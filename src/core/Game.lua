@@ -15,8 +15,9 @@ local Screens = require("src.ui.Screens")
 
 local Game = {}
 
--- dev-mode gate for the F5/backtick hotkeys; false keeps every src/dev
--- module unloaded, so a player boot never touches a byte of dev code
+-- dev-mode gate for the F5/backtick/F3 hotkeys; false keeps every src/dev
+-- module (and the debug menu) unloaded, so a player boot never touches a
+-- byte of dev code
 local devMode = os.getenv("POKEPORT_DEV") == "1" or _G.POKEPORT_DEV_MODE == true
 
 -- the boot screen ids (field.boot.screens); a plain function so the
@@ -278,6 +279,19 @@ function Game:keypressed(key)
   end
   if devMode and key == "`" then
     self.stack:push(require("src.dev.Console").new(self))
+    return
+  end
+  if devMode and key == "f3" and self.save then
+    -- toggle, like the F10 manager below: a second press closes it
+    -- instead of stacking another
+    local top = self.stack:top()
+    if top and top.screenId == "DebugMenu" then
+      self.stack:pop()
+    else
+      local menu = require("src.ui.DebugMenu").new(self)
+      menu.screenId = "DebugMenu"
+      self.stack:push(menu)
+    end
     return
   end
   if key == "f10" then

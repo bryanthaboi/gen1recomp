@@ -152,3 +152,23 @@ The console understands these verbs (anything else is evaluated as Lua):
 
 Developer mode also arms the mod loader's dev tripwire, which flags mods
 that reach outside their permission set.
+
+## Debug menu
+
+With developer mode active, `F3` opens a menu-driven front end for the
+same cheats the console offers, docked to the left of the screen (press
+`F3` again to close it):
+
+- `NO CLIP` — toggle walking through walls, sprites and ledges (stays
+  on the same tile grid; still bounded by the map's edges). Selecting it
+  does not close the menu, so the label flips between ON/OFF in place.
+- `TELEPORT` — pick any map from a full list and warp there.
+- `HEAL` — fully heal the current party.
+- `ITEM` — pick an item and a quantity to add to the bag.
+- `POKéMON` — pick a species and a level to add to the party (or the PC
+  if the party is full).
+- `OPTIONS` — a nested menu (B backs out to the debug menu, not the
+  overworld) for lower-level toggles:
+  - `NO WILDS` — suppress wild encounters entirely.
+  - `FAST WALK` — halve the player's step time (stacks with the
+    bicycle).

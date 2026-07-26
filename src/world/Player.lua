@@ -64,18 +64,32 @@ function Player:tryMove(dir, map, entities)
     return "turned"
   end
   if self.turnTimer > 0 then return nil end
-  local ok, why = Collision.canMove(map, entities, self, dir)
+  local Game = require("src.core.Game")
+  local tx, ty = Collision.target(self.cellX, self.cellY, dir)
+  local ok, why
+  if Game.noclip then
+    -- debug menu toggle (src/ui/DebugMenu.lua): walk through tiles,
+    -- sprites and ledges, still bounded by the map's own tile grid
+    ok = map:inBounds(tx, ty)
+    why = ok and nil or "bounds"
+  else
+    ok, why = Collision.canMove(map, entities, self, dir)
+  end
   if not ok then
     return "blocked", why
   end
-  local tx, ty = Collision.target(self.cellX, self.cellY, dir)
   self.targetX, self.targetY = tx, ty
   self.moving = true
   self.progress = 0
   -- the bicycle doubles walking speed (8 frames per step)
-  local save = require("src.core.Game").save
-  self.stepFramesCur = (save and save.onBike) and self.bikeStepFrames
-                       or self.stepFrames or STEP_FRAMES
+  local stepFrames = (Game.save and Game.save.onBike) and self.bikeStepFrames
+                     or self.stepFrames or STEP_FRAMES
+  -- debug menu's OPTIONS > FAST WALK toggle (src/ui/DebugMenu.lua): halves
+  -- it again on top of biking, same doubling the bike itself applies
+  if Game.fastWalk then
+    stepFrames = math.max(1, math.floor(stepFrames / 2))
+  end
+  self.stepFramesCur = stepFrames
   return "moved"
 end
 

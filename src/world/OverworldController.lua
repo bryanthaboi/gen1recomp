@@ -2775,14 +2775,18 @@ function OverworldState:onStepComplete()
   -- (wild_encounters.asm: caves, towers, the Mansion, Power Plant)
   local encDef = Game.data.encounters[self.map.id]
   local enc
-  local indoor = Game.data.field.indoorEncounters
-  if p.surfing and encDef and encDef.water and self.map:isWaterCell(p.cellX, p.cellY) then
-    enc = self:rollEncounter({ grass = encDef.water }, "water")
-  elseif self.map:isGrassCell(p.cellX, p.cellY) then
-    enc = self:rollEncounter(encDef, "grass")
-  elseif indoor and self.map.def.index >= indoor.firstIndoorMap
-         and self.map.def.tileset ~= indoor.excludedTileset then
-    enc = self:rollEncounter(encDef, "indoor")
+  -- Game.noWilds: the debug menu's OPTIONS > NO WILDS toggle
+  -- (src/ui/DebugMenu.lua)
+  if not Game.noWilds then
+    local indoor = Game.data.field.indoorEncounters
+    if p.surfing and encDef and encDef.water and self.map:isWaterCell(p.cellX, p.cellY) then
+      enc = self:rollEncounter({ grass = encDef.water }, "water")
+    elseif self.map:isGrassCell(p.cellX, p.cellY) then
+      enc = self:rollEncounter(encDef, "grass")
+    elseif indoor and self.map.def.index >= indoor.firstIndoorMap
+           and self.map.def.tileset ~= indoor.excludedTileset then
+      enc = self:rollEncounter(encDef, "indoor")
+    end
   end
   if enc then
     -- REPEL blocks wild mons weaker than the lead
