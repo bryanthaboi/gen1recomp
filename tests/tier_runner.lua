@@ -15,6 +15,8 @@
 
 local Runner = {}
 
+local FsIo = require("tests.fs_io")
+
 local function interpreter()
   -- arg[-1] is how the suite was invoked (luajit here, lua5.4 elsewhere)
   return (arg and arg[-1]) or "luajit"
@@ -22,17 +24,13 @@ end
 
 function Runner.suites(dir)
   local files = {}
-  local pipe = io.popen(("ls -1 '%s'/*.lua 2>/dev/null"):format(dir))
-  if not pipe then return files end
-  for line in pipe:lines() do
-    local name = line:match("[^/]+$")
+  for _, name in ipairs(FsIo.listDir(dir)) do
     -- "_" prefixes helpers; facts.lua is the tier's pinned-value table
     -- (a content_<mod>/facts.lua is data the suites read, not a suite)
-    if name and name:sub(1, 1) ~= "_" and name ~= "facts.lua" then
-      files[#files + 1] = line
+    if name:match("%.lua$") and name:sub(1, 1) ~= "_" and name ~= "facts.lua" then
+      files[#files + 1] = dir .. "/" .. name
     end
   end
-  pipe:close()
   table.sort(files)
   return files
 end

@@ -15,6 +15,71 @@ local function quote(path)
   return "'" .. tostring(path):gsub("'", "'\\''") .. "'"
 end
 
+-- The suites also run on Windows checkouts, where cmd has no ls/find/test.
+-- These probes pick the spelling the host shell understands; anything that
+-- listed a directory through a bare Unix command silently returned nothing
+-- there, and a tier built on an empty listing passes vacuously.
+FsIo.isWindows = package.config:sub(1, 1) == "\\"
+
+local function shellLines(cmd)
+  local lines = {}
+  local pipe = io.popen(cmd)
+  if not pipe then return lines end
+  for line in pipe:lines() do
+    if line ~= "" then lines[#lines + 1] = line end
+  end
+  pipe:close()
+  return lines
+end
+
+-- names directly inside path (files and directories mixed, like ls -1)
+function FsIo.listDir(path)
+  local cmd
+  if FsIo.isWindows then
+    cmd = 'dir /b "' .. tostring(path) .. '" 2>nul'
+  else
+    cmd = "ls -1 " .. quote(path) .. " 2>/dev/null"
+  end
+  local items = shellLines(cmd)
+  table.sort(items)
+  return items
+end
+
+-- every *.lua under dir, recursively, as forward-slash paths
+function FsIo.luaFilesUnder(dir)
+  local cmd
+  if FsIo.isWindows then
+    cmd = 'dir /b /s "' .. tostring(dir) .. '\\*.lua" 2>nul'
+  else
+    -- -L follows symlinks: a checkout that symlinks src/ (worktrees, the
+    -- ROM-free CI probe) would otherwise scan nothing and hand every gate
+    -- an empty catalog to pass vacuously against
+    cmd = "find -L " .. quote(dir) .. " -name '*.lua' -type f 2>/dev/null"
+  end
+  local files = {}
+  for _, line in ipairs(shellLines(cmd)) do
+    files[#files + 1] = (line:gsub("\\", "/"))
+  end
+  table.sort(files)
+  return files
+end
+
+-- existence probe that never shells out on Windows: directories do not
+-- open() there at all, and rename-self succeeds for anything that exists
+function FsIo.isDir(path)
+  local handle = io.open(path, "rb")
+  if handle then
+    local probe = handle:read(1)
+    handle:close()
+    if probe ~= nil then return false end
+    if FsIo.isWindows then return false end -- opened but empty: a file
+  elseif FsIo.isWindows then
+    return os.rename(path, path) == true
+  end
+  local ok = os.execute("test -d " .. quote(path))
+  return ok == true or ok == 0
+end
+
 function FsIo.new(rootDir)
   local base = rootDir or "."
 
@@ -50,8 +115,7 @@ function FsIo.new(rootDir)
       -- a directory opens on some libc builds but reads nothing
       if probe ~= nil then return { type = "file" } end
     end
-    local ok = os.execute("test -d " .. quote(abs(path)))
-    if ok == true or ok == 0 then return { type = "directory" } end
+    if FsIo.isDir(abs(path)) then return { type = "directory" } end
     if handle then return { type = "file" } end
     return nil
   end
@@ -61,15 +125,7 @@ function FsIo.new(rootDir)
   end
 
   function fs.getDirectoryItems(path)
-    local items = {}
-    local pipe = io.popen("ls -1 " .. quote(abs(path)) .. " 2>/dev/null")
-    if not pipe then return items end
-    for line in pipe:lines() do
-      if line ~= "" then items[#items + 1] = line end
-    end
-    pipe:close()
-    table.sort(items)
-    return items
+    return FsIo.listDir(abs(path))
   end
 
   fs.root = base

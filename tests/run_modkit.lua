@@ -11,12 +11,12 @@ local dirs = { "tests/modkit/cases" }
 
 -- mods ship their own tests (21-testing-and-ci "how mods ship their own
 -- tests"); pick up every mods/<id>/tests directory that exists
-local pipe = io.popen("ls -d mods/*/tests 2>/dev/null")
-if pipe then
-  for line in pipe:lines() do
-    if line ~= "" then dirs[#dirs + 1] = line end
+local FsIo = require("tests.fs_io")
+for _, name in ipairs(FsIo.listDir("mods")) do
+  if not name:find(".", 1, true) then
+    local dir = "mods/" .. name .. "/tests"
+    if FsIo.isDir(dir) then dirs[#dirs + 1] = dir end
   end
-  pipe:close()
 end
 
 Runner.main(dirs, "modkit")
