@@ -368,24 +368,38 @@ check(#empty.lines == 0, "empty report renders no rows")
 
 -- ------- modkit CLI: scaffold -> validate green, lint gate red
 
+local isWindows = package.config:sub(1, 1) == "\\"
+
 -- luajit's pclose drops the exit status, so the shell reports it in-band
 local function run(command)
-  local pipe = io.popen(command .. ' 2>&1; echo "EXIT:$?"')
+  if isWindows then
+    -- cmd expands %errorlevel% when the line is parsed, before the command
+    -- runs; /v:on defers !errorlevel! to execution time
+    command = 'cmd /v:on /c "' .. command .. ' 2>&1 & echo EXIT:!errorlevel!"'
+  else
+    command = command .. ' 2>&1; echo "EXIT:$?"'
+  end
+  local pipe = io.popen(command)
   local output = pipe:read("*a")
   pipe:close()
   local code = tonumber(output:match("EXIT:(%d+)%s*$")) or -1
   return output, code
 end
 
-local python = "python3"
+local python = isWindows and "python" or "python3"
 local haveTools = run(python .. " --version")
 check(haveTools:find("Python 3", 1, true) ~= nil, "python3 available for modkit")
 
 local tmp = os.tmpname()
 os.remove(tmp)
-local root = tmp .. "_modkit"
-check(os.execute(("mkdir -p %q"):format(root)) == 0
-  or os.execute(("mkdir -p %q"):format(root)) == true, "scratch dir")
+-- Windows tmpname is already a full path under TEMP; forward slashes keep
+-- %q from doubling backslashes for cmd
+local root = (isWindows and tmp:gsub("\\", "/") or tmp) .. "_modkit"
+-- cmd mkdir creates parents on its own and treats -p as a directory name
+local mkdir = isWindows and "mkdir" or "mkdir -p"
+local rmdir = isWindows and "rmdir /s /q" or "rm -rf"
+check(os.execute((mkdir .. " %q"):format(root)) == 0
+  or os.execute((mkdir .. " %q"):format(root)) == true, "scratch dir")
 
 local out, code = run(("%s tools/modkit.py scaffold scaffy --dest %q")
   :format(python, root))
@@ -433,7 +447,7 @@ if packed then packed:close() end
 
 -- a bad mod trips the schema rule and the no-ROM-content gate
 local bad = root .. "/badmod"
-os.execute(("mkdir -p %q"):format(bad))
+os.execute((mkdir .. " %q"):format(bad))
 local function write(path, body)
   local handle = assert(io.open(path, "wb"))
   handle:write(body)
@@ -470,7 +484,7 @@ check(io.open(root .. "/bad.modpkg", "rb") == nil, "no package written on refusa
 -- whether the machine has an imported dataset
 local function ruleMod(id, manifestExtra, body)
   local dir = root .. "/" .. id
-  os.execute(("mkdir -p %q"):format(dir))
+  os.execute((mkdir .. " %q"):format(dir))
   write(dir .. "/manifest.json",
     ('{"id":"%s","name":"%s","version":"1.0.0","api":2,"entry":"main.lua"%s}')
       :format(id, id, manifestExtra or ""))
@@ -625,7 +639,7 @@ if packed then packed:close() end
 -- MK305 diffs shipped tables against the imported dataset; fake one under
 -- a scratch repo root so the check exercises the same on ROM-less machines
 local fake = root .. "/fakerepo"
-os.execute(("mkdir -p %q %q"):format(
+os.execute((mkdir .. " %q %q"):format(
   fake .. "/data/generated", fake .. "/mods/dumper"))
 local rows = {}
 for index = 1, 12 do
@@ -645,8 +659,12 @@ check(code ~= 0, "bulk data-table dump fails lint: " .. out)
 check(out:find("MK305", 1, true) ~= nil, "dump reported as MK305")
 
 -- no interpreter means no verdict; the gate fails closed, never open
-out, code = run(("MODKIT_LUAJIT=%q %s tools/modkit.py --repo %q lint %q")
-  :format(fake .. "/no-such-luajit", python, fake, fake .. "/mods/dumper"))
+local missingLuajit = isWindows
+  and ('set "MODKIT_LUAJIT=%s" && %s tools/modkit.py --repo %q lint %q')
+    :format(fake .. "/no-such-luajit", python, fake, fake .. "/mods/dumper")
+  or ("MODKIT_LUAJIT=%q %s tools/modkit.py --repo %q lint %q")
+    :format(fake .. "/no-such-luajit", python, fake, fake .. "/mods/dumper")
+out, code = run(missingLuajit)
 check(code ~= 0, "lint fails when luajit is missing")
 check(out:find("MK100", 1, true) ~= nil, "missing luajit reported as MK100")
 
@@ -656,7 +674,7 @@ out, code = run(("%s tools/modkit.py --repo %q lint %q")
 check(code == 0, "dump check without a dataset stays a warning")
 check(out:find("MK305 WARN", 1, true) ~= nil, "skipped dump check is reported")
 
-os.execute(("rm -rf %q"):format(root))
+os.execute((rmdir .. " %q"):format(root))
 
 -- ------- restore shared runtime state for the suites that follow
 

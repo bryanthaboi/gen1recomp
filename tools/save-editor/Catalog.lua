@@ -22,6 +22,17 @@ end
 function Catalog.scrapeEvents(scriptDir, headerPath, listFiles, extraDirs)
   listFiles = listFiles or function(dir)
     local out = {}
+    if package.config:sub(1, 1) == "\\" then
+      -- cmd has no ls; dir /b prints bare names, so re-attach the directory
+      local p = io.popen(string.format('dir /b "%s\\*.lua" 2>nul', dir))
+      if p then
+        for line in p:lines() do
+          if line ~= "" then table.insert(out, dir .. "/" .. line) end
+        end
+        p:close()
+      end
+      return out
+    end
     local p = io.popen(string.format('ls "%s"/*.lua 2>/dev/null', dir))
     if p then
       for line in p:lines() do

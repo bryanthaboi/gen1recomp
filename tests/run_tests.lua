@@ -3141,12 +3141,13 @@ runSuites(orderedGlob("tests/parity_*.lua", {
 -- always been; scripts/test.sh also runs them directly.
 do
   local lua = (arg and arg[-1]) or "luajit"
+  local devnull = package.config:sub(1, 1) == "\\" and "nul" or "/dev/null"
   for _, tier in ipairs({ "tests/run_content_red.lua",
       "tests/run_engine.lua", "tests/run_modkit.lua" }) do
     local handle = io.open(tier, "r")
     if handle then
       handle:close()
-      local status = os.execute(("%q %s > /dev/null 2>&1"):format(lua, tier))
+      local status = os.execute(("%q %s > " .. devnull .. " 2>&1"):format(lua, tier))
       check(status == 0 or status == true, tier:match("([^/]+)%.lua$") .. " tier")
     end
   end

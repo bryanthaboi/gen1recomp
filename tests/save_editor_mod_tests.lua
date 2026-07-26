@@ -88,7 +88,8 @@ love.filesystem = memfs({
     .. '"entry":"main.lua","dependencies":[],"api":2}',
   [MOD_ROOT .. "/main.lua"] = MOD_MAIN,
 })
-os.execute('mkdir -p "' .. MOD_ROOT .. '"')
+-- plain mkdir: cmd reads "-p" as a directory name, and mods/ always exists
+os.execute('mkdir "' .. MOD_ROOT .. '"')
 local diskMain = assert(io.open(MOD_ROOT .. "/main.lua", "w"))
 diskMain:write(MOD_MAIN)
 diskMain:close()
@@ -144,7 +145,11 @@ local ok, err = pcall(function()
 end)
 
 os.remove(MOD_ROOT .. "/main.lua")
-os.execute('rmdir "' .. MOD_ROOT .. '" 2>/dev/null')
+if package.config:sub(1, 1) == "\\" then
+  os.execute('rmdir "' .. MOD_ROOT .. '"')
+else
+  os.execute('rmdir "' .. MOD_ROOT .. '" 2>/dev/null')
+end
 os.remove(tmpPath)
 love.filesystem = savedFS
 -- leave shared singletons the way we found them (the fixture merged one

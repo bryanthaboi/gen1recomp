@@ -56,15 +56,20 @@ do
 end
 
 local SaveIO = require("SaveIO")
+local FsIo = require("tests.fs_io")
 
 do
   local path = SaveIO.defaultPath()
   check(type(path) == "string" and #path > 0, "defaultPath nonempty")
   check(path:match("save%.lua$"), "defaultPath ends with save.lua")
   check(path:match("pokemon%-love2d"), "defaultPath uses game identity folder")
-  local uname = io.popen and io.popen("uname -s 2>/dev/null")
-  local sys = uname and uname:read("*l") or ""
-  if uname then uname:close() end
+  local sys = ""
+  if package.config:sub(1, 1) ~= "\\" then
+    -- no uname on Windows; the macOS-only check below just skips there
+    local uname = io.popen("uname -s 2>/dev/null")
+    sys = uname and uname:read("*l") or ""
+    if uname then uname:close() end
+  end
   if sys == "Darwin" then
     check(path:match("/LOVE/"), "defaultPath on macOS includes LOVE folder")
   end
@@ -92,14 +97,7 @@ do
   loaded = assert(SaveIO.load(path))
   eq(loaded.money, 99, "second save money")
 
-  local bakFiles = {}
-  local bakGlob = io.popen('ls -1 "' .. path .. '.bak-"* 2>/dev/null')
-  if bakGlob then
-    for line in bakGlob:lines() do
-      bakFiles[#bakFiles + 1] = line
-    end
-    bakGlob:close()
-  end
+  local bakFiles = FsIo.globPrefix(path .. ".bak-")
   check(#bakFiles >= 1, "second save creates .bak-* sibling")
   if #bakFiles >= 1 then
     local bakData, berr = SaveIO.load(bakFiles[1])
@@ -376,11 +374,7 @@ do
 
   os.remove(a); os.remove(b)
   for _, path in ipairs({ a, b }) do
-    local bak = io.popen('ls -1 "' .. path .. '.bak-"* 2>/dev/null')
-    if bak then
-      for line in bak:lines() do os.remove(line) end
-      bak:close()
-    end
+    for _, bak in ipairs(FsIo.globPrefix(path .. ".bak-")) do os.remove(bak) end
   end
 end
 

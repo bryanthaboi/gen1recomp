@@ -64,6 +64,20 @@ function FsIo.luaFilesUnder(dir)
   return files
 end
 
+-- full paths matching the shell's "prefix"* glob (e.g. save.lua.bak-*)
+function FsIo.globPrefix(prefix)
+  local dir, base = tostring(prefix):match("^(.*[/\\])([^/\\]*)$")
+  if not dir then dir, base = "", tostring(prefix) end
+  if dir == "" then dir = "." end
+  local matches = {}
+  for _, name in ipairs(FsIo.listDir(dir)) do
+    if name:sub(1, #base) == base then
+      matches[#matches + 1] = dir .. name
+    end
+  end
+  return matches
+end
+
 -- existence probe that never shells out on Windows: directories do not
 -- open() there at all, and rename-self succeeds for anything that exists
 function FsIo.isDir(path)

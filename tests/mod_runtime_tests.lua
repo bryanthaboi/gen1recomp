@@ -190,15 +190,25 @@ Runtime.install(nullEvents, nullHooks)
 -- POKEPORT_DATA_DIR points Data:load at another dataset root; the fixture
 -- set is ROM-free, so this is what lets a runner boot with no data/generated
 local ffi = require("ffi")
-ffi.cdef([[
-int setenv(const char *name, const char *value, int overwrite);
-int unsetenv(const char *name);
-]])
-ffi.C.setenv("POKEPORT_DATA_DIR", "tests/fixture_data", 1)
+local setVar, unsetVar
+if ffi.os == "Windows" then
+  -- msvcrt has no setenv/unsetenv; _putenv with an empty value unsets
+  ffi.cdef([[ int _putenv(const char *envstring); ]])
+  setVar = function(name, value) ffi.C._putenv(name .. "=" .. value) end
+  unsetVar = function(name) ffi.C._putenv(name .. "=") end
+else
+  ffi.cdef([[
+  int setenv(const char *name, const char *value, int overwrite);
+  int unsetenv(const char *name);
+  ]])
+  setVar = function(name, value) ffi.C.setenv(name, value, 1) end
+  unsetVar = function(name) ffi.C.unsetenv(name) end
+end
+setVar("POKEPORT_DATA_DIR", "tests/fixture_data")
 local Data = require("src.core.Data")
 local fixture = setmetatable({}, { __index = Data })
 local okLoad, loadErr = pcall(Data.load, fixture)
-ffi.C.unsetenv("POKEPORT_DATA_DIR")
+unsetVar("POKEPORT_DATA_DIR")
 check(okLoad, "Data:load honours POKEPORT_DATA_DIR (" .. tostring(loadErr) .. ")")
 check(okLoad and fixture.pokemon ~= nil and fixture.pokemon.FIXMON_A ~= nil,
   "the override serves the fixture dataset")
