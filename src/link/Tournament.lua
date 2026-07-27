@@ -18,6 +18,7 @@ local Protocol = require("src.link.Protocol")
 local Runtime = require("src.mods.Runtime")
 local Sound = require("src.core.Sound")
 local TextBox = require("src.render.TextBox")
+local Strings = require("src.core.Strings")
 
 local Tournament = {}
 Tournament.__index = Tournament
@@ -128,7 +129,7 @@ end
 function Tournament:startHosting()
   self.net = Net.new()
   if not self.net:connectTCP(Net.defaultRelayAddress()) then
-    self:exitWith("Link error:\n" .. (self.net.error or "?"))
+    self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
     return
   end
   local size, minL, maxL = partyStats(self.game.save.party)
@@ -151,7 +152,7 @@ end
 function Tournament:startJoining(code)
   self.net = Net.new()
   if not self.net:connectTCP(Net.defaultRelayAddress()) then
-    self:exitWith("Link error:\n" .. (self.net.error or "?"))
+    self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
     return
   end
   local size, minL, maxL = partyStats(self.game.save.party)
@@ -171,9 +172,9 @@ end
 -- -------------------------------------------------------------------
 
 local JOIN_ERROR_TEXT = {
-  not_found = "That code wasn't\nfound.",
-  already_started = "That tournament\nhas already begun.",
-  expired = "That code has\nexpired.",
+  not_found = Strings.source("That code wasn't\nfound."),
+  already_started = Strings.source("That tournament\nhas already begun."),
+  expired = Strings.source("That code has\nexpired."),
 }
 
 function Tournament:handleMessage(msg)
@@ -198,17 +199,17 @@ function Tournament:handleMessage(msg)
     end
   elseif msg.type == "tournament_host_error" then
     if msg.reason == "party_ineligible" then
-      self:exitWith(("Can't host:\nneed %d Pokemon\nLv %s-%s."):format(
-        msg.requiredPartySize, levelLabel(msg.minLevel), levelLabel(msg.maxLevel)))
+      self:exitWith(Strings("Can't host:\nneed %d Pokemon\nLv %s-%s.", msg.requiredPartySize, levelLabel(msg.minLevel), levelLabel(msg.maxLevel)))
     else
-      self:exitWith("Couldn't host\nthat tournament.")
+      self:exitWith(Strings("Couldn't host\nthat tournament."))
     end
   elseif msg.type == "tournament_join_error" then
     if msg.reason == "party_ineligible" then
-      self:exitWith(("Your party needs\n%d Pokemon, Lv\n%s-%s."):format(
-        msg.requiredPartySize, levelLabel(msg.minLevel), levelLabel(msg.maxLevel)))
+      self:exitWith(Strings("Your party needs\n%d Pokemon, Lv\n%s-%s.", msg.requiredPartySize, levelLabel(msg.minLevel), levelLabel(msg.maxLevel)))
     else
-      self:exitWith(JOIN_ERROR_TEXT[msg.reason] or "Couldn't join\nthat tournament.")
+      self:exitWith(JOIN_ERROR_TEXT[msg.reason]
+                    and Strings(JOIN_ERROR_TEXT[msg.reason])
+                    or Strings("Couldn't join\nthat tournament."))
     end
   elseif msg.type == "tournament_roster" then
     self.roster = msg.players
@@ -281,7 +282,7 @@ function Tournament:beginMatchBattle()
     -- shouldn't happen (both sides already passed the online-play mods
     -- gate), but a mismatched engine/build is still possible -- bail out
     -- of just this match rather than crash the tournament
-    self:exitWith("Link error:\nversion mismatch\nwith opponent.")
+    self:exitWith(Strings("Link error:\nversion mismatch\nwith opponent."))
     return
   end
   self.linkSeed = self.isHost and love.math.random(1, 2 ^ 30) or nil
@@ -351,11 +352,11 @@ function Tournament:update(dt)
     self.net:update()
     if self.net.error and self.stage ~= "menu" and self.stage ~= "hostSettings"
        and self.stage ~= "codeEntry" then
-      self:exitWith("Link error:\n" .. self.net.error:sub(1, 60))
+      self:exitWith(Strings("Link error:\n%s", self.net.error:sub(1, 60)))
       return
     end
     if self.net.closed and self.stage ~= "done" then
-      self:exitWith("The tournament\nconnection was\nlost.")
+      self:exitWith(Strings("The tournament\nconnection was\nlost."))
       return
     end
   end
@@ -381,7 +382,7 @@ function Tournament:update(dt)
           and LinkBattle.newHost(self.game, self.net, self.pendingBattleOpts)
           or LinkBattle.newGuest(self.game, self.net, self.pendingBattleOpts)
         if not battle then
-          self:exitWith(why or "Link battle\ncan't start.")
+          self:exitWith(why or Strings("Link battle\ncan't start."))
           return
         end
         -- anything after `party` in this same batch belongs to the
@@ -418,7 +419,7 @@ function Tournament:update(dt)
             forceLevel = levelForWire(self.settings.forceLevel),
           })
           if not battle then
-            self:exitWith(why or "Can't watch this\nmatch.")
+            self:exitWith(why or Strings("Can't watch this\nmatch."))
             return
           end
           for j = #msgs, i + 1, -1 do
@@ -541,8 +542,8 @@ local SETTINGS_LABELS = { "POKEMON", "MIN LV", "MAX LV", "TIMER", "LEVELS", "PLA
 function Tournament:draw()
   if self.stage == "menu" then
     drawTitle("TOURNAMENT")
-    Font.draw("HOST", 32, 48)
-    Font.draw("JOIN", 32, 68)
+    Font.draw(Strings("HOST"), 32, 48)
+    Font.draw(Strings("JOIN"), 32, 68)
     Font.drawCode(CURSOR, 24, self.index == 1 and 48 or 68)
 
   elseif self.stage == "hostSettings" then
@@ -561,7 +562,7 @@ function Tournament:draw()
       Font.draw(values[i], 96, y)
       if i == self.settingsIndex then Font.drawCode(CURSOR, 8, y) end
     end
-    Font.draw("START: create", 8, 128)
+    Font.draw(Strings("START: create"), 8, 128)
 
   elseif self.stage == "codeEntry" then
     drawTitle("ENTER CODE")
@@ -573,28 +574,27 @@ function Tournament:draw()
         Font.drawCode(0xEE, x, 76)
       end
     end
-    Font.draw("A: join  B: back", 8, 128)
+    Font.draw(Strings("A: join  B: back"), 8, 128)
 
   elseif self.stage == "registering" then
     drawTitle("CONNECTING...")
-    Font.draw("B: cancel", 8, 128)
+    Font.draw(Strings("B: cancel"), 8, 128)
 
   elseif self.stage == "bracket" or self.stage == "matchHello"
       or self.stage == "matchWaitParty" or self.stage == "spectateWait" then
-    drawTitle(("TOURNAMENT %s"):format(self.code or "??????"))
+    drawTitle(Strings("TOURNAMENT %s", self.code or "??????"))
     if self.bracket then
       local y = 20
       for _, round in ipairs(self.bracket.rounds) do
-        Font.draw(("ROUND %d"):format(round.round), 8, y)
+        Font.draw(Strings("ROUND %d", round.round), 8, y)
         y = y + 10
         for _, m in ipairs(round.matches) do
           local line
           if m.bye then
-            line = ("%s (bye)"):format(m.a or m.b or "?")
+            line = Strings("%s (bye)", m.a or m.b or "?")
           else
             local mark = m.state == "live" and "*" or (m.winner and "" or "")
-            line = ("%s%s vs %s%s"):format(
-              m.winner == m.a and ">" or " ", m.a or "?",
+            line = Strings("%s%s vs %s%s", m.winner == m.a and ">" or " ", m.a or "?",
               m.b or "?", m.winner == m.b and "<" or (mark == "*" and " *" or ""))
           end
           Font.draw(line, 12, y)
@@ -604,11 +604,11 @@ function Tournament:draw()
       end
     else
       if self.participating == false then
-        Font.draw("(organizing --", 16, 32)
-        Font.draw("not playing)", 16, 42)
+        Font.draw(Strings("(organizing --"), 16, 32)
+        Font.draw(Strings("not playing)"), 16, 42)
       end
-      Font.draw("Waiting for", 16, 48)
-      Font.draw("players to join:", 16, 60)
+      Font.draw(Strings("Waiting for"), 16, 48)
+      Font.draw(Strings("players to join:"), 16, 60)
       local y = 60
       for i, name in ipairs(self.roster) do
         y = 60 + i * 10
@@ -620,18 +620,18 @@ function Tournament:draw()
       end
     end
     if self.isCreator and #self.roster >= 2 and not self.bracket then
-      Font.draw("A: START  B: cancel", 8, 132)
+      Font.draw(Strings("A: START  B: cancel"), 8, 132)
     else
-      Font.draw("B: cancel", 8, 132)
+      Font.draw(Strings("B: cancel"), 8, 132)
     end
 
   elseif self.stage == "done" then
     drawTitle("TOURNAMENT OVER")
     if self.champion then
-      Font.draw(("%s is the"):format(self.champion), 16, 56)
-      Font.draw("champion!", 16, 68)
+      Font.draw(Strings("%s is the", self.champion), 16, 56)
+      Font.draw(Strings("champion!"), 16, 68)
     end
-    Font.draw("A: continue", 8, 128)
+    Font.draw(Strings("A: continue"), 8, 128)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

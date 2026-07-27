@@ -8,12 +8,13 @@ local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
 local Party = require("src.pokemon.Party")
 local TextBox = require("src.render.TextBox")
+local Strings = require("src.core.Strings")
 
 local BoxMenu = {}
 
 local function monLabel(game, mon)
   local def = game.data.pokemon[mon.species]
-  return ("%s :L%d"):format(mon.nickname or def.name, mon.level)
+  return Strings("%s :L%d", mon.nickname or def.name, mon.level)
 end
 
 local function monName(game, mon)
@@ -28,13 +29,13 @@ local function monSubmenu(game, action, mon, onAction)
   game.stack:push(Menu.new(game, {
     { label = action, onSelect = onAction },
     {
-      label = "STATS",
+      label = Strings("STATS"),
       keepOpen = true,
       onSelect = function()
         require("src.ui.Screens").push(game, "SummaryMenu", mon)
       end,
     },
-    { label = "CANCEL" },
+    { label = Strings("CANCEL") },
   }, { tx = 9, ty = 10, tw = 11, th = 8, noSound = true }))
 end
 
@@ -50,12 +51,12 @@ local function withdraw(game)
   local t = game.data.text
   if #box == 0 then
     game.stack:push(TextBox.new(game, t._NoMonText
-      or "What? There are\nno POKéMON here!"))
+      or Strings("What? There are\nno POKéMON here!")))
     return
   end
   if #game.save.party >= Party.MAX then
     game.stack:push(TextBox.new(game, t._CantTakeMonText
-      or "You can't take\nany more POKéMON.\fDeposit POKéMON\nfirst."))
+      or Strings("You can't take\nany more POKéMON.\fDeposit POKéMON\nfirst.")))
     return
   end
   local items = {}
@@ -63,7 +64,7 @@ local function withdraw(game)
     table.insert(items, { label = monLabel(game, mon), value = i })
   end
   game.stack:push(ListMenu.new(game,
-    ("BOX %d (WITHDRAW)"):format(game.save.currentBox), items, {
+    Strings("BOX %d (WITHDRAW)", game.save.currentBox), items, {
     onChoose = function(item, list)
       local mon = box[item.value]
       if not mon then return end
@@ -78,7 +79,7 @@ local function withdraw(game)
         game.stringBuffer = name
         require("src.core.Sound").playCry(game.data, mon.species)
         afterTransfer(game, list, t._MonIsTakenOutText
-          or (name .. " is\ntaken out.\vGot " .. name .. "."))
+          or Strings("%s is\ntaken out.\vGot %s.", name, name))
       end)
     end,
   }))
@@ -88,13 +89,13 @@ local function deposit(game)
   local t = game.data.text
   if #game.save.party <= 1 then
     game.stack:push(TextBox.new(game, t._CantDepositLastMonText
-      or "You can't deposit\nthe last POKéMON!"))
+      or Strings("You can't deposit\nthe last POKéMON!")))
     return
   end
   local box = Boxes.active(game.save)
   if #box >= Boxes.CAPACITY then
     game.stack:push(TextBox.new(game, t._BoxFullText
-      or "Oops! This Box is\nfull of POKéMON."))
+      or Strings("Oops! This Box is\nfull of POKéMON.")))
     return
   end
   local items = {}
@@ -107,12 +108,12 @@ local function deposit(game)
       if not mon then return end
       monSubmenu(game, "DEPOSIT", mon, function()
         if #game.save.party <= 1 then
-          list.footer = "You need at least\none POKéMON!"
+          list.footer = Strings("You need at least\none POKéMON!")
           return
         end
         local active = Boxes.active(game.save)
         if #active >= Boxes.CAPACITY then
-          list.footer = ("BOX %d is full!"):format(game.save.currentBox)
+          list.footer = Strings("BOX %d is full!", game.save.currentBox)
           return
         end
         table.remove(game.save.party, item.value)
@@ -122,7 +123,7 @@ local function deposit(game)
         game.boxNumString = tostring(game.save.currentBox)
         require("src.core.Sound").playCry(game.data, mon.species)
         afterTransfer(game, list, t._MonWasStoredText
-          or (name .. " was\nstored in Box " .. game.boxNumString .. "."))
+          or Strings("%s was\nstored in Box %s.", name, game.boxNumString))
       end)
     end,
   }))
@@ -135,7 +136,7 @@ local function release(game)
   local t = game.data.text
   if #box == 0 then
     game.stack:push(TextBox.new(game, t._NoMonText
-      or "What? There are\nno POKéMON here!"))
+      or Strings("What? There are\nno POKéMON here!")))
     return
   end
   local items = {}
@@ -143,20 +144,20 @@ local function release(game)
     table.insert(items, { label = monLabel(game, mon), value = i })
   end
   game.stack:push(ListMenu.new(game,
-    ("BOX %d (RELEASE)"):format(game.save.currentBox), items, {
+    Strings("BOX %d (RELEASE)", game.save.currentBox), items, {
     onChoose = function(_, list)
       local mon = box[list.index]
       if not mon then return end
       local name = monName(game, mon)
       local ChoiceBox = require("src.ui.ChoiceBox")
       game.stack:push(TextBox.new(game,
-        "Once released,\n" .. name .. " is\ngone forever. OK?", function()
+        Strings("Once released,\n%s is\ngone forever. OK?", name), function()
         game.stack:push(ChoiceBox.new(game, function(yes)
           if not yes then return end
           table.remove(box, list.index)
           require("src.core.Sound").playCry(game.data, mon.species)
           game.stack:push(TextBox.new(game,
-            ("%s was\nreleased outside.\fBye %s!"):format(name, name)))
+            Strings("%s was\nreleased outside.\fBye %s!", name, name)))
           list:removeCurrent()
         end, { defaultNo = true, noSound = true }))
       end))
@@ -170,7 +171,7 @@ local function changeBox(game)
   for i = 1, Boxes.COUNT do
     local mark = i == game.save.currentBox and "*" or " "
     table.insert(items, {
-      label = ("%sBOX %2d"):format(mark, i),
+      label = Strings("%sBOX %2d", mark, i),
       right = ("%d/%d"):format(#boxes[i], Boxes.CAPACITY),
       value = i,
     })
@@ -181,7 +182,7 @@ local function changeBox(game)
       -- BOX, data will be saved. OK?"); declining aborts the change
       local ChoiceBox = require("src.ui.ChoiceBox")
       game.stack:push(TextBox.new(game,
-        "When you change a\nPOKéMON BOX, data\nwill be saved. OK?", function()
+        Strings("When you change a\nPOKéMON BOX, data\nwill be saved. OK?"), function()
         game.stack:push(ChoiceBox.new(game, function(yes)
           if not yes then return end
           game.save.currentBox = item.value
@@ -197,10 +198,10 @@ end
 local function drawChrome(game)
   Font.drawBox(0, 12, 20, 6)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("What?", 8, 112)
+  Font.draw(Strings("What?"), 8, 112)
   Font.drawBox(9, 14, 11, 4)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("BOX No.", 80, 128)
+  Font.draw(Strings("BOX No."), 80, 128)
   local n = game.save.currentBox or 1
   if n >= 10 then
     Font.draw(tostring(n), 136, 128)
@@ -217,15 +218,15 @@ function BoxMenu.new(game)
   -- full interior (cursor col + label).  keepOpen so WITHDRAW/DEPOSIT/
   -- RELEASE/CHANGE BOX leave this menu underneath (jp BillsPCMenu).
   local menu = Menu.new(game, {
-    { label = "WITHDRAW <PK><MN>", keepOpen = true,
+    { label = Strings("WITHDRAW <PK><MN>"), keepOpen = true,
       onSelect = function() withdraw(game) end },
-    { label = "DEPOSIT <PK><MN>", keepOpen = true,
+    { label = Strings("DEPOSIT <PK><MN>"), keepOpen = true,
       onSelect = function() deposit(game) end },
-    { label = "RELEASE <PK><MN>", keepOpen = true,
+    { label = Strings("RELEASE <PK><MN>"), keepOpen = true,
       onSelect = function() release(game) end },
-    { label = "CHANGE BOX", keepOpen = true,
+    { label = Strings("CHANGE BOX"), keepOpen = true,
       onSelect = function() changeBox(game) end },
-    { label = "SEE YA!" },
+    { label = Strings("SEE YA!") },
     -- Bill's PC runs silent end to end (BIT_NO_MENU_BUTTON_SOUND,
     -- engine/menus/pokemon_pc.asm)
   }, { tx = 0, ty = 0, tw = 14, th = 12, noSound = true })

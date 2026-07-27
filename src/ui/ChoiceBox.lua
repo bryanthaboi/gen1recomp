@@ -2,6 +2,7 @@
 
 local Font = require("src.render.Font")
 local Theme = require("src.ui.Theme")
+local Strings = require("src.core.Strings")
 
 local ChoiceBox = {}
 ChoiceBox.__index = ChoiceBox
@@ -46,8 +47,8 @@ function ChoiceBox:draw()
   local tx, ty, tw, th = self.tx, self.ty, self.tw, self.th
   Font.drawBox(tx, ty, tw, th)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("YES", (tx + 2) * 8, (ty + 1) * 8)
-  Font.draw("NO", (tx + 2) * 8, (ty + 3) * 8)
+  Font.draw(Strings("YES"), (tx + 2) * 8, (ty + 1) * 8)
+  Font.draw(Strings("NO"), (tx + 2) * 8, (ty + 3) * 8)
   Font.drawCode(Theme.cursor, (tx + 1) * 8,
                 (ty + (self.index == 1 and 1 or 3)) * 8)
   love.graphics.setColor(1, 1, 1, 1)

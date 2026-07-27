@@ -6,6 +6,7 @@
 
 local Badges = require("src.inventory.Badges")
 local Font = require("src.render.Font")
+local Strings = require("src.core.Strings")
 
 local TrainerCard = {}
 TrainerCard.__index = TrainerCard
@@ -114,7 +115,7 @@ function TrainerCard:draw()
     love.graphics.draw(self.pic, 104, 4)
   end
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("NAME/" .. (save.player.name or "RED"), 16, 16)
+  Font.draw(Strings("NAME/%s", save.player.name or "RED"), 16, 16)
   Font.draw(("MONEY/¥%d"):format(save.money or 0), 16, 32)
   local t = math.floor(save.playTime or 0)
   Font.draw(("TIME/%3d:%02d"):format(math.floor(t / 3600),
@@ -123,7 +124,7 @@ function TrainerCard:draw()
   -- the circle-dotted BADGES banner (TrainerInfo_BadgesText)
   self:frameBox(0, 8, 20, 3)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("BADGES", 56, 72)
+  Font.draw(Strings("BADGES"), 56, 72)
   if self.circle then
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(self.circle, 48, 72)

@@ -21,6 +21,7 @@ local Logger = require("src.core.Logger")
 local Protocol = require("src.link.Protocol")
 local Runtime = require("src.mods.Runtime")
 local TurnOrder = require("src.battle.TurnOrder")
+local Strings = require("src.core.Strings")
 
 local LinkBattle = {}
 
@@ -177,18 +178,18 @@ function LinkBattle.new(game, net, opts)
   local theirName = opts.theirName or "FOE"
 
   if not Handshake.battleAllowed(opts.verdict) then
-    return nil, "Link battle needs\nthe same mods on\nboth games."
+    return nil, Strings("Link battle needs\nthe same mods on\nboth games.")
   end
 
   -- both parties pass through the same pack->unpack clamp on both
   -- machines, so the copies are identical everywhere
   local unpackOpts = { strict = opts.strict or false, forceLevel = opts.forceLevel }
   local myParty, myErr = unpackParty(game, opts.myParty, unpackOpts, function(p)
-    return ("Your %s can't\nbattle on the\nother game."):format(tostring(p.species))
+    return Strings("Your %s can't\nbattle on the\nother game.", tostring(p.species))
   end)
   if not myParty then return nil, myErr end
   local theirParty, theirErr = unpackParty(game, opts.theirParty, unpackOpts, function(p, why)
-    return ("Their %s isn't\nin this game.\n(%s)"):format(tostring(p.species), tostring(why))
+    return Strings("Their %s isn't\nin this game.\n(%s)", tostring(p.species), tostring(why))
   end)
   if not theirParty then return nil, theirErr end
   if #myParty == 0 or #theirParty == 0 then
@@ -232,7 +233,7 @@ function LinkBattle.new(game, net, opts)
   self.enemyParty = theirParty
   self.playerParty = myParty -- intro ball row uses the clamped copies
   self.opponentName = theirName
-  self.introText = ("%s wants\nto battle!"):format(theirName)
+  self.introText = Strings("%s wants\nto battle!", theirName)
   self.remoteHashes = {}
   self.localHashes = {}
   self.remoteParts = {}
@@ -292,7 +293,7 @@ function LinkBattle.new(game, net, opts)
       battle = s, side = s.sides[2], battler = s.enemy, previous = previous,
     })
     s.enemySendingOut = true
-    s:sayNext(("%s sent\nout %s!"):format(theirName, s.enemy.name))
+    s:sayNext(Strings("%s sent\nout %s!", theirName, s.enemy.name))
     s:actNext(function()
       s.enemySendingOut = false
       s:startGrowIn(s.enemy)
@@ -315,8 +316,9 @@ function LinkBattle.new(game, net, opts)
                 tostring(turn), component, tostring(localH), tostring(remoteH))
     Runtime.emit("link.desync", { turn = turn, component = component,
                                   localHash = localH, remoteHash = remoteH })
-    endAsDraw(s, ("Link desync!\n%s differs.\fAre both games\nrunning the same\nmods?")
-                 :format(component))
+    endAsDraw(s, Strings(
+      "Link desync!\n%s differs.\fAre both games\nrunning the same\nmods?",
+      component))
   end
 
   -- a verified turn stays recorded: consuming it here left a finished
@@ -349,7 +351,7 @@ function LinkBattle.new(game, net, opts)
   local function resolveLockstep(s, myMsg, theirMsg)
     if myMsg.kind == "run" or theirMsg.kind == "run" then
       local who = myMsg.kind == "run" and game.save.player.name or theirName
-      endAsDraw(s, ("%s ran from\nthe battle!"):format(who))
+      endAsDraw(s, Strings("%s ran from\nthe battle!", who))
       return
     end
     s.phase = "messages"
@@ -479,9 +481,9 @@ function LinkBattle.new(game, net, opts)
         party = myParty,
         onSwitch = function(mon)
           if mon == s.player.mon then
-            s:say(("%s is\nalready out!"):format(s.player.name))
+            s:say(Strings("%s is\nalready out!", s.player.name))
           elseif mon.hp <= 0 then
-            s:say("There's no will\nto fight!")
+            s:say(Strings("There's no will\nto fight!"))
           else
             s:resolveSwitch(mon)
           end
@@ -491,7 +493,7 @@ function LinkBattle.new(game, net, opts)
   end
 
   self.openItems = function(s)
-    s:say("Items can't be\nused in a link\nbattle!")
+    s:say(Strings("Items can't be\nused in a link\nbattle!"))
     s.phase = "messages"
     s.afterQueue = "menu"
   end
@@ -509,7 +511,7 @@ function LinkBattle.new(game, net, opts)
         return
       end
     end
-    s:sayNext(("%s is out of\nPOKéMON!\f%s wins!"):format(game.save.player.name,
+    s:sayNext(Strings("%s is out of\nPOKéMON!\f%s wins!", game.save.player.name,
                                                           theirName))
     s.result = "lose"
     s.afterQueue = "finish"
@@ -522,7 +524,7 @@ function LinkBattle.new(game, net, opts)
         return
       end
     end
-    s:sayNext(("%s is out of\nPOKéMON!\f%s wins!"):format(theirName,
+    s:sayNext(Strings("%s is out of\nPOKéMON!\f%s wins!", theirName,
                                                           game.save.player.name))
     s.result = "win"
     s.afterQueue = "finish"
@@ -543,13 +545,13 @@ function LinkBattle.new(game, net, opts)
         -- only a draw if our own simulation hasn't already decided
         -- (the winner's bye can arrive while we're still animating)
         if not s.result then
-          endAsDraw(s, ("%s left the\nbattle."):format(theirName))
+          endAsDraw(s, Strings("%s left the\nbattle.", theirName))
         end
       elseif msg.type == "forfeit" then
         -- the peer's own shot clock ran out; unlike a mutual RUN/desync
         -- draw, this has a definite winner (us)
         if not s.result then
-          endWithResult(s, "win", ("%s ran out of\ntime!"):format(theirName))
+          endWithResult(s, "win", Strings("%s ran out of\ntime!", theirName))
         end
       else
         -- a tournament control message (bracket_update, the next
@@ -582,7 +584,7 @@ function LinkBattle.new(game, net, opts)
       if s.turnClock <= 0 then
         s.turnClockActive = false
         send({ type = "forfeit" })
-        endWithResult(s, "lose", "Time's up! You\nforfeit the match.")
+        endWithResult(s, "lose", Strings("Time's up! You\nforfeit the match."))
       end
     elseif opts.turnLimit then
       s.turnClockActive = false
@@ -643,17 +645,16 @@ function LinkBattle.newSpectator(game, net, opts)
   local guestName = opts.guestName or "GUEST"
 
   if not Handshake.battleAllowed(opts.verdict) then
-    return nil, "Link battle needs\nthe same mods on\nboth games."
+    return nil, Strings("Link battle needs\nthe same mods on\nboth games.")
   end
 
   local unpackOpts = { strict = opts.strict or false, forceLevel = opts.forceLevel }
   local hostParty, hostErr = unpackParty(game, opts.hostParty, unpackOpts, function(p)
-    return ("%s's %s can't\nbattle on this\ngame."):format(hostName, tostring(p.species))
+    return Strings("%s's %s can't\nbattle on this\ngame.", hostName, tostring(p.species))
   end)
   if not hostParty then return nil, hostErr end
   local guestParty, guestErr = unpackParty(game, opts.guestParty, unpackOpts, function(p, why)
-    return ("%s's %s can't\nbattle on this\ngame.\n(%s)"):format(
-      guestName, tostring(p.species), tostring(why))
+    return Strings("%s's %s can't\nbattle on this\ngame.\n(%s)", guestName, tostring(p.species), tostring(why))
   end)
   if not guestParty then return nil, guestErr end
   if #hostParty == 0 or #guestParty == 0 then
@@ -672,7 +673,7 @@ function LinkBattle.newSpectator(game, net, opts)
   self.enemyParty = guestParty
   self.playerParty = hostParty
   self.opponentName = guestName
-  self.introText = ("%s vs %s!"):format(hostName, guestName)
+  self.introText = Strings("%s vs %s!", hostName, guestName)
 
   local function orderMove(action)
     if action and action.id then return game.data.moves[action.id] end
@@ -712,7 +713,7 @@ function LinkBattle.newSpectator(game, net, opts)
       battle = s, side = s.sides[2], battler = s.enemy, previous = previous,
     })
     s.enemySendingOut = true
-    s:sayNext(("%s sent\nout %s!"):format(guestName, s.enemy.name))
+    s:sayNext(Strings("%s sent\nout %s!", guestName, s.enemy.name))
     s:actNext(function()
       s.enemySendingOut = false
       s:startGrowIn(s.enemy)
@@ -789,7 +790,7 @@ function LinkBattle.newSpectator(game, net, opts)
         return
       end
     end
-    s:sayNext(("%s is out of\nPOKéMON!\f%s wins!"):format(hostName, guestName))
+    s:sayNext(Strings("%s is out of\nPOKéMON!\f%s wins!", hostName, guestName))
     s.result = "guestWin"
     s.afterQueue = "finish"
   end
@@ -801,7 +802,7 @@ function LinkBattle.newSpectator(game, net, opts)
         return
       end
     end
-    s:sayNext(("%s is out of\nPOKéMON!\f%s wins!"):format(guestName, hostName))
+    s:sayNext(Strings("%s is out of\nPOKéMON!\f%s wins!", guestName, hostName))
     s.result = "hostWin"
     s.afterQueue = "finish"
   end

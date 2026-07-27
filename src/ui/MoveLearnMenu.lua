@@ -4,6 +4,7 @@
 -- can't be forgotten; B / CANCEL gives up on the new move.
 
 local Font = require("src.render.Font")
+local Strings = require("src.core.Strings")
 
 local MoveLearnMenu = {}
 MoveLearnMenu.__index = MoveLearnMenu
@@ -43,9 +44,9 @@ function MoveLearnMenu:enter()
   local name = self:monName()
   self.selecting = false
   game.stack:push(TextBox.new(game,
-    ("%s is\ntrying to learn\v%s!\fBut, %s\ncan't learn more\vthan 4 moves!\f")
-      :format(name, mdef.name, name) ..
-    ("Delete an older\nmove to make room\vfor %s?"):format(mdef.name),
+    Strings("%s is\ntrying to learn\v%s!\fBut, %s\ncan't learn more\vthan 4 moves!\f",
+            name, mdef.name, name) ..
+    Strings("Delete an older\nmove to make room\vfor %s?", mdef.name),
     nil, {
       choice = function(yes)
         if yes then
@@ -76,7 +77,7 @@ function MoveLearnMenu:update(dt)
         -- HMCantDeleteText, then back to the forget list
         local TextBox = require("src.render.TextBox")
         self.game.stack:push(TextBox.new(self.game,
-          "HM techniques\ncan't be deleted!"))
+          Strings("HM techniques\ncan't be deleted!")))
         return
       end
       local mdef = self.game.data.moves[self.newMoveId]
@@ -96,7 +97,7 @@ function MoveLearnMenu:confirmAbandon()
   local mdef = game.data.moves[self.newMoveId]
   self.selecting = false
   game.stack:push(TextBox.new(game,
-    ("Abandon learning\n%s?"):format(mdef.name), nil, {
+    Strings("Abandon learning\n%s?", mdef.name), nil, {
       choice = function(yes)
         if yes then self:finish(false) else self:enter() end
       end,
@@ -113,11 +114,11 @@ function MoveLearnMenu:finish(learned)
   local msg
   if learned then
     -- OneTwoAndText/PoofText/ForgotAndText
-    msg = ("1, 2 and... Poof!\f%s forgot\n%s!\fAnd...\f%s learned\n%s!")
-          :format(name, self.forgot, name, mdef.name)
+    msg = Strings("1, 2 and... Poof!\f%s forgot\n%s!\fAnd...\f%s learned\n%s!",
+                  name, self.forgot, name, mdef.name)
   else
     -- DidNotLearnText
-    msg = ("%s\ndid not learn\v%s!"):format(name, mdef.name)
+    msg = Strings("%s\ndid not learn\v%s!", name, mdef.name)
   end
   game.stack:push(TextBox.new(game, msg, function()
     if self.onDone then self.onDone(learned) end
@@ -133,12 +134,12 @@ function MoveLearnMenu:draw()
   for i, mv in ipairs(self.mon.moves) do
     Font.draw(self.game.data.moves[mv.id].name, 48, (5 + i) * 8)
   end
-  Font.draw("CANCEL", 48, (6 + #self.mon.moves) * 8)
+  Font.draw(Strings("CANCEL"), 48, (6 + #self.mon.moves) * 8)
   Font.drawCode(CURSOR, 40, (5 + self.index) * 8)
   -- WhichMoveToForgetText in the bottom dialogue box
   Font.drawBox(0, 12, 20, 6)
-  Font.draw("Which move should", 8, 14 * 8)
-  Font.draw("be forgotten?", 8, 16 * 8)
+  Font.draw(Strings("Which move should"), 8, 14 * 8)
+  Font.draw(Strings("be forgotten?"), 8, 16 * 8)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

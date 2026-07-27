@@ -10,6 +10,7 @@ local Semver = require("src.mods.Semver")
 local Version = require("src.core.Version")
 local Theme = require("src.ui.Theme")
 local OptionRows = require("src.ui.OptionRows")
+local Strings = require("src.core.Strings")
 
 local ManagerState = {}
 ManagerState.__index = ManagerState
@@ -269,7 +270,7 @@ function ManagerState:modRows()
     end
   end
   if #rows == 0 then
-    rows[1] = { header = true, label = "NO MODS INSTALLED" }
+    rows[1] = { header = true, label = Strings("NO MODS INSTALLED") }
   end
   return rows
 end
@@ -281,7 +282,7 @@ function ManagerState:profileRows()
     rows[#rows + 1] = { profile = p, label = p.name,
       glyph = opts.activeProfile == p.name and GLYPH.errored or " " }
   end
-  rows[#rows + 1] = { saveAs = true, label = "SAVE CURRENT AS.." }
+  rows[#rows + 1] = { saveAs = true, label = Strings("SAVE CURRENT AS..") }
   rows[#rows + 1] = { adhoc = true,
     label = opts.activeProfile and "[AD-HOC]" or "[AD-HOC] (LIVE)" }
   return rows
@@ -316,30 +317,30 @@ function ManagerState:detailRows(m)
   rows[#rows + 1] = { label = m.enabled and "DISABLE" or "ENABLE",
     action = function() self:beginToggle(m) end }
   if self:schemaFor(m) then
-    rows[#rows + 1] = { label = "OPTIONS..",
+    rows[#rows + 1] = { label = Strings("OPTIONS.."),
       action = function() self:openOptions(m) end }
   end
   if m.permissions and #m.permissions > 0 then
-    rows[#rows + 1] = { label = "PERMISSIONS..",
+    rows[#rows + 1] = { label = Strings("PERMISSIONS.."),
       action = function() self:goTo("permissions") end }
   end
   if m.error then
-    rows[#rows + 1] = { label = "VIEW ERROR..",
+    rows[#rows + 1] = { label = Strings("VIEW ERROR.."),
       action = function() self:goTo("errors") end }
   end
-  rows[#rows + 1] = { label = "BACK", action = function() self:goBack() end }
+  rows[#rows + 1] = { label = Strings("BACK"), action = function() self:goBack() end }
   return rows
 end
 
 function ManagerState:applyRows()
   local rows = {}
-  rows[#rows + 1] = { label = "APPLY & RESTART", action = function()
+  rows[#rows + 1] = { label = Strings("APPLY & RESTART"), action = function()
     self:openConfirm({ "RESTART NOW?" }, function() self:restartGame() end)
   end }
-  rows[#rows + 1] = { label = "DISCARD CHANGES", action = function()
+  rows[#rows + 1] = { label = Strings("DISCARD CHANGES"), action = function()
     self:discardChanges()
   end }
-  rows[#rows + 1] = { label = "BACK", action = function() self:goBack() end }
+  rows[#rows + 1] = { label = Strings("BACK"), action = function() self:goBack() end }
   return rows
 end
 
@@ -352,7 +353,7 @@ function ManagerState:permissionRows(m)
       label = info and info.text or name }
   end
   if #rows == 0 then
-    rows[1] = { inert = true, label = "DATA & API ONLY" }
+    rows[1] = { inert = true, label = Strings("DATA & API ONLY") }
   end
   return rows
 end
@@ -564,7 +565,7 @@ function ManagerState:openCascade(r, m, want)
   else
     local dep = self.byId[r.alsoDisable[1]]
     lines[#lines + 1] = (dep and dep.name or r.alsoDisable[1]) .. " NEEDS THIS."
-    lines[#lines + 1] = #r.alsoDisable > 1 and "DISABLE ALL?" or "DISABLE BOTH?"
+    lines[#lines + 1] = #r.alsoDisable > 1 and "DISABLE ALL?" or Strings("DISABLE BOTH?")
   end
   self.overlay = { kind = "confirm", lines = lines, index = 1,
     onYes = function() self:commitToggle(r.apply) end }
@@ -700,7 +701,7 @@ end
 function ManagerState:saveCurrentAs()
   local NamingScreen = require("src.ui.NamingScreen")
   self.game.stack:push(NamingScreen.new(self.game, {
-    title = "PROFILE NAME?",
+    title = Strings("PROFILE NAME?"),
     maxLen = 10,
     onDone = function(name)
       local opts = self:optionsTable()
@@ -726,7 +727,7 @@ end
 function ManagerState:renameProfile(p)
   local NamingScreen = require("src.ui.NamingScreen")
   self.game.stack:push(NamingScreen.new(self.game, {
-    title = "RENAME?",
+    title = Strings("RENAME?"),
     maxLen = 10,
     default = p.name,
     onDone = function(name)
@@ -886,7 +887,7 @@ function ManagerState:buildOptionRows(m, schema)
         end }
     end
   end
-  rows[#rows + 1] = { id = "__reset", label = "RESET DEFAULTS",
+  rows[#rows + 1] = { id = "__reset", label = Strings("RESET DEFAULTS"),
     value = function() return "" end,
     activate = function()
       for _, row in ipairs(schema) do
@@ -1047,7 +1048,7 @@ function ManagerState:drawApply()
     y = y + 1
   end
   if #staged == 0 then
-    Font.draw(Runtime.safeMode and "SAFE MODE" or "NO CHANGES", 16, y * 8)
+    Font.draw(Runtime.safeMode and "SAFE MODE" or Strings("NO CHANGES"), 16, y * 8)
     y = y + 1
   end
   local rows = self:rowsForScreen()
@@ -1076,12 +1077,12 @@ function ManagerState:drawOverlay()
   end
   if overlay.kind == "confirm" then
     local yesY = ty + #lines + 1
-    Font.draw("YES", 5 * 8, yesY * 8)
-    Font.draw("NO", 5 * 8, (yesY + 1) * 8)
+    Font.draw(Strings("YES"), 5 * 8, yesY * 8)
+    Font.draw(Strings("NO"), 5 * 8, (yesY + 1) * 8)
     Font.drawCode(Theme.cursor, 4 * 8,
                   (overlay.index == 1 and yesY or yesY + 1) * 8)
   else
-    Font.draw("A:OK", 5 * 8, (ty + #lines + 1) * 8)
+    Font.draw(Strings("A:OK"), 5 * 8, (ty + #lines + 1) * 8)
   end
 end
 
@@ -1090,7 +1091,7 @@ function ManagerState:draw()
     OptionRows.draw(self.game, self.optionRows or {}, self.cursor,
                     self.scroll or 0)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(self.notice or "B:DONE (NO RESTART)", 8, 136)
+    Font.draw(self.notice or Strings("B:DONE (NO RESTART)"), 8, 136)
     love.graphics.setColor(1, 1, 1, 1)
     if self.overlay then self:drawOverlay() end
     return
@@ -1099,7 +1100,7 @@ function ManagerState:draw()
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(1, 1, 1, 1)
   Font.drawBox(0, 0, 20, 18)
-  Font.draw(self.banner or "MOD MANAGER", 16, 8)
+  Font.draw(self.banner or Strings("MOD MANAGER"), 16, 8)
   if self.screen == "list" then
     self:drawList()
   elseif self.screen == "detail" then

@@ -26,6 +26,7 @@ local Status = require("src.battle.Status")
 local TrainerAI = require("src.battle.TrainerAI")
 local TurnOrder = require("src.battle.TurnOrder")
 local TypeChart = require("src.battle.TypeChart")
+local Strings = require("src.core.Strings")
 
 local BattleState = {}
 BattleState.__index = BattleState
@@ -208,13 +209,17 @@ local TRAINER_DVS = { attack = 9, defense = 8, speed = 8, special = 8, hp = 8 }
 
 -- charge-turn texts by move id; the move record's chargeText field wins
 -- (ChargeEffect's per-move text pointers)
+-- Strings.source, not Strings: this table is built at require time, before
+-- Strings.load has a catalog, so translating here would freeze the English.
+-- The marker is a no-op that puts these lines in the catalog anyway; the
+-- lookup happens where chargeText is formatted below.
 local CHARGE_TEXT = {
-  FLY = "%s\nflew up high!",
-  DIG = "%s\ndug a hole!",
-  RAZOR_WIND = "%s\nmade a whirlwind!",
-  SOLARBEAM = "%s\ntook in sunlight!",
-  SKULL_BASH = "%s\nlowered its head!",
-  SKY_ATTACK = "%s\nis glowing!",
+  FLY = Strings.source("%s\nflew up high!"),
+  DIG = Strings.source("%s\ndug a hole!"),
+  RAZOR_WIND = Strings.source("%s\nmade a whirlwind!"),
+  SOLARBEAM = Strings.source("%s\ntook in sunlight!"),
+  SKULL_BASH = Strings.source("%s\nlowered its head!"),
+  SKY_ATTACK = Strings.source("%s\nis glowing!"),
 }
 
 -- pokered's <USER>/<TARGET> text macros (home/text.asm
@@ -416,9 +421,9 @@ function BattleState.newWild(game, species, level, opts)
   self.enemy = makeBattler(game.data, Pokemon.new(game.data, species, level), false)
   markSeen(game, species)
   if opts and opts.hooked then
-    self.introText = ("The hooked\n%s\nattacked!"):format(self.enemy.name)
+    self.introText = Strings("The hooked\n%s\nattacked!", self.enemy.name)
   else
-    self.introText = ("Wild %s\nappeared!"):format(self.enemy.name)
+    self.introText = Strings("Wild %s\nappeared!", self.enemy.name)
   end
   return self
 end
@@ -539,7 +544,7 @@ function BattleState.newTrainer(game, oppClass, partyIndex)
   -- wEnemyMonSpecies2 before the intro's SET_PAL_BATTLE
   -- (engine/battle/core.asm:6682, engine/gfx/palettes.asm SetPal_Battle)
   self.trainerPic = getImage(self.trainer.pic, namedPalette(game.data, "MEWMON"))
-  self.introText = ("%s wants\nto fight!"):format(self.trainer.name)
+  self.introText = Strings("%s wants\nto fight!", self.trainer.name)
   return self
 end
 
@@ -553,7 +558,7 @@ function BattleState:makeGhost()
   -- (engine/battle/core.asm InitWildBattle .isGhost)
   self.enemy.sprite = getImage("assets/generated/battle/front/ghost.png",
                                monPalette(self.data, self.enemy.mon.species))
-  self.introText = "The GHOST\nappeared!"
+  self.introText = Strings("The GHOST\nappeared!")
 end
 
 -- The old man's catch tutorial (BATTLE_TYPE_OLD_MAN,
@@ -947,10 +952,10 @@ function BattleState:sendOutText(name)
   if e and e.hp > 0 and math.floor(e.stats.hp / 4) > 0 then
     pct = math.floor(e.hp * 25 / math.floor(e.stats.hp / 4))
   end
-  if pct >= 70 then return ("Go! %s!"):format(name) end
-  if pct >= 40 then return ("Do it! %s!"):format(name) end
-  if pct >= 10 then return ("Get'm! %s!"):format(name) end
-  return ("The enemy's weak!\nGet'm! %s!"):format(name)
+  if pct >= 70 then return Strings("Go! %s!", name) end
+  if pct >= 40 then return Strings("Do it! %s!", name) end
+  if pct >= 10 then return Strings("Get'm! %s!", name) end
+  return Strings("The enemy's weak!\nGet'm! %s!", name)
 end
 
 -- audio/play_battle_music.asm: gym leaders (wGymLeaderNo) get the
@@ -1042,7 +1047,7 @@ function BattleState:enter()
   end
   self:say(self.introText)
   if self.kind == "trainer" then
-    self:say(("%s sent\nout %s!"):format(self.trainer.name, self.enemy.name))
+    self:say(Strings("%s sent\nout %s!", self.trainer.name, self.enemy.name))
     self:act(function()
       -- EnemySendOutFirstMon (core.asm:1421-1434): after the text the
       -- pic grows out of the ball (AnimateSendingOutMon), then the cry
@@ -1055,7 +1060,7 @@ function BattleState:enter()
     -- out of the ball after "X sent out Y!" (not the wild "already there"
     -- intro that LinkBattle previously inherited from newWild).
     self.enemySendingOut = true
-    self:say(("%s sent\nout %s!"):format(self.opponentName or "FOE",
+    self:say(Strings("%s sent\nout %s!", self.opponentName or "FOE",
                                           self.enemy.name))
     self:act(function()
       self.enemySendingOut = false
@@ -1229,7 +1234,7 @@ function BattleState:update(dt)
 
   if self.phase == "menu" and self.safari then
     if self.safari.balls <= 0 then
-      self:say("PA: You're out of\nSAFARI BALLs!\nGame over!")
+      self:say(Strings("PA: You're out of\nSAFARI BALLs!\nGame over!"))
       self.phase = "messages"
       self.result = "run"
       self.afterQueue = "finish"
@@ -1284,7 +1289,7 @@ function BattleState:update(dt)
     if input:wasPressed("a") then
       local choice = ({ "fight", "pkmn", "item", "run" })[self.menuIndex]
       if choice == "fight" and self.ghost then
-        self:say(("%s is too\nscared to move!"):format(self.player.name))
+        self:say(Strings("%s is too\nscared to move!", self.player.name))
         self.phase = "messages"
         self.afterQueue = "menu"
         self:act(function()
@@ -1301,7 +1306,7 @@ function BattleState:update(dt)
         end
         if not self:playerHasPP() then
           -- _NoMovesLeftText, then Struggle engages
-          self:say(("%s has no\nmoves left!"):format(self.player.name))
+          self:say(Strings("%s has no\nmoves left!", self.player.name))
           self:resolveTurn({ id = "STRUGGLE", pp = 1, struggle = true })
           return
         end
@@ -1343,11 +1348,11 @@ function BattleState:update(dt)
       end
       local mv = moves[self.moveIndex]
       if self.player.disabledSlot == self.moveIndex then
-        self:say("The move is\ndisabled!")
+        self:say(Strings("The move is\ndisabled!"))
         self.phase = "messages"
         self.afterQueue = "menu"
       elseif mv.pp <= 0 then
-        self:say("No PP left for\nthis move!")
+        self:say(Strings("No PP left for\nthis move!"))
         self.phase = "messages"
         self.afterQueue = "menu"
       else
@@ -1391,7 +1396,7 @@ function BattleState:resolveMimic(user, target, move, moveInst)
   table.insert(self.queue, self.nextInsert, { wait = 50 })
   if target.invulnerable
      or not self:accuracyRoll(move, user, target) then
-    self:sayNext("But, it failed!")
+    self:sayNext(Strings("But, it failed!"))
     return
   end
   local slots = {}
@@ -1401,7 +1406,7 @@ function BattleState:resolveMimic(user, target, move, moveInst)
   if #slots == 0 then
     -- .getRandomMove rerolls empty slots forever; a moveless target
     -- can't happen in practice, so just fail instead of hanging
-    self:sayNext("But, it failed!")
+    self:sayNext(Strings("But, it failed!"))
     return
   end
   if user.isPlayer and self.kind ~= "link" then
@@ -1462,7 +1467,7 @@ function BattleState:applyMimic(user, target, moveInst, slot)
   entry.mimic = true
   self:animNext("MIMIC", user.isPlayer)
   -- _MimicLearnedMoveText: "<USER> / learned / MOVE!"
-  self:sayNext(("%s\nlearned\n%s!"):format(displayName(user),
+  self:sayNext(Strings("%s\nlearned\n%s!", displayName(user),
                                            self.data.moves[src.id].name))
 end
 
@@ -1502,7 +1507,7 @@ function BattleState:openOldManBag()
   self:ui(function()
     local list
     list = ListMenu.new(game, "ITEMS", {
-      { value = "POKE_BALL", label = "POKé BALL", right = "x50" },
+      { value = "POKE_BALL", label = Strings("POKé BALL"), right = "x50" },
     }, {
       script = function(l)
         l.scriptTimer = (l.scriptTimer or 0) + 1
@@ -1532,7 +1537,7 @@ function BattleState:oldManThrow()
   self.phase = "messages"
   self.afterQueue = "finish"
   self.result = "run" -- nothing is kept; wBattleResult only ends the demo
-  self:say("OLD MAN used\nPOKé BALL!")
+  self:say(Strings("OLD MAN used\nPOKé BALL!"))
   self:act(function()
     require("src.core.Sound").play(self.data, "Ball_Toss")
     -- ItemUseBall's beat before the toss chain (like throwBall)
@@ -1542,7 +1547,7 @@ function BattleState:oldManThrow()
     self:actNext(function()
       require("src.core.Sound").play(self.data, "Caught_Mon")
     end)
-    self:sayNext(("All right!\n%s was\ncaught!"):format(self.enemy.name))
+    self:sayNext(Strings("All right!\n%s was\ncaught!", self.enemy.name))
   end)
 end
 
@@ -2294,7 +2299,7 @@ function BattleState:executeAction(user, target, action)
     -- ghost battles: the ghost never attacks; its whole turn is the
     -- GetOutText (ExecuteEnemyMove -> PrintGhostText, core.asm:5462-5463)
     if self.ghost and not user.isPlayer then
-      self:sayNext(self.data.text._GetOutText or "GHOST: Get out...\nGet out...")
+      self:sayNext(self.data.text._GetOutText or Strings("GHOST: Get out...\nGet out..."))
       return
     end
 
@@ -2331,8 +2336,8 @@ function BattleState:executeAction(user, target, action)
       self.aiUses = self:aiUsesFor()
       markSeen(self.game, self.enemy.mon.species)
       -- _AIBattleWithdrawText: "X with-/drew Y!"
-      self:sayNext(("%s with-\ndrew %s!"):format(self.trainer.name, oldName))
-      self:sayNext(("%s sent\nout %s!"):format(self.trainer.name, self.enemy.name))
+      self:sayNext(Strings("%s with-\ndrew %s!", self.trainer.name, oldName))
+      self:sayNext(Strings("%s sent\nout %s!", self.trainer.name, self.enemy.name))
       return
     end
 
@@ -2345,7 +2350,7 @@ function BattleState:executeAction(user, target, action)
       -- 3392): sleep/freeze/held/flinch keep the mon recharging next turn
       if self:preRechargeChecks(user, target) then return end
       user.mustRecharge = nil
-      self:sayNext(("%s\nmust recharge!"):format(displayName(user)))
+      self:sayNext(Strings("%s\nmust recharge!", displayName(user)))
       return
     end
     if action.special == "bound" then
@@ -2390,8 +2395,8 @@ function BattleState:statusOnomatopoeia(user, kind)
     anim = isPlayer and "CONF_PLAYER_ANIM" or "CONF_ANIM"
   end
   local text = kind == "sleep"
-    and (displayName(user) .. "\nis fast asleep!")
-    or (displayName(user) .. "\nis confused!")
+    and Strings("%s\nis fast asleep!", displayName(user))
+    or Strings("%s\nis confused!", displayName(user))
   if kind == "sleep" and isPlayer then
     self:animNext(anim, isPlayer)
     self:sayNext(text)
@@ -2430,18 +2435,18 @@ function BattleState:preRechargeChecks(user, target)
     user.sleepTurns = (user.sleepTurns or 1) - 1
     if user.sleepTurns <= 0 then
       mon.status = nil
-      self:sayNext(displayName(user) .. "\nwoke up!")
+      self:sayNext(Strings("%s\nwoke up!", displayName(user)))
     else
       self:statusOnomatopoeia(user, "sleep")
     end
     return true
   end
   if mon.status == "FRZ" then
-    self:sayNext(displayName(user) .. "\nis frozen solid!")
+    self:sayNext(Strings("%s\nis frozen solid!", displayName(user)))
     return true
   end
   if target.trappingTurns then
-    self:sayNext(displayName(user) .. "\ncan't move!")
+    self:sayNext(Strings("%s\ncan't move!", displayName(user)))
     return true
   end
   if user.flinched then
@@ -2449,7 +2454,7 @@ function BattleState:preRechargeChecks(user, target)
     -- player recharges, so the flinch eats the recharge turn and the
     -- flag survives (the Hyper Beam flinch glitch)
     user.flinched = false
-    self:sayNext(displayName(user) .. "\nflinched!")
+    self:sayNext(Strings("%s\nflinched!", displayName(user)))
     return true
   end
   return false
@@ -2470,7 +2475,7 @@ function BattleState:statusInterrupt(user, target)
                                    { id = "CONFUSED", power = 40, type = "NORMAL", accuracy = 100 },
                                    { rng = self.rng, forceCrit = false, typeless = true,
                                      screens = target })
-    self:sayNext("It hurt itself in\nits confusion!")
+    self:sayNext(Strings("It hurt itself in\nits confusion!"))
     self:clearVolatiles(user, true)
     self:applyDamage(user, dmg)
     if user.mon.hp <= 0 then self:onFaint(user) end
@@ -2558,7 +2563,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
 
   self.moveAnimRow = nil
   if not (user.thrashTurns and moveInst == user.thrashMove and user.thrashAnnounced) then
-    self:sayNext(("%s\nused %s!"):format(displayName(user), move.name))
+    self:sayNext(Strings("%s\nused %s!", displayName(user), move.name))
     -- the move's animation plays right after the announcement; the
     -- damage path attaches the target's hit blink to this row so the
     -- blink follows the animation (pokered's order).  Mimic is the
@@ -2618,8 +2623,10 @@ function BattleState:performMove(user, target, moveInst, isCalled)
       self:animNext(chargeAnim, user.isPlayer)
     end
     local chargeText = move.chargeText or CHARGE_TEXT[move.id]
-                       or "%s\nis charging up!"
-    self:sayNext(chargeText:format(displayName(user)))
+                       or Strings.source("%s\nis charging up!")
+    -- the template is a source string (a move record may supply its own),
+    -- so translate it here rather than where it was declared
+    self:sayNext(Strings(chargeText, displayName(user)))
     return
   end
 
@@ -2641,7 +2648,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
       -- SleepEffect/PoisonEffect/... call PlayCurrentMoveAnimation only
       -- after the effect lands; a miss skips it
       self:cancelMoveAnim()
-      self:sayNext(("%s's\nattack missed!"):format(displayName(user)))
+      self:sayNext(Strings("%s's\nattack missed!", displayName(user)))
       return
     end
     local msgs = record.run(ctx)
@@ -2659,7 +2666,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
   if move.power == 0 and not (record and record.kind == "full") then
     MoveEffects.warnUnknown(move.effect)
     self:cancelMoveAnim()
-    self:sayNext("But, it failed!")
+    self:sayNext(Strings("But, it failed!"))
     return
   end
 
@@ -2668,7 +2675,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
 end
 
 function BattleState:continueTrapping(user, target)
-  self:sayNext(("%s's\nattack continues!"):format(displayName(user)))
+  self:sayNext(Strings("%s's\nattack continues!", displayName(user)))
   -- .MultiturnMoveCheck (core.asm:3554-3566) prints AttackContinuesText
   -- then jumps to GetPlayerAnimationType, so the trapping move's full
   -- animation replays each locked turn (same damage, animation shown).
@@ -2691,15 +2698,15 @@ end
 function BattleState:continueBide(user, target)
   user.bideTurns = user.bideTurns - 1
   if user.bideTurns > 0 then
-    self:sayNext(("%s\nis storing energy!"):format(displayName(user)))
+    self:sayNext(Strings("%s\nis storing energy!", displayName(user)))
     return
   end
-  self:sayNext(("%s\nunleashed energy!"):format(displayName(user)))
+  self:sayNext(Strings("%s\nunleashed energy!", displayName(user)))
   local dmg = (user.bideDamage or 0) * 2
   user.bideTurns, user.bideDamage = nil, nil
   if dmg <= 0 then
     self:cancelMoveAnim()
-    self:sayNext("But, it failed!")
+    self:sayNext(Strings("But, it failed!"))
     return
   end
   self:applyDamage(target, dmg)
@@ -2718,9 +2725,9 @@ function BattleState:applyDamage(target, dmg)
     target.substituteHP = target.substituteHP - dmg
     if target.substituteHP <= 0 then
       target.substituteHP = nil
-      self:sayNext(("%s's\nSUBSTITUTE broke!"):format(displayName(target)))
+      self:sayNext(Strings("%s's\nSUBSTITUTE broke!", displayName(target)))
     else
-      self:sayNext(("The SUBSTITUTE\ntook damage for\n%s!"):format(displayName(target)))
+      self:sayNext(Strings("The SUBSTITUTE\ntook damage for\n%s!", displayName(target)))
     end
     return dmg
   end
@@ -2732,7 +2739,7 @@ function BattleState:applyDamage(target, dmg)
   end
   if target.rageMove and dealt > 0 then
     target.stages.attack = math.min(6, (target.stages.attack or 0) + 1)
-    self:sayNext(("%s's\nRAGE is building!"):format(displayName(target)))
+    self:sayNext(Strings("%s's\nRAGE is building!", displayName(target)))
   end
   return dealt
 end
@@ -2771,7 +2778,7 @@ function BattleState:onFaint(battler)
     self:actNext(function() self:playVictoryMusic() end)
   end
   -- _EnemyMonFaintedText "Enemy X fainted!" / _PlayerMonFaintedText
-  self:sayNext(("%s\nfainted!"):format(displayName(battler)))
+  self:sayNext(Strings("%s\nfainted!", displayName(battler)))
   if battler.isPlayer then
     self:act(function() self:playerMonFainted() end)
   else
@@ -2820,19 +2827,19 @@ function BattleState:enemyMonFainted()
       -- _BoostedText / _WithExpAllText end in the CONT code (\v, "...\011"
       -- in data/generated/text.lua): the box waits for A/B + ▼ then scrolls
       -- the amount line in, so it stays on-screen instead of at y=144 (#216).
-      local tail = "%d EXP. Points!"
+      local text = Strings.source("%s gained\n%d EXP. Points!")
       if announce == "expAll" then
-        tail = "with EXP.ALL,\v" .. tail
+        text = Strings.source("%s gained\nwith EXP.ALL,\v%d EXP. Points!")
       elseif mon.traded then
-        tail = "a boosted\v" .. tail
+        text = Strings.source("%s gained\na boosted\v%d EXP. Points!")
       end
-      self:sayNext(("%s gained\n" .. tail):format(name, gained))
+      self:sayNext(Strings(text, name, gained))
     end
     -- per level: GrewLevelText -> the stats window (PrintStatsBox) ->
     -- the move-learn checks (experience.asm:245-256)
     local game = self.game
     for _, lv in ipairs(levels) do
-      self:sayNext(("%s grew\nto level %d!"):format(name, lv))
+      self:sayNext(Strings("%s grew\nto level %d!", name, lv))
       self:uiNext(function()
         require("src.core.Sound").play(game.data, "Level_Up")
         return StatBox.new(game, mon)
@@ -2905,10 +2912,10 @@ function BattleState:enemyMonFainted()
       if style ~= "set" and partyCount > 1 and self.player.mon.hp > 0 then
         -- _TrainerAboutToUseText: "X is" / "about to use" then cont nick,
         -- then para "Will PLAYER" / "change POKéMON?" with YES/NO.
-        self:say(("%s is\nabout to use"):format(self.trainer.name))
-        self:say(("%s!"):format(nextName))
+        self:say(Strings("%s is\nabout to use", self.trainer.name))
+        self:say(Strings("%s!", nextName))
         self:sayChoice(
-          ("Will %s\nchange POKéMON?"):format(self.game.save.player.name),
+          Strings("Will %s\nchange POKéMON?", self.game.save.player.name),
           function(yes)
             if not yes then return end
             local game = self.game
@@ -2941,7 +2948,7 @@ function BattleState:enemyMonFainted()
         -- (AnimateSendingOutMon) with the cry; no POOF -- that animation
         -- belongs to the player-side SendOutMon (core.asm:1757-1762)
         self.enemySendingOut = true
-        self:sayNext(("%s sent\nout %s!"):format(self.trainer.name, self.enemy.name))
+        self:sayNext(Strings("%s sent\nout %s!", self.trainer.name, self.enemy.name))
         self:actNext(function()
           self.enemySendingOut = false
           self:startGrowIn(self.enemy)
@@ -2985,9 +2992,9 @@ function BattleState:enemyMonFainted()
     -- prize money
     self:actNext(function() self:playVictoryMusic() end)
     -- _TrainerDefeatedText: "<PLAYER> defeated\nTRAINER!"
-    self:sayNext(("%s defeated\n%s!"):format(self.game.save.player.name,
+    self:sayNext(Strings("%s defeated\n%s!", self.game.save.player.name,
                                              self.trainer.name))
-    self:sayNext(("%s got ¥%d\nfor winning!"):format(self.game.save.player.name, prize))
+    self:sayNext(Strings("%s got ¥%d\nfor winning!", self.game.save.player.name, prize))
   end
   self.result = "win"
   self.afterQueue = "finish"
@@ -3003,7 +3010,7 @@ function BattleState:learnMove(mon, moveId)
   if #mon.moves < 4 then
     table.insert(mon.moves, { id = moveId, pp = mdef.pp })
     Runtime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
-    self:sayNext(("%s learned\n%s!"):format(mon.nickname or self.data.pokemon[mon.species].name,
+    self:sayNext(Strings("%s learned\n%s!", mon.nickname or self.data.pokemon[mon.species].name,
                                             mdef.name))
     return
   end
@@ -3048,14 +3055,14 @@ function BattleState:playerMonFainted()
     if self.oppClass == "OPP_RIVAL1" then
       local TextBox = require("src.render.TextBox")
       local raw = (self.data.text and self.data.text._Rival1WinText)
-        or "{RIVAL}: Yeah! Am\nI great or what?"
+        or Strings("{RIVAL}: Yeah! Am\nI great or what?")
       self:sayNext(TextBox.substitute(self.game, raw))
     end
     -- Oak's Lab starter rival: Rival1WinText only (no blackout lines).
     -- Any other wipe, including Route 22 RIVAL1, still blacks out.
     if not BattleState.isOaksLabStarterRival(self) then
-      self:sayNext(("%s is out of\nuseable POKéMON!"):format(self.game.save.player.name))
-      self:sayNext(("%s blacked\nout!"):format(self.game.save.player.name))
+      self:sayNext(Strings("%s is out of\nuseable POKéMON!", self.game.save.player.name))
+      self:sayNext(Strings("%s blacked\nout!", self.game.save.player.name))
     end
     self.result = "lose"
     self.afterQueue = "finish"
@@ -3068,7 +3075,7 @@ function BattleState:playerMonFainted()
   -- battles go straight to the party menu (the menu-phase guard).
   if self.kind ~= "wild" then return end
   local game = self.game
-  self:say(self.data.text._UseNextMonText or "Use next POKéMON?")
+  self:say(self.data.text._UseNextMonText or Strings("Use next POKéMON?"))
   self:ui(function()
     local ChoiceBox = require("src.ui.ChoiceBox")
     return ChoiceBox.new(game, function(yes)
@@ -3076,11 +3083,11 @@ function BattleState:playerMonFainted()
       local pSpd = (game.save.party[1].stats or { speed = 0 }).speed or 0
       if self:runRoll(pSpd, TurnOrder.effectiveSpeed(self.enemy)) then
         require("src.core.Sound").play(self.data, "Run")
-        self:say("Got away safely!")
+        self:say(Strings("Got away safely!"))
         self.result = "run"
         self.afterQueue = "finish"
       else
-        self:say("Can't escape!")
+        self:say(Strings("Can't escape!"))
       end
     end)
   end)
@@ -3100,7 +3107,7 @@ function BattleState:openReplacementMenu()
       forceSwitch = true,
       onSwitch = function(mon)
         if mon.hp <= 0 then
-          self:say("There's no will\nto fight!")
+          self:say(Strings("There's no will\nto fight!"))
           return -- the menu-phase guard reopens the menu
         end
         self:restoreMimicked(self.player)
@@ -3144,7 +3151,7 @@ function BattleState:safariAction(choice)
 
   if choice == "run" then
     require("src.core.Sound").play(self.data, "Run")
-    self:say("Got away safely!")
+    self:say(Strings("Got away safely!"))
     self.result = "run"
     self.afterQueue = "finish"
     return
@@ -3152,7 +3159,7 @@ function BattleState:safariAction(choice)
 
   if choice == "ball" then
     st.balls = st.balls - 1
-    self:say(("%s used\nSAFARI BALL!"):format(playerName))
+    self:say(Strings("%s used\nSAFARI BALL!", playerName))
     self:act(function()
       require("src.core.Sound").play(self.data, "Ball_Toss")
       self.lastBall = "SAFARI_BALL"
@@ -3169,7 +3176,7 @@ function BattleState:safariAction(choice)
         self:actNext(function()
           require("src.core.Sound").play(self.data, "Caught_Mon")
         end)
-        self:sayNext(("All right!\n%s was\ncaught!"):format(self.enemy.name))
+        self:sayNext(Strings("All right!\n%s was\ncaught!", self.enemy.name))
         -- same ItemUseBall .captured flow as a regular ball
         self:act(function() self:storeCaughtMon() end)
       else
@@ -3181,12 +3188,12 @@ function BattleState:safariAction(choice)
   end
 
   if choice == "bait" then
-    self:say(("%s threw some\nBAIT."):format(playerName))
+    self:say(Strings("%s threw some\nBAIT.", playerName))
     self.safariCatchRate = math.floor(self.safariCatchRate / 2)
     self.baitFactor = math.min(255, self.baitFactor + self.rng(1, 5))
     self.escapeFactor = 0
   else -- rock
-    self:say(("%s threw a\nROCK."):format(playerName))
+    self:say(Strings("%s threw a\nROCK.", playerName))
     self.safariCatchRate = math.min(255, self.safariCatchRate * 2)
     self.escapeFactor = math.min(255, self.escapeFactor + self.rng(1, 5))
     self.baitFactor = 0
@@ -3202,13 +3209,13 @@ end
 function BattleState:safariEnemyTurn()
   if self.baitFactor > 0 then
     self.baitFactor = self.baitFactor - 1
-    self:sayNext(("Wild %s\nis eating!"):format(self.enemy.name))
+    self:sayNext(Strings("Wild %s\nis eating!", self.enemy.name))
   elseif self.escapeFactor > 0 then
     self.escapeFactor = self.escapeFactor - 1
     if self.escapeFactor == 0 then
       self.safariCatchRate = self.enemy.def.catchRate
     end
-    self:sayNext(("Wild %s\nis angry!"):format(self.enemy.name))
+    self:sayNext(Strings("Wild %s\nis angry!", self.enemy.name))
   end
   self:act(function()
     local speed = self.enemy.curStats.speed % 256
@@ -3224,7 +3231,7 @@ function BattleState:safariEnemyTurn()
       fled = self.rng(0, 255) < b
     end
     if fled then
-      self:sayNext(("Wild %s\nran!"):format(self.enemy.name))
+      self:sayNext(Strings("Wild %s\nran!", self.enemy.name))
       self:actNext(function()
         require("src.core.Sound").play(self.data, "Run")
         startPicKind(self:picFxFor(self.enemy), "slideOff")
@@ -3282,7 +3289,7 @@ function BattleState:tryRun()
     -- Spelling it with three \n dropped "trainer battle!" and handed the
     -- menu straight back (#239).
     self:say(self.data.text._NoRunningText
-      or "No! There's no\nrunning from a\vtrainer battle!")
+      or Strings("No! There's no\nrunning from a\vtrainer battle!"))
     return
   end
   -- modified in-battle speeds (stat stages + paralysis), like the
@@ -3291,11 +3298,11 @@ function BattleState:tryRun()
                                TurnOrder.effectiveSpeed(self.enemy))
   if escaped then
     require("src.core.Sound").play(self.data, "Run")
-    self:say("Got away safely!")
+    self:say(Strings("Got away safely!"))
     self.result = "run"
     self.afterQueue = "finish"
   else
-    self:say("Can't escape!")
+    self:say(Strings("Can't escape!"))
     self:act(function()
       self:executeAction(self.enemy, self.player, self:enemyAction())
     end)
@@ -3328,13 +3335,13 @@ end
 function BattleState:ballMissMessage(shakes)
   local t = self.data.text
   if shakes == 0 then
-    return t._ItemUseBallText01 or "You missed the\nPOKéMON!"
+    return t._ItemUseBallText01 or Strings("You missed the\nPOKéMON!")
   elseif shakes == 1 then
-    return t._ItemUseBallText02 or "Darn! The POKéMON\nbroke free!"
+    return t._ItemUseBallText02 or Strings("Darn! The POKéMON\nbroke free!")
   elseif shakes == 2 then
-    return (t._ItemUseBallText03 or "Aww! It appeared\nto be caught!"):gsub("%s+$", "")
+    return (t._ItemUseBallText03 or Strings("Aww! It appeared\nto be caught!")):gsub("%s+$", "")
   end
-  return t._ItemUseBallText04 or "Shoot! It was so\nclose too!"
+  return t._ItemUseBallText04 or Strings("Shoot! It was so\nclose too!")
 end
 
 -- AskName (engine/menus/naming_screen.asm): ClearSprites, wild field blank,
@@ -3345,7 +3352,7 @@ function BattleState:askNicknameUI(mon, displayName)
   self.lockedBall = nil
   self.blankForAskName = true
   local TextBox = require("src.render.TextBox")
-  local text = ("Do you want to\ngive a nickname\nto %s?"):format(displayName)
+  local text = Strings("Do you want to\ngive a nickname\nto %s?", displayName)
   local label = game.data.text and game.data.text._DoYouWantToNicknameText
   if label then
     -- extractor CONT is \t; TextBox scrolls on \n/\v
@@ -3356,7 +3363,7 @@ function BattleState:askNicknameUI(mon, displayName)
       self.blankForAskName = false
       if not yes then return end
       pcall(Screens.push, game, "NamingScreen", {
-        title = "NICKNAME?", maxLen = 10,
+        title = Strings("NICKNAME?"), maxLen = 10,
         onDone = function(name)
           if name and #name > 0 then mon.nickname = name end
         end,
@@ -3384,7 +3391,7 @@ function BattleState:storeCaughtMon()
   stampOT(game.save, self.enemy.mon)
   if isNew then
     -- _ItemUseBallText06 + ShowPokedexData
-    self:sayNext(("New POKéDEX data\nwill be added for\n%s!"):format(self.enemy.name))
+    self:sayNext(Strings("New POKéDEX data\nwill be added for\n%s!", self.enemy.name))
     self:uiNext(function()
       return self:buildScreen("DexEntryMenu", species)
     end)
@@ -3405,10 +3412,10 @@ function BattleState:storeCaughtMon()
       askCaughtNickname()
       -- _ItemUseBallText07/08 keyed on EVENT_MET_BILL
       local pc = (game.save.flags and game.save.flags.EVENT_MET_BILL)
-                 and "BILL's PC" or "someone's PC"
-      self:sayNext(("%s was\ntransferred to\n%s!"):format(self.enemy.name, pc))
+                 and "BILL's PC" or Strings("someone's PC")
+      self:sayNext(Strings("%s was\ntransferred to\n%s!", self.enemy.name, pc))
     else
-      self:sayNext("But every BOX\nis full!")
+      self:sayNext(Strings("But every BOX\nis full!"))
     end
   end
   Runtime.emit("pokemon.caught", {
@@ -3462,13 +3469,13 @@ end
 
 -- called by BagMenu when a ball is thrown
 function BattleState:throwBall(ball)
-  self:say(("%s used\n%s!"):format(self.game.save.player.name,
+  self:say(Strings("%s used\n%s!", self.game.save.player.name,
                                    self.data.items[ball].name))
   self:act(function()
     require("src.core.Sound").play(self.data, "Ball_Toss")
     if self.kind ~= "wild" then
-      self:sayNext("The TRAINER\nblocked the BALL!")
-      self:sayNext("Don't be a thief!")
+      self:sayNext(Strings("The TRAINER\nblocked the BALL!"))
+      self:sayNext(Strings("Don't be a thief!"))
       return
     end
     if self.ghost then
@@ -3478,8 +3485,8 @@ function BattleState:throwBall(ball)
       -- ($10 anim data, no wobbles), and the turn is spent like any
       -- failed throw
       self:animNext(self:tossAnimFor(ball), true, nil, ball)
-      self:sayNext("It dodged the\nthrown BALL!")
-      self:sayNext("This POKéMON\ncan't be caught!")
+      self:sayNext(Strings("It dodged the\nthrown BALL!"))
+      self:sayNext(Strings("This POKéMON\ncan't be caught!"))
       self:act(function()
         self:executeAction(self.enemy, self.player, self:enemyAction())
       end)
@@ -3502,7 +3509,7 @@ function BattleState:throwBall(ball)
       self:actNext(function()
         require("src.core.Sound").play(self.data, "Caught_Mon")
       end)
-      self:sayNext(("All right!\n%s was\ncaught!"):format(self.enemy.name))
+      self:sayNext(Strings("All right!\n%s was\ncaught!", self.enemy.name))
       self:act(function() self:storeCaughtMon() end)
     else
       self:sayNext(self:ballMissMessage(shakes))
@@ -3522,9 +3529,9 @@ function BattleState:openParty()
       battle = self,
       onSwitch = function(mon)
         if mon == self.player.mon then
-          self:say(("%s is\nalready out!"):format(self.player.name))
+          self:say(Strings("%s is\nalready out!", self.player.name))
         elseif mon.hp <= 0 then
-          self:say("There's no will\nto fight!")
+          self:say(Strings("There's no will\nto fight!"))
         else
           self:resolveSwitch(mon)
         end
@@ -3550,7 +3557,7 @@ end
 function BattleState:finish()
   if self.payDay and self.result == "win" then
     self.game.save.money = self.game.save.money + self.payDay
-    self:say(("%s picked up\n¥%d!"):format(self.game.save.player.name, self.payDay))
+    self:say(Strings("%s picked up\n¥%d!", self.game.save.player.name, self.payDay))
     self.payDay = nil
     self.afterQueue = "finish"
     self.phase = "messages"
@@ -4358,9 +4365,9 @@ function BattleState:drawTextArea()
     -- -- next to FIGHT (9,14) for the first 80 frames, then ITEM (9,16)
     Font.drawBox(8, 12, 12, 6)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("FIGHT", 80, 112)
+    Font.draw(Strings("FIGHT"), 80, 112)
     Font.drawCode(0xE1, 128, 112); Font.drawCode(0xE2, 136, 112)
-    Font.draw("ITEM", 80, 128); Font.draw("RUN", 128, 128)
+    Font.draw(Strings("ITEM"), 80, 128); Font.draw(Strings("RUN"), 128, 128)
     Font.drawCode(0xED, 72, (self.demoTimer or 0) <= 80 and 112 or 128)
   elseif self.phase == "menu" then
     local col = (self.menuIndex - 1) % 2
@@ -4369,16 +4376,16 @@ function BattleState:drawTextArea()
       -- SAFARI_BATTLE_MENU_TEMPLATE: full-width box, "BALLx  BAIT /
       -- THROW ROCK  RUN" from (2,14)
       Font.drawBox(0, 12, 20, 6)
-      Font.draw("BALLx", 16, 112); Font.draw("BAIT", 112, 112)
-      Font.draw("THROW ROCK", 16, 128); Font.draw("RUN", 112, 128)
+      Font.draw(Strings("BALLx"), 16, 112); Font.draw(Strings("BAIT"), 112, 112)
+      Font.draw(Strings("THROW ROCK"), 16, 128); Font.draw(Strings("RUN"), 112, 128)
       Font.drawCode(0xED, (col == 0 and 8 or 104), 112 + row * 16)
     else
       -- BATTLE_MENU_TEMPLATE: box (8,12)-(19,17), "FIGHT <PK><MN> /
       -- ITEM  RUN" from (10,14); cursor columns 9 / 15
       Font.drawBox(8, 12, 12, 6)
-      Font.draw("FIGHT", 80, 112)
+      Font.draw(Strings("FIGHT"), 80, 112)
       Font.drawCode(0xE1, 128, 112); Font.drawCode(0xE2, 136, 112)
-      Font.draw("ITEM", 80, 128); Font.draw("RUN", 128, 128)
+      Font.draw(Strings("ITEM"), 80, 128); Font.draw(Strings("RUN"), 128, 128)
       Font.drawCode(0xED, (col == 0 and 72 or 120), 112 + row * 16)
     end
   elseif self.phase == "moveSelect" then
@@ -4403,10 +4410,10 @@ function BattleState:drawTextArea()
     local sel = self.player.curMoves[self.moveIndex]
     if sel then
       if self.player.disabledSlot == self.moveIndex then
-        Font.draw("disabled!", 8, 80)
+        Font.draw(Strings("disabled!"), 8, 80)
       else
         local def = self.data.moves[sel.id]
-        Font.draw("TYPE/", 8, 72)
+        Font.draw(Strings("TYPE/"), 8, 72)
         -- the type record's display name (a mod type shows its name, and
         -- PSYCHIC_TYPE prints PSYCHIC like the original)
         Font.draw(def.type and TypeChart.displayName(def.type) or "", 16, 80)

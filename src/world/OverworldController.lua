@@ -22,6 +22,7 @@ local TextBox = require("src.render.TextBox")
 local Transition = require("src.render.Transition")
 local Warp = require("src.world.Warp")
 local Zoom = require("src.render.Zoom")
+local Strings = require("src.core.Strings")
 
 -- isOverworld marks the live world state for WorldAPI's stack scan
 local OverworldState = { isOpaque = true, isOverworld = true }
@@ -1312,10 +1313,10 @@ function OverworldState:goFishing(rod)
   Game.stack:push(TextBox.new(Game, ". . .", function()
     self.fishing = nil
     if not enc then
-      Game.stack:push(TextBox.new(Game, "Not even a nibble!"))
+      Game.stack:push(TextBox.new(Game, Strings("Not even a nibble!")))
       return
     end
-    Game.stack:push(TextBox.new(Game, "Oh!\nIt's a bite!", function()
+    Game.stack:push(TextBox.new(Game, Strings("Oh!\nIt's a bite!"), function()
       local BattleState = require("src.battle.BattleState")
       local battle = BattleState.newWild(Game, enc.species, enc.level, { hooked = true })
       if Game.save.safari and Map.inRegion(self.map.def, "SAFARI", "SAFARI_ZONE") then
@@ -1482,25 +1483,25 @@ function OverworldState:tryBookshelf(fx, fy)
     if self.map.def.tileset == "MANSION"
        and self.map:tileAt(fx * 2, fy * 2) == 0x38 then
       Game.stack:push(TextBox.new(Game, t._DiglettSculptureText
-        or "It's a sculpture\nof DIGLETT."))
+        or Strings("It's a sculpture\nof DIGLETT.")))
       return true
     end
     Game.stack:push(TextBox.new(Game, t._PokemonBooksText
-      or "Crammed full of\nPOKéMON books!"))
+      or Strings("Crammed full of\nPOKéMON books!")))
   elseif kind == "stuff" then
     Game.stack:push(TextBox.new(Game, t._PokemonStuffText
-      or "There's a slew of\nPOKéMON stuff!"))
+      or Strings("There's a slew of\nPOKéMON stuff!")))
   elseif kind == "elevator" then
     Game.stack:push(TextBox.new(Game, t._ElevatorText
-      or "An elevator!"))
+      or Strings("An elevator!")))
   elseif kind == "statues" then
     -- IndigoPlateauStatues: the plaque, then one of the two lines
     -- keyed by the statue's column (XCoord bit 0)
     local line = (self.player.cellX % 2 == 0) and t._IndigoPlateauStatuesText2
                  or t._IndigoPlateauStatuesText3
     Game.stack:push(TextBox.new(Game,
-      (t._IndigoPlateauStatuesText1 or "INDIGO PLATEAU") .. "\f"
-      .. (line or "POKéMON LEAGUE HQ")))
+      (t._IndigoPlateauStatuesText1 or Strings("INDIGO PLATEAU")) .. "\f"
+      .. (line or Strings("POKéMON LEAGUE HQ"))))
   end
   return true
 end
@@ -1556,7 +1557,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       save.hiddenTaken = save.hiddenTaken or {}
       if save.hiddenTaken[key] then return false end
       if not require("src.inventory.Bag").add(save, h.item, 1) then
-        Game.stack:push(TextBox.new(Game, "You can't carry\nany more items!"))
+        Game.stack:push(TextBox.new(Game, Strings("You can't carry\nany more items!")))
         return true
       end
       save.hiddenTaken[key] = true
@@ -1564,7 +1565,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       -- hidden items always play SFX_GET_ITEM_2 (hidden_items.asm)
       require("src.core.Sound").play(Game.data, "Get_Item2")
       Game.stack:push(TextBox.new(Game,
-        ("%s found\n%s!"):format(save.player.name, name)))
+        Strings("%s found\n%s!", save.player.name, name)))
       return true
     end
   end
@@ -1578,7 +1579,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       save.coins = math.min(9999, (save.coins or 0) + h.coins)
       require("src.core.Sound").play(Game.data, "Get_Item2")
       Game.stack:push(TextBox.new(Game,
-        ("%s found\n%d coins!"):format(save.player.name, h.coins)))
+        Strings("%s found\n%d coins!", save.player.name, h.coins)))
       return true
     end
   end
@@ -1590,20 +1591,20 @@ function OverworldState:tryHiddenObject(fx, fy)
     if h.x == fx and h.y == fy then
       if h.state == "out_of_order" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerOutOfOrderText
-          or "OUT OF ORDER\nThis is broken."))
+          or Strings("OUT OF ORDER\nThis is broken.")))
       elseif h.state == "out_to_lunch" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerOutToLunchText
-          or "OUT TO LUNCH\nThis is reserved."))
+          or Strings("OUT TO LUNCH\nThis is reserved.")))
       elseif h.state == "keys" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerSomeonesKeysText
-          or "Someone's keys!\nThey'll be back."))
+          or Strings("Someone's keys!\nThey'll be back.")))
       elseif not save.inventory.COIN_CASE then
         Game.stack:push(TextBox.new(Game, txt._GameCornerCoinCaseText
-          or "A COIN CASE is\nrequired!"))
+          or Strings("A COIN CASE is\nrequired!")))
       elseif (save.coins or 0) == 0 then
         -- AbleToPlaySlotsCheck: a COIN CASE with no coins can't play
         Game.stack:push(TextBox.new(Game, txt._GameCornerNoCoinsText
-          or "You don't have\nany coins!"))
+          or Strings("You don't have\nany coins!")))
       else
         -- one machine per visit is secretly lucky
         -- (wLuckySlotHiddenEventIndex, engine/slots/game_corner_slots.asm)
@@ -1663,7 +1664,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       if gym then
         local key = save.inventory[gym.badge] and "_GymStatueText2" or "_GymStatueText1"
         local text = Game.data.text[key]
-                     or "{RAM}\nPOKéMON GYM\nLEADER: {RAM}"
+                     or Strings("{RAM}\nPOKéMON GYM\nLEADER: {RAM}")
         text = text:gsub("{RAM:wGymCityName}", gym.city)
                    :gsub("{RAM:wGymLeaderName}", gym.leader)
         Game.stack:push(TextBox.new(Game, text))
@@ -1676,7 +1677,7 @@ function OverworldState:tryHiddenObject(fx, fy)
   for _, h in ipairs(extras.printTrash and extras.printTrash[self.map.id] or {}) do
     if h.x == fx and h.y == fy then
       Game.stack:push(TextBox.new(Game, txt._VermilionGymTrashText
-        or "Nope, there's\nonly trash here."))
+        or Strings("Nope, there's\nonly trash here.")))
       return true
     end
   end
@@ -1718,7 +1719,7 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   local t = Game.data.text
   if not Game.save.inventory.CARD_KEY then
     Game.stack:push(TextBox.new(Game,
-      t._CardKeyFailText or "Darn! It needs a\nCARD KEY!"))
+      t._CardKeyFailText or Strings("Darn! It needs a\nCARD KEY!")))
     return true
   end
   require("src.core.Sound").play(Game.data, "Go_Inside")
@@ -1735,8 +1736,8 @@ function OverworldState:tryCardKeyDoor(fx, fy)
     end
   end
   Game.stack:push(TextBox.new(Game,
-    (t._CardKeySuccessText1 or "Bingo!")
-    .. (t._CardKeySuccessText2 or "\nThe CARD KEY\nopened the door!")))
+    (t._CardKeySuccessText1 or Strings("Bingo!"))
+    .. (t._CardKeySuccessText2 or Strings("\nThe CARD KEY\nopened the door!"))))
   return true
 end
 
@@ -1753,7 +1754,7 @@ function OverworldState:trashCanSwitch(canIndex)
   local t = Game.data.text
   local save = Game.save
   local tc = Game.data.field.hiddenExtras.trashCans
-  local trashText = t._VermilionGymTrashText or "Nope, there's\nonly trash here."
+  local trashText = t._VermilionGymTrashText or Strings("Nope, there's\nonly trash here.")
   -- "Don't do the trash can puzzle if it's already been done."
   if save.flags.EVENT_2ND_LOCK_OPENED then
     Game.stack:push(TextBox.new(Game, trashText))
@@ -1801,7 +1802,7 @@ function OverworldState:trashCanSwitch(canIndex)
     -- open.
     Game.stack:push(TextBox.new(Game,
       t._VermilionGymTrashSuccessText1
-      or "Hey! There's a\nswitch under the\ntrash!\fThe 1st electric\nlock opened!",
+      or Strings("Hey! There's a\nswitch under the\ntrash!\fThe 1st electric\nlock opened!"),
       function() require("src.core.Sound").play(Game.data, "Switch") end))
     return
   end
@@ -1818,7 +1819,7 @@ function OverworldState:trashCanSwitch(canIndex)
     -- prints, so the beep fires as the box closes, not as it opens.
     Game.stack:push(TextBox.new(Game,
       t._VermilionGymTrashSuccessText3
-      or "The 2nd electric\nlock opened!\fThe motorized door\nopened!",
+      or Strings("The 2nd electric\nlock opened!\fThe motorized door\nopened!"),
       function() require("src.core.Sound").play(Game.data, "Go_Inside") end))
   else
     -- wrong can: ResetEvent EVENT_1ST_LOCK_OPENED and immediately
@@ -1830,7 +1831,7 @@ function OverworldState:trashCanSwitch(canIndex)
     -- text prints, so the beep fires as the box closes, not as it opens.
     Game.stack:push(TextBox.new(Game,
       t._VermilionGymTrashFailText
-      or "Nope! There's\nonly trash here.\fHey! The electric\nlocks were reset!",
+      or Strings("Nope! There's\nonly trash here.\fHey! The electric\nlocks were reset!"),
       function() require("src.core.Sound").play(Game.data, "Denied") end))
   end
 end
@@ -1852,12 +1853,12 @@ function OverworldState:billsHousePC()
   if flags.EVENT_USED_CELL_SEPARATOR_ON_BILL
      or not flags.EVENT_BILL_SAID_USE_CELL_SEPARATOR then
     Game.stack:push(TextBox.new(Game, t._BillsHouseMonitorText
-      or "TELEPORTER is\ndisplayed on the\nPC monitor."))
+      or Strings("TELEPORTER is\ndisplayed on the\nPC monitor.")))
     return
   end
   require("src.core.Music").stop()
   Game.stack:push(TextBox.new(Game, t._BillsHouseInitiatedText
-    or "{PLAYER} initiated\nTELEPORTER's Cell\nSeparator!", function()
+    or Strings("{PLAYER} initiated\nTELEPORTER's Cell\nSeparator!"), function()
     flags.EVENT_USED_CELL_SEPARATOR_ON_BILL = true
     require("src.core.Sound").play(Game.data, "Switch")
     self:queueScript({
@@ -1894,13 +1895,13 @@ function OverworldState:billsHousePokemonList()
         end,
       })
     end
-    table.insert(items, { label = "CANCEL" })
+    table.insert(items, { label = Strings("CANCEL") })
     -- TextBoxBorder b=10,c=9 at (0,0) -> total tw=11, th=12
     Game.stack:push(Menu.new(Game, items,
       { tx = 0, ty = 0, tw = 11, th = 12 }))
   end
   Game.stack:push(TextBox.new(Game, t._BillsHousePokemonListText1
-    or "BILL's favorite\nPOKéMON list!", openList))
+    or Strings("BILL's favorite\nPOKéMON list!"), openList))
 end
 
 -- BillsHouseBillExitsMachineScript: human Bill appears inside the machine
@@ -1994,7 +1995,7 @@ function OverworldState:trySurf(fx, fy)
   local p = self.player
   p.surfing = true
   require("src.core.Music").setSurfing(Game.data, true)
-  local text = (Game.data.text._SurfingGotOnText or "{PLAYER} got on\n{RAM:wNameBuffer}!")
+  local text = (Game.data.text._SurfingGotOnText or Strings("{PLAYER} got on\n{RAM:wNameBuffer}!"))
                :gsub("{RAM:wNameBuffer}", name)
   Game.stack:push(TextBox.new(Game, text, function()
     -- start_sub_menus.asm .surf: UseItem returns (mount + text done),
@@ -2042,7 +2043,7 @@ function OverworldState:tryCut(fx, fy)
   -- gen 1 confirms nothing (engine/overworld/cut.asm UsedCut): the
   -- _UsedCutText message, then the tree vanishes with dust + SFX_CUT
   local name = mon.nickname or Game.data.pokemon[mon.species].name
-  local text = (Game.data.text._UsedCutText or "{RAM:wNameBuffer} hacked\naway with CUT!")
+  local text = (Game.data.text._UsedCutText or Strings("{RAM:wNameBuffer} hacked\naway with CUT!"))
                :gsub("{RAM:wNameBuffer}", name)
   Game.stack:push(TextBox.new(Game, text, function()
     self.cutBlocks = self.cutBlocks or {}
@@ -2178,7 +2179,7 @@ function OverworldState:talkTo(npc)
   -- the string "0" as truthy, so screen it out and fall through to text.
   if d.item and d.item ~= "0" and d.item ~= 0 then
     if not require("src.inventory.Bag").add(Game.save, d.item, 1) then
-      Game.stack:push(TextBox.new(Game, "You can't carry\nany more items!"))
+      Game.stack:push(TextBox.new(Game, Strings("You can't carry\nany more items!")))
       return
     end
     Game.save.itemsTaken = Game.save.itemsTaken or {}
@@ -2194,7 +2195,7 @@ function OverworldState:talkTo(npc)
     require("src.core.Sound").play(Game.data,
       (ddef and ddef.keyItem) and "Get_Key_Item" or "Get_Item1")
     Game.stack:push(TextBox.new(Game,
-      ("%s found\n%s!"):format(Game.save.player.name, name)))
+      Strings("%s found\n%s!", Game.save.player.name, name)))
     return
   end
 
@@ -2203,7 +2204,7 @@ function OverworldState:talkTo(npc)
   if d.pokemon then
     npc:facePlayer(self.player)
     local text = select(1, Game.data:resolveText(self.map.def.label, d.text))
-                 or "Gyaoo!"
+                 or Strings("Gyaoo!")
     local BattleState = require("src.battle.BattleState")
     Game.stack:push(TextBox.new(Game, text, function()
       local battle = BattleState.newWild(Game, d.pokemon, d.level)
@@ -2246,7 +2247,7 @@ function OverworldState:talkTo(npc)
   if entry then
     if entry.mart then
       npc:facePlayer(self.player)
-      Game.stack:push(TextBox.new(Game, "Hi there!\nMay I help you?", function()
+      Game.stack:push(TextBox.new(Game, Strings("Hi there!\nMay I help you?"), function()
         Screens.push(Game, "ShopMenu", entry.mart)
         unfreeze()
       end))
@@ -2290,7 +2291,7 @@ function OverworldState:openPC(onDone)
   -- when Bill hands over the SS Ticket)
   local metBill = flags.EVENT_MET_BILL or flags.EVENT_GOT_SS_TICKET
   table.insert(items, {
-    label = metBill and "BILL'S PC" or "SOMEONE'S PC",
+    label = metBill and "BILL'S PC" or Strings("SOMEONE'S PC"),
     onSelect = function()
       require("src.core.Sound").play(Game.data, "Enter_PC")
       Screens.push(Game, "BoxMenu")
@@ -2310,7 +2311,7 @@ function OverworldState:openPC(onDone)
   -- Prof. Oak's dex rating only appears once you have the Pokédex
   if flags.EVENT_GOT_POKEDEX then
     table.insert(items, {
-      label = "PROF.OAK's PC",
+      label = Strings("PROF.OAK's PC"),
       onSelect = function()
         self:dexRating()
         done()
@@ -2330,7 +2331,7 @@ function OverworldState:openPC(onDone)
     require("src.core.Sound").play(Game.data, "Turn_Off_PC")
     done()
   end
-  table.insert(items, { label = "LOG OFF", onSelect = logOff })
+  table.insert(items, { label = Strings("LOG OFF"), onSelect = logOff })
   -- pokered sets BIT_NO_MENU_BUTTON_SOUND for the whole PC session
   -- (engine/overworld/pokecenter_pc.asm / player_pc.asm); DisplayPCMainMenu
   -- calls TextBoxBorder with c=14 (interior width, +2 for the border), so
@@ -2355,9 +2356,9 @@ function OverworldState:dexRating()
     local lo = math.floor(owned / 10) * 10
     key = ("_DexRatingText_Own%dTo%d"):format(lo, lo + 9)
   end
-  local rating = Game.data.text[key] or "Keep it up!"
+  local rating = Game.data.text[key] or Strings("Keep it up!")
   local completion = Game.data.text._DexCompletionText
-    or "POKéDEX comp-\nletion is:\f{NUM:hDexRatingNumMonsSeen} POKéMON seen\n{NUM:hDexRatingNumMonsOwned} POKéMON owned\fPROF.OAK's\nRating:"
+    or Strings("POKéDEX comp-\nletion is:\f{NUM:hDexRatingNumMonsSeen} POKéMON seen\n{NUM:hDexRatingNumMonsOwned} POKéMON owned\fPROF.OAK's\nRating:")
   completion = completion
     :gsub("{NUM:hDexRatingNumMonsSeen[^}]*}", tostring(seen))
     :gsub("{NUM:hDexRatingNumMonsOwned[^}]*}", tostring(owned))
@@ -2404,20 +2405,20 @@ end
 -- POKéMON" and "fighting fit".
 function OverworldState:nurseHeal(onDone, npc)
   local t = Game.data.text
-  local bye = t._PokemonCenterFarewellText or "We hope to see\nyou again!"
+  local bye = t._PokemonCenterFarewellText or Strings("We hope to see\nyou again!")
   local hello = t._PokemonCenterWelcomeText
-                or "Welcome to our\nPOKéMON CENTER!"
+                or Strings("Welcome to our\nPOKéMON CENTER!")
   if not Game.save.usedPokecenter then
     Game.save.usedPokecenter = true -- BIT_USED_POKECENTER
     hello = hello .. "\f"
-            .. (t._ShallWeHealYourPokemonText or "Shall we heal your\nPOKéMON?")
+            .. (t._ShallWeHealYourPokemonText or Strings("Shall we heal your\nPOKéMON?"))
   end
   Game.stack:push(TextBox.new(Game, hello, nil, { choice = function(yes)
     if not yes then
       Game.stack:push(TextBox.new(Game, bye, onDone))
       return
     end
-    local need = t._NeedYourPokemonText or "OK. We'll need\nyour POKéMON."
+    local need = t._NeedYourPokemonText or Strings("OK. We'll need\nyour POKéMON.")
     Game.stack:push(TextBox.new(Game, need, function()
       -- the nurse turns to the machine, the map music stops, and the
       -- party heals before the machine runs (predef HealParty)
@@ -2452,7 +2453,7 @@ end
 
 function OverworldState:finishNurseHeal(bye, onDone)
   local t = Game.data.text
-  local fit = t._PokemonFightingFitText or "Your POKéMON are\nfighting fit!"
+  local fit = t._PokemonFightingFitText or Strings("Your POKéMON are\nfighting fit!")
   Game.stack:push(TextBox.new(Game, fit .. "\f" .. bye, onDone))
 end
 
@@ -2464,21 +2465,21 @@ end
 -- for the original serial handshake; declining prints "Please come again!"
 function OverworldState:cableClubReceptionist(onDone)
   local t = Game.data.text
-  local welcome = t._CableClubNPCWelcomeText or "Welcome to the\nCable Club!"
+  local welcome = t._CableClubNPCWelcomeText or Strings("Welcome to the\nCable Club!")
   if not Game.save.flags.EVENT_GOT_POKEDEX then
     -- CableClubNPC .didNotConnect path before the pokedex
     Game.stack:push(TextBox.new(Game, welcome .. "\f"
       .. (t._CableClubNPCMakingPreparationsText
-          or "We're making\npreparations.\vPlease wait."), onDone))
+          or Strings("We're making\npreparations.\vPlease wait.")), onDone))
     return
   end
   local apply = t._CableClubNPCPleaseApplyHereHaveToSaveText
-    or "Please apply here.\fBefore opening\nthe link, we have\vto save the game."
+    or Strings("Please apply here.\fBefore opening\nthe link, we have\vto save the game.")
   Game.stack:push(TextBox.new(Game, welcome .. "\f" .. apply, nil,
     { choice = function(yes)
       if not yes then
         Game.stack:push(TextBox.new(Game,
-          t._CableClubNPCPleaseComeAgainText or "Please come\nagain!", onDone))
+          t._CableClubNPCPleaseComeAgainText or Strings("Please come\nagain!"), onDone))
         return
       end
       Game:writeSave()
@@ -2513,7 +2514,7 @@ function OverworldState:engageTrainer(npc, onDone)
   local battleText = header and header.battle and Game.data.text[header.battle]
   if not battleText then
     battleText = select(1, Game.data:resolveText(self.map.def.label, d.text))
-                 or "I like shorts!\nThey're comfy and\neasy to wear!"
+                 or Strings("I like shorts!\nThey're comfy and\neasy to wear!")
   end
   local wonText = header and header.won and Game.data.text[header.won]
 
@@ -2592,11 +2593,11 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex)
     if reward.badge then
       local name = Game.data.items[reward.badge] and Game.data.items[reward.badge].name
                    or reward.badge
-      table.insert(lines, ("%s received\nthe %s!"):format(Game.save.player.name, name))
+      table.insert(lines, Strings("%s received\nthe %s!", Game.save.player.name, name))
     end
     if reward.item then
       local name = Game.stringBuffer or reward.item
-      table.insert(lines, ("%s received\n%s!"):format(Game.save.player.name, name))
+      table.insert(lines, Strings("%s received\n%s!", Game.save.player.name, name))
     end
   end
   if #lines > 0 then
@@ -2790,7 +2791,7 @@ function OverworldState:applyFieldPoison()
   local queue = {}
   for _, mon in ipairs(fainted) do
     local name = mon.nickname or Game.data.pokemon[mon.species].name
-    table.insert(queue, ("%s\nfainted!"):format(name))
+    table.insert(queue, Strings("%s\nfainted!", name))
   end
   local alive = false
   for _, mon in ipairs(save.party) do
@@ -2804,7 +2805,7 @@ function OverworldState:applyFieldPoison()
     end
     if not alive then
       Game.stack:push(TextBox.new(Game,
-        ("%s blacked\nout!"):format(save.player.name), function()
+        Strings("%s blacked\nout!", save.player.name), function()
         local Pokemon = require("src.pokemon.Pokemon")
         for _, mon in ipairs(save.party) do Pokemon.heal(mon) end
         save.money = math.floor(save.money
@@ -2940,7 +2941,7 @@ function OverworldState:onStepComplete()
     if Game.save.repelSteps == 0 then
       -- no encounter on the exact wear-off step (wild_encounters.asm
       -- .lastRepelStep returns CantEncounter)
-      Game.stack:push(TextBox.new(Game, "REPEL's effect\nwore off."))
+      Game.stack:push(TextBox.new(Game, Strings("REPEL's effect\nwore off.")))
       return
     end
   end
@@ -3074,14 +3075,14 @@ function OverworldState:checkBadgeGate()
             -- Route22GateGuardGoRightAheadText plays sound_get_item_1
             require("src.core.Sound").play(Game.data, "Get_Item1")
             Game.stack:push(TextBox.new(Game,
-              t["_" .. g.passText] or "Go right ahead!"))
+              t["_" .. g.passText] or Strings("Go right ahead!")))
           end
           return false
         end
         -- Route22GateGuardNoBoulderbadgeText plays SFX_DENIED
         require("src.core.Sound").play(Game.data, "Denied")
         Game.stack:push(TextBox.new(Game,
-          (t["_" .. g.failText] or "You don't have the\nBOULDERBADGE yet!")
+          (t["_" .. g.failText] or Strings("You don't have the\nBOULDERBADGE yet!"))
           .. (t._Route22GateGuardICantLetYouPassText or ""), function()
             self:scriptMove(p, "down", 1)
           end))
@@ -3102,14 +3103,14 @@ function OverworldState:checkBadgeGate()
           -- Route23OhThatIsTheBadgeText plays sound_get_item_1
           require("src.core.Sound").play(Game.data, "Get_Item1")
           local text = (t["_" .. g.passText] or
-                        "Oh! That is the\n{RAM}!"):gsub("{RAM:wNameBuffer}", badgeName)
+                        Strings("Oh! That is the\n{RAM}!")):gsub("{RAM:wNameBuffer}", badgeName)
           Game.stack:push(TextBox.new(Game, text))
           return false
         end
         -- Route23YouDontHaveTheBadgeYetText plays SFX_DENIED
         require("src.core.Sound").play(Game.data, "Denied")
         local text = (t["_" .. g.failText] or
-                      "You don't have the\n{RAM} yet!"):gsub("{RAM:wNameBuffer}", badgeName)
+                      Strings("You don't have the\n{RAM} yet!")):gsub("{RAM:wNameBuffer}", badgeName)
         Game.stack:push(TextBox.new(Game, text, function()
           self:scriptMove(p, "down", 1)
         end))
@@ -3147,7 +3148,7 @@ function OverworldState:checkForcedMovement()
           Game.save.forcedBike = true
           require("src.core.Music").playMap(Game.data, self.map.id, true)
         else
-          Game.stack:push(TextBox.new(Game, "You need a\nBICYCLE for the\nCycling Road!",
+          Game.stack:push(TextBox.new(Game, Strings("You need a\nBICYCLE for the\nCycling Road!"),
             function()
               local back = ({ up = "down", down = "up",
                               left = "right", right = "left" })[p.facing]
@@ -3275,7 +3276,7 @@ function OverworldState:boulderIntoHole(npc)
       for i = #self.entities, 1, -1 do
         if self.entities[i] == npc then table.remove(self.entities, i) end
       end
-      Game.stack:push(TextBox.new(Game, "The boulder fell\nthrough the hole!"))
+      Game.stack:push(TextBox.new(Game, Strings("The boulder fell\nthrough the hole!")))
       return true
     end
   end
@@ -3305,7 +3306,7 @@ function OverworldState:safariStep()
   if not st or not self:inSafariStepZone() then return false end
   st.steps = st.steps - 1
   if st.steps > 0 then return false end
-  self:safariGameOver("PA: Ding-dong!\nTime's up!")
+  self:safariGameOver(Strings("PA: Ding-dong!\nTime's up!"))
   return true
 end
 
@@ -3314,7 +3315,7 @@ function OverworldState:safariGameOver(text)
   Game.save.safari = nil
   local t = Game.data.text
   Game.stack:push(TextBox.new(Game,
-    (text or "") .. "\f" .. (t._GameOverText or "PA: Your SAFARI\nGAME is over!"),
+    (text or "") .. "\f" .. (t._GameOverText or Strings("PA: Your SAFARI\nGAME is over!")),
     function()
       local exit_ = FieldDefaults.fieldValue(Game.data, "safari", "exitWarp")
       self:startWarpTo(exit_.map, exit_.x, exit_.y, exit_.facing or "down")
@@ -3357,7 +3358,7 @@ function OverworldState:afterBattle(result, battle)
   else
     -- throwing the last SAFARI BALL ends the game
     if Game.save.safari and Game.save.safari.balls <= 0 then
-      self:safariGameOver("PA: You're out of\nSAFARI BALLs!")
+      self:safariGameOver(Strings("PA: You're out of\nSAFARI BALLs!"))
     end
     evolutions()
   end

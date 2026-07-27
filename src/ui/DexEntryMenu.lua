@@ -8,6 +8,7 @@
 -- without permanently marking the mon owned.
 
 local Font = require("src.render.Font")
+local Strings = require("src.core.Strings")
 
 local DexEntryMenu = {}
 DexEntryMenu.__index = DexEntryMenu
@@ -76,8 +77,8 @@ function DexEntryMenu:draw()
     -- feet/inches use the dex screen's ′/″ glyphs ("HT  ?′??″" in
     -- pokedex.asm; the tiles come from gfx/pokedex/pokedex.png via
     -- engine/gfx/load_pokedex_tiles.asm)
-    Font.draw(("HT %d′%02d″"):format(e.heightFt, e.heightIn or 0), 72, 44)
-    Font.draw(("WT %.1flb"):format((e.weight or 0) / 10), 72, 54)
+    Font.draw(Strings("HT %d′%02d″", e.heightFt, e.heightIn or 0), 72, 44)
+    Font.draw(Strings("WT %.1flb", (e.weight or 0) / 10), 72, 54)
   end
   local text = owned and e.text and self.game.data.text[e.text] or nil
   local y = 72
@@ -88,7 +89,7 @@ function DexEntryMenu:draw()
       y = y + 10
     end
   else
-    Font.draw("Data unknown.", 8, y)
+    Font.draw(Strings("Data unknown."), 8, y)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

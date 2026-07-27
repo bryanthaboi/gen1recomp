@@ -27,6 +27,7 @@
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local IntroMovie = {}
 IntroMovie.__index = IntroMovie
@@ -287,7 +288,7 @@ function IntroMovie:drawSplash()
     end
     -- custom studio name (replaces the GAME FREAK splash text)
     love.graphics.setColor(0, 0, 0, dim and 0.35 or 1)
-    local card = self.studio.card or "bois club games"
+    local card = self.studio.card or Strings("bois club games")
     Font.draw(card, (160 - #card * 8) / 2, TEXT_Y)
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -348,7 +349,7 @@ function IntroMovie:drawFight()
 
   if not gengar and not nido then
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("GENGAR VS NIDORINO", (160 - 18 * 8) / 2, 64)
+    Font.draw(Strings("GENGAR VS NIDORINO"), (160 - 18 * 8) / 2, 64)
     love.graphics.setColor(1, 1, 1, 1)
   end
   drawBars()
@@ -366,7 +367,7 @@ function IntroMovie:draw()
     -- custom boot card (replaces the Nintendo / GAME FREAK copyright
     -- card; no (c) glyph in the charmap, keep it ASCII-safe)
     love.graphics.setColor(0, 0, 0, 1)
-    local credit = self.studio.credit or "bois club"
+    local credit = self.studio.credit or Strings("bois club")
     Font.draw("2026", (160 - 4 * 8) / 2, 48)
     Font.draw(credit, (160 - #credit * 8) / 2, 64)
     Font.draw("bryanthaboi", (160 - 11 * 8) / 2, 80)

@@ -15,6 +15,7 @@
 local Data = require("src.core.Data")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local MapScripts = {}
 
@@ -268,7 +269,7 @@ function MapScripts.validateContribution(contribution, lookup)
     end
   end
   if type(contribution) ~= "table" then
-    return { "contribution is not a table" }
+    return { Strings("contribution is not a table") }
   end
   for textConst, script in pairs(contribution.talk or {}) do
     if type(script) == "table" then collect("talk." .. textConst, script) end

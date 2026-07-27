@@ -13,6 +13,7 @@ local Font = require("src.render.Font")
 local Runtime = require("src.mods.Runtime")
 local Sound = require("src.core.Sound")
 local Theme = require("src.ui.Theme")
+local Strings = require("src.core.Strings")
 
 local NamingScreen = {}
 NamingScreen.__index = NamingScreen
@@ -64,7 +65,7 @@ function NamingScreen.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, NamingScreen)
   self.game = game
-  self.title = opts.title or "YOUR NAME?"
+  self.title = opts.title or Strings("YOUR NAME?")
   self.presets = opts.presets
   self.maxLen = opts.maxLen or 7
   self.default = opts.default
@@ -78,7 +79,7 @@ end
 function NamingScreen:enter()
   if self.presets and #self.presets > 0 then
     local Menu = require("src.ui.Menu")
-    local items = { { label = "NEW NAME" } }
+    local items = { { label = Strings("NEW NAME") } }
     for _, preset in ipairs(self.presets) do
       table.insert(items, {
         label = preset,

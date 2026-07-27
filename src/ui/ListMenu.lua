@@ -5,6 +5,7 @@
 local Font = require("src.render.Font")
 local Runtime = require("src.mods.Runtime")
 local Theme = require("src.ui.Theme")
+local Strings = require("src.core.Strings")
 
 local ListMenu = {}
 ListMenu.__index = ListMenu
@@ -192,7 +193,7 @@ function ListMenu:draw()
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(self.title, 8, 4)
   if #self.items == 0 then
-    Font.draw("Nothing here.", 16, 64)
+    Font.draw(Strings("Nothing here."), 16, 64)
   end
   for row = 1, self.rows do
     local i = self.scroll + row

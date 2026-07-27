@@ -114,6 +114,21 @@ function Strings.get(source, ...)
   return out
 end
 
+-- A marker, not a lookup: returns its argument untouched.
+--
+-- Some templates are declared in a module-level table and formatted much
+-- later (BattleState's charge-move lines, for one).  Translating at the
+-- declaration would freeze the English, because those tables are built at
+-- require time and Strings.load has no catalog yet; the use site therefore
+-- calls Strings(template, ...) and looks the source up then.  That works at
+-- runtime but leaves the literal invisible to the catalog generator, which
+-- only sees what is spelled out at a call site.  Wrapping the declaration in
+-- Strings.source puts it back in the harvest while changing nothing at all
+-- about when the lookup happens.
+function Strings.source(text)
+  return text
+end
+
 setmetatable(Strings, { __call = function(_, ...) return Strings.get(...) end })
 
 return Strings

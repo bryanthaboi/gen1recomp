@@ -9,6 +9,7 @@ local TextBox = require("src.render.TextBox")
 local BagMenu = {}
 
 local Bag = require("src.inventory.Bag")
+local Strings = require("src.core.Strings")
 
 -- acquisition order like wBagItems (Bag.order), not alphabetical
 local function buildItems(game)
@@ -108,13 +109,13 @@ local function useOn(game, battle, id, target, list, moveIndex)
     if game.save.onBike then
       game.save.onBike = false
       Music.playMap(game.data, ow and ow.map.id, false)
-      showMessages(game, { save_name(game) .. " got off\nthe BICYCLE." })
+      showMessages(game, { Strings("%s got off\nthe BICYCLE.", save_name(game)) })
     elseif bikeAllowed() then
       game.save.onBike = true
       Music.playMap(game.data, ow.map.id, true)
-      showMessages(game, { save_name(game) .. " got on\nthe BICYCLE!" })
+      showMessages(game, { Strings("%s got on\nthe BICYCLE!", save_name(game)) })
     else
-      showMessages(game, { "No cycling\nallowed here." })
+      showMessages(game, { Strings("No cycling\nallowed here.") })
     end
     return
   end
@@ -130,13 +131,14 @@ local function useOn(game, battle, id, target, list, moveIndex)
         return
       end
     end
-    showMessages(game, { "No good! It's not\neven near water." })
+    showMessages(game, { Strings("No good! It's not\neven near water.") })
     return
   end
 
   if result == "ball" then
     if not battle then
-      showMessages(game, { "OAK: " .. game.save.player.name .. "!\nThis isn't the\ntime to use that!" })
+      showMessages(game, { Strings("OAK: %s!\nThis isn't the\ntime to use that!",
+                              game.save.player.name) })
       return
     end
     consume(game, id)
@@ -151,7 +153,7 @@ local function useOn(game, battle, id, target, list, moveIndex)
     local function teach()
       if #target.moves < 4 then
         table.insert(target.moves, { id = moveId, pp = mdef.pp })
-        showMessages(game, { ("%s learned\n%s!"):format(target.nickname or
+        showMessages(game, { Strings("%s learned\n%s!", target.nickname or
           game.data.pokemon[target.species].name, mdef.name) })
         if result == "learn" then consume(game, id) end
       else
@@ -172,7 +174,7 @@ local function useOn(game, battle, id, target, list, moveIndex)
       require("src.ui.Screens").push(game, "TownMap")
     end)
     if not ok then
-      showMessages(game, { "The TOWN MAP is\nunreadable here." })
+      showMessages(game, { Strings("The TOWN MAP is\nunreadable here.") })
     end
     return
   end
@@ -184,10 +186,10 @@ local function useOn(game, battle, id, target, list, moveIndex)
     local t = game.data.text
     if ow and ow:hasHiddenItemLeft() then
       showMessages(game, { t._ItemfinderFoundItemText
-        or "Yes! ITEMFINDER\nindicates there's\nan item nearby." })
+        or Strings("Yes! ITEMFINDER\nindicates there's\nan item nearby.") })
     else
       showMessages(game, { t._ItemfinderFoundNothingText
-        or "Nope! ITEMFINDER\nisn't responding." })
+        or Strings("Nope! ITEMFINDER\nisn't responding.") })
     end
     return
   end
@@ -219,8 +221,9 @@ local function useOn(game, battle, id, target, list, moveIndex)
       -- departure helper -- the same path Dig/Teleport take from the party menu
       ow:beginTeleportOut()
     else
-      showMessages(game, { "OAK: " .. game.save.player.name
-        .. "!\nThis isn't the\ntime to use that!" })
+      showMessages(game, { Strings(
+        "OAK: %s!\nThis isn't the\ntime to use that!",
+        game.save.player.name) })
     end
     return
   end
@@ -264,7 +267,7 @@ local function useOn(game, battle, id, target, list, moveIndex)
             if #target.moves < 4 then
               table.insert(target.moves, { id = moveId, pp = mdef.pp })
               local name = target.nickname or def.name
-              showMessages(game, { ("%s learned\n%s!"):format(name, mdef.name) },
+              showMessages(game, { Strings("%s learned\n%s!", name, mdef.name) },
                            nextStep)
             else
               require("src.ui.Screens").push(game, "MoveLearnMenu",
@@ -354,8 +357,8 @@ local function useItem(game, battle, id, list)
       local moveDef = game.data.moves[def.machine.move]
       local moveName = moveDef and moveDef.name or def.machine.move
       local booted = def.machine.kind == "HM"
-        and "Booted up an HM!" or "Booted up a TM!"
-      showMessages(game, { booted, ("It contained\n%s!"):format(moveName) },
+        and "Booted up an HM!" or Strings("Booted up a TM!")
+      showMessages(game, { booted, Strings("It contained\n%s!", moveName) },
         function() pickTargetAndUse(game, battle, id, list) end)
       return
     end
@@ -411,14 +414,14 @@ function BagMenu.new(game, opts)
       -- too tall, which left the labels stranded near its top edge (#284).
       local Menu = require("src.ui.Menu")
       game.stack:push(Menu.new(game, {
-        { label = "USE", onSelect = function()
+        { label = Strings("USE"), onSelect = function()
             useItem(game, battle, id, list)
           end },
-        { label = "TOSS", onSelect = function()
+        { label = Strings("TOSS"), onSelect = function()
             -- KeyItemFlags + HMs decide tossability (not price:
             -- MOON STONE is price 0 but tossable)
             if not def or def.keyItem or id:find("^HM_") then
-              showMessages(game, { "That's too impor-\ntant to toss!" })
+              showMessages(game, { Strings("That's too impor-\ntant to toss!") })
               return
             end
             local QuantityBox = require("src.ui.QuantityBox")
@@ -432,7 +435,7 @@ function BagMenu.new(game, opts)
                   Bag.remove(game.save, id, qty)
                   list.items = buildItems(game)
                   list.index = math.min(list.index, math.max(1, #list.items))
-                  showMessages(game, { ("Threw away\n%s."):format(def and def.name or id) })
+                  showMessages(game, { Strings("Threw away\n%s.", def and def.name or id) })
                 end))
               end,
             }))

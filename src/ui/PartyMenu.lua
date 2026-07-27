@@ -17,6 +17,7 @@ local Screens = require("src.ui.Screens")
 local Theme = require("src.ui.Theme")
 local FieldDefaults = require("src.world.FieldDefaults")
 local Map = require("src.world.Map")
+local Strings = require("src.core.Strings")
 
 local PartyMenu = {}
 PartyMenu.__index = PartyMenu
@@ -204,7 +205,7 @@ function PartyMenu:update(dt)
         self.game.save.flashLit = true
         self.game.stack:push(TextBox.new(self.game,
           self.game.data.text._FlashLightsAreaText
-          or "A blinding FLASH\nlights the area!", function()
+          or Strings("A blinding FLASH\nlights the area!"), function()
             self.game.stack:push(Transition.whiteFlash(self.game))
           end))
         return
@@ -247,7 +248,7 @@ function PartyMenu:update(dt)
                        current = "_CurrentTooFastText",
                        no_place = "_SurfingNoPlaceToGetOffText" })[reason]
                     or "_NoSurfingHereText"
-        local txt = (self.game.data.text[key] or "No SURFing here!")
+        local txt = (self.game.data.text[key] or Strings("No SURFing here!"))
                     :gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
         if reason == "no_place" then
           -- .cannotStopSurfing prints _SurfingNoPlaceToGetOffText but
@@ -278,7 +279,7 @@ function PartyMenu:update(dt)
         local def = self.game.data.pokemon[mon.species]
         local key = (reason == "no_badge") and "_NewBadgeRequiredText"
                                             or "_NothingToCutText"
-        local txt = (self.game.data.text[key] or "Nothing to CUT!")
+        local txt = (self.game.data.text[key] or Strings("Nothing to CUT!"))
                     :gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
         self.game.stack:push(TextBox.new(self.game, txt))
         return -- .loop: submenu stays open behind the message
@@ -300,9 +301,9 @@ function PartyMenu:update(dt)
         self.game.stack:pop() -- close the party menu (jp .goBackToMap)
         ow.strengthActive = true
         local t1 = (self.game.data.text._UsedStrengthText
-          or "{RAM:wNameBuffer} used\nSTRENGTH."):gsub("{RAM:wNameBuffer}", name)
+          or Strings("{RAM:wNameBuffer} used\nSTRENGTH.")):gsub("{RAM:wNameBuffer}", name)
         local t2 = (self.game.data.text._CanMoveBouldersText
-          or "{RAM:wNameBuffer} can\nmove boulders."):gsub("{RAM:wNameBuffer}", name)
+          or Strings("{RAM:wNameBuffer} can\nmove boulders.")):gsub("{RAM:wNameBuffer}", name)
         self.game.stack:push(TextBox.new(self.game, t1, function()
           self.game.stack:push(TextBox.new(self.game, t2, function()
             self.game.stack:push(Transition.whiteFlash(self.game))
@@ -348,7 +349,7 @@ function PartyMenu:update(dt)
          or user.hp <= heal then
         self.softboiledFrom = nil
         local TextBox = require("src.render.TextBox")
-        self.game.stack:push(TextBox.new(self.game, "It won't have\nany effect."))
+        self.game.stack:push(TextBox.new(self.game, Strings("It won't have\nany effect.")))
       else
         user.hp = user.hp - heal
         mon.hp = math.min(mon.stats.hp, mon.hp + heal)
@@ -357,7 +358,7 @@ function PartyMenu:update(dt)
         local def = self.game.data.pokemon[mon.species]
         local TextBox = require("src.render.TextBox")
         self.game.stack:push(TextBox.new(self.game,
-          ("%s's HP\nwas restored!"):format(mon.nickname or def.name)))
+          Strings("%s's HP\nwas restored!", mon.nickname or def.name)))
       end
     elseif self.swapFrom then
       if self.swapFrom ~= self.index then
@@ -375,14 +376,14 @@ function PartyMenu:update(dt)
       local ow = self.game.overworld
       if self.battle and self.onSwitch then
         -- SwitchStatsCancelText (core.asm PartyMenuOrRockOrRun)
-        items = { { label = "SWITCH", action = "battle_switch" },
-                  { label = "STATS", action = "stats" },
-                  { label = "CANCEL", action = "cancel" } }
+        items = { { label = Strings("SWITCH"), action = "battle_switch" },
+                  { label = Strings("STATS"), action = "stats" },
+                  { label = Strings("CANCEL"), action = "cancel" } }
       else
         -- STATS/SWITCH plus this mon's field moves (start_sub_menus.asm
         -- builds the same dynamic list)
-        items = { { label = "STATS", action = "stats" },
-                  { label = "SWITCH", action = "switch" } }
+        items = { { label = Strings("STATS"), action = "stats" },
+                  { label = Strings("SWITCH"), action = "switch" } }
         -- Field moves (HMs/TMs) are usable out of battle even when the mon
         -- is fainted -- Gen 1 does not require HP for Cut/Fly/Surf/etc.
         -- Battle still excludes this list via `not self.battle`. Softboiled
@@ -395,35 +396,35 @@ function PartyMenu:update(dt)
           for _, mv in ipairs(mon.moves) do
             if mv.id == "FLY" and outside
                and self.game.save.inventory.THUNDERBADGE then
-              table.insert(items, { label = "FLY", action = "fly" })
+              table.insert(items, { label = Strings("FLY"), action = "fly" })
             elseif mv.id == "FLASH" and ow.dark
                and self.game.save.inventory.BOULDERBADGE then
-              table.insert(items, { label = "FLASH", action = "flash" })
+              table.insert(items, { label = Strings("FLASH"), action = "flash" })
             elseif mv.id == "CUT" and self.game.save.inventory.CASCADEBADGE then
               -- CUT/SURF/STRENGTH are party-menu field moves too
               -- (start_sub_menus.asm .outOfBattleMovePointers); listed here
               -- with the same list-time badge filter this file already uses
               -- for FLY/FLASH.  The facing-tile/activation check happens on
               -- selection (useCutFieldMove/useSurfFieldMove).
-              table.insert(items, { label = "CUT", action = "cut" })
+              table.insert(items, { label = Strings("CUT"), action = "cut" })
             elseif mv.id == "SURF" and self.game.save.inventory.SOULBADGE then
-              table.insert(items, { label = "SURF", action = "surf" })
+              table.insert(items, { label = Strings("SURF"), action = "surf" })
             elseif mv.id == "STRENGTH" and self.game.save.inventory.RAINBOWBADGE then
-              table.insert(items, { label = "STRENGTH", action = "strength" })
+              table.insert(items, { label = Strings("STRENGTH"), action = "strength" })
             elseif mv.id == "SOFTBOILED" then
-              table.insert(items, { label = "SOFTBOILED", action = "softboiled" })
+              table.insert(items, { label = Strings("SOFTBOILED"), action = "softboiled" })
             elseif mv.id == "TELEPORT" and outside then
               -- TELEPORT works only OUTDOORS (start_sub_menus.asm
               -- .teleport -> CheckIfInOutsideMap); dark maps don't
               -- block it
-              table.insert(items, { label = "TELEPORT", action = "escape" })
+              table.insert(items, { label = Strings("TELEPORT"), action = "escape" })
             elseif mv.id == "DIG" and DIG_TILESETS[ow.map.def.tileset]
                and ow.map.id ~= "AGATHAS_ROOM" then
               -- DIG runs ItemUseEscapeRope (.dig sets wCurItem =
               -- ESCAPE_ROPE): usable in the dungeon tilesets of
               -- escape_rope_tilesets.asm minus Agatha's room, even in
               -- the dark (Rock Tunnel)
-              table.insert(items, { label = "DIG", action = "escape" })
+              table.insert(items, { label = Strings("DIG"), action = "escape" })
             end
           end
         end
@@ -456,13 +457,13 @@ function PartyMenu:bottomMessage()
     return "Use on which one?"
   elseif self.tmhm then
     return self.game.data.text._PartyMenuUseTMText
-      or "Use TM on which\nPOKéMON?"
+      or Strings("Use TM on which\nPOKéMON?")
   elseif self.battle then
     return self.game.data.text._PartyMenuBattleText
-      or "Bring out which\nPOKéMON?"
+      or Strings("Bring out which\nPOKéMON?")
   else
     return self.game.data.text._PartyMenuNormalText
-      or "Choose a POKéMON."
+      or Strings("Choose a POKéMON.")
   end
 end
 
@@ -480,7 +481,7 @@ function PartyMenu:draw()
   love.graphics.setColor(0, 0, 0, 1)
   local party = self.party or self.game.save.party
   if #party == 0 then
-    Font.draw("No POKéMON!", 16, 64)
+    Font.draw(Strings("No POKéMON!"), 16, 64)
   end
   local HudTiles = require("src.render.HudTiles")
   for i, mon in ipairs(party) do
@@ -512,13 +513,13 @@ function PartyMenu:draw()
       end
       -- right-aligned so the shorter "ABLE" shares "NOT ABLE"'s right edge
       if can then
-        Font.draw("ABLE", 120, y + 8)
+        Font.draw(Strings("ABLE"), 120, y + 8)
       else
-        Font.draw("NOT ABLE", 88, y + 8)
+        Font.draw(Strings("NOT ABLE"), 88, y + 8)
       end
     else
       if mon.hp <= 0 then
-        Font.draw("FNT", 136, y)
+        Font.draw(Strings("FNT"), 136, y)
       elseif mon.status then
         Font.draw(mon.status, 136, y)
       end
@@ -541,9 +542,9 @@ function PartyMenu:draw()
     end
   end
   if self.swapFrom then
-    Font.draw("Move to where?", 8, 136)
+    Font.draw(Strings("Move to where?"), 8, 136)
   elseif self.softboiledFrom then
-    Font.draw("Use on which one?", 8, 136)
+    Font.draw(Strings("Use on which one?"), 8, 136)
   elseif self.tmhm then
     -- "Use TM on which\nPOKeMON?" in the standard bottom text box
     -- (party_menu.asm keeps the message box for the TM/HM menu); box + line
@@ -551,14 +552,14 @@ function PartyMenu:draw()
     Font.drawBox(0, 12, 20, 6)
     love.graphics.setColor(0, 0, 0, 1)
     local prompt = self.game.data.text._PartyMenuUseTMText
-      or "Use TM on which\nPOKéMON?"
+      or Strings("Use TM on which\nPOKéMON?")
     local ly = 112
     for line in (prompt .. "\n"):gmatch("([^\n]*)\n") do
       Font.draw(line, 8, ly)
       ly = ly + 16
     end
   elseif self.pickOnly then
-    Font.draw("Use on which one?", 8, 136)
+    Font.draw(Strings("Use on which one?"), 8, 136)
   else
     -- default field party menu (StartMenu) and the battle voluntary-switch
     -- (BattleState:openParty): Gen1 prints PartyMenuNormalText / PartyMenuBattleText

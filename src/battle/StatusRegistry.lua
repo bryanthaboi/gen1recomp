@@ -5,6 +5,7 @@
 
 local Runtime = require("src.mods.Runtime")
 local Status = require("src.battle.Status")
+local Strings = require("src.core.Strings")
 
 local StatusRegistry = {}
 
@@ -45,7 +46,7 @@ function StatusRegistry.inflict(battle, target, status, opts)
   if record and record.onInflict then
     msgs = record.onInflict(battle, target, opts, display)
   else
-    msgs = { ("%s\nwas afflicted\nby %s!"):format(display,
+    msgs = { Strings("%s\nwas afflicted\nby %s!", display,
                record and record.label or tostring(status)) }
   end
   Runtime.emit("battle.status_inflicted", {

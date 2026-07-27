@@ -6,6 +6,7 @@
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
 local GameVersion = require("src.core.GameVersion")
+local Strings = require("src.core.Strings")
 
 local TitleState = {}
 TitleState.__index = TitleState
@@ -165,19 +166,19 @@ function ContinueInfo:draw()
   -- box at (4,7), 8x14 content; labels double-spaced from (5,9)
   Font.drawBox(4, 7, 16, 10)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("PLAYER", 40, 72)
+  Font.draw(Strings("PLAYER"), 40, 72)
   Font.draw((save.player and save.player.name) or "RED", 96, 72)
   local badges = require("src.inventory.Badges").count(self.game.data, save)
-  Font.draw("BADGES", 40, 88)
+  Font.draw(Strings("BADGES"), 40, 88)
   Font.draw(("%2d"):format(badges), 128, 88)
   local owned = 0
   for _ in pairs(save.pokedex and save.pokedex.owned or {}) do
     owned = owned + 1
   end
-  Font.draw("POKéDEX", 40, 104)
+  Font.draw(Strings("POKéDEX"), 40, 104)
   Font.draw(("%3d"):format(owned), 120, 104)
   local t = math.floor(save.playTime or 0)
-  Font.draw("TIME", 40, 120)
+  Font.draw(Strings("TIME"), 40, 120)
   Font.draw(("%3d:%02d"):format(math.floor(t / 3600),
                                 math.floor(t / 60) % 60), 104, 120)
   love.graphics.setColor(1, 1, 1, 1)
@@ -188,7 +189,7 @@ function TitleState:openMenu()
   local game = self.game
   local items = {}
   if hasSave() then
-    table.insert(items, { label = "CONTINUE", onSelect = function()
+    table.insert(items, { label = Strings("CONTINUE"), onSelect = function()
       -- peek at the save for the info window; fall through if the
       -- file can't be read
       local ok, loaded = pcall(require("src.core.SaveData").load)
@@ -199,13 +200,13 @@ function TitleState:openMenu()
       end
     end })
   end
-  table.insert(items, { label = "NEW GAME", onSelect = function()
+  table.insert(items, { label = Strings("NEW GAME"), onSelect = function()
     if self.onNewGame then self.onNewGame() end
   end })
-  table.insert(items, { label = "OPTION", onSelect = function()
+  table.insert(items, { label = Strings("OPTION"), onSelect = function()
     require("src.ui.Screens").push(game, "OptionsMenu")
   end })
-  table.insert(items, { label = "EXIT GAME", onSelect = function()
+  table.insert(items, { label = Strings("EXIT GAME"), onSelect = function()
     if love.event and love.event.quit then
       love.event.quit()
     end
@@ -254,7 +255,7 @@ function TitleState:draw()
     love.graphics.draw(self.logo, 16, 8)
   else
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(self.blue and "POKéMON BLUE" or "POKéMON RED",
+    Font.draw(self.blue and "POKéMON BLUE" or Strings("POKéMON RED"),
       (160 - 12 * 8) / 2, 24)
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -290,7 +291,7 @@ function TitleState:draw()
   love.graphics.setColor(0, 0, 0, 1)
   -- the copyright row (tile 2,17); copyrightText because field.title's
   -- copyright key already names the extracted image strip
-  Font.draw(self.title.copyrightText or "2026 bois club games", 1, 136)
+  Font.draw(self.title.copyrightText or Strings("2026 bois club games"), 1, 136)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

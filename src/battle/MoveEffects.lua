@@ -15,6 +15,7 @@ local Logger = require("src.core.Logger")
 local StatusRegistry = require("src.battle.StatusRegistry")
 local TurnOrder = require("src.battle.TurnOrder")
 local TypeChart = require("src.battle.TypeChart")
+local Strings = require("src.core.Strings")
 
 local MoveEffects = {}
 
@@ -36,14 +37,14 @@ local STAT_LABEL = {
 local function changeStage(battle, who, stat, delta, fromEnemy)
   if fromEnemy and (who.substituteHP or who.mist) then
     if who.mist then
-      return { displayName(who) .. " is\nprotected by MIST!" }
+      return { Strings("%s is\nprotected by MIST!", displayName(who)) }
     end
-    return { "But, it failed!" }
+    return { Strings("But, it failed!") }
   end
   local cur = who.stages[stat] or 0
   local new = math.max(-6, math.min(6, cur + delta))
   if new == cur then
-    return { ("Nothing happened!") }
+    return { Strings("Nothing happened!") }
   end
   who.stages[stat] = new
   -- effects.asm:505-506: after any stat-stage change, modified stats are
@@ -53,13 +54,13 @@ local function changeStage(battle, who, stat, delta, fromEnemy)
   -- _MonsStatsRoseText/_MonsStatsFellText: "X's / STAT rose!"; the
   -- two-stage variants scroll "greatly" onto a third line
   if delta >= 2 then
-    return { ("%s's\n%s\ngreatly rose!"):format(displayName(who), STAT_LABEL[stat]) }
+    return { Strings("%s's\n%s\ngreatly rose!", displayName(who), STAT_LABEL[stat]) }
   elseif delta == 1 then
-    return { ("%s's\n%s rose!"):format(displayName(who), STAT_LABEL[stat]) }
+    return { Strings("%s's\n%s rose!", displayName(who), STAT_LABEL[stat]) }
   elseif delta == -1 then
-    return { ("%s's\n%s fell!"):format(displayName(who), STAT_LABEL[stat]) }
+    return { Strings("%s's\n%s fell!", displayName(who), STAT_LABEL[stat]) }
   end
-  return { ("%s's\n%s\ngreatly fell!"):format(displayName(who), STAT_LABEL[stat]) }
+  return { Strings("%s's\n%s\ngreatly fell!", displayName(who), STAT_LABEL[stat]) }
 end
 MoveEffects.changeStage = changeStage
 
@@ -88,10 +89,10 @@ end
 local function statusMove(status)
   return function(battle, user, target, move)
     if target.mon.status then
-      return { "But, it failed!" }
+      return { Strings("But, it failed!") }
     end
     if status == "PSN" and target.substituteHP then
-      return { "But, it failed!" }
+      return { Strings("But, it failed!") }
     end
     local msgs = inflictStatus(battle, target, status, {
       toxic = move and move.id == "TOXIC",
@@ -99,7 +100,7 @@ local function statusMove(status)
       source = move and move.id,
     })
     if #msgs == 0 then
-      return { "But, it failed!" }
+      return { Strings("But, it failed!") }
     end
     return msgs
   end
@@ -111,7 +112,7 @@ local function statusSide(status, chance)
     -- target (regardless of the burn roll)
     if move and move.type == "FIRE" and target.mon.status == "FRZ" then
       target.mon.status = nil
-      return { ("Fire defrosted\n%s!"):format(displayName(target)) }
+      return { Strings("Fire defrosted\n%s!", displayName(target)) }
     end
     if battle.rng(0, 255) >= chance then return {} end
     return inflictStatus(battle, target, status, {
@@ -144,10 +145,10 @@ end
 
 local function confuse(battle, target, pierceSub)
   if target.confusedTurns or (target.substituteHP and not pierceSub) then
-    return { "But, it failed!" }
+    return { Strings("But, it failed!") }
   end
   target.confusedTurns = battle.rng(2, 5)
-  return { ("%s\nbecame confused!"):format(displayName(target)) }
+  return { Strings("%s\nbecame confused!", displayName(target)) }
 end
 
 -- ---------------------------------------------------------------------
@@ -181,53 +182,53 @@ MoveEffects.primary = {
   LEECH_SEED_EFFECT = function(battle, user, target)
     -- leech_seed.asm has no substitute check: seeding lands through one
     if target.leechSeeded then
-      return { "But, it failed!" }
+      return { Strings("But, it failed!") }
     end
     for _, t in ipairs(target.curTypes) do
-      if t == "GRASS" then return { "But, it failed!" } end
+      if t == "GRASS" then return { Strings("But, it failed!") } end
     end
     target.leechSeeded = true
-    return { ("%s\nwas seeded!"):format(displayName(target)) }
+    return { Strings("%s\nwas seeded!", displayName(target)) }
   end,
 
   HEAL_EFFECT = function(battle, user, target, move)
     local mon = user.mon
     if move.id == "REST" then
-      if mon.hp == mon.stats.hp then return { "But, it failed!" } end
+      if mon.hp == mon.stats.hp then return { Strings("But, it failed!") } end
       mon.hp = mon.stats.hp
       mon.status = "SLP"
       user.sleepTurns = 2
       user.toxicCounter = nil
-      return { ("%s\nstarted sleeping!"):format(displayName(user)) }
+      return { Strings("%s\nstarted sleeping!", displayName(user)) }
     end
-    if mon.hp == mon.stats.hp then return { "But, it failed!" } end
+    if mon.hp == mon.stats.hp then return { Strings("But, it failed!") } end
     mon.hp = math.min(mon.stats.hp, mon.hp + math.floor(mon.stats.hp / 2))
-    return { ("%s\nregained health!"):format(displayName(user)) }
+    return { Strings("%s\nregained health!", displayName(user)) }
   end,
 
   LIGHT_SCREEN_EFFECT = function(battle, user)
-    if user.lightScreen then return { "But, it failed!" } end
+    if user.lightScreen then return { Strings("But, it failed!") } end
     user.lightScreen = true
-    return { ("%s's\nprotected against\nspecial attacks!"):format(displayName(user)) }
+    return { Strings("%s's\nprotected against\nspecial attacks!", displayName(user)) }
   end,
 
   REFLECT_EFFECT = function(battle, user)
-    if user.reflect then return { "But, it failed!" } end
+    if user.reflect then return { Strings("But, it failed!") } end
     user.reflect = true
-    return { ("%s\ngained armor!"):format(displayName(user)) }
+    return { Strings("%s\ngained armor!", displayName(user)) }
   end,
 
   MIST_EFFECT = function(battle, user)
-    if user.mist then return { "But, it failed!" } end
+    if user.mist then return { Strings("But, it failed!") } end
     user.mist = true
     -- _ShroudedInMistText (lowercase "mist")
-    return { ("%s's\nshrouded in mist!"):format(displayName(user)) }
+    return { Strings("%s's\nshrouded in mist!", displayName(user)) }
   end,
 
   FOCUS_ENERGY_EFFECT = function(battle, user)
-    if user.focusEnergy then return { "But, it failed!" } end
+    if user.focusEnergy then return { Strings("But, it failed!") } end
     user.focusEnergy = true
-    return { ("%s's\ngetting pumped!"):format(displayName(user)) }
+    return { Strings("%s's\ngetting pumped!", displayName(user)) }
   end,
 
   HAZE_EFFECT = function(battle, user, target)
@@ -254,33 +255,33 @@ MoveEffects.primary = {
       target.skipMove = true
     end
     target.mon.status = nil
-    return { "All STATUS changes\nare eliminated!" }
+    return { Strings("All STATUS changes\nare eliminated!") }
   end,
 
   SUBSTITUTE_EFFECT = function(battle, user)
-    if user.substituteHP then return { ("%s\nhas a SUBSTITUTE!"):format(displayName(user)) } end
+    if user.substituteHP then return { Strings("%s\nhas a SUBSTITUTE!", displayName(user)) } end
     local cost = math.floor(user.mon.stats.hp / 4)
     -- substitute.asm only fails on subtraction underflow (current HP
     -- strictly below maxHP/4); at equality the substitute is built and
     -- the user is left standing on exactly 0 HP (it faints only when
     -- the engine next checks HP, not here)
     if user.mon.hp < cost then
-      return { "Too weak to make\na SUBSTITUTE!" }
+      return { Strings("Too weak to make\na SUBSTITUTE!") }
     end
     user.mon.hp = user.mon.hp - cost
     user.substituteHP = cost + 1
     -- _SubstituteText
-    return { "It created a\nSUBSTITUTE!" }
+    return { Strings("It created a\nSUBSTITUTE!") }
   end,
 
   CONVERSION_EFFECT = function(battle, user, target)
     -- conversion.asm fails against a mid-Fly/Dig target (INVULNERABLE)
     if target.invulnerable then
-      return { "But, it failed!" }
+      return { Strings("But, it failed!") }
     end
     user.curTypes = { target.curTypes[1], target.curTypes[2] }
     -- _ConvertedTypeText
-    return { ("Converted type to\n%s's!"):format(displayName(target)) }
+    return { Strings("Converted type to\n%s's!", displayName(target)) }
   end,
 
   -- MIMIC_EFFECT lives in BattleState:resolveMimic: MimicEffect
@@ -311,27 +312,27 @@ MoveEffects.primary = {
       table.insert(user.curMoves, { id = mv.id, pp = 5, mimic = true })
     end
     -- _TransformedText: the copied name prints bare (wNameBuffer)
-    return { ("%s\ntransformed into\n%s!"):format(displayName(user), target.name) }
+    return { Strings("%s\ntransformed into\n%s!", displayName(user), target.name) }
   end,
 
   DISABLE_EFFECT = function(battle, user, target)
-    if target.disabledSlot then return { "But, it failed!" } end
+    if target.disabledSlot then return { Strings("But, it failed!") } end
     local usable = {}
     for i, mv in ipairs(target.curMoves) do
       if mv.pp > 0 then table.insert(usable, i) end
     end
-    if #usable == 0 then return { "But, it failed!" } end
+    if #usable == 0 then return { Strings("But, it failed!") } end
     local slot = usable[battle.rng(1, #usable)]
     target.disabledSlot = slot
     target.disabledTurns = battle.rng(1, 8)
     local id = target.curMoves[slot].id
     -- _MoveWasDisabledText: "X's / MOVE was / disabled!"
-    return { ("%s's\n%s was\ndisabled!"):format(displayName(target),
+    return { Strings("%s's\n%s was\ndisabled!", displayName(target),
                                                 battle.data.moves[id].name) }
   end,
 
   SPLASH_EFFECT = function()
-    return { "No effect!" }
+    return { Strings("No effect!") }
   end,
 }
 
@@ -428,7 +429,9 @@ local function drainHalf(text)
     local mon = ctx.user.mon
     mon.hp = math.min(mon.stats.hp, mon.hp + heal)
     ctx.drain()
-    ctx.say(text:format(displayName(ctx.target)))
+    -- `text` arrives as a source string (Strings.source at the call
+    -- site keeps it in the catalog); look it up here, at use time
+    ctx.say(Strings(text, displayName(ctx.target)))
   end
 end
 
@@ -436,7 +439,7 @@ end
 -- flags the miss before the special-damage override)
 local function immuneMsg(ctx)
   if TypeChart.effectiveness(ctx.move.type, ctx.target.curTypes) == 0 then
-    return ("It doesn't affect\n%s!"):format(displayName(ctx.target))
+    return Strings("It doesn't affect\n%s!", displayName(ctx.target))
   end
   return nil
 end
@@ -498,12 +501,12 @@ MoveEffects.full = {
       -- removed): overkill and substitute hits recoil at full strength
       local recoil = math.max(1, math.floor(ctx.rawDamage
                                             / (ctx.moveInst.struggle and 2 or 4)))
-      ctx.say(("%s's\nhit with recoil!"):format(displayName(ctx.user)))
+      ctx.say(Strings("%s's\nhit with recoil!", displayName(ctx.user)))
       ctx.battle:applyDamage(ctx.user, recoil)
     end,
   },
   DRAIN_HP_EFFECT = {
-    afterDamage = drainHalf("Sucked health from\n%s!"),
+    afterDamage = drainHalf(Strings.source("Sucked health from\n%s!")),
   },
   DREAM_EATER_EFFECT = {
     -- only works on sleeping targets (checked before damage)
@@ -511,7 +514,7 @@ MoveEffects.full = {
       if ctx.target.mon.status ~= "SLP" then return false, "But, it failed!" end
       return true
     end,
-    afterDamage = drainHalf("%s's\ndream was eaten!"),
+    afterDamage = drainHalf(Strings.source("%s's\ndream was eaten!")),
   },
 
   -- charge moves: first turn just charges; Fly AND Dig go
@@ -557,7 +560,7 @@ MoveEffects.full = {
           user.thrashTurns, user.thrashMove, user.thrashAnnounced = nil, nil, nil
           if not user.confusedTurns then
             user.confusedTurns = ctx.rng(2, 5)
-            ctx.say(("%s\nbecame confused!"):format(displayName(user)))
+            ctx.say(Strings("%s\nbecame confused!", displayName(user)))
           end
         end
       end
@@ -566,7 +569,7 @@ MoveEffects.full = {
   JUMP_KICK_EFFECT = {
     onMiss = function(ctx, reason)
       if reason ~= "accuracy" then return end
-      ctx.say(("%s\nkept going and\ncrashed!"):format(displayName(ctx.user)))
+      ctx.say(Strings("%s\nkept going and\ncrashed!", displayName(ctx.user)))
       ctx.damage(ctx.user, 1)
     end,
   },
@@ -595,7 +598,7 @@ MoveEffects.full = {
     afterDamage = function(ctx)
       local battle = ctx.battle
       battle.payDay = (battle.payDay or 0) + 2 * ctx.user.mon.level
-      ctx.say("Coins scattered\neverywhere!")
+      ctx.say(Strings("Coins scattered\neverywhere!"))
     end,
   },
   SWIFT_EFFECT = { neverMiss = true },
@@ -610,7 +613,7 @@ MoveEffects.full = {
       local user = ctx.user
       user.bideTurns = ctx.rng(2, 3)
       user.bideDamage = 0
-      ctx.say(("%s\nis storing energy!"):format(displayName(user)))
+      ctx.say(Strings("%s\nis storing energy!", displayName(user)))
     end,
   },
   SWITCH_AND_TELEPORT_EFFECT = {
@@ -631,27 +634,27 @@ MoveEffects.full = {
         end
         if ok then
           if move.id == "ROAR" then
-            ctx.say(("%s\nran away scared!"):format(displayName(target)))
+            ctx.say(Strings("%s\nran away scared!", displayName(target)))
           elseif move.id == "WHIRLWIND" then
-            ctx.say(("%s\nwas blown away!"):format(displayName(target)))
+            ctx.say(Strings("%s\nwas blown away!", displayName(target)))
           else
-            ctx.say(("%s\nran from battle!"):format(displayName(user)))
+            ctx.say(Strings("%s\nran from battle!", displayName(user)))
           end
           battle.result = "run"
           battle.afterQueue = "finish"
         elseif move.id == "TELEPORT" then
           battle:cancelMoveAnim()
-          ctx.say("But, it failed!")
+          ctx.say(Strings("But, it failed!"))
         else
           battle:cancelMoveAnim()
-          ctx.say(("It didn't affect\n%s!"):format(displayName(target)))
+          ctx.say(Strings("It didn't affect\n%s!", displayName(target)))
         end
       elseif move.id == "TELEPORT" then
         battle:cancelMoveAnim()
-        ctx.say("But, it failed!")
+        ctx.say(Strings("But, it failed!"))
       else
         battle:cancelMoveAnim()
-        ctx.say(("%s\nis unaffected!"):format(displayName(target)))
+        ctx.say(Strings("%s\nis unaffected!", displayName(target)))
       end
     end,
   },
@@ -669,7 +672,7 @@ MoveEffects.full = {
     callsMove = function(ctx)
       local last = ctx.target.lastMove
       if not last then
-        ctx.say("The MIRROR MOVE\nfailed!")
+        ctx.say(Strings("The MIRROR MOVE\nfailed!"))
         return nil
       end
       return last

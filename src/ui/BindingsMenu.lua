@@ -7,6 +7,7 @@
 local Font = require("src.render.Font")
 local ListMenu = require("src.ui.ListMenu")
 local Input = require("src.core.Input")
+local Strings = require("src.core.Strings")
 
 local BindingsMenu = setmetatable({}, { __index = ListMenu })
 BindingsMenu.__index = BindingsMenu
@@ -55,7 +56,9 @@ function BindingsMenu.new(game)
                   and game.save.options.bindings
   local items = {}
   for i, def in ipairs(BUTTONS) do
-    items[i] = { label = def.label,
+    -- translated here, not in ROWS: that table is built at require
+    -- time, before Strings.load has a catalog to look in
+    items[i] = { label = Strings(def.label),
                  right = boundRight(overlay, def), button = def }
   end
   local self = setmetatable(ListMenu.new(game, "CONTROLS", items, {}),
@@ -111,7 +114,7 @@ function BindingsMenu:draw()
   if self.capture then
     Font.drawBox(1, 6, 18, 4)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("PRESS A BUTTON", 24, 60)
+    Font.draw(Strings("PRESS A BUTTON"), 24, 60)
     love.graphics.setColor(1, 1, 1, 1)
   end
 end

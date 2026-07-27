@@ -10,6 +10,7 @@ local Menu = require("src.ui.Menu")
 local Renderer = require("src.render.Renderer")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
+local Strings = require("src.core.Strings")
 
 local StartMenu = {}
 
@@ -26,19 +27,19 @@ function StartMenu.new(game)
 
   -- POKéDEX: only after Oak hands it over
   if flags.EVENT_GOT_POKEDEX then
-    table.insert(items, { label = "POKéDEX", onSelect = function()
+    table.insert(items, { label = Strings("POKéDEX"), onSelect = function()
       Screens.push(game, "PokedexMenu", { onCancel = reopen })
     end })
   end
 
   -- POKéMON is always listed (draw_start_menu.asm prints it even with
   -- an empty party; selecting it then just no-ops)
-  table.insert(items, { label = "POKéMON", onSelect = function()
+  table.insert(items, { label = Strings("POKéMON"), onSelect = function()
     if #game.save.party == 0 then return end
     Screens.push(game, "PartyMenu", { onCancel = reopen })
   end })
 
-  table.insert(items, { label = "ITEM", onSelect = function()
+  table.insert(items, { label = Strings("ITEM"), onSelect = function()
     Screens.push(game, "BagMenu", { onCancel = reopen })
   end })
 
@@ -50,7 +51,7 @@ function StartMenu.new(game)
 
   -- SAVE shows the player/badges/dex/time panel then asks to confirm
   -- (PrintSaveScreenText)
-  table.insert(items, { label = "SAVE", onSelect = function()
+  table.insert(items, { label = Strings("SAVE"), onSelect = function()
     local TextBox = require("src.render.TextBox")
     local ChoiceBox = require("src.ui.ChoiceBox")
     local badges = require("src.inventory.Badges").count(game.data, game.save)
@@ -59,32 +60,32 @@ function StartMenu.new(game)
       owned = owned + 1
     end
     local t = math.floor(game.save.playTime or 0)
-    local panel = ("PLAYER %s\nBADGES    %d\nPOKéDEX %3d\nTIME %6d:%02d")
-      :format(game.save.player.name or "RED", badges, owned,
-              math.floor(t / 3600), math.floor(t / 60) % 60)
+    local panel = Strings("PLAYER %s\nBADGES    %d\nPOKéDEX %3d\nTIME %6d:%02d",
+                          game.save.player.name or "RED", badges, owned,
+                          math.floor(t / 3600), math.floor(t / 60) % 60)
     game.stack:push(TextBox.new(game,
-      panel .. "\fWould you like to\nSAVE the game?", function()
+      panel .. Strings("\fWould you like to\nSAVE the game?"), function()
       game.stack:push(ChoiceBox.new(game, function(yes)
         if not yes then return end
         -- "Now saving..." beat before the write (save.asm
         -- NowSavingString), then GameSavedText + SFX_SAVE
-        game.stack:push(TextBox.new(game, "Now saving...", function()
+        game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
           game:writeSave()
           require("src.core.Sound").play(game.data, "Save")
           game.stack:push(TextBox.new(game,
-            (game.save.player.name or "RED") .. " saved\nthe game!"))
+            Strings("%s saved\nthe game!", game.save.player.name or "RED")))
         end))
       end))
     end))
   end })
 
-  table.insert(items, { label = "OPTION", onSelect = function()
+  table.insert(items, { label = Strings("OPTION"), onSelect = function()
     Screens.push(game, "OptionsMenu", { onCancel = reopen })
   end })
 
   -- LINK needs a party
   if #game.save.party > 0 then
-    table.insert(items, { label = "LINK", onSelect = function()
+    table.insert(items, { label = Strings("LINK"), onSelect = function()
       local LinkState = require("src.link.LinkState")
       game.stack:push(LinkState.new(game))
     end })
@@ -94,7 +95,7 @@ function StartMenu.new(game)
   -- one discovered mod so a vanilla install's menu is unchanged
   local status = game.modStatus
   if status and #(status.available or {}) > 0 then
-    table.insert(items, { label = "MODS", onSelect = function()
+    table.insert(items, { label = Strings("MODS"), onSelect = function()
       Screens.push(game, "ManagerState")
     end })
   end
@@ -102,10 +103,10 @@ function StartMenu.new(game)
   -- the original's EXIT just closed the menu (CloseStartMenu); with a
   -- window close button covering that, QUIT instead power-cycles back
   -- to the title after a confirm (defaultNo guards accidental quits)
-  table.insert(items, { label = "QUIT", onSelect = function()
+  table.insert(items, { label = Strings("QUIT"), onSelect = function()
     local TextBox = require("src.render.TextBox")
     local ChoiceBox = require("src.ui.ChoiceBox")
-    game.stack:push(TextBox.new(game, "RETURN TO MAIN\nMENU?", function()
+    game.stack:push(TextBox.new(game, Strings("RETURN TO MAIN\nMENU?"), function()
       game.stack:push(ChoiceBox.new(game, function(yes)
         if yes then game:returnToTitle() end
       end, { defaultNo = true }))
@@ -155,7 +156,7 @@ function StartMenu.new(game)
       love.graphics.setColor(0, 0, 0, 1)
       Font.draw(("%3d"):format(math.floor(safari.steps or 0)), 8, 8)
       Font.draw("/500", 32, 8)
-      Font.draw("BALL", 8, 24)
+      Font.draw(Strings("BALL"), 8, 24)
       Font.draw(("%2d"):format(math.floor(safari.balls or 0)), 48, 24)
       love.graphics.setColor(1, 1, 1, 1)
     end

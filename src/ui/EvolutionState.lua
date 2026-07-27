@@ -11,6 +11,7 @@
 
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
+local Strings = require("src.core.Strings")
 
 local EvolutionState = {}
 EvolutionState.__index = EvolutionState
@@ -74,7 +75,7 @@ function EvolutionState:update(dt)
     local TextBox = require("src.render.TextBox")
     -- mirrors data/generated/text.lua _StoppedEvolvingText
     game.stack:push(TextBox.new(game,
-      ("Huh? %s\nstopped evolving!"):format(self.oldName),
+      Strings("Huh? %s\nstopped evolving!", self.oldName),
       function()
         Music.restoreMap(game.data)
         game.stack:pop() -- the evolution screen itself
@@ -90,8 +91,8 @@ function EvolutionState:update(dt)
     local TextBox = require("src.render.TextBox")
     local newName = game.data.pokemon[self.newSpecies].name
     game.stack:push(TextBox.new(game,
-      ("Congratulations!\nYour %s\nevolved into\n%s!")
-        :format(self.oldName, newName),
+      Strings("Congratulations!\nYour %s\nevolved into\n%s!",
+              self.oldName, newName),
       function()
         Music.restoreMap(game.data)
         game.stack:pop() -- the evolution screen itself
@@ -126,9 +127,9 @@ function EvolutionState:draw()
 
   love.graphics.setColor(0, 0, 0, 1)
   if not self.done then
-    Font.draw("What?", 8, 104)
+    Font.draw(Strings("What?"), 8, 104)
     Font.draw(self.oldName .. " is", 8, 114)
-    Font.draw("evolving!", 8, 124)
+    Font.draw(Strings("evolving!"), 8, 124)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

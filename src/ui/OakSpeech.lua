@@ -13,6 +13,7 @@ local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
 local TextBox = require("src.render.TextBox")
 local Font = require("src.render.Font")
+local Strings = require("src.core.Strings")
 
 local OakSpeech = {}
 OakSpeech.__index = OakSpeech
@@ -140,7 +141,7 @@ function OakSpeech.defaultSteps(speech)
       id = "name_player",
       kind = "name",
       who = "player",
-      title = "YOUR NAME?",
+      title = Strings("YOUR NAME?"),
       presetsWho = "player",
       presetsFallback = { "RED", "ASH", "JACK" },
     },
@@ -154,7 +155,7 @@ function OakSpeech.defaultSteps(speech)
       id = "name_rival",
       kind = "name",
       who = "rival",
-      title = "HIS NAME?",
+      title = Strings("HIS NAME?"),
       presetsWho = "rival",
       presetsFallback = { "BLUE", "GARY", "JOHN" },
     },
@@ -337,7 +338,7 @@ function OakSpeech:runStep(step)
     self.picFlip = true
     self:revealPic("wipe", function()
       Sound.playCry(self.game.data, self.demoSpecies)
-      self:say("_OakSpeechText2A", function() self:advance() end)
+      self:say(Strings("_OakSpeechText2A"), function() self:advance() end)
     end)
   elseif kind == "name" then
     local who = step.who or "player"
@@ -345,7 +346,7 @@ function OakSpeech:runStep(step)
       or namePresets(self.game, step.presetsWho or who,
                      step.presetsFallback or { "RED" })
     require("src.ui.Screens").push(self.game, "NamingScreen", {
-      title = step.title or (who == "rival" and "HIS NAME?" or "YOUR NAME?"),
+      title = step.title or (who == "rival" and "HIS NAME?" or Strings("YOUR NAME?")),
       presets = presets,
       maxLen = step.maxLen or self.nameLen,
       onDone = function(name)

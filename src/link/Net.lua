@@ -26,6 +26,7 @@
 
 local Json = require("src.link.Json")
 local Logger = require("src.core.Logger")
+local Strings = require("src.core.Strings")
 
 local hasEnet, enet = pcall(require, "enet")
 if not hasEnet then enet = nil end
@@ -173,7 +174,7 @@ function Net:connectTCP(addr)
   tcp:settimeout(5)
   local ok, err = tcp:connect(host, port)
   if not ok then
-    self.error = ("can't reach relay %s:%d\n(%s)"):format(host, port, tostring(err))
+    self.error = Strings("can't reach relay %s:%d\n(%s)", host, port, tostring(err))
     return false
   end
   tcp:settimeout(0)
@@ -236,11 +237,14 @@ local function handleGenericRelayControl(self, msg)
     self.paired = true
     return true
   elseif msg.type == "join_error" then
-    self.error = ({
-      not_found = "That code wasn't\nfound.",
-      full = "That game already\nhas two players.",
-      expired = "That code has\nexpired.",
-    })[msg.reason] or ("Couldn't join:\n%s"):format(tostring(msg.reason))
+    self.error = Strings(({
+      not_found = Strings.source("That code wasn't\nfound."),
+      full = Strings.source("That game already\nhas two players."),
+      expired = Strings.source("That code has\nexpired."),
+    })[msg.reason] or "")
+    if self.error == "" then
+      self.error = Strings("Couldn't join:\n%s", tostring(msg.reason))
+    end
     self.closed = true
     return true
   elseif msg.type == "peer_gone" then
@@ -328,7 +332,7 @@ function Net:update()
       -- an unreachable join target surfaces as a service error
       -- (ICMP unreachable on the connected UDP socket)
       if self.mode == "joining" and not self.paired then
-        self.error = ("no answer from\n%s"):format(self.target or "the host")
+        self.error = Strings("no answer from\n%s", self.target or "the host")
       else
         self.error = tostring(event)
       end
@@ -358,14 +362,14 @@ function Net:update()
         self.closed = true
         if not self.paired then
           self.error = self.error or
-            ("no answer from\n%s"):format(self.target or "the host")
+            Strings("no answer from\n%s", self.target or "the host")
         end
       end
     end
   end
   if self.mode == "joining" and not self.paired
      and self.joinDeadline and now() > self.joinDeadline then
-    self.error = ("no answer from\n%s"):format(self.target or "the host")
+    self.error = Strings("no answer from\n%s", self.target or "the host")
     self.closed = true
     pcall(function() self.peer:disconnect_now() end)
   end

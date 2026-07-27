@@ -4,6 +4,7 @@
 local Font = require("src.render.Font")
 local Sound = require("src.core.Sound")
 local TextBox = require("src.render.TextBox")
+local Strings = require("src.core.Strings")
 
 local TradeAnim = {}
 TradeAnim.__index = TradeAnim
@@ -343,7 +344,7 @@ function TradeAnim:drawMonInfo(mon, ot, otId, boxTy)
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(no, 56, y0)
   Font.draw(speciesName(self.game, mon), 40, y0 + 16)
-  Font.draw("OT/" .. (ot or "????"), 40, y0 + 32)
+  Font.draw(Strings("OT/%s", ot or "????"), 40, y0 + 32)
   Font.draw(("IDNo.%05d"):format(otId or 0), 40, y0 + 48)
   love.graphics.setColor(1, 1, 1, 1)
 end

@@ -6,6 +6,7 @@
 
 local Font = require("src.render.Font")
 local SaveData = require("src.core.SaveData")
+local Strings = require("src.core.Strings")
 
 local QuarantineReport = {}
 QuarantineReport.__index = QuarantineReport
@@ -38,12 +39,12 @@ local function buildLines(report, meta)
   end
   local rows = {}
   for _, mon in ipairs(report.lostMons or {}) do
-    rows[#rows + 1] = ("%s (%s)"):format(mon.species or "?", mon.from or "?")
+    rows[#rows + 1] = Strings("%s (%s)", mon.species or "?", mon.from or "?")
   end
   section(lines, "Moved to LOST box:", rows)
   rows = {}
   for _, item in ipairs(report.lostItems or {}) do
-    rows[#rows + 1] = ("%s x%d"):format(item.id or "?", item.count or 1)
+    rows[#rows + 1] = Strings("%s x%d", item.id or "?", item.count or 1)
   end
   section(lines, "Items removed:", rows)
   rows = {}
@@ -51,16 +52,16 @@ local function buildLines(report, meta)
     if map.to then
       rows[#rows + 1] = ("%s>%s"):format(map.id or "?", map.to)
     else
-      rows[#rows + 1] = ("%s (%s)"):format(map.id or "?", map.field or "?")
+      rows[#rows + 1] = Strings("%s (%s)", map.id or "?", map.field or "?")
     end
   end
   section(lines, "Location reset:", rows)
   rows = {}
   for _, mon in ipairs(report.restoredMons or {}) do
-    rows[#rows + 1] = ("%s to box %d"):format(mon.species or "?", mon.box or 0)
+    rows[#rows + 1] = Strings("%s to box %d", mon.species or "?", mon.box or 0)
   end
   for _, item in ipairs(report.restoredItems or {}) do
-    rows[#rows + 1] = ("%s x%d"):format(item.id or "?", item.count or 1)
+    rows[#rows + 1] = Strings("%s x%d", item.id or "?", item.count or 1)
   end
   section(lines, "Restored:", rows)
   local notice = SaveData.modsDiffNotice(report.modsDiff, meta)
@@ -113,7 +114,7 @@ function QuarantineReport:draw()
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   Font.drawBox(0, 0, 20, 18)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("LOAD REPORT", 8, 8)
+  Font.draw(Strings("LOAD REPORT"), 8, 8)
   for row = 1, VISIBLE do
     local line = self.lines[self.offset + row]
     if line then Font.draw(line, 8, 12 + row * 8) end
@@ -121,7 +122,7 @@ function QuarantineReport:draw()
   if self.offset < self:maxOffset() then
     Font.drawCode(require("src.ui.Theme").moreArrow, 144, 124)
   end
-  Font.draw("A:CONTINUE", 8, 130)
+  Font.draw(Strings("A:CONTINUE"), 8, 130)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

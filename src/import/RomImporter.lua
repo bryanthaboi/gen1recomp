@@ -1,4 +1,5 @@
 local GameVersion = require("src.core.GameVersion")
+local Strings = require("src.core.Strings")
 
 local RomImporter = {}
 RomImporter.__index = RomImporter
@@ -356,7 +357,7 @@ end
 -- Returns the chosen absolute path or nil.  Android uses love.system.pickFile
 -- ("mod") instead -- see RomImporter:chooseMod.
 local function chooseZip()
-  local prompt = "Choose a mod .zip"
+  local prompt = Strings("Choose a mod .zip")
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
@@ -387,7 +388,7 @@ end
 -- dialogs).  Returns the chosen absolute path or nil.  Android uses
 -- love.system.pickFile("sav") instead -- see RomImporter:chooseSaveImport.
 local function chooseSav()
-  local prompt = "Choose a .sav save file"
+  local prompt = Strings("Choose a .sav save file")
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
@@ -1426,7 +1427,7 @@ function RomImporter:draw()
       self.updateButton = { x = rect.x, y = rect.y, width = rect.width,
         height = rect.height, action = "download" }
       message(upLatest and ("Update v" .. upLatest .. " available")
-        or "An update is available", rect.width)
+        or Strings("An update is available"), rect.width)
     elseif upStatus == "needs_full" then
       local rect = actionButton("Open releases")
       self.updateButton = { x = rect.x, y = rect.y, width = rect.width,
@@ -1718,7 +1719,7 @@ function RomImporter:_playButton(x, y, w, h, gameName, ready, locked)
     col(PAL.disabledInk, 0.3)
     love.graphics.rectangle("line", x, y, w, h, r, r)
     col(PAL.disabledInk)
-    local label = locked and "Coming soon" or "Import a ROM to play"
+    local label = locked and "Coming soon" or Strings("Import a ROM to play")
     printfB(label, x, y + (h - self.playFont:getHeight()) / 2, w, "center")
     self.playButtonRect = nil
   end
@@ -1730,13 +1731,13 @@ function RomImporter:_drawTabBar(x, y, w, h, chip)
   local s, pulse = self._s, self.pulse
   local tabs = {
     { id = "red",    letter = "R", top = PAL.chipRedTop,  bot = PAL.chipRedBot,
-      under = PAL.red,    label = "RED",    ink = PAL.white },
+      under = PAL.red,    label = Strings("RED"),    ink = PAL.white },
     { id = "blue",   letter = "B", top = PAL.chipBlueTop, bot = PAL.chipBlueBot,
-      under = PAL.blue,   label = "BLUE",   ink = PAL.white },
+      under = PAL.blue,   label = Strings("BLUE"),   ink = PAL.white },
     { id = "yellow", letter = "Y", top = PAL.chipGoldTop, bot = PAL.chipGoldBot,
-      under = PAL.gold,   label = "YELLOW", ink = PAL.chipInkGold },
+      under = PAL.gold,   label = Strings("YELLOW"), ink = PAL.chipInkGold },
     { id = "mods",   mods = true,  top = PAL.chipModTop,  bot = PAL.chipModBot,
-      under = PAL.modDot, label = "MODS" },
+      under = PAL.modDot, label = Strings("MODS") },
   }
   local gap = 10 * s
   local r = 12 * s
@@ -1795,7 +1796,7 @@ function RomImporter:_drawTabBar(x, y, w, h, chip)
   local ready = 0
   for _, v in ipairs(GameVersion.ORDER) do if self.ready[v] then ready = ready + 1 end end
   love.graphics.setFont(self.readyFont)
-  local label = ("%d of 3 ready"):format(ready)
+  local label = Strings("%d of 3 ready", ready)
   local lw = self.readyFont:getWidth(label)
   if x + w - lw > cursorX + 8 * s then
     col(PAL.labelGray)
@@ -1851,7 +1852,7 @@ function RomImporter:_drawGamePanel(version, x, y, w, h)
 
   -- ROM card contents by state (rehomes the existing import flow)
   local dropHint = self.android and "Copy the .gb via USB."
-    or "Or drop the .gb file here."
+    or Strings("Or drop the .gb file here.")
   local accent = locked and PAL.gold or (version == "red" and PAL.red or PAL.blue)
   local romState, romDetail, romBtnLabel, romBtnEnabled, romProgress
   if locked then
@@ -1866,12 +1867,12 @@ function RomImporter:_drawGamePanel(version, x, y, w, h)
       romDetail = self.detail or ""
       romProgress = self.progress or 0
     elseif ready then
-      romState = self.romName[version] or "ROM imported"
+      romState = self.romName[version] or Strings("ROM imported")
       romDetail = "Verified."
       romBtnLabel, romBtnEnabled = "Re-import ROM", true
     elseif erroring then
       romState = "Import failed"
-      romDetail = self.detail or "That ROM could not be imported."
+      romDetail = self.detail or Strings("That ROM could not be imported.")
       romBtnLabel, romBtnEnabled = "Import ROM", true
     elseif notice then
       romState = "No ROM imported"
@@ -2000,7 +2001,7 @@ function RomImporter:_drawGamePanel(version, x, y, w, h)
   if sfNotice and sfNotice.dir then
     iy = iy + 4 * s
     love.graphics.setFont(self.hintFont)
-    local label = "Open folder"
+    local label = Strings("Open folder")
     local lw = self.hintFont:getWidth(label)
     local frect = { x = ix, y = iy, width = lw, height = self.hintFont:getHeight(),
       dir = sfNotice.dir }
@@ -2228,14 +2229,13 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
 
         love.graphics.setFont(self.slotNameFont)
         col(PAL.white)
-        local name = slot.name or "NEW GAME"
+        local name = slot.name or Strings("NEW GAME")
         printB(ellipsize(self.slotNameFont, name, rw - 24 * s - math.max(pillW, rightReserve)),
           rx + 12 * s, ry + rowPadV)
 
         local metaTxt
         if slot.exists and slot.meta then
-          metaTxt = ("%d badges - %s - %d caught"):format(
-            slot.meta.badges or 0, slot.meta.timeText or "0:00",
+          metaTxt = Strings("%d badges - %s - %d caught", slot.meta.badges or 0, slot.meta.timeText or "0:00",
             slot.meta.dexCount or 0)
         else
           metaTxt = "empty slot"
@@ -2339,7 +2339,7 @@ function RomImporter:_drawModsPanel(x, y, w, h)
   for _, m in ipairs(mods) do if m.enabled then enabledCount = enabledCount + 1 end end
   love.graphics.setFont(self.hintFont)
   col(PAL.warning)
-  love.graphics.print(("%d of %d enabled"):format(enabledCount, #mods),
+  love.graphics.print(Strings("%d of %d enabled", enabledCount, #mods),
     x + nameW + 14 * s, y + (headerH - self.hintFont:getHeight()) / 2)
 
   local btnLabel = "Import mod .zip"
@@ -2360,7 +2360,7 @@ function RomImporter:_drawModsPanel(x, y, w, h)
   else
     col(PAL.warning)
     love.graphics.printf(self.android and "Or copy a mod .zip via USB."
-      or "Or drop a mod .zip onto the window.", x, top, w, "left")
+      or Strings("Or drop a mod .zip onto the window."), x, top, w, "left")
   end
   top = top + self.hintFont:getHeight() + 12 * s
 
@@ -2376,7 +2376,7 @@ function RomImporter:_drawModsPanel(x, y, w, h)
     col(PAL.warning)
     local emptyHint = self.android
       and "No mods installed - tap Import mod .zip to add one."
-      or "No mods installed - drop a mod .zip here to add one."
+      or Strings("No mods installed - drop a mod .zip here to add one.")
     love.graphics.printf(emptyHint,
       x + 16 * s, top + boxH / 2 - self.hintFont:getHeight() / 2, w - 32 * s, "center")
     self.modRects = {}

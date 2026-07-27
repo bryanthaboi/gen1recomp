@@ -144,4 +144,12 @@ do
   eq(complaints(), mid, "the arity complaint is not repeated")
 end
 
+-- The catalog is module state, and the aggregator runs every suite in one
+-- Lua process: leaving it loaded translated the battle text underneath the
+-- suites that run after this one (parity_J asserted on "But, it failed!"
+-- and got the French).  Put it back before handing the process on.
+Strings.load({})
+check(not Strings.active(), "the catalog is unloaded for the suites after this one")
+eq(Strings("But, it failed!"), "But, it failed!", "English is restored")
+
 S.finish()

@@ -12,6 +12,7 @@ local ChoiceBox = require("src.ui.ChoiceBox")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
 local QuantityBox = require("src.ui.QuantityBox")
+local Strings = require("src.core.Strings")
 
 local ShopMenu = {}
 
@@ -33,7 +34,7 @@ local function buy(game, stock)
   end
   local greet = txt(game, "_PokemartBuyingGreetingText", "Take your time.")
   local notEnough = txt(game, "_PokemartNotEnoughMoneyText",
-                        "You don't have\nenough money.")
+                        Strings("You don't have\nenough money."))
   local list
   list = ListMenu.new(game, "BUY", items, {
     dialogue = true,
@@ -56,7 +57,7 @@ local function buy(game, stock)
           end
           local cost = qty * def.price
           -- _PokemartTellBuyPriceText + yes/no confirm
-          list.footer = ("%s?\nThat will be\n¥%d. OK?"):format(def.name, cost)
+          list.footer = Strings("%s?\nThat will be\n¥%d. OK?", def.name, cost)
           game.stack:push(ChoiceBox.new(game, function(yes)
             if not yes then
               list.footer = greet
@@ -68,13 +69,13 @@ local function buy(game, stock)
             end
             if not Bag.add(game.save, item.value, qty) then
               list.footer = txt(game, "_PokemartItemBagFullText",
-                                "You can't carry\nany more items.")
+                                Strings("You can't carry\nany more items."))
               return
             end
             require("src.core.Sound").play(game.data, "Purchase")
             game.save.money = game.save.money - cost
             list.footer = txt(game, "_PokemartBoughtItemText",
-                              "Here you are!\nThank you!")
+                              Strings("Here you are!\nThank you!"))
           end))
         end,
       }))
@@ -112,7 +113,7 @@ local function sell(game)
       -- ITEM_NONE "0" from Blue's House before that pickup was fixed (#11).
       if not def or def.keyItem or item.value:find("^HM_") then
         list.footer = txt(game, "_PokemartUnsellableItemText",
-                          "I can't put a\nprice on that.")
+                          Strings("I can't put a\nprice on that."))
         return
       end
       local unit = math.floor(def.price / 2)
@@ -125,7 +126,7 @@ local function sell(game)
             return
           end
           -- _PokemartTellSellPriceText + yes/no confirm
-          list.footer = ("I can pay you\n¥%d for that."):format(unit * qty)
+          list.footer = Strings("I can pay you\n¥%d for that.", unit * qty)
           game.stack:push(ChoiceBox.new(game, function(yes)
             if not yes then
               list.footer = greet
@@ -152,9 +153,9 @@ function ShopMenu.new(game, stock, onQuit)
   -- keepOpen: the mart menu stays underneath its list so closing the
   -- list lands back here; only QUIT (or B) leaves and fires onQuit
   local menu = Menu.new(game, {
-    { label = "BUY", keepOpen = true, onSelect = function() buy(game, stock) end },
-    { label = "SELL", keepOpen = true, onSelect = function() sell(game) end },
-    { label = "QUIT", onSelect = onQuit },
+    { label = Strings("BUY"), keepOpen = true, onSelect = function() buy(game, stock) end },
+    { label = Strings("SELL"), keepOpen = true, onSelect = function() sell(game) end },
+    { label = Strings("QUIT"), onSelect = onQuit },
   }, { tx = 0, ty = 0, tw = 8, th = 8 })
   menu.onCancel = onQuit
   return menu

@@ -45,6 +45,7 @@
 
 local Font = require("src.render.Font")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local SlotMachine = {}
 SlotMachine.__index = SlotMachine
@@ -356,7 +357,7 @@ function SlotMachine:resolveWin(win)
   -- SlotReward300Func prints "Yeah!" (text_pause) before the flash; the port
   -- shows it in the box while the screen flashes.  LinedUpText follows.
   self.yeah = (sym == "7")
-  self.message = ("%s lined up!\nScored %d coins!"):format(sym, pay)
+  self.message = Strings("%s lined up!\nScored %d coins!", sym, pay)
   -- .flashScreenLoop: flip rBGP, wait 5 frames, b times.  The coins are not
   -- credited until the player dismisses the "lined up" text (see startPayout).
   self.stage = "flash"
@@ -394,7 +395,7 @@ end
 -- delay then CloseTextDisplay), otherwise ask "One more go?".
 function SlotMachine:afterSpin()
   if coins(self) == 0 then
-    self.message = "Darn!\nRan out of coins!"
+    self.message = Strings("Darn!\nRan out of coins!")
     self.stage = "message"
     self.afterMessage = nil
     self.exitTimer = 60
@@ -515,7 +516,7 @@ function SlotMachine:update(dt)
     self.bet = 3 - self.betIndex
     if input:wasPressed("a") then
       if coins(self) < self.bet then
-        self.message = "Not enough\ncoins!"
+        self.message = Strings("Not enough\ncoins!")
         self.afterMessage = "bet"
         self.stage = "message"
         return
@@ -671,8 +672,8 @@ function SlotMachine:drawBottom()
     local by = self.stage == "intro" and 6 or 11
     Font.drawBox(13, by, 6, 5)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("YES", 15 * 8, (by + 1) * 8)
-    Font.draw("NO", 15 * 8, (by + 2) * 8)
+    Font.draw(Strings("YES"), 15 * 8, (by + 1) * 8)
+    Font.draw(Strings("NO"), 15 * 8, (by + 2) * 8)
     Font.drawCode(0xED, 14 * 8, (by + 1 + (self.yesno == 1 and 0 or 1)) * 8)
   end
   love.graphics.setColor(1, 1, 1, 1)
@@ -723,8 +724,8 @@ function SlotMachine:drawPlain(art)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw("SLOT MACHINE", 32, 4)
-  Font.draw(("COINS %4d"):format(coins(self)), 8, 16)
+  Font.draw(Strings("SLOT MACHINE"), 32, 4)
+  Font.draw(Strings("COINS %4d", coins(self)), 8, 16)
   if art then self:drawReels(art) end
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(">", 12, 56)

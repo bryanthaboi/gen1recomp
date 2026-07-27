@@ -11,6 +11,7 @@ local Protocol = require("src.link.Protocol")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local TextBox = require("src.render.TextBox")
+local Strings = require("src.core.Strings")
 
 local LinkState = {}
 LinkState.__index = LinkState
@@ -90,7 +91,7 @@ function LinkState.newJoinOnline(game, code)
     self.stage = "onlineJoining"
   else
     self.stage = "menu" -- exitWith below needs a real stage to unwind from
-    self:exitWith("Link error:\n" .. (self.net.error or "?"))
+    self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
   end
   return self
 end
@@ -174,7 +175,7 @@ function LinkState:update(dt)
   if self.net then
     self.net:update()
     if self.net.error and not PRE_CONNECT_STAGES[self.stage] then
-      self:exitWith("Link error:\n" .. self.net.error:sub(1, 60))
+      self:exitWith(Strings("Link error:\n%s", self.net.error:sub(1, 60)))
       return
     end
     -- the peer vanished without a bye (only once the inbox is drained,
@@ -183,7 +184,7 @@ function LinkState:update(dt)
        and not PRE_CONNECT_STAGES[self.stage] and self.stage ~= "addrEntry"
        and self.stage ~= "codeEntry" and self.stage ~= "notice"
        and self.stage ~= "battleRunning" then
-      self:exitWith("The link was\nbroken.")
+      self:exitWith(Strings("The link was\nbroken."))
       return
     end
   end
@@ -201,7 +202,7 @@ function LinkState:update(dt)
         self.index = 1
       elseif self.index == 2 or self.index == 3 then
         if not Handshake.onlineAllowed(self.game) then
-          self:exitWith("Online play needs\nno mods enabled.\fDisable them in\nSTART > MODS.")
+          self:exitWith(Strings("Online play needs\nno mods enabled.\fDisable them in\nSTART > MODS."))
           return
         end
         if self.index == 2 then
@@ -227,7 +228,7 @@ function LinkState:update(dt)
         if self.net:host() then
           self.stage = "hosting"
         else
-          self:exitWith("Link error:\n" .. (self.net.error or "?"))
+          self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
         end
       else
         self.stage = "addrEntry"
@@ -246,7 +247,7 @@ function LinkState:update(dt)
         if self.net:hostOnline() then
           self.stage = "onlineHosting"
         else
-          self:exitWith("Link error:\n" .. (self.net.error or "?"))
+          self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
         end
       else
         self.stage = "codeEntry"
@@ -284,7 +285,7 @@ function LinkState:update(dt)
       if self.net:joinOnline(nil, code) then
         self.stage = "onlineJoining"
       else
-        self:exitWith("Link error:\n" .. (self.net.error or "?"))
+        self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
       end
     end
 
@@ -323,7 +324,7 @@ function LinkState:update(dt)
       if self.net:join(table.concat(octets, ".")) then
         self.stage = "joining"
       else
-        self:exitWith("Link error:\n" .. (self.net.error or "?"))
+        self:exitWith(Strings("Link error:\n%s", self.net.error or "?"))
       end
     end
 
@@ -433,7 +434,7 @@ function LinkState:update(dt)
         end
         if not battle then
           self.net:send({ type = "bye" })
-          self:exitWith(why or "Link battle\ncan't start.", "error")
+          self:exitWith(why or Strings("Link battle\ncan't start."), "error")
           return
         end
         self.game.stack:push(battle)
@@ -491,8 +492,8 @@ function LinkState:updateTrade(input)
   local t = self.trade
 
   if t.stage == "cancelled" then
-    self:exitWith(t.error and ("The trade stopped:\n%s."):format(t.error)
-                  or "The trade was\ncancelled.")
+    self:exitWith(t.error and Strings("The trade stopped:\n%s.", t.error)
+                  or Strings("The trade was\ncancelled."))
     return
   end
   if t.stage == "done" then
@@ -520,7 +521,7 @@ function LinkState:updateTrade(input)
       enemyOtId = received.otId,
       onDone = function()
         game.stack:push(TextBox.new(game,
-          ("Trade completed!\f%s received\n%s!"):format(game.save.player.name, name),
+          Strings("Trade completed!\f%s received\n%s!", game.save.player.name, name),
           function()
             if evoTo then
               -- via="TRADE": a trade evolution cannot be B-cancelled
@@ -547,7 +548,7 @@ function LinkState:updateTrade(input)
     -- the trade) -- B is dead after that, matching the A branch's own
     -- self.confirmed == nil guard
     self.net:send({ type = "bye" })
-    self:exitWith("The trade was\ncancelled.")
+    self:exitWith(Strings("The trade was\ncancelled."))
   elseif t.stage == "picking" and input:wasPressed("a") then
     if t:canPick(self.index) then
       self.net:send(t:pick(self.index))
@@ -574,30 +575,30 @@ end
 function LinkState:draw()
   if self.stage == "menu" then
     drawTitle("BOIS CLUB LIVE")
-    Font.draw("LINK CABLE (LAN)", 32, 44)
-    Font.draw("ONLINE MATCH", 32, 60)
-    Font.draw("TOURNAMENT", 32, 76)
+    Font.draw(Strings("LINK CABLE (LAN)"), 32, 44)
+    Font.draw(Strings("ONLINE MATCH"), 32, 60)
+    Font.draw(Strings("TOURNAMENT"), 32, 76)
     Font.drawCode(CURSOR, 24, 44 + (self.index - 1) * 16)
 
   elseif self.stage == "lanMenu" then
     drawTitle("LINK CABLE (LAN)")
-    Font.draw("HOST A GAME", 32, 48)
-    Font.draw("JOIN A GAME", 32, 68)
+    Font.draw(Strings("HOST A GAME"), 32, 48)
+    Font.draw(Strings("JOIN A GAME"), 32, 68)
     Font.drawCode(CURSOR, 24, self.index == 1 and 48 or 68)
-    Font.draw("UDP port " .. Net.defaultPort(), 8, 128)
+    Font.draw(Strings("UDP port %s", Net.defaultPort()), 8, 128)
 
   elseif self.stage == "onlineMenu" then
     drawTitle("ONLINE MATCH")
-    Font.draw("HOST ONLINE", 32, 48)
-    Font.draw("JOIN ONLINE", 32, 68)
+    Font.draw(Strings("HOST ONLINE"), 32, 48)
+    Font.draw(Strings("JOIN ONLINE"), 32, 68)
     Font.drawCode(CURSOR, 24, self.index == 1 and 48 or 68)
 
   elseif self.stage == "onlineHosting" then
     drawTitle("HOSTING ONLINE")
-    Font.draw("Tell your friend", 16, 40)
-    Font.draw("the code:", 16, 52)
+    Font.draw(Strings("Tell your friend"), 16, 40)
+    Font.draw(Strings("the code:"), 16, 52)
     Font.draw(self.net.code or "??????", 32, 68)
-    Font.draw("Waiting for join...", 8, 96)
+    Font.draw(Strings("Waiting for join..."), 8, 96)
 
   elseif self.stage == "codeEntry" then
     drawTitle("ENTER CODE")
@@ -609,18 +610,18 @@ function LinkState:draw()
         Font.drawCode(0xEE, x, 76) -- ▼ under the active slot
       end
     end
-    Font.draw("A: connect  B: back", 8, 128)
+    Font.draw(Strings("A: connect  B: back"), 8, 128)
 
   elseif self.stage == "onlineJoining" then
     drawTitle("CONNECTING...")
-    Font.draw("Calling...", 8, 56)
+    Font.draw(Strings("Calling..."), 8, 56)
     Font.draw(self.net.target or "", 8, 72)
 
   elseif self.stage == "hosting" then
     drawTitle("HOSTING")
-    Font.draw("Friend joins at:", 16, 48)
+    Font.draw(Strings("Friend joins at:"), 16, 48)
     Font.draw(self.net.address or "?", 16, 64)
-    Font.draw("Waiting for join...", 8, 96)
+    Font.draw(Strings("Waiting for join..."), 8, 96)
 
   elseif self.stage == "addrEntry" then
     drawTitle("ENTER HOST ADDRESS")
@@ -635,34 +636,34 @@ function LinkState:draw()
     for octet = 1, 3 do
       Font.draw(".", 16 + octet * 32 - 8, 64)
     end
-    Font.draw("Port: " .. Net.defaultPort(), 16, 96)
-    Font.draw("A: connect  B: back", 8, 128)
+    Font.draw(Strings("Port: %s", Net.defaultPort()), 16, 96)
+    Font.draw(Strings("A: connect  B: back"), 8, 128)
 
   elseif self.stage == "joining" then
     drawTitle("JOINING...")
-    Font.draw("Calling...", 8, 56)
+    Font.draw(Strings("Calling..."), 8, 56)
     Font.draw(self.net.target or "", 8, 72)
 
   elseif self.stage == "modeSelect" then
     drawTitle("CONNECTED!")
-    Font.draw("TRADE", 32, 48)
-    Font.draw("BATTLE", 32, 68)
+    Font.draw(Strings("TRADE"), 32, 48)
+    Font.draw(Strings("BATTLE"), 32, 68)
     Font.drawCode(CURSOR, 24, self.index == 1 and 48 or 68)
 
   elseif self.stage == "battleOptions" then
     drawTitle("BATTLE OPTIONS")
-    Font.draw("LEVELS:", 16, 56)
+    Font.draw(Strings("LEVELS:"), 16, 56)
     Font.draw(forceLevelLabel(self.levelChoice or ANY), 88, 56)
-    Font.draw("A: continue  B: back", 8, 128)
+    Font.draw(Strings("A: continue  B: back"), 8, 128)
 
   elseif self.stage == "waitMode" or self.stage == "waitHello" then
     drawTitle("CONNECTED!")
     if self.stage == "waitHello" then
-      Font.draw("Checking the", 16, 56)
-      Font.draw("other game...", 16, 72)
+      Font.draw(Strings("Checking the"), 16, 56)
+      Font.draw(Strings("other game..."), 16, 72)
     else
-      Font.draw("Waiting for the", 16, 56)
-      Font.draw("host to choose...", 16, 72)
+      Font.draw(Strings("Waiting for the"), 16, 56)
+      Font.draw(Strings("host to choose..."), 16, 72)
     end
 
   elseif self.stage == "notice" then
@@ -671,12 +672,12 @@ function LinkState:draw()
       if i > 8 then break end -- what fits above the prompt row
       Font.draw(line, 8, 24 + (i - 1) * 12)
     end
-    Font.draw(self.noticeExits and "A: back" or "A: trade anyway", 8, 128)
+    Font.draw(self.noticeExits and "A: back" or Strings("A: trade anyway"), 8, 128)
 
   elseif self.stage == "trade" then
     drawTitle("TRADE")
     local t = self.trade
-    Font.draw("YOURS", 8, 20)
+    Font.draw(Strings("YOURS"), 8, 20)
     for i, mon in ipairs(self.game.save.party) do
       local def = self.game.data.pokemon[mon.species]
       local label = (mon.nickname or def.name):sub(1, 8)
@@ -684,7 +685,7 @@ function LinkState:draw()
       Font.draw(label, 16, 20 + i * 12)
       if i == self.index then Font.drawCode(CURSOR, 8, 20 + i * 12) end
     end
-    Font.draw("THEIRS", 84, 20)
+    Font.draw(Strings("THEIRS"), 84, 20)
     for i, mon in ipairs(t.theirParty or {}) do
       local def = self.game.data.pokemon[mon.species]
       Font.draw((mon.nickname or def.name):sub(1, 8), 92, 20 + i * 12)
@@ -695,16 +696,16 @@ function LinkState:draw()
     elseif t.stage == "waitParty" then hint = "Exchanging data..."
     elseif t.stage == "picking" then
       hint = t:canPick(self.index) and "Pick one to trade"
-             or "X: not on theirs"
+             or Strings("X: not on theirs")
     elseif t.stage == "waitPick" then hint = "Waiting for them..."
     elseif t.stage == "confirming" then
-      hint = self.confirmed and "Waiting..." or "A: trade  B: cancel"
+      hint = self.confirmed and "Waiting..." or Strings("A: trade  B: cancel")
     end
     Font.draw(hint or "", 8, 132)
 
   elseif self.stage == "battleWait" or self.stage == "battleRunning" then
     drawTitle("LINK BATTLE")
-    Font.draw("Exchanging data...", 16, 64)
+    Font.draw(Strings("Exchanging data..."), 16, 64)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

@@ -22,6 +22,7 @@ local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
 local OptionRows = require("src.ui.OptionRows")
 local Renderer = require("src.render.Renderer")
+local Strings = require("src.core.Strings")
 
 local OptionsMenu = {}
 OptionsMenu.__index = OptionsMenu
@@ -116,14 +117,14 @@ local function sameRows(_, rows) return rows end
 -- ladder's, so the save.options mutations are unchanged
 local function buildRows(game)
   local rows = {
-    { id = "textSpeed", label = "TEXT SPEED",
+    { id = "textSpeed", label = Strings("TEXT SPEED"),
       value = function(g) return SPEEDS[speedIndex(g)][2] end,
       step = function(g)
         local i = speedIndex(g) % #SPEEDS + 1
         g.save.options.textSpeed = SPEEDS[i][1]
         return true
       end },
-    { id = "animations", label = "BATTLE ANIMATION",
+    { id = "animations", label = Strings("BATTLE ANIMATION"),
       value = function(g)
         return g.save.options.animations == false and "OFF" or "ON"
       end,
@@ -132,7 +133,7 @@ local function buildRows(game)
         o.animations = o.animations == false and true or false
         return true
       end },
-    { id = "battleStyle", label = "BATTLE STYLE",
+    { id = "battleStyle", label = Strings("BATTLE STYLE"),
       value = function(g)
         return g.save.options.battleStyle == "set" and "SET" or "SHIFT"
       end,
@@ -141,7 +142,7 @@ local function buildRows(game)
         o.battleStyle = o.battleStyle == "set" and "shift" or "set"
         return true
       end },
-    { id = "ruleset", label = "RULESET",
+    { id = "ruleset", label = Strings("RULESET"),
       value = function(g) return rulesetName(g) end,
       step = function(g, dir)
         local ids = rulesetIds(g)
@@ -150,7 +151,7 @@ local function buildRows(game)
         g.save.options.ruleset = ids[wrapIndex(i - 1 + dir, #ids) + 1]
         return true
       end },
-    { id = "musicVol", label = "MUSIC VOL",
+    { id = "musicVol", label = Strings("MUSIC VOL"),
       value = function(g) return volLabel(g.save.options.musicVol) end,
       step = function(g, dir)
         local o = g.save.options
@@ -158,7 +159,7 @@ local function buildRows(game)
         require("src.core.Music").setVolumeLevel(o.musicVol)
         return true
       end },
-    { id = "sfxVol", label = "SFX VOL",
+    { id = "sfxVol", label = Strings("SFX VOL"),
       value = function(g) return volLabel(g.save.options.sfxVol) end,
       step = function(g, dir)
         local o = g.save.options
@@ -166,7 +167,7 @@ local function buildRows(game)
         require("src.core.Sound").setVolumeLevel(o.sfxVol)
         return true
       end },
-    { id = "musicFilter", label = "MUSIC FILTER",
+    { id = "musicFilter", label = Strings("MUSIC FILTER"),
       value = function(g)
         return FILTERS[(g.save.options.musicFilter or 0) + 1]
       end,
@@ -176,7 +177,7 @@ local function buildRows(game)
         require("src.core.Music").setFilterLevel(o.musicFilter)
         return true
       end },
-    { id = "colors", label = "COLORS",
+    { id = "colors", label = Strings("COLORS"),
       value = function(g)
         return PaletteFX.modeLabel(g.save.options.colors or "gbc")
       end,
@@ -188,7 +189,7 @@ local function buildRows(game)
         PaletteFX.setMode(o.colors)
         return true
       end },
-    { id = "tilt", label = "TILT",
+    { id = "tilt", label = Strings("TILT"),
       value = function(g) return Tilt.levelLabel(g.save.options.tilt or 0) end,
       step = function(g, dir)
         local o = g.save.options
@@ -205,7 +206,7 @@ local function buildRows(game)
         end
         return true
       end },
-    { id = "gbcfx", label = "GBC FX",
+    { id = "gbcfx", label = Strings("GBC FX"),
       value = function(g)
         return GBCFX.levelLabel(g.save.options.gbcfx or 0)
       end,
@@ -215,7 +216,7 @@ local function buildRows(game)
         GBCFX.setLevel(o.gbcfx)
         return true
       end },
-    { id = "zoom", label = "ZOOM",
+    { id = "zoom", label = Strings("ZOOM"),
       value = function(g)
         return Zoom.offsetLabel(g.save.options.zoom or 0)
       end,
@@ -230,7 +231,7 @@ local function buildRows(game)
         Zoom.offset = off
         return true
       end },
-    { id = "voidFill", label = "VOID FILL",
+    { id = "voidFill", label = Strings("VOID FILL"),
       value = function(g)
         return TileRenderer.voidFillLabel(g.save.options.voidFill)
       end,
@@ -246,7 +247,7 @@ local function buildRows(game)
         TileRenderer.setVoidFill(o.voidFill)
         return true
       end },
-    { id = "videoMode", label = "VIDEO MODE",
+    { id = "videoMode", label = Strings("VIDEO MODE"),
       value = function(g)
         return VideoMode.modeLabel(g.save.options.videoMode)
       end,
@@ -259,7 +260,7 @@ local function buildRows(game)
     -- hard render cap (issue #88): bounds the present rate so a
     -- driver-forced vsync-off run cannot spin at thousands of FPS.  Logic
     -- is fixed-step off dt, so this touches presentation only.
-    { id = "fpsCap", label = "MAX FPS",
+    { id = "fpsCap", label = Strings("MAX FPS"),
       value = function(g)
         return FrameCap.label(g.save.options.fpsCap)
       end,
@@ -271,7 +272,7 @@ local function buildRows(game)
       end },
     -- fast-forward the logic clock only; music and sfx keep their tempo
     -- (src/core/GameSpeed.lua), so this is safe to leave on
-    { id = "speed", label = "GAME SPEED",
+    { id = "speed", label = Strings("GAME SPEED"),
       value = function(g)
         return GameSpeed.levelLabel(g.save.options.speed)
       end,
@@ -282,17 +283,17 @@ local function buildRows(game)
       end },
     -- the manager's discoverable home (18-mod-manager-ux); inert until
     -- opened, so the row costs a vanilla install nothing
-    { id = "mods", label = "MODS",
+    { id = "mods", label = Strings("MODS"),
       value = function(g)
         local status = g.modStatus or {}
-        return ("%d INSTALLED"):format(#(status.available or {}))
+        return Strings("%d INSTALLED", #(status.available or {}))
       end,
       activate = function(g)
         require("src.ui.Screens").push(g, "ManagerState")
       end },
     -- rebinding UI (gap C2, 12-ui-extensibility 4.4); captured inputs
     -- live in options.bindings, so the row costs a vanilla install nothing
-    { id = "controls", label = "CONTROLS",
+    { id = "controls", label = Strings("CONTROLS"),
       activate = function(g)
         require("src.ui.Screens").push(g, "BindingsMenu")
       end },

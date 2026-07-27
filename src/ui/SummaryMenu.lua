@@ -12,6 +12,7 @@ local Font = require("src.render.Font")
 -- TypeChart.displayName maps it back to "PSYCHIC", like HallOfFame and the
 -- battle move-type box already do (#214).
 local TypeChart = require("src.battle.TypeChart")
+local Strings = require("src.core.Strings")
 
 local SummaryMenu = {}
 SummaryMenu.__index = SummaryMenu
@@ -90,7 +91,7 @@ function SummaryMenu:draw()
     drawLineBox(19, 1, 6, 10)
     HudTiles.drawHPBar(data, 11, 3, mon, 1) -- wHPBarType 1
     Font.draw(("%3d/%3d"):format(mon.hp, mon.stats.hp), 96, 32)
-    Font.draw("STATUS/", 72, 48)
+    Font.draw(Strings("STATUS/"), 72, 48)
     Font.draw(mon.status or "OK", 128, 48)
 
     -- stats box (0,8) 10x10: names rows 9/11/13/15, values indented
@@ -107,27 +108,27 @@ function SummaryMenu:draw()
 
     -- TYPE1/TYPE2/IDNo/OT column (10,9) with values indented (11,10)
     drawLineBox(19, 9, 8, 6)
-    Font.draw("TYPE1/", 80, 72)
+    Font.draw(Strings("TYPE1/"), 80, 72)
     Font.draw(def.types[1] and TypeChart.displayName(def.types[1]) or "", 88, 80)
     if def.types[2] then
-      Font.draw("TYPE2/", 80, 88)
+      Font.draw(Strings("TYPE2/"), 80, 88)
       Font.draw(TypeChart.displayName(def.types[2]), 88, 96)
     end
-    Font.draw("IDNo/", 80, 104)
+    Font.draw(Strings("IDNo/"), 80, 104)
     -- the trainer ID is rolled at new game (SaveData.newGame) and
     -- backfilled on load for old saves
     Font.draw(("%05d"):format(mon.otId or game.save.player.id or 0), 96, 112)
-    Font.draw("OT/", 80, 120)
+    Font.draw(Strings("OT/"), 80, 120)
     Font.draw(mon.ot or game.save.player.name or "RED", 96, 128)
   else
     -- page 2: EXP + the moves with PP (StatusScreen2)
     drawLineBox(19, 1, 6, 10)
-    Font.draw("EXP POINTS", 72, 24)
+    Font.draw(Strings("EXP POINTS"), 72, 24)
     Font.draw(("%d"):format(mon.exp), 96, 32)
     -- StatusScreen2: "LEVEL UP" at (9,5); next-exp PrintNumber 7 cols
     -- at (7,6); space at (14,6); PrintLevel at (16,6).  The old
     -- "%d to L%d" string at x=88 overflowed the DrawLineBox edge.
-    Font.draw("LEVEL UP", 72, 40)
+    Font.draw(Strings("LEVEL UP"), 72, 40)
     local Growth = require("src.pokemon.Growth")
     local nextExp = mon.level < 100
       and (Growth.expForLevel(def.growthRate, mon.level + 1) - mon.exp) or 0
@@ -141,7 +142,7 @@ function SummaryMenu:draw()
       if mv then
         local mdef = data.moves[mv.id]
         Font.draw(mdef.name, 16, y)
-        Font.draw("PP", 88, y + 8)
+        Font.draw(Strings("PP"), 88, y + 8)
         Font.draw(("%2d/%2d"):format(mv.pp, mdef.pp), 112, y + 8)
       else
         Font.draw("-", 16, y)

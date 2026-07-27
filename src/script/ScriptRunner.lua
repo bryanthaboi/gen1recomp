@@ -13,6 +13,7 @@
 local Commands = require("src.script.Commands")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local unpack = table.unpack or unpack -- LuaJIT (LÖVE) compatibility
 
@@ -195,7 +196,7 @@ function ScriptRunner:resume(...)
   if not ok then
     local source = self.ctx and self.ctx.source
     local where = source
-      and (" [%s %s.%s]"):format(tostring(source.modId or "engine"),
+      and Strings(" [%s %s.%s]", tostring(source.modId or "engine"),
         tostring(source.mapId or "?"), tostring(source.hook or "?"))
       or ""
     Logger.error("script error%s: %s", where, tostring(err))

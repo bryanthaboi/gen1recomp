@@ -31,6 +31,7 @@
 
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
+local Strings = require("src.core.Strings")
 
 local Credits = {}
 Credits.__index = Credits
@@ -261,14 +262,14 @@ function Credits:drawCopyright(xoff)
       love.graphics.draw(self.gfImg, xoff + 80, 88)
     else
       love.graphics.setColor(0, 0, 0, 1)
-      Font.draw("GAME FREAK", xoff + 80, 88)
+      Font.draw(Strings("GAME FREAK"), xoff + 80, 88)
       love.graphics.setColor(1, 1, 1, 1)
     end
   else
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("Nintendo", xoff + 80, 56)
-    Font.draw("Creatures inc.", xoff + 80, 72)
-    Font.draw("GAME FREAK inc.", xoff + 16, 88)
+    Font.draw(Strings("Nintendo"), xoff + 80, 56)
+    Font.draw(Strings("Creatures inc."), xoff + 80, 72)
+    Font.draw(Strings("GAME FREAK inc."), xoff + 16, 88)
     love.graphics.setColor(1, 1, 1, 1)
   end
 end
@@ -298,7 +299,7 @@ function Credits:drawTheEnd()
     end
   else
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw((te and te.display) or "T H E  E N D", 32, 64)
+    Font.draw((te and te.display) or Strings("T H E  E N D"), 32, 64)
     love.graphics.setColor(1, 1, 1, 1)
   end
 end

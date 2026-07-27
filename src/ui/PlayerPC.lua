@@ -10,6 +10,7 @@ local ChoiceBox = require("src.ui.ChoiceBox")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local PlayerPC = {}
 
@@ -76,14 +77,14 @@ local function withdraw(game)
       askQuantity(game, list, pc[item.value] or 1, item.value, function(qty)
         local Bag = require("src.inventory.Bag")
         if not Bag.add(game.save, item.value, qty) then
-          list.footer = "You can't carry\nany more items."
+          list.footer = Strings("You can't carry\nany more items.")
           return
         end
         pc[item.value] = pc[item.value] - qty
         if pc[item.value] <= 0 then pc[item.value] = nil end
         refreshRow(list, pc, item.value)
         Sound.play(game.data, "Withdraw_Deposit")
-        list.footer = ("Withdrew\n%s."):format(itemName(game, item.value))
+        list.footer = Strings("Withdrew\n%s.", itemName(game, item.value))
       end)
     end,
   }))
@@ -112,14 +113,14 @@ local function deposit(game)
     onChoose = function(item, list)
       askQuantity(game, list, inv[item.value] or 1, item.value, function(qty)
         if pcFull(game, pc, item.value) then
-          list.footer = "No room left to\nstore items."
+          list.footer = Strings("No room left to\nstore items.")
           return
         end
         require("src.inventory.Bag").remove(game.save, item.value, qty)
         pc[item.value] = (pc[item.value] or 0) + qty
         refreshRow(list, inv, item.value)
         Sound.play(game.data, "Withdraw_Deposit")
-        list.footer = ("%s was\nstored via PC."):format(itemName(game, item.value))
+        list.footer = Strings("%s was\nstored via PC.", itemName(game, item.value))
       end)
     end,
   }))
@@ -132,7 +133,7 @@ local function toss(game)
     onChoose = function(item, list)
       local def = game.data.items[item.value]
       if (def and def.keyItem) or item.value:find("^HM_") then
-        list.footer = "That's too impor-\ntant to toss!"
+        list.footer = Strings("That's too impor-\ntant to toss!")
         return
       end
       local QuantityBox = require("src.ui.QuantityBox")
@@ -140,13 +141,13 @@ local function toss(game)
         max = pc[item.value] or 1,
         onDone = function(qty)
           if not qty then return end
-          list.footer = ("Toss %s?"):format(itemName(game, item.value))
+          list.footer = Strings("Toss %s?", itemName(game, item.value))
           game.stack:push(ChoiceBox.new(game, function(yes)
             if yes then
               pc[item.value] = pc[item.value] - qty
               if pc[item.value] <= 0 then pc[item.value] = nil end
               refreshRow(list, pc, item.value)
-              list.footer = ("Threw away %s."):format(itemName(game, item.value))
+              list.footer = Strings("Threw away %s.", itemName(game, item.value))
             else
               list.footer = nil
             end
@@ -163,10 +164,10 @@ function PlayerPC.new(game)
     -- keepOpen so B in the item lists returns here instead of dropping the
     -- whole PC session (players_pc.asm re-shows the PC menu); same pattern
     -- as BoxMenu's rows
-    { label = "WITHDRAW ITEM", keepOpen = true, onSelect = function() withdraw(game) end },
-    { label = "DEPOSIT ITEM", keepOpen = true, onSelect = function() deposit(game) end },
-    { label = "TOSS ITEM", keepOpen = true, onSelect = function() toss(game) end },
-    { label = "LOG OFF" },
+    { label = Strings("WITHDRAW ITEM"), keepOpen = true, onSelect = function() withdraw(game) end },
+    { label = Strings("DEPOSIT ITEM"), keepOpen = true, onSelect = function() deposit(game) end },
+    { label = Strings("TOSS ITEM"), keepOpen = true, onSelect = function() toss(game) end },
+    { label = Strings("LOG OFF") },
     -- silent PC session (BIT_NO_MENU_BUTTON_SOUND); players_pc.asm
     -- PlayersPCMenu TextBoxBorder (0,0) b=8 c=14 → 16x10
   }, { tx = 0, ty = 0, tw = 16, th = 10, noSound = true })

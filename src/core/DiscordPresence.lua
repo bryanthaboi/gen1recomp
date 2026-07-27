@@ -9,6 +9,7 @@
 local Json = require("src.link.Json")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local DiscordPresence = {
   APP_ID = "1529183141267374262",
@@ -436,7 +437,7 @@ end
 local function buildActivity()
   local details, activityState
   if state.activity == "battle" then
-    details = state.battleLabel or "In battle"
+    details = state.battleLabel or Strings("In battle")
     activityState = state.location and (state.location) or "Kanto"
   elseif state.activity == "exploring" and state.location then
     details = state.location
@@ -550,20 +551,20 @@ local function subscribe(game)
 
   track("battle.started", function(ev)
     local battle = ev and ev.battle
-    local label = "In battle"
+    local label = Strings("In battle")
     if ev and ev.kind == "wild" then
       local name = speciesName(game, ev.species)
       if name then
         label = "Battling wild " .. name
         if ev.level then label = label .. " Lv" .. tostring(ev.level) end
       else
-        label = "Wild battle"
+        label = Strings("Wild battle")
       end
     elseif ev and ev.kind == "trainer" then
       local tname = battle and battle.trainer and battle.trainer.name
-      label = tname and ("Battling " .. tname) or "Trainer battle"
+      label = tname and ("Battling " .. tname) or Strings("Trainer battle")
     elseif ev and ev.kind == "link" then
-      label = "Link battle"
+      label = Strings("Link battle")
     end
     local mapId = state.mapId
       or (game.save and game.save.player and game.save.player.map)
@@ -594,7 +595,7 @@ local function subscribe(game)
       state.mapId = nil
       setPresence({
         activity = "menu",
-        location = id == "IntroMovie" and "Watching the intro" or "Title screen",
+        location = id == "IntroMovie" and "Watching the intro" or Strings("Title screen"),
         clearBattle = true,
       })
     end

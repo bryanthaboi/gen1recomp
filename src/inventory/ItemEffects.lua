@@ -12,6 +12,7 @@
 
 local Pokemon = require("src.pokemon.Pokemon")
 local Flags = require("src.script.Flags")
+local Strings = require("src.core.Strings")
 
 local ItemEffects = {}
 
@@ -119,8 +120,8 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   if battle and (VITAMINS[itemId] or STONES[itemId] or itemId == "PP_UP"
                  or itemId == "RARE_CANDY" or itemId == "COIN_CASE"
                  or (itemDef and itemDef.machine)) then
-    return "failed", { "OAK: " .. save.player.name
-      .. "!\nThis isn't the\ntime to use that!" }
+    return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!",
+                               save.player.name) }
   end
 
   if BALLS[itemId] then
@@ -138,11 +139,12 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       local mapId, npc = adjacentSleepingSnorlax(save, ow)
       if npc then
         return "flute_wake", { data.text._PlayedFluteHadEffectText
-          or "{PLAYER} played the\nPOKé FLUTE." }, { mapId = mapId, npc = npc }
+          or Strings("{PLAYER} played the\nPOKé FLUTE.") },
+          { mapId = mapId, npc = npc }
       end
       -- otherwise: play the tune, nothing happens (ItemUsePokeFlute's
       -- PlayedFluteNoEffectText branch)
-      return "flute_field", { "Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!" }
+      return "flute_field", { Strings("Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!") }
     end
     local woke = false
     local function wake(mon)
@@ -157,24 +159,24 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     -- WakeUpEntireParty runs on the enemy's bench too
     for _, mon in ipairs(battle.enemyParty or {}) do wake(mon) end
     if not woke then
-      return "failed", { "Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!" }
+      return "failed", { Strings("Played the POKé\nFLUTE.\fNow, that's a\ncatchy tune!") }
     end
-    return "flute", { ("%s played the\nPOKé FLUTE."):format(save.player.name),
-                      "All sleeping\nPOKéMON woke up!" }
+    return "flute", { Strings("%s played the\nPOKé FLUTE.", save.player.name),
+                      Strings("All sleeping\nPOKéMON woke up!") }
   end
 
   -- battle-only items
   if X_ITEMS[itemId] or itemId == "DIRE_HIT" or itemId == "GUARD_SPEC"
      or itemId == "POKE_DOLL" then
     if not battle then
-      return "failed", { "OAK: " .. save.player.name .. "!\nThis isn't the\ntime to use that!" }
+      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
     end
     local b = battle.player
     if itemId == "X_ACCURACY" then
       -- ItemUseXAccuracy sets USING_X_ACCURACY: moves never miss
       -- (not an accuracy stage)
       b.xAccuracy = true
-      return "consumed", { ("%s's\nhits will never\nmiss!"):format(b.name) }
+      return "consumed", { Strings("%s's\nhits will never\nmiss!", b.name) }
     end
     if X_ITEMS[itemId] then
       local stat = X_ITEMS[itemId]
@@ -183,28 +185,28 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       -- effect, so at +6 it is still consumed and StatModifierUpEffect
       -- just prints "Nothing happened!"
       if cur >= 6 then
-        return "consumed", { "Nothing happened!" }
+        return "consumed", { Strings("Nothing happened!") }
       end
       b.stages[stat] = cur + 1
-      return "consumed", { ("%s's\n%s rose!"):format(b.name, stat:upper()) }
+      return "consumed", { Strings("%s's\n%s rose!", b.name, stat:upper()) }
     end
     -- ItemUseDireHit/ItemUseGuardSpec always set the bit and consume
     -- the item, even when it is already active
     if itemId == "DIRE_HIT" then
       b.focusEnergy = true
-      return "consumed", { ("%s's\ngetting pumped!"):format(b.name) }
+      return "consumed", { Strings("%s's\ngetting pumped!", b.name) }
     end
     if itemId == "GUARD_SPEC" then
       b.mist = true
-      return "consumed", { ("%s's\nprotected against\nstat changes!"):format(b.name) }
+      return "consumed", { Strings("%s's\nprotected against\nstat changes!", b.name) }
     end
     if itemId == "POKE_DOLL" then
       if battle.kind ~= "wild" then
         -- ItemUsePokeDoll jumps to ItemUseNotTime in trainer battles
-        return "failed", { "OAK: " .. save.player.name
-          .. "!\nThis isn't the\ntime to use that!" }
+        return "failed", { Strings(
+          "OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
       end
-      return "consumed_escape", { "The wild POKéMON\nran away!" }
+      return "consumed_escape", { Strings("The wild POKéMON\nran away!") }
     end
   end
 
@@ -213,7 +215,7 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   -- restore every move with no menu.
   if itemId == "ETHER" or itemId == "MAX_ETHER"
      or itemId == "ELIXER" or itemId == "MAX_ELIXER" then
-    if not target then return "failed", { "It won't have\nany effect." } end
+    if not target then return "failed", { Strings("It won't have\nany effect.") } end
     local restored = false
     local full = itemId == "MAX_ETHER" or itemId == "MAX_ELIXER"
     local allMoves = itemId == "ELIXER" or itemId == "MAX_ELIXER"
@@ -235,9 +237,9 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       restored = mv and restore(mv) or false
     end
     if not restored then
-      return "failed", { "It won't have\nany effect." }
+      return "failed", { Strings("It won't have\nany effect.") }
     end
-    return "consumed", { ("%s's PP\nwas restored!"):format(monName(data, target)) }
+    return "consumed", { Strings("%s's PP\nwas restored!", monName(data, target)) }
   end
 
   local heal = HEAL_AMOUNT[itemId]
@@ -250,17 +252,17 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       target.status = nil
       cureActiveToxic(battle, target)
       require("src.core.Sound").play(data, "Heal_Ailment")
-      return "consumed", { ("%s's\nstatus returned\nto normal!"):format(monName(data, target)) }
+      return "consumed", { Strings("%s's\nstatus returned\nto normal!", monName(data, target)) }
     end
     if not target or target.hp <= 0 or target.hp >= target.stats.hp then
-      return "failed", { "It won't have\nany effect." }
+      return "failed", { Strings("It won't have\nany effect.") }
     end
     if itemId == "MAX_POTION" or itemId == "FULL_RESTORE" then
       target.hp = target.stats.hp
     else
       target.hp = math.min(target.stats.hp, target.hp + heal)
     end
-    local msgs = { ("%s's HP\nwas restored!"):format(monName(data, target)) }
+    local msgs = { Strings("%s's HP\nwas restored!", monName(data, target)) }
     if itemId == "FULL_RESTORE" then
       target.status = nil
       cureActiveToxic(battle, target)
@@ -272,27 +274,27 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   local cures = STATUS_HEAL[itemId]
   if cures then
     if not target or not target.status or not cures[target.status] then
-      return "failed", { "It won't have\nany effect." }
+      return "failed", { Strings("It won't have\nany effect.") }
     end
     target.status = nil
     cureActiveToxic(battle, target)
     require("src.core.Sound").play(data, "Heal_Ailment")
-    return "consumed", { ("%s's\nstatus returned\nto normal!"):format(monName(data, target)) }
+    return "consumed", { Strings("%s's\nstatus returned\nto normal!", monName(data, target)) }
   end
 
   if itemId == "REVIVE" or itemId == "MAX_REVIVE" then
     if not target or target.hp > 0 then
-      return "failed", { "It won't have\nany effect." }
+      return "failed", { Strings("It won't have\nany effect.") }
     end
     target.status = nil
     target.hp = itemId == "REVIVE" and math.floor(target.stats.hp / 2) or target.stats.hp
     require("src.core.Sound").play(data, "Heal_HP")
-    return "consumed", { ("%s\nis revitalized!"):format(monName(data, target)) }
+    return "consumed", { Strings("%s\nis revitalized!", monName(data, target)) }
   end
 
   if itemId == "RARE_CANDY" then
     if not target or target.level >= 100 then
-      return "failed", { "It won't have\nany effect." }
+      return "failed", { Strings("It won't have\nany effect.") }
     end
     local Growth = require("src.pokemon.Growth")
     local Stats = require("src.pokemon.Stats")
@@ -302,56 +304,56 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
     local old = target.stats
     target.stats = Stats.calc(speciesDef, target.level, target.dvs, target.statExp)
     target.hp = math.min(target.stats.hp, target.hp + (target.stats.hp - old.hp))
-    return "consumed", { ("%s grew\nto level %d!"):format(monName(data, target), target.level) },
+    return "consumed", { Strings("%s grew\nto level %d!", monName(data, target), target.level) },
            { leveledTo = target.level }
   end
 
   if STONES[itemId] then
-    if not target then return "failed", { "It won't have\nany effect." } end
+    if not target then return "failed", { Strings("It won't have\nany effect.") } end
     local speciesDef = data.pokemon[target.species]
     for _, evo in ipairs(speciesDef.evolutions) do
       if evo.method == "ITEM" and evo.item == itemId then
         return "consumed", nil, { evolveTo = evo.species }
       end
     end
-    return "failed", { "It won't have\nany effect." }
+    return "failed", { Strings("It won't have\nany effect.") }
   end
 
   -- vitamins: +2560 stat exp, refused at 25600+ (ItemUseVitamin,
   -- engine/items/item_effects.asm)
   local vitaminStat = VITAMINS[itemId]
   if vitaminStat then
-    if not target then return "failed", { "It won't have\nany effect." } end
+    if not target then return "failed", { Strings("It won't have\nany effect.") } end
     target.statExp = target.statExp or {}
     local cur = target.statExp[vitaminStat] or 0
     if cur >= 25600 then
-      return "failed", { "It won't have\nany effect." }
+      return "failed", { Strings("It won't have\nany effect.") }
     end
     target.statExp[vitaminStat] = math.min(65535, cur + 2560)
     local Stats = require("src.pokemon.Stats")
     target.stats = Stats.calc(data.pokemon[target.species], target.level,
                               target.dvs, target.statExp)
     target.hp = math.min(target.hp, target.stats.hp)
-    return "consumed", { ("%s's %s\nrose!"):format(monName(data, target),
+    return "consumed", { Strings("%s's %s\nrose!", monName(data, target),
       vitaminStat == "hp" and "HP" or vitaminStat:upper()) }
   end
 
   -- PP UP boosts the move the player picked (ItemUsePPUp's move menu)
   if itemId == "PP_UP" then
-    if not target then return "failed", { "It won't have\nany effect." } end
+    if not target then return "failed", { Strings("It won't have\nany effect.") } end
     local mv = target.moves[moveIndex or 1]
     local mdef = mv and data.moves[mv.id]
     if mdef and (mv.ppUps or 0) < 3 then
       mv.ppUps = (mv.ppUps or 0) + 1
       -- each PP UP adds maxPP/5 uses on top of the base maximum
       mv.pp = mv.pp + math.floor(mdef.pp / 5)
-      return "consumed", { ("%s's PP\nincreased!"):format(mdef.name) }
+      return "consumed", { Strings("%s's PP\nincreased!", mdef.name) }
     end
-    return "failed", { "It won't have\nany effect." }
+    return "failed", { Strings("It won't have\nany effect.") }
   end
 
   if itemDef and itemDef.machine then
-    if not target then return "failed", { "It won't have\nany effect." } end
+    if not target then return "failed", { Strings("It won't have\nany effect.") } end
     local speciesDef = data.pokemon[target.species]
     local ok = false
     for _, m in ipairs(speciesDef.tmhm) do
@@ -362,11 +364,11 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       -- plays SFX_DENIED before MonCannotLearnMachineMoveText (the generic
       -- ItemUseNotTime/NoCyclingAllowedHere paths are silent)
       require("src.core.Sound").play(data, "Denied")
-      return "failed", { ("%s can't\nlearn that move!"):format(monName(data, target)) }
+      return "failed", { Strings("%s can't\nlearn that move!", monName(data, target)) }
     end
     for _, mv in ipairs(target.moves) do
       if mv.id == itemDef.machine.move then
-        return "failed", { "It knows that\nmove already!" }
+        return "failed", { Strings("It knows that\nmove already!") }
       end
     end
     -- HMs are never consumed; TMs are single-use
@@ -375,14 +377,14 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
 
   if itemId == "OLD_ROD" or itemId == "GOOD_ROD" or itemId == "SUPER_ROD" then
     if battle then
-      return "failed", { "OAK: " .. save.player.name .. "!\nThis isn't the\ntime to use that!" }
+      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
     end
     return "fish", itemId
   end
 
   if itemId == "BICYCLE" then
     if battle then
-      return "failed", { "OAK: " .. save.player.name .. "!\nThis isn't the\ntime to use that!" }
+      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
     end
     return "bicycle"
   end
@@ -392,26 +394,26 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   end
   if itemId == "TOWN_MAP" then
     if battle then
-      return "failed", { "OAK: " .. save.player.name .. "!\nThis isn't the\ntime to use that!" }
+      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
     end
     return "townmap"
   end
   if itemId == "ITEMFINDER" then
     if battle then
-      return "failed", { "OAK: " .. save.player.name .. "!\nThis isn't the\ntime to use that!" }
+      return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
     end
     return "itemfinder"
   end
   if itemId == "COIN_CASE" then
-    return "failed", { ("Coin count:\n%d"):format(save.coins or 0) }
+    return "failed", { Strings("Coin count:\n%d", save.coins or 0) }
   end
   if itemId == "REPEL" or itemId == "SUPER_REPEL" or itemId == "MAX_REPEL" then
     local steps = itemId == "REPEL" and 100 or itemId == "SUPER_REPEL" and 200 or 250
     save.repelSteps = steps
-    return "consumed", { ("%s used\n%s!"):format(save.player.name, name) }
+    return "consumed", { Strings("%s used\n%s!", save.player.name, name) }
   end
 
-  return "failed", { "OAK: " .. save.player.name .. "!\nThis isn't the\ntime to use that!" }
+  return "failed", { Strings("OAK: %s!\nThis isn't the\ntime to use that!", save.player.name) }
 end
 
 return ItemEffects

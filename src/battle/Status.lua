@@ -48,6 +48,11 @@ local function damageOverTime(template)
   end
 end
 
+-- Labels stay plain literals on purpose: this table is built at require
+-- time, before Strings.load has a catalog, so a Strings() here would
+-- freeze the English.  They are already translatable through the
+-- statuses registry (mod.content.statuses:patch(id, { label = ... })).
+--
 -- The five persistent conditions as records: the beforeMove gauntlet, the
 -- residual sweep, the inflict text/immunities (StatusRegistry.inflict),
 -- the catch/wobble bonuses (Catching.attempt), the HUD label, and the
@@ -86,7 +91,7 @@ Status.RECORDS = {
   PSN = {
     id = "PSN", label = "PSN", hudLabel = "PSN",
     catchBonus = 12, shakeBonus = 5,
-    residual = damageOverTime("%s's\nhurt by poison!"),
+    residual = damageOverTime(Strings.source("%s's\nhurt by poison!")),
     canInflict = function(target) return not hasType(target, "POISON") end,
     onInflict = function(_, target, opts, display)
       if opts.toxic then
@@ -101,7 +106,7 @@ Status.RECORDS = {
     id = "BRN", label = "BRN", hudLabel = "BRN",
     catchBonus = 12, shakeBonus = 5,
     statPenalty = { stat = "attack", div = 2 },
-    residual = damageOverTime("%s's\nhurt by the burn!"),
+    residual = damageOverTime(Strings.source("%s's\nhurt by the burn!")),
     canInflict = function(target) return not hasType(target, "FIRE") end,
     onInflict = function(_, _, _, display)
       return { Strings("%s\nwas burned!", display) }

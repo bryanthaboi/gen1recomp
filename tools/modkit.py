@@ -1207,7 +1207,8 @@ end
 # sweep writes them; a call whose source string is built at runtime cannot
 # be translated and is not meant to match here.
 STRINGS_CALL = re.compile(
-    r'\bStrings\(\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')\s*(?:,|\))')
+    r'\bStrings(?:\.source)?\('
+    r'\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')\s*(?:,|\))')
 
 
 def harvest_engine_strings(repo):

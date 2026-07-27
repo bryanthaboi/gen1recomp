@@ -19,6 +19,7 @@
 -- enemy PP — Gen 1 AI never reads wEnemyMonPP).
 
 local TypeChart = require("src.battle.TypeChart")
+local Strings = require("src.core.Strings")
 
 local TrainerAI = {}
 
@@ -99,7 +100,7 @@ function TrainerAI.useItem(battle, item)
   local enemy = battle.enemy
   local trainerName = battle.trainer.name
   local itemName = battle.data.items[item] and battle.data.items[item].name or item
-  local msgs = { ("%s\nused %s!"):format(trainerName, itemName) }
+  local msgs = { Strings("%s\nused %s!", trainerName, itemName) }
   if item == "FULL_HEAL" then
     enemy.mon.status = nil
     enemy.toxicCounter = nil
@@ -112,10 +113,10 @@ function TrainerAI.useItem(battle, item)
   elseif X_STAT[item] then
     local stat = X_STAT[item]
     enemy.stages[stat] = math.min(6, (enemy.stages[stat] or 0) + 1)
-    table.insert(msgs, ("%s's\n%s rose!"):format(enemy.name, stat:upper()))
+    table.insert(msgs, Strings("%s's\n%s rose!", enemy.name, stat:upper()))
   elseif item == "GUARD_SPEC" then
     enemy.mist = true
-    table.insert(msgs, ("%s's\nprotected against\nstat changes!"):format(enemy.name))
+    table.insert(msgs, Strings("%s's\nprotected against\nstat changes!", enemy.name))
   end
   return msgs
 end

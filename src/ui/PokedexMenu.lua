@@ -1,6 +1,7 @@
 -- Minimal Pokédex: dex-ordered list with seen/owned markers.
 
 local ListMenu = require("src.ui.ListMenu")
+local Strings = require("src.core.Strings")
 
 local PokedexMenu = {}
 
@@ -46,7 +47,7 @@ function PokedexMenu.new(game, opts)
     end
   end
   local list = ListMenu.new(game, "POKéDEX", items, {
-    footer = ("SEEN %d  OWNED %d"):format(seen, owned),
+    footer = Strings("SEEN %d  OWNED %d", seen, owned),
     pageJump = true, -- Left/Right page jumps like the original
     onCancel = opts.onCancel, -- B returns to the start menu when opened from it
     onChoose = function(item)
@@ -57,16 +58,16 @@ function PokedexMenu.new(game, opts)
       local Menu = require("src.ui.Menu")
       local Screens = require("src.ui.Screens")
       game.stack:push(Menu.new(game, {
-        { label = "DATA", onSelect = function()
+        { label = Strings("DATA"), onSelect = function()
             Screens.push(game, "DexEntryMenu", item.value)
           end },
-        { label = "CRY", keepOpen = true, onSelect = function()
+        { label = Strings("CRY"), keepOpen = true, onSelect = function()
             require("src.core.Sound").playCry(game.data, item.value)
           end },
-        { label = "AREA", onSelect = function()
+        { label = Strings("AREA"), onSelect = function()
             Screens.push(game, "TownMap", { nestSpecies = item.value })
           end },
-        { label = "QUIT" },
+        { label = Strings("QUIT") },
       }, { tx = 12, ty = 8, tw = 8, th = 10 }))
     end,
   })
