@@ -711,6 +711,27 @@ check(type("intro.oak_speech.started") == "string"
   "intro.oak_speech lifecycle event names are stable")
 events:removeOwner("fixture")
 
+-- issue #308: finish runs once even when a finished-listener pushes a
+-- screen (the pop in finish() then removes that screen instead of the
+-- speech, and a live shrink re-fires the event every frame)
+do
+  local fgame = { data = {}, stack = newStack(), input = newInput(),
+                  save = { player = {} } }
+  local fspeech = OakSpeech.new(fgame, nil)
+  fspeech.shrink = { frame = 103 } -- past the shrink timeline's end
+  fgame.stack:push(fspeech)
+  fspeech.picReveal = nil -- skip the intro fade so update reaches shrink
+  local finishes = 0
+  events:on("intro.oak_speech.finished", function()
+    finishes = finishes + 1
+    fgame.stack:push({ pushedByListener = true }) -- the #308 trap
+  end, 0, "t308")
+  for _ = 1, 3 do fspeech:update(1 / 60) end
+  events:removeOwner("t308")
+  check(finishes == 1,
+    "finished fires once when a listener pushes a screen")
+end
+
 -- ModUI step helpers
 local tiny = { { id = "a" }, { id = "c" } }
 ModUI.insertStepAfter(tiny, "a", { id = "b" })

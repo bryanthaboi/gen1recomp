@@ -542,6 +542,10 @@ function OakSpeech:update(dt)
   elseif s.frame >= 79 and s.frame <= 102 then
     self.fadeLevel = math.floor((s.frame - 79) / 8) + 1
   elseif s.frame > 102 then
+    -- clear before finish(): a finished-listener that pushes a state gets
+    -- ITS state popped in the speech's place, and a live shrink would call
+    -- finish() again next frame, re-firing the event every frame (#308)
+    self.shrink = nil
     self:finish()
   end
 end
