@@ -260,6 +260,46 @@ do
     "unwrapped pokemon.icon is vanilla")
 end
 
+-- ------- field.playerPics / player.sprite (the player's own trainer art)
+
+do
+  local Sprites = require("src.pokemon.Sprites")
+  local vanilla = {}
+  local path, tc = Sprites.playerPath(vanilla, "back", { kind = "battle" })
+  check(path == "assets/generated/battle/redb.png" and tc == false,
+    "unhooked player.sprite returns the vanilla back pic")
+  check(Sprites.playerPath(vanilla, "back", { kind = "battle", demo = true })
+          == "assets/generated/battle/oldmanb.png",
+    "the catch tutorial resolves the old man in the player's place")
+  check(Sprites.playerPath(vanilla, "front", { kind = "trainer_card" })
+          == "assets/generated/trainer_card/red.png",
+    "the front pic is the one the intro / card / Hall of Fame share")
+
+  -- the data seam: one key replaced, the rest still vanilla
+  local data = { field = { playerPics = { back = "mods/hero/art/back.png" } } }
+  check(Sprites.playerPath(data, "back", { kind = "battle" })
+          == "mods/hero/art/back.png",
+    "field.playerPics replaces the back pic")
+  check(Sprites.playerPath(data, "front", { kind = "trainer_card" })
+          == "assets/generated/trainer_card/red.png",
+    "field.playerPics inherits the keys it does not set")
+
+  -- the live seam: content has frozen, the hook still picks per save
+  local unsub = wrap("player.sprite", function(next, p, ctx)
+    check(ctx.side == "back" and ctx.kind == "battle" and ctx.demo == false,
+      "player.sprite ctx carries side/kind/demo")
+    ctx.trueColor = true
+    return "mods/outfits/art/blue_back.png"
+  end)
+  path, tc = Sprites.playerPath(vanilla, "back", { kind = "battle" })
+  check(path == "mods/outfits/art/blue_back.png" and tc == true,
+    "player.sprite can swap path + trueColor after content freeze")
+  unsub()
+  check(Sprites.playerPath(vanilla, "back", { kind = "battle" })
+          == "assets/generated/battle/redb.png",
+    "unwrapped player.sprite is vanilla")
+end
+
 -- silence unused import warnings in strict environments
 check(Player ~= nil and Music ~= nil, "player/music modules load")
 

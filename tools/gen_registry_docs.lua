@@ -97,6 +97,14 @@ for _, name in ipairs(names) do
     line("%s", spec.example)
     line("```")
   end
+  -- prose a registry needs beyond its schema (resolution order, the
+  -- guarantees a value carries).  It lives on the spec rather than in the
+  -- page because this file is regenerated: hand-written paragraphs in the
+  -- output are deleted by the next run.
+  if spec.notes then
+    line("")
+    line("%s", spec.notes)
+  end
 end
 
 line("")

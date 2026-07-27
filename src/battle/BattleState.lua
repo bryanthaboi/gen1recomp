@@ -1025,10 +1025,16 @@ function BattleState:enter()
   -- MonsterPalettes[0] = PAL_MEWMON (wBattleMonSpecies is still 0 when
   -- the intro's SET_PAL_BATTLE runs -- SetPal_Battle,
   -- engine/gfx/palettes.asm:28)
-  self.playerBackPic = getImage(self.demo
-    and "assets/generated/battle/oldmanb.png"
-    or "assets/generated/battle/redb.png",
-    namedPalette(self.data, "MEWMON"))
+  -- field.playerPics picks the pic (the catch tutorial's old man fights in
+  -- the player's place), then the player.sprite hook gets the last word so
+  -- a mod can vary it per save.  It loads through getImage like every other
+  -- battle pic, so a replacement keeps the SGB recolor, the transition
+  -- fade, the ground-padding measurement and battle_sprite_scales.
+  local backPath, backTrueColor =
+    require("src.pokemon.Sprites").playerPath(self.data, "back",
+      { kind = "battle", demo = self.demo, battle = self })
+  self.playerBackPic = getImage(backPath,
+    namedPalette(self.data, "MEWMON"), backTrueColor)
   self.showPlayerBack = self.playerBackPic ~= nil
   -- the enemy's cry as it appears (data/pokemon/cries.asm); PlayCry sits at
   -- a different point in each battle kind, so queue it per branch

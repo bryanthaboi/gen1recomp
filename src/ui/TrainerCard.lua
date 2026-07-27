@@ -4,6 +4,7 @@
 -- are built from the real trainer_info.png frame tiles (the patterned
 -- band + line style).
 
+local Assets = require("src.render.Assets")
 local Badges = require("src.inventory.Badges")
 local Font = require("src.render.Font")
 local Strings = require("src.core.Strings")
@@ -17,8 +18,11 @@ function TrainerCard:sgbPalettes(game)
   return require("src.render.PaletteFX").wholeNamed(game.data, "MEWMON")
 end
 
+-- through Assets.resolve so an enabled mod's overrides/ shadows these the
+-- same way it shadows every other generated asset
 local function tryImage(path)
-  local ok, img = pcall(love.graphics.newImage, path)
+  if not path then return nil end
+  local ok, img = pcall(love.graphics.newImage, Assets.resolve(path))
   return ok and img or nil
 end
 
@@ -63,7 +67,8 @@ function TrainerCard.new(game, opts)
     end
   end
   self.circle = tryImage("assets/generated/trainer_card/circle_tile.png")
-  self.pic = tryImage("assets/generated/trainer_card/red.png")
+  self.pic = tryImage(require("src.pokemon.Sprites").playerPath(
+    game.data, "front", { kind = "trainer_card" }))
   return self
 end
 

@@ -7,6 +7,7 @@
 -- name/time/money boxes plus the dex rating.  Plays Music_HallOfFame
 -- when the audio data has it.  Calls onDone() after popping itself.
 
+local Assets = require("src.render.Assets")
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
 local Sound = require("src.core.Sound")
@@ -48,9 +49,11 @@ local FADE_FRAMES = 20
 -- HoFPrintTextAndDelay after each dex line
 local DEX_HOLD = 120
 
+-- through Assets.resolve so an enabled mod's overrides/ shadows these the
+-- same way it shadows every other generated asset
 local function tryImage(path)
   if not path then return nil end
-  local ok, img = pcall(love.graphics.newImage, path)
+  local ok, img = pcall(love.graphics.newImage, Assets.resolve(path))
   return ok and img or nil
 end
 
@@ -80,7 +83,8 @@ function HallOfFame.new(game, onDone)
   self.timer = 0
   self.phase = "mons"
   self.sprites = {} -- species -> image or false
-  self.playerPic = tryImage("assets/generated/trainer_card/red.png")
+  self.playerPic = tryImage(require("src.pokemon.Sprites").playerPath(
+    game.data, "front", { kind = "hof" }))
   self.scrollX = PIC_X
   self.showHofBanner = false
   self.fade = 0

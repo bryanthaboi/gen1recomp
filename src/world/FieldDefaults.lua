@@ -79,6 +79,19 @@ local PLAYER_SPRITES = {
   bike = "SPRITE_RED_BIKE", fly = "SPRITE_BIRD",
 }
 
+-- The player's own trainer art: RedPicBack (the battle back pic, up until
+-- "Go!"), OldManPicBack (the catch tutorial fights in his place), and
+-- RedPicFront (gfx/player/red.png, shared by Oak's intro, the trainer card
+-- and the Hall of Fame).  Asset paths, not sprite ids -- these are pics,
+-- unrelated to the walking sheet in PLAYER_SPRITES above.  Resolution runs
+-- through Sprites.playerPath, so the player.sprite hook can still vary them
+-- per save after content freezes.
+local PLAYER_PICS = {
+  back = "assets/generated/battle/redb.png",
+  demoBack = "assets/generated/battle/oldmanb.png",
+  front = "assets/generated/trainer_card/red.png",
+}
+
 -- Route22Gate_Script rewrites wLastMap from the player's Y every frame, so
 -- the north exit leaves onto Route 23 and the south onto Route 22.  Rules
 -- are ordered, first match wins, the last row is the default.
@@ -106,6 +119,7 @@ FieldDefaults.FIELD = {
   fishing = FISHING,
   safari = SAFARI,
   playerSprites = PLAYER_SPRITES,
+  playerPics = PLAYER_PICS,
   lastMapRewrites = LAST_MAP_REWRITES,
   -- CheckIfInOutsideMap: what counts as "outside" for the wLastMap memory
   outsideTilesets = { "OVERWORLD", "PLATEAU" },

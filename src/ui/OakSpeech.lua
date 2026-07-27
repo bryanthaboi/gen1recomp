@@ -7,6 +7,7 @@
 -- mod can insertBefore("name_player", ...) without counting indices.
 -- Calls onDone() after popping itself.
 
+local Assets = require("src.render.Assets")
 local Sound = require("src.core.Sound")
 local Music = require("src.core.Music")
 local Logger = require("src.core.Logger")
@@ -52,9 +53,11 @@ local function textOr(game, key)
   return (t and t[key]) or FALLBACKS[key]
 end
 
+-- through Assets.resolve so an enabled mod's overrides/ shadows these the
+-- same way it shadows every other generated asset
 local function tryImage(path)
   if not path then return nil end
-  local ok, img = pcall(love.graphics.newImage, path)
+  local ok, img = pcall(love.graphics.newImage, Assets.resolve(path))
   return ok and img or nil
 end
 
@@ -102,7 +105,9 @@ function OakSpeech.resolvePic(game, desc, speech)
     if speech and speech.playerPic and not desc.path then
       return speech.playerPic, false
     end
-    return tryImage(desc.path or "assets/generated/trainer_card/red.png"), false
+    if desc.path then return tryImage(desc.path), false end
+    return tryImage(require("src.pokemon.Sprites").playerPath(
+      game.data, "front", { kind = "intro" })), false
   elseif t == "image" then
     return tryImage(desc.path), desc.flip and true or false
   elseif t == "sprite" then
@@ -221,7 +226,8 @@ function OakSpeech.new(game, onDone)
   self.nameLen = constants.playerNameLength or 7
   -- RedPicFront (gfx/player/red.png, shared with the trainer card) and
   -- the ShrinkPic1/ShrinkPic2 frames (gfx/player/shrink{1,2}.png)
-  self.playerPic = tryImage("assets/generated/trainer_card/red.png")
+  self.playerPic = tryImage(require("src.pokemon.Sprites").playerPath(
+    game.data, "front", { kind = "intro" }))
   self.shrinkPic1 = tryImage(oakGfx.shrink1
                              or "assets/generated/intro/shrink1.png")
   self.shrinkPic2 = tryImage(oakGfx.shrink2

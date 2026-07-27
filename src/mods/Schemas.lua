@@ -929,8 +929,20 @@ R.battle_sprite_scales = {
     -- 1 = native pixels; the drawn size relative to the pic's own pixels
     scale = f.numRange(0.25, 4.0),
   },
-  example = 'mod.content.battle_sprite_scales:register("abra_back", ' ..
-    '{ path = "assets/generated/battle/back/abrab.png", scale = 1.5 })',
+  example = [[
+mod.content.battle_sprite_scales:register("abra_back", {
+  path = "assets/generated/battle/back/abrab.png",
+  scale = 1.5,
+})]],
+  notes = [[
+Scales one battle pic by its asset path, overriding the species-level
+`battleScaleFront`/`battleScaleBack` (see [pokemon](#pokemon)) for that
+image. The only way to scale a pic that is not species-keyed, like the
+player's trainer back sprite. Resolution order at draw time:
+image-level, then species-level, then the defaults (1x front, 2x back).
+The pic stays grounded at any scale: player feet stay flush on the
+text-box top, the enemy pic stays bottom-pinned in its slot, and the
+scale composes with the send-out grow animation.]],
 }
 
 -- ------- progression
@@ -1157,6 +1169,12 @@ R.field = {
                                             name = f.opt(f.str) })),
       nest = f.opt(f.any) },
     flyOrder = f.list(f.str),
+    -- the player's own trainer art (FieldDefaults.PLAYER_PICS): the battle
+    -- back pic, the catch tutorial's old man, and the front pic the intro,
+    -- trainer card and Hall of Fame share.  Every key is optional so a
+    -- conversion can replace one pic and inherit the rest.
+    playerPics = f.rec{
+      back = f.opt(f.str), demoBack = f.opt(f.str), front = f.opt(f.str) },
     -- the new-game and boot config a total conversion replaces
     boot = f.rec{
       startMap = f.opt(f.str), startX = f.opt(f.int(0)), startY = f.opt(f.int(0)),

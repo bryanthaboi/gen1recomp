@@ -3,8 +3,12 @@
 -- patch pokemon.spriteFront / icons.bySpecies.  These helpers are the
 -- sanctioned seam: every battle pic and party icon load goes through
 -- pokemon.sprite / pokemon.icon, which stay live for the whole process.
+--
+-- playerPath is the same seam for the player's own trainer art, whose
+-- vanilla paths are data (field.playerPics) rather than a species record.
 
 local Runtime = require("src.mods.Runtime")
+local FieldDefaults = require("src.world.FieldDefaults")
 
 local Sprites = {}
 
@@ -31,6 +35,36 @@ function Sprites.path(data, species, side, opts)
   }
   if path and Runtime.wantsHook("pokemon.sprite") then
     local hooked = Runtime.call("pokemon.sprite", samePath, path, ctx)
+    if type(hooked) == "string" and hooked ~= "" then path = hooked end
+  end
+  return path, ctx.trueColor and true or false
+end
+
+-- Resolve the player's own trainer pic path.
+-- side: "back" (the battle intro pic) | "front" (intro / card / Hall of Fame)
+-- opts.kind: "battle" | "intro" | "trainer_card" | "hof"
+-- opts.demo: the catch tutorial, where the old man fights in the player's
+--            place and stands in for the back pic
+-- opts.battle: the live battle, for kind == "battle"
+-- Returns path, trueColor.
+function Sprites.playerPath(data, side, opts)
+  opts = opts or {}
+  side = side == "back" and "back" or "front"
+  -- one key per pic, so a conversion can replace the back and inherit the
+  -- rest; fieldValue folds data.field over FieldDefaults per key
+  local key = side == "front" and "front"
+              or (opts.demo and "demoBack" or "back")
+  local path = FieldDefaults.fieldValue(data, "playerPics", key)
+  local ctx = {
+    side = side,
+    kind = opts.kind or "battle",
+    demo = opts.demo and true or false,
+    battle = opts.battle,
+    trueColor = false,
+    data = data,
+  }
+  if path and Runtime.wantsHook("player.sprite") then
+    local hooked = Runtime.call("player.sprite", samePath, path, ctx)
     if type(hooked) == "string" and hooked ~= "" then path = hooked end
   end
   return path, ctx.trueColor and true or false
