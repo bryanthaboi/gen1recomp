@@ -37,6 +37,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -1211,6 +1212,33 @@ STRINGS_CALL = re.compile(
     r'\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')\s*(?:,|\))')
 
 
+def _fold_ascii(text):
+    folded = unicodedata.normalize("NFKD", text or "")
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    folded = re.sub(r"[^A-Za-z0-9_-]+", "_", folded).strip("_-")
+    return folded.lower()
+
+
+def ascii_mod_id(name, language=None):
+    r"""An engine-legal manifest id derived from what the author called it.
+
+    src/mods/Manifest.lua matches `^[%w_%-]+$`, and Lua's %w is ASCII where
+    Python's \w is not, so "VersaoVermelha" with a tilde loads fine by
+    Python's rules and is rejected by the engine's.  The directory keeps the
+    author's name (the loader keys on manifest.id, not the folder); this is
+    only the id.
+
+    Accented Latin folds cleanly.  A name written entirely in a non-Latin
+    script does not, and those are precisely the translations worth
+    supporting, so fall back to the --language name and then to a stable
+    digest rather than refusing to scaffold."""
+    for candidate in (_fold_ascii(name), _fold_ascii(language)):
+        if candidate:
+            return candidate
+    digest = hashlib.sha1((name or "").encode("utf-8")).hexdigest()[:8]
+    return f"translation_{digest}"
+
+
 def harvest_engine_strings(repo):
     """Every literal the engine passes through src/core/Strings.lua, in
     source order per file. Returns [(lua_literal, "path:line"), ...]."""
@@ -1532,9 +1560,13 @@ def cmd_translation(args, repo):
     """Scaffold (or refresh) a translation mod: every player-visible string
     the engine and the dataset know about, as empty catalogs to fill in."""
     dest = os.path.join(args.dest or os.path.join(repo, "mods"), args.id)
-    if not re.fullmatch(r"[\w\-]+", args.id):
-        print(f"modkit: bad id {args.id!r} (letters, numbers, _ or -)")
-        return 2
+    # Translations get named in the language they translate into
+    # ("VersaoVermelha", with the tilde), but the engine's manifest rule is
+    # Lua's `^[%w_%-]+$`, and Lua's %w is ASCII-only where Python's \w is not.
+    # A directory named in the target language is fine -- the loader keys on
+    # manifest.id, not the folder -- so keep the name the author asked for and
+    # derive an ASCII id for the manifest.
+    mod_id = ascii_mod_id(args.id, args.language)
     exists = os.path.exists(dest)
     if exists and not (args.refresh or args.force):
         print(f"modkit: {dest} exists (use --refresh to update the catalogs)")
@@ -1596,8 +1628,8 @@ def cmd_translation(args, repo):
 
     engine_version_ = engine_version(repo)
     subst = {
-        "{{id}}": args.id,
-        "{{name}}": lang_name + " translation",
+        "{{id}}": mod_id,
+        "{{name}}": args.id,
         "{{lang}}": lang_name,
         "{{lang_id}}": re.sub(r"\W+", "_", args.id).lower(),
         "{{game_version}}": engine_version_,
