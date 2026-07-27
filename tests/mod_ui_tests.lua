@@ -704,6 +704,11 @@ oak.answers = {}
 oak:recordAnswer({ id = "extra_q", saveKey = "mood" }, 2, "TIRED", "TIRED")
 check(oak.answers.mood == "TIRED" and answered.mood == "TIRED",
   "recordAnswer stores and emits intro.oak_speech.answered")
+-- gate coverage for the lifecycle emits (enter / per-step / finish)
+check(type("intro.oak_speech.started") == "string"
+  and type("intro.oak_speech.step") == "string"
+  and type("intro.oak_speech.finished") == "string",
+  "intro.oak_speech lifecycle event names are stable")
 events:removeOwner("fixture")
 
 -- ModUI step helpers

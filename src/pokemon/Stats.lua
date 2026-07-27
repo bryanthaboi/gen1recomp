@@ -57,4 +57,20 @@ function Stats.applyStage(value, stage)
   return math.max(1, math.min(999, v))
 end
 
+-- Gen 2 shiny formula applied to Gen 1 DVs (the RBY "virtual shiny"):
+-- Defense/Speed/Special DV == 10 and Attack DV is even-high
+-- (2, 3, 6, 7, 10, 11, 14, or 15).  Used by shiny-indicator mods.
+local SHINY_ATK = {
+  [2] = true, [3] = true, [6] = true, [7] = true,
+  [10] = true, [11] = true, [14] = true, [15] = true,
+}
+
+function Stats.isShiny(dvs)
+  if type(dvs) ~= "table" then return false end
+  return (dvs.defense or 0) == 10
+     and (dvs.speed or 0) == 10
+     and (dvs.special or 0) == 10
+     and SHINY_ATK[dvs.attack or 0] == true
+end
+
 return Stats

@@ -94,8 +94,9 @@ function OakSpeech.resolvePic(game, desc, speech)
     if speech and desc.id == speech.demoSpecies and speech.demoPic then
       return speech.demoPic, desc.flip and true or false
     end
-    local mon = game.data.pokemon and game.data.pokemon[desc.id]
-    return tryImage(mon and mon.spriteFront), desc.flip and true or false
+    local path = require("src.pokemon.Sprites").path(
+      game.data, desc.id, "front", { kind = "oak" })
+    return tryImage(path), desc.flip and true or false
   elseif t == "player" then
     if speech and speech.playerPic and not desc.path then
       return speech.playerPic, false
@@ -212,8 +213,9 @@ function OakSpeech.new(game, onDone)
   -- the show-off mon and the name length cap come from data; the vanilla
   -- literals stay as the fallbacks
   self.demoSpecies = oakGfx.demoSpecies or "NIDORINO"
-  local demo = game.data.pokemon and game.data.pokemon[self.demoSpecies]
-  self.demoPic = tryImage(demo and demo.spriteFront)
+  local demoPath = require("src.pokemon.Sprites").path(
+    game.data, self.demoSpecies, "front", { kind = "oak" })
+  self.demoPic = tryImage(demoPath)
   local constants = game.data.constants or {}
   self.nameLen = constants.playerNameLength or 7
   -- RedPicFront (gfx/player/red.png, shared with the trainer card) and

@@ -34,7 +34,9 @@ function DexEntryMenu.new(game, speciesOrOpts)
   local species, forceOwned = resolveArgs(speciesOrOpts)
   local self = setmetatable({ game = game, forceOwned = forceOwned }, DexEntryMenu)
   self.def = game.data.pokemon[species]
-  local ok, img = pcall(love.graphics.newImage, self.def.spriteFront)
+  local path = require("src.pokemon.Sprites").path(game.data, species, "front",
+    { kind = "dex" })
+  local ok, img = path and pcall(love.graphics.newImage, path)
   self.sprite = ok and img or nil
   require("src.core.Sound").playCry(game.data, species)
   return self

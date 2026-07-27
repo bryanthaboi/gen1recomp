@@ -5,8 +5,12 @@
 -- given, a "NEW NAME" + presets menu is shown first
 -- (engine/menus/main_menu.asm name lists).
 -- Pops itself from the stack, then calls opts.onDone(name).
+--
+-- ui.naming.grid may replace either page; keep an "ED" cell and a
+-- single-cell case-switch row so confirm / case-flip keep working.
 
 local Font = require("src.render.Font")
+local Runtime = require("src.mods.Runtime")
 local Sound = require("src.core.Sound")
 local Theme = require("src.ui.Theme")
 
@@ -37,8 +41,24 @@ local GRID_LOWER = {
   { "-", "?", "!", "♂", "♀", "/", ".", ",", "ED" },
   { "UPPER CASE" },
 }
-local CASE_ROW = 6
-local ED_ROW, ED_COL = 5, 9
+
+-- locate the ED confirm cell and the case-switch row on a (possibly
+-- modded) grid; falls back to vanilla coordinates
+local function findMeta(grid)
+  local caseRow, edRow, edCol = #grid, 5, 9
+  for r, row in ipairs(grid) do
+    if #row == 1 and (row[1] == "lower case" or row[1] == "UPPER CASE"
+                      or row[1] == "lower" or row[1] == "UPPER") then
+      caseRow = r
+    end
+    for c, cell in ipairs(row) do
+      if cell == "ED" then edRow, edCol = r, c end
+    end
+  end
+  return caseRow, edRow, edCol
+end
+
+local function sameGrid(grid) return grid end
 
 function NamingScreen.new(game, opts)
   opts = opts or {}
@@ -86,16 +106,27 @@ function NamingScreen:confirm()
 end
 
 function NamingScreen:grid()
-  return self.lower and GRID_LOWER or GRID_UPPER
+  local base = self.lower and GRID_LOWER or GRID_UPPER
+  if not Runtime.wantsHook("ui.naming.grid") then return base end
+  local hooked = Runtime.call("ui.naming.grid", sameGrid, base, {
+    lower = self.lower and true or false,
+    title = self.title,
+    maxLen = self.maxLen,
+    game = self.game,
+  })
+  if type(hooked) ~= "table" or #hooked == 0 then return base end
+  return hooked
 end
 
 -- Gen 1 jumps the cursor to ED once the name is full.
 function NamingScreen:jumpToEnd()
-  self.row, self.col = ED_ROW, ED_COL
+  local _, edRow, edCol = findMeta(self:grid())
+  self.row, self.col = edRow, edCol
 end
 
 function NamingScreen:update(dt)
   local GRID = self:grid()
+  local caseRow, edRow, edCol = findMeta(GRID)
   local input = self.game.input
   if input:wasPressed("start") then
     self:confirm()
@@ -107,28 +138,28 @@ function NamingScreen:update(dt)
   end
   if input:wasPressed("up") then
     -- wrapping up from the top row lands on the case-switch cell
-    self.row = self.row > 1 and self.row - 1 or CASE_ROW
+    self.row = self.row > 1 and self.row - 1 or caseRow
     self.col = math.min(self.col, #GRID[self.row])
   elseif input:wasPressed("down") then
     self.row = self.row < #GRID and self.row + 1 or 1
     self.col = math.min(self.col, #GRID[self.row])
   elseif input:wasPressed("left") then
     -- no horizontal movement on the case-switch row
-    if self.row ~= CASE_ROW then
+    if self.row ~= caseRow then
       self.col = self.col > 1 and self.col - 1 or #GRID[self.row]
     end
   elseif input:wasPressed("right") then
-    if self.row ~= CASE_ROW then
+    if self.row ~= caseRow then
       self.col = self.col < #GRID[self.row] and self.col + 1 or 1
     end
   elseif input:wasPressed("b") then
     table.remove(self.glyphs)
   elseif input:wasPressed("a") then
-    if self.row == ED_ROW and self.col == ED_COL then
+    if self.row == edRow and self.col == edCol then
       self:confirm()
       return
     end
-    if self.row == CASE_ROW then
+    if self.row == caseRow then
       self.lower = not self.lower
       return
     end

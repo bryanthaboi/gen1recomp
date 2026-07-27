@@ -95,6 +95,7 @@ local function drawIcon(game, mon, x, y, selected, counter)
     name = def and def.dex and icons.byDex and icons.byDex[def.dex]
     path = name and icons.icons and icons.icons[name]
   end
+  path = require("src.pokemon.Sprites").iconPath(game.data, mon, path, { name = name })
   if not path then return end
   if iconImages[path] == nil then
     -- resolve through Assets so an overrides/ or transform-derived icon
