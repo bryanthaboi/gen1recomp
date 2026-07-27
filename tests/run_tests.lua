@@ -1917,6 +1917,40 @@ do
   check(math.abs(physX - 7) < 1e-9 and math.abs(physY - 7) < 1e-9,
         "#208 swapped-aspect still yields square 7x7 physical GB pixels")
 
+  -- #208 part two: getting the draw scale right is useless if the SOURCE is
+  -- fractional.  love.graphics.newCanvas defaults dpiscale to
+  -- love.graphics.getDPIScale(), so on mobile (conf.lua sets highdpi) a
+  -- newCanvas(160, 144) is really a 441x397 texture holding 2.755 texels per
+  -- GB pixel; the integer blit then lands those on 5 / 7 / 8 physical pixels
+  -- instead of a uniform 7.  Every render target must be pixel-exact.
+  Zoom.reset()
+  g.getDimensions = function() return 698, 392 end
+  g.getPixelDimensions = function() return 1920, 1080 end
+  g.getDPIScale = function() return 1080 / 392 end
+  -- one table, not a fistful of locals: this chunk is close to Lua's
+  -- 200-local ceiling and a few more here overflow it
+  local probe = { made = {}, newCanvas = g.newCanvas,
+                  ui = Renderer.canvas, world = Renderer.worldCanvas }
+  g.newCanvas = function(w, h, settings)
+    probe.made[#probe.made + 1] =
+      { w = w, h = h, dpiscale = settings and settings.dpiscale }
+    return probe.newCanvas(w, h)
+  end
+  Renderer:init()
+  Renderer:beginWorldPass()
+  love.graphics.setCanvas()
+  g.newCanvas = probe.newCanvas
+  Renderer.canvas, Renderer.worldCanvas = probe.ui, probe.world
+  Renderer.worldActive = false
+  check(#probe.made >= 2, "#208 init + world pass allocated their canvases")
+  for _, c in ipairs(probe.made) do
+    eq(c.dpiscale, 1,
+       ("#208 canvas %dx%d is pixel-exact (dpiscale 1, not the screen's)")
+         :format(c.w, c.h))
+    if c.w == 160 and c.h == 144 then probe.sawUi = true end
+  end
+  check(probe.sawUi, "#208 the UI canvas is requested at exactly 160x144")
+
   -- missing pixel API falls back to getDimensions (headless / old stub)
   g.getPixelDimensions = nil
   g.getDPIScale = nil

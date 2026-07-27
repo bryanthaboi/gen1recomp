@@ -96,6 +96,20 @@ function Game:load()
   end
 
   Logger.info("game loaded")
+  -- Scaling bug reports (#87, #208) are unanswerable without these three
+  -- numbers: LOVE units, drawable pixels, and the integer physical pixels
+  -- per GB pixel the renderer settled on.  Cheap, once, and it turns "it
+  -- looks stretched" into something reproducible.
+  if love.graphics and love.graphics.getDimensions then
+    local ww, wh = love.graphics.getDimensions()
+    local pw, ph = ww, wh
+    if love.graphics.getPixelDimensions then
+      pw, ph = love.graphics.getPixelDimensions()
+    end
+    Logger.info(string.format(
+      "display: %dx%d units, %dx%d px, fit scale %d px/GB px",
+      ww, wh, pw, ph, Renderer:fitScale()))
+  end
 end
 
 -- the merged field.boot: spawn, names, money and the naming presets a

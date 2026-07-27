@@ -3876,8 +3876,11 @@ function BattleState:colorMode()
     if g and g.newCanvas and g.setScissor and g.setShader and g.getCanvas
        and love.image and PaletteFX.pack(self.data)
        and PaletteFX.shader() then
-      local ok1, bg = pcall(g.newCanvas, 160, 144)
-      local ok2, wv = pcall(g.newCanvas, 160, 144)
+      -- 160x144 real pixels, not DPI units, or the colored battle background
+      -- resamples against the UI canvas on mobile (#208; PixelCanvas.lua)
+      local PixelCanvas = require("src.render.PixelCanvas")
+      local ok1, bg = pcall(PixelCanvas.new, 160, 144)
+      local ok2, wv = pcall(PixelCanvas.new, 160, 144)
       if ok1 and ok2 and bg and wv then
         self.bgCanvas, self.waveCanvas = bg, wv
         ready = true

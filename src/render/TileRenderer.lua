@@ -542,7 +542,10 @@ end
 local function bakeBorderFill(self, block)
   local border = self.map.tileset.blocks[block + 1]
   if not border then return end
-  local canvas = love.graphics.newCanvas(32, 32)
+  -- 32x32 real pixels: a DPI-scaled canvas would bake the border block at a
+  -- fractional texel size and the repeat-wrapped image would then tile at
+  -- non-square pixels (#208, see src/render/PixelCanvas.lua)
+  local canvas = require("src.render.PixelCanvas").new(32, 32)
   love.graphics.push("all")
   love.graphics.setCanvas(canvas)
   love.graphics.clear(1, 1, 1, 1)
