@@ -4309,7 +4309,10 @@ end
 function BattleState:drawTextArea()
   Font.drawBox(0, 12, 20, 6)
   love.graphics.setColor(0, 0, 0, 1)
-  if self.phase == "messages" and self.current then
+  if self.phase == "messages" and (self.current or self.animPlaying) then
+    -- during the move animation self.current is nil but shown still holds
+    -- the "used X!" lines; keep drawing them like pokered, whose move
+    -- animations only touch sprites and never the textbox tilemap (#296)
     -- rolling 2-line window: shown[1] at row y=112, shown[2] at y=128 (battle
     -- text uses every other tile row, hlcoord *,14 / *,16).  scrollPx animates
     -- the lines up one row (ScrollTextUpOneLine) so a 3rd line scrolls into
