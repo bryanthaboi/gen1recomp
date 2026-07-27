@@ -575,6 +575,39 @@ do
 end
 
 do
+  -- fieldmove.eligibility: next_ is the whole vanilla partyKnows check,
+  -- so a wrapper can widen field-move rules without forking the engine
+  local save = {
+    inventory = { SOULBADGE = 1, THUNDERBADGE = 1, CASCADEBADGE = 1 },
+    party = { { species = "SQUIRTLE", moves = {} },
+              { species = "PIDGEY", moves = { { id = "FLY" } } } },
+  }
+  local game = { save = save, data = Data }
+  check(bindGame(OW.partyKnows, game), "partyKnows binds a test Game")
+  check(OW:partyKnows("SURF") == nil, "no hook, no surf without a knower")
+  check(OW:partyKnows("FLY") == save.party[2], "the knower wins unwrapped")
+  withBuses(function(_, hooks)
+    local seen
+    hooks:wrap("fieldmove.eligibility", function(next_, moveId, ctx)
+      seen = { moveId = moveId, ctx = ctx }
+      local mon = next_(moveId, ctx)
+      if mon then return mon end -- vanilla first
+      if moveId == "SURF" then return ctx.save.party[1] end
+      return nil
+    end, 0, "rental")
+    check(OW:partyKnows("SURF") == save.party[1],
+      "the hook can offer a field move vanilla denies")
+    check(OW:partyKnows("FLY") == save.party[2],
+      "a vanilla knower still beats the hook")
+    check(OW:partyKnows("CUT") == nil,
+      "next_ still yields nil when the hook declines")
+    check(seen.moveId == "CUT" and seen.ctx.save == save
+      and seen.ctx.data == Data,
+      "the hook ctx carries moveId, save, and data")
+  end)
+end
+
+do
   -- warp.destination reroutes one door without owning the warp table
   local warpDef = Data.maps.PALLET_TOWN.warps[1]
   local m1 = Warp.destination(Data, warpDef)

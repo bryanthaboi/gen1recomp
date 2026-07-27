@@ -1240,7 +1240,7 @@ end
 -- (constants.hmBadges; distinct from constants.hmMoves, the forget gate).
 -- Gen 1 allows field use from fainted party members (party menu + name
 -- lookup for Cut/Surf messages); do not require mon.hp > 0 here.
-function OverworldState:partyKnows(moveId)
+local function partyKnowsVanilla(moveId)
   local gate = (FieldDefaults.constant(Game.data, "hmBadges") or {})[moveId]
   local badge = gate and gate.badge
   if badge and not Game.save.inventory[badge] then
@@ -1252,6 +1252,17 @@ function OverworldState:partyKnows(moveId)
     end
   end
   return nil
+end
+
+function OverworldState:partyKnows(moveId)
+  -- a mod may unlock a field move another way (an HM in the bag, a rental
+  -- mon); next_ is the whole vanilla check, so calling it first keeps
+  -- vanilla answers winning
+  if Runtime.wantsHook("fieldmove.eligibility") then
+    return Runtime.call("fieldmove.eligibility", partyKnowsVanilla, moveId,
+      { save = Game.save, data = Game.data })
+  end
+  return partyKnowsVanilla(moveId)
 end
 
 -- The rejection loop shared by the Good and Super Rods
