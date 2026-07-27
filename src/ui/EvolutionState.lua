@@ -28,10 +28,11 @@ end
 
 local FLASH_FRAMES = 220
 
-local function frontSprite(game, species)
-  local def = game.data.pokemon[species]
-  if not (def and def.spriteFront) then return nil end
-  local ok, img = pcall(love.graphics.newImage, def.spriteFront)
+local function frontSprite(game, species, mon)
+  local path = require("src.pokemon.Sprites").path(game.data, species, "front",
+    { mon = mon, kind = "evolution" })
+  if not path then return nil end
+  local ok, img = pcall(love.graphics.newImage, path)
   return ok and img or nil
 end
 
@@ -46,8 +47,8 @@ function EvolutionState.new(game, mon, newSpecies, onDone, via)
   -- B-cancel poll; level-up, stone and rare-candy evos are all cancelable.
   self.cancelable = (via ~= "TRADE")
   self.oldName = mon.nickname or game.data.pokemon[mon.species].name
-  self.oldSprite = frontSprite(game, mon.species)
-  self.newSprite = frontSprite(game, newSpecies)
+  self.oldSprite = frontSprite(game, mon.species, mon)
+  self.newSprite = frontSprite(game, newSpecies, mon)
   self.t = 0
   self.done = false
   self.canceled = false

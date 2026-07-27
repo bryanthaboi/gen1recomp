@@ -22,12 +22,15 @@ package org.love2d.android;
 
 import org.libsdl.app.SDLActivity;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -61,13 +64,24 @@ public class GameActivity extends SDLActivity {
     protected final int[] recordAudioRequestDummy = new int[1];
     public static final int EXTERNAL_STORAGE_REQUEST_CODE = 2;
     public static final int RECORD_AUDIO_REQUEST_CODE = 3;
-    public static final int ROM_PICKER_REQUEST_CODE = 4;
-    // Mirrors conf.lua's t.identity ("pokemon-love2d"): where the picked ROM
+    public static final int FILE_PICKER_REQUEST_CODE = 4;
+    public static final int FILE_CREATE_REQUEST_CODE = 5;
+    /** @deprecated Prefer FILE_PICKER_REQUEST_CODE; kept for older call sites. */
+    public static final int ROM_PICKER_REQUEST_CODE = FILE_PICKER_REQUEST_CODE;
+    // Mirrors conf.lua's t.identity ("pokemon-love2d"): where the picked file
     // is dropped so RomImporter's existing folder scan finds it -- see
     // src/import/RomImporter.lua and Filesystem::setIdentity (sets Android's
     // save directory to getExternalFilesDir()/save/<identity>).
     private static final String ROM_SAVE_IDENTITY = "pokemon-love2d";
     private static final String PICKED_ROM_FILENAME = "picked_rom.gb";
+    private static final String PICKED_MOD_FILENAME = "picked_mod.zip";
+    private static final String PICKED_SAVE_FILENAME = "picked_save.sav";
+    private static final String PENDING_EXPORT_FILENAME = "pending_export.sav";
+    private static final String EXPORT_DONE_FILENAME = "export_done.flag";
+    // Destination basename for the in-flight SAF pick (set by showFilePicker).
+    private String pendingPickFilename = PICKED_ROM_FILENAME;
+    // Suggested download name for the in-flight SAF create (set by showCreateDocument).
+    private String pendingCreateSuggestedName = "export.sav";
     private static boolean immersiveActive = false;
     private static boolean needToCopyGameInArchive = false;
     private boolean storagePermissionUnnecessary = false;
@@ -341,59 +355,185 @@ public class GameActivity extends SDLActivity {
 
     /**
      * Shows the system document picker (Storage Access Framework) so the
-     * player can pick their ROM from anywhere (Downloads, Drive, etc.)
-     * without needing to know where the app's external files folder is.
-     * Requires API 19+ (ACTION_OPEN_DOCUMENT); the picked file (if any)
+     * player can pick a ROM / mod / save from anywhere (Downloads, Drive,
+     * etc.) without needing to know where the app's external files folder
+     * is. Requires API 19+ (ACTION_OPEN_DOCUMENT); the picked file (if any)
      * arrives later in onActivityResult, not synchronously here.
+     *
+     * @param destFilename basename under the app save identity (e.g.
+     *                     picked_rom.gb, picked_mod.zip, picked_save.sav)
      */
     @Keep
-    public static boolean showRomFilePicker() {
+    public static boolean showFilePicker(String destFilename) {
         if (android.os.Build.VERSION.SDK_INT < 19) return false;
         GameActivity self = (GameActivity) mSingleton;
         if (self == null) return false;
+        if (destFilename == null || destFilename.length() == 0) {
+            destFilename = PICKED_ROM_FILENAME;
+        }
+        // Reject path separators so a hostile JNI caller cannot escape the
+        // save identity directory.
+        if (destFilename.indexOf('/') >= 0 || destFilename.indexOf('\\') >= 0) {
+            Log.d("GameActivity", "refusing unsafe picker dest: " + destFilename);
+            return false;
+        }
 
+        self.pendingPickFilename = destFilename;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         try {
-            self.startActivityForResult(intent, ROM_PICKER_REQUEST_CODE);
+            self.startActivityForResult(intent, FILE_PICKER_REQUEST_CODE);
             return true;
         } catch (Exception e) {
-            Log.d("GameActivity", "could not open ROM file picker: " + e.getMessage());
+            Log.d("GameActivity", "could not open file picker: " + e.getMessage());
             return false;
+        }
+    }
+
+    /** ROM convenience wrapper; prefer showFilePicker with an explicit name. */
+    @Keep
+    public static boolean showRomFilePicker() {
+        return showFilePicker(PICKED_ROM_FILENAME);
+    }
+
+    /** Mod .zip convenience wrapper used by love.system.pickFile("mod"). */
+    @Keep
+    public static boolean showModFilePicker() {
+        return showFilePicker(PICKED_MOD_FILENAME);
+    }
+
+    /** Battery .sav convenience wrapper used by love.system.pickFile("sav"). */
+    @Keep
+    public static boolean showSaveFilePicker() {
+        return showFilePicker(PICKED_SAVE_FILENAME);
+    }
+
+    /**
+     * Shows ACTION_CREATE_DOCUMENT so the player can save a staged export
+     * (pending_export.sav in the app save identity) to Downloads / Drive /
+     * etc. Suggested name is the dialog's default filename.
+     */
+    @Keep
+    public static boolean showCreateDocument(String suggestedName) {
+        if (android.os.Build.VERSION.SDK_INT < 19) return false;
+        GameActivity self = (GameActivity) mSingleton;
+        if (self == null) return false;
+        if (suggestedName == null || suggestedName.length() == 0) {
+            suggestedName = "export.sav";
+        }
+        if (suggestedName.indexOf('/') >= 0 || suggestedName.indexOf('\\') >= 0) {
+            Log.d("GameActivity", "refusing unsafe create name: " + suggestedName);
+            return false;
+        }
+        File source = new File(
+            new File(self.getExternalFilesDir(null), "save"),
+            ROM_SAVE_IDENTITY + "/" + PENDING_EXPORT_FILENAME);
+        if (!source.isFile()) {
+            Log.d("GameActivity", "no pending export at " + source);
+            return false;
+        }
+
+        self.pendingCreateSuggestedName = suggestedName;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, suggestedName);
+        try {
+            self.startActivityForResult(intent, FILE_CREATE_REQUEST_CODE);
+            return true;
+        } catch (Exception e) {
+            Log.d("GameActivity", "could not open create-document picker: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private File saveIdentityDir() {
+        return new File(new File(getExternalFilesDir(null), "save"), ROM_SAVE_IDENTITY);
+    }
+
+    private boolean copyFileToUri(File source, Uri destUri) {
+        InputStream in = null;
+        OutputStream out = null;
+        try {
+            in = new BufferedInputStream(new FileInputStream(source));
+            out = getContentResolver().openOutputStream(destUri);
+            if (out == null) return false;
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+            }
+            out.flush();
+            return true;
+        } catch (IOException e) {
+            Log.d("GameActivity", "copy to URI failed: " + e.getMessage());
+            return false;
+        } finally {
+            try { if (in != null) in.close(); } catch (IOException ignored) {}
+            try { if (out != null) out.close(); } catch (IOException ignored) {}
         }
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != ROM_PICKER_REQUEST_CODE) return;
+        if (requestCode == FILE_CREATE_REQUEST_CODE) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                Log.d("GameActivity", "create-document cancelled");
+                return;
+            }
+            File source = new File(saveIdentityDir(), PENDING_EXPORT_FILENAME);
+            if (!source.isFile()) {
+                Log.d("GameActivity", "pending export missing at result time");
+                return;
+            }
+            Uri uri = data.getData();
+            if (copyFileToUri(source, uri)) {
+                // Signal Lua on next focus that the SAF export finished.
+                File flag = new File(saveIdentityDir(), EXPORT_DONE_FILENAME);
+                try {
+                    FileOutputStream fos = new FileOutputStream(flag, false);
+                    fos.write("ok".getBytes());
+                    fos.close();
+                } catch (IOException e) {
+                    Log.d("GameActivity", "could not write export_done flag: " + e.getMessage());
+                }
+                // Keep pending_export.sav so a retry still works; Lua may remove it.
+            } else {
+                Log.d("GameActivity", "could not write export to " + uri);
+            }
+            return;
+        }
+        if (requestCode != FILE_PICKER_REQUEST_CODE) return;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            Log.d("GameActivity", "ROM picker returned no file (cancelled?)");
+            Log.d("GameActivity", "file picker returned no file (cancelled?)");
             return;
         }
 
         Uri uri = data.getData();
-        File destDir = new File(new File(getExternalFilesDir(null), "save"), ROM_SAVE_IDENTITY);
+        File destDir = saveIdentityDir();
         if (!destDir.exists() && !destDir.mkdirs()) {
             Log.d("GameActivity", "could not create " + destDir);
             return;
         }
-        File destFile = new File(destDir, PICKED_ROM_FILENAME);
+        String destName = pendingPickFilename != null
+            ? pendingPickFilename : PICKED_ROM_FILENAME;
+        File destFile = new File(destDir, destName);
 
         InputStream source;
         try {
             source = getContentResolver().openInputStream(uri);
         } catch (FileNotFoundException e) {
-            Log.d("GameActivity", "could not open picked ROM: " + e.getMessage());
+            Log.d("GameActivity", "could not open picked file: " + e.getMessage());
             return;
         }
         if (source == null) {
-            Log.d("GameActivity", "ContentResolver returned no stream for picked ROM");
+            Log.d("GameActivity", "ContentResolver returned no stream for picked file");
             return;
         }
         if (!copyAssetFile(source, destFile.getPath())) {
-            Log.d("GameActivity", "could not copy picked ROM to " + destFile);
+            Log.d("GameActivity", "could not copy picked file to " + destFile);
         }
     }
 

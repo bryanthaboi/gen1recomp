@@ -30,9 +30,11 @@ end
 
 function SummaryMenu.new(game, mon)
   local self = setmetatable({ game = game, mon = mon, page = 1 }, SummaryMenu)
-  local def = game.data.pokemon[mon.species]
-  if def and def.spriteFront then
-    local ok, img = pcall(love.graphics.newImage, def.spriteFront)
+  local Sprites = require("src.pokemon.Sprites")
+  local path = Sprites.path(game.data, mon.species, "front",
+    { mon = mon, kind = "summary" })
+  if path then
+    local ok, img = pcall(love.graphics.newImage, path)
     self.sprite = ok and img or nil
   end
   require("src.core.Sound").playCry(game.data, mon.species)

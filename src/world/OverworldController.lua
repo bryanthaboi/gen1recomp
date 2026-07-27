@@ -452,6 +452,35 @@ end
 
 -- name -> name so the map.palette chain has a vanilla link to wrap
 local function samePalette(name) return name end
+local function sameTod(tod) return tod end
+
+-- world.tod default: always DAY.  A day/night mod returns "NIGHT",
+-- "MORNING", etc.; the result is cached on the overworld and handed to
+-- map.palette as ctx.tod so palette swaps can key off the period.
+function OverworldState:timeOfDay()
+  local tod = self.tod or "DAY"
+  if not Runtime.wantsHook("world.tod") then return tod end
+  local map = self.map
+  local nextTod = Runtime.call("world.tod", sameTod, tod, {
+    map = map,
+    mapId = map and map.id,
+    x = self.player and self.player.cellX,
+    y = self.player and self.player.cellY,
+    steps = self.todSteps or 0,
+  })
+  if type(nextTod) ~= "string" or nextTod == "" then nextTod = tod end
+  if nextTod ~= tod then
+    self.tod = nextTod
+    if Runtime.wants("world.tod_changed") then
+      Runtime.emit("world.tod_changed", {
+        tod = nextTod, previous = tod, mapId = map and map.id,
+      })
+    end
+  else
+    self.tod = nextTod
+  end
+  return self.tod
+end
 
 function OverworldState:paletteNameFor(map)
   local palettes = FieldDefaults.field(Game.data, "palettes")
@@ -470,8 +499,9 @@ function OverworldState:paletteNameFor(map)
     name = (last and paletteLookup(palettes, last, lastDef and lastDef.tileset))
            or palettes.default
   end
+  local tod = self:timeOfDay()
   if not Runtime.wantsHook("map.palette") then return name end
-  return Runtime.call("map.palette", samePalette, name, map)
+  return Runtime.call("map.palette", samePalette, name, map, { tod = tod })
 end
 
 -- UI-pass palette (text boxes and menus tint with the current map).  OG RED
@@ -2781,11 +2811,18 @@ end
 
 function OverworldState:onStepComplete()
   local p = self.player
+  self.todSteps = (self.todSteps or 0) + 1
+  -- re-evaluate day/night so a step-based clock can fire world.tod_changed;
+  -- paletteNameFor reads self.tod on the next paint
+  if Runtime.wantsHook("world.tod") then
+    self:timeOfDay()
+  end
 
   -- hot path: the payload is only built when something is listening
   if Runtime.wants("world.stepped") then
     Runtime.emit("world.stepped", { mapId = self.map.id, x = p.cellX, y = p.cellY,
-                                    tile = self.map:cellTile(p.cellX, p.cellY) })
+                                    tile = self.map:cellTile(p.cellX, p.cellY),
+                                    tod = self.tod })
   end
 
   -- dismounting a surf: landing on a walkable cell ends it

@@ -3,11 +3,12 @@
 -- manifests only.  The full loader (src/mods/Loader.lua) still owns the real
 -- load at boot; this reads the same options.mods enable-state the loader
 -- writes, derives per-mod status with the pure ManagerState.resolveToggle,
--- and installs a dropped/chosen .zip into the save-dir "mods/<id>/" tree.
+-- installs a dropped/chosen .zip into the save-dir "mods/<id>/" tree, and
+-- uninstalls a mod by removing that tree + clearing options.mods[id].
 --
 -- Split in two: the pure derivation (deriveList, locateRoot) has no love and
--- no filesystem, so the engine tier can table-drive it; the discovery and
--- install paths reach for love.filesystem and SaveData.
+-- no filesystem, so the engine tier can table-drive it; the discovery,
+-- install, and uninstall paths reach for love.filesystem and SaveData.
 
 local Manifest = require("src.mods.Manifest")
 local ManagerState = require("src.mods.ManagerState")
@@ -330,6 +331,36 @@ function LauncherMods.installZip(source)
   end
   cleanup()
   return true, manifest.id
+end
+
+-- uninstall(id) -> true  |  nil, errString
+-- Removes mods/<id>/ from the save directory and clears options.mods[id] so the
+-- loader and in-game manager no longer see it.  Rejects unknown / missing ids.
+-- Does not touch other mods' enable state.
+function LauncherMods.uninstall(id)
+  if type(id) ~= "string" or id == "" then
+    return nil, "missing mod id"
+  end
+  if id:find("[/\\]") or id == "." or id == ".." then
+    return nil, "invalid mod id"
+  end
+  if not (love and love.filesystem) then
+    return nil, "mod uninstall needs LOVE"
+  end
+  local fs = love.filesystem
+  local dest = "mods/" .. id
+  if not fs.getInfo(dest) then
+    return nil, "mod '" .. id .. "' is not installed"
+  end
+  removeTree(dest)
+  -- Drop the enable flag so a reinstall of the same id starts from the
+  -- loader's default (enabled) rather than a stale false.
+  local options = SaveData.loadOptions()
+  if options.mods and options.mods[id] ~= nil then
+    options.mods[id] = nil
+    SaveData.saveOptions(options)
+  end
+  return true
 end
 
 return LauncherMods

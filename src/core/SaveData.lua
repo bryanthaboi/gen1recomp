@@ -552,6 +552,44 @@ function SaveData.writeSlot(version, slotId, saveTable)
   return true
 end
 
+-- Delete a registered slot: remove its main/.bak/.tmp files, drop it from the
+-- options registry, and if it was active point active at another remaining
+-- slot (or clear active when the list is empty).  Returns true, or false +
+-- an error string when the id is unknown / not registered.
+function SaveData.deleteSlot(version, slotId)
+  version = version or GameVersion.get()
+  if not knownVersion(version) then return false, "unknown version" end
+  if type(slotId) ~= "string" or slotId == "" then
+    return false, "missing slot id"
+  end
+  local fs = persistFs(nil)
+  ensureVersionSlots(version, fs)
+  local opts = SaveData.loadOptions(fs)
+  opts.saveSlots = opts.saveSlots or {}
+  local reg = opts.saveSlots[version]
+  if not reg or not reg.list then return false, "slot not registered" end
+  local found, idx = false, nil
+  for i, id in ipairs(reg.list) do
+    if id == slotId then found = true; idx = i; break end
+  end
+  if not found then return false, "slot not registered" end
+
+  local main, bak, tmp = slotNames(version, slotId)
+  remove(fs, main)
+  remove(fs, bak)
+  remove(fs, tmp)
+
+  table.remove(reg.list, idx)
+  if reg.active == slotId then
+    reg.active = reg.list[1]  -- may be nil when the list is now empty
+  end
+  opts.saveSlots[version] = reg
+  SaveData.saveOptions(opts, fs)
+  slotsChecked[version] = true
+  activeSlotCache[version] = reg.active or false
+  return true
+end
+
 -- Test seam: drop the process-global slot cache so a suite can exercise
 -- migration/resolution against a freshly injected filesystem.  Unused by
 -- the game, which resolves each version exactly once per boot.

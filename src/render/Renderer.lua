@@ -10,6 +10,7 @@ local Zoom = require("src.render.Zoom")
 local Tilt = require("src.render.Tilt")
 local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
+local Runtime = require("src.mods.Runtime")
 
 local Renderer = {}
 
@@ -486,6 +487,17 @@ function Renderer:endFrame(zones, worldZones)
   love.graphics.setColor(clearR, clearG, clearB, 1)
   love.graphics.rectangle("fill", 0, 0, ww, wh)
   love.graphics.setColor(1, 1, 1, 1)
+  -- render.letterbox: SGB borders / custom void art in the bars around the
+  -- 160x144 (or world) blit.  Drawn after the clear and before the game
+  -- canvas so the playfield sits on top of the border.
+  if Runtime.wantsHook("render.letterbox") then
+    Runtime.call("render.letterbox", function() end, {
+      ww = ww, wh = wh, pw = pw, ph = ph,
+      ox = ox, oy = oy, vpw = vpw, vph = vph,
+      scale = Sp, dpiX = dpiX, dpiY = dpiY,
+      worldActive = self.worldActive and true or false,
+    })
+  end
 
   -- blit `canvas` at (sx, sy) LOVE-unit scales into origin (bx, by),
   -- scissored to the (boxX, boxY, boxW, boxH) screen rect.  zoneSx/zoneSy

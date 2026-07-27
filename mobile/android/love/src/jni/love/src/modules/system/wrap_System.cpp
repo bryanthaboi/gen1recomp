@@ -97,7 +97,15 @@ int w_vibrate(lua_State *L)
 
 int w_pickFile(lua_State *L)
 {
-	luax_pushboolean(L, instance()->pickFile());
+	const char *kind = luaL_optstring(L, 1, nullptr);
+	luax_pushboolean(L, instance()->pickFile(kind));
+	return 1;
+}
+
+int w_createFile(lua_State *L)
+{
+	const char *suggested = luaL_optstring(L, 1, nullptr);
+	luax_pushboolean(L, instance()->createFile(suggested));
 	return 1;
 }
 
@@ -117,6 +125,7 @@ static const luaL_Reg functions[] =
 	{ "openURL", w_openURL },
 	{ "vibrate", w_vibrate },
 	{ "pickFile", w_pickFile },
+	{ "createFile", w_createFile },
 	{ "hasBackgroundMusic", w_hasBackgroundMusic },
 	{ 0, 0 }
 };

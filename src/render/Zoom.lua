@@ -4,19 +4,38 @@
 -- zoom.  Persisted as save.options.zoom (default 0 = FIT).
 -- Spec: docs/new-features.md (survey zoom)
 
+local Runtime = require("src.mods.Runtime")
+
 local Zoom = {}
 
 Zoom.offset = 0
 
--- effective integer scale s' in [1, 2*S]
-function Zoom.scale(S)
-  return math.max(1, math.min(2 * S, S + Zoom.offset))
-end
-
--- legal offset range for a given fit scale
+-- legal offset range for a given fit scale (vanilla: survey at 1 px/world
+-- through 2× fit).  zoom.range may widen or shrink the window.
 function Zoom.offsetRange(S)
   S = math.max(1, math.floor(tonumber(S) or 1))
-  return 1 - S, S
+  local lo, hi = 1 - S, S
+  if Runtime.wantsHook("zoom.range") then
+    lo, hi = Runtime.call("zoom.range", function(a, b) return a, b end, lo, hi, S)
+    lo = math.floor(tonumber(lo) or (1 - S))
+    hi = math.floor(tonumber(hi) or S)
+    if lo > hi then lo, hi = hi, lo end
+  end
+  return lo, hi
+end
+
+-- effective scale s' = S + offset, clamped to the (possibly modded) range.
+-- Vanilla stays in [1, 2*S].  A zoom.range wrapper that lowers `lo` below
+-- 1-S permits sub-1 survey scales so the whole region can fit on screen.
+function Zoom.scale(S)
+  local lo, hi = Zoom.offsetRange(S)
+  local s = S + Zoom.offset
+  local minScale = S + lo
+  local maxScale = math.max(minScale, S + hi)
+  if s < minScale then s = minScale end
+  if s > maxScale then s = maxScale end
+  if s < 0.25 then s = 0.25 end
+  return s
 end
 
 function Zoom.clampOffset(offset, S)

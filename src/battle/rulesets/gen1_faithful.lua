@@ -16,4 +16,7 @@ return {
   -- Wild/trainer enemies never spend PP (DecrementPP only touches the
   -- player side in pokered). They therefore never Struggle from empty PP.
   enemyUnlimitedPP = true,
+  -- Gen 1 Hyper Beam: no recharge when the target faints (or its
+  -- substitute breaks).  Set false to always recharge like Gen 2+.
+  hyperBeamSkipRechargeOnKO = true,
 }

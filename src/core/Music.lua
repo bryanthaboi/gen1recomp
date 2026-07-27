@@ -24,7 +24,31 @@ local FILTER_HIGHGAIN = { 0.4, 0.16, 0.064 }
 local filterLevel = 0
 
 local function applyVolume(src)
-  if src then pcall(src.setVolume, src, VOLUME * volumeScale) end
+  if not src then return end
+  local vol = VOLUME * volumeScale
+  if Runtime.wantsHook("music.volume") then
+    local ctx = {
+      song = state.current,
+      mapSong = state.mapSong,
+      onBike = state.onBike,
+      surfing = state.surfing,
+      fading = state.fade ~= nil,
+      optionScale = volumeScale,
+    }
+    local ok, Game = pcall(require, "src.core.Game")
+    if ok and Game then
+      local ow = Game.overworld
+      if ow and ow.player then
+        ctx.x, ctx.y = ow.player.cellX, ow.player.cellY
+        ctx.mapId = ow.map and ow.map.id
+        ctx.tod = ow.tod
+      end
+    end
+    vol = Runtime.call("music.volume", function(v) return v end, vol, ctx)
+    vol = tonumber(vol) or (VOLUME * volumeScale)
+    if vol < 0 then vol = 0 end
+  end
+  pcall(src.setVolume, src, vol)
 end
 
 -- Source:setFilter needs OpenAL EFX; the pcall degrades to unfiltered
@@ -408,6 +432,12 @@ end
 -- restores the map theme after a one-shot jingle
 function Music.update(data)
   if state.chip then require("src.core.ChipAudio").update() end
+  -- distance / indoor muffling mods re-apply volume every frame while
+  -- subscribed; otherwise applyVolume only runs on song/option changes
+  if Runtime.wantsHook("music.volume") and not state.fade then
+    applyVolume(state.source)
+    applyVolume(state.loopSource)
+  end
   -- volume ramp (Music.fadeOut): hold the current level for `control`
   -- frames, then drop one level (FadeOutAudio decrements both rAUDVOL
   -- nibbles when its counter reaches 0); at level 0 the music stops.

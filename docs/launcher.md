@@ -5,19 +5,39 @@ that runs before `Game:load`. Besides ROM import (see the file's own header)
 it hosts a tabbed shell covering per-game save slots and a mod manager. This
 file documents the runtime model; the visual spec lives separately.
 
-## Android multi-ROM import
+## Android multi-ROM / mod / save import
 
-On Android, `love.system.pickFile()` opens the Storage Access Framework
-picker (`GameActivity.showRomFilePicker`); the chosen file is copied to
-`picked_rom.gb` in the app save directory. `RomImporter` then imports on
-refocus / Choose via `findPendingRom`: only a 1 MiB `.gb` whose SHA-1 maps
-to a version that is **not** yet ready counts as pending. A leftover
-`picked_rom.gb` from Red therefore cannot block Blue's Choose (issue #167).
-After a successful import the consumed save-dir `.gb` is removed.
+On Android, `love.system.pickFile([kind])` opens the Storage Access Framework
+picker (`GameActivity.showFilePicker`); the chosen file is copied into the app
+save directory as:
+
+| `kind` | Destination |
+| --- | --- |
+| nil / `"rom"` | `picked_rom.gb` (open) |
+| `"mod"` | `picked_mod.zip` (open) |
+| `"sav"` / `"save"` | `picked_save.sav` (open) |
+
+Export uses a separate API: `love.system.createFile(suggestedName)` →
+`GameActivity.showCreateDocument` (`ACTION_CREATE_DOCUMENT`), which copies
+staged `pending_export.sav` to the user-chosen URI and writes `export_done.flag`
+for the launcher to acknowledge on refocus.
+
+`RomImporter` then imports on refocus / Choose:
+
+- **ROMs** via `findPendingRom`: only a 1 MiB `.gb` whose SHA-1 maps to a
+  version that is **not** yet ready counts as pending. A leftover
+  `picked_rom.gb` from Red therefore cannot block Blue's Choose (issue #167).
+- **Mods** via `findPendingMod`: Prefer `picked_mod.zip`, or (on Choose) any
+  other `.zip` at the save-dir root (USB copy).
+- **Saves** via `findPendingSav`: Prefer `picked_save.sav`, or (on Choose) any
+  other `.sav` at the save-dir root.
+
+After a successful import the consumed save-dir file is removed.
 
 **Manual check (device/emulator):** import Red → switch to Blue → Choose →
 system file picker must appear (not a silent Red re-extract) → pick Blue →
-Blue becomes ready beside Red.
+Blue becomes ready beside Red. On the MODS tab, Import mod .zip must open the
+same system picker and install the chosen archive on return.
 
 ## Tab structure
 
@@ -78,6 +98,10 @@ The launcher-facing API:
 - `SaveData.createSlot(version)` -> new slot id, registered but with **no
   save file written**. An empty slot means the title screen offers NEW GAME
   only, which needs no further changes.
+- `SaveData.deleteSlot(version, slotId)` removes the slot's
+  main/`.bak`/`.tmp` files, drops it from the registry, and if it was active
+  points active at another remaining slot (or clears active when the list is
+  empty). The launcher's SAVE SLOT panel Delete control calls this.
 
 ## Launcher mod manager
 
@@ -114,6 +138,9 @@ before `Game:load`, so **it never loads a mod's entry chunk**; only
   temp first (mount only reaches save-dir-relative paths), the same way
   `RomImporter` handles a dropped ROM. A failed copy rolls its partial tree
   back, and every path unmounts and clears the staged temp file.
+- `LauncherMods.uninstall(id)` removes `mods/<id>/` and clears
+  `options.mods[id]` so a later reinstall starts from the loader's default
+  (enabled). The mods panel Delete control calls this and re-derives the list.
 
 ## Import / Export save
 
@@ -122,9 +149,10 @@ through `src/import/SaveFileIO.lua`, which sits on top of
 `src/save_convert/SaveConvert.lua` and the slot API in `SaveData`.
 
 - **Import save** is live once the game's ROM is imported (playable). It opens
-  a native `.sav` picker (`chooseSav`, the per-OS dialogs mirror `chooseZip`;
-  Android has no picker and shows a drop hint). `SaveFileIO.importToSlot`
-  reads the bytes (an absolute path, a dropped LOVE file, or raw bytes),
+  a native `.sav` picker (`chooseSav` on desktop; on Android,
+  `love.system.pickFile("sav")` → `picked_save.sav`, same SAF path as ROMs).
+  `SaveFileIO.importToSlot` reads the bytes (an absolute path, a save-dir
+  relative name, a dropped LOVE file, or raw bytes),
   guards the 32768-byte size, runs `SaveConvert.importSav` (which also rejects
   a bad main-data checksum), then registers a fresh slot (`SaveData.createSlot`),
   writes it (`SaveData.writeSlot`), and makes it active (`SaveData.setActiveSlot`).
@@ -136,9 +164,13 @@ through `src/import/SaveFileIO.lua`, which sits on top of
   slot, encodes it back with `SaveConvert.exportSav` (a slot never keeps
   `rawImport`, so this is a zero-filled template export, which is valid), and
   writes `exports/gen1recomp-<version>-<slotId>.sav` in the save directory
-  (`love.filesystem.createDirectory("exports")`). It returns the absolute path
-  (`love.filesystem.getSaveDirectory()`), which the notice line shows with a
-  desktop "Open folder" affordance (`love.system.openURL("file://" .. dir)`).
+  (`love.filesystem.createDirectory("exports")`). On desktop it returns the
+  absolute path (`love.filesystem.getSaveDirectory()`), which the notice line
+  shows with an "Open folder" affordance (`love.system.openURL("file://" .. dir)`).
+  On Android the bytes are also staged as `pending_export.sav` and
+  `love.system.createFile(suggestedName)` opens `ACTION_CREATE_DOCUMENT` so the
+  player can save to Downloads / Drive / etc.; on return `export_done.flag`
+  makes focus show "Save exported."
 - **Drag-drop.** `filedropped` routes a `.sav` to the import path for the
   currently active game tab; when a non-game tab (mods, or the locked yellow
   placeholder) is showing it defaults to red, the always-present first game

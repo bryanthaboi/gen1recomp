@@ -3,6 +3,7 @@
 -- box and the Pokédex.
 
 local Font = require("src.render.Font")
+local Runtime = require("src.mods.Runtime")
 local Theme = require("src.ui.Theme")
 
 local ListMenu = {}
@@ -15,9 +16,37 @@ function ListMenu:sgbPalettes(game)
 end
 
 local ROWS = 7
+-- frames to wait before key-repeat kicks in, then between repeats
+local REPEAT_DELAY = 16
+local REPEAT_RATE = 4
+
+-- ui.list_menu identity: unhooked opts pass through unchanged
+local function sameOpts(opts) return opts end
 
 function ListMenu.new(game, title, items, opts)
   opts = opts or {}
+  -- bag / shop / dex / generic: mods may enable wrap, pageJump, keyRepeat
+  if Runtime.wantsHook("ui.list_menu") then
+    local hooked = Runtime.call("ui.list_menu", sameOpts, {
+      wrap = opts.wrap,
+      pageJump = opts.pageJump,
+      keyRepeat = opts.keyRepeat,
+      repeatDelay = opts.repeatDelay,
+      repeatRate = opts.repeatRate,
+    }, {
+      game = game,
+      title = title,
+      kind = opts.kind or title,
+      itemCount = items and #items or 0,
+    })
+    if type(hooked) == "table" then
+      if hooked.wrap ~= nil then opts.wrap = hooked.wrap end
+      if hooked.pageJump ~= nil then opts.pageJump = hooked.pageJump end
+      if hooked.keyRepeat ~= nil then opts.keyRepeat = hooked.keyRepeat end
+      if hooked.repeatDelay ~= nil then opts.repeatDelay = hooked.repeatDelay end
+      if hooked.repeatRate ~= nil then opts.repeatRate = hooked.repeatRate end
+    end
+  end
   local self = setmetatable({}, ListMenu)
   self.game = game
   self.title = title
@@ -28,6 +57,12 @@ function ListMenu.new(game, title, items, opts)
   self.onCancel = opts.onCancel
   self.footer = opts.footer
   self.pageJump = opts.pageJump    -- Left/Right move a page at a time
+  self.wrap = opts.wrap            -- Up on first / Down on last wraps
+  self.keyRepeat = opts.keyRepeat  -- hold Up/Down (and pageJump L/R) to scroll
+  self.repeatDelay = opts.repeatDelay or REPEAT_DELAY
+  self.repeatRate = opts.repeatRate or REPEAT_RATE
+  self.holdDir = nil
+  self.holdFrames = 0
   self.onSelectKey = opts.onSelectKey -- SELECT pressed on an item
   -- scripted mode (the old man tutorial): update() runs the script
   -- every frame INSTEAD of reading input -- DisplayListMenuID's old-man
@@ -46,6 +81,42 @@ function ListMenu.new(game, title, items, opts)
   return self
 end
 
+local function moveIndex(self, delta)
+  local n = #self.items
+  if n == 0 then return end
+  local next = self.index + delta
+  if self.wrap then
+    next = ((next - 1) % n) + 1
+  else
+    next = math.max(1, math.min(n, next))
+  end
+  self.index = next
+end
+
+local function syncScroll(self)
+  if self.index - self.scroll > self.rows then
+    self.scroll = self.index - self.rows
+  end
+  if self.index - self.scroll < 1 then self.scroll = self.index - 1 end
+end
+
+-- edge press or key-repeat tick for a held direction
+local function navPressed(self, dir)
+  if dir == "up" then
+    moveIndex(self, -1)
+  elseif dir == "down" then
+    moveIndex(self, 1)
+  elseif dir == "left" and self.pageJump then
+    moveIndex(self, -self.rows)
+  elseif dir == "right" and self.pageJump then
+    moveIndex(self, self.rows)
+  else
+    return false
+  end
+  syncScroll(self)
+  return true
+end
+
 function ListMenu:update(dt)
   if self.script then
     self.script(self)
@@ -59,14 +130,20 @@ function ListMenu:update(dt)
     end
     return
   end
+
+  local moved = false
   if input:wasPressed("up") then
-    self.index = math.max(1, self.index - 1)
+    moved = navPressed(self, "up")
+    self.holdDir, self.holdFrames = "up", 0
   elseif input:wasPressed("down") then
-    self.index = math.min(#self.items, self.index + 1)
+    moved = navPressed(self, "down")
+    self.holdDir, self.holdFrames = "down", 0
   elseif self.pageJump and input:wasPressed("left") then
-    self.index = math.max(1, self.index - self.rows)
+    moved = navPressed(self, "left")
+    self.holdDir, self.holdFrames = "left", 0
   elseif self.pageJump and input:wasPressed("right") then
-    self.index = math.min(#self.items, self.index + self.rows)
+    moved = navPressed(self, "right")
+    self.holdDir, self.holdFrames = "right", 0
   elseif self.onSelectKey and input:wasPressed("select") then
     self.onSelectKey(self.items[self.index], self)
   elseif input:wasPressed("b") then
@@ -80,10 +157,22 @@ function ListMenu:update(dt)
     end
     return
   end
-  if self.index - self.scroll > self.rows then
-    self.scroll = self.index - self.rows
+
+  -- hold-to-scroll (opt-in via ui.list_menu keyRepeat)
+  if self.keyRepeat then
+    local dir = self.holdDir
+    if dir and input:isDown(dir) then
+      self.holdFrames = self.holdFrames + 1
+      local afterDelay = self.holdFrames - self.repeatDelay
+      if afterDelay >= 0 and afterDelay % self.repeatRate == 0 then
+        navPressed(self, dir)
+      end
+    else
+      self.holdDir, self.holdFrames = nil, 0
+    end
   end
-  if self.index - self.scroll < 1 then self.scroll = self.index - 1 end
+
+  if not moved then syncScroll(self) end
 end
 
 -- remove current item (e.g. consumed); keeps cursor valid

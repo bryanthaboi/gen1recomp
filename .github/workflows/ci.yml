@@ -14,7 +14,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # Integration branch + release branch. PRs already run via pull_request
+    # (any base); this list is only for post-merge push runs.
+    branches: [dev, main]
   pull_request:
 
 # a force-push while CI is mid-run should cancel the stale run, not queue

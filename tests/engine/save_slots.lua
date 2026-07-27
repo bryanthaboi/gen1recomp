@@ -165,6 +165,41 @@ do
   T.eq(SaveData.createSlot("red"), "slot3", "ids increment past the highest")
 end
 
+-- ---------------------------------------------- deleteSlot
+
+do
+  local files = fresh()
+  local a = SaveData.createSlot("red")
+  local b = SaveData.createSlot("red")
+  SaveData.setActiveSlot("red", b)
+  local save = SaveData.newGame()
+  save.player.name = "KEEP"
+  T.check(SaveData.writeSlot("red", a, save), "seed slot1 with a save")
+  save.player.name = "GONE"
+  T.check(SaveData.writeSlot("red", b, save), "seed slot2 with a save")
+
+  local ok, err = SaveData.deleteSlot("red", b)
+  T.check(ok, "deleteSlot removes the active slot: " .. tostring(err))
+  T.eq(files["saves/red/slot2.lua"], nil, "slot2's file is gone")
+  T.check(files["saves/red/slot1.lua"] ~= nil, "the other slot's file stays")
+  local opts = SaveSerializer.decode(files["options.lua"])
+  T.eq(opts.saveSlots.red.active, a, "active falls back to the remaining slot")
+  T.eq(#opts.saveSlots.red.list, 1, "the deleted id is dropped from the list")
+  T.eq(opts.saveSlots.red.list[1], a, "only slot1 remains registered")
+
+  ok = SaveData.deleteSlot("red", a)
+  T.check(ok, "deleting the last slot succeeds")
+  opts = SaveSerializer.decode(files["options.lua"])
+  T.eq(#opts.saveSlots.red.list, 0, "the registry list is empty")
+  T.eq(opts.saveSlots.red.active, nil, "active clears when no slots remain")
+  T.eq(#SaveData.listSlots("red"), 0, "listSlots reports an empty install")
+
+  local bad, badErr = SaveData.deleteSlot("red", "slot99")
+  T.check(not bad, "deleting an unknown slot fails")
+  T.check(tostring(badErr):find("not registered", 1, true) ~= nil,
+    "unknown-slot error is user-presentable")
+end
+
 -- ---------------------------------------------- saveNames follows the slot
 
 do

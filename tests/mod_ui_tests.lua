@@ -667,6 +667,59 @@ oak = OakSpeech.new({ data = {} }, nil)
 check(oak.demoSpecies == "NIDORINO" and oak.nameLen == 7,
   "no data keeps the vanilla speech values")
 
+-- ------- intro.oak_speech.build
+local vanillaSteps = OakSpeech.defaultSteps(oak)
+check(#vanillaSteps == 9, "vanilla speech has nine steps")
+check(vanillaSteps[1].id == "oak_welcome" and vanillaSteps[9].id == "shrink",
+  "vanilla speech anchors start and end")
+
+hooks:wrap("intro.oak_speech.build", function(nextFn, steps, speech)
+  steps = nextFn(steps, speech)
+  ModUI.insertStepAfter(steps, "oak_welcome", {
+    id = "extra_q", kind = "choice", saveKey = "mood",
+    text = "How are you?", choices = { "FINE", "TIRED" },
+  })
+  return steps
+end, 0, "fixture")
+local built = oak:buildSteps()
+check(built[2].id == "extra_q" and built[2].kind == "choice",
+  "intro.oak_speech.build can insert a choice after oak_welcome")
+check(built[3].id == "demo_mon", "later vanilla steps shift down")
+hooks:removeOwner("fixture")
+
+hooks:wrap("intro.oak_speech.build", function() return 42 end, 0, "bad")
+built = oak:buildSteps()
+check(#built == 9 and built[1].id == "oak_welcome",
+  "a non-table intro.oak_speech.build result degrades to vanilla")
+check(logged("intro.oak_speech.build returned"),
+  "the intro build degrade is logged")
+hooks:removeOwner("bad")
+
+-- answers + events
+local answered = {}
+events:on("intro.oak_speech.answered", function(ev)
+  answered[ev.saveKey] = ev.value
+end, 0, "fixture")
+oak.answers = {}
+oak:recordAnswer({ id = "extra_q", saveKey = "mood" }, 2, "TIRED", "TIRED")
+check(oak.answers.mood == "TIRED" and answered.mood == "TIRED",
+  "recordAnswer stores and emits intro.oak_speech.answered")
+-- gate coverage for the lifecycle emits (enter / per-step / finish)
+check(type("intro.oak_speech.started") == "string"
+  and type("intro.oak_speech.step") == "string"
+  and type("intro.oak_speech.finished") == "string",
+  "intro.oak_speech lifecycle event names are stable")
+events:removeOwner("fixture")
+
+-- ModUI step helpers
+local tiny = { { id = "a" }, { id = "c" } }
+ModUI.insertStepAfter(tiny, "a", { id = "b" })
+check(tiny[2].id == "b", "ModUI.insertStepAfter anchors on step id")
+ModUI.insertStepBefore(tiny, "c", { id = "b2" })
+check(tiny[3].id == "b2", "ModUI.insertStepBefore anchors on step id")
+ModUI.removeStep(tiny, "b")
+check(tiny[2].id == "b2", "ModUI.removeStep drops by id")
+
 local IntroMovie = require("src.ui.IntroMovie")
 local introDone = false
 local igame = { data = { field = { intro = {

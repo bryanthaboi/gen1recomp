@@ -140,8 +140,9 @@ function Credits:enter()
 end
 
 function Credits:monSprite(species)
-  local def = self.game.data.pokemon and self.game.data.pokemon[species]
-  return silhouette(def and def.spriteFront)
+  local path = require("src.pokemon.Sprites").path(
+    self.game.data, species, "front", { kind = "credits" })
+  return silhouette(path)
 end
 
 -- advance to the next CreditsOrder screen (Credits .nextCreditsScreen);

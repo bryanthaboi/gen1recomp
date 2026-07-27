@@ -118,8 +118,9 @@ end
 function HallOfFame:spriteFor(species)
   local cached = self.sprites[species]
   if cached == nil then
-    local def = self.game.data.pokemon[species]
-    cached = tryImage(def and def.spriteFront) or false
+    local path = require("src.pokemon.Sprites").path(
+      self.game.data, species, "front", { kind = "hof" })
+    cached = tryImage(path) or false
     self.sprites[species] = cached
   end
   return cached or nil

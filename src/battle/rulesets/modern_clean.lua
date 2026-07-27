@@ -11,4 +11,6 @@ return {
   focusEnergyBug = false,
   -- Gen 2+ style: AI opponents deplete PP and can Struggle when empty.
   enemyUnlimitedPP = false,
+  -- Gen 2+: Hyper Beam always forces a recharge turn, even on a KO.
+  hyperBeamSkipRechargeOnKO = false,
 }

@@ -117,8 +117,9 @@ function TitleState:currentSprite()
   local species = self.cycleSpecies[self.cycleIndex]
   local cached = self.sprites[species]
   if cached == nil then
-    local def = self.game.data.pokemon[species]
-    cached = tryImage(def and def.spriteFront) or false
+    local path = require("src.pokemon.Sprites").path(
+      self.game.data, species, "front", { kind = "title" })
+    cached = tryImage(path) or false
     self.sprites[species] = cached
   end
   return cached or nil

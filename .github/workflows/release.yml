@@ -10,6 +10,9 @@ name: Release
 #   - To force a specific version, either:
 #       * run this workflow manually (Actions tab) and type it into "version", or
 #       * put "[release X.Y.Z]" anywhere in the commit message.
+#
+# Branch model: day-to-day work merges to `dev`. Releases stay on `main` only
+# so promoting `dev` -> `main` is the ship gate that cuts a build.
 
 on:
   push:

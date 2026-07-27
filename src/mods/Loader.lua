@@ -68,6 +68,7 @@ local devShim = { installed = false, permissions = {}, warned = {}, depth = 0 }
 local SUPPORTED_REQUIRES = {
   ["src.mods.Semver"] = true,
   ["src.audio.ChipAsm"] = true,
+  ["src.pokemon.Stats"] = true, -- Stats.isShiny / calc for indicator mods
 }
 
 local function scanRequire(name)

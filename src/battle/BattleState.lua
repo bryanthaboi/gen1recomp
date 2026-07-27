@@ -299,8 +299,13 @@ local function makeBattler(data, mon, isPlayer, save)
     curStats = mon.stats,
     curTypes = def.types,
     curMoves = mon.moves,
-    sprite = getImage(isPlayer and def.spriteBack or def.spriteFront,
-                      monPalette(data, mon.species), def.trueColor),
+    sprite = (function()
+      local Sprites = require("src.pokemon.Sprites")
+      local path, tc = Sprites.path(data, mon.species,
+        isPlayer and "back" or "front",
+        { mon = mon, kind = "battle" })
+      return getImage(path, monPalette(data, mon.species), tc)
+    end)(),
   }
 end
 
@@ -318,13 +323,16 @@ BattleState.makeBattler = makeBattler
 function BattleState:speciesSprite(species, isPlayerSide)
   local def = self.data.pokemon[species]
   if not def then return nil end
+  local Sprites = require("src.pokemon.Sprites")
+  local path, tc = Sprites.path(self.data, species,
+    isPlayerSide and "back" or "front", { kind = "battle" })
   local PaletteFX = require("src.render.PaletteFX")
   local colors = PaletteFX.monPal(self.data, species, true)
   local name = "GRAYMON"
   if PaletteFX.usesGbcPack() then name = "redpp:GRAYMON" end
-  return getImage(isPlayerSide and def.spriteBack or def.spriteFront,
+  return getImage(path,
                   colors and { name = name, colors = colors } or nil,
-                  def.trueColor)
+                  tc)
 end
 
 local function markSeen(game, species)
@@ -4473,6 +4481,11 @@ function BattleState:draw()
     love.graphics.rectangle("fill", 0, 0, 160, 144)
   end
   love.graphics.setColor(1, 1, 1, 1)
+  -- battle.overlay: shiny sparkles, custom HUD chrome, etc.  Draw-only;
+  -- the vanilla link is a no-op so an empty chain costs nothing.
+  if Runtime.wantsHook("battle.overlay") then
+    Runtime.call("battle.overlay", function() end, self)
+  end
 end
 
 return BattleState

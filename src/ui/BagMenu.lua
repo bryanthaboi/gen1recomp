@@ -370,6 +370,7 @@ function BagMenu.new(game, opts)
   local battle = opts.battle
   local list
   list = ListMenu.new(game, "ITEMS", buildItems(game), {
+    kind = "bag",
     footer = ("¥%d"):format(game.save.money),
     -- SELECT reorders items like the original bag (swap_items.asm)
     onSelectKey = function(item, l)

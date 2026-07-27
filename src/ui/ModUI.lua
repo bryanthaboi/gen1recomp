@@ -57,4 +57,32 @@ function ModUI.removeLabel(items, label)
   return items
 end
 
+-- Oak speech step-list helpers (intro.oak_speech.build).  Anchored on
+-- stable step.id values the same way insertBefore anchors on labels.
+local function stepIndex(steps, id)
+  for i, step in ipairs(steps) do
+    if step.id == id then return i end
+  end
+  return nil
+end
+
+function ModUI.insertStepBefore(steps, anchorId, step)
+  local i = stepIndex(steps, anchorId)
+  table.insert(steps, i or (#steps + 1), step)
+  return steps
+end
+
+function ModUI.insertStepAfter(steps, anchorId, step)
+  local i = stepIndex(steps, anchorId)
+  table.insert(steps, i and (i + 1) or (#steps + 1), step)
+  return steps
+end
+
+function ModUI.removeStep(steps, id)
+  for i = #steps, 1, -1 do
+    if steps[i].id == id then table.remove(steps, i) end
+  end
+  return steps
+end
+
 return ModUI

@@ -48,8 +48,9 @@ local function dexOf(game, mon)
 end
 
 local function spriteOf(game, mon)
-  local def = game.data.pokemon[mon.species]
-  return tryImage(def and def.spriteFront)
+  local path = require("src.pokemon.Sprites").path(game.data, mon.species, "front",
+    { mon = mon, kind = "trade" })
+  return tryImage(path)
 end
 
 local function expand(game, key, subs)

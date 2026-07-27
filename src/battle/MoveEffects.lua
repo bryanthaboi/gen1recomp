@@ -581,8 +581,12 @@ MoveEffects.full = {
   },
   HYPER_BEAM_EFFECT = {
     afterDamage = function(ctx)
-      -- no recharge when the target faints OR its substitute breaks
-      if ctx.target.mon.hp > 0 and not ctx.brokeSub then
+      -- Gen 1: no recharge when the target faints OR its substitute breaks.
+      -- Ruleset hyperBeamSkipRechargeOnKO=false forces Gen 2+ always-recharge.
+      local ruleset = ctx.battle and ctx.battle.ruleset
+      local skipOnKO = not ruleset or ruleset.hyperBeamSkipRechargeOnKO ~= false
+      local targetDown = ctx.target.mon.hp <= 0 or ctx.brokeSub
+      if not skipOnKO or not targetDown then
         ctx.user.mustRecharge = true
       end
     end,

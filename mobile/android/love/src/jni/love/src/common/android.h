@@ -63,9 +63,16 @@ void vibrate(double seconds);
  * Shows the system's "pick a document" UI (Storage Access Framework).
  * Returns true if the picker was launched; the picked file (if any) is
  * copied asynchronously by GameActivity.onActivityResult into the app's
- * external save directory, not returned here -- see src/import/RomImporter.lua.
+ * external save directory under destFilename (default picked_rom.gb), not
+ * returned here -- see src/import/RomImporter.lua.
  **/
-bool showFilePicker();
+bool showFilePicker(const char *destFilename = nullptr);
+
+/**
+ * Shows ACTION_CREATE_DOCUMENT so Lua can export a staged pending_export.sav
+ * to a user-chosen location. suggestedName is the dialog default filename.
+ **/
+bool showCreateDocument(const char *suggestedName = nullptr);
 
 /*
  * Helper functions for the filesystem module

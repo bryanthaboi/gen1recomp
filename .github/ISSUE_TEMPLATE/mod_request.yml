@@ -1,0 +1,115 @@
+name: Mod request
+description: Ask for a gameplay, cosmetic, audio, or QoL change that belongs as a Lua mod.
+labels: ["mod request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This tracker is for ideas that should ship as **mods**, not as core engine
+        features — alternate sprites, running shoes, day/night, shiny indicators,
+        soundtrack packs, Gen 2-like battle toggles, map cosmetics, bag QoL, etc.
+
+        The engine already exposes a lot of this through registries and hooks
+        ([modding wiki](https://github.com/bryanthaboi/pokemon-gen1-recomp-project/wiki)).
+        Use a **Feature request** instead for launcher / ports / video options /
+        networking / save tooling / new API seams.
+
+  - type: input
+    id: summary
+    attributes:
+      label: One line summary
+      description: What the mod should do, in a sentence.
+      placeholder: Hold B to run at bike speed on the overworld
+    validations:
+      required: true
+
+  - type: input
+    id: discord
+    attributes:
+      label: Discord username (optional)
+      description: >
+        So maintainers or mod authors can ping you on Discord if they pick this up.
+        Leave blank if you'd rather keep everything on GitHub.
+      placeholder: yourname
+    validations:
+      required: false
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What should the mod do
+      description: >
+        Describe the player-facing behavior. What changes, where, what does the
+        player see or press. If it toggles from Options or a START-menu entry, say so.
+      placeholder: |
+        Hold B while walking outdoors to move at bike speed. Release to walk again.
+        Same places the bike is allowed; no effect in battles or menus.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this worth doing as a mod
+      description: >
+        Why optional/modded rather than a core option. Who wants it on, who wants
+        vanilla left alone.
+      placeholder: |
+        Great for replaying and backtracking, but some people want a strict Gen 1
+        pace. A mod (or an opt-in mod option) keeps both camps happy.
+    validations:
+      required: true
+
+  - type: textarea
+    id: how
+    attributes:
+      label: How should it work
+      description: >
+        Buttons, menus, edge cases, whether it needs new art/audio. If you know a
+        hook or registry that fits (movement.speed, pokemon.sprite, rulesets, …),
+        mention it — otherwise leave it open.
+      placeholder: |
+        - Hold B on the overworld
+        - Same step timing as the bike
+        - Disabled where the bike is disabled
+        - Prefer hooks:wrap("movement.speed") if that still fits
+    validations:
+      required: true
+
+  - type: dropdown
+    id: vanilla
+    attributes:
+      label: With the mod off, is vanilla unchanged
+      options:
+        - Yes — parity when disabled
+        - No — it would replace something always-on
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Best-fit mod category
+      description: Same taxonomy as example mods (BALANCE, GRAPHICS, AUDIO, …).
+      options:
+        - GAMEPLAY / QoL
+        - GRAPHICS
+        - AUDIO
+        - BALANCE / ruleset
+        - CONTENT (maps, encounters, trainers)
+        - UI / TOOL
+        - TOTAL_CONVERSION-ish
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Reference screenshots, other games/hacks that do it, related issues, or
+        "I'd like to try writing this myself." Leave blank if nothing comes to mind.
+    validations:
+      required: false

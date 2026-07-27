@@ -190,4 +190,22 @@ do
   check(err ~= nil, "the no-root case carries a reason")
 end
 
+-- ------- uninstall: rejects bad ids without needing a real mods tree
+
+do
+  local ok, err = LauncherMods.uninstall("")
+  eq(ok, nil, "empty id is rejected")
+  check(tostring(err):find("missing", 1, true) ~= nil, "empty-id reason")
+
+  ok, err = LauncherMods.uninstall("../escape")
+  eq(ok, nil, "path-like ids are rejected")
+  check(tostring(err):find("invalid", 1, true) ~= nil, "path-id reason")
+
+  ok, err = LauncherMods.uninstall("ghost")
+  -- Without a mods/ghost tree (and with the love stub's getInfo), uninstall
+  -- either needs LOVE or reports not installed -- never silently succeeds.
+  eq(ok, nil, "a missing mod does not uninstall")
+  check(err ~= nil, "missing-mod uninstall carries a reason")
+end
+
 T.finish("launcher_mods")

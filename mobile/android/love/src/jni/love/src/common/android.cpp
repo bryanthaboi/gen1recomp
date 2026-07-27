@@ -183,13 +183,37 @@ void vibrate(double seconds)
 	env->DeleteLocalRef(activity);
 }
 
-bool showFilePicker()
+bool showFilePicker(const char *destFilename)
 {
+	if (destFilename == nullptr || destFilename[0] == '\0')
+		destFilename = "picked_rom.gb";
+
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
 
-	jmethodID method = env->GetStaticMethodID(activity, "showRomFilePicker", "()Z");
-	jboolean result = env->CallStaticBooleanMethod(activity, method);
+	jmethodID method = env->GetStaticMethodID(activity, "showFilePicker",
+		"(Ljava/lang/String;)Z");
+	jstring jname = env->NewStringUTF(destFilename);
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jname);
+	env->DeleteLocalRef(jname);
+
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
+bool showCreateDocument(const char *suggestedName)
+{
+	if (suggestedName == nullptr || suggestedName[0] == '\0')
+		suggestedName = "export.sav";
+
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	jmethodID method = env->GetStaticMethodID(activity, "showCreateDocument",
+		"(Ljava/lang/String;)Z");
+	jstring jname = env->NewStringUTF(suggestedName);
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jname);
+	env->DeleteLocalRef(jname);
 
 	env->DeleteLocalRef(activity);
 	return result;

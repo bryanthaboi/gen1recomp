@@ -3089,6 +3089,7 @@ runSuites(orderedGlob("tests/mod_*.lua tests/modkit_tests.lua", {
   "tests/mod_battle_tests.lua", "tests/mod_graphics_tests.lua",
   "tests/mod_render_tests.lua", "tests/mod_battle_scale_tests.lua",
   "tests/mod_scripting_tests.lua", "tests/mod_ui_tests.lua",
+  "tests/mod_qol_hooks_tests.lua",
   "tests/mod_save_tests.lua", "tests/modkit_tests.lua",
 }, {
   -- run_link_tests.lua owns this one; dofiling it here as well would
@@ -3114,6 +3115,8 @@ runSuites({ "tests/rom_importer_cursor_test.lua" })
 -- ---------------------------------------------- Android second ROM pick (#167)
 runSuites({ "tests/rom_importer_android_pick_test.lua" })
 
+-- ---------------------------------------------- Android mod / save SAF pick
+runSuites({ "tests/rom_importer_android_mod_pick_test.lua" })
 -- ---------------------------------------------- parity workstream tests
 -- Each tests/parity_*.lua is a self-contained file (own bootstrap + check,
 -- error()s if any assertion fails).  Globbed, so dropping a new parity
