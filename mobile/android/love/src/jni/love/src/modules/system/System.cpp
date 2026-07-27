@@ -22,6 +22,8 @@
 #include "common/config.h"
 #include "System.h"
 
+#include <cstring>
+
 #if defined(LOVE_MACOSX)
 #include <CoreServices/CoreServices.h>
 #elif defined(LOVE_IOS)
@@ -180,11 +182,32 @@ void System::vibrate(double seconds) const
 #endif
 }
 
-bool System::pickFile() const
+bool System::pickFile(const char *kind) const
 {
 #ifdef LOVE_ANDROID
-	return love::android::showFilePicker();
+	const char *dest = "picked_rom.gb";
+	if (kind != nullptr)
+	{
+		if (strcmp(kind, "mod") == 0)
+			dest = "picked_mod.zip";
+		else if (strcmp(kind, "sav") == 0 || strcmp(kind, "save") == 0)
+			dest = "picked_save.sav";
+		else if (strcmp(kind, "rom") == 0)
+			dest = "picked_rom.gb";
+	}
+	return love::android::showFilePicker(dest);
 #else
+	LOVE_UNUSED(kind);
+	return false;
+#endif
+}
+
+bool System::createFile(const char *suggestedName) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::showCreateDocument(suggestedName);
+#else
+	LOVE_UNUSED(suggestedName);
 	return false;
 #endif
 }

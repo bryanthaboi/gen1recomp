@@ -111,9 +111,21 @@ public:
 	 * Android only for now; the result (if any) is not returned here -- see
 	 * love::android::showFilePicker and src/import/RomImporter.lua.
 	 *
+	 * @param kind Optional pick kind: nullptr/"rom" -> picked_rom.gb,
+	 *             "mod" -> picked_mod.zip, "sav"/"save" -> picked_save.sav.
 	 * @return Whether the picker was shown.
 	 **/
-	virtual bool pickFile() const;
+	virtual bool pickFile(const char *kind = nullptr) const;
+
+	/**
+	 * Shows the platform's native "create / save a file" UI (Android SAF
+	 * ACTION_CREATE_DOCUMENT). Copies staged pending_export.sav from the app
+	 * save directory to the user-chosen URI. See GameActivity.showCreateDocument.
+	 *
+	 * @param suggestedName Default filename shown in the dialog.
+	 * @return Whether the create dialog was shown.
+	 **/
+	virtual bool createFile(const char *suggestedName = nullptr) const;
 
 	/**
 	 * Gets if the user is playing music on background.

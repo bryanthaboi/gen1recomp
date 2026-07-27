@@ -290,6 +290,39 @@ local function findPendingRom(ready)
   return nil
 end
 
+-- Android SAF writes mod picks to picked_mod.zip; USB copies may use any
+-- .zip basename at the save-dir root.  preferAny=true also accepts those USB
+-- copies (Choose / Import); focus only consumes the SAF basename so a random
+-- leftover archive is never auto-installed on every refocus.
+local function findPendingMod(preferAny)
+  local preferred = "picked_mod.zip"
+  if love.filesystem.getInfo(preferred, "file") then
+    return preferred
+  end
+  if not preferAny then return nil end
+  for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
+    if name:lower():match("%.zip$") and love.filesystem.getInfo(name, "file") then
+      return name
+    end
+  end
+  return nil
+end
+
+-- Same pattern as findPendingMod for battery saves (picked_save.sav / *.sav).
+local function findPendingSav(preferAny)
+  local preferred = "picked_save.sav"
+  if love.filesystem.getInfo(preferred, "file") then
+    return preferred
+  end
+  if not preferAny then return nil end
+  for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
+    if name:lower():match("%.sav$") and love.filesystem.getInfo(name, "file") then
+      return name
+    end
+  end
+  return nil
+end
+
 local function chooseRom(promptName)
   promptName = promptName or "Pokemon"
   local prompt = "Choose your " .. promptName .. " ROM"
@@ -320,8 +353,8 @@ local function chooseRom(promptName)
 end
 
 -- Open a native picker for a mod .zip (mirrors chooseRom's per-OS dialogs).
--- Returns the chosen absolute path or nil.  Android has no picker; the mods
--- panel steers that case to the drag-drop hint instead.
+-- Returns the chosen absolute path or nil.  Android uses love.system.pickFile
+-- ("mod") instead -- see RomImporter:chooseMod.
 local function chooseZip()
   local prompt = "Choose a mod .zip"
   local platform = love.system.getOS()
@@ -351,8 +384,8 @@ local function chooseZip()
 end
 
 -- Open a native picker for a raw .sav battery save (mirrors chooseZip's per-OS
--- dialogs).  Returns the chosen absolute path or nil.  Android has no picker;
--- the SAVE FILES card steers that case to the drag-drop hint instead.
+-- dialogs).  Returns the chosen absolute path or nil.  Android uses
+-- love.system.pickFile("sav") instead -- see RomImporter:chooseSaveImport.
 local function chooseSav()
   local prompt = "Choose a .sav save file"
   local platform = love.system.getOS()
@@ -429,10 +462,16 @@ function RomImporter.new(onComplete, opts)
     -- affordance (desktop love.system.openURL).
     saveNotice = {},
     -- MODS panel state (pass 3): mods is the cached LauncherMods.list() array
-    -- (refreshed lazily on first draw and after any toggle/install); modScroll
-    -- is the list scroll offset (px, clamped in draw); modNotice is the last
-    -- install result { ok, text } shown as a line above the list.
+    -- (refreshed lazily on first draw and after any toggle/install/delete);
+    -- modScroll is the list scroll offset (px, clamped in draw); modNotice is
+    -- the last install/delete result { ok, text } shown as a line above the list.
     mods = nil, modScroll = 0, modNotice = nil,
+    -- Android SAF: which game tab should receive the next picked_save.sav when
+    -- focus consumes it (set by chooseSaveImport before opening the picker).
+    androidPendingVersion = nil,
+    -- Android SAF create-document: which game's SAVE FILES card should show
+    -- "Save exported." when export_done.flag appears on focus.
+    androidPendingExportVersion = nil,
   }, RomImporter)
 
   for _, version in ipairs(GameVersion.ORDER) do
@@ -491,10 +530,40 @@ end
 -- The system picker runs as a separate top activity, so LOVE's own
 -- love.focus/love.visible pause while it's up (see main.lua) -- once the
 -- player returns here with a file picked, GameActivity has already copied
--- it into the save directory, so a pending-ROM rescan on refocus picks it
--- up without the player needing to tap the button again.
+-- it into the save directory, so a pending-file rescan on refocus picks it
+-- up without the player needing to tap the button again.  Mod and save SAF
+-- drops (picked_mod.zip / picked_save.sav) are consumed first so a leftover
+-- ROM pick cannot steal the focus path when both games are already ready.
 function RomImporter:focus(f)
   if not (f and self.android and self.workState ~= "working") then return end
+  -- SAF create-document finished: GameActivity wrote export_done.flag.
+  if love.filesystem.getInfo("export_done.flag", "file") then
+    love.filesystem.remove("export_done.flag")
+    love.filesystem.remove("pending_export.sav")
+    local version = self.androidPendingExportVersion or self:_savedropTarget()
+    self.androidPendingExportVersion = nil
+    self.saveNotice[version] = { ok = true, text = "Save exported." }
+    if self.tab == "mods" or self.tab == "yellow" then self.tab = version end
+    return
+  end
+  local modName = findPendingMod(false)
+  if modName then
+    self:_installMod(modName)
+    if self.modNotice and self.modNotice.ok then
+      love.filesystem.remove(modName)
+    end
+    return
+  end
+  local savName = findPendingSav(false)
+  if savName then
+    local version = self.androidPendingVersion or self:_savedropTarget()
+    self.androidPendingVersion = nil
+    self:_importSave(version, savName)
+    if self.saveNotice[version] and self.saveNotice[version].ok then
+      love.filesystem.remove(savName)
+    end
+    return
+  end
   if self.ready.red and self.ready.blue then return end
   local name, data = findPendingRom(self.ready)
   if name then self:startData(data, name) end
@@ -672,13 +741,38 @@ function RomImporter:_installMod(source)
   self.tab = "mods"
 end
 
--- "Import mod .zip" button: open a native picker (desktop) and install the
--- pick.  Android has no picker, so it points the player at the drop path.
+-- Remove an installed mod from the save-dir mods/ tree and refresh the panel.
+function RomImporter:_deleteMod(id)
+  if self.workState == "working" then return end
+  local LauncherMods = require("src.mods.LauncherMods")
+  local ok, res = LauncherMods.uninstall(id)
+  if ok then
+    self:_refreshMods()
+    self.modNotice = { ok = true, text = "Deleted " .. tostring(id) }
+  else
+    self.modNotice = { ok = false, text = tostring(res) }
+  end
+end
+
+-- "Import mod .zip" button: open a native picker and install the pick.
+-- Android mirrors ROM import: scan for a pending .zip in the save dir (USB
+-- or a fresh SAF drop), else love.system.pickFile("mod") -> picked_mod.zip
+-- which focus/Choose consumes on return.
 function RomImporter:chooseMod()
   if self.workState == "working" then return end
   if self.android then
-    self.modNotice =
-      { ok = false, text = "Drop a mod .zip onto the window to install it." }
+    local name = findPendingMod(true)
+    if name then
+      self:_installMod(name)
+      if self.modNotice and self.modNotice.ok then
+        love.filesystem.remove(name)
+      end
+      return
+    end
+    if not love.system.pickFile("mod") then
+      self.modNotice = { ok = false,
+        text = "Could not open the file picker. Copy a mod .zip via USB." }
+    end
     return
   end
   local path = chooseZip()
@@ -722,13 +816,26 @@ function RomImporter:_importSave(version, source)
   end
 end
 
--- "Import save" button: open a native .sav picker (desktop) and import the pick.
--- Android has no picker, so it points the player at the drop path.
+-- "Import save" button: open a native .sav picker and import the pick.
+-- Android mirrors ROM / mod import via love.system.pickFile("sav").
 function RomImporter:chooseSaveImport(version)
   if self.workState == "working" then return end
   if self.android then
-    self.saveNotice[version] =
-      { ok = false, text = "Drop a .sav onto the window to import it." }
+    local name = findPendingSav(true)
+    if name then
+      self.androidPendingVersion = version
+      self:_importSave(version, name)
+      if self.saveNotice[version] and self.saveNotice[version].ok then
+        love.filesystem.remove(name)
+      end
+      return
+    end
+    self.androidPendingVersion = version
+    if not love.system.pickFile("sav") then
+      self.androidPendingVersion = nil
+      self.saveNotice[version] = { ok = false,
+        text = "Could not open the file picker. Copy a .sav via USB." }
+    end
     return
   end
   local path = chooseSav()
@@ -736,16 +843,58 @@ function RomImporter:chooseSaveImport(version)
 end
 
 -- "Export save" button: write the active slot back out to a raw .sav in the save
--- directory's exports/ folder and show the path (with an open-folder affordance)
--- on the SAVE FILES card.
+-- directory's exports/ folder.  On desktop, show the path with an open-folder
+-- affordance.  On Android, stage pending_export.sav and open the system
+-- create-document picker (love.system.createFile) so the player can save to
+-- Downloads / Drive / etc. -- the app-private exports/ path is not useful there.
 function RomImporter:exportSave(version)
   if self.workState == "working" then return end
   local ok, res = require("src.import.SaveFileIO").exportActiveSlot(version)
-  if ok then
-    local dir = res:match("^(.*)[/\\][^/\\]+$")
-    self.saveNotice[version] = { ok = true, text = "Exported to " .. res, dir = dir }
-  else
+  if not ok then
     self.saveNotice[version] = { ok = false, text = tostring(res) }
+    return
+  end
+  if self.android then
+    local rel = res:match("exports[/\\][^/\\]+$")
+    local data = rel and love.filesystem.read(rel)
+    if not data then
+      self.saveNotice[version] = { ok = false,
+        text = "Exported, but could not stage the file for the picker." }
+      return
+    end
+    local suggested = rel:match("[^/\\]+$") or "export.sav"
+    local wrote, writeErr = love.filesystem.write("pending_export.sav", data)
+    if not wrote then
+      self.saveNotice[version] = { ok = false,
+        text = "Could not stage the export: " .. tostring(writeErr) }
+      return
+    end
+    self.androidPendingExportVersion = version
+    if love.system.createFile and love.system.createFile(suggested) then
+      self.saveNotice[version] = { ok = true,
+        text = "Pick where to save " .. suggested .. "..." }
+    else
+      self.androidPendingExportVersion = nil
+      self.saveNotice[version] = { ok = true,
+        text = "Exported inside the app folder (picker unavailable)." }
+    end
+    return
+  end
+  local dir = res:match("^(.*)[/\\][^/\\]+$")
+  self.saveNotice[version] = { ok = true, text = "Exported to " .. res, dir = dir }
+end
+
+-- Delete a save slot from the registry and disk, then refresh the panel.  If the
+-- deleted slot was active, SaveData.deleteSlot points active at another slot.
+function RomImporter:_deleteSlot(version, id)
+  if self.workState == "working" then return end
+  local SaveData = require("src.core.SaveData")
+  local ok, err = SaveData.deleteSlot(version, id)
+  if ok then
+    self:_refreshSlots(version)
+    self.saveNotice[version] = { ok = true, text = "Deleted " .. tostring(id) .. "." }
+  else
+    self.saveNotice[version] = { ok = false, text = tostring(err) }
   end
 end
 
@@ -1427,9 +1576,17 @@ function RomImporter:mousepressed(x, y, button)
     end
     return
   end
-  -- SAVE SLOT rows.  On desktop a press only ARMS a click: _updateSlotDrag
-  -- commits it on release when the pointer did not move (a moved pointer scrolls
-  -- instead).  Android has no reliable pointer polling, so it selects on press.
+  -- SAVE SLOT rows / Delete.  Delete is checked first so a tap on the Delete
+  -- label never also selects the row.  On desktop a press only ARMS a click:
+  -- _updateSlotDrag commits it on release when the pointer did not move (a
+  -- moved pointer scrolls instead).  Android has no reliable pointer polling,
+  -- so it selects on press.  Delete fires immediately (small fixed target).
+  for _, r in ipairs(self.slotDeleteRects or {}) do
+    if inside(r, x, y) then
+      self:_deleteSlot(self.panelVersion, r.id)
+      return
+    end
+  end
   for _, r in ipairs(self.slotRects or {}) do
     if inside(r, x, y) then
       if self.android then
@@ -1445,11 +1602,17 @@ function RomImporter:mousepressed(x, y, button)
     self:_newSlot(self.panelVersion); return
   end
   -- Mods panel: the import button dispatches on press (fixed header, no scroll
-  -- conflict); a toggle switch, which lives in the scrollable list, only ARMS a
-  -- press so _updateSlotDrag can tell a click from a drag-scroll (Android, with
-  -- no pointer polling, toggles on press).
+  -- conflict); Delete fires immediately; a toggle switch, which lives in the
+  -- scrollable list, only ARMS a press so _updateSlotDrag can tell a click from
+  -- a drag-scroll (Android, with no pointer polling, toggles on press).
   if inside(self.modImportRect, x, y) then
     self:chooseMod(); return
+  end
+  for _, r in ipairs(self.modDeleteRects or {}) do
+    if inside(r, x, y) then
+      self:_deleteMod(r.id)
+      return
+    end
   end
   for _, r in ipairs(self.modRects or {}) do
     if inside(r, x, y) then
@@ -1759,7 +1922,8 @@ function RomImporter:_drawGamePanel(version, x, y, w, h)
   elseif locked then
     sfHintText, sfHintCol = "Not available yet.", PAL.warning
   elseif self.android then
-    sfHintText, sfHintCol = "Import a .sav, or drop one on the window.", PAL.warning
+    sfHintText, sfHintCol =
+      "Import or export a .sav with the system file picker.", PAL.warning
   else
     sfHintText, sfHintCol =
       "Import a .sav to a new slot, or export the active slot.", PAL.warning
@@ -1999,6 +2163,8 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
     love.graphics.printf("No saves yet - start a new game or import one.",
       rx + 12 * s, listTop + listH / 2 - self.hintFont:getHeight() / 2,
       rw - 24 * s, "center")
+    self.slotRects = {}
+    self.slotDeleteRects = {}
   elseif listH > 0 then
     local nameH = self.slotNameFont:getHeight()
     local metaH = self.labelFont:getHeight()
@@ -2017,6 +2183,7 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
     self.slotScroll[version] = scroll
 
     self.slotRects = {}
+    self.slotDeleteRects = {}
     love.graphics.setScissor(math.floor(rx), math.floor(listTop),
       math.ceil(rw), math.ceil(listH))
     for i, slot in ipairs(slots) do
@@ -2028,6 +2195,20 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
         love.graphics.setLineWidth(math.max(1, (selected and 1.5 or 1) * s))
         col(selected and PAL.green or PAL.cardBorder, selected and 0.9 or 0.22)
         love.graphics.rectangle("line", rx, ry, rw, rowH, rr, rr)
+
+        -- Delete label (bottom-right); reserve its width so name/meta don't overlap
+        love.graphics.setFont(self.hintFont)
+        local delText = "Delete"
+        local delW = self.hintFont:getWidth(delText)
+        local delH = self.hintFont:getHeight()
+        local delX = rx + rw - 12 * s - delW
+        local delY = ry + rowH - rowPadV - delH
+        local drect = { x = delX - 6 * s, y = delY - 4 * s,
+          width = delW + 12 * s, height = delH + 8 * s, id = slot.id }
+        local dhot = self:_hover(drect)
+        col(dhot and PAL.red or PAL.warning)
+        love.graphics.print(delText, delX, delY)
+        local rightReserve = delW + 18 * s
 
         -- LOADED pill (top-right of the active row), then reserve its width
         local pillW = 0
@@ -2048,7 +2229,7 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
         love.graphics.setFont(self.slotNameFont)
         col(PAL.white)
         local name = slot.name or "NEW GAME"
-        printB(ellipsize(self.slotNameFont, name, rw - 24 * s - pillW),
+        printB(ellipsize(self.slotNameFont, name, rw - 24 * s - math.max(pillW, rightReserve)),
           rx + 12 * s, ry + rowPadV)
 
         local metaTxt
@@ -2061,7 +2242,7 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
         end
         love.graphics.setFont(self.labelFont)
         col(PAL.warning)
-        love.graphics.print(ellipsize(self.labelFont, metaTxt, rw - 24 * s),
+        love.graphics.print(ellipsize(self.labelFont, metaTxt, rw - 24 * s - rightReserve),
           rx + 12 * s, ry + rowPadV + nameH + 4 * s)
 
         -- clip the hit rect to the visible list band so a partly-scrolled row
@@ -2071,6 +2252,12 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h)
         if vy2 > vy then
           self.slotRects[#self.slotRects + 1] =
             { x = rx, y = vy, width = rw, height = vy2 - vy, id = slot.id }
+        end
+        local dvy = math.max(drect.y, listTop)
+        local dvy2 = math.min(drect.y + drect.height, listBottom)
+        if dvy2 > dvy then
+          self.slotDeleteRects[#self.slotDeleteRects + 1] =
+            { x = drect.x, y = dvy, width = drect.width, height = dvy2 - dvy, id = slot.id }
         end
       end
     end
@@ -2165,14 +2352,14 @@ function RomImporter:_drawModsPanel(x, y, w, h)
 
   local top = y + headerH + 14 * s
 
-  -- notice line: the last install result, else the drag-drop hint
+  -- notice line: the last install/delete result, else the platform hint
   love.graphics.setFont(self.hintFont)
   if self.modNotice then
     col(self.modNotice.ok and PAL.green or PAL.red)
     love.graphics.printf(self.modNotice.text, x, top, w, "left")
   else
     col(PAL.warning)
-    love.graphics.printf(self.android and "Copy a mod .zip via USB."
+    love.graphics.printf(self.android and "Or copy a mod .zip via USB."
       or "Or drop a mod .zip onto the window.", x, top, w, "left")
   end
   top = top + self.hintFont:getHeight() + 12 * s
@@ -2187,20 +2374,25 @@ function RomImporter:_drawModsPanel(x, y, w, h)
     dashedRoundRect(x, top, w, boxH, 14 * s, 7 * s, 5 * s)
     love.graphics.setFont(self.hintFont)
     col(PAL.warning)
-    love.graphics.printf("No mods installed - drop a mod .zip here to add one.",
+    local emptyHint = self.android
+      and "No mods installed - tap Import mod .zip to add one."
+      or "No mods installed - drop a mod .zip here to add one."
+    love.graphics.printf(emptyHint,
       x + 16 * s, top + boxH / 2 - self.hintFont:getHeight() / 2, w - 32 * s, "center")
     self.modRects = {}
+    self.modDeleteRects = {}
     self._modMax = 0
     return
   end
 
-  -- card metrics (design: rounded 14, padding 14x16; toggle 56x28)
+  -- card metrics (design: rounded 14, padding 14x16; toggle 56x28; Delete under)
   local padH, padV = 16 * s, 14 * s
   local cardGap, cardR = 10 * s, 14 * s
   local tw, th = 52 * s, 28 * s
   local innerW = w - 2 * padH
   local chipH = self.hintFont:getHeight() + 8 * s
-  local clusterH = chipH + 6 * s + th   -- status chip stacked over the toggle
+  local delH = self.hintFont:getHeight()
+  local clusterH = chipH + 6 * s + th + 6 * s + delH
 
   love.graphics.setFont(self.stateFont)
   local nameH = self.stateFont:getHeight()
@@ -2210,7 +2402,8 @@ function RomImporter:_drawModsPanel(x, y, w, h)
   for i, m in ipairs(mods) do
     local chipText = modStatusChip(m.status)
     local chipW = self.hintFont:getWidth(chipText) + 20 * s
-    local clusterW = math.max(chipW, tw)
+    local delW = self.hintFont:getWidth("Delete")
+    local clusterW = math.max(chipW, tw, delW)
     local leftW = math.max(40 * s, innerW - clusterW - 14 * s)
     local descH = 0
     if m.description ~= "" then
@@ -2221,7 +2414,7 @@ function RomImporter:_drawModsPanel(x, y, w, h)
     local contentH = padV * 2 + nameH + (descH > 0 and (6 * s + descH) or 0)
     local cardH = math.max(contentH, padV * 2 + clusterH)
     layout[i] = { h = cardH, leftW = leftW, clusterW = clusterW,
-      chipText = chipText, chipW = chipW }
+      chipText = chipText, chipW = chipW, delW = delW }
     total = total + cardH
   end
   total = total + (#mods - 1) * cardGap
@@ -2231,6 +2424,7 @@ function RomImporter:_drawModsPanel(x, y, w, h)
   local scroll = clamp(self.modScroll or 0, 0, maxScroll)
   self.modScroll = scroll
   self.modRects = {}
+  self.modDeleteRects = {}
 
   love.graphics.setScissor(math.floor(x), math.floor(top),
     math.ceil(w), math.ceil(listH))
@@ -2269,7 +2463,7 @@ function RomImporter:_drawModsPanel(x, y, w, h)
         love.graphics.printf(m.description, nx, ny + nameH + 6 * s, L.leftW, "left")
       end
 
-      -- right cluster: status chip stacked over the toggle, vertically centred
+      -- right cluster: status chip, toggle, Delete — vertically centred
       local clusterX = x + w - padH - L.clusterW
       local clusterY = cy + (cardH - clusterH) / 2
       local _, chipColor = modStatusChip(m.status)
@@ -2303,13 +2497,28 @@ function RomImporter:_drawModsPanel(x, y, w, h)
       col(PAL.white)
       love.graphics.circle("fill", kcx, ty + th / 2, kd / 2)
 
-      -- hit rect clipped to the visible list band (a partly-scrolled toggle is
-      -- only clickable where it actually shows)
+      -- Delete under the toggle
+      local delX = clusterX + (L.clusterW - L.delW) / 2
+      local delY = ty + th + 6 * s
+      local drect = { x = delX - 6 * s, y = delY - 2 * s,
+        width = L.delW + 12 * s, height = delH + 4 * s, id = m.id }
+      local dhot = self:_hover(drect)
+      love.graphics.setFont(self.hintFont)
+      col(dhot and PAL.red or PAL.warning)
+      love.graphics.print("Delete", delX, delY)
+
+      -- hit rects clipped to the visible list band
       local vy = math.max(trect.y, top)
       local vy2 = math.min(trect.y + trect.height, top + listH)
       if vy2 > vy then
         self.modRects[#self.modRects + 1] =
           { x = trect.x, y = vy, width = trect.width, height = vy2 - vy, id = m.id }
+      end
+      local dvy = math.max(drect.y, top)
+      local dvy2 = math.min(drect.y + drect.height, top + listH)
+      if dvy2 > dvy then
+        self.modDeleteRects[#self.modDeleteRects + 1] =
+          { x = drect.x, y = dvy, width = drect.width, height = dvy2 - dvy, id = m.id }
       end
     end
     cy = cy + cardH + cardGap

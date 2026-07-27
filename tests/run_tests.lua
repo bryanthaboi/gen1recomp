@@ -3115,6 +3115,8 @@ runSuites({ "tests/rom_importer_cursor_test.lua" })
 -- ---------------------------------------------- Android second ROM pick (#167)
 runSuites({ "tests/rom_importer_android_pick_test.lua" })
 
+-- ---------------------------------------------- Android mod / save SAF pick
+runSuites({ "tests/rom_importer_android_mod_pick_test.lua" })
 -- ---------------------------------------------- parity workstream tests
 -- Each tests/parity_*.lua is a self-contained file (own bootstrap + check,
 -- error()s if any assertion fails).  Globbed, so dropping a new parity

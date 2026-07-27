@@ -47,11 +47,19 @@ local function readSource(source)
     return source
   end
   local f, openErr = io.open(source, "rb")
-  if not f then return nil, "could not read the save file: " .. tostring(openErr) end
-  local data = f:read("*a")
-  f:close()
-  if type(data) ~= "string" then return nil, "the save file was empty" end
-  return data
+  if f then
+    local data = f:read("*a")
+    f:close()
+    if type(data) ~= "string" then return nil, "the save file was empty" end
+    return data
+  end
+  -- Android SAF drops (picked_save.sav) and USB copies land in the LOVE save
+  -- directory; io.open cannot see them, so fall back to love.filesystem.
+  if love and love.filesystem and love.filesystem.read then
+    local data = love.filesystem.read(source)
+    if type(data) == "string" then return data end
+  end
+  return nil, "could not read the save file: " .. tostring(openErr)
 end
 
 -- importToSlot(source, version) -> ok, slotIdOrErr
