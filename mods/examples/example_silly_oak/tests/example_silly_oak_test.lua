@@ -1,7 +1,21 @@
 -- Standalone: luajit mods/examples/example_silly_oak/tests/example_silly_oak_test.lua
 -- Covers the intro.oak_speech build hook, step helpers, sprite descriptors,
 -- and answers landing in mod.save.
+--
+-- Needs an imported ROM dataset (data/generated/).  Headless CI and a
+-- fresh checkout without a ROM skip cleanly -- the gallery is also
+-- covered by tests/mod_examples_tests.lua when generated data is present.
 package.path = "./?.lua;./?/init.lua;" .. package.path
+
+local function hasGenerated()
+  local handle = io.open("data/generated/constants.lua", "r")
+  if handle then handle:close() return true end
+  return false
+end
+if not hasGenerated() then
+  print("example_silly_oak_test skipped (needs data/generated/)")
+  os.exit(0)
+end
 
 local T = require("tests.modkit")
 local Runtime = require("src.mods.Runtime")
