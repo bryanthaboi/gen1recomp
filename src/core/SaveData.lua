@@ -1155,9 +1155,16 @@ function SaveData.defaultHeal(boot)
 end
 
 -- Post-credits home (issue #103).  pokered left the player in HALL_OF_FAME
--- after jp Init; this port places CONTINUE at the NewGameWarp bedroom and
--- retargets LAST_MAP exits (Red's house mats) at the heal-point town so
--- leaving the house does not dump the player back at Indigo Plateau.
+-- after jp Init; this port relocates CONTINUE instead, and retargets
+-- LAST_MAP exits (Red's house mats) at the heal-point town so leaving the
+-- house does not dump the player back at Indigo Plateau.
+--
+-- The landing spot is the blackout point, not the NewGameWarp bedroom:
+-- HallOfFameResetEventsAndSaveScript sets wLastBlackoutMap := PALLET_TOWN,
+-- so resuming puts the player outside the front door.  Spawning them back
+-- in the upstairs bedroom was a port-only detour (#253).  Non-vanilla
+-- spawns are unaffected -- defaultHeal returns boot's own start map for
+-- those, which is what the bedroom branch resolved to anyway.
 -- Marks postGameHomeOk so a later intentional HoF save is not relocated.
 function SaveData.applyPostGameHome(save, boot)
   boot = type(boot) == "table" and boot or {}
@@ -1165,9 +1172,9 @@ function SaveData.applyPostGameHome(save, boot)
   save.lastHeal = { map = heal.map, x = heal.x, y = heal.y }
   save.lastOutdoor = { id = heal.map, x = heal.x, y = heal.y }
   save.player = save.player or {}
-  save.player.map = boot.startMap or "REDS_HOUSE_2F"
-  save.player.x = boot.startX or 3
-  save.player.y = boot.startY or 6
+  save.player.map = heal.map
+  save.player.x = heal.x
+  save.player.y = heal.y
   save.player.facing = boot.startFacing or "down"
   save.postGameHomeOk = true
   return heal

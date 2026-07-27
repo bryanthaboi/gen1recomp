@@ -53,6 +53,9 @@ function Game:load()
   require("src.render.Font").load(Data)
   -- menu cursor/border/geometry constants; field.theme restyles them
   require("src.ui.Theme").load(Data)
+  -- the engine's own text, after the merge so a translation mod's catalog
+  -- is already in Data.strings; empty on a mod-free boot and skipped
+  require("src.core.Strings").load(Data)
 
   self.stack = StateStack
   StateStack:init()

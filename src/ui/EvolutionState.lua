@@ -1,11 +1,13 @@
 -- The evolution movie (engine/movie/evolution.asm): the mon's pic
 -- flashes back and forth with the evolved form, speeding up, then the
 -- new form appears with its cry and the congratulations text.
--- pokered engine/pokemon/evos_moves.asm (EvolveMon) polls hJoyHeld during
--- the flash: holding B aborts the evolution -- the mon keeps its species
--- and _StoppedEvolvingText ("Huh? MON stopped evolving!") prints.  The
--- lone exception is trade evolutions (wLinkState == LINK_STATE_TRADING),
--- which skip that poll and cannot be cancelled (#213).
+-- pokered engine/movie/evolution.asm (Evolution_CheckForCancel) polls the
+-- joypad during the flash: holding B aborts the evolution -- the mon keeps
+-- its species and _StoppedEvolvingText ("Huh? MON stopped evolving!")
+-- prints.  Two kinds are exempt: trade evolutions, which evos_moves.asm
+-- routes past the poll entirely (wLinkState == LINK_STATE_TRADING, #213),
+-- and stone evolutions, where the B press is read but thrown away because
+-- ItemUseEvoStone left wForceEvolution set (#290).
 
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
@@ -43,9 +45,12 @@ function EvolutionState.new(game, mon, newSpecies, onDone, via)
   self.newSpecies = newSpecies
   self.onDone = onDone
   self.via = via
-  -- evos_moves.asm: only trade evolutions (LINK_STATE_TRADING) skip the
-  -- B-cancel poll; level-up, stone and rare-candy evos are all cancelable.
-  self.cancelable = (via ~= "TRADE")
+  -- evolution.asm Evolution_CheckForCancel: a B press is discarded when
+  -- wForceEvolution is set, and ItemUseEvoStone sets it before calling
+  -- TryEvolvingMon, so a stone evolution (via == "ITEM") cannot be
+  -- cancelled either.  Only level-up and rare-candy evolutions run with
+  -- wForceEvolution clear and so honour B (#290, #213).
+  self.cancelable = (via ~= "TRADE" and via ~= "ITEM")
   self.oldName = mon.nickname or game.data.pokemon[mon.species].name
   self.oldSprite = frontSprite(game, mon.species, mon)
   self.newSprite = frontSprite(game, newSpecies, mon)

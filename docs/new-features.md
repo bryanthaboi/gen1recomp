@@ -194,3 +194,37 @@ stick push hides it, the next screen touch brings it back, and unplugging
 the last controller restores it immediately. Layout re-derives from the
 window size on rotation. Desktop testing: `POKEPORT_TOUCH=1 love .` forces
 the overlay on and lets the mouse act as a finger (`=0` forces it off).
+## Translation support
+
+Every string the player can read is now reachable from a mod, so a
+translation is an ordinary content mod rather than a fork.
+
+Two things had to change. Text layout stopped counting bytes: the dialogue
+box measures a line in glyphs (charmap sequences), so a 3-byte character
+costs one column, a cut never lands inside a character, and a page with a
+non-default `advance` re-measures instead of overflowing. That also fixed
+25 vanilla English lines that were wrapping early because `é` in POKéMON
+and POKéDEX costs two bytes ("I study POKéMON as" is 19 bytes and 18
+glyphs, and the box was breaking it).
+
+Second, the text the engine writes itself - battle messages, item results,
+menu labels, the link-play screens - moved behind `src/core/Strings.lua`
+and the new `strings` registry. Extracted script text was already
+overridable through `text`; this covers the other half. Entries are keyed
+by the English source, so a translation that has not reached a string yet
+keeps rendering in English and a half-finished translation stays playable.
+
+Authors generate the whole thing:
+
+```sh
+python3 tools/modkit.py translation francais --language "Francais"
+```
+
+That scaffolds a mod with every translatable string as an empty catalog,
+plus a glyph-page and charmap stub, a naming-grid stub, and a
+`francais-worksheet/` directory holding the English to translate from
+(deliberately outside the mod: extracted text is ROM content and must not
+be packed). `--refresh` re-harvests after an engine update, keeping
+existing translations and parking orphaned keys rather than dropping them.
+
+See the wiki's Translations guide.

@@ -149,10 +149,13 @@ local saved = savedRaw and SaveData.decode(savedRaw) or nil
 check(saved ~= nil, "save.lua written and decodable")
 eq(saved and saved.lastHeal and saved.lastHeal.map, "PALLET_TOWN",
    "wLastBlackoutMap := PALLET_TOWN before the save")
-eq(saved and saved.player and saved.player.map, "REDS_HOUSE_2F",
-   "CONTINUE lands in the bedroom (post-game home, #103)")
-eq(saved and saved.player and saved.player.x, 3, "bedroom spawn x")
-eq(saved and saved.player and saved.player.y, 6, "bedroom spawn y")
+-- #103 parked CONTINUE in the upstairs bedroom; #253 corrected that to the
+-- blackout point the Hall of Fame script actually writes, so the player
+-- resumes outside the front door like the original.
+eq(saved and saved.player and saved.player.map, "PALLET_TOWN",
+   "CONTINUE lands at the front door, not the bedroom (#253)")
+eq(saved and saved.player and saved.player.x, 5, "Pallet spawn x")
+eq(saved and saved.player and saved.player.y, 6, "Pallet spawn y")
 eq(saved and saved.lastOutdoor and saved.lastOutdoor.id, "PALLET_TOWN",
    "LAST_MAP exits aim at Pallet Town, not Indigo")
 check(saved and saved.postGameHomeOk, "postGameHomeOk marks the relocate done")
@@ -171,7 +174,7 @@ eq(destMap, "PALLET_TOWN", "Red's house LAST_MAP -> PALLET_TOWN")
 eq(dx, 5, "Pallet door x")
 eq(dy, 5, "Pallet door y")
 
--- stuck-save rescue: HoF + hallOfFame + no postGameHomeOk -> bedroom
+-- stuck-save rescue: HoF + hallOfFame + no postGameHomeOk -> Pallet Town
 local stuck = SaveData.newGame()
 stuck.player.map = "HALL_OF_FAME"
 stuck.player.x, stuck.player.y = 4, 2
@@ -180,7 +183,7 @@ stuck.hallOfFame = { { { species = "PIKACHU", level = 81 } } }
 check(SaveData.needsPostGameRescue(stuck), "pre-fix softlock save needs rescue")
 SaveData.applyPostGameHome(stuck, Data.field.boot)
 check(not SaveData.needsPostGameRescue(stuck), "rescue is one-shot")
-eq(stuck.player.map, "REDS_HOUSE_2F", "rescue warps home")
+eq(stuck.player.map, "PALLET_TOWN", "rescue warps to the blackout point")
 eq(stuck.lastOutdoor.id, "PALLET_TOWN", "rescue retargets LAST_MAP")
 
 -- `jp Init`: everything popped, boot sequence pushed (intro -> title)

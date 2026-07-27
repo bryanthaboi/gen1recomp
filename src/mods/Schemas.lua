@@ -584,6 +584,17 @@ R.text = {
   example = 'mod.content.text:override("_PalletTownText1", "HELLO!")',
 }
 
+-- The engine's own authored text, the half of the game `text` does not
+-- cover (src/core/Strings.lua).  The id is the English source string, so a
+-- translation supplies one entry per literal the engine draws and anything
+-- it has not reached yet keeps rendering in English.  Ids that collide in
+-- English but not elsewhere carry a "context|source" prefix.
+R.strings = {
+  semantics = "record", target = "strings",
+  value = f.str,
+  example = 'mod.content.strings:override("But, it failed!", "Echec !")',
+}
+
 -- the self-contained bytecode blob ChipAsm.song/sfx emit (13.1 shape 2);
 -- shared by every namespace that plays a chip program
 local chipProgram = f.rec{

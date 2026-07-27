@@ -102,35 +102,84 @@ local function pageFor(code)
   return nil
 end
 
+local SPACE = 0x7F
+
+-- Segment text into glyph spans: `{ from, to, code }` byte ranges, one per
+-- drawn glyph, code nil when the charmap has nothing.  A span is a whole
+-- charmap sequence, so a multi-byte char ("é", "♂") and an ASCII ligature
+-- ("<PK>", "'d") are each one glyph.
+--
+-- Every caller that *measures* or *cuts* text walks these instead of bytes.
+-- "POKéMON" is 8 bytes and 7 glyphs: measuring it as 8 wraps lines that fit
+-- (25 vanilla lines did), and cutting at byte 8 splits the é into two
+-- invalid bytes that both draw as spaces.  That distinction is the whole
+-- reason a non-English font can be shipped as a mod (#186, #245).
+--
+-- Safe before Font.load: with no charmap it falls back to UTF-8 lead-byte
+-- boundaries, which is all a headless paginate needs.
+function Font.split(text)
+  local spans = {}
+  local i, n = 1, #text
+  while i <= n do
+    local span
+    local candidates = state and state.byFirstByte[text:byte(i)]
+    if candidates then
+      for _, entry in ipairs(candidates) do
+        local len = #entry.seq
+        if text:sub(i, i + len - 1) == entry.seq then
+          span = { from = i, to = i + len - 1, code = entry.code }
+          break
+        end
+      end
+    end
+    if not span then
+      -- Nothing matched.  Still keep a UTF-8 sequence whole, so a cut never
+      -- lands mid-character even for a glyph we cannot draw.
+      local last = i
+      if text:byte(i) >= 0xC0 then
+        local k = i + 1
+        while k <= n do
+          local b = text:byte(k)
+          if b < 0x80 or b > 0xBF then break end
+          last, k = k, k + 1
+        end
+      end
+      span = { from = i, to = last }
+    end
+    spans[#spans + 1] = span
+    i = span.to + 1
+  end
+  return spans
+end
+
+-- How many leading spans fit in `budget` pixels.  Advances come from each
+-- glyph's own page, so a variable-width page measures correctly.
+function Font.spansFitting(spans, budget)
+  local used, fit = 0, 0
+  for _, span in ipairs(spans) do
+    used = used + Font.advanceOf(span.code or SPACE)
+    if used > budget then break end
+    fit = fit + 1
+  end
+  return fit
+end
+
 -- Convert a text string into a list of glyph codes.  Unknown characters
 -- render as space (and are reported once).
 local reported = {}
 function Font.encode(text)
   local codes = {}
-  local i = 1
-  while i <= #text do
-    local candidates = state.byFirstByte[text:byte(i)]
-    local matched = false
-    if candidates then
-      for _, entry in ipairs(candidates) do
-        local n = #entry.seq
-        if text:sub(i, i + n - 1) == entry.seq then
-          codes[#codes + 1] = entry.code
-          i = i + n
-          matched = true
-          break
-        end
-      end
-    end
-    if not matched then
-      local ch = text:sub(i, i)
-      if not reported[ch] and ch:byte() >= 32 then
+  for _, span in ipairs(Font.split(text)) do
+    local code = span.code
+    if not code then
+      local ch = text:sub(span.from, span.to)
+      if not reported[ch] and text:byte(span.from) >= 32 then
         reported[ch] = true
         require("src.core.Logger").warn("font: no glyph for %q", ch)
       end
-      codes[#codes + 1] = 0x7F -- space
-      i = i + 1
+      code = SPACE
     end
+    codes[#codes + 1] = code
   end
   return codes
 end

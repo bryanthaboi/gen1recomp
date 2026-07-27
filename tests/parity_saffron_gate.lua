@@ -29,6 +29,10 @@ local check, eq = S.check, S.eq
 
 -- The gate pushes real TextBoxes, which want a loaded Font atlas; the
 -- decision under test is which branch runs, not how the text renders.
+-- Restored at the end of the file: run_tests.lua dofiles every parity suite
+-- into one process, so a stub left in package.loaded is inherited by every
+-- suite that sorts after this one.
+local realTextBox = package.loaded["src.render.TextBox"]
 package.loaded["src.render.TextBox"] = {
   new = function(_, text, done) return { text = text, done = done } end,
 }
@@ -116,5 +120,7 @@ for _, id in ipairs({ "ROUTE_5_GATE", "ROUTE_6_GATE",
                       "ROUTE_7_GATE", "ROUTE_8_GATE" }) do
   check(M[id] and M[id].onStep, id .. " has the guard trigger")
 end
+
+package.loaded["src.render.TextBox"] = realTextBox
 
 S.finish()

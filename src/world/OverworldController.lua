@@ -1505,6 +1505,43 @@ function OverworldState:tryBookshelf(fx, fy)
   return true
 end
 
+-- Bench guys are the one hidden-event family whose extracted label is a
+-- wrapper rather than the string itself: bench_guys.asm defines e.g.
+-- PewterCityPokecenterBenchGuyText:: as `text_far _PewterCityPokecenterGuyText`,
+-- so data/generated/field.lua carries the wrapper name while the text sits
+-- under the far label.  The two only coincide for Mt Moon and the Celadon
+-- hotel, which is why every other bench guy answered with silence (#248).
+-- pokered's own names are irregular here (Cerulean/Lavender/Vermilion drop
+-- "City", Cinnabar drops "Island"), so this is a table, not a transform.
+local BENCH_GUY_TEXT = {
+  ViridianCityPokecenterBenchGuyText   = "_ViridianCityPokecenterGuyText",
+  PewterCityPokecenterBenchGuyText     = "_PewterCityPokecenterGuyText",
+  CeruleanCityPokecenterBenchGuyText   = "_CeruleanPokecenterGuyText",
+  LavenderCityPokecenterBenchGuyText   = "_LavenderPokecenterGuyText",
+  VermilionCityPokecenterBenchGuyText  = "_VermilionPokecenterGuyText",
+  CeladonCityPokecenterBenchGuyText    = "_CeladonCityPokecenterGuyText",
+  FuchsiaCityPokecenterBenchGuyText    = "_FuchsiaCityPokecenterGuyText",
+  CinnabarIslandPokecenterBenchGuyText = "_CinnabarPokecenterGuyText",
+  RockTunnelPokecenterBenchGuyText     = "_RockTunnelPokecenterGuyText",
+}
+
+-- SaffronCityPokecenterBenchGuyText is text_asm: he complains about ROCKET
+-- until EVENT_BEAT_SILPH_CO_GIOVANNI, then thanks you for clearing them out.
+-- Takes data/save rather than reading the Game upvalue so tests can resolve
+-- every label in the table without standing a whole overworld up.
+function OverworldState.benchGuyText(data, save, label)
+  if not label then return nil end
+  if label == "SaffronCityPokecenterBenchGuyText" then
+    local key = (save and save.flags and save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI)
+                and "_SaffronCityPokecenterGuyText2"
+                or "_SaffronCityPokecenterGuyText1"
+    return data.text[key]
+  end
+  -- the direct name first, so a cache whose extractor already resolved the
+  -- far label keeps working without consulting the table
+  return data.text["_" .. label] or data.text[BENCH_GUY_TEXT[label] or ""]
+end
+
 -- Hidden events at the faced cell (data/events/hidden_events.asm):
 -- HiddenItems give their item once, HiddenCoins fill the COIN CASE,
 -- StartSlotMachine seats open the minigame.  Taken spots persist in
@@ -1609,7 +1646,7 @@ function OverworldState:tryHiddenObject(fx, fy)
   -- bench guys (data/events/bench_guys.asm)
   for _, h in ipairs(extras.benchGuys[self.map.id] or {}) do
     if h.x == fx and h.y == fy and (not h.facing or h.facing == facing) then
-      local text = h.text and Game.data.text["_" .. h.text]
+      local text = OverworldState.benchGuyText(Game.data, save, h.text)
       if text then
         Game.stack:push(TextBox.new(Game, text))
         return true

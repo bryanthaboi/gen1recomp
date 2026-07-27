@@ -528,11 +528,16 @@ function PartyMenu:draw()
       love.graphics.setColor(0, 0, 0, 1)
       Font.draw(("%3d/%3d"):format(mon.hp, mon.stats.hp), 104, y + 8)
     end
+    -- home/pokemon.asm PartyMenuInit seeds wTopMenuItemY/X with 1/0, so the
+    -- cursor sits on the entry's *second* tile row (the level/HP line),
+    -- level with the middle of the two-row icon -- not on the name row that
+    -- entryY returns.  Drawing it at y put it a tile too high (#278).
+    local cursorY = y + 8
     if i == self.index then
-      Font.drawCode(Theme.cursor, 0, y)
+      Font.drawCode(Theme.cursor, 0, cursorY)
     end
     if i == self.swapFrom or i == self.softboiledFrom then
-      Font.drawCode(Theme.cursorHollow, 0, y) -- the unfilled swap arrow
+      Font.drawCode(Theme.cursorHollow, 0, cursorY) -- the unfilled swap arrow
     end
   end
   if self.swapFrom then

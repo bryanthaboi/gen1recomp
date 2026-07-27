@@ -16,6 +16,14 @@ M.VIRIDIAN_MART = {
   -- StartSimulatingJoypadStates walks the player to the counter
   -- (.PlayerMovement: PAD_LEFT 1, PAD_UP 2, door (3,7) -> counter (2,5))
   -- and ViridianMartOaksParcelScript hands the parcel over.  The player
+  -- never presses A.
+  --
+  -- The RLE list is consumed back to front: DecodeRLEList fills forward
+  -- from wSimulatedJoypadStatesEnd, the script seeds wSimulatedJoypadStates-
+  -- Index with the count, and home/overworld.asm decrements that index
+  -- before each read.  So PAD_LEFT 1, PAD_UP 2 actually plays up, up, left,
+  -- and the walk ends facing the clerk.  Replaying the list front to back
+  -- put the player at the counter facing up instead (#235).  The player
   -- never presses A.  This matters beyond convenience: the parcel gates
   -- Oak's Pokedex and the old man clearing Route 2, so vanilla guarantees
   -- it on entry rather than letting you walk out without it.
@@ -28,8 +36,8 @@ M.VIRIDIAN_MART = {
     if not f.EVENT_GOT_STARTER then return end
     ow:queueScript({
       { "show_text", "_ViridianMartClerkYouCameFromPalletTownText" },
-      { "move_player", "left", 1 },
       { "move_player", "up", 2 },
+      { "move_player", "left", 1 },
       -- the quest text's last page is "{PLAYER} got\nOAK's PARCEL!"
       { "give_item", "OAKS_PARCEL", 1, "_ViridianMartClerkParcelQuestText" },
       { "set_flag", "EVENT_GOT_OAKS_PARCEL" },

@@ -12,6 +12,11 @@ if not _G.love then _G.love = require("tests.love_stub") end
 local S = require("tests.harness").suite("parity tower rival")
 local check, eq = S.check, S.eq
 
+-- Both stubs are restored at the end of the file: run_tests.lua dofiles
+-- every parity suite into one process, so anything left in package.loaded is
+-- inherited by every suite that sorts after this one.
+local realTextBox = package.loaded["src.render.TextBox"]
+local realMusic = package.loaded["src.core.Music"]
 package.loaded["src.render.TextBox"] = {
   new = function(_, text, done) return { text = text, done = done } end,
 }
@@ -134,5 +139,8 @@ do
 
   Commands.hide_object = realHide
 end
+
+package.loaded["src.render.TextBox"] = realTextBox
+package.loaded["src.core.Music"] = realMusic
 
 S.finish()

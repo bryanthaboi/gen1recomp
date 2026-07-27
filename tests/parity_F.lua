@@ -8,6 +8,8 @@
 -- EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE and the one-shot
 -- EVENT_GOT_POKEBALLS_FROM_OAK flag (data/scripts/oaks_lab.lua).
 -- Also #137: starter give_pokemon runs AskName (nickname yes/no).
+-- Also #235: the Viridian Mart parcel walk replays its simulated joypad
+-- states in the order the original consumes them.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 if not _G.love then _G.love = require("tests.love_stub") end
 local Data = require("src.core.Data")
@@ -146,5 +148,38 @@ eq(Game.save.party[1] and Game.save.party[1].species, "CHARMANDER",
    "declined-nickname path still gives Charmander")
 eq(Game.save.party[1] and Game.save.party[1].nickname, nil,
    "declining nickname leaves the species name")
+
+-- === #235: the parcel walk goes up first, then left ===
+-- ViridianMartDefaultScript feeds .PlayerMovement (PAD_LEFT 1, PAD_UP 2)
+-- through DecodeRLEList into wSimulatedJoypadStatesEnd and then walks the
+-- index *down*, so the list plays back to front: up, up, left.  Ending on
+-- the left step is what leaves the player facing the clerk; replaying it
+-- front to back parked them at the counter facing up.
+do
+  local parcelSave = SaveData.newGame()
+  Flags.set(parcelSave, "EVENT_GOT_STARTER")
+  local realSave = Game.save
+  Game.save = parcelSave
+
+  local queued
+  local fakeOw = { queueScript = function(_, rows) queued = rows end }
+  local mart = mapScripts.get("VIRIDIAN_MART")
+  check(mart and type(mart.onEnter) == "function",
+        "VIRIDIAN_MART has an onEnter parcel script")
+  mart.onEnter(Game, fakeOw)
+  check(type(queued) == "table", "entering the mart queues the parcel script")
+
+  local moves = {}
+  for _, row in ipairs(queued or {}) do
+    if row[1] == "move_player" then moves[#moves + 1] = { row[2], row[3] } end
+  end
+  eq(#moves, 2, "the walk is two move_player runs")
+  eq(moves[1] and moves[1][1], "up", "first leg is up (#235)")
+  eq(moves[1] and moves[1][2], 2, "first leg is two cells")
+  eq(moves[2] and moves[2][1], "left", "second leg is left, facing the clerk")
+  eq(moves[2] and moves[2][2], 1, "second leg is one cell")
+
+  Game.save = realSave
+end
 
 S.finish()

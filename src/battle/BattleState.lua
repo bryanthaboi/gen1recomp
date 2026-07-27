@@ -3277,7 +3277,12 @@ function BattleState:tryRun()
   self.phase = "messages"
   self.afterQueue = "menu"
   if self.kind == "trainer" then
-    self:say("No! There's no\nrunning from a\ntrainer battle!")
+    -- _NoRunningText is three lines in a two-line box, so the third arrives
+    -- on a \v scroll (ContText: ▼ then a button press) rather than a \n.
+    -- Spelling it with three \n dropped "trainer battle!" and handed the
+    -- menu straight back (#239).
+    self:say(self.data.text._NoRunningText
+      or "No! There's no\nrunning from a\vtrainer battle!")
     return
   end
   -- modified in-battle speeds (stat stages + paralysis), like the
@@ -3592,9 +3597,11 @@ local HudTiles = require("src.render.HudTiles")
 local hudTile = HudTiles.tile
 local drawHPBar = HudTiles.drawHPBar
 
--- CenterMonName: 1-2 letter names print two tiles right, 3-4 one tile
+-- CenterMonName: 1-2 letter names print two tiles right, 3-4 one tile.
+-- Counted in glyphs, not bytes: a nickname carrying "é" or "♂" is one
+-- charmap sequence per glyph, and byte length would push it a tile left.
 local function nameX(tx, name)
-  local n = #name
+  local n = #Font.split(name)
   return tx * 8 + (n <= 2 and 16 or n <= 4 and 8 or 0)
 end
 

@@ -92,13 +92,28 @@ end
 -- pokered ContText waits for A/B + ▼ before scrolling that line in.
 function TextBox.paginate(text, maxCols)
   maxCols = maxCols or (Theme.textBox and Theme.textBox.maxCols) or MAX_COLS
+  -- maxCols is a column count, so the budget is that many vanilla 8px
+  -- cells.  Measuring in pixels rather than columns is what lets a mod's
+  -- variable-advance page wrap correctly (#186).
+  local budget = maxCols * 8
   local pages = {}
   local contBefore = {}
+  -- Soft-wrap on glyph boundaries, never byte boundaries: a line is over
+  -- budget by what it *draws*, and the cut falls between glyphs so a
+  -- multi-byte char is never torn in half.
   local function pushLine(lines, conts, line, wait)
-    while #line > maxCols do
-      local cut = maxCols
-      for i = maxCols, 1, -1 do
-        if line:sub(i, i) == " " then cut = i break end
+    while true do
+      local spans = Font.split(line)
+      local fit = Font.spansFitting(spans, budget)
+      if fit >= #spans then break end
+      -- a glyph wider than the whole box still has to advance by one
+      fit = math.max(fit, 1)
+      local cut = spans[fit].to
+      for i = fit, 1, -1 do
+        if line:sub(spans[i].from, spans[i].to) == " " then
+          cut = spans[i].to
+          break
+        end
       end
       table.insert(lines, line:sub(1, cut))
       table.insert(conts, wait)

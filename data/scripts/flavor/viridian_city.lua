@@ -59,13 +59,17 @@ M.VIRIDIAN_CITY = {
     -- ViridianCityYoungster2CaterpieAndWeedleDescriptionText are
     -- defined without a leading underscore in pokered/text/ViridianCity.asm
     -- and aren't present in data/generated/text.lua, so we fall back to
-    -- the literal strings from pokered.
+    -- the literal strings from pokered.  Those fallbacks have to carry the
+    -- extractor's markers, not plain newlines: line -> \n, cont -> \v,
+    -- para -> \f.  Spelling cont/para as \n and \n\n put all six lines on
+    -- one page with nothing to wait on, so the whole speech scrolled past
+    -- without a button press (#250).
     TEXT_VIRIDIANCITY_YOUNGSTER2 = function(game, ow, npc, done)
       local t = text(game)
       ask(game, t._ViridianCityYoungster2YouWantToKnowAboutText
-        or "You want to know\nabout the 2 kinds\nof caterpillar\nPOKéMON?", function(yes)
+        or "You want to know\nabout the 2 kinds\vof caterpillar\vPOKéMON?", function(yes)
         if yes then
-          push(game, "CATERPIE has no\npoison, but\nWEEDLE does.\n\nWatch out for its\nPOISON STING!", done)
+          push(game, "CATERPIE has no\npoison, but\vWEEDLE does.\fWatch out for its\nPOISON STING!", done)
         else
           push(game, "Oh, OK then!", done)
         end

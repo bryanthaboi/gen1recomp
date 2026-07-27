@@ -5,6 +5,8 @@
 -- and residual sweep.  Callers without a battle (pure-module tests) fall
 -- back to the vanilla records, which is bit-identical behavior.
 
+local Strings = require("src.core.Strings")
+
 local Status = {}
 
 -- pokered's <USER>/<TARGET> text macros print "Enemy " before the enemy
@@ -28,8 +30,11 @@ local function hasType(battler, wanted)
 end
 
 -- shared PSN/BRN residual: 1/16 max HP, multiplied (and advanced) by the
--- Toxic counter (HandlePoisonBurnLeechSeed)
-local function damageOverTime(what)
+-- Toxic counter (HandlePoisonBurnLeechSeed).  The caller passes the whole
+-- sentence rather than the noun: "hurt by poison" and "hurt by the burn"
+-- decline differently once translated, so a shared fragment cannot be the
+-- translatable unit.
+local function damageOverTime(template)
   return function(battler)
     local mon = battler.mon
     local base = math.max(1, math.floor(mon.stats.hp / 16))
@@ -39,7 +44,7 @@ local function damageOverTime(what)
       battler.toxicCounter = battler.toxicCounter + 1
     end
     mon.hp = math.max(0, mon.hp - dmg)
-    return { ("%s's\nhurt by %s!"):format(name(battler), what) }
+    return { Strings(template, name(battler)) }
   end
 end
 
@@ -57,13 +62,13 @@ Status.RECORDS = {
       battler.sleepTurns = (battler.sleepTurns or 1) - 1
       if battler.sleepTurns <= 0 then
         battler.mon.status = nil
-        return false, { name(battler) .. "\nwoke up!" } -- wakes but loses the turn
+        return false, { Strings("%s\nwoke up!", name(battler)) } -- wakes, loses the turn
       end
-      return false, { name(battler) .. "\nis fast asleep!" }
+      return false, { Strings("%s\nis fast asleep!", name(battler)) }
     end,
     onInflict = function(battle, target, opts, display)
       target.sleepTurns = battle.rng(1, 7)
-      return { ("%s\nfell asleep!"):format(display) }
+      return { Strings("%s\nfell asleep!", display) }
     end,
   },
   FRZ = {
@@ -71,35 +76,35 @@ Status.RECORDS = {
     catchBonus = 25, shakeBonus = 10,
     beforeMovePriority = 30,
     beforeMove = function(battler)
-      return false, { name(battler) .. "\nis frozen solid!" }
+      return false, { Strings("%s\nis frozen solid!", name(battler)) }
     end,
     canInflict = function(target) return not hasType(target, "ICE") end,
     onInflict = function(_, _, _, display)
-      return { ("%s\nwas frozen solid!"):format(display) }
+      return { Strings("%s\nwas frozen solid!", display) }
     end,
   },
   PSN = {
     id = "PSN", label = "PSN", hudLabel = "PSN",
     catchBonus = 12, shakeBonus = 5,
-    residual = damageOverTime("poison"),
+    residual = damageOverTime("%s's\nhurt by poison!"),
     canInflict = function(target) return not hasType(target, "POISON") end,
     onInflict = function(_, target, opts, display)
       if opts.toxic then
         target.toxicCounter = 1
         -- _BadlyPoisonedText
-        return { ("%s's\nbadly poisoned!"):format(display) }
+        return { Strings("%s's\nbadly poisoned!", display) }
       end
-      return { ("%s\nwas poisoned!"):format(display) }
+      return { Strings("%s\nwas poisoned!", display) }
     end,
   },
   BRN = {
     id = "BRN", label = "BRN", hudLabel = "BRN",
     catchBonus = 12, shakeBonus = 5,
     statPenalty = { stat = "attack", div = 2 },
-    residual = damageOverTime("the burn"),
+    residual = damageOverTime("%s's\nhurt by the burn!"),
     canInflict = function(target) return not hasType(target, "FIRE") end,
     onInflict = function(_, _, _, display)
-      return { ("%s\nwas burned!"):format(display) }
+      return { Strings("%s\nwas burned!", display) }
     end,
   },
   PAR = {
@@ -110,7 +115,7 @@ Status.RECORDS = {
     beforeMove = function(battler, rng)
       -- cp 25 percent / jr nc: fully paralyzed on rand < 63 (63/256)
       if rng(0, 255) < 63 then
-        return false, { name(battler) .. "'s\nfully paralyzed!" }
+        return false, { Strings("%s's\nfully paralyzed!", name(battler)) }
       end
       return true, {}
     end,
@@ -120,7 +125,7 @@ Status.RECORDS = {
     end,
     onInflict = function(_, _, _, display)
       -- _ParalyzedMayNotAttackText (primary and secondary paralysis)
-      return { ("%s's\nparalyzed! It may\nnot attack!"):format(display) }
+      return { Strings("%s's\nparalyzed! It may\nnot attack!", display) }
     end,
   },
 }
@@ -156,7 +161,7 @@ function Status.beforeMove(battler, rng, battle)
   end
   if battler.flinched then
     battler.flinched = false
-    return false, { name(battler) .. "\nflinched!" }
+    return false, { Strings("%s\nflinched!", name(battler)) }
   end
   local record = Status.recordFor(battleStatuses(battle), mon.status)
   local handler = record and record.beforeMove
@@ -174,23 +179,23 @@ function Status.beforeMove(battler, rng, battle)
   end
   if battler.boundTurns and battler.boundTurns > 0 then
     battler.boundTurns = battler.boundTurns - 1
-    msgs[#msgs + 1] = name(battler) .. "\ncan't move!"
+    msgs[#msgs + 1] = Strings("%s\ncan't move!", name(battler))
     return false, msgs
   end
   if battler.disabledTurns then
     battler.disabledTurns = battler.disabledTurns - 1
     if battler.disabledTurns <= 0 then
       battler.disabledTurns, battler.disabledSlot = nil, nil
-      table.insert(msgs, name(battler) .. "'s\ndisabled no more!")
+      table.insert(msgs, Strings("%s's\ndisabled no more!", name(battler)))
     end
   end
   if battler.confusedTurns then
     battler.confusedTurns = battler.confusedTurns - 1
     if battler.confusedTurns <= 0 then
       battler.confusedTurns = nil
-      table.insert(msgs, name(battler) .. "\nsnapped out of\nconfusion!")
+      table.insert(msgs, Strings("%s\nsnapped out of\nconfusion!", name(battler)))
     else
-      table.insert(msgs, name(battler) .. "\nis confused!")
+      table.insert(msgs, Strings("%s\nis confused!", name(battler)))
       -- cp 50 percent + 1 / jr c: hurt itself on rand >= 128 (128/256)
       if rng(0, 255) < 128 then
         return false, msgs, true -- hurt itself
@@ -231,7 +236,7 @@ function Status.residual(battler, opponent, battle)
     dmg = math.min(dmg, mon.hp)
     mon.hp = mon.hp - dmg
     opponent.mon.hp = math.min(opponent.mon.stats.hp, opponent.mon.hp + dmg)
-    table.insert(msgs, ("LEECH SEED saps\n%s!"):format(name(battler)))
+    table.insert(msgs, Strings("LEECH SEED saps\n%s!", name(battler)))
   end
   return msgs
 end

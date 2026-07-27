@@ -402,7 +402,13 @@ function BagMenu.new(game, opts)
         useItem(game, battle, id, list)
         return
       end
-      -- USE / TOSS submenu (the original's item options)
+      -- USE / TOSS submenu (the original's item options).
+      -- data/text_boxes.asm USE_TOSS_MENU_TEMPLATE: box (13,10)-(19,14),
+      -- text at (15,11); start_sub_menus.asm then sets wTopMenuItemY/X to
+      -- 11/14 for the cursor.  Menu's own geometry reproduces all of that
+      -- from the box alone, so this needs opts rather than a change to the
+      -- shared Menu.  The old 12/10/8/6 box was a column too wide and a row
+      -- too tall, which left the labels stranded near its top edge (#284).
       local Menu = require("src.ui.Menu")
       game.stack:push(Menu.new(game, {
         { label = "USE", onSelect = function()
@@ -431,7 +437,7 @@ function BagMenu.new(game, opts)
               end,
             }))
           end },
-      }, { tx = 12, ty = 10, tw = 8, th = 6 }))
+      }, { tx = 13, ty = 10, tw = 7, th = 5 }))
     end,
   })
   return list
