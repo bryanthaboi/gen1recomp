@@ -1,0 +1,21 @@
+-- Sharing metadata for the manager detail pane.
+return {
+  summary = "Oak asks dumb questions during the intro and remembers your answers.",
+  author = "Pokemon Gen 1 Recompilation Project",
+  contact = "https://github.com/bryanthaboi/pokemon-gen1-recomp-project",
+  tags = { "intro", "ui", "oak", "hooks" },
+  differences = {
+    changed = {
+      "Oak's NEW GAME speech gains extra questions and sprite beats",
+    },
+    added = {
+      "mod.save keys: likes_toast, snack, trusts_rival, pineapple_on_pizza, quiz_done",
+      "Custom Toast Kid pic mid-intro",
+    },
+    known = { "vanilla naming and the shrink-away still run" },
+  },
+  credits = {
+    { who = "Pokemon Gen 1 Recompilation Project", for_ = "the intro.oak_speech hooks" },
+  },
+  compat = { engine = ">=0.0.0 <2.0.0", modApi = 2 },
+}

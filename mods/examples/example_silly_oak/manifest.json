@@ -1,0 +1,15 @@
+{
+  "id": "example_silly_oak",
+  "name": "Silly Oak Intro Example",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "UI",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Reshapes Oak's intro speech with extra questions, sprite swaps, and answers saved to mod.save."
+}

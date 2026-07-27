@@ -1,6 +1,6 @@
 # Example mod gallery
 
-Seven reference mods, one per modder persona. Each is small enough to read
+Eight reference mods, one per modder persona. Each is small enough to read
 in one sitting, exercises a different slice of the mod API, and is a real,
 runnable, tested mod — not a snippet.
 
@@ -16,6 +16,7 @@ Copy the one closest to what you want to build.
 | 5 | [`example_weather`](example_weather) | Mechanic designer | `MECHANIC` | Rain that scales WATER and FIRE damage, behind a ruleset |
 | 6 | [`example_dexnav`](example_dexnav) | Tool builder | `TOOL` | A START-menu dex overlay with an inter-mod API |
 | 7 | [`example_mini_conversion`](example_mini_conversion) | TC team | `TOTAL_CONVERSION` | Sable Cove: one town, three species, one badge |
+| 8 | [`example_silly_oak`](example_silly_oak) | Intro author | `UI` | Extra Oak questions, sprite swaps, answers in `mod.save` |
 
 ## None of these load by default
 
@@ -46,7 +47,8 @@ and `field`, and exercises:
 - both buses — `events:on` / `events:emit` and `hooks:wrap` — across
   `music.select`, `battle.damage`, `ui.start_menu.items`, `ui.options.rows`,
   `battle.started`, `battle.turn_started`, `battle.ended`, `flag.changed`,
-  `game.ready` and `assets.transformed`
+  `game.ready`, `assets.transformed`, `intro.oak_speech.build`,
+  `intro.oak_speech.answered` and `intro.oak_speech.finished`
 - `mod.save`, `mod.options`, `mod.exports`, `mod.commands`, `mod.ui`,
   `mod:read`, `mod.log` and `mod.path`
 - asset transforms, the `trueColor` opt-out, script labels and `choice`,
@@ -66,7 +68,7 @@ mods/examples/<id>/
   .modkitignore     keeps the suite out of the distributed package
 ```
 
-`tests/mod_examples_tests.lua` in the engine's own suite loads all seven
+`tests/mod_examples_tests.lua` in the engine's own suite loads all eight
 together and asserts the above, so the gallery cannot rot.
 
 These example mods arent perfect and are just examples to show you basics of wahts possible, but way more than just this is possible.

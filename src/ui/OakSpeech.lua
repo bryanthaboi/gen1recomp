@@ -1,14 +1,16 @@
 -- The intro sequence (engine/movie/oak_speech/oak_speech.asm): Oak's
 -- welcome, the NIDORINO show-off, player and rival naming, and the
--- closing "legend is about to unfold" text followed by the shrink-away:
--- the player pic collapses through ShrinkPic1/ShrinkPic2 into the
--- overworld walking sprite before the fade to white.  Uses the real
--- extracted texts (_OakSpeechText1/2A/2B/3, _IntroducePlayerText,
--- _IntroduceRivalText) with literal fallbacks.
+-- closing "legend is about to unfold" text followed by the shrink-away.
+--
+-- Steps are a data table so mods can reshape the whole speech through
+-- hooks:wrap("intro.oak_speech.build").  Vanilla ids stay stable so a
+-- mod can insertBefore("name_player", ...) without counting indices.
 -- Calls onDone() after popping itself.
 
 local Sound = require("src.core.Sound")
 local Music = require("src.core.Music")
+local Logger = require("src.core.Logger")
+local Runtime = require("src.mods.Runtime")
 local TextBox = require("src.render.TextBox")
 local Font = require("src.render.Font")
 
@@ -55,12 +57,153 @@ local function tryImage(path)
   return ok and img or nil
 end
 
+-- Resolve a pic descriptor to (image, flip).
+-- Descriptors:
+--   "oak" | "rival" | "player"          shorthand
+--   { type = "trainer", id = "OPP_PROF_OAK" }
+--   { type = "pokemon", id = "PIKACHU", flip = true }
+--   { type = "player", path = "..." }   optional override path
+--   { type = "image", path = "..." }
+--   { type = "sprite", id = "SPRITE_RED" }
+function OakSpeech.resolvePic(game, desc, speech)
+  if desc == nil then return nil, false end
+  if type(desc) == "string" then
+    if desc == "oak" then
+      desc = { type = "trainer", id = "OPP_PROF_OAK" }
+    elseif desc == "rival" then
+      desc = { type = "trainer", id = "OPP_RIVAL1" }
+    elseif desc == "player" then
+      desc = { type = "player" }
+    else
+      -- bare species id
+      desc = { type = "pokemon", id = desc }
+    end
+  end
+  local t = desc.type
+  if t == "trainer" then
+    if speech and desc.id == "OPP_PROF_OAK" and speech.oakPic then
+      return speech.oakPic, false
+    end
+    if speech and desc.id == "OPP_RIVAL1" and speech.rivalPic then
+      return speech.rivalPic, false
+    end
+    local trainers = game.data.trainers or {}
+    local tr = trainers[desc.id]
+    return tryImage(tr and tr.pic), false
+  elseif t == "pokemon" then
+    if speech and desc.id == speech.demoSpecies and speech.demoPic then
+      return speech.demoPic, desc.flip and true or false
+    end
+    local mon = game.data.pokemon and game.data.pokemon[desc.id]
+    return tryImage(mon and mon.spriteFront), desc.flip and true or false
+  elseif t == "player" then
+    if speech and speech.playerPic and not desc.path then
+      return speech.playerPic, false
+    end
+    return tryImage(desc.path or "assets/generated/trainer_card/red.png"), false
+  elseif t == "image" then
+    return tryImage(desc.path), desc.flip and true or false
+  elseif t == "sprite" then
+    local sp = game.data.sprites and game.data.sprites[desc.id]
+    return tryImage(sp and sp.image), desc.flip and true or false
+  end
+  return nil, false
+end
+
+-- Vanilla step list.  Ids are the stable anchors mods insert around.
+function OakSpeech.defaultSteps(speech)
+  return {
+    {
+      id = "oak_welcome",
+      kind = "say",
+      textKey = "_OakSpeechText1",
+      pic = "oak",
+      reveal = "fade",
+    },
+    {
+      id = "demo_mon",
+      kind = "demo",
+    },
+    {
+      id = "world_spiel",
+      kind = "say",
+      textKey = "_OakSpeechText2B",
+    },
+    {
+      id = "ask_player_name",
+      kind = "say",
+      textKey = "_IntroducePlayerText",
+      pic = "player",
+    },
+    {
+      id = "name_player",
+      kind = "name",
+      who = "player",
+      title = "YOUR NAME?",
+      presetsWho = "player",
+      presetsFallback = { "RED", "ASH", "JACK" },
+    },
+    {
+      id = "ask_rival_name",
+      kind = "say",
+      textKey = "_IntroduceRivalText",
+      pic = "rival",
+    },
+    {
+      id = "name_rival",
+      kind = "name",
+      who = "rival",
+      title = "HIS NAME?",
+      presetsWho = "rival",
+      presetsFallback = { "BLUE", "GARY", "JOHN" },
+    },
+    {
+      id = "legend",
+      kind = "say",
+      textKey = "_OakSpeechText3",
+      pic = "player",
+    },
+    {
+      id = "shrink",
+      kind = "shrink",
+    },
+  }
+end
+
+-- list helpers for intro.oak_speech.build wrappers (also on ModUI)
+local function indexOfId(steps, id)
+  for i, step in ipairs(steps) do
+    if step.id == id then return i end
+  end
+  return nil
+end
+
+function OakSpeech.insertBefore(steps, anchorId, step)
+  local i = indexOfId(steps, anchorId)
+  table.insert(steps, i or (#steps + 1), step)
+  return steps
+end
+
+function OakSpeech.insertAfter(steps, anchorId, step)
+  local i = indexOfId(steps, anchorId)
+  table.insert(steps, i and (i + 1) or (#steps + 1), step)
+  return steps
+end
+
+function OakSpeech.removeId(steps, id)
+  for i = #steps, 1, -1 do
+    if steps[i].id == id then table.remove(steps, i) end
+  end
+  return steps
+end
+
 function OakSpeech.new(game, onDone)
   local self = setmetatable({}, OakSpeech)
   self.game = game
   self.onDone = onDone
   self.step = 0
   self.pic = nil
+  self.answers = {}
   local trainers = game.data.trainers or {}
   self.oakPic = tryImage(trainers.OPP_PROF_OAK and trainers.OPP_PROF_OAK.pic)
   self.rivalPic = tryImage(trainers.OPP_RIVAL1 and trainers.OPP_RIVAL1.pic)
@@ -87,9 +230,26 @@ function OakSpeech.new(game, onDone)
   return self
 end
 
+function OakSpeech:buildSteps()
+  local steps = OakSpeech.defaultSteps(self)
+  local hooked = Runtime.call("intro.oak_speech.build",
+    function(s) return s end, steps, self)
+  if type(hooked) ~= "table" then
+    Logger.error("intro.oak_speech.build returned %s; keeping vanilla steps",
+                 type(hooked))
+    return steps
+  end
+  return hooked
+end
+
 function OakSpeech:enter()
   -- MUSIC_ROUTES2 plays under the whole speech (oak_speech.asm:43-48)
   Music.play(self.game.data, self.cfg.music or "Music_Routes2")
+  self.answers = {}
+  self.steps = self:buildSteps()
+  if Runtime.wants("intro.oak_speech.started") then
+    Runtime.emit("intro.oak_speech.started", { speech = self, steps = self.steps })
+  end
   self:advance()
 end
 
@@ -97,80 +257,187 @@ function OakSpeech:say(key, next)
   self.game.stack:push(TextBox.new(self.game, textOr(self.game, key), next))
 end
 
-local STEPS = {
-  -- 1. Oak's welcome (Oak's pic fades in first, FadeInIntroPic)
-  function(self)
-    self.pic = self.oakPic
-    self:revealPic("fade", function()
-      self:say("_OakSpeechText1", function() self:advance() end)
+function OakSpeech:sayText(text, next, opts)
+  self.game.stack:push(TextBox.new(self.game, text, next, opts))
+end
+
+function OakSpeech:stepText(step)
+  if step.text then return step.text end
+  if step.textKey then return textOr(self.game, step.textKey) end
+  return ""
+end
+
+function OakSpeech:applyPic(step)
+  if step.pic == nil then return end
+  local img, flip = OakSpeech.resolvePic(self.game, step.pic, self)
+  if img then
+    self.pic = img
+    self.picFlip = flip or false
+  elseif step.pic == "player" or (type(step.pic) == "table" and step.pic.type == "player") then
+    -- mirror the old fallback: player pic missing → oak
+    self.pic = self.playerPic or self.oakPic
+    self.picFlip = false
+  end
+end
+
+function OakSpeech:recordAnswer(step, index, label, value)
+  if value == nil then value = label end
+  if step.saveKey then
+    self.answers[step.saveKey] = value
+  end
+  if Runtime.wants("intro.oak_speech.answered") then
+    Runtime.emit("intro.oak_speech.answered", {
+      speech = self,
+      step = step,
+      index = index,
+      label = label,
+      value = value,
+      saveKey = step.saveKey,
+    })
+  end
+end
+
+function OakSpeech:afterReveal(step, fn)
+  if step.reveal then
+    self:revealPic(step.reveal, fn)
+  else
+    fn()
+  end
+end
+
+function OakSpeech:runCry(step)
+  local cry = step.cry
+  if not cry then return end
+  if cry == true then
+    if type(step.pic) == "string" and step.pic ~= "oak"
+        and step.pic ~= "rival" and step.pic ~= "player" then
+      cry = step.pic
+    elseif type(step.pic) == "table" and step.pic.type == "pokemon" then
+      cry = step.pic.id
+    else
+      return
+    end
+  end
+  Sound.playCry(self.game.data, cry)
+end
+
+function OakSpeech:runStep(step)
+  local kind = step.kind or "say"
+  if kind == "say" then
+    self:applyPic(step)
+    self:afterReveal(step, function()
+      self:runCry(step)
+      self:sayText(self:stepText(step), function() self:advance() end)
     end)
-  end,
-  -- 2. NIDORINO show-off: the front sprite is mirrored horizontally
-  --    (LoadFlippedFrontSpriteByMonIndex) and wipes in from the right
-  --    (MovePicLeft), then its cry sounds and the text prints
-  function(self)
+  elseif kind == "demo" then
+    -- NIDORINO show-off: mirrored front sprite + wipe + cry + text 2A
     self.pic = self.demoPic
     self.picFlip = true
     self:revealPic("wipe", function()
       Sound.playCry(self.game.data, self.demoSpecies)
       self:say("_OakSpeechText2A", function() self:advance() end)
     end)
-  end,
-  -- 3. the rest of the world-of-POKéMON spiel
-  function(self)
-    self:say("_OakSpeechText2B", function() self:advance() end)
-  end,
-  -- 4. "First, what is your name?" over the player's own pic
-  --    (RedPicFront, oak_speech.asm:86-91) then the naming screen
-  function(self)
-    self.pic = self.playerPic or self.oakPic
-    self:say("_IntroducePlayerText", function() self:advance() end)
-  end,
-  function(self)
+  elseif kind == "name" then
+    local who = step.who or "player"
+    local presets = step.presets
+      or namePresets(self.game, step.presetsWho or who,
+                     step.presetsFallback or { "RED" })
     require("src.ui.Screens").push(self.game, "NamingScreen", {
-      title = "YOUR NAME?",
-      presets = namePresets(self.game, "player", { "RED", "ASH", "JACK" }),
-      maxLen = self.nameLen,
+      title = step.title or (who == "rival" and "HIS NAME?" or "YOUR NAME?"),
+      presets = presets,
+      maxLen = step.maxLen or self.nameLen,
       onDone = function(name)
-        self.game.save.player.name = name
+        if who == "rival" then
+          self.game.save.player.rival = name
+        else
+          self.game.save.player.name = name
+        end
+        self:recordAnswer(step, 1, name, name)
         self:advance()
       end,
     })
-  end,
-  -- 6. the rival introduction and naming
-  function(self)
-    self.pic = self.rivalPic
-    self:say("_IntroduceRivalText", function() self:advance() end)
-  end,
-  function(self)
-    require("src.ui.Screens").push(self.game, "NamingScreen", {
-      title = "HIS NAME?",
-      presets = namePresets(self.game, "rival", { "BLUE", "GARY", "JOHN" }),
-      maxLen = self.nameLen,
-      onDone = function(name)
-        self.game.save.player.rival = name
-        self:advance()
-      end,
-    })
-  end,
-  -- 8. "your very own POKéMON legend is about to unfold!" over the
-  --    player pic again (oak_speech.asm:105-113)
-  function(self)
-    self.pic = self.playerPic or self.oakPic
-    self:say("_OakSpeechText3", function() self:advance() end)
-  end,
-  -- 9. SFX_SHRINK: the pic collapses through the two shrink frames
-  --    into the walking sprite, then fades to white (oak_speech.asm
-  --    .next, lines 115-166).  Not skippable, like the DelayFrames
-  --    chain it ports.
-  function(self)
+  elseif kind == "choice" then
+    self:applyPic(step)
+    self:afterReveal(step, function()
+      self:runCry(step)
+      local function openMenu()
+        local Menu = require("src.ui.Menu")
+        local items = {}
+        for i, label in ipairs(step.choices or {}) do
+          items[i] = {
+            label = label,
+            onSelect = function()
+              local value = label
+              if step.values and step.values[i] ~= nil then
+                value = step.values[i]
+              end
+              self:recordAnswer(step, i, label, value)
+              self:advance()
+            end,
+          }
+        end
+        self.game.stack:push(Menu.new(self.game, items, {
+          cancelable = step.cancelable == true,
+          tx = step.tx or 4,
+          ty = step.ty or 0,
+          tw = step.tw or 12,
+          th = step.th,
+        }))
+      end
+      local text = self:stepText(step)
+      if text ~= "" then
+        self:sayText(text, openMenu)
+      else
+        openMenu()
+      end
+    end)
+  elseif kind == "yesno" then
+    self:applyPic(step)
+    self:afterReveal(step, function()
+      self:runCry(step)
+      self:sayText(self:stepText(step), nil, {
+        defaultNo = step.defaultNo,
+        choice = function(yes)
+          local label = yes and "YES" or "NO"
+          local value = yes
+          if step.values then
+            if yes then
+              value = step.values[1]
+            else
+              value = step.values[2]
+            end
+          end
+          self:recordAnswer(step, yes and 1 or 2, label, value)
+          self:advance()
+        end,
+      })
+    end)
+  elseif kind == "pic" then
+    -- show a sprite with an optional reveal, no text
+    self:applyPic(step)
+    self:afterReveal(step, function()
+      self:runCry(step)
+      self:advance()
+    end)
+  elseif kind == "shrink" then
     Sound.play(self.game.data, "Shrink")
-    -- the OakSpeechText3 box holds its last page on screen through the
-    -- shrink (pokered text boxes persist until overwritten)
-    self.shrinkText = self:lastPageLines("_OakSpeechText3")
+    -- prefer an explicit shrink text key; fall back to the legend beat
+    local key = step.textKey or "_OakSpeechText3"
+    self.shrinkText = self:lastPageLines(key)
     self.shrink = { frame = 0 }
-  end,
-}
+  elseif kind == "fn" then
+    -- full escape hatch: step.run(speech, done)
+    if type(step.run) == "function" then
+      step.run(self, function() self:advance() end)
+    else
+      self:advance()
+    end
+  else
+    Logger.warn("oak speech unknown step kind %s (id=%s); skipping",
+                tostring(kind), tostring(step.id))
+    self:advance()
+  end
+end
 
 -- the last two visible lines of a text's final page, pre-encoded
 function OakSpeech:lastPageLines(key)
@@ -202,15 +469,31 @@ end
 function OakSpeech:advance()
   self.step = self.step + 1
   self.picFlip = false
-  local fn = STEPS[self.step]
-  if fn then
-    fn(self)
+  local steps = self.steps
+  if not steps then
+    -- enter() builds steps; keep a path for callers that advance early
+    steps = self:buildSteps()
+    self.steps = steps
+  end
+  local step = steps[self.step]
+  if step then
+    if Runtime.wants("intro.oak_speech.step") then
+      Runtime.emit("intro.oak_speech.step", {
+        speech = self, step = step, index = self.step,
+      })
+    end
+    self:runStep(step)
   else
     self:finish()
   end
 end
 
 function OakSpeech:finish()
+  if Runtime.wants("intro.oak_speech.finished") then
+    Runtime.emit("intro.oak_speech.finished", {
+      speech = self, answers = self.answers,
+    })
+  end
   -- the map theme starts with the overworld beneath (the original's
   -- special warp into Pallet Town)
   local ow = self.game.overworld
@@ -267,8 +550,8 @@ function OakSpeech:draw()
   if self.pic then
     -- IntroDisplayPicCenteredOrUpperRight centered: the 7x7-tile pic
     -- area sits at hlcoord 6,4 = (48,32); smaller mon pics pad inside
-    -- it like the sprite buffer does ((8 - w) >> 1 tiles across,
-    -- bottom-aligned)
+    -- it like the sprite buffer does ((8 - w) >> 1) tiles across,
+    -- bottom-aligned
     local w, h = self.pic:getDimensions()
     local x = 48 + math.floor((8 - w / 8) / 2) * 8
     local y = 32 + (7 - h / 8) * 8
