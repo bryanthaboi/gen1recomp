@@ -30,8 +30,10 @@ local function quads16(img, count, stride, x0, y0)
   return q
 end
 
-function TrainerCard.new(game)
-  local self = setmetatable({ game = game }, TrainerCard)
+function TrainerCard.new(game, opts)
+  opts = opts or {}
+  local self = setmetatable({ game = game, onCancel = opts.onCancel },
+                            TrainerCard)
   local img = tryImage("assets/generated/trainer_card/badges.png")
   if img then
     -- badges.2bpp is 8 stacked [face, badge] pairs (DrawBadges FaceBadgeTiles)
@@ -66,8 +68,12 @@ end
 
 function TrainerCard:update(dt)
   local input = self.game.input
+  -- either button dismisses the card back to the start menu
+  -- (StartMenu_TrainerInfo: WaitForTextScrollButtonPress then
+  -- RedisplayStartMenu)
   if input:wasPressed("a") or input:wasPressed("b") then
     self.game.stack:pop()
+    if self.onCancel then self.onCancel() end
   end
 end
 

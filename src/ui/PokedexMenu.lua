@@ -9,7 +9,8 @@ function PokedexMenu:sgbPalettes(game)
   return require("src.render.PaletteFX").wholeNamed(game.data, "BROWNMON")
 end
 
-function PokedexMenu.new(game)
+function PokedexMenu.new(game, opts)
+  opts = opts or {}
   local dex = game.save.pokedex or { seen = {}, owned = {} }
   local byDex = {}
   for species, def in pairs(game.data.pokemon) do
@@ -47,6 +48,7 @@ function PokedexMenu.new(game)
   local list = ListMenu.new(game, "POKéDEX", items, {
     footer = ("SEEN %d  OWNED %d"):format(seen, owned),
     pageJump = true, -- Left/Right page jumps like the original
+    onCancel = opts.onCancel, -- B returns to the start menu when opened from it
     onChoose = function(item)
       if not item.value then return end
       -- the DATA / CRY / AREA / QUIT choice (engine/menus/pokedex.asm

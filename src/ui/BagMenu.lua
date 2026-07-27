@@ -372,6 +372,8 @@ function BagMenu.new(game, opts)
   list = ListMenu.new(game, "ITEMS", buildItems(game), {
     kind = "bag",
     footer = ("¥%d"):format(game.save.money),
+    -- B returns to the start menu when the bag was opened from it
+    onCancel = opts.onCancel,
     -- SELECT reorders items like the original bag (swap_items.asm)
     onSelectKey = function(item, l)
       if not item then return end

@@ -160,9 +160,12 @@ end
 function PlayerPC.new(game)
   game.save.pcItems = game.save.pcItems or {}
   return Menu.new(game, {
-    { label = "WITHDRAW ITEM", onSelect = function() withdraw(game) end },
-    { label = "DEPOSIT ITEM", onSelect = function() deposit(game) end },
-    { label = "TOSS ITEM", onSelect = function() toss(game) end },
+    -- keepOpen so B in the item lists returns here instead of dropping the
+    -- whole PC session (players_pc.asm re-shows the PC menu); same pattern
+    -- as BoxMenu's rows
+    { label = "WITHDRAW ITEM", keepOpen = true, onSelect = function() withdraw(game) end },
+    { label = "DEPOSIT ITEM", keepOpen = true, onSelect = function() deposit(game) end },
+    { label = "TOSS ITEM", keepOpen = true, onSelect = function() toss(game) end },
     { label = "LOG OFF" },
     -- silent PC session (BIT_NO_MENU_BUTTON_SOUND); players_pc.asm
     -- PlayersPCMenu TextBoxBorder (0,0) b=8 c=14 → 16x10

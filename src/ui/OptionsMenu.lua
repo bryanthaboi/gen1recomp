@@ -328,7 +328,8 @@ local function buildRows(game)
   return rows
 end
 
-function OptionsMenu.new(game)
+function OptionsMenu.new(game, opts)
+  opts = opts or {}
   local rows = buildRows(game)
   local hooked = Runtime.call("ui.options.rows", sameRows, game, rows)
   if type(hooked) == "table" then
@@ -337,8 +338,8 @@ function OptionsMenu.new(game)
     Logger.error("ui.options.rows returned %s; keeping the vanilla rows",
                  type(hooked))
   end
-  return setmetatable({ game = game, rows = rows, index = 1, scroll = 0 },
-                      OptionsMenu)
+  return setmetatable({ game = game, rows = rows, index = 1, scroll = 0,
+                        onCancel = opts.onCancel }, OptionsMenu)
 end
 
 function OptionsMenu:update(dt)
@@ -361,9 +362,11 @@ function OptionsMenu:update(dt)
       changed = row.step(self.game, dir) and true or false
     elseif input:wasPressed("a") then -- CANCEL
       self.game.stack:pop()
+      if self.onCancel then self.onCancel() end
     end
   elseif input:wasPressed("b") or input:wasPressed("start") then
     self.game.stack:pop()
+    if self.onCancel then self.onCancel() end
   end
   if changed and self.game.writeOptions then
     self.game:writeOptions()

@@ -19,10 +19,15 @@ function StartMenu.new(game)
   local flags = game.save.flags or {}
   local items = {}
 
+  -- vanilla start submenus return here on B (RedisplayStartMenu): the
+  -- generic Menu pops the start menu when a row is selected, so each
+  -- submenu gets an onCancel that re-opens it
+  local function reopen() Screens.push(game, "StartMenu") end
+
   -- POKéDEX: only after Oak hands it over
   if flags.EVENT_GOT_POKEDEX then
     table.insert(items, { label = "POKéDEX", onSelect = function()
-      Screens.push(game, "PokedexMenu")
+      Screens.push(game, "PokedexMenu", { onCancel = reopen })
     end })
   end
 
@@ -30,17 +35,17 @@ function StartMenu.new(game)
   -- an empty party; selecting it then just no-ops)
   table.insert(items, { label = "POKéMON", onSelect = function()
     if #game.save.party == 0 then return end
-    Screens.push(game, "PartyMenu")
+    Screens.push(game, "PartyMenu", { onCancel = reopen })
   end })
 
   table.insert(items, { label = "ITEM", onSelect = function()
-    Screens.push(game, "BagMenu")
+    Screens.push(game, "BagMenu", { onCancel = reopen })
   end })
 
   -- the player's name opens the trainer card (StartMenu_TrainerInfo)
   table.insert(items, { label = game.save.player.name or "RED",
     onSelect = function()
-      Screens.push(game, "TrainerCard")
+      Screens.push(game, "TrainerCard", { onCancel = reopen })
     end })
 
   -- SAVE shows the player/badges/dex/time panel then asks to confirm
@@ -74,7 +79,7 @@ function StartMenu.new(game)
   end })
 
   table.insert(items, { label = "OPTION", onSelect = function()
-    Screens.push(game, "OptionsMenu")
+    Screens.push(game, "OptionsMenu", { onCancel = reopen })
   end })
 
   -- LINK needs a party
