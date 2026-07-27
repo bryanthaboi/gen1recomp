@@ -167,6 +167,18 @@ function TextBox:update(dt)
       if self.autoSrc and self.autoSrc.isPlaying and self.autoSrc:isPlaying() then
         return -- the cry is still sounding (WaitForSoundToFinish)
       end
+      -- auto.wait: the pet-NPC cries (PewterNidoranHouseNidoranText,
+      -- ViridianNicknameHouseSpearowText) have nothing queued behind the
+      -- cry, so DisplayTextID's trailing WaitForTextScrollButtonPress still
+      -- runs once it is over -- their maps enable auto text box drawing,
+      -- which zeroes wDoNotWaitForButtonPressAfterDisplayingText
+      -- (home/window.asm AutoTextBoxDrawingCommon).  Drop the auto gate and
+      -- hand the box to the plain A/B path, which also starts the blinking
+      -- arrow, instead of popping it (#247, #251).
+      if self.auto.wait then
+        self.auto = nil
+        return
+      end
       self.autoTimer = self.autoTimer + 1
       local delay = self.auto.delay or 3
       -- auto.onOverlap: fired once when the delay elapses but before the

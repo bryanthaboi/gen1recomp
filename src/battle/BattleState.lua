@@ -1025,6 +1025,21 @@ function BattleState:enter()
     or "assets/generated/battle/redb.png",
     namedPalette(self.data, "MEWMON"))
   self.showPlayerBack = self.playerBackPic ~= nil
+  -- the enemy's cry as it appears (data/pokemon/cries.asm); PlayCry sits at
+  -- a different point in each battle kind, so queue it per branch
+  local function queueEnemyCry()
+    self:act(function()
+      require("src.core.Sound").playCry(self.data, self.enemy.mon.species)
+    end)
+  end
+  -- PrintBeginningBattleText (engine/battle/common_text.asm:10-19): a wild
+  -- battle calls PlayCry BEFORE PrintText WildMonAppearedText, so the cry
+  -- sounds with the "Wild X appeared!" box instead of waiting on the A
+  -- press that clears its `prompt` (#303).  The Silph-Scope-less tower
+  -- ghost gets no cry at all (common_text.asm:43-48).
+  if self.kind ~= "trainer" and self.kind ~= "link" and not self.ghost then
+    queueEnemyCry()
+  end
   self:say(self.introText)
   if self.kind == "trainer" then
     self:say(("%s sent\nout %s!"):format(self.trainer.name, self.enemy.name))
@@ -1034,6 +1049,7 @@ function BattleState:enter()
       self.showEnemyTrainer = false
       self:startGrowIn(self.enemy)
     end)
+    queueEnemyCry()
   elseif self.kind == "link" then
     -- Colosseum has no foe trainer pic, but the enemy mon still grows
     -- out of the ball after "X sent out Y!" (not the wild "already there"
@@ -1045,12 +1061,7 @@ function BattleState:enter()
       self.enemySendingOut = false
       self:startGrowIn(self.enemy)
     end)
-  end
-  if not self.ghost then
-    -- the enemy's cry plays as it appears (data/pokemon/cries.asm)
-    self:act(function()
-      require("src.core.Sound").playCry(self.data, self.enemy.mon.species)
-    end)
+    queueEnemyCry()
   end
   if not self.safari and not self.demo then
     self:say(self:sendOutText(self.player.name))
