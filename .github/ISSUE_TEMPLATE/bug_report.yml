@@ -25,7 +25,9 @@ body:
       options:
         - macOS
         - Windows
-        - Both
+        - Linux
+        - Android
+        - Multiple platforms
     validations:
       required: true
 
@@ -37,6 +39,17 @@ body:
       placeholder: 0.1.4
     validations:
       required: true
+
+  - type: input
+    id: discord
+    attributes:
+      label: Discord username (optional)
+      description: >
+        So maintainers can ping you on Discord if they need a quick follow-up.
+        Leave blank if you'd rather keep everything on GitHub.
+      placeholder: yourname
+    validations:
+      required: false
 
   - type: input
     id: location
