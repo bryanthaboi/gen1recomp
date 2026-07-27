@@ -10,22 +10,12 @@
 -- call site exists.
 
 local Schemas = require("src.mods.Schemas")
+local FsIo = require("tests.fs_io")
 
 local Catalog = {}
 
 local function luaFilesUnder(dir)
-  local files = {}
-  -- -L follows symlinks: a checkout that symlinks src/ (worktrees, the
-  -- ROM-free CI probe) would otherwise scan nothing and hand every gate an
-  -- empty catalog to pass vacuously against
-  local pipe = io.popen("find -L " .. dir .. " -name '*.lua' -type f 2>/dev/null")
-  if not pipe then return files end
-  for line in pipe:lines() do
-    if line ~= "" then files[#files + 1] = line end
-  end
-  pipe:close()
-  table.sort(files)
-  return files
+  return FsIo.luaFilesUnder(dir)
 end
 
 local function scan(dirs, patterns)

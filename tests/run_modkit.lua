@@ -15,14 +15,12 @@ local dirs = { "tests/modkit/cases" }
 -- under mods/examples/<id>/tests and need data/generated/, and the
 -- gallery itself is covered by tests/mod_examples_tests.lua.  Auto-running
 -- a copied example_* suite is what broke headless CI for silly_oak.
-local pipe = io.popen("ls -d mods/*/tests 2>/dev/null")
-if pipe then
-  for line in pipe:lines() do
-    if line ~= "" and not line:match("^mods/example_") then
-      dirs[#dirs + 1] = line
-    end
+local FsIo = require("tests.fs_io")
+for _, name in ipairs(FsIo.listDir("mods")) do
+  if not name:find(".", 1, true) and not name:match("^example_") then
+    local dir = "mods/" .. name .. "/tests"
+    if FsIo.isDir(dir) then dirs[#dirs + 1] = dir end
   end
-  pipe:close()
 end
 
 Runner.main(dirs, "modkit")

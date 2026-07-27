@@ -63,13 +63,17 @@ end
 -- engine tier, the SDK cases, and any tests a shipped mod carries
 local function testCorpus()
   local files, bodies = {}, {}
-  local pipe = io.popen(
-    "ls tests/*.lua tests/engine/*.lua tests/modkit/cases/*.lua mods/*/tests/*.lua 2>/dev/null")
-  if pipe then
-    for line in pipe:lines() do
-      if line ~= "" then files[#files + 1] = line end
+  local FsIo = require("tests.fs_io")
+  local function addLuaFrom(dir)
+    for _, name in ipairs(FsIo.listDir(dir)) do
+      if name:match("%.lua$") then files[#files + 1] = dir .. "/" .. name end
     end
-    pipe:close()
+  end
+  addLuaFrom("tests")
+  addLuaFrom("tests/engine")
+  addLuaFrom("tests/modkit/cases")
+  for _, mod in ipairs(FsIo.listDir("mods")) do
+    if not mod:find(".", 1, true) then addLuaFrom("mods/" .. mod .. "/tests") end
   end
   for _, path in ipairs(files) do
     bodies[path] = slurp(path) or ""
