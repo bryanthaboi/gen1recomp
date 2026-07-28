@@ -2183,6 +2183,20 @@ function OverworldState:talkTo(npc)
     return
   end
 
+  -- boulders (object_event SPRITE_BOULDER): every map's boulder text is the
+  -- same `text_far _BoulderText` wrapper, and the extractor records only the
+  -- local "BoulderText" label with no resolved string, so resolveText came
+  -- up empty and boulders answered with silence (#318).  The ROM just
+  -- prints the shared line; the STRENGTH gate lives in the push mechanic
+  -- (checkBoulderPush), not here.  Keyed on the sprite, not isPushable: a
+  -- mod's pushable override must not replace its own talk text.
+  if d.sprite == "SPRITE_BOULDER" then
+    Game.stack:push(TextBox.new(Game,
+      Game.data.text._BoulderText
+        or Strings("This requires\nSTRENGTH to move!"), unfreeze))
+    return
+  end
+
   -- item balls (object_event item argument).  A payload id of "0" is
   -- pokered's ITEM_NONE sentinel: the ROM object sets the 0x80 "has item"
   -- bit but names item 0, so it is a plain text object, not an item ball
