@@ -12,10 +12,9 @@ supplied by the player.
 <p align="center"> <a href="https://kotaku.com/pokemon-red-blue-recompilation-project-voxel-3d-mod-2000720281"> <img src="https://img.shields.io/badge/AS%20SEEN%20ON-KOTAKU-ea2e49?style=for-the-badge" alt="As seen on KOTAKU"> </a> </p>
 
 
-
 ### Watch the latest update video
 
-[![Watch the latest update video](https://img.youtube.com/vi/TbHdJIrKJJU/maxresdefault.jpg)](https://www.youtube.com/watch?v=TbHdJIrKJJU)
+[![Watch the latest update video](https://img.youtube.com/vi/8IOgqbe4YvA/maxresdefault.jpg)](https://www.youtube.com/watch?v=8IOgqbe4YvA)
 
 
 This project does not include a ROM, emulate the Game Boy, transpile assembly,
