@@ -228,6 +228,9 @@ function Game:update(dt)
   -- reason: they are presentational, so fast-forward must not speed them up
   require("src.render.Pipelines").update(dt)
   pcall(function() require("src.core.DiscordPresence").update(dt) end)
+  -- Android's native companion reads a small presentation-only snapshot
+  -- from the save directory. Desktop/headless builds return immediately.
+  pcall(function() require("src.core.SecondScreen").update(dt, self) end)
   -- Steady-state memory backstop: advance the incremental collector one
   -- small step every rendered frame.  The heavy GPU objects are now freed
   -- explicitly (map eviction, battle exit, canvas/renderer swaps), so this

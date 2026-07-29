@@ -43,10 +43,14 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.res.AssetManager;
+import android.graphics.Point;
+import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.util.Log;
 import android.util.DisplayMetrics;
@@ -86,6 +90,14 @@ public class GameActivity extends SDLActivity {
     private static boolean needToCopyGameInArchive = false;
     private boolean storagePermissionUnnecessary = false;
     private boolean shortEdgesMode = false;
+    private final Handler companionHandler = new Handler(Looper.getMainLooper());
+    private CompanionPresentation companionPresentation;
+    private final Runnable companionLauncher = new Runnable() {
+        @Override
+        public void run() {
+            launchCompanionOnSmallerDisplay();
+        }
+    };
     public boolean embed = false;
     public int safeAreaTop = 0;
     public int safeAreaLeft = 0;
@@ -278,6 +290,8 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        companionHandler.removeCallbacks(companionLauncher);
+        dismissCompanion();
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -287,6 +301,8 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
+        companionHandler.removeCallbacks(companionLauncher);
+        dismissCompanion();
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -297,6 +313,84 @@ public class GameActivity extends SDLActivity {
     @Override
     public void onResume() {
         super.onResume();
+        companionHandler.removeCallbacks(companionLauncher);
+        companionHandler.postDelayed(companionLauncher, 350);
+    }
+
+    /**
+     * AYN Thor exposes both panels as ordinary Android displays.  Discover
+     * them on every resume rather than remembering display ids: ids can
+     * change when the lower panel is switched off and back on.
+     *
+     * The LOVE activity remains on the largest active display.  Only then do
+     * we put the read-only companion on the smallest one; a single-screen
+     * device and a game that was intentionally launched on a smaller panel
+     * are both left completely unchanged.
+     */
+    private void launchCompanionOnSmallerDisplay() {
+        if (isFinishing() || android.os.Build.VERSION.SDK_INT < 26) return;
+
+        DisplayManager manager =
+            (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        Display current = getDisplay();
+        if (manager == null || current == null) return;
+
+        Display largest = null;
+        Display smallest = null;
+        long largestArea = -1;
+        long smallestArea = Long.MAX_VALUE;
+        int activeCount = 0;
+        Point size = new Point();
+        for (Display display : manager.getDisplays()) {
+            if (display == null || display.getState() == Display.STATE_OFF) continue;
+            display.getRealSize(size);
+            long area = (long) size.x * (long) size.y;
+            if (area <= 0) continue;
+            activeCount++;
+            if (area > largestArea) {
+                largestArea = area;
+                largest = display;
+            }
+            if (area < smallestArea) {
+                smallestArea = area;
+                smallest = display;
+            }
+        }
+        if (activeCount < 2 || largest == null || smallest == null) {
+            dismissCompanion();
+            return;
+        }
+        if (current.getDisplayId() != largest.getDisplayId()
+            || smallest.getDisplayId() == current.getDisplayId()
+            || largestArea == smallestArea) {
+            dismissCompanion();
+            return;
+        }
+        if (companionPresentation != null
+            && companionPresentation.isShowing()
+            && companionPresentation.getDisplay().getDisplayId()
+                == smallest.getDisplayId()) {
+            return;
+        }
+
+        try {
+            dismissCompanion();
+            companionPresentation = new CompanionPresentation(this, smallest);
+            companionPresentation.show();
+            Log.i("GameActivity", "second-screen companion shown on display "
+                + smallest.getDisplayId());
+        } catch (RuntimeException error) {
+            dismissCompanion();
+            Log.w("GameActivity", "could not show second-screen companion", error);
+        }
+    }
+
+    private void dismissCompanion() {
+        if (companionPresentation == null) return;
+        if (companionPresentation.isShowing()) {
+            companionPresentation.dismiss();
+        }
+        companionPresentation = null;
     }
 
     @Keep
