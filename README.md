@@ -1,8 +1,12 @@
-# Gen1Recomp
+# Gen1LuaReimplementation
 
 A native LÖVE2D recreation of Poke Red, Blue and Yellow. The engine and map
-behavior are hand-written Lua; game data and graphics are decoded from a ROM
+behavior are converted to Lua using a LLM; game data and graphics are decoded from a ROM
 supplied by the player.
+
+## AI disclosure
+
+This project was created with heavy use of LLMs which did the grunt work of converting the disassembly code into Lua. Note that this project is completely untested, and any issues reported will be sent back to the LLM, which will attempt a fix and this will also be merged untested. What this means it that this is not a suitable way to actually play the game and should remain a curiosity. If you want a playable version of the game, please play literally any other version. 
 
 <p align="center"><img src="https://raw.githubusercontent.com/bryanthaboi/gen1recomp/refs/heads/dev/assets/logo/logo.png"></p>
 
