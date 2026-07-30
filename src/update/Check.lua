@@ -174,4 +174,19 @@ function Check.download()
   cmdCh:push({ cmd = "download" })
 end
 
+-- Stop the worker thread (called from love.quit); same process-reuse rationale
+-- as ChipAudio.shutdown.  An idle worker wakes from its demand() immediately;
+-- one that is mid check/download only sees the command once the transfer
+-- settles, so skip the join in those states: quit must not block behind curl.
+function Check.shutdown()
+  if not worker then return end
+  drain()
+  if cmdCh then cmdCh:push({ cmd = "quit" }) end
+  if cache.status ~= "checking" and cache.status ~= "downloading" then
+    pcall(function() worker:wait() end)
+  end
+  worker = nil
+  workerReady = false
+end
+
 return Check

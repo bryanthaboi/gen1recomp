@@ -485,4 +485,19 @@ function ChipAudio._renderSfxForTest(data, header, seconds)
   return ChipSynth.soundData(engine, math.floor(seconds * SAMPLE_RATE), 1)
 end
 
+-- Stop the worker thread for good (called from love.quit).  A love.thread
+-- that outlives the main state keeps love's C++ modules referenced, so PhysFS
+-- is never deinitialized.  Desktop processes die right after quit and never
+-- notice, but Android reuses the cached process: the next launch re-runs
+-- boot.lua inside it and dies with "Failed to initialize filesystem: already
+-- initialized", leaving the app unopenable until a force-stop.  The worker
+-- polls its command channel every millisecond, so the wait() returns at once.
+function ChipAudio.shutdown()
+  if not worker then return end
+  if cmdCh then cmdCh:push({ cmd = "quit" }) end
+  pcall(function() worker:wait() end)
+  worker = nil
+  workerReady = false
+end
+
 return ChipAudio

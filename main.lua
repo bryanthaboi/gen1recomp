@@ -424,6 +424,11 @@ function love.quit()
   pcall(function()
     require("src.core.DiscordPresence").shutdown()
   end)
+  -- Worker threads must not outlive the main state: they keep love's modules
+  -- (and PhysFS) referenced, and Android reuses the cached process on the next
+  -- launch, which then fails to boot (see ChipAudio.shutdown).
+  pcall(function() require("src.core.ChipAudio").shutdown() end)
+  pcall(function() require("src.update.Check").shutdown() end)
 end
 
 function love.filedropped(file)
