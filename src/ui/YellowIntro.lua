@@ -574,10 +574,14 @@ function YellowIntro:beginScenes()
   self:startScene(0)
 end
 
+-- The movie's exit never stops the song (intro_yellow.asm PlayIntroScene
+-- .go_to_title_screen, where the A/B/START skip lands too): Music_YellowIntro
+-- outlasts the scenes and plays on into the title setup until title.asm's
+-- StopAllMusic before MUSIC_TITLE_SCREEN, which TitleState:startMusic stands
+-- in for (#436)
 function YellowIntro:finish()
   if self.finished then return end
   self.finished = true
-  pcall(Music.stop)
   self.game.stack:pop()
   if self.onDone then self.onDone() end
 end

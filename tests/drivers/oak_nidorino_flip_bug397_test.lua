@@ -105,11 +105,13 @@ return function(game)
         speech.picFlip == true and speech.pic == speech.demoPic)
   U.shot(game, DIR .. "/oak_nido_2a.png")
 
-  -- one A per page of 2A; picFlip must survive every one of them
+  -- one A per page of 2A; picFlip must survive every one of them.  The page
+  -- count is not fixed (an A during the typewriter only finishes the line), so
+  -- keep turning until the step moves on rather than budgeting presses.
   local held = true
-  for _ = 1, 8 do
+  for _ = 1, 60 do
     U.tap(game, "a")
-    U.wait(10)
+    U.wait(12)
     if speech.picFlip ~= true or speech.pic ~= speech.demoPic then
       held = false
       break
@@ -126,22 +128,32 @@ return function(game)
   U.shot(game, DIR .. "/oak_nido_2b.png")
   U.log("shots in", DIR)
 
-  -- put the beat back so the transition can be watched live: pop the box, rewind
-  -- the step counter and re-run the demo beat (wipe, cry, page A)
+  -- put the beat back so the page break can be watched live: pop the box and
+  -- rewind the step counter.  The wipe and the cry are both skipped on the way
+  -- back in -- the sprite is already standing there and it already called once,
+  -- so replaying them reads as NIDORINO entering twice -- leaving just page A.
   for _ = 1, 8 do
     if top() == speech then break end
     game.stack:pop()
   end
   if top() == speech then
-    speech.picReveal = nil
+    local Sound = require("src.core.Sound")
+    local realReveal, realCry = speech.revealPic, Sound.playCry
+    speech.revealPic = function(self, _, next)
+      self.picReveal = nil
+      if next then next() end
+    end
+    Sound.playCry = function() end
     speech.step = demoIdx
     speech:runStep(speech.steps[demoIdx])
-    U.wait(60)
+    speech.revealPic, Sound.playCry = realReveal, realCry
+    U.wait(30)
   end
 
-  U.log("NIDORINO wipes in from the right facing LEFT, horn toward screen-left.")
-  U.log("Press A to turn the page: the sprite must not move or mirror, it stays")
-  U.log("facing left until the screen fades to white for the naming beat.")
+  U.log("NIDORINO is standing where the wipe left it, facing LEFT with its horn")
+  U.log("toward screen-left, and page A is back up.  Press A to turn the page:")
+  U.log("the sprite must not move or mirror, it stays facing left until the")
+  U.log("screen fades to white for the naming beat.")
 
   while true do
     coroutine.yield()

@@ -78,6 +78,10 @@ public class GameActivity extends SDLActivity {
     private static final String PICKED_SAVE_FILENAME = "picked_save.sav";
     private static final String PENDING_EXPORT_FILENAME = "pending_export.sav";
     private static final String EXPORT_DONE_FILENAME = "export_done.flag";
+    // Written when a SAF pick cannot be read at all, with the destination
+    // basename as its body, so RomImporter:focus can say so in the launcher
+    // instead of leaving the player on "No ROM imported" (issue #442).
+    private static final String PICK_ERROR_FILENAME = "pick_error.flag";
     // Destination basename for the in-flight SAF pick (set by showFilePicker).
     private String pendingPickFilename = PICKED_ROM_FILENAME;
     // Suggested download name for the in-flight SAF create (set by showCreateDocument).
@@ -452,6 +456,17 @@ public class GameActivity extends SDLActivity {
         return new File(new File(getExternalFilesDir(null), "save"), ROM_SAVE_IDENTITY);
     }
 
+    /** Drops a small flag file in the save identity for Lua to consume on focus. */
+    private void writeSaveDirFlag(String name, String body) {
+        try {
+            FileOutputStream fos = new FileOutputStream(new File(saveIdentityDir(), name), false);
+            fos.write(body.getBytes());
+            fos.close();
+        } catch (IOException e) {
+            Log.d("GameActivity", "could not write " + name + ": " + e.getMessage());
+        }
+    }
+
     private boolean copyFileToUri(File source, Uri destUri) {
         InputStream in = null;
         OutputStream out = null;
@@ -491,14 +506,7 @@ public class GameActivity extends SDLActivity {
             Uri uri = data.getData();
             if (copyFileToUri(source, uri)) {
                 // Signal Lua on next focus that the SAF export finished.
-                File flag = new File(saveIdentityDir(), EXPORT_DONE_FILENAME);
-                try {
-                    FileOutputStream fos = new FileOutputStream(flag, false);
-                    fos.write("ok".getBytes());
-                    fos.close();
-                } catch (IOException e) {
-                    Log.d("GameActivity", "could not write export_done flag: " + e.getMessage());
-                }
+                writeSaveDirFlag(EXPORT_DONE_FILENAME, "ok");
                 // Keep pending_export.sav so a retry still works; Lua may remove it.
             } else {
                 Log.d("GameActivity", "could not write export to " + uri);
@@ -521,19 +529,36 @@ public class GameActivity extends SDLActivity {
             ? pendingPickFilename : PICKED_ROM_FILENAME;
         File destFile = new File(destDir, destName);
 
-        InputStream source;
+        // ACTION_OPEN_DOCUMENT is meant to land in the system documents UI, but
+        // some OEM shells (ColorOS) offer third-party file managers in a
+        // chooser, and those hand back either a provider URI this app has no
+        // grant for (SecurityException / FileNotFoundException) or a bare
+        // file:// path (unreadable without storage permission on targetSdk 34).
+        // Try the resolver, then the path, then tell Lua why nothing imported.
+        InputStream source = null;
         try {
             source = getContentResolver().openInputStream(uri);
-        } catch (FileNotFoundException e) {
+        } catch (Exception e) {
             Log.d("GameActivity", "could not open picked file: " + e.getMessage());
-            return;
+        }
+        if (source == null && "file".equals(uri.getScheme()) && uri.getPath() != null) {
+            try {
+                source = new FileInputStream(uri.getPath());
+            } catch (FileNotFoundException e) {
+                Log.d("GameActivity", "could not open picked path: " + e.getMessage());
+            }
         }
         if (source == null) {
-            Log.d("GameActivity", "ContentResolver returned no stream for picked file");
+            Log.d("GameActivity", "no readable stream for picked file " + uri);
+            writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
             return;
         }
         if (!copyAssetFile(source, destFile.getPath())) {
             Log.d("GameActivity", "could not copy picked file to " + destFile);
+            // A truncated pick would only fail verification later, so drop it
+            // and report instead.
+            destFile.delete();
+            writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
         }
     }
 

@@ -11,9 +11,14 @@
 -- tables load through `require`, exactly how src/core/Data.lua pulls the
 -- generated modules -- which resolves under both plain luajit (package.path
 -- "./?.lua") for the headless CLI/tests and love.filesystem for a fused
--- build, with an OS-path fallback for odd working directories. The only
--- place `love` is referenced is inside a guarded fallback, so running under
--- stock Lua never touches it.
+-- build, with an OS-path fallback for odd working directories. `love` is only
+-- ever referenced inside guarded fallbacks, so running under stock Lua never
+-- touches it.
+--
+-- When a caller names the game a save belongs to, the generated tables come
+-- out of that version's ROM cache through CacheFs instead: the launcher does
+-- its importing before the cache is mounted onto the un-prefixed paths, so
+-- require alone cannot see them there (#420).
 
 local GenSave = require("src.save_convert.GenSave")
 
@@ -63,20 +68,59 @@ local function loadTable(requirePath, filePath)
     :format(requirePath, requirePath, filePath)
 end
 
-local crosswalk   -- { pokemon=, moves=, items=, maps=, eventFlags= }
+-- The four generated tables live in one game's ROM cache, and the launcher
+-- reaches this code before that cache is on the un-prefixed read path:
+-- CacheFs.mountVersion only runs from main.lua's bootGame (after Play), and
+-- Blue/Yellow keep their cache under GameVersion.cachePrefix.  So a bare
+-- require sees Red's copy at best, and nothing at all in a fused portable
+-- build (the game folder is only readable through CacheFs's PhysFS mount) --
+-- read the tables out of the cache whenever the caller names the game the
+-- save belongs to, and let the require path above cover everything else
+-- (#420).
+local function loadCacheTable(gameVersion, filePath)
+  if not (gameVersion and love and love.filesystem) then return nil end
+  if not filePath:match("^data/generated/") then return nil end
+  local okc, CacheFs = pcall(require, "src.import.CacheFs")
+  local okg, GameVersion = pcall(require, "src.core.GameVersion")
+  if not (okc and okg and type(CacheFs) == "table") then return nil end
+  local info = GameVersion.VERSIONS[gameVersion]
+  if not info then return nil end
+  -- CacheFs.prefix is launcher-owned global state (it points at whatever
+  -- import last ran), so borrow it for this read and put it back.
+  local saved = CacheFs.prefix
+  CacheFs.prefix = info.cachePrefix
+  local okr, bytes = pcall(CacheFs.read, filePath)
+  CacheFs.prefix = saved
+  if not (okr and type(bytes) == "string") then return nil end
+  local chunk = loadstring(bytes, "@" .. info.cachePrefix .. filePath)
+  if not chunk then return nil end
+  local okx, mod = pcall(chunk)
+  if okx and type(mod) == "table" then return mod end
+  return nil
+end
+
+-- Crosswalk sets keyed by the game whose cache they came from ("*" for the
+-- require-resolved set): Yellow's tables are not Red's, so one import must
+-- never be handed the previous import's data (#420).
+local crosswalks = {}   -- [key] = { pokemon=, moves=, items=, maps=, eventFlags= }
 local charmapReady
 
-local function ensureData()
-  if not crosswalk then
+local function ensureData(gameVersion)
+  local key = gameVersion or "*"
+  if not crosswalks[key] then
     local data = {}
-    for key, spec in pairs(DATA_MODULES) do
-      if key ~= "charmap" then
-        local mod, e = loadTable(spec[1], spec[2])
-        if not mod then return nil, e end
-        data[key] = mod
+    for name, spec in pairs(DATA_MODULES) do
+      if name ~= "charmap" then
+        local mod = loadCacheTable(gameVersion, spec[2])
+        if not mod then
+          local e
+          mod, e = loadTable(spec[1], spec[2])
+          if not mod then return nil, e end
+        end
+        data[name] = mod
       end
     end
-    crosswalk = data
+    crosswalks[key] = data
   end
   if not charmapReady then
     local cm, err = loadTable(DATA_MODULES.charmap[1], DATA_MODULES.charmap[2])
@@ -84,13 +128,14 @@ local function ensureData()
     GenSave.setCharmap(cm)
     charmapReady = true
   end
-  return crosswalk
+  return crosswalks[key]
 end
 
 -- Exposed for the CLI/tests so they can share the exact data set the codec
--- uses (and so a caller can pre-warm the cache).  Returns data, err.
-function SaveConvert.loadData()
-  return ensureData()
+-- uses (and so a caller can pre-warm the cache).  gameVersion picks whose ROM
+-- cache the generated tables come from.  Returns data, err.
+function SaveConvert.loadData(gameVersion)
+  return ensureData(gameVersion)
 end
 
 -- ------------------------------------------------------------------
@@ -138,20 +183,22 @@ SaveConvert.mergeDefaults = mergeDefaults
 -- Public API
 -- ------------------------------------------------------------------
 
--- importSav(bytes, version) -> saveTable, err
+-- importSav(bytes, version, gameVersion) -> saveTable, err
 -- bytes: the raw 32768-byte SRAM string. Validates size and the main-data
 -- checksum, decodes through GenSave, and returns a save table fully merged
 -- over the new-game defaults and tagged with `version`, ready to hand to
--- SaveSerializer.encode for a slot file. On any failure returns nil + a
--- message (never raises).
-function SaveConvert.importSav(bytes, version)
+-- SaveSerializer.encode for a slot file. gameVersion ("red"/"blue"/"yellow")
+-- names the game the save is being imported for, which is what selects the
+-- crosswalk tables; omit it to take whatever `require` resolves. On any
+-- failure returns nil + a message (never raises).
+function SaveConvert.importSav(bytes, version, gameVersion)
   if type(bytes) ~= "string" then
     return nil, "expected raw save bytes as a string"
   end
   if #bytes ~= GenSave.SAVE_SIZE then
     return nil, ("save must be %d bytes, got %d"):format(GenSave.SAVE_SIZE, #bytes)
   end
-  local data, derr = ensureData()
+  local data, derr = ensureData(gameVersion)
   if not data then return nil, derr end
 
   local ok, decoded = pcall(GenSave.decode, bytes, data)
@@ -170,16 +217,17 @@ function SaveConvert.importSav(bytes, version)
   return mergeDefaults(decoded, version)
 end
 
--- exportSav(saveTable) -> bytes, err
+-- exportSav(saveTable, gameVersion) -> bytes, err
 -- Encodes a save table back to a raw 32768-byte SRAM image. Template-aware:
 -- if the table still carries the stashed import template (saveTable.rawImport)
 -- GenSave reproduces every unmodeled region from it; otherwise those regions
--- are zero-filled. On failure returns nil + a message (never raises).
-function SaveConvert.exportSav(saveTable)
+-- are zero-filled. gameVersion selects the crosswalk tables exactly as in
+-- importSav. On failure returns nil + a message (never raises).
+function SaveConvert.exportSav(saveTable, gameVersion)
   if type(saveTable) ~= "table" then
     return nil, "expected a save table"
   end
-  local data, derr = ensureData()
+  local data, derr = ensureData(gameVersion)
   if not data then return nil, derr end
   local ok, bytes = pcall(GenSave.encode, saveTable, data, nil)
   if not ok then return nil, "encode failed: " .. tostring(bytes) end

@@ -196,6 +196,11 @@ return function(game)
         type(emote.pikaPic) == "string"
         and love.filesystem.getInfo(emote.pikaPic) ~= nil)
   check("a cry source was created", reportCries(before))
+  -- the beat now runs the pikapic script's own pikapic_setduration, three
+  -- 60Hz frames per tick, so even the shortest script (32 ticks) outlasts
+  -- the 50 frame hold this port used to serve every emotion (#424)
+  check("the hold runs the script's own duration, not a flat 50 frames",
+        (emote.frames or 0) >= 80)
   bubbleReport(emote)
   U.log("happiness", tostring(game.save.pikachuHappiness or 90),
         "mood", tostring(game.save.pikachuMood or 128))
@@ -209,7 +214,14 @@ return function(game)
   -- wPikachuEmotionModifier 5 is MapSpecificPikachuExpression's fifth
   -- entry, emotion 25: BOLT_BUBBLE plus PCM clip 35.  Forcing it takes the
   -- mood roll out of the picture, so a missing bubble here is a real fault.
-  U.wait(70) -- the 50 frame hold, plus slack, before input is looked at again
+  -- wait the pikapic beat out instead of counting frames: its length is the
+  -- script's now, and an A press during it would only cut it short
+  -- (PikaPicAnimTimerAndJoypad, #424)
+  for _ = 1, 400 do
+    if not ow.emote then break end
+    U.wait(1)
+  end
+  U.wait(6)
   game.save.pikachuEmotionModifier = 5
   check("still facing the follower for the second press", facingFollower())
   before = #cries

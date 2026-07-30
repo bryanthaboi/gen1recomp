@@ -128,6 +128,11 @@ M.POKEMON_TOWER_6F = {
       t._PokemonTower6FBeGoneText or "Be gone...\nIntruders...", function()
       local BattleState = require("src.battle.BattleState")
       local battle = BattleState.newWild(game, "MAROWAK", 30)
+      -- ItemUseBall .notOldManBattle (item_effects.asm:166-175): a ball
+      -- thrown on POKEMON_TOWER_6F at the RESTLESS SOUL is dodged whether
+      -- or not the scope revealed it, so the "can't be caught" state rides
+      -- the battle instead of IsGhostBattle alone (#444)
+      battle.noCatch = true
       if not game.save.inventory.SILPH_SCOPE then
         battle:makeGhost()
       end

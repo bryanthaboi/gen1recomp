@@ -23,10 +23,15 @@ M.CERULEAN_MELANIES_HOUSE = {
         rows[#rows + 1] = { "jump_if_false", "declined" }
         rows[#rows + 1] = { "give_pokemon", "BULBASAUR", 10 }
         rows[#rows + 1] = { "jump_if_false", "end" } -- party + box full
-        rows[#rows + 1] = { "show_text", "MelanieText3" }
+        -- Event and HideObject before MelanieText3: give_pokemon's nickname
+        -- prompt and the received text both yield, and a script that dies
+        -- in that window used to leave the BULBASAUR given with the event
+        -- clear, so Melanie offered a second one (#426).  The flag is only
+        -- read at script entry, so the order is invisible in play.
+        rows[#rows + 1] = { "set_flag", "EVENT_GOT_BULBASAUR_IN_CERULEAN" }
         rows[#rows + 1] = { "hide_object", "CERULEAN_MELANIES_HOUSE",
                             "CERULEANMELANIESHOUSE_BULBASAUR" }
-        rows[#rows + 1] = { "set_flag", "EVENT_GOT_BULBASAUR_IN_CERULEAN" }
+        rows[#rows + 1] = { "show_text", "MelanieText3" }
         rows[#rows + 1] = { "jump", "end" }
         rows[#rows + 1] = { "label", "declined" }
         rows[#rows + 1] = { "show_text", "MelanieText5" }
@@ -60,8 +65,13 @@ M.ROUTE_24 = {
       { "jump_if_false", "declined" },
       { "give_pokemon", "CHARMANDER", 10 },
       { "jump_if_false", "end" },
-      { "show_text", "_Route24DamianText2" },
+      -- SetEvent hoisted ahead of the received text (Route24.asm writes it
+      -- after Route24Text_515e3, where nothing in between can fail): the
+      -- nickname prompt and the text both yield, and a script death in that
+      -- window left the CHARMANDER given with EVENT_54F clear, so Damian
+      -- handed out a second one on the next talk (#426).
       { "set_flag", "EVENT_54F" },
+      { "show_text", "_Route24DamianText2" },
       { "jump", "end" },
       { "label", "declined" },
       { "show_text", "_Route24DamianText3" },
@@ -87,9 +97,10 @@ M.VERMILION_CITY = {
         rows[#rows + 1] = { "jump_if_false", "declined" }
         rows[#rows + 1] = { "give_pokemon", "SQUIRTLE", 10 }
         rows[#rows + 1] = { "jump_if_false", "end" }
-        rows[#rows + 1] = { "show_text", "_OfficerJennyText3" }
+        -- event before the received text, as above (#426)
         rows[#rows + 1] = { "set_flag",
                             "EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY" }
+        rows[#rows + 1] = { "show_text", "_OfficerJennyText3" }
         rows[#rows + 1] = { "jump", "end" }
         rows[#rows + 1] = { "label", "declined" }
         rows[#rows + 1] = { "show_text", "_OfficerJennyText4" }

@@ -30,7 +30,16 @@ return function(game)
 
   local opts = game.save.options
   local mode = opts and opts.colors or PaletteFX.mode
-  check("COLORS is SGB (the default this bug shows in)", mode == "gbc")
+  -- the seam only exists under the SGB zone clips, so put the renderer there
+  -- rather than trusting whatever COLORS the save was last left on (setMode
+  -- is display-only; the option itself is restored below)
+  if PaletteFX.mode ~= "gbc" then
+    U.log("COLORS is", tostring(mode) .. "; switching the view to SGB for the check")
+    PaletteFX.setMode("gbc")
+    U.wait(20)
+  end
+  check("the view is in SGB (the mode this bug shows in)",
+        PaletteFX.mode == "gbc")
   if (opts and opts.musicVol or 0) == 0 then
     U.log("WARNING music volume is 0: the title theme will be silent.")
   end

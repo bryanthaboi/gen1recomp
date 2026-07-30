@@ -168,6 +168,21 @@ function LauncherMods.pickStrays(found, installed)
   return out
 end
 
+-- isReadableRoot(folder, source, cacheRoot) -> is folder already on the
+-- physfs read path, pure.  source is love.filesystem.getSource(), cacheRoot
+-- the mounted portable game folder (CacheFs.root()); a fused build has both,
+-- and they are different paths (the archive inside the executable vs the
+-- folder beside it).  Either one's mods/ is readable already, so nothing in
+-- it is a stray -- and the portable folder must additionally never be handed
+-- to CacheFs.withMounted: PHYSFS_mount reports success for a directory
+-- already in the search path WITHOUT adding a second entry, so the paired
+-- unmount tears down the one real mount and the panel loses every mod in the
+-- game folder (#413).
+function LauncherMods.isReadableRoot(folder, source, cacheRoot)
+  if not folder or folder == "" then return false end
+  return folder == source or folder == cacheRoot
+end
+
 -- ------- discovery (love.filesystem)
 
 local function decodeManifest(raw, path)
@@ -349,17 +364,20 @@ end
 local STRAY_MOUNT = "stray_scan"
 
 -- Run fn(mountedModsRoot) for each game folder that has a readable mods/
--- directory, one mount at a time.  Folders that are already the physfs source
--- are skipped: their mods/ is discoverable by definition, so anything there is
--- installed already and not a stray (this is every `love <gamedir>` dev run).
+-- directory, one mount at a time.  Folders already on the read path are
+-- skipped (isReadableRoot): the physfs source, which is every `love <gamedir>`
+-- dev run, and the portable game folder CacheFs mounted, where re-mounting is
+-- what used to drop the mount (#413).
 local function eachStrayRoot(fn)
   local SaveData_ = require("src.core.SaveData")
   local fs = love and love.filesystem
   if not fs then return end
   local source = fs.getSource and fs.getSource()
+  local cacheRoot = CacheFs.root()
   local seen = {}
   for _, folder in ipairs(SaveData_.gameFolders() or {}) do
-    if not seen[folder] and folder ~= source then
+    if not seen[folder]
+      and not LauncherMods.isReadableRoot(folder, source, cacheRoot) then
       seen[folder] = true
       CacheFs.withMounted(folder, STRAY_MOUNT, function()
         local root = STRAY_MOUNT .. "/mods"

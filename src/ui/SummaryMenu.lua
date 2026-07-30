@@ -43,12 +43,13 @@ function SummaryMenu.new(game, mon)
   Stats.ensure(game.data.pokemon[mon.species], mon)
   local self = setmetatable({ game = game, mon = mon, page = 1 }, SummaryMenu)
   local Sprites = require("src.pokemon.Sprites")
-  local path = Sprites.path(game.data, mon.species, "front",
+  local path, trueColor = Sprites.path(game.data, mon.species, "front",
     { mon = mon, kind = "summary" })
   if path then
     local ok, img = pcall(love.graphics.newImage, path)
     self.sprite = ok and img or nil
   end
+  self.spriteTrueColor = self.sprite and trueColor or false
   require("src.core.Sound").playCry(game.data, mon.species)
   return self
 end
@@ -111,8 +112,14 @@ function SummaryMenu:draw()
   -- the same routine the intro's NIDORINO show-off uses (OakSpeech picFlip:
   -- negative x scale anchored at the pic's right edge). #280
   if self.sprite then
-    love.graphics.draw(self.sprite, 8 + self.sprite:getWidth(),
-                       math.max(0, 56 - self.sprite:getHeight()), 0, -1, 1)
+    local pw, ph = self.sprite:getDimensions()
+    local py = math.max(0, 56 - ph)
+    love.graphics.draw(self.sprite, 8 + pw, py, 0, -1, 1)
+    -- a full-color pic has to sit out the SGB monPal recolor, so mark the
+    -- rect the mirrored draw covers for the unshaded pass (#430)
+    if self.spriteTrueColor then
+      require("src.render.PaletteFX").markTrueColor(8, py, pw, ph)
+    end
   end
   local HudTiles = require("src.render.HudTiles")
   love.graphics.setColor(0, 0, 0, 1)

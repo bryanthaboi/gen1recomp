@@ -179,6 +179,38 @@ local function resolveUnmount()
   return physfsUnmountFn
 end
 
+-- PHYSFS_getMountPoint, resolved the same way: a non-NULL return means `dir`
+-- is already somewhere in the search path.  withMounted needs it because
+-- PHYSFS_mount reports success for an already-mounted directory without
+-- adding a second entry, so its unmount would drop a mount it did not make
+-- (#413).
+local physfsMountPointFn = nil
+local function resolveMountPoint()
+  if physfsMountPointFn ~= nil then return physfsMountPointFn end
+  physfsMountPointFn = false
+  local ok, ffi = pcall(require, "ffi")
+  if not ok then return physfsMountPointFn end
+  pcall(ffi.cdef, "const char *PHYSFS_getMountPoint(const char *dir);")
+  local libs = {
+    function() return ffi.C end,
+    function() return ffi.load("love") end,
+  }
+  for _, getlib in ipairs(libs) do
+    local okl, lib = pcall(getlib)
+    if okl and lib then
+      local oks, fn = pcall(function() return lib.PHYSFS_getMountPoint end)
+      if oks and fn then
+        physfsMountPointFn = function(d)
+          local okr, ret = pcall(fn, d)
+          return okr and ret ~= nil and ret ~= ffi.NULL
+        end
+        break
+      end
+    end
+  end
+  return physfsMountPointFn
+end
+
 -- The portable game folder when the cache should live there, else nil.
 -- Resolved (and, for a fused build, mounted) once and cached.  Requires a
 -- desktop portable install (SaveData) and a working windowless mkdir.
@@ -398,13 +430,20 @@ end
 -- resolves -- which is what makes it safe to point at a folder whose contents
 -- nobody has validated.
 --
--- Returns nil when the mount is unavailable (no ffi, no PHYSFS symbol, or the
--- mount was refused), which callers must treat as "could not look", not as
--- "nothing there".  An error inside fn still unmounts before it propagates.
+-- Returns nil when the mount is unavailable (no ffi, no PHYSFS symbol, the
+-- mount was refused, or `dir` is already on the read path), which callers must
+-- treat as "could not look", not as "nothing there".  An error inside fn still
+-- unmounts before it propagates.
 function CacheFs.withMounted(dir, mountPoint, fn)
   if not dir or dir == "" then return nil end
   local mount, unmount = resolveMount(), resolveUnmount()
   if not (mount and unmount) then return nil end
+  -- A directory already in the search path cannot be borrowed: PHYSFS_mount
+  -- returns success without adding an entry, and the unmount below would then
+  -- remove the mount somebody else is relying on -- for the portable game
+  -- folder, the one that makes its cache and mods readable at all (#413)
+  local mountedAt = resolveMountPoint()
+  if mountedAt and mountedAt(dir) then return nil end
   if not mount(dir, mountPoint, true) then return nil end
   local ok, res = pcall(fn)
   unmount(dir)

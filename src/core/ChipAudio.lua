@@ -32,17 +32,20 @@ local MUSIC_BUFFER_COUNT = ChipSynth.MUSIC_BUFFER_COUNT
 --   [1] pulse 1   [2] pulse 2   [3] wave   [4] noise / drums
 -- Volume: 1 = authentic, 0 = mute, >1 boosts
 -- Pitch:  1 = authentic, 2 = +1 octave, 0.5 = -1 octave
+-- The shipped values stay at 1: 0.25 / 0.5 on the wave channel buried the Ch3
+-- countermelodies an octave low (#429), and ChipSynth already applies the
+-- wave channel's own hardware octave (frequency * 0.5).
 -- ---------------------------------------------------------------------------
 local CHANNEL_VOLUME = {
   [1] = 1, -- pulse 1
   [2] = 1, -- pulse 2
-  [3] = 0.25, -- wave
+  [3] = 1, -- wave
   [4] = 1, -- noise / drums
 }
 local CHANNEL_PITCH = {
   [1] = 1, -- pulse 1
   [2] = 1, -- pulse 2
-  [3] = 0.5, -- wave
+  [3] = 1, -- wave
   [4] = 1, -- noise / drums
 }
 ChipSynth.setChannelVolumes(CHANNEL_VOLUME)

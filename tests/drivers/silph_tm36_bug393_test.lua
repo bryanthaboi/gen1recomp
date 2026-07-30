@@ -121,15 +121,24 @@ return function(game)
   check("and the TM is still hers while it is up", not hasTm())
   U.shot(game, DIR .. "/bug393_1_scared.png")
 
-  -- read the rest of the conversation the way a player does
-  for i = 2, 8 do
+  -- read the rest of the conversation the way a player does.  The pleading runs
+  -- seven lines before GiveItem, and the gift box and the SELFDESTRUCT warning
+  -- follow it, so turn pages until the talk actually ends instead of counting
+  -- them out -- the bound is only there so a stuck box cannot hang the driver.
+  -- boxText reads the whole box, so several A presses walk one string: log a
+  -- box the first time it is seen, not once per page turn
+  local i, last = 1, first
+  for _ = 1, 40 do
     U.tap(game, "a")
     U.wait(40)
     local t = boxText()
     if not t then break end
-    U.log(("box %d reads:"):format(i), t)
-    if t:find("TM36", 1, true) then
-      U.shot(game, DIR .. "/bug393_2_tm36.png")
+    if t ~= last then
+      i, last = i + 1, t
+      U.log(("box %d reads:"):format(i), t)
+      if t:find("TM36", 1, true) then
+        U.shot(game, DIR .. "/bug393_2_tm36.png")
+      end
     end
   end
   check("TM36 ended up in the bag", hasTm())

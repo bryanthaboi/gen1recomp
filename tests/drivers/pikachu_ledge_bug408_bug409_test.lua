@@ -71,11 +71,14 @@ return function(game)
   -- a cell the player can hop south from, with two walkable cells above it
   -- to walk in from and a walkable landing two cells below
   local function hopCellOk(map, cx, cy)
-    if not (map:inBounds(cx, cy) and map:inBounds(cx, cy + 2)) then
+    if not (map:inBounds(cx, cy) and map:inBounds(cx, cy + 3)) then
       return false
     end
     if not map:isWalkableCell(cx, cy) then return false end
     if not map:isWalkableCell(cx, cy + 2) then return false end
+    -- one more open cell below the landing: the queued hop only drains on
+    -- the player's NEXT step, so the ledge needs room to take it (#424)
+    if not map:isWalkableCell(cx, cy + 3) then return false end
     if not (map:isWalkableCell(cx, cy - 1)
             and map:isWalkableCell(cx, cy - 2)) then
       return false
@@ -209,6 +212,26 @@ return function(game)
     U.log("the arc was already over before the capture; no mid-air frame")
   end
 
+  -- The hop command is buffered a step behind the player: Func_fcc64 appends
+  -- nothing for the landing half of the jump, so Func_fcc92 cannot pop the
+  -- hop until another command queues behind it.  Pikachu therefore walks to
+  -- the cell the player took off from and waits there (#424).
+  step(120)
+  local waiting = follower()
+  check("the follower waits on the cell the player took off from",
+        waiting ~= nil and waiting.cellX == hx and waiting.cellY == hy)
+  check("it has not hopped while the player stood still", not sawHopStep)
+
+  -- one more player step drains the queued hop
+  for _ = 1, 90 do
+    table.insert(game.input.pressQueue, "down")
+    game.input.state["down"] = true
+    coroutine.yield()
+    sample()
+    if ow.player.cellY > hy + 2 then break end
+  end
+  game.input.state["down"] = false
+
   -- let the follower finish crossing (its hop is one normal step's frames
   -- with a doubled step vector, pikachu_follow.asm Func_fca0a)
   step(120)
@@ -242,9 +265,11 @@ return function(game)
 
   U.log("Hold Down to hop the ledge again from here.")
   U.log("During the arc there should be one flat ellipse on the ground under")
-  U.log("the player, not a taller blob with a seam across its middle, and")
-  U.log("Pikachu should clear both cells in one motion.  The near miss to")
-  U.log("watch for is Pikachu pausing a beat on the ledge tile itself.")
+  U.log("the player, not a taller blob with a seam across its middle.")
+  U.log("Pikachu should walk up to the cell you jumped from and STAY there")
+  U.log("until you take another step, then clear both cells in one motion.")
+  U.log("The near misses to watch for are Pikachu hopping alongside you and")
+  U.log("Pikachu pausing a beat on the ledge tile itself.")
 
   while true do
     coroutine.yield()

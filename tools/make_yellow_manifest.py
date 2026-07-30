@@ -75,6 +75,9 @@ YELLOW_EXTRA_SYMBOLS = (
     "YellowIntroCloudGFX",
     "PikachuCriesPointerTable",
     "CGBBasePalettes",
+    # Jessie & James share the ROCKET trainer class but battle behind their
+    # own pic (home/trainers2.asm IsFightingJessieJames) (#439)
+    "JessieJamesPic",
     # the five Pikachu-only emotion bubbles (emotion_bubbles.asm)
     "SkullEmote",
     "HeartEmote",

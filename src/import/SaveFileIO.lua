@@ -75,7 +75,10 @@ function SaveFileIO.importToSlot(source, version)
     return false, ("A save file must be %d bytes (32 KB); this one is %d.")
       :format(SAVE_SIZE, #bytes)
   end
-  local save, convertErr = SaveConvert.importSav(bytes, version)
+  -- 3rd arg: the crosswalk has to come from THIS game's ROM cache.  The
+  -- launcher imports before the cache is mounted on the un-prefixed paths, so
+  -- SaveConvert cannot find the generated tables by itself here (#420).
+  local save, convertErr = SaveConvert.importSav(bytes, version, version)
   if not save then return false, convertErr end
   -- Tag the game version and normalize the meta stamp: SaveConvert leaves
   -- meta.format = "gen1_import", but SaveData.load's migration pass compares
@@ -103,7 +106,7 @@ function SaveFileIO.exportActiveSlot(version)
   version = version or GameVersion.get()
   local save = SaveData.load(version)
   if not save then return false, "this game has no save to export yet" end
-  local bytes, exportErr = SaveConvert.exportSav(save)
+  local bytes, exportErr = SaveConvert.exportSav(save, version)
   if not bytes then return false, exportErr end
   local slotId = SaveData.activeSlot(version) or "save"
   local fs = love and love.filesystem

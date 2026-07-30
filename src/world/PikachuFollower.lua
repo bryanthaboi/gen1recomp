@@ -181,9 +181,29 @@ local function spawnCell(ow)
   return p.cellX, p.cellY
 end
 
-function PikachuFollower.onMapEntered(game, ow)
+-- the live follower, for a caller that has to carry it across a setMap
+-- that rebuilds ow.npcs (OverworldState:crossConnection, #427)
+function PikachuFollower.current(ow)
+  local npc = findFollower(ow)
+  return npc
+end
+
+function PikachuFollower.onMapEntered(game, ow, opts)
   remove(ow)
   if not shouldSpawn(game, ow) then return end
+  -- opts.keepPikachu is the follower a connection crossing kept alive:
+  -- LoadMapHeader's connection path sets wPikachuSpawnState = 2 and bit 4
+  -- of wPikachuOverworldStateFlags, so SchedulePikachuSpawnForAfterText
+  -- takes .normal_spawn_state -- map coords rebased, sprite data and
+  -- follow command buffer left alone.  Re-list the same instance and let
+  -- rebase() shift its cell; a warp arrives without it and respawns
+  -- behind the player, the full spawn path of that same routine.
+  local keep = opts and opts.keepPikachu
+  if keep then
+    table.insert(ow.npcs, keep)
+    table.insert(ow.entities, keep)
+    return
+  end
   local x, y = spawnCell(ow)
   local npc = makeFollower(game, ow, x, y, ow.player.facing)
   table.insert(ow.npcs, npc)
@@ -271,6 +291,14 @@ end
 local function idleTick(ow, npc)
   -- Func_fc82e: a step in progress ends the idle state outright
   if ow.player.moving then idleReset(npc) return end
+  -- Every counter below burns one unit per UpdateSprites call, and a
+  -- standing OverworldLoop spends two DelayFrames on each pass (home/
+  -- overworld.asm: OverworldLoop delays, falls into OverworldLoopLessDelay
+  -- which delays again, then .noDirectionButtonsPressed loops back), so the
+  -- whole Func_fc803 family runs at half this port's 60Hz fixed step: the
+  -- first glance is $20 CALLS, 64 frames, not 32 (#424).
+  npc.idleClock = ((npc.idleClock or 0) + 1) % 2
+  if npc.idleClock ~= 0 then return end
   local idle = npc.idle
   if not idle then
     idle = { kind = "wait", frames = IDLE_LOOK }
@@ -339,6 +367,28 @@ local function ledgeStep(game, ow, cx, cy, dir)
   return false
 end
 
+-- Slide the follower into the connected map's coordinate frame by the
+-- delta crossConnection applied to the player: the two maps are one
+-- continuous world, so a seam is a pure translation.  MapX/MapY in
+-- wSpritePikachuStateData2 are all .normal_spawn_state rewrites there,
+-- never the pixel coords, which is why the original walks through a seam
+-- instead of popping (#427).
+function PikachuFollower.rebase(ow, dx, dy)
+  local npc = findFollower(ow)
+  if npc then
+    npc.cellX, npc.cellY = npc.cellX + dx, npc.cellY + dy
+    npc.px, npc.py = npc.px + dx * 16, npc.py + dy * 16
+    if npc.targetX then npc.targetX = npc.targetX + dx end
+    if npc.targetY then npc.targetY = npc.targetY + dy end
+    if npc.goalX then npc.goalX = npc.goalX + dx end
+    if npc.goalY then npc.goalY = npc.goalY + dy end
+    -- Func_fc82e: the player is taking a step, so any idle pose is over
+    if npc.idle then idleReset(npc) end
+  end
+  local trail = ow.pikachuTrail
+  if trail then trail.x, trail.y = trail.x + dx, trail.y + dy end
+end
+
 -- one follow step per frame: chase the cell the player last vacated
 -- (pikachu_follow.asm keeps it one walk step behind)
 function PikachuFollower.update(game, ow)
@@ -371,8 +421,27 @@ function PikachuFollower.update(game, ow)
   local destX = p.targetX or p.cellX
   local destY = p.targetY or p.cellY
   if destX ~= trail.x or destY ~= trail.y then
-    npc.goalX, npc.goalY = trail.x, trail.y
-    trail.x, trail.y = destX, destY
+    local stepDir = destY > trail.y and "down" or destY < trail.y and "up"
+                    or destX > trail.x and "right" or "left"
+    -- A ledge hop commits TWO steps (checkLedgeHop -> scriptMove(p, dir, 2),
+    -- the two simulated presses of HandleLedges) but only ONE follow
+    -- command: Func_fcc08 sees BIT_LEDGE_OR_FISHING and defers to
+    -- Func_fcc64, which appends the $5-$8 hop on the takeoff step and
+    -- appends nothing on the landing step (bit 6 of
+    -- wPikachuOverworldStateFlags toggles between the two).  With no command
+    -- behind it the hop cannot leave the buffer -- Func_fcc92 only pops once
+    -- a second command is queued -- so Pikachu walks up to the cell the
+    -- player took off from, waits there two cells behind (the Func_fc842
+    -- idle rolls), and hops one player step later (#424, after #409).
+    if trail.ledgeHop == stepDir then
+      trail.ledgeHop = nil
+      trail.x, trail.y = destX, destY
+    else
+      trail.ledgeHop = ledgeStep(game, ow, trail.x, trail.y, stepDir)
+                       and stepDir or nil
+      npc.goalX, npc.goalY = trail.x, trail.y
+      trail.x, trail.y = destX, destY
+    end
   end
   -- standing still with nothing to chase is the idle state (Func_fc803);
   -- once a step is under way NPC:update owns px/py, so only the idle
@@ -404,7 +473,9 @@ function PikachuFollower.update(game, ow)
   npc.targetX = npc.cellX + (dir == "right" and 1 or dir == "left" and -1 or 0)
   npc.targetY = npc.cellY + (dir == "down" and 1 or dir == "up" and -1 or 0)
   -- the cell ahead is the ledge the player hopped: clear both cells in one
-  -- step instead of stopping on the ledge (#409).  pikachu_follow.asm
+  -- step instead of stopping on the ledge (#409).  The trail above holds
+  -- this back until the player commits a further step, so it fires from the
+  -- cell on top of the ledge, a step late (#424).  pikachu_follow.asm
   -- Func_fcc08 appends the $5-$8 hop commands while BIT_LEDGE_OR_FISHING
   -- is set, and Func_fca0a runs them as two AddPikachuStepVector cells over
   -- one normal step's frames -- no arc and no shadow, the hop command only
@@ -422,7 +493,12 @@ function PikachuFollower.update(game, ow)
   -- steps are queued (AreThereAtLeastTwoStepsInPikachuFollowCommandBuffer:
   -- walk counter $4 instead of NormalPikachuFollow's $8).
   local stepLen = p.stepFramesCur or p.stepFrames or 16
-  if far > 1 then stepLen = math.max(1, math.floor(stepLen / 2)) end
+  -- the hop is never a Fast step: Func_fc7aa jumps to Func_fca0a on the $4
+  -- movement status BEFORE it asks AreThereAtLeastTwoSteps..., so its two
+  -- cells ride one normal step's frames even though the goal is two away.
+  if far > 1 and not npc.hopStep then
+    stepLen = math.max(1, math.floor(stepLen / 2))
+  end
   npc.stepFrames = stepLen
   npc.moving = true
   npc.progress = 0
@@ -499,6 +575,60 @@ local MOOD_MATRIX = {
 -- wPikachuEmotionModifier values 1-5 (MapSpecificPikachuExpression
 -- .Emotions): scripted one-shots -- 21 is the fishing-rod reaction
 local MODIFIER_EMOTIONS = { 18, 21, 23, 24, 25 }
+
+-- ExecutePikaPicAnimScript spends a Delay3 on every pass of its loop
+-- (pikachu_pic_animation.asm PikaPicAnimTimerAndJoypad), so one script tick
+-- is three 60Hz frames: the flat 50 frame hold this port used was under a
+-- third of even the shortest script (#424).
+local PIKAPIC_TICK = 3
+local PIKAPIC_LIFT = 4 -- px the stand-in pic rises on an overlay run
+
+-- pikaemotion_pikapic's script id per emotion: emotion N takes
+-- PikaPicAnimScript N, except the four listed here (data/pikachu/
+-- pikachu_emotions.asm).
+local PIKAPIC_SCRIPT = { [29] = 10, [30] = 20, [31] = 23, [32] = 23 }
+
+-- Per script: pikapic_setduration's tick count, and for the scripts whose
+-- overlay is a whole second pose, that frameset's run lengths in ticks
+-- (data/pikachu/pikachu_pic_objects.asm PikaPicAnimBGFrames_*, which script
+-- N reaches as frameset N+5, or N+6 from script 10 up).  The list alternates
+-- pikaframedelay (the base pic alone) and pikaframe (the overlay) starting
+-- with a delay, so a frameset that opens on a pikaframe opens with a zero
+-- here; the frameset restarts until pikapic_looptofinish runs the duration
+-- out.  Scripts 1, 2, 3, 5, 6, 8 and 9 are left without a list on purpose:
+-- their overlays (PikaAnimTilemap_14 to _22) only paint a few tiles over a
+-- pic that otherwise stands still, so with no tiles to paint the port has
+-- nothing to show for them and must not bob the whole picture instead.
+local PIKAPIC = {
+  [1]  = { dur = 40 },
+  [2]  = { dur = 44 },
+  [3]  = { dur = 80 },
+  [4]  = { dur = 70,  seq = { 8, 8, 20, 8 } },
+  [5]  = { dur = 32 },
+  [6]  = { dur = 50 },
+  [7]  = { dur = 58,  seq = { 0, 8, 2, 8, 2, 8 } },
+  [8]  = { dur = 44 },
+  [9]  = { dur = 56 },
+  [10] = { dur = 56,  seq = { 8, 11, 5 } },
+  [11] = { dur = 100, seq = { 20, 8, 20, 8 } },
+  [12] = { dur = 50,  seq = { 13, 12, 100, 8 } },
+  [13] = { dur = 50,  seq = { 5, 5, 5, 5, 100 } },
+  [14] = { dur = 40,  seq = { 2, 2, 2, 2 } },
+  [15] = { dur = 50,  seq = { 5, 5, 5, 5 } },
+  [16] = { dur = 32,  seq = { 0, 8, 100 } },
+  [17] = { dur = 100, seq = { 10, 3, 3, 3, 100 } },
+  [18] = { dur = 32,  seq = { 3, 100, 8, 8 } },
+  [19] = { dur = 44,  seq = { 0, 6, 6, 6, 6 } },
+  [20] = { dur = 50,  seq = { 8, 12, 8, 12 } },
+  [21] = { dur = 40,  seq = { 8, 104 } },
+  [22] = { dur = 40,  seq = { 8, 100 } },
+  [23] = { dur = 70,  seq = { 16, 16, 16, 16 } },
+  [24] = { dur = 60,  seq = { 6, 6, 6, 6, 100 } },
+  [25] = { dur = 50,  seq = { 6, 106 } },
+  [26] = { dur = 100, seq = { 20, 8, 20, 116 } },
+  [27] = { dur = 30,  seq = { 4, 100 } },
+  [28] = { dur = 64,  seq = { 12, 12, 12, 100 } },
+}
 
 local function moodEmotion(save)
   local mood = save.pikachuMood or 128
@@ -579,15 +709,36 @@ function PikachuFollower.talk(game, ow, npc, done)
   -- ends with one, and its box is the only thing most of them put on
   -- screen (emotion 5, the fresh-save cell, has no bubble at all).  The
   -- 40x40 front pic is the size of PikaAnimTilemap_1's 5x5 base frame;
-  -- Sprites.path keeps a mod's replacement skin in play.  The scripts'
-  -- 32-58 frame durations bracket the hold below, so it stays at 50.
+  -- Sprites.path keeps a mod's replacement skin in play.
   local Sprites = require("src.pokemon.Sprites")
   local pic = Sprites.path(game.data, "PIKACHU", "front",
                            { kind = "overworld" })
+  local anim = PIKAPIC[PIKAPIC_SCRIPT[emotion] or emotion] or PIKAPIC[1]
+  local hold = anim.dur * PIKAPIC_TICK
   ow.emote = {
-    npc = npc, frames = 50, bubble = bi or false, pikaPic = pic,
-    onDone = done,
+    npc = npc, frames = hold, bubble = bi or false, pikaPic = pic,
+    pikaSeq = anim.seq, pikaTotal = hold, skippable = true, onDone = done,
   }
+end
+
+-- Where the framed pic sits this frame.  The overlay a pikaframe run draws
+-- is a second full-body pose (PikaAnimTilemap_23 and up replace all 5x5
+-- tiles) out of gfx/pikachu/unknown_*, which the cache does not carry, so
+-- the port lifts the one pic it has for the length of those runs -- the jump
+-- the happy emotions make inside the box (#424, still on #407's stand-in).
+function PikachuFollower.picLift(emote)
+  local seq = emote and emote.pikaSeq
+  if not seq then return 0 end
+  local loop = 0
+  for _, run in ipairs(seq) do loop = loop + run end
+  if loop <= 0 then return 0 end
+  local elapsed = math.max(0, (emote.pikaTotal or 0) - (emote.frames or 0))
+  local tick = math.floor(elapsed / PIKAPIC_TICK) % loop
+  for i, run in ipairs(seq) do
+    if tick < run then return i % 2 == 0 and PIKAPIC_LIFT or 0 end
+    tick = tick - run
+  end
+  return 0
 end
 
 -- ---------------------------------------------------------------------

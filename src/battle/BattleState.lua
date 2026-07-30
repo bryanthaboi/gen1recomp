@@ -4,7 +4,7 @@
 -- Flow: intro -> menu (FIGHT/PKMN/ITEM/RUN) -> move select -> turn
 -- resolution (a queue of messages/actions/UI pushes) -> back to menu,
 -- until one side is out, then finish.  Pops itself and calls
--- onFinish("win"|"lose"|"run"|"caught"|"skipped").
+-- onFinish("win"|"lose"|"run"|"caught").
 --
 -- The Gen 1 move-effect pipeline (multi-hit, charge, trapping, thrash,
 -- bide, recharge, confusion, screens, substitute, transform, ...) is
@@ -547,6 +547,19 @@ local function applySpecialMoves(data, oppClass, partyIndex, party)
   end
 end
 
+-- Yellow only: ROCKET with wTrainerNo >= $2a is Jessie & James, who share
+-- the class and the name "ROCKET" but battle behind their own pic
+-- (home/trainers2.asm IsFightingJessieJames).  picJessieJames exists only
+-- in a Yellow cache extracted after #439, so an older cache keeps the
+-- grunt pic until it is re-imported.
+function BattleState.trainerPicPath(trainer, oppClass, partyIndex)
+  if oppClass == "OPP_ROCKET" and (partyIndex or 1) >= 42
+     and trainer.picJessieJames then
+    return trainer.picJessieJames
+  end
+  return trainer.pic
+end
+
 function BattleState.newTrainer(game, oppClass, partyIndex)
   local self = newBattle(game)
   self.kind = "trainer"
@@ -608,7 +621,9 @@ function BattleState.newTrainer(game, oppClass, partyIndex)
   -- MonsterPalettes[0] = PAL_MEWMON -- InitBattleCommon zeroes
   -- wEnemyMonSpecies2 before the intro's SET_PAL_BATTLE
   -- (engine/battle/core.asm:6682, engine/gfx/palettes.asm SetPal_Battle)
-  self.trainerPic = getImage(self.trainer.pic, namedPalette(game.data, "MEWMON"))
+  self.trainerPic = getImage(
+    BattleState.trainerPicPath(self.trainer, oppClass, partyIndex),
+    namedPalette(game.data, "MEWMON"))
   self.introText = Strings("%s wants\nto fight!", self.trainer.name)
   return self
 end
@@ -1115,10 +1130,34 @@ function BattleState:battleKind()
 end
 
 function BattleState:enter()
-  if self.dead then
+  -- Out of useable POKéMON before the battle even starts.  pokered does not
+  -- skip the battle: .checkAnyPartyAlive (engine/battle/core.asm:158-162)
+  -- runs right after the intro and jumps to HandlePlayerBlackOut, so the
+  -- player blacks out and afterBattle's "lose" path revives the party at the
+  -- last heal point.  Handing the map back with a 0 HP party instead bricked
+  -- the save: every later encounter aborted here too and sighted trainers
+  -- re-engaged forever (#425).  self.dead alone is not the test --
+  -- makeOldManDemo and LinkBattle install a player battler after the
+  -- constructor flagged the battle dead.
+  if self.dead and not self.player then
+    local name = self.game.save.player.name
+    self.result = "lose"
     self.game.stack:pop()
-    Runtime.emit("battle.ended", { battle = self, result = "skipped" })
-    if self.onFinish then self.onFinish("skipped") end
+    require("src.core.Music").restoreMap(self.data)
+    Runtime.emit("battle.ended", { battle = self, result = "lose", skipped = true })
+    local onFinish = self.onFinish
+    local function blackedOut()
+      if onFinish then onFinish("lose") end
+    end
+    -- the Oak's Lab starter rival returns above PlayerBlackedOutText2 and
+    -- afterBattle keeps the player in the lab, so print nothing there
+    if BattleState.isOaksLabStarterRival(self) then return blackedOut() end
+    -- _PlayerBlackedOutText2 (data/text/text_2.asm:896): the two paragraphs
+    -- playerMonFainted queues on the battle screen; there is no battle
+    -- screen to queue them on here, so they print over the map.
+    self.game.stack:push(require("src.render.TextBox").new(self.game,
+      Strings("%s is out of\nuseable POKéMON!", name) .. "\f"
+      .. Strings("%s blacked\nout!", name), blackedOut))
     return
   end
   local Music = require("src.core.Music")
@@ -1956,6 +1995,15 @@ function BattleState:resolveSwitch(newMon)
 end
 
 function BattleState:endOfTurn()
+  -- the same ret: a decided battle never reaches HandlePoisonBurnLeechSeed
+  -- or CheckNumAttacksLeft (core.asm:417-421, 456-460), so the residual
+  -- sweep and the trapping-counter release are skipped on the turn a
+  -- Teleport escape (or a win/loss/capture) settles it (#441).  The
+  -- turn_ended hook still fires: mods count turns, not residuals.
+  if self.result then
+    Runtime.emit("battle.turn_ended", { battle = self, turn = self.turnCount or 0 })
+    return
+  end
   -- sideToxic mirrors w*ToxicCounter: it advances only while the
   -- battler's badly-poisoned flag (toxicCounter) is set, an item/AI
   -- cure clears the flag but NOT the side counter, and a fresh Toxic
@@ -2626,6 +2674,12 @@ function BattleState:syncShownStatus()
 end
 
 function BattleState:executeAction(user, target, action)
+  -- MainInBattleLoop reads wEscapedFromBattle right after Execute*Move and
+  -- rets (core.asm:417-421, 456-460): a Teleport/Roar/Whirlwind escape ends
+  -- the turn where it lands and the second mover never moves.  self.result
+  -- is only ever set once the battle is over (run/win/lose/caught), and the
+  -- faint cases are already covered by the HP guard below (#441)
+  if self.result then return end
   if user.mon.hp <= 0 or target.mon.hp <= 0 then return end
   if not action then return end
 
@@ -3920,12 +3974,15 @@ function BattleState:throwBall(ball)
       self:act(function() self:endOfTurn() end)
       return
     end
-    if self.ghost then
+    if self.ghost or self.noCatch then
       -- ItemUseBall's can't-be-caught path (item_effects.asm:149-153):
       -- the ball is thrown (TossBallAnimation still picks the arc from
       -- wCurItem, so a Master/Ultra toss keeps its flicker), dodged
       -- ($10 anim data, no wobbles), and the turn is spent like any
-      -- failed throw
+      -- failed throw.  battle.noCatch is the .notOldManBattle half of the
+      -- same check (item_effects.asm:166-175): the POKEMON_TOWER_6F
+      -- RESTLESS SOUL dodges balls even once the scope has revealed it,
+      -- so it is not a ghost battle any more (#444)
       self:animNext(self:tossAnimFor(ball), true, nil, ball)
       self:sayNext(Strings("It dodged the\nthrown BALL!"))
       self:sayNext(Strings("This POKéMON\ncan't be caught!"))

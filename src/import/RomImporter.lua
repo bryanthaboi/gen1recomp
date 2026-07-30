@@ -35,6 +35,13 @@ local REQUIRED_FILES = {
   "assets/generated/audio/programs.bin",
 }
 
+-- Files only one version's cache carries.  A version that predates one of
+-- them re-imports on its own, without dragging the other versions through a
+-- CACHE_FORMAT bump.
+local VERSION_REQUIRED_FILES = {
+  yellow = { "assets/generated/battle/trainers/jessie_james.png" }, -- #439
+}
+
 -- "Split-screen ROM selector" first-run palette (matches FirstRun.dc.html from
 -- the Claude Design project): a dark neon arcade panel, one column per game.
 -- Red, Blue, and Yellow share the same importer flow once listed in
@@ -97,6 +104,9 @@ local function allRequiredFilesExist(version)
   CacheFs.prefix = GameVersion.cachePrefix(version)
   local ok = true
   for _, path in ipairs(REQUIRED_FILES) do
+    if not CacheFs.exists(path) then ok = false; break end
+  end
+  for _, path in ipairs(ok and VERSION_REQUIRED_FILES[version] or {}) do
     if not CacheFs.exists(path) then ok = false; break end
   end
   CacheFs.prefix = saved
@@ -321,18 +331,46 @@ local function findPendingRom(ready)
   return nil
 end
 
+-- GameActivity always writes the SAF pick to picked_rom.gb, so a leftover
+-- under that exact basename is the file the player just chose and
+-- findPendingRom silently refused: wrong size, or a hacked/overdumped cart
+-- whose SHA-1 matches no known version ([b]/[BF] dumps never will).  Route it
+-- through startData so the launcher says which of the two it was instead of
+-- staying on "No ROM imported" with no message at all (issue #442), and drop
+-- the file so the next tap starts from a clean slate.  A cart that is simply
+-- already imported is not an error -- #167 skips it on purpose -- so leave
+-- that one alone.
+local function consumePickedRomError(self)
+  local preferred = "picked_rom.gb"
+  if not love.filesystem.getInfo(preferred, "file") then return false end
+  local data = love.filesystem.read(preferred)
+  if type(data) == "string" and #data == 1024 * 1024 then
+    local version = GameVersion.forSha1(sha1(data))
+    if version and self.ready[version] then return false end
+  end
+  love.filesystem.remove(preferred)
+  if type(data) ~= "string" then
+    self:setError("The picked file could not be read. Reopen the picker and "
+      .. "choose the ROM with the Files (Documents) app.")
+    return true
+  end
+  self:startData(data, preferred)
+  return true
+end
+
 -- Android SAF writes mod picks to picked_mod.zip; USB copies may use any
 -- .zip basename at the save-dir root.  preferAny=true also accepts those USB
 -- copies (Choose / Import); focus only consumes the SAF basename so a random
 -- leftover archive is never auto-installed on every refocus.
-local function findPendingMod(preferAny)
+local function findPendingMod(preferAny, skip)
   local preferred = "picked_mod.zip"
   if love.filesystem.getInfo(preferred, "file") then
     return preferred
   end
   if not preferAny then return nil end
   for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
-    if name:lower():match("%.zip$") and love.filesystem.getInfo(name, "file") then
+    if name:lower():match("%.zip$") and not (skip and skip[name])
+        and love.filesystem.getInfo(name, "file") then
       return name
     end
   end
@@ -340,18 +378,34 @@ local function findPendingMod(preferAny)
 end
 
 -- Same pattern as findPendingMod for battery saves (picked_save.sav / *.sav).
-local function findPendingSav(preferAny)
+local function findPendingSav(preferAny, skip)
   local preferred = "picked_save.sav"
   if love.filesystem.getInfo(preferred, "file") then
     return preferred
   end
   if not preferAny then return nil end
   for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
-    if name:lower():match("%.sav$") and love.filesystem.getInfo(name, "file") then
+    if name:lower():match("%.sav$") and not (skip and skip[name])
+        and love.filesystem.getInfo(name, "file") then
       return name
     end
   end
   return nil
+end
+
+-- Retire an Android pick once it has been through the installer / importer,
+-- whether or not it worked: a pick left on disk wins the scans above forever,
+-- so the next tap re-runs the same failing file and the picker never reopens
+-- (#420).  The SAF basename is GameActivity's own copy of the pick and is
+-- always deleted; a USB copy is the player's file, so a failed one is only
+-- skipped for the rest of the session.
+local function consumePick(self, name, safName, ok)
+  if ok or name == safName then
+    love.filesystem.remove(name)
+    return
+  end
+  self.pickSkip = self.pickSkip or {}
+  self.pickSkip[name] = true
 end
 
 local function chooseRom(promptName)
@@ -568,7 +622,13 @@ function RomImporter.new(onComplete, opts)
   end
   if android and needRom then
     local name, data = findPendingRom(self.ready)
-    if name then self:startData(data, name) end
+    if name then
+      self:startData(data, name)
+    else
+      -- The picker runs as its own activity and Android may kill us while it
+      -- is up, so a rejected pick can outlive the focus handler (#442).
+      consumePickedRomError(self)
+    end
   end
 
   -- Mouse-wheel scroll for the save-slot / mods lists.  main.lua (off limits)
@@ -629,28 +689,53 @@ function RomImporter:focus(f)
     if self.tab == "mods" then self.tab = version end
     return
   end
-  local modName = findPendingMod(false)
-  if modName then
-    self:_installMod(modName)
-    if self.modNotice and self.modNotice.ok then
-      love.filesystem.remove(modName)
+  -- The SAF pick failed inside GameActivity, which wrote pick_error.flag with
+  -- the destination basename in it: some OEM shells (ColorOS) let a third-party
+  -- archive manager win the ACTION_OPEN_DOCUMENT chooser and hand back a URI
+  -- this app has no permission to read, and until #442 that returned to a
+  -- launcher that said nothing at all.
+  local pickError = love.filesystem.getInfo("pick_error.flag", "file")
+    and love.filesystem.read("pick_error.flag")
+  if pickError then
+    love.filesystem.remove("pick_error.flag")
+    local text = "Could not read the picked file. Reopen the picker and choose "
+      .. "it with the Files (Documents) app, or copy it into: "
+      .. love.filesystem.getSaveDirectory()
+    if pickError:find("picked_mod", 1, true) then
+      self.modNotice = { ok = false, text = text }
+    elseif pickError:find("picked_save", 1, true) then
+      local version = self.androidPendingVersion or self:_savedropTarget()
+      self.androidPendingVersion = nil
+      self.saveNotice[version] = { ok = false, text = text }
+    else
+      self:setError(text)
     end
     return
   end
-  local savName = findPendingSav(false)
+  local modName = findPendingMod(false, self.pickSkip)
+  if modName then
+    self:_installMod(modName)
+    consumePick(self, modName, "picked_mod.zip",
+      self.modNotice and self.modNotice.ok)
+    return
+  end
+  local savName = findPendingSav(false, self.pickSkip)
   if savName then
     local version = self.androidPendingVersion or self:_savedropTarget()
     self.androidPendingVersion = nil
     self:_importSave(version, savName)
-    if self.saveNotice[version] and self.saveNotice[version].ok then
-      love.filesystem.remove(savName)
-    end
+    consumePick(self, savName, "picked_save.sav",
+      self.saveNotice[version] and self.saveNotice[version].ok)
     return
   end
   for _, v in ipairs(GameVersion.ORDER) do
     if not self.ready[v] then
       local name, data = findPendingRom(self.ready)
-      if name then self:startData(data, name) end
+      if name then
+        self:startData(data, name)
+      else
+        consumePickedRomError(self)
+      end
       return
     end
   end
@@ -698,8 +783,9 @@ function RomImporter:startData(data, displayName)
   local actualHash = sha1(data)
   local version = GameVersion.forSha1(actualHash)
   if not version then
-    self:setError(("Unsupported ROM (SHA-1 %s). Use an unmodified US Pokemon "
-      .. "Red, Blue, or Yellow ROM."):format(actualHash))
+    self:setError(("Unsupported ROM (SHA-1 %s). This needs a clean US Pokemon "
+      .. "Red, Blue, or Yellow dump; patched, trimmed or \"fixed\" dumps "
+      .. "(tagged [b] or [BF]) never verify."):format(actualHash))
     return
   end
   local info = GameVersion.info(version)
@@ -849,12 +935,11 @@ end
 function RomImporter:chooseMod()
   if self.workState == "working" then return end
   if self.android then
-    local name = findPendingMod(true)
+    local name = findPendingMod(true, self.pickSkip)
     if name then
       self:_installMod(name)
-      if self.modNotice and self.modNotice.ok then
-        love.filesystem.remove(name)
-      end
+      consumePick(self, name, "picked_mod.zip",
+        self.modNotice and self.modNotice.ok)
       return
     end
     if not love.system.pickFile("mod") then
@@ -908,13 +993,12 @@ end
 function RomImporter:chooseSaveImport(version)
   if self.workState == "working" then return end
   if self.android then
-    local name = findPendingSav(true)
+    local name = findPendingSav(true, self.pickSkip)
     if name then
       self.androidPendingVersion = version
       self:_importSave(version, name)
-      if self.saveNotice[version] and self.saveNotice[version].ok then
-        love.filesystem.remove(name)
-      end
+      consumePick(self, name, "picked_save.sav",
+        self.saveNotice[version] and self.saveNotice[version].ok)
       return
     end
     self.androidPendingVersion = version
@@ -999,6 +1083,8 @@ function RomImporter:choose(version)
     local name, data = findPendingRom(self.ready)
     if name then
       self:startData(data, name)
+    elseif consumePickedRomError(self) then
+      return   -- a rejected pick explains itself instead of silently reopening
     elseif not love.system.pickFile() then
       -- Picker unavailable (API < 19, or no document-picker app installed):
       -- fall back to the USB folder-drop path as a friendly notice, not an
@@ -1415,6 +1501,32 @@ function RomImporter.pageScrollFor(naturalH, viewportH, scroll)
   return maxPage > 0, clamp(scroll or 0, 0, maxPage), maxPage
 end
 
+-- Every hit rect mousepressed dispatches on, cleared before any panel draws:
+-- each rect is rebuilt only by the panel that draws its control, so whatever a
+-- frame does not draw must not stay clickable.  Missing the Delete rects here
+-- let a click on the mods tab land on the game tab's save Delete label (#433).
+function RomImporter:_resetFrameRects()
+  self.romButtonRect = nil
+  self.playButtonRect = nil
+  self.tabRects = {}
+  -- Rebuilt only by the active version's SAVE SLOT panel, so the mods tab (or a
+  -- version with no panel drawn this frame) cannot inherit last frame's rows.
+  self.slotRects = nil
+  self.slotEditRects = nil
+  self.slotDeleteRects = nil
+  self.newSlotRect = nil
+  -- Rebuilt only by the mods panel; nil elsewhere so a game tab cannot inherit
+  -- last frame's mod toggles / Delete labels / import button.
+  self.modRects = nil
+  self.modDeleteRects = nil
+  self.modImportRect = nil
+  -- Rebuilt only by the active game panel's SAVE FILES card; nil elsewhere so
+  -- the mods tab cannot inherit last frame's save Import/Export/open-folder hits.
+  self.saveImportRect = nil
+  self.saveExportRect = nil
+  self.saveFolderRect = nil
+end
+
 function RomImporter:draw()
   local width, height = love.graphics.getDimensions()
   local s = clamp(height / 768, 0.7, 1.6)
@@ -1433,23 +1545,7 @@ function RomImporter:draw()
   end
   self._hoverEnabled = self._padCursorActive or not self.android
   self._anyHover = false
-  self.romButtonRect = nil
-  self.playButtonRect = nil
-  self.tabRects = {}
-  -- Rebuilt only by the active version's SAVE SLOT panel, so the mods tab (or a
-  -- version with no panel drawn this frame) cannot inherit last frame's rows.
-  self.slotRects = nil
-  self.slotEditRects = nil
-  self.newSlotRect = nil
-  -- Rebuilt only by the mods panel; nil elsewhere so a game tab cannot inherit
-  -- last frame's mod toggles / import button.
-  self.modRects = nil
-  self.modImportRect = nil
-  -- Rebuilt only by the active game panel's SAVE FILES card; nil elsewhere so
-  -- the mods tab cannot inherit last frame's save Import/Export/open-folder hits.
-  self.saveImportRect = nil
-  self.saveExportRect = nil
-  self.saveFolderRect = nil
+  self:_resetFrameRects()
 
   -- Fonts + size-dependent scenery, rebuilt only when the window size changes.
   local fontKey = ("%dx%d"):format(width, height)
@@ -1936,6 +2032,16 @@ local function inside(r, x, y)
   return true
 end
 
+-- A Delete label is armed by one click and commits on a second one on the same
+-- target; it disarms on any other press and after this many seconds, because
+-- nothing in the launcher can undo a delete (#433).
+local DELETE_CONFIRM_SECONDS = 4
+
+local function armedDelete(a, kind, id, version)
+  return a ~= nil and a.kind == kind and a.id == id and a.version == version
+    and (love.timer.getTime() - a.t) <= DELETE_CONFIRM_SECONDS
+end
+
 function RomImporter:mousepressed(x, y, button)
   if self._rename then return end -- the rename modal swallows all clicks
   -- Whether a press can be ARMED and resolved on release, which needs a
@@ -1955,6 +2061,10 @@ function RomImporter:mousepressed(x, y, button)
     return
   end
   if button ~= 1 then return end
+  -- Any press that is not the second click on an armed Delete disarms it, so
+  -- take the arm off self up front and let the Delete loops below re-arm.
+  local armed = self._confirmDelete
+  self._confirmDelete = nil
   if inside(self.bcgButton, x, y) or inside(self.linkUrlRect, x, y) then
     love.system.openURL(COMMUNITY_URL)
     return
@@ -2019,7 +2129,12 @@ function RomImporter:mousepressed(x, y, button)
   -- targets, no scroll conflict).
   for _, r in ipairs(self.slotDeleteRects or {}) do
     if inside(r, x, y) then
-      self:_deleteSlot(self.panelVersion, r.id)
+      if armedDelete(armed, "slot", r.id, self.panelVersion) then
+        self:_deleteSlot(self.panelVersion, r.id)
+      else
+        self._confirmDelete = { kind = "slot", id = r.id,
+          version = self.panelVersion, t = love.timer.getTime() }
+      end
       return
     end
   end
@@ -2053,7 +2168,11 @@ function RomImporter:mousepressed(x, y, button)
   end
   for _, r in ipairs(self.modDeleteRects or {}) do
     if inside(r, x, y) then
-      self:_deleteMod(r.id)
+      if armedDelete(armed, "mod", r.id, nil) then
+        self:_deleteMod(r.id)
+      else
+        self._confirmDelete = { kind = "mod", id = r.id, t = love.timer.getTime() }
+      end
       return
     end
   end
@@ -2792,8 +2911,11 @@ function RomImporter:_drawSaveSlotPanel(version, x, y, w, h, paged)
         local drect = { x = delX - 6 * s, y = delY - 4 * s,
           width = delW + 12 * s, height = delH + 8 * s, id = slot.id }
         local dhot = self:_hover(drect)
-        col(dhot and PAL.red or PAL.warning)
-        love.graphics.print(delText, delX, delY)
+        -- Armed by a first click, the label asks before a second one commits;
+        -- the box stays sized to "Delete" so the row never reflows (#433).
+        local darmed = armedDelete(self._confirmDelete, "slot", slot.id, version)
+        col((darmed or dhot) and PAL.red or PAL.warning)
+        love.graphics.printf(darmed and "Sure?" or delText, delX, delY, delW, "center")
         local rightReserve = delW + 18 * s
 
         -- Edit label, immediately left of Delete: opens the bundled save
@@ -3150,8 +3272,10 @@ function RomImporter:_drawModsPanel(x, y, w, h, paged)
         width = L.delW + 12 * s, height = delH + 4 * s, id = m.id }
       local dhot = self:_hover(drect)
       love.graphics.setFont(self.hintFont)
-      col(dhot and PAL.red or PAL.warning)
-      love.graphics.print("Delete", delX, delY)
+      -- Same two-click arm as a save slot's Delete (#433).
+      local darmed = armedDelete(self._confirmDelete, "mod", m.id, nil)
+      col((darmed or dhot) and PAL.red or PAL.warning)
+      love.graphics.printf(darmed and "Sure?" or "Delete", delX, delY, L.delW, "center")
 
       -- hit rects clipped to the visible list band
       local vy = math.max(trect.y, top)

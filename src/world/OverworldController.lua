@@ -366,7 +366,7 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   for _, n in ipairs(self.npcs) do table.insert(self.entities, n) end
   -- Yellow's companion Pikachu trails the player (never in
   -- self.entities: it does not block movement, pikachu_follow.asm)
-  require("src.world.PikachuFollower").onMapEntered(Game, self)
+  require("src.world.PikachuFollower").onMapEntered(Game, self, opts)
 
   -- opts.keepMusic: the Oak-escort warp keeps MUSIC_MEET_PROF_OAK
   -- playing into the lab (BIT_NO_MAP_MUSIC in wStatusFlags7);
@@ -899,7 +899,12 @@ function OverworldState:update(dt)
   -- the emotion-bubble pause holds the world for a beat
   if self.emote then
     self.emote.frames = self.emote.frames - 1
-    if self.emote.frames <= 0 then
+    -- PikaPicAnimTimerAndJoypad (engine/pikachu/pikachu_pic_animation.asm)
+    -- cuts a pikapic beat short on A or B; the "!" bubble hold has no such
+    -- check, so only the pikapic marks itself skippable (#424)
+    local cut = self.emote.skippable
+                and (Game.input:wasPressed("a") or Game.input:wasPressed("b"))
+    if cut or self.emote.frames <= 0 then
       local done = self.emote.onDone
       self.emote = nil
       if done then done() end
@@ -1291,7 +1296,14 @@ function OverworldState:crossConnection(dir, conn)
   -- still protects the visible step when neighbor rebuild or the sync
   -- fallback stalls, and avoids the rare one-frame volume spike from a
   -- song swap mid-step.
-  self:setMap(conn.map, x, y, p.facing, { seamless = true, keepMusic = true })
+  -- Yellow's follower crosses the seam as one continuous walk, so hand the
+  -- live instance through setMap (which rebuilds self.npcs) instead of
+  -- letting it respawn behind the player (#427)
+  local PikachuFollower = require("src.world.PikachuFollower")
+  local pika = PikachuFollower.current(self)
+  local fromX, fromY = p.cellX, p.cellY
+  self:setMap(conn.map, x, y, p.facing,
+              { seamless = true, keepMusic = true, keepPikachu = pika })
   self.pendingSeamMusic = conn.map
   -- place the player one cell before the seam (their old world spot,
   -- which the neighbor strip renders identically) and start the step
@@ -1301,6 +1313,8 @@ function OverworldState:crossConnection(dir, conn)
   local d = DIRVEC[dir]
   p.cellX, p.cellY = x - d[1], y - d[2]
   p.px, p.py = p.cellX * 16, p.cellY * 16
+  -- same translation for the follower and the cell it is chasing
+  PikachuFollower.rebase(self, p.cellX - fromX, p.cellY - fromY)
   self.camera:follow(p.px, p.py)
   p.facing = dir
   p.targetX, p.targetY = x, y
@@ -4461,9 +4475,10 @@ function OverworldState:drawUI()
   -- TalkToPikachu's picture box (engine/pikachu/pikachu_pic_animation.asm
   -- PlacePikapicTextBoxBorder: TextBoxBorder at (6,5) with b,c = 5,5, so a
   -- 7x7 box holding the 5x5 pic at (7,6) -- PikaAnimTilemap_1).  The
-  -- per-emotion frame gfx (gfx/pikachu/unknown_*) are not extracted, so
-  -- the front pic holds for the whole beat while the cry and any emote
-  -- bubble play over the world below (#407).
+  -- per-emotion frame gfx (gfx/pikachu/unknown_*) are not extracted, so the
+  -- front pic stands in for every frame of the script; PikachuFollower
+  -- .picLift lifts it on the runs that draw the alternate pose, and the
+  -- script's own duration times the beat (#407, #424).
   if self.emote and self.emote.pikaPic then
     require("src.render.Font").drawBox(6, 5, 7, 7)
     -- one image per path, cached: this draws every frame of the hold, and
@@ -4477,8 +4492,9 @@ function OverworldState:drawUI()
     if img then
       love.graphics.setColor(1, 1, 1, 1)
       local w, h = img:getDimensions()
+      local lift = require("src.world.PikachuFollower").picLift(self.emote)
       love.graphics.draw(img, math.floor(56 + (40 - w) / 2),
-                         math.floor(48 + (40 - h) / 2))
+                         math.floor(48 + (40 - h) / 2) - lift)
     end
   end
 

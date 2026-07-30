@@ -1307,6 +1307,16 @@ function RomExtractor:extractTrainers()
     }
     self:tick("Trainers", index, #order)
   end
+  -- Yellow's Jessie & James fight as OPP_ROCKET but carry their own pic
+  -- (home/trainers2.asm IsFightingJessieJames); only Yellow's manifest has
+  -- the symbol, so Red and Blue skip this (#439).
+  if self.symbols.JessieJamesPic then
+    local relative = "battle/trainers/jessie_james.png"
+    self:writeCompressedPic("JessieJamesPic", relative)
+    if out.OPP_ROCKET then
+      out.OPP_ROCKET.picJessieJames = "assets/generated/" .. relative
+    end
+  end
   self:write("trainers", out)
   return out
 end

@@ -102,6 +102,18 @@ return function(game)
   battle.enemy.mon.hp = 400
   battle.enemy.shownHP = 400
 
+  -- A PIDGEY that level knows WHIRLWIND, and in a wild battle that blows the
+  -- player out of the fight (result "run") the moment the foe picks it, which
+  -- takes the untested types down with it.  Drop it and the foe keeps the
+  -- GUST / SAND-ATTACK / QUICK ATTACK the hand-off notes below describe.
+  -- curMoves aliases mon.moves, so one pass covers both.
+  for i = #battle.enemy.mon.moves, 1, -1 do
+    local id = battle.enemy.mon.moves[i].id
+    if id == "WHIRLWIND" or id == "ROAR" or id == "TELEPORT" then
+      table.remove(battle.enemy.mon.moves, i)
+    end
+  end
+
   -- ---- watch the fx layer ------------------------------------------------
   -- one entry per applying-attack row, labelled with the move that queued it
   local rows, cur, using = {}, nil, nil
@@ -131,10 +143,13 @@ return function(game)
     end
   end
 
-  -- step n frames, sampling every one, pressing A every `mash` frames
+  -- step n frames, sampling every one, pressing A every `mash` frames -- but
+  -- only while a box is up.  An A that lands on the FIGHT menu opens the move
+  -- list and fires the highlighted move, so mashing past the end of a turn
+  -- starts extra turns behind the driver's back and eventually ends the battle.
   local function pump(n, mash, stop)
     for i = 1, n do
-      if mash and i % mash == 0 then
+      if mash and i % mash == 0 and battle.phase == "messages" then
         table.insert(game.input.pressQueue, "a")
       end
       U.wait(1)
@@ -144,16 +159,34 @@ return function(game)
     end
   end
 
+  -- a full turn is the player's announcement, animation and damage drain plus
+  -- the foe's, so budget frames for the slowest of them rather than the typical
+  -- one: a short budget hands the next move a battle still in `messages`
   local function toMenu()
-    pump(400, 6, function() return battle.phase == "menu" and #battle.queue == 0 end)
+    pump(1200, 6, function() return battle.phase == "menu" and #battle.queue == 0 end)
     return battle.phase == "menu"
   end
 
-  -- FIGHT is menuIndex 1 of the 2x2 grid; A opens moveSelect, where up/down
-  -- walk the slots.  A press that lands on a frame the battle is not reading
-  -- input is simply lost, so every step retries instead of assuming.
+  -- The move list is a flat column in the classic layout, but the wide one
+  -- lays the four slots out 2x2 (WideBattle.navigate): up/down swap rows and
+  -- left/right swap columns, so walking down the list there never reaches
+  -- slots 2 and 4.  Return the press that closes the gap in either layout.
+  local function towardSlot(slot)
+    if battle.moveIndex == slot then return nil end
+    if battle:wideLayout() then
+      local row, col = math.floor((battle.moveIndex - 1) / 2), (battle.moveIndex - 1) % 2
+      local wantRow, wantCol = math.floor((slot - 1) / 2), (slot - 1) % 2
+      if row ~= wantRow then return row < wantRow and "down" or "up" end
+      return col < wantCol and "right" or "left"
+    end
+    return battle.moveIndex < slot and "down" or "up"
+  end
+
+  -- FIGHT is menuIndex 1 of the 2x2 grid; A opens moveSelect, where the presses
+  -- above walk the slots.  A press that lands on a frame the battle is not
+  -- reading input is simply lost, so every step retries instead of assuming.
   local function useMove(slot)
-    for _ = 1, 40 do
+    for _ = 1, 80 do
       if battle.phase == "moveSelect" then break end
       if battle.phase == "menu" then
         if battle.menuIndex ~= 1 then
@@ -161,13 +194,17 @@ return function(game)
         else
           U.tap(game, "a")
         end
+      else
+        -- the last turn's boxes are still up: keep turning pages
+        U.tap(game, "a")
       end
       U.wait(4)
     end
     if battle.phase ~= "moveSelect" then return false end
     for _ = 1, 30 do
-      if battle.moveIndex == slot then break end
-      U.tap(game, battle.moveIndex < slot and "down" or "up")
+      local dir = towardSlot(slot)
+      if not dir then break end
+      U.tap(game, dir)
       U.wait(3)
     end
     if battle.moveIndex ~= slot then return false end
@@ -193,15 +230,22 @@ return function(game)
   check("the battle reached its FIGHT menu", toMenu())
 
   for _, m in ipairs(MOVES) do
-    local sent = useMove(m.slot)
-    check("chose " .. m.id .. " from the move menu", sent)
-    if sent then
-      -- catch the shake mid-flight for the screenshot: the offset is live for
-      -- only a couple of dozen frames
-      local shotAt
+    -- catch the shake mid-flight for the screenshot: the offset is live for
+    -- only a couple of dozen frames
+    local shotAt
+    -- HYPNOSIS lands 6 times in 10 and TACKLE 19 in 20, and a miss plays no
+    -- applying-attack animation at all, so give each move a few turns to
+    -- connect instead of reading a whiffed one as a regression
+    local sent, r
+    for _ = 1, 8 do
+      -- the foe leans on SAND-ATTACK, and stacked accuracy drops make even
+      -- TACKLE whiff turn after turn, so hand the accuracy back each try
+      battle.player.stages.accuracy = 0
+      sent = useMove(m.slot)
+      if not sent then break end
       -- A every 8 frames: the text box between the announcement and the
       -- animation waits on the button like any other
-      pump(400, 8, function()
+      pump(1200, 8, function()
         local live = battle.fx and (m.peak and (battle.fx.shakeX or 0) ~= 0
                                     or (not m.peak and battle.fx.blink
                                         and battle.fx.blink.frames > 0))
@@ -209,12 +253,19 @@ return function(game)
           shotAt = true
           U.shot(game, DIR .. "/" .. SHOTS[m.id])
         end
-        local r = lastRowFor(m.id)
-        return r ~= nil and battle.fx.shakeProg == nil
-               and (r.frames > 0 or r.blinked)
+        local row = lastRowFor(m.id)
+        -- back at the menu with the row in hand: the turn is over either way
+        if row and battle.phase == "menu" and #battle.queue == 0 then return true end
+        return row ~= nil and battle.fx.shakeProg == nil
+               and (row.frames > 0 or row.blinked)
       end)
       toMenu()
-      local r = lastRowFor(m.id)
+      r = lastRowFor(m.id)
+      if r then break end
+      U.log("  " .. m.id .. " did not connect that turn; using it again")
+    end
+    check("chose " .. m.id .. " from the move menu", sent)
+    if sent then
       check(m.id .. " queued an applying-attack row", r ~= nil)
       if r then
         check(("%s is animation type %d (got %s)")

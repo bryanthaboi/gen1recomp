@@ -48,7 +48,19 @@ M.MT_MOON_B2F = {
       { "show_object", "MT_MOON_B2F", "MTMOONB2F_JESSIE" },
       { "show_object", "MT_MOON_B2F", "MTMOONB2F_JAMES" },
       { "show_text", "_MtMoonJessieJamesText1" },
-      { "face_player_dir", "right" },
+      { "face_player_dir", "up" },
+      { "emote", "player", "shock", 30 },
+      -- MtMoonB2FScript_49e15 simulates PAD_UP for one player step, then
+      -- Script6/Script9 walk Jessie (object 2, MovementData_f9e65: six
+      -- $06) and James (object 6, f9e66: five $06); both objects' movement
+      -- byte 2 is LEFT, so .determineDirection makes those LEFT steps --
+      -- Jessie (9,3)->(3,3) above the player at (3,4), James (9,4)->(4,4)
+      -- beside him. #423
+      { "walk_npc", "player", { "up" } },
+      { "walk_npc", 2, { "left", "left", "left", "left", "left", "left" } },
+      { "face_object", 2, "down" },
+      { "walk_npc", 6, { "left", "left", "left", "left", "left" } },
+      { "face_object", 6, "left" },
       { "show_text", "_MtMoonJessieJamesText2" },
       { "start_battle", "trainer", "OPP_ROCKET", 42 },
       { "check_battle_result", "win" },
@@ -57,8 +69,10 @@ M.MT_MOON_B2F = {
       { "show_text", "_MtMoonJessieJamesText4" },
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
+      { "fade", "out" },
       { "hide_object", "MT_MOON_B2F", "MTMOONB2F_JESSIE" },
       { "hide_object", "MT_MOON_B2F", "MTMOONB2F_JAMES" },
+      { "fade", "in" },
       { "play_default_music" },
       { "set_flag", "EVENT_BEAT_MT_MOON_3_JESSIE_JAMES" },
     }, {})
