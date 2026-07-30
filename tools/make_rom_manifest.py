@@ -315,7 +315,10 @@ def text_metadata(pokered):
     for path in paths:
         for _, line in util.read_asm(path):
             stripped = line.strip()
-            match = re.match(r"(_\w+)::?\s*$", stripped)
+            # not every string label carries the far-text underscore
+            # (SilphCo2FSilphWorkerFPleaseTakeThisText and friends live in
+            # the script bank), and dropping those lost their strings (#393)
+            match = re.match(r"(\w+)::?\s*$", stripped)
             if match:
                 current = match.group(1)
                 labels.append(current)

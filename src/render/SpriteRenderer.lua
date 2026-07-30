@@ -135,7 +135,10 @@ local function blitFrame(image, quad, x, y, flip, redraw)
   end
 end
 
-function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip)
+-- topHalf blits only the upper 8 rows of the frame: FishingAnim overwrites the
+-- bottom tile row of the standing frames with the fishing pose art, which the
+-- caller then draws itself through :drawTile (Player:draw, #384)
+function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip, topHalf)
   local x = math.floor(px - camX)
   local y = math.floor(py - camY) - 4
   local image = self.image
@@ -190,7 +193,39 @@ function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip)
     flip = true
   end
   local quad = self.frames[frame] or self.frames[0]
+  if topHalf then
+    self.halfFrames = self.halfFrames or {}
+    if not self.halfFrames[frame] then
+      local iw, ih = self.image:getDimensions()
+      self.halfFrames[frame] = love.graphics.newQuad(0, frame * 16, 16, 8, iw, ih)
+    end
+    quad = self.halfFrames[frame]
+  end
   blitFrame(image, quad, x, y, flip, redraw)
+end
+
+-- Blit a loose 16-wide fx tile at screen (x, y) wearing THIS sprite's OBJ
+-- palette, mirroring the mode branches in :draw above.  The fishing pose row
+-- overwrites the sheet's own tiles in VRAM in the original, so it has to be
+-- recolored and OG-RED-redrawn exactly like the sheet rather than blitted as
+-- raw DMG shades (#384).
+function SpriteRenderer:drawTile(path, x, y, flip)
+  local image, redraw = getImage(path), false
+  if self.def.trueColor then
+    PaletteFX.markTrueColor(x, y, 16, 8)
+  elseif PaletteFX.usesGbcPack() then
+    local colors, group = PaletteFX.spriteObp(self.def, self.seed)
+    if colors then image = getObpImage(path, colors, group) end
+  elseif PaletteFX.usesSpriteObp() and PaletteFX.spriteRedrawPassActive() then
+    image, redraw = getObpImage(path, PaletteFX.ogObj()), true
+  else
+    image = getObpImage(path, PaletteFX.dmgObj())
+  end
+  local iw, ih = image:getDimensions()
+  self.tileQuads = self.tileQuads or {}
+  self.tileQuads[path] = self.tileQuads[path]
+                         or love.graphics.newQuad(0, 0, iw, ih, iw, ih)
+  blitFrame(image, self.tileQuads[path], x, y, flip, redraw)
 end
 
 return SpriteRenderer

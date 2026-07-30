@@ -35,6 +35,48 @@ PaletteFX.MODE_LABELS = {
 }
 PaletteFX.mode = "gbc"
 
+-- ------- dark-cave state (wMapPalOffset)
+--
+-- Unlike the per-frame shadeMap further down, this outlives a frame: ADVANCED
+-- resolves real colour per tile and BAKES it (tileset atlas, sprite sheets),
+-- so FadePal2's shift has to reach those bakes and their cache keys rather
+-- than a shader (#383).  OverworldState owns it: armed before the map's atlas
+-- is built, cleared by FLASH.
+local darkWorld = false
+
+-- returns true when the flag actually changed, so the caller can rebuild
+function PaletteFX.setDarkWorld(on)
+  on = on and true or false
+  if darkWorld == on then return false end
+  darkWorld = on
+  return true
+end
+
+function PaletteFX.darkWorld() return darkWorld end
+
+-- cache-key suffix for anything baked under the dark shift
+function PaletteFX.darkKey() return darkWorld and "#dark" or "" end
+
+-- FadePal2 sets rOBP0 = `dc 3,3,3,2` as well as rBGP, so EVERY OBJ colour a
+-- sprite can carry lands on shade 3: the player, trainers and item balls are
+-- black silhouettes until FLASH (#383).  Applied to whatever 4-colour OBP the
+-- active mode resolved, with a distinct cache group so the lit and dark bakes
+-- of one sheet never collide in SpriteRenderer's obpCache.
+function PaletteFX.darkObp(colors, group)
+  if not (colors and darkWorld) then return colors, group end
+  return PaletteFX.permute(colors, PaletteFX.DARK_BGP), tostring(group) .. "dark"
+end
+
+-- the same shift folded into a baked 8-group world palette array (ADVANCED)
+local function darkGroups(groups)
+  if not (groups and darkWorld) then return groups end
+  local out = {}
+  for i = 1, #groups do
+    out[i] = PaletteFX.permute(groups[i], PaletteFX.DARK_BGP)
+  end
+  return out
+end
+
 -- Classic DMG pea-soup greens (#9BBC0F / #8BAC0F / #306230 / #0F380F)
 PaletteFX.CLASSIC = {
   { 155, 188, 15 }, { 139, 172, 15 }, { 48, 98, 48 }, { 15, 56, 15 },
@@ -93,9 +135,13 @@ end
 -- Red bake with a Blue one and one version would show the other's colors.
 -- Yellow: same Red OBJ green as above until Yellow-specific tables land.
 function PaletteFX.ogObj()
-  if GameVersion.isBlue() then return PaletteFX.GBC_OBJ_BLUE, "gbcobj_blue" end
-  if GameVersion.isYellow() then return PaletteFX.GBC_OBJ, "gbcobj" end
-  return PaletteFX.GBC_OBJ, "gbcobj"
+  if GameVersion.isBlue() then
+    return PaletteFX.darkObp(PaletteFX.GBC_OBJ_BLUE, "gbcobj_blue")
+  end
+  if GameVersion.isYellow() then
+    return PaletteFX.darkObp(PaletteFX.GBC_OBJ, "gbcobj")
+  end
+  return PaletteFX.darkObp(PaletteFX.GBC_OBJ, "gbcobj")
 end
 
 -- The DMG object ramp every mode except OG RED bakes onto overworld sprites,
@@ -114,7 +160,7 @@ PaletteFX.OBP0_SHADES = {
 }
 
 function PaletteFX.dmgObj()
-  return PaletteFX.OBP0_SHADES, "obp0"
+  return PaletteFX.darkObp(PaletteFX.OBP0_SHADES, "obp0")
 end
 
 local INV_MAP = { [0] = 3, [1] = 2, [2] = 1, [3] = 0 }
@@ -503,7 +549,7 @@ function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY)
   local w = pack and pack.world
   local base = w and w.groupColors[tileset]
   if not base then return nil end
-  if not w.roofGroup[tileset] then return base end
+  if not w.roofGroup[tileset] then return darkGroups(base) end
   local roofMapId = mapId
   if mapId == ROUTE_6_SAFFRON.mapId and playerCellY
      and playerCellY < ROUTE_6_SAFFRON.cellYBelow then
@@ -511,7 +557,7 @@ function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY)
   end
   local roofMap = data and data.maps and data.maps[roofMapId]
   local roof = roofMap and w.roofByMapIndex[roofMap.index]
-  if not roof then return base end
+  if not roof then return darkGroups(base) end
   local out = {}
   for i = 1, 8 do out[i] = base[i] end
   -- LoadTownPalette only overwrites W2_BgPaletteData + $32, i.e. colors 1
@@ -521,7 +567,7 @@ function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY)
   -- material's 2 middle shades are town-specific
   local base4 = base[ROOF_GROUP + 1]
   out[ROOF_GROUP + 1] = { base4[1], roof[1], roof[2], base4[4] }
-  return out
+  return darkGroups(out)
 end
 
 -- an overworld sprite's resolved 4-color OBJ palette (ColorOverworldSprite),
@@ -552,7 +598,7 @@ function PaletteFX.spriteObp(spriteDef, seed)
     for i = 1, #seed do h = (h * 31 + seed:byte(i)) % 4294967296 end
     group = h % 4
   end
-  return w.spritePalettes[group], group
+  return PaletteFX.darkObp(w.spritePalettes[group], group)
 end
 
 -- GetHealthBarColor (home/palettes.asm) on the standard 48px bar

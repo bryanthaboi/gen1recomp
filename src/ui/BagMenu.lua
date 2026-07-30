@@ -305,9 +305,11 @@ local function useOn(game, battle, id, target, list, moveIndex, picker)
     -- HP medicine: fill the bar in the still-open picker first, then print
     -- and close, the order item_effects.asm .doneHealing runs in
     -- (SFX_HEAL_HP -> UpdateHPBar2 -> RedrawPartyMenu prints the message).
-    -- picker is nil for every other item and for in-battle use, which keeps
-    -- the pop-then-print path below.  #252
-    if picker and extra and extra.healedFrom and target then
+    -- Only a keepOpen picker is still on the stack to animate: every other
+    -- item, and every in-battle use, popped it in PartyMenu before onSwitch,
+    -- and takes the pop-then-print path below -- which is the path that
+    -- spends the battle turn.  #252, #379
+    if picker and picker.keepOpen and extra and extra.healedFrom and target then
       picker:animateTo(target, extra.healedFrom, function()
         showMessages(game, payload, closePicker)
       end)

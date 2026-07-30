@@ -538,7 +538,7 @@ press(fpm, "a")
 check(not fpm.submenu and forced == fgame.save.party[1],
   "forceSwitch still picks immediately (ChooseNextMon / SHIFT)")
 
--- ------- issue #320: the STRENGTH blink sits under its texts
+-- ------- issues #320/#385: the STRENGTH texts print over the party menu
 do
   local owStub = { strengthActive = false,
                    map = { def = { tileset = "OVERWORLD" } }, dark = false }
@@ -556,9 +556,8 @@ do
   pm.subIndex = #pm.subItems
   press(pm, "a") -- run STRENGTH
   local states = sgame.stack.states
-  check(#states == 2 and states[1].frames ~= nil
-    and states[2].pages ~= nil,
-    "the blink sits under the strength texts")
+  check(#states == 2 and states[1] == pm and states[2].pages ~= nil,
+    "the strength text sits over the still-open party menu")
   check(owStub.strengthActive == true, "strength still activates")
 end
 

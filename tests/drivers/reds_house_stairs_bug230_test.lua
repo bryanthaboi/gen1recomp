@@ -45,8 +45,9 @@ return function(game)
     ow = game.overworld
   end
 
-  -- 1) Arrive on the 2F stairs via a REAL warp so warpEntryCell/justWarped
-  --    are set.  Teleporting straight onto (7,1) bypasses takeWarp and would
+  -- 1) Arrive on the 2F stairs via a REAL warp so the arrival state is real
+  --    (warpEntryCell set, BIT_STANDING_ON_WARP cleared by the stair tile).
+  --    Teleporting straight onto (7,1) bypasses takeWarp and would
   --    never set the arrival-inert state, so the bug could not reproduce --
   --    we must walk up onto the 1F stairs and let the warp carry us.
   U.teleport(game, "REDS_HOUSE_1F", 7, 3, "up")

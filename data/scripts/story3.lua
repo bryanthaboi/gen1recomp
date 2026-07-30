@@ -182,17 +182,16 @@ M.POKEMON_TOWER_6F = {
 -- preFrames: the shake's lead-in delays -- ShakeElevator's own Delay3s
 -- come to 9 frames; Silph/Rocket's ...ShakeScript prefixes another
 -- Delay3 (12) while CeladonMartElevatorShakeScript farjps straight in
+-- The panel is a bg_event, not a map-entry script: data/maps/objects/
+-- CeladonMartElevator.asm has `bg_event 3, 0, TEXT_CELADONMARTELEVATOR`
+-- and CeladonMartElevatorText is what runs DisplayElevatorFloorMenu, so
+-- the menu waits for the player to face the panel and press A (#395).
+-- Map entry only stores the car's exit warps (CeladonMartElevator
+-- StoreWarpEntriesScript), which is elevatorSeedExit below.
 -- After the ride the original does NOT jump-cut to the floor: choosing a
--- floor in engine/events/elevator.asm DisplayElevatorFloorMenu rewrites
--- the elevator car's own warp entries (wWarpEntries, via .UpdateWarp) to
--- the chosen floor's exit warp, then the player walks out of the car onto
--- that warp themselves (scripts/SilphCoElevator.asm etc.).  Reproduce
--- that here: rewrite the car's exit warps, then drive a short scripted
--- walk-out onto an exit tile and take the (now rewritten) warp, reusing
--- ow:scriptMove / ow:takeWarp (the Oak-escort primitives).
-local WALK_DIRVEC = { up = { 0, -1 }, down = { 0, 1 }, left = { -1, 0 }, right = { 1, 0 } }
-local WALK_OPP = { up = "down", down = "up", left = "right", right = "left" }
-local WALK_ORDER = { "up", "down", "left", "right" }
+-- floor rewrites the elevator car's own warp entries (wWarpEntries, via
+-- .UpdateWarp) to the chosen floor's exit warp and returns control, and
+-- the player walks out of the car onto that warp themselves.
 
 -- .UpdateWarp: point EVERY car exit warp at the same floor's elevator
 -- door (warp id, map id).  Shared generated map data, but the car's
@@ -203,46 +202,6 @@ local function elevatorSetExit(ow, floor)
     w.destMap = floor.map
     w.destWarp = floor.warpIdx
   end
-end
-
-local function elevatorWalkOut(ow, floor)
-  local m, p = ow.map, ow.player
-  elevatorSetExit(ow, floor)
-  -- leave by the exit tile under the player (they warped in onto one),
-  -- else the nearest
-  local door
-  for _, w in ipairs(m.def.warps) do
-    if w.x == p.cellX and w.y == p.cellY then door = w break end
-  end
-  if not door then
-    local best
-    for _, w in ipairs(m.def.warps) do
-      local d = math.abs(w.x - p.cellX) + math.abs(w.y - p.cellY)
-      if not best or d < best then best, door = d, w end
-    end
-  end
-  -- the car interior sits on the door's walkable side; "out" is the
-  -- doorway direction (the map edge for Silph/Celadon, the top doorway
-  -- for the Rocket car).  Fixed direction order keeps the step
-  -- deterministic when a door tile has several walkable neighbours
-  -- (Silph/Celadon step up into the car, the Rocket car steps down).
-  local into
-  for _, dir in ipairs(WALK_ORDER) do
-    local v = WALK_DIRVEC[dir]
-    local nx, ny = door.x + v[1], door.y + v[2]
-    if m:inBounds(nx, ny) and m:isWalkableCell(nx, ny) then into = dir break end
-  end
-  into = into or "up"
-  local out = WALK_OPP[into]
-  local function leave()
-    ow:takeWarp(door) -- door SFX + warp to the rewritten floor target
-  end
-  -- step one tile into the car, then walk back through the doorway onto
-  -- the exit tile and take the warp: a visible walk-out on valid tiles
-  -- for either door orientation, instead of a jump cut
-  ow:scriptMove(p, into, 1, function()
-    ow:scriptMove(p, out, 1, leave)
-  end)
 end
 
 local function elevatorFloors(elevatorMapId, game)
@@ -272,9 +231,9 @@ local function elevatorFloors(elevatorMapId, game)
 end
 
 local function elevatorSeedExit(ow, floors, fromMapId)
-  -- Seed a walk-out destination before the menu (or key-gate text):
-  -- entry floor when known, else the first listed floor (1F).  Choosing
-  -- a floor still rewrites via elevatorWalkOut; B-cancel / no-key leave
+  -- Seed a walk-out destination on entry (before the panel is ever
+  -- read): entry floor when known, else the first listed floor (1F).
+  -- Choosing a floor rewrites it again; B-cancel / no-key leave
   -- keeps this seed so walking out of the car cannot hit a missing ROM
   -- placeholder (#123) or the car's static default floor (#90: Rocket
   -- Hideout defaults to B1F even when entered from B2F/B4F).
@@ -288,68 +247,68 @@ local function elevatorSeedExit(ow, floors, fromMapId)
   return exitFloor
 end
 
-local function elevator(elevatorMapId, keyGate, preFrames)
+local function elevator(elevatorMapId, panelText, keyGate, preFrames)
+  -- the panel bg_event: DisplayElevatorFloorMenu runs from this text
+  -- script, never from map entry (#395)
+  local function panel(game, ow, npc, done)
+    done = done or function() end
+    local floors = elevatorFloors(elevatorMapId, game)
+    -- Rocket Hideout: without LIFT_KEY the panel only prints the need-
+    -- a-key line and shows no floor menu
+    -- (scripts/RocketHideoutElevator.asm).
+    if keyGate and not game.save.inventory[keyGate.item] then
+      local TextBox = require("src.render.TextBox")
+      game.stack:push(TextBox.new(game,
+        game.data.text[keyGate.text] or "It appears to\nneed a key.", done))
+      return
+    end
+    local items = {}
+    for _, f in ipairs(floors) do
+      table.insert(items, { label = f.token, value = f })
+    end
+    local ListMenu = require("src.ui.ListMenu")
+    game.stack:push(ListMenu.new(game, "WHICH FLOOR?", items, {
+      onChoose = function(item, list)
+        list:close()
+        -- the whole ShakeElevator ride runs in place -- music stop, 100
+        -- collision-thud scroll bounces, the PA chime -- and only then
+        -- does .UpdateWarp's rewrite land, with the player still stood
+        -- at the panel: they walk out to the car door themselves
+        local ElevatorShake = require("src.world.ElevatorShake")
+        game.stack:push(ElevatorShake.new(game, ow, {
+          preFrames = preFrames,
+          onDone = function()
+            elevatorSetExit(ow, item.value)
+            done()
+          end,
+        }))
+      end,
+      onCancel = function()
+        -- DisplayElevatorFloorMenu: `ret c` on B -- no warp, nothing
+        -- happens, the player just stays in the car (exit warps were
+        -- already seeded on entry)
+        done()
+      end,
+    }))
+  end
   return {
     -- fromMapId: the floor the player just left (setMap passes it), so a
     -- B-cancel can still walk out onto a real map.  Silph's ROM car warps
     -- default to UNUSED_MAP_ED, which is not in Data.maps -- Warp.resolve
     -- asserted and hard-crashed (#123).
     onEnter = function(game, ow, fromMapId)
-      local floors = elevatorFloors(elevatorMapId, game)
-      elevatorSeedExit(ow, floors, fromMapId)
-      -- Rocket Hideout: without LIFT_KEY the panel only prints the need-
-      -- a-key line (scripts/RocketHideoutElevator.asm).  Exit warps are
-      -- still seeded above so walking out returns to the entry floor
-      -- instead of the car's ROM default (B1F) -- #90 / #105.
-      if keyGate and not game.save.inventory[keyGate.item] then
-        local TextBox = require("src.render.TextBox")
-        game.stack:push(TextBox.new(game,
-          game.data.text[keyGate.text] or "It appears to\nneed a key."))
-        return
-      end
-      local items = {}
-      for _, f in ipairs(floors) do
-        table.insert(items, { label = f.token, value = f })
-      end
-      local ListMenu = require("src.ui.ListMenu")
-      game.stack:push(ListMenu.new(game, "WHICH FLOOR?", items, {
-        onChoose = function(item, list)
-          list:close()
-          -- the map-entry Transition (startWarpTo) calls onEnter from
-          -- its OWN midpoint callback, so this menu was pushed on top
-          -- of that still-active Transition; only the top state
-          -- updates, so it froze mid-fade instead of finishing.  Left
-          -- alone it would resurface after the ride and play a stray
-          -- fade at the wrong time -- pop it now, before it can happen.
-          local Transition = require("src.render.Transition")
-          if getmetatable(game.stack:top()) == Transition then
-            game.stack:pop()
-          end
-          -- the whole ShakeElevator ride runs in place -- music stop,
-          -- 100 collision-thud scroll bounces, the PA chime -- and only
-          -- then does the player walk out of the car onto the chosen
-          -- floor (elevatorWalkOut rewrites the car's exit warps first)
-          local ElevatorShake = require("src.world.ElevatorShake")
-          game.stack:push(ElevatorShake.new(game, ow, {
-            preFrames = preFrames,
-            onDone = function()
-              elevatorWalkOut(ow, item.value)
-            end,
-          }))
-        end,
-        onCancel = function()
-          -- DisplayElevatorFloorMenu: `ret c` on B -- no warp, nothing
-          -- happens, the player just stays in the car (exit warps were
-          -- already seeded to the entry floor above)
-        end,
-      }))
+      elevatorSeedExit(ow, elevatorFloors(elevatorMapId, game), fromMapId)
     end,
+    talk = { [panelText] = panel },
   }
 end
 
-M.SILPH_CO_ELEVATOR = elevator("SILPH_CO_ELEVATOR")
-M.CELADON_MART_ELEVATOR = elevator("CELADON_MART_ELEVATOR", nil, 9)
+M.SILPH_CO_ELEVATOR = elevator("SILPH_CO_ELEVATOR",
+  "TEXT_SILPHCOELEVATOR_ELEVATOR")
+M.CELADON_MART_ELEVATOR = elevator("CELADON_MART_ELEVATOR",
+  "TEXT_CELADONMARTELEVATOR", nil, 9)
 M.ROCKET_HIDEOUT_ELEVATOR = elevator("ROCKET_HIDEOUT_ELEVATOR",
+  "TEXT_ROCKETHIDEOUTELEVATOR",
   { item = "LIFT_KEY", text = "_RocketHideoutElevatorAppearsToNeedKeyText" })
 
 -- -------------------------------------------------------------------
@@ -695,6 +654,16 @@ local DOCK_SHIP_BLOCKS = {
   { bx = 7, by = 2, water = 13 }, { bx = 8, by = 2, water = 13 },
 }
 
+-- her four hull columns bow-to-stern (upper-half / lower-half block ids)
+-- and the open-water ids of the rows she sits in
+local DOCK_SHIP_COLUMNS = {
+  { bx = 5, top = 4, bottom = 8 },
+  { bx = 6, top = 5, bottom = 9 },
+  { bx = 7, top = 6, bottom = 10 },
+  { bx = 8, top = 7, bottom = 11 },
+}
+local DOCK_WATER_TOP, DOCK_WATER_BOTTOM = 1, 13
+
 M.VERMILION_DOCK = {
   onEnter = function(game, ow)
     local Flags = require("src.script.Flags")
@@ -729,17 +698,39 @@ M.VERMILION_DOCK = {
         ow:startDustAnim(cx, 1, function() puff(n - 1, cx + 2) end)
       end
       puff(3, 15)
+      -- VermilionDock_EraseSSAnne deliberately leaves the blocks under the
+      -- player alone ("south of the player and won't be redrawn"), so skip
+      -- his own block: he must not spend the walk-out standing on water
+      local pbx = math.floor(ow.player.cellX / 2)
+      local pby = math.floor(ow.player.cellY / 2)
       local rows = {}
-      rows[#rows + 1] = { "wait", 100 }
-      rows[#rows + 1] = { "play_sound", "SS_Anne_Horn" }
-      for _, b in ipairs(DOCK_SHIP_BLOCKS) do
-        rows[#rows + 1] = { "replace_block", b.bx, b.by, b.water }
+      local function setBlock(bx, by, block)
+        if bx < 1 or bx > 8 then return end
+        if bx == pbx and by == pby then return end
+        rows[#rows + 1] = { "replace_block", bx, by, block }
       end
-      rows[#rows + 1] = { "wait", 30 }
+      rows[#rows + 1] = { "wait", 120 }
+      rows[#rows + 1] = { "play_sound", "SS_Anne_Horn" }
+      -- .shift_columns_up slides her tile columns west behind a mid-frame
+      -- rSCX split; with no split scroll here she sails one block per beat
+      -- and the water closes in astern (#360)
+      for step = 1, 8 do
+        for _, col in ipairs(DOCK_SHIP_COLUMNS) do
+          setBlock(col.bx - step, 1, col.top)
+          setBlock(col.bx - step, 2, col.bottom)
+        end
+        setBlock(9 - step, 1, DOCK_WATER_TOP)
+        setBlock(9 - step, 2, DOCK_WATER_BOTTOM)
+        rows[#rows + 1] = { "wait", 20 }
+      end
+      -- the second horn as she clears the dock, then EraseSSAnne's 120
+      -- frames before the walk out
+      rows[#rows + 1] = { "play_sound", "SS_Anne_Horn" }
+      rows[#rows + 1] = { "wait", 120 }
       rows[#rows + 1] = { "move_player", "up", 2 }
-      -- keep Music_Surfing across the city warp (pokered stays on it
-      -- through the exit-ship walk)
-      rows[#rows + 1] = { "play_music", "Music_Surfing", { keep = true } }
+      -- no keepMusic on this warp: Music_Surfing belongs to the dock's
+      -- cutscene, and VERMILION_CITY's own theme has to take over as the
+      -- player crosses in (EnterMap's PlayDefaultMusic)
       rows[#rows + 1] = { "warp", "VERMILION_CITY", 18, 31, "up" }
       rows[#rows + 1] = { "move_player", "up", 2 }
       ow:queueScript(rows)

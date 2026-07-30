@@ -174,4 +174,14 @@ function Check.download()
   cmdCh:push({ cmd = "download" })
 end
 
+-- End the worker thread.  Its command loop sits in Channel:demand(), which
+-- never returns on its own, and LOVE waits for every live love.thread before
+-- the process exits (#339).
+function Check.shutdown()
+  if cmdCh then cmdCh:push({ cmd = "quit" }) end
+  if worker then pcall(function() worker:wait() end) end
+  worker, cmdCh, stateCh = nil, nil, nil
+  workerReady = false
+end
+
 return Check

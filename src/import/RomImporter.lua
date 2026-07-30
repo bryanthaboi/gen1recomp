@@ -6,7 +6,7 @@ local RomImporter = {}
 RomImporter.__index = RomImporter
 
 -- Cache generation tag; bump to force every imported version to re-extract.
-local CACHE_FORMAT = "rom-cache-v7:"
+local CACHE_FORMAT = "rom-cache-v8:"
 -- The completion marker is written under each version's cache prefix
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"

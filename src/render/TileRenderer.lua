@@ -402,8 +402,15 @@ end
 -- the route's own default roof (Vermilion's) throughout.
 local gbcAtlasCache = {}
 
+-- Cache suffix for a map's RED++ bake.  A dark cave folds FadePal2 into the
+-- palette worldGroupColors hands the bake (#383), so the lit and dark bakes of
+-- one map are different images and must not share a key.
+local function gbcKeyFor(mapId)
+  return "#gbc:" .. mapId .. PaletteFX.darkKey()
+end
+
 local function getGbcAtlas(imagePath, tilesetId, mapId, perRow, data)
-  local key = imagePath .. "#gbc:" .. mapId
+  local key = imagePath .. gbcKeyFor(mapId)
   if gbcAtlasCache[key] ~= nil then return gbcAtlasCache[key] or nil end
   local img = false
   if love.image and love.image.newImageData then
@@ -473,7 +480,7 @@ function TileRenderer.new(map, data)
       self.gbcAtlas = true
       -- also recolors the animated water/flower entries below, so they
       -- match the atlas's static tiles instead of showing raw grayscale
-      gbcCtx = { tilesetId = map.tileset.id, mapId = map.id, key = "#gbc:" .. map.id,
+      gbcCtx = { tilesetId = map.tileset.id, mapId = map.id, key = gbcKeyFor(map.id),
                 groupColors = PaletteFX.worldGroupColors(data, map.tileset.id, map.id, nil) }
       -- ...and feeds the color-0-keyed single tiles the feet overdraw needs
       -- (see getKeyedTile): same source image and palette groups, so keep the
@@ -481,6 +488,7 @@ function TileRenderer.new(map, data)
       gbcCtx.imagePath = map.tileset.image
       gbcCtx.perRow = map.tileset.tilesPerRow
       self.gbcCtx = gbcCtx
+      self.gbcAtlasKey = map.tileset.image .. gbcCtx.key
       self.gbcKeyed = {}
     end
   end
@@ -582,7 +590,7 @@ local function ensureWaterBorderFill(self)
     local groupColors = PaletteFX.worldGroupColors(
       self.data, map.tileset.id, map.id, nil)
     colors = group and groupColors and groupColors[group + 1] or nil
-    gbcKey = "#gbc:" .. map.id
+    gbcKey = gbcKeyFor(map.id)
   end
   local textures = getShiftVariants(map.tileset.image, perRow, WATER_TILE,
                                     colors, gbcKey)
@@ -913,8 +921,9 @@ function TileRenderer:release()
     self.gbcCtx = nil
   end
   if self.gbcAtlas and self.image then
-    local key = self.map.tileset.image .. "#gbc:" .. self.map.id
+    local key = self.gbcAtlasKey or (self.map.tileset.image .. gbcKeyFor(self.map.id))
     if gbcAtlasCache[key] == self.image then gbcAtlasCache[key] = nil end
+    self.gbcAtlasKey = nil
     safeRelease(self.image)
     self.image = nil
     self.gbcAtlas = nil

@@ -402,7 +402,7 @@ check(ChipAudio.awaitingFirstBuffer(),
 clearAwait()
 
 -- sfx shape dispatch
-check(Sound.play(data, "Beep") == nil, "Sound.play returns nothing")
+check(Sound.play(data, "Beep") ~= nil, "Sound.play returns the source it started")
 check(lastSource().file == "assets/beep.wav", "a bare string sfx is a static source")
 resetSources()
 Sound.play(data, "Chip_Sfx")

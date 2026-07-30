@@ -119,10 +119,11 @@ clearCaptured()
 local pmStr = PartyMenu.new(Game)
 selectSubItem(pmStr, 3)
 eq(Game.overworld.strengthActive, true, "party-menu STRENGTH sets strengthActive")
-check(not onStack(pmStr), "party menu closes after STRENGTH")
+check(onStack(pmStr), "party menu stays under the STRENGTH texts (#385)")
 check(sawText("used") and sawText("STRENGTH"), "_UsedStrengthText shown")
 drainText()
 check(sawText("move boulders"), "_CanMoveBouldersText shown after it")
+check(not onStack(pmStr), "party menu closes with the blink after the texts")
 
 -- now the same two bumps push the boulder (gate passes -> arm -> move)
 eq(ow:checkBoulderPush("right"), false, "first bump arms the push after activation")
@@ -166,9 +167,10 @@ ow.player.facing = "down"; ow.player.surfing = false
 clearCaptured()
 local pmSurf = PartyMenu.new(Game)
 selectSubItem(pmSurf, 3)
--- the blink sits under the got-on text (#320); dismissing the text is
--- what mounts and steps
-Game.stack:top().onDone()
+-- the got-on text prints over the menu (#385); dismissing it closes the
+-- menu and mounts, and the blink that follows carries the step
+check(onStack(pmSurf), "party menu stays under the got-on text")
+Game.stack:pop().onDone() -- a TextBox pops itself before firing onDone
 eq(ow.player.surfing, true, "SURF from the party menu sets player.surfing")
 check(not onStack(pmSurf), "party menu closes after a successful SURF")
 check(sawText("got on"), "_SurfingGotOnText shown on a successful SURF")
@@ -375,9 +377,10 @@ clearCaptured()
 local pmNoOff = PartyMenu.new(Game)
 selectSubItem(pmNoOff, 3)
 check(sawText("There's no place\nto get off!"), "_SurfingNoPlaceToGetOffText verbatim")
-check(not onStack(pmNoOff), "the menu closes after the message (result stays 1)")
+check(onStack(pmNoOff), "the menu stays under the message (#385)")
 eq(ow.player.surfing, true, "still surfing after a blocked dismount")
 drainText()
+check(not onStack(pmNoOff), "the menu closes after the message (result stays 1)")
 ow.player.surfing = false
 popToOW()
 
@@ -501,7 +504,7 @@ clearCaptured()
 -- submenu order: STATS, SWITCH, FLY, CUT, STRENGTH, SURF (move order on mon)
 local pmFaintSurf = PartyMenu.new(Game)
 selectSubItem(pmFaintSurf, 6)
-Game.stack:top().onDone() -- dismiss the text: mount + step (#320)
+Game.stack:pop().onDone() -- dismiss the text: menu closes, mount (#320, #385)
 eq(ow.player.surfing, true, "fainted mon can SURF from the party menu")
 check(not onStack(pmFaintSurf), "party menu closes after fainted SURF")
 

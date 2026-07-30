@@ -628,14 +628,19 @@ do
   local ow = setmetatable({ player = { facing = "down" } }, { __index = OW })
   ow.stepForwardOrCrossEdge = function(_, dir) ow.stepped = dir end
 
-  ow:trySurf(10, 10)
-  local bottom, top = stack.states[1], stack.states[2]
-  check(bottom and bottom.frames ~= nil and top and top.pages ~= nil,
-    "the blink sits under the surf text on the stack")
+  local closed = false
+  ow:trySurf(10, 10, function() closed = true end)
+  local top = stack.states[1]
+  check(#stack.states == 1 and top and top.pages ~= nil,
+    "the surf text prints alone, over the party menu (#385)")
   check(not ow.player.surfing, "no surfing sprite while the text is up")
 
   top.onDone()
-  check(ow.player.surfing == true, "surfing applies with the step")
+  check(closed, "the party menu closes when the text ends")
+  check(ow.player.surfing == true, "surfing applies with the blink")
+  local blink = stack.states[#stack.states]
+  check(blink and blink.frames ~= nil, "the blink follows the text")
+  blink.onDone()
   check(ow.stepped == "down", "the step onto the water fires")
 end
 

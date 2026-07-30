@@ -135,6 +135,9 @@ M.SILPH_CO_2F = {
   talk = {
     TEXT_SILPHCO2F_SILPH_WORKER_F = gift({
       flag = "EVENT_GOT_TM36", item = "TM_SELFDESTRUCT",
+      -- the label carries no leading underscore: pokered keeps this one in
+      -- the script bank, not the far-text bank (#393)
+      pre = "SilphCo2FSilphWorkerFPleaseTakeThisText",
       received = "_SilphCo2FSilphWorkerFReceivedTM36Text",
       explain = "_SilphCo2FSilphWorkerFTM36ExplanationText",
       noRoom = "_SilphCo2FSilphWorkerFTM36NoRoomText",
@@ -836,6 +839,19 @@ M.SILPH_CO_7F = {
   end,
 }
 
+-- SSAnne2FRivalAfterBattleScript's exit walk is keyed on the player's X,
+-- not on where the rival stopped: from (37,8) the rival stands below him on
+-- (36,8) and takes .RivalDownFourMovement straight down out of the room;
+-- from (36,8) he stands above him on (36,7) and takes
+-- .RivalWalkAroundPlayerMovement, which steps RIGHT and then falls through
+-- into the same four DOWNs, so five downs in all (#360).
+local function ssAnne2FRivalExitDirs(onLeft)
+  if onLeft then
+    return { "right", "down", "down", "down", "down", "down" }
+  end
+  return { "down", "down", "down", "down" }
+end
+
 -- S.S. Anne 2F rival ambush (scripts/SSAnne2F.asm; coords 36/37,8)
 M.SS_ANNE_2F = {
   onStep = function(game, ow, x, y)
@@ -848,11 +864,12 @@ M.SS_ANNE_2F = {
       { "face_object", 2, onLeft and "down" or "right" },      -- 3
       { "show_text", "_SSAnne2FRivalText" },                   -- 4
       { "rival_battle", "OPP_RIVAL2", 1 },                     -- 5
-      { "jump_if_false", 10 },                                 -- 6
+      { "jump_if_false", 11 },                                 -- 6
       { "set_flag", "EVENT_BEAT_SS_ANNE_RIVAL" },              -- 7
       { "show_text", "_SSAnne2FRivalDefeatedText" },           -- 8
-      { "move_npc_to", 2, 36, 4 },                             -- 9
-      { "hide_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },       -- 10
+      { "show_text", "_SSAnne2FRivalCutMasterText" },          -- 9
+      { "walk_npc", 2, ssAnne2FRivalExitDirs(onLeft) },        -- 10
+      { "hide_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },       -- 11
     }, onLeft and "up" or "left")
   end,
 }

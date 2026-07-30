@@ -21907,6 +21907,10 @@
       23,
       21570
     ],
+    "SilphCo2FSilphWorkerFPleaseTakeThisText": [
+      32,
+      25684
+    ],
     "SilphCo2F_h": [
       22,
       23781
@@ -34024,6 +34028,7 @@
       ]
     },
     "labels": [
+      "SilphCo2FSilphWorkerFPleaseTakeThisText",
       "_AIBattleUseItemText",
       "_AIBattleWithdrawText",
       "_AbandonLearningText",

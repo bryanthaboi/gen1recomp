@@ -351,18 +351,23 @@ function PartyMenu:update(dt)
         end })
         return
       elseif action == "flash" then -- FLASH lights dark tunnels
-        -- start_sub_menus.asm .flash: PrintText _FlashLightsAreaText, then
-        -- GBPalWhiteOutWithDelay3 + jp .goBackToMap
+        -- start_sub_menus.asm .flash: PrintText _FlashLightsAreaText runs
+        -- with the party menu still on screen, and only then
+        -- GBPalWhiteOutWithDelay3 + jp .goBackToMap.  So the message reads
+        -- over the menu, and the cave is lit when the blink hands the
+        -- screen back, never under the text (#385).
         local ow = self.game.overworld
         local TextBox = require("src.render.TextBox")
         local Transition = require("src.render.Transition")
-        self.game.stack:pop()
-        ow.dark = false
         self.game.save.flashLit = true
         self.game.stack:push(TextBox.new(self.game,
           self.game.data.text._FlashLightsAreaText
           or Strings("A blinding FLASH\nlights the area!"), function()
-            self.game.stack:push(Transition.whiteFlash(self.game))
+            self:close()
+            -- setDark, not a bare field write: ADVANCED carries the darkness
+            -- in a baked atlas, so lighting the cave rebuilds it (#383)
+            self.game.stack:push(Transition.whiteFlash(self.game, nil,
+              function() ow:setDark(false) end))
           end))
         return
       elseif action == "surf" then
@@ -377,9 +382,11 @@ function PartyMenu:update(dt)
         local reason = ow:useSurfFieldMove()
         local Transition = require("src.render.Transition")
         if reason == "ok" then
-          self.game.stack:pop() -- close the party menu (jp .goBackToMap)
+          -- UseItem prints _SurfingGotOnText with the party menu still up;
+          -- GBPalWhiteOutWithDelay3 + jp .goBackToMap only follow it, so
+          -- trySurf closes this menu when its text does (#385)
           local fx, fy = ow.player:facingCell()
-          ow:trySurf(fx, fy)
+          ow:trySurf(fx, fy, function() self:close() end)
           return
         end
         if reason == "dismount" then
@@ -410,9 +417,10 @@ function PartyMenu:update(dt)
           -- .cannotStopSurfing prints _SurfingNoPlaceToGetOffText but
           -- never zeroes wActionResultOrTookBattleTurn, so unlike the
           -- other refusals the menu still closes afterwards
-          -- (GBPalWhiteOutWithDelay3 + .goBackToMap)
-          self.game.stack:pop()
+          -- (GBPalWhiteOutWithDelay3 + .goBackToMap), and the text prints
+          -- over the still-open menu like every other .loop refusal (#385)
           self.game.stack:push(TextBox.new(self.game, txt, function()
+            self:close()
             self.game.stack:push(Transition.whiteFlash(self.game))
           end))
           return
@@ -454,18 +462,19 @@ function PartyMenu:update(dt)
         local Transition = require("src.render.Transition")
         local def = self.game.data.pokemon[mon.species]
         local name = mon.nickname or def.name
-        self.game.stack:pop() -- close the party menu (jp .goBackToMap)
         ow.strengthActive = true
         local t1 = (self.game.data.text._UsedStrengthText
           or Strings("{RAM:wNameBuffer} used\nSTRENGTH.")):gsub("{RAM:wNameBuffer}", name)
         local t2 = (self.game.data.text._CanMoveBouldersText
           or Strings("{RAM:wNameBuffer} can\nmove boulders.")):gsub("{RAM:wNameBuffer}", name)
-        -- like surf (#320): the blink belongs UNDER the texts, not as a
-        -- flashbang on the empty map after them; the stack only updates
-        -- the top state, so the flash holds until the texts close
-        self.game.stack:push(Transition.whiteFlash(self.game))
+        -- like surf (#320, #385): both texts print with the party menu
+        -- still on screen, and the blink IS the menu closing afterwards,
+        -- not a flashbang on the empty map
         self.game.stack:push(TextBox.new(self.game, t1, function()
-          self.game.stack:push(TextBox.new(self.game, t2))
+          self.game.stack:push(TextBox.new(self.game, t2, function()
+            self:close()
+            self.game.stack:push(Transition.whiteFlash(self.game))
+          end))
         end, { auto = { sound = function()
           return require("src.core.Sound").playCry(self.game.data, mon.species)
         end } }))

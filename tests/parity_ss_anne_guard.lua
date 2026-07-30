@@ -81,7 +81,7 @@ end
 
 local function owWith(moved)
   return {
-    player = { facing = "down", cellY = 2 },
+    player = { facing = "down", cellX = 14, cellY = 2 },
     scriptMove = function(_, _, dir, n) moved[#moved + 1] = { dir, n } end,
     queueScript = function(self, rows) self._queued = rows end,
     startDustAnim = function() end,
@@ -178,18 +178,23 @@ do
   end
   check(sawSurf, "departure plays Music_Surfing")
   check(ow._queued ~= nil, "departure queues the sail-away script")
-  local kept, horn = false, false
+  -- #360: the surf override must NOT ride into Vermilion City, she has to
+  -- sail west block by block, and the block under the player stays dry
+  local kept, horns, slid, underPlayer = false, 0, 0, false
   for _, row in ipairs(ow._queued or {}) do
-    if row[1] == "play_music" and row[2] == "Music_Surfing"
-        and row[3] and row[3].keep then
-      kept = true
-    end
+    if row[1] == "play_music" and row[3] and row[3].keep then kept = true end
     if row[1] == "play_sound" and row[2] == "SS_Anne_Horn" then
-      horn = true
+      horns = horns + 1
+    end
+    if row[1] == "replace_block" then
+      slid = slid + 1
+      if row[2] == 7 and row[3] == 1 then underPlayer = true end
     end
   end
-  check(kept, "departure keeps Music_Surfing across the city warp")
-  check(horn, "departure queues SS_Anne_Horn")
+  eq(kept, false, "departure lets VERMILION_CITY's own theme take the warp")
+  eq(horns, 2, "the horn blows before and after she sails")
+  check(slid > 8, "she sails west block by block instead of vanishing")
+  eq(underPlayer, false, "the block under the player is never watered over")
 end
 
 -- Captain rub jingle: play_once Music_PkmnHealed sits after the rub text.

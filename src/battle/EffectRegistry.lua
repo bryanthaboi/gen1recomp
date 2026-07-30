@@ -186,7 +186,15 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   -- hitRow carries the blink instead.
   local hitSfx = info.typeMult > 10 and "Super_Effective"
                  or info.typeMult < 10 and "Not_Very_Effective" or "Damage"
+  -- GetPlayerAnimationType / GetEnemyAnimationType (engine/battle/core.asm
+  -- :3159 / :5555): wAnimationType is 4 (blink the enemy pic) or 1 (shake
+  -- the screen vertically) for a damaging move with no added effect, and
+  -- 5 / 2 (a horizontal shake) as soon as the move HAS one -- which is why
+  -- Bubblebeam and Confusion shake instead of blinking (#354)
+  local added = move.effect ~= nil and move.effect ~= "NO_ADDITIONAL_EFFECT"
   local hitFx = { sfx = hitSfx,
+                  animType = user.isPlayer and (added and 5 or 4)
+                             or (added and 2 or 1),
                   blink = battle:animationsOn() and target or nil }
 
   local totalDealt = 0

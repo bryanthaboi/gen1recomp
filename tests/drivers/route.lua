@@ -6325,18 +6325,35 @@ function MANUAL.evolveNidorino() return true end
 -- SILPH_CO_ELEVATOR at 140) gate real geography: the mart's upper floors
 -- and most of Silph are only reachable through them.
 --
--- The floor menu opens from the map's own onEnter (data/scripts/story3.lua
--- `elevator`), so it is already up by the time we get here -- there is
--- nothing to interact with. Rows are the short floor tokens pokered prints
--- ("5F", "B2F"), which is exactly the tail of the destination map id, so
--- the next segment names the button to press.
+-- The floor menu belongs to the car's panel bg_event, not to map entry
+-- (#395): walk to the panel and press A. Rows are the short floor tokens
+-- pokered prints ("5F", "B2F"), which is exactly the tail of the
+-- destination map id, so the next segment names the button to press.
 -- Ride the elevator to `wantMap` (defaults to the next segment's floor).
---
--- The floor menu opens from the elevator's own onEnter, so it is already up
--- when we arrive. If it is NOT up -- we bounced in on a stray warp and the
--- menu was dismissed, or we are on the default 1F-exit oscillation -- step
--- back onto the car's warp to re-open it before giving up.
 local function rideElevator(where, wantMap)
+  -- Stand beside the car's panel bg_event and press A to open the floor
+  -- menu (data/maps/objects/CeladonMartElevator.asm `bg_event 3, 0`).
+  local function pressPanel()
+    local m = ow().map
+    local sign = (m.def.signs or {})[1]
+    if not sign then return false end
+    -- offset from the panel cell, then the direction that faces it back
+    local SIDES = { { 0, 1, "up" }, { 0, -1, "down" },
+                    { 1, 0, "left" }, { -1, 0, "right" } }
+    for _, s in ipairs(SIDES) do
+      local sx, sy = sign.x + s[1], sign.y + s[2]
+      if m:inBounds(sx, sy) and m:isWalkableCell(sx, sy) then
+        ops.goto_({ x = sx, y = sy })
+        local p = ow().player
+        if ow().map.id == m.id and p.cellX == sx and p.cellY == sy then
+          faceDir(s[3])
+          press("a")
+          if waitFor(isList, 60) then return true end
+        end
+      end
+    end
+    return false
+  end
   local want = tostring(wantMap or nextMapWanted or "")
   local token = want:match("_([^_]+)$")
   if not token then
@@ -6345,14 +6362,7 @@ local function rideElevator(where, wantMap)
     return false
   end
   local from = ow().map.id
-  if not waitFor(isList, 20) then
-    -- Re-open the floor menu: the car's exit warp re-enters the elevator,
-    -- firing onEnter again. This is what breaks the un-ridden bounce.
-    local car = findWarpTo("ELEVATOR") or findWarpTo("")
-    if car then walkOntoWarp(car.x, car.y) end
-    from = ow().map.id
-  end
-  if not waitFor(isList, 60) then
+  if not isList() and not pressPanel() then
     note("elevator: no floor menu", where)
     say(("elevator on %s: the WHICH FLOOR? menu never opened"):format(from))
     return false
@@ -6388,11 +6398,11 @@ local function rideElevator(where, wantMap)
   if not cursorTo("index", idx) then backOut() return false end
   press("a")
   -- ShakeElevator runs the whole ride in place -- music stop, 100 scroll
-  -- bounces, the PA chime -- and only then walks us out onto the floor.
-  for _ = 1, 600 do
-    if ow().map.id ~= from then break end
-    if idle() then U.wait(4) else mashUntilIdle() end
-  end
+  -- bounces, the PA chime -- and then hands control back inside the car:
+  -- the rewritten exit warp is what we walk out onto (#395).
+  mashUntilIdle()
+  local car = findWarpTo(want) or ow().map.def.warps[1]
+  if car then walkOntoWarp(car.x, car.y) end
   local landed = ow().map.id
   if landed == want then
     say(("rode the elevator to %s"):format(token))

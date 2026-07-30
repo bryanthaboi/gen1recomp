@@ -424,6 +424,16 @@ function love.quit()
   pcall(function()
     require("src.core.DiscordPresence").shutdown()
   end)
+  -- LOVE waits for every live love.thread before the process exits, and both
+  -- background workers idle in a loop that only a "quit" command breaks, so
+  -- without this the process outlived the window and the next launch re-entered
+  -- the dead one instead of starting fresh (#339)
+  if package.loaded["src.core.ChipAudio"] then
+    pcall(package.loaded["src.core.ChipAudio"].shutdown)
+  end
+  if package.loaded["src.update.Check"] then
+    pcall(package.loaded["src.update.Check"].shutdown)
+  end
 end
 
 function love.filedropped(file)
@@ -461,6 +471,13 @@ function love.run()
       for name, a, b, c, d, e, f in love.event.poll() do
         if name == "quit" then
           if not love.quit or not love.quit() then
+            -- Android keeps the process and its task alive after LOVE's own
+            -- teardown, so the relaunched task re-enters an activity whose
+            -- native main already returned; end the process outright once the
+            -- love.quit hook has run (#339)
+            if love.system and love.system.getOS() == "Android" then
+              os.exit(a or 0)
+            end
             return a or 0
           end
         end

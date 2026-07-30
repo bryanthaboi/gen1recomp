@@ -437,12 +437,26 @@ function Renderer:drawTiltedWorld(zoneList, sx, sy, wox, woy, target)
   return true
 end
 
--- clamp a scissor rect to the viewport box
-local function scissorClamped(x, y, w, h, ox, oy, vpw, vph)
+-- Clamp a scissor rect to the viewport box, then round it outward to whole
+-- framebuffer pixels.  love.graphics.setScissor truncates x, y, w and h to
+-- pixels independently, so a rect with fractional unit edges (Android's
+-- non-integer DPI puts fitScale/dpi in Sx/Sy) loses up to a pixel per side
+-- and two adjacent SGB zones stop sharing an edge: the letterbox clear shows
+-- through as a horizontal seam at every zone boundary (#373).  Rounding
+-- outward makes neighbours overlap by at most one row instead -- the overlap
+-- redraws the same canvas pixels one palette later, and past the canvas edge
+-- there is nothing to draw.  The half pixel keeps LOVE's truncation on the
+-- snapped edge rather than one short of it.
+local function scissorClamped(x, y, w, h, ox, oy, vpw, vph, dpiX, dpiY)
   local x2, y2 = math.min(x + w, ox + vpw), math.min(y + h, oy + vph)
   x, y = math.max(x, ox), math.max(y, oy)
   if x2 <= x or y2 <= y then return false end
-  love.graphics.setScissor(x, y, x2 - x, y2 - y)
+  dpiX, dpiY = dpiX or 1, dpiY or 1
+  local px1, py1 = math.floor(x * dpiX), math.floor(y * dpiY)
+  local px2, py2 = math.ceil(x2 * dpiX), math.ceil(y2 * dpiY)
+  love.graphics.setScissor((px1 + 0.5) / dpiX, (py1 + 0.5) / dpiY,
+                           (px2 - px1 + 0.5) / dpiX,
+                           (py2 - py1 + 0.5) / dpiY)
   return true
 end
 
@@ -572,7 +586,7 @@ function Renderer:endFrame(zones, worldZones)
       if not plain then PaletteFX.sendColors(shader, z.colors) end
       if scissorClamped(bx + z.x * zoneSx, by + z.y * zoneSy,
                         z.w * zoneSx, z.h * zoneSy,
-                        boxX, boxY, boxW, boxH) then
+                        boxX, boxY, boxW, boxH, dpiX, dpiY) then
         love.graphics.draw(canvas, bx, by, 0, sx, sy)
       end
     end

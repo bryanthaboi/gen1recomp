@@ -666,6 +666,48 @@ M.WARDENS_HOUSE = {
 -- generic OPP_GIOVANNI#2 battle)
 -- -------------------------------------------------------------------
 
+-- SilphCo11FTeamRocketLeavesScript (scripts/SilphCo11F.asm) hides every
+-- ROCKET and rocket-aligned SCIENTIST toggle on 2F-11F the moment Giovanni
+-- falls; the item balls, the 2F/10F rescued workers and the 7F rival keep
+-- theirs.  Names and order are data/maps/toggleable_objects.asm's
+-- TOGGLE_SILPH_CO_<floor>_n entries.  Saffron City's half of the same
+-- script lives in M.SAFFRON_CITY (story4.lua) (#392).
+local SILPH_ROCKET_OBJECTS = {
+  { "SILPH_CO_2F",  { "SILPHCO2F_SCIENTIST1", "SILPHCO2F_SCIENTIST2",
+                      "SILPHCO2F_ROCKET1", "SILPHCO2F_ROCKET2" } },
+  { "SILPH_CO_3F",  { "SILPHCO3F_ROCKET", "SILPHCO3F_SCIENTIST" } },
+  { "SILPH_CO_4F",  { "SILPHCO4F_ROCKET1", "SILPHCO4F_SCIENTIST",
+                      "SILPHCO4F_ROCKET2" } },
+  { "SILPH_CO_5F",  { "SILPHCO5F_ROCKET1", "SILPHCO5F_SCIENTIST",
+                      "SILPHCO5F_ROCKER", "SILPHCO5F_ROCKET2" } },
+  { "SILPH_CO_6F",  { "SILPHCO6F_ROCKET1", "SILPHCO6F_SCIENTIST",
+                      "SILPHCO6F_ROCKET2" } },
+  { "SILPH_CO_7F",  { "SILPHCO7F_ROCKET1", "SILPHCO7F_SCIENTIST",
+                      "SILPHCO7F_ROCKET2", "SILPHCO7F_ROCKET3" } },
+  { "SILPH_CO_8F",  { "SILPHCO8F_ROCKET1", "SILPHCO8F_SCIENTIST",
+                      "SILPHCO8F_ROCKET2" } },
+  { "SILPH_CO_9F",  { "SILPHCO9F_ROCKET1", "SILPHCO9F_SCIENTIST",
+                      "SILPHCO9F_ROCKET2" } },
+  { "SILPH_CO_10F", { "SILPHCO10F_ROCKET", "SILPHCO10F_SCIENTIST" } },
+  { "SILPH_CO_11F", { "SILPHCO11F_GIOVANNI", "SILPHCO11F_ROCKET1",
+                      "SILPHCO11F_ROCKET2" } },
+}
+
+-- hide_object writes save.objectToggles, so the single pass at the win
+-- covers floors the player is not standing on; onlyMap is the per-floor
+-- repair path below.
+local function silphRocketsLeave(game, ow, onlyMap)
+  local Commands = require("src.script.Commands")
+  local ctx = { game = game, save = game.save, overworld = ow }
+  for _, floor in ipairs(SILPH_ROCKET_OBJECTS) do
+    if not onlyMap or onlyMap == floor[1] then
+      for _, name in ipairs(floor[2]) do
+        Commands.hide_object(ctx, floor[1], name)
+      end
+    end
+  end
+end
+
 M.SILPH_CO_11F = {
   -- Giovanni's battle is a COORDINATE TRIGGER, not a talk.
   -- SilphCo11FDefaultScript (scripts/SilphCo11F.asm) checks
@@ -692,13 +734,11 @@ M.SILPH_CO_11F = {
     ow:scriptMove(gio, "down", 3, function()
       gio:facePlayer(ow.player)
       ow:engageTrainer(gio, function()
-        -- SilphCo11FTeamRocketLeavesScript: Giovanni leaves the floor
+        -- SilphCo11FTeamRocketLeavesScript: every Silph rocket leaves
         -- after the loss (the street rockets are handled by
         -- M.SAFFRON_CITY.onEnter in story4.lua).
         if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
-          local Commands = require("src.script.Commands")
-          local ctx = { game = game, save = game.save, overworld = ow }
-          Commands.hide_object(ctx, "SILPH_CO_11F", "SILPHCO11F_GIOVANNI")
+          silphRocketsLeave(game, ow)
         end
       end)
     end)
@@ -706,27 +746,45 @@ M.SILPH_CO_11F = {
   end,
   onEnter = function(game, ow)
     if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
-      local Commands = require("src.script.Commands")
-      local ctx = { game = game, save = game.save, overworld = ow }
-      Commands.hide_object(ctx, "SILPH_CO_11F", "SILPHCO11F_GIOVANNI")
+      silphRocketsLeave(game, ow)
     end
   end,
   talk = {
+    -- SilphCo11FSilphPresidentText branches on EVENT_GOT_MASTER_BALL only:
+    -- the teleport pads reach him without passing Giovanni's trigger, and
+    -- afterwards he describes the ball forever.  The old rows fell off the
+    -- end of the script on both branches, so a second talk was silence
+    -- (#392).
     TEXT_SILPHCO11F_SILPH_PRESIDENT = {
       { "face_player" },                                                     -- 1
-      { "check_flag", "EVENT_BEAT_SILPH_CO_GIOVANNI" },                      -- 2
-      { "jump_if_false", 10 },                                               -- 3
-      { "check_flag", "EVENT_GOT_MASTER_BALL" },                             -- 4
-      { "jump_if_true", 10 },                                                -- 5
-      { "show_text", "_SilphCo11FSilphPresidentText" },                      -- 6
+      { "check_flag", "EVENT_GOT_MASTER_BALL" },                             -- 2
+      { "jump_if_true", 9 },                                                 -- 3
+      { "show_text", "_SilphCo11FSilphPresidentText" },                      -- 4
       -- give-then-print like scripts/SilphCo11F.asm
-      { "give_item", "MASTER_BALL", 1, false },                              -- 7
-      { "show_text", "_SilphCo11FSilphPresidentReceivedMasterBallText" },    -- 8
-      { "set_flag", "EVENT_GOT_MASTER_BALL" },                               -- 9
-      { "jump", 11 },                                                        -- 10
+      { "give_item", "MASTER_BALL", 1, false },                              -- 5
+      { "show_text", "_SilphCo11FSilphPresidentReceivedMasterBallText" },    -- 6
+      { "set_flag", "EVENT_GOT_MASTER_BALL" },                               -- 7
+      { "jump", "end" },                                                     -- 8
+      { "show_text",
+        "_SilphCo11FSilphPresidentMasterBallDescriptionText" },              -- 9
     },
   },
 }
+
+-- Floors 2F-10F carry no other onEnter, so this repairs saves that beat
+-- Giovanni before the hide list existed (same shape as
+-- M.POKEMON_TOWER_7F.onEnter); 11F hides its own inside the table above.
+for _, floor in ipairs(SILPH_ROCKET_OBJECTS) do
+  local mapId = floor[1]
+  if mapId ~= "SILPH_CO_11F" then
+    M[mapId] = M[mapId] or {}
+    M[mapId].onEnter = function(game, ow)
+      if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
+        silphRocketsLeave(game, ow, mapId)
+      end
+    end
+  end
+end
 
 -- -------------------------------------------------------------------
 -- Victory Road boulder switches (scripts/VictoryRoad1F/2F/3F.asm):

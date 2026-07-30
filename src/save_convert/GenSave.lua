@@ -84,6 +84,15 @@ O.coins = O.mainData + 685                                -- 2B BCD
 -- (wWalkBikeSurfState) + 10 = 359, so 685 + 359 = 1044 as well.
 O.townVisited = O.mainData + 1044                         -- 2B (flag_array NUM_CITY_MAPS)
 O.eventFlags = O.mainData + 1104                          -- 320B (flag_array NUM_EVENTS = 2560 bits)
+-- Progress bits vanilla keeps OUTSIDE wEventFlags that this port still spells
+-- as save.flags entries (#396).  Offsets walk forward from wTownVisitedFlag
+-- over the same ram/wram.asm declaration run the 60-byte gap above sums:
+-- +29 wStatusFlags1, +35 wStatusFlags4, +41 wElite4Flags,
+-- +44 wCompletedInGameTradeFlags.
+O.statusFlags1 = O.townVisited + 29                       -- 1B
+O.statusFlags4 = O.townVisited + 35                       -- 1B
+O.elite4Flags = O.townVisited + 41                        -- 1B
+O.tradeFlags = O.townVisited + 44                         -- 2B (flag_array NUM_NPC_TRADES)
 -- Play time (wPlayTimeHours/Maxed/Minutes/Seconds/Frames) lives INSIDE the
 -- sMainData window (wMainDataStart..wMainDataEnd is copied verbatim into
 -- SRAM), 1866 bytes past wMainDataStart -- reached from the checksum-verified
@@ -313,6 +322,34 @@ local BADGE_BY_BIT = {
 }
 local BADGE_BY_BIT_SET = {}
 for _, name in pairs(BADGE_BY_BIT) do BADGE_BY_BIT_SET[name] = true end
+
+-- save.flags names whose vanilla home is NOT wEventFlags (#396: exporting a
+-- save and importing it back made the Saffron gate guards thirsty again,
+-- because BIT_GAVE_SAFFRON_GUARDS_DRINK is a wStatusFlags1 bit and nothing
+-- carried it).  Bit numbers are constants/ram_constants.asm; the trade bits
+-- are wWhichTrade, which engine/events/in_game_trades.asm uses to index
+-- wCompletedInGameTradeFlags, i.e. the data/events/trades.asm row order the
+-- port's `trade` command takes 1-based.
+local EXTRA_FLAG_BITS = {
+  EVENT_GOT_OLD_ROD       = { O.statusFlags1, 3 },
+  EVENT_GOT_GOOD_ROD      = { O.statusFlags1, 4 },
+  EVENT_GOT_SUPER_ROD     = { O.statusFlags1, 5 },
+  EVENT_GAVE_GUARDS_DRINK = { O.statusFlags1, 6 },
+  EVENT_GOT_LAPRAS        = { O.statusFlags4, 0 },
+  EVENT_STARTED_ELITE_4   = { O.elite4Flags, 1 },
+  EVENT_TRADED_NIDORINO_FOR_NIDORINA   = { O.tradeFlags, 0 },
+  EVENT_TRADED_ABRA_FOR_MR_MIME        = { O.tradeFlags, 1 },
+  EVENT_TRADED_PONYTA_FOR_SEEL         = { O.tradeFlags, 3 },
+  EVENT_TRADED_SPEAROW_FOR_FARFETCHD   = { O.tradeFlags, 4 },
+  EVENT_TRADED_SLOWBRO_FOR_LICKITUNG   = { O.tradeFlags, 5 },
+  EVENT_TRADED_POLIWHIRL_FOR_JYNX      = { O.tradeFlags, 6 },
+  EVENT_TRADED_RAICHU_FOR_ELECTRODE    = { O.tradeFlags, 7 },
+  EVENT_TRADED_VENONAT_FOR_TANGELA     = { O.tradeFlags, 8 },
+  EVENT_TRADED_NIDORAN_M_FOR_NIDORAN_F = { O.tradeFlags, 9 },
+}
+
+-- port-local name -> the wEventFlags name it means (#396)
+local FLAG_ALIAS = { EVENT_RECEIVED_BIKE_VOUCHER = "EVENT_GOT_BIKE_VOUCHER" }
 
 -- STATUS_* bits (constants/battle_constants.asm): 0-2 sleep-turns-left,
 -- 3 PSN, 4 BRN, 5 FRZ, 6 PAR
@@ -671,6 +708,14 @@ function GenSave.decode(bytes, data, opts)
     end
   end
 
+  -- the same progress under names that are not wEventFlags bits (#396)
+  for name, spec in pairs(EXTRA_FLAG_BITS) do
+    if bitGet(bytes, spec[1], spec[2]) then save.flags[name] = true end
+  end
+  for portName, vanillaName in pairs(FLAG_ALIAS) do
+    if save.flags[vanillaName] then save.flags[portName] = true end
+  end
+
   -- FLY destinations.  wTownVisitedFlag's bit index IS the town's map index:
   -- engine/items/town_map.asm BuildFlyLocationsList loads the 16-bit value
   -- into de and rotates it right one bit per iteration with b counting up
@@ -793,6 +838,19 @@ function GenSave.encode(save, data, template)
     for name in pairs(save.flags) do
       local bitIdx = events.byName[name]
       if bitIdx then bitSet(buf, O.eventFlags, bitIdx, true) end
+    end
+    for portName, vanillaName in pairs(FLAG_ALIAS) do
+      local bitIdx = events.byName[vanillaName]
+      if bitIdx and save.flags[portName] then bitSet(buf, O.eventFlags, bitIdx, true) end
+    end
+  end
+
+  -- Non-wEventFlags progress, written both ways: this port's save is the only
+  -- authority for these names, so a flag it does not hold must clear the
+  -- template's bit rather than survive in the export (#396).
+  if save.flags then
+    for name, spec in pairs(EXTRA_FLAG_BITS) do
+      bitSet(buf, spec[1], spec[2], save.flags[name] and true or false)
     end
   end
 

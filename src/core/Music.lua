@@ -85,6 +85,7 @@ local function fanfareActive()
   local ok, playing = pcall(src.isPlaying, src)
   if ok and playing then return true end
   state.fanfare = nil
+  require("src.core.ChipAudio").holdMusic(false)
   return false
 end
 
@@ -94,6 +95,9 @@ end
 function Music.duckForFanfare(src)
   if not src then return end
   state.fanfare = src
+  -- ChipAudio is what starts a chip song, so the pause below cannot hold one
+  -- that has not started yet (nor one Music.play swaps in mid-jingle) (#398)
+  require("src.core.ChipAudio").holdMusic(true)
   if state.source then
     local ok, playing = pcall(state.source.isPlaying, state.source)
     if ok and playing then

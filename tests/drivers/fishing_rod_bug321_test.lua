@@ -181,7 +181,8 @@ return function(game)
   U.log("Correct: one 8x8 rod stroke touching the player's hands, a mirror")
   U.log("image left vs right, still up for the whole verdict box (#321).")
   U.log("Shots: " .. SHOT_DIR .. "/bug321_rod_<facing>_{dots,verdict}.png")
-  U.log("Still unported: the fishing pose, the sprite shake, the ! bubble.")
+  U.log("The pose swaps the sprite's bottom tile row (#384); the sprite shake")
+  U.log("and the ! bubble on a bite are still unported.")
 
   while true do
     coroutine.yield()

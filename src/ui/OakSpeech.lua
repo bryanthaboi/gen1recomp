@@ -486,7 +486,10 @@ end
 
 function OakSpeech:advance()
   self.step = self.step + 1
-  self.picFlip = false
+  -- picFlip belongs to the pic, not to the step: OakSpeechText2 prints 2A
+  -- and 2B over one flipped NIDORINO with no redraw between them
+  -- (oak_speech.asm:80-83), so a pic-less step must not un-mirror what is
+  -- still on screen; only applyPic and the demo step may change it (#397)
   local steps = self.steps
   if not steps then
     -- enter() builds steps; keep a path for callers that advance early

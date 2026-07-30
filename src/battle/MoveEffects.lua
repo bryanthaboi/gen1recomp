@@ -609,10 +609,16 @@ MoveEffects.full = {
   },
 
   BIDE_EFFECT = {
+    -- BideEffect (effects.asm:764-789) is a ResidualEffects2 entry: the
+    -- storing turn plays XSTATITEM_ANIM (XSTATITEM_DUPLICATE_ANIM on the
+    -- enemy side) and never BIDE's own animation, which belongs to the
+    -- release turn in .UnleashEnergy (#375)
     perform = function(ctx)
       local user = ctx.user
       user.bideTurns = ctx.rng(2, 3)
       user.bideDamage = 0
+      ctx.battle:cancelMoveAnim()
+      ctx.anim(user.isPlayer and "XSTATITEM_ANIM" or "XSTATITEM_DUPLICATE_ANIM")
       ctx.say(Strings("%s\nis storing energy!", displayName(user)))
     end,
   },

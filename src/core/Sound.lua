@@ -111,6 +111,9 @@ local function played(kind, name, species)
   Runtime.emit("sound.played", { kind = kind, name = name, species = species })
 end
 
+-- returns the started source (nil headless, or when the def failed to load)
+-- so callers that block on a fanfare like the original's
+-- PlaySoundWaitForCurrent -> WaitForSoundToFinish can poll it
 function Sound.play(data, name)
   local sfx = data.audio and data.audio.sfx
   local def = sfx and sfx[name]
@@ -120,6 +123,7 @@ function Sound.play(data, name)
     require("src.core.Music").duckForFanfare(src)
   end
   played("sfx", name)
+  return src
 end
 
 -- Play a move's sound with its MoveSoundTable pitch/tempo modifiers

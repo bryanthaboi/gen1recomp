@@ -55,6 +55,14 @@ local currentMusic
 local pendingBuf -- a current-gen buffer popped from the worker but not yet
                  -- queued because the Source was momentarily full
 
+-- Music holds playback while a fanfare owns the music channels (#398).
+-- Pausing the Source is not enough on its own: this module is what starts a
+-- chip song (immediately on the sync path, on the first worker buffer on the
+-- threaded one), so a song that begins during a jingle would come up
+-- underneath it.  Music.duckForFanfare sets the hold, Music releases it when
+-- the jingle ends.
+local musicHeld = false
+
 -- ---------------------------------------------------------------------------
 -- worker management
 -- ---------------------------------------------------------------------------
@@ -148,7 +156,7 @@ local function playMusicSync(data, header, allowLoops)
   currentMusic = { source = source, engine = engine, threaded = false,
                    started = true, finished = false }
   fillSync(MUSIC_FILL_INITIAL)
-  source:play()
+  if not musicHeld then source:play() end
   return source
 end
 
@@ -222,7 +230,7 @@ local function updateThreaded()
       end
     end
   end
-  if not m.started then
+  if not m.started and not musicHeld then
     if (MUSIC_BUFFER_COUNT - m.source:getFreeBufferCount()) > 0 then
       pcall(function() m.source:play() end)
       m.started = true
@@ -245,7 +253,7 @@ end
 -- pause/resume behavior.
 function ChipAudio.ensureMusicPlaying()
   local m = currentMusic
-  if not m or m.finished then return end
+  if not m or m.finished or musicHeld then return end
   if m.threaded then
     if not m.started then return end
     local ok, playing = pcall(function() return m.source:isPlaying() end)
@@ -261,6 +269,18 @@ function ChipAudio.ensureMusicPlaying()
       pcall(m.source.play, m.source)
     end
   end
+end
+
+-- Silence the song for the length of a fanfare and start whatever was held
+-- back once it ends.  Held state outlives a song change: Music.play may swap
+-- songs while the jingle is still sounding.
+function ChipAudio.holdMusic(held)
+  held = not not held
+  if held == musicHeld then return end
+  musicHeld = held
+  if held then return end
+  ChipAudio.update()
+  ChipAudio.ensureMusicPlaying()
 end
 
 -- Threaded playMusic returns an empty QueueableSource and only calls
@@ -301,6 +321,17 @@ function ChipAudio.invalidate()
   ChipAudio.stopMusic()
   ChipSynth.invalidateBanks()
   if workerReady and cmdCh then cmdCh:push({ cmd = "invalidate" }) end
+end
+
+-- End the worker thread.  LOVE waits for every live love.thread before the
+-- process exits and the worker's command loop only returns on "quit", so
+-- skipping this leaves the process running after the window is gone (#339).
+function ChipAudio.shutdown()
+  ChipAudio.stopMusic()
+  if workerReady and cmdCh then cmdCh:push({ cmd = "quit" }) end
+  if worker then pcall(function() worker:wait() end) end
+  worker, cmdCh, outCh = nil, nil, nil
+  workerReady = false
 end
 
 -- Runtime mix for one hardware channel (1..4).  Takes effect on the next

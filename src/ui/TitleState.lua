@@ -22,13 +22,17 @@ TitleState.isOpaque = true
 -- LOGO2 blue / LOGO1 red (issue #133).  A trailing trueColor zone leaves the
 -- overlay's DMG black unshaded while the logo and title mon keep title pals.
 --
--- ROM SuperPal whites are often {255,239,255}.  Under RED++, LOGO2/MEWMON
--- come from the GBC pack (pure white) while Blue's LOGO1 stays on the ROM
--- pack (#128), so the version-ribbon row reads as a pink band.  Force that
--- slot to pure white; ink colors (Blue/Red "Version" text) stay intact.
-local function withPureWhite(pal)
+-- Every title SuperPal shares color 0 on hardware (sgb_palettes.asm: LOGO1,
+-- LOGO2 and MEWMON all start RGB 31,29,31), so the ribbon band's white has to
+-- be the neighbouring zones' white.  Under RED++, LOGO2/MEWMON come from the
+-- GBC pack (pure white) while Blue's LOGO1 stays on the ROM pack (#128) and
+-- the row reads as a pink band; taking LOGO2's white fixes that without
+-- forcing pure white in SGB, where a brighter band drew two faint lines
+-- across the title (#373).  Ink colors (Blue/Red "Version" text) stay intact.
+local function withWhiteOf(pal, ref)
   if not pal then return nil end
-  return { { 255, 255, 255 }, pal[2], pal[3], pal[4] }
+  if not (ref and ref[1]) then return pal end
+  return { ref[1], pal[2], pal[3], pal[4] }
 end
 
 function TitleState:sgbPalettes(game)
@@ -46,9 +50,10 @@ function TitleState:sgbPalettes(game)
       P.zone(logoPal, 9, 8, 10, 8),
     }
   else
+    local logoPal = P.pal(game.data, "LOGO2")
     z = {
-      P.zone(P.pal(game.data, "LOGO2"), 0, 0, 19, 7),
-      P.zone(withPureWhite(P.pal(game.data, "LOGO1")), 0, 8, 19, 9),
+      P.zone(logoPal, 0, 0, 19, 7),
+      P.zone(withWhiteOf(P.pal(game.data, "LOGO1"), logoPal), 0, 8, 19, 9),
       P.zone(P.pal(game.data, "MEWMON"), 0, 10, 19, 17),
     }
   end
@@ -427,7 +432,7 @@ end
 -- the version ribbon at (7,8), Red's title art as OAM at px (82,80),
 -- the title mon in the 7x7 box at tile (5,10), copyright on row 17.
 -- Yellow (title_yellow.asm): logo (2,1), speech bubble (6,4), Pikachu
--- (4,8) 12x9 — no version ribbon, no cycling mon, no Red OAM.
+-- (4,8) 12x9 -- no version ribbon, no cycling mon, no Red OAM.
 function TitleState:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
