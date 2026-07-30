@@ -4,8 +4,11 @@
 #
 # Usage: scripts/build_ios.sh [--fetch] [--device] [--release] [--package-only]
 #
-#   (default)         Simulator Debug (CODE_SIGNING_ALLOWED=NO)
-#   --device          iphoneos SDK (needs signing / DEVELOPMENT_TEAM)
+#   (default)         Simulator Debug (ad-hoc signed)
+#   --device          iphoneos SDK; signing team auto-detected from the
+#                     keychain when DEVELOPMENT_TEAM is not set
+#   --install         after a --device build, install the app onto the
+#                     first connected iPhone/iPad (unlock it first)
 #   --release         Release configuration
 #   --fetch           Download love-11.5-ios-source.zip into mobile/ios/love-src/
 #   --package-only    Zip game.love + apply plist overlay; skip xcodebuild
@@ -35,7 +38,19 @@ LIBS_DIR="$XCODE_DIR/ios/libraries"
 
 APP_NAME="gen1recomp"
 DISPLAY_NAME="gen1recomp"
-BUNDLE_ID="com.theboisclub.pokemonred"
+# Bundle ID resolution, most specific wins:
+#   1. GEN1_BUNDLE_ID env var
+#   2. mobile/ios/bundle_id.local (one line, gitignored — pins YOUR install
+#      so rebuilds keep updating the same app on your phone)
+#   3. device builds: com.gen1recomp.t<your team id> — explicit App IDs are
+#      globally unique across ALL Apple accounts (and required once
+#      capabilities like HealthKit are involved), so a per-team default
+#      lets anyone build without colliding with someone else's app
+#   4. simulator: the project default (no App ID registration involved)
+BUNDLE_ID="${GEN1_BUNDLE_ID:-}"
+if [ -z "$BUNDLE_ID" ] && [ -f "$IOS_DIR/bundle_id.local" ]; then
+  BUNDLE_ID="$(tr -d '[:space:]' < "$IOS_DIR/bundle_id.local")"
+fi
 LOVE_VERSION="$(tr -d '[:space:]' < "$IOS_DIR/LOVE_VERSION" 2>/dev/null || echo 11.5)"
 IOS_SOURCE_ZIP="love-${LOVE_VERSION}-ios-source.zip"
 APPLE_LIBS_ZIP="love-${LOVE_VERSION}-apple-libraries.zip"
@@ -46,6 +61,7 @@ FETCH=false
 DEVICE=false
 RELEASE=false
 PACKAGE_ONLY=false
+INSTALL=false
 
 say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
@@ -57,14 +73,43 @@ while [ $# -gt 0 ]; do
     --device) DEVICE=true ;;
     --release) RELEASE=true ;;
     --package-only) PACKAGE_ONLY=true ;;
+    --install) INSTALL=true ;;
     -h|--help)
       sed -n '2,22p' "$0"
       exit 0
       ;;
-    *) fail "unknown argument: $1 (try --fetch, --device, --release, or --package-only)" ;;
+    *) fail "unknown argument: $1 (try --fetch, --device, --release, --install, or --package-only)" ;;
   esac
   shift
 done
+
+# ---------------------------------------------------------- signing identity
+# Auto-detect the Apple Development team when the caller didn't set one: the
+# OU field of the first Apple Development certificate in the keychain (Xcode
+# creates that certificate when you sign into Settings -> Accounts).
+detect_team() {
+  security find-certificate -c "Apple Development" -p 2>/dev/null \
+    | openssl x509 -noout -subject 2>/dev/null \
+    | sed -n 's/.*OU *= *\([A-Z0-9]*\).*/\1/p' | head -1
+}
+if $DEVICE && [ -z "${DEVELOPMENT_TEAM:-}" ]; then
+  DEVELOPMENT_TEAM="$(detect_team || true)"
+  if [ -n "$DEVELOPMENT_TEAM" ]; then
+    say "signing team auto-detected from keychain: $DEVELOPMENT_TEAM"
+  else
+    fail "no Apple signing identity found.
+  Open Xcode -> Settings -> Accounts, press +, and sign in with your
+  Apple ID (a free account works). That creates the certificate this
+  script signs with. Then re-run this command."
+  fi
+fi
+if [ -z "$BUNDLE_ID" ]; then
+  if $DEVICE; then
+    BUNDLE_ID="com.gen1recomp.t$(printf '%s' "$DEVELOPMENT_TEAM" | tr '[:upper:]' '[:lower:]')"
+  else
+    BUNDLE_ID="com.theboisclub.pokemonred"
+  fi
+fi
 
 # --------------------------------------------------------------- host checks
 if [ "$(uname -s)" != "Darwin" ]; then
@@ -166,16 +211,23 @@ pack_game_love() {
   rm -f "$LOVE_FILE"
   # Same payload as scripts/build.sh / build_android.sh: game sources plus
   # tools/save-editor, which the launcher's Edit button opens in-process.
+  # mods/pokewalker rides inside game.love on iOS only: physfs merges the
+  # fused archive with the save dir, so the loader discovers it like any
+  # installed mod, and its Apple Health sync is a no-op everywhere else.
   (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
     main.lua conf.lua src data assets tools/save-editor \
     tools/rom_manifest.json tools/rom_manifest_blue.json \
+    mods/pokewalker \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
+  # NOTE: grep -q here would race pipefail — it exits on first match, unzip
+  # dies of SIGPIPE (141), and the pipeline "fails" nondeterministically.
+  # >/dev/null keeps grep reading the whole stream instead.
   if unzip -Z1 "$LOVE_FILE" \
-      | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
+      | grep -E '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' >/dev/null; then
     fail "game.love unexpectedly contains generated ROM data"
   fi
-  unzip -Z1 "$LOVE_FILE" | grep -qx 'tools/save-editor/App.lua' \
+  unzip -Z1 "$LOVE_FILE" | grep -x 'tools/save-editor/App.lua' >/dev/null \
     || fail "game.love is missing the save editor (Edit on a save row would crash)"
   say "game.love: $(du -h "$LOVE_FILE" | cut -f1) -> $LOVE_FILE"
 }
@@ -300,18 +352,25 @@ run_xcodebuild() {
     SYMROOT="$BUILD_DIR/Build/Products"
     OBJROOT="$BUILD_DIR/Build/Intermediates"
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
-    PRODUCT_NAME="$APP_NAME"
     MARKETING_VERSION="$LOVE_VERSION"
     ONLY_ACTIVE_ARCH=NO
   )
 
   if ! $DEVICE; then
-    # Simulator: no signing required
-    args+=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=)
+    # Simulator: ad-hoc signing (no certificate needed). A plain unsigned
+    # build would drop the entitlements file, and HealthKit refuses to run
+    # without the com.apple.developer.healthkit entitlement even in the
+    # simulator.
+    args+=(CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=-)
   else
     warn "device build: configure signing in Xcode or set DEVELOPMENT_TEAM / CODE_SIGN_IDENTITY"
     if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
-      args+=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM")
+      # Automatic signing + provisioning updates lets xcodebuild register the
+      # bundle ID / create a development profile from the CLI, so a device
+      # build works without ever opening the project in Xcode.
+      args+=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
+             CODE_SIGN_STYLE=Automatic
+             -allowProvisioningUpdates)
     fi
     if [ -n "${CODE_SIGN_IDENTITY:-}" ]; then
       args+=(CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY")
@@ -364,20 +423,56 @@ run_xcodebuild() {
   local dist_dir="$DIST/${config}-${sdk}"
   rm -rf "$dist_dir"
   mkdir -p "$dist_dir"
-  cp -R "$app" "$dist_dir/"
-  say "copied to $dist_dir/$(basename "$app")"
+  cp -R "$app" "$dist_dir/$APP_NAME.app"
+  say "copied to $dist_dir/$APP_NAME.app"
 
   say "iOS app: $app"
   say "bundle id: $BUNDLE_ID  display: $DISPLAY_NAME"
   if $DEVICE; then
-    warn "signing/provisioning is manual,  see mobile/ios/README.md"
+    if $INSTALL; then
+      install_to_device "$app"
+    else
+      say "install with: scripts/build_ios.sh --device --install (iPhone plugged in + unlocked)"
+    fi
   else
     say "simulator tip: xcrun simctl install booted \"$app\""
   fi
 }
 
+# ------------------------------------------------------------ device install
+# Installs the freshly built .app onto the first connected iPhone/iPad via
+# devicectl. The phone must be paired (plugged in at least once + "Trust
+# This Computer") and UNLOCKED during the install.
+install_to_device() {
+  local app="$1"
+  local line udid
+  line="$(xcrun devicectl list devices 2>/dev/null \
+    | grep -E 'iPhone|iPad' | grep -v 'Watch' | head -1 || true)"
+  udid="$(printf '%s' "$line" \
+    | grep -Eo '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' \
+    | head -1 || true)"
+  if [ -z "$udid" ]; then
+    fail "no iPhone/iPad found.
+  Plug the phone in with a cable, unlock it, tap 'Trust This Computer'
+  if asked, then re-run: scripts/build_ios.sh --device --install"
+  fi
+  say "installing onto: $(printf '%s' "$line" | sed 's/  .*//') ($udid)"
+  if xcrun devicectl device install app --device "$udid" "$app"; then
+    say "installed. On the phone: tap the new app on your Home Screen."
+    say "first launch may ask you to enable Developer Mode (Settings ->"
+    say "Privacy & Security -> Developer Mode) and to trust the developer"
+    say "(Settings -> General -> VPN & Device Management)."
+  else
+    fail "install failed. Most common cause: the phone was locked.
+  Unlock it, keep it plugged in, and re-run:
+  scripts/build_ios.sh --device --install"
+  fi
+}
+
 # --------------------------------------------------------------- main
 apply_ios_branding
+say "applying iOS native bridge patches (picker/Files support)"
+python3 "$IOS_DIR/patch_love_src.py" || fail "patch_love_src.py failed"
 pack_game_love
 ensure_game_love_in_xcode
 

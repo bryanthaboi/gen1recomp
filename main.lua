@@ -358,7 +358,18 @@ end
 
 function love.touchpressed(id, x, y, dx, dy, pressure)
   if editorMode then return end
-  if Importer then return Importer:mousepressed(x, y, 1) end
+  if Importer then
+    -- iOS: LÖVE already synthesizes a mousepressed for the primary touch,
+    -- and love.mousepressed below forwards that to the Importer, so
+    -- forwarding here too fires every launcher button twice per tap.  The
+    -- resulting double-present was fatal for the document picker: the
+    -- second sheet stole the first one's weakly-held delegate, so picking
+    -- a file silently did nothing.  Android keeps the forward for upstream
+    -- parity (its SAF picker is a separate activity and tolerates the
+    -- re-launch).
+    if love.system.getOS() == "iOS" then return end
+    return Importer:mousepressed(x, y, 1)
+  end
   Game:touchpressed(id, x, y)
 end
 

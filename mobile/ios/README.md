@@ -1,5 +1,25 @@
 # iOS build (LÖVE 11.5)
 
+> **Native ROM/mod/save import.** The iOS build ships a Swift
+> document-picker bridge (`native/GRPickerBridge.swift` + `GRBootstrap.m`)
+> that `patch_love_src.py` wires into the LÖVE tree on every build:
+>
+> - `love.system.pickFile("rom"|"mod"|"sav")` and `love.system.createFile`
+>   are exposed to Lua on iOS (same contract as love-android's SAF picker:
+>   picks land in the save dir as `picked_rom.gb` / `picked_mod.zip` /
+>   `picked_save.sav`; exports signal via `export_done.flag`).
+> - The Info.plist overlay enables `UIFileSharingEnabled` +
+>   `LSSupportsOpeningDocumentsInPlace`, and `GRBootstrap.m` sweeps
+>   `.gb/.gbc/.zip/.sav` files dropped in Documents (Files app / Finder)
+>   into the LÖVE save dir on every activation — drop a ROM, open the app,
+>   and it imports with no taps.
+> - `src/import/RomImporter.lua` treats iOS as a mobile platform and polls
+>   for picker results (iOS pickers are in-process modals, so Android's
+>   refocus rescan never fires).
+>
+> The note below about a missing "UIDocumentPicker handoff" is
+> resolved by this bridge.
+
 macOS + Xcode only. Pins the official **LÖVE 11.5** iOS Xcode tree
 (`love-11.5-ios-source.zip` from [love2d/love releases](https://github.com/love2d/love/releases/tag/11.5)),
 matching `conf.lua`'s `t.version = "11.5"`.

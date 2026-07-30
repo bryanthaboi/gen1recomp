@@ -1,0 +1,33 @@
+-- Sharing metadata (25-community-and-ecosystem.md 3.2).  Read by tooling
+-- and the manager detail pane; never by the loader's merge.
+return {
+  summary = "Real-world steps from Apple Health become EXP for your party.",
+  author = "mresnick67",
+  contact = "https://github.com/mresnick67/Gen1ReComp-Pokewalker",
+  tags = { "mechanic", "ios", "health", "opt-in", "field" },
+  differences = {
+    changed = {},
+    added = {
+      "an opt-in SYNC STEPS option: Apple Health step counts convert to "
+        .. "EXP at a configurable rate (10/20/50 steps per EXP)",
+      "EXP lands on the lead mon or splits across the party, applied with "
+        .. "the engine's own growth curves and rare-candy stat math",
+      "a walk-report textbox at quiet moments (save load, map change, "
+        .. "battle end)",
+    },
+    known = {
+      "needs an iOS build that ships the native Health bridge "
+        .. "(love.system.syncHealthSteps); on every other platform the mod "
+        .. "loads but stays dormant",
+      "level-ups granted while walking do not prompt for new moves and do "
+        .. "not trigger level evolutions until the next in-battle level "
+        .. "(same as over-leveling with rare candies)",
+      "steps sync on launch/activation; no background delivery yet",
+    },
+  },
+  credits = {
+    { who = "Nintendo's Pokewalker (HGSS)", for_ = "the idea this recreates" },
+    { who = "bryanthaboi/gen1recomp", for_ = "the engine and mod platform" },
+  },
+  compat = { engine = ">=1.0.0 <2.0.0", modApi = 2 },
+}

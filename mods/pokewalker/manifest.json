@@ -1,0 +1,16 @@
+{
+  "id": "pokewalker",
+  "name": "Pokewalker (Apple Health)",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "MECHANIC",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "permissions": ["network", "engine_internals"],
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Your real-world steps (Apple Health) become EXP for your party. Opt-in: enable SYNC STEPS in this mod's options. Needs an iOS build with the Health bridge; dormant elsewhere."
+}

@@ -100,5 +100,16 @@
 			</dict>
 		</dict>
 	</array>
+	<!-- gen1recomp iOS: expose the app's Documents folder in the Files app /
+	     Finder so ROMs, mod .zips, and .sav files can be dropped in without
+	     the picker; GRBootstrap sweeps them into the LÖVE save dir. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- gen1recomp iOS: Pokéwalker mod reads step counts (opt-in, in the
+	     in-game mod manager) and converts them to Pokémon EXP. -->
+	<key>NSHealthShareUsageDescription</key>
+	<string>The Pokéwalker mod reads your step count to give your Pokémon party experience points for real-world walking.</string>
 </dict>
 </plist>
