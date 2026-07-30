@@ -223,6 +223,9 @@ function SaveData.defaultOptions()
     -- 0-7 like the GB's NR50 master volume
     musicVol = 7,
     sfxVol = 7,
+    -- Yellow only: 0-7 trim for Pikachu's PCM voice clips on top of sfxVol
+    -- (the PIKACHU VOL row appears only on Yellow; see Sound.lua)
+    pikaVol = 7,
     musicFilter = 0,
     -- logic fast-forward multiplier; audio is unaffected (GameSpeed.lua)
     speed = 1,

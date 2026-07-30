@@ -16,6 +16,30 @@ local cache = {}
 -- scaling the 0.8 base every source gets
 local BASE_VOLUME = 0.8
 local volumeScale = 1
+-- port addition (Yellow only): 0-7 trim from save.options.pikaVol on top of
+-- the SFX level, for Pikachu's voice clips alone.  Yellow voices every
+-- Pikachu cry with PCM samples that are far louder and far more frequent
+-- than the chip cries around them (the follower alone talks on every
+-- interaction), so this is the one source players want to pull down
+-- without muting the rest of the SFX bus.  7 = untouched, 0 = silent.
+local pikaScale = 1
+
+-- cache keys whose volume the Pikachu trim applies to: the PCM clips, plus
+-- the chip PIKACHU cry that a Yellow cache without extracted clips falls
+-- back to (playCry).  Red/Blue never reach the second branch, so a shared
+-- options.lua carrying a low pikaVol cannot quiet their Pikachu.
+local function isPikaKey(key)
+  if type(key) ~= "string" then return false end
+  if key:sub(1, 8) == "pikacry:" then return true end
+  return key == "cry:PIKACHU"
+    and require("src.core.GameVersion").isYellow()
+end
+
+local function volumeFor(key)
+  local scale = volumeScale
+  if isPikaKey(key) then scale = scale * pikaScale end
+  return BASE_VOLUME * scale
+end
 
 -- Fanfares occupy the music's tone channels on the Game Boy: their sfx
 -- headers claim channels 5-7 (= hardware channels 1-3), silencing the
@@ -91,7 +115,7 @@ local function playPath(data, key, def, pitch, tempo)
       reportBadDef("sfx", key, owner(data, "sfx", key), err)
       return nil
     end
-    s:setVolume(BASE_VOLUME * volumeScale)
+    s:setVolume(volumeFor(key))
     cache[key] = s
     src = s
   end
@@ -215,7 +239,7 @@ function Sound.playPikaCry(data, n)
       cache[key] = false
       return nil
     end
-    s:setVolume(BASE_VOLUME * volumeScale)
+    s:setVolume(volumeFor(key))
     cache[key] = s
     src = s
   end
@@ -249,7 +273,7 @@ function Sound.playCry(data, species)
         owner(data, "cries", species), err)
       return nil
     end
-    s:setVolume(BASE_VOLUME * volumeScale)
+    s:setVolume(volumeFor(key))
     cache[key] = s
     src = s
   end
@@ -325,7 +349,7 @@ function Sound.startLoop(data, name)
       return
     end
     s:setLooping(true)
-    s:setVolume(BASE_VOLUME * volumeScale)
+    s:setVolume(volumeFor(name))
     loopCache[name] = s
     src = s
   end
@@ -349,14 +373,26 @@ end
 -- 0-7 SFX volume level (0 mutes); cached sources (menu beeps, cries,
 -- the low-health alarm loop) update immediately so the change is heard
 -- on the next play
+local function reapplyVolumes()
+  for key, src in pairs(cache) do
+    if src then pcall(src.setVolume, src, volumeFor(key)) end
+  end
+  for key, src in pairs(loopCache) do
+    if src then pcall(src.setVolume, src, volumeFor(key)) end
+  end
+end
+
 function Sound.setVolumeLevel(level)
   volumeScale = math.max(0, math.min(7, level or 7)) / 7
-  for _, src in pairs(cache) do
-    if src then pcall(src.setVolume, src, BASE_VOLUME * volumeScale) end
-  end
-  for _, src in pairs(loopCache) do
-    if src then pcall(src.setVolume, src, BASE_VOLUME * volumeScale) end
-  end
+  reapplyVolumes()
+end
+
+-- 0-7 Pikachu-voice trim on top of the SFX level (7 = no trim, 0 mutes the
+-- clips while the rest of the SFX bus keeps its level).  Yellow only: on
+-- Red/Blue no cached key answers isPikaKey, so this is inert there.
+function Sound.setPikaVolumeLevel(level)
+  pikaScale = math.max(0, math.min(7, level or 7)) / 7
+  reapplyVolumes()
 end
 
 -- hot reload / jukebox A-B: drop one key's sources (its pitch-tempo
@@ -390,6 +426,7 @@ Assets.register(Sound.invalidate)
 -- loading a save)
 function Sound.applyOptions(opts)
   Sound.setVolumeLevel(opts and opts.sfxVol or 7)
+  Sound.setPikaVolumeLevel(opts and opts.pikaVol or 7)
 end
 
 return Sound

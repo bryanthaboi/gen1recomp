@@ -193,6 +193,11 @@ flushes the live options. Old saves that still embed an `options` table are
 migrated once into `options.lua` on load.
 
 - Music / SFX volume
+- PIKACHU VOL (0-7, Yellow only): trims Pikachu's PCM voice clips under the
+  SFX level, so the follower's constant chatter, the title-screen cry and
+  every in-battle "Pika!" can be pulled down (or muted at 0) without
+  quieting the rest of the sound effects. The row is hidden on Red/Blue,
+  which have no voice clips.
 - Music Filter
 - OG GLITCHES on / off (Gen 1 quirks vs. modern-clean battle rules)
 - BATTLE LAYOUT (OG / WIDE); see "Widescreen battle layout" below

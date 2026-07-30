@@ -2,7 +2,8 @@
 -- (engine/menus/main_menu.asm DisplayOptionMenu), the battle ruleset
 -- (cycles the merged rulesets registry; gen1_faithful keeps the original
 -- quirks), plus the port's audio rows and display rows: music/SFX
--- volume (0-7), music low-pass filter (OFF/1X/2X/3X), COLORS / TILT /
+-- volume (0-7), PIKACHU VOL (0-7, Yellow only: trims the PCM voice clips
+-- under SFX VOL), music low-pass filter (OFF/1X/2X/3X), COLORS / TILT /
 -- GBC FX / ZOOM / VOID FILL / VIDEO MODE, and the MODS row that opens
 -- the mod manager.
 -- Rows are descriptors fed through the ui.options.rows hook, so mods can
@@ -16,6 +17,7 @@ local GBCFX = require("src.render.GBCFX")
 local Zoom = require("src.render.Zoom")
 local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
+local GameVersion = require("src.core.GameVersion")
 local VideoMode = require("src.core.VideoMode")
 local FrameCap = require("src.core.FrameCap")
 local Logger = require("src.core.Logger")
@@ -178,6 +180,18 @@ local function buildRows(game)
         require("src.core.Sound").setVolumeLevel(o.sfxVol)
         return true
       end },
+    -- Yellow only (filtered out below on Red/Blue): trims Pikachu's voice
+    -- clips under the SFX level, since Yellow plays them constantly (every
+    -- follower interaction, the title screen, the dex) and they are mixed
+    -- much hotter than the chip cries.
+    { id = "pikaVol", label = Strings("PIKACHU VOL"),
+      value = function(g) return volLabel(g.save.options.pikaVol) end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.pikaVol = stepVolume(o.pikaVol, dir)
+        require("src.core.Sound").setPikaVolumeLevel(o.pikaVol)
+        return true
+      end },
     { id = "musicFilter", label = Strings("MUSIC FILTER"),
       value = function(g)
         return FILTERS[(g.save.options.musicFilter or 0) + 1]
@@ -314,6 +328,17 @@ local function buildRows(game)
     local filtered = {}
     for _, row in ipairs(rows) do
       if row.id ~= "gbcfx" then filtered[#filtered + 1] = row end
+    end
+    rows = filtered
+  end
+  -- PIKACHU VOL only means something where the voice clips exist: Yellow
+  -- (data.audio.pikaCries is the clip count the importer wrote).  Red/Blue
+  -- keep the row list they always had.
+  local audio = game and game.data and game.data.audio
+  if not (GameVersion.isYellow() and audio and audio.pikaCries) then
+    local filtered = {}
+    for _, row in ipairs(rows) do
+      if row.id ~= "pikaVol" then filtered[#filtered + 1] = row end
     end
     rows = filtered
   end
