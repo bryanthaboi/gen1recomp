@@ -19,6 +19,20 @@ function Menu.new(game, items, opts)
   self.tx = opts.tx or 10
   self.ty = opts.ty or 0
   self.tw = opts.tw or 10
+  -- grow the box to the widest label so longer (e.g. localized) labels don't
+  -- overflow the frame; nudge tx left to keep the box on-screen (20 tiles).
+  do
+    local widest = 0
+    for _, it in ipairs(items) do
+      if it.label then
+        local n = #Font.split(it.label)
+        if n > widest then widest = n end
+      end
+    end
+    local needed = widest + 3
+    if needed > self.tw then self.tw = needed end
+    if self.tx + self.tw > 20 then self.tx = math.max(0, 20 - self.tw) end
+  end
   self.rowStep = opts.rowStep or 2
   -- maxVisible: cap the box to this many rows and scroll the rest instead
   -- of growing past it (e.g. the start menu, whose row count varies with

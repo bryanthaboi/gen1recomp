@@ -97,8 +97,13 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor)
     -- feet/inches use the dex screen's ′/″ glyphs ("HT  ?′??″" in
     -- pokedex.asm; the tiles come from gfx/pokedex/pokedex.png via
     -- engine/gfx/load_pokedex_tiles.asm)
-    Font.draw(Strings("HT %d′%02d″", e.heightFt, e.heightIn or 0), 72, 44)
-    Font.draw(Strings("WT %.1flb", (e.weight or 0) / 10), 72, 54)
+    if e.heightM then
+      Font.draw((("GR. %.1fm"):format(e.heightM):gsub("(%d)%.(%d)", "%1,%2")), 64, 44)
+      Font.draw((("GEW. %.1fkg"):format(e.weightKg or 0):gsub("(%d)%.(%d)", "%1,%2")), 64, 54)
+    else
+      Font.draw(Strings("HT %d′%02d″", e.heightFt, e.heightIn or 0), 72, 44)
+      Font.draw(Strings("WT %.1flb", (e.weight or 0) / 10), 72, 54)
+    end
   end
   local text = owned and e.text and game.data.text[e.text] or nil
   local y = 72

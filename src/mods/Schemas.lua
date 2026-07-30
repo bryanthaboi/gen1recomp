@@ -428,6 +428,7 @@ R.pokemon = {
     spriteFront = f.path, spriteBack = f.path, frontSize = f.int(1, 7),
     dexEntry = f.opt(f.rec{ kind = f.str, heightFt = f.int(0),
                             heightIn = f.int(0, 11), weight = f.num,
+                            heightM = f.opt(f.num), weightKg = f.opt(f.num),
                             text = f.str }),
     icon = f.opt(f.union{ f.str, f.rec{ image = f.path,
                                         frames = f.opt(f.int(1)) } }),

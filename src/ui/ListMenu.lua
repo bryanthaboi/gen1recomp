@@ -191,7 +191,7 @@ function ListMenu:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(self.title, 8, 4)
+  Font.draw(Strings(self.title), 8, 4)
   if #self.items == 0 then
     Font.draw(Strings("Nothing here."), 16, 64)
   end
