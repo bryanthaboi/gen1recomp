@@ -183,7 +183,7 @@ function NamingScreen:draw()
   end
   for r, row in ipairs(self:grid()) do
     for c, cell in ipairs(row) do
-      Font.draw(cell, c * 16, 32 + r * 16)
+      Font.draw(Strings(cell), c * 16, 32 + r * 16)
     end
   end
   Font.drawCode(Theme.cursor, self.col * 16 - 8, 32 + self.row * 16)
