@@ -280,7 +280,16 @@ function Commands.start_battle(ctx, kind, a, b)
     end
     runner:resume()
   end
-  ctx.game.stack:push(battle)
+  -- Route through the overworld's own pushBattle when a map is under the
+  -- fight, so a scripted trainer (the rival, a gym leader) gets the same
+  -- transition wipe and battle theme a walked-into fight does -- and reaches
+  -- the seam a render pipeline wraps to stage its arena before the wipe. A
+  -- battle scripted with no overworld beneath it (from the title) starts bare.
+  if ctx.overworld and ctx.overworld.pushBattle then
+    ctx.overworld:pushBattle(battle)
+  else
+    ctx.game.stack:push(battle)
+  end
   runner:yield()
 end
 
