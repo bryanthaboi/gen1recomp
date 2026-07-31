@@ -630,11 +630,9 @@ function Game:applyOptions(opts)
   local DualScreen = require("src.render.DualScreen")
   DualScreen.applyOptions(opts)
   if DualScreen.active() then
+    -- tilt reshapes the one world pass and cannot survive the split; a
+    -- drawWorld pipeline produces the whole top-screen image, so it stays on
     require("src.render.Tilt").setLevel(0)
-    local Pipelines = require("src.render.Pipelines")
-    for _, entry in ipairs(Pipelines.list()) do
-      if entry.def.drawWorld then Pipelines.setLevel(entry.id, 0) end
-    end
   end
   require("src.render.SecondScreen").setEnabled(DualScreen.active())
   require("src.render.TileRenderer").applyOptions(opts)

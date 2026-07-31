@@ -636,6 +636,35 @@ function Renderer:endFrame(zones, worldZones)
       self.lastWorldCanvas = self.worldCanvas
       self.lastWorldZones = worldZones
     end
+    -- Voxel/diorama on the top screen: a drawWorld pipeline hands back the
+    -- whole world image (worldOverride), which replaces the flat top-screen
+    -- blit above. Held at the last frame under a battle (worldActive off), so
+    -- the top screen keeps the diorama the fight was called from. Fit and
+    -- centred, so a full-window image pillarboxes rather than stretches.
+    if self.worldActive then self.lastWorldOverride = self.worldOverride end
+    local wov = self.worldActive and self.worldOverride or self.lastWorldOverride
+    if wov and not battle then
+      -- a held override can be released underneath us (Voxel3D drops its
+      -- canvas on a resize / DS-region size change), so drawing it is fenced:
+      -- a dangling reference blanks the top screen for a frame, never crashes.
+      local ok = pcall(function()
+        local ovw, ovh = wov:getWidth(), wov:getHeight()
+        local sc = math.min(wvpw / ovw, wvph / ovh)
+        love.graphics.setScissor(wox, woy, wvpw, wvph)
+        -- black under the fit, so a pillarboxed image shows bars rather than
+        -- the flat world blitted a moment ago in this same region
+        love.graphics.setColor(0, 0, 0, 1)
+        love.graphics.rectangle("fill", wox, woy, wvpw, wvph)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(wov, wox + (wvpw - ovw * sc) / 2,
+                           woy + (wvph - ovh * sc) / 2, 0, sc, sc)
+        love.graphics.setScissor()
+      end)
+      if not ok then
+        love.graphics.setScissor()
+        self.lastWorldOverride = nil
+      end
+    end
     local fade = self.worldFadeAlpha
     if fade and fade > 0 then
       love.graphics.setColor(0, 0, 0, fade)
