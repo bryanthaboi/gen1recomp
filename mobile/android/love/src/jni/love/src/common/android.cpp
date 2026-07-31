@@ -851,4 +851,51 @@ const char *getArg0()
 } // android
 } // love
 
+extern "C" __attribute__((visibility("default")))
+int love_android_secondary_ready()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID m = env->GetStaticMethodID(activity, "hasSecondaryDisplay", "()Z");
+	jboolean ready = JNI_FALSE;
+	if (m)
+		ready = env->CallStaticBooleanMethod(activity, m);
+	else
+		env->ExceptionClear();
+	env->DeleteLocalRef(activity);
+	return ready ? 1 : 0;
+}
+
+extern "C" __attribute__((visibility("default")))
+void love_android_push_secondary(const void *rgba, int w, int h)
+{
+	if (!rgba || w <= 0 || h <= 0)
+		return;
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID m = env->GetStaticMethodID(activity, "updateSecondaryFrame", "(Ljava/nio/ByteBuffer;II)V");
+	if (m)
+	{
+		jobject buf = env->NewDirectByteBuffer((void*) rgba, (jlong) w * (jlong) h * 4);
+		env->CallStaticVoidMethod(activity, m, buf, w, h);
+		env->DeleteLocalRef(buf);
+	}
+	else
+		env->ExceptionClear();
+	env->DeleteLocalRef(activity);
+}
+
+extern "C" __attribute__((visibility("default")))
+void love_android_secondary_enable(int on)
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+	jmethodID m = env->GetStaticMethodID(activity, "setSecondaryEnabled", "(Z)V");
+	if (m)
+		env->CallStaticVoidMethod(activity, m, on ? JNI_TRUE : JNI_FALSE);
+	else
+		env->ExceptionClear();
+	env->DeleteLocalRef(activity);
+}
+
 #endif // LOVE_ANDROID

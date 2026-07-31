@@ -108,9 +108,14 @@ screen. Purely presentational, no Game Boy equivalent, persisted in
 - GBC FX and post-process pipelines still apply, over both screens at the
   stacked scale. Collision, movement, triggers, encounters, and scripts are
   untouched; nothing about the split reaches gameplay.
-- Desktop and Android both stack the two screens inside the one window.
-  Driving them onto two separate physical displays on multi-display Android
-  hardware is a native-shell layer that is not yet wired.
+- On desktop and single-display Android the two screens stack inside the one
+  window. On multi-display Android (e.g. the AYN Thor) the top screen fills
+  the main panel and the bottom screen is driven onto the second physical
+  display through an Android `Presentation` (native `love-android` layer:
+  `GameActivity` + the `love_android_secondary_*` bridge in
+  `src/jni/love/src/common/android.cpp`, fed the palettized bottom canvas each
+  frame), falling back to the in-window stack when no second display is present.
+  The secondary panel renders the bottom screen fullscreen (system bars hidden).
 
 ## Colors mode
 

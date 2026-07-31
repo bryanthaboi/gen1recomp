@@ -97,6 +97,8 @@ function WhiteFlash:update(dt)
 end
 
 function WhiteFlash:draw()
+  local r = self.game and self.game.renderer
+  if r then r.worldFlashAlpha = 1 end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
 end

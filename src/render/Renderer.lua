@@ -12,6 +12,7 @@ local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
 local PixelCanvas = require("src.render.PixelCanvas")
 local DualScreen = require("src.render.DualScreen")
+local SecondScreen = require("src.render.SecondScreen")
 local Runtime = require("src.mods.Runtime")
 
 local Renderer = {}
@@ -199,6 +200,7 @@ end
 
 -- transparent: the world pass shows through (UI pass draws overlays only)
 function Renderer:beginFrame(transparent)
+  self.worldFlashAlpha = nil
   self.worldActive = false
   self.uprightActive = false
   self.worldOverride = nil
@@ -607,18 +609,44 @@ function Renderer:endFrame(zones, worldZones)
   end
 
   if DualScreen.active() then
-    local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
-    composeScale = scale
     local wc = self.worldActive and self.worldCanvas or self.lastWorldCanvas
     local wz = self.worldActive and worldZones or self.lastWorldZones
-    if wc then
-      blit(wc, wr.sx, wr.sy, wz, wr.sx, wr.sy, wr.ox, wr.oy, wr.ox, wr.oy, wr.w, wr.h)
+    local wox, woy, wvpw, wvph, wsx, wsy
+    if SecondScreen.available() then
+      wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
+      if wc then
+        blit(wc, wsx, wsy, wz, wsx, wsy, wox, woy, wox, woy, wvpw, wvph)
+      end
+      self.pushSecondary = true
+      if self.battleCascadeProg then
+        self:drawBattleCascade(self.battleCascadeProg, ww, wh, wox, woy, wvpw, wvph, wsx, wsy)
+      end
+    else
+      local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
+      composeScale = scale
+      wox, woy, wvpw, wvph, wsx, wsy = wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy
+      if wc then
+        blit(wc, wsx, wsy, wz, wsx, wsy, wox, woy, wox, woy, wvpw, wvph)
+      end
+      blit(self.canvas, ur.sx, ur.sy, zones, ur.sx, ur.sy,
+           ur.ox, ur.oy, ur.ox, ur.oy, ur.w, ur.h)
+      self.pushSecondary = false
     end
-    blit(self.canvas, ur.sx, ur.sy, zones, ur.sx, ur.sy,
-         ur.ox, ur.oy, ur.ox, ur.oy, ur.w, ur.h)
     if self.worldActive then
       self.lastWorldCanvas = self.worldCanvas
       self.lastWorldZones = worldZones
+    end
+    local fade = self.worldFadeAlpha
+    if fade and fade > 0 then
+      love.graphics.setColor(0, 0, 0, fade)
+      love.graphics.rectangle("fill", wox, woy, wvpw, wvph)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    local flash = self.worldFlashAlpha
+    if flash and flash > 0 then
+      love.graphics.setColor(1, 1, 1, flash)
+      love.graphics.rectangle("fill", wox, woy, wvpw, wvph)
+      love.graphics.setColor(1, 1, 1, 1)
     end
   else
   if self.worldOverride then
@@ -742,6 +770,25 @@ function Renderer:endFrame(zones, worldZones)
       -- result on the screen at the same 1:1 unit mapping it was built at
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(composed, 0, 0)
+    end
+  end
+  if self.pushSecondary then
+    self.pushSecondary = false
+    local w, h = self.canvas:getWidth(), self.canvas:getHeight()
+    if not self.secondCanvas or self.secondCanvas:getWidth() ~= w
+       or self.secondCanvas:getHeight() ~= h then
+      if self.secondCanvas and self.secondCanvas.release then self.secondCanvas:release() end
+      self.secondCanvas = PixelCanvas.new(w, h, "nearest")
+    end
+    love.graphics.setCanvas(self.secondCanvas)
+    love.graphics.clear(0, 0, 0, 0)
+    love.graphics.setColor(1, 1, 1, 1)
+    blit(self.canvas, 1, 1, zones, 1, 1, 0, 0, 0, 0, w, h)
+    love.graphics.setCanvas()
+    local ok, id = pcall(function() return self.secondCanvas:newImageData() end)
+    if ok and id then
+      SecondScreen.push(id, w, h)
+      if id.release then pcall(function() id:release() end) end
     end
   end
   self.worldActive = false

@@ -636,6 +636,7 @@ function Game:applyOptions(opts)
       if entry.def.drawWorld then Pipelines.setLevel(entry.id, 0) end
     end
   end
+  require("src.render.SecondScreen").setEnabled(DualScreen.active())
   require("src.render.TileRenderer").applyOptions(opts)
   -- returns true when a persisted GBC FX level was cleared on mobile
   local gbcCleared = require("src.render.GBCFX").applyOptions(opts)
