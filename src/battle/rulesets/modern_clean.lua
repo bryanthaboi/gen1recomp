@@ -13,4 +13,6 @@ return {
   enemyUnlimitedPP = false,
   -- Gen 2+: Hyper Beam always forces a recharge turn, even on a KO.
   hyperBeamSkipRechargeOnKO = false,
+  -- Gen 6+: Health siren triggers for a fixed cycle and then stops.
+  modernLowHealthAlarm = true,
 }

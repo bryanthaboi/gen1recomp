@@ -2497,6 +2497,11 @@ end
 -- (item_effects.asm:991-994 clears the alarm before the bar animates).
 -- No alarm before the player HUD first draws (send-out), nor in the
 -- safari/old-man battles, which have no player mon HUD.
+--
+-- modernLowHealthAlarm's cycle budget, consumed in the tick
+-- below (search lowHealthAlarmCycleFrames). 2 trips through the
+-- 2-beep source is roughly a second and a half of warning.
+local LOW_HEALTH_ALARM_CYCLES = 2
 function BattleState:lowHealthAlarmActive()
   local p = self.player
   if not p or self.safari or self.demo or self.result
@@ -2662,17 +2667,50 @@ function BattleState:updateFx()
     if self.growIn.frame >= 12 then self.growIn = nil end
   end
   -- low-HP alarm (audio/low_health_alarm.asm): the two-tone siren
-  -- loops while the player's bar is red; see lowHealthAlarmActive
+  -- loops while the player's bar is red; see lowHealthAlarmActive.
+  -- REVERT: modernLowHealthAlarm (ruleset flag, src/battle/rulesets/
+  -- modern_clean.lua) is the only thing branching here. To restore
+  -- faithful-only behavior, delete this whole `if modernAlarm` block
+  -- and the lowHealthAlarmCycleFrames/lowHealthAlarmSpent fields, and
+  -- go back to the two-line `if self.lowHealthAlarmOn then
+  -- Sound.startLoop(...) else Sound.stopLoop(...) end` this replaced.
   local Sound = require("src.core.Sound")
   -- self.lowHealthAlarmOn mirrors wLowHealthAlarm's bit 7: a latch read
   -- back inside lowHealthAlarmActive (the RHS sees last frame's value)
   -- so a sounding siren rides out the next hit's HP drain instead of
   -- dropping out mid-announcement (#293)
   self.lowHealthAlarmOn = self:lowHealthAlarmActive()
+  local modernAlarm = self.ruleset and self.ruleset.modernLowHealthAlarm
+  if not modernAlarm then
+    if self.lowHealthAlarmOn then
+      Sound.startLoop(self.data, "Low_Health_Alarm")
+    else
+      Sound.stopLoop("Low_Health_Alarm")
+    end
+    return
+  end
   if self.lowHealthAlarmOn then
-    Sound.startLoop(self.data, "Low_Health_Alarm")
+    if not self.lowHealthAlarmSpent then
+      -- ChipAudio.newLowHealthAlarm renders one non-looped source that
+      -- is itself two tone-cycles long (62 samples-at-60fps worth); let
+      -- it play LOW_HEALTH_ALARM_CYCLES trips through that before going
+      -- quiet, so the fight gets a few beeps of warning rather than a
+      -- siren for the rest of the battle.
+      self.lowHealthAlarmCycleFrames = (self.lowHealthAlarmCycleFrames or 0) + 1
+      if self.lowHealthAlarmCycleFrames > LOW_HEALTH_ALARM_CYCLES * 62 then
+        Sound.stopLoop("Low_Health_Alarm")
+        self.lowHealthAlarmSpent = true
+      else
+        Sound.startLoop(self.data, "Low_Health_Alarm")
+      end
+    end
   else
+    -- HP left red (healed out, or the alarm's own gating above already
+    -- silenced it): rearm, so the next drop into red plays its own
+    -- fresh fixed cycle rather than staying muted for the whole battle.
     Sound.stopLoop("Low_Health_Alarm")
+    self.lowHealthAlarmCycleFrames = 0
+    self.lowHealthAlarmSpent = false
   end
 end
 
