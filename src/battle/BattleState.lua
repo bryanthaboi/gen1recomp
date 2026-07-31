@@ -42,6 +42,7 @@ BattleState.letterboxWhite = true
 -- prompts pushed during a wide battle keep its wide canvas, while drawing
 -- their classic 160px UI centred within it (Game:draw).
 function BattleState:isWideBattleLayout()
+  if require("src.render.DualScreen").active() then return false end
   local options = self.game and self.game.save and self.game.save.options
   return options and options.battleLayout == "wide" or false
 end

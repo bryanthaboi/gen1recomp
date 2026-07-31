@@ -11,6 +11,7 @@ local Tilt = require("src.render.Tilt")
 local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
 local PixelCanvas = require("src.render.PixelCanvas")
+local DualScreen = require("src.render.DualScreen")
 local Runtime = require("src.mods.Runtime")
 
 local Renderer = {}
@@ -178,6 +179,10 @@ end
 -- corners; flat mode returns exactly today's size (growth factor is 1 when
 -- tilt is inactive).
 function Renderer:worldViewSize()
+  -- Dual-screen shows a clean 160x144 world in the top screen; survey zoom's
+  -- window-filling view is off in this mode (they both reshape the one world
+  -- pass), so the world canvas is exactly one Game Boy screen.
+  if DualScreen.active() then return self.WIDTH, self.HEIGHT end
   local _, _, pw, ph = displayMetrics()
   local sp = Zoom.scale(self:fitScale())
   local vw, vh = math.ceil(pw / sp), math.ceil(ph / sp)
@@ -268,7 +273,13 @@ function Renderer:beginWorldPass()
     -- free the old canvas before replacing it: a zoom/tilt tween changes
     -- the view size every frame, so without this the superseded canvases
     -- pile up in VRAM until a GC finalizer happens to run
-    if self.worldCanvas and self.worldCanvas.release then self.worldCanvas:release() end
+    if self.worldCanvas and self.worldCanvas.release then
+      if self.lastWorldCanvas == self.worldCanvas then
+        self.lastWorldCanvas = nil
+        self.lastWorldZones = nil
+      end
+      self.worldCanvas:release()
+    end
     self.worldCanvas = PixelCanvas.new(vw, vh, "nearest")
   end
   self.worldActive = true
@@ -488,6 +499,7 @@ function Renderer:endFrame(zones, worldZones)
   -- Sp = integer framebuffer pixels per GB pixel;
   -- Sx/Sy = LOVE-unit draw scales (may differ when dpiX ≠ dpiY).
   local Sp = self:fitScale()
+  local composeScale = Sp
   local Sx, Sy = Sp / dpiX, Sp / dpiY
   local uiw, uih = self:uiSize()
   local vpw, vph = uiw * Sx, uih * Sy
@@ -536,7 +548,7 @@ function Renderer:endFrame(zones, worldZones)
   -- is the pack's off-white (255,239,255), which a hardcoded 1,1,1 framed in
   -- a visibly brighter border.
   local clearR, clearG, clearB = 0, 0, 0
-  if not self.worldActive then
+  if not self.worldActive and not DualScreen.active() then
     local ok, Game = pcall(require, "src.core.Game")
     local stack = ok and Game and Game.stack
     local base = stack and stack.visibleBase and stack:visibleBase()
@@ -551,7 +563,7 @@ function Renderer:endFrame(zones, worldZones)
   -- render.letterbox: SGB borders / custom void art in the bars around the
   -- 160x144 (or world) blit.  Drawn after the clear and before the game
   -- canvas so the playfield sits on top of the border.
-  if Runtime.wantsHook("render.letterbox") then
+  if Runtime.wantsHook("render.letterbox") and not DualScreen.active() then
     Runtime.call("render.letterbox", function() end, {
       ww = ww, wh = wh, pw = pw, ph = ph,
       ox = ox, oy = oy, vpw = vpw, vph = vph,
@@ -594,6 +606,21 @@ function Renderer:endFrame(zones, worldZones)
     love.graphics.setShader()
   end
 
+  if DualScreen.active() then
+    local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
+    composeScale = scale
+    local wc = self.worldActive and self.worldCanvas or self.lastWorldCanvas
+    local wz = self.worldActive and worldZones or self.lastWorldZones
+    if wc then
+      blit(wc, wr.sx, wr.sy, wz, wr.sx, wr.sy, wr.ox, wr.oy, wr.ox, wr.oy, wr.w, wr.h)
+    end
+    blit(self.canvas, ur.sx, ur.sy, zones, ur.sx, ur.sy,
+         ur.ox, ur.oy, ur.ox, ur.oy, ur.w, ur.h)
+    if self.worldActive then
+      self.lastWorldCanvas = self.worldCanvas
+      self.lastWorldZones = worldZones
+    end
+  else
   if self.worldOverride then
     -- A render pipeline already produced the whole world -- terrain,
     -- characters and its own FX overlay -- as one window-resolution image,
@@ -696,6 +723,7 @@ function Renderer:endFrame(zones, worldZones)
   end
   -- UI stays in the classic centered GB letterbox
   blit(self.canvas, Sx, Sy, zones, Sx, Sy, ox, oy, ox, oy, vpw, vph)
+  end
 
   if present then
     love.graphics.setCanvas()
@@ -705,10 +733,10 @@ function Renderer:endFrame(zones, worldZones)
     -- grid itself.  Each pass hands back a canvas; with none registered
     -- this returns `present` unchanged and the frame is byte-identical.
     local composed = Pipelines.present(present,
-      { width = ww, height = wh, scale = Sp, dpi = dpiY, dpiX = dpiX, dpiY = dpiY }) or present
+      { width = ww, height = wh, scale = composeScale, dpi = dpiY, dpiX = dpiX, dpiY = dpiY }) or present
     if GBCFX.active() then
       -- shader grid/shadow math is in framebuffer pixels
-      GBCFX.present(composed, Sp)
+      GBCFX.present(composed, composeScale)
     else
       -- the present canvas only existed for the post-process, so put the
       -- result on the screen at the same 1:1 unit mapping it was built at

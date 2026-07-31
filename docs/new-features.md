@@ -83,6 +83,35 @@ Game Boy equivalent:
 - Collision, movement, sight lines, triggers, encounters, and scripts are
   untouched; nothing about the tilt reaches gameplay.
 
+## Dual screen
+
+The Options menu **DUAL SCREEN** row stacks the game as two Game Boy screens,
+DS-style: the overworld renders on the top screen and every UI layer,  text
+boxes, the START menu, shops, the PC, and battles,  renders on the bottom
+screen. Purely presentational, no Game Boy equivalent, persisted in
+`save.options.dualScreen` (default OFF):
+
+- The engine already draws the world pass and the UI pass into separate
+  canvases; this mode lays them out as two 160×144 screens with a small black
+  gutter between them instead of compositing the UI over the world in one
+  letterbox. The stack is centred and integer-scaled into the window exactly
+  like the single screen, so pixels stay crisp and square.
+- While an overworld state is on top, the top screen shows the live world and
+  the bottom screen shows whatever UI is open (blank during free roam). When a
+  full-screen state with no overworld beneath it is on top,  a battle, or a
+  menu opened from the title,  the top screen holds the last overworld frame,
+  frozen, while the state draws on the bottom.
+- It is mutually exclusive with the modes that reshape the single world pass:
+  survey zoom and tilt are forced off while it is on (their saved levels come
+  back when it is turned off), and the wide battle layout falls back to the
+  classic 160×144 arrangement.
+- GBC FX and post-process pipelines still apply, over both screens at the
+  stacked scale. Collision, movement, triggers, encounters, and scripts are
+  untouched; nothing about the split reaches gameplay.
+- Desktop and Android both stack the two screens inside the one window.
+  Driving them onto two separate physical displays on multi-display Android
+  hardware is a native-shell layer that is not yet wired.
+
 ## Colors mode
 
 The `2` key (and the Options menu COLORS row) cycles the display mode
@@ -215,6 +244,8 @@ migrated once into `options.lua` on load.
   `-`/`=` step one level and save
 - VOID FILL (TREES / WATER / BLACK) for OVERWORLD beyond-edge space
 - GBC FX (OFF / 1 / 2 / 3 / 4),  also hotkey `5`
+- DUAL SCREEN (OFF / ON) stacks the world and UI as two screens; see "Dual
+  screen" below (mutually exclusive with ZOOM / TILT / WIDE battle)
 - MAX FPS (30 / 40 / 50 / 60 / 75 / 90 / 100 / 120 / 144 / 160, default 60),
   a hard render frame-rate cap (`save.options.fpsCap`).
 

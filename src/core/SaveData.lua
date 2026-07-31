@@ -235,6 +235,8 @@ function SaveData.defaultOptions()
     gbcfx = 0,
     -- survey zoom offset from window fit scale (0 = FIT); see Zoom.lua
     zoom = 0,
+    -- stack world (top) + UI (bottom) as two GB screens; see DualScreen.lua
+    dualScreen = false,
     -- OVERWORLD beyond-edge fill: trees | water | black
     voidFill = "trees",
     -- windowed | borderless (desktop fullscreen); ignored on mobile

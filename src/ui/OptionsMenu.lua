@@ -15,6 +15,7 @@ local Pipelines = require("src.render.Pipelines")
 local Tilt = require("src.render.Tilt")
 local GBCFX = require("src.render.GBCFX")
 local Zoom = require("src.render.Zoom")
+local DualScreen = require("src.render.DualScreen")
 local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
 local GameVersion = require("src.core.GameVersion")
@@ -254,6 +255,14 @@ local function buildRows(game)
         elseif off < lo then off = hi end
         o.zoom = off
         Zoom.offset = off
+        return true
+      end },
+    { id = "dualScreen", label = Strings("DUAL SCREEN"),
+      value = function() return DualScreen.label() end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.dualScreen = not DualScreen.active()
+        g:applyOptions(o)
         return true
       end },
     { id = "voidFill", label = Strings("VOID FILL"),

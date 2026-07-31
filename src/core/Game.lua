@@ -627,6 +627,15 @@ function Game:applyOptions(opts)
   -- just restored back off (the two are mutually exclusive)
   require("src.render.Pipelines").applyOptions(opts)
   require("src.render.Zoom").applyOptions(opts)
+  local DualScreen = require("src.render.DualScreen")
+  DualScreen.applyOptions(opts)
+  if DualScreen.active() then
+    require("src.render.Tilt").setLevel(0)
+    local Pipelines = require("src.render.Pipelines")
+    for _, entry in ipairs(Pipelines.list()) do
+      if entry.def.drawWorld then Pipelines.setLevel(entry.id, 0) end
+    end
+  end
   require("src.render.TileRenderer").applyOptions(opts)
   -- returns true when a persisted GBC FX level was cleared on mobile
   local gbcCleared = require("src.render.GBCFX").applyOptions(opts)
