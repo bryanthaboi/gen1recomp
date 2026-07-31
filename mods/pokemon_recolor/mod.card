@@ -1,0 +1,31 @@
+-- Sharing metadata: read by tooling and the manager's detail pane, never
+-- by the loader's merge, so a malformed card can never break a load.
+return {
+  summary = "Recolours battle sprites per species. Ships palettes, not art.",
+  author = "Sergio Torrado",
+  contact = "https://github.com/serivt",
+  tags = { "cosmetic", "graphics", "data-only", "palettes" },
+  differences = {
+    changed = {
+      "120 of 151 species get a four-shade ramp derived from their Gen 3 art",
+      "those species opt out of the renderer's 4-grey re-shade (trueColor)",
+    },
+    added = {
+      "per-species algorithm choice recorded in ramps.lua, reviewed by eye",
+    },
+    known = {
+      "31 species are deliberately left on their vanilla palette; they "
+        .. "were judged to read better that way",
+      "the ramp is derived per species, not per region -- a two-tone mon "
+        .. "gets its dominant colours, not its markings",
+      "tilesets, overworld sprites, party icons, the HUD and the font are "
+        .. "not touched at all",
+      "changing a variant requires re-running the tool: it clears the "
+        .. "derived tree, which AssetTransform itself never does",
+    },
+  },
+  credits = {
+    { who = "pret/pokered", for_ = "the battle pic layout this repaints" },
+  },
+  compat = { engine = ">=1.0.0 <2.0.0", modApi = 2 },
+}

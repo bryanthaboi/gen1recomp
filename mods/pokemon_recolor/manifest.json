@@ -1,0 +1,18 @@
+{
+  "id": "pokemon_recolor",
+  "name": "Pokemon Recolor",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "game_version": ">=0.0.0-dev <2.0.0",
+  "category": "GRAPHICS",
+  "priority": 100,
+  "assets_transforms": "transforms.lua",
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "incompatible": [],
+  "experimental": false,
+  "description": "Recolours battle sprites per species from derived palettes. Ships no art; nothing else is touched."
+}
