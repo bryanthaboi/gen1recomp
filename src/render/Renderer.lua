@@ -613,76 +613,82 @@ function Renderer:endFrame(zones, worldZones)
     local wz = self.worldActive and worldZones or self.lastWorldZones
     local wox, woy, wvpw, wvph, wsx, wsy
     local physical = SecondScreen.available()
-    local battle, battleTop = false, false
+    -- A dual-screen battle hands over a 160x288 surface: two stacked Game
+    -- Boy screens, the field on top and the message/menu below
+    -- (src/battle/DualBattle.lua). Every other state is one 160x144 screen
+    -- with the world pass above it.
+    local dsBattle = self.canvas:getHeight() >= self.HEIGHT * 2
+    -- Whether a battle sits anywhere in the stack. An opaque menu opened over
+    -- it (BAG, PARTY) collapses the surface to 160x144, but the fight must
+    -- stay on the top screen while that menu owns the bottom.
+    local battleInStack = false
     do
       local ok, G = pcall(require, "src.core.Game")
-      local stack = ok and G and G.stack
-      if stack and stack.states then
-        battle, battleTop = DualScreen.battleMode(stack.states)
+      local st = ok and G and G.stack and G.stack.states
+      if st then
+        for i = #st, 1, -1 do
+          if st[i].isBattleScreen then battleInStack = true break end
+        end
       end
     end
-    if battle then
-      local cw, ch = self.canvas:getWidth(), self.canvas:getHeight()
-      if not self.battleComposite or self.battleComposite:getWidth() ~= cw
-         or self.battleComposite:getHeight() ~= ch then
-        if self.battleComposite and self.battleComposite.release then self.battleComposite:release() end
-        self.battleComposite = PixelCanvas.new(cw, ch, "nearest")
+    -- Draw one Game Boy screen's worth of the (already colorized) UI canvas
+    -- -- source rows [qy, qy+HEIGHT) -- filling a screen region.
+    local function screenBlit(qy, r)
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setScissor(r.ox, r.oy, r.w, r.h)
+      love.graphics.draw(self.canvas,
+        love.graphics.newQuad(0, qy, self.canvas:getWidth(), self.HEIGHT,
+                              self.canvas:getDimensions()),
+        r.ox, r.oy, 0, r.sx, r.sy)
+      love.graphics.setScissor()
+    end
+    -- Stash the battle field (the top screen) so an overlay that collapses
+    -- the 288 surface can keep the fight up top while it takes the bottom.
+    local function stashField()
+      if not self.dsField or self.dsField:getWidth() ~= self.WIDTH
+         or self.dsField:getHeight() ~= self.HEIGHT then
+        if self.dsField and self.dsField.release then self.dsField:release() end
+        self.dsField = PixelCanvas.new(self.WIDTH, self.HEIGHT, "nearest")
       end
-      love.graphics.setCanvas(self.battleComposite)
+      local prevC = love.graphics.getCanvas()
+      love.graphics.setCanvas(self.dsField)
       love.graphics.clear(0, 0, 0, 0)
       love.graphics.setColor(1, 1, 1, 1)
-      blit(self.canvas, 1, 1, zones, 1, 1, 0, 0, 0, 0, cw, ch)
-      love.graphics.setCanvas(present)
-      local SPLIT = 96
-      local topSrc, tqy, tqh, botSrc, bqy, bqh
-      if battleTop then
-        if not self.battleField or self.battleField:getWidth() ~= cw
-           or self.battleField:getHeight() ~= SPLIT then
-          if self.battleField and self.battleField.release then self.battleField:release() end
-          self.battleField = PixelCanvas.new(cw, SPLIT, "nearest")
-        end
-        love.graphics.setCanvas(self.battleField)
-        love.graphics.clear(0, 0, 0, 0)
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(self.battleComposite,
-          love.graphics.newQuad(0, 0, cw, SPLIT, cw, ch), 0, 0)
-        love.graphics.setCanvas(present)
-        topSrc, tqy, tqh = self.battleComposite, 0, SPLIT
-        botSrc, bqy, bqh = self.battleComposite, SPLIT, ch - SPLIT
-      else
-        topSrc, tqy, tqh = self.battleField, 0, SPLIT
-        botSrc, bqy, bqh = self.battleComposite, 0, ch
-      end
-      local function strip(src, qy, qh, rox, roy, rw, rh, rsx, rsy)
-        if not src then return end
-        local q = love.graphics.newQuad(0, qy, src:getWidth(), qh, src:getDimensions())
-        local dy = roy + (rh - qh * rsy) / 2
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.setScissor(rox, roy, rw, rh)
-        love.graphics.draw(src, q, rox, dy, 0, rsx, rsy)
-        love.graphics.setScissor()
-      end
-      if physical then
-        wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
-        strip(topSrc, tqy, tqh, ox, oy, vpw, vph, Sx, Sy)
-        if botSrc then
-          local ok, id = pcall(function()
-            return botSrc:newImageData(1, 1, 0, bqy, botSrc:getWidth(), bqh)
-          end)
-          if ok and id then self.pushImage = id end
-        end
-        self.pushSecondary = false
-      else
-        local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
-        composeScale = scale
-        wox, woy, wvpw, wvph, wsx, wsy = wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy
-        strip(topSrc, tqy, tqh, wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy)
-        strip(botSrc, bqy, bqh, ur.ox, ur.oy, ur.w, ur.h, ur.sx, ur.sy)
-        self.pushSecondary = false
-      end
+      love.graphics.draw(self.canvas, love.graphics.newQuad(0, 0, self.WIDTH,
+        self.HEIGHT, self.canvas:getDimensions()), 0, 0)
+      love.graphics.setCanvas(prevC)
+    end
+    -- Blit the frozen field into a top-screen region; false when none stashed.
+    local function fieldBlit(r)
+      if not self.dsField then return false end
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setScissor(r.ox, r.oy, r.w, r.h)
+      love.graphics.draw(self.dsField, r.ox, r.oy, 0, r.sx, r.sy)
+      love.graphics.setScissor()
+      return true
+    end
+    if dsBattle and physical then
+      wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
+      screenBlit(0, { ox = ox, oy = oy, w = vpw, h = vph, sx = Sx, sy = Sy })
+      stashField()
+      local okid, id = pcall(function()
+        return self.canvas:newImageData(1, 1, 0, self.HEIGHT,
+                                        self.canvas:getWidth(), self.HEIGHT)
+      end)
+      if okid and id then self.pushImage = id end
+      self.pushSecondary = false
+    elseif dsBattle then
+      local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
+      composeScale = scale
+      wox, woy, wvpw, wvph, wsx, wsy = wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy
+      screenBlit(0, wr)              -- top screen: the field
+      screenBlit(self.HEIGHT, ur)    -- bottom screen: the message/menu
+      stashField()
+      self.pushSecondary = false
     elseif physical then
       wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
-      if wc then
+      local top = { ox = ox, oy = oy, w = vpw, h = vph, sx = Sx, sy = Sy }
+      if not (battleInStack and fieldBlit(top)) and wc then
         blit(wc, wsx, wsy, wz, wsx, wsy, wox, woy, wox, woy, wvpw, wvph)
       end
       self.pushSecondary = true
@@ -693,7 +699,7 @@ function Renderer:endFrame(zones, worldZones)
       local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
       composeScale = scale
       wox, woy, wvpw, wvph, wsx, wsy = wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy
-      if wc then
+      if not (battleInStack and fieldBlit(wr)) and wc then
         blit(wc, wsx, wsy, wz, wsx, wsy, wr.ox, wr.oy, wr.ox, wr.oy, wr.w, wr.h)
       end
       blit(self.canvas, ur.sx, ur.sy, zones, ur.sx, ur.sy,
@@ -704,14 +710,12 @@ function Renderer:endFrame(zones, worldZones)
       self.lastWorldCanvas = self.worldCanvas
       self.lastWorldZones = worldZones
     end
-    -- Voxel/diorama on the top screen: a drawWorld pipeline hands back the
-    -- whole world image (worldOverride), which replaces the flat top-screen
-    -- blit above. Held at the last frame under a battle (worldActive off), so
-    -- the top screen keeps the diorama the fight was called from. Fit and
-    -- centred, so a full-window image pillarboxes rather than stretches.
+    -- Voxel/diorama on the top screen (free-roam only; a dual-screen battle
+    -- owns both screens itself). Held at the last frame while worldActive is
+    -- off, so the top screen keeps the diorama the fight was called from.
     if self.worldActive then self.lastWorldOverride = self.worldOverride end
     local wov = self.worldActive and self.worldOverride or self.lastWorldOverride
-    if wov and not battle then
+    if wov and not dsBattle and not battleInStack then
       -- a held override can be released underneath us (Voxel3D drops its
       -- canvas on a resize / DS-region size change), so drawing it is fenced:
       -- a dangling reference blanks the top screen for a frame, never crashes.
@@ -719,8 +723,6 @@ function Renderer:endFrame(zones, worldZones)
         local ovw, ovh = wov:getWidth(), wov:getHeight()
         local sc = math.min(wvpw / ovw, wvph / ovh)
         love.graphics.setScissor(wox, woy, wvpw, wvph)
-        -- black under the fit, so a pillarboxed image shows bars rather than
-        -- the flat world blitted a moment ago in this same region
         love.graphics.setColor(0, 0, 0, 1)
         love.graphics.rectangle("fill", wox, woy, wvpw, wvph)
         love.graphics.setColor(1, 1, 1, 1)

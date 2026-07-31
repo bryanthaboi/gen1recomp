@@ -28,6 +28,7 @@ local TurnOrder = require("src.battle.TurnOrder")
 local TypeChart = require("src.battle.TypeChart")
 local Strings = require("src.core.Strings")
 local WideBattle = require("src.battle.WideBattle")
+local DualBattle = require("src.battle.DualBattle")
 
 local BattleState = {}
 BattleState.__index = BattleState
@@ -52,9 +53,17 @@ function BattleState:wideLayout()
   return self:isWideBattleLayout()
 end
 
+-- DUAL SCREEN: field on the top screen, menu on the bottom, over a 160x288
+-- surface (src/battle/DualBattle.lua). Mutually exclusive with wide, which
+-- isWideBattleLayout already forces off while dual screen is on.
+function BattleState:dualLayout()
+  return require("src.render.DualScreen").active()
+end
+
 -- Renderer:setUISize asks the top state for its surface before anything draws
 function BattleState:uiSize()
   if self:wideLayout() then return WideBattle.WIDTH, WideBattle.HEIGHT end
+  if self:dualLayout() then return DualBattle.WIDTH, DualBattle.HEIGHT end
   return 160, 144
 end
 
@@ -64,6 +73,7 @@ end
 -- extra columns unremapped in the forced-mono modes (WideBattle.zones).
 function BattleState:sgbPalettes()
   if self:wideLayout() then return WideBattle.zones() end
+  if self:dualLayout() then return DualBattle.zones() end
   return nil
 end
 
@@ -5052,6 +5062,7 @@ end
 
 function BattleState:draw()
   if self:wideLayout() then return WideBattle.draw(self) end
+  if self:dualLayout() then return DualBattle.draw(self) end
   return self:drawClassic()
 end
 
