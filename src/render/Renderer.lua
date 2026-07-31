@@ -668,8 +668,17 @@ function Renderer:endFrame(zones, worldZones)
       return true
     end
     if dsBattle and physical then
-      wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
-      screenBlit(0, { ox = ox, oy = oy, w = vpw, h = vph, sx = Sx, sy = Sy })
+      -- On a second-display device each physical screen is its own 160x144
+      -- panel, so the field fills the main panel as one Game Boy screen. The
+      -- 288 surface's own fit would shrink a portrait stack into a landscape
+      -- panel (tiny battle on the AYN Thor); size to a single screen instead.
+      local sp = math.max(1, math.floor(math.min(pw / self.WIDTH, ph / self.HEIGHT)))
+      local sx1, sy1 = sp / dpiX, sp / dpiY
+      local rw, rh = self.WIDTH * sx1, self.HEIGHT * sy1
+      local rox = math.floor((pw - self.WIDTH * sp) / 2) / dpiX
+      local roy = math.floor((ph - self.HEIGHT * sp) / 2) / dpiY
+      wox, woy, wvpw, wvph, wsx, wsy = rox, roy, rw, rh, sx1, sy1
+      screenBlit(0, { ox = rox, oy = roy, w = rw, h = rh, sx = sx1, sy = sy1 })
       stashField()
       local okid, id = pcall(function()
         return self.canvas:newImageData(1, 1, 0, self.HEIGHT,
