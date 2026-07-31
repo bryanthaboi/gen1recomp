@@ -13,4 +13,7 @@ return {
   enemyUnlimitedPP = false,
   -- Gen 2+: Hyper Beam always forces a recharge turn, even on a KO.
   hyperBeamSkipRechargeOnKO = false,
+  -- Gen 6+: every non-fainted party mon gets a full exp share, no held
+  -- item required (BattleState.lua, tagged REVERT: modernExpShare).
+  modernExpShare = true,
 }

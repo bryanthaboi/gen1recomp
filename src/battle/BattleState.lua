@@ -3208,7 +3208,10 @@ function BattleState:onFaint(battler)
   end
 end
 
-function BattleState:enemyMonFainted()
+-- Exp for the defeated enemy, shared by the faint path (enemyMonFainted)
+-- and, under modernExpShare, the catch path (storeCaughtMon): Gen 6+
+-- also pays out exp when the wild mon is caught rather than knocked out
+function BattleState:awardExp()
   -- exp is split among the mons that fought this enemy
   -- (engine/battle/experience.asm); traded mons earn x1.5; each
   -- participant gets the full stat exp
@@ -3286,11 +3289,19 @@ function BattleState:enemyMonFainted()
       end
     end
   end
+  -- modernExpShare (ruleset flag, src/battle/rulesets/modern_clean.lua)
+  -- swaps gen1's EXP.ALL item for gen6+-style Exp Share. To restore
+  -- faithful-only behavior, delete this local and the `if modernShare`
+  -- block below, and change `local expAll = not modernShare and ...`
+  -- back to `local expAll = (self.game.save.inventory.EXP_ALL or 0) > 0`.
+  local modernShare = self.ruleset and self.ruleset.modernExpShare
   -- with EXP.ALL, participants split half the exp and the other half
   -- is divided among the whole party (engine/battle/experience.asm)
-  local expAll = (self.game.save.inventory.EXP_ALL or 0) > 0
+  local expAll = not modernShare and (self.game.save.inventory.EXP_ALL or 0) > 0
   for _, mon in ipairs(alive) do
-    applyShare(mon, participants * (expAll and 2 or 1), true)
+    -- gen6+: participants no longer split exp among each other -- each
+    -- gets the full, undivided amount (split = 1)
+    applyShare(mon, modernShare and 1 or participants * (expAll and 2 or 1), true)
   end
   if expAll then
     -- the second GainExperience pass sets the gain flags for the WHOLE
@@ -3306,7 +3317,21 @@ function BattleState:enemyMonFainted()
       end
     end
   end
+  if modernShare then
+    -- gen6+ Exp Share: every non-participant, non-fainted party mon
+    -- gets a flat 50% of the undivided share a participant got -- no
+    -- held item, no gen1 halving-and-redividing.
+    for _, mon in ipairs(self.game.save.party) do
+      if mon.hp > 0 and not self.participants[mon] then
+        applyShare(mon, 2, "expAll")
+      end
+    end
+  end
   self.participants = {}
+end
+
+function BattleState:enemyMonFainted()
+  self:awardExp()
 
   if self.kind == "trainer" then
     -- EnemySendOutFirstMon / AnyEnemyPokemonAliveCheck (core.asm): scan
@@ -3867,6 +3892,10 @@ function BattleState:storeCaughtMon()
   -- (item_effects.asm:472-501), regenerating its move list from the
   -- base data -- a Mimic'd slot never leaves the battle with it
   self:restoreMimicked(self.enemy)
+  -- gen6+: catching also pays out exp, same split as a faint would have
+  -- (REVERT: modernExpShare -- delete this call along with awardExp's
+  -- other modernExpShare bits to go back to catches never granting exp)
+  if self.ruleset and self.ruleset.modernExpShare then self:awardExp() end
   local game = self.game
   local dex = game.save.pokedex
   local species = self.enemy.mon.species
