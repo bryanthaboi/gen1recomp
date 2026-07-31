@@ -64,4 +64,23 @@ T.eq(vw, 160, "the world view is the classic width while dual screen is on")
 T.eq(vh, 144, "the world view is the classic height while dual screen is on")
 DualScreen.setEnabled(false)
 
+-- battle dual layout: which screen the battlefield vs the menu lands on
+local BATTLE = { isOpaque = true, isBattleScreen = true }
+local OVERWORLD = { isOpaque = true }
+local BAG = { isOpaque = true }            -- bag/party cover the battle
+local CHOICE = { isOpaque = false }        -- YES/NO etc. over a live battle
+local function mode(...) return DualScreen.battleMode({ ... }) end
+
+local b, t = mode(OVERWORLD)
+T.eq(b, false, "no battle in the stack -> not battle mode")
+T.eq(t, false, "no battle -> no split")
+b, t = mode(OVERWORLD, BATTLE)
+T.eq(b, true, "a battle on top is battle mode")
+T.eq(t, true, "battle on top -> split battlefield/menu")
+b, t = mode(OVERWORLD, BATTLE, BAG)
+T.eq(b, true, "battle still active under an opaque bag/party screen")
+T.eq(t, false, "opaque bag/party covers the battle -> whole thing to the menu screen")
+b, t = mode(OVERWORLD, BATTLE, CHOICE)
+T.eq(t, true, "a non-opaque overlay over a live battle keeps the split")
+
 T.finish("dual screen layout")

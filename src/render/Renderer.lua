@@ -612,7 +612,75 @@ function Renderer:endFrame(zones, worldZones)
     local wc = self.worldActive and self.worldCanvas or self.lastWorldCanvas
     local wz = self.worldActive and worldZones or self.lastWorldZones
     local wox, woy, wvpw, wvph, wsx, wsy
-    if SecondScreen.available() then
+    local physical = SecondScreen.available()
+    local battle, battleTop = false, false
+    do
+      local ok, G = pcall(require, "src.core.Game")
+      local stack = ok and G and G.stack
+      if stack and stack.states then
+        battle, battleTop = DualScreen.battleMode(stack.states)
+      end
+    end
+    if battle then
+      local cw, ch = self.canvas:getWidth(), self.canvas:getHeight()
+      if not self.battleComposite or self.battleComposite:getWidth() ~= cw
+         or self.battleComposite:getHeight() ~= ch then
+        if self.battleComposite and self.battleComposite.release then self.battleComposite:release() end
+        self.battleComposite = PixelCanvas.new(cw, ch, "nearest")
+      end
+      love.graphics.setCanvas(self.battleComposite)
+      love.graphics.clear(0, 0, 0, 0)
+      love.graphics.setColor(1, 1, 1, 1)
+      blit(self.canvas, 1, 1, zones, 1, 1, 0, 0, 0, 0, cw, ch)
+      love.graphics.setCanvas(present)
+      local SPLIT = 96
+      local topSrc, tqy, tqh, botSrc, bqy, bqh
+      if battleTop then
+        if not self.battleField or self.battleField:getWidth() ~= cw
+           or self.battleField:getHeight() ~= SPLIT then
+          if self.battleField and self.battleField.release then self.battleField:release() end
+          self.battleField = PixelCanvas.new(cw, SPLIT, "nearest")
+        end
+        love.graphics.setCanvas(self.battleField)
+        love.graphics.clear(0, 0, 0, 0)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(self.battleComposite,
+          love.graphics.newQuad(0, 0, cw, SPLIT, cw, ch), 0, 0)
+        love.graphics.setCanvas(present)
+        topSrc, tqy, tqh = self.battleComposite, 0, SPLIT
+        botSrc, bqy, bqh = self.battleComposite, SPLIT, ch - SPLIT
+      else
+        topSrc, tqy, tqh = self.battleField, 0, SPLIT
+        botSrc, bqy, bqh = self.battleComposite, 0, ch
+      end
+      local function strip(src, qy, qh, rox, roy, rw, rh, rsx, rsy)
+        if not src then return end
+        local q = love.graphics.newQuad(0, qy, src:getWidth(), qh, src:getDimensions())
+        local dy = roy + (rh - qh * rsy) / 2
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setScissor(rox, roy, rw, rh)
+        love.graphics.draw(src, q, rox, dy, 0, rsx, rsy)
+        love.graphics.setScissor()
+      end
+      if physical then
+        wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
+        strip(topSrc, tqy, tqh, ox, oy, vpw, vph, Sx, Sy)
+        if botSrc then
+          local ok, id = pcall(function()
+            return botSrc:newImageData(1, 1, 0, bqy, botSrc:getWidth(), bqh)
+          end)
+          if ok and id then self.pushImage = id end
+        end
+        self.pushSecondary = false
+      else
+        local scale, wr, ur = DualScreen.layout(pw, ph, dpiX, dpiY, self.WIDTH, self.HEIGHT)
+        composeScale = scale
+        wox, woy, wvpw, wvph, wsx, wsy = wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy
+        strip(topSrc, tqy, tqh, wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy)
+        strip(botSrc, bqy, bqh, ur.ox, ur.oy, ur.w, ur.h, ur.sx, ur.sy)
+        self.pushSecondary = false
+      end
+    elseif physical then
       wox, woy, wvpw, wvph, wsx, wsy = ox, oy, vpw, vph, Sx, Sy
       if wc then
         blit(wc, wsx, wsy, wz, wsx, wsy, wox, woy, wox, woy, wvpw, wvph)
@@ -626,7 +694,7 @@ function Renderer:endFrame(zones, worldZones)
       composeScale = scale
       wox, woy, wvpw, wvph, wsx, wsy = wr.ox, wr.oy, wr.w, wr.h, wr.sx, wr.sy
       if wc then
-        blit(wc, wsx, wsy, wz, wsx, wsy, wox, woy, wox, woy, wvpw, wvph)
+        blit(wc, wsx, wsy, wz, wsx, wsy, wr.ox, wr.oy, wr.ox, wr.oy, wr.w, wr.h)
       end
       blit(self.canvas, ur.sx, ur.sy, zones, ur.sx, ur.sy,
            ur.ox, ur.oy, ur.ox, ur.oy, ur.w, ur.h)
@@ -801,7 +869,12 @@ function Renderer:endFrame(zones, worldZones)
       love.graphics.draw(composed, 0, 0)
     end
   end
-  if self.pushSecondary then
+  if self.pushImage then
+    local id = self.pushImage
+    self.pushImage = nil
+    SecondScreen.push(id, id:getWidth(), id:getHeight())
+    if id.release then pcall(function() id:release() end) end
+  elseif self.pushSecondary then
     self.pushSecondary = false
     local w, h = self.canvas:getWidth(), self.canvas:getHeight()
     if not self.secondCanvas or self.secondCanvas:getWidth() ~= w

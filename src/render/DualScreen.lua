@@ -75,4 +75,22 @@ function DualScreen.screenAt(px, py, pw, ph, w, h)
   return nil
 end
 
+-- battleTop keys off the visible base (topmost opaque state), so a non-opaque
+-- overlay above a live battle keeps the split while bag/party (opaque) drops it.
+function DualScreen.battleMode(states)
+  local battle, battleTop = false, false
+  if type(states) == "table" and #states > 0 then
+    local base = 1
+    for i = #states, 1, -1 do
+      if states[i].isOpaque then base = i break end
+    end
+    local baseState = states[base]
+    battleTop = baseState and baseState.isBattleScreen and true or false
+    for i = #states, 1, -1 do
+      if states[i].isBattleScreen then battle = true break end
+    end
+  end
+  return battle, battleTop
+end
+
 return DualScreen
