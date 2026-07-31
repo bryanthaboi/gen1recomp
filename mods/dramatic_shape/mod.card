@@ -1,0 +1,42 @@
+-- Sharing metadata (25-community-and-ecosystem.md 3.2).  Read by tooling
+-- and the manager detail pane; never by the loader's merge.
+return {
+  summary = "The overworld as a 3D diorama, and battles fought on it: real occlusion, tilt-shift, over-the-shoulder fights.",
+  author = "DramaticShape",
+  contact = "https://github.com/DramaticShape/DRAMATIC_SHAPE",
+  tags = { "graphics", "3d", "voxel", "render-pipeline", "presentation",
+           "battle" },
+  differences = {
+    changed = {
+      "with VOXEL on, the overworld draws as 3D geometry instead of flat tiles",
+      "occlusion comes from a depth buffer rather than a y-sort, so buildings really hide what is behind them",
+      "with 3D-BTL on, a battle draws over the map's nearest clear ground instead of over a white field",
+      "the map's NPCs are culled for the length of a battle, so the wipe plays over an empty map",
+      "a battle's letterbox voids go black rather than white, because the battle canvas is no longer white",
+      "VOXEL and the engine's TILT are mutually exclusive -- turning one on switches the other off",
+      "hotkeys 3 and 5 are taken over from the engine's TILT and GBC FX; both remain on the OPTIONS menu",
+      "the VOXEL key (3) turns TILT and GBC FX off on every press -- both fight the diorama, and 3 is now the only key that reaches either",
+    },
+    added = {
+      "VOXEL options row and hotkey 3 (OFF / 15 / 35 / 50 / 75 degrees)",
+      "T-SHIFT options row and hotkey 6 (OFF / 1 / 2 / 3), the miniature blur",
+      "V-GRID on hotkey 5 and V-CURVE on hotkey 7",
+      "3D-BTL on hotkey 8 (ON / OFF, on by default), battles fought on the world map",
+      "an over-the-shoulder battle camera on a slow parallax orbit, with a depth-of-field pass that holds both mons sharp",
+      "a sky behind the diorama at the 75-degree rung, outdoor maps only, coloured by the active palette mode",
+      "a hand-authored tile shape profile (data/voxel_heights.lua) a mod can extend",
+    },
+    known = {
+      "needs shader and depth-canvas support; without them the rows still cycle but the world stays 2D and battles draw plainly",
+      "a map with no 3x6 clearing falls back to a 1x4 one, and a map with neither draws the plain battle screen",
+      "the arena is where the CAMERA goes -- nobody is moved, so a fight staged across the map is a shot of that ground, not a trip to it",
+      "the battle backdrop renders at the GB's 160x144 to match the pics composited over it, so it is chunkier than the free-roam pass",
+      "menus and cutscenes are unaffected -- outside a battle the mode only draws the free-roam overworld",
+      "terrain meshes are cached per map, so the first frame after entering a large map costs a build",
+    },
+  },
+  credits = {
+    { who = "pret/pokered", for_ = "the tile and sprite data the geometry is derived from" },
+  },
+  compat = { engine = ">=0.1.37 <2.0.0", modApi = 2 },
+}

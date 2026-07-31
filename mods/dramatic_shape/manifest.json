@@ -1,0 +1,19 @@
+{
+  "id": "DRAMATIC_SHAPE",
+  "name": "Dramatic Shape Voxel Mod",
+  "version": "1.2.1",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": "0.0.0-dev || >=0.1.37 <2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": [
+    "engine_internals"
+  ],
+  "affects_link": false,
+  "description": "A full 3D diorama overworld: extruded terrain, depth-buffered occlusion, voxel characters and a tilt-shift miniature pass -- and battles fought on the map itself, shot over the shoulder at the nearest clear ground with a slow parallax drift and a depth-of-field pass. Registers two render pipelines and claims hotkeys 3, 5, 6, 7 and 8 -- 3 and 5 displace the engine's TILT and GBC FX keys, both still reachable on the OPTIONS menu. Presentational only: it changes what a battle is drawn over, never where anybody stands."
+}
