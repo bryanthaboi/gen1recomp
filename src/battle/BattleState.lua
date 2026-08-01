@@ -4430,7 +4430,21 @@ function BattleState:finish()
   require("src.core.Music").restoreMap(self.data)
   self.game.stack:pop()
   Runtime.emit("battle.ended", { battle = self, result = self.result or "run" })
-  if self.onFinish then self.onFinish(self.result or "run") end
+  -- Coming back from the battle screen is a fade, not a cut: EnterMap sees
+  -- BIT_BATTLE_OVER_OR_BLACKOUT set and runs MapEntryAfterBattle
+  -- (home/overworld.asm:22, :749-753) = GBFadeInFromWhite.  This is the one
+  -- choke point every battle -- wild, trainer, walk-up, scripted, link --
+  -- passes through on its way out, so the fade is guaranteed here rather
+  -- than depending on each caller having wrapped onFinish correctly.
+  local result = self.result or "run"
+  local onFinish = self.onFinish
+  if result == "lose" then
+    -- the blackout path warps to the heal point with its own transition
+    if onFinish then onFinish(result) end
+    return
+  end
+  self.game.stack:push(require("src.render.Transition").battleReturn(self.game,
+    function() if onFinish then onFinish(result) end end))
 end
 
 -- ---------------------------------------------------------------------
