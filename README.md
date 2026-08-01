@@ -50,8 +50,9 @@ supplied by the player.
 
 
 This project does not include a ROM, emulate the Game Boy, transpile assembly,
-or download a disassembly. A canonical US Poke Red, Blue, or Yellow ROM is the
-only game content input.
+or download a disassembly. A canonical Poke Red, Blue, or Yellow ROM -- the US
+release, or the Spanish EUR release for Red/Blue -- is the only game content
+input.
 
 The ROM is verified, used during import, and then released from memory. It is
 not copied into the cache. Later launches load the private generated cache and
@@ -64,12 +65,22 @@ Open the desktop app. On first boot, choose your legally obtained `.gb` /
 `.gbc` file or drop it onto the window. Import takes a few seconds and the
 game starts automatically.
 
-Only the canonical 1 MiB US Red, Blue, and Yellow ROMs are accepted. The
-importer verifies SHA-1 before creating any game data:
+Only canonical 1 MiB Red, Blue, and Yellow ROMs are accepted. The importer
+verifies SHA-1 before creating any game data:
 
-- Red: `ea9bcae617fdf159b045185467ae58b2e4a48b9a`
-- Blue: `d7037c83e1ae5b39bde3c30787637ba1d4c48ce2`
-- Yellow: `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1`
+- Red (US): `ea9bcae617fdf159b045185467ae58b2e4a48b9a`
+- Blue (US): `d7037c83e1ae5b39bde3c30787637ba1d4c48ce2`
+- Yellow (US): `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1`
+- Edicion Roja (Spain): `fc17c5b904d551b1b908054ccd1c493f755f832a`
+- Edicion Azul (Spain): `7715e7b133e8634df48918b9138374110212a108`
+
+A Spanish dump imports into the same Red/Blue tab as its US counterpart --
+same cache, same saves -- and the game plays fully in Spanish (dialogue,
+menus, the metric Pokedex, EDICION ROJA/AZUL title and credits). The last
+imported dump decides the language. The Spanish Yellow (Pokemon Amarillo) is
+recognized but not yet supported: its manifest needs a shift-matching
+disassembly, which exists for Red/Blue (einstein95/pokered-es) but not for
+Yellow.
 
 The packaged app contains neither a ROM nor pre-extracted game data. Music,
 sound effects, and cries are synthesized while the game runs from compact

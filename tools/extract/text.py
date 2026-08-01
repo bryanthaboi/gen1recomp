@@ -133,7 +133,10 @@ def parse_text_file(path, texts, rel):
             continue
         if s in ("ENDC", "vc_patch_end"):
             continue
-        m = re.match(r"(_\w+)::?\s*$", s)
+        # not every string label carries the far-text underscore
+        # (SilphCo2FSilphWorkerFPleaseTakeThisText and friends live in the
+        # script bank), and dropping those lost their strings (#393)
+        m = re.match(r"(\w+)::?\s*$", s)
         if m:
             flush()
             label = m.group(1)

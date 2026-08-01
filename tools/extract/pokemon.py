@@ -93,9 +93,50 @@ def parse_base_stats_file(path, rel):
     return out
 
 
+def parse_dex_unit_labels(pokered):
+    """engine/menus/pokedex.asm HeightWeightText: the localized captions of
+    a metric dex screen ("AL   ???<m>" / "PE   ???<k><g>" in Spanish)."""
+    path = os.path.join(pokered, "engine/menus/pokedex.asm")
+    in_block = False
+    labels = []
+    for lineno, line in read_asm(path):
+        s = line.strip()
+        if s.startswith("HeightWeightText"):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        m = re.match(r'(?:db|next)\s+"([^\s?"]+)', s)
+        if m:
+            labels.append(m.group(1))
+        if len(labels) == 2:
+            break
+    if len(labels) != 2:
+        return None
+    return {"height": labels[0], "weight": labels[1]}
+
+
+def metric_dex_fields(height, weight, labels=None):
+    """Dex fields for an EUR metric entry: decimeters and hectograms, with
+    imperial equivalents derived so heightFt/weight consumers keep working."""
+    total_inches = round(height * 3.937007874)
+    labels = labels or {}
+    return {
+        "heightM": height / 10.0,
+        "weightKg": weight / 10.0,
+        "heightFt": total_inches // 12,
+        "heightIn": total_inches % 12,
+        "weight": round(weight * 2.20462262),
+        "heightLabel": labels.get("height"),
+        "weightLabel": labels.get("weight"),
+    }
+
+
 def parse_dex_entries(pokered, species_order):
-    """data/pokemon/dex_entries.asm: kind, height ft/in, weight (0.1 lb),
-    dex text label -- pointer table is in internal species order."""
+    """data/pokemon/dex_entries.asm: kind, height, weight, dex text label --
+    pointer table is in internal species order.  US entries store feet/inches
+    and tenths of a pound; EUR localizations store one byte of decimeters and
+    a word of hectograms instead."""
     lines = read_asm(os.path.join(pokered, "data/pokemon/dex_entries.asm"))
     pointer_order = []
     bodies = {}
@@ -122,6 +163,10 @@ def parse_dex_entries(pokered, species_order):
             bodies[current]["heightFt"] = int(m.group(1))
             bodies[current]["heightIn"] = int(m.group(2))
             continue
+        m = re.match(r"db\s+(\d+)$", s)
+        if m:
+            bodies[current]["metricHeight"] = int(m.group(1))
+            continue
         m = re.match(r"dw\s+(\d+)$", s)
         if m:
             bodies[current]["weight"] = int(m.group(1))
@@ -130,10 +175,22 @@ def parse_dex_entries(pokered, species_order):
         if m:
             bodies[current]["text"] = m.group(1)
 
+    unit_labels = None
+    if any("metricHeight" in body for body in bodies.values()):
+        unit_labels = parse_dex_unit_labels(pokered)
+
     out = {}
     for i, label in enumerate(pointer_order):
-        if i < len(species_order):
-            out[species_order[i]] = bodies.get(label, {})
+        if i >= len(species_order):
+            continue
+        body = bodies.get(label, {})
+        if "metricHeight" in body:
+            entry = {"kind": body.get("kind")}
+            entry.update(metric_dex_fields(
+                body["metricHeight"], body.get("weight", 0), unit_labels))
+            entry["text"] = body.get("text")
+            body = entry
+        out[species_order[i]] = body
     return out
 
 

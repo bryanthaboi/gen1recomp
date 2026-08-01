@@ -94,19 +94,23 @@ def _read_raw(path):
 
 def extract(pokered, out_dir):
     # ---- SuperPalettes ---------------------------------------------------
+    # _read_raw keeps comments (the PAL_ names live there), so the
+    # IF DEF(_RED)/IF DEF(_BLUE) gates around PAL_LOGO1 are resolved here
+    # against util.ASM_DEFINES instead of through read_asm.
     palettes = {}
     order = []
-    in_blue = False
+    in_skipped = False
     for lineno, line in _read_raw(os.path.join(pokered, "data/sgb/sgb_palettes.asm")):
         s = line.strip()
-        if s.startswith("IF DEF(_BLUE)"):
-            in_blue = True
+        m = re.match(r"IF\s+DEF\((\w+)\)", s)
+        if m:
+            in_skipped = m.group(1) not in util.ASM_DEFINES
             continue
-        if s.startswith("ENDC") or s.startswith("IF DEF(_RED)"):
-            in_blue = False
+        if s.startswith("ENDC"):
+            in_skipped = False
             continue
         m = re.match(r"RGB\s+([\d,\s]+);\s*PAL_(\w+)", s)
-        if not m or in_blue:
+        if not m or in_skipped:
             continue
         nums = [n for n in re.split(r"[,\s]+", m.group(1).strip()) if n]
         if len(nums) != 12:

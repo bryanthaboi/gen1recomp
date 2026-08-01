@@ -48,3 +48,23 @@ no dialogue strings, images, audio samples, or ROM bytes.
 
 `tools/make_rom_manifest.py` and `tools/verify_rom_data.py` are developer audit
 tools. They are not used by the packaged game.
+
+## EUR (Spanish) Manifests
+
+The Spanish releases (Edicion Roja/Azul) are rebuilds of the US ROMs: every
+data bank keeps its US layout, while the far-text banks and any bank holding
+translated bytes are re-laid-out, so symbol addresses move.
+`tools/make_es_manifest.py` derives `rom_manifest_red_es.json` and
+`rom_manifest_blue_es.json` from the shipped US manifests, re-resolving every
+symbol (and the inline audio header addresses) from the shift-matching
+einstein95/pokered-es disassembly's `.sym` files, and re-parsing only the
+language-dependent metadata: the charmap/font charmap (accented characters),
+text dynamic-substitution commands, preset names, credits, trade nicknames,
+town-map names, the title ribbon metrics, and the metric Pokedex layout
+(`dexUnits`/`dexUnitLabels` -- EUR dex entries store decimeters/hectograms,
+one byte shorter than the US feet/inches layout).
+
+To regenerate: clone and build https://github.com/einstein95/pokered-es
+(`make red blue`, RGBDS 1.x), then run
+`python3 tools/make_es_manifest.py --pokered-es /path/to/pokered-es`.
+`tools/verify_rom_data.py --define _BLUE` audits the Blue variants.

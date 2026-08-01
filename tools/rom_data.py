@@ -11,6 +11,10 @@ from dataclasses import dataclass
 CANONICAL_RED_SHA1 = "ea9bcae617fdf159b045185467ae58b2e4a48b9a"
 CANONICAL_BLUE_SHA1 = "d7037c83e1ae5b39bde3c30787637ba1d4c48ce2"
 CANONICAL_YELLOW_SHA1 = "cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1"
+# EUR (Spain) releases: "Pokemon - Edicion Roja/Azul (Spain) (SGB Enhanced)".
+# Rebuilt localizations of the US ROMs, byte-matched by einstein95/pokered-es.
+CANONICAL_RED_ES_SHA1 = "fc17c5b904d551b1b908054ccd1c493f755f832a"
+CANONICAL_BLUE_ES_SHA1 = "7715e7b133e8634df48918b9138374110212a108"
 ROM_BANK_SIZE = 0x4000
 
 

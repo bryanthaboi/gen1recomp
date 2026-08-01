@@ -20,6 +20,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from extract import pokemon as pokemon_extract  # noqa: E402
 from extract import util  # noqa: E402
 from rom_data import (  # noqa: E402
     CANONICAL_BLUE_SHA1, CANONICAL_RED_SHA1, CANONICAL_YELLOW_SHA1,
@@ -1267,9 +1268,24 @@ def _dex_entry(rom, symbols, manifest, index, species):
     kind, consumed = read_string(
         rom, table.bank, address, manifest["charmap"], max_length=32)
     address += consumed
-    height_ft, height_in = rom.bytes(table.bank, address, 2)
-    weight = rom.word(table.bank, address + 2)
-    address += 4
+    entry = {"kind": kind}
+    if manifest.get("dexUnits") == "metric":
+        # EUR localizations: db decimeters, dw hectograms -- one byte
+        # shorter than the US layout.
+        height = rom.byte(table.bank, address)
+        weight = rom.word(table.bank, address + 1)
+        address += 3
+        entry.update(pokemon_extract.metric_dex_fields(
+            height, weight, manifest.get("dexUnitLabels")))
+    else:
+        height_ft, height_in = rom.bytes(table.bank, address, 2)
+        weight = rom.word(table.bank, address + 2)
+        address += 4
+        entry.update({
+            "heightFt": height_ft,
+            "heightIn": height_in,
+            "weight": weight,
+        })
     if rom.byte(table.bank, address) != 0x17:
         raise ValueError(
             f"dex entry {index + 1} has no TX_FAR command")
@@ -1278,13 +1294,8 @@ def _dex_entry(rom, symbols, manifest, index, species):
     text_label = manifest["dexEntryLabels"].get(species)
     if text_label is None:
         text_label = f"_DexEntry_{text_bank:02X}_{text_address:04X}"
-    return {
-        "kind": kind,
-        "heightFt": height_ft,
-        "heightIn": height_in,
-        "weight": weight,
-        "text": text_label,
-    }
+    entry["text"] = text_label
+    return entry
 
 
 def extract_pokemon(rom, symbols, manifest, out_dir, assets_dir):
@@ -1706,7 +1717,12 @@ def extract_field(rom, symbols, manifest, out_dir, assets_dir):
 
     raw_2bpp(
         "PokemonLogoGraphics", 128, 56, "title/pokemon_logo.png")
-    raw_1bpp("Version_GFX", 80, 8, "title/red_version.png")
+    # The version ribbon is localized ("EDICION ROJA" is 64px wide where
+    # "RED VERSION" is 80), so its size comes from the field metadata.
+    version_spec = manifest["field"]["title"]["version"]
+    raw_1bpp(
+        "Version_GFX", version_spec["width"], version_spec["height"],
+        "title/red_version.png")
     raw_2bpp(
         "PlayerCharacterTitleGraphics", 40, 56, "title/player.png",
         matte=True)

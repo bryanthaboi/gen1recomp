@@ -429,6 +429,8 @@ R.pokemon = {
     dexEntry = f.opt(f.rec{ kind = f.str, heightFt = f.int(0),
                             heightIn = f.int(0, 11), weight = f.num,
                             heightM = f.opt(f.num), weightKg = f.opt(f.num),
+                            heightLabel = f.opt(f.str),
+                            weightLabel = f.opt(f.str),
                             text = f.str }),
     icon = f.opt(f.union{ f.str, f.rec{ image = f.path,
                                         frames = f.opt(f.int(1)) } }),

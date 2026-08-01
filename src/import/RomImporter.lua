@@ -33,10 +33,19 @@ local CACHE_FORMAT = "rom-cache-v9:"
 -- (rom-cache.complete for Red, blue/rom-cache.complete for Blue).
 local MARKER_PATH = "rom-cache.complete"
 
--- The marker a finished import writes for a version: the generation tag plus
--- that version's ROM hash, so both a format bump and a swapped ROM invalidate.
-local function markerFor(version)
-  return CACHE_FORMAT .. GameVersion.info(version).sha1
+-- The marker a finished import writes: the generation tag plus the hash of
+-- the ROM that was extracted, so both a format bump and a swapped ROM
+-- invalidate.  A version accepts several dumps (US and localized EUR), each
+-- with its own hash, so validity is membership, not equality.
+local function markerFor(rom)
+  return CACHE_FORMAT .. rom.sha1
+end
+
+local function markerIsCurrent(version, marker)
+  for _, rom in ipairs(GameVersion.info(version).roms) do
+    if marker == markerFor(rom) then return true end
+  end
+  return false
 end
 local COMMUNITY_URL = "https://bois.icu"
 local TRUST_WARNING = "if you did not get this from bryanthaboi's github " ..
@@ -238,18 +247,18 @@ function RomImporter.isReady(version)
   CacheFs.prefix = GameVersion.cachePrefix(version)
   local marker = CacheFs.read(MARKER_PATH)
   CacheFs.prefix = saved
-  return marker == markerFor(version) and allRequiredFilesExist(version)
+  return marker ~= nil and markerIsCurrent(version, marker)
+    and allRequiredFilesExist(version)
 end
 
--- Load the import manifest for a version and confirm it matches that ROM.
-local function decodeManifest(version)
-  local path = GameVersion.info(version).manifest
-  local raw, readError = love.filesystem.read(path)
+-- Load the import manifest for a dump and confirm it matches that ROM.
+local function decodeManifest(rom)
+  local raw, readError = love.filesystem.read(rom.manifest)
   if not raw then error("ROM import metadata is missing: " .. tostring(readError)) end
   local Json = require("src.link.Json")
   local manifest, decodeError = Json.decode(raw)
   if not manifest then error("ROM import metadata is invalid: " .. tostring(decodeError)) end
-  assert(manifest.romSha1 == GameVersion.info(version).sha1,
+  assert(manifest.romSha1 == rom.sha1,
     "ROM import metadata version mismatch")
   return manifest
 end
@@ -672,7 +681,7 @@ function RomImporter.new(onComplete, opts)
     local marker = CacheFs.read(MARKER_PATH)
     CacheFs.prefix = saved
     self.returning[version] =
-      (not ready) and marker ~= nil and marker ~= markerFor(version)
+      (not ready) and marker ~= nil and not markerIsCurrent(version, marker)
     self.romName[version] = "pokemon_" .. info.id
       .. (info.id == "yellow" and ".gbc" or ".gb")
   end
@@ -854,11 +863,19 @@ function RomImporter:startData(data, displayName)
     return
   end
   local actualHash = sha1(data)
-  local version = GameVersion.forSha1(actualHash)
+  local version, rom = GameVersion.forSha1(actualHash)
   if not version then
-    self:setError(("Unsupported ROM (SHA-1 %s). This needs a clean US Pokemon "
-      .. "Red, Blue, or Yellow dump; patched, trimmed or \"fixed\" dumps "
-      .. "(tagged [b] or [BF]) never verify."):format(actualHash))
+    local known = GameVersion.UNSUPPORTED[actualHash]
+    if known then
+      self:setError(known .. " is a clean dump, but this edition is not "
+        .. "supported yet -- Spanish EUR support covers Red and Blue; "
+        .. "Yellow still needs the US dump.")
+      return
+    end
+    self:setError(("Unsupported ROM (SHA-1 %s). This needs a clean Pokemon "
+      .. "Red, Blue, or Yellow dump -- US, or Spanish EUR (Edicion Roja/"
+      .. "Azul); patched, trimmed or \"fixed\" dumps (tagged [b] or [BF]) "
+      .. "never verify."):format(actualHash))
     return
   end
   local info = GameVersion.info(version)
@@ -891,7 +908,7 @@ function RomImporter:startData(data, displayName)
     CacheFs.removeTree("assets/generated")
     CacheFs.remove(MARKER_PATH)
 
-    local manifest = decodeManifest(version)
+    local manifest = decodeManifest(rom)
     local RomExtractor = require("src.import.RomExtractor")
     local extractor = RomExtractor.new(self.romData, manifest,
       function(progress, total, stage, current, stageTotal)
@@ -906,7 +923,7 @@ function RomImporter:startData(data, displayName)
     collectgarbage("collect")
     -- Written last: the marker is what isReady() checks, so it must only
     -- appear once every required file is in place.
-    local ok, writeError = CacheFs.write(MARKER_PATH, markerFor(version))
+    local ok, writeError = CacheFs.write(MARKER_PATH, markerFor(rom))
     CacheFs.prefix = ""   -- restore the default so later writes stay at the root
     if not ok then error("could not finish the private cache: " .. tostring(writeError)) end
     self.ready[version] = true

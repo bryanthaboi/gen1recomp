@@ -138,9 +138,25 @@ def extract_title(pokered, assets_dir):
     no separate gfx manifest file, so the caller embeds this in field.lua
     under the `title` key.
     """
+    # The version ribbon is a gated INCBIN (gfx/version.asm): red_version
+    # for Red, blue_version for Blue.  Resolve it through read_asm so
+    # ASM_DEFINES picks the right png; the generated filename stays
+    # red_version.png -- the runtime keys on it.
+    version_rel = "gfx/title/red_version.png"
+    version_asm = os.path.join(pokered, "gfx/version.asm")
+    if os.path.isfile(version_asm):
+        for _, line in read_asm(version_asm):
+            m = re.match(r'INCBIN\s+"(gfx/title/\w+)\.1bpp"', line.strip())
+            if m:
+                version_rel = m.group(1) + ".png"
+                break
+
     out = {}
     for key, src_rel, matte in TITLE_GRAPHICS:
         base = os.path.basename(src_rel)
+        if key == "version":
+            src_rel = version_rel
+            base = "red_version.png"
         size = convert_png(os.path.join(pokered, src_rel),
                            os.path.join(assets_dir, "title", base),
                            transparent_matte=matte)
@@ -395,10 +411,28 @@ def extract_intro(pokered, assets_dir):
             f"gfx/intro/gengar.png via gfx/intro/gengar_{n}.tilemap "
             "(TILEMAP_GENGAR_INTRO_*, engine/movie/intro.asm)")
 
+    # The intro's front mon is version-gated: Red shows Nidorino, but Blue
+    # trees based on the Japanese Blue engine (the EUR localizations) show
+    # Jigglypuff.  Resolve the INCBINs through read_asm so ASM_DEFINES picks
+    # the right pngs; the generated filenames stay red_nidorino_* -- the
+    # runtime keys on them, whatever mon the pixels show.
+    fronts = {}
+    pending = None
+    for _, line in util.read_asm(
+            os.path.join(pokered, "engine/movie/intro.asm")):
+        s = line.strip()
+        m = re.match(r"FightIntroFrontMon(\d?):{1,2}\s*$", s)
+        if m:
+            pending = int(m.group(1) or 1)
+            continue
+        m = re.match(r'INCBIN\s+"(gfx/intro/\w+)\.2bpp"', s)
+        if m and pending:
+            fronts[pending] = m.group(1) + ".png"
+            pending = None
     manifest["nidorino"] = {}
     for n in (1, 2, 3):
-        rel = f"gfx/intro/red_nidorino_{n}.png"
-        base = os.path.basename(rel)
+        rel = fronts.get(n, f"gfx/intro/red_nidorino_{n}.png")
+        base = f"red_nidorino_{n}.png"
         size = convert_png(os.path.join(pokered, rel),
                            os.path.join(out_dir, base), transparent_color0=True)
         if size != (48, 48):
@@ -454,9 +488,35 @@ def extract_slots(pokered, assets_dir):
        or "ld a, $58" not in engine:
         util.die("slot_machine.asm: wheel tile loading/drawing code changed")
 
-    src = Image.open(os.path.join(pokered, "gfx/slots/red_slots_2.png"))
+    # The slot sheets are version-gated INCBINs (red_slots_* in Red,
+    # blue_slots_* in Blue trees); resolve them through read_asm so
+    # ASM_DEFINES picks the right pngs.  Generated filenames stay
+    # red_slots_* -- the runtime keys on them.
+    def gated_png(asm_rel, label, fallback):
+        pending = False
+        for _, line in read_asm(os.path.join(pokered, asm_rel)):
+            s = line.strip()
+            if re.match(rf"{label}:{{1,2}}\s*$", s):
+                pending = True
+                continue
+            m = pending and re.match(r'INCBIN\s+"(gfx/slots/\w+)\.2bpp"', s)
+            if m:
+                return m.group(1) + ".png"
+            if pending and s and not s.startswith("IF") \
+                    and not s.startswith("ENDC"):
+                break
+        return fallback
+
+    background_rel = gated_png(
+        "engine/slots/slot_machine.asm", "SlotMachineTiles1",
+        "gfx/slots/red_slots_1.png")
+    wheel_rel = gated_png(
+        "engine/battle/animations.asm", "SlotMachineTiles2",
+        "gfx/slots/red_slots_2.png")
+
+    src = Image.open(os.path.join(pokered, wheel_rel))
     if src.size != (32, 48):
-        util.die(f"red_slots_2.png: expected 32x48, got {src.size}")
+        util.die(f"{wheel_rel}: expected 32x48, got {src.size}")
     rgba = _convert_image(src, transparent_color0=True)
 
     def tile_pair(n):
@@ -481,9 +541,9 @@ def extract_slots(pokered, assets_dir):
     _save_png(sheet, os.path.join(assets_dir, "slots", "symbols.png"))
 
     sheets = {}
-    for key, rel in (("background", "gfx/slots/red_slots_1.png"),
-                     ("wheel", "gfx/slots/red_slots_2.png")):
-        base = os.path.basename(rel)
+    for key, rel, base in (
+            ("background", background_rel, "red_slots_1.png"),
+            ("wheel", wheel_rel, "red_slots_2.png")):
         size = convert_png(os.path.join(pokered, rel),
                            os.path.join(assets_dir, "slots", base))
         sheets[key] = {"path": f"assets/generated/slots/{base}",

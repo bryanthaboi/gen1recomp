@@ -720,7 +720,13 @@ def parse_badge_gates(pokered):
         util.die("Route23.asm: expected 7 guard rows and 7 badge pointers")
     guards = []
     for i, y in enumerate(ys):
-        badge = badge_names.get(badge_ptr_labels[len(ys) - 1 - i])
+        ptr_label = badge_ptr_labels[len(ys) - 1 - i]
+        # The badge id comes from the pointer label (EarthBadgeText ->
+        # EARTHBADGE): labels stay English in localized trees, while the
+        # displayed string under them is translated ("MED.TIERRA@").
+        m = re.match(r"(\w+)BadgeText$", ptr_label)
+        badge = m.group(1).upper() + "BADGE" if m \
+            else badge_names.get(ptr_label)
         if not badge:
             util.die(f"Route23.asm: no badge name for row y={y}")
         guard = {
@@ -773,7 +779,17 @@ def parse_preset_names(pokered):
         m = re.match(r'DEF\s+RIVALNAME\d\s+EQUS\s+"(\w+)"', s)
         if m:
             rival.append(m.group(1))
-    return {"player": player, "rival": rival, "customOption": "NEW NAME"}
+    # The menus lead with a "NEW NAME" row; localized trees translate it
+    # ("NUEVO N."), so read the first list entry rather than hardcoding.
+    custom = "NEW NAME"
+    list_path = os.path.join(pokered, "data/player/names_list.asm")
+    if os.path.isfile(list_path):
+        for lineno, line in read_asm(list_path):
+            m = re.match(r'db\s+"([^"@]+)@"', line.strip())
+            if m:
+                custom = m.group(1)
+                break
+    return {"player": player, "rival": rival, "customOption": custom}
 
 
 def parse_dark_maps(pokered):
@@ -1262,7 +1278,11 @@ def parse_coin_purchases(pokered):
     coins = int(f"00{coins_low}")
     dialogue = "\n".join(l.strip() for _, l in read_asm(
         os.path.join(pokered, "text/GameCorner.asm")))
-    if f"¥{price} for {coins}" not in dialogue:
+    # The clerk's line must quote the scripted price and coin count.  Word
+    # order and currency placement vary by language ("¥1000 for 50" in
+    # English, "50 fichas por 1000¥" in Spanish), so check the numbers, not
+    # the phrase.
+    if str(price) not in dialogue or str(coins) not in dialogue:
         util.die("GameCorner text/script coin purchase mismatch")
     return [{"coins": coins, "price": price}]
 
@@ -1440,14 +1460,18 @@ def extract(pokered, out_dir):
         util.die("badge gate extraction sanity check failed")
     if len(preset_names["player"]) != 3 or len(preset_names["rival"]) != 3:
         util.die("preset name extraction sanity check failed")
-    # Red expects RED/ASH/JACK + BLUE/GARY/JOHN. Yellow ships YELLOW/... with
-    # no IF DEF gates; Blue swaps player/rival. Only enforce the Red pair when
-    # building Red (ASM_DEFINES has _RED) or when RED already appears.
-    if "_RED" in util.ASM_DEFINES or "RED" in preset_names["player"]:
+    # Red expects RED/ASH/JACK + BLUE/GARY/JOHN (ROJO/AZUL in the Spanish
+    # tree). Yellow ships YELLOW/... with no IF DEF gates; Blue swaps
+    # player/rival. Only enforce the Red pair when building Red (ASM_DEFINES
+    # has _RED) or when a Red player name already appears.
+    red_pairs = {"RED": "BLUE", "ROJO": "AZUL"}
+    red_name = next(
+        (name for name in red_pairs if name in preset_names["player"]), None)
+    if "_RED" in util.ASM_DEFINES or red_name:
         if "YELLOW" in preset_names["player"]:
             pass  # pokeyellow ungated presets; Red name check does not apply
-        elif "RED" not in preset_names["player"] \
-                or "BLUE" not in preset_names["rival"]:
+        elif not red_name \
+                or red_pairs[red_name] not in preset_names["rival"]:
             util.die("preset name extraction sanity check failed")
     elif "YELLOW" in preset_names["player"]:
         if "BLUE" not in preset_names["rival"]:
@@ -1482,14 +1506,20 @@ def extract(pokered, out_dir):
        or (intro["fallingStar"]["width"], intro["bigStar"]["width"],
            intro["gamefreakText"]["width"]) != (8, 16, 80):
         util.die("intro asset extraction sanity check failed")
-    if town_map["locations"].get("PALLET_TOWN") != {"x": 2, "y": 11,
-                                                    "name": "PALLET TOWN"} \
-       or town_map["locations"].get("CERULEAN_CAVE_1F", {}).get("name") != "CERULEAN CAVE" \
+    # Location display names are translated in localized trees ("PUEBLO
+    # PALETA"), so pin the coordinates and structure, not the strings.
+    pallet = town_map["locations"].get("PALLET_TOWN", {})
+    if (pallet.get("x"), pallet.get("y")) != (2, 11) \
+       or not pallet.get("name") \
+       or not town_map["locations"].get("CERULEAN_CAVE_1F", {}).get("name") \
        or len(town_map["cursorOrder"]) != 47 \
        or town_map["cursorOrder"][0] != "PALLET_TOWN":
         util.die("town map extraction sanity check failed")
-    if len(credits["screens"]) != 35 or len(credits["mons"]) != 15 \
-       or credits["screens"][0]["lines"][1]["text"] != "RED VERSION STAFF" \
+    # The banner and screen count are localized ("RED VERSION STAFF" over 35
+    # screens in US Red, "POKéMON / EDICIÓN ROJA" over 34 in Spanish); the
+    # director card and the mon reel are not.
+    if len(credits["screens"]) < 30 or len(credits["mons"]) != 15 \
+       or not credits["screens"][0]["lines"][1]["text"] \
        or credits["screens"][1]["lines"] != [{"column": 6, "text": "DIRECTOR"},
                                              {"column": 3, "text": "SATOSHI TAJIRI"}] \
        or not credits["screens"][-1].get("copyright") \

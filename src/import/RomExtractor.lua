@@ -1051,20 +1051,36 @@ function RomExtractor:dexEntry(index, species)
   local kind, consumed = self.rom:readString(
     pointerTable.bank, address, self.manifest.charmap, 0x50, 32)
   address = address + consumed
-  local heightFt = self.rom:byte(pointerTable.bank, address)
-  local heightIn = self.rom:byte(pointerTable.bank, address + 1)
-  local weight = self.rom:word(pointerTable.bank, address + 2)
-  address = address + 4
+  local entry = { kind = kind }
+  if self.manifest.dexUnits == "metric" then
+    -- EUR localizations: db decimeters, dw hectograms -- one byte shorter
+    -- than the US layout.  Imperial fields are derived so every consumer
+    -- of heightFt/weight keeps working.
+    local height = self.rom:byte(pointerTable.bank, address)
+    local weight = self.rom:word(pointerTable.bank, address + 1)
+    address = address + 3
+    local totalInches = round(height * 3.937007874)
+    local labels = self.manifest.dexUnitLabels or {}
+    entry.heightM = height / 10
+    entry.weightKg = weight / 10
+    entry.heightFt = math.floor(totalInches / 12)
+    entry.heightIn = totalInches % 12
+    entry.weight = round(weight * 2.20462262)
+    entry.heightLabel = labels.height
+    entry.weightLabel = labels.weight
+  else
+    entry.heightFt = self.rom:byte(pointerTable.bank, address)
+    entry.heightIn = self.rom:byte(pointerTable.bank, address + 1)
+    entry.weight = self.rom:word(pointerTable.bank, address + 2)
+    address = address + 4
+  end
   assert(self.rom:byte(pointerTable.bank, address) == 0x17,
     "dex entry " .. index .. " has no TX_FAR command")
   local textAddress = self.rom:word(pointerTable.bank, address + 1)
   local textBank = self.rom:byte(pointerTable.bank, address + 3)
-  local textLabel = self.manifest.dexEntryLabels[species]
+  entry.text = self.manifest.dexEntryLabels[species]
     or ("_DexEntry_%02X_%04X"):format(textBank, textAddress)
-  return {
-    kind = kind, heightFt = heightFt, heightIn = heightIn,
-    weight = weight, text = textLabel,
-  }
+  return entry
 end
 
 function RomExtractor:extractPokemon()
@@ -1630,7 +1646,11 @@ function RomExtractor:extractField()
 
   self:raw2bpp("PokemonLogoGraphics", 128, 56,
     "title/pokemon_logo.png"); tick()
-  self:raw1bpp("Version_GFX", 80, 8,
+  -- the version ribbon is localized ("EDICION ROJA" is 64px wide where
+  -- "RED VERSION" is 80), so its size comes from the field metadata
+  local versionSpec = ((self.manifest.field or {}).title or {}).version
+    or { width = 80, height = 8 }
+  self:raw1bpp("Version_GFX", versionSpec.width, versionSpec.height,
     "title/red_version.png"); tick()
   self:raw2bpp("PlayerCharacterTitleGraphics", 40, 56,
     "title/player.png", { matte = true }); tick()
