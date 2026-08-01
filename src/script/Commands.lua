@@ -281,7 +281,19 @@ function Commands.start_battle(ctx, kind, a, b)
     end
     runner:resume()
   end
-  ctx.game.stack:push(battle)
+  -- Every battle enters through the transition wipe, script-driven ones
+  -- included: BattleTransition (engine/battle/battle_transitions.asm:1) runs
+  -- from DoBattleTransitionAndInitBattleVariables for all of them, and
+  -- GetBattleTransitionID_WildOrTrainer picks the style from the battle kind.
+  -- Pushing the BattleState straight onto the stack skipped the wipe
+  -- entirely, so every scripted trainer -- gym leaders, the rival, Giovanni --
+  -- and every scripted wild battle simply cut to the battle screen.  The
+  -- trainer-sight path already went through pushBattle; this one did not.
+  if ctx.overworld and ctx.overworld.pushBattle then
+    ctx.overworld:pushBattle(battle)
+  else
+    ctx.game.stack:push(battle)
+  end
   runner:yield()
 end
 
@@ -770,7 +782,15 @@ function Commands.old_man_demo(ctx)
   local battle = BattleState.newWild(ctx.game, om.species, om.level)
   battle:makeOldManDemo()
   battle.onFinish = function() runner:resume() end
-  ctx.game.stack:push(battle)
+  -- InitWildBattle calls DoBattleTransitionAndInitBattleVariables
+  -- unconditionally (core.asm:6699) -- there is no BATTLE_TYPE_OLD_MAN
+  -- special case -- so the catch tutorial gets the wipe like any other
+  -- wild battle
+  if ctx.overworld and ctx.overworld.pushBattle then
+    ctx.overworld:pushBattle(battle)
+  else
+    ctx.game.stack:push(battle)
+  end
   runner:yield()
 end
 
