@@ -72,8 +72,31 @@ ZIP**, then double-click the zip to unpack it.
    scripts/build_ios.sh --device --install
    ```
 
-   The script finds your signing identity and your phone by itself. If it
-   complains, it tells you exactly what to fix (usually: the phone was
+   The script finds your signing identity, then lists every connected
+   iPhone/iPad (physical devices first, then simulators) and asks which
+   one to install onto. Example:
+
+   ```text
+   ==> connected devices (* = default; physical preferred):
+     *1. iPhone de Andrew  (physical, iPhone 16e)  state=available (paired)
+      2. iPad de Andrew    (physical, iPad …)      state=unavailable  [may fail]
+      3. iPhone 15         (simulated, …)          state=shutdown  [simulator — …]
+   Install onto which device? [1]:
+   ```
+
+   Press **return** to accept the default (the `*` row — usually your
+   unlocked physical iPhone), or type another number. If an iPad or an
+   old pairing shows up as `unavailable`, pick your phone instead of the
+   first row that used to win by accident.
+
+   Non-interactive / CI: skip the prompt by pinning a name or UDID:
+
+   ```sh
+   GEN1_IOS_DEVICE='iPhone' scripts/build_ios.sh --device --install
+   ```
+
+   Only bash + Xcode's `xcrun devicectl` are used (Xcode 15+). If the
+   script complains, it tells you what to fix (usually: the phone was
    locked — unlock and re-run).
 
 3. First time only, the iPhone will want two approvals:
@@ -106,7 +129,9 @@ ZIP**, then double-click the zip to unpack it.
 |---|---|
 | `xcodebuild not found` | Xcode isn't installed or wasn't opened once — do Step 1 |
 | `no Apple signing identity found` | Do Step 2, then re-run |
-| `no iPhone/iPad found` | Cable in? Phone unlocked? Tapped "Trust"? |
+| `no iPhone/iPad found` / `devicectl not found` | Cable in? Phone unlocked? Tapped "Trust"? Need **Xcode 15+** for `devicectl` |
+| Install goes to the wrong device | At the prompt, type the number next to your iPhone (or set `GEN1_IOS_DEVICE='iPhone'`) |
+| Device listed as `unavailable` / `[may fail]` | Unlock that device, keep it plugged in, re-run — or pick another row |
 | Install fails with "locked" | Unlock the phone, keep it unlocked, re-run |
 | App icon appears then won't open | Do the two approvals in Step 5.3 |
 | App stops launching after a week | Free-account 7-day limit — re-run Step 5.2 |
