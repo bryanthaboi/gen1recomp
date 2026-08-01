@@ -3366,6 +3366,9 @@ runSuites({ "tests/rom_importer_android_pick_test.lua" })
 -- ---------------------------------------------- Android mod / save SAF pick
 runSuites({ "tests/rom_importer_android_mod_pick_test.lua" })
 
+-- ---------------------------------------------- launcher soft keyboard (#578)
+runSuites({ "tests/rom_importer_keyboard_test.lua" })
+
 -- ---------------------------------------------- import with no picker (#482)
 runSuites({ "tests/rom_importer_no_picker_test.lua" })
 runSuites({ "tests/rom_importer_double_pick_test.lua" })

@@ -1310,6 +1310,7 @@ end
 
 function RomImporter:update(dt)
   self.pulse = self.pulse + dt
+  self:_syncKeyboard()
   self:_updatePadCursor(dt)
   if self.ios and love.system.getPickedFile and self.workState ~= "working" then
     local path = love.system.getPickedFile()
@@ -4588,6 +4589,53 @@ function RomImporter:_findThumb(entry)
   end)
   self._findThumbs[entry.id] = ok and image or false
   return ok and image or nil
+end
+
+-- Mobile soft keyboard sync.  LOVE only delivers love.textinput while
+-- setTextInput(true) is active, and that call is what raises the Android/iOS
+-- keyboard; desktop has text input on by default, so this is mobile-only
+-- (mirrors tools/save-editor/Kit.lua's syncSoftKeyboard).  The launcher's
+-- text fields -- save-slot rename (#205), the add-mod-index prompt (#578)
+-- and the mod search field -- never enabled it, so on Android the player
+-- could neither type nor paste into them.
+function RomImporter:_kbdFieldRect()
+  local s = self._s or 1
+  local ox, oy, width, height = SafeArea.rect()
+  local appW = math.min(width, 1440 * s)
+  local appX = ox + (width - appW) / 2
+  -- the two modals are centered boxes; field offsets match the draws
+  if self._indexPrompt then
+    local dw = math.min(appW - 32 * s, 520 * s)
+    local dh = 168 * s
+    local dx = appX + (appW - dw) / 2
+    local dy = oy + (height - dh) / 2
+    return "index", dx + 16 * s, dy + 66 * s, dw - 32 * s, 32 * s
+  end
+  if self._rename then
+    local dw = math.min(appW - 32 * s, 420 * s)
+    local dh = 128 * s
+    local dx = appX + (appW - dw) / 2
+    local dy = oy + (height - dh) / 2
+    return "rename", dx + 16 * s, dy + 44 * s, dw - 32 * s, 30 * s
+  end
+  if self._findSearchFocus and self.findSearchRect then
+    local r = self.findSearchRect
+    return "search", r.x, r.y, r.width, r.height
+  end
+  return nil
+end
+
+function RomImporter:_syncKeyboard()
+  local id, fx, fy, fw, fh = self:_kbdFieldRect()
+  if id == self._kbdField then return end
+  if self._kbdField and self.android then
+    love.keyboard.setTextInput(false)
+  end
+  self._kbdField = id
+  if id and self.android then
+    love.keyboard.setTextInput(true, math.floor(fx), math.floor(fy),
+      math.floor(fw), math.floor(fh))
+  end
 end
 
 -- Open the "add an index" text prompt.  Deliberately a typed URL rather than a
