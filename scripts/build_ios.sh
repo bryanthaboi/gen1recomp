@@ -8,8 +8,9 @@
 #   (default)         Simulator Debug (ad-hoc signed)
 #   --device          iphoneos SDK; signing team auto-detected from the
 #                     keychain when DEVELOPMENT_TEAM is not set
-#   --install         after a --device build, install the app onto the
-#                     first connected iPhone/iPad (unlock it first)
+#   --install         after a --device build, list iPhone/iPad devices
+#                     (physical first) via xcrun devicectl and install.
+#                     Non-interactive: GEN1_IOS_DEVICE='name-or-udid'
 #   --release         Release configuration
 #   --version X.Y.Z   stamp MARKETING_VERSION / CURRENT_PROJECT_VERSION
 #   --fetch           Download love-11.5-ios-source.zip into mobile/ios/love-src/
@@ -544,23 +545,246 @@ package_ipa() {
 }
 
 # ------------------------------------------------------------ device install
-# Installs the freshly built .app onto the first connected iPhone/iPad via
-# devicectl. The phone must be paired (plugged in at least once + "Trust
-# This Computer") and UNLOCKED during the install.
+# Lists iPhone/iPad devices via `xcrun devicectl` (ships with Xcode 15+),
+# sorted with physical/usable first, then prompts. Simulators stay visible
+# but are deprioritized. Pin with GEN1_IOS_DEVICE=name-or-udid.
+# Only bash + Xcode CLI — no Homebrew tools. Device must be unlocked.
 install_to_device() {
   local app="$1"
-  local line udid
-  line="$(xcrun devicectl list devices 2>/dev/null \
-    | grep -E 'iPhone|iPad' | grep -v 'Watch' | head -1 || true)"
-  udid="$(printf '%s' "$line" \
-    | grep -Eo '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' \
-    | head -1 || true)"
-  if [ -z "$udid" ]; then
-    fail "no iPhone/iPad found.
-  Plug the phone in with a cable, unlock it, tap 'Trust This Computer'
-  if asked, then re-run: scripts/build_ios.sh --device --install"
+  local prefer="${GEN1_IOS_DEVICE:-}"
+  local interactive=0
+  [ -t 0 ] && [ -t 1 ] && interactive=1
+
+  command -v xcrun >/dev/null 2>&1 \
+    || fail "xcrun not found (install Xcode)"
+  xcrun --find devicectl >/dev/null 2>&1 \
+    || fail "devicectl not found. Need Xcode 15+ (xcrun --find devicectl)."
+
+  # Table columns (widths vary): Name  Hostname  Identifier  State  Model  Reality
+  # Parse is best-effort: bad rows are skipped so a format tweak can't abort install.
+  local -a names udids states models realities scores usables
+  local line name udid state model reality rest score usable is_physical
+  local tmp_list
+  tmp_list="$(mktemp -t gen1-ios-devices.XXXXXX 2>/dev/null)" \
+    || tmp_list="/tmp/gen1-ios-devices.$$"
+
+  if ! xcrun devicectl list devices >"$tmp_list" 2>/dev/null; then
+    rm -f "$tmp_list"
+    fail "devicectl list devices failed.
+  Is Xcode installed and selected? (xcode-select -p)"
   fi
-  say "installing onto: $(printf '%s' "$line" | sed 's/  .*//') ($udid)"
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Header / separator / blank
+    case "$line" in
+      ""|Name\ *|-----*) continue ;;
+    esac
+    # Only phone/tablet rows (Watch etc. ignored)
+    printf '%s\n' "$line" | grep -Eq 'iPhone|iPad' || continue
+
+    udid="$(printf '%s\n' "$line" \
+      | grep -Eo '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' \
+      | head -1 || true)"
+    [ -n "$udid" ] || continue
+
+    name="${line%%"$udid"*}"
+    name="$(printf '%s' "$name" | sed -E 's/[[:space:]]+$//' 2>/dev/null || printf '%s' "$name")"
+    [ -n "$name" ] || name="?"
+
+    rest="${line#*"$udid"}"
+    rest="$(printf '%s' "$rest" | sed -E 's/^[[:space:]]+//' 2>/dev/null || printf '%s' "$rest")"
+
+    # Reality from the full row
+    reality="unknown"
+    case "$line" in
+      *physical*) reality="physical" ;;
+      *simulated*) reality="simulated" ;;
+    esac
+    rest="$(printf '%s' "$rest" \
+      | sed -E 's/[[:space:]]+(physical|simulated)[[:space:]]*$//' 2>/dev/null \
+      || printf '%s' "$rest")"
+
+    # State: first token, or "available (paired)"
+    state="unknown"
+    if printf '%s' "$rest" | grep -Eq '^available \(paired\)'; then
+      state="available (paired)"
+      rest="${rest#available (paired)}"
+    elif [ -n "$rest" ]; then
+      state="${rest%%[[:space:]]*}"
+      rest="${rest#"$state"}"
+    fi
+    rest="$(printf '%s' "$rest" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' 2>/dev/null \
+      || printf '%s' "$rest")"
+    model="$rest"
+    [ -n "$model" ] || model="?"
+
+    is_physical=0
+    [ "$reality" = "physical" ] && is_physical=1
+
+    # "Usable" for default auto-pick: physical + not unavailable/unknown.
+    # Sims can still be chosen interactively (install may fail for iphoneos builds).
+    usable=0
+    score=0
+    if [ "$is_physical" -eq 1 ]; then
+      score=$((score + 1000))
+      case "$state" in
+        unavailable|unknown|"") ;;
+        *) usable=1; score=$((score + 100)) ;;
+      esac
+    else
+      # Booted sim slightly above shutdown sim
+      case "$state" in
+        boot*|available*|connected*) score=$((score + 20)) ;;
+      esac
+    fi
+    case "$name $model" in
+      *[Ii][Pp]hone*) score=$((score + 10)) ;;
+    esac
+    case "$state" in
+      available*|connected*) score=$((score + 5)) ;;
+    esac
+
+    names+=("$name")
+    udids+=("$udid")
+    states+=("$state")
+    models+=("$model")
+    realities+=("$reality")
+    scores+=("$score")
+    usables+=("$usable")
+  done <"$tmp_list"
+  rm -f "$tmp_list"
+
+  local count=${#udids[@]}
+  if [ "$count" -eq 0 ]; then
+    fail "no iPhone/iPad found via devicectl.
+  Plug a phone in (or boot a simulator), unlock it, tap Trust if asked,
+  then re-run: scripts/build_ios.sh --device --install"
+  fi
+
+  # Sort indices by score descending (insertion sort — bash 3.2 safe)
+  local -a order
+  local i j key
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    order+=("$i")
+    i=$((i + 1))
+  done
+  i=1
+  while [ "$i" -lt "$count" ]; do
+    key="${order[$i]}"
+    j=$((i - 1))
+    while [ "$j" -ge 0 ] && [ "${scores[${order[$j]}]}" -lt "${scores[$key]}" ]; do
+      order[$((j + 1))]="${order[$j]}"
+      j=$((j - 1))
+    done
+    order[$((j + 1))]="$key"
+    i=$((i + 1))
+  done
+
+  local pick=-1
+  if [ -n "$prefer" ]; then
+    local pref_lc blob
+    pref_lc="$(printf '%s' "$prefer" | tr '[:upper:]' '[:lower:]')"
+    for i in "${order[@]}"; do
+      blob="$(printf '%s %s' "${names[$i]}" "${udids[$i]}" | tr '[:upper:]' '[:lower:]')"
+      case "$blob" in
+        *"$pref_lc"*) pick=$i; break ;;
+      esac
+    done
+    if [ "$pick" -lt 0 ]; then
+      fail "no device matching GEN1_IOS_DEVICE='$prefer'
+$(for i in "${order[@]}"; do
+  printf '  %s  [%s]  %s\n' "${names[$i]}" "${realities[$i]}" "${udids[$i]}"
+done)"
+    fi
+  else
+    # Default = first usable physical in sorted order; else first row
+    local default_pos=0
+    local idx
+    for idx in "${!order[@]}"; do
+      i="${order[$idx]}"
+      if [ "${usables[$i]}" -eq 1 ]; then
+        default_pos=$idx
+        break
+      fi
+    done
+
+    say "connected devices (* = default; physical preferred):"
+    local pos=0 mark flag
+    for i in "${order[@]}"; do
+      pos=$((pos + 1))
+      mark=" "
+      [ $((pos - 1)) -eq "$default_pos" ] && mark="*"
+      flag=""
+      if [ "${realities[$i]}" = "simulated" ]; then
+        flag="  [simulator — device .app may not install]"
+      elif [ "${usables[$i]}" -eq 0 ]; then
+        flag="  [may fail]"
+      fi
+      printf '  %s%d. %s  (%s, %s)  state=%s%s\n' \
+        "$mark" "$pos" "${names[$i]}" "${realities[$i]}" "${models[$i]}" \
+        "${states[$i]}" "$flag"
+    done
+
+    if [ "$interactive" -eq 1 ]; then
+      local raw=""
+      # Best-effort TTY prompt; fall back to stdin / default on Enter
+      if [ -w /dev/tty ] 2>/dev/null; then
+        printf 'Install onto which device? [%d]: ' "$((default_pos + 1))" >/dev/tty 2>/dev/null \
+          || printf 'Install onto which device? [%d]: ' "$((default_pos + 1))" >&2
+        IFS= read -r raw </dev/tty 2>/dev/null || raw=""
+      else
+        printf 'Install onto which device? [%d]: ' "$((default_pos + 1))" >&2
+        IFS= read -r raw || raw=""
+      fi
+      if [ -z "$raw" ]; then
+        pick="${order[$default_pos]}"
+      else
+        case "$raw" in
+          *[!0-9]*)
+            warn "invalid choice '$raw' — using default"
+            pick="${order[$default_pos]}"
+            ;;
+          *)
+            if [ "$raw" -lt 1 ] || [ "$raw" -gt "$count" ]; then
+              warn "choice out of range ($raw) — using default"
+              pick="${order[$default_pos]}"
+            else
+              pick="${order[$((raw - 1))]}"
+            fi
+            ;;
+        esac
+      fi
+    else
+      pick="${order[$default_pos]}"
+      if [ "${usables[$pick]}" -eq 0 ]; then
+        fail "no usable physical device for non-interactive install.
+  Unlock/reconnect a phone, or pin one: GEN1_IOS_DEVICE='iPhone'
+  Devices seen:
+$(for i in "${order[@]}"; do
+  printf '  %s  [%s]  state=%s\n' "${names[$i]}" "${realities[$i]}" "${states[$i]}"
+done)"
+      fi
+      say "auto-selected (non-interactive): ${names[$pick]}"
+    fi
+  fi
+
+  # Guard against empty pick (shouldn't happen)
+  if [ -z "${pick:-}" ] || [ "$pick" -lt 0 ] 2>/dev/null; then
+    fail "internal error: no device selected"
+  fi
+
+  name="${names[$pick]}"
+  udid="${udids[$pick]}"
+  [ -n "$udid" ] || fail "selected device has no identifier"
+
+  if [ "${realities[$pick]}" = "simulated" ]; then
+    warn "$name is a simulator — this is an iphoneos (device) build; install may fail"
+  elif [ "${usables[$pick]}" -eq 0 ]; then
+    warn "$name is ${states[$pick]} — install may fail (unlock / reconnect)"
+  fi
+
+  say "installing onto: $name ($udid)"
   if xcrun devicectl device install app --device "$udid" "$app"; then
     say "installed. On the phone: tap the new app on your Home Screen."
     say "first launch may ask you to enable Developer Mode (Settings ->"
