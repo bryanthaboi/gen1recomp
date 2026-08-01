@@ -78,8 +78,8 @@ ZIP**, then double-click the zip to unpack it.
 
    ```text
    ==> connected devices (* = default; physical preferred):
-     *1. iPhone de Andrew  (physical, iPhone 16e)  state=available (paired)
-      2. iPad de Andrew    (physical, iPad …)      state=unavailable  [may fail]
+     *1. My iPhone  (physical, iPhone 16e)  state=available (paired)
+      2. My iPad    (physical, iPad …)      state=unavailable  [may fail]
       3. iPhone 15         (simulated, …)          state=shutdown  [simulator — …]
    Install onto which device? [1]:
    ```
