@@ -202,6 +202,39 @@ bool System::pickFile(const char *kind) const
 #endif
 }
 
+bool System::hasSecondaryDisplay() const
+{
+#ifdef LOVE_ANDROID
+	return love::android::hasSecondaryDisplay();
+#else
+	return false;
+#endif
+}
+
+bool System::presentUIFrame(const std::string &pixels, int w, int h) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::presentUIFrame(pixels.data(), pixels.size(), w, h);
+#else
+	LOVE_UNUSED(pixels);
+	LOVE_UNUSED(w);
+	LOVE_UNUSED(h);
+	return false;
+#endif
+}
+
+bool System::pollSecondScreenTouch(int &action, float &x, float &y) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::pollSecondScreenTouch(action, x, y);
+#else
+	LOVE_UNUSED(action);
+	LOVE_UNUSED(x);
+	LOVE_UNUSED(y);
+	return false;
+#endif
+}
+
 bool System::createFile(const char *suggestedName) const
 {
 #ifdef LOVE_ANDROID

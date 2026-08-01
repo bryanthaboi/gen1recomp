@@ -11,6 +11,7 @@ local StateStack = require("src.core.StateStack")
 local TouchControls = require("src.core.TouchControls")
 local ModLoader = require("src.mods.Loader")
 local ModRuntime = require("src.mods.Runtime")
+local OverworldSecondScreen = require("src.render.OverworldSecondScreen")
 local Screens = require("src.ui.Screens")
 
 local Game = {}
@@ -351,6 +352,12 @@ function Game:draw()
   if ModRuntime.wantsHook("render.hud") then
     ModRuntime.call("render.hud", function() end, self, viewport)
   end
+  -- AYN Thor second screen: pause-menu column + non-pausing party status.
+  -- An independent output surface (its own canvas, its own
+  -- presentUIFrame push), so its position here relative to the
+  -- main-screen pipeline above is arbitrary -- it never touches
+  -- viewport/zones/the main canvas.
+  OverworldSecondScreen.draw(self)
   -- on-screen mobile controls: pure screen-space, over the finished frame
   TouchControls:draw()
 end
@@ -653,6 +660,7 @@ function Game:applyOptions(opts)
   end
   Input:applyBindings(opts.bindings)
   TouchControls:applyOptions(opts)
+  require("src.render.SecondScreen").applyOptions(opts)
   -- heal soft-bricked APK installs that already saved gbcfx > 0 (#136)
   if gbcCleared then self:writeOptions() end
 end

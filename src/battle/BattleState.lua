@@ -22,6 +22,8 @@ local Party = require("src.pokemon.Party")
 local Pokemon = require("src.pokemon.Pokemon")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
+local SecondScreen = require("src.render.SecondScreen")
+local SecondScreenInput = require("src.render.SecondScreenInput")
 local Status = require("src.battle.Status")
 local TrainerAI = require("src.battle.TrainerAI")
 local TurnOrder = require("src.battle.TurnOrder")
@@ -49,6 +51,50 @@ end
 function BattleState:wideLayout()
   return self:isWideBattleLayout()
 end
+
+-- The second screen stacks two independent strips in one push: dialogue on
+-- top (its own coordinate space, translated up from y=96 to y=0 -- see
+-- drawTextArea), battle controls below it (their EXISTING absolute
+-- coordinates, some starting as high as y=56, translated down by this
+-- offset so they land under the dialogue strip instead of overlapping
+-- it). SECOND_SCREEN_HEIGHT is exactly 144 (the controls' own extent) +
+-- this offset (the dialogue strip's height, same 20x6-tile box the main
+-- screen used for it).
+local SECOND_SCREEN_WIDTH = 160
+local SECOND_SCREEN_CONTROLS_Y_OFFSET = 48
+local SECOND_SCREEN_HEIGHT = 144 + SECOND_SCREEN_CONTROLS_Y_OFFSET
+
+-- Whether this frame's battle text -- dialogue or the interactive
+-- menu/move-select UI -- belongs on the AYN Thor's second screen
+-- (src/render/SecondScreen.lua) instead of the main GB canvas. The
+-- old-man demo menu (self.demo) is scripted, not real input, so it stays
+-- on the main screen even when a second screen is present.
+function BattleState:usesSecondScreenText()
+  return SecondScreen.available()
+    and (self.phase == "messages"
+         or self.phase == "moveSelect"
+         or self.phase == "mimicSelect"
+         or (self.phase == "menu" and not self.demo))
+end
+
+-- Whenever usesSecondScreenText() is true, the main screen's text-box rows
+-- (y96-144) go completely unused -- drawClassic scales the battle scene
+-- (HUDs/pics/anim layer) up to fill them instead of leaving them blank.
+-- SCENE_SCALE_Y (144/96) makes the content that used to fill rows 0-11
+-- exactly fill the whole 160x144 canvas height. SCENE_SCALE_X stays 1: an
+-- equal-axis scale would push the content past 160px wide and need
+-- cropping off each side to fit back in, which read as a hard, distracting
+-- cut rather than a clean fill -- full width, no crop, was the better
+-- tradeoff once actually seen on-device, even though it means pics/HUDs
+-- come out slightly taller than wide versus their original proportions.
+-- Not tied to a broader "second screen present" check: the "intro" phase
+-- doesn't redirect (usesSecondScreenText() is phase-specific), so it
+-- correctly keeps the unscaled classic view rather than fighting
+-- drawTextArea's own (unscaled) empty box for that same screen real estate.
+local SCENE_SCALE_X = 1
+local SCENE_SCALE_Y = 144 / 96
+local SCENE_SCALE_X_OFFSET = 0 -- no X scale means no re-centering needed;
+                                -- kept as a named hook in case that changes
 
 -- Renderer:setUISize asks the top state for its surface before anything draws
 function BattleState:uiSize()
@@ -1444,9 +1490,54 @@ function BattleState:tickFx()
   self:updateFx()
 end
 
+-- Which row a second-screen tap at y (160x144 space) landed nearest to,
+-- among `count` rows spaced 8px apart starting at baseY -- matches the
+-- moveSelect/mimicSelect move-list layout in drawTextArea (baseY 96/56).
+-- Clamped, so a tap above/below the list still picks the nearest end
+-- rather than being ignored.
+local function nearestRow(y, baseY, count)
+  local i = math.floor((y - baseY) / 8 + 0.5)
+  return math.max(1, math.min(count, i))
+end
+
 function BattleState:update(dt)
   self:tickFx()
   local input = self.game.input
+
+  -- AYN Thor second-screen touch: a completed tap sets this phase's
+  -- cursor to the tapped item and pulses a same-shape "a" press, so the
+  -- input:wasPressed("a") branches below handle it exactly like a real
+  -- button confirm -- no separate choice-handling logic to keep in sync.
+  -- The pulse lands on Input's *next* step (Game:step calls Input:step
+  -- before BattleState:update), a one-frame delay that's imperceptible
+  -- for a menu confirm.
+  if self:usesSecondScreenText() then
+    local tapX, tapY = SecondScreenInput.poll()
+    if tapX then
+      -- controls render translated down by this offset (drawTextArea) so
+      -- they sit below the dialogue strip; undo it here so the hit-test
+      -- math below can keep using the controls' original coordinates
+      -- unmodified. A tap during "messages" (dialogue has no controls to
+      -- hit) just falls through every branch below and is discarded.
+      tapY = tapY - SECOND_SCREEN_CONTROLS_Y_OFFSET
+      if self.phase == "menu" then
+        local colBound = self.safari and 80 or 112
+        local col = tapX < colBound and 0 or 1
+        local row = tapY < 120 and 0 or 1
+        self.menuIndex = row * 2 + col + 1
+        input:overlayPressed("a")
+        input:overlayReleased("a")
+      elseif self.phase == "moveSelect" then
+        self.moveIndex = nearestRow(tapY, 96, #self.player.curMoves)
+        input:overlayPressed("a")
+        input:overlayReleased("a")
+      elseif self.phase == "mimicSelect" then
+        self.mimicIndex = nearestRow(tapY, 56, #self.mimicMoves)
+        input:overlayPressed("a")
+        input:overlayReleased("a")
+      end
+    end
+  end
 
   -- safety net: HP/status changed outside a queued drain (level-up heals,
   -- field effects, bag cures) snaps once the queue is idle
@@ -4548,7 +4639,15 @@ end
 -- text box (window-layer content), so compositing an unshifted copy
 -- underneath ghosted every name in the vacated strip (#295).  The strip
 -- shows blank color 0 instead, like the hardware revealing empty BG.
-function BattleState:drawZonePass(src, sx, sy)
+-- scaleX/scaleY/offsetX: when the battle scene is scaled up to fill the
+-- rows the text box vacated (see drawClassic's sceneScale), src already
+-- contains the pre-scaled content -- baked that way during the bgCanvas
+-- bake pass, same transform -- so only the zone SCISSOR rects need
+-- converting to match where that content actually landed.
+-- love.graphics.setScissor is NOT affected by the active love.graphics
+-- transform (unlike draw calls), so this can't be handled by wrapping the
+-- loop in a push/scale instead.
+function BattleState:drawZonePass(src, sx, sy, scaleX, scaleY, offsetX)
   local PaletteFX = require("src.render.PaletteFX")
   local shader = PaletteFX.shader()
   local pals = self:sgbBattlePals()
@@ -4556,10 +4655,13 @@ function BattleState:drawZonePass(src, sx, sy)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setShader(shader)
   local shaking = sx ~= 0 or sy ~= 0
+  scaleX = scaleX or 1
+  scaleY = scaleY or 1
+  offsetX = offsetX or 0
   for _, z in ipairs(BATTLE_ZONES) do
     PaletteFX.sendColors(shader, PaletteFX.permute(pals[z.pal], bgp))
-    local zx, zy = z[1] * 8, z[2] * 8
-    local zw, zh = (z[3] - z[1] + 1) * 8, (z[4] - z[2] + 1) * 8
+    local zx, zy = z[1] * 8 * scaleX + offsetX, z[2] * 8 * scaleY
+    local zw, zh = (z[3] - z[1] + 1) * 8 * scaleX, (z[4] - z[2] + 1) * 8 * scaleY
     love.graphics.setScissor(zx, zy, zw, zh)
     if shaking then
       love.graphics.rectangle("fill", zx, zy, zw, zh)
@@ -4931,6 +5033,27 @@ function BattleState:drawHUDs(slide)
 end
 
 function BattleState:drawTextArea()
+  -- When present, the AYN Thor's second screen takes the whole box+content
+  -- for these phases -- draw it there instead of the main GB canvas, which
+  -- is left untouched (blank/showing the battle scene) for the duration.
+  local onSecondScreen = self:usesSecondScreenText()
+  if onSecondScreen then
+    SecondScreen.begin(SECOND_SCREEN_WIDTH, SECOND_SCREEN_HEIGHT)
+    if self.phase == "messages" then
+      -- Dialogue gets its own strip at the canvas top. Every coordinate
+      -- below assumes the main screen's text-box position (box top
+      -- y=96, lines at y=112/128) -- translate so that lands at y=0
+      -- instead, rather than duplicating the position math.
+      love.graphics.translate(0, -96)
+    else
+      -- Battle controls (menu/moveSelect/mimicSelect) keep their
+      -- existing absolute coordinates verbatim -- mimicSelect's box
+      -- starts as high as y=56 -- so shift the whole canvas down to
+      -- land them below the dialogue strip instead of overlapping it.
+      love.graphics.translate(0, SECOND_SCREEN_CONTROLS_Y_OFFSET)
+    end
+  end
+
   Font.drawBox(0, 12, 20, 6)
   love.graphics.setColor(0, 0, 0, 1)
   if self.phase == "messages" and (self.current or self.animPlaying) then
@@ -5046,6 +5169,10 @@ function BattleState:drawTextArea()
     end
     Font.drawCode(0xED, 8, (7 + self.mimicIndex) * 8)
   end
+
+  if onSecondScreen then
+    SecondScreen.finish()
+  end
 end
 
 function BattleState:draw()
@@ -5070,6 +5197,28 @@ function BattleState:drawClassic()
     sx = self.frame % 4 < 2 and 2 or -2
   end
   local slide = (self.introSlide or 0) * 4 -- intro slide-in offset
+  -- moveSelect/mimicSelect's menu box normally clips the player pic's rows
+  -- it would otherwise overwrite (drawPicsLayer's clipY); when that box
+  -- moved to the second screen instead, nothing draws over those rows on
+  -- the main screen any more, so let the pic show fully. Also gates the
+  -- scene scale-up (see SCENE_SCALE_X/Y above) -- both exist for the
+  -- exact same reason: the text box's territory on the main screen is
+  -- empty.
+  local skipMenuClip = self:usesSecondScreenText()
+  local sceneScale = skipMenuClip
+  -- "battle.sceneScale": a mod that composes its own battle camera/scene
+  -- (e.g. a 3D-diorama overlay compositing through
+  -- Renderer:setWorldOverride) can veto the scale-up for a frame it's
+  -- staging itself by hooking this and returning false -- the classic
+  -- pics/HUDs/anim layer then draw at their normal, unscaled positions
+  -- and BATTLE_ZONES scissors, which is what a mod doing its own
+  -- screen-space projection expects instead of having this transform
+  -- silently double-apply on top of its own. Unhooked, behavior is
+  -- unchanged from sceneScale above.
+  if sceneScale and Runtime.wantsHook("battle.sceneScale") then
+    sceneScale = Runtime.call("battle.sceneScale",
+      function(_, wanted) return wanted end, self, sceneScale) ~= false
+  end
 
   if self:colorMode() then
     -- SGB pipeline: gray BG canvas -> (wavy) -> zone recolor with the
@@ -5080,29 +5229,59 @@ function BattleState:drawClassic()
     g.setCanvas(self.bgCanvas)
     g.setColor(1, 1, 1, 1)
     g.rectangle("fill", 0, 0, 160, 144)
+    if sceneScale then
+      g.push()
+      g.translate(SCENE_SCALE_X_OFFSET, 0)
+      g.scale(SCENE_SCALE_X, SCENE_SCALE_Y)
+    end
     self:drawHUDs(slide)
+    if sceneScale then g.pop() end
     self:drawTextArea()
     if wavy then
       -- the mon pics are BG tiles on the GB, so SE_WAVY_SCREEN bends
       -- them too: bake them into the canvas as DMG grays and let the
       -- zone pass color them by region (exactly what the SGB did)
       self.grayPics = true
-      g.setScissor(0, 0, 160, 96) -- BG pics live above the text box
-      self:drawPicsLayer(slide, 0, 0)
+      -- BG pics live above the text box -- unless that box moved to the
+      -- second screen and freed the whole canvas (sceneScale)
+      g.setScissor(0, 0, 160, sceneScale and 144 or 96)
+      if sceneScale then
+        g.push()
+        g.translate(SCENE_SCALE_X_OFFSET, 0)
+        g.scale(SCENE_SCALE_X, SCENE_SCALE_Y)
+      end
+      self:drawPicsLayer(slide, 0, 0, nil, skipMenuClip)
+      if sceneScale then g.pop() end
       g.setScissor()
       self.grayPics = nil
     end
     g.setCanvas(prev)
-    self:drawZonePass(self:applyWavy(self.bgCanvas), sx, sy)
+    self:drawZonePass(self:applyWavy(self.bgCanvas), sx, sy,
+      sceneScale and SCENE_SCALE_X, sceneScale and SCENE_SCALE_Y,
+      sceneScale and SCENE_SCALE_X_OFFSET)
     if not wavy then
       -- the pics are BG tiles in rows 0-11 on the GB: they can never
       -- cover the text box, whatever the SE offsets do (a vertical
-      -- window shake moves the box down with everything else)
-      g.setScissor(0, 0, 160, 96 + math.max(0, sy))
-      self:drawPicsLayer(slide, sx, sy)
+      -- window shake moves the box down with everything else) -- unless,
+      -- again, sceneScale means there is no text box on this screen to
+      -- cover
+      g.setScissor(0, 0, 160, sceneScale and 144 or (96 + math.max(0, sy)))
+      if sceneScale then
+        g.push()
+        g.translate(SCENE_SCALE_X_OFFSET, 0)
+        g.scale(SCENE_SCALE_X, SCENE_SCALE_Y)
+      end
+      self:drawPicsLayer(slide, sx, sy, nil, skipMenuClip)
+      if sceneScale then g.pop() end
       g.setScissor()
     end
+    if sceneScale then
+      g.push()
+      g.translate(SCENE_SCALE_X_OFFSET, 0)
+      g.scale(SCENE_SCALE_X, SCENE_SCALE_Y)
+    end
     self:drawAnimLayer(true)
+    if sceneScale then g.pop() end
   else
     -- flat fallback (headless / no shader support): pre-colorized pics
     -- on white, no palette fades
@@ -5113,9 +5292,15 @@ function BattleState:drawClassic()
       love.graphics.push()
       love.graphics.translate(sx, sy)
     end
-    self:drawPicsLayer(slide, 0, 0)
+    if sceneScale then
+      love.graphics.push()
+      love.graphics.translate(SCENE_SCALE_X_OFFSET, 0)
+      love.graphics.scale(SCENE_SCALE_X, SCENE_SCALE_Y)
+    end
+    self:drawPicsLayer(slide, 0, 0, nil, skipMenuClip)
     self:drawHUDs(slide)
     self:drawAnimLayer(false)
+    if sceneScale then love.graphics.pop() end
     self:drawTextArea()
     if shaking then
       love.graphics.pop()

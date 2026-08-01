@@ -10,6 +10,7 @@ local Menu = require("src.ui.Menu")
 local Renderer = require("src.render.Renderer")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
+local SecondScreen = require("src.render.SecondScreen")
 local Strings = require("src.core.Strings")
 
 local StartMenu = {}
@@ -160,6 +161,22 @@ function StartMenu.new(game)
       Font.draw(("%2d"):format(math.floor(safari.balls or 0)), 48, 24)
       love.graphics.setColor(1, 1, 1, 1)
     end
+  end
+
+  -- AYN Thor second screen: this is the pause menu, so once a second
+  -- screen exists its content lives there instead -- a persistent left
+  -- column (src/render/OverworldSecondScreen.lua), which frees the main
+  -- screen to keep showing the map uninterrupted while paused, the same
+  -- move BattleState's menus already made for battle. drawColumn keeps
+  -- the real draw logic (box/items/cursor, including the safari overlay
+  -- above) available for the coordinator to call against the
+  -- second-screen canvas; draw() itself becomes a no-op on the main
+  -- screen once a second screen is present, and falls back to the
+  -- classic on-screen menu exactly as before everywhere else.
+  menu.drawColumn = menu.draw
+  menu.draw = function(self)
+    if SecondScreen.available() then return end
+    self:drawColumn()
   end
   return menu
 end

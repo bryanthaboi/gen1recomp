@@ -1,0 +1,16 @@
+{
+  "id": "example_second_screen",
+  "name": "Second Screen Pipe Test",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "DEBUG",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "permissions": ["engine_internals"],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Step-1 validation mod: draws an animated test pattern to a small canvas and pushes it to a secondary Android display (e.g. an AYN Thor's bottom panel) every few frames, to prove the native pixel pipe works end to end before anything real (battle UI, party HUD) is redirected there."
+}

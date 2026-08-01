@@ -239,6 +239,14 @@ local function drawIcon(game, mon, x, y, selected, counter)
   end
 end
 
+-- Exposed for src/render/PartyStatusHUD.lua, which draws the same party
+-- icon strip on the AYN Thor's second screen and shouldn't re-derive the
+-- icon registry lookup / OBP0 bake / mirrored-frame logic that lives here.
+-- Callers outside this file must set love.graphics color to white first
+-- (icons are full-color art, not a tinted glyph) and restore it after,
+-- same as the in-file call site below.
+PartyMenu.drawIcon = drawIcon
+
 function PartyMenu.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, PartyMenu)

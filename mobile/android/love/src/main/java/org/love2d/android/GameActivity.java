@@ -31,6 +31,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -38,12 +39,16 @@ import java.util.Map;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.app.Presentation;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.res.AssetManager;
+import android.graphics.Bitmap;
+import android.graphics.Paint;
+import android.hardware.display.DisplayManager;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -96,6 +101,246 @@ public class GameActivity extends SDLActivity {
     public int safeAreaLeft = 0;
     public int safeAreaBottom = 0;
     public int safeAreaRight = 0;
+
+    // Secondary-display support (e.g. the bottom panel on an AYN Thor,
+    // exposed by Android as a Presentation-category Display -- see
+    // mobile/ANDROID.md and docs on love.system.hasSecondaryDisplay /
+    // love.system.presentUIFrame). Static because the JNI bridge in
+    // src/common/android.cpp calls these as static methods, matching the
+    // rest of this class's existing statics (gamePath, vibrator, etc).
+    private static Presentation secondaryPresentation = null;
+    private static UIFrameView secondaryView = null;
+
+    // A plain View that just blits whatever Bitmap it's given. Deliberately
+    // NOT part of SDL's/LÖVE's GL surface or event loop -- it's a second,
+    // independent Android window, fed frames explicitly via pushUIFrame
+    // rather than sharing LÖVE's renderer or draw thread.
+    private static class UIFrameView extends View {
+        private Bitmap frame;
+        private final Paint paint = new Paint();
+        private boolean touchDown = false;
+
+        UIFrameView(Context context) {
+            super(context);
+            setBackgroundColor(0xFFFFFFFF); // matches the white GB-style
+                                             // panels (Font.drawBox, etc.)
+                                             // pushed frames are drawn
+                                             // with, while no frame has
+                                             // arrived yet or outside the
+                                             // letterboxed content rect
+            paint.setFilterBitmap(false); // nearest-neighbour: pushed frames
+                                           // are pixel art, same as the main
+                                           // screen's integer-scale pipeline
+        }
+
+        void setFrame(Bitmap bitmap) {
+            frame = bitmap;
+            postInvalidate();
+        }
+
+        // Shared by onDraw and onTouchEvent so the letterbox math (and thus
+        // the coordinate space touches get reported in) can never drift
+        // from what is actually on screen. Returns null if there is nothing
+        // sane to compute against yet (no frame, zero-size view).
+        private android.graphics.RectF contentRect() {
+            if (frame == null) {
+                return null;
+            }
+            int vw = getWidth();
+            int vh = getHeight();
+            int fw = frame.getWidth();
+            int fh = frame.getHeight();
+            if (vw <= 0 || vh <= 0 || fw <= 0 || fh <= 0) {
+                return null;
+            }
+            float scale = Math.min((float) vw / fw, (float) vh / fh);
+            float dw = fw * scale;
+            float dh = fh * scale;
+            float left = (vw - dw) / 2f;
+            float top = (vh - dh) / 2f;
+            return new android.graphics.RectF(left, top, left + dw, top + dh);
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            android.graphics.RectF dst = contentRect();
+            if (dst != null) {
+                canvas.drawBitmap(frame, null, dst, paint);
+            }
+        }
+
+        // Reverse channel for pushUIFrame: reports taps back in the pushed
+        // frame's own pixel space (clamped to its bounds), so Lua-side
+        // hit-testing (see src/render/SecondScreenInput.lua) can work
+        // against the exact coordinates it drew at, independent of the
+        // panel's actual resolution or the letterbox offset. Single-touch
+        // only -- plenty for menu taps, and multi-touch on a status/menu
+        // panel is not a case worth the extra complexity yet.
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            android.graphics.RectF dst = contentRect();
+            if (dst == null) {
+                return true;
+            }
+            int action;
+            switch (event.getAction() & MotionEvent.ACTION_MASK) {
+                case MotionEvent.ACTION_DOWN:
+                    action = 0;
+                    touchDown = true;
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (!touchDown) return true;
+                    action = 1;
+                    break;
+                case MotionEvent.ACTION_UP:
+                    action = 2;
+                    touchDown = false;
+                    break;
+                default: // CANCEL and anything else: treat as a cancel
+                    action = 3;
+                    touchDown = false;
+                    break;
+            }
+            float scale = dst.width() / frame.getWidth();
+            float fx = (event.getX() - dst.left) / scale;
+            float fy = (event.getY() - dst.top) / scale;
+            fx = Math.max(0f, Math.min((float) frame.getWidth(), fx));
+            fy = Math.max(0f, Math.min((float) frame.getHeight(), fy));
+            queueSecondScreenTouch(action, fx, fy);
+            return true;
+        }
+    }
+
+    // Queued taps on the second screen, drained by pollSecondScreenTouch
+    // (called from love::android::pollSecondScreenTouch in android.cpp,
+    // itself driven by love.system.pollSecondScreenTouch). Capped so a
+    // Lua side that stops polling (wrong phase, second screen torn down
+    // mid-gesture) cannot grow this unboundedly; dropping the OLDEST entry
+    // once full keeps the most current finger position, which is the one
+    // that matters for a menu tap.
+    private static final int MAX_QUEUED_SECOND_SCREEN_TOUCHES = 64;
+    private static final ArrayDeque<float[]> secondScreenTouchQueue = new ArrayDeque<>();
+
+    private static synchronized void queueSecondScreenTouch(int action, float x, float y) {
+        if (secondScreenTouchQueue.size() >= MAX_QUEUED_SECOND_SCREEN_TOUCHES) {
+            secondScreenTouchQueue.pollFirst();
+        }
+        secondScreenTouchQueue.addLast(new float[] { action, x, y });
+    }
+
+    // {action, x, y} for the oldest queued touch, or null if none is
+    // pending. action: 0 = down, 1 = move, 2 = up, 3 = cancel. x/y are in
+    // the same pixel space as the w/h a presentUIFrame call last used.
+    @Keep
+    public static synchronized float[] pollSecondScreenTouch() {
+        return secondScreenTouchQueue.pollFirst();
+    }
+
+    // Looks for a Presentation-category secondary display (DisplayManager's
+    // term for a display meant to host separate content, as opposed to a
+    // mirrored one) and, if found, shows a Presentation with a UIFrameView
+    // on it. Safe to call more than once; a no-op after the first display is
+    // attached. Called from onCreate; does nothing on single-screen devices.
+    private void attachSecondaryDisplay() {
+        if (secondaryPresentation != null) {
+            return;
+        }
+
+        DisplayManager displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        if (displayManager == null) {
+            return;
+        }
+
+        Display[] presentationDisplays =
+            displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+        if (presentationDisplays.length == 0) {
+            Log.d("GameActivity", "No secondary (presentation) display found.");
+            return;
+        }
+
+        // First presentation display found; devices seen so far (AYN Thor)
+        // expose exactly one.
+        Display secondaryDisplay = presentationDisplays[0];
+        Presentation presentation = new Presentation(this, secondaryDisplay);
+        // A Presentation's Window is focusable by default, so a touch on it
+        // could pull KEY input focus (D-pad/A/B, delivered as key events by
+        // SDL) away from the main game window onto this one -- the second
+        // screen is touch-only UI and must never intercept physical button
+        // presses meant for gameplay. FLAG_NOT_FOCUSABLE only blocks that;
+        // touch delivery (onTouchEvent above) doesn't require window focus
+        // and is unaffected.
+        presentation.getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+        UIFrameView view = new UIFrameView(presentation.getContext());
+        presentation.setContentView(view);
+
+        try {
+            presentation.show();
+        } catch (WindowManager.InvalidDisplayException e) {
+            Log.d("GameActivity", "Secondary display went away before show()", e);
+            return;
+        }
+
+        secondaryPresentation = presentation;
+        secondaryView = view;
+        Log.d("GameActivity", "Attached secondary display: " + secondaryDisplay);
+    }
+
+    // Counterpart to attachSecondaryDisplay: dismisses the Presentation so
+    // the second screen goes blank/closes whenever the main screen does
+    // (onPause -- home button, screen lock, task switch away). Safe to call
+    // when nothing is attached. hasSecondaryDisplay() correctly reports
+    // false once this runs, so Lua-side pushers (see
+    // src/render/SecondScreen.lua) stop on their own without needing to
+    // know the activity backgrounded -- attachSecondaryDisplay() re-shows
+    // it from onResume.
+    private void dismissSecondaryDisplay() {
+        if (secondaryPresentation == null) {
+            return;
+        }
+        secondaryPresentation.dismiss();
+        secondaryPresentation = null;
+        secondaryView = null;
+        synchronized (GameActivity.class) {
+            secondScreenTouchQueue.clear();
+        }
+        Log.d("GameActivity", "Dismissed secondary display (activity backgrounded)");
+    }
+
+    @Keep
+    public static boolean hasSecondaryDisplay() {
+        return secondaryPresentation != null && secondaryView != null;
+    }
+
+    // pixels: raw RGBA8 bytes, row-major, no padding -- w*h*4 bytes exactly,
+    // the same layout love.graphics.Canvas:newImageData():getString() hands
+    // back in Lua. Called from the JNI bridge in src/common/android.cpp
+    // (love::android::presentUIFrame), itself called from
+    // love.system.presentUIFrame. Runs on LÖVE's thread, not the UI thread,
+    // so the actual Bitmap update + invalidate is posted over to it.
+    @Keep
+    public static boolean pushUIFrame(byte[] pixels, int w, int h) {
+        if (secondaryView == null || pixels == null || w <= 0 || h <= 0) {
+            return false;
+        }
+        if (pixels.length != w * h * 4) {
+            return false;
+        }
+
+        final Bitmap bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        bitmap.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(pixels));
+
+        final UIFrameView view = secondaryView;
+        view.post(new Runnable() {
+            @Override
+            public void run() {
+                view.setFrame(bitmap);
+            }
+        });
+        return true;
+    }
 
     private static native void nativeSetDefaultStreamValues(int sampleRate, int framesPerBurst);
 
@@ -158,6 +403,8 @@ public class GameActivity extends SDLActivity {
             getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
             shortEdgesMode = false;
         }
+
+        attachSecondaryDisplay();
     }
 
     @Override
@@ -287,6 +534,7 @@ public class GameActivity extends SDLActivity {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
         }
+        dismissSecondaryDisplay();
         super.onDestroy();
     }
 
@@ -296,12 +544,14 @@ public class GameActivity extends SDLActivity {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
         }
+        dismissSecondaryDisplay();
         super.onPause();
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        attachSecondaryDisplay();
     }
 
     /**

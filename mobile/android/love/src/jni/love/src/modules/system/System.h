@@ -118,6 +118,38 @@ public:
 	virtual bool pickFile(const char *kind = nullptr) const;
 
 	/**
+	 * Whether a secondary (Presentation-category) display is attached and
+	 * ready -- e.g. the bottom panel on an AYN Thor. Android only; always
+	 * false elsewhere. See love::android::hasSecondaryDisplay.
+	 **/
+	virtual bool hasSecondaryDisplay() const;
+
+	/**
+	 * Sends an RGBA8 pixel buffer to the secondary display and requests a
+	 * redraw there. pixels must be exactly w*h*4 bytes (row-major, no
+	 * padding) -- the layout Canvas:newImageData():getString() returns.
+	 * Android only; always false elsewhere. See love::android::presentUIFrame.
+	 *
+	 * @param pixels Raw RGBA8 bytes.
+	 * @param w Width in pixels of the buffer.
+	 * @param h Height in pixels of the buffer.
+	 * @return Whether the frame was accepted (false if no secondary display
+	 *         is attached, or the buffer size didn't match w*h*4).
+	 **/
+	virtual bool presentUIFrame(const std::string &pixels, int w, int h) const;
+
+	/**
+	 * Reverse channel for presentUIFrame: pops the oldest pending touch on
+	 * the secondary display. action is 0 (down), 1 (move), 2 (up) or 3
+	 * (cancel); x/y are in the same pixel space as the w/h a presentUIFrame
+	 * call last used. Android only; always false elsewhere. See
+	 * love::android::pollSecondScreenTouch.
+	 *
+	 * @return Whether a touch was popped (false if none was queued).
+	 **/
+	virtual bool pollSecondScreenTouch(int &action, float &x, float &y) const;
+
+	/**
 	 * Shows the platform's native "create / save a file" UI (Android SAF
 	 * ACTION_CREATE_DOCUMENT). Copies staged pending_export.sav from the app
 	 * save directory to the user-chosen URI. See GameActivity.showCreateDocument.

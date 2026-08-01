@@ -357,6 +357,22 @@ local function buildRows(game)
         require("src.core.TouchControls"):applyOptions(o)
         return true
       end },
+    -- AYN Thor second screen (src/render/SecondScreen.lua): battle
+    -- text/controls, the pause-menu column, party status, the region
+    -- map. Everything gated on it funnels through
+    -- SecondScreen.available(), so this one row is the entire off
+    -- switch. Hidden where the hardware hook doesn't even exist (every
+    -- non-Android build), so the row costs those installs nothing.
+    { id = "enableDS", label = Strings("ENABLE DS"),
+      value = function(g)
+        return (g.save.options.enableDS ~= false) and Strings("ON") or Strings("OFF")
+      end,
+      step = function(g)
+        local o = g.save.options
+        o.enableDS = (o.enableDS == false)
+        require("src.render.SecondScreen").applyOptions(o)
+        return true
+      end },
   }
   -- issue #136: hide GBC FX on Android/iOS -- the present shader soft-bricks
   if not GBCFX.isSupported() then
@@ -380,6 +396,17 @@ local function buildRows(game)
       end
       rows = filtered
     end
+  end
+  -- ENABLE DS only where the hardware hook exists at all -- built
+  -- non-Android, or an Android build predating it, never define
+  -- love.system.hasSecondaryDisplay, so the row would just be a
+  -- permanently-inert ON/OFF toggle there.
+  if not love.system.hasSecondaryDisplay then
+    local filtered = {}
+    for _, row in ipairs(rows) do
+      if row.id ~= "enableDS" then filtered[#filtered + 1] = row end
+    end
+    rows = filtered
   end
   -- PIKACHU VOL only means something where the voice clips exist: Yellow
   -- (data.audio.pikaCries is the clip count the importer wrote).  Red/Blue

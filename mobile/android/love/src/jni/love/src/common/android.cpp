@@ -201,6 +201,60 @@ bool showFilePicker(const char *destFilename)
 	return result;
 }
 
+bool hasSecondaryDisplay()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	jmethodID method = env->GetStaticMethodID(activity, "hasSecondaryDisplay", "()Z");
+	jboolean result = env->CallStaticBooleanMethod(activity, method);
+
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
+bool presentUIFrame(const char *pixels, size_t size, int w, int h)
+{
+	if (pixels == nullptr || w <= 0 || h <= 0)
+		return false;
+	if (size != (size_t) w * (size_t) h * 4)
+		return false;
+
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	jmethodID method = env->GetStaticMethodID(activity, "pushUIFrame", "([BII)Z");
+
+	jbyteArray jpixels = env->NewByteArray((jsize) size);
+	env->SetByteArrayRegion(jpixels, 0, (jsize) size, (const jbyte *) pixels);
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jpixels, (jint) w, (jint) h);
+	env->DeleteLocalRef(jpixels);
+
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
+bool pollSecondScreenTouch(int &action, float &x, float &y)
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	jmethodID method = env->GetStaticMethodID(activity, "pollSecondScreenTouch", "()[F");
+	jfloatArray result = (jfloatArray) env->CallStaticObjectMethod(activity, method);
+	env->DeleteLocalRef(activity);
+
+	if (result == nullptr)
+		return false;
+
+	jfloat *elems = env->GetFloatArrayElements(result, nullptr);
+	action = (int) elems[0];
+	x = elems[1];
+	y = elems[2];
+	env->ReleaseFloatArrayElements(result, elems, JNI_ABORT);
+	env->DeleteLocalRef(result);
+	return true;
+}
+
 bool showCreateDocument(const char *suggestedName)
 {
 	if (suggestedName == nullptr || suggestedName[0] == '\0')

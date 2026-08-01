@@ -74,6 +74,35 @@ bool showFilePicker(const char *destFilename = nullptr);
  **/
 bool showCreateDocument(const char *suggestedName = nullptr);
 
+/**
+ * Whether GameActivity has found a secondary (Presentation-category) Android
+ * Display and attached a rendering surface to it -- e.g. the AYN Thor's
+ * bottom panel. False on single-screen devices/desktop, and false until the
+ * Java side has finished attaching (see GameActivity.attachSecondaryDisplay).
+ * Mods should check this before calling presentUIFrame every frame.
+ **/
+bool hasSecondaryDisplay();
+
+/**
+ * Copies an RGBA8 pixel buffer (w*h*4 bytes, row-major, no padding -- the
+ * same layout love.graphics.Canvas:newImageData():getString() returns) to
+ * the secondary display's Bitmap and requests a redraw. A no-op returning
+ * false if hasSecondaryDisplay() is false or the buffer size doesn't match
+ * w*h*4. See GameActivity.pushUIFrame.
+ **/
+bool presentUIFrame(const char *pixels, size_t size, int w, int h);
+
+/**
+ * Reverse channel for presentUIFrame: pops the oldest pending touch on the
+ * secondary display, if any. action is 0 (down), 1 (move), 2 (up) or 3
+ * (cancel); x/y are in the same pixel space as the w/h a presentUIFrame
+ * call last used. Returns false (leaving the outputs untouched) when
+ * nothing is queued -- callers should poll every frame they care about
+ * input, draining until it returns false, since more than one touch can
+ * queue between polls. See GameActivity.pollSecondScreenTouch.
+ **/
+bool pollSecondScreenTouch(int &action, float &x, float &y);
+
 /*
  * Helper functions for the filesystem module
  */

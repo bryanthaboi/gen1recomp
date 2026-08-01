@@ -109,6 +109,49 @@ int w_createFile(lua_State *L)
 	return 1;
 }
 
+int w_hasSecondaryDisplay(lua_State *L)
+{
+	luax_pushboolean(L, instance()->hasSecondaryDisplay());
+	return 1;
+}
+
+// pixels: a string of raw RGBA8 bytes, e.g. from
+// canvas:newImageData():getString() -- exactly w*h*4 bytes, or this
+// returns false without sending anything.
+int w_presentUIFrame(lua_State *L)
+{
+	size_t len = 0;
+	const char *pixels = luaL_checklstring(L, 1, &len);
+	int w = (int) luaL_checkinteger(L, 2);
+	int h = (int) luaL_checkinteger(L, 3);
+	luax_pushboolean(L, instance()->presentUIFrame(std::string(pixels, len), w, h));
+	return 1;
+}
+
+// Returns a table {action=0|1|2|3, x=.., y=..} for the oldest pending
+// second-screen touch (action: 0 down, 1 move, 2 up, 3 cancel; x/y in the
+// same pixel space as the w/h the last presentUIFrame call used), or nil
+// if none is queued. Callers should loop until nil since more than one
+// touch can queue between polls.
+int w_pollSecondScreenTouch(lua_State *L)
+{
+	int action = 0;
+	float x = 0, y = 0;
+	if (!instance()->pollSecondScreenTouch(action, x, y))
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_newtable(L);
+	lua_pushinteger(L, action);
+	lua_setfield(L, -2, "action");
+	lua_pushnumber(L, x);
+	lua_setfield(L, -2, "x");
+	lua_pushnumber(L, y);
+	lua_setfield(L, -2, "y");
+	return 1;
+}
+
 int w_hasBackgroundMusic(lua_State *L)
 {
 	lua_pushboolean(L, instance()->hasBackgroundMusic());
@@ -126,6 +169,9 @@ static const luaL_Reg functions[] =
 	{ "vibrate", w_vibrate },
 	{ "pickFile", w_pickFile },
 	{ "createFile", w_createFile },
+	{ "hasSecondaryDisplay", w_hasSecondaryDisplay },
+	{ "presentUIFrame", w_presentUIFrame },
+	{ "pollSecondScreenTouch", w_pollSecondScreenTouch },
 	{ "hasBackgroundMusic", w_hasBackgroundMusic },
 	{ 0, 0 }
 };
