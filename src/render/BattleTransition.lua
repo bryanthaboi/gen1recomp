@@ -32,10 +32,23 @@ local FLASH_CYCLES = 3
 -- InitBattleCommon decompresses the front pic (core.asm:6694-6730), and
 -- SlidePlayerAndEnemySilhouettesOnScreen rebuilds the whole tilemap between
 -- DisableLCD and EnableLCD (core.asm:9-49) before anything moves.  This port
--- has no load to hide behind, so the hold has to be explicit (#315).  30 is a
--- frame budget for that work, not a number pokered states; retune this one
--- constant against a reference recording if it reads long or short.
-local BLACK_HOLD = 30
+-- has no load to hide behind, so the hold has to be explicit (#315).  This is
+-- a frame budget for that work, not a number pokered states.
+--
+-- 60 comes from pokered-c (BTRANS_BLACK_HOLD_FRAMES), which itemized the
+-- derivable floor at ~13 frames -- LoadHpBarAndStatusTilePatterns 4,
+-- LoadHudTilePatterns 2, ClearScreen's Delay3 3, the DisableLCD LY wait 1,
+-- Delay3 after EnableLCD 3 -- and then noted that the two sprite
+-- decompressors (UncompressSpriteFromDE for the 7x7 front pic,
+-- LoadPlayerBackPic's uncompress + ScaleSpriteByTwo) are bit-level RLE/delta
+-- decoders whose cost cannot be cycle-counted from the asm at all.  So the
+-- derivation bottoms out around 25-30 with an unbounded remainder, and 60
+-- was set by ear against the real ROM ("a solid second") and confirmed as
+-- ~95% right rather than frame-matched.  The credible range is 30-60; do NOT
+-- "correct" this down toward the floor on the strength of the derivation,
+-- because the omitted decompressors are exactly the unbounded part.  It
+-- wants a frame-by-frame capture against hardware to pin exactly.
+local BLACK_HOLD = 60
 
 local TILE = 8
 local COLS, ROWS = 160 / TILE, 144 / TILE -- 20 x 18 tiles
@@ -106,11 +119,12 @@ end
 -- HalfCircle2 continues (1,11) down under the bottom back to (18,11)).
 -- arms = 1 (Circle, halves in sequence) or 2 (DoubleCircle, both halves
 -- at once, so opposite arms)
-local function sweepOrder(arms)
-  local cx, cy = COLS / 2, ROWS / 2
+local function sweepOrder(arms, cols, rows)
+  cols, rows = cols or COLS, rows or ROWS
+  local cx, cy = cols / 2, rows / 2
   local tiles = {}
-  for y = 0, ROWS - 1 do
-    for x = 0, COLS - 1 do
+  for y = 0, rows - 1 do
+    for x = 0, cols - 1 do
       local a = math.atan2(cy - (y + 0.5), x + 0.5 - cx)
       if a < 0 then a = a + 2 * math.pi end
       if arms == 2 then a = a % math.pi end
@@ -121,18 +135,116 @@ local function sweepOrder(arms)
   return tiles
 end
 
+-- ---------------------------------------------------------------------
+-- Arbitrary-grid wipes, for the surface OUTSIDE the classic letterbox
+-- ---------------------------------------------------------------------
+--
+-- The builders above reproduce the ROM's exact walks on its 20x18 tilemap,
+-- overrun and all, and stay the authority inside the 160x144 box.  A zoomed
+-- or windowed surface has more grid than the Game Boy ever had, and no
+-- hardware behaviour to be faithful to out there -- but filling it with a
+-- generic square cascade made a spiral read as "a spiral in a box, with
+-- something else happening around it".  These generalise the same shapes to
+-- whatever grid the window works out to so the whole surface wipes as one
+-- figure.
+
+-- perimeter inward, counterclockwise, starting down the left edge -- the
+-- direction BattleTransition_InwardSpiral walks
+local function spiralInGrid(cols, rows)
+  local order = {}
+  local x0, y0, x1, y1 = 0, 0, cols - 1, rows - 1
+  while x0 <= x1 and y0 <= y1 do
+    for y = y0, y1 do order[#order + 1] = { x0, y } end
+    x0 = x0 + 1
+    if x0 > x1 then break end
+    for x = x0, x1 do order[#order + 1] = { x, y1 } end
+    y1 = y1 - 1
+    if y0 > y1 then break end
+    for y = y1, y0, -1 do order[#order + 1] = { x1, y } end
+    x1 = x1 - 1
+    if x0 > x1 then break end
+    for x = x1, x0, -1 do order[#order + 1] = { x, y0 } end
+    y0 = y0 + 1
+  end
+  return order
+end
+
+-- the outward spiral is the same walk read from the middle out
+local function spiralOutGrid(cols, rows)
+  local inward = spiralInGrid(cols, rows)
+  local order = {}
+  for i = #inward, 1, -1 do order[#order + 1] = inward[i] end
+  return order
+end
+
+local GRID_BUILDERS = {
+  spiralin     = spiralInGrid,
+  spiralout    = spiralOutGrid,
+  circle       = function(c, r) return sweepOrder(1, c, r) end,
+  doublecircle = function(c, r) return sweepOrder(2, c, r) end,
+}
+
+-- Tile order for `style` on an arbitrary cols x rows grid, or nil for the
+-- styles whose shape is plain geometry (stripes / shrink / split) and which
+-- the caller extends with rectangles instead.  Cached per style+size: the
+-- window grid only changes on a resize or a zoom step.
+local orderFor -- defined below; the authentic 20x18 builders
+
+local gridCache = {}
+function BattleTransition.gridOrder(style, cols, rows)
+  local build = GRID_BUILDERS[style]
+  if not build or cols < 1 or rows < 1 then return nil end
+  -- At exactly the Game Boy's grid the ROM's own walk is the answer, overrun
+  -- and all -- so an unzoomed window is the classic wipe, not a lookalike.
+  if cols == COLS and rows == ROWS then return orderFor(style, nil) end
+  local key = style .. ":" .. cols .. "x" .. rows
+  local hit = gridCache[key]
+  if hit == nil then
+    hit = build(cols, rows) or false
+    gridCache[key] = hit
+  end
+  return hit or nil
+end
+
+-- Wipe lengths, taken from pokered-c's battle_transition.c frame budget --
+-- derived from battle_transitions.asm and then checked on a live
+-- side-by-side against the ROM.  Each wipe is `steps x frames-per-step`:
+--
+--   DoubleCircle   10 x 3 =  30      SpiralOut  360 fills / 3 per frame = 120
+--   Circle         20 x 3 =  60      HStripes    20 x 3 = 60
+--   Shrink          9 x 6 =  54      VStripes    18 x 3 = 54
+--   Split           9 x 6 =  54      (asm:386-392 and :418-424)
+--
+-- The port used a flat 40/24 for all eight, which ran every wipe between
+-- 1.5x and 3x too fast -- the single biggest reason a battle used to open
+-- so much more abruptly here than on hardware.
+--
+-- The inward spiral is the one that bites.  It writes one tile per
+-- iteration and calls BattleTransition_TransferDelay3 every seventh tile
+-- (wInwardSpiralUpdateScreenCounter counts 7 down to 0), and that helper is
+-- `ld a,1 / ldh [hAutoBGTransferEnabled] / call Delay3 / xor a / ldh [...]`
+-- (battle_transitions.asm:619) -- THREE frames, not a one-frame transfer.
+-- Reading it as one frame runs the whole spiral 3x too fast; pokered-c
+-- caught that against the real ROM.  Deriving the length from the path we
+-- actually walk keeps the cadence right if the order ever changes.
+local SPIRAL_IN_TILES_PER_STEP = 7
+local SPIRAL_IN_STEP_FRAMES = 3 -- TransferDelay3
+local SPIRAL_IN_FRAMES = math.ceil(#inwardSpiralOrder()
+                                   / SPIRAL_IN_TILES_PER_STEP)
+                         * SPIRAL_IN_STEP_FRAMES
+
 -- The eight wipes as records: frames is the wipe length, flash marks the
 -- two circle wipes that call BattleTransition_FlashScreen first.  new()
 -- reads them, and the transitions registry serves the same table.
 BattleTransition.STYLES = {
-  doublecircle = { kind = "wipe", frames = 40, flash = true },
-  spiralin     = { kind = "wipe", frames = 40 },
-  circle       = { kind = "wipe", frames = 40, flash = true },
-  spiralout    = { kind = "wipe", frames = 40 },
-  hstripes     = { kind = "wipe", frames = 24 },
-  shrink       = { kind = "wipe", frames = 24 },
-  vstripes     = { kind = "wipe", frames = 24 },
-  split        = { kind = "wipe", frames = 24 },
+  doublecircle = { kind = "wipe", frames = 30, flash = true },
+  spiralin     = { kind = "wipe", frames = SPIRAL_IN_FRAMES },
+  circle       = { kind = "wipe", frames = 60, flash = true },
+  spiralout    = { kind = "wipe", frames = 120 },
+  hstripes     = { kind = "wipe", frames = 60 },
+  shrink       = { kind = "wipe", frames = 54 },
+  vstripes     = { kind = "wipe", frames = 54 },
+  split        = { kind = "wipe", frames = 54 },
 }
 
 -- the eight wipes plus Transition's two warp fades: one registrant owns
@@ -164,7 +276,7 @@ local BUILTIN_ORDERS = {
 -- A registered style may bring its own tile order (a list of {x, y}, or a
 -- function returning one); the four built-in orders are the defaults for
 -- the styles that have always had them.
-local function orderFor(style, def)
+function orderFor(style, def)
   if ORDERS[style] == nil then
     local order = def and def.order
     if type(order) == "function" then
@@ -235,6 +347,15 @@ function BattleTransition:draw()
     local v = FLASH_STEPS[step]
     if v ~= 0 then
       local shade = v > 0 and 0 or 1
+      -- The flash is a palette write (rBGP), so on hardware it tints every
+      -- pixel the LCD shows.  Hand it to the renderer as a screen-space veil
+      -- so it covers the whole surface at any zoom; only the headless and
+      -- no-renderer paths fall back to filling the 160x144 box.
+      local r = self.game and self.game.renderer
+      if r then
+        r.screenVeil = { shade, math.abs(v) }
+        return
+      end
       love.graphics.setColor(shade, shade, shade, math.abs(v))
       love.graphics.rectangle("fill", 0, 0, 160, 144)
       love.graphics.setColor(1, 1, 1, 1)
@@ -242,21 +363,34 @@ function BattleTransition:draw()
     return
   end
 
-  love.graphics.setColor(0, 0, 0, 1)
   local prog = math.min(1, self.t / self.wipeLen)
-  -- Cascade black 8x8 blocks across the window area *outside* the classic
-  -- 160x144 wipe square, in lockstep with the OG wipe progress.  Renderer
-  -- paints them in screen space after the world blit (see endFrame).
-  local renderer = self.game and self.game.renderer
-  if renderer then renderer.battleCascadeProg = prog end
   local style = self.style
 
-  -- a registered style may draw itself; the eight built-ins do not
+  -- a registered style may draw itself; the eight built-ins do not.  A custom
+  -- draw owns the 160x144 UI canvas as it always has.
   if self.def and self.def.draw then
+    love.graphics.setColor(0, 0, 0, 1)
     self.def.draw(self, prog)
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
+
+  -- With a renderer the wipe is drawn ONCE over the whole surface in screen
+  -- space (Renderer:drawBattleWipe), on a tile grid anchored to the letterbox
+  -- and extended outward at the same tile size.  That makes it a single
+  -- continuous figure: the spiral starts at the outermost edge of the window
+  -- and works inward, instead of one spiral inside the letterbox running
+  -- alongside a second one outside it.  Nothing is stretched -- the pattern is
+  -- continued with more tiles, not scaled-up pixels -- so at 1x the grid works
+  -- out to exactly 20x18 and this is the classic wipe unchanged.
+  local renderer = self.game and self.game.renderer
+  if renderer then
+    renderer.battleWipe = { style = style, prog = prog }
+    return
+  end
+
+  -- headless / no renderer: the classic 160x144 path
+  love.graphics.setColor(0, 0, 0, 1)
 
   local order = orderFor(style, self.def)
   if order then

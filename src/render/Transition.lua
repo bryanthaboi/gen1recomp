@@ -1,17 +1,27 @@
 -- Screen fade used for warps: fade out, run a callback (map switch), fade in.
 -- Pushed on the state stack above the overworld.
 
+local Timing = require("src.core.Timing")
+
 local Transition = {}
 Transition.__index = Transition
 
-local FRAMES = 12
+-- PlayMapChangeSound tail-calls GBFadeOutToBlack on every map change
+-- (home/overworld.asm:703), which is four palette steps of DelayFrames 8 --
+-- 32 frames.  There is no matching fade in: the new map is built while the
+-- palettes are still blacked out and OverworldLoop's LoadGBPal
+-- (home/overworld.asm:45) restores them in a single write, so the map pops
+-- in.  The old symmetric 12/12 fade was both too fast and a shape the
+-- hardware never had.
+local FRAMES = Timing.WARP_FADE_OUT
+local FRAMES_IN = Timing.WARP_FADE_IN
 local FLASH_FRAMES = 7
 
 -- The two fades as transitions records, so a mod retimes a warp fade the
 -- same way it retimes a battle wipe.  BattleTransition.registerInto pulls
 -- these in with its eight wipes -- one registrant owns the registry.
 Transition.STYLES = {
-  warp_fade = { kind = "fade", frames = FRAMES },
+  warp_fade = { kind = "fade", frames = FRAMES, framesIn = FRAMES_IN },
   white_flash = { kind = "fade", frames = FLASH_FRAMES },
 }
 
@@ -36,26 +46,39 @@ function Transition.new(game, onMidpoint, onDone)
   self.onDone = onDone
   self.t = 0
   self.phase = "out"
-  self.frames = styleOf(game, "warp_fade").frames or FRAMES
+  local style = styleOf(game, "warp_fade")
+  self.frames = style.frames or FRAMES
+  -- a style may still ask for a fade in (mods, and the record is data-driven);
+  -- the built-in warp is 0, matching hardware
+  self.framesIn = style.framesIn or FRAMES_IN
   return self
+end
+
+function Transition:finish()
+  self.game.stack:pop()
+  if self.onDone then self.onDone() end
 end
 
 function Transition:update(dt)
   self.t = self.t + 1
-  if self.t >= self.frames then
+  local len = (self.phase == "out") and self.frames or self.framesIn
+  if self.t >= len then
     self.t = 0
     if self.phase == "out" then
       self.phase = "in"
       if self.onMidpoint then self.onMidpoint() end
+      -- LoadGBPal restores the palettes in one write, so with no fade in the
+      -- map is simply there on the next frame
+      if (self.framesIn or 0) <= 0 then self:finish() end
     else
-      self.game.stack:pop()
-      if self.onDone then self.onDone() end
+      self:finish()
     end
   end
 end
 
 function Transition:draw()
-  local alpha = self.t / self.frames
+  local len = (self.phase == "out") and self.frames or self.framesIn
+  local alpha = (len and len > 0) and (self.t / len) or 1
   if self.phase == "in" then alpha = 1 - alpha end
   -- Survey zoom draws the overworld into a window-filling world canvas
   -- while the UI pass stays the classic 160x144 letterbox.  A rect on the
@@ -99,6 +122,68 @@ end
 function WhiteFlash:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
+end
+
+-- Coming back to the overworld after a battle.
+--
+-- The battle screen is torn down with the palettes still whited out, the
+-- caller spends `ld c, 10 / call DelayFrames` (home/overworld.asm:351-352),
+-- and then EnterMap sees BIT_BATTLE_OVER_OR_BLACKOUT set and runs
+-- MapEntryAfterBattle (:22, :749-753), which is GBFadeInFromWhite -- three
+-- palette steps of DelayFrames 8, so 24 frames.  The port had none of it and
+-- simply cut from the battle to the map.
+--
+-- A dark map takes the other branch: wMapPalOffset is nonzero there, so
+-- MapEntryAfterBattle does a plain LoadGBPal and the map is just there.  Pass
+-- opts.instant for that case.
+local BattleReturn = {}
+BattleReturn.__index = BattleReturn
+BattleReturn.isOpaque = false -- the overworld draws underneath
+
+function Transition.battleReturn(game, onDone, opts)
+  opts = opts or {}
+  return setmetatable({
+    game = game, onDone = onDone, t = 0,
+    hold = opts.hold or Timing.POST_BATTLE_RETURN,
+    frames = opts.instant and 0 or (opts.frames or Timing.FADE_IN_FROM_WHITE),
+  }, BattleReturn)
+end
+
+function BattleReturn:update(dt)
+  self.t = self.t + 1
+  if self.t >= self.hold + self.frames then
+    self.game.stack:pop()
+    if self.onDone then self.onDone() end
+  end
+end
+
+-- GBFadeInFromWhite is a palette staircase, not a smooth ramp: GBFadeIncCommon
+-- writes one palette then holds it with `ld c, 8 / call DelayFrames`
+-- (home/fade.asm:30-41), three times over.  Stepping the veil the same way
+-- keeps the fade reading like a Game Boy palette fade rather than a tween.
+local FADE_STEP_FRAMES = 8
+
+function BattleReturn:alpha()
+  if self.t < self.hold then return 1 end
+  if self.frames <= 0 then return 0 end
+  local steps = math.max(1, math.floor(self.frames / FADE_STEP_FRAMES))
+  local step = math.floor((self.t - self.hold) / FADE_STEP_FRAMES)
+  if step >= steps then return 0 end
+  return (steps - step - 1) / steps
+end
+
+function BattleReturn:draw()
+  local a = self:alpha()
+  -- the fade is a palette write, so it covers the whole surface; the
+  -- renderer paints it in screen space (see Renderer.screenVeil)
+  local r = self.game and self.game.renderer
+  if r then
+    r.screenVeil = { 1, a }
+    return
+  end
+  love.graphics.setColor(1, 1, 1, a)
+  love.graphics.rectangle("fill", 0, 0, 160, 144)
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 return Transition

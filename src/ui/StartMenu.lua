@@ -133,7 +133,12 @@ function StartMenu.new(game)
   local rowStep = 2
   local maxVisible = math.floor((Renderer.HEIGHT / 8 - 2) / rowStep)
   local menu = Menu.new(game, items,
-    { tx = 9, ty = 0, tw = 11, maxVisible = maxVisible, startCloses = true })
+    -- the START menu hugs the top-right corner of the SCREEN, not of a
+    -- centred letterbox: at 9,0 x 11 it is already flush with the top and
+    -- right of the 20x18 grid, so the anchor keeps it flush when the view
+    -- is zoomed out and the letterbox no longer fills the window
+    { tx = 9, ty = 0, tw = 11, maxVisible = maxVisible, startCloses = true,
+      anchor = "topright" })
   -- the cursor position survives closing the menu
   -- (wBattleAndStartSavedMenuItem, home/start_menu.asm)
   menu.index = math.min(game.save.startMenuIndex or 1, #items)

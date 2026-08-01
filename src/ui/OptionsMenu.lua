@@ -19,6 +19,7 @@ local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
 local GameVersion = require("src.core.GameVersion")
 local VideoMode = require("src.core.VideoMode")
+local FaithfulRes = require("src.core.FaithfulRes")
 local FrameCap = require("src.core.FrameCap")
 local Performance = require("src.core.Performance")
 local Logger = require("src.core.Logger")
@@ -154,6 +155,40 @@ local function buildRows(game)
       step = function(g)
         local o = g.save.options
         o.battleLayout = o.battleLayout == "wide" and "og" or "wide"
+        return true
+      end },
+    -- FIXED keeps the classic integer-scaled letterbox -- a GB pixel is a
+    -- whole number of screen pixels and the battle is the same size at any
+    -- zoom.  FILL scales the battle surface to the window so it fills
+    -- vertically; that needs a fractional scale, so pixels stop being evenly
+    -- sized.  Battle only: the overworld is untouched either way.
+    { id = "battleFit", label = Strings("BATTLE SIZE"),
+      value = function(g)
+        return g.save.options.battleFit == "fill" and Strings("FILL")
+               or Strings("FIXED")
+      end,
+      step = function(g)
+        local o = g.save.options
+        o.battleFit = o.battleFit == "fill" and "fixed" or "fill"
+        return true
+      end },
+    -- What sits behind and around the battle.  WHITE is the classic paper
+    -- field; BLACK swaps it for black bars; WORLD leaves the frozen overworld
+    -- visible underneath, dimmed (the battle stops being opaque, so the map
+    -- shows through everywhere the battle does not paint).
+    { id = "battleBg", label = Strings("BATTLE BG"),
+      value = function(g)
+        local m = g.save.options.battleBg
+        if m == "black" then return Strings("BLACK") end
+        if m == "world" then return Strings("WORLD") end
+        return Strings("WHITE")
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        local order = { "white", "black", "world" }
+        local cur = 1
+        for i, m in ipairs(order) do if o.battleBg == m then cur = i break end end
+        o.battleBg = order[(cur - 1 + (dir or 1)) % #order + 1]
         return true
       end },
     { id = "ruleset", label = Strings("RULESET"),
@@ -296,6 +331,20 @@ local function buildRows(game)
         local o = g.save.options
         o.videoMode = VideoMode.cycle(o.videoMode, dir)
         VideoMode.apply(o.videoMode)
+        return true
+      end },
+    -- Lock the window to an exact 160x144 multiple, so the surface IS the
+    -- Game Boy screen with no letterbox at all.  Sits next to VIDEO MODE
+    -- because it overrides it: holding an exact size means dropping
+    -- fullscreen.
+    { id = "faithfulRes", label = Strings("FAITHFUL RES"),
+      value = function(g)
+        return FaithfulRes.label(g.save.options.faithfulRes)
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.faithfulRes = FaithfulRes.cycle(o.faithfulRes, dir)
+        FaithfulRes.apply(o.faithfulRes)
         return true
       end },
     -- hard render cap (issue #88): bounds the present rate so a

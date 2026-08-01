@@ -127,6 +127,35 @@ function Renderer:fitScale()
   return math.max(1, math.floor(math.min(pw / w, ph / h)))
 end
 
+-- Integer framebuffer pixels per GB pixel for the UI pass.
+--
+-- Survey zoom only ever scaled the world: the UI kept blitting at fitScale,
+-- so zooming out left a full-size dialogue box over a shrunken world, which
+-- reads as the UI growing.  Stepping the UI down with the zoom keeps the two
+-- in proportion.  Whole integers only, so a UI pixel stays a whole number of
+-- screen pixels and the font does not resample; and never below half of
+-- fitScale, because past that the text stops being readable.
+--
+-- Zooming IN does not scale the UI up -- a dialogue box larger than the
+-- classic one has no reference to be faithful to, and the letterbox it sits
+-- in does not grow either.
+function Renderer:uiScale()
+  local S = self:fitScale()
+  local off = Zoom.offset or 0
+  -- Only follow the zoom when a world is actually on screen.  Survey zoom is
+  -- an OVERWORLD control; the title screen, the intro and the credits show no
+  -- world at all, and shrinking them to match a zoom level the player set for
+  -- the map is meaningless.  worldActive is this frame's answer -- beginFrame
+  -- clears it and beginWorldPass sets it -- so a state that draws no world
+  -- keeps the full fit scale.
+  if not self.worldActive then return S end
+  if off >= 0 then return S end
+  local floorS = math.ceil(S / 2) -- at most a 50% reduction
+  local s = S + off               -- one integer step per zoom-out step
+  if s < floorS then s = floorS end
+  return math.max(1, s)
+end
+
 -- the native-pixel UI surface in use right now
 function Renderer:uiSize()
   return self.uiWidth or self.WIDTH, self.uiHeight or self.HEIGHT
@@ -200,8 +229,14 @@ function Renderer:beginFrame(transparent)
   -- warp-fade overlay from Transition (issue #121); cleared each frame so
   -- a popped transition cannot leave a sticky black veil
   self.worldFadeAlpha = nil
-  -- battle-transition cascade outside the 160x144 wipe (BattleTransition)
-  self.battleCascadeProg = nil
+  -- battle-transition wipe, drawn over the whole surface (BattleTransition)
+  self.battleWipe = nil
+  -- whole-surface veil in screen space (battle-transition flash, the
+  -- fade in from white after a battle) -- covers the window, not just the
+  -- 160x144 letterbox
+  self.screenVeil = nil
+  -- edge-anchored UI regions, re-declared by their elements each frame
+  self.uiAnchors = nil
   -- last frame's trueColor rects and sprite redraws go before anything
   -- draws this one
   PaletteFX.clearTrueColor()
@@ -218,44 +253,94 @@ function Renderer:beginFrame(transparent)
   end
 end
 
--- Black 8x8 (scaled) blocks cascading outward from the classic GB letterbox
--- into the surrounding window, matching BattleTransition wipe progress.
--- Tiles that sit entirely inside the 160x144 square are left to the OG wipe.
+-- The battle-transition wipe, drawn once over the WHOLE surface in screen
+-- space rather than as a 160x144 wipe plus a separate fill around it.
+--
+-- The tile grid is anchored on the letterbox and extended outward at the same
+-- tile size, so the figure is continuous: a spiral begins at the outermost
+-- edge of the window and works inward through the letterbox to the middle.
+-- Nothing is stretched -- the pattern is continued with more tiles, not
+-- scaled-up pixels -- and at 1x the grid works out to exactly 20x18, where
+-- BattleTransition.gridOrder hands back the ROM's own walk, so an unzoomed
+-- window is the classic wipe unchanged.
+--
 -- Sx/Sy are LOVE-unit scales (Sy defaults to Sx on uniform surfaces).
-function Renderer:drawBattleCascade(prog, ww, wh, ox, oy, vpw, vph, Sx, Sy)
-  if not prog or prog <= 0 then return end
+function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
+  if not wipe or not wipe.prog or wipe.prog <= 0 then return end
   Sy = Sy or Sx
-  local TILE_W, TILE_H = 8 * Sx, 8 * Sy
-  if TILE_W < 1 then TILE_W = 1 end
-  if TILE_H < 1 then TILE_H = 1 end
-  local cols = math.ceil(ww / TILE_W)
-  local rows = math.ceil(wh / TILE_H)
-  local cx, cy = ox + vpw / 2, oy + vph / 2
-  local order = {}
-  for row = 0, rows - 1 do
-    for col = 0, cols - 1 do
-      local x, y = col * TILE_W, row * TILE_H
-      -- any tile with area outside the letterbox participates
-      if x < ox or y < oy or x + TILE_W > ox + vpw or y + TILE_H > oy + vph then
-        local dist = math.max(math.abs(x + TILE_W / 2 - cx),
-                              math.abs(y + TILE_H / 2 - cy))
-        order[#order + 1] = { x, y, dist }
-      end
-    end
-  end
-  if #order == 0 then return end
-  table.sort(order, function(a, b)
-    if a[3] ~= b[3] then return a[3] < b[3] end
-    if a[2] ~= b[2] then return a[2] < b[2] end
-    return a[1] < b[1]
-  end)
-  local n = math.floor(#order * math.min(1, prog) + 1e-6)
-  if prog >= 1 then n = #order end
+  local TW, TH = 8 * Sx, 8 * Sy
+  if TW < 1 then TW = 1 end
+  if TH < 1 then TH = 1 end
+  local prog = math.min(1, wipe.prog)
+
   love.graphics.setColor(0, 0, 0, 1)
   love.graphics.setScissor(0, 0, ww, wh)
-  for i = 1, n do
-    local t = order[i]
-    love.graphics.rectangle("fill", t[1], t[2], TILE_W, TILE_H)
+
+  if prog >= 1 then
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    love.graphics.setScissor()
+    love.graphics.setColor(1, 1, 1, 1)
+    return
+  end
+
+  -- whole-tile padding out to each window edge, keeping the grid in phase
+  -- with the letterbox's tiles
+  local padL = math.max(0, math.ceil(ox / TW))
+  local padT = math.max(0, math.ceil(oy / TH))
+  local padR = math.max(0, math.ceil((ww - ox - vpw) / TW))
+  local padB = math.max(0, math.ceil((wh - oy - vph) / TH))
+  local lbCols = math.max(1, math.floor(vpw / TW + 0.5))
+  local lbRows = math.max(1, math.floor(vph / TH + 0.5))
+  local cols, rows = padL + lbCols + padR, padT + lbRows + padB
+  local x0, y0 = ox - padL * TW, oy - padT * TH
+
+  -- required here rather than at the top: BattleTransition reaches the
+  -- renderer through game.renderer at draw time, and a module-level require
+  -- would put the two files in a load cycle
+  local BattleTransition = require("src.render.BattleTransition")
+  local order = BattleTransition.gridOrder(wipe.style, cols, rows)
+
+  if order then
+    local n = math.floor(#order * prog + 1e-6)
+    for i = 1, n do
+      local t = order[i]
+      love.graphics.rectangle("fill", x0 + t[1] * TW, y0 + t[2] * TH, TW, TH)
+    end
+  else
+    -- shrink / split / the stripes are geometry, not a walk: the same shapes
+    -- measured against the window instead of the letterbox
+    local style = wipe.style
+    if style == "hstripes" then
+      local w = ww * prog
+      for row = 0, rows - 1 do
+        local y = y0 + row * TH
+        if row % 2 == 0 then
+          love.graphics.rectangle("fill", 0, y, w, TH)
+        else
+          love.graphics.rectangle("fill", ww - w, y, w, TH)
+        end
+      end
+    elseif style == "vstripes" then
+      local h = wh * prog
+      for col = 0, cols - 1 do
+        local x = x0 + col * TW
+        if col % 2 == 0 then
+          love.graphics.rectangle("fill", x, 0, TW, h)
+        else
+          love.graphics.rectangle("fill", x, wh - h, TW, h)
+        end
+      end
+    elseif style == "shrink" then
+      local h, w = wh / 2 * prog, ww / 2 * prog
+      love.graphics.rectangle("fill", 0, 0, ww, h)
+      love.graphics.rectangle("fill", 0, wh - h, ww, h)
+      love.graphics.rectangle("fill", 0, 0, w, wh)
+      love.graphics.rectangle("fill", ww - w, 0, w, wh)
+    else -- split: a black cross growing out of the centre in both axes
+      local h, w = wh / 2 * prog, ww / 2 * prog
+      love.graphics.rectangle("fill", 0, wh / 2 - h, ww, h * 2)
+      love.graphics.rectangle("fill", ww / 2 - w, 0, w * 2, wh)
+    end
   end
   love.graphics.setScissor()
   love.graphics.setColor(1, 1, 1, 1)
@@ -509,6 +594,38 @@ function Renderer:blitCanvas(canvas, sx, sy, zoneList, zoneSx, zoneSy,
   love.graphics.setShader()
 end
 
+-- Take a rect out of a list of rects, splitting each overlapped one into up
+-- to four pieces.  Used to vacate an anchored UI region from the letterbox
+-- blit, so the element is drawn at its anchor and not also in place.
+local function subtractRect(list, x, y, w, h)
+  local out = {}
+  local x2, y2 = x + w, y + h
+  for _, r in ipairs(list) do
+    local rx, ry, rw, rh = r[1], r[2], r[3], r[4]
+    local rx2, ry2 = rx + rw, ry + rh
+    if x2 <= rx or x >= rx2 or y2 <= ry or y >= ry2 then
+      out[#out + 1] = r -- disjoint
+    else
+      if ry < y then out[#out + 1] = { rx, ry, rw, y - ry } end
+      if y2 < ry2 then out[#out + 1] = { rx, y2, rw, ry2 - y2 } end
+      local ty, ty2 = math.max(ry, y), math.min(ry2, y2)
+      if rx < x then out[#out + 1] = { rx, ty, x - rx, ty2 - ty } end
+      if x2 < rx2 then out[#out + 1] = { x2, ty, rx2 - x2, ty2 - ty } end
+    end
+  end
+  return out
+end
+
+-- A UI element that should sit against a screen edge rather than inside the
+-- centred letterbox.  Declared during the element's own draw, in UI-canvas
+-- pixels, and consumed by endFrame this frame only.
+--   anchor: "bottom" | "topright" | "topleft" | "bottomright"
+function Renderer:setUIAnchor(x, y, w, h, anchor)
+  self.uiAnchors = self.uiAnchors or {}
+  self.uiAnchors[#self.uiAnchors + 1] =
+    { x = x, y = y, w = w, h = h, anchor = anchor }
+end
+
 -- zones: optional list of SGB palette regions (see PaletteFX) in
 -- 160x144 UI space, applied to the UI pass.  worldZones: optional
 -- regions in world-canvas pixels (overworld survey zoom colors each
@@ -529,6 +646,23 @@ function Renderer:endFrame(zones, worldZones)
   -- Snap the letterbox origin to a framebuffer pixel, then convert to units.
   local ox = math.floor((pw - uiw * Sp) / 2) / dpiX
   local oy = math.floor((ph - uih * Sp) / 2) / dpiY
+  -- The UI has its own scale: it steps down as the survey zoom goes out (see
+  -- uiScale), so it can be smaller than the world letterbox.  Un-zoomed these
+  -- are identical to Sp/ox/oy and every rect below is what it always was.
+  local Up = self:uiScale()
+  -- BATTLE SIZE "fill" (Renderer.uiFill, set per frame by Game:draw): scale
+  -- the surface to the window rather than to whole GB pixels, so the battle
+  -- fills vertically at any zoom or window size.  Fractional by nature -- a
+  -- GB pixel stops being a whole number of screen pixels, which is the trade
+  -- the setting exists to offer.  Clamped on the horizontal too, so a narrow
+  -- window scales to fit instead of overflowing off both sides.
+  if self.uiFill then
+    Up = math.min(ph / uih, pw / uiw)
+  end
+  local Ux, Uy = Up / dpiX, Up / dpiY
+  local uvpw, uvph = uiw * Ux, uih * Uy
+  local uox = math.floor((pw - uiw * Up) / 2) / dpiX
+  local uoy = math.floor((ph - uih * Up) / 2) / dpiY
   local GBCFX = require("src.render.GBCFX")
   -- Forced mono/Classic modes still need a whole-screen zone when a state
   -- exposes no SGB packets (raw DMG canvas), so sendColors can remap.
@@ -606,7 +740,12 @@ function Renderer:endFrame(zones, worldZones)
     local stack = ok and Game and Game.stack
     local base = stack and stack.visibleBase and stack:visibleBase()
     local state = base and stack.states and stack.states[base]
-    if state and state.letterboxWhite then
+    -- BATTLE BG "black" keeps the default black clear; "white" (and any
+    -- non-battle state that opts in) uses the paper shade.  "world" never
+    -- reaches here -- it makes the battle non-opaque, so the world pass is
+    -- active and this whole branch is skipped.
+    if state and state.letterboxWhite
+       and not (state.bgMode and state:bgMode() == "black") then
       clearR, clearG, clearB = PaletteFX.paperShade(Game and Game.data)
     end
   end
@@ -654,9 +793,6 @@ function Renderer:endFrame(zones, worldZones)
       love.graphics.setColor(0, 0, 0, fade)
       love.graphics.rectangle("fill", 0, 0, ww, wh)
       love.graphics.setColor(1, 1, 1, 1)
-    end
-    if self.battleCascadeProg then
-      self:drawBattleCascade(self.battleCascadeProg, ww, wh, ox, oy, vpw, vph, Sx, Sy)
     end
   elseif self.worldActive then
     local sp = Zoom.scale(Sp)
@@ -732,14 +868,81 @@ function Renderer:endFrame(zones, worldZones)
       love.graphics.rectangle("fill", 0, 0, ww, wh)
       love.graphics.setColor(1, 1, 1, 1)
     end
-    -- Battle transition: cascade black blocks into the area outside the
-    -- classic 160x144 wipe square (world still shows through until filled).
-    if self.battleCascadeProg then
-      self:drawBattleCascade(self.battleCascadeProg, ww, wh, ox, oy, vpw, vph, Sx, Sy)
+  end
+  -- BATTLE BG "world": the frozen overworld has just been composited and the
+  -- battle is about to blit over it.  Dim the world first, so the battle
+  -- reads as the foreground instead of competing with a fully lit map.  Goes
+  -- here rather than in the letterbox clear because with the world pass
+  -- active there is no clear -- the world already covers the surface.
+  if self.battleDim and self.battleDim > 0 then
+    love.graphics.setColor(0, 0, 0, self.battleDim)
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+
+  -- UI: anchored regions against their screen edges, the rest in the classic
+  -- centred letterbox.  With nothing anchored this is the single blit it has
+  -- always been.
+  local anchors = self.uiAnchors
+  if not anchors or #anchors == 0 then
+    blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy, uox, uoy, uvpw, uvph)
+  else
+    local rest = { { uox, uoy, uvpw, uvph } }
+    local placed = {}
+    for _, a in ipairs(anchors) do
+      local dw, dh = a.w * Ux, a.h * Uy
+      -- Anchors are edge-RELATIVE: an element keeps its distance from the
+      -- canvas edge, measured against the screen edge instead.  That is what
+      -- keeps a stack together -- the yes/no box sits 48px above the canvas
+      -- bottom, so bottom-anchoring lands it 48px above the screen bottom,
+      -- still directly over the dialogue box, rather than on top of it.
+      local gapR = (uiw - (a.x + a.w)) * Ux
+      local gapB = (uih - (a.y + a.h)) * Uy
+      local dx, dy
+      if a.anchor == "bottom" then
+        dx = uox + a.x * Ux -- horizontally it stays with the letterbox
+        dy = wh - gapB - dh
+      elseif a.anchor == "topright" then
+        dx = ww - gapR - dw
+        dy = a.y * Uy
+      else -- unknown anchor: leave it where it is
+        dx, dy = uox + a.x * Ux, uoy + a.y * Uy
+      end
+      placed[#placed + 1] = { a = a, dx = dx, dy = dy, dw = dw, dh = dh }
+      rest = subtractRect(rest, uox + a.x * Ux, uoy + a.y * Uy, dw, dh)
+    end
+    for _, r in ipairs(rest) do
+      blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy, r[1], r[2], r[3], r[4])
+    end
+    for _, p in ipairs(placed) do
+      -- shift the draw origin so canvas pixel (a.x, a.y) lands on (dx, dy).
+      -- The zone scissors are computed from the same origin, so an SGB
+      -- region travels with the element instead of staying in the letterbox.
+      blit(self.canvas, Ux, Uy, zones, Ux, Uy,
+           p.dx - p.a.x * Ux, p.dy - p.a.y * Uy, p.dx, p.dy, p.dw, p.dh)
     end
   end
-  -- UI stays in the classic centered GB letterbox
-  blit(self.canvas, Sx, Sy, zones, Sx, Sy, ox, oy, ox, oy, vpw, vph)
+
+  -- The battle wipe covers the whole surface, letterbox included, so it goes
+  -- over the finished composite rather than under the UI blit.  On hardware
+  -- it is the tilemap being overwritten -- there is nothing it does not cover.
+  if self.battleWipe then
+    self:drawBattleWipe(self.battleWipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
+  end
+
+  -- Palette-register effects (BattleTransition_FlashScreen's rBGP writes, the
+  -- GBFadeInFromWhite after a battle) tint every pixel the LCD shows -- there
+  -- is no "outside the screen" on hardware for them to miss.  So they are
+  -- painted here, over the finished composite, rather than into the 160x144
+  -- UI canvas: at any zoom above 1x a letterbox-only veil left the
+  -- surrounding window untouched, which read as the effect happening inside
+  -- a window rather than to the whole screen.  { shade, alpha }.
+  local veil = self.screenVeil
+  if veil and veil[2] > 0 then
+    love.graphics.setColor(veil[1], veil[1], veil[1], veil[2])
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
 
   if present then
     love.graphics.setCanvas()

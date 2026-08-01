@@ -9,8 +9,21 @@ local MoveEffects = require("src.battle.MoveEffects")
 local Runtime = require("src.mods.Runtime")
 local StatusRegistry = require("src.battle.StatusRegistry")
 local Strings = require("src.core.Strings")
+local Timing = require("src.core.Timing")
 
 local EffectRegistry = {}
+
+-- A move that misses -- or that registers as missed, which in Gen 1 includes
+-- a type immunity and damage floored to zero -- skips its animation and
+-- falls into PlayerCheckIfFlyOrChargeEffect's `ld c, 30 / call DelayFrames`
+-- (engine/battle/core.asm:3155-3158 and :3185; enemy twin at :5588) before
+-- anything is printed.  EXPLODE_EFFECT is the exception: core.asm:3157
+-- branches it to PlayPlayerMoveAnimation instead, so it pays the animation
+-- rather than the hold -- the same condition that gates cancelMoveAnim.
+local function missBeat(battle, record)
+  if record and record.explode then return end
+  battle:waitNext(Timing.MOVE_STATUS_OR_MISS)
+end
 
 -- pokered's <USER>/<TARGET> text macros print "Enemy " before the enemy
 -- mon's nickname (home/text.asm PlaceMoveUsersName)
@@ -92,6 +105,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   if target.invulnerable and not neverMiss then
     -- Explosion/Selfdestruct still animate on a miss (HandleIfPlayerMoveMissed)
     if not (record and record.explode) then battle:cancelMoveAnim() end
+    missBeat(battle, record)
     battle:sayNext(Strings("%s's\nattack missed!", displayName(user)))
     -- MoveHitTest's INVULNERABLE branch sets the same wMoveMissed as a
     -- failed accuracy roll (core.asm:5260), and the miss handler still
@@ -120,6 +134,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     if not battle:accuracyRoll(move, user, target) then
       -- Explosion/Selfdestruct still animate on a miss (HandleIfPlayerMoveMissed)
       if not (record and record.explode) then battle:cancelMoveAnim() end
+      missBeat(battle, record)
       battle:sayNext(Strings("%s's\nattack missed!", displayName(user)))
       -- Jump Kick crash, Explode self-destruct
       if record and record.onMiss then record.onMiss(ctx, "accuracy") end
@@ -147,6 +162,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     end
     if not counterable or (battle.lastDamage or 0) == 0 then
       battle:cancelMoveAnim()
+      missBeat(battle, record)
       battle:sayNext(Strings("%s's\nattack missed!", displayName(user)))
       return
     end
@@ -170,6 +186,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   if info.typeMult == 0 then
     -- type immunity zeros damage and sets wMoveMissed in Gen 1, so no anim
     if not (record and record.explode) then battle:cancelMoveAnim() end
+    missBeat(battle, record)
     battle:sayNext(Strings("It doesn't affect\n%s!", displayName(target)))
     if record and record.onMiss then record.onMiss(ctx, "immune") end
     return
@@ -177,6 +194,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   if info.missed then
     -- 0.25x floored the damage to zero: the original registers a miss
     if not (record and record.explode) then battle:cancelMoveAnim() end
+    missBeat(battle, record)
     battle:sayNext(Strings("%s's\nattack missed!", displayName(user)))
     if record and record.onMiss then record.onMiss(ctx, "floored") end
     return
@@ -231,6 +249,13 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     -- every strike -- damage was only rolled once
     if info.crit then battle:sayNext(Strings("Critical hit!")) end
     if info.ohko then battle:sayNext(Strings("One-hit KO!")) end
+    -- PrintCriticalOHKOText closes with `ld c, 20 / jp DelayFrames` at its
+    -- .done label (core.asm:3812-3814) -- and the no-crit path jumps to that
+    -- same label (:3799), so this hold is paid on EVERY landed hit, not just
+    -- critical ones.  It sits between the crit text and DisplayEffectiveness
+    -- (:3228-3229), which is where the beat before "It's super effective!"
+    -- comes from.
+    battle:waitNext(Timing.CRIT_OHKO_TEXT)
     if info.typeMult > 10 then
       battle:sayNext(Strings("It's super\neffective!"))
     elseif info.typeMult < 10 then

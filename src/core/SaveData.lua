@@ -219,6 +219,15 @@ function SaveData.defaultOptions()
     -- battle screen composition: og (the 160x144 original) | wide
     -- (304x144, src/battle/WideBattle.lua)
     battleLayout = "og",
+    -- BATTLE SIZE: "fixed" = the classic integer-scaled letterbox; "fill" =
+    -- scale the battle surface to the window so it fills vertically.  See
+    -- BattleState:wantsFillScale.
+    battleFit = "fixed",
+    -- BATTLE BG: what fills the screen behind and around the battle.
+    -- "white" = the display mode's paper shade (the classic look),
+    -- "black" = plain black bars, "world" = the frozen overworld showing
+    -- through, dimmed.  See BattleState:bgMode.
+    battleBg = "white",
     ruleset = "gen1_faithful",
     -- 0-7 like the GB's NR50 master volume
     musicVol = 7,
@@ -239,6 +248,9 @@ function SaveData.defaultOptions()
     voidFill = "trees",
     -- windowed | borderless (desktop fullscreen); ignored on mobile
     videoMode = "windowed",
+    -- lock the window to an exact 160x144 multiple, 1..4 (0 = OFF); see
+    -- src/core/FaithfulRes.lua.  Ignored on mobile.
+    faithfulRes = 0,
     -- hard render frame-rate cap; render-only pacing (issue #88, FrameCap.lua)
     fpsCap = 60,
     -- graphics performance tier: auto | high | balanced | low.  "auto"

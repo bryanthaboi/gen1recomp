@@ -265,6 +265,38 @@ end
 -- exactly as the owning state computed it
 local function sameZones(_, zones) return zones end
 
+-- Dim alpha for a BATTLE BG "world" battle anywhere in the stack, or nil.
+-- Same whole-stack rule as fillScaleInStack: a party menu or text box opened
+-- during the battle must not drop the dim for a frame.
+function Game.worldBgBattleDim(stack)
+  for i = #(stack and stack.states or {}), 1, -1 do
+    local state = stack.states[i]
+    if state and state.bgMode and state:bgMode() == "world" then
+      return state.BG_WORLD_DIM or 0.55
+    end
+  end
+  return nil
+end
+
+-- Does anything on the stack want the surface scaled to FILL the window
+-- (aspect preserved, bars on the long axis) rather than sit at the fixed
+-- integer scale?
+--
+-- Asked of the WHOLE stack, not just the top.  For BATTLE SIZE "fill" that is
+-- because the party menu, bag and text boxes a battle opens must not snap the
+-- surface back to the fixed scale for a frame; the title screen and intro want
+-- it unconditionally, since neither has a world behind it and neither has any
+-- reason to sit in a small box in the middle of a large window.
+function Game.fillScaleInStack(stack)
+  for i = #(stack and stack.states or {}), 1, -1 do
+    local state = stack.states[i]
+    if state and state.wantsFillScale and state:wantsFillScale() then
+      return true
+    end
+  end
+  return false
+end
+
 -- A wide battle owns the surface until it leaves the stack.  The party,
 -- bag, choice and text states it opens still draw their original 160px UI,
 -- but the canvas must not snap to 160px between those states.
@@ -319,6 +351,14 @@ function Game:draw()
   else
     Renderer:setUISize(Renderer.WIDTH, Renderer.HEIGHT)
   end
+  -- BATTLE SIZE: scale the battle surface to the window instead of the
+  -- classic integer letterbox.  Read from the whole stack, not just the top,
+  -- so a party menu or text box opened mid-battle keeps the same surface.
+  Renderer.uiFill = Game.fillScaleInStack(self.stack)
+  -- BATTLE BG "world": dim the overworld the battle is drawn over.  Read off
+  -- the stack for the same reason as uiFill above -- a prompt opened during
+  -- the battle must not drop the dim for a frame.
+  Renderer.battleDim = Game.worldBgBattleDim(self.stack)
   Renderer:beginFrame(worldBelow)
   for i = self.stack:visibleBase(), #self.stack.states do
     local state = self.stack.states[i]
@@ -658,6 +698,9 @@ function Game:applyOptions(opts)
   -- returns true when a persisted GBC FX level was cleared on mobile
   local gbcCleared = require("src.render.GBCFX").applyOptions(opts)
   require("src.core.VideoMode").applyOptions(opts)
+  -- after VideoMode: a faithful-resolution lock is an exact window size, so
+  -- it has to be the last word on the window (it drops fullscreen to hold)
+  require("src.core.FaithfulRes").applyOptions(opts)
   -- normalizes a nil/garbage cap to the 60 default, so old saves with no
   -- fpsCap key pace at the standard rate (issue #88)
   require("src.core.FrameCap").applyOptions(opts)

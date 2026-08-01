@@ -33,6 +33,10 @@ local IntroMovie = {}
 IntroMovie.__index = IntroMovie
 IntroMovie.isOpaque = true
 
+-- Same as the title screen: full-bleed art, no world behind it, no player zoom
+-- to respect, so fill the window rather than sit at the fixed integer scale.
+function IntroMovie:wantsFillScale() return true end
+
 -- SGB intro palettes: the splash uses PalPacket_GameFreakIntro (logo
 -- GAMEFREAK, falling star columns RED/VIRIDIAN/BLUEMON), the attract
 -- fight PalPacket_NidorinoIntro (PURPLEMON letterbox, BLACK bars)

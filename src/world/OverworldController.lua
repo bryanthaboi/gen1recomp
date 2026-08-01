@@ -717,6 +717,33 @@ function OverworldState:pushBattle(battle)
   if battle.computeMusicKind then
     require("src.core.Music").playBattle(Game.data, battle:computeMusicKind())
   end
+
+  -- Coming back from the battle screen is a fade, not a cut: EnterMap sees
+  -- BIT_BATTLE_OVER_OR_BLACKOUT set and runs MapEntryAfterBattle
+  -- (home/overworld.asm:22, :749-753) = GBFadeInFromWhite, behind the
+  -- `ld c, 10 / call DelayFrames` at :351-352.
+  --
+  -- It is wrapped around onFinish here, at the one funnel every battle goes
+  -- through, rather than inside afterBattle: a script-driven win defers
+  -- afterBattle into ctx.afterScript so an evolution screen cannot be buried
+  -- under the trainer's follow-up text (see Commands.start_battle), and the
+  -- fade inherited that deferral -- on a rival battle it fired after the
+  -- post-battle dialogue AND the walk-off, instead of when the battle ended.
+  --
+  -- The rest of onFinish runs as the fade's onDone, which is also the
+  -- hardware order: MapEntryAfterBattle fades the map back in, and only then
+  -- does the map script get to run.  The overworld is frozen meanwhile --
+  -- StateStack updates the top state only -- so nothing moves under it.
+  local finish = battle.onFinish
+  battle.onFinish = function(result)
+    if result == "lose" then
+      -- the blackout path warps to the heal point with its own transition
+      if finish then finish(result) end
+      return
+    end
+    Game.stack:push(require("src.render.Transition").battleReturn(Game,
+      function() if finish then finish(result) end end))
+  end
   Game.stack:push(BattleTransition.new(Game, function()
     Game.stack:push(battle)
   end, {

@@ -3,6 +3,7 @@
 local Font = require("src.render.Font")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
+local Timing = require("src.core.Timing")
 
 local ChoiceBox = {}
 ChoiceBox.__index = ChoiceBox
@@ -25,6 +26,19 @@ end
 
 function ChoiceBox:update(dt)
   local input = self.game.input
+  -- Both branches of DisplayTwoOptionMenu hold 15 frames with the menu still
+  -- on screen before TwoOptionMenu_RestoreScreenTiles hands control back
+  -- (engine/menus/text_box.asm:322-323, :333-334).
+  if self.pending ~= nil then
+    self.holdFrames = self.holdFrames - 1
+    if self.holdFrames <= 0 then
+      local yes = self.pending
+      self.pending = nil
+      self.game.stack:pop()
+      self.onChoose(yes)
+    end
+    return
+  end
   if input:wasPressed("up") or input:wasPressed("down") then
     self.index = self.index == 1 and 2 or 1
   elseif input:wasPressed("a") then
@@ -32,19 +46,28 @@ function ChoiceBox:update(dt)
     if not self.noSound then
       require("src.core.Sound").play(self.game.data, "Press_AB")
     end
-    self.game.stack:pop()
-    self.onChoose(self.index == 1)
+    self.pending = (self.index == 1)
+    self.holdFrames = Timing.YES_NO_ANSWER
   elseif input:wasPressed("b") then
     if not self.noSound then
       require("src.core.Sound").play(self.game.data, "Press_AB")
     end
-    self.game.stack:pop()
-    self.onChoose(false)
+    -- .choseSecondMenuItem writes wCurrentMenuItem = 1 before the hold, so
+    -- the cursor visibly snaps to NO for those 15 frames
+    self.index = 2
+    self.pending = false
+    self.holdFrames = Timing.YES_NO_ANSWER
   end
 end
 
 function ChoiceBox:draw()
   local tx, ty, tw, th = self.tx, self.ty, self.tw, self.th
+  -- rides the same bottom anchor as the dialogue box it sits above, so the
+  -- pair travels together (the anchor keeps each element's gap from the edge)
+  local r = self.game and self.game.renderer
+  if r and r.setUIAnchor then
+    r:setUIAnchor(tx * 8, ty * 8, tw * 8, th * 8, "bottom")
+  end
   Font.drawBox(tx, ty, tw, th)
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(Strings("YES"), (tx + 2) * 8, (ty + 1) * 8)

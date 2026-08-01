@@ -23,6 +23,7 @@ local Pokemon = require("src.pokemon.Pokemon")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Status = require("src.battle.Status")
+local Timing = require("src.core.Timing")
 local TrainerAI = require("src.battle.TrainerAI")
 local TurnOrder = require("src.battle.TurnOrder")
 local TypeChart = require("src.battle.TypeChart")
@@ -49,6 +50,41 @@ end
 function BattleState:wideLayout()
   return self:isWideBattleLayout()
 end
+
+-- BATTLE SIZE: "fixed" keeps the classic integer-scaled letterbox (a GB pixel
+-- is a whole number of screen pixels, and the battle is the same size at any
+-- zoom); "fill" scales the battle surface to the window instead, so it fills
+-- vertically.  Filling means a fractional scale, so pixels stop being evenly
+-- sized -- that is the trade, which is why it is a setting rather than a
+-- change.  Only the battle surface is affected; the overworld is unchanged.
+function BattleState:wantsFillScale()
+  local options = self.game and self.game.save and self.game.save.options
+  return options and options.battleFit == "fill" or false
+end
+
+-- BATTLE BG: what fills the screen AROUND the battle -- the letterbox voids
+-- that grow as the window gets bigger or the view is zoomed out.  The battle
+-- screen itself is untouched: it keeps its white paper field in every mode.
+--
+--   "white"  the display mode's paper shade (the classic look)
+--   "black"  plain black bars
+--   "world"  the frozen overworld, dimmed
+--
+-- "world" works by making the battle NON-opaque: StateStack:visibleBase then
+-- finds the overworld below it and Game:draw keeps drawing the map, so the
+-- voids show it instead of a flat clear.  The battle still paints its own
+-- opaque 160x144 field over the top, so only the surround changes.
+function BattleState:bgMode()
+  local options = self.game and self.game.save and self.game.save.options
+  local mode = options and options.battleBg
+  if mode == "black" or mode == "world" then return mode end
+  return "white"
+end
+
+-- How far to dim the overworld behind a "world" background, 0..1.  Enough
+-- that the battle reads as the foreground rather than competing with a fully
+-- lit map behind it.
+BattleState.BG_WORLD_DIM = 0.55
 
 -- Renderer:setUISize asks the top state for its surface before anything draws
 function BattleState:uiSize()
@@ -844,9 +880,30 @@ function BattleState:drainNext(battler, stopAt)
                { drain = true, battler = battler, stopAt = stopAt })
 end
 
--- One frame of the HP-bar drain (engine/gfx/hp_bar.asm UpdateHPBar):
--- the bar animates a pixel per two frames, so displayed HP moves at
--- maxHP/96 per frame (48-pixel bar).  Returns true while animating.
+-- Queue a pure frame hold at the current insert point, the way the original
+-- spends DelayFrames between the beats of a turn.  Mirrors sayNext/drainNext
+-- so a caller can interleave holds with messages in source order.
+function BattleState:waitNext(frames)
+  if not frames or frames <= 0 then return end
+  self.nextInsert = (self.nextInsert or 0) + 1
+  table.insert(self.queue, self.nextInsert, { wait = frames })
+end
+
+-- One frame of the HP-bar drain (engine/gfx/hp_bar.asm UpdateHPBar).
+--
+-- The original walks the bar ONE HP POINT per loop iteration (:81-120), and
+-- what each iteration costs depends on the side:
+--   * UpdateHPBar_PrintHPNumber spends a DelayFrame (:234) reprinting the
+--     number, but only when wHPBarType is nonzero (:207-209) -- the player's
+--     own HUD and the party menu, never the enemy's;
+--   * UpdateHPBar_AnimateHPBar spends 2 frames for each pixel the bar
+--     actually moved (:147-148), and most single-HP steps move none.
+-- So the player's bar drains at 1 HP per frame plus 2 frames per pixel,
+-- while the enemy's costs nothing until it crosses a pixel boundary.  The
+-- old flat maxHP/96 rate was the enemy-side formula applied to both, which
+-- ran a 150 HP mon's full drain in 96 frames against hardware's 249.
+--
+-- Returns true while animating.
 function BattleState:stepHPDrain()
   local busy = false
   for _, b in ipairs({ self.player, self.enemy }) do
@@ -857,14 +914,30 @@ function BattleState:stepHPDrain()
          and b.shownHP >= b.drainFloor then
         goal = b.drainFloor
       end
-      if b.shownHP ~= goal then
-        local step = math.max(1, b.mon.stats.hp) / 96
-        if b.shownHP > goal then
-          b.shownHP = math.max(goal, b.shownHP - step)
-        else
-          b.shownHP = math.min(goal, b.shownHP + step)
+      if (b.drainHold or 0) > 0 then
+        b.drainHold = b.drainHold - 1
+        busy = true
+      elseif b.shownHP ~= goal then
+        local maxHP = math.max(1, b.mon.stats.hp)
+        local playerSide = (b == self.player)
+        local cost = 0
+        -- consume whole HP steps until this frame's budget is spent; on the
+        -- enemy HUD several free steps can land in the same frame
+        while b.shownHP ~= goal and cost < 1 do
+          local nextHP = b.shownHP + ((b.shownHP > goal) and -1 or 1)
+          cost = cost + Timing.hpDrainStepFrames(b.shownHP, nextHP,
+                                                 maxHP, playerSide)
+          b.shownHP = nextHP
         end
-        busy = busy or b.shownHP ~= goal
+        b.drainHold = math.max(0, cost - 1)
+        b.draining = true
+        busy = true
+      elseif b.draining then
+        -- .animateHPBarDone's final number print, one more pixel step and
+        -- Delay3 (hp_bar.asm:132-135); this frame is the first of them
+        b.draining = nil
+        b.drainHold = Timing.hpDrainClosingFrames(b == self.player) - 1
+        busy = true
       end
     end
   end
@@ -939,6 +1012,14 @@ function BattleState:updateQueue()
     self.waitFrames = self.waitFrames - 1
     return true
   end
+  -- WaitForSoundToFinish (home/delay.asm:15-20) blocks until the sfx has
+  -- actually stopped sounding, which is how the original gives a sound its
+  -- own clear window instead of letting the next beat play over it
+  if self.waitingSound then
+    local src = self.waitingSound
+    if src and src.isPlaying and src:isPlaying() then return true end
+    self.waitingSound = nil
+  end
   -- an HP-bar drain holds the queue until the bar catches up
   if self.draining then
     if self:stepHPDrain() then return true end
@@ -990,6 +1071,12 @@ function BattleState:updateQueue()
       self.waitFrames = item.wait
       return true
     end
+    if item.waitSound then
+      -- the source is fetched now, not when the row was queued, so the
+      -- act() that started the sound has already run
+      self.waitingSound = item.waitSound()
+      return true
+    end
     if item.mimicSelect then
       -- pause the queue on Mimic's copy menu (MoveSelectionMenu with
       -- wMoveMenuType = 1 lists the enemy's moves; cursor starts on 1)
@@ -1010,6 +1097,16 @@ function BattleState:updateQueue()
     -- the animation ends (hitRow rows carry a hit with no animation --
     -- thrash/rage continuation turns that skip the announcement).
     if item.anim or item.hitRow then
+      -- PlayMoveAnimation writes wAnimationID, calls Delay3, and only then
+      -- jumps to MoveAnimation (core.asm:6635-6640), so three frames pass
+      -- between the move's announcement and the first frame of its
+      -- animation.  Put the row back and pay that first.
+      if item.anim and not item.animDelayed then
+        item.animDelayed = true
+        table.insert(self.queue, 1, item)
+        self.waitFrames = Timing.MOVE_ANIM_PRE
+        return true
+      end
       local mdef = item.anim and self.data.moves[item.anim]
       local anim = mdef and mdef.anim
       if item.anim == "POOF_ANIM" then
@@ -1081,17 +1178,38 @@ function BattleState:updateQueue()
   -- a \v CONT wait holds the box until A/B, then scrolls the next line in
   -- (home/text.asm ContText); this keeps a 3rd line on-screen (#216)
   if self.msgWaiting then
+    -- _ContText prints the â–¼ and runs ProtectedDelay3 BEFORE ManualTextScroll
+    -- starts watching the joypad (home/text.asm:263-267), so three frames
+    -- pass with the arrow up and the button ignored
+    if (self.msgPreWait or 0) > 0 then
+      self.msgPreWait = self.msgPreWait - 1
+      return true
+    end
     if input:wasPressed("a") or input:wasPressed("b") then
       self.msgWaiting = nil
       self:beginMsgLine()
+      -- then the two ScrollTextUpOneLine calls block for 5 frames each
+      -- (home/text.asm:280-305) before the next line starts typing
+      self.waitFrames = Timing.TEXT_SCROLL_PAIR
     end
     return true
   end
   local cur = self.shown[#self.shown]
   if #cur < #self.codes then
-    -- battle typewriter cadence: two glyphs per fixed step (as before)
-    for _ = 1, 2 do
-      if #cur >= #self.codes then break end
+    -- Battle text prints through the same PrintText path as everything
+    -- else, so it pays PrintLetterDelay per character (home/print_text.asm:
+    -- 4-45): hFrameCounter is loaded from wOptions & $f -- the OPTION text
+    -- speed, 1/3/5, default 3 -- and the loop spins until it drains, unless
+    -- A or B is held, which collapses the wait to a single DelayFrame.
+    -- This used to run two glyphs per frame flat, six times hardware speed
+    -- at the default setting, and ignored the text-speed option entirely.
+    local delay = (self.game.save.options and self.game.save.options.textSpeed)
+                  or 3
+    if delay ~= 1 and delay ~= 3 and delay ~= 5 then delay = 3 end
+    if input:isDown("a") or input:isDown("b") then delay = 1 end
+    self.charTimer = (self.charTimer or 0) + 1
+    while self.charTimer >= delay and #cur < #self.codes do
+      self.charTimer = self.charTimer - delay
       cur[#cur + 1] = self.codes[#cur + 1]
       self.charIndex = self.charIndex + 1
     end
@@ -1100,6 +1218,7 @@ function BattleState:updateQueue()
     -- scrolling, \n advances now (beginMsgLine scrolls if the box is full)
     if self.lines[self.lineIndex + 1].cont then
       self.msgWaiting = true
+      self.msgPreWait = Timing.TEXT_PRE_ADVANCE
     else
       self:beginMsgLine()
     end
@@ -1126,8 +1245,18 @@ function BattleState:updateQueue()
       -- only on a \v CONT hold (#317).  A flag of its own, not msgWaiting:
       -- that branch above scrolls the NEXT line in, which this page has not
       -- got, so reusing it would call beginMsgLine on a drained message.
-      self.msgPrompt = true
-      if input:wasPressed("a") or input:wasPressed("b") then
+      if not self.msgPrompt then
+        self.msgPrompt = true
+        -- PromptText runs ProtectedDelay3 between writing the arrow and
+        -- ManualTextScroll (home/text.asm:213-217), so the page holds for
+        -- three frames with the button ignored before it can be dismissed.
+        -- Without it a queued A press could clear a page the same frame its
+        -- last glyph landed, which is most of "it doesn't hold sometimes".
+        self.msgPromptWait = Timing.TEXT_PRE_ADVANCE
+      end
+      if (self.msgPromptWait or 0) > 0 then
+        self.msgPromptWait = self.msgPromptWait - 1
+      elseif input:wasPressed("a") or input:wasPressed("b") then
         self.msgPrompt = nil
         self.current = nil
       end
@@ -1248,11 +1377,12 @@ function BattleState:enter()
   -- without a transition (link battles, scripted pushes)
   Music.playBattle(self.data, self.musicKind)
   -- intro presentation (SlidePlayerAndEnemySilhouettesOnScreen): both
-  -- sides slide in as black silhouettes.  The original scrolls SCX from
-  -- $90 to 0 two pixels per frame (72 frames); the port covers the full
-  -- 160px screen width, so 2px/frame is an 80-frame slide (slide offset is
-  -- introSlide*2 below).  The trainer pics stay up until the send-outs.
-  self.introSlide = 80
+  -- sides slide in; the trainer pics stay up until the send-outs
+  -- BATTLE BG "world" drops this battle's opacity so StateStack keeps drawing
+  -- the overworld underneath it (see bgMode).  Per instance, so the class
+  -- default stays opaque for every other battle and for older saves.
+  self.isOpaque = self:bgMode() ~= "world"
+  self.introSlide = Timing.BATTLE_SLIDE_IN_FRAMES
   self.showEnemyTrainer = self.kind == "trainer" and self.trainerPic ~= nil
   -- DrawAllPokeballs (common_text.asm:27) puts the party ball rows AND the
   -- HUD corner/underline tiles under them (PlacePlayerHUDTiles /
@@ -1298,6 +1428,25 @@ function BattleState:enter()
      and not self.ghost and not self.scopeReveal then
     queueEnemyCry()
   end
+  -- PrintBeginningBattleText .trainerBattle (common_text.asm): a trainer
+  -- battle gives SFX_SILPH_SCOPE a clear window -- PlaySound, then
+  -- WaitForSoundToFinish, which blocks -- and only after `ld c, 20 /
+  -- DelayFrames` do DrawAllPokeballs and the "wants to fight!" text run.
+  -- The balls and the text used to appear on the same frame the silhouettes
+  -- landed, so the sound had to share its whole duration with the ball draw
+  -- and the text scroll instead of landing on its own.
+  --
+  -- The sfx is extracted as "Trainer_Appeared" (tools/rom_manifest.json
+  -- sfxHeaders, bank 8 / $42bb -- the same header pokered names
+  -- SFX_Silph_Scope); nothing had ever played it.
+  if self.kind == "trainer" then
+    self:act(function()
+      self.introSfx = require("src.core.Sound").play(self.data,
+                                                     "Trainer_Appeared")
+    end)
+    table.insert(self.queue, { waitSound = function() return self.introSfx end })
+    table.insert(self.queue, { wait = Timing.TRAINER_INTRO_SFX_GAP })
+  end
   self:say(self.introText)
   -- the unveil rides on that same box, before _InitBattleCommon clears the
   -- intro chrome below (#492)
@@ -1339,6 +1488,14 @@ function BattleState:enter()
     end)
     queueEnemyCry()
   end
+  -- StartBattle .foundFirstAliveEnemyMon (core.asm:152-156): the `call nz`
+  -- gates only EnemySendOutFirstMon -- the `ld c, 40 / call DelayFrames`
+  -- after it is unconditional, so a wild battle pays it too, between
+  -- "Wild X appeared!" and "Go! Y!".  It lands before .playerSendOutFirstMon
+  -- (:166), not at the end of the intro.  Appended, not waitNext'd: the
+  -- intro is built linearly, and waitNext's insert point is for rows added
+  -- while the queue is already running.
+  table.insert(self.queue, { wait = Timing.BATTLE_START_SENDOUT })
   if not self.safari and not self.demo then
     -- StartBattle .playerSendOutFirstMon (core.asm:236-240): the back pic
     -- walks off the LEFT edge (SlideTrainerPicOffScreen, hlcoord 1,5,
@@ -2510,24 +2667,27 @@ function BattleState:applyHitFx(hit)
       prog[#prog + 1] = { dy = 0, frames = 3 }
     end
     self.fx.shakeProg = prog
-    self.waitFrames = 48 -- the predef blocks until the shake settles
+    self.waitFrames = Timing.SHAKE_VERTICAL -- the predef blocks until it settles
   elseif t == 2 then
     self.fx.shakeProg = fastShakeProg(8)
-    self.waitFrames = 72
+    self.waitFrames = Timing.SHAKE_HORIZ_HEAVY
   elseif t == 3 then
     self.fx.shakeProg = slowShakeProg(6, 2)
-    self.waitFrames = 48
+    self.waitFrames = Timing.SHAKE_HORIZ_SLOW
   elseif t == 4 then
     if hit.blink then
-      self.fx.blink = { target = hit.blink, frames = 20 }
-      self.waitFrames = 20
+      -- AnimationBlinkMon: 6 iterations of hide/5 frames/show/5 frames.
+      -- This is the animation for every plain damaging move the player
+      -- uses, and it ran at a third of its length.
+      self.fx.blink = { target = hit.blink, frames = Timing.BLINK_MON }
+      self.waitFrames = Timing.BLINK_MON
     end
   elseif t == 5 then
     self.fx.shakeProg = fastShakeProg(2)
-    self.waitFrames = 18
+    self.waitFrames = Timing.SHAKE_HORIZ_LIGHT
   elseif t == 6 then
     self.fx.shakeProg = slowShakeProg(3, 2)
-    self.waitFrames = 24
+    self.waitFrames = Timing.SHAKE_HORIZ_SLOW2
   end
 end
 
@@ -3305,10 +3465,13 @@ function BattleState:onFaint(battler)
     Sound.playCry(self.data, battler.mon.species)
     Sound.play(self.data, "Faint_Fall")
     self.fx = self.fx or {}
-    self.fx.faint = { battler = battler, frames = 30 }
+    -- SlideDownFaintedMonPic: PIC_HEIGHT (7) slide steps, each closing with
+    -- DelayFrames 2 (core.asm:1186-1222).  The port held this one twice as
+    -- long as hardware.
+    self.fx.faint = { battler = battler, frames = Timing.FAINT_SLIDE }
   end)
   self.nextInsert = (self.nextInsert or 0) + 1
-  table.insert(self.queue, self.nextInsert, { wait = 30 })
+  table.insert(self.queue, self.nextInsert, { wait = Timing.FAINT_SLIDE })
   if not battler.isPlayer and self.kind == "wild" then
     -- FaintEnemyPokemon .wild_win (core.asm:792-795): beating a wild
     -- mon calls EndLowHealthAlarm and starts MUSIC_DEFEATED_WILD_MON
@@ -4323,10 +4486,14 @@ function BattleState:growInScale(battler)
 end
 
 -- battler hidden this frame? (damage blink)
+--
+-- AnimationBlinkMon hides the pic, waits DelayFrames 5, shows it, waits
+-- DelayFrames 5, six times over (animations.asm:1360-1376) -- a 10-frame
+-- period, not 8.  With Timing.BLINK_MON that is exactly six blinks.
 function BattleState:fxHidden(battler)
   local fx = self.fx
   if fx and fx.blink and fx.blink.target == battler and fx.blink.frames > 0 then
-    return self.frame % 8 < 4
+    return self.frame % 10 < 5
   end
   return false
 end
@@ -5230,7 +5397,8 @@ function BattleState:drawClassic()
   if sx == 0 and sy == 0 and fx and fx.shake and fx.shake > 0 then
     sx = self.frame % 4 < 2 and 2 or -2
   end
-  local slide = (self.introSlide or 0) * 2 -- intro slide-in offset (2px/frame)
+  -- intro slide-in offset: 2 px per frame, so 144 px over 72 frames
+  local slide = (self.introSlide or 0) * Timing.BATTLE_SLIDE_PX_PER_FRAME
 
   if self:colorMode() then
     -- SGB pipeline: gray BG canvas -> (wavy) -> zone recolor with the
