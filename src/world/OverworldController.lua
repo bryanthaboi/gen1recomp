@@ -1824,9 +1824,16 @@ function OverworldState:tryHiddenObject(fx, fy)
     end
   end
 
-  -- bench guys (data/events/bench_guys.asm)
+  -- bench guys (data/events/bench_guys.asm).  Gate on textFacing -- the
+  -- bench_guys.asm direction PrintBenchGuyText actually checks against the
+  -- player -- not h.facing, the hidden-object trigger arg.  The two disagree
+  -- for Vermilion/Saffron/Fuchsia/Cinnabar, whose hidden object records "up"
+  -- while the seat sits on the x=0 wall and can only be faced from (1,y)
+  -- looking left.  Gating on that "up" arg left those four benches
+  -- impossible to talk to at all (#488); textFacing is "left" for every
+  -- bench guy, which is the one reachable approach.
   for _, h in ipairs(extras.benchGuys[self.map.id] or {}) do
-    if h.x == fx and h.y == fy and (not h.facing or h.facing == facing) then
+    if h.x == fx and h.y == fy and (not h.textFacing or h.textFacing == facing) then
       local text = OverworldState.benchGuyText(Game.data, save, h.text)
       if text then
         Game.stack:push(TextBox.new(Game, text))

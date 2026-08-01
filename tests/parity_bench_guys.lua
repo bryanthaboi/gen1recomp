@@ -25,6 +25,17 @@ local check, eq = S.check, S.eq
 local OverworldState = require("src.world.OverworldController")
 local resolve = OverworldState.benchGuyText
 
+-- inject a stub into a method's shared upvalue (same seam parity_bills_pc uses)
+local function setUpvalue(fn, name, val)
+  local i = 1
+  while true do
+    local n = debug.getupvalue(fn, i)
+    if not n then return false end
+    if n == name then debug.setupvalue(fn, i, val); return true end
+    i = i + 1
+  end
+end
+
 local benchGuys = Data.field and Data.field.hiddenExtras
   and Data.field.hiddenExtras.benchGuys
 check(type(benchGuys) == "table", "generated data carries a benchGuys table")
@@ -85,5 +96,65 @@ end
 -- a label the table has never heard of stays nil rather than throwing
 eq(resolve(Data, noFlags, "NoSuchBenchGuyText"), nil, "unknown label resolves to nil")
 eq(resolve(Data, noFlags, nil), nil, "missing label resolves to nil")
+
+-- ------------------------------------------------------------------
+-- #488: the interaction must gate on textFacing (the bench_guys.asm
+-- direction PrintBenchGuyText checks against the player), NOT the
+-- hidden-object trigger arg `facing`.  Every seat sits on the x=0 wall,
+-- reachable only from (1,y) facing left, so textFacing is "left" for all;
+-- but four centers record facing="up" from the hidden object.  Gating on
+-- that arg made those four benches impossible to talk to at all.
+-- ------------------------------------------------------------------
+
+-- reachability invariant: every labelled bench guy is faced from the left,
+-- the one approach a wall-hugging x=0 seat allows
+for mapId, list in pairs(benchGuys) do
+  for _, h in ipairs(list) do
+    if h.text then
+      eq(h.textFacing, "left", mapId .. " bench guy is faced from the left")
+    end
+  end
+end
+
+-- the data trap the bug rode in on: these four disagree (arg says up)
+for _, mapId in ipairs({ "VERMILION_POKECENTER", "SAFFRON_POKECENTER",
+                         "FUCHSIA_POKECENTER", "CINNABAR_POKECENTER" }) do
+  local h = benchGuys[mapId] and benchGuys[mapId][1]
+  check(h and h.facing == "up",
+    mapId .. " hidden-object trigger arg is 'up' (the #488 trap)")
+  check(h and h.textFacing == "left",
+    mapId .. " but bench_guys.asm faces left (what the engine must use)")
+end
+
+-- functional: drive the real tryHiddenObject.  Facing the seat (left) must
+-- talk to a previously-broken bench guy; facing the stale "up" must not.
+do
+  local SaveData = require("src.core.SaveData")
+  local pushed = {}
+  local textBoxStub = { new = function(_, text) local b = { text = text }; pushed[#pushed + 1] = b; return b end }
+  local fakeGame = {
+    data = Data,
+    save = SaveData.newGame(),
+    stack = { push = function(_, it) pushed[#pushed + 1] = it end },
+  }
+  check(setUpvalue(OverworldState.tryHiddenObject, "Game", fakeGame), "Game upvalue set")
+  check(setUpvalue(OverworldState.tryHiddenObject, "TextBox", textBoxStub), "TextBox upvalue set")
+
+  local guy = benchGuys.VERMILION_POKECENTER[1]
+  local function press(facing)
+    pushed = {}
+    local self_ = setmetatable(
+      { map = { id = "VERMILION_POKECENTER" }, player = { facing = facing } },
+      { __index = OverworldState })
+    return self_:tryHiddenObject(guy.x, guy.y)
+  end
+
+  local hit = press("left")
+  check(hit == true, "facing the seat (left) triggers the Vermilion bench guy (#488)")
+  check(pushed[1] and type(pushed[1].text) == "string" and #pushed[1].text > 0,
+    "the bench guy actually says something")
+
+  check(not press("up"), "facing the stale 'up' arg does not trigger (gate still discriminates)")
+end
 
 S.finish()
