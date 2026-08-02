@@ -9,7 +9,7 @@ Updated at the completion of every feature.
 
 | Feature | Kind | Version | Status | Lives in |
 |---|---|---|---|---|
-| [Celadon Battle Facility](#celadon-battle-facility) | Mod | 1.0.0 | Shipped | [mods/celadon_battle_facility/](mods/celadon_battle_facility/) |
+| [Celadon Battle Facility](#celadon-battle-facility) | Mod | 1.0.1 | Shipped | [mods/celadon_battle_facility/](mods/celadon_battle_facility/) |
 | ROM files gitignored | Repo hygiene | — | Shipped | [.gitignore](.gitignore) |
 
 ---
@@ -90,8 +90,12 @@ What made the first one go smoothly, so the next follows the same shape:
    fork's `dev`; keep `upstream/dev` merges separate so the history stays
    readable.
 3. **Verify against the data, then against the render.** Map data will not
-   tell you that a block carries baked-in signage, or that your room is four
-   screens wide. Both cost a rewrite on the first feature. Screenshot it.
+   tell you that a block carries baked-in signage (17 is "GYM", 115 "MART",
+   113/114 "POKe"), that your room is four screens wide, or that a building
+   has no roofline. All three cost a rewrite on the first feature. Render the
+   candidate blocks and screenshot the result before believing the layout.
+   `tools/` has no block viewer; a dozen lines of Pillow over
+   `assets/generated/tilesets/*.png` plus the `blocks` table does the job.
 4. **Ship a unit suite and at least one driver.** The suite catches structure
    (`ScriptRunner.validate` finds bad labels and unknown verbs for free); the
    driver catches behaviour.

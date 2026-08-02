@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1
+
+- **The building has a roof.** 1.0.0 stacked two *wall* rows (the Dept.
+  Store's middle floors), so it read as a brick wall standing in the grass
+  with no roofline or top border. It now copies ROUTE_5's gate house whole --
+  `32/13/13/33` roof over `55/125/58/126` wall -- which is the one 4-wide
+  roofed building in Kanto carrying a door and no lettering. The suite asserts
+  the top row is roof blocks.
+- The double door is now a single door at cell (8,21), matching that
+  building. Both interior doorway cells still return to it.
+
 ## 1.0.0
 
 The full ladder.

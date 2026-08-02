@@ -30,8 +30,11 @@ T.eq(#city.blocks, city.width * city.height,
 -- The 4x2 footprint at block (2,9), and nothing else, changed.  Signage is
 -- baked into the tileset art, so this asserts the two sign blocks stay out:
 -- 17 draws "GYM" and 115 draws "MART".
-local FOOT = { [0] = { 104, 127, 127, 105 }, [1] = { 55, 58, 58, 126 } }
-local SIGN_BLOCKS = { [17] = "GYM", [115] = "MART" }
+local FOOT = { [0] = { 32, 13, 13, 33 }, [1] = { 55, 125, 58, 126 } }
+-- 17 draws "GYM", 115 "MART", 113/114 "POKe"
+local SIGN_BLOCKS = { [17] = "GYM", [115] = "MART", [113] = "POKe", [114] = "POKe" }
+-- the roof row is what makes it read as a building rather than a wall
+local ROOF_BLOCKS = { [32] = true, [13] = true, [33] = true, [12] = true, [14] = true }
 local changed = {}
 for i, v in ipairs(city.blocks) do
   if v ~= baseBlocks[i] then changed[#changed + 1] = i end
@@ -47,6 +50,11 @@ for r = 0, 1 do
     T.check(SIGN_BLOCKS[city.blocks[idx]] == nil,
       ("footprint cell (%d,%d) is free of baked-in signage (%s)")
         :format(2 + c, 9 + r, tostring(SIGN_BLOCKS[city.blocks[idx]])))
+    if r == 0 then
+      T.check(ROOF_BLOCKS[city.blocks[idx]],
+        ("footprint top row (%d,%d) is a roof block, so the building has a "
+         .. "roofline instead of reading as a bare wall"):format(2 + c, 9 + r))
+    end
   end
 end
 
@@ -60,7 +68,7 @@ end
 
 -- ------- the door
 
-T.eq(#city.warps, baseWarpCount + 2, "the two doorway warps were appended")
+T.eq(#city.warps, baseWarpCount + 1, "the doorway warp was appended")
 for i = 1, baseWarpCount do
   T.eq(city.warps[i].destMap, Pristine.warps[i].destMap,
     ("Celadon's own warp %d is untouched"):format(i))
@@ -68,11 +76,9 @@ for i = 1, baseWarpCount do
   T.eq(city.warps[i].y, Pristine.warps[i].y, ("warp %d keeps its cell"):format(i))
 end
 
--- the two 58 door blocks sit at footprint columns 1 and 2, so their
--- bottom-left cells are x=6 and x=8 on the footprint's bottom row
-local doors = { city.warps[baseWarpCount + 1], city.warps[baseWarpCount + 2] }
-T.eq(doors[1].x, 6, "the left door sits on its block's bottom-left cell")
-T.eq(doors[2].x, 8, "the right door sits on its block's bottom-left cell")
+-- block 58 sits at footprint column 2, so its bottom-left cell is x=8
+local doors = { city.warps[baseWarpCount + 1] }
+T.eq(doors[1].x, 8, "the door sits on block 58's bottom-left cell")
 for i, door in ipairs(doors) do
   T.eq(door.y, 21, ("door %d sits on the footprint's bottom row"):format(i))
   T.eq(door.destMap, "CELADON_BATTLE_FACILITY",

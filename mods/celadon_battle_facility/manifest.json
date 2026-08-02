@@ -1,7 +1,7 @@
 {
   "id": "celadon_battle_facility",
   "name": "Celadon Battle Facility",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",

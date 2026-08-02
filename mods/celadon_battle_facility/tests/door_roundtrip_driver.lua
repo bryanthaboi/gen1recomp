@@ -10,8 +10,8 @@ return function(game)
   local DIR = os.getenv("SHOT_DIR") or "shots"
 
   local CITY, FACILITY = "CELADON_CITY", "CELADON_BATTLE_FACILITY"
-  -- the left of the two doorway cells; the footprint spans cells x 4..11
-  local DOOR_X, DOOR_Y = 6, 21
+  -- the single doorway cell; the footprint spans cells x 4..11
+  local DOOR_X, DOOR_Y = 8, 21
 
   local failures = 0
   local function check(cond, msg)
@@ -68,7 +68,7 @@ return function(game)
 
   -- ------- the building is solid, not walk-through scenery
 
-  U.teleport(game, CITY, DOOR_X - 2, DOOR_Y + 1, "up")
+  U.teleport(game, CITY, DOOR_X - 4, DOOR_Y + 1, "up")
   U.hold(game, "up", 24)
   U.wait(6)
   check(ow.map.id == CITY and ow.player.cellY >= DOOR_Y,

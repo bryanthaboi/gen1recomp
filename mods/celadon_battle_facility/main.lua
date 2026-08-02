@@ -91,23 +91,27 @@ end
 -- Top-left corner of the 4x2 block footprint, in block coordinates.
 local FOOT_COL, FOOT_ROW = 2, 9
 
--- A two-storey brick building with a double door: 104/127/127/105 is the
--- upper facade and 55/58/58/126 the ground floor, with the two 58s carrying
--- the doors.  This is the Celadon Dept. Store's shape (block row 6, columns
--- 3-6, whose warps sit on each 58's bottom-left cell at (8,13) and (10,13)),
--- with one deliberate substitution.
+-- A roofed 4x2 building, copied whole from ROUTE_5 (block columns 3-6, rows
+-- 15-16 -- the Route 5 gate house), whose warp sits on block 58's bottom-left
+-- cell at (10,33).  32/13/13/33 is the roof and 55/125/58/126 the wall, with
+-- 58 carrying the door.
 --
--- Signage is baked into the tileset art, so the obvious copies are traps:
--- block 17 draws "GYM" and block 115 draws "MART".  The Dept. Store's real
--- bottom-right is 115; 126 is the same brick end with a plain window, which
--- is why it stands in here.
+-- The roof row is the point.  An earlier draft stacked two *wall* rows
+-- (104/127/127/105 over 55/58/58/126, the Dept. Store's middle floors), which
+-- gave a building with no roofline -- it read as a brick wall standing in the
+-- grass rather than a structure.
+--
+-- Signage is baked into the tileset art, so copying a neighbour wholesale is
+-- a trap: block 17 draws "GYM", 115 draws "MART", and 113/114 draw "POKe".
+-- This pattern is the one real 4-wide roofed building in Kanto that carries a
+-- door and no lettering.
 local FOOTPRINT = {
-  { 104, 127, 127, 105 },
-  {  55,  58,  58, 126 },
+  {  32,  13,  13,  33 },
+  {  55, 125,  58, 126 },
 }
 
--- Which footprint columns (0-based) carry a door, matching the two 58s.
-local DOOR_COLS = { 1, 2 }
+-- Which footprint columns (0-based) carry a door, matching block 58.
+local DOOR_COLS = { 2 }
 
 -- The lawn block every footprint cell is expected to be replacing.  Asserted
 -- rather than assumed: if an engine update reshapes Celadon, this mod should
@@ -216,7 +220,13 @@ return function(mod)
 
   -- ------- the interior map
 
-  local back = mod.cityWarpIndices or { 1, 1 }
+  -- The interior doorway is two cells wide but the building has a single
+  -- door, so both cells return to it.  Falls back to warp 1 when the
+  -- exterior patch was skipped; on a fixture base there is no Celadon to
+  -- return to anyway.
+  local back = mod.cityWarpIndices or {}
+  local backLeft = back[1] or 1
+  local backRight = back[2] or backLeft
   local exitX = IN_DOOR_COL * 2
   local exitY = (IN_H - 1) * 2 + 1
 
@@ -233,8 +243,8 @@ return function(mod)
     -- does it, so you cannot slip past the door diagonally.  Each cell
     -- returns to the exterior door you came in by.
     warps = {
-      { x = exitX, y = exitY, destMap = CITY, destWarp = back[1] },
-      { x = exitX + 1, y = exitY, destMap = CITY, destWarp = back[2] },
+      { x = exitX, y = exitY, destMap = CITY, destWarp = backLeft },
+      { x = exitX + 1, y = exitY, destMap = CITY, destWarp = backRight },
     },
     -- The cast sits one row clear of the back wall.  The camera clamps its
     -- top at y=3 in a room this tall, so NPCs on the first floor row (y=2-3)
