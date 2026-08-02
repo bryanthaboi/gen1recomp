@@ -477,14 +477,23 @@ function TitleState:draw()
     -- the Yellow fallback layout draws no ribbon at all.
     if self.version and not self.yellow then
       local iw, ih = self.version:getDimensions()
-      if self.blue then
-        love.graphics.draw(self.version,
-          love.graphics.newQuad(0, 0, 64, 8, iw, ih), 56, 64)
-      else
+      -- The ribbon is loaded at the END of the VERSION_TILES band
+      -- (title.asm: vChars2 tile $60 + (VERSION_TILES tiles - size) / 2), so
+      -- a ribbon narrower than the band is right-aligned; the band ends at
+      -- px 120.  US Red is the one 80px ribbon, and it is the only one drawn
+      -- in two pieces: "RED" (px 0-16) and "VERSION" (px 40-80) with the
+      -- unused middle skipped.  Everything else -- US Blue, and the 64px EUR
+      -- ribbons (EDICION ROJA/AZUL) -- is one continuous graphic, and
+      -- quad-ing 80px out of a 64px image cut the word short (it read past
+      -- the image edge).
+      if iw == 80 and not self.blue then
         love.graphics.draw(self.version,
           love.graphics.newQuad(0, 0, 16, 8, iw, ih), 56, 64)
         love.graphics.draw(self.version,
           love.graphics.newQuad(40, 0, 40, 8, iw, ih), 80, 64)
+      else
+        love.graphics.draw(self.version,
+          love.graphics.newQuad(0, 0, iw, 8, iw, ih), 120 - iw, 64)
       end
     end
     local sprite, spriteTrueColor = self:currentSprite()

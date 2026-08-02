@@ -69,6 +69,7 @@ rm -f "$LOVE_FILE"
   main.lua conf.lua src data assets tools/save-editor \
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_yellow.json \
+  tools/rom_manifest_red_es.json tools/rom_manifest_blue_es.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
 if unzip -Z1 "$LOVE_FILE" \
     | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
@@ -82,7 +83,9 @@ fi
 for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 tools/save-editor/panels/Party.lua \
                 tools/rom_manifest.json tools/rom_manifest_blue.json \
-                tools/rom_manifest_yellow.json; do
+                tools/rom_manifest_yellow.json \
+                tools/rom_manifest_red_es.json \
+                tools/rom_manifest_blue_es.json; do
   unzip -Z1 "$LOVE_FILE" | grep -qx "$required" \
     || fail "game.love is missing $required"
 done

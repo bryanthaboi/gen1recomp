@@ -79,7 +79,13 @@ end
 function NamingScreen:enter()
   if self.presets and #self.presets > 0 then
     local Menu = require("src.ui.Menu")
-    local items = { { label = Strings("NEW NAME") } }
+    -- The custom-name row is the game's own menu string (the first entry of
+    -- data/player/names_list.asm), which localized releases translate --
+    -- "NUEVO N." in the Spanish one -- so prefer the extracted value and
+    -- keep the engine catalog for caches that predate it.
+    local presetNames = (self.game.data.field or {}).presetNames
+    local custom = presetNames and presetNames.customOption
+    local items = { { label = custom or Strings("NEW NAME") } }
     for _, preset in ipairs(self.presets) do
       table.insert(items, {
         label = preset,
