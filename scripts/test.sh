@@ -87,6 +87,23 @@ run_tier "T4 mod-SDK" "$LUA" tests/run_modkit.lua
 KNOWN_CONTENT_FAILURES=0
 KNOWN_CONTENT_LINES=""
 
+# T3 asserts the facts that are true of the US English Red release and of
+# nothing else (tests/run_content_red.lua), down to the literal dialogue --
+# "SEED" for Bulbasaur's dex kind, RED/ASH/JACK for the name presets, 35
+# credit screens.  A localized import satisfies none of them: the Spanish
+# release answers SEMILLA, ROJO/ASH/JAIME and 34 screens, all correct for
+# that ROM.  Running the tier anyway would report a wall of failures the
+# code is not responsible for, so detect the imported release and skip.
+# The presets are the cheapest signal that survives extraction.
+content_is_us_red() {
+  "$LUA" -e '
+    local ok, field = pcall(dofile, "data/generated/field.lua")
+    if not ok or type(field) ~= "table" then os.exit(1) end
+    local player = (field.presetNames or {}).player or {}
+    os.exit(player[1] == "RED" and 0 or 1)
+  ' >/dev/null 2>&1
+}
+
 run_content_behavior() {
   local out
   out=$("$LUA" tests/run_tests.lua 2>&1)
@@ -115,7 +132,13 @@ if [ -f data/generated/maps.lua ]; then
     echo ""
     echo "-- T3 content: skipped (--quick)"
   else
-    run_tier "T3 content behavior (Red)" run_content_behavior
+    if content_is_us_red; then
+      run_tier "T3 content behavior (Red)" run_content_behavior
+    else
+      echo ""
+      echo "-- T3 content behavior: skipped (the imported ROM is not the US"
+      echo "   English Red release; its dialogue answers different strings)"
+    fi
     # The save editor ships inside every build (the launcher's Edit button on
     # a save row opens it), so its panel suites run in CI rather than by hand.
     run_tier "T3 save editor" "$LUA" tests/run_save_editor_tests.lua
