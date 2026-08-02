@@ -1,0 +1,27 @@
+-- Sharing metadata: read by tooling and the manager detail pane, never by
+-- the loader's merge.
+return {
+  summary = "A tiered gauntlet ladder on Celadon City's west lawn, "
+    .. "with opponents scaled to your party.",
+  author = "amoore2829",
+  contact = "https://github.com/amoore2829/gen1recompfork",
+  tags = { "gameplay", "battle", "post-game", "kanto" },
+  differences = {
+    changed = {
+      "Celadon City gains a building on its west lawn (block rows 9-10, "
+        .. "columns 2-5); eight lawn blocks and two appended warps, nothing else",
+    },
+    added = {
+      "CELADON_BATTLE_FACILITY interior on the FACILITY tileset",
+    },
+    known = {
+      "enabling any mod disables online link play (Handshake.onlineAllowed)",
+      "phase 1 only: the interior is an empty lobby, with the ladder, "
+        .. "party scaling and prizes still to come",
+    },
+  },
+  credits = {
+    { who = "pret/pokered", for_ = "the Celadon block layout the footprint sits in" },
+  },
+  compat = { engine = ">=1.0.0 <2.0.0", modApi = 2 },
+}

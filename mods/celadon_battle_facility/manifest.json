@@ -1,0 +1,15 @@
+{
+  "id": "celadon_battle_facility",
+  "name": "Celadon Battle Facility",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GAMEPLAY",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "A tiered gauntlet ladder on Celadon City's west lawn: consecutive battles scaled to your party's level, with Bronze/Silver/Gold tiers and persistent records."
+}

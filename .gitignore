@@ -3,6 +3,14 @@
 data/generated/
 assets/generated/
 
+# The player's own ROM and save. Never committable: the whole point of the
+# import pipeline is that no ROM content lives in the repo, and a .gb dropped
+# beside main.lua for a quick import is one `git add -A` away from a public
+# copyright violation.
+*.gb
+*.gbc
+*.sav
+
 # LÖVE packages
 *.love
 
