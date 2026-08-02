@@ -166,6 +166,30 @@ lowercases and de-dupes. A recommended starting set: `beginner`,
 `data-only`, `quality-of-life`, `hardcore`, `cosmetic`, `story`, `ruleset`,
 `audio`, `ui`, `total-conversion`.
 
+### Is it your mod, or the engine?
+
+Answer this before filing a bug against the engine -- and expect to be asked
+for it when you do.
+
+```sh
+POKEPORT_NO_MODS=1 ./scripts/run.sh              # macOS / Linux
+```
+```powershell
+$env:POKEPORT_NO_MODS = '1'; .\scripts\run.ps1   # Windows
+```
+
+Every installed mod is skipped for that run. Still happens? It is the
+engine. Gone? It is a mod -- boot normally and disable them one at a time to
+find which.
+
+This is a load-time skip, not an uninstall: the mod manager still lists
+everything, and **your per-mod enable choices are never written while it is
+set**, so a toggle in that session cannot overwrite the configuration you are
+bisecting against.
+
+Worth setting for driver and CI runs (`POKEPORT_DRIVER`) too, so a scripted
+run does not depend on whatever happens to be installed in that checkout.
+
 ---
 
 ## Route B — contributing an engine / mod-API change

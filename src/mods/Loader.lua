@@ -182,6 +182,11 @@ end
 function Loader:_saveState()
   -- a read-only injected fs keeps enable toggles in-memory only
   if not self.fs.write then return end
+  -- POKEPORT_NO_MODS force-disables everything for this run only.  This
+  -- writes `not disabled` for EVERY mod, so persisting from such a session --
+  -- one toggle in the mod manager is enough to call it -- would overwrite the
+  -- player's real enable choices with "all off".
+  if self.forceNoMods then return end
   local options = SaveData.loadOptions(self.fs)
   options.mods = options.mods or {}
   for id in pairs(self.mods) do
@@ -838,6 +843,17 @@ function Loader:load(data)
   require("src.mods.Builtins").install(self.content, data)
   self:_loadState()
   self:_discover()
+  -- POKEPORT_NO_MODS=1: boot with every mod off, for telling an engine bug
+  -- apart from a mod's without uninstalling anything.  After _discover so it
+  -- covers whatever is actually installed, and the manager still LISTS them
+  -- all -- this disables loading, it is not an uninstall.  Strictly a
+  -- run-time switch: _saveState refuses to persist while it is set.
+  if os.getenv("POKEPORT_NO_MODS") then
+    self.forceNoMods = true
+    for id in pairs(self.mods) do
+      self.disabled[id] = true
+    end
+  end
   -- Experimental mods stay off until the player opts in: a missing
   -- options.mods entry normally means enabled, but experimental flips that.
   do
