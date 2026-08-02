@@ -11,6 +11,9 @@ assets/generated/
 *.gbc
 *.sav
 
+# crash catcher output (mods/celadon_battle_facility/tests/crashlog_driver.lua)
+cbf-crash.txt
+
 # LÖVE packages
 *.love
 
