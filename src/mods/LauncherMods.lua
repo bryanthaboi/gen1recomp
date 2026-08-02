@@ -265,6 +265,21 @@ function LauncherMods.setEnabled(id, enabled)
   return true
 end
 
+-- setAllEnabled(ids, enabled): the launcher's Enable all / Disable all buttons
+-- (#647).  Writes exactly the options.mods shape setEnabled does, but loads and
+-- saves once for the whole list: saveOptions rewrites the whole options file per
+-- call, so looping setEnabled over a big mods folder is one disk write per mod
+-- and leaves a half-applied state behind if one of them fails.
+function LauncherMods.setAllEnabled(ids, enabled)
+  local options = SaveData.loadOptions()
+  options.mods = options.mods or {}
+  for _, id in ipairs(ids or {}) do
+    options.mods[id] = enabled and true or false
+  end
+  SaveData.saveOptions(options)
+  return true
+end
+
 -- ------- install (love.filesystem)
 
 -- Read a .zip source into bytes.  A string is an external absolute path (like

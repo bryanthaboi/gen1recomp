@@ -1490,15 +1490,25 @@ function RomImporter:gamepadaxis(_, axis, value)
   end
 end
 
+-- Same gate as src/core/Input.lua's isMappedPad: a pad SDL can map already
+-- reached gamepadpressed this frame, so re-entering it from the raw event
+-- would fire the virtual cursor's click twice off one A press (#620).
+local function isMappedPad(joystick)
+  return joystick ~= nil and joystick.isGamepad ~= nil and joystick:isGamepad()
+end
+
 function RomImporter:joystickpressed(joystick, button)
+  if isMappedPad(joystick) then return end
   if button == 1 then self:gamepadpressed(joystick, "a") end
 end
 
 function RomImporter:joystickreleased(joystick, button)
+  if isMappedPad(joystick) then return end
   if button == 1 then self:gamepadreleased(joystick, "a") end
 end
 
 function RomImporter:joystickaxis(joystick, axis, value)
+  if isMappedPad(joystick) then return end
   if axis == 1 then
     self:gamepadaxis(joystick, "leftx", value)
   elseif axis == 2 then
@@ -1506,7 +1516,8 @@ function RomImporter:joystickaxis(joystick, axis, value)
   end
 end
 
-function RomImporter:joystickhat(_, hat, direction)
+function RomImporter:joystickhat(joystick, hat, direction)
+  if isMappedPad(joystick) then return end
   for _, dir in ipairs(self._rawHatDirs[hat] or {}) do
     self._padDir[dir] = nil
   end
@@ -1772,6 +1783,11 @@ function RomImporter:_resetFrameRects()
   self.modRects = nil
   self.modDeleteRects = nil
   self.modImportRect = nil
+  -- Enable all / Disable all share that header and the same rule (#647): they
+  -- are only drawn when the row is wide enough, so a stale rect would otherwise
+  -- stay clickable over whatever the next tab (or the next window size) draws.
+  self.modEnableAllRect = nil
+  self.modDisableAllRect = nil
   -- Same rule as the toggles above, and it started to bite once FIND MODS gave
   -- the mods tab a neighbour: these two were rebuilt by the mods panel but
   -- never cleared, so switching tabs left the last mod row's Update / Versions
@@ -2679,6 +2695,8 @@ function RomImporter:mousepressed(x, y, button)
         self:_findInstall(c.indexEntry)
       elseif c.kind == "update" then
         self:_confirmModUpdate(c.id, c.release)
+      elseif c.kind == "enableAll" then
+        self:_setAllMods(true, true)
       else
         self:_toggleMod(c.id, true)
       end
@@ -2852,6 +2870,14 @@ function RomImporter:mousepressed(x, y, button)
   -- a drag-scroll (Android, with no pointer polling, toggles on press).
   if inside(self.modImportRect, x, y) then
     self:chooseMod(); return
+  end
+  -- Enable all / Disable all sit in that same fixed header, so they dispatch on
+  -- press like the import button rather than arming a drag (#647).
+  if inside(self.modEnableAllRect, x, y) then
+    self:_setAllMods(true); return
+  end
+  if inside(self.modDisableAllRect, x, y) then
+    self:_setAllMods(false); return
   end
   for _, r in ipairs(self.modDeleteRects or {}) do
     if inside(r, x, y) then
@@ -4074,6 +4100,49 @@ function RomImporter:_toggleMod(id, confirmed)
   self:_refreshMods()
 end
 
+-- Enable all / Disable all (#647).  One options write for the whole list
+-- (LauncherMods.setAllEnabled) and one relist afterwards, so the count, the
+-- switches and every status chip resolve together instead of per mod.
+-- Enabling routes through the same experimental confirm _toggleMod arms: that
+-- opt-in is the only warning an experimental mod ever gets, and a bulk button
+-- must not be the way around it.  Disabling needs no confirm -- it is the
+-- recovery action, and Delete is the only destructive one on this panel.
+function RomImporter:_setAllMods(want, confirmed)
+  local LauncherMods = require("src.mods.LauncherMods")
+  local ids, experimental = {}, false
+  for _, m in ipairs(self.mods or {}) do
+    if m.enabled ~= want then
+      ids[#ids + 1] = m.id
+      if want and m.experimental then experimental = true end
+    end
+  end
+  if #ids == 0 then
+    self.modNotice = { ok = true, text = want
+      and Strings("Every mod is already enabled.")
+      or Strings("Every mod is already disabled.") }
+    return
+  end
+  if want and experimental and not confirmed then
+    self._modConfirm = {
+      kind = "enableAll",
+      title = "Experimental mods",
+      yesLabel = "Enable all",
+      lines = {
+        "Some of these mods are marked experimental.",
+        "They may be unfinished or unstable.",
+        "Enable everything anyway?",
+      },
+    }
+    return
+  end
+  self._modConfirm = nil
+  LauncherMods.setAllEnabled(ids, want)
+  self:_refreshMods()
+  self.modNotice = { ok = true, text = want
+    and Strings("Enabled %d mods.", #ids)
+    or Strings("Disabled %d mods.", #ids) }
+end
+
 -- GitHub Update / Check for updates / Versions. Soft-fails into modNotice.
 -- Update button: when a newer release is known, confirm then install; when
 -- already current, force-refresh the 6h cache and report / offer update.
@@ -4247,8 +4316,10 @@ function RomImporter:_drawModsPanel(x, y, w, h, paged)
   for _, m in ipairs(mods) do if m.enabled then enabledCount = enabledCount + 1 end end
   love.graphics.setFont(self.hintFont)
   col(PAL.warning)
-  love.graphics.print(Strings("%d of %d enabled", enabledCount, #mods),
-    x + nameW + 14 * s, y + (headerH - self.hintFont:getHeight()) / 2)
+  local countText = Strings("%d of %d enabled", enabledCount, #mods)
+  local countX = x + nameW + 14 * s
+  love.graphics.print(countText, countX,
+    y + (headerH - self.hintFont:getHeight()) / 2)
 
   local btnLabel = "Import mod .zip"
   local btnH = math.max(38 * s, self.saveBtnFont:getHeight() + 20 * s)
@@ -4257,6 +4328,32 @@ function RomImporter:_drawModsPanel(x, y, w, h, paged)
   local btnY = y + (headerH - btnH) / 2
   self.modImportRect =
     self:_glassyButton(btnX, btnY, btnW, btnH, btnLabel, self.saveBtnFont, true)
+
+  -- Enable all / Disable all (#647): bulk switches beside Import mod .zip, so
+  -- coming back from a cable-club session (which asks for a vanilla fingerprint,
+  -- src/link/Fingerprint.lua) costs one click instead of one switch per mod.
+  -- The header is a single row shared with the count, so the chips are dropped
+  -- rather than overlapped when the column is too narrow to hold them (a
+  -- phone-width layout); the per-mod switches below are always the full path.
+  self.modEnableAllRect, self.modDisableAllRect = nil, nil
+  if #mods > 0 then
+    local enaLabel, disLabel = Strings("Enable all"), Strings("Disable all")
+    love.graphics.setFont(self.hintFont)
+    local bulkH = self.hintFont:getHeight() + 10 * s
+    local bulkY = y + (headerH - bulkH) / 2
+    local enaW = self.hintFont:getWidth(enaLabel) + 24 * s
+    local disW = self.hintFont:getWidth(disLabel) + 24 * s
+    local bulkGap = 8 * s
+    local room = btnX - (countX + self.hintFont:getWidth(countText) + bulkGap)
+    if room >= enaW + disW + 2 * bulkGap then
+      local disX = btnX - bulkGap - disW
+      local enaX = disX - bulkGap - enaW
+      self.modEnableAllRect =
+        self:_chipButton(enaX, bulkY, enaLabel, { w = enaW, h = bulkH })
+      self.modDisableAllRect =
+        self:_chipButton(disX, bulkY, disLabel, { w = disW, h = bulkH })
+    end
+  end
 
   local top = y + headerH + 14 * s
 

@@ -253,6 +253,41 @@ bool restartApp()
 	return result;
 }
 
+bool httpDownload(const char *url, const char *destPath, const char *userAgent, const char *accept)
+{
+	if (url == nullptr || destPath == nullptr)
+		return false;
+
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	// Old APK / new liblove skew: report "no transport" the same way a
+	// missing curl does, instead of aborting on a missing method (#597).
+	jmethodID method = env->GetStaticMethodID(activity, "httpDownload",
+		"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return false;
+	}
+
+	jstring jurl = env->NewStringUTF(url);
+	jstring jdest = env->NewStringUTF(destPath);
+	jstring jua = env->NewStringUTF(userAgent != nullptr ? userAgent : "gen1recomp");
+	jstring jaccept = accept != nullptr ? env->NewStringUTF(accept) : nullptr;
+
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jurl, jdest, jua, jaccept);
+
+	env->DeleteLocalRef(jurl);
+	env->DeleteLocalRef(jdest);
+	env->DeleteLocalRef(jua);
+	if (jaccept != nullptr)
+		env->DeleteLocalRef(jaccept);
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
 /*
  * Helper functions for the filesystem module
  */

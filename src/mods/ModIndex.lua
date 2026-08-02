@@ -520,36 +520,19 @@ function ModIndex.writeCache(feed, index)
   return ok
 end
 
--- ------- host I/O (curl, via ModUpdate's shell plumbing)
-
-local function shq(s)
-  s = tostring(s)
-  if love and love.system and love.system.getOS
-      and love.system.getOS() == "Windows" then
-    return '"' .. s:gsub('"', '') .. '"'
-  end
-  return "'" .. s:gsub("'", "'\\''") .. "'"
-end
+-- ------- host I/O (HostShell's transport: curl, or the Android JNI bridge)
 
 -- Plain GET returning the body.  No GitHub Accept header: the feed and the
 -- description markdown are static files on Pages, and the public feed is
--- explicitly unauthenticated.
+-- explicitly unauthenticated.  The transport itself lives in
+-- src/core/HostShell.lua because Android has no curl and has to fetch through
+-- love.system.httpDownload instead (#597).
 function ModIndex.httpGet(url)
-  local ModUpdate = require("src.mods.ModUpdate")
-  if not ModUpdate.haveCurl() then
-    return nil, "curl is not available on this platform"
-  end
   local HostShell = require("src.core.HostShell")
-  local cmd = "curl -fsSL --connect-timeout 10 --max-time 40 "
-    .. "-H " .. shq("User-Agent: gen1recomp-mod-index") .. " "
-    .. shq(url)
-  local pipeOk, pipe = pcall(HostShell.popen, cmd)
-  if not pipeOk or not pipe then return nil, "could not run curl" end
-  local readOk, out = pcall(function() return pipe:read("*a") end)
-  pcall(function() pipe:close() end)
-  if not readOk then return nil, "fetch failed: " .. tostring(out) end
-  if not out or out == "" then return nil, "empty response from " .. url end
-  return out
+  if not HostShell.canFetch() then
+    return nil, "no network transport on this platform"
+  end
+  return HostShell.httpGet(url, "gen1recomp-mod-index")
 end
 
 -- fetch(source, opts) -> index, err, meta

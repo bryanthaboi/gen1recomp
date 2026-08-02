@@ -90,6 +90,14 @@ bool syncHealthSteps();
  **/
 bool restartApp();
 
+/**
+ * Blocking HTTPS GET into destPath (GameActivity.httpDownload). Android has
+ * no curl binary, so this is the transport src/core/HostShell.lua uses there
+ * for the mod index and mod updates (#597). userAgent / accept may be null.
+ * Returns whether a complete file was written.
+ **/
+bool httpDownload(const char *url, const char *destPath, const char *userAgent, const char *accept);
+
 /*
  * Helper functions for the filesystem module
  */

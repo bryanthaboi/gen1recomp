@@ -36,8 +36,11 @@ local function makeGame(party)
   function stack:push(state) self.states[#self.states + 1] = state end
   function stack:pop() return table.remove(self.states) end
   function stack:top() return self.states[#self.states] end
+  -- isDown as well as wasPressed: battle text collapses PrintLetterDelay
+  -- while A or B is held, and the typing path reads it every frame
   return { data = Data, save = save, stack = stack,
-           input = { wasPressed = function(_, b) return press[b] == true end } }
+           input = { wasPressed = function(_, b) return press[b] == true end,
+                     isDown = function(_, b) return press[b] == true end } }
 end
 
 -- A held: updateQueue only reads the button once a page is typed out, so an

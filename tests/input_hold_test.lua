@@ -67,6 +67,21 @@ Input:joystickpressed(nil, 1)
 Input:step()
 check(Input:isDown("a"), "raw joystick primary button presses A")
 
+-- A pad SDL already maps sends both event pairs for one physical button,
+-- and its raw indices are per-driver (iOS puts the D-pad on 7..10), so the
+-- raw fallback must stand down for it (#620).
+local mapped = { isGamepad = function() return true end }
+Input:reset()
+Input:joystickpressed(mapped, 9)
+Input:joystickhat(mapped, 1, "l")
+Input:joystickaxis(mapped, 1, -0.9)
+Input:step()
+check(not Input:isDown("select"), "mapped pad ignores raw button indices")
+check(not Input:isDown("left"), "mapped pad ignores raw hat and axis")
+Input:gamepadpressed(mapped, "dpleft")
+Input:step()
+check(Input:isDown("left"), "mapped pad still routes through gamepad events")
+
 -- The launcher has a separate virtual cursor, so prove generic joystick
 -- events reach its left-stick and D-pad state too.
 local RomImporter = require("src.import.RomImporter")
@@ -90,6 +105,9 @@ check(not importer._padDir.dpright,
   "raw joystick hat release clears the launcher cursor")
 importer:joystickpressed(nil, 1)
 check(clicked, "raw joystick primary button clicks the launcher cursor")
+clicked = false
+importer:joystickpressed(mapped, 1)
+check(not clicked, "mapped pad does not double-click the launcher cursor")
 
 -- Drivers that only inject pressQueue still get a one-step hold.
 Input:reset()

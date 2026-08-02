@@ -808,9 +808,22 @@ local function soundData(engine, samples, channels)
   return result
 end
 
--- Render a one-shot effect (SFX/cry) to a mono SoundData, or nil when it is
--- too short to be audible.  The caller wraps it in a static love.audio.Source
--- (a playback concern, hence not done here).
+-- Render a one-shot effect (SFX/cry) to a two-channel SoundData, or nil when
+-- it is too short to be audible.  The caller wraps it in a static
+-- love.audio.Source (a playback concern, hence not done here).
+--
+-- The synthesis is mono (one summed value per frame, unlike the music path's
+-- sampleStereo), but the buffer is written stereo on purpose: OpenAL only
+-- spatializes 1-channel Sources, and a Source left at the default (0,0,0)
+-- position, exactly where the listener sits, is rendered as an ambient sound
+-- spread over EVERY output channel the device exposes at gains that differ
+-- from the front pair.  On an interface with more than two outputs that put
+-- the SFX on outputs 5+6 as well, while the 2-channel music source
+-- (ChipAudio.playMusic) stayed on 1+2 (#626).  Multi-channel buffers skip
+-- spatialization entirely and map onto the front pair, so duplicating the
+-- sample costs one buffer's memory and makes effects route exactly like
+-- music.  Deliberately not sampleStereo: that honors the NR51 panning byte
+-- and would newly hard-pan any effect whose header issues command 0xEE.
 local function renderEffectData(data, header, options)
   if not header then return nil end
   options = options or {}
@@ -825,8 +838,12 @@ local function renderEffectData(data, header, options)
     values[count] = engine:sample()
   end
   if count < math.floor(SAMPLE_RATE / 100) then return nil end
-  local result = love.sound.newSoundData(count, SAMPLE_RATE, 16, 1)
-  for index = 1, count do result:setSample(index - 1, values[index]) end
+  local result = love.sound.newSoundData(count, SAMPLE_RATE, 16, 2)
+  for index = 1, count do
+    local value = values[index]
+    result:setSample(index - 1, 1, value)
+    result:setSample(index - 1, 2, value)
+  end
   return result
 end
 

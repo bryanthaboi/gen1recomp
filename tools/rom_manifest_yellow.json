@@ -19934,7 +19934,13 @@
         "imageWidth": 16,
         "label": "GamblerAsleepSprite"
       }
-    ]
+    ],
+    "surfPikachu": {
+      "imageBase": "surfing_pikachu",
+      "imageHeight": 96,
+      "imageWidth": 16,
+      "label": "SurfingPikachuSprite"
+    }
   },
   "symbols": {
     "AbraPicBack": [
@@ -21368,6 +21374,22 @@
     "FallingStar": [
       28,
       16822
+    ],
+    "FanClubChairPrintText1": [
+      43,
+      22070
+    ],
+    "FanClubChairPrintText2": [
+      43,
+      22210
+    ],
+    "FanClubChairPrintText3": [
+      43,
+      22243
+    ],
+    "FanClubChairPrintText4": [
+      43,
+      22257
     ],
     "FarfetchdPicBack": [
       10,
@@ -25293,6 +25315,18 @@
       24,
       22540
     ],
+    "SSAnneKitchenCook7EelsAuBarbecueText": [
+      38,
+      21363
+    ],
+    "SSAnneKitchenCook7PrimeBeefSteakText": [
+      38,
+      21414
+    ],
+    "SSAnneKitchenCook7SalmonDuSaladText": [
+      38,
+      21298
+    ],
     "SSAnneKitchenCook7Text": [
       24,
       22545
@@ -26069,9 +26103,17 @@
       21,
       25898
     ],
+    "SilphCo9FNurseDontGiveUpText": [
+      38,
+      30668
+    ],
     "SilphCo9FNurseText": [
       23,
       22467
+    ],
+    "SilphCo9FNurseThankYouText": [
+      38,
+      30683
     ],
     "SilphCo9FNurseYouLookTiredText": [
       38,
@@ -26237,9 +26279,17 @@
       32,
       25380
     ],
+    "SurfingPikachuSprite": [
+      63,
+      28143
+    ],
     "SwimmerPic": [
       19,
       20787
+    ],
+    "TMNotebookText": [
+      39,
+      27310
     ],
     "TamerPic": [
       19,
@@ -26753,6 +26803,10 @@
       6,
       21103
     ],
+    "ViridianCityFisherYouCanHaveThisText": [
+      45,
+      18396
+    ],
     "ViridianCityGambler1Text": [
       6,
       21055
@@ -26800,6 +26854,14 @@
     "ViridianCityYoungster1Text": [
       6,
       21043
+    ],
+    "ViridianCityYoungster2CaterpieAndWeedleDescriptionText": [
+      45,
+      18125
+    ],
+    "ViridianCityYoungster2OkThenText": [
+      45,
+      18111
     ],
     "ViridianCityYoungster2Text": [
       6,
@@ -39174,7 +39236,30 @@
       ]
     },
     "labels": [
+      "FanClubChairPrintText1",
+      "FanClubChairPrintText2",
+      "FanClubChairPrintText3",
+      "FanClubChairPrintText4",
+      "MelanieBulbasaurText",
+      "MelanieOddishText",
+      "MelanieSandshrewText",
+      "MelanieText1",
+      "MelanieText2",
+      "MelanieText3",
+      "MelanieText4",
+      "MelanieText5",
+      "SSAnneKitchenCook7EelsAuBarbecueText",
+      "SSAnneKitchenCook7PrimeBeefSteakText",
+      "SSAnneKitchenCook7SalmonDuSaladText",
       "SilphCo2FSilphWorkerFPleaseTakeThisText",
+      "SilphCo9FNurseDontGiveUpText",
+      "SilphCo9FNurseThankYouText",
+      "SilphCo9FNurseYouLookTiredText",
+      "TMNotebookText",
+      "TeachingHMsText",
+      "ViridianCityFisherYouCanHaveThisText",
+      "ViridianCityYoungster2CaterpieAndWeedleDescriptionText",
+      "ViridianCityYoungster2OkThenText",
       "_AIBattleUseItemText",
       "_AIBattleWithdrawText",
       "_AbandonLearningText",
@@ -41860,15 +41945,7 @@
       "_YeahText",
       "_YourNameIsText",
       "_ZapdosDexEntry",
-      "_ZubatDexEntry",
-      "MelanieText1",
-      "MelanieText2",
-      "MelanieText3",
-      "MelanieText4",
-      "MelanieText5",
-      "MelanieBulbasaurText",
-      "MelanieOddishText",
-      "MelanieSandshrewText"
+      "_ZubatDexEntry"
     ],
     "pointers": {
       "AgathasRoom": {

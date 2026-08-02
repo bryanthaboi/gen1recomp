@@ -1,8 +1,13 @@
 -- Launcher touch-controls editor (#327): drag each on-screen button to a
--- new spot, toggle the overlay off entirely, Reset to defaults, Done to
--- persist into options.lua.  Opened from the game panel's "Touch Controls"
--- button; main.lua suspends the launcher the same way it does for the
--- save editor.
+-- new spot, resize them, toggle the overlay off entirely, Reset to
+-- defaults, Done to persist into options.lua.  Opened from the game
+-- panel's "Touch Controls" button; main.lua suspends the launcher the same
+-- way it does for the save editor.
+--
+-- Everything edited here belongs to the orientation currently on screen
+-- (#633): portrait and landscape keep separate positions and sizes, so a
+-- player lays out each rotation once.  Rotate the device (or resize the
+-- desktop window past square) and the editor switches buckets live.
 --
 -- Draws in full window LOVE units -- the same space TouchControls uses
 -- after Renderer:endFrame -- so what you drag here is what you get in play.
@@ -63,9 +68,11 @@ end
 local function persist()
   local opts = SaveData.loadOptions()
   local cfg = TouchControls:config()
+  -- replaces the whole table, so a pre-#633 top-level positions key is
+  -- dropped once the player saves under the new shape
   opts.touchControls = {
     enabled = cfg.enabled,
-    positions = cfg.positions,
+    layouts = cfg.layouts,
   }
   SaveData.saveOptions(opts)
 end
@@ -113,6 +120,8 @@ function Editor.draw()
   local fullW, fullH = love.graphics.getDimensions()
   local ox, oy, ww, wh = SafeArea.rect()
   local s = math.max(0.75, math.min(1.4, wh / 768))
+  -- resolve the orientation bucket before any chrome reads scale (#633)
+  local bucket = TouchControls:currentBucket()
   Editor.rects = {}
 
   -- radial-ish navy field (two stacked fills; matches launcher atmosphere)
@@ -186,13 +195,41 @@ function Editor.draw()
   chromeBtn(toggle, on and "Disable" or "Enable",
             on and PAL.red or PAL.green)
 
+  -- size card (#633): -/+ resize every control in the orientation on
+  -- screen; the heading names it so it is plain the other one is untouched
+  local sizeY = cardY + cardH + 10 * s
+  col(PAL.card, 0.88)
+  roundRect("fill", cardX, sizeY, cardW, cardH, 12 * s)
+  col(PAL.stroke, 0.4)
+  roundRect("line", cardX, sizeY, cardW, cardH, 12 * s)
+
+  love.graphics.setFont(Editor.fonts.body)
+  col(PAL.label)
+  local orient = TouchControls.orientation == "landscape"
+    and "Landscape" or "Portrait"
+  love.graphics.print("Button size (" .. orient .. ")",
+                      cardX + 16 * s, sizeY + 12 * s)
+  love.graphics.setFont(Editor.fonts.btn)
+  col(PAL.white)
+  love.graphics.print(
+    string.format("%d%%", math.floor((bucket.scale or 1) * 100 + 0.5)),
+    cardX + 16 * s, sizeY + 34 * s)
+
+  local stepW = 52 * s
+  local plus = { x = cardX + cardW - 16 * s - stepW,
+                 y = sizeY + (cardH - btnH) / 2, w = stepW, h = btnH }
+  local minus = { x = plus.x - 10 * s - stepW, y = plus.y, w = stepW, h = btnH }
+  Editor.rects.sizeUp, Editor.rects.sizeDown = plus, minus
+  chromeBtn(minus, "-", { 60, 70, 110 })
+  chromeBtn(plus, "+", { 60, 70, 110 })
+
   -- hint
   love.graphics.setFont(Editor.fonts.body)
   col(PAL.label, 0.9)
   local hint = on
-    and "Drag each button to reposition. Layout is saved when you tap Done."
+    and "Drag each button to reposition, -/+ to resize. Portrait and landscape are saved separately when you tap Done."
     or "Controls are hidden in-game. Enable them to show and edit the layout."
-  love.graphics.printf(hint, ox + pad, cardY + cardH + 12 * s, ww - 2 * pad, "left")
+  love.graphics.printf(hint, ox + pad, sizeY + cardH + 12 * s, ww - 2 * pad, "left")
 
   -- the overlay itself (preview mode; dimmed when disabled)
   TouchControls:draw()
@@ -214,6 +251,12 @@ local function beginDrag(id, x, y)
   if inside(Editor.rects.done, x, y) then close(); return end
   if inside(Editor.rects.reset, x, y) then resetLayout(); return end
   if inside(Editor.rects.toggle, x, y) then toggleEnabled(); return end
+  if inside(Editor.rects.sizeDown, x, y) then
+    TouchControls:nudgeScale(-TouchControls.SCALE_STEP); return
+  end
+  if inside(Editor.rects.sizeUp, x, y) then
+    TouchControls:nudgeScale(TouchControls.SCALE_STEP); return
+  end
 
   local name = TouchControls:hitTest(x, y)
   if not name then return end
@@ -271,6 +314,11 @@ function Editor.keypressed(key)
     close()
   elseif key == "r" then
     resetLayout()
+  -- desktop shortcuts for the size -/+ (POKEPORT_TOUCH=1 testing, #633)
+  elseif key == "-" or key == "kp-" then
+    TouchControls:nudgeScale(-TouchControls.SCALE_STEP)
+  elseif key == "=" or key == "+" or key == "kp+" then
+    TouchControls:nudgeScale(TouchControls.SCALE_STEP)
   end
 end
 

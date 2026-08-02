@@ -310,6 +310,49 @@ function Game.wideBattleInStack(stack)
   return nil
 end
 
+-- Whether a state on the stack composes its own screen and so wants the
+-- edge anchors held off (BattleState.holdsUIAnchors).  Whole-stack, like
+-- everything else here: the text box and YES/NO a battle puts up are states
+-- of their own sitting above it, and they are exactly the elements that must
+-- stay inside the battle's composition rather than dock to the window.
+function Game.uiAnchorsHeldInStack(stack)
+  for i = #(stack and stack.states or {}), 1, -1 do
+    local state = stack.states[i]
+    if state and state.holdsUIAnchors then return true end
+  end
+  return false
+end
+
+-- Where Game:draw starts drawing this frame.  Normally the topmost opaque
+-- state (StateStack:visibleBase) -- but BATTLE BG "world" composes the battle
+-- over the LIVE map, and an opaque state pushed on top of it (the party menu,
+-- the bag) becomes that base, cutting the overworld -- and with it the world
+-- pass -- out of the frame entirely.  The backdrop the battle established
+-- then collapses to endFrame's flat black clear for as long as the menu is
+-- up.  So a world-bg battle keeps the frame starting from underneath itself
+-- until it leaves the stack, the same hold uiFill and the dim already use.
+--
+-- Only the START of the draw moves.  The clear stays keyed to the real
+-- visibleBase, so the menu still gets its opaque canvas and draws exactly as
+-- before; what changes is the window AROUND its letterbox, which keeps
+-- showing the map instead of going black.  Both menus fill their own
+-- 160x144 field first, so nothing beneath them shows through it.
+function Game.drawBaseInStack(stack, visibleBase)
+  local states = stack and stack.states or {}
+  for i = visibleBase - 1, 1, -1 do
+    local state = states[i]
+    if state and state.bgMode and state:bgMode() == "world" then
+      -- restart the search from under the battle: the highest opaque state at
+      -- or below it (the overworld), not the menu sitting over it
+      for j = i, 1, -1 do
+        if states[j].isOpaque then return j end
+      end
+      return 1
+    end
+  end
+  return visibleBase
+end
+
 -- Shift classic SGB zones to the centred UI. A full-width base zone extends
 -- into both margins, keeping the canvas' paper color continuous; narrower
 -- sprite and status zones move with the classic UI content.
@@ -335,6 +378,10 @@ function Game:draw()
   -- white clear
   local base = self.stack:visibleBase()
   local worldBelow = self.stack.states[base] == self.overworld
+  -- a world-bg battle keeps the map drawing under whatever it opened, so the
+  -- world pass can run for a frame whose CLEAR is still an opaque menu's
+  local drawFrom = Game.drawBaseInStack(self.stack, base)
+  local worldDrawn = self.stack.states[drawFrom] == self.overworld
   -- A wide battle holds its 304px surface through every menu or prompt it
   -- opens. States that do not draw the wide battle composition are centred
   -- in that surface below, so their classic coordinates and hit testing stay
@@ -359,8 +406,18 @@ function Game:draw()
   -- the stack for the same reason as uiFill above -- a prompt opened during
   -- the battle must not drop the dim for a frame.
   Renderer.battleDim = Game.worldBgBattleDim(self.stack)
+  -- ...and for the same reason the UI's own scale has to know the world is
+  -- still the backdrop while an opaque menu covers it.  Renderer:uiScale
+  -- steps the UI down with the survey zoom only while a world is behind it,
+  -- gated on this frame's world pass -- which the party menu and the bag end
+  -- by being opaque.  Without this hold they lose the step-down and blit at
+  -- full fit scale over a battle drawn at the zoomed-out one.
+  Renderer.uiWorldHold = Renderer.battleDim ~= nil
+  -- ...and a battle keeps its dialogue box and YES/NO inside its own screen
+  -- instead of letting them dock to the window edge.
+  Renderer.uiAnchorHold = Game.uiAnchorsHeldInStack(self.stack)
   Renderer:beginFrame(worldBelow)
-  for i = self.stack:visibleBase(), #self.stack.states do
+  for i = drawFrom, #self.stack.states do
     local state = self.stack.states[i]
     local wideState = state and state.isWideBattleLayout
       and state:isWideBattleLayout()
@@ -397,7 +454,13 @@ function Game:draw()
   if ModRuntime.wantsHook("render.zones") then
     zones = ModRuntime.call("render.zones", sameZones, self, zones)
   end
-  if worldBelow and self.overworld.sgbWorldZones then
+  -- Keyed to whether the map actually DREW, not to whether it is the clear's
+  -- base: an opaque menu over a world-bg battle still renders the world pass
+  -- (drawBaseInStack), and leaving worldZones nil there drops endFrame's
+  -- world blit onto the UI zone list instead -- the party menu's own HP-bar
+  -- palettes, in 160x144 space, smeared across a world-canvas-sized image.
+  -- That is the offset, red-for-green map behind the menu.
+  if worldDrawn and self.overworld.sgbWorldZones then
     worldZones = self.overworld:sgbWorldZones()
   end
   local viewport = Renderer:endFrame(zones, worldZones)
@@ -580,15 +643,38 @@ local function isAccelerometer(joystick)
   return name ~= nil and name:lower():find("accelerometer", 1, true) ~= nil
 end
 
+-- BindingsMenu's raw-stick capture rides the same top-state routing as the
+-- keyboard and gamepad paths (#632).  Only a stick SDL does not recognize
+-- as a gamepad reaches the capture: a recognized pad raises BOTH
+-- joystickpressed and gamepadpressed for one press, and the joystick half
+-- would otherwise beat its own gamepadpressed to the armed row and record
+-- "JOY1" for a button the player can plainly see is A.  Same predicate as
+-- Input's, kept local here so Game never reaches into Input's internals.
+local function isRawStick(joystick)
+  return not (joystick and joystick.isGamepad and joystick:isGamepad())
+end
+
 function Game:joystickpressed(joystick, button)
   if isAccelerometer(joystick) then return end
   TouchControls:noteGamepad()
+  local top = self.stack and self.stack:top()
+  if isRawStick(joystick) and top and top.onJoystickPressed then
+    top:onJoystickPressed(button)
+    return
+  end
   Input:joystickpressed(joystick, button)
 end
 
 function Game:joystickreleased(joystick, button)
   if isAccelerometer(joystick) then return end
+  -- same observe-after-Input contract as Game:keyreleased (#589): the
+  -- capture watches the release, it never owns it, so a held-state flag
+  -- Input saw go down before the capture armed cannot be stranded
   Input:joystickreleased(joystick, button)
+  local top = self.stack and self.stack:top()
+  if isRawStick(joystick) and top and top.onJoystickReleased then
+    top:onJoystickReleased(button)
+  end
 end
 
 function Game:joystickaxis(joystick, axis, value)

@@ -103,6 +103,10 @@ YELLOW_EXTRA_SYMBOLS = (
     "Pic_e5b7d", "Pic_e5ddd", "GFX_e6020", "Pic_e6340", "Pic_e6587",
     "Pic_e67d6", "GFX_e6e6f", "GFX_e718f", "GFX_e74af", "Pic_e77cf",
     "Pic_f0abf", "Pic_f0cf4",
+    # Yellow-only overworld player surf sprite, loaded outside
+    # SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) --
+    # needs its own extract like RedBikeSprite. (RFC 0001)
+    "SurfingPikachuSprite",
 )
 
 # Yellow-only dialogue whose bank labels carry no leading underscore, so

@@ -1,10 +1,12 @@
 -- Immediate-mode widget kit for the save editor, drawn in the launcher's
 -- visual language (see Theme.lua and SaveEditor.dc.html).
 --
--- Call Kit.beginFrame(mx, my, clicked) once per love.draw() before any widget
--- and Kit.endFrame() after the last one; widgets read the frame's mouse state
--- to decide hover / click, and endFrame retires the text-input queue so a
--- keystroke is never applied twice.
+-- Call Kit.beginFrame(mx, my, clicked, wheel) once per love.draw() before any
+-- widget and Kit.endFrame() after the last one; widgets read the frame's mouse
+-- state to decide hover / click, and endFrame retires the text-input queue so a
+-- keystroke is never applied twice.  The wheel notches accumulated since the
+-- last frame arrive the same way and are retired the same way: an unclaimed
+-- notch dies with the frame rather than scrolling something later (#595).
 --
 -- Hit testing is a plain rect with no z-order, so panels must draw
 -- overlapping controls in dispatch order and every target is >= 26px tall
@@ -17,6 +19,7 @@ local PAL = Theme.PAL
 local Kit = {}
 Kit.mouseX, Kit.mouseY = 0, 0
 Kit.mouseClicked = false  -- left button pressed this frame
+Kit.wheelY = 0            -- wheel notches queued since the last frame (#595)
 Kit.focus = nil           -- id of the text field receiving keystrokes
 Kit.time = 0
 Kit.fonts = {}
@@ -58,9 +61,10 @@ local function canPrintf()
   return G and type(G.printf) == "function"
 end
 
-function Kit.beginFrame(mx, my, clicked)
+function Kit.beginFrame(mx, my, clicked, wheel)
   Kit.mouseX, Kit.mouseY = mx, my
   Kit.mouseClicked = clicked
+  Kit.wheelY = wheel or 0
   if love and love.timer and love.timer.getTime then
     Kit.time = love.timer.getTime()
   end
@@ -68,8 +72,10 @@ end
 
 -- Retire this frame's keystrokes.  Anything typed while no field had focus is
 -- dropped here rather than replayed into the next field that gets clicked.
+-- A wheel notch no list claimed retires with them, for the same reason.
 function Kit.endFrame()
   for i = #edits, 1, -1 do edits[i] = nil end
+  Kit.wheelY = 0
 end
 
 -- Rebuild the font set when the window size changes.  `s` matched the
@@ -425,6 +431,29 @@ function Kit.pager(x, y, w, offset, total, perPage)
   Kit.text("mono", label, x + 2 * bw + 20 * Kit.scale,
     y + (h - Kit.textHeight("mono")) / 2, PAL.caption)
   return offset, h
+end
+
+-- ----------------------------------------------------------------- scroll
+-- Mouse wheel over a list body (#595): same offset contract as Kit.pager, so
+-- a list can carry both and stay on one page counter.  Three rules, all of
+-- them consequences of Kit having no z-order:
+--   * only the list the pointer is inside takes the notch,
+--   * the notch is consumed, so two stacked lists cannot both eat it,
+--   * Kit.blockClicks shields it exactly as it shields Kit.press, or the
+--     panel under an open species picker would scroll through the modal.
+local SCROLL_ROWS = 3
+
+function Kit.scroll(x, y, w, h, offset, total, perPage)
+  local maxOffset = math.max(0, (total or 0) - (perPage or 0))
+  offset = Theme.clamp(offset or 0, 0, maxOffset)
+  if Kit.blockClicks or (Kit.wheelY or 0) == 0 then return offset end
+  if not Kit.hit(x, y, w, h) then return offset end
+  -- LOVE reports wheel-up as positive y; up moves the window toward the top
+  -- of the list, which is a smaller offset.
+  local rows = math.max(1, math.min(SCROLL_ROWS, perPage or SCROLL_ROWS))
+  local step = (Kit.wheelY > 0) and -rows or rows
+  Kit.wheelY = 0
+  return Theme.clamp(offset + step, 0, maxOffset)
 end
 
 -- Clip drawing to a rect (list bodies).  No-ops under the headless stub.

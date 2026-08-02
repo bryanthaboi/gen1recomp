@@ -435,8 +435,18 @@ local function drainHalf(text)
   end
 end
 
--- fixed damage still respects type immunity (AdjustDamageForMoveType
--- flags the miss before the special-damage override)
+-- OHKO is the only "damage but not through normal calculations" family
+-- that still runs the type chart.  CalculateDamage hands OHKO_EFFECT to
+-- JumpToOHKOMoveEffect (engine/battle/core.asm:4329) and, when the effect
+-- did not set wMoveMissed, execution falls through to
+-- AdjustDamageForMoveType (core.asm:3147), which multiplies the 65535 by
+-- the 0 matchup and flags the miss.  Fixed damage and Super Fang do not:
+-- they are the SetDamageEffects table (data/battle/set_damage_effects.asm)
+-- and core.asm:3139 jumps straight to MoveHitTest, skipping
+-- CalculateDamage, AdjustDamageForMoveType and RandomizeDamage, while
+-- ApplyAttackToEnemyPokemon (core.asm:4612) writes wDamage with no
+-- effectiveness step.  So in Gen 1 NIGHT_SHADE hits Normal-types and
+-- SUPER_FANG hits Ghosts, and only OHKO_EFFECT calls this (#616).
 local function immuneMsg(ctx)
   if TypeChart.effectiveness(ctx.move.type, ctx.target.curTypes) == 0 then
     return Strings("It doesn't affect\n%s!", displayName(ctx.target))
@@ -466,8 +476,7 @@ MoveEffects.full = {
 
   SPECIAL_DAMAGE_EFFECT = {
     chooseDamage = function(ctx)
-      local blocked = immuneMsg(ctx)
-      if blocked then return nil, blocked end
+      -- no immunity check: SetDamageEffects skips AdjustDamageForMoveType (#616)
       local dmg = fixedDamageFor(ctx)
       if not dmg then return nil, "But, it failed!" end
       return dmg, plainInfo()
@@ -475,8 +484,7 @@ MoveEffects.full = {
   },
   SUPER_FANG_EFFECT = {
     chooseDamage = function(ctx)
-      local blocked = immuneMsg(ctx)
-      if blocked then return nil, blocked end
+      -- also SetDamageEffects: halves a Ghost's HP in Gen 1 (#616)
       return math.max(1, math.floor(ctx.target.mon.hp / 2)), plainInfo()
     end,
   },

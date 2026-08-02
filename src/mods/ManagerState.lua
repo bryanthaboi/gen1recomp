@@ -11,6 +11,7 @@ local Version = require("src.core.Version")
 local Theme = require("src.ui.Theme")
 local OptionRows = require("src.ui.OptionRows")
 local Strings = require("src.core.Strings")
+local ModProfile = require("src.mods.ModProfile")
 
 local ManagerState = {}
 ManagerState.__index = ManagerState
@@ -180,6 +181,16 @@ end
 
 function ManagerState:enter()
   self:refresh()
+  -- #593: the setup that existed before profiles shipped becomes PROFILE 1
+  -- the first time the manager opens, so switching away from it is always a
+  -- round trip.  Seeded here rather than at boot because profiles are only
+  -- ever read on this screen.
+  local seeded = ModProfile.ensureFirst(self:optionsTable(),
+    self.status.available, self:modOptionsTable())
+  if seeded then
+    self:persistOptions()
+    self:refresh()
+  end
   if Runtime.safeMode then
     self.banner = "SAFE MODE - ALL MODS OFF"
   end
@@ -211,6 +222,12 @@ end
 function ManagerState:optionsTable()
   local save = self.game.save
   return (save and save.options) or {}
+end
+
+-- Per-mod option values as persisted (options.modOptions; setOption below is
+-- the only writer).  A profile captures this alongside the enable set.
+function ManagerState:modOptionsTable()
+  return self:optionsTable().modOptions or {}
 end
 
 function ManagerState:manifestMap()
@@ -283,6 +300,10 @@ function ManagerState:profileRows()
       glyph = opts.activeProfile == p.name and GLYPH.errored or " " }
   end
   rows[#rows + 1] = { saveAs = true, label = Strings("SAVE CURRENT AS..") }
+  -- #593 sharing: EXPORT writes the focused profile to profiles/*.g1rmodlist
+  -- in the save dir, IMPORT reads back every file dropped in that folder.
+  rows[#rows + 1] = { exportProfile = true, label = Strings("EXPORT..") }
+  rows[#rows + 1] = { importProfile = true, label = Strings("IMPORT..") }
   rows[#rows + 1] = { adhoc = true,
     label = opts.activeProfile and "[AD-HOC]" or "[AD-HOC] (LIVE)" }
   return rows
@@ -478,6 +499,10 @@ function ManagerState:activate()
     self:applyProfile(row.profile)
   elseif row.saveAs then
     self:saveCurrentAs()
+  elseif row.exportProfile then
+    self:exportActiveProfile()
+  elseif row.importProfile then
+    self:importProfiles()
   elseif row.adhoc then
     self:optionsTable().activeProfile = nil
     self:notify("AD-HOC SET ACTIVE")
@@ -712,9 +737,26 @@ function ManagerState:applyProfile(p)
     end
   end
   self:commitToggle(combined)
+  -- #593: a profile is the whole setup, not just the enable set.  Options go
+  -- through setOption so loader.modOptions and mod.options_changed stay in
+  -- step; save slots move only to slots that version already registered
+  -- (SaveData.setActiveSlot would otherwise conjure one).
+  for modId, bucket in pairs(p.options or {}) do
+    if self.byId[modId] then
+      for key, value in pairs(bucket) do self:setOption(modId, key, value) end
+    end
+  end
+  for _, move in ipairs(ModProfile.slotMoves(p)) do
+    require("src.core.SaveData").setActiveSlot(move[1], move[2])
+  end
   self:optionsTable().activeProfile = p.name
   self:persistOptions()
-  self:notify("PROFILE STAGED")
+  local missing = ModProfile.missingIds(p, self.byId)
+  if #missing > 0 then
+    self:notify(#missing .. " MODS MISSING")
+  else
+    self:notify("PROFILE STAGED")
+  end
 end
 
 function ManagerState:saveCurrentAs()
@@ -725,22 +767,48 @@ function ManagerState:saveCurrentAs()
     onDone = function(name)
       local opts = self:optionsTable()
       opts.modProfiles = opts.modProfiles or {}
-      local enabled = {}
-      for _, m in ipairs(self.status.available or {}) do
-        enabled[m.id] = m.enabled and true or false
-      end
+      local snap = ModProfile.capture(self.status.available,
+        self:modOptionsTable())
       local existing = self:findProfile(name)
       if existing then
-        existing.enabled = enabled
+        existing.enabled, existing.options, existing.slots =
+          snap.enabled, snap.options, snap.slots
       else
-        opts.modProfiles[#opts.modProfiles + 1] =
-          { name = name, enabled = enabled }
+        snap.name = name
+        opts.modProfiles[#opts.modProfiles + 1] = snap
       end
       opts.activeProfile = name
       self:persistOptions()
       self:refresh()
     end,
   }))
+end
+
+-- #593 sharing.  Export drops the active profile (or the focused one) in the
+-- save directory's profiles/ folder as <NAME>.g1rmodlist; import reads every
+-- file already there.  Deliberately folder-based rather than a native file
+-- picker: the same shape SaveFileIO uses for exports/, and it works on the
+-- mobile builds where no picker exists.
+function ManagerState:exportActiveProfile()
+  local row = self:focusedRow()
+  local p = (row and row.profile)
+    or self:findProfile(self:optionsTable().activeProfile)
+  if not p then return self:notify("NO PROFILE") end
+  local ok = ModProfile.export(p)
+  self:notify(ok and ("SAVED " .. p.name) or "EXPORT FAILED")
+end
+
+function ManagerState:importProfiles()
+  local opts = self:optionsTable()
+  opts.modProfiles = opts.modProfiles or {}
+  local n = 0
+  for _, path in ipairs(ModProfile.files()) do
+    if ModProfile.import(path, opts.modProfiles) then n = n + 1 end
+  end
+  if n == 0 then return self:notify("NO MODLISTS") end
+  self:persistOptions()
+  self:snapCursor()
+  self:notify(n .. " IMPORTED")
 end
 
 function ManagerState:renameProfile(p)

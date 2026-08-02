@@ -83,6 +83,23 @@ def extract(pokered, out_dir, assets_dir, sprite_order):
             "walker": frames >= 6,
         }
 
+    # Yellow-only: the surfing-Pikachu overworld ride sheet, loaded
+    # outside SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) --
+    # same extra extract as RedBikeSprite. (RFC 0001)
+    surf_src = files.get("SurfingPikachuSprite")
+    if surf_src:
+        png_src = os.path.join(pokered, re.sub(r"\.2bpp$", ".png", surf_src))
+        dst = os.path.join(assets_dir, "sprites", "surfing_pikachu.png")
+        size = gfx.convert_png(png_src, dst, transparent_color0=True)
+        frames = size[1] // 16
+        out["SPRITE_SURFING_PIKACHU"] = {
+            "id": "SPRITE_SURFING_PIKACHU",
+            "source": "gfx/sprites.asm SurfingPikachuSprite (LoadSurfingPlayerSpriteGraphics2)",
+            "image": "assets/generated/sprites/surfing_pikachu.png",
+            "frames": frames,
+            "walker": frames >= 6,
+        }
+
     util.write_lua(os.path.join(out_dir, "sprites.lua"), out,
                    header="Sources: data/sprites/sprites.asm, gfx/sprites/*.png\n"
                           "Frame order (walker): stand D/U/L, walk D/U/L; right = flipped left.")

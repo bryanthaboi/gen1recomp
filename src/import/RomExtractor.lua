@@ -495,6 +495,25 @@ function RomExtractor:extractSprites()
     image = "assets/generated/sprites/red_bike.png",
     frames = bikeFrames, walker = bikeFrames >= 6,
   }
+  -- Yellow-only: the surfing-Pikachu overworld sheet, loaded outside
+  -- SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) -- same
+  -- extra-extract shape as RedBikeSprite. (RFC 0001)
+  local surfPika = self.manifest.sprites.surfPikachu
+  if surfPika and self.symbols[surfPika.label] then
+    local spSymbol = self:symbol(surfPika.label)
+    self:write2bpp(
+      self.rom:bytes(spSymbol.bank, spSymbol.address,
+        surfPika.imageWidth * surfPika.imageHeight / 4),
+      surfPika.imageWidth, surfPika.imageHeight,
+      "sprites/" .. surfPika.imageBase .. ".png", true)
+    local spFrames = surfPika.imageHeight / 16
+    out.SPRITE_SURFING_PIKACHU = {
+      id = "SPRITE_SURFING_PIKACHU",
+      source = ("ROM:%s"):format(surfPika.label),
+      image = "assets/generated/sprites/" .. surfPika.imageBase .. ".png",
+      frames = spFrames, walker = spFrames >= 6,
+    }
+  end
   self:write("sprites", out)
   self:tick("Overworld sprites", #order + 1, #order + 1)
   return out

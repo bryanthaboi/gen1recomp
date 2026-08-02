@@ -1011,6 +1011,10 @@ do
     "the boot path seeded field.palettes")
   check(Data.field.playerSprites.walk == "SPRITE_RED",
     "the boot path seeded field.playerSprites")
+  check(Data.field.playerSprites.surf == "SPRITE_SEEL",
+    "the surf sprite defaults to the Seel")
+  check(Data.field.playerSprites.surfPikachu == "SPRITE_SURFING_PIKACHU",
+    "the surfing-Pikachu sprite defaults to SPRITE_SURFING_PIKACHU (RFC 0001; Yellow ride)")
   check(Data.field.badgeGates.ROUTE_22_GATE.passedFlag == "PASSED_ROUTE22_GATE",
     "the boot path filled the gaps in a stamped key")
   check(Data.constants.world.stepFrames == 16,

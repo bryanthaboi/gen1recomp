@@ -178,9 +178,21 @@ function Manifest.validate(raw, path)
     "experimental must be a boolean")
   local experimental = raw.experimental == true
 
+  -- #501: a translation declares itself here.  Neither the ROM's dialogue
+  -- nor the engine's own strings are hashed into the link surface
+  -- (src/link/Fingerprint.lua header), so an English install and a Spanish
+  -- one run the same lockstep simulation, exactly as two regional carts on
+  -- a real cable did.  The flag is only the author's claim;
+  -- Handshake.onlineBlockers checks it against the ops the mod actually
+  -- appended before online play trusts it.
+  assert(raw.language == nil or type(raw.language) == "boolean",
+    "language must be a boolean")
+  local language = raw.language == true
+
   -- overhauls and total conversions are assumed to move the link
-  -- fingerprint unless the manifest says otherwise; content packs are not
-  local affectsLink = profile ~= "content"
+  -- fingerprint unless the manifest says otherwise; content packs and
+  -- declared translations are not
+  local affectsLink = profile ~= "content" and not language
   if type(raw.affects_link) == "boolean" then affectsLink = raw.affects_link end
 
   local function optionalFile(value, field)
@@ -211,6 +223,7 @@ function Manifest.validate(raw, path)
     github = github,
     experimental = experimental,
     profile = profile,
+    language = language,
     affects_link = affectsLink,
     permissions = permissions,
     permissionSet = permissionSet,

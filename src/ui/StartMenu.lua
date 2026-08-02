@@ -53,7 +53,6 @@ function StartMenu.new(game)
   -- (PrintSaveScreenText)
   table.insert(items, { label = Strings("SAVE"), onSelect = function()
     local TextBox = require("src.render.TextBox")
-    local ChoiceBox = require("src.ui.ChoiceBox")
     local badges = require("src.inventory.Badges").count(game.data, game.save)
     local owned = 0
     for _ in pairs(game.save.pokedex and game.save.pokedex.owned or {}) do
@@ -64,8 +63,8 @@ function StartMenu.new(game)
                           game.save.player.name or "RED", badges, owned,
                           math.floor(t / 3600), math.floor(t / 60) % 60)
     game.stack:push(TextBox.new(game,
-      panel .. Strings("\fWould you like to\nSAVE the game?"), function()
-      game.stack:push(ChoiceBox.new(game, function(yes)
+      panel .. Strings("\fWould you like to\nSAVE the game?"), nil, {
+      choice = function(yes)
         if not yes then return end
         -- "Now saving..." beat before the write (save.asm
         -- NowSavingString), then GameSavedText + SFX_SAVE
@@ -75,8 +74,8 @@ function StartMenu.new(game)
           game.stack:push(TextBox.new(game,
             Strings("%s saved\nthe game!", game.save.player.name or "RED")))
         end))
-      end))
-    end))
+      end,
+    }))
   end })
 
   table.insert(items, { label = Strings("OPTION"), onSelect = function()
@@ -105,12 +104,12 @@ function StartMenu.new(game)
   -- to the title after a confirm (defaultNo guards accidental quits)
   table.insert(items, { label = Strings("QUIT"), onSelect = function()
     local TextBox = require("src.render.TextBox")
-    local ChoiceBox = require("src.ui.ChoiceBox")
-    game.stack:push(TextBox.new(game, Strings("RETURN TO MAIN\nMENU?"), function()
-      game.stack:push(ChoiceBox.new(game, function(yes)
+    game.stack:push(TextBox.new(game, Strings("RETURN TO MAIN\nMENU?"), nil, {
+      defaultNo = true,
+      choice = function(yes)
         if yes then game:returnToTitle() end
-      end, { defaultNo = true }))
-    end))
+      end,
+    }))
   end })
 
   local hooked = Runtime.call("ui.start_menu.items", sameItems, game, items)
@@ -150,9 +149,16 @@ function StartMenu.new(game)
   end
 
   -- inside the Safari Zone the start menu also shows remaining steps and
-  -- SAFARI BALLs (PrintSafariZoneSteps): a 9x5 border at the top-left with
-  -- "steps/500" and "BALL xx"
-  if game.save.safari then
+  -- SAFARI BALLs (PrintSafariZoneSteps, engine/overworld/player_state.asm:
+  -- 219-224): a 9x5 border at the top-left with "steps/500" and "BALL xx".
+  -- It opens with `cp SAFARI_ZONE_EAST / ret c`, so only the nine interior
+  -- maps ($D9..$E1) get it -- SAFARI_ZONE_GATE is $9C and falls under that
+  -- early out, and used to show "502/500" while the player was still
+  -- standing at the counter (#540).  Same map set as the step counter's
+  -- (FieldDefaults safari.stepMaps via OverworldState:inSafariStepZone).
+  local ow = game.overworld
+  if game.save.safari and ow and ow.map and ow.inSafariStepZone
+     and ow:inSafariStepZone() then
     local baseDraw = menu.draw
     menu.draw = function(self)
       baseDraw(self)

@@ -142,6 +142,14 @@ public:
 	virtual bool restartApp() const;
 
 	/**
+	 * Blocking HTTPS GET into an absolute host path (Android only; false
+	 * elsewhere). Android has no curl, which is what every other platform
+	 * fetches the mod index with (#597).
+	 **/
+	virtual bool httpDownload(const char *url, const char *destPath,
+		const char *userAgent = nullptr, const char *accept = nullptr) const;
+
+	/**
 	 * Gets if the user is playing music on background.
 	 * Throws an exception on unsupported platforms.
 	 *

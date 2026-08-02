@@ -77,6 +77,12 @@ local SAFARI = {
 local PLAYER_SPRITES = {
   walk = "SPRITE_RED", surf = "SPRITE_SEEL",
   bike = "SPRITE_RED_BIKE", fly = "SPRITE_BIRD",
+  -- Yellow's IsSurfingPikachuInParty: when the SURF-mon is a Pikachu,
+  -- the player rides this sheet.  GFX loads via
+  -- LoadSurfingPlayerSpriteGraphics2, not SpriteSheetPointerTable, so
+  -- it needs a manifest extract (RFC 0001).  Guarded in Player.new so
+  -- before extraction lands the ride keeps the Seel.
+  surfPikachu = "SPRITE_SURFING_PIKACHU",
 }
 
 -- The player's own trainer art: RedPicBack (the battle back pic, up until

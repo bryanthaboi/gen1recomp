@@ -389,6 +389,10 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
         and not self.map:isWalkableCell(x, y)
         and self.map:isWaterCell(x, y)
     end
+    -- re-derive from the live party: a reloaded save with the SURF-Pikachu
+    -- since deposited should not render the Pikachu sheet.
+    -- ponytail: re-derived rather than persisted.
+    self:syncSurfingPikachu()
   end
   -- crossConnection re-arms this after setMap; clear so a warp/reload
   -- cannot leave a stale deferred PlayMapMusic pending
@@ -1489,6 +1493,21 @@ function OverworldState:partyKnows(moveId)
   return partyKnowsVanilla(moveId)
 end
 
+-- IsSurfingPikachuInParty (home/map_objects.asm): when the SURF-mon
+-- is a Pikachu, pose() renders the Pikachu surf sprite.  Called at
+-- every surf-state change so a reloaded save picks the right sheet
+-- after a party change.  No-op when not surfing.
+function OverworldState:syncSurfingPikachu()
+  local p = self.player
+  if not p then return end
+  if not p.surfing then
+    p.surfingPikachu = false
+    return
+  end
+  local mon = self:partyKnows("SURF")
+  p.surfingPikachu = mon ~= nil and mon.species == "PIKACHU" or false
+end
+
 -- The rejection loop shared by the Good and Super Rods
 -- (item_effects.asm ItemUseGoodRod .RandomLoop / ReadSuperRodData): an
 -- odd random byte is no bite; otherwise a 2-bit pick rerolls until it
@@ -1585,6 +1604,7 @@ function OverworldState:flyTo(mapId)
   Game.save.onBike = false
   Game.save.forcedBike = nil -- HandleFlyWarpOrDungeonWarp res BIT_ALWAYS_ON_BIKE
   self.player.surfing = false
+  self:syncSurfingPikachu()
   -- the bird carries the player off westward before the warp
   -- (engine/overworld/player_animations.asm LoadBirdSpriteGraphics)
   self.flyAnim = { frames = 48 }
@@ -1612,6 +1632,7 @@ function OverworldState:beginTeleportOut(onDone)
   end
   require("src.core.Sound").play(Game.data, "Teleport_Exit1")
   self.player.surfing = false
+  self:syncSurfingPikachu()
   self.player.inputLocked = true
   -- rising spin: the mirror of the arrival spin-drop set in startWarpTo, so
   -- spinRise lifts the sprite (Player:pose) while spinFrames counts down
@@ -2275,6 +2296,7 @@ function OverworldState:trySurf(fx, fy, onClose)
   Game.stack:push(TextBox.new(Game, text, function()
     if onClose then onClose() end
     p.surfing = true
+    self:syncSurfingPikachu()
     require("src.core.Music").setSurfing(Game.data, true)
     Game.stack:push(require("src.render.Transition").whiteFlash(Game, nil,
       function() self:stepForwardOrCrossEdge(p.facing) end))
@@ -3196,6 +3218,7 @@ function OverworldState:onStepComplete()
   -- dismounting a surf: landing on a walkable cell ends it
   if p.surfing and self.map:isWalkableCell(p.cellX, p.cellY) then
     p.surfing = false
+    self:syncSurfingPikachu()
     require("src.core.Music").setSurfing(Game.data, false)
   end
 
@@ -3497,6 +3520,7 @@ function OverworldState:checkForcedMovement()
         end
       elseif tile.mode == "surf" then
         p.surfing = true
+        self:syncSurfingPikachu()
         require("src.core.Music").setSurfing(Game.data, true)
       end
       return false
@@ -3775,6 +3799,7 @@ end
 function OverworldState:warpToHealPoint(onDone, opts)
   local heal = self:healPoint()
   self.player.surfing = false
+  self:syncSurfingPikachu()
   -- HandleFlyWarpOrDungeonWarp + DisplayPlayerBlackedOutText both clear
   -- BIT_ALWAYS_ON_BIKE (home/overworld.asm / home/text_script.asm)
   Game.save.forcedBike = nil

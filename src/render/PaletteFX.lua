@@ -646,10 +646,13 @@ function PaletteFX.spriteObp(spriteDef, seed)
   local src = spriteDef and (spriteDef.paletteSource or spriteDef.source)
   if not (w and src) then return nil end
   local idx = tonumber(src:match("%[(%d+)%]"))
-  -- RedBikeSprite loads outside SpriteSheetPointerTable
-  -- (LoadBikePlayerSpriteGraphics), so its source carries no bracketed
-  -- index; it wears the player's own palette, same as SPRITE_RED
-  if not idx and src:find("RedBikeSprite", 1, true) then idx = 0 end
+  -- RedBikeSprite and SurfingPikachuSprite load outside
+  -- SpriteSheetPointerTable, so their source has no bracketed index;
+  -- they wear the player's OBP palette (spriteAssignment[0]).
+  if not idx and (src:find("RedBikeSprite", 1, true)
+                  or src:find("SurfingPikachuSprite", 1, true)) then
+    idx = 0
+  end
   local group = idx and w.spriteAssignment[idx]
   if group == nil then return nil end
   if group == "random" then

@@ -209,10 +209,15 @@ duration:
   closes, and apply again after. Fast-forward otherwise runs one peer's
   queue faster than the peer it is locked to and drains a tournament shot
   clock faster than the opponent racing it.
-- **Online play runs vanilla.** Picking ONLINE MATCH or TOURNAMENT with
-  mods enabled offers to switch them all off and relaunch (mods merge at
-  boot, so a restart is the only way). The restart is confirmed, not
-  silent. They stay listed as disabled, ready to switch back on.
+- **Online play runs vanilla, except for your language.** Picking ONLINE
+  MATCH or TOURNAMENT with mods enabled offers to switch the gameplay ones
+  off and relaunch (mods merge at boot, so a restart is the only way). The
+  restart is confirmed, not silent. They stay listed as disabled, ready to
+  switch back on. A mod that declares itself a translation and provably
+  writes nothing but text stays on: the two games hash the same link
+  surface, so a Spanish install and an English one can battle and trade,
+  each reading the game in its own language and naming the other player's
+  party out of its own text.
 - **Only a meaningful split ends a match.** The per-turn state signature
   both peers exchange is split three ways: `actives` and `bench` carry
   species, HP, status, stat stages, PP and the rest of the party, and a
@@ -314,12 +319,18 @@ window size on rotation. Desktop testing: `POKEPORT_TOUCH=1 love .` forces
 the overlay on and lets the mouse act as a finger (`=0` forces it off).
 
 The launcher's **Touch Controls** button opens a drag editor: move each
-button freely, **Disable** to hide the overlay permanently (for
-controllers / emulation handhelds -- distinct from the temporary
-gamepad auto-hide), **Reset** for defaults, **Done** to save into
-`options.lua` as normalized window fractions so rotation keeps the
-relative placement. In-game, Options → **TOUCH PAD** toggles the same
-on/off flag without leaving a play session.
+button freely, resize the whole pad with **-/+** (60% to 160%), **Disable**
+to hide the overlay permanently (for controllers / emulation handhelds --
+distinct from the temporary gamepad auto-hide), **Reset** for defaults,
+**Done** to save into `options.lua` as normalized window fractions so a
+different screen keeps the relative placement.
+
+Portrait and landscape are edited and saved separately (#633): the editor
+follows whichever orientation is on screen, and **Reset** only clears that
+one, so a layout that works held upright does not have to double as the
+one used sideways. An `options.lua` from before this split keeps its single
+layout in both orientations until one of them is edited. In-game, Options →
+**TOUCH PAD** toggles the same on/off flag without leaving a play session.
 
 ## Translation support
 
@@ -382,7 +393,9 @@ semantics - so the two windows read as one app. Six tabs:
 - **Items**: money, a searchable item picker (replacing the arrows that
   cycled one id at a time through ~250 items), the configurable bag (20 slots
   by default), PC storage
-  with no slot cap, and the eight badges as toggle chips.
+  with no slot cap, and the eight badges as toggle chips. The picker, the bag
+  and PC storage all scroll under the mouse wheel, so the whole catalog is
+  reachable one-handed without typing a query.
 - **Events**: flags, defeated trainers, taken items and per-map object
   toggles, with a real filter field and a two-column paged grid.
 - **Map**: any map rendered with the game's own renderer, warps followable,
@@ -460,3 +473,38 @@ two buttons. Holding a second key or pad button while the first is still
 down backs out of the capture without touching a keyboard; Escape still
 cancels too. SELECT clears one row back to its default, and START resets
 every binding after a confirmation.
+
+Controllers a system has no mapping for (common on Linux handhelds and
+off-brand pads) report bare button numbers rather than names. Those are
+rebindable on the same screen and show up as JOY1, JOY2 and so on in the
+controller column. Recognized controllers are read only through their
+named buttons, so a rebind on those is never shadowed by the factory
+layout underneath it.
+
+## Mod profiles (#593)
+
+The mod manager's PROFILES tab holds named setups. A profile remembers which
+mods are on, every mod's own options, and which save slot each game version
+plays, so swapping profiles swaps the whole playthrough and not just the mod
+list. The setup that existed before profiles shipped becomes PROFILE 1 the
+first time the manager opens.
+
+EXPORT.. writes the selected profile to `profiles/<NAME>.g1rmodlist` in the
+save directory; drop a `.g1rmodlist` someone shared into that folder and
+IMPORT.. adds it. Imported profiles never overwrite an existing one (a name
+clash gets a number). Mods the shared profile names but that are not installed
+are reported when the profile is applied; installing them is still a manual
+trip through the mods list or Find Mods.
+
+## Windows: no console windows on launcher actions
+
+Checking for updates, browsing a mod index, adding a mod repo, installing a
+mod and picking a ROM all run a host tool (curl, PowerShell) in a child
+process. On Windows those children used to each open their own console
+window, so a session could end up buried under half a dozen of them. The
+game now claims one console for itself at boot and hides it; the children
+inherit that invisible console and nothing pops up. Nothing else changes:
+file pickers are ordinary desktop dialogs and still appear normally, and a
+run started from a terminal (`lovec.exe`, what `scripts\run.ps1` prefers)
+keeps its terminal and its printed output. Set `POKEPORT_CONSOLE=1` to opt
+out.

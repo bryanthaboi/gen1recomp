@@ -37,6 +37,16 @@ BattleState.isOpaque = true
 -- window reads as one continuous battle screen (no black bars).
 BattleState.letterboxWhite = true
 
+-- A battle is a self-contained SCREEN, not the window.  The overworld's
+-- dialogue box docks to the window edge on purpose (Renderer:setUIAnchor) --
+-- a box floating in the middle of a zoomed-out map reads as detached.  A
+-- battle is the opposite: pokered draws its text box and YES/NO in the same
+-- 160x144 tilemap as the HUD, and pulling them out to the window edge splits
+-- the composition in two -- the caught-mon nickname prompt lands a whole
+-- letterbox below the white field it is supposed to be printed on.  Anchors
+-- are held off for as long as a battle is in the stack.
+BattleState.holdsUIAnchors = true
+
 -- BATTLE LAYOUT: the classic 160x144 arrangement, or the widescreen one on
 -- a 304x144 surface (src/battle/WideBattle.lua).  Only the composition
 -- differs; every battler, queue and animation below is shared.  Menus and
@@ -1466,12 +1476,21 @@ function BattleState:enter()
     table.insert(self.queue, { wait = 16 })
     self:act(function()
       self.showEnemyTrainer = false
+      -- the slot is EMPTY from here until AnimateSendingOutMon runs below:
+      -- the pic has walked off and the mon is still in its ball, so nothing
+      -- stands in the enemy slot while TrainerSentOutText prints.  Without
+      -- this the front sprite popped in full-size the instant the trainer
+      -- left, sat there through the whole text box, and the grow-in then
+      -- restarted it from nothing -- the mon appearing before it was sent
+      -- out.  Mirrors the flag the mid-battle replacement already sets.
+      self.enemySendingOut = true
       self:slidePic("foe")
     end)
     self:say(Strings("%s sent\nout %s!", self.trainer.name, self.enemy.name))
     self:act(function()
       -- EnemySendOutFirstMon (core.asm:1421-1434): after the text the
       -- pic grows out of the ball (AnimateSendingOutMon), then the cry
+      self.enemySendingOut = false
       self:startGrowIn(self.enemy)
     end)
     queueEnemyCry()
@@ -5211,11 +5230,12 @@ function BattleState:drawHUDs(slide)
     self:drawBallRow(self.enemyParty, 64, 16, -8)
   end
 
-  -- Safari shows only the ball count; the old man demo shows neither mon
-  if self.safari then
-    love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(("BALLx%2d"):format(self.safari.balls), 88, 72)
-  end
+  -- A safari / old-man battle has no player mon out, so no player HUD (see
+  -- hidePlayer below).  Nothing takes its place: PrintSafariZoneSteps -- the
+  -- "nnn/500 / BALLx nn" box -- is start-menu only and returns early off the
+  -- nine interior maps (engine/overworld/player_state.asm:219-224), so no
+  -- ball count belongs over the battlefield.  The count lives in the BALL
+  -- menu item instead (drawTextArea, #540).
   -- Party pokeball rows and the HUD chrome under them, for exactly the
   -- window DrawAllPokeballs owns (common_text.asm:27, with the intro text).
   -- SetupOwnPartyPokeballs runs in EVERY battle, so the player's row belongs
@@ -5320,6 +5340,11 @@ function BattleState:drawTextArea()
       Font.drawBox(0, 12, 20, 6)
       Font.draw(Strings("BALLx"), 16, 112); Font.draw(Strings("BAIT"), 112, 112)
       Font.draw(Strings("THROW ROCK"), 16, 128); Font.draw(Strings("RUN"), 112, 128)
+      -- DisplayBattleMenu .safariLeftColumn / .safariRightColumn print
+      -- wNumSafariBalls at hlcoord 7,14 with `lb bc, 1, 2` -- one byte, two
+      -- digits, space padded -- right after the "BALLx" label at columns
+      -- 2..6 (engine/battle/core.asm:2074-2079, 2107-2112) (#540)
+      Font.draw(("%2d"):format(self.safari.balls), 56, 112)
       Font.drawCode(0xED, (col == 0 and 8 or 104), 112 + row * 16)
     else
       -- BATTLE_MENU_TEMPLATE: box (8,12)-(19,17), "FIGHT <PK><MN> /

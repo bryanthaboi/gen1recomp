@@ -82,6 +82,40 @@ local function isChipDef(def)
   return type(def) == "table" and (def.chip ~= nil or def.address ~= nil)
 end
 
+-- OpenAL only spatializes 1-channel Sources, and one left at the default
+-- (0,0,0) position sits on top of the listener, which OpenAL renders as an
+-- ambient sound spread over every output channel the device has: on an
+-- interface with more than two outputs the SFX also came out of outputs 5+6
+-- while the 2-channel music stayed on 1+2 (#626).  A Source cannot change its
+-- channel count after the fact, so a mono file def is re-decoded and its
+-- sample duplicated into a stereo buffer, which OpenAL never spatializes.
+-- Chip SFX and cries are already stereo at the source (ChipSynth
+-- renderEffectData); this covers file defs, i.e. Yellow's 8-bit mono PCM
+-- Pikachu clips (RomExtractor extractPikachuCries) and mod-supplied wav/ogg
+-- SFX.  Every step is guarded: a headless love stub without love.sound, or a
+-- decoder that will not hand back SoundData, keeps the original Source.
+local function widenMono(source, file)
+  if not (source and love.sound and love.sound.newSoundData) then
+    return source
+  end
+  local ok, channels = pcall(function() return source:getChannelCount() end)
+  if not ok or channels ~= 1 then return source end
+  local built, widened = pcall(function()
+    local mono = love.sound.newSoundData(file)
+    local frames = mono:getSampleCount()
+    local stereo = love.sound.newSoundData(frames, mono:getSampleRate(),
+                                           mono:getBitDepth(), 2)
+    for index = 0, frames - 1 do
+      local value = mono:getSample(index)
+      stereo:setSample(index, 1, value)
+      stereo:setSample(index, 2, value)
+    end
+    return love.audio.newSource(stereo, "static")
+  end)
+  if built and widened then return widened end
+  return source
+end
+
 -- a file def carries an optional playback rate; a bare string is shorthand
 -- for { file = <string> }
 local function newFileSource(def)
@@ -89,6 +123,7 @@ local function newFileSource(def)
   if type(file) ~= "string" then return nil, "no chip program and no file" end
   local ok, s = pcall(love.audio.newSource, file, "static")
   if not ok or not s then return nil, ok and "no source" or tostring(s) end
+  s = widenMono(s, file) -- keep mono defs off the surround channels (#626)
   if type(def) == "table" and def.pitch then pcall(s.setPitch, s, def.pitch) end
   return s
 end
@@ -233,12 +268,16 @@ function Sound.playPikaCry(data, n)
   local src = cache[key]
   if src == false then return nil end
   if not src then
-    local ok, s = pcall(love.audio.newSource,
-      ("assets/generated/audio/pika_cries/cry_%02d.wav"):format(n), "static")
-    if not ok then
+    local path = ("assets/generated/audio/pika_cries/cry_%02d.wav"):format(n)
+    local ok, s = pcall(love.audio.newSource, path, "static")
+    if not ok or not s then
       cache[key] = false
       return nil
     end
+    -- the importer writes these clips as 8-bit mono (RomExtractor
+    -- extractPikachuCries), so they need the same widening as the chip
+    -- effects to stay off a multi-output device's surround channels (#626)
+    s = widenMono(s, path)
     s:setVolume(volumeFor(key))
     cache[key] = s
     src = s

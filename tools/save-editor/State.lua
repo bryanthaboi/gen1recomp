@@ -55,6 +55,7 @@ function State.new()
     selectedItemId = nil,
     selectedBagId = nil,
     selectedPcId = nil,
+    itemPickOffset = 0, -- scroll position in the ADD ITEM list (#595)
     bagOffset = 0,
     pcOffset = 0,
 

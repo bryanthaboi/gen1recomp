@@ -123,6 +123,16 @@ int w_restartApp(lua_State *L)
 	return 1;
 }
 
+int w_httpDownload(lua_State *L)
+{
+	const char *url = luaL_checkstring(L, 1);
+	const char *dest = luaL_checkstring(L, 2);
+	const char *ua = luaL_optstring(L, 3, nullptr);
+	const char *accept = luaL_optstring(L, 4, nullptr);
+	luax_pushboolean(L, instance()->httpDownload(url, dest, ua, accept));
+	return 1;
+}
+
 int w_hasBackgroundMusic(lua_State *L)
 {
 	lua_pushboolean(L, instance()->hasBackgroundMusic());
@@ -142,6 +152,7 @@ static const luaL_Reg functions[] =
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
+	{ "httpDownload", w_httpDownload },
 	{ "hasBackgroundMusic", w_hasBackgroundMusic },
 	{ 0, 0 }
 };

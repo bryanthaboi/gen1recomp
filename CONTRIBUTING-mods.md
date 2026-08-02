@@ -118,6 +118,7 @@ not a hard error, so the list can grow without breaking old mods.
 | `QUEST` | New story, NPCs, dialogue, cutscenes | content |
 | `MECHANIC` | New or changed battle/field mechanics via hooks/effects | overhaul |
 | `GRAPHICS` | Sprite / tileset / palette / font changes | content |
+| `LANGUAGE` | A translation: `text`, `strings` and the glyphs it needs | content |
 | `AUDIO` | Music, sfx, cries | content |
 | `UI` | New or modified screens, menus, overlays | content / overhaul |
 | `TOOL` | Dev/QoL utilities, overlays, inter-mod libraries | content |
@@ -127,6 +128,15 @@ not a hard error, so the list can grow without breaking old mods.
 `GAMEPLAY` is accepted as an alias for `TWEAK`, so `example_mew_starter`
 keeps validating with the value it has shipped since before the taxonomy
 existed.
+
+A translation may also set `"language": true` in the manifest. That is the
+one claim online play acts on: an install running nothing but verified
+translations may take an ONLINE MATCH or a TOURNAMENT instead of being
+asked to restart vanilla. The claim is checked, not taken -- the mod
+qualifies only if every record it writes lands in `text`, `strings` or
+`font`, it wraps no hook, subscribes to no event and requests no
+permission. Anything else and it is an ordinary content mod that happens to
+ship text.
 
 ### 4. `mod.card`
 

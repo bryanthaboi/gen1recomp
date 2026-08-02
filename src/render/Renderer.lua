@@ -142,13 +142,22 @@ end
 function Renderer:uiScale()
   local S = self:fitScale()
   local off = Zoom.offset or 0
-  -- Only follow the zoom when a world is actually on screen.  Survey zoom is
-  -- an OVERWORLD control; the title screen, the intro and the credits show no
-  -- world at all, and shrinking them to match a zoom level the player set for
-  -- the map is meaningless.  worldActive is this frame's answer -- beginFrame
-  -- clears it and beginWorldPass sets it -- so a state that draws no world
-  -- keeps the full fit scale.
-  if not self.worldActive then return S end
+  -- Only follow the zoom when a world is actually behind the UI.  Survey zoom
+  -- is an OVERWORLD control; the title screen, the intro and the credits show
+  -- no world at all, and shrinking them to match a zoom level the player set
+  -- for the map is meaningless.  worldActive is this frame's answer --
+  -- beginFrame clears it and beginWorldPass sets it -- so a state that draws
+  -- no world keeps the full fit scale.
+  --
+  -- uiWorldHold (Game:draw) is the case worldActive cannot answer: a BATTLE
+  -- BG "world" battle stays the scene's backdrop while an OPAQUE state -- the
+  -- party menu, the bag -- covers it, whether or not a world pass ran under
+  -- that state.  Reading worldActive alone drops the step-down there and
+  -- blits those menus a whole scale larger than the battle they cover.
+  -- Game.drawBaseInStack keeps the map drawing in the common case, so the two
+  -- normally agree; this holds the scale even when it cannot (a battle with
+  -- something other than the overworld beneath it).
+  if not (self.worldActive or self.uiWorldHold) then return S end
   if off >= 0 then return S end
   local floorS = math.ceil(S / 2) -- at most a 50% reduction
   local s = S + off               -- one integer step per zoom-out step
@@ -621,6 +630,10 @@ end
 -- pixels, and consumed by endFrame this frame only.
 --   anchor: "bottom" | "topright" | "topleft" | "bottomright"
 function Renderer:setUIAnchor(x, y, w, h, anchor)
+  -- uiAnchorHold (Game:draw): a state that composes its own screen -- a
+  -- battle -- keeps every element inside it, so the box blits where it was
+  -- drawn in the canvas instead of being pulled to the window edge.
+  if self.uiAnchorHold then return end
   self.uiAnchors = self.uiAnchors or {}
   self.uiAnchors[#self.uiAnchors + 1] =
     { x = x, y = y, w = w, h = h, anchor = anchor }
@@ -740,6 +753,19 @@ function Renderer:endFrame(zones, worldZones)
     local stack = ok and Game and Game.stack
     local base = stack and stack.visibleBase and stack:visibleBase()
     local state = base and stack.states and stack.states[base]
+    -- A battle owns the surround it established until it leaves the stack.
+    -- Reading it off visibleBase alone loses that the moment the battle opens
+    -- an OPAQUE state -- the party menu, the bag -- because that state becomes
+    -- the base and answers no to letterboxWhite, flipping a white battle
+    -- surround to flat black for as long as the menu is up.  Same whole-stack
+    -- hold as uiFill and the dim.
+    for i = #(stack and stack.states or {}), 1, -1 do
+      local s = stack.states[i]
+      if s and s.letterboxWhite then
+        state = s
+        break
+      end
+    end
     -- BATTLE BG "black" keeps the default black clear; "white" (and any
     -- non-battle state that opts in) uses the paper shade.  "world" never
     -- reaches here -- it makes the battle non-opaque, so the world pass is

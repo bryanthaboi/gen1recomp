@@ -13,6 +13,55 @@ function HostShell.envPrefix()
   return ""
 end
 
+-- Windows: every host tool we shell out to (curl for the update and mod-index
+-- fetches, the PowerShell ROM picker, the update downloader's `start /b`) is
+-- spawned through io.popen / os.execute, which run it under cmd.exe.  A
+-- GUI-subsystem process owns no console, so each of those children allocates
+-- its own -- one console window flashing per call, several stacking up during
+-- a mod install or an update (#606).  #74 fixed the same storm for the
+-- per-file cache mkdir by dropping the shell entirely (src/import/CacheFs.lua);
+-- the callers above genuinely need one, so we do the other half: allocate a
+-- single console for ourselves, once, and hide it.  A child inherits the
+-- parent's console when the parent has one, so every later spawn attaches to
+-- that invisible console and pops up nothing.  GUI dialogs the children raise
+-- (the PowerShell OpenFileDialog) are desktop windows and still appear.
+--
+-- Skipped when a console already exists, which is the developer case
+-- (lovec.exe, what scripts/run.ps1 prefers, or t.console), so printed output
+-- keeps landing in the terminal the game was launched from.  POKEPORT_CONSOLE=1
+-- opts out entirely and restores the old behaviour.  Memoized; non-Windows and
+-- FFI-less builds no-op.  Called once from love.load before anything shells
+-- out (main.lua).
+local consoleHidden = nil
+
+function HostShell.hideHostConsole()
+  if consoleHidden ~= nil then return consoleHidden end
+  consoleHidden = false
+  if os.getenv("POKEPORT_CONSOLE") == "1" then return consoleHidden end
+
+  local okFfi, ffi = pcall(require, "ffi")
+  if not okFfi or ffi.os ~= "Windows" then return consoleHidden end
+
+  -- kernel32 (AllocConsole/GetConsoleWindow) and user32 (ShowWindow) are
+  -- already loaded in any LOVE process, so ffi.C resolves both -- the same
+  -- assumption CacheFs makes for CreateDirectoryA.
+  pcall(ffi.cdef, [[
+    void *GetConsoleWindow(void);
+    int AllocConsole(void);
+    int ShowWindow(void *hWnd, int nCmdShow);
+  ]])
+  local ok, hidden = pcall(function()
+    if ffi.C.GetConsoleWindow() ~= nil then return false end
+    if ffi.C.AllocConsole() == 0 then return false end
+    local hwnd = ffi.C.GetConsoleWindow()
+    if hwnd == nil then return false end
+    ffi.C.ShowWindow(hwnd, 0) -- SW_HIDE
+    return true
+  end)
+  consoleHidden = (ok and hidden) or false
+  return consoleHidden
+end
+
 -- Wraps io.popen with the AppImage env fix applied and lua errors swallowed
 function HostShell.popen(command, mode)
   local ok, pipe = pcall(io.popen, HostShell.envPrefix() .. command, mode or "r")
@@ -67,6 +116,123 @@ function HostShell.restart()
   ffi.C.unsetenv("LD_LIBRARY_PATH")
   local argv = ffi.new("const char *[2]", appimage, nil)
   ffi.C.execv(appimage, ffi.cast("char *const *", argv))
+end
+
+-- ------- HTTP transport ----------------------------------------------------
+--
+-- Every remote fetch (mod index, mod releases, thumbnails) used to shell out
+-- to curl, which macOS / Windows 10+ / desktop Linux all ship and Android does
+-- not: adding a mod index on Android died with "curl is not available on this
+-- platform" (#597).  Android goes through the GameActivity.httpDownload JNI
+-- bridge instead (HttpsURLConnection, using the INTERNET permission link play
+-- already needs), surfaced by our vendored liblove as
+-- love.system.httpDownload(url, absPath, userAgent, accept).  Both transports
+-- block the calling thread and deal in whole files, so callers keep exactly
+-- the contract they had with curl.
+
+-- Shell quoting for one curl argument; cmd.exe has no single-quote form.
+function HostShell.quote(s)
+  s = tostring(s)
+  if love and love.system and love.system.getOS
+      and love.system.getOS() == "Windows" then
+    return '"' .. s:gsub('"', '') .. '"'
+  end
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+function HostShell.haveCurl()
+  local pipe = HostShell.popen("curl --version")
+  if not pipe then return false end
+  local readOk, out = pcall(function() return pipe:read("*a") end)
+  pcall(function() pipe:close() end)
+  return readOk and out ~= nil and out:find("curl", 1, true) ~= nil
+end
+
+-- The bridge only exists in our Android liblove.  An older APK reports nil
+-- here and falls back to the "no transport" error the callers already show;
+-- the iOS build compiles the same wrapper but always returns false, so gate
+-- on the OS as well and keep its error message honest.
+local function haveBridge()
+  if not (love and love.system and type(love.system.httpDownload) == "function") then
+    return false
+  end
+  return love.system.getOS and love.system.getOS() == "Android"
+end
+
+-- Is any transport available at all?  Callers gate on this, never on curl.
+function HostShell.canFetch()
+  return HostShell.haveCurl() or haveBridge()
+end
+
+-- Download url to an absolute host path.  Returns true, or nil plus an error.
+-- The curl branch deliberately ignores curl's exit code, as the download paths
+-- always did: callers judge the result by the file they got.
+function HostShell.httpDownload(url, absPath, userAgent, accept)
+  if type(url) ~= "string" or url == "" then return nil, "missing url" end
+  if type(absPath) ~= "string" or absPath == "" then return nil, "missing path" end
+  userAgent = userAgent or "gen1recomp"
+  if HostShell.haveCurl() then
+    local cmd = "curl -fsSL --connect-timeout 15 --max-time 300 "
+      .. "-H " .. HostShell.quote("User-Agent: " .. userAgent) .. " "
+    if accept then
+      cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "
+    end
+    cmd = cmd .. "-o " .. HostShell.quote(absPath) .. " " .. HostShell.quote(url)
+    local pipe = HostShell.popen(cmd)
+    if not pipe then return nil, "could not start download" end
+    pcall(function() pipe:read("*a") end)
+    pcall(function() pipe:close() end)
+    return true
+  end
+  if not haveBridge() then
+    return nil, "no network transport on this platform"
+  end
+  local ok, done = pcall(love.system.httpDownload, url, absPath, userAgent, accept)
+  if ok and done then return true end
+  return nil, "download failed"
+end
+
+-- GET returning the body.  curl streams it through a pipe; the Android bridge
+-- can only write a file, so there we fetch into the save directory (the only
+-- writable root on Android) and read it back.
+function HostShell.httpGet(url, userAgent, accept)
+  if type(url) ~= "string" or url == "" then return nil, "missing url" end
+  userAgent = userAgent or "gen1recomp"
+  if HostShell.haveCurl() then
+    local cmd = "curl -fsSL --connect-timeout 10 --max-time 40 "
+      .. "-H " .. HostShell.quote("User-Agent: " .. userAgent) .. " "
+    if accept then
+      cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "
+    end
+    cmd = cmd .. HostShell.quote(url)
+    local pipe = HostShell.popen(cmd)
+    if not pipe then return nil, "could not run curl" end
+    local readOk, out = pcall(function() return pipe:read("*a") end)
+    pcall(function() pipe:close() end)
+    if not readOk then return nil, "fetch failed: " .. tostring(out) end
+    if not out or out == "" then return nil, "empty response from " .. url end
+    return out
+  end
+  if not haveBridge() then
+    return nil, "no network transport on this platform"
+  end
+  if not (love.filesystem and love.filesystem.getSaveDirectory) then
+    return nil, "fetch needs LOVE"
+  end
+  local dirOk, saveDir = pcall(love.filesystem.getSaveDirectory)
+  if not dirOk or not saveDir or saveDir == "" then
+    return nil, "no save directory"
+  end
+  local name = "http_fetch.tmp"
+  pcall(love.filesystem.remove, name)
+  local ok, err = HostShell.httpDownload(url, saveDir .. "/" .. name, userAgent, accept)
+  if not ok then return nil, err end
+  local readOk, body = pcall(love.filesystem.read, name)
+  pcall(love.filesystem.remove, name)
+  if not readOk or type(body) ~= "string" or body == "" then
+    return nil, "empty response from " .. url
+  end
+  return body
 end
 
 return HostShell

@@ -17,6 +17,26 @@ local FRAMES = Timing.WARP_FADE_OUT
 local FRAMES_IN = Timing.WARP_FADE_IN
 local FLASH_FRAMES = 7
 
+-- Every fade in home/fade.asm holds each palette write with
+-- `ld c, 8 / call DelayFrames`, so eight frames is the step of all of them.
+local FADE_STEP_FRAMES = 8
+
+-- Veil alpha `t` frames into a `len`-frame fade out.  GBFadeOutToBlack
+-- (home/fade.asm:43-46) walks FadePal4 -> FadePal3 -> FadePal2 -> FadePal1
+-- with b = 4, and FadePal4 IS the normal palette while FadePal1 is solid
+-- black (:64-67) -- so the screen sits untouched through the first eight
+-- frames and then drops a whole shade per step, reaching black for the last
+-- hold.  The port tweened the veil instead, which reads as a dissolve rather
+-- than a Game Boy fade (#607).  A record retimed shorter than two steps
+-- (mods) keeps the old ramp so it still reaches black.
+local function fadeAlpha(t, len)
+  if not len or len <= 0 then return 1 end
+  local steps = math.floor(len / FADE_STEP_FRAMES)
+  if steps < 2 then return t / len end
+  local step = math.min(steps - 1, math.floor(t / (len / steps)))
+  return step / (steps - 1)
+end
+
 -- The two fades as transitions records, so a mod retimes a warp fade the
 -- same way it retimes a battle wipe.  BattleTransition.registerInto pulls
 -- these in with its eight wipes -- one registrant owns the registry.
@@ -76,10 +96,17 @@ function Transition:update(dt)
   end
 end
 
-function Transition:draw()
+-- The veil alpha for this frame, exposed the way BattleReturn:alpha is so
+-- the staircase can be asserted without stubbing love.graphics.
+function Transition:alpha()
   local len = (self.phase == "out") and self.frames or self.framesIn
-  local alpha = (len and len > 0) and (self.t / len) or 1
-  if self.phase == "in" then alpha = 1 - alpha end
+  local a = fadeAlpha(self.t, len)
+  if self.phase == "in" then a = 1 - a end
+  return a
+end
+
+function Transition:draw()
+  local alpha = self:alpha()
   -- Survey zoom draws the overworld into a window-filling world canvas
   -- while the UI pass stays the classic 160x144 letterbox.  A rect on the
   -- UI canvas only darkens that center box (issue #121); when the world
@@ -161,7 +188,8 @@ end
 -- writes one palette then holds it with `ld c, 8 / call DelayFrames`
 -- (home/fade.asm:30-41), three times over.  Stepping the veil the same way
 -- keeps the fade reading like a Game Boy palette fade rather than a tween.
-local FADE_STEP_FRAMES = 8
+-- The hold is the same eight frames the warp fade steps on, so both share
+-- FADE_STEP_FRAMES at the top of the file.
 
 function BattleReturn:alpha()
   if self.t < self.hold then return 1 end

@@ -24,6 +24,7 @@ on:
     paths-ignore:
       - '.github/**'
       - '**.md'
+      - 'mobile/ios/app-repo.json'
   workflow_dispatch:
     inputs:
       version:
@@ -383,7 +384,66 @@ jobs:
 
           echo "Published release $tag"
 
+      - name: Update iOS app repository
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        run: |
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          ipa="dist/release/gen1recomp-${v}-ios.ipa"
+          app_repo="mobile/ios/app-repo.json"
+          [ -f "$ipa" ] || { echo "::error::$ipa not found"; exit 1; }
+          [ -f "$app_repo" ] || { echo "::error::$app_repo not found"; exit 1; }
+
+          date="$(date -u +"%Y-%m-%d")"
+          size="$(wc -c < "$ipa" | tr -d '[:space:]')"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/gen1recomp-${v}-ios.ipa"
+          entry="$(jq -n \
+            --arg version "$v" \
+            --arg date "$date" \
+            --arg download_url "$download_url" \
+            --argjson size "$size" \
+            '{version: $version, date: $date, size: $size, downloadURL: $download_url, localizedDescription: "Gen1Recomp - A native Lua / LÖVE2D recreation of Gen 1 Poke"}')"
+
+          if jq -e --arg version "$v" \
+            'any(.apps[] | select(.bundleIdentifier == "com.theboisclub.gen1recomp").versions[]?; .version == $version)' \
+            "$app_repo" >/dev/null; then
+            jq --arg version "$v" --argjson entry "$entry" \
+              '(.apps[] | select(.bundleIdentifier == "com.theboisclub.gen1recomp").versions) |= map(if .version == $version then $entry else . end)' \
+              "$app_repo" > "$app_repo.tmp"
+          else
+            jq --argjson entry "$entry" \
+              '(.apps[] | select(.bundleIdentifier == "com.theboisclub.gen1recomp").versions) |= [$entry] + .' \
+              "$app_repo" > "$app_repo.tmp"
+          fi
+          mv "$app_repo.tmp" "$app_repo"
+
+      # main is PR-only for everyone except deploy keys (the "main protection"
+      # ruleset's bypass actor), so this push must authenticate with the
+      # RELEASE_DEPLOY_KEY deploy key over SSH; the workflow's GITHUB_TOKEN
+      # would be rejected by the branch protection.
+      - name: Commit iOS app repository
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        env:
+          DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          git add mobile/ios/app-repo.json
+          if git diff --cached --quiet; then
+            echo "app-repo.json unchanged; nothing to push"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/release-deploy-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(ios): update app-repo.json [skip ci]"
+          git -c core.sshCommand="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            push "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
+          rm -f "$key"
+
       - name: Clean up signing keychain
         if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
         run: |
           security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/release-deploy-key"

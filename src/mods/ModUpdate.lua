@@ -254,39 +254,21 @@ function ModUpdate.statusFor(installedVersion, releases)
   return "current", best
 end
 
--- ------- host I/O (curl)
+-- ------- host I/O (HostShell's transport: curl, or the Android JNI bridge)
 
-local function shq(s)
-  s = tostring(s)
-  if love and love.system and love.system.getOS
-      and love.system.getOS() == "Windows" then
-    return '"' .. s:gsub('"', '') .. '"'
-  end
-  return "'" .. s:gsub("'", "'\\''") .. "'"
-end
-
-local function curlCapture(url)
+-- GitHub's API wants a User-Agent and answers the versioned Accept.
+local function apiFetch(url)
   local HostShell = require("src.core.HostShell")
-  local cmd = "curl -fsSL --connect-timeout 10 --max-time 40 "
-    .. "-H " .. shq("User-Agent: gen1recomp-mod-updater") .. " "
-    .. "-H " .. shq("Accept: application/vnd.github+json") .. " "
-    .. shq(url)
-  local pipeOk, pipe = pcall(HostShell.popen, cmd)
-  if not pipeOk or not pipe then return nil, "could not run curl" end
-  local readOk, out = pcall(function() return pipe:read("*a") end)
-  pcall(function() pipe:close() end)
-  if not readOk then return nil, "curl read failed: " .. tostring(out) end
-  if not out or out == "" then return nil, "empty response from GitHub" end
-  return out
+  return HostShell.httpGet(url, "gen1recomp-mod-updater",
+    "application/vnd.github+json")
 end
 
+-- Still just the curl probe it always was.  "Can we fetch at all" is
+-- HostShell.canFetch, which also knows about the Android bridge (#597); every
+-- gate below asks that instead.
 function ModUpdate.haveCurl()
   local HostShell = require("src.core.HostShell")
-  local pipeOk, pipe = pcall(HostShell.popen, "curl --version")
-  if not pipeOk or not pipe then return false end
-  local readOk, out = pcall(function() return pipe:read("*a") end)
-  pcall(function() pipe:close() end)
-  return readOk and out ~= nil and out:find("curl", 1, true) ~= nil
+  return HostShell.haveCurl()
 end
 
 -- Fetch release list. opts.force bypasses the 6h cache.
@@ -302,15 +284,16 @@ function ModUpdate.fetchReleases(repo, modId, opts)
       return cached.releases, nil, { fromCache = true }
     end
   end
-  if not ModUpdate.haveCurl() then
+  local HostShell = require("src.core.HostShell")
+  if not HostShell.canFetch() then
     -- Stale cache is better than nothing when offline
     local cached = ModUpdate.readCache(repo)
     if cached and cached.releases then
       return cached.releases, nil, { fromCache = true, stale = true }
     end
-    return nil, "curl is not available on this platform"
+    return nil, "no network transport on this platform"
   end
-  local body, curlErr = curlCapture(ModUpdate.apiReleasesUrl(repo))
+  local body, curlErr = apiFetch(ModUpdate.apiReleasesUrl(repo))
   if not body then
     local cached = ModUpdate.readCache(repo)
     if cached and cached.releases then
@@ -331,10 +314,10 @@ function ModUpdate.downloadZip(url, destName)
   if not (love and love.filesystem) then
     return nil, "download needs LOVE"
   end
-  if not ModUpdate.haveCurl() then
-    return nil, "curl is not available on this platform"
-  end
   local HostShell = require("src.core.HostShell")
+  if not HostShell.canFetch() then
+    return nil, "no network transport on this platform"
+  end
   local name = destName or ("mod_update_" .. tostring(os.time()) .. ".zip")
   name = tostring(name):gsub("[/\\]", "_")
   local saveOk, saveDir = pcall(function()
@@ -344,12 +327,9 @@ function ModUpdate.downloadZip(url, destName)
     return nil, "no save directory"
   end
   local abs = saveDir .. "/" .. name
-  local cmd = "curl -fsSL --connect-timeout 15 --max-time 300 -o "
-    .. shq(abs) .. " " .. shq(url)
-  local pipeOk, pipe = pcall(HostShell.popen, cmd)
-  if not pipeOk or not pipe then return nil, "could not start download" end
-  pcall(function() pipe:read("*a") end)
-  pcall(function() pipe:close() end)
+  -- Either transport can fail quietly; the getInfo size check below is what
+  -- actually decides whether we got a file (#597).
+  HostShell.httpDownload(url, abs, "gen1recomp-mod-updater")
   local infoOk, info = pcall(love.filesystem.getInfo, name)
   if not infoOk or not info or (info.size or 0) == 0 then
     pcall(love.filesystem.remove, name)

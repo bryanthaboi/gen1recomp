@@ -41,6 +41,10 @@ local S
 -- vanilla records over an already-merged Data
 local mods
 local mouseClicked = false
+-- Wheel notches queued by App.wheelmoved since the last draw, handed to Kit
+-- there like mouseClicked is: LOVE delivers events before love.draw, so a
+-- notch is always spent by the frame that follows it (#595).
+local wheelY = 0
 
 -- Which game's cache Data was loaded from.  main.lua checks this before
 -- opening the editor on a save from the other version, because the two
@@ -602,7 +606,7 @@ local function drawStatusBar(x, y, w, h)
     and (ctrl .. "+S save . " .. ctrl ..
          "+R reload . Esc clear selection . Close returns to the launcher")
     or (ctrl .. "+S save . " .. ctrl ..
-        "+R reload . Esc clear selection . arrows pan map . wheel zoom")
+        "+R reload . Esc clear selection . arrows pan map . wheel scrolls lists")
   local hintW = Kit.textWidth("tiny", hint)
   Kit.textRight("tiny", hint, x + w - pad, y + (h - Kit.textHeight("tiny")) / 2, PAL.faint)
   local avail = w - 2 * pad - hintW - 14 * s
@@ -620,8 +624,9 @@ function App.draw()
   local s = Kit.scale
 
   local mx, my = love.mouse.getPosition()
-  Kit.beginFrame(mx, my, mouseClicked)
+  Kit.beginFrame(mx, my, mouseClicked, wheelY)
   mouseClicked = false
+  wheelY = 0
   -- Modal shield.  Kit has no z-order, so the picker cannot simply be drawn
   -- last: the chrome and the panel underneath would take the same tap.  The
   -- shield goes up before anything dispatches and comes down only for the
@@ -699,9 +704,13 @@ end
 
 function App.wheelmoved(x, y)
   if not S then return end
+  -- The map tab spends the wheel on zoom; every other tab routes it through
+  -- Kit so whichever list the pointer is over takes it next draw (#595).
   if S.tab == "map" and MapBrowser.wheelmoved then
     MapBrowser.wheelmoved(S, y)
+    return
   end
+  wheelY = wheelY + (y or 0)
 end
 
 function App.quit()

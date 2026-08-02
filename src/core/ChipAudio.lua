@@ -418,16 +418,22 @@ function ChipAudio.newCry(data, species, resolved)
   })
 end
 
+-- Two channels for the same reason ChipSynth.renderEffectData renders stereo:
+-- a mono Source is spatialized by OpenAL at the listener position and spreads
+-- over every output an interface has (#626).  The siren itself is unchanged,
+-- both channels carry the same sample.
 function ChipAudio.newLowHealthAlarm()
   local samples = math.floor(SAMPLE_RATE * 62 / 60)
-  local data = love.sound.newSoundData(samples, SAMPLE_RATE, 16, 1)
+  local data = love.sound.newSoundData(samples, SAMPLE_RATE, 16, 2)
   local phase = 0
   for index = 0, samples - 1 do
     local frame = math.floor(index * 60 / SAMPLE_RATE) % 31
     local register = frame < 11 and 0x750 or 0x6EE
     local frequency = 131072 / (2048 - register)
     phase = (phase + frequency / SAMPLE_RATE) % 1
-    data:setSample(index, (phase < 0.5 and 1 or -1) * 0.25)
+    local value = (phase < 0.5 and 1 or -1) * 0.25
+    data:setSample(index, 1, value)
+    data:setSample(index, 2, value)
   end
   return love.audio.newSource(data, "static")
 end

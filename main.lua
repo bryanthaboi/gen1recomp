@@ -184,6 +184,11 @@ local function bootGame(version)
 end
 
 function love.load(args)
+  -- Before anything can shell out (update check, mod index, ROM picker),
+  -- claim one hidden console on Windows so those children inherit it instead
+  -- of each flashing their own cmd.exe window (#606).  No-op elsewhere.
+  require("src.core.HostShell").hideHostConsole()
+
   -- Self-updater boot shell: a fused build may mount and chainload a newer
   -- downloaded payload here.  True means it took over, so we must stop.  A
   -- dev / source checkout no-ops (see src/update/Boot.lua).

@@ -4,9 +4,11 @@
 -- (.PlayerNextToSafariZoneWorker1CoordsArray).  Paying ¥500 hands over
 -- 30 SAFARI BALLs and starts the 502-step game
 -- (SafariZoneGateWouldYouLikeToJoinScript: wSafariSteps = 502,
--- wNumSafariBalls = SAFARI_BALLS_RECEIVED).  Declining walks you back
--- so you can't slip past.  Returning to the gate ends the game and the
--- worker takes the leftover balls back.
+-- wNumSafariBalls = SAFARI_BALLS_RECEIVED), then auto-walks the player
+-- up through the north warp into the zone.  Declining walks you back
+-- so you can't slip past.  Returning to the gate ends the game, the
+-- worker takes the leftover balls back and the auto-walk drops you 3
+-- cells below the warp you came in by (#540).
 --
 -- Step/ball bookkeeping lives in src/world/OverworldController.lua
 -- (safariStep/safariGameOver, from
@@ -19,7 +21,33 @@ local FEE = 500
 local BALLS = 30
 local STEPS = 502
 
-local function startGame(game, t, done, balls, introText)
+-- SafariZoneGateSafariZoneWorker1WouldYouLikeToJoinText .success closes with
+-- `ld a, PAD_UP / ld c, 3 / SafariZoneEntranceAutoWalk`: paying walks the
+-- player up out of the gate and through the north warp, it is never left to
+-- the player.  EVENT_IN_SAFARI_ZONE is already set when that walk runs, so
+-- the two gate steps taken before the warp fires are charged against
+-- wSafariSteps (home/overworld.asm:307-310) -- which is why the counter
+-- reads 500/500 on arrival even though the script wrote 502 (#540).  The
+-- port's counter only runs on the nine interior maps (FieldDefaults
+-- safari.stepMaps, OverworldState:inSafariStepZone), so charge those two
+-- steps here instead.
+local function walkIntoZone(game, ow)
+  local p = ow.player
+  -- only from the two trigger cells in front of the worker, which are the
+  -- columns the north warps sit on; a player who paid after TALKING to him
+  -- from somewhere else walks in on their own, as they do today
+  local w = p.cellY == 2 and ow.map:warpAtCell(p.cellX, 0) or nil
+  if not w then return end
+  ow:scriptMove(p, "up", 2, function()
+    local st = game.save.safari
+    if st then st.steps = st.steps - 2 end
+    -- scripted steps skip onStepComplete (and with it CheckWarpsNoCollision),
+    -- so take that warp explicitly once the walk lands on it
+    ow:takeWarp(w.def)
+  end)
+end
+
+local function startGame(game, ow, t, done, balls, introText)
   game.save.safari = { balls = balls or BALLS, steps = STEPS }
   game.save.safariNags = nil
   local TextBox = require("src.render.TextBox")
@@ -31,7 +59,10 @@ local function startGame(game, t, done, balls, introText)
   local pa = t._SafariZoneGateSafariZoneWorker1CallYouOnThePAText
              or "\fWe'll call you on\nthe PA when you\nrun out of time\nor SAFARI BALLs!"
   local luck = t._SafariZoneGateSafariZoneWorker1GoodLuckText or "Good Luck!"
-  game.stack:push(TextBox.new(game, paid .. pa .. "\f" .. luck, done))
+  game.stack:push(TextBox.new(game, paid .. pa .. "\f" .. luck, function()
+    if done then done() end
+    walkIntoZone(game, ow)
+  end))
 end
 
 -- Yellow's soft-lock fix (scripts/SafariZoneGate_2.asm): a player short of
@@ -52,7 +83,7 @@ local function yellowLowCost(game, ow, t, done, back)
           or "\fOh, all right, pay\nme what you have.")
       .. "\f" .. (t._SafariZoneLowCostText2
                   or "But, I can't give\nyou all 30 BALLs.")
-    startGame(game, t, done, balls, intro)
+    startGame(game, ow, t, done, balls, intro)
     return
   end
   local nag = game.save.safariNags or 0
@@ -62,7 +93,7 @@ local function yellowLowCost(game, ow, t, done, back)
       (t._SafariZoneLowCostText8 or "Read my lips, NO!\nGet it?")
       .. (t._SafariZoneLowCostText3
           or "\fYou're persistent,\naren't you?\fOK, you can go in\nfor free, but\njust this once!")
-    startGame(game, t, done, 1, intro)
+    startGame(game, ow, t, done, 1, intro)
     return
   end
   local nags = {
@@ -100,7 +131,7 @@ local function joinPrompt(game, ow, done)
           end
         else
           game.save.money = game.save.money - FEE
-          startGame(game, t, done)
+          startGame(game, ow, t, done)
         end
       end))
     end))
@@ -135,27 +166,38 @@ M.SAFARI_ZONE_GATE = {
   -- no walks you back into the zone
   onEnter = function(game, ow)
     if not game.save.safari or ow.player.cellY > 1 then return end
-    local TextBox = require("src.render.TextBox")
-    local ChoiceBox = require("src.ui.ChoiceBox")
-    local t = game.data.text
-    game.stack:push(TextBox.new(game,
-      t._SafariZoneGateSafariZoneWorker1LeavingEarlyText or "Leaving early?",
-      function()
-        game.stack:push(ChoiceBox.new(game, function(yes)
-          if not yes then
-            -- back into the zone through the entrance warp
-            local w = game.data.maps.SAFARI_ZONE_CENTER.warps[1]
-            ow:startWarpTo("SAFARI_ZONE_CENTER", w.x, w.y, "up")
-            return
-          end
-          game.save.safari = nil
-          game.stack:push(TextBox.new(game,
-            (t._SafariZoneGateSafariZoneWorker1ReturnSafariBallsText
-             or "Please return any\nSAFARI BALLs you\nhave left.")
-            .. "\f" .. (t._SafariZoneGateSafariZoneWorker1GoodHaulComeAgainText
-                        or "Did you get a\ngood haul?\fCome again!")))
-        end))
-      end))
+    -- QUEUED, never pushed: onEnter runs inside the arriving warp's
+    -- Transition midpoint, and Transition:finish pops whatever is on top
+    -- the same frame (Timing.WARP_FADE_IN is 0) -- so a box pushed here is
+    -- swallowed, and on a build where it survived it drew over a screen
+    -- still faded to black (#540).  Same contract as M.HALL_OF_FAME in
+    -- data/scripts/story.lua.
+    --
+    -- SafariZoneGateLeavingSafariScript .leaving_early: YES prints the
+    -- return-balls text, faces the player down and runs
+    -- SafariZoneEntranceAutoWalk with `PAD_DOWN, c = 3`, landing on the
+    -- counter row 3 cells below the warp you came in by; NO prints
+    -- "Good Luck!" and walks one step back up through that same warp.
+    local rightSide = ow.player.cellX ~= 3
+    local dest = game.data.maps.SAFARI_ZONE_CENTER.warps[rightSide and 2 or 1]
+    ow:queueScript({
+      { "ask", "_SafariZoneGateSafariZoneWorker1LeavingEarlyText" },
+      { "jump_if_false", "stay" },
+      -- the port never reaches SafariZoneGateLeavingSafariScript's own
+      -- GOOD_HAUL_COME_AGAIN branch (safariGameOver warps straight to the
+      -- counter), so the sign-off rides on this path
+      { "show_text", "_SafariZoneGateSafariZoneWorker1ReturnSafariBallsText" },
+      { "show_text", "_SafariZoneGateSafariZoneWorker1GoodHaulComeAgainText" },
+      -- no value: set_field assigns nil, which is how save.safari is cleared
+      { "set_field", "safari" },
+      -- move_player runs through scriptMove, which skips onStepComplete, so
+      -- walking back down past (x,2) cannot re-fire the join trigger
+      { "move_player", "down", 3 },
+      { "jump", "end" },
+      { "label", "stay" },
+      { "show_text", "_SafariZoneGateSafariZoneWorker1GoodLuckText" },
+      { "warp", "SAFARI_ZONE_CENTER", dest.x, dest.y, "up" },
+    })
   end,
 }
 

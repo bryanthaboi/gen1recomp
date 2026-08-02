@@ -16,6 +16,12 @@ function ChoiceBox.new(game, onChoose, opts)
   self.index = (opts and opts.defaultNo) and 2 or 1
   -- BIT_NO_MENU_BUTTON_SOUND: PC-session prompts stay silent
   self.noSound = (opts and opts.noSound) or false
+  -- Only a choice box sitting on top of an ANCHORED dialogue box rides the
+  -- anchor with it (TextBox passes it).  A bare one -- the battle's switch
+  -- offer, a shop or PC confirm -- belongs over the screen that pushed it,
+  -- and docking it to the window edge instead tears it off that screen by
+  -- however far the letterbox sits from the edge.
+  self.anchor = opts and opts.anchor or nil
   local box = Theme.choiceBox
   self.tx = (opts and opts.tx) or box.tx
   self.ty = (opts and opts.ty) or box.ty
@@ -64,9 +70,9 @@ function ChoiceBox:draw()
   local tx, ty, tw, th = self.tx, self.ty, self.tw, self.th
   -- rides the same bottom anchor as the dialogue box it sits above, so the
   -- pair travels together (the anchor keeps each element's gap from the edge)
-  local r = self.game and self.game.renderer
+  local r = self.anchor and self.game and self.game.renderer
   if r and r.setUIAnchor then
-    r:setUIAnchor(tx * 8, ty * 8, tw * 8, th * 8, "bottom")
+    r:setUIAnchor(tx * 8, ty * 8, tw * 8, th * 8, self.anchor)
   end
   Font.drawBox(tx, ty, tw, th)
   love.graphics.setColor(0, 0, 0, 1)

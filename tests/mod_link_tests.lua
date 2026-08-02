@@ -212,6 +212,49 @@ eq(Handshake.mods(overhaulGame)[1].affectsLink, true, "and rides the hello")
 eq(Handshake.hello(tweakGame, "trade").linkModified, true,
    "the hello carries the flag a v1 peer is judged against")
 
+-- #501: a declared translation is invisible to the wire, so online play
+-- lets an English install meet a Spanish one
+local languageGame = loadMods({
+  ["mods/espanol/manifest.json"] =
+    '{"id":"espanol","name":"espanol","version":"1.0.0","entry":"main.lua",' ..
+    '"language":true,"category":"LANGUAGE"}',
+  ["mods/espanol/main.lua"] = [[
+return function(mod)
+  mod.content.strings:override("But, it failed!", "Pero fallo!")
+end
+]],
+})
+eq(Handshake.mods(languageGame)[1].language, true,
+   "the translation flag rides the hello")
+eq(Handshake.mods(languageGame)[1].affectsLink, false,
+   "and a translation never claims the fingerprint")
+eq(Handshake.linkModified(languageGame), false,
+   "it leaves the link surface alone")
+eq(Handshake.onlineAllowed(languageGame), true, "so online play allows it")
+eq(Fingerprint.compute(languageGame.data, Handshake.mods(languageGame)),
+   Fingerprint.compute(languageGame.data, {}),
+   "and two peers reading different languages hash the same")
+eq(Handshake.onlineAllowed(tweakGame), false,
+   "a content mod that touches a species still forces vanilla")
+eq(Handshake.onlineAllowed(bareGame), true, "vanilla still goes online")
+
+-- the flag is a claim, not a pass: a mod that writes gameplay is not a
+-- translation however its manifest describes itself
+local fakeLanguageGame = loadMods({
+  ["mods/faux/manifest.json"] =
+    '{"id":"faux","name":"faux","version":"1.0.0","entry":"main.lua","language":true}',
+  ["mods/faux/main.lua"] = [[
+return function(mod)
+  mod.content.strings:override("But, it failed!", "It worked!")
+  mod.content.pokemon:patch("PIKA", { baseStats = { attack = 200 } })
+end
+]],
+})
+eq(Handshake.onlineAllowed(fakeLanguageGame), false,
+   "a self-declared translation that patches a species is still blocked")
+eq(#Handshake.onlineBlockers(fakeLanguageGame), 1,
+   "and the mod manager restart prompt names it")
+
 -- ------- builtin records are private per dataset
 
 -- two independent loads must not share record tables: an edit through one

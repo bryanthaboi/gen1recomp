@@ -78,7 +78,7 @@ end
 -- play_cry's waitForButton form keeps that cry gate but hands the box back
 -- to the A/B path once the cry is over -- see TextBox's opts.auto.wait
 -- (#247, #251).
-function Commands.show_text(ctx, textId, subs)
+function Commands.show_text(ctx, textId, subs, extraOpts)
   local text = ctx.game.data.text[textId]
   if not text and ctx.overworld then
     text = ctx.game.data:resolveText(ctx.overworld.map.def.label, textId)
@@ -128,6 +128,12 @@ function Commands.show_text(ctx, textId, subs)
       end
     end
   end
+  if extraOpts then
+    opts = opts or {}
+    for k, v in pairs(extraOpts) do
+      opts[k] = v
+    end
+  end
   ctx.game.stack:push(TextBox.new(ctx.game, text, function()
     runner:resume()
   end, opts))
@@ -139,16 +145,18 @@ function Commands.jump(ctx, target)
 end
 
 -- ask <textId> [subs]: show text, then a YES/NO box; result lands in
--- ctx.lastCheck.  subs are forwarded to show_text's {token} filling.
+-- ctx.lastCheck.  The box rides opts.choice (TextBox.lua), so the YES/NO
+-- menu pops up over the still-visible text once it finishes typing, the
+-- same as every hand-written prompt (OverworldController, BattleState,
+-- OakSpeech) -- not a bare ChoiceBox after the text box has already been
+-- cleared with A (DisplayTextID's WaitForTextScrollButtonPress never fires
+-- ahead of a YES/NO box in the original; home/text.asm).
 function Commands.ask(ctx, textId, subs)
-  Commands.show_text(ctx, textId, subs)
-  local ChoiceBox = require("src.ui.ChoiceBox")
   local runner = ctx.runner
-  ctx.game.stack:push(ChoiceBox.new(ctx.game, function(yes)
+  Commands.show_text(ctx, textId, subs, { choice = function(yes)
     ctx.lastCheck = yes
     runner:resume()
-  end))
-  runner:yield()
+  end })
 end
 
 function Commands.face_player(ctx)
@@ -596,13 +604,16 @@ local function askNickname(ctx, mon)
         and ctx.game.data.pokemon[mon.species].name)
     or mon.species
   -- Prefer the real text label; fall back to the BattleState wording.
+  local textId, subs
   if ctx.game.data.text and ctx.game.data.text._DoYouWantToNicknameText then
-    Commands.show_text(ctx, "_DoYouWantToNicknameText", { RAM = name })
+    textId, subs = "_DoYouWantToNicknameText", { RAM = name }
   else
-    Commands.show_text(ctx, Strings("Do you want to\ngive a nickname\nto %s?", name))
+    textId = Strings("Do you want to\ngive a nickname\nto %s?", name)
   end
-  local ChoiceBox = require("src.ui.ChoiceBox")
-  ctx.game.stack:push(ChoiceBox.new(ctx.game, function(yes)
+  -- opts.choice (TextBox.lua): the YES/NO box rides over the still-visible
+  -- question instead of a bare ChoiceBox popping up after an A press
+  -- already cleared it (same fix as Commands.ask).
+  Commands.show_text(ctx, textId, subs, { choice = function(yes)
     if not yes then
       ctx.lastCheck = success
       runner:resume()
@@ -616,9 +627,7 @@ local function askNickname(ctx, mon)
         runner:resume()
       end,
     })
-  end))
-  runner:yield()
-  ctx.lastCheck = success
+  end })
 end
 
 -- give_pokemon <species> <level>: _GivePokemon (engine/events/

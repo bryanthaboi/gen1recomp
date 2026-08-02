@@ -73,6 +73,21 @@ of the build script's permission trim). The first
 read runs immediately (`onRequestPermissionsResult`,
 `STEP_PERMISSION_REQUEST_CODE`).
 
+### Network transport (mod index / mod updates)
+
+`love.system.httpDownload(url, absPath [, userAgent [, accept]])` ->
+`GameActivity.httpDownload` (same JNI route as the picker and the step
+bridge: `common/android.cpp` -> `modules/system/System.cpp` ->
+`wrap_System.cpp`). Android ships no `curl`, which is what the desktop
+builds fetch the mod index, mod release lists and mod zips with, so the
+"Find mods" tab used to fail with "curl is not available on this
+platform" (#597). The Java side is a blocking `HttpsURLConnection` GET
+(https only, redirects followed by hand, body renamed into place only
+once complete) and runs on LOVE's Lua thread, never the UI thread.
+`src/core/HostShell.lua` picks the transport: curl when present,
+otherwise this bridge; an APK older than the bridge simply reports no
+transport, exactly as a missing curl does.
+
 ### SDK / NDK
 
 love-android 11.5a expects:
@@ -107,7 +122,7 @@ scripts, tests, and mobile build sources are excluded.
 | `app.name` | Pokemon Red |
 | `app.orientation` | `fullUser`. This is only the manifest default: SDL requests FULL_SENSOR at window creation (resizable window, no `SDL_HINT_ORIENTATIONS`), and `GameActivity.setOrientationBis` remaps that to FULL_USER so the device's rotation lock is honoured. |
 | `app.version_name` / `app.version_code` | set from `--version X.Y.Z` (code = major*10000 + minor*100 + patch); left as-is if `--version` is omitted |
-| Permissions | INTERNET / RECORD_AUDIO / WRITE_EXTERNAL_STORAGE stripped; VIBRATE + BLUETOOTH kept |
+| Permissions | RECORD_AUDIO / WRITE_EXTERNAL_STORAGE stripped; VIBRATE + BLUETOOTH + INTERNET (link play, mod index) + ACTIVITY_RECOGNITION (step bridge) kept |
 
 ## Releases
 

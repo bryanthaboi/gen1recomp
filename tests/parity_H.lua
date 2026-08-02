@@ -40,9 +40,12 @@ end
 check(sf.SEAFOAM_ISLANDS_B3F and #sf.SEAFOAM_ISLANDS_B3F.holes == 2,
       "SEAFOAM_ISLANDS_B3F still has its own 2 holes (B3F->B4F, unrelated to this change)")
 
--- data/scripts/seafoam.lua no longer force-shows the B2F boulders on entry
+-- data/scripts/seafoam.lua no longer force-shows the B2F boulders on entry.
+-- The map DOES own an onStep now (the player's hole falls, #599), so the
+-- assertion is about onEnter specifically, not about the map table.
 local seafoamScripts = require("data.scripts.seafoam")
-check(seafoamScripts.SEAFOAM_ISLANDS_B2F == nil,
+check(seafoamScripts.SEAFOAM_ISLANDS_B2F == nil
+        or seafoamScripts.SEAFOAM_ISLANDS_B2F.onEnter == nil,
       "data/scripts/seafoam.lua no longer hardcodes a SEAFOAM_ISLANDS_B2F onEnter hook")
 
 -- === (2) functional 1F -> B1F -> B2F -> B3F -> B4F cascade ===

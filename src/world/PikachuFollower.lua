@@ -789,12 +789,60 @@ function PikachuFollower.onBillsHouseEnter(game, ow)
     return
   end
   if game.save.flags.EVENT_MET_BILL_2 then return end
+  -- BillsHouseScript0 (scripts/BillsHouse.asm:41-47) only runs the confused
+  -- walk while CheckPikachuStatusCondition comes back clear
+  -- (engine/pikachu/pikachu_status.asm:140, carry when the starter's status
+  -- byte is nonzero); a statused starter keeps trailing the player instead,
+  -- and that is the one state that lets onBillWalksAroundPlayer below fire,
+  -- since the confused beat ends in DisablePikachuFollowingPlayer (#455).
+  local starter = PikachuFollower.starterInParty(game.save)
+  if starter and starter.status then return end
   local npc = findFollower(ow)
   if not npc then return end
   ow.pikachuBillsScene = true
   movePikachu(ow, npc, { { "right", 3 }, { "up", 1 } }, function()
     billsHouseEmotion(game, ow, npc, "QUESTION_BUBBLE")
   end)
+end
+
+-- BillsHousePikachuWatchPlayer (scripts/BillsHouse_2.asm:133-156), reached
+-- from BillsHouseScript2 (scripts/BillsHouse.asm:58-69) only when the player
+-- faces down -- so Bill has to walk around them -- and Pikachu is still
+-- following, i.e. the confused beat above was skipped.  Both tables go
+-- through TryApplyPikachuMovementData
+-- (engine/events/try_pikachu_movement.asm:1-15), which keeps the data only
+-- when the caller's b equals GetPikachuFacingDirectionAndReturnToE
+-- (engine/pikachu/pikachu_follow.asm:1110-1151).  That byte is not the
+-- sprite's facing: it is Pikachu's position relative to the player, UP when
+-- Pikachu's MapY sits above the player's, DOWN below, and on a shared row
+-- LEFT when west, RIGHT when east ($ff on the same cell).  So WatchPlayer1
+-- (b = SPRITE_FACING_UP) means "Pikachu stands above the player" and
+-- WatchPlayer2 (b = SPRITE_FACING_RIGHT) means "Pikachu stands level with
+-- and east of the player".  ApplyPikachuMovementData_ walks a whole table
+-- synchronously (engine/pikachu/pikachu_movement.asm:9-18), so the second
+-- call does observe the finished walk; the two are mutually exclusive by
+-- geometry rather than by timing, since both routes end at
+-- (playerX - 1, playerY), west of the player, where the RIGHT test fails.
+-- Each closes on PIKAMOVEMENT_LOOK_RIGHT, leaving Pikachu watching the
+-- player while Bill talks; PIKAMOVEMENT_DELAY is dropped here as in the
+-- beats above (#455).
+function PikachuFollower.onBillWalksAroundPlayer(game, ow)
+  if not (GameVersion.isYellow() and ow.map and ow.map.id == "BILLS_HOUSE")
+     or ow.pikachuBillsScene then
+    return
+  end
+  local npc = findFollower(ow)
+  if not npc or not ow.player then return end
+  local steps
+  if npc.cellY < ow.player.cellY then       -- PikachuMovement_WatchPlayer1
+    steps = { { "left", 1 }, { "down", 1 } }
+  elseif npc.cellY == ow.player.cellY
+     and npc.cellX > ow.player.cellX then   -- PikachuMovement_WatchPlayer2
+    steps = { { "up", 1 }, { "left", 2 }, { "down", 1 } }
+  else
+    return
+  end
+  movePikachu(ow, npc, steps, function() npc.facing = "right" end)
 end
 
 function PikachuFollower.onBillEnteredMachine(game, ow)

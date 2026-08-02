@@ -461,6 +461,27 @@ def extract_sprites(rom, symbols, manifest, out_dir, assets_dir):
         "walker": bike_frames >= 6,
     }
 
+    # Yellow-only: the surfing-Pikachu overworld ride sheet, loaded
+    # outside SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) --
+    # same extra extract as RedBikeSprite. (RFC 0001)
+    surf = manifest["sprites"].get("surfPikachu")
+    if surf and _has_symbol(symbols, surf["label"]):
+        surf_symbol = _symbol(symbols, surf["label"])
+        surf_length = surf["imageWidth"] * surf["imageHeight"] // 4
+        _write_2bpp_png(
+            rom.bytes(surf_symbol.bank, surf_symbol.address, surf_length),
+            surf["imageWidth"], surf["imageHeight"],
+            os.path.join(assets_dir, "sprites", surf["imageBase"] + ".png"),
+            transparent_color0=True)
+        surf_frames = surf["imageHeight"] // 16
+        out["SPRITE_SURFING_PIKACHU"] = {
+            "id": "SPRITE_SURFING_PIKACHU",
+            "source": f"ROM:{surf['label']}",
+            "image": f"assets/generated/sprites/{surf['imageBase']}.png",
+            "frames": surf_frames,
+            "walker": surf_frames >= 6,
+        }
+
     util.write_lua(
         os.path.join(out_dir, "sprites.lua"), out,
         header="Source: canonical Pokemon Red ROM (overworld sprite sheets)")

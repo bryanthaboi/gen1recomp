@@ -1,0 +1,17 @@
+{
+  "name": "gen1recomp App Repo",
+  "identifier": "com.theboisclub.gen1recomp.repo",
+  "iconURL": "https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/assets/logo/logo.png",
+  "apps": [
+    {
+      "name": "gen1recomp",
+      "bundleIdentifier": "com.theboisclub.gen1recomp",
+      "developerName": "bryanthaboi",
+      "iconURL": "https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/assets/logo/logo.png",
+      "localizedDescription": "Gen1Recomp - A native Lua / LÖVE2D recreation of Gen 1 Poke",
+      "tintColor": "3b5ca8",
+      "category": "games",
+      "versions": []
+    }
+  ]
+}

@@ -595,4 +595,16 @@ steps = 0
 FixedStep:update(1 / 60)
 T.eq(steps, 1, "and the clamp expires after that one frame")
 
+-- ...and the absorbed frame must not hand the accumulator back sitting on a
+-- step boundary.  A residual of zero has no margin on the long side, so the
+-- accumulator settles a hair under one step and stays there, flipping between
+-- 0 and 2 steps on sub-millisecond frame wobble for the rest of the session,
+-- which is what made pacing erratic forever after a route seam (issue #487).
+FixedStep:init(function() steps = steps + 1 end)
+FixedStep:discardCatchup()
+FixedStep:update(0.25)
+T.check(FixedStep.accum > FixedStep.STEP * 0.25
+        and FixedStep.accum < FixedStep.STEP * 0.75,
+  "the absorbed hitch frame leaves the accumulator mid-step, not on a boundary")
+
 T.finish("timing parity")

@@ -33,13 +33,22 @@ local MAX_COLS = 18
 -- up: StateStack updates the top state only, so the overworld and its
 -- ScriptRunner are frozen underneath (the Pewter JIGGLYPUFF dance drives
 -- its spin off it, data/scripts/story5.lua, #249).
+-- opts.stay: text that ends in `done` rather than `prompt` returns from
+-- PrintText with the box still on screen while the caller keeps running
+-- (_ViridianSchoolBlackboardText2, data/text/text_2.asm:646).  Such a box
+-- waits for nothing, shows no blinking arrow, and never pops itself --
+-- whoever pushed it owns the pop.  stay.onShown fires once, on the frame
+-- the last page finishes typing, which is where the caller pushes whatever
+-- goes on top of it (#591).
 function TextBox.new(game, text, onDone, opts)
   local self = setmetatable({}, TextBox)
   self.game = game
   self.onDone = onDone
   self.choice = opts and opts.choice
   self.defaultNo = opts and opts.defaultNo
+  self.choiceNoSound = opts and opts.noSound
   self.auto = opts and opts.auto
+  self.stay = opts and opts.stay
   local box = Theme.textBox or {}
   self.boxTx = box.tx or BOX_TX
   self.boxTy = box.ty or BOX_TY
@@ -186,6 +195,16 @@ function TextBox:update(dt)
     return
   end
   if self.done then
+    -- opts.stay: the box is finished but stays up under whatever the caller
+    -- pushed over it; StateStack updates the top state only, so this runs
+    -- exactly once (#591)
+    if self.stay then
+      if not self.stayShown then
+        self.stayShown = true
+        if self.stay.onShown then self.stay.onShown() end
+      end
+      return
+    end
     if self.auto then
       if not self.autoStarted then
         self.autoStarted = true
@@ -240,7 +259,9 @@ function TextBox:update(dt)
         self.game.stack:push(ChoiceBox.new(self.game, function(yes)
           self.game.stack:pop() -- this text box, under the choice
           self.choice(yes)
-        end, { defaultNo = self.defaultNo }))
+        end, { defaultNo = self.defaultNo, noSound = self.choiceNoSound,
+               -- this box is anchored below it; the pair moves together
+               anchor = "bottom" }))
       end
       return
     end
@@ -353,7 +374,8 @@ function TextBox:draw()
       Font.drawCode(code, self.textX + (j - 1) * 8, y)
     end
   end
-  if (self.waiting or (self.done and not self.choice and not self.auto))
+  if (self.waiting or (self.done and not self.choice and not self.auto
+                       and not self.stay))
      and self.blink < 30 then
     -- page-advance cursor: glyph $EE by default, the blinking down arrow
     -- the original prints via `ld a, "▼"` (home/text.asm)

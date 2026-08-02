@@ -4,9 +4,10 @@
 --
 -- The picker is a searchable list rather than the old pair of arrows that
 -- cycled one id at a time through ~250 items, which was the single worst
--- interaction in the editor.  Badges sit in the wallet column as toggle
--- chips because they are boolean inventory flags, not stackable items, and
--- must not look like quantity rows.
+-- interaction in the editor.  It scrolls under the mouse wheel too (#595):
+-- typing used to be the only way to reach an id past the first screenful.
+-- Badges sit in the wallet column as toggle chips because they are boolean
+-- inventory flags, not stackable items, and must not look like quantity rows.
 
 local Bag = require("src.inventory.Bag")
 local Theme = require("Theme")
@@ -97,8 +98,12 @@ function M.draw(S, Kit, x, y, w, h)
   Kit.card(x, pickY, leftW, pickH)
   Kit.caption(x + pad, pickY + pad, "ADD ITEM")
   local qy = pickY + pad + Kit.textHeight("caption") + 8 * s
+  local prevQuery = S.itemQuery or ""
   S.itemQuery = Kit.textfield("item-query", x + pad, qy, leftW - 2 * pad, 32 * s,
     S.itemQuery or "", "search item ids...")
+  -- a new query is a new list: keep the first hit on screen rather than
+  -- leaving the view parked wherever the old result set had scrolled to
+  if S.itemQuery ~= prevQuery then S.itemPickOffset = 0 end
 
   local choices = {}
   for _, id in ipairs(S.cat.items) do
@@ -117,9 +122,14 @@ function M.draw(S, Kit, x, y, w, h)
   local cRowH = 28 * s
   local cGap = 5 * s
   local visible = math.max(1, math.floor((listBottom - listTop) / (cRowH + cGap)))
+  -- #595: the wheel drives the same offset a pager would, so the whole
+  -- catalog is reachable with the mouse alone.  Kit.scroll clamps, which is
+  -- also what pulls the view back when a narrower query shortens the list.
+  S.itemPickOffset = Kit.scroll(x + pad, listTop, leftW - 2 * pad,
+    listBottom - listTop, S.itemPickOffset or 0, #choices, visible)
   Kit.pushClip(x + pad, listTop, leftW - 2 * pad, listBottom - listTop)
-  for i = 1, math.min(visible, #choices) do
-    local id = choices[i]
+  for i = 1, math.min(visible, #choices - S.itemPickOffset) do
+    local id = choices[S.itemPickOffset + i]
     local ry = listTop + (i - 1) * (cRowH + cGap)
     if Kit.row(x + pad, ry, leftW - 2 * pad, cRowH, id == S.selectedItemId,
         PAL.green, 8 * s) then
@@ -130,10 +140,11 @@ function M.draw(S, Kit, x, y, w, h)
       x + pad + 10 * s, ry + (cRowH - Kit.textHeight("mono")) / 2, PAL.text)
   end
   Kit.popClip()
-  -- the overflow count rides the caption line, where it can never collide
+  -- the position counter rides the caption line, where it can never collide
   -- with the list body or the two add buttons below it
   if #choices > visible then
-    Kit.textRight("micro", ("+%d more"):format(#choices - visible),
+    Kit.textRight("micro", ("%d-%d of %d"):format(S.itemPickOffset + 1,
+      math.min(S.itemPickOffset + visible, #choices), #choices),
       x + leftW - pad, pickY + pad, PAL.faint)
   elseif #choices == 0 then
     Kit.text("mono", "no item matches", x + pad + 10 * s, listTop + 8 * s, PAL.faint)
@@ -195,6 +206,9 @@ function M.draw(S, Kit, x, y, w, h)
   local rowGap = 6 * s
   local perPage = math.max(1, math.floor((pagerY - 12 * s - rowsTop) / (rowH + rowGap)))
   S.bagOffset = Ops.clamp(S.bagOffset or 0, 0, math.max(0, #order - perPage))
+  -- the wheel moves the same offset the pager below does (#595)
+  S.bagOffset = Kit.scroll(bagX + pad, rowsTop, listW - 2 * pad,
+    pagerY - 12 * s - rowsTop, S.bagOffset, #order, perPage)
 
   if #order == 0 then
     Kit.emptyBox(bagX + pad, rowsTop, listW - 2 * pad, 70 * s, "Bag is empty.")
@@ -221,6 +235,8 @@ function M.draw(S, Kit, x, y, w, h)
   Kit.textRight("mono", ("%d kinds"):format(#pcOrder), pcX + listW - pad,
     y + pad, PAL.caption)
   S.pcOffset = Ops.clamp(S.pcOffset or 0, 0, math.max(0, #pcOrder - perPage))
+  S.pcOffset = Kit.scroll(pcX + pad, rowsTop, listW - 2 * pad,
+    pagerY - 12 * s - rowsTop, S.pcOffset, #pcOrder, perPage)
   if #pcOrder == 0 then
     Kit.emptyBox(pcX + pad, rowsTop, listW - 2 * pad, 70 * s,
       "PC storage is empty. Items sent here have no slot cap.")

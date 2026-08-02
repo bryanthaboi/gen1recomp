@@ -22,7 +22,6 @@ if not pcall(Font.encode, "A") then Font.load(Data) end
 require("data.scripts.init")
 local MapScripts = require("src.script.MapScripts")
 local TextBox = require("src.render.TextBox")
-local Menu = require("src.ui.Menu")
 local S = require("tests.harness").suite("parity Viridian School blackboard/notebook (#503)")
 local check, eq = S.check, S.eq
 
@@ -69,7 +68,7 @@ for _, cell in ipairs({ { 4, 0 }, { 3, 1 }, { 4, 4 }, { 3, 3 }, { 2, 0 } }) do
      ("(%d,%d) is not one of the readables"):format(cell[1], cell[2]))
 end
 
--- === the blackboard: intro -> prompt -> 6-item menu (5 statuses + QUIT) ===
+-- === the blackboard: intro -> held prompt with a two-column list over it ===
 stack = {}
 eq(hooks.onInteract(game, ow, 3, 0), true, "the blackboard at (3,0) is claimed")
 local intro = stack[#stack]
@@ -83,16 +82,29 @@ local prompt = stack[#stack]
 check(getmetatable(prompt) == TextBox
         and pages(prompt):find("heading", 1, true) ~= nil,
       "the intro leads into the which-heading prompt")
-prompt.onDone()
+-- #591: _ViridianSchoolBlackboardText2 ends in `done`, so .blackboardLoop
+-- leaves it on screen and runs HandleMenuInput under it; the port used to
+-- make the player dismiss it and then hid it while the list was up
+check(prompt.onDone == nil and prompt.stay ~= nil,
+      "the prompt is held open instead of waiting for A and popping")
+prompt.stay.onShown()
 
-local menu = stack[#stack]
-check(getmetatable(menu) == Menu, "the prompt opens the status menu")
-eq(#menu.items, 6, "five statuses plus QUIT")
+local board = stack[#stack]
+check(getmetatable(board) ~= TextBox and type(board.draw) == "function",
+      "the held prompt opens the headings list over itself")
+eq(stack[#stack - 1], prompt, "the list sits on the still-visible prompt box")
 local labels = {}
-for i, item in ipairs(menu.items) do labels[i] = (item.label or ""):gsub("^%s+", "") end
+for i, label in ipairs(board.labels) do labels[i] = label:gsub("^%s+", "") end
 eq(table.concat(labels, "/"), "SLP/PSN/PAR/BRN/FRZ/QUIT",
    "the statuses read SLP/PSN/PAR/BRN/FRZ, QUIT last")
-eq(menu.items[6].onSelect, nil, "QUIT has no onSelect; Menu's own B/pop closes it")
+-- two columns: StatusAilmentText1 at hlcoord 1,2 and StatusAilmentText2 at
+-- hlcoord 6,2, RIGHT keeping the row and adding wMenuItemOffset 3
+board.col, board.row = 1, 1
+eq(board:selection(), 1, "top of the left column is SLP")
+board.col, board.row = 2, 1
+eq(board:selection(), 4, "RIGHT keeps the row and lands on BRN (offset 3)")
+board.col, board.row = 2, 3
+eq(board:selection(), 6, "bottom of the right column is QUIT")
 
 local STATUS_KEYS = {
   "_ViridianBlackboardSleepText", "_ViridianBlackboardPoisonText",
@@ -100,8 +112,9 @@ local STATUS_KEYS = {
   "_ViridianBlackboardFrozenText",
 }
 for i, key in ipairs(STATUS_KEYS) do
-  stack = {}
-  menu.items[i].onSelect()
+  stack = { prompt, board } -- picking pops the list AND the box under it
+  board.onPick(i)
+  eq(#stack, 1, labels[i] .. " clears the list and the prompt it sat on")
   local blurb = stack[#stack]
   check(getmetatable(blurb) == TextBox, labels[i] .. " prints a text box")
   local want = Data.text[key]:match("^[^\n\011\012]+")
@@ -110,12 +123,31 @@ for i, key in ipairs(STATUS_KEYS) do
   check(type(blurb.onDone) == "function",
         labels[i] .. " returns to the prompt instead of dropping out (loops)")
   blurb.onDone()
-  check(getmetatable(stack[#stack]) == TextBox,
-        "the prompt comes back after " .. labels[i])
-  stack[#stack].onDone()
-  check(getmetatable(stack[#stack]) == Menu,
-        "the menu comes back after " .. labels[i] .. " (loop, not exit)")
+  local back = stack[#stack]
+  check(getmetatable(back) == TextBox and back.stay ~= nil,
+        "the held prompt comes back after " .. labels[i])
+  back.stay.onShown()
+  check(stack[#stack].labels ~= nil,
+        "the list comes back after " .. labels[i] .. " (loop, not exit)")
 end
+
+-- #591: wCurrentMenuItem / wMenuItemOffset are zeroed once above
+-- .blackboardLoop, so `jp .blackboardLoop` after a blurb comes back with the
+-- cursor on the row and column that was just picked (read FRZ, land on FRZ)
+stack = { prompt, board }
+board.col, board.row = 2, 2
+eq(board:selection(), 5, "right column, middle row is FRZ")
+board.onPick(5)
+stack[#stack].onDone()
+stack[#stack].stay.onShown()
+eq(stack[#stack], board, "the same headings list comes back, not a fresh one")
+eq(board.col, 2, "the column survives the blurb (wMenuItemOffset is not recleared)")
+eq(board.row, 2, "the row survives the blurb (wCurrentMenuItem is not recleared)")
+
+-- QUIT and B share .exitBlackboard: both close the list and the prompt
+stack = { prompt, board }
+board.onQuit()
+eq(#stack, 0, "QUIT/B closes the headings list and the prompt box together")
 
 -- === the notebook: five pages, three yes/no turns, then the girl catches you ==
 stack = {}

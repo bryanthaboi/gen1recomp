@@ -230,6 +230,20 @@ bool System::restartApp() const
 #endif
 }
 
+bool System::httpDownload(const char *url, const char *destPath,
+	const char *userAgent, const char *accept) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::httpDownload(url, destPath, userAgent, accept);
+#else
+	LOVE_UNUSED(url);
+	LOVE_UNUSED(destPath);
+	LOVE_UNUSED(userAgent);
+	LOVE_UNUSED(accept);
+	return false;
+#endif
+}
+
 bool System::hasBackgroundMusic() const
 {
 #if defined(LOVE_ANDROID)
