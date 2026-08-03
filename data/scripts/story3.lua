@@ -546,24 +546,53 @@ M.GAME_CORNER = {
     -- object const and from every one of his text labels
     -- (GameCornerClerkText, pokeyellow/scripts/GameCorner.asm) with an
     -- identical body, so each line resolves under both spellings and the
-    -- handler is bound to both text ids just below (#552).
+    -- handler is bound to both text ids just below (#552).  The original
+    -- frames the exchange with GameCornerDrawCoinBox -- the MONEY/COIN
+    -- box top-right, drawn before the offer and redrawn after the sale --
+    -- and the question stays up while the YES/NO box sits over it (#624).
     TEXT_GAMECORNER_CLERK1 = function(game, ow, npc, done)
       local TextBox = require("src.render.TextBox")
-      local ChoiceBox = require("src.ui.ChoiceBox")
+      local Font = require("src.render.Font")
       local t = game.data.text
       local function line(suffix, fallback)
         return t["_GameCornerClerk1" .. suffix]
                or t["_GameCornerClerk" .. suffix]
                or fallback
       end
+      -- The coin box is a draw-only stack state: it reads the save every
+      -- frame, so the post-sale redraw the asm does by hand happens on
+      -- its own.  hlcoord 11,0 with a 7x5 interior (TextBoxBorder b=5,
+      -- c=7), MONEY/¥ on rows 2-3 and COIN/coins on rows 4-5, both
+      -- amounts leading-zeroed like PrintBCDNumber's LEADING_ZEROES.
+      local coinBox = { game = game }
+      function coinBox:draw()
+        Font.drawBox(11, 0, 9, 7)
+        love.graphics.setColor(0, 0, 0, 1)
+        Font.draw("MONEY", 96, 16)
+        Font.draw(("¥%06d"):format(game.save.money), 96, 24)
+        Font.draw("COIN", 96, 32)
+        Font.draw(("%04d"):format(game.save.coins or 0), 120, 40)
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+      game.stack:push(coinBox)
+      local function finish()
+        -- remove in place: the box sits under whichever text is closing
+        local states = game.stack.states
+        for i = #states, 1, -1 do
+          if states[i] == coinBox then table.remove(states, i) break end
+        end
+        done()
+      end
       game.stack:push(TextBox.new(game,
         line("DoYouNeedSomeGameCoinsText",
-             "Do you need some\ngame coins?\f¥1000 for 50."), function()
-        game.stack:push(ChoiceBox.new(game, function(yes)
+             "Do you need some\ngame coins?\f¥1000 for 50."), nil, {
+        -- opts.choice pops the YES/NO up over the still-visible question,
+        -- PrintText + YesNoChoice style, instead of after it (#624)
+        choice = function(yes)
           if not yes then
             game.stack:push(TextBox.new(game,
               line("PleaseComePlaySometimeText",
-                   "No? Please come\nplay sometime!"), done))
+                   "No? Please come\nplay sometime!"), finish))
             return
           end
           -- scripts/GameCorner.asm GameCornerClerk1Text: coins need
@@ -571,29 +600,28 @@ M.GAME_CORNER = {
           if not game.save.inventory.COIN_CASE then
             game.stack:push(TextBox.new(game,
               line("DontHaveCoinCaseText",
-                   "You don't have a\nCOIN CASE!"), done))
+                   "You don't have a\nCOIN CASE!"), finish))
             return
           end
           if (game.save.coins or 0) >= 9990 then
             game.stack:push(TextBox.new(game,
               line("CoinCaseIsFullText",
-                   "Oops! Your COIN\nCASE is full."), done))
+                   "Oops! Your COIN\nCASE is full."), finish))
             return
           end
           if game.save.money < 1000 then
             game.stack:push(TextBox.new(game,
               line("CantAffordTheCoinsText",
-                   "You can't afford\nthe coins!"), done))
+                   "You can't afford\nthe coins!"), finish))
             return
           end
           game.save.money = game.save.money - 1000
           game.save.coins = math.min(9999, (game.save.coins or 0) + 50)
           game.stack:push(TextBox.new(game,
             line("ThanksHereAre50CoinsText",
-                 "Thanks! Here are\nyour 50 coins!")
-            .. ("\fCOINS: %d"):format(game.save.coins), done))
-        end))
-      end))
+                 "Thanks! Here are\nyour 50 coins!"), finish))
+        end,
+      }))
     end,
   },
 }

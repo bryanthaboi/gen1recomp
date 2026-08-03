@@ -53,11 +53,14 @@ local sawChoice = false
 
 -- One conversation, start to finish.  `answer` is which row of the YES/NO
 -- box to take; the loop mashes A the way a player does and nudges the
--- cursor down once when the choice box comes up.
+-- cursor down once when the choice box comes up.  The MONEY/COIN box is a
+-- plain draw-only table under the text boxes (#624), so it is the one
+-- stack entry with a draw and no metatable.
 local function talk(save, answer)
   Game.save = save
   StateStack:init()
   shown, sawChoice = {}, false
+  local sawCoinBox = false
   local done = false
   local ow = { map = { id = "GAME_CORNER", def = Data.maps.GAME_CORNER },
                npcs = {}, entities = {} }
@@ -67,6 +70,11 @@ local function talk(save, answer)
   for _ = 1, 2000 do
     local top = StateStack:top()
     if not top then break end
+    for _, state in ipairs(StateStack.states) do
+      if type(state.draw) == "function" and getmetatable(state) == nil then
+        sawCoinBox = true
+      end
+    end
     if getmetatable(top) == ChoiceBox then
       sawChoice = true
       if answer == "no" and not moved then
@@ -81,7 +89,7 @@ local function talk(save, answer)
     StateStack:update(1 / 60)
   end
   Input.pressed = {}
-  return done
+  return done, sawCoinBox
 end
 
 local function newSave(money, coins, caseToo)
@@ -102,13 +110,16 @@ end
 -- ------------------------------------------------------- the sale itself
 do
   local save = newSave(1000, 0)
-  check(talk(save, "yes"), "the buy conversation runs to the end")
+  local finished, sawCoinBox = talk(save, "yes")
+  check(finished, "the buy conversation runs to the end")
   check(sawChoice, "the clerk opens a real YES/NO box, not just a line (#552)")
+  check(sawCoinBox, "the MONEY/COIN box rides the exchange (#624)")
   eq(#shown, 2, "two boxes: the offer and the receipt")
   check(said("¥1000 for 50"), "the offer quotes ¥1000 for 50 coins")
   eq(save.money, 0, "¥1000 leaves the wallet")
   eq(save.coins, 50, "50 coins land in the case")
-  check(said("COINS: 50"), "the receipt prints the new coin total")
+  check(not said("COINS: 50"),
+    "the receipt skips the coin tally; the coin box already shows it")
 end
 
 -- ---------------------------------------------------------------- saying no
