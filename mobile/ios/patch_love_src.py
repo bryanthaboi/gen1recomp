@@ -13,7 +13,7 @@ What it does:
      calls a GR*Bridge Swift class through the Objective-C runtime, so
      liblove never links against Swift directly).
   3. Patches love.xcodeproj so the love-ios app target compiles the native
-     files (Swift 5, iOS 14 deployment for UTType/forExporting APIs).
+     files (Swift 5, iOS 16 deployment -- Xcode 26+ refuses lower).
 """
 
 import re
@@ -265,9 +265,26 @@ def patch_pbxproj():
     )
     text = text[: m.end()] + insertion + text[m.end():]
 
+    # liblove.xcodeproj as well as the app target.
+    #
+    # Upstream leaves the static library at its historical 8.0.  Xcode 26 and
+    # later refuse a deployment target below 12.0 outright, so patching only
+    # the app project leaves the build failing inside liblove -- reported
+    # against a project this script never touches, which is a confusing
+    # place to land.
+    lib_proj = PBXPROJ.parent.parent / "liblove.xcodeproj" / "project.pbxproj"
+    if lib_proj.is_file():
+        lib_text = lib_proj.read_text(encoding="utf-8")
+        lib_new, n = re.subn(r"IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;",
+                             "IPHONEOS_DEPLOYMENT_TARGET = 16.0;", lib_text)
+        if n and lib_new != lib_text:
+            lib_proj.write_text(lib_new, encoding="utf-8")
+            print(f"patch_love_src: liblove.xcodeproj deployment target "
+                  f"-> 16.0 ({n} configuration(s))")
+
     # Swift + modern deployment target + HealthKit entitlements on the
     # love-ios app target only (UTType and forExporting need iOS 14;
-    # liblove stays as upstream).
+    # liblove is raised alongside it, above).
     for config_id in IOS_APP_CONFIG_IDS:
         cfg_re = re.compile(
             re.escape(config_id) + r" /\* \w+ \*/ = \{.*?buildSettings = \{\n",
@@ -277,7 +294,7 @@ def patch_pbxproj():
             fail(f"build configuration {config_id} not found")
         settings = (
             "\t\t\t\tSWIFT_VERSION = 5.0;\n"
-            "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 14.0;\n"
+            "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 16.0;\n"
             '\t\t\t\tCODE_SIGN_ENTITLEMENTS = "ios/native/love-ios.entitlements";\n'
         )
         text = text[: m.end()] + settings + text[m.end():]
