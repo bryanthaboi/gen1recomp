@@ -754,6 +754,10 @@ end
 -- A disconnected/dropped controller can't send the button-up for whatever
 -- it was holding, so drop all input state rather than try to guess which
 -- flags it owned.
+function Game:joystickadded(joystick)
+  TouchControls:joystickadded()
+end
+
 function Game:joystickremoved(joystick)
   Input:reset()
   TouchControls:joystickremoved()

@@ -52,7 +52,7 @@ local CALLBACK_NAMES = {
   "touchpressed", "touchmoved", "touchreleased",
   "gamepadpressed", "gamepadreleased", "gamepadaxis",
   "joystickpressed", "joystickreleased", "joystickaxis", "joystickhat",
-  "joystickremoved",
+  "joystickadded", "joystickremoved",
   "focus", "visible", "resize", "filedropped", "directorydropped",
   "errorhandler", "threaderror", "lowmemory",
 }

@@ -210,6 +210,10 @@ end
 function TouchControls:applyOptions(opts)
   local cfg = TouchControls.normalizeConfig(opts and opts.touchControls)
   self.enabled = cfg.enabled
+  -- Default ON: plugging a controller in already says which input the player
+  -- wants, so the overlay steps aside for it.  == false so a missing option
+  -- keeps the new behaviour rather than needing a migration.
+  self.autoHide = not (opts and opts.touchAutoHide == false)
   self.layouts = cfg.layouts
   self.layoutW, self.layoutH = nil, nil
   self.layoutOx, self.layoutOy = nil, nil
@@ -501,11 +505,29 @@ end
 
 -- last controller unplugged: show the overlay again immediately instead
 -- of requiring a blind first tap
+-- A controller has been connected.  noteGamepad already hides the overlay on
+-- the first button or stick USE, but until then the pad sits over the screen
+-- next to a controller the player has clearly chosen -- and on a fresh boot
+-- with a pad already paired, it sits there until something is pressed.
+-- Connecting is itself the statement of intent.
+--
+-- Never resurrects an overlay the player disabled outright, and never fires
+-- where there is no overlay to hide.
+function TouchControls:joystickadded()
+  if self.autoHide == false then return end
+  if not self.active or self.enabled == false then return end
+  self.controllerHidden = true
+  self:reset()
+end
+
 function TouchControls:joystickremoved()
   self:reset()
   if love.joystick and love.joystick.getJoystickCount
      and love.joystick.getJoystickCount() == 0 then
-    self.controllerHidden = false
+    -- With auto-hide off the player is driving this by hand and a disconnect
+    -- must not override them.  With it on, a controller going flat has to
+    -- give the pad back -- there is nothing else to play with.
+    if self.autoHide ~= false then self.controllerHidden = false end
   end
 end
 

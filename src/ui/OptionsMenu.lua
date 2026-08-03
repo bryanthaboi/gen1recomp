@@ -423,6 +423,18 @@ local function buildRows(game)
         require("src.core.TouchControls"):applyOptions(o)
         return true
       end },
+    -- Sits next to the pad it governs.
+    { id = "touchAutoHide", label = Strings("AUTO HIDE PAD"),
+      value = function(g)
+        return (g.save.options.touchAutoHide == false)
+          and Strings("OFF") or Strings("ON")
+      end,
+      step = function(g)
+        local o = g.save.options
+        o.touchAutoHide = (o.touchAutoHide == false)
+        require("src.core.TouchControls"):applyOptions(o)
+        return true
+      end },
   }
   -- issue #136: hide GBC FX on Android/iOS -- the present shader soft-bricks
   if not GBCFX.isSupported() then

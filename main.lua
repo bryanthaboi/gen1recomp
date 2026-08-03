@@ -413,6 +413,14 @@ function love.visible(v)
   Game:visible(v)
 end
 
+-- A controller appearing is a statement of intent: the on-screen pad steps
+-- aside for it (TouchControls:joystickadded), and comes back when the last
+-- one is unplugged.
+function love.joystickadded(joystick)
+  if editorMode or TouchEditor or Importer then return end
+  if Game and Game.joystickadded then Game:joystickadded(joystick) end
+end
+
 function love.touchpressed(id, x, y, dx, dy, pressure)
   if editorMode then return end
   if TouchEditor then
