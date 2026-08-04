@@ -807,7 +807,7 @@ local function buildRomCard(imp, parent, m, version, info, ready, locked)
 
   local accent = version == "yellow" and "gold" or version
   local c = card(parent, { padding = m.cardPad, gap = 8 * m.s })
-  label(c, "ROM", 12 * m.s + 1, C("gray"))
+  label(c, Strings("ROM"), 12 * m.s + 1, C("gray"))
   label(c, romState, 15 * m.s + 2, C("white"))
   label(c, romDetail, 12 * m.s + 2, C("detail"))
   if romProgress ~= nil then
@@ -847,7 +847,7 @@ local function buildSaveFilesCard(imp, parent, m, version, ready, locked)
   local savImportLabel = imp.isNX and Strings("Scan again") or Strings("Import save")
 
   local c = card(parent, { padding = m.cardPad, gap = 8 * m.s })
-  label(c, "SAVE FILES", 12 * m.s + 1, C("gray"))
+  label(c, Strings("SAVE FILES"), 12 * m.s + 1, C("gray"))
   local row = mk({ parent = c, width = "100%",
     positioning = "flex", flexDirection = "horizontal", gap = 10 * m.s })
   -- explicit halves rather than flex growth, which mis-distributed inside
@@ -889,7 +889,7 @@ local function buildSlotCard(imp, parent, m, version)
   local head = mk({ parent = c, width = "100%",
     positioning = "flex", flexDirection = "horizontal",
     justifyContent = "space-between", alignItems = "center" })
-  label(head, "SAVE SLOT", 12 * m.s + 1, C("gray"), { textWrap = false })
+  label(head, Strings("SAVE SLOT"), 12 * m.s + 1, C("gray"), { textWrap = false })
   label(head, n == 1 and Strings("1 slot") or Strings("%d slots", n),
     12 * m.s + 1, C("gray"), { textWrap = false })
 
@@ -983,10 +983,14 @@ local function buildSlotCard(imp, parent, m, version)
       })
     end
     local armed = deleteArmed(imp, "slot", slot.id, version)
-    -- width pinned to the unarmed label so arming to "Sure?" never reflows
-    -- the row under the pointer (#433)
+    -- width pinned so arming to "Sure?" never reflows the row under the
+    -- pointer (#433).  Pinned to the wider of the two captions, not to the
+    -- unarmed one: English "Delete" is the longer of the pair, but a
+    -- translation need not keep that order (Japanese さくじょ is shorter than
+    -- よろしい？), and pinning to the shorter one clips the other.
     button(imp, btnRow, rowKey .. "-del", DELETE_LABEL(armed), {
-      w = math.ceil(textWidth(chipSize, DELETE_LABEL(false))) + 26,
+      w = math.ceil(math.max(textWidth(chipSize, DELETE_LABEL(false)),
+                             textWidth(chipSize, DELETE_LABEL(true)))) + 26,
       size = chipSize, kind = armed and "dangerArmed" or "danger",
       keepArm = true,
       action = function()

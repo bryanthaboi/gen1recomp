@@ -2888,7 +2888,7 @@ end
 -- NX / desktop / Android labels and inbox hints for the FlexLove view.
 function RomImporter:_modsImportButtonLabel()
   if self.isNX then return Strings("Scan again") end
-  return "Import mod .zip"
+  return Strings("Import mod .zip")
 end
 
 function RomImporter:_modsDefaultHint()
@@ -2899,7 +2899,7 @@ function RomImporter:_modsDefaultHint()
     return Strings("Copy a .zip via MTP into %s/imports/mods/\n"
       .. "DBI MTP → 1: SD Card/%simports/mods/", saveDir, rel)
   end
-  if self.android then return "Or copy a mod .zip via USB." end
+  if self.android then return Strings("Or copy a mod .zip via USB.") end
   return Strings("Or drop a mod .zip onto the window.")
 end
 
@@ -2915,7 +2915,7 @@ function RomImporter:_savesDefaultHint(version)
       .. "DBI MTP → 1: SD Card/%s%s/", game, saveDir, inbox, rel, inbox)
   end
   if self.android then
-    return "Import or export a .sav with the system file picker."
+    return Strings("Import or export a .sav with the system file picker.")
   end
   return Strings("Import a .sav to a new slot, or export the active slot.")
 end
