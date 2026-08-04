@@ -12,9 +12,9 @@ return {
       TEXT_ROUTE16GATE1F_GUARD = {
         { "face_player" },
         { "check_item", "BICYCLE" },
-        { "jump_if_true", 5 },
+        { "jump_if_true", 6 },
         { "show_text", "_Route16Gate1FGuardNoPedestriansAllowedText" },
-        { "jump", 6 },
+        { "jump", "end" },
         { "show_text", "_Route16Gate1FGuardCyclingRoadExplanationText" },
       },
     },

@@ -102,7 +102,9 @@ function ModUpdate.previewLine(text, maxChars)
   return s
 end
 
--- Decode one GitHub release object into { version, tag, zip, prerelease, body }.
+-- Decode one GitHub release object into { version, tag, zip, prerelease,
+-- name, body, downloads }. `downloads` is the sum of every asset's
+-- download_count, GitHub's own measure of a release's downloads.
 function ModUpdate.parseRelease(doc, modId)
   if type(doc) ~= "table" or not doc.tag_name then
     return nil, "no tag_name in release"
@@ -114,6 +116,13 @@ function ModUpdate.parseRelease(doc, modId)
   local triple = version:match("^(%d+%.%d+%.%d+)")
   local zip = ModUpdate.pickZipAsset(doc.assets, modId, triple)
   local body = type(doc.body) == "string" and doc.body or ""
+  local downloads = 0
+  if type(doc.assets) == "table" then
+    for _, a in ipairs(doc.assets) do
+      local d = type(a) == "table" and tonumber(a.download_count)
+      if d and d > 0 then downloads = downloads + d end
+    end
+  end
   return {
     version = triple,
     tag = tostring(doc.tag_name),
@@ -121,6 +130,8 @@ function ModUpdate.parseRelease(doc, modId)
     prerelease = doc.prerelease == true,
     name = type(doc.name) == "string" and doc.name or triple,
     body = body,
+    downloads = downloads,
+    published = (doc.published_at or doc.created_at or ""):match("^(%d+%-%d+%-%d+)"),
   }
 end
 
@@ -154,7 +165,7 @@ function ModUpdate.parseReleases(jsonText, modId, Json)
 end
 
 function ModUpdate.apiReleasesUrl(repo)
-  return "https://api.github.com/repos/" .. repo .. "/releases?per_page=30"
+  return "https://api.github.com/repos/" .. repo .. "/releases?per_page=100"
 end
 
 function ModUpdate.apiLatestUrl(repo)
@@ -178,6 +189,52 @@ function ModUpdate.pickBest(releases)
     if not rel.prerelease then return rel end
   end
   return releases[1]
+end
+
+-- Sum of per-release download counts.  Returns nil when no release carries
+-- the field (a cache entry written before downloads existed), else
+-- { total = <sum>, releases = <release count> } so a caller can tell a
+-- real "0 downloads" apart from "no data yet".
+function ModUpdate.totalDownloads(releases)
+  if type(releases) ~= "table" or #releases == 0 then return nil end
+  local total, hasData = 0, false
+  for _, rel in ipairs(releases) do
+    local d = type(rel) == "table" and tonumber(rel.downloads)
+    if d then
+      hasData = true
+      total = total + d
+    end
+  end
+  if not hasData then return nil end
+  return { total = total, releases = #releases }
+end
+
+-- First and latest release dates ("YYYY-MM-DD", ISO strings compare in
+-- calendar order).  Returns nil when no release carries a date -- same
+-- "no data yet" rule as totalDownloads.
+function ModUpdate.releaseDates(releases)
+  if type(releases) ~= "table" or #releases == 0 then return nil end
+  local first, latest, has = nil, nil, false
+  for _, rel in ipairs(releases) do
+    local p = type(rel) == "table" and rel.published
+    if type(p) == "string" and p ~= "" then
+      has = true
+      if not first or p < first then first = p end
+      if not latest or p > latest then latest = p end
+    end
+  end
+  if not has then return nil end
+  return { first = first, latest = latest }
+end
+
+-- Thousands-separated count for the launcher ("12,345"), plain for small
+-- numbers.  Never throws; garbage in, "0" out.
+function ModUpdate.formatCount(n)
+  n = tonumber(n)
+  if not n or n ~= n or n < 0 then return "0" end
+  local s = tostring(math.floor(n))
+  s = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+  return (s:gsub("^,", ""))
 end
 
 -- ------- cache (options.modUpdateCache[repo])
@@ -210,6 +267,22 @@ function ModUpdate.cacheFresh(entry, now, ttl)
     and (now - entry.checkedAt) < ttl
 end
 
+-- A cache entry written before download counts existed carries no
+-- `downloads` on any release.  It is provably stale -- parseRelease always
+-- sets the field now -- so treat it as expired: the next fetch rewrites
+-- the entry in the current format, one refetch per repo, and the launcher's
+-- download line stops hiding behind an old cache.
+function ModUpdate.cacheUsable(cached)
+  if type(cached) ~= "table" or type(cached.releases) ~= "table" then
+    return false
+  end
+  if #cached.releases == 0 then return true end
+  for _, rel in ipairs(cached.releases) do
+    if tonumber(rel.downloads) then return true end
+  end
+  return false
+end
+
 function ModUpdate.writeCache(repo, releases)
   if type(repo) ~= "string" or repo == "" then return false end
   local ok = pcall(function()
@@ -226,6 +299,8 @@ function ModUpdate.writeCache(repo, releases)
         name = rel.name,
         prerelease = rel.prerelease == true,
         body = type(rel.body) == "string" and rel.body or "",
+        downloads = tonumber(rel.downloads) or 0,
+        published = rel.published,
         zip = rel.zip and {
           name = rel.zip.name,
           url = rel.zip.url,
@@ -254,39 +329,21 @@ function ModUpdate.statusFor(installedVersion, releases)
   return "current", best
 end
 
--- ------- host I/O (curl)
+-- ------- host I/O (HostShell's transport: curl, or the Android JNI bridge)
 
-local function shq(s)
-  s = tostring(s)
-  if love and love.system and love.system.getOS
-      and love.system.getOS() == "Windows" then
-    return '"' .. s:gsub('"', '') .. '"'
-  end
-  return "'" .. s:gsub("'", "'\\''") .. "'"
-end
-
-local function curlCapture(url)
+-- GitHub's API wants a User-Agent and answers the versioned Accept.
+local function apiFetch(url)
   local HostShell = require("src.core.HostShell")
-  local cmd = "curl -fsSL --connect-timeout 10 --max-time 40 "
-    .. "-H " .. shq("User-Agent: gen1recomp-mod-updater") .. " "
-    .. "-H " .. shq("Accept: application/vnd.github+json") .. " "
-    .. shq(url)
-  local pipeOk, pipe = pcall(HostShell.popen, cmd)
-  if not pipeOk or not pipe then return nil, "could not run curl" end
-  local readOk, out = pcall(function() return pipe:read("*a") end)
-  pcall(function() pipe:close() end)
-  if not readOk then return nil, "curl read failed: " .. tostring(out) end
-  if not out or out == "" then return nil, "empty response from GitHub" end
-  return out
+  return HostShell.httpGet(url, "gen1recomp-mod-updater",
+    "application/vnd.github+json")
 end
 
+-- Still just the curl probe it always was.  "Can we fetch at all" is
+-- HostShell.canFetch, which also knows about the Android bridge (#597); every
+-- gate below asks that instead.
 function ModUpdate.haveCurl()
   local HostShell = require("src.core.HostShell")
-  local pipeOk, pipe = pcall(HostShell.popen, "curl --version")
-  if not pipeOk or not pipe then return false end
-  local readOk, out = pcall(function() return pipe:read("*a") end)
-  pcall(function() pipe:close() end)
-  return readOk and out ~= nil and out:find("curl", 1, true) ~= nil
+  return HostShell.haveCurl()
 end
 
 -- Fetch release list. opts.force bypasses the 6h cache.
@@ -298,19 +355,20 @@ function ModUpdate.fetchReleases(repo, modId, opts)
   end
   if not opts.force then
     local cached = ModUpdate.readCache(repo)
-    if ModUpdate.cacheFresh(cached) then
+    if ModUpdate.cacheFresh(cached) and ModUpdate.cacheUsable(cached) then
       return cached.releases, nil, { fromCache = true }
     end
   end
-  if not ModUpdate.haveCurl() then
+  local HostShell = require("src.core.HostShell")
+  if not HostShell.canFetch() then
     -- Stale cache is better than nothing when offline
     local cached = ModUpdate.readCache(repo)
     if cached and cached.releases then
       return cached.releases, nil, { fromCache = true, stale = true }
     end
-    return nil, "curl is not available on this platform"
+    return nil, "no network transport on this platform"
   end
-  local body, curlErr = curlCapture(ModUpdate.apiReleasesUrl(repo))
+  local body, curlErr = apiFetch(ModUpdate.apiReleasesUrl(repo))
   if not body then
     local cached = ModUpdate.readCache(repo)
     if cached and cached.releases then
@@ -331,10 +389,10 @@ function ModUpdate.downloadZip(url, destName)
   if not (love and love.filesystem) then
     return nil, "download needs LOVE"
   end
-  if not ModUpdate.haveCurl() then
-    return nil, "curl is not available on this platform"
-  end
   local HostShell = require("src.core.HostShell")
+  if not HostShell.canFetch() then
+    return nil, "no network transport on this platform"
+  end
   local name = destName or ("mod_update_" .. tostring(os.time()) .. ".zip")
   name = tostring(name):gsub("[/\\]", "_")
   local saveOk, saveDir = pcall(function()
@@ -344,12 +402,9 @@ function ModUpdate.downloadZip(url, destName)
     return nil, "no save directory"
   end
   local abs = saveDir .. "/" .. name
-  local cmd = "curl -fsSL --connect-timeout 15 --max-time 300 -o "
-    .. shq(abs) .. " " .. shq(url)
-  local pipeOk, pipe = pcall(HostShell.popen, cmd)
-  if not pipeOk or not pipe then return nil, "could not start download" end
-  pcall(function() pipe:read("*a") end)
-  pcall(function() pipe:close() end)
+  -- Either transport can fail quietly; the getInfo size check below is what
+  -- actually decides whether we got a file (#597).
+  HostShell.httpDownload(url, abs, "gen1recomp-mod-updater")
   local infoOk, info = pcall(love.filesystem.getInfo, name)
   if not infoOk or not info or (info.size or 0) == 0 then
     pcall(love.filesystem.remove, name)

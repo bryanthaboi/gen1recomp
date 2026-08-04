@@ -40,23 +40,30 @@ function State.new()
 
     -- party / inspector
     selectedParty = 1,
+    partyOffset = 0,       -- roster scroll position (#715)
+    inspectorScroll = 0,   -- MonEditor body pixel scroll (#715)
     editingMon = nil,   -- reference into party or a box
-    -- species picker overlay: nil when closed, otherwise { query, offset }.
-    -- Modal in the literal sense -- App shields every widget under it for the
-    -- frame -- because Kit hit-tests without a z-order (#541).
+    -- species picker overlay: nil when closed, otherwise { query, offset }
+    -- plus mode = "box-add" when it is adding to a box instead of changing a
+    -- species (Ops.openBoxAddPicker).  Modal in the literal sense -- App
+    -- shields every widget under it for the frame -- because Kit hit-tests
+    -- without a z-order (#541).
     speciesPicker = nil,
 
     -- boxes
     selectedBox = 1,
     selectedBoxSlot = 1,
+    dockOffset = 0,     -- party dock scroll position (#715)
 
     -- items
     itemQuery = "",
     selectedItemId = nil,
     selectedBagId = nil,
     selectedPcId = nil,
+    itemPickOffset = 0, -- scroll position in the ADD ITEM list (#595)
     bagOffset = 0,
     pcOffset = 0,
+    itemsScroll = 0,    -- stacked-layout pixel scroll (#715)
 
     -- events
     eventsTab = "flags",

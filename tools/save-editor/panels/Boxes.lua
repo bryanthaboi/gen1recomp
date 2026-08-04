@@ -1,11 +1,23 @@
 -- Boxes panel: the 12 PC boxes as a real grid rather than the old 20-row
--- text list.  Three columns:
+-- text list.  Three columns at full width:
 --   box strip   which boxes have room, so you can see where a deposit lands
---   the grid    5 x 4 = Boxes.CAPACITY, empty cells are dashed and clickable
+--   the grid    empty cells are dashed and clickable
 --   party dock  the deposit source and withdraw target, both in one place
 --
 -- Selecting a slot points S.editingMon at it, so switching to the Party tab
 -- keeps inspecting the same mon.
+--
+-- #715 reflow: the three columns need about 900 real px.  Below that the
+-- panel stacks the grid over the party dock at full width and drops the box
+-- strip (the grid header's < > steppers and Box N counter cover its job).
+-- The grid's column count adapts to the width it actually gets, the dock's
+-- roster scrolls, and the action labels shorten when the row is tight, so
+-- no button ever paints over its neighbour.
+--
+-- Adding a mon opens the same searchable species picker the inspector uses
+-- (see SpeciesPicker.lua / Ops.openBoxAddPicker): the picked species lands
+-- in the selected box as a Lv5 mon built by the same MonOps path partyAdd
+-- uses, so its stats, exp and moves are consistent.
 
 local BoxesMod = require("src.pokemon.Boxes")
 local PartyMod = require("src.pokemon.Party")
@@ -16,24 +28,10 @@ local PAL = Theme.PAL
 local M = {}
 
 local COLS = 5
-local ROWS = math.ceil(BoxesMod.CAPACITY / COLS)
 
-function M.draw(S, Kit, x, y, w, h)
+local function drawStrip(S, Kit, boxes, x, y, stripW, h)
   local s = Kit.scale
-  local gap = 20 * s
   local pad = 16 * s
-
-  S.selectedBox = Ops.clamp(S.selectedBox or 1, 1, BoxesMod.COUNT)
-  S.save.currentBox = S.selectedBox
-  local boxes = Ops.boxes(S)
-  local box = boxes[S.selectedBox]
-
-  local stripW = math.max(150 * s, math.min(200 * s, w * 0.16))
-  local dockW = math.max(220 * s, math.min(300 * s, w * 0.22))
-  local gridX = x + stripW + gap
-  local gridW = w - stripW - dockW - 2 * gap
-
-  -- ------------------------------------------------------------ box strip
   Kit.card(x, y, stripW, h)
   Kit.caption(x + pad, y + pad, ("BOXES . %d"):format(BoxesMod.COUNT))
   local stripTop = y + pad + Kit.textHeight("caption") + 10 * s
@@ -56,8 +54,10 @@ function M.draw(S, Kit, x, y, w, h)
     Kit.meter(mx, ry + (bRowH - 5 * s) / 2, 44 * s, 5 * s,
       fill / BoxesMod.CAPACITY * 100, fill >= BoxesMod.CAPACITY and PAL.yellow or PAL.blue)
   end
+end
 
-  -- ------------------------------------------------------------- the grid
+local function drawGrid(S, Kit, box, gridX, y, gridW, h)
+  local s = Kit.scale
   Kit.card(gridX, y, gridW, h)
   local gpad = 18 * s
   local gx = gridX + gpad
@@ -78,17 +78,59 @@ function M.draw(S, Kit, x, y, w, h)
     Ops.stepBox(S, 1)
   end
 
+  -- Bottom action row, measured before it is drawn (#715): full labels when
+  -- they fit side by side, short verbs when they do not, so Withdraw / Add /
+  -- Release can never stack on each other the way the fixed offsets did.
   local actH = 34 * s
   local actY = y + h - gpad - actH
+  local wdLabel, addLabel = "Withdraw to party", "+ Add mon here"
+  local relLabel = Ops.armLabel(S, "box-release", "Release")
+  local function widths()
+    return Kit.textWidth("small", wdLabel) + 22 * s,
+           Kit.textWidth("small", addLabel) + 22 * s,
+           Kit.textWidth("small", relLabel) + 22 * s
+  end
+  local wdW, addW, relW = widths()
+  if wdW + addW + relW + 20 * s > ginner then
+    wdLabel, addLabel = "Withdraw", "+ Add"
+    wdW, addW, relW = widths()
+  end
+  if Kit.button(gx, actY, wdW, actH, wdLabel,
+      { font = "small", radius = 9 * s,
+        enabled = #S.save.party < PartyMod.MAX }) then
+    Ops.withdraw(S)
+  end
+  if Kit.button(gx + wdW + 10 * s, actY, addW, actH, addLabel,
+      { font = "small", radius = 9 * s,
+        enabled = #box < BoxesMod.CAPACITY }) then
+    Ops.openBoxAddPicker(S, Kit)
+  end
+  if Kit.button(gx + ginner - relW, actY, relW, actH, relLabel,
+      { kind = "danger", font = "small", radius = 9 * s }) then
+    Ops.release(S)
+  end
+
+  -- ------------------------------------------------------------- the grid
   local gridTop = y + gpad + headH + 14 * s
   local gridH = actY - 14 * s - gridTop
   local cellGap = 10 * s
-  local cellW = (ginner - cellGap * (COLS - 1)) / COLS
-  local cellH = math.min((gridH - cellGap * (ROWS - 1)) / ROWS, 110 * s)
+  -- Columns adapt to the real width (#715): a cell needs ~86px before its
+  -- name reads, so a narrow card gets fewer, taller-stacked columns instead
+  -- of five slivers.
+  local cols = math.max(2, math.min(COLS,
+    math.floor((ginner + cellGap) / (86 * s + cellGap))))
+  local rows = math.ceil(BoxesMod.CAPACITY / cols)
+  local cellW = math.max(0, (ginner - cellGap * (cols - 1)) / cols)
+  -- floor at Kit's 26px tap target so a short window shrinks the cells but
+  -- never inverts them (#715); overflow clips inside the grid body rather
+  -- than running over the action row, and the clip fences the hit tests
+  local cellH = math.max(26 * s,
+    math.min((gridH - cellGap * (rows - 1)) / rows, 110 * s))
 
+  Kit.pushClip(gx, gridTop, ginner, gridH)
   for i = 1, BoxesMod.CAPACITY do
-    local cc = (i - 1) % COLS
-    local cr = math.floor((i - 1) / COLS)
+    local cc = (i - 1) % cols
+    local cr = math.floor((i - 1) / cols)
     local bx = gx + cc * (cellW + cellGap)
     local by = gridTop + cr * (cellH + cellGap)
     local mon = box[i]
@@ -104,7 +146,8 @@ function M.draw(S, Kit, x, y, w, h)
         Kit.ellipsize("mono", mon.species, cellW - 12 * s), bx,
         by + cellH / 2 - Kit.textHeight("mono") / 2, cellW, PAL.text)
     else
-      -- empty slots are dashed and clickable: clicking one adds a mon there
+      -- empty slots are dashed and clickable: clicking one opens the species
+      -- picker to add a mon there
       Theme.col(PAL.cardBorder, Kit.hover(bx, by, cellW, cellH) and 0.6 or 0.32)
       Theme.dashed(bx, by, cellW, cellH, 11 * s, 6 * s, 5 * s)
       Kit.text("micro", tostring(i), bx + 10 * s, by + 8 * s, PAL.faint)
@@ -112,31 +155,16 @@ function M.draw(S, Kit, x, y, w, h)
         cellW, PAL.faint)
       if Kit.press(bx, by, cellW, cellH) then
         S.selectedBoxSlot = math.min(i, #box + 1)
-        Ops.boxAdd(S)
+        Ops.openBoxAddPicker(S, Kit)
       end
     end
   end
+  Kit.popClip()
+end
 
-  local wdW = 170 * s
-  if Kit.button(gx, actY, wdW, actH, "Withdraw to party",
-      { font = "small", radius = 9 * s,
-        enabled = #S.save.party < PartyMod.MAX }) then
-    Ops.withdraw(S)
-  end
-  if Kit.button(gx + wdW + 10 * s, actY, 140 * s, actH, "+ Add mon here",
-      { font = "small", radius = 9 * s,
-        enabled = #box < BoxesMod.CAPACITY }) then
-    Ops.boxAdd(S)
-  end
-  local relW = 110 * s
-  if Kit.button(gx + ginner - relW, actY, relW, actH,
-      Ops.armLabel(S, "box-release", "Release"),
-      { kind = "danger", font = "small", radius = 9 * s }) then
-    Ops.release(S)
-  end
-
-  -- ----------------------------------------------------------- party dock
-  local dx = gridX + gridW + gap
+local function drawDock(S, Kit, dx, y, dockW, h)
+  local s = Kit.scale
+  local pad = 16 * s
   Kit.card(dx, y, dockW, h)
   Kit.caption(dx + pad, y + pad, "PARTY DOCK")
   Kit.textRight("mono", ("%d/%d"):format(#S.save.party, PartyMod.MAX),
@@ -144,35 +172,71 @@ function M.draw(S, Kit, x, y, w, h)
   local dTop = y + pad + Kit.textHeight("caption") + 10 * s
   local dInner = dockW - 2 * pad
   local dRowH = 34 * s
-  for i, mon in ipairs(S.save.party) do
-    local ry = dTop + (i - 1) * (dRowH + 7 * s)
-    if Kit.row(dx + pad, ry, dInner, dRowH, S.editingMon == mon, PAL.green, 9 * s) then
-      Ops.selectParty(S, i)
-    end
-    local lv = ("Lv%d"):format(mon.level)
-    local lvW = Kit.textWidth("tiny", lv)
-    Kit.textRight("tiny", lv, dx + pad + dInner - 10 * s,
-      ry + (dRowH - Kit.textHeight("tiny")) / 2, PAL.caption)
-    Kit.text("mono", Kit.ellipsize("mono", mon.species, dInner - 30 * s - lvW),
-      dx + pad + 10 * s, ry + (dRowH - Kit.textHeight("mono")) / 2, PAL.text)
-  end
+  local dGap = 7 * s
+
+  -- Deposit is pinned to the card bottom and the roster scrolls above it
+  -- (#715): six party rows used to be laid out unconditionally and the
+  -- button drawn below them, which on a short card walked both straight out
+  -- of the card.
+  local depH = 36 * s
+  local depY = y + h - pad - depH
+  local listH = math.max(0, depY - 10 * s - dTop)
+
   if #S.save.party == 0 then
-    Kit.emptyBox(dx + pad, dTop, dInner, 70 * s, "Party is empty.")
+    Kit.emptyBox(dx + pad, dTop, dInner, math.min(listH, 70 * s), "Party is empty.")
+  else
+    local visible = math.max(1, math.floor((listH + dGap) / (dRowH + dGap)))
+    S.dockOffset = Kit.scroll(dx + pad, dTop, dInner, listH,
+      S.dockOffset or 0, #S.save.party, visible)
+    Kit.pushClip(dx + pad, dTop, dInner, listH)
+    for i = 1, visible do
+      local slot = S.dockOffset + i
+      local mon = S.save.party[slot]
+      if not mon then break end
+      local ry = dTop + (i - 1) * (dRowH + dGap)
+      if Kit.row(dx + pad, ry, dInner, dRowH, S.editingMon == mon, PAL.green, 9 * s) then
+        Ops.selectParty(S, slot)
+      end
+      local lv = ("Lv%d"):format(mon.level)
+      local lvW = Kit.textWidth("tiny", lv)
+      Kit.textRight("tiny", lv, dx + pad + dInner - 10 * s,
+        ry + (dRowH - Kit.textHeight("tiny")) / 2, PAL.caption)
+      Kit.text("mono", Kit.ellipsize("mono", mon.species, dInner - 30 * s - lvW),
+        dx + pad + 10 * s, ry + (dRowH - Kit.textHeight("mono")) / 2, PAL.text)
+    end
+    Kit.popClip()
+    Kit.scrollbar(dx + pad, dTop, dInner, listH,
+      S.dockOffset, #S.save.party, math.max(1, math.floor((listH + dGap) / (dRowH + dGap))))
   end
 
-  local depY = dTop + math.max(#S.save.party, 2) * (dRowH + 7 * s) + 6 * s
-  if Kit.button(dx + pad, depY, dInner, 36 * s, "Deposit selected slot",
+  if Kit.button(dx + pad, depY, dInner, depH, "Deposit selected slot",
       { kind = "accent", font = "small", radius = 9 * s,
         enabled = #S.save.party > 0 }) then
     Ops.deposit(S)
   end
-  local noteY = depY + 36 * s + 10 * s
-  local noteH = y + h - pad - noteY
-  if noteH > Kit.textHeight("tiny") * 2 then
-    Kit.textCenter("tiny",
-      "Deposit fills the current box first, then the next box with room, and " ..
-      "the status bar says where the mon landed.",
-      dx + pad, noteY, dInner, PAL.caption)
+end
+
+function M.draw(S, Kit, x, y, w, h)
+  local s = Kit.scale
+  local gap = 20 * s
+
+  S.selectedBox = Ops.clamp(S.selectedBox or 1, 1, BoxesMod.COUNT)
+  S.save.currentBox = S.selectedBox
+  local boxes = Ops.boxes(S)
+  local box = boxes[S.selectedBox]
+
+  if w < 900 * s then
+    -- stacked (#715): grid over dock, strip dropped (see the header comment)
+    local dockH = Theme.clamp(h * 0.38, 140 * s, 320 * s)
+    drawGrid(S, Kit, box, x, y, w, h - dockH - gap)
+    drawDock(S, Kit, x, y + h - dockH, w, dockH)
+  else
+    local stripW = math.max(150 * s, math.min(200 * s, w * 0.16))
+    local dockW = math.max(220 * s, math.min(300 * s, w * 0.22))
+    local gridW = w - stripW - dockW - 2 * gap
+    drawStrip(S, Kit, boxes, x, y, stripW, h)
+    drawGrid(S, Kit, box, x + stripW + gap, y, gridW, h)
+    drawDock(S, Kit, x + w - dockW, y, dockW, h)
   end
 end
 

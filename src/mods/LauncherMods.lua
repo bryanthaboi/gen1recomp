@@ -265,12 +265,35 @@ function LauncherMods.setEnabled(id, enabled)
   return true
 end
 
+-- setAllEnabled(ids, enabled): the launcher's Enable all / Disable all buttons
+-- (#647).  Writes exactly the options.mods shape setEnabled does, but loads and
+-- saves once for the whole list: saveOptions rewrites the whole options file per
+-- call, so looping setEnabled over a big mods folder is one disk write per mod
+-- and leaves a half-applied state behind if one of them fails.
+function LauncherMods.setAllEnabled(ids, enabled)
+  local options = SaveData.loadOptions()
+  options.mods = options.mods or {}
+  for _, id in ipairs(ids or {}) do
+    options.mods[id] = enabled and true or false
+  end
+  SaveData.saveOptions(options)
+  return true
+end
+
 -- ------- install (love.filesystem)
 
--- Read a .zip source into bytes.  A string is an external absolute path (like
--- a chosen ROM) read with io.*, falling back to a save-dir-relative
--- love.filesystem read; a love DroppedFile is opened the way RomImporter
--- ingests dropped ROMs.
+-- Read a .zip source into bytes.  Save-dir-relative paths (inbox /
+-- picked_mod.zip) prefer love.filesystem so NX/Android never hit a cwd-relative
+-- io.open that can see a different file than PhysFS.  Absolute host paths
+-- (desktop picker) still use io.*.  DroppedFile matches RomImporter ROM drops.
+local function isHostAbsolutePath(path)
+  return type(path) == "string" and (
+      path:match("^/")
+      or path:match("^%a:[/\\]")
+      or path:match("^[Ss][Dd][Mm][Cc]:")
+    )
+end
+
 local function readArchive(source)
   local t = type(source)
   if (t == "userdata" or t == "table") and type(source.open) == "function" then
@@ -282,6 +305,10 @@ local function readArchive(source)
     return data
   end
   if t == "string" then
+    if not isHostAbsolutePath(source) and love and love.filesystem then
+      local data = love.filesystem.read(source)
+      if data then return data end
+    end
     local f = io.open(source, "rb")
     if f then
       local data = f:read("*a")
@@ -296,6 +323,12 @@ local function readArchive(source)
     return nil, "could not open " .. source
   end
   return nil, "unsupported archive source"
+end
+
+-- Local PK\3\4 / empty-file check before mount (corrupt MTP / AppleDouble).
+local function zipLooksValid(data)
+  if type(data) ~= "string" or #data < 4 then return false end
+  return data:sub(1, 2) == "PK"
 end
 
 -- Shallow listing of a mounted archive shaped for locateRoot: files by name,
@@ -495,21 +528,44 @@ function LauncherMods._installZipInner(source, opts)
   local fs = love.filesystem
   local data, readErr = readArchive(source)
   if not data then return nil, readErr end
-
-  -- stage into a save-dir temp so mount can reach it
-  local tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
-  local ok, writeErr = fs.write(tmp, data)
-  if not ok then
-    return nil, "could not stage the .zip: " .. tostring(writeErr)
+  if not zipLooksValid(data) then
+    local label = type(source) == "string" and (source:match("[^/\\]+$") or source)
+      or "archive"
+    return nil, "not a zip file: " .. tostring(label)
+      .. " (need a real .zip; skip Mac ._ files from MTP)"
   end
+
+  -- Prefer in-memory mount (PHYSFS_mountMemory via FileData). Avoids Horizon's
+  -- "file already open" failure when write-then-mount reopens a save-dir zip.
   local mount = "mod_import_mount"
-  if not fs.mount(tmp, mount) then
-    fs.remove(tmp)
-    return nil, "that .zip could not be opened"
+  local tmp = nil
+  local mountKey = nil
+  local mounted = false
+  if fs.newFileData then
+    local archiveName = ("mod_import_%d_%d.zip"):format(
+      os.time(), math.random(0, 999999))
+    local okFd, fd = pcall(fs.newFileData, data, archiveName)
+    if okFd and fd and fs.mount(fd, mount) then
+      mounted = true
+      mountKey = fd
+    end
+  end
+  if not mounted then
+    -- Fallback: stage into a save-dir temp so path-mount can reach it.
+    tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
+    local ok, writeErr = fs.write(tmp, data)
+    if not ok then
+      return nil, "could not stage the .zip: " .. tostring(writeErr)
+    end
+    if not fs.mount(tmp, mount) then
+      fs.remove(tmp)
+      return nil, "that .zip could not be opened"
+    end
+    mountKey = tmp
   end
   local function cleanup()
-    pcall(fs.unmount, tmp)
-    fs.remove(tmp)
+    pcall(fs.unmount, mountKey)
+    if tmp then fs.remove(tmp) end
   end
 
   local prefix, rootErr = LauncherMods.locateRoot(topLevelPaths(mount))

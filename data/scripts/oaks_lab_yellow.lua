@@ -71,8 +71,12 @@ return {
       { "show_text", "_OaksLabRivalLeaveItAllToMeText" },
       { "set_flag", "EVENT_GOT_POKEDEX" },
       { "set_flag", "EVENT_OAK_GOT_PARCEL" },
+      -- OaksLabOakGivesPokedexScript: HideObject TOGGLE_LYING_OLD_MAN /
+      -- ShowObject TOGGLE_OLD_MAN_2 -- Yellow's tutorial old man stands
+      -- on the sleeper's cell (18,9); the Red/Blue walker OLD_MAN at
+      -- (17,5) never appears in Yellow (#617)
       { "hide_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN_SLEEPY" },
-      { "show_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN" },
+      { "show_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN2" },
       { "stop_music" },
       { "play_music", "Music_MeetRival" },
       { "move_npc_to", RIVAL, 4, 7 },
@@ -283,10 +287,12 @@ return {
       table.insert(rows, { "label", "lost_lab" })
       table.insert(rows, { "set_field", "rivalStarter", 3 })
       table.insert(rows, { "label", "exit" })
-      -- OaksLabRivalStartsExitScript: parting shot, walk out past the
-      -- player, restore the lab theme
+      -- OaksLabRivalStartsExitScript: parting shot, rival exit fanfare, then
+      -- walk out past the player (#683).
       table.insert(rows, { "wait", 20 })
       table.insert(rows, { "show_text", "_OaksLabRivalSmellYouLaterText" })
+      table.insert(rows, { "stop_music" })
+      table.insert(rows, { "play_music", "Music_MeetRival" })
       table.insert(rows, { "move_npc_to", RIVAL, 4, 11 })
       table.insert(rows, { "hide_object", "OAKS_LAB", "OAKSLAB_RIVAL" })
       table.insert(rows, { "play_music", "Music_OaksLab" })

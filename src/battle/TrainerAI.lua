@@ -20,8 +20,15 @@
 
 local TypeChart = require("src.battle.TypeChart")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local TrainerAI = {}
+
+-- pokered's <USER>/<TARGET> text macros print "Enemy " before the
+-- enemy mon's nickname (home/text.asm PlaceMoveUsersName)
+local function displayName(b)
+  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
+end
 
 local HEAL_AMOUNT = { POTION = 20, SUPER_POTION = 50, HYPER_POTION = 200 }
 local X_STAT = { X_ATTACK = "attack", X_DEFEND = "defense", X_SPEED = "speed" }
@@ -95,12 +102,16 @@ function TrainerAI.switchAction(battle)
   return { special = "aiSwitch", index = alive[1] }
 end
 
--- Apply an aiItem action to the enemy battler; returns messages.
+-- Apply an aiItem action to the enemy battler; returns messages, already
+-- final: the item line prints the raw nickname (AIPrintItemUseText has no
+-- "Enemy " prefix in pokered), the stat lines carry it via displayName, so
+-- the caller must not run these through prefixEnemy.
 function TrainerAI.useItem(battle, item)
   local enemy = battle.enemy
   local trainerName = battle.trainer.name
   local itemName = battle.data.items[item] and battle.data.items[item].name or item
-  local msgs = { Strings("%s\nused %s!", trainerName, itemName) }
+  local msgs = { romText(battle.data, "_AIBattleUseItemText",
+    "%s\nused %s!", trainerName, itemName, enemy.name) }
   if item == "FULL_HEAL" then
     enemy.mon.status = nil
     enemy.toxicCounter = nil
@@ -113,10 +124,10 @@ function TrainerAI.useItem(battle, item)
   elseif X_STAT[item] then
     local stat = X_STAT[item]
     enemy.stages[stat] = math.min(6, (enemy.stages[stat] or 0) + 1)
-    table.insert(msgs, Strings("%s's\n%s rose!", enemy.name, stat:upper()))
+    table.insert(msgs, Strings("%s's\n%s rose!", displayName(enemy), stat:upper()))
   elseif item == "GUARD_SPEC" then
     enemy.mist = true
-    table.insert(msgs, Strings("%s's\nprotected against\nstat changes!", enemy.name))
+    table.insert(msgs, Strings("%s's\nprotected against\nstat changes!", displayName(enemy)))
   end
   return msgs
 end

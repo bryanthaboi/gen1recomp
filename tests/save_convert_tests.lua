@@ -590,5 +590,37 @@ do
         .. data.pokemon.NIDORAN_F.catchRate .. ")")
 end
 
+-- (4) name-field tails: real cartridge saves legitimately hold 0x00 (and
+-- stale glyph) bytes after a name's $50 terminator, and rewriting them broke
+-- the import -> export byte-identical round trip.  With a template every
+-- tail byte must survive verbatim; only a templateless (engine-origin)
+-- export $50-pads the tail (#206).
+do
+  local s = SaveData.newGame({ playerName = "RED" })
+  for i = 1, 12 do s.boxes = s.boxes or {}; s.boxes[i] = {} end
+  local b1 = GenSave.encode(s, data, nil)
+  -- templateless: the tail past "RED@" must be all $50 padding
+  local ok50 = true
+  for i = 4, 10 do
+    if b1:byte(OFF.playerName + i + 1) ~= 0x50 then ok50 = false end
+  end
+  check(ok50, "templateless export $50-pads the player-name tail (#206)")
+  -- build a template whose player-name tail mixes 0x00 and stale glyphs
+  -- after the terminator, exactly like a real traded/edited cartridge save
+  local tpl = {}
+  for i = 1, #b1 do tpl[i] = b1:sub(i, i) end
+  tpl[OFF.playerName + 5] = string.char(0x00)
+  tpl[OFF.playerName + 6] = string.char(0x81)
+  tpl[OFF.playerName + 7] = string.char(0x00)
+  local tplBytes = table.concat(tpl)
+  local decoded = GenSave.decode(tplBytes, data)
+  check(decoded.player.name == "RED",
+        "a 0x00/stale tail past the terminator does not leak into the name")
+  local b2 = GenSave.encode(decoded, data)
+  check(b2:sub(OFF.playerName + 1, OFF.playerName + 11)
+          == tplBytes:sub(OFF.playerName + 1, OFF.playerName + 11),
+        "template name tails (incl. 0x00 bytes) round-trip byte-identical")
+end
+
 print(string.format("save convert: %d/%d checks passed", checks - failures, checks))
 if failures > 0 then os.exit(1) end

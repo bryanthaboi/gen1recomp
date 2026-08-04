@@ -108,8 +108,16 @@ return {
                            "_ViridianGymGiovanniTM27ExplanationText",
                          } },
 
-  -- Silph Co. Giovanni: unlocks the president's Master Ball gift
-  ["OPP_GIOVANNI#2"] = { flag = "EVENT_BEAT_SILPH_CO_GIOVANNI" },
+  -- Silph Co. Giovanni: unlocks the president's Master Ball gift.
+  -- SilphCo11FGiovanniStartBattleScript (scripts/SilphCo11F.asm) hands the
+  -- battle SilphCo10FGiovanniILostAgainText through SaveEndBattleTextPointers,
+  -- but he has no def_trainers header on 11F, so engageTrainer finds no
+  -- header.won to give it -- this chain is the port's stand-in for that loss
+  -- line (#722).  The "Blast it all!" speech, the fade and the rockets
+  -- leaving are SilphCo11FGiovanniAfterBattleScript, ported in M.SILPH_CO_11F
+  -- (data/scripts/story.lua).
+  ["OPP_GIOVANNI#2"] = { flag = "EVENT_BEAT_SILPH_CO_GIOVANNI",
+                         dialogue = { "_SilphCo10FGiovanniILostAgainText" } },
 
   -- Fighting Dojo Karate Master (scripts/FightingDojo.asm
   -- FightingDojoKarateMasterPostBattleScript sets EVENT_BEAT_KARATE_MASTER,

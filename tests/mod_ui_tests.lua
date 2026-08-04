@@ -779,8 +779,9 @@ check(oak.demoSpecies == "NIDORINO" and oak.nameLen == 7,
 
 -- ------- intro.oak_speech.build
 local vanillaSteps = OakSpeech.defaultSteps(oak)
-check(#vanillaSteps == 9, "vanilla speech has nine steps")
-check(vanillaSteps[1].id == "oak_welcome" and vanillaSteps[9].id == "shrink",
+check(#vanillaSteps == 11, "vanilla speech has eleven steps")
+check(vanillaSteps[1].id == "oak_welcome"
+  and vanillaSteps[#vanillaSteps].id == "shrink",
   "vanilla speech anchors start and end")
 
 hooks:wrap("intro.oak_speech.build", function(nextFn, steps, speech)
@@ -799,7 +800,7 @@ hooks:removeOwner("fixture")
 
 hooks:wrap("intro.oak_speech.build", function() return 42 end, 0, "bad")
 built = oak:buildSteps()
-check(#built == 9 and built[1].id == "oak_welcome",
+check(#built == #vanillaSteps and built[1].id == "oak_welcome",
   "a non-table intro.oak_speech.build result degrades to vanilla")
 check(logged("intro.oak_speech.build returned"),
   "the intro build degrade is logged")
@@ -1083,6 +1084,36 @@ check(easy.name == "HARD" and ms:optionsTable().activeProfile == "HARD",
 ms:deleteProfile(easy)
 check(ms:findProfile("HARD") == nil
   and ms:optionsTable().activeProfile == nil, "delete clears the profile")
+
+-- #593: a profile carries mod options and the per-version save slot, and
+-- round-trips through the .g1rmodlist export
+local ModProfile = require("src.mods.ModProfile")
+ms:setOption("okmod", "hardcore", true)
+ms:saveCurrentAs()
+mgame.stack:top().onDone("SHARE")
+mgame.stack:pop()
+local shared = ms:findProfile("SHARE")
+check(shared.options.okmod.hardcore == true,
+  "a profile snapshots per-mod options, not just the enable set")
+ms:setOption("okmod", "hardcore", false)
+ms:applyProfile(shared)
+check(loader.modOptions.okmod.hardcore == true,
+  "applying a profile restores its mod options")
+local wire = ModProfile.encode(shared)
+local back = ModProfile.decode(wire)
+check(back and back.name == "SHARE" and back.options.okmod.hardcore == true,
+  "a .g1rmodlist body round-trips through the data-only parser")
+check(ModProfile.decode("return {}") == nil, "a non-modlist file is refused")
+check(#ModProfile.missingIds({ enabled = { ghost = true } }, ms.byId) == 1,
+  "a profile naming an uninstalled mod reports it missing")
+local seedOpts = { modProfiles = {} }
+ModProfile.ensureFirst(seedOpts, ms.status.available, {})
+check(#seedOpts.modProfiles == 1 and seedOpts.modProfiles[1].name == "PROFILE 1"
+  and seedOpts.modProfilesSeeded == true,
+  "the pre-profiles setup migrates into PROFILE 1 once")
+seedOpts.modProfiles = {}
+ModProfile.ensureFirst(seedOpts, ms.status.available, {})
+check(#seedOpts.modProfiles == 0, "seeding never runs twice")
 
 -- permissions rows
 local permy = manifest("permy", { permissions = { "network" } })

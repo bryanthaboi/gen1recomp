@@ -134,12 +134,13 @@ local function drawHUDs(battle, slide)
     drawStatusPanel(battle, battle.enemy, 0, 0, false)
   end
 
-  if battle.safari then
-    Font.drawBox(23, 7, 15, 4)
-    love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(("BALLx%2d"):format(battle.safari.balls), 200, 72)
-  elseif battle.player and not battle.demo and not battle.showPlayerBack
-      and slide == 0 then
+  -- No player status panel in a safari / old-man battle: no mon of the
+  -- player's is out.  Nothing replaces it either -- the ball count is a menu
+  -- item, not a HUD element (DisplayBattleMenu prints wNumSafariBalls inside
+  -- the battle menu box, engine/battle/core.asm:2074-2079), so it rides in
+  -- drawCommandMenu below like the classic layout's (#540).
+  if not battle.safari and battle.player and not battle.demo
+      and not battle.showPlayerBack and slide == 0 then
     drawStatusPanel(battle, battle.player, 184, 56, true)
   end
   drawIntroBalls(battle)
@@ -172,6 +173,9 @@ local function drawCommandMenu(battle)
     Font.drawBox(0, 13, 38, 5)
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(Strings("BALLx"), 16, 112)
+    -- wNumSafariBalls immediately after the label, as at hlcoord 7,14
+    -- (engine/battle/core.asm:2074-2079) (#540)
+    Font.draw(("%2d"):format(battle.safari.balls), 56, 112)
     Font.draw(Strings("BAIT"), 168, 112)
     Font.draw(Strings("THROW ROCK"), 16, 128)
     Font.draw(Strings("RUN"), 168, 128)
@@ -320,7 +324,9 @@ function WideBattle.draw(battle)
   if sx == 0 and sy == 0 and fx and fx.shake and fx.shake > 0 then
     sx = battle.frame % 4 < 2 and 2 or -2
   end
-  local slide = (battle.introSlide or 0) * 2
+  -- same 2 px/frame silhouette slide the 160px layout uses
+  local slide = (battle.introSlide or 0)
+                * require("src.core.Timing").BATTLE_SLIDE_PX_PER_FRAME
 
   -- Each side keeps its original sprite pixels and placement math: the two
   -- 160x144 OAM regions are translated apart and clipped into the wider

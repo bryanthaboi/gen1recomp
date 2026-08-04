@@ -62,10 +62,19 @@ end
 -- Blank out every Strings(...) / Strings.source(...) call span, parens
 -- balanced, so a call wrapped across lines counts as covered.  A per-line
 -- test reported the continuation lines of three real calls as misses.
+--
+-- romText(...) counts as a router too: it prefers the line the importer
+-- extracted from the ROM and hands its literal straight to Strings(...)
+-- whenever that label is absent (a cache built before it, or a dataset-less
+-- unit test), so the literal is still catalog-backed and a translation mod
+-- still reaches it.  Blanking the whole span is safe -- the only literals
+-- inside are the pokered label and that fallback.
 local function stripStringsCalls(body)
   local out, i, n = {}, 1, #body
   while i <= n do
     local s, e = body:find("Strings%.?s?o?u?r?c?e?%(", i)
+    local rs = body:find("romText%(", i)
+    if rs and (not s or rs < s) then s, e = rs, nil end
     if not s then out[#out + 1] = body:sub(i) break end
     out[#out + 1] = body:sub(i, s - 1)
     local depth, j = 0, body:find("%(", s)

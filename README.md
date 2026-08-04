@@ -4,6 +4,9 @@ A native LÖVE2D recreation of Poke Red, Blue and Yellow. The engine and map
 behavior are hand-written Lua; game data and graphics are decoded from a ROM
 supplied by the player.
 
+> [!CAUTION]
+> **We are NOT affiliated with the website `gen1recomp[.]com`** That website is not run by this project, was not authorized by us, and we have no idea who operates it. It is impersonating this project; do not download anything from it, and treat anything it hosts or claims as untrustworthy. Even if the site currently links back to this repository, the people behind it can change its content at any time, so nothing on it should ever be trusted. This GitHub repository and the Discord linked below are the only official sources for this project.
+
 <p align="center"><img src="https://raw.githubusercontent.com/bryanthaboi/gen1recomp/refs/heads/dev/assets/logo/logo.png"></p>
 
 **SUPPORT / ANNOUNCEMENTS / MODS:** [Discord](https://bois.icu)
@@ -86,6 +89,19 @@ The packaged app contains neither a ROM nor pre-extracted game data. Music,
 sound effects, and cries are synthesized while the game runs from compact
 audio channel programs copied out of the verified ROM.
 
+### A note on Windows Defender warnings
+
+Windows Defender sometimes flags the Windows build with a generic
+machine-learning detection such as `Trojan:Win32/Wacatac!ml` (#621). This is
+a known false positive: the exe is the official LÖVE runtime with the game
+archive appended (the standard way LÖVE games ship), and Defender's
+heuristics distrust unsigned executables with appended data. Every release
+publishes SHA-256 checksums (`sha256sums.txt`) so you can verify your
+download, and you can confirm a flagged file yourself on
+[VirusTotal](https://www.virustotal.com), where these builds come back clean
+on every engine except Defender's heuristic. False positives are reported to
+Microsoft as they come up.
+
 ## Controls
 
 
@@ -107,6 +123,7 @@ supported out of the box.
 | Key       | What it does                                         |
 | --------- | ---------------------------------------------------- |
 | `-` / `=` | Zoom out / in (overworld; also mouse wheel)          |
+| `1`       | Cycle GAME SPEED up (controller: R2 faster, L2 slower) |
 | `2`       | Cycle COLORS                                         |
 | `3`       | Cycle TILT (free-roam overworld)                     |
 | `4`       | Cycle ZOOM through every level (free-roam overworld) |
@@ -116,8 +133,8 @@ supported out of the box.
 | `F10`     | Open / close the mod manager                         |
 
 
-COLORS, TILT, ZOOM, GBC FX, and VOID FILL are also in the Options menu
-and persist in `options.lua`.
+COLORS, TILT, ZOOM, GBC FX, GAME SPEED, and VOID FILL are also in the
+Options menu and persist in `options.lua`.
 
 ### Low-end devices
 
@@ -206,12 +223,43 @@ Every release ships `gen1recomp-*-ios.ipa`. Sideload it with AltStore
 build and install from source on a Mac instead, see
 [docs/ios-install.md](docs/ios-install.md).
 
+<div>
+    <a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://github.com/bryanthaboi/gen1recomp/raw/refs/heads/main/mobile/ios/app-repo.json"><img src="./.github/resources/sidestore-badge.png" alt="Add to SideStore" height="60"></a>
+    &nbsp;
+    <a href="https://intradeus.github.io/http-protocol-redirector?r=feather://source/https://github.com/bryanthaboi/gen1recomp/raw/refs/heads/main/mobile/ios/app-repo.json"><img src="./.github/resources/feather-badge.png" alt="Add to Feather" height="60"></a>
+    &nbsp;
+    <a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://github.com/bryanthaboi/gen1recomp/raw/refs/heads/main/mobile/ios/app-repo.json"><img src="./.github/resources/altstore-badge.png" alt="Add to AltStore" height="60"></a>
+    &nbsp;
+    <a href="https://github.com/bryanthaboi/gen1recomp/releases/latest"><img src="./.github/resources/github-badge.png" alt="Download from GitHub" height="60"></a>
+</div>
+
 ## Handhelds
 
 A PortMaster-style port for the **Anbernic RG34XXSP** on Stock OS 64-bit MOD
 ships with every release as `gen1recomp-*-rg34xxsp-stockos64-mod.zip`.
 Install steps, controls, and troubleshooting live in
 [docs/anbernic-rg34xxsp.md](docs/anbernic-rg34xxsp.md).
+
+## Nintendo Switch
+
+Releases ship an SD-ready `gen1recomp-*-switch.zip` (issue
+[#531](https://github.com/bryanthaboi/gen1recomp/issues/531)). Runtime target
+is pinned [love-nx](https://github.com/retronx-team/love-nx) `11.5-nx1`.
+Requires a console that can run Switch homebrew. Hardware evidence: **OLED**
+(author) and **V1 / Erista** boot (community).
+
+- Players: [docs/switch-install.md](docs/switch-install.md) — download the
+  zip, extract at the microSD root (install or update), title-override
+  launch, import your own legal ROM, Joy-Con controls and shortcuts.
+- Builders: [docs/switch-build.md](docs/switch-build.md) — `--fetch` /
+  `--loose` / `--fused`, toolchain, Docker fallback, and **CI vs release**
+  (path-gated ubuntu selftest, canonical fused PR artifact, release hard-fail).
+
+Limitations, Dusklight-derived method, and how we tested:
+[docs/switch-development.md](docs/switch-development.md) and
+[docs/switch-hardware-evidence.md](docs/switch-hardware-evidence.md). Community
+help — especially HOS / love-nx packaging and broader hardware coverage — is
+welcome.
 
 ## Modding
 
@@ -259,5 +307,8 @@ request with real detail is one that can actually get built.
 This project would not be possible without [pret](https://github.com/pret) >
 the pret band of decompiling maniacs > and their
 [pokered](https://github.com/pret/pokered) disassembly.
+
+Nintendo Switch port: [andrewqsantos](https://github.com/andrewqsantos).  
+Switch hardware testing (V1 boot): [booshankles](https://github.com/booshankles).
 
 <p align="center"><a href="https://boisclub.games"><img src="https://raw.githubusercontent.com/bryanthaboi/gen1recomp/refs/heads/dev/assets/logo/bcg.png"></a></p>

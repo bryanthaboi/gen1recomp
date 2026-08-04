@@ -105,7 +105,14 @@ for path in scripts:lines() do
   end
 end
 scripts:close()
-check(#TRADE_ROWS == 7, "the nine-row trade table's seven reachable trades are scripted")
+check(#TRADE_ROWS == 8, "all eight scripted trade rows are found")
+-- trade slot 6 is scripted twice: Red's youngster and Yellow's gate cook
+-- share the index and its done flag, one row per version (#651)
+local slot6 = 0
+for _, row in ipairs(TRADE_ROWS) do
+  if row.index == 6 then slot6 = slot6 + 1 end
+end
+eq(slot6, 2, "trade slot 6 has a row for each version")
 
 -- ------------------------------------------------------------------
 -- round trips

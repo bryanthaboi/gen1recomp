@@ -1699,8 +1699,10 @@ do
   local SafeArea = require("src.core.SafeArea")
   local cfg = TC.normalizeConfig(nil)
   eq(cfg.enabled, true, "touchControls default enabled")
-  check(cfg.positions == nil, "touchControls default positions nil")
+  check(cfg.layouts.portrait.positions == nil, "touchControls default positions nil")
+  eq(cfg.layouts.landscape.scale, 1, "touchControls default scale 1")
 
+  -- pre-#633 file: one positions table seeds both orientations, as copies
   cfg = TC.normalizeConfig({
     enabled = false,
     positions = {
@@ -1711,11 +1713,15 @@ do
     },
   })
   eq(cfg.enabled, false, "normalizeConfig keeps enabled=false")
-  eq(cfg.positions.dpad.x, 1, "normalizeConfig clamps x high")
-  eq(cfg.positions.dpad.y, 0, "normalizeConfig clamps y low")
-  eq(cfg.positions.a.x, 0.5, "normalizeConfig keeps a")
-  check(cfg.positions.junk == nil, "normalizeConfig drops unknown controls")
-  check(cfg.positions.b == nil, "normalizeConfig drops non-numeric")
+  local pcfg, lcfg = cfg.layouts.portrait, cfg.layouts.landscape
+  eq(pcfg.positions.dpad.x, 1, "normalizeConfig clamps x high")
+  eq(pcfg.positions.dpad.y, 0, "normalizeConfig clamps y low")
+  eq(pcfg.positions.a.x, 0.5, "normalizeConfig keeps a")
+  check(pcfg.positions.junk == nil, "normalizeConfig drops unknown controls")
+  check(pcfg.positions.b == nil, "normalizeConfig drops non-numeric")
+  eq(lcfg.positions.dpad.x, 1, "legacy positions seed landscape too")
+  check(pcfg.positions ~= lcfg.positions,
+        "orientations never share one positions table (#633)")
 
   local L = TC.defaultLayout(400, 800)
   check(L.dpad.cx < 200, "default d-pad on left half")
@@ -3369,6 +3375,10 @@ runSuites({ "tests/rom_importer_android_mod_pick_test.lua" })
 -- ---------------------------------------------- import with no picker (#482)
 runSuites({ "tests/rom_importer_no_picker_test.lua" })
 runSuites({ "tests/rom_importer_double_pick_test.lua" })
+-- ---------------------------------------------- Switch platform capabilities
+-- platform_nx_* / rom_importer_nx_* live in tests/engine/ (ROM-free T2) so
+-- CI's headless lane runs them without data/generated/.
+runSuites({ "tests/launcher_mods_install_zip_test.lua" })
 -- ---------------------------------------------- parity workstream tests
 -- Each tests/parity_*.lua is a self-contained file (own bootstrap + check,
 -- error()s if any assertion fails).  Globbed, so dropping a new parity

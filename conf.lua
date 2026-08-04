@@ -58,7 +58,17 @@ function love.conf(t)
   -- engine before conf runs (LÖVE 11.x / 11.5).
   local osName = love._os
   local mobile = osName == "Android" or osName == "iOS"
-  if mobile then
+  local nx = osName == "NX"
+  if nx then
+    -- Switch (love-nx): hint handheld 720p. SDL auto-switches portable↔dock
+    -- (720p↔1080p) only when the window is resizable and not exclusive
+    -- fullscreen; NxDisplay.sync also applies the size on boot and dock change.
+    t.window.width = 1280
+    t.window.height = 720
+    t.window.fullscreen = false
+    t.window.resizable = true
+    t.window.highdpi = false
+  elseif mobile then
     -- resizable is what unlocks orientation.  SDL's Android backend, given no
     -- SDL_HINT_ORIENTATIONS (LÖVE sets none), calls setRequestedOrientation
     -- at window creation -- FULL_SENSOR when the window is resizable (rotates
@@ -70,6 +80,10 @@ function love.conf(t)
     -- just work.  FULL_SENSOR ignores the device's rotation lock, so
     -- GameActivity.setOrientationBis remaps it to FULL_USER after SDL has
     -- run: same orientations allowed, but auto-rotate being off now wins.
+    -- A persisted ORIENTATION lock (#592) overrides all of this after boot:
+    -- src/core/Orientation.lua sets SDL_HINT_ORIENTATIONS over the FFI and
+    -- re-triggers the request, from main.lua for the launcher and from
+    -- Game:applyOptions in game.
     -- iOS follows the Info.plist orientations
     -- (see mobile/ios/overlays/love-ios.plist, now portrait + landscape).
     t.window.resizable = true

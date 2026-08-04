@@ -240,7 +240,7 @@ local function decodeName(bytes, off, len)
   return table.concat(out)
 end
 
-local function encodeName(buf, off, len, text)
+local function encodeName(buf, off, len, text, padTail)
   local i, pos = 0, 1
   while i < len - 1 and pos <= #text do
     -- a bracketed control token (e.g. "<DOT>", from decodeName reading a
@@ -259,16 +259,17 @@ local function encodeName(buf, off, len, text)
     setByte(buf, off + i, charmap.byToken[ch] or charmap.byToken["?"] or 0x50)
     i, pos = i + 1, pos + clen
   end
-  -- Write exactly ONE $50 terminator and then $50-pad the rest of the
-  -- field: every real save the naming screen ever wrote fills the tail
-  -- with $50, and a zero tail is what PKHeX renders as garbage glyphs
-  -- after the name ("JOHN{}", #206).  Template bytes that are NOT zero
-  -- stay untouched, so an unchanged name still round-trips
-  -- byte-identical and stale template data survives.
+  -- Write exactly ONE $50 terminator.  The tail past it is $50-padded only
+  -- on a templateless (engine-origin) export, where the zero-filled buffer
+  -- is what PKHeX renders as garbage glyphs after the name ("JOHN{}", #206).
+  -- With a template the tail keeps the original save's bytes verbatim --
+  -- real cartridge saves legitimately hold 0x00 (and other stale glyph)
+  -- bytes after the terminator, and rewriting any of them broke the
+  -- import->export byte-identical round trip (the game and PKHeX both stop
+  -- reading at the terminator, so preserved tails are always safe).
   if i < len then setByte(buf, off + i, 0x50) end
-  for j = i + 1, len - 1 do
-    local cur = buf[off + j + 1]
-    if cur == nil or cur:byte() == 0 then setByte(buf, off + j, 0x50) end
+  if padTail then
+    for j = i + 1, len - 1 do setByte(buf, off + j, 0x50) end
   end
 end
 
@@ -781,8 +782,9 @@ function GenSave.encode(save, data, template)
     for i = 1, GenSave.SAVE_SIZE do buf[i] = zero end
   end
 
-  encodeName(buf, O.playerName, NAME_LENGTH, (save.player and save.player.name) or "RED")
-  encodeName(buf, O.rivalName, NAME_LENGTH, (save.player and save.player.rival) or "BLUE")
+  local padTail = not src
+  encodeName(buf, O.playerName, NAME_LENGTH, (save.player and save.player.name) or "RED", padTail)
+  encodeName(buf, O.rivalName, NAME_LENGTH, (save.player and save.player.rival) or "BLUE", padTail)
   setU16be(buf, O.playerId, (save.player and save.player.id) or 0)
   -- wOptions (engine/menus/main_menu.asm InitOptions): bit 7 = battle
   -- effects OFF, bit 6 = SET style, bits 2-0 = text speed -- the recomp's
@@ -875,11 +877,11 @@ function GenSave.encode(save, data, template)
     encodeMon(buf, O.partyMons + i * PARTY_STRUCT_SIZE, mon, true, cw)
     setByte(buf, O.partySpecies + i, cw.pokemonIndex[mon.species] or 0)
     encodeName(buf, O.partyMonOT + i * NAME_LENGTH, NAME_LENGTH,
-              mon.ot or (save.player and save.player.name) or "RED")
+              mon.ot or (save.player and save.player.name) or "RED", padTail)
     -- no nickname stores the species' DISPLAY name, not its ROM constant id
     -- ("NIDORAN_M" would charmap the "_" to "?") (#257)
     encodeName(buf, O.partyMonNicks + i * NAME_LENGTH, NAME_LENGTH,
-              mon.nickname or speciesName(cw, mon.species))
+              mon.nickname or speciesName(cw, mon.species), padTail)
   end
   -- $FF-terminate the species index list right after the last real mon. The
   -- struct, OT-name and nickname bytes of the empty slots past partyN are left
@@ -900,9 +902,9 @@ function GenSave.encode(save, data, template)
       encodeMon(buf, base + 22 + i * BOX_STRUCT_SIZE, mon, false, cw)
       setByte(buf, base + 1 + i, cw.pokemonIndex[mon.species] or 0)
       encodeName(buf, base + 22 + MONS_PER_BOX * BOX_STRUCT_SIZE + i * NAME_LENGTH, NAME_LENGTH,
-                mon.ot or (save.player and save.player.name) or "RED")
+                mon.ot or (save.player and save.player.name) or "RED", padTail)
       encodeName(buf, base + 22 + MONS_PER_BOX * (BOX_STRUCT_SIZE + NAME_LENGTH) + i * NAME_LENGTH, NAME_LENGTH,
-                mon.nickname or speciesName(cw, mon.species))  -- #257, as above
+                mon.nickname or speciesName(cw, mon.species), padTail)  -- #257, as above
     end
     -- $FF-terminate the species list after the last real mon; empty slots past
     -- n keep their template bytes (byte-identical round-trip) or zero (fresh

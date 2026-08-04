@@ -6,12 +6,32 @@
 -- for variable-width text; the default is the GB's flat 8px.
 -- The charmap is matched greedily (longest sequence first) so multi-byte
 -- UTF-8 chars and ligature glyphs like 'd 'l 's map to single glyphs.
+--
+-- A translation may instead set data.font.ttf and render its text through a
+-- real TTF (the bundled Plain Pixel by default), so a script that would need
+-- hundreds of page tiles works out of the box.  Single characters then draw
+-- from the TTF; multi-character charmap sequences (<PK>, the 'd ligatures)
+-- and the sub-0x80 chrome glyphs (borders, arrows) keep their tiles, which
+-- is why the box border never depends on the TTF's coverage.
 
 local Assets = require("src.render.Assets")
 
 local Font = {}
 
 local GLYPH = 8
+
+-- TTF glyph codes are the Unicode codepoint offset far above any page base,
+-- so they flow through the same span/encode/drawCode pipeline as tiles.
+local TTF_BASE = 0x400000
+Font.TTF_BASE = TTF_BASE
+
+-- The engine's bundled TTF (assets/fonts/plainpixel/README.md: CC-BY 4.0,
+-- Douglas Vautour).  data.font.ttf.file overrides for a mod-shipped font.
+-- 15 is the font's design em: its glyphs only rasterize at their true
+-- pixel size (5x11 base, 11x11 double-width) at multiples of 15; at any
+-- other size they downscale unevenly (at 11, M comes out 4px and A 5px).
+Font.PLAINPIXEL = "assets/fonts/plainpixel/PlainPixel-Regular.ttf"
+Font.PLAINPIXEL_SIZE = 15
 
 local state
 local loadedFrom
@@ -83,6 +103,42 @@ function Font.load(data)
   Font.BORDER = {}
   for key, code in pairs(Font.DEFAULT_BORDER) do Font.BORDER[key] = code end
   for key, code in pairs(def.border or {}) do Font.BORDER[key] = code end
+
+  -- TTF mode.  All fields optional: {} means "the bundled Plain Pixel at
+  -- its native 11px".  A failed load logs and falls back to tiles, so a
+  -- typo'd path degrades exactly like a missing page image does above.
+  if type(def.ttf) == "table" then
+    local file = def.ttf.file or Font.PLAINPIXEL
+    local ok, obj = pcall(love.graphics.newFont, file,
+                          def.ttf.size or Font.PLAINPIXEL_SIZE, "mono")
+    if ok and obj then
+      -- nearest keeps the pixel font crisp under the integer UI scale
+      if obj.setFilter then pcall(obj.setFilter, obj, "nearest", "nearest") end
+      state.ttf = {
+        font = obj, file = file,
+        -- the font's own advances already carry a 1px gap at its design
+        -- size; spacing adds to (or, negative, takes from) every advance
+        spacing = def.ttf.spacing or 0,
+        -- bold double-prints each glyph at a 1px offset, for fonts whose
+        -- single-pixel strokes read too light against the tile art
+        bold = def.ttf.bold == true,
+        -- glyphs are taller than the 8px cell (11px base, and the em box
+        -- reserves even more for vertical extension); anchor the font's
+        -- baseline to the tile font's, which sits on row 7 of the cell, so
+        -- caps line up and descenders hang below as the GB font's own do
+        yOffset = def.ttf.yOffset or (obj.getBaseline
+          and (GLYPH - 1 - obj:getBaseline()) or (GLYPH - obj:getHeight())),
+        widths = {}, chars = {},
+      }
+    else
+      require("src.core.Logger").warn("font: could not load ttf %q (%s)",
+        tostring(file), tostring(obj))
+    end
+  end
+end
+
+function Font.ttfActive()
+  return state ~= nil and state.ttf ~= nil
 end
 
 -- re-run load against the data it last saw, so hot reload picks up an
@@ -104,6 +160,49 @@ end
 
 local SPACE = 0x7F
 
+-- Decode one UTF-8 sequence: codepoint and the index of its last byte, or
+-- nil on a malformed lead/continuation (the caller falls back to bytes).
+local function utf8Decode(text, i)
+  local b = text:byte(i)
+  if not b then return nil, i end
+  if b < 0x80 then return b, i end
+  local cont, cp
+  if b >= 0xF0 then cont, cp = 3, b - 0xF0
+  elseif b >= 0xE0 then cont, cp = 2, b - 0xE0
+  elseif b >= 0xC0 then cont, cp = 1, b - 0xC0
+  else return nil, i end
+  for k = i + 1, i + cont do
+    local c = text:byte(k)
+    if not c or c < 0x80 or c > 0xBF then return nil, i end
+    cp = cp * 64 + (c - 0x80)
+  end
+  return cp, i + cont
+end
+
+local function utf8Encode(cp)
+  if cp < 0x80 then return string.char(cp) end
+  if cp < 0x800 then
+    return string.char(0xC0 + math.floor(cp / 64), 0x80 + cp % 64)
+  end
+  if cp < 0x10000 then
+    return string.char(0xE0 + math.floor(cp / 4096),
+                       0x80 + math.floor(cp / 64) % 64, 0x80 + cp % 64)
+  end
+  return string.char(0xF0 + math.floor(cp / 262144),
+                     0x80 + math.floor(cp / 4096) % 64,
+                     0x80 + math.floor(cp / 64) % 64, 0x80 + cp % 64)
+end
+
+-- the character a TTF code draws, cached per code
+local function ttfChar(ttf, code)
+  local ch = ttf.chars[code]
+  if not ch then
+    ch = utf8Encode(code - TTF_BASE)
+    ttf.chars[code] = ch
+  end
+  return ch
+end
+
 -- Segment text into glyph spans: `{ from, to, code }` byte ranges, one per
 -- drawn glyph, code nil when the charmap has nothing.  A span is a whole
 -- charmap sequence, so a multi-byte char ("é", "♂") and an ASCII ligature
@@ -119,6 +218,7 @@ local SPACE = 0x7F
 -- boundaries, which is all a headless paginate needs.
 function Font.split(text)
   local spans = {}
+  local ttf = state and state.ttf
   local i, n = 1, #text
   while i <= n do
     local span
@@ -127,9 +227,21 @@ function Font.split(text)
       for _, entry in ipairs(candidates) do
         local len = #entry.seq
         if text:sub(i, i + len - 1) == entry.seq then
+          if ttf then
+            -- single characters belong to the TTF; only multi-character
+            -- sequences (ligatures, <PK> macros) keep their tile mapping
+            local cp, last = utf8Decode(entry.seq, 1)
+            if cp and last == len then break end
+          end
           span = { from = i, to = i + len - 1, code = entry.code }
           break
         end
+      end
+    end
+    if not span and ttf then
+      local cp, last = utf8Decode(text, i)
+      if cp and cp >= 0x20 then
+        span = { from = i, to = last, code = TTF_BASE + cp }
       end
     end
     if not span then
@@ -185,14 +297,37 @@ function Font.encode(text)
 end
 
 function Font.drawCode(code, x, y)
+  local ttf = state and state.ttf
+  if ttf and code >= TTF_BASE then
+    local prev = love.graphics.getFont()
+    love.graphics.setFont(ttf.font)
+    local ch = ttfChar(ttf, code)
+    love.graphics.print(ch, x, y + ttf.yOffset)
+    if ttf.bold then love.graphics.print(ch, x + 1, y + ttf.yOffset) end
+    if prev then love.graphics.setFont(prev) end
+    return
+  end
   local page = pageFor(code)
   if not page then return end
   local quad = page.quads[code - page.base]
   if quad then love.graphics.draw(page.image, quad, x, y) end
 end
 
--- how far the pen moves past a glyph; 8 unless its page says otherwise
+-- how far the pen moves past a glyph; 8 unless its page says otherwise.
+-- TTF glyphs answer with the font's own metrics (5px base, 11px for
+-- double-width kana/CJK in Plain Pixel), which is what makes TextBox's
+-- pixel-budget pagination fit more of a narrow script per line.
 function Font.advanceOf(code)
+  local ttf = state and state.ttf
+  if ttf and code >= TTF_BASE then
+    local w = ttf.widths[code]
+    if not w then
+      w = ttf.font:getWidth(ttfChar(ttf, code)) + ttf.spacing
+        + (ttf.bold and 1 or 0)
+      ttf.widths[code] = w
+    end
+    return w
+  end
   local page = pageFor(code)
   return page and page.advance or GLYPH
 end

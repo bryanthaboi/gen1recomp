@@ -23,11 +23,23 @@ function Picker.results(S)
   return Ops.speciesSearch(S, p and p.query or "")
 end
 
+-- One commit funnel for both of the picker's jobs: changing the inspected
+-- mon's species, and the Boxes panel's add flow (mode "box-add"), which
+-- creates a fresh Lv5 mon in the selected box instead (#715).  Either way an
+-- unusable record refuses in the status bar rather than crashing (#541).
+local function commit(S, id)
+  local p = S.speciesPicker
+  if p and p.mode == "box-add" then
+    return Ops.boxAddSpecies(S, id)
+  end
+  return Ops.setSpecies(S, S.editingMon, id)
+end
+
 -- Enter commits the top match, which is the whole point of a search field.
 function Picker.commitFirst(S, Kit)
   local hits = Picker.results(S)
   if not hits[1] then return Ops.say(S, "No species matches that") end
-  local ok = Ops.setSpecies(S, S.editingMon, hits[1])
+  local ok = commit(S, hits[1])
   if ok then Ops.closeSpeciesPicker(S, Kit) end
   return ok
 end
@@ -65,7 +77,8 @@ function Picker.draw(S, Kit, width, height)
   local cx, cy = x + pad, y + pad
   local inner = w - 2 * pad
 
-  Kit.caption(cx, cy, "CHOOSE A SPECIES")
+  Kit.caption(cx, cy, p.mode == "box-add"
+    and ("ADD TO BOX %d"):format(S.selectedBox or 1) or "CHOOSE A SPECIES")
   local closeW = 30 * s
   if Kit.button(x + w - pad - closeW, cy - 4 * s, closeW, 26 * s, "x",
       { font = "small", radius = 7 * s }) then
@@ -86,6 +99,9 @@ function Picker.draw(S, Kit, width, height)
   local listH = (y + h - pad - pagerH - 10 * s) - cy
   local perPage = math.max(1, math.floor((listH + rowGap) / (rowH + rowGap)))
   p.offset = Theme.clamp(p.offset or 0, 0, math.max(0, #hits - perPage))
+  -- wheel / touch drag scroll the modal list too; the shield is already
+  -- lowered for this layer, so Kit.scroll works here and only here (#715)
+  p.offset = Kit.scroll(cx, cy, inner, listH, p.offset, #hits, perPage)
 
   if #hits == 0 then
     Kit.emptyBox(cx, cy, inner, listH, "Nothing matches that.")
@@ -99,9 +115,11 @@ function Picker.draw(S, Kit, width, height)
       -- A record the formulas cannot use still lists, greyed: hiding it would
       -- make a modded species look like it never registered (#541).
       local usable = Ops.speciesUsable(S, id)
-      local current = (S.editingMon and S.editingMon.species == id)
+      -- box-add has no "current" species: nothing is being replaced
+      local current = p.mode ~= "box-add"
+        and (S.editingMon and S.editingMon.species == id) or false
       if Kit.row(cx, ry, inner, rowH, current, PAL.green, 9 * s) then
-        if Ops.setSpecies(S, S.editingMon, id) then
+        if commit(S, id) then
           Ops.closeSpeciesPicker(S, Kit)
           Kit.popClip()
           return
@@ -121,6 +139,7 @@ function Picker.draw(S, Kit, width, height)
         ry + (rowH - Kit.textHeight("tiny")) / 2, PAL.caption)
     end
     Kit.popClip()
+    Kit.scrollbar(cx, cy, inner, listH, p.offset, #hits, perPage)
   end
 
   p.offset = Kit.pager(cx, y + h - pad - pagerH, inner, p.offset, #hits, perPage)

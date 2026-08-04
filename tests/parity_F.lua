@@ -34,6 +34,16 @@ Game.stack = StateStack; StateStack:init()
 Game.save = SaveData.newGame()
 require("src.render.Font").load(Data)
 
+-- spy on Sound.play so the starter-received jingle beat is observable
+-- without real audio (parity_C does the same for its arrival SFX)
+local Sound = require("src.core.Sound")
+local realSoundPlay = Sound.play
+local played = {}
+Sound.play = function(data, name)
+  played[#played + 1] = name
+  return realSoundPlay(data, name)
+end
+
 -- pumps a script coroutine to completion; pressFn returns the Input.pressed
 -- table for this frame (default: mash A through text/ask/naming)
 local function runScript(script, pressFn)
@@ -64,6 +74,14 @@ check(Flags.get(Game.save, "EVENT_GOT_STARTER"), "starter flag set")
 eq(Game.save.inventory.POKE_BALL, nil, "no POKe BALLs yet right after picking a starter")
 check(Game.save.party[1] and Game.save.party[1].species == "BULBASAUR",
       "starter joined the party")
+-- #668: OaksLabReceivedMonText carries sound_get_key_item; the jingle
+-- must fire as the starter is handed over (once for the player's mon,
+-- once for the rival's counter-pick)
+local jingles = 0
+for _, name in ipairs(played) do
+  if name == "Get_Key_Item" then jingles = jingles + 1 end
+end
+eq(jingles, 2, "starter + rival counter-pick both play the Get_Key_Item jingle (#668)")
 -- A-mash accepts the nickname prompt and fills NamingScreen with A's
 check(Game.save.party[1].nickname == "AAAAAAAAAA",
       "starter nickname prompt accepted (AskName / #137)")
@@ -181,5 +199,7 @@ do
 
   Game.save = realSave
 end
+
+Sound.play = realSoundPlay
 
 S.finish()

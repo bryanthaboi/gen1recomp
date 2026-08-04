@@ -11,7 +11,8 @@
 #   --install         after a --device build, install the app onto the
 #                     first connected iPhone/iPad (unlock it first)
 #   --release         Release configuration
-#   --version X.Y.Z   stamp MARKETING_VERSION / CURRENT_PROJECT_VERSION
+#   --version X.Y.Z   stamp the engine version into game.love plus
+#                     MARKETING_VERSION / CURRENT_PROJECT_VERSION
 #   --fetch           Fetch LÖVE 12.0 sources and Apple dependencies into mobile/ios/love-src/
 #   --package-only    Zip game.love + apply plist overlay; skip xcodebuild
 #
@@ -217,7 +218,7 @@ apply_ios_branding() {
 }
 
 apply_ios_icon() {
-  local source="$ROOT/assets/logo/logo.png"
+  local source="$ROOT/assets/logo/gen1recomp_cover.png"
   local target="$XCODE_DIR/Images.xcassets/iOS AppIcon.appiconset"
   [ -f "$source" ] || fail "missing iOS icon source: $source"
   [ -d "$target" ] || fail "missing iOS app icon set: $target"
@@ -314,9 +315,13 @@ pack_game_love() {
   # it reappears every launch.  Mods install as .zips at runtime instead
   # (launcher -> MODS -> Import mod .zip), the same lifecycle as every
   # other platform.
+  # libs/ carries the vendored FlexLove toolkit the launcher UI is built on
+  # (src/import/LauncherView.lua requires it at the top level, and RomImporter
+  # calls into that view from both update and draw), so an archive without it
+  # dies on the first frame with nothing left to fall back to.
   # shellcheck disable=SC2086  # MANIFESTS is a deliberate word list
   (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
-    main.lua conf.lua src data assets tools/save-editor \
+    main.lua conf.lua src libs data assets tools/save-editor \
     $MANIFESTS \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
@@ -332,15 +337,38 @@ pack_game_love() {
   # in 0.1.45 through 0.1.47: decodeManifest (src/import/RomImporter.lua) errors
   # outright when a version's manifest is absent, so Import ROM on Yellow died
   # in the built app while dev, which reads the source tree, stayed green.
+  # libs/flexlove/FlexLove.lua is on the list for the same reason: it was added
+  # to build.sh's payload and to no other packager, so the mobile builds shipped
+  # a launcher that threw before drawing its first frame.
   archive_entries="$(unzip -Z1 "$LOVE_FILE")"
   # shellcheck disable=SC2086  # MANIFESTS is a deliberate word list
   for required in src/update/Boot.lua tools/save-editor/App.lua \
                   tools/save-editor/Kit.lua tools/save-editor/panels/Party.lua \
+                  libs/flexlove/FlexLove.lua \
                   $MANIFESTS; do
     printf '%s\n' "$archive_entries" | grep -qx "$required" \
       || fail "game.love is missing $required"
   done
   say "game.love: $(du -h "$LOVE_FILE" | cut -f1) -> $LOVE_FILE"
+
+  if printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    say "stamping engine version $VERSION into game.love"
+    local stamp_dir
+    stamp_dir="$(mktemp -d)"
+    mkdir -p "$stamp_dir/src/core"
+    sed -E "s/(engine[[:space:]]*=[[:space:]]*\")([^\"]*)(\")/\1$VERSION\3/" \
+      "$ROOT/src/core/Version.lua" > "$stamp_dir/src/core/Version.lua"
+    (cd "$stamp_dir" && zip -q "$LOVE_FILE" src/core/Version.lua)
+    local version_re
+    version_re="$(printf '%s' "$VERSION" | sed 's/\./\\./g')"
+    unzip -p "$LOVE_FILE" src/core/Version.lua \
+      | grep -Eq "engine[[:space:]]*=[[:space:]]*\"$version_re\"" \
+      || fail "version stamp failed: game.love does not report engine $VERSION"
+    rm -rf "$stamp_dir"
+    say "stamped engine version: $VERSION"
+  else
+    say "no X.Y.Z --version,  shipping default engine (no stamp)"
+  fi
 }
 
 # Ensure game.love is in the love-ios Copy Bundle Resources phase (idempotent).
@@ -433,6 +461,86 @@ print("patched project.pbxproj")
 PY
 }
 
+suppress_love_dependency_warnings() {
+  local liblove_pbx="$XCODE_DIR/liblove.xcodeproj/project.pbxproj"
+  local love_pbx="$XCODE_DIR/love.xcodeproj/project.pbxproj"
+  [ -f "$liblove_pbx" ] || fail "missing $liblove_pbx"
+  [ -f "$love_pbx" ] || fail "missing $love_pbx"
+
+  python3 - "$liblove_pbx" "$love_pbx" <<'PY'
+import pathlib
+import sys
+
+def patch_configs(path, config_ids, settings):
+    text = path.read_text()
+    for config_id in config_ids:
+        marker = f"\t\t{config_id}"
+        start = text.find(marker)
+        if start < 0:
+            raise SystemExit(f"missing configuration {config_id}")
+        settings_start = text.find("\t\t\tbuildSettings = {\n", start)
+        block_end = text.find("\n\t\t};", settings_start)
+        if settings_start < 0 or block_end < 0:
+            raise SystemExit(f"invalid configuration {config_id}")
+        block = text[settings_start:block_end]
+        lines = block.splitlines(keepends=True)
+        for setting in settings:
+            key = setting.split(" = ", 1)[0].strip()
+            prefix = f"{key} ="
+            replaced = False
+            normalized = []
+            for line in lines:
+                if line.startswith(f"\t\t\t\t{prefix}"):
+                    if not replaced:
+                        normalized.append(setting)
+                        replaced = True
+                else:
+                    normalized.append(line)
+            if not replaced:
+                normalized.insert(1, setting)
+            lines = normalized
+        normalized_block = "".join(lines)
+        if normalized_block != block:
+            text = text[:settings_start] + normalized_block + text[block_end:]
+    path.write_text(text)
+
+patch_configs(
+    pathlib.Path(sys.argv[1]),
+    (
+        "FA0B78EF1A958B90000E1D17",
+        "FA0B78F01A958B90000E1D17",
+        "FA0B78F11A958B90000E1D17",
+    ),
+    (
+        "\t\t\t\tCLANG_WARN_UNINITIALIZED_AUTOS = NO;\n",
+        "\t\t\t\tCLANG_WARN_UNREACHABLE_CODE = NO;\n",
+        "\t\t\t\tCLANG_WARN_UNUSED_PARAMETER = NO;\n",
+        "\t\t\t\tGCC_WARN_CHECK_SWITCH_STATEMENTS = NO;\n",
+        "\t\t\t\tGCC_WARN_SIGN_COMPARE = NO;\n",
+        "\t\t\t\tGCC_WARN_UNINITIALIZED_AUTOS = NO;\n",
+        "\t\t\t\tGCC_WARN_UNUSED_FUNCTION = NO;\n",
+        "\t\t\t\tGCC_WARN_UNUSED_PARAMETER = NO;\n",
+        "\t\t\t\tGCC_WARN_UNUSED_VARIABLE = NO;\n",
+        "\t\t\t\tOTHER_CFLAGS = \"$(inherited) -Wno-sign-compare -Wno-strict-prototypes -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable\";\n",
+        "\t\t\t\tOTHER_CPLUSPLUSFLAGS = \"$(inherited) -Wno-deprecated-declarations -Wno-non-c-typedef-for-linkage -Wno-sign-compare -Wno-switch -Wno-unguarded-availability-new -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-parameter -Wno-unused-private-field -Wno-unused-variable\";\n",
+    ),
+)
+patch_configs(
+    pathlib.Path(sys.argv[2]),
+    (
+        "FA0B7F261A95AAF4000E1D17",
+        "FA0B7F271A95AAF4000E1D17",
+        "FA0B7F281A95AAF4000E1D17",
+    ),
+    (
+        "\t\t\t\tCLANG_WARN_UNDECLARED_SELECTOR = NO;\n",
+        "\t\t\t\tCLANG_WARN_UNUSED_PARAMETER = NO;\n",
+        "\t\t\t\tOTHER_CFLAGS = \"$(inherited) -Wno-undeclared-selector -Wno-unused-parameter\";\n",
+    ),
+)
+PY
+}
+
 # --------------------------------------------------------------- xcodebuild
 # love.system.pickFile and createFile are a native bridge compiled in by
 # mobile/ios/patch_love_src.py, not part of LÖVE.  A build that skipped the
@@ -512,8 +620,8 @@ run_xcodebuild() {
     MARKETING_VERSION="$marketing_version"
     CURRENT_PROJECT_VERSION="$project_version"
     ONLY_ACTIVE_ARCH=NO
+    DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING=YES
   )
-
   if ! $DEVICE; then
     # Simulator: ad-hoc signing (no certificate needed). A plain unsigned
     # build would drop the entitlements file, and HealthKit refuses to run
@@ -523,9 +631,6 @@ run_xcodebuild() {
   else
     warn "device build: configure signing in Xcode or set DEVELOPMENT_TEAM / CODE_SIGN_IDENTITY"
     if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
-      # Automatic signing + provisioning updates lets xcodebuild register the
-      # bundle ID / create a development profile from the CLI, so a device
-      # build works without ever opening the project in Xcode.
       args+=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
              CODE_SIGN_STYLE=Automatic
              -allowProvisioningUpdates)
@@ -543,11 +648,27 @@ run_xcodebuild() {
 
   say "xcodebuild love-ios ($config / $sdk)"
   set +e
-  (
-    cd "$XCODE_DIR"
-    xcodebuild "${args[@]}"
-  )
-  local xc_status=$?
+  local xc_status
+  if command -v xcbeautify >/dev/null 2>&1; then
+    (
+      cd "$XCODE_DIR"
+      xcodebuild "${args[@]}"
+    ) 2>&1 | xcbeautify
+    local pipeline_status=("${PIPESTATUS[@]}")
+    local xcode_status=${pipeline_status[0]}
+    local beautify_status=${pipeline_status[1]}
+    if [ "$xcode_status" -ne 0 ]; then
+      xc_status=$xcode_status
+    else
+      xc_status=$beautify_status
+    fi
+  else
+    (
+      cd "$XCODE_DIR"
+      xcodebuild "${args[@]}"
+    )
+    xc_status=$?
+  fi
   set -e
   if [ "$xc_status" -ne 0 ]; then
     fail "xcodebuild failed (exit $xc_status).
@@ -563,8 +684,9 @@ run_xcodebuild() {
   if [ ! -d "$app" ]; then
     # PRODUCT_NAME override can still leave love.app on older projects
     if [ -d "$products/love.app" ]; then
-      app="$products/love.app"
-      warn "built app is love.app (PRODUCT_NAME override not applied); fusing game.love anyway"
+      app="$products/$APP_NAME.app"
+      mv "$products/love.app" "$app"
+      warn "renamed love.app to $APP_NAME.app"
     else
       warn "xcodebuild finished but no .app under $products"
       find "$BUILD_DIR/Build/Products" -name '*.app' 2>/dev/null | head -20 || true
@@ -573,7 +695,11 @@ run_xcodebuild() {
   fi
 
   # Fuse even if the pbxproj wire-up failed,  LÖVE runs any bundled *.love.
-  if [ ! -f "$app/game.love" ]; then
+  # Byte-compare, never just existence: xcodebuild's incremental Copy Bundle
+  # Resources can leave a previous build's game.love in a surviving .app, and
+  # an existence check shipped that stale payload in the .ipa (today's Lua
+  # fixes present in ios/resources/ but absent from the installed app).
+  if ! cmp -s "$LOVE_FILE" "$app/game.love"; then
     say "fusing game.love into $(basename "$app")"
     cp "$LOVE_FILE" "$app/game.love"
   fi
@@ -655,6 +781,7 @@ python3 "$IOS_DIR/patch_love_src.py" || fail "patch_love_src.py failed"
 ensure_manifests
 pack_game_love
 ensure_game_love_in_xcode
+suppress_love_dependency_warnings
 
 if $PACKAGE_ONLY; then
   say "package-only: skipping xcodebuild (game.love + plist ready under mobile/ios/love-src/)"

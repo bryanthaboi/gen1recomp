@@ -65,6 +65,18 @@ if b1 then
   eq(b1.event, B1F_GUARD, "B1F waits on the fifth grunt")
 end
 
+-- Yellow ships no RocketHideoutB4FDoorCallbackScript (its
+-- scripts/RocketHideoutB4F.asm calls EnableAutoTextBoxDrawing first thing)
+-- and the same open .blk doorway, and Jessie & James hold the two guard
+-- slots without setting either guard flag, so the B4F row must not be
+-- stamped on a Yellow boot (#650).  Read through fieldValue, which is how
+-- a cache carrying closedDoors but no skipMaps still resolves it.
+local skipMaps = FieldDefaults.fieldValue(Data, "cardKeyDoors", "skipMaps")
+check(skipMaps and skipMaps.yellow and skipMaps.yellow[B4F],
+      "Yellow skips the B4F lift gate")
+check(not (skipMaps and skipMaps.red), "Red keeps both gates")
+check(not (skipMaps and skipMaps.blue), "Blue keeps both gates")
+
 -- the events the rows name have to be the ones the guards actually set:
 -- interact() writes trainerHeader().event on a win
 eq(Data:trainerHeader("RocketHideoutB4F", 2).event, GUARD_0,

@@ -31,6 +31,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -563,6 +565,73 @@ public class GameActivity extends SDLActivity {
         }
         Runtime.getRuntime().exit(0);
         return true; // unreachable, but keeps the JNI signature honest
+    }
+
+    /**
+     * Blocking HTTPS GET into destPath, exposed as love.system.httpDownload
+     * and used by src/core/HostShell.lua. Android ships no curl binary, so
+     * every remote fetch the desktop builds do with curl (mod index feeds,
+     * mod release lists, mod zips, thumbnails) comes through here (#597).
+     * Runs on LOVE's Lua thread, never the UI thread, so the platform's
+     * network-on-main-thread rule is not in play and a blocking call matches
+     * the curl semantics the Lua callers already expect.
+     *
+     * Redirects are followed by hand because HttpURLConnection silently drops
+     * a redirect that changes protocol, and only https is accepted: the feeds
+     * live on GitHub Pages / raw and a downgrade to http must fail, not fetch.
+     * The body lands in a .part file and is renamed only once complete, so a
+     * dropped connection can never leave a half file the caller trusts.
+     */
+    @Keep
+    public static boolean httpDownload(String url, String destPath, String userAgent, String accept) {
+        if (url == null || destPath == null) return false;
+        HttpURLConnection conn = null;
+        File tmp = new File(destPath + ".part");
+        try {
+            String current = url;
+            for (int hop = 0; hop < 5; hop++) {
+                URL parsed = new URL(current);
+                if (!"https".equalsIgnoreCase(parsed.getProtocol())) return false;
+                conn = (HttpURLConnection) parsed.openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+                conn.setRequestProperty("User-Agent",
+                    userAgent == null ? "gen1recomp" : userAgent);
+                if (accept != null) conn.setRequestProperty("Accept", accept);
+                int code = conn.getResponseCode();
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String next = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    conn = null;
+                    if (next == null) return false;
+                    current = new URL(parsed, next).toString();
+                    continue;
+                }
+                if (code < 200 || code > 299) return false;
+                InputStream in = new BufferedInputStream(conn.getInputStream());
+                OutputStream out = new BufferedOutputStream(new FileOutputStream(tmp));
+                try {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                } finally {
+                    try { out.close(); } catch (IOException ignored) {}
+                    try { in.close(); } catch (IOException ignored) {}
+                }
+                File dest = new File(destPath);
+                dest.delete();
+                if (!tmp.renameTo(dest)) return false;
+                return dest.length() > 0;
+            }
+            return false;
+        } catch (Exception e) {
+            Log.d("GameActivity", "httpDownload failed: " + e.getMessage());
+            return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+            if (tmp.exists()) tmp.delete();
+        }
     }
 
     /**

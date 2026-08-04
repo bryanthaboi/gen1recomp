@@ -100,12 +100,25 @@ end
 -- play so a hot-reloaded dataset (or a mod's audio) always reaches the worker
 local function slimAudio(data)
   local audio = data.audio or {}
+  -- NX-only: resolve the versioned cache prefix on the main thread and hand
+  -- it to the worker, which runs in a fresh Lua state without GameVersion.
+  local programPrefix
+  if require("src.core.Platform").isNX() then
+    local prefix = require("src.core.GameVersion").cachePrefix()
+    if prefix ~= "" then programPrefix = prefix end
+  end
   return {
     programFile = audio.programFile,
+    programPrefix = programPrefix,
     bankOrder = audio.bankOrder,
     waveBanks = audio.waveBanks,
     noiseHeaders = audio.noiseHeaders,
   }
+end
+
+-- test-only: expose slimAudio so the NX prefix hand-off is verifiable
+function ChipAudio._slimAudioForTest(data)
+  return slimAudio(data)
 end
 
 -- If the worker died (a malformed def that errors mid-synth), fall back to the
@@ -418,16 +431,22 @@ function ChipAudio.newCry(data, species, resolved)
   })
 end
 
+-- Two channels for the same reason ChipSynth.renderEffectData renders stereo:
+-- a mono Source is spatialized by OpenAL at the listener position and spreads
+-- over every output an interface has (#626).  The siren itself is unchanged,
+-- both channels carry the same sample.
 function ChipAudio.newLowHealthAlarm()
   local samples = math.floor(SAMPLE_RATE * 62 / 60)
-  local data = love.sound.newSoundData(samples, SAMPLE_RATE, 16, 1)
+  local data = love.sound.newSoundData(samples, SAMPLE_RATE, 16, 2)
   local phase = 0
   for index = 0, samples - 1 do
     local frame = math.floor(index * 60 / SAMPLE_RATE) % 31
     local register = frame < 11 and 0x750 or 0x6EE
     local frequency = 131072 / (2048 - register)
     phase = (phase + frequency / SAMPLE_RATE) % 1
-    data:setSample(index, (phase < 0.5 and 1 or -1) * 0.25)
+    local value = (phase < 0.5 and 1 or -1) * 0.25
+    data:setSample(index, 1, value)
+    data:setSample(index, 2, value)
   end
   return love.audio.newSource(data, "static")
 end

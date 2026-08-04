@@ -7,7 +7,7 @@ Subcommands:
     scaffold  <id> [--profile content|overhaul|total_conversion] [--api 2]
               [--github owner/repo] [--experimental] [--dest DIR] [--force]
     translation <id> [--language NAME] [--base auto|fixture|imported]
-              [--refresh] [--dest DIR]
+              [--refresh] [--dest DIR] [--pixel-font]
     validate  <id|path> [--strict] [--base auto|fixture|imported]
     lint      <id|path>
     pack      <mod-dir> [-o out.modpkg]
@@ -1475,6 +1475,17 @@ return function(mod)
   end
 
   -- ---- glyphs -------------------------------------------------------
+  -- Text rendering through the bundled Plain Pixel TTF ("Plain Pixel
+  -- Font" by Douglas Vautour (Burpy Fresh), CC-BY 4.0 -- see
+  -- assets/fonts/plainpixel/README.md).  Registered, it replaces the tile
+  -- font for ordinary characters, so a translation needs no glyph sheet
+  -- at all; box borders and <PK>-style macros keep their tiles.  Options:
+  -- { file = mod.assets:path("myfont.ttf"), size = 15, spacing = 0,
+  --   yOffset = -6, bold = true } -- size is the font's design em (Plain
+  -- Pixel only rasterizes cleanly at multiples of 15), bold thickens a
+  -- 1px-stroke font that reads too light.
+  {{ttf_register}}mod.content.font:register("ttf", {})
+
   -- Register the sheet BEFORE anything asks for a glyph on it.  base is
   -- the first code the page owns; 0x100 and up is free space above the
   -- vanilla pages, so a new alphabet never collides with them.
@@ -1566,6 +1577,14 @@ rather than anything out of the ROM, so there the key *is* the English and
 you can translate straight from it.
 
 ## Start with the font, not the text
+
+The fast path: scaffold with `--pixel-font` (or uncomment the
+`mod.content.font:register("ttf", {})` line in `main.lua`) and the game
+renders text through the engine's bundled Plain Pixel TTF, which already
+covers Latin with diacritics, Cyrillic, kana and CJK.  No glyph sheet, no
+charmap; `lang/font.lua` and `lang/charmap.lua` can stay empty.  The rest
+of this section is for translations that want the hand-drawn tile look
+instead.
 
 The engine draws from **glyph pages**: an image of 8x8 cells plus a charmap
 saying which byte sequence draws which cell. The vanilla pages sit at `$60`
@@ -1665,7 +1684,13 @@ Nothing is translated yet: {{total}} strings are waiting in `lang/`.
 - `assets/font/` - your glyph sheet
 '''
 
-FONT_README = '''Put your glyph sheet here.
+FONT_README = '''You may not need this directory at all: scaffold with
+`--pixel-font` (or uncomment the `register("ttf", {})` line in main.lua)
+and text renders through the engine's bundled Plain Pixel TTF, which
+covers Latin, kana and CJK out of the box.  A glyph sheet is only for a
+translation that wants the hand-drawn GB look.
+
+Put your glyph sheet here.
 
 A page is a PNG of 8x8 cells, 16 per row by default, black on white. Codes
 run left to right and top to bottom starting at the page's `base`, so the
@@ -1761,6 +1786,7 @@ def cmd_translation(args, repo):
         "{{extra}}": "",
         "{{github_line}}": "",
         "{{experimental}}": "false",
+        "{{ttf_register}}": "" if args.pixel_font else "-- ",
         "{{total}}": str(sum(counts.values())),
         "{{table}}": "\n".join(
             f"| `lang/{name}.lua` | {counts[name]} |" for name, *_ in catalogs),
@@ -1999,6 +2025,9 @@ def main(argv):
     p.add_argument("--dest")
     p.add_argument("--base", default="auto",
                    choices=["auto", "fixture", "imported"])
+    p.add_argument("--pixel-font", action="store_true",
+                   help="render text through the bundled Plain Pixel TTF "
+                        "instead of the tile font (no glyph sheet needed)")
     p.add_argument("--refresh", action="store_true",
                    help="re-harvest the catalogs, keeping existing work")
     p.add_argument("--force", action="store_true")

@@ -110,17 +110,19 @@ function LinkState:exitWith(message, reason)
   end
 end
 
--- Online play meets strangers, so it requires vanilla on both ends
--- (Handshake.onlineAllowed).  Mods merge into the shared Data registries at
--- boot and there is no unmerge, so switching them off has to go through a
--- relaunch -- but the player should not have to go find the mod manager and
--- work out which mods count.  This turns every enabled mod off, records
--- them so the mod manager can put them back, and relaunches.  The restart
+-- Online play meets strangers, so it requires a vanilla simulation on both
+-- ends (Handshake.onlineAllowed).  Mods merge into the shared Data
+-- registries at boot and there is no unmerge, so switching them off has to
+-- go through a relaunch -- but the player should not have to go find the
+-- mod manager and work out which mods count.  This turns the blocking mods
+-- off, records them so the mod manager can put them back, and relaunches.
+-- Verified translations are not blockers (#501), so a player keeps their
+-- language across the restart and only the gameplay mods go.  The restart
 -- is confirmed rather than silent: it drops unsaved progress.
 function LinkState:offerVanillaRestart()
   local game = self.game
   local loader = game.mods
-  local mods = Handshake.mods(game)
+  local mods = Handshake.onlineBlockers(game)
   local names = {}
   for i, mod in ipairs(mods) do
     if i > 2 then break end
@@ -712,7 +714,9 @@ function LinkState:draw()
     end
 
   elseif self.stage == "notice" then
-    drawTitle("CHECK YOUR MODS")
+    -- a version-skew notice has nothing to do with mods (#758)
+    drawTitle(self.verdict == "engine_skew" and "UPDATE YOUR GAME"
+                                             or "CHECK YOUR MODS")
     for i, line in ipairs(self.noticeLines or {}) do
       if i > 8 then break end -- what fits above the prompt row
       Font.draw(line, 8, 24 + (i - 1) * 12)

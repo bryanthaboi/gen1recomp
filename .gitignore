@@ -31,7 +31,10 @@ mobile/ios/love-src/
 mobile/ios/cache/
 mobile/ios/build/
 
-# Final packaged build artifacts (mac/win/web/android/ios) — see scripts/build.sh
+# love-nx vendor binaries (fetch per docs/switch-development.md; also covered by .*)
+.bazinga/love-nx/
+
+# Final packaged build artifacts (mac/win/web/android/ios/switch) — see scripts/build.sh
 /dist/
 
 # Legacy manual convenience-copy location (superseded by /dist/android/)

@@ -89,7 +89,7 @@ mkdir -p "$GAME_SRC"
 # tools/save-editor is part of that payload: the launcher's Edit button on a
 # save row opens it in-process (main.lua).
 (cd "$ROOT" && zip -q -9 -r "$WORK/game-payload.zip" \
-  main.lua conf.lua src data assets tools/save-editor \
+  main.lua conf.lua src libs data assets tools/save-editor \
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_red_es.json tools/rom_manifest_blue_es.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')

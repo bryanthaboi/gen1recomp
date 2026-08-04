@@ -7,6 +7,14 @@
 -- the Party and Boxes panels dock into (rule 1 of the design spec): the list
 -- stays visible while you edit, and Escape clears the selection rather than
 -- "closing a window".
+--
+-- #715 reflow: the inspector used to shrink its stat tiles and DV/move rows
+-- against a vertical budget, and past a point the rows still ran over the
+-- action buttons.  Sizes are fixed at readable values now; when the card is
+-- too short for them the whole body scrolls (Kit.scrollPixels), and when it
+-- is too narrow for the DV | moves split the two columns stack.  The clip
+-- over the card doubles as the hit fence, so a control scrolled out of view
+-- cannot take a stray tap.
 
 local Theme = require("Theme")
 local Ops = require("Ops")
@@ -66,63 +74,12 @@ end
 -- and the differences between mons stay legible.
 local STAT_SCALE = 400
 
-function MonEditor.draw(S, Kit, x, y, w, h)
+-- The -5 -1 [Lv] +1 +5 stepper row plus the EXP readout, at (lx0, ly).
+local function drawLevelRow(S, Kit, mon, lx0, ly)
   local s = Kit.scale
-  Kit.card(x, y, w, h)
-  local mon = S.editingMon
-  local pad = 18 * s
-  if not mon then
-    -- The inspector column is always drawn, so it explains itself rather
-    -- than collapsing and reflowing the panel underneath it.
-    local tw = math.min(w - 40 * s, 340 * s)
-    Kit.textCenter("button",
-      "Pick a slot on the left to inspect it. Every change here re-runs the " ..
-      "Gen1 stat formulas, so HP and stats stay legal.",
-      x + (w - tw) / 2, y + h / 2 - Kit.textHeight("button"), tw, PAL.muted)
-    return
-  end
-
-  local def = S.data.pokemon[mon.species]
-  local cx, cy = x + pad, y + pad
-  local inner = w - 2 * pad
-  -- Backstop for a window too short for even the compacted rhythm below:
-  -- nothing this panel draws may land outside its own card (#497).  Party
-  -- draws the inspector last, so no outer clip is lost by the pop at the end.
-  Kit.pushClip(x, y, w, h)
-
-  -- ---------------------------------------------------------- header row
-  local sprite = 96 * s
-  MonEditor.drawSprite(S, Kit, mon.species, cx, cy, sprite)
-  local hx = cx + sprite + 18 * s
-  local hw = inner - sprite - 18 * s
-
-  Kit.text("title", mon.species, hx, cy, PAL.heading)
-  local nameW = Kit.textWidth("title", mon.species)
-  Kit.text("tiny", ("#%03d"):format(def and def.dex or 0), hx + nameW + 12 * s,
-    cy + Kit.textHeight("title") - Kit.textHeight("tiny") - 2 * s, PAL.caption)
-
-  -- One control instead of a pair of arrows: cycling walked the catalog an
-  -- entry at a time (151 taps to cross the dex) and ran a full MonOps
-  -- recalculation on every step, including on records the Gen1 formulas
-  -- cannot use, which is what crashed the editor (#541).  This opens the
-  -- searchable picker; the species name itself is a second, larger target.
-  local pickH = 30 * s
-  local pickW = math.min(150 * s, math.max(90 * s, hw * 0.6))
-  local px = hx + hw - pickW
-  local py = cy + (Kit.textHeight("title") - pickH) / 2
-  local openPicker = Kit.button(px, py, pickW, pickH, "Change species",
-    { kind = "accent", font = "small", radius = 8 * s })
-  if not openPicker then
-    openPicker = Kit.press(hx, cy, math.max(0, px - hx - 10 * s),
-      Kit.textHeight("title"))
-  end
-  if openPicker then Ops.openSpeciesPicker(S, Kit) end
-
-  -- level stepper: -5 -1 [Lv] +1 +5, matching MonOps.setLevel's 1..100 clamp
-  local ly = cy + Kit.textHeight("title") + 14 * s
   local lh = 28 * s
-  Kit.caption(hx, ly + (lh - Kit.textHeight("caption")) / 2, "LEVEL")
-  local lx = hx + 52 * s
+  Kit.caption(lx0, ly + (lh - Kit.textHeight("caption")) / 2, "LEVEL")
+  local lx = lx0 + 52 * s
   local bw = 40 * s
   for _, d in ipairs({ { "-5", -5 }, { "-1", -1 } }) do
     if Kit.stepper(lx, ly, bw, lh, d[1], { font = "small", radius = 7 * s }) then
@@ -141,52 +98,19 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   end
   Kit.text("mono", ("EXP %d"):format(mon.exp or 0), lx + 6 * s,
     ly + (lh - Kit.textHeight("mono")) / 2, PAL.muted)
+  return lh
+end
 
-  -- ------------------------------------------------------- derived stats
-  local statsY = cy + sprite + 18 * s
-  Kit.caption(cx, statsY, "STATS . recalculated from level + DVs")
-  statsY = statsY + Kit.textHeight("caption") + 10 * s
-  local gap = 12 * s
-  local cellW = (inner - gap * 4) / 5
-  -- Everything below the header competes for one vertical budget.  At the
-  -- design size it is generous; in a 720px-tall window (a phone held
-  -- sideways) it is not, and the DV / move rows used to run past the card and
-  -- paint over the status bar (#497).  Shrink the two flexible blocks -- the
-  -- stat tiles and the DV / move rows -- instead of overflowing, with floors
-  -- that keep every row the 26px target Kit's rule 6 promises.  statsY is
-  -- already past the STATS caption here, so only the DVs / MOVES caption is
-  -- subtracted.
-  local actH = 34 * s
-  local rowGap = 8 * s
-  local budget = (y + h - pad) - statsY - (Kit.textHeight("caption") + 10 * s)
-    - 18 * s - actH - 4 * s
-  local cellH = Theme.clamp(budget * 0.3, 46 * s, 68 * s)
-  local rowH = Theme.clamp((budget - cellH) / 4 - rowGap, 26 * s, 34 * s)
-  for i, st in ipairs(STAT_KEYS) do
-    local bx = cx + (i - 1) * (cellW + gap)
-    Theme.row(bx, statsY, cellW, cellH, 10 * s, 0.6)
-    local value = (mon.stats and mon.stats[st.field]) or 0
-    Kit.text("micro", st.key, bx + 12 * s, statsY + 10 * s, PAL.caption)
-    Kit.text("stat", tostring(value), bx + 12 * s,
-      statsY + 10 * s + Kit.textHeight("micro") + 4 * s, PAL.heading)
-    Kit.meter(bx + 12 * s, statsY + cellH - 14 * s, cellW - 24 * s, 5 * s,
-      value / STAT_SCALE * 100, PAL.blue)
-  end
+-- Everything the level row needs in width, for the "does it fit beside the
+-- sprite" decision.
+local function levelRowWidth(Kit, mon)
+  local s = Kit.scale
+  return 52 * s + 2 * (40 * s + 8 * s) + 58 * s + 8 * s + 2 * (40 * s + 8 * s)
+    + 6 * s + Kit.textWidth("mono", ("EXP %d"):format(mon.exp or 0))
+end
 
-  -- --------------------------------------------------- DVs | moves split
-  local colY = statsY + cellH + 18 * s
-  local colGap = 18 * s
-  local colW = (inner - colGap) / 2
-  local rightX = cx + colW + colGap
-
-  Kit.caption(cx, colY, "DVs")
-  Kit.textRight("tiny", ("HP DV auto-derived . %d"):format(mon.dvs.hp or 0),
-    cx + colW, colY, PAL.caption)
-  Kit.caption(rightX, colY, "MOVES")
-  Kit.textRight("tiny", "click a slot to cycle", rightX + colW, colY, PAL.caption)
-
-  local rowY = colY + Kit.textHeight("caption") + 10 * s
-
+local function drawDvRows(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
+  local s = Kit.scale
   for i, key in ipairs(DV_KEYS) do
     local ry = rowY + (i - 1) * (rowH + rowGap)
     Theme.row(cx, ry, colW, rowH, 10 * s, 0.6)
@@ -212,7 +136,10 @@ function MonEditor.draw(S, Kit, x, y, w, h)
       Ops.setDv(S, mon, key, 15)
     end
   end
+end
 
+local function drawMoveRows(S, Kit, mon, rightX, rowY, colW, rowH, rowGap)
+  local s = Kit.scale
   for slot = 1, 4 do
     local ry = rowY + (slot - 1) * (rowH + rowGap)
     Theme.row(rightX, ry, colW, rowH, 10 * s, 0.6)
@@ -239,16 +166,175 @@ function MonEditor.draw(S, Kit, x, y, w, h)
       Ops.clearMove(S, mon, slot)
     end
   end
+end
 
-  local actY = rowY + 4 * (rowH + rowGap) + 4 * s
-  local actW = (colW - 10 * s) / 2
-  if Kit.button(rightX, actY, actW, actH, "Reset to learnset",
-      { font = "small", radius = 9 * s }) then
-    Ops.resetMoves(S, mon)
+function MonEditor.draw(S, Kit, x, y, w, h)
+  local s = Kit.scale
+  Kit.card(x, y, w, h)
+  local mon = S.editingMon
+  local pad = 18 * s
+  if not mon then
+    -- The inspector column is always drawn, so it explains itself rather
+    -- than collapsing and reflowing the panel underneath it.
+    local tw = math.min(w - 40 * s, 340 * s)
+    Kit.textCenter("button",
+      "Pick a slot on the left to inspect it. Every change here re-runs the " ..
+      "Gen1 stat formulas, so HP and stats stay legal.",
+      x + (w - tw) / 2, y + h / 2 - Kit.textHeight("button"), tw, PAL.muted)
+    return
   end
-  if Kit.button(rightX + actW + 10 * s, actY, actW, actH, "Full heal",
-      { kind = "good", font = "small", radius = 9 * s }) then
-    Ops.healMon(S, mon)
+
+  local def = S.data.pokemon[mon.species]
+  local inner = w - 2 * pad
+  local capH = Kit.textHeight("caption")
+  local titleH = Kit.textHeight("title")
+
+  -- Reflow decisions, all against real pixels (#715): the DV | moves split
+  -- needs ~470px of card interior; below that the two stacks go one above
+  -- the other.  A narrow card also drops the sprite to 64px so the header
+  -- text keeps room.
+  local narrow = inner < 470 * s
+  local sprite = (narrow and 64 or 96) * s
+  local rowH = 30 * s
+  local rowGap = 8 * s
+  local cellH = 52 * s
+  local actH = 34 * s
+
+  local hw = inner - sprite - 18 * s
+  local levelInHeader = hw >= levelRowWidth(Kit, mon)
+  local headerH
+  if levelInHeader then
+    headerH = math.max(sprite, titleH + 14 * s + 28 * s)
+  else
+    -- the level row does not fit beside the sprite: it drops below the
+    -- header block at full card width instead of painting over the sprite
+    headerH = math.max(sprite, titleH) + 12 * s + 28 * s
+  end
+
+  local colRowsH = 4 * (rowH + rowGap) - rowGap
+  local colsH
+  if narrow then
+    colsH = (capH + 10 * s + colRowsH) * 2 + 14 * s + 10 * s + actH
+  else
+    colsH = capH + 10 * s + colRowsH + 12 * s + actH
+  end
+  local contentH = pad + headerH + 18 * s
+    + capH + 10 * s + cellH + 18 * s
+    + colsH + pad
+
+  -- Called before the widgets so this frame already draws at the updated
+  -- offset; any list-free card body is fair game for the drag (#715).
+  S.inspectorScroll = Kit.scrollPixels(x, y, w, h, S.inspectorScroll, contentH)
+  Kit.pushClip(x, y, w, h)
+  local cx = x + pad
+  local cy = y + pad - S.inspectorScroll
+
+  -- ---------------------------------------------------------- header row
+  MonEditor.drawSprite(S, Kit, mon.species, cx, cy, sprite)
+  local hx = cx + sprite + 18 * s
+
+  -- One control instead of a pair of arrows: cycling walked the catalog an
+  -- entry at a time (151 taps to cross the dex) and ran a full MonOps
+  -- recalculation on every step, including on records the Gen1 formulas
+  -- cannot use, which is what crashed the editor (#541).  This opens the
+  -- searchable picker; the species name itself is a second, larger target.
+  local pickH = 30 * s
+  local pickW = math.min(150 * s, math.max(90 * s, hw * 0.6))
+  local px = hx + hw - pickW
+  local py = cy + (titleH - pickH) / 2
+
+  -- the species name yields to the button instead of running under it (#715)
+  local name = Kit.ellipsize("title", mon.species, math.max(40 * s, px - hx - 12 * s))
+  Kit.text("title", name, hx, cy, PAL.heading)
+  local nameW = Kit.textWidth("title", name)
+  if nameW + Kit.textWidth("tiny", "#000") + 12 * s < px - hx - 12 * s then
+    Kit.text("tiny", ("#%03d"):format(def and def.dex or 0), hx + nameW + 12 * s,
+      cy + titleH - Kit.textHeight("tiny") - 2 * s, PAL.caption)
+  end
+
+  local openPicker = Kit.button(px, py, pickW, pickH, "Change species",
+    { kind = "accent", font = "small", radius = 8 * s })
+  if not openPicker then
+    openPicker = Kit.press(hx, cy, math.max(0, px - hx - 10 * s), titleH)
+  end
+  if openPicker then Ops.openSpeciesPicker(S, Kit) end
+
+  -- level stepper: -5 -1 [Lv] +1 +5, matching MonOps.setLevel's 1..100 clamp
+  if levelInHeader then
+    drawLevelRow(S, Kit, mon, hx, cy + titleH + 14 * s)
+  else
+    drawLevelRow(S, Kit, mon, cx, cy + math.max(sprite, titleH) + 12 * s)
+  end
+
+  -- ------------------------------------------------------- derived stats
+  local statsY = cy + headerH + 18 * s
+  Kit.caption(cx, statsY, "STATS . recalculated from level + DVs")
+  statsY = statsY + capH + 10 * s
+  local gap = 12 * s
+  local cellW = (inner - gap * 4) / 5
+  for i, st in ipairs(STAT_KEYS) do
+    local bx = cx + (i - 1) * (cellW + gap)
+    Theme.row(bx, statsY, cellW, cellH, 10 * s, 0.6)
+    local value = (mon.stats and mon.stats[st.field]) or 0
+    Kit.text("micro", st.key, bx + 12 * s, statsY + 8 * s, PAL.caption)
+    Kit.text("stat", tostring(value), bx + 12 * s,
+      statsY + 8 * s + Kit.textHeight("micro") + 2 * s, PAL.heading)
+    Kit.meter(bx + 12 * s, statsY + cellH - 12 * s, cellW - 24 * s, 5 * s,
+      value / STAT_SCALE * 100, PAL.blue)
+  end
+
+  -- --------------------------------------------------- DVs | moves split
+  local colY = statsY + cellH + 18 * s
+  if narrow then
+    -- stacked: DVs first, then moves, then the two actions side by side at
+    -- full width (#715)
+    Kit.caption(cx, colY, "DVs")
+    Kit.textRight("tiny", ("HP DV auto-derived . %d"):format(mon.dvs.hp or 0),
+      cx + inner, colY, PAL.caption)
+    local rowY = colY + capH + 10 * s
+    drawDvRows(S, Kit, mon, cx, rowY, inner, rowH, rowGap)
+
+    local movesY = rowY + colRowsH + 14 * s
+    Kit.caption(cx, movesY, "MOVES")
+    Kit.textRight("tiny", "click a slot to cycle", cx + inner, movesY, PAL.caption)
+    local mRowY = movesY + capH + 10 * s
+    drawMoveRows(S, Kit, mon, cx, mRowY, inner, rowH, rowGap)
+
+    local actY = mRowY + colRowsH + 10 * s
+    local actW = (inner - 10 * s) / 2
+    if Kit.button(cx, actY, actW, actH, "Reset to learnset",
+        { font = "small", radius = 9 * s }) then
+      Ops.resetMoves(S, mon)
+    end
+    if Kit.button(cx + actW + 10 * s, actY, actW, actH, "Full heal",
+        { kind = "good", font = "small", radius = 9 * s }) then
+      Ops.healMon(S, mon)
+    end
+  else
+    local colGap = 18 * s
+    local colW = (inner - colGap) / 2
+    local rightX = cx + colW + colGap
+
+    Kit.caption(cx, colY, "DVs")
+    Kit.textRight("tiny", ("HP DV auto-derived . %d"):format(mon.dvs.hp or 0),
+      cx + colW, colY, PAL.caption)
+    Kit.caption(rightX, colY, "MOVES")
+    Kit.textRight("tiny", "click a slot to cycle", rightX + colW, colY, PAL.caption)
+
+    local rowY = colY + capH + 10 * s
+    drawDvRows(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
+    drawMoveRows(S, Kit, mon, rightX, rowY, colW, rowH, rowGap)
+
+    local actY = rowY + colRowsH + 12 * s
+    local actW = (colW - 10 * s) / 2
+    if Kit.button(rightX, actY, actW, actH, "Reset to learnset",
+        { font = "small", radius = 9 * s }) then
+      Ops.resetMoves(S, mon)
+    end
+    if Kit.button(rightX + actW + 10 * s, actY, actW, actH, "Full heal",
+        { kind = "good", font = "small", radius = 9 * s }) then
+      Ops.healMon(S, mon)
+    end
   end
   Kit.popClip()
 end

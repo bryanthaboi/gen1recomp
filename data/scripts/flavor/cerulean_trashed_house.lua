@@ -14,9 +14,9 @@ return {
       --   else               -> .WhatsLostIsLostText (player has TM_DIG)
       TEXT_CERULEANTRASHEDHOUSE_FISHING_GURU = {
         { "check_item", "TM_DIG" },
-        { "jump_if_true", 4 },
+        { "jump_if_true", 5 },
         { "show_text", "_CeruleanTrashedHouseFishingGuruTheyStoleATMText" },
-        { "jump", 5 },
+        { "jump", "end" },
         { "show_text", "_CeruleanTrashedHouseFishingGuruWhatsLostIsLostText" },
       },
     },

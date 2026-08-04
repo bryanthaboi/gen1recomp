@@ -1,0 +1,3 @@
+# Default Docker image for fused nacptool/elf2nro fallback.
+# Override with GEN1_DKP_IMAGE; operators may pin a digest for reproducibility.
+devkitpro/devkita64:latest

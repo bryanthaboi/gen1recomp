@@ -65,14 +65,21 @@ mkdir -p "$CACHE" "$WORK" "$DIST/mac" "$DIST/win" "$DIST/linux"
 say "packing game.love"
 LOVE_FILE="$WORK/game.love"
 rm -f "$LOVE_FILE"
+# libs/ carries the vendored FlexLove toolkit the launcher UI is built on
+# (src/import/LauncherView.lua); a build without it dies on the first frame.
 (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
-  main.lua conf.lua src data assets tools/save-editor \
+  main.lua conf.lua src libs data assets tools/save-editor \
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_yellow.json \
   tools/rom_manifest_red_es.json tools/rom_manifest_blue_es.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
-if unzip -Z1 "$LOVE_FILE" \
-    | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
+# Materialize the listing once and grep the file: piping unzip straight into
+# grep -q under `set -o pipefail` SIGPIPEs unzip when grep exits early on a
+# match, and the pipeline's failure reads as "missing <file>" for whichever
+# entry happened to match first (see the same fix in pack_love.sh).
+LOVE_LISTING="$WORK/love-listing.txt"
+unzip -Z1 "$LOVE_FILE" > "$LOVE_LISTING"
+if grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' "$LOVE_LISTING"; then
   fail "game.love unexpectedly contains generated ROM data"
 fi
 # The editor is only reachable if its entry point and both module directories
@@ -82,11 +89,12 @@ fi
 # way once).
 for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 tools/save-editor/panels/Party.lua \
+                libs/flexlove/FlexLove.lua \
                 tools/rom_manifest.json tools/rom_manifest_blue.json \
                 tools/rom_manifest_yellow.json \
                 tools/rom_manifest_red_es.json \
                 tools/rom_manifest_blue_es.json; do
-  unzip -Z1 "$LOVE_FILE" | grep -qx "$required" \
+  grep -qxF "$required" "$LOVE_LISTING" \
     || fail "game.love is missing $required"
 done
 say "game.love: $(du -h "$LOVE_FILE" | cut -f1)"

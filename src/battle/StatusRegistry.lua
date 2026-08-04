@@ -12,7 +12,7 @@ local StatusRegistry = {}
 -- pokered's <USER>/<TARGET> text macros (home/text.asm
 -- PlaceMoveUsersName): enemy-mon texts print "Enemy " before the name
 local function displayName(b)
-  return b.isPlayer and b.name or ("Enemy " .. b.name)
+  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
 end
 
 -- opts: toxic (start the Toxic counter), moveType (for the type gates),

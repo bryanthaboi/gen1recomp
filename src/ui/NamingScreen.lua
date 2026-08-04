@@ -159,21 +159,28 @@ function NamingScreen:update(dt)
     if self.row ~= caseRow then
       self.col = self.col < #GRID[self.row] and self.col + 1 or 1
     end
-  elseif input:wasPressed("b") then
-    table.remove(self.glyphs)
-  elseif input:wasPressed("a") then
-    if self.row == edRow and self.col == edCol then
-      self:confirm()
-      return
-    end
-    if self.row == caseRow then
-      self.lower = not self.lower
-      return
-    end
-    if #self.glyphs < self.maxLen then
-      Sound.play(self.game.data, "Press_AB")
-      table.insert(self.glyphs, GRID[self.row][self.col])
-      if #self.glyphs >= self.maxLen then self:jumpToEnd() end
+  else
+    -- Prefer A over B when both edges fire in one frame (love-nx dual
+    -- gamepad+raw path historically set both; erase must not win).
+    local pressedA = input:wasPressed("a")
+    local pressedB = input:wasPressed("b")
+    if pressedA and pressedB then pressedB = false end
+    if pressedB then
+      table.remove(self.glyphs)
+    elseif pressedA then
+      if self.row == edRow and self.col == edCol then
+        self:confirm()
+        return
+      end
+      if self.row == caseRow then
+        self.lower = not self.lower
+        return
+      end
+      if #self.glyphs < self.maxLen then
+        Sound.play(self.game.data, "Press_AB")
+        table.insert(self.glyphs, GRID[self.row][self.col])
+        if #self.glyphs >= self.maxLen then self:jumpToEnd() end
+      end
     end
   end
 end

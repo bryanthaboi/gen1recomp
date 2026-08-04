@@ -5,8 +5,9 @@
 -- Three frame-counted phases:
 --  1. copyright card, 180 frames (intro.asm:311-312).
 --  2. shooting star: 64 frames of empty letterbox (intro.asm:323-324), then
---     the big star streaks down-left for 40 frames while the GAME FREAK
---     logo + letters sit at (72,56)/(40,80) (splash.asm:27-60, 211-228),
+--     the big star streaks down-left for 40 frames while the studio logo
+--     sits centered in the letterbox band (the GAME FREAK logo + letter
+--     row it replaces sat at (72,56)/(40,80); splash.asm:27-60, 211-228),
 --     the logo flashes 3x10 frames (splash.asm:72-82), 4 waves of small
 --     stars rain from the logo -- 6x24 frames, +1px every 3 frames, lower
 --     star blinking (splash.asm:97-146, 163-209) -- and a 40 frame hold
@@ -32,6 +33,10 @@ local Strings = require("src.core.Strings")
 local IntroMovie = {}
 IntroMovie.__index = IntroMovie
 IntroMovie.isOpaque = true
+
+-- Same as the title screen: full-bleed art, no world behind it, no player zoom
+-- to respect, so fill the window rather than sit at the fixed integer scale.
+function IntroMovie:wantsFillScale() return true end
 
 -- SGB intro palettes: the splash uses PalPacket_GameFreakIntro (logo
 -- GAMEFREAK, falling star columns RED/VIRIDIAN/BLUEMON), the attract
@@ -75,7 +80,12 @@ local SPLASH_FRAMES = WAVES_END + 40  -- ld c, 40 (intro.asm:329-331)
 -- (GameFreakLogoOAMData, splash.asm:211-228; screen = grid*8, OAM offsets
 -- cancel)
 local LOGO_X, LOGO_Y = 72, 56
-local TEXT_X, TEXT_Y = 40, 80
+
+-- The studio logo (assets/logo/minilogo.png) stands in for both the
+-- GAME FREAK logo and its letter row, so it gets the whole band between
+-- the letterbox bars (y 32..112) down to where the star waves spawn
+-- (y=88): fit it inside this box, centered, aspect preserved.
+local STUDIO_BOX = { w = 128, h = 52, cx = 80, cy = 60 }
 
 -- the 4 waves of small stars: screen X positions, all spawning at y=88
 -- (OAM $68; SmallStarsWave*Coords, splash.asm:160-183)
@@ -146,6 +156,16 @@ function IntroMovie.new(game, onDone)
   self.skipAll = intro.skip and true or false
   local function img(e) return tryImage(e and e.path) end
   self.copyright = tryImage("assets/generated/title/copyright.png")
+  -- studio mark replaces the GAME FREAK logo + splash text entirely; the
+  -- extracted logo stays as the fallback if the asset is missing
+  self.studioLogo = tryImage(self.studio.logo or "assets/logo/minilogo.png")
+  if self.studioLogo then
+    self.studioLogo:setFilter("nearest", "nearest")
+    local iw, ih = self.studioLogo:getDimensions()
+    self.studioScale = math.min(STUDIO_BOX.w / iw, STUDIO_BOX.h / ih)
+    self.studioX = STUDIO_BOX.cx - iw * self.studioScale / 2
+    self.studioY = STUDIO_BOX.cy - ih * self.studioScale / 2
+  end
   self.logo = img(intro.gamefreakLogo)
   self.gfText = img(intro.gamefreakText)
   self.bigStar = img(intro.bigStar)
@@ -283,13 +303,12 @@ function IntroMovie:drawSplash()
     local flashing = t >= FLASH_START and t < FLASH_START + FLASH_FRAMES
     local dim = flashing and math.floor((t - FLASH_START) / 5) % 2 == 0
     love.graphics.setColor(1, 1, 1, dim and 0.35 or 1)
-    if self.logo then
+    if self.studioLogo then
+      love.graphics.draw(self.studioLogo, self.studioX, self.studioY,
+                         0, self.studioScale, self.studioScale)
+    elseif self.logo then
       love.graphics.draw(self.logo, LOGO_X, LOGO_Y)
     end
-    -- custom studio name (replaces the GAME FREAK splash text)
-    love.graphics.setColor(0, 0, 0, dim and 0.35 or 1)
-    local card = self.studio.card or Strings("bois club games")
-    Font.draw(card, (160 - #card * 8) / 2, TEXT_Y)
     love.graphics.setColor(1, 1, 1, 1)
   end
   if t >= STAR_START and t < FLASH_START then

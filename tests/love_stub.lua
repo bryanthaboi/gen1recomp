@@ -11,6 +11,9 @@ Image.__index = Image
 function Image:getDimensions() return self.w, self.h end
 function Image:getWidth() return self.w end
 function Image:getHeight() return self.h end
+-- IntroMovie sets the studio logo filter unconditionally on load
+function Image:setFilter(min, mag) self.minFilter, self.magFilter = min, mag end
+function Image:getFilter() return self.minFilter or "nearest", self.magFilter or "nearest" end
 
 -- read PNG dimensions from the file header (no decoder needed)
 local function pngSize(path)
@@ -40,8 +43,15 @@ local gstate = { shader = nil, canvas = nil, blend = "alpha",
 local gstack = {}
 
 stub.graphics = {
-  newImage = function(path)
-    local w, h = pngSize(path)
+  newImage = function(pathOrData)
+    local path = pathOrData
+    if type(pathOrData) == "table" and pathOrData._fileData then
+      path = pathOrData.name or "<filedata>"
+    elseif type(pathOrData) == "table" and pathOrData.path then
+      path = pathOrData.path
+    end
+    local w, h = 8, 8
+    if type(path) == "string" then w, h = pngSize(path) end
     return setmetatable({ w = w, h = h, path = path }, Image)
   end,
   newQuad = function(x, y, w, h) return { x = x, y = y, w = w, h = h } end,
@@ -64,11 +74,36 @@ stub.graphics = {
   -- newMesh / stencil stay absent on purpose: tools/save-editor/Theme.lua
   -- probes for them and falls back to flat fills, which is the path a
   -- headless run should take.
-  newFont = function(size)
-    local px = size or 12
+  -- Accepts both real signatures: newFont(size) and
+  -- newFont(filename, size, hinting), the latter for the TTF text mode
+  -- (src/render/Font.lua).  Width counts codepoints, not bytes, and CJK /
+  -- kana measure double, so tests can assert the wide-glyph metrics a real
+  -- pixel font (5px base, 11px double-width) exhibits without rasterizing.
+  newFont = function(a, b)
+    if type(a) == "string" then
+      -- real LÖVE raises on a missing file; callers pcall and fall back
+      local handle = io.open(a, "rb")
+      if not handle then error("Could not open file " .. a) end
+      handle:close()
+    end
+    local px = (type(a) == "number" and a) or b or 12
+    local unit = math.max(1, px * 0.5)
     return {
-      getWidth = function(_, text) return #tostring(text) * math.max(1, px * 0.5) end,
+      getWidth = function(_, text)
+        text = tostring(text)
+        local w, i, n = 0, 1, #text
+        while i <= n do
+          local byte = text:byte(i)
+          local len = byte >= 0xF0 and 4 or byte >= 0xE0 and 3
+                      or byte >= 0xC0 and 2 or 1
+          w = w + (byte >= 0xE1 and 2 or 1) * unit  -- U+1000+: double width
+          i = i + len
+        end
+        return w
+      end,
       getHeight = function() return px end,
+      getBaseline = function() return px - 2 end,
+      setFilter = noop,
     }
   end,
   setFont = function(f) gstate.font = f end,
@@ -118,49 +153,130 @@ stub.math = {
 
 stub.filesystem = {
   write = function(name, content) files[name] = content return true end,
-  read = function(name) return files[name] end,
   remove = function(name) files[name] = nil return true end,
-  -- directories are implied by key prefixes ("mods/x/manifest.json")
-  getInfo = function(name)
-    if files[name] then return { type = "file" } end
+  newFileData = function(contents, name)
+    return { _fileData = true, contents = contents, name = name or "" }
+  end,
+  createDirectory = function() return true end,
+  -- Record mounts for CacheFs.mountVersion tests (NX Blue/Yellow overlay).
+  _mounts = {},
+  mount = function(archive, mountpoint, appendToPath)
+    stub.filesystem._mounts[#stub.filesystem._mounts + 1] = {
+      archive = archive, mountpoint = mountpoint or "",
+      append = appendToPath and true or false,
+    }
+    return true
+  end,
+  unmount = function(archive)
+    local mounts = stub.filesystem._mounts
+    for i = #mounts, 1, -1 do
+      if mounts[i].archive == archive then
+        table.remove(mounts, i)
+        return true
+      end
+    end
+    return false
+  end,
+  getSaveDirectory = function() return "/tmp/pokeport-stub-save" end,
+  isFused = function() return false end,
+}
+
+-- Resolve a PhysFS path through recorded mounts (prepend first, newest wins).
+local function resolveViaMounts(name)
+  local mounts = stub.filesystem._mounts
+  for i = #mounts, 1, -1 do
+    local m = mounts[i]
+    if not m.append then
+      local mp = m.mountpoint or ""
+      local key
+      if mp == "" then
+        key = m.archive .. "/" .. name
+      elseif name == mp then
+        key = m.archive
+      elseif name:sub(1, #mp + 1) == mp .. "/" then
+        local rel = name:sub(#mp + 2)
+        key = m.archive .. "/" .. rel
+      end
+      if key then
+        if files[key] then return key, "file" end
+        local prefix = key .. "/"
+        for k in pairs(files) do
+          if k:sub(1, #prefix) == prefix then return key, "directory" end
+        end
+      end
+    end
+  end
+  return nil
+end
+
+function stub.filesystem.read(name)
+  if files[name] then return files[name] end
+  local key = resolveViaMounts(name)
+  if key and files[key] then return files[key] end
+  return nil
+end
+
+function stub.filesystem.getInfo(name, filter)
+  if files[name] then
+    if filter and filter ~= "file" then return nil end
+    return { type = "file" }
+  end
+  local prefix = name .. "/"
+  for key in pairs(files) do
+    if key:sub(1, #prefix) == prefix then
+      if filter and filter ~= "directory" then return nil end
+      return { type = "directory" }
+    end
+  end
+  local key, kind = resolveViaMounts(name)
+  if key and kind then
+    if filter and filter ~= kind then return nil end
+    return { type = kind }
+  end
+  return nil
+end
+
+stub.filesystem.load = function(name)
+  local data = stub.filesystem.read(name)
+  if not data then return nil, "no file" end
+  return load(data, name)
+end
+
+stub.filesystem.getDirectoryItems = function(name)
+  local seen, items = {}, {}
+  name = name or ""
+  local function addChild(child)
+    if child and not seen[child] then
+      seen[child] = true
+      items[#items + 1] = child
+    end
+  end
+  -- "" / "/" = save-dir root (RomImporter Android ROM scan)
+  if name == "" or name == "/" then
+    for key in pairs(files) do
+      addChild(key:match("^[^/]+"))
+    end
+  else
     local prefix = name .. "/"
     for key in pairs(files) do
-      if key:sub(1, #prefix) == prefix then return { type = "directory" } end
-    end
-    return nil
-  end,
-  load = function(name)
-    if not files[name] then return nil, "no file" end
-    return load(files[name], name)
-  end,
-  getDirectoryItems = function(name)
-    local seen, items = {}, {}
-    name = name or ""
-    -- "" / "/" = save-dir root (RomImporter Android ROM scan)
-    if name == "" or name == "/" then
-      for key in pairs(files) do
-        local child = key:match("^[^/]+")
-        if child and not seen[child] then
-          seen[child] = true
-          items[#items + 1] = child
-        end
+      if key:sub(1, #prefix) == prefix then
+        addChild(key:sub(#prefix + 1):match("^[^/]+"))
       end
-    else
-      local prefix = name .. "/"
-      for key in pairs(files) do
-        if key:sub(1, #prefix) == prefix then
-          local child = key:sub(#prefix + 1):match("^[^/]+")
-          if child and not seen[child] then
-            seen[child] = true
-            items[#items + 1] = child
-          end
+    end
+    -- Also surface children exposed via mounts.
+    local key = resolveViaMounts(name)
+    if key then
+      local mprefix = key .. "/"
+      for k in pairs(files) do
+        if k:sub(1, #mprefix) == mprefix then
+          addChild(k:sub(#mprefix + 1):match("^[^/]+"))
         end
       end
     end
-    table.sort(items)
-    return items
-  end,
-}
+  end
+  table.sort(items)
+  return items
+end
 
 -- table-backed SoundData so ChipAudio's offline render seam
 -- (_renderMusicForTest) runs headless; modkit bounce writes WAVs from it
@@ -187,6 +303,25 @@ function SoundData:getDuration() return self.samples / self.rate end
 
 stub.sound = {
   newSoundData = function(samples, rate, bits, channels)
+    -- Path form (love.sound.newSoundData(filename)): only succeed when the
+    -- stub FS has the file, matching real LÖVE.  Synthesize a short mono
+    -- 8-bit buffer so Sound.widenMono can run headless for seeded paths
+    -- (pika cries); missing files must error so widenMono keeps the
+    -- original Source (give_item_jingle identity checks, etc.).
+    if type(samples) == "string" then
+      if not stub.filesystem.getInfo(samples) then
+        error("Could not open file " .. samples .. ". Does not exist.")
+      end
+      local n = 32
+      local sd = setmetatable({
+        samples = n, rate = rate or 22050, bits = bits or 8,
+        channels = channels or 1, data = {}, path = samples,
+      }, SoundData)
+      for i = 0, n - 1 do
+        sd:setSample(i, (i % 2 == 0) and 0.5 or -0.5)
+      end
+      return sd
+    end
     return setmetatable({ samples = samples, rate = rate or 44100,
       bits = bits or 16, channels = channels or 1, data = {} }, SoundData)
   end,
@@ -202,6 +337,30 @@ stub.mouse = {
 }
 
 stub.timer = { getTime = function() return 0 end }
+
+-- Minimal image module so Assets.imageData can decode FileData fallbacks
+-- headless (full pixel stubs live in tests/mod_graphics_tests.lua).
+local ImageData = {}
+ImageData.__index = ImageData
+function ImageData:getWidth() return self.w end
+function ImageData:getHeight() return self.h end
+function ImageData:getDimensions() return self.w, self.h end
+function ImageData:getPixel() return 0, 0, 0, 1 end
+function ImageData:setPixel() end
+function ImageData:mapPixel() end
+function ImageData:encode() return { getString = function() return "" end } end
+
+stub.image = {
+  newImageData = function(a, b)
+    if type(a) == "table" and a._fileData then
+      return setmetatable({ w = 8, h = 8, path = a.name, source = a }, ImageData)
+    end
+    if type(a) == "string" then
+      return setmetatable({ w = 8, h = 8, path = a }, ImageData)
+    end
+    return setmetatable({ w = a or 8, h = b or 8 }, ImageData)
+  end,
+}
 
 -- Desktop / headless: full-window safe area (matches LÖVE's fallback).
 stub.window = {

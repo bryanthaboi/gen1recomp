@@ -373,9 +373,17 @@ function PartyMenu:update(dt)
           or Strings("A blinding FLASH\nlights the area!"), function()
             self:close()
             -- setDark, not a bare field write: ADVANCED carries the darkness
-            -- in a baked atlas, so lighting the cave rebuilds it (#383)
-            self.game.stack:push(Transition.whiteFlash(self.game, nil,
-              function() ow:setDark(false) end))
+            -- in a baked atlas, so lighting the cave drops every resident map
+            -- and rebakes this one (#383).  It runs HERE, before the blink,
+            -- because start_sub_menus.asm .flash clears wMapPalOffset before
+            -- PrintText and blinks last of all: the cave is already lit by the
+            -- time GBPalWhiteOutWithDelay3 runs.  Hanging the rebuild off the
+            -- blink's completion instead left that rebuild's whole cost --
+            -- seconds of per-pixel atlas baking on a phone -- on screen as a
+            -- solid white frame with nothing under it, which reads as a
+            -- lockup (#610).
+            ow:setDark(false)
+            self.game.stack:push(Transition.whiteFlash(self.game))
           end))
         return
       elseif action == "surf" then

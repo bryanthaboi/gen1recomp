@@ -219,6 +219,24 @@ function SaveData.defaultOptions()
     -- battle screen composition: og (the 160x144 original) | wide
     -- (304x144, src/battle/WideBattle.lua)
     battleLayout = "og",
+    -- BATTLE SIZE: "fixed" = the classic integer-scaled letterbox; "fill" =
+    -- scale the battle surface to the window so it fills vertically.  See
+    -- BattleState:wantsFillScale.
+    battleFit = "fixed",
+    -- BATTLE BG: what fills the screen behind and around the battle.
+    -- "white" = the display mode's paper shade (the classic look),
+    -- "black" = plain black bars, "world" = the frozen overworld showing
+    -- through, dimmed.  See BattleState:bgMode.
+    battleBg = "white",
+    -- UI LAYOUT: "centered" = a fixed letterbox.  Every element sits where it
+    -- was drawn in the 160x144 canvas and the UI does not follow the survey
+    -- zoom, so nothing moves or resizes under the player.  The original
+    -- composition.  "dynamic" = the dialogue box docks to the window's bottom
+    -- edge, the START menu to its top right, and the UI steps down with the
+    -- zoom.  Centered is the default: dynamic reads better zoomed out, but it
+    -- moves the screen furniture, so it is opt-in.
+    -- See Game.dynamicUI, Renderer:setUIAnchor and Renderer:uiScale.
+    uiLayout = "centered",
     ruleset = "gen1_faithful",
     -- 0-7 like the GB's NR50 master volume
     musicVol = 7,
@@ -239,6 +257,9 @@ function SaveData.defaultOptions()
     voidFill = "trees",
     -- windowed | borderless (desktop fullscreen); ignored on mobile
     videoMode = "windowed",
+    -- lock the window to an exact 160x144 multiple, 1..4 (0 = OFF); see
+    -- src/core/FaithfulRes.lua.  Ignored on mobile.
+    faithfulRes = 0,
     -- hard render frame-rate cap; render-only pacing (issue #88, FrameCap.lua)
     fpsCap = 60,
     -- graphics performance tier: auto | high | balanced | low.  "auto"
@@ -254,6 +275,15 @@ function SaveData.defaultOptions()
     -- Native mod enablement is an installation option, not save-slot data.
     -- Missing entries mean enabled so newly installed mods work by default.
     mods = {},
+    -- Named setups the player can switch between (#593; src/mods/ModProfile.lua
+    -- owns the shape, src/mods/ManagerState.lua the UI): each row is
+    -- { name, enabled = {id=bool}, options = {id={k=v}}, slots = {version=slotId} }.
+    -- activeProfile names the row the live set currently matches (nil for
+    -- ad-hoc, so it has no default entry here; mergeOptions preserves it).
+    -- modProfilesSeeded records that the pre-profiles setup was already
+    -- migrated into PROFILE 1, so deleting every profile does not re-seed one.
+    modProfiles = {},
+    modProfilesSeeded = false,
     -- GitHub release checks for mods with a manifest "github" field
     -- (src/mods/ModUpdate.lua). Keyed by owner/repo; TTL is six hours.
     modUpdateCache = {},
@@ -269,8 +299,11 @@ function SaveData.defaultOptions()
     modIndexCache = {},
     -- On-screen touch overlay (Android/iOS; see src/core/TouchControls.lua).
     -- enabled=false hides it permanently (distinct from auto-hide-on-gamepad).
-    -- positions are optional normalized centers {x=0..1, y=0..1} per control
-    -- (dpad/a/b/start/select); nil means the default layout.
+    -- layouts.portrait / layouts.landscape each hold optional normalized
+    -- centers {x=0..1, y=0..1} per control (dpad/a/b/start/select) plus a
+    -- size scale; nil positions mean that orientation draws the default
+    -- layout (#633).  Pre-#633 files stored one top-level positions table;
+    -- TouchControls.normalizeConfig folds it into both orientations on load.
     touchControls = { enabled = true },
   }
 end

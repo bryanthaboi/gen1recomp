@@ -1,0 +1,67 @@
+{
+  "name": "gen1recomp App Repo",
+  "identifier": "com.theboisclub.gen1recomp.repo",
+  "iconURL": "https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/assets/logo/gen1recomp_cover.png",
+  "apps": [
+    {
+      "name": "gen1recomp",
+      "bundleIdentifier": "com.theboisclub.gen1recomp",
+      "developerName": "bryanthaboi",
+      "iconURL": "https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/assets/logo/gen1recomp_cover.png",
+      "localizedDescription": "Gen1Recomp - A native Lua / LÖVE2D recreation of Gen 1 Poke",
+      "tintColor": "3b5ca8",
+      "category": "games",
+      "versions": [
+        {
+          "version": "0.1.64",
+          "date": "2026-08-03",
+          "size": 9317129,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.64/gen1recomp-0.1.64-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Contributors\n\n- @bryanthaboi\n- @ShaneMcGovernIE"
+        },
+        {
+          "version": "0.1.63",
+          "date": "2026-08-03",
+          "size": 9316977,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.63/gen1recomp-0.1.63-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #623 Game Corner Prize Exchange various issues\n- #624 Coins purschase menu missing your current money and coins\n- #636 Inaccurate Old Man tutorial in yellow + misc issues relating to him\n- #637 True color broken on Hall of Fame and Party Stats when using the wide battle option\n- #639 Pokédex can't show the correct stats when you catch 100 or more pokémon + overly simplified layout\n- #650 Rocket Hideout Progression Bug - Stuck with door closed after defeating Jessie and James in Yellow\n- #697 Missaligned HUD on Hall of Fame\n- #704 Player doesn't follow Prof. Oak to the Hall of Fame on the first screen\n- #722 Issues with Giovanni in Silph C.O.\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.1.62",
+          "date": "2026-08-03",
+          "size": 9309934,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.62/gen1recomp-0.1.62-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.1.61",
+          "date": "2026-08-03",
+          "size": 9052744,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.61/gen1recomp-0.1.61-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #325 Launcher crashes importing a mod .zip with non-ASCII characters in the filename (Windows)\n- #646 Fuchsia City Pokemon not being added to Pokedex.\n- #651 Parasect trading NPC mute and deaf\n- #665 fix: file path sanitizing is needed\n- #706 Champion theme playing too late\n- #709 Fainted Pokemon plays its normal cry instead of the pitched-down, slower faint cry\n- #719 Silph C.O workers dialog bug.\n\n## Contributors\n\n- @bryanthaboi\n- @castdrian\n- @jherediagu\n- @johnjohto\n- @ShaneMcGovernIE\n- hernan"
+        },
+        {
+          "version": "0.1.60",
+          "date": "2026-08-02",
+          "size": 8337730,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.60/gen1recomp-0.1.60-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #596 No rival theme\n- #641 PP UP UI\n- #648 The revive item does not return the divided experience to fallen Pokemon that participated in battle.\n- #677 Gamespeed 3x\n- #683 Rival theme not playing in Oak's Lab\n- #689 Corrupted color on table in Celadon City using Advanced Colors preset\n- #694 Missing sound effect when falling from boulder holes\n- #695 Pressing B on the PC should bring you back to the previous screen, not turn it off\n\n## Contributors\n\n- @bryanthaboi\n- @castdrian\n- @ShaneMcGovernIE\n- @spiritsnails\n- Shane McGovern"
+        },
+        {
+          "version": "0.1.59",
+          "date": "2026-08-02",
+          "size": 8334731,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.59/gen1recomp-0.1.59-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #668 No Jingle playing when receiving first Pokemon from Oak\n- #671 faint animation error\n\n## Contributors\n\n- @bryanthaboi\n- @castdrian\n- @jherediagu\n- @spiritsnails\n- Shane McGovern"
+        },
+        {
+          "version": "0.1.58",
+          "date": "2026-08-02",
+          "size": 8331163,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.58/gen1recomp-0.1.58-ios.ipa",
+          "localizedDescription": "Gen1Recomp - A native Lua / LÖVE2D recreation of Gen 1 Poke"
+        }
+      ]
+    }
+  ]
+}

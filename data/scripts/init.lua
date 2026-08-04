@@ -48,7 +48,8 @@ end
 if GameVersion.isYellow() then
   for _, file in ipairs({ "data.scripts.yellow_gifts",
                           "data.scripts.yellow_jessie_james",
-                          "data.scripts.yellow_beach_house" }) do
+                          "data.scripts.yellow_beach_house",
+                          "data.scripts.yellow_viridian_old_man" }) do
     for mapId, mod in pairs(require(file)) do
       MapScripts.attachBase(mapId, mod)
     end

@@ -14,8 +14,12 @@
 --
 -- Player preferences (options.touchControls) can permanently disable the
 -- overlay and/or override per-control positions as normalized window
--- fractions.  The launcher editor (src/ui/TouchControlsEditor.lua) writes
--- those; applyOptions reads them at boot and whenever options change.
+-- fractions.  Positions and a size multiplier are stored per orientation
+-- (#633): options.touchControls.layouts.portrait / .landscape, picked from
+-- the safe rect's aspect, so laying the pad out in landscape never moves
+-- the portrait one.  The launcher editor (src/ui/TouchControlsEditor.lua)
+-- writes those; applyOptions reads them at boot and whenever options
+-- change.
 --
 -- Controls press GB buttons through Input:overlayPressed/Released -- their
 -- own input source, not a keyboard alias -- so a held overlay direction
@@ -47,6 +51,15 @@ local SLOP = { a = 1.3, b = 1.3, start = 1.4, select = 1.4 }
 local BUTTONS = { "a", "b", "start", "select" }
 local CONTROLS = { "dpad", "a", "b", "start", "select" }
 
+-- Per-orientation layout buckets (#633).  Orientation comes from the safe
+-- rect, not the device: sw > sh is landscape, so a resized desktop window
+-- under POKEPORT_TOUCH exercises the same path a phone rotation does.
+local ORIENTATIONS = { "portrait", "landscape" }
+
+-- Control size multiplier bounds for the editor's -/+ (#633).  1.0 is the
+-- historical size, so an install that never touches it draws as before.
+local SCALE_MIN, SCALE_MAX, SCALE_STEP = 0.6, 1.6, 0.1
+
 local IMAGES = {
   dpad = "assets/touch/dpad.png",
   dpad_up = "assets/touch/dpad_up.png",
@@ -65,6 +78,33 @@ local function clamp01(v)
   return v
 end
 
+local function clampScale(v)
+  if type(v) ~= "number" or v ~= v then return 1 end
+  if v < SCALE_MIN then return SCALE_MIN end
+  if v > SCALE_MAX then return SCALE_MAX end
+  return v
+end
+
+-- Copy a persisted positions table, dropping unknown / non-numeric entries.
+-- Always a fresh table: two orientations seeded from the same pre-#633
+-- layout must not alias, or dragging one would still move the other.
+local function normalizePositions(src)
+  if type(src) ~= "table" then return nil end
+  local pos = {}
+  for _, name in ipairs(CONTROLS) do
+    local p = src[name]
+    if type(p) == "table" and type(p.x) == "number" and type(p.y) == "number" then
+      pos[name] = { x = clamp01(p.x), y = clamp01(p.y) }
+    end
+  end
+  if not next(pos) then return nil end
+  return pos
+end
+
+local function orientationFor(sw, sh)
+  return (sw or 0) > (sh or 0) and "landscape" or "portrait"
+end
+
 local function wantsOverlay()
   local env = os.getenv("POKEPORT_TOUCH")
   if env == "1" then return true end
@@ -73,22 +113,26 @@ local function wantsOverlay()
   return osName == "Android" or osName == "iOS"
 end
 
--- Normalize a persisted touchControls table into {enabled, positions}.
+-- Normalize a persisted touchControls table into
+-- {enabled, layouts = {portrait = {positions, scale}, landscape = {...}}}.
 -- Unknown / garbage keys are dropped so a bad options.lua cannot brick
--- the overlay.
+-- the overlay.  Pre-#633 files stored one top-level positions table and no
+-- scale; that layout seeds both orientations, so an upgrading player keeps
+-- what they had until they edit one of them.
 function TouchControls.normalizeConfig(tc)
-  local out = { enabled = true, positions = nil }
-  if type(tc) ~= "table" then return out end
+  local out = { enabled = true, layouts = { portrait = {}, landscape = {} } }
+  -- a nil / garbage table still yields full buckets (scale defaulted), so
+  -- no caller ever has to nil-check a bucket's scale
+  if type(tc) ~= "table" then tc = {} end
   if tc.enabled == false then out.enabled = false end
-  if type(tc.positions) == "table" then
-    local pos = {}
-    for _, name in ipairs(CONTROLS) do
-      local p = tc.positions[name]
-      if type(p) == "table" and type(p.x) == "number" and type(p.y) == "number" then
-        pos[name] = { x = clamp01(p.x), y = clamp01(p.y) }
-      end
-    end
-    if next(pos) then out.positions = pos end
+  local saved = type(tc.layouts) == "table" and tc.layouts or nil
+  for _, o in ipairs(ORIENTATIONS) do
+    local b = saved and saved[o]
+    if type(b) ~= "table" then b = { positions = tc.positions, scale = tc.scale } end
+    out.layouts[o] = {
+      positions = normalizePositions(b.positions),
+      scale = clampScale(b.scale),
+    }
   end
   return out
 end
@@ -96,11 +140,14 @@ end
 -- Pure default layout in LOVE units for a usable rect of size ww x wh at
 -- origin (ox, oy).  Shared by layout() and the editor's Reset path so
 -- defaults stay in one place.  ox/oy default to 0 for the headless tests
--- and for callers that already pass a full-window size.
-function TouchControls.defaultLayout(ww, wh, ox, oy)
+-- and for callers that already pass a full-window size.  scale (#633) is
+-- the orientation's size multiplier: every width and the margin derive
+-- from dpadW, so scaling it moves the default centers with the art
+-- instead of letting bigger buttons hang off the edge.
+function TouchControls.defaultLayout(ww, wh, ox, oy, scale)
   ox, oy = ox or 0, oy or 0
   local short = math.min(ww, wh)
-  local dpadW = math.min(180, short * 0.34)
+  local dpadW = math.min(180, short * 0.34) * clampScale(scale)
   local abW = dpadW * 0.46
   local ssW = dpadW * 0.30
   local margin = dpadW * 0.12
@@ -127,7 +174,13 @@ end
 function TouchControls:init()
   self.active = wantsOverlay()
   self.enabled = true
+  -- per-orientation buckets (#633); self.positions / self.scale mirror the
+  -- one currently on screen so layout(), the editor and the tests keep a
+  -- single lookup
+  self.layouts = { portrait = {}, landscape = {} }
+  self.orientation = nil
   self.positions = nil
+  self.scale = 1
   self.preview = false
   self.controllerHidden = false
   self.touches = {}
@@ -157,20 +210,30 @@ end
 function TouchControls:applyOptions(opts)
   local cfg = TouchControls.normalizeConfig(opts and opts.touchControls)
   self.enabled = cfg.enabled
-  self.positions = cfg.positions
+  self.layouts = cfg.layouts
   self.layoutW, self.layoutH = nil, nil
   self.layoutOx, self.layoutOy = nil, nil
+  -- prime positions/scale for the orientation on screen so callers that
+  -- read them before the next layout() (editor chrome, tests) see the file
+  self:currentBucket()
   if not self.enabled then
     self.controllerHidden = false
     self:reset()
   end
 end
 
+-- Snapshot for the editor's save path: enabled plus both orientation
+-- buckets, matching what options.lua stores (#633).
 function TouchControls:config()
-  return {
-    enabled = self.enabled ~= false,
-    positions = self.positions,
-  }
+  local out = { enabled = self.enabled ~= false, layouts = {} }
+  for _, o in ipairs(ORIENTATIONS) do
+    local b = self.layouts and self.layouts[o] or nil
+    out.layouts[o] = {
+      positions = b and b.positions or nil,
+      scale = clampScale(b and b.scale),
+    }
+  end
+  return out
 end
 
 -- Preview mode: force-draw the overlay for the layout editor, ignoring
@@ -197,13 +260,33 @@ local function clampZone(zone, x0, y0, x1, y1)
   zone.cy = math.max(y0 + half, math.min(y1 - half, zone.cy))
 end
 
+-- The bucket for the orientation currently on screen (#633), created on
+-- demand.  Mirrors it into self.orientation / self.positions / self.scale,
+-- which layout(), the editor chrome and the tests read.
+function TouchControls:currentBucket()
+  local _, _, sw, sh = SafeArea.rect()
+  local o = orientationFor(sw, sh)
+  self.layouts = self.layouts or { portrait = {}, landscape = {} }
+  local b = self.layouts[o]
+  if type(b) ~= "table" then
+    b = {}
+    self.layouts[o] = b
+  end
+  b.scale = clampScale(b.scale)
+  self.orientation = o
+  self.positions = b.positions
+  self.scale = b.scale
+  return b
+end
+
 -- Layout in LOVE units (density-independent on mobile), recomputed when
 -- the window or safe area changes (rotation, resize, notch insets).
 -- Default: d-pad bottom-left, B/A bottom-right with A above B (the Game Boy
 -- diagonal), START/SELECT flanking the bottom center -- all inside the
 -- device safe area so thumbs clear the home indicator / cutouts.
 -- Custom positions (normalized 0..1 within the safe rect) override centers
--- while sizes stay derived from the short edge.
+-- while sizes stay derived from the short edge, times the orientation's
+-- size setting (#633).
 function TouchControls:layout()
   local ox, oy, sw, sh = SafeArea.rect()
   if self.layoutW == sw and self.layoutH == sh
@@ -212,10 +295,13 @@ function TouchControls:layout()
   end
   self.layoutW, self.layoutH = sw, sh
   self.layoutOx, self.layoutOy = ox, oy
-  self.L = TouchControls.defaultLayout(sw, sh, ox, oy)
-  if self.positions then
+  -- orientation picks which saved layout applies; rotating swaps buckets
+  -- because sw/sh swapped, which is already the cache key above (#633)
+  local bucket = self:currentBucket()
+  self.L = TouchControls.defaultLayout(sw, sh, ox, oy, bucket.scale)
+  if bucket.positions then
     for _, name in ipairs(CONTROLS) do
-      local p = self.positions[name]
+      local p = bucket.positions[name]
       local zone = self.L[name]
       if p and zone then
         zone.cx = ox + p.x * sw
@@ -242,17 +328,43 @@ function TouchControls:setControlCenter(name, cx, cy)
   if not zone then return end
   zone.cx, zone.cy = cx, cy
   clampZone(zone, ox, oy, ox + sw, oy + sh)
-  self.positions = self.positions or {}
-  self.positions[name] = {
+  -- writes land in the orientation on screen only (#633)
+  local bucket = self:currentBucket()
+  bucket.positions = bucket.positions or {}
+  self.positions = bucket.positions
+  bucket.positions[name] = {
     x = sw > 0 and (zone.cx - ox) / sw or 0,
     y = sh > 0 and (zone.cy - oy) / sh or 0,
   }
 end
 
+-- Editor Reset: defaults for the orientation on screen only (#633), so
+-- resetting landscape never throws away the portrait layout.
 function TouchControls:clearPositions()
+  local bucket = self:currentBucket()
+  bucket.positions = nil
+  bucket.scale = 1
   self.positions = nil
+  self.scale = 1
   self.layoutW, self.layoutH = nil, nil
   self.layoutOx, self.layoutOy = nil, nil
+end
+
+-- Control size multiplier for the orientation on screen (#633).  Widths and
+-- the default centers both derive from it in defaultLayout; custom centers
+-- keep their normalized spot and re-clamp inside the safe rect on the next
+-- layout().
+function TouchControls:setScale(scale)
+  local bucket = self:currentBucket()
+  bucket.scale = clampScale(scale)
+  self.scale = bucket.scale
+  self.layoutW, self.layoutH = nil, nil
+  self.layoutOx, self.layoutOy = nil, nil
+  return self.scale
+end
+
+function TouchControls:nudgeScale(delta)
+  return self:setScale((self.scale or 1) + delta)
 end
 
 local function inCircle(zone, x, y, slop)
@@ -446,5 +558,8 @@ function TouchControls:draw()
 end
 
 TouchControls.CONTROLS = CONTROLS
+TouchControls.ORIENTATIONS = ORIENTATIONS
+TouchControls.SCALE_MIN, TouchControls.SCALE_MAX = SCALE_MIN, SCALE_MAX
+TouchControls.SCALE_STEP = SCALE_STEP
 
 return TouchControls

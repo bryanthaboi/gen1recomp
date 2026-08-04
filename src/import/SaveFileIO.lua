@@ -6,8 +6,8 @@
 -- bytes), runs them through SaveConvert.importSav (32768-byte + checksum
 -- validated), then registers a fresh slot, writes it, and makes it active.
 -- Export loads the active slot, encodes it back to a 32768-byte SRAM image, and
--- drops it in the save directory's exports/ folder, returning the absolute path
--- so the launcher can offer an "open folder" affordance.
+-- drops it in the save directory's exports/<version>/ folder, returning the
+-- absolute path so the launcher can offer an "open folder" affordance.
 --
 -- Every failure returns false + a friendly one-line message (never raises), so
 -- the card can surface it as a red notice line rather than crashing.
@@ -99,9 +99,9 @@ end
 -- exportActiveSlot(version) -> ok, pathOrErr
 -- Loads the version's active slot save (SaveData.load semantics), encodes it
 -- back to a 32768-byte SRAM image, and writes it to
--- exports/gen1recomp-<version>-<slotId>.sav in the save directory (created if
--- absent).  Returns true + the absolute path on success, false + a friendly
--- message otherwise.
+-- exports/<version>/gen1recomp-<version>-<slotId>.sav in the save directory
+-- (created if absent).  Returns true + the absolute path on success, false + a
+-- friendly message otherwise.
 function SaveFileIO.exportActiveSlot(version)
   version = version or GameVersion.get()
   local save = SaveData.load(version)
@@ -111,8 +111,12 @@ function SaveFileIO.exportActiveSlot(version)
   local slotId = SaveData.activeSlot(version) or "save"
   local fs = love and love.filesystem
   if not (fs and fs.write) then return false, "no filesystem available to export to" end
-  if fs.createDirectory then fs.createDirectory("exports") end
-  local rel = ("exports/gen1recomp-%s-%s.sav"):format(version, slotId)
+  if fs.createDirectory then
+    fs.createDirectory("exports")
+    fs.createDirectory("exports/" .. version)
+  end
+  -- Per-game folder so MTP browsing matches inbox layout (red/blue/yellow).
+  local rel = ("exports/%s/gen1recomp-%s-%s.sav"):format(version, version, slotId)
   local ok, writeErr = fs.write(rel, bytes)
   if not ok then return false, "could not write the export: " .. tostring(writeErr) end
   local base = fs.getSaveDirectory and fs.getSaveDirectory() or ""

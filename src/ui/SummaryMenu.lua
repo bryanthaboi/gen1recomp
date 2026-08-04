@@ -203,7 +203,8 @@ function SummaryMenu:draw()
         local mdef = data.moves[mv.id]
         Font.draw(mdef.name, 16, y)
         Font.draw(Strings("PP"), 88, y + 8)
-        Font.draw(("%2d/%2d"):format(mv.pp, mdef.pp), 112, y + 8)
+        local maxPP = mdef.pp + (mv.ppUps or 0) * math.floor(mdef.pp / 5)
+        Font.draw(("%2d/%2d"):format(mv.pp, maxPP), 112, y + 8)
       else
         Font.draw("-", 16, y)
         Font.draw("--", 112, y + 8)

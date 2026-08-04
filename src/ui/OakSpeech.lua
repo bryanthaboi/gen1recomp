@@ -20,6 +20,16 @@ local OakSpeech = {}
 OakSpeech.__index = OakSpeech
 OakSpeech.isOpaque = true
 
+-- The speech is a white field with a pic on it, and its dialogue box docks to
+-- the WINDOW's bottom edge (Renderer:setUIAnchor, via TextBox).  The white it
+-- fills below is only the 160x144 UI canvas, so once the box moved to the
+-- window edge the two stopped touching: black letterbox showed between the
+-- bottom of Oak's white and the top of the box he is speaking from.  Filling
+-- the voids with the paper shade -- the same opt-in a battle uses -- puts the
+-- box back on the field.  Not a literal 1,1,1: the canvas is colorized, so
+-- endFrame matches it with PaletteFX.paperShade.
+OakSpeech.letterboxWhite = true
+
 -- FadeInIntroPic runs a 6-step palette fade; MovePicLeft wipes the mon
 -- sprite in from the right.  Both play out before the beat's text prints.
 local FADE_FRAMES = 24
@@ -46,6 +56,8 @@ local FALLBACKS = {
   _OakSpeechText3 = Strings.source("{PLAYER}!\fYour very own\nPOKéMON legend is\vabout to unfold!\fA world of dreams\nand adventures\vwith POKéMON\vawaits! Let's go!"),
   _IntroducePlayerText = Strings.source("First, what is\nyour name?"),
   _IntroduceRivalText = Strings.source("This is my grand-\nson. He's been\vyour rival since\vyou were a baby.\f...Erm, what is\nhis name again?"),
+  _YourNameIsText = Strings.source("Right! So your\nname is {PLAYER}!"),
+  _HisNameIsText = Strings.source("That's right! I\nremember now! His\vname is {RIVAL}!"),
 }
 
 local function textOr(game, key)
@@ -153,6 +165,14 @@ function OakSpeech.defaultSteps(speech)
       presetsFallback = { "RED", "ASH", "JACK" },
     },
     {
+      -- oak_speech.asm prints YourNameIsText right after the naming screen
+      -- returns ("Right! So your name is RED!"); the port went straight on
+      -- to the rival and dropped it, in every language.
+      id = "confirm_player_name",
+      kind = "say",
+      textKey = "_YourNameIsText",
+    },
+    {
       id = "ask_rival_name",
       kind = "say",
       textKey = "_IntroduceRivalText",
@@ -165,6 +185,12 @@ function OakSpeech.defaultSteps(speech)
       title = Strings("HIS NAME?"),
       presetsWho = "rival",
       presetsFallback = { "BLUE", "GARY", "JOHN" },
+    },
+    {
+      -- HisNameIsText, the rival's counterpart to the confirmation above
+      id = "confirm_rival_name",
+      kind = "say",
+      textKey = "_HisNameIsText",
     },
     {
       id = "legend",
@@ -611,6 +637,15 @@ function OakSpeech:draw()
     love.graphics.draw(self.walkSheet, self.walkQuad, 64, 60)
   end
   if self.shrinkText then
+    -- This is a REPLICA of the dialogue box that just closed, redrawn at
+    -- TextBox's own rect (BOX_TX..BOX_TH = 0,12,20,6) so the last page holds
+    -- while the pic shrinks.  The real box rides the bottom anchor, so this
+    -- one has to as well -- otherwise the text visibly jumps up a letterbox
+    -- on the frame the real box is swapped for this copy.
+    local r = self.game and self.game.renderer
+    if r and r.setUIAnchor then
+      r:setUIAnchor(0, 12 * 8, 20 * 8, 6 * 8, "bottom")
+    end
     Font.drawBox(0, 12, 20, 6)
     love.graphics.setColor(0, 0, 0, 1)
     for i, line in ipairs(self.shrinkText) do

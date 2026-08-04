@@ -19,6 +19,7 @@ local Pokemon = require("src.pokemon.Pokemon")
 local SaveData = require("src.core.SaveData")
 local Sound = require("src.core.Sound")
 local Music = require("src.core.Music")
+local Timing = require("src.core.Timing")
 
 -- Silence audio: BattleState reaches both modules through require() at the
 -- call site, so patching the fields here is what the battle ends up calling.
@@ -40,8 +41,11 @@ local function makeGame(party)
   function stack:push(state) self.states[#self.states + 1] = state end
   function stack:pop() return table.remove(self.states) end
   function stack:top() return self.states[#self.states] end
+  -- isDown as well as wasPressed: battle text collapses PrintLetterDelay
+  -- while A or B is held, and the typing path reads it every frame
   return { data = Data, save = save, stack = stack,
-           input = { wasPressed = function(_, b) return press[b] == true end } }
+           input = { wasPressed = function(_, b) return press[b] == true end,
+                     isDown = function(_, b) return press[b] == true end } }
 end
 
 -- One fixed step with A held.  updateQueue only reads the button once a page
@@ -128,6 +132,12 @@ end
 check(prompted, "a typed-out intro page raises the prompt flag (blinking arrow)")
 eq(wild.introBalls, true, "the ball row is still up while the arrow blinks")
 
+-- PromptText writes the arrow and then runs ProtectedDelay3 before
+-- ManualTextScroll starts watching the joypad (home/text.asm:213-217), so the
+-- page ignores the button for TEXT_PRE_ADVANCE frames.  The loop above breaks
+-- on the frame the arrow goes up, which is inside that hold.
+for _ = 1, Timing.TEXT_PRE_ADVANCE do press.a = false wild:update(1 / 60) end
+
 -- press A: ClearSprites + both ClearScreenAreas, then the enemy HUD
 step(wild)
 eq(wild.msgPrompt, nil, "the prompt flag clears on the A press")
@@ -195,6 +205,26 @@ check(foeShown, "the foe's pic stays drawn for the whole slide")
 check(foeDone ~= nil and sentFrame ~= nil and foeDone < sentFrame,
       "the slide finishes BEFORE TrainerSentOutText (core.asm:1308-1310)")
 eq(tr.showEnemyTrainer, false, "only then is the trainer pic taken down")
+
+-- ...and the mon is not standing in that slot yet.  The pic walks off at
+-- core.asm:1308-1310 but AnimateSendingOutMon does not run until :1421-1434,
+-- so the slot is empty for the whole of TrainerSentOutText -- the mon is
+-- still in its ball.  It used to pop in full-size the instant the trainer
+-- left and sit there through the text, so the grow-in played over a mon that
+-- had already arrived; the mid-battle replacement always held it back.
+check(tr.enemySendingOut, "the foe's mon stays in its ball while announced")
+eq(tr:growInScale(tr.enemy), nil, "and nothing is growing into the slot yet")
+
+local firstGrowScale
+for _ = 1, 400 do
+  step(tr)
+  if tr.growIn and tr.growIn.battler == tr.enemy then
+    firstGrowScale = tr:growInScale(tr.enemy)
+    break
+  end
+end
+eq(firstGrowScale, 0, "the send-out opens on the ball beat, not a finished pic")
+eq(tr.enemySendingOut, false, "which is when the slot is handed over")
 
 -- and the window never reopens: drive the rest of the intro out
 for _ = 1, 400 do

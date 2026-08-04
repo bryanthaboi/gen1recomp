@@ -36,13 +36,22 @@ local script = story.WARDENS_HOUSE.talk.TEXT_WARDENSHOUSE_WARDEN
 -- instrument show_text the way parity_gift_atomicity.lua does, to record
 -- exactly which text ids actually printed
 local shown = {}
+-- forward EVERY argument: the 4th is extraOpts, which is how Commands.ask
+-- hands down its `choice` callback.  A wrapper that stops at `subs` silently
+-- turns every ask in the script back into a plain show_text -- no YES/NO box,
+-- and ctx.lastCheck left holding whatever the previous check_* put there.
 local origShow = Commands.show_text
-Commands.show_text = function(ctx, textId, subs)
+Commands.show_text = function(ctx, textId, ...)
   shown[#shown + 1] = textId
-  return origShow(ctx, textId, subs)
+  return origShow(ctx, textId, ...)
 end
 
-local function runScript()
+-- `button` drives the whole conversation: both A and B page a text box, and
+-- on the YES/NO box A takes the cursor's default (YES) while B snaps to NO
+-- and answers false (ChoiceBox:update, .choseSecondMenuItem).  So holding A
+-- runs the yes branch and holding B runs the no branch, with no reaching
+-- into the choice box from the test.
+local function runScript(button)
   shown = {}
   StateStack:init()
   local ow = { map = { id = "WARDENS_HOUSE", def = { label = "WardensHouse" } },
@@ -53,7 +62,7 @@ local function runScript()
   local guard = 0
   while r:isRunning() and guard < 3000 do
     guard = guard + 1
-    Input.pressed = { a = true }
+    Input.pressed = { [button or "a"] = true }
     StateStack:update(1 / 60)
     r:update()
   end
@@ -85,12 +94,33 @@ check(runScript(), "a third talk completes")
 eq(table.concat(shown, ","), "_WardensHouseWardenHM04ExplanationText",
    "the explanation text repeats on every later talk, not just the first")
 
--- === 3) unrelated path is unchanged: no GOLD TEETH, no flag yet ===
+-- === 3) no GOLD TEETH yet: the gibberish question, then a YES/NO, then the
+--        warden's answer -- Gibberish2 on yes, Gibberish3 on no (#645).
+--        The port used to stop dead after the question. ===
 Game.save = SaveData.newGame()
-check(runScript(), "empty-handed talk completes")
-eq(table.concat(shown, ","), "_WardensHouseWardenGibberish1Text",
-   "without the GOLD TEETH the Warden's gibberish line is unchanged")
+check(runScript("a"), "empty-handed talk completes on yes")
+eq(table.concat(shown, ","),
+   "_WardensHouseWardenGibberish1Text,_WardensHouseWardenGibberish2Text",
+   "answering YES gets the warden's reply, not silence (#645)")
 check(not Flags.get(Game.save, "EVENT_GOT_HM04"), "no HM04 yet")
+
+Game.save = SaveData.newGame()
+check(runScript("b"), "empty-handed talk completes on no")
+eq(table.concat(shown, ","),
+   "_WardensHouseWardenGibberish1Text,_WardensHouseWardenGibberish3Text",
+   "and answering NO gets the other reply (#645)")
+
+-- the question is asked, not just printed: `ask` is what puts the YES/NO box
+-- up, so a future edit that downgrades it back to show_text fails here
+local askRow
+for _, row in ipairs(script) do
+  if row[2] == "_WardensHouseWardenGibberish1Text" then askRow = row[1] end
+end
+eq(askRow, "ask", "the gibberish line is asked with a YES/NO, not just shown")
+
+-- neither answer touches the teeth trade
+check(not Flags.get(Game.save, "EVENT_GAVE_GOLD_TEETH"),
+      "and neither answer hands over teeth the player does not have")
 
 Commands.show_text = origShow
 

@@ -1,8 +1,9 @@
 name: Release
 
 # Builds the macOS, Windows, and Linux desktop apps, an Android APK, an iOS
-# IPA, and the Anbernic RG34XXSP (Stock OS 64-bit MOD / PortMaster) port on
-# the self-hosted Mac runner, and publishes them as a GitHub Release.
+# IPA, a Nintendo Switch SD-ready zip (experimental), and the Anbernic RG34XXSP
+# (Stock OS 64-bit MOD / PortMaster) port on the self-hosted Mac runner, and
+# publishes them as a GitHub Release.
 #
 # Versioning:
 #   - First ever release is 0.1.0.
@@ -24,6 +25,7 @@ on:
     paths-ignore:
       - '.github/**'
       - '**.md'
+      - 'mobile/ios/app-repo.json'
   workflow_dispatch:
     inputs:
       version:
@@ -42,11 +44,17 @@ concurrency:
 
 jobs:
   release:
-    runs-on: [self-hosted, macOS]
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
 
     steps:
+      # The self-hosted runner lives under the machine owner's home
+      # directory; mask it first so absolute paths in every later step's
+      # output show up as *** in the public workflow logs.
+      - name: Mask runner paths
+        run: echo "::add-mask::$HOME"
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -121,6 +129,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Import signing certificate into a temporary keychain
+        if: github.repository == 'bryanthaboi/gen1recomp'
         run: |
           set -euo pipefail
           KEYCHAIN_PATH="$RUNNER_TEMP/pokemon-signing.keychain-db"
@@ -170,13 +179,33 @@ jobs:
           set -euo pipefail
           scripts/build_android.sh --version "${{ steps.ver.outputs.version }}"
 
-      - name: Build iOS
+      - name: Install xcbeautify
         run: |
           set -euo pipefail
-          # Device Release IPA; signs with the Apple Development identity on
-          # the runner (auto team detection). Users on other Apple IDs still
-          # re-sign or build via docs/ios-install.md.
-          scripts/build_ios.sh --fetch --device --release \
+          brew list xcbeautify >/dev/null 2>&1 || brew install xcbeautify
+
+      - name: Build iOS
+        env:
+          CANONICAL_REPOSITORY: ${{ github.repository == 'bryanthaboi/gen1recomp' }}
+        run: |
+          set -euo pipefail
+          if [ "$CANONICAL_REPOSITORY" = true ]; then
+            scripts/build_ios.sh --fetch --device --release \
+              --version "${{ steps.ver.outputs.version }}"
+          else
+            scripts/build_ios.sh --fetch --release \
+              --version "${{ steps.ver.outputs.version }}"
+          fi
+
+      - name: Build Switch
+        run: |
+          set -euo pipefail
+          # Hard-fail gate: Switch ships with every release (never soft-fail).
+          # PR CI is path-gated (ubuntu selftest + canonical fused); release
+          # always builds Switch regardless of which files changed.
+          # Needs native switch-tools (nacptool/elf2nro) and/or Docker on the
+          # Mac self-hosted runner; see docs/switch-build.md.
+          scripts/build_switch.sh --fetch --fused \
             --version "${{ steps.ver.outputs.version }}"
 
       - name: Build Anbernic RG34XXSP port
@@ -187,6 +216,7 @@ jobs:
           ./build-rg34xxsp.sh --version "${{ steps.ver.outputs.version }}"
 
       - name: Notarize & staple macOS app
+        if: github.repository == 'bryanthaboi/gen1recomp'
         run: |
           set -euo pipefail
           ci_dir="${POKEMON_CI_DIR:-$HOME/.config/pokemon-ci}"
@@ -221,6 +251,7 @@ jobs:
           echo "Notarized + stapled ✓"
 
       - name: Stage release assets
+        if: github.repository == 'bryanthaboi/gen1recomp'
         id: assets
         run: |
           set -euo pipefail
@@ -238,6 +269,12 @@ jobs:
           ipa="dist/ios/gen1recomp.ipa"
           [ -f "$ipa" ] || { echo "::error::$ipa not found (expected from scripts/build_ios.sh --device)"; exit 1; }
           cp "$ipa" "$outdir/gen1recomp-${v}-ios.ipa"
+
+          swzip="dist/switch/gen1recomp-${v}-switch.zip"
+          [ -f "$swzip" ] || { echo "::error::$swzip not found (expected from scripts/build_switch.sh --fused → pack_sd_zip.sh)"; exit 1; }
+          cp "$swzip" "$outdir/gen1recomp-${v}-switch.zip"
+          # Local fused .nro stays under dist/switch/ for PR CI / debug; release
+          # publishes the SD-ready zip only.
 
           # Anbernic handheld port (suffix names the CFW it targets, so a
           # future RG35XX/other-CFW pack can ship alongside it).
@@ -260,6 +297,7 @@ jobs:
           cat "$outdir/sha256sums.txt"
 
       - name: Publish GitHub Release
+        if: github.repository == 'bryanthaboi/gen1recomp'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -349,22 +387,92 @@ jobs:
           fi
           printf 'Release notes:\n%s\n' "$notes"
 
+          release_files=(
+            "dist/release/gen1recomp-${v}-macos.zip"
+            "dist/release/gen1recomp-${v}-windows.zip"
+            "dist/release/gen1recomp-${v}-linux.zip"
+            "dist/release/gen1recomp-${v}-android.apk"
+            "dist/release/gen1recomp-${v}-ios.ipa"
+            "dist/release/gen1recomp-${v}-switch.zip"
+            "dist/release/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip"
+            "dist/release/gen1recomp-${v}.love"
+            "dist/release/sha256sums.txt"
+          )
+
           gh release create "$tag" \
             --target "$GITHUB_SHA" \
             --title "$v" \
             --notes "$notes" \
-            "dist/release/gen1recomp-${v}-macos.zip" \
-            "dist/release/gen1recomp-${v}-windows.zip" \
-            "dist/release/gen1recomp-${v}-linux.zip" \
-            "dist/release/gen1recomp-${v}-android.apk" \
-            "dist/release/gen1recomp-${v}-ios.ipa" \
-            "dist/release/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip" \
-            "dist/release/gen1recomp-${v}.love" \
-            "dist/release/sha256sums.txt"
+            "${release_files[@]}"
 
           echo "Published release $tag"
 
+      - name: Update iOS app repository
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        run: |
+          set -euo pipefail
+          v="${{ steps.ver.outputs.version }}"
+          ipa="dist/release/gen1recomp-${v}-ios.ipa"
+          app_repo="mobile/ios/app-repo.json"
+          [ -f "$ipa" ] || { echo "::error::$ipa not found"; exit 1; }
+          [ -f "$app_repo" ] || { echo "::error::$app_repo not found"; exit 1; }
+
+          date="$(date -u +"%Y-%m-%d")"
+          size="$(wc -c < "$ipa" | tr -d '[:space:]')"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/gen1recomp-${v}-ios.ipa"
+          localized_description="Gen1Recomp - A native Lua / LÖVE2D recreation of Gen 1 Poke"
+          release_notes="$(GH_TOKEN="${{ github.token }}" gh release view "v${v}" --json body --jq '.body // ""' 2>/dev/null || true)"
+          if [ -n "$release_notes" ]; then
+            localized_description="$release_notes"
+          fi
+          entry="$(jq -n \
+            --arg version "$v" \
+            --arg date "$date" \
+            --arg download_url "$download_url" \
+            --arg localized_description "$localized_description" \
+            --argjson size "$size" \
+            '{version: $version, date: $date, size: $size, downloadURL: $download_url, localizedDescription: $localized_description}')"
+
+          if jq -e --arg version "$v" \
+            'any(.apps[] | select(.bundleIdentifier == "com.theboisclub.gen1recomp").versions[]?; .version == $version)' \
+            "$app_repo" >/dev/null; then
+            jq --arg version "$v" --argjson entry "$entry" \
+              '(.apps[] | select(.bundleIdentifier == "com.theboisclub.gen1recomp").versions) |= map(if .version == $version then $entry else . end)' \
+              "$app_repo" > "$app_repo.tmp"
+          else
+            jq --argjson entry "$entry" \
+              '(.apps[] | select(.bundleIdentifier == "com.theboisclub.gen1recomp").versions) |= [$entry] + .' \
+              "$app_repo" > "$app_repo.tmp"
+          fi
+          mv "$app_repo.tmp" "$app_repo"
+
+      # main is PR-only for everyone except deploy keys (the "main protection"
+      # ruleset's bypass actor), so this push must authenticate with the
+      # RELEASE_DEPLOY_KEY deploy key over SSH; the workflow's GITHUB_TOKEN
+      # would be rejected by the branch protection.
+      - name: Commit iOS app repository
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        env:
+          DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          git add mobile/ios/app-repo.json
+          if git diff --cached --quiet; then
+            echo "app-repo.json unchanged; nothing to push"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/release-deploy-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(ios): update app-repo.json [skip ci]"
+          git -c core.sshCommand="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            push "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
+          rm -f "$key"
+
       - name: Clean up signing keychain
-        if: always()
+        if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
         run: |
           security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/release-deploy-key"

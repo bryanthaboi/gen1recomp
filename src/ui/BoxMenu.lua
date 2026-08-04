@@ -164,18 +164,18 @@ local function release(game)
       local mon = box[list.index]
       if not mon then return end
       local name = monName(game, mon)
-      local ChoiceBox = require("src.ui.ChoiceBox")
       game.stack:push(TextBox.new(game,
-        Strings("Once released,\n%s is\ngone forever. OK?", name), function()
-        game.stack:push(ChoiceBox.new(game, function(yes)
+        Strings("Once released,\n%s is\ngone forever. OK?", name), nil, {
+        defaultNo = true, noSound = true,
+        choice = function(yes)
           if not yes then return end
           table.remove(box, list.index)
           require("src.core.Sound").playCry(game.data, mon.species)
           game.stack:push(TextBox.new(game,
             Strings("%s was\nreleased outside.\fBye %s!", name, name)))
           list:removeCurrent()
-        end, { defaultNo = true, noSound = true }))
-      end))
+        end,
+      }))
     end,
   }))
 end
@@ -196,16 +196,16 @@ local function changeBox(game)
     onChoose = function(item, list)
       -- the original asks BEFORE switching ("When you change a #MON
       -- BOX, data will be saved. OK?"); declining aborts the change
-      local ChoiceBox = require("src.ui.ChoiceBox")
       game.stack:push(TextBox.new(game,
-        Strings("When you change a\nPOKéMON BOX, data\nwill be saved. OK?"), function()
-        game.stack:push(ChoiceBox.new(game, function(yes)
+        Strings("When you change a\nPOKéMON BOX, data\nwill be saved. OK?"), nil, {
+        noSound = true,
+        choice = function(yes)
           if not yes then return end
           game.save.currentBox = item.value
           if game.writeSave then game:writeSave() end
           list:close()
-        end, { noSound = true }))
-      end))
+        end,
+      }))
     end,
   }))
 end

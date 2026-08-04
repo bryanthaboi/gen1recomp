@@ -10,9 +10,9 @@ return {
       --   not set: _SilphCo3FSilphWorkerMWhatShouldIDoText
       TEXT_SILPHCO3F_SILPH_WORKER_M = {
         { "check_flag", "EVENT_BEAT_SILPH_CO_GIOVANNI" },
-        { "jump_if_true", 4 },
+        { "jump_if_true", 5 },
         { "show_text", "_SilphCo3FSilphWorkerMWhatShouldIDoText" },
-        { "jump", 5 },
+        { "jump", "end" },
         { "show_text", "_SilphCo3FSilphWorkerMYouSavedUsText" },
       },
     },

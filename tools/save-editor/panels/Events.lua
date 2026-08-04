@@ -102,19 +102,26 @@ function M.draw(S, Kit, x, y, w, h)
   local inner = w - 2 * pad
 
   -- ------------------------------------------------------------ sub-tabs
+  -- The pills flow left to right and WRAP when the card is too narrow to
+  -- hold all four on one line (#715): a fixed row used to run the last pill
+  -- past the card edge.
   local pillH = 32 * s
-  local px = cx
+  local px, py = cx, y + pad
   for _, t in ipairs(SUB_TABS) do
     local pw = Kit.textWidth("small", t.label) + 32 * s
+    if px > cx and px + pw > cx + inner then
+      px = cx
+      py = py + pillH + 8 * s
+    end
     local active = (S.eventsTab == t.id)
     Theme.col(PAL.rowBg, 0.6)
-    love.graphics.rectangle("fill", px, y + pad, pw, pillH, pillH / 2, pillH / 2)
-    Theme.stroke(px, y + pad, pw, pillH, pillH / 2,
+    love.graphics.rectangle("fill", px, py, pw, pillH, pillH / 2, pillH / 2)
+    Theme.stroke(px, py, pw, pillH, pillH / 2,
       active and PAL.blue or PAL.cardBorder, active and 0.8 or 0.24,
       active and 1.5 * s or 1)
-    Kit.textCenter("small", t.label, px, y + pad + (pillH - Kit.textHeight("small")) / 2,
+    Kit.textCenter("small", t.label, px, py + (pillH - Kit.textHeight("small")) / 2,
       pw, active and PAL.heading or PAL.muted)
-    if Kit.press(px, y + pad, pw, pillH) then
+    if Kit.press(px, py, pw, pillH) then
       S.eventsTab = t.id
       S.eventsOffset = 0
       Ops.disarm(S)
@@ -123,12 +130,21 @@ function M.draw(S, Kit, x, y, w, h)
     px = px + pw + 10 * s
   end
 
+  -- The filter shares the last pill row when there is room for at least a
+  -- usable field beside the pills; on a narrow window it wraps onto its own
+  -- row instead of painting over the last pill (#715).
   local clearW = 74 * s
-  local fieldW = math.min(280 * s, math.max(140 * s, cx + inner - clearW - 10 * s - px - 10 * s))
+  local filterY = py
+  local availF = cx + inner - clearW - 10 * s - px - 10 * s
+  if availF < 120 * s then
+    filterY = py + pillH + 8 * s
+    availF = inner - clearW - 10 * s
+  end
+  local fieldW = math.min(280 * s, math.max(120 * s, availF))
   local fieldX = cx + inner - clearW - 10 * s - fieldW
-  S.eventFilter = Kit.textfield("event-filter", fieldX, y + pad, fieldW, pillH,
+  S.eventFilter = Kit.textfield("event-filter", fieldX, filterY, fieldW, pillH,
     S.eventFilter, "filter keys...")
-  if Kit.button(cx + inner - clearW, y + pad, clearW, pillH, "Clear",
+  if Kit.button(cx + inner - clearW, filterY, clearW, pillH, "Clear",
       { kind = "accent", font = "small", radius = 8 * s,
         enabled = S.eventFilter ~= "" }) then
     S.eventFilter = ""
@@ -136,8 +152,9 @@ function M.draw(S, Kit, x, y, w, h)
     Ops.say(S, "Filter cleared")
   end
 
-  local hintY = y + pad + pillH + 10 * s
-  Kit.text("small", HINTS[S.eventsTab] or "", cx, hintY, PAL.caption)
+  local hintY = filterY + pillH + 10 * s
+  Kit.text("small", Kit.ellipsize("small", HINTS[S.eventsTab] or "", inner),
+    cx, hintY, PAL.caption)
 
   -- ---------------------------------------------------------- row grid
   local rows = buildRows(S)
@@ -147,21 +164,31 @@ function M.draw(S, Kit, x, y, w, h)
   local rowH = 34 * s
   local rowGap = 8 * s
   local colGap = 20 * s
-  local colW = (inner - colGap) / 2
-  local perCol = math.max(1, math.floor((pagerY - 12 * s - gridTop) / (rowH + rowGap)))
-  local perPage = perCol * 2
+  -- two columns need ~460 logical px before the checkbox labels read; a
+  -- phone gets one full-width column instead of two crushed ones (#715)
+  local cols = (inner >= 460 * s) and 2 or 1
+  local colW = (inner - colGap * (cols - 1)) / cols
+  local gridH = pagerY - 12 * s - gridTop
+  local perCol = math.max(1, math.floor(gridH / (rowH + rowGap)))
+  local perPage = perCol * cols
 
   S.eventsOffset = Ops.clamp(S.eventsOffset or 0, 0, math.max(0, #rows - perPage))
+  -- wheel / touch drag move whole grid rows, same contract as the pager (#715)
+  S.eventsOffset = Kit.scroll(cx, gridTop, inner, gridH, S.eventsOffset,
+    #rows, perPage, cols)
 
   if #rows == 0 then
-    Kit.emptyBox(cx, gridTop, inner, 80 * s,
+    Kit.emptyBox(cx, gridTop, inner, math.min(gridH, 80 * s),
       S.eventFilter ~= "" and "No key matches that filter."
         or "Nothing recorded here yet.")
   end
+  -- clip the grid body: on a window too short for even one row the partial
+  -- row clips (and its hit test is fenced) instead of covering the pager (#715)
+  Kit.pushClip(cx, gridTop, inner, gridH)
   for i = 1, math.min(perPage, #rows - S.eventsOffset) do
     local row = rows[S.eventsOffset + i]
-    local ci = (i - 1) % 2
-    local ri = math.floor((i - 1) / 2)
+    local ci = (i - 1) % cols
+    local ri = math.floor((i - 1) / cols)
     local rx = cx + ci * (colW + colGap)
     local ry = gridTop + ri * (rowH + rowGap)
     if row.header then
@@ -175,23 +202,30 @@ function M.draw(S, Kit, x, y, w, h)
       if changed then row.set(newChecked) end
     end
   end
+  Kit.popClip()
 
-  S.eventsOffset = Kit.pager(cx, pagerY, inner, S.eventsOffset, #rows, perPage)
+  Kit.scrollbar(cx, gridTop, inner, gridH, S.eventsOffset, #rows, perPage)
 
   -- "Clear all" only makes sense for the two key tables the editor owns
-  -- wholesale; flags and object toggles are cleared one row at a time.
+  -- wholesale; flags and object toggles are cleared one row at a time.  Its
+  -- width is reserved BEFORE the pager draws, so the pager's counter yields
+  -- to the button instead of running underneath it (#715).
   local clearKey = (S.eventsTab == "trainers" and "defeatedTrainers")
     or (S.eventsTab == "items" and "itemsTaken") or nil
+  local clearBw = 0
   if clearKey then
     local label = (S.eventsTab == "trainers") and "Clear all trainers"
       or "Clear all items taken"
-    local bw = Kit.textWidth("small", label) + 32 * s
-    if Kit.button(cx + inner - bw, pagerY, bw, pagerH,
+    clearBw = Kit.textWidth("small", label) + 32 * s
+    if Kit.button(cx + inner - clearBw, pagerY, clearBw, pagerH,
         Ops.armLabel(S, "clear-" .. clearKey, label),
         { kind = "danger", font = "small", radius = 8 * s }) then
       Ops.clearTable(S, clearKey, label:gsub("^Clear all ", ""))
     end
+    clearBw = clearBw + 10 * s
   end
+  S.eventsOffset = Kit.pager(cx, pagerY, inner - clearBw, S.eventsOffset,
+    #rows, perPage)
 end
 
 return M

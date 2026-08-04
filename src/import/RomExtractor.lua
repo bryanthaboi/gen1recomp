@@ -495,6 +495,25 @@ function RomExtractor:extractSprites()
     image = "assets/generated/sprites/red_bike.png",
     frames = bikeFrames, walker = bikeFrames >= 6,
   }
+  -- Yellow-only: the surfing-Pikachu overworld sheet, loaded outside
+  -- SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) -- same
+  -- extra-extract shape as RedBikeSprite. (RFC 0001)
+  local surfPika = self.manifest.sprites.surfPikachu
+  if surfPika and self.symbols[surfPika.label] then
+    local spSymbol = self:symbol(surfPika.label)
+    self:write2bpp(
+      self.rom:bytes(spSymbol.bank, spSymbol.address,
+        surfPika.imageWidth * surfPika.imageHeight / 4),
+      surfPika.imageWidth, surfPika.imageHeight,
+      "sprites/" .. surfPika.imageBase .. ".png", true)
+    local spFrames = surfPika.imageHeight / 16
+    out.SPRITE_SURFING_PIKACHU = {
+      id = "SPRITE_SURFING_PIKACHU",
+      source = ("ROM:%s"):format(surfPika.label),
+      image = "assets/generated/sprites/" .. surfPika.imageBase .. ".png",
+      frames = spFrames, walker = spFrames >= 6,
+    }
+  end
   self:write("sprites", out)
   self:tick("Overworld sprites", #order + 1, #order + 1)
   return out
@@ -2024,21 +2043,23 @@ end
 -- PikachuCriesPointerTable, 42 `dba` rows; each clip is `dw length` then
 -- 1-bit PCM, MSB first -- home/pikachu_cries.asm PlayPikachuPCM toggles
 -- rAUD3LEVEL per bit at roughly 190 CPU cycles a sample).  Decoded to
--- plain 8-bit mono WAVs; returns the clip count for data.audio.pikaCries,
+-- 16-bit stereo WAVs (identical L/R) so OpenAL never spatializes them as
+-- ambient surround (#626); returns the clip count for data.audio.pikaCries,
 -- or nil when the manifest has no pointer table (Red/Blue).
 function RomExtractor:extractPikachuCries()
   if not self.symbols["PikachuCriesPointerTable"] then return nil end
   local NUM = 42   -- NUM_PIKA_CRIES
   local RATE = 22050 -- ~4.19 MHz / ~190 cycles per sample
-  -- byte -> 8 samples, MSB first (LoadNextSoundClipSample: `and $80`)
+  -- byte -> 8 mono sample levels, MSB first (LoadNextSoundClipSample: `and $80`)
+  -- levels match the old unsigned-8 WAV (on=0xE0, off=0x20) as floats in [-1,1]
   local lut = {}
   for byte = 0, 255 do
     local out = {}
     for bit = 7, 0, -1 do
       local on = math.floor(byte / 2 ^ bit) % 2 == 1
-      out[#out + 1] = string.char(on and 0xE0 or 0x20)
+      out[#out + 1] = on and ((0xE0 - 128) / 128) or ((0x20 - 128) / 128)
     end
-    lut[byte] = table.concat(out)
+    lut[byte] = out
   end
   local function u16(v)
     return string.char(v % 256, math.floor(v / 256) % 256)
@@ -2046,6 +2067,12 @@ function RomExtractor:extractPikachuCries()
   local function u32(v)
     return string.char(v % 256, math.floor(v / 256) % 256,
       math.floor(v / 65536) % 256, math.floor(v / 16777216) % 256)
+  end
+  local function i16le(f)
+    local v = math.floor(f * 32767 + (f >= 0 and 0.5 or -0.5))
+    if v > 32767 then v = 32767 elseif v < -32768 then v = -32768 end
+    if v < 0 then v = v + 65536 end
+    return string.char(v % 256, math.floor(v / 256) % 256)
   end
   local CacheFs = require("src.import.CacheFs")
   local pointers = self:symbol("PikachuCriesPointerTable")
@@ -2055,11 +2082,16 @@ function RomExtractor:extractPikachuCries()
     local header = self.rom:bytes(bank, address, 2)
     local length = header[1] + header[2] * 256
     local raw = self.rom:bytes(bank, address + 2, length)
-    local samples = {}
-    for i, byte in ipairs(raw) do samples[i] = lut[byte] end
-    local pcm = table.concat(samples)
+    local parts = {}
+    for _, byte in ipairs(raw) do
+      for _, level in ipairs(lut[byte]) do
+        local s = i16le(level)
+        parts[#parts + 1] = s .. s -- identical L/R (#626)
+      end
+    end
+    local pcm = table.concat(parts)
     local wav = "RIFF" .. u32(36 + #pcm) .. "WAVEfmt " .. u32(16)
-      .. u16(1) .. u16(1) .. u32(RATE) .. u32(RATE) .. u16(1) .. u16(8)
+      .. u16(1) .. u16(2) .. u32(RATE) .. u32(RATE * 4) .. u16(4) .. u16(16)
       .. "data" .. u32(#pcm) .. pcm
     local ok, err = CacheFs.write(
       ("assets/generated/audio/pika_cries/cry_%02d.wav"):format(index + 1),

@@ -10,8 +10,6 @@ name: ci
 # The T3 content tier asserts Pokemon Red facts; scripts/test.sh detects
 # data/generated/ is absent and skips it rather than failing.
 #
-# Runs alongside release.yml, which is untouched by this file.
-
 on:
   push:
     # Integration branch + release branch. PRs already run via pull_request
@@ -24,12 +22,170 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  ios-changes:
+    name: detect iOS changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(mobile/ios/|scripts/build_ios\.sh$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ios-build:
+    name: iOS build
+    needs: ios-changes
+    if: needs.ios-changes.outputs.changed == 'true'
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    outputs:
+      ipa_url: ${{ steps.upload-ipa.outputs.artifact-url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: import signing certificate
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        run: |
+          keychain_path="$RUNNER_TEMP/gen1recomp-ci-signing.keychain-db"
+          ci_dir="${POKEMON_CI_DIR:-$HOME/.config/pokemon-ci}"
+          p12="$ci_dir/signing.p12"
+          passfile="$ci_dir/signing.pass"
+          [ -f "$p12" ] && [ -f "$passfile" ] || exit 1
+          p12pw="$(cat "$passfile")"
+          kcpw="$(openssl rand -base64 24)"
+          echo "::add-mask::$kcpw"
+          security delete-keychain "$keychain_path" 2>/dev/null || true
+          security create-keychain -p "$kcpw" "$keychain_path"
+          security set-keychain-settings "$keychain_path"
+          security unlock-keychain -p "$kcpw" "$keychain_path"
+          security import "$p12" -P "$p12pw" -k "$keychain_path" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$keychain_path" >/dev/null
+          existing="$(security list-keychains -d user | sed -e 's/^[[:space:]]*//' -e 's/"//g')"
+          security list-keychains -d user -s "$keychain_path" $existing
+      - name: install xcbeautify
+        run: brew list xcbeautify >/dev/null 2>&1 || brew install xcbeautify
+      - name: build iOS release
+        env:
+          CANONICAL_REPOSITORY: ${{ github.repository == 'bryanthaboi/gen1recomp' }}
+        run: |
+          if [ "$CANONICAL_REPOSITORY" = true ]; then
+            scripts/build_ios.sh --fetch --device --release
+          else
+            scripts/build_ios.sh --fetch --release
+          fi
+      - name: upload iOS release artifact
+        id: upload-ipa
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-ios-ipa
+          path: dist/ios/gen1recomp.ipa
+          if-no-files-found: error
+          retention-days: 7
+      - name: clean up signing keychain
+        if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
+        run: security delete-keychain "$RUNNER_TEMP/gen1recomp-ci-signing.keychain-db" 2>/dev/null || true
+
+  switch-changes:
+    name: detect Switch changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_switch\.sh$|scripts/switch/|docs/switch-.*\.md$|tests/switch_ci_workflows_test\.lua$|tests/switch_transfer_docs_test\.lua$|\.github/workflows/(ci|release|switch-artifact-comment)\.yml$|src/core/(NxAssetOverlay|Platform|GameVersion)\.lua$|src/import/CacheFs\.lua$|tests/engine/(assets_version_fallback|nx_generated_guard|nx_yellow_boot|switch_diagnostics)_test\.lua$|tests/engine/platform_nx)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  switch-selftest:
+    name: Switch offline selftest
+    needs: switch-changes
+    if: needs.switch-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: install luajit
+        run: sudo apt-get update && sudo apt-get install -y luajit
+      - name: Switch offline selftest
+        run: bash scripts/switch/selftest_build_switch.sh
+      - name: verify_payload self-test
+        run: bash scripts/switch/verify_payload.sh --self-test
+      - name: Switch CI workflow content gate
+        run: luajit tests/switch_ci_workflows_test.lua
+      - name: Switch transfer docs content gate
+        run: luajit tests/switch_transfer_docs_test.lua
+      # NX runtime regressions gate this job via switch-changes; run the NX
+      # engine suites here too so a PR touching them gets feedback on the
+      # fork-safe ubuntu runner before the self-hosted Mac build.
+      - name: NX engine suites (headless)
+        run: |
+          luajit tests/engine/assets_version_fallback_test.lua
+          luajit tests/engine/nx_generated_guard_test.lua
+          luajit tests/engine/nx_yellow_boot_test.lua
+
+  switch-build:
+    name: Switch fused build
+    needs: [switch-changes, switch-selftest]
+    if: |
+      always()
+      && needs.switch-changes.outputs.changed == 'true'
+      && needs.switch-selftest.result == 'success'
+      && github.repository == 'bryanthaboi/gen1recomp'
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ["self-hosted", "macOS"]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build Switch fused NRO
+        run: |
+          set -euo pipefail
+          VER="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          scripts/build_switch.sh --fetch --fused --version "$VER"
+          echo "SWITCH_VER=$VER" >> "$GITHUB_ENV"
+      - name: upload Switch NRO artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-switch-nro
+          path: |
+            dist/switch/gen1recomp-${{ env.SWITCH_VER }}-switch.nro
+            dist/switch/gen1recomp-${{ env.SWITCH_VER }}-switch.nro.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   headless:
     name: headless suites (no ROM)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # LuaJIT, not lua5.4: LOVE 11.x embeds LuaJIT 2.1 and the engine is
       # written to Lua 5.1 semantics, so CI must run the interpreter the
@@ -47,7 +203,7 @@ jobs:
     name: fixture dataset integrity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y luajit
       - run: python3 -m pip install --upgrade pillow
 
@@ -89,7 +245,7 @@ jobs:
     name: screenshot differ (capture not yet wired)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 -m pip install --upgrade pillow
 
       # 21-testing-and-ci §"Testing & acceptance criteria": compare_shots
@@ -137,7 +293,7 @@ jobs:
     name: mod lint (no ROM-derived content)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # the MK305 dump check key-diffs shipped tables through luajit, and
       # modkit treats a missing interpreter as a fatal MK100 -- without

@@ -40,7 +40,8 @@ function Handshake.mods(game)
   if not ok or not status then return mods end
   for _, manifest in ipairs(status.loaded or {}) do
     mods[#mods + 1] = { id = manifest.id, version = manifest.version,
-                        affectsLink = manifest.affects_link ~= false }
+                        affectsLink = manifest.affects_link ~= false,
+                        language = manifest.language == true }
   end
   table.sort(mods, function(a, b) return tostring(a.id) < tostring(b.id) end)
   return mods
@@ -67,15 +68,82 @@ function Handshake.linkModified(game)
   return false
 end
 
+-- #501: the registries a declared translation may write, and nothing else.
+-- `text` is the ROM's dialogue, `strings` the engine's own authored text
+-- (src/mods/Schemas.lua R.text / R.strings) and `font` the glyphs a
+-- language with accents needs.  None of the three is hashed into the
+-- fingerprint (src/link/Fingerprint.lua header), so two peers reading the
+-- same game in different languages stay in lockstep -- which is also what
+-- the cable did: TradeCenter_PrintPartyListNames (pokered
+-- engine/link/cable_club.asm) names the peer's party out of the local
+-- ROM's table, only the trainer name and the party bytes travel.
+-- text_pointers is deliberately out: its rows carry mart inventories and
+-- nurse/pc flags, which are gameplay, not language.
+local LANGUAGE_REGISTRIES = { text = true, strings = true, font = true }
+
+Handshake.LANGUAGE_REGISTRIES = LANGUAGE_REGISTRIES
+
+-- The manifest's `language = true` is the author's claim; this is the
+-- check.  A mod counts as a translation only if every op it appended
+-- landed in a language registry, it subscribed no code (a hook or listener
+-- runs inside the battle the two peers are lockstepping) and it asked for
+-- no permission.  Online play meets strangers, so nothing here may rest on
+-- the manifest alone.  A patched client can still lie about its own mods --
+-- the fingerprint, not this, is what keeps the shared simulation honest;
+-- this gate is what keeps an honest install from being told to turn its
+-- language off.
+local function translationOnly(mod, id)
+  local record = mod.mods and mod.mods[id]
+  local manifest = record and record.manifest
+  if manifest and #(manifest.permissions or {}) > 0 then return false end
+  for name, registry in pairs(mod.content or {}) do
+    if not LANGUAGE_REGISTRIES[name] then
+      for _, list in pairs(registry.ops or {}) do
+        for _, entry in ipairs(list) do
+          if entry.owner == id then return false end
+        end
+      end
+    end
+  end
+  for _, chain in pairs((mod.hooks and mod.hooks.chains) or {}) do
+    for _, entry in ipairs(chain) do
+      if entry.owner == id then return false end
+    end
+  end
+  for _, list in pairs((mod.events and mod.events.listeners) or {}) do
+    for _, entry in ipairs(list) do
+      if entry.owner == id then return false end
+    end
+  end
+  return true
+end
+
+-- the enabled mods that keep this install out of online play, in the
+-- id order Handshake.mods sorts: everything except verified translations.
+-- LinkState:offerVanillaRestart names these and switches off exactly these.
+function Handshake.onlineBlockers(game)
+  local mod = loader(game)
+  local blockers = {}
+  for _, entry in ipairs(Handshake.mods(game)) do
+    local allowed = entry.language and not entry.affectsLink
+      and mod ~= nil and translationOnly(mod, entry.id)
+    if not allowed then blockers[#blockers + 1] = entry end
+  end
+  return blockers
+end
+
 -- online play (the relay-based online match / tournament flows in
 -- LinkState/Tournament) meets strangers, not a coordinating friend, so it
 -- skips the LAN path's per-peer compatibility negotiation entirely and
--- just requires vanilla on both ends: no mod-added Pokemon, no surprises.
--- Mods only ever get baked in at boot (Loader:load), so this is a gate on
--- attempting to go online, not a live mod toggle -- the player disables
--- mods via the mod manager and relaunches.
+-- just requires a vanilla simulation on both ends: no mod-added Pokemon, no
+-- surprises.  #501 carves out translations, because a language is not a
+-- simulation: a mod that only rewrites text is invisible to the wire and
+-- may stay on, so an English player and a Spanish one can meet the way two
+-- regional carts always could.  Mods only ever get baked in at boot
+-- (Loader:load), so this is a gate on attempting to go online, not a live
+-- mod toggle -- the player disables mods via the mod manager and relaunches.
 function Handshake.onlineAllowed(game)
-  return #Handshake.mods(game) == 0
+  return #Handshake.onlineBlockers(game) == 0
 end
 
 -- mode is nil on the guest: it pairs and announces itself before the host
@@ -101,6 +169,8 @@ end
 
 -- full        identical link surfaces: nothing to negotiate, lockstep is safe
 -- vanilla_peer  an old build, and we are unmodified, so it is right about us
+-- engine_skew both v2 on the same major, but different releases: trade
+--             still negotiates, battle is refused (see below)
 -- subset      both v2 but the surfaces differ: negotiated trade, no battle
 -- refused     an old build we would silently corrupt, or a different engine
 function Handshake.checkCompat(localHello, remoteHello)
@@ -114,6 +184,16 @@ function Handshake.checkCompat(localHello, remoteHello)
   if major(remoteHello.engineVersion) ~= major(localHello.engineVersion) then
     return "refused", "engine_mismatch"
   end
+  -- A lockstep battle needs the same engine RELEASE, not just the same
+  -- major: the fingerprint only covers the data/mod link surface, and
+  -- battle logic changes between minor releases (parity fixes, move
+  -- effect rework...), so two honest vanilla installs a release apart
+  -- pair as "full" and then diverge a few turns in -- the mid-battle
+  -- "same mods?" desync draw of #758.  Trade doesn't lockstep a
+  -- simulation, so it stays negotiable across releases.
+  if tostring(remoteHello.engineVersion) ~= tostring(localHello.engineVersion) then
+    return "engine_skew", "engine_release_mismatch"
+  end
   if remoteHello.fingerprint == localHello.fingerprint then
     return "full", nil
   end
@@ -123,7 +203,7 @@ end
 -- only two v2 peers that agreed on a verdict may reject a mon outright; a v1
 -- peer keeps the old substitute-a-move behaviour it was built against
 function Handshake.strict(verdict)
-  return verdict == "full" or verdict == "subset"
+  return verdict == "full" or verdict == "subset" or verdict == "engine_skew"
 end
 
 function Handshake.battleAllowed(verdict)
@@ -207,6 +287,24 @@ function Handshake.describe(localHello, remoteHello, verdict, mode)
       wrap(lines, "The two games are")
       wrap(lines, "different engine")
       wrap(lines, "versions.")
+    end
+    return lines
+  end
+  if verdict == "engine_skew" then
+    -- name both releases so two friends can tell WHO updates: this used
+    -- to surface three turns in as a desync draw blaming mods (#758)
+    wrap(lines, "Your game versions")
+    wrap(lines, "differ:")
+    wrap(lines, (" you: v%s"):format(tostring(localHello.engineVersion)))
+    wrap(lines, (" %s: v%s"):format(peer:sub(1, 8),
+                                    tostring(remoteHello.engineVersion)))
+    if mode == "battle" then
+      wrap(lines, "Battle needs the")
+      wrap(lines, "same version on")
+      wrap(lines, "both games.")
+    else
+      wrap(lines, "Trading is limited")
+      wrap(lines, "to shared POKéMON.")
     end
     return lines
   end

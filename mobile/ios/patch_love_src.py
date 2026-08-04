@@ -39,6 +39,7 @@ WRAP_INCLUDES = """
 #ifdef LOVE_IOS
 #include <objc/runtime.h>
 #include <objc/message.h>
+#include <string>
 #include "filesystem/Filesystem.h"
 #endif
 """ % MARKER
@@ -53,8 +54,12 @@ WRAP_FUNCS = """
 #ifdef LOVE_IOS
 static const char *gr_saveDirectory()
 {
+	static std::string saveDirectory;
 	auto fs = Module::getInstance<love::filesystem::Filesystem>(Module::M_FILESYSTEM);
-	return fs != nullptr ? fs->getSaveDirectory() : "";
+	if (fs == nullptr)
+		return "";
+	saveDirectory = fs->getSaveDirectory();
+	return saveDirectory.c_str();
 }
 
 static int gr_callBridge(lua_State *L, const char *className,
@@ -98,6 +103,74 @@ WRAP_REGISTRATION = """#ifdef LOVE_IOS
 	{ "pickFile", w_pickFile },
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
+	{ "httpDownload", w_httpDownload },
+#endif
+"""
+
+WRAP_SYNC_FUNCS = """
+#ifdef LOVE_IOS
+static const char *gr_saveDirectory()
+{
+	static std::string saveDirectory;
+	auto fs = Module::getInstance<love::filesystem::Filesystem>(Module::M_FILESYSTEM);
+	if (fs == nullptr)
+		return "";
+	saveDirectory = fs->getSaveDirectory();
+	return saveDirectory.c_str();
+}
+
+static int gr_callBridge(lua_State *L, const char *className,
+                         const char *selector, const char *arg)
+{
+	Class cls = objc_getClass(className);
+	if (cls == nullptr)
+	{
+		lua_pushboolean(L, 0);
+		return 1;
+	}
+	typedef signed char (*GRMsg)(Class, SEL, const char *, const char *);
+	signed char ok = ((GRMsg)objc_msgSend)(cls, sel_registerName(selector),
+	                                       arg, gr_saveDirectory());
+	lua_pushboolean(L, ok != 0);
+	return 1;
+}
+
+int w_syncHealthSteps(lua_State *L)
+{
+	return gr_callBridge(L, "GRHealthBridge", "syncStepsWithCommand:saveDir:", "sync");
+}
+#endif
+
+"""
+
+WRAP_SYNC_REGISTRATION = """#ifdef LOVE_IOS
+	{ "syncHealthSteps", w_syncHealthSteps },
+	{ "httpDownload", w_httpDownload },
+#endif
+"""
+
+BRIDGE_EXTRA_FUNCS = """
+#ifdef LOVE_IOS
+int w_httpDownload(lua_State *L)
+{
+	const char *url = luaL_checkstring(L, 1);
+	const char *destination = luaL_checkstring(L, 2);
+	const char *userAgent = luaL_optstring(L, 3, "gen1recomp");
+	const char *accept = luaL_optstring(L, 4, "");
+	Class cls = objc_getClass("GRPickerBridge");
+	if (cls == nullptr)
+	{
+		lua_pushboolean(L, 0);
+		return 1;
+	}
+	typedef signed char (*GRDownload)(Class, SEL, const char *, const char *,
+	                                  const char *, const char *);
+	signed char ok = ((GRDownload)objc_msgSend)(
+		cls, sel_registerName("httpDownloadWithUrl:destination:userAgent:accept:"),
+		url, destination, userAgent, accept);
+	lua_pushboolean(L, ok != 0);
+	return 1;
+}
 #endif
 """
 
@@ -169,14 +242,17 @@ def patch_wrap_system():
     anchor = "static const luaL_Reg functions[] ="
     if anchor not in text:
         fail(f"anchor not found in {WRAP_SYSTEM}")
-    text = text.replace(anchor, WRAP_FUNCS + anchor, 1)
+    has_native_picker = re.search(r"\bint w_pickFile\s*\(", text) is not None
+    bridge_funcs = WRAP_SYNC_FUNCS if has_native_picker else WRAP_FUNCS
+    text = text.replace(anchor, bridge_funcs + BRIDGE_EXTRA_FUNCS + anchor, 1)
     reg_anchor = '\t{ "vibrate", w_vibrate },\n'
     if reg_anchor not in text:
         fail(f"registration anchor not found in {WRAP_SYSTEM}")
-    text = text.replace(reg_anchor, reg_anchor + WRAP_REGISTRATION, 1)
+    registration = WRAP_SYNC_REGISTRATION if has_native_picker else WRAP_REGISTRATION
+    text = text.replace(reg_anchor, reg_anchor + registration, 1)
     WRAP_SYSTEM.write_text(text)
     print("patch_love_src: wrap_System.cpp patched "
-          "(pickFile/createFile/syncHealthSteps)")
+          "(pickFile/createFile/syncHealthSteps/httpDownload)")
 
 
 def patch_pbxproj():

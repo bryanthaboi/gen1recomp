@@ -271,6 +271,45 @@ function Ops.closeSpeciesPicker(S, Kit)
   if Kit and Kit.blur then Kit.blur() end
 end
 
+-- The Boxes panel's add flow rides the same picker (#715): instead of
+-- silently dropping catalog entry #1 into the box, "+ Add mon here" and the
+-- dashed empty cells open the picker in box-add mode, and the committed
+-- species goes through Ops.boxAddSpecies below.  No selection is required:
+-- the target is the box, not a mon.
+function Ops.openBoxAddPicker(S, Kit)
+  local box = Ops.boxes(S)[S.selectedBox]
+  if #box >= BoxesMod.CAPACITY then
+    return Ops.say(S, ("Box %d is full (%d/%d)")
+      :format(S.selectedBox, #box, BoxesMod.CAPACITY))
+  end
+  S.speciesPicker = { query = "", offset = 0, opened = true, mode = "box-add" }
+  if Kit then Kit.focus = "species-picker" end  -- soft keyboard rises (#529)
+  return true
+end
+
+-- Commit half of the box-add picker.  Builds the mon exactly the way
+-- Ops.partyAdd does (MonOps.create at Lv5, owned by the save's player), so a
+-- box mon and a party mon born in the editor are indistinguishable.
+function Ops.boxAddSpecies(S, id)
+  local box = Ops.boxes(S)[S.selectedBox]
+  if #box >= BoxesMod.CAPACITY then
+    return Ops.say(S, ("Box %d is full (%d/%d)")
+      :format(S.selectedBox, #box, BoxesMod.CAPACITY))
+  end
+  if not Ops.speciesUsable(S, id) then
+    return Ops.say(S, ("%s has no usable base stats,  cannot add it")
+      :format(tostring(id)))
+  end
+  local mon = MonOps.create(S.data, id, 5)
+  mon.ot = S.save.player.name
+  mon.otId = S.save.player.id
+  table.insert(box, mon)
+  S.selectedBoxSlot = #box
+  S.editingMon = mon
+  return Ops.mark(S, ("Added %s Lv5 to box %d slot %d")
+    :format(id, S.selectedBox, #box))
+end
+
 function Ops.setDv(S, mon, key, value)
   if not mon then return false end
   local want = clamp(math.floor(value), 0, 15)
@@ -362,6 +401,9 @@ function Ops.selectBoxSlot(S, index)
   return true
 end
 
+-- Kept for the keyboard/test path; the Boxes panel itself goes through the
+-- species picker (Ops.openBoxAddPicker -> Ops.boxAddSpecies) so the user
+-- chooses what lands in the box instead of always getting catalog entry #1.
 function Ops.boxAdd(S)
   local box = Ops.boxes(S)[S.selectedBox]
   if #box >= BoxesMod.CAPACITY then

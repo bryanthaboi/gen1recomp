@@ -75,14 +75,10 @@ check(ri.findNotice and ri.findNotice.ok == false,
 -- ---- PASTE chip: same entry point the touch screen uses -------------------
 
 ri:_promptAddIndex()
--- the chip rect is what draw() published last frame (pinned: modal chrome
--- ignores the page-scroll band); mousepressed hit-tests it while the
--- prompt is up and everywhere else the prompt swallows the press
-ri._indexPasteRect = { x = 10, y = 10, width = 60, height = 24, pinned = true }
+-- the prompt's Paste button (LauncherView) queues _pasteIndexUrl, the same
+-- funnel ctrl/cmd+V uses, so both paths share the strip and the cap
 clipboard = "  https://example.com/mods/index.json\n"
-ri:mousepressed(200, 200, 1)
-eq(ri._indexPrompt.text, "", "a press outside the chip pastes nothing")
-ri:mousepressed(20, 20, 1)
+ri:_pasteIndexUrl()
 eq(ri._indexPrompt.text, "https://example.com/mods/index.json",
    "the PASTE chip lands the clipboard with whitespace stripped (#578)")
 
@@ -90,7 +86,7 @@ eq(ri._indexPrompt.text, "https://example.com/mods/index.json",
 -- overflow MAX_INDEX_URL (200)
 ri._indexPrompt.text = ""
 clipboard = string.rep("a", 300)
-ri:mousepressed(20, 20, 1)
+ri:_pasteIndexUrl()
 eq(#ri._indexPrompt.text, 200, "the PASTE chip enforces MAX_INDEX_URL")
 
 -- and through ctrl/cmd+V, which used to skip the cap entirely
@@ -117,22 +113,32 @@ ri:keypressed("return")
 eq(lastArm(), false, "committing the rename disarms setTextInput")
 eq(renamed and renamed[3], "OLD!", "the commit reaches SaveData.renameSlot")
 
--- ---- find-search field: arm on rect press, disarm on escape ---------------
+-- ---- find-search field: arm on focus, disarm on escape / tab change -------
 
-ri.findSearchRect = { x = 100, y = 100, width = 80, height = 20 }
-ri:mousepressed(110, 110, 1)
-check(ri._findSearchFocus == true, "pressing the search field takes focus")
-eq(lastArm(), true, "and arms setTextInput")
+-- the search field's click handler (LauncherView) takes focus and arms;
+-- drive the same pair the handler queues
+ri._findSearchFocus = true
+ri:_armTextInput()
+eq(lastArm(), true, "focusing the search field arms setTextInput")
 ri:keypressed("escape")
 check(ri._findSearchFocus == false, "escape drops the search caret")
 eq(lastArm(), false, "and disarms setTextInput")
 
--- a press elsewhere on the find tab also drops the caret and disarms
-ri:mousepressed(110, 110, 1)
-eq(lastArm(), true, "refocus for the click-away case")
-ri:mousepressed(400, 400, 1)
-check(ri._findSearchFocus == false, "a click away drops the caret")
+-- switching tabs (chips, shoulder buttons) also drops the caret and disarms
+ri._findSearchFocus = true
+ri:_armTextInput()
+eq(lastArm(), true, "refocus for the tab-change case")
+ri:_switchTab("mods")
+check(ri._findSearchFocus == false, "a tab change drops the caret")
 eq(lastArm(), false, "and disarms setTextInput")
+ri.tab = "find"
+
+ri:_toggleFindSearchFocus()
+check(ri._findSearchFocus == true, "tapping the search field focuses it")
+eq(lastArm(), true, "refocusing the search field arms setTextInput")
+ri:_toggleFindSearchFocus()
+check(ri._findSearchFocus == false, "tapping the focused search field blurs it")
+eq(lastArm(), false, "blurring the search field disarms setTextInput")
 
 -- ---- desktop contract (#529): disarm never lowers off Android -------------
 

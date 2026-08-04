@@ -1,0 +1,3 @@
+*.gb
+*.sym
+__pycache__/

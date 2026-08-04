@@ -41,10 +41,17 @@ function Player.new(data, cx, cy, facing)
   -- LoadSurfingPlayerSpriteGraphics, home/overworld.asm)
   local walkId = FieldDefaults.fieldValue(data, "playerSprites", "walk")
   local surfId = FieldDefaults.fieldValue(data, "playerSprites", "surf")
+  local surfPikaId = FieldDefaults.fieldValue(data, "playerSprites", "surfPikachu")
   local bikeId = FieldDefaults.fieldValue(data, "playerSprites", "bike")
   self.sprite = SpriteRenderer.new(data.sprites[walkId], "player")
   if surfId and data.sprites[surfId] then
     self.surfSprite = SpriteRenderer.new(data.sprites[surfId], "player")
+  end
+  -- Yellow's surfing-Pikachu ride (Yellow LoadSurfingPlayerSpriteGraphics2,
+  -- paired with field.playerSprites.surfPikachu). rotated in at pose()
+  -- when the SURF-mon is a Pikachu.
+  if surfPikaId and data.sprites[surfPikaId] then
+    self.surfPikachuSprite = SpriteRenderer.new(data.sprites[surfPikaId], "player")
   end
   if bikeId and data.sprites[bikeId] then
     self.bikeSprite = SpriteRenderer.new(data.sprites[bikeId], "player")
@@ -288,6 +295,7 @@ function Player:pose()
   -- RodResponse (engine/items/item_effects.asm) zeroes wWalkBikeSurfState
   -- across FishingAnim, so casting from the water shows the on-foot sheet
   local sprite = (self.fishing and self.sprite)
+                 or (self.surfing and self.surfingPikachu and self.surfPikachuSprite)
                  or (self.surfing and self.surfSprite)
                  or (self.onBike and self.bikeSprite) or self.sprite
   return sprite, self.px, py, facing, phase, flip, hopping

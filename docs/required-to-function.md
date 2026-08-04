@@ -1,12 +1,11 @@
 # What This Port Requires
 
 The packaged desktop app requires one user-supplied input on first boot: a
-canonical 1 MiB US Pokemon Red ROM.
+canonical 1 MiB US Pokemon Red, Blue, or Yellow ROM.
 
-The importer verifies SHA-1
-`ea9bcae617fdf159b045185467ae58b2e4a48b9a`. Other revisions, Virtual
-Console releases, and Pokemon Blue are rejected rather than decoded with
-incorrect addresses.
+The importer verifies the SHA-1 for the game (see `src/core/GameVersion.lua`
+for specific hashes). Other revisions and Virtual Console releases are rejected
+rather than decoded with incorrect addresses.
 
 After verification, the app generates its private cache in the LÖVE save
 directory. It does not keep a copy of the ROM. Later boots use the cache.
@@ -15,9 +14,11 @@ Python and Pillow are not required by the packaged app.
 ## Bundled Metadata
 
 Assembly removes high-level names and some relationships that the Lua port
-needs. `tools/rom_manifest.json` therefore contains:
+needs. The version-specific files `tools/rom_manifest.json`,
+`tools/rom_manifest_blue.json`, and `tools/rom_manifest_yellow.json` therefore
+contain:
 
-- the 3,268 ROM symbol addresses actually read by the extractor
+- the ROM symbol addresses actually read by the extractor
 - symbolic IDs and ordering for maps, species, moves, items, and trainers
 - source-erased dimensions, image names, and map object integration names
 - hand-ported field/script integration tables

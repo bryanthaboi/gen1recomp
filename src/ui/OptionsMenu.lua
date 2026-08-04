@@ -19,6 +19,8 @@ local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
 local GameVersion = require("src.core.GameVersion")
 local VideoMode = require("src.core.VideoMode")
+local Orientation = require("src.core.Orientation")
+local FaithfulRes = require("src.core.FaithfulRes")
 local FrameCap = require("src.core.FrameCap")
 local Performance = require("src.core.Performance")
 local Logger = require("src.core.Logger")
@@ -154,6 +156,57 @@ local function buildRows(game)
       step = function(g)
         local o = g.save.options
         o.battleLayout = o.battleLayout == "wide" and "og" or "wide"
+        return true
+      end },
+    -- FIXED keeps the classic integer-scaled letterbox -- a GB pixel is a
+    -- whole number of screen pixels and the battle is the same size at any
+    -- zoom.  FILL scales the battle surface to the window so it fills
+    -- vertically; that needs a fractional scale, so pixels stop being evenly
+    -- sized.  Battle only: the overworld is untouched either way.
+    { id = "battleFit", label = Strings("BATTLE SIZE"),
+      value = function(g)
+        return g.save.options.battleFit == "fill" and Strings("FILL")
+               or Strings("FIXED")
+      end,
+      step = function(g)
+        local o = g.save.options
+        o.battleFit = o.battleFit == "fill" and "fixed" or "fill"
+        return true
+      end },
+    -- What sits behind and around the battle.  WHITE is the classic paper
+    -- field; BLACK swaps it for black bars; WORLD leaves the frozen overworld
+    -- visible underneath, dimmed (the battle stops being opaque, so the map
+    -- shows through everywhere the battle does not paint).
+    { id = "battleBg", label = Strings("BATTLE BG"),
+      value = function(g)
+        local m = g.save.options.battleBg
+        if m == "black" then return Strings("BLACK") end
+        if m == "world" then return Strings("WORLD") end
+        return Strings("WHITE")
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        local order = { "white", "black", "world" }
+        local cur = 1
+        for i, m in ipairs(order) do if o.battleBg == m then cur = i break end end
+        o.battleBg = order[(cur - 1 + (dir or 1)) % #order + 1]
+        return true
+      end },
+    -- CENTERED is a fixed letterbox: elements stay inside the 160x144 canvas
+    -- and the UI does not follow the survey zoom, so nothing moves or resizes
+    -- under the player.  The composition the port shipped with.  DYNAMIC docks
+    -- the dialogue box to the window's bottom edge and the START menu to its
+    -- top right, and steps the UI down with the zoom -- easier to read zoomed
+    -- out, but it moves furniture the original never moved, so it is opt-in.
+    -- BATTLE SIZE is independent of this and works under either.
+    { id = "uiLayout", label = Strings("UI LAYOUT"),
+      value = function(g)
+        return g.save.options.uiLayout == "dynamic" and Strings("DYNAMIC")
+               or Strings("CENTERED")
+      end,
+      step = function(g)
+        local o = g.save.options
+        o.uiLayout = o.uiLayout == "dynamic" and "centered" or "dynamic"
         return true
       end },
     { id = "ruleset", label = Strings("RULESET"),
@@ -298,6 +351,33 @@ local function buildRows(game)
         VideoMode.apply(o.videoMode)
         return true
       end },
+    -- Android orientation lock (#592): AUTO / PORTRAIT / LANDSCAPE /
+    -- REVERSE LANDSCAPE, live-applied through SDL's orientation hint.
+    -- Filtered out below on everything that is not Android.
+    { id = "orientation", label = Strings("ORIENTATION"),
+      value = function(g)
+        return Strings(Orientation.modeLabel(g.save.options.orientation))
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.orientation = Orientation.cycle(o.orientation, dir)
+        Orientation.apply(o.orientation)
+        return true
+      end },
+    -- Lock the window to an exact 160x144 multiple, so the surface IS the
+    -- Game Boy screen with no letterbox at all.  Sits next to VIDEO MODE
+    -- because it overrides it: holding an exact size means dropping
+    -- fullscreen.
+    { id = "faithfulRes", label = Strings("FAITHFUL RATIO"),
+      value = function(g)
+        return FaithfulRes.label(g.save.options.faithfulRes)
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.faithfulRes = FaithfulRes.cycle(o.faithfulRes, dir)
+        FaithfulRes.apply(o.faithfulRes)
+        return true
+      end },
     -- hard render cap (issue #88): bounds the present rate so a
     -- driver-forced vsync-off run cannot spin at thousands of FPS.  Logic
     -- is fixed-step off dt, so this touches presentation only.
@@ -363,6 +443,14 @@ local function buildRows(game)
     local filtered = {}
     for _, row in ipairs(rows) do
       if row.id ~= "gbcfx" then filtered[#filtered + 1] = row end
+    end
+    rows = filtered
+  end
+  -- ORIENTATION only on Android, the one platform Orientation.apply reaches.
+  if not Orientation.isAndroid() then
+    local filtered = {}
+    for _, row in ipairs(rows) do
+      if row.id ~= "orientation" then filtered[#filtered + 1] = row end
     end
     rows = filtered
   end

@@ -176,6 +176,20 @@ M.ROUTE_18_GATE_2F = {
       { "face_player" },
       { "trade", 6, "EVENT_TRADED_SLOWBRO_FOR_LICKITUNG" }, -- MARC
     },
+    -- Yellow replaces the youngster with a cook trading SPIKE
+    -- (TANGELA -> PARASECT): pokeyellow/scripts/Route18Gate2F.asm
+    -- Route18Gate2FCookText runs TRADE_FOR_SPIKE, index 6 in the Yellow
+    -- TradeMons table that Data:applyVersionedFieldData swaps in.  Red
+    -- maps have no COOK object here and Yellow maps have no YOUNGSTER,
+    -- so each version only ever fires its own row (#651).  Both rows
+    -- share the Red-flavoured done flag on purpose: a .sav tracks
+    -- "trade slot 6 completed" in one wCompletedInGameTradeFlags bit
+    -- either version reads, and the save codec maps that bit to this
+    -- flag name (src/save_convert/GenSave.lua EXTRA_FLAG_BITS).
+    TEXT_ROUTE18GATE2F_COOK = {
+      { "face_player" },
+      { "trade", 6, "EVENT_TRADED_SLOWBRO_FOR_LICKITUNG" }, -- SPIKE (Yellow)
+    },
   },
 }
 

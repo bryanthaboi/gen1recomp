@@ -265,6 +265,47 @@ Flags.set(Game.save, "EVENT_BEAT_ROUTE12_SNORLAX")
 result = ItemEffects.use(Data, Game.save, "POKE_FLUTE", nil, nil, nil, owAdjacent)
 eq(result, "flute_field", "an already-beaten Snorlax doesn't wake again")
 
+-- === 9) a beaten Snorlax never stands in the road again: the routes'
+--        onEnter reconciles the object toggle from EVENT_BEAT_ROUTEnn_SNORLAX,
+--        so a save that lost the toggle (mod toggle, old build) is repaired
+--        on entry instead of sealing the route -- the flute refuses to wake
+--        a beaten Snorlax, which is what left #585 stuck ===
+local OverworldState = require("src.world.OverworldController")
+local function objOf(mapId, objName)
+  for _, obj in ipairs(Data.maps[mapId].objects or {}) do
+    if obj.name == objName then return obj end
+  end
+end
+
+for _, route in ipairs({
+  { "ROUTE_12", "ROUTE12_SNORLAX", "EVENT_BEAT_ROUTE12_SNORLAX" },
+  { "ROUTE_16", "ROUTE16_SNORLAX", "EVENT_BEAT_ROUTE16_SNORLAX" },
+}) do
+  local mapId, objName, beatFlag = route[1], route[2], route[3]
+  local enter = mapScripts.get(mapId).onEnter
+  check(type(enter) == "function", mapId .. " has an onEnter hook")
+  enter = type(enter) == "function" and enter or function() end
+
+  -- unbeaten: entering must not remove the sleeper
+  local save = SaveData.newGame()
+  enter({ save = save }, nil)
+  eq(save.objectToggles and save.objectToggles[mapId]
+     and save.objectToggles[mapId][objName], nil,
+     objName .. " is left alone while it has not been beaten")
+  check(OverworldState.objectVisible(save, mapId, objOf(mapId, objName)),
+        objName .. " still spawns before the flute wakes it")
+
+  -- beaten but still toggled visible (the #585 save state): repaired
+  save.flags[beatFlag] = true
+  save.objectToggles = save.objectToggles or {}
+  save.objectToggles[mapId] = { [objName] = true }
+  enter({ save = save }, nil)
+  eq(save.objectToggles[mapId][objName], false,
+     objName .. " is hidden again once " .. beatFlag .. " is set")
+  check(not OverworldState.objectVisible(save, mapId, objOf(mapId, objName)),
+        objName .. " no longer spawns on a beaten route")
+end
+
 -- restore the real commands for later suites
 Commands.show_text = origShow
 Commands.start_battle = origStart

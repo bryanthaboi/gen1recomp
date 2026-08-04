@@ -12,6 +12,7 @@
 local Font = require("src.render.Font")
 local Music = require("src.core.Music")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local EvolutionState = {}
 EvolutionState.__index = EvolutionState
@@ -89,9 +90,9 @@ function EvolutionState:update(dt)
     self.done = true
     self.canceled = true
     local TextBox = require("src.render.TextBox")
-    -- mirrors data/generated/text.lua _StoppedEvolvingText
     game.stack:push(TextBox.new(game,
-      Strings("Huh? %s\nstopped evolving!", self.oldName),
+      romText(game.data, "_StoppedEvolvingText",
+        "Huh? %s\nstopped evolving!", self.oldName),
       function()
         Music.restoreMap(game.data)
         game.stack:pop() -- the evolution screen itself
@@ -106,6 +107,8 @@ function EvolutionState:update(dt)
     require("src.core.Sound").playCry(game.data, self.newSpecies)
     local TextBox = require("src.render.TextBox")
     local newName = game.data.pokemon[self.newSpecies].name
+    -- _EvolvedText extracts truncated (it stops at a dynamic marker the
+    -- decoder does not follow), so the engine's wording stands here
     game.stack:push(TextBox.new(game,
       Strings("Congratulations!\nYour %s\nevolved into\n%s!",
               self.oldName, newName),

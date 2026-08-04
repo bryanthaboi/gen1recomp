@@ -15,6 +15,7 @@ local Screens = require("src.ui.Screens")
 local Stats = require("src.pokemon.Stats")
 local TextBox = require("src.render.TextBox")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local Evolution = {}
 
@@ -140,7 +141,8 @@ function Evolution.learnEvolutionMoves(game, mon, onDone)
       table.insert(mon.moves, { id = moveId, pp = mdef.pp })
       Runtime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
       game.stack:push(TextBox.new(game,
-        Strings("%s learned\n%s!", name, mdef.name), nextStep))
+        romText(game.data, "_LearnedMove1Text",
+          "%s learned\n%s!", name, mdef.name), nextStep))
     else
       -- LearnMoveFromLevelUp with a full moveset: the forget UI
       Screens.push(game, "MoveLearnMenu", mon, moveId, nextStep)
@@ -161,8 +163,12 @@ function Evolution.evolve(game, mon, newSpecies, onDone, via)
   Music.play(game.data, Music.special(game.data, "evolution"))
   local oldName = mon.nickname or game.data.pokemon[mon.species].name
   Evolution.apply(game, mon, newSpecies, via)
-  local msg = Strings("What?\n%s is\nevolving!\fCongratulations!\nYour %s\nevolved into\n%s!",
-                      oldName, oldName, game.data.pokemon[newSpecies].name)
+  -- the congrats page keeps the engine wording: _EvolvedText extracts
+  -- truncated (it stops at a dynamic marker the decoder does not follow)
+  local msg = romText(game.data, "_IsEvolvingText",
+                "What?\n%s is\nevolving!", oldName)
+    .. "\f" .. Strings("Congratulations!\nYour %s\nevolved into\n%s!",
+                 oldName, game.data.pokemon[newSpecies].name)
   game.stack:push(TextBox.new(game, msg, function()
     Music.restoreMap(game.data)
     -- re-run the evolved species' level-up learn check before onDone

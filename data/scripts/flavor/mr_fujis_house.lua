@@ -13,9 +13,9 @@ M.MR_FUJIS_HOUSE = {
     TEXT_MRFUJISHOUSE_SUPER_NERD = {
       { "face_player" },                                                    -- 1
       { "check_flag", "EVENT_RESCUED_MR_FUJI" },                            -- 2
-      { "jump_if_true", 5 },                                                -- 3
+      { "jump_if_true", 6 },                                                -- 3
       { "show_text", "_MrFujisHouseSuperNerdMrFujiIsntHereText" },          -- 4
-      { "jump", 6 },                                                        -- 5
+      { "jump", "end" },                                                    -- 5
       { "show_text", "_MrFujisHouseSuperNerdMrFujiHadBeenPrayingText" },    -- 6
     },
 
@@ -25,9 +25,9 @@ M.MR_FUJIS_HOUSE = {
     TEXT_MRFUJISHOUSE_LITTLE_GIRL = {
       { "face_player" },                                                    -- 1
       { "check_flag", "EVENT_RESCUED_MR_FUJI" },                            -- 2
-      { "jump_if_true", 5 },                                                -- 3
+      { "jump_if_true", 6 },                                                -- 3
       { "show_text", "_MrFujisHouseLittleGirlThisIsMrFujisHouseText" },     -- 4
-      { "jump", 6 },                                                        -- 5
+      { "jump", "end" },                                                    -- 5
       { "show_text", "_MrFujisHouseLittleGirlPokemonAreNiceToHugText" },    -- 6
     },
 

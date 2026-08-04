@@ -864,11 +864,12 @@ do
 end
 
 do
-  -- #497: the editor drew a desktop layout into a phone window.  Kit.layout
-  -- scaled off height alone, and a phone in portrait (720x1560) is TALLER
-  -- than the 768px desktop reference while being barely half as wide, so the
-  -- scale came back clamped at 1.6 and every right-aligned cluster in the
-  -- chrome landed on top of the block to its left.  Both axes now pay.
+  -- #497 shrank the layout to fit a phone's width; #715 replaced that with
+  -- reflow.  The scale never dips below the 0.9 readability floor now: a
+  -- narrow window keeps readable fonts and 26px tap targets and the panels
+  -- stack / drop columns / scroll instead of shrinking.  The width term
+  -- (width/640) only stops a portrait phone from inflating to the 1.6 cap
+  -- its height alone would buy.
   local Kit = require("Kit")
   local Theme = require("Theme")
   local function about(got, want, msg)
@@ -876,19 +877,21 @@ do
           msg .. string.format(" (got %.4f, want %.4f)", got, want))
   end
 
-  about(Kit.layout(720, 1560), 0.72, "portrait phone scales off its width")
-  check(Kit.layout(720, 1560) < 1.0,
-        "a portrait phone no longer draws a larger-than-desktop layout")
+  about(Kit.layout(720, 1560), 720 / 640,
+    "portrait phone scales off its width, gently")
+  check(Kit.layout(720, 1560) >= 0.9,
+        "a portrait phone never drops below the readability floor")
   about(Kit.layout(1560, 720), 720 / 768, "landscape phone still scales off height")
-  about(Kit.layout(360, 640), 0.62, "a tiny window stops at the floor")
+  about(Kit.layout(360, 640), 0.9,
+    "a tiny window stops at the readable floor and reflows instead of shrinking")
+  about(Kit.layout(500, 800), 0.9, "500px wide sits on the floor too")
 
-  -- desktop and laptop sizes have to be pixel-identical to before the fix:
-  -- everything at or above the 1000px reference width lands on the height
-  -- term, exactly as it always did
+  -- desktop and laptop sizes keep the height-only scale they always had
   for _, size in ipairs({ { 1280, 800 }, { 1024, 768 }, { 1920, 1080 },
-                          { 1440, 900 }, { 2560, 1440 } }) do
-    about(Kit.layout(size[1], size[2]), Theme.clamp(size[2] / 768, 0.7, 1.6),
-      ("%dx%d keeps its old height-only scale"):format(size[1], size[2]))
+                          { 1440, 900 }, { 2560, 1440 }, { 900, 700 } }) do
+    about(Kit.layout(size[1], size[2]),
+      Theme.clamp(math.min(size[1] / 640, size[2] / 768), 0.9, 1.6),
+      ("%dx%d keeps its height-based scale"):format(size[1], size[2]))
   end
 end
 
@@ -917,8 +920,13 @@ do
     end
   end
 
+  -- 720x1280 / 1280x720 are the #715 report's shapes (Android, both
+  -- orientations): the Map tab used to lay its viewport out at a negative
+  -- width in portrait and crash on the scissor.  The desktop sizes pin that
+  -- the responsive reflow does not disturb the layouts that already worked.
   for _, size in ipairs({ { 720, 1560 }, { 1560, 720 }, { 480, 1040 },
-                          { 1280, 800 } }) do
+                          { 1280, 800 }, { 720, 1280 }, { 1280, 720 },
+                          { 1024, 768 }, { 1920, 1080 }, { 360, 640 } }) do
     love.graphics.getDimensions = function() return size[1], size[2] end
     App.load(tmpPath, { version = "red" })
     local S = App.getState()
@@ -928,6 +936,8 @@ do
       local ok, err = pcall(App.draw)
       check(ok, ("the %s tab draws at %s: %s"):format(tab, label, tostring(err)))
     end
+    check((S._mapViewW or 0) >= 0 and (S._mapViewH or 0) >= 0,
+      ("the map viewport stays non-negative at %s (#715)"):format(label))
     S.tab = "party"
     Ops.selectParty(S, 1)
     local ok, err = pcall(App.draw)
@@ -942,6 +952,193 @@ do
 
   love.graphics.getDimensions = oldDimensions
   love.graphics.setScissor = oldScissor
+
+  os.remove(tmpPath)
+  for _, bak in ipairs(FsIo.globPrefix(tmpPath .. ".bak-")) do os.remove(bak) end
+end
+
+do
+  -- #715 reflow audit.  Kit records every control that could take a click
+  -- while Kit.audit is set (shielded widgets are skipped, since a modal
+  -- legitimately covers what it shields).  The sweep below drives every tab
+  -- at the window shapes the reflow has to serve and FAILS if any two
+  -- controls overlap or any control escapes the window, which is exactly
+  -- the "buttons covering things" class of bug the shrink-to-fit layout
+  -- kept producing.  Rects clip to the region that bounds their hit test,
+  -- so a row scrolled out of a list is not a phantom overlap.
+  local Kit = require("Kit")
+
+  local function clipped(r)
+    local x1, y1, x2, y2 = r.x, r.y, r.x + r.w, r.y + r.h
+    if r.clip then
+      x1 = math.max(x1, r.clip.x); y1 = math.max(y1, r.clip.y)
+      x2 = math.min(x2, r.clip.x + r.clip.w); y2 = math.min(y2, r.clip.y + r.clip.h)
+    end
+    if x2 - x1 <= 1 or y2 - y1 <= 1 then return nil end
+    return x1, y1, x2, y2
+  end
+
+  local function overlap(a, b)
+    local ax1, ay1, ax2, ay2 = clipped(a)
+    if not ax1 then return false end
+    local bx1, by1, bx2, by2 = clipped(b)
+    if not bx1 then return false end
+    return math.min(ax2, bx2) - math.max(ax1, bx1) > 1
+       and math.min(ay2, by2) - math.max(ay1, by1) > 1
+  end
+
+  local function auditFrame(label, W, H)
+    local rects = Kit.audit
+    local controls = {}
+    for _, r in ipairs(rects) do
+      if r.class == "control" then controls[#controls + 1] = r end
+    end
+    check(#controls > 0, label .. ": the frame dispatched controls at all")
+    local collisions, escapes = 0, 0
+    for i = 1, #controls do
+      local a = controls[i]
+      local x1, y1, x2, y2 = clipped(a)
+      if x1 and (x1 < -0.5 or y1 < -0.5 or x2 > W + 0.5 or y2 > H + 0.5) then
+        escapes = escapes + 1
+        print(("  escape: %s (%.0f,%.0f %.0fx%.0f)")
+          :format(a.label, a.x, a.y, a.w, a.h))
+      end
+      for j = i + 1, #controls do
+        if overlap(a, controls[j]) then
+          collisions = collisions + 1
+          print(("  overlap: '%s' vs '%s' at (%.0f,%.0f) / (%.0f,%.0f)")
+            :format(a.label, controls[j].label, a.x, a.y,
+              controls[j].x, controls[j].y))
+        end
+      end
+    end
+    check(collisions == 0, label .. ": no two controls overlap")
+    check(escapes == 0, label .. ": every control stays inside the window")
+  end
+
+  local tmpPath = os.tmpname() .. "-audit-save.lua"
+  local data = SaveData.newGame()
+  data.party = {}
+  for i = 1, require("src.pokemon.Party").MAX do
+    data.party[i] = MonOps.create(Data, i % 2 == 0 and "PIDGEY" or "CHARIZARD",
+      10 * i)
+  end
+  local f = io.open(tmpPath, "wb")
+  f:write(SaveData.encode(data))
+  f:close()
+
+  local oldDimensions = love.graphics.getDimensions
+  local sizes = { { 500, 800 }, { 720, 1280 }, { 1280, 720 },
+                  { 1024, 768 }, { 900, 700 }, { 1920, 1080 } }
+  for _, size in ipairs(sizes) do
+    local W, H = size[1], size[2]
+    love.graphics.getDimensions = function() return W, H end
+    App.load(tmpPath, { version = "red" })
+    local S = App.getState()
+    -- populate the panels the fresh save leaves empty, so their controls
+    -- (quantity rows, box cells, dock rows, flags) are exercised too
+    Ops.selectParty(S, 1)
+    Ops.boxAdd(S); Ops.boxAdd(S)
+    Ops.addToBag(S, S.cat.items[1])
+    Ops.addToPc(S, S.cat.items[2])
+    Ops.setFlag(S, "EVENT_GOT_POKEDEX", true)
+    for _, tab in ipairs({ "party", "boxes", "items", "events", "map", "dex" }) do
+      S.tab = tab
+      Kit.audit = {}
+      local ok, err = pcall(App.draw)
+      check(ok, ("%dx%d %s draws: %s"):format(W, H, tab, tostring(err)))
+      if ok then auditFrame(("%dx%d %s"):format(W, H, tab), W, H) end
+      Kit.audit = nil
+    end
+    -- the species picker dialog reflows too; frame 2, since the opening
+    -- frame is fully shielded by design (#541) and would audit empty
+    S.tab = "party"
+    Ops.openSpeciesPicker(S, Kit)
+    App.draw()
+    Kit.audit = {}
+    local ok, err = pcall(App.draw)
+    check(ok, ("%dx%d species picker draws: %s"):format(W, H, tostring(err)))
+    if ok then auditFrame(("%dx%d species picker"):format(W, H), W, H) end
+    Kit.audit = nil
+    Ops.closeSpeciesPicker(S, Kit)
+  end
+  love.graphics.getDimensions = oldDimensions
+
+  os.remove(tmpPath)
+  for _, bak in ipairs(FsIo.globPrefix(tmpPath .. ".bak-")) do os.remove(bak) end
+end
+
+do
+  -- Box add flow: the Boxes panel's "+ Add mon here" and its dashed empty
+  -- cells open the SAME species picker the inspector uses, in box-add mode,
+  -- and the committed species lands in the selected box as a Lv5 mon built
+  -- by the same MonOps path Ops.partyAdd uses.
+  local Kit = require("Kit")
+  local BoxesMod = require("src.pokemon.Boxes")
+  local tmpPath = os.tmpname() .. "-boxadd-save.lua"
+  local f = io.open(tmpPath, "wb")
+  f:write(SaveData.encode(SaveData.newGame()))
+  f:close()
+
+  App.load(tmpPath, { version = "red" })
+  local S = App.getState()
+  S.tab = "boxes"
+
+  check(Ops.openBoxAddPicker(S, Kit) == true, "box-add picker opens")
+  check(S.speciesPicker ~= nil, "the picker is up")
+  eq(S.speciesPicker.mode, "box-add", "and it is in box-add mode")
+  eq(Kit.focus, "species-picker", "with the search field focused (#529)")
+
+  local ok, err = pcall(App.draw)
+  check(ok, "the box-add picker draws headlessly: " .. tostring(err))
+
+  App.textinput("PIKACHU")
+  App.draw()
+  App.keypressed("return")
+  local box = Ops.boxes(S)[S.selectedBox]
+  check(S.speciesPicker == nil, "committing closes the picker")
+  eq(#box, 1, "the commit added exactly one mon to the box")
+  local mon = box[1]
+  eq(mon.species, "PIKACHU", "the picked species landed in the box")
+  eq(mon.level, 5, "as a Lv5 mon, matching partyAdd's default")
+  check(mon.stats and mon.stats.hp and mon.stats.hp > 0,
+        "with real Gen1 stats from MonOps.create")
+  eq(mon.ot, S.save.player.name, "owned by the save's player")
+  eq(mon.otId, S.save.player.id, "with the player's trainer id")
+  check(S.editingMon == mon, "and the inspector now points at it")
+  check(S.dirty, "and the save is dirty")
+
+  -- Escape leaves without adding anything
+  Ops.openBoxAddPicker(S, Kit)
+  App.textinput("BULBASAUR")
+  App.draw()
+  App.keypressed("escape")
+  check(S.speciesPicker == nil, "Escape closes the box-add picker")
+  eq(#box, 1, "Escape added nothing")
+
+  -- an unusable (mod-partial) record refuses instead of crashing (#541)
+  Data.pokemon.TESTMON_BOXADD = { name = "TESTMON", dex = 0,
+    baseStats = { hp = 40 }, growthRate = "MEDIUM_FAST",
+    types = { "NORMAL" }, learnset = {} }
+  S.cat = Catalog.build(Data)
+  S.dirty = false
+  check(Ops.boxAddSpecies(S, "TESTMON_BOXADD") == false,
+        "a record without usable base stats is refused")
+  eq(#box, 1, "and nothing was added")
+  check(S.status:match("base stats") ~= nil, "and the refusal explains itself")
+  check(S.dirty == false, "and the save stays clean")
+  Data.pokemon.TESTMON_BOXADD = nil
+  S.cat = Catalog.build(Data)
+
+  -- a full box refuses to even open the picker
+  while #box < BoxesMod.CAPACITY do Ops.boxAdd(S) end
+  check(Ops.openBoxAddPicker(S, Kit) == false, "a full box refuses the picker")
+  check(S.speciesPicker == nil, "and it stays closed")
+  check(S.status:match("full") ~= nil, "and says why")
+
+  -- ...and a commit raced against a filling box refuses too
+  check(Ops.boxAddSpecies(S, "PIKACHU") == false,
+        "boxAddSpecies refuses a full box")
 
   os.remove(tmpPath)
   for _, bak in ipairs(FsIo.globPrefix(tmpPath .. ".bak-")) do os.remove(bak) end

@@ -37,6 +37,7 @@ If the file isn't there (or you want another copy), use **Open...**, drop a
 | --- | --- |
 | `Theme.lua` | the launcher's palette + drawing primitives (cards, glow, dashed outlines, letterspaced captions) |
 | `Kit.lua` | immediate-mode widgets built on Theme: buttons, rows, meters, chips, checkboxes, a real text field, pagers |
+| `PadInput.lua` | virtual cursor for Switch / gamepads (stick move, A click, B close, shoulders cycle tabs) |
 | `Ops.lua` | **every mutation**, behind one funnel that sets dirty + status together |
 | `App.lua` | chrome (version rail, title bar, tab rail, status bar) and the panel router |
 | `panels/` | one file per tab; pure layout that dispatches into Ops |
@@ -45,6 +46,15 @@ If the file isn't there (or you want another copy), use **Open...**, drop a
 the modal species search the inspector opens, drawn by `App.draw` after the
 panel rather than routed through the tab table. Kit has no z-order, so while
 it is up `Kit.blockClicks` shields every widget underneath it.
+
+### Switch / gamepad
+
+On Nintendo Switch (and any gamepad without a mouse), the editor uses the same
+virtual-cursor idea as the launcher: left stick / D-pad moves a pointer, **A**
+clicks, **B** closes (with the usual unsaved confirm), L/R cycle tabs, and the
+right stick scrolls lists. Touch taps forward as clicks. Without that path the
+editor soft-locked until HOME — `main.lua` used to drop all pad/touch events
+while `editorMode` was set.
 
 The design reference is the `SaveEditor.dc.html` mockup that this port
 transcribes; its measurements are in the same pixel space `App.lua` draws in.
@@ -70,6 +80,7 @@ luajit tests/save_editor_task6_tests.lua    # Boxes + Items rules
 luajit tests/save_editor_task7_tests.lua    # Events + Dex rules
 luajit tests/save_editor_task8_tests.lua    # map browser + spawn points
 luajit tests/save_editor_mod_tests.lua      # modded species/items stay editable
+luajit tests/save_editor_pad_input_test.lua # pad cursor / NX input routing
 ```
 
 They drive `Ops.lua` rather than clicking pixel coordinates. The panels are

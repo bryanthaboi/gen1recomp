@@ -10,6 +10,23 @@
 
 local editorMode = os.getenv("POKEPORT_EDITOR") == "1" or POKEPORT_EDITOR_MODE == true
 
+local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
+local NxDisplay = require("src.core.NxDisplay")
+
+-- Lua errors: persist a redacted trace in the save dir and surface a hint.
+do
+  local defaultErrorHandler = love.errorhandler
+  function love.errorhandler(msg)
+    local hint = SwitchDiagnostics.logLuaError(msg)
+    if hint and type(msg) == "string" then
+      msg = msg .. "\n\n" .. hint
+    end
+    if defaultErrorHandler then
+      return defaultErrorHandler(msg)
+    end
+  end
+end
+
 local Game, EditorApp, Importer, TouchEditor
 
 local autopilot -- optional scripted-input dev tool (tests/autopilot.lua)
@@ -103,6 +120,11 @@ local function openEditor(version, slotId)
   require("src.import.CacheFs").mountVersion(version)
   editorVersion = version
   editorHost = Importer
+  -- Drop launcher pad/FlexLove so the save editor owns input (NX shim +
+  -- virtual cursor + system hand cursor). Desktop park is a light no-op.
+  if Importer and Importer.prepareOverlayHandoff then
+    Importer:prepareOverlayHandoff()
+  end
   Importer = nil
   editorMode = true
   resizeForEditor()
@@ -129,6 +151,9 @@ function closeEditor()
   restoreWindow()
   Importer = editorHost
   editorHost = nil
+  if Importer and Importer.resumeAfterOverlay then
+    Importer:resumeAfterOverlay()
+  end
   if Importer and version and Importer.savesChanged then
     Importer:savesChanged(version)
   end
@@ -142,6 +167,9 @@ local closeTouchControlsEditor  -- forward declaration
 
 local function openTouchControlsEditor()
   touchEditorHost = Importer
+  if Importer and Importer.prepareOverlayHandoff then
+    Importer:prepareOverlayHandoff()
+  end
   Importer = nil
   TouchEditor = require("src.ui.TouchControlsEditor")
   TouchEditor.load({ onClose = function() closeTouchControlsEditor() end })
@@ -152,6 +180,9 @@ function closeTouchControlsEditor()
   TouchEditor = nil
   Importer = touchEditorHost
   touchEditorHost = nil
+  if Importer and Importer.resumeAfterOverlay then
+    Importer:resumeAfterOverlay()
+  end
 end
 
 local function bootGame(version)
@@ -161,7 +192,16 @@ local function bootGame(version)
   -- data, so data/generated + assets/generated resolve to that version's files.
   local GameVersion = require("src.core.GameVersion")
   GameVersion.set(version or os.getenv("POKEPORT_VERSION") or "red")
-  require("src.import.CacheFs").mountVersion(GameVersion.get())
+  local CacheFs = require("src.import.CacheFs")
+  -- Keep CacheFs.prefix aligned for any CacheFs.read fallback during Data:load
+  -- (Blue/Yellow caches live under blue/ / yellow/).
+  CacheFs.prefix = GameVersion.cachePrefix()
+  CacheFs.mountVersion(GameVersion.get())
+  -- NX: always write nx-asset-probe.log so Yellow/Blue art failures are
+  -- diagnosable from the SD without enabling switch-debug.txt.
+  pcall(function()
+    require("src.debug.SwitchDiagnostics").probeAssets(GameVersion.get())
+  end)
   if love.window and love.window.setTitle then
     local Version = require("src.core.Version")
     love.window.setTitle(Version.title(
@@ -184,6 +224,18 @@ local function bootGame(version)
 end
 
 function love.load(args)
+  -- Before anything can shell out (update check, mod index, ROM picker),
+  -- claim one hidden console on Windows so those children inherit it instead
+  -- of each flashing their own cmd.exe window (#606).  No-op elsewhere.
+  require("src.core.HostShell").hideHostConsole()
+
+  -- NX fused mounts are unreliable for the blue|yellow cache overlay: wrap
+  -- the love loaders once so every generated-asset read falls back to the
+  -- versioned save-dir copy.  Never installed on desktop/Android/iOS.
+  if require("src.core.Platform").isNX() then
+    require("src.core.NxAssetOverlay").install()
+  end
+
   -- Self-updater boot shell: a fused build may mount and chainload a newer
   -- downloaded payload here.  True means it took over, so we must stop.  A
   -- dev / source checkout no-ops (see src/update/Boot.lua).
@@ -203,6 +255,16 @@ function love.load(args)
     end
   end
   love.graphics.setDefaultFilter("nearest", "nearest")
+  -- NX: handheld 720p / docked 1080p. Runs for every boot path (launcher,
+  -- editor, scripted); no-op on desktop/mobile.
+  NxDisplay.sync()
+
+  -- Apply the persisted Android orientation lock (#592) before the launcher
+  -- shows: SDL created the window with no orientation hint, so without this
+  -- the launcher would rotate freely until Game:applyOptions runs at boot.
+  -- No-op on desktop / iOS / when options.lua does not exist yet.
+  require("src.core.Orientation").applyOptions(
+    require("src.core.SaveData").loadOptions())
 
   -- Standalone editor.  A bare `--editor` run has no launcher behind it, so
   -- Close quits; --save points it at a specific file, otherwise it opens the
@@ -268,6 +330,9 @@ function love.load(args)
 end
 
 function love.update(dt)
+  SwitchDiagnostics.maybeFlush(false)
+  -- NX only (no-op elsewhere): follow dock/undock without waiting for SDL.
+  NxDisplay.sync()
   if editorMode then return EditorApp.update(dt) end
   if TouchEditor then return TouchEditor.update(dt) end
   if Importer then return Importer:update(dt) end
@@ -342,48 +407,140 @@ function love.keyreleased(key)
 end
 
 function love.gamepadpressed(joystick, button)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("gamepadpressed", joystick, button)
+  if editorMode then
+    if EditorApp and EditorApp.gamepadpressed then
+      return EditorApp.gamepadpressed(joystick, button)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.gamepadpressed then
+      return TouchEditor.gamepadpressed(joystick, button)
+    end
+    return
+  end
   if Importer then return Importer:gamepadpressed(joystick, button) end
   Game:gamepadpressed(joystick, button)
 end
 
 function love.gamepadreleased(joystick, button)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("gamepadreleased", joystick, button)
+  if editorMode then
+    if EditorApp and EditorApp.gamepadreleased then
+      return EditorApp.gamepadreleased(joystick, button)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.gamepadreleased then
+      return TouchEditor.gamepadreleased(joystick, button)
+    end
+    return
+  end
   if Importer then return Importer:gamepadreleased(joystick, button) end
   Game:gamepadreleased(joystick, button)
 end
 
 function love.gamepadaxis(joystick, axis, value)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("gamepadaxis", joystick, axis, { value = value })
+  if editorMode then
+    if EditorApp and EditorApp.gamepadaxis then
+      return EditorApp.gamepadaxis(joystick, axis, value)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.gamepadaxis then
+      return TouchEditor.gamepadaxis(joystick, axis, value)
+    end
+    return
+  end
   if Importer then return Importer:gamepadaxis(joystick, axis, value) end
   Game:gamepadaxis(joystick, axis, value)
 end
 
 function love.joystickpressed(joystick, button)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("joystickpressed", joystick, button)
+  if editorMode then
+    if EditorApp and EditorApp.joystickpressed then
+      return EditorApp.joystickpressed(joystick, button)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.joystickpressed then
+      return TouchEditor.joystickpressed(joystick, button)
+    end
+    return
+  end
   if Importer then return Importer:joystickpressed(joystick, button) end
   Game:joystickpressed(joystick, button)
 end
 
 function love.joystickreleased(joystick, button)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("joystickreleased", joystick, button)
+  if editorMode then
+    if EditorApp and EditorApp.joystickreleased then
+      return EditorApp.joystickreleased(joystick, button)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.joystickreleased then
+      return TouchEditor.joystickreleased(joystick, button)
+    end
+    return
+  end
   if Importer then return Importer:joystickreleased(joystick, button) end
   Game:joystickreleased(joystick, button)
 end
 
 function love.joystickaxis(joystick, axis, value)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("joystickaxis", joystick, axis, { value = value })
+  if editorMode then
+    if EditorApp and EditorApp.joystickaxis then
+      return EditorApp.joystickaxis(joystick, axis, value)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.joystickaxis then
+      return TouchEditor.joystickaxis(joystick, axis, value)
+    end
+    return
+  end
   if Importer then return Importer:joystickaxis(joystick, axis, value) end
   Game:joystickaxis(joystick, axis, value)
 end
 
 function love.joystickhat(joystick, hat, direction)
-  if editorMode or TouchEditor then return end
+  SwitchDiagnostics.onJoystickEvent("joystickhat", joystick, hat, { direction = direction })
+  if editorMode then
+    if EditorApp and EditorApp.joystickhat then
+      return EditorApp.joystickhat(joystick, hat, direction)
+    end
+    return
+  end
+  if TouchEditor then
+    if TouchEditor.joystickhat then
+      return TouchEditor.joystickhat(joystick, hat, direction)
+    end
+    return
+  end
   if Importer then return Importer:joystickhat(joystick, hat, direction) end
   Game:joystickhat(joystick, hat, direction)
 end
 
+function love.joystickadded(joystick)
+  SwitchDiagnostics.onJoystickEvent("joystickadded", joystick)
+  if editorMode or TouchEditor then return end
+  if Importer then return end
+  Game:joystickadded(joystick)
+end
+
 function love.joystickremoved(joystick)
+  SwitchDiagnostics.onJoystickEvent("joystickremoved", joystick)
   if editorMode or TouchEditor then return end
   if Importer then return end
   Game:joystickremoved(joystick)
@@ -395,6 +552,7 @@ end
 function love.focus(f)
   if editorMode or TouchEditor then return end
   if Importer then
+    require("src.core.Input"):reset()
     if Importer.focus then Importer:focus(f) end
     return
   end
@@ -404,12 +562,29 @@ end
 -- v is true when the window becomes visible again, false on minimize.
 function love.visible(v)
   if editorMode or TouchEditor then return end
-  if Importer then return end
+  if Importer then
+    require("src.core.Input"):reset()
+    return
+  end
   Game:visible(v)
 end
 
+function love.lowmemory()
+  if editorMode or TouchEditor or Importer then return end
+  if Game then Game:onResume() end
+end
+
 function love.touchpressed(id, x, y, dx, dy, pressure)
-  if editorMode then return end
+  if editorMode then
+    -- iOS synthesizes mousepressed for the primary touch; forwarding here
+    -- would double-fire.  Android / NX need the explicit touch → click path
+    -- (love-nx does not synthesize mouse for the editor the way desktop does).
+    if love.system.getOS() == "iOS" then return end
+    if EditorApp and EditorApp.mousepressed then
+      return EditorApp.mousepressed(x, y, 1)
+    end
+    return
+  end
   if TouchEditor then
     -- iOS synthesizes mousepressed for the primary touch (same as the
     -- launcher); Android drives the editor through love.touch directly.
@@ -417,16 +592,10 @@ function love.touchpressed(id, x, y, dx, dy, pressure)
     return TouchEditor.touchpressed(id, x, y)
   end
   if Importer then
-    -- iOS: LÖVE already synthesizes a mousepressed for the primary touch,
-    -- and love.mousepressed below forwards that to the Importer, so
-    -- forwarding here too fires every launcher button twice per tap.  The
-    -- resulting double-present was fatal for the document picker: the
-    -- second sheet stole the first one's weakly-held delegate, so picking
-    -- a file silently did nothing.  Android keeps the forward for upstream
-    -- parity (its SAF picker is a separate activity and tolerates the
-    -- re-launch).
-    if love.system.getOS() == "iOS" then return end
-    return Importer:mousepressed(x, y, 1)
+    -- Both mobiles: FlexLove scroll needs the real touch stream. Clicks are
+    -- polled inside the view; the istouch filter on mousepressed still drops
+    -- Android's synthesized mouse twin so Import cannot double-fire (#553).
+    return Importer:touchpressed(id, x, y, dx, dy, pressure)
   end
   Game:touchpressed(id, x, y)
 end
@@ -437,7 +606,9 @@ function love.touchmoved(id, x, y, dx, dy, pressure)
     if love.system.getOS() == "iOS" then return end
     return TouchEditor.touchmoved(id, x, y)
   end
-  if Importer then return end
+  if Importer then
+    return Importer:touchmoved(id, x, y, dx, dy, pressure)
+  end
   Game:touchmoved(id, x, y)
 end
 
@@ -447,7 +618,9 @@ function love.touchreleased(id, x, y, dx, dy, pressure)
     if love.system.getOS() == "iOS" then return end
     return TouchEditor.touchreleased(id, x, y)
   end
-  if Importer then return end
+  if Importer then
+    return Importer:touchreleased(id, x, y, dx, dy, pressure)
+  end
   Game:touchreleased(id, x, y)
 end
 
@@ -469,24 +642,20 @@ function love.mousepressed(x, y, button, istouch)
     return TouchEditor.mousepressed(x, y, button)
   end
   if Importer then
-    -- The same double-fire TouchEditor guards against, which the launcher was
-    -- missing: love.touchpressed above forwards the primary touch to the
-    -- Importer on Android, and LÖVE ALSO synthesizes a mouse press for that
-    -- same touch, so one tap ran every launcher button twice.  On Import that
-    -- meant two choose() calls and two stacked SAF picker activities: the
-    -- player picked their ROM, the top picker closed, and the second was still
-    -- underneath asking for it again, which is the "import the file twice"
-    -- in #553.  Filtering on istouch keeps a real mouse (DeX, a Chromebook, a
-    -- USB mouse) working, which an Android-wide return would have broken.
-    --
-    -- ANDROID ONLY, and the OS test is load bearing: love.touchpressed above
-    -- returns early on iOS and never forwards, so there the synthesized mouse
-    -- press is the ONLY event the launcher gets.  Filtering istouch on both
-    -- killed every tap on iOS outright.
-    if istouch and love.system.getOS() == "Android" then return end
+    -- love.touchpressed already forwards the primary touch into FlexLove for
+    -- scroll. LÖVE ALSO synthesizes a mouse press for that same touch; if both
+    -- reached a press handler, one tap ran every launcher button twice and
+    -- stacked two SAF pickers (#553). Clicks are polled inside FlexLove from
+    -- love.touch / mouse.isDown, so dropping the synthesized istouch press is
+    -- safe. A real mouse (DeX, Chromebook, USB) still reaches mousepressed.
+    if istouch and (love.system.getOS() == "Android"
+        or love.system.getOS() == "iOS") then return end
     return Importer:mousepressed(x, y, button)
   end
   if editorMode and EditorApp.mousepressed then
+    -- Same Android double-fire guard: touchpressed already clicked for the
+    -- save editor; a synthesized mouse press must not fire again.
+    if istouch and love.system.getOS() == "Android" then return end
     return EditorApp.mousepressed(x, y, button)
   end
   if mouseTouch and Game and button == 1 then

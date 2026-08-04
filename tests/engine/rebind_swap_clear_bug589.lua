@@ -17,6 +17,7 @@ love = love or require("tests.love_stub")
 
 local Input = require("src.core.Input")
 local Strings = require("src.core.Strings")
+local Timing = require("src.core.Timing")
 local BindingsMenu = require("src.ui.BindingsMenu")
 
 -- same doubles as rebind_capture_bug510: a stack the menu can pop itself
@@ -43,6 +44,14 @@ local function press(state, btn)
   state.game.input.queue = { [btn] = true }
   state:update(1 / 60)
   state.game.input.queue = {}
+end
+
+-- ChoiceBox now holds YES/NO answers on screen for Timing.YES_NO_ANSWER
+-- frames before it commits and pops (DisplayTwoOptionMenu's 15-frame hold,
+-- #GH-627 timing parity); a bare press only arms the choice, so answering
+-- it needs the hold run out before the pop/commit is visible.
+local function settleChoice(state)
+  for _ = 1, Timing.YES_NO_ANSWER do state:update(1 / 60) end
 end
 
 -- rows are BindingsMenu's BUTTONS order
@@ -146,6 +155,7 @@ eq(bm.footer, Strings("RESET ALL BINDINGS?"),
 
 -- the box starts on NO: a bare A press must keep the overlay
 press(box, "a")
+settleChoice(box)
 eq(game.stack:top(), bm, "answering pops the box")
 check(game.save.options.bindings ~= nil, "NO keeps the bindings (defaultNo)")
 eq(bm.items[ROW_A].right, "P/B", "and the rows keep showing them")
@@ -155,6 +165,7 @@ press(bm, "start")
 box = game.stack:top()
 press(box, "up")
 press(box, "a")
+settleChoice(box)
 check(game.save.options.bindings == nil, "YES clears options.bindings (#589)")
 eq(bm.items[ROW_A].right, "Z/A", "the A row reads its default again")
 eq(bm.items[ROW_B].right, "X/B", "so does the B row the swap had touched")

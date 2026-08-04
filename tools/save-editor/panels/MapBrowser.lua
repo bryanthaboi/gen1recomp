@@ -156,16 +156,44 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   S.mapQuery = S.mapQuery or ""
   S.mapZoom = clampZoom(S.mapZoom or 2)
 
+  -- Column plan (#715).  Side by side, the list and spawn cards claim ~470
+  -- logical px before the viewport gets anything, and a portrait phone does
+  -- not have it: the old layout answered by laying the viewport out at a
+  -- negative width, which the scissor below rejected ("Can't set scissor
+  -- with negative width and/or height") and took the whole editor down.
+  -- Portrait now stacks the three cards vertically -- list, viewport, spawn
+  -- inspector, each full width -- and every viewport dimension is clamped at
+  -- zero so no window shape can reach the scissor with a negative rect.
   local listW = math.max(200 * s, math.min(260 * s, w * 0.2))
   local sideW = math.max(230 * s, math.min(300 * s, w * 0.22))
-  local viewX = x + listW + gap
   local viewW = w - listW - sideW - 2 * gap
+  local stacked = h > w or viewW < 260 * s
+  local lr, vr, sr  -- list / viewport / spawn card rects
+  if stacked then
+    local capH = Kit.textHeight("caption")
+    -- list: caption, search field, three rows, pager, the goto button
+    local listH = math.min(math.max(0, h * 0.32),
+      2 * pad + capH + 8 * s + 32 * s + 10 * s + 3 * 30 * s + 10 * s
+      + 30 * s + 10 * s + 34 * s)
+    -- spawns: caption, three 62px rows, the hint line
+    local sideH = math.min(math.max(0, h * 0.34),
+      2 * pad + capH + 12 * s + 3 * (62 * s + 8 * s) - 8 * s + 6 * s + 30 * s)
+    lr = { x = x, y = y, w = w, h = listH }
+    vr = { x = x, y = y + listH + gap, w = w,
+           h = math.max(0, h - listH - sideH - 2 * gap) }
+    sr = { x = x, y = y + h - sideH, w = w, h = sideH }
+  else
+    lr = { x = x, y = y, w = listW, h = h }
+    vr = { x = x + listW + gap, y = y, w = math.max(0, viewW), h = h }
+    sr = { x = x + w - sideW, y = y, w = sideW, h = h }
+  end
 
   -- --------------------------------------------------------- the map list
-  Kit.card(x, y, listW, h)
-  Kit.caption(x + pad, y + pad, "MAPS")
-  local qy = y + pad + Kit.textHeight("caption") + 8 * s
-  S.mapQuery = Kit.textfield("map-query", x + pad, qy, listW - 2 * pad, 32 * s,
+  local listInner = lr.w - 2 * pad
+  Kit.card(lr.x, lr.y, lr.w, lr.h)
+  Kit.caption(lr.x + pad, lr.y + pad, "MAPS")
+  local qy = lr.y + pad + Kit.textHeight("caption") + 8 * s
+  S.mapQuery = Kit.textfield("map-query", lr.x + pad, qy, listInner, 32 * s,
     S.mapQuery, "search maps...")
 
   local ids = {}
@@ -176,31 +204,40 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   end
 
   local gotoH = 34 * s
-  local gotoY = y + h - pad - gotoH
+  local gotoY = lr.y + lr.h - pad - gotoH
   local pagerH = 30 * s
   local pagerY = gotoY - 10 * s - pagerH
   local listTop = qy + 32 * s + 10 * s
   local mRowH = 26 * s
   local mGap = 4 * s
-  local perPage = math.max(1, math.floor((pagerY - 10 * s - listTop) / (mRowH + mGap)))
+  local listBodyH = pagerY - 10 * s - listTop
+  local perPage = math.max(1, math.floor(listBodyH / (mRowH + mGap)))
   S.mapListOffset = Ops.clamp(S.mapListOffset or 0, 0, math.max(0, #ids - perPage))
+  -- wheel and touch drag reach the list too (#715): App routes the wheel to
+  -- zoom on this tab, so the list rides Kit's drag path and the pager alone
+  -- on desktop -- on a phone the drag is the difference between "stuck" and
+  -- scrollable.
+  S.mapListOffset = Kit.scroll(lr.x + pad, listTop, listInner, listBodyH,
+    S.mapListOffset, #ids, perPage)
 
   for i = 1, math.min(perPage, #ids - S.mapListOffset) do
     local id = ids[S.mapListOffset + i]
     local ry = listTop + (i - 1) * (mRowH + mGap)
-    if Kit.row(x + pad, ry, listW - 2 * pad, mRowH, id == S.mapId, PAL.blue, 7 * s) then
+    if Kit.row(lr.x + pad, ry, listInner, mRowH, id == S.mapId, PAL.blue, 7 * s) then
       MapBrowser.select(S, id)
     end
-    Kit.text("tiny", Kit.ellipsize("tiny", id, listW - 2 * pad - 18 * s),
-      x + pad + 9 * s, ry + (mRowH - Kit.textHeight("tiny")) / 2,
+    Kit.text("tiny", Kit.ellipsize("tiny", id, listInner - 18 * s),
+      lr.x + pad + 9 * s, ry + (mRowH - Kit.textHeight("tiny")) / 2,
       id == S.mapId and PAL.heading or PAL.muted)
   end
   if #ids == 0 then
-    Kit.text("mono", "no map matches", x + pad + 9 * s, listTop + 8 * s, PAL.faint)
+    Kit.text("mono", "no map matches", lr.x + pad + 9 * s, listTop + 8 * s, PAL.faint)
   end
-  S.mapListOffset = Kit.pager(x + pad, pagerY, listW - 2 * pad, S.mapListOffset,
+  Kit.scrollbar(lr.x + pad, listTop, listInner, listBodyH,
+    S.mapListOffset, #ids, perPage)
+  S.mapListOffset = Kit.pager(lr.x + pad, pagerY, listInner, S.mapListOffset,
     #ids, perPage)
-  if Kit.button(x + pad, gotoY, listW - 2 * pad, gotoH, "Go to save location",
+  if Kit.button(lr.x + pad, gotoY, listInner, gotoH, "Go to save location",
       { font = "small", radius = 9 * s }) then
     MapBrowser.select(S, S.save.player.map)
     Ops.say(S, ("Jumped to %s (%d,%d)"):format(S.save.player.map,
@@ -208,18 +245,18 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   end
 
   -- ---------------------------------------------------------- the viewport
-  Kit.card(viewX, y, viewW, h)
+  Kit.card(vr.x, vr.y, vr.w, vr.h)
   local vpad = 18 * s
-  local vx0 = viewX + vpad
-  local vinner = viewW - 2 * vpad
+  local vx0 = vr.x + vpad
+  local vinner = math.max(0, vr.w - 2 * vpad)
   local headH = 28 * s
   Kit.text("monoBig", tostring(S.mapId), vx0,
-    y + vpad + (headH - Kit.textHeight("monoBig")) / 2, PAL.heading)
+    vr.y + vpad + (headH - Kit.textHeight("monoBig")) / 2, PAL.heading)
 
   local ok, map = pcall(MapLoader.load, S.data, S.mapId)
   if not ok then
     Kit.text("mono", "Failed to load map: " .. tostring(map), vx0,
-      y + vpad + headH + 20 * s, PAL.red)
+      vr.y + vpad + headH + 20 * s, PAL.red)
     return
   end
 
@@ -227,38 +264,46 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   local oLabel = outdoor and "OUTDOOR" or "INDOOR"
   local oW = Kit.textWidth("tiny", oLabel) + 16 * s
   local oX = vx0 + Kit.textWidth("monoBig", tostring(S.mapId)) + 14 * s
-  Theme.stroke(oX, y + vpad + (headH - 20 * s) / 2, oW, 20 * s, 6 * s,
+  Theme.stroke(oX, vr.y + vpad + (headH - 20 * s) / 2, oW, 20 * s, 6 * s,
     PAL.cardBorder, 0.3, 1)
   Kit.textCenter("tiny", oLabel, oX,
-    y + vpad + (headH - 20 * s) / 2 + (20 * s - Kit.textHeight("tiny")) / 2, oW,
+    vr.y + vpad + (headH - 20 * s) / 2 + (20 * s - Kit.textHeight("tiny")) / 2, oW,
     outdoor and PAL.green or PAL.muted)
 
-  -- zoom cluster, right-aligned in the viewport header
+  -- zoom cluster, right-aligned in the viewport header.  The centre button
+  -- is the one part with a long label; on a header too narrow to hold it
+  -- beside the title it is dropped (its job is covered by the list's "Go to
+  -- save location" plus the first-draw centering) rather than painted over
+  -- the map name (#715).
   local centerW = 130 * s
   local zBtn = 32 * s
   local rightEdge = vx0 + vinner
-  if Kit.button(rightEdge - centerW, y + vpad, centerW, headH, "Center on player",
-      { kind = "accent", font = "small", radius = 7 * s }) then
-    if S.save.player.map == S.mapId then
-      centerOn(S, S.save.player.x, S.save.player.y)
-      Ops.say(S, "Centred on the player")
-    else
-      Ops.say(S, "Player isn't on this map")
+  local zoomW = 2 * zBtn + 56 * s + 12 * s
+  local showCenter = vinner >= zoomW + 10 * s + centerW + 160 * s
+  if showCenter then
+    if Kit.button(rightEdge - centerW, vr.y + vpad, centerW, headH, "Center on player",
+        { kind = "accent", font = "small", radius = 7 * s }) then
+      if S.save.player.map == S.mapId then
+        centerOn(S, S.save.player.x, S.save.player.y)
+        Ops.say(S, "Centred on the player")
+      else
+        Ops.say(S, "Player isn't on this map")
+      end
     end
   end
-  local zx = rightEdge - centerW - 10 * s - (2 * zBtn + 56 * s + 12 * s)
-  if Kit.stepper(zx, y + vpad, zBtn, headH, "-", { radius = 7 * s }) then
+  local zx = rightEdge - (showCenter and (centerW + 10 * s) or 0) - zoomW
+  if Kit.stepper(zx, vr.y + vpad, zBtn, headH, "-", { radius = 7 * s }) then
     S.mapZoom = clampZoom(S.mapZoom - 0.5)
   end
   Kit.textCenter("mono", ("%.2fx"):format(S.mapZoom), zx + zBtn + 6 * s,
-    y + vpad + (headH - Kit.textHeight("mono")) / 2, 56 * s, PAL.muted)
-  if Kit.stepper(zx + zBtn + 62 * s, y + vpad, zBtn, headH, "+", { radius = 7 * s }) then
+    vr.y + vpad + (headH - Kit.textHeight("mono")) / 2, 56 * s, PAL.muted)
+  if Kit.stepper(zx + zBtn + 62 * s, vr.y + vpad, zBtn, headH, "+", { radius = 7 * s }) then
     S.mapZoom = clampZoom(S.mapZoom + 0.5)
   end
 
   local legendH = 22 * s
-  local vy0 = y + vpad + headH + 12 * s
-  local vh0 = (y + h - vpad - legendH - 10 * s) - vy0
+  local vy0 = vr.y + vpad + headH + 12 * s
+  local vh0 = math.max(0, (vr.y + vr.h - vpad - legendH - 10 * s) - vy0)
   S._mapViewW, S._mapViewH = vinner, vh0
 
   -- First draw of a map: park the camera somewhere meaningful rather than at
@@ -279,8 +324,11 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   Theme.stroke(vx0, vy0, vinner, vh0, 12 * s, PAL.cardBorder, 0.28, 1)
 
   -- love_stub (headless tests) lacks push/pop/scale/scissor; skip the actual
-  -- render there but keep all click/button logic below running.
-  if love.graphics.push then
+  -- render there but keep all click/button logic below running.  The size
+  -- guard is the #715 crash fix proper: an exhausted viewport (a window
+  -- shorter or narrower than the chrome) renders nothing instead of handing
+  -- LOVE a negative scissor rect.
+  if love.graphics.push and vinner > 0 and vh0 > 0 then
     love.graphics.setScissor(math.floor(vx0), math.floor(vy0),
       math.ceil(vinner), math.ceil(vh0))
     love.graphics.push()
@@ -290,6 +338,23 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
     drawOverlays(S, map)
     love.graphics.pop()
     love.graphics.setScissor()
+  end
+
+  -- Touch pan (#715): arrows/WASD and the wheel are desktop-only inputs, so
+  -- a held pointer drags the camera directly.  A plain tap still selects a
+  -- cell via the click handling below; only movement while held pans.
+  if Kit.mouseDown and not Kit.blockClicks
+     and (S._mapDrag or Kit.hit(vx0, vy0, vinner, vh0)) then
+    local d = S._mapDrag
+    if not d then
+      S._mapDrag = { mx = Kit.mouseX, my = Kit.mouseY,
+                     camX = S.mapCamX, camY = S.mapCamY }
+    else
+      S.mapCamX = d.camX - (Kit.mouseX - d.mx) / S.mapZoom
+      S.mapCamY = d.camY - (Kit.mouseY - d.my) / S.mapZoom
+    end
+  elseif not Kit.mouseDown then
+    S._mapDrag = nil
   end
 
   -- click handling: warp cells jump the view, everything else selects
@@ -307,7 +372,7 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   end
 
   -- legend + the current selection readout
-  local ly = y + h - vpad - legendH + 4 * s
+  local ly = vr.y + vr.h - vpad - legendH + 4 * s
   local lx = vx0
   local legend = {
     { PAL.blue, "warp", false },
@@ -332,11 +397,11 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
     vx0 + vinner, ly, PAL.caption)
 
   -- ------------------------------------------------------ spawn inspector
-  local sx0 = viewX + viewW + gap
-  Kit.card(sx0, y, sideW, h)
-  Kit.caption(sx0 + pad, y + pad, "SPAWN POINTS")
-  local sTop = y + pad + Kit.textHeight("caption") + 12 * s
-  local sInner = sideW - 2 * pad
+  local sx0 = sr.x
+  Kit.card(sx0, sr.y, sr.w, sr.h)
+  Kit.caption(sx0 + pad, sr.y + pad, "SPAWN POINTS")
+  local sTop = sr.y + pad + Kit.textHeight("caption") + 12 * s
+  local sInner = sr.w - 2 * pad
   local player = S.save.player
   local out = S.save.lastOutdoor
   local heal = S.save.lastHeal

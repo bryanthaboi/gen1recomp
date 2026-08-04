@@ -94,11 +94,18 @@ T.check(box:find("Those are", 1, true) == nil,
 T.check(box:find("#MON", 1, true) == nil,
   "the ROM #MON ligature is spelled out as Pokémon")
 
--- the pokered beat also turns Oak to face the player
-T.check(contribution.talk[BALL][20][1] == "face_object"
-    and contribution.talk[BALL][20][2] == 5
-    and contribution.talk[BALL][20][3] == "down",
-  "row 20 faces Oak down before the line (OaksLabLastMonScript)")
+-- the pokered beat also turns Oak to face the player: find the
+-- face_object row in the leftover-ball path (content-based, so a jingle
+-- row added for #668 doesn't shift the hard-coded index)
+local oakFaceRow
+for i, row in ipairs(contribution.talk[BALL]) do
+  if row[1] == "face_object" and row[2] == 5 and row[3] == "down" then
+    oakFaceRow = i
+    break
+  end
+end
+T.check(oakFaceRow ~= nil,
+  "a face_object row turns Oak down before the line (OaksLabLastMonScript)")
 
 -- ---- pre-escort: still the vanilla "Those are POKé BALLs" line
 local pre = { EVENT_GOT_STARTER = false, EVENT_FOLLOWED_OAK_INTO_LAB = false }
@@ -115,15 +122,25 @@ T.check(concat(t3):find("last Pokémon!", 1, true) == nil,
   "no last-mon line before the pick")
 
 -- ---- all three balls share the same table shape (last-mon beat present)
+-- content-based again: locate the leftover-ball "Pokémon" line wherever
+-- it sits, instead of pinning a row number (#668 added two jingle rows)
 for _, key in ipairs({
   "TEXT_OAKSLAB_CHARMANDER_POKE_BALL",
   "TEXT_OAKSLAB_SQUIRTLE_POKE_BALL",
   "TEXT_OAKSLAB_BULBASAUR_POKE_BALL",
 }) do
   local script = contribution.talk[key]
-  T.check(script and script[21] and script[21][2] and
-    script[21][2]:find("Pokémon", 1, true) ~= nil,
-    key .. " carries the last-mon line")
+  local lastMon
+  if script then
+    for _, row in ipairs(script) do
+      if row[1] == "show_text" and type(row[2]) == "string"
+          and row[2]:find("Pokémon", 1, true) then
+        lastMon = row[2]
+        break
+      end
+    end
+  end
+  T.check(lastMon ~= nil, key .. " carries the last-mon line")
 end
 
 T.finish("oaks_lab_last_ball_bug601")

@@ -8,6 +8,7 @@ local Camera = require("src.render.Camera")
 local Collision = require("src.world.Collision")
 local Encounter = require("src.world.Encounter")
 local FieldDefaults = require("src.world.FieldDefaults")
+local GameVersion = require("src.core.GameVersion")
 local Logger = require("src.core.Logger")
 local Map = require("src.world.Map")
 local MapLoader = require("src.world.MapLoader")
@@ -23,6 +24,7 @@ local TextBox = require("src.render.TextBox")
 local Transition = require("src.render.Transition")
 local Warp = require("src.world.Warp")
 local Zoom = require("src.render.Zoom")
+local romText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
 
 -- isOverworld marks the live world state for WorldAPI's stack scan
@@ -34,6 +36,32 @@ local mapScripts -- registry of hand-ported map scripts
 
 local COMPASS = { up = "north", down = "south", left = "west", right = "east" }
 local DIRVEC = { up = { 0, -1 }, down = { 0, 1 }, left = { -1, 0 }, right = { 1, 0 } }
+
+-- Fly animation coord paths (engine/overworld/player_animations.asm):
+-- y/x pairs in GB screen pixels, one pair every 3 frames (DoFlyAnimation's
+-- Delay3).  The port anchors a path on the player's own position instead
+-- of the GB screen center: FLY_ANCHOR is the pair where the original has
+-- the player's sprite, so path1 starts exactly on the player.
+local FLY_ANCHOR = { 0x3C, 0x48 }
+local FLY_PATH1 = { -- FlyAnimationScreenCoords1: up and off to the right
+  { 0x3C, 0x48 }, { 0x3C, 0x50 }, { 0x3B, 0x58 }, { 0x3A, 0x60 },
+  { 0x39, 0x68 }, { 0x37, 0x70 }, { 0x37, 0x78 }, { 0x33, 0x80 },
+  { 0x30, 0x88 }, { 0x2D, 0x90 }, { 0x2A, 0x98 }, { 0x27, 0xA0 },
+}
+local FLY_PATH2 = { -- FlyAnimationScreenCoords2: out over the top-left;
+  -- the 11th step reads the ($F0,$00) terminator, fully off screen
+  { 0x1A, 0x90 }, { 0x19, 0x80 }, { 0x17, 0x70 }, { 0x15, 0x60 },
+  { 0x12, 0x50 }, { 0x0F, 0x40 }, { 0x0C, 0x30 }, { 0x09, 0x20 },
+  { 0x05, 0x10 }, { 0x00, 0x00 }, { -16, 0x00 },
+}
+-- FlyAnimationEnterScreenCoords: in from off the top-right.  Its own last
+-- pair is ($3C,$40), so the arrival anchors there and lands on the player.
+local FLY_ARRIVE_ANCHOR = { 0x3C, 0x40 }
+local FLY_PATH_IN = {
+  { 0x05, 0x98 }, { 0x0F, 0x90 }, { 0x18, 0x88 }, { 0x20, 0x80 },
+  { 0x27, 0x78 }, { 0x2D, 0x70 }, { 0x32, 0x68 }, { 0x36, 0x60 },
+  { 0x39, 0x58 }, { 0x3B, 0x50 }, { 0x3C, 0x48 }, { 0x3C, 0x40 },
+}
 
 -- healing machine ball screen positions (PokeCenterOAMData dbsprite
 -- rows are raw shadow-OAM bytes, so the hardware's -8/-16 OAM origin
@@ -223,6 +251,13 @@ function OverworldState:stampClosedDoors()
                                                "closedDoors")
   local floorDoors = self.map and closedDoors and closedDoors[self.map.id]
   if not floorDoors then return end
+  -- ...and floors the running version has no callback for: Yellow's B4F
+  -- lift gate stands open from the first visit, since Jessie & James take
+  -- the two guard slots there and set neither guard flag (#650)
+  local skipMaps = FieldDefaults.fieldValue(Game.data, "cardKeyDoors",
+                                            "skipMaps")
+  local skipped = skipMaps and skipMaps[GameVersion.get()]
+  if skipped and skipped[self.map.id] then return end
   local stamped, unlocked = false, false
   for _, door in ipairs(floorDoors) do
     local open
@@ -389,6 +424,10 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
         and not self.map:isWalkableCell(x, y)
         and self.map:isWaterCell(x, y)
     end
+    -- re-derive from the live party: a reloaded save with the SURF-Pikachu
+    -- since deposited should not render the Pikachu sheet.
+    -- ponytail: re-derived rather than persisted.
+    self:syncSurfingPikachu()
   end
   -- crossConnection re-arms this after setMap; clear so a warp/reload
   -- cannot leave a stale deferred PlayMapMusic pending
@@ -717,6 +756,11 @@ function OverworldState:pushBattle(battle)
   if battle.computeMusicKind then
     require("src.core.Music").playBattle(Game.data, battle:computeMusicKind())
   end
+
+  -- The fade back in from white on the way out is BattleState:finish()'s
+  -- job now -- the one choke point every battle passes through on exit,
+  -- guaranteed regardless of which caller pushed the battle -- so this
+  -- function only owns the entry wipe.
   Game.stack:push(BattleTransition.new(Game, function()
     Game.stack:push(battle)
   end, {
@@ -898,10 +942,20 @@ function OverworldState:update(dt)
     return
   end
   if self.flyAnim then
-    self.flyAnim.frames = self.flyAnim.frames - 1
-    if self.flyAnim.frames <= 0 then
+    -- DoFlyAnimation runs one coord pair every Delay3 (3 frames); the
+    -- in-place flap is 8 pairs, then the two paths with a 40-frame beat
+    -- while the bird is parked off screen between them
+    local anim = self.flyAnim
+    anim.t = anim.t + 1
+    if anim.phase == "flap" and anim.t >= 8 * 3 then
+      anim.phase, anim.t = "path1", 0
+      require("src.core.Sound").play(Game.data, "Fly")
+    elseif anim.phase == "path1" and anim.t >= #FLY_PATH1 * 3 then
+      anim.phase, anim.t = "hold", 0
+    elseif anim.phase == "hold" and anim.t >= 40 then
+      anim.phase, anim.t = "path2", 0
+    elseif anim.phase == "path2" and anim.t >= #FLY_PATH2 * 3 then
       self.flyAnim = nil
-      self.player.inputLocked = false
       local d = self.flyDest
       self.flyDest = nil
       if d then
@@ -909,8 +963,19 @@ function OverworldState:update(dt)
         -- SFX_FLY (EnterMapAnim .flyAnimation)
         self.arriveWarp = "fly"
         self:startWarpTo(d.map, d.x, d.y, "down", nil, { via = "fly" })
+      else
+        self.player.inputLocked = false
       end
       return
+    end
+  end
+  if self.flyArrive then
+    -- EnterMapAnim .flyAnimation: one swoop in from the top-right, then
+    -- LoadPlayerSpriteGraphics -- the player reappears where it lands
+    self.flyArrive.t = self.flyArrive.t + 1
+    if self.flyArrive.t >= #FLY_PATH_IN * 3 then
+      self.flyArrive = nil
+      self.player.inputLocked = false
     end
   end
 
@@ -1207,12 +1272,16 @@ function OverworldState:checkBoulderPush(dir)
   end
   local bx, by = Collision.target(fx, fy, dir)
   if not self.map:inBounds(bx, by) then self.boulderTried = nil return false end
+  -- CheckForCollisionWhenPushingBoulder uses the same walkable check as
+  -- player movement (CheckTilePassable walks the same wTilesetCollisionPtr
+  -- list) -- there is no hole/warp escape hatch in the original, so a
+  -- boulder can never be pushed onto a cell the player cannot walk onto.
+  -- The known push targets (CAVERN $22 holes, Victory Road switches) are
+  -- walkable tiles in their tileset's coll list already, so removing the
+  -- port's isWarpTileCell exception only stops wall pushes (#754).
   if not self.map:isWalkableCell(bx, by) then
-    -- boulders may be pushed into holes/switch spots that aren't walkable
-    if not self.map:isWarpTileCell(bx, by) then
-      self.boulderTried = nil
-      return false
-    end
+    self.boulderTried = nil
+    return false
   end
   if Collision.occupied(self.entities, bx, by, npc) then
     self.boulderTried = nil
@@ -1484,6 +1553,21 @@ function OverworldState:partyKnows(moveId)
   return partyKnowsVanilla(moveId)
 end
 
+-- IsSurfingPikachuInParty (home/map_objects.asm): when the SURF-mon
+-- is a Pikachu, pose() renders the Pikachu surf sprite.  Called at
+-- every surf-state change so a reloaded save picks the right sheet
+-- after a party change.  No-op when not surfing.
+function OverworldState:syncSurfingPikachu()
+  local p = self.player
+  if not p then return end
+  if not p.surfing then
+    p.surfingPikachu = false
+    return
+  end
+  local mon = self:partyKnows("SURF")
+  p.surfingPikachu = mon ~= nil and mon.species == "PIKACHU" or false
+end
+
 -- The rejection loop shared by the Good and Super Rods
 -- (item_effects.asm ItemUseGoodRod .RandomLoop / ReadSuperRodData): an
 -- odd random byte is no bite; otherwise a 2-bit pick rerolls until it
@@ -1546,7 +1630,7 @@ function OverworldState:goFishing(rod)
     -- PrintText and only clears it once the verdict box is done, so the rod
     -- must NOT vanish with the dots box (#321).
     if not enc then
-      Game.stack:push(TextBox.new(Game, Strings("Not even a nibble!"), function()
+      Game.stack:push(TextBox.new(Game, romText(Game.data, "_NoNibbleText", "Not even a nibble!"), function()
         -- the rod OAM goes out with the verdict box (res BIT_LEDGE_OR_FISHING
         -- straight after PrintText) but the player keeps the patched tiles
         -- until the overworld reloads them a few frames later
@@ -1557,7 +1641,7 @@ function OverworldState:goFishing(rod)
       end))
       return
     end
-    Game.stack:push(TextBox.new(Game, Strings("Oh!\nIt's a bite!"), function()
+    Game.stack:push(TextBox.new(Game, romText(Game.data, "_ItsABiteText", "Oh!\nIt's a bite!"), function()
       -- the bite goes straight into battle, which reloads the sprite tiles
       self.fishing = nil
       self.player.fishing = nil
@@ -1576,13 +1660,15 @@ end
 function OverworldState:flyTo(mapId)
   local spot = Game.data.field.flyWarps[mapId]
   if not spot then return end
-  require("src.core.Sound").play(Game.data, "Fly")
   Game.save.onBike = false
   Game.save.forcedBike = nil -- HandleFlyWarpOrDungeonWarp res BIT_ALWAYS_ON_BIKE
   self.player.surfing = false
-  -- the bird carries the player off westward before the warp
-  -- (engine/overworld/player_animations.asm LoadBirdSpriteGraphics)
-  self.flyAnim = { frames = 48 }
+  self:syncSurfingPikachu()
+  -- _LeaveMapAnim .flyAnimation: the bird flaps in place (8 x Delay3),
+  -- then SFX_FLY and the up-right path, a 40-frame beat off screen, and
+  -- the exit over the top-left -- the warp fades only once the bird is
+  -- gone (#702).  fxBird draws it; the player hides for the whole flight.
+  self.flyAnim = { phase = "flap", t = 0 }
   self.player.inputLocked = true
   self.flyDest = { map = mapId, x = spot.x, y = spot.y }
 end
@@ -1607,6 +1693,7 @@ function OverworldState:beginTeleportOut(onDone)
   end
   require("src.core.Sound").play(Game.data, "Teleport_Exit1")
   self.player.surfing = false
+  self:syncSurfingPikachu()
   self.player.inputLocked = true
   -- rising spin: the mirror of the arrival spin-drop set in startWarpTo, so
   -- spinRise lifts the sprite (Player:pose) while spinFrames counts down
@@ -1737,7 +1824,7 @@ function OverworldState:tryBookshelf(fx, fy)
     if self.map.def.tileset == "MANSION"
        and self.map:tileAt(fx * 2, fy * 2) == 0x38 then
       Game.stack:push(TextBox.new(Game, t._DiglettSculptureText
-        or Strings("It's a sculpture\nof DIGLETT.")))
+        or romText(Game.data, "_DiglettSculptureText", "It's a sculpture\nof DIGLETT.")))
       return true
     end
     Game.stack:push(TextBox.new(Game, t._PokemonBooksText
@@ -1754,7 +1841,7 @@ function OverworldState:tryBookshelf(fx, fy)
     local line = (self.player.cellX % 2 == 0) and t._IndigoPlateauStatuesText2
                  or t._IndigoPlateauStatuesText3
     Game.stack:push(TextBox.new(Game,
-      (t._IndigoPlateauStatuesText1 or Strings("INDIGO PLATEAU")) .. "\f"
+      (t._IndigoPlateauStatuesText1 or romText(Game.data, "_IndigoPlateauStatuesText1", "INDIGO PLATEAU")) .. "\f"
       .. (line or Strings("POKéMON LEAGUE HQ"))))
   end
   return true
@@ -1811,7 +1898,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       save.hiddenTaken = save.hiddenTaken or {}
       if save.hiddenTaken[key] then return false end
       if not require("src.inventory.Bag").add(save, h.item, 1, Game.data) then
-        Game.stack:push(TextBox.new(Game, Strings("You can't carry\nany more items!")))
+        Game.stack:push(TextBox.new(Game, romText(Game.data, "_CantCarryMoreText", "You can't carry\nany more items!")))
         return true
       end
       save.hiddenTaken[key] = true
@@ -1845,20 +1932,20 @@ function OverworldState:tryHiddenObject(fx, fy)
     if h.x == fx and h.y == fy then
       if h.state == "out_of_order" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerOutOfOrderText
-          or Strings("OUT OF ORDER\nThis is broken.")))
+          or romText(Game.data, "_GameCornerOutOfOrderText", "OUT OF ORDER\nThis is broken.")))
       elseif h.state == "out_to_lunch" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerOutToLunchText
-          or Strings("OUT TO LUNCH\nThis is reserved.")))
+          or romText(Game.data, "_GameCornerOutToLunchText", "OUT TO LUNCH\nThis is reserved.")))
       elseif h.state == "keys" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerSomeonesKeysText
-          or Strings("Someone's keys!\nThey'll be back.")))
+          or romText(Game.data, "_GameCornerSomeonesKeysText", "Someone's keys!\nThey'll be back.")))
       elseif not save.inventory.COIN_CASE then
         Game.stack:push(TextBox.new(Game, txt._GameCornerCoinCaseText
-          or Strings("A COIN CASE is\nrequired!")))
+          or romText(Game.data, "_GameCornerCoinCaseText", "A COIN CASE is\nrequired!")))
       elseif (save.coins or 0) == 0 then
         -- AbleToPlaySlotsCheck: a COIN CASE with no coins can't play
         Game.stack:push(TextBox.new(Game, txt._GameCornerNoCoinsText
-          or Strings("You don't have\nany coins!")))
+          or romText(Game.data, "_GameCornerNoCoinsText", "You don't have\nany coins!")))
       else
         -- one machine per visit is secretly lucky
         -- (wLuckySlotHiddenEventIndex, engine/slots/game_corner_slots.asm)
@@ -1942,7 +2029,7 @@ function OverworldState:tryHiddenObject(fx, fy)
   for _, h in ipairs(extras.printTrash and extras.printTrash[self.map.id] or {}) do
     if h.x == fx and h.y == fy then
       Game.stack:push(TextBox.new(Game, txt._VermilionGymTrashText
-        or Strings("Nope, there's\nonly trash here.")))
+        or romText(Game.data, "_VermilionGymTrashText", "Nope, there's\nonly trash here.")))
       return true
     end
   end
@@ -1984,7 +2071,7 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   local t = Game.data.text
   if not Game.save.inventory.CARD_KEY then
     Game.stack:push(TextBox.new(Game,
-      t._CardKeyFailText or Strings("Darn! It needs a\nCARD KEY!")))
+      t._CardKeyFailText or romText(Game.data, "_CardKeyFailText", "Darn! It needs a\nCARD KEY!")))
     return true
   end
   require("src.core.Sound").play(Game.data, "Go_Inside")
@@ -2002,7 +2089,7 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   end
   Game.stack:push(TextBox.new(Game,
     (t._CardKeySuccessText1 or Strings("Bingo!"))
-    .. (t._CardKeySuccessText2 or Strings("\nThe CARD KEY\nopened the door!"))))
+    .. (t._CardKeySuccessText2 or romText(Game.data, "_CardKeySuccessText2", "\nThe CARD KEY\nopened the door!"))))
   return true
 end
 
@@ -2019,7 +2106,7 @@ function OverworldState:trashCanSwitch(canIndex)
   local t = Game.data.text
   local save = Game.save
   local tc = Game.data.field.hiddenExtras.trashCans
-  local trashText = t._VermilionGymTrashText or Strings("Nope, there's\nonly trash here.")
+  local trashText = t._VermilionGymTrashText or romText(Game.data, "_VermilionGymTrashText", "Nope, there's\nonly trash here.")
   -- "Don't do the trash can puzzle if it's already been done."
   if save.flags.EVENT_2ND_LOCK_OPENED then
     Game.stack:push(TextBox.new(Game, trashText))
@@ -2118,7 +2205,7 @@ function OverworldState:billsHousePC()
   if flags.EVENT_USED_CELL_SEPARATOR_ON_BILL
      or not flags.EVENT_BILL_SAID_USE_CELL_SEPARATOR then
     Game.stack:push(TextBox.new(Game, t._BillsHouseMonitorText
-      or Strings("TELEPORTER is\ndisplayed on the\nPC monitor.")))
+      or romText(Game.data, "_BillsHouseMonitorText", "TELEPORTER is\ndisplayed on the\nPC monitor.")))
     return
   end
   require("src.core.Music").stop()
@@ -2270,6 +2357,7 @@ function OverworldState:trySurf(fx, fy, onClose)
   Game.stack:push(TextBox.new(Game, text, function()
     if onClose then onClose() end
     p.surfing = true
+    self:syncSurfingPikachu()
     require("src.core.Music").setSurfing(Game.data, true)
     Game.stack:push(require("src.render.Transition").whiteFlash(Game, nil,
       function() self:stepForwardOrCrossEdge(p.facing) end))
@@ -2442,7 +2530,7 @@ function OverworldState:talkTo(npc)
   -- the string "0" as truthy, so screen it out and fall through to text.
   if d.item and d.item ~= "0" and d.item ~= 0 then
     if not require("src.inventory.Bag").add(Game.save, d.item, 1, Game.data) then
-      Game.stack:push(TextBox.new(Game, Strings("You can't carry\nany more items!")))
+      Game.stack:push(TextBox.new(Game, romText(Game.data, "_CantCarryMoreText", "You can't carry\nany more items!")))
       return
     end
     Game.save.itemsTaken = Game.save.itemsTaken or {}
@@ -2510,7 +2598,7 @@ function OverworldState:talkTo(npc)
   if entry then
     if entry.mart then
       npc:facePlayer(self.player)
-      Game.stack:push(TextBox.new(Game, Strings("Hi there!\nMay I help you?"), function()
+      Game.stack:push(TextBox.new(Game, romText(Game.data, "_PokemartGreetingText", "Hi there!\nMay I help you?"), function()
         Screens.push(Game, "ShopMenu", entry.mart)
         unfreeze()
       end))
@@ -2553,8 +2641,13 @@ function OverworldState:openPC(onDone)
   -- (engine/menus/pokemon_pc.asm gates on EVENT_MET_BILL; we reach that
   -- when Bill hands over the SS Ticket)
   local metBill = flags.EVENT_MET_BILL or flags.EVENT_GOT_SS_TICKET
+  -- keepOpen so B in the sub-PC returns here instead of exiting the
+  -- PC session (#695); the sub-PC screens (BoxMenu, PlayerPC) already
+  -- use keepOpen for their own rows, matching the original ROM's flow
+  -- where the main menu stays underneath.
   table.insert(items, {
     label = metBill and "BILL'S PC" or Strings("SOMEONE'S PC"),
+    keepOpen = true,
     onSelect = function()
       require("src.core.Sound").play(Game.data, "Enter_PC")
       Screens.push(Game, "BoxMenu")
@@ -2565,6 +2658,7 @@ function OverworldState:openPC(onDone)
   -- the player's item storage is always available
   table.insert(items, {
     label = (Game.save.player.name or "RED") .. "'s PC",
+    keepOpen = true,
     onSelect = function()
       Screens.push(Game, "PlayerPC")
       done()
@@ -2575,6 +2669,7 @@ function OverworldState:openPC(onDone)
   if flags.EVENT_GOT_POKEDEX then
     table.insert(items, {
       label = Strings("PROF.OAK's PC"),
+      keepOpen = true,
       onSelect = function()
         self:openOaksPC(done)
       end,
@@ -2705,7 +2800,7 @@ end
 -- POKéMON" and "fighting fit".
 function OverworldState:nurseHeal(onDone, npc)
   local t = Game.data.text
-  local bye = t._PokemonCenterFarewellText or Strings("We hope to see\nyou again!")
+  local bye = t._PokemonCenterFarewellText or romText(Game.data, "_PokemonCenterFarewellText", "We hope to see\nyou again!")
   local hello = t._PokemonCenterWelcomeText
                 or Strings("Welcome to our\nPOKéMON CENTER!")
   if not Game.save.usedPokecenter then
@@ -2780,21 +2875,21 @@ end
 -- for the original serial handshake; declining prints "Please come again!"
 function OverworldState:cableClubReceptionist(onDone)
   local t = Game.data.text
-  local welcome = t._CableClubNPCWelcomeText or Strings("Welcome to the\nCable Club!")
+  local welcome = t._CableClubNPCWelcomeText or romText(Game.data, "_CableClubNPCWelcomeText", "Welcome to the\nCable Club!")
   if not Game.save.flags.EVENT_GOT_POKEDEX then
     -- CableClubNPC .didNotConnect path before the pokedex
     Game.stack:push(TextBox.new(Game, welcome .. "\f"
       .. (t._CableClubNPCMakingPreparationsText
-          or Strings("We're making\npreparations.\vPlease wait.")), onDone))
+          or romText(Game.data, "_CableClubNPCMakingPreparationsText", "We're making\npreparations.\vPlease wait.")), onDone))
     return
   end
   local apply = t._CableClubNPCPleaseApplyHereHaveToSaveText
-    or Strings("Please apply here.\fBefore opening\nthe link, we have\vto save the game.")
+    or romText(Game.data, "_CableClubNPCPleaseApplyHereHaveToSaveText", "Please apply here.\fBefore opening\nthe link, we have\vto save the game.")
   Game.stack:push(TextBox.new(Game, welcome .. "\f" .. apply, nil,
     { choice = function(yes)
       if not yes then
         Game.stack:push(TextBox.new(Game,
-          t._CableClubNPCPleaseComeAgainText or Strings("Please come\nagain!"), onDone))
+          t._CableClubNPCPleaseComeAgainText or romText(Game.data, "_CableClubNPCPleaseComeAgainText", "Please come\nagain!"), onDone))
         return
       end
       Game:writeSave()
@@ -3191,6 +3286,7 @@ function OverworldState:onStepComplete()
   -- dismounting a surf: landing on a walkable cell ends it
   if p.surfing and self.map:isWalkableCell(p.cellX, p.cellY) then
     p.surfing = false
+    self:syncSurfingPikachu()
     require("src.core.Music").setSurfing(Game.data, false)
   end
 
@@ -3275,7 +3371,7 @@ function OverworldState:onStepComplete()
     if Game.save.repelSteps == 0 then
       -- no encounter on the exact wear-off step (wild_encounters.asm
       -- .lastRepelStep returns CantEncounter)
-      Game.stack:push(TextBox.new(Game, Strings("REPEL's effect\nwore off.")))
+      Game.stack:push(TextBox.new(Game, romText(Game.data, "_RepelWoreOffText", "REPEL's effect\nwore off.")))
       return
     end
   end
@@ -3492,6 +3588,7 @@ function OverworldState:checkForcedMovement()
         end
       elseif tile.mode == "surf" then
         p.surfing = true
+        self:syncSurfingPikachu()
         require("src.core.Music").setSurfing(Game.data, true)
       end
       return false
@@ -3640,7 +3737,7 @@ function OverworldState:safariStep()
   if not st or not self:inSafariStepZone() then return false end
   st.steps = st.steps - 1
   if st.steps > 0 then return false end
-  self:safariGameOver(Strings("PA: Ding-dong!\nTime's up!"))
+  self:safariGameOver(romText(Game.data, "_TimesUpText", "PA: Ding-dong!\nTime's up!"))
   return true
 end
 
@@ -3649,7 +3746,7 @@ function OverworldState:safariGameOver(text)
   Game.save.safari = nil
   local t = Game.data.text
   Game.stack:push(TextBox.new(Game,
-    (text or "") .. "\f" .. (t._GameOverText or Strings("PA: Your SAFARI\nGAME is over!")),
+    (text or "") .. "\f" .. (t._GameOverText or romText(Game.data, "_GameOverText", "PA: Your SAFARI\nGAME is over!")),
     function()
       local exit_ = FieldDefaults.fieldValue(Game.data, "safari", "exitWarp")
       self:startWarpTo(exit_.map, exit_.x, exit_.y, exit_.facing or "down")
@@ -3745,7 +3842,9 @@ function OverworldState:takeWarp(warpDef)
     self:startWarpTo(destMap, x, y, facing)
     return
   elseif pad == "hole" then
-    -- falling through a hole: no door SFX, no walk-out step
+    -- falling through a hole: Faint_Fall plays while the player drops,
+    -- matching the boulder-hole Faint_Thud at line 3618 (#694)
+    require("src.core.Sound").play(Game.data, "Faint_Fall")
     self:startWarpTo(destMap, x, y, facing)
     return
   end
@@ -3770,6 +3869,7 @@ end
 function OverworldState:warpToHealPoint(onDone, opts)
   local heal = self:healPoint()
   self.player.surfing = false
+  self:syncSurfingPikachu()
   -- HandleFlyWarpOrDungeonWarp + DisplayPlayerBlackedOutText both clear
   -- BIT_ALWAYS_ON_BIKE (home/overworld.asm / home/text_script.asm)
   Game.save.forcedBike = nil
@@ -3839,6 +3939,10 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
     -- door warps never take this branch.
     if arriveWarp == "fly" then
       require("src.core.Sound").play(Game.data, "Fly")
+      -- EnterMapAnim .flyAnimation: the bird swoops in off the top-right
+      -- edge and the player reappears where it lands (#702); the input
+      -- lock from flyTo releases when the swoop finishes
+      self.flyArrive = { t = 0 }
     elseif arriveWarp == "teleport" then
       require("src.core.Sound").play(Game.data, "Teleport_Enter1")
       -- ENTER_2 caps the spin-down a moment later
@@ -4346,20 +4450,40 @@ function OverworldState:drawWorld()
 
   -- the FLY bird sweeping off with the player
   local function fxBird()
-    if not self.flyAnim then return end
+    local anim = self.flyAnim or self.flyArrive
+    if not anim then return end
     local birdId = FieldDefaults.fieldValue(Game.data, "playerSprites", "fly")
     if not self.birdSprite and birdId and Game.data.sprites[birdId] then
       local SR = require("src.render.SpriteRenderer")
       self.birdSprite = SR.new(Game.data.sprites[birdId])
     end
-    if self.birdSprite then
-      local t = 48 - self.flyAnim.frames
-      local bx = self.player.px - t * 4
-      local by = self.player.py - math.floor(t * 1.5)
-      love.graphics.setColor(1, 1, 1, 1)
-      self.birdSprite:draw(bx, by, cam.x, cam.y, "left",
-                           math.floor(t / 4) % 2, false)
+    if not self.birdSprite then return end
+    -- DoFlyAnimation: the bird flaps its wings every Delay3; each path is
+    -- anchored on the player's cell (FLY_ANCHOR / FLY_ARRIVE_ANCHOR) so
+    -- the flight rides any screen position, and it faces its travel
+    -- direction (rightward travel flips the left-drawn sheet)
+    local phase = anim.phase or "arrive"
+    if phase == "hold" then return end -- parked off screen between paths
+    local path, anchor, facing
+    if phase == "path1" then
+      path, anchor, facing = FLY_PATH1, FLY_ANCHOR, "right"
+    elseif phase == "path2" then
+      path, anchor, facing = FLY_PATH2, FLY_ANCHOR, "left"
+    elseif phase == "arrive" then
+      path, anchor, facing = FLY_PATH_IN, FLY_ARRIVE_ANCHOR, "left"
     end
+    local step = math.floor(anim.t / 3)
+    local sx, sy
+    if path then
+      local pair = path[math.min(#path, step + 1)]
+      sx, sy = pair[2] - anchor[2], pair[1] - anchor[1]
+    else
+      sx, sy = 0, 0 -- the in-place flap sits on the player
+      facing = "right"
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    self.birdSprite:draw(self.player.px + sx, self.player.py + sy,
+                         cam.x, cam.y, facing, step % 2, false)
   end
 
   -- fishing pose: the rod tile over the faced water (gfx/fishing.asm)
@@ -4509,7 +4633,7 @@ function OverworldState:drawWorld()
       g.npc:draw(cam.x - g.ox, cam.y - g.oy)
     end
     for _, e in ipairs(self.entities) do
-      if not (self.flyAnim and e == self.player) then
+      if not ((self.flyAnim or self.flyArrive) and e == self.player) then
         e:draw(cam.x, cam.y)
         -- tall grass overdraws the sprite's feet (GB sprite priority);
         -- the overdraw is BG tiles, so it rides the shake offset too
@@ -4560,7 +4684,7 @@ function OverworldState:drawWorld()
       items[#items + 1] = { y = g.npc.py + g.oy + 16, kind = "ghost", g = g }
     end
     for _, e in ipairs(self.entities) do
-      if not (self.flyAnim and e == self.player) then
+      if not ((self.flyAnim or self.flyArrive) and e == self.player) then
         items[#items + 1] = { y = e.py + 16, kind = "entity", e = e }
       end
     end
@@ -4611,7 +4735,7 @@ function OverworldState:drawWorld()
       local fy = self.emote.npc.py - cam.y + 16
       self:billboard(fx, fy, vw, vh, zoneColorsAt(zones, fx, fy), false, fxEmote)
     end
-    if self.flyAnim then
+    if self.flyAnim or self.flyArrive then
       local fx = self.player.px - cam.x + 8
       local fy = self.player.py - cam.y + 16
       self:billboard(fx, fy, vw, vh, zoneColorsAt(zones, fx, fy), false, fxBird)

@@ -148,11 +148,11 @@ do
 
   local ok, path = SaveFileIO.exportActiveSlot("red")
   eq(ok, true, "exportActiveSlot succeeds for an active slot with a save")
-  eq(path, "/fake/save/exports/gen1recomp-red-slot1.sav",
-    "the export path is absolute and names the version + slot")
+  eq(path, "/fake/save/exports/red/gen1recomp-red-slot1.sav",
+    "the export path is absolute under exports/<version>/")
 
-  local outBytes = files["exports/gen1recomp-red-slot1.sav"]
-  check(outBytes ~= nil, "the export file lands in the save-dir exports/ folder")
+  local outBytes = files["exports/red/gen1recomp-red-slot1.sav"]
+  check(outBytes ~= nil, "the export file lands in the per-game exports/ folder")
   eq(outBytes and #outBytes, GenSave.SAVE_SIZE, "the export is exactly 32768 bytes")
   check(outBytes and mainChecksumValid(outBytes),
     "the export carries a valid main-data checksum")
@@ -281,7 +281,7 @@ do
     if not SaveFileIO.importToSlot(GenSave.encode(seed, data, nil), "red") then return nil end
     if not SaveData.load("red") then return nil end
     if not SaveFileIO.exportActiveSlot("red") then return nil end
-    return files["exports/gen1recomp-red-slot1.sav"]
+    return files["exports/red/gen1recomp-red-slot1.sav"]
   end
 
   local function assertLoadable(label, mapId, x, y)

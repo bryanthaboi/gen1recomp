@@ -47,7 +47,14 @@ function PokedexMenu.new(game, opts)
     end
   end
   local list = ListMenu.new(game, "POKéDEX", items, {
-    footer = Strings("SEEN %d  OWNED %d", seen, owned),
+    -- SEEN / OWN in the original's fixed three-digit field: engine/menus/
+    -- pokedex.asm HandlePokedexListMenu prints both counts with
+    -- `lb bc, 1, 3` (hlcoord 16,3 and 16,6), labelled by PokedexSeenText
+    -- and PokedexOwnText ("OWN", not "OWNED").  The width is load bearing
+    -- here: a bare ListMenu footer goes through the 18-column text wrap,
+    -- so the old 19-glyph "SEEN 100  OWNED 100" split in two and its first
+    -- half landed on the list's last row at y=120 (#639).
+    footer = Strings("SEEN %3d  OWN %3d", seen, owned),
     pageJump = true, -- Left/Right page jumps like the original
     onCancel = opts.onCancel, -- B returns to the start menu when opened from it
     onChoose = function(item, dexList)

@@ -50,6 +50,9 @@ TextBox.new = function(game, text, onDone, opts)
 end
 
 local sawChoice = false
+-- what sat under the YES/NO box the first time it opened, and what sat at
+-- the bottom of the stack for the whole conversation (#624)
+local underChoice, coinBox = nil, nil
 
 -- One conversation, start to finish.  `answer` is which row of the YES/NO
 -- box to take; the loop mashes A the way a player does and nudges the
@@ -58,16 +61,21 @@ local function talk(save, answer)
   Game.save = save
   StateStack:init()
   shown, sawChoice = {}, false
+  underChoice, coinBox = nil, nil
   local done = false
   local ow = { map = { id = "GAME_CORNER", def = Data.maps.GAME_CORNER },
                npcs = {}, entities = {} }
   yellow(Game, ow, { def = {} }, function() done = true end)
+  coinBox = StateStack.states[1]
 
   local moved = false
   for _ = 1, 2000 do
     local top = StateStack:top()
     if not top then break end
     if getmetatable(top) == ChoiceBox then
+      if not sawChoice then
+        underChoice = StateStack.states[#StateStack.states - 1]
+      end
       sawChoice = true
       if answer == "no" and not moved then
         moved = true
@@ -108,7 +116,14 @@ do
   check(said("¥1000 for 50"), "the offer quotes ¥1000 for 50 coins")
   eq(save.money, 0, "¥1000 leaves the wallet")
   eq(save.coins, 50, "50 coins land in the case")
-  check(said("COINS: 50"), "the receipt prints the new coin total")
+  check(getmetatable(underChoice) == TextBox,
+        "the offer stays on screen under the YES/NO box (#624)")
+  check(coinBox and coinBox.draw and not coinBox.update,
+        "a draw-only MONEY/COIN box sits under the whole conversation,"
+        .. " like GameCornerDrawCoinBox (#624)")
+  check(not said("COINS: 50"),
+        "the receipt is the plain thanks line: the new total shows in that"
+        .. " box, which the asm redraws after the sale (#624)")
 end
 
 -- ---------------------------------------------------------------- saying no

@@ -8,6 +8,7 @@
 
 local Font = require("src.render.Font")
 local Theme = require("src.ui.Theme")
+local Timing = require("src.core.Timing")
 
 local TextBox = {}
 TextBox.__index = TextBox
@@ -32,13 +33,22 @@ local MAX_COLS = 18
 -- up: StateStack updates the top state only, so the overworld and its
 -- ScriptRunner are frozen underneath (the Pewter JIGGLYPUFF dance drives
 -- its spin off it, data/scripts/story5.lua, #249).
+-- opts.stay: text that ends in `done` rather than `prompt` returns from
+-- PrintText with the box still on screen while the caller keeps running
+-- (_ViridianSchoolBlackboardText2, data/text/text_2.asm:646).  Such a box
+-- waits for nothing, shows no blinking arrow, and never pops itself --
+-- whoever pushed it owns the pop.  stay.onShown fires once, on the frame
+-- the last page finishes typing, which is where the caller pushes whatever
+-- goes on top of it (#591).
 function TextBox.new(game, text, onDone, opts)
   local self = setmetatable({}, TextBox)
   self.game = game
   self.onDone = onDone
   self.choice = opts and opts.choice
   self.defaultNo = opts and opts.defaultNo
+  self.choiceNoSound = opts and opts.noSound
   self.auto = opts and opts.auto
+  self.stay = opts and opts.stay
   local box = Theme.textBox or {}
   self.boxTx = box.tx or BOX_TX
   self.boxTy = box.ty or BOX_TY
@@ -177,7 +187,24 @@ end
 function TextBox:update(dt)
   local input = self.game.input
   self.blink = (self.blink + 1) % 60
+  -- A page or CONT advance blocks the whole box while the original's scroll
+  -- and clear run (src/core/Timing.lua TEXT_SCROLL_PAIR / TEXT_PAGE_CLEAR).
+  -- Nothing types and no input is read until it drains.
+  if (self.holdFrames or 0) > 0 then
+    self.holdFrames = self.holdFrames - 1
+    return
+  end
   if self.done then
+    -- opts.stay: the box is finished but stays up under whatever the caller
+    -- pushed over it; StateStack updates the top state only, so this runs
+    -- exactly once (#591)
+    if self.stay then
+      if not self.stayShown then
+        self.stayShown = true
+        if self.stay.onShown then self.stay.onShown() end
+      end
+      return
+    end
     if self.auto then
       if not self.autoStarted then
         self.autoStarted = true
@@ -232,7 +259,9 @@ function TextBox:update(dt)
         self.game.stack:push(ChoiceBox.new(self.game, function(yes)
           self.game.stack:pop() -- this text box, under the choice
           self.choice(yes)
-        end, { defaultNo = self.defaultNo }))
+        end, { defaultNo = self.defaultNo, noSound = self.choiceNoSound,
+               -- this box is anchored below it; the pair moves together
+               anchor = "bottom" }))
       end
       return
     end
@@ -244,6 +273,13 @@ function TextBox:update(dt)
     return
   end
   if self.waiting then
+    -- _ContText and Paragraph both print the â–¼ and run ProtectedDelay3
+    -- before ManualTextScroll starts watching the joypad (home/text.asm:265,
+    -- :234), so the arrow is up for three frames that swallow the button.
+    if (self.preWait or 0) > 0 then
+      self.preWait = self.preWait - 1
+      return
+    end
     if input:wasPressed("a") or input:wasPressed("b") then
       require("src.core.Sound").play(self.game.data, "Press_AB")
       self.waiting = false
@@ -252,11 +288,17 @@ function TextBox:update(dt)
         self.contAdvance = false
         self.lineIndex = self.lineIndex + 1
         self:beginLine()
+        -- ScrollTextUpOneLine is 5 blocking frames and, as its own comment
+        -- says, is "always called twice in a row" (home/text.asm:280-305)
+        self.holdFrames = Timing.TEXT_SCROLL_PAIR
       else
         self.shown = {}
         self.pageIndex = self.pageIndex + 1
         self.lineIndex = 1
         self:beginLine()
+        -- ClearScreenArea then DelayFrames 20: the box sits empty before the
+        -- next page starts typing (home/text.asm:236-240)
+        self.holdFrames = Timing.TEXT_PAGE_CLEAR
       end
     end
     return
@@ -283,6 +325,7 @@ function TextBox:update(dt)
         if conts and conts[nextIdx] then
           -- pokered <CONT>: ▼ + WaitForTextScrollButtonPress before scroll
           self.waiting = true
+          self.preWait = Timing.TEXT_PRE_ADVANCE
           self.contAdvance = true
         else
           self.lineIndex = nextIdx
@@ -290,6 +333,7 @@ function TextBox:update(dt)
         end
       elseif self.pageIndex < #self.pages then
         self.waiting = true
+        self.preWait = Timing.TEXT_PRE_ADVANCE
         self.contAdvance = false
       else
         self.done = true
@@ -300,6 +344,15 @@ function TextBox:update(dt)
 end
 
 function TextBox:draw()
+  -- The dialogue box belongs against the bottom of the screen, not floating
+  -- in the middle of a zoomed-out letterbox.  Declared per frame; the
+  -- renderer blits this region to the screen edge and the rest of the UI
+  -- where it always was (Renderer:setUIAnchor).
+  local r = self.game and self.game.renderer
+  if r and r.setUIAnchor then
+    r:setUIAnchor(self.boxTx * 8, self.boxTy * 8,
+                  self.boxTw * 8, self.boxTh * 8, "bottom")
+  end
   Font.drawBox(self.boxTx, self.boxTy, self.boxTw, self.boxTh)
   love.graphics.setColor(0, 0, 0, 1)
   if self.scrollPx and self.scrollPx > 0 then
@@ -317,11 +370,16 @@ function TextBox:draw()
   local ys = { self.line1Y, self.line2Y }
   for i, line in ipairs(self.shown) do
     local y = (ys[i] or self.line2Y) + (i == 1 and off or 0)
-    for j, code in ipairs(line) do
-      Font.drawCode(code, self.textX + (j - 1) * 8, y)
+    -- the pen advances per glyph, matching the pixel budget paginate
+    -- measured with; every fixed-width page still lands on the 8px grid
+    local pen = self.textX
+    for _, code in ipairs(line) do
+      Font.drawCode(code, pen, y)
+      pen = pen + Font.advanceOf(code)
     end
   end
-  if (self.waiting or (self.done and not self.choice and not self.auto))
+  if (self.waiting or (self.done and not self.choice and not self.auto
+                       and not self.stay))
      and self.blink < 30 then
     -- page-advance cursor: glyph $EE by default, the blinking down arrow
     -- the original prints via `ld a, "▼"` (home/text.asm)

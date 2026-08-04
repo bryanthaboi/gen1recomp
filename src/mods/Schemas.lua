@@ -1066,6 +1066,12 @@ local function fontIsCharmap(id)
   return tostring(id):match("^charmap:.+$") ~= nil
 end
 
+-- the third id form: "ttf" switches text rendering to a real TTF (the
+-- bundled Plain Pixel when `file` is omitted -- src/render/Font.lua)
+local function fontIsTtf(id)
+  return tostring(id) == "ttf"
+end
+
 R.font = {
   semantics = "record", target = "font",
   value = f.union{
@@ -1073,6 +1079,9 @@ R.font = {
            advance = f.opt(f.int(1)),
            charmap = f.opt(f.list(f.rec{ code = f.int(0), seq = f.str })) },
     f.rec{ seq = f.str, code = f.int(0) },
+    f.rec{ file = f.opt(f.path), size = f.opt(f.int(1)),
+           spacing = f.opt(f.num), yOffset = f.opt(f.num),
+           bold = f.opt(f.bool) },
   },
   extra = function(id, value)
     if fontIsCharmap(id) then
@@ -1082,12 +1091,18 @@ R.font = {
       if type(value.code) ~= "number" then
         return "a charmap: entry needs a code"
       end
+    elseif fontIsTtf(id) then
+      -- every field optional: {} is "the bundled font at its native size"
+      if value.image ~= nil or value.base ~= nil then
+        return 'the "ttf" entry takes file/size/spacing/yOffset/bold, not a page'
+      end
     elseif value.image == nil or value.base == nil then
       return "a font page needs an image and a base"
     end
   end,
   baseAt = function(base, id)
     if fontIsCharmap(id) then return nil end
+    if fontIsTtf(id) then return base.ttf end
     return base.pages and base.pages[id] or nil
   end,
   baseIds = function(base)
@@ -1098,6 +1113,9 @@ R.font = {
   write = function(target, registry)
     local pages = target.pages or {}
     target.pages = pages
+    -- the extractor never emits a ttf entry, so like the charmap rows it is
+    -- rebuilt from the registry each merge: disabling the mod disables it
+    target.ttf = nil
     -- the extractor's rows have no id and stay put; the registry's own are
     -- rebuilt every merge so a re-merge replaces them instead of stacking
     local rows = {}
@@ -1110,6 +1128,8 @@ R.font = {
         if value ~= nil then
           rows[#rows + 1] = { id = id, seq = value.seq, code = value.code }
         end
+      elseif fontIsTtf(id) then
+        target.ttf = value
       else
         pages[id] = value
       end

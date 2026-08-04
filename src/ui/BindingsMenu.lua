@@ -123,8 +123,10 @@ function BindingsMenu:beginCapture(item)
   self.pending = nil
   self.onKeyPressed = BindingsMenu.captureKey
   self.onGamepadPressed = BindingsMenu.capturePad
+  self.onJoystickPressed = BindingsMenu.captureJoy
   self.onKeyReleased = BindingsMenu.captureKeyRelease
   self.onGamepadReleased = BindingsMenu.capturePadRelease
+  self.onJoystickReleased = BindingsMenu.captureJoyRelease
 end
 
 function BindingsMenu:endCapture()
@@ -132,8 +134,10 @@ function BindingsMenu:endCapture()
   self.pending = nil
   self.onKeyPressed = nil
   self.onGamepadPressed = nil
+  self.onJoystickPressed = nil
   self.onKeyReleased = nil
   self.onGamepadReleased = nil
+  self.onJoystickReleased = nil
 end
 
 -- Escape is the capture's way out, so it is never captured: every other
@@ -166,6 +170,27 @@ function BindingsMenu:capturePadRelease(button)
   local p = self.pending
   if p and p.slot == "pad" and p.value == button then
     self:storeBinding("pad", button)
+  end
+end
+
+-- A stick SDL has no game-controller-database entry for reports plain
+-- button numbers instead of names, so its capture stores "joyN" in the
+-- SAME pad slot every other controller uses (#632).  The row's right
+-- column, storeBinding's swap and START's reset-all then need no special
+-- case, and src/core/Input.lua's applyBindings is the only place that has
+-- to decode the name.  `raw` keeps the two release hooks apart: p.value is
+-- "joy3" here and an SDL button name there, so neither can claim the
+-- other's release.  Game only routes a raw stick to these hooks, so a
+-- recognized pad still records its readable SDL name.
+function BindingsMenu:captureJoy(button)
+  if self.pending then return self:endCapture() end
+  self.pending = { slot = "pad", value = "joy" .. button, raw = true }
+end
+
+function BindingsMenu:captureJoyRelease(button)
+  local p = self.pending
+  if p and p.raw and p.value == "joy" .. button then
+    self:storeBinding("pad", p.value)
   end
 end
 

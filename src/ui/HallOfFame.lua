@@ -73,8 +73,12 @@ function HallOfFame.new(game, onDone)
   self.timer = 0
   self.phase = "mons"
   self.sprites = {} -- species -> image or false
-  self.playerPic = tryImage(require("src.pokemon.Sprites").playerPath(
-    game.data, "front", { kind = "hof" }))
+  self.spriteTrueColor = {} -- species -> full-color art flag (#637)
+  local playerPath, playerTrueColor =
+    require("src.pokemon.Sprites").playerPath(
+      game.data, "front", { kind = "hof" })
+  self.playerPic = tryImage(playerPath)
+  self.playerTrueColor = self.playerPic and playerTrueColor or false
   self.scrollX = PIC_X
   self.showHofBanner = false
   self.fade = 0
@@ -113,10 +117,11 @@ end
 function HallOfFame:spriteFor(species)
   local cached = self.sprites[species]
   if cached == nil then
-    local path = require("src.pokemon.Sprites").path(
+    local path, trueColor = require("src.pokemon.Sprites").path(
       self.game.data, species, "front", { kind = "hof" })
     cached = tryImage(path) or false
     self.sprites[species] = cached
+    self.spriteTrueColor[species] = cached and trueColor or false
   end
   return cached or nil
 end
@@ -225,13 +230,18 @@ function HallOfFame:drawMonInfo(mon)
   love.graphics.setColor(0, 0, 0, 1)
   local name = mon.nickname or (def and def.name) or mon.species
   Font.draw(name, 1 * 8, 4 * 8)
+  -- HoFMonInfoText is placed at (2,6) with "next" separators, and PlaceNextChar
+  -- advances 2 * SCREEN_WIDTH per <NEXT> unless BIT_SINGLE_SPACED_LINES is set
+  -- (home/text.asm); nothing on the HoF path sets it, so the labels sit on rows
+  -- 6/8/10 lined up with their values, not 6/7/8 (#697).
   Font.draw(Strings("LEVEL/"), 2 * 8, 6 * 8)
-  Font.draw(Strings("TYPE1/"), 2 * 8, 7 * 8)
+  Font.draw(Strings("TYPE1/"), 2 * 8, 8 * 8)
   local t1 = def and def.types and def.types[1]
   local t2 = def and def.types and def.types[2]
   local dual = t2 and t2 ~= t1
   if dual then
-    Font.draw(Strings("TYPE2/"), 2 * 8, 8 * 8)
+    -- EraseType2Text blanks 6 tiles at hl+$13 from (3,9), so TYPE2/ is at (2,10)
+    Font.draw(Strings("TYPE2/"), 2 * 8, 10 * 8)
   end
   -- PrintLevelCommon at (8,7): bare level digits (no <LV> tile here)
   Font.draw(tostring(mon.level), 8 * 8, 7 * 8)
@@ -251,10 +261,20 @@ function HallOfFame:drawHofBanner()
   Font.draw(Strings("HALL OF FAME"), 4 * 8, 15 * 8)
 end
 
-function HallOfFame:drawPic(img)
+function HallOfFame:drawPic(img, trueColor)
   if not img then return end
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(img, self.scrollX or PIC_X, PIC_Y)
+  local x = self.scrollX or PIC_X
+  love.graphics.draw(img, x, PIC_Y)
+  -- SET_PAL_POKEMON_WHOLE_SCREEN (HoFShowMonOrPlayer) colors the WHOLE
+  -- screen in the mon's palette, so sgbPalettes above hands the blit a
+  -- whole-canvas zone -- and a full-color pic has to sit that remap out.
+  -- Report the rect the pic covers for the unshaded pass, the way
+  -- SummaryMenu does for the status screen pic (#637; #430).
+  if trueColor then
+    require("src.render.PaletteFX").markTrueColor(x, PIC_Y,
+                                                 img:getDimensions())
+  end
 end
 
 -- HoFDisplayPlayerStats boxes + labels (player pic already on the right)
@@ -284,7 +304,8 @@ function HallOfFame:draw()
   if self.phase == "mons" or self.phase == "fade" then
     local mon = self.game.save.party[self.index]
     if mon then
-      self:drawPic(self:spriteFor(mon.species))
+      self:drawPic(self:spriteFor(mon.species),
+                   self.spriteTrueColor[mon.species])
       if self.scrollX >= PIC_X then
         self:drawMonInfo(mon)
         if self.showHofBanner then
@@ -297,13 +318,13 @@ function HallOfFame:draw()
       love.graphics.rectangle("fill", 0, 0, 160, 144)
     end
   elseif self.phase == "player" then
-    self:drawPic(self.playerPic)
+    self:drawPic(self.playerPic, self.playerTrueColor)
   elseif self.phase == "player_stats" then
-    self:drawPic(self.playerPic)
+    self:drawPic(self.playerPic, self.playerTrueColor)
     self:drawPlayerStats()
   elseif self.phase == "player_dex" or self.phase == "player_rating" then
     -- the TextBox chain draws the dex texts over the stat boxes
-    self:drawPic(self.playerPic)
+    self:drawPic(self.playerPic, self.playerTrueColor)
     self:drawPlayerStats()
   end
 

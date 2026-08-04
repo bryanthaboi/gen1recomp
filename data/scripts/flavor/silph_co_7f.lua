@@ -10,9 +10,9 @@ return {
       --   set: _SilphCo7FSilphWorkerM2CancelledMasterBallText
       TEXT_SILPHCO7F_SILPH_WORKER_M2 = {
         { "check_flag", "EVENT_BEAT_SILPH_CO_GIOVANNI" },
-        { "jump_if_true", 4 },
+        { "jump_if_true", 5 },
         { "show_text", "_SilphCo7FSilphWorkerM2AfterTheMasterBallText" },
-        { "jump", 5 },
+        { "jump", "end" },
         { "show_text", "_SilphCo7FSilphWorkerM2CancelledMasterBallText" },
       },
 
@@ -22,9 +22,9 @@ return {
       --   set: _SilphCo7FSilphWorkerM3YouChasedOffTeamRocketText
       TEXT_SILPHCO7F_SILPH_WORKER_M3 = {
         { "check_flag", "EVENT_BEAT_SILPH_CO_GIOVANNI" },
-        { "jump_if_true", 4 },
+        { "jump_if_true", 5 },
         { "show_text", "_SilphCo7FSilphWorkerM3ItWouldBeBadText" },
-        { "jump", 5 },
+        { "jump", "end" },
         { "show_text", "_SilphCo7FSilphWorkerM3YouChasedOffTeamRocketText" },
       },
 
@@ -34,9 +34,9 @@ return {
       --   set: _SilphCo7FSilphWorkerM4SafeAtLastText
       TEXT_SILPHCO7F_SILPH_WORKER_M4 = {
         { "check_flag", "EVENT_BEAT_SILPH_CO_GIOVANNI" },
-        { "jump_if_true", 4 },
+        { "jump_if_true", 5 },
         { "show_text", "_SilphCo7FSilphWorkerM4ItsReallyDangerousHereText" },
-        { "jump", 5 },
+        { "jump", "end" },
         { "show_text", "_SilphCo7FSilphWorkerM4SafeAtLastText" },
       },
     },

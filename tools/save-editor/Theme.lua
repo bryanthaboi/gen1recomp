@@ -227,7 +227,12 @@ end
 function Theme.ellipsize(font, text, maxW)
   text = tostring(text or "")
   if not font then return text end
-  if maxW <= 0 or font:getWidth(text) <= maxW then return text end
+  -- A non-positive budget means "nothing fits", not "everything fits": the
+  -- old early-out returned the whole string, which is how a phone-width
+  -- status bar ended up with two lines of text stacked on top of each other
+  -- (#715).
+  if maxW <= 0 then return "" end
+  if font:getWidth(text) <= maxW then return text end
   local ell = "..."
   local ew = font:getWidth(ell)
   while #text > 0 and font:getWidth(text) + ew > maxW do
@@ -239,7 +244,8 @@ end
 function Theme.ellipsizeLeft(font, text, maxW)
   text = tostring(text or "")
   if not font then return text end
-  if maxW <= 0 or font:getWidth(text) <= maxW then return text end
+  if maxW <= 0 then return "" end  -- same rule as Theme.ellipsize (#715)
+  if font:getWidth(text) <= maxW then return text end
   local ell = "..."
   local ew = font:getWidth(ell)
   while #text > 0 and font:getWidth(text) + ew > maxW do

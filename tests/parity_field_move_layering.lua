@@ -160,7 +160,11 @@ ow.player.surfing = false
 -- =====================================================================
 -- .flash: `xor a / ld [wMapPalOffset], a` is undone before PrintText in
 -- the asm, but the map is not on screen then -- the party menu is -- so
--- the lit cave may only appear once the blink hands the screen back
+-- the lit cave may only appear once the blink hands the screen back.
+-- The lighting itself happens as the message closes the menu, ahead of
+-- the blink like the asm: in ADVANCED that call rebakes every resident
+-- map, and behind the blink's completion that cost was spent with a
+-- blank white frame as the newest thing on screen (#610).
 -- =====================================================================
 Game.save.flashLit = false
 Game.save.party = { mkMon("PIKACHU", "FLASH") }
@@ -174,7 +178,9 @@ eq(backdrop(), pmFlash, "the party menu is the backdrop of _FlashLightsAreaText"
 eq(ow.dark, true, "the tunnel is still dark while the message is up")
 drainOne()
 check(isBlink(Game.stack:top()), "the blink follows the FLASH message")
-eq(ow.dark, true, "the tunnel is still dark when the blink starts")
+-- lit before the blink is pushed, so no rebuild can run while the white
+-- frame is the newest one presented (#610); the blink hides it either way
+eq(ow.dark, false, "the tunnel is lit by the time the blink starts")
 settle(ow)
 eq(Game.stack:top(), ow, "FLASH ends on the map")
 eq(ow.dark, false, "the tunnel is lit once the blink hands the map back")

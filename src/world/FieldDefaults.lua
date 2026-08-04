@@ -77,6 +77,12 @@ local SAFARI = {
 local PLAYER_SPRITES = {
   walk = "SPRITE_RED", surf = "SPRITE_SEEL",
   bike = "SPRITE_RED_BIKE", fly = "SPRITE_BIRD",
+  -- Yellow's IsSurfingPikachuInParty: when the SURF-mon is a Pikachu,
+  -- the player rides this sheet.  GFX loads via
+  -- LoadSurfingPlayerSpriteGraphics2, not SpriteSheetPointerTable, so
+  -- it needs a manifest extract (RFC 0001).  Guarded in Player.new so
+  -- before extraction lands the ride keeps the Seel.
+  surfPikachu = "SPRITE_SURFING_PIKACHU",
 }
 
 -- The player's own trainer art: RedPicBack (the battle back pic, up until
@@ -149,6 +155,14 @@ FieldDefaults.FIELD = {
                      "EVENT_BEAT_ROCKET_HIDEOUT_4_TRAINER_1" } },
       },
     },
+    -- Floors whose door callback a version does not have.  Yellow dropped
+    -- RocketHideoutB4FDoorCallbackScript entirely (pokeyellow
+    -- scripts/RocketHideoutB4F.asm goes straight to EnableAutoTextBoxDrawing)
+    -- and its .blk ships the same open $0e doorway, so B4F's lift gate is
+    -- never barred there.  Every manifest still carries the row above, so
+    -- this is what stops a Yellow cache walling Giovanni off behind two
+    -- guard flags Jessie & James never set (#650).
+    skipMaps = { yellow = { ROCKET_HIDEOUT_B4F = true } },
   },
   -- VermilionGymSetDoorTile opens the motorized door once both locks are hit
   hiddenExtras = {

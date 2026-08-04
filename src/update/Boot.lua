@@ -250,6 +250,12 @@ function Boot.run(args)
   if not (love.filesystem.isFused and love.filesystem.isFused()) then
     return false
   end
+  -- Switch (and any host without validated network): never probe payloads.
+  local okp, Platform = pcall(require, "src.core.Platform")
+  if okp and Platform and Platform.networkValidated
+      and not Platform.networkValidated() then
+    return false
+  end
   -- The chainloaded love.load calls Boot.run again; the flag makes it a no-op.
   if _G.POKEPORT_PAYLOAD_MOUNTED then return false end
 

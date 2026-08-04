@@ -1,0 +1,55 @@
+name: Switch artifact comment
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "gen1recomp-switch-nro") | .id')"
+          [ -n "$artifact_id" ] || exit 0
+          head_owner="${HEAD_REPOSITORY%%/*}"
+          pr_number="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=$head_owner:$HEAD_BRANCH" --jq '.[0].number // empty')"
+          [ -n "$pr_number" ] || exit 0
+          echo "artifact_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts/$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+      # Upsert via comment-tag only — do not delete-all bot comments (clobbers iOS).
+      - name: Get build info
+        id: build-info
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          commit_hash="$(printf '%s' "$HEAD_SHA" | cut -c1-7)"
+          build_time="$(date "+%Y-%m-%d %H:%M:%S")"
+          echo "hash=$commit_hash" >> "$GITHUB_OUTPUT"
+          echo "time=$build_time" >> "$GITHUB_OUTPUT"
+      - name: comment Switch artifact
+        if: steps.artifact.outputs.pr_number != ''
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          message: |
+            [gen1recomp-switch.nro](${{ steps.artifact.outputs.artifact_url }})
+
+            **Commit**: [#${{ steps.build-info.outputs.hash }}](https://github.com/${{ github.event.workflow_run.head_repository.full_name }}/commit/${{ github.event.workflow_run.head_sha }})
+            **Build Time**: `${{ steps.build-info.outputs.time }}`
+
+            <sub>This comment was automatically generated. [View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }})</sub>
+          pr-number: ${{ steps.artifact.outputs.pr_number }}
+          comment-tag: switch-build-result
+          github-token: ${{ github.token }}

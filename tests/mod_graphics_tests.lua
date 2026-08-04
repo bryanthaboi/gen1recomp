@@ -621,7 +621,9 @@ check(PaletteFX.pal({ palettes = nil }, "ROUTE") == gbc.palettes.ROUTE,
 check(PaletteFX.effectiveColors(gbc.palettes.MEWMON) == gbc.palettes.MEWMON,
       "RED++ passes zone colors through like GBC")
 -- issue #84: CELADON_DINER shares LOBBY block 29 (table top) with
--- CELADON_MART_ROOF (#52); both need the $37->$5a BROWN alias
+-- CELADON_MART_ROOF (#52); both need the $37->$5a BROWN alias.
+-- Issue #689: blocks 45 and 49 also form tables with tile $37 on their
+-- flat surfaces; CELADON_DINER uses all three.
 do
   local aliases = PaletteFX.TILE_ALIASES
   local roof = aliases and aliases.CELADON_MART_ROOF
@@ -630,11 +632,20 @@ do
         "CELADON_MART_ROOF and CELADON_DINER both have TILE_ALIASES")
   check(diner == roof,
         "diner reuses the same lobby table-top alias as the mart roof")
+  check(#diner == 3, "three LOBBY table blocks have the tile alias")
   local al = diner and diner[1]
   check(al and al.block == 29 and al.tile == 0x37 and al.alias == 0x5a
         and al.group == 5 and al.cells[5] and al.cells[6]
         and al.cells[9] and al.cells[10],
         "lobby table-top alias remaps block 29 cells 5/6/9/10")
+  al = diner and diner[2]
+  check(al and al.block == 45 and al.tile == 0x37 and al.alias == 0x5a
+        and al.group == 5 and al.cells[13] and al.cells[14],
+        "lobby table-top alias remaps block 45 cells 13/14")
+  al = diner and diner[3]
+  check(al and al.block == 49 and al.tile == 0x37 and al.alias == 0x5a
+        and al.group == 5 and al.cells[1] and al.cells[2],
+        "lobby table-top alias remaps block 49 cells 1/2")
 end
 -- issue #128: RED++'s gbc pack is Red-derived; Blue must keep ROM LOGO1
 -- (and the Blue-only SLOTS* rows) so the title ribbon is blue, not red
@@ -673,7 +684,7 @@ for _, id in ipairs({ "doublecircle", "spiralin", "circle", "spiralout",
                       "hstripes", "shrink", "vstripes", "split" }) do
   check(transitions:get(id) ~= nil, "the engine registers wipe " .. id)
 end
-check(transitions:get("warp_fade").frames == 12,
+check(transitions:get("warp_fade").frames == 32,
       "the warp fade registers as a transitions record")
 check(transitions:get("white_flash").frames == 7,
       "the white flash registers as a transitions record")
@@ -689,8 +700,23 @@ end
 local retimed = { transitions = { warp_fade = { kind = "fade", frames = 30 } } }
 check(Transition.new({ data = retimed }).frames == 30,
       "a patched warp_fade record changes the fade length")
-check(Transition.new({ data = { transitions = {} } }).frames == 12,
-      "an unregistered id falls back to the built-in 12 frames")
+check(Transition.new({ data = { transitions = {} } }).frames == 32,
+      "an unregistered id falls back to the built-in 32 frames")
+
+-- issue #607: the warp fade is GBFadeOutToBlack's four palette writes, each
+-- held eight frames (home/fade.asm:43-60) -- the map is untouched through the
+-- first hold and solid black through the last, with nothing tweened between.
+do
+  local staircase = Transition.new({ data = { transitions = {} } })
+  staircase.phase = "out"
+  local want = { { 0, 0 }, { 7, 0 }, { 8, 1 / 3 }, { 15, 1 / 3 },
+                 { 16, 2 / 3 }, { 23, 2 / 3 }, { 24, 1 }, { 31, 1 } }
+  for _, w in ipairs(want) do
+    staircase.t = w[1]
+    check(staircase:alpha() == w[2],
+          ("the warp fade holds its shade at frame %d"):format(w[1]))
+  end
+end
 
 -- issue #121: with the survey-zoom world pass active, the warp fade must
 -- darken the full window composite (via Renderer.worldFadeAlpha), not just
@@ -711,7 +737,9 @@ do
 
   Renderer:init()
   local fade = Transition.new({ renderer = Renderer, stack = { pop = noop } })
-  fade.t = 6 -- mid fade-out (12 frames)
+  -- GBFadeOutToBlack steps every eight frames, so frame 16 of the 32 frame
+  -- fade is its third palette write: two thirds of the way to black (#607)
+  fade.t = 16
   fade.phase = "out"
 
   Renderer:beginFrame(true)
@@ -719,7 +747,7 @@ do
   Renderer:endWorldPass()
   check(Renderer.worldActive == true, "world pass stays marked active until endFrame")
   fade:draw()
-  check(Renderer.worldFadeAlpha == 0.5,
+  check(Renderer.worldFadeAlpha == 2 / 3,
         "warp fade hands mid-out alpha to the world composite overlay")
   check(#rects == 0,
         "warp fade does not paint the 160x144 UI letterbox while the world pass is up")
@@ -730,9 +758,10 @@ do
   local fadeRect
   for _, r in ipairs(rects) do
     -- endFrame's letterbox clear is also a full-window black fill (a == 1);
-    -- the warp overlay is the half-alpha one Transition requested
+    -- the warp overlay is the two-thirds-alpha one Transition requested
     if r.mode == "fill" and r.x == 0 and r.y == 0
-       and r.w == 640 and r.h == 576 and r.r == 0 and r.a == 0.5 then
+       and r.w == 640 and r.h == 576 and r.r == 0
+       and math.abs(r.a - 2 / 3) < 1e-6 then
       fadeRect = r
     end
   end
@@ -742,7 +771,7 @@ do
 
   -- without a world pass (opaque UI states), keep the classic UI rect
   Renderer:beginFrame(false)
-  fade.t = 6
+  fade.t = 16
   fade.phase = "out"
   rects = {}
   fade:draw()

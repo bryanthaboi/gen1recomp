@@ -188,7 +188,12 @@ M.BILLS_HOUSE = {
           end
           if ow.player.facing == "down" then
             -- the player is standing on his straight path: walk around
-            -- (.PokemonWalkAroundPlayerMovement)
+            -- (.PokemonWalkAroundPlayerMovement).  BillsHouseScript2 runs
+            -- BillsHousePikachuWatchPlayer first on this branch, so a
+            -- Pikachu that is still following steps clear of Bill's detour
+            -- and turns to watch the player (#455).
+            require("src.world.PikachuFollower")
+              .onBillWalksAroundPlayer(game, ow)
             ow:scriptMove(npc, "right", 1, function()
               ow:scriptMove(npc, "up", 2, function()
                 ow:scriptMove(npc, "left", 1, function()
@@ -600,12 +605,34 @@ local function snorlaxWake(mapId, objName, beatFlag, wokeUpText, calmedText)
   }
 end
 
+-- A beaten Snorlax is gone for good: Route12/Route16DefaultScript run
+-- HideObject in the same breath as the battle that sets
+-- EVENT_BEAT_ROUTEnn_SNORLAX, so "event set, object still on the map" is a
+-- state the asm cannot produce.  Here it can (a mod's world:toggleObject, a
+-- save edited or migrated from a build older than the flag), and it is a
+-- dead end: ItemEffects' adjacentSleepingSnorlax refuses to wake a Snorlax
+-- whose beat flag is set (ItemUsePokeFlute's CheckEvent, engine/items/
+-- item_effects.asm), so the sleeper sits in the road forever and Cycling
+-- Road is unreachable (#585).  Reconcile the toggle from the flag on every
+-- entry -- the mirror of SaveData.lua's toggle -> flag backfill, and the
+-- same repair shape the Silph Co. floors use below.
+local function hideBeatenSnorlax(mapId, objName, beatFlag)
+  return function(game, ow)
+    if not game.save.flags[beatFlag] then return end
+    local Commands = require("src.script.Commands")
+    Commands.hide_object({ game = game, save = game.save, overworld = ow },
+                         mapId, objName)
+  end
+end
+
 -- snorlaxWake is looked up by ItemEffects.lua/BagMenu.lua (via
 -- data/scripts/init.lua's M.get) and run when the flute wakes Snorlax;
 -- objName/beatFlag let ItemEffects find the NPC and check whether it's
 -- already been beaten before allowing the wake.
 M.ROUTE_12 = {
   talk = { TEXT_ROUTE12_SNORLAX = { { "show_text", "_Route12SnorlaxText" } } },
+  onEnter = hideBeatenSnorlax("ROUTE_12", "ROUTE12_SNORLAX",
+                              "EVENT_BEAT_ROUTE12_SNORLAX"),
   snorlaxWake = {
     objName = "ROUTE12_SNORLAX", beatFlag = "EVENT_BEAT_ROUTE12_SNORLAX",
     script = snorlaxWake("ROUTE_12", "ROUTE12_SNORLAX", "EVENT_BEAT_ROUTE12_SNORLAX",
@@ -614,6 +641,8 @@ M.ROUTE_12 = {
 }
 M.ROUTE_16 = {
   talk = { TEXT_ROUTE16_SNORLAX = { { "show_text", "_Route16Text7" } } },
+  onEnter = hideBeatenSnorlax("ROUTE_16", "ROUTE16_SNORLAX",
+                              "EVENT_BEAT_ROUTE16_SNORLAX"),
   snorlaxWake = {
     objName = "ROUTE16_SNORLAX", beatFlag = "EVENT_BEAT_ROUTE16_SNORLAX",
     script = snorlaxWake("ROUTE_16", "ROUTE16_SNORLAX", "EVENT_BEAT_ROUTE16_SNORLAX",
@@ -645,16 +674,18 @@ M.SAFARI_ZONE_SECRET_HOUSE = {
 M.WARDENS_HOUSE = {
   talk = {
     TEXT_WARDENSHOUSE_WARDEN = {
+      -- Labelled rather than hand-numbered: the branches here have been
+      -- re-pointed twice now (#535, #645), and every insert used to mean
+      -- renumbering three jumps that had no way of announcing they were stale.
       { "face_player" },                                             -- 1
       { "check_flag", "EVENT_GOT_HM04" },                            -- 2
       -- #535: previously jumped to the same silent-end target as the
-      -- give-then-thank fallthrough (row 13), so the warden said nothing
-      -- on every visit after the trade. pokered's .got_item branch
-      -- (scripts/WardensHouse.asm) instead prints HM04ExplanationText,
-      -- so route here to the new row 17 that does the same.
-      { "jump_if_true", 17 },                                        -- 3
+      -- give-then-thank fallthrough, so the warden said nothing on every
+      -- visit after the trade. pokered's .got_item branch
+      -- (scripts/WardensHouse.asm) instead prints HM04ExplanationText.
+      { "jump_if_true", "got_hm04" },                                -- 3
       { "check_item", "GOLD_TEETH" },                                -- 4
-      { "jump_if_false", 15 },                                       -- 5
+      { "jump_if_false", "no_teeth" },                               -- 5
       { "show_text", "_WardensHouseWardenGaveTheGoldTeethText" },    -- 6
       { "take_item", "GOLD_TEETH", 1 },                              -- 7
       { "set_flag", "EVENT_GAVE_GOLD_TEETH" },                       -- 8
@@ -663,15 +694,27 @@ M.WARDENS_HOUSE = {
       { "give_item", "HM_STRENGTH", 1, false },                      -- 10
       { "show_text", "_WardensHouseWardenReceivedHM04Text" },        -- 11
       { "set_flag", "EVENT_GOT_HM04" },                              -- 12
-      { "jump", 18 },                                                -- 13 (already got it this convo; jp .done)
-      { "jump", 18 },                                                -- 14 (unused)
-      { "show_text", "_WardensHouseWardenGibberish1Text" },          -- 15
-      { "jump", 18 },                                                -- 16 (#535: skip the new explanation row below)
+      { "jump", "end" },                                             -- 13 (jp .done)
+
+      -- #645: WardensHouseWardenText prints Gibberish1, then YesNoChoice,
+      -- and the warden answers the same gibberish either way -- Gibberish2
+      -- on yes, Gibberish3 on no (scripts/WardensHouse.asm).  The port
+      -- printed the question and walked off before the answer.
+      { "label", "no_teeth" },                                       -- 14
+      { "ask", "_WardensHouseWardenGibberish1Text" },                -- 15
+      { "jump_if_true", "gibberish_yes" },                           -- 16
+      { "show_text", "_WardensHouseWardenGibberish3Text" },          -- 17
+      { "jump", "end" },                                             -- 18
+      { "label", "gibberish_yes" },                                  -- 19
+      { "show_text", "_WardensHouseWardenGibberish2Text" },          -- 20
+      { "jump", "end" },                                             -- 21
+
       -- #535: pokered .got_item branch (scripts/WardensHouse.asm) --
       -- printed on every subsequent talk once EVENT_GOT_HM04 is set.
       -- Text is _WardensHouseWardenHM04ExplanationText (text/WardensHouse.asm):
       -- HM04 teaches Strength, and hints at the Safari Zone secret house.
-      { "show_text", "_WardensHouseWardenHM04ExplanationText" },     -- 17
+      { "label", "got_hm04" },                                       -- 22
+      { "show_text", "_WardensHouseWardenHM04ExplanationText" },     -- 23
     },
   },
 }
@@ -723,6 +766,28 @@ local function silphRocketsLeave(game, ow, onlyMap)
   end
 end
 
+-- SilphCo11FGiovanniAfterBattleScript (scripts/SilphCo11F.asm) is the whole
+-- aftermath: DisplayTextID TEXT_SILPHCO11F_GIOVANNI_YOU_RUINED_OUR_PLANS,
+-- GBFadeOutToBlack, SilphCo11FTeamRocketLeavesScript, Delay3,
+-- GBFadeInFromBlack, then SetEvent.  The port had only the hide pass, so the
+-- speech never played and every rocket blinked out in front of the player
+-- (#722).  Same hide list as silphRocketsLeave, spelled as script rows so the
+-- fade can hold over it.
+local function silphAftermathRows()
+  local rows = {
+    { "show_text", "_SilphCo11FGiovanniYouRuinedOurPlansText" },
+    { "fade", "out" },
+  }
+  for _, floor in ipairs(SILPH_ROCKET_OBJECTS) do
+    for _, name in ipairs(floor[2]) do
+      rows[#rows + 1] = { "hide_object", floor[1], name }
+    end
+  end
+  rows[#rows + 1] = { "wait", 3 }   -- Delay3
+  rows[#rows + 1] = { "fade", "in" }
+  return rows
+end
+
 M.SILPH_CO_11F = {
   -- Giovanni's battle is a COORDINATE TRIGGER, not a talk.
   -- SilphCo11FDefaultScript (scripts/SilphCo11F.asm) checks
@@ -749,11 +814,15 @@ M.SILPH_CO_11F = {
     ow:scriptMove(gio, "down", 3, function()
       gio:facePlayer(ow.player)
       ow:engageTrainer(gio, function()
-        -- SilphCo11FTeamRocketLeavesScript: every Silph rocket leaves
-        -- after the loss (the street rockets are handled by
-        -- M.SAFFRON_CITY.onEnter in story4.lua).
+        -- SilphCo11FGiovanniAfterBattleScript: the "Blast it all!" speech,
+        -- then SilphCo11FTeamRocketLeavesScript behind a fade so every Silph
+        -- rocket leaves off-screen (the street rockets are handled by
+        -- M.SAFFRON_CITY.onEnter in story4.lua).  Queued, not run here: the
+        -- battle's own callbacks are still unwinding, so queueScript starts
+        -- it on the first idle overworld frame -- after the end-battle
+        -- "Arrgh!!" box victories.lua OPP_GIOVANNI#2 pushes (#722).
         if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
-          silphRocketsLeave(game, ow)
+          ow:queueScript(silphAftermathRows())
         end
       end)
     end)
@@ -899,6 +968,7 @@ M.VICTORY_ROAD_3F = {
   -- fall is onStep, not a collision block.
   onStep = function(game, ow, x, y)
     if x == 23 and y == 15 then
+      require("src.core.Sound").play(game.data, "Faint_Fall")
       ow:startWarpTo("VICTORY_ROAD_2F", 22, 16, ow.player.facing)
       return true
     end
@@ -937,40 +1007,62 @@ M.VICTORY_ROAD_3F = {
 local championsRoomRivalScript = {
   { "face_player" },                                        -- 1
   { "check_flag", "EVENT_BEAT_CHAMPION_RIVAL_THIS_RUN" },   -- 2
-  { "jump_if_true", 25 },                                   -- 3  past end
+  -- "end" rather than a row number past the tail: this script grew by a row
+  -- when the follow-Oak walk landed (#704), which silently turned the old
+  -- numeric 26 into a jump ONTO the closing HALL_OF_FAME warp instead of past
+  -- it, so a returning champion warped straight into the induction.
+  { "jump_if_true", "end" },                                -- 3
   { "show_text", "_ChampionsRoomRivalIntroText" },          -- 4
-  { "rival_battle", "OPP_RIVAL3", 1 },                      -- 5
-  { "jump_if_false", 25 },                                  -- 6  past end
-  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL_THIS_RUN" },     -- 7
-  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL" },              -- 8
+  -- ChampionsRoomRivalReadyToBattleScript plays MUSIC_FINAL_BATTLE after
+  -- the intro text, before the battle itself (#706); pushBattle's wipe-time
+  -- playBattle("final") then no-ops on the same song, so the theme stays
+  -- continuous into the fight
+  { "play_music", "Music_FinalBattle" },                    -- 5
+  { "rival_battle", "OPP_RIVAL3", 1 },                      -- 6
+  -- losing halts here; the numeric target this replaced pointed at the
+  -- closing warp, which inducted a player who had just lost the fight (#704)
+  { "jump_if_false", "end" },                               -- 7
+  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL_THIS_RUN" },     -- 8
+  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL" },              -- 9
   -- ChampionsRoomRivalDefeatedScript re-displays TEXT_CHAMPIONSROOM_RIVAL,
   -- whose text_asm takes the EVENT_BEAT_CHAMPION_RIVAL branch =
   -- _ChampionsRoomRivalAfterBattleText (the in-battle _RivalDefeatedText
   -- is the port's generic "<PLAYER> defeated BLUE!" engine line instead).
-  { "show_text", "_ChampionsRoomRivalAfterBattleText" },    -- 9
+  { "show_text", "_ChampionsRoomRivalAfterBattleText" },    -- 10
   -- ChampionsRoomOakArrivesScript: Music_Cities1AlternateTempo
   -- (Cities1, kept into HALL_OF_FAME like BIT_NO_MAP_MUSIC after
   -- defeating RIVAL3), then Oak's "{PLAYER}!" + reveal + walk in
-  { "play_music", "Music_Cities1", { keep = true } },       -- 10
-  { "show_text", "_ChampionsRoomOakText" },                 -- 11
-  { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 12
-  { "move_npc", 2, "up", 5 },                               -- 13 OakEntranceAfterVictoryMovement
+  { "play_music", "Music_Cities1", { keep = true } },       -- 11
+  { "show_text", "_ChampionsRoomOakText" },                 -- 12
+  { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 13
+  { "move_npc", 2, "up", 5 },                               -- 14 OakEntranceAfterVictoryMovement
   -- OakCongratulatesPlayerScript: rival faces left, Oak faces down
-  { "face_object", 1, "left" },                             -- 14
-  { "face_object", 2, "down" },                             -- 15
-  { "show_text", "_ChampionsRoomOakCongratulatesPlayerText" }, -- 16
+  { "face_object", 1, "left" },                             -- 15
+  { "face_object", 2, "down" },                             -- 16
+  { "show_text", "_ChampionsRoomOakCongratulatesPlayerText" }, -- 17
   -- OakDisappointedWithRivalScript: Oak turns to the rival (right)
-  { "face_object", 2, "right" },                            -- 17
-  { "show_text", "_ChampionsRoomOakDisappointedWithRivalText" }, -- 18
+  { "face_object", 2, "right" },                            -- 18
+  { "show_text", "_ChampionsRoomOakDisappointedWithRivalText" }, -- 19
   -- OakComeWithMeScript: Oak faces down again, then exits up
-  { "face_object", 2, "down" },                             -- 19
-  { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 20
-  { "move_npc", 2, "up", 2 },                               -- 21 OakExitChampionsRoomMovement
-  { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 22
+  { "face_object", 2, "down" },                             -- 20
+  { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 21
+  { "move_npc", 2, "up", 2 },                               -- 22 OakExitChampionsRoomMovement
+  { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 23
+  -- ChampionsRoomPlayerFollowsOakScript / WalkToHallOfFame_RLEMovement
+  -- (PAD_UP 4, PAD_LEFT 1): the player walks out after Oak instead of the
+  -- screen just fading on the spot (#704).  The entrance walk leaves the
+  -- player at (4,3) and both north-wall warps sit on row 0, so the original
+  -- only ever spends three of those simulated steps -- CheckWarpsNoCollision
+  -- takes the HALL_OF_FAME warp the moment the walk lands on (4,0) and the
+  -- trailing UP/LEFT are dropped.  Scripted steps ignore collision here just
+  -- as they do in the original (CollisionCheckOnLand skips its checks while
+  -- wSimulatedJoypadStatesIndex is non-zero), so stepping through the
+  -- rival's cell at (4,2) is the ported behavior, not a clip.
+  { "move_player", "up", 3 },                               -- 24
   -- hand the induction off to the HALL_OF_FAME room (consumed by its
   -- onEnter), then warp up into it (destWarp 1 lands at (4,7) facing up)
-  { "set_field", "pendingHallOfFame", true },               -- 23
-  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 24
+  { "set_field", "pendingHallOfFame", true },               -- 25
+  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 26
 }
 
 M.CHAMPIONS_ROOM = {
