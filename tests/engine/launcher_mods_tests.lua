@@ -328,4 +328,47 @@ do
   eq(bad.name, "abc", "surrogates and overlongs are dropped")
 end
 
+-- ------- pre-boot translation strings (deriveStrings)
+--
+-- The launcher draws before Game:load, so a translation mod's catalog has to
+-- reach Strings without the loader running.  These are the rules that decide
+-- what it may contribute, with the filesystem read injected.
+do
+  local manifests = {
+    { id = "aaa", name = "A", version = "1.0.0", path = "mods/aaa" },
+    { id = "zzz", name = "Z", version = "1.0.0", path = "mods/zzz" },
+  }
+  local catalogs = {
+    ["mods/aaa"] = { ["Import ROM"] = "A-rom", ["Delete"] = "A-del",
+                     ["Cancel"] = "" },
+    ["mods/zzz"] = { ["Import ROM"] = "Z-rom" },
+  }
+  local function read(path) return catalogs[path] end
+  local function byIdMap(ms)
+    local m = {}
+    for _, x in ipairs(ms) do m[x.id] = x end
+    return m
+  end
+
+  local rows = LauncherMods.deriveList(manifests, { mods = {} })
+  local merged = LauncherMods.deriveStrings(rows, byIdMap(manifests), read)
+  eq(merged["Delete"], "A-del", "an enabled mod contributes its catalog")
+  eq(merged["Import ROM"], "Z-rom",
+    "later id wins a shared key, as it would at boot")
+  eq(merged["Cancel"], nil,
+    "an empty value is untranslated, never a blank translation")
+
+  local offRows = LauncherMods.deriveList(manifests, { mods = { zzz = false } })
+  local off = LauncherMods.deriveStrings(offRows, byIdMap(manifests), read)
+  eq(off["Import ROM"], "A-rom", "a disabled mod contributes nothing")
+
+  local none = LauncherMods.deriveStrings(
+    LauncherMods.deriveList(manifests, { mods = { aaa = false, zzz = false } }),
+    byIdMap(manifests), read)
+  eq(none, nil, "no enabled catalog leaves the launcher on its English source")
+
+  eq(LauncherMods.deriveStrings(rows, byIdMap(manifests), function() return nil end),
+    nil, "a mod that ships no catalog is skipped, not an error")
+end
+
 T.finish("launcher_mods")

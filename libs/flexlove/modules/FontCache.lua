@@ -107,6 +107,11 @@ function FONT_CACHE.get(size, fontPath)
     font = love.graphics.newFont(size)
   end
 
+  -- Per-glyph fallback so a non-Latin UI string is not drawn as tofu.
+  -- pcall'd require: FlexLove is vendored and must still load standalone.
+  local okUi, UiFont = pcall(require, "src.render.UiFont")
+  if okUi and UiFont then UiFont.attach(font, size) end
+
   -- Add to cache with LRU metadata
   FONT_CACHE[cacheKey] = {
     font = font,

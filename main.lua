@@ -313,6 +313,18 @@ function love.load(args)
     return
   end
 
+  -- The launcher draws before any game boots, so the mod loader has not run
+  -- and Strings has no catalog.  Routing the launcher's text through Strings
+  -- (#767) only pays off if something fills that catalog this early, and no
+  -- restart could: the ordering is the same on every launch.  Read the
+  -- enabled mods' string catalogs -- data only, no entry chunk -- so a
+  -- translation reaches the launcher too.  Game:load replaces this with the
+  -- real merged catalog once a version boots.
+  do
+    local preload = require("src.mods.LauncherMods").translationStrings()
+    if preload then require("src.core.Strings").load({ strings = preload }) end
+  end
+
   -- Interactive: the launcher always runs.  Red, Blue, and Yellow are each
   -- live: a column shows Play when that game's ROM is already imported, or
   -- Choose ROM / drag-drop when it is not.  Any dropped .gb is routed by its

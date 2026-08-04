@@ -329,7 +329,9 @@ local function mfont(size)
   size = math.max(8, math.floor(size + 0.5))
   local f = measureFonts[size]
   if not f then
-    f = love.graphics.newFont(size)
+    -- same fallback the rendering faces get (FlexLove FontCache), or the
+    -- launcher measures Latin widths for text it draws with kana
+    f = require("src.render.UiFont").attach(love.graphics.newFont(size), size)
     measureFonts[size] = f
   end
   return f
