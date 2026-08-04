@@ -273,4 +273,83 @@ do
   eq(cats[1], "GAMEPLAY", "and they keep the feed's declared order")
 end
 
+-- ------- the pre-added official index (sources)
+
+-- sources()/addSource()/removeSource() persist through SaveData; stub the
+-- module functions so the assertions observe the exact option writes
+-- without touching a real options file.
+do
+  local SaveData = require("src.core.SaveData")
+  local vanillaLoad, vanillaSave = SaveData.loadOptions, SaveData.saveOptions
+  local state = { opts = nil, saved = nil }
+  SaveData.loadOptions = function() return state.opts end
+  SaveData.saveOptions = function(opts) state.saved = opts end
+  local function fresh()
+    state.opts = {}          -- a fresh install: no index ever configured
+    state.saved = nil
+  end
+  local official = ModIndex.OFFICIAL
+  check(official ~= nil and type(official.feed) == "string",
+    "the official index resolves to a feed URL")
+
+  fresh()
+  local list = ModIndex.sources()
+  eq(#list, 1, "a fresh install lists one source")
+  eq(list[1].feed, official.feed, "and it is the official index")
+  check(state.saved == nil, "listing the default does not persist anything")
+
+  fresh()
+  state.opts = {
+    modIndexes = {
+      { url = "https://example.com/ix", feed = "https://example.com/ix/data/index.json",
+        base = "https://example.com/ix/", label = "example/ix" },
+    },
+  }
+  list = ModIndex.sources()
+  eq(#list, 2, "player indexes ride below the official default")
+  eq(list[1].feed, official.feed, "official stays on top")
+  eq(list[2].feed, "https://example.com/ix/data/index.json",
+    "the player's own index follows")
+
+  fresh()
+  state.opts = { modIndexes = { {
+    url = "https://github.com/bryanthaboi/gen1recomp-mod-index",
+    feed = official.feed, base = official.base, label = official.label,
+  } } }
+  list = ModIndex.sources()
+  eq(#list, 1, "a hand-added official index is not duplicated")
+
+  fresh()
+  state.opts = { modIndexes = {}, modIndexesOfficialRemoved = true }
+  eq(#ModIndex.sources(), 0,
+    "removing the official index opts out of the default for good")
+
+  -- Removing the pre-added (never persisted) official row still sticks.
+  fresh()
+  local ok = ModIndex.removeSource(official.feed)
+  check(ok == true, "removing the pre-added official index succeeds")
+  check(state.saved.modIndexesOfficialRemoved == true,
+    "and records the permanent opt-out")
+
+  -- Removing a player index does not touch the official opt-out.
+  fresh()
+  state.opts = { modIndexes = { {
+    url = "https://example.com/ix", feed = "https://example.com/ix/data/index.json",
+    base = "https://example.com/ix/", label = "example/ix",
+  } } }
+  ModIndex.removeSource("https://example.com/ix/data/index.json")
+  check(state.saved.modIndexesOfficialRemoved == nil,
+    "removing a player index leaves the official default alone")
+  eq(#state.saved.modIndexes, 0, "and drops the removed row")
+
+  -- addSource on the official feed stores one row; sources() shows it once.
+  fresh()
+  local added, err = ModIndex.addSource("bryanthaboi/gen1recomp-mod-index")
+  check(added ~= nil, "adding the official index by slug works: " .. tostring(err))
+  eq(added.feed, official.feed, "and resolves to the same feed")
+  eq(#ModIndex.sources(), 1, "one row, no double-listing")
+
+  SaveData.loadOptions, SaveData.saveOptions = vanillaLoad, vanillaSave
+end
+
 print("ok mod_index_tests")

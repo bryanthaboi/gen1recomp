@@ -453,10 +453,14 @@ printout.
 
 A FIND MODS tab sits beside MODS in the launcher and browses a published
 mod index: a metadata-only feed listing mods that live in their authors'
-own repositories. No index ships with the launcher and none is ever added
-automatically, so the tab opens on an "Add an index" prompt until you name
-one; paste an index URL or its `owner/repo` and it is remembered in
-`options.lua`. More than one index can be added, and the listings merge.
+own repositories. The project's own index
+(`bryanthaboi/gen1recomp-mod-index`) ships pre-added for every install,
+so the tab opens on the official listing right away; paste another index
+URL or its `owner/repo` and it is remembered in `options.lua`. More than
+one index can be added, and the listings merge (the first source wins on
+a duplicate mod id). Removing the official index opts out of it for good
+-- it will not come back on the next launch -- and removing any index
+drops its cached listing with it.
 
 ## Soft reset (all versions)
 

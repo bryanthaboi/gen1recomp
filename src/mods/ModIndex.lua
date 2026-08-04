@@ -421,9 +421,25 @@ local function loadOptions()
   return require("src.core.SaveData").loadOptions()
 end
 
+-- The project's own index, pre-added for every install: it is the default
+-- source behind FIND MODS.  Built through the same resolution players'
+-- pastes go through, so the feed/base/fallback triple cannot drift from
+-- what addSource("bryanthaboi/gen1recomp-mod-index") would store.
+ModIndex.OFFICIAL = ModIndex.resolveSource("bryanthaboi/gen1recomp-mod-index")
+    or {}
+if type(ModIndex.OFFICIAL.feed) == "string" then
+  ModIndex.OFFICIAL.url =
+    "https://github.com/bryanthaboi/gen1recomp-mod-index"
+  ModIndex.OFFICIAL.official = true
+end
+
 -- The player's index list, normalised.  Rows are { url, feed, base, fallback,
 -- label }; `url` is what they typed, kept so the row reads back the way they
 -- entered it.
+--
+-- The official index tops the list for every install unless the player
+-- removed it (a permanent opt-out: it must not come back next launch) or
+-- already added it by hand (no duplicates).
 function ModIndex.sources()
   local ok, opts = pcall(loadOptions)
   if not ok or type(opts) ~= "table" then return {} end
@@ -432,6 +448,14 @@ function ModIndex.sources()
     if type(row) == "table" and type(row.feed) == "string" then
       out[#out + 1] = row
     end
+  end
+  local official = ModIndex.OFFICIAL
+  if type(official.feed) == "string" and opts.modIndexesOfficialRemoved ~= true then
+    local hasOfficial = false
+    for _, row in ipairs(out) do
+      if row.feed == official.feed then hasOfficial = true break end
+    end
+    if not hasOfficial then table.insert(out, 1, official) end
   end
   return out
 end
@@ -471,8 +495,15 @@ function ModIndex.removeSource(feed)
     for _, row in ipairs(opts.modIndexes or {}) do
       if row.feed == feed then found = true else kept[#kept + 1] = row end
     end
-    if not found then return nil end
     opts.modIndexes = kept
+    -- Removing the official index opts out of the pre-added default too:
+    -- it tops the sources list without ever being in modIndexes, so the
+    -- flag (not the list) is what keeps it gone.
+    if ModIndex.OFFICIAL and feed == ModIndex.OFFICIAL.feed then
+      opts.modIndexesOfficialRemoved = true
+      found = true
+    end
+    if not found then return nil end
     if type(opts.modIndexCache) == "table" then opts.modIndexCache[feed] = nil end
     SaveData.saveOptions(opts)
     return true

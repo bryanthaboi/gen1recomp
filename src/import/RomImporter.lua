@@ -2889,10 +2889,10 @@ end
 --
 -- The index is metadata only (src/mods/ModIndex.lua): it says where a mod's
 -- zip lives, and the install runs through exactly the same path "Import mod
--- .zip" does.  Nothing here is automatic -- no index ships with the launcher,
--- and the tab stays an empty "Add an index" prompt until the player names one,
--- because subscribing to somebody's list of mods is a trust decision and not a
--- default.
+-- .zip" does.  The project's own index (bryanthaboi/gen1recomp-mod-index)
+-- ships pre-added for every install -- it tops ModIndex.sources() until the
+-- player removes it, which opts out permanently -- and any number of other
+-- indexes can be added beside it.
 --
 -- Fetching is the same synchronous curl the update checks already use, cached
 -- in options for a day, so the first open of the tab costs one round trip and
