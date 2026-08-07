@@ -1,0 +1,21 @@
+{
+  "id": "traduccion_es",
+  "name": "Traducción Española",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "game_version": ">=0.0.0-dev <1.0.0",
+  "category": "LANGUAGE",
+  "priority": 100,
+  "permissions": [
+    "filesystem",
+    "engine_internals"
+  ],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "incompatible": [],
+  "experimental": false,
+  "description": "Spanish translation: decodes the official EUR script and art from your own cartridge dump at load time. / El juego en espanol desde tu propio cartucho. Mod por jherediagu."
+}

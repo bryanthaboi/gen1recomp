@@ -1,0 +1,46 @@
+-- Sharing metadata (25-community-and-ecosystem.md 3.2).  Read by tooling
+-- and the manager detail pane; never by the loader's merge.
+return {
+  summary = "The official Spanish script, decoded from the player's own "
+    .. "EUR cartridge at load time.",
+  author = "jherediagu",
+  contact = "https://github.com/jherediagu/gen1recomp",
+  tags = { "language", "spanish", "data-only", "quality-of-life" },
+  differences = {
+    changed = {
+      "every dialogue label the EUR manifests map (2,585) overrides to the "
+        .. "official Spanish script, decoded at load time from the Spanish "
+        .. "Red/Blue dump found in the player's imports/ folder",
+      "move, item and trainer-class names take their official Spanish "
+        .. "forms from the same dump (ÁCIDO, POCIÓN, JOVEN, ...)",
+      "the full engine-string catalog (557 entries) is hand-translated in "
+        .. "lang/strings.lua: battle, menus, options, PC, link play, the "
+        .. "launcher and the mod manager; plus status labels and the "
+        .. "hand-ported cutscene lines",
+      "accents, the \":N\" level tag, the \"PS\" HP label and the "
+        .. "\"Edicion Roja\" title ribbon are all re-derived at load time "
+        .. "from the player's own cartridge (pixel-identical to hardware); "
+        .. "the mod ships recipes and addresses, never the art",
+    },
+    added = {},
+    known = {
+      "without a Spanish EUR dump in imports/, dialogue and names stay in "
+        .. "English; only the hand-translated engine strings apply",
+      "the player still imports the US ROM: the base extraction is "
+        .. "untouched and the translation layers over it",
+      "type names (FUEGO, AGUA, ...) live in the type_chart registry and "
+        .. "are not yet translated",
+      "Pokédex flavour text and the metric height/weight are not yet "
+        .. "carried over",
+      "Spanish Yellow (Pokemon Amarillo) is not covered: no address "
+        .. "manifest exists for it yet",
+
+    },
+  },
+  credits = {
+    { who = "einstein95/pokered-es",
+      for_ = "the shift-matching Spanish disassembly the address "
+        .. "manifests derive from" },
+  },
+  compat = { engine = ">=0.0.0-dev <1.0.0", modApi = 2 },
+}

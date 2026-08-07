@@ -1,0 +1,5 @@
+# Dev-only files, never packaged: the test suite requires engine modules
+# (a private-require finding against the shipped archive) and build_spec.py
+# only regenerates rom/spec_es.lua from the import manifests.
+tests/traduccion_es_test.lua
+tools/build_spec.py
