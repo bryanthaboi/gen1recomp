@@ -2199,6 +2199,15 @@ end
 -- this the page SCROLLS (wheel / touch drag) instead of compressing: the
 -- pinned Play block used to walk up over the cards on a short window, which
 -- is unusable, and the footer simply lives below the fold until scrolled to.
+--
+-- The minimum is also the FIT-SCALE target: Layout.metrics shrinks the whole
+-- UI until the panel minimum plus the header/footer chrome fits the window
+-- height, so on short or square windows (the RG34XX's 720x720, 4:3 devices,
+-- phones) everything stays reachable instead of sitting under the fold.
+-- Only below the fit floor (Kit.FIT_FLOOR) does the page fall back to
+-- scrolling rather than compressing.
+local PANEL_MIN_TWO = 460   -- side-by-side columns
+local PANEL_MIN_ONE = 660   -- one column (actions + slot + pinned Play)
 local function minPanelHeight(m)
   -- One column stacks the actions card, the slot card and the pinned Play
   -- block in a single pile, so it needs more room than the side-by-side
@@ -2208,12 +2217,13 @@ local function minPanelHeight(m)
   -- no slot could be picked at all (#852).  660 fits the actions card, one
   -- slot row with its pager and New button, and the pinned block; whatever
   -- the window cannot show, the page scroll above reaches.
-  return math.floor((m.twoCol and 460 or 660) * m.s)
+  return math.floor((m.twoCol and PANEL_MIN_TWO or PANEL_MIN_ONE) * m.s)
 end
 
 function LauncherView.draw(imp)
   ensureState(imp)
-  local m = Layout.metrics(1200)
+  local m = Layout.metrics(1200,
+    { two = PANEL_MIN_TWO, one = PANEL_MIN_ONE })
 
   -- The pointer is the pad cursor while it is active, so the ring, hover and
   -- clicks all agree on where "the pointer" is.

@@ -8,7 +8,9 @@
 -- ~9.2ms/frame down to well under 1ms (see POKEPORT_LAUNCHER_PROF).
 --
 -- Usage, once per love.draw():
---     Kit.layout(w, h)                     -- fonts + scale, only on resize
+--     Kit.layout(w, h, fitH)               -- fonts + scale, only on resize
+--                                          -- fitH = unscaled px of panel
+--                                          --    content that must fit height
 --     Kit.beginFrame(mx, my, clicked, wheel)
 --     ... widgets ...
 --     Kit.endFrame()
@@ -118,19 +120,38 @@ local function font(name)
 end
 Kit.font = font
 
--- Rebuild the font set when the window size changes.  The scale never dips
--- below 0.9 so text and the 30px tap targets stay readable on a phone; a
--- narrow window is answered by REFLOW (see Layout.lua), never by shrinking.
+-- Rebuild the font set when the window size changes.  A narrow window is
+-- answered by REFLOW (see Layout.lua); a SHORT window that would put content
+-- under the fold is answered by FIT-SCALING: the whole UI (text, tap
+-- targets, padding, row heights) shrinks together until the caller's panel
+-- minimum plus the header/footer chrome lands on screen.  The fit never
+-- sinks below FIT_FLOOR; below that the page scrolls instead of rendering
+-- unusably tiny controls.
 -- Global size multiplier.  Everything in the UI derives from Kit.scale, so
 -- one factor here moves text, tap targets, padding and row heights together
 -- and nothing drifts out of proportion.  1.3 because the launcher is read at
 -- couch distance as often as at desk distance, and the old sizing was tuned
 -- for the latter only.
 local UI_SCALE = 1.3
+-- Fit-scaling floor, in effective (post UI_SCALE) px.  0.78 keeps a 30px tap
+-- target at ~23px and the 14px button face at ~11px on a dense handheld, and
+-- is enough to fit the whole launcher on the RG34XX's 720x720 screen.
+local FIT_FLOOR = 0.78
+-- Vertical chrome the fit budget must cover beyond the panel minimum,
+-- unscaled px: the header body (~80), the footer body (~74) and the
+-- inter-block gap (~12).
+local FIT_CHROME = 166
 
-function Kit.layout(width, height)
+function Kit.layout(width, height, fitH)
   local s = Theme.clamp(math.min(width / 640, height / 768), 0.9, 1.6) * UI_SCALE
-  local key = ("%dx%d"):format(math.floor(width), math.floor(height))
+  if fitH and fitH > 0 then
+    -- Solve for the scale at which the panel minimum plus chrome (which
+    -- grows with s) plus the fixed logo band fits the window height, and
+    -- take it only if it is below the resolution scale.
+    local logoH = Theme.clamp(height * 0.10, 36, 84)
+    s = math.min(s, math.max(FIT_FLOOR, (height - logoH) / (fitH + FIT_CHROME)))
+  end
+  local key = ("%dx%d@%.2f"):format(math.floor(width), math.floor(height), s)
   if Kit._fontKey ~= key then
     Kit._fontKey = key
     Kit.fonts = Theme.fonts(s)

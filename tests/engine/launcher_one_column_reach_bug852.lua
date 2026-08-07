@@ -8,8 +8,11 @@
 -- threshold read "tall enough", so the short-window page scroll never
 -- engaged, buildSlotCard was cut by Kit.pushClip against the pinned block,
 -- and Kit's clip-bounded hit-testing (src/ui/kit/Kit.lua) left every slot
--- row, the pager and "+ New save slot" drawn-but-inert.  The fix makes the
--- threshold column-aware, so those windows scroll instead of clipping.
+-- row, the pager and "+ New save slot" drawn-but-inert.  The fix made the
+-- threshold column-aware (LauncherView's PANEL_MIN_TWO/ONE).  That minimum
+-- now doubles as the FIT-SCALE target: Layout.metrics shrinks the whole UI
+-- until the stack plus chrome fits the window, so those windows show
+-- everything on screen; only below the fit floor does the page scroll.
 --
 -- The seam is LauncherView.draw itself: it publishes the page-scroll extent
 -- on the importer (imp._pageScroll / imp._pageScrollMax, the values the
@@ -52,39 +55,52 @@ local function freshLauncher()
   return RomImporter.new(function() end, { launcher = true })
 end
 
--- ------------------------------------------------ #852: the scroll engages
--- 480x900 one column: enough room for the old flat 460*s threshold, not for
--- the one-column stack.  Before the fix draw() left _pageScrollMax at 0 here
--- and the slot card sat clipped inert against the pinned buttons.
+-- ------------------------------------------ #852: the stack stays reachable
+-- 480x900 one column.  Before the #852 fix the flat 460*s threshold read
+-- "tall enough", so the page-scroll never engaged and the slot card sat
+-- clipped inert against the pinned buttons.  Now the one-column minimum is
+-- also the FIT-SCALE target: Layout.metrics shrinks the whole UI until that
+-- minimum plus the header/footer chrome fits the window height, so the
+-- entire stack -- title, actions card, slot card, pinned block, footer --
+-- lands on screen and there is nothing to scroll.
+--
+-- The draw's own metrics use the launcher's fit hint ({ two = 460, one =
+-- 660 }), so the test passes the same hint to keep m.s in agreement.
 window(480, 900)
-local m = Layout.metrics(1200)
+local m = Layout.metrics(1200, { two = 460, one = 660 })
 eq(m.twoCol, false, "480-wide window lays out one column")
 local imp = freshLauncher()
 LauncherView.draw(imp)
-check((imp._pageScrollMax or 0) > 0,
-  "one-column window short of the stack engages the page scroll")
+eq(imp._pageScrollMax or 0, 0,
+  "fit-scale puts the whole one-column stack on screen")
 eq(imp._pageScroll, 0, "a fresh page starts at the top")
 
--- The wheel moves the page (the same offset the touch drag feeds), and the
--- offset clamps to the extent, so the whole stack down to "+ New save slot"
--- and the footer is reachable rather than clipped away.
-local extent = imp._pageScrollMax
-imp._wheelY = -1
-LauncherView.draw(imp)
-eq(imp._pageScroll, math.min(math.floor(48 * m.s), extent),
-  "one wheel notch scrolls the page down by its step")
-imp._pageScroll = 1e6
-LauncherView.draw(imp)
-eq(imp._pageScroll, imp._pageScrollMax,
-  "an offset past the end clamps to the extent, so the bottom is reachable")
-
--- The reporter's portrait phone (360x780 units) is shorter still and must
--- also scroll; before the fix its slot list was unreachable.
+-- The reporter's portrait phone (360x780 units) also fits after fit-scaling;
+-- before the fix its slot list was unreachable.
 window(360, 780)
 local phone = freshLauncher()
 LauncherView.draw(phone)
-check((phone._pageScrollMax or 0) > 0,
-  "portrait-phone one-column window engages the page scroll")
+eq(phone._pageScrollMax or 0, 0,
+  "portrait-phone one-column window fits after fit-scaling")
+
+-- Below the fit floor a very short window still engages the page scroll, and
+-- the wheel clamps to the extent so the bottom of the stack -- down to
+-- "+ New save slot" and the footer -- stays reachable rather than clipped.
+window(480, 360)
+local short = freshLauncher()
+LauncherView.draw(short)
+check((short._pageScrollMax or 0) > 0,
+  "a very short one-column window below the fit floor scrolls")
+local shortM = Layout.metrics(1200, { two = 460, one = 660 })
+local extent = short._pageScrollMax
+short._wheelY = -1
+LauncherView.draw(short)
+eq(short._pageScroll, math.min(math.floor(48 * shortM.s), extent),
+  "one wheel notch scrolls the page down by its step")
+short._pageScroll = 1e6
+LauncherView.draw(short)
+eq(short._pageScroll, short._pageScrollMax,
+  "an offset past the end clamps to the extent, so the bottom is reachable")
 
 -- A one-column window tall enough for the whole stack stays inert: the
 -- column-aware minimum is a floor, not a permanent scroll.

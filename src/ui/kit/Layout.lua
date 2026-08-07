@@ -27,15 +27,45 @@ Layout.BP = {
   threeCol = 1100,  -- wide desktop: mod list + detail + chrome
 }
 
+-- Resolve the column count for an app width and scale.  Shared by the
+-- metrics builder and the fit-scale pass below.
+local function columnCount(appW, s)
+  return (appW >= Layout.BP.threeCol * s and 3)
+      or (appW >= Layout.BP.twoCol * s and 2)
+      or 1
+end
+
 -- Build the frame's metrics.  `maxAppW` caps the content column on an
 -- ultrawide monitor so the UI stays a readable measure instead of stretching.
-function Layout.metrics(maxAppW)
+-- `fitH` (optional) is the panel minimum the caller needs to fit vertically,
+-- as `{ two = 460, one = 660 }` in unscaled px per column count.  When set,
+-- the whole UI fit-scales down so that minimum plus the header/footer chrome
+-- lands on screen instead of under the fold (see Kit.layout).
+function Layout.metrics(maxAppW, fitH)
   local W, H = 0, 0
   if love and love.graphics and love.graphics.getDimensions then
     W, H = love.graphics.getDimensions()
   end
   local ox, oy, sw, sh = SafeArea.rect()
   local s = Kit.layout(sw, sh)
+
+  -- The column count decides which panel minimum applies, so resolve it
+  -- against the resolution scale first, then fit against the matching
+  -- minimum.  Fit-shrinking can change the column count -- a 720px square
+  -- window drops below the two-column breakpoint and the two-column
+  -- minimum (460) replaces the one-column minimum (660) -- so re-fit
+  -- against the new minimum until scale and column count stabilise.
+  local cols = columnCount(math.min(sw, (maxAppW or 1200) * s), s)
+  if fitH then
+    for _ = 1, 3 do
+      local need = cols >= 2 and fitH.two or fitH.one
+      if not need then break end
+      s = Kit.layout(sw, sh, need)
+      local nextCols = columnCount(math.min(sw, (maxAppW or 1200) * s), s)
+      if nextCols == cols then break end
+      cols = nextCols
+    end
+  end
 
   local appW = math.min(sw, (maxAppW or 1200) * s)
   local m = {
@@ -53,9 +83,7 @@ function Layout.metrics(maxAppW)
     railH = math.max(3, math.floor(4 * s)),
     logoH = math.floor(Theme.clamp(sh * 0.10, 36, 84)),
   }
-  m.cols = (appW >= Layout.BP.threeCol * s and 3)
-        or (appW >= Layout.BP.twoCol * s and 2)
-        or 1
+  m.cols = columnCount(appW, s)
   m.twoCol = m.cols >= 2
   m.contentW = m.w - 2 * m.pad
   m.colW = m.twoCol
