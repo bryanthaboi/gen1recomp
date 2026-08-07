@@ -223,8 +223,9 @@ filesystem stub the slot backend uses (`tests/engine/save_file_io_tests.lua`).
 ## Responsiveness
 
 Every measurement derives from `love.graphics.getDimensions()` each frame
-plus the existing global scale `s = clamp(height / 768, 0.7, 1.6)`; nothing
-assumes a fixed window size. The game panel's two-column grid (ROM/SAVE
+plus the existing global scale `s = clamp(min(width / 640, height / 768),
+0.9, 1.6) * 1.3`; nothing assumes a fixed window size. The game panel's
+two-column grid (ROM/SAVE
 FILES/Play on the left, SAVE SLOT on the right) collapses to one stacked
 column, slot card below Play, when the window is too narrow for both
 `~300 * s`-wide columns. The save-slot list and the mod list both scroll
@@ -235,6 +236,20 @@ narrow-safe, and content caps out at `~1440 * s` wide, centered.
 The desktop window has a floor of 480x360 (`conf.lua` `minwidth`/`minheight`),
 under which the cards stop being readable at all. Mobile ignores it: those
 windows are fullscreen.
+
+### Fit scaling
+
+A SHORT or squat window is answered by FIT-SCALING, not just scrolling.
+`Layout.metrics(maxAppW, fitH)` takes the panel minimum the active tab
+needs (`{ two = 460, one = 660 }`, unscaled px) and `Kit.layout` solves
+for the scale at which that minimum plus the header/footer chrome lands
+on screen: text, tap targets, padding and row heights all move together
+off `Kit.scale`, so a 720x720 handheld (RG34XX) and 4:3 or phone-shaped
+windows show the whole stack with nothing under the fold. Because
+fit-shrinking can flip the column count, the metrics re-fit against the
+matching minimum until scale and columns stabilise. The fit never sinks
+below `Kit.FIT_FLOOR` (0.78, below which a 30px tap target would shrink
+to ~23px); under that the page scroll above remains the backstop.
 
 ### Page scroll
 
