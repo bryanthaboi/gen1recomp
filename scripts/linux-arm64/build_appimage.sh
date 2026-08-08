@@ -369,6 +369,7 @@ Name=gen1recomp
 Comment=Pokémon Gen 1 recompilation
 Exec=$APP_NAME
 Icon=$APP_NAME
+StartupWMClass=love
 Categories=Game;
 Terminal=false
 EOF
