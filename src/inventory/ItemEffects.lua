@@ -25,6 +25,18 @@ local function noEffect(data)
   return romText(data, "_ItemUseNoEffectText", "It won't have\nany effect.")
 end
 
+local function registeredEffect(data, itemDef)
+    if not data or not itemDef or not itemDef.effect then
+        return nil
+    end
+
+    if not data.item_effects then
+        return nil
+    end
+
+    return data.item_effects[itemDef.effect]
+end
+
 local HEAL_AMOUNT = {
   POTION = 20, SUPER_POTION = 50, HYPER_POTION = 200,
   FRESH_WATER = 50, SODA_POP = 60, LEMONADE = 80,
@@ -72,7 +84,18 @@ function ItemEffects.healsHP(id)
 end
 
 -- Does this item need a party-member target?
-function ItemEffects.needsTarget(id, itemDef)
+-- 'data' is optional for compat purposes; targeting falls back to itemDef/vanilla detection
+function ItemEffects.needsTarget(id, itemDef, data)
+  if itemDef and itemDef.needsTarget ~= nil then
+      return itemDef.needsTarget
+  end
+
+  local effect = registeredEffect(data, itemDef)
+
+  if effect and effect.needsTarget ~= nil then
+    return effect.needsTarget
+  end
+
   return HEAL_AMOUNT[id] or STATUS_HEAL[id] or id == "MAX_POTION"
       or id == "FULL_RESTORE" or id == "REVIVE" or id == "MAX_REVIVE"
       or id == "RARE_CANDY" or STONES[id]
@@ -146,6 +169,28 @@ end
 function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   local itemDef = data.items[itemId]
   local name = itemDef and itemDef.name or itemId
+
+  local effectDef = registeredEffect(data, itemDef)
+  if effectDef then
+    if battle and effectDef.battle == false then
+        return "failed", { notTime(data, save) }
+    end
+
+    if not battle and effectDef.field == false then
+        return "failed", { notTime(data, save) }
+    end
+
+    return effectDef.use({
+        data = data,
+        save = save,
+        itemId = itemId,
+        item = itemDef,
+        target = target,
+        battle = battle,
+        moveIndex = moveIndex,
+        overworld = ow,
+    })
+  end
 
   -- ItemUseVitamin / ItemUsePPUp / ItemUseEvoStone / ItemUseCoinCase /
   -- ItemUseTMHM / ItemUseRepelCommon all refuse mid-battle

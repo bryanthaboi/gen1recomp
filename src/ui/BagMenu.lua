@@ -253,6 +253,18 @@ local function useOn(game, battle, id, target, list, moveIndex, picker)
     return
   end
 
+  if result == "kept" then
+    if battle then
+        list:close()
+        showMessages(game, payload, function()
+            battle:itemUsed({})
+        end)
+    else
+        showMessages(game, payload, closePicker)
+    end
+    return
+  end
+
   if result == "consumed" then
     consume(game, id)
     -- refresh counts in the list
@@ -404,7 +416,7 @@ local function useItem(game, battle, id, list)
     showMessages(game, payload)
     return
   end
-  if ItemEffects.needsTarget(id, def) and not ItemEffects.isBall(id) then
+  if ItemEffects.needsTarget(id, def, game.data) and not ItemEffects.isBall(id) then
     -- TMs/HMs boot up and announce their move before the target picker
     -- (ItemUseTMHM: BootedUpTMText / BootedUpHMText + TeachMachineMoveText)
     if def and def.machine then
