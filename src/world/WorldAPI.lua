@@ -8,6 +8,7 @@
 local Logger = require("src.core.Logger")
 local Assets = require("src.render.Assets")
 local MapLoader = require("src.world.MapLoader")
+local Party = require("src.pokemon.Party")
 local Runtime = require("src.mods.Runtime")
 
 local WorldAPI = {}
@@ -224,6 +225,49 @@ function WorldAPI:queueScript(rows, extra)
   if not ow or not ow.runner then return nil, NO_OVERWORLD end
   if ow.runner:isRunning() then return nil, "a script is already running" end
   ow.runner:run(rows, extra)
+  return true
+end
+
+-- The supported way to start a wild encounter.  Hand-rolling this -- build a
+-- BattleState, push it -- silently costs evolutions and blackout-on-loss
+-- (both hang off onFinish -> afterBattle) plus the entry wipe and battle
+-- theme (both owned by pushBattle).  Nothing raises when they are missing.
+function WorldAPI:startWildBattle(species, level)
+  local ow = self:overworld()
+  if not ow then return nil, NO_OVERWORLD end
+  if not self.game.data.pokemon[species] then
+    return nil, "unknown species: " .. tostring(species)
+  end
+  -- Pokemon.new writes the level through verbatim -- into level, the stat
+  -- calc and the exp curve -- so a fraction has to be refused here rather
+  -- than round somewhere downstream.  The % test also catches NaN, which
+  -- passes both range comparisons.
+  level = tonumber(level)
+  if not level or level % 1 ~= 0 or level < 1 or level > 100 then
+    return nil, "level must be a whole number 1..100"
+  end
+  -- overworld() resolves the world from UNDER whatever sits on top of it,
+  -- so from a battle hook this would otherwise stack a second battle over
+  -- the live one -- and on a loss its afterBattle blacks out and warps
+  -- with the outer battle still on the stack.
+  local BattleTransition = require("src.render.BattleTransition")
+  for _, state in ipairs(self.game.stack and self.game.stack.states or {}) do
+    if state.awardExp or getmetatable(state) == BattleTransition then
+      return nil, "a battle is already running"
+    end
+  end
+  if ow.transitioning then return nil, "the world is mid-warp" end
+  -- BattleState.newWild marks the species SEEN before it reports an empty
+  -- party, so the party check comes first: a refused call must not leave a
+  -- Pokedex entry behind.
+  local save = self.game.save
+  if not (save and Party.firstHealthy(save.party or {})) then
+    return nil, "no healthy party"
+  end
+  local battle = require("src.battle.BattleState")
+    .newWild(self.game, species, level)
+  battle.onFinish = function(result) ow:afterBattle(result, battle) end
+  ow:pushBattle(battle)
   return true
 end
 
