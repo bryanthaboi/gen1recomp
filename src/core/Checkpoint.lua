@@ -6,6 +6,7 @@ local SaveData = require("src.core.SaveData")
 local Version = require("src.core.Version")
 local BattleState = require("src.battle.BattleState")
 local BattleCheckpoint = require("src.core.BattleCheckpoint")
+local ModRuntime = require("src.mods.Runtime")
 
 local Checkpoint = {}
 
@@ -398,7 +399,15 @@ function Checkpoint.restore(game, checkpoint)
   if ok then
     local restored, verifyCode = Checkpoint.capture(game)
     if restored and validated.rng == nil then restored.rng = nil end
-    if restored and equalData(restored, validated) then return true end
+    if restored and equalData(restored, validated) then
+      if ModRuntime.wants("checkpoint.restored") then
+        ModRuntime.emit("checkpoint.restored", {
+          game = game,
+          kind = validated.kind,
+        })
+      end
+      return true
+    end
     err = restored and ("restored state differed at "
       .. tostring(firstDifference(validated, restored) or "canonical encoding"))
       or ("restored state could not be captured: " .. tostring(verifyCode))

@@ -194,6 +194,34 @@ effects; verifies a recapture; and rolls back runtime plus RNG in memory if
 reconstruction fails. Callers that need crash recovery should durably capture
 their own recovery checkpoint before restore.
 
+Checkpoint ownership follows the persistence model rather than mod identity:
+
+- canonical `game.save` progress, including every mod's `save.modData` /
+  `mod.save` bucket and data-only fields added to saved Pokémon, rewinds;
+- global and per-mod options remain at their current values;
+- independently written `mod.storage` records do not rewind; and
+- mod-owned runtime objects, references, and caches are never serialized.
+
+Successful restore emits `checkpoint.restored` only after reconstruction and
+differential recapture have committed. Mods that cache rewound progress or hold
+references to reconstructed runtime objects can re-read their own public state
+and rebuild at that point:
+
+```lua
+mod.events:on("checkpoint.restored", function(ev)
+  -- ev.kind is "overworld" or "battle"; ev.game is fully reconstructed.
+  cachedQuestStage = mod.save:get("quest_stage", 0)
+  rebuildRuntimeFor(ev.game, ev.kind)
+end)
+```
+
+The event is not emitted for validation failure, failed reconstruction, or a
+successful rollback. Its payload contains no checkpoint data or other mod's
+private state. A mod that deliberately stores progress-coupled truth in
+`mod.storage` must version and reconcile that relationship itself; the engine
+cannot distinguish it safely from independent history, configuration, or cache
+data.
+
 See RFC 0003, RFC 0004, and RFC 0005 for exact contracts and error codes.
 
 ## Developer console
