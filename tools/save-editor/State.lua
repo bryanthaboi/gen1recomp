@@ -43,6 +43,8 @@ function State.new()
     partyOffset = 0,       -- roster scroll position (#715)
     inspectorScroll = 0,   -- MonEditor body pixel scroll (#715)
     editingMon = nil,   -- reference into party or a box
+    nicknameDraft = nil,    -- text being typed in the inspector's nickname field
+    nicknameMon = nil,      -- the mon the draft belongs to (nil for none)
     -- species picker overlay: nil when closed, otherwise { query, offset }
     -- plus mode = "box-add" when it is adding to a box instead of changing a
     -- species (Ops.openBoxAddPicker).  Modal in the literal sense -- App
