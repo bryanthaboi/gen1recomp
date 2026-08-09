@@ -1,0 +1,19 @@
+{
+  "id": "cheat_engine",
+  "name": "Cheat Engine",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "TOOL",
+  "game_version": ">=0.0.0-dev <1.0.0",
+  "priority": 100,
+  "permissions": [
+    "engine_internals"
+  ],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Cheat engine: heal/XP/money, evolve, give/add pokemon, give all pokemon (Mew+Mewtwo to party, rest to PC), give items, no encounters, spawn pokemon, bike anywhere, surf always, enable cut/rock, always catch (incl. trainer mons), always run/crit, god mode, OHKO, walk walls, turbo speed, perfect DVs, shiny toggle, max stat exp, all badges, all TM/HM, infinite PP/items.",
+  "github": ""
+}
