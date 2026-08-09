@@ -1,6 +1,6 @@
 local GameVersion = require("src.core.GameVersion")
 local GamepadMap = require("src.core.GamepadMap")
-local Strings = require("src.core.Strings")
+local AppLocale = require("src.core.AppLocale")
 local HostShell = require("src.core.HostShell")
 local Platform = require("src.core.Platform")
 local SafeArea = require("src.core.SafeArea")
@@ -428,8 +428,9 @@ function RomImporter:_setNxInboxNotice(version)
   if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
   self.notice = {
     version = version,
-    status = Strings("Copy your .gb/.gbc into:"),
-    detail = Strings("%s/imports/\nDBI MTP → 1: SD Card/%simports/", saveDir, rel),
+    status = AppLocale("Copy your .gb/.gbc into:"),
+    detail = ("%s/imports/"):format(saveDir) .. "\n"
+      .. AppLocale("DBI MTP → 1: SD Card/%simports/", rel),
   }
 end
 
@@ -439,8 +440,9 @@ function RomImporter:_setNxModsInboxNotice()
   if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
   self.modNotice = {
     ok = true,
-    text = Strings("Copy your .zip into:\n%s/imports/mods/\nDBI MTP → 1: SD Card/%simports/mods/",
-      saveDir, rel),
+    text = AppLocale("Copy your .zip into:") .. "\n"
+      .. ("%s/imports/mods/"):format(saveDir) .. "\n"
+      .. AppLocale("DBI MTP → 1: SD Card/%simports/mods/", rel),
   }
 end
 
@@ -460,8 +462,9 @@ function RomImporter:_setNxSavesInboxNotice(version)
   self.saveNotice = self.saveNotice or {}
   self.saveNotice[version] = {
     ok = true,
-    text = Strings("Copy your %s .sav into:\n%s/%s/\nDBI MTP → 1: SD Card/%s%s/",
-      game, saveDir, inbox, rel, inbox),
+    text = AppLocale("Copy your %s .sav into:", game) .. "\n"
+      .. ("%s/%s/"):format(saveDir, inbox) .. "\n"
+      .. AppLocale("DBI MTP → 1: SD Card/%s%s/", rel, inbox),
   }
 end
 
@@ -660,11 +663,11 @@ function RomImporter:rescanModsAction()
   -- a good install; still append the last failure so a real broken zip is
   -- visible beside the success line.
   if anyOk and lastFail then
-    local okText = (lastOk and lastOk.text) or "Installed"
-    local failText = (lastFail and lastFail.text) or "unknown error"
+    local okText = (lastOk and lastOk.text) or AppLocale("Installed")
+    local failText = (lastFail and lastFail.text) or AppLocale("unknown error")
     self.modNotice = {
       ok = true,
-      text = Strings("%s\n(%d failed: %s)", okText, failCount, failText),
+      text = okText .. "\n" .. AppLocale("(%d failed: %s)", failCount, failText),
     }
   elseif anyOk then
     self.modNotice = lastOk
@@ -718,17 +721,18 @@ function RomImporter:rescanSavesAction(version)
   if okCount > 0 then
     local okText
     if okCount == 1 and lastOk then
-      okText = Strings("%s (%s tab)", lastOk.text, gameLabel)
+      okText = AppLocale("%s (%s tab)", lastOk.text, gameLabel)
     else
-      okText = Strings("Imported %d saves into %s. Active: %s.",
+      okText = AppLocale("Imported %d saves into %s. Active: %s.",
         okCount, gameLabel, tostring(self.activeSlot[version]))
     end
     if failCount > 0 then
-      local failText = (lastFail and lastFail.text) or "unknown error"
-      okText = Strings("%s\n(%d failed: %s)", okText, failCount, failText)
+      local failText = (lastFail and lastFail.text) or AppLocale("unknown error")
+      okText = okText .. "\n" .. AppLocale("(%d failed: %s)", failCount, failText)
     end
     if skipCount > 0 then
-      okText = Strings("%s\n(%d already imported, skipped)", okText, skipCount)
+      okText = okText .. "\n"
+        .. AppLocale("(%d already imported, skipped)", skipCount)
     end
     self.saveNotice[version] = { ok = true, text = okText }
   elseif failCount > 0 then
@@ -736,7 +740,7 @@ function RomImporter:rescanSavesAction(version)
   elseif skipCount > 0 then
     self.saveNotice[version] = {
       ok = true,
-      text = Strings("Already imported — %d file(s) skipped. Check SAVE SLOT.",
+      text = AppLocale("Already imported — %d file(s) skipped. Check SAVE SLOT.",
         skipCount),
     }
   end
@@ -763,7 +767,8 @@ function RomImporter:rescanAction(version)
     local data = love.filesystem.read(path)
     local displayName = path:match("[^/\\]+$") or path
     if type(data) ~= "string" then
-      self:setError("The file could not be read: " .. displayName, version)
+      self:setError(AppLocale("The file could not be read: %s", displayName),
+        version)
       return
     end
     if #data ~= ROM_BYTES then
@@ -785,9 +790,9 @@ function RomImporter:rescanAction(version)
   if targetReady then
     self.notice = {
       version = version,
-      status = Strings("No new ROM found."),
-      detail = Strings("Already-imported dumps are ignored. Add another version or "
-        .. "delete the copy when finished."),
+      status = AppLocale("No new ROM found."),
+      detail = AppLocale(
+        "Already-imported dumps are ignored. Add another version or delete the copy when finished."),
     }
     return
   end
@@ -799,10 +804,10 @@ function RomImporter:rescanAction(version)
     local label = GameVersion.info(version).displayName
     self.notice = {
       version = version,
-      status = Strings("No matching ROM found."),
-      detail = Strings(
-        "%s is matched by SHA-1 on this tab. Other dumps in imports/ stay "
-          .. "for their own tabs — open that game and Scan again.", label),
+      status = AppLocale("No matching ROM found."),
+      detail = AppLocale(
+        "%s is matched by SHA-1 on this tab. Other dumps in imports/ stay for their own tabs — open that game and Scan again.",
+        label),
     }
     return
   end
@@ -872,8 +877,8 @@ local function consumePickedRomError(self)
   end
   love.filesystem.remove(preferred)
   if type(data) ~= "string" then
-    self:setError("The picked file could not be read. Reopen the picker and "
-      .. "choose the ROM with the Files (Documents) app.")
+    self:setError(AppLocale(
+      "The picked file could not be read. Reopen the picker and choose the ROM with the Files (Documents) app."))
     return true
   end
   self:startData(data, preferred)
@@ -972,7 +977,7 @@ end
 -- Returns the chosen absolute path or nil.  Android uses love.system.pickFile
 -- ("mod") instead -- see RomImporter:chooseMod.
 local function chooseZip()
-  local prompt = shellSafe(Strings("Choose a mod .zip"))
+  local prompt = shellSafe(AppLocale("Choose a mod .zip"))
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
@@ -1012,7 +1017,7 @@ end
 -- dialogs).  Returns the chosen absolute path or nil.  Android uses
 -- love.system.pickFile("sav") instead -- see RomImporter:chooseSaveImport.
 local function chooseSav()
-  local prompt = shellSafe(Strings("Choose a .sav save file"))
+  local prompt = shellSafe(AppLocale("Choose a .sav save file"))
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
@@ -1330,7 +1335,7 @@ function RomImporter:focus(f)
     love.filesystem.remove("pending_export.sav")
     local version = self.androidPendingExportVersion or self:_savedropTarget()
     self.androidPendingExportVersion = nil
-    self.saveNotice[version] = { ok = true, text = "Save exported." }
+    self.saveNotice[version] = { ok = true, text = AppLocale("Save exported.") }
     if self.tab == "mods" then self.tab = version end
     return
   end
@@ -1343,9 +1348,9 @@ function RomImporter:focus(f)
     and love.filesystem.read("pick_error.flag")
   if pickError then
     love.filesystem.remove("pick_error.flag")
-    local text = "Could not read the picked file. Reopen the picker and choose "
-      .. "it with the Files (Documents) app, or copy it into: "
-      .. love.filesystem.getSaveDirectory()
+    local text = AppLocale(
+      "Could not read the picked file. Reopen the picker and choose it with the Files (Documents) app, or copy it into: %s",
+      love.filesystem.getSaveDirectory())
     if pickError:find("picked_mod", 1, true) then
       self.modNotice = { ok = false, text = text }
     elseif pickError:find("picked_save", 1, true) then
@@ -1392,7 +1397,7 @@ function RomImporter:setError(message, version)
   self.errorVersion = version or self.importing or self.chooseVersion or "red"
   self.importing = nil
   self.notice = nil
-  self.status = "That ROM could not be imported"
+  self.status = AppLocale("That ROM could not be imported")
   self.detail = tostring(message)
   self.progress = 0
   self.worker = nil
@@ -1421,20 +1426,19 @@ end
 function RomImporter:startData(data, displayName)
   if self.workState == "working" then return end
   if type(data) ~= "string" then
-    self:setError("The selected file could not be read.")
+    self:setError(AppLocale("The selected file could not be read."))
     return
   end
   if #data ~= 1024 * 1024 then
-    self:setError(("Expected a 1 MiB Game Boy ROM; this file is %.2f MiB.")
-      :format(#data / 1024 / 1024))
+    self:setError(AppLocale("Expected a 1 MiB Game Boy ROM; this file is %.2f MiB.",
+      #data / 1024 / 1024))
     return
   end
   local actualHash = sha1(data)
   local version = GameVersion.forSha1(actualHash)
   if not version then
-    self:setError(("Unsupported ROM (SHA-1 %s). This needs a clean US Pokemon "
-      .. "Red, Blue, or Yellow dump; patched, trimmed or \"fixed\" dumps "
-      .. "(tagged [b] or [BF]) never verify."):format(actualHash))
+    self:setError(AppLocale("Unsupported ROM (SHA-1 %s). This needs a clean US Pokemon Red, Blue, or Yellow dump; patched, trimmed or so-called fixed dumps (tagged [b] or [BF]) never verify.",
+      actualHash))
     return
   end
   local info = GameVersion.info(version)
@@ -1447,12 +1451,12 @@ function RomImporter:startData(data, displayName)
   self.importing = version
   self.workState = "working"
   self.notice = nil
-  self.status = "Verifying " .. info.displayName
+  self.status = AppLocale("Verifying %s", info.displayName)
   self.detail = displayName or info.displayName
   self.progress = 0
   self.romData = data
   self.worker = coroutine.create(function()
-    self.status = "Preparing private game data"
+    self.status = AppLocale("Preparing private game data")
     coroutine.yield()
     -- Redirect every cache write to this version's subtree, then clear only
     -- that version's previous cache from both homes (save directory and, for
@@ -1498,14 +1502,14 @@ function RomImporter:startData(data, displayName)
     self.importing = nil
     self.workState = "complete"
     self.completeVersion = version
-    self.status = "Ready"
+    self.status = AppLocale("Ready")
     -- NX launcher stays put: keep the imports/ cleanup hint instead of
     -- overwriting it with a "Starting…" line that never boots from here.
     if self.launcher and self.isNX and type(displayName) == "string" then
-      self.detail = Strings("%s imported. You may delete the copy from "
-        .. "imports/ when finished.", displayName)
+      self.detail = AppLocale("%s imported. You may delete the copy from imports/ when finished.",
+        displayName)
     else
-      self.detail = "Starting " .. info.displayName .. "..."
+      self.detail = AppLocale("Starting %s...", info.displayName)
     end
     self.progress = 1
     if self.launcher then
@@ -1523,7 +1527,8 @@ function RomImporter:startPath(path)
   if not path then return end
   local data, readError = readExternalPath(path)
   if not data then
-    self:setError("Could not read the selected file: " .. tostring(readError))
+    self:setError(AppLocale("Could not read the selected file: %s",
+      tostring(readError)))
     return
   end
   self:startData(data, path:match("[^/\\]+$") or path)
@@ -1549,7 +1554,8 @@ function RomImporter:filedropped(file)
   end
   local data, readError = readDroppedFile(file)
   if not data then
-    self:setError("Could not read the dropped file: " .. tostring(readError))
+    self:setError(AppLocale("Could not read the dropped file: %s",
+      tostring(readError)))
     return
   end
   self:startData(data, file:getFilename())
@@ -1568,12 +1574,12 @@ function RomImporter:_installMod(source)
   end)
   if not ok then
     self.modNotice = { ok = false,
-      text = "Import failed: " .. tostring(installed) }
+      text = AppLocale("Import failed: %s", tostring(installed)) }
     return
   end
   if installed then
     pcall(self._refreshMods, self)
-    self.modNotice = { ok = true, text = "Installed " .. tostring(res) }
+    self.modNotice = { ok = true, text = AppLocale("Installed %s", tostring(res)) }
   else
     self.modNotice = { ok = false, text = tostring(res) }
   end
@@ -1588,12 +1594,12 @@ function RomImporter:_deleteMod(id)
   end)
   if not ok then
     self.modNotice = { ok = false,
-      text = "Delete failed: " .. tostring(deleted) }
+      text = AppLocale("Delete failed: %s", tostring(deleted)) }
     return
   end
   if deleted then
     pcall(self._refreshMods, self)
-    self.modNotice = { ok = true, text = "Deleted " .. tostring(id) }
+    self.modNotice = { ok = true, text = AppLocale("Deleted %s", tostring(id)) }
   else
     self.modNotice = { ok = false, text = tostring(res) }
   end
@@ -1615,7 +1621,8 @@ function RomImporter:chooseMod()
     self.pickerPendingKind = "mod"
     if not pickFile("mod") then
       self.pickerPendingKind = nil
-      self.modNotice = { ok = false, text = "Could not open the file picker." }
+      self.modNotice = { ok = false,
+        text = AppLocale("Could not open the file picker.") }
     end
     return
   end
@@ -1629,7 +1636,7 @@ function RomImporter:chooseMod()
     end
     if not pickFile("mod") then
       self.modNotice = { ok = false,
-        text = "Could not open the file picker. Copy a mod .zip via USB." }
+        text = AppLocale("Could not open the file picker. Copy a mod .zip via USB.") }
     else
       self.pickPending = true
       self.pickTimer = 0
@@ -1661,8 +1668,9 @@ function RomImporter:_importSave(version, source, force)
     self.tab = version
   end
   if not self.ready[version] then
-    self.saveNotice[version] = { ok = false, text = "Import the "
-      .. GameVersion.info(version).displayName .. " ROM before importing a save." }
+    self.saveNotice[version] = { ok = false,
+      text = AppLocale("Import the %s ROM before importing a save.",
+        GameVersion.info(version).displayName) }
     return
   end
   local ok, res, info = require("src.import.SaveFileIO").importToSlot(source, version, force)
@@ -1670,7 +1678,8 @@ function RomImporter:_importSave(version, source, force)
     self:_refreshSlots(version)
     self.activeSlot[version] = res
     self.slotScroll[version] = math.huge   -- pin the new row on screen (clamped in draw)
-    self.saveNotice[version] = { ok = true, text = "Imported save into " .. tostring(res) .. "." }
+    self.saveNotice[version] = { ok = true,
+      text = AppLocale("Imported save into %s.", tostring(res)) }
     return
   end
   if res == nil and info and info.needsConfirm then
@@ -1681,15 +1690,15 @@ function RomImporter:_importSave(version, source, force)
       kind = "importOversize",
       version = version,
       source = source,
-      title = "Oversized save file",
+      title = AppLocale("Oversized save file"),
       lines = {
-        ("This save is %d bytes; a cartridge save is exactly %d bytes (32 KB).")
-          :format(info.size, 32768),
-        "It may come from a ROM that saved the battery image with an emulator.",
-        "The extra bytes would be discarded.",
-        "Import it anyway?",
+        AppLocale("This save is %d bytes; a cartridge save is exactly %d bytes (32 KB).",
+          info.size, 32768),
+        AppLocale("It may come from a ROM that saved the battery image with an emulator."),
+        AppLocale("The extra bytes would be discarded."),
+        AppLocale("Import it anyway?"),
       },
-      yesLabel = "Import anyway",
+      yesLabel = AppLocale("Import anyway"),
     }
     return
   end
@@ -1713,7 +1722,8 @@ function RomImporter:chooseSaveImport(version)
     if not pickFile("sav") then
       self.pickerPendingKind = nil
       self.pickerPendingVersion = nil
-      self.saveNotice[version] = { ok = false, text = "Could not open the file picker." }
+      self.saveNotice[version] = { ok = false,
+        text = AppLocale("Could not open the file picker.") }
     end
     return
   end
@@ -1730,7 +1740,7 @@ function RomImporter:chooseSaveImport(version)
     if not pickFile("sav") then
       self.androidPendingVersion = nil
       self.saveNotice[version] = { ok = false,
-        text = "Could not open the file picker. Copy a .sav via USB." }
+        text = AppLocale("Could not open the file picker. Copy a .sav via USB.") }
     else
       self.pickPending = true
       self.pickTimer = 0
@@ -1762,7 +1772,8 @@ function RomImporter:exportSave(version)
     local outDir = exportsDir(version)
     self.saveNotice[version] = {
       ok = true,
-      text = Strings("Exported to %s\nDBI MTP → 1: SD Card/%s%s/", res, rel, outDir),
+      text = AppLocale("Exported to %s", res) .. "\n"
+        .. AppLocale("DBI MTP → 1: SD Card/%s%s/", rel, outDir),
     }
     return
   end
@@ -1772,14 +1783,14 @@ function RomImporter:exportSave(version)
     local data = rel and love.filesystem.read(rel)
     if not data then
       self.saveNotice[version] = { ok = false,
-        text = "Exported, but could not stage the file for the picker." }
+        text = AppLocale("Exported, but could not stage the file for the picker.") }
       return
     end
     local suggested = rel:match("[^/\\]+$") or "export.sav"
     local wrote, writeErr = love.filesystem.write("pending_export.sav", data)
     if not wrote then
       self.saveNotice[version] = { ok = false,
-        text = "Could not stage the export: " .. tostring(writeErr) }
+        text = AppLocale("Could not stage the export: %s", tostring(writeErr)) }
       return
     end
     self.androidPendingExportVersion = version
@@ -1787,16 +1798,17 @@ function RomImporter:exportSave(version)
       self.pickPending = true
       self.pickTimer = 0
       self.saveNotice[version] = { ok = true,
-        text = "Pick where to save " .. suggested .. "..." }
+        text = AppLocale("Pick where to save %s...", suggested) }
     else
       self.androidPendingExportVersion = nil
       self.saveNotice[version] = { ok = true,
-        text = "Exported inside the app folder (picker unavailable)." }
+        text = AppLocale("Exported inside the app folder (picker unavailable).") }
     end
     return
   end
   local dir = res:match("^(.*)[/\\][^/\\]+$")
-  self.saveNotice[version] = { ok = true, text = "Exported to " .. res, dir = dir }
+  self.saveNotice[version] = { ok = true,
+    text = AppLocale("Exported to %s", res), dir = dir }
 end
 
 -- Delete a save slot from the registry and disk, then refresh the panel.  If the
@@ -1807,7 +1819,8 @@ function RomImporter:_deleteSlot(version, id)
   local ok, err = SaveData.deleteSlot(version, id)
   if ok then
     self:_refreshSlots(version)
-    self.saveNotice[version] = { ok = true, text = "Deleted " .. tostring(id) .. "." }
+    self.saveNotice[version] = { ok = true,
+      text = AppLocale("Deleted %s.", tostring(id)) }
   else
     self.saveNotice[version] = { ok = false, text = tostring(err) }
   end
@@ -1832,8 +1845,8 @@ function RomImporter:choose(version)
     if not data then
       self.notice = {
         version = self.chooseVersion,
-        status = "The detected ROM is no longer available.",
-        detail = "Choose Import ROM to select it another way.",
+        status = AppLocale("The detected ROM is no longer available."),
+        detail = AppLocale("Choose Import ROM to select it another way."),
       }
       return
     end
@@ -1844,7 +1857,7 @@ function RomImporter:choose(version)
     self.pickerPendingKind = "rom"
     if not pickFile("rom") then
       self.pickerPendingKind = nil
-      self:setError("Could not open the file picker.")
+      self:setError(AppLocale("Could not open the file picker."))
     end
     return
   end
@@ -1863,7 +1876,7 @@ function RomImporter:choose(version)
       -- error (which would read as a rejected file).
       self.notice = {
         version = self.chooseVersion,
-        status = "No picker available, copy your ROM into:",
+        status = AppLocale("No picker available, copy your ROM into:"),
         detail = love.filesystem.getSaveDirectory(),
       }
     else
@@ -1893,13 +1906,14 @@ function RomImporter:choose(version)
       or "the game folder"
     self.notice = {
       version = self.chooseVersion,
-      status = "No file picker. Copy your .gb/.gbc into:",
+      status = AppLocale("No file picker. Copy your .gb/.gbc into:"),
       detail = where,
     }
     return
   end
   if love.system.getOS() ~= "OS X" and love.system.getOS() ~= "Windows" then
-    self:setError("File selection is unavailable here. Drop the .gb/.gbc file onto the window.")
+    self:setError(AppLocale(
+      "File selection is unavailable here. Drop the .gb/.gbc file onto the window."))
   end
 end
 
@@ -1940,7 +1954,7 @@ function RomImporter:_pollPickedFiles(dt)
     self.pickPending = nil
     self.modNotice = { ok = false, text = pickError }
     self.notice = { version = self.chooseVersion or "red",
-                    status = "File import failed:", detail = pickError }
+                    status = AppLocale("File import failed:"), detail = pickError }
     return
   end
   local found = love.filesystem.getInfo("export_done.flag", "file") ~= nil
@@ -2000,11 +2014,11 @@ function RomImporter:update(dt)
       if os.getenv("POKEPORT_LAUNCHER_CONFIRM") == "1" then
         self._modConfirm = {
           kind = "update",
-          title = "Install mod",
-          yesLabel = "Install",
+          title = AppLocale("Install mod"),
+          yesLabel = AppLocale("Install"),
           lines = { "JP GREEN - Poketto Monsuta Midori v0.4.4",
-                    "by bryanthaboi",
-                    "Mods are not reviewed - trust the author." },
+                    AppLocale("by %s", "bryanthaboi"),
+                    AppLocale("Mods are not reviewed - trust the author.") },
         }
       end
       -- POKEPORT_LAUNCHER_SETTINGS=1 opens the gear panel, the other layout
@@ -2841,12 +2855,13 @@ function RomImporter:_refreshMods()
     -- the list right below it, one that did not is the only word they get
     if #imported > 0 then
       self.modNotice = { ok = true,
-        text = "Imported from the game folder: " .. table.concat(imported, ", ") }
+        text = AppLocale("Imported from the game folder: %s",
+          table.concat(imported, ", ")) }
     end
     if #failed > 0 then
       self.modNotice = { ok = false,
-        text = "Found beside the game but could not import: "
-               .. table.concat(failed, ", ") }
+        text = AppLocale("Found beside the game but could not import: %s",
+          table.concat(failed, ", ")) }
     end
   end
   self.mods = LauncherMods.list() or {}
@@ -2963,12 +2978,12 @@ function RomImporter:_toggleMod(id, confirmed)
   if want and experimental and not confirmed then
     self._modConfirm = {
       kind = "experimental", id = id,
-      title = "Experimental mod",
-      yesLabel = "Enable",
+      title = AppLocale("Experimental mod"),
+      yesLabel = AppLocale("Enable"),
       lines = {
-        "This mod is marked experimental.",
-        "It may be unfinished or unstable.",
-        "Enable it anyway?",
+        AppLocale("This mod is marked experimental."),
+        AppLocale("It may be unfinished or unstable."),
+        AppLocale("Enable it anyway?"),
       },
     }
     return
@@ -2996,19 +3011,19 @@ function RomImporter:_setAllMods(want, confirmed)
   end
   if #ids == 0 then
     self.modNotice = { ok = true, text = want
-      and Strings("Every mod is already enabled.")
-      or Strings("Every mod is already disabled.") }
+      and AppLocale("Every mod is already enabled.")
+      or AppLocale("Every mod is already disabled.") }
     return
   end
   if want and experimental and not confirmed then
     self._modConfirm = {
       kind = "enableAll",
-      title = "Experimental mods",
-      yesLabel = "Enable all",
+      title = AppLocale("Experimental mods"),
+      yesLabel = AppLocale("Enable all"),
       lines = {
-        "Some of these mods are marked experimental.",
-        "They may be unfinished or unstable.",
-        "Enable everything anyway?",
+        AppLocale("Some of these mods are marked experimental."),
+        AppLocale("They may be unfinished or unstable."),
+        AppLocale("Enable everything anyway?"),
       },
     }
     return
@@ -3017,8 +3032,8 @@ function RomImporter:_setAllMods(want, confirmed)
   LauncherMods.setAllEnabled(ids, want)
   self:_refreshMods()
   self.modNotice = { ok = true, text = want
-    and Strings("Enabled %d mods.", #ids)
-    or Strings("Disabled %d mods.", #ids) }
+    and AppLocale("Enabled %d mods.", #ids)
+    or AppLocale("Disabled %d mods.", #ids) }
 end
 
 -- GitHub Update / Check for updates / Versions. Soft-fails into modNotice.
@@ -3032,7 +3047,8 @@ function RomImporter:_modGithubAction(id, action)
   -- lands in this branch.
   if not Platform.canFetchRemote() then
     self.modNotice = { ok = false,
-      text = "Remote mod download is unavailable on this platform. Install a mod .zip from storage instead." }
+      text = AppLocale(
+        "Remote mod download is unavailable on this platform. Install a mod .zip from storage instead.") }
     return
   end
   local ModUpdate = require("src.mods.ModUpdate")
@@ -3041,7 +3057,8 @@ function RomImporter:_modGithubAction(id, action)
     if m.id == id then row = m; break end
   end
   if not row or not row.github then
-    self.modNotice = { ok = false, text = "This mod has no github field" }
+    self.modNotice = { ok = false,
+      text = AppLocale("This mod has no GitHub field") }
     return
   end
 
@@ -3052,12 +3069,12 @@ function RomImporter:_modGithubAction(id, action)
     if info and info.status == "available" and info.best then
       self._modConfirm = {
         kind = "update", id = row.id, release = info.best,
-        title = "Update available",
-        yesLabel = "Update",
+        title = AppLocale("Update available"),
+        yesLabel = AppLocale("Update"),
         lines = {
-          "Update " .. row.name .. "?",
-          "Installed v" .. tostring(row.version),
-          "Latest v" .. tostring(info.best.version),
+          AppLocale("Update %s?", row.name),
+          AppLocale("Installed v%s", tostring(row.version)),
+          AppLocale("Latest v%s", tostring(info.best.version)),
         },
       }
       return
@@ -3074,8 +3091,8 @@ function RomImporter:_modGithubAction(id, action)
     h = ModUpdate.beginFetchReleases(row.github, row.id,
       { force = action ~= "versions" }),
   }
-  self:_setBusy(action == "versions" and Strings("Loading versions")
-    or Strings("Checking for updates"), row.name)
+  self:_setBusy(action == "versions" and AppLocale("Loading versions")
+    or AppLocale("Checking for updates"), row.name)
 end
 
 -- Drive the in-flight per-mod release check.  Called from _pumpModInfoFetch's
@@ -3091,7 +3108,8 @@ function RomImporter:_pumpModCheck()
   self:_clearBusy()
   if not ok then
     self._modVersions = nil
-    self.modNotice = { ok = false, text = "Update failed: " .. tostring(done) }
+    self.modNotice = { ok = false,
+      text = AppLocale("Update failed: %s", tostring(done)) }
     return
   end
   if not releases then
@@ -3099,7 +3117,7 @@ function RomImporter:_pumpModCheck()
     return
   end
   if #releases == 0 then
-    self.modNotice = { ok = false, text = "No .zip releases found" }
+    self.modNotice = { ok = false, text = AppLocale("No .zip releases found") }
     return
   end
 
@@ -3124,20 +3142,21 @@ function RomImporter:_pumpModCheck()
 
   if status == "available" and best then
     self.modNotice = { ok = true,
-      text = job.name .. ": new version available (v" .. best.version .. ")" }
+      text = AppLocale("%s: new version available (v%s)", job.name, best.version) }
     self._modConfirm = {
       kind = "update", id = job.id, release = best,
-      title = "Update available",
-      yesLabel = "Update",
+      title = AppLocale("Update available"),
+      yesLabel = AppLocale("Update"),
       lines = {
-        "Update " .. job.name .. "?",
-        "Installed v" .. tostring(job.version),
-        "Latest v" .. tostring(best.version),
+        AppLocale("Update %s?", job.name),
+        AppLocale("Installed v%s", tostring(job.version)),
+        AppLocale("Latest v%s", tostring(best.version)),
       },
     }
   else
     self.modNotice = { ok = true,
-      text = job.name .. " is up to date (v" .. tostring(job.version) .. ")" }
+      text = AppLocale("%s is up to date (v%s)", job.name,
+        tostring(job.version)) }
   end
 end
 
@@ -3177,12 +3196,12 @@ function RomImporter:_beginModInstall(spec)
     h = ModUpdate.beginDownloadZip(release.zip.url, tmpName,
       release.zip.size),
   }
-  self:_setBusy(Strings("Downloading %s", tostring(spec.name or spec.modId)),
+  self:_setBusy(AppLocale("Downloading %s", tostring(spec.name or spec.modId)),
     "v" .. tostring(release.version or "?"))
 end
 
 function RomImporter:_modInstallFailed(spec, msg)
-  local notice = { ok = false, text = tostring(msg) }
+  local notice = { ok = false, text = AppLocale.message(msg) }
   if spec.notice == "find" then self.findNotice = notice
   else self.modNotice = notice end
   self:_clearBusy()
@@ -3210,7 +3229,7 @@ function RomImporter:_pumpModInstall()
   end
   -- Unzip + manifest check.  Fast, and it must run here: love.filesystem
   -- writes are main-thread only.
-  self:_setBusy(Strings("Installing %s", tostring(spec.name or spec.modId)))
+  self:_setBusy(AppLocale("Installing %s", tostring(spec.name or spec.modId)))
   local LauncherMods = require("src.mods.LauncherMods")
   local ran, res, resErr = pcall(LauncherMods.installDownloadedZip,
     spec.modId, path, job.version)
@@ -3227,7 +3246,7 @@ function RomImporter:_pumpModInstall()
   -- to be re-derived before the next paint or the card lies.
   pcall(self._refreshMods, self)
   local shown = tostring(resErr or job.version or "")
-  local text = ("%s %s %s"):format(spec.verb or "Installed",
+  local text = ("%s %s %s"):format(spec.verb or AppLocale("Installed"),
     tostring(spec.name or spec.modId), shown)
   if spec.notice == "find" then
     self.findNotice = { ok = true, text = text }
@@ -3243,7 +3262,7 @@ function RomImporter:_confirmModUpdate(modId, release)
   end
   self:_beginModInstall({
     modId = modId, name = row and row.name or modId,
-    release = release, verb = "Updated", notice = "mod",
+    release = release, verb = AppLocale("Updated"), notice = "mod",
   })
 end
 
@@ -3252,15 +3271,15 @@ function RomImporter:_installModVersion(modId, release)
   self._modReleaseNotes = nil
   self:_beginModInstall({
     modId = modId, name = modId, release = release,
-    verb = "Installed", notice = "mod",
+    verb = AppLocale("Installed"), notice = "mod",
   })
 end
 
 
 -- NX / desktop / Android labels and inbox hints for the FlexLove view.
 function RomImporter:_modsImportButtonLabel()
-  if self.isNX then return Strings("Scan again") end
-  return Strings("Import mod .zip")
+  if self.isNX then return AppLocale("Scan again") end
+  return AppLocale("Import mod .zip")
 end
 
 function RomImporter:_modsDefaultHint()
@@ -3268,11 +3287,11 @@ function RomImporter:_modsDefaultHint()
     local saveDir = love.filesystem.getSaveDirectory()
     local rel = RomImporter.mtpHintPath(saveDir)
     if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
-    return Strings("Copy a .zip via MTP into %s/imports/mods/\n"
-      .. "DBI MTP → 1: SD Card/%simports/mods/", saveDir, rel)
+    return AppLocale("Copy a .zip via MTP into %s/imports/mods/", saveDir)
+      .. "\n" .. AppLocale("DBI MTP → 1: SD Card/%simports/mods/", rel)
   end
-  if self.android then return Strings("Or copy a mod .zip via USB.") end
-  return Strings("Or drop a mod .zip onto the window.")
+  if self.android then return AppLocale("Or copy a mod .zip via USB.") end
+  return AppLocale("Or drop a mod .zip onto the window.")
 end
 
 function RomImporter:_savesDefaultHint(version)
@@ -3283,24 +3302,24 @@ function RomImporter:_savesDefaultHint(version)
     local rel = RomImporter.mtpHintPath(saveDir)
     if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
     local game = GameVersion.info(version).displayName
-    return Strings("Copy a %s .sav via MTP into %s/%s/\n"
-      .. "DBI MTP → 1: SD Card/%s%s/", game, saveDir, inbox, rel, inbox)
+    return AppLocale("Copy a %s .sav via MTP into %s/%s/", game, saveDir, inbox)
+      .. "\n" .. AppLocale("DBI MTP → 1: SD Card/%s%s/", rel, inbox)
   end
   if self.android then
-    return Strings("Import or export a .sav with the system file picker.")
+    return AppLocale("Import or export a .sav with the system file picker.")
   end
-  return Strings("Import a .sav to a new slot, or export the active slot.")
+  return AppLocale("Import a .sav to a new slot, or export the active slot.")
 end
 
 function RomImporter:_modsEmptyHint()
   if self.isNX then
-    return Strings("No mods installed - copy a .zip into imports/mods/ "
-      .. "and tap Scan again.")
+    return AppLocale(
+      "No mods installed - copy a .zip into imports/mods/ and tap Scan again.")
   end
   if self.android then
-    return "No mods installed - tap Import mod .zip to add one."
+    return AppLocale("No mods installed - tap Import mod .zip to add one.")
   end
-  return Strings("No mods installed - drop a mod .zip here to add one.")
+  return AppLocale("No mods installed - drop a mod .zip here to add one.")
 end
 
 -- ------- FIND MODS: browsing a community mod index -------------------------
@@ -3347,7 +3366,8 @@ function RomImporter:_refreshFind(force)
     self.findLoaded = true
     self.findIndex = { mods = {}, categories = {} }
     self.findNotice = { ok = false,
-      text = "Mod indexes cannot be fetched on this platform. Install a mod .zip from storage instead." }
+      text = AppLocale(
+        "Mod indexes cannot be fetched on this platform. Install a mod .zip from storage instead.") }
     return
   end
   local ModIndex = require("src.mods.ModIndex")
@@ -3371,9 +3391,9 @@ function RomImporter:_refreshFind(force)
     mods = {}, seen = {}, cats = {}, catSeen = {}, errs = {},
     stale = false, oldest = nil, at = 1,
   }
-  self:_setBusy(Strings("Fetching mod index"),
+  self:_setBusy(AppLocale("Fetching mod index"),
     #sources == 1 and (sources[1].label or sources[1].feed)
-      or Strings("%d indexes", #sources))
+      or AppLocale("%d indexes", #sources))
 end
 
 -- Drive the in-flight index fetch one frame at a time.  Called from update().
@@ -3395,7 +3415,7 @@ function RomImporter:_pumpFindFetch()
         item.done = true
         if not index then
           f.errs[#f.errs + 1] = (item.source.label or item.source.feed)
-            .. ": " .. tostring(err)
+            .. ": " .. AppLocale.message(err)
         else
           item.index, item.meta = index, meta
         end
@@ -3441,7 +3461,7 @@ function RomImporter:_pumpFindFetch()
     self.findNotice = { ok = false, text = table.concat(f.errs, "  -  ") }
   elseif f.force then
     self.findNotice = { ok = true,
-      text = Strings("Refreshed - %d mods listed", #f.mods) }
+      text = AppLocale("Refreshed - %d mods listed", #f.mods) }
   end
   -- A category that no longer exists after a refresh would filter everything
   -- away with no way back except guessing.
@@ -3663,10 +3683,11 @@ function RomImporter:_commitAddIndex()
   local ModIndex = require("src.mods.ModIndex")
   local row, err = ModIndex.addSource(prompt.text or "")
   if not row then
-    self.findNotice = { ok = false, text = tostring(err) }
+    self.findNotice = { ok = false, text = AppLocale.message(err) }
     return
   end
-  self.findNotice = { ok = true, text = Strings("Added %s", row.label or row.feed) }
+  self.findNotice = { ok = true,
+    text = AppLocale("Added %s", row.label or row.feed) }
   self.findLoaded = false
   self:_ensureFind()
 end
@@ -3675,10 +3696,10 @@ function RomImporter:_removeIndex(feed)
   local ModIndex = require("src.mods.ModIndex")
   local ok, err = ModIndex.removeSource(feed)
   if not ok then
-    self.findNotice = { ok = false, text = tostring(err) }
+    self.findNotice = { ok = false, text = AppLocale.message(err) }
     return
   end
-  self.findNotice = { ok = true, text = Strings("Index removed") }
+  self.findNotice = { ok = true, text = AppLocale("Index removed") }
   self.findLoaded = false
   self:_ensureFind()
 end
@@ -3711,7 +3732,7 @@ function RomImporter:_findConfirmInstall(entry)
   local url, why = ModIndex.installUrl(entry)
   if not url then
     self.findNotice = { ok = false,
-      text = (entry.title or entry.id) .. ": " .. tostring(why) }
+      text = (entry.title or entry.id) .. ": " .. AppLocale.message(why) }
     return
   end
   local installed = self:_findInstalledMap()
@@ -3722,20 +3743,20 @@ function RomImporter:_findConfirmInstall(entry)
   })
   local version = ModIndex.displayVersion(entry)
   local lines = { (entry.title or entry.id) .. " v" .. tostring(version) }
-  if entry.author then lines[#lines + 1] = "by " .. entry.author end
+  if entry.author then lines[#lines + 1] = AppLocale("by %s", entry.author) end
   local have = installed[entry.id]
   if have then
-    lines[#lines + 1] = "Replaces installed v" .. tostring(have)
+    lines[#lines + 1] = AppLocale("Replaces installed v%s", tostring(have))
   end
   for _, issue in ipairs(issues) do
-    lines[#lines + 1] = "! " .. issue.text
+    lines[#lines + 1] = "! " .. AppLocale.message(issue.text)
   end
-  lines[#lines + 1] = "Mods are not reviewed - trust the author."
+  lines[#lines + 1] = AppLocale("Mods are not reviewed - trust the author.")
   self._modConfirm = {
     kind = (#issues > 0) and "warn" or "update",
     indexEntry = entry,
-    title = have and "Reinstall mod" or "Install mod",
-    yesLabel = have and "Reinstall" or "Install",
+    title = have and AppLocale("Reinstall mod") or AppLocale("Install mod"),
+    yesLabel = have and AppLocale("Reinstall") or AppLocale("Install"),
     lines = lines,
   }
 end
@@ -3743,7 +3764,7 @@ end
 function RomImporter:_findInstall(entry)
   self:_beginModInstall({
     modId = entry.id, name = entry.title or entry.id, entry = entry,
-    verb = "Installed", notice = "find",
+    verb = AppLocale("Installed"), notice = "find",
   })
 end
 

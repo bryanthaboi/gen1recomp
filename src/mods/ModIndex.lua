@@ -20,6 +20,7 @@
 -- than parsed hopefully.
 
 local ModIndex = {}
+local AppMessage = require("src.core.AppMessage")
 
 -- The feed is rebuilt on every push and refreshed nightly, so a day-old copy
 -- is the worst a cached listing can be.  ModUpdate's six hours is tuned for a
@@ -55,9 +56,9 @@ end
 -- The raw.githubusercontent fallback exists because Pages deploys lag a push
 -- by a minute or two; it is only ever consulted when the feed fetch fails.
 function ModIndex.resolveSource(input)
-  if type(input) ~= "string" then return nil, "missing index URL" end
+  if type(input) ~= "string" then return nil, AppMessage("Missing index URL") end
   local url = trim(input)
-  if url == "" then return nil, "missing index URL" end
+  if url == "" then return nil, AppMessage("Missing index URL") end
 
   local owner, repo = githubSlug(url)
   if owner then
@@ -71,7 +72,7 @@ function ModIndex.resolveSource(input)
   end
 
   if not url:match("^https?://") then
-    return nil, "index must be an http(s) URL or owner/repo"
+    return nil, AppMessage("The index must be an HTTP(S) URL or owner/repo")
   end
 
   -- A feed URL names the file; the Pages root is what is left once the
@@ -197,18 +198,19 @@ function ModIndex.parse(jsonText, Json)
   local ok, result, err = pcall(function()
     local doc, decodeErr = Json.decode(jsonText)
     if type(doc) ~= "table" then
-      return nil, decodeErr or "index.json is not an object"
+      return nil, decodeErr or AppMessage("index.json is not an object")
     end
     local schema = tonumber(doc.schema_version)
     if schema == nil then
-      return nil, "index.json has no schema_version"
+      return nil, AppMessage("index.json has no schema_version")
     end
     if schema ~= ModIndex.SCHEMA_VERSION then
-      return nil, ("index schema %d is not supported (this build reads %d)")
-        :format(schema, ModIndex.SCHEMA_VERSION)
+      return nil, AppMessage(
+        "Index schema %d is not supported (this build reads %d)",
+        schema, ModIndex.SCHEMA_VERSION)
     end
     if type(doc.mods) ~= "table" then
-      return nil, "index.json has no mods array"
+      return nil, AppMessage("index.json has no mods array")
     end
     local mods = {}
     for _, raw in ipairs(doc.mods) do
@@ -222,7 +224,9 @@ function ModIndex.parse(jsonText, Json)
       mods = mods,
     }
   end)
-  if not ok then return nil, "could not read the index: " .. tostring(result) end
+  if not ok then
+    return nil, AppMessage("Could not read the index: %s", tostring(result))
+  end
   return result, err
 end
 
@@ -235,7 +239,7 @@ end
 -- URL is never invented -- codeload gives you the repo, not the built mod, and
 -- the folder layout would be wrong even when the download succeeds.
 function ModIndex.installUrl(entry)
-  if type(entry) ~= "table" then return nil, "no entry" end
+  if type(entry) ~= "table" then return nil, AppMessage("No index entry") end
   if entry.update_check == "ok" and entry.latest and entry.latest.zip
       and entry.latest.zip.url then
     return entry.latest.zip.url, "release"
@@ -244,16 +248,16 @@ function ModIndex.installUrl(entry)
     return entry.downloadURL, "download"
   end
   if entry.update_check == "off" then
-    return nil, "the author does not publish installable releases"
+    return nil, AppMessage("The author does not publish installable releases")
   end
   if entry.update_check == "no installable release" then
-    return nil, "no release with a .zip asset yet"
+    return nil, AppMessage("No release with a .zip file yet")
   end
   if type(entry.update_check) == "string"
       and entry.update_check:match("^error") then
     return nil, entry.update_check
   end
-  return nil, "nothing installable listed"
+  return nil, AppMessage("Nothing installable is listed")
 end
 
 function ModIndex.canInstall(entry)
@@ -301,31 +305,31 @@ function ModIndex.compatIssues(entry, ctx)
 
   local modApi = tonumber(ctx.modApi)
   if entry.api and modApi and entry.api > modApi then
-    warn(("Needs mod API %d; this build provides %d")
-      :format(entry.api, modApi))
+    warn(AppMessage("Needs mod API %d; this build provides %d",
+      entry.api, modApi))
   end
 
   if entry.game_version and ctx.engineVersion then
     local okSemver, Semver = pcall(require, "src.mods.Semver")
     if okSemver and not Semver.satisfies(ctx.engineVersion, entry.game_version) then
-      warn(("Needs engine %s (have %s)")
-        :format(entry.game_version, ctx.engineVersion))
+      warn(AppMessage("Needs engine %s (have %s)",
+        entry.game_version, ctx.engineVersion))
     end
   end
 
   if entry.profile and entry.profile ~= "content" then
-    warn(("Profile '%s' changes engine behaviour beyond content")
-      :format(entry.profile))
+    warn(AppMessage("Profile '%s' changes engine behaviour beyond content",
+      entry.profile))
   end
   if entry.affects_link then
-    warn("Changes link play; both sides need the same mods")
+    warn(AppMessage("Changes link play; both sides need the same mods"))
   end
   if entry.experimental then
-    warn("Marked experimental by its author")
+    warn(AppMessage("Marked experimental by its author"))
   end
 
   for _, name in ipairs(entry.permissions or {}) do
-    warn("Requests permission: " .. name)
+    warn(AppMessage("Requests permission: %s", name))
   end
 
   -- dependencies / conflicts arrive as the manifest's own vocabulary: either
@@ -345,12 +349,13 @@ function ModIndex.compatIssues(entry, ctx)
 
   eachSpec(entry.dependencies, function(id, range)
     if installed[id] == nil then
-      warn("Needs " .. id .. (range and (" " .. range) or "") .. " (not installed)")
+      local spec = id .. (range and (" " .. range) or "")
+      warn(AppMessage("Needs %s (not installed)", spec))
     end
   end)
   eachSpec(entry.conflicts, function(id)
     if installed[id] ~= nil then
-      warn("Conflicts with installed " .. id)
+      warn(AppMessage("Conflicts with installed %s", id))
     end
   end)
 
@@ -456,7 +461,7 @@ function ModIndex.addSource(input)
     opts.modIndexes = opts.modIndexes or {}
     for _, row in ipairs(opts.modIndexes) do
       if row.feed == source.feed then
-        return nil, "that index is already added"
+        return nil, AppMessage("That index is already added")
       end
     end
     source.url = trim(input)
@@ -464,7 +469,9 @@ function ModIndex.addSource(input)
     SaveData.saveOptions(opts)
     return source
   end)
-  if not ok then return nil, "could not save the index: " .. tostring(result) end
+  if not ok then
+    return nil, AppMessage("Could not save the index: %s", tostring(result))
+  end
   return result, addErr
 end
 
@@ -472,7 +479,9 @@ end
 -- keeping a feed's mods around after its source is gone is how a stale card
 -- outlives the index it came from.
 function ModIndex.removeSource(feed)
-  if type(feed) ~= "string" or feed == "" then return nil, "missing index" end
+  if type(feed) ~= "string" or feed == "" then
+    return nil, AppMessage("Missing index")
+  end
   local ok, result = pcall(function()
     local SaveData = require("src.core.SaveData")
     local opts = loadOptions()
@@ -487,7 +496,7 @@ function ModIndex.removeSource(feed)
     return true
   end)
   if not ok then return nil, tostring(result) end
-  if not result then return nil, "that index is not in the list" end
+  if not result then return nil, AppMessage("That index is not in the list") end
   return true
 end
 
@@ -539,7 +548,7 @@ end
 function ModIndex.httpGet(url)
   local HostShell = require("src.core.HostShell")
   if not HostShell.canFetch() then
-    return nil, "no network transport on this platform"
+    return nil, AppMessage("Network access is unavailable on this platform")
   end
   return HostShell.httpGet(url, "gen1recomp-mod-index")
 end
@@ -551,7 +560,7 @@ end
 function ModIndex.fetch(source, opts)
   opts = opts or {}
   if type(source) ~= "table" or type(source.feed) ~= "string" then
-    return nil, "missing index source"
+    return nil, AppMessage("Missing index source")
   end
   local feed = source.feed
 
@@ -612,7 +621,7 @@ function ModIndex.beginFetch(source, opts)
   opts = opts or {}
   local h = { source = source, opts = opts, stage = "start" }
   if type(source) ~= "table" or type(source.feed) ~= "string" then
-    h.stage, h.err = "done", "missing index source"
+    h.stage, h.err = "done", AppMessage("Missing index source")
     return h
   end
   return h
@@ -633,7 +642,7 @@ end
 
 -- Returns done, index, err, meta.
 function ModIndex.pumpFetch(h)
-  if not h then return true, nil, "no handle" end
+  if not h then return true, nil, AppMessage("Missing index request") end
   local Fetch = require("src.net.Fetch")
   local feed = h.source and h.source.feed
 
@@ -685,14 +694,16 @@ function ModIndex.pumpFetch(h)
     h.index, h.meta = index, meta
     return true, index, nil, meta
   end
-  h.err = h.parseErr or st.err or "index fetch failed"
+  h.err = h.parseErr or st.err or AppMessage("Could not download the index")
   return true, nil, h.err
 end
 
 -- Fetch a description_url / any index-relative text file.  Returns the raw
 -- markdown; callers run it through ModUpdate.cleanBody for display.
 function ModIndex.fetchText(url)
-  if type(url) ~= "string" or url == "" then return nil, "no description" end
+  if type(url) ~= "string" or url == "" then
+    return nil, AppMessage("No description available")
+  end
   return ModIndex.httpGet(url)
 end
 
@@ -700,7 +711,9 @@ end
 -- relative path.  Reuses ModUpdate.downloadZip, which is a plain curl -o with
 -- a non-empty-file check -- nothing in it is zip-specific.
 function ModIndex.downloadThumbnail(url, modId)
-  if type(url) ~= "string" or url == "" then return nil, "no thumbnail" end
+  if type(url) ~= "string" or url == "" then
+    return nil, AppMessage("No thumbnail available")
+  end
   local ModUpdate = require("src.mods.ModUpdate")
   local ext = url:match("%.(%a%a%a?%a?)$") or "png"
   local name = ("mod_thumb_%s.%s"):format(tostring(modId):gsub("[^%w%-_]", "_"), ext)
