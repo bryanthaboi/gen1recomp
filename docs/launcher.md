@@ -5,6 +5,21 @@ that runs before `Game:load`. Besides ROM import (see the file's own header)
 it hosts a tabbed shell covering per-game save slots and a mod manager. This
 file documents the runtime model; the visual spec lives separately.
 
+## Interface localization
+
+Launcher-owned text uses `src/core/AppLocale.lua`, independently of gameplay
+and mod `Strings()` catalogs. `main.lua` applies the saved application locale
+before the first launcher frame. Settings records the locale generation used
+to build its rows, and `LauncherView` rebuilds the open model after a language
+change so labels update immediately.
+
+Service-layer mod-index messages use locale-neutral `AppMessage` descriptors;
+`RomImporter` translates them only at the UI boundary. Index descriptions,
+mod metadata, and other third-party content remain untouched. English is `en`
+and the first translated catalog is Spain Spanish (`es-ES`). See
+[`localization.md`](localization.md) for the architecture and contribution
+rules.
+
 ## Android multi-ROM / mod / save import
 
 On Android, `love.system.pickFile([kind])` opens the Storage Access Framework
