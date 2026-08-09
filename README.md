@@ -87,8 +87,9 @@ restart and the preference is shared by Red, Blue, and Yellow.
 
 This setting does not translate cartridge dialogue, battles, species, moves,
 items, Pokédex data, ROM-derived text, or text supplied by third-party mods.
-Those remain separate from the application locale. Architecture, contribution
-rules, and test coverage are documented in
+Those remain separate from the interface translation. Want to contribute
+another language? See [Contributing interface translations](docs/translating.md).
+Architecture, integration rules, and test coverage are documented in
 [docs/localization.md](docs/localization.md).
 
 ### A note on Windows Defender warnings

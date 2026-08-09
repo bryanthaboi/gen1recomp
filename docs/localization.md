@@ -333,7 +333,10 @@ because translated labels expose sizing assumptions that English can hide.
 
 ## Adding a built-in locale
 
-A contributor should need to:
+For the translation contribution workflow, see
+[Contributing interface translations](translating.md).
+
+A contributor handling the application integration should need to:
 
 1. add one locale metadata/catalog module with a canonical BCP 47 id;
 2. add the locale to the application locale registry/order;
