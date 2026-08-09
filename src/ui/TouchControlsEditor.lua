@@ -17,6 +17,7 @@
 -- closes (Done), shoulders nudge button size.
 
 local SaveData = require("src.core.SaveData")
+local AppLocale = require("src.core.AppLocale")
 local TouchControls = require("src.core.TouchControls")
 local PadCursor = require("src.ui.PadCursor")
 local GamepadMap = require("src.core.GamepadMap")
@@ -155,12 +156,15 @@ function Editor.draw()
 
   love.graphics.setFont(Editor.fonts.title)
   col(PAL.white)
-  love.graphics.print("Touch Controls", ox + pad, oy + pad + 4 * s)
+  love.graphics.print(AppLocale("Touch Controls"), ox + pad, oy + pad + 4 * s)
 
   -- Done / Reset
-  local done = { x = ox + ww - pad - btnW, y = oy + pad + (barH - btnH) / 2,
-                 w = btnW, h = btnH }
-  local reset = { x = done.x - 10 * s - btnW, y = done.y, w = btnW, h = btnH }
+  local doneLabel, resetLabel = AppLocale("Done"), AppLocale("Reset")
+  local doneW = math.max(btnW, Editor.fonts.btn:getWidth(doneLabel) + 24 * s)
+  local resetW = math.max(btnW, Editor.fonts.btn:getWidth(resetLabel) + 24 * s)
+  local done = { x = ox + ww - pad - doneW, y = oy + pad + (barH - btnH) / 2,
+                 w = doneW, h = btnH }
+  local reset = { x = done.x - 10 * s - resetW, y = done.y, w = resetW, h = btnH }
   Editor.rects.done, Editor.rects.reset = done, reset
 
   local function chromeBtn(r, label, fill)
@@ -174,8 +178,8 @@ function Editor.draw()
     love.graphics.print(label, r.x + (r.w - tw) / 2,
                         r.y + (r.h - Editor.fonts.btn:getHeight()) / 2)
   end
-  chromeBtn(reset, "Reset", { 60, 70, 110 })
-  chromeBtn(done, "Done", PAL.green)
+  chromeBtn(reset, resetLabel, { 60, 70, 110 })
+  chromeBtn(done, doneLabel, PAL.green)
 
   -- enable toggle card
   local cardY = oy + barH + pad + 14 * s
@@ -188,12 +192,12 @@ function Editor.draw()
 
   love.graphics.setFont(Editor.fonts.body)
   col(PAL.label)
-  love.graphics.print("On-screen controls", cardX + 16 * s,
+  love.graphics.print(AppLocale("On-screen controls"), cardX + 16 * s,
                       cardY + 12 * s)
   love.graphics.setFont(Editor.fonts.btn)
   local on = Editor.enabled
   col(on and PAL.green or PAL.red)
-  love.graphics.print(on and "ON" or "OFF", cardX + 16 * s,
+  love.graphics.print(AppLocale(on and "ON" or "OFF"), cardX + 16 * s,
                       cardY + 34 * s)
 
   local toggleW = 110 * s
@@ -203,7 +207,7 @@ function Editor.draw()
     w = toggleW, h = btnH,
   }
   Editor.rects.toggle = toggle
-  chromeBtn(toggle, on and "Disable" or "Enable",
+  chromeBtn(toggle, on and AppLocale("Disable") or AppLocale("Enable"),
             on and PAL.red or PAL.green)
 
   -- size card (#633): -/+ resize every control in the orientation on
@@ -217,8 +221,8 @@ function Editor.draw()
   love.graphics.setFont(Editor.fonts.body)
   col(PAL.label)
   local orient = TouchControls.orientation == "landscape"
-    and "Landscape" or "Portrait"
-  love.graphics.print("Button size (" .. orient .. ")",
+    and AppLocale("Landscape") or AppLocale("Portrait")
+  love.graphics.print(AppLocale("Button size (%s)", orient),
                       cardX + 16 * s, sizeY + 12 * s)
   love.graphics.setFont(Editor.fonts.btn)
   col(PAL.white)
@@ -238,8 +242,8 @@ function Editor.draw()
   love.graphics.setFont(Editor.fonts.body)
   col(PAL.label, 0.9)
   local hint = on
-    and "Drag each button to reposition, -/+ to resize. Portrait and landscape are saved separately when you tap Done."
-    or "Controls are hidden in-game. Enable them to show and edit the layout."
+    and AppLocale("Drag each button to reposition, -/+ to resize. Portrait and landscape are saved separately when you tap Done.")
+    or AppLocale("Controls are hidden in-game. Enable them to show and edit the layout.")
   love.graphics.printf(hint, ox + pad, sizeY + cardH + 12 * s, ww - 2 * pad, "left")
 
   -- the overlay itself (preview mode; dimmed when disabled)
