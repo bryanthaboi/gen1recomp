@@ -1,0 +1,17 @@
+{
+  "id": "intro_bypass",
+  "name": "Intro Bypass",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "MECHANIC",
+  "game_version": ">=0.0.0-dev <1.0.0",
+  "priority": 300,
+  "permissions": ["engine_internals"],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Skip the Oak intro: pick your name, starter (starters + legendaries), shiny or not, and level, then jump straight into the overworld.",
+  "github": ""
+}
