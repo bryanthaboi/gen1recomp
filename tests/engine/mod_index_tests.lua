@@ -220,7 +220,7 @@ do
   })
   -- engine_internals is a declared permission, so there is always one line
   local text = ""
-  for _, i in ipairs(issues) do text = text .. i.text .. "\n" end
+  for _, i in ipairs(issues) do text = text .. tostring(i.text) .. "\n" end
   check(text:find("engine_internals", 1, true) ~= nil,
     "a declared permission is surfaced before install")
   check(text:find("mod API", 1, true) == nil,
@@ -235,7 +235,7 @@ do
     modApi = 2, engineVersion = "0.0.0-dev", installed = {},
   })
   local text = ""
-  for _, i in ipairs(issues) do text = text .. i.text .. "\n" end
+  for _, i in ipairs(issues) do text = text .. tostring(i.text) .. "\n" end
   check(text:find("mod API 99", 1, true) ~= nil, "too-new api warns")
   check(text:find("experimental", 1, true) ~= nil, "experimental warns")
   check(text:find("total_conversion", 1, true) ~= nil, "a non-content profile warns")
@@ -250,7 +250,7 @@ do
                       conflicts = { "rival" } }
   local issues = ModIndex.compatIssues(arrayForm, { installed = { rival = "1.0.0" } })
   local text = ""
-  for _, i in ipairs(issues) do text = text .. i.text .. "\n" end
+  for _, i in ipairs(issues) do text = text .. tostring(i.text) .. "\n" end
   check(text:find("Needs base", 1, true) ~= nil, "a missing dependency warns")
   check(text:find(">=1.0.0", 1, true) ~= nil, "with its range")
   check(text:find("Needs other", 1, true) ~= nil, "a rangeless dependency warns")
