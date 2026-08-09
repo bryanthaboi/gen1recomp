@@ -7,7 +7,7 @@ local ModUpdate = {}
 
 ModUpdate.CACHE_TTL = 6 * 60 * 60  -- six hours
 
-local Strings = require("src.core.Strings")
+local AppLocale = require("src.core.AppLocale")
 
 local function stripV(tag)
   return (tostring(tag):gsub("^[vV]", ""))
@@ -261,13 +261,13 @@ end
 -- shows no line rather than a wrong "0".
 function ModUpdate.downloadsLine(total)
   if total == nil then return nil end
-  return Strings("%s downloads across all releases",
+  return AppLocale("%s downloads across all releases",
     ModUpdate.formatCount(total))
 end
 
 function ModUpdate.datesLine(first, latest)
   if not (first or latest) then return nil end
-  return Strings("Released %s  -  Updated %s", first or "?", latest or "?")
+  return AppLocale("Released %s  -  Updated %s", first or "?", latest or "?")
 end
 
 function ModUpdate.statsLine(total, first, latest)
