@@ -171,6 +171,24 @@ Changing `Interface Language` updates application UI immediately. Views that
 cache rendered text or descriptors must rebuild/refresh themselves; the user
 must not be asked to restart Gen1Recomp merely to change interface language.
 
+### Responsive localized UI
+
+Layout decisions must use the measured localized strings, not widths assumed
+from the English source. A natural translation must not be shortened merely to
+preserve an English one-line arrangement.
+
+When a label and its action fit together, the existing compact layout should
+remain unchanged. When they do not, the surface should reflow: keep both texts
+complete, move controls onto another row when necessary, and include the added
+height before laying out the content below. Secondary information such as a
+count may be omitted when there is not enough room. Interactive controls must
+remain within their card and window; an action that is too wide even on its own
+row should wrap rather than be ellipsized.
+
+This rule is language-neutral. Responsive tests may inject deliberately long
+fixture strings into an existing locale for the duration of the test; doing so
+does not register or ship a new language.
+
 ## Persistence
 
 The locale belongs in the existing global `options.lua` table, alongside other
@@ -323,13 +341,18 @@ Automated coverage includes:
 - compatibility with the current mod `Strings()` registry;
 - inventory detection for new untranslated application strings;
 - stale/orphan detection after an English source key changes;
-- UTF-8/font coverage for built-in catalogs.
+- UTF-8/font coverage for built-in catalogs;
+- localized headers retain their current compact layout when possible and
+  reflow without overlap, clipping, or lost list height when strings are long.
 
 The catalog gate checks missing and stale entries, placeholder compatibility,
 dynamic source markers, and high-confidence bare launcher literals. ROM-free
 launcher/import/mod suites cover responsive layouts and application/gameplay
 localization boundaries. Desktop and narrow/mobile validation remains useful
 because translated labels expose sizing assumptions that English can hide.
+`tests/engine/launcher_slot_header_locale_test.lua` covers the save-slot header
+with source strings, longer localized fixtures, and an action wider than one
+row; no ROM or additional locale is required.
 
 ## Adding a built-in locale
 

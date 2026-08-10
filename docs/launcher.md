@@ -242,10 +242,18 @@ plus the existing global scale `s = clamp(height / 768, 0.7, 1.6)`; nothing
 assumes a fixed window size. The game panel's two-column grid (ROM/SAVE
 FILES/Play on the left, SAVE SLOT on the right) collapses to one stacked
 column, slot card below Play, when the window is too narrow for both
-`~300 * s`-wide columns. The save-slot list and the mod list both scroll
-(wheel, or drag on touch/desktop) clamped to their own content extent,
-recomputed every draw. The tab bar labels only the active chip so it stays
-narrow-safe, and content caps out at `~1440 * s` wide, centered.
+`~300 * s`-wide columns. Lists paginate from the height available on the
+current frame, and the tab bar labels only the active chip so it stays
+narrow-safe. Content caps out at `~1440 * s` wide, centered.
+
+The SAVE SLOT header measures its localized title and **Import save** action.
+When both fit, it keeps the original one-row layout. Otherwise the complete
+title remains above the complete button, the header reserves the second row
+before the slot list is positioned, and the optional slot count appears only
+when the title row still has room. A button wider than the card interior wraps
+its label inside a full-width control. No locale-specific width or abbreviated
+translation is part of this decision. The ROM-free regression is
+`tests/engine/launcher_slot_header_locale_test.lua`.
 
 The desktop window has a floor of 480x360 (`conf.lua` `minwidth`/`minheight`),
 under which the cards stop being readable at all. Mobile ignores it: those
