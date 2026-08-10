@@ -695,6 +695,74 @@ local function chipWidth(label, m)
   return Kit.textWidth("small", label) + math.floor(20 * m.s)
 end
 
+-- Split a section caption only when the caption by itself is wider than its
+-- row.  Most locales return the single source line; the word-aware fallback
+-- keeps a future long title complete instead of clipping it at the card edge.
+local function captionLines(label, maxW)
+  label = tostring(label or "")
+  if Kit.captionWidth(label) <= maxW then return { label } end
+  local lines, line = {}, ""
+  for word in label:gmatch("%S+") do
+    local candidate = line == "" and word or (line .. " " .. word)
+    if line ~= "" and Kit.captionWidth(candidate) > maxW then
+      lines[#lines + 1] = line
+      line = word
+    else
+      line = candidate
+    end
+  end
+  if line ~= "" then lines[#lines + 1] = line end
+  return #lines > 0 and lines or { label }
+end
+
+-- Measure the localized save-card header before the list gets its height
+-- budget.  The source layout is preserved byte-for-byte in shape when title
+-- and action fit together; otherwise the full action moves below the full
+-- title.  A button that cannot fit even on its own row wraps inside the card.
+local function slotHeaderLayout(innerW, m, title, action)
+  local gap = math.floor(8 * m.s)
+  local titleLineH = Kit.textHeight("caption")
+  local titleLineGap = math.floor(2 * m.s)
+  local titleRows = captionLines(title, innerW)
+  local titleH = #titleRows * titleLineH
+    + math.max(0, #titleRows - 1) * titleLineGap
+  local titleW = #titleRows == 1 and Kit.captionWidth(titleRows[1]) or innerW
+
+  local naturalButtonW = chipWidth(action, m) + math.floor(8 * m.s)
+  local buttonW = math.min(innerW, naturalButtonW)
+  local wrapButton = naturalButtonW > innerW
+  local buttonTextW = math.max(1, buttonW - math.floor(16 * m.s))
+  local buttonH = m.btnH
+  if wrapButton then
+    buttonH = math.max(buttonH,
+      Kit.wrapHeight("small", action, buttonTextW) + math.floor(16 * m.s))
+  end
+
+  local inline = #titleRows == 1 and not wrapButton
+    and titleW + gap + buttonW <= innerW
+  local buttonX = innerW - buttonW
+  if inline then
+    return {
+      inline = true, h = math.max(titleLineH, buttonH) + gap,
+      titleLines = titleRows, titleLineH = titleLineH,
+      titleLineGap = titleLineGap,
+      titleY = math.floor((buttonH - titleLineH) / 2), titleW = titleW,
+      buttonX = buttonX, buttonY = 0, buttonW = buttonW,
+      buttonH = buttonH, wrapButton = false,
+      countRight = buttonX - gap, gap = gap,
+    }
+  end
+
+  return {
+    inline = false, h = titleH + gap + buttonH + gap,
+    titleLines = titleRows, titleLineH = titleLineH,
+    titleLineGap = titleLineGap, titleY = 0, titleW = titleW,
+    buttonX = buttonX, buttonY = titleH + gap, buttonW = buttonW,
+    buttonH = buttonH, wrapButton = wrapButton,
+    countRight = innerW, gap = gap,
+  }
+end
+
 local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   imp:_ensureSlots(version)
   local slots = imp.slots[version] or {}
@@ -751,7 +819,13 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
 
   -- The header carries "Import save": a .sav import CREATES a slot, so it
   -- belongs to the slot list rather than to the ROM card it used to sit in.
-  local headH = math.max(Kit.textHeight("caption"), m.btnH) + math.floor(8 * m.s)
+  -- Measure the localized strings first: a future locale may need the action
+  -- on a second line even though English and Spanish fit side by side here.
+  local slotTitle = AppLocale("SAVE SLOT")
+  local savImportLabel = imp.isNX and AppLocale("Scan again")
+    or AppLocale("Import save")
+  local header = slotHeaderLayout(iw, m, slotTitle, savImportLabel)
+  local headH = header.h
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local newBtnH = m.btnH
   local sfNotice = imp.saveNotice[version]
@@ -782,23 +856,24 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
 
   Kit.card(x, y, w, h)
   local cy = y + pad
-  local capY = cy + math.floor((m.btnH - Kit.textHeight("caption")) / 2)
-  Kit.caption(x + pad, capY, AppLocale("SAVE SLOT"))
-  local savImportLabel = imp.isNX and AppLocale("Scan again")
-    or AppLocale("Import save")
-  local impW = chipWidth(savImportLabel, m) + math.floor(8 * m.s)
-  btn(imp, x + w - pad - impW, cy, impW, m.btnH, "sav-import-" .. version,
+  local capY = cy + header.titleY
+  for i, line in ipairs(header.titleLines) do
+    Kit.caption(x + pad,
+      capY + (i - 1) * (header.titleLineH + header.titleLineGap), line)
+  end
+  btn(imp, x + pad + header.buttonX, cy + header.buttonY,
+    header.buttonW, header.buttonH, "sav-import-" .. version,
     savImportLabel, {
-      kind = "accent", font = "small", enabled = ready and true or false,
+      kind = "accent", font = "small", wrap = header.wrapButton,
+      enabled = ready and true or false,
       action = ready and function() imp:chooseSaveImport(version) end or nil,
     })
-  local countW = (x + w - pad - impW - math.floor(8 * m.s))
-    - (x + pad + Kit.captionWidth(AppLocale("SAVE SLOT")) + math.floor(8 * m.s))
+  local countW = header.countRight - (header.titleW + header.gap)
   local countText = n == 1 and AppLocale("1 slot") or AppLocale("%d slots", n)
-  if countW >= Kit.textWidth("small", countText) then
+  if #header.titleLines == 1 and countW >= Kit.textWidth("small", countText) then
     Kit.textRight("small",
       countText,
-      x + w - pad - impW - math.floor(8 * m.s), capY, PAL.muted)
+      x + pad + header.countRight, capY, PAL.muted)
   end
   cy = cy + headH
 
