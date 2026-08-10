@@ -18,10 +18,55 @@
 -- contract, src/mods/ManagerState.lua buildOptionRows) and persist in
 -- options.modOptions[modId][key], the exact table the loader reads on boot.
 
-local Strings = require("src.core.Strings")
+local AppLocale = require("src.core.AppLocale")
 local SaveData = require("src.core.SaveData")
 
 local LauncherSettings = {}
+
+local settingValues = {
+  [AppLocale.source("ADVANCED")] = true,
+  [AppLocale.source("AUTO")] = true,
+  [AppLocale.source("BALANCED")] = true,
+  [AppLocale.source("BLACK")] = true,
+  [AppLocale.source("BORDERLESS")] = true,
+  [AppLocale.source("CENTERED")] = true,
+  [AppLocale.source("CLASSIC")] = true,
+  [AppLocale.source("DYNAMIC")] = true,
+  [AppLocale.source("FAST")] = true,
+  [AppLocale.source("FILL")] = true,
+  [AppLocale.source("FIXED")] = true,
+  [AppLocale.source("HEAVY")] = true,
+  [AppLocale.source("HIGH")] = true,
+  [AppLocale.source("LANDSCAPE")] = true,
+  [AppLocale.source("LIGHT")] = true,
+  [AppLocale.source("LOW")] = true,
+  [AppLocale.source("MEDIUM")] = true,
+  [AppLocale.source("NORMAL")] = true,
+  [AppLocale.source("OFF")] = true,
+  [AppLocale.source("OG")] = true,
+  [AppLocale.source("OG BLUE")] = true,
+  [AppLocale.source("OG INV")] = true,
+  [AppLocale.source("OG RED")] = true,
+  [AppLocale.source("OG YELLOW")] = true,
+  [AppLocale.source("ON")] = true,
+  [AppLocale.source("PORTRAIT")] = true,
+  [AppLocale.source("REVERSE LANDSCAPE")] = true,
+  [AppLocale.source("SET")] = true,
+  [AppLocale.source("SGB INV")] = true,
+  [AppLocale.source("SHIFT")] = true,
+  [AppLocale.source("SLOW")] = true,
+  [AppLocale.source("TREES")] = true,
+  [AppLocale.source("WATER")] = true,
+  [AppLocale.source("WHITE")] = true,
+  [AppLocale.source("WIDE")] = true,
+  [AppLocale.source("WINDOWED")] = true,
+  [AppLocale.source("WORLD")] = true,
+}
+
+local function settingValue(source)
+  source = tostring(source)
+  return settingValues[source] and AppLocale(source) or source
+end
 
 local function wrapIndex(i, n)
   i = i % n
@@ -31,7 +76,7 @@ end
 
 local function volLabel(v)
   v = v or 7
-  return v == 0 and "OFF" or tostring(v)
+  return v == 0 and settingValue("OFF") or tostring(v)
 end
 
 local function stepVolume(v, dir)
@@ -48,7 +93,7 @@ local function ladder(opts, key, pairsList, default)
     end
     return 1
   end
-  return function() return Strings(pairsList[index()][2]) end,
+  return function() return settingValue(pairsList[index()][2]) end,
     function(dir)
       opts[key] = pairsList[wrapIndex(index() - 1 + (dir or 1), #pairsList) + 1][1]
       return true
@@ -68,35 +113,51 @@ local function coreRows(opts, hooks)
     rows[#rows + 1] = { label = label, value = value, step = step }
   end
 
-  add(Strings("TEXT SPEED"), ladder(opts, "textSpeed", SPEEDS, 3))
-  add(Strings("BATTLE ANIMATION"),
+  -- Interface Language is an application preference, not a Pokemon/gameplay
+  -- option.  Keep it in the launcher's global settings model because those
+  -- settings already persist in options.lua across Red/Blue/Yellow.  The view
+  -- observes AppLocale.generation() and rebuilds this model on the next frame.
+  local localeRow = {}
+  localeRow.label = AppLocale("Interface Language")
+  localeRow.value = function()
+    return AppLocale.displayName(opts.interfaceLocale or AppLocale.get())
+  end
+  localeRow.step = function(dir)
+    opts.interfaceLocale = AppLocale.cycle(opts.interfaceLocale or AppLocale.get(), dir)
+    AppLocale.set(opts.interfaceLocale)
+    return true
+  end
+  rows[#rows + 1] = localeRow
+
+  add(AppLocale("TEXT SPEED"), ladder(opts, "textSpeed", SPEEDS, 3))
+  add(AppLocale("BATTLE ANIMATION"),
     ladder(opts, "animations",
       { { true, "ON" }, { false, "OFF" } }, true))
-  add(Strings("BATTLE STYLE"),
+  add(AppLocale("BATTLE STYLE"),
     ladder(opts, "battleStyle",
       { { "shift", "SHIFT" }, { "set", "SET" } }, "shift"))
-  add(Strings("BATTLE LAYOUT"),
+  add(AppLocale("BATTLE LAYOUT"),
     ladder(opts, "battleLayout",
       { { "og", "OG" }, { "wide", "WIDE" } }, "og"))
-  add(Strings("BATTLE SIZE"),
+  add(AppLocale("BATTLE SIZE"),
     ladder(opts, "battleFit",
       { { "fixed", "FIXED" }, { "fill", "FILL" } }, "fixed"))
-  add(Strings("BATTLE BG"),
+  add(AppLocale("BATTLE BG"),
     ladder(opts, "battleBg",
       { { "white", "WHITE" }, { "black", "BLACK" }, { "world", "WORLD" } },
       "white"))
-  add(Strings("UI LAYOUT"),
+  add(AppLocale("UI LAYOUT"),
     ladder(opts, "uiLayout",
       { { "centered", "CENTERED" }, { "dynamic", "DYNAMIC" } }, "centered"))
 
-  add(Strings("MUSIC VOL"),
+  add(AppLocale("MUSIC VOL"),
     function() return volLabel(opts.musicVol) end,
     function(dir) opts.musicVol = stepVolume(opts.musicVol, dir); return true end)
-  add(Strings("SFX VOL"),
+  add(AppLocale("SFX VOL"),
     function() return volLabel(opts.sfxVol) end,
     function(dir) opts.sfxVol = stepVolume(opts.sfxVol, dir); return true end)
-  add(Strings("MUSIC FILTER"),
-    function() return FILTERS[(opts.musicFilter or 0) + 1] end,
+  add(AppLocale("MUSIC FILTER"),
+    function() return settingValue(FILTERS[(opts.musicFilter or 0) + 1]) end,
     function(dir)
       opts.musicFilter = ((opts.musicFilter or 0) + dir) % #FILTERS
       return true
@@ -104,8 +165,8 @@ local function coreRows(opts, hooks)
 
   local okPerf, Performance = pcall(require, "src.core.Performance")
   if okPerf then
-    add(Strings("PERFORMANCE"),
-      function() return Strings(Performance.label(opts.performance)) end,
+    add(AppLocale("PERFORMANCE"),
+      function() return settingValue(Performance.label(opts.performance)) end,
       function(dir)
         opts.performance = Performance.cycle(opts.performance, dir)
         return true
@@ -114,8 +175,8 @@ local function coreRows(opts, hooks)
 
   local okPal, PaletteFX = pcall(require, "src.render.PaletteFX")
   if okPal then
-    add(Strings("COLORS"),
-      function() return PaletteFX.modeLabel(opts.colors or "gbc") end,
+    add(AppLocale("COLORS"),
+      function() return settingValue(PaletteFX.modeLabel(opts.colors or "gbc")) end,
       function(dir)
         local cur, idx = opts.colors or "gbc", 1
         for i, m in ipairs(PaletteFX.MODES) do
@@ -128,8 +189,8 @@ local function coreRows(opts, hooks)
 
   local okTilt, Tilt = pcall(require, "src.render.Tilt")
   if okTilt then
-    add(Strings("TILT"),
-      function() return Tilt.levelLabel(opts.tilt or 0) end,
+    add(AppLocale("TILT"),
+      function() return settingValue(Tilt.levelLabel(opts.tilt or 0)) end,
       function(dir)
         opts.tilt = wrapIndex((opts.tilt or 0) + dir, 4)
         return true
@@ -140,8 +201,8 @@ local function coreRows(opts, hooks)
   -- the in-game row.
   local okFx, GBCFX = pcall(require, "src.render.GBCFX")
   if okFx and GBCFX.isSupported() then
-    add(Strings("GBC FX"),
-      function() return GBCFX.levelLabel(opts.gbcfx or 0) end,
+    add(AppLocale("GBC FX"),
+      function() return settingValue(GBCFX.levelLabel(opts.gbcfx or 0)) end,
       function(dir)
         opts.gbcfx = wrapIndex((opts.gbcfx or 0) + dir, 5)
         return true
@@ -150,8 +211,8 @@ local function coreRows(opts, hooks)
 
   local okTile, TileRenderer = pcall(require, "src.render.TileRenderer")
   if okTile and TileRenderer.VOID_FILLS then
-    add(Strings("VOID FILL"),
-      function() return TileRenderer.voidFillLabel(opts.voidFill) end,
+    add(AppLocale("VOID FILL"),
+      function() return settingValue(TileRenderer.voidFillLabel(opts.voidFill)) end,
       function(dir)
         local modes = TileRenderer.VOID_FILLS
         local cur, idx = opts.voidFill or "trees", 1
@@ -165,8 +226,8 @@ local function coreRows(opts, hooks)
 
   local okVm, VideoMode = pcall(require, "src.core.VideoMode")
   if okVm then
-    add(Strings("VIDEO MODE"),
-      function() return VideoMode.modeLabel(opts.videoMode) end,
+    add(AppLocale("VIDEO MODE"),
+      function() return settingValue(VideoMode.modeLabel(opts.videoMode)) end,
       function(dir)
         opts.videoMode = VideoMode.cycle(opts.videoMode, dir)
         return true
@@ -182,8 +243,8 @@ local function coreRows(opts, hooks)
     local osName = love.system and love.system.getOS and love.system.getOS()
     local okOr, Orientation = pcall(require, "src.core.Orientation")
     if okOr and osName == "Android" then
-      add(Strings("ORIENTATION"),
-        function() return Strings(Orientation.modeLabel(opts.orientation)) end,
+      add(AppLocale("ORIENTATION"),
+        function() return settingValue(Orientation.modeLabel(opts.orientation)) end,
         function(dir)
           opts.orientation = Orientation.cycle(opts.orientation, dir)
           Orientation.apply(opts.orientation)
@@ -194,8 +255,8 @@ local function coreRows(opts, hooks)
 
   local okFr, FaithfulRes = pcall(require, "src.core.FaithfulRes")
   if okFr then
-    add(Strings("FAITHFUL RATIO"),
-      function() return FaithfulRes.label(opts.faithfulRes) end,
+    add(AppLocale("FAITHFUL RATIO"),
+      function() return settingValue(FaithfulRes.label(opts.faithfulRes)) end,
       function(dir)
         opts.faithfulRes = FaithfulRes.cycle(opts.faithfulRes, dir)
         return true
@@ -204,8 +265,8 @@ local function coreRows(opts, hooks)
 
   local okCap, FrameCap = pcall(require, "src.core.FrameCap")
   if okCap then
-    add(Strings("MAX FPS"),
-      function() return FrameCap.label(opts.fpsCap) end,
+    add(AppLocale("MAX FPS"),
+      function() return settingValue(FrameCap.label(opts.fpsCap)) end,
       function(dir)
         opts.fpsCap = FrameCap.cycle(opts.fpsCap, dir)
         return true
@@ -216,20 +277,20 @@ local function coreRows(opts, hooks)
   if okSpd then
     -- Per-category (RFC 0007): overworld/battle/menu each cycle their own
     -- multiplier, mirroring OptionsMenu.lua's three rows.
-    add(Strings("OVERWORLD SPEED"),
-      function() return GameSpeed.levelLabel(opts.speedOverworld) end,
+    add(AppLocale("OVERWORLD SPEED"),
+      function() return settingValue(GameSpeed.levelLabel(opts.speedOverworld)) end,
       function(dir)
         opts.speedOverworld = GameSpeed.cycle(opts.speedOverworld, dir)
         return true
       end)
-    add(Strings("BATTLE SPEED"),
-      function() return GameSpeed.levelLabel(opts.speedBattle) end,
+    add(AppLocale("BATTLE SPEED"),
+      function() return settingValue(GameSpeed.levelLabel(opts.speedBattle)) end,
       function(dir)
         opts.speedBattle = GameSpeed.cycle(opts.speedBattle, dir)
         return true
       end)
-    add(Strings("MENU SPEED"),
-      function() return GameSpeed.levelLabel(opts.speedMenu) end,
+    add(AppLocale("MENU SPEED"),
+      function() return settingValue(GameSpeed.levelLabel(opts.speedMenu)) end,
       function(dir)
         opts.speedMenu = GameSpeed.cycle(opts.speedMenu, dir)
         return true
@@ -244,11 +305,11 @@ local function coreRows(opts, hooks)
     local show = env == "1"
       or (env ~= "0" and (osName == "Android" or osName == "iOS"))
     if show then
-      add(Strings("TOUCH PAD"),
+      add(AppLocale("TOUCH PAD"),
         function()
           local tc = opts.touchControls
           local on = not (type(tc) == "table" and tc.enabled == false)
-          return on and Strings("ON") or Strings("OFF")
+          return settingValue(on and "ON" or "OFF")
         end,
         function()
           local tc = type(opts.touchControls) == "table" and opts.touchControls or {}
@@ -260,8 +321,8 @@ local function coreRows(opts, hooks)
       -- the row buzzes once at the level being selected.
       local okTC, TC = pcall(require, "src.core.TouchControls")
       if okTC then
-        add(Strings("VIBRATION"),
-          function() return Strings(TC.hapticLabel(opts.haptics)) end,
+        add(AppLocale("VIBRATION"),
+          function() return settingValue(TC.hapticLabel(opts.haptics)) end,
           function(dir)
             opts.haptics = TC.cycleHaptics(opts.haptics, dir)
             TC.buzz(opts.haptics)
@@ -280,8 +341,8 @@ local function coreRows(opts, hooks)
   -- supplied (the standalone save editor opens this model with none).
   if hooks and hooks.editTouchControls then
     rows[#rows + 1] = {
-      label = Strings("TOUCH CONTROLS"),
-      actionLabel = Strings("Edit"),
+      label = AppLocale("TOUCH CONTROLS"),
+      actionLabel = AppLocale("Edit"),
       action = function()
         hooks.editTouchControls()
         -- The editor replaces the whole screen: nothing left to persist here
@@ -300,8 +361,8 @@ local function coreRows(opts, hooks)
   -- The dragged touch-overlay layout goes with it: it is the same class of
   -- customisation and the same class of getting stuck.
   rows[#rows + 1] = {
-    label = Strings("RESET REBINDS"),
-    actionLabel = Strings("Reset"),
+    label = AppLocale("RESET REBINDS"),
+    actionLabel = AppLocale("Reset"),
     danger = true,
     action = function()
       opts.bindings = nil
@@ -389,7 +450,7 @@ local function modRows(opts, mod)
       -- where schema errors are reported to the author
     elseif row.type == "toggle" then
       rows[#rows + 1] = { label = row.label or row.key,
-        value = function() return get(row) and Strings("ON") or Strings("OFF") end,
+        value = function() return settingValue(get(row) and "ON" or "OFF") end,
         step = function()
           set(row.key, not get(row))
           return true
@@ -432,7 +493,7 @@ local function modRows(opts, mod)
     end
   end
   if #rows > 0 then
-    rows[#rows + 1] = { label = Strings("RESET DEFAULTS"),
+    rows[#rows + 1] = { label = AppLocale("RESET DEFAULTS"),
       value = function() return "" end,
       step = function()
         for _, row in ipairs(mod.schema) do
@@ -455,8 +516,11 @@ end
 --   editTouchControls()  -- hand the screen to the touch-overlay editor
 function LauncherSettings.open(hooks)
   local opts = SaveData.loadOptions()
+  -- Normalize the persisted value without re-applying the already active
+  -- bootstrap locale every time this panel opens.
+  opts.interfaceLocale = AppLocale.normalize(opts.interfaceLocale)
   local sections = {
-    { title = Strings("OPTIONS"), rows = coreRows(opts, hooks) },
+    { title = AppLocale("OPTIONS"), rows = coreRows(opts, hooks) },
   }
   for _, mod in ipairs(discoverModSchemas(opts)) do
     local rows = modRows(opts, mod)
@@ -467,6 +531,7 @@ function LauncherSettings.open(hooks)
   return {
     opts = opts,
     sections = sections,
+    localeGeneration = AppLocale.generation(),
     save = function() SaveData.saveOptions(opts) end,
   }
 end

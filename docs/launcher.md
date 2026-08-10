@@ -5,6 +5,21 @@ that runs before `Game:load`. Besides ROM import (see the file's own header)
 it hosts a tabbed shell covering per-game save slots and a mod manager. This
 file documents the runtime model; the visual spec lives separately.
 
+## Interface localization
+
+Launcher-owned text uses `src/core/AppLocale.lua`, independently of gameplay
+and mod `Strings()` catalogs. `main.lua` applies the saved application locale
+before the first launcher frame. Settings records the locale generation used
+to build its rows, and `LauncherView` rebuilds the open model after a language
+change so labels update immediately.
+
+Service-layer mod-index messages use locale-neutral `AppMessage` descriptors;
+`RomImporter` translates them only at the UI boundary. Index descriptions,
+mod metadata, and other third-party content remain untouched. English is `en`
+and the first translated catalog is Spain Spanish (`es-ES`). See
+[`localization.md`](localization.md) for the architecture and contribution
+rules.
+
 ## Android multi-ROM / mod / save import
 
 On Android, `love.system.pickFile([kind])` opens the Storage Access Framework
@@ -227,10 +242,18 @@ plus the existing global scale `s = clamp(height / 768, 0.7, 1.6)`; nothing
 assumes a fixed window size. The game panel's two-column grid (ROM/SAVE
 FILES/Play on the left, SAVE SLOT on the right) collapses to one stacked
 column, slot card below Play, when the window is too narrow for both
-`~300 * s`-wide columns. The save-slot list and the mod list both scroll
-(wheel, or drag on touch/desktop) clamped to their own content extent,
-recomputed every draw. The tab bar labels only the active chip so it stays
-narrow-safe, and content caps out at `~1440 * s` wide, centered.
+`~300 * s`-wide columns. Lists paginate from the height available on the
+current frame, and the tab bar labels only the active chip so it stays
+narrow-safe. Content caps out at `~1440 * s` wide, centered.
+
+The SAVE SLOT header measures its localized title and **Import save** action.
+When both fit, it keeps the original one-row layout. Otherwise the complete
+title remains above the complete button, the header reserves the second row
+before the slot list is positioned, and the optional slot count appears only
+when the title row still has room. A button wider than the card interior wraps
+its label inside a full-width control. No locale-specific width or abbreviated
+translation is part of this decision. The ROM-free regression is
+`tests/engine/launcher_slot_header_locale_test.lua`.
 
 The desktop window has a floor of 480x360 (`conf.lua` `minwidth`/`minheight`),
 under which the cards stop being readable at all. Mobile ignores it: those

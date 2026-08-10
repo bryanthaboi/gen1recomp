@@ -35,6 +35,7 @@ local Loader = require("src.ui.kit.Loader")
 local GameVersion = require("src.core.GameVersion")
 local Version = require("src.core.Version")
 local Strings = require("src.core.Strings")
+local AppLocale = require("src.core.AppLocale")
 
 local PAL = Theme.PAL
 local LauncherView = {}
@@ -311,29 +312,36 @@ local function cartColor(version)
   return CART_COLOR[version] or PAL.green
 end
 
+local function localizedGameName(version, info)
+  if version == "red" then return AppLocale("Red") end
+  if version == "blue" then return AppLocale("Blue") end
+  if version == "yellow" then return AppLocale("Yellow") end
+  return info and (info.launcherName or info.displayName) or tostring(version)
+end
+
 local function modStatusColor(status)
-  if status == "ok" then return Strings("Ready"), PAL.green end
-  if status == "conflict" then return Strings("Conflict"), PAL.red end
-  return Strings("Incompatible"), PAL.yellow
+  if status == "ok" then return AppLocale("Ready"), PAL.green end
+  if status == "conflict" then return AppLocale("Conflict"), PAL.red end
+  return AppLocale("Incompatible"), PAL.yellow
 end
 
 local function findActionFor(entry, installedVersion)
   local ModIndex = require("src.mods.ModIndex")
   if not ModIndex.canInstall(entry) then
-    return nil, Strings("Not installable from this index")
+    return nil, AppLocale("Not installable from this index")
   end
-  if not installedVersion then return Strings("Install"), nil end
+  if not installedVersion then return AppLocale("Install"), nil end
   local listed = ModIndex.displayVersion(entry)
   local ModUpdate = require("src.mods.ModUpdate")
   if type(installedVersion) == "string"
       and ModUpdate.isNewer(installedVersion, listed) then
-    return Strings("Update"), "Installed v" .. installedVersion
+    return AppLocale("Update"), AppLocale("Installed v%s", installedVersion)
   end
-  return Strings("Reinstall"), "Installed v" .. tostring(installedVersion)
+  return AppLocale("Reinstall"), AppLocale("Installed v%s", tostring(installedVersion))
 end
 
 local function DELETE_LABEL(armed)
-  return armed and Strings("Sure?") or Strings("Delete")
+  return armed and AppLocale("Sure?") or AppLocale("Delete")
 end
 
 local function deleteArmed(imp, kind, id, version)
@@ -454,11 +462,11 @@ local function buildHeader(imp, m)
   -- actually refer to these.  The colour rides the outline and the glyph at
   -- rest and becomes the fill when active, the same rule the buttons follow.
   local tabs = {
-    { id = "red",    letter = "R", label = Strings("RED"),    color = PAL.railRed },
-    { id = "blue",   letter = "B", label = Strings("BLUE"),   color = PAL.railBlue },
-    { id = "yellow", letter = "Y", label = Strings("YELLOW"), color = PAL.railGold },
-    { id = "mods",   icon = imp._modsIcon, label = Strings("MODS") },
-    { id = "find",   icon = imp._findIcon, label = Strings("FIND MODS") },
+    { id = "red",    letter = AppLocale("R"), label = AppLocale("RED"),    color = PAL.railRed },
+    { id = "blue",   letter = AppLocale("B"), label = AppLocale("BLUE"),   color = PAL.railBlue },
+    { id = "yellow", letter = AppLocale("Y"), label = AppLocale("YELLOW"), color = PAL.railGold },
+    { id = "mods",   icon = imp._modsIcon, label = AppLocale("MODS") },
+    { id = "find",   icon = imp._findIcon, label = AppLocale("FIND MODS") },
   }
   local tabH = m.chip
   local tx = m.x + m.pad
@@ -520,22 +528,22 @@ function LauncherView._updateControl(imp)
   st = (ok and type(st) == "table") and st or nil
   local status = st and st.status or "idle"
   if status == "checking" then
-    return status, Strings("Checking..."), nil, false
+    return status, AppLocale("Checking..."), nil, false
   elseif status == "downloading" then
     local pct = st.progress and math.floor(st.progress * 100) or 0
-    return status, Strings("Updating %d%%", pct), nil, false
+    return status, AppLocale("Updating %d%%", pct), nil, false
   elseif status == "available" then
-    return status, st.latest and (Strings("Update v") .. st.latest)
-      or Strings("Update"), function() pcall(imp.Check.download) end, true
+    return status, st.latest and AppLocale("Update v%s", st.latest)
+      or AppLocale("Update"), function() pcall(imp.Check.download) end, true
   elseif status == "ready" then
-    return status, Strings("Restart to update"),
+    return status, AppLocale("Restart to update"),
       function() require("src.core.HostShell").restart() end, true
   elseif status == "needs_full" then
-    return status, Strings("Open releases"),
+    return status, AppLocale("Open releases"),
       function() love.system.openURL(imp.Check.releaseUrl()) end, true
   end
   -- idle / uptodate / error: offer a manual check, with no glow.
-  return status, Strings("Check for updates"),
+  return status, AppLocale("Check for updates"),
     function() pcall(imp.Check.start) end, false
 end
 
@@ -550,16 +558,16 @@ end
 --   enabled  whether that button may be pressed
 --   progress 0-1 while an import for THIS version is running
 local function romModel(imp, version, info, ready, locked)
-  local importLabel = imp.isNX and Strings("Scan again") or Strings("Import ROM")
+  local importLabel = imp.isNX and AppLocale("Scan again") or AppLocale("Import ROM")
   if locked then
-    return { state = Strings("Not supported yet"),
-      detail = Strings("Support for this game is on the way."),
-      label = Strings("Import unavailable"), enabled = false }
+    return { state = AppLocale("Not supported yet"),
+      detail = AppLocale("Support for this game is on the way."),
+      label = AppLocale("Import unavailable"), enabled = false }
   end
-  local dropHint = imp.isNX and Strings("Copy the .gb/.gbc via MTP into imports/.")
-    or (imp.baseRomDiscovery and Strings("Or copy the .gb/.gbc into baseroms/.")
-      or (imp.android and Strings("Copy the .gb/.gbc via USB.")
-        or Strings("Or drop the .gb/.gbc file here.")))
+  local dropHint = imp.isNX and AppLocale("Copy the .gb/.gbc via MTP into imports/.")
+    or (imp.baseRomDiscovery and AppLocale("Or copy the .gb/.gbc into baseroms/.")
+      or (imp.android and AppLocale("Copy the .gb/.gbc via USB.")
+        or AppLocale("Or drop the .gb/.gbc file here.")))
   local importing = imp.importing == version
   local erroring = imp.workState == "error" and imp.errorVersion == version
   local notice = imp.notice and imp.notice.version == version and imp.notice
@@ -567,40 +575,39 @@ local function romModel(imp, version, info, ready, locked)
   local scanning = imp.baseRomDiscovery and imp.baseRomScan
     and imp.baseRomScan.state ~= "done"
   if importing and (imp.workState == "working" or imp.workState == "complete") then
-    return { state = imp.status or Strings("Importing"),
+    return { state = imp.status or AppLocale("Importing"),
       detail = imp.detail or "", progress = imp.progress or 0 }
   elseif erroring then
     -- An import that FAILED is reported even on a ready game (a re-import
     -- that could not read the new file): the failure is the only reason the
     -- library still holds the old cache, and it must not be silent (the
     -- "Import failed with no explanation" report).
-    return { state = Strings("Import failed"),
-      detail = imp.detail or Strings("That ROM could not be imported."),
+    return { state = AppLocale("Import failed"),
+      detail = imp.detail or AppLocale("That ROM could not be imported."),
       label = importLabel, enabled = true }
   elseif ready then
-    return { label = Strings("Re-import ROM"), enabled = true }
+    return { label = AppLocale("Re-import ROM"), enabled = true }
   elseif notice then
-    return { state = Strings("No ROM imported"),
+    return { state = AppLocale("No ROM imported"),
       detail = ((notice.status or "") .. " " .. (notice.detail or ""))
         :gsub("^%s+", ""):gsub("%s+$", ""),
       label = importLabel, enabled = true }
   elseif baseRom then
-    return { state = Strings("Compatible ROM found"),
-      detail = Strings("Found in baseroms/: %s", baseRom.name),
-      label = Strings("Import detected ROM"), enabled = true }
+    return { state = AppLocale("Compatible ROM found"),
+      detail = AppLocale("Found in baseroms/: %s", baseRom.name),
+      label = AppLocale("Import detected ROM"), enabled = true }
   elseif scanning then
-    return { state = Strings("Checking baseroms..."),
-      detail = Strings("Looking for compatible Red, Blue, and Yellow ROMs."),
-      label = Strings("Import ROM"), enabled = false }
+    return { state = AppLocale("Checking baseroms..."),
+      detail = AppLocale("Looking for compatible Red, Blue, and Yellow ROMs."),
+      label = AppLocale("Import ROM"), enabled = false }
   elseif imp.returning[version] then
-    return { state = Strings("Update required"),
-      detail = Strings("This build needs a few more things from your ")
-        .. info.label .. Strings(" ROM. Re-import to continue."),
-      label = Strings("Re-import ROM"), enabled = true }
+    return { state = AppLocale("Update required"),
+      detail = AppLocale("This build needs a few more things from your %s ROM. Re-import to continue.",
+        info.label),
+      label = AppLocale("Re-import ROM"), enabled = true }
   end
-  return { state = Strings("No ROM imported"),
-    detail = Strings("The ROM is verified before any files are created. ")
-      .. dropHint,
+  return { state = AppLocale("No ROM imported"),
+    detail = AppLocale("The ROM is verified before any files are created. %s", dropHint),
     label = importLabel, enabled = true }
 end
 
@@ -688,6 +695,74 @@ local function chipWidth(label, m)
   return Kit.textWidth("small", label) + math.floor(20 * m.s)
 end
 
+-- Split a section caption only when the caption by itself is wider than its
+-- row.  Most locales return the single source line; the word-aware fallback
+-- keeps a future long title complete instead of clipping it at the card edge.
+local function captionLines(label, maxW)
+  label = tostring(label or "")
+  if Kit.captionWidth(label) <= maxW then return { label } end
+  local lines, line = {}, ""
+  for word in label:gmatch("%S+") do
+    local candidate = line == "" and word or (line .. " " .. word)
+    if line ~= "" and Kit.captionWidth(candidate) > maxW then
+      lines[#lines + 1] = line
+      line = word
+    else
+      line = candidate
+    end
+  end
+  if line ~= "" then lines[#lines + 1] = line end
+  return #lines > 0 and lines or { label }
+end
+
+-- Measure the localized save-card header before the list gets its height
+-- budget.  The source layout is preserved byte-for-byte in shape when title
+-- and action fit together; otherwise the full action moves below the full
+-- title.  A button that cannot fit even on its own row wraps inside the card.
+local function slotHeaderLayout(innerW, m, title, action)
+  local gap = math.floor(8 * m.s)
+  local titleLineH = Kit.textHeight("caption")
+  local titleLineGap = math.floor(2 * m.s)
+  local titleRows = captionLines(title, innerW)
+  local titleH = #titleRows * titleLineH
+    + math.max(0, #titleRows - 1) * titleLineGap
+  local titleW = #titleRows == 1 and Kit.captionWidth(titleRows[1]) or innerW
+
+  local naturalButtonW = chipWidth(action, m) + math.floor(8 * m.s)
+  local buttonW = math.min(innerW, naturalButtonW)
+  local wrapButton = naturalButtonW > innerW
+  local buttonTextW = math.max(1, buttonW - math.floor(16 * m.s))
+  local buttonH = m.btnH
+  if wrapButton then
+    buttonH = math.max(buttonH,
+      Kit.wrapHeight("small", action, buttonTextW) + math.floor(16 * m.s))
+  end
+
+  local inline = #titleRows == 1 and not wrapButton
+    and titleW + gap + buttonW <= innerW
+  local buttonX = innerW - buttonW
+  if inline then
+    return {
+      inline = true, h = math.max(titleLineH, buttonH) + gap,
+      titleLines = titleRows, titleLineH = titleLineH,
+      titleLineGap = titleLineGap,
+      titleY = math.floor((buttonH - titleLineH) / 2), titleW = titleW,
+      buttonX = buttonX, buttonY = 0, buttonW = buttonW,
+      buttonH = buttonH, wrapButton = false,
+      countRight = buttonX - gap, gap = gap,
+    }
+  end
+
+  return {
+    inline = false, h = titleH + gap + buttonH + gap,
+    titleLines = titleRows, titleLineH = titleLineH,
+    titleLineGap = titleLineGap, titleY = 0, titleW = titleW,
+    buttonX = buttonX, buttonY = titleH + gap, buttonW = buttonW,
+    buttonH = buttonH, wrapButton = wrapButton,
+    countRight = innerW, gap = gap,
+  }
+end
+
 local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   imp:_ensureSlots(version)
   local slots = imp.slots[version] or {}
@@ -704,9 +779,9 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   local chipH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local rowInner = iw - math.floor(20 * m.s)
   local maxChips = {
-    { w = chipWidth(Strings("Export"), m) },
-    { w = chipWidth(Strings("Rename"), m) },
-    { w = chipWidth(Strings("Edit"), m) },
+    { w = chipWidth(AppLocale("Export"), m) },
+    { w = chipWidth(AppLocale("Rename"), m) },
+    { w = chipWidth(AppLocale("Edit"), m) },
     -- Delete's width is pinned to the WIDER of its two captions so arming to
     -- "Sure?" never reflows the row under the pointer (#433).
     { w = math.max(chipWidth(DELETE_LABEL(false), m),
@@ -744,7 +819,13 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
 
   -- The header carries "Import save": a .sav import CREATES a slot, so it
   -- belongs to the slot list rather than to the ROM card it used to sit in.
-  local headH = math.max(Kit.textHeight("caption"), m.btnH) + math.floor(8 * m.s)
+  -- Measure the localized strings first: a future locale may need the action
+  -- on a second line even though English and Spanish fit side by side here.
+  local slotTitle = AppLocale("SAVE SLOT")
+  local savImportLabel = imp.isNX and AppLocale("Scan again")
+    or AppLocale("Import save")
+  local header = slotHeaderLayout(iw, m, slotTitle, savImportLabel)
+  local headH = header.h
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local newBtnH = m.btnH
   local sfNotice = imp.saveNotice[version]
@@ -775,28 +856,30 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
 
   Kit.card(x, y, w, h)
   local cy = y + pad
-  local capY = cy + math.floor((m.btnH - Kit.textHeight("caption")) / 2)
-  Kit.caption(x + pad, capY, Strings("SAVE SLOT"))
-  local savImportLabel = imp.isNX and Strings("Scan again")
-    or Strings("Import save")
-  local impW = chipWidth(savImportLabel, m) + math.floor(8 * m.s)
-  btn(imp, x + w - pad - impW, cy, impW, m.btnH, "sav-import-" .. version,
+  local capY = cy + header.titleY
+  for i, line in ipairs(header.titleLines) do
+    Kit.caption(x + pad,
+      capY + (i - 1) * (header.titleLineH + header.titleLineGap), line)
+  end
+  btn(imp, x + pad + header.buttonX, cy + header.buttonY,
+    header.buttonW, header.buttonH, "sav-import-" .. version,
     savImportLabel, {
-      kind = "accent", font = "small", enabled = ready and true or false,
+      kind = "accent", font = "small", wrap = header.wrapButton,
+      enabled = ready and true or false,
       action = ready and function() imp:chooseSaveImport(version) end or nil,
     })
-  local countW = (x + w - pad - impW - math.floor(8 * m.s))
-    - (x + pad + Kit.captionWidth(Strings("SAVE SLOT")) + math.floor(8 * m.s))
-  if countW > 0 then
+  local countW = header.countRight - (header.titleW + header.gap)
+  local countText = n == 1 and AppLocale("1 slot") or AppLocale("%d slots", n)
+  if #header.titleLines == 1 and countW >= Kit.textWidth("small", countText) then
     Kit.textRight("small",
-      n == 1 and Strings("1 slot") or Strings("%d slots", n),
-      x + w - pad - impW - math.floor(8 * m.s), capY, PAL.muted)
+      countText,
+      x + pad + header.countRight, capY, PAL.muted)
   end
   cy = cy + headH
 
   if n == 0 then
     Kit.emptyBox(x + pad, cy, iw, usedListH,
-      Strings("No saves yet - start a new game or import one."))
+      AppLocale("No saves yet - start a new game or import one."))
     cy = cy + usedListH + gap
   else
     -- Wheel over the list turns pages; the page index is bounded, so there is
@@ -821,12 +904,12 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
         and (inner - maxChipsW - math.floor(12 * m.s)) or inner
       local ly = ry + math.floor(8 * m.s)
         + (sideBySide and math.floor((math.max(textH, chipH) - textH) / 2) or 0)
-      local name = slot.label or slot.name or Strings("NEW GAME")
+      local name = slot.label or slot.name or AppLocale("NEW GAME")
       local tagW = 0
       if selected then
-        tagW = Kit.textWidth("micro", Strings("LOADED")) + math.floor(16 * m.s)
+        tagW = Kit.textWidth("micro", AppLocale("LOADED")) + math.floor(16 * m.s)
         Kit.tag(px + textW - tagW, ly, tagW, Kit.textHeight("button"),
-          Strings("LOADED"), PAL.inverse)
+          AppLocale("LOADED"), PAL.inverse)
         tagW = tagW + math.floor(8 * m.s)
       end
       Kit.text("button", Kit.ellipsize("button", name, textW - tagW), px, ly, ink)
@@ -836,7 +919,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
         metaTxt = Strings("%d badges - %s - %d caught", slot.meta.badges or 0,
           slot.meta.timeText or "0:00", slot.meta.dexCount or 0)
       else
-        metaTxt = Strings("empty slot")
+        metaTxt = AppLocale("empty slot")
       end
       Kit.text("small", Kit.ellipsize("small", metaTxt, textW), px, ly,
         selected and PAL.inverse or PAL.muted)
@@ -853,7 +936,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
       local armed = deleteArmed(imp, "slot", slot.id, version)
       local chips = {}
       if slot.exists then
-        chips[#chips + 1] = { label = Strings("Export"), kind = "accent",
+        chips[#chips + 1] = { label = AppLocale("Export"), kind = "accent",
           key = rowKey .. "-export",
           action = function()
             imp:_selectSlot(version, slot.id)
@@ -861,12 +944,12 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
           end }
       end
       if not imp.android then
-        chips[#chips + 1] = { label = Strings("Rename"), kind = "accent",
+        chips[#chips + 1] = { label = AppLocale("Rename"), kind = "accent",
           key = rowKey .. "-rename",
           action = function() imp:_beginRename(version, slot.id) end }
       end
       if imp.onEditSave and slot.exists then
-        chips[#chips + 1] = { label = Strings("Edit"), kind = "accent",
+        chips[#chips + 1] = { label = AppLocale("Edit"), kind = "accent",
           key = rowKey .. "-edit",
           action = function() imp.onEditSave(version, slot.id) end }
       end
@@ -907,7 +990,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
     if folderRow then
       cy = cy + math.floor(4 * m.s)
       local key = "sav-folder-" .. version
-      local label = Strings("Open folder")
+      local label = AppLocale("Open folder")
       local lw = Kit.textWidth("small", label)
       local lh = Kit.textHeight("small")
       Kit.focusable(key, x + pad, cy, lw, lh)
@@ -930,7 +1013,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
     cy = cy + pagerH + gap
   end
   btn(imp, x + pad, cy, iw, newBtnH, "slot-new-" .. version,
-    Strings("+ New save slot"), {
+    AppLocale("+ New save slot"), {
       kind = "good",
       action = function() imp:_newSlot(version) end,
     })
@@ -941,19 +1024,18 @@ local function buildGamePanel(imp, x, y, w, availH, m, version)
   imp.panelVersion = version
   local info = GameVersion.info(version)
   local locked = info == nil
-  local gameName = info and (info.launcherName or info.displayName)
-    or tostring(version)
+  local gameName = localizedGameName(version, info)
   local ready = (not locked) and imp.ready[version] or false
 
   -- title + status tag
   local titleH = Kit.textHeight("title")
   Kit.text("title", Kit.ellipsize("title", gameName, w * 0.6), x, y, PAL.heading)
   local tagText, tagCol
-  if ready then tagText, tagCol = Strings("GOOD TO GO"), PAL.green
+  if ready then tagText, tagCol = AppLocale("GOOD TO GO"), PAL.green
   elseif imp.baseRoms and imp.baseRoms[version] then
-    tagText, tagCol = Strings("ROM FOUND"), PAL.green
-  elseif locked then tagText, tagCol = Strings("COMING SOON"), PAL.steel
-  else tagText, tagCol = Strings("ROM REQUIRED"), PAL.yellow end
+    tagText, tagCol = AppLocale("ROM FOUND"), PAL.green
+  elseif locked then tagText, tagCol = AppLocale("COMING SOON"), PAL.steel
+  else tagText, tagCol = AppLocale("ROM REQUIRED"), PAL.yellow end
   local tagW = Kit.textWidth("micro", tagText) + math.floor(18 * m.s)
   local tagH = Kit.textHeight("micro") + math.floor(10 * m.s)
   Kit.tag(x + Kit.textWidth("title", Kit.ellipsize("title", gameName, w * 0.6))
@@ -995,7 +1077,7 @@ local function buildGamePanel(imp, x, y, w, availH, m, version)
     local mgW = playH
     local bgap = math.floor(8 * m.s)
     btn(imp, lx, ly, lw - mgW - bgap, playH, "play-" .. version,
-      Strings("Play ") .. gameName, {
+      AppLocale("Play %s", gameName), {
         fill = cartColor(version), ink = PAL.inverse, font = "stat",
         action = function() imp:play(version) end,
       })
@@ -1050,10 +1132,10 @@ end
 -- "Sort" button, which is what freed the chip row's two lines of space.
 local function sortDefs()
   return {
-    { key = "name", label = Strings("Name") },
-    { key = "popularity", label = Strings("Popularity") },
-    { key = "release", label = Strings("Release date") },
-    { key = "updated", label = Strings("Last updated") },
+    { key = "name", label = AppLocale("Name") },
+    { key = "popularity", label = AppLocale("Popularity") },
+    { key = "release", label = AppLocale("Release date") },
+    { key = "updated", label = AppLocale("Last updated") },
   }
 end
 
@@ -1101,16 +1183,16 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     kind = "accent", font = "small",
     action = function() imp:chooseMod() end })
   if #mods > 0 then
-    local dw = Kit.textWidth("small", Strings("Disable all")) + math.floor(20 * m.s)
-    btn(imp, place(dw), cy, dw, bh, "mods-disable-all", Strings("Disable all"), {
+    local dw = Kit.textWidth("small", AppLocale("Disable all")) + math.floor(20 * m.s)
+    btn(imp, place(dw), cy, dw, bh, "mods-disable-all", AppLocale("Disable all"), {
       kind = "warn", font = "small",
       action = function() imp:_setAllMods(false) end })
-    local ew = Kit.textWidth("small", Strings("Enable all")) + math.floor(20 * m.s)
-    btn(imp, place(ew), cy, ew, bh, "mods-enable-all", Strings("Enable all"), {
+    local ew = Kit.textWidth("small", AppLocale("Enable all")) + math.floor(20 * m.s)
+    btn(imp, place(ew), cy, ew, bh, "mods-enable-all", AppLocale("Enable all"), {
       kind = "good", font = "small",
       action = function() imp:_setAllMods(true) end })
-    local sw = Kit.textWidth("small", Strings("Sort")) + math.floor(24 * m.s)
-    btn(imp, place(sw), cy, sw, bh, "mods-sort", Strings("Sort"), {
+    local sw = Kit.textWidth("small", AppLocale("Sort")) + math.floor(24 * m.s)
+    btn(imp, place(sw), cy, sw, bh, "mods-sort", AppLocale("Sort"), {
       font = "small",
       action = function() imp._sortPopup = true end })
   end
@@ -1242,15 +1324,15 @@ local function buildModsPanel(imp, x, y, w, availH, m)
       -- An inline spinner, because this row's release check is genuinely in
       -- flight -- the list stays usable while it resolves.
       Loader.dot(lx, ly, Kit.textHeight("small"))
-      Kit.text("small", Strings("Checking..."),
+      Kit.text("small", AppLocale("Checking..."),
         lx + Kit.textHeight("small") + math.floor(6 * m.s), ly, PAL.muted)
     elseif info and info.status == "available" then
-      Kit.text("small", Strings("v%s available", tostring(info.latest)),
+      Kit.text("small", AppLocale("v%s available", tostring(info.latest)),
         lx, ly, PAL.yellow)
     elseif info and info.status == "current" then
-      Kit.text("small", Strings("up to date"), lx, ly, PAL.muted)
+      Kit.text("small", AppLocale("up to date"), lx, ly, PAL.muted)
     elseif info and info.status == "error" then
-      Kit.text("small", Strings("check failed"), lx, ly, PAL.red)
+      Kit.text("small", AppLocale("check failed"), lx, ly, PAL.red)
     end
     ly = ly + Kit.textHeight("small") + math.floor(2 * m.s)
 
@@ -1302,16 +1384,16 @@ local function buildFindPanel(imp, x, y, w, availH, m)
   if #sources == 0 then
     local h = math.floor(140 * m.s)
     Kit.card(x, cy, w, h)
-    Kit.textCenter("button", Strings("No mod index added"), x,
+    Kit.textCenter("button", AppLocale("No mod index added"), x,
       cy + math.floor(24 * m.s), w, PAL.heading)
-    Kit.textWrapped("small", Strings(
+    Kit.textWrapped("small", AppLocale(
       "Add an index to browse mods. An index is a published list; paste its URL or its owner/repo."),
       x + math.floor(24 * m.s), cy + math.floor(54 * m.s),
       w - math.floor(48 * m.s), PAL.muted, 2)
-    local aw = Kit.textWidth("small", Strings("Add an index"))
+    local aw = Kit.textWidth("small", AppLocale("Add an index"))
       + math.floor(28 * m.s)
     btn(imp, x + math.floor((w - aw) / 2), cy + h - m.btnH - math.floor(14 * m.s),
-      aw, m.btnH, "find-add", Strings("Add an index"), {
+      aw, m.btnH, "find-add", AppLocale("Add an index"), {
         kind = "accent", font = "small",
         action = function() imp._indexManage = true end })
     return
@@ -1321,30 +1403,30 @@ local function buildFindPanel(imp, x, y, w, availH, m)
   local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
   local bgap = math.floor(6 * m.s)
   local place = Layout.rightCluster(x, w, bgap)
-  local xw = Kit.textWidth("small", Strings("Indexes")) + math.floor(20 * m.s)
-  btn(imp, place(xw), cy, xw, fieldH, "find-indexes", Strings("Indexes"), {
+  local xw = Kit.textWidth("small", AppLocale("Indexes")) + math.floor(20 * m.s)
+  btn(imp, place(xw), cy, xw, fieldH, "find-indexes", AppLocale("Indexes"), {
     font = "small",
     action = function() imp._indexManage = true end })
-  local sw = Kit.textWidth("small", Strings("Sort")) + math.floor(20 * m.s)
-  btn(imp, place(sw), cy, sw, fieldH, "find-sort", Strings("Sort"), {
+  local sw = Kit.textWidth("small", AppLocale("Sort")) + math.floor(20 * m.s)
+  btn(imp, place(sw), cy, sw, fieldH, "find-sort", AppLocale("Sort"), {
     font = "small",
     action = function() imp._sortPopup = true end })
   -- The Filter button carries its state: blue while a category is active,
   -- so a filtered-down list never reads as "the index shrank".
-  local fw = Kit.textWidth("small", Strings("Filter")) + math.floor(20 * m.s)
-  btn(imp, place(fw), cy, fw, fieldH, "find-filter", Strings("Filter"), {
+  local fw = Kit.textWidth("small", AppLocale("Filter")) + math.floor(20 * m.s)
+  btn(imp, place(fw), cy, fw, fieldH, "find-filter", AppLocale("Filter"), {
     kind = imp.findCategory and "accent" or "ghost", font = "small",
     action = function() imp._filterPopup = true end })
   local searchW = place(0) - x - bgap
   textField(imp, x, cy, searchW, fieldH, "find-search", imp.findQuery or "",
-    Strings("Search mods"), imp._findSearchFocus == true,
+    AppLocale("Search mods"), imp._findSearchFocus == true,
     function() imp:_toggleFindSearchFocus() end)
   cy = cy + fieldH + math.floor(8 * m.s)
 
   if #rows == 0 then
     Kit.emptyBox(x, cy, w, math.floor(110 * m.s),
-      (total == 0) and Strings("This index lists no mods yet.")
-        or Strings("No mods match that search."))
+      (total == 0) and AppLocale("This index lists no mods yet.")
+        or AppLocale("No mods match that search."))
     return
   end
 
@@ -1437,7 +1519,7 @@ local function buildFindPanel(imp, x, y, w, availH, m)
       love.graphics.draw(image, Theme.snap(px), Theme.snap(ly), 0, s, s)
     else
       Theme.stroke(px, ly, thumb, thumb, PAL.line, Theme.A.hairline, 1)
-      Kit.textCenter("micro", "MOD", px,
+      Kit.textCenter("micro", AppLocale("MOD"), px,
         ly + (thumb - Kit.textHeight("micro")) / 2, thumb, PAL.faint)
     end
 
@@ -1480,10 +1562,10 @@ end
 
 -- ------------------------------------------------------------------ footer
 
-local TRUST_WARNING = "if you did not get this from bryanthaboi's github "
-  .. "or a link from the discord that bryanthaboi himself posted, just know "
-  .. "it might have been tampered with. go to the discord to verify "
-  .. COMMUNITY_URL .. " (or click the logo above)"
+local function trustWarning()
+  return AppLocale("If you did not get this from bryanthaboi's GitHub or a link posted by bryanthaboi himself on Discord, it may have been tampered with. Visit %s to verify it (or click the logo above).",
+    COMMUNITY_URL)
+end
 
 -- Pinned to the bottom of the window; returns the y it starts at, so the
 -- panels above know how much room they have.
@@ -1499,7 +1581,7 @@ local function footerHeight(imp, m)
   -- button rides beside the mark.
   local rowH = math.max(math.floor(22 * m.s), Kit.tapMin())
   return math.floor(8 * m.s) + rowH + math.floor(6 * m.s)
-    + Kit.wrapHeight("micro", TRUST_WARNING, m.contentW)
+    + Kit.wrapHeight("micro", trustWarning(), m.contentW)
     + math.floor(8 * m.s)
 end
 
@@ -1550,7 +1632,7 @@ local function buildFooter(imp, m, y)
   -- the URL inside it IS the link -- no separate link floating elsewhere.
   -- font:getWrap never splits an unspaced word, so the URL stays whole on
   -- one line and a plain substring find locates it.
-  local lines = Kit.wrapLines("micro", TRUST_WARNING, m.contentW)
+  local lines = Kit.wrapLines("micro", trustWarning(), m.contentW)
   local lh = Kit.textHeight("micro")
   for i, line in ipairs(lines or {}) do
     local lw = Kit.textWidth("micro", line)
@@ -1623,17 +1705,17 @@ local function buildPrompt(imp, m, spec)
   cy = cy + fieldH + math.floor(12 * m.s)
 
   local place = Layout.rightCluster(px + pad, pw - 2 * pad, math.floor(8 * m.s))
-  local okW = Kit.textWidth("small", spec.okLabel or Strings("Save"))
+  local okW = Kit.textWidth("small", spec.okLabel or AppLocale("Save"))
     + math.floor(28 * m.s)
   btn(imp, place(okW), cy, okW, m.btnH, spec.key .. "-ok",
-    spec.okLabel or Strings("Save"),
+    spec.okLabel or AppLocale("Save"),
     { kind = "primary", font = "small", action = spec.commit })
-  local cw = Kit.textWidth("small", Strings("Cancel")) + math.floor(28 * m.s)
-  btn(imp, place(cw), cy, cw, m.btnH, spec.key .. "-cancel", Strings("Cancel"),
+  local cw = Kit.textWidth("small", AppLocale("Cancel")) + math.floor(28 * m.s)
+  btn(imp, place(cw), cy, cw, m.btnH, spec.key .. "-cancel", AppLocale("Cancel"),
     { font = "small", action = spec.cancel })
   if spec.paste then
-    local pwid = Kit.textWidth("small", Strings("Paste")) + math.floor(28 * m.s)
-    btn(imp, px + pad, cy, pwid, m.btnH, spec.key .. "-paste", Strings("Paste"),
+    local pwid = Kit.textWidth("small", AppLocale("Paste")) + math.floor(28 * m.s)
+    btn(imp, px + pad, cy, pwid, m.btnH, spec.key .. "-paste", AppLocale("Paste"),
       { kind = "accent", font = "small", action = spec.paste })
   end
   cy = cy + m.btnH + math.floor(8 * m.s)
@@ -1651,7 +1733,7 @@ local function buildConfirmModal(imp, m)
     + #(c.lines or {}) * lineH + math.floor(12 * m.s) + m.btnH + pad
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("stat", c.title or Strings("Confirm"), px + pad, cy, PAL.heading)
+  Kit.text("stat", c.title or AppLocale("Confirm"), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("stat") + math.floor(12 * m.s)
   for _, line in ipairs(c.lines or {}) do
     Kit.text("small", Kit.ellipsize("small", line, pw - 2 * pad),
@@ -1662,7 +1744,7 @@ local function buildConfirmModal(imp, m)
   local gap = math.floor(10 * m.s)
   local halfW = math.floor((pw - 2 * pad - gap) / 2)
   btn(imp, px + pad, cy, halfW, m.btnH, "confirm-yes",
-    c.yesLabel or Strings("OK"), {
+    c.yesLabel or AppLocale("OK"), {
       kind = "primary", font = "small",
       action = function()
         imp._modConfirm = nil
@@ -1680,7 +1762,7 @@ local function buildConfirmModal(imp, m)
       end,
     })
   btn(imp, px + pad + halfW + gap, cy, halfW, m.btnH, "confirm-no",
-    Strings("Cancel"), { font = "small",
+    AppLocale("Cancel"), { font = "small",
       action = function() imp._modConfirm = nil end })
 end
 
@@ -1714,7 +1796,7 @@ local function buildTextModal(imp, m, key, title, body, closeFn)
     perPage, key))
   cy = cy + pagerH + math.floor(10 * m.s)
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, key .. "-close",
-    Strings("Close"), { font = "small", action = closeFn })
+    AppLocale("Close"), { font = "small", action = closeFn })
 end
 
 local function buildVersionsModal(imp, m)
@@ -1726,18 +1808,18 @@ local function buildVersionsModal(imp, m)
   local px, py, pw, ph = modalPanel(m, w, h)
   local cy = py + pad
   Kit.text("button", Kit.ellipsize("button",
-    Strings("Other versions: ") .. tostring(v.name), pw - 2 * pad),
+    AppLocale("Other versions: %s", tostring(v.name)), pw - 2 * pad),
     px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(6 * m.s)
 
   local info = imp:_modUpdateInfo(v.id)
-  local statusTxt = Strings("Installed: v") .. tostring(v.current)
+  local statusTxt = AppLocale("Installed: v%s", tostring(v.current))
   local statusCol = PAL.detail
   if info and info.status == "available" then
-    statusTxt = statusTxt .. "  -  " .. Strings("Update v") .. tostring(info.latest)
+    statusTxt = statusTxt .. "  -  " .. AppLocale("Update v%s", tostring(info.latest))
     statusCol = PAL.yellow
   elseif info and info.status == "current" then
-    statusTxt = statusTxt .. "  -  " .. Strings("Up to date")
+    statusTxt = statusTxt .. "  -  " .. AppLocale("Up to date")
     statusCol = PAL.green
   end
   Kit.text("small", statusTxt, px + pad, cy, statusCol)
@@ -1764,7 +1846,7 @@ local function buildVersionsModal(imp, m)
     local ix = px + pad + math.floor(10 * m.s)
     local inner = pw - 2 * pad - math.floor(20 * m.s)
     local text = "v" .. rel.version
-    if rel.version == v.current then text = text .. Strings(" (installed)") end
+    if rel.version == v.current then text = text .. AppLocale(" (installed)") end
     if rel.prerelease then text = text .. " pre" end
     Kit.text("small", text, ix, ry + math.floor(8 * m.s),
       rel.version == v.current and PAL.yellow or PAL.heading)
@@ -1779,14 +1861,14 @@ local function buildVersionsModal(imp, m)
       + math.floor(4 * m.s)
     local place = Layout.rightCluster(ix, inner, math.floor(6 * m.s))
     if rel.version ~= v.current then
-      local iw5 = Kit.textWidth("small", Strings("Install")) + math.floor(20 * m.s)
-      btn(imp, place(iw5), ly, iw5, chipH, "ver-inst-" .. i, Strings("Install"), {
+      local iw5 = Kit.textWidth("small", AppLocale("Install")) + math.floor(20 * m.s)
+      btn(imp, place(iw5), ly, iw5, chipH, "ver-inst-" .. i, AppLocale("Install"), {
         kind = "accent", font = "small",
         action = function() imp:_installModVersion(v.id, rel) end })
     end
     if type(rel.body) == "string" and rel.body:match("%S") then
-      local rw = Kit.textWidth("small", Strings("Read more")) + math.floor(20 * m.s)
-      btn(imp, place(rw), ly, rw, chipH, "ver-notes-" .. i, Strings("Read more"), {
+      local rw = Kit.textWidth("small", AppLocale("Read more")) + math.floor(20 * m.s)
+      btn(imp, place(rw), ly, rw, chipH, "ver-notes-" .. i, AppLocale("Read more"), {
         kind = "accent", font = "small",
         action = function()
           imp._modReleaseNotes = { version = rel.version, body = rel.body or "" }
@@ -1798,7 +1880,7 @@ local function buildVersionsModal(imp, m)
     Kit.pager(px + pad, cy, pw - 2 * pad, cur, n, perPage, "versions"))
   cy = cy + pagerH + math.floor(10 * m.s)
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "versions-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._modVersions = nil end })
 end
 
@@ -1813,7 +1895,7 @@ local function buildSortModal(imp, m)
     + #defs * (m.btnH + gap) + m.btnH + pad
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("button", Strings("Sort by"), px + pad, cy, PAL.heading)
+  Kit.text("button", AppLocale("Sort by"), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
   local cur = currentSort(imp)
   for _, s in ipairs(defs) do
@@ -1833,7 +1915,7 @@ local function buildSortModal(imp, m)
     cy = cy + m.btnH + gap
   end
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "sortpop-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._sortPopup = nil end })
 end
 
@@ -1841,7 +1923,7 @@ end
 -- enough categories to overflow a single stacked column on a short window.
 local function buildFilterModal(imp, m)
   local cats = (imp.findIndex and imp.findIndex.categories) or {}
-  local items = { { key = nil, label = Strings("All") } }
+  local items = { { key = nil, label = AppLocale("All") } }
   for _, c in ipairs(cats) do items[#items + 1] = { key = c, label = c } end
   local pad = math.floor(18 * m.s)
   local w = math.floor(440 * m.s)
@@ -1851,7 +1933,7 @@ local function buildFilterModal(imp, m)
     + nrows * (m.btnH + gap) + m.btnH + pad
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("button", Strings("Filter by category"), px + pad, cy, PAL.heading)
+  Kit.text("button", AppLocale("Filter by category"), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
   local colW = math.floor((pw - 2 * pad - gap) / 2)
   for i, it in ipairs(items) do
@@ -1869,7 +1951,7 @@ local function buildFilterModal(imp, m)
   end
   cy = cy + nrows * (m.btnH + gap)
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "filterpop-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._filterPopup = nil end })
 end
 
@@ -1889,21 +1971,21 @@ local function buildIndexesModal(imp, m)
     - math.floor(8 * m.s) + pad
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("button", Strings("Mod indexes"), px + pad, cy, PAL.heading)
+  Kit.text("button", AppLocale("Mod indexes"), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
   if #sources == 0 then
-    Kit.text("small", Strings("No index added yet."), px + pad, cy, PAL.muted)
+    Kit.text("small", AppLocale("No index added yet."), px + pad, cy, PAL.muted)
     cy = cy + Kit.textHeight("small") + gap
   else
     for _, source in ipairs(sources) do
       local feed = source.feed
-      local rmW = Kit.textWidth("small", Strings("Remove"))
+      local rmW = Kit.textWidth("small", AppLocale("Remove"))
         + math.floor(20 * m.s)
       Kit.text("small", Kit.ellipsize("small", source.label or feed,
         pw - 2 * pad - rmW - math.floor(12 * m.s)), px + pad,
         cy + (rowH - Kit.textHeight("small")) / 2, PAL.detail)
       btn(imp, px + pw - pad - rmW, cy, rmW, rowH,
-        "idx-rm-" .. tostring(feed), Strings("Remove"), {
+        "idx-rm-" .. tostring(feed), AppLocale("Remove"), {
           kind = "danger", font = "small",
           action = function() imp:_removeIndex(feed) end })
       cy = cy + rowH + gap
@@ -1911,11 +1993,11 @@ local function buildIndexesModal(imp, m)
   end
   cy = cy + math.floor(6 * m.s)
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "idx-add",
-    Strings("Add index"), { kind = "accent", font = "small",
+    AppLocale("Add index"), { kind = "accent", font = "small",
       action = function() imp:_promptAddIndex() end })
   cy = cy + m.btnH + math.floor(8 * m.s)
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "idx-refresh",
-    Strings("Refresh all"), {
+    AppLocale("Refresh all"), {
       kind = "accent", font = "small", enabled = #sources > 0,
       action = function()
         imp._findSearchFocus = false
@@ -1924,7 +2006,7 @@ local function buildIndexesModal(imp, m)
       end })
   cy = cy + m.btnH + math.floor(8 * m.s)
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "idx-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._indexManage = nil end })
 end
 
@@ -1953,27 +2035,27 @@ local function buildModActionsModal(imp, m)
   local statusText, statusCol = modStatusColor(mod.status)
   local line = "v" .. tostring(mod.version or "?") .. "   " .. statusText
   if info and info.status == "available" then
-    line = line .. "   " .. Strings("v%s available", tostring(info.latest))
+    line = line .. "   " .. AppLocale("v%s available", tostring(info.latest))
   elseif info and info.status == "current" then
-    line = line .. "   " .. Strings("up to date")
+    line = line .. "   " .. AppLocale("up to date")
   end
   Kit.text("small", Kit.ellipsize("small", line, pw - 2 * pad),
     px + pad, cy, statusCol)
   cy = cy + Kit.textHeight("small") + math.floor(12 * m.s)
   local id = mod.id
   if hasGit then
-    local updLabel, updKind = Strings("Check for updates"), "ghost"
+    local updLabel, updKind = AppLocale("Check for updates"), "ghost"
     if info and info.status == "available" then
-      updLabel, updKind = Strings("Update"), "warn"
+      updLabel, updKind = AppLocale("Update"), "warn"
     elseif info and info.status == "current" then
-      updLabel = Strings("Check again")
+      updLabel = AppLocale("Check again")
     end
     btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "modact-upd", updLabel, {
       kind = updKind, font = "small",
       action = function() imp:_modGithubAction(id, "update") end })
     cy = cy + m.btnH + gap
     btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "modact-ver",
-      Strings("Versions"), { kind = "accent", font = "small",
+      AppLocale("Versions"), { kind = "accent", font = "small",
         action = function() imp:_modGithubAction(id, "versions") end })
     cy = cy + m.btnH + gap
   end
@@ -1989,7 +2071,7 @@ local function buildModActionsModal(imp, m)
       end })
   cy = cy + m.btnH + gap
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "modact-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._modActions = nil end })
 end
 
@@ -2040,24 +2122,24 @@ local function buildFindEntryModal(imp, m)
       end })
   else
     btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "findpop-inst",
-      Strings("Not installable from this index"),
+      AppLocale("Not installable from this index"),
       { font = "small", enabled = false })
   end
   cy = cy + m.btnH + gap
   local half = entry.repo and math.floor((pw - 2 * pad - gap) / 2)
     or (pw - 2 * pad)
-  btn(imp, px + pad, cy, half, m.btnH, "findpop-det", Strings("Details"), {
+  btn(imp, px + pad, cy, half, m.btnH, "findpop-det", AppLocale("Details"), {
     kind = "accent", font = "small",
     action = function() imp:_findShowDetails(entry) end })
   if entry.repo then
     local repo = entry.repo
     btn(imp, px + pad + half + gap, cy, half, m.btnH, "findpop-src",
-      Strings("Source"), { kind = "accent", font = "small",
+      AppLocale("Source"), { kind = "accent", font = "small",
         action = function() love.system.openURL(repo) end })
   end
   cy = cy + m.btnH + gap
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "findpop-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._findEntry = nil end })
 end
 
@@ -2070,8 +2152,7 @@ local function buildGameManageModal(imp, m)
   local info = GameVersion.info(version)
   local ready = imp.ready[version] or false
   local mdl = romModel(imp, version, info, ready, info == nil)
-  local gameName = info and (info.launcherName or info.displayName)
-    or tostring(version)
+  local gameName = localizedGameName(version, info)
   local saveDir = love.filesystem.getSaveDirectory
     and love.filesystem.getSaveDirectory() or nil
   -- The folder link is desktop-only: Android and NX have no browsable path to
@@ -2083,7 +2164,7 @@ local function buildGameManageModal(imp, m)
   local gap = math.floor(8 * m.s)
   local bodyW = w - 2 * pad
   local detailH = Kit.wrapHeight("small",
-    mdl.detail or Strings("The ROM for this game is imported and verified."),
+    mdl.detail or AppLocale("The ROM for this game is imported and verified."),
     bodyW, 3)
   local pathH = saveDir
     and (Kit.textHeight("micro") + math.floor(8 * m.s)) or 0
@@ -2094,10 +2175,10 @@ local function buildGameManageModal(imp, m)
   local cy = py + pad
 
   Kit.text("button", Kit.ellipsize("button",
-    Strings("Manage ") .. gameName, pw - 2 * pad), px + pad, cy, PAL.heading)
+    AppLocale("Manage %s", gameName), pw - 2 * pad), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(8 * m.s)
   cy = cy + Kit.textWrapped("small",
-    mdl.detail or Strings("The ROM for this game is imported and verified."),
+    mdl.detail or AppLocale("The ROM for this game is imported and verified."),
     px + pad, cy, pw - 2 * pad, mdl.state and PAL.detail or PAL.green, 3)
   cy = cy + math.floor(12 * m.s)
   if saveDir then
@@ -2109,7 +2190,7 @@ local function buildGameManageModal(imp, m)
   end
 
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "manage-rom",
-    mdl.label or Strings("Re-import ROM"), {
+    mdl.label or AppLocale("Re-import ROM"), {
       kind = "accent", font = "small", enabled = mdl.enabled ~= false,
       action = (mdl.enabled ~= false) and function()
         imp._gameManage = nil
@@ -2119,32 +2200,37 @@ local function buildGameManageModal(imp, m)
   cy = cy + m.btnH + gap
   if canOpenFolder then
     btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "manage-folder",
-      Strings("Open folder"), { kind = "accent", font = "small",
+      AppLocale("Open folder"), { kind = "accent", font = "small",
         action = function() love.system.openURL(imp:fileUrl(saveDir)) end })
     cy = cy + m.btnH + gap
   end
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "manage-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp._gameManage = nil end })
 end
 
 local function buildSettingsModal(imp, m)
   local model = imp._settings
+  if model.localeGeneration ~= AppLocale.generation() then
+    imp:_openSettings()
+    model = imp._settings
+    imp._settingsFlat = nil
+  end
   local pad = math.floor(18 * m.s)
   local w = math.floor(640 * m.s)
   local h = math.floor(math.min(m.H - 2 * m.pad, m.H * 0.9))
   local px, py, pw, ph = modalPanel(m, w, h)
   local cy = py + pad
 
-  Kit.text("stat", Strings("Settings"), px + pad, cy, PAL.heading)
-  local cw = Kit.textWidth("small", Strings("Close")) + math.floor(24 * m.s)
+  Kit.text("stat", AppLocale("Settings"), px + pad, cy, PAL.heading)
+  local cw = Kit.textWidth("small", AppLocale("Close")) + math.floor(24 * m.s)
   btn(imp, px + pw - pad - cw, cy, cw, m.btnH, "settings-close",
-    Strings("Close"), { font = "small",
+    AppLocale("Close"), { font = "small",
       action = function() imp:_closeSettings() end })
   cy = cy + math.max(Kit.textHeight("stat"), m.btnH) + math.floor(6 * m.s)
   -- WRAPPED, not printed flat: on a portrait panel this line ran straight off
   -- the right edge and the sentence ended mid-word at the card border.
-  cy = cy + Kit.textWrapped("micro", Strings(
+  cy = cy + Kit.textWrapped("micro", AppLocale(
     "Saved to your options file; the game applies these on its next start."),
     px + pad, cy, pw - 2 * pad, PAL.muted, 2)
     + math.floor(10 * m.s)
@@ -2239,7 +2325,7 @@ local function buildSettingsModal(imp, m)
       local rx = ix + inner
 
       if row.editText then
-        local ew = Kit.textWidth("small", Strings("Edit")) + math.floor(20 * m.s)
+        local ew = Kit.textWidth("small", AppLocale("Edit")) + math.floor(20 * m.s)
         local vw = math.floor(160 * m.s)
         Kit.text("small", Kit.ellipsize("small", row.label,
           labelW or (inner - ew - vw - math.floor(20 * m.s))),
@@ -2248,7 +2334,7 @@ local function buildSettingsModal(imp, m)
           rx - ew - math.floor(10 * m.s),
           ctlY + (m.btnH - Kit.textHeight("small")) / 2, PAL.detail)
         btn(imp, rx - ew, ctlY, ew, m.btnH,
-          key .. "-edit", Strings("Edit"), { kind = "accent", font = "small",
+          key .. "-edit", AppLocale("Edit"), { kind = "accent", font = "small",
             action = function()
               imp._settingsText = { row = row, text = tostring(row.value() or ""),
                 maxLen = row.editText.maxLen }
@@ -2257,12 +2343,12 @@ local function buildSettingsModal(imp, m)
       elseif row.action then
         -- A plain action row (Reset rebinds, Touch controls): the whole right
         -- side is one button rather than a value ladder.
-        local aw = Kit.textWidth("small", row.actionLabel or Strings("Run"))
+        local aw = Kit.textWidth("small", row.actionLabel or AppLocale("Run"))
           + math.floor(24 * m.s)
         Kit.text("small", Kit.ellipsize("small", row.label,
           labelW or (inner - aw - math.floor(12 * m.s))), ix, labelY, PAL.text)
         btn(imp, rx - aw, ctlY, aw, m.btnH,
-          key .. "-act", row.actionLabel or Strings("Run"), {
+          key .. "-act", row.actionLabel or AppLocale("Run"), {
             kind = row.danger and "danger" or "ghost", font = "small",
             action = function()
               if row.action() ~= false then model.save() end
@@ -2311,42 +2397,42 @@ local function buildModals(imp, m)
     local st = imp._settingsText
     buildPrompt(imp, m, {
       key = "settext", title = st.row.label, text = st.text,
-      okLabel = Strings("Save"),
+      okLabel = AppLocale("Save"),
       commit = function() imp:_commitSettingsText() end,
       cancel = function()
         imp._settingsText = nil
         imp:_disarmTextInput()
       end,
-      footnote = Strings("Enter to save - Esc to cancel"),
+      footnote = AppLocale("Enter to save - Esc to cancel"),
     })
     return true
   end
   if imp._settings then buildSettingsModal(imp, m) return true end
   if imp._rename then
     buildPrompt(imp, m, {
-      key = "rename", title = Strings("Name save slot"),
-      text = imp._rename.text, okLabel = Strings("Save"),
+      key = "rename", title = AppLocale("Name save slot"),
+      text = imp._rename.text, okLabel = AppLocale("Save"),
       commit = function() imp:_commitRename() end,
       cancel = function()
         imp._rename = nil
         imp:_disarmTextInput()
       end,
-      footnote = Strings("Enter to save - Esc to cancel - empty clears"),
+      footnote = AppLocale("Enter to save - Esc to cancel - empty clears"),
     })
     return true
   end
   if imp._indexPrompt then
     buildPrompt(imp, m, {
-      key = "index", title = Strings("Add a mod index"),
-      hint = Strings("Paste the index URL, or its owner/repo."),
-      text = imp._indexPrompt.text or "", okLabel = Strings("Add"),
+      key = "index", title = AppLocale("Add a mod index"),
+      hint = AppLocale("Paste the index URL, or its owner/repo."),
+      text = imp._indexPrompt.text or "", okLabel = AppLocale("Add"),
       commit = function() imp:_commitAddIndex() end,
       cancel = function()
         imp._indexPrompt = nil
         imp:_disarmTextInput()
       end,
       paste = function() imp:_pasteIndexUrl() end,
-      footnote = Strings("Enter to add - Esc to cancel"),
+      footnote = AppLocale("Enter to add - Esc to cancel"),
     })
     return true
   end
@@ -2355,9 +2441,9 @@ local function buildModals(imp, m)
     local ModUpdate = require("src.mods.ModUpdate")
     local n = imp._modReleaseNotes
     local body = ModUpdate.cleanBody(n.body or "", 0)
-    if body == "" then body = Strings("(No release notes.)") end
+    if body == "" then body = AppLocale("(No release notes.)") end
     buildTextModal(imp, m, "release-notes",
-      "v" .. tostring(n.version) .. Strings(" notes"), body,
+      AppLocale("v%s notes", tostring(n.version)), body,
       function() imp._modReleaseNotes = nil end)
     return true
   end
@@ -2365,7 +2451,7 @@ local function buildModals(imp, m)
     local ModUpdate = require("src.mods.ModUpdate")
     local d = imp._findDetails
     local body = ModUpdate.cleanBody(d.body or "", 0)
-    if body == "" then body = Strings("(No description.)") end
+    if body == "" then body = AppLocale("(No description.)") end
     buildTextModal(imp, m, "find-details", d.title, body,
       function() imp._findDetails = nil end)
     return true
@@ -2391,7 +2477,7 @@ end
 local function loaderSpec(imp)
   if imp.workState == "working" then
     return {
-      title = imp.status or Strings("Working"),
+      title = imp.status or AppLocale("Working"),
       detail = imp.detail,
       progress = imp.progress,
     }
@@ -2405,7 +2491,7 @@ local function loaderSpec(imp)
   -- must be able to use the launcher meanwhile), but if they reach the Find
   -- Mods tab before it lands, THEN they are waiting on it and it earns one.
   if imp.tab == "find" and imp._findFetch and not imp.findLoaded then
-    return { title = Strings("Loading mod index") }
+    return { title = AppLocale("Loading mod index") }
   end
   return nil
 end

@@ -78,6 +78,20 @@ The packaged app contains neither a ROM nor pre-extracted game data. Music,
 sound effects, and cries are synthesized while the game runs from compact
 audio channel programs copied out of the verified ROM.
 
+### Interface language
+
+The launcher and other Gen1Recomp-owned application surfaces support English
+(`en`, the default) and Spanish for Spain (`es-ES`). Change the language under
+**Settings -> Interface Language**; visible application UI refreshes without a
+restart and the preference is shared by Red, Blue, and Yellow.
+
+This setting does not translate cartridge dialogue, battles, species, moves,
+items, Pokédex data, ROM-derived text, or text supplied by third-party mods.
+Those remain separate from the interface translation. Want to contribute
+another language? See [Contributing interface translations](docs/translating.md).
+Architecture, integration rules, and test coverage are documented in
+[docs/localization.md](docs/localization.md).
+
 ### A note on Windows Defender warnings
 
 Windows Defender sometimes flags the Windows build with a generic

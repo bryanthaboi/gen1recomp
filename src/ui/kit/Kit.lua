@@ -42,6 +42,7 @@
 -- covers.
 
 local Theme = require("src.ui.kit.Theme")
+local AppLocale = require("src.core.AppLocale")
 local PAL = Theme.PAL
 
 local Kit = {}
@@ -561,8 +562,18 @@ end
 function Kit.emptyBox(x, y, w, h, message)
   if not G then return end
   Theme.strokeRounded(x, y, w, h, PAL.line, 0.22, 1, Theme.radius())
-  Kit.textCenter("button", Kit.ellipsize("button", message, w - 24 * Kit.scale),
-    x, y + (h - Kit.textHeight("button")) / 2, w, PAL.muted)
+  local lines = Kit.wrapLines("button", message, w - 24 * Kit.scale) or { "" }
+  local n = math.min(#lines, 2)
+  local lineH = Kit.textHeight("button")
+  local firstY = y + (h - n * lineH) / 2
+  for i = 1, n do
+    local line = lines[i]
+    if i == n and #lines > n then
+      line = Kit.ellipsize("button", line .. "...", w - 24 * Kit.scale)
+    end
+    Kit.textCenter("button", line, x, firstY + (i - 1) * lineH,
+      w, PAL.muted)
+  end
 end
 
 -- ----------------------------------------------------------------- buttons
@@ -599,7 +610,7 @@ local KINDS = {
 }
 Kit.KINDS = KINDS
 
--- opts: { kind, font, enabled, align, id, glow, fill, ink }
+-- opts: { kind, font, enabled, align, id, glow, fill, ink, wrap }
 --   id      -- opts into the focus ring (give every real control one)
 --   glow    -- a pulsing outline for "something is waiting for you" (the
 --              update button).  No blend-mode change: the alpha of the
@@ -609,6 +620,7 @@ Kit.KINDS = KINDS
 --              (red/blue/gold) rather than a semantic one: on that screen
 --              "which game am I launching" outranks "what kind of verb is
 --              this", and the colour is already the tab's identity.
+--   wrap    -- draw every wrapped label line; the caller must reserve height
 -- Returns true when activated, by click OR by the focus ring's Enter/A.
 function Kit.button(x, y, w, h, label, opts)
   opts = opts or {}
@@ -645,14 +657,28 @@ function Kit.button(x, y, w, h, label, opts)
     end
     local fname = opts.font or "button"
     local ink = enabled and kind.ink or PAL.inverse
-    local ty = y + (h - Kit.textHeight(fname)) / 2
-    local shown = Kit.ellipsize(fname, label, w - 16 * Kit.scale)
     -- Button labels are bold: they are the shortest, most-scanned text on
     -- screen and sit on a saturated fill.
-    if opts.align == "left" then
-      Kit.textBold(fname, shown, x + 10 * Kit.scale, ty, ink)
+    if opts.wrap then
+      -- A localized action may be wider than its container even after its
+      -- surrounding layout has moved it onto a separate row.  In that rare
+      -- case the caller reserves the extra height and asks the button to wrap
+      -- instead of silently shortening the translated action with an ellipsis.
+      local lines = Kit.wrapLines(fname, label, w - 16 * Kit.scale)
+        or { tostring(label) }
+      local lineH = Kit.textHeight(fname)
+      local ty = y + (h - #lines * lineH) / 2
+      for i, line in ipairs(lines) do
+        Kit.textCenterBold(fname, line, x, ty + (i - 1) * lineH, w, ink)
+      end
     else
-      Kit.textCenterBold(fname, shown, x, ty, w, ink)
+      local ty = y + (h - Kit.textHeight(fname)) / 2
+      local shown = Kit.ellipsize(fname, label, w - 16 * Kit.scale)
+      if opts.align == "left" then
+        Kit.textBold(fname, shown, x + 10 * Kit.scale, ty, ink)
+      else
+        Kit.textCenterBold(fname, shown, x, ty, w, ink)
+      end
     end
   end
   if not enabled then return false end
@@ -809,25 +835,33 @@ end
 -- Returns the new page (1-based) and the row height consumed.
 function Kit.pager(x, y, w, page, total, perPage, idPrefix)
   local h = math.max(Kit.tapMin(), 30 * Kit.scale)
-  local bw = 74 * Kit.scale
+  local prevLabel = AppLocale("< Prev")
+  local nextLabel = AppLocale("Next >")
+  local buttonPad = 24 * Kit.scale
+  local prevW = math.max(74 * Kit.scale,
+    Kit.textWidth("small", prevLabel) + buttonPad)
+  local nextW = math.max(74 * Kit.scale,
+    Kit.textWidth("small", nextLabel) + buttonPad)
   local pages = math.max(1, math.ceil(total / math.max(1, perPage)))
   page = math.floor(Theme.clamp(page or 1, 1, pages))
   local gap = 8 * Kit.scale
   idPrefix = idPrefix or "pager"
 
-  if Kit.button(x, y, bw, h, "< Prev", { kind = "ghost", font = "small",
+  if Kit.button(x, y, prevW, h, prevLabel,
+      { kind = "ghost", font = "small",
       enabled = page > 1, id = idPrefix .. ":prev" }) then
     page = math.max(1, page - 1)
   end
-  if Kit.button(x + bw + gap, y, bw, h, "Next >", { kind = "ghost",
+  if Kit.button(x + prevW + gap, y, nextW, h, nextLabel, { kind = "ghost",
       font = "small", enabled = page < pages, id = idPrefix .. ":next" }) then
     page = math.min(pages, page + 1)
   end
 
   local first = total > 0 and ((page - 1) * perPage + 1) or 0
   local last = math.min(total, page * perPage)
-  local label = ("%d-%d of %d   (page %d/%d)"):format(first, last, total, page, pages)
-  local labelX = x + 2 * bw + 2 * gap + gap
+  local label = AppLocale("%d-%d of %d   (page %d/%d)",
+    first, last, total, page, pages)
+  local labelX = x + prevW + nextW + 3 * gap
   Kit.text("mono", Kit.ellipsize("mono", label, math.max(0, x + w - labelX)),
     labelX, y + (h - Kit.textHeight("mono")) / 2, PAL.caption)
   return page, h
