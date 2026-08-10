@@ -610,7 +610,7 @@ local KINDS = {
 }
 Kit.KINDS = KINDS
 
--- opts: { kind, font, enabled, align, id, glow, fill, ink }
+-- opts: { kind, font, enabled, align, id, glow, fill, ink, wrap }
 --   id      -- opts into the focus ring (give every real control one)
 --   glow    -- a pulsing outline for "something is waiting for you" (the
 --              update button).  No blend-mode change: the alpha of the
@@ -620,6 +620,7 @@ Kit.KINDS = KINDS
 --              (red/blue/gold) rather than a semantic one: on that screen
 --              "which game am I launching" outranks "what kind of verb is
 --              this", and the colour is already the tab's identity.
+--   wrap    -- draw every wrapped label line; the caller must reserve height
 -- Returns true when activated, by click OR by the focus ring's Enter/A.
 function Kit.button(x, y, w, h, label, opts)
   opts = opts or {}
@@ -656,14 +657,28 @@ function Kit.button(x, y, w, h, label, opts)
     end
     local fname = opts.font or "button"
     local ink = enabled and kind.ink or PAL.inverse
-    local ty = y + (h - Kit.textHeight(fname)) / 2
-    local shown = Kit.ellipsize(fname, label, w - 16 * Kit.scale)
     -- Button labels are bold: they are the shortest, most-scanned text on
     -- screen and sit on a saturated fill.
-    if opts.align == "left" then
-      Kit.textBold(fname, shown, x + 10 * Kit.scale, ty, ink)
+    if opts.wrap then
+      -- A localized action may be wider than its container even after its
+      -- surrounding layout has moved it onto a separate row.  In that rare
+      -- case the caller reserves the extra height and asks the button to wrap
+      -- instead of silently shortening the translated action with an ellipsis.
+      local lines = Kit.wrapLines(fname, label, w - 16 * Kit.scale)
+        or { tostring(label) }
+      local lineH = Kit.textHeight(fname)
+      local ty = y + (h - #lines * lineH) / 2
+      for i, line in ipairs(lines) do
+        Kit.textCenterBold(fname, line, x, ty + (i - 1) * lineH, w, ink)
+      end
     else
-      Kit.textCenterBold(fname, shown, x, ty, w, ink)
+      local ty = y + (h - Kit.textHeight(fname)) / 2
+      local shown = Kit.ellipsize(fname, label, w - 16 * Kit.scale)
+      if opts.align == "left" then
+        Kit.textBold(fname, shown, x + 10 * Kit.scale, ty, ink)
+      else
+        Kit.textCenterBold(fname, shown, x, ty, w, ink)
+      end
     end
   end
   if not enabled then return false end
