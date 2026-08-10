@@ -1,4 +1,4 @@
--- Nuzlocke Rules v3.29 - UI polish, concise rule descriptions, and E4 caps
+-- Nuzlocke Rules v3.27 - Battle-item enforcement fix and current Nuzlocke rules profile
 return function(mod)
   local Stats = require("src.pokemon.Stats")
   local Growth = require("src.pokemon.Growth")
@@ -336,8 +336,7 @@ return function(mod)
           ROUTE_NAMES[id] = formatAreaDisplayName(name, id)
           table.insert(ALL_ROUTES, {
               id = id,
-              name = ROUTE_NAMES[id],
-              dynamic = true,
+              name = ROUTE_NAMES[id]
           })
       elseif name then
           ROUTE_NAMES[id] = formatAreaDisplayName(name, id)
@@ -478,11 +477,6 @@ return function(mod)
   ---------------------------------------------------------------------
   -- AREA KEY
   ---------------------------------------------------------------------
-  -- Assigned after the town classifier is defined.  This lets overworld
-  -- town interiors share the parent town's encounter slot instead of
-  -- becoming dozens of separate "areas" in the tracker.
-  local canonicalEncounterArea
-
   local function areaKey(game, battle)
       if battle and battle.safari then
           return "SAFARI_ZONE"
@@ -498,11 +492,7 @@ return function(mod)
           mapId = game.save.player.map
       end
 
-      local key = routeKey(mapId)
-      if canonicalEncounterArea then
-          key = canonicalEncounterArea(key)
-      end
-      return key
+      return routeKey(mapId)
   end
 
   ---------------------------------------------------------------------
@@ -956,7 +946,7 @@ return function(mod)
           staticGiftAreas.SQUIRTLE   = "VERMILION_CITY"
       end
       local staticTradeAreas = {
-          JYNX       = "CERULEAN_CITY",
+          JYX        = "CERULEAN_CITY",
           FARFETCHD  = "VERMILION_CITY",
           MR_MIME    = "ROUTE_2",
           LICKITUNG  = "FUCHSIA_CITY",
@@ -1123,57 +1113,54 @@ return function(mod)
       {
           title = "- CORE -",
           rules = {
-              { key = "nuzlocke_enabled", name = "Nuzlocke", desc = "Master switch. OFF disables the Nuzlocke rules." },
-              { key = "permadeath",       name = "Permadeath", desc = "A fainted Pokemon is dead and cannot be used again." },
-              { key = "encounter_limit",  name = "1st Catch", desc = "Only the first eligible catch in each area is allowed." },
-              { key = "failed_encounter", name = "Failed Encounters", desc = "A failed first encounter consumes the area. Dupes and Shinies can bypass it when their clauses are ON." },
-              { key = "nickname_rule",   name = "Nickname Rule", desc = "Every caught Pokemon must be given a nickname." },
+              { key = "nuzlocke_enabled", name = "Nuzlocke", desc = "Master switch for all Nuzlocke rules. Toggle this off to disable everything." },
+              { key = "permadeath",       name = "Permadeath", desc = "Fainted Pokemon are considered dead and removed from the party." },
+              { key = "encounter_limit",  name = "1st Catch", desc = "Only the first eligible catch per area can be caught." },
+              { key = "failed_encounter", name = "Failed Encounters", desc = "If ON, your first eligible wild/overworld encounter consumes the area even if you defeat it, flee, or fail to catch it. Dupes encounters do not consume the area while Dupes Clause is ON; shiny Pokemon are always allowed when Shiny Clause is ON." },
+              { key = "nickname_rule",   name = "Nickname Rule", desc = "You must enter a nickname for every Pokemon you catch." },
           }
       },
       {
           title = "- CLAUSES -",
           rules = {
-              { key = "dupes_mode",      name = "Dupes Clause", desc = "Repeated catches are skipped and do not consume the area. Shiny Clause overrides this." },
-              { key = "dupes_scope",     name = "Dupes Scope", choice = true, choices = { "SPECIES", "FAMILY" }, desc = "SPECIES skips only the same species. FAMILY skips the entire evolution family." },
-              { key = "shiny_clause",    name = "Shiny Clause", desc = "Shinies may always be caught, even when 1st Catch or Dupes would block them." },
+              { key = "dupes_mode",      name = "Dupes Clause", desc = "Previously caught duplicate families do not count as the area encounter and cannot be caught, unless shiny." },
+              { key = "shiny_clause",    name = "Shiny Clause", desc = "Shiny Pokemon are always allowed as catches, even when they would otherwise violate 1st Catch or Dupes." },
           }
       },
       {
           title = "- GENERAL -",
           rules = {
-              { key = "overworld_encounters", name = "Overworld", desc = "Overworld wild spawns can count as area encounters." },
-              { key = "town_catches",         name = "Town Catches", desc = "Wild catches in towns and cities can count as area encounters. The Pallet starter is always tracked." },
-              { key = "ban_legendaries",      name = "No Legend", desc = "Articuno, Zapdos, Moltres, and Mewtwo cannot be caught or used." },
-              { key = "ban_mythicals",        name = "No Mythic", desc = "Mew cannot be caught or used." },
-              { key = "allow_gifts",          name = "Gift Pokemon", desc = "Allowed gifts use the encounter slot for the area where they are received." },
-              { key = "allow_trades",         name = "In-Game Trades", desc = "Allowed trades use the encounter slot for the trade location. Version-specific trades are supported." },
+              { key = "overworld_encounters", name = "Overworld", desc = "Allow Pokemon caught from overworld spawns to count as area encounters." },
+              { key = "town_catches",         name = "Town Catches", desc = "Allow Pokemon caught in towns/cities to count as encounters. Pallet Town starter slot is always tracked regardless." },
+              { key = "ban_legendaries",      name = "No Legend", desc = "Legendary Pokemon (Articuno, Zapdos, Moltres, Mewtwo) cannot be caught or used." },
+              { key = "ban_mythicals",        name = "No Mythic", desc = "Mythical Pokemon (Mew) cannot be caught or used." },
+              { key = "allow_gifts",      name = "Gift Pokemon", desc = "Gift Pokemon (Eevee, Lapras, Fossils, etc.) are allowed and consume the area slot where they were received." },
+              { key = "allow_trades",     name = "In-Game Trades", desc = "In-game traded Pokemon are allowed and consume the area slot where the trade NPC lives. Version-specific trades (Red/Blue/Yellow) are all accounted for." },
           }
       },
       {
           title = "- HARDCORE -",
           rules = {
-              { key = "hardcore_mode",    name = "Level Caps", desc = "Your Pokemon cannot exceed the next Gym Leader's ace. E4 Caps continues the cap after Giovanni." },
-              { key = "elite_four_caps",  name = "E4 Caps", desc = "After Giovanni: Lorelei 54, Bruno 58, Agatha 60, Lance 62, Champion 65." },
-              { key = "no_healing_items", name = "No Healing Items", desc = "Potions, Revives, and status-healing items cannot be used during battle." },
-              { key = "no_battle_items",  name = "No X Items", desc = "X Attack, X Defend, and other battle stat items cannot be used during battle. Poke Balls still work." },
+              { key = "hardcore_mode",    name = "Level Caps", desc = "Max level = next Gym Leader ace. Experience is capped automatically." },
+              { key = "no_healing_items", name = "No Healing Items", desc = "Potions, Revives, and status-healing items cannot be used in battle." },
+              { key = "no_battle_items",  name = "No X Items", desc = "X Attack, X Defend, and similar non-healing battle items cannot be used in battle. Poke Balls are unaffected." },
           }
       },
       {
           title = "- IRONMON -",
           rules = {
-              { key = "no_shopping",      name = "No Shop", desc = "Poke Marts refuse all purchases while this rule is ON." },
-              { key = "no_poke_center",  name = "No PokeCenter", desc = "Pokemon Centers cannot heal your party while this rule is ON." },
-              { key = "no_mom_heal",     name = "No Mom Heal", desc = "Mom cannot heal your party while this rule is ON." },
-              { key = "whiteout_clause", name = "Whiteout", desc = "ON: total party KO is survivable. OFF: a blackout ends the run and wipes the save." },
-              { key = "first_rival_mercy", name = "First Rival Mercy", desc = "Only the first Rival battle at Oak's Lab can ignore Blackout. It works once per save." },
-              { key = "solo_active",      name = "Solo Only", desc = "Only one Pokemon may be active in the party. PC swaps are still allowed." },
+              { key = "no_shopping",     name = "No Shop", desc = "Cannot buy from Poke Marts. The clerk will politely refuse you." },
+              { key = "no_poke_center",  name = "No PokeCenter", desc = "Cannot heal at Pokemon Centers. Nurse Joy will turn you away." },
+              { key = "no_mom_heal",      name = "No Mom Heal", desc = "Mom cannot heal your party when you visit home. She will remind you of your rules instead." },
+              { key = "whiteout_clause",  name = "Whiteout", desc = "A total party KO is survivable. The normal game whiteout sends you back without restoring dead Pokemon." },
+              { key = "solo_active",      name = "Solo Only", desc = "Only one Pokemon in the active party slot. Enforced at catch time; does not block PC swaps." },
           }
       },
       {
           title = "- UI -",
           rules = {
-              { key = "catch_info", name = "Catch Info", desc = "Adds CATCH INFO to the party menu for owned Pokemon." },
-              { key = "area_guide_enabled", name = "Area Guide", desc = "Shows the full Encounter Tracker area list. OFF shows only areas already recorded by the tracker." },
+              { key = "catch_info", name = "Catch Info", desc = "Show CATCH INFO in the party menu for Pokemon you own." },
+              { key = "area_guide_enabled", name = "Area Guide", desc = "Show the second Encounter Tracker page with all catchable areas. Turn OFF to restrict the tracker to your catches only." },
           }
       },
   }
@@ -1276,10 +1263,6 @@ return function(mod)
       if key == "rules_locked" then
           return false
       end
-      if key == "dupes_scope" then
-          -- Preserve the older family-wide behavior by default.
-          return "FAMILY"
-      end
       -- Core/general defaults for a new Nuzlocke run.
       -- These are the requested startup defaults; once the save exists,
       -- the active save is authoritative and in-game toggles override them.
@@ -1289,7 +1272,7 @@ return function(mod)
       end
       if key == "overworld_encounters" or key == "town_catches"
           or key == "no_healing_items" or key == "no_battle_items"
-          or key == "no_mom_heal" or key == "elite_four_caps" then
+          or key == "no_mom_heal" then
           return false
       end
       return false
@@ -1346,16 +1329,7 @@ return function(mod)
           for _, rule in ipairs(cat.rules) do
               local v = source and source[rule.key]
               if v == nil then v = defaultRuleValue(rule.key) end
-              if rule.choice then
-                  local choices = rule.choices or {}
-                  local valid = false
-                  for _, choice in ipairs(choices) do
-                      if v == choice then valid = true; break end
-                  end
-                  copy[rule.key] = valid and v or defaultRuleValue(rule.key)
-              else
-                  copy[rule.key] = (v == true)
-              end
+              copy[rule.key] = (v == true)
           end
       end
       copy.area_guide_enabled = source and source.area_guide_enabled ~= false
@@ -1366,14 +1340,6 @@ return function(mod)
       copy.starting_pokeballs = math.max(0, math.min(99,
           tonumber(source and source.starting_pokeballs) or defaultRuleValue("starting_pokeballs")))
       return copy
-  end
-
-  local function profileRuleValue(profile, rule)
-      local value = profile and profile[rule.key]
-      if rule.choice then
-          return value or defaultRuleValue(rule.key)
-      end
-      return value == true
   end
 
   local function serializeSetupValue(v)
@@ -1466,7 +1432,7 @@ return function(mod)
       local profile = copyRuleProfile(pendingNewGameRules)
       for _, cat in ipairs(ruleCategories) do
           for _, rule in ipairs(cat.rules) do
-              mod.save:set(rule.key, profileRuleValue(profile, rule))
+              mod.save:set(rule.key, profile[rule.key] == true)
           end
       end
       saveAreaGuideState(profile.area_guide_enabled == true)
@@ -1518,7 +1484,7 @@ return function(mod)
       -- an OFF selection is a real selection, not permission to use defaults.
       for _, cat in ipairs(ruleCategories) do
           for _, rule in ipairs(cat.rules) do
-              local expected = profileRuleValue(profile, rule)
+              local expected = profile[rule.key] == true
               mod.save:set(rule.key, expected)
           end
       end
@@ -1531,7 +1497,7 @@ return function(mod)
       -- will stamp the same snapshot again.
       for _, cat in ipairs(ruleCategories) do
           for _, rule in ipairs(cat.rules) do
-              local expected = profileRuleValue(profile, rule)
+              local expected = profile[rule.key] == true
               local actual = mod.save:get(rule.key, nil)
               if actual ~= expected then
                   allVerified = false
@@ -1602,7 +1568,7 @@ return function(mod)
 
       for _, cat in ipairs(ruleCategories) do
           for _, rule in ipairs(cat.rules) do
-              mod.save:set(rule.key, profileRuleValue(profile, rule))
+              mod.save:set(rule.key, profile[rule.key] == true)
           end
       end
       saveAreaGuideState(profile.area_guide_enabled == true)
@@ -1611,7 +1577,7 @@ return function(mod)
       local verified = true
       for _, cat in ipairs(ruleCategories) do
           for _, rule in ipairs(cat.rules) do
-              if mod.save:get(rule.key, nil) ~= profileRuleValue(profile, rule) then
+              if mod.save:get(rule.key, nil) ~= (profile[rule.key] == true) then
                   verified = false
                   break
               end
@@ -1698,28 +1664,11 @@ return function(mod)
   -- ace level of the first badge the player has not earned yet.  This mirrors
   -- the usual Nuzlocke convention and keeps the rule independent of map order.
   ---------------------------------------------------------------------
-  local GYM_LEVEL_CAPS = { 14, 21, 24, 29, 43, 43, 47, 50 }
-  local GYM_LEVEL_CAP_OPPONENTS = {
+  local LEVEL_CAPS = { 14, 21, 24, 29, 43, 43, 47, 50, 100 }
+  local LEVEL_CAP_GYM_LEADERS = {
       "BROCK", "MISTY", "LT SURGE", "ERIKA",
-      "KOGA", "SABRINA", "BLAINE", "GIOVANNI"
+      "KOGA", "SABRINA", "BLAINE", "GIOVANNI", "MAX"
   }
-
-  -- Optional post-Giovanni caps.  The stage advances only when the expected
-  -- Elite Four / Champion battle is actually won, so the cap cannot jump
-  -- ahead merely because the player entered Indigo Plateau.
-  local E4_LEVEL_CAPS = { 54, 58, 60, 62, 65 }
-  local E4_OPPONENTS = {
-      "OPP_LORELEI", "OPP_BRUNO", "OPP_AGATHA", "OPP_LANCE", "OPP_RIVAL3"
-  }
-  local E4_CAP_LABELS = {
-      "LORELEI", "BRUNO", "AGATHA", "LANCE", "CHAMP."
-  }
-  local E4_STAGE_KEY = "elite_four_stage"
-
-  local function currentEliteFourStage()
-      local stage = tonumber(mod.save:get(E4_STAGE_KEY, 0)) or 0
-      return math.max(0, math.min(#E4_LEVEL_CAPS, math.floor(stage)))
-  end
 
   local function currentBadgeCount(save)
       local inventory = save and save.inventory or {}
@@ -1742,59 +1691,13 @@ return function(mod)
   end
 
   local function nextLevelCap(save)
-      local badges = currentBadgeCount(save)
-      if badges < #GYM_LEVEL_CAPS then
-          return GYM_LEVEL_CAPS[badges + 1] or 100
-      end
-
-      if mod.save:get("elite_four_caps", false) == true then
-          local stage = currentEliteFourStage()
-          return E4_LEVEL_CAPS[stage + 1] or 100
-      end
-
-      return 100
+      return LEVEL_CAPS[math.min(currentBadgeCount(save) + 1, #LEVEL_CAPS)] or 100
   end
 
   local function nextLevelCapInfo(save)
-      local badges = currentBadgeCount(save)
-      if badges < #GYM_LEVEL_CAPS then
-          return GYM_LEVEL_CAPS[badges + 1] or 100,
-              GYM_LEVEL_CAP_OPPONENTS[badges + 1] or "MAX"
-      end
-
-      if mod.save:get("elite_four_caps", false) == true then
-          local stage = currentEliteFourStage()
-          return E4_LEVEL_CAPS[stage + 1] or 100,
-              E4_CAP_LABELS[stage + 1] or "MAX"
-      end
-
-      return 100, "MAX"
+      local index = math.min(currentBadgeCount(save) + 1, #LEVEL_CAPS)
+      return LEVEL_CAPS[index] or 100, LEVEL_CAP_GYM_LEADERS[index] or "MAX"
   end
-
-  -- Advance the optional E4 cap ladder only after the expected opponent is
-  -- actually defeated.  Checking enemyParty HP avoids depending on a
-  -- particular battle-ended result string across recomp builds.
-  mod.events:on("battle.ended", function(payload)
-      if mod.save:get("elite_four_caps", false) ~= true then return end
-
-      local battle = payload and (payload.battle or payload)
-      if not battle or battle.kind ~= "trainer" then return end
-
-      local stage = currentEliteFourStage()
-      if stage >= #E4_OPPONENTS then return end
-      if tostring(battle.oppClass or "") ~= E4_OPPONENTS[stage + 1] then return end
-
-      local enemyParty = battle.enemyParty
-      if type(enemyParty) ~= "table" or #enemyParty == 0 then return end
-
-      for _, mon in ipairs(enemyParty) do
-          if mon and (tonumber(mon.hp) or 0) > 0 then
-              return
-          end
-      end
-
-      mod.save:set(E4_STAGE_KEY, stage + 1)
-  end)
 
   local function capExperienceForMon(mon, cap)
       local def = Data.pokemon and Data.pokemon[mon and mon.species]
@@ -1948,53 +1851,15 @@ return function(mod)
       if key == "starting_money" or key == "starting_pokeballs" then
           return tonumber(stored) or defaultRuleValue(key)
       end
-      if key == "dupes_scope" then
-          return stored == "SPECIES" and "SPECIES" or "FAMILY"
-      end
       return stored == true
   end
 
 
-  local setConfigValue
-
-  local function cycleChoiceValue(key, direction, preGame)
-      local ruleDef
-      for _, cat in ipairs(ruleCategories) do
-          for _, rule in ipairs(cat.rules) do
-              if rule.key == key then
-                  ruleDef = rule
-                  break
-              end
-          end
-          if ruleDef then break end
-      end
-
-      if not ruleDef or not ruleDef.choice then return false end
-      local choices = ruleDef.choices or {}
-      if #choices == 0 then return false end
-
-      local current = getConfigValue(key, preGame)
-      local index = 1
-      for i, choice in ipairs(choices) do
-          if choice == current then
-              index = i
-              break
-          end
-      end
-
-      direction = direction or 1
-      index = ((index - 1 + direction) % #choices) + 1
-      setConfigValue(key, choices[index], preGame)
-      return true
-  end
-
-  setConfigValue = function(key, value, preGame)
+  local function setConfigValue(key, value, preGame)
       if key == "starting_money" then
           value = math.max(0, math.min(9999, math.floor(tonumber(value) or 0)))
       elseif key == "starting_pokeballs" then
           value = math.max(0, math.min(99, math.floor(tonumber(value) or 0)))
-      elseif key == "dupes_scope" then
-          value = value == "SPECIES" and "SPECIES" or "FAMILY"
       else
           value = value == true
       end
@@ -2180,26 +2045,21 @@ return function(mod)
 
               local function moveCursor(dir)
                   local target = self.cursor
-                  local count = #flatItemList
-                  if count == 0 then return end
 
-                  -- Walk at most one complete list cycle. This avoids an
-                  -- infinite loop if a future category configuration leaves
-                  -- no selectable rule rows.
-                  for _ = 1, count do
+                  repeat
                       target = target + dir
+
                       if target < 1 then
-                          target = count
-                      elseif target > count then
                           target = 1
                       end
 
-                      if not flatItemList[target].isHeader then
-                          self.cursor = target
-                          self.descScroll = 0
-                          return
+                      if target > #flatItemList then
+                          target = #flatItemList
                       end
-                  end
+                  until not flatItemList[target].isHeader
+
+                  self.cursor = target
+                  self.descScroll = 0
               end
 
               local function selectedItem()
@@ -2281,13 +2141,8 @@ return function(mod)
                       activateControl(item)
                   elseif canChangeSelected(item) then
                       local key = item.rule.key
-                      if item.rule.choice then
-                          local direction = self.game.input:wasPressed("left") and -1 or 1
-                          cycleChoiceValue(key, direction, self.preGame)
-                      else
-                          local cur = getConfigValue(key, self.preGame)
-                          setConfigValue(key, not cur, self.preGame)
-                      end
+                      local cur = getConfigValue(key, self.preGame)
+                      setConfigValue(key, not cur, self.preGame)
                   end
               elseif self.game.input:wasPressed("select") then
                   if item and not item.isHeader then
@@ -2308,12 +2163,8 @@ return function(mod)
                       self.descScroll = 0
                   elseif canChangeSelected(item) then
                       local key = item.rule.key
-                      if item.rule.choice then
-                          cycleChoiceValue(key, 1, self.preGame)
-                      else
-                          local cur = getConfigValue(key, self.preGame)
-                          setConfigValue(key, not cur, self.preGame)
-                      end
+                      local cur = getConfigValue(key, self.preGame)
+                      setConfigValue(key, not cur, self.preGame)
                   end
               end
           end
@@ -2409,12 +2260,7 @@ return function(mod)
                               Font.draw("^", 118 + ((self.digitIndex - 1) + prefix) * 6, drawY - 8)
                           end
                       else
-                          local status
-                          if item.rule.choice then
-                              status = (val == "SPECIES") and "SPEC" or "FAM"
-                          else
-                              status = val and "ON" or "OFF"
-                          end
+                          local status = val and "ON" or "OFF"
                           Font.draw(status, 118, drawY)
                       end
                   end
@@ -2560,64 +2406,7 @@ return function(mod)
       return false
   end
 
-  local TOWN_PARENT_BY_PREFIX = {
-      pallet = "PALLET_TOWN", viridian = "VIRIDIAN_CITY",
-      pewter = "PEWTER_CITY", cerulean = "CERULEAN_CITY",
-      vermilion = "VERMILION_CITY", vermillion = "VERMILION_CITY",
-      lavender = "LAVENDER_TOWN", fuchsia = "FUCHSIA_CITY",
-      celadon = "CELADON_CITY", saffron = "SAFFRON_CITY",
-      cinnabar = "CINNABAR_ISLAND",
-  }
-
-  local function townParentArea(id, name)
-      id = tostring(id or "")
-      if TOWN_AREA_IDS[id] then return id end
-
-      local text = tostring(name or id or ""):lower()
-      text = text:gsub("_+", " ")
-      text = text:gsub("([a-z])([A-Z])", "%1 %2"):lower()
-      for prefix, parent in pairs(TOWN_PARENT_BY_PREFIX) do
-          if text:find("^" .. prefix, 1) then
-              for _, word in ipairs(TOWN_INTERIOR_WORDS) do
-                  if text:find(word, 1, true) then
-                      return parent
-                  end
-              end
-          end
-      end
-      return nil
-  end
-
-  canonicalEncounterArea = function(id)
-      id = routeKey(id)
-      if not id then return nil end
-      local parent = townParentArea(id, ROUTE_NAMES[id])
-      if parent and parent ~= id then
-          return parent
-      end
-      return id
-  end
-
-  local function hasEncounterData(game, id)
-      local encounters = game and game.data and game.data.encounters
-      local def = encounters and encounters[id]
-      if type(def) ~= "table" then return false end
-
-      local function hasEntries(tbl)
-          if type(tbl) ~= "table" then return false end
-          for _, value in pairs(tbl) do
-              if type(value) == "table" then
-                  if #value > 0 then return true end
-                  if hasEntries(value) then return true end
-              end
-          end
-          return false
-      end
-
-      return hasEntries(def)
-  end
-
-  local function areaAllowedByConfig(area, game)
+  local function areaAllowedByConfig(area)
       if not area then
           return false
       end
@@ -2628,27 +2417,9 @@ return function(mod)
           return true
       end
 
-      -- Wilds of Kanto can spawn Pokemon in town interiors. Those interiors
-      -- share the parent town's Nuzlocke slot and should never inflate the
-      -- Area Guide into a list of every building map.
-      local parent = townParentArea(area.id, area.name)
-      if parent and parent ~= area.id then
-          return false
-      end
-
       if isTownArea(area.id, area.name) and not mod.save:get("town_catches", false) then
           return false
       end
-
-      -- Dynamic maps are only guide-worthy when they actually expose
-      -- encounter data, or when the player already has a recorded catch there.
-      -- This prevents game.data.maps from turning the guide into 100+
-      -- unrelated interiors while preserving compatibility with custom maps.
-      if area.dynamic and not hasEncounterData(game, area.id)
-          and caughtAreas()[area.id] == nil then
-          return false
-      end
-
       return true
   end
 
@@ -2657,7 +2428,7 @@ return function(mod)
       local list = {}
 
       for _, r in ipairs(ALL_ROUTES) do
-          if areaAllowedByConfig(r, game) then
+          if areaAllowedByConfig(r) then
               table.insert(list, r)
           end
       end
@@ -2805,8 +2576,8 @@ return function(mod)
               -- Keep the gym/rules area above a completely dedicated bottom
               -- navigation strip.  The previous layout let the second rule
               -- line run into the button prompts on real hardware scaling.
-              Font.draw("NEXT BOSS", 16, 80)
-              Font.draw(marqueeText(leader, 7, self.ruleArrowTime), 88, 80)
+              Font.draw("NEXT CAP", 16, 80)
+              Font.draw(leader, 88, 80)
 
               Font.draw("RULES", 16, 90)
               if #names == 0 then
@@ -2991,9 +2762,9 @@ return function(mod)
               local capStr = cap >= 100 and "CAP:MAX" or ("CAP:" .. tostring(cap))
               Font.draw(capStr, 14, 112)
               if guideEnabled then
-                  Font.draw("A:PAGE", 66, 112)
+                  Font.draw("A:PG", 72, 112)
               end
-              Font.draw("B:BACK", 112, 112)
+              Font.draw("B:X", 122, 112)
 
               if canScrollDown and blinkOn then
                   Font.draw("v", 72, 126)
@@ -3232,8 +3003,7 @@ return function(mod)
   mod.hooks:wrap("ui.party.submenu", function(next, game, items, mon, ctx)
       if mod.save:get("nuzlocke_enabled", true) and mod.save:get("catch_info", true) and mon then
           mod.ui.insertBefore(items, "CANCEL", {
-              -- The submenu row is narrower than the dedicated Catch Info screen.
-              label = "CATCH",
+              label = "CATCH INFO",
               onSelect = function()
                   mod.ui.push(
                       game,
@@ -3956,28 +3726,9 @@ return function(mod)
       return found
   end
 
-  local function ownsSpecies(game, species)
-      local wanted = tostring(species or ""):upper()
-      if wanted == "" then return false end
-      local function owns(mon)
-          return mon and tostring(mon.species or ""):upper() == wanted
-      end
-      for _, mon in ipairs((game.save and game.save.party) or {}) do
-          if owns(mon) then return true end
-      end
-      for _, box in ipairs((game.save and game.save.boxes) or {}) do
-          for _, mon in ipairs(box or {}) do
-              if owns(mon) then return true end
-          end
-      end
-      return false
-  end
-
   local function ownsFamily(game, species)
       local members = pokemonFamily(game, species)
-      local function owns(mon)
-          return mon and members[mon.species] == true
-      end
+      local function owns(mon) return mon and members[mon.species] == true end
       for _, mon in ipairs((game.save and game.save.party) or {}) do
           if owns(mon) then return true end
       end
@@ -3987,13 +3738,6 @@ return function(mod)
           end
       end
       return false
-  end
-
-  local function dupesBlocks(game, species)
-      if mod.save:get("dupes_scope", "FAMILY") == "SPECIES" then
-          return ownsSpecies(game, species)
-      end
-      return ownsFamily(game, species)
   end
 
   ---------------------------------------------------------------------
@@ -4051,53 +3795,6 @@ return function(mod)
       return false
   end
 
-  ---------------------------------------------------------------------
-  -- WILDS OF KANTO COMPATIBILITY
-  --
-  -- Wilds of Kanto creates a visible Pokemon entity and then starts a
-  -- normal { "start_battle", "wild", species, level } script. The battle
-  -- itself intentionally has no overworld flag, so the Nuzlocke must carry
-  -- that information across the Wilds pendingBattle state. Wilds exposes
-  -- its SpawnLogic through mod.exports.logic, and its entity records use
-  -- the public overworldWildSpawn marker.
-  ---------------------------------------------------------------------
-  local wildsCollisionPending = nil
-
-  local function getWildsLogic()
-      local ok, wilds = pcall(function()
-          return mod.find and mod.find("overworld_wild_spawns")
-      end)
-      if not ok or not wilds then return nil end
-      local exports = wilds.exports
-      if type(exports) ~= "table" then return nil end
-      local logic = exports.logic
-      if type(logic) ~= "table" then return nil end
-      return logic
-  end
-
-  local function getWildsPendingBattle()
-      local logic = getWildsLogic()
-      local pending = logic and logic.pendingBattle
-      if type(pending) ~= "table" then return nil end
-      if type(pending.species) ~= "string" or pending.species == "" then
-          return nil
-      end
-      return pending
-  end
-
-  local function markBattleAsWildsOverworld(battle, pending)
-      if not battle or not pending then return end
-      -- These are runtime battle fields only. They let every existing
-      -- Nuzlocke catch/failed-encounter check use the same path as other
-      -- overworld encounters without modifying Wilds itself.
-      battle.overworldEncounter = true
-      battle.overworld = true
-      battle.encounterType = "overworld"
-      battle.source = "overworld_wild_spawns"
-      battle.nuzlockeWildsOverworld = true
-      battle.nuzlockeWildsSpecies = pending.species
-  end
-
   local function beginWildEncounter(payload)
       if not payload then return end
       local battle = payload.battle or payload
@@ -4106,29 +3803,21 @@ return function(mod)
       local game = payload.game or currentGame
       if not active(game, battle) then return end
 
-      local wildsPending = getWildsPendingBattle()
-      if wildsPending then
-          markBattleAsWildsOverworld(battle, wildsPending)
-      end
-
       local key = areaKey(game, battle)
       if not key then return end
       local species = battle.enemy and battle.enemy.mon and battle.enemy.mon.species
           or battle.enemy and battle.enemy.species
-          or (wildsPending and wildsPending.species)
           or payload.species
       if type(species) ~= "string" or species == "" then return end
 
       local shiny = enemyIsShiny(battle)
       local shinyClause = mod.save:get("shiny_clause", false) == true
       local town = isTownArea(key, routeName(key))
-      local overworld = battle.nuzlockeWildsOverworld == true
-          or battle.overworldEncounter == true
+      local overworld = battle.overworldEncounter == true
           or battle.overworld == true
           or battle.isOverworld == true
           or battle.encounterType == "overworld"
           or battle.source == "overworld"
-          or battle.source == "overworld_wild_spawns"
 
       if overworld and not mod.save:get("overworld_encounters", false) then return end
       if town and not mod.save:get("town_catches", false) then return end
@@ -4139,7 +3828,7 @@ return function(mod)
       local existing = getEncounterState(key)
       if existing and (existing.status == "FAILED" or existing.status == "CAUGHT") then return end
 
-      if mod.save:get("dupes_mode", false) and dupesBlocks(game, species)
+      if mod.save:get("dupes_mode", false) and ownsFamily(game, species)
           and not (shiny and shinyClause) then
           return
       end
@@ -4154,55 +3843,11 @@ return function(mod)
       }
   end
 
-  -- Wilds normally starts battles from movement.collision or world.stepped.
-  -- The collision marker is useful on builds where battle.started fires before
-  -- another mod's pendingBattle is visible. It does not consume the collision
-  -- or start/stop a battle itself.
-  pcall(function()
-      mod.hooks:wrap("movement.collision", function(next, allowed, ctx)
-          if ctx and ctx.entity and ctx.entity.overworldWildSpawn == true then
-              local game = currentGame
-              local entity = ctx.entity
-              local pending = {
-                  species = entity.species,
-                  level = entity.level,
-                  encounterType = "overworld",
-                  mapId = entity.mapId,
-              }
-              local ow = game and game.overworld
-              if not ow and mod.world and mod.world.overworld then
-                  ow = mod.world:overworld()
-              end
-              local mapId = entity.mapId or (ow and ow.map and ow.map.id)
-              if mapId then pending.mapId = mapId end
-              -- Store a lightweight fallback only when Wilds itself has not
-              -- populated pendingBattle yet. battle.started will consume it.
-              if not getWildsPendingBattle() then
-                  wildsCollisionPending = pending
-              end
-          end
-          return next(allowed, ctx)
-      end, 10000)
-  end)
-
   mod.events:on("battle.started", function(payload)
-      local fallback = wildsCollisionPending
-      wildsCollisionPending = nil
-      local logicPending = getWildsPendingBattle()
-      if logicPending then
-          -- Prefer the authoritative Wilds record.
-          markBattleAsWildsOverworld(payload and (payload.battle or payload), logicPending)
-      elseif type(fallback) == "table" then
-          local battle = payload and (payload.battle or payload)
-          if battle and not isTrainerBattleForNuzlocke(battle) then
-              markBattleAsWildsOverworld(battle, fallback)
-          end
-      end
       beginWildEncounter(payload)
   end)
 
   mod.events:on("battle.ended", function(payload)
-      wildsCollisionPending = nil
       -- Do not rely on battle.started state surviving the battle.  The engine's
       -- authoritative finish seam emits battle.ended with the actual BattleState,
       -- so resolve the failed encounter directly from that battle.  This also
@@ -4239,14 +3884,11 @@ return function(mod)
       end
 
       local town = isTownArea(key, routeName(key))
-      local overworld = (pending and pending.encounterType == "overworld")
-          or battle.nuzlockeWildsOverworld == true
-          or battle.overworldEncounter == true
+      local overworld = battle.overworldEncounter == true
           or battle.overworld == true
           or battle.isOverworld == true
           or battle.encounterType == "overworld"
           or battle.source == "overworld"
-          or battle.source == "overworld_wild_spawns"
       if overworld and mod.save:get("overworld_encounters", false) ~= true then
           return
       end
@@ -4263,7 +3905,7 @@ return function(mod)
       end
 
       if mod.save:get("dupes_mode", false) == true
-          and dupesBlocks(game, species) then
+          and ownsFamily(game, species) then
           return
       end
 
@@ -4313,10 +3955,7 @@ return function(mod)
           return "overworld"
       end
 
-      -- Pallet Town is the mandatory starter slot. Do not let the ordinary
-      -- town-catch restriction block a wild encounter there if another mod
-      -- adds one; starter/gift tracking remains handled separately.
-      if town and key ~= "PALLET_TOWN" and not mod.save:get("town_catches", false) then
+      if town and not mod.save:get("town_catches", false) then
           return "town"
       end
 
@@ -4343,7 +3982,7 @@ return function(mod)
       end
 
       if mod.save:get("dupes_mode", false)
-          and dupesBlocks(game, species)
+          and ownsFamily(game, species)
           and not shiny then
           return "dupes"
       end
@@ -4462,6 +4101,7 @@ return function(mod)
   ---------------------------------------------------------------------
   -- WHITEOUT STATE
   ---------------------------------------------------------------------
+  local whiteoutPending = false
 
   local function hasHealthyParty(game)
       local party = game and game.save and game.save.party or {}
@@ -4550,36 +4190,6 @@ return function(mod)
               end
               return result
           end
-      end
-
-      ---------------------------------------------------------------------
-      -- FIRST RIVAL BATTLE MERCY
-      --
-      -- Optional Nuzlocke exception: only the very first Rival battle at
-      -- Oak's Lab is exempt from Blackout/Game Over.  We identify it by
-      -- trainer class + the live Pallet Town area and consume the exception
-      -- exactly once.  Later Rival battles are never exempt.
-      ---------------------------------------------------------------------
-      local function isFirstOakLabRivalBattle(battle)
-          if not battle or battle.kind ~= "trainer" then
-              return false
-          end
-
-          local oppClass = tostring(battle.oppClass or ""):upper()
-          if not oppClass:find("RIVAL", 1, true) then
-              return false
-          end
-
-          if mod.save:get("first_rival_mercy", false) ~= true then
-              return false
-          end
-
-          if mod.save:get("first_rival_mercy_used", false) == true then
-              return false
-          end
-
-          local key = areaKey(battle.game, battle)
-          return key == "PALLET_TOWN"
       end
 
       local vanillaOnFaint = BattleState.onFaint
@@ -4685,7 +4295,7 @@ return function(mod)
                       name = mon.nickname or mon.species or "???",
                       species = mon.species,
                       location = key,
-                      cause = causeText,
+                      cause = cause,
                   })
 
                   -- Remove the dead mon before vanilla's playerMonFainted()
@@ -4704,19 +4314,9 @@ return function(mod)
               self.nuzlockeLastDamage = nil
               self.nuzlockeLastResidual = nil
 
-              if not hasHealthyParty(self.game) then
-                  if isFirstOakLabRivalBattle(self) then
-                      -- Consume this exception permanently for this save.
-                      mod.save:set("first_rival_mercy_used", true)
-                      -- Treat this one battle as a survivable whiteout,
-                      -- regardless of the normal Whiteout/Blackout setting.
-                      self.nuzlockeWhiteout = true
-                      self.nuzlockeFirstRivalMercy = true
-                  elseif mod.save:get("whiteout_clause", false) then
-                      self.nuzlockeWhiteout = true
-                  else
-                      self.nuzlockeGameOver = true
-                  end
+              if not mod.save:get("whiteout_clause", false)
+                  and not hasHealthyParty(self.game) then
+                  self.nuzlockeGameOver = true
               end
           end
 
@@ -4727,27 +4327,10 @@ return function(mod)
 
       local vanillaPlayerFainted = BattleState.playerMonFainted
       BattleState.playerMonFainted = function(self)
-          if self.nuzlockeWhiteout then
-              self.result = "nuzlocke_whiteout"
-              self.afterQueue = "finish"
-              local msg
-              if self.nuzlockeFirstRivalMercy then
-                  msg = "Your Rival defeated you,\nbut the first Oak's Lab battle\nis exempt from Blackout."
-              else
-                  msg = "Your party has\nno usable POKéMON...\nYou have blacked out,\nbut the run survives."
-              end
-              if type(self.sayNext) == "function" then
-                  pcall(self.sayNext, self, msg)
-              elseif type(self.say) == "function" then
-                  pcall(self.say, self, msg)
-              elseif type(self.message) == "function" then
-                  pcall(self.message, self, msg)
-              end
-              return
-          end
           if self.nuzlockeGameOver then
               self.result = "nuzlocke_game_over"
               self.afterQueue = "finish"
+              -- Try every known message API in priority order.
               local msg = "All of your\nPOKeMON are dead...\nYour run is over."
               if type(self.sayNext) == "function" then
                   pcall(self.sayNext, self, msg)
@@ -4763,83 +4346,55 @@ return function(mod)
 
       local vanillaFinish = BattleState.finish
       BattleState.finish = function(self)
-          if self.nuzlockeWhiteout then
-              self.nuzlockeWhiteout = nil
-              self.nuzlockeFirstRivalMercy = nil
-              if self.game and self.game.stack then
-                  self.game.stack:pop()
-              end
-              if okRuntime and Runtime then
-                  Runtime.emit("battle.ended", {
-                      battle = self,
-                      result = "nuzlocke_whiteout"
-                  })
-              end
-
-              local ow = self.game and self.game.overworld
-              local save = self.game and self.game.save
-              if ow and type(ow.warpToHealPoint) == "function" then
-                  local okWarp = pcall(function()
-                      ow:warpToHealPoint(nil, { via = "nuzlocke_whiteout" })
-                  end)
-                  if not okWarp and save then
-                      local fallback = save.lastHeal
-                      if not fallback then
-                          local okDefault, SD = pcall(require, "src.core.SaveData")
-                          local boot = self.game.data and self.game.data.field
-                              and self.game.data.field.boot or {}
-                          if okDefault and SD and type(SD.defaultHeal) == "function" then
-                              fallback = SD.defaultHeal(boot)
-                          end
-                      end
-                      if fallback and fallback.map and type(ow.startWarpTo) == "function" then
-                          ow:startWarpTo(
-                              fallback.map,
-                              fallback.x or 1,
-                              fallback.y or 1,
-                              "down",
-                              nil,
-                              { via = "nuzlocke_whiteout" }
-                          )
-                      end
-                  end
-              end
-              return
-          end
-
           if not self.nuzlockeGameOver then
               return vanillaFinish(self)
           end
+
           self.nuzlockeGameOver = nil
+
           if self.game and self.game.stack then
               self.game.stack:pop()
           end
+
           if okRuntime and Runtime then
               Runtime.emit("battle.ended", {
                   battle = self,
                   result = "nuzlocke_game_over"
               })
           end
+
           if okSave and okVersion and SaveData and GameVersion
               and SaveData.activeSlot then
+
               local version = GameVersion.get()
               local slot = SaveData.activeSlot(version)
-              if slot then SaveData.deleteSlot(version, slot) end
+              if slot then
+                  SaveData.deleteSlot(version, slot)
+              end
           end
+
           if okScreens and Screens then
               local ending = Screens.push(self.game, "Credits", function()
                   local musicOk, Music = pcall(require, "src.core.Music")
-                  if musicOk and Music then Music.stop() end
-                  while self.game.stack:top() do self.game.stack:pop() end
+                  if musicOk and Music then
+                      Music.stop()
+                  end
+
+                  while self.game.stack:top() do
+                      self.game.stack:pop()
+                  end
+
                   if self.game.makeTitleState then
                       self.game.stack:push(self.game:makeTitleState())
                   end
               end)
-              if ending then ending.phase, ending.timer = "end_wait", 0 end
+
+              if ending then
+                  ending.phase, ending.timer = "end_wait", 0
+              end
           end
       end
   end)
-
 
   ---------------------------------------------------------------------
   -- POKé MART / POKéMON CENTER ENFORCEMENT
@@ -4946,10 +4501,6 @@ return function(mod)
       local tag = nuzlockeMapTag(ctx)
       return tag:find("REDS_HOUSE", 1, true) ~= nil
           or tag:find("REDSHOUSE", 1, true) ~= nil
-          or tag:find("REDS HOUSE", 1, true) ~= nil
-          or tag:find("RED_HOUSE", 1, true) ~= nil
-          or tag:find("PALLET_TOWN_HOUSE", 1, true) ~= nil
-          or (tag:find("PALLET", 1, true) ~= nil and tag:find("HOUSE", 1, true) ~= nil)
   end
 
   local nuzlockeScriptHealGateInstalled = false
@@ -4970,6 +4521,9 @@ return function(mod)
           if name == "heal_party" then
               if mod.save:get("no_mom_heal", false) == true
                   and isMomsHouseMap(ctx) then
+                  -- Mom's vanilla script fades to white immediately before
+                  -- heal_party.  This hook runs at heal_party, so skip the
+                  -- remainder and replace the heal with Mom's own message.
                   showRuleMessageImmediate(ctx,
                       "Mom: I know you need\nrest, sweetheart, but\nour Nuzlocke rules say\nI can't heal your\nPokemon right now.\nYou'll be okay!")
                   return "end"
@@ -4983,134 +4537,11 @@ return function(mod)
               end
           end
 
-          -- Block the Poke Mart menu from opening when no_shopping is ON.
-          -- The script.command interception is the most reliable seam because
-          -- map scripts may cache a direct reference to Commands.open_mart
-          -- before the field-command patch installs, causing the Commands
-          -- table replacement to be bypassed. This hook runs unconditionally.
-          if (name == "open_mart" or name == "shop" or name == "mart")
-              and mod.save:get("no_shopping", false) == true then
-              showRuleMessageImmediate(ctx,
-                  "Clerk: I'd love to\nhelp, but your\nNuzlocke rules\nprevent shopping.\nYour wallet lives\nto fight another day!")
-              return "end"
-          end
-
           return next(ctx, name, args)
       end, 10000)
   end
 
   installNuzlockeScriptHealGate()
-
-  ---------------------------------------------------------------------
-  -- DIRECT FACILITY INTERACTION GATES
-  --
-  -- The current Gen1Recomp interaction seam exposes the actual NPC in
-  -- front of the player.  This is more reliable than inferring a facility
-  -- from a later generic heal_party/open_mart command.  The Nurse/instant-
-  -- heal example mod uses the same OverworldController.interact seam and
-  -- identifies Nurse Joy from the text-entry metadata.  Use that pattern
-  -- here for Centers and Marts, while retaining the command patches below
-  -- as fallbacks for scripts/contexts that bypass the normal interaction.
-  ---------------------------------------------------------------------
-  local nuzlockeFacilityInteractionPatched = false
-  local function installNuzlockeFacilityInteractionGate()
-      if nuzlockeFacilityInteractionPatched then return end
-      local okOW, OverworldState = pcall(require, "src.world.OverworldController")
-      if not okOW or not OverworldState or type(OverworldState.interact) ~= "function" then
-          return false
-      end
-
-      local vanillaInteract = OverworldState.interact
-
-      local DIR = {
-          up = { 0, -1 }, down = { 0, 1 },
-          left = { -1, 0 }, right = { 1, 0 },
-      }
-
-      local function frontEntries(game)
-          local result = {}
-          local ow = game and game.overworld
-          local player = ow and ow.player
-          if not (ow and player and ow.npcAtCell) then return result end
-          local d = DIR[player.facing]
-          if not d then return result end
-          local cx, cy = player.cellX + d[1], player.cellY + d[2]
-          -- Nurse Joy talks across the counter, so inspect one and two cells.
-          -- Checking two cells also covers the normal Mart counter layout.
-          for _, pos in ipairs({
-              { cx, cy },
-              { cx + d[1], cy + d[2] },
-          }) do
-              local npc = ow:npcAtCell(pos[1], pos[2])
-              if npc and not npc.pikachuFollower and npc.def and npc.def.text then
-                  local mapDef = ow.map and ow.map.def
-                  local label = mapDef and mapDef.label
-                  local data = game and game.data
-                  local entry = data and data.textEntry and label
-                      and data:textEntry(label, npc.def.text)
-                  if entry then
-                      result[#result + 1] = entry
-                  end
-              end
-          end
-          return result
-      end
-
-      local function nurseAhead(game)
-          for _, entry in ipairs(frontEntries(game)) do
-              if entry.nurse == true then return true end
-          end
-          return false
-      end
-
-      local function martAhead(game)
-          for _, entry in ipairs(frontEntries(game)) do
-              -- Commands.open_mart consumes entry.mart as the shop id, so
-              -- this is the engine's own authoritative marker for a Mart
-              -- clerk rather than a guessed map-name test.
-              if entry.mart ~= nil then return true end
-          end
-          return false
-      end
-
-      local function pushFacilityMessage(game, msg)
-          if not (game and game.stack) then return end
-          local okText, TextBox = pcall(require, "src.render.TextBox")
-          if okText and TextBox then
-              pcall(function() game.stack:push(TextBox.new(game, msg)) end)
-          end
-      end
-
-      OverworldState.__nuzlockeFacilityInteractionPatched = true
-      nuzlockeFacilityInteractionPatched = true
-
-      OverworldState.interact = function(self, ...)
-          local game = self and self.game
-
-          if mod.save:get("no_poke_center", false) == true and nurseAhead(game) then
-              pushFacilityMessage(game,
-                  "Nurse Joy: I'm sorry,\nbut your Nuzlocke\nrules don't allow\nPokemon Center\nhealing right now.")
-              return
-          end
-
-          if mod.save:get("no_shopping", false) == true and martAhead(game) then
-              pushFacilityMessage(game,
-                  "Clerk: I'd love to\nhelp, but your\nNuzlocke rules\nprevent shopping.\nYour wallet lives\nto fight another day!")
-              return
-          end
-
-          return vanillaInteract(self, ...)
-      end
-
-      return true
-  end
-
-  -- Install at the same lifecycle seam used by the proven Nurse interaction
-  -- mod.  Retry if the overworld controller has not been loaded yet.
-  mod.events:on("game.ready", function()
-      pcall(installNuzlockeFacilityInteractionGate)
-  end)
-  pcall(installNuzlockeFacilityInteractionGate)
 
       local function blockedHeal(ctx)
           -- heal_party is also used by Mom, so the Center rule must only
@@ -5201,176 +4632,6 @@ return function(mod)
   end)
   mod.events:on("save.loaded", function()
       pcall(installNuzlockeFieldCommandPatches)
-  end)
-
-
-  ---------------------------------------------------------------------
-  -- MOD MANAGER / MODERN UI OPTION SCREEN
-  --
-  -- Gen1 Modern UI recognizes settings screens built with the public
-  -- src.ui.OptionRows contract.  Give the Nuzlocke mod the same manager
-  -- handoff used by the Shiny Pokémon mod: ManagerState.openOptions()
-  -- routes this mod to a real OptionRows screen, while the Nuzlocke mod
-  -- continues to own all values and callbacks.
-  ---------------------------------------------------------------------
-  local NUZLOCKE_MANAGER_SCREEN = "NuzlockeManagerOptionsScreen"
-
-  local function managerRuleValue(key)
-      local value = mod.save:get(key, nil)
-      if value == nil then
-          return defaultRuleValue(key)
-      end
-      return value
-  end
-
-  local function managerToggleRule(key)
-      -- Respect the same in-game lock used by the Nuzlocke Rules screen.
-      if managerRuleValue("rules_locked") == true and key ~= "rules_locked" then
-          return
-      end
-      local current = managerRuleValue(key) == true
-      setConfigValue(key, not current, false)
-  end
-
-  local function makeNuzlockeManagerScreen(game)
-      local OptionRows = require("src.ui.OptionRows")
-      local rows = {}
-
-      rows[#rows + 1] = {
-          label = "LOCK RULES",
-          value = function()
-              return managerRuleValue("rules_locked") == true and "ON" or "OFF"
-          end,
-          step = function(g)
-              setConfigValue("rules_locked", not (managerRuleValue("rules_locked") == true), false)
-          end,
-      }
-
-      for _, category in ipairs(ruleCategories or {}) do
-          if category and (category.title or category.name) then
-              rows[#rows + 1] = {
-                  label = tostring(category.title or category.name),
-                  header = true,
-              }
-          end
-
-          for _, rule in ipairs((category and category.rules) or {}) do
-              if rule and rule.key then
-                  rows[#rows + 1] = {
-                      label = tostring(rule.name or rule.key),
-                      value = function()
-                          if rule.choice then
-                              return tostring(managerRuleValue(rule.key) or rule.choices[1])
-                          end
-                          return managerRuleValue(rule.key) == true and "ON" or "OFF"
-                      end,
-                      step = function(g)
-                          if rule.choice then
-                              if managerRuleValue("rules_locked") ~= true then
-                                  cycleChoiceValue(rule.key, 1, false)
-                              end
-                          else
-                              managerToggleRule(rule.key)
-                          end
-                      end,
-                  }
-              end
-          end
-      end
-
-      rows[#rows + 1] = {
-          label = "SAVE RULES",
-          value = function() return "SAVE" end,
-          step = function(g)
-              saveCurrentInGameRules()
-              pendingRulesDirty = false
-          end,
-      }
-
-      local screen = {
-          game = game,
-          rows = rows,
-          index = 1,
-          scroll = 0,
-          isOpaque = true,
-      }
-
-      function screen:update()
-          local input = self.game and self.game.input
-          if not input then return end
-
-          local function moveCursor(dir)
-              local target = self.index
-              repeat
-                  target = target + dir
-                  if target < 1 then target = #self.rows end
-                  if target > #self.rows then target = 1 end
-              until self.rows[target] and not self.rows[target].header
-              self.index = target
-          end
-
-          if input:wasPressed("up") then
-              moveCursor(-1)
-          elseif input:wasPressed("down") then
-              moveCursor(1)
-          elseif input:wasPressed("left")
-              or input:wasPressed("right")
-              or input:wasPressed("a") then
-              local row = self.rows[self.index]
-              if row and row.step then
-                  row.step(self.game)
-              end
-          elseif input:wasPressed("b") then
-              self.game.stack:pop()
-              return
-          end
-
-          self.scroll = OptionRows.clampScroll(
-              self.index, self.scroll, #self.rows, nil)
-      end
-
-      function screen:draw()
-          OptionRows.draw(
-              self.game,
-              self.rows,
-              self.index,
-              self.scroll,
-              "A/◀▶:CHANGE  B:DONE"
-          )
-      end
-
-      return screen
-  end
-
-  mod.content.screens:register(NUZLOCKE_MANAGER_SCREEN, {
-      new = makeNuzlockeManagerScreen
-  })
-
-  -- Use the same public ManagerState routing contract as the Shiny Pokémon
-  -- mod.  This is additive and only changes this mod's Options destination.
-  mod.events:once("mods.loaded", function()
-      local okManager, ManagerState = pcall(require, "src.mods.ManagerState")
-      if not okManager or not ManagerState then return end
-
-      local routes = rawget(ManagerState, "__modOptionScreenRoutes")
-      if not routes then
-          routes = {}
-          local openOptions = ManagerState.openOptions
-          if type(openOptions) ~= "function" then return end
-
-          ManagerState.openOptions = function(self, manifest)
-              local screenId = manifest and routes[manifest.id]
-              if screenId then
-                  local Screens = require("src.ui.Screens")
-                  return Screens.push(self.game, screenId)
-              end
-              return openOptions(self, manifest)
-          end
-
-          ManagerState.__modOptionScreenRoutes = routes
-      end
-
-      routes[mod.id] = NUZLOCKE_MANAGER_SCREEN
   end)
 
 end
