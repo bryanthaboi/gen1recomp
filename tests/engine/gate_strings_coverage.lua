@@ -30,6 +30,16 @@ local WATCHED_FILES = {
   "src/core/DiscordPresence.lua",
 }
 
+-- These watched files intentionally contain application-shell text rather
+-- than ROM/gameplay text.  AppLocale(...) is their approved translation
+-- router; keeping the list explicit prevents gameplay strings from bypassing
+-- the Strings(...) catalog by accident.
+local APP_LOCALE_FILES = {
+  ["src/import/RomImporter.lua"] = true,
+  ["src/ui/TouchControlsEditor.lua"] = true,
+  ["src/ui/kit/Kit.lua"] = true,
+}
+
 -- A marker in one of these is not prose.  Keep the reason with the rule:
 -- a bare pattern list is unreviewable six months from now.
 local ALLOWED = {
@@ -61,9 +71,9 @@ local function isAllowed(line)
   return nil
 end
 
--- Blank out every Strings(...) / Strings.source(...) call span, parens
--- balanced, so a call wrapped across lines counts as covered.  A per-line
--- test reported the continuation lines of three real calls as misses.
+-- Blank out every approved translation-router call span, parens balanced, so
+-- a call wrapped across lines counts as covered.  A per-line test reported
+-- the continuation lines of three real calls as misses.
 --
 -- romText(...) counts as a router too: it prefers the line the importer
 -- extracted from the ROM and hands its literal straight to Strings(...)
@@ -71,12 +81,14 @@ end
 -- unit test), so the literal is still catalog-backed and a translation mod
 -- still reaches it.  Blanking the whole span is safe -- the only literals
 -- inside are the pokered label and that fallback.
-local function stripStringsCalls(body)
+local function stripTranslationCalls(body, allowAppLocale)
   local out, i, n = {}, 1, #body
   while i <= n do
     local s, e = body:find("Strings%.?s?o?u?r?c?e?%(", i)
     local rs = body:find("romText%(", i)
     if rs and (not s or rs < s) then s, e = rs, nil end
+    local app = allowAppLocale and body:find("AppLocale%(", i)
+    if app and (not s or app < s) then s, e = app, nil end
     if not s then out[#out + 1] = body:sub(i) break end
     out[#out + 1] = body:sub(i, s - 1)
     local depth, j = 0, body:find("%(", s)
@@ -97,9 +109,10 @@ local function stripStringsCalls(body)
   return table.concat(out)
 end
 
--- literals carrying a line marker, ignoring ones already inside a Strings call
-local function offenders(body)
-  body = stripStringsCalls(body)
+-- literals carrying a line marker, ignoring ones already inside an approved
+-- translation-router call
+local function offenders(body, allowAppLocale)
+  body = stripTranslationCalls(body, allowAppLocale)
   local out = {}
   local lineno = 0
   for line in (body .. "\n"):gmatch("(.-)\n") do
@@ -109,7 +122,12 @@ local function offenders(body)
     if not isComment then
       -- a double-quoted literal containing \n, \f or \v
       for literal in line:gmatch('"[^"]*"') do
-        if literal:find("\\[nfv]") and not isAllowed(line) then
+        -- A bare newline is layout glue, not prose, in the explicitly listed
+        -- application-shell files.  Text on either side still has to pass
+        -- through AppLocale(...), which is stripped above.
+        local appLayoutMarker = allowAppLocale and literal == '"\\n"'
+        if literal:find("\\[nfv]") and not appLayoutMarker
+            and not isAllowed(line) then
           out[#out + 1] = { line = lineno, text = code:sub(1, 90) }
           break
         end
@@ -136,7 +154,7 @@ for _, path in ipairs(files) do
       local body = handle:read("*a")
       handle:close()
       scanned = scanned + 1
-      for _, hit in ipairs(offenders(body)) do
+      for _, hit in ipairs(offenders(body, APP_LOCALE_FILES[path] == true)) do
         bad[#bad + 1] = ("%s:%d  %s"):format(path, hit.line, hit.text)
       end
       -- track which allowances are still earning their place
@@ -150,7 +168,7 @@ end
 
 T.check(scanned > 20, "the gate read the files it listed")
 T.check(#bad == 0,
-  ("%d player-visible literal(s) are not routed through Strings(...):\n  %s")
+  ("%d player-visible literal(s) are not routed through an approved translation layer:\n  %s")
     :format(#bad, table.concat(bad, "\n  ")))
 
 -- the ratchet half: an allowance nothing matches any more is dead weight
