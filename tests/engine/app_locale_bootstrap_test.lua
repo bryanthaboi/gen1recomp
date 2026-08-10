@@ -3,6 +3,8 @@
 -- contract directly: load options once, apply locale first, then orientation,
 -- all before the launcher/importer module is constructed.
 
+package.path = "./?.lua;./?/init.lua;" .. package.path
+
 local T = require("tests.modkit")
 
 local f = assert(io.open("main.lua", "rb"))

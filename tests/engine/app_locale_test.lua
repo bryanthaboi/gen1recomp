@@ -181,8 +181,12 @@ do
     "module-provided palette values pass through the application catalog")
   eq(values["MODO DE VÍDEO"], "VENTANA",
     "module-provided video-mode values use the application locale")
-  eq(values["VELOCIDAD DEL JUEGO"], "NORMAL",
-    "module-provided game-speed values use the application locale")
+  eq(values["VELOCIDAD DEL MUNDO"], "NORMAL",
+    "module-provided overworld-speed values use the application locale")
+  eq(values["VELOCIDAD DE COMBATE"], "NORMAL",
+    "module-provided battle-speed values use the application locale")
+  eq(values["VELOCIDAD DE MENÚ"], "NORMAL",
+    "module-provided menu-speed values use the application locale")
 
   Strings.load({})
   SaveData.loadOptions, SaveData.saveOptions = oldLoad, oldSave
