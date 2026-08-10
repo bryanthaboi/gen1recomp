@@ -35,6 +35,16 @@ An edited vanilla map becomes a `mod.content.maps:patch` carrying only the
 fields that moved; a new map becomes a `:register`. See
 `docs/new-features.md` and the extension's own README.
 
+## Read-only map overviews
+
+`mod.world:mapOverview()` returns collision `rows` at map-cell resolution,
+optional visual `tileRows` at 2x resolution, and optional `tileDetailRows` at
+4x resolution. Visual rows contain Game Boy shades from `"0"` (lightest) to
+`"3"` (darkest); their matching width and height fields describe the grid.
+`markers` contains active `{ kind, x, y }` points in map-cell coordinates for
+`warp`, visible `item`, and untaken `hidden` locations. All fields are
+read-only snapshots; mods choose which layers to render.
+
 ## Rendering pipelines
 
 Most registries hand the engine *content*. `render_pipelines` hands it
@@ -99,6 +109,44 @@ Three rules worth knowing:
 
 Returning `nil` from `drawWorld` is a normal answer meaning "not this
 frame"; the engine draws the vanilla world instead.
+
+## Variable-size overworld sprites
+
+The `sprites` registry keeps the vanilla 16x16 grounded walker as its default,
+but a mod can describe any frame rectangle and anchor for player characters,
+NPCs, followers, mounts, vehicles, bosses, or other field actors:
+
+```lua
+mod.content.sprites:register("SPRITE_COMPANION", {
+  image = "mods/example/companion.png", -- one frame per row
+  frames = 6,
+  walker = true,
+  frameWidth = 32,
+  frameHeight = 32,
+  anchorX = 16, -- frame-relative bottom-center anchor
+  anchorY = 32,
+})
+```
+
+`frameWidth` and `frameHeight` are sheet pixels. `anchorX` and `anchorY` are
+measured from each frame's top-left; when omitted they default to the frame's
+horizontal center and bottom edge, so a larger sprite grows upward while its
+feet stay on the same world cell. Omitting all four fields is exactly the
+vanilla 16x16 placement. The normal player/NPC/follower draw paths consume
+these values automatically, including horizontal flips and the fishing pose.
+
+Custom render pipelines can use the same geometry without reproducing the
+pose rules:
+
+```lua
+local geometry = sprite:getPoseGeometry(facing, walkPhase, stepFlip)
+-- geometry.quad, .x/.y/.width/.height, .anchorX/.anchorY, .mirror
+local originX, originY = sprite:getScreenOrigin(px, py, camX, camY)
+```
+
+`getFrameGeometry(frame)` is the corresponding accessor for a specific
+zero-based sheet frame. Both accessors return fresh tables and share the
+renderer’s frame selection and mirror conventions.
 
 ## Battle sprite scaling
 
@@ -193,6 +241,34 @@ preserves current options; suppresses normal map-entry/save-load/intro side
 effects; verifies a recapture; and rolls back runtime plus RNG in memory if
 reconstruction fails. Callers that need crash recovery should durably capture
 their own recovery checkpoint before restore.
+
+Checkpoint ownership follows the persistence model rather than mod identity:
+
+- canonical `game.save` progress, including every mod's `save.modData` /
+  `mod.save` bucket and data-only fields added to saved Pokémon, rewinds;
+- global and per-mod options remain at their current values;
+- independently written `mod.storage` records do not rewind; and
+- mod-owned runtime objects, references, and caches are never serialized.
+
+Successful restore emits `checkpoint.restored` only after reconstruction and
+differential recapture have committed. Mods that cache rewound progress or hold
+references to reconstructed runtime objects can re-read their own public state
+and rebuild at that point:
+
+```lua
+mod.events:on("checkpoint.restored", function(ev)
+  -- ev.kind is "overworld" or "battle"; ev.game is fully reconstructed.
+  cachedQuestStage = mod.save:get("quest_stage", 0)
+  rebuildRuntimeFor(ev.game, ev.kind)
+end)
+```
+
+The event is not emitted for validation failure, failed reconstruction, or a
+successful rollback. Its payload contains no checkpoint data or other mod's
+private state. A mod that deliberately stores progress-coupled truth in
+`mod.storage` must version and reconcile that relationship itself; the engine
+cannot distinguish it safely from independent history, configuration, or cache
+data.
 
 See RFC 0003, RFC 0004, and RFC 0005 for exact contracts and error codes.
 
@@ -290,5 +366,63 @@ update and input ownership, so a mod can mirror a native menu on another
 display without reimplementing it. The default is `true`. Treat the wrapper as
 a pure predicate: the renderer may ask it more than once per frame.
 
+Scrollable list states expose `state.kind` for use with this hook. Generic
+lists fall back to their title; PC lists use stable, localization-independent
+identifiers: `pc_box_withdraw`, `pc_box_deposit`, `pc_box_release`,
+`pc_box_change`, `pc_item_withdraw`, `pc_item_deposit`, and `pc_item_toss`.
+
+`battle.bottom_ui_visible` and `battle.status_hud_visible` independently
+control the battle text/menu layer and the HP/status panels. Both receive
+`(next, state)` and default to `true`, so vanilla rendering is unchanged.
+Pushed text boxes also pass through `battle.bottom_ui_visible`; a wrapper that
+only owns battle presentation should return `false` only for its active battle
+or text-box state.
+
+`core.logic_speed` receives `(next, game)` once per `Game:logicSpeed()` call
+(once per frame). Vanilla behavior resolves the per-category GAME SPEED
+option (`GameSpeed.CATEGORIES`: overworld/battle/menu) for whichever
+category `Game.speedCategoryInStack` says is active right now. A mod may
+call `next(game)` and return its result to pass that resolution through, or
+return a different number outright to override it for that frame (a bot mod
+forcing 1X for one route segment, say, regardless of the category or saved
+option). The result is clamped to the nearest valid `GameSpeed.LEVELS` entry
+regardless of what a subscriber returns, so a bad value (0, negative, `nil`)
+cannot destabilize the fixed-step accumulator. This hook runs *after* link
+play's 1X lock and the `--speed`/equivalent run-argument override, both of
+which stay unconditional and are never visible to a subscriber.
+
 Developer mode also arms the mod loader's dev tripwire, which flags mods
 that reach outside their permission set.
+
+## Process-lifecycle hooks
+
+These exist so a platform-specific launcher integration (a native shell
+that embeds this engine and wraps its window in platform UI) can live
+entirely in a mod instead of hand-patching `main.lua`, which every other
+engine change also touches.
+
+`core.update` receives `(next, game, dt)` once per frame from
+`love.update`. Vanilla behavior is `game:update(dt)`, unconditionally. A
+mod may skip calling `next(game, dt)` to pause the simulation for that
+frame (e.g. while a native settings sheet is on top), and may run
+additional per-frame polling before or after that call regardless of
+whether it calls `next` -- useful for one-shot flags that must be observed
+every frame even while paused.
+
+`core.quit_to_launcher` receives `(next)` once from `love.quit()`. `next()`
+returns the engine's own decision for whether closing the window should
+return to the Lua launcher instead of exiting; a mod may return `false`
+outright, without ever calling `next`, to veto that and let the process
+really quit -- for a platform host that owns its own "return to launcher"
+UI and would otherwise get looped straight back into the game it just
+quit.
+
+A manifest may also declare `force_enable_env`, an environment variable
+name that re-enables the mod regardless of a saved disable in
+`options.mods` when that variable is set to `"1"`. This is for a mod that
+cannot function disabled on the one build where its env var is set (a
+platform-bridge mod bundled only with that build's launcher, for example).
+
+Neither hook needs a `Runtime.wantsHook` guard before calling it: `Hooks:call`
+already falls straight through to the vanilla function when no mod has
+wrapped the name, at negligible cost.

@@ -261,8 +261,12 @@ function SaveData.defaultOptions()
     -- (the PIKACHU VOL row appears only on Yellow; see Sound.lua)
     pikaVol = 7,
     musicFilter = 0,
-    -- logic fast-forward multiplier; audio is unaffected (GameSpeed.lua)
-    speed = 1,
+    -- Per-category logic fast-forward multiplier (RFC 0007); audio is
+    -- unaffected (GameSpeed.lua). Superseded from a single "speed" field --
+    -- mergeOptions migrates an old save's value into all three below.
+    speedOverworld = 1,
+    speedBattle = 1,
+    speedMenu = 1,
     -- port display options (OptionsMenu / hotkeys 2/3/4/5)
     colors = "gbc",
     tilt = 0,
@@ -339,6 +343,19 @@ function SaveData.mergeOptions(loaded)
     for k, v in pairs(loaded) do
       opts[k] = v
     end
+    -- RFC 0007 migration: a save from before per-category GAME SPEED still
+    -- has a single "speed" and none of the three new fields, so seed all
+    -- three from it -- an existing player's fast-forward preference
+    -- carries over instead of two of the three categories silently
+    -- resetting to 1X. "speed" is dropped on the way out (not kept as a
+    -- stale alias), so a re-save never re-triggers this migration.
+    if loaded.speed ~= nil and loaded.speedOverworld == nil
+        and loaded.speedBattle == nil and loaded.speedMenu == nil then
+      opts.speedOverworld = loaded.speed
+      opts.speedBattle = loaded.speed
+      opts.speedMenu = loaded.speed
+    end
+    opts.speed = nil
   end
   return opts
 end

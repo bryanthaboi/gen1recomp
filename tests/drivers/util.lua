@@ -65,8 +65,12 @@ function U.newGame(game)
   U.wait(5)
   U.tap(game, "start") -- skip intro movie
   U.wait(10)
-  U.tap(game, "a") -- title -> menu
-  U.wait(5)
+  local title = game.stack:top()
+  for _ = 1, 60 do
+    U.tap(game, "a")
+    U.wait(5)
+    if game.stack:top() ~= title then break end
+  end
   -- menu: CONTINUE may or may not exist; NEW GAME is first without a save
   U.tap(game, "a")
   U.wait(10)

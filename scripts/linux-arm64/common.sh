@@ -142,7 +142,10 @@ download_pinned() {
     rm -f "$dest"
   fi
   say "downloading $(basename "$dest")"
-  curl -fL --progress-bar "$url" -o "$dest.tmp" || fail "download failed: $url"
+  # --retry-all-errors because plain --retry skips TLS handshake failures,
+  # which is how xiph.org drops these tarballs; the pin below still gates it.
+  curl -fL --retry 5 --retry-delay 2 --retry-all-errors --progress-bar \
+    "$url" -o "$dest.tmp" || fail "download failed: $url"
   got="$(sha256_file "$dest.tmp")"
   [ "$got" = "$want" ] || fail "$(printf '%s\n  expected %s\n  got      %s' \
     "checksum mismatch for $(basename "$dest")" "$want" "$got")"

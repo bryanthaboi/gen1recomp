@@ -97,7 +97,9 @@ events, `onEnter` scripts, forced-movement/current checks, and last-map rewrites
 it does not emit normal `save.loading`/`save.loaded` lifecycle events. After
 reconstruction, the engine recaptures and byte-compares normalized data. A failed
 apply rolls back and returns `restore_failed`; failure of that rollback returns
-`rollback_failed`.
+`rollback_failed`. Only after a successful comparison does the engine emit
+`checkpoint.restored` with `{ game = game, kind = "overworld" }`. Validation
+failure, failed apply, and successful rollback emit nothing.
 
 Durable recovery remains a caller responsibility: in-memory rollback handles a
 runtime exception, not process termination.
@@ -112,9 +114,11 @@ support implied here.
 
 ## Migration note for existing mods
 
-**Nothing.** No existing hook, event, save, controller, or world action changes
+**Nothing required.** No existing hook, save, controller, or world action changes
 when `mod.checkpoints` is unused. The reconstruction path is called only by a
-successful public restore after validation.
+successful public restore after validation. Mods whose runtime caches derive from
+rewound `game.save` or `mod.save` state may optionally subscribe to
+`checkpoint.restored` and rebuild from their own public state.
 
 ## Parity tests
 
@@ -124,7 +128,9 @@ successful public restore after validation.
   unsafe refusal, detached data-only capture, exact map/tile/facing/surf sync,
   `A -> mutate B -> restore A -> recapture A2` equality across representative
   progress, settings preservation, compatibility rejection without mutation,
-  map-side-effect suppression, and injected reconstruction rollback.
+  map-side-effect suppression, injected reconstruction rollback, mod-owned
+  metadata and `mod.save` rewind, independent `mod.storage`/options preservation,
+  and success-only runtime-cache reconciliation through `checkpoint.restored`.
 
 ## Deprecation etiquette
 

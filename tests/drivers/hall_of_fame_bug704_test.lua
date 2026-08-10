@@ -195,7 +195,7 @@ return function(game)
   ow:queueScript(slice, { npc = rival })
 
   local startY = ow.player.cellY
-  local minY, walkShot = startY, false
+  local minY, walkShot, sharedCell = startY, false, false
   local hof
   for i = 1, 5000 do
     local top = game.stack:top()
@@ -205,8 +205,9 @@ return function(game)
     end
     local w = game.overworld
     if w and w.map and w.map.id == "CHAMPIONS_ROOM" then
-      local y = w.player.cellY
+      local x, y = w.player.cellX, w.player.cellY
       if y < minY then minY = y end
+      if x == rival.cellX and y == rival.cellY then sharedCell = true end
       if y <= 2 and not walkShot then
         walkShot = U.shot(game, DIR .. "/hof704_follows_oak.png")
       end
@@ -215,6 +216,7 @@ return function(game)
   end
   check("the player walked out of the room before the warp (#704)",
         minY < startY)
+  check("the player routed around the rival", not sharedCell)
   check("walk-out screenshot", walkShot)
   check("the induction started", hof ~= nil)
   if not hof then

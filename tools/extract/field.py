@@ -1471,9 +1471,11 @@ def extract(pokered, out_dir):
         util.die("bike riding tileset extraction sanity check failed")
     if indoor_encounters["firstIndoorMap"] != 0x25:
         util.die("indoor encounter boundary sanity check failed")
-    if len(title) != 5 or any(not v["width"] for v in title.values()) \
+    if len(title) not in (5, 6) or any(not v["width"] for v in title.values()) \
        or (title["gamefreakInc"]["width"],
-           title["gamefreakInc"]["height"]) != (72, 8):
+           title["gamefreakInc"]["height"]) != (72, 8) \
+       or ("nine" in title and (title["nine"]["width"],
+                                title["nine"]["height"]) != (8, 8)):
         util.die("title asset extraction sanity check failed")
     if any((intro["gengar"][f]["width"], intro["gengar"][f]["height"])
            != (56, 56) for f in ("frame1", "frame2", "frame3")) \

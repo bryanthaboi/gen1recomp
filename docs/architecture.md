@@ -38,7 +38,7 @@ the same core data and graphics into the source tree for verification.
 | | `src/core/SaveData.lua` | Lua-serialized save in the LÖVE save dir |
 | render | `src/render/Renderer.lua` | 160x144 canvas, integer nearest scaling |
 | | `src/render/TileRenderer.lua` | one SpriteBatch per map (8x8 quads) + border-block ring |
-| | `src/render/SpriteRenderer.lua` | 6-frame walker sheets, flipped right facing |
+| | `src/render/SpriteRenderer.lua` | variable-size anchored sprite sheets, 6-frame walkers and flipped right facing |
 | | `src/render/Font.lua` | glyph rendering via charmap (greedy longest match) |
 | | `src/render/TextBox.lua` | dialogue box: typewriter, `\n` line, `\v` scroll, `\f` page |
 | | `src/render/Camera.lua`, `Transition.lua` | follow camera, warp fades |

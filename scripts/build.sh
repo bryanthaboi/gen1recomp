@@ -357,13 +357,44 @@ build_linux() {
 
   cp "$LOVE_FILE" "$appdir/game.love"
 
-  # The .desktop's Icon=love resolves against the AppDir root by basename,
-  # so drop the stock love.svg and provide our PNG under the same name;
-  # .DirIcon is what appimaged/thumbnailers show for the file itself.
+  # Replace LÖVE's own desktop entry rather than keeping it: it says
+  # Name=LÖVE / Icon=love, which is what appimaged, app menus and file
+  # managers displayed this image as. Same file as the arm64 build writes,
+  # so both architectures integrate under the game's name.
+  local stock_desktop
+  stock_desktop="$(find "$appdir" -maxdepth 1 -name '*.desktop' | wc -l | tr -d ' ')"
+  [ "$stock_desktop" = 1 ] \
+    || fail "expected exactly one .desktop at the AppDir root, found $stock_desktop"
+  rm -f "$appdir"/*.desktop
+
+  # share/ carries a second, NoDisplay copy of the same entry plus the .love
+  # file-type icons and mime rule, all left over from LÖVE's `make install`
+  # (its Exec even points at the CI runner that built it). Nothing at runtime
+  # reads them -- only share/lua and share/luajit-* are on LUA_PATH -- but
+  # AppRun puts $APPDIR/share on XDG_DATA_DIRS, so anyone extracting the image
+  # gets a "LÖVE" entry back. The arm64 AppDir never had them.
+  rm -rf "$appdir/share/applications" "$appdir/share/pixmaps" \
+         "$appdir/share/mime" "$appdir/share/icons"
+
+  cat > "$appdir/$APP_NAME.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=gen1recomp
+Comment=Pokémon Gen 1 recompilation
+Exec=$APP_NAME
+Icon=$APP_NAME
+StartupWMClass=love
+Categories=Game;
+Terminal=false
+EOF
+
+  # Icon= resolves against the AppDir root by basename, so the PNG has to be
+  # named after the desktop entry; .DirIcon is what appimaged and
+  # file-manager thumbnailers show for the file itself.
   [ -f "$ICON_SRC" ] || fail "missing icon source: $ICON_SRC"
-  rm -f "$appdir/love.svg" "$appdir/.DirIcon"
-  sips -z 512 512 "$ICON_SRC" --out "$appdir/love.png" >/dev/null
-  cp "$appdir/love.png" "$appdir/.DirIcon"
+  rm -f "$appdir/love.svg" "$appdir/love.png" "$appdir/.DirIcon"
+  sips -z 512 512 "$ICON_SRC" --out "$appdir/$APP_NAME.png" >/dev/null
+  cp "$appdir/$APP_NAME.png" "$appdir/.DirIcon"
 
   sed -i '' 's|^#FUSE_PATH="$APPDIR/my_game.love"$|FUSE_PATH="$APPDIR/game.love"|' "$appdir/AppRun"
   grep -q '^FUSE_PATH="\$APPDIR/game.love"$' "$appdir/AppRun" \

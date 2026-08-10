@@ -60,6 +60,17 @@ for _, r in ipairs(rows) do
 end
 check(not hasRecord, "CHAMPIONS_ROOM rival script no longer calls record_hall_of_fame")
 
+-- The post-battle walk takes the right-hand detour before heading north, so
+-- the player does not visibly pass through the rival at (4,2).
+local route = {}
+for _, r in ipairs(rows) do
+  if r[1] == "move_player" then route[#route + 1] = r end
+end
+eq(route[#route - 1] and route[#route - 1][2], "right",
+   "walk-out route first moves right around the rival")
+eq(route[#route] and route[#route][2], "up",
+   "walk-out route then heads north to Hall of Fame")
+
 -- (3) Commands.face_player_dir sets the player's facing
 local Commands = require("src.script.Commands")
 check(type(Commands.face_player_dir) == "function", "Commands.face_player_dir is a function")

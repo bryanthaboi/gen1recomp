@@ -51,6 +51,7 @@ function ListMenu.new(game, title, items, opts)
   local self = setmetatable({}, ListMenu)
   self.game = game
   self.title = title
+  self.kind = opts.kind or title
   self.items = items
   self.index = 1
   self.scroll = 0

@@ -75,6 +75,19 @@ do
   check(anyText(tb, "SUBSTITUTE"), "the failure text still prints")
 end
 
+-- Exact quarter HP is also not enough: accepting it would leave the user at
+-- 0 HP with substituteHP set, so the next trainer-battle turn cannot advance.
+do
+  local tb = freshBattle()
+  local cost = math.floor(tb.enemy.mon.stats.hp / 4)
+  tb.enemy.mon.hp = cost
+  tb:performMove(tb.enemy, tb.player, { id = "SUBSTITUTE", pp = 10 }, false)
+  check(tb.enemy.substituteHP == nil and tb.enemy.mon.hp == cost,
+        "exact quarter HP cannot create a zero-HP substitute")
+  check(not anyAnim(tb, "SUBSTITUTE"),
+        "the exact-boundary failure plays no animation")
+end
+
 -- .alreadyHasSubstitute: same, with a doll already standing
 do
   local tb = freshBattle()

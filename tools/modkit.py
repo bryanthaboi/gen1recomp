@@ -716,7 +716,7 @@ def run_loader(repo, mod_dir, findings, base="fixture", notes=None):
         driver_path = handle.name
     try:
         proc = subprocess.run([LUAJIT, driver_path], cwd=repo,
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, text=True, encoding="utf-8", timeout=120)
     except FileNotFoundError:
         findings.append(Finding("MK100", "error",
                                 f"cannot run {LUAJIT} (install luajit or "
@@ -1056,7 +1056,7 @@ def check_data_dump(repo, path, base, rel):
     driver = DUMP_DRIVER % (lua_quote(path), lua_quote(vanilla))
     try:
         proc = subprocess.run([LUAJIT, "-e", driver], cwd=repo,
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8", timeout=60)
     except FileNotFoundError:
         # the gate must fail closed: a missing interpreter is a broken
         # environment, not a clean mod
@@ -1416,7 +1416,7 @@ def dump_dataset(repo, base):
     handle.close()
     try:
         proc = subprocess.run([os.environ.get("LUA", "luajit"), handle.name],
-                              cwd=repo, capture_output=True, text=True)
+                              cwd=repo, capture_output=True, text=True, encoding="utf-8")
     finally:
         os.unlink(handle.name)
     if proc.returncode != 0:

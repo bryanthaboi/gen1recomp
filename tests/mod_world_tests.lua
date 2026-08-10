@@ -823,6 +823,29 @@ do
       and caught.enemy.mon.species == "TANGELA",
       "and it is the species the authored encounter table names")
 
+    -- Trainer battles do not arm the wild-encounter cooldown.
+    walker.wildEncounterGraceSteps = 0
+    walker:afterBattle("win", { kind = "trainer" })
+    check(walker.wildEncounterGraceSteps == 0,
+      "trainer battles do not start the wild encounter grace period")
+
+    -- pokered grants three completed steps after a wild battle before the
+    -- next random battle can start (end_of_battle.asm + home/overworld.asm).
+    local finishedWild = caught
+    walker:afterBattle("run", finishedWild)
+    caught = nil
+    withBuses(function(_, hooks)
+      hooks:wrap("encounter.roll", function()
+        return { species = "TANGELA", level = 5 }
+      end, 0, "grace-period")
+      for step = 1, 3 do
+        pcall(walker.onStepComplete, walker)
+        check(caught == nil, "wild encounter grace period blocks step " .. step)
+      end
+      pcall(walker.onStepComplete, walker)
+      check(caught ~= nil, "wild encounter is eligible on step 4")
+    end)
+
     -- the same walk with an encounter.roll wrapper never starts a battle
     withBuses(function(_, hooks)
       hooks:wrap("encounter.roll", function() return nil end, 0, "nuzlocke")
@@ -893,6 +916,76 @@ do
   check(value == nil and err == "no overworld", "npc() off the world")
   value, err = api:queueScript({})
   check(value == nil and err == "no overworld", "queueScript() off the world")
+  value, err = api:startWildBattle("PIDGEY", 5)
+  check(value == nil and err == "no overworld", "startWildBattle() off the world")
+end
+
+-- startWildBattle: what regresses is the handoff, not the battle.  A mod that
+-- builds a BattleState and pushes it itself still fights and still levels; it
+-- silently loses onFinish -> afterBattle (evolutions, blackout-on-loss) and
+-- pushBattle (entry wipe, battle theme).  Shipped mods have hit exactly this.
+do
+  -- the real dataset, not fixture(): a battle reaches for type_chart, items,
+  -- battle_anims and more, and this block only reads
+  local data = Data
+  local state, game = liveWorld(data)
+  -- the handoff runs through these three, so each needs the live game
+  for _, fn in ipairs({ "pushBattle", "isDungeonTransitionMap", "afterBattle" }) do
+    check(bindGame(OW[fn], game), fn .. " binds Game")
+  end
+  state:setMap("PALLET_TOWN", 5, 6, "down", { via = "boot" })
+
+  local Pokemon = require("src.pokemon.Pokemon")
+  local api = WorldAPI.new(game, "tester")
+
+  local value, err = api:startWildBattle("NOT_A_MON", 5)
+  check(value == nil and err:find("unknown species", 1, true),
+    "an unknown species refuses and names it")
+  -- Pokemon.new writes the level through into the stat calc and the exp curve
+  -- verbatim, so a fraction has to be refused rather than rounded downstream
+  for _, lv in ipairs({ 0, 101, "nope", 5.5 }) do
+    check(api:startWildBattle("PIDGEY", lv) == nil,
+      "level " .. tostring(lv) .. " refuses")
+  end
+
+  local caterpie = Pokemon.new(data, "CATERPIE", 6)
+  game.save.party = { caterpie }
+  check(api:startWildBattle("PIDGEY", 25) == true, "a wild battle starts")
+
+  -- pushBattle pushes the entry transition, which pushes the battle from its
+  -- own callback; awardExp is the BattleState marker (screenId would not work,
+  -- only Screens.push stamps that and pushBattle pushes the battle directly)
+  check(game.stack:top() ~= nil and game.stack:top().awardExp == nil,
+    "the entry transition goes on first")
+  -- overworld() resolves the world from UNDER the battle, so a second call
+  -- while one is up has to refuse rather than stack another
+  check(api:startWildBattle("PIDGEY", 5) == nil,
+    "a battle already running refuses")
+
+  local battle
+  for _ = 1, 400 do
+    local t = game.stack:top()
+    if t and t.awardExp then battle = t break end
+    if t and t.update then t:update(1 / 60) else break end
+  end
+  check(battle ~= nil, "the transition hands off to the battle")
+
+  battle.participants = { [caterpie] = true }
+  battle:awardExp()
+  check(caterpie.level >= 7, "the mon levels past its evolution threshold")
+  check(battle.leveledUp and battle.leveledUp[caterpie],
+    "awardExp records the level-up for EvolveAfterBattle")
+
+  game.stack:pop()
+  battle.onFinish("win")
+  for _ = 1, 12 do
+    local t = game.stack:top()
+    if not t or t.screenId == "EvolutionState" then break end
+    game.stack:pop()
+    if t.onDone then t.onDone() end
+  end
+  check(game.stack:top() and game.stack:top().screenId == "EvolutionState",
+    "the win reaches the evolution screen")
 end
 
 do

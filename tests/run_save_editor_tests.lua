@@ -291,6 +291,106 @@ do
   eq(mon.level, 1, "stepSpecies keeps the level")
 end
 
+do
+  -- Nicknames: the editor edits mon.nickname, which is nil when un-nicknamed
+  -- (every display site reads `mon.nickname or def.name`, GenSave.lua).  The
+  -- game's naming screen caps at 10 glyphs and treats an empty confirm as "no
+  -- nickname", so the verbs below mirror that: "" clears, a name matching the
+  -- species' standard name normalizes back to nil, too-long or unrenderable
+  -- names refuse with a status line, and nothing silently no-ops.
+  local S = State.new()
+  S.data = Data
+  S.cat = Catalog.build(Data)
+  S.save = SaveData.newGame()
+  local mon = MonOps.create(Data, "CHARIZARD", 50)
+  S.save.party = { mon }
+  S.editingMon = mon
+
+  eq(Ops.nicknameLength("POKEMON"), 7, "nicknameLength counts ASCII glyphs")
+  eq(Ops.nicknameLength("ééé"), 3, "nicknameLength counts a multi-byte char as one glyph")
+  eq(Ops.nicknameLength("♂♀!"), 3, "nicknameLength counts symbol glyphs")
+  check(Ops.nicknameUsable(S, "CHARIZARD"), "ASCII letters are renderable")
+  check(Ops.nicknameUsable(S, "Nidoking"), "lower case is renderable")
+  check(Ops.nicknameUsable(S, "é") == true, "a charmap glyph is renderable")
+  check(Ops.nicknameUsable(S, "PIKA€") == false, "a non-charmap glyph is not renderable")
+  check(Ops.nicknameUsable(S, "🤖") == false, "an emoji is not renderable")
+  -- "@" is the Gen1 string terminator: the codec has an entry for it but the
+  -- game font has no tile, so Font.encode draws it as a space in-game
+  check(Ops.nicknameUsable(S, "POKE@MON") == false,
+        "the terminator @ is not a renderable nickname glyph")
+  check(Ops.nicknameUsable(S, "POKE#MON") == false,
+        "the # marker is not a renderable nickname glyph")
+
+  -- the field gate: sanitize skips unrenderable glyphs and clamps at 10, so
+  -- what reaches the mon can only ever be a legal Gen 1 nickname
+  eq(Ops.nicknameSanitize(S, "PIKA\226\130\172"), "PIKA",
+    "sanitize drops an unrenderable glyph")
+  eq(Ops.nicknameSanitize(S, "PIKA\226\130\172CHU"), "PIKACHU",
+    "sanitize skips a bad glyph mid-name instead of aborting the rest")
+  eq(Ops.nicknameSanitize(S, "POKE@MON"), "POKEMON",
+    "sanitize strips the invisible @ terminator")
+  eq(Ops.nicknameSanitize(S, "1234567890123"), "1234567890",
+    "sanitize clamps the draft at 10 glyphs")
+  eq(Ops.nicknameSanitize(S, "\195\169"), "\195\169",
+    "sanitize keeps a charmap glyph")
+  eq(Ops.nicknameSanitize(S, ""), "", "sanitize of empty is empty")
+
+  Ops.setNickname(S, mon, "SPARKY")
+  eq(mon.nickname, "SPARKY", "setNickname stores the name")
+  check(S.dirty == true, "setNickname marks the save dirty")
+  eq(S.status:match("SPARKY") ~= nil, true, "setNickname narrates the new name")
+  S.dirty = false
+
+  check(Ops.setNickname(S, mon, "SPARKY") == false,
+        "setting the same nickname again is a no-op")
+  check(S.dirty == false, "the no-op did not dirty the save")
+  check(S.status:match("Already nicknamed") ~= nil, "the no-op explains itself")
+
+  -- a name matching the species' standard name is the un-nicknamed state
+  Ops.setNickname(S, mon, "CHARIZARD")
+  eq(mon.nickname, nil, "a name equal to the standard name normalizes to nil")
+  eq(S.status:match("standard name") ~= nil, true, "the normalization explains itself")
+
+  check(Ops.clearNickname(S, mon) == false,
+        "clearing an already-un-nicknamed mon is a no-op")
+  check(S.status:match("no nickname") ~= nil, "the no-op explains itself")
+
+  -- empty input means clear, like an empty naming-screen confirm
+  Ops.setNickname(S, mon, "SPARKY")
+  eq(mon.nickname, "SPARKY", "re-nicknamed for the empty-clear check")
+  check(Ops.setNickname(S, mon, "") == true, "an empty name is a valid clear")
+  eq(mon.nickname, nil, "an empty name clears the nickname")
+  check(S.status:match("Cleared") ~= nil, "the clear narrates")
+
+  Ops.setNickname(S, mon, "1234567890")
+  eq(mon.nickname, "1234567890", "a 10-glyph name is accepted")
+  S.dirty = false
+  check(Ops.setNickname(S, mon, "12345678901") == false,
+        "an 11-glyph name is refused")
+  eq(mon.nickname, "1234567890", "a refused name leaves the mon alone")
+  check(S.dirty == false, "a refused name does not dirty the save")
+  check(S.status:match("capped at 10") ~= nil, "the length refusal explains itself")
+
+  check(Ops.setNickname(S, mon, "PIKA€") == false,
+        "a name with an unrenderable glyph is refused")
+  eq(mon.nickname, "1234567890", "a refused glyph leaves the mon alone")
+  check(S.status:match("cannot render") ~= nil, "the glyph refusal explains itself")
+  check(Ops.setNickname(S, mon, "POKE@MON") == false,
+        "a name with the invisible @ terminator is refused")
+  eq(mon.nickname, "1234567890", "a refused @ name leaves the mon alone")
+  check(S.status:match("cannot render") ~= nil, "the @ refusal explains itself")
+
+  check(Ops.setNickname(S, nil, "X") == false, "setNickname without a mon refuses")
+  check(S.status:match("Pick a slot") ~= nil, "and explains itself")
+  check(Ops.clearNickname(S, nil) == false, "clearNickname without a mon refuses")
+
+  -- the canonical round trip: what the game reads back is the same either way
+  mon.nickname = "SPARKY"
+  local encoded = SaveData.encode(S.save)
+  local back = SaveData.decode(encoded)
+  eq(back.party[1].nickname, "SPARKY", "a nickname survives a save round trip")
+end
+
 -- App.load corrupt-save vs missing-save (Important fix #2): App.load takes
 -- an optional path override precisely so tests can drive this without
 -- touching the real default save file.
@@ -794,6 +894,83 @@ do
   check(S.status:match("No species matches") ~= nil, "and says so")
   eq(S.save.party[1].species, "PIKACHU", "and changes nothing")
   Ops.closeSpeciesPicker(S, Kit)
+
+  os.remove(tmpPath)
+  for _, bak in ipairs(FsIo.globPrefix(tmpPath .. ".bak-")) do os.remove(bak) end
+end
+
+do
+  -- The inspector's nickname field is commit-on-Enter: the draft lives in
+  -- S.nicknameDraft while typing, Enter commits it through Ops.setNickname,
+  -- and Escape discards it.  Drive it through App the way a player would:
+  -- focus the field (a click is just a Kit.focus assignment here), type,
+  -- drain the edits with a draw, then press Enter / Escape.
+  local Kit = require("Kit")
+  local tmpPath = os.tmpname() .. "-nickname-save.lua"
+  local data = SaveData.newGame()
+  data.party = { MonOps.create(Data, "CHARIZARD", 50) }
+  local f = io.open(tmpPath, "wb")
+  f:write(SaveData.encode(data))
+  f:close()
+
+  App.load(tmpPath, { version = "red" })
+  local S = App.getState()
+  S.tab = "party"
+  Ops.selectParty(S, 1)
+  local mon = S.editingMon
+  eq(mon.nickname, nil, "the save starts un-nicknamed")
+
+  -- type "SPARKY" and commit with Enter
+  Kit.focus = "mon-nickname"
+  App.textinput("SPARKY")
+  App.draw()
+  eq(S.nicknameDraft, "SPARKY", "typed text lands in the draft")
+  App.keypressed("return")
+  eq(mon.nickname, "SPARKY", "Enter commits the draft to the mon")
+  check(S.dirty == true, "the commit marks the save dirty")
+  check(Kit.focus == nil, "Enter blurs the field")
+  S.dirty = false
+
+  -- The field has no select-all, so a rename is backspace-then-type (the
+  -- caret parks at the end, exactly like the editor's other fields).
+  local function clearField(n)
+    Kit.focus = "mon-nickname"
+    for _ = 1, n do App.keypressed("backspace") end
+    App.draw()
+  end
+
+  -- type junk, then Escape: nothing is committed and the draft is discarded
+  clearField(#mon.nickname)
+  App.textinput("ZEPTO")
+  App.draw()
+  eq(S.nicknameDraft, "ZEPTO", "the draft holds the new typing")
+  App.keypressed("escape")
+  eq(mon.nickname, "SPARKY", "Escape does not commit")
+  eq(S.nicknameDraft, "SPARKY", "Escape resets the draft to the committed name")
+  check(Kit.focus == nil, "Escape blurs the field")
+
+  -- an unrenderable glyph is blocked AT INPUT: the euro sign never reaches
+  -- the draft, so the field can only ever hold what the game can render
+  clearField(#mon.nickname)
+  App.textinput("PIKA\226\130\172") -- PIKA + euro sign, not a charmap glyph
+  App.draw()
+  eq(S.nicknameDraft, "PIKA", "an unrenderable glyph is dropped at input")
+  App.keypressed("return")
+  eq(mon.nickname, "PIKA", "the clean draft commits on Enter")
+
+  -- and the 10-glyph cap blocks extra input the same way
+  clearField(#mon.nickname)
+  App.textinput("123456789012345")
+  App.draw()
+  eq(S.nicknameDraft, "1234567890", "typing past 10 glyphs clamps at 10")
+
+  -- the @ terminator never reaches the draft either: it draws as a space
+  -- in-game, so the field strips it like any other unrenderable glyph.  The
+  -- clamp test above left an uncommitted draft, so clear the whole draft.
+  clearField(#S.nicknameDraft)
+  App.textinput("POKE@MON")
+  App.draw()
+  eq(S.nicknameDraft, "POKEMON", "the @ terminator is stripped at input")
 
   os.remove(tmpPath)
   for _, bak in ipairs(FsIo.globPrefix(tmpPath .. ".bak-")) do os.remove(bak) end

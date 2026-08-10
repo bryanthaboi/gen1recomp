@@ -40,6 +40,27 @@ T.eq(Font.advanceOf(0x80), 8, "and the pen stays 8px monospace")
 
 -- ------------------------------------------------- the ttf takes over
 
+-- Font rasterizers must use the same 1x pixel grid as PixelCanvas, rather
+-- than inheriting Android's window density.  Keep this local fake so the
+-- contract is testable without requiring a real LÖVE window.
+do
+  local g, oldNewFont = love.graphics, love.graphics.newFont
+  local args
+  g.newFont = function(...)
+    args = { ... }
+    return oldNewFont(Font.PLAINPIXEL, Font.PLAINPIXEL_SIZE)
+  end
+  local loaded, err = pcall(Font.load, {
+    font = { charmap = CHARMAP, ttf = { file = "custom.ttf", size = 13 } },
+  })
+  g.newFont = oldNewFont
+  if not loaded then error(err, 0) end
+  T.eq(args[1], "custom.ttf", "rasterizer uses the configured file")
+  T.eq(args[2], 13, "rasterizer uses the configured size")
+  T.eq(args[3], "mono", "rasterizer keeps the pixel hinting mode")
+  T.eq(args[4], 1, "rasterizer stays on the pixel canvas scale")
+end
+
 Font.load({ font = { charmap = CHARMAP, ttf = {} } })
 T.check(Font.ttfActive(), "an empty ttf table loads the bundled font")
 

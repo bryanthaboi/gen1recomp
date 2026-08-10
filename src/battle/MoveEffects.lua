@@ -281,11 +281,11 @@ MoveEffects.primary = {
                failed = true }
     end
     local cost = math.floor(user.mon.stats.hp / 4)
-    -- substitute.asm only fails on subtraction underflow (current HP
-    -- strictly below maxHP/4); at equality the substitute is built and
-    -- the user is left standing on exactly 0 HP (it faints only when
-    -- the engine next checks HP, not here)
-    if user.mon.hp < cost then
+    -- A Substitute costs one quarter of max HP, rounded down. Do not let
+    -- the cost consume the user's last HP: the move must fail at the exact
+    -- boundary as well as below it, or the next turn's HP guard can leave a
+    -- trainer battle unable to progress.
+    if user.mon.hp <= cost then
       return { romText(battle.data, "_TooWeakSubstituteText", "Too weak to make\na SUBSTITUTE!"),
                failed = true }
     end

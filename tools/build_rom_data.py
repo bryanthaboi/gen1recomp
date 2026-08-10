@@ -1747,6 +1747,17 @@ def extract_field(rom, symbols, manifest, out_dir, assets_dir):
         "title/copyright.png")
     raw_2bpp(
         "GameFreakLogoGraphics", 72, 8, "title/gamefreak_inc.png")
+    # Yellow NineTile (pokeyellow gfx/font.asm): final "9" of (c)1995-1999,
+    # parked in the 16 bytes between GameFreakLogoGraphics and TextBoxGraphics.
+    if _has_symbol(symbols, "GameFreakLogoGraphics") \
+       and _has_symbol(symbols, "TextBoxGraphics"):
+        gf = _symbol(symbols, "GameFreakLogoGraphics")
+        tb = _symbol(symbols, "TextBoxGraphics")
+        if tb.address == gf.address + 9 * 16 + 16:
+            nine_raw = rom.bytes(gf.bank, gf.address + 9 * 16, 16)
+            _save_png(
+                _decode_2bpp(nine_raw, 8, 8, False),
+                os.path.join(assets_dir, "title/nine.png"))
 
     # Yellow fixed Pikachu title (pret/pokeyellow title_yellow.asm): tilemap
     # composition over both tile banks -- PokemonLogoGraphics in vChars2

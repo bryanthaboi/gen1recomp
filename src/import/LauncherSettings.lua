@@ -275,10 +275,24 @@ local function coreRows(opts, hooks)
 
   local okSpd, GameSpeed = pcall(require, "src.core.GameSpeed")
   if okSpd then
-    add(AppLocale("GAME SPEED"),
-      function() return settingValue(GameSpeed.levelLabel(opts.speed)) end,
+    -- Per-category (RFC 0007): overworld/battle/menu each cycle their own
+    -- multiplier, mirroring OptionsMenu.lua's three rows.
+    add(AppLocale("OVERWORLD SPEED"),
+      function() return settingValue(GameSpeed.levelLabel(opts.speedOverworld)) end,
       function(dir)
-        opts.speed = GameSpeed.cycle(opts.speed, dir)
+        opts.speedOverworld = GameSpeed.cycle(opts.speedOverworld, dir)
+        return true
+      end)
+    add(AppLocale("BATTLE SPEED"),
+      function() return settingValue(GameSpeed.levelLabel(opts.speedBattle)) end,
+      function(dir)
+        opts.speedBattle = GameSpeed.cycle(opts.speedBattle, dir)
+        return true
+      end)
+    add(AppLocale("MENU SPEED"),
+      function() return settingValue(GameSpeed.levelLabel(opts.speedMenu)) end,
+      function(dir)
+        opts.speedMenu = GameSpeed.cycle(opts.speedMenu, dir)
         return true
       end)
   end

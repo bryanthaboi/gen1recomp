@@ -130,6 +130,12 @@ TITLE_GRAPHICS = [
     ("gamefreakInc", "gfx/title/gamefreak_inc.png", False),
 ]
 
+# Yellow only (pokeyellow gfx/font.asm NineTile): final "9" of (c)1995-1999
+# on the title copyright line and intro/credits copyright card.
+OPTIONAL_TITLE_GRAPHICS = [
+    ("nine", "gfx/title/nine.png", False),
+]
+
 
 def extract_title(pokered, assets_dir):
     """Convert the title-screen graphics to assets/generated/title/.
@@ -143,6 +149,19 @@ def extract_title(pokered, assets_dir):
         base = os.path.basename(src_rel)
         size = convert_png(os.path.join(pokered, src_rel),
                            os.path.join(assets_dir, "title", base),
+                           transparent_matte=matte)
+        out[key] = {
+            "path": f"assets/generated/title/{base}",
+            "width": size[0],
+            "height": size[1],
+            "source": src_rel,
+        }
+    for key, src_rel, matte in OPTIONAL_TITLE_GRAPHICS:
+        src = os.path.join(pokered, src_rel)
+        if not os.path.isfile(src):
+            continue
+        base = os.path.basename(src_rel)
+        size = convert_png(src, os.path.join(assets_dir, "title", base),
                            transparent_matte=matte)
         out[key] = {
             "path": f"assets/generated/title/{base}",

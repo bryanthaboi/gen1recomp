@@ -103,7 +103,31 @@ local YELLOW_CYCLE_SPECIES = {
   "JIGGLYPUFF", "MEOWTH", "PSYDUCK", "VULPIX", "ABRA",
   "GROWLITHE", "CUBONE", "GASTLY", "HITMONLEE", "SNORLAX", "DRAGONITE",
 }
-local CYCLE_FRAMES = 240 -- the original waits ~4s between picks
+-- ..(engine/movie/title.asm ln 227)
+local HOLD_FRAMES = 200
+local STARTERS = { CHARMANDER = true, SQUIRTLE = true, BULBASAUR = true }
+
+-- ..(engine/movie/title2.asm ln 13)
+local function scrollFrames(steps, offset)
+  local frames = {}
+  for _, step in ipairs(steps) do
+    for _ = 1, step[2] do
+      frames[#frames + 1] = offset
+      offset = offset - step[1]
+    end
+  end
+  return frames
+end
+local OUT_FRAMES = scrollFrames(
+  { { 1, 2 }, { 2, 2 }, { 3, 2 }, { 4, 2 }, { 5, 2 }, { 6, 2 },
+    { 8, 3 }, { 9, 3 } }, 0)
+local IN_FRAMES = scrollFrames(
+  { { 10, 2 }, { 9, 4 }, { 8, 4 }, { 6, 3 }, { 5, 2 }, { 3, 1 },
+    { 1, 1 } }, 120)
+
+-- ..(engine/movie/title2.asm ln 85)
+local BALL_FRAMES = { 97, 95, 94, 93, 92, 93, 94, 95, 97, 100 }
+local BALL_REST = 100
 
 local function tryImage(path)
   if not path then return nil end
@@ -178,9 +202,35 @@ function TitleState.new(game, opts)
                           or "assets/generated/title/red_version.png")
   self.player = tryImage(imagePath(title.player)
                          or "assets/generated/title/player.png")
+  -- ..(engine/movie/title2.asm ln 85)
+  if self.player then
+    local pw, ph = self.player:getDimensions()
+    self.ballQuad = love.graphics.newQuad(0, 16, 8, 8, pw, ph)
+    self.playerQuads = {
+      { love.graphics.newQuad(0, 0, pw, 16, pw, ph), 0, 0 },
+      { love.graphics.newQuad(8, 16, pw - 8, 8, pw, ph), 8, 16 },
+      { love.graphics.newQuad(0, 24, pw, ph - 24, pw, ph), 0, 24 },
+    }
+  end
+  self.copyImg = tryImage(imagePath(title.copyright)
+                          or "assets/generated/title/copyright.png")
+  self.copyQuads = {}
+  if self.copyImg then
+    local iw, ih = self.copyImg:getDimensions()
+    for t = 0, 18 do
+      self.copyQuads[t] = love.graphics.newQuad(t * 8, 0, 8, 8, iw, ih)
+    end
+  end
+  self.gfInc = tryImage(imagePath(title.gamefreakInc)
+                        or "assets/generated/title/gamefreak_inc.png")
   self.blue = GameVersion.isBlue()
   self.yellow = GameVersion.isYellow()
     or title.layout == "yellow_pikachu"
+  -- ..(pokeyellow engine/movie/title.asm .tileScreenCopyrightTiles / NineTile)
+  self.nineImg = self.yellow and tryImage(imagePath(title.nine)
+    or "assets/generated/title/nine.png") or nil
+  self.copyPrefix = self.yellow
+    and { 0, 1, 2, 3, 1, 2 } or { 0, 1, 2, 1, 3, 1, 4 }
   -- Yellow title is a fixed Pikachu composition (title_yellow.asm), not
   -- TitleMons cycling.  Prefer composed pikachu.png from the Yellow import.
   self.yellowPikachu = self.yellow and tryImage(imagePath(title.pikachu)
@@ -203,7 +253,10 @@ function TitleState.new(game, opts)
     self.blinkTimer = 0
     self.blinkAt = nil
   else
-    self.phase = "loop"
+    -- ..(engine/movie/title.asm ln 28)
+    self.scy = 0x40
+    self.phase = "drop"
+    self.dropStep, self.dropLeft = 1, nil
     self.showBubble = true
   end
   local defaultCycle = self.yellowLayout and { "PIKACHU" }
@@ -216,14 +269,15 @@ function TitleState.new(game, opts)
   self.cycleIndex = 1
   self.timer = 0
   self.blink = 0
+  self.scrollPhase = "hold"
+  self.scrollFrame = 1
+  self.monOffset = 0
+  self.ballY = BALL_REST
   return self
 end
 
 function TitleState:enter()
-  -- Yellow defers the title theme until after the logo drop and
-  -- Pikachu's cry (title.asm plays MUSIC_TITLE_SCREEN only after
-  -- WaitForSoundToFinish on PikachuCry1)
-  if self.yellowLayout then return end
+  if self.phase ~= "loop" then return end
   self:startMusic()
 end
 
@@ -240,6 +294,11 @@ end
 local DROP_STEPS = {
   { -4, 16 }, { 3, 4 }, { -3, 4 }, { 2, 2 }, { -2, 2 }, { 1, 2 }, { -1, 2 },
 }
+local SETTLE_FRAMES = 36
+
+-- ..(engine/movie/title.asm ln 201)
+local RIBBON_FRAMES = {}
+for offset = 112, 4, -4 do RIBBON_FRAMES[#RIBBON_FRAMES + 1] = offset end
 
 -- the boot cinematic up to the interactive loop; one call per frame
 function TitleState:updateSequence()
@@ -263,12 +322,23 @@ function TitleState:updateSequence()
       self.dropLeft = nil
     end
   elseif self.phase == "settle" then
-    -- ld c, 36 / DelayFrames, then the whoosh and the bubble
     self.timer = self.timer + 1
-    if self.timer >= 36 then
+    if self.timer >= SETTLE_FRAMES then
       Sound.play(data, "Intro_Whoosh")
       self.showBubble = true
-      self.phase = "bubble"
+      self.phase = self.yellowLayout and "bubble" or "ribbon"
+      self.ribbonOffset = RIBBON_FRAMES[1]
+      self.timer = 0
+    end
+  elseif self.phase == "ribbon" then
+    self.timer = self.timer + 1
+    local offset = RIBBON_FRAMES[self.timer + 1]
+    if offset then
+      self.ribbonOffset = offset
+    else
+      self.ribbonOffset = nil
+      self:startMusic()
+      self.phase = "loop"
       self.timer = 0
     end
   elseif self.phase == "bubble" then
@@ -432,12 +502,63 @@ function TitleState:openMenu()
   game.stack:push(menu)
 end
 
+-- ..(engine/movie/title.asm ln 271)
+function TitleState:pickNewMon()
+  if #self.cycleSpecies < 2 then return end
+  local pick = self.cycleIndex
+  while pick == self.cycleIndex do
+    pick = love.math.random(1, #self.cycleSpecies)
+  end
+  self.cycleIndex = pick
+end
+
+function TitleState:setCyclePhase(phase)
+  self.scrollPhase = phase
+  self.scrollFrame = 1
+  self.timer = 0
+  if phase == "in" then
+    self:pickNewMon()
+    self.monOffset = IN_FRAMES[1]
+  elseif phase == "out" then
+    self.monOffset = OUT_FRAMES[1]
+  elseif phase == "ball" then
+    self.ballY = BALL_FRAMES[1]
+  else
+    self.monOffset = 0
+  end
+end
+
+function TitleState:updateCycle()
+  local phase = self.scrollPhase
+  if phase == "hold" then
+    if self.timer >= HOLD_FRAMES then self:setCyclePhase("out") end
+    return
+  end
+  local frames = phase == "out" and OUT_FRAMES
+              or phase == "ball" and BALL_FRAMES or IN_FRAMES
+  self.scrollFrame = self.scrollFrame + 1
+  local value = frames[self.scrollFrame]
+  if value then
+    if phase == "ball" then self.ballY = value else self.monOffset = value end
+    return
+  end
+  if phase == "out" then
+    -- ..(engine/movie/title.asm ln 235)
+    self:setCyclePhase(
+      STARTERS[self.cycleSpecies[self.cycleIndex]] and "ball" or "in")
+  elseif phase == "ball" then
+    self:setCyclePhase("in")
+  else
+    self:setCyclePhase("hold")
+  end
+end
+
 function TitleState:update(dt)
+  if self.phase ~= "loop" then
+    self:updateSequence()
+    return
+  end
   if self.yellowLayout then
-    if self.phase ~= "loop" then
-      self:updateSequence()
-      return -- input is ignored until the cinematic lands (title.asm)
-    end
     self:updateBlink()
     local input = self.game.input
     if input:wasPressed("start") or input:wasPressed("a") then
@@ -452,21 +573,7 @@ function TitleState:update(dt)
   end
   self.timer = self.timer + 1
   self.blink = (self.blink + 1) % 60
-  if not self.yellowLayout and self.timer >= CYCLE_FRAMES then
-    self.timer = 0
-    -- random pick that never repeats the current one
-    if #self.cycleSpecies > 1 then
-      local pick = self.cycleIndex
-      while pick == self.cycleIndex do
-        pick = love.math.random(1, #self.cycleSpecies)
-      end
-      self.cycleIndex = pick
-    end
-    self.slideIn = 20 -- TitleScreenScrollInMon slides the pic in
-  end
-  if self.slideIn and self.slideIn > 0 then
-    self.slideIn = self.slideIn - 1
-  end
+  self:updateCycle()
   local input = self.game.input
   if input:wasPressed("start") or input:wasPressed("a") then
     -- the title mon cries when you leave the title (.finishedWaiting);
@@ -478,15 +585,14 @@ function TitleState:update(dt)
   end
 end
 
--- The original tilemap (engine/movie/title.asm): logo at tile (2,1),
--- the version ribbon at (7,8), Red's title art as OAM at px (82,80),
--- the title mon in the 7x7 box at tile (5,10), copyright on row 17.
--- Yellow (title_yellow.asm): logo (2,1), speech bubble (6,4), Pikachu
--- (4,8) 12x9 -- no version ribbon, no cycling mon, no Red OAM.
+-- ..(engine/movie/title.asm ln 28)
 function TitleState:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
-  local scrollY = self.yellowLayout and -(self.scy or 0) or 0
+  local scrollY = -(self.scy or 0)
+  -- ..(engine/movie/title.asm ln 28)
+  local preRibbon = not self.yellowLayout
+    and (self.phase == "drop" or self.phase == "settle")
   if self.logo then
     love.graphics.draw(self.logo, 16, 8 + scrollY)
   else
@@ -514,27 +620,29 @@ function TitleState:draw()
     -- Yellow's Version_GFX slot holds a leftover "Blue Version" ribbon
     -- (pokeyellow gfx/title/blue_version.png, unreferenced by title code);
     -- the Yellow fallback layout draws no ribbon at all.
-    if self.version and not self.yellow then
+    if self.version and not self.yellow and not preRibbon then
       local iw, ih = self.version:getDimensions()
+      local rx = self.ribbonOffset or 0
       if self.versionFull then
         -- a continuous ribbon (versionRibbon) centers as one piece
-        love.graphics.draw(self.version, math.floor((160 - iw) / 2), 64)
+        love.graphics.draw(self.version, math.floor((160 - iw) / 2) + rx, 64)
       elseif self.blue then
         love.graphics.draw(self.version,
-          love.graphics.newQuad(0, 0, 64, 8, iw, ih), 56, 64)
+          love.graphics.newQuad(0, 0, 64, 8, iw, ih), 56 + rx, 64)
       else
         love.graphics.draw(self.version,
-          love.graphics.newQuad(0, 0, 16, 8, iw, ih), 56, 64)
+          love.graphics.newQuad(0, 0, 16, 8, iw, ih), 56 + rx, 64)
         love.graphics.draw(self.version,
-          love.graphics.newQuad(40, 0, 40, 8, iw, ih), 80, 64)
+          love.graphics.newQuad(40, 0, 40, 8, iw, ih), 80 + rx, 64)
       end
     end
-    local sprite, spriteTrueColor = self:currentSprite()
+    local sprite, spriteTrueColor
+    if self.scrollPhase ~= "ball" then
+      sprite, spriteTrueColor = self:currentSprite()
+    end
     if sprite then
       local w, h = sprite:getDimensions()
-      local slide = (self.slideIn or 0) * 8 -- scroll in from the right
-      -- bottom-aligned and centered in the (5,10)-(11,16) tile box
-      local x = 40 + math.floor((56 - w) / 2) + slide
+      local x = 40 + math.floor((56 - w) / 2) + self.monOffset
       local y = 136 - h
       love.graphics.draw(sprite, x, y)
       -- a full-color mon keeps its own palette through the SGB pass, minus
@@ -550,13 +658,34 @@ function TitleState:draw()
       end
     end
     -- Red is OAM in the original: he draws over the mon's box edge
-    if self.player then
+    if self.playerQuads then
+      for _, part in ipairs(self.playerQuads) do
+        love.graphics.draw(self.player, part[1], 82 + part[2], 80 + part[3])
+      end
+      love.graphics.draw(self.player, self.ballQuad, 82, self.ballY)
+    elseif self.player then
       love.graphics.draw(self.player, 82, 80)
     end
   end
+  self:drawCopyright(136 + (preRibbon and 0 or scrollY))
+end
+
+function TitleState:drawCopyright(y)
+  if not self.title.copyrightText and self.copyImg and self.gfInc then
+    local x = 16
+    for _, t in ipairs(self.copyPrefix) do
+      love.graphics.draw(self.copyImg, self.copyQuads[t], x, y)
+      x = x + 8
+    end
+    if self.nineImg then
+      love.graphics.draw(self.nineImg, x, y)
+      x = x + 8
+    end
+    love.graphics.draw(self.gfInc, x, y)
+    return
+  end
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(self.title.copyrightText or Strings("2026 bois club games"),
-    1, 136 + scrollY)
+  Font.draw(self.title.copyrightText or Strings("GAME FREAK inc."), 16, y)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

@@ -90,11 +90,14 @@ mutation. The engine then:
 4. binds an engine-owned wild/trainer completion continuation;
 5. installs the battle directly at the settled menu without replaying its intro;
 6. restores the RNG after reconstruction has finished; and
-7. recaptures and compares the complete checkpoint.
+7. recaptures and compares the complete checkpoint; and
+8. emits `checkpoint.restored` with `{ game = game, kind = "battle" }` after the
+   comparison succeeds.
 
 The pre-operation checkpoint is the transaction rollback. A failed post-install
 RNG restore is covered: both battle runtime and RNG are reconstructed back to
-their original values.
+their original values. Validation failure, failed reconstruction, and successful
+rollback emit no checkpoint lifecycle event.
 
 ## Continuation decision
 
@@ -112,9 +115,10 @@ contract until a separate semantic ScriptRunner checkpoint RFC exists.
 ## Migration note
 
 **Existing mods require no changes.** The facade and format number are unchanged;
-the new kind and RNG field are additive. Overworld-only callers may continue to
-filter `capability.kind`. No-mod behavior is unchanged when checkpoints are
-unused.
+the new kind, RNG field, and success-only lifecycle event are additive.
+Overworld-only callers may continue to filter `capability.kind`. Mods with derived
+runtime caches may rebuild them from restored public state when the event fires.
+No-mod behavior is unchanged when checkpoints are unused.
 
 ## Verification
 
@@ -129,5 +133,8 @@ unused.
   raw RNG result after reload;
 - corrupt content/continuation rejection before mutation;
 - injected post-install failure with full runtime and RNG rollback;
+- mod-added Pokémon metadata and `mod.save` rewind while independent
+  `mod.storage` and options remain current;
+- exactly one post-verification `checkpoint.restored` event and none on failure;
 - legacy overworld checkpoint compatibility;
 - complete ROM-free engine and public mod-API suites.

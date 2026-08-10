@@ -446,16 +446,17 @@ check(misted2.stages.attack == nil
       and mistMsgs[1]:find("MIST", 1, true) ~= nil,
       "primary stat drop still blocked by MIST")
 
--- Substitute boundary: built at exactly 1/4 max HP, leaving 0 HP
--- (substitute.asm only fails on subtraction underflow)
+-- Substitute boundary: the move must fail when its quarter-HP cost would
+-- consume all current HP, preventing a zero-HP user with a live substitute.
 local subUser = { mon = { stats = { hp = 40 }, hp = 10 }, name = "SUBBY" }
-MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser)
-check(subUser.substituteHP ~= nil and subUser.mon.hp == 0,
-      "substitute built at exactly 1/4 max HP leaves 0 HP")
-local subUser2 = { mon = { stats = { hp = 40 }, hp = 9 }, name = "SUBBY" }
-local subMsgs = MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser2)
-check(subUser2.substituteHP == nil
+local subMsgs = MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser)
+check(subUser.substituteHP == nil and subUser.mon.hp == 10
       and subMsgs[1]:find("weak", 1, true) ~= nil,
+      "substitute fails at exactly 1/4 max HP")
+local subUser2 = { mon = { stats = { hp = 40 }, hp = 9 }, name = "SUBBY" }
+local subMsgs2 = MoveEffects.primary.SUBSTITUTE_EFFECT(sideRng, subUser2)
+check(subUser2.substituteHP == nil and subUser2.mon.hp == 9
+      and subMsgs2[1]:find("weak", 1, true) ~= nil,
       "substitute fails below 1/4 max HP")
 
 -- Haze clears Disable/X ACCURACY on both sides and forfeits the turn of
@@ -2759,29 +2760,43 @@ do
   -- SPEED below: a full loop of #STEPS presses returns to the 60 default.
   for _ = 1, #FrameCap.STEPS - 1 do press("a") end
   eq(og.save.options.fpsCap, 60, "MAX FPS wraps back to 60")
+  -- RFC 0007: the single GAME SPEED row is now three independent rows,
+  -- one per GameSpeed.CATEGORIES entry.
   press("down")
-  eq(om.index, 21, "cursor reaches GAME SPEED")
+  eq(om.index, 21, "cursor reaches OVERWORLD SPEED")
   press("a")
-  eq(og.save.options.speed, 2, "A cycles GAME SPEED to 2X")
+  eq(og.save.options.speedOverworld, 2, "A cycles OVERWORLD SPEED to 2X")
   -- Driven by the level list rather than a literal press count: adding a
   -- speed (20X went in for the bot runs) otherwise fails this as a wrap
   -- bug when the cycling is fine and the row is simply one longer.
   for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
-  eq(og.save.options.speed, 1, "GAME SPEED wraps back to NORMAL")
+  eq(og.save.options.speedOverworld, 1, "OVERWORLD SPEED wraps back to NORMAL")
   press("down")
-  eq(om.index, 22, "cursor reaches MODS")
+  eq(om.index, 22, "cursor reaches BATTLE SPEED")
+  press("a")
+  eq(og.save.options.speedBattle, 2, "A cycles BATTLE SPEED to 2X")
+  for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
+  eq(og.save.options.speedBattle, 1, "BATTLE SPEED wraps back to NORMAL")
   press("down")
-  eq(om.index, 23, "cursor reaches CONTROLS")
+  eq(om.index, 23, "cursor reaches MENU SPEED")
+  press("a")
+  eq(og.save.options.speedMenu, 2, "A cycles MENU SPEED to 2X")
+  for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
+  eq(og.save.options.speedMenu, 1, "MENU SPEED wraps back to NORMAL")
   press("down")
-  eq(om.index, 24, "CANCEL stays the fixed final row")
-  eq(om.scroll, 19, "CANCEL keeps the last option boxes on screen")
+  eq(om.index, 24, "cursor reaches MODS")
+  press("down")
+  eq(om.index, 25, "cursor reaches CONTROLS")
+  press("down")
+  eq(om.index, 26, "CANCEL stays the fixed final row")
+  eq(om.scroll, 21, "CANCEL keeps the last option boxes on screen")
   om:draw() -- smoke: scrolled layout draws under the headless stub
   press("a")
   check(popped, "A on CANCEL closes the options menu")
   local om2 = OptionsMenu.new(og)
   OInput.pressed = { up = true }; om2:update(1 / 60); OInput.pressed = {}
-  eq(om2.index, 24, "up from the top wraps to CANCEL")
-  eq(om2.scroll, 19, "wrapping to CANCEL scrolls to the tail")
+  eq(om2.index, 26, "up from the top wraps to CANCEL")
+  eq(om2.scroll, 21, "wrapping to CANCEL scrolls to the tail")
   -- headless-safe: no love.audio, setters only update internal state
   require("src.core.Music").applyOptions(og.save.options)
   require("src.core.Sound").applyOptions(og.save.options)

@@ -111,6 +111,11 @@ local NOISE_DIVISORS = {
   [4] = 64, [5] = 80, [6] = 96, [7] = 112,
 }
 
+
+local HPF_CHARGE = 0.999958 ^ (GB_CLOCK / SAMPLE_RATE)
+local LPF_ALPHA = 0.8
+local MIX_SCALE = 0.5
+
 local function snapTicks(ticks)
   return math.floor((ticks * 1470 + 256) / 512)
 end
@@ -269,6 +274,7 @@ function Channel.new(engine, spec, options)
     phase = 0,
     noiseLfsr = 0x7FFF,
     noiseClock = 0,
+    drumTail = nil,
     timeTicks = 0,
   }, Channel)
 end
@@ -527,6 +533,25 @@ local function envelopeVolume(volume, fade, elapsed)
   return math.min(15, volume + steps)
 end
 
+
+local function envelopeRingSamples(volume, fade)
+  if not fade or fade <= 0 or not volume or volume <= 0 then return 0 end
+  return math.floor(volume * (fade / 64) * SAMPLE_RATE + 0.5)
+end
+
+local function extendDrumEnvelope(segments)
+  local last = segments and segments[#segments]
+  if not last then return segments end
+  local ringEnd = last.startSample + envelopeRingSamples(last.volume, last.fade)
+  if ringEnd > last.endSample then last.endSample = ringEnd end
+  return segments
+end
+
+local function drumAudioEnd(drum)
+  local last = drum and drum[#drum]
+  return last and last.endSample or 0
+end
+
 function Channel:resetNoise()
   self.noiseLfsr = 0x7FFF
   self.noiseClock = 0
@@ -566,8 +591,7 @@ function Channel:sampleNoise(parameter)
       end
     end
   end
-  -- LuaGB: instantaneous inverted LFSR LSB (high when bit0 == 0)
-  return bit.band(self.noiseLfsr, 1) == 0 and 1 or -1
+  return bit.band(self.noiseLfsr, 1) == 0 and 1 or 0
 end
 
 local function sweepCalculation(register, sweep)
@@ -611,21 +635,51 @@ end
 function Channel:sample()
   while not self.ended
       and (not self.event or self.event.sample >= self.event.samples) do
+    local prev = self.event
     self.event = self:nextEvent()
     self.phase = 0
-    self:resetNoise()
+    if self.event and self.event.drum then
+      self.drumTail = nil
+      self:resetNoise()
+    elseif prev and prev.drum and prev.sample < drumAudioEnd(prev.drum) then
+      -- ..(audio/engine_1.asm ln 197)
+      self.drumTail = prev
+    elseif not (self.event and self.event.silence and self.drumTail) then
+      self.drumTail = nil
+      self:resetNoise()
+    end
   end
   local event = self.event
-  if not event then return 0 end
+  local gain = channelVolume[self.hardware] or 1
+  if not event then
+    local tail = self.drumTail
+    if not tail then return 0 end
+    local sampleIndex = tail.sample
+    tail.sample = sampleIndex + 1
+    if sampleIndex >= drumAudioEnd(tail.drum) then
+      self.drumTail = nil
+      return 0
+    end
+    return self:sampleDrum(tail, sampleIndex) * gain
+  end
   local sampleIndex = event.sample
   event.elapsed = sampleIndex / SAMPLE_RATE
   event.sample = sampleIndex + 1
-  if event.silence then return 0 end
-
-  local gain = channelVolume[self.hardware] or 1
+  if event.silence then
+    local tail = self.drumTail
+    if not tail then return 0 end
+    local tailIndex = tail.sample
+    tail.sample = tailIndex + 1
+    if tailIndex >= drumAudioEnd(tail.drum) then
+      self.drumTail = nil
+      return 0
+    end
+    return self:sampleDrum(tail, tailIndex) * gain
+  end
   if event.drum then
     return self:sampleDrum(event, sampleIndex) * gain
   end
+  self.drumTail = nil
   local volume = envelopeVolume(
     event.volume or 0, event.fade or 0, event.elapsed)
   if event.noise then
@@ -665,7 +719,8 @@ function Channel:sample()
     -- a def-local program may omit its wave table entirely
     if not wave then return 0 end
     local index = math.min(32, math.floor(phase * 32) + 1)
-    return wave[index] * event.waveLevel * gain
+    local nibble = math.max(0, math.min(15, wave[index] * 8 + 8))
+    return (nibble / 15) * event.waveLevel * gain
   end
   local duty = event.duty
   if type(duty) == "table" then
@@ -674,7 +729,7 @@ function Channel:sample()
   local pattern = WAVE_PATTERN_TABLES[duty or 2] or WAVE_PATTERN_TABLES[2]
   local step = math.floor(phase * 8) % 8
   if pattern[step + 1] == 0 then
-    return -volume / 15 * gain
+    return 0
   end
   return volume / 15 * gain
 end
@@ -685,7 +740,7 @@ Engine.__index = Engine
 function Engine:noiseInstrument(number)
   -- a def-local drum wins over the ROM engine's table for that id
   local custom = self.customDrums and self.customDrums[number]
-  if custom then return custom end
+  if custom then return extendDrumEnvelope(custom) end
   local cached = self.noiseInstruments[number]
   if cached then return cached end
 
@@ -718,6 +773,7 @@ function Engine:noiseInstrument(number)
     end
   end
 
+  extendDrumEnvelope(segments)
   self.noiseInstruments[number] = segments
   return segments
 end
@@ -792,6 +848,8 @@ function Engine.new(data, header, options)
     customDrums = chip and chip.drums or nil,
     noiseInstruments = {},
     channels = {},
+    hpfCap = 0, hpfCapLeft = 0, hpfCapRight = 0,
+    lpf = 0, lpfLeft = 0, lpfRight = 0,
   }, Engine)
   -- header.tempo: the Music_*AlternateTempo override Music.play stamps onto
   -- a copy of the song def (audio/alternate_tempo.asm) (#847)
@@ -826,10 +884,20 @@ function Engine:finished()
   return true
 end
 
+local function analogOut(engine, input, hpfField, lpfField)
+  local cap = engine[hpfField]
+  local hp = input - cap
+  engine[hpfField] = input - hp * HPF_CHARGE
+  local prev = engine[lpfField]
+  local lp = prev + LPF_ALPHA * (hp - prev)
+  engine[lpfField] = lp
+  return math.max(-1, math.min(1, lp * MIX_SCALE))
+end
+
 function Engine:sample()
   local value = 0
   for _, channel in ipairs(self.channels) do value = value + channel:sample() end
-  return math.max(-1, math.min(1, value / 4))
+  return analogOut(self, value, "hpfCap", "lpf")
 end
 
 function Engine:sampleStereo()
@@ -840,8 +908,8 @@ function Engine:sampleStereo()
     if not event or event.panLeft ~= false then left = left + value end
     if not event or event.panRight ~= false then right = right + value end
   end
-  return math.max(-1, math.min(1, left / 4)),
-    math.max(-1, math.min(1, right / 4))
+  return analogOut(self, left, "hpfCapLeft", "lpfLeft"),
+    analogOut(self, right, "hpfCapRight", "lpfRight")
 end
 
 function Engine:sampleChannel(number)
@@ -850,7 +918,7 @@ function Engine:sampleChannel(number)
     local value = channel:sample()
     if channel.number == number then selected = value end
   end
-  return math.max(-1, math.min(1, selected / 4))
+  return analogOut(self, selected, "hpfCap", "lpf")
 end
 
 -- render `samples` frames into a fresh SoundData (mono or stereo).  love.sound
@@ -870,22 +938,7 @@ local function soundData(engine, samples, channels)
   return result
 end
 
--- Render a one-shot effect (SFX/cry) to a two-channel SoundData, or nil when
--- it is too short to be audible.  The caller wraps it in a static
--- love.audio.Source (a playback concern, hence not done here).
---
--- The synthesis is mono (one summed value per frame, unlike the music path's
--- sampleStereo), but the buffer is written stereo on purpose: OpenAL only
--- spatializes 1-channel Sources, and a Source left at the default (0,0,0)
--- position, exactly where the listener sits, is rendered as an ambient sound
--- spread over EVERY output channel the device exposes at gains that differ
--- from the front pair.  On an interface with more than two outputs that put
--- the SFX on outputs 5+6 as well, while the 2-channel music source
--- (ChipAudio.playMusic) stayed on 1+2 (#626).  Multi-channel buffers skip
--- spatialization entirely and map onto the front pair, so duplicating the
--- sample costs one buffer's memory and makes effects route exactly like
--- music.  Deliberately not sampleStereo: that honors the NR51 panning byte
--- and would newly hard-pan any effect whose header issues command 0xEE.
+
 local function renderEffectData(data, header, options)
   if not header then return nil end
   options = options or {}

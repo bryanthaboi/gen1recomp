@@ -31,6 +31,7 @@
 -- to just THE END.
 
 local Font = require("src.render.Font")
+local GameVersion = require("src.core.GameVersion")
 local Music = require("src.core.Music")
 local Strings = require("src.core.Strings")
 
@@ -64,11 +65,12 @@ local MON_PREP_FRAMES = 9
 
 -- LoadCopyrightTiles (engine/movie/title.asm CopyrightTextString): tile
 -- sequences into the extracted title/copyright.png strip (tiles $60-$72:
--- (c)'95.'96.'98 + Nintendo + Creatures inc.); the GAME FREAK inc. row is
--- the title/gamefreak_inc.png strip (GameFreakLogoGraphics, tiles
--- $73-$7B), with the intro's composed gamefreak_text.png as a fallback
--- for pre-regeneration data.
-local COPY_PREFIX = { 0, 1, 2, 1, 3, 1, 4 }               -- (c)'95.'96.'98
+-- Red/Blue (c)'95.'96.'98, Yellow (c)1995-1999 + NineTile) + Nintendo +
+-- Creatures inc.; the GAME FREAK inc. row is title/gamefreak_inc.png
+-- (GameFreakLogoGraphics, tiles $73-$7B), with the intro's composed
+-- gamefreak_text.png as a fallback for pre-regeneration data.
+local COPY_PREFIX_RB = { 0, 1, 2, 1, 3, 1, 4 }            -- (c)'95.'96.'98
+local COPY_PREFIX_YELLOW = { 0, 1, 2, 3, 1, 2 }           -- (c)1995-199
 local COPY_NINTENDO = { 5, 6, 7, 8, 9, 10 }               -- Nintendo
 local COPY_CREATURES = { 11, 12, 13, 14, 15, 16, 17, 18 } -- Creatures inc.
 
@@ -140,6 +142,12 @@ function Credits.new(game, onDone, onTheEnd)
                         and title.gamefreakInc.path)
              or tryImage(intro and intro.gamefreakText
                          and intro.gamefreakText.path)
+  self.yellowCopy = GameVersion.isYellow()
+    or (title and title.layout == "yellow_pikachu")
+  self.copyPrefix = self.yellowCopy and COPY_PREFIX_YELLOW or COPY_PREFIX_RB
+  self.nineImg = self.yellowCopy and tryImage(
+    title and title.nine and title.nine.path
+      or "assets/generated/title/nine.png") or nil
   return self
 end
 
@@ -255,6 +263,17 @@ function Credits:drawPage(screen, xoff, shade)
   if screen.copyright then self:drawCopyright(xoff) end
 end
 
+function Credits:drawCopyPrefix(x, y)
+  local img = self.copyImg
+  for _, t in ipairs(self.copyPrefix) do
+    love.graphics.draw(img, self.copyQuads[t], x, y)
+    x = x + 8
+  end
+  if self.nineImg then
+    love.graphics.draw(self.nineImg, x, y)
+  end
+end
+
 function Credits:drawCopyright(xoff)
   local img = self.copyImg
   if img then
@@ -267,11 +286,11 @@ function Credits:drawCopyright(xoff)
       end
       return x
     end
-    row(COPY_PREFIX, xoff + 16, 56)
+    self:drawCopyPrefix(xoff + 16, 56)
     row(COPY_NINTENDO, xoff + 80, 56)
-    row(COPY_PREFIX, xoff + 16, 72)
+    self:drawCopyPrefix(xoff + 16, 72)
     row(COPY_CREATURES, xoff + 80, 72)
-    row(COPY_PREFIX, xoff + 16, 88)
+    self:drawCopyPrefix(xoff + 16, 88)
     if self.gfImg then
       love.graphics.draw(self.gfImg, xoff + 80, 88)
     else

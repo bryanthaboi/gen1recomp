@@ -37,7 +37,8 @@ end
 
 local Y_TITLE = {
   "pikachu.png", "pika_bubble.png", "eyes_half.png", "eyes_closed.png",
-  "player.png", "copyright.png", "yellow_version.png",
+  "player.png", "copyright.png", "gamefreak_inc.png", "nine.png",
+  "yellow_version.png",
 }
 for _, name in ipairs(Y_TITLE) do
   seed("yellow/assets/generated/title/" .. name)
@@ -207,6 +208,11 @@ check(pre ~= nil, "the IntroMovie pre-roll was constructed")
 eq(pre and pre.copyright and pre.copyright.path,
   "yellow/assets/generated/title/copyright.png",
   "copyright card resolves to the yellow/ copy")
+eq(pre and pre.nineImg and pre.nineImg.path,
+  "yellow/assets/generated/title/nine.png",
+  "copyright NineTile resolves to the yellow/ copy")
+check(pre and pre.yellowCopy == true,
+  "IntroMovie selects the Yellow (c)1995-1999 tile sequence")
 eq(pre and pre.studioLogo and pre.studioLogo.path,
   "yellow/assets/generated/intro/studio_logo.png",
   "data-driven studio logo resolves to the yellow/ copy")
@@ -266,6 +272,7 @@ GameVersion.set("blue")
 seed("blue/assets/generated/title/blue_version.png", "blue-version-bytes")
 seed("blue/assets/generated/title/player.png")
 seed("blue/assets/generated/title/copyright.png")
+seed("blue/assets/generated/title/gamefreak_inc.png")
 local B_INTRO = {
   "gf_logo.png", "gf_text.png", "big_star.png",
   "falling_star.png", "falling_star_blink.png", "studio_logo.png",

@@ -218,7 +218,11 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   else
     colsH = capH + 10 * s + colRowsH + 12 * s + actH
   end
+  -- the nickname section: a caption line (with the Clear button on it) plus
+  -- the field + Set row
+  local nickFieldH = 30 * s
   local contentH = pad + headerH + 18 * s
+    + capH + 10 * s + nickFieldH + 18 * s
     + capH + 10 * s + cellH + 18 * s
     + colsH + pad
 
@@ -266,8 +270,45 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     drawLevelRow(S, Kit, mon, cx, cy + math.max(sprite, titleH) + 12 * s)
   end
 
+  -- ---------------------------------------------------------- nickname
+  -- Editing the field is a draft (S.nicknameDraft) held on the mon it belongs
+  -- to; Set / Enter commit it through Ops.setNickname, which clears on an
+  -- empty value, and Clear goes through Ops.clearNickname.  The draft resets
+  -- when the selection moves so one mon's typing can never leak onto another.
+  local nickY = cy + headerH + 18 * s
+  Kit.caption(cx, nickY, "NICKNAME")
+  local clearW = 74 * s
+  local clearH = 24 * s
+  if Kit.button(cx + inner - clearW, nickY + (capH - clearH) / 2, clearW, clearH,
+      "Clear", { kind = "danger", font = "micro", radius = 6 * s }) then
+    Ops.clearNickname(S, mon)
+    S.nicknameDraft = ""
+  end
+  local fieldY = nickY + capH + 10 * s
+  local setW = 64 * s
+  local fieldW = inner - setW - 10 * s
+  if S.nicknameMon ~= mon then
+    local switching = S.nicknameMon ~= nil
+    S.nicknameMon = mon
+    S.nicknameDraft = mon.nickname or ""
+    -- a still-focused field would keep appending keystrokes to the newly
+    -- selected mon; the selection move counts as leaving the field.  The
+    -- first sync (nicknameMon starts nil) never blurs: the species picker
+    -- owns focus when it opens, and blurring there drops the player's typing.
+    if switching and Kit.focus == "mon-nickname" then Kit.blur() end
+  end
+  S.nicknameDraft = Kit.textfield("mon-nickname", cx, fieldY, fieldW, nickFieldH,
+    S.nicknameDraft or "", "no nickname",
+    { sanitize = function(value) return Ops.nicknameSanitize(S, value) end })
+  if Kit.button(cx + fieldW + 10 * s, fieldY, setW, nickFieldH, "Set",
+      { kind = "accent", font = "small", radius = 8 * s }) then
+    if Ops.setNickname(S, mon, S.nicknameDraft) then
+      S.nicknameDraft = mon.nickname or ""
+    end
+  end
+
   -- ------------------------------------------------------- derived stats
-  local statsY = cy + headerH + 18 * s
+  local statsY = nickY + capH + 10 * s + nickFieldH + 18 * s
   Kit.caption(cx, statsY, "STATS . recalculated from level + DVs")
   statsY = statsY + capH + 10 * s
   local gap = 12 * s

@@ -229,6 +229,7 @@ function Manifest.validate(raw, path)
     permissionSet = permissionSet,
     options_schema = optionalFile(raw.options_schema, "options_schema"),
     assets_transforms = optionalFile(raw.assets_transforms, "assets_transforms"),
+    force_enable_env = optionalFile(raw.force_enable_env, "force_enable_env"),
     path = path,
     raw = raw,
   }

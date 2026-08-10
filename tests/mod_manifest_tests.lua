@@ -105,6 +105,7 @@ local full = Manifest.validate({
   api = 2, profile = "overhaul", permissions = { "network" },
   dependencies = { "colorlib@^1.2" }, conflicts = { "always_noon" },
   options_schema = "options.lua", assets_transforms = "transforms.lua",
+  force_enable_env = "SOME_ENV",
 }, "mods/full")
 check(full.api == 2 and full.profile == "overhaul", "api and profile parse")
 check(full.affects_link == true, "overhaul defaults to affecting link play")
@@ -115,6 +116,7 @@ check(full.conflictSpecs[1].id == "always_noon" and full.conflictSpecs[1].range 
   "a bare conflict entry has no range")
 check(full.options_schema == "options.lua"
   and full.assets_transforms == "transforms.lua", "declared files are kept")
+check(full.force_enable_env == "SOME_ENV", "force_enable_env is kept")
 
 -- ------- github / experimental / incompatible
 local gh = Manifest.validate({

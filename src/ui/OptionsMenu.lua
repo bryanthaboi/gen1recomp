@@ -392,14 +392,35 @@ local function buildRows(game)
         return true
       end },
     -- fast-forward the logic clock only; music and sfx keep their tempo
-    -- (src/core/GameSpeed.lua), so this is safe to leave on
-    { id = "speed", label = Strings("GAME SPEED"),
+    -- (src/core/GameSpeed.lua), so this is safe to leave on. Per-category
+    -- (RFC 0007): overworld walking, battle turns and menu navigation each
+    -- cycle their own multiplier -- GameSpeed.CATEGORIES is the single
+    -- source of truth for which three rows exist.
+    { id = "speedOverworld", label = Strings("OVERWORLD SPEED"),
       value = function(g)
-        return GameSpeed.levelLabel(g.save.options.speed)
+        return GameSpeed.levelLabel(g.save.options.speedOverworld)
       end,
       step = function(g, dir)
         local o = g.save.options
-        o.speed = GameSpeed.cycle(o.speed, dir)
+        o.speedOverworld = GameSpeed.cycle(o.speedOverworld, dir)
+        return true
+      end },
+    { id = "speedBattle", label = Strings("BATTLE SPEED"),
+      value = function(g)
+        return GameSpeed.levelLabel(g.save.options.speedBattle)
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.speedBattle = GameSpeed.cycle(o.speedBattle, dir)
+        return true
+      end },
+    { id = "speedMenu", label = Strings("MENU SPEED"),
+      value = function(g)
+        return GameSpeed.levelLabel(g.save.options.speedMenu)
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.speedMenu = GameSpeed.cycle(o.speedMenu, dir)
         return true
       end },
     -- the manager's discoverable home (18-mod-manager-ux); inert until

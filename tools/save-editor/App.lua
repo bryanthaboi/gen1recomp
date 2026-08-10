@@ -842,6 +842,24 @@ function App.keypressed(key)
       return
     end
   end
+  -- The inspector's nickname field is a commit-on-Enter field, unlike the
+  -- search fields, which are live view state.  Enter commits the draft through
+  -- Ops and blurs; Escape discards it and blurs.  Both must run before
+  -- Kit.keypressed, which maps return/escape to the same "\r" edit and cannot
+  -- tell "commit" from "cancel".
+  if Kit.focus == "mon-nickname" then
+    if key == "return" or key == "kpenter" then
+      if S.editingMon and Ops.setNickname(S, S.editingMon, S.nicknameDraft) then
+        S.nicknameDraft = S.editingMon.nickname or ""
+      end
+      Kit.blur()
+      return
+    elseif key == "escape" then
+      Kit.blur()
+      if S.editingMon then S.nicknameDraft = S.editingMon.nickname or "" end
+      return
+    end
+  end
   -- A focused text field eats the keys it cares about (typing "s" into the
   -- map filter must not trigger Save).
   if Kit.keypressed(key) then return end

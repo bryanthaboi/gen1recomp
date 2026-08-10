@@ -72,6 +72,7 @@ end
 local function withdraw(game)
   local pc = game.save.pcItems
   game.stack:push(ListMenu.new(game, "WITHDRAW ITEM", buildItems(game, pc), {
+    kind = "pc_item_withdraw",
     messageBox = true,
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     onChoose = function(item, list)
@@ -110,6 +111,7 @@ local function deposit(game)
     if not Bag.isBadge(id) then depositable[id] = count end
   end
   game.stack:push(ListMenu.new(game, "DEPOSIT ITEM", buildItems(game, depositable), {
+    kind = "pc_item_deposit",
     messageBox = true,
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     onChoose = function(item, list)
@@ -131,6 +133,7 @@ end
 local function toss(game)
   local pc = game.save.pcItems
   game.stack:push(ListMenu.new(game, "TOSS ITEM", buildItems(game, pc), {
+    kind = "pc_item_toss",
     messageBox = true,
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     onChoose = function(item, list)

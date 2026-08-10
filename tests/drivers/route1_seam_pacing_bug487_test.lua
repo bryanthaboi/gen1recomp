@@ -46,7 +46,9 @@ return function(game)
         os.getenv("POKEPORT_DRIVER") == nil)
   check("no fast-forward multiplier is set",
         (tonumber(os.getenv("POKEPORT_SPEED")) or 1) == 1
-          and (game.save.options.speed or 1) == 1)
+          and (game.save.options.speedOverworld or 1) == 1
+          and (game.save.options.speedBattle or 1) == 1
+          and (game.save.options.speedMenu or 1) == 1)
   check("a window is up to watch (this is a visual call)",
         love.window ~= nil and love.window.isOpen and love.window.isOpen())
   U.log("MAX FPS reads", FrameCap.label(game.save.options.fpsCap),

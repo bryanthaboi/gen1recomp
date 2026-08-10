@@ -1756,7 +1756,7 @@ end
 
 function RomExtractor:extractField()
   self:beginStage("Interface artwork")
-  local done, total = 0, 50
+  local done, total = 0, 51
   local function tick()
     done = done + 1
     self:tick("Interface artwork", math.min(done, total), total)
@@ -1772,6 +1772,16 @@ function RomExtractor:extractField()
     "title/copyright.png"); tick()
   self:raw2bpp("GameFreakLogoGraphics", 72, 8,
     "title/gamefreak_inc.png"); tick()
+
+  do
+    local gf = self.symbols["GameFreakLogoGraphics"]
+    local tb = self.symbols["TextBoxGraphics"]
+    if gf and tb and tb[2] == gf[2] + 9 * 16 + 16 then
+      local raw = self.rom:bytes(gf[1], gf[2] + 9 * 16, 16)
+      self:save(ImageWriter.decode2bpp(raw, 8, 8, false), "title/nine.png")
+    end
+  end
+  tick()
   -- Yellow fixed Pikachu title art (no-op on Red/Blue manifests).
   self:extractYellowTitleArt(); tick()
 

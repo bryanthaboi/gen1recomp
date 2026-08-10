@@ -1067,23 +1067,18 @@ local championsRoomRivalScript = {
   { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 23
   { "move_npc", 2, "up", 2 },                               -- 24 OakExitChampionsRoomMovement
   { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 25
-  -- ChampionsRoomPlayerFollowsOakScript / WalkToHallOfFame_RLEMovement
-  -- (PAD_UP 4, PAD_LEFT 1): the player walks out after Oak instead of the
-  -- screen just fading on the spot (#704).  The entrance walk leaves the
-  -- player at (4,3) and both north-wall warps sit on row 0, so the original
-  -- only ever spends three of those simulated steps -- CheckWarpsNoCollision
-  -- takes the HALL_OF_FAME warp the moment the walk lands on (4,0) and the
-  -- trailing UP/LEFT are dropped.  Scripted steps ignore collision here just
-  -- as they do in the original (CollisionCheckOnLand skips its checks while
-  -- wSimulatedJoypadStatesIndex is non-zero), so stepping through the
-  -- rival's cell at (4,2) is the ported behavior, not a clip.  Re-reported
-  -- as a clip in #847 and re-checked against home/overworld.asm
-  -- CollisionCheckOnLand, which is still the authority: do not "fix" it.
-  { "move_player", "up", 3 },                               -- 26
+  -- ChampionsRoomPlayerFollowsOakScript / WalkToHallOfFame_RLEMovement.
+  -- The player walks out after Oak instead of the screen just fading on the
+  -- spot (#704).  Route one tile right before walking north so the player
+  -- reaches the north-wall HALL_OF_FAME warp without sharing the rival's
+  -- (4,2) cell.  The original simulated movement bypasses entity collision,
+  -- but this scene should not visibly walk through the defeated rival.
+  { "move_player", "right", 1 },                            -- 26
+  { "move_player", "up", 3 },                               -- 27
   -- hand the induction off to the HALL_OF_FAME room (consumed by its
   -- onEnter), then warp up into it (destWarp 1 lands at (4,7) facing up)
-  { "set_field", "pendingHallOfFame", true },               -- 27
-  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 28
+  { "set_field", "pendingHallOfFame", true },               -- 28
+  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 29
 }
 
 M.CHAMPIONS_ROOM = {

@@ -271,6 +271,38 @@ do
         "and nothing is disabled off a failed migration")
 end
 
+-- ------- force_enable_env: an env var can override a saved disable
+-- (src/mods/Loader.lua's enable-resolution block, added for a mod that
+-- cannot function disabled on the one build where its env var is set --
+-- e.g. a platform-launcher bridge mod).
+do
+  local forceFiles = {
+    ["options.lua"] = "return { mods = { forced = false } }",
+    ["mods/forced/manifest.json"] =
+      [[{"id":"forced","name":"forced","version":"1.0.0","entry":"main.lua",]]
+      .. [["force_enable_env":"SOME_TEST_ENV"}]],
+    ["mods/forced/main.lua"] = "return function(mod) end",
+  }
+
+  local realGetenv = os.getenv
+  os.getenv = function(name)
+    if name == "SOME_TEST_ENV" then return "1" end
+    return realGetenv(name)
+  end
+  local onLoader = Loader.new({ fs = memfs(forceFiles) })
+  check(onLoader:load({ pokemon = {} }) == true,
+    "force_enable_env: load succeeds with the env var set")
+  check(onLoader.mods.forced.enabled == true,
+    "a matching force_enable_env re-enables a mod saved as disabled")
+  os.getenv = realGetenv
+
+  local offLoader = Loader.new({ fs = memfs(forceFiles) })
+  check(offLoader:load({ pokemon = {} }) == true,
+    "force_enable_env: load succeeds with the env var unset")
+  check(offLoader.mods.forced.enabled == false,
+    "with the env var unset, the saved disable is left alone")
+end
+
 -- leave shared singletons the way we found them for later chained tests
 local StateStack = require("src.core.StateStack")
 while StateStack:top() do StateStack:pop() end

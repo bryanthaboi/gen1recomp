@@ -51,4 +51,19 @@ function GameSpeed.cycle(v, dir)
   return levels[nextIdx]
 end
 
+-- Per-category speed (RFC 0007): overworld walking, battle turns and menu
+-- navigation each cycle their own multiplier instead of one global "speed"
+-- value. This list is the single source of truth for which categories
+-- exist and the order the Options rows/save.options keys follow;
+-- Game.lua's stack-walk (Game.speedCategoryInStack) decides WHICH category
+-- is active on a given frame, this module only knows the category names.
+GameSpeed.CATEGORIES = { "overworld", "battle", "menu" }
+
+-- the save.options field name a category's multiplier lives under, e.g.
+-- "overworld" -> "speedOverworld". Centralized so Game.lua, OptionsMenu.lua,
+-- LauncherSettings.lua and the SaveData migration never hand-spell the key.
+function GameSpeed.optionKey(category)
+  return "speed" .. category:sub(1, 1):upper() .. category:sub(2)
+end
+
 return GameSpeed

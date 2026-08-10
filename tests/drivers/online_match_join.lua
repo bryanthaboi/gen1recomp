@@ -55,7 +55,11 @@ return function(game)
   local link = LinkState.new(game)
   game.stack:push(link)
   U.wait(10)
-  game.save.options.speed = 20
+  -- RFC 0007: set all three per-category speeds high, since the link lock
+  -- has to win over every one of them, not just whichever is active.
+  game.save.options.speedOverworld = 20
+  game.save.options.speedBattle = 20
+  game.save.options.speedMenu = 20
   U.wait(2)
   log("logicSpeed with GAME SPEED=20 during link:", game:logicSpeed())
 

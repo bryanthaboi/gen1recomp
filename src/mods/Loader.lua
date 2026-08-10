@@ -951,6 +951,16 @@ function Loader:load(data)
       end
     end
   end
+  -- A manifest may name an env var that force-enables it regardless of a
+  -- saved disable in options.mods -- generic, not tied to any mod id, for
+  -- a mod (e.g. a native-launcher bridge) that cannot function disabled on
+  -- the one build where its env var is set.
+  for id, mod in pairs(self.mods) do
+    local envName = mod.manifest.force_enable_env
+    if envName and os.getenv(envName) == "1" then
+      self.disabled[id] = nil
+    end
+  end
   for id, mod in pairs(self.mods) do
     mod.enabled = not self.disabled[id]
     mod.state = mod.enabled and "pending" or "disabled"

@@ -137,8 +137,10 @@ function Font.load(data)
   -- typo'd path degrades exactly like a missing page image does above.
   if type(def.ttf) == "table" then
     local file = def.ttf.file or Font.PLAINPIXEL
-    local ok, obj = pcall(love.graphics.newFont, file,
-                          def.ttf.size or Font.PLAINPIXEL_SIZE, "mono")
+    local size = def.ttf.size or Font.PLAINPIXEL_SIZE
+    -- The game renders into a pixel-exact canvas, so keep the TTF rasterizer
+    -- on that same 1x grid instead of inheriting the window DPI on mobile.
+    local ok, obj = pcall(love.graphics.newFont, file, size, "mono", 1)
     if ok and obj then
       -- nearest keeps the pixel font crisp under the integer UI scale
       if obj.setFilter then pcall(obj.setFilter, obj, "nearest", "nearest") end

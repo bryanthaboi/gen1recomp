@@ -221,24 +221,44 @@ function Game:step(dt)
   -- it on its own real-time 60Hz accumulator instead.
 end
 
+-- The per-category (RFC 0007) save.options multiplier for whichever of
+-- "battle"/"overworld"/"menu" Game.speedCategoryInStack says is active
+-- right now.  This is the "vanilla" the core.logic_speed hook wraps below
+-- -- Game:logicSpeed calls it AFTER the link and speedOverride checks, so
+-- neither a mod nor the category resolution ever has a seam to defeat them.
+function Game:_resolveLogicSpeed()
+  local GameSpeed = require("src.core.GameSpeed")
+  local category = Game.speedCategoryInStack(self.stack)
+  local key = GameSpeed.optionKey(category)
+  local opts = self.save and self.save.options
+  return GameSpeed.clamp(opts and opts[key] or GameSpeed.DEFAULT)
+end
+
 -- The logic multiplier for this frame. Read live rather than cached so the
--- Options row takes effect immediately; speedOverride is the --speed /
+-- Options rows take effect immediately; speedOverride is the --speed /
 -- POKEPORT_SPEED run argument, which wins over the saved option so a bot
 -- or screenshot run does not depend on whatever the player last chose.
 function Game:logicSpeed()
   local GameSpeed = require("src.core.GameSpeed")
   -- Link play is always 1X on both machines, and this wins over every other
-  -- source including POKEPORT_SPEED.  Fast-forward multiplies the logic
-  -- clock, so a peer at 10X burned a tournament shot clock ten times faster
-  -- than the opponent it is racing, and drove its own animation/message
-  -- queue at a different rate than the peer it is locked to.  Nothing about
-  -- a match should depend on what either player set this to.
+  -- source including POKEPORT_SPEED and every per-category option.
+  -- Fast-forward multiplies the logic clock, so a peer at 10X burned a
+  -- tournament shot clock ten times faster than the opponent it is racing,
+  -- and drove its own animation/message queue at a different rate than the
+  -- peer it is locked to.  Nothing about a match should depend on what
+  -- either player set this to -- checked here, before the core.logic_speed
+  -- hook ever runs, so a mod cannot defeat it either.
   if self.linkSession or (self.linkNet and not self.linkNet.closed) then
     return 1
   end
   if self.speedOverride then return GameSpeed.clamp(self.speedOverride) end
-  local opts = self.save and self.save.options
-  return GameSpeed.clamp(opts and opts.speed or GameSpeed.DEFAULT)
+  -- Clamp here too, not just in _resolveLogicSpeed's vanilla path: a mod's
+  -- core.logic_speed hook can return anything (0, negative, nil, NaN) and
+  -- Hooks:call only guards against a hook that throws, not one that
+  -- returns a bad value, so an unclamped result would flow straight into
+  -- the FixedStep accumulator math below and freeze or destabilize logic.
+  return GameSpeed.clamp(ModRuntime.call("core.logic_speed",
+    function(g) return g:_resolveLogicSpeed() end, self))
 end
 
 function Game:update(dt)
@@ -335,6 +355,28 @@ function Game.wideBattleInStack(stack)
     end
   end
   return nil
+end
+
+-- Which of "battle"/"overworld"/"menu" per-category GAME SPEED (RFC 0007)
+-- applies right now. Whole-stack, the same idiom as fillScaleInStack/
+-- wideBattleInStack above: an overlay with neither marker (PartyMenu,
+-- ChoiceBox, a NamingScreen, a text box) is transparent to the walk and
+-- inherits whatever is under it, making the category a property of the
+-- STACK POSITION the overlay sits over, not of the overlay itself. A
+-- scripted sequence (script.started/ended) never pushes a state of its
+-- own either -- it runs through the owning overworld/battle state's own
+-- script runner or message queue -- so it inherits the same way. Nothing
+-- identifying as either (the title screen, credits, an intro cutscene
+-- with nothing under it) falls to "menu", the bucket every non-gameplay
+-- screen gets; see the RFC's Decisions section for the full reasoning.
+function Game.speedCategoryInStack(stack)
+  local states = stack and stack.states
+  for i = #(states or {}), 1, -1 do
+    local state = states[i]
+    if state and state.isBattle then return "battle" end
+    if state and state.isOverworld then return "overworld" end
+  end
+  return "menu"
 end
 
 -- Whether a state on the stack composes its own screen and so wants the
@@ -556,8 +598,15 @@ function Game:_cycleSpeed(dir)
         or ow.engaging or ow.emote))
   end
   if busy then return end
+  -- Cycles whichever category Game.speedCategoryInStack says is active
+  -- right now (RFC 0007) -- pressing the hotkey during a battle speeds up
+  -- just the battle, on the overworld just the walk, in a menu just the
+  -- menu. A single physical control that means "speed up whatever I'm
+  -- looking at right now" needs no new UI and matches what a player
+  -- pressing it mid-battle almost certainly wants.
   local GameSpeed = require("src.core.GameSpeed")
-  self.save.options.speed = GameSpeed.cycle(self.save.options.speed, dir)
+  local key = GameSpeed.optionKey(Game.speedCategoryInStack(self.stack))
+  self.save.options[key] = GameSpeed.cycle(self.save.options[key], dir)
   self:writeOptions()
 end
 

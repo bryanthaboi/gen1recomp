@@ -67,6 +67,7 @@ local function withdraw(game)
   game.stack:push(ListMenu.new(game,
     Strings("BOX %d (WITHDRAW)", game.save.currentBox), items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_withdraw",
     onChoose = function(item, list)
       local mon = box[item.value]
       if not mon then return end
@@ -114,6 +115,7 @@ local function deposit(game)
   end
   game.stack:push(ListMenu.new(game, "PARTY (DEPOSIT)", items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_deposit",
     onChoose = function(item, list)
       local mon = game.save.party[item.value]
       if not mon then return end
@@ -160,6 +162,7 @@ local function release(game)
   game.stack:push(ListMenu.new(game,
     Strings("BOX %d (RELEASE)", game.save.currentBox), items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_release",
     onChoose = function(_, list)
       local mon = box[list.index]
       if not mon then return end
@@ -193,6 +196,7 @@ local function changeBox(game)
   end
   game.stack:push(ListMenu.new(game, "CHANGE BOX", items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_change",
     onChoose = function(item, list)
       -- the original asks BEFORE switching ("When you change a #MON
       -- BOX, data will be saved. OK?"); declining aborts the change

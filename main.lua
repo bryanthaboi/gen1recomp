@@ -13,6 +13,7 @@ local editorMode = os.getenv("POKEPORT_EDITOR") == "1" or POKEPORT_EDITOR_MODE =
 local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
 local LaunchOptions = require("src.core.LaunchOptions")
 local NxDisplay = require("src.core.NxDisplay")
+local PlatformHooks = require("src.core.PlatformHooks")
 
 -- Lua errors: persist a redacted trace in the save dir and surface a hint.
 do
@@ -427,7 +428,11 @@ function love.update(dt)
     end
     return
   end
-  Game:update(dt)
+  -- Mods may wrap or veto the per-frame simulation step (pause it, react
+  -- to external platform state, etc.) -- see docs/modding.md's core.update
+  -- entry. Vanilla behavior (used when no mod claims the hook) is just
+  -- Game:update(dt), unconditionally, exactly as before this hook existed.
+  PlatformHooks.update(Game, dt)
 end
 
 function love.draw()
@@ -820,8 +825,16 @@ function love.quit()
     or os.getenv("POKEPORT_IMPORT_ONLY") == "1" or os.getenv("POKEPORT_IMPORT_ROM")
   -- #887: a shortcut session (--game / POKEPORT_GAME) has no launcher to go
   -- back to and the restart would re-read the shortcut, so it exits instead.
-  if Game and not Importer and not quitToLauncher and not scripted
-      and not launchedIntoGame then
+  --
+  -- A platform launcher that owns "return to launcher" itself (see
+  -- docs/modding.md's core.quit_to_launcher entry) may veto returning to
+  -- this Lua launcher via that hook. Vanilla behavior (used when no mod
+  -- claims the hook) is exactly the condition below.
+  local wouldReturnToLauncher = PlatformHooks.quitToLauncher(function()
+    return Game and not Importer and not quitToLauncher and not scripted
+      and not launchedIntoGame
+  end)
+  if wouldReturnToLauncher then
     quitToLauncher = true
     -- Tell the fresh boot to ignore any boot-straight-into-a-game option this
     -- once, so the restart really does land in the launcher (#887).  A failed

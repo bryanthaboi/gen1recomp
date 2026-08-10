@@ -93,6 +93,7 @@ local titleGame = {
            field = { title = { cycleSpecies = { "PIKACHU" } } } },
 }
 local title = TitleState.new(titleGame, {})
+title.phase, title.scy = "loop", 0
 local titleSprite, titleTrueColor = title:currentSprite()
 check(titleSprite and titleTrueColor,
       "title cache keeps a Pokemon sprite's trueColor flag")

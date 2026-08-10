@@ -74,6 +74,9 @@ local function battleWith(fx, sprites)
     growInScale = function() return nil end,
     drawBallRow = function() end,
     statusLabel = function() return "" end,
+    statusHUDVisible = function() return true end,
+    bottomUIVisible = function() return true end,
+    caughtMarkerVisible = function() return false end,
   }
 end
 

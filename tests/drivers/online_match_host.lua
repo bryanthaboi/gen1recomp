@@ -55,8 +55,12 @@ return function(game)
   U.wait(10)
 
   -- the GAME SPEED forcing under test: a link session pins the logic clock
-  -- to 1X no matter what the option or POKEPORT_SPEED says
-  game.save.options.speed = 10
+  -- to 1X no matter what the option or POKEPORT_SPEED says. RFC 0007: set
+  -- all three per-category speeds high, since the link lock has to win over
+  -- every one of them, not just whichever category happens to be active.
+  game.save.options.speedOverworld = 10
+  game.save.options.speedBattle = 10
+  game.save.options.speedMenu = 10
   U.wait(2)
   log("logicSpeed with GAME SPEED=10 during link:", game:logicSpeed())
 

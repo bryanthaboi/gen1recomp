@@ -426,7 +426,12 @@ end
 -- state because Kit had no input widget; this replaces that hack, and App
 -- routes love.textinput / love.keypressed in through Kit.textinput /
 -- Kit.keypressed.  Returns the (possibly edited) value; the caller stores it.
-function Kit.textfield(id, x, y, w, h, value, placeholder)
+--
+-- `opts.sanitize(value)` (optional) is a post-filter run on the merged text
+-- right after this frame's edits and BEFORE it draws, so a keystroke or paste
+-- the filter rejects never even flashes on screen.  It gets the whole value
+-- because a paste arrives as one textinput chunk alongside existing text.
+function Kit.textfield(id, x, y, w, h, value, placeholder, opts)
   audit("control", x, y, w, h, id)
   value = tostring(value or "")
   if Kit.press(x, y, w, h) then Kit.focus = id end
@@ -443,6 +448,9 @@ function Kit.textfield(id, x, y, w, h, value, placeholder)
       else
         value = value .. e
       end
+    end
+    if opts and opts.sanitize then
+      value = opts.sanitize(value)
     end
   end
   if G then

@@ -1,31 +1,8 @@
--- Boot splash + attract movie, a faithful port of PlayIntro
--- (engine/movie/intro.asm) and AnimateShootingStar (engine/movie/splash.asm)
--- using the real extracted art (data/generated/field.lua `intro` manifest).
---
--- Three frame-counted phases:
---  1. copyright card, 180 frames (intro.asm:311-312).
---  2. shooting star: 64 frames of empty letterbox (intro.asm:323-324), then
---     the big star streaks down-left for 40 frames while the studio logo
---     sits centered in the letterbox band (the GAME FREAK logo + letter
---     row it replaces sat at (72,56)/(40,80); splash.asm:27-60, 211-228),
---     the logo flashes 3x10 frames (splash.asm:72-82), 4 waves of small
---     stars rain from the logo -- 6x24 frames, +1px every 3 frames, lower
---     star blinking (splash.asm:97-146, 163-209) -- and a 40 frame hold
---     (intro.asm:329-331).
---  3. the Gengar/Nidorino fight (PlayIntroScene, intro.asm:23-141), played
---     from FIGHT_SCRIPT below: Music_IntroBattle starts, Gengar (56x56 BG
---     pose from a gengar_N.tilemap, at tile 13,7 = x104,y56) scrolls left
---     while Nidorino (48x48 OAM at x-8,y72) walks right, then the scripted
---     hip/hop hops, Gengar's raise + slash lunge, Nidorino's dodge leap,
---     retreat, crouch and final lunge, ending in a 24-frame fade to white
---     (GBFadeOutToWhite, home/fade.asm:26-40).
---
--- Any of A/B/START skips the whole movie (CheckForUserInterruption).
--- Pops itself and calls onDone() when finished or skipped.  All art loads
--- through pcall and every missing graphic degrades to a text/rect
--- fallback, so the movie stays headless-safe.
+-- ..(engine/movie/intro.asm ln 8)
+-- ..(engine/movie/splash.asm ln 27)
 
 local Font = require("src.render.Font")
+local GameVersion = require("src.core.GameVersion")
 local Music = require("src.core.Music")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
@@ -76,15 +53,20 @@ local WAVE_FRAMES = 24        -- 8 substeps x 3 frames (splash.asm:186-209)
 local WAVES_END = WAVES_START + 6 * WAVE_FRAMES  -- 4 waves + 2 empty
 local SPLASH_FRAMES = WAVES_END + 40  -- ld c, 40 (intro.asm:329-331)
 
--- logo 16x24 at grid (10,9), letters row at grid y=12 cols 6..15
--- (GameFreakLogoOAMData, splash.asm:211-228; screen = grid*8, OAM offsets
--- cancel)
+-- ..(engine/movie/splash.asm ln 211)
 local LOGO_X, LOGO_Y = 72, 56
+local TEXT_X, TEXT_Y = 40, 80
 
--- The studio logo (assets/logo/minilogo.png) stands in for both the
--- GAME FREAK logo and its letter row, so it gets the whole band between
--- the letterbox bars (y 32..112) down to where the star waves spawn
--- (y=88): fit it inside this box, centered, aspect preserved.
+-- CopyrightTextString (engine/movie/title.asm).  Red/Blue years are
+-- (c)'95.'96.'98; Yellow's sheet spells (c)1995-1999 and finishes the
+-- last digit with NineTile (title screen).  Intro originally overflows
+-- into the font "A" tile for that digit; we draw NineTile so both
+-- screens read 1999.
+local COPY_PREFIX_RB = { 0, 1, 2, 1, 3, 1, 4 }
+local COPY_PREFIX_YELLOW = { 0, 1, 2, 3, 1, 2 }
+local COPY_NINTENDO = { 5, 6, 7, 8, 9, 10 }
+local COPY_CREATURES = { 11, 12, 13, 14, 15, 16, 17, 18 }
+
 local STUDIO_BOX = { w = 128, h = 52, cx = 80, cy = 60 }
 
 -- the 4 waves of small stars: screen X positions, all spawning at y=88
@@ -155,10 +137,25 @@ function IntroMovie.new(game, onDone)
   self.studio = intro.studio or {}
   self.skipAll = intro.skip and true or false
   local function img(e) return tryImage(e and e.path) end
-  self.copyright = tryImage("assets/generated/title/copyright.png")
-  -- studio mark replaces the GAME FREAK logo + splash text entirely; the
-  -- extracted logo stays as the fallback if the asset is missing
-  self.studioLogo = tryImage(self.studio.logo or "assets/logo/minilogo.png")
+  local titleCfg = game.data.field and game.data.field.title or {}
+  self.copyright = img(titleCfg.copyright)
+    or tryImage("assets/generated/title/copyright.png")
+  self.copyQuads = {}
+  if self.copyright then
+    local iw, ih = self.copyright:getDimensions()
+    for t = 0, 18 do
+      self.copyQuads[t] = love.graphics.newQuad(t * 8, 0, 8, 8, iw, ih)
+    end
+  end
+  self.gfInc = img(titleCfg.gamefreakInc)
+    or tryImage("assets/generated/title/gamefreak_inc.png")
+  -- ..(pokeyellow engine/movie/title.asm CopyrightTextString / NineTile)
+  self.yellowCopy = GameVersion.isYellow()
+    or titleCfg.layout == "yellow_pikachu"
+  self.copyPrefix = self.yellowCopy and COPY_PREFIX_YELLOW or COPY_PREFIX_RB
+  self.nineImg = self.yellowCopy and (
+    img(titleCfg.nine) or tryImage("assets/generated/title/nine.png")) or nil
+  self.studioLogo = tryImage(self.studio.logo)
   if self.studioLogo then
     self.studioLogo:setFilter("nearest", "nearest")
     local iw, ih = self.studioLogo:getDimensions()
@@ -306,23 +303,11 @@ function IntroMovie:drawSplash()
     if self.studioLogo then
       love.graphics.draw(self.studioLogo, self.studioX, self.studioY,
                          0, self.studioScale, self.studioScale)
-    elseif self.logo then
-      love.graphics.draw(self.logo, LOGO_X, LOGO_Y)
+    else
+      if self.logo then love.graphics.draw(self.logo, LOGO_X, LOGO_Y) end
+      if self.gfText then love.graphics.draw(self.gfText, TEXT_X, TEXT_Y) end
     end
     love.graphics.setColor(1, 1, 1, 1)
-  end
-  if t >= STAR_START and t < FLASH_START then
-    -- big star: from OAM (160,0) moving +4Y/-4X per frame
-    -- (GameFreakShootingStarOAMData + .bigStarLoop, splash.asm:32-60)
-    local n = t - STAR_START + 1
-    local sx, sy = 152 - 4 * n, -16 + 4 * n
-    if self.bigStar then
-      love.graphics.draw(self.bigStar, sx, sy)
-    else
-      love.graphics.setColor(0, 0, 0, 1)
-      love.graphics.rectangle("fill", sx + 6, sy + 6, 4, 4)
-      love.graphics.setColor(1, 1, 1, 1)
-    end
   end
   if t >= WAVES_START then
     -- small stars: wave w spawns at y=88 every 24 frames, everything falls
@@ -351,6 +336,18 @@ function IntroMovie:drawSplash()
     end
   end
   drawBars()
+  if t >= STAR_START and t < FLASH_START then
+    -- ..(engine/movie/splash.asm ln 32)
+    local n = t - STAR_START + 1
+    local sx, sy = 152 - 4 * n, -16 + 4 * n
+    if self.bigStar then
+      love.graphics.draw(self.bigStar, sx, sy)
+    else
+      love.graphics.setColor(0, 0, 0, 1)
+      love.graphics.rectangle("fill", sx + 6, sy + 6, 4, 4)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+  end
 end
 
 function IntroMovie:drawFight()
@@ -379,17 +376,48 @@ function IntroMovie:drawFight()
   end
 end
 
+function IntroMovie:drawCopyPrefix(x, y)
+  for _, t in ipairs(self.copyPrefix) do
+    love.graphics.draw(self.copyright, self.copyQuads[t], x, y)
+    x = x + 8
+  end
+  if self.nineImg then
+    love.graphics.draw(self.nineImg, x, y)
+  end
+end
+
+function IntroMovie:drawCopyright()
+  if self.studio.card or self.studio.credit then
+    local card = self.studio.card or ""
+    local credit = self.studio.credit or ""
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.draw(card, (160 - #card * 8) / 2, 64)
+    Font.draw(credit, (160 - #credit * 8) / 2, 80)
+  elseif self.copyright and self.gfInc then
+    local function row(seq, x, y)
+      for _, t in ipairs(seq) do
+        love.graphics.draw(self.copyright, self.copyQuads[t], x, y)
+        x = x + 8
+      end
+    end
+    for _, y in ipairs({ 56, 72, 88 }) do self:drawCopyPrefix(16, y) end
+    row(COPY_NINTENDO, 80, 56)
+    row(COPY_CREATURES, 80, 72)
+    love.graphics.draw(self.gfInc, 80, 88)
+  else
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.draw(Strings("Nintendo"), 80, 56)
+    Font.draw(Strings("Creatures inc."), 80, 72)
+    Font.draw(Strings("GAME FREAK inc."), 16, 88)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 function IntroMovie:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   if self.phase == 1 then
-    -- custom boot card (replaces the Nintendo / GAME FREAK copyright
-    -- card; no (c) glyph in the charmap, keep it ASCII-safe)
-    love.graphics.setColor(0, 0, 0, 1)
-    local credit = self.studio.credit or Strings("bois club")
-    Font.draw("2026", (160 - 4 * 8) / 2, 48)
-    Font.draw(credit, (160 - #credit * 8) / 2, 64)
-    Font.draw("bryanthaboi", (160 - 11 * 8) / 2, 80)
+    self:drawCopyright()
   elseif self.phase == 2 then
     self:drawSplash()
   else
