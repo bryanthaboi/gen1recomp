@@ -276,12 +276,13 @@ function love.load(args)
   -- editor, scripted); no-op on desktop/mobile.
   NxDisplay.sync()
 
-  -- Apply the persisted Android orientation lock (#592) before the launcher
-  -- shows: SDL created the window with no orientation hint, so without this
-  -- the launcher would rotate freely until Game:applyOptions runs at boot.
-  -- No-op on desktop / iOS / when options.lua does not exist yet.
-  require("src.core.Orientation").applyOptions(
-    require("src.core.SaveData").loadOptions())
+  -- Load global options once before any application UI is constructed.  The
+  -- locale must be active for the launcher's first frame; the same table also
+  -- applies Android's persisted orientation lock (#592).  Both are safe
+  -- no-ops/fallbacks when options.lua does not exist yet.
+  local startupOptions = require("src.core.SaveData").loadOptions()
+  require("src.core.AppLocale").applyOptions(startupOptions)
+  require("src.core.Orientation").applyOptions(startupOptions)
 
   -- Standalone editor.  A bare `--editor` run has no launcher behind it, so
   -- Close quits; --save points it at a specific file, otherwise it opens the
