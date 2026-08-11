@@ -45,7 +45,29 @@ function FsIo.listDir(path)
   return items
 end
 
--- every *.lua under dir, recursively, as forward-slash paths
+-- `dir /b /s` answers with ABSOLUTE paths where `find <dir>` answers with
+-- checkout-relative ones, so the two hosts handed callers different strings.
+-- Every gate that classifies a site by path substring inherited whatever the
+-- checkout happened to be called: a directory named "gen2-recomp" makes
+-- gate_gen2_mod_api's isGen2Site() true for all 321 src files, so the Gen 1
+-- half of each parity pair reports "no Gen 1 site" and 194 checks fail on a
+-- tree that is fine. Strip the root back off so Windows matches POSIX.
+local windowsRoot
+local function stripRoot(path)
+  if windowsRoot == nil then
+    -- cmd's bare `cd` prints the working directory
+    windowsRoot = (shellLines("cd")[1] or ""):gsub("\\", "/"):gsub("/+$", "")
+  end
+  if windowsRoot == "" then return path end
+  local prefix = windowsRoot .. "/"
+  -- Windows paths are case-insensitive; `cd` and `dir` can disagree on case
+  if path:sub(1, #prefix):lower() == prefix:lower() then
+    return path:sub(#prefix + 1)
+  end
+  return path
+end
+
+-- every *.lua under dir, recursively, as checkout-relative forward-slash paths
 function FsIo.luaFilesUnder(dir)
   local cmd
   if FsIo.isWindows then
@@ -58,7 +80,9 @@ function FsIo.luaFilesUnder(dir)
   end
   local files = {}
   for _, line in ipairs(shellLines(cmd)) do
-    files[#files + 1] = (line:gsub("\\", "/"))
+    local path = (line:gsub("\\", "/"))
+    if FsIo.isWindows then path = stripRoot(path) end
+    files[#files + 1] = path
   end
   table.sort(files)
   return files
