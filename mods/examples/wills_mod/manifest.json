@@ -1,0 +1,17 @@
+{
+  "id": "wills_mod",
+  "name": "Will's Mod",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "TOOL",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "affects_link": false,
+  "github": "illanrego/wills-mod",
+  "description": "Catch-'em-all toolkit: a map-first wild-encounter guide (PKMN MAP) and battle HUD owned-ball markers."
+}

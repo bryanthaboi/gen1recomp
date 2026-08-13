@@ -21,7 +21,7 @@ local GALLERY_ROOT = "mods/examples"
 local IDS = {
   "example_balance_tweaks", "example_shiny_palette", "example_jukebox",
   "example_lost_parcel", "example_weather", "example_dexnav",
-  "example_mini_conversion", "example_silly_oak",
+  "example_mini_conversion", "example_silly_oak", "wills_mod",
 }
 
 -- the closed vocabulary from 25 3.1; GAMEPLAY is the accepted v1 alias
@@ -330,8 +330,16 @@ eq(loader.optionSchemas.example_dexnav and #loader.optionSchemas.example_dexnav,
   "#6 defined two option rows")
 local menu = Runtime.call("ui.start_menu.items", function(_, items) return items end,
   { data = data }, { { label = "POKéDEX" }, { label = "SAVE" } })
-eq(#menu, 3, "#6 added exactly one start-menu row")
-eq(menu[2].label, "DEXNAV", "#6 anchored the row before SAVE")
+-- wills_mod also wraps the START menu (its PKMN MAP row). The loader
+-- discovers mods in sorted order, so wills_mod wraps last, and hook wraps
+-- are LIFO: its row runs first, then dexnav's. The merged menu is
+-- [POKéDEX, PKMN MAP, DEXNAV, SAVE]; #9 asserts the same two-row
+-- co-existence with the vanilla QUIT row still last.
+eq(#menu, 4, "#6 the two start-menu wraps added two rows total")
+eq(menu[1].label, "POKéDEX", "#6 the vanilla rows are still in order")
+eq(menu[2].label, "PKMN MAP", "#6 wills_mod's row runs first (wrapped last)")
+eq(menu[3].label, "DEXNAV", "#6 dexnav's row rides along")
+eq(menu[4].label, "SAVE", "#6 SAVE stays last")
 
 -- #7 total conversion: boot, constants, species, map
 eq(data.field.boot.startMap, "SABLE_COVE", "#7 owns the boot spawn")
@@ -346,6 +354,19 @@ check(data.maps.SABLE_COVE ~= nil, "#7 registered its map")
 eq(#data.maps.SABLE_COVE.blocks,
   data.maps.SABLE_COVE.width * data.maps.SABLE_COVE.height,
   "#7 the map's block array matches its size")
+
+-- #9 wills_mod: two read-only overlays and a screen registry
+check(Runtime.wantsHook("battle.overlay"), "#9 wrapped battle.overlay")
+check(Runtime.wantsHook("render.hud"), "#9 wrapped render.hud")
+check(Runtime.wantsHook("ui.options.rows"), "#9 wrapped the options rows")
+local wm = Runtime.call("ui.start_menu.items", function(_, items) return items end,
+  { data = data, save = {} },
+  { { label = "POKéDEX" }, { label = "SAVE" }, { label = "QUIT" } })
+eq(#wm, 5, "#9 the merged menu gained PKMN MAP and DEXNAV")
+eq(wm[1].label, "POKéDEX", "#9 the vanilla rows are still in order")
+eq(wm[2].label, "PKMN MAP", "#9 wills_mod's row runs first (wrapped last)")
+eq(wm[3].label, "DEXNAV", "#9 dexnav's row rides along")
+eq(wm[5].label, "QUIT", "#9 QUIT stays last")
 
 -- co-existence: the gallery does not fight over ids
 check(data.pokemon.MEW ~= nil, "vanilla species survive the whole gallery")

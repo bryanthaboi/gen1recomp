@@ -1,0 +1,34 @@
+return {
+  summary = "Catch-'em-all toolkit: map-first encounter guide + owned-ball battle HUD.",
+  author = "Illan",
+  contact = "",
+  tags = { "ui", "tool", "quality-of-life", "encounters" },
+  differences = {
+    changed = {
+      "the START menu gains a PKMN MAP row before SAVE",
+      "battles gain a Pokédex owned-ball marker beside each battler's name",
+    },
+    added = {
+      "map-first browser using the imported ROM's Kanto Town Map",
+      "a blinking white marker showing the player's current location, even without encounters there",
+      "a walking HUD listing the current area's LAND and WATER species with level ranges",
+      "HUD modes: AUTO (grass/water only), ALWAYS, OFF — options menu or H key",
+      "HUD sizes: SMALL, MEDIUM, LARGE — options menu",
+      "Pokédex owned-ball markers on the walking HUD and in species lists",
+      "D-pad marker navigation, A to open, and SELECT for the complete list",
+      "separate source-map entries for routes, floors, caves, and buildings",
+      "LAND and WATER encounter views",
+      "per-species level ranges and exact per-level chance per movement step",
+    },
+    known = {
+      "v1.0.0 covers walking and Surf encounter tables only; fishing, static, gift, trade, and prize Pokémon are not represented",
+      "the guide reads data when opened; reopen it after enabling a mod that changes encounter tables",
+      "the battle HUD draws at final positions, so during the send-out slide the ball sits at its rest spot",
+    },
+  },
+  credits = {
+    { who = "Gen1Recomp project", for_ = "the public mod and UI APIs" },
+    { who = "pret/pokered", for_ = "the original game data extraction reference" },
+  },
+  compat = { modApi = 2 },
+}

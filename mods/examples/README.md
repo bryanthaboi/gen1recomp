@@ -1,6 +1,6 @@
 # Example mod gallery
 
-Eight reference mods, one per modder persona. Each is small enough to read
+Nine reference mods, one per modder persona. Each is small enough to read
 in one sitting, exercises a different slice of the mod API, and is a real,
 runnable, tested mod — not a snippet.
 
@@ -17,6 +17,7 @@ Copy the one closest to what you want to build.
 | 6 | [`example_dexnav`](example_dexnav) | Tool builder | `TOOL` | A START-menu dex overlay with an inter-mod API |
 | 7 | [`example_mini_conversion`](example_mini_conversion) | TC team | `TOTAL_CONVERSION` | Sable Cove: one town, three species, one badge |
 | 8 | [`example_silly_oak`](example_silly_oak) | Intro author | `UI` | Extra Oak questions, sprite swaps, answers in `mod.save` |
+| 9 | [`wills_mod`](wills_mod) | QoL toolkit builder | `TOOL` | A map-first encounter guide (PKMN MAP) plus owned-ball battle HUD |
 
 ## None of these load by default
 
