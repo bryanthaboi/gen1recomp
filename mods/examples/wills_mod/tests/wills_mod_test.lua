@@ -1,4 +1,4 @@
--- Will's Mod gallery suite: loads the bundled entry through the real loader
+-- Encounters Guide gallery suite: loads the bundled entry through the real loader
 -- and asserts the stated effects: two read-only overlay hooks, a PKMN MAP
 -- START-menu row, and the screen family resolving through the registry.
 --

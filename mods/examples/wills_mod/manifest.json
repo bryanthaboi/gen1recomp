@@ -1,6 +1,6 @@
 {
   "id": "wills_mod",
-  "name": "Will's Mod",
+  "name": "Encounters Guide",
   "version": "1.0.0",
   "api": 2,
   "entry": "main.lua",

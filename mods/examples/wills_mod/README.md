@@ -1,4 +1,4 @@
-# Will's Mod
+# Encounters Guide
 
 A catch-'em-all toolkit for Gen1Recomp: a map-first wild-encounter guide
 (START → PKMN MAP) plus a battle HUD that marks Pokémon you have already
