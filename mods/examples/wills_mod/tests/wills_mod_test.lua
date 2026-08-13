@@ -29,9 +29,8 @@ local data = fixtureData()
 local run = T.sdk.loadMod("mods/examples/wills_mod", { data = data })
 T.eq(#run.errors, 0, "loads clean (" .. tostring(run.errors[1]) .. ")")
 
--- ------- the two read-only overlays and the options rows are wrapped
+-- ------- the read-only overlays and the options rows are wrapped
 
-T.check(Runtime.wantsHook("battle.overlay"), "battle.overlay is wrapped")
 T.check(Runtime.wantsHook("render.hud"), "render.hud is wrapped")
 T.check(Runtime.wantsHook("ui.options.rows"), "the options rows are wrapped")
 

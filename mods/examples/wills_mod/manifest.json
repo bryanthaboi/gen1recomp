@@ -1,7 +1,7 @@
 {
   "id": "wills_mod",
   "name": "Encounters Guide",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
@@ -13,5 +13,5 @@
   "conflicts": [],
   "affects_link": false,
   "github": "illanrego/wills-mod",
-  "description": "Catch-'em-all toolkit: a map-first wild-encounter guide (PKMN MAP) and battle HUD owned-ball markers."
+  "description": "A map-first wild-encounter guide (PKMN MAP) with a walking HUD and exact encounter tables."
 }

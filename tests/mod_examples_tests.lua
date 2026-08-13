@@ -355,8 +355,7 @@ eq(#data.maps.SABLE_COVE.blocks,
   data.maps.SABLE_COVE.width * data.maps.SABLE_COVE.height,
   "#7 the map's block array matches its size")
 
--- #9 wills_mod: two read-only overlays and a screen registry
-check(Runtime.wantsHook("battle.overlay"), "#9 wrapped battle.overlay")
+-- #9 wills_mod: a walking overlay, options rows, and a screen registry
 check(Runtime.wantsHook("render.hud"), "#9 wrapped render.hud")
 check(Runtime.wantsHook("ui.options.rows"), "#9 wrapped the options rows")
 local wm = Runtime.call("ui.start_menu.items", function(_, items) return items end,
