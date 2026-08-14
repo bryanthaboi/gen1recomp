@@ -1299,14 +1299,27 @@ def _dex_entry(rom, symbols, manifest, index, species):
     kind, consumed = read_string(
         rom, table.bank, address, manifest["charmap"], max_length=32)
     address += consumed
-    height_ft, height_in = rom.bytes(table.bank, address, 2)
-    weight = rom.word(table.bank, address + 2)
-    address += 4
-    if rom.byte(table.bank, address) != 0x17:
+
+    # US Red/Blue store heightFt, heightIn, weightLo, weightHi, TX_FAR.
+    # Spanish Red/Blue store metric height in decimeters followed by weight
+    # and TX_FAR. Detect the layout from the opcode.
+    if rom.byte(table.bank, address + 3) == 0x17:
+        height_dm = rom.byte(table.bank, address)
+        weight = rom.word(table.bank, address + 1)
+        total_inches = int(height_dm * 10 / 2.54 + 0.5)
+        height_ft, height_in = divmod(total_inches, 12)
+        tx_far_offset = 3
+    else:
+        height_ft, height_in = rom.bytes(table.bank, address, 2)
+        weight = rom.word(table.bank, address + 2)
+        tx_far_offset = 4
+
+    tx_far = address + tx_far_offset
+    if rom.byte(table.bank, tx_far) != 0x17:
         raise ValueError(
             f"dex entry {index + 1} has no TX_FAR command")
-    text_address = rom.word(table.bank, address + 1)
-    text_bank = rom.byte(table.bank, address + 3)
+    text_address = rom.word(table.bank, tx_far + 1)
+    text_bank = rom.byte(table.bank, tx_far + 3)
     text_label = manifest["dexEntryLabels"].get(species)
     if text_label is None:
         text_label = f"_DexEntry_{text_bank:02X}_{text_address:04X}"

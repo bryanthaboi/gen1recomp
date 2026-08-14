@@ -1094,14 +1094,33 @@ function RomExtractor:dexEntry(index, species)
   local kind, consumed = self.rom:readString(
     pointerTable.bank, address, self.manifest.charmap, 0x50, 32)
   address = address + consumed
-  local heightFt = self.rom:byte(pointerTable.bank, address)
-  local heightIn = self.rom:byte(pointerTable.bank, address + 1)
-  local weight = self.rom:word(pointerTable.bank, address + 2)
-  address = address + 4
-  assert(self.rom:byte(pointerTable.bank, address) == 0x17,
+
+  -- US Red/Blue store heightFt, heightIn, weightLo, weightHi, TX_FAR.
+  -- The Spanish Red/Blue ROMs store metric height in decimeters followed by
+  -- weight and TX_FAR. Detect the layout from the opcode so both formats use
+  -- the same extractor and generated-data schema.
+  local txFarOffset
+  local heightFt, heightIn, weight
+  if self.rom:byte(pointerTable.bank, address + 3) == 0x17 then
+    local heightDm = self.rom:byte(pointerTable.bank, address)
+    weight = self.rom:word(pointerTable.bank, address + 1)
+    txFarOffset = 3
+
+    local totalInches = math.floor(heightDm * 10 / 2.54 + 0.5)
+    heightFt = math.floor(totalInches / 12)
+    heightIn = totalInches % 12
+  else
+    heightFt = self.rom:byte(pointerTable.bank, address)
+    heightIn = self.rom:byte(pointerTable.bank, address + 1)
+    weight = self.rom:word(pointerTable.bank, address + 2)
+    txFarOffset = 4
+  end
+
+  assert(self.rom:byte(pointerTable.bank, address + txFarOffset) == 0x17,
     "dex entry " .. index .. " has no TX_FAR command")
-  local textAddress = self.rom:word(pointerTable.bank, address + 1)
-  local textBank = self.rom:byte(pointerTable.bank, address + 3)
+  local txFar = address + txFarOffset
+  local textAddress = self.rom:word(pointerTable.bank, txFar + 1)
+  local textBank = self.rom:byte(pointerTable.bank, txFar + 3)
   local textLabel = self.manifest.dexEntryLabels[species]
     or ("_DexEntry_%02X_%04X"):format(textBank, textAddress)
   return {

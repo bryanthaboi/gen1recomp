@@ -14,6 +14,11 @@ function Rom.offset(bank, address)
       ("ROM0 address out of range: $%04X"):format(address))
     return address
   end
+  -- The Spanish Red/Blue dumps contain a few bank-local pointers in data
+  -- tables. Normalize those CPU-bank addresses before indexing the ROM.
+  if address >= 0 and address < BANK_SIZE then
+    address = address + BANK_SIZE
+  end
   assert(address >= BANK_SIZE and address < BANK_SIZE * 2,
     ("bank %02X address out of range: $%04X"):format(bank, address))
   return bank * BANK_SIZE + address - BANK_SIZE

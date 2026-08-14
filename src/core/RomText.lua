@@ -28,9 +28,45 @@
 local Strings = require("src.core.Strings")
 
 return function(data, label, fallback, ...)
+  -- _ItemUseText001 is shared by the battle move announcement and item-use
+  -- announcement.  The extracted ROM form uses {USER}/{TARGET} placeholders,
+  -- so it bypasses the %s catalog key before the translated formatter gets a
+  -- chance to run.  For Spanish Red deliberately use the caller's fallback;
+  -- Strings translates that stable engine sentence and preserves the same
+  -- behavior for both moves and item use.
+  if Strings.active() and label == "_ItemUseText001" then
+    return Strings(fallback, ...)
+  end
+
   local text = data and data.text and data.text[label]
   if not text then return Strings(fallback, ...) end
+
   local args = { ... }
+
+  -- Extracted ROM text normally wins, but for the Spanish Red build the
+  -- engine's localized fallback may intentionally override the extracted
+  -- English sentence.  Strings.lookup is a no-op for the English build, so
+  -- this keeps the English ROM completely unchanged.
+  if Strings.active() then
+    text = text:gsub("\r\n", "\n")
+
+    -- Some Gen 1 battle/field strings differ only in the capitalization used
+    -- by the extracted label.  Keep the catalog's canonical wording while
+    -- accepting the ROM's PROF. OAK spelling.  This is deliberately narrow:
+    -- the rest of the extracted text remains an exact catalog lookup so that
+    -- unrelated English strings cannot be translated accidentally.
+    local oak = text:lower()
+    if oak:find("that prof%. oak!", 1, false) and oak:find("last pok", 1, true) then
+      text = Strings.lookup("That Prof. OAK!\nLast Pokémon!")
+    elseif oak:find("that prof%. oak!", 1, false) then
+      text = Strings.lookup("That Prof. OAK!")
+    elseif oak:find("last pok", 1, true) then
+      text = Strings.lookup("Last Pokémon!")
+    else
+      text = Strings.lookup(text)
+    end
+  end
+
   if #args == 0 then return text end
 
   if #args == 1 and type(args[1]) == "table" then
@@ -52,6 +88,8 @@ return function(data, label, fallback, ...)
   elseif #args == slots - named then
     fillNamed = false
   else
+    -- Fall back to the engine literal and let the Spanish catalog translate
+    -- it when the extracted line's placeholders do not match the call.
     return Strings(fallback, ...)
   end
 

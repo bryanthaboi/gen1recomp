@@ -67,7 +67,7 @@ local function starterBall(askText, species, choseFlag, ownBall,
     -- OaksLabLastMonScript; #601).  The ROM's "#MON" ligature is spelled
     -- out as Pokémon here.
     { "face_object", 5, "down" },                 -- 22
-    { "show_text", "That's PROF.OAK's\nlast Pokémon!" }, -- 23
+    { "show_text", "_OaksLabLastMonText" },       -- 23
     -- OaksLabLastMonScript ends at TextScriptEnd; the port used to fall
     -- through into the pre-pick line below (#601 remnant, reported on #600)
     { "jump", "end" },                            -- 24
