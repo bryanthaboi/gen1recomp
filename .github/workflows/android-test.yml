@@ -1,0 +1,47 @@
+name: Android APK (dev)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "APK version (X.Y.Z)"
+        required: false
+        default: "0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653"
+
+      - name: Build APK
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build_android.sh
+          scripts/build_android.sh --version "${{ inputs.version }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gen1recomp-android-${{ inputs.version }}
+          path: dist/android/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
