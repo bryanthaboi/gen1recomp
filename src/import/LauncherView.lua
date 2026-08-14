@@ -2513,6 +2513,11 @@ local function buildSettingsModal(imp, m)
 
   -- Settings rows are PAGINATED, flattened across sections so a page is a
   -- uniform run of rows.  Section titles ride along as their own entry.
+  if model.refresh and model.refresh() then
+    -- Rebuild the flattened cache after a parent setting changes so Android
+    -- removes dependent controls and recalculates pagination immediately.
+    imp._settingsFlat = nil
+  end
   local flat = imp._settingsFlat
   if not flat or flat.model ~= model then
     flat = { model = model }

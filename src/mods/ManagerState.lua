@@ -15,6 +15,7 @@ local Theme = require("src.ui.Theme")
 local OptionRows = require("src.ui.OptionRows")
 local Strings = require("src.core.Strings")
 local ModProfile = require("src.mods.ModProfile")
+local OptionVisibility = require("src.mods.OptionVisibility")
 
 local ManagerState = {}
 ManagerState.__index = ManagerState
@@ -955,6 +956,42 @@ function ManagerState:optionValue(modId, row)
   return v
 end
 
+function ManagerState:optionVisible(modId, row, schema, defaults)
+  if not defaults then
+    defaults = {}
+    for _, schemaRow in ipairs(schema or self.optionSchema or {}) do
+      if type(schemaRow) == "table" and type(schemaRow.key) == "string" then
+        defaults[schemaRow.key] = schemaRow.default
+      end
+    end
+  end
+  return OptionVisibility.isVisible(row, function(key, default)
+    return self:optionValue(modId, { key = key, default = default })
+  end, defaults)
+end
+
+function ManagerState:refreshOptionRows(preferredId)
+  if not (self.optionMod and self.optionSchema) then return end
+  local previousId
+  if not preferredId and self.optionRows then
+    local old = self.optionRows[self.cursor]
+    previousId = old and old.id
+  end
+  local rows = self:buildOptionRows(self.optionMod, self.optionSchema)
+  self.optionRows = rows
+  local wanted = preferredId or previousId
+  if wanted then
+    for i, row in ipairs(rows) do
+      if row.id == wanted then
+        self.cursor = i
+        break
+      end
+    end
+  end
+  self.cursor = clampIndex(self.cursor, math.max(1, #rows))
+  self.scroll = OptionRows.clampScroll(self.cursor, self.scroll or 0, #rows, nil)
+end
+
 function ManagerState:setOption(modId, key, value)
   local save = self.game.save
   if save and save.options then
@@ -979,12 +1016,20 @@ end
 function ManagerState:buildOptionRows(m, schema)
   local rows = {}
   local modId = m.id
+  local defaults = {}
+  for _, schemaRow in ipairs(schema) do
+    if type(schemaRow) == "table" and type(schemaRow.key) == "string" then
+      defaults[schemaRow.key] = schemaRow.default
+    end
+  end
   for _, row in ipairs(schema) do
     if type(row) ~= "table" or type(row.key) ~= "string" or row.key == ""
         or not OPTION_TYPES[row.type] then
       -- malformed rows are skipped, reported where the errors screen reads
       Runtime.reportError(modId, "options row skipped: "
         .. tostring(type(row) == "table" and (row.key or row.type) or row))
+    elseif not self:optionVisible(modId, row, schema, defaults) then
+      -- A dependent option stays out of the cursor and draw lists entirely.
     elseif row.type == "toggle" then
       rows[#rows + 1] = { id = row.key, label = row.label or row.key,
         value = function()
@@ -1068,6 +1113,7 @@ function ManagerState:buildOptionRows(m, schema)
           self:setOption(modId, row.key, row.default)
         end
       end
+      self:refreshOptionRows("__reset")
       self:notify("DEFAULTS RESTORED")
     end }
   return rows
@@ -1079,6 +1125,8 @@ function ManagerState:openOptions(m)
     self:notify("NO OPTIONS")
     return
   end
+  self.optionMod = m
+  self.optionSchema = schema
   self.optionRows = self:buildOptionRows(m, schema)
   self:goTo("options")
 end
@@ -1099,11 +1147,17 @@ function ManagerState:updateOptions(input)
       or input:wasPressed("a") then
     local dir = input:wasPressed("left") and -1 or 1
     local row = rows[self.cursor]
+    local changed = false
     if row.activate and input:wasPressed("a") then
       self:confirmSound()
       row.activate()
     elseif row.step then
-      row.step(self.game, dir)
+      changed = row.step(self.game, dir) == true
+    end
+    if changed and row.id then
+      self:refreshOptionRows(row.id)
+      rows = self.optionRows or {}
+      n = #rows
     end
   end
   self.scroll = OptionRows.clampScroll(self.cursor, self.scroll or 0, n, nil)

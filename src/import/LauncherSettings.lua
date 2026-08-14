@@ -20,6 +20,7 @@
 
 local Strings = require("src.core.Strings")
 local SaveData = require("src.core.SaveData")
+local OptionVisibility = require("src.mods.OptionVisibility")
 
 local LauncherSettings = {}
 
@@ -327,6 +328,22 @@ end
 
 local OPTION_TYPES = { toggle = true, choice = true, number = true, text = true }
 
+-- The Android launcher uses this model directly rather than the in-game mod
+-- manager. Evaluate the schema dependency rules here too so child settings
+-- disappear immediately when a parent is switched off.
+local function modOptionValue(opts, modId, row)
+  local stored = opts.modOptions and opts.modOptions[modId]
+  local value = stored and stored[row.key]
+  if value == nil then value = row.default end
+  return value
+end
+
+local function modOptionVisible(opts, modId, row, defaults)
+  return OptionVisibility.isVisible(row, function(key, default)
+    return modOptionValue(opts, modId, { key = key, default = default })
+  end, defaults)
+end
+
 -- Enabled mods with a loadable options_schema, discovered the same way
 -- LauncherMods discovers manifests (mods/ one level deep; the launcher's
 -- readiness check has already mounted a portable install's game folder).
@@ -375,6 +392,12 @@ end
 local function modRows(opts, mod)
   local rows = {}
   local modId = mod.id
+  local defaults = {}
+  for _, schemaRow in ipairs(mod.schema) do
+    if type(schemaRow) == "table" and type(schemaRow.key) == "string" then
+      defaults[schemaRow.key] = schemaRow.default
+    end
+  end
   local function stored()
     local t = opts.modOptions
     return t and t[modId] or nil
@@ -396,6 +419,8 @@ local function modRows(opts, mod)
         or not OPTION_TYPES[row.type] then
       -- malformed rows are skipped silently here; the in-game manager is
       -- where schema errors are reported to the author
+    elseif not modOptionVisible(opts, modId, row, defaults) then
+      -- Dependent settings do not take up a row in the Android launcher.
     elseif row.type == "toggle" then
       rows[#rows + 1] = { label = row.label or row.key,
         value = function() return get(row) and Strings("ON") or Strings("OFF") end,
@@ -440,6 +465,15 @@ local function modRows(opts, mod)
         setText = function(text) set(row.key, text) end }
     end
   end
+  local visibleKeys = {}
+  for _, row in ipairs(mod.schema) do
+    if type(row) == "table" and type(row.key) == "string"
+        and OPTION_TYPES[row.type]
+        and modOptionVisible(opts, modId, row, defaults) then
+      visibleKeys[#visibleKeys + 1] = row.key
+    end
+  end
+  rows._signature = table.concat(visibleKeys, "\0")
   if #rows > 0 then
     rows[#rows + 1] = { label = Strings("RESET DEFAULTS"),
       value = function() return "" end,
@@ -594,16 +628,31 @@ function LauncherSettings.open(hooks, version)
   end
   -- Mod options are generation-agnostic (the manager's options_schema
   -- contract), so they ride along either way.
-  for _, mod in ipairs(discoverModSchemas(opts)) do
+  local mods = discoverModSchemas(opts)
+  for _, mod in ipairs(mods) do
     local rows = modRows(opts, mod)
     if #rows > 0 then
-      sections[#sections + 1] = { title = mod.name, rows = rows }
+      sections[#sections + 1] = { title = mod.name, rows = rows, mod = mod }
     end
   end
   return {
     opts = opts,
     version = version,
     sections = sections,
+    refresh = function()
+      local changed = false
+      for _, section in ipairs(sections) do
+        local mod = section.mod
+        if mod then
+          local rows = modRows(opts, mod)
+          if section.rows._signature ~= rows._signature then
+            section.rows = rows
+            changed = true
+          end
+        end
+      end
+      return changed
+    end,
     save = function() SaveData.saveOptions(opts) end,
   }
 end
