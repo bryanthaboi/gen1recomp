@@ -166,6 +166,11 @@ function closeEditor()
     require("src.import.CacheFs").unmountVersion(version)
     require("src.core.Data"):unloadGenerated()
   end
+  for k in pairs(package.loaded) do
+    if type(k) == "string" and (k:find("save%-editor") or k == "App" or k == "Kit" or k == "State" or k == "Catalog" or k == "SaveIO" or k == "Ops" or k == "MonOps" or k == "ItemOps" or k == "PadInput" or k == "Gen" or k == "Theme") then
+      package.loaded[k] = nil
+    end
+  end
   editorVersion = nil
   restoreWindow()
   Importer = editorHost

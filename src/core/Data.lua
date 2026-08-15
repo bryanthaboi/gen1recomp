@@ -280,11 +280,14 @@ function Data:unloadGenerated()
       if not pristine[key] then self[key] = nil end
     end
   end
+  self._pristineKeys = nil
   for _, name in ipairs(MODULES) do
     package.loaded["data.generated." .. name] = nil
+    self[name] = nil
   end
   for _, name in ipairs(OPTIONAL) do
     package.loaded["data.generated." .. name] = nil
+    self[name] = nil
   end
 end
 
