@@ -21,7 +21,7 @@ local GALLERY_ROOT = "mods/examples"
 local IDS = {
   "example_balance_tweaks", "example_shiny_palette", "example_jukebox",
   "example_lost_parcel", "example_weather", "example_dexnav",
-  "example_mini_conversion", "example_silly_oak",
+  "example_mini_conversion", "example_silly_oak", "modern_type_chart",
 }
 
 -- the closed vocabulary from 25 3.1; GAMEPLAY is the accepted v1 alias
@@ -263,6 +263,14 @@ check(#data.pokemon.VENUSAUR.learnset > 0, "#1 patch left the learnset alone")
 eq(data.items.TM_TOXIC.price, 2000, "#1 halved a TM price through each()")
 eq(data.items.POTION.price, 300, "#1 left non-TM prices alone")
 eq(data.encounters.ROUTE_1.grass.rate, 20, "#1 re-slotted Route 1")
+
+-- modern type chart: the four later typings and corrected Ghost matchup
+eq(data.moves.GUST.type, "FLYING", "modern chart makes GUST Flying")
+eq(data.moves.KARATE_CHOP.type, "FIGHTING",
+  "modern chart makes KARATE CHOP Fighting")
+eq(data.moves.SAND_ATTACK.type, "GROUND",
+  "modern chart makes SAND-ATTACK Ground")
+eq(data.moves.BITE.type, "DARK", "modern chart makes BITE Dark")
 
 -- #2 artist: palette records and the trueColor opt-out
 check(data.palettes.palettes.EXAMPLE_SHINY ~= nil, "#2 registered a palette record")

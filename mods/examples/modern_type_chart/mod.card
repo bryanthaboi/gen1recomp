@@ -1,0 +1,24 @@
+return {
+  summary = "Later typings for four Gen I moves and a corrected Ghost matchup.",
+  author = "mfiumara",
+  contact = "https://github.com/mfiumara",
+  tags = { "balance", "data-only", "ruleset" },
+  differences = {
+    changed = {
+      "Gust is Flying/special",
+      "Karate Chop is Fighting/physical",
+      "Sand-Attack is Ground/status",
+      "Bite is Dark/physical",
+      "Ghost attacks are super effective against Psychic",
+    },
+    added = { "Dark type and its relevant matchup rows" },
+    known = {
+      "Pokemon typings and later-generation battle mechanics stay unchanged",
+      "Struggle keeps its Generation I typed-damage behavior",
+    },
+  },
+  credits = {
+    { who = "Bulbapedia contributors", for_ = "cross-generation move and type-chart documentation" },
+  },
+  compat = { engine = ">=1.0.0 <2.0.0", modApi = 2 },
+}
