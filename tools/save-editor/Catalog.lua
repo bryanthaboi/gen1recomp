@@ -40,10 +40,11 @@ end
 
 local function shellListLua(dir)
   local out = {}
+  if not (io and io.popen) then return out end
   if package.config:sub(1, 1) == "\\" then
     -- cmd has no ls; dir /b prints bare names, so re-attach the directory
-    local p = io.popen(string.format('dir /b "%s\\*.lua" 2>nul', dir))
-    if p then
+    local ok, p = pcall(io.popen, string.format('dir /b "%s\\*.lua" 2>nul', dir))
+    if ok and p then
       for line in p:lines() do
         if line ~= "" then table.insert(out, dir .. "/" .. line) end
       end
@@ -51,8 +52,8 @@ local function shellListLua(dir)
     end
     return out
   end
-  local p = io.popen(string.format('ls "%s"/*.lua 2>/dev/null', dir))
-  if p then
+  local ok, p = pcall(io.popen, string.format('ls "%s"/*.lua 2>/dev/null', dir))
+  if ok and p then
     for line in p:lines() do
       table.insert(out, line)
     end
@@ -64,8 +65,8 @@ end
 local function readText(path)
   local fs = love and love.filesystem
   if fs and fs.read and fs.getInfo and fs.getInfo(path) then
-    local body = fs.read(path)
-    if body then return body end
+    local ok, body = pcall(fs.read, path)
+    if ok and body then return body end
   end
   local f = io.open(path, "r")
   if not f then return nil end
@@ -78,7 +79,7 @@ end
 -- scripts show up beside the vanilla EVENT_ ones
 function Catalog.scrapeEvents(scriptDir, headerPath, listFiles, extraDirs)
   listFiles = listFiles or function(dir)
-    return loveListLua(dir) or shellListLua(dir)
+    return loveListLua(dir) or shellListLua(dir) or {}
   end
 
   local found = {}
@@ -97,7 +98,8 @@ function Catalog.scrapeEvents(scriptDir, headerPath, listFiles, extraDirs)
     dirs[#dirs + 1] = dir
   end
   for _, dir in ipairs(dirs) do
-    for _, path in ipairs(listFiles(dir)) do
+    local files = listFiles(dir) or {}
+    for _, path in ipairs(files) do
       local body = readText(path)
       if body then eat(body) end
     end
