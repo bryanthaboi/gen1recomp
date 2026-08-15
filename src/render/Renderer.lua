@@ -94,6 +94,7 @@ function Renderer:init()
   -- reason -- worldViewSize() already works in drawable pixels.
   self.uiWidth, self.uiHeight = self.WIDTH, self.HEIGHT
   self.canvas = PixelCanvas.new(self.uiWidth, self.uiHeight, "nearest")
+  self.battleHUDCanvas = nil
   self.worldCanvas = nil
   self.worldActive = false
   -- tilt mode only: a transparent overlay canvas the size of the world
@@ -202,8 +203,37 @@ function Renderer:setUISize(w, h)
   w, h = math.floor(w), math.floor(h)
   if w == self.uiWidth and h == self.uiHeight and self.canvas then return end
   if self.canvas and self.canvas.release then self.canvas:release() end
+  if self.battleHUDCanvas and self.battleHUDCanvas.release then
+    self.battleHUDCanvas:release()
+  end
+  self.battleHUDCanvas = nil
   self.uiWidth, self.uiHeight = w, h
   self.canvas = PixelCanvas.new(w, h, "nearest")
+end
+
+-- Transparent native-pixel layer for WIDE battle furniture.  WideBattle
+-- draws its existing status/menu functions here exactly once, then endFrame
+-- places their registered rectangles in physical-window space.  Keeping this
+-- separate from `canvas` avoids cutting HUD-shaped holes out of an already
+-- flattened white battle composition.
+function Renderer:beginBattleHUDPass()
+  local w, h = self:uiSize()
+  if not self.battleHUDCanvas
+     or self.battleHUDCanvas:getWidth() ~= w
+     or self.battleHUDCanvas:getHeight() ~= h then
+    if self.battleHUDCanvas and self.battleHUDCanvas.release then
+      self.battleHUDCanvas:release()
+    end
+    self.battleHUDCanvas = PixelCanvas.new(w, h, "nearest")
+  end
+  local previous = love.graphics.getCanvas and love.graphics.getCanvas() or self.canvas
+  love.graphics.setCanvas(self.battleHUDCanvas)
+  love.graphics.clear(0, 0, 0, 0)
+  return previous
+end
+
+function Renderer:endBattleHUDPass(previous)
+  love.graphics.setCanvas(previous or self.canvas)
 end
 
 -- LOVE-unit draw scales endFrame uses for the UI blit: integer framebuffer
@@ -671,6 +701,17 @@ end
 -- centred letterbox.  Declared during the element's own draw, in UI-canvas
 -- pixels, and consumed by endFrame this frame only.
 --   anchor: "bottom" | "topright" | "topleft" | "bottomright"
+local function addUIAnchor(renderer, x, y, w, h, anchor, windowClamped,
+                           canvas, extract)
+  renderer.uiAnchors = renderer.uiAnchors or {}
+  renderer.uiAnchors[#renderer.uiAnchors + 1] = {
+    x = x, y = y, w = w, h = h, anchor = anchor,
+    windowClamped = windowClamped and true or false,
+    canvas = canvas,
+    extract = extract ~= false,
+  }
+end
+
 function Renderer:setUIAnchor(x, y, w, h, anchor)
   -- UI LAYOUT = CENTERED (uiCentered, set per frame by Game:draw from
   -- save.options.uiLayout): every element stays where it was drawn in the
@@ -684,9 +725,17 @@ function Renderer:setUIAnchor(x, y, w, h, anchor)
   -- battle -- keeps every element inside it, so the box blits where it was
   -- drawn in the canvas instead of being pulled to the window edge.
   if self.uiAnchorHold then return end
-  self.uiAnchors = self.uiAnchors or {}
-  self.uiAnchors[#self.uiAnchors + 1] =
-    { x = x, y = y, w = w, h = h, anchor = anchor }
+  addUIAnchor(self, x, y, w, h, anchor, false, self.canvas, true)
+end
+
+-- WIDE battle HUD regions are already complete, palette-correct pixels in the
+-- battle canvas.  Register one for the window compositor without opening the
+-- normal UI-anchor gate: BattleState intentionally holds TextBox, ChoiceBox
+-- and menu anchors inside its screen, and that contract must remain intact.
+-- Only WideBattle calls this seam, with exact opaque HUD rectangles.
+function Renderer:setBattleUIAnchor(x, y, w, h, anchor)
+  addUIAnchor(self, x, y, w, h, anchor, true,
+              self.battleHUDCanvas or self.canvas, false)
 end
 
 -- zones: optional list of SGB palette regions (see PaletteFX) in
@@ -1000,11 +1049,27 @@ function Renderer:endFrame(zones, worldZones)
       elseif a.anchor == "topright" then
         dx = ww - gapR - dw
         dy = a.y * Uy
+      elseif a.anchor == "topleft" then
+        dx = a.x * Ux
+        dy = a.y * Uy
+      elseif a.anchor == "bottomright" then
+        dx = ww - gapR - dw
+        dy = wh - gapB - dh
       else -- unknown anchor: leave it where it is
         dx, dy = uox + a.x * Ux, uoy + a.y * Uy
       end
+      -- Battle HUD regions deliberately leave the native battle rectangle,
+      -- but never the physical window.  When a pathological tiny window is
+      -- smaller than a region, pin its near edge at zero and let the existing
+      -- framebuffer clip make the unavoidable cut.
+      if a.windowClamped then
+        dx = math.max(0, math.min(math.max(0, ww - dw), dx))
+        dy = math.max(0, math.min(math.max(0, wh - dh), dy))
+      end
       placed[#placed + 1] = { a = a, dx = dx, dy = dy, dw = dw, dh = dh }
-      rest = subtractRect(rest, uox + a.x * Ux, uoy + a.y * Uy, dw, dh)
+      if a.extract then
+        rest = subtractRect(rest, uox + a.x * Ux, uoy + a.y * Uy, dw, dh)
+      end
     end
     for _, r in ipairs(rest) do
       blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy, r[1], r[2], r[3], r[4])
@@ -1013,7 +1078,7 @@ function Renderer:endFrame(zones, worldZones)
       -- shift the draw origin so canvas pixel (a.x, a.y) lands on (dx, dy).
       -- The zone scissors are computed from the same origin, so an SGB
       -- region travels with the element instead of staying in the letterbox.
-      blit(self.canvas, Ux, Uy, zones, Ux, Uy,
+      blit(p.a.canvas or self.canvas, Ux, Uy, zones, Ux, Uy,
            p.dx - p.a.x * Ux, p.dy - p.a.y * Uy, p.dx, p.dy, p.dw, p.dh)
     end
   end

@@ -92,6 +92,11 @@ local menu = { isOpaque = true } -- PartyMenu / ListMenu
 local whiteBattle = setmetatable(
   { game = { save = { options = { battleBg = "white" } } } },
   { __index = BattleState })
+local wideWhiteBattle = setmetatable(
+  { game = { save = { options = {
+      battleBg = "white", battleLayout = "wide",
+  } } } },
+  { __index = BattleState })
 local function stack(...) return { states = { ... },
   visibleBase = function(self)
     for i = #self.states, 1, -1 do
@@ -111,12 +116,28 @@ T.eq(s2:visibleBase(), 1, "the battle alone already drew from the overworld")
 T.eq(Game.drawBaseInStack(s2, s2:visibleBase()), 1, "and still does")
 local s3 = stack(overworld, whiteBattle, menu)
 T.eq(Game.drawBaseInStack(s3, s3:visibleBase()), 3,
-  "a white-bg battle has no map to hold, so nothing moves")
+  "a classic white-bg battle has no presentation to hold, so nothing moves")
+local s3wide = stack(overworld, wideWhiteBattle, menu)
+T.eq(Game.drawBaseInStack(s3wide, s3wide:visibleBase()), 2,
+  "an opaque WIDE battle still draws beneath its classic menu")
 local s4 = stack(overworld, menu)
 T.eq(Game.drawBaseInStack(s4, s4:visibleBase()), 2,
   "and a menu outside a battle is untouched")
 T.eq(Game.drawBaseInStack(stack(overworld), 1), 1, "a lone base is safe")
 T.eq(Game.drawBaseInStack(nil, 1), 1, "and so is no stack at all")
+
+-- An opaque classic menu paints only its own centred 160x144 field.  When a
+-- WIDE world-backed battle keeps the 304x144 owner surface underneath it,
+-- that owner's unused margins must remain transparent instead of inheriting
+-- beginFrame's white opaque clear.
+T.eq(Game.uiCanvasTransparent(true, true, nil), true,
+  "the ordinary overworld UI canvas remains transparent")
+T.eq(Game.uiCanvasTransparent(false, true, worldBattle), true,
+  "a classic menu over a world-backed WIDE battle preserves transparent margins")
+T.eq(Game.uiCanvasTransparent(false, true, nil), false,
+  "a classic world battle keeps its ordinary opaque full-screen menu")
+T.eq(Game.uiCanvasTransparent(false, false, worldBattle), false,
+  "a WIDE battle without a world pass keeps its opaque backdrop")
 
 -- ------------------------------------------- the YES/NO stays with its screen
 

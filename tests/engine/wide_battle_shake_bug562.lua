@@ -28,7 +28,7 @@ local HudTiles = require("src.render.HudTiles")
 local g = love.graphics
 local realPush, realPop = g.push, g.pop
 local tx, ty, stack = 0, 0, {}
-local scissors, marks
+local scissors, marks, anchors
 
 g.push = function(...) stack[#stack + 1] = { tx, ty }; realPush(...) end
 g.pop = function()
@@ -57,6 +57,12 @@ HudTiles.drawHPBar = function() mark("hpbar") end
 -- question: are the two pic regions and everything else moving as one?
 local function battleWith(fx, sprites)
   return {
+    game = { renderer = {
+      setBattleUIAnchor = function(_, x, y, w, h, anchor)
+        anchors[#anchors + 1] =
+          { x = x, y = y, w = w, h = h, anchor = anchor }
+      end,
+    } },
     data = {},
     frame = 0,
     phase = "messages",
@@ -80,11 +86,15 @@ local function battleWith(fx, sprites)
   }
 end
 
-local function draw(fx, sprites)
+local function draw(fx, sprites, overlay)
   tx, ty, stack = 0, 0, {}
-  scissors, marks = {}, {}
-  WideBattle.draw(battleWith(fx, sprites))
-  return scissors, marks
+  scissors, marks, anchors = {}, {}, {}
+  local battle = battleWith(fx, sprites)
+  if overlay then
+    battle.game.stack = { top = function() return overlay end }
+  end
+  WideBattle.draw(battle)
+  return scissors, marks, anchors
 end
 
 local function marksNamed(list, name)
@@ -119,7 +129,7 @@ end
 -- The baseline the shaken frames are measured against: the player's 160x144
 -- region is inset 32px from the top of the wider field, the enemy's starts at
 -- x=160, and both draw their classic-space pics at the wide anchors.
-local s, m = draw(nil)
+local s, m, a = draw(nil)
 T.eq(s[1].x, 0, "unshaken, the player region clips from the left edge")
 T.eq(s[1].y, 32, "unshaken, the player region starts below the foe's HUD")
 T.eq(s[2].x, 160, "unshaken, the enemy region clips from the halfway mark")
@@ -130,25 +140,37 @@ T.eq(pics[1].tx, 20, "unshaken, the player pic sits on the player anchor")
 T.eq(pics[1].ty, 8, "unshaken, the player pic sits on the player baseline")
 T.eq(pics[2].tx, 136, "unshaken, the enemy pic sits on the enemy anchor")
 everythingAt(m, 0, 0, "no shake")
+T.eq(#a, 3, "the two status boxes and bottom strip register for window placement")
+T.eq(a[1].anchor, "topleft", "the foe status box uses the top window edge")
+T.eq(a[2].anchor, "bottomright", "the player status box uses the lower-right edge")
+T.eq(a[3].anchor, "bottom", "the message/menu strip uses the bottom window edge")
+T.eq(a[3].y, WideBattle.FIELD_BOTTOM,
+  "the bottom strip begins at the wide battlefield boundary")
+local _, _, overlayAnchors = draw(nil, nil, {})
+T.eq(#overlayAnchors, 0,
+  "a pushed battle overlay stays in front of every detached HUD region")
 
 -- -------------------------------------------------- horizontal shake (#562)
 -- TAIL WHIP is wAnimationType 6, AnimationShakeScreenHorizontallySlow b=3:
 -- the screen creeps out to 3px and back, twice, in silence.  Before the fix
 -- the two pic regions took the 3px and drawHUDs / drawTextArea did not, so
 -- the foe glided sideways over a stationary HUD and message box.
-s, m = draw({ shakeX = 3, shakeY = 0 })
+s, m, a = draw({ shakeX = 3, shakeY = 0 })
 T.eq(s[1].x, 3, "a horizontal shake carries the player region's clip with it")
 T.eq(s[2].x, 163, "...and the enemy region's")
 pics = marksNamed(m, "pics")
 T.eq(pics[1].tx, 23, "the player pic rides the shake")
 T.eq(pics[2].tx, 139, "the enemy pic rides the shake")
 everythingAt(m, 3, 0, "3px horizontal shake")
+T.eq(a[1].x, 3, "window HUD capture follows a horizontal screen shake")
+T.eq(a[3].w, WideBattle.WIDTH - 3,
+  "its source crop keeps the native canvas edge clipping")
 
 -- ---------------------------------------------------- vertical shake (#562)
 -- wAnimationType 1 (PredefShakeScreenVertically b=8) drops the whole window.
 -- The region rects move with their contents, so a pic pushed toward
 -- FIELD_BOTTOM is not sheared off its own window edge on the way down.
-s, m = draw({ shakeX = 0, shakeY = 8 })
+s, m, a = draw({ shakeX = 0, shakeY = 8 })
 T.eq(s[1].y, 40, "a vertical shake carries the player region's clip down")
 T.eq(s[1].h, WideBattle.FIELD_BOTTOM - 32,
   "the player region keeps its height, so the pic is not cropped short")
@@ -156,6 +178,9 @@ T.eq(s[2].y, 8, "the enemy region's clip drops the same 8px")
 pics = marksNamed(m, "pics")
 T.eq(pics[1].ty, 16, "the player pic drops with it")
 everythingAt(m, 0, 8, "8px vertical shake")
+T.eq(a[1].y, 8, "window HUD capture follows a vertical screen shake")
+T.eq(a[3].h, WideBattle.HEIGHT - WideBattle.FIELD_BOTTOM - 8,
+  "the shaken bottom strip is clipped at the native canvas edge")
 
 -- --------------------------------------------------- the animations-off path
 -- With ANIMATION = OFF an extracted anim that carries a shake flag falls back

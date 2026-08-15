@@ -61,4 +61,76 @@ Renderer:setUISize(99999, 99999)
 T.eq(select(1, Renderer:uiSize()), 160, "an oversized surface falls back")
 Renderer:setUISize(160, 144)
 
+-- The WIDE HUD uses a dedicated registration path.  It must bypass the two
+-- gates that continue to hold ordinary battle TextBox / ChoiceBox anchors,
+-- without weakening those gates globally.
+Renderer.uiAnchors = nil
+Renderer.uiCentered = true
+Renderer.uiAnchorHold = true
+Renderer:setUIAnchor(0, 104, 304, 40, "bottom")
+T.eq(Renderer.uiAnchors, nil,
+  "ordinary UI anchors remain held inside a battle")
+Renderer:setBattleUIAnchor(0, 104, 304, 40, "bottom")
+T.eq(#(Renderer.uiAnchors or {}), 1,
+  "the dedicated WIDE HUD region reaches the window compositor")
+T.eq(Renderer.uiAnchors[1].windowClamped, true,
+  "a battle HUD region is constrained to the physical window")
+T.eq(Renderer.uiAnchors[1].extract, false,
+  "a battle HUD region does not cut a hole in the main battle canvas")
+Renderer.uiAnchors = nil
+Renderer.uiCentered = false
+Renderer.uiAnchorHold = false
+
+-- The actual WIDE path draws those regions into a transparent layer and
+-- restores the main battle canvas before the frame compositor runs.
+local mainCanvas = Renderer.canvas
+local previous = Renderer:beginBattleHUDPass()
+T.eq(previous, mainCanvas, "the HUD pass remembers the battle canvas")
+T.check(Renderer.battleHUDCanvas ~= mainCanvas,
+  "the HUD pass owns a separate transparent canvas")
+T.eq(love.graphics.getCanvas(), Renderer.battleHUDCanvas,
+  "HUD drawing is redirected to the transparent canvas")
+Renderer:endBattleHUDPass(previous)
+T.eq(love.graphics.getCanvas(), mainCanvas,
+  "ending the HUD pass restores the battle canvas")
+
+-- At a 1000x700 window the 304x144 surface fits at 3x, centred at (44,134).
+-- Pin the exact draw origins of all three extracted regions: these are real
+-- physical-window coordinates, not points outside the source canvas.
+local g = love.graphics
+local realDims, realPixelDims, realDraw =
+  g.getDimensions, g.getPixelDimensions, g.draw
+g.getDimensions = function() return 1000, 700 end
+g.getPixelDimensions = function() return 1000, 700 end
+local draws = {}
+g.draw = function(canvas, x, y, rotation, sx, sy)
+  if canvas == Renderer.canvas then
+    draws[#draws + 1] = { x = x, y = y, sx = sx, sy = sy }
+  end
+end
+Renderer:setUISize(WideBattle.WIDTH, WideBattle.HEIGHT)
+Renderer.uiCentered, Renderer.uiFill = true, false
+Renderer:beginFrame(false)
+Renderer:setBattleUIAnchor(0, 0, 128, 32, "topleft")
+Renderer:setBattleUIAnchor(184, 56, 120, 40, "bottomright")
+Renderer:setBattleUIAnchor(0, 104, 304, 40, "bottom")
+Renderer:endFrame(WideBattle.zones(), nil)
+
+local function sawOrigin(x, y)
+  for _, d in ipairs(draws) do
+    if d.x == x and d.y == y and d.sx == 3 and d.sy == 3 then return true end
+  end
+  return false
+end
+T.check(sawOrigin(0, 0), "the foe panel is composited at the physical top-left")
+T.check(sawOrigin(88, 268),
+  "the player panel keeps its lower-right gaps in window space")
+T.check(sawOrigin(44, 268),
+  "the full-width bottom strip is composited against the window bottom")
+
+g.getDimensions, g.getPixelDimensions, g.draw = realDims, realPixelDims, realDraw
+Renderer:setUISize(160, 144)
+Renderer.uiAnchors = nil
+Renderer.uiCentered, Renderer.uiFill = false, false
+
 T.finish("wide battle layout")

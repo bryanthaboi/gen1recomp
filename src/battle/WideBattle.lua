@@ -92,6 +92,40 @@ local function levelAt(battle, battler, x, y)
   end
 end
 
+-- Move an already-rendered boxed HUD region out of the native 304x144 battle
+-- surface during the physical-window composite.  `windowHUD = false` is a
+-- deliberately battle-local escape hatch for screenshot A/B drivers; normal
+-- WIDE battles use the window layout.  The ordinary UI anchor gate remains
+-- held, so battle-owned TextBox / ChoiceBox states do not move with these.
+local function battleIsTopState(battle)
+  local stack = battle.game and battle.game.stack
+  return not (stack and stack.top) or stack:top() == battle
+end
+
+local function anchorHUD(battle, x, y, w, h, anchor)
+  if battle.windowHUD == false then return end
+  -- Full-screen battle overlays own the UI above the still-running arena.
+  -- Since the detached HUD canvas is normally composited last, registering
+  -- these regions while NamingScreen/ListMenu/PartyMenu/BagMenu is topmost
+  -- would incorrectly place status panels in front of that newer screen.
+  if not battleIsTopState(battle) then return end
+  local renderer = battle.game and battle.game.renderer
+  if renderer and renderer.setBattleUIAnchor then
+    -- Screen-shake translation is active while the HUD draws.  Capture the
+    -- pixels where they actually landed, intersected with the same native
+    -- canvas edge that clipped the legacy composition.
+    x = x + (battle.windowHUDOffsetX or 0)
+    y = y + (battle.windowHUDOffsetY or 0)
+    local x2 = math.min(WideBattle.WIDTH, x + w)
+    local y2 = math.min(WideBattle.HEIGHT, y + h)
+    x, y = math.max(0, x), math.max(0, y)
+    w, h = x2 - x, y2 - y
+    if w > 0 and h > 0 then
+      renderer:setBattleUIAnchor(x, y, w, h, anchor)
+    end
+  end
+end
+
 -- One side's status box: name and level on the first line, a long HP bar
 -- under it, and the numeric HP on the player's box only (the foe's exact
 -- HP is never shown, like the original).
@@ -114,6 +148,8 @@ local function drawStatusPanel(battle, battler, x, y, player)
     Font.draw(("%3d/%3d"):format(shownHP(battler), battler.mon.stats.hp),
       x + tw * 8 - 64, y + 24)
   end
+  anchorHUD(battle, x, y, tw * 8, th * 8,
+            player and "bottomright" or "topleft")
 end
 
 -- the party ball rows DrawAllPokeballs puts up with the intro text, moved
@@ -144,7 +180,6 @@ local function drawHUDs(battle, slide)
       and not battle.showPlayerBack and slide == 0 then
     drawStatusPanel(battle, battle.player, 184, 56, true)
   end
-  drawIntroBalls(battle)
 end
 
 local function drawMessageBox(battle)
@@ -268,6 +303,15 @@ local function drawTextArea(battle)
   else
     Font.drawBox(0, 13, 38, 5)
   end
+  -- A transparent TextBox / ChoiceBox pushed above the battle starts at the
+  -- classic y=96, while this strip starts at y=104.  Moving only this crop
+  -- would tear that overlay across two coordinate spaces.  Leave the strip in
+  -- the native composition until the battle itself owns the top of the stack.
+  if battleIsTopState(battle) then
+    anchorHUD(battle, 0, WideBattle.FIELD_BOTTOM,
+              WideBattle.WIDTH, WideBattle.HEIGHT - WideBattle.FIELD_BOTTOM,
+              "bottom")
+  end
 end
 
 -- Battle animations are authored in the original 160px coordinate space.
@@ -309,17 +353,29 @@ end
 -- The whole 304x144 composition for one frame.
 function WideBattle.draw(battle)
   local g = love.graphics
+  local renderer = battle.game and battle.game.renderer
+  local windowHUD = battle.windowHUD ~= false and renderer
+                    and renderer.beginBattleHUDPass
+                    and renderer.endBattleHUDPass
   -- The field is the display mode's paper.  Under a forced-mono mode the
   -- whole surface is remapped downstream (WideBattle.zones), so the field
   -- goes down as DMG white and comes out of that pass as the mode's paper;
   -- painting the resolved shade there would run it through the remap twice
   -- and land a shade off the letterbox the renderer fills around it.
-  if monoMode() then
-    g.setColor(1, 1, 1, 1)
+  local transparentField = windowHUD and not battle.blankForAskName
+                           and battle.bgMode and battle:bgMode() == "world"
+  if transparentField then
+    -- The world/voxel pass is already underneath this canvas.  Leaving its
+    -- field transparent is what lets that scene occupy the native battle
+    -- rectangle as well as the physical-window margins.
   else
-    g.setColor(PaletteFX.paperShade(battle.data))
+    if monoMode() then
+      g.setColor(1, 1, 1, 1)
+    else
+      g.setColor(PaletteFX.paperShade(battle.data))
+    end
+    g.rectangle("fill", 0, 0, WideBattle.WIDTH, WideBattle.HEIGHT)
   end
-  g.rectangle("fill", 0, 0, WideBattle.WIDTH, WideBattle.HEIGHT)
   -- AskName clears the field the same way the classic layout does
   if battle.blankForAskName then return end
 
@@ -346,6 +402,7 @@ function WideBattle.draw(battle)
   inRegion(160 + sx, sy, 144, WideBattle.FIELD_BOTTOM, 136 + sx, sy,
     function() battle:drawPicsLayer(slide, 0, 0, "enemy", true) end)
   battle.wideRegion = nil
+  drawIntroBalls(battle)
 
   -- A battle sets rWY to 0 (engine/battle/core.asm), so the window the
   -- shakes move IS the whole screen: PredefShakeScreenHorizontally,
@@ -359,12 +416,26 @@ function WideBattle.draw(battle)
     if sx == 0 and sy == 0 then return fn() end
     g.push()
     g.translate(sx, sy)
+    battle.windowHUDOffsetX, battle.windowHUDOffsetY = sx, sy
     fn()
+    battle.windowHUDOffsetX, battle.windowHUDOffsetY = nil, nil
     g.pop()
   end
-  shaken(function() drawHUDs(battle, slide) end)
   drawAnimationLayer(battle)
-  shaken(function() drawTextArea(battle) end)
+
+  if windowHUD then
+    local previous = renderer:beginBattleHUDPass()
+    shaken(function() drawHUDs(battle, slide) end)
+    shaken(function() drawTextArea(battle) end)
+    if fx and fx.flash and fx.flash > 0 and battle.frame % 4 < 2 then
+      g.setColor(1, 1, 1, 0.85)
+      g.rectangle("fill", 0, 0, WideBattle.WIDTH, WideBattle.HEIGHT)
+    end
+    renderer:endBattleHUDPass(previous)
+  else
+    shaken(function() drawHUDs(battle, slide) end)
+    shaken(function() drawTextArea(battle) end)
+  end
 
   if fx and fx.flash and fx.flash > 0 and battle.frame % 4 < 2 then
     g.setColor(1, 1, 1, 0.85)
