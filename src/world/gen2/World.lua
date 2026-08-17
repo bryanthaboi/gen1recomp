@@ -436,9 +436,19 @@ function World.computeNeighbors(maps, rootId, hops, reachW, reachH)
   while queue[qi] do
     local cur = queue[qi]
     qi = qi + 1
-    for dir, conn in pairs(cur.def.connections or {}) do
-      local destId = conn.mapId or conn.map
-      local destDef = type(destId) == "string" and maps[destId] or nil
+    for dir, side in pairs(cur.def.connections or {}) do
+      -- A side may hold a single connection object or an array (editor-only
+      -- extra connections); iterate either form.
+      local conns
+      if type(side) == "table" and (side.map or side.mapId) then
+        conns = { side }
+      else
+        conns = side
+      end
+      if type(conns) == "table" then
+        for _, conn in ipairs(conns) do
+          local destId = conn.mapId or conn.map
+          local destDef = type(destId) == "string" and maps[destId] or nil
       if destDef and not placed[destId] then
         placed[destId] = true
         local offset = conn.offset or 0
@@ -463,6 +473,8 @@ function World.computeNeighbors(maps, rootId, hops, reachW, reachH)
           end
         end
       end
+      end
+    end
     end
   end
   return out
@@ -8729,7 +8741,25 @@ end
 -- the step running so the seam does not hitch.
 function World:tryConnection(dir)
   local connKey = DIR_CONN[dir]
-  local conn = self.map:connection(connKey)
+  local side = self.map:connection(connKey)
+  -- A side may hold several connections (editor-only extras); pick the one
+  -- whose seam sits under the player's position along the edge.
+  local conn = side
+  if type(side) == "table" and not (side.mapId or side.map) then
+    local isH = (connKey == "north" or connKey == "south")
+    local cell = isH and self.player.cellX or self.player.cellY
+    conn = nil
+    for _, c in ipairs(side) do
+      if c and (c.mapId or c.map) then
+        local destDef = self.maps[c.mapId or c.map]
+        local along = cell - (c.offset or 0) * 2
+        local dim = destDef
+          and (((isH and destDef.width) or destDef.height) * 2) or math.huge
+        if along >= 0 and along < dim then conn = c; break end
+      end
+    end
+    conn = conn or side[1]
+  end
   if not conn or not conn.mapId then return false end
   local dest = self.maps[conn.mapId]
   if not dest then return false end

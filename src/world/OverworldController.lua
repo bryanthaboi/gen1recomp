@@ -184,8 +184,18 @@ function OverworldState.computeNeighbors(maps, rootId, hops, reachW, reachH)
   while queue[qi] do
     local cur = queue[qi]
     qi = qi + 1
-    for dir, conn in pairs(cur.def.connections or {}) do
-      local destDef = maps[conn.map]
+    for dir, side in pairs(cur.def.connections or {}) do
+      -- A side may hold a single connection object or an array (when the
+      -- editor stacked extra connections); iterate either form.
+      local conns
+      if type(side) == "table" and (side.map or side.mapId) then
+        conns = { side }
+      else
+        conns = side
+      end
+      if type(conns) == "table" then
+        for _, conn in ipairs(conns) do
+          local destDef = maps[conn.map]
       if destDef and not placed[conn.map] then
         placed[conn.map] = true
         local ox, oy
@@ -208,6 +218,8 @@ function OverworldState.computeNeighbors(maps, rootId, hops, reachW, reachH)
           end
         end
       end
+      end
+    end
     end
   end
   return out
@@ -1526,18 +1538,41 @@ function OverworldState:checkEdgeExit(dir)
     return true
   end
 
-  local conn = self.map:connection(COMPASS[dir])
+  local conn = self:connectionAt(COMPASS[dir])
   if conn then
     return self:crossConnection(dir, conn)
   end
   return false
 end
 
+-- Picks the connection on `dir` the player is actually stepping across.  A side
+-- may carry several connections (editor-only extras); the one whose seam sits
+-- under the player's position along the edge is the correct destination.  For
+-- single-connection sides this just returns that connection.
+function OverworldState:connectionAt(dir)
+  local side = self.map:connection(dir)
+  if type(side) ~= "table" then return nil end
+  if side.map or side.mapId then return side end
+  local p = self.player
+  local isH = (dir == "north" or dir == "south")
+  local cell = isH and p.cellX or p.cellY
+  for _, c in ipairs(side) do
+    if c and (c.map or c.mapId) then
+      local destDef = Game.data.maps[c.map or c.mapId]
+      local along = cell - (c.offset or 0) * 2
+      local dim = destDef
+        and (((isH and destDef.width) or destDef.height) * 2) or math.huge
+      if along >= 0 and along < dim then return c end
+    end
+  end
+  return side[1]
+end
+
 -- Landing cell on the connected map for a step off this map's edge in
 -- `dir` (same math as crossConnection).  Returns destDef, tilesetDef, x, y
 -- or nil when there is no usable connection.
 function OverworldState:connectionLanding(dir)
-  local conn = self.map:connection(COMPASS[dir])
+  local conn = self:connectionAt(COMPASS[dir])
   if not conn then return nil end
   local dest = Game.data.maps[conn.map]
   if not dest then return nil end

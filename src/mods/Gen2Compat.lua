@@ -983,7 +983,26 @@ local function buildOverworld()
   function ow.connectionLanding(dir)
     local world = w("connectionLanding")
     if not (world and world.map and world.player) then return nil end
-    local conn = world.map:connection(COMPASS[dir] or dir)
+    local side = world.map:connection(COMPASS[dir] or dir)
+    if not side then return nil end
+    -- A side may hold several connections (editor-only extras); pick the one
+    -- whose seam sits under the player's position along the edge.
+    local conn = side
+    if type(side) == "table" and not (side.map or side.mapId) then
+      local isH = (dir == "north" or dir == "south")
+      local cell = isH and world.player.cellX or world.player.cellY
+      conn = nil
+      for _, c in ipairs(side) do
+        if c and (c.map or c.mapId) then
+          local destDef = world.maps[c.map or c.mapId]
+          local along = cell - (c.offset or 0) * 2
+          local dim = destDef
+            and (((isH and destDef.width) or destDef.height) * 2) or math.huge
+          if along >= 0 and along < dim then conn = c; break end
+        end
+      end
+      conn = conn or side[1]
+    end
     if not conn then return nil end
     local destId = conn.map or conn.mapId
     local destDef = destId and world.maps and world.maps[destId]
