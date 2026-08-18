@@ -45,6 +45,22 @@ local function hashSet(list, into)
   return into
 end
 
+-- The 16-tile content of a block: native block ids resolve through the
+-- tileset's `blocks` array; a block id at/above the native count is a
+-- GRAFTED block (cross-tileset paint, mods/mapamap) and resolves through the
+-- map def's `graftBlocks` list, which stores the tileset-atlas slots the
+-- imported graphic occupies.  Returns the tile array, or nil when unknown.
+function Map.blockTiles(def, tilesetDef, id)
+  if not (def and tilesetDef and tilesetDef.blocks) then return nil end
+  if id == nil then return nil end
+  local native = #tilesetDef.blocks
+  if id < native then
+    return tilesetDef.blocks[id + 1]
+  end
+  local g = def.graftBlocks and def.graftBlocks[id - native]
+  return g and g.tiles
+end
+
 -- Collision tile (bottom-left 8x8) of a cell on an UNLOADED map def --
 -- the connected neighbor during an edge crossing.  pokered's
 -- GetTileAndCoordsInFrontOfPlayer / collision checks read the neighbor
@@ -59,7 +75,7 @@ function Map.defCellTile(def, tilesetDef, cx, cy)
   else
     id = def.blocks[by * def.width + bx + 1]
   end
-  local block = tilesetDef.blocks[(id or 0) + 1]
+  local block = Map.blockTiles(def, tilesetDef, id or 0)
   if not block then return nil end
   return block[(ty % 4) * 4 + (tx % 4) + 1]
 end
@@ -200,12 +216,14 @@ function Map:blockAt(bx, by)
   return self.def.blocks[by * self.def.width + bx + 1]
 end
 
--- tile id at tile coordinates (8px grid), border-extended
+-- tile id at tile coordinates (8px grid), border-extended.  Block content is
+-- resolved through Map.blockTiles so a grafted (cross-tileset) block id reads
+-- its def.graftBlocks entry too.
 function Map:tileAt(tx, ty)
   local bx, by = math.floor(tx / 4), math.floor(ty / 4)
-  local block = self.tileset.blocks[self:blockAt(bx, by) + 1]
+  local block = Map.blockTiles(self.def, self.tileset, self:blockAt(bx, by))
   local ix = (ty % 4) * 4 + (tx % 4) + 1
-  return block[ix]
+  return block and block[ix]
 end
 
 -- the collision tile of a cell: bottom-left 8x8 tile
@@ -278,6 +296,13 @@ function Map:isCounterCell(cx, cy)
     if c == t then return true end
   end
   return false
+end
+
+function Map:rebuildWarpIndex()
+  self.warpAt = {}
+  for i, w in ipairs(self.def.warps or {}) do
+    self.warpAt[w.y * self.widthCells + w.x] = { index = i, def = w }
+  end
 end
 
 function Map:warpAtCell(cx, cy)

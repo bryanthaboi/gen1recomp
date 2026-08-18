@@ -474,6 +474,20 @@ function WorldAPI:startWildBattle(species, level)
   return true
 end
 
+-- refresh the warp index on a loaded Map so newly added warps are usable
+-- without a full map reload; pass nil to target the active map
+function WorldAPI:rebuildWarpIndex(mapId)
+  local ow = self:overworld()
+  if mapId then
+    local cached = MapLoader.cached(mapId)
+    if cached then cached:rebuildWarpIndex() end
+    return cached ~= nil
+  end
+  if not ow or not ow.map then return nil, NO_OVERWORLD end
+  ow.map:rebuildWarpIndex()
+  return true
+end
+
 -- drop a map's cached instance so the next load re-reads its record; when
 -- it is the active map the world reloads around the player in place
 function WorldAPI:invalidateMap(mapId)
