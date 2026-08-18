@@ -34,7 +34,7 @@ local SEP = package.config:sub(1, 1)
 
 -- Cache-relative paths are prefixed with this before every read/write, so a
 -- version's import lands under its GameVersion.cachePrefix (red/, blue/,
--- yellow/).  The launcher sets it per import / per readiness check; it stays
+-- yellow/, gold/).  The launcher sets it per import / per readiness check; it stays
 -- "" outside those flows.  Runtime *reads* (require / newImage) do NOT go
 -- through here -- CacheFs.mountVersion overlays the active version's subtree
 -- onto the un-prefixed paths instead.
@@ -305,7 +305,7 @@ function CacheFs.read(rel)
 end
 
 -- Read cache-relative `rel` for the active GameVersion when PhysFS may hide
--- prefixed Blue/Yellow trees (fused NX mount hole). Same order Data:load
+-- prefixed Blue/Yellow/Gold trees (fused NX mount hole). Same order Data:load
 -- already used: active version prefix with CacheFs.prefix cleared, then
 -- `rel` under the caller's CacheFs.prefix. Returns the bytes or nil.
 function CacheFs.readActive(rel)
@@ -320,6 +320,25 @@ function CacheFs.readActive(rel)
   end
   if type(bytes) == "string" then return bytes end
   return nil
+end
+
+-- Compile a generated Lua module from the active version's cache.  Gold's
+-- Game2 (and World's disk fallback) cannot use require / love.filesystem.load
+-- of the unprefixed path: those need the fused NX mount that hides
+-- gold/data/generated.  Same bytes Data:load already compiles via readActive.
+-- Returns value, err (err is nil on success).
+function CacheFs.loadActive(rel)
+  local bytes = CacheFs.readActive(rel)
+  if type(bytes) ~= "string" then
+    return nil, "missing " .. tostring(rel)
+  end
+  local GameVersion = require("src.core.GameVersion")
+  local compile = loadstring or load
+  local chunk, err = compile(bytes, "@" .. GameVersion.cachePrefix() .. rel)
+  if not chunk then return nil, err end
+  local ok, value = pcall(chunk)
+  if ok then return value end
+  return nil, value
 end
 
 -- does cache-relative `rel` exist as a file?

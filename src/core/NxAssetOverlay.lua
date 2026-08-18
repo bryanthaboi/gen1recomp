@@ -18,8 +18,9 @@
 --   * the chip-audio worker (src/core/chip_worker.lua) is a separate Lua
 --     state without these wrappers; ChipAudio.slimAudio hands it the prefix
 --     explicitly as audio.programPrefix.
---   * data/generated module loads go through CacheFs.readActive, which
---     already implements the same fallback for require bytes.
+--   * data/generated module loads go through CacheFs.readActive /
+--     CacheFs.loadActive (Data:load, Game2, World), which already implement
+--     the same fallback for require / load bytes.
 
 local GameVersion = require("src.core.GameVersion")
 

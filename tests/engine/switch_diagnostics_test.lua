@@ -89,6 +89,22 @@ check(probe:find("resolve=yellow/assets/generated/fonts/font.png", 1, true) ~= n
   "probe records versioned font path visibility")
 check(not probe:find(string.char(0xEA, 0x9B), 1, true),
   "probe log contains no ROM-like binary")
+check(probe:find("data/generated/audio.lua", 1, true) ~= nil,
+  "probe records data/generated audio visibility")
+
+GameVersion.set("gold")
+love.filesystem.write("gold/data/generated/audio.lua", "return { generation = 2 }")
+love.filesystem.write("gold/assets/generated/title/title_screen.png", "title-bytes")
+SwitchDiagnostics.probeAssets("gold")
+probe = love.filesystem.read("nx-asset-probe.log") or ""
+check(probe:find("cachePrefix=gold/", 1, true) ~= nil, "probe records gold prefix")
+check(probe:find("title_screen.png", 1, true) ~= nil,
+  "gold probe uses Gold title art, not reds_house")
+check(probe:find("gold/data/generated/audio.lua", 1, true) ~= nil
+  or probe:find("versioned=type=file", 1, true) ~= nil,
+  "gold probe sees prefixed audio.lua")
+love.filesystem.remove("gold/data/generated/audio.lua")
+love.filesystem.remove("gold/assets/generated/title/title_screen.png")
 
 love.system = { getOS = function() return "OS X" end }
 Platform._resetForTests()

@@ -115,6 +115,30 @@ GameVersion.set("red")
 clearPath("blue/" .. PNG)
 eq(love.filesystem.read(PNG), nil, "Red keeps the stock miss behavior")
 
+-- Gold data/generated: Game2 cannot use unprefixed love.filesystem.load
+-- when the fused mount is missing.  Seed ONLY gold/, matching the SD layout
+-- after a Gold import.
+GameVersion.set("gold")
+local AUDIO = "data/generated/audio.lua"
+local AUDIO_SRC = "return { generation = 2, runtime = true, marker = 'gold-audio' }"
+clearPath(AUDIO)
+love.filesystem.write("gold/" .. AUDIO, AUDIO_SRC)
+eq(love.filesystem.read(AUDIO), nil,
+  "unprefixed data/generated/audio.lua is a miss (broken Gold mount)")
+local CacheFs = require("src.import.CacheFs")
+local savedPrefix = CacheFs.prefix
+CacheFs.prefix = ""
+local goldAudio, goldErr = CacheFs.loadActive(AUDIO)
+CacheFs.prefix = savedPrefix
+check(goldAudio ~= nil, "loadActive compiles gold/data/generated/audio.lua")
+eq(goldErr, nil, "loadActive has no error when the prefixed file exists")
+eq(goldAudio and goldAudio.marker, "gold-audio",
+  "Gold audio.lua is the prefixed cache, not an empty table")
+eq(goldAudio and goldAudio.generation, 2, "Gold audio.lua keeps generation 2")
+eq(love.filesystem.load(AUDIO), nil,
+  "stock love.filesystem.load still misses the unprefixed Gold path")
+clearPath("gold/" .. AUDIO)
+
 -- Uninstall restores the stock loaders byte for byte
 GameVersion.set("yellow")
 love.filesystem.write("yellow/" .. PNG, "yellow-png-bytes")

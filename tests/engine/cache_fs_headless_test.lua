@@ -16,5 +16,8 @@ check(CacheFs.read("data/generated/audio.lua") == nil,
   "read is a nil miss headless, not a crash")
 check(CacheFs.readActive("data/generated/audio.lua") == nil,
   "readActive is a nil miss headless, not a crash")
+local loaded, loadErr = CacheFs.loadActive("data/generated/audio.lua")
+check(loaded == nil, "loadActive is a nil miss headless, not a crash")
+check(type(loadErr) == "string", "loadActive reports the miss")
 
 T.finish()

@@ -395,12 +395,17 @@ local function givePokeMon(data, speciesIndex, level, itemIndex)
   })
 end
 
+-- Same prefixed-then-plain order Game2 uses: fused NX hides gold/data/generated
+-- behind the packaged data/ directory, so love.filesystem.load of the
+-- unprefixed path is only the desktop/mount fallback.
 local function loadGenerated(path)
-  local chunk, err = love.filesystem.load(path)
-  if not chunk then return nil, err end
-  local ok, value = pcall(chunk)
-  if not ok then return nil, value end
-  return value
+  local value, err = require("src.import.CacheFs").loadActive(path)
+  if value ~= nil then return value end
+  local chunk, loadErr = love.filesystem.load(path)
+  if not chunk then return nil, err or loadErr end
+  local ok, result = pcall(chunk)
+  if not ok then return nil, result end
+  return result
 end
 
 -- Paste the 9-tile roof sheet over atlas tiles $0a-$12.

@@ -49,5 +49,17 @@ check(CacheFs.mountVersion("yellow") == true, "mountVersion(yellow) returns true
 eq(love.filesystem.read("assets/generated/fonts/font.png"), "yellow-font",
   "Yellow mount exposes fonts/font.png at the unprefixed path")
 
+-- Gold: loadActive must see gold/data/generated without a working mount
+-- (the fused NX hole Game2 used to walk into).
+GameVersion.set("gold")
+love.filesystem._mounts = {}
+love.filesystem.write("gold/data/generated/audio.lua",
+  "return { generation = 2, marker = 'from-gold' }")
+local audio = CacheFs.loadActive("data/generated/audio.lua")
+eq(audio and audio.marker, "from-gold",
+  "loadActive(gold) reads gold/data/generated/audio.lua with no mount")
+eq(love.filesystem.read("data/generated/audio.lua"), nil,
+  "unprefixed Gold audio.lua stays missing without a mount")
+
 GameVersion.set("red")
 T.finish()

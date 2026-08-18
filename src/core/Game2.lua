@@ -119,7 +119,13 @@ local function visibleBaseState(stack)
   return stack:renderVisible(state) and state or nil
 end
 
+-- Prefixed cache first (CacheFs.loadActive): fused NX cannot mount
+-- gold/data/generated onto data/generated, the same hole Blue/Yellow hit.
+-- love.filesystem.load of the unprefixed path stays as a desktop/mount
+-- fallback so a working overlay or a source tree still boots.
 local function loadGenerated(path)
+  local value = require("src.import.CacheFs").loadActive(path)
+  if value ~= nil then return value end
   local chunk = love.filesystem.load(path)
   if not chunk then return nil end
   local ok, data = pcall(chunk)

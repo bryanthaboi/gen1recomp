@@ -215,7 +215,12 @@ function SwitchDiagnostics.probeAssets(version)
     "saveDir=" .. tostring(filesystem.getSaveDirectory and filesystem.getSaveDirectory() or "?"),
   }
 
-  local samples = {
+  local samples = (version == "gold" or GameVersion.get() == "gold") and {
+    "assets/generated/fonts/font.png",
+    "assets/generated/title/title_screen.png",
+    "assets/generated/tilesets/johto.png",
+    "assets/generated/sprites/chris.png",
+  } or {
     "assets/generated/fonts/font.png",
     "assets/generated/tilesets/reds_house.png",
     "assets/generated/sprites/red.png",
@@ -238,9 +243,29 @@ function SwitchDiagnostics.probeAssets(version)
     end
   end
 
+  -- data/generated is the Gold (and Gen 1) Lua index.  Game2 loads these
+  -- via CacheFs.loadActive; a prefixed hit + unprefixed miss is the fused
+  -- mount hole this probe exists to show.
+  local dataFiles = {
+    "data/generated/audio.lua",
+    "data/generated/maps.lua",
+    "data/generated/tilesets.lua",
+    "assets/generated/audio/programs.bin",
+  }
+  for _, path in ipairs(dataFiles) do
+    local versioned = prefix ~= "" and (prefix .. path) or path
+    lines[#lines + 1] = ("--- %s"):format(path)
+    lines[#lines + 1] = "unprefixed=" .. probeInfo(filesystem, path)
+    if prefix ~= "" then
+      lines[#lines + 1] = "versioned=" .. probeInfo(filesystem, versioned)
+    end
+  end
+
   -- Shallow listing so we can see if the extract tree exists at all.
-  local roots = { "yellow", "blue", "assets", "yellow/assets/generated",
-    "yellow/assets/generated/sprites", "blue/assets/generated/sprites" }
+  local roots = { "gold", "yellow", "blue", "assets",
+    "gold/data/generated", "gold/assets/generated",
+    "yellow/assets/generated", "yellow/assets/generated/sprites",
+    "blue/assets/generated/sprites" }
   for _, dir in ipairs(roots) do
     local info = filesystem.getInfo(dir)
     if info and info.type == "directory" and filesystem.getDirectoryItems then
