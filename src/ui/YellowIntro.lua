@@ -256,10 +256,7 @@ function YellowIntro.new(game, onDone)
   local ok, canvas = pcall(love.graphics.newCanvas, 256, 256)
   self.bgCanvas = ok and canvas or nil
 
-  -- Yellow boots exactly like Red up to the attract movie: the copyright
-  -- card and the GAME FREAK shooting-star splash play first.  Reuse
-  -- IntroMovie's phases 1-2 and take over where its Gengar fight (phase
-  -- 3) would begin; a skip press during the pre-roll skips everything.
+  -- intro.asm:311 copyright card, splash.asm:29 shooting star
   local IntroMovie = require("src.ui.IntroMovie")
   local pre = IntroMovie.new(game, nil)
   local baseStart = pre.startPhase
@@ -644,8 +641,8 @@ end
 -- Both scene-loop exits (scene 17 running out, and the A/B/START skip) land
 -- on .go_to_title_screen, which calls YellowIntro_BlankPalettes and then
 -- spends EXIT_FRAMES DelayFrame calls clearing the tilemap and the OAM
--- buffers before the title screen is built (#523).  The pre-roll's own skip
--- is IntroMovie's path, not this one, and still finishes immediately.
+-- buffers before the title screen is built (#523).  A press during the
+-- pre-roll splash starts the scenes instead of reaching here.
 function YellowIntro:exitToTitle()
   if self.finished or self.exiting then return end
   self.exiting = true

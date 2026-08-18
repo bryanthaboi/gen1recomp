@@ -40,6 +40,10 @@ Net.__index = Net
 Net.DEFAULT_PORT = 7777
 Net.DEFAULT_RELAY_ADDRESS = "147.182.215.255:7778"
 
+Net.MAX_LINE = 256 * 1024
+Net.MAX_RX_PER_FRAME = 512 * 1024
+Net.ENET_BANDWIDTH = 256 * 1024
+
 function Net.available()
   return enet ~= nil
 end
@@ -115,7 +119,8 @@ function Net:host(port)
     return false
   end
   port = tonumber(port) or Net.defaultPort()
-  local ok, h, err = pcall(enet.host_create, ("*:%d"):format(port), 2, 1)
+  local ok, h, err = pcall(enet.host_create, ("*:%d"):format(port), 2, 1,
+                           Net.ENET_BANDWIDTH, Net.ENET_BANDWIDTH)
   if not ok or not h then
     self.error = ("can't open UDP port %d (%s)"):format(
       port, tostring(ok and err or h))
@@ -255,7 +260,7 @@ local function handleGenericRelayControl(self, msg)
 end
 
 function Net:handleTCPLine(line)
-  local msg = Json.decode(line)
+  local msg = Json.decode(line, Net.MAX_LINE)
   if msg == nil then
     Logger.warn("link: bad relay message %q", line:sub(1, 60))
     return
@@ -276,6 +281,11 @@ function Net:drainLines()
     local line = self.rxBuf:sub(1, nl - 1)
     self.rxBuf = self.rxBuf:sub(nl + 1)
     if #line > 0 then self:handleTCPLine(line) end
+  end
+  if #self.rxBuf > Net.MAX_LINE then
+    self.rxBuf = ""
+    self.error = Strings("The other side\nsent bad data.")
+    self.closed = true
   end
 end
 
@@ -300,10 +310,14 @@ function Net:updateTCP()
       return
     end
   end
-  while true do
+  local budget = Net.MAX_RX_PER_FRAME
+  while budget > 0 do
     local data, err, partial = sock:receive(8192)
     local chunk = data or partial or ""
-    if #chunk > 0 then self.rxBuf = self.rxBuf .. chunk end
+    if #chunk > 0 then
+      self.rxBuf = self.rxBuf .. chunk
+      budget = budget - #chunk
+    end
     if err == "closed" then
       self.closed = true
       break
@@ -350,7 +364,7 @@ function Net:update()
         for _, msg in ipairs(queued) do self:send(msg) end
       end
     elseif event.type == "receive" then
-      local msg = Json.decode(event.data)
+      local msg = Json.decode(event.data, Net.MAX_LINE)
       if msg ~= nil then
         table.insert(self.inbox, msg)
       else

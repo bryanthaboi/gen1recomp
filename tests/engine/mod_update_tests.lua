@@ -208,6 +208,32 @@ eq(ModUpdate.formatCount("12345"), "12,345", "numeric strings are accepted")
 eq(ModUpdate.formatCount(nil), "0", "nil formats as zero")
 eq(ModUpdate.formatCount("garbage"), "0", "garbage formats as zero")
 
+-- abbrevCount: what a browse card has room for
+eq(ModUpdate.abbrevCount(0), "0", "zero abbreviates to itself")
+eq(ModUpdate.abbrevCount(999), "999", "below 1000 stays exact")
+eq(ModUpdate.abbrevCount(1000), "1k", "a round thousand drops its decimal")
+eq(ModUpdate.abbrevCount(1578), "1.6k", "thousands round to one decimal")
+eq(ModUpdate.abbrevCount(24000), "24k", "a round figure keeps no .0")
+eq(ModUpdate.abbrevCount(999999), "1M", "no count ever reads as 1000k")
+eq(ModUpdate.abbrevCount(1234567), "1.2M", "millions abbreviate too")
+eq(ModUpdate.abbrevCount("1578"), "1.6k", "numeric strings are accepted")
+eq(ModUpdate.abbrevCount(nil), "?", "an unknown count is not a zero")
+eq(ModUpdate.abbrevCount("garbage"), "?", "garbage is unknown, not a zero")
+
+-- downloadsShort / trendingLine: the card and detail forms
+eq(ModUpdate.downloadsShort(1578), "1.6k downloads", "the card form abbreviates")
+eq(ModUpdate.downloadsShort(0), "0 downloads", "a real zero is still stated")
+eq(ModUpdate.downloadsShort(nil), "? downloads",
+  "an unknown count says so rather than vanishing or reading as zero")
+eq(ModUpdate.trendingLine(388, 30), "388 in the last 30 days",
+  "the trending line names its window")
+eq(ModUpdate.trendingLine(388, 12), "388 in the last 12 days",
+  "a short window says so rather than claiming a month")
+eq(ModUpdate.trendingLine(388, nil), "388 recently",
+  "a count with no window still reads")
+check(ModUpdate.trendingLine(nil, 30) == nil,
+  "no trailing-window count means no trending line")
+
 -- statsLine: the shared launcher row line, part by part
 eq(ModUpdate.statsLine(1234567, "2024-05-31", "2026-07-01"),
   "1,234,567 downloads across all releases  -  Released 2024-05-31  -  Updated 2026-07-01",

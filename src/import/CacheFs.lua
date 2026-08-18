@@ -34,7 +34,7 @@ local SEP = package.config:sub(1, 1)
 
 -- Cache-relative paths are prefixed with this before every read/write, so a
 -- version's import lands under its GameVersion.cachePrefix (red/, blue/,
--- yellow/).  The launcher sets it per import / per readiness check; it stays
+-- yellow/, gold/).  The launcher sets it per import / per readiness check; it stays
 -- "" outside those flows.  Runtime *reads* (require / newImage) do NOT go
 -- through here -- CacheFs.mountVersion overlays the active version's subtree
 -- onto the un-prefixed paths instead.
@@ -305,7 +305,7 @@ function CacheFs.read(rel)
 end
 
 -- Read cache-relative `rel` for the active GameVersion when PhysFS may hide
--- prefixed Blue/Yellow trees (fused NX mount hole). Same order Data:load
+-- prefixed Blue/Yellow/Gold trees (fused NX mount hole). Same order Data:load
 -- already used: active version prefix with CacheFs.prefix cleared, then
 -- `rel` under the caller's CacheFs.prefix. Returns the bytes or nil.
 function CacheFs.readActive(rel)
@@ -320,6 +320,32 @@ function CacheFs.readActive(rel)
   end
   if type(bytes) == "string" then return bytes end
   return nil
+end
+
+-- Load a generated Lua table the way Data:load does: versioned save-dir
+-- bytes first (gold/data/generated/maps.lua), then the un-prefixed path.
+-- Game2/World used love.filesystem.load("data/generated/...") which misses
+-- on fused NX when the gold/ overlay mount fails -- intro art still loads
+-- via NxAssetOverlay, but oak_speech.lua / font.lua / maps.lua do not.
+function CacheFs.loadActive(rel)
+  local bytes = CacheFs.readActive(rel)
+  if type(bytes) == "string" then
+    local GameVersion = require("src.core.GameVersion")
+    local loader = loadstring or load
+    local chunk, err = loader(bytes, "@" .. GameVersion.cachePrefix() .. rel)
+    if not chunk then return nil, err end
+    local ok, value = pcall(chunk)
+    if not ok then return nil, value end
+    return value
+  end
+  if love and love.filesystem and love.filesystem.load then
+    local chunk, err = love.filesystem.load(rel)
+    if not chunk then return nil, err end
+    local ok, value = pcall(chunk)
+    if not ok then return nil, value end
+    return value
+  end
+  return nil, "Could not open file " .. rel .. ". Does not exist."
 end
 
 -- does cache-relative `rel` exist as a file?

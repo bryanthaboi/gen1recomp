@@ -141,7 +141,7 @@ function SaveFileIO.exportActiveSlot(version)
     fs.createDirectory("exports")
     fs.createDirectory("exports/" .. version)
   end
-  -- Per-game folder so MTP browsing matches inbox layout (red/blue/yellow).
+  -- Per-game folder so MTP browsing matches inbox layout (red/blue/yellow/gold).
   local rel = ("exports/%s/gen1recomp-%s-%s.sav"):format(version, version, slotId)
   local ok, writeErr = fs.write(rel, bytes)
   if not ok then return false, "could not write the export: " .. tostring(writeErr) end

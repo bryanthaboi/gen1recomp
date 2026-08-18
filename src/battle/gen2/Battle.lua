@@ -1868,7 +1868,11 @@ function Battle:useMove(attacker, defender, moveId)
   if status and (def.power or 0) == 0 then
     -- A refused primary status is a failed move (effect_commands.asm:3748,
     -- :6656); a refused secondary already animated and stays unmarked (:3752).
-    if Battle.AI_FAIL_STATUSES[status]
+    if self:statusRefusedByType(defender, def.type, status) then
+      self:markMissed()
+      self:emit({ kind = "message",
+        text = "It doesn't affect " .. self:monName(defender) .. "..." })
+    elseif Battle.AI_FAIL_STATUSES[status]
         and self:aiRandomFail(attacker, defender) then
       self:markMissed()
       self:emit({ kind = "message", text = "But it failed!" })
@@ -1880,7 +1884,8 @@ function Battle:useMove(attacker, defender, moveId)
       and record.status or nil
     -- engine/battle/effect_commands.asm:6325
     if secondary and (defender.hp or 0) > 0
-        and not self:safeguarded(defender) then
+        and not self:safeguarded(defender)
+        and not self:statusRefusedByType(defender, def.type, secondary) then
       local chance = def.effectChance or 0
       if chance > 0 and rand(self.random, 100) < chance then
         self:applyStatus(defender, secondary, attacker)
@@ -2941,6 +2946,27 @@ end
 
 -- `source` is the battler that inflicted it, carried only so
 -- battle.status_inflicted can name it the way Gen 1's does.
+-- BattleCommand_Paralyze and BattleCommand_Poison refuse on a zero matchup,
+-- and the poison pair also refuses a POISON-type target: effect_commands.asm
+-- :5788 (paralyze), :3671 (poison), :3646 / :4019 (the secondary arms).
+-- Sleep, confusion and stat changes are deliberately not gated.
+function Battle:statusRefusedByType(defender, moveType, status)
+  if not (status == "paralyze" or status == "poison" or status == "toxic") then
+    return false
+  end
+  local types = (self:speciesDef(defender) or {}).types or defender.types or {}
+  if moveType then
+    local matchups = self.data.type_chart and self.data.type_chart.matchups
+    if Damage.typeMultiplier(moveType, types, matchups) == 0 then return true end
+  end
+  if status == "poison" or status == "toxic" then
+    for _, t in ipairs(types) do
+      if t == "POISON" then return true end
+    end
+  end
+  return false
+end
+
 function Battle:applyStatus(mon, status, source)
   if (mon.hp or 0) <= 0 then return false end
   -- Confusion is SUBSTATUS_CONFUSED on the cart, not a status byte: it lives
@@ -3202,6 +3228,7 @@ end
 -- player's own.
 function Battle:isOutsider(mon)
   local playerId = self.save and self.save.player and self.save.player.id
+  if mon.traded == true then return true end
   if mon.otId == nil or playerId == nil then return false end
   return mon.otId ~= playerId
 end
@@ -3363,25 +3390,33 @@ function Battle:awardExperience(loser)
   -- has no EXP.ALL (the EXP.SHARE pass below is its replacement), so it is
   -- accepted and ignored rather than changing what is printed.  `recipients`,
   -- `holders` and `halved` are the Gen 2 additions.
-  if not Runtime.wantsHook("battle.exp_award") then return vanillaAward() end
-  local alive = {}
-  for _, index in ipairs(participants) do
-    local mon = self.party[index]
-    if mon and (mon.hp or 0) > 0 then alive[#alive + 1] = mon end
-  end
-  local function applyShare(mon, split)
-    for index, candidate in ipairs(self.party) do
-      if candidate == mon then
-        return self:giveExperiencePass(loser, def, { index },
-          math.max(1, split or 1), halved)
+  if Runtime.wantsHook("battle.exp_award") then
+    local alive = {}
+    for _, index in ipairs(participants) do
+      local mon = self.party[index]
+      if mon and (mon.hp or 0) > 0 then alive[#alive + 1] = mon end
+    end
+    local function applyShare(mon, split)
+      for index, candidate in ipairs(self.party) do
+        if candidate == mon then
+          return self:giveExperiencePass(loser, def, { index },
+            math.max(1, split or 1), halved)
+        end
       end
     end
+    Runtime.call("battle.exp_award", vanillaAward, {
+      battle = self, participants = #participants, alive = alive,
+      applyShare = applyShare, recipients = participants, holders = holders,
+      halved = halved, loser = loser,
+    })
+  else
+    vanillaAward()
   end
-  Runtime.call("battle.exp_award", vanillaAward, {
-    battle = self, participants = #participants, alive = alive,
-    applyShare = applyShare, recipients = participants, holders = holders,
-    halved = halved, loser = loser,
-  })
+
+  -- GiveExperiencePoints .done falls through ResetBattleParticipants into
+  -- AddBattleParticipant (engine/battle/core.asm:7116 and :3033).
+  self.participants = {}
+  if self.playerIndex then self.participants[self.playerIndex] = true end
 end
 
 -- The answer to a `choose-forget`: drop the move in `slot` and put the

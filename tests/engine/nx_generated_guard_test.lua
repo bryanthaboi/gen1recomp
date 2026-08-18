@@ -66,4 +66,21 @@ check(mainSrc:find("isNX", 1, true) ~= nil
     and mainSrc:find('require("src.core.NxAssetOverlay").install()', 1, true) ~= nil,
   "the overlay install stays gated on Platform.isNX()")
 
+-- Gold Game2 / World must compile data/generated via CacheFs.loadActive so
+-- a fused NX boot does not depend on mounting gold/ onto data/generated.
+local function readSrc(path)
+  local fh = io.open(path, "r")
+  local body = fh and fh:read("*a") or ""
+  if fh then fh:close() end
+  return body
+end
+local game2Src = readSrc("src/core/Game2.lua")
+check(game2Src:find("loadActive", 1, true) ~= nil,
+  "Game2 compiles generated modules through CacheFs.loadActive")
+check(game2Src:find("loadActive(path)", 1, true) ~= nil,
+  "Game2.loadGenerated calls loadActive")
+local worldSrc = readSrc("src/world/gen2/World.lua")
+check(worldSrc:find("loadActive", 1, true) ~= nil,
+  "World's on-disk fallback also uses CacheFs.loadActive")
+
 T.finish()

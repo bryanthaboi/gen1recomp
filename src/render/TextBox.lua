@@ -26,6 +26,7 @@ local NAME_DELAYS = { FAST = 1, MID = 3, SLOW = 5 }
 -- up over the still-visible text (YesNoChoicePokeCenter and friends);
 -- the box then closes and choice(yes) runs instead of onDone.
 -- opts.defaultNo starts the cursor on NO.
+-- opts.choiceLabels / opts.choiceBox: data/yes_no_menu_strings.asm:16
 -- opts.auto: texts with no `prompt` (a text_asm/text_end tail, like
 -- _UsedStrengthText) never wait for a button: once the last page has
 -- typed out, auto.sound() runs (returning an audio source blocks like
@@ -51,6 +52,8 @@ function TextBox.new(game, text, onDone, opts)
   self.choice = opts and opts.choice
   self.defaultNo = opts and opts.defaultNo
   self.choiceNoSound = opts and opts.noSound
+  self.choiceLabels = opts and opts.choiceLabels
+  self.choiceBox = opts and opts.choiceBox
   self.money = opts and opts.money
   self.auto = opts and opts.auto
   self.stay = opts and opts.stay
@@ -340,6 +343,7 @@ function TextBox:update(dt)
           self.game.stack:pop() -- this text box, under the choice
           self.choice(yes)
         end, { defaultNo = self.defaultNo, noSound = self.choiceNoSound,
+               labels = self.choiceLabels, box = self.choiceBox,
                -- this box is anchored below it; the pair moves together
                anchor = "bottom" }))
       end

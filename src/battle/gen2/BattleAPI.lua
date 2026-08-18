@@ -39,6 +39,21 @@ local function messageCopy(screen)
   return #lines > 0 and lines or nil
 end
 
+local function itemCopies(game, screen, catchable)
+  local out = {}
+  for id, count in pairs((game.save and game.save.inventory) or {}) do
+    local def = game.data.items and game.data.items[id]
+    if count > 0 and def and def.pocket == "BALL" then
+      out[#out + 1] = { id = id, name = def.name or id, count = count,
+        ball = true, needsTarget = false,
+        catchChance = catchable and screen.catchChance
+          and screen:catchChance(id) or nil }
+    end
+  end
+  table.sort(out, function(a, b) return a.name < b.name end)
+  return out
+end
+
 local function signature(game, screen, top)
   if not screen then return "none" end
   local battle = screen.battle or {}
@@ -55,6 +70,9 @@ local function signature(game, screen, top)
     parts[#parts + 1] = tostring(mon)
     parts[#parts + 1] = tostring(mon.hp)
     parts[#parts + 1] = tostring(mon.status)
+  end
+  for _, item in ipairs(itemCopies(game, screen, false)) do
+    parts[#parts + 1] = item.id .. "=" .. tostring(item.count)
   end
   return table.concat(parts, "|")
 end
@@ -111,9 +129,9 @@ function BattleAPI:snapshot()
     player = monCopy(game.data, battle.player, true),
     enemy = monCopy(game.data, battle.enemy, true),
     party = party, moves = moveCopies(game, battle),
-    -- Gold's PACK is pocketed and target selection is screen-owned.  Omit it
-    -- until the engine can expose the same semantic item records as Gen 1.
-    items = {} }
+    -- Targeted medicine remains screen-owned, but balls are complete semantic
+    -- records and can safely expose the same read-only preview as Gen 1.
+    items = itemCopies(game, screen, battle.wild and not screen.tutorial) }
 end
 
 local MENU_CHOICES = { fight = true, party = true, item = true, run = true }

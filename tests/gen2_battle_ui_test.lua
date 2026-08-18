@@ -282,6 +282,16 @@ local function runToMenu(screen, cap)
   return false
 end
 
+do
+  local screen = newScreen({ inventory = {
+    MASTER_BALL = 1, POKE_BALL = 1,
+  } })
+  eq(screen:catchChance("MASTER_BALL"), 100,
+    "the battle screen exposes a certain Master Ball preview")
+  check(type(screen:catchChance("POKE_BALL")) == "number",
+    "the battle screen exposes the live wild catch preview")
+end
+
 -- ---- BattleMenu empties the textbox ---------------------------------------
 do
   local screen = newScreen()

@@ -24,6 +24,7 @@ local Runtime = require("src.mods.Runtime")
 local BattleSafety = require("src.battle.BattleSafety")
 local Screens = require("src.ui.Screens")
 local Status = require("src.battle.Status")
+local Theme = require("src.ui.Theme")
 local Timing = require("src.core.Timing")
 local TrainerAI = require("src.battle.TrainerAI")
 local TurnOrder = require("src.battle.TurnOrder")
@@ -983,8 +984,8 @@ end
 
 -- Message that opens YES/NO once typed out, keeping the text visible
 -- underneath (pokered `done` + TWO_OPTION_MENU / TextBox opts.choice).
-function BattleState:sayChoice(text, onChoose)
-  table.insert(self.queue, { text = text, choice = onChoose })
+function BattleState:sayChoice(text, onChoose, opts)
+  table.insert(self.queue, { text = text, choice = onChoose, choiceOpts = opts })
 end
 
 function BattleState:act(fn)
@@ -1485,7 +1486,7 @@ function BattleState:updateQueue()
         local fn = item.choice
         battle.current = nil
         fn(yes)
-      end))
+      end, item.choiceOpts))
       return true
     end
     if item and item.auto then
@@ -1843,14 +1844,7 @@ function BattleState:enter()
     self:say(self:sendOutText(self.player.name))
     -- then the POOF plays and the mon appears with its cry
     -- (SendOutMon: message -> AnimateSendingOutMon -> PlayCry)
-    table.insert(self.queue, { anim = "POOF_ANIM", attackerIsPlayer = false })
-    self:act(function()
-      self.sendingOut = false
-      -- SendOutMon (core.asm:1757-1762): after the poof the mon grows
-      -- out of the ball (AnimateSendingOutMon at hlcoord 4,11)
-      self:startGrowIn(self.player)
-      self:waitSfxNext(self:playEntranceCry(self.player))
-    end)
+    self:queueSendOutAnim(true)
     self:markParticipant()
   end
   self.phase = "messages"
@@ -2680,13 +2674,7 @@ function BattleState:resolveSwitch(newMon)
     sendOutMonCursors(self)
     self.sendingOut = true
     self:sayNext(self:sendOutText(self.player.name))
-    self:animNext("POOF_ANIM", false)
-    self:actNext(function()
-      self.sendingOut = false
-      -- SendOutMon (core.asm:1757-1762): poof, then the grow-in
-      self:startGrowIn(self.player)
-      self:waitSfxNext(self:playEntranceCry(self.player))
-    end)
+    self:queueSendOutAnim(false)
   end)
   self:act(function()
     self:executeAction(self.enemy, self.player, self:enemyAction())
@@ -3231,6 +3219,50 @@ function BattleState:startGrowIn(battler)
   table.insert(self.queue, self.nextInsert, { wait = 12 })
 end
 
+-- SendOutMon branches on IsThisPartyMonStarterPikachu before the animation:
+-- the starter gets no ball and no grow-in -- pokeyellow core.asm:1798-1819
+function BattleState:starterPikachuSendOut()
+  if not require("src.core.GameVersion").isYellow() then return false end
+  local mon = self.player and self.player.mon
+  return require("src.world.PikachuFollower")
+           .isStarterPikachu(self.game.save, mon)
+end
+
+-- StarterPikachuBattleEntranceAnimation: the back pic walks in from hlcoord
+-- 0,5, one column every 2 frames -- engine/battle/pikachu_entrance_anim.asm:1
+function BattleState:startPikachuEntrance()
+  self:slidePic("playerMon", -56, 0, 8, 2)
+  self.nextInsert = (self.nextInsert or 0) + 1
+  table.insert(self.queue, self.nextInsert, { wait = 16 })
+  self:actNext(function()
+    self:slidePic("playerMon")
+    self:waitSfxNext(self:playEntranceCry(self.player))
+  end)
+end
+
+-- Player send-out tail: POOF_ANIM + AnimateSendingOutMon (core.asm:1757-1762),
+-- or the starter Pikachu entrance instead (pokeyellow core.asm:1798-1819)
+function BattleState:queueSendOutAnim(append)
+  local pikachu = self:starterPikachuSendOut()
+  if not pikachu then
+    if append then
+      table.insert(self.queue, { anim = "POOF_ANIM", attackerIsPlayer = false })
+    else
+      self:animNext("POOF_ANIM", false)
+    end
+  end
+  local fn = function()
+    self.sendingOut = false
+    if pikachu then
+      self:startPikachuEntrance()
+    else
+      self:startGrowIn(self.player)
+      self:waitSfxNext(self:playEntranceCry(self.player))
+    end
+  end
+  if append then self:act(fn) else self:actNext(fn) end
+end
+
 -- Should the low-health alarm sound this frame?  pokered keys it off
 -- the drawn bar color: DrawPlayerHUDAndHPBar (core.asm:1846-1875) sets
 -- wLowHealthAlarm bit 7 when GetHealthBarColor says the player bar is
@@ -3289,17 +3321,18 @@ end
 -- _ScrollTrainerPicAfterBattle (engine/battle/scroll_draw_trainer_pic.asm)
 -- brings the beaten foe back in from the right one column every 4 frames.
 -- picOff holds the live programs by slot -- "foe" = the enemy trainer pic,
--- "back" = the player's back pic -- as a screen-pixel x offset stepped
--- toward `to`; updateFx advances them, drawPicsLayer adds them, and the
--- queue rows that start them park a { wait } of the matching length.  Call
--- with no target to clear a slot (#317, #282).
-function BattleState:slidePic(slot, from, to, step)
+-- "back" = the player's back pic, "playerMon" = the player's mon back pic --
+-- as a screen-pixel x offset stepped toward `to`; updateFx advances them,
+-- drawPicsLayer adds them, and the queue rows that start them park a
+-- { wait } of the matching length.  Call with no target to clear
+-- a slot (#317, #282).
+function BattleState:slidePic(slot, from, to, step, hold)
   self.picOff = self.picOff or {}
   if to == nil then
     self.picOff[slot] = nil
     return
   end
-  self.picOff[slot] = { x = from or 0, to = to, step = step or 4 }
+  self.picOff[slot] = { x = from or 0, to = to, step = step or 4, hold = hold }
 end
 
 -- the live x offset for a pic slot, 0 when nothing is sliding
@@ -3317,10 +3350,18 @@ function BattleState:updateFx()
   -- the battle slot) until its owner clears the slot
   if self.picOff then
     for _, p in pairs(self.picOff) do
-      if p.x < p.to then
-        p.x = math.min(p.to, p.x + p.step)
-      elseif p.x > p.to then
-        p.x = math.max(p.to, p.x - p.step)
+      local move = true
+      if p.hold then
+        p.held = (p.held or 0) + 1
+        move = p.held >= p.hold
+        if move then p.held = 0 end
+      end
+      if move then
+        if p.x < p.to then
+          p.x = math.min(p.to, p.x + p.step)
+        elseif p.x > p.to then
+          p.x = math.max(p.to, p.x - p.step)
+        end
       end
     end
   end
@@ -4070,8 +4111,8 @@ function BattleState:awardExp()
   end
   local function applyShare(mon, split, announce)
     local playerId = self.game.save.player and self.game.save.player.id
-    local traded = mon.otId ~= nil and playerId ~= nil
-      and mon.otId ~= playerId or mon.traded == true and mon.otId == nil
+    local traded = mon.traded == true
+      or (mon.otId ~= nil and playerId ~= nil and mon.otId ~= playerId)
     local levels, gained = Experience.apply(self.data, mon, self.enemy.def,
                                             self.enemy.mon.level, self.kind == "trainer",
                                             split, traded)
@@ -4231,7 +4272,7 @@ function BattleState:enemyMonFainted()
                 end
               end,
             })
-          end)
+          end, { box = Theme.trainerSwitchBox })
       end
       self:act(function()
         local previous = self.enemy
@@ -4295,12 +4336,7 @@ function BattleState:enemyMonFainted()
         sendOutMonCursors(self)
         self.sendingOut = true
         self:sayNext(self:sendOutText(self.player.name))
-        self:animNext("POOF_ANIM", false)
-        self:actNext(function()
-          self.sendingOut = false
-          self:startGrowIn(self.player)
-          self:waitSfxNext(self:playEntranceCry(self.player))
-        end)
+        self:queueSendOutAnim(false)
       end)
       return
     end
@@ -4491,13 +4527,7 @@ function BattleState:openReplacementMenu()
         sendOutMonCursors(self)
         self.sendingOut = true
         self:sayNext(self:sendOutText(self.player.name))
-        self:animNext("POOF_ANIM", false)
-        self:actNext(function()
-          self.sendingOut = false
-          -- SendOutMon (core.asm:1757-1762): poof, then the grow-in
-          self:startGrowIn(self.player)
-          self:waitSfxNext(self:playEntranceCry(self.player))
-        end)
+        self:queueSendOutAnim(false)
       end,
     })
   end)
@@ -5749,7 +5779,10 @@ function BattleState:drawPicsLayer(slide, sx, sy, onlySide, skipMenuClip)
     else
       local dx, dy = BattleState.backPlacement(img:getWidth(),
         img:getHeight(), pad, padL, s)
-      self:drawBattlerPic(self.player, dx + sx, dy + sy, s)
+      -- picOffset: StarterPikachuBattleEntranceAnimation walking the pic in
+      -- from the left -- engine/battle/pikachu_entrance_anim.asm:1
+      self:drawBattlerPic(self.player, dx + sx + self:picOffset("playerMon"),
+                          dy + sy, s)
     end
   end
   if clipped then

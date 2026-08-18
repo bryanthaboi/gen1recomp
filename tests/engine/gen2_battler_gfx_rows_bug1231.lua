@@ -47,12 +47,32 @@ do
   T.eq(feet.tile, (0x80 - 6 * 2) - 49, "2ROW base")
 end
 
+-- engine/battle_anims/anim_commands.asm:317
 do
   local runner = AnimRunner.new({})
   runner:start(nil)
   AnimRunner.COMMANDS.battlergfx_1row(runner)
   local head = findLoaded(runner, "BATTLE_ANIM_GFX_PLAYERHEAD")
+  local feet = findLoaded(runner, "BATTLE_ANIM_GFX_ENEMYFEET")
   T.eq(head and head.battler, "enemy", "the script command routes the same way")
+  T.eq(head.rows, 2, "$da's macro says 1row, its jumptable slot says _2Row")
+  T.eq(head.tiles, 14, "two enemy rows")
+  T.eq(head.tile, (0x80 - 6 * 2 - 7 * 2) - 49, "at the _2Row base")
+  T.eq(feet.tiles, 12, "two player rows")
+  T.eq(feet.tile, (0x80 - 6 * 2) - 49, "at the _2Row base")
+end
+
+do
+  local runner = AnimRunner.new({})
+  runner:start(nil)
+  AnimRunner.COMMANDS.battlergfx_2row(runner)
+  local head = findLoaded(runner, "BATTLE_ANIM_GFX_PLAYERHEAD")
+  local feet = findLoaded(runner, "BATTLE_ANIM_GFX_ENEMYFEET")
+  T.eq(head.rows, 1, "$d9's macro says 2row, its jumptable slot says _1Row")
+  T.eq(head.tiles, 7, "one enemy row")
+  T.eq(head.tile, (0x80 - 6 - 7) - 49, "at the _1Row base")
+  T.eq(feet.tiles, 6, "one player row")
+  T.eq(feet.tile, (0x80 - 6) - 49, "at the _1Row base")
 end
 
 T.finish("gen2 battler gfx row attribution bug 1231")

@@ -357,8 +357,8 @@ local options = OptionsMenu.new(optionsGame, {
   options = Save.defaultOptions(),
 })
 -- The cart's seven rows, then the port's: CONTROLS, audio, speed, display,
--- video mode, the mobile-gated touch three (buildRows) and CANCEL.
-check("twenty-one rows", #OptionsMenu.ROWS, 21)
+-- video mode, the mobile-gated touch three (buildRows), MAX FPS and CANCEL.
+check("twenty-three rows", #OptionsMenu.ROWS, 23)
 check("the cart's rows come first", OptionsMenu.ROWS[7].key, "frame")
 check("then the rebind screen", OptionsMenu.ROWS[8].id, "controls")
 check("then the port's audio group", OptionsMenu.ROWS[9].key, "musicVol")
@@ -861,10 +861,15 @@ check("GBC leaves a palette alone",
     1)[1], 1)
 check("and has no present pass", GbcPalette.presentColors(), nil)
 
-local gbcfxIndex
+local zoomIndex, gbcfxIndex
 for i, row in ipairs(OptionsMenu.ROWS) do
+  if row.label == "ZOOM" then zoomIndex = i end
   if row.label == "GBC FX" then gbcfxIndex = i end
 end
+check("VOID FILL follows ZOOM", OptionsMenu.ROWS[zoomIndex + 1].label,
+  "VOID FILL")
+check("and TILT follows VOID FILL", OptionsMenu.ROWS[zoomIndex + 2].label,
+  "TILT")
 check("VIDEO MODE follows GBC FX", OptionsMenu.ROWS[gbcfxIndex + 1].label,
   "VIDEO MODE")
 check("and TOUCH PAD follows it", OptionsMenu.ROWS[gbcfxIndex + 2].label,
@@ -896,6 +901,28 @@ check("left also toggles, stored as borderless",
 scrollOptions:cycle(videoRow, -1)
 check("left toggles back to windowed",
   scrollOptions.options.videoMode, "windowed")
+
+local voidRow = select(2, rowNamed("VOID FILL"))
+check("VOID FILL is a row", voidRow ~= nil, true)
+check("and it defaults to FADE", Save.DEFAULT_OPTIONS.voidFill, "fade")
+scrollOptions.options.voidFill = "fade"
+local BorderFill = require("src.world.gen2.BorderFill")
+BorderFill.setVoidFill("fade")
+scrollOptions:cycle(voidRow, 1)
+check("right steps to WATER", scrollOptions.options.voidFill, "water")
+check("and the live fill tracks it", BorderFill.voidFill, "water")
+scrollOptions:cycle(voidRow, 1)
+check("then TREES", scrollOptions.options.voidFill, "trees")
+scrollOptions:cycle(voidRow, 1)
+check("then BLACK", scrollOptions.options.voidFill, "black")
+scrollOptions:cycle(voidRow, 1)
+check("and wraps back to FADE", scrollOptions.options.voidFill, "fade")
+check("FADE blanks the longer labels", voidRow.text(scrollOptions.options),
+  "FADE ")
+scrollOptions.options.voidFill = "water"
+check("WATER fits the value column", voidRow.text(scrollOptions.options),
+  "WATER")
+BorderFill.setVoidFill("fade")
 
 check("text reads WINDOWED", videoRow.text(scrollOptions.options), "WINDOWED")
 scrollOptions.options.videoMode = "borderless"

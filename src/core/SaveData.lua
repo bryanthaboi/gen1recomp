@@ -666,11 +666,10 @@ function SaveData.setModEnabled(options, id, enabled, version)
   options.modsByVersion = options.modsByVersion or {}
   local bucket = options.modsByVersion[version] or {}
   options.modsByVersion[version] = bucket
-  -- no shared flag reads as enabled, the same default the loader applies to a
-  -- missing entry, so a fresh install never fills the overlay with agreement
+  -- with no shared flag the default is the caller's (experimental mods read as
+  -- disabled), so the answer is stored outright rather than judged against one
   local shared = options.mods and options.mods[id]
-  if type(shared) ~= "boolean" then shared = true end
-  if shared == enabled then
+  if type(shared) == "boolean" and shared == enabled then
     bucket[id] = nil
   else
     bucket[id] = enabled
@@ -1922,6 +1921,26 @@ function SaveData.applyPostGameHome(save, boot)
   save.player.facing = boot.startFacing or "down"
   save.postGameHomeOk = true
   return heal
+end
+
+-- 0.1.82-0.1.9x loads stamped the player's own id onto traded mons and saved
+-- it, which reads back as home-caught.  A caught mon can never carry
+-- traded=true, so clearing that pair is safe on every load.  #1461
+function SaveData.repairTradedOtIds(save)
+  local playerId = save and save.player and save.player.id
+  if playerId == nil then return 0 end
+  local fixed = 0
+  local function scrub(mon)
+    if mon and mon.traded == true and mon.otId == playerId then
+      mon.otId = nil
+      fixed = fixed + 1
+    end
+  end
+  for _, mon in ipairs(save.party or {}) do scrub(mon) end
+  for _, box in ipairs(save.boxes or {}) do
+    for _, mon in ipairs(box) do scrub(mon) end
+  end
+  return fixed
 end
 
 -- Softlocked 0.1.11 saves: still standing in HALL_OF_FAME after credits,

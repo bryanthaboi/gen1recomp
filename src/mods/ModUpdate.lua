@@ -265,9 +265,42 @@ function ModUpdate.downloadsLine(total)
     ModUpdate.formatCount(total))
 end
 
+ModUpdate.NO_COUNT = "?"
+
+function ModUpdate.abbrevCount(n)
+  n = tonumber(n)
+  if not n or n ~= n or n < 0 then return ModUpdate.NO_COUNT end
+  n = math.floor(n)
+  if n < 1000 then return tostring(n) end
+  local units, idx, value = { "k", "M", "B" }, 0, n
+  repeat
+    value = value / 1000
+    idx = idx + 1
+  until idx >= #units or math.floor(value * 10 + 0.5) / 10 < 1000
+  local scaled = math.floor(value * 10 + 0.5) / 10
+  local shown = (scaled % 1 == 0) and tostring(math.floor(scaled))
+    or string.format("%.1f", scaled)
+  return shown .. units[idx]
+end
+
+function ModUpdate.downloadsShort(total)
+  return Strings("%s downloads", ModUpdate.abbrevCount(total))
+end
+
+function ModUpdate.trendingLine(recent, windowDays)
+  if recent == nil then return nil end
+  if not windowDays then
+    return Strings("%s recently", ModUpdate.abbrevCount(recent))
+  end
+  return Strings("%s in the last %d days", ModUpdate.abbrevCount(recent),
+    math.floor(windowDays))
+end
+
 function ModUpdate.datesLine(first, latest)
   if not (first or latest) then return nil end
-  return Strings("Released %s  -  Updated %s", first or "?", latest or "?")
+  if not first then return Strings("Updated %s", latest) end
+  if not latest then return Strings("Released %s", first) end
+  return Strings("Released %s  -  Updated %s", first, latest)
 end
 
 function ModUpdate.statsLine(total, first, latest)

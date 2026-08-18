@@ -2096,10 +2096,23 @@ function Pokegear:mapCursorSprite(x, y)
   Chrome.cursor(math.floor(x / 8), math.floor(y / 8))
 end
 
+-- PokegearRadio_Init's tile $08 at `depixel 4, 10, 4, 4`, three rows deep
+-- (data/sprite_anims/oam.asm:588), x = knob (pokegear.asm:1355).
+function Pokegear:drawTuningKnob()
+  self:loadArrowSheet()
+  if not (self.arrow and self.arrow:available()) then return end
+  local row = self:currentStation()
+  local tx = (72 + (row and row.knob or 0)) / 8
+  self.arrow:draw(0x08, tx, 1)
+  self.arrow:draw(0x08, tx, 2)
+  self.arrow:draw(0x08, tx, 3)
+end
+
 function Pokegear:drawRadio()
   self:ensureTuned()
   self:drawTilemap(self.gfx and self.gfx.cards and self.gfx.cards.radio)
   self:drawStrip()
+  self:drawTuningKnob()
   local station = self:currentStation()
   -- UpdateRadioStation prints the tuned channel's name at (2,9).  Dead air
   -- prints nothing: NoRadioStation clears the box and leaves it clear.

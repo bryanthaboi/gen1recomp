@@ -67,6 +67,10 @@ local SUBMENU_LABEL = {
 -- (data/text/common_2.asm), the three lines TossMenu prints in order.
 local TOSS_HOW_MANY = { "Throw away how", "many?" }
 
+-- _AskItemMoveText (data/text/common_2.asm:322), printed while wSwitchItem
+-- holds a row and the cursor is looking for its new home.
+local ASK_ITEM_MOVE = { "Where should this", "be moved to?" }
+
 -- _YouDontHaveAMonText and .AnEggCantHoldAnItemText, GiveItem's two refusals.
 local NO_POKEMON = { "You don't have a", "#MON!" }
 local EGG_CANT_HOLD = { "An EGG can't hold", "an item." }
@@ -127,6 +131,9 @@ function PackMenu.new(game, opts)
   self.game = game
   self.save = opts.save or (game and game.save)
   self.items = opts.items or (game and game.data and game.data.items)
+  -- Bag.order / Bag.move read `.items` off an injectable data table, and the
+  -- one this screen draws from is not always the Data singleton.
+  self.bagData = { items = self.items }
   self.world = opts.world or (game and game.world)
   self.onChoose = opts.onChoose
   self.onClose = opts.onClose
@@ -207,7 +214,13 @@ end
 function PackMenu:rebuild()
   local pocket = self:pocket().id
   local rows = {}
-  for itemId, raw in pairs((self.save and self.save.inventory) or {}) do
+  local save = self.save
+  local inventory = (save and save.inventory) or {}
+  -- Row order IS wBagItems' order, which is what SELECT rewrites.
+  local order = (save and save.inventory)
+    and Bag.order(save, self.bagData) or {}
+  for _, itemId in ipairs(order) do
+    local raw = inventory[itemId]
     -- A count that is not a number at all (a hand-written save, a mod, an old
     -- migration) counts as one rather than raising out of the draw.
     local count = tonumber(raw) or (raw and 1) or 0
@@ -219,18 +232,13 @@ function PackMenu:rebuild()
         name = PackMenu.label(itemId, def),
         teaches = self:moveLabel(def and def.teaches),
         tmNumber = def and def.tmNumber,
-        -- KEY_ITEM and TM_HM rows do not show a quantity on the cart.
-        showCount = pocket == "ITEM" or pocket == "BALL",
-        index = def and def.index or math.huge,
+        -- A KEY_ITEM never shows one, and engine/items/tmhm.asm:390 skips the
+        -- count for an HM only -- a TM prints ×NN like any other stack.
+        showCount = pocket == "ITEM" or pocket == "BALL"
+          or (pocket == "TM_HM" and tostring(itemId):sub(1, 3) ~= "HM_"),
       }
     end
   end
-  -- Bag order on the cart is acquisition order; without that recorded, item id
-  -- order is the stable, reproducible choice.
-  table.sort(rows, function(a, b)
-    if a.index ~= b.index then return a.index < b.index end
-    return a.id < b.id
-  end)
   self.rows = rows
   self.index = math.min(self.index, #rows + 1)
   if self.index < 1 then self.index = 1 end
@@ -671,6 +679,11 @@ function PackMenu:update(_dt)
     self:updateQuantity(input)
     return
   end
+  -- engine/items/pack.asm:1237 Pack_InterpretJoypad .switching_item
+  if self.switching then
+    self:updateSwitch(input)
+    return
+  end
   if self.message then
     if input:wasPressed("a") or input:wasPressed("b") then
       self.message = nil
@@ -716,9 +729,50 @@ function PackMenu:update(_dt)
     end
     return
   elseif input:wasPressed("select") then
-    self:registerSelected()
+    self:armSwitch()
     return
   end
+end
+
+-- engine/items/pack.asm:1290 Pack_InterpretJoypad .select
+function PackMenu:armSwitch()
+  if self:isCancel() then return end
+  if not self.rows[self.index] then return end
+  self.switching = self.index
+  self.message = ASK_ITEM_MOVE
+end
+
+-- `.switching_item` (engine/items/pack.asm:1297): A or SELECT places, B backs
+-- out, and left/right cannot leave the pocket mid-move.
+function PackMenu:updateSwitch(input)
+  if input:wasPressed("up") then
+    self.index = self.index > 1 and self.index - 1 or self:total()
+    self:ensureVisible()
+  elseif input:wasPressed("down") then
+    self.index = self.index < self:total() and self.index + 1 or 1
+    self:ensureVisible()
+  elseif input:wasPressed("a") or input:wasPressed("select") then
+    self:placeSwitch()
+  elseif input:wasPressed("b") then
+    self:endSwitch()
+  end
+end
+
+-- engine/items/pack.asm:1307 .place_insert / .end_switch
+function PackMenu:placeSwitch()
+  local from = self.switching
+  local row = self.rows[from]
+  if row and not self:isCancel() and self.index ~= from then
+    Bag.move(self.save, row.id, self:pocket().id, self.index, self.bagData)
+    self:rebuild()
+    self:storeCursor()
+  end
+  self:endSwitch()
+end
+
+function PackMenu:endSwitch()
+  self.switching = nil
+  self.message = nil
 end
 
 -- VerticalMenu over the submenu rows: up/down wrap, A picks, B is the carry
@@ -777,12 +831,10 @@ function PackMenu:updateConfirm(input)
   end
 end
 
--- RegisterItem (engine/items/pack.asm), the submenu's SEL row.  SELECT on the
--- highlighted row reaches the same routine: the cart's SELECT is the bag's own
--- item shuffle, which this port does not have, so the button is free and a
--- player who knows Gen 1's registration shortcut gets it.  World:registerItem
--- re-runs CheckSelectableItem's gate (TM/HM and anything CANT_SELECT_F
--- refuses), so neither door can register what the cart would not.
+-- RegisterItem (engine/items/pack.asm), the submenu's SEL row and its ONLY
+-- door -- the cart's SELECT is the bag's own item shuffle (see armSwitch).
+-- World:registerItem re-runs CheckSelectableItem's gate (TM/HM and anything
+-- CANT_SELECT_F refuses), so it cannot register what the cart would not.
 function PackMenu:registerSelected()
   if self:isCancel() then return end
   local row = self.rows[self.index]
@@ -828,22 +880,38 @@ end
 
 -- The list, description and cursor, on top of whatever chrome was drawn.
 --
--- PlaceMenuItemQuantity (engine/menus/menu_2.asm) writes the ×N one row DOWN
--- and one column RIGHT of the name -- the quantity is the entry's second line,
--- not a right-aligned column, which is why every PACK row is two tiles tall.
+-- PlaceMenuItemQuantity (engine/menus/menu_2.asm:10) writes the ×N one row
+-- DOWN and one column RIGHT of the name -- the quantity is the entry's second
+-- line, not a right-aligned column, which is why every PACK row is two tiles
+-- tall.  Its `lb bc, 1, 2` is a TWO-digit field with the leading digit blanked,
+-- so the ones digit sits at name + 3 whether the count is 5 or 50.
+--
+-- ScrollingMenu_PlaceCursor (engine/menus/scrolling_menu.asm:438) marks the
+-- row SELECT armed with the hollow ▷ while the solid ▶ goes on looking.
 function PackMenu:drawList(listX, listY)
   for row = 1, VISIBLE_ROWS do
     local i = row + self.scroll
     local ty = listY + (row - 1) * LIST_SPACING
     if i <= #self.rows then
       local entry = self.rows[i]
-      if i == self.index then Chrome.cursor(listX - 1, ty) end
+      if i == self.index then
+        Chrome.cursor(listX - 1, ty)
+      elseif i == self.switching then
+        Chrome.cursor(listX - 1, ty, true)
+      end
       Chrome.print(entry.name, listX, ty)
       if entry.teaches then
-        -- The TM pocket puts the move the TM teaches on that second line.
+        -- The TM pocket puts the move the TM teaches on that second line, and
+        -- its count at listX + 9 (engine/items/tmhm.asm:392) -- on the LABEL's
+        -- line here, since the move name owns the one below it.
         Chrome.print(entry.teaches, listX + 1, ty + 1)
+        if entry.showCount then
+          Chrome.print("\xc3\x97" .. Chrome.number(entry.count, 2),
+            listX + 9, ty)
+        end
       elseif entry.showCount then
-        Chrome.print("\xc3\x97" .. tostring(entry.count), listX + 1, ty + 1)
+        Chrome.print("\xc3\x97" .. Chrome.number(entry.count, 2),
+          listX + 1, ty + 1)
       end
     elseif i == self:total() then
       if i == self.index then Chrome.cursor(listX - 1, ty) end
@@ -897,12 +965,10 @@ function PackMenu:drawSubmenu()
   end
 end
 
--- TossItem_MenuHeader is `menu_coords 15, 9, SCREEN_WIDTH - 1, TEXTBOX_Y - 1`
--- with NoPriceToDisplay behind it: a small box in the bottom right holding
--- nothing but the count.
+-- engine/items/buy_sell_toss.asm:133 BuySellToss_UpdateQuantityDisplay
 function PackMenu:drawQuantity()
   Chrome.box(15, 9, 5, 3)
-  Chrome.print("\xc3\x97" .. tostring(self.qtyState.qty), 16, 10)
+  Chrome.print("\xc3\x97" .. Chrome.number(self.qtyState.qty, 2, true), 16, 10)
 end
 
 -- YesNoBox's own coords, the same box every other Gen 2 screen here draws.

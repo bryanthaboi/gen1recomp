@@ -10,10 +10,10 @@ local PixelCanvas = require("src.render.PixelCanvas")
 
 local MapPreview = {}
 
+-- home/map.asm:1739-1748 LoadTilesetGFX
 local ROOF_TILESETS = {
   TILESET_JOHTO = true,
   TILESET_JOHTO_MODERN = true,
-  TILESET_KANTO = true,
 }
 
 local function applyRoofOverlay(atlasPath, roofPath, tilesPerRow)

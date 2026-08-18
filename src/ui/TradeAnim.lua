@@ -445,7 +445,8 @@ function TradeAnim:draw()
     -- mon pic on the BG at hlcoord 7, 2; info box on the window at
     -- hWY $50, so it sits in the bottom half of the screen
     if self.monVisible and self.sentSprite then
-      love.graphics.draw(self.sentSprite, 56, 16)
+      -- engine/movie/trade.asm:751
+      love.graphics.draw(self.sentSprite, 56 + self.sentSprite:getWidth(), 16, 0, -1, 1)
       if self.sentSpriteTrueColor then
         require("src.render.PaletteFX").markTrueColor(
           56 - self.scx, 16, self.sentSprite:getDimensions())
@@ -501,7 +502,8 @@ function TradeAnim:draw()
 
   elseif p == "show_enemy" then
     if self.monVisible and self.recvSprite then
-      love.graphics.draw(self.recvSprite, 56, 16)
+      -- engine/movie/trade.asm:751
+      love.graphics.draw(self.recvSprite, 56 + self.recvSprite:getWidth(), 16, 0, -1, 1)
       if self.recvSpriteTrueColor then
         require("src.render.PaletteFX").markTrueColor(
           56, 16, self.recvSprite:getDimensions())

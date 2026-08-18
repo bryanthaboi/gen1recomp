@@ -6,11 +6,14 @@ local HostShell = {}
 -- spawn tries to link against the libraries we're shipping instead of the
 -- system ones. We want to unset the var so that any system tools can find
 -- their proper libraries. Only needed when running in an AppImage.
+-- LD_PRELOAD is Steam's overlay (#1470): its 32-bit half cannot load into a
+-- 64-bit child, so ld.so prints an error into that child's output.
 function HostShell.envPrefix()
-  if os.getenv("APPIMAGE") then
-    return "env -u LD_LIBRARY_PATH "
-  end
-  return ""
+  local unset = ""
+  if os.getenv("APPIMAGE") then unset = unset .. "-u LD_LIBRARY_PATH " end
+  if os.getenv("LD_PRELOAD") then unset = unset .. "-u LD_PRELOAD " end
+  if unset == "" then return "" end
+  return "env " .. unset
 end
 
 -- Windows: every host tool we shell out to (curl for the update and mod-index
@@ -222,11 +225,20 @@ end
 local HTTP_MARK = "\n__gen1recomp_http__"
 local HTTP_MARK_FMT = "\\n__gen1recomp_http__%{http_code}"
 
+local function stripLoaderNoise(out)
+  while out:find("^ERROR: ld%.so:") do
+    local nl = out:find("\n", 1, true)
+    if not nl then return "" end
+    out = out:sub(nl + 1)
+  end
+  return out
+end
+
 -- Split a curl pipe's output into (body, status, noise).  `status` is nil
 -- when curl never got far enough to have one (DNS failure, no route, a
 -- timeout), in which case `noise` carries curl's own complaint.
 local function splitCurlOutput(out)
-  out = tostring(out or "")
+  out = stripLoaderNoise(tostring(out or ""))
   local at = nil
   local from = 1
   while true do

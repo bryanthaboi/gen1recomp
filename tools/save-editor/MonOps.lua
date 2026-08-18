@@ -43,7 +43,7 @@ end
 function MonOps.setMove(data, mon, slot, moveId)
   assert(slot >= 1 and slot <= 4)
   local mdef = data.moves[moveId]
-  assert(mdef, "unknown move")
+  assert(type(mdef) == "table", "unknown move")
   mon.moves = mon.moves or {}
   mon.moves[slot] = {
     id = moveId,

@@ -105,8 +105,16 @@ function NPC:update(map, entities)
   end
 end
 
+-- UpdateNPCSprite branches to NotYetMoving while BIT_FONT_LOADED is set
+-- -- engine/overworld/movement.asm:139
+local function textBoxUp()
+  local stack = require("src.core.Game").stack
+  local top = stack and stack.top and stack:top()
+  return top ~= nil and not top.isOverworld
+end
+
 function NPC:walkPhase()
-  if not self.moving then return 0 end
+  if not self.moving or textBoxUp() then return 0 end
   -- engine/overworld/movement.asm:301
   local p = (self.animClock or 0) % 16
   return (p >= 4 and p < 12) and 1 or 0

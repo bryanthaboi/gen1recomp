@@ -132,6 +132,33 @@ do
   check(cat.species[1] < cat.species[2], "species sorted")
 end
 
+-- RomExtractorGen2 stamps generation/source beside the id-keyed records, and
+-- they sort last because lowercase follows uppercase. #1466
+do
+  local gold = {
+    pokemon = { generation = 2, source = "ROM", CHIKORITA = { name = "CHIKORITA" } },
+    items   = { generation = 2, source = "ROM", POTION = { name = "POTION" } },
+    moves   = {
+      generation = 2, source = "ROM:Moves + MoveNames",
+      TACKLE = { pp = 35 }, ZAP_CANNON = { pp = 5 },
+    },
+  }
+  local cat = Catalog.build(gold)
+  eq(#cat.moves, 2, "gold move catalog holds only real moves")
+  eq(cat.moves[#cat.moves], "ZAP_CANNON", "and the last entry is a move, not a scalar")
+  for _, list in pairs(cat) do
+    for _, id in ipairs(list) do
+      check(id ~= "generation" and id ~= "source",
+            "no provenance scalar reached a catalog: " .. tostring(id))
+    end
+  end
+
+  local S = { data = gold, cat = cat }
+  local mon = { moves = { { id = "ZAP_CANNON", pp = 5 } } }
+  check(require("Ops").cycleMove(S, mon, 1), "cycling off the last move succeeds")
+  eq(mon.moves[1].id, "TACKLE", "and wraps to the first move instead of a scalar")
+end
+
 do
   local events = Catalog.scrapeEvents("data/scripts", "data/generated/trainer_headers.lua")
   check(#events > 50, "scraped events")

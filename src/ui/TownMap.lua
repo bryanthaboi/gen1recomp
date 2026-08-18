@@ -14,7 +14,9 @@
 -- This is what the party-menu FLY field move opens (#195).
 
 local Font = require("src.render.Font")
+local PaletteFX = require("src.render.PaletteFX")
 local Sound = require("src.core.Sound")
+local SpriteRenderer = require("src.render.SpriteRenderer")
 
 local TownMap = {}
 TownMap.__index = TownMap
@@ -227,7 +229,21 @@ function TownMap.new(game, opts)
     local sprites = game.data.sprites or {}
     local red = sprites[playerSprites.walk or "SPRITE_RED"]
                 or sprites.SPRITE_RED
-    local ok, img = pcall(love.graphics.newImage, red and red.image)
+    -- the marker is the overworld walking sheet, so it wears that sheet's OBJ
+    -- palette and shade-0 keying -- engine/items/town_map.asm:342
+    local colors, group
+    if PaletteFX.usesGbcPack() then
+      colors, group = PaletteFX.spriteObp(red, "player")
+    end
+    if not colors then
+      if PaletteFX.usesSpriteObp() then
+        colors, group = PaletteFX.ogObj()
+      else
+        colors, group = PaletteFX.dmgObj()
+      end
+    end
+    local ok, img = pcall(SpriteRenderer.obpImage,
+                          red and red.image, colors, group)
     if ok and img then
       self.playerSheet = img
       self.playerQuad = love.graphics.newQuad(0, 0, 16, 16,
@@ -316,6 +332,13 @@ function TownMap:update(dt)
   end
 end
 
+-- OG RED bakes the boot-ROM OBJ palette in, so the marker has to be replayed
+-- over the screen-wide TOWNMAP zone pass the way every other OBJ is (#301)
+function TownMap:markPlayerRedraw(x, y)
+  if not PaletteFX.usesSpriteObp() then return end
+  PaletteFX.markUiSpriteRedraw(self.playerSheet, self.playerQuad, x, y)
+end
+
 local function drawSquare(loc)
   if isRoute(loc) then
     love.graphics.setColor(0.62, 0.62, 0.62, 1)  -- routes lighter
@@ -364,6 +387,7 @@ function TownMap:draw()
       local x, y = markerXY(self.playerLoc)
       if self.playerSheet then
         love.graphics.draw(self.playerSheet, self.playerQuad, x - 4, y - 3)
+        self:markPlayerRedraw(x - 4, y - 3)
       else
         love.graphics.setColor(0, 0, 0, 1)
         love.graphics.rectangle("fill", x + 2, y + 2, 4, 4)
@@ -406,6 +430,8 @@ function TownMap:draw()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(self.playerSheet, self.playerQuad,
                            self.playerLoc.x * 8 - 4, self.playerLoc.y * 8 - 3)
+        self:markPlayerRedraw(self.playerLoc.x * 8 - 4,
+                              self.playerLoc.y * 8 - 3)
       else
         love.graphics.setColor(0, 0, 0, 1)
         love.graphics.rectangle("fill", self.playerLoc.x * 8 + 2,

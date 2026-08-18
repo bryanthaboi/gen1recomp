@@ -220,6 +220,9 @@ function SwitchDiagnostics.probeAssets(version)
     "assets/generated/tilesets/reds_house.png",
     "assets/generated/sprites/red.png",
     "assets/generated/sprites/monster.png",
+    "data/generated/maps.lua",
+    "data/generated/oak_speech.lua",
+    "data/generated/font.lua",
   }
   for _, path in ipairs(samples) do
     local versioned = prefix ~= "" and (prefix .. path) or path
@@ -230,17 +233,26 @@ function SwitchDiagnostics.probeAssets(version)
       lines[#lines + 1] = "versioned=" .. probeInfo(filesystem, versioned)
     end
     lines[#lines + 1] = "resolve=" .. tostring(resolved)
-    lines[#lines + 1] = "newImage=" .. probeOpen("image", resolved)
-    lines[#lines + 1] = "newImageData=" .. probeOpen("imageData", resolved)
-    if prefix ~= "" and resolved ~= versioned then
-      lines[#lines + 1] = "newImage_versioned=" .. probeOpen("image", versioned)
-      lines[#lines + 1] = "newImageData_versioned=" .. probeOpen("imageData", versioned)
+    if path:sub(-4) == ".lua" then
+      local CacheFs = require("src.import.CacheFs")
+      local loaded, err = CacheFs.loadActive(path)
+      lines[#lines + 1] = "loadActive=" .. (loaded ~= nil and "ok"
+        or ("FAIL " .. tostring(err):gsub("%s+", " "):sub(1, 160)))
+    else
+      lines[#lines + 1] = "newImage=" .. probeOpen("image", resolved)
+      lines[#lines + 1] = "newImageData=" .. probeOpen("imageData", resolved)
+      if prefix ~= "" and resolved ~= versioned then
+        lines[#lines + 1] = "newImage_versioned=" .. probeOpen("image", versioned)
+        lines[#lines + 1] = "newImageData_versioned=" .. probeOpen("imageData", versioned)
+      end
     end
   end
 
   -- Shallow listing so we can see if the extract tree exists at all.
-  local roots = { "yellow", "blue", "assets", "yellow/assets/generated",
-    "yellow/assets/generated/sprites", "blue/assets/generated/sprites" }
+  local roots = { "yellow", "blue", "gold", "assets", "yellow/assets/generated",
+    "yellow/assets/generated/sprites", "blue/assets/generated/sprites",
+    "gold/assets/generated", "gold/assets/generated/sprites",
+    "gold/data/generated" }
   for _, dir in ipairs(roots) do
     local info = filesystem.getInfo(dir)
     if info and info.type == "directory" and filesystem.getDirectoryItems then

@@ -163,14 +163,23 @@ function screen2:chooseMove(slot)
   return true
 end
 function screen2:cancelMove() self.phase = "menu" return true end
+function screen2:catchChance(ball)
+  return ball == "MASTER_BALL" and 100 or 37.5
+end
 local game2 = {
   data = {
     pokemon = { CHIKORITA = { name = "CHIKORITA" },
       RATTATA = { name = "RATTATA" } },
     moves = { TACKLE = { name = "TACKLE", type = "NORMAL",
       power = 35, accuracy = 95, pp = 35 } },
+    items = {
+      MASTER_BALL = { name = "MASTER BALL", pocket = "BALL" },
+      POTION = { name = "POTION", pocket = "ITEM" },
+    },
   },
-  save = { party = { player2 } }, stack = { states = { screen2 } },
+  save = { party = { player2 }, inventory = {
+    MASTER_BALL = 1, POTION = 2,
+  } }, stack = { states = { screen2 } },
 }
 
 local api2 = require("src.battle.gen2.BattleAPI").new(game2)
@@ -179,6 +188,9 @@ check(snapshot2 and snapshot2.kind == "wild" and snapshot2.prompt == "menu",
   "Gold battle is discovered through its screen id")
 eq(snapshot2.player.maxHp, 21, "Gold max HP uses the mon field")
 eq(snapshot2.moves[1].name, "TACKLE", "Gold moves are copied")
+eq(#snapshot2.items, 1, "Gold exposes balls without guessing targeted items")
+eq(snapshot2.items[1].catchChance, 100,
+  "Gold ball records expose the exact catch preview")
 snapshot2.player.hp = 0
 snapshot2.moves[1].pp = 0
 eq(player2.hp, 20, "changing a snapshot cannot change a Gold Pokemon")

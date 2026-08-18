@@ -12,9 +12,9 @@
 --   * The two tilemaps behind DrawMagnetTrain (MagnetTrainBGTiles, a 2x18
 --     vertical strip repeated across all 32 columns, and MagnetTrainTilemap,
 --     the 20x4 train laid over rows 6-9) come from the extracted cache at
---     data.field.magnetTrain.  A cache built before the extractor learned to
---     follow them has neither, and then the ride runs with a blank screen
---     rather than with invented art.
+--     data.gen2Field.magnetTrain.  A cache built before the extractor
+--     learned to follow them has neither, and then the ride runs with a
+--     blank screen rather than with invented art.
 --   * The background is baked into a 256x144 canvas once, because the only
 --     thing that changes per frame is the per-band SCX.
 --   * SetMagnetTrainPals gives the four bush rows and the four bottom rows
@@ -57,7 +57,7 @@ function MagnetTrainRide.new(game, opts)
   self.onDone = opts.onDone
   self.finished = false
 
-  local field = self.data and self.data.field
+  local field = self.data and self.data.gen2Field
   local gfx = field and field.magnetTrain
   self.ride = MagnetTrain.new({
     toGoldenrod = opts.toGoldenrod,
@@ -65,8 +65,8 @@ function MagnetTrainRide.new(game, opts)
     fgTilemap = gfx and gfx.tilemap,
   })
 
-  self.tileset = self.data and self.data.tilesets
-    and self.data.tilesets.TILESET_TRAIN_STATION
+  self.tileset = self.data and self.data.gen2Tilesets
+    and self.data.gen2Tilesets.TILESET_TRAIN_STATION
   self.palettes = self:bgPalettes()
   self.spriteSheet = self:playerSheet()
 
@@ -84,7 +84,7 @@ end
 -- even though both stations are INDOOR maps.
 function MagnetTrainRide:bgPalettes()
   local data = self.data
-  local palettes = data and data.palettes
+  local palettes = data and data.gen2Palettes
   if not palettes then return nil end
   return Palettes.bgSet(palettes, { environment = "TOWN" },
     Palettes.clockDaytime())
@@ -129,7 +129,7 @@ end
 -- are cut per 8x8 sub-tile rather than by the sheet's 16-pixel width, because
 -- the OAM data addresses the four tiles of a frame individually.
 function MagnetTrainRide:playerSheet()
-  local sprites = self.data and self.data.sprites
+  local sprites = self.data and self.data.gen2Sprites
   local def = sprites and (sprites.SPRITE_CHRIS or sprites.SPRITE_KRIS)
   local path = def and def.image
   if not path then return nil end
@@ -259,8 +259,8 @@ end
 -- MapObjectPals' PAL_OW_RED, the palette every .OAMData_MagnetTrainRed entry
 -- names.
 function MagnetTrainRide:playerPalette()
-  local palettes = self.data and self.data.palettes
-  local sprites = self.data and self.data.sprites
+  local palettes = self.data and self.data.gen2Palettes
+  local sprites = self.data and self.data.gen2Sprites
   if not palettes then return nil end
   return Palettes.spritePalette(palettes, Palettes.clockDaytime(),
     sprites and sprites.SPRITE_CHRIS)

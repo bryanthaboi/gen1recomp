@@ -134,6 +134,10 @@ function Commands.show_text(ctx, textId, subs, extraOpts)
       opts[k] = v
     end
   end
+  -- MONEY_BOX (engine/menus/text_box.asm:133) reads the live wallet
+  if opts and opts.money == true then
+    opts.money = function() return ctx.save.money end
+  end
   ctx.game.stack:push(TextBox.new(ctx.game, text, function()
     runner:resume()
   end, opts))
@@ -778,6 +782,16 @@ end
 
 function Commands.give_money(ctx, amount)
   ctx.save.money = math.max(0, ctx.save.money + amount)
+end
+
+-- check_money <amount>: HasEnoughMoney (home/money.asm:1)
+function Commands.check_money(ctx, amount)
+  ctx.lastCheck = (ctx.save.money or 0) >= (amount or 0)
+end
+
+-- take_money <amount>: SubBCDPredef (engine/math/bcd.asm:193)
+function Commands.take_money(ctx, amount)
+  ctx.save.money = math.max(0, (ctx.save.money or 0) - (amount or 0))
 end
 
 -- Point LAST_MAP exits at an outdoor door (pokered wLastMap).  Keeps the

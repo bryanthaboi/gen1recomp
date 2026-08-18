@@ -63,6 +63,7 @@ function Editor.load(opts)
   Editor.hostPoll = opts.hostPoll == true
   Editor.drag = nil
   Editor.rects = {}
+  Editor._closed = false
   Editor._hostMouse = false
   Editor._hostTouches = nil
   Editor.fonts = {
@@ -137,6 +138,7 @@ function Editor.unload()
   Editor.drag = nil
   Editor.onClose = nil
   Editor.version = nil
+  Editor.rects = {}
   Editor._hostMouse = false
   Editor._hostTouches = nil
 end
@@ -159,6 +161,8 @@ local function persist()
 end
 
 local function close()
+  if Editor._closed then return end
+  Editor._closed = true
   persist()
   local cb = Editor.onClose
   Editor.unload()
@@ -427,6 +431,7 @@ function Editor.pollHostPointers()
     if not Editor._hostMouse then
       Editor._hostMouse = true
       beginDrag("mouse", x, y)
+      if Editor._closed then return end
     else
       moveDrag("mouse", x, y)
     end
@@ -446,6 +451,7 @@ function Editor.pollHostPointers()
       if not Editor._hostTouches[id] then
         Editor._hostTouches[id] = true
         beginDrag(id, tx, ty)
+        if Editor._closed then return end
       else
         moveDrag(id, tx, ty)
       end

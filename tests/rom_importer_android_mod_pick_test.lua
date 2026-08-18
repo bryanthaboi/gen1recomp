@@ -166,6 +166,47 @@ eq(ri._requiredImported.importId, "source", "focus routes to the pending declara
 check(love.filesystem.getInfo("picked_required_import.bin") == nil,
   "focus removes the staged required-file pick")
 
+-- Android releases with the updated launcher but the older native bridge do
+-- not advertise required_import. They still support the established ROM SAF
+-- picker, whose result must be quarantined to the pending dependency request.
+love.system.pickFileKinds = function() return "rom,mod,sav" end
+pickCalls = {}
+ri = freshImporter({ red = true, blue = true })
+ri.nativePicker = true
+ri.mobileFileBridge = true
+ri.mods = { {
+  id = "needs_source",
+  manifest = { id = "needs_source", name = "Needs Source",
+    required_imports = { { id = "source", name = "Source", file = "source.bin",
+      format = "raw", md5 = { "00000000000000000000000000000000" } } } },
+} }
+ri:chooseRequiredImport("needs_source", "source")
+eq(pickCalls[1], "rom", "legacy Android bridge falls back to its ROM SAF picker")
+check(ri.requiredImportLegacyRomPick,
+  "legacy Android ROM picker result is marked as a required import")
+ri._importRequiredSource = function(self, modId, importId, source)
+  self._requiredImported = { modId = modId, importId = importId, source = source }
+  return true
+end
+love.filesystem.write("picked_rom.gb", "source bytes")
+ri:focus(true)
+eq(ri._requiredImported.source, "picked_rom.gb",
+  "legacy Android ROM staging name is routed to the required import")
+eq(ri._requiredImported.modId, "needs_source",
+  "legacy Android picker preserves the requested mod")
+check(love.filesystem.getInfo("picked_rom.gb") == nil,
+  "legacy Android dependency pick is removed after import")
+
+-- A legacy bridge reports a failed copy using that same staging basename; it
+-- must stay on the dependency page rather than becoming a game-ROM error.
+ri:chooseRequiredImport("needs_source", "source")
+love.filesystem.write("pick_error.flag", "picked_rom.gb")
+ri:focus(true)
+check(ri.modNotice ~= nil and ri.modNotice.ok == false,
+  "legacy Android picker errors are shown as dependency import errors")
+check(ri.pickerPendingKind == nil,
+  "legacy Android picker error clears the pending dependency request")
+
 love.system.getOS = saved.getOS
 love.system.pickFile = saved.pickFile
 love.system.pickFileKinds = saved.pickFileKinds
@@ -174,5 +215,6 @@ love.filesystem.remove("usb_mod.zip")
 love.filesystem.remove("picked_mod.zip")
 love.filesystem.remove("picked_save.sav")
 love.filesystem.remove("picked_required_import.bin")
+love.filesystem.remove("picked_rom.gb")
 
 S.finish()

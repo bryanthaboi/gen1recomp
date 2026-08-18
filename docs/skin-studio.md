@@ -6,6 +6,7 @@ control layout, and the rectangle the Game Boy screen is drawn into. Engine:
 (draw and input), `src/render/Renderer.lua` (the screen viewport),
 `src/ui/SkinStudio.lua` (the desktop editor). Tests:
 `tests/engine/touch_skin_test.lua`, `tests/engine/skin_studio_test.lua`,
+`tests/engine/skin_studio_image_import.lua`,
 `tests/engine/launcher_skins_tab.lua`.
 
 Skins are picked in the launcher's **Skins** tab, which also imports them and
@@ -25,7 +26,7 @@ as-is. Supported keys:
 | `overlayN_overlay` | bezel image |
 | `overlayN_full_screen` | stretch the page to the window |
 | `overlayN_rect` | page placement, default `0,0,1,1` |
-| `overlayN_aspect_ratio` | fallback aspect when not full screen |
+| `overlayN_aspect_ratio` | design aspect; the overlay letterboxes to it even when full screen |
 | `overlayN_range_mod`, `overlayN_alpha_mod` | desc defaults |
 | `overlayN_viewport` | `x,y,w,h`, the screen cutout |
 | `overlayN_viewport_fill` | parsed; the engine always fits, see below |
@@ -159,8 +160,25 @@ The Super Game Boy preset locks the viewport to the real screen window,
 resize. X / Y / W / H are in canvas pixels, so a control can be typed to the
 coordinate its art was drawn at. Bind, hitbox shape, hit reach and idle and
 pressed images are per control; the bezel, the pages and the screen cutout are
-per page. The cutout is itself a draggable element with a 10:9 lock. Drop a PNG
-or JPG on the window to import art into the skin.
+per page. The cutout is itself a draggable element with a 10:9 lock.
+
+Each page can **Lock** to portrait or landscape. With **Match canvas** on
+(the default), Next page picks a matching mock device and the canvas preset
+picks a matching page. Turn Match canvas off to look at a portrait page on a
+landscape device.
+
+A RetroArch overlay whose pages are already named portrait / landscape
+(the auto-rotate convention) locks those pages and turns Match canvas on
+when you open it. You do not have to click Lock first.
+
+**Art.** The **Bezel**, **Idle art** and **Pressed art** rows cycle through the
+images already in the skin folder; the **Import** button beside each one opens
+the host file picker (`src/core/FilePicker.lua`: osascript, PowerShell,
+zenity/kdialog) and copies the chosen PNG or JPG into `img/` under the name in
+the SKIN field, then assigns it to that slot. Dropping a PNG or JPG on the
+window does the same for whichever slot was last touched. A new bezel does not
+move the screen cutout: press **Detect screen from bezel** to measure it out of
+the art's alpha.
 
 **Testing.** **Test** makes the canvas live: clicking presses real Game Boy
 buttons and the footer reports what is held. **Play** saves the skin, selects
@@ -175,5 +193,3 @@ straight back into `skins/` and still opens in RetroArch.
 ## Not implemented
 
 RetroArch's `analog_*`, `dpad_area`, `abxy_area` and `retrok_*` desc types.
-Image assignment cycles through art already in the skin folder; there is no
-file browser, so new art arrives by drag and drop.

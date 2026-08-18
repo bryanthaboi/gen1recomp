@@ -268,10 +268,10 @@ an optional stock `catchChance` percentage.
 `prompt` describes the currently visible choice (`menu`, `moves`, `party`,
 `advance`, `safari`, or `mimic`) and is `locked` when another screen or battle
 phase owns input. Generation-specific features remain optional: Gen 1 includes
-battle medicine, balls, catch previews, Safari balls, and Mimic choices;
-Gold currently returns an empty `items` list rather than guessing at its
-pocketed PACK flow. Callers should ignore unknown fields and tolerate absent
-optional ones.
+battle medicine, balls, catch previews, Safari balls, and Mimic choices. Gold
+exposes balls and their exact stock catch previews; targeted medicine remains
+screen-owned and is omitted rather than guessing at its pocketed PACK flow.
+Callers should ignore unknown fields and tolerate absent optional ones.
 
 ## Battle menu intents
 

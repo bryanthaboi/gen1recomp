@@ -114,23 +114,110 @@ do
     "a feed without release stats parses them as absent")
 end
 
--- release stats a feed can publish: total downloads and first/last dates
+-- release stats a feed can publish: download counts and first/last dates
 -- ride along additively, so a feed carrying them stays readable by every
 -- build that predates them
 do
   local withStats = {}
   for k, v in pairs(NUZLOCKE) do withStats[k] = v end
-  withStats.downloads = 1234
+  withStats.downloads = { total = 1578, recent = 388, window_days = 30,
+                          as_of = "2026-08-18T05:17:00.000Z" }
   withStats.first_release = "2024-05-31"
   withStats.last_release = "2026-07-01"
   local index = ModIndex.parse(feed({ withStats }))
   local m = index.mods[1]
-  eq(m.downloads, 1234, "total downloads are kept")
+  eq(m.downloads.total, 1578, "total downloads are kept")
+  eq(m.downloads.recent, 388, "the trailing-window count is kept")
+  eq(m.downloads.window_days, 30, "the window length is kept")
+  eq(m.downloads.as_of, "2026-08-18T05:17:00.000Z", "the read time is kept")
   eq(m.first_release, "2024-05-31", "first release date is kept")
   eq(m.last_release, "2026-07-01", "last release date is kept")
-  withStats.downloads = "9999"
-  m = ModIndex.parse(feed({ withStats })).mods[1]
-  eq(m.downloads, 9999, "numeric-string downloads are coerced")
+end
+
+-- ------- download counts: unknown is not zero
+--
+-- The feed's `downloads` object has three ways of saying "not known" -- the
+-- field absent, the field null, and a null count inside it -- and every one
+-- of them has to stay distinguishable from a real zero, because the browse
+-- card prints one and sorts the other.
+do
+  local function jsonWith(downloads)
+    local raw = {}
+    for k, v in pairs(NUZLOCKE) do raw[k] = v end
+    raw.downloads = downloads
+    return feed({ raw })
+  end
+  local function statsForJson(text)
+    return ModIndex.downloadStats(ModIndex.parse(text).mods[1])
+  end
+  local function statsFor(downloads)
+    return statsForJson(jsonWith(downloads))
+  end
+
+  check(statsFor(nil) == nil, "an absent downloads field is unknown")
+  -- Json.encode has no null of its own, so the literal the feed actually
+  -- sends is patched into the text.
+  local nulled = jsonWith({}):gsub('"downloads":%[%]', '"downloads":null', 1)
+  check(nulled:find('"downloads":null', 1, true) ~= nil,
+    "the null feed fixture really contains a null")
+  check(statsForJson(nulled) == nil, "a null downloads field is unknown")
+  check(statsFor({}) == nil, "an object with no counts is unknown")
+  eq(statsFor({ total = 0 }).total, 0, "a real zero total survives")
+
+  -- recent / window_days stay null until the index has more than a day of
+  -- history, even once total is a real number.
+  local young = statsFor({ total = 12, as_of = "2026-08-18T05:17:00.000Z" })
+  eq(young.total, 12, "a total with no window yet is still a total")
+  check(young.recent == nil and young.window_days == nil,
+    "no trailing window means no trending figure, not a zero one")
+
+  -- A cache written before the object shipped stored a bare number; it is
+  -- read back through the same door rather than migrated.
+  local legacy = ModIndex.downloadStats({ downloads = 4321 })
+  eq(legacy.total, 4321, "a bare number reads as the total")
+  check(legacy.recent == nil, "and carries no trending figure")
+  check(ModIndex.downloadStats({}) == nil, "a row with no counts is unknown")
+  check(ModIndex.downloadStats(nil) == nil, "no entry is unknown")
+end
+
+-- ------- release dates: the feed already dates every listing it can install
+--
+-- Sorting must span the whole index, not the pages a reader happened to
+-- visit, so the "last updated" date comes off the feed's own `latest` blob
+-- rather than out of a per-mod repo fetch.
+do
+  local raw = {}
+  for k, v in pairs(NUZLOCKE) do raw[k] = v end
+  local d = ModIndex.releaseDates(ModIndex.parse(feed({ raw })).mods[1])
+  eq(d.latest, "2026-07-31", "latest release date comes from latest.published_at")
+  check(d.first == nil, "the feed cannot date a first release from that alone")
+
+  raw.first_release = "2024-05-31"
+  raw.last_release = "2026-07-01"
+  d = ModIndex.releaseDates(ModIndex.parse(feed({ raw })).mods[1])
+  eq(d.first, "2024-05-31", "an explicit first_release wins")
+  eq(d.latest, "2026-07-01", "an explicit last_release beats the latest blob")
+
+  local bare = {}
+  for k, v in pairs(NUZLOCKE) do bare[k] = v end
+  bare.latest, bare.update_check = nil, "no installable release"
+  check(ModIndex.releaseDates(ModIndex.parse(feed({ bare })).mods[1]) == nil,
+    "a listing with no releases has no dates")
+  check(ModIndex.releaseDates(nil) == nil, "no entry has no dates")
+end
+
+-- ------- cache version: a copy written before a field existed cannot answer
+-- for it, and the TTL is a whole day
+do
+  local now = os.time()
+  check(ModIndex.cacheFresh({ checkedAt = now,
+    version = ModIndex.CACHE_VERSION }), "a current cache is fresh")
+  check(not ModIndex.cacheFresh({ checkedAt = now }),
+    "an unstamped cache is refetched rather than trusted for a day")
+  check(not ModIndex.cacheFresh({ checkedAt = now,
+    version = ModIndex.CACHE_VERSION - 1 }), "so is an older stamp")
+  check(not ModIndex.cacheFresh({ checkedAt = now - ModIndex.CACHE_TTL - 1,
+    version = ModIndex.CACHE_VERSION }), "and an expired one")
 end
 
 -- schema_version is a contract, not a hint: an unknown one is refused rather

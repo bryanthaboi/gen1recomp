@@ -195,6 +195,55 @@ Studio.addControl()
 eq(#Studio.skin.pages[2].controls, 1, "controls land on the active page")
 eq(#Studio.skin.pages[1].controls, 0, "and not on the other one")
 
+-- page orientation lock follows the canvas when Match canvas is on (#1503)
+session()
+Studio.canvasIndex = 1
+Studio.matchOrient = true
+eq(Studio.cyclePageOrient(1), "portrait", "cycle starts at portrait from unlocked")
+eq(Studio.page().orient, "portrait", "and stores the lock on the page")
+eq(Studio.page().name, "portrait", "a generic page is renamed so play can auto-rotate")
+eq(Studio.canvas().id, "phone_portrait", "and the canvas stays portrait")
+
+Studio.addPage()
+eq(Studio.cyclePageOrient(1), "portrait", "the new page starts unlocked, first lock is portrait")
+Studio.cyclePageOrient(1)
+eq(Studio.page().orient, "landscape", "second cycle is landscape")
+eq(Studio.canvas().id, "phone_landscape", "Match canvas flips the mock device with the page")
+
+Studio.pageIndex = 1
+Studio.syncCanvasToPage()
+eq(Studio.canvas().id, "phone_portrait", "switching back to the portrait page restores portrait canvas")
+
+Studio.setCanvas(2)
+eq(Studio.pageIndex, 2, "picking a landscape canvas selects the landscape page")
+
+Studio.matchOrient = false
+Studio.pageIndex = 1
+Studio.setCanvas(2)
+eq(Studio.pageIndex, 1, "Match canvas off leaves the page when the device changes")
+eq(Studio.canvas().id, "phone_landscape", "and still honours the canvas click")
+
+-- a RetroArch overlay that already auto-rotates locks itself on open (#1503)
+session()
+Studio.matchOrient = false
+Studio.canvasIndex = 2
+Studio.skin = assert(TouchSkin.parse([[
+overlays = 2
+overlay0_name = "portrait"
+overlay0_full_screen = true
+overlay0_descs = 1
+overlay0_desc0 = "a,0.5,0.5,radial,0.05,0.05"
+overlay1_name = "landscape"
+overlay1_full_screen = true
+overlay1_descs = 1
+overlay1_desc0 = "a,0.5,0.5,radial,0.05,0.05"
+]]))
+Studio.pageIndex = 1
+check(Studio.applyImportedOrient(), "import of a portrait/landscape pair is automatic")
+check(Studio.matchOrient, "and turns Match canvas on")
+eq(Studio.page().name, "landscape", "keeping the landscape canvas already on screen")
+eq(Studio.page().orient, "landscape", "with the page already locked")
+
 -- --------------------------------------------------------------- clone
 
 local source = TouchSkin.load("assets/skins/gb_anim", "gb_anim")

@@ -273,6 +273,10 @@ Save.DEFAULT_OPTIONS = {
   -- means something different, hence the different name.
   color = "gbc",
   videoMode = "windowed",
+  fpsCap = 60,
+  -- VOID FILL: fade | water | trees | black.  fade is each map header's own
+  -- border block with the dissolve across a boundary (#1418).
+  voidFill = "fade",
   musicVol = 7,             -- 0-7, like the GB's NR50 master volume
   sfxVol = 7,               -- 0-7
   musicFilter = 0,          -- low-pass steps, 0 = off

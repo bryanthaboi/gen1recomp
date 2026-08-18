@@ -70,12 +70,12 @@ end
 do
   local host, guest = sessionPair()
   guest:send({ type = "before", sequence = 1 })
-  guest:send({ type = "hello", sequence = 2 })
+  guest:send({ type = "greeting", sequence = 2 })
   guest:send({ type = "after", sequence = 3 })
-  guest:send({ type = "hello", sequence = 4 })
+  guest:send({ type = "greeting", sequence = 4 })
   host:update()
 
-  local hello = host:take("hello")
+  local hello = host:take("greeting")
   T.eq(hello.sequence, 2, "take removes the first matching packet")
   T.eq(host:pollOne().sequence, 1, "pollOne removes only the FIFO head")
 
@@ -122,14 +122,14 @@ end
 
 do
   local transport = fakeTransport({ onUpdate = function(self)
-    self.inbox[#self.inbox + 1] = { type = "bye", final = true }
+    self.inbox[#self.inbox + 1] = { type = "bye" }
     self.closed = true
   end })
   local session = Session.new(transport, { role = "host", kind = "link" })
   session:update()
   T.eq(session:getStatus(), "draining", "normal close drains its final packet")
   T.eq(session.closed, false, "compatibility closed waits for the FIFO")
-  T.eq(session:take("bye").final, true, "final close packet remains observable")
+  T.check(session:take("bye") ~= nil, "final close packet remains observable")
   T.eq(session:getStatus(), "closed", "normal drain reaches closed")
   T.eq(transport.closeCount, 1, "transport cleanup runs once")
 end
@@ -182,21 +182,22 @@ do
   } })
   local session = Session.new(transport, { role = "host", kind = "link" })
   session:update()
-  local reason = session:getFailure()
-  T.eq(reason, "protocol_error", "malformed packet fails as protocol_error")
-  T.eq(session:getStatus(), "draining", "malformed batch drains valid prefix")
+  T.eq(session:getFailure(), nil, "a malformed packet is not a terminal failure")
+  T.eq(session:getStatus(), "paired", "the session stays usable after a bad packet")
   local messages = session:poll()
-  T.eq(#messages, 1, "malformed value and untrusted tail are not exposed")
-  T.eq(messages[1].sequence, 1, "valid prefix survives malformed packet")
-  T.eq(session:getStatus(), "failed", "protocol drain reaches failed")
+  T.eq(#messages, 2, "the malformed value is dropped, the rest is delivered")
+  T.eq(messages[1].sequence, 1, "packets before the malformed one survive")
+  T.eq(messages[2].sequence, 3, "packets after the malformed one survive")
+  T.eq(session.dropped, 1, "the drop is counted")
 end
 
 do
   local transport = fakeTransport({ inbox = { { type = 7 } } })
   local session = Session.new(transport, { role = "host", kind = "link" })
   session:update()
-  T.eq(session:getFailure(), "protocol_error",
-    "table without string type is a protocol error")
+  T.eq(session:getFailure(), nil,
+    "a table without a string type is dropped, not a terminal failure")
+  T.eq(#session:poll(), 0, "...and never reaches the mode")
 end
 
 do
@@ -268,8 +269,9 @@ do
   local receiver = Session.new(receiverNet, { role = "guest", kind = "link" })
   senderNet:send(false)
   receiver:update()
-  T.eq(receiver:getFailure(), "protocol_error",
-    "loopback forwards decoded false to session validation")
+  T.eq(receiver:getFailure(), nil,
+    "a decoded scalar off the loopback is dropped, not fatal")
+  T.eq(#receiver:poll(), 0, "...and never reaches the mode")
 end
 
 do
@@ -284,8 +286,9 @@ do
   }
   local session = Session.new(transport, { role = "guest", kind = "link" })
   session:update()
-  T.eq(session:getFailure(), "protocol_error",
-    "ENet forwards decoded false to session validation")
+  T.eq(session:getFailure(), nil,
+    "a decoded scalar off ENet is dropped, not fatal")
+  T.eq(#session:poll(), 0, "...and never reaches the mode")
 end
 
 do
@@ -294,8 +297,9 @@ do
   T.check(pcall(transport.handleTCPLine, transport, "42"),
     "TCP control handoff does not index a decoded scalar")
   session:update()
-  T.eq(session:getFailure(), "protocol_error",
-    "decoded TCP scalar reaches session validation")
+  T.eq(session:getFailure(), nil,
+    "a decoded TCP scalar is dropped, not fatal")
+  T.eq(#session:poll(), 0, "...and never reaches the mode")
 end
 
 do

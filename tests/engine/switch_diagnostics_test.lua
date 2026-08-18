@@ -89,6 +89,23 @@ check(probe:find("resolve=yellow/assets/generated/fonts/font.png", 1, true) ~= n
   "probe records versioned font path visibility")
 check(not probe:find(string.char(0xEA, 0x9B), 1, true),
   "probe log contains no ROM-like binary")
+check(probe:find("data/generated/maps.lua", 1, true) ~= nil,
+  "probe records Gold/Gen2 maps.lua visibility")
+check(probe:find("loadActive=", 1, true) ~= nil,
+  "probe uses loadActive for generated Lua instead of newImage")
+
+-- Gold maps.lua / gold/ folders: fused NX intro/naming/overworld crash.
+GameVersion.set("gold")
+love.filesystem.write("gold/data/generated/maps.lua", "return { NEW_BARK_TOWN = true }")
+love.filesystem.write("gold/data/generated/oak_speech.lua", "return {}")
+SwitchDiagnostics.probeAssets("gold")
+probe = love.filesystem.read("nx-asset-probe.log") or ""
+check(probe:find("cachePrefix=gold/", 1, true) ~= nil, "probe records gold prefix")
+check(probe:find("data/generated/maps.lua", 1, true) ~= nil,
+  "probe lists maps.lua (the Gold cache incomplete path)")
+check(probe:find("list gold", 1, true) ~= nil, "probe lists gold/ folder")
+check(probe:find("list gold/data/generated", 1, true) ~= nil,
+  "probe lists gold/data/generated/")
 
 love.system = { getOS = function() return "OS X" end }
 Platform._resetForTests()
@@ -104,5 +121,7 @@ love.filesystem.remove("nx-asset-probe.log")
 love.filesystem.remove("yellow/assets/generated/fonts/font.png")
 love.filesystem.remove("yellow/assets/generated/tilesets/reds_house.png")
 love.filesystem.remove("yellow/assets/generated/sprites/red.png")
+love.filesystem.remove("gold/data/generated/maps.lua")
+love.filesystem.remove("gold/data/generated/oak_speech.lua")
 
 T.finish()

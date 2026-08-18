@@ -68,14 +68,20 @@ end
 
 -- Acquisition-ordered id list (wBagItems).  Rebuilt sorted once for
 -- saves from before the order existed, then maintained incrementally.
-function Bag.order(save)
+function Bag.order(save, data)
   local order = save.bagOrder
   if not order then
+    local items = (data or require("src.core.Data")).items
     order = {}
     for id in pairs(save.inventory) do
       if not isBadge(id) then table.insert(order, id) end
     end
-    table.sort(order)
+    table.sort(order, function(a, b)
+      local ia = (items and items[a] and items[a].index) or math.huge
+      local ib = (items and items[b] and items[b].index) or math.huge
+      if ia ~= ib then return ia < ib end
+      return a < b
+    end)
     save.bagOrder = order
   end
   -- drop stale ids, append unknown ones (defensive against direct
@@ -93,6 +99,29 @@ function Bag.order(save)
     if not isBadge(id) and not seen[id] then table.insert(order, id) end
   end
   return order
+end
+
+-- engine/items/switch_items.asm:38 SwitchItemsInBag .below / .above -- the
+-- rotate the PACK's SELECT performs, over the rows of ONE pocket.
+function Bag.move(save, id, pocket, toIndex, data)
+  local order = Bag.order(save, data)
+  local slots, ids = {}, {}
+  for i = 1, #order do
+    if pocketOf(order[i], data) == pocket then
+      slots[#slots + 1] = i
+      ids[#ids + 1] = order[i]
+    end
+  end
+  local from
+  for i = 1, #ids do
+    if ids[i] == id then from = i break end
+  end
+  if not from then return false end
+  local to = math.max(1, math.min(math.floor(tonumber(toIndex) or from), #ids))
+  if to == from then return false end
+  table.insert(ids, to, table.remove(ids, from))
+  for i = 1, #slots do order[slots[i]] = ids[i] end
+  return true
 end
 
 -- Add qty of an item; returns false (and adds nothing) when a new slot

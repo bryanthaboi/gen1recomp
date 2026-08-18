@@ -23,11 +23,15 @@ function ChoiceBox.new(game, onChoose, opts)
   -- and docking it to the window edge instead tears it off that screen by
   -- however far the letterbox sits from the edge.
   self.anchor = opts and opts.anchor or nil
-  local box = Theme.choiceBox
+  local box = (opts and opts.box) or Theme.choiceBox
   self.tx = (opts and opts.tx) or box.tx
   self.ty = (opts and opts.ty) or box.ty
   self.tw = (opts and opts.tw) or box.tw
   self.th = (opts and opts.th) or box.th
+  -- TwoOptionMenuStrings rows carry their own labels and a "blank line
+  -- before first menu item?" flag (data/yes_no_menu_strings.asm:8-16)
+  self.labels = (opts and opts.labels) or { "YES", "NO" }
+  self.firstItem = (opts and opts.firstItem) or box.firstItem or 1
   return self
 end
 
@@ -81,10 +85,12 @@ function ChoiceBox:draw()
   local paper = self.game and self.game.textboxPaper and self.game:textboxPaper()
   Font.drawBox(tx, ty, tw, th, paper)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(Strings("YES"), (tx + 2) * 8, (ty + 1) * 8)
-  Font.draw(Strings("NO"), (tx + 2) * 8, (ty + 3) * 8)
+  -- <NEXT> advances 2 * SCREEN_WIDTH -- home/text.asm:64
+  local row = self.firstItem
+  Font.draw(Strings(self.labels[1]), (tx + 2) * 8, (ty + row) * 8)
+  Font.draw(Strings(self.labels[2]), (tx + 2) * 8, (ty + row + 2) * 8)
   Font.drawCode(Theme.cursor, (tx + 1) * 8,
-                (ty + (self.index == 1 and 1 or 3)) * 8)
+                (ty + row + (self.index == 1 and 0 or 2)) * 8)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

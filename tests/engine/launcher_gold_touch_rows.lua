@@ -43,6 +43,15 @@ local gold = LauncherSettings.open(hooks, "gold")
 check(has(gold, "TOUCH PAD"), "Gold's gear offers TOUCH PAD")
 check(has(gold, "VIBRATION"), "and VIBRATION")
 check(has(gold, "TOUCH CONTROLS"), "and the layout editor")
+check(has(gold, "VOID FILL"), "and VOID FILL")
+
+local voidFill = findRow(gold, "VOID FILL")
+eq(voidFill.value(), "FADE ", "VOID FILL defaults to FADE")
+voidFill.step(1)
+eq(gold.opts.gold.voidFill, "water", "right stores water in the gold block")
+eq(voidFill.value(), "WATER", "and the row reads WATER")
+voidFill.step(-1)
+eq(gold.opts.gold.voidFill, "fade", "left restores fade")
 
 -- Every write has to land in the gold block: the flat keys beside it are
 -- Red's, and Gold's boot never reads them (src/core/gen2/Save.lua:299).

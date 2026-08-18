@@ -169,6 +169,7 @@ the NX runtime modules `src/core/NxAssetOverlay.lua`, `src/core/Platform.lua`,
 `tests/engine/assets_version_fallback_test.lua`,
 `tests/engine/nx_generated_guard_test.lua`,
 `tests/engine/nx_yellow_boot_test.lua`,
+`tests/engine/cache_fs_gold_nx_load_test.lua`,
 `tests/engine/switch_diagnostics_test.lua`, `tests/engine/platform_nx_*`,
 or the Switch-related workflow YAML), CI runs:
 
@@ -179,7 +180,8 @@ or the Switch-related workflow YAML), CI runs:
    `luajit tests/switch_transfer_docs_test.lua`, and the NX engine suites
    headlessly (`luajit tests/engine/assets_version_fallback_test.lua`,
    `luajit tests/engine/nx_generated_guard_test.lua`,
-   `luajit tests/engine/nx_yellow_boot_test.lua`).
+   `luajit tests/engine/nx_yellow_boot_test.lua`,
+   `luajit tests/engine/cache_fs_gold_nx_load_test.lua`).
 2. **Fused NRO build** only on the **main** repository
    (`bryanthaboi/gen1recomp`), on the self-hosted Mac runner
    (`scripts/build_switch.sh --fetch --fused`), and only when the workflow

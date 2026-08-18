@@ -46,4 +46,30 @@ do
   T.eq(tradedWithId.otId, 777, "a recorded foreign OT id is never overwritten")
 end
 
+-- #1461: saves that passed through 0.1.82-0.1.9x already have the player's
+-- own id written onto traded mons, so stamping correctly from now on does
+-- not help them.  The repair runs on every load, not behind a format gate.
+do
+  local SaveData = require("src.core.SaveData")
+  local save = newSave()
+  local poisoned = { traded = true, otId = 12345 }
+  local foreign = { traded = true, otId = 777 }
+  local caught = { otId = 12345 }
+  save.party = { poisoned, foreign, caught }
+  save.boxes = { { { traded = true, otId = 12345 } } }
+
+  T.eq(SaveData.repairTradedOtIds(save), 2, "both poisoned mons are repaired")
+  T.eq(poisoned.otId, nil, "a traded mon carrying the player id is cleared")
+  T.eq(save.boxes[1][1].otId, nil, "boxed mons are repaired too")
+  T.eq(foreign.otId, 777, "a real foreign OT id is left alone")
+  T.eq(caught.otId, 12345, "a caught mon keeps the player id")
+  T.eq(caught.traded, nil, "and is never marked traded")
+
+  T.eq(SaveData.repairTradedOtIds(save), 0, "the repair is idempotent")
+
+  -- and after the repair the stamp loop must not re-adopt it
+  BattleState.stampOT(save, poisoned)
+  T.eq(poisoned.otId, nil, "the stamp loop does not undo the repair")
+end
+
 T.finish("exp traded ot survives reload bug 1265")

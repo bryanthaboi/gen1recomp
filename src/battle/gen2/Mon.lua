@@ -388,7 +388,8 @@ function Mon.stampOT(save, mon)
   mon.ot = mon.ot or player.name
   -- NpcTrade.lua:150: `ot` is what Breeding reads, `otName` what the summary prints.
   mon.otName = mon.otName or mon.ot
-  mon.otId = mon.otId or player.id
+  -- engine/battle/experience.asm:69: a traded mon keeps its own OT id
+  if not mon.traded then mon.otId = mon.otId or player.id end
   return mon
 end
 

@@ -78,8 +78,12 @@ local MOVE_SUBMENU = { "MOVE", "STATS", "CANCEL" }
 -- engine/pokemon/bills_pc.asm:472-478: BillsPC_Withdraw's menu rows.
 local WITHDRAW_SUBMENU = { "WITHDRAW", "STATS", "RELEASE", "CANCEL" }
 
+-- BillsPCDepositMenuHeader's .MenuData (engine/pokemon/bills_pc.asm:234-240).
+local DEPOSIT_SUBMENU = { "DEPOSIT", "STATS", "RELEASE", "CANCEL" }
+
 function BoxMenu:submenuRows()
   if self.mode == "move" then return MOVE_SUBMENU end
+  if self.mode == "deposit" then return DEPOSIT_SUBMENU end
   return WITHDRAW_SUBMENU
 end
 
@@ -219,21 +223,12 @@ function BoxMenu:act()
     if self.onClose then self.onClose() end
     return
   end
-  -- engine/pokemon/bills_pc.asm:336-344: withdraw and move both PrepSubmenu.
-  if self.mode == "move" or self.mode == "withdraw" then
-    if not self:selected() then return end
-    self.phase = "submenu"
-    -- `ld a, $1 / ld [wMenuCursorY], a`: the submenu always opens on MOVE.
-    self.submenuIndex = 1
-    return
-  end
-  local ok, result = Boxes.deposit(self.save, self.index, self.boxIndex)
-  if not ok then
-    self.message = result
-    return
-  end
-  self.message = nil
-  self:clampIndex()
+  -- engine/pokemon/bills_pc.asm:336-344: withdraw and move both PrepSubmenu,
+  -- and _DepositPKMN's .a_button steps to .WhatsUp the same way (:94-102).
+  if not self:selected() then return end
+  self.phase = "submenu"
+  -- `ld a, $1 / ld [wMenuCursorY], a`: the submenu always opens on its top row.
+  self.submenuIndex = 1
 end
 
 -- ------------------------------------------------------------ MOVE, step 2
@@ -243,8 +238,9 @@ end
 -- the PARTY, so a boxed mon walks straight past.  Returns true, or false and
 -- the string the cart places.
 function BoxMenu:checkMailPreventBlackout()
-  -- `ld a, [wBillsPC_LoadedBox] / and a / jr nz, .Okay`.
-  if not self:isParty() then return true end
+  -- `ld a, [wBillsPC_LoadedBox] / and a / jr nz, .Okay`; _DepositPKMN zeroes
+  -- that byte too, so its list is the party (bills_pc.asm:17-18).
+  if not (self:isParty() or self.mode == "deposit") then return true end
   local party = self.save.party or {}
   -- `cp $3 / jr c, .ItsYourLastPokemon`: a party of one or two may not send
   -- one away at all, however healthy the rest of it is.
@@ -311,10 +307,25 @@ function BoxMenu:doWithdraw()
   self:clampIndex()
 end
 
+-- engine/pokemon/bills_pc.asm:155 BillsPCDepositFuncDeposit
+function BoxMenu:doDeposit()
+  local ok, result = Boxes.deposit(self.save, self.index, self.boxIndex)
+  if not ok then
+    self.message = result
+    return
+  end
+  self.message = nil
+  self.phase = nil
+  self.index, self.scroll = 1, 0
+  self:clampIndex()
+end
+
 function BoxMenu:chooseSubmenu()
   local row = self:submenuRows()[self.submenuIndex]
   if row == "MOVE" then
     self:beginMove()
+  elseif row == "DEPOSIT" then
+    self:doDeposit()
   elseif row == "WITHDRAW" then
     self:doWithdraw()
   elseif row == "STATS" then
@@ -393,6 +404,9 @@ function BoxMenu:insertMon()
     target = target - 1
   end
   table.insert(dest, math.max(1, math.min(target, #dest + 1)), mon)
+  -- .CopyToBox is InsertPokemonIntoBox, which tails into
+  -- RestorePPOfDepositedPokemon (engine/pokemon/move_mon_wo_mail.asm:35-37).
+  if not self:isParty(destIndex) then Boxes.restorePP(mon) end
   self.phase = nil
   self.moveFrom, self.backup = nil, nil
   self.index, self.scroll = 1, 0
@@ -521,6 +535,16 @@ function BoxMenu:askRelease()
   if self:isCancel() then return end
   local mon = self:selected()
   if not mon then return end
+  -- BillsPCDepositFuncRelease runs the mail/blackout net BEFORE the egg check
+  -- (engine/pokemon/bills_pc.asm:183-187).
+  if self.mode == "deposit" then
+    local allowed, refusal = self:checkMailPreventBlackout()
+    if not allowed then
+      self.phase = nil
+      self.message = refusal
+      return
+    end
+  end
   -- Both release paths run BillsPC_IsMonAnEgg first, so the question is never
   -- even asked over an egg (engine/pokemon/bills_pc.asm:186-187 and :427-428).
   if mon.isEgg then
@@ -534,7 +558,12 @@ function BoxMenu:askRelease()
   local name = mon.nickname or mon.name or mon.species or "?"
   game.stack:push(ChoiceBox.new(game, function(yes)
     if not yes then return end
-    local ok, err = Boxes.release(self.save, self.boxIndex, self.index)
+    local ok, err
+    if self.mode == "deposit" then
+      ok, err = Boxes.releaseFromParty(self.save, self.index)
+    else
+      ok, err = Boxes.release(self.save, self.boxIndex, self.index)
+    end
     if not ok then
       self.message = err
       return

@@ -101,6 +101,14 @@ function Boxes.canDeposit(save, partyIndex, boxIndex)
   return true
 end
 
+-- RestorePPOfDepositedPokemon (engine/pokemon/move_mon.asm:711-773): every
+-- slot back to GetMaxPPOfMove, which already carries its own PP Up count.
+function Boxes.restorePP(mon)
+  for _, move in ipairs((mon and mon.moves) or {}) do
+    if type(move) == "table" then move.pp = move.maxPp or move.pp end
+  end
+end
+
 function Boxes.deposit(save, partyIndex, boxIndex)
   local ok, reason = Boxes.canDeposit(save, partyIndex, boxIndex)
   if not ok then return false, reason end
@@ -112,6 +120,9 @@ function Boxes.deposit(save, partyIndex, boxIndex)
   Mail.removeSlot(save, partyIndex)
   local box = Boxes.box(save, boxIndex)
   box[#box + 1] = mon
+  -- SendGetMonIntoFromBox's PC_DEPOSIT arm ends in RestorePPOfDepositedPokemon
+  -- (engine/pokemon/move_mon.asm:633-635, :696-700).
+  Boxes.restorePP(mon)
   return true, mon
 end
 
@@ -129,6 +140,15 @@ function Boxes.withdraw(save, boxIndex, slot)
   local ok, reason = Boxes.canWithdraw(save, boxIndex, slot)
   if not ok then return false, reason end
   local mon = table.remove(Boxes.box(save, boxIndex), slot)
+  -- The `get mon into Party` arm alone heals: status cleared and MON_MAXHP
+  -- copied over MON_HP, an egg's staying 0 (move_mon.asm:666-693).
+  mon.status = nil
+  mon.statusTurns = nil
+  if mon.isEgg then
+    mon.hp = 0
+  else
+    mon.hp = mon.maxHp or mon.hp
+  end
   save.party = save.party or {}
   save.party[#save.party + 1] = mon
   return true, mon
@@ -140,6 +160,16 @@ function Boxes.release(save, boxIndex, slot)
   local box = Boxes.box(save, boxIndex)
   if not box[slot] then return false, "There is no POKéMON there." end
   return true, table.remove(box, slot)
+end
+
+-- RELEASE off the DEPOSIT screen, whose list is the party: it is
+-- RemoveMonFromPartyOrBox's REMOVE_PARTY arm (bills_pc.asm:204-207).
+function Boxes.releaseFromParty(save, slot)
+  local party = (save and save.party) or {}
+  if not party[slot] then return false, "There is no POKéMON there." end
+  local mon = table.remove(party, slot)
+  Mail.removeSlot(save, slot)
+  return true, mon
 end
 
 -- Move a boxed mon to another box (MOVE PKMN W/O MAIL's box-to-box case).

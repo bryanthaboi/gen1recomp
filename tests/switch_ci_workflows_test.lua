@@ -26,7 +26,7 @@ end
 -- Also gates the NX runtime modules and the NX engine suites so an NX
 -- runtime regression cannot slip past switch-selftest / switch-build.
 local SWITCH_PATH_REGEX =
-  [[^(scripts/build_switch\.sh$|scripts/switch/|docs/switch-.*\.md$|tests/switch_ci_workflows_test\.lua$|tests/switch_transfer_docs_test\.lua$|\.github/workflows/(ci|release|switch-artifact-comment)\.yml$|src/core/(NxAssetOverlay|Platform|GameVersion)\.lua$|src/import/CacheFs\.lua$|tests/engine/(assets_version_fallback|nx_generated_guard|nx_yellow_boot|switch_diagnostics)_test\.lua$|tests/engine/platform_nx)]]
+  [[^(scripts/build_switch\.sh$|scripts/switch/|docs/switch-.*\.md$|tests/switch_ci_workflows_test\.lua$|tests/switch_transfer_docs_test\.lua$|\.github/workflows/(ci|release|switch-artifact-comment)\.yml$|src/core/(NxAssetOverlay|Platform|GameVersion)\.lua$|src/import/CacheFs\.lua$|tests/engine/(assets_version_fallback|nx_generated_guard|nx_yellow_boot|switch_diagnostics|cache_fs_gold_nx_load)_test\.lua$|tests/engine/platform_nx)]]
 
 local ci = read(".github/workflows/ci.yml")
 local release = read(".github/workflows/release.yml")
@@ -50,6 +50,7 @@ for _, fragment in ipairs({
   "nx_generated_guard",
   "nx_yellow_boot",
   "switch_diagnostics",
+  "cache_fs_gold_nx_load",
   "tests/engine/platform_nx",
 }) do
   mustContain(ci, fragment, "ci.yml path regex NX fragment")
@@ -79,6 +80,7 @@ do
   mustContain(block, "luajit tests/engine/assets_version_fallback_test.lua", "switch-selftest")
   mustContain(block, "luajit tests/engine/nx_generated_guard_test.lua", "switch-selftest")
   mustContain(block, "luajit tests/engine/nx_yellow_boot_test.lua", "switch-selftest")
+  mustContain(block, "luajit tests/engine/cache_fs_gold_nx_load_test.lua", "switch-selftest")
   mustNotContain(block, "continue-on-error:", "switch-selftest")
 end
 
@@ -185,6 +187,7 @@ mustContain(test_sh, "T0 switch transfer docs gate", "scripts/test.sh")
 mustContain(test_sh, "tests/engine/assets_version_fallback_test.lua", "scripts/test.sh")
 mustContain(test_sh, "tests/engine/nx_generated_guard_test.lua", "scripts/test.sh")
 mustContain(test_sh, "tests/engine/nx_yellow_boot_test.lua", "scripts/test.sh")
+mustContain(test_sh, "tests/engine/cache_fs_gold_nx_load_test.lua", "scripts/test.sh")
 mustContain(build_doc, "tests/switch_ci_workflows_test.lua", "switch-build.md path list")
 mustContain(build_doc, "tests/switch_transfer_docs_test.lua", "switch-build.md path list")
 
@@ -197,6 +200,7 @@ for _, path in ipairs({
   "tests/engine/assets_version_fallback_test.lua",
   "tests/engine/nx_generated_guard_test.lua",
   "tests/engine/nx_yellow_boot_test.lua",
+  "tests/engine/cache_fs_gold_nx_load_test.lua",
   "tests/engine/switch_diagnostics_test.lua",
   "tests/engine/platform_nx_*",
 }) do

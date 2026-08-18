@@ -280,6 +280,7 @@ function Channel.new(engine, spec, options)
     allowLoops = options.allowLoops ~= false,
     frequencyOffset = options.frequencyOffset or 0,
     frameTicks = options.frameTicks or FRAME_TICKS,
+    plainTicks = (options.plainFrames or 0) * FRAME_TICKS,
     speed = 12,
     noteLength = 1, -- Gen 2 CHANNEL_NOTE_LENGTH (note_type)
     durationModifier = 0, -- Gen 2 fractional-frame carry
@@ -349,8 +350,9 @@ function Channel:frequencyGen2(note, octave)
   return bit.band(register + self.frequencyOffset, 0x7FF)
 end
 
-function Channel:durationTicks(length)
-  local tempo = self.sfx and self.frameTicks or self.engine.tempo
+function Channel:durationTicks(length, plain)
+  local tempo = self.sfx and (plain and FRAME_TICKS or self.frameTicks)
+    or self.engine.tempo
   local speed = self.sfx and (self.executeMusic and self.speed or 1)
     or self.speed
   return length * speed * tempo
@@ -586,6 +588,9 @@ function Channel:nextEvent()
       local packed = self:byte()
       local volume = bit.rshift(packed, 4)
       local fade = fadeValue(bit.band(packed, 0x0F))
+      -- audio/engine_2.asm:991-1013, :1015-1033, :1077-1096
+      local plain = self.timeTicks < self.plainTicks
+      local offset = plain and 0 or self.frequencyOffset
       if self.noise then
         -- Audio2_ApplyWavePatternAndFrequency adds wFrequencyModifier to the
         -- frequency low byte for every channel at or past CHAN5, the noise
@@ -595,12 +600,12 @@ function Channel:nextEvent()
         -- byte that noise does not use for frequency.  Dropping it left the
         -- battle hit sounds at their unmodified pitches, where super effective
         -- reads as the duller of the two (#826).
-        local parameter = bit.band(self:byte() + self.frequencyOffset, 0xFF)
+        local parameter = bit.band(self:byte() + offset, 0xFF)
         return self:noiseEvent(
-          self:durationTicks(length), volume, fade, parameter)
+          self:durationTicks(length, plain), volume, fade, parameter)
       end
-      local register = bit.band(self:word() + self.frequencyOffset, 0x7FF)
-      return self:tone(self:durationTicks(length), register, volume, fade)
+      local register = bit.band(self:word() + offset, 0x7FF)
+      return self:tone(self:durationTicks(length, plain), register, volume, fade)
     elseif command == 0x10 then
       local packed = self:byte()
       self.sweep = {
@@ -1260,6 +1265,7 @@ function Engine.new(data, header, options)
       allowLoops = options.allowLoops,
       frequencyOffset = options.frequencyOffset,
       frameTicks = frameTicks,
+      plainFrames = options.plainFrames,
     })
   end
   return engine

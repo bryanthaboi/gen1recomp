@@ -441,7 +441,7 @@ function Ops.cycleMove(S, mon, slot)
   end
   for step = 1, #moves do
     local nextId = moves[((idx + step - 1) % #moves) + 1]
-    if S.data and S.data.moves and S.data.moves[nextId] then
+    if S.data and S.data.moves and type(S.data.moves[nextId]) == "table" then
       MonOps.setMove(S.data, mon, slot, nextId)
       return Ops.mark(S, ("Move %d set to %s"):format(slot, nextId))
     end

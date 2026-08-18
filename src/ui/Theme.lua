@@ -17,6 +17,12 @@ local Theme = {
   textBox = { tx = 0, ty = 12, tw = 20, th = 6, maxCols = 18 },
   -- InitYesNoTextBoxParameters / AskName: hlcoord 14, 7 (YES_NO_MENU 4x3)
   choiceBox = { tx = 14, ty = 7, tw = 6, th = 5 },
+  -- YesNoChoicePokeCenter: hlcoord 11, 6 (HEAL_CANCEL_MENU 7x4, blank line
+  -- before the first item) -- home/yes_no.asm:21, data/yes_no_menu_strings.asm:16
+  healCancelBox = { tx = 11, ty = 6, tw = 9, th = 6, firstItem = 2 },
+  -- EnemySendOutFirstMon inlines its own TWO_OPTION_MENU at hlcoord 0, 7
+  -- instead of the shared right-hand one -- engine/battle/core.asm:1378-1384
+  trainerSwitchBox = { tx = 0, ty = 7, tw = 6, th = 5 },
 }
 
 function Theme.load(data)

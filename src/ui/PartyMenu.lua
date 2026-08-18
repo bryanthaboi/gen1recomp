@@ -313,6 +313,9 @@ function PartyMenu.new(game, opts)
   -- TM/HM display (ABLE / NOT ABLE per mon instead of the HP bar, and the
   -- "Use TM on which POKeMON?" prompt). Set by BagMenu.pickTargetAndUse. #210
   self.tmhm = opts.tmhm
+  -- Evolution stones: opts.evoStone = item id gives Gen 1's
+  -- EVO_STONE_PARTY_MENU ABLE / NOT ABLE display (party_menu.asm:114). #1411
+  self.evoStone = opts.evoStone
   self.forceSwitch = opts.forceSwitch
   self.battle = opts.battle
   self.party = party -- link/scoped battles pass their local party view
@@ -795,6 +798,20 @@ function PartyMenu:draw()
         if m == self.tmhm.move then can = true break end
       end
       -- right-aligned so the shorter "ABLE" shares "NOT ABLE"'s right edge
+      if can then
+        Font.draw(Strings("ABLE"), 120, y + 8)
+      else
+        Font.draw(Strings("NOT ABLE"), 88, y + 8)
+      end
+    elseif self.evoStone then
+      -- party_menu.asm:114 .evolutionStoneMenu: an EVOLVE_ITEM row matching
+      -- wEvoStoneItemID, printed in the TM/HM strings' row+1 column+9 slot
+      local can = false
+      for _, evo in ipairs(def.evolutions or {}) do
+        if evo.method == "ITEM" and evo.item == self.evoStone then
+          can = true break
+        end
+      end
       if can then
         Font.draw(Strings("ABLE"), 120, y + 8)
       else

@@ -85,6 +85,63 @@ local _, _, vw0, vh0 = BorderFill.viewport(0, 0, 160, 144, 0)
 check(vw0 > 0 and vh0 > 0, "scale 0 falls back to 1 rather than collapsing")
 
 -- ---------------------------------------------------------------------------
+-- VOID FILL (#1418): FADE / WATER / TREES / BLACK
+-- ---------------------------------------------------------------------------
+
+eq(BorderFill.voidFill, "fade", "the live fill defaults to FADE")
+eq(BorderFill.voidFillLabel(), "FADE ", "and prints with a trailing space")
+
+local johto = { id = "CHERRYGROVE_CITY", tileset = "TILESET_JOHTO",
+  borderBlock = 0x35 }
+local route = { id = "ROUTE_30", tileset = "TILESET_JOHTO", borderBlock = 0x05 }
+local kanto = { id = "PALLET_TOWN", tileset = "TILESET_KANTO",
+  borderBlock = 0x0f }
+local cave = { id = "UNION_CAVE_1F", tileset = "TILESET_CAVE", borderBlock = 0x09 }
+local house = { id = "PLAYERS_HOUSE_1F", tileset = "TILESET_PLAYERS_HOUSE",
+  borderBlock = 0x00 }
+
+eq(BorderFill.fillBlock(johto), 0x35, "FADE keeps Cherrygrove's water")
+eq(BorderFill.fillBlock(route), 0x05, "and Route 30's trees")
+eq(BorderFill.fillKey(johto), "fade|CHERRYGROVE_CITY",
+  "FADE dissolves per map")
+eq(BorderFill.fillKey(route) ~= BorderFill.fillKey(johto), true,
+  "so the two maps are different fills")
+
+BorderFill.setVoidFill("water")
+eq(BorderFill.fillBlock(johto), 0x35, "WATER uses Cherrygrove's water block")
+eq(BorderFill.fillBlock(route), 0x35, "on Route 30 too")
+eq(BorderFill.fillBlock(kanto), 0x43, "and Cinnabar's water on Kanto")
+eq(BorderFill.fillBlock(cave), 0x09, "but a cave keeps its own border")
+eq(BorderFill.fillBlock(house), 0x00, "and so does a house")
+eq(BorderFill.fillKey(johto), BorderFill.fillKey(route),
+  "two Johto maps share one WATER fill")
+eq(BorderFill.fillKey(johto) ~= BorderFill.fillKey(kanto), true,
+  "Kanto water is a different sheet")
+
+BorderFill.setVoidFill("trees")
+eq(BorderFill.fillBlock(johto), 0x05, "TREES uses New Bark's tree wall")
+eq(BorderFill.fillBlock(kanto), 0x0f, "and Pallet's on Kanto")
+eq(BorderFill.fillBlock(cave), 0x09, "caves still keep their own")
+
+BorderFill.setVoidFill("black")
+eq(BorderFill.fillBlock(johto), false, "BLACK skips the tiled bake")
+eq(BorderFill.fillBlock(house), false, "indoors too")
+eq(BorderFill.fillKey(johto), "black", "and is one sheet everywhere")
+
+BorderFill.setVoidFill("nope")
+eq(BorderFill.voidFill, "fade", "an unknown mode falls back to FADE")
+BorderFill.setVoidFill("fade")
+eq(BorderFill.cycle(1), "water", "cycle steps FADE to WATER")
+eq(BorderFill.cycle(1), "trees", "then TREES")
+eq(BorderFill.cycle(1), "black", "then BLACK")
+eq(BorderFill.cycle(1), "fade", "and wraps to FADE")
+eq(BorderFill.cycle(-1), "black", "left wraps the other way")
+BorderFill.applyOptions({ voidFill = "trees" })
+eq(BorderFill.voidFill, "trees", "applyOptions pushes the saved mode")
+BorderFill.applyOptions({})
+eq(BorderFill.voidFill, "fade", "and a missing key restores FADE")
+
+-- ---------------------------------------------------------------------------
 -- The real cache: the map the bug was reported on
 -- ---------------------------------------------------------------------------
 

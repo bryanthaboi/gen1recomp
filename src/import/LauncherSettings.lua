@@ -529,9 +529,9 @@ end
 -- Gold reads NONE of the rows above.  Its OPTION screen writes a different
 -- set of names, several of which collide with Gen 1's at a different TYPE
 -- (battleStyle "SHIFT" vs "shift", textSpeed a label vs a frame delay), and
--- its renderer has no battle layout, no SGB palette packs and no void fill --
--- so a gear opened on the Gold tab used to offer a dozen controls that did
--- nothing and hide the seven that the cart itself has.
+-- its renderer has no battle layout and no SGB palette packs -- so a gear
+-- opened on the Gold tab used to offer a dozen controls that did nothing
+-- and hide the seven that the cart itself has.
 --
 -- The block lives in options.lua under `gold`, which is exactly where
 -- src/core/gen2/Save.lua loadOptions reads it, so an edit here is live on the
@@ -617,6 +617,21 @@ local function gen2Rows(opts, hooks)
       end)
   end
 
+  local okFill, BorderFill = pcall(require, "src.world.gen2.BorderFill")
+  if okFill and BorderFill.VOID_FILLS then
+    add(Strings("VOID FILL"),
+      function() return BorderFill.voidFillLabel(opts.voidFill) end,
+      function(dir)
+        local modes = BorderFill.VOID_FILLS
+        local cur, idx = opts.voidFill or "fade", 1
+        for i, m in ipairs(modes) do
+          if m == cur then idx = i break end
+        end
+        opts.voidFill = modes[wrapIndex(idx - 1 + dir, #modes) + 1]
+        return true
+      end)
+  end
+
   -- Same #136 gate as the Gen 1 row and the in-game one.
   local okFx, GBCFX = pcall(require, "src.render.GBCFX")
   if okFx and GBCFX.isSupported() then
@@ -634,6 +649,16 @@ local function gen2Rows(opts, hooks)
       function() return VideoMode.modeLabel(opts.videoMode) end,
       function(dir)
         opts.videoMode = VideoMode.cycle(opts.videoMode, dir)
+        return true
+      end)
+  end
+
+  local okCap, FrameCap = pcall(require, "src.core.FrameCap")
+  if okCap then
+    add(Strings("MAX FPS"),
+      function() return FrameCap.label(opts.fpsCap) end,
+      function(dir)
+        opts.fpsCap = FrameCap.cycle(opts.fpsCap, dir)
         return true
       end)
   end

@@ -4,6 +4,7 @@ local PAL = Theme.PAL
 local TouchSkin = require("src.core.TouchSkin")
 local TouchControls = require("src.core.TouchControls")
 local SaveData = require("src.core.SaveData")
+local FilePicker = require("src.core.FilePicker")
 
 local Studio = {}
 
@@ -17,6 +18,17 @@ Studio.CANVASES = {
   { id = "ultrawide", label = "Ultrawide 21:9", w = 2560, h = 1080 },
   { id = "sgb_border", label = "Super Game Boy border", w = 256, h = 224,
     lockViewport = { x = 48 / 256, y = 40 / 224, w = 160 / 256, h = 144 / 224 } },
+}
+
+-- Per-page lock, and whether the canvas preset follows it.  Match is on
+-- by default so a portrait/landscape overlay pair does not need two
+-- separate clicks to preview the right way up.  #1503
+Studio.matchOrient = true
+Studio.ORIENT_CYCLE = { "any", "portrait", "landscape" }
+Studio.ORIENT_LABEL = {
+  any = "Lock: Off",
+  portrait = "Lock: Portrait",
+  landscape = "Lock: Landscape",
 }
 
 local HANDLE = 7
@@ -63,9 +75,91 @@ local function syncActive()
   TouchSkin.pageIndex = Studio.pageIndex
 end
 
-function Studio.setCanvas(index)
+local function canvasOrientation(canvas)
+  canvas = canvas or Studio.canvas()
+  if not canvas then return nil end
+  return canvas.w > canvas.h and "landscape" or "portrait"
+end
+
+local function pickCanvasIndex(want)
+  local cur = Studio.canvas()
+  if canvasOrientation(cur) == want then return Studio.canvasIndex end
+  if cur and cur.id then
+    local hint = cur.id:gsub("portrait", want):gsub("landscape", want)
+    for i, c in ipairs(Studio.CANVASES) do
+      if c.id == hint then return i end
+    end
+  end
+  for i, c in ipairs(Studio.CANVASES) do
+    if canvasOrientation(c) == want and not c.lockViewport then return i end
+  end
+  return nil
+end
+
+function Studio.applyImportedOrient()
+  if not Studio.skin then return false end
+  if not TouchSkin.hasOrientPair(Studio.skin) then
+    Studio.syncCanvasToPage()
+    return false
+  end
+  -- A RetroArch overlay that already auto-rotates should do the same in
+  -- the studio: lock is on, canvas follows, and the visible page matches
+  -- the mock device.  #1503
+  Studio.matchOrient = true
+  Studio.syncPageToCanvas()
+  Studio.syncCanvasToPage()
+  return true
+end
+
+function Studio.syncCanvasToPage()
+  if not Studio.matchOrient then return end
+  local want = TouchSkin.pageOrient(Studio.page())
+  if not want then return end
+  local idx = pickCanvasIndex(want)
+  if idx and idx ~= Studio.canvasIndex then Studio.setCanvas(idx, true) end
+end
+
+function Studio.syncPageToCanvas()
+  if not Studio.matchOrient or not Studio.skin then return end
+  local want = canvasOrientation()
+  if TouchSkin.pageOrient(Studio.page()) == want then return end
+  for i, page in ipairs(Studio.skin.pages or {}) do
+    if TouchSkin.pageOrient(page) == want then
+      Studio.pageIndex = i
+      Studio.selected = nil
+      syncActive()
+      return
+    end
+  end
+end
+
+function Studio.cyclePageOrient(dir)
+  local page = Studio.page()
+  if not page then return end
+  local cur = TouchSkin.pageOrient(page) or "any"
+  local idx = 1
+  for i, o in ipairs(Studio.ORIENT_CYCLE) do
+    if o == cur then idx = i break end
+  end
+  local n = #Studio.ORIENT_CYCLE
+  local nxt = Studio.ORIENT_CYCLE[((idx - 1 + (dir or 1)) % n) + 1]
+  page.orient = nxt
+  local name = tostring(page.name or "")
+  if (nxt == "portrait" or nxt == "landscape")
+     and (name == "" or name == "main" or name:match("^page%d+$")) then
+    page.name = nxt
+  end
+  markDirty()
+  Studio.syncCanvasToPage()
+  return nxt
+end
+
+function Studio.setCanvas(index, fromSync)
   local n = #Studio.CANVASES
   Studio.canvasIndex = ((index - 1) % n) + 1
+  -- Pick the matching page before writing canvas-owned fields onto it,
+  -- so a landscape preset does not stamp a portrait page.  #1503
+  if not fromSync then Studio.syncPageToCanvas() end
   local canvas = Studio.canvas()
   local page = Studio.page()
   if page and canvas.lockViewport then
@@ -76,7 +170,11 @@ function Studio.setCanvas(index)
     page.viewportFill = false
     markDirty()
   end
-  if page then page.aspect = canvas.w / canvas.h end
+  -- A cfg-authored aspect_ratio is the overlay's design aspect; keep it so
+  -- the preview letterboxes like RetroArch instead of stretching (#1503).
+  if page and not page.aspectFromCfg then
+    page.aspect = canvas.w / canvas.h
+  end
 end
 
 function Studio.load(opts)
@@ -101,6 +199,10 @@ function Studio.load(opts)
   TouchControls.active = true
   TouchControls.enabled = true
   TouchControls:setPreview(true)
+  -- Play snaps pages from the window aspect.  The studio uses its own
+  -- Match canvas toggle against the mock device instead.  #1503
+  TouchSkin.autoOrient = false
+  Studio.matchOrient = true
 
   local start = opts.skinId
   if not start then
@@ -129,6 +231,7 @@ function Studio.open(id)
   Studio.dirty = false
   Studio.images = TouchSkin.listImages(Studio.skin.root)
   syncActive()
+  Studio.applyImportedOrient()
   return true
 end
 
@@ -136,6 +239,7 @@ function Studio.unload()
   Studio.pendingPlay = false
   TouchSkin.setSurface(nil)
   TouchSkin.setActive(nil)
+  TouchSkin.autoOrient = true
   TouchControls:setPreview(false)
   TouchControls:reset()
   Studio.skin = nil
@@ -214,12 +318,19 @@ function Studio.cycleImage(dir)
   markDirty()
 end
 
+function Studio.imageTargetLabel()
+  local target = Studio.imageTarget
+  if target == "bezel" or not Studio.selectedControl() then return "bezel" end
+  return target == "pressed" and "pressed art" or "idle art"
+end
+
 function Studio.assignImage(rel)
   local page, ctl = Studio.page(), Studio.selectedControl()
   local img = TouchSkin.resolveImage(Studio.skin.root, rel)
-  if ctl and Studio.imageTarget == "pressed" then
+  local target = Studio.imageTarget
+  if ctl and target == "pressed" then
     ctl.pressedImagePath, ctl.pressedImage = rel, img
-  elseif ctl and Studio.imageTarget == "idle" then
+  elseif ctl and target == "idle" then
     ctl.imagePath, ctl.image = rel, img
   elseif page then
     page.imagePath, page.image = rel, img
@@ -228,11 +339,69 @@ function Studio.assignImage(rel)
   Studio.dirty = true
 end
 
+local function commitSkinId()
+  local skin = Studio.skin
+  if not skin then return end
+  local id = (Studio.skinIdField or ""):gsub("[^%w_%-]", "")
+  if id == "" or id == skin.id then return end
+  TouchSkin.saveTo(skin, id)
+  Studio.available = TouchSkin.list()
+end
+
+function Studio.adoptImage(name, data, target)
+  if not Studio.skin then return false end
+  if target then Studio.imageTarget = target end
+  if not FilePicker.matches(name, FilePicker.IMAGE) then
+    Studio.status = "Pick a PNG or JPG."
+    return false
+  end
+  commitSkinId()
+  local rel, err = TouchSkin.importImage(Studio.skin, name, data)
+  if not rel then
+    Studio.status = "Import failed: " .. tostring(err)
+    return false
+  end
+  local where = Studio.imageTargetLabel()
+  Studio.assignImage(rel)
+  Studio.skinIdField = Studio.skin.id
+  Studio.status = "Imported " .. rel .. " as " .. where
+  if where == "bezel" and not Studio.canvas().lockViewport then
+    Studio.status = Studio.status
+      .. " -- use Detect screen from bezel to place the screen"
+  end
+  return true
+end
+
+function Studio.importImageFile(target)
+  if not Studio.skin then return end
+  target = target or Studio.imageTarget
+  Studio.imageTarget = target
+  if target ~= "bezel" and not Studio.selectedControl() then
+    Studio.status = "Select a control first, or import a bezel image."
+    return
+  end
+  if not FilePicker.available() then
+    Studio.status = "No file picker here -- drag a PNG onto the window instead."
+    return
+  end
+  local prompt = (target == "bezel") and "Choose a bezel image"
+    or "Choose a button image"
+  local path = FilePicker.open(prompt, FilePicker.IMAGE)
+  if not path then return end
+  local base = FilePicker.basename(path)
+  local data, err = FilePicker.read(path)
+  if not data then
+    Studio.status = "Could not read " .. base .. ": " .. tostring(err)
+    return
+  end
+  Studio.adoptImage(base, data, target)
+end
+
 function Studio.filedropped(file)
   if not Studio.skin then return end
   local path = (file.getFilename and file:getFilename()) or ""
-  local base = path:match("([^/\\]+)$") or path
-  if not base:lower():match("%.png$") and not base:lower():match("%.jpe?g$") then
+  local base = FilePicker.basename(path)
+  if not FilePicker.matches(base, FilePicker.IMAGE) then
     Studio.status = "Drop a PNG or JPG to use it as art."
     return
   end
@@ -246,17 +415,7 @@ function Studio.filedropped(file)
     Studio.status = "Could not read " .. base
     return
   end
-  local rel, err = TouchSkin.importImage(Studio.skin, base, data)
-  if not rel then
-    Studio.status = "Import failed: " .. tostring(err)
-    return
-  end
-  Studio.assignImage(rel)
-  local where = Studio.selectedControl()
-    and (Studio.imageTarget == "pressed" and "pressed art" or "idle art")
-    or "bezel"
-  Studio.status = "Imported " .. rel .. " as " .. where
-  Studio.skinIdField = Studio.skin.id
+  Studio.adoptImage(base, data)
 end
 
 function Studio.detectViewport()
@@ -302,6 +461,7 @@ function Studio.addPage()
   Studio.pageIndex = #skin.pages
   Studio.selected = nil
   syncActive()
+  Studio.syncCanvasToPage()
   markDirty()
 end
 
@@ -376,7 +536,8 @@ end
 local function viewportRect(page, r)
   local v = page.viewport
   if not v then return nil end
-  return r.x + v.x * r.w, r.y + v.y * r.h, v.w * r.w, v.h * r.h
+  local bx, by, bw, bh = TouchSkin.pageBox(page, r.w, r.h, r.x, r.y)
+  return bx + v.x * bw, by + v.y * bh, v.w * bw, v.h * bh
 end
 
 local function handleRects(bx, by, bw, bh)
@@ -484,17 +645,19 @@ function Studio.updateDrag(mx, my, r)
     end
   end
 
+  local px, py, pw, ph = TouchSkin.pageBox(page, r.w, r.h, r.x, r.y)
+  if pw <= 0 or ph <= 0 then return end
   if d.kind:find("control") then
     local ctl = Studio.selectedControl()
     if not ctl then return end
-    ctl.x = clamp01(((bx + bw * 0.5) - r.x) / r.w)
-    ctl.y = clamp01(((by + bh * 0.5) - r.y) / r.h)
-    ctl.rangeX = math.max(0.002, (bw * 0.5) / r.w)
-    ctl.rangeY = math.max(0.002, (bh * 0.5) / r.h)
+    ctl.x = clamp01(((bx + bw * 0.5) - px) / pw)
+    ctl.y = clamp01(((by + bh * 0.5) - py) / ph)
+    ctl.rangeX = math.max(0.002, (bw * 0.5) / pw)
+    ctl.rangeY = math.max(0.002, (bh * 0.5) / ph)
   else
     page.viewport = {
-      x = clamp01((bx - r.x) / r.w), y = clamp01((by - r.y) / r.h),
-      w = math.max(0.02, bw / r.w), h = math.max(0.02, bh / r.h),
+      x = clamp01((bx - px) / pw), y = clamp01((by - py) / ph),
+      w = math.max(0.02, bw / pw), h = math.max(0.02, bh / ph),
     }
   end
   markDirty()
@@ -609,17 +772,34 @@ local function inspectorBody(x, y, w)
     Studio.pageIndex = (Studio.pageIndex % #Studio.skin.pages) + 1
     Studio.selected = nil
     syncActive()
+    Studio.syncCanvasToPage()
   end
   if Kit.button(x + half + gap, cy, half, rowH, "Add page", { id = "pageadd" }) then
     Studio.addPage()
   end
   cy = cy + rowH + gap
+  local lock = TouchSkin.pageOrient(page) or "any"
+  if Kit.button(x, cy, half, rowH, Studio.ORIENT_LABEL[lock] or "Lock: Off",
+                { id = "orient" }) then
+    Studio.cyclePageOrient(1)
+  end
+  local matchOn = Studio.matchOrient
+  Studio.matchOrient = Kit.checkbox(x + half + gap, cy, half, rowH,
+                                    Studio.matchOrient, "Match canvas", "matchorient")
+  if Studio.matchOrient and not matchOn then Studio.syncCanvasToPage() end
+  cy = cy + rowH + gap
 
   if page then
     local bezel = page.imagePath or "(none)"
-    if Kit.button(x, cy, w, rowH, "Bezel: " .. bezel, { id = "bezel" }) then
+    local pickW = 82 * Kit.scale
+    local cycleW = w - pickW - gap
+    if Kit.button(x, cy, cycleW, rowH, "Bezel: " .. bezel, { id = "bezel" }) then
       Studio.imageTarget = "bezel"
       Studio.cycleImage(1)
+    end
+    if Kit.button(x + cycleW + gap, cy, pickW, rowH, "Import",
+                  { id = "bezelpick" }) then
+      Studio.importImageFile("bezel")
     end
     cy = cy + rowH + gap
     local vpLabel = page.viewport and "Screen cutout: ON" or "Screen cutout: OFF"
@@ -701,16 +881,24 @@ local function inspectorBody(x, y, w)
   Kit.text("small", ("canvas %dx%d px"):format(canvas.w, canvas.h), x, cy, PAL.faint)
   cy = cy + Kit.textHeight("small") + gap
 
+  local pickW = 82 * Kit.scale
+  local artW = w - pickW - gap
   local idle = ctl.imagePath or "(none)"
-  if Kit.button(x, cy, w, rowH, "Idle art: " .. idle, { id = "img" }) then
+  if Kit.button(x, cy, artW, rowH, "Idle art: " .. idle, { id = "img" }) then
     Studio.imageTarget = "idle"
     Studio.cycleImage(1)
   end
+  if Kit.button(x + artW + gap, cy, pickW, rowH, "Import", { id = "imgpick" }) then
+    Studio.importImageFile("idle")
+  end
   cy = cy + rowH + gap
   local pressed = ctl.pressedImagePath or "(none)"
-  if Kit.button(x, cy, w, rowH, "Pressed art: " .. pressed, { id = "imgp" }) then
+  if Kit.button(x, cy, artW, rowH, "Pressed art: " .. pressed, { id = "imgp" }) then
     Studio.imageTarget = "pressed"
     Studio.cycleImage(1)
+  end
+  if Kit.button(x + artW + gap, cy, pickW, rowH, "Import", { id = "imgppick" }) then
+    Studio.importImageFile("pressed")
   end
   return cy + rowH
 end
@@ -883,6 +1071,16 @@ end
 
 function Studio.wheelmoved(_, dy)
   Studio.wheel = dy
+end
+
+function Studio.focus()
+  Studio.drag = nil
+  Studio.clicked = false
+  if Studio.testing then TouchControls:reset() end
+end
+
+function Studio.visible()
+  Studio.focus()
 end
 
 function Studio.textinput(text)

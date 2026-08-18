@@ -213,6 +213,22 @@ previous, alpha = BorderFill.crossfade(owner, trees, "ROUTE_30")
 check("then it is over", previous, nil)
 check("and the new block owns the void", alpha, 1)
 
+-- Forced WATER on two Johto maps shares a fill key, so the dissolve does
+-- not run identical water against itself.
+BorderFill.setVoidFill("water")
+local johtoWater = { id = "CHERRYGROVE_CITY", tileset = "TILESET_JOHTO",
+  borderBlock = 0x35 }
+local routeTrees = { id = "ROUTE_30", tileset = "TILESET_JOHTO",
+  borderBlock = 0x05 }
+check("WATER fill keys match across Johto",
+  BorderFill.fillKey(johtoWater), BorderFill.fillKey(routeTrees))
+local forced = {}
+BorderFill.crossfade(forced, "water", BorderFill.fillKey(johtoWater))
+local fromForced = BorderFill.crossfade(forced, "water",
+  BorderFill.fillKey(routeTrees))
+check("so walking Route 30 does not start a fade", fromForced, nil)
+BorderFill.setVoidFill("fade")
+
 -- No key at all (an old caller) is the plain single draw.
 local bare = {}
 previous, alpha = BorderFill.crossfade(bare, trees, nil)

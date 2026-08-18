@@ -166,7 +166,8 @@ function EvolutionState:draw()
   if sprite then
     local x = math.floor((160 - sprite:getWidth()) / 2)
     local y = math.max(8, 64 - sprite:getHeight())
-    love.graphics.draw(sprite, x, y)
+    -- engine/movie/evolution.asm:103
+    love.graphics.draw(sprite, x + sprite:getWidth(), y, 0, -1, 1)
     if spriteTrueColor then
       require("src.render.PaletteFX").markTrueColor(x, y, sprite:getDimensions())
     end

@@ -702,6 +702,23 @@ M.MT_MOON_B2F = {
     return false
   end,
   talk = {
+    -- MtMoonB2FSuperNerdText: once beaten his line turns on the fossils
+    -- (scripts/MtMoonB2F.asm:187), which the header's flat `after` can't hold
+    TEXT_MTMOONB2F_SUPER_NERD = function(game, ow, npc, done)
+      if not superNerdBeaten(ow) then
+        engageSuperNerd(game, ow, done)
+        return
+      end
+      local TextBox = require("src.render.TextBox")
+      local t = game.data.text
+      local flags = game.save.flags
+      local line = (flags.EVENT_GOT_DOME_FOSSIL or flags.EVENT_GOT_HELIX_FOSSIL)
+        and (t._MtMoonB2FSuperNerdTheresAPokemonLabText
+             or "Far away, on\nCINNABAR ISLAND,\nthere's a POKéMON\nLAB.")
+        or (t._MtMoonB2fSuperNerdEachTakeOneText
+            or "We'll each take\none!\nNo being greedy!")
+      game.stack:push(TextBox.new(game, line, done))
+    end,
     TEXT_MTMOONB2F_DOME_FOSSIL = mtMoonFossil(
       "DOME_FOSSIL", "MTMOONB2F_HELIX_FOSSIL", "EVENT_GOT_DOME_FOSSIL"),
     TEXT_MTMOONB2F_HELIX_FOSSIL = mtMoonFossil(
@@ -716,7 +733,8 @@ local function museumClerk(game, ow, done, onDecline)
   local t = game.data.text or {}
   if game.save.flags.EVENT_BOUGHT_MUSEUM_TICKET then
     game.stack:push(TextBox.new(game,
-      "Take your time,\nand enjoy it all!", done))
+      t._Museum1FScientist1TakePlentyOfTimeText
+        or "Take your time,\nand enjoy it all!", done))
     return
   end
   -- scripts/Museum1F.asm:72
@@ -734,10 +752,12 @@ local function museumClerk(game, ow, done, onDecline)
           { money = money }))
       elseif yes then
         game.stack:push(TextBox.new(game,
-          "You don't have\nenough money.", onDecline or done, { money = money }))
+          t._Museum1FScientist1DontHaveEnoughMoneyText
+            or "You don't have\nenough money.", onDecline or done, { money = money }))
       else
         game.stack:push(TextBox.new(game,
-          "Come again!", onDecline or done, { money = money }))
+          t._Museum1FScientist1ComeAgainText
+            or "Come again!", onDecline or done, { money = money }))
       end
     end }))
 end

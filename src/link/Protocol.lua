@@ -17,6 +17,25 @@ local Runtime = require("src.mods.Runtime")
 
 local Protocol = {}
 
+local MAX_WIRE_NAME = 40
+
+local function num(v, default)
+  local n = tonumber(v)
+  if n == nil or n ~= n or n == math.huge or n == -math.huge then
+    return default
+  end
+  return n
+end
+
+local function tbl(v)
+  return type(v) == "table" and v or {}
+end
+
+local function text(v)
+  if type(v) ~= "string" then return nil end
+  return v:sub(1, MAX_WIRE_NAME)
+end
+
 Protocol.hello = Handshake.hello
 Protocol.checkCompat = Handshake.checkCompat
 
@@ -78,6 +97,10 @@ function Protocol.unpackMon(data, packed, opts)
   local Stats = require("src.pokemon.Stats")
   local Growth = require("src.pokemon.Growth")
   local strict = opts and opts.strict
+  if type(packed) ~= "table" then
+    if strict then return nil, "unknown POKéMON" end
+    return nil
+  end
   -- forceLevel comes from an "auto-level" ruling.  The picker's ANY choice
   -- ("use each mon's real level", Gen1's only mode) is a string sentinel on
   -- the LinkState/Tournament side (see levelForWire) that must mean "no
@@ -91,7 +114,7 @@ function Protocol.unpackMon(data, packed, opts)
     if strict then return nil, "unknown POKéMON" end
     return nil
   end
-  local level = math.max(2, math.min(100, math.floor(packed.level or 5)))
+  local level = math.max(2, math.min(100, math.floor(num(packed.level, 5))))
   -- "auto-level" tournaments/matches: every participant's real level is
   -- ignored and everyone rebuilds at the same fixed level instead, so a
   -- Lv12 and a Lv100 party can battle on equal footing. Both sides pass
@@ -99,25 +122,27 @@ function Protocol.unpackMon(data, packed, opts)
   if forceLevel then
     level = math.max(2, math.min(100, math.floor(forceLevel)))
   end
+  local packedDvs, packedStatExp = tbl(packed.dvs), tbl(packed.statExp)
   local dvs = {}
   for _, k in ipairs({ "hp", "attack", "defense", "speed", "special" }) do
-    dvs[k] = math.max(0, math.min(15, math.floor((packed.dvs or {})[k] or 0)))
+    dvs[k] = math.max(0, math.min(15, math.floor(num(packedDvs[k], 0))))
   end
   local statExp = {}
   for _, k in ipairs({ "hp", "attack", "defense", "speed", "special" }) do
-    statExp[k] = math.max(0, math.min(65535, math.floor((packed.statExp or {})[k] or 0)))
+    statExp[k] = math.max(0, math.min(65535, math.floor(num(packedStatExp[k], 0))))
   end
   local stats = Stats.calc(def, level, dvs, statExp)
   local moves = {}
-  for _, mv in ipairs(packed.moves or {}) do
+  for _, entry in ipairs(tbl(packed.moves)) do
+    local mv = tbl(entry)
     local mdef = data.moves[mv.id]
     if mdef and #moves < 4 then
-      local ppUps = math.max(0, math.min(3, math.floor(mv.ppUps or 0)))
+      local ppUps = math.max(0, math.min(3, math.floor(num(mv.ppUps, 0))))
       local maxPP = mdef.pp + ppUps * math.floor(mdef.pp / 5)
-      local entry = { id = mv.id,
-                      pp = math.max(0, math.min(maxPP, math.floor(mv.pp or 0))) }
-      if mv.ppUps ~= nil then entry.ppUps = ppUps end
-      table.insert(moves, entry)
+      local move = { id = mv.id,
+                     pp = math.max(0, math.min(maxPP, math.floor(num(mv.pp, 0)))) }
+      if mv.ppUps ~= nil then move.ppUps = ppUps end
+      table.insert(moves, move)
     end
   end
   if #moves == 0 then
@@ -132,27 +157,29 @@ function Protocol.unpackMon(data, packed, opts)
   -- same as a standardized tournament format would
   local forced = forceLevel
   local hp = forced and stats.hp
-    or math.max(0, math.min(stats.hp, math.floor(packed.hp or stats.hp)))
-  local status = forced and nil or packed.status
+    or math.max(0, math.min(stats.hp, math.floor(num(packed.hp, stats.hp))))
+  local status = forced and nil or text(packed.status)
   -- preserve the sender's original-trainer identity (party_struct MON_OTID +
   -- wPartyMonOT on a real cable), clamped/typed like every other field so a
   -- tampered packet can't inject a bad ID or a huge name.  Left nil when the
   -- packet omits them (a v1/old peer) -- no worse than before for that legacy
   -- path, and once ot is set the load-time stampOT backfill (mon.ot or ...)
   -- becomes a no-op so the sender's identity survives save/reload (#215).
-  local otId = packed.otId
-    and math.max(0, math.min(65535, math.floor(packed.otId))) or nil
+  local packedOtId = num(packed.otId)
+  local otId = packedOtId
+    and math.max(0, math.min(65535, math.floor(packedOtId))) or nil
   local ot = type(packed.ot) == "string" and packed.ot:sub(1, 10) or nil
   return {
     species = packed.species,
     level = level,
-    exp = math.max(0, math.floor(packed.exp or Growth.expForLevel(def.growthRate, level))),
+    exp = math.max(0, math.floor(num(packed.exp,
+      Growth.expForLevel(def.growthRate, level)))),
     dvs = dvs,
     statExp = statExp,
     stats = stats,
     hp = hp,
     status = status,
-    nickname = packed.nickname,
+    nickname = text(packed.nickname),
     ot = ot,
     otId = otId,
     moves = moves,
@@ -246,6 +273,10 @@ end
 function Protocol.unpackMon2(data, packed, opts)
   local Mon = require("src.battle.gen2.Mon")
   local strict = opts and opts.strict
+  if type(packed) ~= "table" then
+    if strict then return nil, "unknown POKéMON" end
+    return nil
+  end
   local forceLevel = opts and tonumber(opts.forceLevel) or nil
   local def = data and data.pokemon and data.pokemon[packed.species]
   if not def then
@@ -253,31 +284,33 @@ function Protocol.unpackMon2(data, packed, opts)
     return nil
   end
   local level = math.max(1, math.min(Mon.MAX_LEVEL,
-    math.floor(packed.level or 5)))
+    math.floor(num(packed.level, 5))))
   if forceLevel then
     level = math.max(1, math.min(Mon.MAX_LEVEL, math.floor(forceLevel)))
   end
+  local packedDvs, packedStatExp = tbl(packed.dvs), tbl(packed.statExp)
   local dvs = {}
   for _, k in ipairs(GEN2_DVS) do
     dvs[k] = math.max(0, math.min(Mon.MAX_DV,
-      math.floor((packed.dvs or {})[k] or 0)))
+      math.floor(num(packedDvs[k], 0))))
   end
   -- derived, never taken from the packet (see GEN2_DVS above)
   dvs.hp = Mon.hpDV(dvs)
   local statExp = {}
   for _, k in ipairs(GEN2_STAT_EXP) do
     statExp[k] = math.max(0, math.min(65535,
-      math.floor((packed.statExp or {})[k] or 0)))
+      math.floor(num(packedStatExp[k], 0))))
   end
   local stats = Mon.stats(def.baseStats, dvs, level, statExp)
   local moves = {}
-  for _, mv in ipairs(packed.moves or {}) do
+  for _, packedMove in ipairs(tbl(packed.moves)) do
+    local mv = tbl(packedMove)
     local mdef = data.moves and data.moves[mv.id]
     if mdef and #moves < 4 then
-      local ppUps = math.max(0, math.min(3, math.floor(mv.ppUps or 0)))
+      local ppUps = math.max(0, math.min(3, math.floor(num(mv.ppUps, 0))))
       local maxPp = (mdef.pp or 0) + ppUps * math.floor((mdef.pp or 0) / 5)
       local entry = { id = mv.id, maxPp = maxPp,
-                      pp = math.max(0, math.min(maxPp, math.floor(mv.pp or 0))) }
+                      pp = math.max(0, math.min(maxPp, math.floor(num(mv.pp, 0)))) }
       if mv.ppUps ~= nil then entry.ppUps = ppUps end
       table.insert(moves, entry)
     end
@@ -296,26 +329,27 @@ function Protocol.unpackMon2(data, packed, opts)
   -- an item the peer cannot represent), and the Gen 2 arm of
   -- Protocol.eligibleParty is what keeps it from ever reaching here on a
   -- negotiated trade.
-  local item = packed.item
+  local item = type(packed.item) == "string" and packed.item or nil
   if item ~= nil and not (data.items and data.items[item]) then
     if strict then return nil, "unknown item" end
     item = nil
   end
   local forced = forceLevel
   local hp = forced and stats.hp
-    or math.max(0, math.min(stats.hp, math.floor(packed.hp or stats.hp)))
-  local status = forced and nil or packed.status
-  local otId = packed.otId
-    and math.max(0, math.min(65535, math.floor(packed.otId))) or nil
+    or math.max(0, math.min(stats.hp, math.floor(num(packed.hp, stats.hp))))
+  local status = forced and nil or text(packed.status)
+  local packedOtId = num(packed.otId)
+  local otId = packedOtId
+    and math.max(0, math.min(65535, math.floor(packedOtId))) or nil
   local ot = type(packed.ot) == "string" and packed.ot:sub(1, 10) or nil
   local growth = Mon.growthFor(data, def.growthRate)
   local mon = {
     species = packed.species,
     name = def.name or packed.species,
-    nickname = packed.nickname,
+    nickname = text(packed.nickname),
     level = level,
-    experience = math.max(0, math.floor(packed.experience
-      or Mon.experienceForLevel(growth, level))),
+    experience = math.max(0, math.floor(num(packed.experience,
+      Mon.experienceForLevel(growth, level)))),
     dvs = dvs,
     statExp = statExp,
     stats = stats,
@@ -328,10 +362,10 @@ function Protocol.unpackMon2(data, packed, opts)
     -- GiveEgg starts a hatched mon at 120 and a caught one at 70; a traded mon
     -- keeps what it arrived with, clamped to the byte the cart stores it in
     happiness = math.max(0, math.min(255,
-      math.floor(packed.happiness or 70))),
-    pokerus = math.max(0, math.min(255, math.floor(packed.pokerus or 0))),
+      math.floor(num(packed.happiness, 70)))),
+    pokerus = math.max(0, math.min(255, math.floor(num(packed.pokerus, 0)))),
     caughtLevel = math.max(1, math.min(Mon.MAX_LEVEL,
-      math.floor(packed.caughtLevel or level))),
+      math.floor(num(packed.caughtLevel, level)))),
     ot = ot,
     otName = ot,
     otId = otId,
@@ -339,7 +373,7 @@ function Protocol.unpackMon2(data, packed, opts)
   }
   if packed.isEgg then
     mon.isEgg = true
-    mon.eggSteps = math.max(0, math.floor(packed.eggSteps or 0))
+    mon.eggSteps = math.max(0, math.floor(num(packed.eggSteps, 0)))
   end
   -- Derived from the DVs on the RECEIVING side, exactly as they were derived on
   -- the sending one: shininess, gender and an Unown's letter are all functions
@@ -401,17 +435,19 @@ end
 -- which slots are in play and a pick can never land on a different mon.
 function Protocol.eligibleParty(party, myRecords, theirRecords)
   local eligible, reasons = {}, {}
-  theirRecords = theirRecords or {}
-  local theirSpecies = theirRecords.pokemon or {}
-  local theirMoves = theirRecords.moves or {}
-  local mySpecies = (myRecords or {}).pokemon or {}
-  local myMoves = (myRecords or {}).moves or {}
+  theirRecords = tbl(theirRecords)
+  myRecords = tbl(myRecords)
+  local theirSpecies = tbl(theirRecords.pokemon)
+  local theirMoves = tbl(theirRecords.moves)
+  local mySpecies = tbl(myRecords.pokemon)
+  local myMoves = tbl(myRecords.moves)
   -- Gen 2 only, and absent on both sides of a Gen 1 trade, which is what keeps
   -- the loop below unchanged for Red: a mon with no `item` never reaches the
   -- held-item arm at all.
-  local theirHeld = theirRecords.heldItems
-  local myHeld = (myRecords or {}).heldItems or {}
-  for i, mon in ipairs(party or {}) do
+  local theirHeld = theirRecords.heldItems ~= nil
+    and tbl(theirRecords.heldItems) or nil
+  local myHeld = tbl(myRecords.heldItems)
+  for i, mon in ipairs(tbl(party)) do
     local reason
     if not theirSpecies[mon.species] then
       reason = "not on the other game"
@@ -551,7 +587,7 @@ function TradeSession:handle(msg)
     end
     if self.stage == "waitParty" then self.stage = "picking" end
   elseif msg.type == "pick" then
-    self.theirPick = msg.index
+    self.theirPick = num(msg.index)
     self:advance()
   elseif msg.type == "confirm" then
     self.theirConfirm = msg.ok
@@ -583,7 +619,18 @@ function TradeSession:confirm(ok)
   return { type = "confirm", ok = ok }
 end
 
+function TradeSession:pickResolves()
+  local index = self.theirPick
+  if type(index) ~= "number" then return false end
+  return self.theirParty ~= nil and self.theirParty[index] ~= nil
+end
+
 function TradeSession:advance()
+  if self.theirPick ~= nil and self.theirParty and not self:pickResolves() then
+    self.stage = "cancelled"
+    self.error = "the other game picked a POKéMON that isn't there"
+    return
+  end
   if self.stage == "picking" and self.myPick then
     self.stage = self.theirPick and "confirming" or "waitPick"
   elseif self.stage == "waitPick" and self.theirPick then

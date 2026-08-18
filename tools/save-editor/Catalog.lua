@@ -9,11 +9,23 @@ local function sortedKeys(t)
   return keys
 end
 
+-- Gen 2's generated tables carry provenance scalars (generation, source)
+-- beside the id-keyed records, so a wheel built from every key would offer
+-- them as pickable entries.  #1466
+local function sortedRecordKeys(t)
+  local keys = {}
+  for k, v in pairs(t or {}) do
+    if type(v) == "table" then table.insert(keys, k) end
+  end
+  table.sort(keys)
+  return keys
+end
+
 function Catalog.build(data)
   return {
-    species = sortedKeys(data.pokemon),
-    items = sortedKeys(data.items),
-    moves = sortedKeys(data.moves),
+    species = sortedRecordKeys(data.pokemon),
+    items = sortedRecordKeys(data.items),
+    moves = sortedRecordKeys(data.moves),
   }
 end
 

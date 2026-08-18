@@ -13,6 +13,7 @@ Features intentionally added beyond the original Pokémon Red, Blue, and Yellow 
 * **Mobile touch controls** with editable layouts, vibration, and orientation settings
 * **Touch skins** in RetroArch overlay format, with bezel art, per-button press states, and Super Game Boy borders
 * **Pokédex diploma and printer image exports**
+* **Mod download counts** from the index feed, with Most-downloaded and Trending sorts
 
 ## Gen 2 Specifics
 

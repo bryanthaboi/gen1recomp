@@ -243,8 +243,9 @@ end
 
 C.incbgeffect = function(self, row) self.bg:incEffect(row[2]) end
 
-C.battlergfx_1row = function(self) self:loadBattlerGfx(1) end
-C.battlergfx_2row = function(self) self:loadBattlerGfx(2) end
+-- anim_commands.asm:317: $d9 (anim_battlergfx_2row) dispatches to _1Row
+C.battlergfx_1row = function(self) self:loadBattlerGfx(2) end
+C.battlergfx_2row = function(self) self:loadBattlerGfx(1) end
 
 -- GetPokeBallWobble's answer, which the ball's own script then branches on.
 C.checkpokeball = function(self)

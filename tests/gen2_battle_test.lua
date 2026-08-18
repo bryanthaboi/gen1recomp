@@ -490,6 +490,11 @@ check("hurt is easier to catch", hurtRate > fullRate, true)
 local asleepRate = Catching.rate({
   maxHp = 60, hp = 1, catchRate = 45, ball = "POKE_BALL", status = "sleep" })
 check("sleep adds 10", asleepRate, math.min(255, hurtRate + 10))
+checkNear("preview converts the exact byte roll", Catching.chance({
+  maxHp = 60, hp = 60, catchRate = 45, ball = "POKE_BALL" }),
+  fullRate * 100 / 256, 0.000001)
+check("master ball preview is certain", Catching.chance({
+  maxHp = 60, hp = 60, catchRate = 1, ball = "MASTER_BALL" }), 100)
 -- The cart's bug: burn/poison/paralysis add nothing.
 check("poison adds nothing (cart bug)", Catching.rate({
   maxHp = 60, hp = 1, catchRate = 45, ball = "POKE_BALL",

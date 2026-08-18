@@ -424,11 +424,12 @@ local function renderEffect(data, header, options)
   return love.audio.newSource(sd, "static")
 end
 
-function ChipAudio.newSfx(data, name, pitch, tempo, header)
+function ChipAudio.newSfx(data, name, pitch, tempo, header, plainFrames)
   header = header or data.audio.sfx[name]
   return renderEffect(data, header, {
     frequencyOffset = pitch or 0,
     frameTicks = 0x80 + (tempo or 0x80),
+    plainFrames = plainFrames,
   })
 end
 

@@ -179,6 +179,65 @@ check("the cursor is the column-1 arrow on the label row",
 check("the cursor starts on the first row", cursorAt and cursorAt.y, 2)
 check("FRAME still prints its literal TYPE", findPrint(":TYPE") ~= nil, true)
 
+-- ------------------------------------------------------- mart buy list
+--
+-- BuyMenu (engine/items/mart.asm) is FadeToMenu + BlankScreen, then
+-- PlaceMoneyTopRight and ScrollingMenu_UpdateDisplay's ClearWholeMenuBox.
+-- The list is not MenuBox'd; only the money box and UpdateItemDescription's
+-- textbox are.  The top menu still overlays the mart, so it must not blank.
+local MartMenu = require("src.ui.gen2.MartMenu")
+local Save = require("src.core.gen2.Save")
+
+local martBoxes, martClears = {}, 0
+local martClear, martBox = Chrome.clear, Chrome.box
+local martPrint, martCursor = Chrome.print, Chrome.cursor
+Chrome.clear = function() martClears = martClears + 1 end
+Chrome.box = function(x, y, w, h)
+  martBoxes[#martBoxes + 1] = { x = x, y = y, w = w, h = h }
+end
+Chrome.print = function() end
+Chrome.cursor = function() end
+
+local function martHasBox(x, y, w, h)
+  for _, b in ipairs(martBoxes) do
+    if b.x == x and b.y == y and b.w == w and b.h == h then return true end
+  end
+  return false
+end
+
+local martSave = Save.newGame()
+local martItems = {
+  POTION = { id = "POTION", name = "POTION", pocket = "ITEM", price = 300,
+    description = "Restores HP\nby 20." },
+}
+local mart = MartMenu.new({ save = martSave, data = { items = martItems } }, {
+  save = martSave,
+  items = martItems,
+  marts = { lists = { { "POTION" } } },
+})
+mart:draw()
+check("the top menu does not blank the tilemap", martClears, 0)
+check("and frames BUY/SELL/QUIT", martHasBox(0, 0, 12, 9), true)
+check("and the welcome speech box", martHasBox(0, 12, 20, 6), true)
+check("the top menu is not opaque", mart.isOpaque, false)
+
+martClears, martBoxes = 0, {}
+mart:enterBuy()
+mart:draw()
+check("BUY blanks the screen (BlankScreen)", martClears > 0, true)
+check("the money box is framed", martHasBox(11, 0, 9, 3), true)
+check("the description box is framed", martHasBox(0, 12, 20, 6), true)
+check("the item list is not (ClearWholeMenuBox, not MenuBox)",
+  martHasBox(1, 3, 19, 9), false)
+check("BlankScreen shadows isOpaque so the letterbox is not the mart",
+  mart.isOpaque, true)
+
+mart:leaveBuy()
+check("leaving BUY unshadows isOpaque", mart.isOpaque, false)
+
+Chrome.clear, Chrome.box = martClear, martBox
+Chrome.print, Chrome.cursor = martPrint, martCursor
+
 -- ------------------------------------------------------- one blit scale
 --
 -- Every Gold screen paints its 160x144 panel through the same helper.  A

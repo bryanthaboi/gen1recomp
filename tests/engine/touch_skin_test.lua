@@ -51,6 +51,7 @@ local page = skin.pages[1]
 eq(page.name, "shell", "page name")
 eq(page.imagePath, "img/back.png", "page background path")
 check(page.fullScreen, "full_screen parsed")
+check(not page.aspectFromCfg, "a cfg without aspect_ratio does not lock aspect")
 eq(page.alphaMod, 0.001, "overlay alpha_mod parsed")
 eq(#page.controls, 7, "seven descs parsed")
 
@@ -109,7 +110,7 @@ local sx, sy, sw, sh, fill = TouchSkin.viewport(W, H)
 eq(sx, 0, "viewport x") eq(sy, 0, "viewport y")
 eq(sw, 400, "viewport w") eq(sh, 400, "viewport h")
 check(fill, "viewport fill flag returned")
-eq(TouchSkin.viewport(W, H), 0, "viewport is window-relative, not page-relative")
+eq(TouchSkin.viewport(W, H), 0, "without a locked aspect, viewport tracks the window")
 
 check(TouchControls:touchpressed("f1", at(0.80, 0.75)), "press on A is captured")
 check(Input:isDown("a"), "skin A presses GB a")
@@ -195,6 +196,8 @@ if bundled then
   for _, btn in ipairs({ "a", "b", "start", "select", "up", "down", "left", "right" }) do
     check(named[btn], "gb_anim binds GB " .. btn)
   end
+  check(not TouchSkin.hasOrientPair(bundled),
+        "gb_anim is not a portrait/landscape auto-rotate overlay")
 end
 
 local tv = TouchSkin.load("assets/skins/tv_crt", "tv_crt")
@@ -321,5 +324,105 @@ end
 
 TouchSkin.setActive(nil)
 TouchControls:setHotkeyHandler(nil)
+
+-- ------------------------------------------ auto-rotate (#1503)
+
+-- RetroArch overlays name a portrait page and a landscape page and wire
+-- overlay_next between them.  Play has to pick the one that matches the
+-- window, or landscape stretches the portrait ranges into wide ovals.
+local ORIENT_CFG = [[
+overlays = 2
+overlay0_name = "portrait"
+overlay0_full_screen = true
+overlay0_normalized = true
+overlay0_aspect_ratio = 0.45
+overlay0_descs = 1
+overlay0_desc0 = "a,0.84382,0.69563,radial,0.09722,0.04375"
+
+overlay1_name = "landscape"
+overlay1_full_screen = true
+overlay1_normalized = true
+overlay1_aspect_ratio = 2.22222222222222
+overlay1_descs = 1
+overlay1_desc0 = "a,0.8307031248,0.8614400000,radial,0.0364168752,0.0813300000"
+]]
+local orient = assert(TouchSkin.parse(ORIENT_CFG))
+check(orient.pages[1].aspectFromCfg, "portrait page locks the cfg aspect_ratio")
+check(orient.pages[2].aspectFromCfg, "landscape page locks the cfg aspect_ratio")
+eq(orient.pages[1].orient, "portrait", "a portrait page name locks on import")
+eq(orient.pages[2].orient, "landscape", "a landscape page name locks on import")
+check(TouchSkin.hasOrientPair(orient), "the pair is an auto-rotate overlay")
+TouchSkin.setActive(orient)
+TouchSkin.autoOrient = true
+
+local PW, PH = 720, 1600
+TouchSkin.setSurface(0, 0, PW, PH)
+eq(TouchSkin.page().name, "portrait", "a tall window picks the portrait page")
+local _, _, pHalfW, pHalfH =
+  TouchSkin.controlGeometry(TouchSkin.page(), TouchSkin.page().controls[1], PW, PH)
+eq(math.floor(pHalfW + 0.5), 70, "portrait A half-width follows range_x")
+eq(math.floor(pHalfH + 0.5), 70, "portrait A half-height follows range_y")
+
+local LW, LH = 1600, 720
+TouchSkin.setSurface(0, 0, LW, LH)
+eq(TouchSkin.page().name, "landscape", "a wide window picks the landscape page")
+local _, _, lHalfW, lHalfH =
+  TouchSkin.controlGeometry(TouchSkin.page(), TouchSkin.page().controls[1], LW, LH)
+eq(math.floor(lHalfW + 0.5), 58, "landscape A half-width follows the landscape range")
+eq(math.floor(lHalfH + 0.5), 59, "landscape A half-height follows the landscape range")
+check(math.abs(lHalfW - lHalfH) < 2, "landscape A stays round instead of stretching")
+
+-- 16:9 is not the overlay's 20:9.  Letterbox to aspect_ratio so A stays round
+-- instead of filling the window and turning into a tall oval (#1503).
+TouchSkin.setSurface(0, 0, 1920, 1080)
+eq(TouchSkin.page().name, "landscape", "16:9 still picks landscape")
+local _, _, boxW, boxH = TouchSkin.pageBox(TouchSkin.page(), 1920, 1080)
+eq(math.floor(boxW + 0.5), 1920, "letterbox keeps the 16:9 width")
+eq(math.floor(boxH + 0.5), 864, "and the overlay's 20:9 height")
+local _, _, sHalfW, sHalfH =
+  TouchSkin.controlGeometry(TouchSkin.page(), TouchSkin.page().controls[1], 1920, 1080)
+check(math.abs(sHalfW - sHalfH) < 2, "A stays round on a 16:9 window")
+
+local nativeOrient = TouchSkin.parseNative(TouchSkin.serialize(orient))
+check(nativeOrient and nativeOrient.pages[2].aspectFromCfg,
+      "native export keeps the aspect lock")
+
+-- an explicit lock wins over the page name, so a studio-authored "main"
+-- page can still auto-rotate in play
+local LOCK_CFG = [[
+overlays = 2
+overlay0_name = "main"
+overlay0_full_screen = true
+overlay0_descs = 1
+overlay0_desc0 = "a,0.5,0.5,radial,0.05,0.05"
+overlay1_name = "wide"
+overlay1_full_screen = true
+overlay1_descs = 1
+overlay1_desc0 = "a,0.5,0.5,radial,0.05,0.05"
+]]
+local locked = assert(TouchSkin.parse(LOCK_CFG))
+locked.pages[1].orient = "portrait"
+locked.pages[2].orient = "landscape"
+TouchSkin.setActive(locked)
+TouchSkin.setSurface(0, 0, 1600, 720)
+eq(TouchSkin.page().name, "wide", "orient lock auto-rotates a page not named landscape")
+local roundTrip = TouchSkin.parseNative(TouchSkin.serialize(locked))
+eq(roundTrip.pages[1].orient, "portrait", "native export keeps a portrait lock")
+eq(roundTrip.pages[2].orient, "landscape", "and a landscape lock")
+
+TouchSkin.setActive(orient)
+TouchSkin.autoOrient = false
+TouchSkin.pageIndex = 1
+eq(TouchSkin.page().name, "portrait",
+   "the studio can keep a portrait page on a landscape canvas")
+TouchSkin.autoOrient = true
+TouchSkin.setSurface(nil)
+
+-- pages that are not a portrait/landscape pair (gb_anim) stay put
+TouchSkin.setActive(skin)
+TouchSkin.setSurface(0, 0, LW, LH)
+eq(TouchSkin.page().name, "shell", "a non-oriented skin does not auto-rotate")
+TouchSkin.setSurface(nil)
+TouchSkin.setActive(nil)
 
 T.finish("touch_skin")

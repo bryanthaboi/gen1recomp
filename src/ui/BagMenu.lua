@@ -300,7 +300,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     end
     list.index = math.min(list.index, math.max(1, #list.items))
     if extra and extra.evolveTo then
-      list:close()
+      -- engine/menus/start_sub_menus.asm:408 .useItem_partyMenu
       local Evolution = require("src.pokemon.Evolution")
       -- item_effects.asm ItemUseEvoStone sets wForceEvolution before
       -- TryEvolvingMon, so a stone evolution's B press is read and
@@ -428,11 +428,12 @@ local function pickTargetAndUse(game, battle, id, list)
   -- TM/HM: open the party menu in Gen 1's TM/HM display mode so each mon
   -- shows ABLE / NOT ABLE from its learnset and the prompt reads "Use TM on
   -- which POKeMON?" (engine/items/item_effects.asm ItemUseTMHM ->
-  -- party_menu.asm TM/HM type). Stones and other pickOnly items keep the
-  -- plain HP layout (Gen 1 shows no ABLE/NOT ABLE for them), so gate
-  -- strictly on def.machine. #210
+  -- party_menu.asm TM/HM type). #210  Stones get the same ABLE / NOT ABLE
+  -- column: ItemUseEvoStone sets EVO_STONE_PARTY_MENU (party_menu.asm:114).
   if def and def.machine then
     opts.tmhm = { move = def.machine.move, kind = def.machine.kind }
+  elseif ItemEffects.isStone(id) then
+    opts.evoStone = id
   end
   require("src.ui.Screens").push(game, "PartyMenu", opts)
 end

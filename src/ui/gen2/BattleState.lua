@@ -314,6 +314,13 @@ function BattleState.new(game, opts)
   self.showEnemyHud = false
   self.showPlayerHud = false
 
+  -- BattleStart_TrainerHuds, farcalled from BattleStartMessage before the
+  -- opening line (engine/battle/trainer_huds.asm:1-9, core.asm:8733).
+  self.ballRows = {
+    player = true,
+    enemy = not (self.battle and self.battle.wild),
+  }
+
   -- InitEnemyTrainer (engine/battle/core.asm:7848) puts the CLASS's 7x7
   -- frontpic in the enemy pic box BEFORE the intro slide, and it stays there
   -- until ResetEnemyBattleVars slides it off; only then is the mon drawn.  The
@@ -349,6 +356,7 @@ function BattleState.new(game, opts)
 
   local enemy = self.battle and self.battle.enemy
   self:noteFirstUnown(enemy)
+  self:markSeen(enemy)
   if enemy then
     if self.battle.wild then
       -- BattleCheckEnemyShininess: a shiny wild mon gets ANIM_SEND_OUT_MON's
@@ -399,6 +407,13 @@ function BattleState.new(game, opts)
   -- "X fainted!" is even displayed.  The replacement arrives with its own
   -- `send` event, which is where the cart's send-out animation sits.
   self.shownMon = { player = player, enemy = enemy }
+  -- home/battle.asm:150 UpdateBattleHuds
+  self.shownStatus = {
+    player = (player and player.status) or false,
+    enemy = (enemy and enemy.status) or false,
+  }
+  -- engine/battle/trainer_huds.asm:142-151
+  self.caughtMark = self:dexCaught(enemy)
   -- And the same for the two numbers AnimateExpBar walks: wBattleMonLevel is
   -- only advanced inside its level loop, right after that level's bar has
   -- crawled full (engine/battle/core.asm:7267-7274), so neither the level nor
@@ -441,6 +456,16 @@ function BattleState:noteFirstUnown(mon)
   if not (save and mon and mon.species == Unown.SPECIES) then return end
   if (save.firstUnownSeen or 0) ~= 0 then return end
   save.firstUnownSeen = Unown.monLetter(mon)
+end
+
+-- LoadEnemyMon's "Saw this mon" (engine/battle/core.asm:6203-6209): the seen
+-- flag is stamped for every battle mode, so a trainer's mon counts too.
+function BattleState:markSeen(mon)
+  local save = self.save
+  if not (save and mon and mon.species) then return end
+  save.pokedex = save.pokedex or { seen = {}, caught = {} }
+  save.pokedex.seen = save.pokedex.seen or {}
+  save.pokedex.seen[mon.species] = true
 end
 
 -- The DUDE answering a prompt.  Every re-arm in the ASM sits at the moment the
@@ -936,6 +961,25 @@ function BattleState:dexCaught(mon)
   return (mon and caught and caught[mon.species]) and true or false
 end
 
+-- The status the HUD prints, one drain behind the engine the way shownHp is:
+-- UpdateBattleHuds runs after the animation and its line (home/battle.asm:150).
+function BattleState:hudStatus(mon, side)
+  local shown = side and self.shownStatus and self.shownStatus[side]
+  if shown == nil then return mon and mon.status or nil end
+  return shown or nil
+end
+
+-- home/battle.asm:150, for the clears no queued event carries (a mon waking,
+-- a thaw, a bag cure): the tags catch up once the queue is idle.
+function BattleState:syncShownStatus()
+  local shown, battle = self.shownStatus, self.battle
+  if not (shown and battle) then return end
+  for _, side in ipairs({ "player", "enemy" }) do
+    local mon = battle[side]
+    shown[side] = (mon and mon.status) or false
+  end
+end
+
 -- The low-HP alarm is not an SFX id at all.  PlayDanger (audio/engine.asm:531)
 -- runs every frame while DANGER_ON_F is set in wLowHealthAlarm and writes a
 -- two-tone square straight to channel 1 -- DangerSoundHigh ($750) at counter 0,
@@ -1153,7 +1197,7 @@ function BattleState:stepAnim(input)
     -- Cart still reaches the after-anim arm after a move script ends; a skip
     -- of the move should not drop the hit shake that follows it.
     if self:startPendingAfterAnim() then return end
-    return self:endSendOutAnim()
+    return self:endSendOutAnim(true)
   end
   if not self.anim:step() then
     self:latchCaughtPic()
@@ -1170,10 +1214,17 @@ end
 
 -- Whatever Call_PlayBattleAnim was standing in front of: a send-out's cry and
 -- HUD update run the moment its animation is done, cut short or not.
-function BattleState:endSendOutAnim()
+function BattleState:endSendOutAnim(skipped)
   local after = self.afterSendOut
   if not after then return end
   self.afterSendOut = nil
+  if after.shiny and not skipped then
+    after.shiny = nil
+    if self:animForId("ANIM_SEND_OUT_MON", after.side, 1) then
+      self.afterSendOut = after
+      return
+    end
+  end
   self:finishSendOut(after)
 end
 
@@ -1202,6 +1253,7 @@ function BattleState:advanceQueue()
     self.introTextShown = nil
   end
   if not event then
+    self:syncShownStatus()
     -- `jp PlayerSwitch`, which follows the enemy's own send-out and spends no
     -- turn (engine/battle/core.asm:2955-2963).
     if self.shiftSwitchIndex then
@@ -1315,6 +1367,14 @@ function BattleState:advanceQueue()
     self.shownHp[event.side] = event.mon.hp or 0
     if self.hpAnim and self.hpAnim.side == event.side then self.hpAnim = nil end
   end
+  -- And the same lag for the status tag (home/battle.asm:150); a send snaps it
+  -- to the incoming mon.
+  if self.shownStatus and event.side
+      and (event.kind == "status"
+        or (event.kind == "send" and event.mon)) then
+    self.shownStatus[event.side] =
+      (event.kind == "send" and event.mon.status or event.status) or false
+  end
   -- AnimateExpBar (engine/battle/core.asm:7191) is called from INSIDE
   -- GiveExperiencePoints before the exp is committed (the call at :6888 sits
   -- ahead of the commit at :6889-6901), so the bar crawls from the figures
@@ -1339,7 +1399,12 @@ function BattleState:advanceQueue()
     -- is still on screen for its own line and the replacement arrives here.
     if self.shownMon then self.shownMon[event.side] = event.mon end
     -- The second of the cart's two wFirstUnownSeen writes (core.asm:3251).
-    if event.side == "enemy" then self:noteFirstUnown(event.mon) end
+    if event.side == "enemy" then
+      self:noteFirstUnown(event.mon)
+      self:markSeen(event.mon)
+      -- engine/battle/trainer_huds.asm:142-151
+      self.caughtMark = self:dexCaught(event.mon)
+    end
     if event.side == "player" then
       -- SendOutPlayerMon zeroes wBattleMenuCursorPosition and wCurMoveNum back
       -- to back (engine/battle/core.asm:3809), so a switched-in mon opens on
@@ -1535,12 +1600,18 @@ end
 -- SetEnemyTurn / SetPlayerTurn, then ANIM_SEND_OUT_MON.  The cry and the HUD
 -- come after the animation, not with it.
 function BattleState:startSendOut(side, mon)
-  local after = { side = side, mon = mon }
+  -- BattleCheckPlayerShininess / BattleCheckEnemyShininess replay the anim's
+  -- `.Shiny` arm before the cry (core.asm:3826-3831, :3371-3377).
+  local after = { side = side, mon = mon, shiny = mon and mon.shiny and true }
   -- ShowSetEnemyMonAndSendOutAnimation and SendOutPlayerMon both draw the pic
   -- into the box before they play the animation, which is the one thing that
   -- undoes a cleared box.
   self.picHidden[side] = false
   self.faintSlide = nil
+  -- The rows are shadow OAM (engine/battle/trainer_huds.asm:203-223), which
+  -- this animation's own sprites overwrite.
+  self.ballRows.player = false
+  self.ballRows.enemy = false
   if self:animForId("ANIM_SEND_OUT_MON", side) then
     self.afterSendOut = after
     return true
@@ -2569,6 +2640,9 @@ function BattleState:pushCaught(enemy, itemId)
     -- in the box", item_effects.asm:624).  Boxes.deposit stays an append: the
     -- PC's own move is InsertPokemonIntoBox, which inserts at the cursor.
     table.insert(box, 1, enemy)
+    -- SendMonIntoBox refills the boxed slot's PP before it closes SRAM
+    -- (move_mon.asm:1062-1063).
+    Boxes.restorePP(enemy)
     -- `.SendToPC` re-reads sBoxCount AFTER the insert and sets
     -- BATTLERESULT_BOX_FULL when the box has just filled
     -- (item_effects.asm:612-619); Script_reloadmapafterbattle tests that bit
@@ -2638,6 +2712,9 @@ end
 -- (engine/battle/core.asm:3298-3304, data/text/battle.asm:222-231).
 function BattleState:offerShiftSwitch(mon)
   self.shiftIndex = 1
+  -- HandleEnemySwitch farcalls EnemySwitch_TrainerHud before the prompt
+  -- (engine/battle/core.asm:2246, engine/battle/trainer_huds.asm:11-15).
+  self.ballRows.enemy = true
   local trainer = (self.battle.trainer and self.battle.trainer.name) or "Foe"
   local player = (self.save and self.save.player and self.save.player.name)
     or "GOLD"
@@ -2868,6 +2945,37 @@ function BattleState:openDexEntry(species)
   })
 end
 
+function BattleState:catchOptions(itemId)
+  local data = self.game and self.game.data or {}
+  local battle = self.battle
+  local enemy = battle and battle.enemy
+  if not enemy then return nil end
+  local enemyDef = data.pokemon and data.pokemon[enemy.species]
+  local dexEntry = data.gen2Pokedex and data.gen2Pokedex[enemy.species]
+  local evolveItem
+  for _, entry in ipairs((enemyDef and enemyDef.evolutions) or {}) do
+    if entry.method == "EVOLVE_ITEM" then evolveItem = entry.item end
+  end
+  local player = battle.player
+  return {
+    battle = battle, mon = enemy, def = enemyDef,
+    maxHp = enemy.maxHp or (enemy.stats and enemy.stats.hp), hp = enemy.hp,
+    catchRate = enemyDef and enemyDef.catchRate or 45, ball = itemId,
+    status = enemy.status, random = battle.random,
+    weight = dexEntry and dexEntry.weight, level = enemy.level,
+    playerLevel = player and player.level,
+    fishing = battle.battleType == "fish", species = enemy.species,
+    gender = enemy.gender, playerSpecies = player and player.species,
+    playerGender = player and player.gender, evolveItem = evolveItem,
+  }
+end
+
+function BattleState:catchChance(itemId)
+  if self.tutorial then return 100 end
+  local opts = self:catchOptions(itemId)
+  return opts and Catching.chance(opts) or nil
+end
+
 -- Items in battle: balls try a catch, the stat items apply their stage, and
 -- everything with a ported party effect runs the same item_effects.asm routine
 -- the field pack runs.  Anything else reports that it cannot be used, which is
@@ -2897,7 +3005,6 @@ function BattleState:useItem(itemId)
       return
     end
     local enemy = self.battle.enemy
-    local enemyDef = data.pokemon and data.pokemon[enemy.species]
     local caught, rate
     if self.tutorial then
       -- `ld a, [wBattleType] / cp BATTLETYPE_TUTORIAL /
@@ -2911,32 +3018,8 @@ function BattleState:useItem(itemId)
       caught, rate = true, 255
     else
       -- The specialty-ball conditions (BallMultiplierFunctionTable): each one
-      -- is something this screen already knows.  Heavy Ball reads the dex
-      -- weight, Moon Ball the species' stone row, Love Ball both genders,
-      -- Level Ball the two levels, Lure Ball wBattleType.
-      local dexEntry = data.gen2Pokedex and data.gen2Pokedex[enemy.species]
-      local evolveItem
-      for _, entry in ipairs((enemyDef and enemyDef.evolutions) or {}) do
-        if entry.method == "EVOLVE_ITEM" then evolveItem = entry.item end
-      end
-      local player = self.battle.player
-      caught, rate = Catching.attempt({
-        maxHp = enemy.maxHp or (enemy.stats and enemy.stats.hp),
-        hp = enemy.hp,
-        catchRate = enemyDef and enemyDef.catchRate or 45,
-        ball = itemId,
-        status = enemy.status,
-        random = self.battle.random,
-        weight = dexEntry and dexEntry.weight,
-        level = enemy.level,
-        playerLevel = player and player.level,
-        fishing = self.battle.battleType == "fish",
-        species = enemy.species,
-        gender = enemy.gender,
-        playerSpecies = player and player.species,
-        playerGender = player and player.gender,
-        evolveItem = evolveItem,
-      })
+      -- is also used by the read-only preview, so both paths stay exact.
+      caught, rate = Catching.attempt(self:catchOptions(itemId))
     end
     -- wWildMon carries the answer through the animation, and
     -- wThrownBallWobbleCount is the counter GetPokeBallWobble bumps once per
@@ -3231,13 +3314,13 @@ function BattleState:drawHud()
   -- PlaceNonFaintStatus (engine/pokemon/mon_stats.asm): a statused mon's tag
   -- prints where the level goes, and DrawEnemyHUD's `.skip_level` arm drops
   -- the level entirely while one is up.
-  Chrome.print(self:statusTag(enemy) or ("<LV>" .. tostring(enemy.level or 1)),
-    6, 1)
+  Chrome.print(self:statusTag(enemy, "enemy")
+    or ("<LV>" .. tostring(enemy.level or 1)), 6, 1)
   local enemyGender = self:genderSymbol(enemy)
   if enemyGender then Chrome.print(enemyGender, 9, 1) end
   -- `ld a, [wBattleMode] / dec a / ret nz`, then CheckCaughtMon puts $5d at
   -- (1,1) (engine/battle/trainer_huds.asm:140-152).
-  if self.battle and self.battle.wild and self:dexCaught(enemy) then
+  if self.battle and self.battle.wild and self.caughtMark then
     self.hud:drawCaughtIcon(1, 1, self:hudHp(enemy, "enemy"),
       enemy.maxHp or (enemy.stats and enemy.stats.hp))
   end
@@ -3249,6 +3332,14 @@ function BattleState:drawHud()
     self:drawFrame(1, 3, 10, false)
   end
   end
+  -- ShowOTTrainerMonsRemaining (engine/battle/trainer_huds.asm:32-45): balls
+  -- walking LEFT from OAM (72, 32), which the -8/-16 offset puts at (8, 2).
+  if showStatus and self.ballRows.enemy then
+    if not self.showEnemyHud and self.hud:available() then
+      self.hud:drawEnemyFrame()
+    end
+    self.hud:drawBallRow(self.battle and self.battle.enemyParty, 8, 2, -1)
+  end
 
   self:drawPic(enemy, false)
 
@@ -3257,6 +3348,14 @@ function BattleState:drawHud()
   --   the HP bar at (10,9), its numbers below; the vertical bar at (18,9), the
   --   border from (18,10) going left, and the exp bar at (10,11).
   self:drawPic(player, true)
+  -- ShowPlayerMonsRemaining (engine/battle/trainer_huds.asm:17-30): balls
+  -- walking RIGHT from OAM (96, 96), i.e. tile (11, 10).
+  if showStatus and self.ballRows.player then
+    if not self.showPlayerHud and self.hud:available() then
+      self.hud:drawPartyIconFrame()
+    end
+    self.hud:drawBallRow(self.battle and self.battle.party, 11, 10, 1)
+  end
   -- No player HUD in the catching tutorial: DrawPlayerHUD lives in
   -- SendOutPlayerMon, which BATTLETYPE_TUTORIAL jumps straight over, and
   -- BattleMenu's own tutorial arm skips UpdateBattleHuds as well.  The DUDE's
@@ -3270,7 +3369,7 @@ function BattleState:drawHud()
   Chrome.print(self:name(player), 10, 7)
   -- PrintPlayerHUD places the same status tag at (14,8) and skips the level
   -- while it is up.
-  Chrome.print(self:statusTag(player)
+  Chrome.print(self:statusTag(player, "player")
     or ("<LV>" .. tostring(self.shownLevel or player.level or 1)), 14, 8)
   local playerGender = self:genderSymbol(player)
   if playerGender then Chrome.print(playerGender, 17, 8) end
@@ -3303,8 +3402,8 @@ local STATUS_TAGS = {
   paralyze = "PAR", sleep = "SLP",
 }
 
-function BattleState:statusTag(mon)
-  return mon and STATUS_TAGS[mon.status] or nil
+function BattleState:statusTag(mon, side)
+  return mon and STATUS_TAGS[self:hudStatus(mon, side)] or nil
 end
 
 -- ♂ / ♀ after the level, or nil for a genderless species (PrintPlayerHUD

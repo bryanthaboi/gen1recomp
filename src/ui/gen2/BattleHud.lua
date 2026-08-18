@@ -48,6 +48,18 @@ local TILE_PLAYER_BOTTOM_LEFT = 0x6f
 -- (engine/battle/trainer_huds.asm:143-152).
 local TILE_CAUGHT = 0x5d
 
+-- The ball icons StageBallTilesData stages, one per party slot
+-- (engine/battle/trainer_huds.asm:47-99).
+local TILE_BALL_NORMAL = 0x31
+local TILE_BALL_STATUSED = 0x32
+local TILE_BALL_FAINTED = 0x33
+local TILE_BALL_EMPTY = 0x34
+-- DrawPlayerPartyIconHUDBorder's corner (trainer_huds.asm:118-132), which is
+-- DrawPlayerHUDBorder's with $77 swapped for $5c.
+local TILE_PARTY_ICON_BOTTOM_RIGHT = 0x5c
+
+BattleHud.PARTY_LENGTH = 6
+
 function BattleHud.new(menuGfx, palettes)
   local self = setmetatable({}, BattleHud)
   self.gfx = menuGfx and menuGfx.battleHud or nil
@@ -184,18 +196,25 @@ local TILE_EXP_FULL = 0x6a    -- FontBattleExtra
 local TILE_EXP_EMPTY = 0x62   -- FontBattleExtra
 local EXP_PARTIAL_BASE = 0x54 -- $54 + remainder lands in ExpBarGFX
 
+-- PAL_BATTLE_BG_EXP, which the attrmap lays over (10,11)..(18,11)
+-- (engine/gfx/cgb_layouts.asm:142-145).
+function BattleHud:expColors()
+  local pal = self.palettes and self.palettes.expBar
+  if not pal then return nil end
+  return {
+    { 255, 255, 255 },
+    { pal[1][1], pal[1][2], pal[1][3] },
+    { pal[2][1], pal[2][2], pal[2][3] },
+    { 0, 0, 0 },
+  }
+end
+
 function BattleHud:drawExpBar(fraction, tx, ty)
   if not self:image("hpBar") then return false end
   fraction = math.max(0, math.min(1, fraction or 0))
   local pixels = math.floor(fraction * BattleHud.EXP_LENGTH_PX)
   -- The whole row wears the exp bar's palette, full and empty cells included.
-  local pal = self.palettes and self.palettes.expBar
-  local colors = pal and {
-    { 255, 255, 255 },
-    { pal[1][1], pal[1][2], pal[1][3] },
-    { pal[2][1], pal[2][2], pal[2][3] },
-    { 0, 0, 0 },
-  } or nil
+  local colors = self:expColors()
 
   local remaining = pixels
   for cell = BattleHud.EXP_CELLS - 1, 0, -1 do
@@ -269,19 +288,56 @@ end
 -- DrawPlayerHUDBorder: hlcoord 18, 10 stepping LEFT, tiles $73 / $77 / $6f /
 -- $76, plus the extra vertical bar DrawPlayerHUD writes at (18,9) so the stub
 -- is two rows tall.
+local PLAYER_FRAME_TILES = {
+  sideSheet = "playerBorder", sideFirst = PLAYER_BORDER_FIRST,
+  cornerSheet = "playerBorder", cornerFirst = PLAYER_BORDER_FIRST,
+  -- $6f is the LAST tile of EnemyHPBarBorderGFX, not the player sheet
+  -- (engine/gfx/load_font.asm:57-65).
+  farSheet = "enemyBorder", farFirst = ENEMY_BORDER_FIRST,
+  side = TILE_PLAYER_RIGHT,
+  nearCorner = TILE_PLAYER_BOTTOM_RIGHT,
+  farCorner = TILE_PLAYER_BOTTOM_LEFT,
+  bottom = TILE_BOTTOM_SIDE,
+}
+
 function BattleHud:drawPlayerFrame()
   self:drawTile("playerBorder", PLAYER_BORDER_FIRST, TILE_PLAYER_RIGHT, 18, 9)
-  self:placeBorder({
-    sideSheet = "playerBorder", sideFirst = PLAYER_BORDER_FIRST,
-    cornerSheet = "playerBorder", cornerFirst = PLAYER_BORDER_FIRST,
-    -- $6f is the LAST tile of EnemyHPBarBorderGFX, not the player sheet
-    -- (engine/gfx/load_font.asm:57-65).
-    farSheet = "enemyBorder", farFirst = ENEMY_BORDER_FIRST,
-    side = TILE_PLAYER_RIGHT,
-    nearCorner = TILE_PLAYER_BOTTOM_RIGHT,
-    farCorner = TILE_PLAYER_BOTTOM_LEFT,
-    bottom = TILE_BOTTOM_SIDE,
-  }, 18, 10, -1)
+  self:placeBorder(PLAYER_FRAME_TILES, 18, 10, -1)
+end
+
+-- DrawPlayerPartyIconHUDBorder (engine/battle/trainer_huds.asm:118-132): the
+-- player border with $5c for the bottom right, and no bar at (18,9).
+function BattleHud:drawPartyIconFrame()
+  self:placeBorder(PLAYER_FRAME_TILES, 18, 10, -1)
+  return self:drawTile("expBar", self.gfx and self.gfx.expBarFirstTile,
+    TILE_PARTY_ICON_BOTTOM_RIGHT, 18, 11, self:expColors())
+end
+
+-- StageBallTilesData's .GetHUDTile, and the $34 it stages past the party
+-- count (engine/battle/trainer_huds.asm:47-100).
+local function ballTile(mon)
+  if not mon then return TILE_BALL_EMPTY end
+  if (mon.hp or 0) <= 0 then return TILE_BALL_FAINTED end
+  return mon.status and TILE_BALL_STATUSED or TILE_BALL_NORMAL
+end
+
+-- PAL_BATTLE_OB_YELLOW (engine/battle/trainer_huds.asm:213-214).
+function BattleHud:ballColors()
+  local pals = self.palettes and self.palettes.battleObjects
+  return pals and pals.PAL_BATTLE_OB_YELLOW or nil
+end
+
+-- LoadTrainerHudOAM (engine/battle/trainer_huds.asm:203-223): six sprites
+-- from (tx, ty), each one tile further along `step`.
+function BattleHud:drawBallRow(party, tx, ty, step)
+  if not self:image("balls") then return false end
+  local first = self.gfx.ballsFirstTile or TILE_BALL_NORMAL
+  local colors = self:ballColors()
+  for slot = 1, BattleHud.PARTY_LENGTH do
+    self:drawTile("balls", first, ballTile(party and party[slot]),
+      tx + (slot - 1) * step, ty, colors)
+  end
+  return true
 end
 
 BattleHud.TILE_HP_LABEL = TILE_HP_LABEL

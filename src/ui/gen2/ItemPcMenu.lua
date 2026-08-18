@@ -518,8 +518,9 @@ function ItemPcMenu:drawList()
       local entry = self.rows[i]
       if i == self.listIndex then Chrome.cursor(5, ty) end
       Chrome.print(entry.name, 6, ty)
-      -- PlaceMenuItemQuantity: the xNN is the entry's second line.
-      Chrome.print(TIMES .. tostring(entry.count), 7, ty + 1)
+      -- PlaceMenuItemQuantity (engine/menus/menu_2.asm:24): the xNN is the
+      -- entry's second line, right-aligned in a blank-padded 2-digit field.
+      Chrome.print(TIMES .. Chrome.number(entry.count, 2), 7, ty + 1)
     elseif i == self:listTotal() then
       if i == self.listIndex then Chrome.cursor(5, ty) end
       Chrome.print("CANCEL", 6, ty)

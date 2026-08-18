@@ -120,7 +120,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_switch\.sh$|scripts/switch/|docs/switch-.*\.md$|tests/switch_ci_workflows_test\.lua$|tests/switch_transfer_docs_test\.lua$|\.github/workflows/(ci|release|switch-artifact-comment)\.yml$|src/core/(NxAssetOverlay|Platform|GameVersion)\.lua$|src/import/CacheFs\.lua$|tests/engine/(assets_version_fallback|nx_generated_guard|nx_yellow_boot|switch_diagnostics)_test\.lua$|tests/engine/platform_nx)'; then
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_switch\.sh$|scripts/switch/|docs/switch-.*\.md$|tests/switch_ci_workflows_test\.lua$|tests/switch_transfer_docs_test\.lua$|\.github/workflows/(ci|release|switch-artifact-comment)\.yml$|src/core/(NxAssetOverlay|Platform|GameVersion)\.lua$|src/import/CacheFs\.lua$|tests/engine/(assets_version_fallback|nx_generated_guard|nx_yellow_boot|switch_diagnostics|cache_fs_gold_nx_load)_test\.lua$|tests/engine/platform_nx)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -151,6 +151,9 @@ jobs:
           luajit tests/engine/assets_version_fallback_test.lua
           luajit tests/engine/nx_generated_guard_test.lua
           luajit tests/engine/nx_yellow_boot_test.lua
+          luajit tests/engine/cache_fs_gold_nx_load_test.lua
+          luajit tests/engine/cache_fs_blue_mount_test.lua
+          luajit tests/engine/switch_diagnostics_test.lua
 
   switch-build:
     name: Switch fused build

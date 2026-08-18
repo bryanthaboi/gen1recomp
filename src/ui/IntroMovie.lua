@@ -293,23 +293,30 @@ function IntroMovie:update(dt)
     return
   end
   local input = self.game.input
-  if input:wasPressed("a") or input:wasPressed("start") then
-    -- CheckForUserInterruption (home/overworld.asm:2395) returns carry only
-    -- on a fresh START or A -- B alone never skips the intro.
-    -- PlayIntro still GBFadeOutToWhite's after an interrupted scene; the
-    -- white hold stands in for that beat before the title is built.
-    self:exitToTitle()
-    return
-  end
+  -- CheckForUserInterruption (home/overworld.asm:2395) returns carry only
+  -- on a fresh START or A -- B alone never skips the intro.
+  local skip = input:wasPressed("a") or input:wasPressed("start")
   self.timer = self.timer + 1
   if self.phase == 1 then
+    -- the copyright card is a bare DelayFrames, deaf to input (intro.asm:311)
     if self.timer >= COPYRIGHT_FRAMES then self:startPhase(2) end
   elseif self.phase == 2 then
     if self.timer == STAR_START then
       Sound.play(self.game.data, "Shooting_Star")  -- splash.asm:29-30
     end
+    -- intro.asm:325 `jr c, .next`
+    if skip and self.timer >= STAR_START and self.timer < WAVES_END then
+      self:startPhase(3)
+      return
+    end
     if self.timer >= SPLASH_FRAMES then self:startPhase(3) end
   else
+    -- PlayIntro still GBFadeOutToWhite's after an interrupted scene; the
+    -- white hold stands in for that beat before the title is built.
+    if skip then
+      self:exitToTitle()
+      return
+    end
     -- PlayShootingStar ends `jp Delay3` once Music_IntroBattle is playing
     -- (intro.asm:337), so PlayIntroScene's first op is not on the music's
     -- own frame

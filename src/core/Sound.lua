@@ -8,6 +8,7 @@
 local Assets = require("src.render.Assets")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
+local bit = require("bit")
 
 local Sound = {}
 
@@ -142,10 +143,10 @@ local function newFileSource(def)
   return s
 end
 
-local function newSfxSource(data, key, def, pitch, tempo)
+local function newSfxSource(data, key, def, pitch, tempo, plain)
   if isChipDef(def) then
     local ok, s = pcall(require("src.core.ChipAudio").newSfx,
-      data, key:match("^([^@]+)") or key, pitch, tempo, def)
+      data, key:match("^([^@]+)") or key, pitch, tempo, def, plain)
     if not ok then return nil, tostring(s) end
     if not s then return nil, "no source" end
     return s
@@ -153,12 +154,12 @@ local function newSfxSource(data, key, def, pitch, tempo)
   return newFileSource(def)
 end
 
-local function playPath(data, key, def, pitch, tempo)
+local function playPath(data, key, def, pitch, tempo, plain)
   if not love.audio or not def then return nil end
   local src = cache[key]
   if src == false then return nil end -- known bad, already logged
   if not src then
-    local s, err = newSfxSource(data, key, def, pitch, tempo)
+    local s, err = newSfxSource(data, key, def, pitch, tempo, plain)
     if not s then
       cache[key] = false
       reportBadDef("sfx", key, owner(data, "sfx", key), err)
@@ -413,50 +414,109 @@ end
 -- still sounding when the second row starts, so the original never plays
 -- SFX_BATTLE_2A (CHAN5+6+8) at all -- unguarded, its tail is heard running
 -- past the end of the animation (#844).
-local lastMoveSfx -- { src, rank, engine, channels } of the last row sound
+local moveSfxChannels = {} -- software channel (5-8) -> { src, address, engine }
 
-local function channelsOverlap(a, b)
-  if not (a and b) then return false end
-  for _, x in ipairs(a) do
-    for _, y in ipairs(b) do
-      if x == y then return true end
-    end
+local function sourceAlive(entry)
+  local ok, playing = pcall(entry.src.isPlaying, entry.src)
+  return ok and playing
+end
+
+local function pruneMoveSfx()
+  for ch, cur in pairs(moveSfxChannels) do
+    if not sourceAlive(cur) then moveSfxChannels[ch] = nil end
   end
-  return false
 end
 
 -- would PlaySound start this def now?  Taking a channel over also stops the
 -- sound that held it, the way .playChannel resets the channel.
 local function sfxChannelGate(data, def)
-  local cur = lastMoveSfx
-  if not cur then return true end
-  local ok, playing = pcall(cur.src.isPlaying, cur.src)
-  if not (ok and playing) then
-    lastMoveSfx = nil
-    return true
-  end
+  pruneMoveSfx()
   -- an unrankable def (file asset, or another engine's bank) has no
   -- comparable sound id: leave it to the mixer, as before
-  if type(def) ~= "table" or not def.address or def.engine ~= cur.engine then
-    return true
-  end
+  if type(def) ~= "table" or not def.address then return true end
   local channels = require("src.core.ChipSynth").effectChannels(data, def)
-  if not channelsOverlap(channels, cur.channels) then return true end
-  if def.address > cur.rank then return false end
-  pcall(cur.src.stop, cur.src)
-  lastMoveSfx = nil
-  return true
+  if not channels then return true end
+  local takeover
+  for _, ch in ipairs(channels) do
+    local cur = moveSfxChannels[ch]
+    if cur and cur.engine == def.engine then
+      if def.address > cur.address then return false end
+      takeover = takeover or {}
+      takeover[cur.src] = true
+    end
+  end
+  if takeover then
+    for ch, cur in pairs(moveSfxChannels) do
+      if takeover[cur.src] then moveSfxChannels[ch] = nil end
+    end
+  end
+  return true, takeover
 end
 
 local function noteMoveSfx(data, def, src)
   if not src or type(def) ~= "table" or not def.address then
-    lastMoveSfx = nil
+    moveSfxChannels = {}
     return
   end
-  lastMoveSfx = {
-    src = src, rank = def.address, engine = def.engine,
-    channels = require("src.core.ChipSynth").effectChannels(data, def),
-  }
+  local channels = require("src.core.ChipSynth").effectChannels(data, def)
+  if not channels then
+    moveSfxChannels = {}
+    return
+  end
+  local entry = { src = src, address = def.address, engine = def.engine }
+  for _, ch in ipairs(channels) do moveSfxChannels[ch] = entry end
+end
+
+-- constants/music_constants.asm:4
+local function sfxHeaderId(def)
+  if type(def) ~= "table" or not def.address then return nil end
+  local rel = def.address - 0x4000
+  if rel <= 0 or rel % 3 ~= 0 then return nil end
+  return rel / 3
+end
+
+local function remainingFrames(src)
+  local ok, dur = pcall(src.getDuration, src, "seconds")
+  if not ok or type(dur) ~= "number" then return nil end
+  local pos
+  ok, pos = pcall(src.tell, src, "seconds")
+  if not ok or type(pos) ~= "number" then return nil end
+  return math.max(0, math.ceil((dur - pos) * 60))
+end
+
+-- audio/engine_2.asm:1077-1096, :991-1013, :1015-1033
+local function plainMoveFrames(data, def, channels)
+  local id = sfxHeaderId(def)
+  local sfx = data.audio and data.audio.sfx
+  if not (id and sfx and channels) then return 0 end
+  local first = sfxHeaderId(sfx.Peck)            -- constants/music_constants.asm:178
+  local last = sfxHeaderId(sfx.Trainer_Appeared) -- constants/music_constants.asm:228
+  if not (first and last) then return 0 end
+  local claimed = {}
+  for _, ch in ipairs(channels) do claimed[ch] = true end
+  local base = (claimed[5] or claimed[8]) and id or 0
+  local others = {}
+  for _, ch in ipairs({ 5, 8 }) do
+    local cur = (not claimed[ch]) and moveSfxChannels[ch] or nil
+    if cur and cur.engine == def.engine and sourceAlive(cur) then
+      local otherId = sfxHeaderId(cur)
+      local rem = remainingFrames(cur.src)
+      if otherId and rem and rem > 0 then
+        others[#others + 1] = { id = otherId, rem = rem }
+      end
+    end
+  end
+  table.sort(others, function(a, b) return a.rem < b.rem end)
+  local plain = 0
+  for drop = 0, #others do
+    local combined = base
+    for i = drop + 1, #others do
+      combined = bit.bor(combined, others[i].id)
+    end
+    if combined >= first and combined <= last then return plain end
+    if drop < #others then plain = others[drop + 1].rem end
+  end
+  return plain
 end
 
 function Sound.playMove(data, anim)
@@ -466,19 +526,32 @@ function Sound.playMove(data, anim)
   local name = anim.sound
   local pitch, tempo = anim.pitch or 0, anim.tempo or 0x80
   local def = sfx[name]
-  if not sfxChannelGate(data, def) then return end
+  local allowed, superseded = sfxChannelGate(data, def)
+  if not allowed then return end
   local src
   -- a chip program synthesizes the modified variant on demand; a file def
   -- can only reach for a pre-rendered one
   if isChipDef(def) then
-    src = playPath(data, ("%s@%02x%02x"):format(name, pitch, tempo),
-                   def, pitch, tempo)
+    local plain = 0
+    if pitch ~= 0 or tempo ~= 0x80 then
+      local channels = require("src.core.ChipSynth").effectChannels(data, def)
+      plain = plainMoveFrames(data, def, channels)
+    end
+    local key = ("%s@%02x%02x"):format(name, pitch, tempo)
+    if plain > 0 then key = ("%s~%d"):format(key, plain) end
+    src = playPath(data, key, def, pitch, tempo, plain)
   else
     local key = ("%s@%02x%02x"):format(name, pitch, tempo)
     if (pitch ~= 0 or tempo ~= 0x80) and sfx[key] then
       src = playPath(data, key, sfx[key])
     else
       src = playPath(data, name, def)
+    end
+  end
+  -- audio/engine_2.asm:1537
+  if superseded then
+    for old in pairs(superseded) do
+      if old ~= src then pcall(old.stop, old) end
     end
   end
   if src then
@@ -711,7 +784,7 @@ end
 -- hot reload / jukebox A-B: drop one key's sources (its pitch-tempo
 -- variants included) or all of them, so the next play re-resolves the def
 function Sound.invalidate(name)
-  lastMoveSfx = nil -- its source is about to be dropped or stopped
+  moveSfxChannels = {} -- their sources are about to be dropped or stopped
   -- Same for wCurSFX, and a reloaded table can repoint the id order.
   curSfx = nil
   sfxIds = nil

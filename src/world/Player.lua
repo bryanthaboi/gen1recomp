@@ -226,7 +226,16 @@ function Player:facingCell()
   return Collision.target(self.cellX, self.cellY, self.facing)
 end
 
+-- UpdatePlayerSprite jumps to .notMoving while BIT_FONT_LOADED is set
+-- -- engine/overworld/movement.asm:57
+local function textBoxUp()
+  local stack = require("src.core.Game").stack
+  local top = stack and stack.top and stack:top()
+  return top ~= nil and not top.isOverworld
+end
+
 function Player:walkPhase()
+  if textBoxUp() then return 0 end
   -- moving, the land-frame after a completed step, or an active wall-bonk
   -- (issue #230) animate; a standing sprite otherwise
   if not self.moving and not self.stepLanded

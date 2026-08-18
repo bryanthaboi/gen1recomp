@@ -118,33 +118,36 @@ M.ROUTE_15_GATE_2F = {
 
 M.MT_MOON_POKECENTER = {
   talk = {
-    TEXT_MTMOONPOKECENTER_MAGIKARP_SALESMAN = function(game, ow, npc, done)
-      local t = text(game)
-      if game.save.flags.EVENT_BOUGHT_MAGIKARP then
-        push(game, t._MtMoonPokecenterMagikarpSalesmanNoRefundsText
-          or "Well, I don't\ngive refunds!", done)
-        return
-      end
-      ask(game, t._MtMoonPokecenterMagikarpSalesmanOfferText
-        or "MAGIKARP! A\nsteal at ¥500!\nWant one?", function(yes)
-        if not yes then
-          push(game, t._MtMoonPokecenterMagikarpSalesmanNoText
-            or "No? I'm only\nselling today!", done)
-          return
-        end
-        if game.save.money < 500 then
-          push(game, t._MtMoonPokecenterMagikarpSalesmanNoMoneyText
-            or "You'll need more\nmoney than that!", done)
-          return
-        end
-        game.save.money = game.save.money - 500
-        game.save.flags.EVENT_BOUGHT_MAGIKARP = true
-        local Commands = require("src.script.Commands")
-        Commands.give_pokemon({ save = game.save, game = game, overworld = ow },
-                              "MAGIKARP", 5)
-        push(game, t._GotMonText or "{PLAYER} got\n{RAM:wNameBuffer}!", done)
-      end)
-    end,
+    -- command rows, not a Lua handler: give_pokemon needs a runner to AskName (#1407)
+    TEXT_MTMOONPOKECENTER_MAGIKARP_SALESMAN = {
+      { "check_flag", "EVENT_BOUGHT_MAGIKARP" },
+      { "jump_if_true", "no_refunds" },
+      -- MONEY_BOX goes up between the offer and YesNoChoice -- MtMoonPokecenter.asm:31
+      { "text_opts", { money = true } },
+      { "ask", "_MtMoonPokecenterMagikarpSalesmanIGotADealText" },
+      { "jump_if_false", "declined" },
+      { "check_money", 500 },
+      { "jump_if_false", "no_money" },
+      { "give_pokemon", "MAGIKARP", 5 },
+      -- MtMoonPokecenter.asm:49 `jr nc, .done`: a refused gift is never charged
+      { "jump_if_false", "box_full" },
+      { "take_money", 500 },
+      { "set_flag", "EVENT_BOUGHT_MAGIKARP" },
+      { "text_sound", "Get_Item1" },
+      { "show_text", "_GotMonText", { RAM = "MAGIKARP" } },
+      { "jump", "end" },
+      { "label", "box_full" },
+      { "show_text", "_BoxIsFullText" },
+      { "jump", "end" },
+      { "label", "declined" },
+      { "show_text", "_MtMoonPokecenterMagikarpSalesmanNoText" },
+      { "jump", "end" },
+      { "label", "no_money" },
+      { "show_text", "_MtMoonPokecenterMagikarpSalesmanNoMoneyText" },
+      { "jump", "end" },
+      { "label", "no_refunds" },
+      { "show_text", "_MtMoonPokecenterMagikarpSalesmanNoRefundsText" },
+    },
   },
 }
 

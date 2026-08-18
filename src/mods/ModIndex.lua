@@ -26,6 +26,7 @@ local ModIndex = {}
 -- single repo's releases; a whole index is heavier and changes more slowly.
 ModIndex.CACHE_TTL = 24 * 60 * 60
 ModIndex.SCHEMA_VERSION = 1
+ModIndex.CACHE_VERSION = 2
 
 -- ------- pure: source resolution
 
@@ -149,6 +150,43 @@ local function parseLatest(raw)
   }
 end
 
+local function parseDownloads(raw)
+  if type(raw) == "number" or type(raw) == "string" then
+    local n = tonumber(raw)
+    return n and { total = n } or nil
+  end
+  if type(raw) ~= "table" then return nil end
+  local out = {
+    total = tonumber(raw.total),
+    recent = tonumber(raw.recent),
+    window_days = tonumber(raw.window_days),
+    as_of = str(raw.as_of),
+  }
+  if out.total == nil and out.recent == nil then return nil end
+  return out
+end
+
+-- downloadStats(entry) -> { total, recent, window_days, as_of } | nil
+function ModIndex.downloadStats(entry)
+  if type(entry) ~= "table" then return nil end
+  return parseDownloads(entry.downloads)
+end
+
+local function isoDay(v)
+  if type(v) ~= "string" then return nil end
+  return v:match("^(%d%d%d%d%-%d%d%-%d%d)")
+end
+
+-- releaseDates(entry) -> { first, latest } | nil
+function ModIndex.releaseDates(entry)
+  if type(entry) ~= "table" then return nil end
+  local first = isoDay(entry.first_release)
+  local latest = isoDay(entry.last_release)
+    or isoDay(entry.latest and entry.latest.published_at)
+  if not (first or latest) then return nil end
+  return { first = first, latest = latest }
+end
+
 local function parseEntry(raw)
   if type(raw) ~= "table" or not str(raw.id) then return nil end
   return {
@@ -160,6 +198,7 @@ local function parseEntry(raw)
     summary = str(raw.summary) or "",
     categories = strArray(raw.categories),
     tags = strArray(raw.tags),
+    games = strArray(raw.games),
     license = str(raw.license),
     repo = str(raw.repo),
     github = str(raw.github),
@@ -174,11 +213,11 @@ local function parseEntry(raw)
     conflicts = raw.conflicts,
     thumbnail = str(raw.thumbnail),
     description_url = str(raw.description_url),
-    -- Optional release stats a feed author can publish: total downloads
+    -- Optional release stats a feed author can publish: download counts
     -- across all releases plus first/last release dates.  Additive-only,
     -- so a feed that carries them stays readable by every build that
     -- predates them (and one that does not still renders fine here).
-    downloads = tonumber(raw.downloads),
+    downloads = parseDownloads(raw.downloads),
     first_release = str(raw.first_release),
     last_release = str(raw.last_release),
     latest = parseLatest(raw.latest),
@@ -515,6 +554,7 @@ function ModIndex.cacheFresh(entry, now, ttl)
   now = now or os.time()
   ttl = ttl or ModIndex.CACHE_TTL
   return entry ~= nil and type(entry.checkedAt) == "number"
+    and entry.version == ModIndex.CACHE_VERSION
     and (now - entry.checkedAt) < ttl
 end
 
@@ -526,6 +566,7 @@ function ModIndex.writeCache(feed, index)
     opts.modIndexCache = opts.modIndexCache or {}
     opts.modIndexCache[feed] = {
       checkedAt = os.time(),
+      version = ModIndex.CACHE_VERSION,
       generatedAt = index.generatedAt,
       categories = index.categories,
       mods = index.mods,

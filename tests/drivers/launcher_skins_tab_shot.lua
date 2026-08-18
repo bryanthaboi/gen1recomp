@@ -94,6 +94,21 @@ return function(game)
   imp:_useSkin(nil)
   shot("skins_tab_imported.png")
 
+  -- import button: the picker hands back an absolute host path, not a drop
+  local picked = dir .. "/picked_skin.zip"
+  local pf = io.open(picked, "wb")
+  pf:write(raw)
+  pf:close()
+  imp:_installSkinZip(picked)
+  U.log("path import notice:", imp._skinNotice.text)
+  U.log("picked_skin found:", tostring(TouchSkin.find("picked_skin") ~= nil))
+  U.log("import label:", imp:_skinsImportButtonLabel())
+  shot("skins_tab_path_imported.png")
+
+  love.window.setMode(520, 760, { resizable = true, highdpi = true })
+  U.wait(3)
+  shot("skins_tab_narrow.png")
+
   U.log("done")
   love.event.quit()
   while true do coroutine.yield() end

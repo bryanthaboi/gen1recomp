@@ -151,8 +151,8 @@ do
 
   local fresh = { mods = {} }
   SaveData.setModEnabled(fresh, "b", true, "gold")
-  eq(fresh.modsByVersion.gold.b, nil,
-    "no shared flag reads as enabled, so agreeing with it stores nothing")
+  eq(fresh.modsByVersion.gold.b, true,
+    "with no shared flag the answer is stored, not dropped against an assumed default")
 end
 
 do

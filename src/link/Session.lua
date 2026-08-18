@@ -1,3 +1,6 @@
+local Logger = require("src.core.Logger")
+local Wire = require("src.link.Wire")
+
 local Session = {}
 Session.__index = Session
 
@@ -23,6 +26,7 @@ function Session.new(transport, options)
     _status = "connecting",
     _terminal = nil,
     _transportCloseCalled = false,
+    dropped = 0,
     paired = false,
     closed = false,
     error = nil,
@@ -120,16 +124,15 @@ function Session:update()
     end
   else
     for index = 1, #messages do
-      local message = messages[index]
-      if type(message) ~= "table" or type(message.type) ~= "string" then
-        if not failureReason then
-          failureReason = "protocol_error"
-          failureDetail = ("message %d must be a table with string type")
-            :format(index)
-        end
-        break
+      local raw = messages[index]
+      local ok, message = pcall(Wire.sanitize, raw)
+      if ok and message then
+        self._inbox[#self._inbox + 1] = message
+      else
+        self.dropped = (self.dropped or 0) + 1
+        local label = type(raw) == "table" and tostring(raw.type) or type(raw)
+        Logger.warn("link: dropped malformed message (%s)", label)
       end
-      self._inbox[#self._inbox + 1] = message
     end
   end
 

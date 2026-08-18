@@ -645,6 +645,14 @@ check(fxAdvances("messages", "linkNext"),
 local fuzzOk, fuzzErr = pcall(dofile, "tests/link_desync_fuzz.lua")
 check(fuzzOk, "lockstep desync fuzz" .. (fuzzOk and "" or (": " .. tostring(fuzzErr))))
 
+-- ---------------------------------------------------------------- hostile wire
+-- Every message type crossed with every wrong Lua type, through the real
+-- Session choke point and into the real consumers.  The regression net for
+-- the remote-crash payloads; self-contained like the fuzz above.
+local hostileOk, hostileErr = pcall(dofile, "tests/link_hostile.lua")
+check(hostileOk, "hostile wire suite"
+      .. (hostileOk and "" or (": " .. tostring(hostileErr))))
+
 -- ---------------------------------------------------------------- mod link compat
 -- Self-contained like the tests/mod_*.lua suites: own bootstrap and
 -- assert-based checks, so it lands here as a single pass/fail line.

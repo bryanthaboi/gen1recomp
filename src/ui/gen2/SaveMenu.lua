@@ -54,6 +54,11 @@ local TIME_X, TIME_Y = 13, 8
 
 local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
 
+-- AlreadyASaveFileText (AskOverwriteSaveFile, engine/menus/save.asm:47) and
+-- SavingDontTurnOffThePower's own line, shared with the PC's CHANGE BOX save.
+local OVERWRITE_PROMPT = { "There is already a", "save file. Is it" }
+local SAVING_PROMPT = { "SAVING… DON'T TURN", "OFF THE POWER." }
+
 function SaveMenu:wantsFillScale() return true end
 function SaveMenu:drawsWidescreen() return true end
 
@@ -75,12 +80,16 @@ function SaveMenu.new(game, opts)
   return self
 end
 
-function SaveMenu:playSfx(id)
-  local data = self.game and self.game.data
+function SaveMenu.playSaveSfx(game, id)
+  local data = game and game.data
   local audio = data and data.audio
   if not (audio and audio.sfxOrder) then return end
   local name = audio.sfxOrder[id + 1]
   if name and audio.sfx and audio.sfx[name] then Sound.play(data, name) end
+end
+
+function SaveMenu:playSfx(id)
+  SaveMenu.playSaveSfx(self.game, id)
 end
 
 function SaveMenu:finish(saved)
@@ -162,10 +171,10 @@ function SaveMenu:prompt()
   if self.phase == "overwrite" then
     -- AlreadyASaveFileText when the file is this player's; AnotherSaveFileText
     -- when the ID differs.  Only the first can happen here.
-    return { "There is already a", "save file. Is it" }
+    return OVERWRITE_PROMPT
   end
   if self.phase == "saving" then
-    return { "SAVING… DON'T TURN", "OFF THE POWER." }
+    return SAVING_PROMPT
   end
   if self.phase == "done" then
     if self.saved then
@@ -225,5 +234,11 @@ function SaveMenu:drawWidescreen(winW, winH)
   self:drawPanel()
   G.pop()
 end
+
+SaveMenu.SFX_SAVE = SFX_SAVE
+SaveMenu.SAVING_FRAMES = SAVING_FRAMES
+SaveMenu.SAVED_FRAMES = SAVED_FRAMES
+SaveMenu.OVERWRITE_PROMPT = OVERWRITE_PROMPT
+SaveMenu.SAVING_PROMPT = SAVING_PROMPT
 
 return SaveMenu

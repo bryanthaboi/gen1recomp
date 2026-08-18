@@ -142,7 +142,11 @@ function TouchSkin.parse(text)
       controls = {},
     }
     if page.imagePath == "" then page.imagePath = nil end
-    if not page.aspect or page.aspect <= 0 then
+    -- An explicit aspect_ratio is the overlay's design aspect.  RetroArch
+    -- letterboxes to it even when full_screen is set, so range_x/range_y
+    -- that were authored as a circle stay a circle.  #1503
+    page.aspectFromCfg = page.aspect ~= nil and page.aspect > 0
+    if not page.aspectFromCfg then
       page.aspect = page.name:lower():find("portrait", 1, true)
         and PORTRAIT_ASPECT or DEFAULT_ASPECT
     end
@@ -168,6 +172,12 @@ function TouchSkin.parse(text)
       if ctl then page.controls[#page.controls + 1] = ctl end
     end
     pages[#pages + 1] = page
+  end
+
+  -- RetroArch auto-rotate: overlay names containing portrait / landscape
+  -- are the lock.  Stamp it so the studio does not need a second click.  #1503
+  for _, page in ipairs(pages) do
+    if not page.orient then page.orient = TouchSkin.pageOrient(page) end
   end
 
   return { pages = pages }
@@ -255,6 +265,9 @@ function TouchSkin.parseNative(text)
       rangeMod = num(raw.rangeMod, 1),
       alphaMod = num(raw.alphaMod, 1),
       aspect = num(raw.aspect, DEFAULT_ASPECT),
+      aspectFromCfg = raw.fitAspect == true,
+      orient = (raw.orient == "portrait" or raw.orient == "landscape"
+                or raw.orient == "any") and raw.orient or nil,
       rect = { x = 0, y = 0, w = 1, h = 1 },
       controls = {},
     }
@@ -287,6 +300,7 @@ function TouchSkin.parseNative(text)
         nextTarget = c.nextTarget,
       }
     end
+    if not page.orient then page.orient = TouchSkin.pageOrient(page) end
     pages[#pages + 1] = page
   end
   return { pages = pages, name = data.name, author = data.author,
@@ -309,6 +323,9 @@ function TouchSkin.toNative(skin)
       rangeMod = page.rangeMod,
       alphaMod = page.alphaMod,
       aspect = page.aspect,
+      fitAspect = page.aspectFromCfg or nil,
+      orient = (page.orient == "portrait" or page.orient == "landscape"
+                or page.orient == "any") and page.orient or nil,
       controls = {},
     }
     if page.rect and (page.rect.x ~= 0 or page.rect.y ~= 0
@@ -704,6 +721,10 @@ end
 
 TouchSkin.active = nil
 TouchSkin.pageIndex = 1
+-- RetroArch Auto-Rotate Overlay (1.7.9, default on mobile): a cfg whose
+-- pages are named portrait / landscape is swapped to match the display.
+-- The Skin Studio turns this off so PAGE and the canvas preset stay independent.
+TouchSkin.autoOrient = true
 
 TouchSkin.surfaceRect = nil
 
@@ -732,9 +753,68 @@ function TouchSkin.select(id)
   return TouchSkin.setActive(skin)
 end
 
+local function displaySize()
+  local r = TouchSkin.surfaceRect
+  if r and r.w and r.h and r.w > 0 and r.h > 0 then return r.w, r.h end
+  if love and love.graphics and love.graphics.getDimensions then
+    return love.graphics.getDimensions()
+  end
+  return 0, 0
+end
+
+-- Explicit lock (studio) wins; otherwise the page name, the RetroArch
+-- auto-rotate convention.  "any" means unlocked even if the name says
+-- portrait or landscape.
+function TouchSkin.pageOrient(page)
+  if not page then return nil end
+  if page.orient == "any" then return nil end
+  if page.orient == "portrait" or page.orient == "landscape" then
+    return page.orient
+  end
+  local n = tostring(page.name or ""):lower()
+  if n:find("landscape", 1, true) then return "landscape" end
+  if n:find("portrait", 1, true) then return "portrait" end
+  return nil
+end
+
+function TouchSkin.hasOrientPair(skin)
+  local saw = {}
+  for _, page in ipairs(skin and skin.pages or {}) do
+    local o = TouchSkin.pageOrient(page)
+    if o then saw[o] = true end
+  end
+  return saw.portrait == true and saw.landscape == true
+end
+
+local function findOrientPage(skin, keyword)
+  for i, page in ipairs(skin.pages or {}) do
+    if TouchSkin.pageOrient(page) == keyword then return i end
+  end
+  return nil
+end
+
+-- If the current page is the wrong orientation of a portrait/landscape pair,
+-- jump to the matching one.  Pages locked to neither (gb_anim's GameBoy /
+-- GameBoyColor) are left alone.  #1503
+function TouchSkin.syncOrientation(w, h)
+  if not TouchSkin.autoOrient then return end
+  local skin = TouchSkin.active
+  if not skin or not w or not h or w <= 0 or h <= 0 then return end
+  local want = w > h and "landscape" or "portrait"
+  local unwant = w > h and "portrait" or "landscape"
+  local page = skin.pages[TouchSkin.pageIndex] or skin.pages[1]
+  local current = TouchSkin.pageOrient(page)
+  if current == want then return end
+  if current ~= unwant then return end
+  local idx = findOrientPage(skin, want)
+  if idx then TouchSkin.pageIndex = idx end
+end
+
 function TouchSkin.page()
   local skin = TouchSkin.active
   if not skin then return nil end
+  local w, h = displaySize()
+  TouchSkin.syncOrientation(w, h)
   return skin.pages[TouchSkin.pageIndex] or skin.pages[1]
 end
 
@@ -766,7 +846,12 @@ function TouchSkin.pageBox(page, w, h, ox, oy)
   ox, oy = ox or 0, oy or 0
   if not page then return ox, oy, w, h end
   local bx, by, bw, bh = ox, oy, w, h
-  if not page.fullScreen and h > 0 then
+  -- full_screen means "relative to the window, not the game viewport".
+  -- When the cfg also names an aspect_ratio, that window is then fitted
+  -- to the overlay's design aspect so buttons do not stretch.  #1503
+  local fit = ((not page.fullScreen) or page.aspectFromCfg)
+    and page.aspect and page.aspect > 0 and h > 0
+  if fit then
     local displayAspect = w / h
     if displayAspect > page.aspect then
       bw = h * page.aspect
@@ -833,8 +918,9 @@ function TouchSkin.viewport(w, h, ox, oy)
   local page = TouchSkin.page()
   if not page or not page.viewport or not TouchSkin.drawable() then return nil end
   local v = page.viewport
-  local x, y = (ox or 0) + v.x * w, (oy or 0) + v.y * h
-  local vw, vh = v.w * w, v.h * h
+  local bx, by, bw, bh = TouchSkin.pageBox(page, w, h, ox, oy)
+  local x, y = bx + v.x * bw, by + v.y * bh
+  local vw, vh = v.w * bw, v.h * bh
   if vw <= 0 or vh <= 0 then return nil end
   return x, y, vw, vh, page.viewportFill == true, page.viewportExpand == true
 end

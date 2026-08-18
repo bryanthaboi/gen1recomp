@@ -120,6 +120,7 @@ bundled game, in that case.
 
 ## Known limitations
 
+
 - **`love.run` persists across handoff.** By the time `chainload` runs, the
   bundled `love.run` has already returned its stepper to LOVE; redefining the
   global `love.run` from the payload's `main.lua` does not affect the loop

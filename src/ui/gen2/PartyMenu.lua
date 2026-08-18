@@ -20,6 +20,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local HpBar = require("src.battle.gen2.HpBar")
+local ItemEffects = require("src.core.gen2.ItemEffects")
 local Logger = require("src.core.Logger")
 local Mail = require("src.core.gen2.Mail")
 local Mon = require("src.battle.gen2.Mon")
@@ -668,17 +669,12 @@ end
 
 -- PlaceStatusString (engine/pokemon/mon_stats.asm): three letters, and a mon
 -- with no HP reads FNT whatever its status byte says.
-local STATUS_STRING = {
-  slp = "SLP", psn = "PSN", brn = "BRN", frz = "FRZ", par = "PAR",
-  poison = "PSN", burn = "BRN", freeze = "FRZ", paralysis = "PAR",
-  sleep = "SLP", toxic = "PSN",
-}
-
 local function statusString(mon)
   if (mon.hp or 0) <= 0 then return "FNT" end
   local status = mon.status
   if not status then return nil end
-  return STATUS_STRING[tostring(status):lower()]
+  local class = ItemEffects.STATUS_CLASS[tostring(status):lower()]
+  return class and class:upper()
 end
 
 -- One list row's strings, exactly what WritePartyMenuTilemap's quality

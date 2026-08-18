@@ -192,20 +192,28 @@ local PAL = {
   chipInkGold = { 58, 44, 0 },     -- #3a2c00  dark "Y" on the gold chip
 }
 
+-- Per-version required cache files.  Gold replaces the Gen 1 list entirely
+-- (VERSION_REQUIRED_FILES_OVERRIDE); Yellow adds a few extra markers.
+local function requiredFilesFor(version)
+  local override = VERSION_REQUIRED_FILES_OVERRIDE[version]
+  if override then return override, true end
+  return REQUIRED_FILES, false
+end
+
 -- CacheFs.exists checks the game folder directly for a portable install,
 -- otherwise the save directory through love.filesystem.  It honors
 -- CacheFs.prefix, so we point it at the version's cache subtree (red/,
--- blue/, yellow/).
+-- blue/, yellow/, gold/).
 local function allRequiredFilesExist(version)
   local CacheFs = require("src.import.CacheFs")
   local saved = CacheFs.prefix
   CacheFs.prefix = GameVersion.cachePrefix(version)
   local ok = true
-  local required = VERSION_REQUIRED_FILES_OVERRIDE[version] or REQUIRED_FILES
+  local required, isOverride = requiredFilesFor(version)
   for _, path in ipairs(required) do
     if not CacheFs.exists(path) then ok = false; break end
   end
-  if ok and not VERSION_REQUIRED_FILES_OVERRIDE[version] then
+  if ok and not isOverride then
     for _, path in ipairs(VERSION_REQUIRED_FILES[version] or {}) do
       if not CacheFs.exists(path) then ok = false; break end
     end
@@ -215,20 +223,23 @@ local function allRequiredFilesExist(version)
 end
 
 -- A developer checkout / Python build leaves generated data in the physfs
--- source: Red at the historical root, Blue/Yellow in their versioned trees.
--- Imported Red caches still live under red/.  Check source paths directly so
--- that cache prefix cannot hide Red's source tree, and keep save-dir caches
--- from counting as current source data.
+-- source: Red at the historical root, Blue/Yellow/Gold in their versioned
+-- trees.  Imported Red caches still live under red/.  Check source paths
+-- directly so that cache prefix cannot hide Red's source tree, and keep
+-- save-dir caches from counting as current source data.
 local function sourceTreeHasData(version)
   if not love.filesystem.getRealDirectory then return false end
   local prefix = version == "red" and "" or GameVersion.cachePrefix(version)
-  for _, path in ipairs(REQUIRED_FILES) do
+  local required, isOverride = requiredFilesFor(version)
+  for _, path in ipairs(required) do
     if love.filesystem.getInfo(prefix .. path, "file") == nil then return false end
   end
-  for _, path in ipairs(VERSION_REQUIRED_FILES[version] or {}) do
-    if love.filesystem.getInfo(prefix .. path, "file") == nil then return false end
+  if not isOverride then
+    for _, path in ipairs(VERSION_REQUIRED_FILES[version] or {}) do
+      if love.filesystem.getInfo(prefix .. path, "file") == nil then return false end
+    end
   end
-  local path = prefix .. REQUIRED_FILES[1]
+  local path = prefix .. required[1]
   local real = love.filesystem.getRealDirectory(path)
   return real == love.filesystem.getSource()
 end
@@ -285,7 +296,7 @@ local function purgeSaveDirCache()
     return true
   end
   -- Purge each version's stale save-directory copy (under its red/ / blue/
-  -- / yellow/ prefix) so it cannot shadow the portable game-folder cache.
+  -- / yellow/ / gold/ prefix) so it cannot shadow the portable game-folder cache.
   for _, version in ipairs(GameVersion.ORDER) do
     local prefix = GameVersion.cachePrefix(version)
     if saveDirHas(prefix .. MARKER_PATH) or saveDirHas(prefix .. REQUIRED_FILES[1]) then
@@ -988,8 +999,18 @@ local function pickerHasKind(kind)
   return false
 end
 
-local function findPendingRequiredImport()
+local function findPendingRequiredImport(self)
   local names = { "picked_required_import.bin", "picked_stadium.z64" }
+  -- Builds released before required_import was added to the Android JNI bridge
+  -- only understand the long-standing "rom" picker kind.  While a required
+  -- import request is in flight, it is safe to treat its staging name as a
+  -- dependency file: the pending IDs below select the same validation/copy
+  -- path as a current bridge.  Never scan picked_rom.gb otherwise, since that
+  -- remains reserved for an ordinary game-ROM import.
+  if self and self.requiredImportLegacyRomPick
+      and self.pickerPendingKind == "required_import" then
+    names[#names + 1] = "picked_rom.gb"
+  end
   for _, name in ipairs(names) do
     if love.filesystem.getInfo(name, "file") then return name end
   end
@@ -1085,6 +1106,39 @@ local function chooseZip()
     if path then return path end
     return commandOutput(
       [[kdialog --getopenfilename "$HOME" "*.zip|Mod archive" 2>/dev/null]])
+  end
+  return nil
+end
+
+local function chooseSkinZip()
+  local prompt = shellSafe(Strings("Choose a skin .zip"))
+  local platform = love.system.getOS()
+  if platform == "OS X" then
+    return commandOutput(
+      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"zip"})' 2>/dev/null]])
+        :format(prompt))
+  elseif platform == "Windows" then
+    local script = table.concat({
+      "Add-Type -AssemblyName System.Windows.Forms;",
+      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      "$d.Title='" .. prompt .. "';",
+      "$d.Filter='Skin archive (*.zip)|*.zip|All files (*.*)|*.*';",
+      "if($d.ShowDialog() -eq 'OK'){",
+      "$n=[IO.Path]::GetFileName($d.FileName) -replace '[^\\x20-\\x7E]','_';",
+      "$t=Join-Path $env:TEMP $n;",
+      "Copy-Item -LiteralPath $d.FileName -Destination $t -Force;",
+      "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
+      "[Console]::Write($t)}",
+    })
+    return commandOutput(
+      'powershell -NoProfile -STA -Command "' .. script .. '"')
+  elseif platform == "Linux" then
+    local path = commandOutput(
+      ([[zenity --file-selection --title="%s" --file-filter="Skin archive | *.zip" 2>/dev/null]])
+        :format(prompt))
+    if path then return path end
+    return commandOutput(
+      [[kdialog --getopenfilename "$HOME" "*.zip|Skin archive" 2>/dev/null]])
   end
   return nil
 end
@@ -1471,14 +1525,23 @@ function RomImporter:focus(f)
     local text = "Could not read the picked file. Reopen the picker and choose "
       .. "it with the Files (Documents) app, or copy it into: "
       .. love.filesystem.getSaveDirectory()
+    local legacyRequiredPick = self.requiredImportLegacyRomPick
+      and self.pickerPendingKind == "required_import"
     if pickError:find("picked_required_import", 1, true)
-        or pickError:find("picked_stadium", 1, true) then
+        or pickError:find("picked_stadium", 1, true)
+        or (legacyRequiredPick and pickError:find("picked_rom", 1, true)) then
       self.modNotice = { ok = false, text = text }
       self.pickerPendingKind = nil
       self.pickerPendingModId = nil
       self.pickerPendingImportId = nil
+      self.requiredImportLegacyRomPick = nil
     elseif pickError:find("picked_mod", 1, true) then
-      self.modNotice = { ok = false, text = text }
+      if self.pickerPendingKind == "skin" then
+        self.pickerPendingKind = nil
+        self._skinNotice = { ok = false, text = text }
+      else
+        self.modNotice = { ok = false, text = text }
+      end
     elseif pickError:find("picked_save", 1, true) then
       local version = self.androidPendingVersion or self:_savedropTarget()
       self.androidPendingVersion = nil
@@ -1488,11 +1551,12 @@ function RomImporter:focus(f)
     end
     return
   end
-  local requiredName = findPendingRequiredImport()
+  local requiredName = findPendingRequiredImport(self)
   if requiredName then
     local modId, importId = self.pickerPendingModId, self.pickerPendingImportId
     self.pickerPendingKind = nil
     self.pickerPendingModId, self.pickerPendingImportId = nil, nil
+    self.requiredImportLegacyRomPick = nil
     local imported = modId and importId
       and self:_importRequiredSource(modId, importId, requiredName)
     consumePick(self, requiredName, requiredName, imported)
@@ -1504,6 +1568,13 @@ function RomImporter:focus(f)
   end
   local modName = findPendingMod(false, self.pickSkip)
   if modName then
+    if self.pickerPendingKind == "skin" then
+      self.pickerPendingKind = nil
+      self:_installSkinZip(modName)
+      consumePick(self, modName, "picked_mod.zip",
+        self._skinNotice and self._skinNotice.ok)
+      return
+    end
     self:_installMod(modName)
     consumePick(self, modName, "picked_mod.zip",
       self.modNotice and self.modNotice.ok)
@@ -2024,7 +2095,17 @@ function RomImporter:chooseRequiredImport(modId, importId)
     return
   end
   if self.nativePicker then
-    if self.mobileFileBridge and not pickerHasKind("required_import") then
+    -- Android 13+ uses the Storage Access Framework for both paths.  Some
+    -- Android 15 installs carry the newer Lua launcher with an older native
+    -- bridge, however, so they do not advertise required_import yet.  Fall
+    -- back to that bridge's known "rom" picker and quarantine its result by
+    -- the pending required-import IDs. iOS has a different asynchronous
+    -- bridge and deliberately keeps the explicit capability requirement.
+    local legacyAndroidPicker = self.mobileFileBridge
+      and love.system.getOS() == "Android"
+      and not pickerHasKind("required_import")
+    if self.mobileFileBridge and not pickerHasKind("required_import")
+        and not legacyAndroidPicker then
       requiredImportNotice(self, modId, importId,
         "This app build cannot pick required mod files yet. Update the app and try again.")
       self.modNotice = nil
@@ -2033,10 +2114,12 @@ function RomImporter:chooseRequiredImport(modId, importId)
     self.pickerPendingKind = "required_import"
     self.pickerPendingModId = modId
     self.pickerPendingImportId = importId
-    if not pickFile("required_import") then
+    self.requiredImportLegacyRomPick = legacyAndroidPicker or nil
+    if not pickFile(legacyAndroidPicker and "rom" or "required_import") then
       self.pickerPendingKind = nil
       self.pickerPendingModId = nil
       self.pickerPendingImportId = nil
+      self.requiredImportLegacyRomPick = nil
       requiredImportNotice(self, modId, importId, "Could not open the file picker.")
       self.modNotice = nil
     elseif self.android then
@@ -2498,6 +2581,11 @@ function RomImporter:update(dt)
         if Platform.isUWP() and self.modNotice and self.modNotice.ok then
           os.remove(path)
         end
+      elseif kind == "skin" then
+        self:_installSkinZip(path)
+        if Platform.isUWP() and self._skinNotice and self._skinNotice.ok then
+          os.remove(path)
+        end
       elseif kind == "sav" then
         local target = version or self:_savedropTarget()
         self:_importSave(target, path)
@@ -2520,6 +2608,8 @@ function RomImporter:update(dt)
           self.pickerPendingModId, self.pickerPendingImportId = nil, nil
         elseif kind == "mod" then
           self.modNotice = { ok = false, text = errorText }
+        elseif kind == "skin" then
+          self._skinNotice = { ok = false, text = errorText }
         elseif kind == "sav" then
           self.saveNotice[version] = { ok = false, text = errorText }
         else
@@ -3047,13 +3137,27 @@ function RomImporter:_useSkin(id)
   }
 end
 
-function RomImporter:_installSkinZip(file)
+function RomImporter:_installSkinZip(source)
+  if self.workState == "working" then return end
+  self.tab = "skins"
   local TouchSkin = require("src.core.TouchSkin")
-  local name = file:getFilename() or ""
-  local data, readError = readDroppedFile(file)
+  local name, data, readError
+  if type(source) == "string" then
+    name = source
+    if not source:match("^/") and not source:match("^%a:[/\\]")
+        and not source:match("^[Ss][Dd][Mm][Cc]:") then
+      data = love.filesystem.read(source)
+    end
+    if not data then data, readError = readExternalPath(source) end
+    if not data then data = love.filesystem.read(source) end
+  else
+    name = source:getFilename() or ""
+    data, readError = readDroppedFile(source)
+  end
   if not data then
     self._skinNotice = { ok = false,
-      text = "Could not read the dropped file: " .. tostring(readError) }
+      text = "Could not read the skin archive: "
+        .. tostring(readError or name) }
     return
   end
   local id, err = TouchSkin.installArchive(name, data)
@@ -3063,6 +3167,51 @@ function RomImporter:_installSkinZip(file)
     return
   end
   self._skinNotice = { ok = true, text = "Imported " .. id }
+end
+
+function RomImporter:_skinsImportButtonLabel()
+  if self.isNX then return Strings("Scan again") end
+  return Strings("Import skin .zip")
+end
+
+function RomImporter:chooseSkin()
+  if self.workState == "working" then return end
+  if self.isNX then
+    local found = #self:_ensureSkins(true)
+    self._skinNotice = { ok = true, text = Strings(
+      "%d skins found. Copy a skin .zip into %s/ over MTP, then scan again.",
+      found, require("src.core.TouchSkin").USER_ROOT) }
+    return
+  end
+  if self.nativePicker and love.system.getPickedFile then
+    self.pickerPendingKind = "skin"
+    if not pickFile("mod") then
+      self.pickerPendingKind = nil
+      self._skinNotice = { ok = false, text = "Could not open the file picker." }
+    end
+    return
+  end
+  if self.android then
+    local name = findPendingMod(true, self.pickSkip)
+    if name then
+      self:_installSkinZip(name)
+      consumePick(self, name, "picked_mod.zip",
+        self._skinNotice and self._skinNotice.ok)
+      return
+    end
+    self.pickerPendingKind = "skin"
+    if not pickFile("mod") then
+      self.pickerPendingKind = nil
+      self._skinNotice = { ok = false,
+        text = "Could not open the file picker. Copy a skin .zip via USB." }
+    else
+      self.pickPending = true
+      self.pickTimer = 0
+    end
+    return
+  end
+  local path = chooseSkinZip()
+  if path then self:_installSkinZip(path) end
 end
 
 function RomImporter:_toggleFindSearchFocus()
@@ -3594,7 +3743,17 @@ function RomImporter:_setAllMods(want, confirmed)
   local LauncherMods = require("src.mods.LauncherMods")
   local ids, experimental = {}, false
   for _, m in ipairs(self.mods or {}) do
-    if m.enabled ~= want then
+    local mismatched = m.enabled ~= want
+    if not self.modScope and type(m.enabledByVersion) == "table" then
+      mismatched = false
+      for _, game in ipairs(GameVersion.ORDER) do
+        if m.enabledByVersion[game] ~= want then
+          mismatched = true
+          break
+        end
+      end
+    end
+    if mismatched then
       ids[#ids + 1] = m.id
       if want and m.experimental then experimental = true end
     end
@@ -4176,25 +4335,12 @@ function RomImporter:_findRows()
     category = self.findCategory,
   })
   if self.modScope then
+    local ModTargets = require("src.mods.ModTargets")
     local gen = GameVersion.generation(self.modScope)
     local kept = {}
     for _, entry in ipairs(rows) do
-      local has1, has2 = false, false
-      local function note(s)
-        s = tostring(s or ""):lower()
-        if s == "gen1" or s == "gen 1" or s == "red" or s == "blue"
-            or s == "yellow" then
-          has1 = true
-        end
-        if s == "gen2" or s == "gen 2" or s == "gold" then
-          has2 = true
-        end
-      end
-      for _, cat in ipairs(entry.categories or {}) do note(cat) end
-      for _, tag in ipairs(entry.tags or {}) do note(tag) end
-      if (not has1 and not has2)
-          or (gen == 2 and has2)
-          or (gen ~= 2 and has1) then
+      local versions = ModTargets.normalize(entry.games)
+      if #versions == 0 or ModTargets.covers(versions, gen) then
         kept[#kept + 1] = entry
       end
     end
@@ -4303,9 +4449,14 @@ function RomImporter:_findStatsCached(entry)
     end
     return nil   -- retry window open; _requestFindStats decides what to do
   end
-  if entry.downloads ~= nil or entry.first_release or entry.last_release then
-    cached = { total = entry.downloads, first = entry.first_release,
-               latest = entry.last_release, done = true }
+  local ModIndex = require("src.mods.ModIndex")
+  local dl = ModIndex.downloadStats(entry)
+  local dates = ModIndex.releaseDates(entry)
+  if dl or dates then
+    cached = { total = dl and dl.total, recent = dl and dl.recent,
+               windowDays = dl and dl.window_days, asOf = dl and dl.as_of,
+               first = dates and dates.first, latest = dates and dates.latest,
+               done = true }
     self._findStatsCache[entry.id] = cached
     return cached
   end

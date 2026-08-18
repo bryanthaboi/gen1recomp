@@ -120,11 +120,11 @@ local function visibleBaseState(stack)
 end
 
 local function loadGenerated(path)
-  local chunk = love.filesystem.load(path)
-  if not chunk then return nil end
-  local ok, data = pcall(chunk)
-  if ok then return data end
-  return nil
+  -- CacheFs.loadActive, not love.filesystem.load: Gold's cache lives under
+  -- gold/ and fused NX often cannot mount that tree onto data/generated/.
+  local CacheFs = require("src.import.CacheFs")
+  local data = CacheFs.loadActive(path)
+  return data
 end
 
 -- NewGame (engine/menus/intro_menu.asm) calls OakSpeech, and OakSpeech's first
@@ -939,6 +939,8 @@ function Game2:load()
   self.data.gen2Maps = loadGenerated("data/generated/maps.lua")
   self.data.gen2Tilesets = loadGenerated("data/generated/tilesets.lua")
   self.data.gen2Roofs = loadGenerated("data/generated/roofs.lua")
+  -- engine/events/magnet_train.asm:165 DrawMagnetTrain
+  self.data.gen2Field = loadGenerated("data/generated/field.lua")
   self.data.gen2Marts = loadGenerated("data/generated/marts.lua")
   self.data.gen2Scripts = loadGenerated("data/generated/scripts.lua")
   self.data.gen2StdScripts = loadGenerated("data/generated/std_scripts.lua")
@@ -1965,6 +1967,8 @@ function Game2:applyOptions()
     haptics = options.haptics,
   })
   require("src.core.VideoMode").applyOptions(options)
+  require("src.core.FrameCap").applyOptions(options)
+  require("src.world.gen2.BorderFill").applyOptions(options)
   local GBCFX = require("src.render.GBCFX")
   if GBCFX.applyOptions(options) and self.save then
     -- applyOptions returns true when it had to clear an unsupported level.

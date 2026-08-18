@@ -42441,7 +42441,7 @@
           "after": "_MtMoonB2FSuperNerdTheresAPokemonLabText",
           "battle": "_MtMoonB2FSuperNerdTheyreBothMineText",
           "event": "EVENT_BEAT_MT_MOON_3_SUPER_NERD",
-          "won": "_MtMoonB2fSuperNerdEachTakeOneText"
+          "won": "_MtMoonB2FSuperNerdOkIllShareText"
         },
         "2": {
           "after": "_MtMoonB2FRocket1AfterBattleText",

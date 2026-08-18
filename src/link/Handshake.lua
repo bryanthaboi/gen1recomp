@@ -270,7 +270,10 @@ end
 
 local function index(mods)
   local byId = {}
-  for _, mod in ipairs(mods or {}) do byId[tostring(mod.id)] = mod end
+  if type(mods) ~= "table" then return byId end
+  for _, mod in ipairs(mods) do
+    if type(mod) == "table" then byId[tostring(mod.id)] = mod end
+  end
   return byId
 end
 
@@ -327,7 +330,8 @@ end
 -- lines for the incompatibility screen: what differs, then what still works
 function Handshake.describe(localHello, remoteHello, verdict, mode)
   local lines = {}
-  local peer = (remoteHello and remoteHello.name) or "THEY"
+  local peerName = remoteHello and remoteHello.name
+  local peer = type(peerName) == "string" and peerName or "THEY"
   if verdict == "refused" then
     -- checked before the v1 arm for the same reason checkCompat checks it
     -- first: a Gen 1 peer meeting a Gen 2 one has no `protocol` to read yet

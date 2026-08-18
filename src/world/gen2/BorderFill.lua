@@ -152,16 +152,95 @@ function BorderFill.bake(atlas, tileset, blockId, bgSet, waterFrame)
   return img
 end
 
+-- VOID FILL (#1418): the beyond-edge scenery under survey zoom.  FADE (the
+-- default) is each map header's own border block with the dissolve below;
+-- WATER / TREES force one block on outdoor tilesets that actually have that
+-- scenery; BLACK is a flat void.  Indoor and cave tilesets have no tree wall
+-- or water metatile, so water/trees fall through to the map's own border
+-- rather than painting a random block.
+--
+-- Canonical ids are the wMapBorderBlock values already used as those fills
+-- in data/maps/attributes.asm: New Bark / Route 30 $05 trees, Cherrygrove
+-- $35 water, Pallet $0f trees, Cinnabar $43 water, Ilex Forest $05 trees.
+BorderFill.VOID_FILLS = { "fade", "water", "trees", "black" }
+BorderFill.voidFill = "fade"
+
+local FILL_BLOCKS = {
+  TILESET_JOHTO = { trees = 0x05, water = 0x35 },
+  TILESET_JOHTO_MODERN = { trees = 0x05, water = 0x35 },
+  TILESET_KANTO = { trees = 0x0f, water = 0x43 },
+  TILESET_FOREST = { trees = 0x05 },
+}
+
+function BorderFill.setVoidFill(mode)
+  local ok = false
+  for _, name in ipairs(BorderFill.VOID_FILLS) do
+    if name == mode then ok = true; break end
+  end
+  BorderFill.voidFill = ok and mode or "fade"
+end
+
+function BorderFill.cycle(delta)
+  local cur = BorderFill.voidFill or "fade"
+  local at = 1
+  for i, name in ipairs(BorderFill.VOID_FILLS) do
+    if name == cur then at = i; break end
+  end
+  local n = #BorderFill.VOID_FILLS
+  at = (at - 1 + (delta or 1)) % n + 1
+  BorderFill.setVoidFill(BorderFill.VOID_FILLS[at])
+  return BorderFill.voidFill
+end
+
+function BorderFill.applyOptions(opts)
+  BorderFill.setVoidFill(opts and opts.voidFill or "fade")
+end
+
+function BorderFill.voidFillLabel(mode)
+  mode = mode or BorderFill.voidFill or "fade"
+  if mode == "water" then return "WATER" end
+  if mode == "trees" then return "TREES" end
+  if mode == "black" then return "BLACK" end
+  -- trailing space blanks the 5-char WATER/TREES/BLACK from the value column
+  return "FADE "
+end
+
+-- The metatile the void should bake, or false when BLACK skips tiling.
+function BorderFill.fillBlock(def)
+  local mode = BorderFill.voidFill or "fade"
+  if mode == "black" then return false end
+  if (mode == "water" or mode == "trees") and def then
+    local fills = FILL_BLOCKS[def.tileset]
+    local block = fills and fills[mode]
+    if block ~= nil then return block end
+  end
+  return def and def.borderBlock or 0
+end
+
+-- Crossfade identity: FADE dissolves per map (Cherrygrove water -> Route 30
+-- trees).  WATER/TREES dissolve only when the forced block itself changes
+-- (Johto water -> Kanto water), so walking two Johto routes does not fade
+-- identical water against itself.  BLACK is one sheet everywhere.
+function BorderFill.fillKey(def)
+  local mode = BorderFill.voidFill or "fade"
+  if mode == "black" then return "black" end
+  local block = BorderFill.fillBlock(def)
+  if mode == "water" or mode == "trees" then
+    return mode .. "|" .. tostring(def and def.tileset) .. "|" .. tostring(block)
+  end
+  return "fade|" .. tostring(def and def.id)
+end
+
 -- Each map header carries its OWN border block, so crossing a boundary swaps
 -- the whole void from one block to another: Cherrygrove's water becomes Route
 -- 30's trees between one frame and the next.  On a 20x18 viewport that is a few
 -- pixels at the screen edge and nobody sees it; under survey zoom the void is
 -- most of the window, and the swap reads as the background popping.
 --
--- So the swap is dissolved rather than cut.  `key` is the map the image belongs
--- to, not the image itself: the same block gets re-baked by the daytime
--- rollover, the COLOR option and the two-frame cave flicker, and a dissolve on
--- any of those would smear the flicker into mush.
+-- So the swap is dissolved rather than cut.  `key` is the fill identity
+-- (BorderFill.fillKey), not the image itself: the same block gets re-baked by
+-- the daytime rollover, the COLOR option and the two-frame cave flicker, and a
+-- dissolve on any of those would smear the flicker into mush.
 BorderFill.CROSSFADE_FRAMES = 20
 
 -- The bookkeeping half, love-free so it can be checked without a canvas.

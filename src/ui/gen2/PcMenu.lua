@@ -24,6 +24,8 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Logger = require("src.core.Logger")
 local Mail = require("src.core.gen2.Mail")
 local Runtime = require("src.mods.Runtime")
+local Save = require("src.core.gen2.Save")
+local SaveMenu = require("src.ui.gen2.SaveMenu")
 local Screens = require("src.ui.Screens")
 local Strings = require("src.core.Strings")
 
@@ -35,6 +37,13 @@ local MON_HOLDING_MAIL = {
   Strings.source("There is a POKéMON\nholding MAIL."),
   Strings.source("Please remove the\nMAIL."),
 }
+
+-- _ChangeBoxSaveText (data/text/common_2.asm:1306) is three lines whose `cont`
+-- has already scrolled by the time YesNoBox goes up over its last two.
+local CHANGE_BOX_SAVE = { "#MON BOX, data", "will be saved. OK?" }
+
+-- YesNoBox's own `lb bc, SCREEN_WIDTH - 6, 7` (home/menu.asm:382-383).
+local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
 
 local PcMenu = {}
 PcMenu.__index = PcMenu
@@ -90,6 +99,13 @@ function PcMenu.new(game, opts)
   self.onClose = opts.onClose
   self.house = opts.house and true or false
   self.events = opts.events
+  -- The same route the start menu's SAVE row takes (src/core/Game2.lua:435),
+  -- so the save.write veto and the save.writing event fire here too.
+  self.writer = opts.writer
+    or (game and type(game.writeSave) == "function"
+      and function() return game:writeSave() end)
+    or Save.save
+  self.saveExists = opts.saveExists
   -- The folded MAIL BOX row belongs to the item PC, and the whose-PC menu
   -- reaches that through <PLAYER>'s PC (src/ui/gen2/ItemPcMenu.lua), so
   -- BILL's PC shows the cart's own five rows.  The bedroom's PC keeps it: the
@@ -154,6 +170,91 @@ end
 
 function PcMenu:close()
   if self.onClose then self.onClose(self.changedDecorations) end
+end
+
+-- engine/pokemon/bills_pc.asm:2403 BillsPC_ChangeBoxSubmenu .Switch
+-- engine/menus/save.asm:40 ChangeBoxSaveGame
+function PcMenu:beginChangeBox(index)
+  self.changeBox = index
+  self.savePhase = "confirm"
+  self.saveChoice = 1
+  self.saveTimer = 0
+  self.saved = nil
+  local existed = self.saveExists
+  if existed == nil then existed = Save.exists("gold") end
+  self.existed = existed
+end
+
+-- .refused: `pop de / ret`, with wCurBox untouched and the picker still up.
+function PcMenu:refuseChangeBox()
+  self.savePhase, self.changeBox = nil, nil
+  self.saveTimer = 0
+end
+
+function PcMenu:acceptChangeBox()
+  if self.saveChoice == 2 then return self:refuseChangeBox() end
+  if self.savePhase == "confirm" and self.existed then
+    self.savePhase = "overwrite"
+    self.saveChoice = 1
+    return
+  end
+  self.savePhase = "saving"
+  self.saveTimer = 0
+end
+
+-- `pop de / ld a, e / ld [wCurBox], a` sits between SaveBox and
+-- SavingDontTurnOffThePower, so the new index rides the file that is written.
+function PcMenu:writeChangeBox()
+  Boxes.setCurrent(self.save, self.changeBox)
+  local ok = self.writer(self.save)
+  self.saved = ok and true or false
+  if ok then SaveMenu.playSaveSfx(self.game, SaveMenu.SFX_SAVE) end
+end
+
+function PcMenu:savePrompt()
+  if self.savePhase == "overwrite" then return SaveMenu.OVERWRITE_PROMPT end
+  if self.savePhase == "saving" then return SaveMenu.SAVING_PROMPT end
+  if self.savePhase == "done" then
+    if self.saved then
+      local name = (self.save.player and self.save.player.name) or "GOLD"
+      return { name .. " saved", "the game." }
+    end
+    return { "Could not save.", "" }
+  end
+  return CHANGE_BOX_SAVE
+end
+
+function PcMenu:updateChangeBox()
+  -- SavingDontTurnOffThePower is DelayFrames, not a prompt: no button does
+  -- anything until the sequence runs out (engine/menus/save.asm:55).
+  if self.savePhase == "saving" then
+    self.saveTimer = self.saveTimer + 1
+    if self.saveTimer >= SaveMenu.SAVING_FRAMES then
+      self:writeChangeBox()
+      self.savePhase = "done"
+      self.saveTimer = 0
+    end
+    return
+  end
+  if self.savePhase == "done" then
+    self.saveTimer = self.saveTimer + 1
+    if self.saveTimer >= SaveMenu.SAVED_FRAMES then
+      self.savePhase, self.changeBox = nil, nil
+      self.picking = false
+    end
+    return
+  end
+
+  local input = self.game and self.game.input
+  if not input then return end
+  if input:wasPressed("up") or input:wasPressed("down") then
+    self.saveChoice = self.saveChoice == 1 and 2 or 1
+  elseif input:wasPressed("a") then
+    self:acceptChangeBox()
+  elseif input:wasPressed("b") then
+    -- B out of a yes/no is NO (InterpretTwoOptionMenu returns carry).
+    self:refuseChangeBox()
+  end
 end
 
 function PcMenu:choose()
@@ -231,6 +332,11 @@ function PcMenu:update(_dt)
     return
   end
 
+  if self.savePhase then
+    self:updateChangeBox()
+    return
+  end
+
   if self.picking then
     local total = Boxes.NUM_BOXES
     if input:wasPressed("up") then
@@ -238,8 +344,11 @@ function PcMenu:update(_dt)
     elseif input:wasPressed("down") then
       self.pickIndex = self.pickIndex < total and self.pickIndex + 1 or 1
     elseif input:wasPressed("a") then
-      Boxes.setCurrent(self.save, self.pickIndex)
-      self.picking = false
+      if self.pickIndex == (self.save.currentBox or 1) then
+        self.picking = false
+      else
+        self:beginChangeBox(self.pickIndex)
+      end
     elseif input:wasPressed("b") then
       self.picking = false
     end
@@ -286,6 +395,22 @@ function PcMenu:drawPanel()
       Chrome.printRight(
         ("%d/%d"):format(Boxes.count(self.save, i), Boxes.MONS_PER_BOX),
         18, ty)
+    end
+    if self.savePhase then
+      -- ChangeBoxSaveGame's MenuTextbox, then YesNoBox over the box list.
+      Chrome.box(0, 12, 20, 6)
+      local lines = self:savePrompt()
+      Chrome.print(lines[1] or "", 1, 14)
+      Chrome.print(lines[2] or "", 1, 16)
+      if self.savePhase == "confirm" or self.savePhase == "overwrite" then
+        Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
+        Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
+        Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+        Chrome.cursor(YESNO_X + 1,
+          YESNO_Y + (self.saveChoice == 1 and 1 or 3))
+      end
+      love.graphics.setColor(1, 1, 1, 1)
+      return
     end
     Chrome.box(0, 14, 20, 4)
     Chrome.print("Which BOX?", 1, 16)

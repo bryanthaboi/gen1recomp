@@ -49,5 +49,16 @@ check(CacheFs.mountVersion("yellow") == true, "mountVersion(yellow) returns true
 eq(love.filesystem.read("assets/generated/fonts/font.png"), "yellow-font",
   "Yellow mount exposes fonts/font.png at the unprefixed path")
 
+-- Gold-only: same overlay contract (the Switch intro/maps.lua hole)
+love.filesystem._mounts = {}
+GameVersion.set("gold")
+love.filesystem.write("gold/data/generated/maps.lua", "return { ok = true }")
+love.filesystem.write("gold/assets/generated/fonts/font.png", "gold-font")
+check(CacheFs.mountVersion("gold") == true, "mountVersion(gold) returns true")
+eq(love.filesystem.read("assets/generated/fonts/font.png"), "gold-font",
+  "Gold mount exposes fonts/font.png at the unprefixed path")
+eq(love.filesystem.read("data/generated/maps.lua"), "return { ok = true }",
+  "Gold mount exposes maps.lua at the unprefixed path")
+
 GameVersion.set("red")
 T.finish()

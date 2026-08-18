@@ -24,14 +24,18 @@
 --   MoneyTopRightMenuHeader menu_coords 11, 0, 19, 2 -- a 9x3 box, and
 --                           PlaceMoneyTextbox writes the amount at
 --                           MenuBoxCoord2Tile + SCREEN_WIDTH + 1 = (12,1)
---   MenuHeader_Buy          menu_coords 1, 3, 19, 11 -- a 19x9 box holding 4
---                           entries of two rows.  ScrollingMenu_UpdateDisplay
---                           starts at (2,4); PlaceMenuItemName prints the name
---                           there and .PrintBCDPrices is handed that origin
---                           plus the menu's own width (8) plus SCREEN_WIDTH, so
---                           the price lands at (10,5).  The ▲ sits on the box's
---                           top right corner (19,3) and the ▼ on its bottom
---                           right (19,11).
+--   MenuHeader_Buy          menu_coords 1, 3, 19, 11 -- a 19x9 rect holding 4
+--                           entries of two rows.  BuyMenuLoop copies that
+--                           header and calls ScrollingMenu; it never calls
+--                           InitScrollingMenu or MenuBox, so the rect is NOT
+--                           a framed window.  ScrollingMenu_UpdateDisplay
+--                           calls ClearWholeMenuBox on it (spaces, no border)
+--                           and starts printing at (2,4); PlaceMenuItemName
+--                           prints the name there and .PrintBCDPrices is
+--                           handed that origin plus the menu's own width (8)
+--                           plus SCREEN_WIDTH, so the price lands at (10,5).
+--                           The ▲ sits on the rect's top right (19,3) and
+--                           the ▼ on its bottom right (19,11).
 --   UpdateItemDescription   Textbox (0,12) interior 18x4 -- a 20x6 box -- with
 --                           the description at (1,14)
 --   BuyItem_MenuHeader      menu_coords 7, 15, 19, 17 -- a 13x3 box, and
@@ -75,7 +79,9 @@ local SFX_TRANSACTION = "Sfx_Transaction"
 
 local MartMenu = {}
 MartMenu.__index = MartMenu
--- engine/items/mart.asm:54
+-- The top menu overlays the mart (StandardMart .HowMayIHelpYou /
+-- .AnythingElse: LoadStandardMenuHeader + PrintText).  BuyMenu is
+-- FadeToMenu + BlankScreen, so enterBuy shadows this for the list.
 MartMenu.isOpaque = false
 
 -- constants/mart_constants.asm.  The `pokemart` macro emits this as one byte
@@ -563,6 +569,10 @@ function MartMenu:enterBuy()
   self.phase = "buy"
   self.index = 1
   self.scroll = 0
+  -- BuyMenu (engine/items/mart.asm): `call FadeToMenu / farcall BlankScreen`.
+  -- BlankScreen fills the tilemap with spaces and the palettes with white, so
+  -- the mart must not keep drawing in the letterbox under the list.
+  self.isOpaque = (self.phase == "buy")
 end
 
 function MartMenu:total()
@@ -618,6 +628,8 @@ end
 -- BuyMenu returns into StandardMart .Buy, which falls through to
 -- .AnythingElse; the other three dialog kinds end on their come-again line.
 function MartMenu:leaveBuy()
+  -- CloseSubmenu restores the map before .AnythingElse / the come-again line.
+  self.isOpaque = nil
   if self.martType == "STANDARD" then
     self:enterTop(self.text.askMore)
   else
@@ -885,11 +897,10 @@ function MartMenu:description()
   return def and def.description or nil
 end
 
--- The bottom visible entry's price row IS the box's bottom border row
--- (entry row 10 + SCREEN_WIDTH = 11, MenuHeader_Buy's own last line), and a
--- GB glyph REPLACES the tile it prints over, border and all.  White under
--- the seven money tiles first is that replacement; on the three rows clear
--- of the border it repaints white over white.
+-- The bottom visible entry's price row is MenuHeader_Buy's last line
+-- (entry row 10 + SCREEN_WIDTH = 11).  A GB glyph REPLACES the tile it
+-- prints over, so white under the seven money tiles first is that
+-- replacement.  On a BlankScreen field it is white over white.
 local function printPriceOpaque(amount, ty)
   local G = love.graphics
   G.setColor(1, 1, 1, 1)
@@ -899,8 +910,10 @@ local function printPriceOpaque(amount, ty)
 end
 
 function MartMenu:drawBuyList()
-  -- engine/items/mart.asm:542
-  Chrome.box(LIST_BOX_X, LIST_BOX_Y, LIST_BOX_W, LIST_BOX_H)
+  -- ScrollingMenu_UpdateDisplay (engine/menus/scrolling_menu.asm) calls
+  -- ClearWholeMenuBox, not MenuBox: the MenuHeader_Buy rect is a cleared
+  -- field, not a framed window.  BlankScreen already filled the tilemap
+  -- with spaces, so the names just land on white.
   for row = 1, VISIBLE_ROWS do
     local i = row + self.scroll
     local ty = LIST_Y + (row - 1) * LIST_SPACING
@@ -960,6 +973,10 @@ function MartMenu:drawUnder()
     self:drawTopMenu()
     self:drawTextBox(self.topLines)
   elseif phase == "buy" or phase == "buyQuantity" then
+    -- BlankScreen (engine/overworld/player_object.asm): the whole tilemap
+    -- is spaces before PlaceMoneyTopRight / the scrolling list / the
+    -- description textbox go down.  Only those last two are framed.
+    Chrome.clear()
     self:drawMoneyBox()
     self:drawBuyList()
     self:drawDescription()

@@ -159,6 +159,13 @@ function NpcTrade.perform(data, save, row, index)
   -- that slot inheriting it (src/core/gen2/Mail.lua).
   Mail.removeSlot(save, index)
   party[#party + 1] = received
+  -- TryAddMonToParty's SetSeenAndCaughtMon (engine/pokemon/move_mon.asm:196),
+  -- which the `predef` at engine/events/npc_trade.asm:168 runs like any other.
+  save.pokedex = save.pokedex or {}
+  save.pokedex.seen = save.pokedex.seen or {}
+  save.pokedex.caught = save.pokedex.caught or {}
+  save.pokedex.seen[received.species] = true
+  save.pokedex.caught[received.species] = true
   return given, received
 end
 

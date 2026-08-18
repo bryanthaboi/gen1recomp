@@ -63,6 +63,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local HpBar = require("src.battle.gen2.HpBar")
+local ItemEffects = require("src.core.gen2.ItemEffects")
 local Mon = require("src.battle.gen2.Mon")
 local Palettes = require("src.world.gen2.Palettes")
 local Pokerus = require("src.core.gen2.Pokerus")
@@ -107,15 +108,6 @@ local STAT_KEYS = {
 local TYPE_NAMES = {
   PSYCHIC_TYPE = "PSYCHIC",
   CURSE_TYPE = "???",
-}
-
--- PlaceStatusString (engine/pokemon/mon_stats.asm): three letters, and a mon
--- with no HP reads FNT whatever its status byte says.  Same table the party
--- list uses; both screens call the same routine on the cart.
-local STATUS_STRING = {
-  slp = "SLP", psn = "PSN", brn = "BRN", frz = "FRZ", par = "PAR",
-  poison = "PSN", burn = "BRN", freeze = "FRZ", paralysis = "PAR",
-  sleep = "SLP", toxic = "PSN",
 }
 
 -- Gen 2 pics are 5x5, 6x6 or 7x7 and PadFrontpic centres the small ones in
@@ -208,11 +200,15 @@ local function levelText(level)
   return "<LV>" .. tostring(level)
 end
 
+-- PlaceStatusString (engine/pokemon/mon_stats.asm): three letters, and a mon
+-- with no HP reads FNT whatever its status byte says.  Same lookup the party
+-- list makes; both screens call the same routine on the cart.
 local function statusText(mon)
   if (mon.hp or 0) <= 0 then return "FNT" end
   local status = mon.status
   if not status then return nil end
-  return STATUS_STRING[tostring(status):lower()]
+  local class = ItemEffects.STATUS_CLASS[tostring(status):lower()]
+  return class and class:upper()
 end
 
 -- wTempMonPokerusStatus is one byte: the low nibble counts the days left and

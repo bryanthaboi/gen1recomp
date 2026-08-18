@@ -1,10 +1,11 @@
 -- NX-only asset overlay: fused love-nx cannot reliably mount
--- blue|yellow/assets/generated onto the un-prefixed assets/generated, so
+-- blue|yellow|gold/{assets,data}/generated onto the un-prefixed paths, so
 -- instead of teaching every call site about versioned caches, this module
 -- wraps EVERY read-side love entry point that accepts a filesystem path
--- once at boot: any string path under assets/generated/ that does not
--- resolve falls back to the active version's prefixed copy
--- (yellow|blue/assets/generated/...).  Covering the whole read surface --
+-- once at boot: any string path under assets/generated/ or data/generated/
+-- prefers the active version's prefixed copy (yellow|blue|gold/...) when
+-- that file exists, so leftover unprefixed Red cache cannot shadow it.
+-- Covering the whole read surface --
 -- not just the loaders we happened to need -- is what keeps future states
 -- and mods inside the fallback without anyone updating this file.
 --
@@ -18,27 +19,43 @@
 --   * the chip-audio worker (src/core/chip_worker.lua) is a separate Lua
 --     state without these wrappers; ChipAudio.slimAudio hands it the prefix
 --     explicitly as audio.programPrefix.
---   * data/generated module loads go through CacheFs.readActive, which
---     already implements the same fallback for require bytes.
+--   * Gen 1 Data:load and Gold Game2/World go through CacheFs.readActive /
+--     CacheFs.loadActive, which implement the same fallback for Lua bytes.
+--     data/generated is still rewritten here so any leftover
+--     love.filesystem.load("data/generated/...") call (the Gold intro /
+--     naming / maps hole on 0.2.4) stays inside the overlay.
 
 local GameVersion = require("src.core.GameVersion")
 
-local GENERATED = "assets/generated/"
+local GENERATED_PREFIXES = {
+  "assets/generated/",
+  "data/generated/",
+}
 
 local NxAssetOverlay = {}
 
 local originals -- raw love functions, non-nil while installed
 
--- Resolve `path` to the versioned copy when the un-prefixed file is missing
--- and the active version (Blue/Yellow) carries it.  Returns nil when the
--- caller's path should be used untouched (non-generated path, Red, the real
--- file exists, or no versioned copy).
+-- Resolve `path` to the active version's prefixed copy when that file
+-- exists (gold|yellow|blue|red/{assets,data}/generated/...).  The versioned
+-- tree wins over a leftover un-prefixed file so a pre-#899 Red root cache
+-- (assets/generated/font.png in the save dir) cannot shadow Gold/Blue/
+-- Yellow art that shares a name.  Returns nil when the caller's path
+-- should be used untouched (non-generated path, empty prefix, or no
+-- versioned copy).
 local function versioned(path)
   if type(path) ~= "string" then return nil end
-  if path:sub(1, #GENERATED) ~= GENERATED then return nil end
+  local generated = false
+  for i = 1, #GENERATED_PREFIXES do
+    local gen = GENERATED_PREFIXES[i]
+    if path:sub(1, #gen) == gen then
+      generated = true
+      break
+    end
+  end
+  if not generated then return nil end
   local prefix = GameVersion.cachePrefix()
   if prefix == "" then return nil end
-  if originals.getInfo(path) then return nil end
   local candidate = prefix .. path
   if originals.getInfo(candidate) then return candidate end
   return nil
