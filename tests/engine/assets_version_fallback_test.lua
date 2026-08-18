@@ -97,10 +97,11 @@ local launcher = love.graphics.newImage("assets/launcher/gear.png")
 eq(launcher.path, "assets/launcher/gear.png",
   "overlay leaves non-generated paths alone")
 
--- The real un-prefixed file wins when it exists
+-- Leftover un-prefixed Red cache must not shadow the versioned copy
+-- (pre-#899 assets/generated at the save-dir root).
 love.filesystem.write(PNG, "root-png-bytes")
-eq(love.filesystem.read(PNG), "root-png-bytes",
-  "overlay prefers the real un-prefixed file over the versioned copy")
+eq(love.filesystem.read(PNG), "yellow-png-bytes",
+  "overlay prefers the versioned copy over leftover unprefixed")
 clearPath(PNG)
 
 -- Blue gets the same treatment
@@ -110,7 +111,18 @@ clearPath("yellow/" .. PNG)
 eq(love.filesystem.read(PNG), "blue-png-bytes",
   "overlay maps generated reads to blue/ for Blue")
 
--- Red has no prefix: nothing is rewritten
+-- Leftover unprefixed font (old Red root) must not beat Gold's copy.
+GameVersion.set("gold")
+local FONT = "assets/generated/fonts/font.png"
+love.filesystem.write(FONT, "stale-red-font")
+love.filesystem.write("gold/" .. FONT, "gold-font")
+eq(love.filesystem.read(FONT), "gold-font",
+  "Gold versioned font wins over leftover unprefixed Red font")
+clearPath(FONT)
+clearPath("gold/" .. FONT)
+
+-- Red has no empty prefix anymore (cachePrefix is red/), but with no
+-- red/ copy the unprefixed miss stays a miss.
 GameVersion.set("red")
 clearPath("blue/" .. PNG)
 eq(love.filesystem.read(PNG), nil, "Red keeps the stock miss behavior")

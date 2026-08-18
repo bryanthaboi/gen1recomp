@@ -192,20 +192,28 @@ local PAL = {
   chipInkGold = { 58, 44, 0 },     -- #3a2c00  dark "Y" on the gold chip
 }
 
+-- Per-version required cache files.  Gold replaces the Gen 1 list entirely
+-- (VERSION_REQUIRED_FILES_OVERRIDE); Yellow adds a few extra markers.
+local function requiredFilesFor(version)
+  local override = VERSION_REQUIRED_FILES_OVERRIDE[version]
+  if override then return override, true end
+  return REQUIRED_FILES, false
+end
+
 -- CacheFs.exists checks the game folder directly for a portable install,
 -- otherwise the save directory through love.filesystem.  It honors
 -- CacheFs.prefix, so we point it at the version's cache subtree (red/,
--- blue/, yellow/).
+-- blue/, yellow/, gold/).
 local function allRequiredFilesExist(version)
   local CacheFs = require("src.import.CacheFs")
   local saved = CacheFs.prefix
   CacheFs.prefix = GameVersion.cachePrefix(version)
   local ok = true
-  local required = VERSION_REQUIRED_FILES_OVERRIDE[version] or REQUIRED_FILES
+  local required, isOverride = requiredFilesFor(version)
   for _, path in ipairs(required) do
     if not CacheFs.exists(path) then ok = false; break end
   end
-  if ok and not VERSION_REQUIRED_FILES_OVERRIDE[version] then
+  if ok and not isOverride then
     for _, path in ipairs(VERSION_REQUIRED_FILES[version] or {}) do
       if not CacheFs.exists(path) then ok = false; break end
     end
@@ -215,20 +223,23 @@ local function allRequiredFilesExist(version)
 end
 
 -- A developer checkout / Python build leaves generated data in the physfs
--- source: Red at the historical root, Blue/Yellow in their versioned trees.
--- Imported Red caches still live under red/.  Check source paths directly so
--- that cache prefix cannot hide Red's source tree, and keep save-dir caches
--- from counting as current source data.
+-- source: Red at the historical root, Blue/Yellow/Gold in their versioned
+-- trees.  Imported Red caches still live under red/.  Check source paths
+-- directly so that cache prefix cannot hide Red's source tree, and keep
+-- save-dir caches from counting as current source data.
 local function sourceTreeHasData(version)
   if not love.filesystem.getRealDirectory then return false end
   local prefix = version == "red" and "" or GameVersion.cachePrefix(version)
-  for _, path in ipairs(REQUIRED_FILES) do
+  local required, isOverride = requiredFilesFor(version)
+  for _, path in ipairs(required) do
     if love.filesystem.getInfo(prefix .. path, "file") == nil then return false end
   end
-  for _, path in ipairs(VERSION_REQUIRED_FILES[version] or {}) do
-    if love.filesystem.getInfo(prefix .. path, "file") == nil then return false end
+  if not isOverride then
+    for _, path in ipairs(VERSION_REQUIRED_FILES[version] or {}) do
+      if love.filesystem.getInfo(prefix .. path, "file") == nil then return false end
+    end
   end
-  local path = prefix .. REQUIRED_FILES[1]
+  local path = prefix .. required[1]
   local real = love.filesystem.getRealDirectory(path)
   return real == love.filesystem.getSource()
 end
@@ -285,7 +296,7 @@ local function purgeSaveDirCache()
     return true
   end
   -- Purge each version's stale save-directory copy (under its red/ / blue/
-  -- / yellow/ prefix) so it cannot shadow the portable game-folder cache.
+  -- / yellow/ / gold/ prefix) so it cannot shadow the portable game-folder cache.
   for _, version in ipairs(GameVersion.ORDER) do
     local prefix = GameVersion.cachePrefix(version)
     if saveDirHas(prefix .. MARKER_PATH) or saveDirHas(prefix .. REQUIRED_FILES[1]) then
@@ -455,9 +466,9 @@ function RomImporter:ensureModsInboxDir()
   return false
 end
 
--- NX raw .sav inbox per game: imports/saves/{red,blue,yellow}/.
+-- NX raw .sav inbox per game: imports/saves/{red,blue,yellow,gold}/.
 -- Parent imports/ then imports/saves/ first — createDirectory is not nested.
--- Creates all three version folders so MTP browsing shows where each game goes.
+-- Creates every version folder so MTP browsing shows where each game goes.
 function RomImporter:ensureSavesInboxDir(version)
   self:ensureImportsDir()
   local info = love.filesystem.getInfo(SAVES_INBOX_DIR)
