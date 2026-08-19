@@ -16,20 +16,28 @@
 
 #include "SampleRateConverter.h"
 
-using namespace flowgraph;
-using namespace resampler;
+using namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
-SampleRateConverter::SampleRateConverter(int32_t channelCount, MultiChannelResampler &resampler)
+SampleRateConverter::SampleRateConverter(int32_t channelCount,
+                                         MultiChannelResampler &resampler)
         : FlowGraphFilter(channelCount)
         , mResampler(resampler) {
     setDataPulledAutomatically(false);
 }
 
+void SampleRateConverter::reset() {
+    FlowGraphNode::reset();
+    mInputCallCount = kInitialCallCount;
+    mInputCursor = 0;
+}
+
 // Return true if there is a sample available.
 bool SampleRateConverter::isInputAvailable() {
+    // If we have consumed all of the input data then go out and get some more.
     if (mInputCursor >= mNumValidInputFrames) {
-        mNumValidInputFrames = input.pullData(mInputFramePosition, input.getFramesPerBuffer());
-        mInputFramePosition += mNumValidInputFrames;
+        mInputCallCount++;
+        mNumValidInputFrames = input.pullData(mInputCallCount, input.getFramesPerBuffer());
         mInputCursor = 0;
     }
     return (mInputCursor < mNumValidInputFrames);

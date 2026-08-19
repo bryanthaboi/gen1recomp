@@ -1,17 +1,17 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 28
+    compileSdkVersion 34
     defaultConfig {
-        applicationId "com.example.oboe.megadrone"
-        minSdkVersion 16
-        targetSdkVersion 28
+        applicationId "com.google.oboe.samples.megadrone"
+        minSdkVersion 21
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
-                cppFlags "-std=c++14"
+                cppFlags "-std=c++17"
                 abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
             }
         }
@@ -38,10 +38,11 @@ android {
             path "src/main/cpp/CMakeLists.txt"
         }
     }
+    namespace 'com.google.oboe.samples.megadrone'
 }
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation 'androidx.appcompat:appcompat:1.0.0-rc02'
+    implementation 'androidx.appcompat:appcompat:1.6.0-rc01'
     implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
 }

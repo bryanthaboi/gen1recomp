@@ -91,6 +91,16 @@ bool syncHealthSteps();
 bool restartApp();
 
 /**
+ * Dynamic App Shortcuts: updates Android ShortcutManager with ready game versions.
+ **/
+bool updateAppShortcuts(const std::vector<std::string> &versions);
+
+/**
+ * Returns the game version requested via initial launch Intent (if any).
+ **/
+std::string getLaunchGame();
+
+/**
  * Blocking HTTPS GET into destPath (GameActivity.httpDownload). Android has
  * no curl binary, so this is the transport src/core/HostShell.lua uses there
  * for the mod index and mod updates (#597). userAgent / accept may be null.
@@ -105,6 +115,21 @@ bool httpDownload(const char *url, const char *destPath, const char *userAgent, 
  * whether the server accepted the send (2xx).
  **/
 bool httpPost(const char *url, const char *body, int bodyLen, const char *contentType, const char *userAgent);
+
+/**
+ * Blocking HTTPS request with a method, headers and a byte body
+ * (GameActivity.httpRequest). What save sync needs and neither of the two
+ * above can give it: PUT, per-request auth headers, and the response body of
+ * a 4xx as well as a 2xx. headerPairs is a flat name, value array of
+ * headerPairCount entries; body/userAgent may be null. `out` receives the
+ * Java side's envelope -- a head line of "STATUS <code>" or "ERROR <text>",
+ * a newline, then the raw response bytes. False means the platform has no
+ * such bridge at all (an old APK under a newer liblove), which the Lua side
+ * reports as "update the app" rather than as a failed request.
+ **/
+bool httpRequest(const char *url, const char *method,
+	const char *const *headerPairs, int headerPairCount,
+	const char *body, int bodyLen, const char *userAgent, std::string &out);
 
 /**
  * TLS client sockets (GameActivity.tls*, implemented by TlsSocket.java).

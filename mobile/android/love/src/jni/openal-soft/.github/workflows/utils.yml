@@ -1,0 +1,85 @@
+name: utils
+
+on:
+  push:
+    paths:
+      - 'utils/**'
+      - 'examples/**'
+      - '.github/workflows/utils.yml'
+
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+  Branch: ${{github.ref_name}}
+
+jobs:
+  Win64:
+    runs-on: windows-latest
+
+    steps:
+    - name: Clone repo and submodules
+      run: git clone https://github.com/${{github.repository}}.git . --branch ${{env.Branch}}
+
+    - name: Get current date, commit hash and count
+      run: |
+        echo "CommitDate=$(git show -s --date=format:'%Y-%m-%d' --format=%cd)" >> $env:GITHUB_ENV
+        echo "CommitHashShort=$(git rev-parse --short=7 HEAD)" >> $env:GITHUB_ENV
+        echo "CommitCount=$(git rev-list --count ${{env.Branch}} --)" >> $env:GITHUB_ENV
+
+    - name: Clone libmysofa
+      run: |
+        git clone https://github.com/hoene/libmysofa.git --branch v1.3.3
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1.1.3
+
+    - name: Restore libmysofa NuGet packages
+      working-directory: ${{github.workspace}}/libmysofa
+      run: nuget restore ${{github.workspace}}/libmysofa/windows/libmysofa.sln
+
+    - name: Build libmysofa
+      working-directory: ${{github.workspace}}/libmysofa
+      run: msbuild /m /p:Configuration=${{env.BUILD_TYPE}} ${{github.workspace}}/libmysofa/windows/libmysofa.sln
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -D "MYSOFA_LIBRARY=${{github.workspace}}/libmysofa/windows/bin/x64/Release/mysofa.lib" -D "MYSOFA_INCLUDE_DIR=${{github.workspace}}/libmysofa/src/hrtf" -D "ZLIB_LIBRARY=${{github.workspace}}/libmysofa/windows/third-party/zlib-1.2.11/lib/zlib.lib" -D "ZLIB_INCLUDE_DIR=${{github.workspace}}/libmysofa/windows/third-party/zlib-1.2.11/include"
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Make Artifacts folder
+      run: |
+        mkdir "Artifacts"
+        mkdir "Release"
+
+    - name: Collect artifacts
+      run: |
+        copy "build/Release/makemhr.exe" "Artifacts/makemhr.exe"
+        copy "build/Release/sofa-info.exe" "Artifacts/sofa-info.exe"
+        copy "build/Release/alrecord.exe" "Artifacts/alrecord.exe"
+        copy "build/Release/altonegen.exe" "Artifacts/altonegen.exe"
+        copy "build/Release/openal-info.exe" "Artifacts/openal-info.exe"
+        copy "build/Release/allafplay.exe" "Artifacts/allafplay.exe"
+        copy "libmysofa/windows/third-party/zlib-1.2.11/bin/zlib.dll" "Artifacts/zlib.dll"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{env.CommitDate}}_utils-r${{env.CommitCount}}@${{env.CommitHashShort}}
+        path: "Artifacts/"
+
+    - name: Compress artifacts
+      uses: papeloto/action-zip@v1
+      with:
+        files: Artifacts/
+        dest: "Release/utils.zip"
+
+    - name: GitHub pre-release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{secrets.GITHUB_TOKEN}}"
+        automatic_release_tag: "utils"
+        prerelease: true
+        title: "[${{env.CommitDate}}] utils-r${{env.CommitCount}}@${{env.CommitHashShort}}"
+        files: "Release/utils.zip"

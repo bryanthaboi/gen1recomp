@@ -1,81 +1,113 @@
-# Android.mk script to build OpenAL-soft 1.21.0 in Android
-
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-#
-# Module definition
-#
 LOCAL_MODULE := libopenal
 LOCAL_ARM_NEON := true
 
-#
-# Flags
-#
-LOCAL_CFLAGS := -std=c11 -DAL_ALEXT_PROTOTYPES -DHAVE_OBOE -DHAVE_OPENSL -fvisibility=hidden
-LOCAL_CPPFLAGS := -std=c++14 -fvisibility-inlines-hidden
-LOCAL_CPP_FEATURES := exceptions
+LOCAL_CFLAGS := \
+    -DAL_BUILD_LIBRARY \
+    -DAL_ALEXT_PROTOTYPES \
+    -DHAVE_OBOE=1 \
+    -DHAVE_OPENSL=1 \
+    -fvisibility=hidden
+LOCAL_CPPFLAGS := -std=c++17 -fvisibility-inlines-hidden
+LOCAL_CPP_FEATURES := exceptions rtti
 
-#
-# Include directories
-#
 LOCAL_C_INCLUDES := \
     $(LOCAL_PATH) \
+    $(LOCAL_PATH)/al \
     $(LOCAL_PATH)/alc \
     $(LOCAL_PATH)/common \
+    $(LOCAL_PATH)/core \
     $(LOCAL_PATH)/include
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
 
-#
-# config.h defines
-#
 ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
-    # Defines for ARM32
     LOCAL_CFLAGS += \
-        -DHAVE_NEON
+        -DHAVE_NEON=1
 else ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
-    # Defines for ARM64
     LOCAL_CFLAGS += \
-        -DHAVE_POSIX_MEMALIGN \
-        -DHAVE_NEON
+        -DHAVE_NEON=1
 else ifeq ($(TARGET_ARCH_ABI),x86)
-    # Defines for x86. UNTESTED!
     LOCAL_CFLAGS += \
-        -DHAVE_SSE \
-        -DHAVE_SSE2 \
-        -DHAVE_SSE3 \
+        -msse3 \
+        -DHAVE_SSE=1 \
+        -DHAVE_SSE2=1 \
+        -DHAVE_SSE3=1 \
+        -DHAVE_SSE_INTRINSICS=1 \
         -DHAVE_CPUID_H \
-        -DHAVE_GCC_GET_CPUID \
-        -DHAVE_SSE_INTRINSICS
+        -DHAVE_GCC_GET_CPUID
 else ifeq ($(TARGET_ARCH_ABI),x86_64)
-    # Defines for x86-64. UNTESTED!
     LOCAL_CFLAGS += \
-        -DHAVE_POSIX_MEMALIGN \
-        -DHAVE_SSE \
-        -DHAVE_SSE2 \
-        -DHAVE_SSE3 \
-        -DHAVE_SSE4_1 \
+        -msse4.1 \
+        -DHAVE_SSE=1 \
+        -DHAVE_SSE2=1 \
+        -DHAVE_SSE3=1 \
+        -DHAVE_SSE4_1=1 \
+        -DHAVE_SSE_INTRINSICS=1 \
         -DHAVE_CPUID_H \
-        -DHAVE_GCC_GET_CPUID \
-        -DHAVE_SSE_INTRINSICS
+        -DHAVE_GCC_GET_CPUID
 endif
 
-#
-# Source files
-#
 LOCAL_SRC_FILES := \
+    common/alassert.cpp \
     common/alcomplex.cpp \
-    common/alexcpt.cpp \
-    common/alfstream.cpp \
-    common/almalloc.cpp \
+    common/alsem.cpp \
     common/alstring.cpp \
+    common/althrd_setname.cpp \
     common/dynload.cpp \
+    common/pffft.cpp \
     common/polyphase_resampler.cpp \
+    common/ringbuffer.cpp \
     common/strutils.cpp \
-    common/threads.cpp \
+    core/ambdec.cpp \
+    core/ambidefs.cpp \
+    core/bformatdec.cpp \
+    core/bs2b.cpp \
+    core/bsinc_tables.cpp \
+    core/buffer_storage.cpp \
+    core/context.cpp \
+    core/converter.cpp \
+    core/cpu_caps.cpp \
+    core/cubic_tables.cpp \
+    core/devformat.cpp \
+    core/device.cpp \
+    core/effectslot.cpp \
+    core/except.cpp \
+    core/filters/biquad.cpp \
+    core/filters/nfc.cpp \
+    core/filters/splitter.cpp \
+    core/fmt_traits.cpp \
+    core/fpu_ctrl.cpp \
+    core/helpers.cpp \
+    core/hrtf.cpp \
+    core/logging.cpp \
+    core/mastering.cpp \
+    core/mixer.cpp \
+    core/storage_formats.cpp \
+    core/uhjfilter.cpp \
+    core/uiddefs.cpp \
+    core/voice.cpp \
+    core/mixer/mixer_c.cpp \
     al/auxeffectslot.cpp \
     al/buffer.cpp \
+    al/debug.cpp \
     al/effect.cpp \
+    al/effects/autowah.cpp \
+    al/effects/chorus.cpp \
+    al/effects/compressor.cpp \
+    al/effects/convolution.cpp \
+    al/effects/dedicated.cpp \
+    al/effects/distortion.cpp \
+    al/effects/echo.cpp \
+    al/effects/effects.cpp \
+    al/effects/equalizer.cpp \
+    al/effects/fshifter.cpp \
+    al/effects/modulator.cpp \
+    al/effects/null.cpp \
+    al/effects/pshifter.cpp \
+    al/effects/reverb.cpp \
+    al/effects/vmorpher.cpp \
     al/error.cpp \
     al/event.cpp \
     al/extension.cpp \
@@ -84,15 +116,12 @@ LOCAL_SRC_FILES := \
     al/source.cpp \
     al/state.cpp \
     alc/alc.cpp \
-    alc/alu.cpp \
     alc/alconfig.cpp \
-    alc/ambdec.cpp \
-    alc/bformatdec.cpp \
-    alc/bs2b.cpp \
-    alc/bsinc_tables.cpp \
-    alc/buffer_storage.cpp \
-    alc/converter.cpp \
-    alc/cpu_caps.cpp \
+    alc/alu.cpp \
+    alc/context.cpp \
+    alc/device.cpp \
+    alc/events.cpp \
+    alc/panning.cpp \
     alc/effects/autowah.cpp \
     alc/effects/chorus.cpp \
     alc/effects/compressor.cpp \
@@ -107,51 +136,27 @@ LOCAL_SRC_FILES := \
     alc/effects/pshifter.cpp \
     alc/effects/reverb.cpp \
     alc/effects/vmorpher.cpp \
-    alc/filters/biquad.cpp \
-    alc/filters/nfc.cpp \
-    alc/filters/splitter.cpp \
-    alc/fmt_traits.cpp \
-    alc/fpu_ctrl.cpp \
-    alc/helpers.cpp \
-    alc/hrtf.cpp \
-    alc/mastering.cpp \
-    alc/panning.cpp \
-    alc/ringbuffer.cpp \
-    alc/uhjfilter.cpp \
-    alc/uiddefs.cpp \
-    alc/voice.cpp \
-    alc/mixer/mixer_c.cpp \
-	opensl_latency.cpp
+    opensl_latency.cpp
 
-#
-# Conditionals source files
-#
 ifneq (,$(findstring HAVE_SSE4_1,${LOCAL_CFLAGS}))
-    # SSE4.1 mixer
     LOCAL_SRC_FILES += \
-        alc/mixer/mixer_sse.cpp \
-        alc/mixer/mixer_sse2.cpp \
-        alc/mixer/mixer_sse3.cpp \
-        alc/mixer/mixer_sse41.cpp
+        core/mixer/mixer_sse.cpp \
+        core/mixer/mixer_sse2.cpp \
+        core/mixer/mixer_sse3.cpp \
+        core/mixer/mixer_sse41.cpp
 else ifneq (,$(findstring HAVE_SSE3,${LOCAL_CFLAGS}))
-    # SSE3 mixer
     LOCAL_SRC_FILES += \
-        alc/mixer/mixer_sse.cpp \
-        alc/mixer/mixer_sse2.cpp \
-        alc/mixer/mixer_sse3.cpp
+        core/mixer/mixer_sse.cpp \
+        core/mixer/mixer_sse2.cpp \
+        core/mixer/mixer_sse3.cpp
 else ifneq (,$(findstring HAVE_SSE2,${LOCAL_CFLAGS}))
-    # SSE2 mixer
     LOCAL_SRC_FILES += \
-        alc/mixer/mixer_sse.cpp \
-        alc/mixer/mixer_sse2.cpp
+        core/mixer/mixer_sse.cpp \
+        core/mixer/mixer_sse2.cpp
 else ifneq (,$(findstring HAVE_NEON,${LOCAL_CFLAGS}))
-    # NEON mixer
-    LOCAL_SRC_FILES += alc/mixer/mixer_neon.cpp
+    LOCAL_SRC_FILES += core/mixer/mixer_neon.cpp
 endif
 
-#
-# backends
-#
 LOCAL_SRC_FILES += \
     alc/backends/base.cpp \
     alc/backends/loopback.cpp \
@@ -160,11 +165,7 @@ LOCAL_SRC_FILES += \
     alc/backends/opensl.cpp \
     alc/backends/wave.cpp
 
-#
-# Libraries related
-#
 LOCAL_STATIC_LIBRARIES := oboe
 LOCAL_LDLIBS := -lOpenSLES -llog
 
-# Build
 include $(BUILD_SHARED_LIBRARY)

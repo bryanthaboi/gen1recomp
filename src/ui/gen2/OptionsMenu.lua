@@ -355,6 +355,11 @@ function OptionsMenu:cycle(row, delta)
   if next_ < 1 then next_ = #row.values end
   if next_ > #row.values then next_ = 1 end
   self.options[row.key] = row.values[next_]
+  -- MUSIC VOL applies itself as it steps; SOUND has to as well, or the
+  -- pan sits on the current song until the next map change (#1471)
+  if row.key == "sound" then
+    require("src.core.Music").applyOptions(self.options)
+  end
 end
 
 function OptionsMenu:leave_()

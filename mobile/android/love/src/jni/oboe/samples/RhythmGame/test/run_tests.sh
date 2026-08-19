@@ -74,12 +74,12 @@ fi
 # Configure the build
 echo "Building tests for ${ABI} using ${PLATFORM}"
 
-CMAKE_ARGS="-H. \
+CMAKE_ARGS="-S. \
 	-B${BUILD_DIR} \
 	-DANDROID_ABI=${ABI} \
 	-DANDROID_PLATFORM=${PLATFORM} \
   	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
-	-DCMAKE_CXX_FLAGS=-std=c++14 \
+	-DCMAKE_CXX_FLAGS=-std=c++17 \
 	-DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
 	-DCMAKE_VERBOSE_MAKEFILE=1"
 

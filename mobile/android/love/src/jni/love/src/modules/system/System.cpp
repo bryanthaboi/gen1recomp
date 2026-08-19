@@ -245,6 +245,25 @@ bool System::restartApp() const
 #endif
 }
 
+bool System::updateShortcuts(const std::vector<std::string> &versions) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::updateAppShortcuts(versions);
+#else
+	LOVE_UNUSED(versions);
+	return false;
+#endif
+}
+
+std::string System::getLaunchGame() const
+{
+#ifdef LOVE_ANDROID
+	return love::android::getLaunchGame();
+#else
+	return "";
+#endif
+}
+
 bool System::httpDownload(const char *url, const char *destPath,
 	const char *userAgent, const char *accept) const
 {
@@ -270,6 +289,27 @@ bool System::httpPost(const char *url, const char *body, int bodyLen,
 	LOVE_UNUSED(bodyLen);
 	LOVE_UNUSED(contentType);
 	LOVE_UNUSED(userAgent);
+	return false;
+#endif
+}
+
+bool System::httpRequest(const char *url, const char *method,
+	const char *const *headerPairs, int headerPairCount,
+	const char *body, int bodyLen, const char *userAgent,
+	std::string &out) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::httpRequest(url, method, headerPairs, headerPairCount,
+		body, bodyLen, userAgent, out);
+#else
+	LOVE_UNUSED(url);
+	LOVE_UNUSED(method);
+	LOVE_UNUSED(headerPairs);
+	LOVE_UNUSED(headerPairCount);
+	LOVE_UNUSED(body);
+	LOVE_UNUSED(bodyLen);
+	LOVE_UNUSED(userAgent);
+	out.clear();
 	return false;
 #endif
 }

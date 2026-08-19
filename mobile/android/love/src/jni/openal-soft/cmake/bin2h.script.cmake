@@ -8,6 +8,5 @@ file(READ "${INPUT_FILE}" indata HEX)
 # per line.
 string(REGEX REPLACE "(..)" "    0x\\1,\n" output "${indata}")
 
-# Write the list of hex chars to the output file in a const byte array
-file(WRITE "${OUTPUT_FILE}"
-    "const unsigned char ${VARIABLE_NAME}[] = {\n${output}};\n")
+# Write the list of hex chars to the output file
+file(WRITE "${OUTPUT_FILE}" "${output}")

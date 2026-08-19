@@ -422,7 +422,7 @@ local function discoverModSchemas(opts)
         -- except experimental mods, which stay off until opted in.
         local flag = require("src.core.SaveData").modEnabled(opts, m.id)
         local enabled = flag == true or (flag == nil and not m.experimental)
-        if enabled then
+        if enabled and not SaveData.isSafeMode(opts) then
           local chunk = fs.load(path .. "/" .. m.options_schema)
           if chunk then
             local okR, schema = pcall(chunk)
@@ -521,7 +521,47 @@ local function modRows(opts, mod)
         return true
       end }
   end
+  for _, row in ipairs(rows) do
+    row.safeModeBlocked = true
+    if row.step then
+      local step = row.step
+      row.step = function(dir)
+        if SaveData.isSafeMode(opts) then return false end
+        return step(dir)
+      end
+    end
+    if row.setText then
+      local setText = row.setText
+      row.setText = function(text)
+        if SaveData.isSafeMode(opts) then return false end
+        return setText(text)
+      end
+    end
+  end
   return rows
+end
+
+local function troubleshootingRows(opts, hooks)
+  return {
+    {
+      label = Strings("SAFE MODE"),
+      actionLabel = function()
+        return SaveData.isSafeMode(opts) and Strings("Turn off") or Strings("Turn on")
+      end,
+      action = function()
+        SaveData.setSafeMode(opts, not SaveData.isSafeMode(opts))
+        return true
+      end,
+    },
+    {
+      label = Strings("REPORT ISSUE"),
+      actionLabel = Strings("Report bug"),
+      action = function()
+        if hooks and hooks.reportIssue then hooks.reportIssue(opts) end
+        return false
+      end,
+    },
+  }
 end
 
 -- ------- Gen 2 (Gold)
@@ -704,6 +744,10 @@ function LauncherSettings.open(hooks, version)
       sections[#sections + 1] = { title = mod.name, rows = rows }
     end
   end
+  sections[#sections + 1] = {
+    title = Strings("TROUBLESHOOTING"),
+    rows = troubleshootingRows(opts, hooks),
+  }
   return {
     opts = opts,
     version = version,

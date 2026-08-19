@@ -301,6 +301,13 @@ end
 -- gear edit these before the game starts (src/import/LauncherSettings.lua).
 Save.OPTIONS_KEY = "gold"
 
+local SHARED_KEYS = {
+  touchControls = true, haptics = true,
+  mods = true, modsByVersion = true, modsGen2 = true,
+  modOptions = true, modProfiles = true, modProfilesSeeded = true,
+  activeProfile = true,
+}
+
 function Save.loadOptions(fs)
   local options = Save.defaultOptions()
   local ok, SaveData = pcall(require, "src.core.SaveData")
@@ -308,7 +315,21 @@ function Save.loadOptions(fs)
   local loaded = SaveData.loadOptions(fs)
   local stored = loaded and loaded[Save.OPTIONS_KEY]
   if type(stored) == "table" then
-    for key, value in pairs(stored) do options[key] = value end
+    for key, value in pairs(stored) do
+      if not SHARED_KEYS[key] then options[key] = value end
+    end
+  end
+  if type(loaded) == "table" then
+    for key in pairs(SHARED_KEYS) do
+      if loaded[key] ~= nil then options[key] = loaded[key] end
+    end
+  end
+  if type(stored) == "table" then
+    for key in pairs(SHARED_KEYS) do
+      if options[key] == nil and stored[key] ~= nil then
+        options[key] = stored[key]
+      end
+    end
   end
   return options
 end
@@ -321,7 +342,13 @@ function Save.saveOptions(options, fs)
   if not ok then return false end
   local file = SaveData.loadOptions(fs) or {}
   local block = {}
-  for key, value in pairs(options) do block[key] = value end
+  for key, value in pairs(options) do
+    if SHARED_KEYS[key] then
+      file[key] = value
+    else
+      block[key] = value
+    end
+  end
   file[Save.OPTIONS_KEY] = block
   SaveData.saveOptions(file, fs)
   return true

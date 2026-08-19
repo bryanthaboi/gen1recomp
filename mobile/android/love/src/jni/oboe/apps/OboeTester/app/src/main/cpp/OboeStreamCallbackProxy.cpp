@@ -17,39 +17,7 @@
 #include "common/OboeDebug.h"
 #include "OboeStreamCallbackProxy.h"
 
-// Linear congruential random number generator.
-static uint32_t s_random16() {
-    static uint32_t seed = 1234;
-    seed = ((seed * 31421) + 6927) & 0x0FFFF;
-    return seed;
-}
-
-/**
- * The random number generator is good for burning CPU because the compiler cannot
- * easily optimize away the computation.
- * @param workload number of times to execute the loop
- * @return a white noise value between -1.0 and +1.0
- */
-static float s_burnCPU(int32_t workload) {
-    uint32_t random = 0;
-    for (int32_t i = 0; i < workload; i++) {
-        for (int32_t j = 0; j < 10; j++) {
-            random = random ^ s_random16();
-        }
-    }
-    return (random - 32768) * (1.0 / 32768);
-}
-
 bool OboeStreamCallbackProxy::mCallbackReturnStop = false;
-
-int64_t OboeStreamCallbackProxy::getNanoseconds(clockid_t clockId) {
-    struct timespec time;
-    int result = clock_gettime(clockId, &time);
-    if (result < 0) {
-        return result;
-    }
-    return (time.tv_sec * 1e9) + time.tv_nsec;
-}
 
 oboe::DataCallbackResult OboeStreamCallbackProxy::onAudioReady(
         oboe::AudioStream *audioStream,
@@ -58,6 +26,23 @@ oboe::DataCallbackResult OboeStreamCallbackProxy::onAudioReady(
     oboe::DataCallbackResult callbackResult = oboe::DataCallbackResult::Stop;
     int64_t startTimeNanos = getNanoseconds();
 
+    // Record which CPU this is running on.
+    orCurrentCpuMask(sched_getcpu());
+
+    // Tell ADPF in advance what our workload will be.
+    if (mWorkloadReportingEnabled) {
+        audioStream->reportWorkload(mNumWorkloadVoices);
+    }
+
+    // Change affinity if app requested a change.
+    uint32_t mask = mCpuAffinityMask;
+    if (mask != mPreviousMask) {
+        int err = applyCpuAffinityMask(mask);
+        if (err != 0) {
+        }
+        mPreviousMask = mask;
+    }
+
     mCallbackCount++;
     mFramesPerCallback = numFrames;
 
@@ -65,31 +50,67 @@ oboe::DataCallbackResult OboeStreamCallbackProxy::onAudioReady(
         return oboe::DataCallbackResult::Stop;
     }
 
-    s_burnCPU((int32_t)(mWorkload * kWorkloadScaler * numFrames));
-
     if (mCallback != nullptr) {
         callbackResult = mCallback->onAudioReady(audioStream, audioData, numFrames);
     }
 
-    // Update CPU load
-    double calculationTime = (double)(getNanoseconds() - startTimeNanos);
-    double inverseRealTime = audioStream->getSampleRate() / (1.0e9 * numFrames);
-    double currentCpuLoad = calculationTime * inverseRealTime; // avoid a divide
-    mCpuLoad = (mCpuLoad * 0.95) + (currentCpuLoad * 0.05); // simple low pass filter
+    mSynthWorkload.onCallback(mNumWorkloadVoices);
+    if (mNumWorkloadVoices > 0) {
+        // Render into the buffer or discard the synth voices.
+        float *buffer = (audioStream->getChannelCount() == 2 && mHearWorkload)
+                        ? static_cast<float *>(audioData) : nullptr;
+        mSynthWorkload.renderStereo(buffer, numFrames);
+    }
+
+    // Measure CPU load.
+    int64_t currentTimeNanos = getNanoseconds();
+    // Sometimes we get a short callback when doing sample rate conversion.
+    // Just ignore those to avoid noise.
+    if (numFrames > (getFramesPerCallback() / 2)) {
+        int64_t calculationTime = currentTimeNanos - startTimeNanos;
+        float currentCpuLoad = calculationTime * 0.000000001f * audioStream->getSampleRate() / numFrames;
+        mCpuLoad = (mCpuLoad * 0.95f) + (currentCpuLoad * 0.05f); // simple low pass filter
+        mMaxCpuLoad = std::max(currentCpuLoad, mMaxCpuLoad.load());
+    }
+
+    if (mPreviousCallbackTimeNs != 0) {
+        mStatistics.add((currentTimeNanos - mPreviousCallbackTimeNs) * kNsToMsScaler);
+    }
+    mPreviousCallbackTimeNs = currentTimeNanos;
 
     return callbackResult;
 }
 
-void OboeStreamCallbackProxy::onErrorBeforeClose(oboe::AudioStream *audioStream, oboe::Result error) {
-    LOGD("OboeStreamCallbackProxy::%s(%p, %d) called", __func__, audioStream, error);
-    if (mCallback != nullptr) {
-        mCallback->onErrorBeforeClose(audioStream, error);
+int OboeStreamCallbackProxy::applyCpuAffinityMask(uint32_t mask) {
+    int err = 0;
+    // Capture original CPU set so we can restore it.
+    if (!mIsOriginalCpuSetValid) {
+        err = sched_getaffinity((pid_t) 0,
+                                sizeof(mOriginalCpuSet),
+                                &mOriginalCpuSet);
+        if (err) {
+            LOGE("%s(0x%02X) - sched_getaffinity(), errno = %d\n", __func__, mask, errno);
+            return -errno;
+        }
+        mIsOriginalCpuSetValid = true;
     }
-}
-
-void OboeStreamCallbackProxy::onErrorAfterClose(oboe::AudioStream *audioStream, oboe::Result  error) {
-    LOGD("OboeStreamCallbackProxy::%s(%p, %d) called", __func__, audioStream, error);
-    if (mCallback != nullptr) {
-        mCallback->onErrorAfterClose(audioStream, error);
+    if (mask) {
+        cpu_set_t cpu_set;
+        CPU_ZERO(&cpu_set);
+        int cpuCount = sysconf(_SC_NPROCESSORS_CONF);
+        for (int cpuIndex = 0; cpuIndex < cpuCount; cpuIndex++) {
+            if (mask & (1 << cpuIndex)) {
+                CPU_SET(cpuIndex, &cpu_set);
+            }
+        }
+        err = sched_setaffinity((pid_t) 0, sizeof(cpu_set_t), &cpu_set);
+    } else {
+        // Restore original mask.
+        err = sched_setaffinity((pid_t) 0, sizeof(mOriginalCpuSet), &mOriginalCpuSet);
     }
+    if (err) {
+        LOGE("%s(0x%02X) - sched_setaffinity(), errno = %d\n", __func__, mask, errno);
+        return -errno;
+    }
+    return 0;
 }

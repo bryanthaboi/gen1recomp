@@ -668,7 +668,7 @@ REQUIRED_SYMBOLS = {
     # Wild encounters (data/wild/*)
     "JohtoGrassWildMons", "JohtoWaterWildMons",
     "KantoGrassWildMons", "KantoWaterWildMons",
-    "FishGroups", "TreeMons", "TreeMonMaps",
+    "FishGroups", "TimeFishGroups", "TreeMons", "TreeMonMaps",
     # data/wild/treemon_maps.asm RockMonMaps: the four maps whose smashable
     # rocks roll TREEMON_SET_ROCK, read by RockMonEncounter.
     "RockMonMaps",
@@ -785,6 +785,7 @@ REQUIRED_SYMBOLS = {
     # Emote bubbles (data/sprites/emotes.asm): showemote's ! over a trainer
     # who just spotted the player, and the other faces scripts use.
     "ShockEmote", "QuestionEmote", "HappyEmote", "SadEmote",
+    "HeartEmote", "BoltEmote", "SleepEmote", "FishEmote",
     # The Pokecenter heal machine's OBJ art (engine/events/
     # heal_machine_anim.asm): two tiles -- the machine's light ($7c) and the
     # ball ($7d) -- plus the CGB palette .LoadPalettes copies over

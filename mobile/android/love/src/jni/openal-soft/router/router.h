@@ -5,25 +5,24 @@
 #include <windows.h>
 #include <winnt.h>
 
-#include <stdio.h>
-
-#include <vector>
-#include <string>
 #include <atomic>
+#include <cstdio>
+#include <memory>
 #include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "AL/alc.h"
 #include "AL/al.h"
 #include "AL/alext.h"
 
+#include "almalloc.h"
+
 
 #define MAKE_ALC_VER(major, minor) (((major)<<8) | (minor))
 
 struct DriverIface {
-    std::wstring Name;
-    HMODULE Module{nullptr};
-    int ALCVer{0};
-
     LPALCCREATECONTEXT alcCreateContext{nullptr};
     LPALCMAKECONTEXTCURRENT alcMakeContextCurrent{nullptr};
     LPALCPROCESSCONTEXT alcProcessContext{nullptr};
@@ -122,70 +121,97 @@ struct DriverIface {
     LPALSPEEDOFSOUND alSpeedOfSound{nullptr};
     LPALDISTANCEMODEL alDistanceModel{nullptr};
 
-    DriverIface(std::wstring name, HMODULE mod)
-      : Name(std::move(name)), Module(mod)
-    { }
-    ~DriverIface()
-    {
-        if(Module)
-            FreeLibrary(Module);
-        Module = nullptr;
-    }
+    /* Functions to load after first context creation. */
+    LPALGENFILTERS alGenFilters{nullptr};
+    LPALDELETEFILTERS alDeleteFilters{nullptr};
+    LPALISFILTER alIsFilter{nullptr};
+    LPALFILTERF alFilterf{nullptr};
+    LPALFILTERFV alFilterfv{nullptr};
+    LPALFILTERI alFilteri{nullptr};
+    LPALFILTERIV alFilteriv{nullptr};
+    LPALGETFILTERF alGetFilterf{nullptr};
+    LPALGETFILTERFV alGetFilterfv{nullptr};
+    LPALGETFILTERI alGetFilteri{nullptr};
+    LPALGETFILTERIV alGetFilteriv{nullptr};
+    LPALGENEFFECTS alGenEffects{nullptr};
+    LPALDELETEEFFECTS alDeleteEffects{nullptr};
+    LPALISEFFECT alIsEffect{nullptr};
+    LPALEFFECTF alEffectf{nullptr};
+    LPALEFFECTFV alEffectfv{nullptr};
+    LPALEFFECTI alEffecti{nullptr};
+    LPALEFFECTIV alEffectiv{nullptr};
+    LPALGETEFFECTF alGetEffectf{nullptr};
+    LPALGETEFFECTFV alGetEffectfv{nullptr};
+    LPALGETEFFECTI alGetEffecti{nullptr};
+    LPALGETEFFECTIV alGetEffectiv{nullptr};
+    LPALGENAUXILIARYEFFECTSLOTS alGenAuxiliaryEffectSlots{nullptr};
+    LPALDELETEAUXILIARYEFFECTSLOTS alDeleteAuxiliaryEffectSlots{nullptr};
+    LPALISAUXILIARYEFFECTSLOT alIsAuxiliaryEffectSlot{nullptr};
+    LPALAUXILIARYEFFECTSLOTF alAuxiliaryEffectSlotf{nullptr};
+    LPALAUXILIARYEFFECTSLOTFV alAuxiliaryEffectSlotfv{nullptr};
+    LPALAUXILIARYEFFECTSLOTI alAuxiliaryEffectSloti{nullptr};
+    LPALAUXILIARYEFFECTSLOTIV alAuxiliaryEffectSlotiv{nullptr};
+    LPALGETAUXILIARYEFFECTSLOTF alGetAuxiliaryEffectSlotf{nullptr};
+    LPALGETAUXILIARYEFFECTSLOTFV alGetAuxiliaryEffectSlotfv{nullptr};
+    LPALGETAUXILIARYEFFECTSLOTI alGetAuxiliaryEffectSloti{nullptr};
+    LPALGETAUXILIARYEFFECTSLOTIV alGetAuxiliaryEffectSlotiv{nullptr};
+
+    std::wstring Name;
+    HMODULE Module{nullptr};
+    int ALCVer{0};
+    std::once_flag InitOnceCtx{};
+
+    template<typename T>
+    DriverIface(T&& name, HMODULE mod) : Name(std::forward<T>(name)), Module(mod) { }
+    ~DriverIface() { if(Module) FreeLibrary(Module); }
+
+    DriverIface(const DriverIface&) = delete;
+    DriverIface(DriverIface&&) = delete;
+    DriverIface& operator=(const DriverIface&) = delete;
+    DriverIface& operator=(DriverIface&&) = delete;
 };
+using DriverIfacePtr = std::unique_ptr<DriverIface>;
 
-extern std::vector<DriverIface> DriverList;
+inline std::vector<DriverIfacePtr> DriverList;
 
-extern thread_local DriverIface *ThreadCtxDriver;
-extern std::atomic<DriverIface*> CurrentCtxDriver;
+inline thread_local DriverIface *ThreadCtxDriver{};
+inline std::atomic<DriverIface*> CurrentCtxDriver{};
+
+inline DriverIface *GetThreadDriver() noexcept { return ThreadCtxDriver; }
+inline void SetThreadDriver(DriverIface *driver) noexcept { ThreadCtxDriver = driver; }
 
 
-class PtrIntMap {
-    void **mKeys{nullptr};
-    /* Shares memory with keys. */
-    int *mValues{nullptr};
-
-    ALsizei mSize{0};
-    ALsizei mCapacity{0};
-    std::mutex mLock;
-
-public:
-    PtrIntMap() = default;
-    ~PtrIntMap();
-
-    ALenum insert(void *key, int value);
-    int removeByKey(void *key);
-    int lookupByKey(void *key);
+enum class eLogLevel {
+    None  = 0,
+    Error = 1,
+    Warn  = 2,
+    Trace = 3,
 };
-
-
-enum LogLevel {
-    LogLevel_None  = 0,
-    LogLevel_Error = 1,
-    LogLevel_Warn  = 2,
-    LogLevel_Trace = 3,
-};
-extern enum LogLevel LogLevel;
-extern FILE *LogFile;
+extern eLogLevel LogLevel;
+extern gsl::owner<std::FILE*> LogFile;
 
 #define TRACE(...) do {                                   \
-    if(LogLevel >= LogLevel_Trace)                        \
+    if(LogLevel >= eLogLevel::Trace)                      \
     {                                                     \
-        fprintf(LogFile, "AL Router (II): " __VA_ARGS__); \
-        fflush(LogFile);                                  \
+        std::FILE *file{LogFile ? LogFile : stderr};      \
+        fprintf(file, "AL Router (II): " __VA_ARGS__);    \
+        fflush(file);                                     \
     }                                                     \
 } while(0)
 #define WARN(...) do {                                    \
-    if(LogLevel >= LogLevel_Warn)                         \
+    if(LogLevel >= eLogLevel::Warn)                       \
     {                                                     \
-        fprintf(LogFile, "AL Router (WW): " __VA_ARGS__); \
-        fflush(LogFile);                                  \
+        std::FILE *file{LogFile ? LogFile : stderr};      \
+        fprintf(file, "AL Router (WW): " __VA_ARGS__);    \
+        fflush(file);                                     \
     }                                                     \
 } while(0)
 #define ERR(...) do {                                     \
-    if(LogLevel >= LogLevel_Error)                        \
+    if(LogLevel >= eLogLevel::Error)                      \
     {                                                     \
-        fprintf(LogFile, "AL Router (EE): " __VA_ARGS__); \
-        fflush(LogFile);                                  \
+        std::FILE *file{LogFile ? LogFile : stderr};      \
+        fprintf(file, "AL Router (EE): " __VA_ARGS__);    \
+        fflush(file);                                     \
     }                                                     \
 } while(0)
 

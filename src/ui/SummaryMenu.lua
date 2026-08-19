@@ -14,6 +14,7 @@ local Font = require("src.render.Font")
 local TypeChart = require("src.battle.TypeChart")
 local Strings = require("src.core.Strings")
 local Stats = require("src.pokemon.Stats")
+local Status = require("src.battle.Status")
 
 local SummaryMenu = {}
 SummaryMenu.__index = SummaryMenu
@@ -145,7 +146,7 @@ function SummaryMenu:draw()
     HudTiles.drawHPBar(data, 11, 3, mon, 1, barZoned) -- wHPBarType 1
     Font.draw(("%3d/%3d"):format(mon.hp, mon.stats.hp), 96, 32)
     Font.draw(Strings("STATUS/"), 72, 48)
-    Font.draw(mon.status or "OK", 128, 48)
+    Font.draw(Status.hudLabelFor(data.statuses, mon.status) or "OK", 128, 48)
 
     -- stats box (0,8) 10x10: names rows 9/11/13/15, values indented
     Font.drawBox(0, 8, 10, 10)

@@ -1,15 +1,44 @@
 #ifndef AL_FILTER_H
 #define AL_FILTER_H
 
+#include <array>
+#include <cstdint>
+#include <string_view>
+#include <utility>
+#include <variant>
+
 #include "AL/al.h"
 #include "AL/alc.h"
-#include "AL/alext.h"
+#include "AL/efx.h"
 
 #include "almalloc.h"
+#include "alnumeric.h"
 
 
-#define LOWPASSFREQREF  5000.0f
-#define HIGHPASSFREQREF  250.0f
+inline constexpr float LowPassFreqRef{5000.0f};
+inline constexpr float HighPassFreqRef{250.0f};
+
+template<typename T>
+struct FilterTable {
+    static void setParami(struct ALfilter*, ALenum, int);
+    static void setParamiv(struct ALfilter*, ALenum, const int*);
+    static void setParamf(struct ALfilter*, ALenum, float);
+    static void setParamfv(struct ALfilter*, ALenum, const float*);
+
+    static void getParami(const struct ALfilter*, ALenum, int*);
+    static void getParamiv(const struct ALfilter*, ALenum, int*);
+    static void getParamf(const struct ALfilter*, ALenum, float*);
+    static void getParamfv(const struct ALfilter*, ALenum, float*);
+
+private:
+    FilterTable() = default;
+    friend T;
+};
+
+struct NullFilterTable : public FilterTable<NullFilterTable> { };
+struct LowpassFilterTable : public FilterTable<LowpassFilterTable> { };
+struct HighpassFilterTable : public FilterTable<HighpassFilterTable> { };
+struct BandpassFilterTable : public FilterTable<BandpassFilterTable> { };
 
 
 struct ALfilter {
@@ -17,36 +46,35 @@ struct ALfilter {
 
     float Gain{1.0f};
     float GainHF{1.0f};
-    float HFReference{LOWPASSFREQREF};
+    float HFReference{LowPassFreqRef};
     float GainLF{1.0f};
-    float LFReference{HIGHPASSFREQREF};
+    float LFReference{HighPassFreqRef};
 
-    struct Vtable {
-        void (*const setParami )(ALfilter *filter, ALenum param, int val);
-        void (*const setParamiv)(ALfilter *filter, ALenum param, const int *vals);
-        void (*const setParamf )(ALfilter *filter, ALenum param, float val);
-        void (*const setParamfv)(ALfilter *filter, ALenum param, const float *vals);
-
-        void (*const getParami )(const ALfilter *filter, ALenum param, int *val);
-        void (*const getParamiv)(const ALfilter *filter, ALenum param, int *vals);
-        void (*const getParamf )(const ALfilter *filter, ALenum param, float *val);
-        void (*const getParamfv)(const ALfilter *filter, ALenum param, float *vals);
-    };
-    const Vtable *vtab{nullptr};
+    using TableTypes = std::variant<NullFilterTable,LowpassFilterTable,HighpassFilterTable,
+        BandpassFilterTable>;
+    TableTypes mTypeVariant;
 
     /* Self ID */
     ALuint id{0};
 
-    void setParami(ALenum param, int value) { vtab->setParami(this, param, value); }
-    void setParamiv(ALenum param, const int *values) { vtab->setParamiv(this, param, values); }
-    void setParamf(ALenum param, float value) { vtab->setParamf(this, param, value); }
-    void setParamfv(ALenum param, const float *values) { vtab->setParamfv(this, param, values); }
-    void getParami(ALenum param, int *value) const { vtab->getParami(this, param, value); }
-    void getParamiv(ALenum param, int *values) const { vtab->getParamiv(this, param, values); }
-    void getParamf(ALenum param, float *value) const { vtab->getParamf(this, param, value); }
-    void getParamfv(ALenum param, float *values) const { vtab->getParamfv(this, param, values); }
+    static void SetName(ALCcontext *context, ALuint id, std::string_view name);
 
-    DISABLE_ALLOC()
+    DISABLE_ALLOC
+};
+
+struct FilterSubList {
+    uint64_t FreeMask{~0_u64};
+    gsl::owner<std::array<ALfilter,64>*> Filters{nullptr};
+
+    FilterSubList() noexcept = default;
+    FilterSubList(const FilterSubList&) = delete;
+    FilterSubList(FilterSubList&& rhs) noexcept : FreeMask{rhs.FreeMask}, Filters{rhs.Filters}
+    { rhs.FreeMask = ~0_u64; rhs.Filters = nullptr; }
+    ~FilterSubList();
+
+    FilterSubList& operator=(const FilterSubList&) = delete;
+    FilterSubList& operator=(FilterSubList&& rhs) noexcept
+    { std::swap(FreeMask, rhs.FreeMask); std::swap(Filters, rhs.Filters); return *this; }
 };
 
 #endif

@@ -18,6 +18,7 @@ local Theme = require("src.ui.Theme")
 local FieldDefaults = require("src.world.FieldDefaults")
 local Map = require("src.world.Map")
 local Strings = require("src.core.Strings")
+local Status = require("src.battle.Status")
 
 local PartyMenu = {}
 PartyMenu.__index = PartyMenu
@@ -821,7 +822,7 @@ function PartyMenu:draw()
       if mon.hp <= 0 then
         Font.draw(Strings("FNT"), 136, y)
       elseif mon.status then
-        Font.draw(mon.status, 136, y)
+        Font.draw(Status.hudLabelFor(self.game.data.statuses, mon.status), 136, y)
       end
       -- the tile HP bar (DrawHP2 + SetPartyMenuHPBarColor).  grayFill:
       -- tinting the fill AND running it through the row's zone

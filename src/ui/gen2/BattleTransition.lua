@@ -28,7 +28,7 @@
 -- covered by tests; the state at the bottom is the only part that draws.
 
 local GbcPalette = require("src.render.GbcPalette")
-local GameViewport = require("src.render.GameViewport")
+local Playfield = require("src.render.Playfield")
 local Palettes = require("src.world.gen2.Palettes")
 local Runtime = require("src.mods.Runtime")
 local SpriteAnims = require("src.ui.gen2.SpriteAnims")
@@ -510,7 +510,7 @@ function BattleTransition:blackAt(col, row)
 end
 
 function BattleTransition:draw()
-  local w, h = GameViewport.dimensions()
+  local w, h = Playfield.dimensions()
   self:drawWidescreen(w, h)
 end
 

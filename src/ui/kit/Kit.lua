@@ -856,8 +856,8 @@ end
 
 -- -------------------------------------------------------------------- pager
 -- Prev / Next / "1-12 of 151".  Drawn even for a single page, so a list is
--- never silently truncated.  This is the ONLY way the launcher moves through
--- a long list: no scrollbars, no momentum, bounded row count per frame.
+-- never silently truncated.  A long list still PAGES rather than scrolling:
+-- no momentum, bounded row count per frame.
 -- Returns the new page (1-based) and the row height consumed.
 local pagerLabels = {}
 
@@ -928,6 +928,64 @@ function Kit.wheelPage(x, y, w, h, page, total, perPage)
   local moved = Theme.clamp((page or 1) + (Kit.wheelY > 0 and -1 or 1), 1, pages)
   Kit.wheelY = 0
   return math.floor(moved)
+end
+
+function Kit.scrollExtent(contentH, viewH)
+  return math.max(0, (contentH or 0) - math.max(0, viewH or 0))
+end
+
+function Kit.scrollClamp(offset, maxScroll)
+  return math.max(0, math.min(offset or 0, math.max(0, maxScroll or 0)))
+end
+
+function Kit.scrollStep(scale)
+  return math.floor(48 * (scale or Kit.scale))
+end
+
+function Kit.scrollBarW(scale)
+  return math.max(2, math.floor(4 * (scale or Kit.scale)))
+end
+
+function Kit.scrollGutter(scale)
+  return Kit.scrollBarW(scale) + math.max(2, math.floor(4 * (scale or Kit.scale)))
+end
+
+function Kit.scrollHandoff(offset, maxScroll, delta)
+  local want = (offset or 0) + (delta or 0)
+  local at = Kit.scrollClamp(want, maxScroll)
+  return at, want - at
+end
+
+function Kit.scrollWheel(offset, maxScroll, x, y, w, h, step)
+  local at = Kit.scrollClamp(offset, maxScroll)
+  local wheel = Kit.wheelY or 0
+  if Kit.blockClicks or wheel == 0 or (maxScroll or 0) <= 0 then
+    return at, false
+  end
+  if not Kit.hit(x, y, w, h) then return at, false end
+  local moved = Kit.scrollClamp(at - wheel * (step or Kit.scrollStep()),
+    maxScroll)
+  if moved == at then return at, false end
+  Kit.wheelY = 0
+  return moved, true
+end
+
+function Kit.scrollBegin(x, y, w, h, offset, maxScroll)
+  Kit.pushClip(x, y, math.max(0, w or 0), math.max(0, h or 0))
+  return y - Kit.scrollClamp(offset, maxScroll)
+end
+
+function Kit.scrollEnd(x, y, w, h, offset, maxScroll)
+  Kit.popClip()
+  if (maxScroll or 0) <= 0 or (h or 0) <= 0 or (w or 0) <= 0 then return end
+  local barW = Kit.scrollBarW()
+  local barX = x + w - barW
+  local at = Kit.scrollClamp(offset, maxScroll)
+  local thumbH = math.max(math.floor(20 * Kit.scale),
+    math.floor(h * (h / (h + maxScroll))))
+  local thumbY = y + (h - thumbH) * (at / maxScroll)
+  Theme.fill(barX, y, barW, h, PAL.bg, 0.35)
+  Theme.fill(barX, thumbY, barW, thumbH, PAL.muted, 0.7)
 end
 
 -- ------------------------------------------------------------------ spinner

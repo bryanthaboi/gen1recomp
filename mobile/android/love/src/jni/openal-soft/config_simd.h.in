@@ -1,0 +1,10 @@
+/* Define to 1 if we have SSE CPU extensions, else 0 */
+#cmakedefine01 HAVE_SSE
+#cmakedefine01 HAVE_SSE2
+#cmakedefine01 HAVE_SSE3
+#cmakedefine01 HAVE_SSE4_1
+
+#cmakedefine01 HAVE_SSE_INTRINSICS
+
+/* Define to 1 if we have ARM Neon CPU extensions, else 0 */
+#cmakedefine01 HAVE_NEON

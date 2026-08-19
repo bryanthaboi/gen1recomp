@@ -1,12 +1,12 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 28
+    compileSdkVersion 34
 
     defaultConfig {
-        applicationId 'com.google.sample.oboe.liveeffect'
-        minSdkVersion 16
-        targetSdkVersion 28
+        applicationId 'com.google.oboe.samples.liveeffect'
+        minSdkVersion 21
+        targetSdkVersion 34
         versionCode 1
         versionName '1.0'
         ndk {
@@ -29,10 +29,11 @@ android {
             path 'src/main/cpp/CMakeLists.txt'
         }
     }
+    namespace 'com.google.oboe.samples.liveEffect'
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.0.0-rc02'
+    implementation 'androidx.appcompat:appcompat:1.6.0-rc01'
     implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
     implementation project(':audio-device')
 }

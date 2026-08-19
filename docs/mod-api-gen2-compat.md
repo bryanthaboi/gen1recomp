@@ -512,8 +512,9 @@ gains a field instead of the name gaining a prefix.
   id under Gen 1's `name` key, which is the one payload difference the
   numeric flag space forces.
 - *Menus (`src/ui/gen2/`):* `ui.start_menu.items`, `ui.title_menu.items`,
-  `ui.options.rows`, `ui.party.submenu`, `ui.naming.grid`, `ui.pc.items`,
-  `ui.list_menu`, `transition.style`. `ui.list_menu` covers Gold's script
+  `ui.options.rows`, `ui.party.submenu`, `ui.party.grid_navigation`,
+  `ui.naming.grid`, `ui.pc.items`, `ui.list_menu`, `transition.style`.
+  `ui.list_menu` covers Gold's script
   menus (`ScriptMenu.lua`); the `Chrome.List` widget the START and title
   menus draw with does not raise it yet, so those two are composed through
   their own hooks only.

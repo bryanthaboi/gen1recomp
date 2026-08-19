@@ -60,6 +60,15 @@ int32_t convertFormatToSizeInBytes(AudioFormat format) {
         case AudioFormat::Float:
             size = sizeof(float);
             break;
+        case AudioFormat::I24:
+            size = 3; // packed 24-bit data
+            break;
+        case AudioFormat::I32:
+            size = sizeof(int32_t);
+            break;
+        case AudioFormat::IEC61937:
+            size = sizeof(int16_t);
+            break;
         default:
             break;
     }
@@ -98,6 +107,9 @@ const char *convertToText<AudioFormat>(AudioFormat format) {
         case AudioFormat::Unspecified:  return "Unspecified";
         case AudioFormat::I16:          return "I16";
         case AudioFormat::Float:        return "Float";
+        case AudioFormat::I24:          return "I24";
+        case AudioFormat::I32:          return "I32";
+        case AudioFormat::IEC61937:     return "IEC61937";
         default:                        return "Unrecognized format";
     }
 }
@@ -183,7 +195,7 @@ const char *convertToText<AudioStream*>(AudioStream* stream) {
      <<"BufferCapacity: "<<stream->getBufferCapacityInFrames()<<std::endl
      <<"BufferSize: "<<stream->getBufferSizeInFrames()<<std::endl
      <<"FramesPerBurst: "<< stream->getFramesPerBurst()<<std::endl
-     <<"FramesPerCallback: "<<stream->getFramesPerCallback()<<std::endl
+     <<"FramesPerDataCallback: "<<stream->getFramesPerDataCallback()<<std::endl
      <<"SampleRate: "<<stream->getSampleRate()<<std::endl
      <<"ChannelCount: "<<stream->getChannelCount()<<std::endl
      <<"Format: "<<oboe::convertToText(stream->getFormat())<<std::endl
@@ -266,6 +278,20 @@ const char *convertToText<ChannelCount>(ChannelCount channelCount) {
     }
 }
 
+template<>
+const char *convertToText<SampleRateConversionQuality>(SampleRateConversionQuality sampleRateConversionQuality) {
+
+    switch (sampleRateConversionQuality) {
+        case SampleRateConversionQuality::None:     return "None";
+        case SampleRateConversionQuality::Fastest:  return "Fastest";
+        case SampleRateConversionQuality::Low:      return "Low";
+        case SampleRateConversionQuality::Medium:   return "Medium";
+        case SampleRateConversionQuality::High:     return "High";
+        case SampleRateConversionQuality::Best:     return "Best";
+        default:                                    return "Unrecognized sample rate conversion quality";
+    }
+}
+
 std::string getPropertyString(const char * name) {
     std::string result;
 #ifdef __ANDROID__
@@ -300,6 +326,22 @@ int getSdkVersion() {
     }
 #endif
     return sCachedSdkVersion;
+}
+
+bool isAtLeastPreReleaseCodename(const std::string& codename) {
+    std::string buildCodename = getPropertyString("ro.build.version.codename");
+    // Special case "REL", which means the build is not a pre-release build.
+    if ("REL" == buildCodename) {
+        return false;
+    }
+
+    // Otherwise lexically compare them. Return true if the build codename is equal to or
+    // greater than the requested codename.
+    return buildCodename.compare(codename) >= 0;
+}
+
+int getChannelCountFromChannelMask(ChannelMask channelMask) {
+    return __builtin_popcount(static_cast<uint32_t>(channelMask));
 }
 
 }// namespace oboe

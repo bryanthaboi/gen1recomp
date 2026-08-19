@@ -17,29 +17,24 @@
 #include <cstring>
 #include <sched.h>
 
+#include "common/OboeDebug.h"
 #include "oboe/Oboe.h"
 #include "AudioStreamGateway.h"
 
-using namespace flowgraph;
+using namespace oboe::flowgraph;
 
 oboe::DataCallbackResult AudioStreamGateway::onAudioReady(
         oboe::AudioStream *audioStream,
         void *audioData,
         int numFrames) {
 
-    if (!mSchedulerChecked) {
-        mScheduler = sched_getscheduler(gettid());
-        mSchedulerChecked = true;
-    }
+    maybeHang(getNanoseconds());
+    printScheduler();
 
     if (mAudioSink != nullptr) {
-        mAudioSink->read(mFramePosition, audioData, numFrames);
-        mFramePosition += numFrames;
+        mAudioSink->read(audioData, numFrames);
     }
 
     return oboe::DataCallbackResult::Continue;
 }
 
-int AudioStreamGateway::getScheduler() {
-    return mScheduler;
-}

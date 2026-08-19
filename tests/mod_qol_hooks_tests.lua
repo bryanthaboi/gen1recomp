@@ -14,6 +14,7 @@ local NamingScreen = require("src.ui.NamingScreen")
 local TextBox = require("src.render.TextBox")
 local ChoiceBox = require("src.ui.ChoiceBox")
 local PartyMenu = require("src.ui.PartyMenu")
+local Gen2PartyMenu = require("src.ui.gen2.PartyMenu")
 local Player = require("src.world.Player")
 local Music = require("src.core.Music")
 
@@ -295,6 +296,16 @@ do
   menu:update(0)
   check(menu.index == 4,
     "removing the hook restores native list navigation immediately")
+
+  local gold = Gen2PartyMenu.new(game, { battle = true })
+  unsub = wrap("ui.party.grid_navigation", function() return true end)
+  gold:update(0)
+  check(gold.index == 3,
+    "a Gold battle party can follow the same companion grid")
+  unsub()
+  gold:update(0)
+  check(gold.index == 4,
+    "Gold restores native party list navigation without the hook")
 end
 
 -- ------- music.volume (distance / indoor muffling)

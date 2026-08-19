@@ -26,5 +26,7 @@ check(helperStart ~= nil, "requiredFilesFor helper exists")
 local helper = src:sub(helperStart, start)
 check(helper:find("VERSION_REQUIRED_FILES_OVERRIDE", 1, true) ~= nil,
   "requiredFilesFor consults VERSION_REQUIRED_FILES_OVERRIDE")
+check(src:find('"assets/generated/battle/hud/balls.png"', 1, true) ~= nil,
+  "Gold caches require the trainer HUD ball sheet")
 
 T.finish()

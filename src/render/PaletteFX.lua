@@ -305,6 +305,13 @@ function PaletteFX.usesGbcPack(mode)
   return mode == "redpp"
 end
 
+function PaletteFX.honorsTrueColor()
+  if GameVersion.generation() >= 2 then
+    return require("src.render.GbcPalette").mode == "gbc"
+  end
+  return PaletteFX.mode == "redpp"
+end
+
 -- Yellow's authentic GBC look is CGBBasePalettes (per-map), not a boot-ROM
 -- auto-palette.  The shared `ogred` save id wears that table on a Yellow
 -- playthrough and labels itself "OG YELLOW".

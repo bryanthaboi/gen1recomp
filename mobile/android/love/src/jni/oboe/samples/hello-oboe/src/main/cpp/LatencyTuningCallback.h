@@ -22,19 +22,19 @@
 #include <oboe/LatencyTuner.h>
 
 #include <TappableAudioSource.h>
-#include <DefaultAudioStreamCallback.h>
+#include <DefaultDataCallback.h>
 #include <trace.h>
 
 /**
- * This callback object extends the functionality of `DefaultAudioStreamCallback` by automatically
+ * This callback object extends the functionality of `DefaultDataCallback` by automatically
  * tuning the latency of the audio stream. @see onAudioReady for more details on this.
  *
  * It also demonstrates how to use tracing functions for logging inside the audio callback without
  * blocking.
  */
-class LatencyTuningCallback: public DefaultAudioStreamCallback {
+class LatencyTuningCallback: public DefaultDataCallback {
 public:
-    LatencyTuningCallback(IRestartable &mParent) : DefaultAudioStreamCallback(mParent) {
+    LatencyTuningCallback() : DefaultDataCallback() {
 
         // Initialize the trace functions, this enables you to output trace statements without
         // blocking. See https://developer.android.com/studio/profile/systrace-commandline.html
@@ -54,11 +54,14 @@ public:
 
     void setBufferTuneEnabled(bool enabled) {mBufferTuneEnabled = enabled;}
 
+    void useStream(std::shared_ptr<oboe::AudioStream>  stream);
+
 private:
     bool mBufferTuneEnabled = true;
 
     // This will be used to automatically tune the buffer size of the stream, obtaining optimal latency
     std::unique_ptr<oboe::LatencyTuner> mLatencyTuner;
+    oboe::AudioStream  *mStream = nullptr;
 };
 
 #endif //SAMPLES_LATENCY_TUNING_CALLBACK_H

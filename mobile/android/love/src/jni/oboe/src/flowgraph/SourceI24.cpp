@@ -17,14 +17,14 @@
 #include <algorithm>
 #include <unistd.h>
 
+#include "FlowGraphNode.h"
+#include "SourceI24.h"
+
 #if FLOWGRAPH_ANDROID_INTERNAL
 #include <audio_utils/primitives.h>
 #endif
 
-#include "FlowGraphNode.h"
-#include "SourceI24.h"
-
-using namespace flowgraph;
+using namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph;
 
 constexpr int kBytesPerI24Packed = 3;
 

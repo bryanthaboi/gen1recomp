@@ -34,6 +34,7 @@ end
 
 function Game:load()
   self.data = Data
+  self.sessionStartedAt = os.time()
   Data:load()
 
   -- Mods are a native engine subsystem.  They load after the verified ROM
@@ -155,6 +156,7 @@ function Game:makeTitleState()
     onNewGame = function()
       while self.stack:top() do self.stack:pop() end
       -- New Game keeps the standalone options.lua preferences
+      self.sessionStartedAt = os.time()
       self.save = SaveData.newGame(self:bootConfig())
       -- no bucket carry-over: mod state from an abandoned session must
       -- not leak into a fresh slot; mods seed via save.created instead
@@ -174,6 +176,7 @@ function Game:makeTitleState()
         self:restoreSave(loaded, recovered, { freshBoot = true })
       end
     end,
+    onExit = self.onExit,
   })
   title.screenId = title.screenId or "TitleState"
   return title
@@ -356,6 +359,7 @@ function Game:update(dt)
   -- reason: they are presentational, so fast-forward must not speed them up
   require("src.render.Pipelines").update(dt)
   pcall(function() require("src.core.DiscordPresence").update(dt) end)
+  self:updateSync(dt)
   -- Steady-state memory backstop: advance the incremental collector one
   -- small step every rendered frame.  The heavy GPU objects are now freed
   -- explicitly (map eviction, battle exit, canvas/renderer swaps), so this
@@ -1178,11 +1182,41 @@ function Game:writeSave()
   -- stamp here so the save.writing payload carries the exact meta the
   -- file gets; mods snapshot runtime state into their namespace now
   self.save.meta = SaveData.buildMeta(
-    self.modStatus and self.modStatus.loaded, self.save.meta)
+    self.modStatus and self.modStatus.loaded, self.save.meta,
+    self.sessionStartedAt)
   if ModRuntime.wants("save.writing") then
     ModRuntime.emit("save.writing", { save = self.save, meta = self.save.meta })
   end
-  return SaveData.save(self.save)
+  local written = SaveData.save(self.save)
+  if written then
+    local eng = self:syncEngine()
+    if eng then pcall(eng.noteSaveWritten, eng) end
+  end
+  return written
+end
+
+function Game:syncEngine()
+  if self._syncOff then return nil end
+  if self._syncEngineRef then return self._syncEngineRef end
+  local ok, SyncEngine = pcall(require, "src.sync.SyncEngine")
+  if not ok or type(SyncEngine) ~= "table" then
+    self._syncOff = true
+    return nil
+  end
+  local eng = SyncEngine.shared()
+  if not eng then
+    self._syncOff = true
+    return nil
+  end
+  self._syncEngineRef = eng
+  return eng
+end
+
+function Game:updateSync(dt)
+  local eng = self:syncEngine()
+  if not eng then return end
+  if not (eng.state.enabled and eng:linked()) and not eng:busy() then return end
+  pcall(eng.update, eng, dt)
 end
 
 -- Persist options.lua only (Options menu / hotkeys 2-5).  Keeps settings
@@ -1241,6 +1275,7 @@ function Game:applyOptions(opts)
 end
 
 function Game:restoreSave(loaded, recovered, opts)
+  self.sessionStartedAt = os.time()
   if ModRuntime.wants("save.loading") then
     ModRuntime.emit("save.loading", { raw = loaded })
   end

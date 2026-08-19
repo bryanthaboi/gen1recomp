@@ -1,10 +1,10 @@
 # - Find OpenSL
 # Find the OpenSL libraries
 #
-#  This module defines the following variables:
-#     OPENSL_FOUND        - True if OPENSL_INCLUDE_DIR & OPENSL_LIBRARY are set
-#     OPENSL_INCLUDE_DIRS - where to find SLES/OpenSLES.h, etc.
-#     OPENSL_LIBRARIES    - the OpenSL library
+#  This module defines the following variables and targets:
+#     OPENSL_FOUND        - True if OPENSL was found
+#     OPENSL_INCLUDE_DIRS - The OpenSL include paths
+#     OPENSL_LIBRARIES    - The OpenSL libraries to link
 #
 
 #=============================================================================
@@ -40,15 +40,12 @@
 #=============================================================================
 
 find_path(OPENSL_INCLUDE_DIR NAMES SLES/OpenSLES.h
-          DOC "The OpenSL include directory"
-)
+    DOC "The OpenSL include directory")
 find_path(OPENSL_ANDROID_INCLUDE_DIR NAMES SLES/OpenSLES_Android.h
-          DOC "The OpenSL Android include directory"
-)
+    DOC "The OpenSL Android include directory")
 
 find_library(OPENSL_LIBRARY NAMES OpenSLES
-             DOC "The OpenSL library"
-)
+    DOC "The OpenSL library")
 
 # handle the QUIETLY and REQUIRED arguments and set OPENSL_FOUND to TRUE if
 # all listed variables are TRUE

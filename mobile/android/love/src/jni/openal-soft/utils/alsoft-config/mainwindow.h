@@ -1,6 +1,8 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <memory>
+
 #include <QMainWindow>
 #include <QListWidget>
 
@@ -8,15 +10,10 @@ namespace Ui {
 class MainWindow;
 }
 
-class MainWindow : public QMainWindow
-{
+class MainWindow : public QMainWindow {
     Q_OBJECT
 
-public:
-    explicit MainWindow(QWidget *parent = 0);
-    ~MainWindow();
-
-private slots:
+private Q_SLOTS:
     void cancelCloseAction();
 
     void saveCurrentConfig();
@@ -32,13 +29,14 @@ private slots:
 
     void updatePeriodSizeEdit(int size);
     void updatePeriodSizeSlider();
-    void updatePeriodCountEdit(int size);
+    void updatePeriodCountEdit(int count);
     void updatePeriodCountSlider();
 
     void selectQuadDecoderFile();
     void select51DecoderFile();
     void select61DecoderFile();
     void select71DecoderFile();
+    void select3D71DecoderFile();
 
     void updateJackBufferSizeEdit(int size);
     void updateJackBufferSizeSlider();
@@ -59,22 +57,26 @@ private slots:
 
     void selectWaveOutput();
 
+public:
+    explicit MainWindow(QWidget *parent=nullptr);
+    ~MainWindow() override;
+
 private:
-    Ui::MainWindow *ui;
+    std::unique_ptr<QValidator> mPeriodSizeValidator;
+    std::unique_ptr<QValidator> mPeriodCountValidator;
+    std::unique_ptr<QValidator> mSourceCountValidator;
+    std::unique_ptr<QValidator> mEffectSlotValidator;
+    std::unique_ptr<QValidator> mSourceSendValidator;
+    std::unique_ptr<QValidator> mSampleRateValidator;
+    std::unique_ptr<QValidator> mJackBufferValidator;
 
-    QValidator *mPeriodSizeValidator;
-    QValidator *mPeriodCountValidator;
-    QValidator *mSourceCountValidator;
-    QValidator *mEffectSlotValidator;
-    QValidator *mSourceSendValidator;
-    QValidator *mSampleRateValidator;
-    QValidator *mJackBufferValidator;
+    std::unique_ptr<Ui::MainWindow> ui;
 
-    bool mNeedsSave;
+    bool mNeedsSave{};
 
-    void closeEvent(QCloseEvent *event);
+    void closeEvent(QCloseEvent *event) override;
 
-    void selectDecoderFile(QLineEdit *line, const char *name);
+    void selectDecoderFile(QLineEdit *line, const char *caption);
 
     QStringList collectHrtfs();
 

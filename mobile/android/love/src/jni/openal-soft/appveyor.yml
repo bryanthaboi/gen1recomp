@@ -1,13 +1,19 @@
-version: 1.21.0.{build}
+version: 1.24.0.{build}
 
 environment:
-    APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-    GEN: "Visual Studio 15 2017"
+    APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+    GEN: "Visual Studio 17 2022"
     matrix:
       - ARCH: Win32
         CFG: Release
       - ARCH: x64
         CFG: Release
+
+after_build:
+- 7z a ..\soft_oal.zip "%APPVEYOR_BUILD_FOLDER%\build\%CFG%\soft_oal.dll" "%APPVEYOR_BUILD_FOLDER%\README.md" "%APPVEYOR_BUILD_FOLDER%\COPYING"
+
+artifacts:
+- path: soft_oal.zip
 
 build_script:
     - cd build

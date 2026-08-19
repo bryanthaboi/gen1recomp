@@ -21,24 +21,21 @@
 
 #include "flowgraph/FlowGraphNode.h"
 #include "oboe/Oboe.h"
+#include "OboeTesterStreamCallback.h"
 
-using namespace flowgraph;
+using namespace oboe::flowgraph;
 
 /**
  * Bridge between an audio flowgraph and an audio device.
  * Pass in an AudioSink and then pass
  * this object to the AudioStreamBuilder as a callback.
  */
-class AudioStreamGateway : public oboe::AudioStreamCallback {
+class AudioStreamGateway : public OboeTesterStreamCallback {
 public:
-//    AudioStreamGateway(int samplesPerFrame);
     virtual ~AudioStreamGateway() = default;
 
-    void setAudioSink(std::shared_ptr<flowgraph::FlowGraphSink>  sink) {
+    void setAudioSink(std::shared_ptr<oboe::flowgraph::FlowGraphSink>  sink) {
         mAudioSink = sink;
-        if (sink) {
-            mFramePosition = sink->getLastFramePosition();
-        }
     }
 
     /**
@@ -49,13 +46,9 @@ public:
             void *audioData,
             int numFrames) override;
 
-    int getScheduler();
-
 private:
-    int64_t  mFramePosition = 0;
-    bool     mSchedulerChecked = false;
-    int      mScheduler;
-    std::shared_ptr<flowgraph::FlowGraphSink>  mAudioSink;
+
+    std::shared_ptr<oboe::flowgraph::FlowGraphSink>  mAudioSink;
 };
 
 

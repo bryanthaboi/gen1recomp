@@ -34,7 +34,7 @@ local Font = require("src.render.Font")
 -- a mod has taken a facade (src/mods/Gen2Compat.lua).
 local Gen1Facade = require("src.mods.Gen2Compat")
 local GbcPalette = require("src.render.GbcPalette")
-local GameViewport = require("src.render.GameViewport")
+local Playfield = require("src.render.Playfield")
 local Gen2Save = require("src.core.gen2.Save")
 local HallOfFame = require("src.core.gen2.HallOfFame")
 local HiddenItems = require("src.world.gen2.HiddenItems")
@@ -313,9 +313,8 @@ local TROPHY_BOXES = {
 }
 
 -- Script_FishCastRod ends on `pause 40`, and Script_GotABite pauses another 40
--- over the bobbing rod before the text lands.  ShakeHeadbuttTree counts down
--- wFrameCounter from 32.  All three are frames at 60 Hz, which is the same
--- clock World:step runs on.
+-- over the bobbing rod before the text lands.
+-- All are frames at 60 Hz, which is the same clock World:step runs on.
 local FISH_CAST_FRAMES = 40
 local FISH_BITE_FRAMES = 40
 local HEADBUTT_SHAKE_FRAMES = 32
@@ -346,10 +345,12 @@ local function sameEncounter(enc) return enc end
 -- (engine/events/fish.asm Fish) byte for byte.
 local FISH_ROD_KEY = { OLD_ROD = "old", GOOD_ROD = "good", SUPER_ROD = "super" }
 
-local function fishVanilla(rod, _mapId, candidates)
+local function fishVanilla(rod, _mapId, candidates, ctx)
   if not candidates then return nil end
-  return Encounter.fish({ fishGroups = { hooked = candidates } }, "hooked",
-    FISH_ROD_KEY[rod] or rod or "old", nil)
+  local tod = ctx and (ctx.tod or ctx.daytime)
+  return Encounter.fish({ fishGroups = { hooked = candidates },
+                          timeFishGroups = ctx and ctx.encounters and ctx.encounters.timeFishGroups },
+    "hooked", FISH_ROD_KEY[rod] or rod or "old", tod, nil)
 end
 
 local function speciesByIndex(pokemon, index)
@@ -4303,6 +4304,7 @@ function World:rollFishing(rod)
     return "nibble"
   end
   local roll
+  local tod = self.tod or "DAY"
   if Runtime.wantsHook("encounter.fishing") then
     -- Gen 1's three arguments, in Gen 1's order: the rod, the map, and the
     -- candidate list the chain may inspect or replace before the roll.  Gold's
@@ -4316,10 +4318,10 @@ function World:rollFishing(rod)
     roll = Runtime.call("encounter.fishing", fishVanilla, rod, map.id,
       groups and groups[group],
       { fishGroup = group, swarm = swarm, encounters = self.encounters,
-        maps = self.maps, data = game.data })
+        maps = self.maps, data = game.data, tod = tod, daytime = tod })
   else
     roll = Encounter.fishSlot(self.encounters, map.id, rod, nil, self.maps,
-      swarm)
+      swarm, tod)
   end
   if not roll or not roll.species then return "nibble" end
   local wild = Mon.new(game.data, roll.species, roll.level)
@@ -4782,19 +4784,36 @@ function World:runQueuedScript()
 end
 
 -- Script_FishCastRod, then Script_NotEvenANibble or Script_GotABite.  Held as
--- a frame counter rather than a movement byte stream because the three
--- commands involved -- fish_cast_rod ($52), fish_got_bite ($51) and show_emote
--- ($54) -- are object ACTION changes, not steps, and Movement.decodeByte has
--- nothing to say about them.
+-- an exact frame counter matching 60 Hz engine ticks.
 function World:beginFishing(outcome, wild)
-  self.fishing = {
-    phase = "cast", timer = FISH_CAST_FRAMES, outcome = outcome, wild = wild,
+  local p = self.player
+  local d = Map.DELTA[p and p.facing or "down"] or Map.DELTA.down
+  local targetCellX = p and (p.cellX + d[1]) or 0
+  local targetCellY = p and (p.cellY + d[2]) or 0
+  local bobber = {
+    cellX = targetCellX,
+    cellY = targetCellY,
+    px = targetCellX * 16,
+    py = targetCellY * 16,
   }
+  self.fishing = {
+    phase = "cast",
+    timer = FISH_CAST_FRAMES,
+    outcome = outcome,
+    wild = wild,
+    bobber = bobber,
+    facing = p and p.facing or "down",
+  }
+  if self.player then
+    self.player.fishing = true
+    self.player.fishingState = self.fishing
+  end
 end
 
 function World:updateFishing()
   local st = self.fishing
   if not st then return end
+  if self.player then self.player.fishingState = st end
   -- A text box owns the frame while it is up; the script only moves on when
   -- its own callback fires.
   if self.textbox or self.choicebox then return end
@@ -4803,7 +4822,7 @@ function World:updateFishing()
     -- StepFunction_GotBite (engine/overworld/map_objects.asm:1430) is one byte
     -- of animation: OBJECT_SPRITE_Y_OFFSET flipped between 0 and 1 once a
     -- frame for the length of the bite, which is the rod jerking in the
-    -- player's hands.  The cast holds still, so only the bite bobs.
+    -- player's hands.
     if self.player then
       self.player.spriteYOffset =
         (st.phase == "bite" and st.timer % 2 == 1) and 1 or 0
@@ -4813,34 +4832,33 @@ function World:updateFishing()
   if self.player then self.player.spriteYOffset = 0 end
   if st.phase == "cast" then
     if st.outcome == "battle" then
-      -- Script_GotABite: four fish_got_bite bobs with the EMOTE_SHOCK bubble
-      -- over the player, then `pause 40` before the rod comes back.
       st.phase = "bite"
       st.timer = FISH_BITE_FRAMES
       self:showEmote(EMOTE_SHOCK, 0, FISH_BITE_FRAMES)
       return
     end
-    -- Script_NotEvenANibble (queued by $1 .FishNoBite) and
-    -- Script_NotEvenANibble2 (by $4 .FishNoFish) differ only in the
-    -- wFishingResult they record; both write RodNothingText and fall through
-    -- to the same PutTheRodAway.
     st.phase = "done"
-    self:showText(Strings(TEXT_ROD_NOTHING), function() self.fishing = nil end)
+    self:showText(Strings(TEXT_ROD_NOTHING), function()
+      self.fishing = nil
+      if self.player then
+        self.player.fishing = nil
+        self.player.fishingState = nil
+      end
+    end)
     return
   end
   if st.phase == "bite" then
     st.phase = "done"
     self:showText(Strings(TEXT_ROD_BITE), function()
       local wild = st.wild
-      -- PutTheRodAway and closetext come before startbattle, and the state has
-      -- to be gone before the battle is pushed or World:busy would still be
-      -- holding the world when it returns.
       self.fishing = nil
-      -- FishFunction's `.goodtofish` writes BATTLETYPE_FISH into wBattleType
-      -- alongside the species and level it hooked (engine/events/overworld.asm),
-      -- which is the one condition LureBallMultiplier reads for its x3.
+      if self.player then
+        self.player.fishing = nil
+        self.player.fishingState = nil
+      end
       if wild then self:startBattle({ wild = wild, battleType = "fish" }) end
     end)
+    return
   end
 end
 
@@ -7493,7 +7511,7 @@ function World:interactBody()
 end
 
 function World:fitScale()
-  local w, h = GameViewport.dimensions()
+  local w, h = Playfield.dimensions()
   return math.max(1, math.floor(math.min(w / 160, h / 144)))
 end
 
@@ -7831,7 +7849,10 @@ function World:drawGrassOver(entity, ox, oy, s)
   local tilePalettes = tileset.tilePalettes
   local tilesPerRow = tileset.tilesPerRow or 16
   local aw, ah = atlas:getDimensions()
-  local rx, ry = entity.px, entity.py + 4
+  -- Only draw the bottom 8px tile row of the cell (ty = py + 8) over the feet,
+  -- matching Gen 1's drawCellBottomRaw.  Starting at py + 4 sampled the top
+  -- tile row and drew grass tufts over the face and torso.
+  local rx, ry = entity.px, entity.py + 8
   self.grassQuad = self.grassQuad or G.newQuad(0, 0, 8, 8, aw, ah)
   local quad = self.grassQuad
   G.setColor(1, 1, 1, 1)
@@ -8327,7 +8348,7 @@ function World:rebuildNeighbors()
   self.neighbors = {}
   if not self.map then return end
   local s = self:zoomScale()
-  local ww, wh = GameViewport.dimensions()
+  local ww, wh = Playfield.dimensions()
   local vw = math.ceil(ww / s)
   local vh = math.ceil(wh / s)
   if vw % 2 ~= 0 then vw = vw + 1 end
@@ -9757,7 +9778,7 @@ function World:drawGround(s)
     if canvas then
       bw, bh = canvas:getDimensions()
     else
-      bw, bh = GameViewport.dimensions()
+      bw, bh = Playfield.dimensions()
     end
     if BorderFill.fillBlock(self.map.def) == false then
       -- BLACK: World:draw clears to a brown letterbox, so the void itself
@@ -9824,13 +9845,14 @@ function World:drawPeople(s, billboard)
       else
         entry.npc:draw(ox, oy, s)
       end
-      -- ShakeGrass rustle only.  The cart also ORs OAM_PRIO onto the lower
-      -- 16x8 (drawGrassOver / IN_GRASS) so the BG tuft covers the feet, but
-      -- stacking that plain grass tile on top of the character with the
-      -- rustle reads as a double overlay here -- keep the walk-through anim.
+      -- ShakeGrass rustle only while moving; drawGrassOver when standing/in grass
+      -- so the BG tuft covers the feet.
       -- Only the current map's own entities: a ghost's cells belong to a
       -- neighbour's block list.
       if entry.ox == 0 and entry.oy == 0 then
+        if entity.inGrass and not (entity.grassShake and entity.moving) then
+          self:drawGrassOver(entity, ox, oy, s)
+        end
         self:drawGrassShake(entity, ox, oy, s)
       end
     end
@@ -10025,7 +10047,7 @@ end
 
 function World:draw()
   local G = love.graphics
-  local w, h = GameViewport.dimensions()
+  local w, h = Playfield.dimensions()
   self:refreshColorMode()
   G.clear(0.07, 0.05, 0.02, 1)
 

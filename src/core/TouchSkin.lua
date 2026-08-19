@@ -2,6 +2,7 @@ local TouchSkin = {}
 
 TouchSkin.BUNDLED_ROOT = "assets/skins"
 TouchSkin.USER_ROOT = "skins"
+TouchSkin.EXPORT_ROOT = "skins/_export"
 
 TouchSkin.GB_BUTTONS = {
   a = "a", b = "b", start = "start", select = "select",
@@ -83,6 +84,110 @@ local function parseBinds(spec)
   return buttons, hotkeys, keys, decorative
 end
 
+TouchSkin.AREA_DEFAULTS = {
+  dpad_area = { up = "up", down = "down", left = "left", right = "right" },
+  abxy_area = { up = "x", down = "b", left = "y", right = "a" },
+  analog_left = { up = "up", down = "down", left = "left", right = "right" },
+  analog_right = { up = "up", down = "down", left = "left", right = "right" },
+}
+
+local DIRECTIONAL_CELLS = {
+  { col = 1, row = 1, h = "left", v = "up" },
+  { col = 2, row = 1, v = "up" },
+  { col = 3, row = 1, h = "right", v = "up" },
+  { col = 1, row = 2, h = "left" },
+  { col = 3, row = 2, h = "right" },
+  { col = 1, row = 3, h = "left", v = "down" },
+  { col = 2, row = 3, v = "down" },
+  { col = 3, row = 3, h = "right", v = "down" },
+}
+
+local function outwardReach(reach)
+  return 1 + 3 * ((num(reach, 1)) - 1)
+end
+
+function TouchSkin.expandDirectional(base, names)
+  names = names or {}
+  local cellX = math.abs(num(base.rangeX, 0.05)) / 3
+  local cellY = math.abs(num(base.rangeY, 0.05)) / 3
+  local out = {}
+  for _, cell in ipairs(DIRECTIONAL_CELLS) do
+    local parts = {}
+    if cell.h and names[cell.h] then parts[#parts + 1] = names[cell.h] end
+    if cell.v and names[cell.v] then parts[#parts + 1] = names[cell.v] end
+    local spec = #parts > 0 and table.concat(parts, "|") or "nul"
+    local ctl = TouchSkin.newControl(spec,
+      num(base.x, 0.5) + (cell.col - 2) * cellX * 2,
+      num(base.y, 0.5) + (cell.row - 2) * cellY * 2,
+      cellX * 2, cellY * 2, "rect")
+    ctl.rangeMod = num(base.rangeMod, 1)
+    ctl.alphaMod = num(base.alphaMod, 1)
+    ctl.reachLeft = cell.col == 1 and outwardReach(base.reachLeft) or 1
+    ctl.reachRight = cell.col == 3 and outwardReach(base.reachRight) or 1
+    ctl.reachUp = cell.row == 1 and outwardReach(base.reachUp) or 1
+    ctl.reachDown = cell.row == 3 and outwardReach(base.reachDown) or 1
+    ctl.pixelCoords = base.pixelCoords
+    ctl.movable = base.movable
+    ctl.exclusive = base.exclusive
+    out[#out + 1] = ctl
+  end
+  return out
+end
+
+local SECTOR_CELLS = {
+  { h = "right" },
+  { h = "right", v = "down" },
+  { v = "down" },
+  { h = "left", v = "down" },
+  { h = "left" },
+  { h = "left", v = "up" },
+  { v = "up" },
+  { h = "right", v = "up" },
+}
+
+TouchSkin.SECTOR_SPAN = math.pi / 4
+
+function TouchSkin.sectorHit(sector, dx, dy)
+  local span = TouchSkin.SECTOR_SPAN
+  local start = (sector - 1) * span - span * 0.5
+  local a = (math.atan2(dy, dx) - start) % (math.pi * 2)
+  return a < span
+end
+
+function TouchSkin.expandSectors(base, names)
+  names = names or {}
+  local out = {}
+  for i, cell in ipairs(SECTOR_CELLS) do
+    local parts = {}
+    if cell.h and names[cell.h] then parts[#parts + 1] = names[cell.h] end
+    if cell.v and names[cell.v] then parts[#parts + 1] = names[cell.v] end
+    local spec = #parts > 0 and table.concat(parts, "|") or "nul"
+    local ctl = TouchSkin.newControl(spec, num(base.x, 0.5), num(base.y, 0.5),
+      math.abs(num(base.rangeX, 0.05)) * 2, math.abs(num(base.rangeY, 0.05)) * 2,
+      base.shape)
+    ctl.sector = i
+    ctl.areaKind = base.areaKind
+    ctl.areaNames = base.areaNames
+    ctl.rangeMod = num(base.rangeMod, 1)
+    ctl.alphaMod = num(base.alphaMod, 1)
+    ctl.reachLeft = num(base.reachLeft, 1)
+    ctl.reachRight = num(base.reachRight, 1)
+    ctl.reachUp = num(base.reachUp, 1)
+    ctl.reachDown = num(base.reachDown, 1)
+    ctl.pixelCoords = base.pixelCoords
+    ctl.movable = base.movable
+    ctl.exclusive = base.exclusive
+    out[#out + 1] = ctl
+  end
+  return out
+end
+
+local function areaSide(kv, prefix, side, fallback)
+  local v = kv[prefix .. "_" .. side]
+  if v == nil or trim(v) == "" then return fallback end
+  return trim(v)
+end
+
 local function parseDesc(kv, prefix, page)
   local spec = kv[prefix]
   if not spec then return nil end
@@ -116,9 +221,28 @@ local function parseDesc(kv, prefix, page)
     imagePath = kv[prefix .. "_overlay"],
     pressedImagePath = kv[prefix .. "_overlay_pressed"],
     nextTarget = kv[prefix .. "_next_target"],
+    movable = toBool(kv[prefix .. "_movable"]) or nil,
+    exclusive = (toBool(kv[prefix .. "_exclusive"])
+                 or toBool(kv[prefix .. "_range_mod_exclusive"])) or nil,
+    saturatePct = num(kv[prefix .. "_saturate_pct"], nil),
   }
   if ctl.imagePath == "" then ctl.imagePath = nil end
   if ctl.pressedImagePath == "" then ctl.pressedImagePath = nil end
+
+  local normalized = kv[prefix .. "_normalized"]
+  if normalized ~= nil then ctl.pixelCoords = not toBool(normalized) end
+
+  local areaKind = trim(t[1]):lower()
+  local defaults = TouchSkin.AREA_DEFAULTS[areaKind]
+  if defaults then
+    ctl.areaKind = areaKind
+    ctl.areaNames = {
+      up = areaSide(kv, prefix, "up", defaults.up),
+      down = areaSide(kv, prefix, "down", defaults.down),
+      left = areaSide(kv, prefix, "left", defaults.left),
+      right = areaSide(kv, prefix, "right", defaults.right),
+    }
+  end
   return ctl
 end
 
@@ -127,7 +251,14 @@ function TouchSkin.parse(text)
   local count = math.floor(num(kv.overlays, 0))
   if count <= 0 then return nil, "no overlays" end
 
-  local pages = {}
+  local pages, warnings = {}, {}
+  local function warn(text)
+    for _, existing in ipairs(warnings) do
+      if existing == text then return end
+    end
+    warnings[#warnings + 1] = text
+  end
+
   for i = 0, count - 1 do
     local p = "overlay" .. i
     local page = {
@@ -166,10 +297,34 @@ function TouchSkin.parse(text)
       page.viewportExpand = toBool(kv[p .. "_viewport_expand"])
     end
 
+    page.pixelCoords = not page.normalized
+    if page.pixelCoords and not page.imagePath then
+      page.pixelCoords = false
+      warn(page.name .. " has no base image: desc coordinates read as normalized")
+    end
+
     local descs = math.floor(num(kv[p .. "_descs"], 0))
     for d = 0, descs - 1 do
       local ctl = parseDesc(kv, p .. "_desc" .. d, page)
-      if ctl then page.controls[#page.controls + 1] = ctl end
+      if not ctl then
+        warn(page.name .. " is missing desc " .. d)
+      elseif ctl.areaKind then
+        if ctl.imagePath or ctl.pressedImagePath then
+          local art = TouchSkin.newControl("nul", ctl.x, ctl.y,
+            ctl.rangeX * 2, ctl.rangeY * 2, ctl.shape)
+          art.imagePath = ctl.imagePath
+          art.pressedImagePath = ctl.pressedImagePath
+          art.rangeMod, art.alphaMod = ctl.rangeMod, ctl.alphaMod
+          art.pixelCoords = ctl.pixelCoords
+          art.movable, art.exclusive = ctl.movable, ctl.exclusive
+          page.controls[#page.controls + 1] = art
+        end
+        for _, cell in ipairs(TouchSkin.expandSectors(ctl, ctl.areaNames)) do
+          page.controls[#page.controls + 1] = cell
+        end
+      else
+        page.controls[#page.controls + 1] = ctl
+      end
     end
     pages[#pages + 1] = page
   end
@@ -180,7 +335,7 @@ function TouchSkin.parse(text)
     if not page.orient then page.orient = TouchSkin.pageOrient(page) end
   end
 
-  return { pages = pages }
+  return { pages = pages, warnings = warnings }
 end
 
 local function readFile(path)
@@ -219,18 +374,26 @@ end
 
 TouchSkin.NATIVE_NAME = "skin.lua"
 
+TouchSkin.readFile = readFile
+TouchSkin.listDir = listDir
+TouchSkin.isDir = isDir
+
 local function findConfig(root)
   if readFile(root .. "/" .. TouchSkin.NATIVE_NAME) then
-    return root .. "/" .. TouchSkin.NATIVE_NAME, "native"
+    return root .. "/" .. TouchSkin.NATIVE_NAME, "native", ""
   end
   local named = { "overlay.cfg", "skin.cfg", "layout.cfg" }
   for _, name in ipairs(named) do
-    if readFile(root .. "/" .. name) then return root .. "/" .. name, "retroarch" end
+    if readFile(root .. "/" .. name) then
+      return root .. "/" .. name, "retroarch", ""
+    end
   end
+  local infoPath, prefix = require("src.core.DeltaSkin").findInfo(root)
+  if infoPath then return infoPath, "delta", prefix end
   local items = listDir(root)
   table.sort(items)
   for _, name in ipairs(items) do
-    if name:match("%.cfg$") then return root .. "/" .. name, "retroarch" end
+    if name:match("%.cfg$") then return root .. "/" .. name, "retroarch", "" end
   end
   return nil
 end
@@ -262,12 +425,17 @@ function TouchSkin.parseNative(text)
       imagePath = raw.image,
       fullScreen = raw.fullScreen ~= false,
       normalized = true,
+      pixelCoords = false,
       rangeMod = num(raw.rangeMod, 1),
       alphaMod = num(raw.alphaMod, 1),
       aspect = num(raw.aspect, DEFAULT_ASPECT),
       aspectFromCfg = raw.fitAspect == true,
       orient = (raw.orient == "portrait" or raw.orient == "landscape"
                 or raw.orient == "any") and raw.orient or nil,
+      screenFit = raw.screenFit == "remainder" and "remainder" or nil,
+      anchor = (raw.anchor == "top" or raw.anchor == "bottom"
+                or raw.anchor == "left" or raw.anchor == "right")
+                and raw.anchor or nil,
       rect = { x = 0, y = 0, w = 1, h = 1 },
       controls = {},
     }
@@ -283,7 +451,24 @@ function TouchSkin.parseNative(text)
     end
     for _, c in ipairs(raw.controls or {}) do
       local buttons, hotkeys, keys, decorative = parseBinds(c.bind or "nul")
+      local sector = tonumber(c.sector)
+      if sector then
+        sector = math.floor(sector)
+        if sector < 1 or sector > #SECTOR_CELLS then sector = nil end
+      end
+      local areaNames
+      if type(c.areaNames) == "table" then
+        areaNames = {}
+        for _, side in ipairs({ "up", "down", "left", "right" }) do
+          if type(c.areaNames[side]) == "string" then
+            areaNames[side] = c.areaNames[side]
+          end
+        end
+      end
       page.controls[#page.controls + 1] = {
+        sector = sector,
+        areaKind = type(c.areaKind) == "string" and c.areaKind or nil,
+        areaNames = areaNames,
         spec = tostring(c.bind or "nul"),
         buttons = buttons, hotkeys = hotkeys, keys = keys,
         decorative = decorative,
@@ -298,6 +483,8 @@ function TouchSkin.parseNative(text)
         imagePath = c.image,
         pressedImagePath = c.imagePressed,
         nextTarget = c.nextTarget,
+        movable = c.movable == true or nil,
+        exclusive = c.exclusive == true or nil,
       }
     end
     if not page.orient then page.orient = TouchSkin.pageOrient(page) end
@@ -324,6 +511,8 @@ function TouchSkin.toNative(skin)
       alphaMod = page.alphaMod,
       aspect = page.aspect,
       fitAspect = page.aspectFromCfg or nil,
+      screenFit = page.screenFit == "remainder" and "remainder" or nil,
+      anchor = page.anchor,
       orient = (page.orient == "portrait" or page.orient == "landscape"
                 or page.orient == "any") and page.orient or nil,
       controls = {},
@@ -355,6 +544,14 @@ function TouchSkin.toNative(skin)
         image = ctl.imagePath,
         imagePressed = ctl.pressedImagePath,
         nextTarget = ctl.nextTarget,
+        movable = ctl.movable or nil,
+        exclusive = ctl.exclusive or nil,
+        sector = ctl.sector,
+        areaKind = ctl.areaKind,
+        areaNames = ctl.areaNames and {
+          up = ctl.areaNames.up, down = ctl.areaNames.down,
+          left = ctl.areaNames.left, right = ctl.areaNames.right,
+        } or nil,
       }
     end
     out.pages[#out.pages + 1] = p
@@ -379,14 +576,78 @@ local function loadImage(path)
   return img
 end
 
+-- FileData so LOVE sniffs JPEG/PNG from the name, not a path inside the zip.
+local function loadImageFromBytes(bytes, name)
+  if not bytes or bytes == "" then return nil end
+  if not (love and love.graphics and love.graphics.newImage) then return nil end
+  if not (love.filesystem and love.filesystem.newFileData) then return nil end
+  local key = "bytes:" .. tostring(name) .. ":" .. tostring(#bytes)
+  local cached = imageCache[key]
+  if cached then return cached end
+  local okFd, fd = pcall(love.filesystem.newFileData, bytes, name or "bezel.jpg")
+  if not okFd or not fd then return nil end
+  local ok, img = pcall(love.graphics.newImage, fd)
+  if not ok or not img then
+    if love.image and love.image.newImageData then
+      local okData, data = pcall(love.image.newImageData, fd)
+      if okData and data then ok, img = pcall(love.graphics.newImage, data) end
+    end
+  end
+  if not ok or not img then return nil end
+  if img.setFilter then img:setFilter("linear", "linear") end
+  imageCache[key] = img
+  return img
+end
+
+local function rasterizePdfPage(page, root)
+  if not page or page.image or not page.pdfPath then return end
+  local pdf = readFile(joinPath(root, page.pdfPath))
+  local raster = require("src.core.PdfImage").extract(pdf)
+  if not raster then return end
+  local name = tostring(page.pdfPath):gsub("%.[Pp][Dd][Ff]$", "") .. "." .. raster.ext
+  page.rasterData = raster.data
+  page.rasterName = name:match("([^/]+)$") or name
+  page.image = loadImageFromBytes(raster.data, page.rasterName)
+end
+
+local function pixelScalePending(page)
+  if page.pixelCoords then return true end
+  for _, ctl in ipairs(page.controls or {}) do
+    if ctl.pixelCoords then return true end
+  end
+  return false
+end
+
+local function applyPixelScale(page)
+  if not pixelScalePending(page) then return true end
+  if not page.image or not page.image.getDimensions then return false end
+  local iw, ih = page.image:getDimensions()
+  if not iw or not ih or iw <= 0 or ih <= 0 then return false end
+  for _, ctl in ipairs(page.controls or {}) do
+    local pixel = ctl.pixelCoords
+    if pixel == nil then pixel = page.pixelCoords end
+    if pixel then
+      ctl.x, ctl.y = ctl.x / iw, ctl.y / ih
+      ctl.rangeX, ctl.rangeY = ctl.rangeX / iw, ctl.rangeY / ih
+      ctl.pixelCoords = false
+    end
+  end
+  page.pixelCoords = false
+  return true
+end
+
 function TouchSkin.load(root, id)
-  local cfgPath, format = findConfig(root)
-  if not cfgPath then return nil, "no skin.lua or .cfg in " .. root end
+  local cfgPath, format, prefix = findConfig(root)
+  if not cfgPath then return nil, "no skin.lua, .cfg or info.json in " .. root end
   local text = readFile(cfgPath)
   if not text then return nil, "unreadable " .. cfgPath end
   local skin, err
   if format == "native" then
     skin, err = TouchSkin.parseNative(text)
+  elseif format == "delta" then
+    local dir = cfgPath:match("^(.*)/[^/]+$") or root
+    skin, err = require("src.core.DeltaSkin").parse(text,
+      { prefix = prefix or "", names = listDir(dir) })
   else
     skin, err = TouchSkin.parse(text)
   end
@@ -401,6 +662,12 @@ function TouchSkin.load(root, id)
   for _, page in ipairs(skin.pages) do
     if page.imagePath then
       page.image = loadImage(joinPath(root, page.imagePath))
+    elseif page.pdfPath then
+      rasterizePdfPage(page, root)
+    end
+    if not applyPixelScale(page) then
+      return nil, "could not read " .. tostring(page.imagePath)
+        .. ", which " .. page.name .. " measures its coordinates against"
     end
     for _, ctl in ipairs(page.controls) do
       if ctl.imagePath then ctl.image = loadImage(joinPath(root, ctl.imagePath)) end
@@ -418,14 +685,30 @@ local function mountZip(archive, point)
   return ok and mounted == true
 end
 
+TouchSkin.ARCHIVE_EXTS = { zip = true, deltaskin = true }
+TouchSkin.LEGACY_EXTS = { gbcskin = true, gbaskin = true, gbskin = true }
+TouchSkin.PDF_ONLY_MESSAGE =
+  "This skin uses PDF artwork with no extractable image. "
+  .. "Ask the author for a PNG version."
+
+function TouchSkin.archiveId(name)
+  name = tostring(name or "")
+  local ext = name:match("%.([%w]+)$")
+  if not ext or not TouchSkin.ARCHIVE_EXTS[ext:lower()] then return nil end
+  local id = name:sub(1, #name - #ext - 1)
+  if id == "" then return nil end
+  return id, ext:lower()
+end
+
 function TouchSkin.list()
   local out, seen = {}, {}
   local function scan(root, source)
     for _, name in ipairs(listDir(root)) do
-      local id = name:gsub("%.zip$", "")
-      if not seen[id] then
+      local archiveId = TouchSkin.archiveId(name)
+      local id = archiveId or name
+      if not seen[id] and name:sub(1, 1) ~= "_" then
         local path = root .. "/" .. name
-        if name:match("%.zip$") then
+        if archiveId then
           local point = TouchSkin.USER_ROOT .. "/_mounted/" .. id
           if mountZip(path, point) and findConfig(point) then
             seen[id] = true
@@ -447,17 +730,20 @@ function TouchSkin.list()
   return out
 end
 
--- Drop a .zip into <save>/skins and report the id it will list under.
+-- Drop a .zip or .deltaskin into <save>/skins and report the id it lists under.
 function TouchSkin.installArchive(name, data)
   if not data or data == "" then return nil, "empty archive" end
   if not (love and love.filesystem and love.filesystem.write) then
     return nil, "no writable filesystem"
   end
   name = tostring(name or ""):match("([^/\\]+)$") or ""
-  name = name:gsub("[^%w%._%-]", "_")
-  if not name:lower():match("%.zip$") then return nil, "not a .zip" end
-  local id = name:gsub("%.[Zz][Ii][Pp]$", "")
-  if id == "" then return nil, "bad archive name" end
+  name = name:gsub("[^%w%._%-]", "_"):gsub("^_+", "")
+  local legacy = name:match("%.([%w]+)$")
+  if legacy and TouchSkin.LEGACY_EXTS[legacy:lower()] then
+    return nil, "old GBA4iOS skin, not supported"
+  end
+  local id = TouchSkin.archiveId(name)
+  if not id then return nil, "not a .zip or .deltaskin" end
 
   pcall(love.filesystem.createDirectory, TouchSkin.USER_ROOT)
   local dest = TouchSkin.USER_ROOT .. "/" .. name
@@ -467,9 +753,14 @@ function TouchSkin.installArchive(name, data)
   local entry = TouchSkin.find(id)
   if not entry then
     love.filesystem.remove(dest)
-    return nil, "no skin.lua or .cfg inside " .. name
+    return nil, "no skin.lua, .cfg or info.json inside " .. name
   end
-  return id
+  local skin = TouchSkin.load(entry.root, entry.id)
+  if skin and require("src.core.DeltaSkin").needsConversion(skin) then
+    love.filesystem.remove(dest)
+    return nil, TouchSkin.PDF_ONLY_MESSAGE
+  end
+  return id, skin and skin.warnings or nil
 end
 
 function TouchSkin.find(id)
@@ -498,29 +789,13 @@ function TouchSkin.assetPaths(skin)
   return out
 end
 
-function TouchSkin.export(skin, destPath)
-  if not skin then return nil, "no skin" end
-  local SkinZip = require("src.core.SkinZip")
-  local entries = { { name = TouchSkin.NATIVE_NAME, data = TouchSkin.serialize(skin) } }
-  local missing = {}
-  for _, rel in ipairs(TouchSkin.assetPaths(skin)) do
-    local data = readFile(joinPath(skin.root, rel))
-    if data then
-      entries[#entries + 1] = { name = rel, data = data }
-    else
-      missing[#missing + 1] = rel
-    end
-  end
-  if skin.configPath and skin.format == "retroarch" then
-    local cfg = readFile(skin.configPath)
-    if cfg then
-      entries[#entries + 1] =
-        { name = skin.configPath:match("([^/]+)$") or "overlay.cfg", data = cfg }
-    end
-  end
-  local blob = SkinZip.encode(entries)
-  destPath = destPath or (TouchSkin.USER_ROOT .. "/" .. skin.id .. "-export.zip")
+local function writeArchive(entries, destPath)
+  local blob = require("src.core.SkinZip").encode(entries)
   local absolute = destPath:sub(1, 1) == "/" or destPath:match("^%a:[/\\]") ~= nil
+  if not absolute and love and love.filesystem and love.filesystem.createDirectory then
+    local dir = destPath:match("^(.*)/[^/]+$")
+    if dir then pcall(love.filesystem.createDirectory, dir) end
+  end
   if not absolute and love and love.filesystem and love.filesystem.write then
     local ok, err = love.filesystem.write(destPath, blob)
     if not ok then return nil, tostring(err) end
@@ -530,7 +805,165 @@ function TouchSkin.export(skin, destPath)
     handle:write(blob)
     handle:close()
   end
+  return destPath
+end
+
+local function collectAssets(skin, rels)
+  local entries, missing = {}, {}
+  for _, rel in ipairs(rels) do
+    local data = readFile(joinPath(skin.root, rel))
+    if data then
+      entries[#entries + 1] = { name = rel, data = data }
+    else
+      missing[#missing + 1] = rel
+    end
+  end
+  return entries, missing
+end
+
+function TouchSkin.export(skin, destPath)
+  if not skin then return nil, "no skin" end
+  local entries = { { name = TouchSkin.NATIVE_NAME, data = TouchSkin.serialize(skin) } }
+  local assets, missing = collectAssets(skin, TouchSkin.assetPaths(skin))
+  for _, entry in ipairs(assets) do entries[#entries + 1] = entry end
+  if skin.configPath and skin.format == "retroarch" then
+    local cfg = readFile(skin.configPath)
+    if cfg then
+      entries[#entries + 1] =
+        { name = skin.configPath:match("([^/]+)$") or "overlay.cfg", data = cfg }
+    end
+  end
+  destPath = destPath or (TouchSkin.EXPORT_ROOT .. "/" .. skin.id .. "-export.zip")
+  local written, err = writeArchive(entries, destPath)
+  if not written then return nil, err end
   return destPath, missing
+end
+
+local function fmtNum(n)
+  n = tonumber(n) or 0
+  if n == math.floor(n) then return string.format("%d", n) end
+  local s = string.format("%.6f", n):gsub("0+$", ""):gsub("%.$", "")
+  return s
+end
+
+local function fmtRect(r)
+  return ('"%s,%s,%s,%s"'):format(fmtNum(r.x), fmtNum(r.y), fmtNum(r.w), fmtNum(r.h))
+end
+
+local function cfgSpec(spec)
+  local parts = {}
+  for raw in tostring(spec or ""):gmatch("[^|]+") do
+    local name = trim(raw)
+    local key = name:lower():match("^key:(.+)$")
+    parts[#parts + 1] = key and ("retrok_" .. key) or name
+  end
+  return table.concat(parts, "|")
+end
+
+function TouchSkin.toRetroArchConfig(skin)
+  local pages = (skin and skin.pages) or {}
+  local out = { "overlays = " .. #pages }
+  for i, page in ipairs(pages) do
+    local p = "overlay" .. (i - 1)
+    out[#out + 1] = ""
+    out[#out + 1] = p .. '_name = "' .. tostring(page.name or ("overlay" .. (i - 1))) .. '"'
+    if page.imagePath then out[#out + 1] = p .. "_overlay = " .. page.imagePath end
+    out[#out + 1] = p .. "_full_screen = " .. (page.fullScreen ~= false and "true" or "false")
+    out[#out + 1] = p .. "_normalized = true"
+    if num(page.rangeMod, 1) ~= 1 then
+      out[#out + 1] = p .. "_range_mod = " .. fmtNum(page.rangeMod)
+    end
+    if num(page.alphaMod, 1) ~= 1 then
+      out[#out + 1] = p .. "_alpha_mod = " .. fmtNum(page.alphaMod)
+    end
+    if page.aspectFromCfg and page.aspect and page.aspect > 0 then
+      out[#out + 1] = p .. "_aspect_ratio = " .. fmtNum(page.aspect)
+    end
+    local r = page.rect
+    if r and (r.x ~= 0 or r.y ~= 0 or r.w ~= 1 or r.h ~= 1) then
+      out[#out + 1] = p .. "_rect = " .. fmtRect(r)
+    end
+    if page.viewport then
+      out[#out + 1] = p .. "_viewport = " .. fmtRect(page.viewport)
+      if page.viewportFill then out[#out + 1] = p .. "_viewport_fill = true" end
+      if page.viewportExpand then out[#out + 1] = p .. "_viewport_expand = true" end
+    end
+    local controls = {}
+    for _, ctl in ipairs(page.controls or {}) do
+      if not ctl.sector or ctl.sector == 1 then controls[#controls + 1] = ctl end
+    end
+    out[#out + 1] = p .. "_descs = " .. #controls
+    for j, ctl in ipairs(controls) do
+      local d = p .. "_desc" .. (j - 1)
+      local spec = ctl.areaKind and ctl.sector and ctl.areaKind
+        or cfgSpec(ctl.spec)
+      if spec == "" then spec = "nul" end
+      out[#out + 1] = ('%s = "%s,%s,%s,%s,%s,%s"'):format(d, spec,
+        fmtNum(ctl.x), fmtNum(ctl.y),
+        ctl.shape == "radial" and "radial" or "rect",
+        fmtNum(ctl.rangeX), fmtNum(ctl.rangeY))
+      if ctl.imagePath then out[#out + 1] = d .. "_overlay = " .. ctl.imagePath end
+      if ctl.pressedImagePath then
+        out[#out + 1] = d .. "_overlay_pressed = " .. ctl.pressedImagePath
+      end
+      if num(ctl.rangeMod, 1) ~= num(page.rangeMod, 1) then
+        out[#out + 1] = d .. "_range_mod = " .. fmtNum(ctl.rangeMod)
+      end
+      if num(ctl.alphaMod, 1) ~= num(page.alphaMod, 1) then
+        out[#out + 1] = d .. "_alpha_mod = " .. fmtNum(ctl.alphaMod)
+      end
+      for key, value in pairs({ up = ctl.reachUp, down = ctl.reachDown,
+                                left = ctl.reachLeft, right = ctl.reachRight }) do
+        if num(value, 1) ~= 1 then
+          out[#out + 1] = d .. "_reach_" .. key .. " = " .. fmtNum(value)
+        end
+      end
+      if ctl.movable then out[#out + 1] = d .. "_movable = true" end
+      if ctl.exclusive then out[#out + 1] = d .. "_exclusive = true" end
+      if ctl.nextTarget then
+        out[#out + 1] = d .. '_next_target = "' .. tostring(ctl.nextTarget) .. '"'
+      end
+      if ctl.areaKind and ctl.sector and ctl.areaNames then
+        local defaults = TouchSkin.AREA_DEFAULTS[ctl.areaKind] or {}
+        for _, side in ipairs({ "up", "down", "left", "right" }) do
+          local name = ctl.areaNames[side]
+          if name and name ~= defaults[side] then
+            out[#out + 1] = d .. "_" .. side .. ' = "' .. name .. '"'
+          end
+        end
+      end
+    end
+  end
+  return table.concat(out, "\n") .. "\n"
+end
+
+function TouchSkin.exportRetroArch(skin, destPath)
+  if not skin then return nil, "no skin" end
+  local entries = { { name = "overlay.cfg", data = TouchSkin.toRetroArchConfig(skin) } }
+  local assets, missing = collectAssets(skin, TouchSkin.assetPaths(skin))
+  for _, entry in ipairs(assets) do entries[#entries + 1] = entry end
+  destPath = destPath or (TouchSkin.EXPORT_ROOT .. "/" .. skin.id .. "-retroarch.zip")
+  local written, err = writeArchive(entries, destPath)
+  if not written then return nil, err end
+  return destPath, missing
+end
+
+function TouchSkin.exportDelta(skin, opts)
+  if not skin then return nil, "no skin" end
+  opts = opts or {}
+  local DeltaSkin = require("src.core.DeltaSkin")
+  local info, assetRels, warnings = DeltaSkin.build(skin, opts)
+  if not info then return nil, assetRels end
+  local entries = {
+    { name = DeltaSkin.INFO_NAME, data = require("src.link.Json").encode(info) },
+  }
+  local assets, missing = collectAssets(skin, assetRels)
+  for _, entry in ipairs(assets) do entries[#entries + 1] = entry end
+  local destPath = opts.path
+    or (TouchSkin.EXPORT_ROOT .. "/" .. skin.id .. ".deltaskin")
+  local written, err = writeArchive(entries, destPath)
+  if not written then return nil, err end
+  return destPath, missing, warnings
 end
 
 TouchSkin.BINDS = {
@@ -597,6 +1030,7 @@ function TouchSkin.clone(skin)
     id = skin.id, name = skin.name, root = skin.root, format = skin.format,
     author = skin.author, notes = skin.notes, configPath = skin.configPath,
     source = skin.source, pages = {},
+    warnings = skin.warnings and copyTable(skin.warnings) or nil,
   }
   for i, page in ipairs(skin.pages or {}) do
     local p = copyTable(page)
@@ -676,7 +1110,8 @@ function TouchSkin.listImages(root)
   local function scan(dir, prefix)
     for _, name in ipairs(listDir(dir)) do
       local path = dir .. "/" .. name
-      if name:lower():match("%.png$") or name:lower():match("%.jpg$") then
+      local lower = name:lower()
+      if lower:match("%.png$") or lower:match("%.jpg$") or lower:match("%.jpeg$") then
         out[#out + 1] = prefix .. name
       elseif isDir(path) and prefix == "" then
         scan(path, name .. "/")
@@ -853,12 +1288,27 @@ function TouchSkin.pageBox(page, w, h, ox, oy)
     and page.aspect and page.aspect > 0 and h > 0
   if fit then
     local displayAspect = w / h
+    local anchor = page.anchor
     if displayAspect > page.aspect then
       bw = h * page.aspect
-      bx = ox + (w - bw) * 0.5
+      local extra = w - bw
+      if anchor == "right" then
+        bx = ox + extra
+      elseif anchor == "left" then
+        bx = ox
+      else
+        bx = ox + extra * 0.5
+      end
     else
       bh = w / page.aspect
-      by = oy + (h - bh) * 0.5
+      local extra = h - bh
+      if anchor == "bottom" then
+        by = oy + extra
+      elseif anchor == "top" then
+        by = oy
+      else
+        by = oy + extra * 0.5
+      end
     end
   end
   local r = page.rect
@@ -872,17 +1322,21 @@ function TouchSkin.controlGeometry(page, ctl, w, h, ox, oy)
   return cx, cy, halfW, halfH
 end
 
-function TouchSkin.hits(page, ctl, w, h, px, py, ox, oy)
+function TouchSkin.hits(page, ctl, w, h, px, py, ox, oy, held)
   local cx, cy, halfW, halfH = TouchSkin.controlGeometry(page, ctl, w, h, ox, oy)
-  local left = halfW * ctl.reachLeft * ctl.rangeMod
-  local right = halfW * ctl.reachRight * ctl.rangeMod
-  local up = halfH * ctl.reachUp * ctl.rangeMod
-  local down = halfH * ctl.reachDown * ctl.rangeMod
+  local mod = held == false and 1 or ctl.rangeMod
+  local left = halfW * ctl.reachLeft * mod
+  local right = halfW * ctl.reachRight * mod
+  local up = halfH * ctl.reachUp * mod
+  local down = halfH * ctl.reachDown * mod
   local dx = px - cx
   local dy = py - cy
   local rx = dx < 0 and left or right
   local ry = dy < 0 and up or down
   if rx <= 0 or ry <= 0 then return false end
+  if ctl.sector and not TouchSkin.sectorHit(ctl.sector, dx, dy) then
+    return false
+  end
   if ctl.shape == "radial" then
     return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1
   end
@@ -911,18 +1365,55 @@ end
 
 function TouchSkin.hasViewport()
   local page = TouchSkin.page()
-  return page ~= nil and page.viewport ~= nil and TouchSkin.drawable()
+  if not page or not TouchSkin.drawable() then return false end
+  return page.viewport ~= nil or page.screenFit == "remainder"
+end
+
+-- Largest strip of (ox,oy,w,h) that does not overlap the overlay box.
+local function remainderBox(ox, oy, w, h, bx, by, bw, bh)
+  local right, bottom = ox + w, oy + h
+  local cand = {
+    { ox, oy, w, by - oy },
+    { ox, by + bh, w, bottom - (by + bh) },
+    { ox, oy, bx - ox, h },
+    { bx + bw, oy, right - (bx + bw), h },
+  }
+  local best, bestArea
+  for _, r in ipairs(cand) do
+    if r[3] > 1 and r[4] > 1 then
+      local area = r[3] * r[4]
+      if not best or area > bestArea then
+        best, bestArea = r, area
+      end
+    end
+  end
+  if not best then return nil end
+  return best[1], best[2], best[3], best[4]
+end
+
+function TouchSkin.pageViewport(page, w, h, ox, oy)
+  if not page then return nil end
+  ox, oy = ox or 0, oy or 0
+  local bx, by, bw, bh = TouchSkin.pageBox(page, w, h, ox, oy)
+  if page.viewport then
+    local v = page.viewport
+    local x, y = bx + v.x * bw, by + v.y * bh
+    local vw, vh = v.w * bw, v.h * bh
+    if vw <= 0 or vh <= 0 then return nil end
+    return x, y, vw, vh, page.viewportFill == true, page.viewportExpand == true
+  end
+  if page.screenFit == "remainder" then
+    local x, y, vw, vh = remainderBox(ox, oy, w, h, bx, by, bw, bh)
+    if not x then return nil end
+    return x, y, vw, vh, false, false
+  end
+  return nil
 end
 
 function TouchSkin.viewport(w, h, ox, oy)
   local page = TouchSkin.page()
-  if not page or not page.viewport or not TouchSkin.drawable() then return nil end
-  local v = page.viewport
-  local bx, by, bw, bh = TouchSkin.pageBox(page, w, h, ox, oy)
-  local x, y = bx + v.x * bw, by + v.y * bh
-  local vw, vh = v.w * bw, v.h * bh
-  if vw <= 0 or vh <= 0 then return nil end
-  return x, y, vw, vh, page.viewportFill == true, page.viewportExpand == true
+  if not page or not TouchSkin.drawable() then return nil end
+  return TouchSkin.pageViewport(page, w, h, ox, oy)
 end
 
 return TouchSkin

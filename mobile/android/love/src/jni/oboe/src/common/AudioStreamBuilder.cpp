@@ -16,6 +16,8 @@
 
 #include <sys/types.h>
 
+
+#include "aaudio/AAudioExtensions.h"
 #include "aaudio/AudioStreamAAudio.h"
 #include "FilterAudioStream.h"
 #include "OboeDebug.h"
@@ -80,15 +82,28 @@ AudioStream *AudioStreamBuilder::build() {
 }
 
 bool AudioStreamBuilder::isCompatible(AudioStreamBase &other) {
-    return getSampleRate() == other.getSampleRate()
-           && getFormat() == other.getFormat()
-           && getChannelCount() == other.getChannelCount();
+    return (getSampleRate() == oboe::Unspecified || getSampleRate() == other.getSampleRate())
+           && (getFormat() == (AudioFormat)oboe::Unspecified || getFormat() == other.getFormat())
+           && (getFramesPerDataCallback() == oboe::Unspecified || getFramesPerDataCallback() == other.getFramesPerDataCallback())
+           && (getChannelCount() == oboe::Unspecified || getChannelCount() == other.getChannelCount());
 }
 
 Result AudioStreamBuilder::openStream(AudioStream **streamPP) {
-    Result result = Result::OK;
+    LOGW("Passing AudioStream pointer deprecated, Use openStream(std::shared_ptr<oboe::AudioStream> &stream) instead.");
+    return openStreamInternal(streamPP);
+}
+
+Result AudioStreamBuilder::openStreamInternal(AudioStream **streamPP) {
+    auto result = isValidConfig();
+    if (result != Result::OK) {
+        LOGW("%s() invalid config. Error %s", __func__, oboe::convertToText(result));
+        return result;
+    }
+
+#ifndef OBOE_SUPPRESS_LOG_SPAM
     LOGI("%s() %s -------- %s --------",
          __func__, getDirection() == Direction::Input ? "INPUT" : "OUTPUT", getVersionText());
+#endif
 
     if (streamPP == nullptr) {
         return Result::ErrorNull;
@@ -104,14 +119,13 @@ Result AudioStreamBuilder::openStream(AudioStream **streamPP) {
     // Do we need to make a child stream and convert.
     if (conversionNeeded) {
         AudioStream *tempStream;
-
-        result = childBuilder.openStream(&tempStream);
+        result = childBuilder.openStreamInternal(&tempStream);
         if (result != Result::OK) {
             return result;
         }
 
         if (isCompatible(*tempStream)) {
-            // Everything matches so we can just use the child stream directly.
+            // The child stream would work as the requested stream so we can just use it directly.
             *streamPP = tempStream;
             return result;
         } else {
@@ -126,10 +140,15 @@ Result AudioStreamBuilder::openStream(AudioStream **streamPP) {
             if (getSampleRate() == oboe::Unspecified) {
                 parentBuilder.setSampleRate(tempStream->getSampleRate());
             }
+            if (getFramesPerDataCallback() == oboe::Unspecified) {
+                parentBuilder.setFramesPerCallback(tempStream->getFramesPerDataCallback());
+            }
 
             // Use childStream in a FilterAudioStream.
             LOGI("%s() create a FilterAudioStream for data conversion.", __func__);
-            FilterAudioStream *filterStream = new FilterAudioStream(parentBuilder, tempStream);
+            std::shared_ptr<AudioStream> childStream(tempStream);
+            FilterAudioStream *filterStream = new FilterAudioStream(parentBuilder, childStream);
+            childStream->setWeakThis(childStream);
             result = filterStream->configureFlowGraph();
             if (result !=  Result::OK) {
                 filterStream->close();
@@ -148,26 +167,41 @@ Result AudioStreamBuilder::openStream(AudioStream **streamPP) {
         }
     }
 
-    result = streamP->open(); // TODO review API
-    if (result == Result::OK) {
-
-        int32_t  optimalBufferSize = -1;
-        // Use a reasonable default buffer size.
-        if (streamP->getDirection() == Direction::Input) {
-            // For input, small size does not improve latency because the stream is usually
-            // run close to empty. And a low size can result in XRuns so always use the maximum.
-            optimalBufferSize = streamP->getBufferCapacityInFrames();
-        } else if (streamP->getPerformanceMode() == PerformanceMode::LowLatency
-                && streamP->getDirection() == Direction::Output)  { // Output check is redundant.
-            optimalBufferSize = streamP->getFramesPerBurst() *
-                                    kBufferSizeInBurstsForLowLatencyStreams;
+    // If MMAP has a problem in this case then disable it temporarily.
+    bool wasMMapOriginallyEnabled = AAudioExtensions::getInstance().isMMapEnabled();
+    bool wasMMapTemporarilyDisabled = false;
+    if (wasMMapOriginallyEnabled) {
+        bool isMMapSafe = QuirksManager::getInstance().isMMapSafe(childBuilder);
+        if (!isMMapSafe) {
+            AAudioExtensions::getInstance().setMMapEnabled(false);
+            wasMMapTemporarilyDisabled = true;
         }
-        if (optimalBufferSize >= 0) {
-            auto setBufferResult = streamP->setBufferSizeInFrames(optimalBufferSize);
-            if (!setBufferResult) {
-                LOGW("Failed to setBufferSizeInFrames(%d). Error was %s",
-                     optimalBufferSize,
-                     convertToText(setBufferResult.error()));
+    }
+    result = streamP->open();
+    if (wasMMapTemporarilyDisabled) {
+        AAudioExtensions::getInstance().setMMapEnabled(wasMMapOriginallyEnabled); // restore original
+    }
+    if (result == Result::OK) {
+        // AAudio supports setBufferSizeInFrames() so use it.
+        if (streamP->getAudioApi() == AudioApi::AAudio) {
+            int32_t  optimalBufferSize = -1;
+            // Use a reasonable default buffer size.
+            if (streamP->getDirection() == Direction::Input) {
+                // For input, small size does not improve latency because the stream is usually
+                // run close to empty. And a low size can result in XRuns so always use the maximum.
+                optimalBufferSize = streamP->getBufferCapacityInFrames();
+            } else if (streamP->getPerformanceMode() == PerformanceMode::LowLatency
+                    && streamP->getDirection() == Direction::Output)  { // Output check is redundant.
+                optimalBufferSize = streamP->getFramesPerBurst() *
+                                        kBufferSizeInBurstsForLowLatencyStreams;
+            }
+            if (optimalBufferSize >= 0) {
+                auto setBufferResult = streamP->setBufferSizeInFrames(optimalBufferSize);
+                if (!setBufferResult) {
+                    LOGW("Failed to setBufferSizeInFrames(%d). Error was %s",
+                         optimalBufferSize,
+                         convertToText(setBufferResult.error()));
+                }
             }
         }
 
@@ -179,6 +213,7 @@ Result AudioStreamBuilder::openStream(AudioStream **streamPP) {
 }
 
 Result AudioStreamBuilder::openManagedStream(oboe::ManagedStream &stream) {
+    LOGW("`openManagedStream` is deprecated. Use openStream(std::shared_ptr<oboe::AudioStream> &stream) instead.");
     stream.reset();
     AudioStream *streamptr;
     auto result = openStream(&streamptr);
@@ -189,7 +224,7 @@ Result AudioStreamBuilder::openManagedStream(oboe::ManagedStream &stream) {
 Result AudioStreamBuilder::openStream(std::shared_ptr<AudioStream> &sharedStream) {
     sharedStream.reset();
     AudioStream *streamptr;
-    auto result = openStream(&streamptr);
+    auto result = openStreamInternal(&streamptr);
     if (result == Result::OK) {
         sharedStream.reset(streamptr);
         // Save a weak_ptr in the stream for use with callbacks.

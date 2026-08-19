@@ -1,43 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    tools:context="com.mobileer.oboetester.RoundTripLatencyActivity" >
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
     android:paddingBottom="@dimen/activity_vertical_margin"
     android:paddingLeft="@dimen/activity_horizontal_margin"
     android:paddingRight="@dimen/activity_horizontal_margin"
-    android:paddingTop="@dimen/activity_vertical_margin"
-    tools:context="com.google.sample.oboe.manualtest.RoundTripLatencyActivity">
+    android:paddingTop="@dimen/activity_vertical_margin" >
 
-    <com.google.sample.oboe.manualtest.StreamConfigurationView
+    <com.mobileer.oboetester.StreamConfigurationView
         android:id="@+id/inputStreamConfiguration"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal" />
 
-    <com.google.sample.oboe.manualtest.InputMarginView
+    <com.mobileer.oboetester.InputMarginView
         android:id="@+id/input_margin_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center" />
 
-    <com.google.sample.oboe.manualtest.StreamConfigurationView
+    <com.mobileer.oboetester.StreamConfigurationView
         android:id="@+id/outputStreamConfiguration"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal" />
 
-    <com.google.sample.oboe.manualtest.BufferSizeView
+    <com.mobileer.oboetester.BufferSizeView
         android:id="@+id/buffer_size_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal" />
 
-    <com.google.sample.oboe.manualtest.WorkloadView
+    <com.mobileer.oboetester.WorkloadView
         android:id="@+id/workload_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -52,10 +58,11 @@
         <Button
             android:id="@+id/button_measure"
             android:layout_width="0dp"
-            android:layout_weight="1"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:onClick="onMeasure"
-            android:text="@string/measure" />
+            android:text="@string/measure"
+            android:textSize="10sp" />
 
         <Button
             android:id="@+id/button_average"
@@ -63,7 +70,18 @@
             android:layout_weight="1"
             android:layout_height="wrap_content"
             android:onClick="onAverage"
-            android:text="@string/average" />
+            android:text="@string/average"
+            android:textSize="10sp" />
+
+        <Button
+            android:id="@+id/button_scan"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:onClick="onScan"
+            android:text="@string/scan"
+            android:textSize="10sp" />
 
         <Button
             android:id="@+id/button_cancel"
@@ -72,7 +90,8 @@
             android:layout_height="wrap_content"
             android:enabled="false"
             android:onClick="onCancel"
-            android:text="@string/cancel" />
+            android:text="@string/cancel"
+            android:textSize="10sp" />
 
         <Button
             android:id="@+id/button_share"
@@ -81,16 +100,24 @@
             android:layout_height="wrap_content"
             android:onClick="onShareFile"
             android:text="@string/share"
-            />
+            android:textSize="10sp" />
     </LinearLayout>
+
+    <com.mobileer.oboetester.CommunicationDeviceView
+        android:id="@+id/comm_device_view"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal" />
 
     <TextView
         android:id="@+id/text_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:lines="15"
-        android:text="@string/use_loopback"
+        android:lines="16"
+        android:text="@string/loopback_instructions_latency"
         android:textSize="18sp"
         android:textStyle="bold" />
 
 </LinearLayout>
+</ScrollView>

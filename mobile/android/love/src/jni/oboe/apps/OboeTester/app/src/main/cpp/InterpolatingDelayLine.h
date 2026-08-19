@@ -21,9 +21,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#include "oboe/Oboe.h"
-#include "FullDuplexStream.h"
-
 /**
  * Monophonic delay line.
  */

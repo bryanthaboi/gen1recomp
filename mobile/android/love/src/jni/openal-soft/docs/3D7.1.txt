@@ -58,17 +58,10 @@ Software Setup
 ==============
 
 To enable 3D7.1 on OpenAL Soft, first make sure the audio device is configured
-for 7.1 output. Then in the alsoft-config utility, under the Renderer tab,
-select the 3D7.1.ambdec preset for the 7.1 Surround decoder configuration. And
-that's it. Any applications using OpenAL Soft can take advantage of fully 3D
-audio, and multi-channel sounds will be properly remixed for the speaker
-layout.
-
-Playback can be improved by (copying and) modifying the 3D7.1.ambdec preset,
-changing the specified speaker distances to match the the real distance (in
-meters) from the center of the speaker array, then enable High Quality Mode in
-alsoft-config. That will improve the quality when the speakers are not all
-equidistant.
+for 7.1 output. Then in the alsoft-config utility, for the Channels setting
+choose "3D7.1 Surround" from the drop-down list. And that's it. Any application
+using OpenAL Soft can take advantage of fully 3D audio, and multi-channel
+sounds will be properly remixed for the speaker layout.
 
 Note that care must be taken that the audio device is not treated as a "true"
 7.1 device by non-3D7.1-capable applications. In particular, the audio server

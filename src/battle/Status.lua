@@ -54,6 +54,13 @@ end
 -- freeze the English.  They are already translatable through the
 -- statuses registry (mod.content.statuses:patch(id, { label = ... })).
 --
+-- Do not add a matching hudLabel = "..." below: Status.hudLabelFor reads
+-- hudLabel before label, and Registry:patch only overrides the fields a
+-- mod actually passes, so a label-only translation patch would be
+-- shadowed by this hudLabel forever. Nothing in this codebase gives
+-- hudLabel a value different from label -- setting it here only recreates
+-- that trap for no observed benefit.
+--
 -- The five persistent conditions as records: the beforeMove gauntlet, the
 -- residual sweep, the inflict text/immunities (StatusRegistry.inflict),
 -- the catch/wobble bonuses (Catching.attempt), the HUD label, and the
@@ -61,7 +68,7 @@ end
 -- read these fields, so a mod's sixth status plugs into every consumer.
 Status.RECORDS = {
   SLP = {
-    id = "SLP", label = "SLP", hudLabel = "SLP",
+    id = "SLP", label = "SLP",
     catchBonus = 25, shakeBonus = 10,
     beforeMovePriority = 40,
     beforeMove = function(battler, _, battle)
@@ -82,7 +89,7 @@ Status.RECORDS = {
     end,
   },
   FRZ = {
-    id = "FRZ", label = "FRZ", hudLabel = "FRZ",
+    id = "FRZ", label = "FRZ",
     catchBonus = 25, shakeBonus = 10,
     beforeMovePriority = 30,
     beforeMove = function(battler, _, battle)
@@ -96,7 +103,7 @@ Status.RECORDS = {
     end,
   },
   PSN = {
-    id = "PSN", label = "PSN", hudLabel = "PSN",
+    id = "PSN", label = "PSN",
     catchBonus = 12, shakeBonus = 5,
     residual = damageOverTime("_HurtByPoisonText",
       Strings.source("%s's\nhurt by poison!")),
@@ -112,7 +119,7 @@ Status.RECORDS = {
     end,
   },
   BRN = {
-    id = "BRN", label = "BRN", hudLabel = "BRN",
+    id = "BRN", label = "BRN",
     catchBonus = 12, shakeBonus = 5,
     statPenalty = { stat = "attack", div = 2 },
     residual = damageOverTime("_HurtByBurnText",
@@ -124,7 +131,7 @@ Status.RECORDS = {
     end,
   },
   PAR = {
-    id = "PAR", label = "PAR", hudLabel = "PAR",
+    id = "PAR", label = "PAR",
     catchBonus = 12, shakeBonus = 5,
     statPenalty = { stat = "speed", div = 4 },
     beforeMovePriority = 10,
@@ -158,6 +165,14 @@ end
 function Status.recordFor(statuses, id)
   if id == nil then return nil end
   return (statuses or Status.RECORDS)[id]
+end
+
+-- the HUD label for a status id: a mod's patched hudLabel/label if the
+-- merged registry has one, the raw id otherwise (BattleState.statusLabel,
+-- SummaryMenu.draw and PartyMenu.draw all read this the same way)
+function Status.hudLabelFor(statuses, id)
+  local record = Status.recordFor(statuses, id)
+  return record and (record.hudLabel or record.label) or id
 end
 
 local function battleStatuses(battle)

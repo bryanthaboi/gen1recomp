@@ -32,66 +32,50 @@ class XRunBehaviour : public ::testing::Test {
 
 protected:
 
-    void SetUp(){
-
+    bool openStream() {
+        Result r = mBuilder.openStream(mStream);
+        EXPECT_EQ(r, Result::OK) << "Failed to open stream " << convertToText(r);
+        return (r == Result::OK);
     }
 
-
-    void openStream(){
-        Result r = mBuilder.openStream(&mStream);
-        if (r != Result::OK){
-            FAIL() << "Failed to open stream. " << convertToText(r);
-        }
-    }
-
-    void closeStream(){
-        if (mStream != nullptr){
-            Result r = mStream->close();
-            if (r != Result::OK){
-                FAIL() << "Failed to close stream. " << convertToText(r);
-            }
-        }
-    }
-
-    void openAndCloseStream(){
-
-        openStream();
-        closeStream();
-        ASSERT_EQ(mStream->getState(), StreamState::Closed);
+    bool closeStream() {
+        Result r = mStream->close();
+        EXPECT_EQ(r, Result::OK) << "Failed to close stream. " << convertToText(r);
+        return (r == Result::OK);
     }
 
     AudioStreamBuilder mBuilder;
-    AudioStream *mStream = nullptr;
+    std::shared_ptr<AudioStream> mStream;
 
 };
 
-// TODO figure out this behaviour - On OpenSLES xRuns are supported withing AudioStreamBuffered, however, these aren't
-// the same as the actual stream underruns
+// TODO figure out this behaviour - On OpenSLES xRuns are supported within AudioStreamBuffered,
+//  however, these aren't the same as the actual stream underruns
 TEST_F(XRunBehaviour, SupportedWhenStreamIsUsingAAudio){
 
-    openStream();
+    ASSERT_TRUE(openStream());
     if (mStream->getAudioApi() == AudioApi::AAudio){
         ASSERT_TRUE(mStream->isXRunCountSupported());
     }
-    closeStream();
+    ASSERT_TRUE(closeStream());
 }
 
 TEST_F(XRunBehaviour, NotSupportedOnOpenSLESWhenStreamIsUsingCallback){
 
     MyCallback callback;
     mBuilder.setCallback(&callback);
-    openStream();
+    ASSERT_TRUE(openStream());
     if (mStream->getAudioApi() == AudioApi::OpenSLES){
         ASSERT_FALSE(mStream->isXRunCountSupported());
     }
-    closeStream();
+    ASSERT_TRUE(closeStream());
 }
 
 TEST_F(XRunBehaviour, SupportedOnOpenSLESWhenStreamIsUsingBlockingIO){
 
-    openStream();
+    ASSERT_TRUE(openStream());
     if (mStream->getAudioApi() == AudioApi::OpenSLES){
         ASSERT_TRUE(mStream->isXRunCountSupported());
     }
-    closeStream();
+    ASSERT_TRUE(closeStream());
 }

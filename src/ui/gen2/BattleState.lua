@@ -740,7 +740,8 @@ function BattleState:drawPic(mon, back)
   -- pokemon.sprite's ctx.trueColor, the same flag Gen 1's Sprites.path hands
   -- back to its own draw site.
   local function paint()
-    if colors and not trueColor and GbcPalette.available() then
+    if colors and not (trueColor and GbcPalette.mode == "gbc")
+       and GbcPalette.available() then
       GbcPalette.with(colors, body)
     else
       body()
@@ -2289,6 +2290,7 @@ function BattleState:openParty(forced)
     -- :2702; engine/pokemon/party_menu.asm:660-679).  Only the voluntary list
     -- carries BattleMonMenu; PickPartyMonInBattle has no submenu.
     prompt = forced and "which" or "choose",
+    battle = true,
     battleSubmenu = not forced,
     onCancel = function()
       stack:pop()
@@ -2761,6 +2763,7 @@ function BattleState:openShiftParty()
   self.phase = "submenu"
   Screens.push(self.game, "Gen2PartyMenu", {
     prompt = "which",
+    battle = true,
     onCancel = function()
       stack:pop()
       self.phase = "resolving"
@@ -3134,6 +3137,7 @@ function BattleState:useOnPartyMon(itemId, action)
   self.phase = "submenu"
   Screens.push(self.game, "Gen2PartyMenu", {
     prompt = "useItem",
+    battle = true,
     party = self.battle.party or (self.save and self.save.party),
     onCancel = function()
       stack:pop()

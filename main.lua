@@ -291,6 +291,78 @@ function closeSkinStudio()
   end
 end
 
+local function makeLauncher()
+  local RomImporter = require("src.import.RomImporter")
+  local forceImport = os.getenv("POKEPORT_FORCE_IMPORT") == "1"
+  return RomImporter.new(function(version)
+    Importer = nil
+    bootGame(version)
+  end, {
+    launcher = true,
+    forceImport = forceImport,
+    onEditSave = openEditor,
+    onEditTouchControls = openTouchControlsEditor,
+    onOpenSkinStudio = require("src.ui.SkinStudio").available_desktop()
+      and openSkinStudio or nil,
+  })
+end
+
+local function returnToLauncher()
+  if not Game then return end
+
+  pcall(function() require("src.core.Music").stop() end)
+  pcall(function() require("src.core.Sound").stop() end)
+  if package.loaded["src.core.ChipAudio"] then
+    pcall(package.loaded["src.core.ChipAudio"].shutdown)
+  end
+  if package.loaded["src.core.DiscordPresence"] then
+    pcall(package.loaded["src.core.DiscordPresence"].shutdown)
+  end
+  if package.loaded["src.core.gen2.Clock"] then
+    pcall(package.loaded["src.core.gen2.Clock"].shutdown)
+  end
+  if package.loaded["src.net.Gen1Tls"] then
+    pcall(package.loaded["src.net.Gen1Tls"].shutdown)
+  end
+  if love.audio and love.audio.stop then
+    pcall(love.audio.stop)
+  end
+
+  local GameVersion = require("src.core.GameVersion")
+  local currentVersion = GameVersion.get()
+  if currentVersion then
+    require("src.import.CacheFs").unmountVersion(currentVersion)
+  end
+  require("src.core.Data"):unloadGenerated()
+
+  local Runtime = require("src.mods.Runtime")
+  if Runtime.reset then
+    Runtime.reset()
+  end
+
+  Game = nil
+  autopilot = nil
+  driverCo = nil
+
+  local Input = require("src.core.Input")
+  local TouchControls = require("src.core.TouchControls")
+  Input:reset()
+  TouchControls:reset()
+
+  require("src.core.Orientation").applyOptions(
+    require("src.core.SaveData").loadOptions())
+
+  local preload = require("src.mods.LauncherMods").translationStrings()
+  if preload then require("src.core.Strings").load({ strings = preload }) end
+
+  if love.window and love.window.setTitle then
+    local Version = require("src.core.Version")
+    love.window.setTitle(Version.title("Gen 1 Recompilation Project"))
+  end
+
+  Importer = makeLauncher()
+end
+
 function bootGame(version)
   -- The launcher hands us the chosen game (Red / Blue / Yellow / Gold);
   -- scripted and headless runs fall back to POKEPORT_VERSION, then Red.
@@ -382,7 +454,7 @@ function love.load(args)
 
   -- Apply the persisted Android orientation lock (#592) before the launcher
   -- shows: SDL created the window with no orientation hint, so without this
-  -- the launcher would rotate freely until Game:applyOptions runs at boot.
+  -- the launcher would rotate freely until options are applied at boot.
   -- No-op on desktop / iOS / when options.lua does not exist yet.
   require("src.core.Orientation").applyOptions(
     require("src.core.SaveData").loadOptions())
@@ -442,8 +514,8 @@ function love.load(args)
   -- (#767) only pays off if something fills that catalog this early, and no
   -- restart could: the ordering is the same on every launch.  Read the
   -- enabled mods' string catalogs -- data only, no entry chunk -- so a
-  -- translation reaches the launcher too.  Game:load replaces this with the
-  -- real merged catalog once a version boots.
+  -- translation reaches the launcher too.  The active game's loader replaces
+  -- this with the real merged catalog once a version boots.
   do
     local preload = require("src.mods.LauncherMods").translationStrings()
     if preload then require("src.core.Strings").load({ strings = preload }) end
@@ -484,17 +556,7 @@ function love.load(args)
   -- by its SHA-1 (GameVersion.forSha1); pressing Play boots that game (Gold
   -- goes to its own service owner, src/core/Game2.lua -- docs/gold-phase1.md).
   -- Edit on a save row opens the bundled editor on that slot (openEditor).
-  Importer = RomImporter.new(function(version)
-    Importer = nil
-    bootGame(version)
-  end, {
-    launcher = true,
-    forceImport = forceImport,
-    onEditSave = openEditor,
-    onEditTouchControls = openTouchControlsEditor,
-    onOpenSkinStudio = require("src.ui.SkinStudio").available_desktop()
-      and openSkinStudio or nil,
-  })
+  Importer = makeLauncher()
 end
 
 function love.update(dt)
@@ -808,6 +870,46 @@ function love.lowmemory()
   if Game then Game:onResume() end
 end
 
+love.handlers = love.handlers or {}
+
+function love.handlers.audiosuspend()
+  local ChipAudio = package.loaded["src.core.ChipAudio"]
+  if ChipAudio then pcall(ChipAudio.setSuspended, true) end
+end
+
+function love.handlers.audioreset()
+  local ChipAudio = package.loaded["src.core.ChipAudio"]
+  if ChipAudio then
+    pcall(ChipAudio.setSuspended, false)
+    pcall(ChipAudio.rebuildPlayback)
+  end
+  local Music = package.loaded["src.core.Music"]
+  if Music then pcall(Music.onDeviceReset) end
+  local Sound = package.loaded["src.core.Sound"]
+  if Sound then pcall(Sound.onDeviceReset) end
+end
+
+function love.handlers.intent_game(version)
+  if type(version) ~= "string" or version == "" then return end
+  version = version:lower():gsub("^%s+", ""):gsub("%s+$", "")
+  local GameVersion = require("src.core.GameVersion")
+  if GameVersion.VERSIONS and not GameVersion.VERSIONS[version] then return end
+
+  local RomImporter = require("src.import.RomImporter")
+  if not RomImporter.isReady(version) then return end
+
+  local currentVersion = GameVersion.get()
+  if Game and currentVersion == version then
+    return
+  end
+
+  if Game then
+    returnToLauncher()
+  end
+  Importer = nil
+  bootGame(version)
+end
+
 function love.touchpressed(id, x, y, dx, dy, pressure)
   if editorMode then
     -- iOS synthesizes mousepressed for the primary touch; forwarding here
@@ -1013,11 +1115,16 @@ function love.quit()
   -- docs/modding.md's core.quit_to_launcher entry) may veto returning to
   -- this Lua launcher via that hook. Vanilla behavior (used when no mod
   -- claims the hook) is exactly the condition below.
+  local isAndroid = (love.system and love.system.getOS and love.system.getOS() == "Android")
   local wouldReturnToLauncher = PlatformHooks.quitToLauncher(function()
     return Game and not Importer and not quitToLauncher and not scripted
-      and not launchedIntoGame
+      and (isAndroid or not launchedIntoGame)
   end)
   if wouldReturnToLauncher then
+    if isAndroid then
+      returnToLauncher()
+      return true -- abort this quit; the restart lands back in the launcher
+    end
     quitToLauncher = true
     -- Tell the fresh boot to ignore any boot-straight-into-a-game option this
     -- once, so the restart really does land in the launcher (#887).  A failed

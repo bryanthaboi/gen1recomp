@@ -5,6 +5,10 @@ body:
   - type: markdown
     attributes:
       value: |
+        **Turn off all mods before filing.** Disable everything in the launcher's MODS
+        tab, confirm the bug still happens, then open this. Bugs that only show up with
+        mods on belong with the mod author, not here.
+
         A screenshot is worth more than any description. If you can grab one, grab one.
         If you genuinely can't, that's fine, but then the details below need to be thorough
         enough that someone can find the bug without ever seeing your screen.
@@ -51,22 +55,24 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: mods_enabled
+  - type: checkboxes
+    id: mods_off
     attributes:
-      label: Were any mods on
-      description: Check the MODS tab in the launcher if you're not sure.
+      label: Mods off
+      description: >
+        Turn off every mod in the launcher's MODS tab and reproduce the bug
+        before submitting. Do not file vanilla bugs with mods still enabled.
       options:
-        - "No"
-        - "Yes"
-    validations:
-      required: true
+        - label: I turned off all mods and can still reproduce this
+          required: true
 
   - type: input
     id: mods_which
     attributes:
-      label: Which mods (if any were on)
-      description: List the enabled mods. Leave blank if none were on.
+      label: Which mods (if you first noticed this with any on)
+      description: >
+        Optional. If you originally hit this with mods enabled, list them —
+        but only after you've confirmed it still happens with all of them off.
       placeholder: nuzlocke 1.0.0, running-shoes 0.3
     validations:
       required: false

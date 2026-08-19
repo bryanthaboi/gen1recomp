@@ -20,6 +20,8 @@
 
 #include "config.h"
 
+#include "error.h"
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -29,27 +31,45 @@
 #include <csignal>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <mutex>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "AL/al.h"
 #include "AL/alc.h"
 
-#include "alcontext.h"
-#include "alexcpt.h"
-#include "almalloc.h"
-#include "logging.h"
+#include "al/debug.h"
+#include "alc/alconfig.h"
+#include "alc/context.h"
+#include "alc/inprogext.h"
+#include "core/logging.h"
 #include "opthelpers.h"
-#include "vector.h"
+#include "strutils.h"
 
 
-bool TrapALError{false};
+namespace al {
+context_error::context_error(ALenum code, const char *msg, ...) : mErrorCode{code}
+{
+    /* NOLINTBEGIN(*-array-to-pointer-decay) */
+    std::va_list args;
+    va_start(args, msg);
+    setMessage(msg, args);
+    va_end(args);
+    /* NOLINTEND(*-array-to-pointer-decay) */
+}
+context_error::~context_error() = default;
+} /* namespace al */
 
 void ALCcontext::setError(ALenum errorCode, const char *msg, ...)
 {
-    auto message = al::vector<char>(256);
+    auto message = std::vector<char>(256);
 
-    va_list args, args2;
+    /* NOLINTBEGIN(*-array-to-pointer-decay) */
+    std::va_list args, args2;
     va_start(args, msg);
     va_copy(args2, args);
     int msglen{std::vsnprintf(message.data(), message.size(), msg, args)};
@@ -60,9 +80,15 @@ void ALCcontext::setError(ALenum errorCode, const char *msg, ...)
     }
     va_end(args2);
     va_end(args);
+    /* NOLINTEND(*-array-to-pointer-decay) */
 
-    if(msglen >= 0) msg = message.data();
-    else msg = "<internal error constructing message>";
+    if(msglen >= 0)
+        msg = message.data();
+    else
+    {
+        msg = "<internal error constructing message>";
+        msglen = static_cast<int>(strlen(msg));
+    }
 
     WARN("Error generated on context %p, code 0x%04x, \"%s\"\n",
         decltype(std::declval<void*>()){this}, errorCode, msg);
@@ -77,30 +103,55 @@ void ALCcontext::setError(ALenum errorCode, const char *msg, ...)
 #endif
     }
 
-    ALenum curerr{AL_NO_ERROR};
-    mLastError.compare_exchange_strong(curerr, errorCode);
+    if(mLastThreadError.get() == AL_NO_ERROR)
+        mLastThreadError.set(errorCode);
+
+    debugMessage(DebugSource::API, DebugType::Error, static_cast<ALuint>(errorCode),
+        DebugSeverity::High, {msg, static_cast<uint>(msglen)});
 }
 
-AL_API ALenum AL_APIENTRY alGetError(void)
-START_API_FUNC
+/* Special-case alGetError since it (potentially) raises a debug signal and
+ * returns a non-default value for a null context.
+ */
+AL_API auto AL_APIENTRY alGetError() noexcept -> ALenum
 {
-    ContextRef context{GetContextRef()};
-    if UNLIKELY(!context)
-    {
-        constexpr ALenum deferror{AL_INVALID_OPERATION};
-        WARN("Querying error state on null context (implicitly 0x%04x)\n", deferror);
-        if(TrapALError)
-        {
-#ifdef _WIN32
-            if(IsDebuggerPresent())
-                DebugBreak();
-#elif defined(SIGTRAP)
-            raise(SIGTRAP);
-#endif
-        }
-        return deferror;
-    }
+    if(auto context = GetContextRef()) LIKELY
+        return alGetErrorDirect(context.get());
 
-    return context->mLastError.exchange(AL_NO_ERROR);
+    auto get_value = [](const char *envname, const char *optname) -> ALenum
+    {
+        auto optstr = al::getenv(envname);
+        if(!optstr)
+            optstr = ConfigValueStr({}, "game_compat", optname);
+        if(optstr)
+        {
+            char *end{};
+            auto value = std::strtoul(optstr->c_str(), &end, 0);
+            if(end && *end == '\0' && value <= std::numeric_limits<ALenum>::max())
+                return static_cast<ALenum>(value);
+            ERR("Invalid default error value: \"%s\"", optstr->c_str());
+        }
+        return AL_INVALID_OPERATION;
+    };
+    static const ALenum deferror{get_value("__ALSOFT_DEFAULT_ERROR", "default-error")};
+
+    WARN("Querying error state on null context (implicitly 0x%04x)\n", deferror);
+    if(TrapALError)
+    {
+#ifdef _WIN32
+        if(IsDebuggerPresent())
+            DebugBreak();
+#elif defined(SIGTRAP)
+        raise(SIGTRAP);
+#endif
+    }
+    return deferror;
 }
-END_API_FUNC
+
+FORCE_ALIGN ALenum AL_APIENTRY alGetErrorDirect(ALCcontext *context) noexcept
+{
+    ALenum ret{context->mLastThreadError.get()};
+    if(ret != AL_NO_ERROR) UNLIKELY
+        context->mLastThreadError.set(AL_NO_ERROR);
+    return ret;
+}

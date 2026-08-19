@@ -52,6 +52,9 @@ public:
     // Data access
     void positionToAudio();
 
+    static constexpr int ERR_INVALID_FORMAT    = -1;
+    static constexpr int ERR_INVALID_STATE    = -2;
+
     int getDataFloat(float *buff, int numFrames);
 
     // int getData16(short *buff, int numFramees);
@@ -59,13 +62,26 @@ public:
 protected:
     InputStream *mStream;
 
-    WavRIFFChunkHeader *mWavChunk;
-    WavFmtChunkHeader *mFmtChunk;
-    WavChunkHeader *mDataChunk;
+    std::shared_ptr<WavRIFFChunkHeader> mWavChunk;
+    std::shared_ptr<WavFmtChunkHeader> mFmtChunk;
+    std::shared_ptr<WavChunkHeader> mDataChunk;
 
     long mAudioDataStartPos;
 
-    std::map<RiffID, WavChunkHeader *> *mChunkMap;
+    std::map<RiffID, std::shared_ptr<WavChunkHeader>> mChunkMap;
+
+private:
+    /*
+     * Individual Format Readers/Converters
+     */
+    int getDataFloat_PCM8(float *buff, int numFrames);
+
+    int getDataFloat_PCM16(float *buff, int numFrames);
+
+    int getDataFloat_PCM24(float *buff, int numFrames);
+
+    int getDataFloat_Float32(float *buff, int numFrames);
+    int getDataFloat_PCM32(float *buff, int numFrames);
 };
 
 } // namespace parselib

@@ -48,12 +48,46 @@ local TAP_SLOP2 = 16 * 16
 -- Installed mods should not turn into a one- or two-item pager on a compact
 -- display.  Keep a useful page size, then let the list viewport scroll.
 local MIN_MODS_PER_PAGE = 10
+local MIN_SKIN_ROWS = 4
+local SKIN_FORMAT_LABEL = {
+  native = "GEN1",
+  retroarch = "RETROARCH",
+  delta = "DELTA",
+}
+local MIN_FIND_ROWS = 3
+local PANEL_OVERSCAN = 0.75
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
 local function inRect(rect, x, y)
   return rect ~= nil and x >= rect.x and x <= rect.x + rect.w
     and y >= rect.y and y <= rect.y + rect.h
+end
+
+local function tabKeyOf(imp) return imp.tab or "red" end
+
+local function tabScrollMax(imp)
+  local t = imp._tabScrollMax
+  return (t and t[tabKeyOf(imp)]) or 0
+end
+
+local function tabScrollAt(imp)
+  local t = imp._tabScroll
+  return clamp((t and t[tabKeyOf(imp)]) or 0, 0, tabScrollMax(imp))
+end
+
+local function setTabScroll(imp, value)
+  imp._tabScroll = imp._tabScroll or {}
+  imp._tabScroll[tabKeyOf(imp)] = clamp(value, 0, tabScrollMax(imp))
+end
+
+local function modListWantsWheel(imp, wheel)
+  if imp.tab ~= "mods" or (imp._modScrollMax or 0) <= 0 then return false end
+  if not inRect(imp._modListRect, Kit.mouseX, Kit.mouseY) then return false end
+  if not inRect(imp._tabRegionRect, Kit.mouseX, Kit.mouseY) then return false end
+  local at = clamp(imp.modScroll or 0, 0, imp._modScrollMax)
+  if wheel < 0 then return at < imp._modScrollMax end
+  return at > 0
 end
 
 -- ------------------------------------------------------------- lifecycle
@@ -65,6 +99,9 @@ local function ensureState(imp)
     imp._actAt = imp._actAt or {}
     imp._uiActions = imp._uiActions or {}
     imp._pages = imp._pages or {}
+    imp._tabScroll = imp._tabScroll or {}
+    imp._tabScrollMax = imp._tabScrollMax or {}
+    imp._tabContentH = imp._tabContentH or {}
     -- Held backspace/arrows must repeat in the text fields; restored on
     -- detach because the game's Input does its own per-step edge detection
     -- and never expects repeated keypressed events.
@@ -155,7 +192,10 @@ function LauncherView.touchpressed(imp, id, x, y)
   imp._touchAt = imp._touchAt or {}
   imp._touchAt[tostring(id)] = {
     x = x, y = y,
-    modsList = (imp._modScrollMax or 0) > 0 and inRect(imp._modListRect, x, y),
+    modsList = imp.tab == "mods" and (imp._modScrollMax or 0) > 0
+      and inRect(imp._modListRect, x, y)
+      and inRect(imp._tabRegionRect, x, y),
+    region = tabScrollMax(imp) > 0 and inRect(imp._tabRegionRect, x, y),
   }
 end
 
@@ -170,13 +210,25 @@ function LauncherView.touchmoved(imp, id, x, y)
     -- A drag that began in the installed-mod viewport scrolls that page's
     -- rows.  Its pager remains available for moving to the next ten-plus
     -- entries; a drag elsewhere keeps the normal short-window page scroll.
-    if start.dragged and start.modsList then
+    if start.dragged then
       local last = start.lastY or start.y
-      imp.modScroll = clamp((imp.modScroll or 0) - (y - last), 0,
-        imp._modScrollMax or 0)
-    elseif start.dragged and (imp._pageScrollMax or 0) > 0 then
-      local last = start.lastY or start.y
-      imp._pageScroll = (imp._pageScroll or 0) - (y - last)
+      local move = -(y - last)
+      if start.modsList then
+        local listMax = imp._modScrollMax or 0
+        local at, leftover = Kit.scrollHandoff(
+          clamp(imp.modScroll or 0, 0, listMax), listMax, move)
+        imp.modScroll = at
+        move = leftover
+      end
+      if move ~= 0 and start.region then
+        local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
+          tabScrollMax(imp), move)
+        setTabScroll(imp, at)
+        move = leftover
+      end
+      if move ~= 0 and (imp._pageScrollMax or 0) > 0 then
+        imp._pageScroll = (imp._pageScroll or 0) + move
+      end
     end
     start.lastY = y
   end
@@ -630,6 +682,7 @@ end
 
 local function modStatusColor(status)
   if status == "ok" then return Strings("Ready"), PAL.green end
+  if status == "safe_mode" then return Strings("Safe mode"), PAL.yellow end
   if status == "needs_import" then return Strings("Import required"), PAL.yellow end
   if status == "conflict" then return Strings("Conflict"), PAL.red end
   -- not a fault: the mod is intact, this is simply not a game it is for
@@ -796,6 +849,34 @@ local function drawSkinGlyph(x, y, w, h, hot)
   Theme.fillRounded(bx + pad + ow * 0.80, by + pad + oh * 0.50, r * 2, r * 2, ink, a, r)
 end
 
+local function drawSyncGlyph(x, y, w, h, hot)
+  local box = math.min(w, h)
+  local bx = x + (w - box) / 2
+  local by = y + (h - box) / 2
+  local pad = box * 0.24
+  local ink = hot and PAL.inverse or PAL.ink
+  local left, right = bx + pad, bx + box - pad
+  local head = box * 0.15
+  local bar = math.max(1, box * 0.09)
+  local topY, botY = by + box * 0.34, by + box * 0.58
+  Theme.fill(left, topY, math.max(0, right - left - head * 0.5), bar, ink, 1)
+  Theme.fill(left + head * 0.5, botY, math.max(0, right - left - head * 0.5),
+    bar, ink, 1)
+  if love.graphics.line then
+    love.graphics.push("all")
+    Theme.col(ink, 1)
+    if love.graphics.setLineWidth then
+      love.graphics.setLineWidth(math.max(1.5, bar))
+    end
+    local ty, byy = topY + bar / 2, botY + bar / 2
+    love.graphics.line(right - head, ty - head, right, ty, right - head,
+      ty + head)
+    love.graphics.line(left + head, byy - head, left, byy, left + head,
+      byy + head)
+    love.graphics.pop()
+  end
+end
+
 local function drawCross(x, y, size, color)
   love.graphics.push("all")
   love.graphics.setColor(color)
@@ -885,6 +966,8 @@ local function headerChrome(imp)
           hot and QUIT_INK_HOT or QUIT_INK_REST)
       end },
     tab = {},
+    sync = { face = "tab", drawFn = drawSyncGlyph,
+      action = function() imp:_openSync() end },
     game = { face = "tab", font = "tab",
       action = function()
         local g = currentGame(imp)
@@ -1047,6 +1130,27 @@ local function buildHeader(imp, m)
     o.image = t.icon
     o.action = chrome.tab[t.id]
     btn(imp, tx, ty, w, tabH, t.key, "", o)
+    tx = tx + w + tabGap
+  end
+
+  do
+    local w = tabH
+    if tx > tabLeft and tx + w > tabRight then
+      tx = tabLeft
+      ty = ty + tabH + tabRowGap
+    end
+    local o = chrome.sync
+    o.active = imp._syncModal ~= nil
+    btn(imp, tx, ty, w, tabH, "tab-sync", "", o)
+    local bh = math.floor(11 * m.s)
+    local bw = math.min(w, Kit.textWidth("micro", "BETA") + math.floor(10 * m.s))
+    Kit.tag(tx + (w - bw) / 2, ty + tabH - bh - math.floor(2 * m.s), bw, bh,
+      "BETA", o.active and PAL.inverse or PAL.yellow)
+    local eng = imp._sync
+    if eng and eng.busy and eng:busy() then
+      Kit.spinner(tx + w - math.floor(8 * m.s), ty + math.floor(8 * m.s),
+        math.max(2, math.floor(4 * m.s)))
+    end
     tx = tx + w + tabGap
   end
 
@@ -1481,7 +1585,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   return h
 end
 
-local function buildGamePanel(imp, x, y, w, availH, m, version)
+local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
   imp.panelVersion = version
   local info = GameVersion.info(version)
   local locked = info == nil
@@ -1527,12 +1631,15 @@ local function buildGamePanel(imp, x, y, w, availH, m, version)
   local afterTitle = math.floor((ready and 22 or 12) * m.s)
   local cy = y + titleH + afterTitle
   local remaining = availH - (titleH + afterTitle)
+  local budgetLeft = math.max(remaining,
+    (budgetH or availH) - (titleH + afterTitle))
 
   local gap = m.gap
   local lx, lw, rx2, rw
   if m.twoCol then
-    lx, lw = x, m.colW
-    rx2, rw = x + m.colW + m.colGap, m.colW
+    local colW = math.floor((w - m.colGap) / 2)
+    lx, lw = x, colW
+    rx2, rw = x + colW + m.colGap, colW
   else
     lx, lw, rx2, rw = x, w, x, w
   end
@@ -1579,15 +1686,19 @@ local function buildGamePanel(imp, x, y, w, availH, m, version)
   -- Save slots.  Two columns put them beside the left stack; ONE column
   -- stacks them underneath.  Either way the card is clipped to the room it
   -- actually has, and sizes its own list to that budget.
+  local bottom = ly
   if not locked then
     local slotY = m.twoCol and cy or ly
-    local slotAvail = m.twoCol and remaining or (cy + remaining - ly)
+    local slotAvail = m.twoCol and budgetLeft or (cy + budgetLeft - ly)
     if slotAvail > 80 * m.s then
       Kit.pushClip(rx2, slotY, rw, math.max(0, slotAvail))
-      buildSlotCard(imp, rx2, slotY, rw, slotAvail, m, version, ready)
+      local slotH = buildSlotCard(imp, rx2, slotY, rw, slotAvail, m, version,
+        ready)
       Kit.popClip()
+      bottom = math.max(bottom, slotY + math.min(slotH or 0, slotAvail))
     end
   end
+  return bottom - y
 end
 
 -- --------------------------------------------------------------- mods panel
@@ -1704,10 +1815,11 @@ end
 
 -- One compact coloured checkbox for each game.  The cartridge colour carries
 -- the game identity even when the row is narrow.
-local function modGameCheckbox(x, y, size, checked, game, id)
-  local color = cartColor(game)
-  local focused = Kit.focusable(id, x, y, size, size)
-  local hot = focused or Kit.hover(x, y, size, size)
+local function modGameCheckbox(x, y, size, checked, game, id, enabled)
+  enabled = enabled ~= false
+  local color = enabled and cartColor(game) or PAL.steel
+  local focused = enabled and Kit.focusable(id, x, y, size, size)
+  local hot = enabled and (focused or Kit.hover(x, y, size, size))
   if love.graphics then
     Theme.fillRounded(x, y, size, size, PAL.bg, 1)
     if checked then
@@ -1719,12 +1831,13 @@ local function modGameCheckbox(x, y, size, checked, game, id)
         hot and Theme.A.focus or Theme.A.hairline, 1)
     end
   end
-  return Kit.press(x, y, size, size) or Kit._activateId == id
+  return enabled and (Kit.press(x, y, size, size) or Kit._activateId == id)
 end
 
 local function buildModsPanel(imp, x, y, w, availH, m)
   imp:_ensureMods()
   local ModUpdate = require("src.mods.ModUpdate")
+  local safeMode = imp.safeMode == true
   local mods = imp.mods or {}
   local gap = m.gap
   local cy = y
@@ -1756,9 +1869,11 @@ local function buildModsPanel(imp, x, y, w, availH, m)
         action = function() imp:chooseMod() end })
       btn(imp, place(disableW), cy, disableW, bh, "mods-disable-all", Strings("Disable all"), {
         kind = "warn", font = "small",
+        enabled = not safeMode,
         action = function() imp:_setAllMods(false) end })
       btn(imp, place(enableW), cy, enableW, bh, "mods-enable-all", Strings("Enable all"), {
         kind = "good", font = "small",
+        enabled = not safeMode,
         action = function() imp:_setAllMods(true) end })
       btn(imp, place(checkFullW), cy, checkFullW, bh, "mods-check-updates", Strings("Check for updates"), {
         font = "small",
@@ -1807,7 +1922,9 @@ local function buildModsPanel(imp, x, y, w, availH, m)
 
   -- notice line
   local noticeText, noticeCol
-  if imp.modNotice then
+  if safeMode then
+    noticeText, noticeCol = "Safe mode is on. All mods are disabled. Turn it off in Settings to change mod toggles.", PAL.yellow
+  elseif imp.modNotice then
     noticeText = imp.modNotice.text
     noticeCol = imp.modNotice.ok and PAL.green or PAL.red
   else
@@ -1821,7 +1938,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   if #mods == 0 then
     imp.modScroll, imp._modScrollMax, imp._modListRect = 0, 0, nil
     Kit.emptyBox(x, cy, w, math.floor(110 * m.s), imp:_modsEmptyHint())
-    return
+    return (cy - y) + math.floor(110 * m.s)
   end
 
   local sortKey = currentSort(imp, "mods")
@@ -1882,7 +1999,8 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   if not lr then lr = {}; imp._modListRect = lr end
   lr.x, lr.y, lr.w, lr.h = x, listTop, w, listH
   imp._modScrollMax = scrollMax
-  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and Kit.hit(x, listTop, w, listH) then
+  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and not Kit.blockClicks
+      and Kit.hit(x, listTop, w, listH) then
     scroll = clamp(scroll - Kit.wheelY * math.floor(48 * m.s), 0, scrollMax)
     Kit.wheelY = 0
   elseif scrollMax == 0 then
@@ -1932,7 +2050,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
       local togKey = "mod-toggle-" .. mod.id .. "-" .. game
       if modGameCheckbox(tx, gamesY, togH,
           mod.enabledByVersion and mod.enabledByVersion[game] == true,
-          game, togKey) then
+          game, togKey, not safeMode) then
         local version = game
         queueAction(imp, togKey, function() imp:_toggleMod(mod.id, nil, version) end)
         flipped = true
@@ -2008,9 +2126,10 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   Kit.popClip()
 
   local pagerY = listTop + listH + gap
-  local newPage = Kit.pager(x, pagerY, w, cur, #mods, perPage, "mods")
+  local newPage, newPagerH = Kit.pager(x, pagerY, w, cur, #mods, perPage, "mods")
   if newPage ~= cur then imp.modScroll = 0 end
   setPage(imp, "mods", newPage)
+  return pagerY + newPagerH - y
 end
 
 -- ---------------------------------------------------------- find mods panel
@@ -2044,6 +2163,32 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
       imp._skinNotice.ok and PAL.green or PAL.red, 2) + math.floor(8 * m.s)
   end
 
+  local urlH = m.btnH
+  local addLabel = Strings("Add")
+  local addW = Kit.textWidth("small", addLabel) + math.floor(24 * m.s)
+  local pasteLabel = Strings("Paste")
+  local pasteW = Kit.textWidth("small", pasteLabel) + math.floor(20 * m.s)
+  if imp._skinFetch then
+    Loader.inline(x, cy, w, urlH,
+      Strings("Downloading %s...", tostring(imp._skinFetch.name or "")))
+  else
+    local urlPlace = Layout.rightCluster(x, w, math.floor(6 * m.s))
+    btn(imp, urlPlace(addW), cy, addW, urlH, "skins-url-add", addLabel, {
+      kind = "accent", font = "small",
+      action = function() imp:_addSkinFromUrl() end })
+    if w - addW - pasteW > math.floor(140 * m.s) then
+      btn(imp, urlPlace(pasteW), cy, pasteW, urlH, "skins-url-paste",
+        pasteLabel, {
+          font = "small", action = function() imp:_pasteSkinUrl() end })
+    end
+    local fieldW = math.max(0, urlPlace(0) - x - math.floor(6 * m.s))
+    textField(imp, x, cy, fieldW, urlH, "skins-url", imp.skinUrl or "",
+      Strings("Paste a skin link (.zip, .cfg, .deltaskin)"),
+      imp._skinUrlFocus == true,
+      function() imp:_toggleSkinUrlFocus() end)
+  end
+  cy = cy + urlH + math.floor(8 * m.s)
+
   -- Studio button.  Desktop only: the host supplies the hook nowhere else.
   if imp.onOpenSkinStudio then
     local label = Strings("Open Skin Studio")
@@ -2071,7 +2216,7 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
   -- The row itself is "use this skin"; the gear beside it configures that
   -- entry -- the built-in pad opens the drag-a-button layout editor, a skin
   -- opens the studio, so neither lands on a screen that cannot edit it.
-  local function skinRow(key, id, title, detail, selected, configure)
+  local function skinRow(key, id, title, detail, selected, configure, format)
     local gearW = configure and rowH or 0
     local rowW = w - (gearW > 0 and (gearW + math.floor(6 * m.s)) or 0)
     local ink = rowHit(imp, x, cy, rowW, rowH, selected, key,
@@ -2079,7 +2224,17 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
     local tagW = selected
       and (Kit.textWidth("small", Strings("IN USE")) + math.floor(20 * m.s))
       or math.floor(12 * m.s)
-    local textW = rowW - math.floor(24 * m.s) - tagW
+    local badge = format and SKIN_FORMAT_LABEL[format] or nil
+    local badgeW = 0
+    if badge then
+      badgeW = Kit.textWidth("micro", badge) + math.floor(16 * m.s)
+      local badgeH = math.floor(16 * m.s)
+      Kit.tag(x + rowW - tagW - badgeW - math.floor(12 * m.s),
+        cy + (rowH - badgeH) / 2, badgeW, badgeH, badge,
+        format == "native" and PAL.green or PAL.blue)
+      badgeW = badgeW + math.floor(10 * m.s)
+    end
+    local textW = math.max(0, rowW - math.floor(24 * m.s) - tagW - badgeW)
     local tx = x + math.floor(12 * m.s)
     local ty = cy + math.floor(7 * m.s)
     Kit.text("mono", Kit.ellipsize("mono", title, textW), tx, ty,
@@ -2102,7 +2257,7 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
 
   local TouchSkin = require("src.core.TouchSkin")
   local hint = Strings(
-    "You can also drop a skin .zip on this window, or put a folder in %s/ of your save directory. RetroArch overlay .cfg files work as-is.",
+    "You can also drop a skin .zip or .deltaskin on this window, or put a folder in %s/ of your save directory. RetroArch overlay .cfg files and Delta skins work as-is.",
     TouchSkin.USER_ROOT)
   local hintH = Kit.wrapHeight("small", hint, w, 3)
   local importH = math.floor(10 * m.s) + hintH
@@ -2111,9 +2266,10 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local listTop = cy
   local listH = availH - (cy - y) - importH
-  local perPage = Kit.rowsThatFit(listH, rowH, rowGap, 1, 20)
+  local perPage = Kit.rowsThatFit(listH, rowH, rowGap, MIN_SKIN_ROWS, 20)
   if #entries > perPage then
-    perPage = Kit.rowsThatFit(listH - pagerH - gap, rowH, rowGap, 1, 20)
+    perPage = Kit.rowsThatFit(listH - pagerH - gap, rowH, rowGap,
+      MIN_SKIN_ROWS, 20)
   end
   local first, last, cur, pages = Kit.pageBounds(page(imp, "skins"),
     #entries, perPage)
@@ -2142,11 +2298,10 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
         bits[#bits + 1] = entry.pages .. " " .. Strings("pages")
       end
       if entry.screen then bits[#bits + 1] = Strings("screen cutout") end
-      local configure = imp.onOpenSkinStudio and function()
-        imp.onOpenSkinStudio(imp.modScope or "red", entry.id)
-      end or nil
+      local configure = function() imp._skinActions = { id = entry.id } end
       skinRow("skin-" .. entry.id, entry.id, entry.id,
-        table.concat(bits, "  \194\183  "), active == entry.id, configure)
+        table.concat(bits, "  \194\183  "), active == entry.id, configure,
+        entry.format)
     end
   end
 
@@ -2164,6 +2319,7 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
 
   cy = cy + math.floor(10 * m.s)
   Kit.textWrapped("small", hint, x, cy, w, PAL.muted, 3)
+  return cy + hintH - y
 end
 
 local function buildFindPanel(imp, x, y, w, availH, m)
@@ -2201,7 +2357,7 @@ local function buildFindPanel(imp, x, y, w, availH, m)
       aw, m.btnH, "find-add", Strings("Add an index"), {
         kind = "accent", font = "small",
         action = function() imp._indexManage = true end })
-    return
+    return (cy - y) + h
   end
 
   -- One row: the search field, then Filter / Sort / Indexes popup buttons.
@@ -2232,7 +2388,7 @@ local function buildFindPanel(imp, x, y, w, availH, m)
     Kit.emptyBox(x, cy, w, math.floor(110 * m.s),
       (total == 0) and Strings("This index lists no mods yet.")
         or Strings("No mods match that search."))
-    return
+    return (cy - y) + math.floor(110 * m.s)
   end
 
   local sortKey = currentSort(imp, "find")
@@ -2283,7 +2439,7 @@ local function buildFindPanel(imp, x, y, w, availH, m)
     + math.floor(8 * m.s)
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local listH = availH - (cy - y) - pagerH - gap
-  local perPage = Kit.rowsThatFit(listH, rowH, gap, 1, 20)
+  local perPage = Kit.rowsThatFit(listH, rowH, gap, MIN_FIND_ROWS, 20)
   local first, last, cur, pages = Kit.pageBounds(page(imp, "find"), #rows, perPage)
   setPage(imp, "find", cur)
   local listTop = cy
@@ -2384,7 +2540,10 @@ local function buildFindPanel(imp, x, y, w, availH, m)
   end
 
   local pagerY = listTop + (last - first + 1) * (rowH + gap)
-  setPage(imp, "find", Kit.pager(x, pagerY, w, cur, #rows, perPage, "find"))
+  local findPage, findPagerH = Kit.pager(x, pagerY, w, cur, #rows, perPage,
+    "find")
+  setPage(imp, "find", findPage)
+  local bottom = pagerY + findPagerH
 
   -- Aggregate progress.  Enrichment happens a page at a time and each row says
   -- so for itself, but with nothing summarising it the panel looked idle while
@@ -2398,7 +2557,9 @@ local function buildFindPanel(imp, x, y, w, availH, m)
     Kit.text("micro", Strings("Checking %d of %d on this page...",
       waiting, last - first + 1),
       x + dh + math.floor(6 * m.s), py, PAL.muted)
+    bottom = math.max(bottom, py + dh)
   end
+  return bottom - y
 end
 
 -- ------------------------------------------------------------------ footer
@@ -2925,6 +3086,7 @@ local function buildProfilesModal(imp, m)
         btn(imp, place(swBtnW), ry + math.floor(4 * m.s), swBtnW, rowH - math.floor(8 * m.s), "prof-sw-" .. i,
           Strings("Switch"), {
             kind = "good", font = "micro",
+            enabled = not imp.safeMode,
             action = function()
               LauncherMods.applyProfile(p.name, options)
               if imp._refreshMods then imp:_refreshMods() end
@@ -2951,8 +3113,10 @@ local function buildModHeaderActionsModal(imp, m)
   local btns = {
     { label = Strings("Mod profiles..."), action = function() imp._profilesPopup = true end },
     { label = Strings("Check for updates"), action = function() imp:_syncModUpdateInfo(true) end },
-    { label = Strings("Enable all mods"), kind = "good", action = function() imp:_setAllMods(true) end },
-    { label = Strings("Disable all mods"), kind = "warn", action = function() imp:_setAllMods(false) end },
+    { label = Strings("Enable all mods"), kind = "good", enabled = not imp.safeMode,
+      action = function() imp:_setAllMods(true) end },
+    { label = Strings("Disable all mods"), kind = "warn", enabled = not imp.safeMode,
+      action = function() imp:_setAllMods(false) end },
     { label = Strings("Sort mods..."), action = function() imp._sortPopup = "mods" end },
   }
   local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
@@ -2965,6 +3129,7 @@ local function buildModHeaderActionsModal(imp, m)
   for i, b in ipairs(btns) do
     btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "modheadact-" .. i, b.label, {
       kind = b.kind or "ghost", font = "small",
+      enabled = b.enabled,
       action = function()
         imp._modHeaderActionsPopup = nil
         b.action()
@@ -3161,6 +3326,75 @@ end
 
 -- Per-mod actions for the MODS tab: the row itself only carries the enable
 -- toggle, everything episodic (update check, versions, delete) lives here.
+local SKIN_EXPORTS = {
+  { id = "native", key = "skinact-exp-native", label = "Export as gen1recomp .zip" },
+  { id = "retroarch", key = "skinact-exp-ra", label = "Export as RetroArch .zip" },
+  { id = "delta", key = "skinact-exp-delta", label = "Export as Delta .deltaskin" },
+}
+
+local function buildSkinActionsModal(imp, m)
+  local id = imp._skinActions and imp._skinActions.id
+  if not id then imp._skinActions = nil return end
+  local entry
+  for _, e in ipairs(imp:_ensureSkins()) do
+    if e.id == id then entry = e break end
+  end
+  if not entry then imp._skinActions = nil return end
+  local pad = math.floor(18 * m.s)
+  local gap = math.floor(8 * m.s)
+  local rows = #SKIN_EXPORTS + 2 + (imp.onOpenSkinStudio and 1 or 0)
+    + (imp._skinExport and imp._skinExport.dir and 1 or 0)
+  local h = pad + Kit.textHeight("button") + math.floor(4 * m.s)
+    + Kit.textHeight("small") + math.floor(12 * m.s)
+    + rows * (m.btnH + gap) - gap + pad
+  local px, py, pw = modalPanel(m, math.floor(440 * m.s), h)
+  local cy = py + pad
+  Kit.text("button", Kit.ellipsize("button", entry.id, pw - 2 * pad),
+    px + pad, cy, PAL.heading)
+  cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
+  local fmt = SKIN_FORMAT_LABEL[entry.format or ""] or Strings("unknown format")
+  Kit.text("small", Kit.ellipsize("small",
+    fmt .. "  \194\183  " .. entry.pages .. " " .. Strings("pages")
+      .. "  \194\183  " .. entry.controls .. " " .. Strings("buttons"),
+    pw - 2 * pad), px + pad, cy, PAL.muted)
+  cy = cy + Kit.textHeight("small") + math.floor(12 * m.s)
+
+  btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "skinact-use",
+    Strings("Use this skin"), { kind = "primary", font = "small",
+      action = function()
+        imp:_useSkin(id)
+        imp._skinActions = nil
+      end })
+  cy = cy + m.btnH + gap
+  if imp.onOpenSkinStudio then
+    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "skinact-edit",
+      Strings("Open in Skin Studio"), { kind = "accent", font = "small",
+        action = function()
+          imp._skinActions = nil
+          imp.onOpenSkinStudio(imp.modScope or "red", id)
+        end })
+    cy = cy + m.btnH + gap
+  end
+  for _, spec in ipairs(SKIN_EXPORTS) do
+    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, spec.key, Strings(spec.label), {
+      font = "small",
+      action = function()
+        imp:_exportSkin(id, spec.id)
+        imp._skinActions = nil
+      end })
+    cy = cy + m.btnH + gap
+  end
+  if imp._skinExport and imp._skinExport.dir then
+    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "skinact-reveal",
+      Strings("Show the exported file"), { font = "small",
+        action = function() imp:_revealSkinExport() end })
+    cy = cy + m.btnH + gap
+  end
+  btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "skinact-close",
+    Strings("Close"), { font = "small",
+      action = function() imp._skinActions = nil end })
+end
+
 local function buildModActionsModal(imp, m)
   local mod
   for _, mm in ipairs(imp.mods or {}) do
@@ -3514,6 +3748,7 @@ end
 
 local function buildSettingsModal(imp, m)
   local model = imp._settings
+  local SaveData = require("src.core.SaveData")
   local pad = math.floor(18 * m.s)
   local w = math.floor(640 * m.s)
   local h = math.floor(math.min(m.H - 2 * m.pad, m.H * 0.9))
@@ -3603,6 +3838,8 @@ local function buildSettingsModal(imp, m)
         item.header)
     else
       local row = item.row
+      local rowEnabled = not row.safeModeBlocked
+        or not SaveData.isSafeMode(model.opts)
       local key = "set-" .. i
       Kit.card(px + pad, ry, pw - 2 * pad, rowH, "hairline")
       local ix = px + pad + math.floor(12 * m.s)
@@ -3632,6 +3869,7 @@ local function buildSettingsModal(imp, m)
           ctlY + (m.btnH - Kit.textHeight("small")) / 2, PAL.detail)
         btn(imp, rx - ew, ctlY, ew, m.btnH,
           key .. "-edit", Strings("Edit"), { kind = "accent", font = "small",
+            enabled = rowEnabled,
             action = function()
               imp._settingsText = { row = row, text = tostring(row.value() or ""),
                 maxLen = row.editText.maxLen }
@@ -3640,12 +3878,14 @@ local function buildSettingsModal(imp, m)
       elseif row.action then
         -- A plain action row (Reset rebinds, Touch controls): the whole right
         -- side is one button rather than a value ladder.
-        local aw = Kit.textWidth("small", row.actionLabel or Strings("Run"))
+        local actionLabel = type(row.actionLabel) == "function"
+          and row.actionLabel() or row.actionLabel or Strings("Run")
+        local aw = Kit.textWidth("small", actionLabel)
           + math.floor(24 * m.s)
         Kit.text("small", Kit.ellipsize("small", row.label,
           labelW or (inner - aw - math.floor(12 * m.s))), ix, labelY, PAL.text)
         btn(imp, rx - aw, ctlY, aw, m.btnH,
-          key .. "-act", row.actionLabel or Strings("Run"), {
+          key .. "-act", actionLabel, {
             kind = row.danger and "danger" or "ghost", font = "small",
             action = function()
               if row.action() ~= false then model.save() end
@@ -3661,12 +3901,14 @@ local function buildSettingsModal(imp, m)
           or valW
         btn(imp, rx - stepW, ctlY, stepW, m.btnH,
           key .. "-next", ">", { font = "small",
+            enabled = rowEnabled,
             action = function() if row.step and row.step(1) then model.save() end end })
         Kit.textCenter("small", Kit.ellipsize("small", tostring(row.value()), vw),
           rx - stepW - vw, ctlY + (m.btnH - Kit.textHeight("small")) / 2, vw,
           PAL.heading)
         btn(imp, rx - stepW - vw - stepW, ctlY, stepW,
           m.btnH, key .. "-prev", "<", { font = "small",
+            enabled = rowEnabled,
             action = function() if row.step and row.step(-1) then model.save() end end })
       end
     end
@@ -3823,6 +4065,7 @@ local function buildDepResolverModal(imp, m)
         local bw = Kit.textWidth("small", btnLabel) + math.floor(20 * m.s)
         btn(imp, place(bw), ly, bw, chipH, "dep-dis-" .. i, btnLabel, {
           kind = "warn", font = "small",
+          enabled = not imp.safeMode,
           action = function()
             local LauncherMods = require("src.mods.LauncherMods")
             LauncherMods.setEnabled(dep.id, false, imp.modScope)
@@ -3907,6 +4150,335 @@ local function buildDepResolverModal(imp, m)
   end
 end
 
+local SYNC_HINT = "Save sync keeps your saves and your mod list on our server so another device can pick them up. It is brand new, so keep your own backups too."
+
+local function syncTitle(imp, m, px, py, pw, pad)
+  local label = Strings("SAVE SYNC")
+  Kit.text("button", label, px + pad, py, PAL.heading)
+  local bh = math.floor(15 * m.s)
+  local bw = Kit.textWidth("micro", "BETA") + math.floor(14 * m.s)
+  Kit.tag(px + pad + Kit.textWidth("button", label) + math.floor(8 * m.s),
+    py + (Kit.textHeight("button") - bh) / 2, bw, bh, "BETA", PAL.yellow)
+  return py + Kit.textHeight("button") + math.floor(12 * m.s)
+end
+
+local function syncStatus(imp, m, x, y, w, eng)
+  if eng:busy() then
+    Loader.inline(x, y, w, m.btnH, eng.status)
+    return m.btnH + math.floor(8 * m.s)
+  end
+  Kit.text("small", Kit.ellipsize("small", eng.status or "", w), x, y,
+    eng.phase == "error" and PAL.red or PAL.muted)
+  return Kit.textHeight("small") + math.floor(10 * m.s)
+end
+
+local function syncRow(imp, m, x, y, w, key, label, opts)
+  opts = opts or {}
+  opts.font = "small"
+  btn(imp, x, y, w, m.btnH, key, label, opts)
+  return y + m.btnH + math.floor(8 * m.s)
+end
+
+function LauncherView.syncSideText(meta)
+  meta = type(meta) == "table" and meta or {}
+  local summary = type(meta.summary) == "table" and meta.summary or {}
+  local bits = {}
+  if type(summary.name) == "string" and summary.name ~= "" then
+    bits[#bits + 1] = summary.name
+  end
+  if tonumber(summary.badges) then
+    bits[#bits + 1] = tostring(math.floor(summary.badges)) .. " "
+      .. Strings("badges")
+  end
+  if type(summary.timeText) == "string" and summary.timeText ~= "" then
+    bits[#bits + 1] = summary.timeText
+  end
+  if tonumber(summary.dexCount) then
+    bits[#bits + 1] = tostring(math.floor(summary.dexCount)) .. " "
+      .. Strings("seen")
+  end
+  local when = tonumber(meta.savedAt)
+  if when then
+    bits[#bits + 1] = Strings("saved") .. " " .. os.date("%Y-%m-%d %H:%M", when)
+  end
+  if #bits == 0 then return Strings("no details") end
+  return table.concat(bits, "  \194\183  ")
+end
+
+local function buildSyncConflict(imp, m, eng)
+  local row = eng.conflicts[1]
+  local pad = math.floor(18 * m.s)
+  local w = math.floor(520 * m.s)
+  local innerW = w - 2 * pad
+  local lead = row.overlap
+    and Strings("These saves were played at the same time.")
+    or Strings("This save also changed on another device.")
+  local leadH = Kit.wrapHeight("small", lead, innerW, 2)
+  local sideH = Kit.textHeight("small") + math.floor(2 * m.s)
+    + Kit.wrapHeight("micro", "x", innerW, 2)
+  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + leadH
+    + math.floor(10 * m.s) + 2 * (sideH + math.floor(10 * m.s))
+    + 4 * (m.btnH + math.floor(8 * m.s)) + pad
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, pw - 2 * pad,
+    PAL.detail, 2) + math.floor(10 * m.s)
+
+  local function side(title, meta)
+    Kit.text("small", title, px + pad, cy, PAL.heading)
+    cy = cy + Kit.textHeight("small") + math.floor(2 * m.s)
+    cy = cy + Kit.textWrapped("micro", LauncherView.syncSideText(meta),
+      px + pad, cy, pw - 2 * pad, PAL.muted, 2) + math.floor(10 * m.s)
+  end
+  side(Strings("This device") .. "  \194\183  " .. tostring(row.version or "?"),
+    row.localMeta)
+  side(Strings("Other device"), row.remoteMeta)
+
+  local key = row.key
+  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-this",
+    Strings("Keep this device"), { kind = "primary",
+      action = function() imp:_syncResolve(key, "local") end })
+  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-other",
+    Strings("Keep the other device"), { kind = "accent",
+      action = function() imp:_syncResolve(key, "remote") end })
+  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-both",
+    Strings("Keep both"), {
+      action = function() imp:_syncResolve(key, "both") end })
+  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-conflict-close",
+    Strings("Close"), { action = function() imp:_closeSync() end })
+end
+
+local function buildSyncLink(imp, m, eng)
+  local mo = imp._syncModal
+  local pad = math.floor(18 * m.s)
+  local w = math.floor(460 * m.s)
+  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local hint = Strings("Enter the two codes the other device is showing.")
+  local hintH = Kit.wrapHeight("small", hint, w - 2 * pad, 2)
+  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + hintH
+    + math.floor(10 * m.s) + 2 * (fieldH + math.floor(8 * m.s))
+    + Kit.textHeight("small") + math.floor(10 * m.s)
+    + 2 * (m.btnH + math.floor(8 * m.s)) + pad
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  cy = cy + Kit.textWrapped("small", hint, px + pad, cy, pw - 2 * pad,
+    PAL.detail, 2) + math.floor(10 * m.s)
+  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "sync-code1",
+    mo.code1 or "", Strings("First code"), imp._syncFocus == "code1",
+    function() imp:_syncFocusField("code1") end)
+  cy = cy + fieldH + math.floor(8 * m.s)
+  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "sync-code2",
+    mo.code2 or "", Strings("Second code"), imp._syncFocus == "code2",
+    function() imp:_syncFocusField("code2") end)
+  cy = cy + fieldH + math.floor(8 * m.s)
+  cy = cy + syncStatus(imp, m, px + pad, cy, pw - 2 * pad, eng)
+  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-link-go",
+    Strings("Link this device"), { kind = "primary", enabled = not eng:busy(),
+      action = function() imp:_syncLink() end })
+  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-link-back",
+    Strings("Back"), { action = function() imp:_syncView("home") end })
+end
+
+local function buildSyncMods(imp, m, eng)
+  local mo = imp._syncModal
+  local pad = math.floor(18 * m.s)
+  local w = math.floor(500 * m.s)
+  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local plan = eng.modPlan
+  local rows = 4 + (plan and 1 or 0)
+  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
+    + 3 * (Kit.textHeight("small") + math.floor(8 * m.s))
+    + fieldH + math.floor(8 * m.s)
+    + rows * (m.btnH + math.floor(8 * m.s)) + pad
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  local innerW = pw - 2 * pad
+
+  if eng.shareCode then
+    Kit.text("small", Strings("Share this code:"), px + pad, cy, PAL.muted)
+    cy = cy + Kit.textHeight("small") + math.floor(4 * m.s)
+    Kit.text("stat", eng.shareCode, px + pad, cy, PAL.heading)
+    cy = cy + Kit.textHeight("stat") + math.floor(4 * m.s)
+    Kit.text("micro", Kit.ellipsize("micro",
+      Strings("Enter this code in Save Sync > Get mod list"), innerW),
+      px + pad, cy, PAL.muted)
+    cy = cy + Kit.textHeight("micro") + math.floor(10 * m.s)
+  end
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-share-mods",
+    Strings("Share mod list"), { kind = "accent", enabled = not eng:busy(),
+      action = function() imp:_syncShareMods() end })
+
+  textField(imp, px + pad, cy, innerW, fieldH, "sync-share-code",
+    mo.share or "", Strings("Paste a 6-character mod code"),
+    imp._syncFocus == "share", function() imp:_syncFocusField("share") end)
+  cy = cy + fieldH + math.floor(8 * m.s)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-get-mods",
+    Strings("Get mod list"), { kind = "accent", enabled = not eng:busy(),
+      action = function() imp:_syncGetShare() end })
+
+  if plan then
+    local line = Strings("%d mods, %d indexes to add",
+      #(plan.toInstall or {}) + #(plan.toEnable or {}), #(plan.indexes or {}))
+    if #(plan.missing or {}) > 0 then
+      line = line .. "  \194\183  " .. Strings("%d not in your indexes",
+        #plan.missing)
+    end
+    Kit.text("small", Kit.ellipsize("small", line, innerW), px + pad, cy,
+      PAL.detail)
+    cy = cy + Kit.textHeight("small") + math.floor(8 * m.s)
+    local prog = mo.progress
+    if prog then
+      Loader.inline(px + pad, cy, innerW, m.btnH,
+        Strings("%d of %d", prog.done or 0, prog.total or 0))
+      cy = cy + m.btnH + math.floor(8 * m.s)
+    else
+      cy = syncRow(imp, m, px + pad, cy, innerW, "sync-apply-mods",
+        Strings("Apply these mods"), { kind = "primary",
+          enabled = not eng:busy(),
+          action = function() imp:_syncApplyMods() end })
+    end
+  end
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-mods-back", Strings("Back"),
+    { action = function() imp:_syncView("home") end })
+end
+
+function LauncherView.syncDeviceRows(eng, limit)
+  local out = {}
+  if not eng or type(eng.devices) ~= "table" then return out end
+  for _, row in ipairs(eng.devices) do
+    if #out >= (limit or 6) then break end
+    if type(row) == "table" and type(row.id) == "string" then
+      out[#out + 1] = {
+        id = row.id,
+        current = row.current == true,
+        label = type(row.label) == "string" and row.label ~= "" and row.label
+          or "device",
+      }
+    end
+  end
+  return out
+end
+
+local function buildSyncHome(imp, m, eng)
+  local pad = math.floor(18 * m.s)
+  local w = math.floor(460 * m.s)
+  local linked = eng:linked()
+  local codes = eng.codes
+  local body = linked
+    and Strings("This device is linked. Saves and the mod list sync when the launcher opens and a few seconds after each save.")
+    or Strings(SYNC_HINT)
+  local innerW = w - 2 * pad
+  local hintH = Kit.wrapHeight("small", body, innerW, 5)
+  local codesH = codes
+    and (Kit.textHeight("small") + math.floor(6 * m.s)
+      + 2 * (Kit.textHeight("title") + math.floor(4 * m.s))
+      + math.floor(8 * m.s)) or 0
+  local devices = linked and LauncherView.syncDeviceRows(eng) or {}
+  local devicesH = #devices > 0
+    and (Kit.textHeight("small") + math.floor(6 * m.s)) or 0
+  local rows = (linked and 5 or 3) + #devices
+  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + hintH
+    + math.floor(10 * m.s) + codesH + devicesH + m.btnH + math.floor(10 * m.s)
+    + rows * (m.btnH + math.floor(8 * m.s)) + pad
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  cy = cy + Kit.textWrapped("small", body, px + pad, cy, innerW, PAL.detail, 5)
+    + math.floor(10 * m.s)
+
+  if codes then
+    Kit.text("small", Strings("Enter these on your other device:"), px + pad,
+      cy, PAL.muted)
+    cy = cy + Kit.textHeight("small") + math.floor(6 * m.s)
+    Kit.text("title", codes.code1, px + pad, cy, PAL.heading)
+    cy = cy + Kit.textHeight("title") + math.floor(4 * m.s)
+    Kit.text("title", codes.code2, px + pad, cy, PAL.heading)
+    cy = cy + Kit.textHeight("title") + math.floor(8 * m.s)
+  end
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng)
+
+  if #devices > 0 then
+    Kit.text("small", Strings("Devices on this account:"), px + pad, cy,
+      PAL.muted)
+    cy = cy + Kit.textHeight("small") + math.floor(6 * m.s)
+    for i, device in ipairs(devices) do
+      local id = device.id
+      if device.current then
+        cy = syncRow(imp, m, px + pad, cy, innerW, "sync-device-" .. i,
+          device.label .. "  \194\183  " .. Strings("this device"),
+          { enabled = false })
+      else
+        cy = syncRow(imp, m, px + pad, cy, innerW, "sync-device-" .. i,
+          Strings("Unlink %s", device.label), { kind = "danger",
+            enabled = not eng:busy(),
+            action = function() imp:_syncUnlinkDevice(id) end })
+      end
+    end
+  end
+
+  if linked then
+    cy = syncRow(imp, m, px + pad, cy, innerW, "sync-now", Strings("Sync now"),
+      { kind = "primary", enabled = not eng:busy(),
+        action = function() imp:_syncNow() end })
+    cy = syncRow(imp, m, px + pad, cy, innerW, "sync-mods",
+      Strings("Share or get a mod list"), { kind = "accent",
+        action = function() imp:_syncView("mods") end })
+    cy = syncRow(imp, m, px + pad, cy, innerW, "sync-unlink",
+      Strings("Unlink this device"), { kind = "danger",
+        action = function() imp:_syncUnlink() end })
+  else
+    cy = syncRow(imp, m, px + pad, cy, innerW, "sync-create",
+      Strings("Create sync account"), { kind = "primary",
+        enabled = not eng:busy(),
+        action = function() imp:_syncCreate() end })
+    cy = syncRow(imp, m, px + pad, cy, innerW, "sync-link",
+      Strings("Link this device"), { kind = "accent",
+        action = function() imp:_syncView("link") end })
+  end
+  syncRow(imp, m, px + pad, cy, innerW, "sync-close", Strings("Close"),
+    { action = function() imp:_closeSync() end })
+end
+
+local function buildSyncUnavailable(imp, m, msg)
+  local pad = math.floor(18 * m.s)
+  local w = math.floor(420 * m.s)
+  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
+    + Kit.wrapHeight("small", msg, w - 2 * pad, 4) + math.floor(10 * m.s)
+    + m.btnH + pad
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  cy = cy + Kit.textWrapped("small", msg, px + pad, cy, pw - 2 * pad,
+    PAL.detail, 4) + math.floor(10 * m.s)
+  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-close",
+    Strings("Close"), { action = function() imp:_closeSync() end })
+end
+
+local function buildSyncModal(imp, m)
+  if not imp:_syncSupported() then
+    buildSyncUnavailable(imp, m, Strings(
+      "Save sync cannot run on this build: it has no way to send the signed requests it needs. Update to the latest app build, or use a desktop build."))
+    return
+  end
+  local eng = imp._sync
+  if not eng then
+    buildSyncUnavailable(imp, m,
+      Strings("Save sync is not available in this build."))
+    return
+  end
+  if eng.phase == "conflict" and eng.conflicts and #eng.conflicts > 0 then
+    buildSyncConflict(imp, m, eng)
+    return
+  end
+  local view = imp._syncModal and imp._syncModal.view or "home"
+  if view == "link" then
+    buildSyncLink(imp, m, eng)
+  elseif view == "mods" then
+    buildSyncMods(imp, m, eng)
+  else
+    buildSyncHome(imp, m, eng)
+  end
+end
+
 -- Whether ANY modal will draw this frame.  draw() consults this BEFORE the
 -- panels build: immediate mode hit-tests each control as it draws, so the
 -- panels underneath a modal must run with Kit.blockClicks already raised or
@@ -3919,7 +4491,7 @@ local function modalUp(imp)
     or imp._findDetails or imp._modVersions or imp._modDepResolver or imp._sortPopup
     or imp._filterPopup or imp._modScopePopup or imp._indexManage
     or imp._gamePopup
-    or imp._modActions or imp._modImports
+    or imp._modActions or imp._modImports or imp._skinActions or imp._syncModal
     or imp._modHeaderActionsPopup or imp._profilesPopup or imp._singleProfileActions or imp._profileSavePrompt
     or imp._profileRenamePrompt or imp._findEntry or imp._gameManage) ~= nil
 end
@@ -4064,6 +4636,8 @@ local function buildModals(imp, m)
   if imp._modScopePopup then buildModScopeModal(imp, m) return true end
   if imp._filterPopup then buildFilterModal(imp, m) return true end
   if imp._indexManage then buildIndexesModal(imp, m) return true end
+  if imp._syncModal then buildSyncModal(imp, m) return true end
+  if imp._skinActions then buildSkinActionsModal(imp, m) return true end
   if imp._modActions then buildModActionsModal(imp, m) return true end
   if imp._findEntry then buildFindEntryModal(imp, m) return true end
   if imp._gameManage then buildGameManageModal(imp, m) return true end
@@ -4173,13 +4747,6 @@ function LauncherView.draw(imp)
   local footH = footerHeight(imp, m)
   local naturalAvail = m.h - headerHeight(m) - footH - m.gap
   local scrollMax = math.max(0, minPanelHeight(m) - naturalAvail)
-  local scroll = math.max(0, math.min(imp._pageScroll or 0, scrollMax))
-  if scrollMax > 0 and (imp._wheelY or 0) ~= 0 then
-    scroll = math.max(0, math.min(
-      scroll - imp._wheelY * math.floor(48 * m.s), scrollMax))
-    imp._wheelY = 0  -- the page consumed the wheel; lists page by tap here
-  end
-  imp._pageScroll, imp._pageScrollMax = scroll, scrollMax
 
   Kit.beginFrame(mx, my, click ~= nil, imp._wheelY or 0)
   imp._clickPt = nil
@@ -4191,6 +4758,35 @@ function LauncherView.draw(imp)
   -- whole stage draws shielded (no clicks, no hover, no focus ring) while
   -- one is up; buildModals lowers the shield for the modal's own controls.
   Kit.blockClicks = modalUp(imp)
+
+  local step = Kit.scrollStep(m.s)
+  local nested = modListWantsWheel(imp, Kit.wheelY or 0)
+  if not nested then
+    local rect = imp._tabRegionRect
+    if rect then
+      setTabScroll(imp, (Kit.scrollWheel(tabScrollAt(imp), tabScrollMax(imp),
+        rect.x, rect.y, rect.w, rect.h, step)))
+    end
+  end
+  local scroll = math.max(0, math.min(imp._pageScroll or 0, scrollMax))
+  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and not nested
+      and not Kit.blockClicks then
+    local moved = math.max(0, math.min(scroll - Kit.wheelY * step, scrollMax))
+    if moved ~= scroll then
+      scroll = moved
+      Kit.wheelY = 0
+    end
+  end
+  imp._pageScroll, imp._pageScrollMax = scroll, scrollMax
+  if (Kit.wheelY or 0) ~= 0 and not nested and not Kit.blockClicks
+      and tabScrollMax(imp) > 0 then
+    local was = tabScrollAt(imp)
+    local to = Kit.scrollClamp(was - Kit.wheelY * step, tabScrollMax(imp))
+    if to ~= was then
+      setTabScroll(imp, to)
+      Kit.wheelY = 0
+    end
+  end
 
   -- The header is the only block that moves with the page scroll, so shift
   -- m.top across the call and put it back rather than wrapping `m` in a
@@ -4210,15 +4806,31 @@ function LauncherView.draw(imp)
   end
 
   local x, w = m.contentX, m.contentW
+  local viewH = math.max(0, availH)
+  local rect = imp._tabRegionRect
+  if not rect then rect = {}; imp._tabRegionRect = rect end
+  rect.x, rect.y, rect.w, rect.h = x, contentY, w, viewH
+
+  local at = tabScrollAt(imp)
+  local py = Kit.scrollBegin(x, contentY, w, viewH, at, tabScrollMax(imp))
+  local budgetH = math.floor(viewH * (1 + PANEL_OVERSCAN))
+  local panelW = math.max(0, w - Kit.scrollGutter(m.s))
+  local contentH
   if imp.tab == "mods" then
-    buildModsPanel(imp, x, contentY, w, availH, m)
+    contentH = buildModsPanel(imp, x, py, panelW, budgetH, m)
   elseif imp.tab == "find" then
-    buildFindPanel(imp, x, contentY, w, availH, m)
+    contentH = buildFindPanel(imp, x, py, panelW, budgetH, m)
   elseif imp.tab == "skins" then
-    buildSkinsPanel(imp, x, contentY, w, availH, m)
+    contentH = buildSkinsPanel(imp, x, py, panelW, budgetH, m)
   else
-    buildGamePanel(imp, x, contentY, w, availH, m, imp.tab)
+    contentH = buildGamePanel(imp, x, py, panelW, availH, m, imp.tab, budgetH)
   end
+  contentH = contentH or availH
+  imp._tabContentH[tabKeyOf(imp)] = contentH
+  imp._tabScrollMax[tabKeyOf(imp)] = Kit.scrollExtent(contentH, viewH)
+  at = clamp(at, 0, tabScrollMax(imp))
+  imp._tabScroll[tabKeyOf(imp)] = at
+  Kit.scrollEnd(x, contentY, w, viewH, at, tabScrollMax(imp))
 
   buildFooter(imp, m, footY)
   Kit.blockClicks = false

@@ -24,6 +24,7 @@ import org.libsdl.app.SDLActivity;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -36,6 +37,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import android.Manifest;
@@ -53,6 +55,10 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -63,8 +69,11 @@ import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.Log;
 import android.util.DisplayMetrics;
-import android.view.*;
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.Icon;
+import android.view.*;
 
 import androidx.annotation.Keep;
 import androidx.core.app.ActivityCompat;
@@ -147,6 +156,22 @@ public class GameActivity extends SDLActivity {
 
     private static native void nativeSetDefaultStreamValues(int sampleRate, int framesPerBurst);
 
+    private static native void nativeAudioFocusLost();
+
+    private static native void nativeAudioFocusGained();
+
+    private static native void nativeAudioDeviceChanged();
+
+    private static native void nativeOnGameIntent(String game);
+
+    private static String initialGame = "";
+
+    private AudioManager.OnAudioFocusChangeListener audioFocusListener = null;
+    private Object audioFocusRequest = null;
+    private Object audioDeviceCallback = null;
+    private boolean audioFocusHeld = false;
+    private boolean audioDeviceCallbackPrimed = false;
+
     /**
      * Native libraries required by an optional Android host extension.
      *
@@ -210,6 +235,10 @@ public class GameActivity extends SDLActivity {
         embed = getResources().getBoolean(R.bool.embed);
         needToCopyGameInArchive = embed;
 
+        Intent startIntent = getIntent();
+        if (startIntent != null && startIntent.hasExtra("game")) {
+            initialGame = startIntent.getStringExtra("game");
+        }
         if (!embed) {
             Intent intent = getIntent();
             handleIntent(intent);
@@ -243,6 +272,12 @@ public class GameActivity extends SDLActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         Log.d("GameActivity", "onNewIntent() with " + intent);
+        if (intent != null && intent.hasExtra("game")) {
+            String game = intent.getStringExtra("game");
+            if (game != null && !game.isEmpty()) {
+                nativeOnGameIntent(game);
+            }
+        }
         if (!embed) {
             handleIntent(intent);
             resetNative();
@@ -368,6 +403,8 @@ public class GameActivity extends SDLActivity {
             vibrator.cancel();
         }
         unregisterSecondaryDisplayListener();
+        unregisterAudioDeviceCallback();
+        abandonAudioFocus();
         onHostDestroy();
         super.onDestroy();
     }
@@ -380,6 +417,8 @@ public class GameActivity extends SDLActivity {
         }
         unregisterSecondaryDisplayListener();
         teardownSecondaryDisplay();
+        unregisterAudioDeviceCallback();
+        abandonAudioFocus();
         onHostPause();
         super.onPause();
     }
@@ -388,6 +427,8 @@ public class GameActivity extends SDLActivity {
     public void onResume() {
         super.onResume();
         onHostResume();
+        requestGameAudioFocus();
+        registerAudioDeviceCallback();
         refreshDualScreenDisplayMode();
         if (secondaryEnabled) registerSecondaryDisplayListener();
         setupSecondaryDisplay();
@@ -649,6 +690,95 @@ public class GameActivity extends SDLActivity {
         return true; // unreachable, but keeps the JNI signature honest
     }
 
+    @Keep
+    public static String getLaunchGame() {
+        return initialGame != null ? initialGame : "";
+    }
+
+    @Keep
+    public static boolean updateAppShortcuts(String[] readyVersions) {
+        GameActivity self = (GameActivity) mSingleton;
+        if (self == null) return false;
+        if (android.os.Build.VERSION.SDK_INT < 25) return false;
+        try {
+            Context context = self.getApplicationContext();
+            ShortcutManager shortcutManager = context.getSystemService(ShortcutManager.class);
+            if (shortcutManager == null) return false;
+
+            if (readyVersions == null || readyVersions.length == 0) {
+                shortcutManager.removeAllDynamicShortcuts();
+                return true;
+            }
+
+            List<ShortcutInfo> shortcuts = new ArrayList<>();
+            int maxShortcuts = Math.min(readyVersions.length, 4);
+
+            for (int i = 0; i < maxShortcuts; i++) {
+                String ver = readyVersions[i];
+                if (ver == null || ver.isEmpty()) continue;
+                String lower = ver.toLowerCase();
+                String shortLabel;
+                String longLabel;
+                int iconResId;
+
+                switch (lower) {
+                    case "red":
+                        shortLabel = "Play Red";
+                        longLabel = "Play Red";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_red", "drawable", context.getPackageName());
+                        break;
+                    case "blue":
+                        shortLabel = "Play Blue";
+                        longLabel = "Play Blue";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_blue", "drawable", context.getPackageName());
+                        break;
+                    case "yellow":
+                        shortLabel = "Play Yellow";
+                        longLabel = "Play Yellow";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_yellow", "drawable", context.getPackageName());
+                        break;
+                    case "gold":
+                        shortLabel = "Play Gold";
+                        longLabel = "Play Gold";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_gold", "drawable", context.getPackageName());
+                        break;
+                    default:
+                        String capitalized = lower.substring(0, 1).toUpperCase() + lower.substring(1);
+                        shortLabel = "Play " + capitalized;
+                        longLabel = "Play " + capitalized;
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_" + lower, "drawable", context.getPackageName());
+                        break;
+                }
+
+                if (iconResId == 0) {
+                    iconResId = context.getResources().getIdentifier("ic_launcher_foreground", "drawable", context.getPackageName());
+                }
+
+                Intent intent = new Intent(context, GameActivity.class);
+                intent.setAction(Intent.ACTION_VIEW);
+                intent.putExtra("game", lower);
+                intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
+                ShortcutInfo.Builder builder = new ShortcutInfo.Builder(context, "shortcut_" + lower)
+                    .setShortLabel(shortLabel)
+                    .setLongLabel(longLabel)
+                    .setIntent(intent);
+
+                if (iconResId != 0) {
+                    builder.setIcon(Icon.createWithResource(context, iconResId));
+                }
+
+                shortcuts.add(builder.build());
+            }
+
+            shortcutManager.setDynamicShortcuts(shortcuts);
+            return true;
+        } catch (Exception e) {
+            Log.d("GameActivity", "could not update shortcuts: " + e.getMessage());
+            return false;
+        }
+    }
+
     /**
      * Blocking HTTPS GET into destPath, exposed as love.system.httpDownload
      * and used by src/core/HostShell.lua. Android ships no curl binary, so
@@ -820,6 +950,149 @@ public class GameActivity extends SDLActivity {
         } catch (Exception e) {
             Log.d("GameActivity", "httpPost failed: " + e.getMessage());
             return false;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /** Response ceiling for httpRequest; anything larger is refused, not buffered. */
+    private static final int HTTP_REQUEST_MAX_RESPONSE = 4 * 1024 * 1024;
+
+    /** Builds an httpRequest envelope: one head line, a newline, then the body. */
+    private static byte[] httpEnvelope(String head, byte[] payload) {
+        byte[] prefix;
+        try {
+            prefix = (head + "\n").getBytes("UTF-8");
+        } catch (Exception e) {
+            prefix = (head + "\n").getBytes();
+        }
+        if (payload == null || payload.length == 0) return prefix;
+        byte[] out = new byte[prefix.length + payload.length];
+        System.arraycopy(prefix, 0, out, 0, prefix.length);
+        System.arraycopy(payload, 0, out, prefix.length, payload.length);
+        return out;
+    }
+
+    /** One-line, CR/LF-free failure text, so an envelope head stays one line. */
+    private static String httpErrorText(Exception e) {
+        String text = e.getMessage();
+        if (text == null || text.length() == 0) text = e.getClass().getSimpleName();
+        text = text.replace('\r', ' ').replace('\n', ' ');
+        if (text.length() > 160) text = text.substring(0, 160);
+        return text;
+    }
+
+    /**
+     * Blocking HTTPS request with a chosen method, headers and byte body,
+     * exposed as love.system.httpRequest and used by src/core/HostShell.lua
+     * for save sync. Sync needs PUT, per-request auth headers and the response
+     * body of a 4xx as well as a 2xx (a conflict answers 409 with the save
+     * that won), none of which httpDownload or httpPost above can express.
+     *
+     * Same rules as those two: https only, redirects followed by hand
+     * (re-sending method and body on each hop), 15s connect / 60s read, and
+     * blocking on the Lua/worker thread -- never the UI thread. Headers arrive
+     * as a flat name, value array; a field carrying CR or LF is refused rather
+     * than sent, so a header value can never inject a second header.
+     *
+     * The reply is an envelope: a head line of "STATUS &lt;code&gt;" or
+     * "ERROR &lt;text&gt;", a newline, then the raw response bytes.
+     */
+    @Keep
+    public static byte[] httpRequest(String url, String method, String[] headerPairs,
+                                     byte[] body, String userAgent) {
+        if (url == null) return httpEnvelope("ERROR missing url", null);
+        String verb = method == null ? "GET" : method.toUpperCase(Locale.US);
+        if (!"GET".equals(verb) && !"POST".equals(verb)
+                && !"PUT".equals(verb) && !"DELETE".equals(verb)) {
+            return httpEnvelope("ERROR unsupported request method", null);
+        }
+        if (headerPairs != null) {
+            if ((headerPairs.length % 2) != 0) {
+                return httpEnvelope("ERROR bad request header", null);
+            }
+            for (int i = 0; i < headerPairs.length; i++) {
+                String field = headerPairs[i];
+                if (field == null) return httpEnvelope("ERROR bad request header", null);
+                if (field.indexOf('\r') >= 0 || field.indexOf('\n') >= 0) {
+                    return httpEnvelope("ERROR bad request header", null);
+                }
+                if ((i % 2) == 0 && field.length() == 0) {
+                    return httpEnvelope("ERROR bad request header", null);
+                }
+            }
+        }
+        HttpURLConnection conn = null;
+        try {
+            String current = url;
+            for (int hop = 0; hop < 5; hop++) {
+                URL parsed = new URL(current);
+                if (!"https".equalsIgnoreCase(parsed.getProtocol())) {
+                    return httpEnvelope("ERROR https only", null);
+                }
+                conn = (HttpURLConnection) parsed.openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+                conn.setRequestMethod(verb);
+                conn.setRequestProperty("User-Agent",
+                    userAgent == null ? "gen1recomp" : userAgent);
+                if (headerPairs != null) {
+                    for (int i = 0; i + 1 < headerPairs.length; i += 2) {
+                        conn.setRequestProperty(headerPairs[i], headerPairs[i + 1]);
+                    }
+                }
+                if (body != null && !"GET".equals(verb)) {
+                    conn.setDoOutput(true);
+                    conn.setFixedLengthStreamingMode(body.length);
+                    OutputStream out = new BufferedOutputStream(conn.getOutputStream());
+                    try {
+                        out.write(body);
+                    } finally {
+                        try { out.close(); } catch (IOException ignored) {}
+                    }
+                }
+                int code = conn.getResponseCode();
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String next = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    conn = null;
+                    if (next == null) {
+                        return httpEnvelope("ERROR redirect without a location", null);
+                    }
+                    current = new URL(parsed, next).toString();
+                    continue;
+                }
+                // A rejection's body is the diagnosis the caller wants, so 4xx
+                // and 5xx are read through getErrorStream rather than dropped.
+                InputStream in;
+                try {
+                    in = conn.getInputStream();
+                } catch (IOException e) {
+                    in = conn.getErrorStream();
+                }
+                ByteArrayOutputStream sink = new ByteArrayOutputStream();
+                if (in != null) {
+                    InputStream reader = new BufferedInputStream(in);
+                    try {
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = reader.read(buf)) > 0) {
+                            if (sink.size() + n > HTTP_REQUEST_MAX_RESPONSE) {
+                                return httpEnvelope("ERROR the reply was too large", null);
+                            }
+                            sink.write(buf, 0, n);
+                        }
+                    } finally {
+                        try { reader.close(); } catch (IOException ignored) {}
+                    }
+                }
+                return httpEnvelope("STATUS " + code, sink.toByteArray());
+            }
+            return httpEnvelope("ERROR too many redirects", null);
+        } catch (Exception e) {
+            Log.d("GameActivity", "httpRequest failed: " + e.getMessage());
+            return httpEnvelope("ERROR " + httpErrorText(e), null);
         } finally {
             if (conn != null) conn.disconnect();
         }
@@ -1452,6 +1725,163 @@ public class GameActivity extends SDLActivity {
         }
 
         return freq;
+    }
+
+    private void requestGameAudioFocus() {
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        if (audioManager == null) {
+            return;
+        }
+
+        if (audioFocusListener == null) {
+            audioFocusListener = new AudioManager.OnAudioFocusChangeListener() {
+                @Override
+                public void onAudioFocusChange(int focusChange) {
+                    handleAudioFocusChange(focusChange);
+                }
+            };
+        }
+
+        int result;
+
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            result = requestGameAudioFocusModern(audioManager);
+        } else {
+            result = audioManager.requestAudioFocus(audioFocusListener,
+                AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+        }
+
+        audioFocusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+
+        if (!audioFocusHeld) {
+            Log.d("GameActivity", "audio focus request was not granted: " + result);
+        }
+    }
+
+    private int requestGameAudioFocusModern(AudioManager audioManager) {
+        if (audioFocusRequest == null) {
+            AudioAttributes attributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_GAME)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
+            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attributes)
+                .setWillPauseWhenDucked(true)
+                .setOnAudioFocusChangeListener(audioFocusListener)
+                .build();
+        }
+
+        return audioManager.requestAudioFocus((AudioFocusRequest) audioFocusRequest);
+    }
+
+    private void abandonAudioFocus() {
+        if (!audioFocusHeld) {
+            return;
+        }
+
+        audioFocusHeld = false;
+
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        if (audioManager == null) {
+            return;
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= 26 && audioFocusRequest != null) {
+            abandonAudioFocusModern(audioManager);
+        } else if (audioFocusListener != null) {
+            audioManager.abandonAudioFocus(audioFocusListener);
+        }
+    }
+
+    private void abandonAudioFocusModern(AudioManager audioManager) {
+        audioManager.abandonAudioFocusRequest((AudioFocusRequest) audioFocusRequest);
+    }
+
+    private void handleAudioFocusChange(int focusChange) {
+        try {
+            switch (focusChange) {
+                case AudioManager.AUDIOFOCUS_LOSS:
+                    audioFocusHeld = false;
+                    nativeAudioFocusLost();
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    nativeAudioFocusLost();
+                    break;
+                case AudioManager.AUDIOFOCUS_GAIN:
+                case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT:
+                case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK:
+                    audioFocusHeld = true;
+                    nativeAudioFocusGained();
+                    break;
+                default:
+                    break;
+            }
+        } catch (UnsatisfiedLinkError e) {
+            Log.d("GameActivity", "audio focus change before liblove was ready", e);
+        }
+    }
+
+    private void registerAudioDeviceCallback() {
+        if (android.os.Build.VERSION.SDK_INT < 23 || audioDeviceCallback != null) {
+            return;
+        }
+
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        if (audioManager == null) {
+            return;
+        }
+
+        audioDeviceCallbackPrimed = false;
+        audioDeviceCallback = createAudioDeviceCallback(audioManager);
+    }
+
+    private Object createAudioDeviceCallback(AudioManager audioManager) {
+        AudioDeviceCallback callback = new AudioDeviceCallback() {
+            @Override
+            public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
+                if (!audioDeviceCallbackPrimed) {
+                    audioDeviceCallbackPrimed = true;
+                    return;
+                }
+                notifyAudioDeviceChanged();
+            }
+
+            @Override
+            public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+                audioDeviceCallbackPrimed = true;
+                notifyAudioDeviceChanged();
+            }
+        };
+
+        audioManager.registerAudioDeviceCallback(callback, new Handler(Looper.getMainLooper()));
+        return callback;
+    }
+
+    private void unregisterAudioDeviceCallback() {
+        if (android.os.Build.VERSION.SDK_INT < 23 || audioDeviceCallback == null) {
+            return;
+        }
+
+        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        if (audioManager != null) {
+            audioManager.unregisterAudioDeviceCallback((AudioDeviceCallback) audioDeviceCallback);
+        }
+
+        audioDeviceCallback = null;
+        audioDeviceCallbackPrimed = false;
+    }
+
+    private void notifyAudioDeviceChanged() {
+        try {
+            nativeAudioDeviceChanged();
+        } catch (UnsatisfiedLinkError e) {
+            Log.d("GameActivity", "audio device change before liblove was ready", e);
+        }
     }
 
     public boolean isNativeLibsExtracted() {

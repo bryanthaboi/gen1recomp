@@ -73,9 +73,7 @@ calculation (ie. left = angle, right = 360-angle).
 The actual coefficients follow. Each coefficient is a signed 24-bit sample.
 Stereo HRTFs interleave left/right ear coefficients.  The HRIRs must be
 minimum-phase.  This allows the use of a smaller filter length, reducing
-computation.  For reference, the default data set uses a 32-point filter while
-even the smallest data set provided by MIT used a 128-sample filter (a 4x
-reduction by applying minimum-phase reconstruction).
+computation.
 
 After the coefficients is an array of unsigned 8-bit delay values as 6.2 fixed-
 point integers, one for each HRIR (with stereo HRTFs interleaving left/right

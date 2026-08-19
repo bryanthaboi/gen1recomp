@@ -291,6 +291,7 @@ function LauncherMods.deriveList(manifests, options, version)
   local ordered = {}
   for _, m in ipairs(manifests) do ordered[#ordered + 1] = m end
   table.sort(ordered, function(a, b) return a.id < b.id end)
+  local safeMode = SaveData.isSafeMode(options)
 
   -- the override is one answer per game (SaveData.modForced), the same scope
   -- the loader resolves it under
@@ -304,17 +305,24 @@ function LauncherMods.deriveList(manifests, options, version)
     -- matching the loader -- except experimental mods, which stay off until
     -- the player opts in.  Scoped through modScope, so this reads exactly what
     -- setEnabled writes and the loader loads for the selected game.
-    local decided = SaveData.modEnabled(options, m.id, SaveData.modScope(version))
-    if decided == nil then decided = not m.experimental end
-    if decided then enabledSet[m.id] = true end
+    if not safeMode then
+      local decided = SaveData.modEnabled(options, m.id, SaveData.modScope(version))
+      if decided == nil then decided = not m.experimental end
+      if decided then enabledSet[m.id] = true end
+    end
   end
 
   local out = {}
   for _, m in ipairs(ordered) do
-    local enabled = enabledSet[m.id] == true
+    local enabled = not safeMode and enabledSet[m.id] == true
     local forced = forcedFor(m.id)
-    local status, detail =
-      statusFor(byId, m.id, enabledSet, enabled, version, forcedFor)
+    local status, detail
+    if safeMode then
+      status, detail = "safe_mode", "Disabled by safe mode"
+    else
+      status, detail =
+        statusFor(byId, m.id, enabledSet, enabled, version, forcedFor)
+    end
     -- nil, not false, when the panel is showing every game at once
     local here = nil
     if version then here = ModTargets.runsHere(m, version, nil, forced) end
@@ -332,7 +340,8 @@ function LauncherMods.deriveList(manifests, options, version)
         local answers = {}
         for _, game in ipairs(GameVersion.ORDER) do
           local answer = SaveData.modEnabled(options, m.id, game)
-          answers[game] = answer == true or (answer == nil and not m.experimental)
+          answers[game] = not safeMode
+            and (answer == true or (answer == nil and not m.experimental))
         end
         return answers
       end)(),
@@ -346,6 +355,7 @@ function LauncherMods.deriveList(manifests, options, version)
       -- panel is showing (src/mods/ModTargets.lua)
       targets = ModTargets.chip(m),
       targetsHere = here,
+      safeMode = safeMode,
     }
   end
   return out
@@ -586,6 +596,7 @@ end
 -- answer.  The loader and the in-game manager use the same scope on next boot.
 function LauncherMods.setEnabled(id, enabled, version)
   local options = SaveData.loadOptions()
+  if SaveData.isSafeMode(options) then return false end
   SaveData.setModEnabled(options, id, enabled, SaveData.modScope(version))
   SaveData.saveOptions(options)
   LauncherMods.syncActiveProfile(options)
@@ -599,6 +610,7 @@ end
 -- and leaves a half-applied state behind if one of them fails.
 function LauncherMods.setAllEnabled(ids, enabled, version)
   local options = SaveData.loadOptions()
+  if SaveData.isSafeMode(options) then return false end
   local scope = SaveData.modScope(version)
   for _, id in ipairs(ids or {}) do
     if scope then
@@ -1184,6 +1196,7 @@ end
 
 function LauncherMods.applyProfile(profileName, options)
   options = options or SaveData.loadOptions()
+  if SaveData.isSafeMode(options) then return false end
   local profiles = options.modProfiles or {}
   local targetProfile
   for _, p in ipairs(profiles) do

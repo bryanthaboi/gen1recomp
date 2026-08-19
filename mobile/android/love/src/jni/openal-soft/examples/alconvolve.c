@@ -22,7 +22,7 @@
  * THE SOFTWARE.
  */
 
-/* This file contains an example for applying convolution reverb to a source. */
+/* This file contains an example for applying convolution to a source. */
 
 #include <assert.h>
 #include <inttypes.h>
@@ -38,10 +38,12 @@
 
 #include "common/alhelpers.h"
 
+#include "win_main_utf8.h"
 
-#ifndef AL_SOFT_convolution_reverb
-#define AL_SOFT_convolution_reverb
-#define AL_EFFECT_CONVOLUTION_REVERB_SOFT        0xA000
+
+#ifndef AL_SOFT_convolution_effect
+#define AL_SOFT_convolution_effect
+#define AL_EFFECT_CONVOLUTION_SOFT               0xA000
 #endif
 
 
@@ -88,11 +90,11 @@ static LPALGETAUXILIARYEFFECTSLOTFV alGetAuxiliaryEffectSlotfv;
 /* This stuff defines a simple streaming player object, the same as alstream.c.
  * Comments are removed for brevity, see alstream.c for more details.
  */
-#define NUM_BUFFERS 4
-#define BUFFER_SAMPLES 8192
+enum { NumBuffers = 4 };
+enum { BufferSamples = 8192 };
 
 typedef struct StreamPlayer {
-    ALuint buffers[NUM_BUFFERS];
+    ALuint buffers[NumBuffers];
     ALuint source;
 
     SNDFILE *sndfile;
@@ -109,7 +111,7 @@ static StreamPlayer *NewPlayer(void)
     player = calloc(1, sizeof(*player));
     assert(player != NULL);
 
-    alGenBuffers(NUM_BUFFERS, player->buffers);
+    alGenBuffers(NumBuffers, player->buffers);
     assert(alGetError() == AL_NO_ERROR && "Could not create buffers");
 
     alGenSources(1, &player->source);
@@ -138,11 +140,11 @@ static void DeletePlayer(StreamPlayer *player)
     ClosePlayerFile(player);
 
     alDeleteSources(1, &player->source);
-    alDeleteBuffers(NUM_BUFFERS, player->buffers);
+    alDeleteBuffers(NumBuffers, player->buffers);
     if(alGetError() != AL_NO_ERROR)
         fprintf(stderr, "Failed to delete object IDs\n");
 
-    memset(player, 0, sizeof(*player));
+    memset(player, 0, sizeof(*player)); /* NOLINT(clang-analyzer-security.insecureAPI.*) */
     free(player);
 }
 
@@ -184,7 +186,7 @@ static int OpenPlayerFile(StreamPlayer *player, const char *filename)
         return 0;
     }
 
-    frame_size = (size_t)(BUFFER_SAMPLES * player->sfinfo.channels) * sizeof(float);
+    frame_size = (size_t)(BufferSamples * player->sfinfo.channels) * sizeof(float);
     player->membuf = malloc(frame_size);
 
     return 1;
@@ -197,9 +199,9 @@ static int StartPlayer(StreamPlayer *player)
     alSourceRewind(player->source);
     alSourcei(player->source, AL_BUFFER, 0);
 
-    for(i = 0;i < NUM_BUFFERS;i++)
+    for(i = 0;i < NumBuffers;i++)
     {
-        sf_count_t slen = sf_readf_float(player->sndfile, player->membuf, BUFFER_SAMPLES);
+        sf_count_t slen = sf_readf_float(player->sndfile, player->membuf, BufferSamples);
         if(slen < 1) break;
 
         slen *= player->sfinfo.channels * (sf_count_t)sizeof(float);
@@ -243,7 +245,7 @@ static int UpdatePlayer(StreamPlayer *player)
         alSourceUnqueueBuffers(player->source, 1, &bufid);
         processed--;
 
-        slen = sf_readf_float(player->sndfile, player->membuf, BUFFER_SAMPLES);
+        slen = sf_readf_float(player->sndfile, player->membuf, BufferSamples);
         if(slen > 0)
         {
             slen *= player->sfinfo.channels * (sf_count_t)sizeof(float);
@@ -278,21 +280,21 @@ static int UpdatePlayer(StreamPlayer *player)
 }
 
 
-/* CreateEffect creates a new OpenAL effect object with a convolution reverb
- * type, and returns the new effect ID.
+/* CreateEffect creates a new OpenAL effect object with a convolution type, and
+ * returns the new effect ID.
  */
 static ALuint CreateEffect(void)
 {
     ALuint effect = 0;
     ALenum err;
 
-    printf("Using Convolution Reverb\n");
+    printf("Using Convolution\n");
 
-    /* Create the effect object and set the convolution reverb effect type. */
+    /* Create the effect object and set the convolution effect type. */
     alGenEffects(1, &effect);
-    alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_CONVOLUTION_REVERB_SOFT);
+    alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_CONVOLUTION_SOFT);
 
-    /* Check if an error occured, and clean up if so. */
+    /* Check if an error occurred, and clean up if so. */
     err = alGetError();
     if(err != AL_NO_ERROR)
     {
@@ -359,10 +361,10 @@ static ALuint LoadSound(const char *filename)
     }
 
     namepart = strrchr(filename, '/');
-    if(namepart || (namepart=strrchr(filename, '\\')))
-        namepart++;
-    else
-        namepart = filename;
+    if(!namepart) namepart = strrchr(filename, '\\');
+    if(!namepart) namepart = filename;
+    else namepart++;
+
     printf("Loading: %s (%s, %dhz, %" PRId64 " samples / %.2f seconds)\n", namepart,
         FormatName(format), sfinfo.samplerate, sfinfo.frames,
         (double)sfinfo.frames / sfinfo.samplerate);
@@ -391,7 +393,7 @@ static ALuint LoadSound(const char *filename)
     free(membuf);
     sf_close(sndfile);
 
-    /* Check if an error occured, and clean up if so. */
+    /* Check if an error occurred, and clean up if so. */
     err = alGetError();
     if(err != AL_NO_ERROR)
     {
@@ -423,10 +425,10 @@ int main(int argc, char **argv)
     if(InitAL(&argv, &argc) != 0)
         return 1;
 
-    if(!alIsExtensionPresent("AL_SOFTX_convolution_reverb"))
+    if(!alIsExtensionPresent("AL_SOFTX_convolution_effect"))
     {
         CloseAL();
-        fprintf(stderr, "Error: Convolution revern not supported\n");
+        fprintf(stderr, "Error: Convolution effect not supported\n");
         return 1;
     }
 
@@ -438,7 +440,7 @@ int main(int argc, char **argv)
     }
 
     /* Define a macro to help load the function pointers. */
-#define LOAD_PROC(T, x)  ((x) = (T)alGetProcAddress(#x))
+#define LOAD_PROC(T, x)  ((x) = FUNCTION_CAST(T, alGetProcAddress(#x)))
     LOAD_PROC(LPALGENFILTERS, alGenFilters);
     LOAD_PROC(LPALDELETEFILTERS, alDeleteFilters);
     LOAD_PROC(LPALISFILTER, alIsFilter);
@@ -500,11 +502,11 @@ int main(int argc, char **argv)
     alGenAuxiliaryEffectSlots(1, &slot);
 
     /* Set the impulse response sound buffer on the effect slot. This allows
-     * effects to access it as needed. In this case, convolution reverb uses it
-     * as the filter source. NOTE: Unlike the effect object, the buffer *is*
-     * kept referenced and may not be changed or deleted as long as it's set,
-     * just like with a source. When another buffer is set, or the effect slot
-     * is deleted, the buffer reference is released.
+     * effects to access it as needed. In this case, convolution uses it as the
+     * filter source. NOTE: Unlike the effect object, the buffer *is* kept
+     * referenced and may not be changed or deleted as long as it's set, just
+     * like with a source. When another buffer is set, or the effect slot is
+     * deleted, the buffer reference is released.
      *
      * The effect slot's gain is reduced because the impulse responses I've
      * tested with result in excessively loud reverb. Is that normal? Even with
@@ -555,10 +557,9 @@ int main(int argc, char **argv)
             continue;
 
         namepart = strrchr(argv[i], '/');
-        if(namepart || (namepart=strrchr(argv[i], '\\')))
-            namepart++;
-        else
-            namepart = argv[i];
+        if(!namepart) namepart = strrchr(argv[i], '\\');
+        if(!namepart) namepart = argv[i];
+        else namepart++;
 
         printf("Playing: %s (%s, %dhz)\n", namepart, FormatName(player->format),
             player->sfinfo.samplerate);

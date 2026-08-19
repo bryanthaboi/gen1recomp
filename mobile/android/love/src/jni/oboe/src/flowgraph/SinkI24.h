@@ -22,7 +22,7 @@
 
 #include "FlowGraphNode.h"
 
-namespace flowgraph {
+namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph {
 
 /**
  * AudioSink that lets you read data as packed 24-bit signed integers.
@@ -32,13 +32,13 @@ class SinkI24 : public FlowGraphSink {
 public:
     explicit SinkI24(int32_t channelCount);
 
-    int32_t read(int64_t framePosition, void *data, int32_t numFrames) override;
+    int32_t read(void *data, int32_t numFrames) override;
 
     const char *getName() override {
         return "SinkI24";
     }
 };
 
-} /* namespace flowgraph */
+} /* namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph */
 
 #endif //FLOWGRAPH_SINK_I24_H

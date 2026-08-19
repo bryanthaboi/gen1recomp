@@ -21,40 +21,52 @@
 #include <sys/types.h>
 
 #include "oboe/Oboe.h"
-#include "FullDuplexStream.h"
 #include "analyzer/LatencyAnalyzer.h"
+#include "FullDuplexStreamWithConversion.h"
 #include "MultiChannelRecording.h"
 
-class FullDuplexAnalyzer : public FullDuplexStream {
+class FullDuplexAnalyzer : public FullDuplexStreamWithConversion {
 public:
-    FullDuplexAnalyzer() {}
+    FullDuplexAnalyzer(LoopbackProcessor *processor)
+            : mLoopbackProcessor(processor) {
+    }
 
     /**
      * Called when data is available on both streams.
      * Caller should override this method.
      */
-    oboe::DataCallbackResult onBothStreamsReady(
-            const void *inputData,
+    oboe::DataCallbackResult onBothStreamsReadyFloat(
+            const float *inputData,
             int   numInputFrames,
-            void *outputData,
+            float *outputData,
             int   numOutputFrames
     ) override;
 
     oboe::Result start() override;
 
-    bool isDone() {
-        return false;
+    LoopbackProcessor *getLoopbackProcessor() {
+        return mLoopbackProcessor;
     }
-
-    virtual LoopbackProcessor *getLoopbackProcessor() = 0;
 
     void setRecording(MultiChannelRecording *recording) {
         mRecording = recording;
     }
 
+    bool isWriteReadDeltaValid() {
+        return mWriteReadDeltaValid;
+    }
+
+    int64_t getWriteReadDelta() {
+        return mWriteReadDelta;
+    }
+
 private:
     MultiChannelRecording  *mRecording = nullptr;
 
+    LoopbackProcessor * const mLoopbackProcessor;
+
+    std::atomic<bool> mWriteReadDeltaValid{false};
+    std::atomic<int64_t> mWriteReadDelta{0};
 };
 
 

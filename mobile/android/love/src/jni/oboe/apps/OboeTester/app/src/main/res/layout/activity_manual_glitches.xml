@@ -1,36 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    tools:context="com.mobileer.oboetester.ManualGlitchActivity"
+    >
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
     android:paddingBottom="@dimen/activity_vertical_margin"
     android:paddingLeft="@dimen/activity_horizontal_margin"
     android:paddingRight="@dimen/activity_horizontal_margin"
-    android:paddingTop="@dimen/activity_vertical_margin"
-    tools:context="com.google.sample.oboe.manualtest.ManualGlitchActivity">
+    android:paddingTop="@dimen/activity_vertical_margin">
 
-    <com.google.sample.oboe.manualtest.StreamConfigurationView
+    <com.mobileer.oboetester.StreamConfigurationView
         android:id="@+id/inputStreamConfiguration"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal" />
 
-    <com.google.sample.oboe.manualtest.InputMarginView
+    <com.mobileer.oboetester.InputMarginView
         android:id="@+id/input_margin_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center" />
 
-    <com.google.sample.oboe.manualtest.StreamConfigurationView
+    <com.mobileer.oboetester.StreamConfigurationView
         android:id="@+id/outputStreamConfiguration"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal" />
 
-    <com.google.sample.oboe.manualtest.BufferSizeView
+    <com.mobileer.oboetester.BufferSizeView
         android:id="@+id/buffer_size_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -38,6 +44,7 @@
         android:orientation="horizontal" />
 
     <LinearLayout
+        android:id="@+id/layoutGlitch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
@@ -92,13 +99,38 @@
         android:id="@+id/text_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:lines="11"
-        android:text="@string/use_loopback"
+        android:lines="14"
+        android:text="@string/loopback_instructions_glitch"
         android:textSize="14sp"
         android:textStyle="bold" />
 
-    <com.google.sample.oboe.manualtest.WaveformView
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <CheckBox
+            android:id="@+id/boxForceGlitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:checked="false"
+            android:onClick="onForceGlitchClicked"
+            android:text="Force glitches"/>
+        <CheckBox
+            android:id="@+id/boxAutoScope"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:checked="true"
+            android:text="Auto draw"/>
+
+    </LinearLayout>
+    <com.mobileer.oboetester.WaveformView
         android:id="@+id/waveview_audio"
         android:layout_width="fill_parent"
-        android:layout_height="fill_parent" />
+        android:layout_height="fill_parent"
+        android:minHeight="200dp"
+        />
 </LinearLayout>
+</ScrollView>

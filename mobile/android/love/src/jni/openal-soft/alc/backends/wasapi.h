@@ -1,19 +1,21 @@
 #ifndef BACKENDS_WASAPI_H
 #define BACKENDS_WASAPI_H
 
-#include "backends/base.h"
+#include "base.h"
 
 struct WasapiBackendFactory final : public BackendFactory {
 public:
-    bool init() override;
+    auto init() -> bool final;
 
-    bool querySupport(BackendType type) override;
+    auto querySupport(BackendType type) -> bool final;
 
-    std::string probe(BackendType type) override;
+    auto queryEventSupport(alc::EventType eventType, BackendType type) -> alc::EventSupport final;
 
-    BackendPtr createBackend(ALCdevice *device, BackendType type) override;
+    auto enumerate(BackendType type) -> std::vector<std::string> final;
 
-    static BackendFactory &getFactory();
+    auto createBackend(DeviceBase *device, BackendType type) -> BackendPtr final;
+
+    static auto getFactory() -> BackendFactory&;
 };
 
 #endif /* BACKENDS_WASAPI_H */

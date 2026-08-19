@@ -22,6 +22,7 @@
 #define LOVE_AUDIO_OPENAL_AUDIO_H
 
 // STD
+#include <atomic>
 #include <queue>
 #include <map>
 #include <vector>
@@ -97,6 +98,8 @@ public:
 	std::vector<love::audio::Source*> pause();
 	void pauseContext();
 	void resumeContext();
+	bool reopenDevice();
+	bool isDeviceConnected();
 	void setVolume(float volume);
 	float getVolume() const;
 
@@ -155,6 +158,7 @@ private:
 	class PoolThread: public thread::Threadable
 	{
 	protected:
+		Audio *audio;
 		Pool *pool;
 
 		// Set this to true when the thread should finish.
@@ -162,13 +166,16 @@ private:
 		// will read from it.
 		volatile bool finish;
 
+		std::atomic<bool> paused;
+
 		// finish lock
 		love::thread::MutexRef mutex;
 
 	public:
-		PoolThread(Pool *pool);
+		PoolThread(Audio *audio, Pool *pool);
 		virtual ~PoolThread();
 		void setFinish();
+		void setPaused(bool paused);
 		void threadFunction();
 	};
 
@@ -176,6 +183,13 @@ private:
 
 	DistanceModel distanceModel;
 	//float metersPerUnit = 1.0;
+
+#ifndef ALC_SOFT_reopen_device
+	typedef ALCboolean (ALC_APIENTRY*LPALCREOPENDEVICESOFT)(ALCdevice *device, const ALCchar *deviceName, const ALCint *attribs);
+#endif
+	LPALCREOPENDEVICESOFT alcReopenDeviceSOFT;
+	bool reopenChecked;
+	love::thread::MutexRef deviceMutex;
 
 #ifdef LOVE_ANDROID
 #	ifndef ALC_SOFT_pause_device
@@ -187,6 +201,9 @@ private:
 	std::vector<love::audio::Source*> pausedSources;
 #endif
 }; // Audio
+
+void pushAudioSuspendEvent();
+void pushAudioResetEvent();
 
 #ifdef ALC_EXT_EFX
  // Effect objects

@@ -29,7 +29,9 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
+#define SDL_MAIN_HANDLED
 #include "SDL.h"
 #include "SDL_audio.h"
 #include "SDL_error.h"
@@ -117,7 +119,7 @@ static ALuint CreateSineWave(void)
     alGenBuffers(1, &buffer);
     alBufferData(buffer, AL_FORMAT_MONO16, data, sizeof(data), 44100);
 
-    /* Check if an error occured, and clean up if so. */
+    /* Check if an error occurred, and clean up if so. */
     err = alGetError();
     if(err != AL_NO_ERROR)
     {
@@ -141,6 +143,8 @@ int main(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
+    SDL_SetMainReady();
+
     /* Print out error if extension is missing. */
     if(!alcIsExtensionPresent(NULL, "ALC_SOFT_loopback"))
     {
@@ -149,7 +153,7 @@ int main(int argc, char *argv[])
     }
 
     /* Define a macro to help load the function pointers. */
-#define LOAD_PROC(T, x)  ((x) = (T)alcGetProcAddress(NULL, #x))
+#define LOAD_PROC(T, x)  ((x) = FUNCTION_CAST(T, alcGetProcAddress(NULL, #x)))
     LOAD_PROC(LPALCLOOPBACKOPENDEVICESOFT, alcLoopbackOpenDeviceSOFT);
     LOAD_PROC(LPALCISRENDERFORMATSUPPORTEDSOFT, alcIsRenderFormatSupportedSOFT);
     LOAD_PROC(LPALCRENDERSAMPLESSOFT, alcRenderSamplesSOFT);
@@ -197,6 +201,10 @@ int main(int argc, char *argv[])
         attrs[3] = ALC_UNSIGNED_SHORT_SOFT;
     else if(obtained.format == AUDIO_S16SYS)
         attrs[3] = ALC_SHORT_SOFT;
+    else if(obtained.format == AUDIO_S32SYS)
+        attrs[3] = ALC_INT_SOFT;
+    else if(obtained.format == AUDIO_F32SYS)
+        attrs[3] = ALC_FLOAT_SOFT;
     else
     {
         fprintf(stderr, "Unhandled SDL format: 0x%04x\n", obtained.format);

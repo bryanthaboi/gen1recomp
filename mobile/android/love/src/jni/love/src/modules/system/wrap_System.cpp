@@ -22,6 +22,9 @@
 #include "wrap_System.h"
 #include "sdl/System.h"
 
+#include <string>
+#include <vector>
+
 namespace love
 {
 namespace system
@@ -150,6 +153,57 @@ int w_httpPost(lua_State *L)
 	return 1;
 }
 
+/*
+ * love.system.httpRequest(url, method, headers, body, userAgent) -> envelope
+ *
+ * `headers` is a flat array of alternating header name and value strings, so
+ * it maps straight onto the Java bridge's String[] without any parsing here.
+ * The single return is the response envelope -- a head line of
+ * "STATUS <code>" or "ERROR <text>", a newline, then the raw body -- or nil
+ * where the build has no bridge, which src/core/HostShell.lua turns into an
+ * "update the app" notice rather than a failed request.
+ */
+int w_httpRequest(lua_State *L)
+{
+	const char *url = luaL_checkstring(L, 1);
+	const char *method = luaL_optstring(L, 2, "GET");
+
+	std::vector<std::string> fields;
+	if (!lua_isnoneornil(L, 3))
+	{
+		luaL_checktype(L, 3, LUA_TTABLE);
+		size_t count = luax_objlen(L, 3);
+		for (size_t i = 1; i <= count; i++)
+		{
+			lua_rawgeti(L, 3, (int) i);
+			const char *field = lua_tostring(L, -1);
+			fields.push_back(field != nullptr ? field : "");
+			lua_pop(L, 1);
+		}
+	}
+	std::vector<const char *> pairs;
+	for (size_t i = 0; i < fields.size(); i++)
+		pairs.push_back(fields[i].c_str());
+
+	size_t bodyLen = 0;
+	const char *body = nullptr;
+	if (!lua_isnoneornil(L, 4))
+		body = luaL_checklstring(L, 4, &bodyLen);
+	const char *ua = luaL_optstring(L, 5, nullptr);
+
+	std::string out;
+	bool ok = instance()->httpRequest(url, method,
+		pairs.empty() ? nullptr : &pairs[0], (int) pairs.size(),
+		body, (int) bodyLen, ua, out);
+	if (!ok)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_pushlstring(L, out.data(), out.size());
+	return 1;
+}
+
 int w_hasBackgroundMusic(lua_State *L)
 {
 	lua_pushboolean(L, instance()->hasBackgroundMusic());
@@ -229,6 +283,34 @@ int w_tlsClose(lua_State *L)
 	return 0;
 }
 
+int w_updateShortcuts(lua_State *L)
+{
+	if (!lua_istable(L, 1))
+		return luaL_error(L, "Expected table of game version strings");
+
+	std::vector<std::string> versions;
+	int len = (int) luax_objlen(L, 1);
+	for (int i = 1; i <= len; ++i)
+	{
+		lua_rawgeti(L, 1, i);
+		if (lua_isstring(L, -1))
+			versions.push_back(lua_tostring(L, -1));
+		lua_pop(L, 1);
+	}
+	luax_pushboolean(L, instance()->updateShortcuts(versions));
+	return 1;
+}
+
+int w_getLaunchGame(lua_State *L)
+{
+	std::string game = instance()->getLaunchGame();
+	if (game.empty())
+		lua_pushnil(L);
+	else
+		luax_pushstring(L, game);
+	return 1;
+}
+
 static const luaL_Reg functions[] =
 {
 	{ "getOS", w_getOS },
@@ -243,8 +325,11 @@ static const luaL_Reg functions[] =
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
+	{ "updateShortcuts", w_updateShortcuts },
+	{ "getLaunchGame", w_getLaunchGame },
 	{ "httpDownload", w_httpDownload },
 	{ "httpPost", w_httpPost },
+	{ "httpRequest", w_httpRequest },
 	{ "tlsOpen", w_tlsOpen },
 	{ "tlsStatus", w_tlsStatus },
 	{ "tlsSend", w_tlsSend },

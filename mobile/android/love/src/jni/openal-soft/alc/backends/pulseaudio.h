@@ -1,19 +1,27 @@
 #ifndef BACKENDS_PULSEAUDIO_H
 #define BACKENDS_PULSEAUDIO_H
 
-#include "backends/base.h"
+#include <string>
+#include <vector>
+
+#include "alc/events.h"
+#include "base.h"
+
+struct DeviceBase;
 
 class PulseBackendFactory final : public BackendFactory {
 public:
-    bool init() override;
+    auto init() -> bool final;
 
-    bool querySupport(BackendType type) override;
+    auto querySupport(BackendType type) -> bool final;
 
-    std::string probe(BackendType type) override;
+    auto queryEventSupport(alc::EventType eventType, BackendType type) -> alc::EventSupport final;
 
-    BackendPtr createBackend(ALCdevice *device, BackendType type) override;
+    auto enumerate(BackendType type) -> std::vector<std::string> final;
 
-    static BackendFactory &getFactory();
+    auto createBackend(DeviceBase *device, BackendType type) -> BackendPtr final;
+
+    static auto getFactory() -> BackendFactory&;
 };
 
 #endif /* BACKENDS_PULSEAUDIO_H */

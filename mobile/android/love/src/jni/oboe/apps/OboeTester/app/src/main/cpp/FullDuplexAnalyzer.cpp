@@ -19,28 +19,39 @@
 
 oboe::Result  FullDuplexAnalyzer::start() {
     getLoopbackProcessor()->setSampleRate(getOutputStream()->getSampleRate());
-    getLoopbackProcessor()->onStartTest();
-    return FullDuplexStream::start();
+    getLoopbackProcessor()->prepareToTest();
+    mWriteReadDeltaValid = false;
+    return FullDuplexStreamWithConversion::start();
 }
 
-oboe::DataCallbackResult FullDuplexAnalyzer::onBothStreamsReady(
-        const void *inputData,
+oboe::DataCallbackResult FullDuplexAnalyzer::onBothStreamsReadyFloat(
+        const float *inputData,
         int   numInputFrames,
-        void *outputData,
+        float *outputData,
         int   numOutputFrames) {
 
     int32_t inputStride = getInputStream()->getChannelCount();
     int32_t outputStride = getOutputStream()->getChannelCount();
-    float *inputFloat = (float *) inputData;
-    float *outputFloat = (float *) outputData;
+    auto *inputFloat = static_cast<const float *>(inputData);
+    float *outputFloat = outputData;
+
+    // Get atomic snapshot of the relative frame positions so they
+    // can be used to calculate timestamp latency.
+    int64_t framesRead = getInputStream()->getFramesRead();
+    int64_t framesWritten = getOutputStream()->getFramesWritten();
+    mWriteReadDelta = framesWritten - framesRead;
+    mWriteReadDeltaValid = true;
 
     (void) getLoopbackProcessor()->process(inputFloat, inputStride, numInputFrames,
                                    outputFloat, outputStride, numOutputFrames);
 
-    // write the first channel of output and input to the stereo recorder
+    // Save data for later analysis or for writing to a WAVE file.
     if (mRecording != nullptr) {
         float buffer[2];
         int numBoth = std::min(numInputFrames, numOutputFrames);
+        // Offset to the selected channels that we are analyzing.
+        inputFloat += getLoopbackProcessor()->getInputChannel();
+        outputFloat += getLoopbackProcessor()->getOutputChannel();
         for (int i = 0; i < numBoth; i++) {
             buffer[0] = *outputFloat;
             outputFloat += outputStride;
@@ -48,14 +59,15 @@ oboe::DataCallbackResult FullDuplexAnalyzer::onBothStreamsReady(
             inputFloat += inputStride;
             mRecording->write(buffer, 1);
         }
-        // Handle mismatch in in numFrames.
-        buffer[0] = 0.0f; // gap in output
+        // Handle mismatch in numFrames.
+        const float gapMarker = -0.9f; // Recognizable value so we can tell underruns from DSP gaps.
+        buffer[0] = gapMarker; // gap in output
         for (int i = numBoth; i < numInputFrames; i++) {
             buffer[1] = *inputFloat;
             inputFloat += inputStride;
             mRecording->write(buffer, 1);
         }
-        buffer[1] = 0.0f; // gap in input
+        buffer[1] = gapMarker; // gap in input
         for (int i = numBoth; i < numOutputFrames; i++) {
             buffer[0] = *outputFloat;
             outputFloat += outputStride;

@@ -1,0 +1,53 @@
+# AmbDec configuration
+# Written by Ambisonic Decoder Toolbox, version 8.0
+
+# input channel order: W Y Z X 
+
+/description     11_1_1h1v_allrad_5200_rE_max_1_band
+
+/version         	3
+
+/dec/chan_mask   	f
+/dec/freq_bands  	1
+/dec/speakers    	11
+/dec/coeff_scale 	n3d
+
+/opt/input_scale  	n3d
+/opt/nfeff_comp   	output
+/opt/delay_comp   	on
+/opt/level_comp   	on
+/opt/xover_freq   	400.000000
+/opt/xover_ratio  	0.000000
+
+/speakers/{
+#       	id	 dist    	 azim      	 elev     	conn
+#-----------------------------------------------------------------------
+add_spkr 	LF	 1.000000	  30.000000	  0.000000
+add_spkr 	RF	 1.000000	 -30.000000	  0.000000
+add_spkr 	CE	 1.000000	   0.000000	  0.000000
+add_spkr 	LS	 1.000000	  90.000000	  0.000000
+add_spkr 	RS	 1.000000	 -90.000000	  0.000000
+add_spkr 	LB	 1.000000	 150.000000	  0.000000
+add_spkr 	RB	 1.000000	-150.000000	  0.000000
+add_spkr 	LFT	 1.000000	  45.000000	 35.000000
+add_spkr 	RFT	 1.000000	 -45.000000	 35.000000
+add_spkr 	LBT	 1.000000	 135.000000	 35.000000
+add_spkr 	RBT	 1.000000	-135.000000	 35.000000
+/}
+
+/matrix/{
+order_gain	1.00000000e+00	1.00000000e+00	0.000000	0.000000
+add_row 	 1.27149251e-01  7.63047539e-02 -3.64373750e-02  1.59700680e-01
+add_row 	 1.07005418e-01 -7.67638760e-02 -4.92129762e-02  1.29012797e-01
+add_row 	 0.00000000e+00  0.00000000e+00  0.00000000e+00  0.00000000e+00
+add_row 	 1.26400196e-01  1.77494694e-01 -3.71203389e-02  0.00000000e+00
+add_row 	 1.26396516e-01 -1.77488059e-01 -3.71297878e-02  0.00000000e+00
+add_row 	 1.06996956e-01  7.67615256e-02 -4.92166307e-02 -1.29001640e-01
+add_row 	 1.27145671e-01 -7.63003471e-02 -3.64353304e-02 -1.59697510e-01
+add_row 	 8.80919747e-02  7.48940670e-02  9.08786244e-02  6.22527183e-02
+add_row 	 1.57880745e-01 -7.28755272e-02  1.82364187e-01  8.74240284e-02
+add_row 	 1.57892225e-01  7.28944768e-02  1.82363474e-01 -8.74301086e-02
+add_row 	 8.80892603e-02 -7.48948724e-02  9.08779842e-02 -6.22480443e-02
+/}
+
+/end

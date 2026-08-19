@@ -1,0 +1,35 @@
+/* Define to 1 if the given backend is enabled, else 0 */
+
+#cmakedefine01 HAVE_ALSA
+
+#cmakedefine01 HAVE_OSS
+
+#cmakedefine01 HAVE_PIPEWIRE
+
+#cmakedefine01 HAVE_SOLARIS
+
+#cmakedefine01 HAVE_SNDIO
+
+#cmakedefine01 HAVE_WASAPI
+
+#cmakedefine01 HAVE_DSOUND
+
+#cmakedefine01 HAVE_WINMM
+
+#cmakedefine01 HAVE_PORTAUDIO
+
+#cmakedefine01 HAVE_PULSEAUDIO
+
+#cmakedefine01 HAVE_JACK
+
+#cmakedefine01 HAVE_COREAUDIO
+
+#cmakedefine01 HAVE_OPENSL
+
+#cmakedefine01 HAVE_OBOE
+
+#cmakedefine01 HAVE_OTHERIO
+
+#cmakedefine01 HAVE_WAVE
+
+#cmakedefine01 HAVE_SDL2

@@ -22,12 +22,17 @@
 #include "common/delay.h"
 #include "RecordingDevice.h"
 #include "sound/Decoder.h"
+#include "event/Event.h"
 
 #include <cstdlib>
 #include <iostream>
 
 #ifdef LOVE_IOS
 #include "common/ios.h"
+#endif
+
+#ifndef ALC_CONNECTED
+#define ALC_CONNECTED 0x313
 #endif
 
 namespace love
@@ -37,9 +42,35 @@ namespace audio
 namespace openal
 {
 
-Audio::PoolThread::PoolThread(Pool *pool)
-	: pool(pool)
+static const int DISCONNECT_CHECK_INTERVAL = 200;
+
+static void pushAudioEvent(const char *name)
+{
+	auto eventmodule = Module::getInstance<event::Event>(Module::M_EVENT);
+
+	if (eventmodule == nullptr)
+		return;
+
+	event::Message *msg = new event::Message(name);
+	eventmodule->push(msg);
+	msg->release();
+}
+
+void pushAudioSuspendEvent()
+{
+	pushAudioEvent("audiosuspend");
+}
+
+void pushAudioResetEvent()
+{
+	pushAudioEvent("audioreset");
+}
+
+Audio::PoolThread::PoolThread(Audio *audio, Pool *pool)
+	: audio(audio)
+	, pool(pool)
 	, finish(false)
+	, paused(false)
 {
 	threadName = "AudioPool";
 }
@@ -51,6 +82,8 @@ Audio::PoolThread::~PoolThread()
 
 void Audio::PoolThread::threadFunction()
 {
+	int disconnectCheck = 0;
+
 	while (true)
 	{
 		{
@@ -61,7 +94,23 @@ void Audio::PoolThread::threadFunction()
 			}
 		}
 
+		if (paused.load())
+		{
+			disconnectCheck = 0;
+			sleep(5);
+			continue;
+		}
+
 		pool->update();
+
+		if (audio != nullptr && ++disconnectCheck >= DISCONNECT_CHECK_INTERVAL)
+		{
+			disconnectCheck = 0;
+
+			if (!audio->isDeviceConnected() && audio->reopenDevice())
+				pushAudioResetEvent();
+		}
+
 		sleep(5);
 	}
 }
@@ -70,6 +119,11 @@ void Audio::PoolThread::setFinish()
 {
 	thread::Lock lock(mutex);
 	finish = true;
+}
+
+void Audio::PoolThread::setPaused(bool paused)
+{
+	this->paused.store(paused);
 }
 
 ALenum Audio::getFormat(int bitDepth, int channels)
@@ -99,6 +153,8 @@ Audio::Audio()
 	, pool(nullptr)
 	, poolThread(nullptr)
 	, distanceModel(DISTANCE_INVERSE_CLAMPED)
+	, alcReopenDeviceSOFT(nullptr)
+	, reopenChecked(false)
 {
 	// Before opening new device, check if recording
 	// is requested.
@@ -189,13 +245,6 @@ Audio::Audio()
 		throw;
 	}
 
-	poolThread = new PoolThread(pool);
-	poolThread->start();
-	
-#ifdef LOVE_IOS
-	love::ios::initAudioSessionInterruptionHandler();
-#endif
-
 #ifdef LOVE_ANDROID
 	bool hasPauseDeviceExt = alcIsExtensionPresent(device, "ALC_SOFT_pause_device") == ALC_TRUE;
 	alcDevicePauseSOFT = hasPauseDeviceExt
@@ -204,6 +253,13 @@ Audio::Audio()
 	alcDeviceResumeSOFT = hasPauseDeviceExt
 		? (LPALCDEVICERESUMESOFT) alcGetProcAddress(device, "alcDeviceResumeSOFT")
 		: nullptr;
+#endif
+
+	poolThread = new PoolThread(this, pool);
+	poolThread->start();
+
+#ifdef LOVE_IOS
+	love::ios::initAudioSessionInterruptionHandler();
 #endif
 }
 
@@ -314,6 +370,9 @@ std::vector<love::audio::Source*> Audio::pause()
 
 void Audio::pauseContext()
 {
+	if (poolThread != nullptr)
+		poolThread->setPaused(true);
+
 #ifdef LOVE_ANDROID
 	if (alcDevicePauseSOFT)
 		alcDevicePauseSOFT(device);
@@ -350,6 +409,52 @@ void Audio::resumeContext()
 	if (context && alcGetCurrentContext() != context)
 		alcMakeContextCurrent(context);
 #endif
+
+	if (poolThread != nullptr)
+		poolThread->setPaused(false);
+}
+
+bool Audio::reopenDevice()
+{
+	if (device == nullptr)
+		return false;
+
+	thread::Lock lock(deviceMutex);
+
+	if (!reopenChecked)
+	{
+		reopenChecked = true;
+
+		if (alcIsExtensionPresent(device, "ALC_SOFT_reopen_device") == ALC_TRUE)
+			alcReopenDeviceSOFT = (LPALCREOPENDEVICESOFT) alcGetProcAddress(device, "alcReopenDeviceSOFT");
+	}
+
+	if (alcReopenDeviceSOFT == nullptr)
+		return false;
+
+	alcGetError(device);
+
+	return alcReopenDeviceSOFT(device, nullptr, nullptr) == ALC_TRUE;
+}
+
+bool Audio::isDeviceConnected()
+{
+	if (device == nullptr)
+		return false;
+
+	thread::Lock lock(deviceMutex);
+
+	if (alcIsExtensionPresent(device, "ALC_EXT_disconnect") != ALC_TRUE)
+		return true;
+
+	ALCint connected = 1;
+	alcGetError(device);
+	alcGetIntegerv(device, ALC_CONNECTED, 1, &connected);
+
+	if (alcGetError(device) != ALC_NO_ERROR)
+		return true;
+
+	return connected != 0;
 }
 
 void Audio::setVolume(float volume)

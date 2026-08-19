@@ -23,7 +23,7 @@
 
 #include "FlowGraphNode.h"
 
-namespace flowgraph {
+namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph {
 
 /**
  * When the target is modified then the output will ramp smoothly
@@ -91,6 +91,6 @@ private:
     float               mLevelTo         = 0.0f;
 };
 
-} /* namespace flowgraph */
+} /* namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph */
 
 #endif //FLOWGRAPH_RAMP_LINEAR_H

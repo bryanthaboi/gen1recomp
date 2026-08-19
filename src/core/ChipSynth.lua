@@ -294,6 +294,10 @@ function Channel.new(engine, spec, options)
     noiseSampling = false, -- Gen 2 toggle_noise
     condition = 0, -- Gen 2 set_condition / sound_jump_if
     tracks = tracks, -- Gen 2 CHANNEL_TRACKS (NR51 bits for this channel)
+    -- last Music_StereoPanning byte; remembered even while MONO so a live
+    -- SOUND toggle can re-apply it without restarting the song (#1471)
+    stereoPanning = nil,
+    forcePanning = false, -- ForceStereoPanning ($e4) ignores the SOUND option
     waveInstrument = 0,
     waveLevel = 1,
     perfectPitch = false,
@@ -404,6 +408,20 @@ function Channel:pan()
   end
   return bit.band(bit.rshift(self.engine.pan, 4), mask) ~= 0,
     bit.band(self.engine.pan, mask) ~= 0
+end
+
+-- Recompute CHANNEL_TRACKS from the remembered panning byte and the live
+-- STEREO flag.  ForceStereoPanning stays put either way.
+function Channel:applyStereoMix()
+  local mask = bit.lshift(1, self.hardware - 1)
+  local default = bit.bor(bit.lshift(mask, 4), mask)
+  if self.forcePanning then
+    return
+  elseif stereoEnabled and self.stereoPanning then
+    self.tracks = bit.band(self.stereoPanning, default)
+  else
+    self.tracks = default
+  end
 end
 
 function Channel:tone(ticks, register, volume, fade)
@@ -756,6 +774,7 @@ function Channel:nextEventGen2()
       local mask = bit.lshift(1, self.hardware - 1)
       local default = bit.bor(bit.lshift(mask, 4), mask)
       self.tracks = bit.band(packed, default)
+      self.forcePanning = true
     elseif command == 0xE5 then -- volume (global master; ignored for mix)
       self:byte()
     elseif command == 0xE6 then -- pitch_offset (big-endian)
@@ -778,8 +797,12 @@ function Channel:nextEventGen2()
     elseif command == 0xEE then -- unknownmusic0xee
       self:word()
     elseif command == 0xEF then
-      -- audio/engine.asm:1987 Music_StereoPanning: apply only when STEREO is on
+      -- audio/engine.asm:1987 Music_StereoPanning: apply only when STEREO is on.
+      -- The packed byte is kept either way so ChipSynth.applyStereo can honour
+      -- a live SOUND toggle mid-song (#1471).
       local packed = self:byte()
+      self.stereoPanning = packed
+      self.forcePanning = false
       if stereoEnabled then
         local mask = bit.lshift(1, self.hardware - 1)
         local default = bit.bor(bit.lshift(mask, 4), mask)
@@ -1298,12 +1321,28 @@ function Engine:sampleStereo()
   local left, right = 0, 0
   for _, channel in ipairs(self.channels) do
     local value = channel:sample()
-    local event = channel.event
-    if not event or event.panLeft ~= false then left = left + value end
-    if not event or event.panRight ~= false then right = right + value end
+    local panLeft, panRight
+    if self.generation == 2 then
+      -- live CHANNEL_TRACKS, not the pan baked into the current note, so a
+      -- SOUND toggle reaches the next synthesized sample (#1471)
+      panLeft, panRight = channel:pan()
+    else
+      local event = channel.event
+      panLeft = not event or event.panLeft ~= false
+      panRight = not event or event.panRight ~= false
+    end
+    if panLeft then left = left + value end
+    if panRight then right = right + value end
   end
   return analogOut(self, left, "hpfCapLeft", "lpfLeft"),
     analogOut(self, right, "hpfCapRight", "lpfRight")
+end
+
+function Engine:applyStereo()
+  if self.generation ~= 2 then return end
+  for _, channel in ipairs(self.channels) do
+    channel:applyStereoMix()
+  end
 end
 
 function Engine:sampleChannel(number)
@@ -1359,5 +1398,11 @@ end
 ChipSynth.newEngine = Engine.new
 ChipSynth.soundData = soundData
 ChipSynth.renderEffectData = renderEffectData
+
+function ChipSynth.applyStereo(engine)
+  if type(engine) == "table" and engine.applyStereo then
+    engine:applyStereo()
+  end
+end
 
 return ChipSynth

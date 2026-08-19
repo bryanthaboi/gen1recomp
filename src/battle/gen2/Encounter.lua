@@ -78,17 +78,31 @@ end
 
 -- Fishing: a rod's list is (cumulative chance, species, level) rows out of 256,
 -- ending at 100%.  A roll past the group's own `chance` is a bite of nothing.
-function Encounter.fish(encounters, fishGroup, rod, random)
+-- Rows with `day` and `nite` sub-slots (from TimeFishGroups) resolve based on
+-- `daytime` ("MORN"/"DAY" vs "NITE"/"DARK").
+function Encounter.fish(encounters, fishGroup, rod, daytime, random)
+  if type(daytime) == "function" and random == nil then
+    random = daytime
+    daytime = nil
+  end
   local group = encounters and encounters.fishGroups
     and encounters.fishGroups[fishGroup]
   if not group then return nil end
   local list = group[rod or "old"]
   if not list or #list == 0 then return nil end
   local value = roll(random, 256)
+  local isNight = (daytime == "DARK" or daytime == "NITE")
+  local todKey = isNight and "nite" or "day"
   for _, row in ipairs(list) do
     if value < (row.chance or 0) then
-      if not row.species or row.species == "NO_ITEM" then return nil end
-      return { species = row.species, level = row.level }
+      local slot = row[todKey]
+      if not slot and row.timeGroup and encounters and encounters.timeFishGroups then
+        local tg = encounters.timeFishGroups[row.timeGroup]
+        slot = tg and tg[todKey]
+      end
+      slot = slot or row
+      if not slot.species or slot.species == 0 or slot.species == "NO_ITEM" then return nil end
+      return { species = slot.species, level = slot.level }
     end
   end
   return nil
@@ -129,7 +143,7 @@ end
 
 -- Which fish group a MAP belongs to lives on the map record, so a caller with
 -- a map id and a rod does not have to know about groups at all.
-function Encounter.fishSlot(encounters, mapId, rod, random, maps, fishSwarm)
+function Encounter.fishSlot(encounters, mapId, rod, random, maps, fishSwarm, daytime)
   local map = maps and maps[mapId]
   local group = map and map.fishGroup
   if not group then
@@ -142,7 +156,7 @@ function Encounter.fishSlot(encounters, mapId, rod, random, maps, fishSwarm)
   if rod == "OLD_ROD" then key = "old"
   elseif rod == "GOOD_ROD" then key = "good"
   elseif rod == "SUPER_ROD" then key = "super" end
-  return Encounter.fish(encounters, group, key or "old", random)
+  return Encounter.fish(encounters, group, key or "old", daytime, random)
 end
 
 -- Headbutt trees: TreeMonMaps says which set a map uses and TreeMons holds

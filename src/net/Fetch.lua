@@ -86,6 +86,7 @@ local function drain()
         else
           j.status = msg.ok and "ok" or "error"
           j.body, j.err, j.path = msg.body, msg.err, msg.path
+          j.code = msg.code
           j.progress = msg.ok and 1 or j.progress
         end
       end
@@ -141,6 +142,14 @@ function Fetch.post(url, body, opts)
   return submit({ kind = "post", url = url, body = body,
     userAgent = opts.userAgent or "gen1recomp",
     contentType = opts.contentType, maxSeconds = opts.maxSeconds })
+end
+
+function Fetch.request(url, opts)
+  opts = opts or {}
+  return submit({ kind = "request", url = url,
+    method = opts.method, body = opts.body, headers = opts.headers,
+    userAgent = opts.userAgent or "gen1recomp",
+    maxSeconds = opts.maxSeconds })
 end
 
 -- Download a URL to `saveRel`, a path relative to the LOVE save directory.

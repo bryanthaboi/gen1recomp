@@ -1,3 +1,256 @@
+openal-soft-1.24.0:
+
+    Updated library codebase to C++17.
+
+    Implemented the ALC_SOFT_system_events extension.
+
+    Implemented the AL_EXT_debug extension.
+
+    Implemented the AL_EXT_direct_context extension.
+
+    Implemented speaker configuration and headphones detection on CoreAudio.
+
+    Fixed a potential crash with some extension functions on 32-bit Windows.
+
+    Fixed a crash that can occur when stopping playback with the Oboe backend.
+
+    Fixed calculating the reverb room rolloff.
+
+    Fixed EAX occlusion, obstruction, and exclusion low-pass filter strength.
+
+    Fixed EAX distance factor calculations.
+
+    Fixed querying AL_EFFECTSLOT_EFFECT on auxiliary effect slots.
+
+    Fixed compilation on some macOS systems that lack libdispatch.
+
+    Fixed compilation as a subproject with MinGW.
+
+    Changed the context error state to be thread-local. This is technically out
+    of spec, but necessary to avoid race conditions with multi-threaded use.
+
+    Split the cubic resampler into 4-point spline and gaussian variants. The
+    latter prioritizing the suppression of aliasing distortion and harmonics,
+    the former not reducing high frequencies as much.
+
+    Improved timing precision of starting delayed sources.
+
+    Improved ring modulator quality.
+
+    Improved performance of convolution reverb.
+
+    Improved WASAPI device enumeration performance.
+
+    Added UWP support.
+
+    Added 'noexcept' to functions and function types when compiled as C++. As a
+    C API, OpenAL can't be expected to throw C++ exceptions, nor can it handle
+    them if they leave a callback.
+
+    Added an experimental config option for using WASAPI spatial audio output.
+
+    Added enumeration support to the PortAudio backend.
+
+    Added compatibility options to override the AL_VENDOR, AL_VERSION, and
+    AL_RENDERER strings.
+
+    Added an example to play LAF files.
+
+    Disabled real-time mixing by default for PipeWire playback.
+
+    Disabled the SndIO backend by default on non-BSD targets.
+
+openal-soft-1.23.1:
+
+    Implemented the AL_SOFT_UHJ_ex extension.
+
+    Implemented the AL_SOFT_buffer_length_query extension.
+
+    Implemented the AL_SOFT_source_start_delay extension.
+
+    Implemented the AL_EXT_STATIC_BUFFER extension.
+
+    Fixed compiling with certain older versions of GCC.
+
+    Fixed compiling as a submodule.
+
+    Fixed compiling with newer versions of Oboe.
+
+    Improved EAX effect version switching.
+
+    Improved the quality of the reverb modulator.
+
+    Improved performance of the cubic resampler.
+
+    Added a compatibility option to restore AL_SOFT_buffer_sub_data. The option
+    disables AL_EXT_SOURCE_RADIUS due to incompatibility.
+
+    Reduced CPU usage when EAX is initialized and FXSlot0 or FXSlot1 are not
+    used.
+
+    Reduced memory usage for ADPCM buffer formats. They're no longer converted
+    to 16-bit samples on load.
+
+openal-soft-1.23.0:
+
+    Fixed CoreAudio capture support.
+
+    Fixed handling per-version EAX properties.
+
+    Fixed interpolating changes to the Super Stereo width source property.
+
+    Fixed detection of the update and buffer size from PipeWire.
+
+    Fixed resuming playback devices with OpenSL.
+
+    Fixed support for certain OpenAL implementations with the router.
+
+    Improved reverb environment transitions.
+
+    Improved performance of convolution reverb.
+
+    Improved quality and performance of the pitch shifter effect slightly.
+
+    Improved sub-sample precision for resampled sources.
+
+    Improved blending spatialized multi-channel sources that use the source
+    radius property.
+
+    Improved mixing 2D ambisonic sources for higher-order 3D ambisonic mixing.
+
+    Improved quadraphonic and 7.1 surround sound output slightly.
+
+    Added config options for UHJ encoding/decoding quality. Including Super
+    Stereo processing.
+
+    Added a config option for specifying the speaker distance.
+
+    Added a compatibility config option for specifying the NFC distance
+    scaling.
+
+    Added a config option for mixing on PipeWire's non-real-time thread.
+
+    Added support for virtual source nodes with PipeWire capture.
+
+    Added the ability for the WASAPI backend to use different playback rates.
+
+    Added support for SOFA files that define per-response delays in makemhr.
+
+    Changed the default fallback playback sample rate to 48khz. This doesn't
+    affect most backends, which can detect a default rate from the system.
+
+    Changed the default resampler to cubic.
+
+    Changed the default HRTF size from 32 to 64 points.
+
+openal-soft-1.22.2:
+
+    Fixed PipeWire version check.
+
+    Fixed building with PipeWire versions before 0.3.33.
+
+openal-soft-1.22.1:
+
+    Fixed CoreAudio capture.
+
+    Fixed air absorption strength.
+
+    Fixed handling 5.1 devices on Windows that use Rear channels instead of
+    Side channels.
+
+    Fixed some compilation issues on MinGW.
+
+    Fixed ALSA not being used on some systems without PipeWire and PulseAudio.
+
+    Fixed OpenSL capturing noise.
+
+    Fixed Oboe capture failing with some buffer sizes.
+
+    Added checks for the runtime PipeWire version. The same or newer version
+    than is used for building will be needed at runtime for the backend to
+    work.
+
+    Separated 3D7.1 into its own speaker configuration.
+
+openal-soft-1.22.0:
+
+    Implemented the ALC_SOFT_reopen_device extension. This allows for moving
+    devices to different outputs without losing object state.
+
+    Implemented the ALC_SOFT_output_mode extension.
+
+    Implemented the AL_SOFT_callback_buffer extension.
+
+    Implemented the AL_SOFT_UHJ extension. This supports native UHJ buffer
+    formats and Super Stereo processing.
+
+    Implemented the legacy EAX extensions. Enabled by default only on Windows.
+
+    Improved sound positioning stability when a source is near the listener.
+
+    Improved the default 5.1 output decoder.
+
+    Improved the high frequency response for the HRTF second-order ambisonic
+    decoder.
+
+    Improved SoundIO capture behavior.
+
+    Fixed UHJ output on NEON-capable CPUs.
+
+    Fixed redundant effect updates when setting an effect property to the
+    current value.
+
+    Fixed WASAPI capture using really low sample rates, and sources with very
+    high pitch shifts when using a bsinc resampler.
+
+    Added a PipeWire backend.
+
+    Added enumeration for the JACK and CoreAudio backends.
+
+    Added optional support for RTKit to get real-time priority. Only used as a
+    backup when pthread_setschedparam fails.
+
+    Added an option for JACK playback to render directly in the real-time
+    processing callback. For lower playback latency, on by default.
+
+    Added an option for custom JACK devices.
+
+    Added utilities to encode and decode UHJ audio files. Files are decoded to
+    the .amb format, and are encoded from libsndfile-compatible formats.
+
+    Added an in-progress extension to hold sources in a playing state when a
+    device disconnects. Allows devices to be reset or reopened and have sources
+    resume from where they left off.
+
+    Lowered the priority of the JACK backend. To avoid it getting picked when
+    PipeWire is providing JACK compatibility, since the JACK backend is less
+    robust with auto-configuration.
+
+openal-soft-1.21.1:
+
+    Improved alext.h's detection of standard types.
+
+    Improved slightly the local source position when the listener and source
+    are near each other.
+
+    Improved click/pop prevention for sounds that stop prematurely.
+
+    Fixed compilation for Windows ARM targets with MSVC.
+
+    Fixed ARM NEON detection on Windows.
+
+    Fixed CoreAudio capture when the requested sample rate doesn't match the
+    system configuration.
+
+    Fixed OpenSL capture desyncing from the internal capture buffer.
+
+    Fixed sources missing a batch update when applied after quickly restarting
+    the source.
+
+    Fixed missing source stop events when stopping a paused source.
+
+    Added capture support to the experimental Oboe backend.
+
 openal-soft-1.21.0:
 
     Updated library codebase to C++14.

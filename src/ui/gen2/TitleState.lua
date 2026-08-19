@@ -169,7 +169,7 @@ function TitleState:update(_dt)
   self.frameCounter = self.frameCounter + 1
   self:advanceHooh()
   if self.frameCounter % self.cloudScrollEvery == 0 then
-    self.cloudScroll = (self.cloudScroll + 1) % 160
+    self.cloudScroll = (self.cloudScroll - 1) % 160
   end
   self:spawnTrail()
   self:stepTrails()

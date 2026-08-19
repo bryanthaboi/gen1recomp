@@ -397,7 +397,8 @@ local GEN2_HOOKS = {
   "world.tod", "map.palette", "fieldmove.eligibility",
   -- menus and the battle intro
   "ui.start_menu.items", "ui.title_menu.items", "ui.options.rows",
-  "ui.party.submenu", "ui.naming.grid", "ui.pc.items", "ui.list_menu",
+  "ui.party.submenu", "ui.party.grid_navigation", "ui.naming.grid",
+  "ui.pc.items", "ui.list_menu",
   "transition.style",
   -- battle
   "battle.damage", "battle.crit", "battle.accuracy", "battle.turn_order",

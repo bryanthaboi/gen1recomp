@@ -38,10 +38,12 @@ public:
     void loadSampleData(parselib::WavStreamReader* reader);
     void unloadSampleData();
 
+    void resampleData(int sampleRate);
+
     virtual AudioProperties getProperties() const { return mAudioProperties; }
 
     float* getSampleData() { return mSampleData; }
-    int32_t getNumSampleFrames() { return mNumSamples; }
+    int32_t getNumSamples() { return mNumSamples; }
 
 protected:
     AudioProperties mAudioProperties;

@@ -12,7 +12,7 @@ What Is It?
 
 Originally developed in the 1970s by Michael Gerzon and a team others,
 Ambisonics was created as a means of recording and playing back 3D sound.
-Taking advantage of the way sound waves propogate, it is possible to record a
+Taking advantage of the way sound waves propagate, it is possible to record a
 fully 3D soundfield using as few as 4 channels (or even just 3, if you don't
 mind dropping down to 2 dimensions like many surround sound systems are). This
 representation is called B-Format. It was designed to handle audio independent
@@ -63,7 +63,7 @@ remain correct over a larger area around the center of the speakers.
 In addition, Ambisonics can encode the near-field effect of sounds, effectively
 capturing the sound distance. The near-field effect is a subtle low-frequency
 boost as a result of wave-front curvature, and properly compensating for this
-occuring with the output speakers (as well as emulating it with a synthesized
+occurring with the output speakers (as well as emulating it with a synthesized
 soundfield) can create an improved sense of distance for sounds that move near
 or far.
 
@@ -72,19 +72,12 @@ How Is It Used?
 ===============
 
 As a 3D audio API, OpenAL is tasked with playing 3D sound as best it can with
-the speaker setup the user has. Since the OpenAL API does not explicitly handle
-the output channel configuration, it has a lot of leeway in how to deal with
-the audio before it's played back for the user to hear. Consequently, OpenAL
-Soft (or any other OpenAL implementation that wishes to) can render using
-Ambisonics and decode the ambisonic mix for a high level of accuracy over what
-simple pan-pot could provide.
-
-When given an appropriate decoder configuration for the channel layout, the
-ambisonic mix can be decoded utilizing the benefits available to ambisonic
-processing, including frequency-dependent processing and near-field effects.
-Without a decoder configuration, the ambisonic mix can still be decoded for
-good stereo or surround sound output, although without near-field effects as
-there's no speaker distance information.
+the speaker setup the user has. Since the OpenAL API doesn't expose discrete
+playback speaker feeds, an implementation has a lot of leeway with how to deal
+with the audio before it's played back for the user to hear. Consequently,
+OpenAL Soft (or any other OpenAL implementation that wishes to) can render
+using Ambisonics and decode the ambisonic mix for a high level of accuracy over
+what simple pan-pot could provide.
 
 In addition to surround sound output, Ambisonics also has benefits with stereo
 output. 2-channel UHJ is a stereo-compatible format that encodes some surround

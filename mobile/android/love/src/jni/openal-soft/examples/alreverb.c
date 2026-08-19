@@ -40,6 +40,8 @@
 
 #include "common/alhelpers.h"
 
+#include "win_main_utf8.h"
+
 
 /* Effect object functions */
 static LPALGENEFFECTS alGenEffects;
@@ -75,15 +77,16 @@ static ALuint LoadEffect(const EFXEAXREVERBPROPERTIES *reverb)
     ALuint effect = 0;
     ALenum err;
 
+    /* Clear error state. */
+    alGetError();
+
     /* Create the effect object and check if we can do EAX reverb. */
     alGenEffects(1, &effect);
-    if(alGetEnumValue("AL_EFFECT_EAXREVERB") != 0)
+    alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB);
+    err = alGetError();
+    if(err == AL_NO_ERROR)
     {
         printf("Using EAX Reverb\n");
-
-        /* EAX Reverb is available. Set the EAX effect type then load the
-         * reverb properties. */
-        alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB);
 
         alEffectf(effect, AL_EAXREVERB_DENSITY, reverb->flDensity);
         alEffectf(effect, AL_EAXREVERB_DIFFUSION, reverb->flDiffusion);
@@ -114,7 +117,8 @@ static ALuint LoadEffect(const EFXEAXREVERBPROPERTIES *reverb)
         printf("Using Standard Reverb\n");
 
         /* No EAX Reverb. Set the standard reverb effect type then load the
-         * available reverb properties. */
+         * available reverb properties.
+         */
         alEffecti(effect, AL_EFFECT_TYPE, AL_EFFECT_REVERB);
 
         alEffectf(effect, AL_REVERB_DENSITY, reverb->flDensity);
@@ -132,7 +136,7 @@ static ALuint LoadEffect(const EFXEAXREVERBPROPERTIES *reverb)
         alEffecti(effect, AL_REVERB_DECAY_HFLIMIT, reverb->iDecayHFLimit);
     }
 
-    /* Check if an error occured, and clean up if so. */
+    /* Check if an error occurred, and clean up if so. */
     err = alGetError();
     if(err != AL_NO_ERROR)
     {
@@ -219,7 +223,7 @@ static ALuint LoadSound(const char *filename)
     free(membuf);
     sf_close(sndfile);
 
-    /* Check if an error occured, and clean up if so. */
+    /* Check if an error occurred, and clean up if so. */
     err = alGetError();
     if(err != AL_NO_ERROR)
     {
@@ -259,7 +263,7 @@ int main(int argc, char **argv)
     }
 
     /* Define a macro to help load the function pointers. */
-#define LOAD_PROC(T, x)  ((x) = (T)alGetProcAddress(#x))
+#define LOAD_PROC(T, x)  ((x) = FUNCTION_CAST(T, alGetProcAddress(#x)))
     LOAD_PROC(LPALGENEFFECTS, alGenEffects);
     LOAD_PROC(LPALDELETEEFFECTS, alDeleteEffects);
     LOAD_PROC(LPALISEFFECT, alIsEffect);

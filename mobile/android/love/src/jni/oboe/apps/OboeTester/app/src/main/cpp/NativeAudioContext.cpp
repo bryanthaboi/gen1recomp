@@ -14,10 +14,20 @@
  * limitations under the License.
  */
 
+// Set to 1 for debugging race condition #1180 with mAAudioStream.
+// See also AudioStreamAAudio.cpp in Oboe.
+// This was left in the code so that we could test the fix again easily in the future.
+// We could not trigger the race condition without adding these get calls and the sleeps.
+#define DEBUG_CLOSE_RACE 0
+
 #include <fstream>
 #include <iostream>
+#if DEBUG_CLOSE_RACE
+#include <thread>
+#endif // DEBUG_CLOSE_RACE
 #include <vector>
 
+#include "oboe/AudioClock.h"
 #include "util/WaveFileWriter.h"
 
 #include "NativeAudioContext.h"
@@ -57,9 +67,9 @@ private:
 bool ActivityContext::mUseCallback = true;
 int  ActivityContext::callbackSize = 0;
 
-oboe::AudioStream * ActivityContext::getOutputStream() {
+std::shared_ptr<oboe::AudioStream> ActivityContext::getOutputStream() {
     for (auto entry : mOboeStreams) {
-        oboe::AudioStream *oboeStream = entry.second.get();
+        std::shared_ptr<oboe::AudioStream> oboeStream = entry.second;
         if (oboeStream->getDirection() == oboe::Direction::Output) {
             return oboeStream;
         }
@@ -67,9 +77,9 @@ oboe::AudioStream * ActivityContext::getOutputStream() {
     return nullptr;
 }
 
-oboe::AudioStream * ActivityContext::getInputStream() {
+std::shared_ptr<oboe::AudioStream> ActivityContext::getInputStream() {
     for (auto entry : mOboeStreams) {
-        oboe::AudioStream *oboeStream = entry.second.get();
+        std::shared_ptr<oboe::AudioStream> oboeStream = entry.second;
         if (oboeStream != nullptr) {
             if (oboeStream->getDirection() == oboe::Direction::Input) {
                 return oboeStream;
@@ -88,9 +98,19 @@ int32_t ActivityContext::allocateStreamIndex() {
     return mNextStreamHandle++;
 }
 
+oboe::Result ActivityContext::release() {
+    oboe::Result result = oboe::Result::OK;
+    stopBlockingIOThread();
+    for (auto entry : mOboeStreams) {
+        std::shared_ptr<oboe::AudioStream> oboeStream = entry.second;
+        result = oboeStream->release();
+    }
+    return result;
+}
+
 void ActivityContext::close(int32_t streamIndex) {
     stopBlockingIOThread();
-    oboe::AudioStream *oboeStream = getStream(streamIndex);
+    std::shared_ptr<oboe::AudioStream> oboeStream = getStream(streamIndex);
     if (oboeStream != nullptr) {
         oboeStream->close();
         LOGD("ActivityContext::%s() delete stream %d ", __func__, streamIndex);
@@ -99,19 +119,18 @@ void ActivityContext::close(int32_t streamIndex) {
 }
 
 bool ActivityContext::isMMapUsed(int32_t streamIndex) {
-    oboe::AudioStream *oboeStream = getStream(streamIndex);
+    std::shared_ptr<oboe::AudioStream> oboeStream = getStream(streamIndex);
     if (oboeStream == nullptr) return false;
     if (oboeStream->getAudioApi() != AudioApi::AAudio) return false;
-    return AAudioExtensions::getInstance().isMMapUsed(oboeStream);
+    return AAudioExtensions::getInstance().isMMapUsed(oboeStream.get());
 }
 
 oboe::Result ActivityContext::pause() {
     oboe::Result result = oboe::Result::OK;
     stopBlockingIOThread();
     for (auto entry : mOboeStreams) {
-        oboe::AudioStream *oboeStream = entry.second.get();
+        std::shared_ptr<oboe::AudioStream> oboeStream = entry.second;
         result = oboeStream->requestPause();
-        printScheduler();
     }
     return result;
 }
@@ -120,9 +139,8 @@ oboe::Result ActivityContext::stopAllStreams() {
     oboe::Result result = oboe::Result::OK;
     stopBlockingIOThread();
     for (auto entry : mOboeStreams) {
-        oboe::AudioStream *oboeStream = entry.second.get();
+        std::shared_ptr<oboe::AudioStream> oboeStream = entry.second;
         result = oboeStream->requestStop();
-        printScheduler();
     }
     return result;
 }
@@ -130,23 +148,23 @@ oboe::Result ActivityContext::stopAllStreams() {
 void ActivityContext::configureBuilder(bool isInput, oboe::AudioStreamBuilder &builder) {
     // We needed the proxy because we did not know the channelCount when we setup the Builder.
     if (mUseCallback) {
-        LOGD("ActivityContext::open() set callback to use oboeCallbackProxy, callback size = %d",
-             callbackSize);
-        builder.setCallback(&oboeCallbackProxy);
-        builder.setFramesPerCallback(callbackSize);
+        builder.setDataCallback(&oboeCallbackProxy);
     }
 }
 
 int ActivityContext::open(jint nativeApi,
                           jint sampleRate,
                           jint channelCount,
+                          jint channelMask,
                           jint format,
                           jint sharingMode,
                           jint performanceMode,
                           jint inputPreset,
+                          jint usage,
+                          jint contentType,
+                          jint bufferCapacityInFrames,
                           jint deviceId,
                           jint sessionId,
-                          jint framesPerBurst,
                           jboolean channelConversionAllowed,
                           jboolean formatConversionAllowed,
                           jint rateConversionQuality,
@@ -182,6 +200,9 @@ int ActivityContext::open(jint nativeApi,
             ->setSharingMode((oboe::SharingMode) sharingMode)
             ->setPerformanceMode((oboe::PerformanceMode) performanceMode)
             ->setInputPreset((oboe::InputPreset)inputPreset)
+            ->setUsage((oboe::Usage)usage)
+            ->setContentType((oboe::ContentType)contentType)
+            ->setBufferCapacityInFrames(bufferCapacityInFrames)
             ->setDeviceId(deviceId)
             ->setSessionId((oboe::SessionId) sessionId)
             ->setSampleRate(sampleRate)
@@ -190,7 +211,13 @@ int ActivityContext::open(jint nativeApi,
             ->setFormatConversionAllowed(formatConversionAllowed)
             ->setSampleRateConversionQuality((oboe::SampleRateConversionQuality) rateConversionQuality)
             ;
-
+    if (channelMask != (jint) oboe::ChannelMask::Unspecified) {
+        // Set channel mask when it is specified.
+        builder.setChannelMask((oboe::ChannelMask) channelMask);
+    }
+    if (mUseCallback) {
+        builder.setFramesPerCallback(callbackSize);
+    }
     configureBuilder(isInput, builder);
 
     builder.setAudioApi(audioApi);
@@ -199,6 +226,12 @@ int ActivityContext::open(jint nativeApi,
     bool oldMMapEnabled = AAudioExtensions::getInstance().isMMapEnabled();
     AAudioExtensions::getInstance().setMMapEnabled(isMMap);
 
+    // Record time for opening.
+    if (isInput) {
+        mInputOpenedAt = oboe::AudioClock::getNanoseconds();
+    } else {
+        mOutputOpenedAt = oboe::AudioClock::getNanoseconds();
+    }
     // Open a stream based on the builder settings.
     std::shared_ptr<oboe::AudioStream> oboeStream;
     Result result = builder.openStream(oboeStream);
@@ -215,7 +248,7 @@ int ActivityContext::open(jint nativeApi,
 
         createRecording();
 
-        finishOpen(isInput, oboeStream.get());
+        finishOpen(isInput, oboeStream);
     }
 
     if (!mUseCallback) {
@@ -223,20 +256,24 @@ int ActivityContext::open(jint nativeApi,
         dataBuffer = std::make_unique<float[]>(numSamples);
     }
 
-    return (result != Result::OK) ? (int)result : streamIndex;
+    if (result != Result::OK) {
+        return (int) result;
+    } else {
+        configureAfterOpen();
+        return streamIndex;
+    }
 }
 
 oboe::Result ActivityContext::start() {
     oboe::Result result = oboe::Result::OK;
-    oboe::AudioStream *inputStream = getInputStream();
-    oboe::AudioStream *outputStream = getOutputStream();
+    std::shared_ptr<oboe::AudioStream> inputStream = getInputStream();
+    std::shared_ptr<oboe::AudioStream> outputStream = getOutputStream();
     if (inputStream == nullptr && outputStream == nullptr) {
         LOGD("%s() - no streams defined", __func__);
         return oboe::Result::ErrorInvalidState; // not open
     }
 
-    configureForStart();
-
+    audioStreamGateway.reset();
     result = startStreams();
 
     if (!mUseCallback && result == oboe::Result::OK) {
@@ -245,6 +282,29 @@ oboe::Result ActivityContext::start() {
         dataThread = new std::thread(threadCallback, this);
     }
 
+#if DEBUG_CLOSE_RACE
+    // Also put a sleep for 400 msec in AudioStreamAAudio::updateFramesRead().
+    if (outputStream != nullptr) {
+        std::thread raceDebugger([outputStream]() {
+            while (outputStream->getState() != StreamState::Closed) {
+                int64_t framesRead = outputStream->getFramesRead();
+                LOGD("raceDebugger, framesRead = %d, state = %d",
+                     (int) framesRead, (int) outputStream->getState());
+            }
+        });
+        raceDebugger.detach();
+    }
+#endif // DEBUG_CLOSE_RACE
+
+    return result;
+}
+
+oboe::Result ActivityContext::flush() {
+    oboe::Result result = oboe::Result::OK;
+    for (auto entry : mOboeStreams) {
+        std::shared_ptr<oboe::AudioStream> oboeStream = entry.second;
+        result = oboeStream->requestFlush();
+    }
     return result;
 }
 
@@ -259,10 +319,11 @@ int32_t  ActivityContext::saveWaveFile(const char *filename) {
     }
     MyOboeOutputStream outStream;
     WaveFileWriter writer(&outStream);
-
+    // You must setup the format before the first write().
     writer.setFrameRate(mSampleRate);
     writer.setSamplesPerFrame(mRecording->getChannelCount());
     writer.setBitsPerSample(24);
+    writer.setFrameCount(mRecording->getSizeInFrames());
     float buffer[mRecording->getChannelCount()];
     // Read samples from start to finish.
     mRecording->rewind();
@@ -283,13 +344,25 @@ int32_t  ActivityContext::saveWaveFile(const char *filename) {
     return outStream.length();
 }
 
+double ActivityContext::getTimestampLatency(int32_t streamIndex) {
+    std::shared_ptr<oboe::AudioStream> oboeStream = getStream(streamIndex);
+    if (oboeStream != nullptr) {
+        auto result = oboeStream->calculateLatencyMillis();
+        return (!result) ? -1.0 : result.value();
+    }
+    return -1.0;
+}
+
 // =================================================================== ActivityTestOutput
 void ActivityTestOutput::close(int32_t streamIndex) {
     ActivityContext::close(streamIndex);
     manyToMulti.reset(nullptr);
     monoToMulti.reset(nullptr);
+    mVolumeRamp.reset();
     mSinkFloat.reset();
     mSinkI16.reset();
+    mSinkI24.reset();
+    mSinkI32.reset();
 }
 
 void ActivityTestOutput::setChannelEnabled(int channelIndex, bool enabled) {
@@ -313,6 +386,9 @@ void ActivityTestOutput::setChannelEnabled(int channelIndex, bool enabled) {
                 mExponentialShape.output.connect(&sineOscillators[channelIndex].frequency);
                 sineOscillators[channelIndex].output.connect(manyToMulti->inputs[channelIndex].get());
                 break;
+            case SignalType::WhiteNoise:
+                mWhiteNoise.output.connect(manyToMulti->inputs[channelIndex].get());
+                break;
             default:
                 break;
         }
@@ -321,13 +397,20 @@ void ActivityTestOutput::setChannelEnabled(int channelIndex, bool enabled) {
     }
 }
 
-void ActivityTestOutput::configureForStart() {
+void ActivityTestOutput::configureAfterOpen() {
     manyToMulti = std::make_unique<ManyToMultiConverter>(mChannelCount);
 
-    mSinkFloat = std::make_unique<SinkFloat>(mChannelCount);
-    mSinkI16 = std::make_unique<SinkI16>(mChannelCount);
+    std::shared_ptr<oboe::AudioStream> outputStream = getOutputStream();
 
-    oboe::AudioStream *outputStream = getOutputStream();
+    mVolumeRamp = std::make_shared<RampLinear>(mChannelCount);
+    mVolumeRamp->setLengthInFrames(kRampMSec * outputStream->getSampleRate() /
+            MILLISECONDS_PER_SECOND);
+    mVolumeRamp->setTarget(mAmplitude);
+
+    mSinkFloat = std::make_shared<SinkFloat>(mChannelCount);
+    mSinkI16 = std::make_shared<SinkI16>(mChannelCount);
+    mSinkI24 = std::make_shared<SinkI24>(mChannelCount);
+    mSinkI32 = std::make_shared<SinkI32>(mChannelCount);
 
     mTriangleOscillator.setSampleRate(outputStream->getSampleRate());
     mTriangleOscillator.frequency.setValue(1.0/kSweepPeriod);
@@ -344,35 +427,52 @@ void ActivityTestOutput::configureForStart() {
     mTriangleOscillator.output.connect(&(mExponentialShape.input));
     {
         double frequency = 330.0;
+        // Go up by a minor third or a perfect fourth just intoned interval.
+        const float interval = (mChannelCount > 8) ? (6.0f / 5.0f) : (4.0f / 3.0f);
         for (int i = 0; i < mChannelCount; i++) {
             sineOscillators[i].setSampleRate(outputStream->getSampleRate());
             sineOscillators[i].frequency.setValue(frequency);
-            frequency *= 4.0 / 3.0; // each sine is at a higher frequency
             sineOscillators[i].amplitude.setValue(AMPLITUDE_SINE);
+            sawtoothOscillators[i].setSampleRate(outputStream->getSampleRate());
+            sawtoothOscillators[i].frequency.setValue(frequency);
+            sawtoothOscillators[i].amplitude.setValue(AMPLITUDE_SAWTOOTH);
+
+            frequency *= interval; // each wave is at a higher frequency
             setChannelEnabled(i, true);
         }
     }
 
-    manyToMulti->output.connect(&(mSinkFloat.get()->input));
-    manyToMulti->output.connect(&(mSinkI16.get()->input));
+    mWhiteNoise.amplitude.setValue(0.5);
 
-    // Clear framePosition in sine oscillators.
+    manyToMulti->output.connect(&(mVolumeRamp.get()->input));
+
+    mVolumeRamp->output.connect(&(mSinkFloat.get()->input));
+    mVolumeRamp->output.connect(&(mSinkI16.get()->input));
+    mVolumeRamp->output.connect(&(mSinkI24.get()->input));
+    mVolumeRamp->output.connect(&(mSinkI32.get()->input));
+
     mSinkFloat->pullReset();
     mSinkI16->pullReset();
+    mSinkI24->pullReset();
+    mSinkI32->pullReset();
 
     configureStreamGateway();
 }
 
 void ActivityTestOutput::configureStreamGateway() {
-    oboe::AudioStream *outputStream = getOutputStream();
+    std::shared_ptr<oboe::AudioStream> outputStream = getOutputStream();
     if (outputStream->getFormat() == oboe::AudioFormat::I16) {
         audioStreamGateway.setAudioSink(mSinkI16);
+    } else if (outputStream->getFormat() == oboe::AudioFormat::I24) {
+        audioStreamGateway.setAudioSink(mSinkI24);
+    } else if (outputStream->getFormat() == oboe::AudioFormat::I32) {
+        audioStreamGateway.setAudioSink(mSinkI32);
     } else if (outputStream->getFormat() == oboe::AudioFormat::Float) {
         audioStreamGateway.setAudioSink(mSinkFloat);
     }
 
     if (mUseCallback) {
-        oboeCallbackProxy.setCallback(&audioStreamGateway);
+        oboeCallbackProxy.setDataCallback(&audioStreamGateway);
     }
 }
 
@@ -380,7 +480,7 @@ void ActivityTestOutput::runBlockingIO() {
     int32_t framesPerBlock = getFramesPerBlock();
     oboe::DataCallbackResult callbackResult = oboe::DataCallbackResult::Continue;
 
-    oboe::AudioStream *oboeStream = getOutputStream();
+    std::shared_ptr<oboe::AudioStream> oboeStream = getOutputStream();
     if (oboeStream == nullptr) {
         LOGE("%s() : no stream found\n", __func__);
         return;
@@ -389,7 +489,7 @@ void ActivityTestOutput::runBlockingIO() {
     while (threadEnabled.load()
            && callbackResult == oboe::DataCallbackResult::Continue) {
         // generate output by calling the callback
-        callbackResult = audioStreamGateway.onAudioReady(oboeStream,
+        callbackResult = audioStreamGateway.onAudioReady(oboeStream.get(),
                                                          dataBuffer.get(),
                                                          framesPerBlock);
 
@@ -409,11 +509,22 @@ void ActivityTestOutput::runBlockingIO() {
     }
 }
 
+oboe::Result ActivityTestOutput::startStreams() {
+    mSinkFloat->pullReset();
+    mSinkI16->pullReset();
+    mSinkI24->pullReset();
+    mSinkI32->pullReset();
+    if (mVolumeRamp != nullptr) {
+        mVolumeRamp->setTarget(mAmplitude);
+    }
+    return getOutputStream()->start();
+}
+
 // ======================================================================= ActivityTestInput
-void ActivityTestInput::configureForStart() {
+void ActivityTestInput::configureAfterOpen() {
     mInputAnalyzer.reset();
     if (mUseCallback) {
-        oboeCallbackProxy.setCallback(&mInputAnalyzer);
+        oboeCallbackProxy.setDataCallback(&mInputAnalyzer);
     }
     mInputAnalyzer.setRecording(mRecording.get());
 }
@@ -422,7 +533,7 @@ void ActivityTestInput::runBlockingIO() {
     int32_t framesPerBlock = getFramesPerBlock();
     oboe::DataCallbackResult callbackResult = oboe::DataCallbackResult::Continue;
 
-    oboe::AudioStream *oboeStream = getInputStream();
+    std::shared_ptr<oboe::AudioStream> oboeStream = getInputStream();
     if (oboeStream == nullptr) {
         LOGE("%s() : no stream found\n", __func__);
         return;
@@ -450,7 +561,7 @@ void ActivityTestInput::runBlockingIO() {
         }
 
         // analyze input
-        callbackResult = mInputAnalyzer.onAudioReady(oboeStream,
+        callbackResult = mInputAnalyzer.onAudioReady(oboeStream.get(),
                                                      dataBuffer.get(),
                                                      framesRead);
     }
@@ -474,8 +585,7 @@ oboe::Result ActivityRecording::startPlayback() {
     builder.setChannelCount(mChannelCount)
             ->setSampleRate(mSampleRate)
             ->setFormat(oboe::AudioFormat::Float)
-            ->setCallback(&mPlayRecordingCallback)
-            ->setAudioApi(oboe::AudioApi::OpenSLES);
+            ->setCallback(&mPlayRecordingCallback);
     oboe::Result result = builder.openStream(&playbackStream);
     if (result != oboe::Result::OK) {
         delete playbackStream;
@@ -491,13 +601,15 @@ oboe::Result ActivityRecording::startPlayback() {
 }
 
 // ======================================================================= ActivityTapToTone
-void ActivityTapToTone::configureForStart() {
+void ActivityTapToTone::configureAfterOpen() {
     monoToMulti = std::make_unique<MonoToMultiConverter>(mChannelCount);
 
-    mSinkFloat = std::make_unique<SinkFloat>(mChannelCount);
-    mSinkI16 = std::make_unique<SinkI16>(mChannelCount);
+    mSinkFloat = std::make_shared<SinkFloat>(mChannelCount);
+    mSinkI16 = std::make_shared<SinkI16>(mChannelCount);
+    mSinkI24 = std::make_shared<SinkI24>(mChannelCount);
+    mSinkI32 = std::make_shared<SinkI32>(mChannelCount);
 
-    oboe::AudioStream *outputStream = getOutputStream();
+    std::shared_ptr<oboe::AudioStream> outputStream = getOutputStream();
     sawPingGenerator.setSampleRate(outputStream->getSampleRate());
     sawPingGenerator.frequency.setValue(FREQUENCY_SAW_PING);
     sawPingGenerator.amplitude.setValue(AMPLITUDE_SAW_PING);
@@ -505,20 +617,26 @@ void ActivityTapToTone::configureForStart() {
     sawPingGenerator.output.connect(&(monoToMulti->input));
     monoToMulti->output.connect(&(mSinkFloat.get()->input));
     monoToMulti->output.connect(&(mSinkI16.get()->input));
+    monoToMulti->output.connect(&(mSinkI24.get()->input));
+    monoToMulti->output.connect(&(mSinkI32.get()->input));
 
-    sawPingGenerator.setEnabled(false);
+    mSinkFloat->pullReset();
+    mSinkI16->pullReset();
+    mSinkI24->pullReset();
+    mSinkI32->pullReset();
+
     configureStreamGateway();
 }
 
-// ======================================================================= ActivityRoundTripLatency
+// ======================================================================= ActivityFullDuplex
 void ActivityFullDuplex::configureBuilder(bool isInput, oboe::AudioStreamBuilder &builder) {
     if (isInput) {
         // Ideally the output streams should be opened first.
-        oboe::AudioStream *outputStream = getOutputStream();
+        std::shared_ptr<oboe::AudioStream> outputStream = getOutputStream();
         if (outputStream != nullptr) {
-            // Make sure the capacity is bigger than two bursts.
-            int32_t burst = outputStream->getFramesPerBurst();
-            builder.setBufferCapacityInFrames(2 * burst);
+            // The input and output buffers will run in sync with input empty
+            // and output full. So set the input capacity to match the output.
+            builder.setBufferCapacityInFrames(outputStream->getBufferCapacityInFrames());
         }
     }
 }
@@ -532,15 +650,16 @@ void ActivityEcho::configureBuilder(bool isInput, oboe::AudioStreamBuilder &buil
     }
     // only output uses a callback, input is polled
     if (!isInput) {
-        builder.setCallback(mFullDuplexEcho.get());
+        builder.setCallback((oboe::AudioStreamCallback *) &oboeCallbackProxy);
+        oboeCallbackProxy.setDataCallback(mFullDuplexEcho.get());
     }
 }
 
-void ActivityEcho::finishOpen(bool isInput, oboe::AudioStream *oboeStream) {
+void ActivityEcho::finishOpen(bool isInput, std::shared_ptr<oboe::AudioStream> &oboeStream) {
     if (isInput) {
-        mFullDuplexEcho->setInputStream(oboeStream);
+        mFullDuplexEcho->setSharedInputStream(oboeStream);
     } else {
-        mFullDuplexEcho->setOutputStream(oboeStream);
+        mFullDuplexEcho->setSharedOutputStream(oboeStream);
     }
 }
 
@@ -549,21 +668,55 @@ void ActivityRoundTripLatency::configureBuilder(bool isInput, oboe::AudioStreamB
     ActivityFullDuplex::configureBuilder(isInput, builder);
 
     if (mFullDuplexLatency.get() == nullptr) {
-        mFullDuplexLatency = std::make_unique<FullDuplexLatency>();
+        mFullDuplexLatency = std::make_unique<FullDuplexAnalyzer>(mLatencyAnalyzer.get());
     }
     if (!isInput) {
         // only output uses a callback, input is polled
-        builder.setCallback(mFullDuplexLatency.get());
+        builder.setCallback((oboe::AudioStreamCallback *) &oboeCallbackProxy);
+        oboeCallbackProxy.setDataCallback(mFullDuplexLatency.get());
     }
 }
 
-void ActivityRoundTripLatency::finishOpen(bool isInput, oboe::AudioStream *oboeStream) {
+void ActivityRoundTripLatency::finishOpen(bool isInput, std::shared_ptr<oboe::AudioStream>
+        &oboeStream) {
     if (isInput) {
-        mFullDuplexLatency->setInputStream(oboeStream);
+        mFullDuplexLatency->setSharedInputStream(oboeStream);
         mFullDuplexLatency->setRecording(mRecording.get());
     } else {
-        mFullDuplexLatency->setOutputStream(oboeStream);
+        mFullDuplexLatency->setSharedOutputStream(oboeStream);
     }
+}
+
+// The timestamp latency is the difference between the input
+// and output times for a specific frame.
+// Start with the position and time from an input timestamp.
+// Map the input position to the corresponding position in output
+// and calculate its time.
+// Use the difference between framesWritten and framesRead to
+// convert input positions to output positions.
+jdouble ActivityRoundTripLatency::measureTimestampLatency() {
+    if (!mFullDuplexLatency->isWriteReadDeltaValid()) return -1.0;
+
+    int64_t writeReadDelta = mFullDuplexLatency->getWriteReadDelta();
+    auto inputTimestampResult = mFullDuplexLatency->getInputStream()->getTimestamp(CLOCK_MONOTONIC);
+    if (!inputTimestampResult) return -1.0;
+    auto outputTimestampResult = mFullDuplexLatency->getOutputStream()->getTimestamp(CLOCK_MONOTONIC);
+    if (!outputTimestampResult) return -1.0;
+
+    int64_t inputPosition = inputTimestampResult.value().position;
+    int64_t inputTimeNanos = inputTimestampResult.value().timestamp;
+    int64_t ouputPosition = outputTimestampResult.value().position;
+    int64_t outputTimeNanos = outputTimestampResult.value().timestamp;
+
+    // Map input frame position to the corresponding output frame.
+    int64_t mappedPosition = inputPosition + writeReadDelta;
+    // Calculate when that frame will play.
+    int32_t sampleRate = mFullDuplexLatency->getOutputStream()->getSampleRate();
+    int64_t mappedTimeNanos = outputTimeNanos + ((mappedPosition - ouputPosition) * 1e9) / sampleRate;
+
+    // Latency is the difference in time between when a frame was recorded and
+    // when its corresponding echo was played.
+    return (mappedTimeNanos - inputTimeNanos) * 1.0e-6; // convert nanos to millis
 }
 
 // ======================================================================= ActivityGlitches
@@ -571,23 +724,46 @@ void ActivityGlitches::configureBuilder(bool isInput, oboe::AudioStreamBuilder &
     ActivityFullDuplex::configureBuilder(isInput, builder);
 
     if (mFullDuplexGlitches.get() == nullptr) {
-        mFullDuplexGlitches = std::make_unique<FullDuplexGlitches>();
+        mFullDuplexGlitches = std::make_unique<FullDuplexAnalyzer>(&mGlitchAnalyzer);
     }
     if (!isInput) {
         // only output uses a callback, input is polled
-        builder.setCallback(mFullDuplexGlitches.get());
+        builder.setCallback((oboe::AudioStreamCallback *) &oboeCallbackProxy);
+        oboeCallbackProxy.setDataCallback(mFullDuplexGlitches.get());
     }
 }
 
-void ActivityGlitches::finishOpen(bool isInput, oboe::AudioStream *oboeStream) {
+void ActivityGlitches::finishOpen(bool isInput, std::shared_ptr<oboe::AudioStream> &oboeStream) {
     if (isInput) {
-        mFullDuplexGlitches->setInputStream(oboeStream);
+        mFullDuplexGlitches->setSharedInputStream(oboeStream);
         mFullDuplexGlitches->setRecording(mRecording.get());
     } else {
-        mFullDuplexGlitches->setOutputStream(oboeStream);
+        mFullDuplexGlitches->setSharedOutputStream(oboeStream);
     }
 }
 
+// ======================================================================= ActivityDataPath
+void ActivityDataPath::configureBuilder(bool isInput, oboe::AudioStreamBuilder &builder) {
+    ActivityFullDuplex::configureBuilder(isInput, builder);
+
+    if (mFullDuplexDataPath.get() == nullptr) {
+        mFullDuplexDataPath = std::make_unique<FullDuplexAnalyzer>(&mDataPathAnalyzer);
+    }
+    if (!isInput) {
+        // only output uses a callback, input is polled
+        builder.setCallback((oboe::AudioStreamCallback *) &oboeCallbackProxy);
+        oboeCallbackProxy.setDataCallback(mFullDuplexDataPath.get());
+    }
+}
+
+void ActivityDataPath::finishOpen(bool isInput, std::shared_ptr<oboe::AudioStream> &oboeStream) {
+    if (isInput) {
+        mFullDuplexDataPath->setSharedInputStream(oboeStream);
+        mFullDuplexDataPath->setRecording(mRecording.get());
+    } else {
+        mFullDuplexDataPath->setSharedOutputStream(oboeStream);
+    }
+}
 
 // =================================================================== ActivityTestDisconnect
 void ActivityTestDisconnect::close(int32_t streamIndex) {
@@ -595,9 +771,9 @@ void ActivityTestDisconnect::close(int32_t streamIndex) {
     mSinkFloat.reset();
 }
 
-void ActivityTestDisconnect::configureForStart() {
-    oboe::AudioStream *outputStream = getOutputStream();
-    oboe::AudioStream *inputStream = getInputStream();
+void ActivityTestDisconnect::configureAfterOpen() {
+    std::shared_ptr<oboe::AudioStream> outputStream = getOutputStream();
+    std::shared_ptr<oboe::AudioStream> inputStream = getInputStream();
     if (outputStream) {
         mSinkFloat = std::make_unique<SinkFloat>(mChannelCount);
         sineOscillator = std::make_unique<SineOscillator>();
@@ -607,13 +783,13 @@ void ActivityTestDisconnect::configureForStart() {
         sineOscillator->frequency.setValue(440.0);
         sineOscillator->amplitude.setValue(AMPLITUDE_SINE);
         sineOscillator->output.connect(&(monoToMulti->input));
+
         monoToMulti->output.connect(&(mSinkFloat->input));
-        // Clear framePosition in sine oscillators.
         mSinkFloat->pullReset();
         audioStreamGateway.setAudioSink(mSinkFloat);
     } else if (inputStream) {
         audioStreamGateway.setAudioSink(nullptr);
     }
-    oboeCallbackProxy.setCallback(&audioStreamGateway);
+    oboeCallbackProxy.setDataCallback(&audioStreamGateway);
 }
 

@@ -1,6 +1,7 @@
 build*/
 winbuild
 win64build
+.vs/
 
 ## kdevelop
 *.kdev4

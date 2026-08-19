@@ -3,6 +3,10 @@
 
 #include <vector>
 
+#include "alspan.h"
+
+
+using uint = unsigned int;
 
 /* This is a polyphase sinc-filtered resampler. It is built for very high
  * quality results, rather than real-time performance.
@@ -32,13 +36,13 @@
  */
 
 struct PPhaseResampler {
-    using uint = unsigned int;
-
     void init(const uint srcRate, const uint dstRate);
-    void process(const uint inN, const double *in, const uint outN, double *out);
+    void process(const al::span<const double> in, const al::span<double> out);
+
+    explicit operator bool() const noexcept { return !mF.empty(); }
 
 private:
-    uint mP, mQ, mM, mL;
+    uint mP{}, mQ{}, mM{}, mL{};
     std::vector<double> mF;
 };
 

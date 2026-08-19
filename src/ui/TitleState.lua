@@ -198,6 +198,7 @@ function TitleState.new(game, opts)
   self.game = game
   self.onNewGame = opts.onNewGame
   self.onContinue = opts.onContinue
+  self.onExit = opts.onExit
   -- branding comes from field.title with the shipped art as fallback, so
   -- a total conversion rebrands the title without replacing the screen
   local title = (game.data.field and game.data.field.title) or {}
@@ -514,7 +515,9 @@ function TitleState:openMenu()
     require("src.ui.Screens").push(game, "OptionsMenu")
   end })
   table.insert(items, { label = Strings("EXIT GAME"), onSelect = function()
-    if love.event and love.event.quit then
+    if self.onExit then
+      self.onExit()
+    elseif love.event and love.event.quit then
       love.event.quit()
     end
   end })

@@ -43,16 +43,29 @@ end
 -- pixel rows out of glyphs.  This is the same rule src/render/Renderer.lua
 -- fitScale applies to the Gen 1 UI canvas; the surround a widescreen screen
 -- paints still fills the window, the PANEL is what stays on the grid.
+local function playfieldRect(winW, winH)
+  local ok, Playfield = pcall(require, "src.render.Playfield")
+  if ok and Playfield.rect then
+    local okv, x, y, w, h = pcall(Playfield.rect, winW, winH)
+    if okv and w and w >= 1 and h and h >= 1 then
+      return x, y, w, h
+    end
+  end
+  return 0, 0, winW or 0, winH or 0
+end
+
 function Chrome.fitScale(winW, winH)
-  return math.max(1, math.floor(math.min((winW or 0) / (Chrome.SCREEN_W * 8),
-    (winH or 0) / (Chrome.SCREEN_H * 8))))
+  local _, _, w, h = playfieldRect(winW, winH)
+  return math.max(1, math.floor(math.min(w / (Chrome.SCREEN_W * 8),
+    h / (Chrome.SCREEN_H * 8))))
 end
 
 -- The centred origin that goes with it, so a caller does not re-derive it.
 function Chrome.fitOrigin(winW, winH, scale)
   scale = scale or Chrome.fitScale(winW, winH)
-  return math.floor((winW - Chrome.SCREEN_W * 8 * scale) / 2),
-    math.floor((winH - Chrome.SCREEN_H * 8 * scale) / 2)
+  local x, y, w, h = playfieldRect(winW, winH)
+  return x + math.floor((w - Chrome.SCREEN_W * 8 * scale) / 2),
+    y + math.floor((h - Chrome.SCREEN_H * 8 * scale) / 2)
 end
 
 -- A bordered box, tile coords.  Leaves the draw color black for text.

@@ -67,6 +67,124 @@ public final class GRPickerBridge: NSObject {
         return succeeded
     }
 
+    // MARK: - General HTTP request (love.system.httpRequest)
+
+    private static let httpMaxResponse = 4 * 1024 * 1024
+
+    // URLSession turns a 301/302/303 POST into a GET on its own. Save sync
+    // signs a method and a body, so every hop re-sends the original request
+    // against the new URL instead, and only over https.
+    private final class GRRedirectKeeper: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            guard let original = task.originalRequest,
+                  let target = request.url,
+                  target.scheme?.lowercased() == "https" else {
+                completionHandler(nil)
+                return
+            }
+            var next = original
+            next.url = target
+            completionHandler(next)
+        }
+    }
+
+    private static let httpSession = URLSession(configuration: .ephemeral,
+                                                delegate: GRRedirectKeeper(),
+                                                delegateQueue: nil)
+
+    private static func httpEnvelope(_ head: String, _ payload: Data?) -> NSData {
+        var out = Data((head + "\n").utf8)
+        if let payload { out.append(payload) }
+        return out as NSData
+    }
+
+    private static func httpErrorText(_ error: Error) -> String {
+        var text = error.localizedDescription
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+        if text.isEmpty { text = "the request failed" }
+        if text.count > 160 { text = String(text.prefix(160)) }
+        return text
+    }
+
+    /// Blocking HTTPS request with a chosen method, headers and byte body, the
+    /// iOS half of love.system.httpRequest (see the Android GameActivity one).
+    /// Headers arrive as "name: value" lines joined by newlines. The reply is
+    /// an envelope: a head line of "STATUS <code>" or "ERROR <text>", a
+    /// newline, then the raw response bytes -- read for 4xx and 5xx as well,
+    /// because a sync conflict answers 409 with the save that won.
+    @objc(httpRequestWithUrl:method:headers:body:bodyLength:userAgent:)
+    public static func httpRequest(url: UnsafePointer<CChar>?,
+                                   method: UnsafePointer<CChar>?,
+                                   headers: UnsafePointer<CChar>?,
+                                   body: UnsafePointer<UInt8>?,
+                                   bodyLength: Int32,
+                                   userAgent: UnsafePointer<CChar>?) -> NSData? {
+        guard let url, let requestURL = URL(string: String(cString: url)) else {
+            return httpEnvelope("ERROR missing url", nil)
+        }
+        guard requestURL.scheme?.lowercased() == "https" else {
+            return httpEnvelope("ERROR https only", nil)
+        }
+        let verb = (method.map { String(cString: $0) } ?? "GET").uppercased()
+        guard ["GET", "POST", "PUT", "DELETE"].contains(verb) else {
+            return httpEnvelope("ERROR unsupported request method", nil)
+        }
+
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = verb
+        request.timeoutInterval = 60
+        request.setValue(userAgent.map { String(cString: $0) } ?? "gen1recomp",
+                         forHTTPHeaderField: "User-Agent")
+        if let headers, headers.pointee != 0 {
+            for line in String(cString: headers).split(separator: "\n") {
+                guard let colon = line.firstIndex(of: ":") else {
+                    return httpEnvelope("ERROR bad request header", nil)
+                }
+                let name = line[line.startIndex..<colon]
+                    .trimmingCharacters(in: .whitespaces)
+                let value = line[line.index(after: colon)...]
+                    .trimmingCharacters(in: .whitespaces)
+                if name.isEmpty {
+                    return httpEnvelope("ERROR bad request header", nil)
+                }
+                request.setValue(value, forHTTPHeaderField: name)
+            }
+        }
+        if verb != "GET", let body, bodyLength > 0 {
+            request.httpBody = Data(bytes: body, count: Int(bodyLength))
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var envelope = httpEnvelope("ERROR no response", nil)
+        let task = httpSession.dataTask(with: request) { data, response, error in
+            defer { semaphore.signal() }
+            if let error {
+                envelope = httpEnvelope("ERROR " + httpErrorText(error), nil)
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                envelope = httpEnvelope("ERROR no response", nil)
+                return
+            }
+            let payload = data ?? Data()
+            if payload.count > httpMaxResponse {
+                envelope = httpEnvelope("ERROR the reply was too large", nil)
+                return
+            }
+            envelope = httpEnvelope("STATUS \(http.statusCode)", payload)
+        }
+        task.resume()
+        guard semaphore.wait(timeout: .now() + 65) == .success else {
+            task.cancel()
+            return httpEnvelope("ERROR the request timed out", nil)
+        }
+        return envelope
+    }
+
     // MARK: - Entry points called from liblove (C strings on purpose)
 
     @objc(presentPickerWithKind:saveDir:)

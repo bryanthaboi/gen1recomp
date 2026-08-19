@@ -1,18 +1,17 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 28
+    compileSdkVersion 34
     defaultConfig {
-        applicationId = "com.google.sample.oboe.manualtest"
+        applicationId = "com.mobileer.oboetester"
         minSdkVersion 23
-        targetSdkVersion 28
-        // Also update the version in the AndroidManifest.xml file.
-        versionCode 32
-        versionName "1.5.24"
+        targetSdkVersion 34
+        versionCode 91
+        versionName "2.7.2"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
-                cppFlags "-std=c++14"
+                cppFlags "-std=c++17"
                 abiFilters "x86", "x86_64", "armeabi-v7a", "arm64-v8a"
             }
         }
@@ -31,14 +30,15 @@ android {
             path "CMakeLists.txt"
         }
     }
+    namespace 'com.mobileer.oboetester'
 }
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'com.android.support.constraint:constraint-layout:2.0.0-beta4'
+    implementation "androidx.core:core-ktx:1.9.0"
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
 
-    testImplementation 'junit:junit:4.13-beta-3'
-    implementation 'com.android.support:appcompat-v7:28.0.0'
-    androidTestImplementation 'com.android.support.test:runner:1.0.2'
-    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

@@ -259,6 +259,7 @@ function Loader.new(opts)
     modInput = {}, modEnv = {}, stepsQueues = {},
     fs = (opts and opts.fs) or (love and love.filesystem),
     dev = dev,
+    safeMode = false,
     -- Which generation this boot is (1 or 2).  Fixed at construction: the
     -- active version is set once in main.lua's bootGame before anything
     -- builds a loader, and a run never changes generation underneath one.
@@ -300,6 +301,8 @@ end
 function Loader:_loadState()
   self.disabled = {}
   local options = SaveData.loadOptions(self.fs)
+  self.safeMode = SaveData.isSafeMode(options)
+  Runtime.safeMode = self.safeMode
   local scope = self:_enableScope()
   local ids = {}
   for id in pairs(options.mods or {}) do ids[id] = true end
@@ -415,6 +418,7 @@ function Loader:_writeOptionSchemas()
 end
 
 function Loader:setEnabled(id, enabled)
+  if self.safeMode then return false end
   if not self.mods[id] then return false end
   self.disabled[id] = not enabled
   self.mods[id].enabled = enabled
@@ -427,6 +431,7 @@ end
 -- choice could not be persisted for a game, so the caller does not promise a
 -- restart will honour it.
 function Loader:setGen2Forced(id, forced)
+  if self.safeMode then return false, false end
   if not self.mods[id] then return false, false end
   self.gen2Forced[id] = forced or nil
   self:_saveState()
@@ -1539,6 +1544,9 @@ function Loader:load(data)
   require("src.mods.Builtins").install(self.content, data, self.generation)
   self:_loadState()
   self:_discover()
+  if self.safeMode then
+    for id in pairs(self.mods) do self.disabled[id] = true end
+  end
   -- Existing installs stored one shared answer.  Once their manifests are
   -- known, split that answer across every game before the next launcher/game
   -- toggle can change one independently.  _loadState already used the same
@@ -1574,7 +1582,7 @@ function Loader:load(data)
   -- the one build where its env var is set.
   for id, mod in pairs(self.mods) do
     local envName = mod.manifest.force_enable_env
-    if envName and os.getenv(envName) == "1" then
+    if not self.safeMode and envName and os.getenv(envName) == "1" then
       self.disabled[id] = nil
     end
   end
@@ -1740,6 +1748,7 @@ function Loader:status()
     local manifest = {}
     for key, value in pairs(mod.manifest) do manifest[key] = value end
     manifest.enabled = mod.enabled ~= false
+    manifest.safeMode = self.safeMode == true
     manifest.state = mod.state or (manifest.enabled and "loaded" or "disabled")
     manifest.error = mod.failure
     -- set instead of `error` when the mod was left out for a reason that is

@@ -13,7 +13,7 @@ about ambisonics.
 
 Starting with OpenAL Soft 1.18, version 3 of the file format is supported as a
 means of specifying custom surround sound speaker layouts. These configuration
-files are also used to enable the high-quality ambisonic decoder.
+files are also used to enable per-speaker distance compensation.
 
 
 File Format
@@ -155,11 +155,14 @@ LB = Back left
 RB = Back right
 CE = Front center
 CB = Back center
+LFT = Top front left
+RFT = Top front right
+LBT = Top back left
+RBT = Top back right
 
 Additionally, configuration files for surround51 will acknowledge back speakers
-for side channels, and surround51rear will acknowledge side speakers for back
-channels, to avoid issues with a configuration expecting 5.1 to use the side
-channels when the device is configured for back, or vice-versa.
+for side channels, to avoid issues with a configuration expecting 5.1 to use
+the side channels when the device is configured for back, or vice-versa.
 
 Furthermore, OpenAL Soft does not require a speaker definition for each output
 channel the configuration is used with. So for example a 5.1 configuration may

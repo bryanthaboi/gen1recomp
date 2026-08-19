@@ -7,5 +7,10 @@
 # cmake .. -DANDROID_STL=c++_shared \
 #     -DCMAKE_TOOLCHAIN_FILE=${ndk_root}/build/cmake/android.toolchain.cmake
 #
+# Certain NDK versions may also need to use the lld linker to avoid errors
+# about missing liblog.so and libOpenSLES.so. That can be done by:
+# cmake .. -DANDROID_LD=lld \
+#     -DCMAKE_TOOLCHAIN_FILE=${ndk_root}/build/cmake/android.toolchain.cmake
+#
 
 MESSAGE(FATAL_ERROR "Use the toolchain provided by the Android NDK")

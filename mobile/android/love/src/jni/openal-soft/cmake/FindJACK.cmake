@@ -43,7 +43,7 @@ find_path(JACK_INCLUDE_DIR NAMES jack/jack.h
           DOC "The JACK include directory"
 )
 
-find_library(JACK_LIBRARY NAMES jack
+find_library(JACK_LIBRARY NAMES jack jack64
              DOC "The JACK library"
 )
 

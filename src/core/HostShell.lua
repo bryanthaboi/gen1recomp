@@ -350,9 +350,21 @@ local function haveBridge()
   return osName == "Android" or osName == "iOS" or osName == "UWP"
 end
 
+local function haveRequestBridge()
+  if not (love and love.system and type(love.system.httpRequest) == "function") then
+    return false
+  end
+  local osName = love.system.getOS and love.system.getOS()
+  return osName == "Android" or osName == "iOS" or osName == "UWP"
+end
+
 -- Is any transport available at all?  Callers gate on this, never on curl.
 function HostShell.canFetch()
   return HostShell.haveCurl() or haveBridge()
+end
+
+function HostShell.canHttpRequest()
+  return (HostShell.haveCurl() or haveRequestBridge()) and true or false
 end
 
 -- Download url to an absolute host path.  Returns true, or nil plus an error.
@@ -555,6 +567,175 @@ function HostShell.httpPost(url, body, contentType, userAgent, maxTime)
     return nil, "log post rejected"
   end
   return nil, "no POST transport on this platform"
+end
+
+local function requestHeaderList(headers)
+  local out = {}
+  if type(headers) == "table" then
+    if #headers > 0 then
+      for _, line in ipairs(headers) do
+        if type(line) == "string" then out[#out + 1] = line end
+      end
+    else
+      local names = {}
+      for name in pairs(headers) do names[#names + 1] = tostring(name) end
+      table.sort(names)
+      for _, name in ipairs(names) do
+        out[#out + 1] = name .. ": " .. tostring(headers[name])
+      end
+    end
+  end
+  for _, line in ipairs(out) do
+    if line:find("[\r\n]") or not line:find(":", 1, true) then return nil end
+  end
+  return out
+end
+
+local BRIDGE_METHODS = { GET = true, POST = true, PUT = true, DELETE = true }
+
+local function requestHeaderPairs(lines)
+  local out = {}
+  for _, line in ipairs(lines) do
+    local name, value = line:match("^%s*([^:]-)%s*:%s*(.-)%s*$")
+    if not name or name == "" then return nil end
+    if name:find("[\r\n]") or value:find("[\r\n]") then return nil end
+    out[#out + 1] = name
+    out[#out + 1] = value
+  end
+  return out
+end
+
+local function bridgeRequest(url, method, headers, body, userAgent)
+  if not BRIDGE_METHODS[method] then
+    return nil, "no request transport for " .. method .. " on this platform"
+  end
+  local fields = requestHeaderPairs(headers)
+  if not fields then return nil, "bad request header" end
+  local ok, envelope = pcall(love.system.httpRequest, url, method, fields,
+                             body, userAgent)
+  if not ok or type(envelope) ~= "string" or envelope == "" then
+    return nil, "this app build cannot make signed requests: update the app to use save sync"
+  end
+  local head, rest = envelope:match("^([^\n]*)\n(.*)$")
+  if not head then
+    return nil, fetchError(url, nil, "unreadable reply from the network bridge")
+  end
+  local status = tonumber(head:match("^STATUS (%d+)$"))
+  if status then return rest or "", nil, status end
+  return nil, fetchError(url, nil, head:match("^ERROR (.*)$") or head)
+end
+
+local requestSeq = 0
+
+local function requestStagingPath(kind)
+  local dir
+  if love and love.filesystem and love.filesystem.getSaveDirectory then
+    local ok, saveDir = pcall(love.filesystem.getSaveDirectory)
+    if ok and type(saveDir) == "string" and saveDir ~= "" then dir = saveDir end
+  end
+  if not dir then
+    dir = os.getenv("TEMP") or os.getenv("TMP")
+    if not dir or dir == "" then dir = os.getenv("TMPDIR") or "/tmp" end
+  end
+  local sep = dir:find("\\") and "\\" or "/"
+  requestSeq = requestSeq + 1
+  return dir .. sep .. ("gen1recomp-req-%s-%d-%d-%d.tmp"):format(
+    kind, os.time() % 1000000, requestSeq, math.random(0, 999999))
+end
+
+local function writeStagingFile(kind, text)
+  local path = requestStagingPath(kind)
+  local file, openErr = io.open(path, "wb")
+  if not file then
+    return nil, "could not create the request " .. kind .. ": " .. tostring(openErr)
+  end
+  local wrote, writeErr = pcall(function()
+    assert(file:write(text))
+    assert(file:close())
+  end)
+  if not wrote then
+    pcall(function() file:close() end)
+    pcall(os.remove, path)
+    return nil, "could not write the request " .. kind .. ": " .. tostring(writeErr)
+  end
+  return path
+end
+
+function HostShell.httpRequest(url, opts)
+  opts = type(opts) == "table" and opts or {}
+  if type(url) ~= "string" or url == "" then return nil, "missing url" end
+  local method = tostring(opts.method or "GET"):upper()
+  if not method:match("^%u+$") then return nil, "bad request method" end
+  local headers = requestHeaderList(opts.headers)
+  if not headers then return nil, "bad request header" end
+  local body = opts.body
+  if body ~= nil and type(body) ~= "string" then return nil, "bad request body" end
+  local userAgent = opts.userAgent or "gen1recomp"
+  local maxTime = tonumber(opts.maxTime) or 30
+
+  if not HostShell.haveCurl() then
+    if haveRequestBridge() then
+      return bridgeRequest(url, method, headers, body, userAgent)
+    end
+    if method == "GET" and #headers == 0 then
+      local got, err = HostShell.httpGet(url, userAgent, opts.accept, maxTime)
+      if not got then return nil, err end
+      return got, nil, 200
+    end
+    if haveBridge() then
+      return nil, "this app build cannot make signed requests: update the app to use save sync"
+    end
+    return nil, "no request transport on this platform"
+  end
+
+  local bodyPath, stageErr
+  if body then
+    bodyPath, stageErr = writeStagingFile("body", body)
+    if not bodyPath then return nil, stageErr end
+  end
+
+  local lines = { "User-Agent: " .. userAgent }
+  for _, line in ipairs(headers) do lines[#lines + 1] = line end
+  if body then
+    lines[#lines + 1] = "Content-Length: " .. tostring(#body)
+  end
+  local headerPath
+  headerPath, stageErr = writeStagingFile("head",
+    table.concat(lines, "\n") .. "\n")
+  if not headerPath then
+    if bodyPath then pcall(os.remove, bodyPath) end
+    return nil, stageErr
+  end
+
+  local function cleanup()
+    if bodyPath then pcall(os.remove, bodyPath) end
+    pcall(os.remove, headerPath)
+  end
+
+  local cmd = ("curl -sSL --proto =http,https --proto-redir =http,https "
+    .. "--connect-timeout 10 --max-time %d "):format(maxTime)
+    .. "-X " .. HostShell.quote(method) .. " "
+    .. "-H " .. HostShell.quote("@" .. headerPath) .. " "
+  if body then
+    cmd = cmd .. "--data-binary " .. HostShell.quote("@" .. bodyPath) .. " "
+  end
+  cmd = cmd .. "-w " .. HostShell.quote(HTTP_MARK_FMT) .. " "
+    .. HostShell.quote(url) .. " 2>&1"
+
+  local pipe = HostShell.popen(cmd)
+  if not pipe then
+    cleanup()
+    return nil, "could not run curl"
+  end
+  local readOk, out = pcall(function() return pipe:read("*a") end)
+  HostShell.pclose(pipe)
+  cleanup()
+  if not readOk then
+    return nil, fetchError(url, nil, tostring(out))
+  end
+  local respBody, status, noise = splitCurlOutput(out)
+  if not status then return nil, fetchError(url, nil, noise) end
+  return respBody or "", nil, status
 end
 
 return HostShell

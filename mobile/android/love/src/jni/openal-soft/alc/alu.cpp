@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "config_simd.h"
 
 #include "alu.h"
 
@@ -26,76 +27,75 @@
 #include <array>
 #include <atomic>
 #include <cassert>
-#include <chrono>
-#include <climits>
 #include <cmath>
 #include <cstdarg>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
-#include <new>
-#include <numeric>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 
-#include "AL/al.h"
-#include "AL/alc.h"
-#include "AL/efx.h"
-
-#include "al/auxeffectslot.h"
-#include "al/buffer.h"
-#include "al/effect.h"
-#include "al/event.h"
-#include "al/listener.h"
-#include "alcmain.h"
-#include "alcontext.h"
 #include "almalloc.h"
+#include "alnumbers.h"
 #include "alnumeric.h"
+#include "alsem.h"
 #include "alspan.h"
 #include "alstring.h"
-#include "ambidefs.h"
 #include "atomic.h"
-#include "bformatdec.h"
-#include "bs2b.h"
-#include "cpu_caps.h"
-#include "devformat.h"
-#include "effects/base.h"
-#include "filters/biquad.h"
-#include "filters/nfc.h"
-#include "filters/splitter.h"
-#include "fpu_ctrl.h"
-#include "front_stablizer.h"
-#include "hrtf.h"
-#include "inprogext.h"
-#include "mastering.h"
-#include "math_defs.h"
-#include "mixer/defs.h"
+#include "core/ambidefs.h"
+#include "core/async_event.h"
+#include "core/bformatdec.h"
+#include "core/bs2b.h"
+#include "core/bsinc_defs.h"
+#include "core/bsinc_tables.h"
+#include "core/bufferline.h"
+#include "core/buffer_storage.h"
+#include "core/context.h"
+#include "core/cpu_caps.h"
+#include "core/cubic_tables.h"
+#include "core/devformat.h"
+#include "core/device.h"
+#include "core/effects/base.h"
+#include "core/effectslot.h"
+#include "core/filters/biquad.h"
+#include "core/filters/nfc.h"
+#include "core/fpu_ctrl.h"
+#include "core/hrtf.h"
+#include "core/mastering.h"
+#include "core/mixer.h"
+#include "core/mixer/defs.h"
+#include "core/mixer/hrtfdefs.h"
+#include "core/resampler_limits.h"
+#include "core/storage_formats.h"
+#include "core/uhjfilter.h"
+#include "core/voice.h"
+#include "core/voice_change.h"
+#include "intrusive_ptr.h"
 #include "opthelpers.h"
 #include "ringbuffer.h"
 #include "strutils.h"
-#include "threads.h"
-#include "uhjfilter.h"
 #include "vecmat.h"
-#include "voice.h"
-
-#include "bsinc_tables.h"
 
 struct CTag;
-#ifdef HAVE_SSE
+#if HAVE_SSE
 struct SSETag;
 #endif
-#ifdef HAVE_SSE2
+#if HAVE_SSE2
 struct SSE2Tag;
 #endif
-#ifdef HAVE_SSE4_1
+#if HAVE_SSE4_1
 struct SSE4Tag;
 #endif
-#ifdef HAVE_NEON
+#if HAVE_NEON
 struct NEONTag;
 #endif
-struct CopyTag;
 struct PointTag;
 struct LerpTag;
 struct CubicTag;
@@ -103,67 +103,54 @@ struct BSincTag;
 struct FastBSincTag;
 
 
-static_assert(MAX_RESAMPLER_PADDING >= BSincPointsMax, "MAX_RESAMPLER_PADDING is too small");
-static_assert(!(MAX_RESAMPLER_PADDING&1), "MAX_RESAMPLER_PADDING is not a multiple of two");
+static_assert(!(MaxResamplerPadding&1), "MaxResamplerPadding is not a multiple of two");
 
 
 namespace {
 
-using namespace std::placeholders;
+using uint = unsigned int;
+using namespace std::chrono;
+using namespace std::string_view_literals;
 
 float InitConeScale()
 {
     float ret{1.0f};
     if(auto optval = al::getenv("__ALSOFT_HALF_ANGLE_CONES"))
     {
-        if(al::strcasecmp(optval->c_str(), "true") == 0
+        if(al::case_compare(*optval, "true"sv) == 0
             || strtol(optval->c_str(), nullptr, 0) == 1)
             ret *= 0.5f;
     }
     return ret;
 }
-
-float InitZScale()
-{
-    float ret{1.0f};
-    if(auto optval = al::getenv("__ALSOFT_REVERSE_Z"))
-    {
-        if(al::strcasecmp(optval->c_str(), "true") == 0
-            || strtol(optval->c_str(), nullptr, 0) == 1)
-            ret *= -1.0f;
-    }
-    return ret;
-}
-
-} // namespace
-
 /* Cone scalar */
 const float ConeScale{InitConeScale()};
 
-/* Localized Z scalar for mono sources */
-const float ZScale{InitZScale()};
+/* Localized scalars for mono sources (initialized in aluInit, after
+ * configuration is loaded).
+ */
+float XScale{1.0f};
+float YScale{1.0f};
+float ZScale{1.0f};
 
-namespace {
+/* Source distance scale for NFC filters. */
+float NfcScale{1.0f};
 
-struct ChanMap {
-    Channel channel;
-    float angle;
-    float elevation;
-};
 
-using HrtfDirectMixerFunc = void(*)(FloatBufferLine &LeftOut, FloatBufferLine &RightOut,
-    const al::span<const FloatBufferLine> InSamples, float2 *AccumSamples, DirectHrtfState *State,
-    const size_t BufferSize);
+using HrtfDirectMixerFunc = void(*)(const FloatBufferSpan LeftOut, const FloatBufferSpan RightOut,
+    const al::span<const FloatBufferLine> InSamples, const al::span<float2> AccumSamples,
+    const al::span<float,BufferLineSize> TempBuf, const al::span<HrtfChannelState> ChanState,
+    const size_t IrSize, const size_t SamplesToDo);
 
 HrtfDirectMixerFunc MixDirectHrtf{MixDirectHrtf_<CTag>};
 
-inline HrtfDirectMixerFunc SelectHrtfMixer(void)
+inline HrtfDirectMixerFunc SelectHrtfMixer()
 {
-#ifdef HAVE_NEON
+#if HAVE_NEON
     if((CPUCapFlags&CPU_CAP_NEON))
         return MixDirectHrtf_<NEONTag>;
 #endif
-#ifdef HAVE_SSE
+#if HAVE_SSE
     if((CPUCapFlags&CPU_CAP_SSE))
         return MixDirectHrtf_<SSETag>;
 #endif
@@ -172,15 +159,15 @@ inline HrtfDirectMixerFunc SelectHrtfMixer(void)
 }
 
 
-inline void BsincPrepare(const ALuint increment, BsincState *state, const BSincTable *table)
+inline void BsincPrepare(const uint increment, BsincState *state, const BSincTable *table)
 {
     size_t si{BSincScaleCount - 1};
     float sf{0.0f};
 
     if(increment > MixerFracOne)
     {
-        sf = MixerFracOne / static_cast<float>(increment);
-        sf = maxf(0.0f, (BSincScaleCount-1) * (sf-table->scaleBase) * table->scaleRange);
+        sf = MixerFracOne/static_cast<float>(increment) - table->scaleBase;
+        sf = std::max(0.0f, BSincScaleCount*sf*table->scaleRange - 1.0f);
         si = float2uint(sf);
         /* The interpolation factor is fit to this diagonally-symmetric curve
          * to reduce the transition ripple caused by interpolating different
@@ -192,57 +179,74 @@ inline void BsincPrepare(const ALuint increment, BsincState *state, const BSincT
     state->sf = sf;
     state->m = table->m[si];
     state->l = (state->m/2) - 1;
-    state->filter = table->Tab + table->filterOffset[si];
+    state->filter = table->Tab.subspan(table->filterOffset[si]);
 }
 
-inline ResamplerFunc SelectResampler(Resampler resampler, ALuint increment)
+inline ResamplerFunc SelectResampler(Resampler resampler, uint increment)
 {
     switch(resampler)
     {
     case Resampler::Point:
         return Resample_<PointTag,CTag>;
     case Resampler::Linear:
-#ifdef HAVE_NEON
+#if HAVE_NEON
         if((CPUCapFlags&CPU_CAP_NEON))
             return Resample_<LerpTag,NEONTag>;
 #endif
-#ifdef HAVE_SSE4_1
+#if HAVE_SSE4_1
         if((CPUCapFlags&CPU_CAP_SSE4_1))
             return Resample_<LerpTag,SSE4Tag>;
 #endif
-#ifdef HAVE_SSE2
+#if HAVE_SSE2
         if((CPUCapFlags&CPU_CAP_SSE2))
             return Resample_<LerpTag,SSE2Tag>;
 #endif
         return Resample_<LerpTag,CTag>;
-    case Resampler::Cubic:
+    case Resampler::Spline:
+    case Resampler::Gaussian:
+#if HAVE_NEON
+        if((CPUCapFlags&CPU_CAP_NEON))
+            return Resample_<CubicTag,NEONTag>;
+#endif
+#if HAVE_SSE4_1
+        if((CPUCapFlags&CPU_CAP_SSE4_1))
+            return Resample_<CubicTag,SSE4Tag>;
+#endif
+#if HAVE_SSE2
+        if((CPUCapFlags&CPU_CAP_SSE2))
+            return Resample_<CubicTag,SSE2Tag>;
+#endif
+#if HAVE_SSE
+        if((CPUCapFlags&CPU_CAP_SSE))
+            return Resample_<CubicTag,SSETag>;
+#endif
         return Resample_<CubicTag,CTag>;
     case Resampler::BSinc12:
     case Resampler::BSinc24:
-        if(increment <= MixerFracOne)
+        if(increment > MixerFracOne)
         {
-            /* fall-through */
-        case Resampler::FastBSinc12:
-        case Resampler::FastBSinc24:
-#ifdef HAVE_NEON
+#if HAVE_NEON
             if((CPUCapFlags&CPU_CAP_NEON))
-                return Resample_<FastBSincTag,NEONTag>;
+                return Resample_<BSincTag,NEONTag>;
 #endif
-#ifdef HAVE_SSE
+#if HAVE_SSE
             if((CPUCapFlags&CPU_CAP_SSE))
-                return Resample_<FastBSincTag,SSETag>;
+                return Resample_<BSincTag,SSETag>;
 #endif
-            return Resample_<FastBSincTag,CTag>;
+            return Resample_<BSincTag,CTag>;
         }
-#ifdef HAVE_NEON
+        /* fall-through */
+    case Resampler::FastBSinc12:
+    case Resampler::FastBSinc24:
+#if HAVE_NEON
         if((CPUCapFlags&CPU_CAP_NEON))
-            return Resample_<BSincTag,NEONTag>;
+            return Resample_<FastBSincTag,NEONTag>;
 #endif
-#ifdef HAVE_SSE
+#if HAVE_SSE
         if((CPUCapFlags&CPU_CAP_SSE))
-            return Resample_<BSincTag,SSETag>;
+            return Resample_<FastBSincTag,SSETag>;
 #endif
-        return Resample_<BSincTag,CTag>;
+        return Resample_<FastBSincTag,CTag>;
     }
 
     return Resample_<PointTag,CTag>;
@@ -250,82 +254,90 @@ inline ResamplerFunc SelectResampler(Resampler resampler, ALuint increment)
 
 } // namespace
 
-void aluInit(void)
+void aluInit(CompatFlagBitset flags, const float nfcscale)
 {
     MixDirectHrtf = SelectHrtfMixer();
+    XScale = flags.test(CompatFlags::ReverseX) ? -1.0f : 1.0f;
+    YScale = flags.test(CompatFlags::ReverseY) ? -1.0f : 1.0f;
+    ZScale = flags.test(CompatFlags::ReverseZ) ? -1.0f : 1.0f;
+
+    NfcScale = std::clamp(nfcscale, 0.0001f, 10000.0f);
 }
 
 
-ResamplerFunc PrepareResampler(Resampler resampler, ALuint increment, InterpState *state)
+ResamplerFunc PrepareResampler(Resampler resampler, uint increment, InterpState *state)
 {
     switch(resampler)
     {
     case Resampler::Point:
     case Resampler::Linear:
-    case Resampler::Cubic:
+        break;
+    case Resampler::Spline:
+        state->emplace<CubicState>(al::span{gSplineFilter.mTable});
+        break;
+    case Resampler::Gaussian:
+        state->emplace<CubicState>(al::span{gGaussianFilter.mTable});
         break;
     case Resampler::FastBSinc12:
     case Resampler::BSinc12:
-        BsincPrepare(increment, &state->bsinc, &bsinc12);
+        BsincPrepare(increment, &state->emplace<BsincState>(), &gBSinc12);
         break;
     case Resampler::FastBSinc24:
     case Resampler::BSinc24:
-        BsincPrepare(increment, &state->bsinc, &bsinc24);
+        BsincPrepare(increment, &state->emplace<BsincState>(), &gBSinc24);
         break;
     }
     return SelectResampler(resampler, increment);
 }
 
 
-void ALCdevice::ProcessHrtf(const size_t SamplesToDo)
+void DeviceBase::ProcessHrtf(const size_t SamplesToDo)
 {
     /* HRTF is stereo output only. */
-    const ALuint lidx{RealOut.ChannelIndex[FrontLeft]};
-    const ALuint ridx{RealOut.ChannelIndex[FrontRight]};
+    const size_t lidx{RealOut.ChannelIndex[FrontLeft]};
+    const size_t ridx{RealOut.ChannelIndex[FrontRight]};
 
     MixDirectHrtf(RealOut.Buffer[lidx], RealOut.Buffer[ridx], Dry.Buffer, HrtfAccumData,
-        mHrtfState.get(), SamplesToDo);
+        mHrtfState->mTemp, mHrtfState->mChannels, mHrtfState->mIrSize, SamplesToDo);
 }
 
-void ALCdevice::ProcessAmbiDec(const size_t SamplesToDo)
+void DeviceBase::ProcessAmbiDec(const size_t SamplesToDo)
 {
-    AmbiDecoder->process(RealOut.Buffer, Dry.Buffer.data(), SamplesToDo);
+    AmbiDecoder->process(RealOut.Buffer, Dry.Buffer, SamplesToDo);
 }
 
-void ALCdevice::ProcessAmbiDecStablized(const size_t SamplesToDo)
+void DeviceBase::ProcessAmbiDecStablized(const size_t SamplesToDo)
 {
     /* Decode with front image stablization. */
-    const ALuint lidx{RealOut.ChannelIndex[FrontLeft]};
-    const ALuint ridx{RealOut.ChannelIndex[FrontRight]};
-    const ALuint cidx{RealOut.ChannelIndex[FrontCenter]};
+    const size_t lidx{RealOut.ChannelIndex[FrontLeft]};
+    const size_t ridx{RealOut.ChannelIndex[FrontRight]};
+    const size_t cidx{RealOut.ChannelIndex[FrontCenter]};
 
-    AmbiDecoder->processStablize(RealOut.Buffer, Dry.Buffer.data(), lidx, ridx, cidx,
-        SamplesToDo);
+    AmbiDecoder->processStablize(RealOut.Buffer, Dry.Buffer, lidx, ridx, cidx, SamplesToDo);
 }
 
-void ALCdevice::ProcessUhj(const size_t SamplesToDo)
+void DeviceBase::ProcessUhj(const size_t SamplesToDo)
 {
     /* UHJ is stereo output only. */
-    const ALuint lidx{RealOut.ChannelIndex[FrontLeft]};
-    const ALuint ridx{RealOut.ChannelIndex[FrontRight]};
+    const size_t lidx{RealOut.ChannelIndex[FrontLeft]};
+    const size_t ridx{RealOut.ChannelIndex[FrontRight]};
 
     /* Encode to stereo-compatible 2-channel UHJ output. */
-    Uhj_Encoder->encode(RealOut.Buffer[lidx], RealOut.Buffer[ridx], Dry.Buffer.data(),
-        SamplesToDo);
+    mUhjEncoder->encode(RealOut.Buffer[lidx].data(), RealOut.Buffer[ridx].data(),
+        {{Dry.Buffer[0].data(), Dry.Buffer[1].data(), Dry.Buffer[2].data()}}, SamplesToDo);
 }
 
-void ALCdevice::ProcessBs2b(const size_t SamplesToDo)
+void DeviceBase::ProcessBs2b(const size_t SamplesToDo)
 {
     /* First, decode the ambisonic mix to the "real" output. */
-    AmbiDecoder->process(RealOut.Buffer, Dry.Buffer.data(), SamplesToDo);
+    AmbiDecoder->process(RealOut.Buffer, Dry.Buffer, SamplesToDo);
 
     /* BS2B is stereo output only. */
-    const ALuint lidx{RealOut.ChannelIndex[FrontLeft]};
-    const ALuint ridx{RealOut.ChannelIndex[FrontRight]};
+    const size_t lidx{RealOut.ChannelIndex[FrontLeft]};
+    const size_t ridx{RealOut.ChannelIndex[FrontRight]};
 
     /* Now apply the BS2B binaural/crossfeed filter. */
-    bs2b_cross_feed(Bs2b.get(), RealOut.Buffer[lidx].data(), RealOut.Buffer[ridx].data(),
-        SamplesToDo);
+    Bs2b->cross_feed(RealOut.Buffer[lidx].data(), RealOut.Buffer[ridx].data(), SamplesToDo);
 }
 
 
@@ -335,82 +347,75 @@ namespace {
  * and starting with a seed value of 22222, is suitable for generating
  * whitenoise.
  */
-inline ALuint dither_rng(ALuint *seed) noexcept
+inline uint dither_rng(uint *seed) noexcept
 {
     *seed = (*seed * 96314165) + 907633515;
     return *seed;
 }
 
 
-auto GetAmbiScales(AmbiScaling scaletype) noexcept -> const std::array<float,MAX_AMBI_CHANNELS>&
+/* Ambisonic upsampler function. It's effectively a matrix multiply. It takes
+ * an 'upsampler' and 'rotator' as the input matrices, and creates a matrix
+ * that behaves as if the B-Format input was first decoded to a speaker array
+ * at its input order, encoded back into the higher order mix, then finally
+ * rotated.
+ */
+void UpsampleBFormatTransform(
+    const al::span<std::array<float,MaxAmbiChannels>,MaxAmbiChannels> output,
+    const al::span<const std::array<float,MaxAmbiChannels>> upsampler,
+    const al::span<const std::array<float,MaxAmbiChannels>,MaxAmbiChannels> rotator,
+    size_t ambi_order)
 {
-    if(scaletype == AmbiScaling::FuMa) return AmbiScale::FromFuMa;
-    if(scaletype == AmbiScaling::SN3D) return AmbiScale::FromSN3D;
-    return AmbiScale::FromN3D;
-}
-
-auto GetAmbiLayout(AmbiLayout layouttype) noexcept -> const std::array<uint8_t,MAX_AMBI_CHANNELS>&
-{
-    if(layouttype == AmbiLayout::FuMa) return AmbiIndex::FromFuMa;
-    return AmbiIndex::FromACN;
-}
-
-auto GetAmbi2DLayout(AmbiLayout layouttype) noexcept -> const std::array<uint8_t,MAX_AMBI2D_CHANNELS>&
-{
-    if(layouttype == AmbiLayout::FuMa) return AmbiIndex::FromFuMa2D;
-    return AmbiIndex::From2D;
-}
-
-
-inline alu::Vector aluCrossproduct(const alu::Vector &in1, const alu::Vector &in2)
-{
-    return alu::Vector{
-        in1[1]*in2[2] - in1[2]*in2[1],
-        in1[2]*in2[0] - in1[0]*in2[2],
-        in1[0]*in2[1] - in1[1]*in2[0],
-        0.0f
-    };
-}
-
-inline float aluDotproduct(const alu::Vector &vec1, const alu::Vector &vec2)
-{
-    return vec1[0]*vec2[0] + vec1[1]*vec2[1] + vec1[2]*vec2[2];
+    const size_t num_chans{AmbiChannelsFromOrder(ambi_order)};
+    for(size_t i{0};i < upsampler.size();++i)
+        output[i].fill(0.0f);
+    for(size_t i{0};i < upsampler.size();++i)
+    {
+        for(size_t k{0};k < num_chans;++k)
+        {
+            const float a{upsampler[i][k]};
+            /* Write the full number of channels. The compiler will have an
+             * easier time optimizing if it has a fixed length.
+             */
+            std::transform(rotator[k].cbegin(), rotator[k].cend(), output[i].cbegin(),
+                output[i].begin(), [a](float rot, float dst) noexcept { return rot*a + dst; });
+        }
+    }
 }
 
 
-alu::Vector operator*(const alu::Matrix &mtx, const alu::Vector &vec) noexcept
+constexpr auto GetAmbiScales(AmbiScaling scaletype) noexcept
 {
-    return alu::Vector{
-        vec[0]*mtx[0][0] + vec[1]*mtx[1][0] + vec[2]*mtx[2][0] + vec[3]*mtx[3][0],
-        vec[0]*mtx[0][1] + vec[1]*mtx[1][1] + vec[2]*mtx[2][1] + vec[3]*mtx[3][1],
-        vec[0]*mtx[0][2] + vec[1]*mtx[1][2] + vec[2]*mtx[2][2] + vec[3]*mtx[3][2],
-        vec[0]*mtx[0][3] + vec[1]*mtx[1][3] + vec[2]*mtx[2][3] + vec[3]*mtx[3][3]
-    };
+    switch(scaletype)
+    {
+    case AmbiScaling::FuMa: return al::span{AmbiScale::FromFuMa};
+    case AmbiScaling::SN3D: return al::span{AmbiScale::FromSN3D};
+    case AmbiScaling::UHJ: return al::span{AmbiScale::FromUHJ};
+    case AmbiScaling::N3D: break;
+    }
+    return al::span{AmbiScale::FromN3D};
+}
+
+constexpr auto GetAmbiLayout(AmbiLayout layouttype) noexcept
+{
+    if(layouttype == AmbiLayout::FuMa) return al::span{AmbiIndex::FromFuMa};
+    return al::span{AmbiIndex::FromACN};
+}
+
+constexpr auto GetAmbi2DLayout(AmbiLayout layouttype) noexcept
+{
+    if(layouttype == AmbiLayout::FuMa) return al::span{AmbiIndex::FromFuMa2D};
+    return al::span{AmbiIndex::FromACN2D};
 }
 
 
-bool CalcContextParams(ALCcontext *Context)
+bool CalcContextParams(ContextBase *ctx)
 {
-    ALcontextProps *props{Context->mUpdate.exchange(nullptr, std::memory_order_acq_rel)};
+    ContextProps *props{ctx->mParams.ContextUpdate.exchange(nullptr, std::memory_order_acq_rel)};
     if(!props) return false;
 
-    ALlistener &Listener = Context->mListener;
-    Listener.Params.DopplerFactor = props->DopplerFactor;
-    Listener.Params.SpeedOfSound = props->SpeedOfSound * props->DopplerVelocity;
-
-    Listener.Params.SourceDistanceModel = props->SourceDistanceModel;
-    Listener.Params.mDistanceModel = props->mDistanceModel;
-
-    AtomicReplaceHead(Context->mFreeContextProps, props);
-    return true;
-}
-
-bool CalcListenerParams(ALCcontext *Context)
-{
-    ALlistener &Listener = Context->mListener;
-
-    ALlistenerProps *props{Listener.Params.Update.exchange(nullptr, std::memory_order_acq_rel)};
-    if(!props) return false;
+    const alu::Vector pos{props->Position[0], props->Position[1], props->Position[2], 1.0f};
+    ctx->mParams.Position = pos;
 
     /* AT then UP */
     alu::Vector N{props->OrientAt[0], props->OrientAt[1], props->OrientAt[2], 0.0f};
@@ -418,67 +423,82 @@ bool CalcListenerParams(ALCcontext *Context)
     alu::Vector V{props->OrientUp[0], props->OrientUp[1], props->OrientUp[2], 0.0f};
     V.normalize();
     /* Build and normalize right-vector */
-    alu::Vector U{aluCrossproduct(N, V)};
+    alu::Vector U{N.cross_product(V)};
     U.normalize();
 
-    Listener.Params.Matrix = alu::Matrix{
-        U[0], V[0], -N[0], 0.0f,
-        U[1], V[1], -N[1], 0.0f,
-        U[2], V[2], -N[2], 0.0f,
-        0.0f, 0.0f,  0.0f, 1.0f
-    };
+    const alu::Matrix rot{
+        U[0], V[0], -N[0], 0.0,
+        U[1], V[1], -N[1], 0.0,
+        U[2], V[2], -N[2], 0.0,
+         0.0,  0.0,   0.0, 1.0};
+    const alu::Vector vel{props->Velocity[0], props->Velocity[1], props->Velocity[2], 0.0};
 
-    const alu::Vector P{Listener.Params.Matrix *
-        alu::Vector{props->Position[0], props->Position[1], props->Position[2], 1.0f}};
-    Listener.Params.Matrix.setRow(3, -P[0], -P[1], -P[2], 1.0f);
+    ctx->mParams.Matrix = rot;
+    ctx->mParams.Velocity = rot * vel;
 
-    const alu::Vector vel{props->Velocity[0], props->Velocity[1], props->Velocity[2], 0.0f};
-    Listener.Params.Velocity = Listener.Params.Matrix * vel;
+    ctx->mParams.Gain = props->Gain * ctx->mGainBoost;
+    ctx->mParams.MetersPerUnit = props->MetersPerUnit
+#if ALSOFT_EAX
+        * props->DistanceFactor
+#endif
+        ;
+    ctx->mParams.AirAbsorptionGainHF = props->AirAbsorptionGainHF;
 
-    Listener.Params.Gain = props->Gain * Context->mGainBoost;
-    Listener.Params.MetersPerUnit = props->MetersPerUnit;
+    ctx->mParams.DopplerFactor = props->DopplerFactor;
+    ctx->mParams.SpeedOfSound = props->SpeedOfSound * props->DopplerVelocity
+#if ALSOFT_EAX
+        / props->DistanceFactor
+#endif
+        ;
 
-    AtomicReplaceHead(Context->mFreeListenerProps, props);
+    ctx->mParams.SourceDistanceModel = props->SourceDistanceModel;
+    ctx->mParams.mDistanceModel = props->mDistanceModel;
+
+    AtomicReplaceHead(ctx->mFreeContextProps, props);
     return true;
 }
 
-bool CalcEffectSlotParams(ALeffectslot *slot, ALeffectslot **sorted_slots, ALCcontext *context)
+bool CalcEffectSlotParams(EffectSlot *slot, EffectSlot **sorted_slots, ContextBase *context)
 {
-    ALeffectslotProps *props{slot->Params.Update.exchange(nullptr, std::memory_order_acq_rel)};
+    EffectSlotProps *props{slot->Update.exchange(nullptr, std::memory_order_acq_rel)};
     if(!props) return false;
 
     /* If the effect slot target changed, clear the first sorted entry to force
      * a re-sort.
      */
-    if(slot->Params.Target != props->Target)
+    if(slot->Target != props->Target)
         *sorted_slots = nullptr;
-    slot->Params.Gain = props->Gain;
-    slot->Params.AuxSendAuto = props->AuxSendAuto;
-    slot->Params.Target = props->Target;
-    slot->Params.EffectType = props->Type;
-    slot->Params.mEffectProps = props->Props;
-    if(IsReverbEffect(props->Type))
+    slot->Gain = props->Gain;
+    slot->AuxSendAuto = props->AuxSendAuto;
+    slot->Target = props->Target;
+    slot->EffectType = props->Type;
+    slot->mEffectProps = props->Props;
+
+    slot->RoomRolloff = 0.0f;
+    slot->DecayTime = 0.0f;
+    slot->DecayLFRatio = 0.0f;
+    slot->DecayHFRatio = 0.0f;
+    slot->DecayHFLimit = false;
+    slot->AirAbsorptionGainHF = 1.0f;
+    if(auto *reverbprops = std::get_if<ReverbProps>(&props->Props))
     {
-        slot->Params.RoomRolloff = props->Props.Reverb.RoomRolloffFactor;
-        slot->Params.DecayTime = props->Props.Reverb.DecayTime;
-        slot->Params.DecayLFRatio = props->Props.Reverb.DecayLFRatio;
-        slot->Params.DecayHFRatio = props->Props.Reverb.DecayHFRatio;
-        slot->Params.DecayHFLimit = props->Props.Reverb.DecayHFLimit;
-        slot->Params.AirAbsorptionGainHF = props->Props.Reverb.AirAbsorptionGainHF;
-    }
-    else
-    {
-        slot->Params.RoomRolloff = 0.0f;
-        slot->Params.DecayTime = 0.0f;
-        slot->Params.DecayLFRatio = 0.0f;
-        slot->Params.DecayHFRatio = 0.0f;
-        slot->Params.DecayHFLimit = false;
-        slot->Params.AirAbsorptionGainHF = 1.0f;
+        slot->RoomRolloff = reverbprops->RoomRolloffFactor;
+        slot->AirAbsorptionGainHF = reverbprops->AirAbsorptionGainHF;
+        /* If this effect slot's Auxiliary Send Auto is off, don't apply the
+         * automatic send adjustments based on source distance.
+         */
+        if(slot->AuxSendAuto)
+        {
+            slot->DecayTime = reverbprops->DecayTime;
+            slot->DecayLFRatio = reverbprops->DecayLFRatio;
+            slot->DecayHFRatio = reverbprops->DecayHFRatio;
+            slot->DecayHFLimit = reverbprops->DecayHFLimit;
+        }
     }
 
     EffectState *state{props->State.release()};
-    EffectState *oldstate{slot->Params.mEffectState};
-    slot->Params.mEffectState = state;
+    EffectState *oldstate{slot->mEffectState.release()};
+    slot->mEffectState.reset(state);
 
     /* Only release the old state if it won't get deleted, since we can't be
      * deleting/freeing anything in the mixer.
@@ -488,10 +508,10 @@ bool CalcEffectSlotParams(ALeffectslot *slot, ALeffectslot **sorted_slots, ALCco
         /* Otherwise, if it would be deleted send it off with a release event. */
         RingBuffer *ring{context->mAsyncEvents.get()};
         auto evt_vec = ring->getWriteVector();
-        if LIKELY(evt_vec.first.len > 0)
+        if(evt_vec[0].len > 0) LIKELY
         {
-            AsyncEvent *evt{::new(evt_vec.first.buf) AsyncEvent{EventType_ReleaseEffectState}};
-            evt->u.mEffectState = oldstate;
+            auto &evt = InitAsyncEvent<AsyncEffectReleaseEvent>(evt_vec[0].buf);
+            evt.mEffectState = oldstate;
             ring->writeAdvance(1);
         }
         else
@@ -505,41 +525,89 @@ bool CalcEffectSlotParams(ALeffectslot *slot, ALeffectslot **sorted_slots, ALCco
         }
     }
 
-    AtomicReplaceHead(context->mFreeEffectslotProps, props);
+    AtomicReplaceHead(context->mFreeEffectSlotProps, props);
 
-    EffectTarget output;
-    if(ALeffectslot *target{slot->Params.Target})
-        output = EffectTarget{&target->Wet, nullptr};
-    else
+    const auto output = [slot,context]() -> EffectTarget
     {
-        ALCdevice *device{context->mDevice.get()};
-        output = EffectTarget{&device->Dry, &device->RealOut};
-    }
-    state->update(context, slot, &slot->Params.mEffectProps, output);
+        if(EffectSlot *target{slot->Target})
+            return EffectTarget{&target->Wet, nullptr};
+        DeviceBase *device{context->mDevice};
+        return EffectTarget{&device->Dry, &device->RealOut};
+    }();
+    state->update(context, slot, &slot->mEffectProps, output);
     return true;
 }
 
 
-/* Scales the given azimuth toward the side (+/- pi/2 radians) for positions in
- * front.
+/* Scales the azimuth of the given vector by 3 if it's in front. Effectively
+ * scales +/-30 degrees to +/-90 degrees, leaving > +90 and < -90 alone.
  */
-inline float ScaleAzimuthFront(float azimuth, float scale)
+inline std::array<float,3> ScaleAzimuthFront3(std::array<float,3> pos)
 {
-    const float abs_azi{std::fabs(azimuth)};
-    if(!(abs_azi >= al::MathDefs<float>::Pi()*0.5f))
-        return std::copysign(minf(abs_azi*scale, al::MathDefs<float>::Pi()*0.5f), azimuth);
-    return azimuth;
+    if(pos[2] < 0.0f)
+    {
+        /* Normalize the length of the x,z components for a 2D vector of the
+         * azimuth angle. Negate Z since {0,0,-1} is angle 0.
+         */
+        const float len2d{std::sqrt(pos[0]*pos[0] + pos[2]*pos[2])};
+        float x{pos[0] / len2d};
+        float z{-pos[2] / len2d};
+
+        /* Z > cos(pi/6) = -30 < azimuth < 30 degrees. */
+        if(z > 0.866025403785f)
+        {
+            /* Triple the angle represented by x,z. */
+            x = x*3.0f - x*x*x*4.0f;
+            z = z*z*z*4.0f - z*3.0f;
+
+            /* Scale the vector back to fit in 3D. */
+            pos[0] = x * len2d;
+            pos[2] = -z * len2d;
+        }
+        else
+        {
+            /* If azimuth >= 30 degrees, clamp to 90 degrees. */
+            pos[0] = std::copysign(len2d, pos[0]);
+            pos[2] = 0.0f;
+        }
+    }
+    return pos;
 }
 
-/* Wraps the given value in radians to stay between [-pi,+pi] */
-inline float WrapRadians(float r)
+/* Scales the azimuth of the given vector by 1.5 (3/2) if it's in front. */
+inline std::array<float,3> ScaleAzimuthFront3_2(std::array<float,3> pos)
 {
-    constexpr float Pi{al::MathDefs<float>::Pi()};
-    constexpr float Pi2{al::MathDefs<float>::Tau()};
-    if(r >  Pi) return std::fmod(Pi+r, Pi2) - Pi;
-    if(r < -Pi) return Pi - std::fmod(Pi-r, Pi2);
-    return r;
+    if(pos[2] < 0.0f)
+    {
+        const float len2d{std::sqrt(pos[0]*pos[0] + pos[2]*pos[2])};
+        float x{pos[0] / len2d};
+        float z{-pos[2] / len2d};
+
+        /* Z > cos(pi/3) = -60 < azimuth < 60 degrees. */
+        if(z > 0.5f)
+        {
+            /* Halve the angle represented by x,z. */
+            x = std::copysign(std::sqrt((1.0f - z) * 0.5f), x);
+            z = std::sqrt((1.0f + z) * 0.5f);
+
+            /* Triple the angle represented by x,z. */
+            x = x*3.0f - x*x*x*4.0f;
+            z = z*z*z*4.0f - z*3.0f;
+
+            /* Scale the vector back to fit in 3D. */
+            pos[0] = x * len2d;
+            pos[2] = -z * len2d;
+        }
+        else
+        {
+            /* If azimuth >= 60 degrees, clamp to 90 degrees. */
+            pos[0] = std::copysign(len2d, pos[0]);
+            pos[2] = 0.0f;
+        }
+    }
+    return pos;
 }
+
 
 /* Begin ambisonic rotation helpers.
  *
@@ -560,98 +628,117 @@ inline float WrapRadians(float r)
  * precomputed since they're constant. The second-order coefficients are
  * followed by the third-order coefficients, etc.
  */
+constexpr size_t CalcRotatorSize(size_t l) noexcept
+{
+    if(l >= 2)
+        return (l*2 + 1)*(l*2 + 1) + CalcRotatorSize(l-1);
+    return 0;
+}
+
 struct RotatorCoeffs {
-    float u, v, w;
+    struct CoeffValues {
+        float u, v, w;
+    };
+    std::array<CoeffValues,CalcRotatorSize(MaxAmbiOrder)> mCoeffs{};
 
-    template<size_t N0, size_t N1>
-    static std::array<RotatorCoeffs,N0+N1> ConcatArrays(const std::array<RotatorCoeffs,N0> &lhs,
-        const std::array<RotatorCoeffs,N1> &rhs)
+    RotatorCoeffs()
     {
-        std::array<RotatorCoeffs,N0+N1> ret;
-        auto iter = std::copy(lhs.cbegin(), lhs.cend(), ret.begin());
-        std::copy(rhs.cbegin(), rhs.cend(), iter);
-        return ret;
-    }
+        auto coeffs = mCoeffs.begin();
 
-    template<int l, int num_elems=l*2+1>
-    static std::array<RotatorCoeffs,num_elems*num_elems> GenCoeffs()
-    {
-        std::array<RotatorCoeffs,num_elems*num_elems> ret{};
-        auto coeffs = ret.begin();
-
-        for(int m{-l};m <= l;++m)
+        for(int l=2;l <= MaxAmbiOrder;++l)
         {
             for(int n{-l};n <= l;++n)
             {
-                // compute u,v,w terms of Eq.8.1 (Table I)
-                const bool d{m == 0}; // the delta function d_m0
-                const float denom{static_cast<float>((std::abs(n) == l) ?
-                    (2*l) * (2*l - 1) : (l*l - n*n))};
+                for(int m{-l};m <= l;++m)
+                {
+                    /* compute u,v,w terms of Eq.8.1 (Table I)
+                     *
+                     * const bool d{m == 0}; // the delta function d_m0
+                     * const double denom{(std::abs(n) == l) ?
+                     *     (2*l) * (2*l - 1) : (l*l - n*n)};
+                     *
+                     * const int abs_m{std::abs(m)};
+                     * coeffs->u = std::sqrt((l*l - m*m) / denom);
+                     * coeffs->v = std::sqrt((l+abs_m-1) * (l+abs_m) / denom) *
+                     *     (1.0+d) * (1.0 - 2.0*d) * 0.5;
+                     * coeffs->w = std::sqrt((l-abs_m-1) * (l-abs_m) / denom) *
+                     *     (1.0-d) * -0.5;
+                     */
 
-                const int abs_m{std::abs(m)};
-                coeffs->u = std::sqrt(static_cast<float>(l*l - m*m)/denom);
-                coeffs->v = std::sqrt(static_cast<float>(l+abs_m-1) * static_cast<float>(l+abs_m) /
-                    denom) * (1.0f+d) * (1.0f - 2.0f*d) * 0.5f;
-                coeffs->w = std::sqrt(static_cast<float>(l-abs_m-1) * static_cast<float>(l-abs_m) /
-                    denom) * (1.0f-d) * -0.5f;
-                ++coeffs;
+                    const double denom{static_cast<double>((std::abs(n) == l) ?
+                          (2*l) * (2*l - 1) : (l*l - n*n))};
+
+                    if(m == 0)
+                    {
+                        coeffs->u = static_cast<float>(std::sqrt(l * l / denom));
+                        coeffs->v = static_cast<float>(std::sqrt((l-1) * l / denom) * -1.0);
+                        coeffs->w = 0.0f;
+                    }
+                    else
+                    {
+                        const int abs_m{std::abs(m)};
+                        coeffs->u = static_cast<float>(std::sqrt((l*l - m*m) / denom));
+                        coeffs->v = static_cast<float>(std::sqrt((l+abs_m-1) * (l+abs_m) / denom) *
+                            0.5);
+                        coeffs->w = static_cast<float>(std::sqrt((l-abs_m-1) * (l-abs_m) / denom) *
+                            -0.5);
+                    }
+                    ++coeffs;
+                }
             }
         }
-
-        return ret;
     }
 };
-const auto RotatorCoeffArray = RotatorCoeffs::ConcatArrays(RotatorCoeffs::GenCoeffs<2>(),
-    RotatorCoeffs::GenCoeffs<3>());
+const RotatorCoeffs RotatorCoeffArray{};
 
 /**
  * Given the matrix, pre-filled with the (zeroth- and) first-order rotation
  * coefficients, this fills in the coefficients for the higher orders up to and
  * including the given order. The matrix is in ACN layout.
  */
-void AmbiRotator(std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNELS> &matrix,
-    const int order)
+void AmbiRotator(AmbiRotateMatrix &matrix, const int order)
 {
     /* Don't do anything for < 2nd order. */
     if(order < 2) return;
 
-    auto P = [](const int i, const int l, const int a, const int n, const size_t last_band,
-        const std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNELS> &R)
+    static constexpr auto P = [](const int i, const int l, const int a, const int n,
+        const size_t last_band, const AmbiRotateMatrix &R)
     {
-        const float ri1{ R[static_cast<ALuint>(i+2)][ 1+2]};
-        const float rim1{R[static_cast<ALuint>(i+2)][-1+2]};
-        const float ri0{ R[static_cast<ALuint>(i+2)][ 0+2]};
+        const float ri1{ R[ 1+2][static_cast<size_t>(i+2_z)]};
+        const float rim1{R[-1+2][static_cast<size_t>(i+2_z)]};
+        const float ri0{ R[ 0+2][static_cast<size_t>(i+2_z)]};
 
-        auto vec = R[static_cast<ALuint>(a+l-1) + last_band].cbegin() + last_band;
+        const size_t y{last_band + static_cast<size_t>(a+l-1)};
         if(n == -l)
-            return ri1*vec[0] + rim1*vec[static_cast<ALuint>(l-1)*size_t{2}];
+            return ri1*R[last_band][y] + rim1*R[last_band + static_cast<size_t>(l-1_z)*2][y];
         if(n == l)
-            return ri1*vec[static_cast<ALuint>(l-1)*size_t{2}] - rim1*vec[0];
-        return ri0*vec[static_cast<ALuint>(n+l-1)];
+            return ri1*R[last_band + static_cast<size_t>(l-1_z)*2][y] - rim1*R[last_band][y];
+        return ri0*R[last_band + static_cast<size_t>(l-1_z+n)][y];
     };
 
-    auto U = [P](const int l, const int m, const int n, const size_t last_band,
-        const std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNELS> &R)
+    static constexpr auto U = [](const int l, const int m, const int n, const size_t last_band,
+        const AmbiRotateMatrix &R)
     {
         return P(0, l, m, n, last_band, R);
     };
-    auto V = [P](const int l, const int m, const int n, const size_t last_band,
-        const std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNELS> &R)
+    static constexpr auto V = [](const int l, const int m, const int n, const size_t last_band,
+        const AmbiRotateMatrix &R)
     {
+        using namespace al::numbers;
         if(m > 0)
         {
             const bool d{m == 1};
             const float p0{P( 1, l,  m-1, n, last_band, R)};
             const float p1{P(-1, l, -m+1, n, last_band, R)};
-            return d ? p0*std::sqrt(2.0f) : (p0 - p1);
+            return d ? p0*sqrt2_v<float> : (p0 - p1);
         }
         const bool d{m == -1};
         const float p0{P( 1, l,  m+1, n, last_band, R)};
         const float p1{P(-1, l, -m-1, n, last_band, R)};
-        return d ? p1*std::sqrt(2.0f) : (p0 + p1);
+        return d ? p1*sqrt2_v<float> : (p0 + p1);
     };
-    auto W = [P](const int l, const int m, const int n, const size_t last_band,
-        const std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNELS> &R)
+    static constexpr auto W = [](const int l, const int m, const int n, const size_t last_band,
+        const AmbiRotateMatrix &R)
     {
         assert(m != 0);
         if(m > 0)
@@ -666,87 +753,106 @@ void AmbiRotator(std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNEL
     };
 
     // compute rotation matrix of each subsequent band recursively
-    auto coeffs = RotatorCoeffArray.cbegin();
+    auto coeffs = RotatorCoeffArray.mCoeffs.cbegin();
     size_t band_idx{4}, last_band{1};
     for(int l{2};l <= order;++l)
     {
         size_t y{band_idx};
-        for(int m{-l};m <= l;++m,++y)
+        for(int n{-l};n <= l;++n,++y)
         {
             size_t x{band_idx};
-            for(int n{-l};n <= l;++n,++x)
+            for(int m{-l};m <= l;++m,++x)
             {
                 float r{0.0f};
 
                 // computes Eq.8.1
-                const float u{coeffs->u};
-                if(u != 0.0f) r += u * U(l, m, n, last_band, matrix);
-                const float v{coeffs->v};
-                if(v != 0.0f) r += v * V(l, m, n, last_band, matrix);
-                const float w{coeffs->w};
-                if(w != 0.0f) r += w * W(l, m, n, last_band, matrix);
+                if(const float u{coeffs->u}; u != 0.0f)
+                    r += u * U(l, m, n, last_band, matrix);
+                if(const float v{coeffs->v}; v != 0.0f)
+                    r += v * V(l, m, n, last_band, matrix);
+                if(const float w{coeffs->w}; w != 0.0f)
+                    r += w * W(l, m, n, last_band, matrix);
 
                 matrix[y][x] = r;
                 ++coeffs;
             }
         }
         last_band = band_idx;
-        band_idx += static_cast<ALuint>(l)*size_t{2} + 1;
+        band_idx += static_cast<uint>(l)*2_uz + 1;
     }
 }
 /* End ambisonic rotation helpers. */
+
+
+constexpr float sin30{0.5f};
+constexpr float cos30{0.866025403785f};
+constexpr float sin45{al::numbers::sqrt2_v<float>*0.5f};
+constexpr float cos45{al::numbers::sqrt2_v<float>*0.5f};
+constexpr float sin110{ 0.939692620786f};
+constexpr float cos110{-0.342020143326f};
+
+struct ChanPosMap {
+    Channel channel;
+    std::array<float,3> pos;
+};
 
 
 struct GainTriplet { float Base, HF, LF; };
 
 void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, const float zpos,
     const float Distance, const float Spread, const GainTriplet &DryGain,
-    const al::span<const GainTriplet,MAX_SENDS> WetGain, ALeffectslot *(&SendSlots)[MAX_SENDS],
-    const VoiceProps *props, const ALlistener &Listener, const ALCdevice *Device)
+    const al::span<const GainTriplet,MaxSendCount> WetGain,
+    const al::span<EffectSlot*,MaxSendCount> SendSlots, const VoiceProps *props,
+    const ContextParams &Context, DeviceBase *Device)
 {
-    static const ChanMap MonoMap[1]{
-        { FrontCenter, 0.0f, 0.0f }
-    }, RearMap[2]{
-        { BackLeft,  Deg2Rad(-150.0f), Deg2Rad(0.0f) },
-        { BackRight, Deg2Rad( 150.0f), Deg2Rad(0.0f) }
-    }, QuadMap[4]{
-        { FrontLeft,  Deg2Rad( -45.0f), Deg2Rad(0.0f) },
-        { FrontRight, Deg2Rad(  45.0f), Deg2Rad(0.0f) },
-        { BackLeft,   Deg2Rad(-135.0f), Deg2Rad(0.0f) },
-        { BackRight,  Deg2Rad( 135.0f), Deg2Rad(0.0f) }
-    }, X51Map[6]{
-        { FrontLeft,   Deg2Rad( -30.0f), Deg2Rad(0.0f) },
-        { FrontRight,  Deg2Rad(  30.0f), Deg2Rad(0.0f) },
-        { FrontCenter, Deg2Rad(   0.0f), Deg2Rad(0.0f) },
-        { LFE, 0.0f, 0.0f },
-        { SideLeft,    Deg2Rad(-110.0f), Deg2Rad(0.0f) },
-        { SideRight,   Deg2Rad( 110.0f), Deg2Rad(0.0f) }
-    }, X61Map[7]{
-        { FrontLeft,   Deg2Rad(-30.0f), Deg2Rad(0.0f) },
-        { FrontRight,  Deg2Rad( 30.0f), Deg2Rad(0.0f) },
-        { FrontCenter, Deg2Rad(  0.0f), Deg2Rad(0.0f) },
-        { LFE, 0.0f, 0.0f },
-        { BackCenter,  Deg2Rad(180.0f), Deg2Rad(0.0f) },
-        { SideLeft,    Deg2Rad(-90.0f), Deg2Rad(0.0f) },
-        { SideRight,   Deg2Rad( 90.0f), Deg2Rad(0.0f) }
-    }, X71Map[8]{
-        { FrontLeft,   Deg2Rad( -30.0f), Deg2Rad(0.0f) },
-        { FrontRight,  Deg2Rad(  30.0f), Deg2Rad(0.0f) },
-        { FrontCenter, Deg2Rad(   0.0f), Deg2Rad(0.0f) },
-        { LFE, 0.0f, 0.0f },
-        { BackLeft,    Deg2Rad(-150.0f), Deg2Rad(0.0f) },
-        { BackRight,   Deg2Rad( 150.0f), Deg2Rad(0.0f) },
-        { SideLeft,    Deg2Rad( -90.0f), Deg2Rad(0.0f) },
-        { SideRight,   Deg2Rad(  90.0f), Deg2Rad(0.0f) }
+    static constexpr std::array MonoMap{
+        ChanPosMap{FrontCenter, std::array{0.0f, 0.0f, -1.0f}}
+    };
+    static constexpr std::array RearMap{
+        ChanPosMap{BackLeft,  std::array{-sin30, 0.0f, cos30}},
+        ChanPosMap{BackRight, std::array{ sin30, 0.0f, cos30}},
+    };
+    static constexpr std::array QuadMap{
+        ChanPosMap{FrontLeft,  std::array{-sin45, 0.0f, -cos45}},
+        ChanPosMap{FrontRight, std::array{ sin45, 0.0f, -cos45}},
+        ChanPosMap{BackLeft,   std::array{-sin45, 0.0f,  cos45}},
+        ChanPosMap{BackRight,  std::array{ sin45, 0.0f,  cos45}},
+    };
+    static constexpr std::array X51Map{
+        ChanPosMap{FrontLeft,   std::array{-sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontRight,  std::array{ sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontCenter, std::array{  0.0f, 0.0f, -1.0f}},
+        ChanPosMap{LFE, {}},
+        ChanPosMap{SideLeft,    std::array{-sin110, 0.0f, -cos110}},
+        ChanPosMap{SideRight,   std::array{ sin110, 0.0f, -cos110}},
+    };
+    static constexpr std::array X61Map{
+        ChanPosMap{FrontLeft,   std::array{-sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontRight,  std::array{ sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontCenter, std::array{  0.0f, 0.0f, -1.0f}},
+        ChanPosMap{LFE, {}},
+        ChanPosMap{BackCenter,  std::array{ 0.0f, 0.0f, 1.0f}},
+        ChanPosMap{SideLeft,    std::array{-1.0f, 0.0f, 0.0f}},
+        ChanPosMap{SideRight,   std::array{ 1.0f, 0.0f, 0.0f}},
+    };
+    static constexpr std::array X71Map{
+        ChanPosMap{FrontLeft,   std::array{-sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontRight,  std::array{ sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontCenter, std::array{  0.0f, 0.0f, -1.0f}},
+        ChanPosMap{LFE, {}},
+        ChanPosMap{BackLeft,    std::array{-sin30, 0.0f, cos30}},
+        ChanPosMap{BackRight,   std::array{ sin30, 0.0f, cos30}},
+        ChanPosMap{SideLeft,    std::array{ -1.0f, 0.0f, 0.0f}},
+        ChanPosMap{SideRight,   std::array{  1.0f, 0.0f, 0.0f}},
     };
 
-    ChanMap StereoMap[2]{
-        { FrontLeft,  Deg2Rad(-30.0f), Deg2Rad(0.0f) },
-        { FrontRight, Deg2Rad( 30.0f), Deg2Rad(0.0f) }
+    std::array StereoMap{
+        ChanPosMap{FrontLeft,   std::array{-sin30, 0.0f, -cos30}},
+        ChanPosMap{FrontRight,  std::array{ sin30, 0.0f, -cos30}},
     };
 
     const auto Frequency = static_cast<float>(Device->Frequency);
-    const ALuint NumSends{Device->NumAuxSends};
+    const uint NumSends{Device->NumAuxSends};
 
     const size_t num_channels{voice->mChans.size()};
     ASSUME(num_channels > 0);
@@ -759,71 +865,91 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
             [](SendParams &params) -> void { params.Gains.Target.fill(0.0f); });
     }
 
-    DirectMode DirectChannels{props->DirectChannels};
-    const ChanMap *chans{nullptr};
-    float downmix_gain{1.0f};
-    switch(voice->mFmtChannels)
+    const auto getChans = [props,&StereoMap](FmtChannels chanfmt) noexcept
+        -> std::pair<DirectMode,al::span<const ChanPosMap>>
     {
-    case FmtMono:
-        chans = MonoMap;
-        /* Mono buffers are never played direct. */
-        DirectChannels = DirectMode::Off;
-        break;
-
-    case FmtStereo:
-        if(DirectChannels == DirectMode::Off)
+        switch(chanfmt)
         {
-            /* Convert counter-clockwise to clock-wise, and wrap between
-             * [-pi,+pi].
-             */
-            StereoMap[0].angle = WrapRadians(-props->StereoPan[0]);
-            StereoMap[1].angle = WrapRadians(-props->StereoPan[1]);
+        case FmtMono:
+            /* Mono buffers are never played direct. */
+            return {DirectMode::Off, al::span{MonoMap}};
+
+        case FmtStereo:
+        case FmtMonoDup:
+            if(props->DirectChannels == DirectMode::Off)
+            {
+                for(size_t i{0};i < 2;++i)
+                {
+                    /* StereoPan is counter-clockwise in radians. */
+                    const float a{props->StereoPan[i]};
+                    StereoMap[i].pos[0] = -std::sin(a);
+                    StereoMap[i].pos[2] = -std::cos(a);
+                }
+            }
+            return {props->DirectChannels, al::span{StereoMap}};
+
+        case FmtRear: return {props->DirectChannels, al::span{RearMap}};
+        case FmtQuad: return {props->DirectChannels, al::span{QuadMap}};
+        case FmtX51: return {props->DirectChannels, al::span{X51Map}};
+        case FmtX61: return {props->DirectChannels, al::span{X61Map}};
+        case FmtX71: return {props->DirectChannels, al::span{X71Map}};
+
+        case FmtBFormat2D:
+        case FmtBFormat3D:
+        case FmtUHJ2:
+        case FmtUHJ3:
+        case FmtUHJ4:
+        case FmtSuperStereo:
+            return {DirectMode::Off, {}};
         }
+        return {props->DirectChannels, {}};
+    };
+    const auto [DirectChannels,chans] = getChans(voice->mFmtChannels);
 
-        chans = StereoMap;
-        downmix_gain = 1.0f / 2.0f;
-        break;
+    voice->mFlags.reset(VoiceHasHrtf).reset(VoiceHasNfc);
+    if(auto *decoder{voice->mDecoder.get()})
+        decoder->mWidthControl = std::min(props->EnhWidth, 0.7f);
 
-    case FmtRear:
-        chans = RearMap;
-        downmix_gain = 1.0f / 2.0f;
-        break;
-
-    case FmtQuad:
-        chans = QuadMap;
-        downmix_gain = 1.0f / 4.0f;
-        break;
-
-    case FmtX51:
-        chans = X51Map;
-        /* NOTE: Excludes LFE. */
-        downmix_gain = 1.0f / 5.0f;
-        break;
-
-    case FmtX61:
-        chans = X61Map;
-        /* NOTE: Excludes LFE. */
-        downmix_gain = 1.0f / 6.0f;
-        break;
-
-    case FmtX71:
-        chans = X71Map;
-        /* NOTE: Excludes LFE. */
-        downmix_gain = 1.0f / 7.0f;
-        break;
-
-    case FmtBFormat2D:
-    case FmtBFormat3D:
-        DirectChannels = DirectMode::Off;
-        break;
-    }
-
-    voice->mFlags &= ~(VoiceHasHrtf | VoiceHasNfc);
-    if(voice->mFmtChannels == FmtBFormat2D || voice->mFmtChannels == FmtBFormat3D)
+    const float lgain{std::min(1.0f-props->Panning, 1.0f)};
+    const float rgain{std::min(1.0f+props->Panning, 1.0f)};
+    const float mingain{std::min(lgain, rgain)};
+    auto SelectChannelGain = [lgain,rgain,mingain](const Channel chan) noexcept
     {
-        /* Special handling for B-Format sources. */
+        switch(chan)
+        {
+        case FrontLeft: return lgain;
+        case FrontRight: return rgain;
+        case FrontCenter: break;
+        case LFE: break;
+        case BackLeft: return lgain;
+        case BackRight: return rgain;
+        case BackCenter: break;
+        case SideLeft: return lgain;
+        case SideRight: return rgain;
+        case TopCenter: break;
+        case TopFrontLeft: return lgain;
+        case TopFrontCenter: break;
+        case TopFrontRight: return rgain;
+        case TopBackLeft: return lgain;
+        case TopBackCenter: break;
+        case TopBackRight: return rgain;
+        case BottomFrontLeft: return lgain;
+        case BottomFrontRight: return rgain;
+        case BottomBackLeft: return lgain;
+        case BottomBackRight: return rgain;
+        case Aux0: case Aux1: case Aux2: case Aux3: case Aux4: case Aux5: case Aux6: case Aux7:
+        case Aux8: case Aux9: case Aux10: case Aux11: case Aux12: case Aux13: case Aux14:
+        case Aux15: case MaxChannels: break;
+        }
+        return mingain;
+    };
 
-        if(Device->AvgSpeakerDist > 0.0f)
+    if(IsAmbisonic(voice->mFmtChannels))
+    {
+        /* Special handling for B-Format and UHJ sources. */
+
+        if(Device->AvgSpeakerDist > 0.0f && voice->mFmtChannels != FmtUHJ2
+            && voice->mFmtChannels != FmtSuperStereo)
         {
             if(!(Distance > std::numeric_limits<float>::epsilon()))
             {
@@ -838,14 +964,14 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
                 /* Clamp the distance for really close sources, to prevent
                  * excessive bass.
                  */
-                const float mdist{maxf(Distance, Device->AvgSpeakerDist/4.0f)};
+                const float mdist{std::max(Distance*NfcScale, Device->AvgSpeakerDist/4.0f)};
                 const float w0{SpeedOfSoundMetersPerSec / (mdist * Frequency)};
 
                 /* Only need to adjust the first channel of a B-Format source. */
                 voice->mChans[0].mDryParams.NFCtrlFilter.adjust(w0);
             }
 
-            voice->mFlags |= VoiceHasNfc;
+            voice->mFlags.set(VoiceHasNfc);
         }
 
         /* Panning a B-Format sound toward some direction is easy. Just pan the
@@ -854,42 +980,30 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
          * panning.
          */
         const float coverage{!(Distance > std::numeric_limits<float>::epsilon()) ? 1.0f :
-            (Spread * (1.0f/al::MathDefs<float>::Tau()))};
+            (al::numbers::inv_pi_v<float>/2.0f * Spread)};
 
         auto calc_coeffs = [xpos,ypos,zpos](RenderMode mode)
         {
             if(mode != RenderMode::Pairwise)
-                return CalcDirectionCoeffs({xpos, ypos, zpos}, 0.0f);
-
-            /* Clamp Y, in case rounding errors caused it to end up outside
-             * of -1...+1.
-             */
-            const float ev{std::asin(clampf(ypos, -1.0f, 1.0f))};
-            /* Negate Z for right-handed coords with -Z in front. */
-            const float az{std::atan2(xpos, -zpos)};
-
-            /* A scalar of 1.5 for plain stereo results in +/-60 degrees
-             * being moved to +/-90 degrees for direct right and left
-             * speaker responses.
-             */
-            return CalcAngleCoeffs(ScaleAzimuthFront(az, 1.5f), ev, 0.0f);
+                return CalcDirectionCoeffs(std::array{xpos, ypos, zpos}, 0.0f);
+            const auto pos = ScaleAzimuthFront3_2(std::array{xpos, ypos, zpos});
+            return CalcDirectionCoeffs(pos, 0.0f);
         };
+        const auto scales = GetAmbiScales(voice->mAmbiScaling);
         auto coeffs = calc_coeffs(Device->mRenderMode);
-        std::transform(coeffs.begin()+1, coeffs.end(), coeffs.begin()+1,
-            std::bind(std::multiplies<float>{}, _1, 1.0f-coverage));
 
-        /* NOTE: W needs to be scaled according to channel scaling. */
-        const auto &scales = GetAmbiScales(voice->mAmbiScaling);
-        ComputePanGains(&Device->Dry, coeffs.data(), DryGain.Base*scales[0],
-            voice->mChans[0].mDryParams.Gains.Target);
-        for(ALuint i{0};i < NumSends;i++)
+        if(!(coverage > 0.0f))
         {
-            if(const ALeffectslot *Slot{SendSlots[i]})
-                ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base*scales[0],
-                    voice->mChans[0].mWetParams[i].Gains.Target);
+            ComputePanGains(&Device->Dry, coeffs, DryGain.Base*scales[0],
+                voice->mChans[0].mDryParams.Gains.Target);
+            for(uint i{0};i < NumSends;i++)
+            {
+                if(const EffectSlot *Slot{SendSlots[i]})
+                    ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base*scales[0],
+                        voice->mChans[0].mWetParams[i].Gains.Target);
+            }
         }
-
-        if(coverage > 0.0f)
+        else
         {
             /* Local B-Format sources have their XYZ channels rotated according
              * to the orientation.
@@ -901,59 +1015,110 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
             V.normalize();
             if(!props->HeadRelative)
             {
-                N = Listener.Params.Matrix * N;
-                V = Listener.Params.Matrix * V;
+                N = Context.Matrix * N;
+                V = Context.Matrix * V;
             }
             /* Build and normalize right-vector */
-            alu::Vector U{aluCrossproduct(N, V)};
+            alu::Vector U{N.cross_product(V)};
             U.normalize();
 
             /* Build a rotation matrix. Manually fill the zeroth- and first-
              * order elements, then construct the rotation for the higher
              * orders.
              */
-            std::array<std::array<float,MAX_AMBI_CHANNELS>,MAX_AMBI_CHANNELS> shrot{};
+            AmbiRotateMatrix &shrot = Device->mAmbiRotateMatrix;
+            shrot.fill(AmbiRotateMatrix::value_type{});
+
             shrot[0][0] = 1.0f;
-            shrot[1][1] =  U[0]; shrot[1][2] = -V[0]; shrot[1][3] = -N[0];
-            shrot[2][1] = -U[1]; shrot[2][2] =  V[1]; shrot[2][3] =  N[1];
-            shrot[3][1] =  U[2]; shrot[3][2] = -V[2]; shrot[3][3] = -N[2];
-            AmbiRotator(shrot, static_cast<int>(minu(voice->mAmbiOrder, Device->mAmbiOrder)));
+            shrot[1][1] =  U[0]; shrot[1][2] = -U[1]; shrot[1][3] =  U[2];
+            shrot[2][1] = -V[0]; shrot[2][2] =  V[1]; shrot[2][3] = -V[2];
+            shrot[3][1] = -N[0]; shrot[3][2] =  N[1]; shrot[3][3] = -N[2];
+            AmbiRotator(shrot, static_cast<int>(Device->mAmbiOrder));
+
+            /* If the device is higher order than the voice, "upsample" the
+             * matrix.
+             *
+             * NOTE: Starting with second-order, a 2D upsample needs to be
+             * applied with a 2D source and 3D output, even when they're the
+             * same order. This is because higher orders have a height offset
+             * on various channels (i.e. when elevation=0, those height-related
+             * channels should be non-0).
+             */
+            AmbiRotateMatrix &mixmatrix = Device->mAmbiRotateMatrix2;
+            if(Device->mAmbiOrder > voice->mAmbiOrder
+                || (Device->mAmbiOrder >= 2 && !Device->m2DMixing
+                    && Is2DAmbisonic(voice->mFmtChannels)))
+            {
+                if(voice->mAmbiOrder == 1)
+                {
+                    const auto upsampler = Is2DAmbisonic(voice->mFmtChannels) ?
+                        al::span{AmbiScale::FirstOrder2DUp} : al::span{AmbiScale::FirstOrderUp};
+                    UpsampleBFormatTransform(mixmatrix, upsampler, shrot, Device->mAmbiOrder);
+                }
+                else if(voice->mAmbiOrder == 2)
+                {
+                    const auto upsampler = Is2DAmbisonic(voice->mFmtChannels) ?
+                        al::span{AmbiScale::SecondOrder2DUp} : al::span{AmbiScale::SecondOrderUp};
+                    UpsampleBFormatTransform(mixmatrix, upsampler, shrot, Device->mAmbiOrder);
+                }
+                else if(voice->mAmbiOrder == 3)
+                {
+                    const auto upsampler = Is2DAmbisonic(voice->mFmtChannels) ?
+                        al::span{AmbiScale::ThirdOrder2DUp} : al::span{AmbiScale::ThirdOrderUp};
+                    UpsampleBFormatTransform(mixmatrix, upsampler, shrot, Device->mAmbiOrder);
+                }
+                else if(voice->mAmbiOrder == 4)
+                {
+                    const auto upsampler = al::span{AmbiScale::FourthOrder2DUp};
+                    UpsampleBFormatTransform(mixmatrix, upsampler, shrot, Device->mAmbiOrder);
+                }
+                else
+                    al::unreachable();
+            }
+            else
+                mixmatrix = shrot;
 
             /* Convert the rotation matrix for input ordering and scaling, and
              * whether input is 2D or 3D.
              */
-            const uint8_t *index_map{(voice->mFmtChannels == FmtBFormat2D) ?
-                GetAmbi2DLayout(voice->mAmbiLayout).data() :
-                GetAmbiLayout(voice->mAmbiLayout).data()};
+            const auto index_map = Is2DAmbisonic(voice->mFmtChannels) ?
+                GetAmbi2DLayout(voice->mAmbiLayout).subspan(0) :
+                GetAmbiLayout(voice->mAmbiLayout).subspan(0);
 
-            static const uint8_t ChansPerOrder[MAX_AMBI_ORDER+1]{1, 3, 5, 7,};
-            static const uint8_t OrderOffset[MAX_AMBI_ORDER+1]{0, 1, 4, 9,};
-            for(size_t c{1};c < num_channels;c++)
+            /* Scale the panned W signal inversely to coverage (full coverage
+             * means no panned signal), and according to the channel scaling.
+             */
+            std::for_each(coeffs.begin(), coeffs.end(),
+                [scale=(1.0f-coverage)*scales[0]](float &coeff) noexcept { coeff *= scale; });
+
+            for(size_t c{0};c < num_channels;c++)
             {
                 const size_t acn{index_map[c]};
-                const size_t order{AmbiIndex::OrderFromChannel[acn]};
-                const size_t tocopy{ChansPerOrder[order]};
-                const size_t offset{OrderOffset[order]};
                 const float scale{scales[acn] * coverage};
-                auto in = shrot.cbegin() + offset;
 
-                coeffs = std::array<float,MAX_AMBI_CHANNELS>{};
-                for(size_t x{0};x < tocopy;++x)
-                    coeffs[offset+x] = in[x][acn] * scale;
+                /* For channel 0, combine the B-Format signal (scaled according
+                 * to the coverage amount) with the directional pan. For all
+                 * other channels, use just the (scaled) B-Format signal.
+                 */
+                std::transform(mixmatrix[acn].cbegin(), mixmatrix[acn].cend(), coeffs.begin(),
+                    coeffs.begin(), [scale](const float in, const float coeff) noexcept
+                    { return in*scale + coeff; });
 
-                ComputePanGains(&Device->Dry, coeffs.data(), DryGain.Base,
+                ComputePanGains(&Device->Dry, coeffs, DryGain.Base,
                     voice->mChans[c].mDryParams.Gains.Target);
 
-                for(ALuint i{0};i < NumSends;i++)
+                for(uint i{0};i < NumSends;i++)
                 {
-                    if(const ALeffectslot *Slot{SendSlots[i]})
-                        ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base,
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base,
                             voice->mChans[c].mWetParams[i].Gains.Target);
                 }
+
+                coeffs = std::array<float,MaxAmbiChannels>{};
             }
         }
     }
-    else if(DirectChannels != DirectMode::Off && Device->FmtChans != DevFmtAmbi3D)
+    else if(DirectChannels != DirectMode::Off && !Device->RealOut.RemixMap.empty())
     {
         /* Direct source channels always play local. Skip the virtual channels
          * and write inputs to the matching real outputs.
@@ -962,23 +1127,25 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
 
         for(size_t c{0};c < num_channels;c++)
         {
-            ALuint idx{GetChannelIdxByName(Device->RealOut, chans[c].channel)};
-            if(idx != INVALID_CHANNEL_INDEX)
-                voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base;
+            const float pangain{SelectChannelGain(chans[c].channel)};
+            if(uint idx{Device->channelIdxByName(chans[c].channel)}; idx != InvalidChannelIndex)
+                voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base * pangain;
             else if(DirectChannels == DirectMode::RemixMismatch)
             {
-                auto match_channel = [chans,c](const InputRemixMap &map) noexcept -> bool
-                { return chans[c].channel == map.channel; };
+                auto match_channel = [channel=chans[c].channel](const InputRemixMap &map) noexcept
+                { return channel == map.channel; };
                 auto remap = std::find_if(Device->RealOut.RemixMap.cbegin(),
                     Device->RealOut.RemixMap.cend(), match_channel);
                 if(remap != Device->RealOut.RemixMap.cend())
+                {
                     for(const auto &target : remap->targets)
                     {
-                        idx = GetChannelIdxByName(Device->RealOut, target.channel);
-                        if(idx != INVALID_CHANNEL_INDEX)
-                            voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base *
-                                target.mix;
+                        idx = Device->channelIdxByName(target.channel);
+                        if(idx != InvalidChannelIndex)
+                            voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base * pangain
+                                * target.mix;
                     }
+                }
             }
         }
 
@@ -987,12 +1154,17 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
          */
         for(size_t c{0};c < num_channels;c++)
         {
-            const auto coeffs = CalcAngleCoeffs(chans[c].angle, chans[c].elevation, 0.0f);
+            /* Skip LFE */
+            if(chans[c].channel == LFE)
+                continue;
 
-            for(ALuint i{0};i < NumSends;i++)
+            const float pangain{SelectChannelGain(chans[c].channel)};
+            const auto coeffs = CalcDirectionCoeffs(chans[c].pos, 0.0f);
+
+            for(uint i{0};i < NumSends;i++)
             {
-                if(const ALeffectslot *Slot{SendSlots[i]})
-                    ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base,
+                if(const EffectSlot *Slot{SendSlots[i]})
+                    ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base * pangain,
                         voice->mChans[c].mWetParams[i].Gains.Target);
             }
         }
@@ -1006,45 +1178,73 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
 
         if(Distance > std::numeric_limits<float>::epsilon())
         {
-            const float ev{std::asin(clampf(ypos, -1.0f, 1.0f))};
-            const float az{std::atan2(xpos, -zpos)};
+            if(voice->mFmtChannels == FmtMono)
+            {
+                const float src_ev{std::asin(std::clamp(ypos, -1.0f, 1.0f))};
+                const float src_az{std::atan2(xpos, -zpos)};
 
-            /* Get the HRIR coefficients and delays just once, for the given
-             * source direction.
-             */
-            GetHrtfCoeffs(Device->mHrtf.get(), ev, az, Distance, Spread,
-                voice->mChans[0].mDryParams.Hrtf.Target.Coeffs,
-                voice->mChans[0].mDryParams.Hrtf.Target.Delay);
-            voice->mChans[0].mDryParams.Hrtf.Target.Gain = DryGain.Base * downmix_gain;
+                Device->mHrtf->getCoeffs(src_ev, src_az, Distance*NfcScale, Spread,
+                    voice->mChans[0].mDryParams.Hrtf.Target.Coeffs,
+                    voice->mChans[0].mDryParams.Hrtf.Target.Delay);
+                voice->mChans[0].mDryParams.Hrtf.Target.Gain = DryGain.Base;
 
-            /* Remaining channels use the same results as the first. */
-            for(size_t c{1};c < num_channels;c++)
+                const auto coeffs = CalcDirectionCoeffs(std::array{xpos, ypos, zpos}, Spread);
+                for(uint i{0};i < NumSends;i++)
+                {
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base,
+                            voice->mChans[0].mWetParams[i].Gains.Target);
+                }
+            }
+            else for(size_t c{0};c < num_channels;c++)
             {
                 /* Skip LFE */
                 if(chans[c].channel == LFE) continue;
-                voice->mChans[c].mDryParams.Hrtf.Target = voice->mChans[0].mDryParams.Hrtf.Target;
-            }
+                const float pangain{SelectChannelGain(chans[c].channel)};
 
-            /* Calculate the directional coefficients once, which apply to all
-             * input channels of the source sends.
-             */
-            const auto coeffs = CalcDirectionCoeffs({xpos, ypos, zpos}, Spread);
-
-            for(size_t c{0};c < num_channels;c++)
-            {
-                /* Skip LFE */
-                if(chans[c].channel == LFE)
-                    continue;
-                for(ALuint i{0};i < NumSends;i++)
+                /* Warp the channel position toward the source position as the
+                 * source spread decreases. With no spread, all channels are at
+                 * the source position, at full spread (pi*2), each channel is
+                 * left unchanged.
+                 */
+                const float a{1.0f - (al::numbers::inv_pi_v<float>/2.0f)*Spread};
+                std::array pos{
+                    lerpf(chans[c].pos[0], xpos, a),
+                    lerpf(chans[c].pos[1], ypos, a),
+                    lerpf(chans[c].pos[2], zpos, a)};
+                const float len{std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2])};
+                if(len < 1.0f)
                 {
-                    if(const ALeffectslot *Slot{SendSlots[i]})
-                        ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base * downmix_gain,
+                    pos[0] /= len;
+                    pos[1] /= len;
+                    pos[2] /= len;
+                }
+
+                const float ev{std::asin(std::clamp(pos[1], -1.0f, 1.0f))};
+                const float az{std::atan2(pos[0], -pos[2])};
+
+                Device->mHrtf->getCoeffs(ev, az, Distance*NfcScale, 0.0f,
+                    voice->mChans[c].mDryParams.Hrtf.Target.Coeffs,
+                    voice->mChans[c].mDryParams.Hrtf.Target.Delay);
+                voice->mChans[c].mDryParams.Hrtf.Target.Gain = DryGain.Base * pangain;
+
+                const auto coeffs = CalcDirectionCoeffs(pos, 0.0f);
+                for(uint i{0};i < NumSends;i++)
+                {
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base * pangain,
                             voice->mChans[c].mWetParams[i].Gains.Target);
                 }
             }
         }
         else
         {
+            /* With no distance, spread is only meaningful for mono sources
+             * where it can be 0 or full (non-mono sources are always full
+             * spread here).
+             */
+            const float spread{Spread * float(voice->mFmtChannels == FmtMono)};
+
             /* Local sources on HRTF play with each channel panned to its
              * relative location around the listener, providing "virtual
              * speaker" responses.
@@ -1054,29 +1254,32 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
                 /* Skip LFE */
                 if(chans[c].channel == LFE)
                     continue;
+                const float pangain{SelectChannelGain(chans[c].channel)};
 
                 /* Get the HRIR coefficients and delays for this channel
                  * position.
                  */
-                GetHrtfCoeffs(Device->mHrtf.get(), chans[c].elevation, chans[c].angle,
-                    std::numeric_limits<float>::infinity(), Spread,
+                const float ev{std::asin(chans[c].pos[1])};
+                const float az{std::atan2(chans[c].pos[0], -chans[c].pos[2])};
+
+                Device->mHrtf->getCoeffs(ev, az, std::numeric_limits<float>::infinity(), spread,
                     voice->mChans[c].mDryParams.Hrtf.Target.Coeffs,
                     voice->mChans[c].mDryParams.Hrtf.Target.Delay);
-                voice->mChans[c].mDryParams.Hrtf.Target.Gain = DryGain.Base;
+                voice->mChans[c].mDryParams.Hrtf.Target.Gain = DryGain.Base * pangain;
 
                 /* Normal panning for auxiliary sends. */
-                const auto coeffs = CalcAngleCoeffs(chans[c].angle, chans[c].elevation, Spread);
+                const auto coeffs = CalcDirectionCoeffs(chans[c].pos, spread);
 
-                for(ALuint i{0};i < NumSends;i++)
+                for(uint i{0};i < NumSends;i++)
                 {
-                    if(const ALeffectslot *Slot{SendSlots[i]})
-                        ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base,
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base * pangain,
                             voice->mChans[c].mWetParams[i].Gains.Target);
                 }
             }
         }
 
-        voice->mFlags |= VoiceHasHrtf;
+        voice->mFlags.set(VoiceHasHrtf);
     }
     else
     {
@@ -1090,49 +1293,80 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
                 /* Clamp the distance for really close sources, to prevent
                  * excessive bass.
                  */
-                const float mdist{maxf(Distance, Device->AvgSpeakerDist/4.0f)};
+                const float mdist{std::max(Distance*NfcScale, Device->AvgSpeakerDist/4.0f)};
                 const float w0{SpeedOfSoundMetersPerSec / (mdist * Frequency)};
 
                 /* Adjust NFC filters. */
                 for(size_t c{0};c < num_channels;c++)
                     voice->mChans[c].mDryParams.NFCtrlFilter.adjust(w0);
 
-                voice->mFlags |= VoiceHasNfc;
+                voice->mFlags.set(VoiceHasNfc);
             }
 
-            /* Calculate the directional coefficients once, which apply to all
-             * input channels.
-             */
-            auto calc_coeffs = [xpos,ypos,zpos,Spread](RenderMode mode)
+            if(voice->mFmtChannels == FmtMono)
             {
-                if(mode != RenderMode::Pairwise)
-                    return CalcDirectionCoeffs({xpos, ypos, zpos}, Spread);
-                const float ev{std::asin(clampf(ypos, -1.0f, 1.0f))};
-                const float az{std::atan2(xpos, -zpos)};
-                return CalcAngleCoeffs(ScaleAzimuthFront(az, 1.5f), ev, Spread);
-            };
-            const auto coeffs = calc_coeffs(Device->mRenderMode);
+                auto calc_coeffs = [xpos,ypos,zpos,Spread](RenderMode mode)
+                {
+                    if(mode != RenderMode::Pairwise)
+                        return CalcDirectionCoeffs(std::array{xpos, ypos, zpos}, Spread);
+                    const auto pos = ScaleAzimuthFront3_2(std::array{xpos, ypos, zpos});
+                    return CalcDirectionCoeffs(pos, Spread);
+                };
+                const auto coeffs = calc_coeffs(Device->mRenderMode);
 
-            for(size_t c{0};c < num_channels;c++)
+                ComputePanGains(&Device->Dry, coeffs, DryGain.Base,
+                    voice->mChans[0].mDryParams.Gains.Target);
+                for(uint i{0};i < NumSends;i++)
+                {
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base,
+                            voice->mChans[0].mWetParams[i].Gains.Target);
+                }
+            }
+            else for(size_t c{0};c < num_channels;c++)
             {
+                const auto pangain = SelectChannelGain(chans[c].channel);
+
                 /* Special-case LFE */
                 if(chans[c].channel == LFE)
                 {
                     if(Device->Dry.Buffer.data() == Device->RealOut.Buffer.data())
                     {
-                        const ALuint idx{GetChannelIdxByName(Device->RealOut, chans[c].channel)};
-                        if(idx != INVALID_CHANNEL_INDEX)
-                            voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base;
+                        const auto idx = uint{Device->channelIdxByName(chans[c].channel)};
+                        if(idx != InvalidChannelIndex)
+                            voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base * pangain;
                     }
                     continue;
                 }
 
-                ComputePanGains(&Device->Dry, coeffs.data(), DryGain.Base * downmix_gain,
-                    voice->mChans[c].mDryParams.Gains.Target);
-                for(ALuint i{0};i < NumSends;i++)
+                /* Warp the channel position toward the source position as the
+                 * spread decreases. With no spread, all channels are at the
+                 * source position, at full spread (pi*2), each channel
+                 * position is left unchanged.
+                 */
+                const auto a = 1.0f - (al::numbers::inv_pi_v<float>/2.0f)*Spread;
+                auto pos = std::array{
+                    lerpf(chans[c].pos[0], xpos, a),
+                    lerpf(chans[c].pos[1], ypos, a),
+                    lerpf(chans[c].pos[2], zpos, a)};
+                const auto len = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
+                if(len < 1.0f)
                 {
-                    if(const ALeffectslot *Slot{SendSlots[i]})
-                        ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base * downmix_gain,
+                    pos[0] /= len;
+                    pos[1] /= len;
+                    pos[2] /= len;
+                }
+
+                if(Device->mRenderMode == RenderMode::Pairwise)
+                    pos = ScaleAzimuthFront3(pos);
+                const auto coeffs = CalcDirectionCoeffs(pos, 0.0f);
+
+                ComputePanGains(&Device->Dry, coeffs, DryGain.Base * pangain,
+                    voice->mChans[c].mDryParams.Gains.Target);
+                for(uint i{0};i < NumSends;i++)
+                {
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base * pangain,
                             voice->mChans[c].mWetParams[i].Gains.Target);
                 }
             }
@@ -1144,37 +1378,43 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
                 /* If the source distance is 0, simulate a plane-wave by using
                  * infinite distance, which results in a w0 of 0.
                  */
-                constexpr float w0{0.0f};
+                static constexpr float w0{0.0f};
                 for(size_t c{0};c < num_channels;c++)
                     voice->mChans[c].mDryParams.NFCtrlFilter.adjust(w0);
 
-                voice->mFlags |= VoiceHasNfc;
+                voice->mFlags.set(VoiceHasNfc);
             }
 
+            /* With no distance, spread is only meaningful for mono sources
+             * where it can be 0 or full (non-mono sources are always full
+             * spread here).
+             */
+            const float spread{Spread * float(voice->mFmtChannels == FmtMono)};
             for(size_t c{0};c < num_channels;c++)
             {
+                const float pangain{SelectChannelGain(chans[c].channel)};
+
                 /* Special-case LFE */
                 if(chans[c].channel == LFE)
                 {
                     if(Device->Dry.Buffer.data() == Device->RealOut.Buffer.data())
                     {
-                        const ALuint idx{GetChannelIdxByName(Device->RealOut, chans[c].channel)};
-                        if(idx != INVALID_CHANNEL_INDEX)
-                            voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base;
+                        const uint idx{Device->channelIdxByName(chans[c].channel)};
+                        if(idx != InvalidChannelIndex)
+                            voice->mChans[c].mDryParams.Gains.Target[idx] = DryGain.Base * pangain;
                     }
                     continue;
                 }
 
-                const auto coeffs = CalcAngleCoeffs((Device->mRenderMode == RenderMode::Pairwise)
-                    ? ScaleAzimuthFront(chans[c].angle, 3.0f) : chans[c].angle,
-                    chans[c].elevation, Spread);
+                const auto coeffs = CalcDirectionCoeffs((Device->mRenderMode==RenderMode::Pairwise)
+                    ? ScaleAzimuthFront3(chans[c].pos) : chans[c].pos, spread);
 
-                ComputePanGains(&Device->Dry, coeffs.data(), DryGain.Base,
+                ComputePanGains(&Device->Dry, coeffs, DryGain.Base * pangain,
                     voice->mChans[c].mDryParams.Gains.Target);
-                for(ALuint i{0};i < NumSends;i++)
+                for(uint i{0};i < NumSends;i++)
                 {
-                    if(const ALeffectslot *Slot{SendSlots[i]})
-                        ComputePanGains(&Slot->Wet, coeffs.data(), WetGain[i].Base,
+                    if(const EffectSlot *Slot{SendSlots[i]})
+                        ComputePanGains(&Slot->Wet, coeffs, WetGain[i].Base * pangain,
                             voice->mChans[c].mWetParams[i].Gains.Target);
                 }
             }
@@ -1199,7 +1439,7 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
             voice->mChans[c].mDryParams.HighPass.copyParamsFrom(highpass);
         }
     }
-    for(ALuint i{0};i < NumSends;i++)
+    for(uint i{0};i < NumSends;i++)
     {
         const float hfNorm{props->Send[i].HFReference / Frequency};
         const float lfNorm{props->Send[i].LFReference / Frequency};
@@ -1220,18 +1460,16 @@ void CalcPanningAndFilters(Voice *voice, const float xpos, const float ypos, con
     }
 }
 
-void CalcNonAttnSourceParams(Voice *voice, const VoiceProps *props, const ALCcontext *ALContext)
+void CalcNonAttnSourceParams(Voice *voice, const VoiceProps *props, const ContextBase *context)
 {
-    const ALCdevice *Device{ALContext->mDevice.get()};
-    ALeffectslot *SendSlots[MAX_SENDS];
+    DeviceBase *Device{context->mDevice};
+    std::array<EffectSlot*,MaxSendCount> SendSlots{};
 
     voice->mDirect.Buffer = Device->Dry.Buffer;
-    for(ALuint i{0};i < Device->NumAuxSends;i++)
+    for(uint i{0};i < Device->NumAuxSends;i++)
     {
         SendSlots[i] = props->Send[i].Slot;
-        if(!SendSlots[i] && i == 0)
-            SendSlots[i] = ALContext->mDefaultSlot.get();
-        if(!SendSlots[i] || SendSlots[i]->Params.EffectType == AL_EFFECT_NULL)
+        if(!SendSlots[i] || SendSlots[i]->EffectType == EffectSlotType::None)
         {
             SendSlots[i] = nullptr;
             voice->mSend[i].Buffer = {};
@@ -1243,276 +1481,249 @@ void CalcNonAttnSourceParams(Voice *voice, const VoiceProps *props, const ALCcon
     /* Calculate the stepping value */
     const auto Pitch = static_cast<float>(voice->mFrequency) /
         static_cast<float>(Device->Frequency) * props->Pitch;
-    if(Pitch > float{MAX_PITCH})
-        voice->mStep = MAX_PITCH<<MixerFracBits;
+    if(Pitch > float{MaxPitch})
+        voice->mStep = MaxPitch<<MixerFracBits;
     else
-        voice->mStep = maxu(fastf2u(Pitch * MixerFracOne), 1);
+        voice->mStep = std::max(fastf2u(Pitch * MixerFracOne), 1u);
     voice->mResampler = PrepareResampler(props->mResampler, voice->mStep, &voice->mResampleState);
 
     /* Calculate gains */
-    const ALlistener &Listener = ALContext->mListener;
-    GainTriplet DryGain;
-    DryGain.Base  = minf(clampf(props->Gain, props->MinGain, props->MaxGain) * props->Direct.Gain *
-        Listener.Params.Gain, GainMixMax);
+    GainTriplet DryGain{};
+    DryGain.Base = std::min(std::clamp(props->Gain, props->MinGain, props->MaxGain) *
+        props->Direct.Gain * context->mParams.Gain, GainMixMax);
     DryGain.HF = props->Direct.GainHF;
     DryGain.LF = props->Direct.GainLF;
-    GainTriplet WetGain[MAX_SENDS];
-    for(ALuint i{0};i < Device->NumAuxSends;i++)
+
+    std::array<GainTriplet,MaxSendCount> WetGain{};
+    for(uint i{0};i < Device->NumAuxSends;i++)
     {
-        WetGain[i].Base = minf(clampf(props->Gain, props->MinGain, props->MaxGain) *
-            props->Send[i].Gain * Listener.Params.Gain, GainMixMax);
+        WetGain[i].Base = std::min(std::clamp(props->Gain, props->MinGain, props->MaxGain) *
+            props->Send[i].Gain * context->mParams.Gain, GainMixMax);
         WetGain[i].HF = props->Send[i].GainHF;
         WetGain[i].LF = props->Send[i].GainLF;
     }
 
     CalcPanningAndFilters(voice, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, DryGain, WetGain, SendSlots, props,
-        Listener, Device);
+        context->mParams, Device);
 }
 
-void CalcAttnSourceParams(Voice *voice, const VoiceProps *props, const ALCcontext *ALContext)
+void CalcAttnSourceParams(Voice *voice, const VoiceProps *props, const ContextBase *context)
 {
-    const ALCdevice *Device{ALContext->mDevice.get()};
-    const ALuint NumSends{Device->NumAuxSends};
-    const ALlistener &Listener = ALContext->mListener;
+    DeviceBase *Device{context->mDevice};
+    const uint NumSends{Device->NumAuxSends};
 
     /* Set mixing buffers and get send parameters. */
     voice->mDirect.Buffer = Device->Dry.Buffer;
-    ALeffectslot *SendSlots[MAX_SENDS];
-    float RoomRolloff[MAX_SENDS];
-    GainTriplet DecayDistance[MAX_SENDS];
-    for(ALuint i{0};i < NumSends;i++)
+    std::array<EffectSlot*,MaxSendCount> SendSlots{};
+    std::array<float,MaxSendCount> RoomRolloff{};
+    for(uint i{0};i < NumSends;i++)
     {
         SendSlots[i] = props->Send[i].Slot;
-        if(!SendSlots[i] && i == 0)
-            SendSlots[i] = ALContext->mDefaultSlot.get();
-        if(!SendSlots[i] || SendSlots[i]->Params.EffectType == AL_EFFECT_NULL)
+        if(!SendSlots[i] || SendSlots[i]->EffectType == EffectSlotType::None)
         {
             SendSlots[i] = nullptr;
-            RoomRolloff[i] = 0.0f;
-            DecayDistance[i].Base = 0.0f;
-            DecayDistance[i].LF = 0.0f;
-            DecayDistance[i].HF = 0.0f;
-        }
-        else if(SendSlots[i]->Params.AuxSendAuto)
-        {
-            RoomRolloff[i] = SendSlots[i]->Params.RoomRolloff + props->RoomRolloffFactor;
-            /* Calculate the distances to where this effect's decay reaches
-             * -60dB.
-             */
-            DecayDistance[i].Base = SendSlots[i]->Params.DecayTime * SpeedOfSoundMetersPerSec;
-            DecayDistance[i].LF = DecayDistance[i].Base * SendSlots[i]->Params.DecayLFRatio;
-            DecayDistance[i].HF = DecayDistance[i].Base * SendSlots[i]->Params.DecayHFRatio;
-            if(SendSlots[i]->Params.DecayHFLimit)
-            {
-                const float airAbsorption{SendSlots[i]->Params.AirAbsorptionGainHF};
-                if(airAbsorption < 1.0f)
-                {
-                    /* Calculate the distance to where this effect's air
-                     * absorption reaches -60dB, and limit the effect's HF
-                     * decay distance (so it doesn't take any longer to decay
-                     * than the air would allow).
-                     */
-                    constexpr float log10_decaygain{-3.0f/*std::log10(ReverbDecayGain)*/};
-                    const float absorb_dist{log10_decaygain / std::log10(airAbsorption)};
-                    DecayDistance[i].HF = minf(absorb_dist, DecayDistance[i].HF);
-                }
-            }
-        }
-        else
-        {
-            /* If the slot's auxiliary send auto is off, the data sent to the
-             * effect slot is the same as the dry path, sans filter effects */
-            RoomRolloff[i] = props->RolloffFactor;
-            DecayDistance[i].Base = 0.0f;
-            DecayDistance[i].LF = 0.0f;
-            DecayDistance[i].HF = 0.0f;
-        }
-
-        if(!SendSlots[i])
             voice->mSend[i].Buffer = {};
+        }
         else
+        {
+            /* NOTE: Contrary to the EFX docs, the effect's room rolloff factor
+             * applies to the selected distance model along with the source's
+             * room rolloff factor, not necessarily the inverse distance model.
+             */
+            RoomRolloff[i] = props->RoomRolloffFactor + SendSlots[i]->RoomRolloff;
+
             voice->mSend[i].Buffer = SendSlots[i]->Wet.Buffer;
+        }
     }
 
     /* Transform source to listener space (convert to head relative) */
     alu::Vector Position{props->Position[0], props->Position[1], props->Position[2], 1.0f};
     alu::Vector Velocity{props->Velocity[0], props->Velocity[1], props->Velocity[2], 0.0f};
     alu::Vector Direction{props->Direction[0], props->Direction[1], props->Direction[2], 0.0f};
-    if(props->HeadRelative == AL_FALSE)
+    if(!props->HeadRelative)
     {
         /* Transform source vectors */
-        Position = Listener.Params.Matrix * Position;
-        Velocity = Listener.Params.Matrix * Velocity;
-        Direction = Listener.Params.Matrix * Direction;
+        Position = context->mParams.Matrix * (Position - context->mParams.Position);
+        Velocity = context->mParams.Matrix * Velocity;
+        Direction = context->mParams.Matrix * Direction;
     }
     else
     {
         /* Offset the source velocity to be relative of the listener velocity */
-        Velocity += Listener.Params.Velocity;
+        Velocity += context->mParams.Velocity;
     }
 
     const bool directional{Direction.normalize() > 0.0f};
     alu::Vector ToSource{Position[0], Position[1], Position[2], 0.0f};
     const float Distance{ToSource.normalize()};
 
-    /* Initial source gain */
-    GainTriplet DryGain{props->Gain, 1.0f, 1.0f};
-    GainTriplet WetGain[MAX_SENDS];
-    for(ALuint i{0};i < NumSends;i++)
-        WetGain[i] = DryGain;
-
     /* Calculate distance attenuation */
     float ClampedDist{Distance};
+    float DryGainBase{props->Gain};
+    std::array<float,MaxSendCount> WetGainBase{};
+    WetGainBase.fill(props->Gain);
 
-    switch(Listener.Params.SourceDistanceModel ?
-           props->mDistanceModel : Listener.Params.mDistanceModel)
+    float DryAttnBase{1.0f};
+    switch(context->mParams.SourceDistanceModel ? props->mDistanceModel
+        : context->mParams.mDistanceModel)
     {
-        case DistanceModel::InverseClamped:
-            ClampedDist = clampf(ClampedDist, props->RefDistance, props->MaxDistance);
-            if(props->MaxDistance < props->RefDistance) break;
-            /*fall-through*/
-        case DistanceModel::Inverse:
-            if(!(props->RefDistance > 0.0f))
-                ClampedDist = props->RefDistance;
-            else
+    case DistanceModel::InverseClamped:
+        if(props->MaxDistance < props->RefDistance) break;
+        ClampedDist = std::clamp(ClampedDist, props->RefDistance, props->MaxDistance);
+        /*fall-through*/
+    case DistanceModel::Inverse:
+        if(props->RefDistance > 0.0f)
+        {
+            float dist{lerpf(props->RefDistance, ClampedDist, props->RolloffFactor)};
+            if(dist > 0.0f)
             {
-                float dist{lerp(props->RefDistance, ClampedDist, props->RolloffFactor)};
-                if(dist > 0.0f) DryGain.Base *= props->RefDistance / dist;
-                for(ALuint i{0};i < NumSends;i++)
-                {
-                    dist = lerp(props->RefDistance, ClampedDist, RoomRolloff[i]);
-                    if(dist > 0.0f) WetGain[i].Base *= props->RefDistance / dist;
-                }
+                DryAttnBase = props->RefDistance / dist;
+                DryGainBase *= DryAttnBase;
             }
-            break;
 
-        case DistanceModel::LinearClamped:
-            ClampedDist = clampf(ClampedDist, props->RefDistance, props->MaxDistance);
-            if(props->MaxDistance < props->RefDistance) break;
-            /*fall-through*/
-        case DistanceModel::Linear:
-            if(!(props->MaxDistance != props->RefDistance))
-                ClampedDist = props->RefDistance;
-            else
+            for(size_t i{0};i < NumSends;++i)
             {
-                float attn{props->RolloffFactor * (ClampedDist-props->RefDistance) /
-                    (props->MaxDistance-props->RefDistance)};
-                DryGain.Base *= maxf(1.0f - attn, 0.0f);
-                for(ALuint i{0};i < NumSends;i++)
-                {
-                    attn = RoomRolloff[i] * (ClampedDist-props->RefDistance) /
-                        (props->MaxDistance-props->RefDistance);
-                    WetGain[i].Base *= maxf(1.0f - attn, 0.0f);
-                }
+                dist = lerpf(props->RefDistance, ClampedDist, RoomRolloff[i]);
+                if(dist > 0.0f) WetGainBase[i] *= props->RefDistance / dist;
             }
-            break;
+        }
+        break;
 
-        case DistanceModel::ExponentClamped:
-            ClampedDist = clampf(ClampedDist, props->RefDistance, props->MaxDistance);
-            if(props->MaxDistance < props->RefDistance) break;
-            /*fall-through*/
-        case DistanceModel::Exponent:
-            if(!(ClampedDist > 0.0f && props->RefDistance > 0.0f))
-                ClampedDist = props->RefDistance;
-            else
+    case DistanceModel::LinearClamped:
+        if(props->MaxDistance < props->RefDistance) break;
+        ClampedDist = std::clamp(ClampedDist, props->RefDistance, props->MaxDistance);
+        /*fall-through*/
+    case DistanceModel::Linear:
+        if(props->MaxDistance != props->RefDistance)
+        {
+            float attn{(ClampedDist-props->RefDistance) /
+                (props->MaxDistance-props->RefDistance) * props->RolloffFactor};
+            DryAttnBase = std::max(1.0f - attn, 0.0f);
+            DryGainBase *= DryAttnBase;
+
+            for(size_t i{0};i < NumSends;++i)
             {
-                const float dist_ratio{ClampedDist/props->RefDistance};
-                DryGain.Base *= std::pow(dist_ratio, -props->RolloffFactor);
-                for(ALuint i{0};i < NumSends;i++)
-                    WetGain[i].Base *= std::pow(dist_ratio, -RoomRolloff[i]);
+                attn = (ClampedDist-props->RefDistance) /
+                    (props->MaxDistance-props->RefDistance) * RoomRolloff[i];
+                WetGainBase[i] *= std::max(1.0f - attn, 0.0f);
             }
-            break;
+        }
+        break;
 
-        case DistanceModel::Disable:
-            ClampedDist = props->RefDistance;
-            break;
+    case DistanceModel::ExponentClamped:
+        if(props->MaxDistance < props->RefDistance) break;
+        ClampedDist = std::clamp(ClampedDist, props->RefDistance, props->MaxDistance);
+        /*fall-through*/
+    case DistanceModel::Exponent:
+        if(ClampedDist > 0.0f && props->RefDistance > 0.0f)
+        {
+            const float dist_ratio{ClampedDist/props->RefDistance};
+            DryAttnBase = std::pow(dist_ratio, -props->RolloffFactor);
+            DryGainBase *= DryAttnBase;
+            for(size_t i{0};i < NumSends;++i)
+                WetGainBase[i] *= std::pow(dist_ratio, -RoomRolloff[i]);
+        }
+        break;
+
+    case DistanceModel::Disable:
+        break;
     }
 
     /* Calculate directional soundcones */
+    float ConeHF{1.0f}, WetCone{1.0f}, WetConeHF{1.0f};
     if(directional && props->InnerAngle < 360.0f)
     {
-        const float Angle{Rad2Deg(std::acos(-aluDotproduct(Direction, ToSource)) *
-            ConeScale * 2.0f)};
+        static constexpr float Rad2Deg{static_cast<float>(180.0 / al::numbers::pi)};
+        const float Angle{Rad2Deg*2.0f * std::acos(-Direction.dot_product(ToSource)) * ConeScale};
 
-        float ConeGain, ConeHF;
-        if(!(Angle > props->InnerAngle))
-        {
-            ConeGain = 1.0f;
-            ConeHF = 1.0f;
-        }
-        else if(Angle < props->OuterAngle)
-        {
-            const float scale{(Angle-props->InnerAngle) / (props->OuterAngle-props->InnerAngle)};
-            ConeGain = lerp(1.0f, props->OuterGain, scale);
-            ConeHF = lerp(1.0f, props->OuterGainHF, scale);
-        }
-        else
+        float ConeGain{1.0f};
+        if(Angle >= props->OuterAngle)
         {
             ConeGain = props->OuterGain;
-            ConeHF = props->OuterGainHF;
+            if(props->DryGainHFAuto)
+                ConeHF = props->OuterGainHF;
+        }
+        else if(Angle >= props->InnerAngle)
+        {
+            const float scale{(Angle-props->InnerAngle) / (props->OuterAngle-props->InnerAngle)};
+            ConeGain = lerpf(1.0f, props->OuterGain, scale);
+            if(props->DryGainHFAuto)
+                ConeHF = lerpf(1.0f, props->OuterGainHF, scale);
         }
 
-        DryGain.Base *= ConeGain;
-        if(props->DryGainHFAuto)
-            DryGain.HF *= ConeHF;
+        DryGainBase *= ConeGain;
         if(props->WetGainAuto)
-            std::for_each(std::begin(WetGain), std::begin(WetGain)+NumSends,
-                [ConeGain](GainTriplet &gain) noexcept -> void { gain.Base *= ConeGain; });
+            WetCone = ConeGain;
         if(props->WetGainHFAuto)
-            std::for_each(std::begin(WetGain), std::begin(WetGain)+NumSends,
-                [ConeHF](GainTriplet &gain) noexcept -> void { gain.HF *= ConeHF; });
+            WetConeHF = ConeHF;
     }
 
     /* Apply gain and frequency filters */
-    DryGain.Base = minf(clampf(DryGain.Base, props->MinGain, props->MaxGain) * props->Direct.Gain *
-        Listener.Params.Gain, GainMixMax);
-    DryGain.HF *= props->Direct.GainHF;
-    DryGain.LF *= props->Direct.GainLF;
-    for(ALuint i{0};i < NumSends;i++)
+    GainTriplet DryGain{};
+    DryGainBase = std::clamp(DryGainBase, props->MinGain, props->MaxGain) * context->mParams.Gain;
+    DryGain.Base = std::min(DryGainBase * props->Direct.Gain, GainMixMax);
+    DryGain.HF = ConeHF * props->Direct.GainHF;
+    DryGain.LF = props->Direct.GainLF;
+
+    std::array<GainTriplet,MaxSendCount> WetGain{};
+    for(uint i{0};i < NumSends;i++)
     {
-        WetGain[i].Base = minf(clampf(WetGain[i].Base, props->MinGain, props->MaxGain) *
-            props->Send[i].Gain * Listener.Params.Gain, GainMixMax);
-        WetGain[i].HF *= props->Send[i].GainHF;
-        WetGain[i].LF *= props->Send[i].GainLF;
+        const auto gain = std::clamp(WetGainBase[i]*WetCone, props->MinGain, props->MaxGain) *
+            context->mParams.Gain;
+        WetGain[i].Base = std::min(gain * props->Send[i].Gain, GainMixMax);
+        WetGain[i].HF = WetConeHF * props->Send[i].GainHF;
+        WetGain[i].LF = props->Send[i].GainLF;
     }
 
     /* Distance-based air absorption and initial send decay. */
-    if(ClampedDist > props->RefDistance && props->RolloffFactor > 0.0f)
+    if(Distance > props->RefDistance) LIKELY
     {
-        const float meters_base{(ClampedDist-props->RefDistance) * props->RolloffFactor *
-            Listener.Params.MetersPerUnit};
-        if(props->AirAbsorptionFactor > 0.0f)
-        {
-            const float hfattn{std::pow(AirAbsorbGainHF, meters_base*props->AirAbsorptionFactor)};
-            DryGain.HF *= hfattn;
-            std::for_each(std::begin(WetGain), std::begin(WetGain)+NumSends,
-                [hfattn](GainTriplet &gain) noexcept -> void { gain.HF *= hfattn; });
-        }
+        /* FIXME: In keeping with EAX, the base air absorption gain should be
+         * taken from the reverb property in the "primary fx slot" when it has
+         * a reverb effect and the environment flag set, and be applied to the
+         * direct path and all environment sends, rather than each path using
+         * the air absorption gain associated with the given slot's effect. At
+         * this point in the mixer, and even in EFX itself, there's no concept
+         * of a "primary fx slot" so it's unclear which effect slot should be
+         * checked.
+         *
+         * The HF reference is also intended to be handled the same way, but
+         * again, there's no concept of a "primary fx slot" here and no way to
+         * know which effect slot to look at for the reference frequency.
+         */
+        const auto distance_units = float{(Distance-props->RefDistance) * props->RolloffFactor};
+        const auto distance_meters = float{distance_units * context->mParams.MetersPerUnit};
+        const auto absorb = float{distance_meters * props->AirAbsorptionFactor};
+        if(absorb > std::numeric_limits<float>::epsilon())
+            DryGain.HF *= std::pow(context->mParams.AirAbsorptionGainHF, absorb);
 
-        if(props->WetGainAuto)
+        /* If the source's Auxiliary Send Filter Gain Auto is off, no extra
+         * adjustment is applied to the send gains.
+         */
+        for(uint i{props->WetGainAuto ? 0u : NumSends};i < NumSends;++i)
         {
+            if(!SendSlots[i] || !(SendSlots[i]->DecayTime > 0.0f))
+                continue;
+
+            if(SendSlots[i]->AirAbsorptionGainHF < 1.0f
+                && absorb > std::numeric_limits<float>::epsilon())
+                WetGain[i].HF *= std::pow(SendSlots[i]->AirAbsorptionGainHF, absorb);
+
+            const float DecayDistance{SendSlots[i]->DecayTime * SpeedOfSoundMetersPerSec};
+
             /* Apply a decay-time transformation to the wet path, based on the
-             * source distance in meters. The initial decay of the reverb
-             * effect is calculated and applied to the wet path.
+             * source distance. The initial decay of the reverb effect is
+             * calculated and applied to the wet path.
+             *
+             * FIXME: This is very likely not correct. It more likely should
+             * work by calculating a rolloff dynamically based on the reverb
+             * parameters (and source distance?) and add it to the room rolloff
+             * with the reverb and source rolloff parameters.
              */
-            for(ALuint i{0};i < NumSends;i++)
-            {
-                if(!(DecayDistance[i].Base > 0.0f))
-                    continue;
-
-                const float gain{std::pow(ReverbDecayGain, meters_base/DecayDistance[i].Base)};
-                WetGain[i].Base *= gain;
-                /* Yes, the wet path's air absorption is applied with
-                 * WetGainAuto on, rather than WetGainHFAuto.
-                 */
-                if(gain > 0.0f)
-                {
-                    float gainhf{std::pow(ReverbDecayGain, meters_base/DecayDistance[i].HF)};
-                    WetGain[i].HF *= minf(gainhf / gain, 1.0f);
-                    float gainlf{std::pow(ReverbDecayGain, meters_base/DecayDistance[i].LF)};
-                    WetGain[i].LF *= minf(gainlf / gain, 1.0f);
-                }
-            }
+            const float baseAttn{DryAttnBase};
+            const float fact{distance_meters / DecayDistance};
+            const float gain{std::pow(ReverbDecayGain, fact)*(1.0f-baseAttn) + baseAttn};
+            WetGain[i].Base *= gain;
         }
     }
 
@@ -1521,14 +1732,14 @@ void CalcAttnSourceParams(Voice *voice, const VoiceProps *props, const ALCcontex
     float Pitch{props->Pitch};
 
     /* Calculate velocity-based doppler effect */
-    float DopplerFactor{props->DopplerFactor * Listener.Params.DopplerFactor};
+    float DopplerFactor{props->DopplerFactor * context->mParams.DopplerFactor};
     if(DopplerFactor > 0.0f)
     {
-        const alu::Vector &lvelocity = Listener.Params.Velocity;
-        float vss{aluDotproduct(Velocity, ToSource) * -DopplerFactor};
-        float vls{aluDotproduct(lvelocity, ToSource) * -DopplerFactor};
+        const alu::Vector &lvelocity = context->mParams.Velocity;
+        float vss{Velocity.dot_product(ToSource) * -DopplerFactor};
+        float vls{lvelocity.dot_product(ToSource) * -DopplerFactor};
 
-        const float SpeedOfSound{Listener.Params.SpeedOfSound};
+        const float SpeedOfSound{context->mParams.SpeedOfSound};
         if(!(vls < SpeedOfSound))
         {
             /* Listener moving away from the source at the speed of sound.
@@ -1556,38 +1767,37 @@ void CalcAttnSourceParams(Voice *voice, const VoiceProps *props, const ALCcontex
      * fixed-point stepping value.
      */
     Pitch *= static_cast<float>(voice->mFrequency) / static_cast<float>(Device->Frequency);
-    if(Pitch > float{MAX_PITCH})
-        voice->mStep = MAX_PITCH<<MixerFracBits;
+    if(Pitch > float{MaxPitch})
+        voice->mStep = MaxPitch<<MixerFracBits;
     else
-        voice->mStep = maxu(fastf2u(Pitch * MixerFracOne), 1);
+        voice->mStep = std::max(fastf2u(Pitch * MixerFracOne), 1u);
     voice->mResampler = PrepareResampler(props->mResampler, voice->mStep, &voice->mResampleState);
 
     float spread{0.0f};
     if(props->Radius > Distance)
-        spread = al::MathDefs<float>::Tau() - Distance/props->Radius*al::MathDefs<float>::Pi();
+        spread = al::numbers::pi_v<float>*2.0f - Distance/props->Radius*al::numbers::pi_v<float>;
     else if(Distance > 0.0f)
         spread = std::asin(props->Radius/Distance) * 2.0f;
 
-    CalcPanningAndFilters(voice, ToSource[0], ToSource[1], ToSource[2]*ZScale,
-        Distance*Listener.Params.MetersPerUnit, spread, DryGain, WetGain, SendSlots, props,
-        Listener, Device);
+    CalcPanningAndFilters(voice, ToSource[0]*XScale, ToSource[1]*YScale, ToSource[2]*ZScale,
+        Distance, spread, DryGain, WetGain, SendSlots, props, context->mParams, Device);
 }
 
-void CalcSourceParams(Voice *voice, ALCcontext *context, bool force)
+void CalcSourceParams(Voice *voice, ContextBase *context, bool force)
 {
     VoicePropsItem *props{voice->mUpdate.exchange(nullptr, std::memory_order_acq_rel)};
     if(!props && !force) return;
 
     if(props)
     {
-        voice->mProps = *props;
+        voice->mProps = static_cast<VoiceProps&>(*props);
 
         AtomicReplaceHead(context->mFreeVoiceProps, props);
     }
 
     if((voice->mProps.DirectChannels != DirectMode::Off && voice->mFmtChannels != FmtMono
-            && voice->mFmtChannels != FmtBFormat2D && voice->mFmtChannels != FmtBFormat3D)
-        || voice->mProps.mSpatializeMode==SpatializeMode::Off
+            && !IsAmbisonic(voice->mFmtChannels))
+        || voice->mProps.mSpatializeMode == SpatializeMode::Off
         || (voice->mProps.mSpatializeMode==SpatializeMode::Auto && voice->mFmtChannels != FmtMono))
         CalcNonAttnSourceParams(voice, &voice->mProps, context);
     else
@@ -1595,55 +1805,75 @@ void CalcSourceParams(Voice *voice, ALCcontext *context, bool force)
 }
 
 
-void SendSourceStateEvent(ALCcontext *context, ALuint id, ALenum state)
+void SendSourceStateEvent(ContextBase *context, uint id, VChangeState state)
 {
     RingBuffer *ring{context->mAsyncEvents.get()};
     auto evt_vec = ring->getWriteVector();
-    if(evt_vec.first.len < 1) return;
+    if(evt_vec[0].len < 1) return;
 
-    AsyncEvent *evt{::new(evt_vec.first.buf) AsyncEvent{EventType_SourceStateChange}};
-    evt->u.srcstate.id = id;
-    evt->u.srcstate.state = state;
+    auto &evt = InitAsyncEvent<AsyncSourceStateEvent>(evt_vec[0].buf);
+    evt.mId = id;
+    switch(state)
+    {
+    case VChangeState::Reset:
+        evt.mState = AsyncSrcState::Reset;
+        break;
+    case VChangeState::Stop:
+        evt.mState = AsyncSrcState::Stop;
+        break;
+    case VChangeState::Play:
+        evt.mState = AsyncSrcState::Play;
+        break;
+    case VChangeState::Pause:
+        evt.mState = AsyncSrcState::Pause;
+        break;
+    /* Shouldn't happen. */
+    case VChangeState::Restart:
+        al::unreachable();
+    }
 
     ring->writeAdvance(1);
 }
 
-void ProcessVoiceChanges(ALCcontext *ctx)
+void ProcessVoiceChanges(ContextBase *ctx)
 {
     VoiceChange *cur{ctx->mCurrentVoiceChange.load(std::memory_order_acquire)};
     VoiceChange *next{cur->mNext.load(std::memory_order_acquire)};
     if(!next) return;
 
-    const ALbitfieldSOFT enabledevt{ctx->mEnabledEvts.load(std::memory_order_acquire)};
+    const auto enabledevt = ctx->mEnabledEvts.load(std::memory_order_acquire);
     do {
         cur = next;
 
         bool sendevt{false};
-        if(cur->mState == AL_INITIAL || cur->mState == AL_STOPPED)
+        if(cur->mState == VChangeState::Reset || cur->mState == VChangeState::Stop)
         {
             if(Voice *voice{cur->mVoice})
             {
                 voice->mCurrentBuffer.store(nullptr, std::memory_order_relaxed);
                 voice->mLoopBuffer.store(nullptr, std::memory_order_relaxed);
-                voice->mSourceID.store(0u, std::memory_order_relaxed);
+                /* A source ID indicates the voice was playing or paused, which
+                 * gets a reset/stop event.
+                 */
+                sendevt = voice->mSourceID.exchange(0u, std::memory_order_relaxed) != 0u;
                 Voice::State oldvstate{Voice::Playing};
-                sendevt = voice->mPlayState.compare_exchange_strong(oldvstate, Voice::Stopping,
+                voice->mPlayState.compare_exchange_strong(oldvstate, Voice::Stopping,
                     std::memory_order_relaxed, std::memory_order_acquire);
                 voice->mPendingChange.store(false, std::memory_order_release);
             }
-            /* AL_INITIAL state change events are always sent, even if the
-             * voice is already stopped or even if there is no voice.
+            /* Reset state change events are always sent, even if the voice is
+             * already stopped or even if there is no voice.
              */
-            sendevt |= (cur->mState == AL_INITIAL);
+            sendevt |= (cur->mState == VChangeState::Reset);
         }
-        else if(cur->mState == AL_PAUSED)
+        else if(cur->mState == VChangeState::Pause)
         {
             Voice *voice{cur->mVoice};
             Voice::State oldvstate{Voice::Playing};
             sendevt = voice->mPlayState.compare_exchange_strong(oldvstate, Voice::Stopping,
                 std::memory_order_release, std::memory_order_acquire);
         }
-        else if(cur->mState == AL_PLAYING)
+        else if(cur->mState == VChangeState::Play)
         {
             /* NOTE: When playing a voice, sending a source state change event
              * depends if there's an old voice to stop and if that stop is
@@ -1667,9 +1897,9 @@ void ProcessVoiceChanges(ALCcontext *ctx)
             Voice *voice{cur->mVoice};
             voice->mPlayState.store(Voice::Playing, std::memory_order_release);
         }
-        else if(cur->mState == AL_SAMPLE_OFFSET)
+        else if(cur->mState == VChangeState::Restart)
         {
-            /* Changing a voice offset never sends a source change event. */
+            /* Restarting a voice never sends a source change event. */
             Voice *oldvoice{cur->mOldVoice};
             oldvoice->mCurrentBuffer.store(nullptr, std::memory_order_relaxed);
             oldvoice->mLoopBuffer.store(nullptr, std::memory_order_relaxed);
@@ -1692,7 +1922,7 @@ void ProcessVoiceChanges(ALCcontext *ctx)
             }
             oldvoice->mPendingChange.store(false, std::memory_order_release);
         }
-        if(sendevt && (enabledevt&EventType_SourceStateChange))
+        if(sendevt && enabledevt.test(al::to_underlying(AsyncEnableBits::SourceState)))
             SendSourceStateEvent(ctx, cur->mSourceID, cur->mState);
 
         next = cur->mNext.load(std::memory_order_acquire);
@@ -1700,19 +1930,18 @@ void ProcessVoiceChanges(ALCcontext *ctx)
     ctx->mCurrentVoiceChange.store(cur, std::memory_order_release);
 }
 
-void ProcessParamUpdates(ALCcontext *ctx, const ALeffectslotArray &slots,
-    const al::span<Voice*> voices)
+void ProcessParamUpdates(ContextBase *ctx, const al::span<EffectSlot*> slots,
+    const al::span<EffectSlot*> sorted_slots, const al::span<Voice*> voices)
 {
     ProcessVoiceChanges(ctx);
 
     IncrementRef(ctx->mUpdateCount);
-    if LIKELY(!ctx->mHoldUpdates.load(std::memory_order_acquire))
+    if(!ctx->mHoldUpdates.load(std::memory_order_acquire)) LIKELY
     {
         bool force{CalcContextParams(ctx)};
-        force |= CalcListenerParams(ctx);
-        auto sorted_slots = const_cast<ALeffectslot**>(slots.data() + slots.size());
-        for(ALeffectslot *slot : slots)
-            force |= CalcEffectSlotParams(slot, sorted_slots, ctx);
+        auto sorted_slot_base = al::to_address(sorted_slots.begin());
+        for(EffectSlot *slot : slots)
+            force |= CalcEffectSlotParams(slot, sorted_slot_base, ctx);
 
         for(Voice *voice : voices)
         {
@@ -1724,142 +1953,152 @@ void ProcessParamUpdates(ALCcontext *ctx, const ALeffectslotArray &slots,
     IncrementRef(ctx->mUpdateCount);
 }
 
-void ProcessContexts(ALCdevice *device, const ALuint SamplesToDo)
+void ProcessContexts(DeviceBase *device, const uint SamplesToDo)
 {
     ASSUME(SamplesToDo > 0);
 
-    for(ALCcontext *ctx : *device->mContexts.load(std::memory_order_acquire))
-    {
-        const ALeffectslotArray &auxslots = *ctx->mActiveAuxSlots.load(std::memory_order_acquire);
-        const al::span<Voice*> voices{ctx->getVoicesSpanAcquired()};
+    const nanoseconds curtime{device->mClockBase.load(std::memory_order_relaxed) +
+        nanoseconds{seconds{device->mSamplesDone.load(std::memory_order_relaxed)}}/
+        device->Frequency};
 
-        /* Process pending propery updates for objects on the context. */
-        ProcessParamUpdates(ctx, auxslots, voices);
+    auto proc_context = [SamplesToDo,curtime](ContextBase *ctx)
+    {
+        const auto auxslotspan = al::span{*ctx->mActiveAuxSlots.load(std::memory_order_acquire)};
+        const auto auxslots = auxslotspan.first(auxslotspan.size()>>1);
+        const auto sorted_slots = auxslotspan.last(auxslotspan.size()>>1);
+        const auto voices = ctx->getVoicesSpanAcquired();
+
+        /* Process pending property updates for objects on the context. */
+        ProcessParamUpdates(ctx, auxslots, sorted_slots, voices);
 
         /* Clear auxiliary effect slot mixing buffers. */
-        for(ALeffectslot *slot : auxslots)
+        auto clear_wetbuffers = [](EffectSlot *slot)
         {
-            for(auto &buffer : slot->Wet.Buffer)
-                buffer.fill(0.0f);
-        }
+            auto clear_buffer = [](const FloatBufferSpan buffer)
+            { std::fill(buffer.begin(), buffer.end(), 0.0f); };
+            std::for_each(slot->Wet.Buffer.begin(), slot->Wet.Buffer.end(), clear_buffer);
+        };
+        std::for_each(auxslots.begin(), auxslots.end(), clear_wetbuffers);
 
         /* Process voices that have a playing source. */
-        for(Voice *voice : voices)
+        auto proc_voice = [ctx,curtime,SamplesToDo](Voice *voice)
         {
             const Voice::State vstate{voice->mPlayState.load(std::memory_order_acquire)};
             if(vstate != Voice::Stopped && vstate != Voice::Pending)
-                voice->mix(vstate, ctx, SamplesToDo);
-        }
+                voice->mix(vstate, ctx, curtime, SamplesToDo);
+        };
+        std::for_each(voices.begin(), voices.end(), proc_voice);
 
         /* Process effects. */
-        if(const size_t num_slots{auxslots.size()})
+        if(!auxslots.empty())
         {
-            auto slots = auxslots.data();
-            auto slots_end = slots + num_slots;
-
-            /* First sort the slots into extra storage, so that effects come
-             * before their effect target (or their targets' target).
+            /* Sort the slots into extra storage, so that effect slots come
+             * before their effect slot target (or their targets' target). Skip
+             * sorting if it has already been done.
              */
-            auto sorted_slots = const_cast<ALeffectslot**>(slots_end);
-            auto sorted_slots_end = sorted_slots;
-            if(*sorted_slots)
+            if(!sorted_slots[0])
             {
-                /* Skip sorting if it has already been done. */
-                sorted_slots_end += num_slots;
-                goto skip_sorting;
-            }
-
-            *sorted_slots_end = *slots;
-            ++sorted_slots_end;
-            while(++slots != slots_end)
-            {
-                auto in_chain = [](const ALeffectslot *s1, const ALeffectslot *s2) noexcept -> bool
-                {
-                    while((s1=s1->Params.Target) != nullptr) {
-                        if(s1 == s2) return true;
-                    }
-                    return false;
-                };
-
-                /* If this effect slot targets an effect slot already in the
-                 * list (i.e. slots outputs to something in sorted_slots),
-                 * directly or indirectly, insert it prior to that element.
+                /* First, copy the slots to the sorted list and partition them,
+                 * so that all slots without a target slot go to the end.
                  */
-                auto checker = sorted_slots;
-                do {
-                    if(in_chain(*slots, *checker)) break;
-                } while(++checker != sorted_slots_end);
+                auto has_target = [](const EffectSlot *slot) noexcept -> bool
+                { return slot->Target != nullptr; };
+                auto split_point = std::partition_copy(auxslots.rbegin(), auxslots.rend(),
+                    sorted_slots.begin(), sorted_slots.rbegin(), has_target).first;
+                /* There must be at least one slot without a slot target. */
+                assert(split_point != sorted_slots.end());
 
-                checker = std::move_backward(checker, sorted_slots_end, sorted_slots_end+1);
-                *--checker = *slots;
-                ++sorted_slots_end;
+                /* Starting from the back of the sorted list, continue
+                 * partitioning the front of the list given each target until
+                 * all targets are accounted for. This ensures all slots
+                 * without a target go last, all slots directly targeting those
+                 * last slots go second-to-last, all slots directly targeting
+                 * those second-last slots go third-to-last, etc.
+                 */
+                auto next_target = sorted_slots.end();
+                while(std::distance(sorted_slots.begin(), split_point) > 1)
+                {
+                    /* This shouldn't happen, but if there's unsorted slots
+                     * left that don't target any sorted slots, they can't
+                     * contribute to the output, so leave them.
+                     */
+                    if(next_target == split_point) UNLIKELY
+                        break;
+
+                    --next_target;
+                    auto not_next = [next_target](const EffectSlot *slot) noexcept -> bool
+                    { return slot->Target != *next_target; };
+                    split_point = std::partition(sorted_slots.begin(), split_point, not_next);
+                }
             }
 
-        skip_sorting:
-            auto process_effect = [SamplesToDo](const ALeffectslot *slot) -> void
+            auto proc_slot = [SamplesToDo](const EffectSlot *slot)
             {
-                EffectState *state{slot->Params.mEffectState};
+                EffectState *state{slot->mEffectState.get()};
                 state->process(SamplesToDo, slot->Wet.Buffer, state->mOutTarget);
             };
-            std::for_each(sorted_slots, sorted_slots_end, process_effect);
+            std::for_each(sorted_slots.begin(), sorted_slots.end(), proc_slot);
         }
 
         /* Signal the event handler if there are any events to read. */
-        RingBuffer *ring{ctx->mAsyncEvents.get()};
-        if(ring->readSpace() > 0)
+        if(RingBuffer *ring{ctx->mAsyncEvents.get()}; ring->readSpace() > 0)
             ctx->mEventSem.post();
-    }
+    };
+    const auto contexts = al::span{*device->mContexts.load(std::memory_order_acquire)};
+    std::for_each(contexts.begin(), contexts.end(), proc_context);
 }
 
 
 void ApplyDistanceComp(const al::span<FloatBufferLine> Samples, const size_t SamplesToDo,
-    const DistanceComp::DistData *distcomp)
+    const al::span<const DistanceComp::ChanData,MaxOutputChannels> chandata)
 {
     ASSUME(SamplesToDo > 0);
 
+    auto distcomp = chandata.begin();
     for(auto &chanbuffer : Samples)
     {
         const float gain{distcomp->Gain};
-        const size_t base{distcomp->Length};
-        float *distbuf{al::assume_aligned<16>(distcomp->Buffer)};
+        auto distbuf = al::span{al::assume_aligned<16>(distcomp->Buffer.data()),
+            distcomp->Buffer.size()};
         ++distcomp;
 
-        if(base < 1)
-            continue;
+        const size_t base{distbuf.size()};
+        if(base < 1) continue;
 
-        float *inout{al::assume_aligned<16>(chanbuffer.data())};
-        auto inout_end = inout + SamplesToDo;
-        if LIKELY(SamplesToDo >= base)
+        const auto inout = al::span{al::assume_aligned<16>(chanbuffer.data()), SamplesToDo};
+        if(SamplesToDo >= base) LIKELY
         {
-            auto delay_end = std::rotate(inout, inout_end - base, inout_end);
-            std::swap_ranges(inout, delay_end, distbuf);
+            auto delay_end = std::rotate(inout.begin(), inout.end()-ptrdiff_t(base), inout.end());
+            std::swap_ranges(inout.begin(), delay_end, distbuf.begin());
         }
         else
         {
-            auto delay_start = std::swap_ranges(inout, inout_end, distbuf);
-            std::rotate(distbuf, delay_start, distbuf + base);
+            auto delay_start = std::swap_ranges(inout.begin(), inout.end(), distbuf.begin());
+            std::rotate(distbuf.begin(), delay_start, distbuf.begin()+ptrdiff_t(base));
         }
-        std::transform(inout, inout_end, inout, std::bind(std::multiplies<float>{}, _1, gain));
+        std::transform(inout.begin(), inout.end(), inout.begin(),
+            [gain](float s) { return s*gain; });
     }
 }
 
-void ApplyDither(const al::span<FloatBufferLine> Samples, ALuint *dither_seed,
+void ApplyDither(const al::span<FloatBufferLine> Samples, uint *dither_seed,
     const float quant_scale, const size_t SamplesToDo)
 {
+    static constexpr double invRNGRange{1.0 / std::numeric_limits<uint>::max()};
     ASSUME(SamplesToDo > 0);
 
     /* Dithering. Generate whitenoise (uniform distribution of random values
      * between -1 and +1) and add it to the sample values, after scaling up to
-     * the desired quantization depth amd before rounding.
+     * the desired quantization depth and before rounding.
      */
     const float invscale{1.0f / quant_scale};
-    ALuint seed{*dither_seed};
+    uint seed{*dither_seed};
     auto dither_sample = [&seed,invscale,quant_scale](const float sample) noexcept -> float
     {
         float val{sample * quant_scale};
-        ALuint rng0{dither_rng(&seed)};
-        ALuint rng1{dither_rng(&seed)};
-        val += static_cast<float>(rng0*(1.0/UINT_MAX) - rng1*(1.0/UINT_MAX));
+        uint rng0{dither_rng(&seed)};
+        uint rng1{dither_rng(&seed)};
+        val += static_cast<float>(rng0*invRNGRange - rng1*invRNGRange);
         return fast_roundf(val) * invscale;
     };
     for(FloatBufferLine &inout : Samples)
@@ -1883,12 +2122,12 @@ template<> inline int32_t SampleConv(float val) noexcept
      * When scaling and clamping for a signed 32-bit integer, these following
      * values are the best a float can give.
      */
-    return fastf2i(clampf(val*2147483648.0f, -2147483648.0f, 2147483520.0f));
+    return fastf2i(std::clamp(val*2147483648.0f, -2147483648.0f, 2147483520.0f));
 }
 template<> inline int16_t SampleConv(float val) noexcept
-{ return static_cast<int16_t>(fastf2i(clampf(val*32768.0f, -32768.0f, 32767.0f))); }
+{ return static_cast<int16_t>(fastf2i(std::clamp(val*32768.0f, -32768.0f, 32767.0f))); }
 template<> inline int8_t SampleConv(float val) noexcept
-{ return static_cast<int8_t>(fastf2i(clampf(val*128.0f, -128.0f, 127.0f))); }
+{ return static_cast<int8_t>(fastf2i(std::clamp(val*128.0f, -128.0f, 127.0f))); }
 
 /* Define unsigned output variations. */
 template<> inline uint32_t SampleConv(float val) noexcept
@@ -1898,77 +2137,134 @@ template<> inline uint16_t SampleConv(float val) noexcept
 template<> inline uint8_t SampleConv(float val) noexcept
 { return static_cast<uint8_t>(SampleConv<int8_t>(val) + 128); }
 
-template<DevFmtType T>
+template<typename T>
 void Write(const al::span<const FloatBufferLine> InBuffer, void *OutBuffer, const size_t Offset,
     const size_t SamplesToDo, const size_t FrameStep)
 {
-    using SampleType = typename DevFmtTypeTraits<T>::Type;
-
     ASSUME(FrameStep > 0);
     ASSUME(SamplesToDo > 0);
 
-    SampleType *outbase = static_cast<SampleType*>(OutBuffer) + Offset*FrameStep;
+    const auto output = al::span{static_cast<T*>(OutBuffer), (Offset+SamplesToDo)*FrameStep}
+        .subspan(Offset*FrameStep);
+    size_t c{0};
     for(const FloatBufferLine &inbuf : InBuffer)
     {
-        SampleType *out{outbase++};
-        auto conv_sample = [FrameStep,&out](const float s) noexcept -> void
+        auto out = output.begin();
+        auto conv_sample = [FrameStep,c,&out](const float s) noexcept
         {
-            *out = SampleConv<SampleType>(s);
-            out += FrameStep;
+            out[c] = SampleConv<T>(s);
+            out += ptrdiff_t(FrameStep);
         };
-        std::for_each(inbuf.begin(), inbuf.begin()+SamplesToDo, conv_sample);
+        std::for_each_n(inbuf.cbegin(), SamplesToDo, conv_sample);
+        ++c;
+    }
+    if(const size_t extra{FrameStep - c})
+    {
+        const auto silence = SampleConv<T>(0.0f);
+        for(size_t i{0};i < SamplesToDo;++i)
+            std::fill_n(&output[i*FrameStep + c], extra, silence);
+    }
+}
+
+template<typename T>
+void Write(const al::span<const FloatBufferLine> InBuffer, al::span<void*> OutBuffers,
+    const size_t Offset, const size_t SamplesToDo)
+{
+    ASSUME(SamplesToDo > 0);
+
+    auto srcbuf = InBuffer.cbegin();
+    for(auto *dstbuf : OutBuffers)
+    {
+        const auto src = al::span{*srcbuf}.first(SamplesToDo);
+        const auto dst = al::span{static_cast<T*>(dstbuf), Offset+SamplesToDo}.subspan(Offset);
+        std::transform(src.cbegin(), src.end(), dst.begin(), SampleConv<T>);
+        ++srcbuf;
     }
 }
 
 } // namespace
 
-void ALCdevice::renderSamples(void *outBuffer, const ALuint numSamples, const size_t frameStep)
+uint DeviceBase::renderSamples(const uint numSamples)
 {
-    FPUCtl mixer_mode{};
-    for(ALuint written{0u};written < numSamples;)
+    const uint samplesToDo{std::min(numSamples, uint{BufferLineSize})};
+
+    /* Clear main mixing buffers. */
+    for(FloatBufferLine &buffer : MixBuffer)
+        buffer.fill(0.0f);
+
     {
-        const ALuint samplesToDo{minu(numSamples-written, BUFFERSIZE)};
-
-        /* Clear main mixing buffers. */
-        for(FloatBufferLine &buffer : MixBuffer)
-            buffer.fill(0.0f);
-
-        /* Increment the mix count at the start (lsb should now be 1). */
-        IncrementRef(MixCount);
+        const auto mixLock = getWriteMixLock();
 
         /* Process and mix each context's sources and effects. */
         ProcessContexts(this, samplesToDo);
 
-        /* Increment the clock time. Every second's worth of samples is
-         * converted and added to clock base so that large sample counts don't
-         * overflow during conversion. This also guarantees a stable
-         * conversion.
+        /* Every second's worth of samples is converted and added to clock base
+         * so that large sample counts don't overflow during conversion. This
+         * also guarantees a stable conversion.
          */
-        SamplesDone += samplesToDo;
-        ClockBase += std::chrono::seconds{SamplesDone / Frequency};
-        SamplesDone %= Frequency;
+        auto samplesDone = mSamplesDone.load(std::memory_order_relaxed) + samplesToDo;
+        auto clockBase = mClockBase.load(std::memory_order_relaxed) +
+            std::chrono::seconds{samplesDone/Frequency};
+        mSamplesDone.store(samplesDone%Frequency, std::memory_order_relaxed);
+        mClockBase.store(clockBase, std::memory_order_relaxed);
+    }
 
-        /* Increment the mix count at the end (lsb should now be 0). */
-        IncrementRef(MixCount);
+    /* Apply any needed post-process for finalizing the Dry mix to the RealOut
+     * (Ambisonic decode, UHJ encode, etc).
+     */
+    postProcess(samplesToDo);
 
-        /* Apply any needed post-process for finalizing the Dry mix to the
-         * RealOut (Ambisonic decode, UHJ encode, etc).
-         */
-        postProcess(samplesToDo);
+    /* Apply compression, limiting sample amplitude if needed or desired. */
+    if(Limiter) Limiter->process(samplesToDo, RealOut.Buffer);
 
-        /* Apply compression, limiting sample amplitude if needed or desired. */
-        if(Limiter) Limiter->process(samplesToDo, RealOut.Buffer.data());
+    /* Apply delays and attenuation for mismatched speaker distances. */
+    if(ChannelDelays)
+        ApplyDistanceComp(RealOut.Buffer, samplesToDo, ChannelDelays->mChannels);
 
-        /* Apply delays and attenuation for mismatched speaker distances. */
-        ApplyDistanceComp(RealOut.Buffer, samplesToDo, ChannelDelay.as_span().cbegin());
+    /* Apply dithering. The compressor should have left enough headroom for the
+     * dither noise to not saturate.
+     */
+    if(DitherDepth > 0.0f)
+        ApplyDither(RealOut.Buffer, &DitherSeed, DitherDepth, samplesToDo);
 
-        /* Apply dithering. The compressor should have left enough headroom for
-         * the dither noise to not saturate.
-         */
-        if(DitherDepth > 0.0f)
-            ApplyDither(RealOut.Buffer, &DitherSeed, DitherDepth, samplesToDo);
+    return samplesToDo;
+}
 
-        if LIKELY(outBuffer)
+void DeviceBase::renderSamples(const al::span<void*> outBuffers, const uint numSamples)
+{
+    FPUCtl mixer_mode{};
+    uint total{0};
+    while(const uint todo{numSamples - total})
+    {
+        const uint samplesToDo{renderSamples(todo)};
+
+        switch(FmtType)
+        {
+#define HANDLE_WRITE(T) case T:                                               \
+    Write<DevFmtType_t<T>>(RealOut.Buffer, outBuffers, total, samplesToDo); break;
+        HANDLE_WRITE(DevFmtByte)
+        HANDLE_WRITE(DevFmtUByte)
+        HANDLE_WRITE(DevFmtShort)
+        HANDLE_WRITE(DevFmtUShort)
+        HANDLE_WRITE(DevFmtInt)
+        HANDLE_WRITE(DevFmtUInt)
+        HANDLE_WRITE(DevFmtFloat)
+        }
+#undef HANDLE_WRITE
+
+        total += samplesToDo;
+    }
+}
+
+void DeviceBase::renderSamples(void *outBuffer, const uint numSamples, const size_t frameStep)
+{
+    FPUCtl mixer_mode{};
+    uint total{0};
+    while(const uint todo{numSamples - total})
+    {
+        const uint samplesToDo{renderSamples(todo)};
+
+        if(outBuffer) LIKELY
         {
             /* Finally, interleave and convert samples, writing to the device's
              * output buffer.
@@ -1976,7 +2272,7 @@ void ALCdevice::renderSamples(void *outBuffer, const ALuint numSamples, const si
             switch(FmtType)
             {
 #define HANDLE_WRITE(T) case T:                                               \
-    Write<T>(RealOut.Buffer, outBuffer, written, samplesToDo, frameStep); break;
+    Write<DevFmtType_t<T>>(RealOut.Buffer, outBuffer, total, samplesToDo, frameStep); break;
             HANDLE_WRITE(DevFmtByte)
             HANDLE_WRITE(DevFmtUByte)
             HANDLE_WRITE(DevFmtShort)
@@ -1988,53 +2284,63 @@ void ALCdevice::renderSamples(void *outBuffer, const ALuint numSamples, const si
             }
         }
 
-        written += samplesToDo;
+        total += samplesToDo;
     }
 }
 
-void ALCdevice::handleDisconnect(const char *msg, ...)
+void DeviceBase::handleDisconnect(const char *msg, ...)
 {
-    if(!Connected.exchange(false, std::memory_order_acq_rel))
-        return;
+    const auto mixLock = getWriteMixLock();
 
-    AsyncEvent evt{EventType_Disconnected};
-    evt.u.user.type = AL_EVENT_TYPE_DISCONNECTED_SOFT;
-    evt.u.user.id = 0;
-    evt.u.user.param = 0;
-
-    va_list args;
-    va_start(args, msg);
-    int msglen{vsnprintf(evt.u.user.msg, sizeof(evt.u.user.msg), msg, args)};
-    va_end(args);
-
-    if(msglen < 0 || static_cast<size_t>(msglen) >= sizeof(evt.u.user.msg))
-        evt.u.user.msg[sizeof(evt.u.user.msg)-1] = 0;
-
-    IncrementRef(MixCount);
-    for(ALCcontext *ctx : *mContexts.load())
+    if(Connected.exchange(false, std::memory_order_acq_rel))
     {
-        const ALbitfieldSOFT enabledevt{ctx->mEnabledEvts.load(std::memory_order_acquire)};
-        if((enabledevt&EventType_Disconnected))
+        AsyncEvent evt{std::in_place_type<AsyncDisconnectEvent>};
+        auto &disconnect = std::get<AsyncDisconnectEvent>(evt);
+
+        /* NOLINTBEGIN(*-array-to-pointer-decay) */
+        va_list args, args2;
+        va_start(args, msg);
+        va_copy(args2, args);
+        if(int msglen{vsnprintf(nullptr, 0, msg, args)}; msglen > 0)
+        {
+            disconnect.msg.resize(static_cast<uint>(msglen)+1_uz);
+            vsnprintf(disconnect.msg.data(), disconnect.msg.size(), msg, args2);
+        }
+        else
+            disconnect.msg = "<failed constructing message>";
+        va_end(args2);
+        va_end(args);
+        /* NOLINTEND(*-array-to-pointer-decay) */
+
+        while(!disconnect.msg.empty() && disconnect.msg.back() == '\0')
+            disconnect.msg.pop_back();
+
+        for(ContextBase *ctx : *mContexts.load())
         {
             RingBuffer *ring{ctx->mAsyncEvents.get()};
-            auto evt_data = ring->getWriteVector().first;
+            auto evt_data = ring->getWriteVector()[0];
             if(evt_data.len > 0)
             {
-                ::new(evt_data.buf) AsyncEvent{evt};
+                al::construct_at(reinterpret_cast<AsyncEvent*>(evt_data.buf), evt);
                 ring->writeAdvance(1);
                 ctx->mEventSem.post();
             }
-        }
 
-        auto voicelist = ctx->getVoicesSpanAcquired();
-        auto stop_voice = [](Voice *voice) -> void
-        {
-            voice->mCurrentBuffer.store(nullptr, std::memory_order_relaxed);
-            voice->mLoopBuffer.store(nullptr, std::memory_order_relaxed);
-            voice->mSourceID.store(0u, std::memory_order_relaxed);
-            voice->mPlayState.store(Voice::Stopped, std::memory_order_release);
-        };
-        std::for_each(voicelist.begin(), voicelist.end(), stop_voice);
+            if(!ctx->mStopVoicesOnDisconnect.load())
+            {
+                ProcessVoiceChanges(ctx);
+                continue;
+            }
+
+            auto voicelist = ctx->getVoicesSpanAcquired();
+            auto stop_voice = [](Voice *voice) -> void
+            {
+                voice->mCurrentBuffer.store(nullptr, std::memory_order_relaxed);
+                voice->mLoopBuffer.store(nullptr, std::memory_order_relaxed);
+                voice->mSourceID.store(0u, std::memory_order_relaxed);
+                voice->mPlayState.store(Voice::Stopped, std::memory_order_release);
+            };
+            std::for_each(voicelist.begin(), voicelist.end(), stop_voice);
+        }
     }
-    IncrementRef(MixCount);
 }

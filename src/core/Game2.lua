@@ -36,6 +36,7 @@ local World = require("src.world.gen2.World")
 -- other engine file, so a call site here is the same call site Gen 1 has.
 local ModRuntime = require("src.mods.Runtime")
 local GameViewport = require("src.render.GameViewport")
+local Playfield = require("src.render.Playfield")
 -- Only for the mod-supplied save migrations and the mods-changed report, which
 -- are keyed off save.meta and know nothing about a generation; Gold's own save
 -- IO is src/core/gen2/Save.lua.
@@ -195,6 +196,7 @@ end
 function Game2:persistOptions()
   pcall(Save.saveOptions, self.options)
 end
+Game2.writeOptions = Game2.persistOptions
 
 -- Point the loader's mod.save backing at this save's modData so per-mod state
 -- persists with the slot.  Same contract and same three call sites as Gen 1
@@ -318,6 +320,7 @@ function Game2:showMainMenu()
     onNewGame = function() self:newGame() end,
     onContinue = function(save) self:continueGame(save) end,
     onOption = function() self:showOptions(function() self:showMainMenu() end) end,
+    onExit = self.onExit,
   })
 end
 
@@ -1160,7 +1163,8 @@ end
 -- (Renderer:endFrame's Sp).  Following the zoom used to shrink the LCD grid to
 -- one screen pixel a cell out at survey range.
 function Game2:pixelScale(w, h)
-  return math.max(1, math.floor(math.min(w / 160, h / 144)))
+  local _, _, pw, ph = Playfield.rect(w, h)
+  return math.max(1, math.floor(math.min(pw / 160, ph / 144)))
 end
 
 -- A window-sized canvas the whole frame is composed into, so the post passes
@@ -1277,7 +1281,8 @@ end
 function Game2:blitZones(canvas, zones, w, h)
   local G = love.graphics
   local GbcPalette = require("src.render.GbcPalette")
-  local sx, sy = w / 160, h / 144
+  local px, py, pw, ph = Playfield.rect(w, h)
+  local sx, sy = pw / 160, ph / 144
   G.setColor(1, 1, 1, 1)
   for _, z in ipairs(zones) do
     -- a colors == false zone is the true-colour opt-out; anything the shader
@@ -1296,11 +1301,11 @@ function Game2:blitZones(canvas, zones, w, h)
     -- whose contract differs from Gen 1's.  Whole-screen and half-screen zones
     -- come out of this at exactly the pixels the plain floor/ceil pair gave
     -- them, so the vanilla picture is untouched.
-    local zx, zy = (z.x or 0) * sx, (z.y or 0) * sy
-    local x1 = math.floor(math.max(zx, 0))
-    local y1 = math.floor(math.max(zy, 0))
-    local x2 = math.ceil(math.min(zx + (z.w or 160) * sx, w))
-    local y2 = math.ceil(math.min(zy + (z.h or 144) * sy, h))
+    local zx, zy = px + (z.x or 0) * sx, py + (z.y or 0) * sy
+    local x1 = math.floor(math.max(zx, px))
+    local y1 = math.floor(math.max(zy, py))
+    local x2 = math.ceil(math.min(zx + (z.w or 160) * sx, px + pw))
+    local y2 = math.ceil(math.min(zy + (z.h or 144) * sy, py + ph))
     if x2 > x1 and y2 > y1 then
       G.setScissor(x1, y1, x2 - x1, y2 - y1)
       G.draw(canvas, 0, 0)
@@ -1402,7 +1407,7 @@ function Game2:drawViewportFrame()
     scene = self:presentCanvas(1, w, h)
   end
   if not scene then
-    self:drawScene(w, h)
+    self:drawContained(w, h)
     self:drawHud(w, h)
     return
   end
@@ -1413,7 +1418,7 @@ function Game2:drawViewportFrame()
   G.origin()
   G.setCanvas(scene)
   G.clear(0, 0, 0, 1)
-  self:drawScene(w, h)
+  self:drawContained(w, h)
   G.setCanvas(previous)
 
   if composing and self:compose(scene, zones, w, h) then
@@ -1462,6 +1467,8 @@ function Game2:drawViewportFrame()
         generation = 2,
       }) == true
     if not outputHandled then
+      local cx, cy, cw, ch = Playfield.cutout(w, h)
+      if cx then G.setScissor(cx, cy, cw, ch) end
       if fx then
         GBCFX.present(source, self:pixelScale(w, h))
       else
@@ -1469,6 +1476,7 @@ function Game2:drawViewportFrame()
         G.draw(source, 0, 0)
         G.setShader()
       end
+      if cx then G.setScissor() end
     end
   end
   G.pop()
@@ -1497,6 +1505,13 @@ function Game2:textboxPaper()
   local base = visibleBaseState(self.stack)
   if base and base.paperColor then return base:paperColor() end
   return nil
+end
+
+function Game2:drawContained(w, h)
+  local pw, ph = Playfield.push(w, h)
+  local ok, err = pcall(self.drawScene, self, pw, ph)
+  Playfield.pop()
+  if not ok then error(err, 0) end
 end
 
 function Game2:drawScene(w, h)

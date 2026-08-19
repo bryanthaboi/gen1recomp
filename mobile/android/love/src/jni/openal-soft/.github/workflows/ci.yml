@@ -1,0 +1,241 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: ${{matrix.config.name}}
+    runs-on: ${{matrix.config.os}}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+        - {
+            name: "Win32-Release",
+            os: windows-latest,
+            cmake_opts: "-A Win32 \
+              -DALSOFT_TESTS=ON \
+              -DALSOFT_BUILD_ROUTER=ON \
+              -DALSOFT_REQUIRE_WINMM=ON \
+              -DALSOFT_REQUIRE_DSOUND=ON \
+              -DALSOFT_REQUIRE_WASAPI=ON",
+            build_type: "Release"
+          }
+        - {
+            name: "Win32-Debug",
+            os: windows-latest,
+            cmake_opts: "-A Win32 \
+              -DALSOFT_TESTS=ON \
+              -DALSOFT_BUILD_ROUTER=ON \
+              -DALSOFT_REQUIRE_WINMM=ON \
+              -DALSOFT_REQUIRE_DSOUND=ON \
+              -DALSOFT_REQUIRE_WASAPI=ON",
+            build_type: "Debug"
+          }
+        - {
+            name: "Win64-Release",
+            os: windows-latest,
+            cmake_opts: "-A x64 \
+              -DALSOFT_TESTS=ON \
+              -DALSOFT_BUILD_ROUTER=ON \
+              -DALSOFT_REQUIRE_WINMM=ON \
+              -DALSOFT_REQUIRE_DSOUND=ON \
+              -DALSOFT_REQUIRE_WASAPI=ON",
+            build_type: "Release"
+          }
+        - {
+            name: "Win64-Debug",
+            os: windows-latest,
+            cmake_opts: "-A x64 \
+              -DALSOFT_TESTS=ON \
+              -DALSOFT_BUILD_ROUTER=ON \
+              -DALSOFT_REQUIRE_WINMM=ON \
+              -DALSOFT_REQUIRE_DSOUND=ON \
+              -DALSOFT_REQUIRE_WASAPI=ON",
+            build_type: "Debug"
+          }
+        - {
+            name: "Win64-UWP",
+            os: windows-latest,
+            cmake_opts: "-A x64 \
+              -DALSOFT_TESTS=OFF \
+              -DCMAKE_SYSTEM_NAME=WindowsStore \
+              \"-DCMAKE_SYSTEM_VERSION=10.0\" \
+              -DALSOFT_BUILD_ROUTER=ON \
+              -DALSOFT_REQUIRE_WASAPI=ON",
+            build_type: "Release"
+          }
+        - {
+            name: "macOS-Release",
+            os: macos-latest,
+            cmake_opts: "-DALSOFT_REQUIRE_COREAUDIO=ON \
+              -DALSOFT_TESTS=ON",
+            build_type: "Release"
+          }
+        - {
+            name: "iOS-Release",
+            os: macos-latest,
+            cmake_opts: "-GXcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DALSOFT_REQUIRE_COREAUDIO=ON \
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_EXAMPLES=OFF \
+            -DALSOFT_TESTS=OFF \
+            -DALSOFT_INSTALL=OFF \
+            \"-DCMAKE_OSX_ARCHITECTURES=arm64\"",
+            build_type: "Release"
+          }
+        - {
+            name: "Linux-Release",
+            os: ubuntu-latest,
+            cmake_opts: "-DALSOFT_REQUIRE_RTKIT=ON \
+              -DALSOFT_REQUIRE_ALSA=ON \
+              -DALSOFT_REQUIRE_OSS=ON \
+              -DALSOFT_REQUIRE_PORTAUDIO=ON \
+              -DALSOFT_REQUIRE_PULSEAUDIO=ON \
+              -DALSOFT_REQUIRE_JACK=ON \
+              -DALSOFT_REQUIRE_PIPEWIRE=ON \
+              -DALSOFT_TESTS=ON",
+            deps_cmdline: "sudo apt update && sudo apt-get install -qq \
+              libpulse-dev \
+              portaudio19-dev \
+              libasound2-dev \
+              libjack-dev \
+              libpipewire-0.3-dev \
+              qtbase5-dev \
+              libdbus-1-dev",
+            build_type: "Release"
+          }
+        - {
+            name: "Android_armeabi-v7a-Release",
+            os: ubuntu-latest,
+            cmake_opts: "-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DALSOFT_EMBED_HRTF_DATA=TRUE \
+            -DALSOFT_REQUIRE_OPENSL=ON",
+            build_type: "Release"
+          }
+        - {
+            name: "Android_arm64-v8a-Release",
+            os: ubuntu-latest,
+            cmake_opts: "-DANDRIOD_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=25 \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DALSOFT_EMBED_HRTF_DATA=TRUE \
+            -DALSOFT_REQUIRE_OPENSL=ON",
+            build_type: "Release"
+          }
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: '0'
+
+    - name: Get current commit tag, short hash, count and date
+      run: |
+        echo "CommitTag=$(git describe --tags --abbrev=0 --match *.*.*)" >> $env:GITHUB_ENV
+        echo "CommitHashShort=$(git rev-parse --short=8 HEAD)" >> $env:GITHUB_ENV
+        echo "CommitCount=$(git rev-list --count $env:GITHUB_REF_NAME)" >> $env:GITHUB_ENV
+        echo "CommitDate=$(git show -s --date=iso-local --format=%cd)" >> $env:GITHUB_ENV
+
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        if [[ ! -z "${{matrix.config.deps_cmdline}}" ]]; then
+          eval ${{matrix.config.deps_cmdline}}
+        fi
+
+    - name: Configure
+      shell: bash
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{matrix.config.build_type}} ${{matrix.config.cmake_opts}} .
+
+    - name: Build
+      shell: bash
+      run: |
+        cmake --build build --config ${{matrix.config.build_type}}
+
+    - name: Test
+      shell: bash
+      run: |
+        cd build
+        ctest
+
+    - name: Set up Windows artifacts
+      if: ${{ contains(matrix.config.name, 'Win') }}
+      shell: bash
+      run: |
+        cd build
+        mkdir archive
+        mkdir archive/router
+        cp ${{matrix.config.build_type}}/soft_oal.dll archive
+        cp ${{matrix.config.build_type}}/OpenAL32.dll archive/router
+
+    - name: Set up Android artifacts
+      if: ${{ contains(matrix.config.name, 'Android') }}
+      shell: bash
+      run: |
+        cd build
+        mkdir archive
+        cp ${{github.workspace}}/build/libopenal.so archive/
+
+    - name: Upload build as a workflow artifact
+      uses: actions/upload-artifact@v4
+      if: ${{ contains(matrix.config.name, 'Win') || contains(matrix.config.name, 'Android') }}
+      with:
+        name: soft_oal-${{matrix.config.name}}
+        path: build/archive
+
+    outputs:
+      CommitTag: ${{env.CommitTag}}
+      CommitHashShort: ${{env.CommitHashShort}}
+      CommitCount: ${{env.CommitCount}}
+      CommitDate: ${{env.CommitDate}}
+
+  release:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4.1.7
+      with:
+        path: "build"
+        pattern: "*-Win??-Release"
+        github-token: "${{secrets.GITHUB_TOKEN}}"
+
+    - name: Set up build folders
+      run: |
+        mkdir -p build/release/OpenALSoft/Documentation
+        mkdir -p build/release/OpenALSoft/Win32
+        mkdir -p build/release/OpenALSoft/Win64
+        echo "${{github.repository}}" >>                                                                              "build/release/OpenALSoft/Documentation/Version.txt"
+        echo "v${{needs.build.outputs.CommitTag}}-${{needs.build.outputs.CommitHashShort}} ${{github.ref_name}}" >>   "build/release/OpenALSoft/Documentation/Version.txt"
+        echo "Commit #${{needs.build.outputs.CommitCount}}" >>                                                        "build/release/OpenALSoft/Documentation/Version.txt"
+        echo "${{needs.build.outputs.CommitDate}}" >>                                                                 "build/release/OpenALSoft/Documentation/Version.txt"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/README.md               -o "build/release/OpenALSoft/Documentation/ReadMe.txt"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/ChangeLog               -o "build/release/OpenALSoft/Documentation/ChangeLog.txt"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/COPYING                 -o "build/release/OpenALSoft/Documentation/License.txt"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/BSD-3Clause             -o "build/release/OpenALSoft/Documentation/License_BSD-3Clause.txt"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/alsoftrc.sample         -o "build/release/OpenALSoft/Win32/alsoft.ini"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/alsoftrc.sample         -o "build/release/OpenALSoft/Win64/alsoft.ini"
+        cp "build/soft_oal-Win32-Release/soft_oal.dll"                                                                "build/release/OpenALSoft/Win32/OpenAL32.dll"
+        cp "build/soft_oal-Win64-Release/soft_oal.dll"                                                                "build/release/OpenALSoft/Win64/OpenAL32.dll"
+        cp -r "build/release/OpenALSoft"                                                                              "build/release/OpenALSoft+HRTF"
+        cp "build/release/OpenALSoft+HRTF/Win32/alsoft.ini"                                                           "build/release/OpenALSoft+HRTF/Documentation/alsoft.ini"
+        curl https://raw.githubusercontent.com/${{github.repository}}/${{github.ref_name}}/configs/HRTF/alsoft.ini -o "build/release/OpenALSoft+HRTF/Win32/alsoft.ini"
+        cp "build/release/OpenALSoft+HRTF/Win32/alsoft.ini"                                                           "build/release/OpenALSoft+HRTF/Win64/alsoft.ini"
+
+    - name: Compress artifacts
+      run: |
+        cd build/release
+        7z a OpenALSoft.zip      ./OpenALSoft/*
+        7z a OpenALSoft+HRTF.zip ./OpenALSoft+HRTF/*
+
+    - name: GitHub pre-release
+      uses: "Sweeistaken/sweelease@v1.1"
+      with:
+        repo_token: "${{secrets.GITHUB_TOKEN}}"
+        automatic_release_tag: "latest"
+        prerelease: true
+        title: "OpenAL Soft v${{needs.build.outputs.CommitTag}}-${{needs.build.outputs.CommitHashShort}}"
+        files: "build/release/*"

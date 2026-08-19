@@ -136,6 +136,9 @@ local VERSION_REQUIRED_FILES_OVERRIDE = {
     -- costs nothing on a current cache and is the difference between every
     -- trainer battle opening with a picture and opening with none.
     "assets/generated/battle/trainers/falkner.png",
+    -- BattleStart_TrainerHuds cannot draw its party rows from a cache made
+    -- before the four ball tiles were extracted (#1502).
+    "assets/generated/battle/hud/balls.png",
     "assets/generated/audio/programs.bin",
   },
 }
@@ -324,6 +327,32 @@ function RomImporter.isReady(version)
   local marker = CacheFs.read(MARKER_PATH)
   CacheFs.prefix = saved
   return marker == markerFor(version) and allRequiredFilesExist(version)
+end
+
+function RomImporter.syncAndroidShortcuts(activeVersion)
+  if not (love.system and love.system.getOS and love.system.getOS() == "Android"
+      and love.system.updateShortcuts) then
+    return false
+  end
+
+  local allVersions = { "red", "blue", "yellow", "gold" }
+  local ready = {}
+  local seen = {}
+
+  if activeVersion and RomImporter.isReady(activeVersion) then
+    table.insert(ready, activeVersion)
+    seen[activeVersion] = true
+  end
+
+  for _, v in ipairs(allVersions) do
+    if not seen[v] and RomImporter.isReady(v) then
+      table.insert(ready, v)
+      seen[v] = true
+      if #ready >= 4 then break end
+    end
+  end
+
+  return love.system.updateShortcuts(ready)
 end
 
 -- Load the import manifest for a version and confirm it matches that ROM.
@@ -1111,18 +1140,18 @@ local function chooseZip()
 end
 
 local function chooseSkinZip()
-  local prompt = shellSafe(Strings("Choose a skin .zip"))
+  local prompt = shellSafe(Strings("Choose a skin .zip or .deltaskin"))
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
-      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"zip"})' 2>/dev/null]])
+      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"zip", "deltaskin"})' 2>/dev/null]])
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
       "Add-Type -AssemblyName System.Windows.Forms;",
       "$d=New-Object System.Windows.Forms.OpenFileDialog;",
       "$d.Title='" .. prompt .. "';",
-      "$d.Filter='Skin archive (*.zip)|*.zip|All files (*.*)|*.*';",
+      "$d.Filter='Skin archive (*.zip;*.deltaskin)|*.zip;*.deltaskin|All files (*.*)|*.*';",
       "if($d.ShowDialog() -eq 'OK'){",
       "$n=[IO.Path]::GetFileName($d.FileName) -replace '[^\\x20-\\x7E]','_';",
       "$t=Join-Path $env:TEMP $n;",
@@ -1134,11 +1163,11 @@ local function chooseSkinZip()
       'powershell -NoProfile -STA -Command "' .. script .. '"')
   elseif platform == "Linux" then
     local path = commandOutput(
-      ([[zenity --file-selection --title="%s" --file-filter="Skin archive | *.zip" 2>/dev/null]])
+      ([[zenity --file-selection --title="%s" --file-filter="Skin archive | *.zip *.deltaskin" 2>/dev/null]])
         :format(prompt))
     if path then return path end
     return commandOutput(
-      [[kdialog --getopenfilename "$HOME" "*.zip|Skin archive" 2>/dev/null]])
+      [[kdialog --getopenfilename "$HOME" "*.zip *.deltaskin|Skin archive" 2>/dev/null]])
   end
   return nil
 end
@@ -1349,6 +1378,7 @@ function RomImporter.new(onComplete, opts)
     findLoaded = false, findSources = nil, findIndex = nil,
     findScroll = 0, findNotice = nil, findQuery = "", findCategory = nil,
     _findSearchFocus = false, _findThumbs = nil,
+    skinUrl = "", _skinUrlFocus = false,
     -- Page scroll offset (px) for the column under the tab bar -- panel, updater
     -- banner and footer -- used only while that column is taller than the window
     -- (see draw()).  Clamped against content in draw, reset on a tab change.
@@ -1392,6 +1422,7 @@ function RomImporter.new(onComplete, opts)
     self.romName[version] = "pokemon_" .. info.id
       .. ((info.id == "yellow" or info.id == "gold") and ".gbc" or ".gb")
   end
+  RomImporter.syncAndroidShortcuts()
   self:_applyLastVersionTab()
   self:_queueBaseRomScan()
 
@@ -1786,6 +1817,7 @@ function RomImporter:_completeImport(version, prefix, displayName)
   self.workState = "complete"
   self.completeVersion = version
   self.status = "Ready"
+  RomImporter.syncAndroidShortcuts(version)
   -- NX launcher stays put: keep the imports/ cleanup hint instead of
   -- overwriting it with a "Starting…" line that never boots from here.
   if self.launcher and self.isNX and type(displayName) == "string" then
@@ -1851,10 +1883,14 @@ end
 function RomImporter:filedropped(file)
   if self.workState == "working" then return end
   -- A dropped .zip is a mod archive: hand it straight to the mods installer
-  -- (which mounts + validates it).  Everything else is treated as a ROM.  The
-  -- dropped file itself is passed through -- installZip opens it the same way
-  -- readDroppedFile does here.
+  -- (which mounts + validates it).  A .deltaskin is only ever a skin, and
+  -- everything else is treated as a ROM.  The dropped file itself is passed
+  -- through -- installZip opens it the same way readDroppedFile does here.
   local name = file:getFilename() or ""
+  if name:lower():match("%.deltaskin$") then
+    self:_installSkinZip(file)
+    return
+  end
   if name:lower():match("%.zip$") then
     -- On the SKINS tab a zip is a skin; everywhere else it is a mod archive.
     if self.tab == "skins" then
@@ -2481,6 +2517,8 @@ function RomImporter:update(dt)
   self:_pumpModInfoFetch()
   self:_pumpFindStats()
   self:_pumpFindThumbs()
+  self:_pumpSkinFetch()
+  self:_pumpSync(dt)
   self:_pumpModCheck()
   self:_pumpModInstall()
   self:_pumpExtract()
@@ -3082,6 +3120,8 @@ end
 function RomImporter:_switchTab(id)
   self.tab = id
   self._findSearchFocus = false
+  self._skinUrlFocus = false
+  self._modScrollMax, self._modListRect = 0, nil
   self:_disarmTextInput()
   -- the skins list is cheap and can change behind the launcher's back
   -- (an export, a hand-dropped folder), so re-read it on every visit
@@ -3107,9 +3147,11 @@ function RomImporter:_ensureSkins(force)
     out[#out + 1] = {
       id = entry.id,
       source = entry.source,
+      format = skin and skin.format or nil,
       pages = skin and #skin.pages or 0,
       controls = controls,
-      screen = page ~= nil and page.viewport ~= nil,
+      screen = page ~= nil
+        and (page.viewport ~= nil or page.screenFit == "remainder"),
       ok = skin ~= nil,
     }
   end
@@ -3140,7 +3182,6 @@ end
 function RomImporter:_installSkinZip(source)
   if self.workState == "working" then return end
   self.tab = "skins"
-  local TouchSkin = require("src.core.TouchSkin")
   local name, data, readError
   if type(source) == "string" then
     name = source
@@ -3160,13 +3201,368 @@ function RomImporter:_installSkinZip(source)
         .. tostring(readError or name) }
     return
   end
-  local id, err = TouchSkin.installArchive(name, data)
+  self:_installSkinData(name, data)
+end
+
+local MAX_SKIN_URL = 300
+local SKIN_TEMP_DIR = "skins/_download"
+
+function RomImporter.skinUrlName(url)
+  local path = tostring(url or ""):gsub("[?#].*$", "")
+  local base = (path:match("([^/\\]+)$") or ""):gsub("[^%w%._%-]", "_")
+  local ext = base:match("%.([%w]+)$")
+  if not ext then
+    return (base ~= "" and base or "skin") .. ".zip"
+  end
+  ext = ext:lower()
+  local TouchSkin = require("src.core.TouchSkin")
+  if TouchSkin.ARCHIVE_EXTS[ext] or ext == "cfg" then return base end
+  return (base:gsub("%.[%w]+$", "")) .. ".zip"
+end
+
+function RomImporter.wrapSkinPayload(name, data)
+  name = tostring(name or "")
+  if not name:lower():match("%.cfg$") then return name, data end
+  if not data then return name, data end
+  if data:sub(1, 2) == "PK" then
+    return (name:gsub("%.[Cc][Ff][Gg]$", "")) .. ".zip", data
+  end
+  local blob = require("src.core.SkinZip").encode({
+    { name = "overlay.cfg", data = data },
+  })
+  return (name:gsub("%.[Cc][Ff][Gg]$", "")) .. ".zip", blob
+end
+
+function RomImporter:_installSkinData(name, data)
+  local TouchSkin = require("src.core.TouchSkin")
+  if not data or data == "" then
+    self._skinNotice = { ok = false, text = Strings("The skin file was empty.") }
+    return nil
+  end
+  local wrappedName, payload = RomImporter.wrapSkinPayload(name, data)
+  local id, note = TouchSkin.installArchive(wrappedName, payload)
   self:_ensureSkins(true)
   if not id then
-    self._skinNotice = { ok = false, text = "Import failed: " .. tostring(err) }
+    self._skinNotice = { ok = false, text = "Import failed: " .. tostring(note) }
+    return nil
+  end
+  local text = "Imported " .. id
+  if type(note) == "table" and note[1] then
+    text = text .. ": " .. tostring(note[1])
+  end
+  self._skinNotice = { ok = true, text = text }
+  return id
+end
+
+function RomImporter:_toggleSkinUrlFocus()
+  self._skinUrlFocus = not self._skinUrlFocus
+  if self._skinUrlFocus then
+    self:_armTextInput()
+  else
+    self:_disarmTextInput()
+  end
+end
+
+function RomImporter:_pasteSkinUrl()
+  local ok, text = pcall(love.system.getClipboardText)
+  if ok and type(text) == "string" then
+    self.skinUrl = utf8Cap((self.skinUrl or "") .. text:gsub("%s", ""),
+      MAX_SKIN_URL)
+  end
+end
+
+function RomImporter:_addSkinFromUrl(url)
+  if self._skinFetch then return false end
+  url = tostring(url or self.skinUrl or ""):gsub("%s", "")
+  if url == "" then
+    self._skinNotice = { ok = false,
+      text = Strings("Paste a link to a skin archive first.") }
+    return false
+  end
+  if not url:match("^https?://") then
+    self._skinNotice = { ok = false,
+      text = Strings("A skin link has to start with http:// or https://") }
+    return false
+  end
+  if not require("src.core.Platform").canFetchRemote() then
+    self._skinNotice = { ok = false,
+      text = Strings("Downloading needs a network transport this build has not got.") }
+    return false
+  end
+  local name = RomImporter.skinUrlName(url)
+  local Fetch = require("src.net.Fetch")
+  self._skinFetch = {
+    url = url, name = name, dest = SKIN_TEMP_DIR .. "/" .. name,
+    job = Fetch.download(url, SKIN_TEMP_DIR .. "/" .. name,
+      { userAgent = "gen1recomp-skin", maxSeconds = 90 }),
+  }
+  self._skinNotice = { ok = true, text = Strings("Downloading %s...", name) }
+  return true
+end
+
+function RomImporter:_pumpSkinFetch()
+  local f = self._skinFetch
+  if not f then return end
+  local Fetch = require("src.net.Fetch")
+  local st = Fetch.poll(f.job)
+  if st.status == "pending" then
+    self._skinFetchProgress = st.progress
     return
   end
-  self._skinNotice = { ok = true, text = "Imported " .. id }
+  Fetch.release(f.job)
+  self._skinFetch, self._skinFetchProgress = nil, nil
+  if st.status ~= "ok" or not st.path then
+    self._skinNotice = { ok = false,
+      text = "Download failed: " .. tostring(st.err or "no data") }
+    return
+  end
+  local data = love.filesystem.read(st.path)
+  love.filesystem.remove(st.path)
+  if self:_installSkinData(f.name, data) then
+    self.skinUrl = ""
+  end
+end
+
+function RomImporter:_exportSkin(id, kind)
+  local TouchSkin = require("src.core.TouchSkin")
+  local entry = id and TouchSkin.find(id)
+  if not entry then
+    self._skinNotice = { ok = false, text = Strings("That skin is gone.") }
+    return nil
+  end
+  local skin = TouchSkin.load(entry.root, entry.id)
+  if not skin then
+    self._skinNotice = { ok = false,
+      text = Strings("Could not read %s", tostring(id)) }
+    return nil
+  end
+  local path, missing, warnings
+  if kind == "retroarch" then
+    path, missing = TouchSkin.exportRetroArch(skin)
+  elseif kind == "delta" then
+    path, missing, warnings = TouchSkin.exportDelta(skin)
+  else
+    path, missing = TouchSkin.export(skin)
+  end
+  if not path then
+    self._skinNotice = { ok = false,
+      text = "Export failed: " .. tostring(missing) }
+    return nil
+  end
+  local dir = love.filesystem.getSaveDirectory
+    and love.filesystem.getSaveDirectory() or nil
+  self._skinExport = { path = path, dir = dir }
+  local text = Strings("Exported to %s", (dir and (dir .. "/") or "") .. path)
+  if type(missing) == "table" and missing[1] then
+    text = text .. " (" .. #missing .. " image(s) missing)"
+  end
+  if type(warnings) == "table" and warnings[1] then
+    text = text .. " " .. tostring(warnings[1])
+  end
+  self._skinNotice = { ok = true, text = text }
+  return path
+end
+
+function RomImporter:_revealSkinExport()
+  local e = self._skinExport
+  if not e or not e.dir then return false end
+  if love.system and love.system.openURL then
+    pcall(love.system.openURL, fileUrl(e.dir))
+  end
+  return true
+end
+
+local MAX_SYNC_CODE = 8
+local MAX_SHARE_CODE = 6
+
+function RomImporter.syncDigits(text)
+  local digits = tostring(text or ""):gsub("[^%d]", "")
+  return digits:sub(1, MAX_SYNC_CODE)
+end
+
+function RomImporter.syncShareCode(text)
+  local out = tostring(text or ""):upper():gsub("[^A-Z2-9]", "")
+  return out:sub(1, MAX_SHARE_CODE)
+end
+
+function RomImporter:_syncDeviceLabel()
+  local name = love.system and love.system.getOS and love.system.getOS()
+  if type(name) ~= "string" or name == "" then return "device" end
+  return name
+end
+
+function RomImporter:_syncEngine()
+  if self._sync ~= nil then return self._sync or nil end
+  local ok, SyncEngine = pcall(require, "src.sync.SyncEngine")
+  if not ok or type(SyncEngine) ~= "table" then
+    self._sync = false
+    return nil
+  end
+  local made, eng = pcall(SyncEngine.shared)
+  if not made or type(eng) ~= "table" then
+    self._sync = false
+    return nil
+  end
+  self._sync = eng
+  return eng
+end
+
+function RomImporter:_syncSupported()
+  if self._syncTransportOk ~= nil then return self._syncTransportOk end
+  local ok, HostShell = pcall(require, "src.core.HostShell")
+  if not ok or type(HostShell) ~= "table"
+      or type(HostShell.canHttpRequest) ~= "function" then
+    self._syncTransportOk = true
+    return true
+  end
+  local asked, can = pcall(HostShell.canHttpRequest)
+  self._syncTransportOk = (not asked) or (can and true or false)
+  return self._syncTransportOk
+end
+
+function RomImporter:_pumpSync(dt)
+  if self._sync == nil then
+    if not self.launcher or self._syncBooted then return end
+    if not self:_syncSupported() then return end
+    self._syncBooted = true
+    local booted = self:_syncEngine()
+    if booted and booted.state.enabled and booted:linked() then
+      pcall(booted.syncNow, booted)
+    end
+  end
+  local eng = self._sync
+  if not eng then return end
+  pcall(eng.update, eng, dt)
+  if eng.phase == "conflict" and eng.conflicts and #eng.conflicts > 0 then
+    if not self._syncModal and not self._syncConflictShown then
+      self._syncConflictShown = true
+      self:_openSync()
+    end
+  else
+    self._syncConflictShown = nil
+  end
+end
+
+function RomImporter:_openSync()
+  self:_syncEngine()
+  self._syncModal = self._syncModal
+    or { view = "home", code1 = "", code2 = "", share = "" }
+  self._syncFocus = nil
+  self:_disarmTextInput()
+end
+
+function RomImporter:_closeSync()
+  self._syncModal = nil
+  self._syncFocus = nil
+  self:_disarmTextInput()
+end
+
+function RomImporter:_syncView(view)
+  if not self._syncModal then return end
+  self._syncModal.view = view
+  self._syncFocus = nil
+  self:_disarmTextInput()
+end
+
+function RomImporter:_syncFocusField(field)
+  if not self._syncModal then return end
+  if self._syncFocus == field then
+    self._syncFocus = nil
+    self:_disarmTextInput()
+    return
+  end
+  self._syncFocus = field
+  self:_armTextInput()
+end
+
+function RomImporter:_syncTypeInto(field, text)
+  local mo = self._syncModal
+  if not mo or not field then return end
+  if field == "share" then
+    mo.share = RomImporter.syncShareCode((mo.share or "") .. tostring(text or ""))
+  else
+    mo[field] = RomImporter.syncDigits((mo[field] or "") .. tostring(text or ""))
+  end
+end
+
+function RomImporter:_syncPaste()
+  local field = self._syncFocus
+  if not field then return end
+  local ok, text = pcall(love.system.getClipboardText)
+  if ok and type(text) == "string" then self:_syncTypeInto(field, text) end
+end
+
+function RomImporter:_syncCreate()
+  local eng = self:_syncEngine()
+  if not eng then return false end
+  return eng:createAccount(self:_syncDeviceLabel())
+end
+
+function RomImporter:_syncLink()
+  local eng, mo = self:_syncEngine(), self._syncModal
+  if not eng or not mo then return false end
+  local ok = eng:linkDevice(mo.code1, mo.code2, self:_syncDeviceLabel())
+  if ok then
+    mo.code1, mo.code2, mo.view = "", "", "home"
+    self._syncFocus = nil
+    self:_disarmTextInput()
+  end
+  return ok
+end
+
+function RomImporter:_syncNow()
+  local eng = self:_syncEngine()
+  if not eng then return false end
+  return eng:syncNow()
+end
+
+function RomImporter:_syncUnlink()
+  local eng = self:_syncEngine()
+  if not eng then return false end
+  eng:unlink()
+  if self._syncModal then self._syncModal.view = "home" end
+  return true
+end
+
+function RomImporter:_syncUnlinkDevice(deviceId)
+  local eng = self:_syncEngine()
+  if not eng or type(eng.unlinkDevice) ~= "function" then return false end
+  return eng:unlinkDevice(deviceId)
+end
+
+function RomImporter:_syncShareMods()
+  local eng = self:_syncEngine()
+  if not eng then return false end
+  return eng:shareMods()
+end
+
+function RomImporter:_syncGetShare()
+  local eng, mo = self:_syncEngine(), self._syncModal
+  if not eng or not mo then return false end
+  return eng:fetchShare(mo.share or "")
+end
+
+function RomImporter:_syncApplyMods()
+  local eng, mo = self:_syncEngine(), self._syncModal
+  if not eng then return false end
+  local ok, err = eng:applyModPlan(function(done, total, label, finished)
+    if not mo then return end
+    if finished then
+      mo.progress = nil
+      if self._refreshMods then self:_refreshMods() end
+    else
+      mo.progress = { done = done, total = total, label = label }
+    end
+  end)
+  if mo then mo.progress = nil end
+  if ok and self._refreshMods then self:_refreshMods() end
+  return ok, err
+end
+
+function RomImporter:_syncResolve(key, choice)
+  local eng = self:_syncEngine()
+  if not eng then return false end
+  return eng:resolveConflict(key, choice)
 end
 
 function RomImporter:_skinsImportButtonLabel()
@@ -3233,6 +3629,10 @@ function RomImporter:_openSettings()
   -- The tab rides along: the editor persists the layout into that game's own
   -- option block, and Gold's is not the flat Gen 1 one (#1100).
   local hooks = {}
+  local version = self.tab
+  hooks.reportIssue = function(opts)
+    return self:_reportIssue(opts, version)
+  end
   if self.onEditTouchControls then
     local version = self.tab
     hooks.editTouchControls = function()
@@ -3250,11 +3650,13 @@ function RomImporter:_openSettings()
   -- The tab the gear was opened on decides the row set: Gold reads a
   -- different option block entirely, and offering it Gen 1's rows meant a
   -- dozen controls that changed nothing (see LauncherSettings.gen2Rows).
-  local version = self.tab
   local ok, model = pcall(function()
     return require("src.import.LauncherSettings").open(hooks, version)
   end)
-  if ok and model then self._settings = model end
+  if ok and model then
+    self._settings = model
+    self._settingsSafeModeAtOpen = require("src.core.SaveData").isSafeMode(model.opts)
+  end
 end
 
 -- Quit from the launcher's own X.  It goes through love.event.quit so main.lua's
@@ -3265,8 +3667,38 @@ function RomImporter:_quitApp()
 end
 
 function RomImporter:_closeSettings()
-  if self._settings then self._settings.save() end
+  local model = self._settings
+  if model then
+    model.save()
+    local safeMode = require("src.core.SaveData").isSafeMode(model.opts)
+    if safeMode ~= self._settingsSafeModeAtOpen then
+      self.mods = nil
+      self.safeMode = safeMode
+      self._modSortCache = nil
+      self._modInfoFetch = nil
+    end
+  end
   self._settings = nil
+  self._settingsSafeModeAtOpen = nil
+end
+
+function RomImporter:_reportIssue(options, version)
+  local ok, IssueReport = pcall(require, "src.core.IssueReport")
+  if not ok then
+    self.modNotice = { ok = false, text = "Could not prepare the issue report." }
+    return false
+  end
+  local opened, url, reason = IssueReport.open(options, {
+    version = version,
+    mods = self.mods,
+  })
+  if not opened then
+    self.modNotice = { ok = false, text = reason or "Could not open the issue report." }
+    return false
+  end
+  self._lastIssueReportURL = url
+  if reason then self.modNotice = { ok = true, text = reason } end
+  return true
 end
 
 function RomImporter:_commitSettingsText()
@@ -3338,6 +3770,27 @@ function RomImporter:keypressed(key)
     if key == "escape" then self:_closeSettings() end
     return
   end
+  if self._syncModal then
+    local field = self._syncFocus
+    if field then
+      local mo = self._syncModal
+      if key == "backspace" then
+        mo[field] = tostring(mo[field] or ""):sub(1, -2)
+      elseif key == "return" or key == "kpenter" or key == "escape" then
+        self._syncFocus = nil
+        self:_disarmTextInput()
+      elseif key == "v"
+          and love.keyboard.isDown("lctrl", "rctrl", "lgui", "rgui") then
+        self:_syncPaste()
+      end
+      return
+    end
+    if self._flex and require("src.import.LauncherView").keypressed(self, key) then
+      return
+    end
+    if key == "escape" then self:_closeSync() end
+    return
+  end
   if self._rename then
     if key == "backspace" then
       self._rename.text = utf8Back(self._rename.text)
@@ -3384,6 +3837,21 @@ function RomImporter:keypressed(key)
         self._modConfirm = nil
         self._modVersions = nil
       end
+    end
+    return
+  end
+  if self._skinUrlFocus then
+    if key == "backspace" then
+      self.skinUrl = utf8Back(self.skinUrl or "")
+    elseif key == "return" or key == "kpenter" then
+      self._skinUrlFocus = false
+      self:_disarmTextInput()
+      self:_addSkinFromUrl()
+    elseif key == "escape" then
+      self._skinUrlFocus = false
+      self:_disarmTextInput()
+    elseif key == "v" and love.keyboard.isDown("lctrl", "rctrl", "lgui", "rgui") then
+      self:_pasteSkinUrl()
     end
     return
   end
@@ -3494,6 +3962,10 @@ function RomImporter:_commitRename()
 end
 
 function RomImporter:textinput(text)
+  if self._syncModal and self._syncFocus then
+    self:_syncTypeInto(self._syncFocus, text)
+    return
+  end
   if self._profileSavePrompt then
     self._profileSavePrompt.text = utf8Cap((self._profileSavePrompt.text or "") .. text, MAX_SLOT_LABEL)
     return
@@ -3512,6 +3984,11 @@ function RomImporter:textinput(text)
     -- with a stray newline attached
     self._indexPrompt.text =
       utf8Cap(self._indexPrompt.text .. text:gsub("%s", ""), MAX_INDEX_URL)
+    return
+  end
+  if self._skinUrlFocus then
+    self.skinUrl = utf8Cap((self.skinUrl or "") .. text:gsub("%s", ""),
+      MAX_SKIN_URL)
     return
   end
   if self._findSearchFocus then
@@ -3561,6 +4038,8 @@ end
 -- so a still list costs nothing after the first paint.
 function RomImporter:_refreshMods()
   local LauncherMods = require("src.mods.LauncherMods")
+  local SaveData = require("src.core.SaveData")
+  self.safeMode = SaveData.isSafeMode(SaveData.loadOptions())
   -- Once per session, ahead of the first listing: pull in any mod the player
   -- unzipped beside the executable, which an ordinary (non-portable) install
   -- has no way to read.  It happens here rather than behind a button because
@@ -3700,6 +4179,10 @@ end
 -- so that game's checkbox and status chips reflect the new resolution.
 -- Enabling an experimental mod arms a confirmation for that same game.
 function RomImporter:_toggleMod(id, confirmed, version)
+  if self.safeMode then
+    self.modNotice = { ok = false, text = "Safe mode is active. Turn it off in Settings to change mods." }
+    return
+  end
   local LauncherMods = require("src.mods.LauncherMods")
   local cur, experimental = false, false
   for _, m in ipairs(self.mods or {}) do
@@ -3740,6 +4223,10 @@ end
 -- must not be the way around it.  Disabling needs no confirm -- it is the
 -- recovery action, and Delete is the only destructive one on this panel.
 function RomImporter:_setAllMods(want, confirmed)
+  if self.safeMode then
+    self.modNotice = { ok = false, text = "Safe mode is active. Turn it off in Settings to change mods." }
+    return
+  end
   local LauncherMods = require("src.mods.LauncherMods")
   local ids, experimental = {}, false
   for _, m in ipairs(self.mods or {}) do

@@ -24,7 +24,7 @@ inline void forward_fft(const al::span<std::complex<double>> buffer)
  * provided buffer, which MUST BE power of two.
  */
 inline void inverse_fft(const al::span<std::complex<double>> buffer)
-{ complex_fft(buffer, 1.0); }
+{ complex_fft(buffer, +1.0); }
 
 /**
  * Calculate the complex helical sequence (discrete-time analytical signal) of

@@ -76,6 +76,23 @@ local BATTLE_SUBMENU_LEFT, BATTLE_SUBMENU_TOP = 11, 11
 
 -- HP bar is 6 tiles wide (48px) in the party list.
 
+local function gridIndex(index, count, direction)
+  if count < 1 then return nil end
+  local row, col = math.floor((index - 1) / 2), (index - 1) % 2
+  if direction == "left" or direction == "right" then
+    local other = row * 2 + (1 - col) + 1
+    return other <= count and other or index
+  end
+  local step = direction == "up" and -1 or direction == "down" and 1
+  if not step then return nil end
+  local rows = math.ceil(count / 2)
+  for offset = 1, rows do
+    local other = ((row + step * offset) % rows) * 2 + col + 1
+    if other <= count then return other end
+  end
+  return index
+end
+
 function PartyMenu:wantsFillScale() return true end
 function PartyMenu:drawsWidescreen() return true end
 
@@ -114,6 +131,7 @@ function PartyMenu.new(game, opts)
   self.wantsSubmenu = opts.submenu == true
   -- BattleMenu_PKMN's `callfar BattleMonMenu` (engine/battle/core.asm:4810).
   self.wantsBattleSubmenu = opts.battleSubmenu == true
+  self.battle = opts.battle == true
   self.submenu = nil
   -- The held slot while SwitchPartyMons' second pick is open; nil otherwise.
   self.switchFrom = nil
@@ -144,6 +162,13 @@ end
 
 function PartyMenu:isCancel()
   return self.index > #self.party
+end
+
+function PartyMenu:gridNavigation()
+  if not self.battle
+      or not Runtime.wantsHook("ui.party.grid_navigation") then return false end
+  return Runtime.call("ui.party.grid_navigation", function() return false end,
+                      self) == true
 end
 
 -- ------------------------------------------------------------- mon submenu
@@ -477,7 +502,18 @@ function PartyMenu:update(_dt)
     return
   end
   local total = self:count()
-  if input:wasPressed("up") then
+  local grid
+  if self:gridNavigation() then
+    local direction = input:wasPressed("left") and "left"
+      or input:wasPressed("right") and "right"
+      or input:wasPressed("up") and "up"
+      or input:wasPressed("down") and "down"
+    grid = gridIndex(self.index, #self.party, direction)
+  end
+  if grid then
+    self.index = grid
+    self:storeCursor()
+  elseif input:wasPressed("up") then
     self.index = self.index > 1 and self.index - 1 or total
   elseif input:wasPressed("down") then
     self.index = self.index < total and self.index + 1 or 1

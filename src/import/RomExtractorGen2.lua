@@ -1927,7 +1927,9 @@ function RomExtractorGen2:extractTitle()
     trail = "assets/generated/title/trail.png",
     copyright = "assets/generated/title/copyright.png",
     copyrightSplash = "assets/generated/title/copyright_splash.png",
-    -- ScrollTitleScreenClouds: 1px left every 8 frames (Gold).
+    -- ScrollTitleScreenClouds: Gold decrements the cloud-band SCX every
+    -- 8 vblanks, so the strip slides 1px right.  Silver does the same
+    -- decrement every frame.
     cloudScrollEvery = 8,
     cloudY = 88,
   }
@@ -4102,8 +4104,30 @@ function RomExtractorGen2:extractEncounters()
 
   -- FishGroups rows: chance byte then old/good/super rod pointers, each a
   -- list of (cumulative chance, species, level) triples ending at 100%.
+  -- Rows with species == 0 (time_group in pokegold data/wild/fish.asm) index
+  -- TimeFishGroups [day_species, day_level, nite_species, nite_level].
   self:trace("fish groups")
   local fish = self:symbol("FishGroups")
+  local timeFishSym = self.symbols.TimeFishGroups and self:symbol("TimeFishGroups")
+  local timeFishBank = timeFishSym and timeFishSym.bank or (fish and fish.bank)
+  local timeFishAddr = timeFishSym and timeFishSym.address or (fish and 0x6BDE)
+  local timeFishGroups = {}
+  if timeFishBank and timeFishAddr then
+    for idx = 0, 31 do
+      local base = timeFishAddr + idx * 4
+      if not romAddrOk(timeFishBank, base + 3) then break end
+      local daySp = self.rom:byte(timeFishBank, base)
+      local dayLv = self.rom:byte(timeFishBank, base + 1)
+      local niteSp = self.rom:byte(timeFishBank, base + 2)
+      local niteLv = self.rom:byte(timeFishBank, base + 3)
+      if daySp == 0 or daySp > 251 or niteSp == 0 or niteSp > 251 then break end
+      timeFishGroups[idx] = {
+        day = { species = self:speciesName(daySp), level = dayLv },
+        nite = { species = self:speciesName(niteSp), level = niteLv },
+      }
+    end
+  end
+
   local fishGroups = {}
   local function readRod(address)
     local list = {}
@@ -4115,11 +4139,24 @@ function RomExtractorGen2:extractEncounters()
       local chance = self.rom:byte(fish.bank, address + i * 3)
       local species = self.rom:byte(fish.bank, address + i * 3 + 1)
       local level = self.rom:byte(fish.bank, address + i * 3 + 2)
-      list[#list + 1] = {
-        chance = chance,
-        species = self:speciesName(species),
-        level = level,
-      }
+      local entry = { chance = chance }
+      if species == 0 then
+        entry.timeGroup = level
+        local tg = timeFishGroups[level]
+        if tg then
+          entry.day = tg.day
+          entry.nite = tg.nite
+          entry.species = tg.day.species
+          entry.level = tg.day.level
+        else
+          entry.species = 0
+          entry.level = level
+        end
+      else
+        entry.species = self:speciesName(species)
+        entry.level = level
+      end
+      list[#list + 1] = entry
       -- Rows are cumulative and the last one is 100% ($ff after `percent`).
       if chance >= 0xfe then break end
     end
@@ -4217,6 +4254,7 @@ function RomExtractorGen2:extractEncounters()
     grass = grass,
     water = water,
     fishGroups = fishGroups,
+    timeFishGroups = timeFishGroups,
     trees = trees,
     rocks = rocks,
     treeSets = treeSets,
@@ -5020,6 +5058,10 @@ function RomExtractorGen2:extractMenuGfx()
     question = "QuestionEmote",
     happy = "HappyEmote",
     sad = "SadEmote",
+    heart = "HeartEmote",
+    bolt = "BoltEmote",
+    sleep = "SleepEmote",
+    fish = "FishEmote",
   }) do
     local symbol = self.symbols[label]
     if symbol then

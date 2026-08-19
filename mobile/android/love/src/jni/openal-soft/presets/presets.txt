@@ -36,7 +36,19 @@ is defined for the decoder, meaning that speaker will be silent for 3D sound
 output). A "proper" 7.1 decoder may be provided in the future, but due to the
 nature of the speaker configuration will have trade-offs.
 
+hex-quad.ambdec
+Specifies a flat-front hexagonal speaker setup, plus an elevated quad speaker
+setup, for 7.1.4 Surround output. The front left and right speakers are placed
+at +30 and -30 degrees, the side speakers are placed at +90 and -90 degrees,
+and the back speakers are placed at +150 and -150 degrees. The elevated
+speakers are placed at an elevation of +35 degrees, with the top front left and
+right speakers placed at +45 and -45 degrees, and the top back left and right
+speakers placed at +135 and -135 degrees. Similar to 7.1, the front-center
+speaker is not used for 3D sound, but will be used as appropriate with
+AL_SOFT_direct_channels or ALC_EXT_DEDICATED.
+
 3D7.1.ambdec
-Specifies a 3D7.1 speaker setup for 7.1 Surround output. Although it's for 7.1
-output, the speakers for such a configuration need to be placed in different
-positions for proper results. Please see docs/3D7.1.txt for more information.
+Specifies a 3D7.1 speaker setup for 3D7.1 Surround output. Please see
+docs/3D7.1.txt for information about speaker placement. Similar to 7.1, the
+front-center speaker is not used for 3D sound, but will be used as appropriate
+with AL_SOFT_direct_channels or ALC_EXT_DEDICATED.

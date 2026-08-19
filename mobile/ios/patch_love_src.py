@@ -9,7 +9,8 @@ What it does:
   1. Copies mobile/ios/native/ (GRPickerBridge.swift, GRHealthBridge.swift,
      GRBootstrap.m) and the HealthKit entitlements into the LÖVE tree.
   2. Patches liblove's wrap_System.cpp to expose love.system.pickFile,
-     love.system.createFile, and love.system.syncHealthSteps on iOS (each
+     love.system.createFile, love.system.syncHealthSteps,
+     love.system.httpDownload and love.system.httpRequest on iOS (each
      calls a GR*Bridge Swift class through the Objective-C runtime, so
      liblove never links against Swift directly).
   3. Patches love.xcodeproj so the love-ios app target compiles the native
@@ -32,11 +33,16 @@ FILESYSTEM_CPP = LOVE_SRC / "src" / "modules" / "filesystem" / "physfs" / "Files
 IOS_MM = LOVE_SRC / "src" / "common" / "ios.mm"
 IOS_H = LOVE_SRC / "src" / "common" / "ios.h"
 SYSTEM_CPP = LOVE_SRC / "src" / "modules" / "system" / "System.cpp"
+AUDIO_H = LOVE_SRC / "src" / "modules" / "audio" / "openal" / "Audio.h"
+AUDIO_CPP = LOVE_SRC / "src" / "modules" / "audio" / "openal" / "Audio.cpp"
 ENTITLEMENTS_SRC = IOS_DIR / "overlays" / "love-ios.entitlements"
 
 NATIVE_FILES = ("GRPickerBridge.swift", "GRHealthBridge.swift", "GRBootstrap.m")
 
 MARKER = "gen1recomp iOS picker bridge"
+
+POOL_PAUSE_MARKER = "poolPaused"
+AUDIO_EVENT_MARKER = "gr_pushAudioEvent"
 
 # Headers must land outside `namespace love { namespace system {`.
 WRAP_INCLUDES = """
@@ -45,6 +51,7 @@ WRAP_INCLUDES = """
 #include <objc/runtime.h>
 #include <objc/message.h>
 #include <string>
+#include <vector>
 #include "filesystem/Filesystem.h"
 #endif
 """ % MARKER
@@ -154,6 +161,7 @@ WRAP_REGISTRATION = """#ifdef LOVE_IOS
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "httpDownload", w_httpDownload },
+	{ "httpRequest", w_httpRequest },
 #endif
 """
 
@@ -196,6 +204,7 @@ int w_syncHealthSteps(lua_State *L)
 WRAP_SYNC_REGISTRATION = """#ifdef LOVE_IOS
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "httpDownload", w_httpDownload },
+	{ "httpRequest", w_httpRequest },
 #endif
 """
 
@@ -219,6 +228,80 @@ int w_httpDownload(lua_State *L)
 		cls, sel_registerName("httpDownloadWithUrl:destination:userAgent:accept:"),
 		url, destination, userAgent, accept);
 	lua_pushboolean(L, ok != 0);
+	return 1;
+}
+
+// love.system.httpRequest(url, method, headers, body, userAgent) -> envelope
+//
+// The transport save sync needs: a chosen method, per-request auth headers,
+// and the response body of a 4xx as well as a 2xx. `headers` is a flat array
+// of alternating name and value strings, joined into "name: value" lines here
+// because the Swift bridge takes C strings and no Foundation type may be
+// NAMED in this translation unit (see w_pickFileKinds above).
+//
+// The single return is the response envelope -- a head line of
+// "STATUS <code>" or "ERROR <text>", a newline, then the raw body -- or nil
+// where the build carries no bridge at all, which src/core/HostShell.lua
+// turns into an "update the app" notice rather than a failed request.
+int w_httpRequest(lua_State *L)
+{
+	const char *url = luaL_checkstring(L, 1);
+	const char *method = luaL_optstring(L, 2, "GET");
+
+	std::string headerBlob;
+	if (!lua_isnoneornil(L, 3))
+	{
+		luaL_checktype(L, 3, LUA_TTABLE);
+		std::vector<std::string> fields;
+		size_t count = luax_objlen(L, 3);
+		for (size_t i = 1; i <= count; i++)
+		{
+			lua_rawgeti(L, 3, (int) i);
+			const char *field = lua_tostring(L, -1);
+			fields.push_back(field != nullptr ? field : "");
+			lua_pop(L, 1);
+		}
+		for (size_t i = 0; i + 1 < fields.size(); i += 2)
+			headerBlob += fields[i] + ": " + fields[i + 1] + "\\n";
+	}
+
+	size_t bodyLen = 0;
+	const char *body = nullptr;
+	if (!lua_isnoneornil(L, 4))
+		body = luaL_checklstring(L, 4, &bodyLen);
+	const char *ua = luaL_optstring(L, 5, "gen1recomp");
+
+	Class cls = objc_getClass("GRPickerBridge");
+	if (cls == nullptr)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	typedef id (*GRRequest)(Class, SEL, const char *, const char *,
+	                        const char *, const unsigned char *, int,
+	                        const char *);
+	id reply = ((GRRequest)objc_msgSend)(
+		cls,
+		sel_registerName("httpRequestWithUrl:method:headers:body:bodyLength:userAgent:"),
+		url, method, headerBlob.c_str(), (const unsigned char *) body,
+		(int) bodyLen, ua);
+	if (reply == nullptr)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	// NSData read through the runtime, for the same reason as above: the
+	// bytes are copied out immediately, before any autorelease pool drains.
+	typedef const void *(*GRBytes)(id, SEL);
+	typedef unsigned long (*GRLength)(id, SEL);
+	const void *bytes = ((GRBytes)objc_msgSend)(reply, sel_registerName("bytes"));
+	unsigned long length = ((GRLength)objc_msgSend)(reply, sel_registerName("length"));
+	if (bytes == nullptr || length == 0)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_pushlstring(L, (const char *) bytes, (size_t) length);
 	return 1;
 }
 #endif
@@ -303,7 +386,7 @@ def patch_wrap_system():
     text = text.replace(reg_anchor, reg_anchor + registration, 1)
     WRAP_SYSTEM.write_text(text)
     print("patch_love_src: wrap_System.cpp patched "
-          "(pickFile/createFile/syncHealthSteps/httpDownload)")
+          "(pickFile/createFile/syncHealthSteps/httpDownload/httpRequest)")
 
 
 def patch_public_documents():
@@ -406,6 +489,344 @@ def patch_ios_haptics():
     print("patch_love_src: iOS haptics use Taptic Engine impact presets")
 
 
+def patch_audio_pool_gate():
+    header = pristine(AUDIO_H, (POOL_PAUSE_MARKER,))
+    header_include_original = "#include <stack>\n#include <cmath>\n"
+    header_include_replacement = "#include <stack>\n#include <cmath>\n#include <atomic>\n"
+    if header_include_original not in header:
+        fail(f"audio header include anchor not found in {AUDIO_H}")
+    header = header.replace(header_include_original, header_include_replacement, 1)
+
+    header_original = (
+        "\tpublic:\n"
+        "\t\tPoolThread(Pool *pool);\n"
+        "\t\tvirtual ~PoolThread();\n"
+        "\t\tvoid setFinish();\n"
+        "\t\tvoid threadFunction();\n"
+        "\t};\n"
+    )
+    header_replacement = (
+        "\tpublic:\n"
+        "\t\tPoolThread(Pool *pool);\n"
+        "\t\tvirtual ~PoolThread();\n"
+        "\t\tvoid setFinish();\n"
+        "\t\tvoid setPoolPaused(bool paused);\n"
+        "\t\tvoid threadFunction();\n"
+        "\n"
+        "\tprivate:\n"
+        "\t\tstd::atomic<bool> poolPaused;\n"
+        "\t\tbool poolUpdating;\n"
+        "\t\tlove::thread::ConditionalRef poolCondition;\n"
+        "\t};\n"
+    )
+    if header_original not in header:
+        fail(f"PoolThread declaration anchor not found in {AUDIO_H}")
+    AUDIO_H.write_text(header.replace(header_original, header_replacement, 1))
+
+    text = pristine(AUDIO_CPP, (POOL_PAUSE_MARKER,))
+
+    ctor_original = (
+        "Audio::PoolThread::PoolThread(Pool *pool)\n"
+        "\t: pool(pool)\n"
+        "\t, finish(false)\n"
+        "{\n"
+    )
+    ctor_replacement = (
+        "Audio::PoolThread::PoolThread(Pool *pool)\n"
+        "\t: pool(pool)\n"
+        "\t, finish(false)\n"
+        "\t, poolPaused(false)\n"
+        "\t, poolUpdating(false)\n"
+        "{\n"
+    )
+    if ctor_original not in text:
+        fail(f"PoolThread constructor anchor not found in {AUDIO_CPP}")
+    text = text.replace(ctor_original, ctor_replacement, 1)
+
+    loop_original = "\t\tpool->update();\n\t\tsleep(5);\n"
+    loop_replacement = (
+        "\t\tbool updatePool = false;\n"
+        "\t\t{\n"
+        "\t\t\tthread::Lock lock(mutex);\n"
+        "\t\t\tif (!poolPaused.load(std::memory_order_acquire))\n"
+        "\t\t\t{\n"
+        "\t\t\t\tpoolUpdating = true;\n"
+        "\t\t\t\tupdatePool = true;\n"
+        "\t\t\t}\n"
+        "\t\t}\n"
+        "\n"
+        "\t\tif (updatePool)\n"
+        "\t\t{\n"
+        "\t\t\tpool->update();\n"
+        "\n"
+        "\t\t\tthread::Lock lock(mutex);\n"
+        "\t\t\tpoolUpdating = false;\n"
+        "\t\t\tpoolCondition->broadcast();\n"
+        "\t\t}\n"
+        "\n"
+        "\t\tsleep(5);\n"
+    )
+    if loop_original not in text:
+        fail(f"pool update loop anchor not found in {AUDIO_CPP}")
+    text = text.replace(loop_original, loop_replacement, 1)
+
+    finish_original = (
+        "void Audio::PoolThread::setFinish()\n"
+        "{\n"
+        "\tthread::Lock lock(mutex);\n"
+        "\tfinish = true;\n"
+        "}\n"
+    )
+    finish_replacement = (
+        "void Audio::PoolThread::setFinish()\n"
+        "{\n"
+        "\tthread::Lock lock(mutex);\n"
+        "\tfinish = true;\n"
+        "}\n"
+        "\n"
+        "void Audio::PoolThread::setPoolPaused(bool paused)\n"
+        "{\n"
+        "\tthread::Lock lock(mutex);\n"
+        "\tpoolPaused.store(paused, std::memory_order_release);\n"
+        "\tif (paused)\n"
+        "\t{\n"
+        "\t\twhile (poolUpdating)\n"
+        "\t\t\tpoolCondition->wait(mutex);\n"
+        "\t}\n"
+        "}\n"
+    )
+    if finish_original not in text:
+        fail(f"setFinish anchor not found in {AUDIO_CPP}")
+    text = text.replace(finish_original, finish_replacement, 1)
+
+    pause_original = (
+        "#else\n"
+        "\talcMakeContextCurrent(nullptr);\n"
+        "#endif\n"
+        "}\n"
+        "\n"
+        "void Audio::resumeContext()\n"
+    )
+    pause_replacement = (
+        "#else\n"
+        "\tif (poolThread)\n"
+        "\t\tpoolThread->setPoolPaused(true);\n"
+        "\talcMakeContextCurrent(nullptr);\n"
+        "#endif\n"
+        "}\n"
+        "\n"
+        "void Audio::resumeContext()\n"
+    )
+    if pause_original not in text:
+        fail(f"pauseContext anchor not found in {AUDIO_CPP}")
+    text = text.replace(pause_original, pause_replacement, 1)
+
+    resume_original = (
+        "#else\n"
+        "\tif (context && alcGetCurrentContext() != context)\n"
+        "\t\talcMakeContextCurrent(context);\n"
+        "#endif\n"
+    )
+    resume_replacement = (
+        "#else\n"
+        "\tif (context && alcGetCurrentContext() != context)\n"
+        "\t\talcMakeContextCurrent(context);\n"
+        "\tif (poolThread)\n"
+        "\t\tpoolThread->setPoolPaused(false);\n"
+        "#endif\n"
+    )
+    if resume_original not in text:
+        fail(f"resumeContext anchor not found in {AUDIO_CPP}")
+    text = text.replace(resume_original, resume_replacement, 1)
+
+    AUDIO_CPP.write_text(text)
+    print("patch_love_src: audio pool thread gated while the context is paused")
+
+
+IOS_AUDIO_EVENT_HELPER = """static void gr_pushAudioEvent(const char *name)
+{
+	auto ev = love::Module::getInstance<love::event::Event>(love::Module::M_EVENT);
+	if (ev == nullptr)
+		return;
+
+	love::event::Message *msg = new love::event::Message(name);
+	ev->push(msg);
+	msg->release();
+}
+
+static bool gr_routeRecoveryPending = false;
+static unsigned int gr_routeRecoveryAttempts = 0;
+
+"""
+
+IOS_ROUTE_CHANGE_METHOD = """
+- (void)finishAudioRouteChange
+{
+	@synchronized (self)
+	{
+		NSError *err = nil;
+		if (![[AVAudioSession sharedInstance] setActive:YES error:&err])
+		{
+			NSLog(@"Error reactivating AVAudioSession: %@", [err localizedDescription]);
+			if (++gr_routeRecoveryAttempts < 8)
+			{
+				dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+				               dispatch_get_main_queue(), ^{
+					[self finishAudioRouteChange];
+				});
+			}
+			else
+			{
+				gr_routeRecoveryPending = false;
+			}
+			return;
+		}
+
+		gr_routeRecoveryPending = false;
+		gr_routeRecoveryAttempts = 0;
+		auto resumed = love::Module::getInstance<love::audio::Audio>(love::Module::M_AUDIO);
+		if (!resumed)
+			return;
+		resumed->resumeContext();
+		gr_pushAudioEvent("audioreset");
+	}
+}
+
+- (void)audioSessionRouteChange:(NSNotification *)note
+{
+	@synchronized (self)
+	{
+		NSNumber *reason = note.userInfo[AVAudioSessionRouteChangeReasonKey];
+		NSUInteger value = reason.unsignedIntegerValue;
+		if (value != AVAudioSessionRouteChangeReasonOldDeviceUnavailable
+			&& value != AVAudioSessionRouteChangeReasonNewDeviceAvailable)
+			return;
+
+		auto audio = love::Module::getInstance<love::audio::Audio>(love::Module::M_AUDIO);
+		if (!audio)
+		{
+			NSLog(@"LoveAudioInterruptionListener could not get love audio module");
+			return;
+		}
+
+		if (gr_routeRecoveryPending)
+			return;
+		gr_routeRecoveryPending = true;
+		gr_routeRecoveryAttempts = 0;
+
+		dispatch_async(dispatch_get_main_queue(), ^{
+			@synchronized (self)
+			{
+				auto suspended = love::Module::getInstance<love::audio::Audio>(love::Module::M_AUDIO);
+				if (!suspended)
+				{
+					gr_routeRecoveryPending = false;
+					return;
+				}
+				gr_pushAudioEvent("audiosuspend");
+				suspended->pauseContext();
+			}
+			[self finishAudioRouteChange];
+		});
+	}
+}
+"""
+
+IOS_ROUTE_OBSERVER = """
+		[center addObserver:[LoveAudioInterruptionListener shared]
+			   selector:@selector(audioSessionRouteChange:)
+			       name:AVAudioSessionRouteChangeNotification
+			     object:session];
+"""
+
+
+def patch_ios_audio_route():
+    text = IOS_MM.read_text()
+    if AUDIO_EVENT_MARKER in text:
+        print("patch_love_src: iOS audio route-change handling already present")
+        return
+
+    include_anchor = '#include "modules/audio/Audio.h"\n'
+    if include_anchor not in text:
+        fail(f"audio module include not found in {IOS_MM}")
+    text = text.replace(
+        include_anchor, include_anchor + '#include "modules/event/Event.h"\n', 1)
+
+    listener_anchor = "@interface LoveAudioInterruptionListener : NSObject\n"
+    if listener_anchor not in text:
+        fail(f"audio listener interface not found in {IOS_MM}")
+    listener_replacement = (
+        IOS_AUDIO_EVENT_HELPER
+        + listener_anchor
+        + "- (void)finishAudioRouteChange;\n"
+        + "@end\n"
+    )
+    text = text.replace(listener_anchor + "@end\n", listener_replacement, 1)
+
+    interruption_original = (
+        "\t\tNSNumber *type = note.userInfo[AVAudioSessionInterruptionTypeKey];\n"
+        "\t\tif (type.unsignedIntegerValue == AVAudioSessionInterruptionTypeBegan)\n"
+        "\t\t\taudio->pauseContext();\n"
+        "\t\telse\n"
+        "\t\t\taudio->resumeContext();\n"
+        "\t}\n"
+        "}\n"
+    )
+    interruption_replacement = (
+        "\t\tNSNumber *type = note.userInfo[AVAudioSessionInterruptionTypeKey];\n"
+        "\t\tif (type.unsignedIntegerValue == AVAudioSessionInterruptionTypeBegan)\n"
+        "\t\t{\n"
+        "\t\t\tgr_pushAudioEvent(\"audiosuspend\");\n"
+        "\t\t\taudio->pauseContext();\n"
+        "\t\t}\n"
+        "\t\telse\n"
+        "\t\t{\n"
+        "\t\t\taudio->resumeContext();\n"
+        "\t\t\tgr_pushAudioEvent(\"audioreset\");\n"
+        "\t\t}\n"
+        "\t}\n"
+        "}\n"
+        + IOS_ROUTE_CHANGE_METHOD
+    )
+    if interruption_original not in text:
+        fail(f"audio interruption handler not found in {IOS_MM}")
+    text = text.replace(interruption_original, interruption_replacement, 1)
+
+    active_original = (
+        "\t\t\tNSLog(@\"ERROR:could not get love audio module\");\n"
+        "\t\t\treturn;\n"
+        "\t\t}\n"
+        "\t\taudio->resumeContext();\n"
+        "\t}\n"
+        "}\n"
+    )
+    active_replacement = (
+        "\t\t\tNSLog(@\"ERROR:could not get love audio module\");\n"
+        "\t\t\treturn;\n"
+        "\t\t}\n"
+        "\t\taudio->resumeContext();\n"
+        "\t\tgr_pushAudioEvent(\"audioreset\");\n"
+        "\t}\n"
+        "}\n"
+    )
+    if active_original not in text:
+        fail(f"applicationBecameActive handler not found in {IOS_MM}")
+    text = text.replace(active_original, active_replacement, 1)
+
+    observer_anchor = (
+        "\t\t[center addObserver:[LoveAudioInterruptionListener shared]\n"
+        "\t\t\t   selector:@selector(audioSessionInterruption:)\n"
+        "\t\t\t       name:AVAudioSessionInterruptionNotification\n"
+        "\t\t\t     object:session];\n"
+    )
+    if observer_anchor not in text:
+        fail(f"audio interruption observer not found in {IOS_MM}")
+    text = text.replace(observer_anchor, observer_anchor + IOS_ROUTE_OBSERVER, 1)
+
+    IOS_MM.write_text(text)
+    print("patch_love_src: iOS audio route changes suspend and rebuild playback")
+
+
 def patch_pbxproj():
     text = pristine(PBXPROJ)
 
@@ -473,6 +894,8 @@ def main():
     copy_native_files()
     patch_public_documents()
     patch_ios_haptics()
+    patch_ios_audio_route()
+    patch_audio_pool_gate()
     patch_wrap_system()
     patch_pbxproj()
 

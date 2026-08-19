@@ -6,9 +6,10 @@
 -- Protocol -- main thread pushes command tables onto the "chipaudio_cmd"
 -- channel and drains produced buffers off "chipaudio_out":
 --   cmd = "play"  { gen, header, allowLoops, audio,
---                   channelVolumes?, channelPitches? }
+--                   channelVolumes?, channelPitches?, stereo?, stereoEpoch? }
 --   cmd = "stop"                                       halt production
---   cmd = "channelMix" { volumes, pitches }            per-hw volume/pitch
+--   cmd = "channelMix" { volumes, pitches, stereo?, stereoEpoch? }
+--                   stereoEpoch present: live SOUND toggle; drop lookahead
 --   cmd = "invalidate"                                 drop the bank cache
 --   cmd = "quit"                                        end the thread
 -- out buffers are tagged with the play's `gen` so the main thread can
@@ -39,6 +40,7 @@ local gen = nil        -- active song generation, or nil when stopped
 local engine = nil     -- the ChipSynth engine producing the current song
 local finished = false -- the current song ran out (non-looping)
 local data = nil       -- { audio = <slim audio tables> } for ROM bank/wave reads
+local stereoEpoch = 0  -- matches ChipAudio; stale pan buffers are dropped
 
 local function handle(cmd)
   if cmd.cmd == "play" then
@@ -56,6 +58,7 @@ local function handle(cmd)
     if cmd.stereo ~= nil then
       ChipSynth.setStereo(cmd.stereo)
     end
+    if cmd.stereoEpoch ~= nil then stereoEpoch = cmd.stereoEpoch end
     local ok, eng = pcall(ChipSynth.newEngine, data, cmd.header,
                           { allowLoops = cmd.allowLoops })
     if ok then
@@ -73,6 +76,11 @@ local function handle(cmd)
     if cmd.volumes ~= nil then ChipSynth.setChannelVolumes(cmd.volumes) end
     if cmd.pitches ~= nil then ChipSynth.setChannelPitches(cmd.pitches) end
     if cmd.stereo ~= nil then ChipSynth.setStereo(cmd.stereo) end
+    if engine and cmd.stereo ~= nil then ChipSynth.applyStereo(engine) end
+    if cmd.stereoEpoch ~= nil then
+      stereoEpoch = cmd.stereoEpoch
+      outCh:clear()
+    end
   elseif cmd.cmd == "invalidate" then
     ChipSynth.invalidateBanks()
   elseif cmd.cmd == "quit" then
@@ -95,12 +103,13 @@ while true do
     local activeGen = gen
     local ok, sd = pcall(ChipSynth.soundData, engine, BUF, 2)
     if not ok then
-      outCh:push({ gen = activeGen, error = tostring(sd) })
+      outCh:push({ gen = activeGen, error = tostring(sd),
+                   stereoEpoch = stereoEpoch })
       finished = true
     else
-      outCh:push({ gen = activeGen, sd = sd })
+      outCh:push({ gen = activeGen, sd = sd, stereoEpoch = stereoEpoch })
       if engine:finished() then
-        outCh:push({ gen = activeGen, done = true })
+        outCh:push({ gen = activeGen, done = true, stereoEpoch = stereoEpoch })
         finished = true
       end
     end

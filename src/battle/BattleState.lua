@@ -234,7 +234,11 @@ local imageMeta = setmetatable({}, WEAK_KEYS)
 -- entirely, so its palette variant collapses back onto the plain path.
 local function getImage(path, pal, trueColor)
   if not path then return nil end
-  if trueColor then pal = nil end
+  if trueColor and require("src.render.PaletteFX").honorsTrueColor() then
+    pal = nil
+  else
+    trueColor = nil
+  end
   local key = pal and (path .. "#" .. pal.name) or path
   if not imageCache[key] then
     local img, pad, padL = nil, 0, 0
@@ -2523,11 +2527,7 @@ end
 
 -- the HUD label drawn in place of the level for a statused mon
 function BattleState:statusLabel(mon)
-  local record = Status.recordFor(self.data.statuses, mon.status)
-  if record then
-    return record.hudLabel or record.label or mon.status
-  end
-  return mon.status
+  return Status.hudLabelFor(self.data.statuses, mon.status)
 end
 
 -- the one accuracy roll (MoveHitTest), hooked as battle.accuracy

@@ -20,14 +20,20 @@
 
 #define STATIC_CAST(...) static_cast<__VA_ARGS__>
 #define REINTERPRET_CAST(...) reinterpret_cast<__VA_ARGS__>
+#define MAYBE_UNUSED [[maybe_unused]]
 
 #else
 
 #define STATIC_CAST(...) (__VA_ARGS__)
 #define REINTERPRET_CAST(...) (__VA_ARGS__)
+#ifdef __GNUC__
+#define MAYBE_UNUSED __attribute__((__unused__))
+#else
+#define MAYBE_UNUSED
+#endif
 #endif
 
-static FILE *my_fopen(const char *fname, const char *mode)
+MAYBE_UNUSED static FILE *my_fopen(const char *fname, const char *mode)
 {
     wchar_t *wname=NULL, *wmode=NULL;
     int namelen, modelen;
@@ -44,10 +50,11 @@ static FILE *my_fopen(const char *fname, const char *mode)
     }
 
 #ifdef __cplusplus
-    auto strbuf = std::make_unique<wchar_t[]>(static_cast<size_t>(namelen+modelen));
+    auto strbuf = std::make_unique<wchar_t[]>(static_cast<size_t>(namelen) +
+        static_cast<size_t>(modelen));
     wname = strbuf.get();
 #else
-    wname = (wchar_t*)calloc(sizeof(wchar_t), (size_t)(namelen+modelen));
+    wname = (wchar_t*)calloc(sizeof(wchar_t), (size_t)namelen + (size_t)modelen);
 #endif
     wmode = wname + namelen;
     MultiByteToWideChar(CP_UTF8, 0, fname, -1, wname, namelen);

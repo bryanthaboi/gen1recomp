@@ -113,6 +113,22 @@ local function doPost(job)
   post({ id = job.id, ok = true, done = true })
 end
 
+local function doRequest(job)
+  if not HostShell then
+    post({ id = job.id, ok = false, err = "no transport" })
+    return
+  end
+  local body, err, code = HostShell.httpRequest(job.url, {
+    method = job.method, body = job.body, headers = job.headers,
+    userAgent = job.userAgent,
+    maxTime = tonumber(job.maxSeconds) or GET_MAX_SECONDS })
+  if not code then
+    post({ id = job.id, ok = false, err = err or "request failed" })
+    return
+  end
+  post({ id = job.id, ok = true, body = body or "", code = code, done = true })
+end
+
 while true do
   local job = cmdCh:demand()
   -- The flag is checked before the job's KIND, so a worker woken by a
@@ -130,6 +146,9 @@ while true do
       if not ok then post({ id = job.id, ok = false, err = tostring(err) }) end
     elseif job.kind == "post" then
       local ok, err = pcall(doPost, job)
+      if not ok then post({ id = job.id, ok = false, err = tostring(err) }) end
+    elseif job.kind == "request" then
+      local ok, err = pcall(doRequest, job)
       if not ok then post({ id = job.id, ok = false, err = tostring(err) }) end
     elseif job.kind == "download" then
       local ok, err = pcall(doDownload, job)

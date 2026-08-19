@@ -20,60 +20,59 @@
 
 #include "config.h"
 
-#include <cctype>
-#include <cstdlib>
-#include <cstring>
+#include <string_view>
+#include <vector>
 
 #include "AL/al.h"
 #include "AL/alc.h"
 
-#include "alcontext.h"
-#include "alexcpt.h"
+#include "alc/context.h"
+#include "alc/inprogext.h"
 #include "alstring.h"
+#include "direct_defs.h"
 #include "opthelpers.h"
 
 
-AL_API ALboolean AL_APIENTRY alIsExtensionPresent(const ALchar *extName)
-START_API_FUNC
+AL_API DECL_FUNC1(ALboolean, alIsExtensionPresent, const ALchar*,extName)
+FORCE_ALIGN ALboolean AL_APIENTRY alIsExtensionPresentDirect(ALCcontext *context, const ALchar *extName) noexcept
 {
-    ContextRef context{GetContextRef()};
-    if UNLIKELY(!context) return AL_FALSE;
-
-    if(!extName)
-        SETERR_RETURN(context, AL_INVALID_VALUE, AL_FALSE, "NULL pointer");
-
-    size_t len{strlen(extName)};
-    const char *ptr{context->mExtensionList};
-    while(ptr && *ptr)
+    if(!extName) UNLIKELY
     {
-        if(al::strncasecmp(ptr, extName, len) == 0 && (ptr[len] == '\0' || isspace(ptr[len])))
-            return AL_TRUE;
+        context->setError(AL_INVALID_VALUE, "NULL pointer");
+        return AL_FALSE;
+    }
 
-        if((ptr=strchr(ptr, ' ')) != nullptr)
-        {
-            do {
-                ++ptr;
-            } while(isspace(*ptr));
-        }
+    const std::string_view tofind{extName};
+    for(std::string_view ext : context->mExtensions)
+    {
+        if(al::case_compare(ext, tofind) == 0)
+            return AL_TRUE;
     }
 
     return AL_FALSE;
 }
-END_API_FUNC
 
 
-AL_API ALvoid* AL_APIENTRY alGetProcAddress(const ALchar *funcName)
-START_API_FUNC
+AL_API ALvoid* AL_APIENTRY alGetProcAddress(const ALchar *funcName) noexcept
 {
     if(!funcName) return nullptr;
     return alcGetProcAddress(nullptr, funcName);
 }
-END_API_FUNC
 
-AL_API ALenum AL_APIENTRY alGetEnumValue(const ALchar *enumName)
-START_API_FUNC
+FORCE_ALIGN ALvoid* AL_APIENTRY alGetProcAddressDirect(ALCcontext*, const ALchar *funcName) noexcept
 {
-    if(!enumName) return static_cast<ALenum>(0);
+    if(!funcName) return nullptr;
+    return alcGetProcAddress(nullptr, funcName);
+}
+
+AL_API ALenum AL_APIENTRY alGetEnumValue(const ALchar *enumName) noexcept
+{
+    if(!enumName) return ALenum{0};
     return alcGetEnumValue(nullptr, enumName);
 }
-END_API_FUNC
+
+FORCE_ALIGN ALenum AL_APIENTRY alGetEnumValueDirect(ALCcontext*, const ALchar *enumName) noexcept
+{
+    if(!enumName) return ALenum{0};
+    return alcGetEnumValue(nullptr, enumName);
+}

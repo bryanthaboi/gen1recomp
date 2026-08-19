@@ -21,21 +21,33 @@
 #include "config.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
+#include <variant>
 
-#include "al/auxeffectslot.h"
-#include "alcmain.h"
-#include "alcontext.h"
-#include "alu.h"
-#include "filters/biquad.h"
+#include "alc/effects/base.h"
+#include "alnumbers.h"
+#include "alnumeric.h"
+#include "alspan.h"
+#include "core/ambidefs.h"
+#include "core/bufferline.h"
+#include "core/context.h"
+#include "core/device.h"
+#include "core/effects/base.h"
+#include "core/effectslot.h"
+#include "core/filters/biquad.h"
+#include "core/mixer.h"
+#include "core/mixer/defs.h"
+#include "intrusive_ptr.h"
 
+struct BufferStorage;
 
 namespace {
 
 struct DistortionState final : public EffectState {
     /* Effect gains for each channel */
-    float mGain[MAX_OUTPUT_CHANNELS]{};
+    std::array<float,MaxAmbiChannels> mGain{};
 
     /* Effect parameters */
     BiquadFilter mLowpass;
@@ -43,32 +55,33 @@ struct DistortionState final : public EffectState {
     float mAttenuation{};
     float mEdgeCoeff{};
 
-    float mBuffer[2][BUFFERSIZE]{};
+    alignas(16) std::array<FloatBufferLine,2> mBuffer{};
 
 
-    void deviceUpdate(const ALCdevice *device) override;
-    void update(const ALCcontext *context, const ALeffectslot *slot, const EffectProps *props, const EffectTarget target) override;
-    void process(const size_t samplesToDo, const al::span<const FloatBufferLine> samplesIn, const al::span<FloatBufferLine> samplesOut) override;
-
-    DEF_NEWDEL(DistortionState)
+    void deviceUpdate(const DeviceBase *device, const BufferStorage *buffer) override;
+    void update(const ContextBase *context, const EffectSlot *slot, const EffectProps *props,
+        const EffectTarget target) override;
+    void process(const size_t samplesToDo, const al::span<const FloatBufferLine> samplesIn,
+        const al::span<FloatBufferLine> samplesOut) override;
 };
 
-void DistortionState::deviceUpdate(const ALCdevice*)
+void DistortionState::deviceUpdate(const DeviceBase*, const BufferStorage*)
 {
     mLowpass.clear();
     mBandpass.clear();
 }
 
-void DistortionState::update(const ALCcontext *context, const ALeffectslot *slot, const EffectProps *props, const EffectTarget target)
+void DistortionState::update(const ContextBase *context, const EffectSlot *slot,
+    const EffectProps *props_, const EffectTarget target)
 {
-    const ALCdevice *device{context->mDevice.get()};
+    auto &props = std::get<DistortionProps>(*props_);
+    const DeviceBase *device{context->mDevice};
 
     /* Store waveshaper edge settings. */
-    const float edge{minf(std::sin(al::MathDefs<float>::Pi()*0.5f * props->Distortion.Edge),
-        0.99f)};
+    const float edge{std::min(std::sin(al::numbers::pi_v<float>*0.5f * props.Edge), 0.99f)};
     mEdgeCoeff = 2.0f * edge / (1.0f-edge);
 
-    float cutoff{props->Distortion.LowpassCutoff};
+    float cutoff{props.LowpassCutoff};
     /* Bandwidth value is constant in octaves. */
     float bandwidth{(cutoff / 2.0f) / (cutoff * 0.67f)};
     /* Divide normalized frequency by the amount of oversampling done during
@@ -77,15 +90,15 @@ void DistortionState::update(const ALCcontext *context, const ALeffectslot *slot
     auto frequency = static_cast<float>(device->Frequency);
     mLowpass.setParamsFromBandwidth(BiquadType::LowPass, cutoff/frequency/4.0f, 1.0f, bandwidth);
 
-    cutoff = props->Distortion.EQCenter;
+    cutoff = props.EQCenter;
     /* Convert bandwidth in Hz to octaves. */
-    bandwidth = props->Distortion.EQBandwidth / (cutoff * 0.67f);
+    bandwidth = props.EQBandwidth / (cutoff * 0.67f);
     mBandpass.setParamsFromBandwidth(BiquadType::BandPass, cutoff/frequency/4.0f, 1.0f, bandwidth);
 
-    const auto coeffs = CalcDirectionCoeffs({0.0f, 0.0f, -1.0f}, 0.0f);
+    static constexpr auto coeffs = CalcDirectionCoeffs(std::array{0.0f, 0.0f, -1.0f});
 
     mOutTarget = target.Main->Buffer;
-    ComputePanGains(target.Main, coeffs.data(), slot->Params.Gain*props->Distortion.Gain, mGain);
+    ComputePanGains(target.Main, coeffs, slot->Gain*props.Gain, mGain);
 }
 
 void DistortionState::process(const size_t samplesToDo, const al::span<const FloatBufferLine> samplesIn, const al::span<FloatBufferLine> samplesOut)
@@ -98,7 +111,7 @@ void DistortionState::process(const size_t samplesToDo, const al::span<const Flo
          * bandpass filters using high frequencies, at which classic IIR
          * filters became unstable.
          */
-        size_t todo{minz(BUFFERSIZE, (samplesToDo-base) * 4)};
+        size_t todo{std::min(BufferLineSize, (samplesToDo-base) * 4_uz)};
 
         /* Fill oversample buffer using zero stuffing. Multiply the sample by
          * the amount of oversampling to maintain the signal's power.
@@ -111,7 +124,7 @@ void DistortionState::process(const size_t samplesToDo, const al::span<const Flo
          * (which is fortunately first step of distortion). So combine three
          * operations into the one.
          */
-        mLowpass.process({mBuffer[0], todo}, mBuffer[1]);
+        mLowpass.process(al::span{mBuffer[0]}.first(todo), mBuffer[1]);
 
         /* Second step, do distortion using waveshaper function to emulate
          * signal processing during tube overdriving. Three steps of
@@ -120,142 +133,49 @@ void DistortionState::process(const size_t samplesToDo, const al::span<const Flo
          */
         auto proc_sample = [fc](float smp) -> float
         {
-            smp = (1.0f + fc) * smp/(1.0f + fc*std::abs(smp));
-            smp = (1.0f + fc) * smp/(1.0f + fc*std::abs(smp)) * -1.0f;
-            smp = (1.0f + fc) * smp/(1.0f + fc*std::abs(smp));
+            smp = (1.0f + fc) * smp/(1.0f + fc*std::fabs(smp));
+            smp = (1.0f + fc) * smp/(1.0f + fc*std::fabs(smp)) * -1.0f;
+            smp = (1.0f + fc) * smp/(1.0f + fc*std::fabs(smp));
             return smp;
         };
-        std::transform(std::begin(mBuffer[1]), std::begin(mBuffer[1])+todo, std::begin(mBuffer[0]),
+        std::transform(mBuffer[1].begin(), mBuffer[1].begin()+todo, mBuffer[0].begin(),
             proc_sample);
 
         /* Third step, do bandpass filtering of distorted signal. */
-        mBandpass.process({mBuffer[0], todo}, mBuffer[1]);
+        mBandpass.process(al::span{mBuffer[0]}.first(todo), mBuffer[1]);
 
         todo >>= 2;
-        const float *outgains{mGain};
-        for(FloatBufferLine &output : samplesOut)
+        auto outgains = mGain.cbegin();
+        auto proc_bufline = [this,base,todo,&outgains](FloatBufferSpan output)
         {
             /* Fourth step, final, do attenuation and perform decimation,
              * storing only one sample out of four.
              */
             const float gain{*(outgains++)};
             if(!(std::fabs(gain) > GainSilenceThreshold))
-                continue;
+                return;
 
-            for(size_t i{0u};i < todo;i++)
-                output[base+i] += gain * mBuffer[1][i*4];
-        }
+            auto src = mBuffer[1].cbegin();
+            const auto dst = al::span{output}.subspan(base, todo);
+            auto dec_sample = [gain,&src](float sample) noexcept -> float
+            {
+                sample += *src * gain;
+                src += 4;
+                return sample;
+            };
+            std::transform(dst.begin(), dst.end(), dst.begin(), dec_sample);
+        };
+        std::for_each(samplesOut.begin(), samplesOut.end(), proc_bufline);
 
         base += todo;
     }
 }
 
 
-void Distortion_setParami(EffectProps*, ALenum param, int)
-{ throw effect_exception{AL_INVALID_ENUM, "Invalid distortion integer property 0x%04x", param}; }
-void Distortion_setParamiv(EffectProps*, ALenum param, const int*)
-{
-    throw effect_exception{AL_INVALID_ENUM, "Invalid distortion integer-vector property 0x%04x",
-        param};
-}
-void Distortion_setParamf(EffectProps *props, ALenum param, float val)
-{
-    switch(param)
-    {
-    case AL_DISTORTION_EDGE:
-        if(!(val >= AL_DISTORTION_MIN_EDGE && val <= AL_DISTORTION_MAX_EDGE))
-            throw effect_exception{AL_INVALID_VALUE, "Distortion edge out of range"};
-        props->Distortion.Edge = val;
-        break;
-
-    case AL_DISTORTION_GAIN:
-        if(!(val >= AL_DISTORTION_MIN_GAIN && val <= AL_DISTORTION_MAX_GAIN))
-            throw effect_exception{AL_INVALID_VALUE, "Distortion gain out of range"};
-        props->Distortion.Gain = val;
-        break;
-
-    case AL_DISTORTION_LOWPASS_CUTOFF:
-        if(!(val >= AL_DISTORTION_MIN_LOWPASS_CUTOFF && val <= AL_DISTORTION_MAX_LOWPASS_CUTOFF))
-            throw effect_exception{AL_INVALID_VALUE, "Distortion low-pass cutoff out of range"};
-        props->Distortion.LowpassCutoff = val;
-        break;
-
-    case AL_DISTORTION_EQCENTER:
-        if(!(val >= AL_DISTORTION_MIN_EQCENTER && val <= AL_DISTORTION_MAX_EQCENTER))
-            throw effect_exception{AL_INVALID_VALUE, "Distortion EQ center out of range"};
-        props->Distortion.EQCenter = val;
-        break;
-
-    case AL_DISTORTION_EQBANDWIDTH:
-        if(!(val >= AL_DISTORTION_MIN_EQBANDWIDTH && val <= AL_DISTORTION_MAX_EQBANDWIDTH))
-            throw effect_exception{AL_INVALID_VALUE, "Distortion EQ bandwidth out of range"};
-        props->Distortion.EQBandwidth = val;
-        break;
-
-    default:
-        throw effect_exception{AL_INVALID_ENUM, "Invalid distortion float property 0x%04x", param};
-    }
-}
-void Distortion_setParamfv(EffectProps *props, ALenum param, const float *vals)
-{ Distortion_setParamf(props, param, vals[0]); }
-
-void Distortion_getParami(const EffectProps*, ALenum param, int*)
-{ throw effect_exception{AL_INVALID_ENUM, "Invalid distortion integer property 0x%04x", param}; }
-void Distortion_getParamiv(const EffectProps*, ALenum param, int*)
-{
-    throw effect_exception{AL_INVALID_ENUM, "Invalid distortion integer-vector property 0x%04x",
-        param};
-}
-void Distortion_getParamf(const EffectProps *props, ALenum param, float *val)
-{
-    switch(param)
-    {
-    case AL_DISTORTION_EDGE:
-        *val = props->Distortion.Edge;
-        break;
-
-    case AL_DISTORTION_GAIN:
-        *val = props->Distortion.Gain;
-        break;
-
-    case AL_DISTORTION_LOWPASS_CUTOFF:
-        *val = props->Distortion.LowpassCutoff;
-        break;
-
-    case AL_DISTORTION_EQCENTER:
-        *val = props->Distortion.EQCenter;
-        break;
-
-    case AL_DISTORTION_EQBANDWIDTH:
-        *val = props->Distortion.EQBandwidth;
-        break;
-
-    default:
-        throw effect_exception{AL_INVALID_ENUM, "Invalid distortion float property 0x%04x", param};
-    }
-}
-void Distortion_getParamfv(const EffectProps *props, ALenum param, float *vals)
-{ Distortion_getParamf(props, param, vals); }
-
-DEFINE_ALEFFECT_VTABLE(Distortion);
-
-
 struct DistortionStateFactory final : public EffectStateFactory {
-    EffectState *create() override { return new DistortionState{}; }
-    EffectProps getDefaultProps() const noexcept override;
-    const EffectVtable *getEffectVtable() const noexcept override { return &Distortion_vtable; }
+    al::intrusive_ptr<EffectState> create() override
+    { return al::intrusive_ptr<EffectState>{new DistortionState{}}; }
 };
-
-EffectProps DistortionStateFactory::getDefaultProps() const noexcept
-{
-    EffectProps props{};
-    props.Distortion.Edge = AL_DISTORTION_DEFAULT_EDGE;
-    props.Distortion.Gain = AL_DISTORTION_DEFAULT_GAIN;
-    props.Distortion.LowpassCutoff = AL_DISTORTION_DEFAULT_LOWPASS_CUTOFF;
-    props.Distortion.EQCenter = AL_DISTORTION_DEFAULT_EQCENTER;
-    props.Distortion.EQBandwidth = AL_DISTORTION_DEFAULT_EQBANDWIDTH;
-    return props;
-}
 
 } // namespace
 

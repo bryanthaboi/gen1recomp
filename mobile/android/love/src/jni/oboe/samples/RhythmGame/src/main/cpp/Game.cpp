@@ -56,10 +56,10 @@ void Game::start() {
 
 void Game::stop(){
 
-    if (mAudioStream != nullptr){
+    if (mAudioStream){
+        mAudioStream->stop();
         mAudioStream->close();
-        delete mAudioStream;
-        mAudioStream = nullptr;
+        mAudioStream.reset();
     }
 }
 
@@ -115,10 +115,7 @@ void Game::onSurfaceDestroyed() {
 
 DataCallbackResult Game::onAudioReady(AudioStream *oboeStream, void *audioData, int32_t numFrames) {
 
-    // If our audio stream is expecting 16-bit samples we need to render our floats into a separate
-    // buffer then convert them into 16-bit ints
-    bool is16Bit = (oboeStream->getFormat() == AudioFormat::I16);
-    float *outputBuffer = (is16Bit) ? mConversionBuffer.get() : static_cast<float *>(audioData);
+    auto *outputBuffer = static_cast<float *>(audioData);
 
     int64_t nextClapEventMs;
 
@@ -136,20 +133,24 @@ DataCallbackResult Game::onAudioReady(AudioStream *oboeStream, void *audioData, 
         mCurrentFrame++;
     }
 
-    if (is16Bit){
-        oboe::convertFloatToPcm16(outputBuffer,
-                                  static_cast<int16_t*>(audioData),
-                                  numFrames * oboeStream->getChannelCount());
-    }
-
     mLastUpdateTime = nowUptimeMillis();
 
     return DataCallbackResult::Continue;
 }
 
-void Game::onErrorAfterClose(AudioStream *oboeStream, Result error){
-    LOGE("The audio stream was closed, please restart the game. Error: %s", convertToText(error));
-};
+void Game::onErrorAfterClose(AudioStream *audioStream, Result error) {
+    if (error == Result::ErrorDisconnected){
+        mGameState = GameState::Loading;
+        mAudioStream.reset();
+        mMixer.removeAllTracks();
+        mCurrentFrame = 0;
+        mSongPositionMs = 0;
+        mLastUpdateTime = 0;
+        start();
+    } else {
+        LOGE("Stream error: %s", convertToText(error));
+    }
+}
 
 /**
  * Get the result of a tap
@@ -175,27 +176,20 @@ bool Game::openStream() {
 
     // Create an audio stream
     AudioStreamBuilder builder;
-    builder.setCallback(this);
+    builder.setFormat(AudioFormat::Float);
+    builder.setFormatConversionAllowed(true);
     builder.setPerformanceMode(PerformanceMode::LowLatency);
     builder.setSharingMode(SharingMode::Exclusive);
-
-    Result result = builder.openStream(&mAudioStream);
+    builder.setSampleRate(48000);
+    builder.setSampleRateConversionQuality(
+            SampleRateConversionQuality::Medium);
+    builder.setChannelCount(2);
+    builder.setDataCallback(this);
+    builder.setErrorCallback(this);
+    Result result = builder.openStream(mAudioStream);
     if (result != Result::OK){
         LOGE("Failed to open stream. Error: %s", convertToText(result));
         return false;
-    }
-
-    if (mAudioStream->getFormat() == AudioFormat::I16){
-        mConversionBuffer = std::make_unique<float[]>(
-                (size_t)mAudioStream->getBufferCapacityInFrames() *
-                mAudioStream->getChannelCount());
-    }
-
-    // Reduce stream latency by setting the buffer size to a multiple of the burst size
-    auto setBufferSizeResult = mAudioStream->setBufferSizeInFrames(
-            mAudioStream->getFramesPerBurst() * kBufferSizeInBursts);
-    if (setBufferSizeResult != Result::OK){
-        LOGW("Failed to set buffer size. Error: %s", convertToText(setBufferSizeResult.error()));
     }
 
     mMixer.setChannelCount(mAudioStream->getChannelCount());

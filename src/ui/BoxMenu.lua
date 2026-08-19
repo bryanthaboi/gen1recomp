@@ -180,8 +180,8 @@ local function release(game)
          and mon.ot == game.save.player.name then
         require("src.core.Sound").playCry(game.data, mon.species)
         game.stack:push(TextBox.new(game,
-          (t._PikachuUnhappyText or Strings("%s looks\nunhappy about it!", name))
-            :gsub("{RAM:wNameBuffer}", name)))
+          ((t._PikachuUnhappyText or Strings("%s looks\nunhappy about it!", name))
+            :gsub("{RAM:wNameBuffer}", name))))
         return
       end
       game.stack:push(TextBox.new(game,

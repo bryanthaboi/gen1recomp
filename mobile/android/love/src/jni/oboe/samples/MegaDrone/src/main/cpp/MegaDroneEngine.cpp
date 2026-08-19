@@ -31,9 +31,15 @@
  * @param cpuIds
  */
 MegaDroneEngine::MegaDroneEngine(std::vector<int> cpuIds) {
-
     createCallback(cpuIds);
-    start();
+}
+
+MegaDroneEngine::~MegaDroneEngine() {
+    if (mStream) {
+        LOGE("MegaDroneEngine destructor was called without calling stop()."
+             "Please call stop() to ensure stream resources are not leaked.");
+        stop();
+    }
 }
 
 void MegaDroneEngine::tap(bool isDown) {
@@ -41,39 +47,80 @@ void MegaDroneEngine::tap(bool isDown) {
 }
 
 void MegaDroneEngine::restart() {
+    stop();
     start();
 }
-
 // Create the playback stream
 oboe::Result MegaDroneEngine::createPlaybackStream() {
     oboe::AudioStreamBuilder builder;
     return builder.setSharingMode(oboe::SharingMode::Exclusive)
             ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
             ->setFormat(oboe::AudioFormat::Float)
-            ->setCallback(mCallback.get())
-            ->openManagedStream(mStream);
+            ->setDataCallback(mDataCallback)
+            ->setErrorCallback(mErrorCallback)
+            ->openStream(mStream);
 }
 
 // Create the callback and set its thread affinity to the supplied CPU core IDs
 void MegaDroneEngine::createCallback(std::vector<int> cpuIds){
-    // Create the callback, we supply ourselves as the parent so that we can restart the stream
+
+    mDataCallback = std::make_shared<DefaultDataCallback>();
+
+    // Create the error callback, we supply ourselves as the parent so that we can restart the stream
     // when it's disconnected
-    mCallback = std::make_unique<DefaultAudioStreamCallback>(*this);
+    mErrorCallback = std::make_shared<DefaultErrorCallback>(*this);
 
     // Bind the audio callback to specific CPU cores as this can help avoid underruns caused by
     // core migrations
-    mCallback->setCpuIds(cpuIds);
-    mCallback->setThreadAffinityEnabled(true);
+    mDataCallback->setCpuIds(cpuIds);
+    mDataCallback->setThreadAffinityEnabled(true);
 }
 
-void MegaDroneEngine::start(){
+bool MegaDroneEngine::start() {
+    // It is possible for a stream's device to become disconnected during stream open or between
+    // stream open and stream start.
+    // If the stream fails to start, close the old stream and try again.
+    bool didStart = false;
+    int tryCount = 0;
+    do {
+        if (tryCount > 0) {
+            usleep(20 * 1000); // Sleep between tries to give the system time to settle.
+        }
+        didStart = attemptStart();
+    } while (!didStart && tryCount++ < 3);
+    if (!didStart) {
+        LOGE("Failed at starting the stream");
+    }
+    return didStart;
+}
+
+bool MegaDroneEngine::attemptStart() {
     auto result = createPlaybackStream();
-    if (result == Result::OK){
+
+    if (result == Result::OK) {
         // Create our synthesizer audio source using the properties of the stream
         mAudioSource = std::make_shared<Synth>(mStream->getSampleRate(), mStream->getChannelCount());
-        mCallback->setSource(std::dynamic_pointer_cast<IRenderableAudio>(mAudioSource));
-        mStream->start();
+        mDataCallback->reset();
+        mDataCallback->setSource(std::dynamic_pointer_cast<IRenderableAudio>(mAudioSource));
+        result = mStream->start();
+        if (result == Result::OK) {
+            return true;
+        } else {
+            LOGW("Failed attempt at starting the playback stream. Error: %s", convertToText(result));
+            return false;
+        }
     } else {
-        LOGE("Failed to create the playback stream. Error: %s", convertToText(result));
+        LOGW("Failed attempt at creating the playback stream. Error: %s", convertToText(result));
+        return false;
     }
 }
+
+bool MegaDroneEngine::stop() {
+    if(mStream && mStream->getState() != oboe::StreamState::Closed) {
+        mStream->stop();
+        mStream->close();
+    }
+    mStream.reset();
+    return true;
+}
+

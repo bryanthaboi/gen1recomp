@@ -20,7 +20,7 @@
 
 #include "config.h"
 
-#include "backends/null.h"
+#include "null.h"
 
 #include <exception>
 #include <atomic>
@@ -30,12 +30,10 @@
 #include <functional>
 #include <thread>
 
-#include "alcmain.h"
-#include "alexcpt.h"
-#include "almalloc.h"
-#include "alu.h"
-#include "logging.h"
-#include "threads.h"
+#include "alstring.h"
+#include "althrd_setname.h"
+#include "core/device.h"
+#include "core/helpers.h"
 
 
 namespace {
@@ -43,24 +41,23 @@ namespace {
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 using std::chrono::nanoseconds;
+using namespace std::string_view_literals;
 
-constexpr ALCchar nullDevice[] = "No Output";
+[[nodiscard]] constexpr auto GetDeviceName() noexcept { return "No Output"sv; }
 
 
 struct NullBackend final : public BackendBase {
-    NullBackend(ALCdevice *device) noexcept : BackendBase{device} { }
+    NullBackend(DeviceBase *device) noexcept : BackendBase{device} { }
 
     int mixerProc();
 
-    void open(const ALCchar *name) override;
+    void open(std::string_view name) override;
     bool reset() override;
     void start() override;
     void stop() override;
 
     std::atomic<bool> mKillNow{true};
     std::thread mThread;
-
-    DEF_NEWDEL(NullBackend)
 };
 
 int NullBackend::mixerProc()
@@ -68,7 +65,7 @@ int NullBackend::mixerProc()
     const milliseconds restTime{mDevice->UpdateSize*1000/mDevice->Frequency / 2};
 
     SetRTPriority();
-    althrd_setname(MIXER_THREAD_NAME);
+    althrd_setname(GetMixerThreadName());
 
     int64_t done{0};
     auto start = std::chrono::steady_clock::now();
@@ -107,14 +104,15 @@ int NullBackend::mixerProc()
 }
 
 
-void NullBackend::open(const ALCchar *name)
+void NullBackend::open(std::string_view name)
 {
-    if(!name)
-        name = nullDevice;
-    else if(strcmp(name, nullDevice) != 0)
-        throw al::backend_exception{ALC_INVALID_VALUE, "Device name \"%s\" not found", name};
+    if(name.empty())
+        name = GetDeviceName();
+    else if(name != GetDeviceName())
+        throw al::backend_exception{al::backend_error::NoDevice, "Device name \"%.*s\" not found",
+            al::sizei(name), name.data()};
 
-    mDevice->DeviceName = name;
+    mDeviceName = name;
 }
 
 bool NullBackend::reset()
@@ -130,8 +128,8 @@ void NullBackend::start()
         mThread = std::thread{std::mem_fn(&NullBackend::mixerProc), this};
     }
     catch(std::exception& e) {
-        throw al::backend_exception{ALC_INVALID_DEVICE, "Failed to start mixing thread: %s",
-            e.what()};
+        throw al::backend_exception{al::backend_error::DeviceError,
+            "Failed to start mixing thread: %s", e.what()};
     }
 }
 
@@ -151,22 +149,20 @@ bool NullBackendFactory::init()
 bool NullBackendFactory::querySupport(BackendType type)
 { return (type == BackendType::Playback); }
 
-std::string NullBackendFactory::probe(BackendType type)
+auto NullBackendFactory::enumerate(BackendType type) -> std::vector<std::string>
 {
-    std::string outnames;
     switch(type)
     {
     case BackendType::Playback:
-        /* Includes null char. */
-        outnames.append(nullDevice, sizeof(nullDevice));
-        break;
+        /* Include null char. */
+        return std::vector{std::string{GetDeviceName()}};
     case BackendType::Capture:
         break;
     }
-    return outnames;
+    return {};
 }
 
-BackendPtr NullBackendFactory::createBackend(ALCdevice *device, BackendType type)
+BackendPtr NullBackendFactory::createBackend(DeviceBase *device, BackendType type)
 {
     if(type == BackendType::Playback)
         return BackendPtr{new NullBackend{device}};

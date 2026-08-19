@@ -1,15 +1,11 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 29
-    buildToolsVersion "29.0.1"
-
+    compileSdkVersion 34
 
     defaultConfig {
-        minSdkVersion 16
-        targetSdkVersion 29
-        versionCode 1
-        versionName "1.0"
+        minSdkVersion 21
+        targetSdkVersion 34
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -26,6 +22,7 @@ android {
             path 'src/main/cpp/CMakeLists.txt'
         }
     }
+    namespace 'com.google.oboe.samples'
 }
 
 dependencies {

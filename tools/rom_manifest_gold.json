@@ -16096,6 +16096,22 @@
       5,
       17417
     ],
+    "HeartEmote": [
+      5,
+      17673
+    ],
+    "BoltEmote": [
+      5,
+      17737
+    ],
+    "SleepEmote": [
+      5,
+      17801
+    ],
+    "FishEmote": [
+      5,
+      17865
+    ],
     "Shrink1Pic": [
       62,
       30142
@@ -16511,6 +16527,10 @@
     "Tilesets": [
       5,
       22206
+    ],
+    "TimeFishGroups": [
+      36,
+      27614
     ],
     "TitleScreenGFX1": [
       38,

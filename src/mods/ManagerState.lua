@@ -365,9 +365,13 @@ end
 
 function ManagerState:detailRows(m)
   local rows = {}
-  rows[#rows + 1] = { label = m.enabled and "DISABLE" or "ENABLE",
-    action = function() self:beginToggle(m) end }
-  if self:schemaFor(m) then
+  if Runtime.safeMode then
+    rows[#rows + 1] = { label = "SAFE MODE ACTIVE", inert = true }
+  else
+    rows[#rows + 1] = { label = m.enabled and "DISABLE" or "ENABLE",
+      action = function() self:beginToggle(m) end }
+  end
+  if not Runtime.safeMode and self:schemaFor(m) then
     rows[#rows + 1] = { label = Strings("OPTIONS.."),
       action = function() self:openOptions(m) end }
   end
@@ -383,7 +387,8 @@ function ManagerState:detailRows(m)
   -- what this mod does.
   local loader = self.game.mods
   local version, gen = self:targetGame()
-  if loader and loader.setGen2Forced and not ModTargets.supports(m, version, gen) then
+  if loader and loader.setGen2Forced and not Runtime.safeMode
+      and not ModTargets.supports(m, version, gen) then
     rows[#rows + 1] = {
       label = m.gen2Forced and Strings("DON'T TRY HERE") or Strings("TRY HERE ANYWAY"),
       action = function() self:toggleGen2Force(m) end }
@@ -674,6 +679,10 @@ end
 -- ------- the enable/disable flow
 
 function ManagerState:beginToggle(m)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return
+  end
   if not m then return end
   local want = not m.enabled
   local loader = self.game.mods
@@ -711,6 +720,10 @@ end
 -- override is scoped to THIS game, and a boot that cannot name one keeps it in
 -- memory only, which the notice says rather than promising a restart.
 function ManagerState:toggleGen2Force(m)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return
+  end
   local loader = self.game.mods
   if not (loader and loader.setGen2Forced) then return end
   local want = not m.gen2Forced
@@ -743,6 +756,10 @@ function ManagerState:enableScope()
 end
 
 function ManagerState:commitToggle(apply)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return
+  end
   local loader = self.game.mods
   local opts = self:optionsTable()
   local scope = self:enableScope()
@@ -757,6 +774,10 @@ function ManagerState:commitToggle(apply)
 end
 
 function ManagerState:discardChanges()
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return
+  end
   local loader = self.game.mods
   local opts = self:optionsTable()
   local scope = self:enableScope()
@@ -802,6 +823,10 @@ function ManagerState:persistOptions()
 end
 
 function ManagerState:applyProfile(p)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return
+  end
   local mods = self:manifestMap()
   local set = self:enabledSet()
   local combined = {}
@@ -963,6 +988,10 @@ function ManagerState:optionValue(modId, row)
 end
 
 function ManagerState:setOption(modId, key, value)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return false
+  end
   local save = self.game.save
   if save and save.options then
     save.options.modOptions = save.options.modOptions or {}
@@ -1123,6 +1152,10 @@ function ManagerState:buildOptionRows(m, schema)
 end
 
 function ManagerState:openOptions(m)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return
+  end
   local schema = self:schemaFor(m)
   if not schema then
     self:notify("NO OPTIONS")

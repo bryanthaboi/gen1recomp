@@ -139,7 +139,7 @@ int main(int argc, char **argv)
         char *end;
         if(strcmp(argv[0], "--") == 0)
             break;
-        else if(strcmp(argv[0], "--channels") == 0 || strcmp(argv[0], "-c") == 0)
+        if(strcmp(argv[0], "--channels") == 0 || strcmp(argv[0], "-c") == 0)
         {
             if(argc < 2)
             {

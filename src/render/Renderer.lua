@@ -15,7 +15,7 @@ local Runtime = require("src.mods.Runtime")
 local GameViewport = require("src.render.GameViewport")
 -- leaf module (no renderer dependency), so requiring it here cannot cycle
 local FaithfulRes = require("src.core.FaithfulRes")
-local TouchSkin = require("src.core.TouchSkin")
+local Playfield = require("src.render.Playfield")
 
 local Renderer = {}
 
@@ -86,12 +86,12 @@ local function displayMetrics()
   if dpiX < 1e-6 then dpiX = 1 end
   if dpiY < 1e-6 then dpiY = 1 end
   local vx, vy = 0, 0
-  local sx, sy, sw, sh = TouchSkin.viewport(pw, ph)
-  if sw and sw >= 1 and sh >= 1 then
-    vx, vy = math.floor(sx), math.floor(sy)
-    pw, ph = math.floor(sw), math.floor(sh)
+  local cut, grow = false, false
+  local sx, sy, sw, sh, _, expand = Playfield.cutout(pw, ph)
+  if sx then
+    vx, vy, pw, ph, cut, grow = sx, sy, sw, sh, true, expand
   end
-  return ww, wh, pw, ph, dpiX, dpiY, vx, vy
+  return ww, wh, pw, ph, dpiX, dpiY, vx, vy, cut, grow
 end
 
 function Renderer:init()
@@ -269,7 +269,7 @@ end
 -- corners; flat mode returns exactly today's size (growth factor is 1 when
 -- tilt is inactive).
 function Renderer:worldViewSize()
-  local _, _, pw, ph = displayMetrics()
+  local _, _, pw, ph, _, _, _, _, cut, grow = displayMetrics()
   -- FAITHFUL RATIO on mobile.  The world pass deliberately expands to cover the
   -- WHOLE display, so letterbox voids become more map instead of black bars.
   -- That is why the lock appeared to do nothing in the overworld: it shrank
@@ -281,13 +281,11 @@ function Renderer:worldViewSize()
   -- this is the same sum with the viewport standing in for the window, so
   -- both platforms show the same map area at the same zoom.
   local cap = FaithfulRes.scaleCap()
-  if not cap and TouchSkin.hasViewport() then
-    local page = TouchSkin.page()
-    if not page.viewportExpand then cap = self:fitScale() end
-  end
+  if not cap and cut and not grow then cap = self:fitScale() end
   if cap then
     local uiw, uih = self:uiSize()
-    pw, ph = uiw * cap, uih * cap
+    pw = cut and math.min(pw, uiw * cap) or uiw * cap
+    ph = cut and math.min(ph, uih * cap) or uih * cap
   end
   local sp = Zoom.scale(self:fitScale())
   local vw, vh = math.ceil(pw / sp), math.ceil(ph / sp)
@@ -346,19 +344,20 @@ end
 -- window is the classic wipe unchanged.
 --
 -- Sx/Sy are LOVE-unit scales (Sy defaults to Sx on uniform surfaces).
-function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
+function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy, wx, wy)
   if not wipe or not wipe.prog or wipe.prog <= 0 then return end
   Sy = Sy or Sx
+  wx, wy = wx or 0, wy or 0
   local TW, TH = 8 * Sx, 8 * Sy
   if TW < 1 then TW = 1 end
   if TH < 1 then TH = 1 end
   local prog = math.min(1, wipe.prog)
 
   love.graphics.setColor(0, 0, 0, 1)
-  love.graphics.setScissor(0, 0, ww, wh)
+  love.graphics.setScissor(wx, wy, ww, wh)
 
   if prog >= 1 then
-    love.graphics.rectangle("fill", 0, 0, ww, wh)
+    love.graphics.rectangle("fill", wx, wy, ww, wh)
     love.graphics.setScissor()
     love.graphics.setColor(1, 1, 1, 1)
     return
@@ -366,10 +365,10 @@ function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
 
   -- whole-tile padding out to each window edge, keeping the grid in phase
   -- with the letterbox's tiles
-  local padL = math.max(0, math.ceil(ox / TW))
-  local padT = math.max(0, math.ceil(oy / TH))
-  local padR = math.max(0, math.ceil((ww - ox - vpw) / TW))
-  local padB = math.max(0, math.ceil((wh - oy - vph) / TH))
+  local padL = math.max(0, math.ceil((ox - wx) / TW))
+  local padT = math.max(0, math.ceil((oy - wy) / TH))
+  local padR = math.max(0, math.ceil((wx + ww - ox - vpw) / TW))
+  local padB = math.max(0, math.ceil((wy + wh - oy - vph) / TH))
   local lbCols = math.max(1, math.floor(vpw / TW + 0.5))
   local lbRows = math.max(1, math.floor(vph / TH + 0.5))
   local cols, rows = padL + lbCols + padR, padT + lbRows + padB
@@ -396,9 +395,9 @@ function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
       for row = 0, rows - 1 do
         local y = y0 + row * TH
         if row % 2 == 0 then
-          love.graphics.rectangle("fill", 0, y, w, TH)
+          love.graphics.rectangle("fill", wx, y, w, TH)
         else
-          love.graphics.rectangle("fill", ww - w, y, w, TH)
+          love.graphics.rectangle("fill", wx + ww - w, y, w, TH)
         end
       end
     elseif style == "vstripes" then
@@ -406,21 +405,21 @@ function Renderer:drawBattleWipe(wipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
       for col = 0, cols - 1 do
         local x = x0 + col * TW
         if col % 2 == 0 then
-          love.graphics.rectangle("fill", x, 0, TW, h)
+          love.graphics.rectangle("fill", x, wy, TW, h)
         else
-          love.graphics.rectangle("fill", x, wh - h, TW, h)
+          love.graphics.rectangle("fill", x, wy + wh - h, TW, h)
         end
       end
     elseif style == "shrink" then
       local h, w = wh / 2 * prog, ww / 2 * prog
-      love.graphics.rectangle("fill", 0, 0, ww, h)
-      love.graphics.rectangle("fill", 0, wh - h, ww, h)
-      love.graphics.rectangle("fill", 0, 0, w, wh)
-      love.graphics.rectangle("fill", ww - w, 0, w, wh)
+      love.graphics.rectangle("fill", wx, wy, ww, h)
+      love.graphics.rectangle("fill", wx, wy + wh - h, ww, h)
+      love.graphics.rectangle("fill", wx, wy, w, wh)
+      love.graphics.rectangle("fill", wx + ww - w, wy, w, wh)
     else -- split: a black cross growing out of the centre in both axes
       local h, w = wh / 2 * prog, ww / 2 * prog
-      love.graphics.rectangle("fill", 0, wh / 2 - h, ww, h * 2)
-      love.graphics.rectangle("fill", ww / 2 - w, 0, w * 2, wh)
+      love.graphics.rectangle("fill", wx, wy + wh / 2 - h, ww, h * 2)
+      love.graphics.rectangle("fill", wx + ww / 2 - w, wy, w * 2, wh)
     end
   end
   love.graphics.setScissor()
@@ -542,7 +541,8 @@ end
 -- into (nil = default framebuffer; presentCanvas when CRT is on).
 -- Returns true on success; false (no shader/mesh) tells endFrame to fall
 -- back to the flat blit unchanged.
-function Renderer:drawTiltedWorld(zoneList, sx, sy, wox, woy, target)
+function Renderer:drawTiltedWorld(zoneList, sx, sy, wox, woy, target,
+                                 boxX, boxY, boxW, boxH)
   local shader = self:tiltShader()
   local mesh = self:tiltMesh()
   if not (shader and mesh) then return false end
@@ -593,12 +593,16 @@ function Renderer:drawTiltedWorld(zoneList, sx, sy, wox, woy, target)
   mesh:setTexture(self.tiltCanvas)
   mesh:setVertices(Tilt.meshCorners(wvw, wvh))
   love.graphics.push()
+  if boxW and boxH and boxW > 0 and boxH > 0 then
+    love.graphics.setScissor(boxX, boxY, boxW, boxH)
+  end
   love.graphics.translate(wox, woy)
   love.graphics.scale(sx, sy)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setShader(shader)
   love.graphics.draw(mesh)
   love.graphics.setShader()
+  love.graphics.setScissor()
   love.graphics.pop()
   return true
 end
@@ -641,6 +645,7 @@ end
 -- or empty zone list is left alone: that already draws the whole canvas
 -- unshaded, which is what the rects were asking for.
 local function withTrueColor(zoneList, pass)
+  if not PaletteFX.honorsTrueColor() then return zoneList end
   local rects = PaletteFX.trueColorRects(pass)
   if not (rects[1] and zoneList and zoneList[1]) then return zoneList end
   local merged = {}
@@ -754,20 +759,23 @@ end
 -- scissored through the shade-remap shader, later zones on top.
 -- When GBC FX is active the composite is drawn into presentCanvas and
 -- presented through the GBC FX shader as a final pass.
-function Renderer:endFrame(zones, worldZones)
-  GameViewport.setTarget()
-  local ww, wh, pw, ph, dpiX, dpiY, vx, vy = displayMetrics()
-  local vux, vuy = vx / dpiX, vy / dpiY
-  local vuw, vuh = pw / dpiX, ph / dpiY
+function Renderer:frameRects()
+  local ww, wh, pw, ph, dpiX, dpiY, vx, vy, cut = displayMetrics()
+  local r = {
+    ww = ww, wh = wh, pw = pw, ph = ph, dpiX = dpiX, dpiY = dpiY,
+    vx = vx, vy = vy, cut = cut,
+    vux = vx / dpiX, vuy = vy / dpiY, vuw = pw / dpiX, vuh = ph / dpiY,
+  }
   -- Sp = integer framebuffer pixels per GB pixel;
   -- Sx/Sy = LOVE-unit draw scales (may differ when dpiX ≠ dpiY).
   local Sp = self:fitScale()
-  local Sx, Sy = Sp / dpiX, Sp / dpiY
+  r.Sp, r.Sx, r.Sy = Sp, Sp / dpiX, Sp / dpiY
   local uiw, uih = self:uiSize()
-  local vpw, vph = uiw * Sx, uih * Sy
+  r.uiw, r.uih = uiw, uih
+  r.vpw, r.vph = uiw * r.Sx, uih * r.Sy
   -- Snap the letterbox origin to a framebuffer pixel, then convert to units.
-  local ox = (vx + math.floor((pw - uiw * Sp) / 2)) / dpiX
-  local oy = (vy + math.floor((ph - uih * Sp) / 2)) / dpiY
+  r.ox = (vx + math.floor((pw - uiw * Sp) / 2)) / dpiX
+  r.oy = (vy + math.floor((ph - uih * Sp) / 2)) / dpiY
   -- The UI has its own scale: it steps down as the survey zoom goes out (see
   -- uiScale), so it can be smaller than the world letterbox.  Un-zoomed these
   -- are identical to Sp/ox/oy and every rect below is what it always was.
@@ -781,10 +789,38 @@ function Renderer:endFrame(zones, worldZones)
   if self.uiFill then
     Up = math.min(ph / uih, pw / uiw)
   end
-  local Ux, Uy = Up / dpiX, Up / dpiY
-  local uvpw, uvph = uiw * Ux, uih * Uy
-  local uox = (vx + math.floor((pw - uiw * Up) / 2)) / dpiX
-  local uoy = (vy + math.floor((ph - uih * Up) / 2)) / dpiY
+  if uiw * Up > pw or uih * Up > ph then
+    Up = math.min(ph / uih, pw / uiw)
+  end
+  r.Up, r.Ux, r.Uy = Up, Up / dpiX, Up / dpiY
+  r.uvpw, r.uvph = uiw * r.Ux, uih * r.Uy
+  r.uox = (vx + math.floor((pw - uiw * Up) / 2)) / dpiX
+  r.uoy = (vy + math.floor((ph - uih * Up) / 2)) / dpiY
+  return r
+end
+
+function Renderer.clipToView(r, x, y, w, h)
+  local x2, y2 = math.min(x + w, r.vux + r.vuw), math.min(y + h, r.vuy + r.vuh)
+  x, y = math.max(x, r.vux), math.max(y, r.vuy)
+  return x, y, math.max(0, x2 - x), math.max(0, y2 - y)
+end
+
+function Renderer:playfieldRect()
+  local r = self:frameRects()
+  return r.vux, r.vuy, r.vuw, r.vuh, r.cut
+end
+
+function Renderer:endFrame(zones, worldZones)
+  GameViewport.setTarget()
+  local R = self:frameRects()
+  local ww, wh, pw, ph = R.ww, R.wh, R.pw, R.ph
+  local dpiX, dpiY, vx, vy, cut = R.dpiX, R.dpiY, R.vx, R.vy, R.cut
+  local vux, vuy, vuw, vuh = R.vux, R.vuy, R.vuw, R.vuh
+  local Sp, Sx, Sy = R.Sp, R.Sx, R.Sy
+  local uiw, uih = R.uiw, R.uih
+  local vpw, vph, ox, oy = R.vpw, R.vph, R.ox, R.oy
+  local Ux, Uy = R.Ux, R.Uy
+  local uvpw, uvph, uox, uoy = R.uvpw, R.uvph, R.uox, R.uoy
   local GBCFX = require("src.render.GBCFX")
   -- Forced mono/Classic modes still need a whole-screen zone when a state
   -- exposes no SGB packets (raw DMG canvas), so sendColors can remap.
@@ -813,6 +849,7 @@ function Renderer:endFrame(zones, worldZones)
       ww = ww, wh = wh, pw = pw, ph = ph, ox = ox, oy = oy,
       vpw = vpw, vph = vph, uiw = uiw, uih = uih,
       scale = Sp, Sx = Sx, Sy = Sy, dpiX = dpiX, dpiY = dpiY,
+      viewX = vux, viewY = vuy, viewWidth = vuw, viewHeight = vuh,
       secondScreen = require("src.render.SecondScreen"),
     }
     if Runtime.call("render.compose", function() return false end, self, ctx) == true then
@@ -900,23 +937,29 @@ function Renderer:endFrame(zones, worldZones)
       clearR, clearG, clearB = PaletteFX.paperShade(Game and Game.data)
     end
   end
+  if cut then
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", 0, 0, ww, wh)
+  end
   love.graphics.setColor(clearR, clearG, clearB, 1)
-  love.graphics.rectangle("fill", 0, 0, ww, wh)
+  love.graphics.rectangle("fill", vux, vuy, vuw, vuh)
   if extendedBlackBand then
     love.graphics.setColor(bandR, bandG, bandB, 1)
-    love.graphics.rectangle("fill", uox, 0, uvpw, wh)
+    love.graphics.rectangle("fill", uox, vuy, uvpw, vuh)
   end
   love.graphics.setColor(1, 1, 1, 1)
   -- render.letterbox: SGB borders / custom void art in the bars around the
   -- 160x144 (or world) blit.  Drawn after the clear and before the game
   -- canvas so the playfield sits on top of the border.
   if Runtime.wantsHook("render.letterbox") then
+    if cut then love.graphics.setScissor(vux, vuy, vuw, vuh) end
     Runtime.call("render.letterbox", function() end, {
       ww = ww, wh = wh, pw = pw, ph = ph,
       ox = ox, oy = oy, vpw = vpw, vph = vph,
       scale = Sp, dpiX = dpiX, dpiY = dpiY,
       worldActive = self.worldActive and true or false,
     })
+    if cut then love.graphics.setScissor() end
   end
 
   -- see Renderer:blitCanvas; bound here to the frame's dpi so the composite
@@ -925,6 +968,10 @@ function Renderer:endFrame(zones, worldZones)
                       bx, by, boxX, boxY, boxW, boxH)
     return self:blitCanvas(canvas, sx, sy, zoneList, zoneSx, zoneSy,
                            bx, by, boxX, boxY, boxW, boxH, dpiX, dpiY)
+  end
+
+  local function clipToView(x, y, w, h)
+    return Renderer.clipToView(R, x, y, w, h)
   end
 
   if self.worldOverride then
@@ -937,9 +984,9 @@ function Renderer:endFrame(zones, worldZones)
     love.graphics.setScissor(vux, vuy, vuw, vuh)
     local loveMajor = love.getVersion()
     if love.system and love.system.getOS and love.system.getOS() == "iOS" and loveMajor >= 12 then
-      love.graphics.draw(self.worldOverride, 0, wh, 0, 1 / dpiX, -1 / dpiY)
+      love.graphics.draw(self.worldOverride, vux, vuy + vuh, 0, 1 / dpiX, -1 / dpiY)
     else
-      love.graphics.draw(self.worldOverride, 0, 0, 0, 1 / dpiX, 1 / dpiY)
+      love.graphics.draw(self.worldOverride, vux, vuy, 0, 1 / dpiX, 1 / dpiY)
     end
     love.graphics.setScissor()
     -- the screen-space overlays the flat path draws over its composite
@@ -963,7 +1010,8 @@ function Renderer:endFrame(zones, worldZones)
     -- falls through to the flat blit, keeping the flat frame byte-for-byte
     -- identical to today.
     local projected =
-      Tilt.active() and self:drawTiltedWorld(worldZones or zones, sx, sy, wox, woy, present)
+      Tilt.active() and self:drawTiltedWorld(worldZones or zones, sx, sy, wox, woy,
+                                             present, vux, vuy, vuw, vuh)
     if not projected then
       if worldZones then
         blit(self.worldCanvas, sx, sy, worldZones, sx, sy, wox, woy, vux, vuy, vuw, vuh)
@@ -1060,7 +1108,7 @@ function Renderer:endFrame(zones, worldZones)
      and not FaithfulRes.scaleCap() then
     local ok, Game = pcall(require, "src.core.Game")
     love.graphics.setColor(PaletteFX.paperShade(ok and Game and Game.data))
-    love.graphics.rectangle("fill", uox, 0, uvpw, wh)
+    love.graphics.rectangle("fill", uox, vuy, uvpw, vuh)
     love.graphics.setColor(1, 1, 1, 1)
   end
 
@@ -1069,9 +1117,9 @@ function Renderer:endFrame(zones, worldZones)
   -- always been.
   local anchors = self.uiAnchors
   if not anchors or #anchors == 0 then
-    blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy, uox, uoy, uvpw, uvph)
+    blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy, clipToView(uox, uoy, uvpw, uvph))
   else
-    local rest = { { uox, uoy, uvpw, uvph } }
+    local rest = { { clipToView(uox, uoy, uvpw, uvph) } }
     local placed = {}
     for _, a in ipairs(anchors) do
       local dw, dh = a.w * Ux, a.h * Uy
@@ -1085,19 +1133,19 @@ function Renderer:endFrame(zones, worldZones)
       local dx, dy
       if a.anchor == "bottom" then
         dx = uox + a.x * Ux -- horizontally it stays with the letterbox
-        dy = wh - gapB - dh
+        dy = vuy + vuh - gapB - dh
       elseif a.anchor == "top" then
         dx = uox + a.x * Ux -- horizontally it stays with the letterbox
-        dy = a.y * Uy
+        dy = vuy + a.y * Uy
       elseif a.anchor == "topright" then
-        dx = ww - gapR - dw
-        dy = a.y * Uy
+        dx = vux + vuw - gapR - dw
+        dy = vuy + a.y * Uy
       else -- unknown anchor: leave it where it is
         dx, dy = uox + a.x * Ux, uoy + a.y * Uy
       end
       if a.windowClamped then
-        dx = math.max(0, math.min(math.max(0, ww - dw), dx))
-        dy = math.max(0, math.min(math.max(0, wh - dh), dy))
+        dx = math.max(vux, math.min(math.max(vux, vux + vuw - dw), dx))
+        dy = math.max(vuy, math.min(math.max(vuy, vuy + vuh - dh), dy))
       end
       placed[#placed + 1] = { a = a, dx = dx, dy = dy, dw = dw, dh = dh }
       if a.extract then
@@ -1112,13 +1160,14 @@ function Renderer:endFrame(zones, worldZones)
       -- The zone scissors are computed from the same origin, so an SGB
       -- region travels with the element instead of staying in the letterbox.
       blit(p.a.canvas or self.canvas, Ux, Uy, zones, Ux, Uy,
-           p.dx - p.a.x * Ux, p.dy - p.a.y * Uy, p.dx, p.dy, p.dw, p.dh)
+           p.dx - p.a.x * Ux, p.dy - p.a.y * Uy,
+           clipToView(p.dx, p.dy, p.dw, p.dh))
     end
   end
   local uiRedraws = PaletteFX.uiSpriteRedraws()
   if uiRedraws[1] then
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setScissor(uox, uoy, uvpw, uvph)
+    love.graphics.setScissor(clipToView(uox, uoy, uvpw, uvph))
     for _, r in ipairs(uiRedraws) do
       if r.quad then
         love.graphics.draw(r.image, r.quad, uox + r.x * Ux, uoy + r.y * Uy,
@@ -1134,7 +1183,8 @@ function Renderer:endFrame(zones, worldZones)
   -- over the finished composite rather than under the UI blit.  On hardware
   -- it is the tilemap being overwritten -- there is nothing it does not cover.
   if self.battleWipe then
-    self:drawBattleWipe(self.battleWipe, ww, wh, ox, oy, vpw, vph, Sx, Sy)
+    self:drawBattleWipe(self.battleWipe, vuw, vuh, ox, oy, vpw, vph, Sx, Sy,
+                        vux, vuy)
   end
 
   -- Palette-register effects (BattleTransition_FlashScreen's rBGP writes, the
@@ -1156,7 +1206,7 @@ function Renderer:endFrame(zones, worldZones)
     if FaithfulRes.scaleCap() then
       love.graphics.rectangle("fill", ox, oy, vpw, vph)
     else
-      love.graphics.rectangle("fill", 0, 0, ww, wh)
+      love.graphics.rectangle("fill", vux, vuy, vuw, vuh)
     end
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -1180,6 +1230,7 @@ function Renderer:endFrame(zones, worldZones)
         generation = 1,
       }) == true
     if not outputHandled then
+      if cut then love.graphics.setScissor(vux, vuy, vuw, vuh) end
       if GBCFX.active() then
         -- shader grid/shadow math is in framebuffer pixels
         GBCFX.present(composed, Sp)
@@ -1189,6 +1240,7 @@ function Renderer:endFrame(zones, worldZones)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(composed, 0, 0)
       end
+      if cut then love.graphics.setScissor() end
     end
   end
   self.worldActive = false
@@ -1201,6 +1253,7 @@ function Renderer:endFrame(zones, worldZones)
     gameWidth = vpw, gameHeight = vph,
     scale = Sp,
     dpiX = dpiX, dpiY = dpiY,
+    viewX = vux, viewY = vuy, viewWidth = vuw, viewHeight = vuh,
   }
 end
 

@@ -22,6 +22,7 @@
 #include "SoundGenerator.h"
 #include "LatencyTuningCallback.h"
 #include "IRestartable.h"
+#include "DefaultErrorCallback.h"
 
 constexpr int32_t kBufferSizeAutomatic = 0;
 
@@ -34,24 +35,23 @@ public:
 
     void tap(bool isDown);
 
-    // From IRestartable
-    void restart() override;
-
-    // These methods reset the underlying stream with new properties
-
     /**
-     * Set the audio device which should be used for playback. Can be set to oboe::kUnspecified if
-     * you want to use the default playback device (which is usually the built-in speaker if
-     * no other audio devices, such as headphones, are attached).
-     *
+     * Open and start a stream.
      * @param deviceId the audio device id, can be obtained through an {@link AudioDeviceInfo} object
      * using Java/JNI.
-    */
-    void setDeviceId(int32_t deviceId);
+     * @return error or OK
+     */
+    oboe::Result start(oboe::AudioApi audioApi, int deviceId, int channelCount);
+    /* Start using current settings. */
+    oboe::Result start();
 
-    void setChannelCount(int channelCount);
+    /**
+     * Stop and close the stream.
+     */
+    oboe::Result stop();
 
-    void setAudioApi(oboe::AudioApi audioApi);
+    // From IRestartable
+    void restart() override;
 
     void setBufferSizeInBursts(int32_t numBursts);
 
@@ -74,16 +74,22 @@ public:
 
     bool isLatencyDetectionSupported();
 
+    bool isAAudioRecommended();
+
 private:
-    oboe::ManagedStream mStream;
-    std::unique_ptr<LatencyTuningCallback> mLatencyCallback;
+    oboe::Result reopenStream();
+    oboe::Result openPlaybackStream();
+
+    std::shared_ptr<oboe::AudioStream> mStream;
+    std::shared_ptr<LatencyTuningCallback> mLatencyCallback;
+    std::shared_ptr<DefaultErrorCallback> mErrorCallback;
     std::shared_ptr<SoundGenerator> mAudioSource;
     bool mIsLatencyDetectionSupported = false;
 
-    oboe::Result createPlaybackStream(oboe::AudioStreamBuilder builder);
-    void updateLatencyDetection();
-    void updateAudioSource();
-    void start();
+    int32_t        mDeviceId = oboe::Unspecified;
+    int32_t        mChannelCount = oboe::Unspecified;
+    oboe::AudioApi mAudioApi = oboe::AudioApi::Unspecified;
+    std::mutex     mLock;
 };
 
 #endif //OBOE_HELLO_OBOE_ENGINE_H

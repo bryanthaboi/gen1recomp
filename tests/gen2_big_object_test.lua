@@ -126,6 +126,9 @@ end
 
 -- ---- and the draw picks the right table -----------------------------------
 do
+  local PaletteFX = require("src.render.PaletteFX")
+  local savedColors = PaletteFX.mode
+  PaletteFX.setMode("redpp")
   local G = love.graphics
   local realDraw = G.draw
   local blits
@@ -147,6 +150,7 @@ do
     "with the doll's own sprite deciding which, the way SetFacingBigDoll does")
 
   G.draw = realDraw
+  PaletteFX.setMode(savedColors)
 end
 
 -- ---- WillObjectIntersectBigObject -----------------------------------------

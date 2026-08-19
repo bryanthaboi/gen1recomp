@@ -9,7 +9,6 @@ local Collision = require("src.world.Collision")
 local Encounter = require("src.world.Encounter")
 local FieldDefaults = require("src.world.FieldDefaults")
 local GameVersion = require("src.core.GameVersion")
-local GameViewport = require("src.render.GameViewport")
 local Logger = require("src.core.Logger")
 local Map = require("src.world.Map")
 local MapLoader = require("src.world.MapLoader")
@@ -5231,7 +5230,7 @@ function OverworldState:drawWorld()
     -- point projects under the pipeline's own camera.  That is the direct
     -- analogue of what :billboard does for tilt, and it keeps exactly one
     -- copy of every effect: the closures above are the ones that run.
-    local pw, ph = GameViewport.dimensions()
+    local _, _, pw, ph = Game.renderer:playfieldRect()
     local pscale = Zoom.scale(Game.renderer:fitScale())
     local ctx = {
       state = self, cam = cam, vw = vw, vh = vh, bgY = bgY,

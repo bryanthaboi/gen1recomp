@@ -80,22 +80,8 @@ macro(find_component _component _pkgconfig _library _header)
             ${PC_LIB${_component}_LIBRARY_DIRS}
     )
 
-    STRING(REGEX REPLACE "/.*" "/version.h" _ver_header ${_header})
-    if(EXISTS "${${_component}_INCLUDE_DIRS}/${_ver_header}")
-        file(STRINGS "${${_component}_INCLUDE_DIRS}/${_ver_header}" version_str REGEX "^#define[\t ]+LIB${_component}_VERSION_M.*")
-
-        string(REGEX REPLACE "^.*LIB${_component}_VERSION_MAJOR[\t ]+([0-9]*).*$" "\\1" version_maj "${version_str}")
-        string(REGEX REPLACE "^.*LIB${_component}_VERSION_MINOR[\t ]+([0-9]*).*$" "\\1" version_min "${version_str}")
-        string(REGEX REPLACE "^.*LIB${_component}_VERSION_MICRO[\t ]+([0-9]*).*$" "\\1" version_mic "${version_str}")
-        unset(version_str)
-
-        set(${_component}_VERSION "${version_maj}.${version_min}.${version_mic}" CACHE STRING "The ${_component} version number.")
-        unset(version_maj)
-        unset(version_min)
-        unset(version_mic)
-    endif(EXISTS "${${_component}_INCLUDE_DIRS}/${_ver_header}")
-    set(${_component}_VERSION     ${PC_${_component}_VERSION}      CACHE STRING "The ${_component} version number.")
-    set(${_component}_DEFINITIONS ${PC_${_component}_CFLAGS_OTHER} CACHE STRING "The ${_component} CFLAGS.")
+    set(${_component}_VERSION     ${PC_${_component}_VERSION}      CACHE STRING "The ${_component} version number." FORCE)
+    set(${_component}_DEFINITIONS ${PC_${_component}_CFLAGS_OTHER} CACHE STRING "The ${_component} CFLAGS." FORCE)
 
     set_component_found(${_component})
 

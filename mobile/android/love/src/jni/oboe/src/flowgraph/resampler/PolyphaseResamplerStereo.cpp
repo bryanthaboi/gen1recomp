@@ -15,10 +15,9 @@
  */
 
 #include <cassert>
-
 #include "PolyphaseResamplerStereo.h"
 
-using namespace resampler;
+using namespace RESAMPLER_OUTER_NAMESPACE::resampler;
 
 #define STEREO  2
 

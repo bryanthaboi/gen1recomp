@@ -20,63 +20,77 @@
 
 #include "config.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
+#include <variant>
 
-#include <algorithm>
+#include "alc/effects/base.h"
+#include "alnumbers.h"
+#include "alnumeric.h"
+#include "alspan.h"
+#include "core/ambidefs.h"
+#include "core/bufferline.h"
+#include "core/context.h"
+#include "core/device.h"
+#include "core/effects/base.h"
+#include "core/effectslot.h"
+#include "core/mixer.h"
+#include "intrusive_ptr.h"
 
-#include "al/auxeffectslot.h"
-#include "alcmain.h"
-#include "alcontext.h"
-#include "alu.h"
-#include "filters/biquad.h"
-#include "vecmat.h"
+struct BufferStorage;
 
 namespace {
 
-#define MIN_FREQ 20.0f
-#define MAX_FREQ 2500.0f
-#define Q_FACTOR 5.0f
+constexpr float GainScale{31621.0f};
+constexpr float MinFreq{20.0f};
+constexpr float MaxFreq{2500.0f};
+constexpr float QFactor{5.0f};
 
 struct AutowahState final : public EffectState {
     /* Effect parameters */
-    float mAttackRate;
-    float mReleaseRate;
-    float mResonanceGain;
-    float mPeakGain;
-    float mFreqMinNorm;
-    float mBandwidthNorm;
-    float mEnvDelay;
+    float mAttackRate{};
+    float mReleaseRate{};
+    float mResonanceGain{};
+    float mPeakGain{};
+    float mFreqMinNorm{};
+    float mBandwidthNorm{};
+    float mEnvDelay{};
 
     /* Filter components derived from the envelope. */
-    struct {
-        float cos_w0;
-        float alpha;
-    } mEnv[BUFFERSIZE];
+    struct FilterParam {
+        float cos_w0{};
+        float alpha{};
+    };
+    std::array<FilterParam,BufferLineSize> mEnv;
 
-    struct {
-        /* Effect filters' history. */
-        struct {
-            float z1, z2;
-        } Filter;
+    struct ChannelData {
+        uint mTargetChannel{InvalidChannelIndex};
+
+        struct FilterHistory {
+            float z1{}, z2{};
+        };
+        FilterHistory mFilter;
 
         /* Effect gains for each output channel */
-        float CurrentGains[MAX_OUTPUT_CHANNELS];
-        float TargetGains[MAX_OUTPUT_CHANNELS];
-    } mChans[MAX_AMBI_CHANNELS];
+        float mCurrentGain{};
+        float mTargetGain{};
+    };
+    std::array<ChannelData,MaxAmbiChannels> mChans;
 
     /* Effects buffers */
-    alignas(16) float mBufferOut[BUFFERSIZE];
+    alignas(16) FloatBufferLine mBufferOut{};
 
 
-    void deviceUpdate(const ALCdevice *device) override;
-    void update(const ALCcontext *context, const ALeffectslot *slot, const EffectProps *props, const EffectTarget target) override;
-    void process(const size_t samplesToDo, const al::span<const FloatBufferLine> samplesIn, const al::span<FloatBufferLine> samplesOut) override;
-
-    DEF_NEWDEL(AutowahState)
+    void deviceUpdate(const DeviceBase *device, const BufferStorage *buffer) override;
+    void update(const ContextBase *context, const EffectSlot *slot, const EffectProps *props,
+        const EffectTarget target) override;
+    void process(const size_t samplesToDo, const al::span<const FloatBufferLine> samplesIn,
+        const al::span<FloatBufferLine> samplesOut) override;
 };
 
-void AutowahState::deviceUpdate(const ALCdevice*)
+void AutowahState::deviceUpdate(const DeviceBase*, const BufferStorage*)
 {
     /* (Re-)initializing parameters and clear the buffers. */
 
@@ -96,34 +110,41 @@ void AutowahState::deviceUpdate(const ALCdevice*)
 
     for(auto &chan : mChans)
     {
-        std::fill(std::begin(chan.CurrentGains), std::end(chan.CurrentGains), 0.0f);
-        chan.Filter.z1 = 0.0f;
-        chan.Filter.z2 = 0.0f;
+        chan.mTargetChannel = InvalidChannelIndex;
+        chan.mFilter.z1 = 0.0f;
+        chan.mFilter.z2 = 0.0f;
+        chan.mCurrentGain = 0.0f;
     }
 }
 
-void AutowahState::update(const ALCcontext *context, const ALeffectslot *slot, const EffectProps *props, const EffectTarget target)
+void AutowahState::update(const ContextBase *context, const EffectSlot *slot,
+    const EffectProps *props_, const EffectTarget target)
 {
-    const ALCdevice *device{context->mDevice.get()};
+    auto &props = std::get<AutowahProps>(*props_);
+    const DeviceBase *device{context->mDevice};
     const auto frequency = static_cast<float>(device->Frequency);
 
-    const float ReleaseTime{clampf(props->Autowah.ReleaseTime, 0.001f, 1.0f)};
+    const float ReleaseTime{std::clamp(props.ReleaseTime, 0.001f, 1.0f)};
 
-    mAttackRate    = std::exp(-1.0f / (props->Autowah.AttackTime*frequency));
+    mAttackRate    = std::exp(-1.0f / (props.AttackTime*frequency));
     mReleaseRate   = std::exp(-1.0f / (ReleaseTime*frequency));
     /* 0-20dB Resonance Peak gain */
-    mResonanceGain = std::sqrt(std::log10(props->Autowah.Resonance)*10.0f / 3.0f);
-    mPeakGain      = 1.0f - std::log10(props->Autowah.PeakGain/AL_AUTOWAH_MAX_PEAK_GAIN);
-    mFreqMinNorm   = MIN_FREQ / frequency;
-    mBandwidthNorm = (MAX_FREQ-MIN_FREQ) / frequency;
+    mResonanceGain = std::sqrt(std::log10(props.Resonance)*10.0f / 3.0f);
+    mPeakGain      = 1.0f - std::log10(props.PeakGain / GainScale);
+    mFreqMinNorm   = MinFreq / frequency;
+    mBandwidthNorm = (MaxFreq-MinFreq) / frequency;
 
     mOutTarget = target.Main->Buffer;
-    auto set_gains = [slot,target](auto &chan, al::span<const float,MAX_AMBI_CHANNELS> coeffs)
-    { ComputePanGains(target.Main, coeffs.data(), slot->Params.Gain, chan.TargetGains); };
-    SetAmbiPanIdentity(std::begin(mChans), slot->Wet.Buffer.size(), set_gains);
+    auto set_channel = [this](size_t idx, uint outchan, float outgain)
+    {
+        mChans[idx].mTargetChannel = outchan;
+        mChans[idx].mTargetGain = outgain;
+    };
+    target.Main->setAmbiMixParams(slot->Wet, slot->Gain, set_channel);
 }
 
-void AutowahState::process(const size_t samplesToDo, const al::span<const FloatBufferLine> samplesIn, const al::span<FloatBufferLine> samplesOut)
+void AutowahState::process(const size_t samplesToDo,
+    const al::span<const FloatBufferLine> samplesIn, const al::span<FloatBufferLine> samplesOut)
 {
     const float attack_rate{mAttackRate};
     const float release_rate{mReleaseRate};
@@ -135,162 +156,75 @@ void AutowahState::process(const size_t samplesToDo, const al::span<const FloatB
     float env_delay{mEnvDelay};
     for(size_t i{0u};i < samplesToDo;i++)
     {
-        float w0, sample, a;
-
         /* Envelope follower described on the book: Audio Effects, Theory,
          * Implementation and Application.
          */
-        sample = peak_gain * std::fabs(samplesIn[0][i]);
-        a = (sample > env_delay) ? attack_rate : release_rate;
-        env_delay = lerp(sample, env_delay, a);
+        const float sample{peak_gain * std::fabs(samplesIn[0][i])};
+        const float a{(sample > env_delay) ? attack_rate : release_rate};
+        env_delay = lerpf(sample, env_delay, a);
 
         /* Calculate the cos and alpha components for this sample's filter. */
-        w0 = minf((bandwidth*env_delay + freq_min), 0.46f) * al::MathDefs<float>::Tau();
+        const float w0{std::min(bandwidth*env_delay + freq_min, 0.46f) *
+            (al::numbers::pi_v<float>*2.0f)};
         mEnv[i].cos_w0 = std::cos(w0);
-        mEnv[i].alpha = std::sin(w0)/(2.0f * Q_FACTOR);
+        mEnv[i].alpha = std::sin(w0)/(2.0f * QFactor);
     }
     mEnvDelay = env_delay;
 
-    auto chandata = std::addressof(mChans[0]);
+    auto chandata = mChans.begin();
     for(const auto &insamples : samplesIn)
     {
+        const size_t outidx{chandata->mTargetChannel};
+        if(outidx == InvalidChannelIndex)
+        {
+            ++chandata;
+            continue;
+        }
+
         /* This effectively inlines BiquadFilter_setParams for a peaking
          * filter and BiquadFilter_processC. The alpha and cosine components
          * for the filter coefficients were previously calculated with the
          * envelope. Because the filter changes for each sample, the
          * coefficients are transient and don't need to be held.
          */
-        float z1{chandata->Filter.z1};
-        float z2{chandata->Filter.z2};
+        float z1{chandata->mFilter.z1};
+        float z2{chandata->mFilter.z2};
 
         for(size_t i{0u};i < samplesToDo;i++)
         {
             const float alpha{mEnv[i].alpha};
             const float cos_w0{mEnv[i].cos_w0};
-            float input, output;
-            float a[3], b[3];
 
-            b[0] =  1.0f + alpha*res_gain;
-            b[1] = -2.0f * cos_w0;
-            b[2] =  1.0f - alpha*res_gain;
-            a[0] =  1.0f + alpha/res_gain;
-            a[1] = -2.0f * cos_w0;
-            a[2] =  1.0f - alpha/res_gain;
+            const std::array b{
+                1.0f + alpha*res_gain,
+                -2.0f * cos_w0,
+                1.0f - alpha*res_gain};
+            const std::array a{
+                1.0f + alpha/res_gain,
+                -2.0f * cos_w0,
+                1.0f - alpha/res_gain};
 
-            input = insamples[i];
-            output = input*(b[0]/a[0]) + z1;
+            const float input{insamples[i]};
+            const float output{input*(b[0]/a[0]) + z1};
             z1 = input*(b[1]/a[0]) - output*(a[1]/a[0]) + z2;
             z2 = input*(b[2]/a[0]) - output*(a[2]/a[0]);
             mBufferOut[i] = output;
         }
-        chandata->Filter.z1 = z1;
-        chandata->Filter.z2 = z2;
+        chandata->mFilter.z1 = z1;
+        chandata->mFilter.z2 = z2;
 
         /* Now, mix the processed sound data to the output. */
-        MixSamples({mBufferOut, samplesToDo}, samplesOut, chandata->CurrentGains,
-            chandata->TargetGains, samplesToDo, 0);
+        MixSamples(al::span{mBufferOut}.first(samplesToDo), samplesOut[outidx],
+            chandata->mCurrentGain, chandata->mTargetGain, samplesToDo);
         ++chandata;
     }
 }
 
 
-void Autowah_setParamf(EffectProps *props, ALenum param, float val)
-{
-    switch(param)
-    {
-    case AL_AUTOWAH_ATTACK_TIME:
-        if(!(val >= AL_AUTOWAH_MIN_ATTACK_TIME && val <= AL_AUTOWAH_MAX_ATTACK_TIME))
-            throw effect_exception{AL_INVALID_VALUE, "Autowah attack time out of range"};
-        props->Autowah.AttackTime = val;
-        break;
-
-    case AL_AUTOWAH_RELEASE_TIME:
-        if(!(val >= AL_AUTOWAH_MIN_RELEASE_TIME && val <= AL_AUTOWAH_MAX_RELEASE_TIME))
-            throw effect_exception{AL_INVALID_VALUE, "Autowah release time out of range"};
-        props->Autowah.ReleaseTime = val;
-        break;
-
-    case AL_AUTOWAH_RESONANCE:
-        if(!(val >= AL_AUTOWAH_MIN_RESONANCE && val <= AL_AUTOWAH_MAX_RESONANCE))
-            throw effect_exception{AL_INVALID_VALUE, "Autowah resonance out of range"};
-        props->Autowah.Resonance = val;
-        break;
-
-    case AL_AUTOWAH_PEAK_GAIN:
-        if(!(val >= AL_AUTOWAH_MIN_PEAK_GAIN && val <= AL_AUTOWAH_MAX_PEAK_GAIN))
-            throw effect_exception{AL_INVALID_VALUE, "Autowah peak gain out of range"};
-        props->Autowah.PeakGain = val;
-        break;
-
-    default:
-        throw effect_exception{AL_INVALID_ENUM, "Invalid autowah float property 0x%04x", param};
-    }
-}
-void Autowah_setParamfv(EffectProps *props,  ALenum param, const float *vals)
-{ Autowah_setParamf(props, param, vals[0]); }
-
-void Autowah_setParami(EffectProps*, ALenum param, int)
-{ throw effect_exception{AL_INVALID_ENUM, "Invalid autowah integer property 0x%04x", param}; }
-void Autowah_setParamiv(EffectProps*, ALenum param, const int*)
-{
-    throw effect_exception{AL_INVALID_ENUM, "Invalid autowah integer vector property 0x%04x",
-        param};
-}
-
-void Autowah_getParamf(const EffectProps *props, ALenum param, float *val)
-{
-    switch(param)
-    {
-    case AL_AUTOWAH_ATTACK_TIME:
-        *val = props->Autowah.AttackTime;
-        break;
-
-    case AL_AUTOWAH_RELEASE_TIME:
-        *val = props->Autowah.ReleaseTime;
-        break;
-
-    case AL_AUTOWAH_RESONANCE:
-        *val = props->Autowah.Resonance;
-        break;
-
-    case AL_AUTOWAH_PEAK_GAIN:
-        *val = props->Autowah.PeakGain;
-        break;
-
-    default:
-        throw effect_exception{AL_INVALID_ENUM, "Invalid autowah float property 0x%04x", param};
-    }
-
-}
-void Autowah_getParamfv(const EffectProps *props, ALenum param, float *vals)
-{ Autowah_getParamf(props, param, vals); }
-
-void Autowah_getParami(const EffectProps*, ALenum param, int*)
-{ throw effect_exception{AL_INVALID_ENUM, "Invalid autowah integer property 0x%04x", param}; }
-void Autowah_getParamiv(const EffectProps*, ALenum param, int*)
-{
-    throw effect_exception{AL_INVALID_ENUM, "Invalid autowah integer vector property 0x%04x",
-        param};
-}
-
-DEFINE_ALEFFECT_VTABLE(Autowah);
-
-
 struct AutowahStateFactory final : public EffectStateFactory {
-    EffectState *create() override { return new AutowahState{}; }
-    EffectProps getDefaultProps() const noexcept override;
-    const EffectVtable *getEffectVtable() const noexcept override { return &Autowah_vtable; }
+    al::intrusive_ptr<EffectState> create() override
+    { return al::intrusive_ptr<EffectState>{new AutowahState{}}; }
 };
-
-EffectProps AutowahStateFactory::getDefaultProps() const noexcept
-{
-    EffectProps props{};
-    props.Autowah.AttackTime = AL_AUTOWAH_DEFAULT_ATTACK_TIME;
-    props.Autowah.ReleaseTime = AL_AUTOWAH_DEFAULT_RELEASE_TIME;
-    props.Autowah.Resonance = AL_AUTOWAH_DEFAULT_RESONANCE;
-    props.Autowah.PeakGain = AL_AUTOWAH_DEFAULT_PEAK_GAIN;
-    return props;
-}
 
 } // namespace
 

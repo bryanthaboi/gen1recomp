@@ -364,12 +364,6 @@ local r, g, b = shaded.data:getPixel(0, 0)
 check(r == 0 and g == 0 and b == 1,
       "a 4-shade pic is palette-quantized onto its shade bucket")
 
-local full = battle:speciesSprite("FULLCOLOR", false)
-r, g, b = full.data:getPixel(0, 0)
-check(math.abs(r - 0.4) < 1e-6 and math.abs(g - 0.7) < 1e-6
-      and math.abs(b - 0.9) < 1e-6,
-      "a trueColor pic keeps a pixel no 4-shade palette contains")
-
 -- trainers.trueColor is the same opt-out on a class portrait
 BattleState.invalidate()
 local trainerPicData = {
@@ -386,6 +380,14 @@ local shadedTrainer = BattleState.trainerSprite(trainerPicData,
 r, g, b = shadedTrainer.data:getPixel(0, 0)
 check(r == 0 and g == 0 and b == 1,
       "a 4-shade trainer pic is palette-quantized onto its shade bucket")
+
+local savedColors = PaletteFX.mode
+PaletteFX.setMode("redpp")
+local full = battle:speciesSprite("FULLCOLOR", false)
+r, g, b = full.data:getPixel(0, 0)
+check(math.abs(r - 0.4) < 1e-6 and math.abs(g - 0.7) < 1e-6
+      and math.abs(b - 0.9) < 1e-6,
+      "a trueColor pic keeps a pixel no 4-shade palette contains")
 local fullTrainer = BattleState.trainerSprite(trainerPicData,
   trainerPicData.trainers.FULLCOLOR)
 r, g, b = fullTrainer.data:getPixel(0, 0)
@@ -395,6 +397,7 @@ check(math.abs(r - 0.4) < 1e-6 and math.abs(g - 0.7) < 1e-6
 check(BattleState.trainerTrueColor(trainerPicData,
         trainerPicData.trainers.REUSED) == true,
       "a basePic reuse inherits the base portrait's trueColor flag")
+PaletteFX.setMode(savedColors)
 
 -- ------- trueColor: the colors == false zone sentinel
 
@@ -434,6 +437,8 @@ check(bareDraw.shader == false,
 -- covered and endFrame splices it in.  Driven through the real draw path
 -- rather than by handing endFrame a hand-built zone.
 
+savedColors = PaletteFX.mode
+PaletteFX.setMode("redpp")
 local GRAYS = PaletteFX.GRAYS
 local function canvasDraws(canvas)
   local drawn = {}
@@ -625,6 +630,7 @@ check(#PaletteFX.trueColorRects("world") == 0,
       "the same tileset without the flag reports nothing")
 Renderer:endWorldPass()
 Renderer:endFrame({ PaletteFX.whole(GRAYS) }, fullWorldZones())
+PaletteFX.setMode(savedColors)
 
 -- ------- font pages and charmap ordering
 

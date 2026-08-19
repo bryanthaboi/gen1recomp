@@ -23,7 +23,7 @@
 
 #include "FlowGraphNode.h"
 
-namespace flowgraph {
+namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph {
 
 // This is 3 dB, (10^(3/20)), to match the maximum headroom in AudioTrack for float data.
 // It is designed to allow occasional transient peaks.
@@ -63,6 +63,6 @@ private:
     float mMaximum = kDefaultMaxHeadroom;
 };
 
-} /* namespace flowgraph */
+} /* namespace FLOWGRAPH_OUTER_NAMESPACE::flowgraph */
 
 #endif //FLOWGRAPH_CLIP_TO_RANGE_H

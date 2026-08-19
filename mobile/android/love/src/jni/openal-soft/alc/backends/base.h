@@ -2,16 +2,20 @@
 #define ALC_BACKENDS_BASE_H
 
 #include <chrono>
+#include <cstdarg>
+#include <cstddef>
 #include <memory>
-#include <mutex>
+#include <ratio>
 #include <string>
+#include <string_view>
+#include <vector>
 
-#include "AL/alc.h"
+#include "core/device.h"
+#include "core/except.h"
+#include "alc/events.h"
 
-#include "albyte.h"
-#include "alcmain.h"
-#include "alexcpt.h"
 
+using uint = unsigned int;
 
 struct ClockLatency {
     std::chrono::nanoseconds ClockTime;
@@ -19,32 +23,34 @@ struct ClockLatency {
 };
 
 struct BackendBase {
-    virtual void open(const ALCchar *name) = 0;
+    virtual void open(std::string_view name) = 0;
 
     virtual bool reset();
     virtual void start() = 0;
     virtual void stop() = 0;
 
-    virtual ALCenum captureSamples(al::byte *buffer, ALCuint samples);
-    virtual ALCuint availableSamples();
+    virtual void captureSamples(std::byte *buffer, uint samples);
+    virtual uint availableSamples();
 
     virtual ClockLatency getClockLatency();
 
-    ALCdevice *const mDevice;
+    DeviceBase *const mDevice;
+    std::string mDeviceName;
 
-    BackendBase(ALCdevice *device) noexcept : mDevice{device} { }
+    BackendBase() = delete;
+    BackendBase(const BackendBase&) = delete;
+    BackendBase(BackendBase&&) = delete;
+    BackendBase(DeviceBase *device) noexcept : mDevice{device} { }
     virtual ~BackendBase() = default;
+
+    void operator=(const BackendBase&) = delete;
+    void operator=(BackendBase&&) = delete;
 
 protected:
     /** Sets the default channel order used by most non-WaveFormatEx-based APIs. */
-    void setDefaultChannelOrder();
+    void setDefaultChannelOrder() const;
     /** Sets the default channel order used by WaveFormatEx. */
-    void setDefaultWFXChannelOrder();
-
-#ifdef _WIN32
-    /** Sets the channel order given the WaveFormatEx mask. */
-    void setChannelOrderFromWFXMask(ALuint chanmask);
-#endif
+    void setDefaultWFXChannelOrder() const;
 };
 using BackendPtr = std::unique_ptr<BackendBase>;
 
@@ -54,24 +60,11 @@ enum class BackendType {
 };
 
 
-/* Helper to get the current clock time from the device's ClockBase, and
- * SamplesDone converted from the sample rate.
- */
-inline std::chrono::nanoseconds GetDeviceClockTime(ALCdevice *device)
-{
-    using std::chrono::seconds;
-    using std::chrono::nanoseconds;
-
-    auto ns = nanoseconds{seconds{device->SamplesDone}} / device->Frequency;
-    return device->ClockBase + ns;
-}
-
 /* Helper to get the device latency from the backend, including any fixed
  * latency from post-processing.
  */
-inline ClockLatency GetClockLatency(ALCdevice *device)
+inline ClockLatency GetClockLatency(DeviceBase *device, BackendBase *backend)
 {
-    BackendBase *backend{device->Backend.get()};
     ClockLatency ret{backend->getClockLatency()};
     ret.Latency += device->FixedLatency;
     return ret;
@@ -79,30 +72,47 @@ inline ClockLatency GetClockLatency(ALCdevice *device)
 
 
 struct BackendFactory {
-    virtual bool init() = 0;
-
-    virtual bool querySupport(BackendType type) = 0;
-
-    virtual std::string probe(BackendType type) = 0;
-
-    virtual BackendPtr createBackend(ALCdevice *device, BackendType type) = 0;
-
-protected:
+    BackendFactory() = default;
+    BackendFactory(const BackendFactory&) = delete;
+    BackendFactory(BackendFactory&&) = delete;
     virtual ~BackendFactory() = default;
+
+    void operator=(const BackendFactory&) = delete;
+    void operator=(BackendFactory&&) = delete;
+
+    virtual auto init() -> bool = 0;
+
+    virtual auto querySupport(BackendType type) -> bool = 0;
+
+    virtual auto queryEventSupport(alc::EventType, BackendType) -> alc::EventSupport
+    { return alc::EventSupport::NoSupport; }
+
+    virtual auto enumerate(BackendType type) -> std::vector<std::string> = 0;
+
+    virtual auto createBackend(DeviceBase *device, BackendType type) -> BackendPtr = 0;
 };
 
 namespace al {
 
+enum class backend_error {
+    NoDevice,
+    DeviceError,
+    OutOfMemory
+};
+
 class backend_exception final : public base_exception {
+    backend_error mErrorCode;
+
 public:
+#ifdef __MINGW32__
+    [[gnu::format(__MINGW_PRINTF_FORMAT, 3, 4)]]
+#else
     [[gnu::format(printf, 3, 4)]]
-    backend_exception(ALCenum code, const char *msg, ...) : base_exception{code}
-    {
-        std::va_list args;
-        va_start(args, msg);
-        setMessage(msg, args);
-        va_end(args);
-    }
+#endif
+    backend_exception(backend_error code, const char *msg, ...);
+    ~backend_exception() override;
+
+    [[nodiscard]] auto errorCode() const noexcept -> backend_error { return mErrorCode; }
 };
 
 } // namespace al

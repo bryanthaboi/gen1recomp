@@ -806,6 +806,8 @@ function TileRenderer:markCellBottomRedraw(cx, cy, camX, camY, colors)
   end
 end
 
+
+
 local WINDOW_MARGIN = 8 -- tiles of slack kept around the view between refills
 
 function TileRenderer:ensureWindow(camX, camY, vw, vh)

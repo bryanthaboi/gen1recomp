@@ -234,8 +234,12 @@ function SpriteRenderer:gen2Obp()
     self.objGroup .. "|" .. tostring(GbcPalette.mode)
 end
 
+local function liveTrueColor(def)
+  return def and def.trueColor and PaletteFX.honorsTrueColor()
+end
+
 function SpriteRenderer:resolveImage()
-  if self.def.trueColor then return self.image end
+  if liveTrueColor(self.def) then return self.image end
   if self.objColors then
     return getObpImage(self.def.image, self:gen2Obp())
   end
@@ -289,7 +293,7 @@ function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip,
   local redraw = false
   -- True-color sheets bypass every palette bake; the screen-space exemption
   -- is recorded below once the final frame/height is known.
-  if self.def.trueColor then
+  if liveTrueColor(self.def) then
     image = self.image
   elseif self.objColors then
     -- Gen 2: the palette came from the caller (setObjPalette).  Like RED++
@@ -349,7 +353,7 @@ function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip,
     drawHeight = math.max(1, self.frameHeight - math.min(8, self.frameHeight))
   end
   -- Full-color art claims exactly the portion of the frame that was drawn.
-  if self.def.trueColor then
+  if liveTrueColor(self.def) then
     PaletteFX.markTrueColor(x, y, self.frameWidth, drawHeight)
   end
   blitFrame(image, quad, x, y, flip, redraw, self.frameWidth)
@@ -360,10 +364,12 @@ end
 -- overwrites the sheet's own tiles in VRAM in the original, so it has to be
 -- recolored and OG-RED-redrawn exactly like the sheet rather than blitted as
 -- raw DMG shades (#384).
-function SpriteRenderer:drawTile(path, x, y, flip)
+function SpriteRenderer:drawTile(path, x, y, flip, quad)
   local image, redraw = getImage(path), false
-  if self.def.trueColor then
+  if liveTrueColor(self.def) then
     PaletteFX.markTrueColor(x, y, 16, 8)
+  elseif self.objColors then
+    image = getObpImage(path, self:gen2Obp())
   elseif PaletteFX.usesGbcPack() then
     local colors, group = PaletteFX.spriteObp(self.def, self.seed)
     if colors then image = getObpImage(path, colors, group) end
@@ -373,10 +379,23 @@ function SpriteRenderer:drawTile(path, x, y, flip)
     image = getObpImage(path, PaletteFX.dmgObj())
   end
   local iw, ih = image:getDimensions()
-  self.tileQuads = self.tileQuads or {}
-  self.tileQuads[path] = self.tileQuads[path]
-                         or love.graphics.newQuad(0, 0, iw, ih, iw, ih)
-  blitFrame(image, self.tileQuads[path], x, y, flip, redraw, iw)
+  local q = quad
+  if not q then
+    self.tileQuads = self.tileQuads or {}
+    self.tileQuads[path] = self.tileQuads[path]
+                           or love.graphics.newQuad(0, 0, iw, ih, iw, ih)
+    q = self.tileQuads[path]
+  end
+  local qw = iw
+  if q then
+    if q.getViewport then
+      local _, _, w = q:getViewport()
+      qw = w
+    elseif q.w then
+      qw = q.w
+    end
+  end
+  blitFrame(image, q, x, y, flip, redraw, qw)
 end
 
 return SpriteRenderer

@@ -987,9 +987,14 @@ R.tilesets = {
 -- for "no fish here, roll the map's water table instead" (pokegold
 -- data/wild/fish.asm), which is why species is a union rather than a bare id.
 local gen2Slot = f.rec{ level = f.int(1), species = f.id("pokemon") }
--- the sentinel row carries level 0 as well as species 0, so both floors drop
+-- the sentinel row carries level 0 as well as species 0, so both floors drop.
+-- Time-dependent rows (TimeFishGroups) carry day/nite sub-slots.
+local gen2FishSubSlot = f.rec{ level = f.int(0), species = f.union{ f.id("pokemon"), f.int(0, 0) } }
 local gen2FishSlot = f.rec{ chance = f.int(0, 255), level = f.int(0),
-                            species = f.union{ f.id("pokemon"), f.int(0, 0) } }
+                            species = f.union{ f.id("pokemon"), f.int(0, 0) },
+                            timeGroup = f.opt(f.int(0, 255)),
+                            day = f.opt(gen2FishSubSlot),
+                            nite = f.opt(gen2FishSubSlot) }
 -- Headbutt/Rock Smash slots.  species is optional and the level floor is 0
 -- because TreeMonSet_Rock has no `rare` half in the ROM (pokegold
 -- data/wild/treemons.asm ends the table after the common rows), so the four
@@ -1046,6 +1051,8 @@ R.encounters = {
       chance = f.int(0, 255),
       old = f.list(gen2FishSlot), good = f.list(gen2FishSlot),
       super = f.list(gen2FishSlot) }),
+    timeFishGroups = f.opt(f.map(f.union{ f.str, f.int(0, 255) },
+      f.rec{ day = gen2FishSubSlot, nite = gen2FishSubSlot })),
     -- headbutt: map -> tree set id, and the set's common/rare tables.  rocks
     -- is the same indirection for Rock Smash.
     trees = f.map(f.str, f.str),

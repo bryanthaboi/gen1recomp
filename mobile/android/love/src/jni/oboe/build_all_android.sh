@@ -28,9 +28,9 @@ fi
 # Directories, paths and filenames
 BUILD_DIR=build
 
-CMAKE_ARGS="-H. \
+CMAKE_ARGS="-S. \
   -DBUILD_SHARED_LIBS=true \
-  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DANDROID_TOOLCHAIN=clang \
   -DANDROID_STL=c++_shared \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
@@ -51,6 +51,7 @@ function build_oboe {
         -DANDROID_ABI=${ABI} \
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${STAGING_DIR}/lib/${ABI} \
         -DANDROID_PLATFORM=android-${MINIMUM_API_LEVEL}\
+        -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
         ${CMAKE_ARGS}
 
   pushd ${ABI_BUILD_DIR}
