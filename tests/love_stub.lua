@@ -14,6 +14,18 @@ function Image:getHeight() return self.h end
 -- IntroMovie sets the studio logo filter unconditionally on load
 function Image:setFilter(min, mag) self.minFilter, self.magFilter = min, mag end
 function Image:getFilter() return self.minFilter or "nearest", self.magFilter or "nearest" end
+-- renderBakedGrown (mods/mapamap) reads the baked native atlas back as
+-- ImageData to compose it under the grown graft rows; mirror the invariant
+-- getData() -> ImageData shares the image's pixel dimensions
+function Image:getData()
+  local w, h = self.w, self.h
+  return setmetatable(
+    { w = w, h = h, getDimensions = function() return w, h end,
+      getWidth = function() return w end, getHeight = function() return h end,
+      getPixel = function() return 0, 0, 0, 1 end, setPixel = function() end,
+      paste = function() end },
+    { __index = function() return function() end end })
+end
 
 -- read PNG dimensions from the file header (no decoder needed)
 local function pngSize(path)
