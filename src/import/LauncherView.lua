@@ -4362,21 +4362,70 @@ local function syncTitle(imp, m, px, py, pw, pad)
   return py + Kit.textHeight("button") + math.floor(12 * m.s)
 end
 
-local function syncStatus(imp, m, x, y, w, eng)
+local function syncWidth(m, want)
+  return math.floor(math.min(want, m.W - 2 * m.pad))
+end
+
+local function syncFit(m, fixed, rows, gaps, texts)
+  local fit = { btnH = m.btnH, gap = math.floor(8 * m.s), lines = {} }
+  local avail = m.H - 2 * m.pad
+  texts = texts or {}
+  for i, blk in ipairs(texts) do fit.lines[i] = blk.max end
+  local function total()
+    local t = fixed + rows * fit.btnH + gaps * fit.gap
+    for i, blk in ipairs(texts) do
+      t = t + Kit.wrapHeight(blk.font, blk.str, blk.w, fit.lines[i])
+    end
+    return t
+  end
+  while total() > avail do
+    local worst, worstH = nil, 0
+    for i, blk in ipairs(texts) do
+      if fit.lines[i] > 1 then
+        local hgt = Kit.wrapHeight(blk.font, blk.str, blk.w, fit.lines[i])
+        if hgt > worstH then worst, worstH = i, hgt end
+      end
+    end
+    if not worst then break end
+    fit.lines[worst] = fit.lines[worst] - 1
+  end
+  if total() > avail and gaps > 0 then
+    fit.gap = math.max(math.max(2, math.floor(3 * m.s)),
+      fit.gap - math.ceil((total() - avail) / gaps))
+  end
+  if total() > avail and rows > 0 then
+    fit.btnH = math.max(Kit.tapMin(),
+      fit.btnH - math.ceil((total() - avail) / rows))
+  end
+  fit.over = total() - avail
+  fit.h = math.min(total(), avail)
+  return fit
+end
+
+local function syncStatus(imp, m, x, y, w, eng, fit)
+  local bh = (fit and fit.btnH) or m.btnH
+  local gap = (fit and fit.gap) or math.floor(8 * m.s)
   if eng:busy() then
-    Loader.inline(x, y, w, m.btnH, eng.status)
-    return m.btnH + math.floor(8 * m.s)
+    Loader.inline(x, y, w, bh, eng.status)
+    return bh + gap
   end
   Kit.text("small", Kit.ellipsize("small", eng.status or "", w), x, y,
     eng.phase == "error" and PAL.red or PAL.muted)
+  return Kit.textHeight("small") + gap + math.floor(2 * m.s)
+end
+
+local function syncReserve(m, eng)
+  if eng:busy() then return m.btnH + math.floor(8 * m.s) end
   return Kit.textHeight("small") + math.floor(10 * m.s)
 end
 
-local function syncRow(imp, m, x, y, w, key, label, opts)
+local function syncRow(imp, m, x, y, w, key, label, opts, fit)
   opts = opts or {}
   opts.font = "small"
-  btn(imp, x, y, w, m.btnH, key, label, opts)
-  return y + m.btnH + math.floor(8 * m.s)
+  local bh = (fit and fit.btnH) or m.btnH
+  local gap = (fit and fit.gap) or math.floor(8 * m.s)
+  btn(imp, x, y, w, bh, key, label, opts)
+  return y + bh + gap
 end
 
 function LauncherView.syncSideText(meta)
@@ -4408,91 +4457,99 @@ end
 local function buildSyncConflict(imp, m, eng)
   local row = eng.conflicts[1]
   local pad = math.floor(18 * m.s)
-  local w = math.floor(520 * m.s)
+  local w = syncWidth(m, math.floor(520 * m.s))
   local innerW = w - 2 * pad
   local lead = row.overlap
     and Strings("These saves were played at the same time.")
     or Strings("This save also changed on another device.")
-  local leadH = Kit.wrapHeight("small", lead, innerW, 2)
-  local sideH = Kit.textHeight("small") + math.floor(2 * m.s)
-    + Kit.wrapHeight("micro", "x", innerW, 2)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + leadH
-    + math.floor(10 * m.s) + 2 * (sideH + math.floor(10 * m.s))
-    + 4 * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local mine = LauncherView.syncSideText(row.localMeta)
+  local theirs = LauncherView.syncSideText(row.remoteMeta)
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(22 * m.s)
+      + 2 * (Kit.textHeight("small") + math.floor(12 * m.s)),
+    4, 4, {
+      { font = "small", str = lead, w = innerW, max = 2 },
+      { font = "micro", str = mine, w = innerW, max = 2 },
+      { font = "micro", str = theirs, w = innerW, max = 2 },
+    })
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, pw - 2 * pad,
-    PAL.detail, 2) + math.floor(10 * m.s)
+  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, innerW,
+    PAL.detail, fit.lines[1]) + math.floor(10 * m.s)
 
-  local function side(title, meta)
+  local function side(title, text, lines)
     Kit.text("small", title, px + pad, cy, PAL.heading)
     cy = cy + Kit.textHeight("small") + math.floor(2 * m.s)
-    cy = cy + Kit.textWrapped("micro", LauncherView.syncSideText(meta),
-      px + pad, cy, pw - 2 * pad, PAL.muted, 2) + math.floor(10 * m.s)
+    cy = cy + Kit.textWrapped("micro", text, px + pad, cy, innerW,
+      PAL.muted, lines) + math.floor(10 * m.s)
   end
   side(Strings("This device") .. "  \194\183  " .. tostring(row.version or "?"),
-    row.localMeta)
-  side(Strings("Other device"), row.remoteMeta)
+    mine, fit.lines[2])
+  side(Strings("Other device"), theirs, fit.lines[3])
 
   local key = row.key
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-this",
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-keep-this",
     Strings("Keep this device"), { kind = "primary",
-      action = function() imp:_syncResolve(key, "local") end })
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-other",
+      action = function() imp:_syncResolve(key, "local") end }, fit)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-keep-other",
     Strings("Keep the other device"), { kind = "accent",
-      action = function() imp:_syncResolve(key, "remote") end })
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-both",
+      action = function() imp:_syncResolve(key, "remote") end }, fit)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-keep-both",
     Strings("Keep both"), {
-      action = function() imp:_syncResolve(key, "both") end })
-  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-conflict-close",
-    Strings("Close"), { action = function() imp:_closeSync() end })
+      action = function() imp:_syncResolve(key, "both") end }, fit)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-conflict-close",
+    Strings("Close"), { action = function() imp:_closeSync() end }, fit)
 end
 
 local function buildSyncLink(imp, m, eng)
   local mo = imp._syncModal
   local pad = math.floor(18 * m.s)
-  local w = math.floor(460 * m.s)
-  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local w = syncWidth(m, math.floor(460 * m.s))
+  local innerW = w - 2 * pad
   local hint = Strings("Enter the two codes the other device is showing.")
-  local hintH = Kit.wrapHeight("small", hint, w - 2 * pad, 2)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + hintH
-    + math.floor(10 * m.s) + 2 * (fieldH + math.floor(8 * m.s))
-    + Kit.textHeight("small") + math.floor(10 * m.s)
-    + 2 * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(22 * m.s)
+      + 2 * (fieldH + math.floor(8 * m.s)) + syncReserve(m, eng),
+    2, 2, { { font = "small", str = hint, w = innerW, max = 2 } })
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", hint, px + pad, cy, pw - 2 * pad,
-    PAL.detail, 2) + math.floor(10 * m.s)
-  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "sync-code1",
+  cy = cy + Kit.textWrapped("small", hint, px + pad, cy, innerW,
+    PAL.detail, fit.lines[1]) + math.floor(10 * m.s)
+  textField(imp, px + pad, cy, innerW, fieldH, "sync-code1",
     mo.code1 or "", Strings("First code"), imp._syncFocus == "code1",
     function() imp:_syncFocusField("code1") end)
-  cy = cy + fieldH + math.floor(8 * m.s)
-  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "sync-code2",
+  cy = cy + fieldH + fit.gap
+  textField(imp, px + pad, cy, innerW, fieldH, "sync-code2",
     mo.code2 or "", Strings("Second code"), imp._syncFocus == "code2",
     function() imp:_syncFocusField("code2") end)
-  cy = cy + fieldH + math.floor(8 * m.s)
-  cy = cy + syncStatus(imp, m, px + pad, cy, pw - 2 * pad, eng)
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-link-go",
+  cy = cy + fieldH + fit.gap
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng, fit)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-link-go",
     Strings("Link this device"), { kind = "primary", enabled = not eng:busy(),
-      action = function() imp:_syncLink() end })
-  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-link-back",
-    Strings("Back"), { action = function() imp:_syncView("home") end })
+      action = function() imp:_syncLink() end }, fit)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-link-back",
+    Strings("Back"), { action = function() imp:_syncView("home") end }, fit)
 end
 
 local function buildSyncMods(imp, m, eng)
   local mo = imp._syncModal
   local pad = math.floor(18 * m.s)
-  local w = math.floor(500 * m.s)
+  local w = syncWidth(m, math.floor(500 * m.s))
+  local innerW = w - 2 * pad
   local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
   local plan = eng.modPlan
   local rows = 4 + (plan and 1 or 0)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
-    + 3 * (Kit.textHeight("small") + math.floor(8 * m.s))
-    + fieldH + math.floor(8 * m.s)
-    + rows * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local codeH = eng.shareCode and (Kit.textHeight("small")
+    + Kit.textHeight("stat") + Kit.textHeight("micro")
+    + math.floor(18 * m.s)) or 0
+  local planH = plan and (Kit.textHeight("small") + math.floor(8 * m.s)) or 0
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(12 * m.s) + codeH + planH
+      + fieldH + math.floor(8 * m.s) + syncReserve(m, eng),
+    rows, rows, {})
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  local innerW = pw - 2 * pad
 
   if eng.shareCode then
     Kit.text("small", Strings("Share this code:"), px + pad, cy, PAL.muted)
@@ -4504,17 +4561,23 @@ local function buildSyncMods(imp, m, eng)
       px + pad, cy, PAL.muted)
     cy = cy + Kit.textHeight("micro") + math.floor(10 * m.s)
   end
+  local withOptions = mo.withOptions ~= false
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-share-options",
+    Strings("Include my mod options") .. "  \194\183  "
+      .. (withOptions and Strings("ON") or Strings("OFF")),
+    { kind = withOptions and "accent" or nil, enabled = not eng:busy(),
+      action = function() imp:_syncToggleShareOptions() end }, fit)
   cy = syncRow(imp, m, px + pad, cy, innerW, "sync-share-mods",
     Strings("Share mod list"), { kind = "accent", enabled = not eng:busy(),
-      action = function() imp:_syncShareMods() end })
+      action = function() imp:_syncShareMods() end }, fit)
 
   textField(imp, px + pad, cy, innerW, fieldH, "sync-share-code",
     mo.share or "", Strings("Paste a 6-character mod code"),
     imp._syncFocus == "share", function() imp:_syncFocusField("share") end)
-  cy = cy + fieldH + math.floor(8 * m.s)
+  cy = cy + fieldH + fit.gap
   cy = syncRow(imp, m, px + pad, cy, innerW, "sync-get-mods",
     Strings("Get mod list"), { kind = "accent", enabled = not eng:busy(),
-      action = function() imp:_syncGetShare() end })
+      action = function() imp:_syncGetShare() end }, fit)
 
   if plan then
     local line = Strings("%d mods, %d indexes to add",
@@ -4523,24 +4586,29 @@ local function buildSyncMods(imp, m, eng)
       line = line .. "  \194\183  " .. Strings("%d not in your indexes",
         #plan.missing)
     end
+    if #(plan.options or {}) > 0 then
+      line = line .. "  \194\183  " .. (plan.applyOptions
+        and Strings("options for %d mods", #plan.options)
+        or Strings("their options skipped"))
+    end
     Kit.text("small", Kit.ellipsize("small", line, innerW), px + pad, cy,
       PAL.detail)
     cy = cy + Kit.textHeight("small") + math.floor(8 * m.s)
     local prog = mo.progress
     if prog then
-      Loader.inline(px + pad, cy, innerW, m.btnH,
+      Loader.inline(px + pad, cy, innerW, fit.btnH,
         Strings("%d of %d", prog.done or 0, prog.total or 0))
-      cy = cy + m.btnH + math.floor(8 * m.s)
+      cy = cy + fit.btnH + fit.gap
     else
       cy = syncRow(imp, m, px + pad, cy, innerW, "sync-apply-mods",
         Strings("Apply these mods"), { kind = "primary",
           enabled = not eng:busy(),
-          action = function() imp:_syncApplyMods() end })
+          action = function() imp:_syncApplyMods() end }, fit)
     end
   end
-  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng)
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng, fit)
   syncRow(imp, m, px + pad, cy, innerW, "sync-mods-back", Strings("Back"),
-    { action = function() imp:_syncView("home") end })
+    { action = function() imp:_syncView("home") end }, fit)
 end
 
 function LauncherView.syncDeviceRows(eng, limit)
@@ -4562,29 +4630,35 @@ end
 
 local function buildSyncHome(imp, m, eng)
   local pad = math.floor(18 * m.s)
-  local w = math.floor(460 * m.s)
+  local w = syncWidth(m, math.floor(460 * m.s))
   local linked = eng:linked()
   local codes = eng.codes
   local body = linked
     and Strings("This device is linked. Saves sync when the launcher opens, a few seconds after each save, and every few minutes while the app is running.")
     or Strings(SYNC_HINT)
   local innerW = w - 2 * pad
-  local hintH = Kit.wrapHeight("small", body, innerW, 5)
   local codesH = codes
     and (Kit.textHeight("small") + math.floor(6 * m.s)
       + 2 * (Kit.textHeight("title") + math.floor(4 * m.s))
       + math.floor(8 * m.s)) or 0
   local devices = linked and LauncherView.syncDeviceRows(eng) or {}
-  local devicesH = #devices > 0
-    and (Kit.textHeight("small") + math.floor(6 * m.s)) or 0
-  local rows = (linked and 5 or 3) + #devices
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + hintH
-    + math.floor(10 * m.s) + codesH + devicesH + m.btnH + math.floor(10 * m.s)
-    + rows * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local hidden, fit = 0, nil
+  repeat
+    local devicesH = #devices > 0
+      and (Kit.textHeight("small") + math.floor(6 * m.s)) or 0
+    fit = syncFit(m,
+      2 * pad + Kit.textHeight("button") + math.floor(22 * m.s) + codesH
+        + devicesH + syncReserve(m, eng),
+      (linked and 4 or 3) + #devices, (linked and 4 or 3) + #devices,
+      { { font = "small", str = body, w = innerW, max = 5 } })
+    if fit.over <= 0 or #devices == 0 then break end
+    table.remove(devices)
+    hidden = hidden + 1
+  until false
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", body, px + pad, cy, innerW, PAL.detail, 5)
-    + math.floor(10 * m.s)
+  cy = cy + Kit.textWrapped("small", body, px + pad, cy, innerW, PAL.detail,
+    fit.lines[1]) + math.floor(10 * m.s)
 
   if codes then
     Kit.text("small", Strings("Enter these on your other device:"), px + pad,
@@ -4595,23 +4669,24 @@ local function buildSyncHome(imp, m, eng)
     Kit.text("title", codes.code2, px + pad, cy, PAL.heading)
     cy = cy + Kit.textHeight("title") + math.floor(8 * m.s)
   end
-  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng)
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng, fit)
 
   if #devices > 0 then
-    Kit.text("small", Strings("Devices on this account:"), px + pad, cy,
-      PAL.muted)
+    Kit.text("small", hidden > 0
+      and Strings("Devices on this account (%d more)", hidden)
+      or Strings("Devices on this account:"), px + pad, cy, PAL.muted)
     cy = cy + Kit.textHeight("small") + math.floor(6 * m.s)
     for i, device in ipairs(devices) do
       local id = device.id
       if device.current then
         cy = syncRow(imp, m, px + pad, cy, innerW, "sync-device-" .. i,
           device.label .. "  \194\183  " .. Strings("this device"),
-          { enabled = false })
+          { enabled = false }, fit)
       else
         cy = syncRow(imp, m, px + pad, cy, innerW, "sync-device-" .. i,
           Strings("Unlink %s", device.label), { kind = "danger",
             enabled = not eng:busy(),
-            action = function() imp:_syncUnlinkDevice(id) end })
+            action = function() imp:_syncUnlinkDevice(id) end }, fit)
       end
     end
   end
@@ -4619,38 +4694,69 @@ local function buildSyncHome(imp, m, eng)
   if linked then
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-now", Strings("Sync now"),
       { kind = "primary", enabled = not eng:busy(),
-        action = function() imp:_syncNow() end })
+        action = function() imp:_syncNow() end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-mods",
       Strings("Share or get a mod list"), { kind = "accent",
-        action = function() imp:_syncView("mods") end })
+        action = function() imp:_syncView("mods") end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-unlink",
       Strings("Unlink this device"), { kind = "danger",
-        action = function() imp:_syncUnlink() end })
+        action = function() imp:_syncUnlink() end }, fit)
   else
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-create",
       Strings("Create sync account"), { kind = "primary",
         enabled = not eng:busy(),
-        action = function() imp:_syncCreate() end })
+        action = function() imp:_syncCreate() end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-link",
       Strings("Link this device"), { kind = "accent",
-        action = function() imp:_syncView("link") end })
+        action = function() imp:_syncView("link") end }, fit)
   end
   syncRow(imp, m, px + pad, cy, innerW, "sync-close", Strings("Close"),
-    { action = function() imp:_closeSync() end })
+    { action = function() imp:_closeSync() end }, fit)
+end
+
+local function buildSyncModOptions(imp, m, eng)
+  local plan = eng.modPlan
+  local ids = {}
+  for _, row in ipairs(plan.options or {}) do ids[#ids + 1] = row.id end
+  local pad = math.floor(18 * m.s)
+  local w = syncWidth(m, math.floor(480 * m.s))
+  local innerW = w - 2 * pad
+  local lead = Strings(
+    "This mod list also carries the options its owner set for %d mods. Import their options, or keep the ones you have?",
+    #ids)
+  local names = table.concat(ids, ", ")
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(32 * m.s), 2, 2, {
+      { font = "small", str = lead, w = innerW, max = 4 },
+      { font = "micro", str = names, w = innerW, max = 3 },
+    })
+  local px, py, pw = modalPanel(m, w, fit.h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, innerW, PAL.detail,
+    fit.lines[1]) + math.floor(8 * m.s)
+  cy = cy + Kit.textWrapped("micro", names, px + pad, cy, innerW, PAL.muted,
+    fit.lines[2]) + math.floor(12 * m.s)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-options-import",
+    Strings("Import their options"), { kind = "primary",
+      action = function() imp:_syncAnswerModOptions(true) end }, fit)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-options-skip",
+    Strings("Keep my options"), {
+      action = function() imp:_syncAnswerModOptions(false) end }, fit)
 end
 
 local function buildSyncUnavailable(imp, m, msg)
   local pad = math.floor(18 * m.s)
-  local w = math.floor(420 * m.s)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
-    + Kit.wrapHeight("small", msg, w - 2 * pad, 4) + math.floor(10 * m.s)
-    + m.btnH + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local w = syncWidth(m, math.floor(420 * m.s))
+  local innerW = w - 2 * pad
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(22 * m.s), 1, 0,
+    { { font = "small", str = msg, w = innerW, max = 4 } })
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", msg, px + pad, cy, pw - 2 * pad,
-    PAL.detail, 4) + math.floor(10 * m.s)
-  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-close",
-    Strings("Close"), { action = function() imp:_closeSync() end })
+  cy = cy + Kit.textWrapped("small", msg, px + pad, cy, innerW,
+    PAL.detail, fit.lines[1]) + math.floor(10 * m.s)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-close",
+    Strings("Close"), { action = function() imp:_closeSync() end }, fit)
 end
 
 local function buildSyncModal(imp, m)
@@ -4667,6 +4773,12 @@ local function buildSyncModal(imp, m)
   end
   if eng.phase == "conflict" and eng.conflicts and #eng.conflicts > 0 then
     buildSyncConflict(imp, m, eng)
+    return
+  end
+  local plan = eng.modPlan
+  if type(plan) == "table" and #(plan.options or {}) > 0
+      and plan.applyOptions == nil then
+    buildSyncModOptions(imp, m, eng)
     return
   end
   local view = imp._syncModal and imp._syncModal.view or "home"

@@ -553,4 +553,109 @@ do
     "and the failure reaches the status line")
 end
 
+do
+  local shared = {}
+  local eng, transport = engine({
+    ["POST /sync/modshare"] = function(req)
+      shared[#shared + 1] = Json.decode(req.body)
+      return { code = 200, body = '{"code":"K7QW3M"}' }
+    end,
+  }, {})
+  eng.modDeps = {
+    installed = function()
+      return { { id = "alpha", version = "1.0.0",
+                 enabledByVersion = { red = true } } }
+    end,
+    indexes = function() return {} end,
+    modOptions = function() return { alpha = { speed = 3 } } end,
+    setOptions = function() return true end,
+  }
+
+  eng:shareMods(false)
+  pump(eng)
+  T.eq(shared[1].manifest.mods[1].options, nil,
+    "a shared list can leave the player's options at home")
+  T.eq(eng.shareCode, "K7QW3M", "and still mints a code")
+
+  eng:shareMods(true)
+  pump(eng)
+  T.eq(shared[2].manifest.mods[1].options.speed, 3,
+    "or carry the options that go with those mods")
+  T.eq(#transport.sent, 2, "one request each")
+end
+
+do
+  local eng = engine({
+    ["GET /sync/modshare"] = { code = 200, body =
+      '{"code":"K7QW3M","manifest":{"rev":2,"indexes":[],"hasOptions":true,' ..
+      '"mods":[{"id":"alpha","version":"1.0.0","enabledFor":["red"],' ..
+      '"options":{"speed":1}}]}}' },
+  }, {})
+  local written = {}
+  eng.modDeps = {
+    installed = function()
+      return { { id = "alpha", version = "1.0.0",
+                 enabledByVersion = { red = true } } }
+    end,
+    indexes = function() return {} end,
+    findEntry = function() return nil end,
+    addIndex = function() return true end,
+    install = function() return true end,
+    setEnabled = function() return true end,
+    modOptions = function() return { alpha = { speed = 3 } } end,
+    setOptions = function(id, values) written[id] = values return true end,
+  }
+
+  eng:fetchShare("K7QW3M")
+  pump(eng)
+  T.eq(#eng.modPlan.options, 1, "a fetched list reports the options it carries")
+  T.eq(eng.modPlan.applyOptions, nil, "without deciding for the player")
+  T.check(eng.status:find("options", 1, true) ~= nil,
+    "and the status line says there is a question to answer")
+  local ask = eng:modOptionsAsk()
+  T.eq(ask and ask[1], "alpha", "the launcher can name the mods it would touch")
+
+  eng:answerModOptions(false)
+  T.eq(eng:modOptionsAsk(), nil, "answering closes the question")
+  eng:applyModPlan()
+  pump(eng)
+  T.eq(next(written), nil, "declining leaves this device's options alone")
+
+  eng:fetchShare("K7QW3M")
+  pump(eng)
+  eng:answerModOptions(true)
+  eng:applyModPlan()
+  pump(eng)
+  T.eq(written.alpha.speed, 1, "accepting writes the sharer's values")
+end
+
+do
+  local eng = engine({
+    ["GET /sync/modshare"] = { code = 200, body =
+      '{"code":"K7QW3M","manifest":{"rev":2,"indexes":[],"hasOptions":true,' ..
+      '"mods":[{"id":"alpha","version":"1.0.0","enabledFor":["red"],' ..
+      '"options":{"speed":1}}]}}' },
+  }, {})
+  local written = {}
+  eng.modDeps = {
+    installed = function()
+      return { { id = "alpha", version = "1.0.0",
+                 enabledByVersion = { red = true } } }
+    end,
+    indexes = function() return {} end,
+    findEntry = function() return nil end,
+    addIndex = function() return true end,
+    install = function() return true end,
+    setEnabled = function() return true end,
+    modOptions = function() return { alpha = { speed = 3 } } end,
+    setOptions = function(id, values) written[id] = values return true end,
+  }
+  eng:fetchShare("K7QW3M")
+  pump(eng)
+  eng:applyModPlan()
+  pump(eng)
+  T.eq(next(written), nil,
+    "an apply that never asked imports nothing: silence is not consent")
+end
+
 T.finish("sync_engine")

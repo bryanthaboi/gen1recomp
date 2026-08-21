@@ -3478,7 +3478,7 @@ end
 function RomImporter:_openSync()
   self:_syncEngine()
   self._syncModal = self._syncModal
-    or { view = "home", code1 = "", code2 = "", share = "" }
+    or { view = "home", code1 = "", code2 = "", share = "", withOptions = true }
   self._syncFocus = nil
   self:_disarmTextInput()
 end
@@ -3563,9 +3563,22 @@ function RomImporter:_syncUnlinkDevice(deviceId)
 end
 
 function RomImporter:_syncShareMods()
-  local eng = self:_syncEngine()
+  local eng, mo = self:_syncEngine(), self._syncModal
   if not eng then return false end
-  return eng:shareMods()
+  return eng:shareMods(mo and mo.withOptions ~= false)
+end
+
+function RomImporter:_syncToggleShareOptions()
+  local mo = self._syncModal
+  if not mo then return false end
+  mo.withOptions = not (mo.withOptions ~= false)
+  return mo.withOptions
+end
+
+function RomImporter:_syncAnswerModOptions(importThem)
+  local eng = self:_syncEngine()
+  if not eng or type(eng.answerModOptions) ~= "function" then return false end
+  return eng:answerModOptions(importThem)
 end
 
 function RomImporter:_syncGetShare()

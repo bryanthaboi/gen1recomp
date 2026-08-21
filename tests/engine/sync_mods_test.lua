@@ -10,9 +10,14 @@ local function row(id, version, enabled, github)
            enabledByVersion = enabled }
 end
 
-local function deps(installed, indexes, catalog)
-  local calls = { installed = {}, enabled = {}, indexes = {} }
+local function deps(installed, indexes, catalog, modOptions)
+  local calls = { installed = {}, enabled = {}, indexes = {}, options = {} }
   return calls, {
+    modOptions = function() return modOptions or {} end,
+    setOptions = function(id, values)
+      calls.options[id] = values
+      return true
+    end,
     installed = function() return installed end,
     indexes = function() return indexes or {} end,
     addIndex = function(url)
@@ -143,6 +148,125 @@ do
   T.eq(steps[1].run(), true, "steps run one at a time")
   T.eq(#calls.indexes, 1, "so the caller can draw between them")
   T.eq(#calls.installed, 0, "without the rest of the plan having run yet")
+end
+
+do
+  local live = {
+    alpha = { speed = 3, name = "ASH", on = true, bad = {} },
+    zeta = {},
+  }
+  local _, d = deps({
+    row("alpha", "2.1.0", { red = true }),
+    row("zeta", "1.0.0", { red = true }),
+  }, {}, {}, live)
+
+  local plain = SyncMods.build(d)
+  T.eq(plain.mods[1].options, nil,
+    "a mod list shares no options unless the player asks for it")
+  T.eq(plain.hasOptions, nil, "and is not flagged as carrying any")
+
+  local full = SyncMods.build(d, true)
+  T.eq(full.hasOptions, true, "opting in flags the list as carrying options")
+  T.eq(full.mods[1].options.speed, 3, "the player's own values ride along")
+  T.eq(full.mods[1].options.name, "ASH", "text values too")
+  T.eq(full.mods[1].options.on, true, "and toggles")
+  T.eq(full.mods[1].options.bad, nil,
+    "a nested table is never sent: only scalars cross the wire")
+  T.eq(full.mods[2].options, nil, "a mod with nothing set sends no bucket")
+end
+
+do
+  local wide = {}
+  for i = 1, SyncMods.MAX_OPTION_KEYS + 20 do wide["k" .. i] = i end
+  wide.huge = string.rep("x", SyncMods.MAX_OPTION_TEXT + 100)
+  local _, d = deps({ row("alpha", "1.0.0", { red = true }) }, {}, {},
+    { alpha = wide })
+  local manifest = SyncMods.build(d, true)
+  local n = 0
+  for _ in pairs(manifest.mods[1].options) do n = n + 1 end
+  T.eq(n, SyncMods.MAX_OPTION_KEYS, "an option bucket is capped")
+  local kept = manifest.mods[1].options.huge
+  T.check(kept == nil or #kept == SyncMods.MAX_OPTION_TEXT,
+    "and a long string is clamped when it makes the cut")
+end
+
+do
+  local manifest = { rev = 2, indexes = {}, hasOptions = true, mods = {
+    { id = "alpha", version = "2.1.0", enabledFor = { "red" },
+      options = { speed = 1, name = "MISTY" } },
+    { id = "beta", version = "1.0.0", enabledFor = { "red" },
+      options = { theme = "dark" } },
+    { id = "same", version = "1.0.0", enabledFor = { "red" },
+      options = { pitch = 5 } },
+    { id = "ghost", version = "0.1.0", enabledFor = { "red" },
+      options = { anything = 1 } },
+  } }
+  local calls, d = deps(
+    { row("alpha", "2.1.0", { red = true }), row("same", "1.0.0", { red = true }) },
+    {}, { beta = { id = "beta" } },
+    { alpha = { speed = 3, name = "ASH" }, same = { pitch = 5 } })
+
+  local plan = SyncMods.plan(manifest, d)
+  T.eq(#plan.options, 2, "only mods this device can actually run are listed")
+  T.eq(plan.options[1].id, "alpha", "the installed one whose values differ")
+  T.eq(plan.options[2].id, "beta", "and the one this plan installs")
+  for _, row in ipairs(plan.options) do
+    T.check(row.id ~= "same", "a mod already set that way is not busywork")
+    T.check(row.id ~= "ghost", "and a mod that cannot be installed is skipped")
+  end
+  T.eq(plan.applyOptions, nil, "nobody's options are imported unasked")
+  T.eq(SyncMods.planHasOptions(plan), true, "the plan reports it has some")
+  T.eq(SyncMods.optionsAnswered(plan), false, "and that the question is open")
+
+  local steps = SyncMods.steps(plan, d)
+  local labels = 0
+  for _, step in ipairs(steps) do
+    if step.label == "alpha" then labels = labels + 1 end
+  end
+  T.eq(labels, 0, "an unanswered plan writes no options")
+
+  SyncMods.answerOptions(plan, false)
+  T.eq(SyncMods.optionsAnswered(plan), true, "declining answers the question")
+  SyncMods.apply(plan, nil, d)
+  T.eq(next(calls.options), nil, "and keeps the options this device already had")
+
+  SyncMods.answerOptions(plan, true)
+  T.eq(plan.applyOptions, true, "accepting arms the option steps")
+  SyncMods.apply(plan, nil, d)
+  T.eq(calls.options.alpha.speed, 1, "the sharer's values are written")
+  T.eq(calls.options.alpha.name, "MISTY", "every key they set")
+  T.eq(calls.options.beta.theme, "dark", "including a mod installed by the plan")
+end
+
+do
+  local manifest = { rev = 2, indexes = {}, mods = {
+    { id = "alpha", version = "1.0.0", enabledFor = { "red" },
+      options = { speed = 1 } } } }
+  local calls, d = deps({ row("alpha", "1.0.0", { red = true }) }, {}, {},
+    { alpha = { speed = 3 } })
+  local plan = SyncMods.plan(manifest, d)
+  T.eq(SyncMods.planEmpty(plan), true,
+    "a list that only differs in options plans no mod work")
+  SyncMods.answerOptions(plan, true)
+  T.eq(SyncMods.planEmpty(plan), false,
+    "until the options are accepted, and then there is work to do")
+  d.install = function() return nil, "download failed" end
+  SyncMods.apply(plan, nil, d)
+  T.eq(calls.options.alpha.speed, 1, "which is just the option write")
+end
+
+do
+  local manifest = { rev = 2, indexes = {}, mods = {
+    { id = "beta", version = "1.0.0", enabledFor = { "red" },
+      options = { speed = 1 } } } }
+  local calls, d = deps({}, {}, { beta = { id = "beta" } })
+  d.install = function() return nil, "download failed" end
+  local plan = SyncMods.plan(manifest, d)
+  SyncMods.answerOptions(plan, true)
+  local ok = SyncMods.apply(plan, nil, d)
+  T.eq(ok, false, "a failed install still fails the apply")
+  T.eq(next(calls.options), nil,
+    "and the options of a mod that never installed are not written")
 end
 
 T.finish("sync_mods")

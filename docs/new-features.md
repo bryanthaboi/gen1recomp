@@ -14,6 +14,7 @@ Features intentionally added beyond the original Pokémon Red, Blue, and Yellow 
 * **Screen position setting** (center, upper, top) shared across all games, for clamp-on controllers that cover the lower screen
 * **Touch skins** in RetroArch overlay format and Delta `.deltaskin` (including PDF-wrapped bezel art), with per-button press states and Super Game Boy borders
 * **Pokédex diploma and printer image exports**
+* **Shareable mod lists** over save sync, optionally carrying the options set for those mods, which the receiving device is asked about before anything is changed
 
 ## Gen 2 Specifics
 
