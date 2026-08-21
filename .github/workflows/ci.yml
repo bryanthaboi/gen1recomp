@@ -382,24 +382,26 @@ jobs:
       # the fingerprint parity gates (gate_fingerprint / gate_meta_coverage)
       # run in the headless job via run_engine; this job only guards the PNGs
 
-  # Only the differ is under test here, and the job is named for that.  The
-  # capture half of the golden pipeline does not exist: a POKEPORT_DRIVER
-  # chunk runs after main.lua has already booted the game, and
-  # src/core/Data.lua has no POKEPORT_DATA_DIR branch, so no LOVE process
-  # can be pointed at tests/fixture_data.  There is deliberately no step
-  # here that runs scripts/test.sh with WITH_SHOTS: it would have nothing
-  # to capture and nothing to diff, and a job that green-lights on skipped
-  # work is worse than an absent one.
   shot-differ:
-    name: screenshot differ (capture not yet wired)
+    name: real LOVE fixture boot + screenshot differ
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: install LOVE and virtual display
+        run: sudo apt-get update && sudo apt-get install -y love xvfb
       - run: python3 -m pip install --upgrade pillow
+
+      # This crosses main.lua, the ROM-importer routing decision, Data:load,
+      # Game:load, the fixture overworld, the renderer, and LOVE's PNG encoder.
+      # It is intentionally a separate process from every Lua harness.
+      - name: boot ROM-free fixture in real LOVE
+        run: bash tests/integration/fixture_love_boot.sh
+
+      - name: run real LOVE compute and HTTP workers
+        run: bash tests/integration/fixture_love_workers.sh
 
       # 21-testing-and-ci §"Testing & acceptance criteria": compare_shots
       # flags a deliberately corrupted golden and passes the clean one.
-      # That is the half of the pipeline this repo can actually prove.
       - name: compare_shots self-test
         run: |
           set -e

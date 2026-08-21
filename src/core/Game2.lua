@@ -5,7 +5,7 @@
 -- shape and screen registry -- so main.lua's bootGame picks this owner when
 -- GameVersion.generation() == 2, and the two never branch into each other.
 --
--- Boot: copyright → GameFreak Presents → GS intro stub → title
+-- Boot: copyright → GameFreak Presents → GS intro → title
 -- (tilemap + Ho-Oh flap / clouds / trails) → Oak speech (Marill + shrink)
 -- → name pick → New Bark Town via src/world/gen2/World.lua.
 --

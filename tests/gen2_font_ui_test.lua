@@ -187,10 +187,12 @@ else
   -- `jr LoadFrame` at the end of _LoadFontsBattleExtra: $79-$7e are the
   -- textbox frame on a battle-sheet screen too, so a box drawn there is the
   -- same box as everywhere else.
+  local frameSheet = fontDef.imageFrames and
+    fontDef.imageFrames:match("[^/]+$") or "font_extra.png"
   for code, name in pairs({ [0x79] = "tl", [0x7a] = "h", [0x7b] = "tr",
       [0x7c] = "v", [0x7d] = "bl", [0x7e] = "br" }) do
-    eq(sheetOf(code), "font_extra.png",
-      ("LoadFrame keeps the %s border glyph off the battle sheet"):format(name))
+    eq(sheetOf(code), frameSheet,
+      ("LoadFrame restores the %s border glyph from the selected frame"):format(name))
   end
   Font.useBattleExtra(false)
   love.graphics.draw = realDraw
@@ -228,6 +230,26 @@ else
   eq(id[2], 0x74, "No is $74")
 
   if haveData then Font.load(Data) end
+end
+
+-- The screen assertions below care about the active VRAM-slot selection, not
+-- the extracted pixels.  When this suite is run by itself there may be no
+-- Gold cache (and, unlike the old shared-process runner, no earlier suite has
+-- happened to initialize Font).  Load tiny stand-in pages so those assertions
+-- exercise the same state transition in complete isolation.
+if not fontDef then
+  local Assets = require("src.render.Assets")
+  local realImage = Assets.image
+  Assets.image = function(path)
+    return { path = path, getDimensions = function() return 128, 16 end }
+  end
+  Font.load({ font = {
+    image = "font.png",
+    imageExtra = "font_extra.png",
+    imageBattleExtra = "font_battle_extra.png",
+    charmap = {},
+  } })
+  Assets.image = realImage
 end
 
 -- ------------------------------------------------------- naming keyboard

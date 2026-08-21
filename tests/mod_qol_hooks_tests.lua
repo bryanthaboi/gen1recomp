@@ -97,6 +97,7 @@ do
   check(list.keyRepeat == true, "ui.list_menu can enable keyRepeat")
   list.index = 1
   -- simulate wrap: Up on first item → last
+  list.inputHold = 0 -- opening cadence is covered by timing_parity.lua
   game.input.wasPressed = function(_, b) return b == "up" end
   list:update(0)
   check(list.index == 3, "wrap Up on first item lands on last")

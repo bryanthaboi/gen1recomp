@@ -407,6 +407,9 @@ do
   -- B can't back out -- and the '▶' hovers POKé BALL for 80 frames
   local enemyHP = demo.enemy.mon.hp
   pressed.b = true
+  -- DisplayListMenuID pays its opening + redraw delay before the scripted
+  -- old-man cursor starts its 80-frame hover.  B remains ignored throughout.
+  while (bag.inputHold or 0) > 0 do bag:update(1 / 60) end
   local hover = 0
   for _ = 1, 80 do
     if stack:top() ~= bag then break end

@@ -103,7 +103,8 @@ end
 -- glyphs are shade 3 on shade 0); what a Lua suite can read without a PNG
 -- decoder is the header, which is what pins 3x9 tiles here.
 do
-  local png = readFile("../pokegold/gfx/font/unown_font.png")
+  local root = os.getenv("POKEGOLD") or "../pokegold"
+  local png = readFile(root .. "/gfx/font/unown_font.png")
   if not png then
     check(true, "no ../pokegold: the font's shape is not pinned (SKIP)")
   else

@@ -9,6 +9,7 @@ return {
   FIX_OUT = {
     id = "FIX_OUT",
     image = "tests/fixture_data/assets/fix_out.png",
+    tilesPerRow = 16,
     blocks = { row(0), row(1), row(2), row(3) },
     walkable = { [0] = true, [1] = true, [2] = true },
     counterTiles = {},

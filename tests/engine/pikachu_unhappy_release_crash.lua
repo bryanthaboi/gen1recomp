@@ -49,6 +49,12 @@ end
 
 local pressed = {}
 local function press(btn)
+  local top = stack:top()
+  while top and (top.inputHold or 0) > 0 do
+    pressed = {}
+    stack:update(1 / 60)
+    top = stack:top()
+  end
   pressed = { [btn] = true }
   stack:update(1 / 60)
   pressed = {}

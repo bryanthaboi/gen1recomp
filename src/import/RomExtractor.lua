@@ -1461,6 +1461,12 @@ function RomExtractor:decodeTextCommands(symbol, substitutions)
         end
         out[#out + 1] = self:textGlyph(value)
       end
+    elseif command == 0x0a then
+      out[#out + 1] = "{PAUSE}"
+    elseif command == 0x0c then
+      local count = self.rom:byte(symbol.bank, address)
+      address = address + 1
+      out[#out + 1] = ("{DOTS:%d}"):format(count)
     elseif command == 1 or command == 2 or command == 9 then
       local expected = substitutions[pending]
       assert(expected, symbol.name .. ": missing dynamic text substitution")

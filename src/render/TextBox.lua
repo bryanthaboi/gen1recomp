@@ -95,7 +95,13 @@ function TextBox.new(game, text, onDone, opts)
     -- bottom row.  Taking the first two would walk the text backwards the
     -- instant the prompt appears.
     for index = math.max(1, #page - 1), #page do
-      self.shown[#self.shown + 1] = Font.encode(page[index])
+      local visible = {}
+      for _, code in ipairs(Font.encode(page[index])) do
+        if code ~= Font.TEXT_PAUSE_CODE and code ~= Font.TEXT_DOT_WAIT_CODE then
+          visible[#visible + 1] = code
+        end
+      end
+      self.shown[#self.shown + 1] = visible
     end
     self.lineIndex = #page
     self.codes = self.shown[#self.shown] or {}
@@ -155,6 +161,15 @@ TextBox.TOKENS = {
   -- getitemname fill.  An unset buffer prints nothing, the same as the cart's
   -- freshly `@`-filled buffer.
   STRBUF = function(game) return game.stringBuffer end,
+  -- Extracted TX_PAUSE / TX_DOTS commands are kept in strings as tokens so
+  -- they survive Lua serialization and mod overlays.  Substitution turns
+  -- them into zero-width Font sentinels; update() consumes those sentinels at
+  -- the exact point in the typewriter stream where the cartridge command ran.
+  PAUSE = function() return "\30" end,
+  DOTS = function(_, count)
+    local n = math.max(0, math.min(255, tonumber(count) or 0))
+    return string.rep("…\31", n)
+  end,
   RAM = function(game, arg)
     if arg == "wStringBuffer" then return game.stringBuffer end
     if arg == "wNameBuffer" then return game.stringBuffer end
@@ -265,7 +280,9 @@ function TextBox:visibleText()
   if not page then return nil end
   local out, count = {}, #(self.shown or {})
   for i = math.max(1, self.lineIndex - count + 1), self.lineIndex do
-    if page[i] ~= nil then out[#out + 1] = page[i] end
+    if page[i] ~= nil then
+      out[#out + 1] = page[i]:gsub("[\30\31]", "")
+    end
   end
   return #out > 0 and out or nil
 end
@@ -422,8 +439,26 @@ function TextBox:update(dt)
     self.charTimer = self.charTimer - delay
     if self.charIndex < #self.codes then
       self.charIndex = self.charIndex + 1
-      local line = self.shown[#self.shown]
-      line[#line + 1] = self.codes[self.charIndex]
+      local code = self.codes[self.charIndex]
+      if code == Font.TEXT_PAUSE_CODE then
+        -- TextCommand_PAUSE polls the held buttons before DelayFrames 30.
+        if not (input:isDown("a") or input:isDown("b")) then
+          self.holdFrames = Timing.TEXT_PAUSE
+        end
+        break
+      elseif code == Font.TEXT_DOT_WAIT_CODE then
+        -- TextCommand_DOTS writes one ellipsis, then polls the held buttons
+        -- before each ten-frame delay.  The token expands to `… sentinel` for
+        -- every requested dot, so the visible glyph was appended immediately
+        -- before this event.
+        if not (input:isDown("a") or input:isDown("b")) then
+          self.holdFrames = Timing.TEXT_DOT
+        end
+        break
+      else
+        local line = self.shown[#self.shown]
+        line[#line + 1] = code
+      end
     else
       -- line finished
       local page = self.pages[self.pageIndex]

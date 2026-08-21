@@ -606,7 +606,13 @@ check(found49 and found49.moves[1].dir == "left" and found49.moves[1].count == 2
 local cries = Data.audio and Data.audio.cries or {}
 local cryCount = 0
 for _ in pairs(cries) do cryCount = cryCount + 1 end
-check(cryCount >= 150, "cries rendered for the full dex (" .. cryCount .. ")")
+-- tools/build_data.py intentionally produces the table/graphics dataset but
+-- not PCM audio.  A full in-game ROM import does include audio; keep the
+-- strong assertion for that path without making the documented Python setup
+-- fail solely because the optional module is absent.
+if Data.audio then
+  check(cryCount >= 150, "cries rendered for the full dex (" .. cryCount .. ")")
+end
 
 -- ---------------------------------------------------------------- slot machine paylines
 local SlotMachine = require("src.ui.SlotMachine")
@@ -1338,8 +1344,8 @@ do
   Game.save.pokedex.owned.EKANS = nil
   local cb = BattleState.newWild(Game, "EKANS", 5)
   cb:storeCaughtMon()
-  check(hasText(cb, "New POKéDEX data\nwill be added for\nEKANS!"),
-        "_ItemUseBallText06 on a first catch")
+  check(hasText(cb, "New POKéDEX data\nwill be added for\vEKANS!"),
+        "_ItemUseBallText06 keeps the cartridge cont before the caught mon")
   check(Game.save.pokedex.owned.EKANS == true, "species registered as owned")
   eq(cb.result, "caught", "catch resolves the battle")
   eq(#Game.save.party, 2, "caught mon joined the party")
@@ -1348,8 +1354,8 @@ do
   for _ = 1, 6 do table.insert(Game.save.party, Pokemon.new(Data, "RATTATA", 5)) end
   local cb2 = BattleState.newWild(Game, "EKANS", 5)
   cb2:storeCaughtMon()
-  check(hasText(cb2, "EKANS was\ntransferred to\nsomeone's PC!"),
-        "_ItemUseBallText08 before meeting Bill")
+  check(hasText(cb2, "EKANS was\ntransferred to\vsomeone's PC!"),
+        "_ItemUseBallText08 keeps the cartridge cont before someone's PC")
   check(not hasText(cb2, "New POKéDEX data"),
         "no dex page for an already-owned species")
   -- #172: SendNewMonToBox still runs AskName before the PC text
@@ -1372,8 +1378,8 @@ do
   Game.save.flags.EVENT_MET_BILL = true
   local cb3 = BattleState.newWild(Game, "EKANS", 5)
   cb3:storeCaughtMon()
-  check(hasText(cb3, "EKANS was\ntransferred to\nBILL's PC!"),
-        "_ItemUseBallText07 after meeting Bill")
+  check(hasText(cb3, "EKANS was\ntransferred to\vBILL's PC!"),
+        "_ItemUseBallText07 keeps the cartridge cont before BILL's PC")
   Game.save.flags.EVENT_MET_BILL = nil
 
   -- trainer defeat wording (_TrainerDefeatedText)
@@ -2304,6 +2310,10 @@ do
   local shop = ShopMenu.new(Game, { "POTION" }, function() quitCalled = true end)
   StateStack:push(shop)
   local function press(btn)
+    local top = StateStack:top()
+    -- This block verifies mart stack/callback behavior.  ListMenu's opening
+    -- delay has its own timing coverage and must elapse before B is accepted.
+    if top and top.inputHold then top.inputHold = 0 end
     Input.pressed = { [btn] = true }
     StateStack:update(1 / 60)
     Input.pressed = {}
@@ -3356,11 +3366,9 @@ end
 -- editing a list and forgetting to meant the suite silently never ran.
 -- They are globbed now (21-testing-and-ci §CI).
 --
--- Order still matters: these suites share one process and one Data, and
--- the sequence they were chained in is the sequence they are known to
--- pass in.  So the known order runs first and anything the glob newly
--- turned up runs after it, alphabetically -- a new suite runs without a
--- code change, and no existing suite moves.
+-- Keep the historical order for stable logs, then append anything newly
+-- discovered alphabetically.  Each path runs in its own process below, so
+-- correctness no longer depends on this order.
 local function orderedGlob(pattern, preferred, skip)
   local seen, ordered = {}, {}
   for _, path in ipairs(preferred) do
@@ -3387,62 +3395,17 @@ local function orderedGlob(pattern, preferred, skip)
   return ordered
 end
 
--- Put the `love` stub back between suites.
---
--- Every one of these files fakes the parts of LOVE it needs, and several
--- replace a whole subtable (`love.filesystem = {...}`) or a single probe
--- (`love.system.getOS = function() return "Android" end`) and never put it
--- back.  Nothing notices until a LATER file reads the leftover, and then the
--- failure lands nowhere near its cause:
---
---   * the Android ROM-importer suites pin getOS to "Android", so
---     GBCFX.isSupported() answers false for the rest of the run and
---     parity_gbcfx fails "setLevel stores an in-range level (got 0, want 2)"
---     -- while passing perfectly on its own;
---   * suites that swap in a minimal love.filesystem drop
---     getDirectoryItems, so three rom_importer suites then die on
---     "attempt to call field 'getDirectoryItems' (a nil value)".
---
--- Snapshotting one level deep is enough: the leaks are whole-subtable
--- assignments and single-function overwrites, both of which this restores.
-local function snapshotLove()
-  if type(love) ~= "table" then return nil end
-  local snap = { root = {}, subs = {} }
-  for k, v in pairs(love) do
-    snap.root[k] = v
-    if type(v) == "table" then
-      local sub = {}
-      for k2, v2 in pairs(v) do sub[k2] = v2 end
-      snap.subs[k] = sub
-    end
-  end
-  return snap
-end
-
-local function restoreLove(snap)
-  if not snap or type(love) ~= "table" then return end
-  for k in pairs(love) do
-    if snap.root[k] == nil then love[k] = nil end
-  end
-  for k, v in pairs(snap.root) do
-    love[k] = v
-    local sub = snap.subs[k]
-    if sub and type(v) == "table" then
-      for k2 in pairs(v) do
-        if sub[k2] == nil then v[k2] = nil end
-      end
-      for k2, v2 in pairs(sub) do v[k2] = v2 end
-    end
-  end
-end
-
 local function runSuites(paths)
+  local lua = (arg and arg[-1]) or "luajit"
   for _, path in ipairs(paths) do
     local label = path:match("([^/]+)%.lua$") or path
-    local snap = snapshotLove()
-    local ok, err = pcall(dofile, path)
-    restoreLove(snap)
-    check(ok, label .. (ok and " suite" or (": " .. tostring(err))))
+    -- Runtime buses, generated Data, screen registries, and several UI
+    -- modules are process singletons.  A shallow love-table restore cannot
+    -- undo their mutations, so a suite that is green on its own could fail
+    -- only because an earlier suite ran first.  Match tier_runner and give
+    -- every self-contained suite the fresh process its contract expects.
+    local status = os.execute(("%q %q"):format(lua, path))
+    check(status == 0 or status == true, label .. " suite")
   end
 end
 

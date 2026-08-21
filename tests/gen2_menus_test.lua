@@ -357,8 +357,9 @@ local options = OptionsMenu.new(optionsGame, {
   options = Save.defaultOptions(),
 })
 -- The cart's seven rows, then the port's: CONTROLS, audio, speed, display,
--- video mode, the mobile-gated touch three (buildRows), MAX FPS and CANCEL.
-check("twenty-three rows", #OptionsMenu.ROWS, 23)
+-- video mode and screen position, the mobile-gated touch three (buildRows),
+-- MAX FPS and CANCEL.
+check("twenty-four rows", #OptionsMenu.ROWS, 24)
 check("the cart's rows come first", OptionsMenu.ROWS[7].key, "frame")
 check("then the rebind screen", OptionsMenu.ROWS[8].id, "controls")
 check("then the port's audio group", OptionsMenu.ROWS[9].key, "musicVol")
@@ -872,7 +873,9 @@ check("and TILT follows VOID FILL", OptionsMenu.ROWS[zoomIndex + 2].label,
   "TILT")
 check("VIDEO MODE follows GBC FX", OptionsMenu.ROWS[gbcfxIndex + 1].label,
   "VIDEO MODE")
-check("and TOUCH PAD follows it", OptionsMenu.ROWS[gbcfxIndex + 2].label,
+check("and SCREEN POS follows it", OptionsMenu.ROWS[gbcfxIndex + 2].label,
+  "SCREEN POS")
+check("and TOUCH PAD follows that", OptionsMenu.ROWS[gbcfxIndex + 3].label,
   "TOUCH PAD")
 
 local videoRow = select(2, rowNamed("VIDEO MODE"))

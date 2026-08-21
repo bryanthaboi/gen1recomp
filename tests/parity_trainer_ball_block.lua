@@ -112,8 +112,10 @@ do
   check(Data.battle_anims and Data.battle_anims.moveAnims
         and Data.battle_anims.moveAnims.TOSS_ANIM ~= nil,
         "TOSS_ANIM has an extracted animation program")
-  check(Data.audio and Data.audio.sfx and Data.audio.sfx.Faint_Thud ~= nil,
-        "SFX_FAINT_THUD is in the generated audio")
+  if Data.audio then
+    check(Data.audio.sfx and Data.audio.sfx.Faint_Thud ~= nil,
+          "SFX_FAINT_THUD is in the generated audio")
+  end
 end
 
 do

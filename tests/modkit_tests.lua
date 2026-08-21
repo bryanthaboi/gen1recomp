@@ -71,7 +71,11 @@ end
 
 -- ------- carried handoff: the data-driven move repair floor
 
-check(require("src.core.Data").constants.fallbackMove == "TACKLE",
+local CoreData = require("src.core.Data")
+CoreData.constants, CoreData.field = nil, nil
+CoreData.maps, CoreData.pokemon = nil, nil
+CoreData:seedDefaults()
+check(CoreData.constants.fallbackMove == "TACKLE",
   "CONSTANT_DEFAULTS seeds fallbackMove = TACKLE")
 
 -- ------- fixture dataset: complete, ROM-free, loader-ready

@@ -95,7 +95,7 @@ do
 end
 
 -- ---- the decomp -----------------------------------------------------------
-local pokegold = "../pokegold"
+local pokegold = os.getenv("POKEGOLD") or "../pokegold"
 local function readFile(path)
   local f = io.open(path, "rb")
   if not f then return nil end

@@ -22,9 +22,15 @@ local CallAsm = require("src.script.gen2.CallAsm")
 
 -- ---- the site table -------------------------------------------------------
 do
-  local sites = 0
-  for _ in pairs(CallAsm.SITES) do sites = sites + 1 end
-  eq(sites, 47, "every callasm / memcall / memcallasm / memjump target in the cart")
+  local sites, routines = 0, {}
+  for _, name in pairs(CallAsm.SITES) do
+    sites = sites + 1
+    routines[name] = true
+  end
+  local routineCount = 0
+  for _ in pairs(routines) do routineCount = routineCount + 1 end
+  eq(sites, 51, "every Gold/Silver callasm target address is registered")
+  eq(routineCount, 47, "the revision aliases still name exactly 47 routines")
 
   local unmapped = {}
   for key, name in pairs(CallAsm.SITES) do
@@ -47,6 +53,8 @@ do
   eq(CallAsm.SITES["11:4055"], "CheckFruitTree", "11:4055 is CheckFruitTree")
   eq(CallAsm.SITES["04:68e0"], "HalveMoney", "04:68e0 is HalveMoney")
   eq(CallAsm.SITES["03:4d7b"], "TryStrengthOW", "03:4d7b is TryStrengthOW")
+  eq(CallAsm.SITES["03:4d79"], "TryStrengthOW",
+    "Silver's relocated 03:4d79 is also TryStrengthOW")
   eq(CallAsm.SITES["2e:6378"], "TreeMonEncounter", "2e:6378 is TreeMonEncounter")
   eq(CallAsm.SITES["14:4786"], "CheckCanUseSquirtbottle",
     "14:4786 is _Squirtbottle.CheckCanUseSquirtbottle")
@@ -382,11 +390,8 @@ end
 --   03:4f35 RockSmashScript        -> 2e:63a1 RockMonEncounter
 --   03:4f60 AskRockSmashScript     -> 03:4f7f HasRockSmash
 local EXPECTED_RESOLVED = {
-  "03:4d30 03:4d15 -> SetStrengthFlag",
-  "03:4d4e 03:4d7b -> TryStrengthOW",
-  "03:4f35 03:474b -> GetPartyNickname",
-  "03:4f35 2e:63a1 -> RockMonEncounter",
-  "03:4f60 03:4f7f -> HasRockSmash",
+  "GetPartyNickname", "HasRockSmash", "RockMonEncounter",
+  "SetStrengthFlag", "TryStrengthOW",
 }
 local ASM_OPS = {
   callasm = true, memcall = true, memcallasm = true, memjump = true,
@@ -423,8 +428,7 @@ for key, list in pairs(scripts) do
         end
         local name = CallAsm.nameFor(cmd.label, bank, addr)
         if name then
-          resolved[#resolved + 1] =
-            ("%s %s -> %s"):format(key, CallAsm.key(bank, addr), name)
+          resolved[#resolved + 1] = name
         end
       end
     end
@@ -437,9 +441,8 @@ check(rows >= 0,
 -- `pairs` over the script table has no order, so sort before comparing.
 table.sort(resolved)
 eq(table.concat(resolved, ", "), table.concat(EXPECTED_RESOLVED, ", "),
-  "and exactly the five field-move sites resolve")
-for _, line in ipairs(resolved) do
-  local name = line:match("-> (%S+)$")
+  "and exactly the five edition-specific field-move sites resolve")
+for _, name in ipairs(resolved) do
   check(CallAsm.HANDLERS[name] ~= nil or CallAsm.STUBS[name] ~= nil,
     name .. " is ported or stubbed, so the site answers something deliberate")
 end

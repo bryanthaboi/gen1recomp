@@ -12,7 +12,7 @@
 #   scripts/test.sh --quick         skip the slow content tier
 #   scripts/test.sh --bless         re-pin the fingerprint goldens
 #   WITH_SHOTS=1 scripts/test.sh    also capture and diff golden shots
-#                                   (fails today -- see the T5 block below)
+#                                   (requires love and a display)
 #
 # LUA overrides the interpreter (luajit here; CI installs lua5.4 too, but
 # the engine targets LuaJIT/5.1 semantics so luajit is the default).
@@ -78,9 +78,13 @@ run_tier "T0 NX Yellow/Blue boot (dynamic paths)" "$LUA" tests/engine/nx_yellow_
 run_tier "T0 NX Gold cache load (maps.lua prefix)" "$LUA" tests/engine/cache_fs_gold_nx_load_test.lua
 run_tier "T0 touch-controls pad cursor" "$LUA" tests/engine/touch_controls_pad_cursor_test.lua
 run_tier "T1/T2 engine invariants + parity gates" "$LUA" tests/run_engine.lua
+run_tier "T2 Gen 2 fixture suites" "$LUA" tests/run_gen2.lua
+run_tier "T2 standalone regressions" "$LUA" tests/run_standalone.lua
 run_tier "T4 mod-SDK" "$LUA" tests/run_modkit.lua
 run_tier "T4 title checkpoint cold restart" \
   bash tests/integration/title_checkpoint_cold_start.sh
+run_tier "T4 save backup cold restart" \
+  bash tests/integration/save_restart_recovery.sh
 
 # The modded-link desync suite (symmetric mod, handshake fail-closed,
 # extra-bag round trip) is ROM-free and runs inside the T4 tier above, as
@@ -161,44 +165,13 @@ fi
 # ------- golden screenshots: needs love + a display
 
 if [ "$SHOTS" = "1" ]; then
-  SHOT_DIR=${SHOT_DIR:-/tmp/pokeport-shots}
-  export SHOT_DIR
-  mkdir -p "$SHOT_DIR"
-  SHOT_DRIVER=tests/drivers/shots_fixture.lua
-
-  # The fixture goldens are not capturable yet.  A driver only ever runs
-  # after main.lua's bootGame(), so it cannot redirect Data:load(), and
-  # src/core/Data.lua has no POKEPORT_DATA_DIR branch -- 21-testing-and-ci
-  # §"Engine changes" specifies one, but it is not implemented, so a LOVE
-  # process has no way to boot tests/fixture_data.  On a ROM-less checkout
-  # main.lua does not even reach the game: RomImporter.isReady() is false
-  # and it opens the importer instead.
-  #
-  # WITH_SHOTS is opt-in, so asking for a tier that cannot run is an error,
-  # not a skip.  Reporting "pass" here is what made the whole pipeline look
-  # delivered while never diffing a single pixel.
-  if [ ! -f "$SHOT_DRIVER" ]; then
-    echo ""
-    echo "-- T5 shots: NOT WIRED ($SHOT_DRIVER does not exist)."
-    echo "   Fixture capture needs the POKEPORT_DATA_DIR override in"
-    echo "   src/core/Data.lua so LOVE can boot tests/fixture_data."
-    FAILED+=("T5 shots (requested but not wired)")
-  elif ! command -v love >/dev/null 2>&1; then
+  if ! command -v love >/dev/null 2>&1; then
     echo ""
     echo "-- T5 shots: love is not on PATH but WITH_SHOTS was requested"
     FAILED+=("T5 shots (love missing)")
   else
-    RUNNER="love ."
-    command -v xvfb-run >/dev/null 2>&1 && RUNNER="xvfb-run -a love ."
-    run_tier "T5 shot capture" \
-      env POKEPORT_IDENTITY="$SANDBOX_IDENTITY" POKEPORT_DRIVER="$SHOT_DRIVER" $RUNNER
-    if [ "$BLESS" = "1" ]; then
-      run_tier "T5 shot bless" \
-        python3 tools/compare_shots.py tests/goldens/shots "$SHOT_DIR" --bless
-    else
-      run_tier "T5 shot diff" \
-        python3 tools/compare_shots.py tests/goldens/shots "$SHOT_DIR"
-    fi
+    run_tier "T5 fixture LOVE boot + capture" \
+      env BLESS_GOLDENS="$BLESS" bash tests/integration/fixture_love_boot.sh
   fi
 fi
 

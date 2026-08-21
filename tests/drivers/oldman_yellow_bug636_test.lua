@@ -166,8 +166,16 @@ return function(game)
   -- its sounds play at their own speed.
   local sawMiss, sawCaught, shot = false, false, false
   if battle then
+    local function battleIsStacked()
+      for _, state in ipairs(game.stack.states or {}) do
+        if state == battle then return true end
+      end
+      return false
+    end
     for _ = 1, 3000 do
-      if game.stack:top() ~= battle then break end
+      -- The scripted one-item bag is briefly pushed above the battle.  That
+      -- is part of the cartridge sequence, not the end of the demo.
+      if not battleIsStacked() then break end
       local cur = battle.current
       local line = cur and cur.text
       if type(line) == "string" then

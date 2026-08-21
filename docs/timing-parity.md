@@ -89,8 +89,8 @@ gaps around it are missing.
 | `<CONT>` line scroll (after the A press) | `ProtectedDelay3` 3 + 2x `ScrollTextUpOneLine` 5 = **13** | `home/text.asm:262-277`, `:283-307` | 13 | `src/render/TextBox.lua` | **fixed** |
 | `<PARA>` paragraph break | `ProtectedDelay3` 3 + clear + **20** = **23** | `home/text.asm:230-243` | 23 | `src/render/TextBox.lua` | **fixed** |
 | Page break (`PageChar`) | 3 + **20** = **23** | `home/text.asm:245-260` | 23 | `src/render/TextBox.lua` | **fixed** |
-| `TextCommand_PAUSE` | **30** | `home/text.asm:500` | - | - | unmeasured |
-| `TextCommand_DOTS` | **10** per dot | `home/text.asm:576` | - | - | unmeasured |
+| `TextCommand_PAUSE` | **30** | `home/text.asm:500` | 30, skipped while A/B is held | both ROM extractors + text renderers | **fixed** |
+| `TextCommand_DOTS` | **10** per dot | `home/text.asm:576` | 10 per ellipsis, skipped while A/B is held | both ROM extractors + text renderers | **fixed** |
 
 The three ProtectedDelay3 frames are a *pre*-input hold: the arrow is already
 up and the button is ignored, because `ManualTextScroll` only starts watching
@@ -126,8 +126,8 @@ scroll blocks for 10 frames. The port's `scrollPx` slide at
 | Sequence | Hardware | Source | Port | Port source | Delta |
 | --- | --- | --- | --- | --- | --- |
 | Yes/no answer (either option) | **15** | `engine/menus/text_box.asm:322-323`, `:333-334` | 15 | `src/ui/ChoiceBox.lua` | **fixed** |
-| List menu open (bag, PC, party-as-list) | **10** | `home/list_menu.asm:55-56` | 0 | `src/ui/ListMenu.lua` | **-100%, open** |
-| List menu redraw per input | `Delay3` = **3** | `home/list_menu.asm:64` | 0 | - | **-100%, open** |
+| List menu open (bag, PC, party-as-list) | **10**, then the loop's initial **3** | `home/list_menu.asm:55-64` | 10 + 3 before first input | `src/ui/ListMenu.lua` | **fixed** |
+| List menu redraw per navigation | `Delay3` = **3** | `home/list_menu.asm:64` | 3 | `src/ui/ListMenu.lua` | **fixed** |
 | Field move from the party menu | `Delay3` = **3** | `engine/menus/start_sub_menus.asm:4,27,175-203` | 7 (white flash) | `src/render/Transition.lua:8` | see note |
 | Teleport from the party menu | **60** + `Delay3` | `engine/menus/start_sub_menus.asm:224-225` | - | - | unmeasured |
 
@@ -371,12 +371,8 @@ Hardware skips the fade on a dark map (`wMapPalOffset` nonzero takes the
 no map needs FLASH to be lit - so that branch is unreachable here;
 `battleReturn` accepts `opts.instant` for it if that ever changes.
 
-Still open, hardware number confirmed but not yet wired:
-
-- List menu open (10) and per-input redraw (`Delay3`).
-- Every battle-table row marked "unmeasured" above - the status/miss beat (30)
-  is the highest-exposure of them, since it is paid on every status move and
-  every miss.
+Still open: every table row explicitly marked "unmeasured" above has a
+confirmed hardware number but has not yet had its complete port path traced.
 
 Entries marked "unmeasured" have confirmed hardware numbers but the port side
 has not been traced; they are remaining work, not known-good.

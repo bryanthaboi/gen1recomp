@@ -29,6 +29,15 @@ local BattleState = require("src.battle.BattleState")
 local OW          = require("src.world.OverworldController")
 
 local MAP = "ROUTE_1"
+local savedAudio = Data.audio
+-- The Python developer extractor omits optional PCM data.  This suite tests
+-- battle/map music routing, so provide stable ids in that configuration;
+-- full cartridge imports still exercise their extracted audio table.
+Data.audio = Data.audio or {
+  mapSongs = { [MAP] = "Music_Routes1", OAKS_LAB = "Music_PalletTown" },
+  battle = { wild = "Music_Battle1", trainer = "Music_Battle2" },
+  songs = {}, sfx = {}, cries = {},
+}
 local MAP_SONG = Data.audio.mapSongs[MAP]
 local WILD_SONG = Data.audio.battle.wild
 
@@ -170,5 +179,6 @@ eq(warp, nil, "and the player stays in the lab for OaksLabRivalEndBattleScript")
 OW.startWarpTo = realStartWarpTo
 Music.play, Music.playBattle = realPlay, realPlayBattle
 Runtime.install(realEvents, Runtime.hooks)
+Data.audio = savedAudio
 
 S.finish()

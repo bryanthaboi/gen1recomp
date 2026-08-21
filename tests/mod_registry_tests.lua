@@ -470,8 +470,9 @@ local vanillaSets = {
   { "trainers", require("data.generated.trainers") },
   { "sprites", require("data.generated.sprites") },
   { "text", require("data.generated.text") },
-  { "music", require("data.generated.audio").songs },
 }
+local audioOk, vanillaAudio = pcall(require, "data.generated.audio")
+if audioOk then vanillaSets[#vanillaSets + 1] = { "music", vanillaAudio.songs } end
 for _, pair in ipairs(vanillaSets) do
   local name, records = pair[1], pair[2]
   local spec = Schemas.REGISTRIES[name]

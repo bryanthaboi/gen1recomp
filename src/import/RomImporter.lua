@@ -321,6 +321,17 @@ end
 -- Whether a given game version's ROM has already been imported and cached.
 function RomImporter.isReady(version)
   version = version or "red"
+  -- External shortcuts and environment variables can name a version this
+  -- build does not support.  It has no cache prefix or marker, so it is never
+  -- ready; importantly, answer that before fixture bypass/cache lookup tries
+  -- to index a missing GameVersion row.
+  if not GameVersion.info(version) then return false end
+  -- A ROM-free integration run supplies a complete generated-data tree
+  -- directly.  Data:load validates every required module and fails with the
+  -- missing path, so the importer must not intercept this boot first and wait
+  -- forever for a ROM that the test deliberately does not have.
+  local fixtureDir = os.getenv("POKEPORT_DATA_DIR")
+  if fixtureDir and fixtureDir ~= "" then return true end
   local CacheFs = require("src.import.CacheFs")
   if CacheFs.root() then
     -- Portable: the cache lives in the game folder next to the executable

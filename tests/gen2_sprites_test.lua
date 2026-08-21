@@ -37,7 +37,7 @@ local DECO_PIKACHU_DOLL = 30
 -- and it ends on `assert_table_length NUM_POKEMON_SPRITES`.  Pinning the row
 -- count and PIKACHU's place in it is what says the extractor followed the
 -- table rather than counted rows off the sprite constants.
-local pokegold = "../pokegold"
+local pokegold = os.getenv("POKEGOLD") or "../pokegold"
 local monsAsm = io.open(pokegold .. "/data/sprites/sprite_mons.asm", "r")
 if not monsAsm then
   check(true, "no ../pokegold: SpriteMons is not pinned against the decomp (SKIP)")

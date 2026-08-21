@@ -54,6 +54,7 @@ dismissText()
 dismissText()
 
 -- B follows ListMenu's real cancellation path: pop menu, then show goodbye.
+game.stack:top().inputHold = 0
 game.stack:top():update(0)
 dismissText()
 

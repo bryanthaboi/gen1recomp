@@ -1074,6 +1074,18 @@ H.UnownPrinter = function(vm)
   end)
 end
 
+-- OverworldTownMap (engine/events/specials.asm): FadeToMenu, run the
+-- view-only `_TownMap` loop until B, then ExitAllMenus.  This is used by every
+-- COLL_TOWN_MAP wall map and the bedroom decoration, and does not require the
+-- player to own the POKeGEAR's MAP card.
+H.OverworldTownMap = function(vm)
+  local h = hooks(vm)
+  if not h.showTownMap then return end
+  Specials.block(vm, function(done)
+    h.showTownMap(function() done(true) end)
+  end)
+end
+
 -- GameCornerPrizeMonCheckDex: a prize mon the player has never caught shows
 -- its #DEX page as it is handed over.  The catch itself is the prize counter's
 -- job (src/ui/gen2/PrizeMenu.lua); this is the entry, and wScriptVar carries
@@ -2426,7 +2438,6 @@ local STUB_ROWS = {
   -- Screens the port has not built.  Each names what it needs; the value is
   -- the arm a cancel takes, so the script backs out rather than proceeding
   -- through a transaction that never happened.
-  { "OverworldTownMap", nil, "needs the POKeGEAR map card in view mode" },
   { "UnusedMemoryGame", nil, "unused in Gold; needs the memory game screen" },
 }
 

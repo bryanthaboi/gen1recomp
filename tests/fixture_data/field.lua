@@ -1,6 +1,18 @@
 return {
   ledges = {},
   hiddenItems = {},
+  waterTilesets = {},
+  cutTreeSwaps = {},
+  forcedMovement = { tiles = {}, clearMaps = {} },
+  playerSprites = {
+    walk = "SPRITE_FIX_PLAYER",
+    surf = "SPRITE_FIX_PLAYER",
+    bike = "SPRITE_FIX_PLAYER",
+    fly = "SPRITE_FIX_PLAYER",
+  },
+  flyWarps = {
+    FIX_TOWN = { x = 5, y = 6 },
+  },
   flyOrder = { "FIX_TOWN" },
   townMap = {
     locations = {

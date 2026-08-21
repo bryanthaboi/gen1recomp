@@ -101,8 +101,11 @@ function Game:load()
 
   -- boot into the title screen (engine/movie/title.asm); NEW GAME runs
   -- the Oak speech + naming, CONTINUE restores the save.  The headless
-  -- autopilot skips straight into the overworld.
-  if os.getenv("POKEPORT_AUTOPILOT") then
+  -- autopilot skips straight into the overworld.  The explicit fixture hook
+  -- does the same while leaving POKEPORT_DRIVER active, which lets a real
+  -- LÖVE process assert and capture a ROM-free boot in CI.
+  if os.getenv("POKEPORT_AUTOPILOT")
+      or os.getenv("POKEPORT_BOOT_OVERWORLD") == "1" then
     StateStack:push(OverworldState, self.save.player.map,
                     self.save.player.x, self.save.player.y, self.save.player.facing)
   else

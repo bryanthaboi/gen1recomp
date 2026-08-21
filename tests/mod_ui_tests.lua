@@ -58,6 +58,10 @@ local function newInput()
 end
 
 local function press(state, btn)
+  -- These are navigation/return-path assertions, not opening-delay tests.
+  -- ListMenu correctly ignores input during the cartridge's opening hold;
+  -- move past that hold before injecting the edge press under test.
+  if state.inputHold then state.inputHold = 0 end
   state.game.input.queue = { [btn] = true }
   state:update(1 / 60)
   state.game.input.queue = {}
@@ -286,7 +290,7 @@ local WANT_IDS = { "textSpeed", "animations", "battleStyle", "battleLayout",
                    "ruleset", "musicVol", "sfxVol", "musicFilter",
                    "performance", "colors",
                    "tilt", "gbcfx", "zoom", "voidFill", "videoMode",
-                   "faithfulRes", "fpsCap",
+                   "faithfulRes", "screenPos", "fpsCap",
                    "speedOverworld", "speedBattle", "speedMenu",
                    "mods", "controls", "dateFormat", "timeFormat" }
 local function orow(menu, id)

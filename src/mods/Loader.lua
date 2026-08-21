@@ -301,7 +301,13 @@ end
 function Loader:_loadState()
   self.disabled = {}
   local options = SaveData.loadOptions(self.fs)
+  -- The environment override is primarily for deterministic diagnostics and
+  -- ROM-free integration boots: they must be able to start the vanilla
+  -- engine even when the checkout/save directory contains enabled mods whose
+  -- content targets a real ROM dataset.  It never persists or changes the
+  -- player's saved safe-mode choice.
   self.safeMode = SaveData.isSafeMode(options)
+    or os.getenv("POKEPORT_SAFE_MODE") == "1"
   Runtime.safeMode = self.safeMode
   local scope = self:_enableScope()
   local ids = {}

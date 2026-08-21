@@ -51,13 +51,16 @@ end
 -- one fixed step with `btn` on its edge; returns the cues it produced
 local function press(state, btn)
   played = {}
-  state.game.input.queue = { [btn] = true }
+  state.game.input.queue = btn and { [btn] = true } or {}
   state:update(1 / 60)
   state.game.input.queue = {}
   return played
 end
 
 local function beeps(state, btn)
+  -- DisplayListMenuID's opening/redraw waits are tested in timing_parity;
+  -- this suite isolates the sound made by the eventual accepted edge.
+  while (state.inputHold or 0) > 0 do press(state, nil) end
   local cues = press(state, btn)
   for _, key in ipairs(cues) do
     if key ~= "Press_AB" then

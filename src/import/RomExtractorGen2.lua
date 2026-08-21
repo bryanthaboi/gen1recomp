@@ -2582,10 +2582,14 @@ function RomExtractorGen2:decodeGen2Text(bank, address, charmap, buffers)
       -- it decodes to the same marker TX_RAM does.
       out[#out + 1] = "{STRBUF}"
       i = i + 1
+    elseif b == 0x0a and not inString then
+      out[#out + 1] = "{PAUSE}"
     elseif b == 0x0c and not inString then
-      i = i + 1 -- TX_DOTS: `db count`, an animated ellipsis with no glyphs.
+      local count = self.rom:byte(bank, address + i + 1)
+      out[#out + 1] = ("{DOTS:%d}"):format(count)
+      i = i + 1 -- TX_DOTS: `db count`, animated ellipses with per-dot waits.
     elseif not inString and TEXT_NO_GLYPH[b] then
-      -- TX_LOW / TX_SCROLL / TX_PAUSE / TX_WAIT_BUTTON / TX_DAY and the six
+      -- TX_LOW / TX_SCROLL / TX_WAIT_BUTTON / TX_DAY and the six
       -- TX_SOUND_* jingles: box and timing commands that print nothing.  Read
       -- as characters they came out as whatever glyph the charmap had at that
       -- byte -- `sound_caught_mon` inside _BreedEggHatchText decoded as a

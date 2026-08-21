@@ -14,6 +14,8 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 if not _G.love then _G.love = require("tests.love_stub") end
 local S = require("tests.harness").suite("parity victory road hole")
 local check, eq = S.check, S.eq
+local Data = require("src.core.Data")
+if not (Data.maps and Data.maps.VICTORY_ROAD_3F) then Data:load() end
 
 local M = dofile("data/scripts/story.lua")
 local vr3 = M.VICTORY_ROAD_3F
@@ -33,7 +35,7 @@ end
 -- Stepping onto the hole falls through to 2F at the dungeon-warp landing.
 do
   local ow, warps = owRecording()
-  local handled = vr3.onStep({}, ow, 23, 15)
+  local handled = vr3.onStep({ data = Data }, ow, 23, 15)
   check(handled, "stepping on (23,15) is consumed")
   eq(#warps, 1, "exactly one dungeon warp fires")
   eq(warps[1].mapId, "VICTORY_ROAD_2F", "destination is VICTORY_ROAD_2F")
@@ -45,14 +47,14 @@ end
 -- Any other cell is ignored (switch at 3,5 is boulder-only).
 do
   local ow, warps = owRecording()
-  eq(vr3.onStep({}, ow, 3, 5), false, "the switch cell does not dungeon-warp")
-  eq(vr3.onStep({}, ow, 22, 15), false, "a neighboring floor cell is ignored")
+  eq(vr3.onStep({ data = Data }, ow, 3, 5), false,
+     "the switch cell does not dungeon-warp")
+  eq(vr3.onStep({ data = Data }, ow, 22, 15), false,
+     "a neighboring floor cell is ignored")
   eq(#warps, 0, "no warp fires off the hole")
 end
 
 -- The hole collision tile stays walkable (fall, do not block).
-local Data = require("src.core.Data")
-if not (Data.maps and Data.maps.VICTORY_ROAD_3F) then Data:load() end
 local MapLoader = require("src.world.MapLoader")
 local map = MapLoader.load(Data, "VICTORY_ROAD_3F")
 check(map:isWalkableCell(23, 15), "CAVERN hole tile at (23,15) is walkable")

@@ -123,10 +123,12 @@ if oakGfx then
     if fh then fh:close() end
   end
 end
-check(Data.audio.sfx and Data.audio.sfx.Shrink ~= nil, "SFX_SHRINK is extracted")
-check(Data.audio.songs and Data.audio.songs.Music_Routes2 ~= nil
-      and Data.audio.songs.Music_MeetProfOak ~= nil,
-      "Routes2 + MeetProfOak songs are extracted")
+if Data.audio then
+  check(Data.audio.sfx and Data.audio.sfx.Shrink ~= nil, "SFX_SHRINK is extracted")
+  check(Data.audio.songs and Data.audio.songs.Music_Routes2 ~= nil
+        and Data.audio.songs.Music_MeetProfOak ~= nil,
+        "Routes2 + MeetProfOak songs are extracted")
+end
 
 -- =====================================================================
 -- (D) Lab walk-in with UP held: a Delay3 emote queued from Oak's entry

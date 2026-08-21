@@ -1227,7 +1227,11 @@ function BattleState:startMessage(item)
     local chunk = npos and text:sub(pos, npos - 1) or text:sub(pos)
     local codes = Font.encode(chunk)
     self.lines[#self.lines + 1] = { codes = codes, cont = cont, text = chunk }
-    self.total = self.total + #codes
+    for _, code in ipairs(codes) do
+      if code ~= Font.TEXT_PAUSE_CODE and code ~= Font.TEXT_DOT_WAIT_CODE then
+        self.total = self.total + 1
+      end
+    end
     if not npos then break end
     cont = text:sub(npos, npos) == "\v"
     pos = npos + 1
@@ -1252,6 +1256,7 @@ function BattleState:beginMsgLine()
   self.lineIndex = self.lineIndex + 1
   local ln = self.lines[self.lineIndex]
   self.codes = ln and ln.codes or {}
+  self.lineCodeIndex = 0
   if #self.shown >= 2 then
     table.remove(self.shown, 1)
     self.scrollPx = 8
@@ -1266,7 +1271,7 @@ function BattleState:visibleText()
   local out, count = {}, #(self.shown or {})
   for i = math.max(1, self.lineIndex - count + 1), self.lineIndex do
     local line = self.lines and self.lines[i]
-    if line then out[#out + 1] = line.text or "" end
+    if line then out[#out + 1] = (line.text or ""):gsub("[\30\31]", "") end
   end
   return #out > 0 and out or nil
 end
@@ -1464,7 +1469,7 @@ function BattleState:updateQueue()
     return true
   end
   local cur = self.shown[#self.shown]
-  if #cur < #self.codes then
+  if (self.lineCodeIndex or 0) < #self.codes then
     -- Battle text prints through the same PrintText path as everything
     -- else, so it pays PrintLetterDelay per character (home/print_text.asm:
     -- 4-45): hFrameCounter is loaded from wOptions & $f -- the OPTION text
@@ -1477,9 +1482,18 @@ function BattleState:updateQueue()
     if delay ~= 1 and delay ~= 3 and delay ~= 5 then delay = 3 end
     if input:isDown("a") or input:isDown("b") then delay = 1 end
     self.charTimer = (self.charTimer or 0) + 1
-    while self.charTimer >= delay and #cur < #self.codes do
+    while self.charTimer >= delay and self.lineCodeIndex < #self.codes do
       self.charTimer = self.charTimer - delay
-      cur[#cur + 1] = self.codes[#cur + 1]
+      self.lineCodeIndex = self.lineCodeIndex + 1
+      local code = self.codes[self.lineCodeIndex]
+      if code == Font.TEXT_PAUSE_CODE or code == Font.TEXT_DOT_WAIT_CODE then
+        if not (input:isDown("a") or input:isDown("b")) then
+          self.waitFrames = code == Font.TEXT_PAUSE_CODE
+            and Timing.TEXT_PAUSE or Timing.TEXT_DOT
+        end
+        break
+      end
+      cur[#cur + 1] = code
       self.charIndex = self.charIndex + 1
     end
   elseif self.lineIndex < #self.lines then

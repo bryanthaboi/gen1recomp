@@ -13,6 +13,8 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 if not _G.love then _G.love = require("tests.love_stub") end
 local S = require("tests.harness").suite("parity seafoam holes")
 local check, eq = S.check, S.eq
+local Data = require("src.core.Data")
+if not (Data.maps and Data.maps.SEAFOAM_ISLANDS_1F) then Data:load() end
 
 local M = require("data.scripts.seafoam")
 
@@ -42,7 +44,8 @@ for _, c in ipairs(CASES) do
   local hooks = M[c[1]]
   check(hooks ~= nil and hooks.onStep ~= nil, c[1] .. " has an onStep hole trigger")
   local ow, warps = owRecording()
-  check(hooks.onStep({}, ow, c[2], c[3]), c[1] .. " consumes the hole step")
+  check(hooks.onStep({ data = Data }, ow, c[2], c[3]),
+        c[1] .. " consumes the hole step")
   eq(#warps, 1, c[1] .. " fires exactly one fall")
   eq(warps[1].mapId, c[4], c[1] .. " falls to " .. c[4])
   eq(warps[1].x, c[5], c[1] .. " lands at x=" .. c[5])
@@ -53,13 +56,12 @@ end
 -- a neighboring floor cell is ignored
 do
   local ow, warps = owRecording()
-  eq(M.SEAFOAM_ISLANDS_1F.onStep({}, ow, 18, 6), false, "a floor cell is ignored")
+  eq(M.SEAFOAM_ISLANDS_1F.onStep({ data = Data }, ow, 18, 6), false,
+     "a floor cell is ignored")
   eq(#warps, 0, "no fall fires off the hole")
 end
 
 -- the hole tiles stay walkable CAVERN holes, and are not map warp events
-local Data = require("src.core.Data")
-if not (Data.maps and Data.maps.SEAFOAM_ISLANDS_1F) then Data:load() end
 local MapLoader = require("src.world.MapLoader")
 for _, c in ipairs(CASES) do
   local map = MapLoader.load(Data, c[1])

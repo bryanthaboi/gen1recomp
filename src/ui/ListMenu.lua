@@ -6,6 +6,7 @@ local Font = require("src.render.Font")
 local Runtime = require("src.mods.Runtime")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
+local Timing = require("src.core.Timing")
 
 local ListMenu = {}
 ListMenu.__index = ListMenu
@@ -73,6 +74,11 @@ function ListMenu.new(game, title, items, opts)
   self.repeatRate = opts.repeatRate or REPEAT_RATE
   self.holdDir = nil
   self.holdFrames = 0
+  -- DisplayListMenuID waits 10 frames before entering its print/input loop;
+  -- that loop redraws and pays Delay3 before HandleMenuInput.  The menu may
+  -- draw during this hold, but no key (including a held key from the screen
+  -- that opened it) is accepted yet.
+  self.inputHold = Timing.LIST_MENU_OPEN + Timing.LIST_MENU_REDRAW
   self.onSelectKey = opts.onSelectKey -- SELECT pressed on an item
   -- scripted mode (the old man tutorial): update() runs the script
   -- every frame INSTEAD of reading input -- DisplayListMenuID's old-man
@@ -157,6 +163,10 @@ local function navPressed(self, dir)
 end
 
 function ListMenu:update(dt)
+  if (self.inputHold or 0) > 0 then
+    self.inputHold = self.inputHold - 1
+    return
+  end
   if self.script then
     self.script(self)
     return
@@ -214,6 +224,10 @@ function ListMenu:update(dt)
     end
   end
 
+  -- Each navigation/swap redraw returns through DisplayListMenuIDLoop and its
+  -- Delay3 before another input can be observed.  A/B exits from the current
+  -- HandleMenuInput call and therefore does not acquire another redraw hold.
+  if moved then self.inputHold = Timing.LIST_MENU_REDRAW end
   if not moved then syncScroll(self) end
 end
 

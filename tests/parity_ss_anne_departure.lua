@@ -30,7 +30,8 @@ package.loaded["src.ui.PicBox"] = { new = function() return {} end }
 local story3 = dofile("data/scripts/story3.lua")
 local story5 = dofile("data/scripts/story5.lua")
 local text = dofile("data/generated/text.lua")
-local audio = dofile("data/generated/audio.lua")
+local audioChunk = loadfile("data/generated/audio.lua")
+local audio = audioChunk and audioChunk() or nil
 local maps = dofile("data/generated/maps.lua")
 
 local function dirsEqual(a, b)
@@ -150,9 +151,11 @@ do
   eq(dockBlock(DOCK_HULL.x1, 2), 11, "stern lower-half block id")
   check(WATER[dockBlock(2, 1)] and WATER[dockBlock(2, 2)],
         "the water she sails into is blocks 1 (upper) and 13 (lower)")
-  eq(audio.mapSongs.VERMILION_CITY, "Music_Vermilion",
-     "the city has its own theme for PlayDefaultMusic to switch to")
-  check(audio.songs.Music_Vermilion ~= nil, "and that song is in the cache")
+  if audio then
+    eq(audio.mapSongs.VERMILION_CITY, "Music_Vermilion",
+       "the city has its own theme for PlayDefaultMusic to switch to")
+    check(audio.songs.Music_Vermilion ~= nil, "and that song is in the cache")
+  end
 
   local rows = sail(14, 2)
 

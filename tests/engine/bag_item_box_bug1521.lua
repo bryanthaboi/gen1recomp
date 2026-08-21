@@ -97,7 +97,12 @@ do
      "wMaxMenuItem 2: three cursor rows (home/list_menu.asm:46-48)")
   list.game = { input = { wasPressed = function(_, b) return b == "down" end,
                           isDown = function() return false end } }
-  for _ = 1, 3 do list:update(1 / 60) end
+  -- Opening/redraw pacing is covered by timing_parity; this assertion is
+  -- only about cursor/scroll geometry, so present three accepted edges.
+  for _ = 1, 3 do
+    list.inputHold = 0
+    list:update(1 / 60)
+  end
   eq(list.index, 4, "three downs reach the fourth item")
   eq(list.index - list.scroll, 3,
      "scrolling instead of dropping the cursor onto the look-ahead row")

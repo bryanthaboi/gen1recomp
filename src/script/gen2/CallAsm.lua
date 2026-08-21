@@ -120,6 +120,15 @@ CallAsm.SITES = {
   ["04:66d1"] = "TryReceiveItem",
 }
 
+-- Silver relocates four of the field-move routines by two bytes.  The
+-- generated scripts contain raw far pointers, not symbol names, so both
+-- cartridge revisions must be admitted explicitly.  RockMonEncounter stays
+-- at 2e:63a1 and already shares the Gold row above.
+CallAsm.SITES["03:4749"] = "GetPartyNickname"
+CallAsm.SITES["03:4d13"] = "SetStrengthFlag"
+CallAsm.SITES["03:4d79"] = "TryStrengthOW"
+CallAsm.SITES["03:4f7d"] = "HasRockSmash"
+
 -- The three WRAM addresses `memcall` / `memcallasm` / `memjump` take instead of
 -- a routine.  Not sites: the pointer AT the address is written at run time
 -- (LoadMemScript for the queued script, the phone engine for the other two),

@@ -2919,6 +2919,35 @@ function World:showDiploma(onDone)
   return true
 end
 
+-- `_TownMap`, opened by wall maps and the bedroom poster.  It shares the map
+-- renderer with the POKeGEAR but is view-only, has no card strip, and is not
+-- gated on ENGINE_MAP_CARD (engine/pokegear/pokegear.asm:1709-1858).
+function World:showTownMap(onDone)
+  local game = self.game
+  if not (game and game.stack) then
+    if onDone then onDone() end
+    return false
+  end
+  local finished = false
+  local function finish()
+    if finished then return end
+    finished = true
+    game.stack:pop()
+    if onDone then onDone() end
+  end
+  local ok = self:pushScreen("Gen2Pokegear", {
+    save = game.save,
+    currentLandmark = self:currentLandmarkId(),
+    viewMap = true,
+    onClose = finish,
+  })
+  if not ok then
+    if onDone then onDone() end
+    return false
+  end
+  return true
+end
+
 -- The Magnet Train ride (engine/events/magnet_train.asm, src/core/gen2/
 -- MagnetTrain.lua, src/ui/gen2/MagnetTrainRide.lua, src/script/gen2/
 -- Specials.lua H.MagnetTrain).  `special MagnetTrain` never writes wScriptVar
@@ -3486,6 +3515,9 @@ function World:specialHooks()
     setDayOfWeek = function(onDone) self:setDayOfWeek(onDone) end,
     showDiploma = function(onDone)
       self:showDiploma(onDone)
+    end,
+    showTownMap = function(onDone)
+      self:showTownMap(onDone)
     end,
     showPhotoStudio = function(mon, onDone)
       self:showPhotoStudio(mon, onDone)

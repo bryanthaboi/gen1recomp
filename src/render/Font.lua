@@ -287,6 +287,17 @@ end
 
 local SPACE = 0x7F
 
+-- TextBox command sentinels.  They survive substitution and pagination but
+-- occupy no tile: TextBox consumes them as timing events instead of drawing
+-- them.  Keeping them in Font's glyph stream means a command in the middle of
+-- an 18-column line cannot make that line wrap one cell early.
+Font.TEXT_PAUSE_CODE = -1
+Font.TEXT_DOT_WAIT_CODE = -2
+local TEXT_CONTROL_CODES = {
+  [0x1e] = Font.TEXT_PAUSE_CODE,
+  [0x1f] = Font.TEXT_DOT_WAIT_CODE,
+}
+
 -- Decode one UTF-8 sequence: codepoint and the index of its last byte, or
 -- nil on a malformed lead/continuation (the caller falls back to bytes).
 local function utf8Decode(text, i)
@@ -357,6 +368,11 @@ function Font.split(text)
   local ttf = state and state.ttf
   local i, n = 1, #text
   while i <= n do
+    local control = TEXT_CONTROL_CODES[text:byte(i)]
+    if control then
+      spans[#spans + 1] = { from = i, to = i, code = control }
+      i = i + 1
+    else
     -- A charmap entry for the same byte wins: a font that ships '#' as a real
     -- glyph is describing its own sheet, and the macro is only the fallback
     -- the vanilla charmap leaves room for.
@@ -408,6 +424,7 @@ function Font.split(text)
       end
       spans[#spans + 1] = span
       i = span.to + 1
+    end
     end
   end
   return spans
@@ -467,6 +484,9 @@ end
 -- double-width kana/CJK in Plain Pixel), which is what makes TextBox's
 -- pixel-budget pagination fit more of a narrow script per line.
 function Font.advanceOf(code)
+  if code == Font.TEXT_PAUSE_CODE or code == Font.TEXT_DOT_WAIT_CODE then
+    return 0
+  end
   local ttf = state and state.ttf
   if ttf and code >= TTF_BASE then
     local w = ttf.widths[code]

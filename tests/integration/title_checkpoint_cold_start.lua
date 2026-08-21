@@ -78,17 +78,36 @@ local SaveSerializer = require("src.core.SaveSerializer")
 local GameMethods = require("src.core.Game")
 local StateStack = require("src.core.StateStack")
 
-local function writeProbe()
+local function writeProbe(version)
   fs.write("mods/cold_start_probe/manifest.json",
-    '{"id":"cold_start_probe","name":"cold start probe","version":"1.0.0",'
+    '{"id":"cold_start_probe","name":"cold start probe","version":"'
+      .. version .. '",'
       .. '"entry":"main.lua","api":2,"profile":"content"}')
   -- mod.exports, not _G: a mod's globals are its own (src/mods/Sandbox.lua)
   fs.write("mods/cold_start_probe/main.lua", [[
 return function(mod)
+  mod.exports.version = "]] .. version .. [["
   mod.exports.storage = mod.storage
   mod.exports.checkpoints = mod.checkpoints
 end
 ]])
+end
+
+local function writeBrokenProbe()
+  fs.write("mods/cold_start_broken/manifest.json",
+    '{"id":"cold_start_broken","name":"cold start broken","version":"1.0.0",'
+      .. '"entry":"main.lua","api":2,"profile":"content"}')
+  fs.write("mods/cold_start_broken/main.lua", [[
+return function()
+  error("deliberate cold-start entry failure")
+end
+]])
+end
+
+local function statusById(loader)
+  local out = {}
+  for _, entry in ipairs(loader:status().available) do out[entry.id] = entry end
+  return out
 end
 
 local function runtime(save, title)
@@ -128,15 +147,21 @@ local function runtime(save, title)
   return game
 end
 
-writeProbe()
 SaveData.resetSlotState()
 local loader = Loader.new({ fs = fs })
 
 if phase == "capture" then
+  writeProbe("1.0.0")
+  writeBrokenProbe()
   local game = runtime(SaveData.newGame({ version = "red" }), false)
   loader.game = game
-  assert(loader:load({}) == true)
+  assert(loader:load({}) == false, "the broken disk mod must fail this boot")
   local probe = assert(loader.exports.cold_start_probe)
+  assert(probe.version == "1.0.0")
+  local status = statusById(loader)
+  assert(status.cold_start_broken.state == "failed")
+  assert(loader.exports.cold_start_broken == nil,
+    "a failed disk mod must publish no exports")
   assert(probe.storage:write(game, "history/index", { newest = "q0001" }))
   local checkpoint = assert(probe.checkpoints:capture(game))
   assert(probe.storage:write(game, "history/q0001", checkpoint))
@@ -145,13 +170,18 @@ if phase == "capture" then
   local normal = assert(SaveData.load("red"))
   assert(normal.meta.playthroughId == id)
   fs.write("cold-start-witness.lua", SaveSerializer.encode({ playthroughId = id }))
+  -- Simulate a mod update while the process is down.  The resume phase uses a
+  -- fresh Loader and must discover the new file rather than retained modules.
+  writeProbe("2.0.0")
   print("cold-start capture persisted")
 else
   local title = runtime(SaveData.newGame({ version = "red" }), true)
   title.save.options = { volume = 7, bindings = {} }
   loader.game = title
-  assert(loader:load({}) == true)
+  assert(loader:load({}) == false, "the broken disk mod remains isolated")
   local probe = assert(loader.exports.cold_start_probe)
+  assert(probe.version == "2.0.0", "fresh process did not load updated mod")
+  assert(statusById(loader).cold_start_broken.state == "failed")
   local selected = assert(probe.storage:selected(title))
   local witness = assert(SaveSerializer.decode(assert(fs.read("cold-start-witness.lua"))))
   assert(selected:context().playthroughId == witness.playthroughId)

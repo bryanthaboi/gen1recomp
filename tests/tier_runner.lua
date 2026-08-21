@@ -37,21 +37,19 @@ end
 
 -- runs every suite in `dirs`, prints one line per suite, returns the
 -- number that failed
-function Runner.run(dirs, label)
+function Runner.runFiles(files, label)
   local lua = interpreter()
   local failed, total = 0, 0
 
-  for _, dir in ipairs(dirs) do
-    for _, path in ipairs(Runner.suites(dir)) do
-      total = total + 1
-      local status = os.execute(("%s %s"):format(lua, path))
-      local ok = status == 0 or status == true
-      if ok then
-        print("ok   " .. path)
-      else
-        failed = failed + 1
-        print("FAIL " .. path)
-      end
+  for _, path in ipairs(files) do
+    total = total + 1
+    local status = os.execute(("%s %s"):format(lua, path))
+    local ok = status == 0 or status == true
+    if ok then
+      print("ok   " .. path)
+    else
+      failed = failed + 1
+      print("FAIL " .. path)
     end
   end
 
@@ -60,8 +58,21 @@ function Runner.run(dirs, label)
   return failed, total
 end
 
+function Runner.run(dirs, label)
+  local files = {}
+  for _, dir in ipairs(dirs) do
+    for _, path in ipairs(Runner.suites(dir)) do files[#files + 1] = path end
+  end
+  return Runner.runFiles(files, label)
+end
+
 function Runner.main(dirs, label)
   local failed = Runner.run(dirs, label)
+  os.exit(failed == 0 and 0 or 1)
+end
+
+function Runner.mainFiles(files, label)
+  local failed = Runner.runFiles(files, label)
   os.exit(failed == 0 and 0 or 1)
 end
 

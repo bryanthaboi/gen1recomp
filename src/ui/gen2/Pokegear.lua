@@ -869,7 +869,8 @@ function Pokegear:drawsWidescreen() return true end
 -- mapDef (the maps.lua record the player is standing on, for the phone's
 -- signal / same-map tests), trainers (trainers.lua, for contact names), text
 -- (text.lua) and onCall(descriptor), which hands a placed call out to whoever
--- can run its script
+-- can run its script. viewMap is `_TownMap`: the same map engine without the
+-- POKeGEAR card strip, closed directly by B.
 function Pokegear.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, Pokegear)
@@ -880,6 +881,7 @@ function Pokegear.new(game, opts)
   self.currentLandmark = opts.currentLandmark
   self.clock = opts.clock
   self.onClose = opts.onClose
+  self.viewMap = opts.viewMap or false
   self.cards = self:visibleCards()
   self.cardIndex = 1
   self.mode = "strip" -- strip | card
@@ -928,6 +930,10 @@ function Pokegear.new(game, opts)
     -- Town) and the Kanto one on NUM_FLYPOINTS - 1 (Indigo Plateau), not on
     -- wherever the player is standing.
     self.flyIndex = (self:region() == "kanto") and #self.fly or 1
+  elseif self.viewMap then
+    self.cards = { { id = "map", label = "MAP" } }
+    self.cardIndex = 1
+    self.mode = "card"
   end
 
   -- _CGB_PokegearPals writes wBGPals1 only (engine/gfx/cgb_layouts.asm:157),
@@ -1079,6 +1085,10 @@ function Pokegear:update(_dt)
   -- The fly picker owns the whole screen: no strip, no card paging, and B
   -- answers -1 rather than backing out to the strip.
   if self.fly then return self:updateFlyMap(input) end
+  if self.viewMap and input:wasPressed("b") then
+    if self.onClose then self.onClose() end
+    return
+  end
   if self.mode == "strip" then
     local stripCard = self:card()
     if not (stripCard and stripCard.id == "phone") then
@@ -1999,6 +2009,25 @@ function Pokegear:drawMap()
   local G = love.graphics
   if self.fly then
     self:drawFlyBubble()
+  elseif self.viewMap then
+    -- _TownMap .InitTilemap: unlike the MAP card this has no device strip.
+    -- Its upper-left cap/rule ends at x=7; the landmark-name plate occupies
+    -- x=8..19 and its lower rule is row 2.
+    self:tile(0x06, 0, 0)
+    for x = 1, 6 do self:tile(0x07, x, 0) end
+    self:tile(0x17, 7, 0)
+    self:tile(0x16, 7, 1)
+    self:tile(0x26, 7, 2)
+    self:drawPlate(8, 0, 12, 2)
+    self:tile(0x34, 8, 0)
+    for x = 8, 18 do self:tile(0x07, x, 2) end
+    self:tile(0x17, 19, 2)
+    local name = current and current.name or ""
+    local row = 0
+    for line in (tostring(name) .. "\n"):gmatch("(.-)\n") do
+      if row < 2 then self:text(line, 9, row) end
+      row = row + 1
+    end
   else
     self:drawStrip()
     -- The header's own bottom rule: $07 across (1,2), with $06 and $17 as caps.
@@ -2283,7 +2312,7 @@ function Pokegear:drawPanel()
   -- Last: the arrow is an OBJ and composites over whatever the card drew.
   -- _FlyMap has no card strip and never animates it
   -- (engine/pokegear/pokegear.asm:1999).
-  if not self.fly then self:drawModeArrow() end
+  if not self.fly and not self.viewMap then self:drawModeArrow() end
   G.setColor(1, 1, 1, 1)
 end
 

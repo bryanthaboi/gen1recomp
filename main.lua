@@ -466,8 +466,8 @@ function love.load(args)
   -- default save path for POKEPORT_VERSION (Red unless overridden), whose
   -- cache has to be mounted before the editor's Data:load.
   if editorMode then
-    local version = os.getenv("POKEPORT_VERSION") or "red"
-    require("src.core.GameVersion").set(version)
+    local requestedVersion = os.getenv("POKEPORT_VERSION") or "red"
+    local version = require("src.core.GameVersion").set(requestedVersion)
     require("src.import.CacheFs").mountVersion(version)
     addEditorRequirePath()
     EditorApp = require("App")
@@ -481,9 +481,14 @@ function love.load(args)
   -- Scripted / headless runs pick their game from POKEPORT_VERSION, then
   -- POKEPORT_GAME / --game= (LaunchOptions), then Red.  Drivers for Gold
   -- must honor POKEPORT_GAME=gold the same way a desktop shortcut does.
-  local scriptedVersion = os.getenv("POKEPORT_VERSION")
+  local requestedVersion = os.getenv("POKEPORT_VERSION")
     or LaunchOptions.resolve(arg)
     or "red"
+  -- Environment and command-line values are untrusted.  Normalize them
+  -- before cache lookup: GameVersion.set deliberately falls back to Red for
+  -- an unsupported id, whereas passing the raw id to cachePrefix would index
+  -- a missing version row and crash before the importer can reject the ROM.
+  local scriptedVersion = require("src.core.GameVersion").set(requestedVersion)
   local ready = RomImporter.isReady(scriptedVersion)
   -- Scripted / headless runs have to reach the game with no human pressing
   -- Play: an autopilot, a frame driver, an import-only build step, or an

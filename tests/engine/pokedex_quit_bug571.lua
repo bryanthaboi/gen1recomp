@@ -35,6 +35,12 @@ local function newGame()
 end
 
 local function press(game, btn)
+  local top = game.stack:top()
+  while top and (top.inputHold or 0) > 0 do
+    game.input.queue = {}
+    game.stack:update(1 / 60)
+    top = game.stack:top()
+  end
   game.input.queue = { [btn] = true }
   game.stack:update(1 / 60)
   game.input.queue = {}

@@ -41,6 +41,10 @@ local function newGame()
 end
 
 local function press(state, btn)
+  while (state.inputHold or 0) > 0 do
+    state.game.input.queue = {}
+    state:update(1 / 60)
+  end
   state.game.input.queue = { [btn] = true }
   state:update(1 / 60)
   state.game.input.queue = {}

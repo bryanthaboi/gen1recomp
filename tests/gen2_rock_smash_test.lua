@@ -197,8 +197,26 @@ do
   else
     local scripts = scriptChunk()
     local encounters = encChunk()
-    local rows = scripts["03:4f35"]
-    check(rows ~= nil, "RockSmashScript is in the cache at 03:4f35")
+    local rows, scriptKey
+    for key, list in pairs(scripts) do
+      if type(list) == "table" then
+        for _, cmd in ipairs(list) do
+          local args = cmd.args or {}
+          local addr = (args[2] or 0) + (args[3] or 0) * 256
+          if cmd.op == "callasm"
+              and CallAsm.nameFor(cmd.label, args[1], addr)
+                == "RockMonEncounter" then
+            rows, scriptKey = list, key
+            break
+          end
+        end
+      end
+      if rows then break end
+    end
+    check(rows ~= nil,
+      "RockSmashScript is found by its RockMonEncounter callasm target")
+    check(scriptKey == "03:4f35" or scriptKey == "03:4f33",
+      "the script key belongs to the Gold or Silver cartridge revision")
     eq(rows and rows[9] and rows[9].op, "callasm",
       "row 9 is the callasm this suite is about")
     eq(rows and rows[9] and rows[9].args and rows[9].args[1], 0x2e,

@@ -72,16 +72,16 @@ do
 end
 
 -- === #250: the CATERPIE / WEEDLE description ===
--- pokered/text/ViridianCity.asm declares this one without the leading
--- underscore the extractor keys on, so it is not in data/generated/text.lua
--- and the port carries a literal.  That makes the literal load-bearing.
+-- Older caches omitted this label because pokered declares it without the
+-- usual leading underscore.  Current extractors preserve it; older generated
+-- datasets still use the byte-identical fallback literal.
 do
-  check(Data.text.ViridianCityYoungster2CaterpieAndWeedleDescriptionText == nil
-        and Data.text._ViridianCityYoungster2CaterpieAndWeedleDescriptionText == nil,
-        "the description really is absent from generated text (hence a literal)")
-
   local desc = "CATERPIE has no\npoison, but\vWEEDLE does.\fWatch out for its\nPOISON STING!"
-  local pages = assertPlayable("caterpillar description", desc)
+  local extracted = Data.text.ViridianCityYoungster2CaterpieAndWeedleDescriptionText
+    or Data.text._ViridianCityYoungster2CaterpieAndWeedleDescriptionText
+  check(extracted == nil or extracted == desc,
+        "an extracted caterpillar description matches the fallback literal")
+  local pages = assertPlayable("caterpillar description", extracted or desc)
   eq(#pages, 2, "para breaks the description into two pages (#250)")
   eq(#pages[1], 3, "page 1 is text + line + cont")
   eq(#pages[2], 2, "page 2 is para + line")

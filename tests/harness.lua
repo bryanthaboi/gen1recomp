@@ -9,13 +9,12 @@
 --   T.check/T.eq + T.finish()  -- a suite that owns its process (the
 --     tests/engine, tests/content_red and tests/modkit/cases tiers, which
 --     tier_runner spawns one at a time).  finish sets the exit code.
---   T.suite(label)             -- a suite tests/run_tests.lua dofiles into
---     its own process (the mod_*/parity_* files).  Scoped counters, and
---     finish raises rather than exiting so one bad suite is one FAIL line
---     in the parent instead of the end of the run.
+--   T.suite(label)             -- a self-contained mod_*/parity_* suite.
+--     Scoped counters, and finish raises rather than calling os.exit so the
+--     file works both as a child process and under an embedding runner.
 
--- suites are dofile'd from the repo root, and requiring this file already
--- needed the prefix, so only add it once
+-- suites run from the repo root, and requiring this file already needed the
+-- prefix, so only add it once
 if not package.path:find("./?/init.lua", 1, true) then
   package.path = "./?.lua;./?/init.lua;" .. package.path
 end
@@ -121,25 +120,19 @@ function T.rng.seq(...)
   end
 end
 
--- A scoped counter for the suites that run *inside* a parent's process.
--- tests/run_tests.lua dofiles the mod_*/parity_* files rather than
--- spawning one process each (tier_runner does that for the newer tiers),
--- so module-level counters would report the whole chained run as one
--- suite's total.  A scoped suite counts only its own checks, and its
--- finish raises instead of exiting -- os.exit here would take the parent
--- down with it, which is why every chained file ended in `error(...)`
--- before there was a harness to share.
+-- A scoped counter for self-contained suites.  It counts only its own checks,
+-- and finish raises instead of exiting: a direct child process still becomes
+-- non-zero, while an embedding runner can catch and report the suite failure.
 function T.suite(label)
   local S = { label = label or "suite", failures = 0, checks = 0, messages = {} }
 
-  -- A chained suite's stream is its own: the parent sets T.verbose for the
-  -- checks it makes itself, and inheriting that would bury its progress
-  -- under every assertion of twenty-odd child files.
+  -- A scoped suite's stream is its own: inheriting module verbosity would
+  -- bury an aggregate run under every child assertion.
   S.verbose = T.VERBOSE_ENV
 
-  -- deliberately does not touch the module-level counters: the parent that
-  -- dofiles this suite counts the suite as one check of its own, and
-  -- folding the child's assertions in too would report every failure twice
+  -- Deliberately does not touch the module-level counters.  An embedding
+  -- runner may count the suite as one check, and folding its assertions into
+  -- the parent as well would report every failure twice.
   local function check(cond, msg)
     S.checks = S.checks + 1
     if cond then

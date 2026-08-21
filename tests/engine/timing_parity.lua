@@ -31,6 +31,10 @@ T.eq(Timing.DELAY3, 3, "Delay3 is three frames")
 T.eq(Timing.TEXT_SCROLL_PAIR, 10, "ScrollTextUpOneLine is 5 frames, run twice")
 T.eq(Timing.TEXT_CONT, 13, "<CONT>: ProtectedDelay3 + the two-line scroll")
 T.eq(Timing.TEXT_PARAGRAPH, 23, "<PARA>: ProtectedDelay3 + DelayFrames 20")
+T.eq(Timing.TEXT_PAUSE, 30, "TextCommand_PAUSE is 30 frames")
+T.eq(Timing.TEXT_DOT, 10, "TextCommand_DOTS is 10 frames per ellipsis")
+T.eq(Timing.LIST_MENU_OPEN, 10, "DisplayListMenuID opens with 10 frames")
+T.eq(Timing.LIST_MENU_REDRAW, 3, "each list redraw pays Delay3")
 T.eq(Timing.YES_NO_ANSWER, 15, "DisplayTwoOptionMenu holds 15 frames")
 T.eq(Timing.WARP_FADE_OUT, 32, "a map change fades out over 32 frames")
 T.eq(Timing.WARP_FADE_IN, 0, "there is no fade in: LoadGBPal restores in one write")
@@ -179,6 +183,76 @@ box2:update(1 / 60)
 Input:release()
 T.eq(box2.holdFrames, Timing.TEXT_SCROLL_PAIR,
   "a CONT advance holds for the two ScrollTextUpOneLine calls")
+
+-- TX_PAUSE and TX_DOTS used to be discarded by both ROM extractors.  Their
+-- tokens now become zero-width typewriter events, including the cart's held
+-- A/B fast path (home/text.asm TextCommand_PAUSE / TextCommand_DOTS).
+local gPause = textGame()
+gPause.save.options.textSpeed = 1
+local pauseBox = TextBox.new(gPause, "A\30B", {})
+pauseBox:update(1 / 60) -- A
+pauseBox:update(1 / 60) -- TX_PAUSE
+T.eq(pauseBox.holdFrames, Timing.TEXT_PAUSE,
+  "TX_PAUSE starts its 30-frame hold at the command position")
+T.eq(#pauseBox.shown[1], 1, "TX_PAUSE itself draws no glyph")
+for _ = 1, Timing.TEXT_PAUSE do pauseBox:update(1 / 60) end
+T.eq(#pauseBox.shown[1], 1, "no following glyph types during TX_PAUSE")
+pauseBox:update(1 / 60)
+T.eq(#pauseBox.shown[1], 2, "typing resumes after exactly 30 held frames")
+
+local gFastPause = textGame()
+gFastPause.save.options.textSpeed = 1
+local fastPause = TextBox.new(gFastPause, "A\30B", {})
+fastPause:update(1 / 60)
+Input.down.a = true
+fastPause:update(1 / 60)
+Input.down.a = nil
+T.eq(fastPause.holdFrames, nil, "held A skips TX_PAUSE's delay")
+fastPause:update(1 / 60)
+T.eq(#fastPause.shown[1], 2, "held-button pause skip does not lose text")
+
+local gDots = textGame()
+gDots.save.options.textSpeed = 1
+local dots = TextBox.new(gDots, "A…\31B", {})
+dots:update(1 / 60)
+dots:update(1 / 60)
+T.eq(#dots.shown[1], 2, "TX_DOTS prints its ellipsis before waiting")
+dots:update(1 / 60)
+T.eq(dots.holdFrames, Timing.TEXT_DOT,
+  "each TX_DOTS ellipsis starts a ten-frame hold")
+
+-- ListMenu's first HandleMenuInput is after DelayFrames 10 and the loop's
+-- Delay3.  Navigation loops through the redraw and pays another Delay3.
+local ListMenu = require("src.ui.ListMenu")
+local menuInput = { pressed = {} }
+function menuInput:wasPressed(key) return self.pressed[key] or false end
+function menuInput:isDown() return false end
+local menuChosen = 0
+local menuGame = { data = Data, input = menuInput,
+  stack = { pop = function() end } }
+local menu = ListMenu.new(menuGame, "ITEMS", {
+  { label = "ONE" }, { label = "TWO" },
+}, { onChoose = function() menuChosen = menuChosen + 1 end })
+for frame = 1, Timing.LIST_MENU_OPEN + Timing.LIST_MENU_REDRAW do
+  menuInput.pressed = { a = true }
+  menu:update(1 / 60)
+  T.eq(menuChosen, 0, "opening list swallows input frame " .. frame)
+end
+menuInput.pressed = { a = true }
+menu:update(1 / 60)
+T.eq(menuChosen, 1, "list accepts input after its 10+3 opening hold")
+
+menuInput.pressed = { down = true }
+menu:update(1 / 60)
+T.eq(menu.index, 2, "accepted navigation moves the list cursor")
+for frame = 1, Timing.LIST_MENU_REDRAW do
+  menuInput.pressed = { up = true }
+  menu:update(1 / 60)
+  T.eq(menu.index, 2, "redraw swallows input frame " .. frame)
+end
+menuInput.pressed = { up = true }
+menu:update(1 / 60)
+T.eq(menu.index, 1, "list accepts navigation after Delay3")
 
 -- ---------------------------------------------------------------- yes/no
 

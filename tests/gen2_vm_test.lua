@@ -1425,7 +1425,9 @@ check(handlerCount >= 70,
 -- RandomPhoneWildMon and RandomPhoneMon left it when the incoming-call ring
 -- landed and GetCallerLocation finally had a caller to read: the id rides
 -- vm.curPhoneCaller and both names now land in the string buffer.
-check(stubCount >= 23,
+-- OverworldTownMap left it when the cartridge's view-only wall-map loop was
+-- implemented; unlike the POKeGEAR map, it does not require the MAP CARD.
+check(stubCount >= 22,
   ("%d are deliberate stubs"):format(stubCount))
 
 local overlap = {}
