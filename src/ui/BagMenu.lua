@@ -17,10 +17,13 @@ local function buildItems(game)
   local items = {}
   for _, id in ipairs(Bag.order(game.save)) do
     local def = game.data.items[id]
+    -- PrintListMenuEntries skips the quantity for anything IsKeyItem_ owns:
+    -- the KeyItemFlags bitfield plus the HMs (item_effects.asm:2616-2641)
+    local unsellable = (def and def.keyItem) or id:find("^HM_") ~= nil
     table.insert(items, {
       value = id,
       label = def and def.name or id,
-      right = "x" .. game.save.inventory[id],
+      right = (not unsellable) and ("x" .. game.save.inventory[id]) or nil,
     })
   end
   return items
@@ -334,8 +337,13 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
               local Evolution = require("src.pokemon.Evolution")
               local evoTo, evo = Evolution.pendingFor(game, target,
                                                      { kind = "levelup" })
+              -- the party menu stays up through TryEvolvingMon and only
+              -- comes down at RemoveUsedItem (item_effects.asm:1392-1418)
               if evoTo then
-                Evolution.evolve(game, target, evoTo, nil, evo and evo.method)
+                Evolution.evolve(game, target, evoTo, closePicker,
+                                 evo and evo.method)
+              else
+                closePicker()
               end
               return
             end
@@ -399,10 +407,9 @@ local function pickTargetAndUse(game, battle, id, list)
   local opts = {
     pickOnly = true,
     battle = battle,
-    -- HP medicine animates its bar with the picker still up (#252).  Only
-    -- out of battle: the in-battle tail closes the bag list underneath
-    -- first, which needs the picker already gone.
-    keepOpen = (not battle) and ItemEffects.healsHP(id),
+    -- HP medicine animates with the picker up (#252), RARE CANDY prints over
+    -- the party menu (item_effects.asm:1392-1418)
+    keepOpen = (not battle) and ItemEffects.keepsPartyMenuOpen(id),
     onSwitch = function(mon, picker)
       if not wantsMove then
         useOn(game, battle, id, mon, list, nil, picker)
@@ -470,7 +477,9 @@ function BagMenu.new(game, opts)
   local list
   list = ListMenu.new(game, "ITEMS", buildItems(game), {
     kind = "bag",
-    footer = ("¥%d"):format(game.save.money),
+    -- StartMenu_Item zeroes wPrintItemPrices and draws no money box: the
+    -- LIST_MENU_BOX floats over the map (engine/menus/start_sub_menus.asm)
+    itemBox = true,
     -- B returns to the start menu when the bag was opened from it
     onCancel = opts.onCancel,
     -- SELECT reorders items like the original bag (swap_items.asm)

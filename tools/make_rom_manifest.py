@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -20,6 +21,43 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract import (battle_anims, constants, field, font, items, maps,  # noqa: E402
                      pokemon, sprites, text, tilesets, trainers, util)
 from rom_data import CANONICAL_RED_SHA1, SymbolTable  # noqa: E402
+
+# The pret/pokered commit this manifest was last verified against. Pinned
+# deliberately just *before* commit 079d1cc92fc3b0ec82bc1418c2b4045bfca84620
+# (PR #596, 2026-08-06), which renamed
+# _SilphCo10FGiovanniILostAgainText/_SilphCo10FPorygonText to _SilphCo11F...
+# -- data/scripts/victories.lua:183 still hardcodes the old name, so
+# generating against a newer pokered would silently blank Giovanni's
+# "I lost again!?" rematch line. Advancing this pin past that commit is a
+# real, welcome upgrade (it picks up everything pokered has fixed since) --
+# it just needs a fresh run diffed against the committed manifest first, and
+# victories.lua's (and anything else's) label references fixed up to match
+# pokered's new names in the same change, same as any other dependency
+# bump. Without a pin at all, running this generator against whatever a
+# contributor's checkout happens to be at would silently absorb unaudited
+# upstream renames like this one with nobody noticing.
+POKERED_REVISION = "cf621a76d4941c93c078eb38e0880fe8db48ef40"
+
+
+def _checkout_revision(path):
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=path, check=True,
+            capture_output=True, text=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def check_pokered_revision(pokered, expected, *, allow_mismatch=False):
+    actual = _checkout_revision(pokered)
+    if actual is None or actual == expected or allow_mismatch:
+        return
+    raise SystemExit(
+        f"{pokered} is at {actual}, but this generator is pinned to "
+        f"{expected}. Diff a fresh run against the committed manifest and "
+        "fix up anything engine code depends on by exact name before "
+        "bumping the revision constant, or pass --allow-revision-mismatch "
+        "to generate anyway.")
 
 
 def simple_constants(pokered, relpath, stop_at=None):
@@ -628,6 +666,80 @@ def embedded_symbols(data, symbols):
     }
 
 
+# Trainer parties this project reimplements that have no data to extract:
+# CeladonChiefHouse's CHIEF is a talk-only NPC in the ROM (the Celadon Chief
+# battle is unused/cut content -- pokered's data/trainers/parties.asm has
+# `ChiefData:` followed by `; none`, zero Pokemon).  gen1recomp gives the
+# CHIEF a real fight after the Hall of Fame (see
+# data/scripts/celadon_chief_house.lua and src/import/RomExtractor.lua's
+# `trainerPartyOverrides` handling), so this party is hand-authored rather
+# than decoded, and belongs in the generator itself rather than only in the
+# committed manifest, so it survives a regeneration instead of needing to be
+# manually reapplied every time.
+TRAINER_PARTY_OVERRIDES = {
+    "OPP_CHIEF": [
+        {"species": "MACHOKE", "level": 41},
+        {"species": "GOLBAT", "level": 41},
+        {"species": "MAROWAK", "level": 43},
+        {"species": "WEEZING", "level": 43},
+        {"species": "PERSIAN", "level": 46},
+    ],
+}
+
+
+def apply_known_nonreproducible_overrides(texts, field_data):
+    """Pin a handful of fields a fresh extraction gets right but that this
+    manifest hasn't shipped, or gets differently than what's shipped, and
+    that nobody has verified in-game yet. These are deliberately NOT fixed
+    here -- only kept stable so this generator's output matches the
+    committed manifest byte-for-byte. Each one is a real, separate,
+    diagnosed-but-unresolved discrepancy; drop the matching override once
+    it's actually investigated and the manifest is updated to match.
+    """
+    # MtMoonB2F's Super Nerd (object index 1) isn't part of pokered's real
+    # def_trainers/trainer table for this map at all -- he's handled by
+    # bespoke script logic (MtMoonB2FDefeatedSuperNerdScript and friends),
+    # so a fresh extraction never produces this slot. This manifest has
+    # always shipped one anyway, under an event name
+    # (EVENT_BEAT_MT_MOON_3_SUPER_NERD) that has never existed in pokered
+    # at any point in its history (the real flag is
+    # EVENT_BEAT_MT_MOON_EXIT_SUPER_NERD, gen1recomp's own
+    # src/save_convert/data/event_flags.lua flag 1401) -- fabricated data,
+    # not pokered drift. OverworldState:trainerDefeated() checks
+    # Game.save.defeatedTrainers[npc.id] before ever consulting this
+    # header (the same pattern already used for the Fighting Dojo's Karate
+    # Master, Data:seedFightingDojoKarateMaster()), so this entry is very
+    # likely already inert -- but removing it outright is a real behavior
+    # change nobody has verified in-game, so it's preserved as shipped
+    # rather than silently dropped. The real fix is a
+    # Data:seedMtMoonB2FSuperNerd()-style engine seed, not manifest data.
+    texts["trainerHeaders"].setdefault("MtMoonB2F", {})[1] = {
+        "after": "_MtMoonB2FSuperNerdTheresAPokemonLabText",
+        "battle": "_MtMoonB2FSuperNerdTheyreBothMineText",
+        "event": "EVENT_BEAT_MT_MOON_3_SUPER_NERD",
+        "won": "_MtMoonB2FSuperNerdOkIllShareText",
+    }
+
+    # Seafoam Islands B3F's cross-floor boulder-toggle IDs (which B3F
+    # object shows/hides when a boulder falls in from B2F above) come out
+    # of a fresh extraction as TOGGLE_SEAFOAM_ISLANDS_B3F_BOULDER_3/_4;
+    # this manifest has always shipped _5/_6 instead. Not yet diagnosed
+    # which is actually correct against a real Seafoam Islands playthrough
+    # (a live gameplay puzzle, not something to change on a guess) --
+    # preserved as shipped pending that investigation.
+    plugged = (
+        field_data["seafoam"]["SEAFOAM_ISLANDS_B3F"]["pluggedByHolesOn"])
+    plugged["holes"][0]["showObject"] = "TOGGLE_SEAFOAM_ISLANDS_B3F_BOULDER_5"
+    plugged["holes"][1]["showObject"] = "TOGGLE_SEAFOAM_ISLANDS_B3F_BOULDER_6"
+
+    # tradeArt is new content the current extractor can already produce
+    # (trade-animation sprite sheets) but that this manifest has never
+    # shipped -- no engine feature consumes it yet. Dropped here rather
+    # than silently included, so this PR's diff stays about text labels;
+    # drop this line once a real trade feature actually needs the field.
+    field_data.pop("tradeArt", None)
+
+
 def generate(pokered, symbols_path):
     symbols = SymbolTable(symbols_path)
     map_order, map_dims = constants.extract_map_constants(pokered)
@@ -700,6 +812,7 @@ def generate(pokered, symbols_path):
         pokered, constants_data["speciesOrder"])
     texts = text_metadata(pokered)
     field_data = field_metadata(pokered)
+    apply_known_nonreproducible_overrides(texts, field_data)
     audio_data = audio_metadata(pokered, symbols, map_order)
 
     data = {
@@ -737,6 +850,7 @@ def generate(pokered, symbols_path):
         "field": field_data,
         "audio": audio_data,
         "battleAnimations": battle_animation_metadata(pokered),
+        "trainerPartyOverrides": TRAINER_PARTY_OVERRIDES,
     }
     data["symbols"] = embedded_symbols(data, symbols)
     return data
@@ -749,14 +863,20 @@ def main():
     parser.add_argument(
         "--out",
         default=os.path.join(os.path.dirname(__file__), "rom_manifest.json"))
+    parser.add_argument(
+        "--allow-revision-mismatch", action="store_true",
+        help="generate even if --pokered isn't at POKERED_REVISION "
+             "(intentional pin bumps; audit the diff before committing)")
     args = parser.parse_args()
 
     pokered = os.path.abspath(args.pokered)
     if not os.path.isfile(os.path.join(pokered, "main.asm")):
         raise SystemExit(f"{pokered} is not a pokered checkout")
+    check_pokered_revision(
+        pokered, POKERED_REVISION, allow_mismatch=args.allow_revision_mismatch)
     data = generate(pokered, os.path.abspath(args.symbols))
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+        json.dump(data, f, ensure_ascii=True, indent=2, sort_keys=True)
         f.write("\n")
     print(f"wrote {args.out}")
 

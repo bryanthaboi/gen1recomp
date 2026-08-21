@@ -337,10 +337,15 @@ function PackMenu:useSelected()
     return
   end
   local world = self.world
-  local result = world and world.useFieldItem and world:useFieldItem(row.id)
+  local result, extra = nil, nil
+  if world and world.useFieldItem then result, extra = world:useFieldItem(row.id) end
   if result then
     if result == "nowhere" then
       self.message = OAK_THIS_ISNT_THE_TIME
+    elseif result == "coin_case" then
+      -- _CoinCaseCountText (data/text/common_3.asm:336): "Coins:" then the
+      -- count, text_decimal 4 digits with PRINTNUM_LEFTALIGN_F so no padding.
+      self.message = { "Coins:", tostring(extra or 0) }
     elseif result == "repel_used" then
       -- ItemUsedText (data/text/common_3.asm): "<PLAYER> used the\n<ITEM>."
       -- World already wrote the counter and took the item out of the bag, so
@@ -1022,8 +1027,7 @@ function PackMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

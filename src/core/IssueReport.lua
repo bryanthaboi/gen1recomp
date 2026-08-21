@@ -6,6 +6,49 @@ local IssueReport = {}
 local FORM_URL = "https://github.com/bryanthaboi/gen1recomp/issues/new"
 local TEMPLATE = "bug_report.yml"
 
+local APPLE_MODELS = {
+  ["iPhone14,2"] = "iPhone 13 Pro",
+  ["iPhone14,3"] = "iPhone 13 Pro Max",
+  ["iPhone14,4"] = "iPhone 13 mini",
+  ["iPhone14,5"] = "iPhone 13",
+  ["iPhone14,7"] = "iPhone 14",
+  ["iPhone14,8"] = "iPhone 14 Plus",
+  ["iPhone15,2"] = "iPhone 14 Pro",
+  ["iPhone15,3"] = "iPhone 14 Pro Max",
+  ["iPhone15,4"] = "iPhone 15",
+  ["iPhone15,5"] = "iPhone 15 Plus",
+  ["iPhone16,1"] = "iPhone 15 Pro",
+  ["iPhone16,2"] = "iPhone 15 Pro Max",
+  ["iPhone17,1"] = "iPhone 16 Pro",
+  ["iPhone17,2"] = "iPhone 16 Pro Max",
+  ["iPhone17,3"] = "iPhone 16",
+  ["iPhone17,4"] = "iPhone 16 Plus",
+  ["iPhone17,5"] = "iPhone 16e",
+  ["Mac14,2"] = "MacBook Air (13-inch, M2)",
+  ["Mac14,3"] = "Mac mini (M2)",
+  ["Mac14,5"] = "MacBook Pro (14-inch, M2 Max)",
+  ["Mac14,6"] = "MacBook Pro (16-inch, M2 Max)",
+  ["Mac14,7"] = "MacBook Pro (13-inch, M2)",
+  ["Mac14,9"] = "MacBook Pro (14-inch, M2 Pro)",
+  ["Mac14,10"] = "MacBook Pro (16-inch, M2 Pro)",
+  ["Mac14,12"] = "Mac mini (M2 Pro)",
+  ["Mac14,13"] = "Mac Studio (M2 Max)",
+  ["Mac14,14"] = "Mac Studio (M2 Ultra)",
+  ["Mac14,15"] = "MacBook Air (15-inch, M2)",
+  ["Mac15,3"] = "MacBook Pro (14-inch, M3)",
+  ["Mac15,6"] = "MacBook Pro (14-inch, M3 Pro)",
+  ["Mac15,7"] = "MacBook Pro (16-inch, M3 Pro)",
+  ["Mac15,12"] = "MacBook Air (13-inch, M3)",
+  ["Mac15,13"] = "MacBook Air (15-inch, M3)",
+  ["Mac16,1"] = "MacBook Pro (14-inch, M4)",
+  ["Mac16,5"] = "MacBook Pro (16-inch, M4 Max)",
+  ["Mac16,6"] = "MacBook Pro (14-inch, M4 Max)",
+  ["Mac16,7"] = "MacBook Pro (16-inch, M4 Pro)",
+  ["Mac16,8"] = "MacBook Pro (14-inch, M4 Pro)",
+  ["Mac16,10"] = "Mac mini (M4)",
+  ["Mac16,11"] = "Mac mini (M4 Pro)",
+}
+
 local function clean(value)
   if value == nil then return nil end
   local text = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
@@ -31,6 +74,16 @@ local function commandValue(command)
   local ok, pipe = pcall(io.popen, command, "r")
   if not ok or not pipe then return nil end
   local readOK, value = pcall(pipe.read, pipe, "*l")
+  pcall(pipe.close, pipe)
+  if not readOK then return nil end
+  return clean(value)
+end
+
+local function commandText(command)
+  if not io or type(io.popen) ~= "function" then return nil end
+  local ok, pipe = pcall(io.popen, command, "r")
+  if not ok or not pipe then return nil end
+  local readOK, value = pcall(pipe.read, pipe, "*a")
   pcall(pipe.close, pipe)
   if not readOK then return nil end
   return clean(value)
@@ -66,6 +119,25 @@ local function loveVersion()
   return result
 end
 
+local function friendlyModel(identifier)
+  identifier = clean(identifier)
+  if not identifier then return nil end
+  return APPLE_MODELS[identifier] or identifier
+end
+
+local function macModel()
+  local details = commandText("system_profiler SPHardwareDataType 2>/dev/null")
+  if details then
+    local name = clean(details:match("Model Name:%s*([^\r\n]+)"))
+    local chip = clean(details:match("Chip:%s*([^\r\n]+)"))
+    if name and chip and not name:find(chip, 1, true) then
+      return name .. " (" .. chip .. ")"
+    end
+    if name then return name end
+  end
+  return friendlyModel(commandValue("sysctl -n hw.model 2>/dev/null"))
+end
+
 local function appVersion()
   local version = clean(Version.engine)
   if not version or version == "0.0.0" or version == "0.0.0-dev" then return "" end
@@ -73,20 +145,25 @@ local function appVersion()
 end
 
 local function deviceModel(rawOS, system)
-  local model = clean(call(system.getModel))
-  if model then return model end
+  local nativeModel = clean(call(system.getDeviceModel))
+  if nativeModel then return friendlyModel(nativeModel) end
   if rawOS == "OS X" or rawOS == "macOS" then
-    return commandValue("sysctl -n hw.model 2>/dev/null")
+    return macModel()
+  end
+  local model = clean(call(system.getModel))
+  if model and not model:lower():find("gpu", 1, true)
+      and not model:lower():find("renderer", 1, true) then
+    return friendlyModel(model)
   end
   if rawOS == "Windows" then
-    return commandValue("powershell.exe -NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_ComputerSystem).Model\" 2>NUL")
+    return friendlyModel(commandValue("powershell.exe -NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_ComputerSystem).Model\" 2>NUL"))
   end
   if rawOS == "Linux" then
-    return commandValue("cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null")
-      or commandValue("cat /sys/devices/virtual/dmi/id/model 2>/dev/null")
+    return friendlyModel(commandValue("cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null")
+      or commandValue("cat /sys/devices/virtual/dmi/id/model 2>/dev/null"))
   end
   if rawOS == "Android" then
-    return commandValue("getprop ro.product.model 2>/dev/null")
+    return friendlyModel(commandValue("getprop ro.product.model 2>/dev/null"))
   end
   return nil
 end
@@ -121,7 +198,7 @@ local function metadata(options, context)
   local window = love and love.window or {}
   local rawOS = clean(call(system.getOS))
   local model = deviceModel(rawOS, system)
-  local renderer, rendererVersion, _, rendererDevice = call(graphics.getRendererInfo)
+  local renderer, rendererVersion = call(graphics.getRendererInfo)
   local width, height = call(graphics.getDimensions)
   local pixelWidth, pixelHeight = call(graphics.getPixelDimensions)
   local modeWidth, modeHeight, flags = call(window.getMode)
@@ -134,11 +211,7 @@ local function metadata(options, context)
     if value then lines[#lines + 1] = "- " .. label .. ": " .. value end
   end
   add("Platform", formOS(rawOS))
-  local hardware = model
-  if rendererDevice and rendererDevice ~= model then
-    hardware = hardware and (hardware .. " (" .. rendererDevice .. ")") or rendererDevice
-  end
-  add("Device", hardware)
+  add("Device", model)
   local rendererDetails = clean(renderer)
   if rendererDetails and clean(rendererVersion) then
     rendererDetails = rendererDetails .. " " .. clean(rendererVersion)

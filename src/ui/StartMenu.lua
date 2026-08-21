@@ -11,6 +11,7 @@ local Renderer = require("src.render.Renderer")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Strings = require("src.core.Strings")
+local Theme = require("src.ui.Theme")
 
 local StartMenu = {}
 
@@ -19,6 +20,7 @@ local function sameItems(_, items) return items end
 function StartMenu.new(game)
   local flags = game.save.flags or {}
   local items = {}
+  local menu
 
   -- vanilla start submenus return here on B (RedisplayStartMenu): the
   -- generic Menu pops the start menu when a row is selected, so each
@@ -51,42 +53,84 @@ function StartMenu.new(game)
     end })
 
   -- SAVE shows the player/badges/dex/time panel then asks to confirm
-  -- (PrintSaveScreenText)
-  table.insert(items, { label = Strings("SAVE"), onSelect = function()
+  -- (PrintSaveScreenText); StartMenu_SaveReset never clears the START menu
+  -- box, so it stays on screen beside the panel (start_sub_menus.asm:641-647)
+  table.insert(items, { label = Strings("SAVE"), keepOpen = true,
+    onSelect = function()
     local TextBox = require("src.render.TextBox")
     local badges = require("src.inventory.Badges").count(game.data, game.save)
     local owned = 0
     for _ in pairs(game.save.pokedex and game.save.pokedex.owned or {}) do
       owned = owned + 1
     end
+    -- the panel is a static snapshot; the cart prints it once
+    -- (main_menu.asm:390-401)
     local t = math.floor(game.save.playTime or 0)
-    local panel = Strings("PLAYER %s\nBADGES    %d\nPOKéDEX %3d\nTIME %6d:%02d",
-                          game.save.player.name or "RED", badges, owned,
-                          math.floor(t / 3600), math.floor(t / 60) % 60)
-    game.stack:push(TextBox.new(game,
-      panel .. Strings("\fWould you like to\nSAVE the game?"), nil, {
-      choice = function(yes)
-        if not yes then return end
-        -- SaveMenu .save (engine/menus/save.asm:164-181): "Now saving..."
-        -- is a bare PlaceString held by DelayFrames 120, then GameSavedText,
-        -- which ends in `done` and so never reaches TX_PROMPT_BUTTON.
-        -- Neither page takes a button press (#765); the second waits on
-        -- SFX_SAVE (PlaySoundWaitForCurrent + WaitForSoundToFinish) and then
-        -- DelayFrames 30.  The write itself is invisible either side of the
-        -- "Now saving..." hold, so it stays on that box's onDone.
-        game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
-          game:writeSave()
-          game.stack:push(TextBox.new(game,
-            Strings("%s saved\nthe game!", game.save.player.name or "RED"),
-            nil, { auto = {
-              sound = function()
-                return require("src.core.Sound").play(game.data, "Save")
-              end,
-              delay = 30,
-            } }))
-        end, { auto = { delay = 120 } }))
+    -- PrintSaveScreenText draws its own border at hlcoord 4,0 (b=8, c=$e) and
+    -- leaves it up under the prompt -- engine/menus/main_menu.asm:381-405
+    local panel
+    panel = {
+      -- the panel overlaps the kept-open START menu box (start_sub_menus.asm:
+      -- 641-647), so neither can be docked to a screen edge on its own
+      holdsUIAnchors = true,
+      delay = 0,
+      update = function()
+        -- ld c, 30 / jp DelayFrames: the bare panel holds before the
+        -- prompt (main_menu.asm:404-405)
+        panel.delay = panel.delay + 1
+        if panel.delay == 30 then panel.openPrompt() end
       end,
-    }))
+      draw = function()
+        Font.drawBox(4, 0, 16, 10)
+        love.graphics.setColor(0, 0, 0, 1)
+        Font.draw(Strings("PLAYER"), 5 * 8, 2 * 8)
+        Font.draw(game.save.player.name or "RED", 12 * 8, 2 * 8)
+        Font.draw(Strings("BADGES"), 5 * 8, 4 * 8)
+        Font.draw(("%2d"):format(badges), 17 * 8, 4 * 8)
+        Font.draw(Strings("POKéDEX"), 5 * 8, 6 * 8)
+        Font.draw(("%3d"):format(owned), 16 * 8, 6 * 8)
+        Font.draw(Strings("TIME"), 5 * 8, 8 * 8)
+        Font.draw(("%3d:%02d"):format(math.floor(t / 3600),
+                                      math.floor(t / 60) % 60), 13 * 8, 8 * 8)
+        love.graphics.setColor(1, 1, 1, 1)
+      end,
+    }
+    local function closePanel()
+      if game.stack:top() == panel then game.stack:pop() end
+      -- SaveMenu returns into HoldTextDisplayOpen, not RedisplayStartMenu
+      -- (start_sub_menus.asm:645-647): the kept-open START menu goes too
+      if menu and game.stack:top() == menu then game.stack:pop() end
+    end
+    panel.openPrompt = function()
+      game.stack:push(TextBox.new(game,
+        Strings("Would you like to\nSAVE the game?"), nil, {
+        -- SaveTheGame_YesOrNo pins its TWO_OPTION_MENU at hlcoord 0, 7 rather
+        -- than the shared right-hand one -- engine/menus/save.asm:186-192
+        choiceBox = Theme.saveBox,
+        choice = function(yes)
+          if not yes then closePanel() return end
+          -- SaveMenu .save (engine/menus/save.asm:164-181): "Now saving..."
+          -- is a bare PlaceString held by DelayFrames 120, then GameSavedText,
+          -- which ends in `done` and so never reaches TX_PROMPT_BUTTON.
+          -- Neither page takes a button press (#765); the second waits on
+          -- SFX_SAVE (PlaySoundWaitForCurrent + WaitForSoundToFinish) and then
+          -- DelayFrames 30.  The write itself is invisible either side of the
+          -- "Now saving..." hold, so it stays on that box's onDone.
+          game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
+            game:writeSave()
+            game.stack:push(TextBox.new(game,
+              Strings("%s saved\nthe game!", game.save.player.name or "RED"),
+              closePanel, { auto = {
+                sound = function()
+                  return require("src.core.Sound").play(game.data, "Save")
+                end,
+                delay = 30,
+              } }))
+          end, { auto = { delay = 120 } }))
+        end,
+      }))
+    end
+    game.stack:push(panel)
   end })
 
   table.insert(items, { label = Strings("OPTION"), onSelect = function()
@@ -142,7 +186,7 @@ function StartMenu.new(game)
   -- with Menu's moreArrow showing while there's more below.
   local rowStep = 2
   local maxVisible = math.floor((Renderer.HEIGHT / 8 - 2) / rowStep)
-  local menu = Menu.new(game, items,
+  menu = Menu.new(game, items,
     -- the START menu hugs the top-right corner of the SCREEN, not of a
     -- centred letterbox: at 9,0 x 11 it is already flush with the top and
     -- right of the 20x18 grid, so the anchor keeps it flush when the view

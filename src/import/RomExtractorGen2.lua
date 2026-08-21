@@ -4,6 +4,7 @@
 -- (species order IS dex order, pics/tilesets are lz3-compressed rather than
 -- pkmncompress'd, maps are grouped instead of flat).  See docs/gold-phase1.md.
 local bit = require("bit")
+local GameVersion = require("src.core.GameVersion")
 local ImageWriter = require("src.import.ImageWriter")
 local LuaWriter = require("src.import.LuaWriter")
 local Rom = require("src.import.Rom")
@@ -168,6 +169,10 @@ function RomExtractorGen2.new(romData, manifest, progress)
     symbols = manifest.symbols,
     progress = progress,
     stage = 0,
+    -- _GOLD / _SILVER: the labels are shared, the data behind a handful of
+    -- them is not (gfx/misc.asm:9-20 vs :46-57).
+    edition = GameVersion.forSha1(manifest.romSha1) == "silver"
+      and "silver" or "gold",
   }, RomExtractorGen2)
 end
 
@@ -1641,22 +1646,40 @@ function RomExtractorGen2:extractTitle()
     return 3
   end
 
-  -- pret gfx/title/title_bg_gold.pal / title_fg.pal (5 BG pals, 2 OBJ pals).
-  local BG_PALS = {
+  local silver = self.edition == "silver"
+
+  -- pret gfx/title/title_bg_gold.pal / title_bg_silver.pal (5 BG pals);
+  -- GSTitleBGPals is the edition-selected include (engine/gfx/color.asm:1234).
+  local BG_PALS = silver and {
+    { { 31, 31, 31 }, { 0, 12, 15 }, { 4, 8, 21 }, { 0, 0, 0 } },
+    { { 31, 21, 0 }, { 15, 17, 15 }, { 4, 8, 21 }, { 0, 0, 17 } },
+    { { 31, 31, 31 }, { 31, 0, 0 }, { 4, 8, 21 }, { 0, 0, 0 } },
+    { { 31, 31, 31 }, { 24, 23, 25 }, { 4, 8, 21 }, { 8, 8, 9 } },
+    { { 31, 31, 31 }, { 5, 10, 11 }, { 0, 12, 15 }, { 0, 0, 0 } },
+  } or {
     { { 31, 31, 31 }, { 18, 23, 31 }, { 15, 20, 31 }, { 0, 0, 0 } },
     { { 31, 21, 0 }, { 12, 14, 12 }, { 15, 20, 31 }, { 0, 0, 17 } },
     { { 31, 31, 31 }, { 31, 0, 0 }, { 15, 20, 31 }, { 0, 0, 0 } },
     { { 31, 31, 31 }, { 29, 25, 0 }, { 15, 20, 31 }, { 17, 10, 1 } },
     { { 31, 31, 31 }, { 23, 26, 31 }, { 18, 23, 31 }, { 0, 0, 0 } },
   }
-  -- title_fg.pal: pal 0 = Ho-Oh silhouette (shades 1-3 are the same brown);
-  -- pal 1 = gold trail sparks (OAM_PAL1 on GSTitleTrail).
+  -- title_fg.pal, shared (GSTitleOBPals, engine/gfx/color.asm:1241): pal 0 =
+  -- Ho-Oh silhouette; pal 1 = gold trail sparks (OAM_PAL1 on GSTitleTrail).
   local OBJ_HOOH = {
     { 31, 31, 31 }, { 7, 6, 3 }, { 7, 6, 3 }, { 7, 6, 3 },
   }
   local OBJ_TRAIL = {
     { 31, 31, 31 }, { 31, 31, 0 }, { 26, 22, 0 }, { 0, 0, 0 },
   }
+  -- engine/movie/title.asm:134-141 + CopyPals (home/palettes.asm:190):
+  -- DmgToCgbObjPal0 %11100000 makes Silver's OBJ pal 0 {c0, c0, c2, c3}.
+  if silver then
+    OBJ_HOOH = {
+      OBJ_HOOH[1], OBJ_HOOH[1], OBJ_HOOH[3], OBJ_HOOH[4],
+    }
+    -- .OAMData_GSTitleTrail is attribute 0, not OAM_PAL1 (oam.asm:834-837).
+    OBJ_TRAIL = OBJ_HOOH
+  end
 
   local function palColor(pal, shade)
     local c = pal[shade + 1] or pal[4]
@@ -1671,8 +1694,9 @@ function RomExtractorGen2:extractTitle()
   -- solid BLACK silhouette on a monochrome screen rather than the shaded pose
   -- a straight decode gives.  rOBP1 (%11111000) carries the gold trail.
   local DMG_BGP = { 0, 2, 1, 3 }
-  local DMG_OBP0 = { 3, 3, 3, 3 }
-  local DMG_OBP1 = { 0, 2, 3, 3 }
+  -- engine/movie/title.asm:105-115: Silver writes %11110000 to both OBPs.
+  local DMG_OBP0 = silver and { 0, 0, 3, 3 } or { 3, 3, 3, 3 }
+  local DMG_OBP1 = silver and { 0, 0, 3, 3 } or { 0, 2, 3, 3 }
   -- ImageWriter's four hardware shades, by shade number.
   local DMG_SHADE = { 1, 2 / 3, 1 / 3, 0 }
 
@@ -1776,6 +1800,28 @@ function RomExtractorGen2:extractTitle()
 
   -- Ho-Oh frames from OAMData_GSIntroHoOh1..5 (data/sprite_anims/oam.asm).
   local hoohTiles = tilesFrom2bpp(self:decompressLz3Symbol("TitleScreenGFX4"), true)
+  -- .OAMData_GSIntroLugia1 / 2 (data/sprite_anims/oam.asm:736-773); the
+  -- spriteanimoam vtile offset is added per frame (core.asm:224-227).
+  local LUGIA_1 = {
+    { -5, -2, 0, 0, 0x00 }, { -5, 0, 0, 0, 0x02 },
+    { -4, -2, 0, 0, 0x04 }, { -4, 0, 0, 0, 0x06 },
+    { -3, -1, 0, 0, 0x08 }, { -2, -1, 0, 0, 0x0a },
+    { -1, -2, 0, 0, 0x0c }, { -1, 0, 0, 0, 0x0e },
+    { 0, -2, 0, 0, 0x10 }, { 0, 0, 0, 0, 0x12 },
+    { 1, -2, 0, 0, 0x14 }, { 1, 0, 0, 0, 0x16 },
+    { 2, -2, 0, 0, 0x18 }, { 2, 0, 0, 0, 0x1a },
+    { 3, -1, 0, 0, 0x1c }, { 4, -1, 0, 0, 0x1e },
+  }
+  local LUGIA_2 = {
+    { -5, -2, 0, 0, 0x00 }, { -5, 0, 0, 0, 0x02 },
+    { -4, -2, 0, 0, 0x04 }, { -4, 0, 0, 0, 0x06 },
+    { -3, -1, 0, 0, 0x08 }, { -2, -1, 0, 0, 0x0a },
+    { -1, -2, 0, 0, 0x0c }, { -1, 0, 0, 0, 0x0e },
+    { 0, -2, 0, 0, 0x10 }, { 0, 0, 0, 0, 0x12 },
+    { 1, -2, 0, 0, 0x14 }, { 1, 0, 0, 0, 0x16 },
+    { 2, -2, 0, 0, 0x18 }, { 2, 0, 0, 0, 0x1a },
+    { 3, -2, 0, 0, 0x1c }, { 4, -2, 0, 0, 0x1e },
+  }
   local HOOH_FRAMES = {
     { -- 1
       { -4, -1, 0, 0, 0x00 }, { -3, -2, 0, 0, 0x02 }, { -3, 0, 0, 0, 0x04 },
@@ -1823,22 +1869,36 @@ function RomExtractorGen2:extractTitle()
       { 3, -2, 0, 0, 0x22 }, { 3, 0, 0, 0, 0x24 },
     },
   }
-  -- Frameset_GSIntroHoOhLugia (Gold): 1,2,3,4,3,5 with these durations.
-  local HOOH_SEQUENCE = {
+  -- Silver's five oamsets, as {layout, vtile base} (oam.asm:103-107).
+  local LUGIA_FRAMES = {
+    { LUGIA_1, 0x00 }, { LUGIA_1, 0x20 }, { LUGIA_2, 0x40 },
+    { LUGIA_2, 0x60 }, { LUGIA_1, 0x00 },
+  }
+  -- Frameset_GSIntroHoOhLugia (data/sprite_anims/framesets.asm:376-396):
+  -- Gold 1,2,3,4,3,5; Silver 2,1,2,3,3,4,4,3,2 on a faster clock.
+  local HOOH_SEQUENCE = silver and {
+    { 2, 3 }, { 1, 7 }, { 2, 7 }, { 3, 7 }, { 3, 7 },
+    { 4, 7 }, { 4, 7 }, { 3, 7 }, { 2, 3 },
+  } or {
     { 1, 10 }, { 2, 9 }, { 3, 10 }, { 4, 10 }, { 3, 9 }, { 5, 10 },
   }
   local hoohPaths, hoohGrayPaths = {}, {}
-  local originX, originY = 32, 24
-  for fi, oam in ipairs(HOOH_FRAMES) do
+  -- Lugia1/2 span x tiles -5..4, four tiles wider than Ho-Oh's -4..3.
+  local originX, originY = silver and 40 or 32, 24
+  local poseW = silver and 80 or 64
+  local frames = silver and LUGIA_FRAMES or HOOH_FRAMES
+  for fi, entry in ipairs(frames) do
+    local oam = silver and entry[1] or entry
+    local base = silver and entry[2] or 0
     -- The pose starts EMPTY, not white: an OBJ's colour 0 is transparent
     -- wherever it falls, so a gap enclosed by the bird shows the sky through
     -- exactly like one outside it, and there is no matte to flood-fill.
-    local pose = ImageWriter.blank(64, 64, 0, 0, 0, 0)
+    local pose = ImageWriter.blank(poseW, 64, 0, 0, 0, 0)
     for _, spr in ipairs(oam) do
       local px = originX + spr[1] * 8 + spr[3]
       local py = originY + spr[2] * 8 + spr[4]
-      blitSprite(pose, hoohTiles[spr[5] + 1], px, py)
-      blitSprite(pose, hoohTiles[spr[5] + 2], px, py + 8)
+      blitSprite(pose, hoohTiles[base + spr[5] + 1], px, py)
+      blitSprite(pose, hoohTiles[base + spr[5] + 2], px, py + 8)
     end
     local tinted = colorize(pose, function() return OBJ_HOOH end)
     local rel = ("title/hooh_%d.png"):format(fi)
@@ -1855,14 +1915,20 @@ function RomExtractorGen2:extractTitle()
   end
   self:tick("Title screen", 3, 5)
 
-  -- Trail: TitleScreenGFX3 is raw 2bpp (8 tiles); Gold OAM uses one 8x16
-  -- on OAM_PAL1 (gold), not the Ho-Oh silhouette pal.
+  -- Trail: TitleScreenGFX3 is raw 2bpp; Gold's OAM is one 8x16, Silver's two
+  -- side by side, and only 4 of Silver's 8 copied tiles exist (title.asm:43).
   local trailSym = self:symbol("TitleScreenGFX3")
-  local trailRaw = self.rom:bytes(trailSym.bank, trailSym.address, 8 * 16)
+  local trailTileCount = silver and 4 or 8
+  local trailRaw =
+    self.rom:bytes(trailSym.bank, trailSym.address, trailTileCount * 16)
   local trailTiles = tilesFrom2bpp(trailRaw, true)
-  local trail = ImageWriter.blank(8, 16, 0, 0, 0, 0)
+  local trail = ImageWriter.blank(silver and 16 or 8, 16, 0, 0, 0, 0)
   blitSprite(trail, trailTiles[1], 0, 0)
   blitSprite(trail, trailTiles[2], 0, 8)
+  if silver then
+    blitSprite(trail, trailTiles[3], 8, 0)
+    blitSprite(trail, trailTiles[4], 8, 8)
+  end
   local trailTint = colorize(trail, function() return OBJ_TRAIL end)
   self:save(trailTint, "title/trail.png")
   self:save(throughRegister(trail, DMG_OBP1), "title/trail_gray.png")
@@ -1908,8 +1974,11 @@ function RomExtractorGen2:extractTitle()
     cloudsGray = "assets/generated/title/clouds_gray.png",
     hoohFramesGray = hoohGrayPaths,
     trailGray = "assets/generated/title/trail_gray.png",
-    -- Frameset_GSIntroHoOhLugia (Gold), frame index 1-based + duration frames.
+    -- Frameset_GSIntroHoOhLugia, frame index 1-based + duration frames.
     hoohSequence = HOOH_SEQUENCE,
+    -- AnimSeq_GSIntroHoOhLugia (engine/sprite_anims/functions.asm:820-838).
+    hoohBobAmplitude = silver and 8 or 2,
+    hoohBobStep = silver and -1 or 1,
     -- `depixel 12, 11` (engine/movie/title.asm).  Two traps, and the port had
     -- fallen into both, which is what put Ho-Oh off-centre:
     --  * ldpixel's own comment calls its first tile argument the X one and is
@@ -1919,19 +1988,45 @@ function RomExtractorGen2:extractTitle()
     --    the cursor two rows up on the box screen.  So this is x 88, y 96.
     --  * those are OAM coordinates, which are biased; a drawn object sits at
     --    (x - 8, y - 16) on screen.
-    -- The pose canvas holds its own origin at (32, 24), so the sheet's corner
-    -- is (88 - 8 - 32, 96 - 16 - 24) -- and the bird's 64px width then lands
-    -- centred on the screen, 48 to 112.
-    hoohX = 48,
-    hoohY = 56,
+    -- The pose canvas holds its own origin, so the sheet's corner is
+    -- (88 - 8 - originX, 96 - 16 - originY) -- and the pose's width then lands
+    -- centred on the screen (Ho-Oh 48..112, Lugia 40..120).
+    hoohX = 80 - originX,
+    hoohY = 80 - originY,
     trail = "assets/generated/title/trail.png",
     copyright = "assets/generated/title/copyright.png",
     copyrightSplash = "assets/generated/title/copyright_splash.png",
-    -- ScrollTitleScreenClouds: Gold decrements the cloud-band SCX every
-    -- 8 vblanks, so the strip slides 1px right.  Silver does the same
-    -- decrement every frame.
-    cloudScrollEvery = 8,
+    -- ScrollTitleScreenClouds (engine/menus/intro_menu.asm:917-928): Gold
+    -- decrements the cloud-band SCX every 8 vblanks, so the strip slides 1px
+    -- right.  Silver does the same decrement every frame.
+    cloudScrollEvery = silver and 1 or 8,
     cloudY = 88,
+    -- BG pal 0 colour 2: the sky the widescreen bands have to match.
+    sky = {
+      BG_PALS[1][3][1] / 31, BG_PALS[1][3][2] / 31, BG_PALS[1][3][3] / 31,
+    },
+    -- The fill under the cloud/wave band: Gold's cloud field is BG pal 0
+    -- colour 0 (white), Silver's sea floor is colour 3 (black).
+    below = silver and {
+      BG_PALS[1][4][1] / 31, BG_PALS[1][4][2] / 31, BG_PALS[1][4][3] / 31,
+    } or {
+      BG_PALS[1][1][1] / 31, BG_PALS[1][1][2] / 31, BG_PALS[1][1][3] / 31,
+    },
+    -- UpdateTitleTrailSprite (engine/menus/intro_menu.asm:1069-1124).  Silver's
+    -- `depixel 15, 11, 4, 0` is OAM (88, 124), less the bias and the (-16, -8)
+    -- corner .OAMData_GSTitleTrail draws from.
+    trailMode = silver and "silver" or "gold",
+    trailSpawns = silver and { { 72, 100 } } or {
+      { 80, 88 }, { 104, 88 }, { 104, 88 }, { 120, 88 },
+      { 120, 88 }, { 88, 88 },
+    },
+    trailSpawnEvery = 4,
+    trailStepX = 4,
+    trailStepY = silver and 0 or 1,
+    -- AnimSeq_GSTitleTrail (functions.asm:784-813) with wIntroSceneTimer 0.
+    trailBobAmplitude = silver and 3 or 2,
+    trailPhaseStep = silver and 7 or 3,
+    trailPhase = silver and 0 or nil,
   }
   self:write("title", data)
   return data
@@ -3344,6 +3439,18 @@ function RomExtractorGen2:extractScriptsAndText(maps, stdScripts)
       elseif info.name == "givepoke" then
         cmd.species, cmd.level, cmd.item, cmd.trainer =
           args[1], args[2], args[3], args[4]
+        -- Script_givepoke (engine/overworld/scripting.asm:1806)
+        if size == 8 then
+          local function readAt(lo, hi)
+            local addr = (args[lo] or 0) + (args[hi] or 0) * 0x100
+            if not romAddrOk(bank, addr) then return nil end
+            local okStr, str = pcall(self.rom.readString, self.rom,
+              bank, addr, charmap, 0x50, 16)
+            return okStr and str or nil
+          end
+          cmd.name = readAt(5, 6)
+          cmd.otName = readAt(7, 8)
+        end
       elseif info.name == "pokepic" or info.name == "disappear" then
         cmd.species = args[1] -- pokepic
         cmd.object = args[1]  -- disappear (same byte)
@@ -5135,6 +5242,229 @@ function RomExtractorGen2:extractMenuGfx()
     eggHatch.shellTiles = 2
   end
   if eggHatch.egg or eggHatch.shell then out.eggHatch = eggHatch end
+
+  -- StatsScreenPageTilesGFX (gfx/font.asm:23), the 17 tiles
+  -- LoadStatsScreenPageTilesGFX lands at vTiles2 $31 (engine/gfx/load_font.asm:90).
+  local hpBarBorder = self.symbols["EnemyHPBarBorderGFX"]
+  if hpBarBorder then
+    local address = hpBarBorder[2] - 17 * 16
+    self:write2bpp(self.rom:bytes(hpBarBorder[1], address, 17 * 16),
+      17 * 8, 8, "menu/stats_tiles.png")
+    out.stats = {
+      sheet = "assets/generated/menu/stats_tiles.png",
+      tiles = 17,
+      firstTile = 0x31,
+    }
+  end
+
+  -- Goldenrod Game Corner: Slot Machine graphics assets
+  local CacheFs = require("src.import.CacheFs")
+  local function packBytes(bytes)
+    local chars = {}
+    for i = 1, #bytes do chars[i] = string.char(bytes[i]) end
+    return table.concat(chars)
+  end
+  local function writeRaw(relative, bytes)
+    local ok, writeError = CacheFs.write(
+      "assets/generated/" .. relative, packBytes(bytes))
+    if not ok then
+      error("could not write " .. relative .. ": " .. tostring(writeError))
+    end
+  end
+
+  -- Canonical sheet sizes match the cart art the UI indexes (and pret's
+  -- gfx/slots + gfx/card_flip PNGs).  ROM LZ streams are those sheets after
+  -- Makefile gfx transforms; reverse what the decompressed bytes still carry.
+  local SLOTS1_W, SLOTS1_H = 16, 152
+  local SLOTS2_W, SLOTS2_H = 16, 256
+  local SLOTS3_W, SLOTS3_H = 24, 240
+  local CARD1_W, CARD1_H = 128, 32
+  local CARD2_W, CARD2_H = 24, 160
+  local CARD3_W, CARD3_H = 8, 56
+
+  local function pad2bpp(raw, width, height)
+    local need = width * height / 4
+    while #raw < need do raw[#raw + 1] = 0 end
+    while #raw > need do table.remove(raw) end
+    return raw
+  end
+
+  local function writeSheet(raw, width, height, relative, transparent)
+    self:write2bpp(pad2bpp(raw, width, height), width, height, relative,
+      transparent)
+  end
+
+  -- Slots3LZ is unique 8x16 OBJ columns (interleave + remove-duplicates +
+  -- remove-xflip).  Rebuild the 24x240 actor sheet the UI quads expect from
+  -- OAMData_SlotsGolem / Chansey* / Egg (data/sprite_anims/oam.asm), same
+  -- pattern as title-screen Ho-Oh frame composition above.
+  local function composeSlotsActors(raw)
+    local tileCount = math.floor(#raw / 16)
+    local tiles = {}
+    for index = 0, tileCount - 1 do
+      local one = {}
+      for b = 1, 16 do one[b] = raw[index * 16 + b] or 0 end
+      tiles[index] = ImageWriter.decode2bpp(one, 8, 8, true)
+    end
+    local sheet = ImageWriter.blank(SLOTS3_W, SLOTS3_H, 1, 1, 1, 0)
+    local function blit8x16(tileId, dx, dy, flipX)
+      local top, bot = tiles[tileId], tiles[tileId + 1]
+      if not (top and bot) then return end
+      ImageWriter.blit(sheet, top, dx, dy, 0, 0, 8, 8, flipX)
+      ImageWriter.blit(sheet, bot, dx, dy + 8, 0, 0, 8, 8, flipX)
+    end
+    local function blitPose(poseY, base, entries)
+      for _, e in ipairs(entries) do
+        blit8x16(base + e.t, (e.x + 2) * 8, poseY + (e.y + 2) * 8, e.xf)
+      end
+    end
+    local golem = {
+      { x = -2, y = -2, t = 0x00 }, { x = -1, y = -2, t = 0x02 },
+      { x = 0, y = -2, t = 0x00, xf = true },
+      { x = -2, y = 0, t = 0x04 }, { x = -1, y = 0, t = 0x06 },
+      { x = 0, y = 0, t = 0x04, xf = true },
+    }
+    local chansey = {
+      {
+        { x = -2, y = -2, t = 0x00 }, { x = -1, y = -2, t = 0x02 },
+        { x = 0, y = -2, t = 0x04 },
+        { x = -2, y = 0, t = 0x06 }, { x = -1, y = 0, t = 0x08 },
+        { x = 0, y = 0, t = 0x0a },
+      },
+      {
+        { x = -2, y = -2, t = 0x00 }, { x = -1, y = -2, t = 0x02 },
+        { x = 0, y = -2, t = 0x04 },
+        { x = -2, y = 0, t = 0x0c }, { x = -1, y = 0, t = 0x0e },
+        { x = 0, y = 0, t = 0x10 },
+      },
+      {
+        { x = -2, y = -2, t = 0x00 }, { x = -1, y = -2, t = 0x02 },
+        { x = 0, y = -2, t = 0x04 },
+        { x = -2, y = 0, t = 0x12 }, { x = -1, y = 0, t = 0x14 },
+        { x = 0, y = 0, t = 0x16 },
+      },
+      {
+        { x = -2, y = -2, t = 0x00 }, { x = -1, y = -2, t = 0x02 },
+        { x = 0, y = -2, t = 0x04 },
+        { x = -2, y = 0, t = 0x18 }, { x = -1, y = 0, t = 0x1a },
+        { x = 0, y = 0, t = 0x1c },
+      },
+      {
+        { x = -2, y = -2, t = 0x1e }, { x = -1, y = -2, t = 0x20 },
+        { x = 0, y = -2, t = 0x22 },
+        { x = -2, y = 0, t = 0x24 }, { x = -1, y = 0, t = 0x26 },
+        { x = 0, y = 0, t = 0x28 },
+      },
+    }
+    blitPose(0, 0x00, golem)
+    blitPose(32, 0x08, golem)
+    for index, frame in ipairs(chansey) do
+      blitPose(32 + index * 32, 0x10, frame)
+    end
+    blit8x16(0x3a, 0, 224, false)
+    return sheet
+  end
+
+  -- card_flip_2.2bpp uses --remove-whitespace: blank tiles in column 2 of the
+  -- 3-wide header strip (indices 2,5,...,23) are dropped from the ROM stream.
+  -- Re-insert them so HEADER_TILE_MAP / MON_ANCHORS (pret sheet indices) work.
+  local function expandCardFlip2(compact)
+    local need = CARD2_W * CARD2_H / 4
+    local out = {}
+    for i = 1, need do out[i] = 0 end
+    local whitespace = {
+      [2] = true, [5] = true, [8] = true, [11] = true,
+      [14] = true, [17] = true, [20] = true, [23] = true,
+    }
+    local src = 0
+    for tile = 0, 59 do
+      if not whitespace[tile] then
+        for b = 1, 16 do
+          out[tile * 16 + b] = compact[src * 16 + b] or 0
+        end
+        src = src + 1
+      end
+    end
+    return out
+  end
+
+  local slots = nil
+  if self.symbols["Slots1LZ"] then
+    -- --trim-whitespace drops the final empty tile (37 of 38).
+    local raw1 = self:decompressLz3Symbol("Slots1LZ")
+    writeSheet(raw1, SLOTS1_W, SLOTS1_H, "slots/gold_slots_1.png")
+    slots = slots or {}
+    slots.sheet1 = "assets/generated/slots/gold_slots_1.png"
+  end
+  if self.symbols["Slots2LZ"] then
+    local raw2 = ImageWriter.deinterleave(
+      self:decompressLz3Symbol("Slots2LZ"), SLOTS2_W)
+    -- Commercial Gold stores the Seven symbol with inverted bit polarity.
+    for i = 1, math.min(64, #raw2) do
+      raw2[i] = bit.band(bit.bnot(raw2[i]), 0xFF)
+    end
+    writeSheet(raw2, SLOTS2_W, SLOTS2_H, "slots/gold_slots_2.png")
+    slots = slots or {}
+    slots.sheet2 = "assets/generated/slots/gold_slots_2.png"
+  end
+  if self.symbols["Slots3LZ"] then
+    local raw3 = self:decompressLz3Symbol("Slots3LZ")
+    local actors = composeSlotsActors(raw3)
+    self:save(actors, "slots/gold_slots_3.png")
+    self:save(actors, "slots/gold_slots_actors.png")
+    slots = slots or {}
+    slots.sheet3 = "assets/generated/slots/gold_slots_3.png"
+  end
+  if self.symbols["SlotsTilemap"] then
+    local symbol = self:symbol("SlotsTilemap")
+    local tm = self.rom:bytes(symbol.bank, symbol.address, 20 * 12)
+    writeRaw("slots/gold_slots.tilemap", tm)
+    slots = slots or {}
+    slots.tilemap = "assets/generated/slots/gold_slots.tilemap"
+  end
+  if slots then out.slots = slots end
+
+  -- Goldenrod Game Corner: Card Flip graphics assets
+  local cardFlip = nil
+  if self.symbols["CardFlipLZ01"] then
+    -- --trim-whitespace: 62 of 64 tiles in the ROM stream.
+    local raw1 = self:decompressLz3Symbol("CardFlipLZ01")
+    writeSheet(raw1, CARD1_W, CARD1_H, "card_flip/card_flip_1.png")
+    cardFlip = cardFlip or {}
+    cardFlip.sheet1 = "assets/generated/card_flip/card_flip_1.png"
+  end
+  if self.symbols["CardFlipLZ02"] then
+    local raw2 = expandCardFlip2(self:decompressLz3Symbol("CardFlipLZ02"))
+    writeSheet(raw2, CARD2_W, CARD2_H, "card_flip/card_flip_2.png")
+    cardFlip = cardFlip or {}
+    cardFlip.sheet2 = "assets/generated/card_flip/card_flip_2.png"
+  end
+  if self.symbols["CardFlipLZ03"] then
+    local raw3 = self:decompressLz3Symbol("CardFlipLZ03")
+    writeSheet(raw3, CARD3_W, CARD3_H, "card_flip/card_flip_3.png")
+    cardFlip = cardFlip or {}
+    cardFlip.sheet3 = "assets/generated/card_flip/card_flip_3.png"
+  end
+  if self.symbols["CardFlipOnButtonGFX"] then
+    local symbol = self:symbol("CardFlipOnButtonGFX")
+    self:write2bpp(self.rom:bytes(symbol.bank, symbol.address, 16), 8, 8, "card_flip/on.png")
+    cardFlip = cardFlip or {}
+    cardFlip.on = "assets/generated/card_flip/on.png"
+  end
+  if self.symbols["CardFlipOffButtonGFX"] then
+    local symbol = self:symbol("CardFlipOffButtonGFX")
+    self:write2bpp(self.rom:bytes(symbol.bank, symbol.address, 16), 8, 8, "card_flip/off.png")
+    cardFlip = cardFlip or {}
+    cardFlip.off = "assets/generated/card_flip/off.png"
+  end
+  if self.symbols["CardFlipTilemap"] then
+    local symbol = self:symbol("CardFlipTilemap")
+    local tm = self.rom:bytes(symbol.bank, symbol.address, 11 * 12)
+    writeRaw("card_flip/card_flip.tilemap", tm)
+    cardFlip = cardFlip or {}
+    cardFlip.tilemap = "assets/generated/card_flip/card_flip.tilemap"
+  end
+  if cardFlip then out.cardFlip = cardFlip end
 
   self:write("menu_gfx", out)
   self:tick("Menu graphics", 1, 1)

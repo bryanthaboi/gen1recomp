@@ -5,8 +5,27 @@
 -- voucher exchange and the BICYCLE/CANCEL price window need more than
 -- command rows (#568).
 
+local TextBox = require("src.render.TextBox")
+
+-- data/events/hidden_events.asm:542
+local BIKE_DISPLAYS = {
+  { 1, 0 }, { 2, 1 }, { 1, 2 }, { 3, 2 }, { 0, 4 }, { 1, 5 },
+}
+
 return {
   BIKE_SHOP = {
+    -- engine/events/hidden_events/new_bike.asm:1
+    onInteract = function(game, ow, fx, fy)
+      for _, c in ipairs(BIKE_DISPLAYS) do
+        if c[1] == fx and c[2] == fy then
+          game.stack:push(TextBox.new(game,
+            (game.data.text or {})._NewBicycleText or "A shiny new\nBICYCLE!"))
+          return true
+        end
+      end
+      return false
+    end,
+
     talk = {
       -- BikeShopMiddleAgedWomanText (pokered/scripts/BikeShop.asm):
       -- always shows the same flavor line, no branching.

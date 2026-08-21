@@ -4,7 +4,8 @@
 -- on a background love.thread worker (src/update/check_worker.lua); this module
 -- is only the thin main-thread state machine the UI polls.  Two channels carry
 -- the conversation:
---   "update_check_cmd"   main -> worker: { cmd = "check" | "download" | "quit" }
+--   "update_check_cmd"   main -> worker: { cmd = "check" | "download" |
+--                                           "download_full" | "quit" }
 --   "update_check_state" worker -> main: { status, latest, progress, error }
 --
 -- Nothing here ever blocks or throws into the game loop: when love.thread is
@@ -20,6 +21,42 @@ local Check = {}
 local Platform = require("src.core.Platform")
 
 Check.REPO = "bryanthaboi/gen1recomp"
+
+-- Full native packages are deliberately named by release target, not by the
+-- generic .love payload.  Keeping the mapping here makes the release parser,
+-- worker and launcher agree on exactly which asset a platform may offer.
+-- Switch owns its native OTA launcher and therefore never reaches this code.
+local function fullAssetName(version, osName, arch, port)
+  if port == "rg34xxsp" then
+    return "gen1recomp-" .. version .. "-rg34xxsp-stockos64-mod.zip"
+  elseif port == "portmaster" then
+    return "gen1recomp-" .. version .. "-sbc-portmaster.zip"
+  elseif osName == "Android" then
+    return "gen1recomp-" .. version .. "-android.apk"
+  elseif osName == "iOS" then
+    return "gen1recomp++-" .. version .. "-ios.ipa"
+  elseif osName == "OS X" or osName == "macOS" then
+    return "gen1recomp-" .. version .. "-macos.zip"
+  elseif osName == "Windows" then
+    return "gen1recomp-" .. version .. "-windows.zip"
+  elseif osName == "UWP" then
+    return "gen1recomp-" .. version .. "-xbox-uwp.zip"
+  elseif osName == "NX" then
+    return "gen1recomp-" .. version .. "-switch.zip"
+  elseif osName == "Linux" and (arch == "arm64" or arch == "aarch64") then
+    return "gen1recomp-" .. version .. "-linux-arm64.AppImage"
+  elseif osName == "Linux" then
+    return "gen1recomp-" .. version .. "-linux.zip"
+  end
+  return nil
+end
+
+function Check.fullAssetName(version, osName, arch, port)
+  if type(version) ~= "string" or not version:match("^%d+%.%d+%.%d+$") then
+    return nil
+  end
+  return fullAssetName(version, osName, arch, port)
+end
 
 local CMD = "update_check_cmd"
 local STATE = "update_check_state"
@@ -50,7 +87,7 @@ end
 -- document is not a release with a strict X.Y.Z tag.  Json is injected so the
 -- worker can pass a filesystem-loaded codec; on the main thread / in tests it
 -- falls back to require.
-function Check.parseRelease(jsonText, Json)
+function Check.parseRelease(jsonText, Json, target)
   Json = Json or require("src.link.Json")
   local notJson = Json.describeUnexpected(jsonText)
   if notJson then return nil, notJson end
@@ -66,11 +103,15 @@ function Check.parseRelease(jsonText, Json)
     return nil, "release tag is not X.Y.Z: " .. tostring(doc.tag_name)
   end
   local payloadName = "gen1recomp-" .. version .. ".love"
+  target = type(target) == "table" and target or {}
+  local fullName = fullAssetName(version, target.os, target.arch, target.port)
   return {
     version = version,
     payloadName = payloadName,
     payload = Check.pickAsset(doc.assets, payloadName),
     sums = Check.pickAsset(doc.assets, "sha256sums.txt"),
+    fullName = fullName,
+    full = fullName and Check.pickAsset(doc.assets, fullName) or nil,
     -- GitHub release body: already fetched with the update check, shown by
     -- the launcher's Patch notes footer button.
     notes = type(doc.body) == "string" and doc.body or "",
@@ -105,6 +146,37 @@ local cmdCh, stateCh   -- the two channels
 local workerReady      -- nil = untried, true = running, false = unavailable
 local requested        -- a check has been asked for this session
 local cache = { status = "idle" } -- newest snapshot from the worker
+
+local function target()
+  local osName = love and love.system and love.system.getOS and love.system.getOS() or nil
+  local arch = jit and jit.arch or nil
+  local port = os.getenv("POKEPORT_PORTMASTER")
+  return { os = osName, arch = arch, port = port }
+end
+
+local function readPersistedFullRequirement()
+  if not (love and love.filesystem and love.filesystem.getInfo) then return nil end
+  local path = "updates/full-update.json"
+  if not love.filesystem.getInfo(path) then return nil end
+  local text = love.filesystem.read(path)
+  if type(text) ~= "string" then return nil end
+  local ok, Json = pcall(require, "src.link.Json")
+  if not ok or not Json then return nil end
+  local decodedOk, requirement = pcall(Json.decode, text)
+  if not decodedOk or type(requirement) ~= "table" then return nil end
+  if type(requirement.version) ~= "string" then return nil end
+  return requirement
+end
+
+local persistedRequirement = readPersistedFullRequirement()
+if persistedRequirement then
+  cache = {
+    status = "needs_full",
+    latest = persistedRequirement.version,
+    reason = persistedRequirement.reason,
+    full = persistedRequirement.full,
+  }
+end
 
 local function ensureWorker()
   if workerReady ~= nil then return workerReady end
@@ -167,11 +239,13 @@ function Check.start(force)
   end
   requested = true
   cache = { status = "checking", notes = cache.notes, latest = cache.latest }
-  cmdCh:push({ cmd = "check" })
+  cmdCh:push({ cmd = "check", target = target() })
 end
 
--- Current snapshot: { status, latest, progress, error, notes }.  status is one of
--- idle | checking | uptodate | available | downloading | ready | needs_full | error.
+-- Current snapshot: { status, latest, progress, error, notes, reason, full }.
+-- status is one of
+-- idle | checking | uptodate | available | downloading | ready | needs_full |
+-- full_downloading | full_ready | error.
 function Check.state()
   drain()
   return {
@@ -180,7 +254,65 @@ function Check.state()
     progress = cache.progress,
     error = cache.error,
     notes = cache.notes,
+    reason = cache.reason,
+    full = cache.full,
   }
+end
+
+-- The full-update record is intentionally persistent. An offline launch still
+-- tells the player why this native shell cannot run the downloaded release.
+function Check.fullUpdateAction()
+  drain()
+  local st = Check.state()
+  if st.status ~= "needs_full" and st.status ~= "full_ready" then return nil end
+  local osName = love and love.system and love.system.getOS and love.system.getOS() or ""
+  if osName == "Android" and type(love.system.installApk) == "function"
+      and type(st.full) == "table" and type(st.full.url) == "string" then
+    if st.status == "full_ready" and type(st.full.path) == "string" then
+      return { label = "Install Android update", kind = "install" }
+    end
+    return { label = "Download Android update", kind = "download" }
+  end
+  if osName == "iOS" then
+    return { label = "Re-sideload app", url =
+      "https://github.com/bryanthaboi/gen1recomp/raw/refs/heads/main/mobile/ios/app-repo.json" }
+  elseif osName == "UWP" then
+    return { label = "Open Xbox install guide", url = Check.releaseUrl() }
+  elseif type(st.full) == "table" and type(st.full.url) == "string" then
+    return { label = "Download full update", url = st.full.url }
+  end
+  return { label = "Open releases", url = Check.releaseUrl() }
+end
+
+function Check.downloadFull()
+  drain()
+  if not cmdCh or cache.status ~= "needs_full" then return false end
+  if not (cache.full and cache.full.url) then return false end
+  cache = { status = "full_downloading", latest = cache.latest, progress = 0,
+    reason = cache.reason, full = cache.full, notes = cache.notes }
+  cmdCh:push({ cmd = "download_full" })
+  return true
+end
+
+function Check.installFull()
+  drain()
+  if cache.status ~= "full_ready" then return false end
+  local path = cache.full and cache.full.path
+  if type(path) ~= "string" or path == "" then return false end
+  if not (love and love.system and type(love.system.installApk) == "function") then return false end
+  local ok, started = pcall(love.system.installApk, path)
+  return ok and started == true
+end
+
+function Check.performFullUpdate()
+  local action = Check.fullUpdateAction()
+  if not action then return false end
+  if action.kind == "download" then return Check.downloadFull() end
+  if action.kind == "install" then return Check.installFull() end
+  if action.url and love and love.system and love.system.openURL then
+    return pcall(love.system.openURL, action.url)
+  end
+  return false
 end
 
 -- Start downloading the payload announced by an "available" check.  A no-op in

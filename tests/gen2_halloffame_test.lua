@@ -31,9 +31,13 @@ require("src.core.Logger").warn = function() end
 
 local Core = require("src.core.gen2.HallOfFame")
 local Credits = require("src.ui.gen2.Credits")
+local GameVersion = require("src.core.GameVersion")
 local HallOfFame = require("src.ui.gen2.HallOfFame")
 local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
+
+local priorVersion = GameVersion.get()
+GameVersion.set("gold")
 
 -- ---- fixtures -------------------------------------------------------------
 
@@ -710,5 +714,7 @@ else
   eq(#creditsData.palettes, 6, "credits.pal is six four-colour sets")
   eq(creditsData.palettes[1][1][1], 255, "and set 1 colour 0 is white")
 end
+
+GameVersion.set(priorVersion)
 
 S.finish()

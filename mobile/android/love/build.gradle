@@ -10,9 +10,9 @@ android {
     ndkVersion '25.2.9519653'
 
     defaultConfig {
-        minSdk 16
-        compileSdk 34
-        targetSdk 34
+        minSdk 19
+        compileSdk 36
+        targetSdk 36
         externalNativeBuild {
             ndkBuild {
                 arguments "-j" + Runtime.runtime.availableProcessors()
@@ -63,8 +63,7 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled false
         }
         debug {
             ndk {

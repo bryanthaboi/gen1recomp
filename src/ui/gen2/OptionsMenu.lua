@@ -196,6 +196,15 @@ local ROWS = {
       return VideoMode.normalize(options.videoMode) == "borderless"
         and "FULL" or "WINDOWED"
     end },
+  { label = "SCREEN POS", key = "screenPos", port = true,
+    cycle = function(options, delta)
+      local ScreenPosition = require("src.core.ScreenPosition")
+      options.screenPos = ScreenPosition.cycle(options.screenPos, delta)
+      ScreenPosition.setMode(options.screenPos)
+    end,
+    text = function(options)
+      return require("src.core.ScreenPosition").label(options.screenPos)
+    end },
   { id = "touchControls", label = "TOUCH PAD", port = true,
     text = function(options)
       local tc = options.touchControls
@@ -457,8 +466,7 @@ function OptionsMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

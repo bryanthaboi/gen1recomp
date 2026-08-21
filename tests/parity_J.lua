@@ -125,6 +125,7 @@ do
   function tb:enemyAction() return { special = "bound" } end
   tb:resolveSwitch(Game.save.party[2])
   acts[1]() -- send-out clears foe trap
+  acts[#acts]()
   eq(tb.enemy.trappingTurns, nil, "player switch clears foe Wrap/Bind/etc.")
   eq(tb.enemy.trapMove, nil, "player switch clears trapMove")
   check(tb:fightLockedAction(tb.player) == nil,

@@ -228,7 +228,10 @@ SaveConvert.mergeDefaults = mergeDefaults
 -- codec exists yet.  Both directions answer with a plain message the
 -- launcher's save card renders as-is, instead of pushing a Gen 2 save
 -- table through Gen 1 offsets and surfacing a codec traceback.
-local GEN2_SAV_UNSUPPORTED = { gold = "Pokemon Gold" }
+local GEN2_SAV_UNSUPPORTED = {
+  gold = "Pokemon Gold",
+  silver = "Pokemon Silver",
+}
 
 -- importSav(bytes, version, gameVersion) -> saveTable, err
 -- bytes: the raw 32768-byte SRAM string. Validates size and the main-data

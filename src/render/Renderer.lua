@@ -15,6 +15,7 @@ local Runtime = require("src.mods.Runtime")
 local GameViewport = require("src.render.GameViewport")
 -- leaf module (no renderer dependency), so requiring it here cannot cycle
 local FaithfulRes = require("src.core.FaithfulRes")
+local ScreenPosition = require("src.core.ScreenPosition")
 local Playfield = require("src.render.Playfield")
 
 local Renderer = {}
@@ -92,6 +93,11 @@ local function displayMetrics()
     vx, vy, pw, ph, cut, grow = sx, sy, sw, sh, true, expand
   end
   return ww, wh, pw, ph, dpiX, dpiY, vx, vy, cut, grow
+end
+
+local function positionLift(ph, contentPx, dpiY, cut)
+  if cut then return 0 end
+  return ScreenPosition.lift(ph, contentPx, ScreenPosition.safeTop() * dpiY)
 end
 
 function Renderer:init()
@@ -269,7 +275,7 @@ end
 -- corners; flat mode returns exactly today's size (growth factor is 1 when
 -- tilt is inactive).
 function Renderer:worldViewSize()
-  local _, _, pw, ph, _, _, _, _, cut, grow = displayMetrics()
+  local _, _, pw, ph, _, dpiY, _, _, cut, grow = displayMetrics()
   -- FAITHFUL RATIO on mobile.  The world pass deliberately expands to cover the
   -- WHOLE display, so letterbox voids become more map instead of black bars.
   -- That is why the lock appeared to do nothing in the overworld: it shrank
@@ -293,6 +299,9 @@ function Renderer:worldViewSize()
   -- so unfloored FX/sprite math cannot phase-shimmer against the tile layer.
   if vw % 2 ~= 0 then vw = vw + 1 end
   if vh % 2 ~= 0 then vh = vh + 1 end
+  local _, uih = self:uiSize()
+  local lift = positionLift(ph, uih * self:fitScale(), dpiY, cut)
+  if lift > 0 then vh = vh + 2 * math.ceil(lift / sp) end
   if Tilt.active() then
     local g = Tilt.viewGrowth()
     vw, vh = math.ceil(vw * g), math.ceil(vh * g)
@@ -774,8 +783,9 @@ function Renderer:frameRects()
   r.uiw, r.uih = uiw, uih
   r.vpw, r.vph = uiw * r.Sx, uih * r.Sy
   -- Snap the letterbox origin to a framebuffer pixel, then convert to units.
+  r.lift = positionLift(ph, uih * Sp, dpiY, cut)
   r.ox = (vx + math.floor((pw - uiw * Sp) / 2)) / dpiX
-  r.oy = (vy + math.floor((ph - uih * Sp) / 2)) / dpiY
+  r.oy = (vy + math.floor((ph - uih * Sp) / 2) - r.lift) / dpiY
   -- The UI has its own scale: it steps down as the survey zoom goes out (see
   -- uiScale), so it can be smaller than the world letterbox.  Un-zoomed these
   -- are identical to Sp/ox/oy and every rect below is what it always was.
@@ -795,7 +805,7 @@ function Renderer:frameRects()
   r.Up, r.Ux, r.Uy = Up, Up / dpiX, Up / dpiY
   r.uvpw, r.uvph = uiw * r.Ux, uih * r.Uy
   r.uox = (vx + math.floor((pw - uiw * Up) / 2)) / dpiX
-  r.uoy = (vy + math.floor((ph - uih * Up) / 2)) / dpiY
+  r.uoy = (vy + math.max(0, math.floor((ph - uih * Up) / 2) - r.lift)) / dpiY
   return r
 end
 
@@ -1002,7 +1012,7 @@ function Renderer:endFrame(zones, worldZones)
     local wvw = self.worldCanvas:getWidth()
     local wvh = self.worldCanvas:getHeight()
     local wox = (vx + math.floor((pw - wvw * sp) / 2)) / dpiX
-    local woy = (vy + math.floor((ph - wvh * sp) / 2)) / dpiY
+    local woy = (vy + math.floor((ph - wvh * sp) / 2) - R.lift) / dpiY
     -- Tilt mode projects the ground world pass through the perspective mesh
     -- (SGB zones baked in beforehand -- see drawTiltedWorld -- so no zone
     -- scissoring here).  drawTiltedWorld returns false when tilt is off or

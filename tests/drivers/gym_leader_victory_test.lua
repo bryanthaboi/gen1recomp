@@ -50,7 +50,8 @@ return function(game)
     U.wait(5)
     local ow = game.stack:top()
     U.shot(game, DIR .. "/" .. shots.prefix .. "_0_gym.png")
-    ow:checkVictoryRewards(class, party)
+    -- true: the badge line rode the battle screen on the real path (#1606)
+    ow:checkVictoryRewards(class, party, true)
     U.wait(10)
     for _, s in ipairs(shots.pages) do
       advancePages(s.want, shots.prefix .. "_" .. s.name)
@@ -63,26 +64,64 @@ return function(game)
 
   game.save.player.name = game.save.player.name or "RED"
 
-  runLeader("PEWTER_GYM", 4, 3, "OPP_BROCK", 1, {
-    prefix = "brock",
-    pages = {
-      { want = "BOULDERBADGE", name = "1_badge" },
-      { want = "FLASH", name = "2_flash" },
-      { want = "Wait!", name = "3_wait" },
-      { want = "TM34", name = "4_tm34" },
-      { want = "BIDE", name = "5_bide" },
-    },
-  })
+  -- The REAL gym path (#1606): the badge line and jingle must ride the
+  -- battle it pushes (scripts/PewterGym.asm:117-119).
+  while game.stack:top() do game.stack:pop() end
+  local Pokemon = require("src.pokemon.Pokemon")
+  game.save.party = { Pokemon.new(game.data, "CHARIZARD", 50) }
+  game.save.flags = game.save.flags or {}
+  game.save.inventory = game.save.inventory or {}
+  game.save.defeatedTrainers = game.save.defeatedTrainers or {}
+  game.stack:push(OW, "PEWTER_GYM", 4, 3, "up")
+  U.wait(5)
+  local realOw = game.stack:top()
+  local brock
+  for _, npc in ipairs(realOw.npcs or {}) do
+    if npc.def and npc.def.trainerClass == "OPP_BROCK" then brock = npc end
+  end
+  assert(brock, "Brock stands in PEWTER_GYM")
+  require("data.scripts.gyms").PEWTER_GYM.talk.TEXT_PEWTERGYM_BROCK(
+    game, realOw, brock, function() end)
+  local battle
+  for _ = 1, 600 do
+    local top = game.stack:top()
+    if top and top.oppClass == "OPP_BROCK" and top.onFinish then
+      battle = top
+      break
+    end
+    U.tap(game, "a")
+    U.wait(2)
+  end
+  assert(battle, "the real gym path reaches Brock's BattleState")
+  assert(type(battle.endBattleText) == "string" and #battle.endBattleText > 0,
+         "the battle carries the armed badge line (#1606)")
+  assert(battle.endBattleSound == "Get_Item1",
+         "and the badge jingle beside it (sound_level_up, PewterGym.asm)")
+  U.shot(game, DIR .. "/brock_real_battle.png")
+  U.log("force-finishing Brock's battle to run the reward chain")
+  battle.onFinish("win")
+  if game.stack:top() == battle then game.stack:pop() end
+  U.wait(10)
+  -- rewardDialogueShown: the badge line rode the battle screen, so the map
+  -- chain opens on the TM prelude, not on a reprint of the badge line
+  for _, s in ipairs({
+    { want = "Wait!", name = "1_wait" },
+    { want = "TM34", name = "2_tm34" },
+    { want = "BIDE", name = "3_bide" },
+  }) do
+    advancePages(s.want, "brock_" .. s.name)
+  end
   assert(game.save.flags.EVENT_BEAT_BROCK, "EVENT_BEAT_BROCK")
   assert(game.save.inventory.BOULDERBADGE, "BOULDERBADGE")
   assert((game.save.inventory.TM_BIDE or 0) >= 1, "TM_BIDE")
 
+  -- checkVictoryRewards direct drive, as after a battle whose badge line
+  -- rode the battle screen (shownOnBattleScreen = true)
   runLeader("CERULEAN_GYM", 5, 5, "OPP_MISTY", 1, {
     prefix = "misty",
     pages = {
-      { want = "CASCADEBADGE", name = "1_badge" },
-      { want = "CUT", name = "2_cut" },
-      { want = "TM11", name = "3_tm11" },
+      { want = "CUT", name = "1_cut" },
+      { want = "TM11", name = "2_tm11" },
     },
   })
   assert(game.save.flags.EVENT_BEAT_MISTY, "EVENT_BEAT_MISTY")

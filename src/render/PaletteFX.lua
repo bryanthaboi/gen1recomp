@@ -454,7 +454,7 @@ function PaletteFX.pal(data, name)
     if fromCgb then return fromCgb end
   end
   local p = PaletteFX.pack(data)
-  local c = p and p.palettes[name]
+  local c = p and p.palettes and p.palettes[name]
   if c then return c end
   if GameVersion.isYellow() then
     local y = PaletteFX.yellowPack()

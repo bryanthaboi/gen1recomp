@@ -741,7 +741,7 @@ def imported_data_dir(repo):
         return path if _generated_data_dir_ok(path) else None
 
     version = (os.environ.get("POKEPORT_VERSION") or "red").lower()
-    if version not in ("red", "blue", "yellow"):
+    if version not in ("red", "blue", "yellow", "gold", "silver"):
         version = "red"
 
     candidates = [
@@ -988,14 +988,25 @@ def cmd_add_release_workflow(args, repo):
 # ---------------------------------------------------------------- lint
 
 def ahash(image):
-    """Ink-mask hash over the 8x8 downscale: background (the lightest GB
-    shade) vs ink.  Swapping the three ink shades -- the classic recolor --
-    leaves the mask intact, which is exactly what MK302 wants to catch."""
+    """Ink-mask hash over the 8x8 downscale: background vs ink, split at
+    THIS image's own average brightness rather than a fixed shade.  Swapping
+    the three ink shades -- the classic recolor -- leaves the mask intact,
+    which is exactly what MK302 wants to catch.
+
+    A fixed cutoff (e.g. "<=200 is ink") only makes sense for sprites with a
+    light background to split against; a mostly-opaque 16x16 icon has almost
+    no pixel above that cutoff, so every such icon collapsed onto the same
+    "all ink" hash and was flagged as a near-duplicate of anything else that
+    also collapsed -- which was most of them, boulder.png included.
+    Thresholding against the image's own mean keeps the split meaningful
+    (and roughly balanced) no matter how light or dark the source is."""
     from PIL import Image
     small = image.convert("L").resize((8, 8), Image.LANCZOS)
     raw = (small.get_flattened_data() if hasattr(small, "get_flattened_data")
            else small.getdata())
-    return sum((1 << i) for i, p in enumerate(raw) if p <= 200)
+    raw = list(raw)
+    average = sum(raw) / len(raw)
+    return sum((1 << i) for i, p in enumerate(raw) if p <= average)
 
 
 def hamming(a, b):
@@ -2393,7 +2404,8 @@ UPVALUE_CALL = re.compile(
 UPVALUE_ARGS = re.compile(
     r"""^\s*([A-Za-z_]\w*)\s*\.\s*(\w+)\s*,\s*["'](\w+)["']""")
 VERSION_MATCH = re.compile(
-    r"""[=~]=\s*["'](red|blue|yellow)["']|["'](red|blue|yellow)["']\s*[=~]=""")
+    r"""[=~]=\s*["'](red|blue|yellow|gold|silver)["']"""
+    r"""|["'](red|blue|yellow|gold|silver)["']\s*[=~]=""")
 
 
 def _line_of(body, offset):

@@ -17,9 +17,9 @@ local function surfingPikachu(game)
   return nil
 end
 
-local function push(game, text, done)
+local function push(game, text, done, opts)
   local TextBox = require("src.render.TextBox")
-  game.stack:push(TextBox.new(game, text, done))
+  game.stack:push(TextBox.new(game, text, done, opts))
 end
 
 -- the two-variant posters: the surf-capable line once a surfing
@@ -69,11 +69,11 @@ return {
 
       TEXT_SUMMERBEACHHOUSE_PIKACHU = function(game, ow, npc, done)
         local t = game.data.text
+        -- scripts/SummerBeachHouse.asm:68
         push(game, t._SummerBeachHousePikachuText or "PIKACHU: Pikaa!",
-          function()
-            require("src.core.Sound").playCry(game.data, "PIKACHU")
-            done()
-          end)
+          done, { auto = { wait = true, delay = 0, sound = function()
+            return require("src.core.Sound").playCry(game.data, "PIKACHU")
+          end } })
       end,
 
       TEXT_SUMMERBEACHHOUSE_POSTER1 = poster(1),

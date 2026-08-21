@@ -326,6 +326,9 @@ function Game:logicSpeed()
   if self.linkSession or (self.linkNet and not self.linkNet.closed) then
     return 1
   end
+  if Game.isFixedSpeedInStack and Game.isFixedSpeedInStack(self.stack) then
+    return 1
+  end
   if self.speedOverride then return GameSpeed.clamp(self.speedOverride) end
   -- Clamp here too, not just in _resolveLogicSpeed's vanilla path: a mod's
   -- core.logic_speed hook can return anything (0, negative, nil, NaN) and
@@ -475,6 +478,15 @@ function Game.speedCategoryInStack(stack)
   return "menu"
 end
 
+function Game.isFixedSpeedInStack(stack)
+  local states = stack and stack.states
+  for i = #(states or {}), 1, -1 do
+    local state = states[i]
+    if state and (state.isFixedSpeed or state.isMinigame) then return true end
+  end
+  return false
+end
+
 -- Whether a state on the stack composes its own screen and so wants the
 -- edge anchors held off (BattleState.holdsUIAnchors).  Whole-stack, like
 -- everything else here: the text box and YES/NO a battle puts up are states
@@ -597,9 +609,10 @@ function Game:draw()
   -- ...and for the same reason the UI's own scale has to know the world is
   -- still the backdrop while an opaque menu covers it.  Renderer:uiScale
   -- steps the UI down with the survey zoom only while a world is behind it,
-  -- gated on this frame's world pass -- which the party menu and the bag end
-  -- by being opaque.  Without this hold they lose the step-down and blit at
-  -- full fit scale over a battle drawn at the zoomed-out one.
+  -- gated on this frame's world pass -- which the party menu ends by being
+  -- opaque (the bag's item box shows the map around it, #1521).  Without
+  -- this hold it loses the step-down and blits at full fit scale over a
+  -- battle drawn at the zoomed-out one.
   Renderer.uiWorldHold = Renderer.battleDim ~= nil
   -- ...and a battle keeps its dialogue box and YES/NO inside its own screen
   -- instead of letting them dock to the window edge.
@@ -906,16 +919,7 @@ function Game:gamepadaxis(joystick, axis, value)
   Input:gamepadaxis(joystick, axis, value)
 end
 
--- conf.lua turns the mobile accelerometer-joystick off (#468), but guard the
--- generic joystick path anyway: any sensor-style device that still reaches us
--- has gravity pinning an axis past the deadzone, which would hide the touch
--- overlay every instant and steer the player by tilt through the axis-1/2
--- mapping (#459).  Real controllers arrive as SDL gamepads or named sticks,
--- never as "* Accelerometer".
-local function isAccelerometer(joystick)
-  local name = joystick and joystick.getName and joystick:getName()
-  return name ~= nil and name:lower():find("accelerometer", 1, true) ~= nil
-end
+local isAccelerometer = GamepadMap.isAccelerometer
 
 -- BindingsMenu's raw-stick capture rides the same top-state routing as the
 -- keyboard and gamepad paths (#632).  Only a stick SDL does not recognize
@@ -970,7 +974,11 @@ end
 -- parked the player until every direction was re-pressed (#799).
 function Game:focus(f)
   Input:reset()
-  if f then Input:reconcile() end
+  if f then
+    Input:reconcile()
+    local eng = self:syncEngine()
+    if eng then pcall(eng.noteResumed, eng) end
+  end
   TouchControls:reset()
   self:cancelPointers()
 end
@@ -990,6 +998,8 @@ function Game:onResume()
   Input:reconcile()
   TouchControls:reset()
   self:cancelPointers()
+  local eng = self:syncEngine()
+  if eng then pcall(eng.noteResumed, eng) end
   -- Chip music may survive NX suspend as a duplicate stream; stop it and let
   -- the active screen re-cue on the next frame (hardware audio check: T19).
   -- Desktop/mobile window-visible flips must not kill overworld music.
@@ -1197,18 +1207,26 @@ end
 
 function Game:syncEngine()
   if self._syncOff then return nil end
-  if self._syncEngineRef then return self._syncEngineRef end
-  local ok, SyncEngine = pcall(require, "src.sync.SyncEngine")
-  if not ok or type(SyncEngine) ~= "table" then
-    self._syncOff = true
-    return nil
-  end
-  local eng = SyncEngine.shared()
+  local eng = self._syncEngineRef
   if not eng then
-    self._syncOff = true
-    return nil
+    local ok, SyncEngine = pcall(require, "src.sync.SyncEngine")
+    if not ok or type(SyncEngine) ~= "table" then
+      self._syncOff = true
+      return nil
+    end
+    eng = SyncEngine.shared()
+    if not eng then
+      self._syncOff = true
+      return nil
+    end
+    self._syncEngineRef = eng
   end
-  self._syncEngineRef = eng
+  if type(eng.protectPlaythrough) == "function" then
+    local meta = self.save and self.save.meta
+    eng:protectPlaythrough(
+      (self.save and self.save.version) or require("src.core.GameVersion").get(),
+      type(meta) == "table" and meta.playthroughId or nil)
+  end
   return eng
 end
 
@@ -1248,6 +1266,7 @@ function Game:applyOptions(opts)
   -- after VideoMode: a faithful-resolution lock is an exact window size, so
   -- it has to be the last word on the window (it drops fullscreen to hold)
   require("src.core.FaithfulRes").applyOptions(opts)
+  require("src.core.ScreenPosition").applyOptions(opts)
   -- normalizes a nil/garbage cap to the 60 default, so old saves with no
   -- fpsCap key pace at the standard rate (issue #88)
   require("src.core.FrameCap").applyOptions(opts)

@@ -581,22 +581,16 @@ MoveEffects.full = {
     end,
   },
   THRASH_PETAL_DANCE_EFFECT = {
-    afterDamage = function(ctx)
+    -- ThrashPetalDanceEffect (effects.asm:791-808) runs before damage
+    -- (data/battle/special_effects.asm:22, core.asm:3531-3552)
+    beforeAccuracy = function(ctx)
       local user = ctx.user
-      if not user.thrashTurns then
-        user.thrashTurns = ctx.rng(2, 3) -- 3-4 attacks total, then confusion
-        user.thrashMove = ctx.moveInst
-        user.thrashAnnounced = true
-      else
-        user.thrashTurns = user.thrashTurns - 1
-        if user.thrashTurns <= 0 then
-          user.thrashTurns, user.thrashMove, user.thrashAnnounced = nil, nil, nil
-          if not user.confusedTurns then
-            user.confusedTurns = ctx.rng(2, 5)
-            ctx.say(romText(ctx.battle.data, "_BecameConfusedText", "%s\nbecame confused!", displayName(user)))
-          end
-        end
-      end
+      if ctx.thrashing or user.thrashTurns then return end
+      user.thrashTurns = ctx.rng(2, 3) -- 3-4 attacks total, then confusion
+      user.thrashMove = ctx.moveInst
+      user.thrashAnnounced = true
+      ctx.battle:animBeforeMove(
+        user.isPlayer and "SHRINKING_SQUARE_ANIM" or "ANIM_B1", user.isPlayer)
     end,
   },
   JUMP_KICK_EFFECT = {

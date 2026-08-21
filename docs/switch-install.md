@@ -91,14 +91,14 @@ Do **not** launch from the Album applet path for normal play.
 
 This project ships **no** game data. On first launch:
 
-1. Put your own legally obtained Pokémon Red, Blue (`.gb`), Yellow, or
-   Gold (`.gbc`) dump into `switch/gen1recomp/pokemon-love2d/imports/` (the
-   launcher also shows the live save-dir path). All four can sit in the
+1. Put your own legally obtained Pokémon Red, Blue (`.gb`), Yellow, Gold, or
+   Silver (`.gbc`) dump into `switch/gen1recomp/pokemon-love2d/imports/` (the
+   launcher also shows the live save-dir path). All five can sit in the
    same folder.
-2. Use **Scan again** on that game's tab (Red / Blue / Yellow / Gold).
-   Rescan matches by ROM SHA-1 for the open tab only. A Red dump never
-   imports from the Yellow tab (and vice versa). Gold is Beta in the
-   launcher; a clean US Gold dump is enough to Play.
+2. Use **Scan again** on that game's tab (Red / Blue / Yellow / Gold /
+   Silver). Rescan matches by ROM SHA-1 for the open tab only. A Red dump
+   never imports from the Yellow tab (and vice versa). Gold and Silver are
+   Beta in the launcher; a clean US dump of either is enough to Play.
 
 ## 5. Import / Export a raw `.sav`
 
@@ -111,10 +111,12 @@ SD / FTP, same transfer methods as ROMs. Paths are **per game**:
 | Blue | `imports/saves/blue/` | `exports/blue/` |
 | Yellow | `imports/saves/yellow/` | `exports/yellow/` |
 | Gold | `imports/saves/gold/` | `exports/gold/` |
+| Silver | `imports/saves/silver/` | `exports/silver/` |
 
 (Under the save dir `pokemon-love2d/`. The zip already creates these folders.
-Gold cart `.sav` import/export is not supported yet -- the folders exist so
-MTP browsing matches the other games. Gold progress still saves in-engine.)
+Gold and Silver cart `.sav` import/export is not supported yet -- the folders
+exist so MTP browsing matches the other games. Gold and Silver progress still
+saves in-engine.)
 
 1. Copy a Gen 1 `.sav` (32 KB) into that game's inbox under the save dir
    ([switch-transfer.md](switch-transfer.md)).

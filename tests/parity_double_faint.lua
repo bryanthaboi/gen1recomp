@@ -33,7 +33,8 @@ local function battleWith(partyHP, result)
   for i, hp in ipairs(partyHP) do
     party[i] = { species = "SQUIRTLE", hp = hp, stats = { hp = 20 } }
   end
-  return {
+  -- the metatable so playerMonFainted can reach playerPartyView
+  return setmetatable({
     kind = "wild",
     result = result,
     afterQueue = nil,
@@ -44,7 +45,7 @@ local function battleWith(partyHP, result)
     sayNext = function(self, m) self.said[#self.said + 1] = m end,
     say = function(self, m) self.said[#self.said + 1] = m end,
     ui = function() end,
-  }
+  }, BattleState)
 end
 
 local function saidBlackout(b)

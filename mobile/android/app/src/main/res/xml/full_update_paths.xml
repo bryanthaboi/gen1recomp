@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deliberately narrow: FileProvider may grant only the staged APK, never
+     arbitrary app, external, or shared storage. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="full_update" path="full-update/" />
+</paths>

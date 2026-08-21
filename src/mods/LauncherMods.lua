@@ -603,6 +603,33 @@ function LauncherMods.setEnabled(id, enabled, version)
   return true
 end
 
+function LauncherMods.modOptions()
+  local ok, options = pcall(SaveData.loadOptions)
+  if not ok or type(options) ~= "table" then return {} end
+  return options.modOptions or {}
+end
+
+function LauncherMods.setModOptions(id, values)
+  if type(id) ~= "string" or id == "" or type(values) ~= "table" then
+    return false
+  end
+  local options = SaveData.loadOptions()
+  if SaveData.isSafeMode(options) then return false end
+  options.modOptions = options.modOptions or {}
+  local bucket = options.modOptions[id] or {}
+  for key, value in pairs(values) do
+    local t = type(value)
+    if type(key) == "string" and key ~= ""
+        and (t == "string" or t == "number" or t == "boolean") then
+      bucket[key] = value
+    end
+  end
+  options.modOptions[id] = bucket
+  SaveData.saveOptions(options)
+  LauncherMods.syncActiveProfile(options)
+  return true
+end
+
 -- setAllEnabled(ids, enabled [, version]): the launcher's Enable all / Disable
 -- all buttons (#647).  Writes what setEnabled writes, but loads and
 -- saves once for the whole list: saveOptions rewrites the whole options file per

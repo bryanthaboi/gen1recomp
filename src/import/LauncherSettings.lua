@@ -303,15 +303,12 @@ local function coreRows(opts, hooks)
       end)
   end
 
-  -- ORIENTATION (#592): Android only -- the lock rides SDL's orientation
-  -- hint, which iOS reads only at startup (the Info.plist governs there) and
-  -- desktop ignores.  Unlike the other launcher rows this one live-applies:
-  -- the window exists here too, and rotating under the player's finger is
-  -- the only feedback that reads.
+  -- ORIENTATION (#592, #1638): mobile only.  Unlike the other launcher rows
+  -- this one live-applies: the window exists here too, and rotating under
+  -- the player's finger is the only feedback that reads.
   do
-    local osName = love.system and love.system.getOS and love.system.getOS()
     local okOr, Orientation = pcall(require, "src.core.Orientation")
-    if okOr and osName == "Android" then
+    if okOr and (Orientation.isAndroid() or Orientation.isIOS()) then
       add(Strings("ORIENTATION"),
         function() return Strings(Orientation.modeLabel(opts.orientation)) end,
         function(dir)
@@ -328,6 +325,17 @@ local function coreRows(opts, hooks)
       function() return FaithfulRes.label(opts.faithfulRes) end,
       function(dir)
         opts.faithfulRes = FaithfulRes.cycle(opts.faithfulRes, dir)
+        return true
+      end)
+  end
+
+  local okSp, ScreenPos = pcall(require, "src.core.ScreenPosition")
+  if okSp then
+    add(Strings("SCREEN POS"),
+      function() return Strings(ScreenPos.label(opts.screenPos)) end,
+      function(dir)
+        opts.screenPos = ScreenPos.cycle(opts.screenPos, dir)
+        ScreenPos.setMode(opts.screenPos)
         return true
       end)
   end
@@ -541,29 +549,6 @@ local function modRows(opts, mod)
   return rows
 end
 
-local function troubleshootingRows(opts, hooks)
-  return {
-    {
-      label = Strings("SAFE MODE"),
-      actionLabel = function()
-        return SaveData.isSafeMode(opts) and Strings("Turn off") or Strings("Turn on")
-      end,
-      action = function()
-        SaveData.setSafeMode(opts, not SaveData.isSafeMode(opts))
-        return true
-      end,
-    },
-    {
-      label = Strings("REPORT ISSUE"),
-      actionLabel = Strings("Report bug"),
-      action = function()
-        if hooks and hooks.reportIssue then hooks.reportIssue(opts) end
-        return false
-      end,
-    },
-  }
-end
-
 -- ------- Gen 2 (Gold)
 --
 -- Gold reads NONE of the rows above.  Its OPTION screen writes a different
@@ -573,9 +558,10 @@ end
 -- opened on the Gold tab used to offer a dozen controls that did nothing
 -- and hide the seven that the cart itself has.
 --
--- The block lives in options.lua under `gold`, which is exactly where
--- src/core/gen2/Save.lua loadOptions reads it, so an edit here is live on the
--- next boot the same way a Gen 1 edit is.  Ladders mirror
+-- The block lives in options.lua under `gold` (the historical key; Gold and
+-- Silver share it the way the Gen 1 games share the flat namespace), which is
+-- exactly where src/core/gen2/Save.lua loadOptions reads it, so an edit here
+-- is live on the next boot the same way a Gen 1 edit is.  Ladders mirror
 -- src/ui/gen2/OptionsMenu.lua's ROWS; when editing one, keep the two in sync.
 local GEN2_KEY = "gold"
 
@@ -722,7 +708,9 @@ end
 function LauncherSettings.open(hooks, version)
   local opts = SaveData.loadOptions()
   local sections
-  if version == "gold" then
+  local GameVersion = require("src.core.GameVersion")
+  if GameVersion.VERSIONS[version]
+      and GameVersion.generation(version) == 2 then
     local block = opts[GEN2_KEY]
     if type(block) ~= "table" then
       block = {}
@@ -744,10 +732,6 @@ function LauncherSettings.open(hooks, version)
       sections[#sections + 1] = { title = mod.name, rows = rows }
     end
   end
-  sections[#sections + 1] = {
-    title = Strings("TROUBLESHOOTING"),
-    rows = troubleshootingRows(opts, hooks),
-  }
   return {
     opts = opts,
     version = version,

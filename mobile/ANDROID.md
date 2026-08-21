@@ -93,8 +93,9 @@ transport, exactly as a missing curl does.
 love-android 11.5a expects:
 
 - **JDK 17**
-- Android SDK with **API 34**
+- Android SDK with **API 36** (Android 16; latest 36.x Build-Tools)
 - NDK **25.2.9519653** (Apple Silicon host supported)
+- **minSdk 19** (Android 4.4), **targetSdk 36** (Android 16)
 
 Set `ANDROID_SDK_ROOT` (or `ANDROID_HOME`), or let the script write
 `local.properties` when it finds `~/Library/Android/sdk`.
@@ -109,10 +110,10 @@ The APK lands under `app/build/outputs/apk/embedNoRecord/debug/`.
 
 `app/src/embed/assets/game.love` - zip of `main.lua`, `conf.lua`, `src/`,
 `libs/` (the vendored FlexLove toolkit the launcher UI needs), `data/`,
-`assets/`, and the Red, Blue, and Yellow ROM manifests. The Android
-packer verifies the Yellow manifest before it packages; if a partial source
-export omitted it, it restores the file from this checkout's Git data and then
-falls back to the project's GitHub copy. Generated game data,
+`assets/`, and the Red, Blue, Yellow, Gold, and Silver ROM manifests. The
+Android packer verifies the Yellow, Gold, and Silver manifests before it
+packages; if a partial source export omitted one, it restores the file from
+this checkout's Git data and then falls back to the project's GitHub copy. Generated game data,
 scripts, tests, and mobile build sources are excluded.
 
 ## Branding (applied by the build script)
@@ -122,15 +123,24 @@ scripts, tests, and mobile build sources are excluded.
 | `app.application_id` | `com.theboisclub.pokemonred` |
 | `app.name` | Pokemon Red |
 | `app.orientation` | `fullUser`. This is only the manifest default: SDL requests FULL_SENSOR at window creation (resizable window, no `SDL_HINT_ORIENTATIONS`), and `GameActivity.setOrientationBis` remaps that to FULL_USER so the device's rotation lock is honoured. |
-| `app.version_name` / `app.version_code` | set from `--version X.Y.Z` (code = major*10000 + minor*100 + patch); left as-is if `--version` is omitted |
-| Permissions | RECORD_AUDIO / WRITE_EXTERNAL_STORAGE stripped; VIBRATE + BLUETOOTH + INTERNET (link play, mod index) + ACTIVITY_RECOGNITION (step bridge) kept |
+| `app.version_name` / `app.version_code` | set from `--version X.Y.Z` (code = major*1,000,000 + minor*1,000 + patch); left as-is if `--version` is omitted |
+| Permissions | RECORD_AUDIO / WRITE_EXTERNAL_STORAGE stripped; VIBRATE + BLUETOOTH + INTERNET (link play, mod index) + ACTIVITY_RECOGNITION (step bridge) kept; REQUEST_INSTALL_PACKAGES is limited to the user-confirmed full-update installer |
 
 ## Releases
 
 `.github/workflows/release.yml` builds the APK with `--version` set to the
 release version and publishes it alongside the macOS/Windows/Linux builds as
-`PokemonRed-<version>-android.apk`.
+`gen1recomp-<version>-android.apk`.
 
 ## Signing
 
-Signed with the default Android keystore (no setup required).
+Production APKs are built with `scripts/build_android.sh --release`. They must
+be signed with the same long-lived certificate as the currently installed app:
+Android's Package Installer rejects an update with a different signing
+certificate. Store that keystore and its passwords only in CI secrets, expose
+them as `GEN1RECOMP_ANDROID_KEYSTORE`,
+`GEN1RECOMP_ANDROID_KEYSTORE_PASSWORD`, `GEN1RECOMP_ANDROID_KEY_ALIAS`, and
+`GEN1RECOMP_ANDROID_KEY_PASSWORD`, and never commit the keystore. A newly
+created certificate cannot update users who have an APK signed by a different
+legacy key; those users need one final manual reinstall before in-app updates
+can take over.

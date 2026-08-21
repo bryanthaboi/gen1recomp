@@ -24,7 +24,7 @@ The short version, for an author deciding what to write:
   merged.** The write is taken, dropped, and named once per mod in the same
   error feed the mod manager shows -- in both directions, so a Red boot writing
   to `decorations` is told exactly as a Gold boot writing to `map_scripts` is.
-- **40 event names and 43 hook names have a call site in both generations**, so
+- **40 event names and 44 hook names have a call site in both generations**, so
   one subscription serves both games. `tests/engine/gate_gen2_mod_api.lua`
   reads those names back out of the source and fails if a site is renamed or
   deleted on either side, and fails again if a new shared site appears without
@@ -55,9 +55,10 @@ The short version, for an author deciding what to write:
 ```
 
 `games` is an optional array of version ids (`"red"`, `"blue"`, `"yellow"`,
-`"gold"`), generations (`"gen1"`, `"gen2"`, case-insensitive) or `"all"`.
-`src/mods/ModTargets.lua` resolves the tokens off `GameVersion.ORDER` and
-`GameVersion.generation`, so nothing anywhere restates the game list.
+`"gold"`, `"silver"`), generations (`"gen1"`, `"gen2"`, case-insensitive) or
+`"all"`. `src/mods/ModTargets.lua` resolves the tokens off `GameVersion.ORDER`
+and `GameVersion.generation`, so nothing anywhere restates the game list.
+`"gen2"` now expands to both Gold and Silver.
 `Manifest.validate` stores the resolved, ORDER-sorted ids on `manifest.games`
 and **derives** `manifest.gen2compat` from them, which is the one field the
 loader's gate reads.
@@ -538,11 +539,13 @@ gains a field instead of the name gaining a prefix.
   `battle.damage_dealt`, `battle.fainted`, `battle.status_inflicted`,
   `battle.battler_switched`, `battle.ball_thrown`, `battle.exp_gained`,
   `pokemon.level_up`, `pokemon.move_learned`; hooks `battle.damage`,
-  `battle.crit`, `battle.accuracy`, `battle.turn_order`,
+  `battle.crit`, `battle.accuracy`, `battle.charge_required`,
+  `battle.turn_order`,
   `battle.enemy_action`, `battle.run`, `battle.exp_award`, `exp.gain`,
   `catch.rate`, `trainer.party`, `battle.overlay`, `battle.low_health_alarm`,
-  `battle.catch_exp`, `battle.bottom_ui_visible` and
-  `battle.status_hud_visible`. One payload difference: Gen 1's vanilla
+  `battle.catch_exp`, `battle.bottom_ui_visible`,
+  `battle.status_hud_visible` and `battle.move_grid_navigation`. One payload
+  difference: Gen 1's vanilla
   `battle.low_health_alarm` link reads `ctx.battle.data`, and Gold's battle
   screen has no `.data` field, so the Gen 2 site **adds** `ctx.data` beside the
   Gen 1 keys. A mod that calls `nextFn` is unaffected; one that reaches through

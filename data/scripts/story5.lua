@@ -122,9 +122,8 @@ M.CINNABAR_LAB_METRONOME_ROOM = {
 -- TM42 Dream Eater (scripts/ViridianCity.asm, the fisher).  The fisher's
 -- YouCanHaveThisText prints before GiveItem, so this gift needs a pre
 -- text (#775).  Like the SilphCo2F worker (#393) that label carries no
--- leading underscore, and on Red it sits outside the extractor's symbol
--- set, so the literal from text/ViridianCity.asm rides along as the
--- fallback; Yellow resolves the ROM string instead.
+-- leading underscore; tools/extract/text.py now collects it regardless,
+-- so preFallback below is just the safety net for a catalog without it.
 M.VIRIDIAN_CITY = {
   talk = {
     TEXT_VIRIDIANCITY_FISHER = gift({
@@ -146,9 +145,11 @@ M.SILPH_CO_2F = {
   talk = {
     TEXT_SILPHCO2F_SILPH_WORKER_F = gift({
       flag = "EVENT_GOT_TM36", item = "TM_SELFDESTRUCT",
-      -- the label carries no leading underscore: pokered keeps this one in
-      -- the script bank, not the far-text bank (#393)
+      -- the label carries no leading underscore (#393); collected like any
+      -- other text/*.asm label now, preFallback is just the safety net
       pre = "SilphCo2FSilphWorkerFPleaseTakeThisText",
+      preFallback = "Eeek!\nNo! Stop! Help!\fOh, you're not\nwith TEAM ROCKET."
+        .. "\vI thought...\vI'm sorry. Here,\vplease take this!",
       received = "_SilphCo2FSilphWorkerFReceivedTM36Text",
       explain = "_SilphCo2FSilphWorkerFTM36ExplanationText",
       noRoom = "_SilphCo2FSilphWorkerFTM36NoRoomText",
@@ -646,27 +647,29 @@ end
 local rocketRows = {
   { "face_player" },                                           -- 1
   { "check_flag", "EVENT_GOT_TM28" },                          -- 2
-  { "jump_if_true", 15 },                                      -- 3 → CeruleanHideRocket
+  { "jump_if_true", 16 },                                      -- 3 → CeruleanHideRocket
   { "check_flag", "EVENT_BEAT_CERULEAN_ROCKET_THIEF" },        -- 4
-  { "jump_if_true", 9 },                                       -- 5
+  { "jump_if_true", 10 },                                      -- 5
   { "show_text", "_CeruleanCityRocketText" },                  -- 6
-  { "start_battle", "trainer", "OPP_ROCKET", 5 },              -- 7
-  { "jump_if_false", "end" },                                  -- 8
-  { "show_text", "_CeruleanCityRocketIllReturnTheTMText" },    -- 9
-  { "set_flag", "EVENT_BEAT_CERULEAN_ROCKET_THIEF" },          -- 10
-  { "give_item", "TM_DIG", 1, false },                         -- 11 (row 13 prints)
-  { "set_flag", "EVENT_GOT_TM28" },                            -- 12
-  { "show_text", "_CeruleanCityRocketReceivedTM28Text" },      -- 13
-  { "show_text", "_CeruleanCityRocketIBetterGetMovingText" },  -- 14
-  { "fade", "out" },                                           -- 15 GBFadeOutToBlack
+  -- scripts/CeruleanCity.asm:297 SaveEndBattleTextPointers
+  { "save_end_battle_text", "_CeruleanCityRocketIGiveUpText" }, -- 7
+  { "start_battle", "trainer", "OPP_ROCKET", 5 },              -- 8
+  { "jump_if_false", "end" },                                  -- 9
+  { "show_text", "_CeruleanCityRocketIllReturnTheTMText" },    -- 10
+  { "set_flag", "EVENT_BEAT_CERULEAN_ROCKET_THIEF" },          -- 11
+  { "give_item", "TM_DIG", 1, false },                         -- 12 (row 14 prints)
+  { "set_flag", "EVENT_GOT_TM28" },                            -- 13
+  { "show_text", "_CeruleanCityRocketReceivedTM28Text" },      -- 14
+  { "show_text", "_CeruleanCityRocketIBetterGetMovingText" },  -- 15
+  { "fade", "out" },                                           -- 16 GBFadeOutToBlack
   -- CeruleanHideRocket while black: GUARD1 (28,12) appears, GUARD2
   -- (27,12) and the ROCKET go.  GUARD2 blocks the trashed-house south
   -- door neighbour -- the swap reconnects the city (Bill's ticket does
   -- the same in story.lua; either route is enough).
-  { "show_object", "CERULEAN_CITY", "CERULEANCITY_GUARD1" },   -- 16
-  { "hide_object", "CERULEAN_CITY", "CERULEANCITY_GUARD2" },   -- 17
-  { "hide_object", "CERULEAN_CITY", "CERULEANCITY_ROCKET" },   -- 18
-  { "fade", "in" },                                            -- 19 GBFadeInFromBlack
+  { "show_object", "CERULEAN_CITY", "CERULEANCITY_GUARD1" },   -- 17
+  { "hide_object", "CERULEAN_CITY", "CERULEANCITY_GUARD2" },   -- 18
+  { "hide_object", "CERULEAN_CITY", "CERULEANCITY_ROCKET" },   -- 19
+  { "fade", "in" },                                            -- 20 GBFadeInFromBlack
 }
 
 M.CERULEAN_CITY = {

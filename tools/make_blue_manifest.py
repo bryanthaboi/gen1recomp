@@ -113,7 +113,7 @@ def main():
 
     blue = derive(red, pokered, os.path.abspath(args.symbols))
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(blue, f, ensure_ascii=False, indent=2, sort_keys=True)
+        json.dump(blue, f, ensure_ascii=True, indent=2, sort_keys=True)
         f.write("\n")
     print(f"wrote {args.out}")
 

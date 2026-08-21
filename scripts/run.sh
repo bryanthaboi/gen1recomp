@@ -17,7 +17,9 @@ fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 if [ ! -f "$ROOT/data/generated/maps.lua" ] \
     && [ ! -f "$ROOT/blue/data/generated/maps.lua" ] \
-    && [ ! -f "$ROOT/yellow/data/generated/maps.lua" ]; then
+    && [ ! -f "$ROOT/yellow/data/generated/maps.lua" ] \
+    && [ ! -f "$ROOT/gold/data/generated/maps.lua" ] \
+    && [ ! -f "$ROOT/silver/data/generated/maps.lua" ]; then
   fail "generated data missing,  run scripts/setup.sh first"
 fi
 

@@ -36,9 +36,8 @@
 --   $3f        the shiny ⁂ icon (stats_tiles tile 14)
 --   $40 / $41  the left and right HP/exp bar end caps
 --
--- The extractor does not carry that sheet yet, so `pageTile` draws those seven
--- shapes directly and takes the sheet the moment menu_gfx grows a `stats`
--- entry.  Everything that IS a glyph goes through the font: ◀ ($71), ▶ ($ed),
+-- The extractor writes that sheet as menu_gfx.stats, which `pageTile` draws.
+-- Everything that IS a glyph goes through the font: ◀ ($71), ▶ ($ed),
 -- № ($74), <ID> ($73), <LV> ($6e) and the row-7 rule's $62 (the empty HP/exp
 -- bar cell, which is FontBattleExtra's -- hence Font.useBattleExtra(true)
 -- around the whole screen, exactly as the party menu does).
@@ -94,6 +93,14 @@ local TILE_BAR_CAP_RIGHT = 0x41
 -- FontBattleExtra's empty HP/exp bar cell, which is what the row-7 rule is
 -- made of (StatsScreen_PlaceHorizontalDivider).
 local TILE_HORIZONTAL_DIVIDER = 0x62
+
+-- gfx/stats/pages.pal, the three palettes _CGB_StatsScreenHPPals copies to
+-- wBGPals1 slots 3-5 (engine/gfx/cgb_layouts.asm:199-212)
+local PAGE_PALETTES = {
+  { { 255, 255, 255 }, { 255, 156, 255 }, { 255, 123, 255 }, { 0, 0, 0 } },
+  { { 255, 255, 255 }, { 173, 255, 115 }, { 140, 255, 0 }, { 0, 0, 0 } },
+  { { 255, 255, 255 }, { 140, 255, 255 }, { 140, 255, 255 }, { 0, 0, 0 } },
+}
 
 -- PrintTempMonStats' .StatNames, and the wTempMon fields it prints beside
 -- them.  <NEXT> steps two rows, so the five labels are 2 rows apart and the
@@ -821,12 +828,37 @@ end
 
 -- ----------------------------------------------------------------- drawing
 
--- A tile out of StatsScreenPageTilesGFX.  The extractor does not carry that
--- sheet, so each of the seven shapes it needs is drawn here; the moment
--- menu_gfx grows a `stats` entry this can take the real tiles instead.
+-- menu_gfx.stats, the 17 tiles LoadStatsScreenPageTilesGFX lands at vTiles2
+-- tile $31 (engine/gfx/load_font.asm:90-95)
+function SummaryMenu:statsTiles()
+  if self.statsSheet ~= nil then return self.statsSheet or nil end
+  local gfx = (self.menuGfx or {}).stats
+  local image = gfx and self:picImage(gfx.sheet)
+  if not image then
+    self.statsSheet = false
+    return nil
+  end
+  local w, h = image:getDimensions()
+  local quads = {}
+  for index = 0, (gfx.tiles or 17) - 1 do
+    quads[(gfx.firstTile or 0x31) + index] =
+      love.graphics.newQuad(index * 8, 0, 8, 8, w, h)
+  end
+  self.statsSheet = { image = image, quads = quads }
+  return self.statsSheet
+end
+
+-- A tile out of StatsScreenPageTilesGFX.  The fallback arm draws each of the
+-- seven shapes by hand for a cache built before menu_gfx.stats existed.
 function SummaryMenu:pageTile(id, tx, ty)
   local G = love.graphics
   local px, py = tx * 8, ty * 8
+  local sheet = self:statsTiles()
+  if sheet and sheet.quads[id] then
+    G.setColor(1, 1, 1, 1)
+    G.draw(sheet.image, sheet.quads[id], px, py)
+    return
+  end
   G.setColor(0, 0, 0, 1)
   if id == TILE_VERTICAL_DIVIDER then
     G.rectangle("fill", px + 3, py, 2, 8)
@@ -847,11 +879,30 @@ end
 -- (17,5), all small ($36) first, then the one for this page redrawn large
 -- ($3a).  The routine writes the four tiles as [hli]/[hld], a row down, then
 -- [hli]/[hl] -- which is why it is a 2x2 block and not a 2x1 strip.
-function SummaryMenu:drawPageSquare(tx, ty, large)
+function SummaryMenu:drawPageSquare(tx, ty, large, colors)
   local G = love.graphics
   local px, py = tx * 8, ty * 8
   -- $3a..$3d for the page that is up, $36..$39 for the other two.
   local first = large and TILE_SQUARE_LARGE or TILE_SQUARE_SMALL
+  local sheet = self:statsTiles()
+  if sheet and sheet.quads[first] then
+    -- [hli] / [hld], a row down, [hli] / [hl]: the four tiles in that
+    -- order (engine/pokemon/stats_screen.asm:841-853).
+    local function body()
+      G.setColor(1, 1, 1, 1)
+      G.draw(sheet.image, sheet.quads[first], px, py)
+      G.draw(sheet.image, sheet.quads[first + 1], px + 8, py)
+      G.draw(sheet.image, sheet.quads[first + 2], px, py + 8)
+      G.draw(sheet.image, sheet.quads[first + 3], px + 8, py + 8)
+    end
+    if colors and GbcPalette.available() then
+      GbcPalette.with(colors, body)
+    else
+      body()
+    end
+    G.setColor(1, 1, 1, 1)
+    return
+  end
   local inset = first == TILE_SQUARE_LARGE and 2 or 5
   local size = 16 - inset * 2
   G.setColor(0, 0, 0, 1)
@@ -862,7 +913,7 @@ end
 function SummaryMenu:drawPageIndicators()
   local columns = { 13, 15, 17 }
   for i, tx in ipairs(columns) do
-    self:drawPageSquare(tx, 5, i == self.page)
+    self:drawPageSquare(tx, 5, i == self.page, PAGE_PALETTES[i])
   end
 end
 
@@ -1124,8 +1175,7 @@ function SummaryMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()
@@ -1134,6 +1184,7 @@ end
 SummaryMenu.STAT_LABELS = STAT_LABELS
 SummaryMenu.STAT_KEYS = STAT_KEYS
 SummaryMenu.TYPE_NAMES = TYPE_NAMES
+SummaryMenu.PAGE_PALETTES = PAGE_PALETTES
 SummaryMenu.levelText = levelText
 
 return SummaryMenu

@@ -43,8 +43,6 @@ local EggHatchAnim = {}
 EggHatchAnim.__index = EggHatchAnim
 EggHatchAnim.isOpaque = true
 
-local SCREEN_W, SCREEN_H = 160, 144
-
 -- Hatch_UpdateFrontpicBGMapCenter is called twice with different hlcoords:
 -- the egg sits at (7,4) and the hatchling at (6,3).  Both are `lb bc, 7, 7`
 -- PlaceGraphic boxes, and the pic inside that box has already been padded to
@@ -446,8 +444,7 @@ function EggHatchAnim:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - SCREEN_W * scale) / 2),
-    math.floor((winH - SCREEN_H * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

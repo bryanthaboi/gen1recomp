@@ -14,6 +14,7 @@
 -- This is what the party-menu FLY field move opens (#195).
 
 local Font = require("src.render.Font")
+local GameVersion = require("src.core.GameVersion")
 local PaletteFX = require("src.render.PaletteFX")
 local Sound = require("src.core.Sound")
 local SpriteRenderer = require("src.render.SpriteRenderer")
@@ -292,7 +293,8 @@ function TownMap:moveList(step)
 end
 
 function TownMap:update(dt)
-  self.blink = (self.blink + 1) % 32
+  local cycle = GameVersion.generation() == 2 and 32 or 50
+  self.blink = (self.blink + 1) % cycle
   local input = self.game.input
   if input:wasPressed("b") then
     Sound.play(self.game.data, "Press_AB")
@@ -361,7 +363,13 @@ function TownMap:draw()
     end
     if self.nestSpecies then
       -- AREA mode: blinking nests, the species name up top
-      if self.blink % 16 < 10 then
+      local showNest = true
+      if GameVersion.generation() == 1 then
+        showNest = self.blink < 25
+      else
+        showNest = self.blink % 16 < 10
+      end
+      if showNest then
         for _, loc in ipairs(self.nests) do
           local x, y = markerXY(loc)
           if self.nestIcon then
@@ -382,8 +390,8 @@ function TownMap:draw()
       love.graphics.setColor(1, 1, 1, 1)
       return
     end
-    -- engine/items/town_map.asm:347; fallback dot stays red 0 for PaletteFX (#152)
-    if self.playerLoc and self.blink < 20 then
+    -- engine/items/town_map.asm:347; player marker is static in both Gen 1 and 2
+    if self.playerLoc then
       local x, y = markerXY(self.playerLoc)
       if self.playerSheet then
         love.graphics.draw(self.playerSheet, self.playerQuad, x - 4, y - 3)
@@ -399,7 +407,13 @@ function TownMap:draw()
     -- (8,8), so draw it -4,-4 to enclose the cell (engine/menus/town_map.asm
     -- draws the box cursor CENTERED on the selected location).  Drawing it at
     -- the cell top-left put the square in the frame's top-left quadrant (#152).
-    if selected and self.blink % 16 < 10 then
+    local showCursor = true
+    if GameVersion.generation() == 1 then
+      showCursor = self.blink < 25
+    else
+      showCursor = self.blink % 16 < 10
+    end
+    if selected and showCursor then
       local x, y = markerXY(selected)
       if self.bg.cursor then
         love.graphics.draw(self.bg.cursor, x - 4, y - 4)
@@ -424,7 +438,8 @@ function TownMap:draw()
     for _, loc in ipairs(self.locs) do
       drawSquare(loc)
     end
-    if self.playerLoc and self.blink < 20 then
+    -- player marker is static in both Gen 1 and 2
+    if self.playerLoc then
       -- engine/items/town_map.asm:347; fallback dot stays red 0 for PaletteFX (#152)
       if self.playerSheet then
         love.graphics.setColor(1, 1, 1, 1)
@@ -438,7 +453,13 @@ function TownMap:draw()
                                 self.playerLoc.y * 8 + 2, 4, 4)
       end
     end
-    if selected and self.blink % 16 < 10 then
+    local showCursor = true
+    if GameVersion.generation() == 1 then
+      showCursor = self.blink < 25
+    else
+      showCursor = self.blink % 16 < 10
+    end
+    if selected and showCursor then
       love.graphics.setColor(0, 0, 0, 1)
       love.graphics.rectangle("line", selected.x * 8 + 0.5,
                               selected.y * 8 + 0.5, 7, 7)
@@ -452,12 +473,14 @@ function TownMap:draw()
       local loc = self.locs[first + i]
       if loc then
         local y = 40 + i * 16
-        if first + i == self.sel and self.blink % 16 < 10 then
+        -- cursor in list mode (Fly mode) is static in RBY (LoadTownMap_Fly)
+        if first + i == self.sel then
           Font.drawCode(0xED, 8, y)  -- the "▶" cursor glyph
         end
         Font.draw(loc.name, 24, y)
-        if loc == self.playerLoc and self.blink < 20 then
-          -- blinking marker on the player's current town; force the palette-safe
+        -- player marker is static
+        if loc == self.playerLoc then
+          -- marker on the player's current town; force the palette-safe
           -- dark shade explicitly so the red-channel shade-remap keeps it
           -- visible regardless of Font.draw's leftover color (#152)
           love.graphics.setColor(0, 0, 0, 1)

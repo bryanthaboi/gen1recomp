@@ -34,8 +34,14 @@ local NamePick = {}
 NamePick.__index = NamePick
 NamePick.isOpaque = true
 
--- data/player_names.asm PlayerNameArray, Gold's half of the IF.
+-- data/player_names.asm PlayerNameArray, one half of the IF per edition.
 local PRESETS = { "GOLD", "HIRO", "TAYLOR", "KARL" }
+local PRESETS_SILVER = { "SILVER", "KAMON", "OSCAR", "MAX" }
+
+local function presetsFor()
+  local silver = require("src.core.GameVersion").get() == "silver"
+  return silver and PRESETS_SILVER or PRESETS
+end
 
 -- menu_coords 0, 0, 10, TEXTBOX_Y - 1 (TEXTBOX_Y = 12).
 local BOX_X1, BOX_Y1, BOX_X2, BOX_Y2 = 0, 0, 10, 11
@@ -60,7 +66,7 @@ function NamePick.new(game, opts)
   self.game = game
   self.onDone = opts.onDone
   self.items = { "NEW NAME" }
-  for _, name in ipairs(opts.presets or PRESETS) do
+  for _, name in ipairs(opts.presets or presetsFor()) do
     self.items[#self.items + 1] = name
   end
   -- `db 1 ; default option`: the cursor starts on NEW NAME, not on a preset.
@@ -106,7 +112,7 @@ function NamePick:openNaming()
       if name and #name > 0 then
         self:choose(name)
       else
-        self:choose(self.items[2] or "GOLD")
+        self:choose(self.items[2] or presetsFor()[1])
       end
     end,
   })
@@ -146,7 +152,7 @@ function NamePick:update(_dt)
       if self.fontOk then
         self:openNaming()
       else
-        self:choose(self.items[2] or "GOLD")
+        self:choose(self.items[2] or presetsFor()[1])
       end
     else
       -- A preset returns through MovePlayerPicLeft, so the pic walks back
@@ -219,13 +225,14 @@ function NamePick:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()
 end
 
 NamePick.PRESETS = PRESETS
+NamePick.PRESETS_SILVER = PRESETS_SILVER
+NamePick.presetsFor = presetsFor
 
 return NamePick

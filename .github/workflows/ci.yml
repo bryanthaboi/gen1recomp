@@ -12,10 +12,11 @@ name: ci
 #
 on:
   push:
-    # Integration branch + release branch. PRs already run via pull_request
-    # (any base); this list is only for post-merge push runs.
     branches: [dev, main]
+  # PRs into dev only: a dev -> main ship PR reuses the required checks the
+  # dev push already put on the same head SHA, so it needs no second run.
   pull_request:
+    branches: [dev]
 
 # a force-push while CI is mid-run should cancel the stale run, not queue
 concurrency:
@@ -318,52 +319,10 @@ jobs:
         run: |
           set -euo pipefail
           scripts/build_linux_arm64.sh --version 0.0.0
+      # Shared with the release workflow so shipped images get the same
+      # self-contained / glibc-floor checks as PR builds.
       - name: Verify the AppImage is self-contained and bullseye-compatible
-        run: |
-          set -euo pipefail
-          image="dist/linux-arm64/gen1recomp-0.0.0-linux-arm64.AppImage"
-
-          # --appimage-extract needs no FUSE, so this works on a runner
-          # without /dev/fuse and still exercises the real payload.
-          "$image" --appimage-extract >/dev/null
-          for required in AppRun bin/love game.love lib/liblove-11.5.so; do
-            [ -e "squashfs-root/$required" ] \
-              || { echo "::error::AppImage is missing $required"; exit 1; }
-          done
-
-          # Every bundled object must resolve once AppRun's LD_LIBRARY_PATH is
-          # applied; an unresolved soname here is a user-visible launch crash.
-          #
-          # This runs on a HEADLESS runner on purpose, and that is the point.
-          # The first version of this build bundled Debian's SDL2, which
-          # hard-links libpulse/libasound/libX11/libwayland, so it only ever
-          # started on a full desktop -- a bare runner is what exposed it.
-          missing="$(LD_LIBRARY_PATH="$PWD/squashfs-root/lib" \
-            ldd squashfs-root/bin/love squashfs-root/lib/*.so* 2>/dev/null \
-            | grep 'not found' || true)"
-          [ -z "$missing" ] || { echo "::error::unresolved deps:"; echo "$missing"; exit 1; }
-
-          # Nothing may hard-link a driver, session or audio-stack library:
-          # those must be reached through dlopen so the AppImage runs on a box
-          # with only ALSA, only Wayland, or only KMSDRM.
-          linked="$(for f in squashfs-root/bin/love squashfs-root/lib/*.so*; do
-            objdump -p "$f" 2>/dev/null | awk '/NEEDED/{print $2}'
-          done | sort -u | grep -E '^lib(pulse|asound|X11|wayland|GL|EGL|drm|gbm|xcb|cairo|sndio|dbus)' || true)"
-          [ -z "$linked" ] \
-            || { echo "::error::these must be dlopened, not linked:"; echo "$linked"; exit 1; }
-
-          # The whole point of compiling on bullseye. If a future change moves
-          # the builder to a newer base, the glibc floor silently rises and
-          # every user on an older distro gets "GLIBC_2.xx not found" -- catch
-          # it here instead of in a release.
-          floor="$(objdump -T squashfs-root/bin/love squashfs-root/lib/*.so* 2>/dev/null \
-            | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)"
-          echo "highest required glibc symbol version: $floor"
-          [ -n "$floor" ] \
-            || { echo "::error::found no versioned glibc symbols -- objdump read nothing"; exit 1; }
-          highest="$(printf '%s\n' "$floor" "GLIBC_2.31" | sort -V | tail -1)"
-          [ "$highest" = "GLIBC_2.31" ] \
-            || { echo "::error::AppImage requires $floor, above the bullseye 2.31 floor"; exit 1; }
+        run: bash scripts/linux-arm64/verify_appimage.sh dist/linux-arm64/gen1recomp-0.0.0-linux-arm64.AppImage
       - name: Upload the AppImage
         uses: actions/upload-artifact@v7
         with:
@@ -400,7 +359,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo apt-get install -y luajit
       - run: python3 -m pip install --upgrade pillow
 
       # the fixture PNGs are committed (they are 8x8 placeholders, not
@@ -421,13 +379,8 @@ jobs:
           print(f"\n{len(paths)} fixture assets valid")
           PY
 
-      # the fingerprint golden is the parity tripwire; prove it still
-      # matches the dataset on a clean checkout
-      - name: fingerprint gate
-        run: luajit tests/engine/gate_fingerprint.lua
-
-      - name: parity-guarantee meta-test
-        run: luajit tests/engine/gate_meta_coverage.lua
+      # the fingerprint parity gates (gate_fingerprint / gate_meta_coverage)
+      # run in the headless job via run_engine; this job only guards the PNGs
 
   # Only the differ is under test here, and the job is named for that.  The
   # capture half of the golden pipeline does not exist: a POKEPORT_DRIVER

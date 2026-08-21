@@ -25,6 +25,7 @@ SHELL_COLORS = {
     "blue": {"main": (35, 125, 235), "dark": (20, 85, 175), "light": (80, 165, 255)},
     "yellow": {"main": (255, 205, 10), "dark": (210, 160, 0), "light": (255, 230, 80)},
     "gold": {"main": (225, 170, 40), "dark": (170, 120, 20), "light": (245, 200, 80)},
+    "silver": {"main": (185, 190, 200), "dark": (130, 135, 145), "light": (225, 230, 240)},
 }
 
 def extract_cleaned_love_emblem():
@@ -186,7 +187,7 @@ def main():
         fg = create_adaptive_foreground(sizes["adaptive"])
         fg.save(os.path.join(drawable_dir, "ic_launcher_foreground.png"), "PNG")
         
-        for ver in ("red", "blue", "yellow", "gold"):
+        for ver in ("red", "blue", "yellow", "gold", "silver"):
             cart = render_3d_cartridge(ver, sizes["shortcut"])
             cart.save(os.path.join(drawable_dir, f"ic_shortcut_{ver}.png"), "PNG")
         

@@ -71,15 +71,15 @@ First install or update (same steps):
      your saves, imported ROMs, mods, and options. Re-extracting only
      replaces the NRO(s) and these help files.
   3. Launch with title override (hold R on HOME, open any title → hbmenu).
-  4. Copy a legal Pokemon Red/Blue .gb or Yellow/Gold .gbc into:
+  4. Copy a legal Pokemon Red/Blue .gb or Yellow/Gold/Silver .gbc into:
        switch/gen1recomp/pokemon-love2d/imports/
      then use Scan again in the launcher if needed.
 
 Inboxes (drop files here via MTP / SD / FTP):
   imports/                      — ROM .gb / .gbc
   imports/mods/                 — community mod .zip
-  imports/saves/red|blue|yellow|gold/  — raw .sav import (Gold cart .sav not yet)
-  exports/red|blue|yellow|gold/        — pull after Export save (Gold not yet)
+  imports/saves/red|blue|yellow|gold|silver/  — raw .sav import (Gold/Silver cart .sav not yet)
+  exports/red|blue|yellow|gold|silver/        — pull after Export save (Gold/Silver not yet)
 
 Full guide: https://github.com/bryanthaboi/gen1recomp/blob/main/docs/switch-install.md
 EOF
@@ -92,7 +92,7 @@ write_readme() {
 }
 
 write_readme "$SAVE_ROOT/imports/README.txt" \
-  "Put a legal Pokemon Red/Blue .gb or Yellow/Gold .gbc here, then Scan again in the launcher."
+  "Put a legal Pokemon Red/Blue .gb or Yellow/Gold/Silver .gbc here, then Scan again in the launcher."
 write_readme "$SAVE_ROOT/imports/mods/README.txt" \
   "Put community mod .zip files here, then MODS → Scan again."
 write_readme "$SAVE_ROOT/imports/saves/red/README.txt" \
@@ -103,6 +103,8 @@ write_readme "$SAVE_ROOT/imports/saves/yellow/README.txt" \
   "Put a Yellow .sav (32 KB) here, then Yellow tab → SAVE FILES → Import save."
 write_readme "$SAVE_ROOT/imports/saves/gold/README.txt" \
   "Gold cart .sav import is not supported yet. Folder reserved so MTP matches the other games."
+write_readme "$SAVE_ROOT/imports/saves/silver/README.txt" \
+  "Silver cart .sav import is not supported yet. Folder reserved so MTP matches the other games."
 write_readme "$SAVE_ROOT/exports/red/README.txt" \
   "After Export save (Red), copy the .sav out of this folder via MTP / SD / FTP."
 write_readme "$SAVE_ROOT/exports/blue/README.txt" \
@@ -111,6 +113,8 @@ write_readme "$SAVE_ROOT/exports/yellow/README.txt" \
   "After Export save (Yellow), copy the .sav out of this folder via MTP / SD / FTP."
 write_readme "$SAVE_ROOT/exports/gold/README.txt" \
   "Gold cart .sav export is not supported yet. Folder reserved so MTP matches the other games."
+write_readme "$SAVE_ROOT/exports/silver/README.txt" \
+  "Silver cart .sav export is not supported yet. Folder reserved so MTP matches the other games."
 
 rm -f "$OUT_ZIP"
 (
@@ -140,10 +144,12 @@ REQUIRED=(
   "switch/gen1recomp/pokemon-love2d/imports/saves/blue/README.txt"
   "switch/gen1recomp/pokemon-love2d/imports/saves/yellow/README.txt"
   "switch/gen1recomp/pokemon-love2d/imports/saves/gold/README.txt"
+  "switch/gen1recomp/pokemon-love2d/imports/saves/silver/README.txt"
   "switch/gen1recomp/pokemon-love2d/exports/red/README.txt"
   "switch/gen1recomp/pokemon-love2d/exports/blue/README.txt"
   "switch/gen1recomp/pokemon-love2d/exports/yellow/README.txt"
   "switch/gen1recomp/pokemon-love2d/exports/gold/README.txt"
+  "switch/gen1recomp/pokemon-love2d/exports/silver/README.txt"
 )
 for rel in "${REQUIRED[@]}"; do
   printf '%s\n' "$LISTING" | grep -Fq "$rel" || fail "zip missing $rel"

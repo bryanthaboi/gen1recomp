@@ -89,6 +89,60 @@ for _, row in ipairs(log) do
 end
 check(gotText, "getmonname filled STRBUF in received text")
 
+-- givepoke's trainer arm (#1569): Script_givepoke (engine/overworld/
+-- scripting.asm:1817-1824), GivePoke (engine/pokemon/move_mon.asm:1695-1736)
+do
+  local given, asked = nil, false
+  local kenyaVm = Vm.new({ generation = 2,
+    ["s:randy"] = {
+      { op = "givepoke", species = 21, level = 10, item = 0, trainer = 1,
+        name = "KENYA", otName = "RANDY" },
+      { op = "end" },
+    },
+  }, {}, Events.new(), {
+    givePoke = function(species, level, item, opts)
+      given = { species = species, level = level, opts = opts }
+      return { species = "SPEAROW" }
+    end,
+    askNickname = function() asked = true end,
+  })
+  check(kenyaVm:start("s:randy"), "Randy's script starts")
+  for _ = 1, 10 do kenyaVm:update() end
+  check(given ~= nil, "the gift reaches givePoke")
+  check(given.opts ~= nil, "the trainer arm carries the two names")
+  eq(given.opts.nickname, "KENYA", "the nickname is the script's own")
+  eq(given.opts.otName, "RANDY", "and so is the OT name")
+  check(not asked, "no nickname prompt on the trainer arm")
+end
+
+-- Every other givepoke in the game is the flag-FALSE form: no names, and the
+-- nickname prompt still runs (engine/pokemon/move_mon.asm:1753-1757).
+do
+  local given, asked = nil, false
+  local plainVm = Vm.new({ generation = 2,
+    ["s:eevee"] = {
+      { op = "givepoke", species = 133, level = 20, item = 0, trainer = 0 },
+      { op = "end" },
+    },
+  }, {}, Events.new(), {
+    givePoke = function(species, level, item, opts)
+      given = { opts = opts }
+      return { species = "EEVEE" }
+    end,
+    showText = function(_, onDone) onDone() end,
+    -- GiveANickname_YesNo (move_mon.asm:1753-1757): the prompt's yes/no
+    yesorno = function(onChoose)
+      asked = true
+      onChoose(false)
+    end,
+  })
+  plainVm:start("s:eevee")
+  for _ = 1, 10 do plainVm:update() end
+  check(given ~= nil and given.opts == nil,
+    "the flag-FALSE form hands givePoke no names")
+  check(asked, "and the nickname prompt still runs on it")
+end
+
 -- Phone + verbosegiveitem (Elm directions / aide potion)
 local phone = {}
 local bag = {}

@@ -91,6 +91,12 @@ bool syncHealthSteps();
 bool restartApp();
 
 /**
+ * Stages a checksum-verified APK from the current save directory and starts
+ * Android's user-confirmed Package Installer flow. Android-only.
+ **/
+bool installApk(const char *path);
+
+/**
  * Dynamic App Shortcuts: updates Android ShortcutManager with ready game versions.
  **/
 bool updateAppShortcuts(const std::vector<std::string> &versions);

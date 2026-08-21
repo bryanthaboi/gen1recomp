@@ -271,10 +271,12 @@ for rel in \
   "switch/gen1recomp/pokemon-love2d/imports/saves/blue/README.txt" \
   "switch/gen1recomp/pokemon-love2d/imports/saves/yellow/README.txt" \
   "switch/gen1recomp/pokemon-love2d/imports/saves/gold/README.txt" \
+  "switch/gen1recomp/pokemon-love2d/imports/saves/silver/README.txt" \
   "switch/gen1recomp/pokemon-love2d/exports/red/README.txt" \
   "switch/gen1recomp/pokemon-love2d/exports/blue/README.txt" \
   "switch/gen1recomp/pokemon-love2d/exports/yellow/README.txt" \
-  "switch/gen1recomp/pokemon-love2d/exports/gold/README.txt"
+  "switch/gen1recomp/pokemon-love2d/exports/gold/README.txt" \
+  "switch/gen1recomp/pokemon-love2d/exports/silver/README.txt"
 do
   printf '%s\n' "$ZIP_LIST" | grep -Fq "$rel" || PACK_MISSING="${PACK_MISSING} ${rel}"
 done

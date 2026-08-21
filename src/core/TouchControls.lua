@@ -218,7 +218,7 @@ function TouchControls.defaultLayout(ww, wh, ox, oy, scale)
   local ssW = dpadW * 0.30
   local margin = dpadW * 0.12
   local ok, GameVersion = pcall(require, "src.core.GameVersion")
-  if ok and GameVersion.isGold and GameVersion.isGold() then
+  if ok and GameVersion.generation and GameVersion.generation() == 2 then
     margin = math.max(margin, math.min(ww * 0.10, 72))
   end
   return {

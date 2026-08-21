@@ -67,6 +67,7 @@ run_tier() {
 # ------- ROM-free tiers: these are what CI runs
 
 run_tier "T0 ROM builder version routing" python3 tests/build_rom_data_cli_test.py
+run_tier "T0 ROM manifest generator pin/overrides" python3 tests/rom_manifest_generator_test.py
 run_tier "T0 switch CI workflow content gate" "$LUA" tests/switch_ci_workflows_test.lua
 run_tier "T0 switch transfer docs gate" "$LUA" tests/switch_transfer_docs_test.lua
 # NX Blue/Yellow asset overlay: ROM-free, must run on every checkout so a

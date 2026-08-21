@@ -22,8 +22,8 @@ Player install (what to download, title override) stays in
 | Loose iteration pair | `sdmc:/switch/gen1recomp/gen1recomp.nro` **and** `game.love` beside it |
 | ROM inbox | LÖVE save dir → `imports/` (launcher shows the live `getSaveDirectory()` path; under MTP often `1: SD Card/<save identity>/imports/`) |
 | Mod zip inbox | Same save dir → `imports/mods/` then MODS → **Scan again** |
-| Save `.sav` inbox | Same save dir → `imports/saves/red\|blue\|yellow\|gold/` then that game's SAVE FILES → **Import save** (Gold cart `.sav` not supported yet) |
-| Save exports | Same save dir → `exports/red\|blue\|yellow\|gold/` (pull after **Export save**; Gold cart `.sav` not supported yet) |
+| Save `.sav` inbox | Same save dir → `imports/saves/red\|blue\|yellow\|gold\|silver/` then that game's SAVE FILES → **Import save** (Gold / Silver cart `.sav` not supported yet) |
+| Save exports | Same save dir → `exports/red\|blue\|yellow\|gold\|silver/` (pull after **Export save**; Gold / Silver cart `.sav` not supported yet) |
 | Opt-in diagnostics | Empty `switch-debug.txt` in the save dir → `switch.log` |
 | Lua error log | `lua-error.log` in the save dir |
 
@@ -54,7 +54,8 @@ macOS, not a Mac-only requirement.
 3. Create `switch/gen1recomp/` if needed; extract the release zip at SD root
    (or copy NRO / `game.love` for loose).
 4. For ROMs/mods/saves, open the save-dir `imports/`, `imports/mods/`,
-   `imports/saves/<red|blue|yellow|gold>/`, or `exports/<red|blue|yellow|gold>/`
+   `imports/saves/<red|blue|yellow|gold|silver>/`, or
+   `exports/<red|blue|yellow|gold|silver>/`
    path the launcher prints.
 5. Wait for the queue; refresh; exit MTP responder; title-override launch.
 

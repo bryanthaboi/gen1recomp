@@ -92,14 +92,32 @@ local function hitCount(ctx, record)
   return dist[r + 1]
 end
 
+-- engine/battle/effects.asm:119-151 (poison), :194-255 (burn/freeze/paralyze)
+local FBP_SIDE_STATUS = { BRN = true, FRZ = true, PAR = true }
+
+local function secondaryStatusFx(battle, user, status)
+  if status == "PSN" then
+    local row = battle:animNext(user.isPlayer and "ENEMY_HUD_SHAKE_ANIM"
+                                or "SHAKE_SCREEN_ANIM", user.isPlayer)
+    row.animDelayed = true
+    row.hit = { animType = user.isPlayer and 6 or 3 }
+  elseif FBP_SIDE_STATUS[status] and user.isPlayer then
+    battle:animNext("ENEMY_HUD_SHAKE_ANIM", true).animDelayed = true
+  end
+end
+
 -- The damaging pipeline, extracted from the performMove monolith: every
 -- stage keeps the original's exact check order and rng consumption
--- (invulnerability -> gate -> hit count -> pre-accuracy -> accuracy ->
+-- (pre-accuracy -> invulnerability -> gate -> hit count -> accuracy ->
 -- damage choice -> hits -> messages -> after-damage -> secondary run).
 function EffectRegistry.runDamaging(battle, ctx, record)
   local user, target = ctx.user, ctx.target
   local move, moveInst = ctx.move, ctx.moveInst
   local neverMiss = record and record.neverMiss
+
+  -- SpecialEffectsCont's JumpMoveEffect (core.asm:3129-3133) runs before
+  -- MoveHitTest's INVULNERABLE test (:3150), mid-Fly/Dig included (#1565)
+  if record and record.beforeAccuracy then record.beforeAccuracy(ctx) end
 
   -- Swift ignores semi-invulnerability (MoveHitTest returns hit for
   -- SWIFT_EFFECT before the INVULNERABLE check)
@@ -128,8 +146,6 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   end
 
   local hits = hitCount(ctx, record)
-
-  if record and record.beforeAccuracy then record.beforeAccuracy(ctx) end
 
   if not neverMiss then
     if not battle:accuracyRoll(move, user, target) then
@@ -207,7 +223,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   -- replay PlayMoveAnimation per strike (pokered: GetPlayerAnimationType
   -- / GetEnemyAnimationType loop on wNumAttacksLeft); hit 1 reuses the
   -- announcement-time moveAnimRow, later hits queue fresh anim rows.
-  -- Thrash/rage continuations have no announcement anim -- a bare
+  -- Mimic queues no announcement anim (announceAnim = false) -- a bare
   -- hitRow carries the blink instead.
   -- PlayApplyingAttackSound (engine/battle/animations.asm, the routine after
   -- PlayApplyingAttackAnimation) picks the sound off wDamageMultipliers -- 10
@@ -318,7 +334,12 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   -- secondary side effects (blocked by fainting)
   if record and record.run and record.kind ~= "primary"
      and target.mon.hp > 0 and totalDealt > 0 then
-    for _, m in ipairs(record.run(ctx)) do
+    local hadStatus = target.mon.status
+    local msgs = record.run(ctx)
+    if target.mon.status and target.mon.status ~= hadStatus then
+      secondaryStatusFx(battle, user, target.mon.status)
+    end
+    for _, m in ipairs(msgs) do
       battle:sayNext(m)
     end
   end

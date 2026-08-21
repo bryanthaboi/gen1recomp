@@ -181,7 +181,7 @@ function PcMenu:beginChangeBox(index)
   self.saveTimer = 0
   self.saved = nil
   local existed = self.saveExists
-  if existed == nil then existed = Save.exists("gold") end
+  if existed == nil then existed = Save.exists() end
   self.existed = existed
 end
 
@@ -453,8 +453,7 @@ function PcMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

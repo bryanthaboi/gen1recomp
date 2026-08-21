@@ -262,7 +262,8 @@ function LinkBattle.new(game, net, opts)
   self.opponentName = theirName
   -- _TrainerWantsToFightText (data/text/text_2.asm:1257): wIsInBattle == 2
   -- takes PrintBeginningBattleText's .trainerBattle arm, link included
-  self.introText = Strings("%s wants\nto fight!", theirName)
+  self.introText = self:romText("_TrainerWantsToFightText",
+    "%s wants\nto fight!", theirName)
   self.remoteHashes = {}
   self.localHashes = {}
   self.remoteParts = {}

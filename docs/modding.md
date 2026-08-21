@@ -81,7 +81,7 @@ Every mod contains a root `manifest.json` defining its metadata, supported games
 | `entry` | `string` | Entry Lua file path relative to mod root (usually `"main.lua"`). |
 | `profile` | `string` | Mod profile: `"content"`, `"overhaul"`, or `"total_conversion"`. |
 | `category` | `string` | Categorization chip (e.g. `"GAMEPLAY"`, `"CONTENT"`, `"UI"`, `"AUDIO"`). |
-| `games` | `array` | Supported game versions: `["gen1"]`, `["gen2"]`, `["red"]`, `["blue"]`, `["yellow"]`, `["gold"]`, or `["all"]`. |
+| `games` | `array` | Supported game versions: `["gen1"]`, `["gen2"]`, `["red"]`, `["blue"]`, `["yellow"]`, `["gold"]`, `["silver"]`, or `["all"]`. |
 | `game_version`| `string` | Semver range of required engine version (e.g. `">=0.0.0-dev <2.0.0"`). |
 | `priority` | `integer` | Load priority order (lower numbers load earlier; dependencies always precede dependents regardless of priority). |
 | `dependencies` | `array` | Hard required dependencies. A mod will not load if a required dependency is missing or disabled for the active game. |
@@ -122,20 +122,39 @@ Each object requires a stable `id`, a display `name`, a destination `file`
 digests. `format` is either `"raw"` (the default) or `"n64"`. An optional
 `description` gives players dump or region guidance in the import panel.
 `size` declares the exact canonical byte length; `max_size` declares a smaller
-per-import ceiling when an exact size is not appropriate. Every import also
-has an engine-enforced 128 MiB ceiling and is rejected before hashing when its
-filesystem reports an invalid size.
+per-import ceiling when an exact size is not appropriate. The engine hard limit
+is 2 GiB. Imports above 128 MiB receive an explicit free-space confirmation and
+use the launcher's streaming large-file path rather than being materialized as
+one Lua string.
 
 For `"n64"`, the launcher recognizes `.z64`, `.v64`, and `.n64` byte orders,
 strips a recognized 512-byte copier header, converts the bytes to canonical
 big-endian `.z64` order, and then checks MD5. The canonical bytes are written
 to `mods/<mod-id>/baseroms/<file>`. Each selection is a private grant to that
 mod: the launcher never scans or copies another mod's imported files merely
-because its manifest names the same digest. Mods read the result with their existing scoped `mod:read` API, for
-example `mod:read("baseroms/stadium2.z64")`; no host path or new filesystem
+because its manifest names the same digest. Small sources can still be read
+with the existing scoped `mod:read` API, for example
+`mod:read("baseroms/stadium2.z64")`. For large sources, prefer the bounded
+`mod.imports` facade described below; no host path or new general filesystem
 permission is exposed. Missing `required_imports` block the mod before its
 entry chunk runs; missing `optional_imports` remain visible in the same
 launcher panel but do not block loading.
+
+#### Bounded access to validated imports
+
+A loaded mod can address only ids declared by its own `required_imports` or
+`optional_imports` arrays:
+
+```lua
+local info, err = mod.imports:info("stadium2")
+local header, err = mod.imports:read("stadium2", 0, 4096)
+```
+
+`read` uses zero-based offsets and is capped at 8 MiB per call. The engine
+rechecks the stored import before exposing it, seeks into the engine-owned
+copy, and never gives the mod a host path or file handle. This is intended for
+large source formats whose table/index can be parsed with small reads before
+selectively reading the payloads a transform actually needs.
 
 MD5 here identifies a known dump because ROM databases commonly publish it;
 it is not a security or authenticity guarantee. Do not paste the SHA-1 used by
@@ -441,6 +460,28 @@ default** (1x front, 2x back).
   ball-to-pic grow multiplies your scale through each stage, so a rescaled
   mon still grows into place from the ball, grounded the whole way.
 
+## Installation-scoped generated cache
+
+Generated data derived from a validated user source often belongs to the mod
+installation rather than to one Pokémon save. `mod.cache` is that namespace:
+
+```lua
+local ok, err = mod.cache:write("extract/v1/arena.bin", encodedArena)
+local bytes, err = mod.cache:read("extract/v1/arena.bin")
+local info = mod.cache:info("extract/v1/arena.bin")
+mod.cache:delete("extract/v1/arena.bin")
+```
+
+The physical root is engine-owned (`mod_cache/<mod-id>/`) and never exposed to
+the mod. Keys are safe relative paths and a single write is capped at 64 MiB.
+The cache does not rewind with checkpoints and is not scoped to game version,
+slot, or playthrough. The mod owns its generated format, fingerprints, rebuild
+policy, and completion marker; the engine treats the bytes as opaque data.
+
+Use `mod.storage` instead when the data belongs to one playthrough. Use
+`mod.cache` when it is a reproducible installation artifact that can be rebuilt
+from a declared user source.
+
 ## Durable tool storage and runtime checkpoints
 
 `mod.save` remains the right place for state that should travel with the next
@@ -632,6 +673,17 @@ never reorders or replaces `game.save.party`; trainer battle checkpoints retain
 the selected indices. Mods remain responsible for selection policy and should
 use only public `mod.ui`, hook, and save APIs. See RFC 0010 for the exact
 contract and compatibility guarantees.
+
+Both battle engines expose the guarded `battle.charge_required` hook when a
+charge-capable move is selected for its initial turn and the active ruleset
+would otherwise charge it. The wrapper receives `(next, ctx)`, where `ctx` is
+`{ battle, user, target, move, charge = true, isCalled }`. Return `false` to
+skip only that initial charge and continue through the ordinary move pipeline;
+call `next(ctx)` to keep it. The hook does not run for the release turn or when
+the active ruleset already skips charging (for example, Gold Solarbeam in
+sun). PP use, accuracy, damage, animation, and secondary effects remain owned
+by the engine. With no subscriber, the vanilla decision runs without building
+the hook context.
 
 ## Developer console
 

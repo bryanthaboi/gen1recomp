@@ -40,8 +40,6 @@ local EvolutionAnim = {}
 EvolutionAnim.__index = EvolutionAnim
 EvolutionAnim.isOpaque = true
 
-local SCREEN_W, SCREEN_H = 160, 144
-
 -- PrepMonFrontpic's box: hlcoord 7, 2, `lb bc, 7, 7`.
 local PIC_TILE_X, PIC_TILE_Y, PIC_TILES = 7, 2, 7
 
@@ -252,6 +250,8 @@ function EvolutionAnim:setPhase(phase)
         full = self.full,
       })
     end
+    local stack = self.game and self.game.stack
+    if stack and stack.top and stack:top() == self then stack:pop() end
     return
   end
 end
@@ -321,8 +321,18 @@ end
 function EvolutionAnim:update(_dt)
   local input = self.game and self.game.input
   local phase = self.phase
-  -- onDone has already fired; the caller pops this state on its own beat.
-  if phase == "done" then return end
+  -- onDone has already fired.
+  if phase == "done" then
+    local stack = self.game and self.game.stack
+    if stack and stack.top and stack:top() == self then stack:pop() end
+    return
+  end
+
+  if phase == "waitingLearn" then
+    local stack = self.game and self.game.stack
+    if stack and stack.top and stack:top() == self then self:nextLearn() end
+    return
+  end
 
   if phase == "flash" then
     return self:updateFlash(input)
@@ -561,8 +571,7 @@ function EvolutionAnim:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - SCREEN_W * scale) / 2),
-    math.floor((winH - SCREEN_H * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

@@ -149,9 +149,11 @@ do
   local events = battle:takeTurn({ kind = "move", move = "ROAR" })
   check(saidSomethingLike(events, "fled in fear!"),
     "FledInFearText: the wild mon is blown away")
-  check(not saidSomethingLike(events, "used TACKLE!"),
-    "and the mon that left never takes its half of the turn")
-  eq(player.hp, hpBefore, "so nothing came back the other way")
+  -- EFFECT_FORCE_SWITCH is priority 0, below BASE_PRIORITY
+  -- (data/moves/effects_priorities.asm:5): Roar goes last (#1475)
+  check(saidSomethingLike(events, "used TACKLE!"),
+    "so the wild mon takes its half of the turn first, Speed regardless")
+  check(player.hp < hpBefore, "and its hit landed before the blow-away")
   eq(battle.over, true, "the battle is over")
   eq(battle.outcome, "fled", "as the cart's DRAW")
 end

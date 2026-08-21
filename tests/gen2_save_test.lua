@@ -28,6 +28,9 @@ love.filesystem = {
 local GameVersion = require("src.core.GameVersion")
 local Save = require("src.core.gen2.Save")
 
+local priorVersion = GameVersion.get()
+GameVersion.set("gold")
+
 local failures, checks = 0, 0
 local function check(name, got, want)
   checks = checks + 1
@@ -48,6 +51,11 @@ check("main file", main, "save_gold.lua")
 check("backup file", backup, "save_gold.lua.bak")
 check("staged file", tmp, "save_gold.lua.tmp")
 check("gold suffix", GameVersion.saveSuffix("gold"), "_gold")
+local sMain, sBackup, sTmp = Save.filenames("silver")
+check("silver main file", sMain, "save_silver.lua")
+check("silver backup file", sBackup, "save_silver.lua.bak")
+check("silver staged file", sTmp, "save_silver.lua.tmp")
+check("silver suffix", GameVersion.saveSuffix("silver"), "_silver")
 -- Red keeps its historical un-suffixed name, so the two can never collide.
 check("red is unsuffixed", GameVersion.saveSuffix("red"), "")
 
@@ -104,7 +112,13 @@ check("defaults are copied", Save.defaultOptions().textSpeed, "MID")
 -- A sparse or hand-edited save must come back indexable rather than crashing
 -- the first screen that reads it.
 local sparse = Save.normalize({ player = {} })
-check("normalized version", sparse.version, "gold")
+check("normalized version", sparse.version, GameVersion.get())
+check("a Gen 2 version already on the table is kept",
+  Save.normalize({ version = "silver", player = {} }).version, "silver")
+check("and a Gen 1 one is replaced by the running edition",
+  Save.normalize({ version = "red", player = {} }).version, "gold")
+check("as is a version this engine does not have",
+  Save.normalize({ version = "crystal", player = {} }).version, "gold")
 check("party exists", type(sparse.party), "table")
 check("inventory exists", type(sparse.inventory), "table")
 check("pokedex seen exists", type(sparse.pokedex.seen), "table")
@@ -477,6 +491,46 @@ do
   check("a fresh slot starts empty", next(fresh.modData), nil)
   files = {}
 end
+
+-- ------- the same save, run as Silver
+--
+-- The blank name is the edition's own first PlayerNameArray row
+-- (data/player_names.asm:12-23).
+do
+  GameVersion.set("silver")
+  files = {}
+
+  local born = Save.newGame({})
+  check("a silver boot stamps silver", born.version, "silver")
+  check("still generation 2", born.generation, 2)
+  check("with the edition's own preset name", born.player.name, "SILVER")
+  check("gold's preset is unchanged", Save.defaultPlayerName("gold"), "GOLD")
+  check("and silver's is its own", Save.defaultPlayerName("silver"), "SILVER")
+  check("the running edition answers with no argument",
+    Save.defaultPlayerName(), "SILVER")
+
+  check("a version-less save takes the running edition",
+    Save.normalize({ player = {} }).version, "silver")
+  check("and a gold save keeps gold on a silver boot",
+    Save.normalize({ version = "gold", player = {} }).version, "gold")
+
+  check("no silver save yet", Save.exists("silver"), false)
+  check("silver save wrote", Save.save(born), true)
+  check("silver save exists now", Save.exists("silver"), true)
+  check("gold is untouched by it", Save.exists("gold"), false)
+
+  local main = Save.filenames("silver")
+  check("the silver file is silver's own", main, "saves/silver/slot1.lua")
+  check("and it is the file on disk", files[main] ~= nil, true)
+  local back = Save.load("silver")
+  check("silver round-trips", back and back.player.name, "SILVER")
+  check("keeping its stamp", back.version, "silver")
+
+  files = {}
+  GameVersion.set("gold")
+end
+
+GameVersion.set(priorVersion)
 
 print(("gen2 save: %d checks, %d failures"):format(checks, failures))
 -- Raise rather than os.exit: tests/run_tests.lua dofiles this file, so an

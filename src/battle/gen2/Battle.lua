@@ -166,6 +166,9 @@ Battle.SUBSTATUS_ITEMS = {
 -- be run from or Roared away.
 Battle.BATTLETYPE_FORCESHINY = 7
 Battle.BATTLETYPE_TRAP = 9
+-- LostBattle's .canlose arm (engine/battle/core.asm:2766): the only battle
+-- type whose loss still prints the trainer's own line instead of a whiteout.
+Battle.BATTLETYPE_CANLOSE = 1
 
 -- BadgeStatBoosts (engine/battle/core.asm:6534): each of these Johto badges
 -- raises the PLAYER's in-battle stat by 1/8.  The routine walks every other
@@ -889,10 +892,13 @@ Battle.PRIORITY = {
   EFFECT_ENDURE = 3,
   EFFECT_COUNTER = -1,
   EFFECT_MIRROR_COAT = -1,
-  EFFECT_VITAL_THROW = -1,
+  EFFECT_FORCE_SWITCH = -1,  -- Whirlwind, Roar: priority 0, below BASE
 }
 
 function Battle:movePriority(moveId)
+  -- GetMovePriority `cp VITAL_THROW / ld a, 0 / ret z`
+  -- (engine/battle/core.asm:787-789).
+  if moveId == "VITAL_THROW" then return -1 end
   local def = self:moveDef(moveId)
   return (def and Battle.PRIORITY[def.effect]) or 0
 end
@@ -1487,6 +1493,15 @@ function Battle:useMove(attacker, defender, moveId)
   local charge = Effects.CHARGE[def.effect]
   if def.effect == "EFFECT_SOLARBEAM" and self.weather == "sun" then
     charge = nil
+  end
+  if charge and not charging and Runtime.wantsHook("battle.charge_required") then
+    local required = Runtime.call("battle.charge_required", function(c)
+      return c.charge
+    end, {
+      battle = self, user = attacker, target = defender, move = def,
+      charge = true, isCalled = (self.copyDepth or 0) > 0,
+    })
+    if required == false then charge = nil end
   end
   if charge and not charging then
     state.chargeMove = moveId
@@ -2403,10 +2418,11 @@ Battle.MOVE_EFFECTS.EFFECT_BATON_PASS = function(self, attacker)
     self.enemy = party[target]
     self.enemy.volatile = carried
   end
-  self:emit({ kind = "send", side = side,
-    mon = side == "player" and self.player or self.enemy,
-    text = "Go! " .. self:monName(side == "player" and self.player
-      or self.enemy) .. "!" })
+  local sent = side == "player" and self.player or self.enemy
+  self:emit({ kind = "send", side = side, mon = sent,
+    hp = sent.hp or 0, status = sent.status or false,
+    level = sent.level, experience = sent.experience,
+    text = "Go! " .. self:monName(sent) .. "!" })
 end
 
 -- BattleCommand_TrapTarget's .Traps table, one line per move: target first,
@@ -2665,6 +2681,8 @@ Battle.MOVE_EFFECTS.EFFECT_FORCE_SWITCH = function(self, attacker, defender,
     self.stages.enemy = Battle.newStages()
   end
   self:emit({ kind = "send", side = self:sideOf(incoming), mon = incoming,
+    hp = incoming.hp or 0, status = incoming.status or false,
+    level = incoming.level, experience = incoming.experience,
     text = self:monName(incoming) .. " was dragged out!" })
   self:breakTrapsOnSend(incoming)
   self:spikesDamage(incoming)
@@ -3084,6 +3102,7 @@ function Battle:resolveFaints()
       if self.trainer then
         self:emit({ kind = "message",
           text = (self.trainer.name or "TRAINER") .. " was defeated!" })
+        self:printWinLossText("win")
         self:awardPrizeMoney()
       end
       -- CheckPayDay, on the win arm only (engine/battle/core.asm:7971-7976,
@@ -3110,6 +3129,8 @@ function Battle:resolveFaints()
     -- can offer a shift on (engine/battle/core.asm:2241-2278).
     self:emit({ kind = "send", side = "enemy", mon = self.enemy,
       replacement = true,
+      hp = self.enemy.hp or 0, status = self.enemy.status or false,
+      level = self.enemy.level, experience = self.enemy.experience,
       text = (self.trainer and self.trainer.name or "Foe") .. " sent out "
         .. self:monName(self.enemy) .. "!" })
     Runtime.emit("battle.battler_switched", {
@@ -3152,6 +3173,11 @@ function Battle:resolveFaints()
     local nextIndex = Battle.firstHealthy(self.party)
     if not nextIndex then
       self:emit({ kind = "message", text = "You have no more POKéMON!" })
+      -- LostBattle (engine/battle/core.asm:2763-2782): only BATTLETYPE_CANLOSE
+      -- reaches PrintWinLossText on a loss; every other loss whites out.
+      if self.battleType == Battle.BATTLETYPE_CANLOSE then
+        self:printWinLossText("lose")
+      end
       self:endBattle("lose")
       return true
     end
@@ -3177,14 +3203,23 @@ function Battle:resolveFaints()
   return false
 end
 
--- WinTrainerBattle's money arm, which runs after BattleText_EnemyWasDefeated
--- and the frontpic slide: the four quarters are dealt between the wallet and
--- Mom's savings and then one StdBattleTextbox names the figure.
---
--- The `ld a, [wDebugFlags] / bit DEBUG_BATTLE_F` skip in front of
--- PrintWinLossText is the trainer's own after-battle line, which this port
--- runs from the script on the way out of the battle rather than from here.
--- The payout is not gated on it either way.
+-- WinTrainerBattle (engine/battle/core.asm:2310-2323), LostBattle's .canlose
+-- arm (:2769-2782), PrintWinLossText (home/trainers.asm:230)
+function Battle:printWinLossText(result)
+  local trainer = self.trainer
+  if not trainer then return end
+  -- The DEBUG_BATTLE_F skip sits in front of PrintWinLossText alone, behind
+  -- the slide (engine/battle/core.asm:2310, :2320-2323).
+  -- The CANLOSE loss arm runs ClearBox first (:2770-2773).
+  self:emit({ kind = "trainer-return", cleared = result == "lose" or nil })
+  local text = (result == "lose") and trainer.lossText or trainer.winText
+  if type(text) ~= "string" or text == "" then return end
+  -- FarPrintText prints the pointer alone: no trainer-name tag in front of
+  -- it, unlike Gen 1's TrainerEndBattleText (pokered home/trainers.asm:355).
+  self:emit({ kind = "win-text", text = text })
+end
+
+-- WinTrainerBattle's money arm (engine/battle/core.asm:2310-2323)
 function Battle:awardPrizeMoney()
   local save = self.save
   if not (save and save.player) then return nil end
@@ -3505,6 +3540,8 @@ function Battle:switch(index)
   self.participants[index] = true
   self.stages.player = Battle.newStages()
   self:emit({ kind = "send", side = "player", mon = mon,
+    hp = mon.hp or 0, status = mon.status or false,
+    level = mon.level, experience = mon.experience,
     text = "Go! " .. self:monName(mon) .. "!" })
   -- battle.battler_switched, the payload BattleState:resolveSwitch emits on
   -- Gen 1: the side record, whoever walked in, and whoever walked out.
@@ -3969,6 +4006,8 @@ function Battle:enemyTrySwitchOrItem()
     self:clearVolatile(self.enemy)
     self.stages.enemy = Battle.newStages()
     self:emit({ kind = "send", side = "enemy", mon = self.enemy,
+      hp = self.enemy.hp or 0, status = self.enemy.status or false,
+      level = self.enemy.level, experience = self.enemy.experience,
       text = (self.trainer.name or "TRAINER") .. " sent out "
         .. self:monName(self.enemy) .. "!" })
     Runtime.emit("battle.battler_switched", {

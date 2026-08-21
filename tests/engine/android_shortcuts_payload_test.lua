@@ -41,12 +41,21 @@ end
 -- Mock isReady
 RomImporter.isReady = function(v)
   return v == "red" or v == "gold" or v == "blue" or v == "yellow"
+    or v == "silver"
 end
 
 local ok = RomImporter.syncAndroidShortcuts("gold")
 check(ok == true, "syncAndroidShortcuts returns true on Android")
 check(#capturedShortcuts == 4, "syncAndroidShortcuts caps at 4 items")
 check(capturedShortcuts[1] == "gold", "activeVersion 'gold' is placed first")
+check(capturedShortcuts[2] == "red" and capturedShortcuts[3] == "blue"
+  and capturedShortcuts[4] == "yellow",
+  "the rest follow GameVersion.ORDER until the cap")
+
+capturedShortcuts = nil
+RomImporter.syncAndroidShortcuts("silver")
+check(#capturedShortcuts == 4, "a fifth ready game does not widen the payload")
+check(capturedShortcuts[1] == "silver", "activeVersion 'silver' is placed first")
 
 -- Test with subset of ready games (e.g. only Red and Gold)
 RomImporter.isReady = function(v)
@@ -78,4 +87,4 @@ end
 love.system.getLaunchGame = savedGetLaunchGame
 love.system.updateShortcuts = nil
 
-print("8/8 checks passed  (android_shortcuts_payload_test)")
+T.finish("android_shortcuts_payload_test")

@@ -21,6 +21,7 @@ local GameVersion = require("src.core.GameVersion")
 local VideoMode = require("src.core.VideoMode")
 local Orientation = require("src.core.Orientation")
 local FaithfulRes = require("src.core.FaithfulRes")
+local ScreenPosition = require("src.core.ScreenPosition")
 local FrameCap = require("src.core.FrameCap")
 local Performance = require("src.core.Performance")
 local Logger = require("src.core.Logger")
@@ -443,6 +444,16 @@ local function buildRows(game)
         FaithfulRes.apply(o.faithfulRes)
         return true
       end },
+    { id = "screenPos", label = Strings("SCREEN POS"),
+      value = function(g)
+        return Strings(ScreenPosition.label(g.save.options.screenPos))
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.screenPos = ScreenPosition.cycle(o.screenPos, dir)
+        ScreenPosition.setMode(o.screenPos)
+        return true
+      end },
     -- hard render cap (issue #88): bounds the present rate so a
     -- driver-forced vsync-off run cannot spin at thousands of FPS.  Logic
     -- is fixed-step off dt, so this touches presentation only.
@@ -569,8 +580,8 @@ local function buildRows(game)
     end
     rows = filtered
   end
-  -- ORIENTATION only on Android, the one platform Orientation.apply reaches.
-  if not Orientation.isAndroid() then
+  -- ORIENTATION only on the platforms Orientation.apply reaches (#1638).
+  if not (Orientation.isAndroid() or Orientation.isIOS()) then
     local filtered = {}
     for _, row in ipairs(rows) do
       if row.id ~= "orientation" then filtered[#filtered + 1] = row end

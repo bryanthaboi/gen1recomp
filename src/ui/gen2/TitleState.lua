@@ -2,6 +2,7 @@
 -- wing-flap (Frameset_GSIntroHoOhLugia), spark trails, A/Start to continue.
 -- drawWidescreen fills the window with sky/clouds so widescreen has no
 -- pillarbox voids; the 160x144 art stays aspect-centered on top.
+-- Every Gold/Silver difference arrives as a title.lua key, defaulted to Gold.
 
 -- src/render/Assets.lua is the mod-override choke point: a raw
 -- love.graphics.newImage skips overrides/ and AssetTransform output.
@@ -16,7 +17,7 @@ local TitleState = {}
 TitleState.__index = TitleState
 TitleState.isOpaque = true
 
--- title_bg_gold.pal mid-sky shade (sampled from composed title_screen.png).
+-- title_bg_gold.pal mid-sky shade, for a cache built before title.sky existed.
 local SKY = { 123 / 255, 165 / 255, 255 / 255, 1 }
 -- ...and its grey stand-in, for when COLOR is not GBC.  The title art is the
 -- one thing in the port baked with its colours in (see the extractor), so the
@@ -61,6 +62,15 @@ function TitleState.new(game, opts)
   self.hoohY = tonumber(title.hoohY) or 56
   self.cloudY = tonumber(title.cloudY) or 88
   self.cloudScrollEvery = tonumber(title.cloudScrollEvery) or 8
+  -- AnimSeq_GSIntroHoOhLugia (engine/sprite_anims/functions.asm:820-838).
+  self.hoohBobAmplitude = tonumber(title.hoohBobAmplitude) or 2
+  self.hoohBobStep = tonumber(title.hoohBobStep) or 1
+  local sky = title.sky
+  self.sky = (type(sky) == "table" and #sky >= 3)
+    and { sky[1], sky[2], sky[3], 1 } or SKY
+  local below = title.below
+  self.below = (type(below) == "table" and #below >= 3)
+    and { below[1], below[2], below[3], 1 } or { 1, 1, 1, 1 }
 
   self.hoohColor, self.hoohGray = {}, {}
   local paths = title.hoohFrames
@@ -80,8 +90,12 @@ function TitleState.new(game, opts)
   self.sequence = title.hoohSequence or {
     { 1, 10 }, { 2, 9 }, { 3, 10 }, { 4, 10 }, { 3, 9 }, { 5, 10 },
   }
+  -- A frame shows duration + 1 ticks: GetSpriteAnimFrame stores the byte on
+  -- the advancing tick and only decrements on the ones after
+  -- (engine/sprite_anims/core.asm:400-434).  Both editions' framesets total
+  -- 64 ticks with it, locking the wing beat to the 64-tick sine bob.
   self.seqIndex = 1
-  self.seqLeft = self.sequence[1] and self.sequence[1][2] or 10
+  self.seqLeft = (self.sequence[1] and self.sequence[1][2] or 10) + 1
   self.frame = 1
 
   -- AnimSeq_GSIntroHoOhLugia's SPRITEANIMSTRUCT_VAR1.
@@ -89,12 +103,21 @@ function TitleState.new(game, opts)
   self.frameCounter = 0
   self.cloudScroll = 0
   self.trails = {}
-  -- UpdateTitleTrailSprite / TitleTrailCoords (intro_menu.asm), in pixels.
-  self.trailSpawns = {
+  -- UpdateTitleTrailSprite / TitleTrailCoords (intro_menu.asm:1069-1124), in
+  -- pixels.
+  self.trailSpawns = title.trailSpawns or {
     { 80, 88 }, { 104, 88 }, { 104, 88 }, { 120, 88 },
     { 120, 88 }, { 88, 88 },
   }
   self.trailSpawnIndex = 1
+  -- AnimSeq_GSTitleTrail (engine/sprite_anims/functions.asm:720-818).
+  self.trailMode = title.trailMode or "gold"
+  self.trailSpawnEvery = tonumber(title.trailSpawnEvery) or 4
+  self.trailStepX = tonumber(title.trailStepX) or 4
+  self.trailStepY = tonumber(title.trailStepY) or 1
+  self.trailBobAmplitude = tonumber(title.trailBobAmplitude) or 2
+  self.trailPhaseStep = tonumber(title.trailPhaseStep) or 3
+  self.trailPhase = tonumber(title.trailPhase)
   -- How far past the 160px frame trails may fly (GB pixels); set each draw.
   self.trailMaxX = 200
   self.musicStarted = false
@@ -119,47 +142,56 @@ function TitleState:enter()
   end
 end
 
--- AnimSeq_GSIntroHoOhLugia (engine/sprite_anims/functions.asm): VAR1 counts up
--- one per frame and the struct's Y offset becomes `d * sin(VAR1 * pi/32)` with
--- d = 2 on Gold (Silver counts DOWN with d = 8).  Sprites_Sine hands back the
--- byte the ASM leaves in a, so the down half of the wave arrives in two's
--- complement and has to be read as a signed pixel delta here.
-function TitleState:hoohBob()
-  local value = SpriteAnims.sine(self.hoohPhase, 2)
-  if value >= 0x80 then value = value - 0x100 end
+-- Sprites_Sine hands back the byte the ASM leaves in a, so the down half of
+-- the wave arrives in two's complement and is a signed pixel delta here.
+local function signed(value)
+  if value >= 0x80 then return value - 0x100 end
   return value
 end
 
+-- AnimSeq_GSIntroHoOhLugia (engine/sprite_anims/functions.asm:820-838).
+function TitleState:hoohBob()
+  return signed(SpriteAnims.sine(self.hoohPhase, self.hoohBobAmplitude))
+end
+
 function TitleState:advanceHooh()
-  self.hoohPhase = (self.hoohPhase + 1) % 256
+  self.hoohPhase = (self.hoohPhase + self.hoohBobStep) % 256
   self.seqLeft = self.seqLeft - 1
   if self.seqLeft > 0 then return end
   self.seqIndex = self.seqIndex + 1
   if self.seqIndex > #self.sequence then self.seqIndex = 1 end
   local step = self.sequence[self.seqIndex]
   self.frame = step[1]
-  self.seqLeft = step[2]
+  self.seqLeft = step[2] + 1
 end
 
 function TitleState:spawnTrail()
   if not (self.trailColor or self.trailGray) then return end
-  if self.frameCounter % 4 ~= 0 then return end
+  if #self.trailSpawns == 0 then return end
+  if self.frameCounter % self.trailSpawnEvery ~= 0 then return end
   local spawn = self.trailSpawns[self.trailSpawnIndex]
   self.trailSpawnIndex = self.trailSpawnIndex % #self.trailSpawns + 1
   if not spawn then return end
   self.trails[#self.trails + 1] = {
-    x = spawn[1], y = spawn[2], phase = love.math.random(0, 255),
+    x = spawn[1], y = spawn[2],
+    phase = self.trailPhase or love.math.random(0, 255),
   }
 end
 
 function TitleState:stepTrails()
   local alive = {}
   local maxX = self.trailMaxX or 200
+  local silver = self.trailMode == "silver"
   for _, t in ipairs(self.trails) do
-    t.x = t.x + 4
-    t.y = t.y + 1
-    t.phase = t.phase + 3
-    t.drawY = t.y + math.floor(math.sin(t.phase / 16) * 2)
+    t.x = t.x + self.trailStepX
+    t.y = t.y + self.trailStepY
+    t.phase = t.phase + self.trailPhaseStep
+    if silver then
+      t.drawY = t.y + signed(SpriteAnims.sine(t.phase, self.trailBobAmplitude))
+    else
+      t.drawY = t.y
+        + math.floor(math.sin(t.phase / 16) * self.trailBobAmplitude)
+    end
     if t.x < maxX then alive[#alive + 1] = t end
   end
   self.trails = alive
@@ -254,14 +286,17 @@ function TitleState:drawWidescreen(winW, winH)
   -- Let trails fly into the side bands.
   self.trailMaxX = math.ceil((winW - ox) / scale) + 16
 
-  -- Sky above the cloud line, paper white below : edge to edge.  The fill has
-  -- to match whichever baked set is showing, or the surround would stay blue
-  -- around a grey screen.
-  local sky = self:gray() and SKY_GRAY or SKY
+  -- Sky above the cloud line, title.below under it (Gold's white cloud
+  -- field, Silver's black sea) : edge to edge.  The fill has to match
+  -- whichever baked set is showing, or the surround would stay blue around a
+  -- grey screen.
+  local sky = self:gray() and SKY_GRAY or self.sky
   G.setColor(sky[1], sky[2], sky[3], 1)
   G.rectangle("fill", 0, 0, winW, math.max(0, cloudTop))
-  G.setColor(1, 1, 1, 1)
+  local below = self.below
+  G.setColor(below[1], below[2], below[3], 1)
   G.rectangle("fill", 0, cloudTop, winW, winH - cloudTop)
+  G.setColor(1, 1, 1, 1)
 
   -- Clouds across the full window width, aligned to the GB cloud band.
   G.push()

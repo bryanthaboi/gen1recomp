@@ -17667,6 +17667,46 @@
     "wBaseUnusedFrontpic": [
       1,
       53554
+    ],
+    "Slots1LZ": [
+      36,
+      31138
+    ],
+    "Slots2LZ": [
+      36,
+      31522
+    ],
+    "Slots3LZ": [
+      36,
+      32130
+    ],
+    "SlotsTilemap": [
+      36,
+      30898
+    ],
+    "CardFlipLZ01": [
+      56,
+      21795
+    ],
+    "CardFlipLZ02": [
+      56,
+      22197
+    ],
+    "CardFlipLZ03": [
+      56,
+      21736
+    ],
+    "CardFlipOnButtonGFX": [
+      56,
+      21779
+    ],
+    "CardFlipOffButtonGFX": [
+      56,
+      21763
+    ],
+    "CardFlipTilemap": [
+      56,
+      22809
     ]
   },
   "tilesets": {

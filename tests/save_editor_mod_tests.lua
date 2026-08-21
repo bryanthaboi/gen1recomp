@@ -149,12 +149,22 @@ local ok, err = pcall(function()
   local Ops = require("Ops")
   check(not ModTargets.supports({}, "gold"),
     "legacy gen1-only fixture does not support gold")
+  check(not ModTargets.supports({}, "silver"),
+    "nor silver")
   check(not ModTargets.supports({ games = { "red" } }, "gold"),
     "explicit gen1 games list does not support gold")
+  check(not ModTargets.supports({ games = { "red" } }, "silver"),
+    "nor silver")
   check(ModTargets.supports({ games = { "gold" } }, "gold"),
     "gold-targeted manifest supports gold")
+  check(not ModTargets.supports({ games = { "gold" } }, "silver"),
+    "and names one edition, not the generation")
+  check(ModTargets.supports({ games = { "gold", "silver" } }, "silver"),
+    "a whole-Gen-2 games list supports silver")
   check(ModTargets.supports({ gen2compat = true }, "gold"),
     "gen2compat legacy still supports gold")
+  check(ModTargets.supports({ gen2compat = true }, "silver"),
+    "and silver with it")
 
   local goldS = {
     data = {

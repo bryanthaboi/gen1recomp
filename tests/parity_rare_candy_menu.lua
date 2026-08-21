@@ -142,8 +142,15 @@ do
   eq(game.save.inventory.RARE_CANDY, 2, "the candy was consumed")
   check(game.stack.states[1] == list,
         "the bag list is STILL on the stack under the level text (#796)")
+  -- .useRareCandy redraws the party menu before it prints
+  -- (item_effects.asm:1392-1418) #1594
+  check(isPicker(game.stack.states[2]),
+        "the party picker is the backdrop for the level text (#1594)")
 
   finishLevelUp(game, box)
+  for _, s in ipairs(game.stack.states) do
+    check(not isPicker(s), "the picker comes down when the sequence ends")
+  end
   eq(game.stack:top(), list,
      "after the stat window the bag is back on top (StartMenu_Item)")
   eq(list.index, row, "the cursor is still on the RARE CANDY row")

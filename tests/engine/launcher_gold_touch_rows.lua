@@ -39,45 +39,54 @@ end
 local edited = 0
 local hooks = { editTouchControls = function() edited = edited + 1 end }
 
-local gold = LauncherSettings.open(hooks, "gold")
-check(has(gold, "TOUCH PAD"), "Gold's gear offers TOUCH PAD")
-check(has(gold, "VIBRATION"), "and VIBRATION")
-check(has(gold, "TOUCH CONTROLS"), "and the layout editor")
-check(has(gold, "VOID FILL"), "and VOID FILL")
+for _, version in ipairs({ "gold", "silver" }) do
+  local model = LauncherSettings.open(hooks, version)
+  check(has(model, "TOUCH PAD"), version .. " gear offers TOUCH PAD")
+  check(has(model, "VIBRATION"), version .. " and VIBRATION")
+  check(has(model, "TOUCH CONTROLS"), version .. " and the layout editor")
+  check(has(model, "VOID FILL"), version .. " and VOID FILL")
 
-local voidFill = findRow(gold, "VOID FILL")
-eq(voidFill.value(), "FADE ", "VOID FILL defaults to FADE")
-voidFill.step(1)
-eq(gold.opts.gold.voidFill, "water", "right stores water in the gold block")
-eq(voidFill.value(), "WATER", "and the row reads WATER")
-voidFill.step(-1)
-eq(gold.opts.gold.voidFill, "fade", "left restores fade")
+  local voidFill = findRow(model, "VOID FILL")
+  eq(voidFill.value(), "FADE ", version .. " VOID FILL defaults to FADE")
+  voidFill.step(1)
+  eq(model.opts.gold.voidFill, "water",
+    version .. " right stores water in the gold block")
+  eq(voidFill.value(), "WATER", version .. " and the row reads WATER")
+  voidFill.step(-1)
+  eq(model.opts.gold.voidFill, "fade", version .. " left restores fade")
 
--- Every write has to land in the gold block: the flat keys beside it are
--- Red's, and Gold's boot never reads them (src/core/gen2/Save.lua:299).
--- loadOptions seeds the flat Gen 1 defaults, so the check is that the Gold
--- rows leave them exactly as they found them.
-local flatPad = gold.opts.touchControls
-local flatBuzz = gold.opts.haptics
+  -- Every write has to land in the gen2 block: the flat keys beside it are
+  -- Red's, and no Gen 2 boot reads them (src/core/gen2/Save.lua:299).
+  -- loadOptions seeds the flat Gen 1 defaults, so the check is that the Gen 2
+  -- rows leave them exactly as they found them.
+  local flatPad = model.opts.touchControls
+  local flatBuzz = model.opts.haptics
 
-local pad = findRow(gold, "TOUCH PAD")
-local before = pad.value()
-pad.step(1)
-check(pad.value() ~= before, "stepping TOUCH PAD flips it")
-check(type(gold.opts.gold) == "table", "into the gold block")
-eq(gold.opts.gold.touchControls.enabled, false, "which now carries enabled")
-eq(gold.opts.touchControls, flatPad, "leaving the flat Gen 1 key alone")
+  local pad = findRow(model, "TOUCH PAD")
+  local before = pad.value()
+  pad.step(1)
+  check(pad.value() ~= before, version .. " stepping TOUCH PAD flips it")
+  check(type(model.opts.gold) == "table", version .. " into the gold block")
+  eq(model.opts.gold.touchControls.enabled, false,
+    version .. " which now carries enabled")
+  eq(model.opts.touchControls, flatPad,
+    version .. " leaving the flat Gen 1 key alone")
+  eq(model.opts.silver, nil,
+    version .. " and inventing no second Gen 2 block beside it")
 
-local buzz = findRow(gold, "VIBRATION")
-local buzzBefore = buzz.value()
-buzz.step(1)
-check(buzz.value() ~= buzzBefore, "stepping VIBRATION moves the level")
-eq(gold.opts.gold.haptics, TouchControls.normalizeHaptics(gold.opts.gold.haptics),
-  "VIBRATION stores a level the shared module knows")
-eq(gold.opts.haptics, flatBuzz, "also without touching Red's")
+  local buzz = findRow(model, "VIBRATION")
+  local buzzBefore = buzz.value()
+  buzz.step(1)
+  check(buzz.value() ~= buzzBefore, version .. " stepping VIBRATION moves the level")
+  eq(model.opts.gold.haptics,
+    TouchControls.normalizeHaptics(model.opts.gold.haptics),
+    version .. " VIBRATION stores a level the shared module knows")
+  eq(model.opts.haptics, flatBuzz, version .. " also without touching Red's")
 
-findRow(gold, "TOUCH CONTROLS").action()
-eq(edited, 1, "the editor row reaches the host hook")
+  edited = 0
+  findRow(model, "TOUCH CONTROLS").action()
+  eq(edited, 1, version .. " the editor row reaches the host hook")
+end
 
 -- The Gen 1 gear is untouched by the extraction: same three rows, still on
 -- the flat table.
@@ -94,6 +103,8 @@ eq(findRow(red, "TOUCH PAD").value() ~= nil, true, "and reading it back")
 -- rather than dead, on both sides.
 eq(has(LauncherSettings.open(nil, "gold"), "TOUCH CONTROLS"), false,
   "no hook, no editor row on Gold")
+eq(has(LauncherSettings.open(nil, "silver"), "TOUCH CONTROLS"), false,
+  "nor on Silver")
 eq(has(LauncherSettings.open(nil, "red"), "TOUCH CONTROLS"), false,
   "nor on Red")
 -- The Edit row hands the screen to the host, and the host has to know WHICH

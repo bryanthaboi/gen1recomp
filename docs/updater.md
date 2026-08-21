@@ -64,7 +64,8 @@ mounted or deleted as stale; the launcher directs the player to a full package.
 
 Each tagged release `vX.Y.Z` carries the existing per-platform archives
 (`gen1recomp-X.Y.Z-macos.zip`, `-windows.zip`, `-linux.zip`,
-`-android.apk`) plus two assets the updater itself consumes:
+`-linux-arm64.AppImage`, `-android.apk`, `-ios.ipa`, `-switch.zip`, Xbox and
+PortMaster archives) plus two assets the updater itself consumes:
 
 - `gen1recomp-X.Y.Z.love` - the payload, matched by the exact pattern
   `gen1recomp-<version>.love` (see `isPayloadName` in `Boot.lua` and
@@ -75,8 +76,9 @@ Each tagged release `vX.Y.Z` carries the existing per-platform archives
   filename otherwise to match the asset name exactly.
 
 A release missing either asset is treated as "no in-place update available":
-`Check` reports `needs_full` and sends the player to `Check.releaseUrl()`
-(`https://github.com/bryanthaboi/gen1recomp/releases/latest`).
+`Check` reports `needs_full`. It also selects the exact current platform asset
+from the same release and persists the requirement, so it is visible again on
+every launch, including offline launches.
 
 ## Save-directory layout
 
@@ -85,6 +87,7 @@ Under the save directory (identity `pokemon-love2d`):
 ```
 updates/gen1recomp-<X.Y.Z>.love   downloaded payload(s)
 updates/pending.txt                crash-guard marker
+updates/full-update.json           persistent native-package requirement
 ```
 
 `pending.txt` holds the filename of the payload currently being chainloaded.
@@ -106,7 +109,8 @@ bundled game, in that case.
    against the GitHub releases API; safe to call every frame, it is a no-op
    once a check is in flight or has reached a terminal state. `Check.state()`
    reports `idle | checking | uptodate | available | downloading | ready |
-   needs_full | error` plus the latest version and download progress.
+   needs_full | full_downloading | full_ready | error` plus the latest version,
+   download progress, and (when applicable) the selected full-package asset.
 3. **Download + verify**: on `available`, `Check.download()` tells the
    worker to fetch the payload, polling the growing `.part` file for
    progress. On completion the worker re-fetches `sha256sums.txt`, verifies
@@ -117,6 +121,14 @@ bundled game, in that case.
 4. **Restart to apply**: a `ready` payload just sits in `updates/` until the
    player relaunches; the next launch's Boot step (1) is what actually
    mounts and runs it. There is no in-session hot-swap.
+5. **Native-package requirement**: when `minShell` or `payloadHost` is
+   incompatible, the worker writes `full-update.json` and surfaces a
+   persistent launcher control. Android downloads the release APK, verifies
+   its SHA-256 entry from `sha256sums.txt`, then invokes Android's Package
+   Installer. The installer asks the user for consent and enforces package,
+   version-code, and signing-certificate compatibility. iOS links the
+   sideload repository for a re-sideload; Xbox, desktop, and PortMaster builds
+   link their correctly named full package. Switch keeps its native OTA flow.
 
 ## Known limitations
 
@@ -140,6 +152,13 @@ bundled game, in that case.
   still need a full reinstall (`minShell` / `payloadHost` gate →
   `needs_full`). Applying a downloaded payload on Android relaunches via
   `love.system.restartApp`; iOS still uses in-process `quit("restart")`.
+- **Android full updates are user-confirmed and certificate-bound.** The app
+  uses a private `FileProvider` cache path plus
+  `Intent.ACTION_INSTALL_PACKAGE`, checks Android 8+'s per-app
+  "install unknown apps" setting, and never requests a silent install. The
+  release job must use the original long-lived Android signing key; a new key
+  causes Android to reject an in-place update and requires a one-time manual
+  reinstall. See [mobile/ANDROID.md](../mobile/ANDROID.md).
 - **Dev/source runs never self-update.** `Boot.run` returns immediately when
   `love.filesystem.isFused()` is false, and a working tree's `engine` is the
   `"0.0.0-dev"` placeholder that always reports up to date, so a source

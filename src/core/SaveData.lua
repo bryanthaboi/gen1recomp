@@ -285,6 +285,7 @@ function SaveData.defaultOptions()
     -- lock the window to an exact 160x144 multiple, 1..4 (0 = OFF); see
     -- src/core/FaithfulRes.lua.  Ignored on mobile.
     faithfulRes = 0,
+    screenPos = "center",
     -- hard render frame-rate cap; render-only pacing (issue #88, FrameCap.lua)
     fpsCap = 60,
     -- graphics performance tier: auto | high | balanced | low.  "auto"
@@ -1279,13 +1280,26 @@ function SaveData.ensurePlaythroughId(save, injectedFs)
   local isFresh = save == freshPlaythrough
   if isFresh then freshPlaythrough = nil end
   local byVersion = opts.playthroughIds and opts.playthroughIds[version]
-  id = not isFresh and byVersion and byVersion[scope] or nil
+  local existing = byVersion and byVersion[scope]
+  id = not isFresh and existing or nil
   if type(id) ~= "string" or id == "" then
     id = SaveData.newPlaythroughId()
-    opts.playthroughIds = opts.playthroughIds or {}
-    opts.playthroughIds[version] = opts.playthroughIds[version] or {}
-    opts.playthroughIds[version][scope] = id
-    SaveData.saveOptions(opts, injectedFs)
+    -- A fresh skeleton still gets its own id (two unsaved New Games sharing a
+    -- slot must stay distinct), and it is still persisted when the slot has no
+    -- binding yet -- that is the contract a tool relies on to resolve
+    -- `selected` at the title after a restart, before any normal SAVE.
+    --
+    -- What it must NOT do is OVERWRITE a binding that already exists. newGame()
+    -- marks a skeleton on the boot frame, before any save is loaded, and mods
+    -- initialise inside that window -- so a mod touching storage at init
+    -- replaced the real save's id with a throwaway, stranding that save's mod
+    -- storage and repeating on every launch.
+    if not (isFresh and type(existing) == "string" and existing ~= "") then
+      opts.playthroughIds = opts.playthroughIds or {}
+      opts.playthroughIds[version] = opts.playthroughIds[version] or {}
+      opts.playthroughIds[version][scope] = id
+      SaveData.saveOptions(opts, injectedFs)
+    end
   end
   save.meta.playthroughId = id
   return id

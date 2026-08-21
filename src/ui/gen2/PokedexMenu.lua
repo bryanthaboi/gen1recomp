@@ -150,7 +150,11 @@ function PokedexMenu.new(game, opts)
   self.pokemon = opts.pokemon or data.pokemon
   self.palettes = opts.palettes or data.gen2Palettes
   self.onClose = opts.onClose
+  -- InitPokedex: wLastDexMode -> wCurDexMode (engine/pokedex/pokedex.asm:97).
   self.modeIndex = 1
+  for i, name in ipairs(MODES) do
+    if self.save and name == self.save.lastDexMode then self.modeIndex = i end
+  end
   self.index = 1
   self.scroll = 0
   self.view = "list" -- list | entry | area | option | search | results | unown
@@ -317,6 +321,13 @@ function PokedexMenu:cursorVisible()
   return ((self.entryBlink or 0) % 32) < 20
 end
 
+-- Pokedex: wCurDexMode -> wLastDexMode on the way out
+-- (engine/pokedex/pokedex.asm:60), which lives in the saved game data.
+function PokedexMenu:close()
+  if self.save then self.save.lastDexMode = MODES[self.modeIndex] end
+  if self.onClose then self.onClose() end
+end
+
 function PokedexMenu:update(_dt)
   self.entryBlink = (self.entryBlink or 0) + 1
   local input = self.game and self.game.input
@@ -328,8 +339,8 @@ function PokedexMenu:update(_dt)
       if input:wasPressed("a") or input:wasPressed("b") then
         if self.page == 1 then
           self.page = 2
-        elseif self.onClose then
-          self.onClose()
+        else
+          self:close()
         end
       end
       return
@@ -367,7 +378,7 @@ function PokedexMenu:update(_dt)
   if self.view == "search" then return self:updateSearch(input) end
   if self.view == "unown" then return self:updateUnown(input) end
   if input:wasPressed("b") then
-    if self.onClose then self.onClose() end
+    self:close()
     return
   elseif input:wasPressed("select") then
     -- Pokedex_UpdateMainScreen: SELECT opens the OPTION screen and START the
@@ -1451,8 +1462,7 @@ function PokedexMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

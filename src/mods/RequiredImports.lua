@@ -23,11 +23,17 @@ local function isRequired(spec)
 end
 
 RequiredImports.specs = allSpecs
-RequiredImports.MAX_BYTES = 128 * 1024 * 1024
+RequiredImports.MAX_BYTES = 2 * 1024 * 1024 * 1024
+-- Past this, the launcher interposes a free-space warning before importing.
+RequiredImports.LARGE_WARN_BYTES = 128 * 1024 * 1024
 
 local function sizeLabel(bytes)
+  if bytes >= 1024 * 1024 * 1024 then
+    return ("%.1f GiB"):format(bytes / (1024 * 1024 * 1024))
+  end
   return ("%.1f MiB"):format(bytes / (1024 * 1024))
 end
+RequiredImports.sizeLabel = sizeLabel
 
 -- Check size before a caller reads an external or stored file into one large
 -- Lua string. N64 sources may carry a 512-byte copier header, while stored
@@ -114,6 +120,36 @@ local function accepts(spec, digest)
   return false
 end
 
+local function specById(manifest, importId)
+  for _, candidate in ipairs(allSpecs(manifest)) do
+    if candidate.id == importId then return candidate end
+  end
+  return nil
+end
+
+RequiredImports.spec = specById
+
+local function streamDigest(fs, path, chunkBytes)
+  if not (fs and fs.newFile) then return nil, "streaming file access is unavailable" end
+  local file, makeErr = fs.newFile(path)
+  if not file then return nil, makeErr or "could not open stored import" end
+  local ok, openErr = file:open("r")
+  if not ok then return nil, openErr or "could not open stored import" end
+  local MD5 = require("src.mods.StreamMD5")
+  local ctx = MD5.new()
+  chunkBytes = chunkBytes or (4 * 1024 * 1024)
+  while true do
+    local data, readErr = file:read(chunkBytes)
+    if data and #data > 0 then ctx:update(data) end
+    if not data or #data < chunkBytes then
+      if readErr then file:close(); return nil, readErr end
+      break
+    end
+  end
+  file:close()
+  return ctx:final()
+end
+
 function RequiredImports.path(manifest, spec)
   return manifest.path .. "/baseroms/" .. spec.file
 end
@@ -174,6 +210,47 @@ local function removeReceipt(manifest, spec, fs)
   end
 end
 
+-- Finalize a caller-streamed import after the destination bytes have already
+-- been copied into the engine-owned baseroms path. This keeps large imports
+-- out of a single Lua string while preserving the same size/MD5 receipt rules.
+function RequiredImports.acceptStoredDigest(manifest, importId, digest, fs)
+  fs = fs or (love and love.filesystem)
+  local spec = specById(manifest, importId)
+  if not spec then return nil, "unknown required import: " .. tostring(importId) end
+  digest = tostring(digest or ""):lower()
+  if not accepts(spec, digest) then
+    return nil, ("MD5 mismatch (got %s)"):format(digest ~= "" and digest or "unavailable")
+  end
+  local path = RequiredImports.path(manifest, spec)
+  local info = fs and fs.getInfo and fs.getInfo(path, "file") or nil
+  if not info then return nil, "copied import is missing" end
+  local sizeErr = RequiredImports.sizeError(spec, info.size, true)
+  if sizeErr then return nil, sizeErr end
+  if love and fs == love.filesystem then
+    local savedPrefix = CacheFs.prefix
+    local ok, prefixErr = xpcall(function()
+      CacheFs.prefix = ""
+      CacheFs.remove(removedMarker(manifest, spec))
+      CacheFs.prefix = savedPrefix
+      -- writeReceipt has its own temporary CacheFs prefix switch. Keep it
+      -- inside this guard too so a write error cannot leak global state.
+      writeReceipt(manifest, spec, digest, info, fs)
+    end, function(err)
+      return tostring(err)
+    end)
+    CacheFs.prefix = savedPrefix
+    if not ok then
+      return nil, "could not finalize import receipt: " .. tostring(prefixErr)
+    end
+    return true, digest
+  elseif fs and fs.remove then
+    fs.remove(removedMarker(manifest, spec))
+  end
+  writeReceipt(manifest, spec, digest, info, fs)
+  return true, digest
+end
+
+
 -- Validate bytes against a declaration.  The returned data is canonicalized
 -- (notably for N64 byte order/header variants) and is what must be stored.
 function RequiredImports.validateData(spec, data, hashFn)
@@ -211,6 +288,22 @@ function RequiredImports.validateStored(manifest, spec, fs, hashFn)
   local cached = cachedDigest(manifest, spec, fs, info)
   if cached then return true, cached, true end
   removeReceipt(manifest, spec, fs)
+  -- Large raw imports (GameCube discs, future optical images, etc.) must never
+  -- be materialized into one Lua string merely because their validation
+  -- receipt was lost. Stream the MD5 directly from the installed file. N64
+  -- sources stay on the canonicalization path because byte-order/header
+  -- normalization is part of their validation contract.
+  if info.size and info.size > RequiredImports.LARGE_WARN_BYTES
+      and spec.format ~= "n64" and fs.newFile then
+    local digest, hashErr = streamDigest(fs, path)
+    if not digest then return nil, hashErr end
+    if not accepts(spec, digest) then
+      return nil, ("MD5 mismatch (got %s)"):format(digest)
+    end
+    info = fs.getInfo(path, "file") or info
+    writeReceipt(manifest, spec, digest, info, fs)
+    return true, digest, false
+  end
   if not fs.read then return nil, "file could not be read" end
   local data = fs.read(path)
   local normalized, detail = RequiredImports.validateStoredData(spec, data, hashFn)

@@ -327,6 +327,7 @@ local function returnToLauncher()
   if love.audio and love.audio.stop then
     pcall(love.audio.stop)
   end
+  pcall(function() require("src.render.SecondScreen").setEnabled(false) end)
 
   local GameVersion = require("src.core.GameVersion")
   local currentVersion = GameVersion.get()
@@ -386,11 +387,12 @@ function bootGame(version)
     love.window.setTitle(Version.title(
       GameVersion.info().displayName .. " (Gen 1 Recompilation Project)"))
   end
-  -- Gold: Gen 1 Game:load cannot consume a Gen 2 cache -- different generated
-  -- tables, save shape and screen registry -- so Gold boots its own service
-  -- owner, which mounts src/world/gen2 (walk / warps / connections) and the
-  -- Gen 2 screens instead of src/core/Game.lua's Gen 1 wiring.
-  if GameVersion.isGold() then
+  -- Gen 2: Gen 1 Game:load cannot consume a Gen 2 cache -- different generated
+  -- tables, save shape and screen registry -- so Gold and Silver boot their
+  -- own service owner, which mounts src/world/gen2 (walk / warps /
+  -- connections) and the Gen 2 screens instead of src/core/Game.lua's Gen 1
+  -- wiring.
+  if GameVersion.generation() == 2 then
     Game = require("src.core.Game2").new()
     Game:load()
   else
@@ -875,6 +877,8 @@ love.handlers = love.handlers or {}
 function love.handlers.audiosuspend()
   local ChipAudio = package.loaded["src.core.ChipAudio"]
   if ChipAudio then pcall(ChipAudio.setSuspended, true) end
+  local Sound = package.loaded["src.core.Sound"]
+  if Sound then pcall(Sound.onDeviceReset) end
 end
 
 function love.handlers.audioreset()

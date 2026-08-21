@@ -230,7 +230,7 @@ end
 
 function Music.play(data, song, loop, ctx)
   if not song then return end
-  if not love.audio then return end -- headless test stub
+  if not (love and love.audio) then return end -- headless test stub
   ctx = ctx or {}
   song = selectSong(song, ctx)
 

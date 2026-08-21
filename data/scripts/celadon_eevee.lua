@@ -25,8 +25,10 @@
 local Menu = require("src.ui.Menu")
 local TextBox = require("src.render.TextBox")
 
--- TMNotebookText (data/text/text_2.asm) has no leading underscore, so the
--- extractor never collects it and the pamphlet's text is inlined.
+-- TMNotebookText (data/text/text_2.asm) has no leading underscore, but the
+-- extractor now collects any top-level label in a dedicated text file
+-- regardless (tools/extract/text.py), so this is the real ROM label --
+-- the literal below is only the fallback for a catalog without it.
 local TM_NOTEBOOK_TEXT = "It's a pamphlet\non TMs.\f...\f"
   .. "There are 50 TMs\nin all.\f"
   .. "There are also 5\nHMs that can be\vused repeatedly.\f"
@@ -70,7 +72,8 @@ return {
       return true
     end
     if fx == 3 and fy == 4 then
-      game.stack:push(TextBox.new(game, TM_NOTEBOOK_TEXT))
+      local text = game.data.text or {}
+      game.stack:push(TextBox.new(game, text.TMNotebookText or TM_NOTEBOOK_TEXT))
       return true
     end
     return false

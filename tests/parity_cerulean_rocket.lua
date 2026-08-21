@@ -67,6 +67,15 @@ end
 check(iGotJump and iGotJump[2] == iFadeOut,
       "EVENT_GOT_TM28 jumps to CeruleanHideRocket fade-out")
 
+-- SaveEndBattleTextPointers before EngageMapTrainer
+-- (scripts/CeruleanCity.asm:295) (#1579)
+local iBattle = find("start_battle")
+local iGiveUp = find("save_end_battle_text",
+                     "_CeruleanCityRocketIGiveUpText")
+check(iGiveUp, "the thief arms _CeruleanCityRocketIGiveUpText")
+check(iBattle and iGiveUp == iBattle - 1,
+      "SaveEndBattleTextPointers runs just before the battle")
+
 local ScriptRunner = require("src.script.ScriptRunner")
 local problems = ScriptRunner.validate(rows)
 eq(#problems, 0, "Rocket script validates: " .. table.concat(problems, "; "))

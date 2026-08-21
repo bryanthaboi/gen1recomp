@@ -27,6 +27,7 @@ local DEFAULT_ART = {
   openCable = "assets/generated/trade/open_cable.png",
   cableHoriz = "assets/generated/trade/cable_horiz.png",
   cableConn = "assets/generated/trade/cable_conn.png",
+  cableSeg = "assets/generated/trade/cable_seg.png",
   cableVert = "assets/generated/trade/cable_vert.png",
   cableCorner = "assets/generated/trade/cable_corner.png",
   cableEnd = "assets/generated/trade/cable_end.png",
@@ -112,6 +113,7 @@ function TradeAnim.new(game, opts)
     openCable = tryImage(art.openCable or DEFAULT_ART.openCable),
     cableHoriz = tryImage(art.cableHoriz or DEFAULT_ART.cableHoriz),
     cableConn = tryImage(art.cableConn or DEFAULT_ART.cableConn),
+    cableSeg = tryImage(art.cableSeg or DEFAULT_ART.cableSeg),
     cableVert = tryImage(art.cableVert or DEFAULT_ART.cableVert),
     cableCorner = tryImage(art.cableCorner or DEFAULT_ART.cableCorner),
     cableEnd = tryImage(art.cableEnd or DEFAULT_ART.cableEnd),
@@ -333,11 +335,19 @@ function TradeAnim:update(dt)
 end
 
 local function drawCableHoriz(self, y, x0, x1)
+  local w = math.max(0, x1 - x0)
+  if w <= 0 then return end
   if self.img.cableHoriz then
-    love.graphics.draw(self.img.cableHoriz, x0 - (self.scx % 8), y)
+    local iw, ih = self.img.cableHoriz:getDimensions()
+    local quad = love.graphics.newQuad(0, 0, math.min(w, iw), ih, iw, ih)
+    love.graphics.draw(self.img.cableHoriz, quad, x0, y)
+  elseif self.img.cableSeg then
+    for x = x0, x1 - 8, 8 do
+      love.graphics.draw(self.img.cableSeg, x, y)
+    end
   else
     love.graphics.setColor(0.2, 0.2, 0.2, 1)
-    love.graphics.rectangle("fill", x0, y + 1, math.max(0, x1 - x0), 6)
+    love.graphics.rectangle("fill", x0, y + 1, w, 6)
     love.graphics.setColor(1, 1, 1, 1)
   end
 end
@@ -422,7 +432,7 @@ function TradeAnim:drawRightGB()
   if self.img.cableCorner then love.graphics.draw(self.img.cableCorner, 112, 32) end
   if self.img.cableVert then
     for i = 1, 4 do
-      love.graphics.draw(self.img.cableVert, 120, 40 + (i - 1) * 8)
+      love.graphics.draw(self.img.cableVert, 112, 40 + (i - 1) * 8)
     end
   end
   if self.img.cableEnd then love.graphics.draw(self.img.cableEnd, 112, 72) end

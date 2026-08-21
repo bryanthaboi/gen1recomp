@@ -96,6 +96,8 @@ local DATA = {
     CYNDAQUIL = {
       id = "CYNDAQUIL", name = "CYNDAQUIL", dex = 155, index = 155,
       growthRate = "GROWTH_MEDIUM_SLOW",
+      -- data/pokemon/base_stats/cyndaquil.asm:10 GENDER_F12_5
+      genderRatio = 31,
       types = { "FIRE", "FIRE" },
       baseStats = {
         hp = 39, attack = 52, defense = 43, speed = 65,
@@ -105,6 +107,8 @@ local DATA = {
     TOTODILE = {
       id = "TOTODILE", name = "TOTODILE", dex = 158, index = 158,
       growthRate = "GROWTH_MEDIUM_SLOW",
+      -- data/pokemon/base_stats/totodile.asm:10 GENDER_F12_5
+      genderRatio = 31,
       types = { "WATER", "WATER" },
       baseStats = {
         hp = 50, attack = 65, defense = 64, speed = 43,
@@ -163,8 +167,11 @@ end
 -- is `levelMoves` and Gen 1 reads level1Moves / learnset.
 local function mon(species, level, opts)
   opts = opts or {}
+  -- engine/pokemon/mon_stats.asm:126 GetGender reads the Attack DV, so the
+  -- gender a page prints follows the DVs, not a hand-set field
   local built = Mon.new(DATA, species, level, {
-    dvs = { attack = 15, defense = 15, speed = 15, special = 15 },
+    dvs = opts.dvs
+      or { attack = 15, defense = 15, speed = 15, special = 15 },
     moves = opts.moves,
   })
   for key, value in pairs(opts.fields or {}) do built[key] = value end
@@ -177,12 +184,13 @@ local CYNDA = mon("CYNDAQUIL", 12, {
     { id = "EMBER", pp = 25, maxPp = 25 },
     { id = "LEER", pp = 7, maxPp = 30 },
   },
-  fields = { nickname = "CYNDAQUIL", gender = "male", item = "BERRY",
+  fields = { nickname = "CYNDAQUIL", item = "BERRY",
     otName = "GOLD", otId = 12345 },
 })
 local TOTO = mon("TOTODILE", 10, {
   moves = { { id = "SURF", pp = 15, maxPp = 15 } },
-  fields = { nickname = "TOTODILE", gender = "female" },
+  dvs = { attack = 0, defense = 15, speed = 15, special = 15 },
+  fields = { nickname = "TOTODILE" },
 })
 
 local SAVE = { player = { name = "GOLD", id = 12345 }, party = { CYNDA, TOTO } }

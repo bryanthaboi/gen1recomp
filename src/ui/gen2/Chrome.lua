@@ -66,6 +66,15 @@ function Chrome.fitOrigin(winW, winH, scale)
   local x, y, w, h = playfieldRect(winW, winH)
   return x + math.floor((w - Chrome.SCREEN_W * 8 * scale) / 2),
     y + math.floor((h - Chrome.SCREEN_H * 8 * scale) / 2)
+      - Chrome.positionLift(winW, winH, scale)
+end
+
+function Chrome.positionLift(winW, winH, scale)
+  local ok, ScreenPosition = pcall(require, "src.core.ScreenPosition")
+  if not ok or ScreenPosition.skinActive(winW, winH) then return 0 end
+  local _, _, _, h = playfieldRect(winW, winH)
+  return ScreenPosition.lift(h, Chrome.SCREEN_H * 8 * (scale
+    or Chrome.fitScale(winW, winH)), ScreenPosition.safeTop())
 end
 
 -- A bordered box, tile coords.  Leaves the draw color black for text.

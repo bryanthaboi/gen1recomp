@@ -32,11 +32,13 @@ do
     "a version id names exactly that game")
   eq(table.concat(ModTargets.expand("GEN1"), ","), "red,blue,yellow",
     "gen1 is every Gen 1 game, case-insensitive")
-  eq(table.concat(ModTargets.expand("gen2"), ","), "gold",
+  eq(table.concat(ModTargets.expand("gen2"), ","), "gold,silver",
     "gen2 is every Gen 2 game")
+  eq(table.concat(ModTargets.expand("silver"), ","), "silver",
+    "and each of them names itself")
   eq(table.concat(ModTargets.expand("all"), ","),
     table.concat(GameVersion.ORDER, ","), "all is the launcher order itself")
-  eq(ModTargets.expand("silver"), nil, "a game this engine has no cache for")
+  eq(ModTargets.expand("crystal"), nil, "a game this engine has no cache for")
   eq(ModTargets.expand("gen9"), nil, "a generation with no games is unknown")
   eq(ModTargets.expand(7), nil, "a non-string token is not a game")
 end
@@ -56,7 +58,7 @@ end
 do
   eq(list(mf({})), "red,blue,yellow",
     "a manifest with no games key is Gen 1, which is what it was tested as")
-  eq(list(mf({ gen2compat = true })), "red,blue,yellow,gold",
+  eq(list(mf({ gen2compat = true })), "red,blue,yellow,gold,silver",
     "gen2compat keeps Gen 1 and adds Gen 2")
   eq(mf({}).gen2compat, false, "and the derived flag agrees")
   eq(mf({ gen2compat = true }).gen2compat, true, "both ways")
@@ -67,14 +69,14 @@ end
 
 do
   local gen2 = mf({ games = { "gen2" } })
-  eq(list(gen2), "gold", "games can name Gen 2 alone")
+  eq(list(gen2), "gold,silver", "games can name Gen 2 alone")
   eq(gen2.gen2compat, true, "which IS the gen2compat claim the gate reads")
   local both = mf({ games = { "gen1", "gen2" } })
-  eq(list(both), "red,blue,yellow,gold", "or both generations")
+  eq(list(both), "red,blue,yellow,gold,silver", "or both generations")
   local one = mf({ games = { "blue" } })
   eq(list(one), "blue", "or one single game")
   eq(one.gen2compat, false, "a Gen 1 game is not a Gen 2 claim")
-  eq(list(mf({ games = { "red" }, gen2compat = true })), "red,gold",
+  eq(list(mf({ games = { "red" }, gen2compat = true })), "red,gold,silver",
     "an old gen2compat beside a new games list still adds its game")
 end
 
@@ -224,10 +226,12 @@ do
   local bad = ModProfile.decode(require("src.core.SaveSerializer").encode({
     format = "g1rmodlist", formatVersion = 1,
     profile = { name = "P", enabledByVersion = {
-      gold = { a = true }, silver = { a = true }, red = "nope" } },
+      gold = { a = true }, silver = { a = true }, crystal = { a = true },
+      red = "nope" } },
   }))
   eq(bad.enabledByVersion.gold.a, true, "a shared file's known game is kept")
-  eq(bad.enabledByVersion.silver, nil, "an unknown game is dropped on read")
+  eq(bad.enabledByVersion.silver.a, true, "every one of them, not just the first")
+  eq(bad.enabledByVersion.crystal, nil, "an unknown game is dropped on read")
   eq(bad.enabledByVersion.red, nil, "and so is a bucket that is not a table")
 end
 

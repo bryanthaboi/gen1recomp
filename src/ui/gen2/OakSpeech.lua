@@ -72,8 +72,8 @@ end
 
 -- Naming presets are boot config the same way Gen 1 reads them
 -- (field.boot.namePresets), so a total conversion that replaces the list once
--- replaces it for both games; NamePick.PRESETS (data/player_names.asm
--- PlayerNameArray) is Gold's fallback.
+-- replaces it for both games; NamePick.presetsFor (data/player_names.asm
+-- PlayerNameArray) is the running edition's fallback.
 local function namePresets(game, who, fallback)
   local boot = game and game.data and game.data.field
     and game.data.field.boot
@@ -351,9 +351,9 @@ function OakSpeech:openNamePick(step)
     picColors = self.playerColors,
     presets = step.presets
       or namePresets(self.game, step.presetsWho or step.who or "player",
-                     step.presetsFallback or NamePick.PRESETS),
+                     step.presetsFallback or NamePick.presetsFor()),
     onDone = function(name)
-      name = name or "GOLD"
+      name = name or NamePick.presetsFor()[1]
       self.game.save.player.name = name
       self.game.stack:pop() -- NamePick
       self.busy = false

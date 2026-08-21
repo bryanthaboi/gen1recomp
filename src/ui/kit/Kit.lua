@@ -918,16 +918,58 @@ function Kit.rowsThatFit(h, rowH, gap, minRows, maxRows)
   return math.max(minRows or 1, math.min(maxRows or 99, per))
 end
 
+Kit.dragX = nil
+Kit.dragY = nil
+Kit.dragAccum = 0
+
+function Kit.dragBegin(x, y)
+  Kit.dragX, Kit.dragY, Kit.dragAccum = x, y, 0
+end
+
+function Kit.dragAdd(dy)
+  if Kit.dragX then Kit.dragAccum = Kit.dragAccum + (dy or 0) end
+end
+
+function Kit.dragEnd()
+  Kit.dragX, Kit.dragY, Kit.dragAccum = nil, nil, 0
+end
+
+local function dragOriginIn(x, y, w, h)
+  if not Kit.dragX then return false end
+  local x1, y1, x2, y2 = x, y, x + w, y + h
+  local c = Kit._clipRect
+  if c then
+    x1, y1 = math.max(x1, c.x), math.max(y1, c.y)
+    x2, y2 = math.min(x2, c.x + c.w), math.min(y2, c.y + c.h)
+  end
+  return Kit.dragX >= x1 and Kit.dragX <= x2
+    and Kit.dragY >= y1 and Kit.dragY <= y2
+end
+
 -- Mouse wheel over a paginated list turns PAGES.  The wheel still has to do
 -- something (users expect it), but it moves a bounded page index rather than
 -- driving a pixel offset, so there is no scroll state and no interpolation.
 function Kit.wheelPage(x, y, w, h, page, total, perPage)
-  if Kit.blockClicks or (Kit.wheelY or 0) == 0 then return page end
-  if not Kit.hit(x, y, w, h) then return page end
+  if Kit.blockClicks then return page end
   local pages = math.max(1, math.ceil(total / math.max(1, perPage)))
-  local moved = Theme.clamp((page or 1) + (Kit.wheelY > 0 and -1 or 1), 1, pages)
-  Kit.wheelY = 0
-  return math.floor(moved)
+  local out = page
+  if (Kit.wheelY or 0) ~= 0 and Kit.hit(x, y, w, h) then
+    out = math.floor(Theme.clamp((out or 1) + (Kit.wheelY > 0 and -1 or 1),
+      1, pages))
+    Kit.wheelY = 0
+  end
+  local acc = Kit.dragAccum or 0
+  if acc ~= 0 and dragOriginIn(x, y, w, h) then
+    local stepPx = math.max(1, math.floor((h or 0) / 2))
+    local flips = acc >= 0 and math.floor(acc / stepPx)
+      or -math.floor(-acc / stepPx)
+    if flips ~= 0 then
+      local want = (out or 1) + flips
+      out = math.floor(Theme.clamp(want, 1, pages))
+      Kit.dragAccum = out ~= want and 0 or acc - flips * stepPx
+    end
+  end
+  return out
 end
 
 function Kit.scrollExtent(contentH, viewH)

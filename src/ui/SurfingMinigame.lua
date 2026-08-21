@@ -66,6 +66,7 @@ local TOTAL_SECTIONS = 24      -- 24 sections ($18) of 128px = 3072px course
 local BG_HEIGHT = 128          -- Rows the BG shows; HP window covers the rest (y=128..144)
 
 -- Routine numbers (wSurfingMinigameRoutineNumber)
+local ROUTINE_TITLE            = -1
 local ROUTINE_START_GAME       = 0
 local ROUTINE_RUN_GAME         = 1
 local ROUTINE_WAIT_RESULTS     = 2
@@ -216,7 +217,9 @@ local WAVE_STEPS = {
   [0x78] = { "beach", 116, 116, ADV }, [0x79] = { "beach", 116, 116, ADV },
   [0x7a] = { "beach", 116, 116, ADV }, [0x7b] = { "beach", 116, 116, RESET },
 }
-local SEQ_STARTS = { 0x01, 0x0e, 0x1a, 0x29, 0x32, 0x40, 0x4d, 0x5c }
+local SEQ_STARTS = {
+  0x01, 0x0e, 0x1a, 0x29, 0x32, 0x40, 0x4d, 0x5c
+}
 
 SurfingMinigame.BG_METATILES = BG_METATILES
 SurfingMinigame.WAVE_PATTERNS = WAVE_PATTERNS
@@ -231,6 +234,40 @@ local ANGLE_BASES = {
   [5] = { 0x0c, 0x63 }, -- Angle 04 (nose down slight)
   [6] = { 0x30, 0x66 }, -- Angle 05 (nose down moderate)
   [7] = { 0x33, 0x69 }, -- Angle 06 (nose down steep / frontflip apex)
+}
+
+-- OAM Definitions from surfing_pikachu_oam.asm
+-- .WaterSpray (3 tiles, relative to PIKA_X = 68, y = self.pikaY)
+local OAM_WATER_SPRAY = {
+  { dy = -4, dx = 11, tile = 0xa7, xflip = false },
+  { dy =  4, dx =  3, tile = 0xb6, xflip = false },
+  { dy =  4, dx = 11, tile = 0xb7, xflip = false },
+}
+
+-- .SmallSplash (6 tiles, relative to cx = 80, cy = self.pikaY + 4)
+local OAM_SMALL_SPLASH = {
+  { dy = -4, dx = -16, tile = 0xa7, xflip = true  },
+  { dy = -4, dx =   8, tile = 0xa7, xflip = false },
+  { dy =  4, dx = -16, tile = 0xb7, xflip = true  },
+  { dy =  4, dx =  -8, tile = 0xb6, xflip = true  },
+  { dy =  4, dx =   0, tile = 0xb6, xflip = false },
+  { dy =  4, dx =   8, tile = 0xb7, xflip = false },
+}
+
+-- .LargeSplash (12 tiles, relative to cx = 80, cy = self.pikaY + 4)
+local OAM_LARGE_SPLASH = {
+  { dy = -12, dx = -16, tile = 0xa8, xflip = false },
+  { dy = -12, dx =  -8, tile = 0xa9, xflip = false },
+  { dy = -12, dx =   0, tile = 0xa9, xflip = true  },
+  { dy = -12, dx =   8, tile = 0xa8, xflip = true  },
+  { dy =  -4, dx = -16, tile = 0xb8, xflip = false },
+  { dy =  -4, dx =  -8, tile = 0xb9, xflip = false },
+  { dy =  -4, dx =   0, tile = 0xb9, xflip = true  },
+  { dy =  -4, dx =   8, tile = 0xb8, xflip = true  },
+  { dy =   4, dx = -16, tile = 0xc8, xflip = false },
+  { dy =   4, dx =  -8, tile = 0xc9, xflip = false },
+  { dy =   4, dx =   0, tile = 0xc9, xflip = true  },
+  { dy =   4, dx =   8, tile = 0xc8, xflip = true  },
 }
 
 -- Beach outro tilemap (gfx/surfing_pikachu/beach_outro.tilemap, 20x10)
@@ -258,9 +295,9 @@ local PIKACHUS_BEACH_PAL = {
 -- 5 Tempo tiers (117, 109, 101, 93, 85 from surfing_pikachu.asm)
 local TEMPO_TIERS = { 1.0, 117 / 109, 117 / 101, 117 / 93, 117 / 85 }
 
-function SurfingMinigame.new(game, onDone)
+function SurfingMinigame.new(game, onDone, skipTitle)
   local self = setmetatable({ game = game, onDone = onDone }, SurfingMinigame)
-  self.routine = ROUTINE_START_GAME
+  self.routine = skipTitle and ROUTINE_START_GAME or ROUTINE_TITLE
   self.pikaState = PIKA_STATE_RIDING
   self.t = 0
   self.routineTimer = 0
@@ -269,9 +306,11 @@ function SurfingMinigame.new(game, onDone)
   self.hp = 6000                -- starts at 6000 (60.00 seconds)
   self.radness = 0              -- accumulated trick stunt points
   self.totalScore = 0           -- tallied total score
-  self.hiScore = game.save.surfingHighScore or 0
+  self.hiScore = (game and game.save and game.save.surfingHighScore) or 0
   self.newRecord = false
   self.currentPitch = 1.0
+  self.isMinigame = true
+  self.isFixedSpeed = true
 
   -- Hardware RNG simulation registers (hRandomAdd, hRandomSub, rDIV)
   self.rDiv = 0
@@ -297,6 +336,7 @@ function SurfingMinigame.new(game, onDone)
   self.boardAngleDecreasing = false
   self.boardAngleTimer = 0
   self.crashTimer = 0
+  self.landingTimer = 0
 
   -- 3-frame buffered D-Pad rotation & input accumulator
   self.joyCounter = 0
@@ -318,14 +358,28 @@ function SurfingMinigame.new(game, onDone)
   self.tallyStep = 0
   self.tallyTimer = 0
 
-  -- Load sheets safely
+  -- Load sheets safely across all GameVersion prefix paths
   local function sheet(path)
     if not (love and love.graphics and love.graphics.newImage) then return nil end
-    local ok, img = pcall(love.graphics.newImage, path)
-    return ok and img or nil
+    local GameVersion = require("src.core.GameVersion")
+    local prefix = (GameVersion and GameVersion.cachePrefix and GameVersion.cachePrefix(game and game.version)) or "yellow/"
+    local filename = path:match("([^/]+)$") or path
+    local paths = {
+      prefix .. path,
+      path,
+      "yellow/assets/generated/minigame/" .. filename,
+      "assets/generated/minigame/" .. filename,
+    }
+    for _, p in ipairs(paths) do
+      local ok, img = pcall(love.graphics.newImage, p)
+      if ok and img then return img end
+    end
+    return nil
   end
   self.bg = sheet("assets/generated/minigame/surf_1a.png")
   self.ob = sheet("assets/generated/minigame/surf_1b.png")
+  self.intro = sheet("assets/generated/minigame/surf_1c.png")
+  self.titleBg = sheet("assets/generated/minigame/title_bg.png")
 
   if self.bg then
     self.tq = {}
@@ -343,32 +397,97 @@ function SurfingMinigame.new(game, onDone)
     end
   end
 
-  Music.play(game.data, "Music_SurfingPikachu")
+  if self.intro then
+    self.iq = {}
+    local iW, iH = self.intro:getDimensions() -- 96x96 tile sheet (12x12 tiles)
+    for n = 0, 143 do
+      self.iq[n] = love.graphics.newQuad((n % 12) * 8, math.floor(n / 12) * 8, 8, 8, iW, iH)
+    end
+    -- Pika Intro Poses (24x32 px each in top 32px: X=0, 24, 48)
+    self.introPikaQuad1 = love.graphics.newQuad(0, 0, 24, 32, iW, iH)
+    self.introPikaQuad2 = love.graphics.newQuad(24, 0, 24, 32, iW, iH)
+    self.introPikaQuad3 = love.graphics.newQuad(48, 0, 24, 32, iW, iH)
+    -- Title Banner Logo ("PIKACHU'S BEACH") (96x32 px at Y=32..64)
+    self.introLogoQuad = love.graphics.newQuad(0, 32, 96, 32, iW, iH)
+    -- Instruction Text ("Use Control Pad to Surf") (96x32 px at Y=64..96)
+    self.introTextQuad = love.graphics.newQuad(0, 64, 96, 32, iW, iH)
+  end
+
+  -- GPU Shader & Canvas for authentic HBlank wave distortion
+  if love and love.graphics and love.graphics.newShader then
+    local shaderCode = [[
+      extern float u_time;
+      extern float u_water_line;
+
+      vec4 effect(vec4 color, Image texture, vec2 texture_coords, vec2 screen_coords) {
+        vec2 uv = texture_coords;
+        if (uv.y >= u_water_line) {
+          float pixel_y = uv.y * 144.0;
+          float wave_px = sin((pixel_y * 0.39269908) + (u_time * 6.0)) * (1.5 / 160.0);
+          uv.x = fract(uv.x + wave_px);
+        }
+        return Texel(texture, uv) * color;
+      }
+    ]]
+    local ok, shader = pcall(love.graphics.newShader, shaderCode)
+    if ok then self.waveShader = shader end
+  end
+
+  if love and love.graphics and love.graphics.newCanvas then
+    local ok, canvas = pcall(love.graphics.newCanvas, 160, 144)
+    if ok then self.bgCanvas = canvas end
+  end
+
+  Music.play(game and game.data, "Music_SurfingPikachu")
   return self
 end
 
--- Authentic Game Boy VBlank LFSR Random Number Generator
+-- Transition cleanly from Title Screen to active run, flushing input bleed-through
+function SurfingMinigame:startFromTitle()
+  self.routine = ROUTINE_START_GAME
+  self.inputAccum = 0
+  self.joyCounter = 0
+  self.rotCountLeft = 0
+  self.rotCountRight = 0
+  self:resetTempo()
+  if self.game and self.game.input and self.game.input.clearPressed then
+    self.game.input:clearPressed()
+  end
+  Sound.play(self.game and self.game.data, "Press_AB")
+end
+
+-- Authentic Game Boy LFSR Random Number Generator
 function SurfingMinigame:getGBRandom()
-  self.rDiv = (self.rDiv + 7 + (self.inputAccum or 0)) % 256
-  self.rAdd = (self.rAdd + self.rDiv) % 256
-  self.rSub = (self.rSub - self.rDiv + 256) % 256
-  return (self.rAdd + self.rSub) % 256
+  self.rDiv = (self.rDiv + 13) % 256
+  local tempAdd = self.rAdd + self.rDiv
+  self.rAdd = tempAdd % 256
+  local tempSub = self.rSub - self.rDiv
+  self.rSub = (tempSub + 256) % 256
+  return self.rAdd
 end
 
 function SurfingMinigame:chooseSequence()
   local distPx = math.floor(self.distanceFixed / 256)
-  if math.floor(distPx / 128) >= 0x16 then
+  local section = math.floor(distPx / 128)
+  if section == 0x16 then
     self.waveFn = 0x6a
-  else
+  elseif section < 0x16 then
     local r = self:getGBRandom()
-    if r ~= 0 then self.waveFn = SEQ_STARTS[((r - 1) % 8) + 1] end
+    if r ~= 0 then
+      self.waveFn = SEQ_STARTS[bit.band(r - 1, 0x07) + 1]
+    end
   end
   return WAVE_PATTERNS[0x00], FLAT_WATER_Y, FLAT_WATER_Y
 end
 
 function SurfingMinigame:pushColumn()
   local pat, hl, hr
-  if self.waveFn == 0 then
+  local distPx = math.floor(self.distanceFixed / 256)
+  if distPx >= (TOTAL_SECTIONS * 128) or self.waveFn >= 0x74 then
+    -- Lock finish line to solid beach sand without cycling back to ocean waves
+    pat, hl, hr = WAVE_PATTERNS["beach"], FLAT_WATER_Y, FLAT_WATER_Y
+    self.waveFn = 0x74
+  elseif self.waveFn == 0 then
     pat, hl, hr = self:chooseSequence()
   else
     local step = WAVE_STEPS[self.waveFn]
@@ -396,30 +515,40 @@ function SurfingMinigame:seaY(x)
   local distPx = math.floor(self.distanceFixed / 256)
   local tile = math.floor((distPx + x) / 8)
   local col = self.cols[math.floor(tile / 2)]
-  if not col then return FLAT_WATER_Y - 16 end
-  return (tile % 2 == 0 and col.hl or col.hr) - 16
+  if not col then return FLAT_WATER_Y end
+  return tile % 2 == 0 and col.hl or col.hr
 end
 
--- Get the tile ID of the wave under Pikachu (sample 9-10 tiles into viewport)
+-- Get the tile ID of the wave under Pikachu (sample 9 tiles / 72 pixels into viewport)
 function SurfingMinigame:getWaveTileUnderPika()
   local distPx = math.floor(self.distanceFixed / 256)
-  local tile = math.floor((distPx + 80) / 8)
-  local col = self.cols[math.floor(tile / 2)]
+  local tile_col = math.floor((distPx + 72) / 8)
+  local waterY = math.floor(self:seaY(80))
+  local tile_row = math.floor(waterY / 8)
+
+  local c = math.floor(tile_col / 2)
+  local col = self.cols[c]
   if not col or not col.pat then return 0x01 end
-  local pat = col.pat
-  for i = 4, 8 do
-    local mt = pat[i]
-    if mt then
-      if mt == 0x02 or mt == 0x06 or mt == 0x0a or mt == 0x11 then
-        return 0x06 -- rising slope
-      elseif mt == 0x03 or mt == 0x07 or mt == 0x0b or mt == 0x0d then
-        return 0x07 -- falling slope
-      elseif mt == 0x08 or mt == 0x09 or mt == 0x0f or mt == 0x10 or mt == 0x14 or mt == 0x15 then
-        return 0x14 -- wave crest / face
-      end
-    end
+
+  local i = math.floor(tile_row / 2) + 1
+  if i < 1 or i > 8 then return 0x01 end
+  local mt = BG_METATILES[col.pat[i]]
+  if not mt then return 0x01 end
+
+  local sub_x = (tile_col % 2 == 0) and 0 or 1
+  local sub_y = (tile_row % 2 == 0) and 0 or 1
+
+  local sub_idx = 1 + sub_x + sub_y * 2
+  local mt_tile = mt[sub_idx] or 0x01
+
+  if mt_tile == 0x02 or mt_tile == 0x04 or mt_tile == 0x06 or mt_tile == 0x0a or mt_tile == 0x11 then
+    return 0x06 -- rising slope
+  elseif mt_tile == 0x03 or mt_tile == 0x05 or mt_tile == 0x07 or mt_tile == 0x0d or mt_tile == 0x13 then
+    return 0x07 -- falling slope
+  elseif mt_tile == 0x08 or mt_tile == 0x09 or mt_tile == 0x0f or mt_tile == 0x10 or mt_tile == 0x12 or mt_tile == 0x14 or mt_tile == 0x15 then
+    return 0x14 -- wave crest / face
   end
-  return 0x01 -- flat open water
+  return 0x01 -- open water (0x0b, 0x00, 0x0e, etc.)
 end
 
 function SurfingMinigame:spawnTrickPopup(text)
@@ -497,21 +626,51 @@ function SurfingMinigame:evaluateLanding()
   end
 end
 
+function SurfingMinigame:updateTempo()
+  local tier = 1
+  if self.speedFixed >= 416 then
+    tier = 5
+  elseif self.speedFixed >= 320 then
+    tier = 4
+  elseif self.speedFixed >= 224 then
+    tier = 3
+  elseif self.speedFixed >= 128 then
+    tier = 2
+  else
+    tier = 1
+  end
+  local targetPitch = TEMPO_TIERS[tier] or 1.0
+  if self.currentPitch ~= targetPitch then
+    self.currentPitch = targetPitch
+    if Music and Music.setPitch then
+      Music.setPitch(self.currentPitch)
+    end
+  end
+end
+
+function SurfingMinigame:resetTempo()
+  self.currentPitch = 1.0
+  if Music and Music.setPitch then
+    Music.setPitch(1.0)
+  end
+end
+
 function SurfingMinigame:updateRiding()
   -- Automatic speed up (+2/256 = +1/128 per frame up to max 512 = 2.0)
   if self.speedFixed < SPEED_MAX then
     self.speedFixed = math.min(SPEED_MAX, self.speedFixed + SPEED_ACCEL)
   end
+  self:updateTempo()
 
   -- Follow wave surface height
   local targetY = self:seaY(80)
-  self.pikaY = math.floor(targetY)
-  self.pikaSubY = 0
+  self.pikaY = math.floor(targetY) - 16
+    self.pikaSubY = 0
 
   -- Water spray every 4 frames
   self.sprayTimer = self.sprayTimer + 1
   if self.sprayTimer % 4 == 0 then
-    table.insert(self.waterSprays, { x = PIKA_X + 16, y = self.pikaY + 12, timer = 12 })
+    table.insert(self.waterSprays, { x = PIKA_X, y = self.pikaY, timer = 4 })
   end
 
   -- Board angle wobbling every 8 frames
@@ -532,14 +691,14 @@ function SurfingMinigame:updateRiding()
     end
   end
 
-  -- Select frame based on slope
+  -- Select frame based on slope (lock flat open water to frame 4 without wobble)
   local tile = self:getWaveTileUnderPika()
   if tile == 0x06 or tile == 0x14 then
     self.frameSet = 6 + (self.boardAngleOffset - 1)
   elseif tile == 0x07 then
     self.frameSet = 2 + (self.boardAngleOffset - 1)
   else
-    self.frameSet = 4 + (self.boardAngleOffset - 1)
+    self.frameSet = 4 -- flat open water: steady horizontal ride
   end
   self.frameSet = math.max(1, math.min(14, self.frameSet))
 
@@ -560,43 +719,71 @@ function SurfingMinigame:updateRiding()
   end
 end
 
-function SurfingMinigame:updateJumping()
-  -- Process accumulated input on the 3-frame buffer boundary
-  self.joyCounter = (self.joyCounter + 1) % 3
-  if self.joyCounter == 0 then
-    local rightHeld = bit.band(self.inputAccum, 1) ~= 0
-    local leftHeld = bit.band(self.inputAccum, 2) ~= 0
-    self.inputAccum = 0
-
-    if rightHeld then
-      self.rotCountLeft = 0
-      self.rotCountRight = self.rotCountRight + 1
-      if self.rotCountRight >= 11 then
-        self.rotCountRight = 0
-        self.radnessMeter = math.min(3, self.radnessMeter + 1)
-        self.trickFlags = bit.bor(self.trickFlags, 1)
-        Sound.play(self.game.data, "Tink")
-      end
-      -- Increment frame set (frontflip forward)
-      self.frameSet = (self.frameSet % 14) + 1
-    elseif leftHeld then
-      self.rotCountRight = 0
-      self.rotCountLeft = self.rotCountLeft + 1
-      if self.rotCountLeft >= 13 then
-        self.rotCountLeft = 0
-        self.radnessMeter = math.min(3, self.radnessMeter + 1)
-        self.trickFlags = bit.bor(self.trickFlags, 2)
-        Sound.play(self.game.data, "Tink")
-      end
-      -- Decrement frame set (backflip backward)
-      self.frameSet = self.frameSet - 1
-      if self.frameSet < 1 then self.frameSet = 14 end
+function SurfingMinigame:handleLanding()
+  local result = self:evaluateLanding()
+  if result == "wipeout" then
+    self.pikaState = PIKA_STATE_CRASHED
+    self.crashTimer = 96
+    self.speedFixed = SPEED_INITIAL
+    self.frameSet = 4
+    Sound.play(self.game.data, "Faint_Fall")
+  else
+    if result == "rough" then
+      self.speedFixed = math.max(SPEED_INITIAL, self.speedFixed - SPEED_ROUGH_PENALTY)
+    elseif result == "hard" then
+      self.speedFixed = math.max(SPEED_INITIAL, self.speedFixed - SPEED_HARD_PENALTY)
     end
+    if self.routine == ROUTINE_RUN_GAME then
+      self:calculateStuntPoints()
+    end
+    self.pikaState = PIKA_STATE_LANDING
+    self.landingTimer = 32
+    self.frameSet = 4
+    Sound.play(self.game.data, "Cut")
+  end
+end
+
+function SurfingMinigame:updateJumping()
+  -- Process accumulated input on the 3-frame buffer boundary (only during active run)
+  if self.routine == ROUTINE_RUN_GAME then
+    self.joyCounter = (self.joyCounter + 1) % 3
+    if self.joyCounter == 0 then
+      local rightHeld = bit.band(self.inputAccum, 1) ~= 0
+      local leftHeld = bit.band(self.inputAccum, 2) ~= 0
+      self.inputAccum = 0
+
+      -- Game Boy priority: Left D-pad checked first, then Right D-pad
+      if leftHeld then
+        self.rotCountRight = 0
+        self.rotCountLeft = self.rotCountLeft + 1
+        if self.rotCountLeft >= 11 then
+          self.rotCountLeft = 0
+          self.radnessMeter = math.min(3, self.radnessMeter + 1)
+          self.trickFlags = bit.bor(self.trickFlags, 1)
+          Sound.play(self.game.data, "Tink")
+        end
+        self.frameSet = (self.frameSet % 14) + 1
+      elseif rightHeld then
+        self.rotCountLeft = 0
+        self.rotCountRight = self.rotCountRight + 1
+        if self.rotCountRight >= 13 then
+          self.rotCountRight = 0
+          self.radnessMeter = math.min(3, self.radnessMeter + 1)
+          self.trickFlags = bit.bor(self.trickFlags, 2)
+          Sound.play(self.game.data, "Tink")
+        end
+        self.frameSet = self.frameSet - 1
+        if self.frameSet < 1 then self.frameSet = 14 end
+      end
+    end
+  else
+    self.inputAccum = 0
   end
 
   -- Authentic Game Boy collision boundary & integer fixed-point jump physics
   if not self.jumpDescending then
-    self.pikaSubY = (self.pikaSubY or 0) + (self.jumpArcMagnitude ^ 2) * 4
+    local a = math.floor(self.jumpArcMagnitude)
+    self.pikaSubY = (self.pikaSubY or 0) + (a * a) * 4
     local intDelta = math.floor(self.pikaSubY / 256)
     self.pikaSubY = self.pikaSubY % 256
     self.pikaY = self.pikaY - intDelta
@@ -608,34 +795,16 @@ function SurfingMinigame:updateJumping()
     end
   else
     -- Hardware execution order: evaluate boundary before adding velocity
-    local waveY = math.floor(self:seaY(80))
+    local waveY = math.floor(self:seaY(80)) - 16
     if self.pikaY >= waveY then
       self.pikaY = waveY
       self.pikaSubY = 0
-      -- Evaluate landing angle vs wave slope
-      local result = self:evaluateLanding()
-      if result == "wipeout" then
-        self.pikaState = PIKA_STATE_CRASHED
-        self.crashTimer = 96
-        self.speedFixed = SPEED_INITIAL
-        self.frameSet = 4
-        Sound.play(self.game.data, "Faint_Fall")
-      else
-        if result == "rough" then
-          self.speedFixed = math.max(SPEED_INITIAL, self.speedFixed - SPEED_ROUGH_PENALTY)
-        elseif result == "hard" then
-          self.speedFixed = math.max(SPEED_INITIAL, self.speedFixed - SPEED_HARD_PENALTY)
-        end
-        self:calculateStuntPoints()
-        self.pikaState = PIKA_STATE_LANDING
-        self.routineTimer = 32
-        self.frameSet = 4
-        Sound.play(self.game.data, "Cut")
-      end
+      self:handleLanding()
       return
     end
 
-    self.pikaSubY = (self.pikaSubY or 0) + (self.jumpArcMagnitude ^ 2) * 4
+    local a = math.floor(self.jumpArcMagnitude)
+    self.pikaSubY = (self.pikaSubY or 0) + (a * a) * 4
     local intDelta = math.floor(self.pikaSubY / 256)
     self.pikaSubY = self.pikaSubY % 256
     self.pikaY = self.pikaY + intDelta
@@ -644,57 +813,66 @@ function SurfingMinigame:updateJumping()
     if self.pikaY >= waveY then
       self.pikaY = waveY
       self.pikaSubY = 0
-      local result = self:evaluateLanding()
-      if result == "wipeout" then
-        self.pikaState = PIKA_STATE_CRASHED
-        self.crashTimer = 96
-        self.speedFixed = SPEED_INITIAL
-        self.frameSet = 4
-        Sound.play(self.game.data, "Faint_Fall")
-      else
-        if result == "rough" then
-          self.speedFixed = math.max(SPEED_INITIAL, self.speedFixed - SPEED_ROUGH_PENALTY)
-        elseif result == "hard" then
-          self.speedFixed = math.max(SPEED_INITIAL, self.speedFixed - SPEED_HARD_PENALTY)
-        end
-        self:calculateStuntPoints()
-        self.pikaState = PIKA_STATE_LANDING
-        self.routineTimer = 32
-        self.frameSet = 4
-        Sound.play(self.game.data, "Cut")
-      end
+      self:handleLanding()
     end
   end
 end
 
 function SurfingMinigame:updateLanding()
-  self.routineTimer = self.routineTimer - 1
+  self.landingTimer = (self.landingTimer or 0) - 1
+
+  -- Follow wave surface height continuously while landing so slopes don't cause position jumps!
+  local targetY = self:seaY(80)
+  self.pikaY = math.floor(targetY) - 16
+  self.pikaSubY = 0
+
   -- Sine wave splash offset
-  self.pikaYOffset = math.floor(math.sin((32 - self.routineTimer) / 32 * math.pi * 2) * 4)
-  if self.routineTimer % 4 == 0 then
-    table.insert(self.waterSprays, { x = PIKA_X + 16, y = self.pikaY + 12, timer = 12 })
+  self.pikaYOffset = math.floor(math.sin((32 - math.max(0, self.landingTimer)) / 32 * math.pi * 2) * 4)
+  if self.landingTimer % 4 == 0 then
+    table.insert(self.waterSprays, { x = PIKA_X, y = self.pikaY, timer = 4 })
   end
-  if self.routineTimer <= 0 then
+
+  if self.landingTimer <= 0 then
     self.pikaYOffset = 0
     self.pikaState = PIKA_STATE_RIDING
+    self.frameSet = 4
   end
 end
 
 function SurfingMinigame:updateCrashed()
   self.crashTimer = self.crashTimer - 1
+  self:resetTempo()
+  -- Follow water surface while wiped out
+  local targetY = self:seaY(80)
+  self.pikaY = math.floor(targetY) - 16
+  self.pikaSubY = 0
   if self.crashTimer <= 0 then
     self.pikaState = PIKA_STATE_RIDING
     self.frameSet = 4
   end
 end
 
-function SurfingMinigame:update()
-  local input = self.game.input
+-- Single Game Boy hardware VBlank cycle tick (59.7275 Hz)
+function SurfingMinigame:tick()
+  local input = self.game and self.game.input
   self.t = self.t + 1
+  self.rDiv = (self.rDiv + 1) % 256
 
-  -- Accumulate physical button presses on every frame (eliminates polling blind spot)
-  if input:isDown("right") then self.inputAccum = bit.bor(self.inputAccum, 1) end
-  if input:isDown("left") then self.inputAccum = bit.bor(self.inputAccum, 2) end
+  -- Title Screen State
+  if self.routine == ROUTINE_TITLE then
+    if input and (input:wasPressed("start") or input:wasPressed("a")) then
+      self:startFromTitle()
+    end
+    return
+  end
+
+  -- Accumulate physical button presses on every frame (only during active run)
+  if self.routine == ROUTINE_RUN_GAME then
+    if input and input:isDown("right") then self.inputAccum = bit.bor(self.inputAccum, 1) end
+    if input and input:isDown("left") then self.inputAccum = bit.bor(self.inputAccum, 2) end
+  else
+    self.inputAccum = 0
+  end
 
   -- Update trick popups
   for i = #self.trickPopups, 1, -1 do
@@ -728,7 +906,7 @@ function SurfingMinigame:update()
       self.routineTimer = 128
       self.speedFixed = 0
       self.ohNoBanner = true
-      Sound.play(self.game.data, "Faint_Fall")
+      Sound.play(self.game and self.game.data, "Faint_Fall")
       return
     end
 
@@ -758,20 +936,44 @@ function SurfingMinigame:update()
     end
 
   elseif self.routine == ROUTINE_WAIT_RESULTS then
-    -- 192 frames coasting past the goal line
+    -- Coasting past the goal line
     self.distanceFixed = self.distanceFixed + (2 * 256)
+    self.cloudOffsetFixed = self.cloudOffsetFixed + math.floor((2 * 256) * 0.25)
     self:generateAhead()
-    self.pikaY = math.floor(self:seaY(80))
-    self.routineTimer = self.routineTimer - 1
-    if self.routineTimer <= 0 then
+
+    -- Run Pikachu state machine so mid-air jumps and wipeout crashes complete
+    if self.pikaState == PIKA_STATE_JUMPING then
+      self:updateJumping()
+    elseif self.pikaState == PIKA_STATE_LANDING then
+      self:updateLanding()
+    elseif self.pikaState == PIKA_STATE_CRASHED then
+      self:updateCrashed()
+    else
+      -- Riding: follow water surface
+      local targetY = self:seaY(80)
+      self.pikaY = math.floor(targetY) - 16
+      self.pikaSubY = 0
+      self.frameSet = 4
+    end
+
+    if self.routineTimer > 0 then
+      self.routineTimer = self.routineTimer - 1
+    end
+
+    -- Only advance to scroll results when delay has finished AND Pikachu is upright
+    if self.routineTimer <= 0 and self.pikaState == PIKA_STATE_RIDING then
       self.routine = ROUTINE_SCROLL_RESULTS
       self.routineTimer = 36
+      self.pikaState = PIKA_STATE_GAME_END
     end
 
   elseif self.routine == ROUTINE_SCROLL_RESULTS then
     self.distanceFixed = self.distanceFixed + (1 * 256)
+    self.cloudOffsetFixed = self.cloudOffsetFixed + math.floor((1 * 256) * 0.25)
     self:generateAhead()
-    self.pikaY = math.floor(self:seaY(80))
+    self.pikaY = math.floor(self:seaY(80)) - 16
+    self.pikaSubY = 0
+    self.frameSet = 4
     self.routineTimer = self.routineTimer - 1
     if self.routineTimer <= 0 then
       self.routine = ROUTINE_DRAW_RESULTS
@@ -813,7 +1015,7 @@ function SurfingMinigame:update()
       local step = math.min(self.hp, 99)
       self.hp = self.hp - step
       self.totalScore = self.totalScore + step
-      Sound.play(self.game.data, "Press_AB")
+      Sound.play(self.game and self.game.data, "Press_AB")
     else
       self.routine = ROUTINE_ADD_RAD_TOTAL
     end
@@ -824,18 +1026,18 @@ function SurfingMinigame:update()
       local step = math.min(self.radness, 99)
       self.radness = self.radness - step
       self.totalScore = self.totalScore + step
-      Sound.play(self.game.data, "Press_AB")
+      Sound.play(self.game and self.game.data, "Press_AB")
     else
       self.routine = ROUTINE_WAIT_LAST
       self.routineTimer = 64
       -- High score check
-      self.newRecord = self.totalScore > (self.game.save.surfingHighScore or 0)
+      self.newRecord = self.totalScore > ((self.game and self.game.save and self.game.save.surfingHighScore) or 0)
       if self.newRecord then
-        self.game.save.surfingHighScore = self.totalScore
-        Sound.play(self.game.data, "Get_Item1")
-        Sound.playPikaCry(self.game.data, 34)
+        if self.game and self.game.save then self.game.save.surfingHighScore = self.totalScore end
+        Sound.play(self.game and self.game.data, "Get_Item1")
+        Sound.playPikaCry(self.game and self.game.data, 34)
       else
-        Sound.playPikaCry(self.game.data, 28)
+        Sound.playPikaCry(self.game and self.game.data, 28)
       end
     end
 
@@ -846,64 +1048,117 @@ function SurfingMinigame:update()
     end
 
   elseif self.routine == ROUTINE_EXIT_ON_PRESS_A then
-    if input:wasPressed("a") or input:wasPressed("b") then
-      self.game.stack:pop()
+    if input and input:wasPressed("a") then
+      if self.game and self.game.stack then self.game.stack:pop() end
       if self.onDone then self.onDone(self.totalScore) end
     end
 
   elseif self.routine == ROUTINE_GAME_OVER then
     self.routineTimer = self.routineTimer - 1
-    if self.routineTimer <= 0 and (input:wasPressed("a") or input:wasPressed("b")) then
-      self.game.stack:pop()
+    if self.routineTimer <= 0 and input and input:wasPressed("a") then
+      if self.game and self.game.stack then self.game.stack:pop() end
       if self.onDone then self.onDone(0) end
     end
   end
 end
 
--- Draw scrolling wave background
+-- Decoupled timestep accumulator for modern multi-refresh-rate displays
+function SurfingMinigame:update(dt)
+  if not dt then
+    self:tick()
+    return
+  end
+
+  -- Accumulate real-world time
+  self.tickAccumulator = (self.tickAccumulator or 0) + dt
+
+  -- Exact Game Boy Color framerate: 59.7275 Hz (approx 0.0167427 seconds per frame)
+  local gbTickRate = 1 / 59.7275
+
+  -- Process as many physical hardware frames as necessary
+  while self.tickAccumulator >= gbTickRate do
+    self:tick()
+    self.tickAccumulator = self.tickAccumulator - gbTickRate
+  end
+end
+
+-- Draw scrolling wave background with authentic GPU shader HBlank wave distortion
 function SurfingMinigame:drawBackground()
   local scx = math.floor(self.distanceFixed / 256)
   local first = math.floor(scx / 16)
-  for c = first, first + 10 do
-    local col = self.cols[c]
-    if col then
-      local x = c * 16 - scx
-      for i = 1, 8 do
-        local mt = BG_METATILES[col.pat[i]]
-        if mt then
-          local y = (i - 1) * 16
-          love.graphics.draw(self.bg, self.tq[mt[1]], x, y)
-          love.graphics.draw(self.bg, self.tq[mt[2]], x + 8, y)
-          love.graphics.draw(self.bg, self.tq[mt[3]], x, y + 8)
-          love.graphics.draw(self.bg, self.tq[mt[4]], x + 8, y + 8)
+
+  local function renderTiles()
+    love.graphics.setColor(1, 1, 1, 1)
+    if not self.bg then return end
+    for c = first, first + 10 do
+      local col = self.cols[c]
+      if col then
+        local x = c * 16 - scx
+        for i = 1, 8 do
+          local mt = BG_METATILES[col.pat[i]]
+          if mt then
+            local y = (i - 1) * 16
+            love.graphics.draw(self.bg, self.tq[mt[1]], x, y)
+            love.graphics.draw(self.bg, self.tq[mt[2]], x + 8, y)
+            love.graphics.draw(self.bg, self.tq[mt[3]], x, y + 8)
+            love.graphics.draw(self.bg, self.tq[mt[4]], x + 8, y + 8)
+          end
         end
       end
     end
+  end
+
+  if self.bgCanvas and self.waveShader and love.graphics.setCanvas and love.graphics.getCanvas then
+    -- 1. Capture the framework's active canvas
+    local prevCanvas = love.graphics.getCanvas()
+
+    love.graphics.setCanvas(self.bgCanvas)
+    -- 2. Clear with transparency (0 alpha) so the sky remains empty
+    love.graphics.clear(0, 0, 0, 0)
+    renderTiles()
+
+    -- 3. Restore the framework's canvas before drawing!
+    love.graphics.setCanvas(prevCanvas)
+
+    -- 4. Safely capture and restore the shader
+    local prevShader = love.graphics.getShader and love.graphics.getShader()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setShader(self.waveShader)
+
+    if self.waveShader.hasUniform and self.waveShader:hasUniform("u_time") then
+      self.waveShader:send("u_time", self.t / 60.0)
+    end
+    if self.waveShader.hasUniform and self.waveShader:hasUniform("u_water_line") then
+      self.waveShader:send("u_water_line", 48.0 / 144.0)
+    end
+
+    love.graphics.draw(self.bgCanvas, 0, 0)
+    love.graphics.setShader(prevShader)
+  else
+    renderTiles()
   end
 end
 
 -- Draw 3x3 Pikachu sprite (24x24 px centered at cx, cy)
 function SurfingMinigame:draw3x3(baseTile, cx, cy, flipX, flipY)
+  local sx = flipX and -1 or 1
+  local sy = flipY and -1 or 1
   for r = 0, 2 do
     for c = 0, 2 do
       local tileId = baseTile + r * 16 + c
       local q = self.oq[tileId]
       if q then
-        if not flipX and not flipY then
-          local dx = (cx - 12) + c * 8
-          local dy = (cy - 12) + r * 8
-          love.graphics.draw(self.ob, q, dx, dy)
-        else
-          local dx = (cx - 12) + (2 - c) * 8 + 8
-          local dy = (cy - 12) + (2 - r) * 8 + 8
-          love.graphics.draw(self.ob, q, dx, dy, 0, -1, -1)
-        end
+        local colIdx = flipX and (2 - c) or c
+        local rowIdx = flipY and (2 - r) or r
+        local dx = (cx - 12) + colIdx * 8 + (flipX and 8 or 0)
+        local dy = (cy - 12) + rowIdx * 8 + (flipY and 8 or 0)
+        love.graphics.draw(self.ob, q, dx, dy, 0, sx, sy)
       end
     end
   end
 end
 
--- Draw HUD status bar
+-- Draw HUD status bar with inverted progress marker (moving right-to-left towards beach)
 function SurfingMinigame:drawHUD()
   -- White background in bottom 16 rows
   love.graphics.setColor(1, 1, 1, 1)
@@ -931,9 +1186,14 @@ function SurfingMinigame:drawHUD()
   end
 
   -- Mini-Pikachu progress marker (tile $fe)
+  -- Game Boy: initial OAM X = $50 (80) = screen X 72, decrements by 2 per section.
+  -- 24 sections × 2 = 48 px total travel, ending at screen X 24.
+  -- We interpolate continuously across those same 48 pixels.
   local distPx = math.floor(self.distanceFixed / 256)
   local progressRatio = math.min(1.0, math.max(0, distPx / (TOTAL_SECTIONS * 128)))
-  local markerX = 16 + math.floor(progressRatio * 80)
+  local markerStartX = 72   -- OAM X $50 (80) minus 8-pixel OAM offset = screen X 72
+  local markerTrack  = 48   -- 24 sections × 2 px per section
+  local markerX = markerStartX - math.floor(progressRatio * markerTrack)
   if self.ob and self.oq and self.oq[0xfe] then
     love.graphics.draw(self.ob, self.oq[0xfe], markerX, BG_HEIGHT + 6)
   end
@@ -956,45 +1216,99 @@ function SurfingMinigame:drawResultsOutro()
   for r = 1, 10 do
     for c = 1, 20 do
       local tId = BEACH_OUTRO[r][c]
-      if tId and self.tq[tId] then
+      if tId and self.tq and self.tq[tId] then
         love.graphics.draw(self.bg, self.tq[tId], (c - 1) * 8, (r + 5) * 8)
       end
     end
   end
 
-  -- Textbox frame on rows 1..9 (X=8..152, Y=8..72)
+  -- Fill interior with white
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("fill", 8, 8, 144, 64)
-  love.graphics.setColor(0, 0, 0, 1)
-  love.graphics.rectangle("line", 8.5, 8.5, 143, 63)
+  love.graphics.rectangle("fill", 16, 16, 128, 56)
 
-  -- Text lines
+  -- Draw the textbox frame using original Game Boy border tiles (rows 1..9, Y=8..72)
+  local function drawBoxRow(rowIdx, leftTile, interiorTile, rightTile)
+    local y = rowIdx * 8
+    if self.tq[leftTile] then
+      love.graphics.draw(self.bg, self.tq[leftTile], 8, y)
+    end
+    if interiorTile and self.tq[interiorTile] then
+      for colIdx = 2, 17 do
+        love.graphics.draw(self.bg, self.tq[interiorTile], colIdx * 8, y)
+      end
+    end
+    if self.tq[rightTile] then
+      love.graphics.draw(self.bg, self.tq[rightTile], 144, y)
+    end
+  end
+
+  drawBoxRow(1, 0x3b, 0x40, 0x3c)
+  for r = 2, 8 do
+    drawBoxRow(r, 0x3f, nil, 0x3f)
+  end
+  drawBoxRow(9, 0x3d, 0x40, 0x3e)
+
+  -- Text lines matching Game Boy screen memory coordinates (cols 2, 10, 15; rows 2, 4, 6, 8)
   Font.draw(Strings("HP Left"), 16, 16)
   if self.routine >= ROUTINE_WRITE_HP_LEFT then
-    Font.draw(string.format("%4d Pts", self.hp), 88, 16)
+    Font.draw(string.format("%04d", self.hp), 80, 16)
+    Font.draw(Strings("Pts"), 120, 16)
   end
 
   if self.routine >= ROUTINE_WRITE_RADNESS then
     Font.draw(Strings("Radness"), 16, 32)
-    Font.draw(string.format("%4d Pts", self.radness), 88, 32)
+    Font.draw(string.format("%04d", self.radness), 80, 32)
+    Font.draw(Strings("Pts"), 120, 32)
   end
 
   if self.routine >= ROUTINE_WRITE_TOTAL then
     Font.draw(Strings("Total"), 16, 48)
-    Font.draw(string.format("%4d Pts", self.totalScore), 88, 48)
+    Font.draw(string.format("%04d", self.totalScore), 80, 48)
+    Font.draw(Strings("Pts"), 120, 48)
   end
 
   if self.routine >= ROUTINE_WAIT_LAST then
     if self.newRecord then
-      Font.draw(Strings("Hi-Score!!"), 48, 60)
+      Font.draw(Strings("Hi-Score!!"), 48, 64)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- Draw minigame Title Screen ("Pikachu's Beach")
+function SurfingMinigame:drawTitleScreen()
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.rectangle("fill", 0, 0, 160, 144)
+
+  -- 1. Draw authentic 160x144 composite title background from ROM
+  if self.titleBg then
+    love.graphics.draw(self.titleBg, 0, 0)
+  else
+    Font.draw("PIKACHU'S BEACH", 20, 32)
+  end
+
+  -- 2. Draw 3x3 Pikachu intro sprite on the water using authentic OAM tile indices
+  if self.ob and self.oq then
+    local animBase = (math.floor(self.t / 32) % 2 == 0) and 0x0c or 0x09
+    self:draw3x3(animBase, 80, 100, false, false)
+  end
+
+  -- 3. High score display at bottom
+  Font.draw(string.format("Hi-Score   %4d Pt", self.hiScore), 16, 120)
+
+  if math.floor(self.t / 30) % 2 == 0 then
+    Font.draw("PRESS START", 36, 132)
+  end
+end
+
 function SurfingMinigame:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
+
+  if self.routine == ROUTINE_TITLE then
+    self:drawTitleScreen()
+    return
+  end
 
   if self.routine >= ROUTINE_DRAW_RESULTS and self.routine <= ROUTINE_EXIT_ON_PRESS_A then
     self:drawResultsOutro()
@@ -1004,22 +1318,42 @@ function SurfingMinigame:draw()
   -- Draw scrolling BG waves
   self:drawBackground()
 
-  -- Parallax clouds in sky
+  -- Parallax clouds in sky (scrolling left at uniform 0.25x camera speed)
   local cloudOffsetPx = math.floor(self.cloudOffsetFixed / 256)
-  local c1x = (32 - cloudOffsetPx * 2) % 200 - 40
-  local c2x = (128 - cloudOffsetPx * 3) % 200 - 40
-  -- Wide cloud (5 tiles: $ec, $ed, $ed, $ee, $ef)
-  for i, tid in ipairs({ 0xec, 0xed, 0xed, 0xee, 0xef }) do
-    love.graphics.draw(self.ob, self.oq[tid], c1x + (i - 1) * 8, 12)
+  local c1x = (160 - (cloudOffsetPx % 200)) - 40
+  local c2x = (240 - (cloudOffsetPx % 200)) - 40
+  if self.ob and self.oq then
+    -- Wide cloud (5 tiles: $ec, $ed, $ed, $ee, $ef)
+    for i, tid in ipairs({ 0xec, 0xed, 0xed, 0xee, 0xef }) do
+      love.graphics.draw(self.ob, self.oq[tid], c1x + (i - 1) * 8, 12)
+    end
+    -- Narrow cloud (4 tiles: $ec, $ed, $ee, $ef)
+    for i, tid in ipairs({ 0xec, 0xed, 0xee, 0xef }) do
+      love.graphics.draw(self.ob, self.oq[tid], c2x + (i - 1) * 8, 20)
+    end
   end
-  -- Narrow cloud (4 tiles: $ec, $ed, $ee, $ef)
-  for i, tid in ipairs({ 0xec, 0xed, 0xee, 0xef }) do
-    love.graphics.draw(self.ob, self.oq[tid], c2x + (i - 1) * 8, 20)
+  -- Helper function to draw OAM multi-sprite composite objects with palette and X-flipping
+  function self:drawOAMSprites(sprites, ox, oy)
+    if not (self.ob and self.oq) then return end
+    love.graphics.setColor(0.5, 0.5, 0.5, 1) -- OAM_PAL1 maps shade 1 to shade 2 (Sea Blue)
+    for _, sp in ipairs(sprites) do
+      local q = self.oq[sp.tile]
+      if q then
+        local x = ox + sp.dx
+        local y = oy + sp.dy
+        if sp.xflip then
+          love.graphics.draw(self.ob, q, x + 8, y, 0, -1, 1)
+        else
+          love.graphics.draw(self.ob, q, x, y)
+        end
+      end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
   end
 
-  -- Draw water spray sprites
+  -- Draw water spray sprites on trailing edge of surfboard
   for _, s in ipairs(self.waterSprays) do
-    love.graphics.draw(self.ob, self.oq[0xa7], s.x, s.y)
+    self:drawOAMSprites(OAM_WATER_SPRAY, s.x, s.y)
   end
 
   -- Draw Pikachu
@@ -1028,11 +1362,19 @@ function SurfingMinigame:draw()
   self.pikaScreenY = cy
 
   if self.pikaState == PIKA_STATE_CRASHED then
-    -- Empty surfboard + splash animation
-    love.graphics.draw(self.ob, self.oq[0x98], cx - 12, cy + 4)
-    love.graphics.draw(self.ob, self.oq[0x99], cx - 4, cy + 4)
-    love.graphics.draw(self.ob, self.oq[0x9a], cx + 4, cy + 4)
-    love.graphics.draw(self.ob, self.oq[0xa8], cx - 12, cy - 8)
+    -- Empty surfboard (3 tiles at bottom)
+    if self.ob and self.oq then
+      love.graphics.draw(self.ob, self.oq[0x98], cx - 12, cy + 4)
+      love.graphics.draw(self.ob, self.oq[0x99], cx - 4, cy + 4)
+      love.graphics.draw(self.ob, self.oq[0x9a], cx + 4, cy + 4)
+    end
+    -- Multi-tile splash animation (.SmallSplash then .LargeSplash)
+    local elapsed = 60 - (self.crashTimer or 0)
+    if elapsed < 16 then
+      self:drawOAMSprites(OAM_SMALL_SPLASH, cx, cy + 4)
+    else
+      self:drawOAMSprites(OAM_LARGE_SPLASH, cx, cy + 4)
+    end
   else
     local angleIdx = ((self.frameSet - 1) % 7) + 1
     local isFlipped = self.frameSet > 7
@@ -1048,20 +1390,24 @@ function SurfingMinigame:draw()
 
   -- "START" banner
   if self.routine == ROUTINE_START_GAME then
-    for r = 0, 1 do
-      for c = 0, 5 do
-        local tid = 0xe0 + r * 16 + c
-        love.graphics.draw(self.ob, self.oq[tid], self.startBannerX - 24 + c * 8, 64 + r * 8)
+    if self.ob and self.oq then
+      for r = 0, 1 do
+        for c = 0, 5 do
+          local tid = 0xe0 + r * 16 + c
+          love.graphics.draw(self.ob, self.oq[tid], self.startBannerX - 24 + c * 8, 64 + r * 8)
+        end
       end
     end
   end
 
   -- "Oh no.." banner on Game Over
   if self.ohNoBanner then
-    for r = 0, 1 do
-      for c = 0, 5 do
-        local tid = 0xca + r * 16 + c
-        love.graphics.draw(self.ob, self.oq[tid], 80 - 24 + c * 8, 64 + r * 8)
+    if self.ob and self.oq then
+      for r = 0, 1 do
+        for c = 0, 5 do
+          local tid = 0xca + r * 16 + c
+          love.graphics.draw(self.ob, self.oq[tid], 80 - 24 + c * 8, 64 + r * 8)
+        end
       end
     end
   end

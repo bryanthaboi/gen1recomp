@@ -35,6 +35,13 @@ local WILD_SONG = Data.audio.battle.wild
 -- every song request in order: "the theme was never restored" and "the theme
 -- was never started" have to read differently.  Music.playMap still sets the
 -- state Music.restoreMap reads, so the real restore path is under test.
+-- singletons this file stands doubles on; the originals go back at the tail,
+-- or a later suite in the same process inherits them (a stubbed startWarpTo
+-- eats every warp after this one)
+local realPlay, realPlayBattle = Music.play, Music.playBattle
+local realStartWarpTo = OW.startWarpTo
+local realEvents = Runtime.events
+
 local songs = {}
 Music.play = function(_, song) songs[#songs + 1] = song end
 local function lastSong() return songs[#songs] end
@@ -159,5 +166,9 @@ check(getmetatable(Game.stack:top()) ~= TextBox,
 eq(labResult, "lose", "it still finishes as a loss")
 eq(Game.save.money, 3000, "no money is lost in the lab")
 eq(warp, nil, "and the player stays in the lab for OaksLabRivalEndBattleScript")
+
+OW.startWarpTo = realStartWarpTo
+Music.play, Music.playBattle = realPlay, realPlayBattle
+Runtime.install(realEvents, Runtime.hooks)
 
 S.finish()

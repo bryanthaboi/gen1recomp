@@ -978,14 +978,17 @@ do
 
   game.stack:pop()
   battle.onFinish("win")
-  for _ = 1, 12 do
+  -- the "is evolving!" box types out and holds DelayFrames 50 before the
+  -- movie (evos_moves.asm:120-134) (#1596), so drive frames to reach it
+  game.input.wasPressed = function() return false end
+  local evoTop
+  for _ = 1, 900 do
     local t = game.stack:top()
-    if not t or t.screenId == "EvolutionState" then break end
-    game.stack:pop()
-    if t.onDone then t.onDone() end
+    if not t then break end
+    if t.screenId == "EvolutionState" then evoTop = t break end
+    if t.update then t:update(1 / 60) else break end
   end
-  check(game.stack:top() and game.stack:top().screenId == "EvolutionState",
-    "the win reaches the evolution screen")
+  check(evoTop ~= nil, "the win reaches the evolution screen")
 end
 
 do

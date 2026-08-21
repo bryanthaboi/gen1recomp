@@ -962,6 +962,8 @@ function Loader:_api(mod)
   local Storage = engineRequire("src.mods.Storage")
   local storage = Storage and Storage.new(modId, loader.fs)
   local Checkpoint = engineRequire("src.core.Checkpoint")
+  local ImportAccess = engineRequire("src.mods.ImportAccess")
+  local importApi, installCache = ImportAccess.new(mod.manifest, loader.fs)
   local api = {
     id = modId,
     version = mod.manifest.version,
@@ -1161,6 +1163,12 @@ function Loader:_api(mod)
     -- checkpoint. The
     -- engine binds version/playthrough/mod scope and portable persistence;
     -- callers never receive paths or a raw filesystem handle.
+    -- Read-only bounded access to this mod's manifest-declared, launcher-validated
+    -- imports. No host path is exposed; large sources are read in bounded ranges.
+    imports = importApi,
+    -- Installation-scoped generated data, independent from Pokémon save slots.
+    -- This is where ROM-derived caches belong; mod.storage remains playthrough-scoped.
+    cache = installCache,
     storage = {
       context = function(_, game) return storage:context(game) end,
       selected = function(_, game) return storage:selected(game) end,
