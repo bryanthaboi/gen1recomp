@@ -125,6 +125,26 @@ function ImageWriter.columnsToRows(raw, tilesWide, tilesHigh, bytesPerTile)
   return out
 end
 
+-- Inverse of pret tools/gfx --interleave (pokecrystal tools/gfx.c).
+-- Build-time interleave stores each vertical 8x16 pair as consecutive 8x8
+-- tiles for OBJ mode; this restores row-major sheet order for PNGs.
+function ImageWriter.deinterleave(raw, width, bytesPerTile)
+  bytesPerTile = bytesPerTile or 16
+  local widthTiles = width / 8
+  local numTiles = #raw / bytesPerTile
+  local out = {}
+  for i = 0, numTiles - 1 do
+    local row = math.floor(i / widthTiles)
+    local src = i * 2 - (row % 2 == 1
+      and widthTiles * (row + 1) - 1
+      or widthTiles * row)
+    for offset = 1, bytesPerTile do
+      out[i * bytesPerTile + offset] = raw[src * bytesPerTile + offset]
+    end
+  end
+  return out
+end
+
 function ImageWriter.save(image, path)
   local ok, fileData = pcall(image.encode, image, "png")
   if not ok then error("could not encode " .. path .. ": " .. tostring(fileData)) end

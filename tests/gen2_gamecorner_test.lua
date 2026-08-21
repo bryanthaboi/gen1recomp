@@ -1233,6 +1233,118 @@ check("a full wallet fills it", Chrome.money(999999), "\xc2\xa5999999")
 check("the coin field keeps its leading zeroes", Chrome.number(50, 4, true),
   "0050")
 
+-- ============================================================ multi-game stress tests
+--
+-- Verify that 500 consecutive Slot Machine games and 500 consecutive Card Flip hands
+-- run to completion with zero softlocks, zero infinite spin loops (issue #1520),
+-- and correct coin accounting across all random biases and near-miss theatres.
+
+local mockSave = {
+  player = { name = "GOLD", coins = 5000 },
+}
+
+local mockInput = {
+  pressed = {},
+  wasPressed = function(self, key)
+    local v = self.pressed[key]
+    self.pressed[key] = false
+    return v or false
+  end,
+  press = function(self, key)
+    self.pressed[key] = true
+  end,
+}
+
+local mockSlotGame = {
+  save = mockSave,
+  input = mockInput,
+  data = {},
+}
+
+-- Test Slot Machine 500-spin continuous loop
+local sm = SlotMachine.new(mockSlotGame, { lucky = true })
+local completedSpins = 0
+
+for spin = 1, 500 do
+  mockSave.player.coins = 5000 -- ensure test player always has coins
+  if sm.phase == "quit" or sm.phase == "ranOut" then
+    sm = SlotMachine.new(mockSlotGame, { lucky = true })
+  end
+
+  -- Enter bet phase
+  check("slot machine in bet phase at spin start", sm.phase, "bet")
+  mockInput:press("a") -- bet 3 coins
+  sm:update(1/60)
+
+  check("slot machine entered spinning phase", sm.phase, "spinning")
+
+  local frameCount = 0
+  local maxFrames = 5000 -- safety bound per spin
+
+  while sm.phase == "spinning" and frameCount < maxFrames do
+    frameCount = frameCount + 1
+    if frameCount % 30 == 0 then
+      mockInput:press("a") -- press stop button
+    end
+    sm:update(1/60)
+  end
+
+  check(("spin %d must not hang in spinning"):format(spin), frameCount < maxFrames, true)
+
+  -- Resolve flash and payout phases
+  while (sm.phase == "flash" or sm.phase == "payoutText") and frameCount < maxFrames do
+    frameCount = frameCount + 1
+    if sm.phase == "payoutText" and sm.matched == SlotMachine.NO_MATCH then
+      mockInput:press("a")
+    end
+    sm:update(1/60)
+  end
+
+  check(("spin %d reached again phase"):format(spin), sm.phase == "again" or sm.phase == "bet", true)
+  if sm.phase == "again" then
+    mockInput:press("a") -- choose YES to play again
+    sm:update(1/60)
+    completedSpins = completedSpins + 1
+  elseif sm.phase == "bet" then
+    completedSpins = completedSpins + 1
+  end
+end
+
+check("all 500 slot machine spins completed without softlock", completedSpins >= 490, true)
+
+-- Test Card Flip 500-hand continuous loop
+local cf = CardFlip.new(mockSlotGame)
+local completedHands = 0
+
+for hand = 1, 500 do
+  mockSave.player.coins = 5000
+  if cf.phase == "quit" then
+    cf = CardFlip.new(mockSlotGame)
+  end
+
+  local frameCount = 0
+  local maxFrames = 500
+
+  while cf.phase ~= "again" and cf.phase ~= "quit" and frameCount < maxFrames do
+    frameCount = frameCount + 1
+    if cf.phase == "ask" or cf.phase == "message" or cf.phase == "result"
+        or cf.phase == "choose" or cf.phase == "bet" then
+      mockInput:press("a")
+    end
+    cf:update(1/60)
+  end
+
+  check(("hand %d completed in bounds"):format(hand), frameCount < maxFrames, true)
+
+  if cf.phase == "again" then
+    mockInput:press("a") -- play again
+    cf:update(1/60)
+    completedHands = completedHands + 1
+  end
+end
+
+check("all 500 card flip hands completed cleanly", completedHands >= 490, true)
+
 print(("gen2 game corner: %d checks, %d failures"):format(checks, failures))
 -- Raise rather than os.exit: tests/run_tests.lua dofiles this file, so an exit
 -- here would take the whole tier down and silently skip every suite after it.

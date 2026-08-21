@@ -10,9 +10,12 @@ android {
         applicationId project.properties["app.application_id"]
         versionCode project.properties["app.version_code"].toInteger()
         versionName project.properties["app.version_name"]
-        minSdk 16
-        compileSdk 34
-        targetSdk 34
+        // NDK r25 no longer supports API 16; API 19 is Android 4.4 and keeps
+        // the native toolchain and package-installer bridge on a supported ABI.
+        minSdk 19
+        // Android 16 / API 36: current Android distribution target.
+        compileSdk 36
+        targetSdk 36
         
         def getAppName = {
             def nameArray = project.properties["app.name_byte_array"]
@@ -38,10 +41,31 @@ android {
             ORIENTATION:project.properties["app.orientation"],
         ]
     }
+    // Release signing lives outside the repository. The release build script
+    // requires all five values below, while debug builds intentionally remain
+    // usable without them.
+    def releaseStore = System.getenv("GEN1RECOMP_ANDROID_KEYSTORE")
+    def releaseStorePassword = System.getenv("GEN1RECOMP_ANDROID_KEYSTORE_PASSWORD")
+    def releaseKeyAlias = System.getenv("GEN1RECOMP_ANDROID_KEY_ALIAS")
+    def releaseKeyPassword = System.getenv("GEN1RECOMP_ANDROID_KEY_PASSWORD")
+    def hasReleaseSigning = releaseStore && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            release {
+                storeFile file(releaseStore)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
         }
     }
     flavorDimensions = ['mode', 'recording']

@@ -126,6 +126,10 @@ local PLAYER_STATE_BY_ID = {
   [8] = FieldMoves.PLAYER_SURF_PIKA,
 }
 
+-- engine/overworld/variables.asm:49 VAR_MOVEMENT reads wPlayerState back
+local PLAYER_STATE_ID = {}
+for id, state in pairs(PLAYER_STATE_BY_ID) do PLAYER_STATE_ID[state] = id end
+
 local BATTLETYPE = {
   CANLOSE = 1,
   FORCESHINY = 7,
@@ -387,14 +391,18 @@ end
 -- Gen 2 moveset lives in `levelMoves` (EvosAttacks).  So every scripted gift,
 -- the STARTER included, arrived knowing nothing: FIGHT listed no moves and the
 -- battle had no legal action left in it.
-local function givePokeMon(data, speciesIndex, level, itemIndex)
+local function givePokeMon(data, speciesIndex, level, itemIndex, opts)
   local id = speciesByIndex(data.pokemon, speciesIndex)
   if not id then return nil end
   return Mon.new(data, id, level or 5, {
     item = itemIndex and itemIndex ~= 0
       and itemByIndex(data.items, itemIndex) or nil,
+    nickname = opts and opts.nickname or nil,
   })
 end
+
+-- GivePoke's trainer arm (engine/pokemon/move_mon.asm:1698-1736)
+local RANDY_OT_ID = 1001
 
 local function loadGenerated(path)
   -- Same NX gold/ fallback Game2 uses. World:load is what surfaces
@@ -1005,13 +1013,18 @@ function World:load()
     setStringBuffer = function(value)
       if self.game then self.game.stringBuffer = value end
     end,
-    givePoke = function(speciesIndex, level, item)
+    givePoke = function(speciesIndex, level, item, opts)
       local data = self.game and self.game.data
       local save = self.game and self.game.save
       if not (data and save) then return end
       save.party = save.party or {}
-      local mon = givePokeMon(data, speciesIndex, level, item)
+      local mon = givePokeMon(data, speciesIndex, level, item, opts)
       if mon then
+        if opts and opts.otName then
+          mon.ot = opts.otName
+          mon.otName = opts.otName
+          mon.otId = RANDY_OT_ID
+        end
         -- GivePoke -> TryAddMonToParty -> AddPartyMon (move_mon.asm:44-56, :143-149).
         Mon.stampOT(save, mon)
         Party.add(save.party, mon)
@@ -1466,13 +1479,11 @@ function World:mapSceneOf(group, mapNum)
 end
 
 -- wTimeOfDay (constants/ram_constants.asm): MORN_F 0, DAY_F 1, NITE_F 2,
--- DARKNESS_F 3.  Palettes.daytimeFor has already resolved the clock and the
--- map's own PALETTE_* override into one of four names, so this is a rename
--- rather than a second clock.
+-- DARKNESS_F 3, off the RTC hour (engine/tilesets/timeofday_pals.asm:5-11)
 local TIME_OF_DAY_ID = { MORN = 0, DAY = 1, NITE = 2, DARK = 3 }
 
 function World:timeOfDayId()
-  return TIME_OF_DAY_ID[self.daytime or "DAY"] or 1
+  return TIME_OF_DAY_ID[self.tod or self.daytime or "DAY"] or 1
 end
 
 -- GetWeekday -> wCurDay, which the RTC counts SUNDAY 0 .. SATURDAY 6 -- the
@@ -1577,11 +1588,11 @@ function World:readVar(varId)
 end
 
 -- Script_checkver: 0 for Gold, 1 for Silver (constants/misc_constants.asm
--- GS_VERSION).  Only the Goldenrod prize counters and a handful of gift mons
--- read it, and the port has no Silver cache yet, so an unset version is Gold.
+-- GS_VERSION).
 function World:gsVersion()
+  local GameVersion = require("src.core.GameVersion")
   local save = self.game and self.game.save
-  local version = (save and save.version) or "gold"
+  local version = (save and save.version) or GameVersion.get()
   return version == "silver" and 1 or 0
 end
 
@@ -4377,6 +4388,8 @@ function World:useFieldItem(itemId)
   if itemId == "SACRED_ASH" then return self:useSacredAsh() end
   if itemId == "ESCAPE_ROPE" then return self:useEscapeRope(itemId) end
   if itemId == "SQUIRTBOTTLE" then return self:useSquirtbottle() end
+  -- CoinCaseEffect (engine/items/item_effects.asm:2243).
+  if itemId == "COIN_CASE" then return "coin_case", self:coins() end
   if REPEL_STEPS[itemId] then return self:useRepel(itemId) end
   if TROPHY_BOXES[itemId] then return self:openTrophyBox(itemId) end
   if not World.isRod(itemId, items) then return nil end
@@ -5810,7 +5823,9 @@ function World:battleMusicContext(opts)
     members = trainer and trainer.classId and members
       and members[trainer.classId] or nil,
     landmark = self.map and self.map.def and self.map.def.landmark,
-    daytime = self.daytime,
+    -- PlayBattleMusic reads wTimeOfDay (engine/battle/start_battle.asm:24),
+    -- not the map's pinned palette set.
+    daytime = self.tod,
   }
 end
 
@@ -6007,6 +6022,24 @@ function World:startBattle(opts, onDone)
   return true
 end
 
+-- wWinTextPointer / wLossTextPointer (home/trainers.asm:120), overwritten by
+-- `winlosstext` (engine/overworld/scripting.asm:651)
+function World:trainerWinLossText()
+  local vm = self.vm
+  if not vm then return nil, nil end
+  local obj = vm.trainerObject or {}
+  local text = self.text or {}
+  -- `winlosstext` writes BOTH pointers; a 0 argument destroys the struct
+  -- value rather than falling back to it (engine/overworld/scripting.asm:651)
+  local winKey, lossKey
+  if vm.winLossArmed then
+    winKey, lossKey = vm.winTextOverride, vm.lossTextOverride
+  else
+    winKey, lossKey = obj.winText, obj.lossText
+  end
+  return winKey and text[winKey] or nil, lossKey and text[lossKey] or nil
+end
+
 -- `startbattle` from a script: a trainer record (class + member) or a
 -- loadwildmon pair.  The VM is parked on the yield until onDone fires, so the
 -- rest of the trainer script (flag set, after-battle text) runs on return.
@@ -6065,6 +6098,9 @@ function World:startScriptedBattle(record, wild, onDone)
       attributes = record.attributes,
       items = record.items,
     }
+    -- wWinTextPointer / wLossTextPointer, read by PrintWinLossText on the
+    -- battle screen (home/trainers.asm:230) (#1512)
+    opts.trainer.winText, opts.trainer.lossText = self:trainerWinLossText()
   elseif wild and wild.species then
     local id, def = speciesByIndex(data and data.pokemon, wild.species)
     -- InitEnemyMon `.NotRoaming` / BATTLETYPE.FORCESHINY: the DV pair is
@@ -6641,8 +6677,9 @@ function World:nameRival(onDone)
       if save then
         save.rival = save.rival or {}
         -- NameRival ends on `ld hl, wRivalName / ld de, .DefaultName / call
-        -- InitName`, and .DefaultName is "SILVER@" on Gold
-        -- (engine/events/specials.asm:80-91).  The default has to be written
+        -- InitName`, and .DefaultName is "SILVER@" on Gold and "GOLD@" on
+        -- Silver (engine/events/specials.asm:80-94).  The default has to be
+        -- written
         -- HERE rather than ridden in from the seed: wRivalName starts as
         -- InitializeNPCNames' "???" (src/core/gen2/Save.lua), which is what the
         -- pre-naming Cherrygrove battle prints.
@@ -6654,7 +6691,7 @@ function World:nameRival(onDone)
         if name and name:gsub(" ", "") ~= "" then
           save.rival.name = name
         else
-          save.rival.name = "SILVER"
+          save.rival.name = self:gsVersion() == 1 and "GOLD" or "SILVER"
         end
       end
       if onDone then onDone(name) end
@@ -9219,8 +9256,10 @@ function World:stepContext()
   local def = self.map and self.map.def
   return {
     data = self.game and self.game.data,
+    -- CheckTime reads wTimeOfDay (engine/events/checktime.asm:2), so the
+    -- caller windows follow the clock even inside a pinned-palette room.
     phone = {
-      map = def, maps = self.maps, daytime = self.daytime,
+      map = def, maps = self.maps, daytime = self.tod,
       clock = self.game and self.game.clock,
     },
     -- GetMapPhoneService: zero means the map HAS service, which maps.lua has
@@ -10052,8 +10091,11 @@ function World:draw()
   G.clear(0.07, 0.05, 0.02, 1)
 
   if not self.mapImage or not self.player then
-    G.setColor(0.85, 0.57, 0.13, 1)
-    G.printf("POKEMON GOLD", 0, math.floor(h * 0.38), w, "center")
+    local silver = self:gsVersion() == 1
+    if silver then G.setColor(0.74, 0.78, 0.83, 1)
+    else G.setColor(0.85, 0.57, 0.13, 1) end
+    G.printf(silver and "POKEMON SILVER" or "POKEMON GOLD",
+      0, math.floor(h * 0.38), w, "center")
     G.setColor(0.92, 0.90, 0.82, 1)
     G.printf(self.status or "No map.",
       0, math.floor(h * 0.48), w, "center")
@@ -10090,6 +10132,15 @@ function World:draw()
   if self.shake then
     self.camera.y = self.camera.y + (self.shake.phase or 0)
   end
+  local ScreenPosition = require("src.core.ScreenPosition")
+  local posLift = 0
+  if not ScreenPosition.skinActive(w, h) then
+    posLift = ScreenPosition.lift(h, 144 * self:fitScale(),
+      ScreenPosition.safeTop())
+  end
+  if posLift > 0 then
+    self.camera.y = self.camera.y + posLift / s
+  end
 
   local override = pipelineId and self:drawPipeline(pipelineId, w, h, s) or nil
 
@@ -10115,7 +10166,7 @@ function World:draw()
     local pad = POKEPIC.pad[math.floor(pw / 8)] or POKEPIC.pad[7]
     G.push()
     G.translate(math.floor((w - 160 * sPic) / 2),
-      math.floor((h - 144 * sPic) / 2))
+      math.floor((h - 144 * sPic) / 2) - posLift)
     G.scale(sPic, sPic)
     G.setColor(1, 1, 1, 1)
     local function body()
@@ -10166,8 +10217,10 @@ function World:draw()
   -- The survey overlay is a developer aid, not part of the game: POKEPORT_DEV
   -- (or the F3 toggle) shows it, a normal boot does not.
   if self.showDebugHud then
-    G.setColor(0.85, 0.57, 0.13, 1)
-    G.printf("POKEMON GOLD", 0, 10, w, "center")
+    local silver = self:gsVersion() == 1
+    if silver then G.setColor(0.74, 0.78, 0.83, 1)
+    else G.setColor(0.85, 0.57, 0.13, 1) end
+    G.printf(silver and "POKEMON SILVER" or "POKEMON GOLD", 0, 10, w, "center")
     G.setColor(0.92, 0.90, 0.82, 1)
     local label = string.format("%s  (%d,%d)  %s  ·  %s  ·  zoom %s",
       self.map.id, p.cellX, p.cellY, p.facing,

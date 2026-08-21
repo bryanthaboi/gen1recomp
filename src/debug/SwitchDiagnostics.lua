@@ -249,10 +249,12 @@ function SwitchDiagnostics.probeAssets(version)
   end
 
   -- Shallow listing so we can see if the extract tree exists at all.
-  local roots = { "yellow", "blue", "gold", "assets", "yellow/assets/generated",
+  local roots = { "yellow", "blue", "gold", "silver", "assets",
+    "yellow/assets/generated",
     "yellow/assets/generated/sprites", "blue/assets/generated/sprites",
     "gold/assets/generated", "gold/assets/generated/sprites",
-    "gold/data/generated" }
+    "gold/data/generated", "silver/assets/generated",
+    "silver/data/generated" }
   for _, dir in ipairs(roots) do
     local info = filesystem.getInfo(dir)
     if info and info.type == "directory" and filesystem.getDirectoryItems then

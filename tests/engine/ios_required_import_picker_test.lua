@@ -29,4 +29,12 @@ check(patch:find("int w_pickFileKinds", 1, true)
 check(patch:find('("GRPickerBridge.swift", ID_FILE_PICKER', 1, true),
   "iOS build patch compiles the required-import picker bridge")
 
+local bootstrap = read("mobile/ios/native/GRBootstrap.m")
+check(bootstrap:find("struct utsname", 1, true)
+    and bootstrap:find("SIMULATOR_MODEL_IDENTIFIER", 1, true),
+  "iOS native bridge reads the hardware model on device and simulator")
+check(patch:find("int w_getDeviceModel", 1, true)
+    and patch:find('{ "getDeviceModel", w_getDeviceModel }', 1, true),
+  "iOS liblove patch exposes the hardware model to Lua")
+
 print("ios_required_import_picker_test: ok")

@@ -161,6 +161,8 @@ jobs:
           scripts/build_linux_arm64.sh \
             --version "${{ needs.version.outputs.version }}" \
             --game-love .bazinga/work/game.love
+      - name: Verify the AppImage is self-contained and bullseye-compatible
+        run: bash scripts/linux-arm64/verify_appimage.sh "dist/linux-arm64/gen1recomp-${{ needs.version.outputs.version }}-linux-arm64.AppImage"
       - name: Upload Linux arm64 release
         uses: actions/upload-artifact@v7
         with:
@@ -285,7 +287,7 @@ jobs:
           retention-days: 1
 
   release:
-    needs: [version, xbox-uwp, linux-arm64, native-tls-win]
+    needs: [version, love-payload, xbox-uwp, linux-arm64, native-tls-win]
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
 
     steps:
@@ -306,6 +308,15 @@ jobs:
         with:
           name: gen1tls-win-x64
           path: dist/native/win-x64
+
+      # The same game.love the arm64 AppImage and Xbox UWP builds fused, so
+      # every release asset ships one identical payload (build.sh's own pack
+      # would omit PATCH_NOTES.md and mobile/ios/app-repo.json).
+      - name: Download shared payload
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-love
+          path: dist/payload
 
       - name: Import signing certificate into a temporary keychain
         if: github.repository == 'bryanthaboi/gen1recomp'
@@ -357,14 +368,36 @@ jobs:
             echo "::error::gen1tls.dll missing at $GEN1TLS_DLL (native-tls-win job)"
             exit 1
           fi
-          scripts/build.sh all --version "${{ needs.version.outputs.version }}" --no-notarize
+          scripts/build.sh all --version "${{ needs.version.outputs.version }}" --no-notarize \
+            --game-love dist/payload/game.love
           unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1tls.dll \
             || { echo "::error::Windows zip is missing gen1tls.dll"; exit 1; }
 
-      - name: Build Android
+      - name: Materialize Android release signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
-          scripts/build_android.sh --version "${{ needs.version.outputs.version }}"
+          [ -n "$KEYSTORE_B64" ] || {
+            echo "::error::ANDROID_RELEASE_KEYSTORE_B64 is required for a publishable Android update"
+            exit 1
+          }
+          python3 - <<'PY'
+          import base64, os, pathlib
+          encoded = os.environ["KEYSTORE_B64"]
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "gen1recomp-android-release.keystore"
+          path.write_bytes(base64.b64decode(encoded, validate=True))
+          PY
+
+      - name: Build Android
+        env:
+          GEN1RECOMP_ANDROID_KEYSTORE: ${{ runner.temp }}/gen1recomp-android-release.keystore
+          GEN1RECOMP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          GEN1RECOMP_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          GEN1RECOMP_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          scripts/build_android.sh --release --version "${{ needs.version.outputs.version }}"
 
       - name: Install xcbeautify
         run: |
@@ -486,8 +519,8 @@ jobs:
           [ -f "$arm64_appimage" ] || { echo "::error::$arm64_appimage not found (expected from the linux-arm64 job)"; exit 1; }
           cp "$arm64_appimage" "$outdir/gen1recomp-${v}-linux-arm64.AppImage"
           chmod +x "$outdir/gen1recomp-${v}-linux-arm64.AppImage"
-          apk="$(find dist/android/debug -name '*.apk' | head -1)"
-          [ -n "$apk" ] || { echo "::error::no Android APK found under dist/android/debug"; exit 1; }
+          apk="$(find dist/android/release -name '*.apk' | head -1)"
+          [ -n "$apk" ] || { echo "::error::no Android APK found under dist/android/release"; exit 1; }
           cp "$apk" "$outdir/gen1recomp-${v}-android.apk"
 
           ipa="dist/ios/gen1recomp++.ipa"

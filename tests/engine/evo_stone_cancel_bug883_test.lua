@@ -30,7 +30,9 @@ package.loaded["src.core.Sound"] = {
   playCry = function() end,
 }
 package.loaded["src.render.TextBox"] = {
-  new = function(_, text, done) return { textBox = true, text = text, done = done } end,
+  new = function(_, text, done, opts)
+    return { textBox = true, text = text, done = done, opts = opts }
+  end,
 }
 -- BagMenu and PartyMenu bind TextBox at require time, so they load against the
 -- stub; Screens caches its factory per id and must be told to forget.
@@ -126,6 +128,21 @@ local function useStone(game)
   game.input.pressed = "a"
   picker:update(1 / 60)
   game.input.pressed = nil
+  -- IsEvolvingText STAYS up; its onShown starts the DelayFrames 50 hold,
+  -- which then pushes the movie over it (evos_moves.asm:120-134) (#1596)
+  local intro = game.stack:top()
+  if not (intro and intro.textBox and intro.opts and intro.opts.stay) then
+    return nil, "the \"is evolving!\" box never opened"
+  end
+  if not tostring(intro.text):find("evolving") then
+    return nil, "the box before the movie is not _IsEvolvingText"
+  end
+  intro.opts.stay.onShown()
+  local hold = game.stack:top()
+  for _ = 1, 60 do
+    if pushed then break end
+    if hold.update then hold.update() end
+  end
   return list
 end
 

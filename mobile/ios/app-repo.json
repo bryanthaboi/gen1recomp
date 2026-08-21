@@ -13,6 +13,104 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.11",
+          "date": "2026-08-20",
+          "size": 13735190,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.11/gen1recomp++-0.2.11-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #393 silph co. npc missing some dialogue\n- #1600 allow my uncle's neighbor to sit at the big kids table\n- #1603 pocket taco - type option \"screen position\"\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @dburton95\n- @mleo2003\n- @thibautbus"
+        },
+        {
+          "version": "0.2.10",
+          "date": "2026-08-19",
+          "size": 13662645,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.10/gen1recomp++-0.2.10-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #998 Jingles not finishing before game proceeds\n- #1472 Message for sending out Pokemon not closing automatically\n- #1526 No screen shake when getting poisoned\n- #1529 Messages missing when interacting with PC\n- #1530 No message for interacting with bikes in the bike shop\n- #1532 Thrash animation incomplete\n- #1534 Dialogue missing when switching out Pokemon\n- #1547 Save states can be used to bypass certain NPCs\n- #1549 Menu Cartridge 3D model has visual issues\n- #1550 Nugget Bridge Rocket repeating dialogue\n- #1551 No scripted dialogue after beating Nugget Bridge Rocket\n\n## Contributors\n\n- @bryanthaboi\n- @castdrian"
+        },
+        {
+          "version": "0.2.9",
+          "date": "2026-08-19",
+          "size": 13656293,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.9/gen1recomp++-0.2.9-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.2.8",
+          "date": "2026-08-19",
+          "size": 13653911,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.8/gen1recomp++-0.2.8-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1502 Gold doesn't show trainer balls\n- #1533 Retroarch Skin Problem 2 (#1503)\n\n## Contributors\n\n- @1Jamie\n- @AverageConsumer\n- @bryanthaboi\n- @castdrian\n- @thibautbus"
+        },
+        {
+          "version": "0.2.7",
+          "date": "2026-08-18",
+          "size": 13597177,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.7/gen1recomp++-0.2.7-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1005 (Android) Screen record mutes the game\n- #1291 Audio Crash\n- #1310 Incoming call crashes G1R\n- #1471 [Gold] #1117 still not fixed\n- #1528 Surfing Minigame doesn't play as intended\n- #1537 Shellder and Corsola missing from Rod encounter tables\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @castdrian"
+        },
+        {
+          "version": "0.2.6",
+          "date": "2026-08-18",
+          "size": 13589036,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.6/gen1recomp++-0.2.6-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1393 [Launcher -> Mods] Only the pages that you manually clicked to are used for sorting\n- #1418 (Pokémon Gold) Framerate and void fill options missing\n- #1430 [Gold] Shop ui off because of a border\n- #1519 Poison damage after battle inconsistent\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.2.5",
+          "date": "2026-08-18",
+          "size": 13586158,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.5/gen1recomp++-0.2.5-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1390 switch and gold\n- #1503 Retroarch Skin Problem\n- #1508 Please check #1412 & #1414 again, we had a misunderstanding\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.2.4",
+          "date": "2026-08-18",
+          "size": 13582747,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.4/gen1recomp++-0.2.4-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1496 Investigate Security according to https://hdbreaker.github.io/blog/pokemon-gen1recomp-hate-cheat/\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.2.3",
+          "date": "2026-08-18",
+          "size": 13579254,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.3/gen1recomp++-0.2.3-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1497 skin studio needs a import file picker babyyyyyy\n\n## Contributors\n\n- @anxiousintrovert\n- @AverageConsumer\n- @bryanthaboi\n- @thibautbus"
+        },
+        {
+          "version": "0.2.2",
+          "date": "2026-08-18",
+          "size": 13575387,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.2/gen1recomp++-0.2.2-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Contributors\n\n- @AverageConsumer\n- @bryanthaboi"
+        },
+        {
+          "version": "0.2.1",
+          "date": "2026-08-17",
+          "size": 13575320,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.1/gen1recomp++-0.2.1-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.2.0",
+          "date": "2026-08-17",
+          "size": 13575299,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.0/gen1recomp++-0.2.0-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1396 Nurse dialogue & options\n- #1398 Alignment of options for changing Pokemon\n- #1400 Flying Bug\n- #1401 [Gold] battlergfx $d9/$da load the wrong row count (jumptable crossed vs macro names)\n- #1406 Magikarp salesman dialogue issues\n- #1407 Not able to nickname Magikarp\n- #1411 No indication for stone evolutions\n- #1413 Using a stone closes menu\n- #1415 Super Nerd dialogue issues\n- #1416 (Pokémon Gold) Pokédex doesn't register other trainers' pokémon as seen\n- #1417 (Pokémon Gold) Pokémon you get in trade aren't being registered as caught\n- #1419 (Pokémon Gold) Deposited pokémon don't get healed\n- #1421 (Pokémon Gold) Bad status and catch state appears on the HUD before they should\n- #1422 (Pokémon Gold) Impossible to have the pokédex register Ditto as caught after it transforms\n- #1423 (Pokémon Gold) No save prompt before changing boxes in the PC\n- #1424 (Pokémon Gold) Quantity for owned TMs not being displayed\n- #1425 (Pokémon Gold) Items quantity in your bag should be alligned to the right\n- #1427 (Pokémon Gold) Can't switch items' position in your bag\n- #1428 (Pokémon Gold) Game doesn't show how many pokémon other trainers have\n- #1429 Pikachu not sliding in before its cry. Stuck on standard pokeball release animation.\n- #1431 Shiny sparkle does not play on your sent out shiny pokemon\n- #1432 Experimental marked mods don't install Android\n- #1433 (Pokémon Gold) Missing prompt for depositing pokémon\n- #1435 When npcs stop you to talk or when you walk up to npcs to talk to them sometimes the player has the wrong sprite\n- #1437 Issues with player sprite on map\n- #1440 hold a direction during cutscene and face the wrong way\n- #1441 Magnet Train missing animation\n- #1442 Radio dial is missing in PokeGear radio\n- #1443 Skipping production logo also skips battle scene\n- #1444 Pokemon lack type immunity to status moves\n- #1447 Soft-lock on Cinnabar Island\n- #1449 Visual error on Route 28\n- #1456 Activating all mods doesn't work properly\n- #1461 #1265 didnt got fixed.\n- #1464 Experiance shared in battle\n- #1465 Changing Touch Layout crashes launcher\n- #1466 #1403 Still Happens\n- #1467 A clearer definition of the use of AI for this reconstruction\n- #1468 [Gold] BICYCLE is broken and some pokegear bug\n- #1469 [Gold] status effects aren't shown in the party overlay or the summary screen of the pokemon\n- #1470 Mod updater doesn't work properly when AppImage is running through Steam or Game Mode (Steam Deck)\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
+          "version": "0.1.99",
+          "date": "2026-08-17",
+          "size": 11391467,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.99/gen1recomp++-0.1.99-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #597 Pulling mod index fails on Android\n- #1403 Save editor not allowing moves to go past ZAP_CANNON\n\n## Contributors\n\n- @1Jamie\n- @AverageConsumer\n- @bryanthaboi\n- @emre155\n- @sanjinpepic\n- @ShaneMcGovernIE\n- @syybott\n- @thibautbus"
+        },
+        {
+          "version": "0.1.98",
+          "date": "2026-08-16",
+          "size": 11380117,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.1.98/gen1recomp++-0.1.98-ios.ipa",
+          "localizedDescription": "Download the correct version for your computer below.\n\n## Issues closed\n\n- #1181 Poison seems to trigger twice during the poisoned pokemon's turn\n- #1211 S.S. Anne Visual bug when it's sailing away\n- #1212 the move payday does not grant money in gen 2\n- #1214 Title Screen with OG Red is the wrong color\n- #1224 Windowed and borderless toggle in Gold\n- #1228 No option to nickname starter\n- #1229 Encounter rate grace period not working\n- #1230 Couple of sound effects missing\n- #1231 Using Tackle partially distorts battle sprites\n- #1232 Wild pokemon's sprite disappears early when using a pokeball\n- #1249 Cant use stat items IE HP UP PP UP PROTIEN\n- #1251 You don't have a COIN CASE\n- #1265 Major: Regression from #984 (probably?)\n- #1267 [GOLD] POKEDEX didn't show pokemon appear area\n- #1269 [Gold] shadow ball should be invert the screen\n- #1271 [Gold] substitute image broken/not shown\n- #1272 [Gold] swift still checks accuracy and/or evasion\n- #1273 S.S. Anne Issues\n- #1276 Nurse back to not bowing (and turning)\n- #1279 Rival still not looking at player when initiating first fight\n- #1282 PKMN league PC option missing\n- #1293 Dig animation is bugged in-battle\n- #1296 Opponent's moves failing\n- #1298 Gen1 sound tracks have a fade in period, if you enter a route and immediately exit it while this transition is going on it will land on the wrong music\n- #1301 Pixels aren't square\n- #1303 Animation speed of walking NPCs too slow\n- #1305 Wrong Pikachu cry when getting defeated\n- #1307 Rival theme broken after initial fight in Yellow\n- #1318 Thunder Wave works on Ground-types\n- #1328 Message for turning on the PC missing\n- #1329 Name Select Background\n- #1330 Message before looking at map missing\n- #1331 Messages in Oak's lab missing\n- #1333 E-mail in Oak's lab missing\n- #1334 Missing message after picking starter\n- #1335 No Money Box\n- #1338 Rival's sister missing dialogue and roaming\n- #1340 Color palett doesn't affect attack animations\n- #1341 Pokedex entries look wrong\n- #1343 No dashes in empty attack slots during fights\n- #1344 Town Map not showing player sprite\n- #1345 Wrong health color on OG palett\n- #1346 Health still black when viewing stats\n- #1360 No Surfing Music\n- #1362 Poison damage does not flash the screen\n- #1368 Fishing Rods behaving irregularly\n- #1385 Team Rocket Hideouts missing music\n- #1388 Safeguard targets opponent, not user\n- #1389 Gastly unobtainable\n- #1391 NPC not escorting player to museum\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.1.97",
           "date": "2026-08-16",
           "size": 11376813,

@@ -143,6 +143,9 @@ public:
 	 **/
 	virtual bool restartApp() const;
 
+	/** Starts Android's user-confirmed install flow for a verified APK. */
+	virtual bool installApk(const char *path) const;
+
 	virtual bool updateShortcuts(const std::vector<std::string> &versions) const;
 	virtual std::string getLaunchGame() const;
 

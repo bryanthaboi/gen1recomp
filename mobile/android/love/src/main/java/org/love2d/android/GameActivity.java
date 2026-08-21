@@ -45,6 +45,7 @@ import android.app.AlarmManager;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.Context;
+import android.content.ClipData;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -77,6 +78,7 @@ import android.view.*;
 
 import androidx.annotation.Keep;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.FileProvider;
 
 public class GameActivity extends SDLActivity {
     private static DisplayMetrics metrics = null;
@@ -398,11 +400,15 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        secondaryHostResumed = false;
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
         }
         unregisterSecondaryDisplayListener();
+        teardownSecondaryDisplay();
+        secondaryEnabled = false;
+        synchronized (secondaryFrameLock) { secondaryFrame = null; }
         unregisterAudioDeviceCallback();
         abandonAudioFocus();
         onHostDestroy();
@@ -411,6 +417,7 @@ public class GameActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
+        secondaryHostResumed = false;
         if (vibrator != null) {
             Log.d("GameActivity", "Cancelling vibration");
             vibrator.cancel();
@@ -426,6 +433,7 @@ public class GameActivity extends SDLActivity {
     @Override
     public void onResume() {
         super.onResume();
+        secondaryHostResumed = true;
         onHostResume();
         requestGameAudioFocus();
         registerAudioDeviceCallback();
@@ -688,6 +696,103 @@ public class GameActivity extends SDLActivity {
         }
         Runtime.getRuntime().exit(0);
         return true; // unreachable, but keeps the JNI signature honest
+    }
+
+    /**
+     * Stages a verified release APK in cache and asks Android's Package
+     * Installer to update this package. This never silently installs an APK:
+     * the platform owns both the unknown-sources consent and final install
+     * confirmation. `updateRoot` comes from the native save directory and is
+     * checked before any file is read, so a Lua caller cannot turn this into a
+     * general-purpose local-file sharing bridge.
+     */
+    @Keep
+    public static boolean installApk(final String sourcePath, final String updateRoot) {
+        final GameActivity self = (GameActivity) mSingleton;
+        if (self == null || sourcePath == null || updateRoot == null) return false;
+        final File source;
+        try {
+            source = new File(sourcePath).getCanonicalFile();
+            File root = new File(updateRoot, "updates").getCanonicalFile();
+            String rootPath = root.getPath() + File.separator;
+            if (!source.getPath().startsWith(rootPath)
+                    || !source.isFile() || source.length() == 0
+                    || !source.getName().matches("gen1recomp-[0-9]+\\.[0-9]+\\.[0-9]+-android\\.apk")) {
+                return false;
+            }
+        } catch (IOException e) {
+            Log.d("GameActivity", "invalid update APK path: " + e.getMessage());
+            return false;
+        }
+
+        // Android 8+ lets the user decide whether this app is trusted to
+        // request package installs. Send them to the per-app setting first;
+        // they deliberately tap Install again after granting it.
+        if (android.os.Build.VERSION.SDK_INT >= 26
+                && !self.getPackageManager().canRequestPackageInstalls()) {
+            try {
+                Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + self.getPackageName()));
+                self.startActivity(settings);
+                return true;
+            } catch (Exception e) {
+                Log.d("GameActivity", "could not open install-source settings: " + e.getMessage());
+                return false;
+            }
+        }
+
+        // Copying an APK can be large; keep both I/O and checksum-verified
+        // source access off the UI thread. The FileProvider exposes this cache
+        // child only after it has been fully written and renamed.
+        new Thread(new Runnable() {
+            @Override public void run() {
+                File stagedDir = new File(self.getCacheDir(), "full-update");
+                File partial = new File(stagedDir, "update.apk.part");
+                File staged = new File(stagedDir, "update.apk");
+                try {
+                    if (!stagedDir.exists() && !stagedDir.mkdirs()) return;
+                    copyFile(source, partial);
+                    if (staged.exists() && !staged.delete()) return;
+                    if (!partial.renameTo(staged)) return;
+                    self.runOnUiThread(new Runnable() {
+                        @Override public void run() { launchPackageInstaller(self, staged); }
+                    });
+                } catch (Exception e) {
+                    Log.d("GameActivity", "could not stage update APK: " + e.getMessage());
+                } finally {
+                    if (partial.exists()) partial.delete();
+                }
+            }
+        }, "gen1recomp-apk-stage").start();
+        return true;
+    }
+
+    private static void copyFile(File source, File destination) throws IOException {
+        InputStream in = new BufferedInputStream(new FileInputStream(source));
+        OutputStream out = new BufferedOutputStream(new FileOutputStream(destination));
+        try {
+            byte[] buffer = new byte[32768];
+            int count;
+            while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+        } finally {
+            try { out.close(); } catch (IOException ignored) {}
+            try { in.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    private static void launchPackageInstaller(GameActivity activity, File apk) {
+        try {
+            Context context = activity.getApplicationContext();
+            Uri uri = FileProvider.getUriForFile(context,
+                context.getPackageName() + ".full_update_provider", apk);
+            Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            install.setData(uri);
+            install.setClipData(ClipData.newRawUri("apk", uri));
+            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(install);
+        } catch (Exception e) {
+            Log.d("GameActivity", "could not open package installer: " + e.getMessage());
+        }
     }
 
     @Keep
@@ -1933,6 +2038,7 @@ public class GameActivity extends SDLActivity {
     private static volatile int secondaryActivityTarget = Display.INVALID_DISPLAY;
     private static volatile long secondaryRetryAfter;
     private static volatile boolean secondaryEnabled = false;
+    private static volatile boolean secondaryHostResumed = false;
     private static volatile int secondaryTarget = SECONDARY_TARGET_AUTO;
     private static volatile int dualScreenDisplayMode = -1;
     private static volatile byte[] secondaryFrame;
@@ -1963,7 +2069,7 @@ public class GameActivity extends SDLActivity {
         if (self == null) return;
         self.runOnUiThread(new Runnable() {
             @Override public void run() {
-                if (on) {
+                if (on && secondaryHostResumed) {
                     self.refreshDualScreenDisplayMode();
                     self.registerSecondaryDisplayListener();
                     rebindSecondaryDisplay();
@@ -2035,9 +2141,11 @@ public class GameActivity extends SDLActivity {
 
     private static void rebindSecondaryDisplay() {
         GameActivity self = (GameActivity) mSingleton;
-        if (self == null || !secondaryEnabled || secondaryOutputIsPreferred(self)) return;
+        if (self == null || !secondaryHostResumed || !secondaryEnabled
+                || secondaryOutputIsPreferred(self)) return;
         self.runOnUiThread(() -> {
-            if (!secondaryEnabled || secondaryOutputIsPreferred(self)) return;
+            if (!secondaryHostResumed || !secondaryEnabled
+                    || secondaryOutputIsPreferred(self)) return;
             teardownSecondaryDisplay();
             setupSecondaryDisplay();
         });
@@ -2045,7 +2153,8 @@ public class GameActivity extends SDLActivity {
 
     private static void setupSecondaryDisplay() {
         GameActivity self = (GameActivity) mSingleton;
-        if (self == null || !secondaryEnabled || secondaryPresentation != null
+        if (self == null || !secondaryHostResumed || !secondaryEnabled
+                || secondaryPresentation != null
                 || secondaryActivity != null || secondaryActivityPending
                 || android.os.SystemClock.elapsedRealtime() < secondaryRetryAfter) return;
         try {

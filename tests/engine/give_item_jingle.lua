@@ -146,12 +146,34 @@ T.eq(resumed, 1, "the script resumed once")
 
 -- ------------------------------------------------------------- plain gift
 -- gotText == false is the script-shows-its-own-text form (Oak's 5 POKE
--- BALLs): nothing to hang the sound on, so it plays on the spot
+-- BALLs): the received text the script prints next carries the jingle
+-- (scripts/OaksLab.asm:1058-1062), so give_item arms it and plays nothing
 plays = {}
 Commands.give_item(ctx, "FIX_POTION", 1, false)
-T.eq(jingles(), 1, "the no-text gift still plays its jingle immediately")
-T.eq(plays[1], "item.wav", "with the plain-item sound")
+T.eq(jingles(), 0, "the no-text gift plays nothing on the spot")
 T.eq(stack:top(), nil, "and pushes no box of its own")
+T.check(ctx.textOpts and ctx.textOpts.auto and ctx.textOpts.auto.sound ~= nil,
+  "the jingle is armed for the next show_text")
+
+Commands.show_text(ctx, "{PLAYER} GOT\nSOMETHING!")
+local box2 = stack:top()
+T.check(getmetatable(box2) == TextBox, "the script's own received box is up")
+T.eq(ctx.textOpts, nil, "show_text consumed the armed jingle")
+for _ = 1, 2000 do
+  if box2.done then break end
+  step(box2.waiting and "a" or nil)
+end
+T.check(box2.done, "the received text typed out")
+T.eq(jingles(), 0, "silent until the last character is placed")
+step()
+T.eq(jingles(), 1, "the jingle fires once the text is out")
+T.eq(plays[#plays], "item.wav", "with the plain-item sound")
+step("a")
+T.eq(stack:top(), box2, "A does not close the box during the jingle")
+sources["item.wav"].playing = false
+step()
+step("a")
+T.eq(stack:top(), nil, "A closes the box after the jingle")
 
 -- ------------------------------------------------------------ script data
 -- both Viridian Mart paths must hand give_item the quest text, since that

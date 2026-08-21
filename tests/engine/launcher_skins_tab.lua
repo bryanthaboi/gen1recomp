@@ -50,20 +50,34 @@ local imp = read("src/import/RomImporter.lua")
 
 check(view:find('id = "skins"', 1, true) ~= nil,
       "LauncherView registers a skins tab")
+check(view:find('id = "bug"', 1, true) ~= nil,
+      "LauncherView registers a bug tab")
 check(view:find("drawSkinGlyph", 1, true) ~= nil,
       "the skins tab draws its own glyph rather than shipping an asset")
+check(view:find('assets/launcher/bug.png', 1, true) ~= nil,
+      "the bug tab uses the standard bug report asset")
 -- the tab has to be next to Find, which is what the request was
 local order = view:match("local HEADER_TABS = %{(.-)%}\n")
 check(order ~= nil, "HEADER_TABS found")
 if order then
   local findAt = order:find('id = "find"', 1, true)
   local skinsAt = order:find('id = "skins"', 1, true)
+  local bugAt = order:find('id = "bug"', 1, true)
   check(findAt and skinsAt and skinsAt > findAt,
         "the skins tab sits immediately after Find")
+  check(skinsAt and bugAt and bugAt > skinsAt,
+        "the bug tab sits after Skins")
 end
 check(view:find('imp.tab == "skins"', 1, true) ~= nil,
       "the panel dispatch routes the skins tab")
 check(view:find("buildSkinsPanel", 1, true) ~= nil, "and a panel builds it")
+check(view:find('imp.tab == "bug"', 1, true) ~= nil,
+      "the panel dispatch routes the bug tab")
+check(view:find("buildBugPanel", 1, true) ~= nil, "and the bug panel builds it")
+check(view:find('Kit.toggle', 1, true) ~= nil,
+      "the bug panel uses a switch for safe mode")
+check(view:find('bug-report', 1, true) ~= nil,
+      "the bug panel has a report action")
 -- the panel must not offer the studio when the host did not supply it
 check(view:find("if imp.onOpenSkinStudio then", 1, true) ~= nil,
       "the Studio button is hidden without a host hook (mobile)")
@@ -79,8 +93,15 @@ check(imp:find("_installMod", 1, true) ~= nil,
 local cycle = imp:match("local order = %{(.-)%}")
 check(cycle and cycle:find('"skins"', 1, true) ~= nil,
       "shoulder-button tab cycling reaches the skins tab")
+check(cycle and cycle:find('"bug"', 1, true) ~= nil,
+      "shoulder-button tab cycling reaches the bug tab")
 local switch = imp:match("function RomImporter:_switchTab%(id%)(.-)\nend")
 check(switch and switch:find("_ensureSkins(true)", 1, true) ~= nil,
       "switching to the tab re-reads the skin list")
+check(imp:find('function RomImporter:_safeModeEnabled', 1, true) ~= nil
+    and imp:find('function RomImporter:_toggleSafeMode', 1, true) ~= nil,
+      "the importer owns the safe mode state")
+check(imp:find('function RomImporter:_reportIssue', 1, true) ~= nil,
+      "the importer owns issue report opening")
 
 T.finish("launcher_skins_tab")

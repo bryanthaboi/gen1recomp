@@ -132,6 +132,13 @@ int w_restartApp(lua_State *L)
 	return 1;
 }
 
+int w_installApk(lua_State *L)
+{
+	const char *path = luaL_checkstring(L, 1);
+	luax_pushboolean(L, instance()->installApk(path));
+	return 1;
+}
+
 int w_httpDownload(lua_State *L)
 {
 	const char *url = luaL_checkstring(L, 1);
@@ -325,6 +332,7 @@ static const luaL_Reg functions[] =
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
+	{ "installApk", w_installApk },
 	{ "updateShortcuts", w_updateShortcuts },
 	{ "getLaunchGame", w_getLaunchGame },
 	{ "httpDownload", w_httpDownload },

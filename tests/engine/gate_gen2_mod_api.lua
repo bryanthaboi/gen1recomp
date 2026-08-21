@@ -23,6 +23,7 @@ T.eq(GameVersion.generation("red"), 1, "Red is Gen 1")
 T.eq(GameVersion.generation("blue"), 1, "Blue is Gen 1")
 T.eq(GameVersion.generation("yellow"), 1, "Yellow is Gen 1")
 T.eq(GameVersion.generation("gold"), 2, "Gold is Gen 2")
+T.eq(GameVersion.generation("silver"), 2, "Silver is Gen 2")
 
 -- ------- 2. manifest: gen2compat is opt-in and defaults off
 
@@ -401,7 +402,8 @@ local GEN2_HOOKS = {
   "ui.pc.items", "ui.list_menu",
   "transition.style",
   -- battle
-  "battle.damage", "battle.crit", "battle.accuracy", "battle.turn_order",
+  "battle.damage", "battle.crit", "battle.accuracy",
+  "battle.charge_required", "battle.turn_order",
   "battle.enemy_action", "battle.run", "battle.exp_award", "exp.gain",
   "catch.rate", "trainer.party",
   -- one wrap cancels or forces an evolution in either game: Gold passes `data`
@@ -422,6 +424,7 @@ local GEN2_HOOKS = {
   -- nextFn gets nil there).
   "battle.catch_exp", "battle.low_health_alarm", "battle.overlay",
   "battle.bottom_ui_visible", "battle.status_hud_visible",
+  "battle.move_grid_navigation",
   -- One pic path resolver for both games: the Gen 1 site is the SHARED
   -- src/pokemon/Sprites.lua and Gold's own battle screen calls the same hook
   -- with the Gen 1 ctx keys plus `letter` and `shiny`, which Red has no

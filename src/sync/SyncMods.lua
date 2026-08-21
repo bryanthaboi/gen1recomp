@@ -1,11 +1,13 @@
 local SyncMods = {}
 
-SyncMods.REV = 1
+SyncMods.REV = 2
+SyncMods.MAX_OPTION_KEYS = 64
+SyncMods.MAX_OPTION_TEXT = 256
 
 local function versions()
   local ok, GameVersion = pcall(require, "src.core.GameVersion")
   if ok and GameVersion and GameVersion.ORDER then return GameVersion.ORDER end
-  return { "red", "blue", "yellow", "gold" }
+  return { "red", "blue", "yellow", "gold", "silver" }
 end
 
 local function defaultDeps()
@@ -35,6 +37,12 @@ local function defaultDeps()
     setEnabled = function(id, enabled, version)
       return require("src.mods.LauncherMods").setEnabled(id, enabled, version)
     end,
+    modOptions = function()
+      return require("src.mods.LauncherMods").modOptions()
+    end,
+    setOptions = function(id, values)
+      return require("src.mods.LauncherMods").setModOptions(id, values)
+    end,
   }
 end
 
@@ -46,6 +54,41 @@ local function deps(given)
   return out
 end
 
+local function sanitizeOptions(bucket)
+  if type(bucket) ~= "table" then return nil end
+  local keys = {}
+  for k, v in pairs(bucket) do
+    local t = type(v)
+    if type(k) == "string" and k ~= ""
+        and (t == "string" or t == "number" or t == "boolean") then
+      keys[#keys + 1] = k
+    end
+  end
+  if #keys == 0 then return nil end
+  table.sort(keys)
+  local out, n = {}, 0
+  for _, k in ipairs(keys) do
+    if n >= SyncMods.MAX_OPTION_KEYS then break end
+    local v = bucket[k]
+    if type(v) == "string" then v = v:sub(1, SyncMods.MAX_OPTION_TEXT) end
+    local finite = type(v) ~= "number"
+      or (v == v and v ~= math.huge and v ~= -math.huge)
+    if finite then
+      out[k] = v
+      n = n + 1
+    end
+  end
+  if n == 0 then return nil end
+  return out
+end
+
+local function sameOptions(a, b)
+  for k, v in pairs(a) do
+    if (b or {})[k] ~= v then return false end
+  end
+  return true
+end
+
 local function sourceOf(row)
   local github = row.github
     or (type(row.manifest) == "table" and row.manifest.github)
@@ -55,9 +98,14 @@ local function sourceOf(row)
   return "local"
 end
 
-function SyncMods.build(given)
+function SyncMods.build(given, includeOptions)
   local d = deps(given)
   local manifest = { rev = SyncMods.REV, indexes = {}, mods = {} }
+  local stored = {}
+  if includeOptions then
+    local ok, live = pcall(d.modOptions)
+    if ok and type(live) == "table" then stored = live end
+  end
   for _, row in ipairs(d.indexes() or {}) do
     local url = row.url or row.feed
     if type(url) == "string" and url ~= "" then
@@ -72,11 +120,14 @@ function SyncMods.build(given)
       for _, version in ipairs(versions()) do
         if answers[version] then enabledFor[#enabledFor + 1] = version end
       end
+      local options = includeOptions and sanitizeOptions(stored[row.id]) or nil
+      if options then manifest.hasOptions = true end
       manifest.mods[#manifest.mods + 1] = {
         id = row.id,
         version = row.version,
         source = sourceOf(row),
         enabledFor = enabledFor,
+        options = options,
       }
     end
   end
@@ -86,8 +137,15 @@ end
 
 function SyncMods.plan(manifest, given)
   local d = deps(given)
-  local plan = { indexes = {}, toInstall = {}, toEnable = {}, missing = {} }
+  local plan = { indexes = {}, toInstall = {}, toEnable = {}, missing = {},
+                 options = {}, applyOptions = nil }
   if type(manifest) ~= "table" then return plan end
+
+  local liveOptions = {}
+  do
+    local ok, live = pcall(d.modOptions)
+    if ok and type(live) == "table" then liveOptions = live end
+  end
 
   local haveIndex = {}
   for _, row in ipairs(d.indexes() or {}) do
@@ -130,6 +188,10 @@ function SyncMods.plan(manifest, given)
             plan.toEnable[#plan.toEnable + 1] = { id = mod.id, version = version }
           end
         end
+        local wanted = sanitizeOptions(mod.options)
+        if wanted and not sameOptions(wanted, liveOptions[mod.id]) then
+          plan.options[#plan.options + 1] = { id = mod.id, values = wanted }
+        end
       end
     end
   end
@@ -138,8 +200,31 @@ end
 
 function SyncMods.planEmpty(plan)
   if type(plan) ~= "table" then return true end
+  if plan.applyOptions and #(plan.options or {}) > 0 then return false end
   return #(plan.indexes or {}) == 0 and #(plan.toInstall or {}) == 0
     and #(plan.toEnable or {}) == 0
+end
+
+function SyncMods.planHasOptions(plan)
+  return type(plan) == "table" and #(plan.options or {}) > 0
+end
+
+function SyncMods.optionsAnswered(plan)
+  return not SyncMods.planHasOptions(plan) or plan.applyOptions ~= nil
+end
+
+function SyncMods.answerOptions(plan, importThem)
+  if type(plan) ~= "table" then return false end
+  plan.applyOptions = importThem and true or false
+  return plan.applyOptions
+end
+
+function SyncMods.optionModIds(plan)
+  local out = {}
+  for _, row in ipairs((type(plan) == "table" and plan.options) or {}) do
+    out[#out + 1] = row.id
+  end
+  return out
 end
 
 function SyncMods.steps(plan, given)
@@ -174,6 +259,19 @@ function SyncMods.steps(plan, given)
       end
       return true
     end }
+  end
+  if plan.applyOptions then
+    for _, want in ipairs(plan.options or {}) do
+      out[#out + 1] = { label = want.id, run = function()
+        if broken[want.id] then return true end
+        local ok, err = d.setOptions(want.id, want.values)
+        if ok == false then
+          return nil, want.id .. ": "
+            .. tostring(err or "could not set the mod options")
+        end
+        return true
+      end }
+    end
   end
   return out
 end

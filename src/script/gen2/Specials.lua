@@ -1694,7 +1694,8 @@ H.RandomPhoneWildMon = function(vm)
   local entry = contact and contact.map and grass and grass[contact.map]
   local slots = entry and entry.slots
   if not slots then return end
-  local daytime = (w and w.daytime) or "DAY"
+  -- wTimeOfDay, not the palette pin (wildmons.asm:861)
+  local daytime = (w and (w.tod or w.daytime)) or "DAY"
   if daytime == "DARK" then daytime = "NITE" end
   local slot = (slots[daytime] or slots.DAY or {})[Specials.random(4)]
   if slot and slot.species then nameSpecies(vm, slot.species) end

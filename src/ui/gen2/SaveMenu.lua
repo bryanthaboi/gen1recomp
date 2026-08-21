@@ -71,7 +71,7 @@ function SaveMenu.new(game, opts)
   self.onDone = opts.onDone
   self.writer = opts.writer or Save.save
   local existed = opts.existed
-  if existed == nil then existed = Save.exists("gold") end
+  if existed == nil then existed = Save.exists() end
   self.existed = existed
   -- confirm -> overwrite (only when a file exists) -> saving -> done
   self.phase = "confirm"
@@ -228,8 +228,7 @@ function SaveMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

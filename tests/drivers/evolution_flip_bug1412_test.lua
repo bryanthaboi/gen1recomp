@@ -23,8 +23,13 @@ return function(game)
   game.save.party = { mon }
   -- engine/movie/evolution.asm:103
   Evolution.evolve(game, mon, "RAICHU", nil, "ITEM")
-  U.wait(12)
-  local top = game.stack:top()
+  -- the IsEvolvingText box now holds 50+ frames before the movie (#1596)
+  local top
+  for _ = 1, 300 do
+    top = game.stack:top()
+    if top and top.screenId == "EvolutionState" then break end
+    U.wait(1)
+  end
   check("the evolution screen opened",
         top and top.screenId == "EvolutionState")
   U.shot(game, DIR .. "/bug1412_evo_old_pikachu.png")

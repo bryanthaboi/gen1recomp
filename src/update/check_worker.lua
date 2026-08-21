@@ -2,7 +2,8 @@
 --
 -- Runs on a love.thread so no curl call, sha256 pass or archive probe ever
 -- touches the render thread.  Talks over two channels:
---   "update_check_cmd"   in:  { cmd = "check" | "download" | "quit" }
+--   "update_check_cmd"   in:  { cmd = "check" | "download" |
+--                                "download_full" | "quit" }
 --   "update_check_state" out: { status, latest, progress, error }
 --
 -- Transport is HostShell: curl via io.popen on desktop, the JNI
@@ -44,6 +45,11 @@ local Boot    = loadModule("src/update/Boot.lua")
 local cmdCh   = love.thread.getChannel("update_check_cmd")
 local stateCh = love.thread.getChannel("update_check_state")
 
+-- The release chosen by the last check. Declare this before post() so status
+-- messages consistently preserve its release notes instead of accidentally
+-- reading a global named `pending`.
+local pending = nil
+
 local function post(t)
   if pending and type(t) == "table" and t.notes == nil then
     t.notes = pending.notes
@@ -56,10 +62,6 @@ local isWindows = osName == "Windows"
 local saveDir   = love.filesystem.getSaveDirectory()
 
 local API_URL = "https://api.github.com/repos/bryanthaboi/gen1recomp/releases/latest"
-
--- the release picked by the last "check"; kept between commands so "download"
--- knows the payload url/size/name without re-fetching
-local pending = nil
 
 -- ---------------------------------------------------------------------------
 -- shell / fetch
@@ -138,6 +140,10 @@ local function verifyPayload(rel, payloadName, sumsText)
   return true
 end
 
+local function verifyFullPackage(rel, assetName, sumsText)
+  return verifyPayload(rel, assetName, sumsText)
+end
+
 -- true = ok to run, false = payload needs a newer shell (needs_full).  When Boot
 -- cannot probe (module missing during parallel dev, or a probe failure) we allow
 -- it: Boot.run's crash-guard handles a payload that turns out unrunnable.
@@ -147,8 +153,34 @@ local function gatePasses(rel)
   if not info then return true end
   local shell = (Version and Version.shell) or 1
   local payloadHost = (Version and Version.payloadHost) or "love"
-  if Boot.canHost then return Boot.canHost(info, shell, payloadHost) end
-  return not (info.minShell and info.minShell > shell)
+  if info.payloadHost and info.payloadHost ~= payloadHost then return false, "payload_host" end
+  if info.minShell and info.minShell > shell then return false, "min_shell" end
+  if Boot.canHost and not Boot.canHost(info, shell, payloadHost) then return false, "shell_gate" end
+  return true
+end
+
+local function persistFullRequirement(rel, reason)
+  if not (rel and rel.version and Json) then return end
+  local full = rel.full
+  local record = {
+    version = rel.version,
+    reason = reason or "full_package_required",
+    full = full and { name = rel.fullName, url = full.url, size = full.size } or nil,
+  }
+  pcall(function()
+    love.filesystem.createDirectory("updates")
+    love.filesystem.write("updates/full-update.json", Json.encode(record))
+  end)
+end
+
+local function postFullRequirement(rel, reason)
+  persistFullRequirement(rel, reason)
+  post({ status = "needs_full", latest = rel and rel.version, reason = reason,
+    full = rel and rel.full and { name = rel.fullName, url = rel.full.url, size = rel.full.size } or nil })
+end
+
+local function clearFullRequirement()
+  pcall(function() love.filesystem.remove("updates/full-update.json") end)
 end
 
 local function cacheNotes(ver, notes)
@@ -177,7 +209,7 @@ end
 -- check
 -- ---------------------------------------------------------------------------
 
-local function doCheck()
+local function doCheck(target)
   post({ status = "checking" })
 
   if not canFetch() then
@@ -193,7 +225,7 @@ local function doCheck()
     return
   end
 
-  local rel, perr = Check.parseRelease(body, Json)
+  local rel, perr = Check.parseRelease(body, Json, target)
   if not rel then
     post({ status = "error", error = perr or "bad release json" })
     return
@@ -212,6 +244,9 @@ local function doCheck()
   end
 
   if compareVersions(rel.version, currentEngine) <= 0 then
+    -- We are now running a native shell at least as new as GitHub's latest
+    -- release, so a former minShell/payloadHost prompt no longer applies.
+    clearFullRequirement()
     post({ status = "uptodate", latest = rel.version })
     return
   end
@@ -219,7 +254,7 @@ local function doCheck()
   -- A newer release, but without the .love payload or its sums we cannot do an
   -- in-place update: send the user to the full installers.
   if not (rel.payload and rel.payload.url and rel.sums and rel.sums.url) then
-    post({ status = "needs_full", latest = rel.version })
+    postFullRequirement(rel, "payload_missing")
     return
   end
 
@@ -229,9 +264,10 @@ local function doCheck()
   if love.filesystem.getInfo(finalRel) then
     local sums = fetchText(rel.sums.url)
     if sums and verifyPayload(finalRel, rel.payloadName, sums) then
-      if gatePasses(finalRel) == false then
+      local allowed, reason = gatePasses(finalRel)
+      if allowed == false then
         love.filesystem.remove(finalRel)
-        post({ status = "needs_full", latest = rel.version })
+        postFullRequirement(rel, reason)
         return
       end
       post({ status = "ready", latest = rel.version })
@@ -353,9 +389,10 @@ local function doDownload()
     return
   end
 
-  if gatePasses(partRel) == false then
+  local allowed, reason = gatePasses(partRel)
+  if allowed == false then
     love.filesystem.remove(partRel)
-    post({ status = "needs_full", latest = rel.version })
+    postFullRequirement(rel, reason)
     return
   end
 
@@ -374,6 +411,63 @@ local function doDownload()
   post({ status = "ready", latest = rel.version })
 end
 
+-- Full native-package download. At present Android consumes the verified file
+-- through its Package Installer bridge. Other platforms retain the same
+-- release metadata and fall back to their platform-specific external update
+-- channel rather than attempting to overwrite a running executable.
+local function doDownloadFull()
+  if not (pending and pending.full and pending.full.url and pending.fullName
+      and pending.sums and pending.sums.url) then
+    post({ status = "error", error = "full package is unavailable" })
+    return
+  end
+
+  local rel = pending
+  local asset = rel.full
+  local name = rel.fullName
+  love.filesystem.createDirectory("updates")
+  local partRel = "updates/" .. name .. ".part"
+  local doneRel = "updates/" .. name
+  local partAbs = saveDir .. "/" .. partRel
+  local doneAbs = saveDir .. "/" .. doneRel
+  love.filesystem.remove(partRel)
+  love.filesystem.remove(doneRel)
+  post({ status = "full_downloading", latest = rel.version, progress = 0,
+    reason = "full_package_required", full = { name = name, url = asset.url, size = asset.size } })
+
+  local ok = HostShell and HostShell.httpDownload(asset.url, partAbs, UA, nil, 900)
+  if not ok then
+    love.filesystem.remove(partRel)
+    postFullRequirement(rel, "full_download_failed")
+    return
+  end
+
+  local sums = fetchText(rel.sums.url)
+  if not sums then
+    love.filesystem.remove(partRel)
+    postFullRequirement(rel, "full_checksum_fetch_failed")
+    return
+  end
+  local valid, err = verifyFullPackage(partRel, name, sums)
+  if not valid then
+    love.filesystem.remove(partRel)
+    post({ status = "error", error = err or "full package verification failed" })
+    return
+  end
+  if not os.rename(partAbs, doneAbs) then
+    local data = love.filesystem.read(partRel)
+    if not data then
+      post({ status = "error", error = "full package finalize failed" })
+      return
+    end
+    love.filesystem.write(doneRel, data)
+    love.filesystem.remove(partRel)
+  end
+  persistFullRequirement(rel, "full_package_required")
+  post({ status = "full_ready", latest = rel.version, reason = "full_package_required",
+    full = { name = name, url = asset.url, size = asset.size, path = doneAbs } })
+end
+
 -- ---------------------------------------------------------------------------
 -- command loop
 -- ---------------------------------------------------------------------------
@@ -384,10 +478,13 @@ while true do
     if cmd.cmd == "quit" then
       break
     elseif cmd.cmd == "check" then
-      local ok, err = pcall(doCheck)
+      local ok, err = pcall(doCheck, cmd.target)
       if not ok then post({ status = "error", error = tostring(err) }) end
     elseif cmd.cmd == "download" then
       local ok, err = pcall(doDownload)
+      if not ok then post({ status = "error", error = tostring(err) }) end
+    elseif cmd.cmd == "download_full" then
+      local ok, err = pcall(doDownloadFull)
       if not ok then post({ status = "error", error = tostring(err) }) end
     end
   end

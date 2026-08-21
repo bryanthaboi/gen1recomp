@@ -1,7 +1,8 @@
 # What This Port Requires
 
 The packaged desktop app requires one user-supplied input on first boot: a
-canonical 1 MiB US Pokemon Red, Blue, or Yellow ROM.
+canonical 1 MiB US Pokemon Red, Blue, or Yellow ROM, or a canonical 2 MiB US
+Pokemon Gold or Silver ROM.
 
 The importer verifies the SHA-1 for the game (see `src/core/GameVersion.lua`
 for specific hashes). Other revisions and Virtual Console releases are rejected
@@ -15,7 +16,8 @@ Python and Pillow are not required by the packaged app.
 
 Assembly removes high-level names and some relationships that the Lua port
 needs. The version-specific files `tools/rom_manifest.json`,
-`tools/rom_manifest_blue.json`, and `tools/rom_manifest_yellow.json` therefore
+`tools/rom_manifest_blue.json`, `tools/rom_manifest_yellow.json`,
+`tools/rom_manifest_gold.json`, and `tools/rom_manifest_silver.json` therefore
 contain:
 
 - the ROM symbol addresses actually read by the extractor

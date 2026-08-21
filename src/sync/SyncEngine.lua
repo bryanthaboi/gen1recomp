@@ -7,6 +7,7 @@ SyncEngine.__index = SyncEngine
 
 SyncEngine.UPLOAD_DEBOUNCE = 5
 SyncEngine.AUTO_INTERVAL = 300
+SyncEngine.RESUME_MIN_GAP = 60
 SyncEngine.MAX_STEPS_PER_UPDATE = 8
 
 local IDLE_STATUS = "Ready"
@@ -133,6 +134,7 @@ function SyncEngine.new(opts)
   eng.modPlan = nil
   eng.shareCode = nil
   eng.clock = 0
+  eng.autoAt = SyncEngine.AUTO_INTERVAL
   eng.queue = {}
   eng.pending = nil
   eng.uploadAt = nil
@@ -258,6 +260,11 @@ function SyncEngine:update(dt)
     self.uploadAt = nil
     if self.state.enabled and self:linked() then self:syncNow() end
   end
+  if self.clock >= self.autoAt and not self:busy()
+      and (self.phase == "idle" or self.phase == "error")
+      and self.state.enabled and self:linked() then
+    self:syncNow()
+  end
   local steps = 0
   while not self.pending and #self.queue > 0
       and steps < SyncEngine.MAX_STEPS_PER_UPDATE do
@@ -296,6 +303,7 @@ function SyncEngine:createAccount(label)
     eng.phase = "idle"
     eng.status = "Sync account created"
     eng:_persist()
+    eng:syncNow()
   end)
 end
 
@@ -385,9 +393,24 @@ function SyncEngine:setEnabled(enabled)
   return self.state.enabled
 end
 
+function SyncEngine:protectPlaythrough(version, playthroughId)
+  self.protectedKey = SyncState.key(version, playthroughId)
+end
+
+function SyncEngine:noteResumed()
+  if not (self.state.enabled and self:linked()) then return end
+  if self:busy() or self.phase == "conflict" then return end
+  if self.now() - (tonumber(self.state.lastSyncAt) or 0)
+      < SyncEngine.RESUME_MIN_GAP then
+    return
+  end
+  self:syncNow()
+end
+
 function SyncEngine:syncNow()
   if not self:linked() then return false, "this device is not linked" end
   if self.pending then return false, "sync is busy" end
+  self.autoAt = self.clock + SyncEngine.AUTO_INTERVAL
   self.queue = {}
   self.conflicts = {}
   self.state.pendingConflicts = {}
@@ -437,13 +460,13 @@ function SyncEngine:_planFrom(remoteState)
         self:_addConflict(entry, key, row)
       elseif localChanged then
         self:_queueUpload(entry, key, false)
-      elseif remoteChanged then
+      elseif remoteChanged and key ~= self.protectedKey then
         self:_queueDownload(key, entry.version, entry.playthroughId, "replace")
       end
     end
   end
   for key, row in pairs(remote) do
-    if not seen[key] then
+    if not seen[key] and key ~= self.protectedKey then
       local version, id = SyncState.splitKey(key)
       if version and id then
         self:_queueDownload(key, version, id, "replace", tonumber(row.rev))
@@ -573,12 +596,13 @@ function SyncEngine:resolveConflict(key, choice)
   return true
 end
 
-function SyncEngine:uploadMods()
+function SyncEngine:uploadMods(includeOptions)
   if not self:linked() then return false, "this device is not linked" end
   if self:busy() then return false, "sync is busy" end
-  local manifest = SyncMods.build(self.modDeps)
+  local manifest = SyncMods.build(self.modDeps, includeOptions)
   self.phase = "uploading"
-  self.status = "Uploading the mod list..."
+  self.status = includeOptions and "Uploading the mod list and options..."
+    or "Uploading the mod list..."
   local handle, err = self.client:putMods(manifest)
   return self:_request(handle, err, function(eng)
     eng.phase = "idle"
@@ -595,19 +619,17 @@ function SyncEngine:fetchModPlan()
   return self:_request(handle, err, function(eng, res)
     local data = res.data or {}
     local manifest = type(data.manifest) == "table" and data.manifest or data
-    eng.modPlan = SyncMods.plan(manifest, eng.modDeps)
-    eng.phase = "idle"
-    eng.status = SyncMods.planEmpty(eng.modPlan)
-      and "Mods already match" or "Mod changes ready to apply"
+    eng:_takeModPlan(SyncMods.plan(manifest, eng.modDeps))
   end)
 end
 
-function SyncEngine:shareMods()
+function SyncEngine:shareMods(includeOptions)
   if not self:linked() then return false, "this device is not linked" end
   if self:busy() then return false, "sync is busy" end
-  local manifest = SyncMods.build(self.modDeps)
+  local manifest = SyncMods.build(self.modDeps, includeOptions)
   self.phase = "uploading"
-  self.status = "Sharing the mod list..."
+  self.status = includeOptions and "Sharing the mod list and options..."
+    or "Sharing the mod list..."
   local handle, err = self.client:shareMods(manifest)
   return self:_request(handle, err, function(eng, res)
     local data = res.data or {}
@@ -626,16 +648,44 @@ function SyncEngine:fetchShare(code)
   return self:_request(handle, err, function(eng, res)
     local data = res.data or {}
     local manifest = type(data.manifest) == "table" and data.manifest or data
-    eng.modPlan = SyncMods.plan(manifest, eng.modDeps)
-    eng.phase = "idle"
-    eng.status = SyncMods.planEmpty(eng.modPlan)
-      and "Mods already match" or "Mod changes ready to apply"
+    eng:_takeModPlan(SyncMods.plan(manifest, eng.modDeps))
   end)
+end
+
+function SyncEngine:_takeModPlan(plan)
+  self.modPlan = plan
+  self.phase = "idle"
+  if SyncMods.planHasOptions(plan) then
+    self.status = ("This list carries options for %d mods.")
+      :format(#plan.options)
+  elseif SyncMods.planEmpty(plan) then
+    self.status = "Mods already match"
+  else
+    self.status = "Mod changes ready to apply"
+  end
+end
+
+function SyncEngine:modOptionsAsk()
+  local plan = self.modPlan
+  if not SyncMods.planHasOptions(plan) then return nil end
+  if plan.applyOptions ~= nil then return nil end
+  return SyncMods.optionModIds(plan)
+end
+
+function SyncEngine:answerModOptions(importThem)
+  local plan = self.modPlan
+  if not SyncMods.planHasOptions(plan) then return false end
+  SyncMods.answerOptions(plan, importThem)
+  self.status = plan.applyOptions
+    and "Their mod options will be imported too"
+    or "Their mod options will be skipped"
+  return plan.applyOptions
 end
 
 function SyncEngine:applyModPlan(progress)
   if not self.modPlan then return false, "no mod plan" end
   if self.modApply then return false, "the mods are already being applied" end
+  self.modPlan.applyOptions = self.modPlan.applyOptions == true
   local steps = SyncMods.steps(self.modPlan, self.modDeps)
   if #steps == 0 then
     self.modPlan = nil

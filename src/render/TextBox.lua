@@ -44,7 +44,8 @@ local NAME_DELAYS = { FAST = 1, MID = 3, SLOW = 5 }
 -- waits for nothing, shows no blinking arrow, and never pops itself --
 -- whoever pushed it owns the pop.  stay.onShown fires once, on the frame
 -- the last page finishes typing, which is where the caller pushes whatever
--- goes on top of it (#591).
+-- goes on top of it (#591).  stay.prompt waits out one arrowed A/B press
+-- first (TextCommand_PROMPT_BUTTON, home/text.asm:434-444) (#1511).
 function TextBox.new(game, text, onDone, opts)
   local self = setmetatable({}, TextBox)
   self.game = game
@@ -57,6 +58,8 @@ function TextBox.new(game, text, onDone, opts)
   self.money = opts and opts.money
   self.auto = opts and opts.auto
   self.stay = opts and opts.stay
+  -- engine/events/hidden_events/cinnabar_gym_quiz.asm:119
+  self.preSound = opts and opts.preSound
   -- opts.instant: put the LAST page up already typed, with no typewriter and
   -- no page waits.  A `yesorno` follows a `writetext` that has already been
   -- read, so re-typing the line under the YES/NO box would be wrong -- the
@@ -270,6 +273,17 @@ end
 function TextBox:update(dt)
   local input = self.game.input
   self.blink = (self.blink + 1) % 60
+  -- home/text.asm:506
+  if self.preSound then
+    if not self.preStarted then
+      self.preStarted = true
+      self.preSrc = self.preSound()
+    end
+    if self.preSrc and self.preSrc.isPlaying and self.preSrc:isPlaying() then
+      return
+    end
+    self.preSound, self.preSrc = nil, nil
+  end
   -- A page or CONT advance blocks the whole box while the original's scroll
   -- and clear run (src/core/Timing.lua TEXT_SCROLL_PAIR / TEXT_PAGE_CLEAR).
   -- Nothing types and no input is read until it drains.
@@ -283,6 +297,15 @@ function TextBox:update(dt)
     -- exactly once (#591)
     if self.stay then
       if not self.stayShown then
+        -- stay.prompt: arrowed A/B wait, then the box stays up
+        -- (TextCommand_PROMPT_BUTTON, home/text.asm:434-444)
+        if self.stay.prompt
+           and not (input:wasPressed("a") or input:wasPressed("b")) then
+          return
+        end
+        if self.stay.prompt then
+          require("src.core.Sound").play(self.game.data, "Press_AB")
+        end
         self.stayShown = true
         if self.stay.onShown then self.stay.onShown() end
       end
@@ -481,7 +504,8 @@ function TextBox:draw()
     Font.draw(money, 152 - Font.width(money), 8)
   end
   if (self.waiting or (self.done and not self.choice and not self.auto
-                       and not self.stay))
+                       and (not self.stay
+                            or (self.stay.prompt and not self.stayShown))))
      and self.blink < 30 then
     -- page-advance cursor: glyph $EE by default, the blinking down arrow
     -- the original prints via `ld a, "▼"` (home/text.asm)

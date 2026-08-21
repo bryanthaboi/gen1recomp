@@ -6,6 +6,27 @@
 // Registered from a constructor so no LÖVE/SDL source needs to know about it.
 
 #import <UIKit/UIKit.h>
+#import <sys/utsname.h>
+
+@interface GRDeviceBridge : NSObject
++ (NSString *)deviceModel;
+@end
+
+@implementation GRDeviceBridge
++ (NSString *)deviceModel
+{
+#if TARGET_OS_SIMULATOR
+    NSString *simulatorModel = NSProcessInfo.processInfo.environment[@"SIMULATOR_MODEL_IDENTIFIER"];
+    if (simulatorModel.length > 0) return simulatorModel;
+#endif
+    struct utsname systemInfo;
+    if (uname(&systemInfo) == 0) {
+        NSString *model = [NSString stringWithUTF8String:systemInfo.machine];
+        if (model.length > 0) return model;
+    }
+    return @"";
+}
+@end
 
 __attribute__((constructor))
 static void GRBootstrapInstall(void)

@@ -216,7 +216,10 @@ local function dojoMasterGate(game, ow, x, y)
   if not master or ow:trainerDefeated(master) then return false end
   ow.player.facing = "right"
   master:facePlayer(ow.player)
-  ow:engageTrainer(master)
+  -- scripts/FightingDojo.asm:117-119 SaveEndBattleTextPointers (#1606)
+  ow:engageTrainer(master, nil,
+    ((game.data or {}).text or {})._FightingDojoKarateMasterDefeatedText,
+    nil, nil, false)
   return true
 end
 
@@ -516,7 +519,17 @@ M.ROUTE_24 = {
           push(game, text(game)._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
             done)
         else
-          ow:engageTrainer(npc, done)
+          -- scripts/Route24.asm:125
+          ow:engageTrainer(npc, function()
+            if ow:trainerDefeated(npc) then
+              -- scripts/Route24.asm:62
+              push(game,
+                text(game)._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
+                done)
+            else
+              done()
+            end
+          end, text(game)._Route24CooltrainerM1DefeatedText, true)
         end
       end
       if not flags.EVENT_GOT_NUGGET then

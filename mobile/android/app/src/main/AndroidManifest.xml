@@ -8,6 +8,10 @@
        the link screen shows as "(Operation not permitted)" (issue #287).
        scripts/build_android.sh must not strip this again. -->
   <uses-permission android:name="android.permission.INTERNET" />
+  <!-- Required only to hand a checksum-verified, user-selected GitHub release
+       APK to Android's own Package Installer. Android still shows the install
+       confirmation and enforces package/signing-key/version compatibility. -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <!-- Step bridge: love.system.syncHealthSteps reads the hardware step
        counter, which Android 10+ gates behind this runtime permission.
        Requested only on the first sync call (the Pokéwalker mod's SYNC
@@ -35,10 +39,22 @@
     <meta-data
         android:name="android.allow_multiple_resumed_activities"
         android:value="true" />
+    <!-- The full-update APK is copied into this small cache subdirectory
+         before it is handed to Package Installer. Keep the provider private
+         and expose only that directory, never a storage root. -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.full_update_provider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/full_update_paths" />
+    </provider>
     <activity
         android:name="org.love2d.android.GameActivity"
         android:exported="true"
-        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode"
         android:label="${NAME}"
         android:launchMode="singleTask"
         android:screenOrientation="${ORIENTATION}"
@@ -55,7 +71,7 @@
     </activity>
     <activity
         android:name="org.love2d.android.GameActivity$SecondaryActivity"
-        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode"
         android:excludeFromRecents="true"
         android:exported="false"
         android:launchMode="singleTask"

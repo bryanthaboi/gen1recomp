@@ -195,8 +195,8 @@ local function parseImports(value, field, required)
       if value == nil then return end
       assert(type(value) == "number" and value > 0 and value % 1 == 0,
         field .. " " .. label .. " must be a positive integer")
-      assert(value <= 128 * 1024 * 1024,
-        field .. " " .. label .. " exceeds the 128 MiB hard limit")
+      assert(value <= 2 * 1024 * 1024 * 1024,
+        field .. " " .. label .. " exceeds the 2 GiB hard limit")
     end
     validateSize(size, "size")
     validateSize(maxSize, "max_size")

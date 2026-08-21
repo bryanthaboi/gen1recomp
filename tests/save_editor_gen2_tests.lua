@@ -71,13 +71,17 @@ local data = {
   maps = {},
 }
 
-local function newState()
+local function newState(version)
+  version = version or "gold"
+  local prior = GameVersion.get()
+  GameVersion.set(version)
   local S = State.new()
   S.data = data
   S.cat = Catalog.build(data)
   S.save = Save2.newGame()
-  S.version = "gold"
+  S.version = version
   Gen.ensureBoxes(S.save)
+  GameVersion.set(prior)
   return S
 end
 
@@ -85,8 +89,17 @@ do
   GameVersion.set("gold")
   eq(Gen.of({ generation = 2 }), 2, "Gen.of generation field")
   eq(Gen.of({ version = "gold" }), 2, "Gen.of version gold")
+  eq(Gen.of({ version = "silver" }), 2, "Gen.of version silver")
   eq(Gen.of(SaveData.newGame()), 1, "Gen.of gen1 newGame")
   eq(Gen.of(Save2.newGame()), 2, "Gen.of gold newGame")
+end
+
+do
+  GameVersion.set("silver")
+  eq(Save2.newGame().version, "silver", "a silver boot stamps silver")
+  eq(Save2.newGame().player.name, "SILVER", "with silver's preset name")
+  eq(Gen.of(Save2.newGame()), 2, "Gen.of silver newGame")
+  GameVersion.set("gold")
 end
 
 do
@@ -103,36 +116,37 @@ do
   check(not Ops.speciesUsable(S1, "BROKEN"), "partial record is not usable")
 end
 
-do
-  local S = newState()
+for _, version in ipairs({ "gold", "silver" }) do
+  local S = newState(version)
   Ops.partyAdd(S)
-  eq(#S.save.party, 1, "partyAdd on gold")
+  eq(#S.save.party, 1, "partyAdd on " .. version)
   local mon = S.save.party[1]
-  eq(mon.species, "CYNDAQUIL", "first catalog species")
-  check(mon.experience ~= nil, "gold mon has experience")
-  check(mon.exp == nil or mon.experience ~= nil, "does not rely on gen1 exp")
+  eq(mon.species, "CYNDAQUIL", version .. " first catalog species")
+  check(mon.experience ~= nil, version .. " mon has experience")
+  check(mon.exp == nil or mon.experience ~= nil,
+    version .. " does not rely on gen1 exp")
   check(mon.stats.specialAttack and mon.stats.specialDefense,
-    "gold stats have spa/spd")
-  check(mon.happiness ~= nil, "gold mon has happiness")
-  eq(mon.ot, S.save.player.name, "stampOT copies player name")
+    version .. " stats have spa/spd")
+  check(mon.happiness ~= nil, version .. " mon has happiness")
+  eq(mon.ot, S.save.player.name, version .. " stampOT copies player name")
 
   Ops.setLevel(S, mon, 20)
-  eq(mon.level, 20, "setLevel 20")
-  check(mon.experience > 0, "experience resynced")
+  eq(mon.level, 20, version .. " setLevel 20")
+  check(mon.experience > 0, version .. " experience resynced")
 
   Ops.setHappiness(S, mon, 200)
-  eq(mon.happiness, 200, "happiness 200")
+  eq(mon.happiness, 200, version .. " happiness 200")
   Ops.setPokerus(S, mon, 15)
-  eq(mon.pokerus, 15, "pokerus byte")
+  eq(mon.pokerus, 15, version .. " pokerus byte")
   Ops.setHeldItem(S, mon, "POTION")
-  eq(mon.item, "POTION", "held item")
+  eq(mon.item, "POTION", version .. " held item")
 
-  eq(mon.name, "CYNDAQUIL", "new mon copies species display name")
+  eq(mon.name, "CYNDAQUIL", version .. " new mon copies species display name")
   Ops.setSpecies(S, mon, "TOTODILE")
-  eq(mon.species, "TOTODILE", "setSpecies id")
-  eq(mon.name, "TOTODILE", "setSpecies rewrites the Gold display name")
-  check(mon.nickname == nil, "setSpecies does not invent a nickname")
-  eq(mon.types[1], "WATER", "setSpecies rewrites copied types")
+  eq(mon.species, "TOTODILE", version .. " setSpecies id")
+  eq(mon.name, "TOTODILE", version .. " setSpecies rewrites the display name")
+  check(mon.nickname == nil, version .. " setSpecies does not invent a nickname")
+  eq(mon.types[1], "WATER", version .. " setSpecies rewrites copied types")
 end
 
 do

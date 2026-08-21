@@ -76,6 +76,8 @@ local function makeWorld()
   local game = {
     data = { audio = {}, screens = registry },
     save = {
+      version = "gold",
+      generation = 2,
       player = { name = "GOLD" },
       party = { { species = "TYPHLOSION", level = 50, hp = 120,
         otId = 33333 } },

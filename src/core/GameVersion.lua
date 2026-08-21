@@ -1,5 +1,5 @@
 -- Which game this process is running: Red (the historical default), Blue,
--- Yellow, or Gold.  One source of truth for everything that differs by
+-- Yellow, Gold, or Silver.  One source of truth for everything that differs by
 -- version -- the accepted ROM hash, the import manifest, where the
 -- extracted cache lives, and the save-file suffix -- so the importer,
 -- cache mount, SaveData, title screen and palette all agree.
@@ -8,7 +8,8 @@
 -- saves are untouched, but its extracted cache lives under red/ like Blue,
 -- Yellow, and Gold (issue #899); a legacy root cache is moved into red/ once
 -- by CacheFs.migrateLegacyRedCache.  All supported versions can be imported
--- and selected side by side.  Gold is Gen 2 (see docs/gold-phase1.md).
+-- and selected side by side.  Gold and Silver are Gen 2 (see
+-- docs/gold-phase1.md).
 --
 -- Zero requires, so it loads during love.conf and under plain Lua for tools
 -- and tests.  The active version is a process-global set once at boot from
@@ -61,13 +62,26 @@ GameVersion.VERSIONS = {
     manifest = "tools/rom_manifest_gold.json",
     cachePrefix = "gold/",    -- gold/data/generated, gold/assets/generated
     saveSuffix = "_gold",     -- save_gold.lua / .bak / .tmp
-    -- The only row that carries one; absent reads as 1 (GameVersion.generation)
+    -- Absent reads as 1 (GameVersion.generation)
+    generation = 2,
+  },
+  -- Gold's engine with edition-selected data; the manifest is derived from
+  -- Gold's by tools/make_silver_manifest.py.
+  silver = {
+    id = "silver",
+    label = "Silver",
+    displayName = "Pokemon Silver",
+    launcherName = "Silver (Beta)",
+    sha1 = "49b163f7e57702bc939d642a18f591de55d92dae",
+    manifest = "tools/rom_manifest_silver.json",
+    cachePrefix = "silver/",  -- silver/data/generated, silver/assets/generated
+    saveSuffix = "_silver",   -- save_silver.lua / .bak / .tmp
     generation = 2,
   },
 }
 
 -- Launcher column order.
-GameVersion.ORDER = { "red", "blue", "yellow", "gold" }
+GameVersion.ORDER = { "red", "blue", "yellow", "gold", "silver" }
 
 GameVersion.current = "red"
 

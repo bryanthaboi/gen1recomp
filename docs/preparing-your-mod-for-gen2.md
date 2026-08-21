@@ -176,7 +176,7 @@ something the filesystem encodes.
 
 | token | means |
 | --- | --- |
-| `"red"`, `"blue"`, `"yellow"`, `"gold"` | that one game (a version id from `GameVersion.ORDER`) |
+| `"red"`, `"blue"`, `"yellow"`, `"gold"`, `"silver"` | that one game (a version id from `GameVersion.ORDER`) |
 | `"gen1"`, `"gen2"` | every game of that generation (case-insensitive; `"gen 2"` also parses) |
 | `"all"` | every game this engine has |
 

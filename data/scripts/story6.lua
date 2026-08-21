@@ -7,9 +7,9 @@ local M = {}
 
 local function text(game) return game.data.text end
 
-local function push(game, s, done)
+local function push(game, s, done, opts)
   local TextBox = require("src.render.TextBox")
-  game.stack:push(TextBox.new(game, s, done))
+  game.stack:push(TextBox.new(game, s, done, opts))
 end
 
 -- PrintText on a text_end string returns with the box still drawn and
@@ -236,7 +236,6 @@ M.CINNABAR_GYM = {
           if yes == machine.yes then
             -- CinnabarGymQuizCorrectText: item jingle, then the gate
             -- slides open (SFX_GO_INSIDE) if it was still locked
-            Sound.play(game.data, "Get_Item1")
             push(game, t._CinnabarGymQuizCorrectText
               or "You're absolutely\ncorrect!\fGo on through!", function()
               if not game.save.flags[gymGateFlag(index)] then
@@ -244,7 +243,9 @@ M.CINNABAR_GYM = {
                 Sound.play(game.data, "Go_Inside")
               end
               applyGymGates(game, ow)
-            end)
+            end, { preSound = function()
+              return Sound.play(game.data, "Get_Item1")
+            end })
             return
           end
           Sound.play(game.data, "Denied")

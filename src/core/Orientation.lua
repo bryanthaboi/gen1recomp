@@ -1,4 +1,4 @@
--- Screen orientation lock, Android only (#592, #716).
+-- Screen orientation lock, Android and iOS (#592, #716, #1638).
 --
 -- Persisted as options.orientation: "auto" | "portrait" | "landscape" |
 -- "reverseLandscape".  The lock travels through SDL_HINT_ORIENTATIONS:
@@ -10,16 +10,12 @@
 -- rotation lock"; LANDSCAPE allows both landscapes (SENSOR_LANDSCAPE ->
 -- USER_LANDSCAPE); REVERSE LANDSCAPE is SDL's LandscapeRight alone.
 --
--- SDL only re-reads the hint when the window is created or its resizable
--- flag changes (SDL_androidwindow.c: Android_CreateWindow /
--- Android_SetWindowResizable both call Android_JNI_SetOrientation).  LOVE
--- 11.5 exposes neither hints nor a resizable setter, so apply() goes through
--- the FFI to SDL's C API: set the hint, then pulse the window's resizable
--- flag off and back on -- each edge makes the Android backend recompute the
--- requested orientation, so a change from the launcher or the OPTION menu
--- takes hold immediately, and the flag ends where it started (conf.lua sets
--- resizable on mobile).  Everything is pcall-guarded: desktop, iOS (the
--- Info.plist governs there) and headless stubs make this a no-op.
+-- Android only re-reads the hint at window creation or on a resizable-flag
+-- change (SDL_androidwindow.c), and SDL_SetWindowResizable early-returns on
+-- a fullscreen window (SDL_video.c:2237) -- which LOVE's Android window
+-- always is -- so the hint never reached a running activity (#1638).
+-- apply() sets the hint for a later window, then goes over JNI for the live
+-- one.  iOS needs only the hint.  Desktop and headless stubs no-op.
 
 local Orientation = {}
 
@@ -58,6 +54,11 @@ function Orientation.isAndroid()
   return love.system.getOS() == "Android"
 end
 
+function Orientation.isIOS()
+  if not love or not love.system or not love.system.getOS then return false end
+  return love.system.getOS() == "iOS"
+end
+
 function Orientation.cycle(mode, dir)
   local cur, idx = Orientation.normalize(mode), 1
   for i, m in ipairs(Orientation.MODES) do
@@ -66,6 +67,15 @@ function Orientation.cycle(mode, dir)
   local n = #Orientation.MODES
   return Orientation.MODES[(idx - 1 + (dir or 1)) % n + 1]
 end
+
+-- ActivityInfo constants, what setOrientationBis lands on per hint after
+-- GameActivity's *_SENSOR -> *_USER remap (#716).
+local REQUESTED = {
+  auto = 13,
+  portrait = 1,
+  landscape = 11,
+  reverseLandscape = 8,
+}
 
 -- The SDL2 C API this module needs.  cdef errors on redefinition, so run it
 -- once and remember whether it took; ffi itself may be absent (plain Lua
@@ -77,33 +87,79 @@ local function sdlFfi()
   if cdefOk == nil then
     cdefOk = pcall(ffi.cdef, [[
       typedef struct SDL_Window SDL_Window;
+      typedef union { int32_t i; int64_t pad; } love_jvalue;
       int SDL_SetHint(const char *name, const char *value);
       SDL_Window *SDL_GL_GetCurrentWindow(void);
       void SDL_SetWindowResizable(SDL_Window *window, int resizable);
+      void *SDL_AndroidGetJNIEnv(void);
+      void *SDL_AndroidGetActivity(void);
     ]])
   end
   if not cdefOk then return nil end
   return ffi
 end
 
--- Push the mode into the live activity.  Returns true when the hint reached
--- SDL (the symbols resolved), false on any non-Android / stubbed platform.
+-- Slot numbers in JNINativeInterface (jni.h).
+local JNI_EXCEPTION_CLEAR = 17
+local JNI_DELETE_LOCAL_REF = 23
+local JNI_GET_OBJECT_CLASS = 31
+local JNI_GET_METHOD_ID = 33
+local JNI_CALL_VOID_METHOD_A = 63
+
+-- What Android_JNI_SetOrientation reaches, called directly: the hint path
+-- cannot re-run on a live fullscreen window (SDL_video.c:2237).
+local function setRequestedOrientation(ffi, requested)
+  local env = ffi.C.SDL_AndroidGetJNIEnv()
+  if env == nil then return false end
+  local activity = ffi.C.SDL_AndroidGetActivity()
+  if activity == nil then return false end
+  local fns = ffi.cast("void***", env)[0]
+  local getObjectClass = ffi.cast("void *(*)(void *, void *)", fns[JNI_GET_OBJECT_CLASS])
+  local getMethodID = ffi.cast(
+    "void *(*)(void *, void *, const char *, const char *)", fns[JNI_GET_METHOD_ID])
+  local callVoidMethodA = ffi.cast(
+    "void (*)(void *, void *, void *, love_jvalue *)", fns[JNI_CALL_VOID_METHOD_A])
+  local deleteLocalRef = ffi.cast("void (*)(void *, void *)", fns[JNI_DELETE_LOCAL_REF])
+  local exceptionClear = ffi.cast("void (*)(void *)", fns[JNI_EXCEPTION_CLEAR])
+
+  local ok = false
+  local cls = getObjectClass(env, activity)
+  if cls ~= nil then
+    local mid = getMethodID(env, cls, "setRequestedOrientation", "(I)V")
+    if mid ~= nil then
+      local args = ffi.new("love_jvalue[1]")
+      args[0].pad = 0
+      args[0].i = requested
+      callVoidMethodA(env, activity, mid, args)
+      ok = true
+    end
+    exceptionClear(env)
+    deleteLocalRef(env, cls)
+  end
+  deleteLocalRef(env, activity)
+  return ok
+end
+
+-- Returns true only when the request actually landed, never unconditionally
+-- as it once did (#1638).
 function Orientation.apply(mode)
-  if not Orientation.isAndroid() then return false end
+  local android = Orientation.isAndroid()
+  if not (android or Orientation.isIOS()) then return false end
   local ffi = sdlFfi()
   if not ffi then return false end
   mode = Orientation.normalize(mode)
-  local ok = pcall(function()
-    -- "SDL_IOS_ORIENTATIONS" is SDL_HINT_ORIENTATIONS's name (SDL_hints.h);
-    -- despite the IOS in the string, the Android backend reads it too.
+  local ok, reached = pcall(function()
+    -- SDL_HINT_ORIENTATIONS is "SDL_IOS_ORIENTATIONS" in the SDL2 Android
+    -- ships and "SDL_ORIENTATIONS" in the SDL3 the iOS app links; each
+    -- engine ignores the other's key.
     ffi.C.SDL_SetHint("SDL_IOS_ORIENTATIONS", HINTS[mode])
-    local win = ffi.C.SDL_GL_GetCurrentWindow()
-    if win ~= nil then
-      ffi.C.SDL_SetWindowResizable(win, 0)
-      ffi.C.SDL_SetWindowResizable(win, 1)
-    end
+    ffi.C.SDL_SetHint("SDL_ORIENTATIONS", HINTS[mode])
+    -- On iOS the hint is the lock: UIKit re-asks on every rotation
+    -- (SDL_uikitviewcontroller.m supportedInterfaceOrientations).
+    if not android then return true end
+    return setRequestedOrientation(ffi, REQUESTED[mode])
   end)
-  return ok
+  return ok and reached == true
 end
 
 function Orientation.applyOptions(opts)

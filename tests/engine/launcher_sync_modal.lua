@@ -61,10 +61,15 @@ local function fakeEngine(over)
       self.isLinked, self.codes = false, nil
       return true
     end,
-    shareMods = function(self)
-      self.calls[#self.calls + 1] = { "shareMods" }
+    shareMods = function(self, withOptions)
+      self.calls[#self.calls + 1] = { "shareMods", withOptions }
       self.shareCode = "K7QW3M"
       return true
+    end,
+    answerModOptions = function(self, importThem)
+      self.calls[#self.calls + 1] = { "answerModOptions", importThem }
+      if self.modPlan then self.modPlan.applyOptions = importThem and true or false end
+      return importThem
     end,
     fetchShare = function(self, code)
       self.calls[#self.calls + 1] = { "fetchShare", code }
@@ -148,7 +153,16 @@ eq(imp._syncModal, nil, "escape closes the modal")
 
 imp:_openSync()
 imp:_syncView("mods")
+eq(imp._syncModal.withOptions, true,
+   "sharing carries the options that go with the mods by default")
 imp:_syncShareMods()
+eq(eng.calls[#eng.calls][2], true, "so the engine is told to include them")
+imp:_syncToggleShareOptions()
+eq(imp._syncModal.withOptions, false, "the toggle turns them off")
+imp:_syncShareMods()
+eq(eng.calls[#eng.calls][2], false,
+   "and a list can be shared with no options at all")
+imp:_syncToggleShareOptions()
 eq(eng.shareCode, "K7QW3M", "Share mod list asks the engine for a code")
 imp:_syncFocusField("share")
 imp:textinput("k7qw3m")
@@ -215,6 +229,22 @@ labels = controls(rImp)
 check(labels["Share mod list"], "the mod view shares a list")
 check(labels["Get mod list"], "and fetches one")
 check(labels["Apply these mods"], "a fetched plan can be applied")
+
+rEng.modPlan = { indexes = {}, toInstall = {}, toEnable = {}, missing = {},
+  options = { { id = "biggermod", values = { speed = 1 } },
+              { id = "another-one", values = { theme = "dark" } } } }
+labels = controls(rImp)
+check(labels["Import their options"],
+      "a list that carries options asks before importing them")
+check(labels["Keep my options"], "and offers to leave this device alone")
+check(not labels["Apply these mods"],
+      "the question is answered before anything is applied")
+rImp:_syncAnswerModOptions(false)
+eq(rEng.calls[#rEng.calls][2], false, "the answer reaches the engine")
+labels = controls(rImp)
+check(labels["Apply these mods"], "and the apply road opens again")
+check(not labels["Import their options"], "with the question gone")
+rEng.modPlan = nil
 
 rImp:_syncView("home")
 rEng.devices = {
@@ -303,5 +333,86 @@ check(pump and pump:find("self.launcher", 1, true) ~= nil,
       "only the interactive launcher boots an engine of its own")
 check(impSrc:find("_syncTypeInto", 1, true) ~= nil,
       "text input is routed through the code filter")
+
+do
+  local realCard = Kit.card
+  local card
+  Kit.card = function(x, y, w, h, variant)
+    card = { x = x, y = y, w = w, h = h }
+    realCard(x, y, w, h, variant)
+  end
+
+  local sizes = {
+    { 1080, 2400 }, { 2400, 1080 }, { 1280, 720 }, { 720, 1280 },
+    { 640, 960 }, { 480, 800 }, { 960, 540 }, { 800, 480 },
+  }
+  local views = {
+    { "home", function() end },
+    { "devices", function(_, e)
+        e.codes = { code1 = "1234-5678", code2 = "8765-4321" }
+        e.devices = { { id = "0a1b2c3d", label = "OS X", current = true },
+                      { id = "99998888", label = "Android" },
+                      { id = "77776666", label = "Steam Deck" } }
+      end },
+    { "link", function(i) i:_syncView("link") end },
+    { "mods", function(i, e)
+        i:_syncView("mods")
+        e.shareCode = "K7QW3M"
+        e.modPlan = { indexes = { "https://x" }, toInstall = { { id = "a" } },
+          toEnable = {}, missing = { { id = "z" } }, options = {} }
+      end },
+    { "mod options", function(i, e)
+        i:_syncView("mods")
+        e.modPlan = { indexes = {}, toInstall = {}, toEnable = {}, missing = {},
+          options = { { id = "biggermod" }, { id = "another-one" },
+                      { id = "a-third-one" } } }
+      end },
+    { "busy", function(i, e)
+        i:_syncView("mods")
+        e.isBusy = true
+        e.status = "Uploading the mod list and options..."
+      end },
+    { "conflict", function(_, e)
+        e.phase = "conflict"
+        e.conflicts = { { key = "red/abc", version = "red", overlap = true,
+          localMeta = { savedAt = 1700000000, sessionStart = 1699999000,
+            summary = { name = "ASH", badges = 3, timeText = "5:42", dexCount = 40 } },
+          remoteMeta = { savedAt = 1700000500, sessionStart = 1699999500,
+            summary = { name = "ASH", badges = 4, timeText = "6:10", dexCount = 44 } } } }
+      end },
+  }
+
+  local worst = { over = 0 }
+  for _, view in ipairs(views) do
+    for _, size in ipairs(sizes) do
+      love.graphics.getDimensions = function() return size[1], size[2] end
+      love.graphics.getPixelDimensions = love.graphics.getDimensions
+      local e = fakeEngine({ isLinked = true })
+      local i = launcher(e)
+      i:_openSync()
+      view[2](i, e)
+      Kit.audit = {}
+      card = nil
+      local ok = pcall(LauncherView.draw, i)
+      local rows = Kit.audit or {}
+      Kit.audit = nil
+      check(ok, ("the %s panel draws at %dx%d"):format(view[1], size[1], size[2]))
+      for _, r in ipairs(rows) do
+        if r.class == "control" and card then
+          local over = math.max((r.x + r.w) - (card.x + card.w),
+                                (r.y + r.h) - (card.y + card.h))
+          if over > worst.over then
+            worst = { over = over, view = view[1], w = size[1], h = size[2],
+                      label = r.label }
+          end
+        end
+      end
+    end
+  end
+  check(worst.over <= 0, ("no sync button leaves its card%s"):format(
+    worst.over > 0 and (": %s %dx%d overflows by %d at '%s'"):format(
+      worst.view, worst.w, worst.h, worst.over, worst.label) or ""))
+  Kit.card = realCard
+end
 
 T.finish("launcher_sync_modal")

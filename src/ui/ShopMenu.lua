@@ -13,6 +13,7 @@ local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
 local QuantityBox = require("src.ui.QuantityBox")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local ShopMenu = {}
 
@@ -57,7 +58,8 @@ local function buy(game, stock)
           end
           local cost = qty * def.price
           -- _PokemartTellBuyPriceText + yes/no confirm
-          list.footer = Strings("%s?\nThat will be\n¥%d. OK?", def.name, cost)
+          list.footer = romText(game.data, "_PokemartTellBuyPriceText",
+            "%s?\nThat will be\n¥%d. OK?", def.name, cost)
           game.stack:push(ChoiceBox.new(game, function(yes)
             if not yes then
               list.footer = greet
@@ -147,7 +149,8 @@ local function sell(game)
             return
           end
           -- _PokemartTellSellPriceText + yes/no confirm
-          list.footer = Strings("I can pay you\n¥%d for that.", unit * qty)
+          list.footer = romText(game.data, "_PokemartTellSellPriceText",
+            "I can pay you\n¥%d for that.", unit * qty)
           game.stack:push(ChoiceBox.new(game, function(yes)
             if not yes then
               list.footer = greet

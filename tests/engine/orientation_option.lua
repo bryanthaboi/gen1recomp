@@ -55,8 +55,12 @@ end
 
 love.system.getOS = function() return "OS X" end
 T.eq(Orientation.apply("portrait"), false, "desktop apply is a refused no-op")
+-- iOS posed but no SDL loaded: the FFI path must fail closed, not claim the
+-- lock took.
 love.system.getOS = function() return "iOS" end
-T.eq(Orientation.apply("portrait"), false, "iOS defers to the Info.plist")
+T.eq(Orientation.apply("portrait"), false, "iOS apply fails closed with no SDL")
+local okIOS = pcall(Orientation.applyOptions, { orientation = "portrait" })
+T.eq(okIOS, true, "posed-iOS apply never raises")
 -- Android posed but no SDL loaded in this process: the FFI path must fail
 -- closed inside its pcall, never throw.
 love.system.getOS = function() return "Android" end

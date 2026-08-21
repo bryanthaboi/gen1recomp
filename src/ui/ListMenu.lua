@@ -17,6 +17,14 @@ function ListMenu:sgbPalettes(game)
 end
 
 local ROWS = 7
+-- LIST_MENU_BOX 4,2 - 19,12 (data/text_boxes.asm:13); 4 names from
+-- hlcoord 6,4 two rows apart (home/list_menu.asm:51-52, 364-365, 471-479)
+local ITEM_BOX = { tx = 4, ty = 2, tw = 16, th = 11 }
+local ITEM_ROWS = 4
+local ITEM_NAME_X, ITEM_TOP_Y = 48, 32
+local ITEM_CURSOR_X = 40
+local ITEM_QTY_X, ITEM_QTY_END = 112, 136
+local ITEM_MORE_X, ITEM_MORE_Y = 144, 88
 -- frames to wait before key-repeat kicks in, then between repeats
 local REPEAT_DELAY = 16
 local REPEAT_RATE = 4
@@ -83,7 +91,20 @@ function ListMenu.new(game, title, items, opts)
   -- for their whole run (engine/menus/pc.asm, engine/menus/players_pc.asm),
   -- so their lists opt out of the A/B beep the same way Menu's noSound does
   self.noSound = opts.noSound or false
-  self.rows = opts.rows or ((opts.dialogue or opts.messageBox) and 4 or ROWS)
+  -- the bag's item list: a partial box the map stays visible around, not a
+  -- screen of its own (home/list_menu.asm:29-31)
+  self.itemBox = opts.itemBox or false
+  if self.itemBox then
+    self.isOpaque = false
+    -- keep RunDefaultPaletteCommand's last palette: ItemMenuLoop never sets
+    -- its own (engine/menus/start_sub_menus.asm:300)
+    self.sgbPalettes = false
+    -- wMaxMenuItem is 2 for item lists; the fourth printed row is a
+    -- look-ahead the cursor cannot reach (home/list_menu.asm:46-48)
+    self.cursorRows = 3
+  end
+  self.rows = opts.rows or (self.itemBox and ITEM_ROWS)
+    or ((opts.dialogue or opts.messageBox) and 4 or ROWS)
   return self
 end
 
@@ -100,8 +121,9 @@ local function moveIndex(self, delta)
 end
 
 local function syncScroll(self)
-  if self.index - self.scroll > self.rows then
-    self.scroll = self.index - self.rows
+  local maxRow = self.cursorRows or self.rows
+  if self.index - self.scroll > maxRow then
+    self.scroll = self.index - maxRow
   end
   if self.index - self.scroll < 1 then self.scroll = self.index - 1 end
 end
@@ -206,7 +228,48 @@ function ListMenu:close()
   if top == self then self.game.stack:pop() end
 end
 
+-- PrintListMenuEntries, minus the price column StartMenu_Item never asks for
+-- (wPrintItemPrices = 0, engine/menus/start_sub_menus.asm)
+function ListMenu:drawItemBox()
+  love.graphics.setColor(1, 1, 1, 1)
+  Font.drawBox(ITEM_BOX.tx, ITEM_BOX.ty, ITEM_BOX.tw, ITEM_BOX.th)
+  love.graphics.setColor(0, 0, 0, 1)
+  if #self.items == 0 then
+    Font.draw(Strings("Nothing here."), ITEM_NAME_X, ITEM_TOP_Y)
+  end
+  local shown = 0
+  for row = 1, self.rows do
+    local i = self.scroll + row
+    local item = self.items[i]
+    if not item then break end
+    shown = shown + 1
+    local y = ITEM_TOP_Y + (row - 1) * 16
+    Font.draw(item.label, ITEM_NAME_X, y)
+    if item.right then
+      -- '×' at column 14, PrintNumber's two right-aligned digits after it
+      -- (home/list_menu.asm:479-490)
+      local count = item.right:sub(2)
+      Font.draw(item.right:sub(1, 1), ITEM_QTY_X, y + 8)
+      Font.draw(count, ITEM_QTY_END - Font.width(count), y + 8)
+    end
+    if i == self.index then
+      Font.drawCode(self.hollowIndex == i
+                    and Theme.cursorHollow or Theme.cursor, ITEM_CURSOR_X, y)
+    end
+    if self.swapIndex == i and i ~= self.index then
+      Font.drawCode(Theme.cursorHollow, ITEM_CURSOR_X, y)
+    end
+  end
+  -- the terminator prints CANCEL and returns before the '▼'
+  -- (home/list_menu.asm:372, 518-524)
+  if shown == self.rows then
+    Font.drawCode(Theme.moreArrow, ITEM_MORE_X, ITEM_MORE_Y)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 function ListMenu:draw()
+  if self.itemBox then return self:drawItemBox() end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(0, 0, 0, 1)

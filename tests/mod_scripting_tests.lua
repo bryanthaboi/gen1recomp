@@ -276,6 +276,8 @@ do
     text = text:gsub("{RIVAL}", save.player.rival or "BLUE")
     if game.stringBuffer then
       text = text:gsub("{RAM:wStringBuffer}", game.stringBuffer)
+      -- wNameBuffer reads the same buffer in this port (TextBox.TOKENS.RAM)
+      text = text:gsub("{RAM:wNameBuffer}", game.stringBuffer)
     end
     text = text:gsub("{[%w_:]+}", "")
     return text

@@ -236,6 +236,32 @@ do
   same(z[2].colors[3], BLUE_LOGO1[3], "Blue LOGO1's other inks stay put")
 end
 
+-- #133's grays overlay follows every box on screen, not just the topmost
+-- state's: DisplayContinueGameInfo leaves the menu box up behind the info
+-- window (main_menu.asm:36-39), and reading only the top left the menu box
+-- on the raw LOGO2 / LOGO1 bands -- blue rows over a red EXIT GAME row.
+do
+  PaletteFX.mode = "gbc"
+  GameVersion.set("red")
+  local stack = {
+    states = { { isOpaque = true },
+               { titleUiBox = { 0, 0, 12, 9 } },
+               { titleUiBox = { 4, 7, 19, 16 } } },
+    visibleBase = function() return 1 end,
+    top = function(self) return self.states[#self.states] end,
+  }
+  local z = title:sgbPalettes({ data = romPack(RED_LOGO1), stack = stack })
+  eq(#z, 5, "both open boxes get an overlay zone")
+  eq(z[4].x, 0, "the menu box keeps its overlay while the info window is up")
+  eq(z[4].y, 0, "at the menu box's own origin")
+  eq(z[5].x, 32, "and the info window's sits on top of it")
+  eq(z[5].y, 56, "at hlcoord 4,7")
+
+  stack.states[3] = nil
+  z = title:sgbPalettes({ data = romPack(RED_LOGO1), stack = stack })
+  eq(#z, 4, "the menu alone is still one overlay, as before")
+end
+
 PaletteFX.mode = savedMode
 GameVersion.set(savedVersion)
 

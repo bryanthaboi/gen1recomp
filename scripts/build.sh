@@ -6,6 +6,7 @@
 #
 # Usage: scripts/build.sh [mac|win|linux|android|ios|all] [--version X.Y.Z] [--identity "Developer ID Application: ..."]
 #                          [--notary-profile NAME] [--no-notarize]
+#                          [--game-love PATH]  # fuse a prebuilt payload (scripts/pack_love.sh) instead of packing one
 #                          [--release]   # ios only: release config instead of debug
 #
 # Output: dist/mac/gen1recomp-macos.zip
@@ -36,6 +37,7 @@ NOTARY_PROFILE="notary-profile"
 NOTARIZE=true
 IOS_RELEASE=false
 IOS_IPA=false
+GAME_LOVE_IN=""
 
 say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
@@ -48,6 +50,7 @@ while [ $# -gt 0 ]; do
     --identity) IDENTITY="$2"; shift ;;
     --notary-profile) NOTARY_PROFILE="$2"; shift ;;
     --no-notarize) NOTARIZE=false ;;
+    --game-love) GAME_LOVE_IN="${2:?--game-love needs a path}"; shift ;;
     --release) IOS_RELEASE=true ;;
     --ipa) IOS_IPA=true ;;
     *) fail "unknown argument: $1" ;;
@@ -62,16 +65,23 @@ mkdir -p "$CACHE" "$WORK" "$DIST/mac" "$DIST/win" "$DIST/linux"
 # launcher's Edit button on a save row opens it in-process (main.lua), and
 # `--editor` / POKEPORT_EDITOR=1 opens it standalone.  It is required through
 # love.filesystem's require path, so it has to live inside the archive.
-say "packing game.love"
 LOVE_FILE="$WORK/game.love"
 rm -f "$LOVE_FILE"
-# The launcher UI kit lives at src/ui/kit (inside src/, packed wholesale);
-# the vendored libs/flexlove tree it replaced is gone.
-(cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
-  main.lua conf.lua src data assets tools/save-editor \
-  tools/rom_manifest.json tools/rom_manifest_blue.json \
-  tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
-  -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
+if [ -n "$GAME_LOVE_IN" ]; then
+  [ -f "$GAME_LOVE_IN" ] || fail "--game-love: no such file: $GAME_LOVE_IN"
+  say "using prebuilt payload: $GAME_LOVE_IN"
+  cp "$GAME_LOVE_IN" "$LOVE_FILE"
+else
+  say "packing game.love"
+  # The launcher UI kit lives at src/ui/kit (inside src/, packed wholesale);
+  # the vendored libs/flexlove tree it replaced is gone.
+  (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
+    main.lua conf.lua src data assets tools/save-editor \
+    tools/rom_manifest.json tools/rom_manifest_blue.json \
+    tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
+    tools/rom_manifest_silver.json \
+    -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
+fi
 # Materialize the listing once and grep the file: piping unzip straight into
 # grep -q under `set -o pipefail` SIGPIPEs unzip when grep exits early on a
 # match, and the pipeline's failure reads as "missing <file>" for whichever
@@ -90,7 +100,8 @@ for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 tools/save-editor/panels/Party.lua \
                 src/ui/kit/Kit.lua \
                 tools/rom_manifest.json tools/rom_manifest_blue.json \
-                tools/rom_manifest_yellow.json tools/rom_manifest_gold.json; do
+                tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
+                tools/rom_manifest_silver.json; do
   grep -qxF "$required" "$LOVE_LISTING" \
     || fail "game.love is missing $required"
 done
@@ -105,18 +116,26 @@ say "game.love: $(du -h "$LOVE_FILE" | cut -f1)"
 # mistaken for a release. The stamp is then read back out of the archive and the
 # build fails if it did not take.
 if printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  say "stamping engine version $VERSION into game.love"
-  stamp_dir="$WORK/stamp"
-  rm -rf "$stamp_dir"
-  mkdir -p "$stamp_dir/src/core"
-  sed -E "s/(engine[[:space:]]*=[[:space:]]*\")[^\"]*(\")/\1$VERSION\2/" \
-    "$ROOT/src/core/Version.lua" > "$stamp_dir/src/core/Version.lua"
-  (cd "$stamp_dir" && zip -q "$LOVE_FILE" src/core/Version.lua)
-  version_re="$(printf '%s' "$VERSION" | sed 's/\./\\./g')"
-  unzip -p "$LOVE_FILE" src/core/Version.lua \
-    | grep -Eq "engine[[:space:]]*=[[:space:]]*\"$version_re\"" \
-    || fail "version stamp failed: game.love does not report engine $VERSION"
-  say "stamped engine version: $VERSION"
+  if [ -n "$GAME_LOVE_IN" ]; then
+    version_re="$(printf '%s' "$VERSION" | sed 's/\./\\./g')"
+    unzip -p "$LOVE_FILE" src/core/Version.lua \
+      | grep -Eq "engine[[:space:]]*=[[:space:]]*\"$version_re\"" \
+      || fail "prebuilt payload does not report engine $VERSION (pack it with pack_love.sh --version $VERSION)"
+    say "prebuilt payload already stamped: $VERSION"
+  else
+    say "stamping engine version $VERSION into game.love"
+    stamp_dir="$WORK/stamp"
+    rm -rf "$stamp_dir"
+    mkdir -p "$stamp_dir/src/core"
+    sed -E "s/(engine[[:space:]]*=[[:space:]]*\")[^\"]*(\")/\1$VERSION\2/" \
+      "$ROOT/src/core/Version.lua" > "$stamp_dir/src/core/Version.lua"
+    (cd "$stamp_dir" && zip -q "$LOVE_FILE" src/core/Version.lua)
+    version_re="$(printf '%s' "$VERSION" | sed 's/\./\\./g')"
+    unzip -p "$LOVE_FILE" src/core/Version.lua \
+      | grep -Eq "engine[[:space:]]*=[[:space:]]*\"$version_re\"" \
+      || fail "version stamp failed: game.love does not report engine $VERSION"
+    say "stamped engine version: $VERSION"
+  fi
 else
   say "version '$VERSION' is not X.Y.Z,  shipping default engine (no stamp)"
 fi

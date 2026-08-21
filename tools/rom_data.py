@@ -11,8 +11,9 @@ from dataclasses import dataclass
 CANONICAL_RED_SHA1 = "ea9bcae617fdf159b045185467ae58b2e4a48b9a"
 CANONICAL_BLUE_SHA1 = "d7037c83e1ae5b39bde3c30787637ba1d4c48ce2"
 CANONICAL_YELLOW_SHA1 = "cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1"
-# Gold is Gen 2: a 2 MiB cart, twice the size of the Gen 1 ROMs above.
+# Gold and Silver are Gen 2: 2 MiB carts, twice the size of the Gen 1 ROMs above.
 CANONICAL_GOLD_SHA1 = "d8b8a3600a465308c9953dfa04f0081c05bdcb94"
+CANONICAL_SILVER_SHA1 = "49b163f7e57702bc939d642a18f591de55d92dae"
 ROM_BANK_SIZE = 0x4000
 
 

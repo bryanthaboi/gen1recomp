@@ -254,7 +254,8 @@ function Commands.give_item(ctx, itemId, count, gotText)
     Commands.show_text(ctx, gotText
       or Strings("{PLAYER} got\n%s!", ctx.game.stringBuffer))
   else
-    Sound.play(ctx.game.data, jingle)
+    -- scripts/OaksLab.asm:1058
+    Commands.text_sound(ctx, jingle)
   end
 end
 

@@ -73,7 +73,10 @@ function Editor.load(opts)
   }
   local optsTbl = SaveData.loadOptions()
   local applied = optsTbl
-  if opts.version == "gold" then
+  local GameVersion = require("src.core.GameVersion")
+  local gen2 = GameVersion.VERSIONS[opts.version]
+    and GameVersion.generation(opts.version) == 2
+  if gen2 then
     local gold = type(optsTbl.gold) == "table" and optsTbl.gold or {}
     applied = {
       touchControls = gold.touchControls,
@@ -151,7 +154,9 @@ local function persist()
     skin = cfg.skin,
     layouts = cfg.layouts,
   }
-  if Editor.version == "gold" then
+  local GameVersion = require("src.core.GameVersion")
+  if GameVersion.VERSIONS[Editor.version]
+      and GameVersion.generation(Editor.version) == 2 then
     opts.gold = type(opts.gold) == "table" and opts.gold or {}
     opts.gold.touchControls = block
   else
@@ -569,7 +574,7 @@ function Editor.new(game)
   local state = { game = game, isOpaque = true }
   Editor.hostPoll = true
   Editor.load({
-    version = "gold",
+    version = require("src.core.GameVersion").get(),
     hostPoll = true,
     onClose = function()
       Editor.hostPoll = false

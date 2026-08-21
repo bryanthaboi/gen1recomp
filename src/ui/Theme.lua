@@ -23,6 +23,9 @@ local Theme = {
   -- EnemySendOutFirstMon inlines its own TWO_OPTION_MENU at hlcoord 0, 7
   -- instead of the shared right-hand one -- engine/battle/core.asm:1378-1384
   trainerSwitchBox = { tx = 0, ty = 7, tw = 6, th = 5 },
+  -- SaveTheGame_YesOrNo pins its TWO_OPTION_MENU at hlcoord 0, 7 too --
+  -- engine/menus/save.asm:186-192
+  saveBox = { tx = 0, ty = 7, tw = 6, th = 5 },
 }
 
 function Theme.load(data)

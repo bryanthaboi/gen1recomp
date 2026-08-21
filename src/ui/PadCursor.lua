@@ -151,6 +151,7 @@ end
 
 function PadCursor.joystickpressed(joystick, button)
   if GamepadMap.ignoreRawForJoystick(joystick) then return nil end
+  if GamepadMap.isAccelerometer(joystick) then return nil end
   local padButton = GamepadMap.mapRawToGamepadButton(button)
   if padButton then return PadCursor.gamepadpressed(joystick, padButton) end
   return nil
@@ -158,12 +159,14 @@ end
 
 function PadCursor.joystickreleased(joystick, button)
   if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  if GamepadMap.isAccelerometer(joystick) then return end
   local padButton = GamepadMap.mapRawToGamepadButton(button)
   if padButton then PadCursor.gamepadreleased(joystick, padButton) end
 end
 
 function PadCursor.joystickaxis(joystick, axisIndex, value)
   if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  if GamepadMap.isAccelerometer(joystick) then return end
   if axisIndex == 1 then
     PadCursor.gamepadaxis(joystick, "leftx", value)
   elseif axisIndex == 2 then
@@ -173,6 +176,7 @@ end
 
 function PadCursor.joystickhat(joystick, hat, direction)
   if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  if GamepadMap.isAccelerometer(joystick) then return end
   for _, d in ipairs(rawHatDirs[hat] or {}) do
     dir[d] = nil
   end

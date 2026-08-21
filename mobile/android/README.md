@@ -41,7 +41,7 @@ Quick Start:
 Before you start, install JDK 17 (not later not earlier). If you intend to build from Android Studio, skip this step as
 Android Studio bundles its own JDK 17.
 
-Install Android SDK with SDK API 34 (34.x.y) and Android NDK 25.2.9519653, set the environment variable
+Install Android SDK with SDK API 36 (latest 36.x Build-Tools) and Android NDK 25.2.9519653, set the environment variable
 `ANDROID_SDK_ROOT` to your Android SDK location and run:
 
 ```

@@ -169,5 +169,7 @@ unzip -p "$temp_dir/game.love" src/core/Version.lua \
   || fail "shared payload version was not stamped"
 grep -qxF "tools/rom_manifest_gold.json" "$temp_dir/love-listing.txt" \
   || fail "shared payload is missing tools/rom_manifest_gold.json"
+grep -qxF "tools/rom_manifest_silver.json" "$temp_dir/love-listing.txt" \
+  || fail "shared payload is missing tools/rom_manifest_silver.json"
 
 say "Linux arm64 self-test passed"

@@ -549,6 +549,15 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   -- Route22Gate_Script rewrites wLastMap from the player's Y on entry
   -- too (not only on step), so a save/load mid-gate keeps exits correct
   if not (opts and opts.checkpoint) then self:syncLastMapRewrite() end
+  -- home/overworld.asm:1821 (JoypadOverworld runs RunMapScript every frame);
+  -- scripts/Route16Gate1F.asm:16, Route5Gate.asm:19, Route22Gate.asm:21
+  if opts and opts.freshBoot and not opts.checkpoint then
+    local standing = mapScripts and mapScripts.get(mapId)
+    if not (standing and standing.onStep
+            and standing.onStep(Game, self, self.player.cellX, self.player.cellY)) then
+      self:checkBadgeGate()
+    end
+  end
 end
 
 -- Neighbor maps drawn at the composed connection offsets: at least the
@@ -849,15 +858,20 @@ function OverworldState:useSoftboiledFieldMove(user, target)
   if not user or not user.stats or not target or not target.stats
       or target == user or target.hp <= 0
       or target.hp >= target.stats.hp or user.hp <= heal then
-    Game.stack:push(TextBox.new(Game, Strings("It won't have\nany effect.")))
+    Game.stack:push(TextBox.new(Game,
+      romText(Game.data, "_ItemUseNoEffectText", "It won't have\nany effect.")))
     return false
   end
+  local before = target.hp
   user.hp = user.hp - heal
   target.hp = math.min(target.stats.hp, target.hp + heal)
   require("src.core.Sound").play(Game.data, "Heal_HP")
   local def = Game.data.pokemon[target.species]
+  -- _PotionText's second slot is the recovered amount, same as
+  -- ItemEffects.lua's potion message -- the engine fallback never shows it
   Game.stack:push(TextBox.new(Game,
-    Strings("%s's HP\nwas restored!", target.nickname or def.name)))
+    romText(Game.data, "_PotionText", "%s's HP\nwas restored!",
+      target.nickname or def.name, target.hp - before)))
   return true
 end
 
@@ -2152,7 +2166,8 @@ function OverworldState:tryHiddenObject(fx, fy)
         -- leaves the spot unfound; _CantCarryMoreText is the Toss line (#872)
         local name = Game.data.items[h.item] and Game.data.items[h.item].name or h.item
         Game.stack:push(TextBox.new(Game,
-          Strings("%s found\n%s!", save.player.name, name) .. "\f"
+          romText(Game.data, "_FoundHiddenItemText", "%s found\n%s!",
+            save.player.name, name) .. "\f"
           .. romText(Game.data, "_HiddenItemBagFullText",
                      "But, {PLAYER} has\nno more room for\vother items!")))
         return true
@@ -2163,7 +2178,8 @@ function OverworldState:tryHiddenObject(fx, fy)
       -- text_asm tail runs it as PlaySoundWaitForCurrent +
       -- WaitForSoundToFinish once the box has printed (hidden_items.asm)
       Game.stack:push(TextBox.new(Game,
-        Strings("%s found\n%s!", save.player.name, name),
+        romText(Game.data, "_FoundHiddenItemText", "%s found\n%s!",
+          save.player.name, name),
         nil, TextBox.soundOpts(Game, "Get_Item2")))
       return true
     end
@@ -2821,8 +2837,8 @@ function OverworldState:talkTo(npc)
         "No more room for\nitems!")
       if GameVersion.isYellow() then
         local name = Game.data.items[d.item] and Game.data.items[d.item].name or d.item
-        noRoom = Strings("%s found\n%s!", Game.save.player.name, name)
-                 .. "\f" .. noRoom
+        noRoom = romText(Game.data, "_FoundItemText", "%s found\n%s!",
+                   Game.save.player.name, name) .. "\f" .. noRoom
       end
       Game.stack:push(TextBox.new(Game, noRoom))
       return
@@ -2839,7 +2855,8 @@ function OverworldState:talkTo(npc)
     local ddef = Game.data.items[d.item]
     -- FoundItemText: text_far, sound_get_item_1, text_end (pick_up_item.asm)
     Game.stack:push(TextBox.new(Game,
-      Strings("%s found\n%s!", Game.save.player.name, name), nil,
+      romText(Game.data, "_FoundItemText", "%s found\n%s!",
+        Game.save.player.name, name), nil,
       TextBox.soundOpts(Game,
         (ddef and ddef.keyItem) and "Get_Key_Item" or "Get_Item1")))
     return
@@ -2945,7 +2962,15 @@ function OverworldState:openPC(onDone)
     keepOpen = true,
     onSelect = function()
       require("src.core.Sound").play(Game.data, "Enter_PC")
-      Screens.push(Game, "BoxMenu")
+      -- engine/menus/pc.asm:73 BillsPC prints the access text before the farcall
+      local accessed = metBill
+        and romText(Game.data, "_AccessedBillsPCText",
+          "Accessed BILL's\nPC.\fAccessed POKéMON\nStorage System.")
+        or romText(Game.data, "_AccessedSomeonesPCText",
+          "Accessed someone's\nPC.\fAccessed POKéMON\nStorage System.")
+      Game.stack:push(TextBox.new(Game, accessed, function()
+        Screens.push(Game, "BoxMenu")
+      end))
       done()
     end,
   })
@@ -2955,9 +2980,13 @@ function OverworldState:openPC(onDone)
     label = (Game.save.player.name or "RED") .. "'s PC",
     keepOpen = true,
     onSelect = function()
-      -- pc.asm .playersPC plays SFX_ENTER_PC before the farcall (#960)
+      -- pc.asm .playersPC plays SFX_ENTER_PC then prints AccessedMyPCText
+      -- before the farcall (engine/menus/pc.asm:54, #960)
       require("src.core.Sound").play(Game.data, "Enter_PC")
-      Screens.push(Game, "PlayerPC")
+      Game.stack:push(TextBox.new(Game,
+        romText(Game.data, "_AccessedMyPCText",
+          "Accessed my PC.\fAccessed Item\nStorage System."),
+        function() Screens.push(Game, "PlayerPC") end))
       done()
     end,
   })
@@ -2973,6 +3002,24 @@ function OverworldState:openPC(onDone)
         self:openOaksPC(done)
       end,
     })
+
+    -- engine/pokemon/bills_pc.asm:48-60 PKMN LEAGUE row (#1566)
+    if #(Game.save.hallOfFame or {}) > 0 then
+      table.insert(items, {
+        label = Strings("<PK><MN>LEAGUE"),
+        keepOpen = true,
+        onSelect = function()
+          -- pc.asm PKMNLeague plays SFX_ENTER_PC, then PKMNLeaguePC prints
+          -- AccessedHoFPCText (engine/menus/pc.asm:67, league_pc.asm:2)
+          require("src.core.Sound").play(Game.data, "Enter_PC")
+          Game.stack:push(TextBox.new(Game,
+            romText(Game.data, "_AccessedHoFPCText",
+              "Accessed POKéMON\nLEAGUE's site.\fAccessed the HALL\nOF FAME List."),
+            function() Screens.push(Game, "LeaguePC") end))
+          done()
+        end,
+      })
+    end
   end
 
   local hooked = Runtime.call("ui.pc.items", sameItems, Game, items)
@@ -3307,7 +3354,8 @@ end
 -- the approach walk and then EngageMapTrainer with no further text: the
 -- caller already showed the box, so the battle starts without a second
 -- one (#869).
-function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText)
+function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText,
+                                      endBattleSound, endBattleIsReward)
   local d = npc.def
   Runtime.emit("world.trainer_engaged", { npc = npc, trainerClass = d.trainerClass,
                                           partyIndex = d.trainerParty })
@@ -3363,6 +3411,13 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
     -- cuts (#282).  Substituted here because BattleState:say takes finished
     -- text, while TextBox expanded the {PLAYER}/{RIVAL} tokens itself.
     battle.endBattleText = wonText and TextBox.substitute(Game, wonText) or nil
+    -- the badge jingle rides the armed line's first page on the battle
+    -- screen (sound_get_item_1 in _TX_PRE dialogue; see gyms.lua) (#1606)
+    battle.endBattleSound = endBattleText ~= nil and endBattleSound or nil
+    -- one truth for both checkVictoryRewards call sites; endBattleIsReward
+    -- = false marks an armed line that is NOT the victories dialogue (#1606)
+    battle.rewardDialogueShown = endBattleText ~= nil
+                                 and endBattleIsReward ~= false
     battle.onFinish = function(result)
       if result == "win" then
         Game.save.defeatedTrainers[npc.id] = true
@@ -3372,7 +3427,8 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
         -- checkVictoryRewards pushes the badge/prize box and starts the map's
         -- onVictory script UNDER whatever runs next, so the player still sees
         -- EndBattle (now inside the battle), then the reward, then AfterBattle
-        self:checkVictoryRewards(d.trainerClass, d.trainerParty)
+        self:checkVictoryRewards(d.trainerClass, d.trainerParty,
+                                 battle.rewardDialogueShown)
         self:afterBattle(result, battle)
         if onDone then onDone() end
       else
@@ -3483,7 +3539,10 @@ end
 -- SetEvent / SetEventRange do after the leader victory.
 -- `hide` is { { mapId, objName }, ... } -- HideObject on those toggles
 -- (e.g. Brock victory clears PEWTERCITY_YOUNGSTER / ROUTE22_RIVAL1).
-function OverworldState:checkVictoryRewards(trainerClass, partyIndex)
+-- `shownOnBattleScreen`: `dialogue` already rode the battle screen as the
+-- armed end-battle line (scripts/CeruleanGym.asm:113)
+function OverworldState:checkVictoryRewards(trainerClass, partyIndex,
+                                            shownOnBattleScreen)
   local victories = require("data.scripts.victories")
   local reward = victories[trainerClass .. "#" .. tostring(partyIndex or 1)]
   if not reward then return self:runVictoryHook() end
@@ -3516,7 +3575,9 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex)
   end
   local chain = rewardChain()
   if reward.dialogue then
-    chain.add(reward.dialogue, reward.badgeSound)
+    if not shownOnBattleScreen then
+      chain.add(reward.dialogue, reward.badgeSound)
+    end
     if reward.item then
       chain.add(reward.tmPre)
       if tmGiven then
@@ -3759,7 +3820,7 @@ function OverworldState:applyFieldPoison()
   local queue = {}
   for _, mon in ipairs(fainted) do
     local name = mon.nickname or Game.data.pokemon[mon.species].name
-    table.insert(queue, Strings("%s\nfainted!", name))
+    table.insert(queue, romText(Game.data, "_PokemonFaintedText", "%s\nfainted!", name))
   end
   local alive = false
   for _, mon in ipairs(save.party) do
@@ -4429,7 +4490,8 @@ function OverworldState:restoreBattleContinuation(battle, origin)
     if result == "win" then
       game.save.defeatedTrainers[origin.npcId] = true
       if origin.event then game.save.flags[origin.event] = true end
-      self:checkVictoryRewards(battle.oppClass, battle.partyIndex)
+      self:checkVictoryRewards(battle.oppClass, battle.partyIndex,
+                               battle.rewardDialogueShown)
     end
     self:afterBattle(result, battle)
     self.engaging = false

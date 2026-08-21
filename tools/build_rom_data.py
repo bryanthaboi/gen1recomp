@@ -2037,8 +2037,48 @@ def extract_field(rom, symbols, manifest, out_dir, assets_dir):
         _decode_2bpp(bytes(reordered), 40, 16),
         os.path.join(assets_dir, "credits/the_end.png"))
 
-    raw_2bpp(
-        "WorldMapTileGraphics", 32, 32, "townmap/tiles.png")
+    if _has_symbol(symbols, "SurfingPikachu1Graphics1"):
+        raw_2bpp("SurfingPikachu1Graphics1", 40, 104, "minigame/surf_1a.png", transparent=False)
+        raw_2bpp("SurfingPikachu1Graphics2", 128, 128, "minigame/surf_1b.png", transparent=True)
+        raw_2bpp("SurfingPikachu1Graphics3", 96, 96, "minigame/surf_1c.png", transparent=True)
+
+        beach_intro = rom.bytes(62, 0x50bc, 240)
+        use_ctrl_pad = rom.bytes(62, 0x51ac, 15)
+        to_surf_rad = rom.bytes(62, 0x51bb, 13)
+        title_map = rom.bytes(62, 0x51c8, 72)
+        screen = [0xff] * (20 * 18)
+        for i in range(240):
+            screen[6 * 20 + i] = beach_intro[i]
+        for r in range(6):
+            for c in range(12):
+                screen[r * 20 + (4 + c)] = title_map[r * 12 + c]
+        for r in range(3):
+            for c in range(15):
+                screen[(7 + r) * 20 + (3 + c)] = 0xff
+        for i in range(15):
+            screen[7 * 20 + 3 + i] = use_ctrl_pad[i]
+        for i in range(13):
+            screen[9 * 20 + 4 + i] = to_surf_rad[i]
+
+        sym3 = _symbol(symbols, "SurfingPikachu1Graphics3")
+        raw_gfx3 = rom.bytes(sym3.bank, sym3.address, 144 * 16)
+        tiles = [_decode_2bpp(raw_gfx3[i*16:(i+1)*16], 8, 8) for i in range(144)]
+        blank = Image.new("RGBA", (8, 8), (255, 255, 255, 255))
+        title_bg = Image.new("RGBA", (160, 144), (255, 255, 255, 255))
+        for r in range(18):
+            for c in range(20):
+                t_id = screen[r * 20 + c]
+                if t_id == 0xff:
+                    tile_img = blank
+                elif t_id >= 0x80:
+                    idx = t_id - 0x80
+                    tile_img = tiles[idx] if idx < 144 else blank
+                else:
+                    idx = 128 + t_id
+                    tile_img = tiles[idx] if idx < 144 else blank
+                title_bg.paste(tile_img, (c * 8, r * 8))
+        _save_png(title_bg, os.path.join(assets_dir, "minigame/title_bg.png"))
+    raw_2bpp("WorldMapTileGraphics", 32, 32, "townmap/tiles.png")
     raw_1bpp(
         "TownMapCursor", 16, 16, "townmap/cursor.png",
         transparent=True)

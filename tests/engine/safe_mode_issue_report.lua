@@ -41,7 +41,8 @@ _G.love = {
   getVersion = function() return 12, 0, 0, "Mysterious Mysteries" end,
   system = {
     getOS = function() return "iOS" end,
-    getModel = function() return "iPad Test" end,
+    getDeviceModel = function() return "iPhone16,2" end,
+    getModel = function() return "Apple A17 Pro GPU" end,
     openURL = function(url) openedURL = url end,
   },
   graphics = {
@@ -78,10 +79,13 @@ check(not url:find("game=", 1, true)
 check(fields.summary == "" and fields.location == "" and fields.screenshot == ""
     and fields.steps == "" and fields.expected == "",
   "report leaves user-entered fields blank")
-check(info.metadata:find("Device: iPad Test", 1, true) ~= nil
+check(info.device == "iPhone 15 Pro Max"
+    and info.metadata:find("Device: iPhone 15 Pro Max", 1, true) ~= nil
     and info.metadata:find("LÖVE: 12.0.0", 1, true) ~= nil
     and info.metadata:find("Safe mode: on", 1, true) ~= nil,
   "report metadata includes device and app details")
+check(not info.metadata:find("Simulator GPU", 1, true),
+  "report metadata does not mistake the renderer device for the device")
 check(not info.metadata:find("unknown", 1, true),
   "report metadata omits unknown values")
 check(not info.metadata:find("Game id", 1, true)
@@ -104,25 +108,31 @@ check(not developmentInfo.metadata:find("0.0.0-dev", 1, true),
 
 local previousOS = love.system.getOS
 local previousModel = love.system.getModel
+local previousDeviceModel = love.system.getDeviceModel
 local previousIO = _G.io
 love.system.getOS = function() return "OS X" end
 love.system.getModel = nil
+love.system.getDeviceModel = nil
 _G.io = {
-  popen = function()
+  popen = function(command)
+    local output = command:find("system_profiler", 1, true)
+      and "Hardware Overview:\n    Model Name: MacBook Air\n    Model Identifier: Mac14,15\n    Chip: Apple M2\n"
+      or "Mac14,15\n"
     return {
-      read = function() return "MacBookPro18,3" end,
+      read = function() return output end,
       close = function() end,
     }
   end,
 }
 local desktopInfo = IssueReport.metadata({}, { mods = {} })
-check(desktopInfo.device == "MacBookPro18,3",
+check(desktopInfo.device == "MacBook Air (Apple M2)",
   "report finds desktop device model when LOVE has no model")
 love.system.getOS = function() return "UWP" end
 local xboxInfo = IssueReport.metadata({}, { mods = {} })
 check(xboxInfo.os == "Xbox", "report maps the Xbox runtime platform")
 love.system.getOS = previousOS
 love.system.getModel = previousModel
+love.system.getDeviceModel = previousDeviceModel
 _G.io = previousIO
 
 local opened = IssueReport.open({ safeMode = false }, {

@@ -14,9 +14,9 @@
 -- height, and flex-shrink compressing text until it overlapped.
 --
 -- THE RULES THIS FILE FOLLOWS:
---   * Lists paginate (Kit.pager).  The installed-mod list also scrolls inside
---     its viewport, so each of its pages can hold at least ten entries without
---     requiring a tall window.  Pages still bound how many mod rows we visit.
+--   * Short lists paginate (Kit.pager, perPage from Kit.rowsThatFit); the
+--     installed-mod list is one continuous scroll instead, drawing only the
+--     rows inside the region viewport so the window bounds the frame cost.
 --   * Every click handler only QUEUES work (imp._uiActions); update() drains
 --     the queue, so an action that tears the view down (Play, Edit save)
 --     never runs inside the frame that dispatched it.
@@ -45,9 +45,6 @@ local COMMUNITY_URL = "https://bois.icu"
 local ACT_DEDUP = 0.35
 -- Finger travel past this (px) is a drag, not a tap.
 local TAP_SLOP2 = 16 * 16
--- Installed mods should not turn into a one- or two-item pager on a compact
--- display.  Keep a useful page size, then let the list viewport scroll.
-local MIN_MODS_PER_PAGE = 10
 local MIN_SKIN_ROWS = 4
 local SKIN_FORMAT_LABEL = {
   native = "GEN1",
@@ -79,15 +76,6 @@ end
 local function setTabScroll(imp, value)
   imp._tabScroll = imp._tabScroll or {}
   imp._tabScroll[tabKeyOf(imp)] = clamp(value, 0, tabScrollMax(imp))
-end
-
-local function modListWantsWheel(imp, wheel)
-  if imp.tab ~= "mods" or (imp._modScrollMax or 0) <= 0 then return false end
-  if not inRect(imp._modListRect, Kit.mouseX, Kit.mouseY) then return false end
-  if not inRect(imp._tabRegionRect, Kit.mouseX, Kit.mouseY) then return false end
-  local at = clamp(imp.modScroll or 0, 0, imp._modScrollMax)
-  if wheel < 0 then return at < imp._modScrollMax end
-  return at > 0
 end
 
 -- ------------------------------------------------------------- lifecycle
@@ -136,12 +124,48 @@ function LauncherView.detach(imp)
   Kit.clearCaches()
 end
 
+local function markNoDrag(imp, x, y, w, h)
+  if Kit.blockClicks then return end
+  local t = imp._noDragRects
+  if not t then t = {}; imp._noDragRects = t end
+  local n = (imp._noDragN or 0) + 1
+  imp._noDragN = n
+  local r = t[n]
+  if not r then r = {}; t[n] = r end
+  r.x, r.y, r.w, r.h = x, y, w, h
+end
+
+local function noDragAt(imp, x, y)
+  local rects = imp._noDragRects
+  for i = 1, imp._noDragN or 0 do
+    if inRect(rects[i], x, y) then return true end
+  end
+  return false
+end
+
+local function armMouse(imp, x, y)
+  if noDragAt(imp, x, y) then
+    imp._clickPt = { x = x, y = y }
+    return
+  end
+  local shielded = imp._modalUpNow
+  imp._mouseAt = {
+    x = x, y = y,
+    region = not shielded and tabScrollMax(imp) > 0
+      and inRect(imp._tabRegionRect, x, y) or false,
+    page = not shielded and (imp._pageScrollMax or 0) > 0 or false,
+  }
+  Kit.dragBegin(x, y)
+end
+
 -- ---------------------------------------------------------------- input
--- The kit is polled, not evented: update() samples the mouse and turns a
--- rising edge into a click point that the next draw consumes.  Host-forwarded
--- mousepressed stays unused, exactly as before, so Android's synthesized
--- mouse path cannot double-fire a tap (#553) -- the dedup window below is the
--- other half of that guarantee.
+-- The kit is polled, not evented: update() samples the mouse.  A press arms
+-- a drag that scrolls like a finger, and the click dispatches on RELEASE so
+-- the drag can disqualify it, exactly like the touch path below; only the
+-- cartridge (which owns its own spin-drag) keeps the press-down click.
+-- Host-forwarded mousepressed stays unused, exactly as before, so Android's
+-- synthesized mouse path cannot double-fire a tap (#553) -- the dedup window
+-- below is the other half of that guarantee.
 function LauncherView.update(imp, dt)
   if not imp._flex then return end
   if imp._launchFade then return end
@@ -166,7 +190,39 @@ function LauncherView.update(imp, dt)
     if not touching and now >= (imp._suppressMouseUntil or 0)
         and now >= (imp._suppressClickUntil or 0) then
       local mx, my = love.mouse.getPosition()
-      imp._clickPt = { x = mx, y = my }
+      armMouse(imp, mx, my)
+    end
+  elseif down and imp._mouseAt then
+    local start = imp._mouseAt
+    local mx, my = love.mouse.getPosition()
+    local ddx, ddy = mx - start.x, my - start.y
+    if ddx * ddx + ddy * ddy > TAP_SLOP2 then
+      start.dragged = true
+    end
+    if start.dragged then
+      local last = start.lastY or start.y
+      local move = -(my - last)
+      if move ~= 0 and start.region then
+        local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
+          tabScrollMax(imp), move)
+        setTabScroll(imp, at)
+        move = leftover
+      end
+      if move ~= 0 and start.page and (imp._pageScrollMax or 0) > 0 then
+        local at, leftover = Kit.scrollHandoff(imp._pageScroll or 0,
+          imp._pageScrollMax, move)
+        imp._pageScroll = at
+        move = leftover
+      end
+      if move ~= 0 then Kit.dragAdd(move) end
+    end
+    start.lastY = my
+  elseif not down and imp._mouseAt then
+    local start = imp._mouseAt
+    imp._mouseAt = nil
+    Kit.dragEnd()
+    if not start.dragged then
+      imp._clickPt = { x = start.x, y = start.y }
     end
   end
   imp._prevMouseDown = down
@@ -192,9 +248,6 @@ function LauncherView.touchpressed(imp, id, x, y)
   imp._touchAt = imp._touchAt or {}
   imp._touchAt[tostring(id)] = {
     x = x, y = y,
-    modsList = imp.tab == "mods" and (imp._modScrollMax or 0) > 0
-      and inRect(imp._modListRect, x, y)
-      and inRect(imp._tabRegionRect, x, y),
     region = tabScrollMax(imp) > 0 and inRect(imp._tabRegionRect, x, y),
   }
 end
@@ -207,19 +260,9 @@ function LauncherView.touchmoved(imp, id, x, y)
     if ddx * ddx + ddy * ddy > TAP_SLOP2 then
       start.dragged = true
     end
-    -- A drag that began in the installed-mod viewport scrolls that page's
-    -- rows.  Its pager remains available for moving to the next ten-plus
-    -- entries; a drag elsewhere keeps the normal short-window page scroll.
     if start.dragged then
       local last = start.lastY or start.y
       local move = -(y - last)
-      if start.modsList then
-        local listMax = imp._modScrollMax or 0
-        local at, leftover = Kit.scrollHandoff(
-          clamp(imp.modScroll or 0, 0, listMax), listMax, move)
-        imp.modScroll = at
-        move = leftover
-      end
       if move ~= 0 and start.region then
         local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
           tabScrollMax(imp), move)
@@ -256,6 +299,24 @@ end
 function LauncherView.clickAt(imp, x, y)
   if not imp._flex then return end
   imp._clickPt = { x = x, y = y }
+end
+
+-- Event-driven press: a macOS trackpad tap delivers press+release inside one
+-- frame, so update()'s love.mouse.isDown poll never sees it.  Arm the drag
+-- from the press event under the poll's own suppression rules -- the poll's
+-- release branch then mints the tap, still within the same frame for a
+-- one-frame tap -- and mark the press seen so the poll cannot arm a second
+-- one when isDown does catch it.
+function LauncherView.mousepressed(imp, x, y)
+  if not imp._flex then return end
+  local now = love.timer.getTime()
+  local touching = imp._touchAt ~= nil and next(imp._touchAt) ~= nil
+  if touching or now < (imp._suppressMouseUntil or 0)
+      or now < (imp._suppressClickUntil or 0) then
+    return
+  end
+  if not imp._mouseAt then armMouse(imp, x, y) end
+  imp._prevMouseDown = true
 end
 
 -- Keyboard focus ring.  Returns true when the key was consumed.  Arrows arm
@@ -343,7 +404,7 @@ end
 
 local CART_COLOR = {
   red = PAL.railRed, blue = PAL.railBlue, yellow = PAL.railGold,
-  gold = PAL.railAmber,
+  gold = PAL.railAmber, silver = PAL.railSilver,
 }
 local function cartColor(version)
   return CART_COLOR[version] or PAL.green
@@ -406,16 +467,25 @@ local function cartQuad(project, x, y, w, h, z)
   }
 end
 
+local function cartFacing(points)
+  local area = 0
+  for i = 1, #points do
+    local a, b = points[i], points[i % #points + 1]
+    area = area + a[1] * b[2] - b[1] * a[2]
+  end
+  return area > 0
+end
+
 local function cartPill(project, x, y, w, h, z, color, alpha)
   local points, radius = {}, h / 2
   for i = 0, 10 do
-    local a = math.pi + math.pi * i / 10
-    points[#points + 1] = { project(x + radius + math.cos(a) * radius,
+    local a = -math.pi / 2 + math.pi * i / 10
+    points[#points + 1] = { project(x + w - radius + math.cos(a) * radius,
       y + radius + math.sin(a) * radius, z) }
   end
   for i = 0, 10 do
-    local a = math.pi * i / 10
-    points[#points + 1] = { project(x + w - radius + math.cos(a) * radius,
+    local a = math.pi / 2 + math.pi * i / 10
+    points[#points + 1] = { project(x + radius + math.cos(a) * radius,
       y + radius + math.sin(a) * radius, z) }
   end
   cartPolygon(points, color, alpha)
@@ -495,6 +565,7 @@ end
 
 local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
   local state = cartridgeState(imp, version)
+  markNoDrag(imp, x, y, w, h)
   local focused = Kit.focusable(key, x, y, w, h)
   local hot = Kit.hover(x, y, w, h)
   local active = state.active
@@ -596,7 +667,7 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
   end
 
   local halfW, halfH = w / 2, h / 2
-  local depth = math.max(8, w * 0.14)
+  local depth = math.max(6, w * 0.10)
   local project = function(px, py, pz)
     return cartProject(cx + pressX, cy + pressY, yaw, pitch,
       px * pressedScale, py * pressedScale, pz * pressedScale)
@@ -628,51 +699,115 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
   local side = { math.floor(shell[1] * 0.54), math.floor(shell[2] * 0.54),
     math.floor(shell[3] * 0.54) }
 
-  cartPolygon(mainBack, side, 1)
-  cartPolygon(capBack, side, 1)
+  local frontFacing = cartFacing(mainFront)
+  if frontFacing then
+    cartPolygon(mainBack, side, 1)
+    cartPolygon(capBack, side, 1)
+  else
+    cartPolygon(mainFront, shell, 1)
+    cartPolygon(capFront, shell, 1)
+  end
   cartPolygon({ mainFront[2], mainFront[3], mainBack[3], mainBack[2] }, side, 1)
   cartPolygon({ mainFront[3], mainFront[4], mainBack[4], mainBack[3] }, side, 1)
   cartPolygon({ mainFront[1], mainFront[2], mainBack[2], mainBack[1] }, side, 1)
+  cartPolygon({ mainFront[4], mainFront[1], mainBack[1], mainBack[4] }, side, 1)
   cartPolygon({ capFront[2], capFront[3], capBack[3], capBack[2] }, side, 1)
   cartPolygon({ capFront[1], capFront[2], capBack[2], capBack[1] }, side, 1)
   cartPolygon({ capFront[4], capFront[1], capBack[1], capBack[4] }, side, 1)
-  cartPolygon(mainFront, shell, 1)
-  cartPolygon(capFront, shell, 1)
-
-  local faceZ = depth + 0.8
-  for i = 0, 4 do
-    local ry = mainTop + 7 + i * h * 0.025
-    cartPolygon(cartQuad(project, -halfW + 2, ry, w * 0.13, 2, faceZ), side, 0.7)
-    cartPolygon(cartQuad(project, halfW - w * 0.13 - 2, ry, w * 0.13, 2, faceZ), side, 0.7)
+  if frontFacing then
+    cartPolygon(mainFront, shell, 1)
+    cartPolygon(capFront, shell, 1)
+  else
+    cartPolygon(mainBack, side, 1)
+    cartPolygon(capBack, side, 1)
+    -- The tri-wing security screw: a domed brass head with three teardrop
+    -- recesses pinwheeled at 120 degrees.
+    local backZ = -(depth + 0.8)
+    local sd = math.min(w, h) * 0.11
+    cartPill(project, -sd * 0.62, -sd * 0.62, sd * 1.24, sd * 1.24, backZ,
+      { math.floor(shell[1] * 0.4), math.floor(shell[2] * 0.4),
+        math.floor(shell[3] * 0.4) }, 0.9)
+    cartPill(project, -sd / 2, -sd / 2, sd, sd, backZ - 0.4,
+      { 196, 186, 148 }, 1)
+    cartPill(project, -sd * 0.32, -sd * 0.32, sd * 0.64, sd * 0.64,
+      backZ - 0.6, { 220, 212, 178 }, 0.8)
+    local r = sd / 2
+    for k = 0, 2 do
+      local a = -math.pi / 2 + k * (2 * math.pi / 3)
+      local ux, uy = math.cos(a), math.sin(a)
+      local vx, vy = -uy, ux
+      local r0, r1 = r * 0.16, r * 0.82
+      local w0, w1 = r * 0.13, r * 0.3
+      cartPolygon({
+        { project(ux * r0 + vx * w0, uy * r0 + vy * w0, backZ - 0.8) },
+        { project(ux * r0 - vx * w0, uy * r0 - vy * w0, backZ - 0.8) },
+        { project(ux * r1 - vx * w1, uy * r1 - vy * w1, backZ - 0.8) },
+        { project(ux * r1 + vx * w1, uy * r1 + vy * w1, backZ - 0.8) },
+      }, { 112, 104, 76 }, 1)
+    end
   end
-  local recessX, recessY = -w * 0.32, mainTop + h * 0.023
-  local recessW, recessH = w * 0.64, h * 0.24
-  cartPolygon(cartQuad(project, recessX, recessY, recessW, recessH, faceZ), shell, 0.88)
-  cartPill(project, recessX + w * 0.025, recessY + h * 0.025,
-    recessW - w * 0.05, h * 0.12, faceZ + 0.5, shell, 0.7)
-  cartPill(project, recessX + w * 0.045, recessY + h * 0.043,
-    recessW - w * 0.09, h * 0.083, faceZ + 0.8, side, 0.42)
 
-  local labelX, labelY = -w * 0.33, -h * 0.20
-  local labelW, labelH = w * 0.66, h * 0.55
-  local plate = cartQuad(project, labelX - 2, labelY - 2, labelW + 4, labelH + 4, faceZ + 0.8)
-  cartPolygon(plate, side, 0.95)
-  local labelPoints = cartQuad(project, labelX, labelY, labelW, labelH, faceZ + 1.2)
-  local label = cartridgeLabel(imp, version)
-  local mesh = label and cartLabelMesh(imp, version, label, labelPoints)
-  if mesh then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(mesh)
-  elseif label then
-    local artScale = math.min(labelW / label.width, labelH / label.height)
-    love.graphics.draw(label.image, labelPoints[1][1], labelPoints[1][2],
-      0, artScale, artScale)
+  if frontFacing then
+    local faceZ = depth + 0.8
+    -- The shell's grip grooves: a stack beside the label recess on the left,
+    -- and one below the top-right corner notch, like the DMG cart.
+    local grooveW = w * 0.115
+    local grooveH = math.max(1, h * 0.009)
+    for i = 0, 5 do
+      local ry = mainTop + h * 0.014 + i * h * 0.021
+      cartPolygon(cartQuad(project, -halfW + w * 0.02, ry,
+        grooveW, grooveH, faceZ), side, 0.7)
+      cartPolygon(cartQuad(project, halfW - grooveW - w * 0.02, ry,
+        grooveW, grooveH, faceZ), side, 0.7)
+    end
+    -- The thin diagonal mold ridge cut into each long side a little below
+    -- the grip grooves, mirrored left/right.
+    local function diagonal(x0, y0, x1, y1)
+      local dx, dy = x1 - x0, y1 - y0
+      local len = math.sqrt(dx * dx + dy * dy)
+      local nx, ny = -dy / len, dx / len
+      local t = math.max(0.6, h * 0.004)
+      cartPolygon({
+        { project(x0 + nx * t, y0 + ny * t, faceZ) },
+        { project(x0 - nx * t, y0 - ny * t, faceZ) },
+        { project(x1 - nx * t, y1 - ny * t, faceZ) },
+        { project(x1 + nx * t, y1 + ny * t, faceZ) },
+      }, side, 0.7)
+    end
+    local dgY = mainTop + h * 0.20
+    diagonal(-halfW + w * 0.006, dgY, -halfW + w * 0.085, dgY + h * 0.038)
+    diagonal(halfW - w * 0.006, dgY, halfW - w * 0.085, dgY + h * 0.038)
+    -- The Nintendo GAME BOY recess: one stadium pill sunk into the shell.
+    local pillX, pillW = -halfW + w * 0.17, w * 0.62
+    local pillY, pillH = mainTop + h * 0.024, h * 0.115
+    cartPill(project, pillX, pillY, pillW, pillH, faceZ + 0.5, side, 0.55)
+    local inX, inY = w * 0.008, h * 0.008
+    cartPill(project, pillX + inX, pillY + inY,
+      pillW - 2 * inX, pillH - 2 * inY, faceZ + 0.8,
+      { math.floor(shell[1] * 0.92), math.floor(shell[2] * 0.92),
+        math.floor(shell[3] * 0.92) }, 1)
+
+    local labelX, labelY = -w * 0.33, -h * 0.20
+    local labelW, labelH = w * 0.66, h * 0.55
+    local plate = cartQuad(project, labelX - 2, labelY - 2, labelW + 4, labelH + 4, faceZ + 0.8)
+    cartPolygon(plate, side, 0.95)
+    local labelPoints = cartQuad(project, labelX, labelY, labelW, labelH, faceZ + 1.2)
+    local label = cartridgeLabel(imp, version)
+    local mesh = label and cartLabelMesh(imp, version, label, labelPoints)
+    if mesh then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(mesh)
+    elseif label then
+      local artScale = math.min(labelW / label.width, labelH / label.height)
+      love.graphics.draw(label.image, labelPoints[1][1], labelPoints[1][2],
+        0, artScale, artScale)
+    end
+    cartPolygon({
+      { project(-w * 0.07, h * 0.37, faceZ + 1) },
+      { project(w * 0.07, h * 0.37, faceZ + 1) },
+      { project(0, h * 0.43, faceZ + 1) },
+    }, side, 0.70)
   end
-  cartPolygon({
-    { project(-w * 0.07, h * 0.37, faceZ + 1) },
-    { project(w * 0.07, h * 0.37, faceZ + 1) },
-    { project(0, h * 0.43, faceZ + 1) },
-  }, side, 0.70)
   love.graphics.pop()
 
   if not state.active and (Kit._activateId == key) then
@@ -920,16 +1055,21 @@ local GAME_TABS = {
     label = "Yellow" },
   { id = "gold",   key = "tab-gold",   letter = "G", color = PAL.railAmber,
     label = "Gold" },
+  { id = "silver", key = "tab-silver", letter = "S", color = PAL.railSilver,
+    label = "Silver" },
 }
 
 local HEADER_TABS = {
   { id = "mods",   key = "tab-mods" },
   { id = "find",   key = "tab-find" },
   { id = "skins",  key = "tab-skins", glyph = true },
+  { id = "bug",    key = "tab-bug" },
 }
 for _, t in ipairs(HEADER_TABS) do
   t.opts = { face = "tab", font = "tab", color = t.color, letter = t.letter }
-  if t.glyph then t.opts.drawFn = drawSkinGlyph end
+  if t.glyph then
+    t.opts.drawFn = drawSkinGlyph
+  end
 end
 
 -- Which cartridge the dropdown is showing: the open game tab, else the last
@@ -1067,6 +1207,8 @@ local function buildHeader(imp, m)
     or love.graphics.newImage("assets/launcher/mods.png")
   imp._findIcon = imp._findIcon
     or love.graphics.newImage("assets/launcher/find.png")
+  imp._bugIcon = imp._bugIcon
+    or love.graphics.newImage("assets/launcher/bug.png")
   -- Game tabs keep their cartridge colours -- that is the one piece of brand
   -- identity in the launcher, and "the red one" is how people actually refer
   -- to these.  The colour rides the outline and the glyph at rest and becomes
@@ -1077,6 +1219,7 @@ local function buildHeader(imp, m)
   for _, t in ipairs(tabs) do
     if t.id == "mods" then t.icon = imp._modsIcon end
     if t.id == "find" then t.icon = imp._findIcon end
+    if t.id == "bug" then t.icon = imp._bugIcon end
   end
   local tabH = m.chip
   local tx = m.x + m.pad
@@ -1086,16 +1229,11 @@ local function buildHeader(imp, m)
   local tabGap = math.floor(6 * m.s)
   local tabRowGap = math.floor(4 * m.s)
 
-  -- the cartridge dropdown, sized to its longest label so switching games
-  -- never reflows the row
+  -- the cartridge dropdown: just the game's initial and the caret; the
+  -- popup list carries the full names
   local chrome0 = headerChrome(imp)
   local game = currentGame(imp)
-  local labelW = 0
-  for _, g in ipairs(GAME_TABS) do
-    labelW = math.max(labelW, Kit.textWidth("tab", Strings(g.label)))
-  end
-  local dropW = math.min(tabRight - tabLeft,
-    tabH + labelW + math.floor(34 * m.s))
+  local dropW = math.min(tabRight - tabLeft, tabH + math.floor(24 * m.s))
   chrome0.game.color = game.color
   chrome0.game.letter = game.letter
   chrome0.game.active = imp.tab == game.id
@@ -1105,7 +1243,7 @@ local function buildHeader(imp, m)
   -- flip with it or it vanishes into the cartridge colour
   local gameInvert = chrome0.game.active or gameHot
   chrome0.game.ring = gameHot and not chrome0.game.active or nil
-  btn(imp, tx, ty, dropW, tabH, "tab-game", Strings(game.label), chrome0.game)
+  btn(imp, tx, ty, dropW, tabH, "tab-game", "", chrome0.game)
   do
     local cw = math.floor(7 * m.s)
     local ccx = tx + dropW - math.floor(14 * m.s)
@@ -1119,7 +1257,7 @@ local function buildHeader(imp, m)
   end
   tx = tx + dropW + tabGap
 
-  for _, t in ipairs(tabs) do
+  local function headerTab(t)
     local w = tabH
     if tx > tabLeft and tx + w > tabRight then
       tx = tabLeft
@@ -1131,6 +1269,11 @@ local function buildHeader(imp, m)
     o.action = chrome.tab[t.id]
     btn(imp, tx, ty, w, tabH, t.key, "", o)
     tx = tx + w + tabGap
+  end
+  -- The bug-report chip sits LAST, past the sync chip.
+  local bugTab
+  for _, t in ipairs(tabs) do
+    if t.id == "bug" then bugTab = t else headerTab(t) end
   end
 
   do
@@ -1153,6 +1296,7 @@ local function buildHeader(imp, m)
     end
     tx = tx + w + tabGap
   end
+  if bugTab then headerTab(bugTab) end
 
   -- `ty` has walked down with the wraps, so this stays correct at one row too.
   y = ty + tabH + math.floor(8 * m.s)
@@ -1172,15 +1316,27 @@ function LauncherView._updateControl(imp)
   elseif status == "downloading" then
     local pct = st.progress and math.floor(st.progress * 100) or 0
     return status, Strings("Updating %d%%", pct), nil, false
+  elseif status == "full_downloading" then
+    local pct = st.progress and math.floor(st.progress * 100) or 0
+    return status, Strings("Downloading app %d%%", pct), nil, false
   elseif status == "available" then
     return status, st.latest and (Strings("Update v") .. st.latest)
       or Strings("Update"), function() pcall(imp.Check.download) end, true
   elseif status == "ready" then
     return status, Strings("Restart to update"),
       function() require("src.core.HostShell").restart() end, true
-  elseif status == "needs_full" then
-    return status, Strings("Open releases"),
-      function() love.system.openURL(imp.Check.releaseUrl()) end, true
+  elseif status == "needs_full" or status == "full_ready" then
+    local action = imp.Check.fullUpdateAction and imp.Check.fullUpdateAction()
+    local label = action and action.label or "Open releases"
+    local url = action and action.url or imp.Check.releaseUrl()
+    return status, Strings(label),
+      function()
+        if action and action.kind and imp.Check.performFullUpdate then
+          pcall(imp.Check.performFullUpdate)
+        else
+          love.system.openURL(url)
+        end
+      end, true
   end
   -- idle / uptodate / error: offer a manual check, with no glow.
   return status, Strings("Check for updates"),
@@ -1923,7 +2079,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   -- notice line
   local noticeText, noticeCol
   if safeMode then
-    noticeText, noticeCol = "Safe mode is on. All mods are disabled. Turn it off in Settings to change mod toggles.", PAL.yellow
+    noticeText, noticeCol = "Safe mode is on. All mods are disabled. Turn it off in the Bug tab to change mod toggles.", PAL.yellow
   elseif imp.modNotice then
     noticeText = imp.modNotice.text
     noticeCol = imp.modNotice.ok and PAL.green or PAL.red
@@ -1936,7 +2092,6 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   cy = cy + buildModScopeRow(imp, x, cy, w, m)
 
   if #mods == 0 then
-    imp.modScroll, imp._modScrollMax, imp._modListRect = 0, 0, nil
     Kit.emptyBox(x, cy, w, math.floor(110 * m.s), imp:_modsEmptyHint())
     return (cy - y) + math.floor(110 * m.s)
   end
@@ -1977,43 +2132,30 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   end
 
   -- A mod row is a fixed height: its details first, then a dedicated second
-  -- line of per-game checkboxes.  Fixed because a page of uniform rows is
-  -- what lets perPage come from the viewport.
+  -- line of per-game checkboxes.  Fixed row heights are what make the
+  -- cull below plain arithmetic.
   local togH = math.floor(26 * m.s)
   local gamesLabel = Strings("Enable for:")
   local textH = Kit.textHeight("button") + math.floor(4 * m.s)
     + Kit.textHeight("small") + math.floor(2 * m.s) + Kit.textHeight("small")
   local rowH = math.floor(8 * m.s) + textH + math.floor(8 * m.s) + togH
     + math.floor(8 * m.s)
-  local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
-  local listH = availH - (cy - y) - pagerH - gap
-  local perPage = Kit.rowsThatFit(listH, rowH, gap, MIN_MODS_PER_PAGE, 20)
-  local first, last, cur, pages = Kit.pageBounds(page(imp, "mods"), #mods, perPage)
-  setPage(imp, "mods", cur)
   local listTop = cy
-  local shown = math.max(0, last - first + 1)
-  local contentH = shown * rowH + math.max(0, shown - 1) * gap
-  local scrollMax = math.max(0, contentH - listH)
-  local scroll = clamp(imp.modScroll or 0, 0, scrollMax)
-  local lr = imp._modListRect
-  if not lr then lr = {}; imp._modListRect = lr end
-  lr.x, lr.y, lr.w, lr.h = x, listTop, w, listH
-  imp._modScrollMax = scrollMax
-  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and not Kit.blockClicks
-      and Kit.hit(x, listTop, w, listH) then
-    scroll = clamp(scroll - Kit.wheelY * math.floor(48 * m.s), 0, scrollMax)
-    Kit.wheelY = 0
-  elseif scrollMax == 0 then
-    local wheelPage = Kit.wheelPage(x, listTop, w, listH, cur, #mods, perPage)
-    if wheelPage ~= cur then imp.modScroll = 0 end
-    setPage(imp, "mods", wheelPage)
-  end
-  imp.modScroll = scroll
 
-  Kit.pushClip(x, listTop, w, listH)
+  -- One continuous list: derive the rows that can touch the viewport before
+  -- entering the loop. Drawing was already culled, but scanning every
+  -- installed row to discover that defeats the point on a large mod library.
+  local view = imp._tabRegionRect
+  local viewTop = view and view.y or listTop
+  local viewBot = view and (view.y + view.h) or (listTop + availH)
+  local stride = rowH + gap
+  local first = math.max(1,
+    math.ceil((viewTop - rowH - listTop) / stride) + 1)
+  local last = math.min(#mods,
+    math.floor((viewBot - listTop) / stride) + 1)
   for i = first, last do
     local mod = mods[i]
-    local ry = listTop + (i - first) * (rowH + gap) - scroll
+    local ry = listTop + (i - 1) * (rowH + gap)
     local rowKey = rowKeyFor(imp, "mod-row-", mod.id)
     local isFullyDisabled = true
     if mod.enabledByVersion then
@@ -2123,13 +2265,9 @@ local function buildModsPanel(imp, x, y, w, availH, m)
         px, ly, PAL.detail)
     end
   end
-  Kit.popClip()
 
-  local pagerY = listTop + listH + gap
-  local newPage, newPagerH = Kit.pager(x, pagerY, w, cur, #mods, perPage, "mods")
-  if newPage ~= cur then imp.modScroll = 0 end
-  setPage(imp, "mods", newPage)
-  return pagerY + newPagerH - y
+  local contentH = #mods * rowH + (#mods - 1) * gap
+  return (listTop + contentH + gap) - y
 end
 
 -- ---------------------------------------------------------- find mods panel
@@ -2320,6 +2458,69 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
   cy = cy + math.floor(10 * m.s)
   Kit.textWrapped("small", hint, x, cy, w, PAL.muted, 3)
   return cy + hintH - y
+end
+
+local function buildBugPanel(imp, x, y, w, availH, m)
+  local SaveData = require("src.core.SaveData")
+  local gap = m.gap
+  local pad = math.floor(16 * m.s)
+  local cy = y
+  local safeMode = imp:_safeModeEnabled()
+
+  Kit.text("button", Strings("Troubleshooting"), x, cy, PAL.heading)
+  cy = cy + Kit.textHeight("button") + gap
+
+  if imp.issueNotice then
+    cy = cy + Kit.textWrapped("small", imp.issueNotice.text, x, cy, w,
+      imp.issueNotice.ok and PAL.green or PAL.red, 2) + gap
+  end
+
+  local switchW = math.floor(92 * m.s)
+  local switchH = math.max(m.btnH, Kit.tapMin())
+  local detail = safeMode
+    and Strings("All mods are disabled and their toggles are locked until safe mode is turned off.")
+    or Strings("Temporarily disable every mod while you reproduce a bug.")
+  local textW = math.max(0, w - 2 * pad - switchW - gap)
+  local detailH = Kit.wrapHeight("small", detail, textW, 3)
+  local safeH = math.max(switchH, Kit.textHeight("small") + math.floor(4 * m.s) + detailH)
+    + 2 * pad
+  Kit.card(x, cy, w, safeH)
+  local textX = x + pad
+  local textY = cy + pad
+  Kit.text("small", Strings("Safe mode"), textX, textY, PAL.heading)
+  Kit.textWrapped("small", detail, textX,
+    textY + Kit.textHeight("small") + math.floor(4 * m.s), textW,
+    PAL.muted, 3)
+  local toggleX = x + w - pad - switchW
+  local toggleY = cy + math.floor((safeH - switchH) / 2)
+  local _, changed = Kit.toggle(toggleX, toggleY, switchW, switchH, safeMode,
+    "bug-safe-mode")
+  if changed then
+    queueAction(imp, "bug-safe-mode", function() imp:_toggleSafeMode() end)
+  end
+  cy = cy + safeH + gap
+
+  local reportLabel = Strings("Report a bug")
+  local reportW = math.min(w - 2 * pad,
+    Kit.textWidth("small", reportLabel) + math.floor(32 * m.s))
+  local reportDetail = Strings("Fill out the GitHub form with the available system information.")
+  local reportTextW = math.max(0, w - 2 * pad - reportW - gap)
+  local reportDetailH = Kit.wrapHeight("small", reportDetail, reportTextW, 3)
+  local reportH = math.max(m.btnH, Kit.textHeight("small") + math.floor(4 * m.s) + reportDetailH)
+    + 2 * pad
+  Kit.card(x, cy, w, reportH)
+  Kit.text("small", Strings("Something not working?"), textX, cy + pad, PAL.heading)
+  Kit.textWrapped("small", reportDetail, textX,
+    cy + pad + Kit.textHeight("small") + math.floor(4 * m.s), reportTextW,
+    PAL.muted, 3)
+  btn(imp, x + w - pad - reportW,
+    cy + math.floor((reportH - m.btnH) / 2), reportW, m.btnH,
+    "bug-report", reportLabel, {
+      kind = "accent", font = "small",
+      action = function()
+        imp:_ensureMods()
+        imp:_reportIssue(SaveData.loadOptions(), nil)
+      end })
 end
 
 local function buildFindPanel(imp, x, y, w, availH, m)
@@ -2798,6 +2999,8 @@ local function buildConfirmModal(imp, m)
           imp:_setAllMods(true, true)
         elseif c.kind == "importOversize" then
           imp:_importSave(c.version, c.source, true)
+        elseif c.kind == "largeImport" then
+          imp:_importRequiredSource(c.modId, c.importId, c.source, true)
         else
           imp:_toggleMod(c.id, true, c.version)
         end
@@ -2817,9 +3020,13 @@ local function buildTextModal(imp, m, key, title, body, closeFn)
   local h = math.floor(math.min(m.H - 2 * m.pad, 460 * m.s))
   local px, py, pw, ph = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("button", Kit.ellipsize("button", title, pw - 2 * pad),
+  local xW = math.max(Kit.tapMin(), math.floor(30 * m.s))
+  Kit.text("button", Kit.ellipsize("button", title,
+    pw - 2 * pad - xW - math.floor(8 * m.s)),
     px + pad, cy, PAL.heading)
-  cy = cy + Kit.textHeight("button") + math.floor(10 * m.s)
+  btn(imp, px + pw - pad - xW, cy, xW, xW, key .. "-x", "X",
+    { font = "small", action = closeFn })
+  cy = cy + math.max(Kit.textHeight("button"), xW) + math.floor(10 * m.s)
 
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local bodyH = (py + ph - pad) - cy - m.btnH - math.floor(10 * m.s)
@@ -4162,21 +4369,70 @@ local function syncTitle(imp, m, px, py, pw, pad)
   return py + Kit.textHeight("button") + math.floor(12 * m.s)
 end
 
-local function syncStatus(imp, m, x, y, w, eng)
+local function syncWidth(m, want)
+  return math.floor(math.min(want, m.W - 2 * m.pad))
+end
+
+local function syncFit(m, fixed, rows, gaps, texts)
+  local fit = { btnH = m.btnH, gap = math.floor(8 * m.s), lines = {} }
+  local avail = m.H - 2 * m.pad
+  texts = texts or {}
+  for i, blk in ipairs(texts) do fit.lines[i] = blk.max end
+  local function total()
+    local t = fixed + rows * fit.btnH + gaps * fit.gap
+    for i, blk in ipairs(texts) do
+      t = t + Kit.wrapHeight(blk.font, blk.str, blk.w, fit.lines[i])
+    end
+    return t
+  end
+  while total() > avail do
+    local worst, worstH = nil, 0
+    for i, blk in ipairs(texts) do
+      if fit.lines[i] > 1 then
+        local hgt = Kit.wrapHeight(blk.font, blk.str, blk.w, fit.lines[i])
+        if hgt > worstH then worst, worstH = i, hgt end
+      end
+    end
+    if not worst then break end
+    fit.lines[worst] = fit.lines[worst] - 1
+  end
+  if total() > avail and gaps > 0 then
+    fit.gap = math.max(math.max(2, math.floor(3 * m.s)),
+      fit.gap - math.ceil((total() - avail) / gaps))
+  end
+  if total() > avail and rows > 0 then
+    fit.btnH = math.max(Kit.tapMin(),
+      fit.btnH - math.ceil((total() - avail) / rows))
+  end
+  fit.over = total() - avail
+  fit.h = math.min(total(), avail)
+  return fit
+end
+
+local function syncStatus(imp, m, x, y, w, eng, fit)
+  local bh = (fit and fit.btnH) or m.btnH
+  local gap = (fit and fit.gap) or math.floor(8 * m.s)
   if eng:busy() then
-    Loader.inline(x, y, w, m.btnH, eng.status)
-    return m.btnH + math.floor(8 * m.s)
+    Loader.inline(x, y, w, bh, eng.status)
+    return bh + gap
   end
   Kit.text("small", Kit.ellipsize("small", eng.status or "", w), x, y,
     eng.phase == "error" and PAL.red or PAL.muted)
+  return Kit.textHeight("small") + gap + math.floor(2 * m.s)
+end
+
+local function syncReserve(m, eng)
+  if eng:busy() then return m.btnH + math.floor(8 * m.s) end
   return Kit.textHeight("small") + math.floor(10 * m.s)
 end
 
-local function syncRow(imp, m, x, y, w, key, label, opts)
+local function syncRow(imp, m, x, y, w, key, label, opts, fit)
   opts = opts or {}
   opts.font = "small"
-  btn(imp, x, y, w, m.btnH, key, label, opts)
-  return y + m.btnH + math.floor(8 * m.s)
+  local bh = (fit and fit.btnH) or m.btnH
+  local gap = (fit and fit.gap) or math.floor(8 * m.s)
+  btn(imp, x, y, w, bh, key, label, opts)
+  return y + bh + gap
 end
 
 function LauncherView.syncSideText(meta)
@@ -4208,91 +4464,99 @@ end
 local function buildSyncConflict(imp, m, eng)
   local row = eng.conflicts[1]
   local pad = math.floor(18 * m.s)
-  local w = math.floor(520 * m.s)
+  local w = syncWidth(m, math.floor(520 * m.s))
   local innerW = w - 2 * pad
   local lead = row.overlap
     and Strings("These saves were played at the same time.")
     or Strings("This save also changed on another device.")
-  local leadH = Kit.wrapHeight("small", lead, innerW, 2)
-  local sideH = Kit.textHeight("small") + math.floor(2 * m.s)
-    + Kit.wrapHeight("micro", "x", innerW, 2)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + leadH
-    + math.floor(10 * m.s) + 2 * (sideH + math.floor(10 * m.s))
-    + 4 * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local mine = LauncherView.syncSideText(row.localMeta)
+  local theirs = LauncherView.syncSideText(row.remoteMeta)
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(22 * m.s)
+      + 2 * (Kit.textHeight("small") + math.floor(12 * m.s)),
+    4, 4, {
+      { font = "small", str = lead, w = innerW, max = 2 },
+      { font = "micro", str = mine, w = innerW, max = 2 },
+      { font = "micro", str = theirs, w = innerW, max = 2 },
+    })
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, pw - 2 * pad,
-    PAL.detail, 2) + math.floor(10 * m.s)
+  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, innerW,
+    PAL.detail, fit.lines[1]) + math.floor(10 * m.s)
 
-  local function side(title, meta)
+  local function side(title, text, lines)
     Kit.text("small", title, px + pad, cy, PAL.heading)
     cy = cy + Kit.textHeight("small") + math.floor(2 * m.s)
-    cy = cy + Kit.textWrapped("micro", LauncherView.syncSideText(meta),
-      px + pad, cy, pw - 2 * pad, PAL.muted, 2) + math.floor(10 * m.s)
+    cy = cy + Kit.textWrapped("micro", text, px + pad, cy, innerW,
+      PAL.muted, lines) + math.floor(10 * m.s)
   end
   side(Strings("This device") .. "  \194\183  " .. tostring(row.version or "?"),
-    row.localMeta)
-  side(Strings("Other device"), row.remoteMeta)
+    mine, fit.lines[2])
+  side(Strings("Other device"), theirs, fit.lines[3])
 
   local key = row.key
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-this",
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-keep-this",
     Strings("Keep this device"), { kind = "primary",
-      action = function() imp:_syncResolve(key, "local") end })
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-other",
+      action = function() imp:_syncResolve(key, "local") end }, fit)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-keep-other",
     Strings("Keep the other device"), { kind = "accent",
-      action = function() imp:_syncResolve(key, "remote") end })
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-keep-both",
+      action = function() imp:_syncResolve(key, "remote") end }, fit)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-keep-both",
     Strings("Keep both"), {
-      action = function() imp:_syncResolve(key, "both") end })
-  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-conflict-close",
-    Strings("Close"), { action = function() imp:_closeSync() end })
+      action = function() imp:_syncResolve(key, "both") end }, fit)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-conflict-close",
+    Strings("Close"), { action = function() imp:_closeSync() end }, fit)
 end
 
 local function buildSyncLink(imp, m, eng)
   local mo = imp._syncModal
   local pad = math.floor(18 * m.s)
-  local w = math.floor(460 * m.s)
-  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local w = syncWidth(m, math.floor(460 * m.s))
+  local innerW = w - 2 * pad
   local hint = Strings("Enter the two codes the other device is showing.")
-  local hintH = Kit.wrapHeight("small", hint, w - 2 * pad, 2)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + hintH
-    + math.floor(10 * m.s) + 2 * (fieldH + math.floor(8 * m.s))
-    + Kit.textHeight("small") + math.floor(10 * m.s)
-    + 2 * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(22 * m.s)
+      + 2 * (fieldH + math.floor(8 * m.s)) + syncReserve(m, eng),
+    2, 2, { { font = "small", str = hint, w = innerW, max = 2 } })
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", hint, px + pad, cy, pw - 2 * pad,
-    PAL.detail, 2) + math.floor(10 * m.s)
-  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "sync-code1",
+  cy = cy + Kit.textWrapped("small", hint, px + pad, cy, innerW,
+    PAL.detail, fit.lines[1]) + math.floor(10 * m.s)
+  textField(imp, px + pad, cy, innerW, fieldH, "sync-code1",
     mo.code1 or "", Strings("First code"), imp._syncFocus == "code1",
     function() imp:_syncFocusField("code1") end)
-  cy = cy + fieldH + math.floor(8 * m.s)
-  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "sync-code2",
+  cy = cy + fieldH + fit.gap
+  textField(imp, px + pad, cy, innerW, fieldH, "sync-code2",
     mo.code2 or "", Strings("Second code"), imp._syncFocus == "code2",
     function() imp:_syncFocusField("code2") end)
-  cy = cy + fieldH + math.floor(8 * m.s)
-  cy = cy + syncStatus(imp, m, px + pad, cy, pw - 2 * pad, eng)
-  cy = syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-link-go",
+  cy = cy + fieldH + fit.gap
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng, fit)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-link-go",
     Strings("Link this device"), { kind = "primary", enabled = not eng:busy(),
-      action = function() imp:_syncLink() end })
-  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-link-back",
-    Strings("Back"), { action = function() imp:_syncView("home") end })
+      action = function() imp:_syncLink() end }, fit)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-link-back",
+    Strings("Back"), { action = function() imp:_syncView("home") end }, fit)
 end
 
 local function buildSyncMods(imp, m, eng)
   local mo = imp._syncModal
   local pad = math.floor(18 * m.s)
-  local w = math.floor(500 * m.s)
+  local w = syncWidth(m, math.floor(500 * m.s))
+  local innerW = w - 2 * pad
   local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
   local plan = eng.modPlan
   local rows = 4 + (plan and 1 or 0)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
-    + 3 * (Kit.textHeight("small") + math.floor(8 * m.s))
-    + fieldH + math.floor(8 * m.s)
-    + rows * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local codeH = eng.shareCode and (Kit.textHeight("small")
+    + Kit.textHeight("stat") + Kit.textHeight("micro")
+    + math.floor(18 * m.s)) or 0
+  local planH = plan and (Kit.textHeight("small") + math.floor(8 * m.s)) or 0
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(12 * m.s) + codeH + planH
+      + fieldH + math.floor(8 * m.s) + syncReserve(m, eng),
+    rows, rows, {})
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  local innerW = pw - 2 * pad
 
   if eng.shareCode then
     Kit.text("small", Strings("Share this code:"), px + pad, cy, PAL.muted)
@@ -4304,17 +4568,23 @@ local function buildSyncMods(imp, m, eng)
       px + pad, cy, PAL.muted)
     cy = cy + Kit.textHeight("micro") + math.floor(10 * m.s)
   end
+  local withOptions = mo.withOptions ~= false
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-share-options",
+    Strings("Include my mod options") .. "  \194\183  "
+      .. (withOptions and Strings("ON") or Strings("OFF")),
+    { kind = withOptions and "accent" or nil, enabled = not eng:busy(),
+      action = function() imp:_syncToggleShareOptions() end }, fit)
   cy = syncRow(imp, m, px + pad, cy, innerW, "sync-share-mods",
     Strings("Share mod list"), { kind = "accent", enabled = not eng:busy(),
-      action = function() imp:_syncShareMods() end })
+      action = function() imp:_syncShareMods() end }, fit)
 
   textField(imp, px + pad, cy, innerW, fieldH, "sync-share-code",
     mo.share or "", Strings("Paste a 6-character mod code"),
     imp._syncFocus == "share", function() imp:_syncFocusField("share") end)
-  cy = cy + fieldH + math.floor(8 * m.s)
+  cy = cy + fieldH + fit.gap
   cy = syncRow(imp, m, px + pad, cy, innerW, "sync-get-mods",
     Strings("Get mod list"), { kind = "accent", enabled = not eng:busy(),
-      action = function() imp:_syncGetShare() end })
+      action = function() imp:_syncGetShare() end }, fit)
 
   if plan then
     local line = Strings("%d mods, %d indexes to add",
@@ -4323,24 +4593,29 @@ local function buildSyncMods(imp, m, eng)
       line = line .. "  \194\183  " .. Strings("%d not in your indexes",
         #plan.missing)
     end
+    if #(plan.options or {}) > 0 then
+      line = line .. "  \194\183  " .. (plan.applyOptions
+        and Strings("options for %d mods", #plan.options)
+        or Strings("their options skipped"))
+    end
     Kit.text("small", Kit.ellipsize("small", line, innerW), px + pad, cy,
       PAL.detail)
     cy = cy + Kit.textHeight("small") + math.floor(8 * m.s)
     local prog = mo.progress
     if prog then
-      Loader.inline(px + pad, cy, innerW, m.btnH,
+      Loader.inline(px + pad, cy, innerW, fit.btnH,
         Strings("%d of %d", prog.done or 0, prog.total or 0))
-      cy = cy + m.btnH + math.floor(8 * m.s)
+      cy = cy + fit.btnH + fit.gap
     else
       cy = syncRow(imp, m, px + pad, cy, innerW, "sync-apply-mods",
         Strings("Apply these mods"), { kind = "primary",
           enabled = not eng:busy(),
-          action = function() imp:_syncApplyMods() end })
+          action = function() imp:_syncApplyMods() end }, fit)
     end
   end
-  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng)
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng, fit)
   syncRow(imp, m, px + pad, cy, innerW, "sync-mods-back", Strings("Back"),
-    { action = function() imp:_syncView("home") end })
+    { action = function() imp:_syncView("home") end }, fit)
 end
 
 function LauncherView.syncDeviceRows(eng, limit)
@@ -4362,29 +4637,35 @@ end
 
 local function buildSyncHome(imp, m, eng)
   local pad = math.floor(18 * m.s)
-  local w = math.floor(460 * m.s)
+  local w = syncWidth(m, math.floor(460 * m.s))
   local linked = eng:linked()
   local codes = eng.codes
   local body = linked
-    and Strings("This device is linked. Saves and the mod list sync when the launcher opens and a few seconds after each save.")
+    and Strings("This device is linked. Saves sync when the launcher opens, a few seconds after each save, and every few minutes while the app is running.")
     or Strings(SYNC_HINT)
   local innerW = w - 2 * pad
-  local hintH = Kit.wrapHeight("small", body, innerW, 5)
   local codesH = codes
     and (Kit.textHeight("small") + math.floor(6 * m.s)
       + 2 * (Kit.textHeight("title") + math.floor(4 * m.s))
       + math.floor(8 * m.s)) or 0
   local devices = linked and LauncherView.syncDeviceRows(eng) or {}
-  local devicesH = #devices > 0
-    and (Kit.textHeight("small") + math.floor(6 * m.s)) or 0
-  local rows = (linked and 5 or 3) + #devices
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s) + hintH
-    + math.floor(10 * m.s) + codesH + devicesH + m.btnH + math.floor(10 * m.s)
-    + rows * (m.btnH + math.floor(8 * m.s)) + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local hidden, fit = 0, nil
+  repeat
+    local devicesH = #devices > 0
+      and (Kit.textHeight("small") + math.floor(6 * m.s)) or 0
+    fit = syncFit(m,
+      2 * pad + Kit.textHeight("button") + math.floor(22 * m.s) + codesH
+        + devicesH + syncReserve(m, eng),
+      (linked and 4 or 3) + #devices, (linked and 4 or 3) + #devices,
+      { { font = "small", str = body, w = innerW, max = 5 } })
+    if fit.over <= 0 or #devices == 0 then break end
+    table.remove(devices)
+    hidden = hidden + 1
+  until false
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", body, px + pad, cy, innerW, PAL.detail, 5)
-    + math.floor(10 * m.s)
+  cy = cy + Kit.textWrapped("small", body, px + pad, cy, innerW, PAL.detail,
+    fit.lines[1]) + math.floor(10 * m.s)
 
   if codes then
     Kit.text("small", Strings("Enter these on your other device:"), px + pad,
@@ -4395,23 +4676,24 @@ local function buildSyncHome(imp, m, eng)
     Kit.text("title", codes.code2, px + pad, cy, PAL.heading)
     cy = cy + Kit.textHeight("title") + math.floor(8 * m.s)
   end
-  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng)
+  cy = cy + syncStatus(imp, m, px + pad, cy, innerW, eng, fit)
 
   if #devices > 0 then
-    Kit.text("small", Strings("Devices on this account:"), px + pad, cy,
-      PAL.muted)
+    Kit.text("small", hidden > 0
+      and Strings("Devices on this account (%d more)", hidden)
+      or Strings("Devices on this account:"), px + pad, cy, PAL.muted)
     cy = cy + Kit.textHeight("small") + math.floor(6 * m.s)
     for i, device in ipairs(devices) do
       local id = device.id
       if device.current then
         cy = syncRow(imp, m, px + pad, cy, innerW, "sync-device-" .. i,
           device.label .. "  \194\183  " .. Strings("this device"),
-          { enabled = false })
+          { enabled = false }, fit)
       else
         cy = syncRow(imp, m, px + pad, cy, innerW, "sync-device-" .. i,
           Strings("Unlink %s", device.label), { kind = "danger",
             enabled = not eng:busy(),
-            action = function() imp:_syncUnlinkDevice(id) end })
+            action = function() imp:_syncUnlinkDevice(id) end }, fit)
       end
     end
   end
@@ -4419,38 +4701,69 @@ local function buildSyncHome(imp, m, eng)
   if linked then
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-now", Strings("Sync now"),
       { kind = "primary", enabled = not eng:busy(),
-        action = function() imp:_syncNow() end })
+        action = function() imp:_syncNow() end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-mods",
       Strings("Share or get a mod list"), { kind = "accent",
-        action = function() imp:_syncView("mods") end })
+        action = function() imp:_syncView("mods") end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-unlink",
       Strings("Unlink this device"), { kind = "danger",
-        action = function() imp:_syncUnlink() end })
+        action = function() imp:_syncUnlink() end }, fit)
   else
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-create",
       Strings("Create sync account"), { kind = "primary",
         enabled = not eng:busy(),
-        action = function() imp:_syncCreate() end })
+        action = function() imp:_syncCreate() end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-link",
       Strings("Link this device"), { kind = "accent",
-        action = function() imp:_syncView("link") end })
+        action = function() imp:_syncView("link") end }, fit)
   end
   syncRow(imp, m, px + pad, cy, innerW, "sync-close", Strings("Close"),
-    { action = function() imp:_closeSync() end })
+    { action = function() imp:_closeSync() end }, fit)
+end
+
+local function buildSyncModOptions(imp, m, eng)
+  local plan = eng.modPlan
+  local ids = {}
+  for _, row in ipairs(plan.options or {}) do ids[#ids + 1] = row.id end
+  local pad = math.floor(18 * m.s)
+  local w = syncWidth(m, math.floor(480 * m.s))
+  local innerW = w - 2 * pad
+  local lead = Strings(
+    "This mod list also carries the options its owner set for %d mods. Import their options, or keep the ones you have?",
+    #ids)
+  local names = table.concat(ids, ", ")
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(32 * m.s), 2, 2, {
+      { font = "small", str = lead, w = innerW, max = 4 },
+      { font = "micro", str = names, w = innerW, max = 3 },
+    })
+  local px, py, pw = modalPanel(m, w, fit.h)
+  local cy = syncTitle(imp, m, px, py + pad, pw, pad)
+  cy = cy + Kit.textWrapped("small", lead, px + pad, cy, innerW, PAL.detail,
+    fit.lines[1]) + math.floor(8 * m.s)
+  cy = cy + Kit.textWrapped("micro", names, px + pad, cy, innerW, PAL.muted,
+    fit.lines[2]) + math.floor(12 * m.s)
+  cy = syncRow(imp, m, px + pad, cy, innerW, "sync-options-import",
+    Strings("Import their options"), { kind = "primary",
+      action = function() imp:_syncAnswerModOptions(true) end }, fit)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-options-skip",
+    Strings("Keep my options"), {
+      action = function() imp:_syncAnswerModOptions(false) end }, fit)
 end
 
 local function buildSyncUnavailable(imp, m, msg)
   local pad = math.floor(18 * m.s)
-  local w = math.floor(420 * m.s)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
-    + Kit.wrapHeight("small", msg, w - 2 * pad, 4) + math.floor(10 * m.s)
-    + m.btnH + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local w = syncWidth(m, math.floor(420 * m.s))
+  local innerW = w - 2 * pad
+  local fit = syncFit(m,
+    2 * pad + Kit.textHeight("button") + math.floor(22 * m.s), 1, 0,
+    { { font = "small", str = msg, w = innerW, max = 4 } })
+  local px, py, pw = modalPanel(m, w, fit.h)
   local cy = syncTitle(imp, m, px, py + pad, pw, pad)
-  cy = cy + Kit.textWrapped("small", msg, px + pad, cy, pw - 2 * pad,
-    PAL.detail, 4) + math.floor(10 * m.s)
-  syncRow(imp, m, px + pad, cy, pw - 2 * pad, "sync-close",
-    Strings("Close"), { action = function() imp:_closeSync() end })
+  cy = cy + Kit.textWrapped("small", msg, px + pad, cy, innerW,
+    PAL.detail, fit.lines[1]) + math.floor(10 * m.s)
+  syncRow(imp, m, px + pad, cy, innerW, "sync-close",
+    Strings("Close"), { action = function() imp:_closeSync() end }, fit)
 end
 
 local function buildSyncModal(imp, m)
@@ -4467,6 +4780,12 @@ local function buildSyncModal(imp, m)
   end
   if eng.phase == "conflict" and eng.conflicts and #eng.conflicts > 0 then
     buildSyncConflict(imp, m, eng)
+    return
+  end
+  local plan = eng.modPlan
+  if type(plan) == "table" and #(plan.options or {}) > 0
+      and plan.applyOptions == nil then
+    buildSyncModOptions(imp, m, eng)
     return
   end
   local view = imp._syncModal and imp._syncModal.view or "home"
@@ -4751,17 +5070,19 @@ function LauncherView.draw(imp)
   Kit.beginFrame(mx, my, click ~= nil, imp._wheelY or 0)
   imp._clickPt = nil
   imp._wheelY = 0
+  imp._noDragN = 0
 
   Theme.field()
 
   -- Everything from here to buildModals sits UNDER any open modal, so the
   -- whole stage draws shielded (no clicks, no hover, no focus ring) while
   -- one is up; buildModals lowers the shield for the modal's own controls.
-  Kit.blockClicks = modalUp(imp)
+  imp._modalUpNow = modalUp(imp)
+  if imp._modalUpNow then imp:_blurPanelFields() end
+  Kit.blockClicks = imp._modalUpNow
 
   local step = Kit.scrollStep(m.s)
-  local nested = modListWantsWheel(imp, Kit.wheelY or 0)
-  if not nested then
+  do
     local rect = imp._tabRegionRect
     if rect then
       setTabScroll(imp, (Kit.scrollWheel(tabScrollAt(imp), tabScrollMax(imp),
@@ -4769,8 +5090,7 @@ function LauncherView.draw(imp)
     end
   end
   local scroll = math.max(0, math.min(imp._pageScroll or 0, scrollMax))
-  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and not nested
-      and not Kit.blockClicks then
+  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and not Kit.blockClicks then
     local moved = math.max(0, math.min(scroll - Kit.wheelY * step, scrollMax))
     if moved ~= scroll then
       scroll = moved
@@ -4778,7 +5098,7 @@ function LauncherView.draw(imp)
     end
   end
   imp._pageScroll, imp._pageScrollMax = scroll, scrollMax
-  if (Kit.wheelY or 0) ~= 0 and not nested and not Kit.blockClicks
+  if (Kit.wheelY or 0) ~= 0 and not Kit.blockClicks
       and tabScrollMax(imp) > 0 then
     local was = tabScrollAt(imp)
     local to = Kit.scrollClamp(was - Kit.wheelY * step, tabScrollMax(imp))
@@ -4822,6 +5142,8 @@ function LauncherView.draw(imp)
     contentH = buildFindPanel(imp, x, py, panelW, budgetH, m)
   elseif imp.tab == "skins" then
     contentH = buildSkinsPanel(imp, x, py, panelW, budgetH, m)
+  elseif imp.tab == "bug" then
+    contentH = buildBugPanel(imp, x, py, panelW, budgetH, m)
   else
     contentH = buildGamePanel(imp, x, py, panelW, availH, m, imp.tab, budgetH)
   end

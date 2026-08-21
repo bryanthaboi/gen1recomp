@@ -619,8 +619,8 @@ function BattleTransition:grid(w, h)
     scale = math.max(1, math.floor(math.min(w / 160, h / 144)))
   end
   local size = 8 * scale
-  local ox = math.floor((w - 160 * scale) / 2)
-  local oy = math.floor((h - 144 * scale) / 2)
+  local Chrome = require("src.ui.gen2.Chrome")
+  local ox, oy = Chrome.fitOrigin(w, h, scale)
   return size, ox, oy
 end
 

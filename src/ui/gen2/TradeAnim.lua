@@ -58,8 +58,6 @@ local TradeAnimView = {}
 TradeAnimView.__index = TradeAnimView
 TradeAnimView.isOpaque = true
 
-local SCREEN_W, SCREEN_H = 160, 144
-
 -- PlaceGraphic's box and the stats panel's Textbox, in tiles.
 local PIC_TILE_X, PIC_TILE_Y, PIC_TILES = 7, 2, 7
 local PANEL_X, PANEL_Y = 3, 0
@@ -876,8 +874,7 @@ function TradeAnimView:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - SCREEN_W * scale) / 2),
-    math.floor((winH - SCREEN_H * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

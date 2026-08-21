@@ -222,7 +222,7 @@ eq(next(t), nil, "already-left Route 25 enter is a no-op")
 Commands.hide_object = realHide
 Commands.show_object = realShow
 package.loaded["src.ui.Menu"] = realMenu
-if realMusic ~= nil then package.loaded["src.core.Music"] = realMusic end
-if realSound ~= nil then package.loaded["src.core.Sound"] = realSound end
+package.loaded["src.core.Music"] = realMusic
+package.loaded["src.core.Sound"] = realSound
 
 S.finish()

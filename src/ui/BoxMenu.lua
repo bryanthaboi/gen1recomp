@@ -185,14 +185,16 @@ local function release(game)
         return
       end
       game.stack:push(TextBox.new(game,
-        Strings("Once released,\n%s is\ngone forever. OK?", name), nil, {
+        (t._OnceReleasedText or Strings("Once released,\n%s is\ngone forever. OK?", name))
+          :gsub("{RAM:wStringBuffer}", name), nil, {
         defaultNo = true, noSound = true,
         choice = function(yes)
           if not yes then return end
           table.remove(box, list.index)
           require("src.core.Sound").playCry(game.data, mon.species)
           game.stack:push(TextBox.new(game,
-            Strings("%s was\nreleased outside.\fBye %s!", name, name)))
+            ((t._MonWasReleasedText or Strings("%s was\nreleased outside.\fBye %s!", name, name))
+              :gsub("{RAM:wStringBuffer}", name))))
           list:removeCurrent()
         end,
       }))

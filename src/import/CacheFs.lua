@@ -287,6 +287,43 @@ function CacheFs.write(rel, data)
   return love.filesystem.write(rel, data)
 end
 
+-- Open a cache-relative file for streaming replacement. The returned handle
+-- has write(bytes) and close() methods and follows the same portable/save-dir
+-- routing as CacheFs.write without forcing the caller to hold the whole file
+-- in one Lua string.
+function CacheFs.openWrite(rel)
+  rel = withPrefix(rel)
+  local root = CacheFs.root()
+  if root then
+    ensureParents(root, rel)
+    local f, err = io.open(realPath(root, rel), "wb")
+    if not f then return nil, err end
+    return {
+      write = function(_, data)
+        local ok, writeErr = f:write(data)
+        if not ok then return nil, writeErr end
+        return true
+      end,
+      close = function() f:close() end,
+    }
+  end
+  if not (love and love.filesystem and love.filesystem.newFile) then
+    return nil, "streaming cache writes are unavailable"
+  end
+  local parent = rel:match("^(.*)/[^/]+$")
+  if parent and not love.filesystem.createDirectory(parent) then
+    local info = love.filesystem.getInfo(parent)
+    local reason = info and ("a " .. info.type .. " already exists there")
+      or "unknown reason"
+    return nil, "could not create " .. parent .. ": " .. reason
+  end
+  local file, makeErr = love.filesystem.newFile(rel)
+  if not file then return nil, makeErr or "could not create cache file" end
+  local ok, openErr = file:open("w")
+  if not ok then return nil, openErr or "could not open cache file" end
+  return file
+end
+
 -- read cache-relative `rel`; returns the bytes or nil
 function CacheFs.read(rel)
   rel = withPrefix(rel)

@@ -837,13 +837,14 @@ M.SILPH_CO_11F = {
             -- every Silph rocket leaves off-screen (the street rockets are
             -- handled by M.SAFFRON_CITY.onEnter in story4.lua).  Queued, not
             -- run here: the battle's own callbacks are still unwinding, so
-            -- queueScript starts it on the first idle overworld frame --
-            -- after the end-battle "Arrgh!!" box victories.lua OPP_GIOVANNI#2
-            -- pushes (#722).
+            -- queueScript starts it on the first idle overworld frame (#722).
             if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
               ow:queueScript(silphAftermathRows())
             end
-          end, nil, true)
+          end,
+          -- "Arrgh!!" is armed for the battle screen, not the map
+          -- (scripts/SilphCo11F.asm:264-266 SaveEndBattleTextPointers) #1606
+          game.data.text._SilphCo10FGiovanniILostAgainText, true)
         end)
       end))
     return true

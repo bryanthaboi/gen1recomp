@@ -283,6 +283,40 @@ bool restartApp()
 	return result;
 }
 
+bool installApk(const char *path)
+{
+	if (path == nullptr || path[0] == '\0')
+		return false;
+
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	// This may be called from Lua's main thread, but use the activity object
+	// class just like httpDownload so a future worker caller does not depend on
+	// the system JNI class loader finding the app class.
+	void *rawActivity = SDL_AndroidGetActivity();
+	if (rawActivity == nullptr)
+		return false;
+	jobject activityObj = (jobject) rawActivity;
+	jclass activity = env->GetObjectClass(activityObj);
+	env->DeleteLocalRef(activityObj);
+
+	jmethodID method = env->GetStaticMethodID(activity, "installApk",
+		"(Ljava/lang/String;Ljava/lang/String;)Z");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return false;
+	}
+
+	jstring jpath = env->NewStringUTF(path);
+	jstring jroot = env->NewStringUTF(bridgeSaveDirectory());
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jpath, jroot);
+	env->DeleteLocalRef(jroot);
+	env->DeleteLocalRef(jpath);
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
 bool updateAppShortcuts(const std::vector<std::string> &versions)
 {
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();

@@ -34,6 +34,20 @@ eq(rel.payload.size, 12345, "payload asset size picked")
 eq(rel.sums.url, "http://x/sums", "sums asset url picked")
 eq(rel.notes, "", "missing release body becomes empty notes")
 
+-- Native package assets are target-specific. This is intentionally separate
+-- from the generic .love payload, which a new shell may be unable to host.
+local android = Check.parseRelease(body, nil, { os = "Android", arch = "arm64" })
+eq(android.fullName, "gen1recomp-1.4.2-android.apk", "Android package name derived")
+eq(android.full, nil, "missing Android package is surfaced as nil")
+eq(Check.fullAssetName("1.4.2", "Android", "arm64"),
+  "gen1recomp-1.4.2-android.apk", "Android full asset mapping")
+eq(Check.fullAssetName("1.4.2", "Linux", "aarch64"),
+  "gen1recomp-1.4.2-linux-arm64.AppImage", "Linux ARM package mapping")
+eq(Check.fullAssetName("1.4.2", "iOS", "arm64"),
+  "gen1recomp++-1.4.2-ios.ipa", "iOS package mapping")
+eq(Check.fullAssetName("not-a-version", "Android", "arm64"), nil,
+  "invalid full-package version rejected")
+
 local withNotes = Check.parseRelease(Json.encode({
   tag_name = "v1.4.2",
   body = "## Issues closed\n\n- #1 cart padding",

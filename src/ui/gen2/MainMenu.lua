@@ -56,7 +56,7 @@ function MainMenu.new(game, opts)
 
   self.save = opts.save
   if self.save == nil and opts.hasSave ~= false then
-    local loaded = Save.load("gold")
+    local loaded = Save.load()
     self.save = loaded
   end
   self.hasSave = opts.hasSave
@@ -218,8 +218,7 @@ function MainMenu:drawWidescreen(winW, winH)
   G.rectangle("fill", 0, 0, winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
-  G.translate(math.floor((winW - 160 * scale) / 2),
-    math.floor((winH - 144 * scale) / 2))
+  G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
   self:drawPanel()
   G.pop()

@@ -1258,7 +1258,9 @@ do
         "_GainedText + _ExpPointsText show the amount")
 
   Game.save.party = { Pokemon.new(Data, "BULBASAUR", 30) }
+  -- GainExperience: MON_OTID vs wPlayerID (experience.asm:69-88) (#1488)
   Game.save.party[1].traded = true
+  Game.save.party[1].otId = (Game.save.player.id or 0) + 1
   local eb2 = BattleState.newWild(Game, "RATTATA", 10)
   eb2.participants = { [Game.save.party[1]] = true }
   eb2:enemyMonFainted()
@@ -2642,7 +2644,6 @@ do
   local Tilt = require("src.render.Tilt")
   local GBCFX = require("src.render.GBCFX")
   local GameSpeed = require("src.core.GameSpeed")
-  local VideoMode = require("src.core.VideoMode")
   local FrameCap = require("src.core.FrameCap")
   local SD = require("src.core.SaveData")
   -- Isolate from earlier save/options writes in this suite
@@ -2663,6 +2664,19 @@ do
     om:update(1 / 60)
     OInput.pressed = {}
   end
+  -- walk the cursor down to a row by id, so a row added to OptionsMenu
+  -- shifts these blocks instead of silently retargeting them
+  local function seek(id)
+    local want = -1
+    for i, row in ipairs(om.rows) do
+      if row.id == id then want = i end
+    end
+    for _ = 1, #om.rows do
+      if om.index == want then break end
+      press("down")
+    end
+    return om.index == want
+  end
   eq(og.save.options.textSpeed, 3,
      "new saves default to MEDIUM text (InitOptions TEXT_DELAY_MEDIUM)")
   eq(og.save.options.colors, "gbc", "new saves default COLORS to GBC")
@@ -2673,65 +2687,58 @@ do
   eq(og.save.options.videoMode, "windowed",
      "new saves default VIDEO MODE to WINDOWED")
   eq(om.scroll, 0, "options viewport starts at the top")
-  for _ = 1, 3 do press("down") end
-  eq(om.index, 4, "cursor reaches BATTLE LAYOUT")
+  check(seek("battleLayout"), "cursor reaches BATTLE LAYOUT")
   press("a")
   eq(og.save.options.battleLayout, "wide",
      "A switches the battle screen to the WIDE layout")
   press("a")
   eq(og.save.options.battleLayout, "og", "BATTLE LAYOUT wraps back to OG")
-  for _ = 1, 5 do press("down") end
-  eq(om.index, 9, "cursor reaches MUSIC VOL")
-  eq(om.scroll, 5, "viewport scrolls to keep MUSIC VOL on screen")
+  check(seek("musicVol"), "cursor reaches MUSIC VOL")
+  eq(om.scroll, om.index - require("src.ui.OptionRows").VISIBLE,
+     "viewport scrolls to keep MUSIC VOL on screen")
   press("left")
   eq(og.save.options.musicVol, 6, "left lowers MUSIC VOL")
   press("right")
   eq(og.save.options.musicVol, 7, "right raises MUSIC VOL back")
   press("right")
   eq(og.save.options.musicVol, 7, "MUSIC VOL clamps at 7")
-  press("down"); press("left")
+  seek("sfxVol"); press("left")
   eq(og.save.options.sfxVol, 6, "SFX VOL adjusts on its own row")
-  press("down")
+  seek("musicFilter")
   for _ = 1, 3 do press("a") end
   eq(og.save.options.musicFilter, 3, "A cycles MUSIC FILTER to 3X")
   press("a")
   eq(og.save.options.musicFilter, 0, "MUSIC FILTER wraps back to OFF")
-  press("down")
-  eq(om.index, 12, "cursor reaches PERFORMANCE")
+  check(seek("performance"), "cursor reaches PERFORMANCE")
   press("a")
   eq(og.save.options.performance, "high", "A cycles PERFORMANCE to HIGH")
   eq(require("src.core.Performance").tier, "high",
      "the live tier tracks the PERFORMANCE option")
   for _ = 1, 3 do press("a") end
   eq(og.save.options.performance, "auto", "PERFORMANCE wraps back to AUTO")
-  press("down")
-  eq(om.index, 13, "cursor reaches COLORS")
+  check(seek("colors"), "cursor reaches COLORS")
   press("a")
   for _ = 1, 4 do press("a") end
-  press("down")
-  eq(om.index, 14, "cursor reaches TILT")
+  check(seek("tilt"), "cursor reaches TILT")
   press("a")
   eq(og.save.options.tilt, 1, "A cycles TILT to 15")
   eq(Tilt.level, 1, "Tilt level tracks TILT option")
   press("a"); press("a"); press("a")
   eq(og.save.options.tilt, 0, "TILT wraps back to OFF")
-  press("down")
-  eq(om.index, 15, "cursor reaches GBC FX")
+  check(seek("gbcfx"), "cursor reaches GBC FX")
   press("a")
   eq(og.save.options.gbcfx, 1, "A cycles GBC FX to 1")
   eq(GBCFX.level, 1, "GBCFX level tracks GBC FX option")
   for _ = 1, 4 do press("a") end
   eq(og.save.options.gbcfx, 0, "GBC FX wraps back to OFF")
-  press("down")
-  eq(om.index, 16, "cursor reaches ZOOM")
+  check(seek("zoom"), "cursor reaches ZOOM")
   local ZoomOpt = require("src.render.Zoom")
   press("a")
   eq(og.save.options.zoom, 1, "A cycles ZOOM to IN1")
   eq(ZoomOpt.offset, 1, "Zoom.offset tracks ZOOM option")
   press("left")
   eq(og.save.options.zoom, 0, "left steps ZOOM back to FIT")
-  press("down")
-  eq(om.index, 17, "cursor reaches VOID FILL")
+  check(seek("voidFill"), "cursor reaches VOID FILL")
   local TR = require("src.render.TileRenderer")
   press("a")
   eq(og.save.options.voidFill, "water", "A cycles VOID FILL to WATER")
@@ -2740,18 +2747,15 @@ do
   eq(og.save.options.voidFill, "black", "A cycles VOID FILL to BLACK")
   press("a")
   eq(og.save.options.voidFill, "trees", "VOID FILL wraps back to TREES")
-  press("down")
-  eq(om.index, 18, "cursor reaches VIDEO MODE")
+  check(seek("videoMode"), "cursor reaches VIDEO MODE")
   press("a")
   eq(og.save.options.videoMode, "borderless",
      "A cycles VIDEO MODE to BORDERLESS")
   press("a")
   eq(og.save.options.videoMode, "windowed",
      "VIDEO MODE wraps back to WINDOWED")
-  press("down")
-  eq(om.index, 19, "cursor reaches FAITHFUL RATIO")
-  press("down")
-  eq(om.index, 20, "cursor reaches MAX FPS")
+  check(seek("faithfulRes"), "cursor reaches FAITHFUL RATIO")
+  check(seek("fpsCap"), "cursor reaches MAX FPS")
   press("a")
   eq(og.save.options.fpsCap, 75, "A cycles MAX FPS up from 60 to 75")
   eq(FrameCap.current, 75, "the live render cap tracks the MAX FPS option")
@@ -2761,8 +2765,7 @@ do
   eq(og.save.options.fpsCap, 60, "MAX FPS wraps back to 60")
   -- RFC 0007: the single GAME SPEED row is now three independent rows,
   -- one per GameSpeed.CATEGORIES entry.
-  press("down")
-  eq(om.index, 21, "cursor reaches OVERWORLD SPEED")
+  check(seek("speedOverworld"), "cursor reaches OVERWORLD SPEED")
   press("a")
   eq(og.save.options.speedOverworld, 2, "A cycles OVERWORLD SPEED to 2X")
   -- Driven by the level list rather than a literal press count: adding a
@@ -2770,26 +2773,20 @@ do
   -- bug when the cycling is fine and the row is simply one longer.
   for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
   eq(og.save.options.speedOverworld, 1, "OVERWORLD SPEED wraps back to NORMAL")
-  press("down")
-  eq(om.index, 22, "cursor reaches BATTLE SPEED")
+  check(seek("speedBattle"), "cursor reaches BATTLE SPEED")
   press("a")
   eq(og.save.options.speedBattle, 2, "A cycles BATTLE SPEED to 2X")
   for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
   eq(og.save.options.speedBattle, 1, "BATTLE SPEED wraps back to NORMAL")
-  press("down")
-  eq(om.index, 23, "cursor reaches MENU SPEED")
+  check(seek("speedMenu"), "cursor reaches MENU SPEED")
   press("a")
   eq(og.save.options.speedMenu, 2, "A cycles MENU SPEED to 2X")
   for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
   eq(og.save.options.speedMenu, 1, "MENU SPEED wraps back to NORMAL")
-  press("down")
-  eq(om.index, 24, "cursor reaches MODS")
-  press("down")
-  eq(om.index, 25, "cursor reaches CONTROLS")
-  press("down")
-  eq(om.index, 26, "cursor reaches DATE FORMAT")
-  press("down")
-  eq(om.index, 27, "cursor reaches TIME FORMAT")
+  check(seek("mods"), "cursor reaches MODS")
+  check(seek("controls"), "cursor reaches CONTROLS")
+  check(seek("dateFormat"), "cursor reaches DATE FORMAT")
+  check(seek("timeFormat"), "cursor reaches TIME FORMAT")
   press("down")
   -- CANCEL is appended after the descriptor list rather than living in it, so
   -- it lands one past #rows and the window holds the last six boxes.  Counted
@@ -2812,7 +2809,7 @@ do
   GBCFX.applyOptions(og.save.options)
   require("src.render.Zoom").applyOptions(og.save.options)
   require("src.render.TileRenderer").applyOptions(og.save.options)
-  VideoMode.applyOptions(og.save.options)
+  require("src.core.VideoMode").applyOptions(og.save.options)
 end
 end
 

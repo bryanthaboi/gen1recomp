@@ -245,6 +245,16 @@ bool System::restartApp() const
 #endif
 }
 
+bool System::installApk(const char *path) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::installApk(path);
+#else
+	LOVE_UNUSED(path);
+	return false;
+#endif
+}
+
 bool System::updateShortcuts(const std::vector<std::string> &versions) const
 {
 #ifdef LOVE_ANDROID

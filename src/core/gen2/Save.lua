@@ -103,7 +103,7 @@ Save.PLAYER_STATES = {
 }
 
 local function saveNames(version)
-  version = version or "gold"
+  version = version or GameVersion.get()
   -- Resolve the ACTIVE SLOT the same way SaveData does, and only fall back to
   -- the flat save_<version>.lua when no slot is registered.
   --
@@ -133,16 +133,22 @@ local function fs()
   return love.filesystem
 end
 
--- A fresh Gold save.  `opts` carries what the intro collected: player name,
+-- The blank-name fallback is the first PlayerNameArray row, which differs
+-- per edition -- data/player_names.asm:12-23.
+function Save.defaultPlayerName(version)
+  return (version or GameVersion.get()) == "silver" and "SILVER" or "GOLD"
+end
+
+-- A fresh Gen 2 save.  `opts` carries what the intro collected: player name,
 -- rival name, and the options the OPTION screen was left on.
 function Save.newGame(opts)
   opts = opts or {}
   local save = {
     format = Save.FORMAT,
-    version = "gold",
+    version = GameVersion.get(),
     generation = 2,
     player = {
-      name = opts.playerName or "GOLD",
+      name = opts.playerName or Save.defaultPlayerName(),
       -- _ResetWRAM rolls wPlayerID out of hRandomSub/hRandomAdd
       -- (engine/menus/intro_menu.asm:41-49).
       id = opts.trainerId or rand(0, 65535),
@@ -214,6 +220,9 @@ function Save.newGame(opts)
     phoneContacts = {},
     tradeFlags = {},
     pokedex = { seen = {}, caught = {} },
+    -- wLastDexMode (engine/pokedex/pokedex.asm:59-61): the sort mode the
+    -- #DEX reopens in.  NEW_MODE is the cart's zero byte.
+    lastDexMode = "NEW",
     -- wUnownDex: the distinct Unown FORMS caught, in catching order.  A second
     -- record beside the #DEX because the #DEX knows only the species
     -- (src/core/gen2/Unown.lua).
@@ -282,6 +291,7 @@ Save.DEFAULT_OPTIONS = {
   musicFilter = 0,          -- low-pass steps, 0 = off
   haptics = "light",
   touchControls = { enabled = true },
+  screenPos = "center",
 }
 
 function Save.defaultOptions()
@@ -302,7 +312,7 @@ end
 Save.OPTIONS_KEY = "gold"
 
 local SHARED_KEYS = {
-  touchControls = true, haptics = true,
+  touchControls = true, haptics = true, screenPos = true,
   mods = true, modsByVersion = true, modsGen2 = true,
   modOptions = true, modProfiles = true, modProfilesSeeded = true,
   activeProfile = true,
@@ -374,10 +384,13 @@ end
 function Save.normalize(save)
   if type(save) ~= "table" then return nil end
   save.format = save.format or Save.FORMAT
-  save.version = "gold"
+  if not (GameVersion.VERSIONS[save.version]
+      and GameVersion.generation(save.version) == 2) then
+    save.version = GameVersion.get()
+  end
   save.generation = 2
   save.player = save.player or {}
-  save.player.name = save.player.name or "GOLD"
+  save.player.name = save.player.name or Save.defaultPlayerName(save.version)
   save.player.id = save.player.id or rand(0, 65535)
   save.player.money = math.max(0, math.min(save.player.money or 0, Save.MAX_MONEY))
   save.player.coins = math.max(0, math.min(save.player.coins or 0, Save.MAX_COINS))
@@ -675,6 +688,12 @@ function Save.validate(save)
   scrubEvents(save, report)
   scrubMapScenes(save, report)
   scrubPlayerState(save, report)
+  -- wLastDexMode: only the three modes the #DEX has (PokedexMenu MODES);
+  -- a hand-edited value falls back to NEW_MODE, the cart's zero byte
+  if save.lastDexMode ~= "NEW" and save.lastDexMode ~= "OLD"
+     and save.lastDexMode ~= "A-Z" then
+    save.lastDexMode = "NEW"
+  end
   -- The `mailmsg` structs get the same treatment for the same reason: their
   -- `type` byte is an item id nothing else in the save vouches for, and a
   -- party key outside 1..6 or a MAILBOX past MAILBOX_CAPACITY is a region the
@@ -753,21 +772,24 @@ end
 -- copy is the witness that survives a crash mid-replace.
 function Save.save(save)
   if type(save) ~= "table" then return false, "no save" end
-  if (save.version or "gold") == "gold" then
+  Save.normalize(save)
+  local version = save.version
+  do
     local ok, SaveData = pcall(require, "src.core.SaveData")
-    if ok and SaveData.activeSlot and not SaveData.activeSlot("gold") then
-      local id = SaveData.createSlot and SaveData.createSlot("gold")
-      if id and SaveData.setActiveSlot then SaveData.setActiveSlot("gold", id) end
+    if ok and SaveData.activeSlot and not SaveData.activeSlot(version) then
+      local id = SaveData.createSlot and SaveData.createSlot(version)
+      if id and SaveData.setActiveSlot then
+        SaveData.setActiveSlot(version, id)
+      end
     end
   end
-  local main, backup, tmp = saveNames(save.version)
+  local main, backup, tmp = saveNames(version)
   local f = fs()
   if not f then return false, "no filesystem" end
   -- saveNames may now return a saves/<version>/<slot>.lua path, and
   -- love.filesystem.write does not create missing parent directories.
   local dir = main:match("^(.*)/[^/]+$")
   if dir and f.createDirectory then f.createDirectory(dir) end
-  Save.normalize(save)
   save.savedAt = os.time()
   local encoded = SaveSerializer.encode(save)
   if f.getInfo(main) then

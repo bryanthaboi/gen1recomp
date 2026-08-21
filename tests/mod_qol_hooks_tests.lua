@@ -267,13 +267,49 @@ end
 
 do
   local BattleState = require("src.battle.BattleState")
+  local Gen2BattleState = require("src.ui.gen2.BattleState")
   local battle = { wideLayout = function() return false end }
   check(not BattleState.moveGridNavigation(battle),
     "classic move navigation stays a list without a mod")
+  check(not Gen2BattleState.moveGridNavigation({}),
+    "Gold move navigation stays a list without a mod")
   local unsub = wrap("battle.move_grid_navigation", function() return true end)
   check(BattleState.moveGridNavigation(battle),
     "a mod can opt the classic move menu into grid navigation")
+  check(Gen2BattleState.moveGridNavigation({}),
+    "the same hook opts Gold's move menu into grid navigation")
+
+  local pressed, moveCount = "right", 4
+  local gold = setmetatable({
+    phase = "moves", moveIndex = 1,
+    slideFrame = math.huge,
+    game = { input = {
+      wasPressed = function(_, key) return key == pressed end,
+    } },
+    updateAlarm = function() end,
+    stepHpAnim = function() return false end,
+    playerMoves = function()
+      local moves = {}
+      for i = 1, moveCount do moves[i] = {} end
+      return moves
+    end,
+  }, { __index = Gen2BattleState })
+  gold:update(0)
+  check(gold.moveIndex == 2,
+    "Gold grid navigation moves right across a companion move row")
+  pressed, gold.moveIndex = "down", 1
+  gold:update(0)
+  check(gold.moveIndex == 3,
+    "Gold grid navigation moves down the companion move column")
+  pressed, moveCount, gold.moveIndex = "down", 3, 2
+  gold:update(0)
+  check(gold.moveIndex == 2,
+    "Gold grid navigation does not select an empty fourth move slot")
   unsub()
+  pressed, gold.moveIndex = "right", 1
+  gold:update(0)
+  check(gold.moveIndex == 1,
+    "removing the hook restores Gold's native vertical move list")
   battle.wideLayout = function() return true end
   check(BattleState.moveGridNavigation(battle),
     "the native wide move grid remains enabled without a mod")

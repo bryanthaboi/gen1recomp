@@ -1,6 +1,7 @@
 -- The evolution movie (engine/movie/evolution.asm): the mon's pic
 -- flashes back and forth with the evolved form, speeding up, then the
--- new form appears with its cry and the congratulations text.
+-- new form appears with its cry and the "evolved into" text
+-- (engine/pokemon/evos_moves.asm:120-128).
 -- pokered engine/movie/evolution.asm (Evolution_CheckForCancel) polls the
 -- joypad during the flash: a fresh B press aborts the evolution -- the mon
 -- keeps its species and _StoppedEvolvingText ("Huh? MON stopped evolving!")
@@ -9,14 +10,13 @@
 -- and stone evolutions, where the B press is read but thrown away because
 -- ItemUseEvoStone left wForceEvolution set (#290).
 
-local Font = require("src.render.Font")
 local Music = require("src.core.Music")
-local Strings = require("src.core.Strings")
 local romText = require("src.core.RomText")
 
+-- Not opaque: ClearScreenArea wipes rows 0-11 only (evos_moves.asm:126-128),
+-- so the "is evolving!" box beneath stays visible through the flash (#1596).
 local EvolutionState = {}
 EvolutionState.__index = EvolutionState
-EvolutionState.isOpaque = true
 
 -- SGB: SetPal_PokemonWholeScreen for the mon on display
 function EvolutionState:sgbPalettes(game)
@@ -127,11 +127,11 @@ function EvolutionState:update(dt)
     require("src.core.Sound").playCry(game.data, self.newSpecies)
     local TextBox = require("src.render.TextBox")
     local newName = game.data.pokemon[self.newSpecies].name
-    -- _EvolvedText extracts truncated (it stops at a dynamic marker the
-    -- decoder does not follow), so the engine's wording stands here
-    game.stack:push(TextBox.new(game,
-      Strings("Congratulations!\nYour %s\nevolved into\n%s!",
-              self.oldName, newName),
+    -- EvolvedText then IntoText in the same box (PrintText_NoCreatingTextBox),
+    -- then SFX_GET_ITEM_2 (engine/pokemon/evos_moves.asm:136-153)
+    local msg = romText(game.data, "_EvolvedText", "%s evolved", self.oldName)
+      .. romText(game.data, "_IntoText", "\ninto %s!", newName)
+    game.stack:push(TextBox.new(game, msg,
       function()
         Music.restoreMap(game.data)
         game.stack:pop() -- the evolution screen itself
@@ -141,13 +141,15 @@ function EvolutionState:update(dt)
         -- first so the "learned MOVE!" text / forget prompt push onto the
         -- overworld / battle-return, not this state.
         Evolution.learnEvolutionMoves(game, self.mon, self.onDone)
-      end))
+      end,
+      TextBox.soundOpts(game, "Get_Item2")))
   end
 end
 
 function EvolutionState:draw()
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("fill", 0, 0, 160, 144)
+  -- rows 0-11 only (hlcoord 0,0 / lb bc, 12, 20, evos_moves.asm:126-128)
+  love.graphics.rectangle("fill", 0, 0, 160, 96)
 
   -- accelerating flash between the two forms
   local sprite, spriteTrueColor
@@ -172,14 +174,6 @@ function EvolutionState:draw()
       require("src.render.PaletteFX").markTrueColor(x, y, sprite:getDimensions())
     end
   end
-
-  love.graphics.setColor(0, 0, 0, 1)
-  if not self.done then
-    Font.draw(Strings("What?"), 8, 104)
-    Font.draw(self.oldName .. " is", 8, 114)
-    Font.draw(Strings("evolving!"), 8, 124)
-  end
-  love.graphics.setColor(1, 1, 1, 1)
 end
 
 return EvolutionState

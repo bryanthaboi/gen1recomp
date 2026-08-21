@@ -67,6 +67,37 @@ T.eq(anchorsAfter({ centered = false, hold = true }), 0,
   "a battle still holds the anchors while DYNAMIC is on")
 T.eq(anchorsAfter({ centered = true, hold = true }), 0, "and with it off")
 
+-- --------------------------------------------------------- the save panel
+
+-- PrintSaveScreenText prints at hlcoord 4,0 over the kept-open START menu box
+-- at 9,0 (start_sub_menus.asm:641-647); docking the menu alone split it (#1619).
+do
+  local StartMenu = require("src.ui.StartMenu")
+  local DataFx = T.fixtures.load()
+  require("src.render.Font").load(DataFx)
+  local pushed = {}
+  local panelGame = {
+    data = DataFx, save = SaveData.newGame(),
+    stack = { states = pushed,
+              push = function(_, s) pushed[#pushed + 1] = s end,
+              pop = function() end,
+              top = function() return pushed[#pushed] end },
+  }
+  panelGame.save.player.name = "RED"
+  local menu = StartMenu.new(panelGame)
+  pushed[#pushed + 1] = menu
+  local saveRow
+  for _, item in ipairs(menu.items) do
+    if tostring(item.label):match("SAVE") then saveRow = item end
+  end
+  T.check(saveRow ~= nil, "the START menu carries a SAVE row")
+  T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), false,
+    "the START menu alone still docks")
+  saveRow.onSelect()
+  T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), true,
+    "the SAVE panel holds the anchors so it cannot be split from the menu")
+end
+
 -- ------------------------------------------------- the scale half of it
 
 -- CENTERED is a FIXED letterbox, so the UI must not follow the survey zoom

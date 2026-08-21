@@ -282,13 +282,19 @@ local function optGame()
 end
 local om = OptionsMenu.new(optGame())
 local WANT_IDS = { "textSpeed", "animations", "battleStyle", "battleLayout",
-                   "battleFit", "battleBg", "uiLayout",
+                   "battleFit", "battleHud", "battleBg", "uiLayout",
                    "ruleset", "musicVol", "sfxVol", "musicFilter",
                    "performance", "colors",
                    "tilt", "gbcfx", "zoom", "voidFill", "videoMode",
                    "faithfulRes", "fpsCap",
                    "speedOverworld", "speedBattle", "speedMenu",
                    "mods", "controls", "dateFormat", "timeFormat" }
+local function orow(menu, id)
+  for _, row in ipairs(menu.rows) do
+    if row.id == id then return row end
+  end
+  error("no options row '" .. id .. "'")
+end
 check(#om.rows == #WANT_IDS, "vanilla options row count (plus MODS/CONTROLS)")
 for i, id in ipairs(WANT_IDS) do
   check(om.rows[i].id == id, "options row order: " .. id)
@@ -296,11 +302,12 @@ end
 
 -- ruleset row cycles the sorted non-hidden registry ids showing name
 om.game.save.options.ruleset = "gen1_faithful"
-check(om.rows[8].value(om.game) == "GEN 1", "ruleset row shows record.name")
-om.rows[8].step(om.game, 1)
+check(orow(om, "ruleset").value(om.game) == "GEN 1",
+  "ruleset row shows record.name")
+orow(om, "ruleset").step(om.game, 1)
 check(om.game.save.options.ruleset == "modern_clean",
   "ruleset row cycles sorted registry ids")
-om.rows[8].step(om.game, 1)
+orow(om, "ruleset").step(om.game, 1)
 check(om.game.save.options.ruleset == "gen1_faithful",
   "hidden rulesets are excluded from the cycle")
 
@@ -319,42 +326,42 @@ check(om.game.save.options.battleLayout == "wide", "battle layout flips to WIDE"
 check(om.rows[4].value(om.game) == "WIDE", "the WIDE layout renders its label")
 om.rows[4].step(om.game, 1)
 check(om.game.save.options.battleLayout == "og", "battle layout flips back")
-om.rows[9].step(om.game, -1)
+orow(om, "musicVol").step(om.game, -1)
 check(om.game.save.options.musicVol == 6, "music volume steps down")
-for _ = 1, 10 do om.rows[9].step(om.game, -1) end
+for _ = 1, 10 do orow(om, "musicVol").step(om.game, -1) end
 check(om.game.save.options.musicVol == 0, "music volume clamps at 0")
 
--- ZOOM / VOID FILL rows (indices track WANT_IDS above; the battle
--- composition rows -- BATTLE SIZE / BATTLE BG / UI LAYOUT -- sit ahead of
--- RULESET, and FAITHFUL RATIO lands between VIDEO MODE and MAX FPS)
+-- ZOOM / VOID FILL rows (looked up by id; WANT_IDS above pins the order)
 local Zoom = require("src.render.Zoom")
 local TileRenderer = require("src.render.TileRenderer")
 om.game.save.options.zoom = 0
 Zoom.offset = 0
-check(om.rows[16].value(om.game) == "FIT", "ZOOM row shows FIT at offset 0")
-om.rows[16].step(om.game, 1)
+check(orow(om, "zoom").value(om.game) == "FIT",
+  "ZOOM row shows FIT at offset 0")
+orow(om, "zoom").step(om.game, 1)
 check(om.game.save.options.zoom == 1 and Zoom.offset == 1,
   "ZOOM row steps to IN1")
-om.rows[17].step(om.game, 1)
+orow(om, "voidFill").step(om.game, 1)
 check(om.game.save.options.voidFill == "water"
       and TileRenderer.voidFill == "water",
   "VOID FILL row cycles TREES → WATER")
-om.rows[17].step(om.game, 1)
+orow(om, "voidFill").step(om.game, 1)
 check(om.game.save.options.voidFill == "black", "VOID FILL steps to BLACK")
-om.rows[17].step(om.game, 1)
+orow(om, "voidFill").step(om.game, 1)
 check(om.game.save.options.voidFill == "trees", "VOID FILL wraps to TREES")
 
 -- the MAX FPS row cycles the render-cap steps and shows the value plain
 om.game.save.options.fpsCap = nil
-check(om.rows[20].value(om.game) == "60",
+check(orow(om, "fpsCap").value(om.game) == "60",
   "MAX FPS row defaults to 60 with no saved cap")
-om.rows[20].step(om.game, 1)
+orow(om, "fpsCap").step(om.game, 1)
 check(om.game.save.options.fpsCap == 75, "MAX FPS steps up from 60 to 75")
-check(om.rows[20].value(om.game) == "75", "the MAX FPS row renders the cap")
+check(orow(om, "fpsCap").value(om.game) == "75",
+  "the MAX FPS row renders the cap")
 om.game.save.options.fpsCap = 160
-om.rows[20].step(om.game, 1)
+orow(om, "fpsCap").step(om.game, 1)
 check(om.game.save.options.fpsCap == 30, "MAX FPS wraps past the ceiling to 30")
-om.rows[20].step(om.game, -1)
+orow(om, "fpsCap").step(om.game, -1)
 check(om.game.save.options.fpsCap == 160, "MAX FPS wraps back down to the ceiling")
 
 -- ------- FrameCap normalize / cycle (issue #88)
@@ -384,7 +391,7 @@ check(FrameCap.current == 60, "FrameCap.applyOptions defaults a missing key to 6
 -- the MODS row is the manager's discoverable home
 local mgGame = optGame()
 om = OptionsMenu.new(mgGame)
-om.rows[24].activate(mgGame)
+orow(om, "mods").activate(mgGame)
 check(getmetatable(mgGame.stack:top()) == ManagerState,
   "the MODS row opens the manager")
 check(mgGame.stack:top().screenId == "ManagerState",
@@ -394,7 +401,7 @@ check(mgGame.stack:top().screenId == "ManagerState",
 local BindingsMenu = require("src.ui.BindingsMenu")
 local cbGame = optGame()
 om = OptionsMenu.new(cbGame)
-om.rows[25].activate(cbGame)
+orow(om, "controls").activate(cbGame)
 local bm = cbGame.stack:top()
 check(getmetatable(bm) == BindingsMenu,
   "the CONTROLS row opens the rebind list")
@@ -413,17 +420,17 @@ check(cbGame.save.options.bindings == nil,
 -- engine UI and mods without becoming checkpoint progress
 om.game.save.options.dateFormat = "device"
 om.game.save.options.timeFormat = "device"
-check(om.rows[26].value(om.game) == "DEVICE",
+check(orow(om, "dateFormat").value(om.game) == "DEVICE",
   "DATE FORMAT defaults to device locale")
-om.rows[26].step(om.game, 1)
+orow(om, "dateFormat").step(om.game, 1)
 check(om.game.save.options.dateFormat == "dmy"
-      and om.rows[26].value(om.game) == "DD-MM-YYYY",
+      and orow(om, "dateFormat").value(om.game) == "DD-MM-YYYY",
   "DATE FORMAT exposes deterministic DMY override")
-check(om.rows[27].value(om.game) == "DEVICE",
+check(orow(om, "timeFormat").value(om.game) == "DEVICE",
   "TIME FORMAT defaults to device locale")
-om.rows[27].step(om.game, 1)
+orow(om, "timeFormat").step(om.game, 1)
 check(om.game.save.options.timeFormat == "24h"
-      and om.rows[27].value(om.game) == "24 HOUR",
+      and orow(om, "timeFormat").value(om.game) == "24 HOUR",
   "TIME FORMAT exposes deterministic 24-hour override")
 check(bm.onKeyPressed == nil and bm.onGamepadPressed == nil,
   "no raw-input claim until a capture is armed")
@@ -583,11 +590,19 @@ check(not fpm.submenu and forced == fgame.save.party[1],
 
 -- ------- issues #320/#385: the STRENGTH texts print over the party menu
 do
+  -- PartyMenu delegates the move to OverworldState:useStrengthFieldMove;
+  -- parity_I_M covers that side, this one covers what the menu does after
   local owStub = { strengthActive = false,
                    map = { def = { tileset = "OVERWORLD" } }, dark = false,
                    partyKnows = function(self, id) return self.knows == id end,
                    knows = "STRENGTH" }
   local sgame = partyGame()
+  owStub.useStrengthFieldMove = function(self, _mon, onClose)
+    self.strengthActive = true
+    sgame.stack:push(require("src.render.TextBox").new(
+      sgame, "used\nSTRENGTH.", onClose))
+    return true
+  end
   sgame.overworld = owStub
   sgame.data.text = {} -- the strength texts fall back to Strings sources
   sgame.save.inventory.RAINBOWBADGE = 1
@@ -1233,7 +1248,7 @@ local Loader = require("src.mods.Loader")
 local uiFiles = {
   ["mods/uikit/manifest.json"] =
     '{"id":"uikit","name":"uikit","version":"1.0.0","entry":"main.lua","api":2}',
-  ["mods/uikit/main.lua"] = "return function(mod) _G.MOD_UI_API = mod end",
+  ["mods/uikit/main.lua"] = "return function(mod) mod.exports.api = mod end",
 }
 local uiFs = {
   read = function(path) return uiFiles[path] end,
@@ -1267,8 +1282,7 @@ local uiFs = {
 }
 local uiLoader = Loader.new({ fs = uiFs })
 check(uiLoader:load({}) == true, "the uikit fixture loads clean")
-local uiApi = _G.MOD_UI_API
-_G.MOD_UI_API = nil
+local uiApi = (uiLoader.exports.uikit or {}).api
 check(uiApi ~= nil, "the entry chunk received its api")
 check(uiApi.ui == ModUI, "mod.ui is the toolkit facade")
 check(uiApi.ui.Theme == Theme, "mod.ui.Theme reaches the theme module")

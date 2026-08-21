@@ -133,7 +133,13 @@ def parse_text_file(path, texts, rel):
             continue
         if s in ("ENDC", "vc_patch_end"):
             continue
-        m = re.match(r"(_\w+)::?\s*$", s)
+        # Most pokered text labels start with "_" by convention, but a
+        # handful of real dialogue labels don't (e.g. text/ViridianCity.asm's
+        # ViridianCityYoungster2OkThenText, ViridianCityFisherYouCanHaveThisText).
+        # text/*.asm, data/text/text_*.asm and dex_text.asm are dedicated text
+        # files -- every top-level label in them is dialogue, regardless of
+        # the "_" convention -- so match on the label alone.
+        m = re.match(r"(\w+)::?\s*$", s)
         if m:
             flush()
             label = m.group(1)

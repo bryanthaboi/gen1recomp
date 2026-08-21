@@ -39,9 +39,13 @@ return function(game)
   local mon = Pokemon.new(game.data, "PIKACHU", 20)
   game.save.party = { mon }
   Evolution.evolve(game, mon, "RAICHU")
-  U.wait(12)
-
-  local top = game.stack:top()
+  -- the IsEvolvingText box now holds 50+ frames before the movie (#1596)
+  local top
+  for _ = 1, 300 do
+    top = game.stack:top()
+    if top and top.screenId == "EvolutionState" then break end
+    U.wait(1)
+  end
   check("the evolution screen opened", top and top.screenId == "EvolutionState")
   U.log("Issue #494: true-color sprites during evolutions and trades")
   U.log("Watch this PIKACHU evolve into RAICHU in ADVANCED colors.")

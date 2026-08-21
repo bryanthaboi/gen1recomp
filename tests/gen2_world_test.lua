@@ -298,15 +298,21 @@ landGame.input:press("a")
 landPack:update(0)
 check(landPack.message == nil, "a button clears the message")
 
--- An item World claims nothing for still falls through to the PACK's own
--- onChoose (TM teaching).
+-- CoinCaseEffect (engine/items/item_effects.asm:2243) is a MenuTextboxWaitButton
+-- over _CoinCaseCountText: the PACK stays open and nothing reaches onChoose.
+landGame.save.player.coins = 250
 landPack.index = 3
 landGame.input:press("a")
 landPack:update(0)
 landGame.input:press("a")
 landPack:update(0)
-eq(chosen, "COIN_CASE", "an unhandled item reaches onChoose untouched")
+check(landPack.message ~= nil, "the COIN CASE prints inside the PACK")
+eq(landPack.message[1], "Coins:", "_CoinCaseCountText's first row")
+eq(landPack.message[2], "250", "and the count on the second")
+eq(chosen, nil, "the COIN CASE never reaches onChoose")
 eq(landGame.stack.cleared, 0, "and does not quit the PACK either")
+landGame.input:press("a")
+landPack:update(0)
 
 -- Facing water: the roll lands on $2 .FishGotSomething, the PACK quits
 -- (PACKSTATE_QUITRUNSCRIPT) and Script_FishCastRod's cast owns the world.
@@ -354,8 +360,10 @@ eq(busyWorld:useRod("OLD_ROD"), "nowhere", "no fishing from inside a battle")
 busyWorld.battleActive = nil
 busyWorld.vm = { running = function() return true end, update = function() end }
 eq(busyWorld:useRod("OLD_ROD"), "nowhere", "no fishing while a script runs")
-check(busyWorld:useFieldItem("COIN_CASE") == nil,
+check(busyWorld:useFieldItem("POTION") == nil,
   "useFieldItem passes an unhandled item back to the PACK")
+eq(busyWorld:useFieldItem("COIN_CASE"), "coin_case",
+  "the COIN CASE is ITEMMENU_CURRENT and World claims it")
 
 -- ---- A2. REPEL / SUPER REPEL / MAX REPEL ----------------------------------
 -- UseRepel (engine/items/item_effects.asm): the step count is the only thing
@@ -1701,14 +1709,21 @@ check(hw:mapSceneOf(3, 4) == nil,
   "a map with NO scene_var row answers nil, which the VM turns into $ff")
 check(hw:mapSceneOf(9, 9) == nil, "and an unresolvable pair is nil too")
 
+-- hw.tod is the production read (the unpinned wTimeOfDay split, #1557);
+-- hw.daytime is the palette pin it must NOT follow
+hw.tod = "DAY"
 eq(hw:timeOfDayId(), 1, "DAY is wTimeOfDay 1")
-hw.daytime = "MORN"
+hw.tod = "MORN"
 eq(hw:timeOfDayId(), 0, "MORN is 0")
-hw.daytime = "NITE"
+hw.tod = "NITE"
 eq(hw:timeOfDayId(), 2, "NITE is 2")
+hw.tod = "NITE"
 hw.daytime = "DARK"
-eq(hw:timeOfDayId(), 3, "DARKNESS is 3")
-hw.daytime = "DAY"
+eq(hw:timeOfDayId(), 2, "a PALETTE_DARK pin does not leak into wTimeOfDay")
+hw.tod = nil
+hw.daytime = "DARK"
+eq(hw:timeOfDayId(), 3, "DARKNESS is 3 only on the tod-less fallback arm")
+hw.tod, hw.daytime = nil, "DAY"
 eq(hw:gsVersion(), 0, "checkver: a Gold save is 0")
 eq(hookWorld({ version = "silver" }):gsVersion(), 1, "and a Silver save is 1")
 
@@ -2876,8 +2891,9 @@ check(selGame.save.registeredItem == nil,
 eq(selWorld:useSelectItem(), "not_registered",
   "SELECT with nothing registered answers not_registered")
 
--- The PACK side: SELECT on a highlighted row is RegisterItem, the one PACK
--- button this port left unbound.
+-- The PACK side: the item submenu's SEL row is RegisterItem's only door --
+-- the cart's SELECT is the bag's own item shuffle
+-- (engine/items/pack.asm:1290 Pack_InterpretJoypad .select).
 selGame.save.inventory.POTION = 3
 selGame.input = stubInput()
 local selPack = PackMenu.new(selGame, { pocket = "ITEM" })
@@ -2885,7 +2901,18 @@ selPack.index = 1
 check(selPack.rows[1].id == "POTION", "the ITEM pocket row under test")
 selGame.input:press("select")
 selPack:update(0)
-check(selPack.message ~= nil, "SELECT on a row opens RegisteredItemText")
+eq(selPack.switching, 1, "SELECT on a row arms the item shuffle")
+check(selGame.save.registeredItem == nil, "and registers nothing")
+selGame.input:press("b")
+selPack:update(0)
+check(selPack.switching == nil and selPack.message == nil,
+  "B backs out of the shuffle")
+selPack:openSubmenu()
+check(table.concat(selPack.submenu.rows, ","):find("sel", 1, true) ~= nil,
+  "the POTION submenu offers the SEL row")
+selPack:closeSubmenu()
+selPack:registerSelected()
+check(selPack.message ~= nil, "SEL opens RegisteredItemText")
 eq(selGame.save.registeredItem.id, "POTION",
   "and World:registerItem actually ran")
 selGame.input:press("a")
@@ -2897,7 +2924,9 @@ selPack.index = selPack:total()
 selGame.save.registeredItem = nil
 selGame.input:press("select")
 selPack:update(0)
-check(selPack.message == nil, "SELECT on CANCEL registers nothing")
+check(selPack.switching == nil and selPack.message == nil,
+  "SELECT on CANCEL arms nothing")
+selPack:registerSelected()
 check(selGame.save.registeredItem == nil, "and the slot stays empty")
 
 -- CantRegisterText: a TM/HM row refuses from the PACK too.
@@ -2906,9 +2935,8 @@ selPack:rebuild()
 local tmPack = PackMenu.new(selGame, { pocket = "TM_HM" })
 tmPack.index = 1
 check(tmPack.rows[1].id == "HM_CUT", "the TM/HM pocket row under test")
-selGame.input:press("select")
-tmPack:update(0)
-check(tmPack.message ~= nil, "SELECT on the HM still opens a message")
+tmPack:registerSelected()
+check(tmPack.message ~= nil, "SEL on the HM still opens a message")
 check(selGame.save.registeredItem == nil,
   "CantRegisterText: the HM never becomes the registered item")
 end
