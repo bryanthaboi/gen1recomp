@@ -1389,7 +1389,15 @@ function Battle:useMove(attacker, defender, moveId)
   -- free of PP and obedience in exactly the same way.
   local rolling = state.rolloutLock == moveId
 
-  if not (charging or rampaging or rolling) then
+  -- The doturn command returns early when the user's substatus carries
+  -- SUBSTATUS_BIDE (effect_commands.asm:978-979), and StoreEnergy's
+  -- continuation skips straight to unleashenergy on every turn after the
+  -- first (move_effects/bide.asm:61-62).  So the whole run costs the one PP
+  -- the opening turn spent, the same way a rampage costs one.
+  local biding = def.effect == "EFFECT_BIDE"
+    and state.bideMove == moveId and (state.bideTurns or 0) > 0
+
+  if not (charging or rampaging or rolling or biding) then
     if move and (move.pp or 0) <= 0 then
       self:emit({ kind = "message", text = "No PP left for this move!" })
       return
@@ -2133,6 +2141,8 @@ Battle.MOVE_EFFECTS.EFFECT_BIDE = function(self, attacker, defender, def, moveId
   if not state.bideTurns then
     state.bideTurns = Effects.bideTurns(self.random)
     state.bideStored = 0
+    -- what the lock below holds the user on, the way rampageMove does
+    state.bideMove = moveId
     self:emit({ kind = "message",
       text = self:monName(attacker) .. " is storing energy!" })
     return
@@ -2144,7 +2154,7 @@ Battle.MOVE_EFFECTS.EFFECT_BIDE = function(self, attacker, defender, def, moveId
     return
   end
   local damage = Effects.bideDamage(state.bideStored)
-  state.bideTurns, state.bideStored = nil, nil
+  state.bideTurns, state.bideStored, state.bideMove = nil, nil, nil
   self:emit({ kind = "message",
     text = self:monName(attacker) .. " unleashed energy!" })
   if damage <= 0 then return fail(self) end
@@ -3780,6 +3790,15 @@ function Battle:lockedInMove(mon)
   if state.rolloutLock then return state.rolloutLock end
   if state.rampageMove and (state.rampageTurns or 0) > 0 then
     return state.rampageMove
+  end
+  -- The player's menu is skipped while SUBSTATUS_BIDE is set
+  -- (core.asm:574-576) and CheckEnemyLockedIn masks the same bit
+  -- (:5648-5651), so a storing bide holds both sides.  Without it the counter
+  -- never reached zero and bideStored kept banking, so the next bide
+  -- unleashed an inflated hit.  Gen 1 holds the menu at
+  -- BattleState:fightLockedAction.
+  if state.bideMove and (state.bideTurns or 0) > 0 then
+    return state.bideMove
   end
   return nil
 end
