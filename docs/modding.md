@@ -292,6 +292,20 @@ exposes balls and their exact stock catch previews; targeted medicine remains
 screen-owned and is omitted rather than guessing at its pocketed PACK flow.
 Callers should ignore unknown fields and tolerate absent optional ones.
 
+## Caught Pokémon storage result
+
+The `pokemon.caught` event includes the boolean `stored`. It is `true` only
+when the exact caught Pokémon has been inserted into the player's party or a
+PC box before the listener runs. It is `false` when the ball catch completed
+but both party and PC storage rejected the Pokémon. Pokédex ownership alone
+does not make `stored` true.
+
+The existing `destination` field remains `"party"` or `"box"` and describes
+the selected storage route. It is not proof that insertion succeeded. Mods
+that require confirmed storage should test `ev.stored == true`; this also
+fails closed on older engines where the field is absent. All other event
+fields and catch behavior are unchanged.
+
 ## Battle menu intents
 
 `mod.battle:submit(intent)` applies a validated choice to the snapshot the mod

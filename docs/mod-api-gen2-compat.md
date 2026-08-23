@@ -563,10 +563,13 @@ gains a field instead of the name gaining a prefix.
   happen either way.
 - *The catch and the evolution:* `pokemon.caught`, `pokemon.evolved`; hook
   `evolution.check`. `src/ui/gen2/BattleState.lua:pushCaught` emits
-  `pokemon.caught` once the mon is in the party or the box, and
-  `src/core/gen2/Evolution.lua` emits `pokemon.evolved` from `apply` and wraps
-  each row's decision in `evolution.check`. The hook passes `data` where Gen 1
-  passes `game`; positions 2-4 (mon, row, trigger) match.
+  `pokemon.caught` once the mon is in the party or the box. Its required
+  `stored` boolean is therefore `true`; Gen 1 also reports `false` when a ball
+  catch completes but full party and box storage reject the mon. The legacy
+  `destination` field still describes the selected route, not insertion
+  success. `src/core/gen2/Evolution.lua` emits `pokemon.evolved` from `apply`
+  and wraps each row's decision in `evolution.check`. The hook passes `data`
+  where Gen 1 passes `game`; positions 2-4 (mon, row, trigger) match.
 - *The frame (`src/core/Game2.lua`):* hooks `input.step`, `input.pointer`,
   `render.zones`, `render.compose`, `render.output_enabled`, `render.output`,
   `render.letterbox`, `render.hud`, `render.viewport`, `render.window`. Each sits
@@ -802,9 +805,11 @@ battle seams (`battle.overlay`, `battle.low_health_alarm`,
 `battle.catch_exp`), the two sprite lookups (`pokemon.sprite`,
 `pokemon.icon`), and the catch/evolution trio (`pokemon.caught`,
 `pokemon.evolved`, `evolution.check` -- `src/ui/gen2/BattleState.lua` emits
-`pokemon.caught` from `pushCaught` once the mon is in the party or the box, and
-`src/core/gen2/Evolution.lua` emits `pokemon.evolved` from `apply` and wraps
-each row's decision in `evolution.check`).
+`pokemon.caught` from `pushCaught` once the mon is in the party or the box with
+`stored = true`; Gen 1 uses the same required boolean and can report `false`
+when all storage is full. `destination` remains the selected route rather than
+proof of storage. `src/core/gen2/Evolution.lua` emits `pokemon.evolved` from
+`apply` and wraps each row's decision in `evolution.check`).
 
 Three partial coverages worth knowing about, because "the hook exists" is not
 the same as "the hook sees everything":
