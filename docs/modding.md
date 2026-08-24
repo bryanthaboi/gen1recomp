@@ -695,6 +695,13 @@ hotkeys. Either set `POKEPORT_DEV=1` in the environment or pass
 love . --developer
 ```
 
+Every sandboxed mod receives the strict boolean `mod.dev`. It is fixed when
+the loader is created and is `true` only for this developer-mode boot. Mods may
+use it to register diagnostic commands or screens and to emit verbose seed or
+balance traces without reading `os.getenv`; production behavior should remain
+quiet when it is `false`. The value grants no permission and exposes no host
+environment data.
+
 While developer mode is active:
 
 - `` ` `` (backtick) opens the console overlay — a Lua REPL with `game`,
