@@ -5102,6 +5102,7 @@ function BattleState:storeCaughtMon()
   local species = self.enemy.mon.species
   local isNew = dex ~= nil and not dex.owned[species]
   local destination = "party"
+  local stored = false
   markOwned(game, species)
   stampOT(game.save, self.enemy.mon)
   if isNew then
@@ -5124,11 +5125,13 @@ function BattleState:storeCaughtMon()
     end)
   end
   if Party.add(game.save.party, self.enemy.mon) then
+    stored = true
     askCaughtNickname()
   else
     destination = "box"
     local boxNum = require("src.pokemon.Boxes").deposit(game.save, self.enemy.mon)
     if boxNum then
+      stored = true
       askCaughtNickname()
       -- _ItemUseBallText07/08 keyed on EVENT_MET_BILL
       local metBill = game.save.flags and game.save.flags.EVENT_MET_BILL
@@ -5143,7 +5146,7 @@ function BattleState:storeCaughtMon()
   end
   Runtime.emit("pokemon.caught", {
     battle = self, mon = self.enemy.mon, species = species, isNew = isNew,
-    ball = self.lastBall, destination = destination, game = game,
+    ball = self.lastBall, destination = destination, stored = stored, game = game,
   })
   self.result = "caught"
   self.afterQueue = "finish"

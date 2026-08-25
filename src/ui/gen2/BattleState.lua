@@ -2863,7 +2863,7 @@ function BattleState:pushCaught(enemy, itemId)
   Runtime.emit("pokemon.caught", {
     battle = self.battle, mon = enemy, species = enemy.species,
     isNew = not knew, ball = itemId,
-    destination = toPc and "box" or "party", game = self.game,
+    destination = toPc and "box" or "party", stored = true, game = self.game,
   })
   self:push({ kind = "ask-nickname", mon = enemy })
   if toPc then
