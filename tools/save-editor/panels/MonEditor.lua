@@ -147,6 +147,66 @@ local function drawDvRows(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
   end
 end
 
+-- engine/pokemon/caught_data.asm:168-199
+local CAUGHT_BY = { { "-", "none" }, { "BOY", "boy" }, { "GIRL", "girl" } }
+
+local function drawCaughtRows(S, Kit, mon, cx, y, inner, row)
+  local s = Kit.scale
+  local chipH = 22 * s
+  local gap = 6 * s
+  local tinyH = Kit.textHeight("tiny")
+
+  Kit.text("tiny", "CAUGHT", cx, y + (row - tinyH) / 2, PAL.caption)
+  local timeX = cx + 62 * s
+  local timeW = math.max(34 * s, (cx + inner - timeX - 3 * gap) / 4)
+  for i, label in ipairs(Ops.CAUGHT_TIMES) do
+    if Kit.chip(timeX + (i - 1) * (timeW + gap), y + (row - chipH) / 2,
+        timeW, chipH, label, (mon.caughtTime or 0) == i - 1, PAL.blue, PAL.steel) then
+      Ops.setCaughtTime(S, mon, i - 1)
+    end
+  end
+  y = y + row + gap
+
+  local btn = 24 * s
+  local lvX = cx + inner - 2 * btn - gap
+  if Kit.stepper(lvX, y + (row - btn) / 2, btn, btn, "-", { font = "small" }) then
+    Ops.setCaughtLevel(S, mon, (mon.caughtLevel or 0) - 1)
+  end
+  if Kit.stepper(lvX + btn + gap, y + (row - btn) / 2, btn, btn, "+",
+      { font = "small" }) then
+    Ops.setCaughtLevel(S, mon, (mon.caughtLevel or 0) + 1)
+  end
+  Kit.textRight("tiny", ("MET LV %d"):format(mon.caughtLevel or 0), lvX - 10 * s,
+    y + (row - tinyH) / 2, PAL.text)
+  Kit.text("tiny", "OT", cx, y + (row - tinyH) / 2, PAL.caption)
+  local otX = cx + 26 * s
+  local otW = math.max(30 * s, (inner * 0.42 - 26 * s - 2 * gap) / 3)
+  for i, pair in ipairs(CAUGHT_BY) do
+    if Kit.chip(otX + (i - 1) * (otW + gap), y + (row - chipH) / 2, otW, chipH,
+        pair[1], (mon.caughtByGender or "none") == pair[2], PAL.blue, PAL.steel) then
+      Ops.setCaughtByGender(S, mon, pair[2])
+    end
+  end
+  y = y + row + gap
+
+  local whereX = cx + inner - 3 * btn - 2 * gap
+  if Kit.stepper(whereX, y + (row - btn) / 2, btn, btn, "-", { font = "small" }) then
+    Ops.setCaughtLocation(S, mon, (mon.caughtLocation or 0) - 1)
+  end
+  if Kit.stepper(whereX + btn + gap, y + (row - btn) / 2, btn, btn, "+",
+      { font = "small" }) then
+    Ops.setCaughtLocation(S, mon, (mon.caughtLocation or 0) + 1)
+  end
+  if Kit.button(whereX + 2 * (btn + gap), y + (row - btn) / 2, btn, btn, "0",
+      { kind = "danger", font = "micro", radius = 6 * s }) then
+    Ops.setCaughtLocation(S, mon, 0)
+  end
+  local where = ("WHERE %s"):format(Gen.landmarkName(S.data, mon.caughtLocation or 0))
+  Kit.text("tiny", Kit.ellipsize("tiny", where, whereX - 10 * s - cx), cx,
+    y + (row - tinyH) / 2, PAL.text)
+  return y + row + gap
+end
+
 local function drawMoveRows(S, Kit, mon, rightX, rowY, colW, rowH, rowGap)
   local s = Kit.scale
   for slot = 1, 4 do
@@ -231,6 +291,7 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   -- the field + Set row
   local extraH = 0
   if Gen.ofState(S) == 2 then extraH = 88 * s end
+  if Gen.hasCaughtData(S.save, S.version) then extraH = extraH + 102 * s end
   local nickFieldH = 30 * s
   local contentH = pad + headerH + 18 * s
     + capH + 10 * s + nickFieldH + 18 * s
@@ -341,7 +402,7 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   local colY = statsY + cellH + 18 * s
   if Gen.ofState(S) == 2 then
     local extraY = colY
-    Kit.caption(cx, extraY, "GOLD")
+    Kit.caption(cx, extraY, Gen.editionLabel(S.save, S.version))
     extraY = extraY + capH + 8 * s
     local row = 28 * s
     Kit.text("tiny", "HELD " .. tostring(mon.item or "none"), cx, extraY, PAL.text)
@@ -371,7 +432,11 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     if mon.unownLetter then bits[#bits + 1] = "Unown " .. tostring(mon.unownLetter) end
     Kit.text("tiny", table.concat(bits, "  ") ~= "" and table.concat(bits, "  ")
       or "gender/shiny follow DVs", cx, extraY, PAL.caption)
-    colY = extraY + 22 * s
+    extraY = extraY + 22 * s
+    if Gen.hasCaughtData(S.save, S.version) then
+      extraY = drawCaughtRows(S, Kit, mon, cx, extraY, inner, row)
+    end
+    colY = extraY
   end
   if narrow then
     -- stacked: DVs first, then moves, then the two actions side by side at

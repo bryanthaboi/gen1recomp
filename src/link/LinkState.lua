@@ -112,6 +112,32 @@ function LinkState.newJoinOnline(game, code)
   return self
 end
 
+-- Adopt a transport that is ALREADY paired and skip the connect UI: an
+-- overworld multiplayer session handing one pair of players off to a battle
+-- or a trade.  The caller has settled which mode and which side hosts, so
+-- all that is left is the hello exchange every link session runs before it
+-- commits -- the fingerprint/mod compatibility check still gets its say,
+-- exactly as it would have on the LAN or ONLINE path.
+--
+-- `transport` is anything Session accepts (update/poll/send/close plus the
+-- .paired/.closed/.error fields), which is what lets a mod route a battle
+-- over a channel of its own.  Ownership transfers with it: exitWith closes
+-- the session, so the caller's transport is done once this state unwinds.
+--
+-- opts.forceLevel  the level rule, normally chosen on the battleOptions
+--                  screen; an adopted session has no menu to pick it on
+function LinkState.newFromSession(game, transport, mode, isHost, opts)
+  local self = LinkState.new(game)
+  self.net = Session.new(transport, { role = isHost and "host" or "guest",
+                                      kind = "link" })
+  self.adopted = true
+  self.adoptedMode, self.adoptedHost = mode, isHost and true or false
+  self.forceLevel = opts and opts.forceLevel or nil
+  self.stage = "adopted"
+  self:sendHello(isHost and mode or nil)
+  return self
+end
+
 function LinkState:exitWith(message, reason)
   DiscordPresence.setJoinCode(nil)
   self.game.linkSession = nil -- back to the player's own GAME SPEED
@@ -203,8 +229,9 @@ function LinkState:decideCompat(mode, isHost)
                mods = peer and peer.mods, fingerprint = peer and peer.fingerprint },
   })
   if self.verdict == "full" or self.verdict == "vanilla_peer" then
-    if isHost and mode == "battle" then
+    if isHost and mode == "battle" and not self.adopted then
       -- host picks the level rule now, before the parties are exchanged
+      -- (an adopted session had it passed in; see newFromSession)
       self.stage = "battleOptions"
     else
       self:startMode(mode, isHost)
@@ -241,6 +268,16 @@ function LinkState:update(dt)
       self:exitWith(Strings("The link was\nbroken."))
       return
     end
+  end
+
+  -- handed over from an already-paired session (LinkState.newFromSession):
+  -- both hellos are in flight, and the first one to land settles compat and
+  -- drops us straight into the agreed mode
+  if self.stage == "adopted" then
+    if self:pollHello() then
+      self:decideCompat(self.adoptedMode, self.adoptedHost)
+    end
+    return
   end
 
   if self.stage == "menu" then
@@ -497,11 +534,26 @@ function LinkState:update(dt)
         return
       end
       self.game.stack:push(battle)
+      self.battle = battle
       self.stage = "battleRunning"
     end
 
   elseif self.stage == "battleRunning" then
     if self.game.stack:top() == self then
+      -- the lockstep copies carry the damage the real party never takes
+      -- (cable rules), so a mode that wants it -- a tournament ladder, a
+      -- battle royale -- reads it from here before the state unwinds
+      local battle = self.battle
+      if battle and Runtime.wants("link.battle_ended") then
+        Runtime.emit("link.battle_ended", {
+          result = battle.result or "ended",
+          myParty = battle.playerParty,
+          theirParty = battle.enemyParty,
+          peerName = self.peerName,
+          role = self.isHost and "host" or "guest",
+        })
+      end
+      self.battle = nil
       self:exitWith(nil) -- battle finished
     end
   end

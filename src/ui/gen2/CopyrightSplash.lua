@@ -23,6 +23,11 @@ local HOLD_FRAMES = 100
 -- Only used when the extracted splash image is missing.
 local LINE_Y = { 48, 64, 80 }
 
+-- Gold boots on the default BGP; Crystal inverts under SCGB_GAMEFREAK_LOGO
+-- (../pokecrystal/engine/movie/splash.asm:20-30).
+local DEFAULT_BACKDROP = { 1, 1, 1 }
+local DEFAULT_INK = { 0, 0, 0 }
+
 local function tryImage(path)
   if not path then return nil end
   local ok, image = pcall(Assets.image, path)
@@ -43,6 +48,8 @@ function CopyrightSplash.new(game, opts)
   self.image = tryImage(opts.image)
     or tryImage(title.copyrightSplash)
     or tryImage("assets/generated/title/copyright_splash.png")
+  self.backdrop = opts.backdrop or title.copyrightBackdrop or DEFAULT_BACKDROP
+  self.ink = opts.ink or title.copyrightInk or DEFAULT_INK
   -- Text fallback only when the ROM extract is missing (tests / bare boots).
   self.lines = opts.lines
   self.frames = 0
@@ -78,17 +85,24 @@ function CopyrightSplash:update(_dt)
   end
 end
 
+function CopyrightSplash:fillBackdrop(width, height)
+  local G = love.graphics
+  local c = self.backdrop
+  G.setColor(c[1], c[2], c[3], 1)
+  G.rectangle("fill", 0, 0, width, height)
+end
+
 function CopyrightSplash:drawPanel()
   local G = love.graphics
-  G.setColor(1, 1, 1, 1)
-  G.rectangle("fill", 0, 0, SCREEN_W, SCREEN_H)
+  self:fillBackdrop(SCREEN_W, SCREEN_H)
   if self.image then
+    G.setColor(1, 1, 1, 1)
     G.draw(self.image, 0, 0)
     return
   end
   if not self.lines then return end
   -- The Gen 2 font is a fixed 8px cell, so centring is a character count.
-  G.setColor(0, 0, 0, 1)
+  G.setColor(self.ink[1], self.ink[2], self.ink[3], 1)
   for index, line in ipairs(self.lines) do
     local y = LINE_Y[index]
     if y then
@@ -104,8 +118,7 @@ end
 
 function CopyrightSplash:drawWidescreen(winW, winH)
   local G = love.graphics
-  G.setColor(1, 1, 1, 1)
-  G.rectangle("fill", 0, 0, winW, winH)
+  self:fillBackdrop(winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   G.push()
   G.translate(Chrome.fitOrigin(winW, winH, scale))

@@ -21,11 +21,14 @@
 -- itself at (0,0) from $46.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local FieldMoves = require("src.world.gen2.FieldMoves")
+local Gen2Save = require("src.core.gen2.Save")
 local Clock = require("src.core.gen2.Clock")
 local Font = require("src.render.Font")
 local Palettes = require("src.world.gen2.Palettes")
 local Phone = require("src.core.gen2.Phone")
 local SpriteRenderer = require("src.render.SpriteRenderer")
+local Strings = require("src.core.Strings")
 local TileSheet = require("src.ui.gen2.TileSheet")
 
 local Pokegear = {}
@@ -55,6 +58,10 @@ local CARDS = {
 -- ENGINE_MAP_CARD gate, which is why FLY works before the Guide Gent hands the
 -- card over.  One row, so `#self.cards` stays 1 and nothing pages.
 local FLY_MAP_CARD = { id = "map", label = "FLY" }
+
+-- ../pokecrystal/engine/events/specials.asm:102 OverworldTownMap -> _TownMap
+-- (:1757): the wall map and the DECO_TOWN_MAP poster, no strip and no card gate.
+local TOWN_MAP_CARD = { id = "map", label = "MAP" }
 
 -- ---------------------------------------------------------------- the radio
 --
@@ -877,7 +884,14 @@ function Pokegear.new(game, opts)
   self.save = opts.save or (game and game.save)
   local data = game and game.data or {}
   self.landmarks = opts.landmarks or data.gen2Landmarks
+  -- TownMap_GetCurrentLandmark (../pokecrystal/engine/pokegear/pokegear.asm:1783)
+  -- reads the map header itself, so a caller that has no landmark to hand still
+  -- gets one.
   self.currentLandmark = opts.currentLandmark
+  if self.currentLandmark == nil and game and game.currentLandmark then
+    local ok, id = pcall(game.currentLandmark, game)
+    if ok then self.currentLandmark = id end
+  end
   self.clock = opts.clock
   self.onClose = opts.onClose
   self.cards = self:visibleCards()
@@ -920,6 +934,7 @@ function Pokegear.new(game, opts)
   -- reject already dropped, so the cursor's skip loop is just "next row".
   self.fly = opts.fly
   self.onFly = opts.onFly
+  self.flyMon = opts.flyMon
   if self.fly and #self.fly > 0 then
     self.cards = { FLY_MAP_CARD }
     self.cardIndex = 1
@@ -930,13 +945,29 @@ function Pokegear.new(game, opts)
     self.flyIndex = (self:region() == "kanto") and #self.fly or 1
   end
 
+  -- _TownMap (../pokecrystal/engine/pokegear/pokegear.asm:1757): the same map,
+  -- one card, no ENGINE_MAP_CARD test and no strip to page.
+  self.townMap = (not self.fly) and opts.townMap and true or nil
+  if self.townMap then
+    self.cards = { TOWN_MAP_CARD }
+    self.cardIndex = 1
+    self.mode = "card"
+  end
+
   -- _CGB_PokegearPals writes wBGPals1 only (engine/gfx/cgb_layouts.asm:157),
   -- so the RED_WALK icon keeps the overworld's own OBJ palette.
   self.sprites = opts.sprites or data.gen2Sprites
   self.palettes = opts.palettes or data.gen2Palettes
+  -- TownMapMon reads wCurPartyMon's icon
+  -- (../pokecrystal/engine/pokegear/pokegear.asm:2708-2721).
+  self.icons = opts.icons or data.gen2Icons
 
   local gfx = (opts.menuGfx or data.gen2MenuGfx or {}).pokegear
   self.gfx = gfx
+  -- _CGB_PokegearPals picks FemalePokegearPals off wPlayerGender
+  -- (../pokecrystal/engine/gfx/cgb_layouts.asm:179-190).
+  self.gearPals = gfx and ((Gen2Save.isFemale(self.save)
+    and gfx.palettesFemale) or gfx.palettes) or nil
   if gfx then
     self.sheet = TileSheet.new({
       path = gfx.tiles, wide = gfx.tilesWide or 16, firstTile = 0,
@@ -950,19 +981,25 @@ function Pokegear:styled()
   return self.sheet ~= nil and self.sheet:available()
 end
 
+-- MalePokegearPals or FemalePokegearPals, whichever _CGB_PokegearPals would
+-- have copied into wBGPals1 (../pokecrystal/engine/gfx/cgb_layouts.asm:179-190).
+function Pokegear:pals()
+  return self.gearPals
+end
+
 -- TownMapPals: a nybble per tile id for $00..$5f, palette 0 above that.
 function Pokegear:colorsFor(tile)
-  local gfx = self.gfx
-  if not (gfx and gfx.palettes) then return nil end
-  if tile >= 0x60 then return gfx.palettes[1] end
-  return gfx.palettes[(gfx.palMap and gfx.palMap[tile + 1]) or 1]
+  local pals = self:pals()
+  if not pals then return nil end
+  if tile >= 0x60 then return pals[1] end
+  return pals[(self.gfx.palMap and self.gfx.palMap[tile + 1]) or 1]
 end
 
 -- Every string on a Pokegear card is a run of font tiles laid straight into
 -- the tilemap, so it wears BG palette 0 (PokegearPals' first entry) rather
 -- than drawing as black ink over whatever was underneath.
 function Pokegear:text(str, tx, ty)
-  local pals = self.gfx and self.gfx.palettes
+  local pals = self:pals()
   return Chrome.printThrough(str, tx, ty, pals and pals[1])
 end
 
@@ -1079,6 +1116,7 @@ function Pokegear:update(_dt)
   -- The fly picker owns the whole screen: no strip, no card paging, and B
   -- answers -1 rather than backing out to the strip.
   if self.fly then return self:updateFlyMap(input) end
+  if self.townMap then return self:updateTownMap(input) end
   if self.mode == "strip" then
     local stripCard = self:card()
     if not (stripCard and stripCard.id == "phone") then
@@ -1160,8 +1198,9 @@ function Pokegear:region()
     and landmarks[self.currentLandmark]
   local index = current and current.index or 0
   -- LANDMARK_FAST_SHIP is $5e = 94, past every Kanto landmark and still Johto.
-  if index == 94 then return "johto" end
-  if index >= 46 then return "kanto" end
+  if index == self:landmarkIndex("FAST_SHIP", 0x5e) then return "johto" end
+  -- `cp KANTO_LANDMARK`, which is PALLET_TOWN's own index.
+  if index >= self:landmarkIndex("PALLET_TOWN", 0x2e) then return "kanto" end
   return "johto"
 end
 
@@ -1605,18 +1644,31 @@ local LANDMARK_PALLET_TOWN = 0x2e
 local LANDMARK_VICTORY_ROAD = 0x57
 local LANDMARK_ROUTE_28 = 0x5d
 
+-- ../pokecrystal/constants/landmark_constants.asm:34 inserts BATTLE_TOWER, so
+-- every index above it is one higher than pokegold's; the cache's own record is
+-- the authority and the numbers above are the fallback for a dataset without one.
+function Pokegear:landmarkIndex(id, fallback)
+  local records = (self.landmarks or {}).landmarks
+  local record = records and (records["LANDMARK_" .. id] or records[id])
+  local index = record and tonumber(record.index)
+  return index or fallback
+end
+
 -- Returns d (last) and e (first).  Kanto's pair comes from
 -- TownMap_GetKantoLandmarkLimits, which withholds everything west of Victory
 -- Road until the Hall of Fame is on the record -- before that the Kanto map
 -- only walks the seven landmarks on the road to Indigo Plateau.
 function Pokegear:cursorLimits()
   if self:region() ~= "kanto" then
-    return LANDMARK_SILVER_CAVE, LANDMARK_NEW_BARK_TOWN
+    -- `ld d, KANTO_LANDMARK - 1`, which is SILVER_CAVE either way round.
+    return self:landmarkIndex("SILVER_CAVE", LANDMARK_SILVER_CAVE),
+      self:landmarkIndex("NEW_BARK_TOWN", LANDMARK_NEW_BARK_TOWN)
   end
+  local last = self:landmarkIndex("ROUTE_28", LANDMARK_ROUTE_28)
   if ((self.save or {}).flags or {}).HALL_OF_FAME then
-    return LANDMARK_ROUTE_28, LANDMARK_PALLET_TOWN
+    return last, self:landmarkIndex("PALLET_TOWN", LANDMARK_PALLET_TOWN)
   end
-  return LANDMARK_ROUTE_28, LANDMARK_VICTORY_ROAD
+  return last, self:landmarkIndex("VICTORY_ROAD", LANDMARK_VICTORY_ROAD)
 end
 
 -- The cursor's landmark index.  Unset, it is the player's own, which is what
@@ -1637,32 +1689,59 @@ end
 
 -- PokegearMap_ContinueMap's .DPad.  Both branches share the increment or
 -- decrement that follows them, which is why the wrap writes e - 1 / d + 1
--- rather than e / d.
-function Pokegear:moveMapCursor(input)
+-- rather than e / d.  _TownMap's own .pressed_up / .pressed_down
+-- (../pokecrystal/engine/pokegear/pokegear.asm:1853-1877) are the same pair of
+-- wraps against the same d/e, so the poster steps through here too.
+function Pokegear:stepMapCursor(delta)
   local last, first = self:cursorLimits()
   local cursor = self:mapCursorIndex()
-  if input:wasPressed("up") then
+  if delta > 0 then
     -- `cp d / jr c, .wrap_around_up`: below the last landmark the value is
     -- left alone, at or past it the cursor is slammed to e - 1 first.
     if cursor >= last then cursor = first - 1 end
     cursor = cursor + 1
-  elseif input:wasPressed("down") then
+  else
     -- `cp e / jr nz, .wrap_around_down`: only the first landmark wraps.
     if cursor == first then cursor = last + 1 end
     cursor = cursor - 1
+  end
+  self.mapCursor = cursor
+end
+
+function Pokegear:moveMapCursor(input)
+  if input:wasPressed("up") then
+    self:stepMapCursor(1)
+  elseif input:wasPressed("down") then
+    self:stepMapCursor(-1)
   elseif input:wasPressed("right") then
     -- Left and right do not move the cursor at all on this card: they page
     -- the POKeGEAR.  .right takes the PHONE if it is owned and the RADIO if
     -- it is not; .left always takes the CLOCK.
     self:switchCard("phone", "radio")
-    return
   elseif input:wasPressed("left") then
     self:switchCard("clock")
-    return
-  else
+  end
+end
+
+-- --------------------------------------------------------------- town map
+--
+-- _TownMap's `.loop` (../pokecrystal/engine/pokegear/pokegear.asm:1831-1845)
+-- reads hJoyPressed for B and hJoyLast for UP and DOWN, and nothing else: A
+-- takes nothing, and left/right have no card to page to.
+function Pokegear:updateTownMap(input)
+  if input:wasPressed("b") then
+    if self.townMapClosed then return end
+    self.townMapClosed = true
+    local stack = self.game and self.game.stack
+    if stack then stack:pop() end
+    if self.onClose then self.onClose() end
     return
   end
-  self.mapCursor = cursor
+  if input:wasPressed("up") then
+    self:stepMapCursor(1)
+  elseif input:wasPressed("down") then
+    self:stepMapCursor(-1)
+  end
 end
 
 -- ------------------------------------------------------------------ fly map
@@ -1796,7 +1875,7 @@ function Pokegear:loadArrowSheet()
       -- pokegold data/sprite_anims/oam.asm .OAMData_RedWalk: STILL_CURSOR's
       -- oamset reuses RED_WALK's OAM data, so this wears PAL_OW_RED.
       palette = (self.playerIcon and self.playerIcon.objColors)
-        or (gfx.palettes and gfx.palettes[1]),
+        or (self:pals() and self:pals()[1]),
     })
   end
 end
@@ -1881,7 +1960,7 @@ function Pokegear:drawClock()
   self:text(Chrome.number(display, 2), 6, 8)
   self:text(":", 8, 8)
   self:text(Chrome.number(minute, 2, true), 9, 8)
-  self:text(hour < 12 and "AM" or "PM", 12, 8)
+  self:text(Strings(hour < 12 and "AM" or "PM"), 12, 8)
 
   -- The bottom Textbox is part of the card (lb bc, 4, 18 at (0,12)), and
   -- PokegearClock_Init prints PokegearPressButtonText straight into it
@@ -1914,7 +1993,7 @@ end
 -- painted white underneath its strings is what puts a cream bar behind every
 -- run printThrough lays down.
 function Pokegear:paperColor()
-  local pals = self.gfx and self.gfx.palettes
+  local pals = self:pals()
   return (pals and pals[1] and pals[1][1]) or { 255, 255, 255 }
 end
 
@@ -1929,7 +2008,7 @@ end
 -- space IS a font-page cell on colour 0, which is the contrast the day/time
 -- window and the map's KANTO label are drawn against.
 function Pokegear:groundColor()
-  local pals = self.gfx and self.gfx.palettes
+  local pals = self:pals()
   local pal = pals and pals[1]
   return (pal and pal[#pal]) or { 0, 0, 0 }
 end
@@ -1989,6 +2068,20 @@ function Pokegear:drawFlyBubble()
   Chrome.cursor(18, 1)
 end
 
+-- _TownMap.InitTilemap (../pokecrystal/engine/pokegear/pokegear.asm:1891-1918):
+-- with no card strip above it the rule turns down at (7,0) and runs back out
+-- along row 2, boxing the name plate into the top right corner instead.
+function Pokegear:drawTownMapRule()
+  self:tile(0x06, 0, 0)
+  for x = 1, 6 do self:tile(0x07, x, 0) end
+  self:tile(0x17, 7, 0)
+  self:tile(0x16, 7, 1)
+  self:tile(0x26, 7, 2)
+  -- `ld bc, NAME_LENGTH` from (8,2), so the run stops one short of the cap.
+  for x = 8, 18 do self:tile(0x07, x, 2) end
+  self:tile(0x17, 19, 2)
+end
+
 function Pokegear:drawMap()
   -- The REGION follows the player (`cp KANTO_LANDMARK` in
   -- PokegearMap_CheckRegion); the name box follows the CURSOR, which the
@@ -2000,11 +2093,15 @@ function Pokegear:drawMap()
   if self.fly then
     self:drawFlyBubble()
   else
-    self:drawStrip()
-    -- The header's own bottom rule: $07 across (1,2), with $06 and $17 as caps.
-    self:tile(0x06, 0, 2)
-    for x = 1, 18 do self:tile(0x07, x, 2) end
-    self:tile(0x17, 19, 2)
+    if self.townMap then
+      self:drawTownMapRule()
+    else
+      self:drawStrip()
+      -- The header's own bottom rule: $07 across (1,2), with $06 and $17 as caps.
+      self:tile(0x06, 0, 2)
+      for x = 1, 18 do self:tile(0x07, x, 2) end
+      self:tile(0x17, 19, 2)
+    end
 
     -- PokegearMap_UpdateLandmarkName: ClearBox(8,0) 2 rows by 12 columns --
     -- with ' ', which is a font-page cell and so reads as BG palette 0's
@@ -2038,7 +2135,11 @@ function Pokegear:drawMap()
     end
   end
   if current and current.x and current.y then
-    self:mapCursorSprite(current.x, current.y)
+    -- FlyMap's cursor is TownMapMon, the FlyMon's icon; only the MAP card's is
+    -- the POKEGEAR_ARROW (../pokecrystal/engine/pokegear/pokegear.asm:2326).
+    if not (self.fly and self:drawFlyMonCursor(current.x, current.y)) then
+      self:mapCursorSprite(current.x, current.y)
+    end
   end
 end
 
@@ -2047,7 +2148,12 @@ end
 function Pokegear:loadPlayerIcon()
   if self.playerIcon ~= nil then return end
   self.playerIcon = false
-  local def = self.sprites and self.sprites.SPRITE_CHRIS
+  -- SPRITE_ANIM_OBJ_RED_WALK or _BLUE_WALK, which is the sheet GetPlayerIcon
+  -- loaded plus PAL_OW_RED or PAL_OW_BLUE
+  -- (../pokecrystal/engine/pokegear/pokegear.asm:2737, :2752-2757).
+  local def = self.sprites
+    and self.sprites[FieldMoves.playerSprite(
+      self.save and self.save.player and self.save.player.gender)]
   if not (def and def.image) then return end
   local ok, icon = pcall(SpriteRenderer.new, def, "player")
   if not (ok and icon) then return end
@@ -2074,6 +2180,48 @@ function Pokegear:drawPlayerIcon(x, y)
   love.graphics.setColor(1, 1, 1, 1)
   self.playerIcon:draw(x - 8, y - 8, 0, -4, "down",
     beat % 2, beat == 3)
+  return true
+end
+
+-- TownMapMon (../pokecrystal/engine/pokegear/pokegear.asm:2708-2721): the
+-- FlyMon's party icon, on PAL_OW_RED like the RED_WALK icon beside it.
+function Pokegear:loadFlyMonIcon()
+  if self.flyMonIcon ~= nil then return end
+  self.flyMonIcon = false
+  local mon = self.flyMon
+  if type(mon) ~= "table" then return end
+  local icons = self.icons
+  local iconId = mon.isEgg and "ICON_EGG"
+    or (icons and icons.species and mon.species
+      and icons.species[mon.species])
+  local entry = iconId and icons and icons.icons and icons.icons[iconId]
+  if not (entry and entry.image) then return end
+  local def = {
+    id = "SPRITE_FLY_MON", image = entry.image, frames = 2, walker = false,
+    spriteType = "POKEMON_SPRITE", palette = "PAL_OW_RED", paletteId = 0,
+    species = mon.species, icon = iconId,
+  }
+  local ok, icon = pcall(SpriteRenderer.new, def, "flymon")
+  if not (ok and icon) then return end
+  local world = self.game and self.game.world
+  local daytime = (world and world.daytime)
+    or Palettes.clockDaytime(self.clock and self.clock.hour or nil)
+  local colors = self.palettes
+    and Palettes.spritePalette(self.palettes, daytime, def)
+  if colors then
+    icon:setObjPalette(colors, ("gen2:%s:0"):format(tostring(daytime)))
+  end
+  self.flyMonIcon = icon
+end
+
+-- .Frameset_PartyMon is two 8-frame icon beats and no mirror
+-- (data/sprite_anims/framesets.asm:66-69).
+function Pokegear:drawFlyMonCursor(x, y)
+  self:loadFlyMonIcon()
+  if not self.flyMonIcon then return false end
+  love.graphics.setColor(1, 1, 1, 1)
+  self.flyMonIcon:draw(x - 8, y - 8, 0, -4, "down", 0, false, false, false,
+    math.floor((self.iconTimer or 0) / 8) % 2)
   return true
 end
 
@@ -2205,6 +2353,14 @@ function Pokegear:drawPlain()
     end
     return
   end
+  if self.townMap then
+    -- No town-map art in this cache, so the name plate the cursor walks is all
+    -- there is to show (../pokecrystal/engine/pokegear/pokegear.asm:700).
+    Chrome.box(7, 0, 13, 3)
+    local current = self:mapLandmark()
+    Chrome.print(flatName(current and current.name), 9, 1)
+    return
+  end
   Chrome.box(0, 0, 20, 4)
   local card = self:card()
   Chrome.print(card and card.label or "", 2, 1)
@@ -2218,7 +2374,7 @@ function Pokegear:drawPlain()
     if display == 0 then display = 12 end
     Chrome.print(("%s:%s %s"):format(
       Chrome.number(display, 2), Chrome.number(minute, 2, true),
-      hour < 12 and "AM" or "PM"), 5, 9)
+      Strings(hour < 12 and "AM" or "PM")), 5, 9)
     Chrome.print(Clock.daytimeLabel(hour), 5, 11)
   elseif id == "radio" then
     -- Without the gear sheet there is no dial art, so the frequencies go down
@@ -2282,8 +2438,9 @@ function Pokegear:drawPanel()
   end
   -- Last: the arrow is an OBJ and composites over whatever the card drew.
   -- _FlyMap has no card strip and never animates it
-  -- (engine/pokegear/pokegear.asm:1999).
-  if not self.fly then self:drawModeArrow() end
+  -- (engine/pokegear/pokegear.asm:1999); neither does _TownMap
+  -- (../pokecrystal/engine/pokegear/pokegear.asm:1757).
+  if not (self.fly or self.townMap) then self:drawModeArrow() end
   G.setColor(1, 1, 1, 1)
 end
 

@@ -1,11 +1,11 @@
 # Touch skins and the Skin Studio
 
 A **skin** replaces the on-screen controls wholesale: a bezel image, a
-control layout, and the rectangle the Game Boy screen is drawn into. Engine:
+control layout, and a screen-placement anchor. Engine:
 `src/core/TouchSkin.lua` (model, parsers, zip export), `src/core/TouchControls.lua`
-(draw and input), `src/render/Renderer.lua` (the screen viewport),
+(draw and input), `src/render/Renderer.lua` (screen placement),
 `src/core/DeltaSkin.lua` (Delta `.deltaskin` import and export),
-`src/ui/SkinStudio.lua` (the desktop editor). Tests:
+`src/ui/SkinStudio.lua` (the responsive skin editor). Tests:
 `tests/engine/touch_skin_test.lua`, `tests/engine/skin_studio_test.lua`,
 `tests/engine/skin_studio_ux.lua`,
 `tests/engine/skin_studio_image_import.lua`,
@@ -13,8 +13,10 @@ control layout, and the rectangle the Game Boy screen is drawn into. Engine:
 `tests/engine/launcher_skins_tab.lua`,
 `tests/engine/launcher_skins_ux.lua`.
 
-Skins are picked in the launcher's **Skins** tab, which also imports them and
-opens the studio. `options.touchControls.skin` holds the folder name.
+The launcher's **Skins** tab imports skins, shows the enabled skin, exports it,
+and is the one place that turns skin use off. **My Skins** holds the visual
+grid, pagination, edit, delete and per-skin export actions.
+`options.touchControls.skin` holds the folder name.
 
 ## Formats
 
@@ -30,7 +32,7 @@ as-is. Supported keys:
 | `overlays` | page count |
 | `overlayN_name` | page name, the target of `next_target` |
 | `overlayN_overlay` | bezel image |
-| `overlayN_full_screen` | stretch the page to the window |
+| `overlayN_full_screen` | cover the window with the page without deforming its artwork |
 | `overlayN_rect` | page placement, default `0,0,1,1` |
 | `overlayN_aspect_ratio` | design aspect; the overlay letterboxes to it even when full screen |
 | `overlayN_range_mod`, `overlayN_alpha_mod` | desc defaults |
@@ -98,8 +100,8 @@ corners fire two directions. `screens[1].outputFrame` (or the legacy
 `gameScreenFrame`) becomes the screen cutout. A portrait page with neither
 keeps `mappingSize` as the overlay aspect, sits at the bottom of the
 window, and puts the Game Boy picture in the leftover space above -- the
-usual GBA4iOS controller-deck layout. Pages that name a screen rect still
-stretch to the window the way Delta does. Host functions map to
+usual GBA4iOS controller-deck layout. Pages that name a screen rect fit the
+game into it. Host functions map to
 engine hotkeys: `menu` to `menu_toggle`, `fastForward` to
 `hold_fast_forward`, `toggleFastForward` to `toggle_fast_forward`;
 `quickSave` and `quickLoad` have nothing to bind to and drop to decoration.
@@ -135,7 +137,7 @@ to decoration and never captures a touch.
 As an extension to the format, `key:<name>` presses any keyboard key, which is
 how a skin button reaches a mod hotkey.
 
-## The screen viewport
+## Screen placement
 
 `overlayN_viewport` is the cutout the picture is fitted into. The Game Boy
 screen keeps its whole-pixel scale and letterboxes inside that rect rather than
@@ -146,6 +148,17 @@ that lets a widescreen bezel take the filling survey-zoom world view instead.
 A viewport also implies the faithful-ratio lock. Without it the world pass
 expands to fill the cutout and you get more map instead of a Game Boy screen.
 
+Zoom still steps around that hole: OUT shows more map inside it, IN enlarges
+the world, and the start menu stays at the hole's fit scale instead of
+shrinking with the map.
+
+An image-backed portrait overlay that has no explicit vertical anchor is treated
+as a controller deck: it is contained without deformation and pinned to the
+bottom on taller screens. The spare space belongs to the game above it.
+
+When a skin is active, **SCREEN POS** reads **SKIN**: placement comes from the
+skin rather than the normal Center / Upper / Top setting.
+
 Border art often ships with a transparent hole and no `viewport` key. **Detect
 screen from bezel** in the studio measures the hole out of the art's alpha
 channel and writes the rect.
@@ -153,10 +166,8 @@ channel and writes the rect.
 ## Bezels versus pads
 
 A skin whose active page binds nothing is a frame rather than a pad: a TV
-surround, a handheld shell, a Super Game Boy border. Those draw on **desktop**
-as well, where the touch overlay itself does not, and a gamepad does not hide
-them. Anything that binds a button still follows the usual mobile /
-`POKEPORT_TOUCH` rule.
+surround, a handheld shell, a Super Game Boy border. Selected skins draw on
+**desktop** as well as mobile; a gamepad does not hide them.
 
 ## Installing
 
@@ -190,9 +201,32 @@ shipping branding.
 
 ## The studio
 
-Launcher, Skins tab, **Open Skin Studio**, or the gear on any skin row to open
-that skin. Desktop only: the launcher does not offer it on Android or iOS,
-because it wants a mouse, typed coordinates and room for an inspector.
+Launcher, Skins tab, **My Skins** opens the Studio library on desktop and
+mobile. **My Skins** is the only visual grid: real bezel previews plus create
+and import actions, with each card owning Edit, Export and (for installed
+skins) Delete. Choosing Edit opens a separate, canvas-first editor; the old
+New/Load workspace controls are deliberately not duplicated inside that editor.
+
+The editor keeps its canvas unobstructed and puts the contextual actions in a
+compact lower tray: add/control binding, button and bezel artwork, pages,
+screen placement, freeform/10:9 screen shape and deletion. **Screen** opens
+cutout, bezel-hole detect, **Detect this screen**, and the canvas presets.
+**Detect this screen** (also on the tray) sets the mock device to the live
+window size so a phone skin is authored at that phone's form factor rather
+than a generic 1080x1920 16:9. **Zoom −** shrinks the mock device inside the
+workspace so the screen hole can be dragged larger than the bezel while the
+handles stay grabable; **Fit** restores contain. The mouse wheel over the
+canvas, and `-` / `=` / `0` on a keyboard, do the same. Touches select, drag and resize the
+same controls that a mouse edits on desktop.
+
+My Skins and the editor chrome sit inside the platform safe area (notch,
+status bar, home indicator), the same inset the launcher uses. The mock
+device still represents the full window, because a skin covers the whole
+screen at play time.
+
+The launcher’s **Turn skins off** button clears the selected skin and disables
+skin use. With no skin enabled, mobile falls back to the built-in pad; that pad
+is not itself a skin card.
 
 **Canvas.** A mock device at a chosen preset, so a phone skin is authored at
 phone proportions on a desktop monitor.
@@ -200,6 +234,7 @@ phone proportions on a desktop monitor.
 | Preset | Size |
 | --- | --- |
 | Phone portrait / landscape | 1080x1920, 1920x1080 |
+| This screen | the live window, so a phone is authored at its own height |
 | Tablet portrait / landscape | 1536x2048, 2048x1536 |
 | Steam Deck | 1280x800 |
 | Desktop 1080p | 1920x1080 |
@@ -216,13 +251,16 @@ and of the page itself when it comes within a few pixels, and the guide it
 snapped to is drawn. X / Y / W / H are in canvas pixels, so a control can be
 typed to the coordinate its art was drawn at. **Back** and **Front** move the
 selection through the draw order. Bind, hitbox shape, hit reach and idle and
-pressed images are per control; the bezel, the pages and the screen cutout are
-per page. The cutout is itself a draggable element with a 10:9 lock.
+pressed images are per control; the bezel, the pages and the screen anchor are
+per page. The SCREEN anchor is itself draggable and resizable; its default
+shape is freeform, with an optional 10:9 lock.
 
 **Bind** opens a grid of every bind the engine understands: the eight Game Boy
-buttons, the diagonal pairs, every hotkey, a few `key:` entries, and
-decoration. The COMBINE chips at the top toggle one part at a time, which is
-how a pipe bind like `left|down` is built without typing it.
+buttons, the diagonal pairs, every hotkey, desktop hotkeys and decoration.
+The desktop section exposes `-` / `=`, `1` through `5`, `F1`, `F2` and `F10`
+as `key:` controls, so a mobile button invokes the exact same game path as
+its desktop shortcut. The COMBINE chips at the top toggle one part at a time,
+which is how a pipe bind like `left|down` is built without typing it.
 
 **Undo** and **Redo** in the top bar cover every edit (ctrl+Z / ctrl+Y, or
 `u` / shift+`u` without a keyboard modifier). The stack holds the last 50
@@ -247,12 +285,13 @@ the **Import** button there and beside each row opens the host file picker (`src
 zenity/kdialog) and copies the chosen PNG or JPG into `img/` under the name in
 the SKIN field, then assigns it to that slot. Dropping a PNG or JPG on the
 window does the same for whichever slot was last touched. A new bezel does not
-move the screen cutout: press **Detect screen from bezel** to measure it out of
+move the screen anchor: press **Detect screen from bezel** to measure it out of
 the art's alpha.
 
-**Testing.** **Test** makes the canvas live: clicking presses real Game Boy
-buttons and the footer reports what is held. **Play** saves the skin, selects
-it, and boots the game with it.
+**Testing.** **Test** renders a game-composition preview behind the live overlay:
+the 160x144 picture letterboxes inside the screen cutout, matching gameplay.
+Clicking presses real Game Boy buttons and the footer reports what is held.
+**Play** saves the skin, selects it, and boots the game with it.
 
 **Saving.** **Save** writes `skins/<name>/skin.lua` and copies every image the
 skin names, so the folder stands alone. **Export** offers three formats, and

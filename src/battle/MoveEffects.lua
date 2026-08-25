@@ -11,6 +11,7 @@
 -- is the registry view of all three -- the merged Data.move_effects a
 -- battle dispatches on serves these same objects.
 
+local Damage = require("src.battle.Damage")
 local Logger = require("src.core.Logger")
 local StatusRegistry = require("src.battle.StatusRegistry")
 local TurnOrder = require("src.battle.TurnOrder")
@@ -57,6 +58,10 @@ local function changeStage(battle, who, stat, delta, fromEnemy)
   -- recomputed and QuarterSpeedDueToParalysis/HalveAttackDueToBurn re-run,
   -- re-baking the burn/para penalty and ending Haze's temporary lift.
   who.hazeStatReset = nil
+  if battle.ruleset and battle.ruleset.badgeBoostReapplyBug
+     and battle.kind ~= "link" and who == battle.player then
+    Damage.reapplyBadgeBoosts(who, stat)
+  end
   -- _MonsStatsRoseText/_MonsStatsFellText: "X's / STAT rose!"; the
   -- two-stage variants scroll "greatly" onto a third line
   local label = Strings(STAT_LABEL[stat])  -- looked up here, not at require (#811)
@@ -132,6 +137,11 @@ end
 
 local function statDownSide(stat)
   return function(battle, user, target)
+    -- engine/battle/effects.asm:552
+    if not user.isPlayer and battle.kind ~= "link"
+       and battle.rng(0, 255) < 64 then
+      return {}
+    end
     if target.substituteHP then return {} end
     if battle.rng(0, 255) >= 85 then return {} end -- 33 percent + 1 (85/256)
     -- StatModifierDownEffect's side-effect branch never runs MoveHitTest,
@@ -254,6 +264,7 @@ MoveEffects.primary = {
       -- Attack-halving and paralysis Speed-quartering on BOTH battlers
       -- until the next stat recompute (a stage change or switch-in).
       b.hazeStatReset = true
+      b.badgeExtraBoosts = nil
     end
     -- Gen 1 also removes the enemy's major status; if that cured sleep
     -- or freeze, the target forfeits its move this turn (haze.asm
@@ -574,6 +585,8 @@ MoveEffects.full = {
         local r = ctx.rng(0, 7)
         user.trappingTurns = ({ 1, 1, 1, 2, 2, 2, 3, 4 })[r + 1]
         user.trapDamage = ctx.rawDamage
+        -- PlayApplyingAttackSound (animations.asm:2639) replays it each turn
+        user.trapHitSfx = ctx.hitSfx
         -- remember the move so its animation can replay on each locked
         -- continuation (core.asm:3554-3566 -> GetPlayerAnimationType)
         user.trapMove = ctx.move.id
@@ -645,7 +658,9 @@ MoveEffects.full = {
       user.bideTurns = ctx.rng(2, 3)
       user.bideDamage = 0
       ctx.battle:cancelMoveAnim()
-      ctx.anim(user.isPlayer and "XSTATITEM_ANIM" or "XSTATITEM_DUPLICATE_ANIM")
+      ctx.battle:animBeforeMove(
+        user.isPlayer and "XSTATITEM_ANIM" or "XSTATITEM_DUPLICATE_ANIM",
+        user.isPlayer)
       ctx.say(Strings("%s\nis storing energy!", displayName(user)))
     end,
   },

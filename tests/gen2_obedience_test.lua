@@ -180,7 +180,7 @@ do
     random = rolls({ 39, 39, 5, 2 }) })
   eq(battle:checkObedience("ROCK_THROW"), true, "napped instead")
   eq(mon.status, "sleep", "BeganToNap writes sleep straight in")
-  eq(mon.statusTurns, 3, "1-7 turns, from the same roll shape as sleep")
+  eq(mon.statusTurns, 3, "1-7 turns, written straight into the status byte")
   check(findText(battle.events, "ROCKY began to nap!"), "with its own line")
 
   -- Self-hit: the margin roll in the second band.

@@ -19,7 +19,8 @@ if [ ! -f "$ROOT/data/generated/maps.lua" ] \
     && [ ! -f "$ROOT/blue/data/generated/maps.lua" ] \
     && [ ! -f "$ROOT/yellow/data/generated/maps.lua" ] \
     && [ ! -f "$ROOT/gold/data/generated/maps.lua" ] \
-    && [ ! -f "$ROOT/silver/data/generated/maps.lua" ]; then
+    && [ ! -f "$ROOT/silver/data/generated/maps.lua" ] \
+    && [ ! -f "$ROOT/crystal/data/generated/maps.lua" ]; then
   fail "generated data missing,  run scripts/setup.sh first"
 fi
 

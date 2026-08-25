@@ -126,9 +126,12 @@ bundled game, in that case.
    persistent launcher control. Android downloads the release APK, verifies
    its SHA-256 entry from `sha256sums.txt`, then invokes Android's Package
    Installer. The installer asks the user for consent and enforces package,
-   version-code, and signing-certificate compatibility. iOS links the
-   sideload repository for a re-sideload; Xbox, desktop, and PortMaster builds
-   link their correctly named full package. Switch keeps its native OTA flow.
+   version-code, and signing-certificate compatibility. A legacy APK without
+   the installer bridge links its full package for one manual bootstrap
+   update, including when its downloaded payload already reports the latest
+   engine version. iOS links the sideload repository for a re-sideload; Xbox,
+   desktop, and PortMaster builds link their correctly named full package.
+   Switch keeps its native OTA flow.
 
 ## Known limitations
 

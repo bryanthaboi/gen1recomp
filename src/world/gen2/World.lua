@@ -41,6 +41,7 @@ local HiddenItems = require("src.world.gen2.HiddenItems")
 local Mail = require("src.core.gen2.Mail")
 local Map = require("src.world.gen2.Map")
 local Palettes = require("src.world.gen2.Palettes")
+local UnownWords = require("src.world.gen2.UnownWords")
 local Mon = require("src.battle.gen2.Mon")
 local Movement = require("src.script.gen2.Movement")
 local Music = require("src.core.Music")
@@ -55,6 +56,7 @@ local Roamers = require("src.core.gen2.Roamers")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
+local SpriteRenderer = require("src.render.SpriteRenderer")
 local StepEvents = require("src.world.gen2.StepEvents")
 local Tilt = require("src.render.Tilt")
 local Strings = require("src.core.Strings")
@@ -83,6 +85,8 @@ local SFX = {
   WARP_TO = 19,
   EXIT_BUILDING = 35,
   JUMP_OVER_LEDGE = 0x16,
+  BUMP = 0x24,
+  FLY = 0x18,
 }
 local EMOTE_SHOCK = 0
 
@@ -115,6 +119,14 @@ local VAR = {
   XCOORD = 0x12,
   YCOORD = 0x13,
   SPECIALPHONECALL = 0x14,
+  -- ../pokecrystal/constants/script_constants.asm:69-74, the six rows Gold's
+  -- table stops short of; ../pokecrystal/engine/overworld/variables.asm:62-67.
+  BT_WIN_STREAK = 0x15,
+  KURT_APRICORNS = 0x16,
+  CALLERID = 0x17,
+  BLUECARDBALANCE = 0x18,
+  BUENASPASSWORD = 0x19,
+  KENJI_BREAK = 0x1a,
 }
 
 -- constants/ram_constants.asm:293 wPlayerState.  PLAYER_SKATE (2) has no row:
@@ -373,6 +385,13 @@ local function itemByIndex(items, index)
   return nil
 end
 
+-- One WRAM byte, the width every VAR_* store is (`ld a, [de]` / `ld [de], a`).
+local function byteOf(value)
+  local n = math.floor(tonumber(value) or 0)
+  if n < 0 then n = 0 end
+  return n % 256
+end
+
 -- CountSetBits over a { key = true } flag table: VAR.DEXCAUGHT, VAR.DEXSEEN
 -- and VAR.BADGES are all "how many of these are set" reads off one.
 local function countFlags(flags)
@@ -521,6 +540,7 @@ function World.new(game)
     lastSfx = nil,
     pokePic = nil,
     pendingSceneScript = false,
+    startedOverworld = false,
     -- GBC color state (engine/gfx/color.asm).  `daytime` is the resolved
     -- MORN/DAY/NITE/DARK the map is currently lit by; clockHour overrides
     -- World:hour for drivers and tests, so the palette, the hour windows and
@@ -729,6 +749,15 @@ function World:load()
   self.tilesets = tilesets
   self.roofs = self:dataTable("gen2Roofs", "data/generated/roofs.lua")
   self.sprites = self:dataTable("gen2Sprites", "data/generated/sprites.lua")
+  -- A pre-#1748 cache stamps a SpriteMons row `frames = 1`, leaving
+  -- OBJECT_ACTION_BOUNCE one frame -- engine/overworld/map_object_action.asm:184
+  for _, def in pairs(self.sprites or {}) do
+    if type(def) == "table" and (def.frames or 1) < 2
+       and type(def.source) == "string"
+       and def.source:find("^ROM:SpriteMons") then
+      def.frames = 2
+    end
+  end
   -- A cache from before the palette stage existed simply has no palettes.lua;
   -- everything below falls back to the grayscale path rather than failing.
   self.palettes = self:dataTable("gen2Palettes", "data/generated/palettes.lua")
@@ -772,6 +801,14 @@ function World:load()
       local okImg, img = pcall(Assets.image, emotes.grassRustle)
       if okImg then self.grassRustleImage = img end
     end
+    -- LoadFishingGFX's two sheets
+    -- (../pokecrystal/engine/events/fishing_gfx.asm:7-12)
+    if emotes.fishing and pcall(Assets.image, emotes.fishing) then
+      self.fishingSheet = emotes.fishing
+    end
+    if emotes.fishingFemale and pcall(Assets.image, emotes.fishingFemale) then
+      self.fishingSheetFemale = emotes.fishingFemale
+    end
   end
   -- The heal machine's two OBJ tiles and their CGB palette, for the
   -- Pokecenter light show (World:startHealMachineAnim).  A cache from before
@@ -798,6 +835,7 @@ function World:load()
   self.text = self:dataTable("gen2Text", "data/generated/text.lua") or {}
   self.constants =
     self:dataTable("gen2Constants", "data/generated/constants.lua") or {}
+  FieldMoves.bindEngineFlags(self.constants.engineFlagOrder)
   -- The side tables a script command NAMES rather than carries: the phone
   -- book, the in-game trades, the elevator's floor labels and the decoration
   -- descriptions.  A cache built before the extractor reached them has no
@@ -1244,7 +1282,7 @@ function World:load()
     end,
 
     -- ---- encounters --------------------------------------------------------
-    setSwarm = function(group, mapNum) self:setSwarm(group, mapNum) end,
+    setSwarm = function(group, mapNum, kind) self:setSwarm(group, mapNum, kind) end,
     rollWild = function() return self:rollWild() end,
     -- The WRAM bytes the ENGINE owns rather than the script: nil means "not
     -- mine", and the VM falls back to its own sparse store.
@@ -1398,6 +1436,9 @@ function World:busy()
     -- and the waterfall climb are all applymovement / pause commands inside a
     -- queued script, so nothing else may run under them.
     or self.fieldMove ~= nil
+    -- FlyFromAnim and FlyToAnim are blocking `callasm`s inside .FlyScript
+    -- (engine/events/overworld.asm:599, :605).
+    or self.flyAnim ~= nil
 end
 
 -- CheckMenuOW (engine/overworld/events.asm:802) is the tail of OWPlayerInput,
@@ -1405,12 +1446,15 @@ end
 -- away while wScriptRunning is non-zero (events.asm:238-243).  Two more gates
 -- sit above it even with no script up: PlayerMovement answering
 -- PLAYERMOVEMENT_CONTINUE, i.e. the player is mid-step (events.asm:474-477),
--- and CheckStandingOnIce carrying (events.asm:479-480).  START and SELECT are
--- read NOWHERE else in the overworld, so a press that arrives while any of
--- those hold is not queued or deferred, it is never read at all.
+-- and CheckStandingOnIce carrying (events.asm:479-480).  The frame a step is
+-- QUEUED answers PLAYERMOVEMENT_FINISH instead (player_movement.asm:455-461),
+-- which is zero, so the poll still runs there -- and on the Cycling Road's
+-- forced roll that landing frame is the only one there is (#1718).
 function World:acceptsMenuInput()
   if self.battleActive or self:busy() then return false end
-  if self.player and self.player.moving then return false end
+  if self.player and self.player.moving and not self.stepFinished then
+    return false
+  end
   -- The same latch pair World:step's slide uses: a latched direction on an ice
   -- tile is CheckStandingOnIce's carry.
   if self.turningDirection and Permissions.isIce(self:playerCollision()) then
@@ -1561,7 +1605,76 @@ function World:readVar(varId)
   if varId == VAR.SPECIALPHONECALL then
     return self:specialCall()
   end
+  if varId >= VAR.BT_WIN_STREAK and varId <= VAR.KENJI_BREAK then
+    return self:crystalVar(varId)
+  end
   return 0
+end
+
+-- ../pokecrystal/engine/overworld/variables.asm:62-67, the six .VarActionTable
+-- rows Crystal appends past VAR_SPECIALPHONECALL.
+function World:crystalVar(varId)
+  -- ../pokecrystal/ram/wram.asm:3286 wCurCaller, which this port parks on the
+  -- VM (src/script/gen2/CallAsm.lua:190).
+  if varId == VAR.CALLERID then
+    return (self.vm and self.vm.curPhoneCaller) or 0
+  end
+  local save = self.game and self.game.save
+  if not save then return 0 end
+  -- ../pokecrystal/ram/wram.asm:1703 wNrOfBeatenBattleTowerTrainers.
+  if varId == VAR.BT_WIN_STREAK then
+    return byteOf(Gen2Save.battleTowerState(save).streak)
+  end
+  -- ../pokecrystal/engine/events/kurt.asm:24,45 wKurtApricornQuantity.
+  if varId == VAR.KURT_APRICORNS then
+    return byteOf(save.kurtApricornQuantity)
+  end
+  local crystal = Gen2Save.crystalState(save)
+  if varId == VAR.BLUECARDBALANCE then
+    return byteOf(crystal.buenaPassword.balance)
+  end
+  if varId == VAR.BUENASPASSWORD then
+    return byteOf(crystal.buenaPassword.word)
+  end
+  -- ../pokecrystal/engine/overworld/time.asm:136 SampleKenjiBreakCountdown.
+  if varId == VAR.KENJI_BREAK then
+    return byteOf(crystal.kenjiBreak)
+  end
+  return 0
+end
+
+-- The three of them Script_writevar can reach: RETVAR_ADDR_DE rows write the
+-- variable itself, RETVAR_STRBUF2 rows write the scratch buffer and are lost
+-- (../pokecrystal/engine/overworld/variables.asm:21-25).
+function World:setCrystalVar(varId, value)
+  value = byteOf(value)
+  if varId == VAR.CALLERID then
+    if self.vm then self.vm.curPhoneCaller = value end
+    return
+  end
+  local save = self.game and self.game.save
+  if not save then return end
+  local buena = Gen2Save.crystalState(save).buenaPassword
+  if varId == VAR.BLUECARDBALANCE then
+    buena.balance = value
+  elseif varId == VAR.BUENASPASSWORD then
+    buena.word = value
+  end
+end
+
+-- ../pokecrystal/engine/events/kurt.asm:19-45 SelectApricornForKurt, whose
+-- byte is what `verbosegiveitemvar <BALL>, VAR_KURT_APRICORNS` hands over.
+function World:setKurtApricornQuantity(count)
+  local save = self.game and self.game.save
+  if not save then return end
+  save.kurtApricornQuantity = byteOf(count)
+end
+
+-- ../pokecrystal/engine/overworld/time.asm:136-142, the 3..6 day roll.
+function World:setKenjiBreak(days)
+  local save = self.game and self.game.save
+  if not save then return end
+  Gen2Save.crystalState(save).kenjiBreak = byteOf(days)
 end
 
 -- Script_checkver: 0 for Gold, 1 for Silver (constants/misc_constants.asm
@@ -1597,7 +1710,7 @@ function World:engineFlag(flag)
   -- how the two would come apart -- the officer's `setflag` and the results
   -- script's `clearflag` are the only writers, and both go through the pair
   -- below.
-  if flag == BugContest.ENGINE_BUG_CONTEST_TIMER and save then
+  if flag == FieldMoves.BUG_CONTEST_FLAG and save then
     return BugContest.isActive(save)
   end
   -- Badges live in save.player.badges, not in the flag table: on the cart the
@@ -1609,6 +1722,11 @@ function World:engineFlag(flag)
     local player = save.player
     local owned = player and player[badge.store]
     return type(owned) == "table" and owned[badge.name] == true
+  end
+  -- Same one-store rule for ENGINE_PLAYER_IS_FEMALE, which IS wPlayerGender
+  -- (../pokecrystal/data/events/engine_flags.asm:131); Gold's FEMALE_FLAG is nil.
+  if flag == FieldMoves.FEMALE_FLAG then
+    return Gen2Save.isFemale(save)
   end
   -- Same one-store rule for the day care.  data/events/engine_flags.asm:18-20
   -- maps the three ids onto DAYCAREMAN_HAS_EGG_F / DAYCAREMAN_HAS_MON_F /
@@ -1633,7 +1751,7 @@ end
 function World:setEngineFlag(flag, value)
   if flag == nil then return end
   local save = self.game and self.game.save
-  if flag == BugContest.ENGINE_BUG_CONTEST_TIMER and save then
+  if flag == FieldMoves.BUG_CONTEST_FLAG and save then
     -- Route35NationalParkGate_OkayToProceed sets the flag BEFORE `special
     -- GiveParkBalls`, so starting here and starting again there is the cart's
     -- own order and the second start is what puts the balls on the counter.
@@ -1647,6 +1765,13 @@ function World:setEngineFlag(flag, value)
     save.player = save.player or {}
     save.player[badge.store] = save.player[badge.store] or {}
     save.player[badge.store][badge.name] = value and true or nil
+    return
+  end
+  -- InitGender is the only writer on the cart, so this exists only to keep a
+  -- stray setflag out of save.engineFlags (../pokecrystal/engine/menus/init_gender.asm:23-42).
+  if flag == FieldMoves.FEMALE_FLAG and save then
+    save.player = save.player or {}
+    save.player.gender = value and "female" or "male"
     return
   end
   -- The write half of the day-care aliases.  DayCareManScript_Outside's
@@ -1684,6 +1809,9 @@ function World:writeVar(varId, value)
   if varId == VAR.MOVEMENT then
     local state = PLAYER_STATE_BY_ID[value or 0]
     if state then self:applyPlayerState(state) end
+  end
+  if varId >= VAR.BT_WIN_STREAK and varId <= VAR.KENJI_BREAK then
+    self:setCrystalVar(varId, value)
   end
 end
 
@@ -1842,6 +1970,16 @@ end
 -- (maps/Route36.asm:58, and again at :70 on the DidntCatchSudowoodo arm) hands
 -- the same slot to the Route 37 twins.  So the pooled objects that read
 -- through the slot have to go with it.
+-- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:1564-1575 writes
+-- the sprite byte into wMapObjects, the LIVE copy, so the map def is untouched.
+function World:setObjectSprite(objectId, spriteName)
+  local npc = self:objectEntity(objectId)
+  local spriteDef = spriteName and self.sprites and self.sprites[spriteName]
+  if not (npc and spriteDef) then return false end
+  if npc:setSpriteDef(spriteDef) then self:applySpritePalette(npc) end
+  return true
+end
+
 function World:setVariableSprite(slot, spriteIndex)
   if slot == nil then return end
   self.variableSprites[slot] = spriteIndex
@@ -1919,7 +2057,7 @@ function World:breedmonSpriteDef(species)
   local def = {
     id = "SPRITE_DAY_CARE_MON",
     image = entry.image,
-    frames = 1,
+    frames = 2,
     walker = false,
     spriteType = "POKEMON_SPRITE",
     palette = "PAL_OW_RED",
@@ -2172,6 +2310,13 @@ function World:playSfxNamed(want, fallbackId)
   self:playSfx(self:sfxIdNamed(want, fallbackId))
 end
 
+-- .BumpSound (engine/overworld/player_movement.asm:771), CheckSFX at
+-- home/audio.asm:477
+function World:bumpSound()
+  if Sound.sfxBusy() then return end
+  self:playSfxNamed("Sfx_Bump", SFX.BUMP)
+end
+
 -- Script_specialsound (engine/overworld/scripting.asm:476) is not a fixed cue:
 -- it farcalls CheckItemPocket (engine/items/items.asm:512), which writes
 -- wCurItem's pocket into wItemAttributeValue, and rings SFX.GET_TM for the
@@ -2181,6 +2326,9 @@ end
 -- rang the ordinary item jingle while the item argument was thrown away.  An
 -- item the cache cannot name takes the `cp TM_HM / jr z` fall-through, SFX.ITEM.
 function World:specialSound(itemIndex)
+  -- The `waitsfx` above it (scripting.asm:445): SFX_READ_TEXT_2 ($08), which
+  -- the box rings on its own press, outranks SFX_GET_TM ($9b) here (#1483).
+  Sound.waitSfxDone()
   local id = itemIndex and self:itemIdByIndex(itemIndex)
   local items = self.game and self.game.data and self.game.data.items
   local def = id and items and items[id]
@@ -2299,12 +2447,10 @@ end
 -- the map pair and DAILYFLAGS1_SWARM are set by the one command.  A port that
 -- stored only the map would leave the Dunsparce call live forever, because
 -- CheckSwarmFlag answers off the flag and clears the pair itself.
-function World:setSwarm(group, mapNum)
+function World:setSwarm(group, mapNum, kind)
   local save = self.game and self.game.save
   if not save then return end
-  save.dailyFlags = save.dailyFlags or {}
-  save.dailyFlags.swarm = true
-  save.swarmMap = self:mapIdByGroupMap(group, mapNum)
+  Roamers.Swarm.set(save, self:mapIdByGroupMap(group, mapNum), kind)
 end
 
 -- Script_loadwildmon's other half: roll the CURRENT map's own table the way a
@@ -3354,14 +3500,6 @@ function World:updateMapSetup()
   if ms.phase == "out" then
     ms.step = ms.step + 1
     self.fade, self.fadeLevel = "white", ms.step / FADE_STEPS
-    -- FlyFromAnim carries the player up and off the map under the fade.  The
-    -- bird's own frames are not in the cache, but the lift is: it is the same
-    -- OBJECT_SPRITE_Y_OFFSET sine the teleport step type walks
-    -- (src/script/gen2/Movement.lua), stepped over the fade's four levels.
-    if ms.lift and self.player then
-      self.player.spriteYOffset = Movement.teleportYOffset(
-        Movement.TELEPORT_RISE_HEIGHT + ms.step * FADE_STEPS)
-    end
     if ms.step >= FADE_STEPS then
       -- setMap clears self.fade (a map load repaints everything), so the sheet
       -- has to be re-armed at full strength on the far side for the fade in to
@@ -3373,16 +3511,12 @@ function World:updateMapSetup()
     return
   end
   ms.step = ms.step - 1
-  -- FlyToAnim, the same curve read backwards: the player comes down onto the
-  -- destination tile as the fade lets go of the screen.
-  if ms.lift and self.player then
-    self.player.spriteYOffset = Movement.teleportYOffset(
-      Movement.TELEPORT_RISE_HEIGHT + ms.step * FADE_STEPS)
-  end
   if ms.step <= 0 then
     self.fade, self.fadeLevel = nil, nil
     self.mapSetup = nil
-    if ms.lift and self.player then self.player.spriteYOffset = 0 end
+    -- `callasm FlyToAnim` is the command straight after `newloadmap
+    -- MAPSETUP_TELEPORT` (engine/events/overworld.asm:604-605).
+    if ms.flyIn then self:startFlyAnim("to", ms.flyIn) end
     return
   end
   self.fadeLevel = ms.step / FADE_STEPS
@@ -3453,7 +3587,7 @@ function World:specialHooks()
     takeItem = function(index, qty) return self:takeItem(index, qty) end,
     engineFlag = function(flag) return self:engineFlag(flag) end,
     setEngineFlag = function(flag, v) self:setEngineFlag(flag, v) end,
-    setSwarm = function(group, mapNum) self:setSwarm(group, mapNum) end,
+    setSwarm = function(group, mapNum, kind) self:setSwarm(group, mapNum, kind) end,
     dayCare = function(side, onDone) self:dayCare(side, onDone) end,
     givePokeMail = function(mail) return self:givePokeMail(mail) end,
     checkPokeMail = function(mail, onDone) self:checkPokeMail(mail, onDone) end,
@@ -3484,6 +3618,14 @@ function World:specialHooks()
     end,
     magnetTrain = function(toGoldenrod, onDone)
       self:magnetTrain(toGoldenrod, onDone)
+    end,
+    -- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:220-223
+    startTowerBattle = function(trainer, onDone)
+      return self:startBattle({ trainer = trainer, battleTower = true }, onDone)
+    end,
+    -- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:1552-1575
+    setObjectSprite = function(objectId, spriteName)
+      return self:setObjectSprite(objectId, spriteName)
     end,
     pushScreen = function(id, opts) return self:pushScreen(id, opts) end,
     monName = function(index)
@@ -3518,7 +3660,34 @@ function World:specialHooks()
       self:openScriptMenu(header, "vertical", onChoose)
     end,
     rareWildMon = function() return self:rareWildMon() end,
+    -- ../pokecrystal/engine/menus/save.asm:181 AskOverwriteSaveFile and :266
+    -- _SaveGameData, the two halves of Link_SaveGame (:63).
+    saveFileState = function() return self:saveFileState() end,
+    writeSave = function() return self:writeSave() end,
+    setKurtApricornQuantity = function(n) self:setKurtApricornQuantity(n) end,
+    setKenjiBreak = function(days) self:setKenjiBreak(days) end,
   }
+end
+
+-- AskOverwriteSaveFile's two reads: wSaveFileExists, and
+-- CompareLoadedAndSavedPlayerID (../pokecrystal/engine/menus/save.asm:224),
+-- which is what picks AlreadyASaveFileText over AnotherSaveFileText.
+function World:saveFileState()
+  local save = self.game and self.game.save
+  local version = save and save.version
+  if not Gen2Save.exists(version) then return false, false end
+  local stored = Gen2Save.load(version)
+  local mine = save and save.player and save.player.id
+  local theirs = stored and stored.player and stored.player.id
+  return true, (mine ~= nil and mine == theirs)
+end
+
+-- _SaveGameData, through the writer the SAVE menu is handed
+-- (src/core/Game2.lua:435) so the save.write veto holds here too.
+function World:writeSave()
+  local game = self.game
+  if not (game and game.writeSave) then return false end
+  return game:writeSave() ~= false
 end
 
 -- RandomUnseenWildMon's lookup half.  The routine picks one of the THREE
@@ -3702,6 +3871,15 @@ function World:updateMovement()
   while st.i <= #st.bytes do
     local b = st.bytes[st.i]
     st.i = st.i + 1
+    -- Movement_step_dig spins for the frames in the byte that follows
+    -- -- engine/overworld/movement.asm:113-131 (#1716)
+    if b == Movement.STEP_DIG then
+      local duration = st.bytes[st.i] or 0
+      st.i = st.i + 1
+      if ent.scriptSpin then ent:scriptSpin(duration) end
+      st.sleep = duration
+      return
+    end
     -- engine/overworld/movement.asm:163
     if b == 0x57 then
       local duration = st.bytes[st.i] or 0
@@ -3727,6 +3905,11 @@ function World:updateMovement()
     elseif act.kind == "step" then
       local fromX, fromY = ent.cellX, ent.cellY
       if ent:scriptStep(act.dir) then
+        -- TurningStep's OBJECT_ACTION_SPIN, for the length of the step
+        -- (engine/overworld/movement.asm:693-699).
+        if act.spin and ent.scriptSpin then
+          ent:scriptSpin(ent.stepFrames or 16)
+        end
         self:followStep(ent, fromX, fromY)
       end
       return
@@ -4422,6 +4605,9 @@ function World:useEscapeRope(itemId)
   local items = self.game and self.game.data and self.game.data.items
   local def = items and items[itemId or "ESCAPE_ROPE"]
   self:takeItem(def and def.index, 1)
+  -- ../pokecrystal/engine/events/overworld.asm:809, between .escaperope and
+  -- QueueScript.
+  UnownWords.kabutoChamber(self.events, self.map and self.map.id)
   self.queuedFieldMove = {
     ok = true, action = "escaperope",
     destMap = destMapId, destWarp = destWarp,
@@ -4631,15 +4817,35 @@ end
 -- src/world/gen2/Bike.lua owns every decision; this is the world state those
 -- decisions read and the presentation they end in.
 
+-- ../pokecrystal/constants/engine_flags.asm:25 ENGINE_MOBILE_SYSTEM shifts every
+-- later id up one: :36 ALWAYS_ON_BIKE against ../pokegold's :35.
+function World:engineFlagId(name, goldId)
+  local order = self.constants and self.constants.engineFlagOrder
+  if type(order) ~= "table" then return goldId end
+  local ids = self.engineFlagIds
+  if not ids then
+    ids = {}
+    for index, entry in pairs(order) do
+      if type(index) == "number" and type(entry) == "string" then
+        ids[entry] = index - 1
+      end
+    end
+    self.engineFlagIds = ids
+  end
+  return ids[name] or goldId
+end
+
 -- wBikeFlags' three bits are ENGINE_* ids like any other flag, so the map
 -- callbacks that set them (Route16AlwaysOnBikeCallback,
 -- Route17AlwaysOnBikeCallback) already land on save.engineFlags.
 function World:alwaysOnBike()
-  return self:engineFlag(Bike.ENGINE_ALWAYS_ON_BIKE)
+  return self:engineFlag(World.engineFlagId(
+    self, "ENGINE_ALWAYS_ON_BIKE", Bike.ENGINE_ALWAYS_ON_BIKE))
 end
 
 function World:downhill()
-  return self:engineFlag(Bike.ENGINE_DOWNHILL)
+  return self:engineFlag(World.engineFlagId(
+    self, "ENGINE_DOWNHILL", Bike.ENGINE_DOWNHILL))
 end
 
 -- GetPlayerTilePermission's operand: the collision under the player's feet.
@@ -4797,6 +5003,11 @@ function World:beginFishing(outcome, wild)
   if self.player then
     self.player.fishing = true
     self.player.fishingState = self.fishing
+    -- LoadFishingGFX reads wPlayerGender
+    -- (../pokecrystal/engine/events/fishing_gfx.asm:8-12)
+    self.player.fishSheet =
+      (FieldMoves.isFemale(self:playerGender()) and self.fishingSheetFemale)
+      or self.fishingSheet
   end
 end
 
@@ -5167,6 +5378,9 @@ function World:fieldContext(mon)
     facingX = fx, facingY = fy,
     facingColl = map:cellCollision(fx, fy),
     playerColl = map:cellCollision(p.cellX, p.cellY),
+    -- Crystal's SurfFunction.TrySurf is the only field move that asks
+    -- (../pokecrystal/engine/events/overworld.asm:364).
+    facingObject = self:facingObject(),
     upColl = map:cellCollision(p.cellX, p.cellY - 1),
     tileset = map.def and map.def.tileset,
     facingBlock = blockId,
@@ -5176,10 +5390,18 @@ function World:fieldContext(mon)
     -- digFromMenu reads this rather than re-deriving the banked warp.
     canEscapeRope = self:escapeRopeTarget() ~= nil,
     playerState = self.playerState,
+    -- SurfFunction.TrySurf and TrySurfOW both refuse while wBikeFlags'
+    -- ALWAYS_ON_BIKE is set (engine/events/overworld.asm:343-345, :498-500).
+    alwaysOnBike = self:alwaysOnBike(),
     strengthActive = self.strengthActive,
     -- FlashFunction tests wTimeOfDayPalset, not the map header, so a
     -- PALETTE_DARK map that FLASH has already lit refuses a second FLASH.
     dark = Palettes.isDarkness(map.def, self:hour(), self.flashUsed),
+    -- ../pokecrystal/engine/events/overworld.asm:285, called by FLASH only and
+    -- only after the badge gate, because it SETS the wall-opened flag.
+    openAerodactylWall = function()
+      return UnownWords.aerodactylChamber(self.events, map.id)
+    end,
   }
 end
 
@@ -5236,6 +5458,37 @@ function World:dropMapImages(mapId)
     end
   end
   if self.connectionMaps then self.connectionMaps[mapId] = nil end
+end
+
+local function safeRelease(obj)
+  if obj and obj ~= false and obj.release then pcall(obj.release, obj) end
+end
+
+-- Eagerly free session-owned GPU caches.  Assets.image-backed atlases are
+-- nilled without release; unique bakes, strips, and roof composites are released.
+function World:release()
+  if self.mapImages then
+    for _, img in pairs(self.mapImages) do safeRelease(img) end
+    self.mapImages = {}
+  end
+  if self.scrollStrips then
+    for _, strip in pairs(self.scrollStrips) do safeRelease(strip) end
+    self.scrollStrips = {}
+  end
+  safeRelease(self.tiltCanvas)
+  self.tiltCanvas = nil
+  if self.grassAtlases then
+    for _, atlas in pairs(self.grassAtlases) do safeRelease(atlas) end
+    self.grassAtlases = {}
+  end
+  if self.atlasCache then
+    for key, atlas in pairs(self.atlasCache) do
+      if key:find("|", 1, true) then safeRelease(atlas) end
+    end
+    self.atlasCache = {}
+  end
+  self.animQuads = nil
+  self.connectionMaps = nil
 end
 
 -- LoadMapAttributes' refill, for every map the session has edited.  Neighbour
@@ -5309,12 +5562,26 @@ function World:refreshMapImages()
   return true
 end
 
+-- wPlayerGender, the byte GetPlayerSprite and AddMapObject both branch on
+-- (engine/overworld/overworld.asm:61-64, engine/overworld/player_object.asm:32-39).
+function World:playerGender()
+  local save = self.game and self.game.save
+  return save and save.player and save.player.gender or nil
+end
+
+-- The Chris/Kris sheet the player wears with no state on it
+-- (data/sprites/player_sprites.asm:2, :9).
+function World:playerSpriteName()
+  return FieldMoves.playerSprite(self:playerGender()) or PLAYER_SPRITE
+end
+
 -- UpdatePlayerSprite (data/sprites/player_sprites.asm ChrisStateSprites): the
 -- player's sprite is a pure function of wPlayerState, which is what makes
 -- getting on and off a Lapras a one-byte change rather than an animation.
 function World:applyPlayerState(state)
   self.playerState = state or FieldMoves.PLAYER_NORMAL
-  local name = FieldMoves.STATE_SPRITE[self.playerState] or PLAYER_SPRITE
+  local name = FieldMoves.stateSprite(self.playerState, self:playerGender())
+    or PLAYER_SPRITE
   local def = self.sprites and self.sprites[name]
   if def and self.player then
     self.player:setSprite(def)
@@ -5336,13 +5603,32 @@ function World:runCut(result)
 end
 
 -- Script_UsedWhirlpool, which is Script_Cut with DisappearWhirlpool and
--- PlayWhirlpoolSound (a bare SFX.SURF) in place of the snip.
+-- PlayWhirlpoolSound in place of the snip.
 function World:runWhirlpool(result)
   self:setNickname(result.mon)
   self:showText(Strings(result.text), function()
     self:replaceBlock(result.blockIndex, result.replacement)
-    self:playSfx(SFX.SURF)
+    self:playWhirlpoolSound()
   end)
+end
+
+-- PlayWhirlpoolSound is WaitSFX, SFX_SURF, WaitSFX, never a bare PlaySFX
+-- -- engine/events/field_moves.asm:5-10 (#1717)
+function World:playWhirlpoolSound()
+  self.fieldMove = { phase = "whirlpoolsfx", waiting = true, left = 180 }
+end
+
+-- PlayerMovementPointers' .force_turn arm and the Script_ForcedMovement it
+-- calls -- events.asm:786-793, forced_movement.asm:1-51 (#1716)
+local FORCED_BACK = { up = "down", down = "up", left = "right", right = "left" }
+
+function World:runForcedMovement()
+  local p = self.player
+  if not p or p.moving or self.moveState then return false end
+  local back = FORCED_BACK[p.facing]
+  if not back then return false end
+  self:beginMovement(0, Movement.forcedMovementBytes(back))
+  return true
 end
 
 -- Script_UseFlash: the text plays SFX.FLASH from inside itself
@@ -5497,7 +5783,7 @@ function World:runFieldMove(result)
   elseif action == "waterfall" then
     self:runWaterfall(result)
   elseif action == "fly" then
-    self:openFlyMap()
+    self:openFlyMap(result.mon)
   elseif action == "headbutt" then
     self:runHeadbutt(result.facingX, result.facingY, result.mon)
   elseif action == "sweetscent" then
@@ -5681,25 +5967,138 @@ function World:flyPoints()
     self.game and self.game.save, self.landmarks, self:region())
 end
 
--- .FlyScript: WarpToSpawnPoint, then `newloadmap MAPSETUP.TELEPORT` brings the
--- map up with the player back in PLAYER_NORMAL.  MapSetupScript_Teleport opens
--- on FadeOutToWhite and falls through into _Warp, so flying is bracketed by the
--- same pair of fades a door is, which is where the two fly animations ride:
--- `lift` below hands them to World:updateMapSetup.
-function World:flyTo(spawnId)
+-- FlyFromAnim / FlyToAnim (engine/events/field_moves.asm:300, :334) and the two
+-- curves they run (engine/sprite_anims/functions.asm:1350, :1418).
+local FLY = {
+  FROM_FRAMES = 128, TO_FRAMES = 64, HOVER = 0x40,
+  AMP_MAX = 0x40, TO_AMP = 11 * 8, RISE = 84,
+}
+
+-- FlyFunction_InitGFX's GetSpeciesIcon (engine/events/field_moves.asm:390):
+-- the icon of the mon in wCurPartyMon, on PAL_OW_RED like every other OW OBJ.
+function World:flyIconFor(mon)
+  if type(mon) ~= "table" then return nil end
+  local data = self.game and self.game.data
+  local icons = data and data.gen2Icons
+  local iconId = mon.isEgg and "ICON_EGG"
+    or (icons and icons.species and mon.species
+      and icons.species[mon.species])
+  local entry = iconId and icons and icons.icons and icons.icons[iconId]
+  if not (entry and entry.image) then return nil end
+  local def = {
+    id = "SPRITE_FLY_MON", image = entry.image, frames = 2, walker = false,
+    spriteType = "POKEMON_SPRITE", palette = "PAL_OW_RED", paletteId = 0,
+    species = mon.species, icon = iconId,
+  }
+  local ok, icon = pcall(SpriteRenderer.new, def, "gen2fly")
+  if not (ok and icon) then return nil end
+  local daytime = self.daytime or Palettes.daytimeFor(
+    self.map and self.map.def, self:hour(), self.flashUsed)
+  local colors = Palettes.spritePalette(self.palettes, daytime, def)
+  if colors then
+    icon:setObjPalette(colors, ("gen2:%s:0"):format(tostring(daytime)))
+  end
+  return icon
+end
+
+-- False when there is no icon sheet (or no love at all): the caller then flies
+-- the way it always did rather than parking the world on an animation.
+function World:startFlyAnim(phase, mon, onDone)
+  local icon = self:flyIconFor(mon)
+  local p = self.player
+  if not (icon and p) then return false end
+  local landing = phase == "to"
+  self.flyAnim = {
+    phase = phase, icon = icon, onDone = onDone, t = 0,
+    px = p.px, py = p.py, xoff = 0, wave = 0,
+    left = landing and FLY.TO_FRAMES or FLY.FROM_FRAMES,
+    hover = landing and 0 or FLY.HOVER,
+    amp = landing and FLY.TO_AMP or 0,
+    y = landing and -FLY.RISE or 0,
+  }
+  return true
+end
+
+-- FlyFunction_FrameTimer (engine/events/field_moves.asm:409) over the two
+-- AnimSeq_Fly* curves; the wobble is Sprites_Cosine's d * cos(n * pi / 32).
+function World:stepFlyAnim()
+  local fa = self.flyAnim
+  if not fa then return end
+  local left = fa.left
+  if left <= 0 then
+    local done = fa.onDone
+    self.flyAnim = nil
+    if done then done() end
+    return
+  end
+  fa.left = left - 1
+  if left >= 0x40 and left % 8 == 0 then
+    self:playSfxNamed("Sfx_Fly", SFX.FLY)
+  end
+  fa.t = fa.t + 1
+  local amp = fa.amp
+  if fa.phase == "to" then
+    if fa.y >= 0 then return end
+    fa.y = fa.y + 2
+    if amp > 0 then fa.amp = amp - 2 end
+  else
+    if fa.hover > 0 then
+      fa.hover = fa.hover - 1
+      return
+    end
+    if fa.y <= -FLY.RISE then return end
+    fa.y = fa.y - 2
+    if amp < FLY.AMP_MAX then fa.amp = amp + 8 end
+  end
+  fa.xoff = math.floor(amp * math.cos((fa.wave % 64) * math.pi / 32))
+  fa.wave = fa.wave + 1
+end
+
+-- .Frameset_RedWalk is two 8-frame icon beats, the fourth mirrored
+-- -- data/sprite_anims/framesets.asm:81-86
+function World:drawFlyAnim(s, billboard)
+  local fa = self.flyAnim
+  if not (fa and fa.icon) then return end
+  local G = love.graphics
+  local cam = self.camera
+  local px = fa.px + fa.xoff
+  local py = fa.py + fa.y
+  local ox = math.floor((0 - cam.x) * s)
+  local oy = math.floor((0 - cam.y) * s)
+  local beat = math.floor(fa.t / 8) % 4
+  local function body()
+    G.setColor(1, 1, 1, 1)
+    G.push()
+    G.translate(ox, oy)
+    G.scale(s, s)
+    fa.icon:draw(px, py, 0, 0, "down", 0, false, false, beat == 3, beat % 2)
+    G.pop()
+  end
+  if billboard then
+    billboard(ox + (px + 8) * s, oy + (py + 16) * s, body)
+  else
+    body()
+  end
+end
+
+-- .FlyScript: FlyFromAnim, WarpToSpawnPoint, `newloadmap MAPSETUP_TELEPORT`,
+-- then FlyToAnim -- engine/events/overworld.asm:595-609
+function World:flyTo(spawnId, mon)
   local spawn = self.landmarks and self.landmarks.spawns
     and self.landmarks.spawns[spawnId]
   if not (spawn and spawn.map and self.maps and self.maps[spawn.map]) then
     return false
   end
-  self:applyPlayerState(FieldMoves.PLAYER_NORMAL)
-  local ok = self:runMapSetup(MAPSETUP.TELEPORT, function()
-    return self:setMap(spawn.map, spawn.x, spawn.y, "down")
-  end)
-  -- FlyFromAnim / FlyToAnim ride the setup script's own two fades: the take-off
-  -- lift under the fade out, the landing under the fade in.
-  if self.mapSetup then self.mapSetup.lift = true end
-  return ok
+  local function warp()
+    self:applyPlayerState(FieldMoves.PLAYER_NORMAL)
+    local ok = self:runMapSetup(MAPSETUP.TELEPORT, function()
+      return self:setMap(spawn.map, spawn.x, spawn.y, "down")
+    end)
+    if self.mapSetup then self.mapSetup.flyIn = mon end
+    return ok
+  end
+  if self:startFlyAnim("from", mon, warp) then return true end
+  return warp()
 end
 
 -- _FlyMap: the town map with the cursor locked to visited flypoints, A takes
@@ -5710,7 +6109,7 @@ end
 -- "Where?" plate over it instead of the card strip.  A run with no love at all
 -- (a headless probe) has no screen to push, so the destinations are offered
 -- one at a time through the same yesorno box every other field move uses.
-function World:openFlyMap()
+function World:openFlyMap(mon)
   local points = self:flyPoints()
   if #points == 0 then return false end
   -- Loaded on demand and through pcall: a headless run has no love, and this
@@ -5721,28 +6120,31 @@ function World:openFlyMap()
       save = self.game.save,
       currentLandmark = self:currentLandmarkId(),
       fly = points,
+      -- TownMapMon draws wCurPartyMon's icon as the cursor
+      -- (../pokecrystal/engine/pokegear/pokegear.asm:2708-2721).
+      flyMon = mon,
       onFly = function(spawnId)
         self.game.stack:pop()
-        self:flyTo(spawnId)
+        self:flyTo(spawnId, mon)
       end,
       onClose = function() self.game.stack:pop() end,
     })
     return true
   end
-  self:askFlyPoint(points, 1)
+  self:askFlyPoint(points, 1, mon)
   return true
 end
 
-function World:askFlyPoint(points, index)
+function World:askFlyPoint(points, index, mon)
   local row = points[index]
   if not row then return end
   local name = (row.name or row.landmark):gsub("\n", " ")
   self:showText(Strings(FieldMoves.TEXT.ASK_FLY_TO, name), function()
     self:askYesNo(function(yes)
       if yes then
-        self:flyTo(row.spawn)
+        self:flyTo(row.spawn, mon)
       else
-        self:askFlyPoint(points, index + 1)
+        self:askFlyPoint(points, index + 1, mon)
       end
     end)
   end)
@@ -5768,6 +6170,18 @@ function World:updateFieldMove()
   if self.textbox or self.choicebox then return end
   if st.timer and st.timer > 0 then
     st.timer = st.timer - 1
+    return
+  end
+  if st.phase == "whirlpoolsfx" then
+    st.left = (st.left or 0) - 1
+    if st.waiting then
+      if Sound.sfxBusy() and st.left > 0 then return end
+      st.waiting = nil
+      self:playSfxNamed("Sfx_Surf", SFX.SURF)
+      return
+    end
+    if Sound.sfxBusy() and st.left > 0 then return end
+    self.fieldMove = nil
     return
   end
   if st.phase == "strength" then
@@ -5865,6 +6279,12 @@ function World:startBattle(opts, onDone)
     -- wBattleType, when the script armed one: the FORCESHINY / TRAP
     -- no-escape rules live in Battle:tryRun and the force-switch handler.
     battleType = opts.battleType,
+    -- wInBattleTowerBattle (../pokecrystal/engine/events/battle_tower/
+    -- battle_tower.asm:220-223), which turns DoBadgeTypeBoosts off.
+    battleTower = opts.battleTower,
+    -- wTimeOfDay, for BattleCommand_TimeBasedHealContinue
+    -- (engine/battle/effect_commands.asm:6401-6404).
+    timeOfDay = self:timeOfDayId(),
   })
   self:playBattleMusic(opts)
   local function pushBattle()
@@ -7378,26 +7798,43 @@ function World:interact()
   return self:interactBody()
 end
 
+-- CheckFacingObject (engine/overworld/npc_movement.asm:229-248): "Double the
+-- distance for counter tiles."  A Pokecenter nurse and a Mart clerk stand
+-- BEHIND a COLL_COUNTER tile, so the cell the player faces is the counter
+-- itself and the object is one further on.  Without this the press finds an
+-- empty wall and nothing happens -- which is to say no nurse and no clerk in
+-- the game could be talked to at all.
+--
+-- Only the OBJECT lookup is doubled, exactly as the cart does it: bg events
+-- and the tile-collision events still read the tile actually faced.
+function World:facingObjectCell()
+  local p = self.player
+  if not p then return nil end
+  local d = Map.DELTA[p.facing] or Map.DELTA.down
+  local fx, fy = p.cellX + d[1], p.cellY + d[2]
+  if self.map and Permissions.isCounter(self.map:cellCollision(fx, fy)) then
+    return p.cellX + d[1] * 2, p.cellY + d[2] * 2
+  end
+  return fx, fy
+end
+
+-- The carry CheckFacingObject answers with: IsNPCAtCoord, and then only when
+-- that object's OBJECT_WALKING reads STANDING (npc_movement.asm:250-266).
+function World:facingObject()
+  local ox, oy = self:facingObjectCell()
+  if not ox then return nil end
+  local npc = self:npcAt(ox, oy)
+  if npc and npc.moving then return nil end
+  return npc
+end
+
 function World:interactBody()
   if self:busy() or not self.player or not self.vm then return false end
   local p = self.player
   if p.moving then return false end
   local d = Map.DELTA[p.facing]
   local fx, fy = p.cellX + d[1], p.cellY + d[2]
-  -- CheckFacingObject (engine/overworld/npc_movement.asm:229): "Double the
-  -- distance for counter tiles."  A Pokecenter nurse and a Mart clerk stand
-  -- BEHIND a COLL_COUNTER tile, so the cell the player faces is the counter
-  -- itself and the object is one further on.  Without this the press finds an
-  -- empty wall and nothing happens -- which is to say no nurse and no clerk in
-  -- the game could be talked to at all.
-  --
-  -- Only the OBJECT lookup is doubled, exactly as the cart does it: bg events
-  -- and the tile-collision events below still read the tile actually faced.
-  local ox, oy = fx, fy
-  if self.map and Permissions.isCounter(self.map:cellCollision(fx, fy)) then
-    ox, oy = p.cellX + d[1] * 2, p.cellY + d[2] * 2
-  end
-  local npc = self:npcAt(ox, oy)
+  local npc = self:npcAt(self:facingObjectCell())
   -- TryObjectEvent writes hLastTalked for EVERY A-press dispatch; scripts
   -- then use LAST_TALKED (`disappear`, `applymovementlasttalked`) without any
   -- setlasttalked of their own.  The port only wrote it from the explicit
@@ -8518,8 +8955,10 @@ function World:setMap(mapId, cx, cy, facing, opts)
   -- MAPCALLBACK_NEWMAP runs, because the Cycling Road's callback is what sets
   -- them straight back again: leaving them set is how one visit to Route 17
   -- would keep the player glued to the bike for the rest of the game.
-  self:setEngineFlag(Bike.ENGINE_ALWAYS_ON_BIKE, false)
-  self:setEngineFlag(Bike.ENGINE_DOWNHILL, false)
+  self:setEngineFlag(World.engineFlagId(
+    self, "ENGINE_ALWAYS_ON_BIKE", Bike.ENGINE_ALWAYS_ON_BIKE), false)
+  self:setEngineFlag(World.engineFlagId(
+    self, "ENGINE_DOWNHILL", Bike.ENGINE_DOWNHILL), false)
   -- "Respawn in Pokemon Centers" (home/map.asm, LoadMapAttributes' .SetSpawn):
   -- walking from an OUTDOOR map into an INDOOR one whose tileset is
   -- TILESET_POKECENTER rewrites wLastSpawnMapGroup / wLastSpawnMapNumber, and
@@ -8578,13 +9017,13 @@ function World:setMap(mapId, cx, cy, facing, opts)
   -- GetWarpDestCoords / EnterMapConnection / EnterMapSpawnPoint write wXCoord
   -- and wYCoord BEFORE HandleNewMap (data/maps/setup_scripts.asm:79-106).
   local face = facing or (self.player and self.player.facing) or "down"
-  local chris = self.sprites and self.sprites[PLAYER_SPRITE]
+  local playerDef = self.sprites and self.sprites[self:playerSpriteName()]
   if self.player then
     self.player.cellX, self.player.cellY = cx, cy
     self.player.px, self.player.py = cx * 16, cy * 16
     self.player.facing = face
-    if chris and not self.player.sprite then
-      self.player:setSprite(chris)
+    if playerDef and not self.player.sprite then
+      self.player:setSprite(playerDef)
     end
     if not opts.seamless then
       self.player.moving = false
@@ -8592,7 +9031,7 @@ function World:setMap(mapId, cx, cy, facing, opts)
       self.player.targetX, self.player.targetY = nil, nil
     end
   else
-    self.player = Player.new(cx, cy, face, chris)
+    self.player = Player.new(cx, cy, face, playerDef)
   end
   -- LoadMapObjects rebuilds OBJECT_FLAGS2 from scratch, so IN_GRASS is decided
   -- by the cell the player arrives on (engine/overworld/map_objects.asm:247).
@@ -8683,10 +9122,9 @@ function World:setMap(mapId, cx, cy, facing, opts)
   if not opts.seamless then
     self.pendingSceneScript = true
   end
-  -- StartMap (engine/overworld/events.asm): `farcall InitCallReceiveDelay` on
-  -- every map entry, connections included -- which is why a player who keeps
-  -- warping is never rung (src/core/gen2/Phone.lua's receive timer).
-  if self.game and self.game.save then
+  -- engine/overworld/events.asm:98
+  if not self.startedOverworld and self.game and self.game.save then
+    self.startedOverworld = true
     require("src.core.gen2.Phone").onMapLoad(self.game.save,
       self:stepContext().phone)
   end
@@ -9125,6 +9563,9 @@ function World:movePlayer(dir)
   elseif result == "blocked" or result == "edge" then
     self.turningDirection = nil
   end
+  -- .NotMoving and .Ice's own arm (player_movement.asm:102 and :87), which
+  -- .TryJump's carry (:376) returns above.
+  if result == "blocked" then self:bumpSound() end
   -- NormalStep, in order (engine/overworld/movement.asm:657-674): InitStep has
   -- already moved OBJECT_TILE_COLLISION onto the destination.
   if result == "moved" then self:playerStepGrass() end
@@ -9635,6 +10076,7 @@ end
 
 function World:stepBody()
   if not self.map or not self.player then return end
+  self.stepFinished = false
   self:pollTimeOfDay()
   -- ShakeScreen and the `musicfadeout` tail both run UNDER a script (the VM is
   -- parked on the earthquake's own waitFrames while the screen is still
@@ -9715,6 +10157,7 @@ function World:stepBody()
   -- it ticks here above the input gate the same way the emote does; its
   -- last flash's onDone is what resumes the nurse.
   if self.healAnim then self:stepHealAnim() end
+  if self.flyAnim then self:stepFlyAnim() end
 
   -- HandleCmdQueue sits in the overworld loop, once a frame, above the input
   -- gate: it is what drops a boulder that is already sitting on a hole, and it
@@ -9735,8 +10178,9 @@ function World:stepBody()
 
   -- Freeze player input while a script / textbox / cutscene move is up.
   if self:busy() then
-    -- Keep scripted entities animating mid-step.
-    if self.player and self.player.moving then
+    -- Keep scripted entities animating mid-step.  A step_dig spin has the
+    -- player standing still, so it has to tick here too.
+    if self.player and (self.player.moving or self.player.spinFrames) then
       self:playerStepGrass()
       if self.player:update() then
         self.player.inGrass =
@@ -9750,6 +10194,7 @@ function World:stepBody()
   local p = self.player
   self:playerStepGrass()
   local landed = p:update()
+  self.stepFinished = landed
   -- CopyCoordsTileToLastCoordsTile -> SetTallGrassFlags, which is what a step
   -- ENDS on (engine/overworld/map_objects.asm:196-208, :247).
   if landed then p.inGrass = self:grassAt(p.cellX, p.cellY) end
@@ -9811,6 +10256,11 @@ function World:stepBody()
   local dir = self.heldDir
   if not p.moving then
     local coll = self:playerCollision()
+    -- .CheckTile tests CheckWhirlpoolTile above the nybble ladder
+    -- -- engine/overworld/player_movement.asm:117-123 (#1716)
+    if Permissions.isWhirlpool(coll) and self:runForcedMovement() then
+      return
+    end
     local current = Permissions.currentDirection(coll)
       or Permissions.doorForcedDirection(coll)
     if current then
@@ -9832,7 +10282,8 @@ function World:stepBody()
 
   local result = self:movePlayer(dir)
   if result == "edge" then
-    self:tryConnection(dir)
+    -- A border block is a wall: engine/overworld/player_movement.asm:264
+    if not self:tryConnection(dir) then self:bumpSound() end
   elseif result == "blocked" and p.facing == dir then
     -- .CheckNPC came back 2: something movable is in the way.  The step is
     -- lost either way, and the boulder is what moves.
@@ -9923,18 +10374,21 @@ function World:drawPeople(s, billboard)
   local G = love.graphics
   local p = self.player
   local cam = self.camera
-  local drawList = {
-    { kind = "player", py = p.py, ox = 0, oy = 0 },
-  }
-  for _, npc in ipairs(self.npcs) do
-    drawList[#drawList + 1] = {
-      kind = "npc", npc = npc, ox = 0, oy = 0, py = npc.py,
-    }
-  end
-  for _, g in ipairs(self.ghosts) do
-    drawList[#drawList + 1] = {
-      kind = "npc", npc = g.npc, ox = g.ox, oy = g.oy, py = g.oy + g.npc.py,
-    }
+  -- .FlyScript hides the map's objects from HideSprites until its
+  -- LoadWalkingSpritesGFX tail -- engine/events/overworld.asm:597, :608
+  local drawList = {}
+  if not self.flyAnim then
+    drawList[1] = { kind = "player", py = p.py, ox = 0, oy = 0 }
+    for _, npc in ipairs(self.npcs) do
+      drawList[#drawList + 1] = {
+        kind = "npc", npc = npc, ox = 0, oy = 0, py = npc.py,
+      }
+    end
+    for _, g in ipairs(self.ghosts) do
+      drawList[#drawList + 1] = {
+        kind = "npc", npc = g.npc, ox = g.ox, oy = g.oy, py = g.oy + g.npc.py,
+      }
+    end
   end
   table.sort(drawList, function(a, b) return a.py < b.py end)
 
@@ -9969,6 +10423,7 @@ function World:drawPeople(s, billboard)
 
   self:drawEmote(s, billboard)
   self:drawHealAnim(s, billboard)
+  self:drawFlyAnim(s, billboard)
 end
 
 -- Split out of drawPeople so World:drawPipeline composites the one copy the
@@ -10036,11 +10491,12 @@ function World:drawPipeline(id, w, h, s)
     -- the art: nil, like Gen 1 returns in its true-colour modes.
     paletteFor = function() return nil end,
     spriteColors = function() return nil end,
-    -- Gold's only standing effects; it has no dust/cutTree/bird/rod overlay,
-    -- and Gen 1's `at` skips a nil body, so those keys are simply absent.
+    -- Gold's only standing effects; it has no dust/cutTree/rod overlay, and
+    -- Gen 1's `at` skips a nil body, so those keys are simply absent.
     fx = {
       emote = function() self:drawEmote(1, nil) end,
       heal = function() self:drawHealAnim(1, nil) end,
+      bird = function() self:drawFlyAnim(1, nil) end,
     },
   }
   -- `project(wx, wy)` -> canvas pixels, nil behind the camera.  s = 1 lays the
@@ -10058,6 +10514,7 @@ function World:drawPipeline(id, w, h, s)
     end
     self:drawEmote(1, at)
     self:drawHealAnim(1, at)
+    self:drawFlyAnim(1, at)
   end
   local override = Pipelines.drawWorld(id, ctx)
   -- world post-processes fold in here, so they never touch the text box on top

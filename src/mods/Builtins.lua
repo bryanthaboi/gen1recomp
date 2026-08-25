@@ -163,8 +163,8 @@ end
 
 -- a module the build dropped disables its registry rather than the game:
 -- the consumer still reads its own table, so vanilla keeps working
-local function load(path)
-  local ok, module = pcall(require, path)
+local function load(path, moduleLoader)
+  local ok, module = pcall(moduleLoader or require, path)
   if ok then return module end
   Logger.warn("builtin registrations skipped for %s (%s)", path, tostring(module))
   return nil
@@ -187,14 +187,14 @@ local function isolate(registry)
   }, { __index = registry })
 end
 
-function Builtins.install(content, data, generation)
+function Builtins.install(content, data, generation, moduleLoader)
   for _, entry in ipairs(registrantsFor(generation)) do
     local registry = content[entry.name] and isolate(content[entry.name])
     if registry then
       if entry.install then
         local modules, complete = {}, true
         for i, path in ipairs(entry.modules) do
-          modules[i] = load(path)
+          modules[i] = load(path, moduleLoader)
           if modules[i] == nil then complete = false end
         end
         -- data is the fourth argument, not the second, so the existing
@@ -204,7 +204,7 @@ function Builtins.install(content, data, generation)
           entry.install(registry, modules, Builtins.OWNER, data)
         end
       else
-        local module = load(entry.from)
+        local module = load(entry.from, moduleLoader)
         -- entry.fn names the entry point for a module that owns more than one
         -- registry (Gold's Battle owns statuses and move_effects); the default
         -- is the registerInto every single-registry module exposes

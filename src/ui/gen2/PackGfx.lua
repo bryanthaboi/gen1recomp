@@ -12,8 +12,9 @@
 --                  which DrawPackGFX swaps per pocket out of PackGFX
 --   DrawPocketName lays a 5x3 block at (0,7) from its own 5x12 tilemap
 --   _CGB_PackPals  loads six BG palettes and colours five rectangles with
---                  them: the two header halves, the quantity column, the
---                  pocket plaque (red) and the bag picture (green)
+--                  them: the two header halves, the CURSOR column (7,2) 1x9
+--                  whose colour 3 is red, the pocket plaque (red) and the bag
+--                  picture (green) -- engine/gfx/cgb_layouts.asm:715-734
 --
 -- A cache from before the pack stage simply has no `pack` table; PackMenu
 -- falls back to its plain boxes then.

@@ -24,8 +24,10 @@
 -- one-line call.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local Logger = require("src.core.Logger")
 local Save = require("src.core.gen2.Save")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local SaveMenu = {}
 SaveMenu.__index = SaveMenu
@@ -55,9 +57,43 @@ local TIME_X, TIME_Y = 13, 8
 local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
 
 -- AlreadyASaveFileText (AskOverwriteSaveFile, engine/menus/save.asm:47) and
--- SavingDontTurnOffThePower's own line, shared with the PC's CHANGE BOX save.
-local OVERWRITE_PROMPT = { "There is already a", "save file. Is it" }
-local SAVING_PROMPT = { "SAVING… DON'T TURN", "OFF THE POWER." }
+-- SavingDontTurnOffThePower's own line -- one \n-joined translatable key
+-- each, used both by this screen's own prompt() below and, through the
+-- SOURCE/twoLines() exports at the bottom of this file, by the PC's CHANGE
+-- BOX save (src/ui/gen2/PcMenu.lua:savePrompt()), which shares these exact
+-- same two cart messages. One key per prompt lets a translation write one
+-- whole, freely reordered sentence instead of two fragments translated in
+-- isolation, and lets a cart whose own text is a single line (German's
+-- SAVING prompt) say so directly by simply omitting the "\n" -- the
+-- per-line override style used elsewhere requires a non-empty value for
+-- every line, so it can't express "this line is blank".
+--
+-- Written as a literal, not built from a table: the translation tooling's
+-- string harvester only recognizes a literal inside Strings.source(...),
+-- not a computed expression, so a concat call here would quietly never
+-- reach a translator.
+local OVERWRITE_PROMPT_SOURCE = Strings.source("There is already a\nsave file. Is it")
+local SAVING_PROMPT_SOURCE = Strings.source("SAVING… DON'T TURN\nOFF THE POWER.")
+
+-- Splits a translated "line one\nline two" string back into the two-slot
+-- table drawPanel's fixed Chrome.print calls expect. No "\n" at all (a
+-- single-line message, or German's one-line SAVING prompt) lands whole on
+-- the first slot, matching the untranslated code's own { text, "" } shape.
+--
+-- Only the first "\n" splits, since this box has room for exactly two
+-- lines. A third line would otherwise draw as a raw newline byte -- garbage
+-- glyph data -- with no other sign anything went wrong, so this warns once
+-- per string instead.
+local warnedTooManyLines = {}
+local function twoLines(text)
+  local first, second = text:match("^(.-)\n(.*)$")
+  if second and second:find("\n", 1, true) and not warnedTooManyLines[text] then
+    warnedTooManyLines[text] = true
+    Logger.warn("SaveMenu: translation of %q has more than two lines; " ..
+      "only the first two fit this box", text)
+  end
+  return { first or text, second or "" }
+end
 
 function SaveMenu:wantsFillScale() return true end
 function SaveMenu:drawsWidescreen() return true end
@@ -171,18 +207,18 @@ function SaveMenu:prompt()
   if self.phase == "overwrite" then
     -- AlreadyASaveFileText when the file is this player's; AnotherSaveFileText
     -- when the ID differs.  Only the first can happen here.
-    return OVERWRITE_PROMPT
+    return twoLines(Strings(OVERWRITE_PROMPT_SOURCE))
   end
   if self.phase == "saving" then
-    return SAVING_PROMPT
+    return twoLines(Strings(SAVING_PROMPT_SOURCE))
   end
   if self.phase == "done" then
     if self.saved then
-      return { self:playerName() .. " saved", "the game." }
+      return twoLines(Strings("%s saved\nthe game.", self:playerName()))
     end
-    return { "Could not save.", "" }
+    return twoLines(Strings("Could not save."))
   end
-  return { "Would you like to", "save the game?" }
+  return twoLines(Strings("Would you like to\nsave the game?"))
 end
 
 function SaveMenu:drawPanel()
@@ -190,10 +226,10 @@ function SaveMenu:drawPanel()
   local summary = Save.summary(self.save)
   Chrome.box(PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
   if summary then
-    Chrome.print("PLAYER " .. summary.name, LABEL_X, LABEL_Y)
-    Chrome.print("BADGES", LABEL_X, LABEL_Y + 2)
-    Chrome.print("POKéDEX", LABEL_X, LABEL_Y + 4)
-    Chrome.print("TIME", LABEL_X, LABEL_Y + 6)
+    Chrome.print(Strings("PLAYER %s", summary.name), LABEL_X, LABEL_Y)
+    Chrome.print(Strings("BADGES"), LABEL_X, LABEL_Y + 2)
+    Chrome.print(Strings("POKéDEX"), LABEL_X, LABEL_Y + 4)
+    Chrome.print(Strings("TIME"), LABEL_X, LABEL_Y + 6)
     -- PrintNum fills its field from the left, space padded.
     Chrome.print(Chrome.number(summary.badges, 2), BADGES_X, BADGES_Y)
     Chrome.print(Chrome.number(summary.caught, 3), DEX_X, DEX_Y)
@@ -211,8 +247,8 @@ function SaveMenu:drawPanel()
 
   if self.phase == "confirm" or self.phase == "overwrite" then
     Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-    Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
-    Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+    Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+    Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
     Chrome.cursor(YESNO_X + 1, YESNO_Y + (self.choice == 1 and 1 or 3))
   end
   love.graphics.setColor(1, 1, 1, 1)
@@ -237,7 +273,8 @@ end
 SaveMenu.SFX_SAVE = SFX_SAVE
 SaveMenu.SAVING_FRAMES = SAVING_FRAMES
 SaveMenu.SAVED_FRAMES = SAVED_FRAMES
-SaveMenu.OVERWRITE_PROMPT = OVERWRITE_PROMPT
-SaveMenu.SAVING_PROMPT = SAVING_PROMPT
+SaveMenu.OVERWRITE_PROMPT_SOURCE = OVERWRITE_PROMPT_SOURCE
+SaveMenu.SAVING_PROMPT_SOURCE = SAVING_PROMPT_SOURCE
+SaveMenu.twoLines = twoLines
 
 return SaveMenu

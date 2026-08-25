@@ -21,7 +21,12 @@
 -- per-move as in Gen 4: type ids below FIRE are physical.  type_chart.lua's
 -- records carry that as `category`.
 
+local GameVersion = require("src.core.GameVersion")
+
 local Damage = {}
+
+-- ../pokecrystal/constants/battle_constants.asm:78
+Damage.MAX_STAT_VALUE = 999
 
 -- data/battle/critical_hit_chances.asm, as "1 in N".
 Damage.CRITICAL_CHANCES = { [0] = 15, 8, 4, 3, 2, 2, 2 }
@@ -60,7 +65,23 @@ end
 function Damage.applyStage(value, stage)
   local numerator, denominator = Damage.stageMultiplier(stage)
   local out = math.floor(value * numerator / denominator)
-  return math.max(1, out)
+  -- ../pokecrystal/engine/battle/core.asm:6739
+  return math.max(1, math.min(Damage.MAX_STAT_VALUE, out))
+end
+
+-- TruncateHL_BC: ../pokegold/engine/battle/effect_commands.asm:2625 runs one
+-- pass, ../pokecrystal/engine/battle/effect_commands.asm:2644 loops it.
+function Damage.truncateStats(attack, defense, fixed)
+  local a = math.max(0, math.floor(attack or 0))
+  local d = math.max(0, math.floor(defense or 0))
+  while a > 255 or d > 255 do
+    d = math.floor(d / 4)
+    if d == 0 then d = 1 end
+    a = math.floor(a / 4)
+    if a == 0 then a = 1 end
+    if not fixed then break end
+  end
+  return a % 256, d % 256
 end
 
 -- Is this move physical?  `types` is type_chart.lua's `types` table.
@@ -169,6 +190,8 @@ end
 --   random(n)              -- 0..n-1, for the variation roll
 --   screen                 -- Reflect/Light Screen active on the defender
 --   defenseHalved          -- EFFECT_SELFDESTRUCT's srl c
+--   reflectOverflowFixed   -- override GameVersion.fixes()'s TruncateHL_BC
+--     answer; ../pokecrystal/engine/battle/effect_commands.asm:2644
 --
 -- Returns damage, info where info carries the pieces a battle message needs:
 -- effectiveness (x10), critical, physical, variation.
@@ -203,6 +226,12 @@ function Damage.calc(opts)
   if opts.screen and not opts.critical then
     defense = defense * 2
   end
+
+  -- PlayerAttackDamage hands DamageCalc one-byte stats
+  -- (../pokecrystal/engine/battle/effect_commands.asm:2604).
+  local fixed = opts.reflectOverflowFixed
+  if fixed == nil then fixed = GameVersion.fixes().reflectOverflow == true end
+  attack, defense = Damage.truncateStats(attack, defense, fixed)
 
   -- BattleCommand_DamageCalc (effect_commands.asm:2905-2913): Selfdestruct and
   -- Explosion halve the defence, never below 1.

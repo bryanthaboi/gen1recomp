@@ -89,10 +89,12 @@ local function handle(cmd)
   return false
 end
 
+local idleWait = false
+
 while true do
   -- drain every pending command first, so a stop/new-play is seen promptly
   local quit = false
-  local cmd = cmdCh:pop()
+  local cmd = idleWait and cmdCh:demand(0.05) or cmdCh:pop()
   while cmd do
     if handle(cmd) then quit = true end
     cmd = cmdCh:pop()
@@ -100,6 +102,7 @@ while true do
   if quit then break end
 
   if engine and not finished and gen and outCh:getCount() < LOOKAHEAD then
+    idleWait = false
     local activeGen = gen
     local ok, sd = pcall(ChipSynth.soundData, engine, BUF, 2)
     if not ok then
@@ -113,8 +116,10 @@ while true do
         finished = true
       end
     end
+  elseif engine and not finished and gen then
+    idleWait = false
+    love.timer.sleep(0.005)
   else
-    -- nothing to do (idle, or the look-ahead is full): yield the core
-    love.timer.sleep(0.001)
+    idleWait = true
   end
 end

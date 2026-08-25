@@ -82,7 +82,7 @@ local function importer(ready)
 end
 
 local allReady = importer({ red = true, blue = true, yellow = true, gold = true,
-  silver = true })
+  silver = true, crystal = true })
 allReady:_queueBaseRomScan()
 eq(allReady.baseRomScan.state, "done", "ready launcher skips discovery")
 eq(listings, 0, "ready launcher does not enumerate baseroms")
@@ -125,7 +125,7 @@ missing:choose("red")
 eq(picks, 1, "the next import attempt falls back to the native picker")
 
 local rescanned = importer({ red = true, blue = true, yellow = true, gold = true,
-  silver = true })
+  silver = true, crystal = true })
 rescanned.baseRoms.red = { path = "baseroms/z-red.gb", name = "z-red.gb" }
 rescanned:reimport("red")
 check(rescanned.baseRoms.red == nil, "re-import clears the detected ROM")

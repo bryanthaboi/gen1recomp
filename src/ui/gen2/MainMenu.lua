@@ -24,6 +24,7 @@ local Logger = require("src.core.Logger")
 local Music = require("src.core.Music")
 local Runtime = require("src.mods.Runtime")
 local Save = require("src.core.gen2.Save")
+local Strings = require("src.core.Strings")
 
 local MainMenu = {}
 MainMenu.__index = MainMenu
@@ -73,14 +74,14 @@ local function sameItems(_, items) return items end
 function MainMenu:buildList()
   local items = {}
   if self.hasSave then
-    items[#items + 1] = { label = "CONTINUE", value = "continue" }
+    items[#items + 1] = { label = Strings("CONTINUE"), value = "continue" }
   end
-  items[#items + 1] = { label = "NEW GAME", value = "new" }
-  items[#items + 1] = { label = "OPTION", value = "option" }
+  items[#items + 1] = { label = Strings("NEW GAME"), value = "new" }
+  items[#items + 1] = { label = Strings("OPTION"), value = "option" }
   -- Not on the cart: a cartridge is left by switching the console off, and
   -- there is no console here.  Mirrors the Gen 1 port's title menu
   -- (src/ui/TitleState.lua), which adds the same row for the same reason.
-  items[#items + 1] = { label = "EXIT GAME", value = "exit" }
+  items[#items + 1] = { label = Strings("EXIT GAME"), value = "exit" }
   -- The same hook name and the same (game, items) payload the Gen 1 title
   -- menu raises (src/ui/TitleState.lua:openMenu), so one mod's title rows
   -- serve both games; only the row shape differs, because Chrome.List reads
@@ -170,7 +171,7 @@ function MainMenu:drawClockBox()
   -- minutes; the AM/PM half is drawn by PrintHour itself.
   local display = hour % 12
   if display == 0 then display = 12 end
-  local half = hour < 12 and "AM" or "PM"
+  local half = Strings(hour < 12 and "AM" or "PM")
   Chrome.print(("%s:%s %s"):format(
     Chrome.number(display, 2), Chrome.number(minute, 2, true), half), 4, 16)
 end
@@ -180,15 +181,15 @@ function MainMenu:drawSavePanel()
   -- DisplaySaveInfoOnContinue: a box down the right side listing the trainer.
   Chrome.textbox(4, 0, 14, 9)
   if not summary then
-    Chrome.print("NO SAVE FILE", 5, 2)
+    Chrome.print(Strings("NO SAVE FILE"), 5, 2)
     return
   end
-  Chrome.print("PLAYER " .. summary.name, 5, 2)
-  Chrome.print("BADGES", 5, 4)
+  Chrome.print(Strings("PLAYER %s", summary.name), 5, 2)
+  Chrome.print(Strings("BADGES"), 5, 4)
   Chrome.printRight(tostring(summary.badges), 17, 4)
-  Chrome.print("POKéDEX", 5, 6)
+  Chrome.print(Strings("POKéDEX"), 5, 6)
   Chrome.printRight(tostring(summary.caught), 17, 6)
-  Chrome.print("TIME", 5, 8)
+  Chrome.print(Strings("TIME"), 5, 8)
   Chrome.printRight(("%d:%s"):format(
     summary.hours, Chrome.number(summary.minutes, 2, true)), 17, 8)
 end

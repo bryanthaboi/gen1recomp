@@ -29,11 +29,38 @@ end
 
 -- nearest valid level for an arbitrary value (a hand-edited options.lua or
 -- a --speed argument), so a bad number degrades to something sane
+-- A cart may narrow the levels a player can reach (CartManifest's `speeds`).
+-- nil restores the full ladder; a one-entry list pins the speed outright.
+local allowed
+
+function GameSpeed.setAllowed(levels)
+  if type(levels) ~= "table" or #levels == 0 then allowed = nil; return end
+  local valid, seen = {}, {}
+  for _, want in ipairs(GameSpeed.LEVELS) do
+    for _, have in ipairs(levels) do
+      if have == want and not seen[want] then
+        seen[want] = true
+        valid[#valid + 1] = want
+      end
+    end
+  end
+  allowed = (#valid > 0) and valid or nil
+end
+
+function GameSpeed.allowed()
+  return allowed or GameSpeed.LEVELS
+end
+
+function GameSpeed.isLocked()
+  return allowed ~= nil and #allowed <= 1
+end
+
 function GameSpeed.clamp(v)
   v = tonumber(v)
-  if not v then return GameSpeed.DEFAULT end
-  local best, bestDiff = GameSpeed.DEFAULT, math.huge
-  for _, level in ipairs(GameSpeed.LEVELS) do
+  local levels = GameSpeed.allowed()
+  if not v then return levels[1] or GameSpeed.DEFAULT end
+  local best, bestDiff = levels[1] or GameSpeed.DEFAULT, math.huge
+  for _, level in ipairs(levels) do
     local diff = math.abs(level - v)
     if diff < bestDiff then best, bestDiff = level, diff end
   end
@@ -42,7 +69,7 @@ end
 
 -- cycle to the next/previous level, wrapping (the options row idiom)
 function GameSpeed.cycle(v, dir)
-  local levels = GameSpeed.LEVELS
+  local levels = GameSpeed.allowed()
   local cur = 1
   for i, level in ipairs(levels) do
     if level == GameSpeed.clamp(v) then cur = i break end

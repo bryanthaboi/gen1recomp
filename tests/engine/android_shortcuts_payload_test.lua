@@ -41,7 +41,7 @@ end
 -- Mock isReady
 RomImporter.isReady = function(v)
   return v == "red" or v == "gold" or v == "blue" or v == "yellow"
-    or v == "silver"
+    or v == "silver" or v == "crystal"
 end
 
 local ok = RomImporter.syncAndroidShortcuts("gold")
@@ -56,6 +56,14 @@ capturedShortcuts = nil
 RomImporter.syncAndroidShortcuts("silver")
 check(#capturedShortcuts == 4, "a fifth ready game does not widen the payload")
 check(capturedShortcuts[1] == "silver", "activeVersion 'silver' is placed first")
+
+capturedShortcuts = nil
+RomImporter.syncAndroidShortcuts("crystal")
+check(#capturedShortcuts == 4, "nor does a sixth")
+check(capturedShortcuts[1] == "crystal", "activeVersion 'crystal' is placed first")
+check(capturedShortcuts[2] == "red" and capturedShortcuts[3] == "blue"
+  and capturedShortcuts[4] == "yellow",
+  "and the rest still follow GameVersion.ORDER until the cap")
 
 -- Test with subset of ready games (e.g. only Red and Gold)
 RomImporter.isReady = function(v)

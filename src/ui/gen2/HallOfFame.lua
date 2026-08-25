@@ -31,10 +31,11 @@
 -- can assert them without a graphics device (the same shape
 -- src/ui/gen2/SummaryMenu.lua uses).
 --
--- WHAT THE CACHE DOES NOT HAVE.  GetTrainerPic for TRAINER_CLASS CAL -- the
--- 7x7 picture of the player HOF_AnimatePlayerPic ends on -- is not extracted.
--- The player's own 5x7 portrait from the trainer card is, and it is the same
--- character, so that stands in and is padded into the 7x7 block the way
+-- WHAT THE CACHE MAY NOT HAVE.  Gold's HOF_AnimatePlayerPic ends on
+-- GetTrainerPic for TRAINER_CLASS CAL, which is not extracted; Crystal's
+-- HOF_LoadTrainerFrontpic ends on ChrisPic / KrisPic, which are extracted when
+-- the cache is new enough.  Failing both, the player's own 5x7 portrait from
+-- the trainer card stands in and is padded into the 7x7 block the way
 -- PlaceGraphic would.  ProfOaksPCRating, which the cart prints into the bottom
 -- box afterwards, needs Oak's PC (still a stub in src/script/gen2/Specials.lua)
 -- and so the box is drawn empty, exactly as it is before that farcall.
@@ -45,6 +46,7 @@ local CommonText = require("src.core.gen2.CommonText")
 local Core = require("src.core.gen2.HallOfFame")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
+local Gen2Save = require("src.core.gen2.Save")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
@@ -250,15 +252,26 @@ function HallOfFame.new(game, opts)
   -- The player's own two pictures.  The backpic is a plain image (the battle
   -- HUD's), the front is the trainer card's 5x7 portrait tile sheet.
   local menuGfx = data.gen2MenuGfx or {}
+  -- HOF_AnimatePlayerPic calls GetPlayerBackpic (../pokecrystal/engine/events/
+  -- halloffame.asm:520-530, ../pokecrystal/engine/gfx/player_gfx.asm:123-128).
+  local female = Gen2Save.isFemale(self.save)
+  local hud = menuGfx.battleHud or {}
   -- player.sprite, the same hook Gen 1's Hall of Fame raises through
   -- Sprites.playerPath (src/ui/HallOfFame.lua:100).
   self.playerBackPath = require("src.pokemon.Sprites").playerPic(
-    (menuGfx.battleHud or {}).playerBack,
+    (female and hud.playerBackFemale) or hud.playerBack,
     { side = "back", kind = "hof", data = data })
+  -- HOF_LoadTrainerFrontpic's ChrisPic / KrisPic under class CHRIS / KRIS
+  -- (../pokecrystal/engine/gfx/player_gfx.asm:138-168).
+  local pics = hud.trainerPics or {}
+  self.trainerPicPath = (female and pics.KRIS) or pics.CHRIS
   local card = menuGfx.trainerCard
   if card and card.card then
+    -- GetCardPic's KrisCardPic arm
+    -- (../pokecrystal/engine/gfx/player_gfx.asm:96-101).
     self.portrait = TileSheet.new({
-      path = card.card, wide = card.cardTilesWide or 16, firstTile = 0,
+      path = (female and card.cardFemale) or card.card,
+      wide = card.cardTilesWide or 16, firstTile = 0,
     })
     self.portraitWide = card.portraitWide or 5
     self.portraitTiles = card.portraitTiles or 35
@@ -559,6 +572,8 @@ end
 -- run of tile ids TrainerCard_PrintTopHalfOfCard uses, translated by the
 -- scroll rather than drawn at a tile coordinate.
 function HallOfFame:drawPortrait(tileX, tileY)
+  local pic = self:image(self.trainerPicPath)
+  if pic then return self:drawScrolled(pic, tileX, tileY, nil) end
   if not (self.portrait and self.portrait:available()) then return end
   local G = love.graphics
   local wide = self.portraitWide

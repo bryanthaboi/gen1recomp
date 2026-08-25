@@ -193,4 +193,31 @@ do
   eq(g.save.options.speedMenu, 2, "cycling in a menu bumps speedMenu")
 end
 
+-- A cart may narrow the ladder (CartManifest's `speeds`), and returning to
+-- the launcher must put it back.
+do
+  local GameSpeed = require("src.core.GameSpeed")
+  eq(#GameSpeed.allowed(), #GameSpeed.LEVELS, "no cart means the full ladder")
+  check(not GameSpeed.isLocked(), "and nothing is pinned")
+
+  GameSpeed.setAllowed({ 1, 2 })
+  eq(#GameSpeed.allowed(), 2, "a cart narrows the ladder")
+  eq(GameSpeed.cycle(1, 1), 2, "cycling stays inside the cart's levels")
+  eq(GameSpeed.cycle(2, 1), 1, "and wraps within them")
+  eq(GameSpeed.clamp(100), 2, "a value past the cart's top clamps into it")
+  check(not GameSpeed.isLocked(), "two levels is narrowed, not pinned")
+
+  GameSpeed.setAllowed({ 1 })
+  check(GameSpeed.isLocked(), "one level reads as pinned")
+  eq(GameSpeed.cycle(1, 1), 1, "and cycling cannot leave it")
+
+  GameSpeed.setAllowed({ 1, 7 })
+  eq(#GameSpeed.allowed(), 1, "a level that is not on the ladder is dropped")
+
+  GameSpeed.setAllowed(nil)
+  eq(#GameSpeed.allowed(), #GameSpeed.LEVELS,
+    "leaving the cart restores the full ladder")
+  eq(GameSpeed.cycle(4, 1), 10, "and cycling reaches the levels again")
+end
+
 T.finish("game_speed_categories")

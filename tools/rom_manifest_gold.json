@@ -12712,6 +12712,22 @@
       16,
       19557
     ],
+    "AlreadyAsleepText": [
+      64,
+      23414
+    ],
+    "AlreadyConfusedText": [
+      64,
+      22417
+    ],
+    "AlreadyParalyzedText": [
+      64,
+      24391
+    ],
+    "AlreadyPoisonedText": [
+      64,
+      23471
+    ],
     "AmpharosBackpic": [
       29,
       25057
@@ -12816,6 +12832,30 @@
       106,
       18033
     ],
+    "AskNumber1FText": [
+      64,
+      19476
+    ],
+    "AskNumber1MText": [
+      64,
+      19144
+    ],
+    "AskNumber2FText": [
+      64,
+      19575
+    ],
+    "AskNumber2MText": [
+      64,
+      19229
+    ],
+    "AttackMissed2Text": [
+      64,
+      23016
+    ],
+    "AttackMissedText": [
+      64,
+      22997
+    ],
     "AzumarillBackpic": [
       29,
       32162
@@ -12831,6 +12871,10 @@
     "BadgeGFX": [
       9,
       25135
+    ],
+    "BadlyPoisonedText": [
+      64,
+      23451
     ],
     "BargainShopData": [
       5,
@@ -12860,6 +12904,178 @@
       2,
       23561
     ],
+    "BattleText_AnEGGCantBattle": [
+      64,
+      21740
+    ],
+    "BattleText_CantEscape": [
+      64,
+      21862
+    ],
+    "BattleText_CantEscape2": [
+      64,
+      21761
+    ],
+    "BattleText_EnemyFled": [
+      64,
+      20885
+    ],
+    "BattleText_EnemyIsAboutToUseWillPlayerChangeMon": [
+      64,
+      21648
+    ],
+    "BattleText_EnemyMonFainted": [
+      64,
+      21358
+    ],
+    "BattleText_EnemySentOut": [
+      64,
+      21694
+    ],
+    "BattleText_EnemyWasDefeated": [
+      64,
+      21408
+    ],
+    "BattleText_GotAwaySafely": [
+      64,
+      21821
+    ],
+    "BattleText_ItemHealedConfusion": [
+      64,
+      22384
+    ],
+    "BattleText_ItemsCantBeUsedHere": [
+      64,
+      21945
+    ],
+    "BattleText_MonCantBeRecalled": [
+      64,
+      21992
+    ],
+    "BattleText_MonFainted": [
+      64,
+      21563
+    ],
+    "BattleText_MonHasNoMovesLeft": [
+      64,
+      22072
+    ],
+    "BattleText_MonIsAlreadyOut": [
+      64,
+      21971
+    ],
+    "BattleText_MonsLightScreenFell": [
+      64,
+      21165
+    ],
+    "BattleText_MonsReflectFaded": [
+      64,
+      21195
+    ],
+    "BattleText_PlayerPickedUpPayDayMoney": [
+      64,
+      20748
+    ],
+    "BattleText_RainContinuesToFall": [
+      64,
+      21221
+    ],
+    "BattleText_SafeguardFaded": [
+      64,
+      21144
+    ],
+    "BattleText_StringBuffer1GrewToLevel": [
+      64,
+      22114
+    ],
+    "BattleText_TargetRecoveredWithItem": [
+      64,
+      21062
+    ],
+    "BattleText_TargetWasHitByFutureSight": [
+      64,
+      21116
+    ],
+    "BattleText_TargetsEncoreEnded": [
+      64,
+      22096
+    ],
+    "BattleText_TheMoveIsDisabled": [
+      64,
+      22049
+    ],
+    "BattleText_TheRainStopped": [
+      64,
+      21293
+    ],
+    "BattleText_TheSandstormRages": [
+      64,
+      21271
+    ],
+    "BattleText_TheSandstormSubsided": [
+      64,
+      21333
+    ],
+    "BattleText_TheSunlightFaded": [
+      64,
+      21312
+    ],
+    "BattleText_TheSunlightIsStrong": [
+      64,
+      21246
+    ],
+    "BattleText_TheresNoEscapeFromTrainerBattle": [
+      64,
+      21775
+    ],
+    "BattleText_TheresNoPPLeftForThisMove": [
+      64,
+      22015
+    ],
+    "BattleText_TheresNoWillToBattle": [
+      64,
+      21713
+    ],
+    "BattleText_UseNextMon": [
+      64,
+      21577
+    ],
+    "BattleText_UserFledUsingAStringBuffer1": [
+      64,
+      21839
+    ],
+    "BattleText_UserHurtBySpikes": [
+      64,
+      21876
+    ],
+    "BattleText_UserRecoveredPPUsing": [
+      64,
+      21087
+    ],
+    "BattleText_UserWasReleasedFromStringBuffer1": [
+      64,
+      22458
+    ],
+    "BattleText_UsersHurtByStringBuffer1": [
+      64,
+      22439
+    ],
+    "BattleText_UsersStringBuffer1Activated": [
+      64,
+      21924
+    ],
+    "BattleText_WildFled": [
+      64,
+      20867
+    ],
+    "BattleText_WildMonIsAngry": [
+      64,
+      22166
+    ],
+    "BattleText_WildMonIsEating": [
+      64,
+      22143
+    ],
     "BattleWinSlideInEnemyTrainerFrontpic": [
       15,
       27158
@@ -12876,6 +13092,14 @@
       106,
       19025
     ],
+    "BeatUpAttackText": [
+      64,
+      25058
+    ],
+    "BecameConfusedText": [
+      64,
+      22364
+    ],
     "BeedrillBackpic": [
       24,
       17173
@@ -12887,6 +13111,14 @@
     "BeedrillPokedexEntry": [
       104,
       17941
+    ],
+    "BeganToNapText": [
+      64,
+      22758
+    ],
+    "BellChimedText": [
+      64,
+      23381
     ],
     "BellossomBackpic": [
       26,
@@ -12912,6 +13144,14 @@
       105,
       16837
     ],
+    "BellyDrumText": [
+      64,
+      24967
+    ],
+    "BillsPCOrangePalette": [
+      2,
+      21965
+    ],
     "BlastoiseBackpic": [
       25,
       30882
@@ -12923,6 +13163,10 @@
     "BlastoisePokedexEntry": [
       104,
       17276
+    ],
+    "BlewSpikesText": [
+      64,
+      24899
     ],
     "BlisseyBackpic": [
       29,
@@ -12936,9 +13180,25 @@
       107,
       21761
     ],
+    "BlownAwayText": [
+      64,
+      23687
+    ],
+    "BoltEmote": [
+      5,
+      17737
+    ],
+    "BracedItselfText": [
+      64,
+      24750
+    ],
     "BugCatchingContestantEventFlagTable": [
       4,
       32186
+    ],
+    "BugContestPrizeNoRoomText": [
+      64,
+      20500
     ],
     "BulbasaurBackpic": [
       28,
@@ -12951,6 +13211,10 @@
     "BulbasaurPokedexEntry": [
       104,
       16384
+    ],
+    "ButItFailedText": [
+      64,
+      24229
     ],
     "ButterfreeBackpic": [
       21,
@@ -12967,6 +13231,34 @@
     "CalPic": [
       26,
       26667
+    ],
+    "CantEscapeNowText": [
+      64,
+      24492
+    ],
+    "CardFlipLZ01": [
+      56,
+      21795
+    ],
+    "CardFlipLZ02": [
+      56,
+      22197
+    ],
+    "CardFlipLZ03": [
+      56,
+      21736
+    ],
+    "CardFlipOffButtonGFX": [
+      56,
+      21763
+    ],
+    "CardFlipOnButtonGFX": [
+      56,
+      21779
+    ],
+    "CardFlipTilemap": [
+      56,
+      22809
     ],
     "CardStatusGFX": [
       9,
@@ -13080,6 +13372,10 @@
       48,
       16384
     ],
+    "ClampedByText": [
+      64,
+      22542
+    ],
     "ClefableBackpic": [
       22,
       24685
@@ -13132,9 +13428,81 @@
       105,
       19293
     ],
+    "CoinVendor_Buy500CoinsText": [
+      64,
+      20375
+    ],
+    "CoinVendor_Buy50CoinsText": [
+      64,
+      20344
+    ],
+    "CoinVendor_CancelText": [
+      64,
+      20469
+    ],
+    "CoinVendor_CoinCaseFullText": [
+      64,
+      20436
+    ],
+    "CoinVendor_IntroText": [
+      64,
+      20267
+    ],
+    "CoinVendor_NoCoinCaseText": [
+      64,
+      20196
+    ],
+    "CoinVendor_NotEnoughMoneyText": [
+      64,
+      20407
+    ],
+    "CoinVendor_WelcomeText": [
+      64,
+      20167
+    ],
+    "CoinsScatteredText": [
+      64,
+      24042
+    ],
+    "ConfusedNoMoreText": [
+      64,
+      22342
+    ],
     "ContestMons": [
       37,
       31672
+    ],
+    "ContestResults_ConsolationPrizeText": [
+      64,
+      19913
+    ],
+    "ContestResults_DidNotWinText": [
+      64,
+      19967
+    ],
+    "ContestResults_JoinUsNextTimeText": [
+      64,
+      19875
+    ],
+    "ContestResults_PartyFullText": [
+      64,
+      20053
+    ],
+    "ContestResults_PlayerWonAPrizeText": [
+      64,
+      19818
+    ],
+    "ContestResults_ReadyToJudgeText": [
+      64,
+      19046
+    ],
+    "ContestResults_ReturnPartyText": [
+      64,
+      20001
+    ],
+    "CopiedStatsText": [
+      64,
+      25003
     ],
     "CopyBackpic": [
       15,
@@ -13155,6 +13523,14 @@
     "CorsolaPokedexEntry": [
       107,
       19589
+    ],
+    "CoveredByVeilText": [
+      64,
+      24785
+    ],
+    "CrashedText": [
+      64,
+      23035
     ],
     "CreditsBellossomGFX": [
       33,
@@ -13183,6 +13559,10 @@
     "Cries": [
       58,
       20882
+    ],
+    "CriticalHitText": [
+      64,
+      23099
     ],
     "CrobatBackpic": [
       29,
@@ -13248,6 +13628,10 @@
       9,
       29015
     ],
+    "DefrostedOpponentText": [
+      64,
+      23552
+    ],
     "DelibirdBackpic": [
       26,
       28406
@@ -13260,6 +13644,10 @@
       107,
       19906
     ],
+    "DestinyBondEffectText": [
+      64,
+      23307
+    ],
     "DewgongBackpic": [
       30,
       25464
@@ -13271,6 +13659,18 @@
     "DewgongPokedexEntry": [
       105,
       18846
+    ],
+    "DidntAffect1Text": [
+      64,
+      24257
+    ],
+    "DidntAffect2Text": [
+      64,
+      24277
+    ],
+    "DifficultBookshelfText": [
+      64,
+      18433
     ],
     "DiglettBackpic": [
       30,
@@ -13295,6 +13695,14 @@
     "DiplomaPalettes": [
       2,
       31366
+    ],
+    "DisabledMoveText": [
+      64,
+      22711
+    ],
+    "DisabledNoMoreText": [
+      64,
+      22270
     ],
     "DittoBackpic": [
       30,
@@ -13332,6 +13740,10 @@
       105,
       18490
     ],
+    "DoesntAffectText": [
+      64,
+      23078
+    ],
     "DoneTileAnimation": [
       63,
       17058
@@ -13347,6 +13759,14 @@
     "DonphanPokedexEntry": [
       107,
       20667
+    ],
+    "DownpourText": [
+      64,
+      24920
+    ],
+    "DraggedOutText": [
+      64,
+      24313
     ],
     "DragonairBackpic": [
       28,
@@ -13387,6 +13807,10 @@
     "DrawPocketName.tilemap": [
       4,
       19964
+    ],
+    "DreamEatenText": [
+      64,
+      23516
     ],
     "DrowzeeBackpic": [
       30,
@@ -13508,9 +13932,21 @@
       4,
       31045
     ],
+    "EliminatedStatsText": [
+      64,
+      24107
+    ],
+    "EnduredText": [
+      64,
+      22629
+    ],
     "EnemyHPBarBorderGFX": [
       62,
       19378
+    ],
+    "EnemyHitTimesText": [
+      64,
+      23725
     ],
     "EnteiBackpic": [
       29,
@@ -13539,6 +13975,10 @@
     "EspeonPokedexEntry": [
       107,
       16728
+    ],
+    "EvadedText": [
+      64,
+      23996
     ],
     "EvosAttacksPointers": [
       16,
@@ -13588,6 +14028,10 @@
       105,
       18372
     ],
+    "FastAsleepText": [
+      64,
+      22188
+    ],
     "FearowBackpic": [
       30,
       22036
@@ -13599,6 +14043,14 @@
     "FearowPokedexEntry": [
       104,
       18743
+    ],
+    "FellAsleepText": [
+      64,
+      23398
+    ],
+    "FellInLoveText": [
+      64,
+      24768
     ],
     "FeraligatrBackpic": [
       22,
@@ -13612,9 +14064,17 @@
       106,
       19800
     ],
+    "FishEmote": [
+      5,
+      17865
+    ],
     "FishGroups": [
       36,
       27127
+    ],
+    "FishingGFX": [
+      20,
+      17792
     ],
     "FlaaffyBackpic": [
       25,
@@ -13640,9 +14100,21 @@
       106,
       17160
     ],
+    "FledFromBattleText": [
+      64,
+      23649
+    ],
+    "FledInFearText": [
+      64,
+      23670
+    ],
     "FlickeringCaveEntrancePalette": [
       63,
       17709
+    ],
+    "FlinchedText": [
+      64,
+      22239
     ],
     "Font": [
       62,
@@ -13664,6 +14136,10 @@
       62,
       21262
     ],
+    "ForesawAttackText": [
+      64,
+      25036
+    ],
     "ForretressBackpic": [
       46,
       17219
@@ -13679,6 +14155,14 @@
     "Frames": [
       62,
       18674
+    ],
+    "FrozenSolidText": [
+      64,
+      22219
+    ],
+    "FullyParalyzedText": [
+      64,
+      24370
     ],
     "FurretBackpic": [
       26,
@@ -13764,6 +14248,10 @@
       15,
       31064
     ],
+    "GettingPumpedText": [
+      64,
+      23789
+    ],
     "GirafarigBackpic": [
       25,
       16384
@@ -13848,6 +14336,14 @@
       105,
       17595
     ],
+    "GotAnEncoreText": [
+      64,
+      23230
+    ],
+    "GotMoneyForWinningText": [
+      64,
+      21380
+    ],
     "GranbullBackpic": [
       28,
       23053
@@ -13916,6 +14412,14 @@
       106,
       16493
     ],
+    "GymStatue_CityGymText": [
+      64,
+      20118
+    ],
+    "GymStatue_WinningTrainersText": [
+      64,
+      20132
+    ],
     "HOF_SlideBackpic": [
       33,
       26135
@@ -13932,9 +14436,37 @@
       62,
       19410
     ],
+    "HPIsFullText": [
+      64,
+      24297
+    ],
+    "HappinessText1": [
+      64,
+      20689
+    ],
+    "HappinessText2": [
+      64,
+      20636
+    ],
+    "HappinessText3": [
+      64,
+      20594
+    ],
     "HappyEmote": [
       5,
       17545
+    ],
+    "HasANightmareText": [
+      64,
+      20968
+    ],
+    "HasNoPPLeftText": [
+      64,
+      22895
+    ],
+    "HasSubstituteText": [
+      64,
+      23853
     ],
     "HaunterBackpic": [
       28,
@@ -13955,6 +14487,10 @@
     "HealMachineAnim.palettes": [
       4,
       26664
+    ],
+    "HeartEmote": [
+      5,
+      17673
     ],
     "HeldItemIcons": [
       35,
@@ -14024,6 +14560,14 @@
       56,
       24760
     ],
+    "HomepageText": [
+      64,
+      18800
+    ],
+    "HookedPokemonAttackedText": [
+      64,
+      20792
+    ],
     "HoothootBackpic": [
       27,
       29087
@@ -14084,6 +14628,26 @@
       107,
       20245
     ],
+    "HungOnText": [
+      64,
+      22606
+    ],
+    "HurtByBurnText": [
+      64,
+      20926
+    ],
+    "HurtByCurseText": [
+      64,
+      20988
+    ],
+    "HurtByPoisonText": [
+      64,
+      20904
+    ],
+    "HurtItselfText": [
+      64,
+      22308
+    ],
     "HypnoBackpic": [
       23,
       29080
@@ -14104,6 +14668,10 @@
       35,
       27326
     ],
+    "IdentifiedText": [
+      64,
+      24678
+    ],
     "IgglybuffBackpic": [
       29,
       31368
@@ -14115,6 +14683,30 @@
     "IgglybuffPokedexEntry": [
       106,
       21350
+    ],
+    "IgnoredOrders2Text": [
+      64,
+      25098
+    ],
+    "IgnoredOrdersText": [
+      64,
+      22811
+    ],
+    "IgnoredSleepingText": [
+      64,
+      22832
+    ],
+    "InLoveWithText": [
+      64,
+      22649
+    ],
+    "IncenseBurnerText": [
+      64,
+      18671
+    ],
+    "InfatuationText": [
+      64,
+      22671
     ],
     "InitializeEventsScript": [
       64,
@@ -14183,6 +14775,14 @@
     "Intro_WipeInFrontpic": [
       1,
       25029
+    ],
+    "IsConfusedText": [
+      64,
+      22292
+    ],
+    "ItFailedText": [
+      64,
+      24245
     ],
     "ItemAttributes": [
       1,
@@ -14464,6 +15064,10 @@
       106,
       20340
     ],
+    "LeechSeedSapsText": [
+      64,
+      20948
+    ],
     "LickitungBackpic": [
       28,
       17349
@@ -14476,6 +15080,14 @@
       105,
       21170
     ],
+    "LightScreenEffectText": [
+      64,
+      24169
+    ],
+    "LoadBallIconGFX.gfx": [
+      11,
+      16804
+    ],
     "LoadOrientedFrontpic": [
       20,
       22948
@@ -14483,6 +15095,18 @@
     "LoadQuestionMarkPic.QuestionMarkLZ": [
       112,
       19520
+    ],
+    "LoafingAroundText": [
+      64,
+      22734
+    ],
+    "LookTownMapText": [
+      64,
+      18740
+    ],
+    "LostAgainstText": [
+      64,
+      21631
     ],
     "LugiaBackpic": [
       21,
@@ -14531,6 +15155,14 @@
     "MachopPokedexEntry": [
       105,
       16502
+    ],
+    "MadeSubstituteText": [
+      64,
+      23831
+    ],
+    "MagazineBookshelfText": [
+      64,
+      18506
     ],
     "MagbyBackpic": [
       28,
@@ -14612,6 +15244,10 @@
       105,
       18264
     ],
+    "MagnitudeText": [
+      64,
+      24838
+    ],
     "MankeyBackpic": [
       23,
       28275
@@ -14684,6 +15320,10 @@
       105,
       20829
     ],
+    "MartSignText": [
+      64,
+      19011
+    ],
     "Marts": [
       5,
       25342
@@ -14711,6 +15351,10 @@
     "MeowthPokedexEntry": [
       104,
       22068
+    ],
+    "MerchandiseShelfText": [
+      64,
+      18713
     ],
     "MetapodBackpic": [
       30,
@@ -14760,6 +15404,14 @@
       107,
       21658
     ],
+    "MimicLearnedMoveText": [
+      64,
+      23963
+    ],
+    "MirrorMoveFailedText": [
+      64,
+      24438
+    ],
     "MisdreavusBackpic": [
       25,
       31608
@@ -14771,6 +15423,10 @@
     "MisdreavusPokedexEntry": [
       107,
       17156
+    ],
+    "MistText": [
+      64,
+      23744
     ],
     "MoltresBackpic": [
       23,
@@ -15212,6 +15868,10 @@
       61,
       17688
     ],
+    "MustRechargeText": [
+      64,
+      22252
+    ],
     "NPCTradeCableText": [
       63,
       19744
@@ -15340,6 +16000,10 @@
       104,
       20535
     ],
+    "NoPPLeftText": [
+      64,
+      22862
+    ],
     "NoctowlBackpic": [
       27,
       30705
@@ -15351,6 +16015,62 @@
     "NoctowlPokedexEntry": [
       106,
       20232
+    ],
+    "NotVeryEffectiveText": [
+      64,
+      23158
+    ],
+    "NothingHappenedText": [
+      64,
+      24206
+    ],
+    "NumberAcceptedFText": [
+      64,
+      19632
+    ],
+    "NumberAcceptedMText": [
+      64,
+      19286
+    ],
+    "NumberDeclinedFText": [
+      64,
+      19664
+    ],
+    "NumberDeclinedMText": [
+      64,
+      19322
+    ],
+    "NurseAskHealText": [
+      64,
+      18079
+    ],
+    "NurseDayText": [
+      64,
+      17984
+    ],
+    "NurseGoodbyeText": [
+      64,
+      18224
+    ],
+    "NurseMornText": [
+      64,
+      17941
+    ],
+    "NurseNiteText": [
+      64,
+      18020
+    ],
+    "NursePokerusText": [
+      64,
+      18278
+    ],
+    "NurseReturnPokemonText": [
+      64,
+      18172
+    ],
+    "NurseTakePokemonText": [
+      64,
+      18146
     ],
     "OctilleryBackpic": [
       30,
@@ -15404,6 +16124,10 @@
       106,
       17489
     ],
+    "OneHitKOText": [
+      64,
+      23116
+    ],
     "OnixBackpic": [
       25,
       17140
@@ -15420,6 +16144,10 @@
       5,
       18398
     ],
+    "PCMailGFX": [
+      56,
+      31768
+    ],
     "PackGFX": [
       4,
       21553
@@ -15435,6 +16163,10 @@
     "PalPacket_Pack": [
       2,
       24741
+    ],
+    "ParalyzedText": [
+      64,
+      24333
     ],
     "ParasBackpic": [
       29,
@@ -15464,6 +16196,10 @@
       2,
       31430
     ],
+    "PerishCountText": [
+      64,
+      21034
+    ],
     "PersianBackpic": [
       24,
       29263
@@ -15492,6 +16228,14 @@
       36,
       17466
     ],
+    "PhoneFullFText": [
+      64,
+      19730
+    ],
+    "PhoneFullMText": [
+      64,
+      19383
+    ],
     "PhoneOutOfAreaScript": [
       36,
       17958
@@ -15515,6 +16259,10 @@
     "PichuPokedexEntry": [
       106,
       21137
+    ],
+    "PictureBookshelfText": [
+      64,
+      18463
     ],
     "PidgeotBackpic": [
       27,
@@ -15604,6 +16352,14 @@
       5,
       28636
     ],
+    "PlayerHitTimesText": [
+      64,
+      23706
+    ],
+    "PokecenterSignText": [
+      64,
+      18982
+    ],
     "PokedexCursorPalette": [
       2,
       21841
@@ -15643,6 +16399,10 @@
     "PokemonCries": [
       60,
       26439
+    ],
+    "PokemonFellFromTreeText": [
+      64,
+      20820
     ],
     "PokemonNames": [
       108,
@@ -15752,6 +16512,10 @@
       0,
       14778
     ],
+    "PresentFailedText": [
+      64,
+      25072
+    ],
     "PrimeapeBackpic": [
       26,
       17463
@@ -15763,6 +16527,22 @@
     "PrimeapePokedexEntry": [
       104,
       22617
+    ],
+    "ProtectedByMistText": [
+      64,
+      23766
+    ],
+    "ProtectedByText": [
+      64,
+      24414
+    ],
+    "ProtectedItselfText": [
+      64,
+      24602
+    ],
+    "ProtectingItselfText": [
+      64,
+      24623
     ],
     "PsyduckBackpic": [
       26,
@@ -15787,6 +16567,10 @@
     "PupitarPokedexEntry": [
       107,
       22319
+    ],
+    "PutACurseText": [
+      64,
+      24562
     ],
     "PuzzlePieceBorderData.TileBordersGFX": [
       56,
@@ -15835,6 +16619,10 @@
     "RadioTilemapRLE": [
       36,
       21708
+    ],
+    "RageBuildingText": [
+      64,
+      23208
     ],
     "RaichuBackpic": [
       25,
@@ -15900,6 +16688,46 @@
       63,
       17597
     ],
+    "ReceivedItemText": [
+      64,
+      19856
+    ],
+    "RecoilText": [
+      64,
+      23810
+    ],
+    "RecoveredUsingText": [
+      64,
+      21896
+    ],
+    "ReflectEffectText": [
+      64,
+      24188
+    ],
+    "RegainedHealthText": [
+      64,
+      22977
+    ],
+    "RegisteredNumberFText": [
+      64,
+      19603
+    ],
+    "RegisteredNumberMText": [
+      64,
+      19257
+    ],
+    "ReleasedByText": [
+      64,
+      24857
+    ],
+    "RematchFText": [
+      64,
+      19786
+    ],
+    "RematchMText": [
+      64,
+      19439
+    ],
     "RemoraidBackpic": [
       26,
       22456
@@ -15911,6 +16739,10 @@
     "RemoraidPokedexEntry": [
       107,
       19692
+    ],
+    "RestedText": [
+      64,
+      22942
     ],
     "RhydonBackpic": [
       23,
@@ -15964,6 +16796,10 @@
       5,
       17609
     ],
+    "SafeguardProtectText": [
+      64,
+      24808
+    ],
     "SandshrewBackpic": [
       23,
       31080
@@ -15987,6 +16823,14 @@
     "SandslashPokedexEntry": [
       104,
       19409
+    ],
+    "SandstormBrewedText": [
+      64,
+      24729
+    ],
+    "SandstormHitsText": [
+      64,
+      21011
     ],
     "ScizorBackpic": [
       25,
@@ -16068,6 +16912,18 @@
       105,
       18727
     ],
+    "SentAllToMomText": [
+      64,
+      21507
+    ],
+    "SentHalfToMomText": [
+      64,
+      21488
+    ],
+    "SentSomeToMomText": [
+      64,
+      21442
+    ],
     "SentretBackpic": [
       30,
       18217
@@ -16079,6 +16935,14 @@
     "SentretPokedexEntry": [
       106,
       19915
+    ],
+    "SharedPainText": [
+      64,
+      23248
+    ],
+    "ShedLeechSeedText": [
+      64,
+      24879
     ],
     "ShellderBackpic": [
       24,
@@ -16095,22 +16959,6 @@
     "ShockEmote": [
       5,
       17417
-    ],
-    "HeartEmote": [
-      5,
-      17673
-    ],
-    "BoltEmote": [
-      5,
-      17737
-    ],
-    "SleepEmote": [
-      5,
-      17801
-    ],
-    "FishEmote": [
-      5,
-      17865
     ],
     "Shrink1Pic": [
       62,
@@ -16144,6 +16992,10 @@
       107,
       20123
     ],
+    "SketchedText": [
+      64,
+      23288
+    ],
     "SkiploomBackpic": [
       28,
       28285
@@ -16155,6 +17007,26 @@
     "SkiploomPokedexEntry": [
       106,
       22935
+    ],
+    "SleepEmote": [
+      5,
+      17801
+    ],
+    "Slots1LZ": [
+      36,
+      31138
+    ],
+    "Slots2LZ": [
+      36,
+      31522
+    ],
+    "Slots3LZ": [
+      36,
+      32130
+    ],
+    "SlotsTilemap": [
+      36,
+      30898
     ],
     "SlowbroBackpic": [
       26,
@@ -16284,6 +17156,10 @@
       36,
       17910
     ],
+    "SpikesText": [
+      64,
+      24646
+    ],
     "SpinarakBackpic": [
       30,
       24500
@@ -16295,6 +17171,10 @@
     "SpinarakPokedexEntry": [
       106,
       20560
+    ],
+    "SpiteEffectText": [
+      64,
+      23348
     ],
     "SpriteMons": [
       5,
@@ -16344,6 +17224,14 @@
       105,
       22617
     ],
+    "StartPerishText": [
+      64,
+      24695
+    ],
+    "StartedNightmareText": [
+      64,
+      24512
+    ],
     "StaryuBackpic": [
       29,
       23076
@@ -16355,6 +17243,14 @@
     "StaryuPokedexEntry": [
       105,
       22509
+    ],
+    "StatsScreenPagePals": [
+      2,
+      21715
+    ],
+    "StatsScreenPageTilesGFX": [
+      62,
+      19106
     ],
     "StatsScreen_PlaceFrontpic": [
       20,
@@ -16376,9 +17272,29 @@
       107,
       18048
     ],
+    "StoleText": [
+      64,
+      24463
+    ],
+    "StoringEnergyText": [
+      64,
+      22563
+    ],
     "StubbedGetFrontpic": [
       112,
       19066
+    ],
+    "SubFadedText": [
+      64,
+      23941
+    ],
+    "SubTookDamageText": [
+      64,
+      23906
+    ],
+    "SuckedHealthText": [
+      64,
+      23493
     ],
     "SudowoodoBackpic": [
       25,
@@ -16404,6 +17320,10 @@
       107,
       22113
     ],
+    "SunGotBrightText": [
+      64,
+      24941
+    ],
     "SunfloraBackpic": [
       23,
       17634
@@ -16427,6 +17347,10 @@
     "SunkernPokedexEntry": [
       106,
       23269
+    ],
+    "SuperEffectiveText": [
+      64,
+      23135
     ],
     "SwarmGrassWildMons": [
       10,
@@ -16452,6 +17376,10 @@
       4,
       23142
     ],
+    "TVText": [
+      64,
+      18789
+    ],
     "TangelaBackpic": [
       30,
       28456
@@ -16475,6 +17403,10 @@
     "TaurosPokedexEntry": [
       105,
       23402
+    ],
+    "TeamRocketOathText": [
+      64,
+      18560
     ],
     "TeddiursaBackpic": [
       29,
@@ -16512,13 +17444,49 @@
       105,
       17272
     ],
+    "Text_BallCaught": [
+      102,
+      17502
+    ],
+    "Text_BattleEffectActivate": [
+      101,
+      18077
+    ],
+    "Text_BattleFoeEffectActivate": [
+      101,
+      18114
+    ],
+    "Text_BattleUser": [
+      101,
+      18149
+    ],
     "Text_BreedHuh": [
       101,
       18257
     ],
+    "Text_Gained": [
+      100,
+      24078
+    ],
+    "Text_MoveForgetCount": [
+      102,
+      17088
+    ],
+    "Text_NPCTraded": [
+      100,
+      20317
+    ],
+    "Text_PlayedPokeFlute": [
+      102,
+      17801
+    ],
     "TheEndGFX": [
       50,
       31933
+    ],
+    "TiedAgainstText": [
+      64,
+      21425
     ],
     "TilesetBGPalette": [
       2,
@@ -16575,6 +17543,18 @@
     "TogeticPokedexEntry": [
       106,
       21575
+    ],
+    "TooWeakSubText": [
+      64,
+      23874
+    ],
+    "TookAimText": [
+      64,
+      23275
+    ],
+    "TookDownWithItText": [
+      64,
+      23183
     ],
     "TotodileBackpic": [
       27,
@@ -16688,6 +17668,18 @@
       14,
       22978
     ],
+    "TransformedText": [
+      64,
+      24142
+    ],
+    "TransformedTypeText": [
+      64,
+      24071
+    ],
+    "TrashCanText": [
+      64,
+      18893
+    ],
     "TreeMonMaps": [
       46,
       25574
@@ -16695,6 +17687,10 @@
     "TreeMons": [
       46,
       25712
+    ],
+    "TurnedAwayText": [
+      64,
+      22793
     ],
     "TypeMatchups": [
       13,
@@ -16751,6 +17747,14 @@
     "UmbreonPokedexEntry": [
       107,
       16835
+    ],
+    "UnaffectedText": [
+      64,
+      23062
+    ],
+    "UnleashedEnergyText": [
+      64,
+      22585
     ],
     "UnownABackpic": [
       46,
@@ -16980,6 +17984,14 @@
       46,
       19007
     ],
+    "UnusedRivalLossText": [
+      64,
+      21525
+    ],
+    "UnusedRivalWinText": [
+      64,
+      21593
+    ],
     "UrsaringBackpic": [
       29,
       27566
@@ -16991,6 +18003,10 @@
     "UrsaringPokedexEntry": [
       107,
       19050
+    ],
+    "UsedBindText": [
+      64,
+      22486
     ],
     "VaporeonBackpic": [
       29,
@@ -17092,6 +18108,10 @@
       63,
       17061
     ],
+    "WantsToBattleText": [
+      64,
+      20847
+    ],
     "WartortleBackpic": [
       26,
       18181
@@ -17103,6 +18123,34 @@
     "WartortlePokedexEntry": [
       104,
       17164
+    ],
+    "WasBurnedText": [
+      64,
+      23537
+    ],
+    "WasDefrostedText": [
+      64,
+      24544
+    ],
+    "WasDisabledText": [
+      64,
+      24018
+    ],
+    "WasFrozenText": [
+      64,
+      23570
+    ],
+    "WasPoisonedText": [
+      64,
+      23434
+    ],
+    "WasSeededText": [
+      64,
+      23981
+    ],
+    "WasTrappedText": [
+      64,
+      22505
     ],
     "WaveSamples": [
       58,
@@ -17144,6 +18192,10 @@
       105,
       21390
     ],
+    "WentToSleepText": [
+      64,
+      22924
+    ],
     "WigglytuffBackpic": [
       30,
       18736
@@ -17155,6 +18207,14 @@
     "WigglytuffPokedexEntry": [
       104,
       20752
+    ],
+    "WildPokemonAppearedText": [
+      64,
+      20770
+    ],
+    "WindowText": [
+      64,
+      18759
     ],
     "WobbuffetBackpic": [
       29,
@@ -17168,6 +18228,22 @@
       107,
       17375
     ],
+    "WokeUpText": [
+      64,
+      22207
+    ],
+    "WontDropAnymoreText": [
+      64,
+      23620
+    ],
+    "WontObeyText": [
+      64,
+      22777
+    ],
+    "WontRiseAnymoreText": [
+      64,
+      23591
+    ],
     "WooperBackpic": [
       30,
       26637
@@ -17179,6 +18255,10 @@
     "WooperPokedexEntry": [
       107,
       16503
+    ],
+    "WrappedByText": [
+      64,
+      22521
     ],
     "WriteTileFromAnimBuffer": [
       63,
@@ -17236,13 +18316,145 @@
       104,
       20858
     ],
+    "_ActorNameText": [
+      101,
+      18023
+    ],
+    "_AlreadyASaveFileText": [
+      101,
+      23097
+    ],
+    "_AlreadySetUpText": [
+      100,
+      17756
+    ],
+    "_AlreadySurfingText": [
+      101,
+      16405
+    ],
+    "_AlreadyUsingStrengthText": [
+      101,
+      16658
+    ],
+    "_AnEggCantHoldAnItemText": [
+      101,
+      17731
+    ],
+    "_AnotherSaveFileText": [
+      101,
+      23151
+    ],
     "_AreWeGeniusesText": [
       100,
       22601
     ],
+    "_AskCutText": [
+      101,
+      17313
+    ],
+    "_AskDeleteMoveText": [
+      102,
+      18433
+    ],
+    "_AskFloorElevatorText": [
+      100,
+      19953
+    ],
+    "_AskForgetMoveText": [
+      102,
+      16969
+    ],
+    "_AskGiveNicknameText": [
+      102,
+      17604
+    ],
+    "_AskHeadbuttText": [
+      101,
+      17021
+    ],
+    "_AskItemMoveText": [
+      101,
+      17959
+    ],
+    "_AskQuantityThrowAwayText": [
+      101,
+      17791
+    ],
+    "_AskRockSmashText": [
+      101,
+      17128
+    ],
+    "_AskStrengthText": [
+      101,
+      16737
+    ],
+    "_AskSurfText": [
+      101,
+      16429
+    ],
+    "_AskThrowAwayText": [
+      101,
+      17769
+    ],
+    "_AskWaterfallText": [
+      101,
+      16512
+    ],
+    "_AskWhirlpoolText": [
+      101,
+      16933
+    ],
+    "_BGEventText": [
+      101,
+      23443
+    ],
     "_BackAlreadyText": [
       100,
       22807
+    ],
+    "_BadgeRequiredText": [
+      100,
+      24749
+    ],
+    "_BallAlmostHadItText": [
+      102,
+      17450
+    ],
+    "_BallAppearedCaughtText": [
+      102,
+      17418
+    ],
+    "_BallBlockedText": [
+      102,
+      18167
+    ],
+    "_BallBoxFullText": [
+      102,
+      18273
+    ],
+    "_BallBrokeFreeText": [
+      102,
+      17389
+    ],
+    "_BallDodgedText": [
+      102,
+      17313
+    ],
+    "_BallDontBeAThiefText": [
+      102,
+      18198
+    ],
+    "_BallMissedText": [
+      102,
+      17367
+    ],
+    "_BallSentToPCText": [
+      102,
+      17534
+    ],
+    "_BallSoCloseText": [
+      102,
+      17473
     ],
     "_BargainShopComeAgainText": [
       101,
@@ -17272,9 +18484,109 @@
       101,
       24113
     ],
+    "_BattleDugText": [
+      101,
+      18243
+    ],
+    "_BattleFlewText": [
+      101,
+      18227
+    ],
+    "_BattleGlowingText": [
+      101,
+      18213
+    ],
+    "_BattleLoweredHeadText": [
+      101,
+      18193
+    ],
+    "_BattleMadeWhirlwindText": [
+      101,
+      18153
+    ],
+    "_BattleMonNickCommaText": [
+      100,
+      24221
+    ],
+    "_BattleStatFellText": [
+      101,
+      18141
+    ],
+    "_BattleStatSharplyFellText": [
+      101,
+      18124
+    ],
+    "_BattleStatWentUpText": [
+      101,
+      18103
+    ],
+    "_BattleStatWentWayUpText": [
+      101,
+      18087
+    ],
+    "_BattleTookSunlightText": [
+      101,
+      18173
+    ],
+    "_BenFernText1": [
+      100,
+      19047
+    ],
+    "_BenFernText2A": [
+      100,
+      19061
+    ],
+    "_BenFernText2B": [
+      100,
+      19080
+    ],
+    "_BenFernText3A": [
+      100,
+      19098
+    ],
+    "_BenFernText3B": [
+      100,
+      19112
+    ],
+    "_BenIntroText1": [
+      100,
+      18968
+    ],
+    "_BenIntroText2": [
+      100,
+      18986
+    ],
+    "_BenIntroText3": [
+      100,
+      18997
+    ],
     "_BidsFarewellToMonText": [
       100,
       18201
+    ],
+    "_BlindingFlashText": [
+      100,
+      24847
+    ],
+    "_BoostedExpPointsText": [
+      100,
+      24091
+    ],
+    "_BootedHMText": [
+      100,
+      24343
+    ],
+    "_BootedTMText": [
+      100,
+      24326
+    ],
+    "_BouldersMayMoveText": [
+      101,
+      16821
+    ],
+    "_BouldersMoveText": [
+      101,
+      16793
     ],
     "_BreedAppearsToCareForText": [
       101,
@@ -17308,6 +18620,26 @@
       101,
       18534
     ],
+    "_BreedingIsNotPossibleText": [
+      100,
+      17240
+    ],
+    "_BugCatchingContestIsOverText": [
+      100,
+      19996
+    ],
+    "_BugCatchingContestTimeUpText": [
+      100,
+      19967
+    ],
+    "_BurnWasHealedText": [
+      100,
+      16563
+    ],
+    "_ButNoSpaceText": [
+      100,
+      20070
+    ],
     "_CGB_GSIntro.ShellderLaprasBGPalette": [
       2,
       22241
@@ -17320,9 +18652,113 @@
       2,
       22895
     ],
+    "_CameToItsSensesText": [
+      100,
+      16694
+    ],
+    "_CanCutText": [
+      101,
+      17353
+    ],
     "_CantAcceptEggText": [
       100,
       22429
+    ],
+    "_CantCarryItemText": [
+      101,
+      17392
+    ],
+    "_CantGetOffBikeText": [
+      101,
+      17246
+    ],
+    "_CantRegisterText": [
+      101,
+      17929
+    ],
+    "_CantSurfText": [
+      101,
+      16384
+    ],
+    "_CantUseDigText": [
+      101,
+      16582
+    ],
+    "_CantUseItemText": [
+      100,
+      24782
+    ],
+    "_CantUseTeleportText": [
+      101,
+      16636
+    ],
+    "_CardFlipChooseACardText": [
+      102,
+      17214
+    ],
+    "_CardFlipDarnText": [
+      102,
+      17306
+    ],
+    "_CardFlipNotEnoughCoinsText": [
+      102,
+      17195
+    ],
+    "_CardFlipPlaceYourBetText": [
+      102,
+      17230
+    ],
+    "_CardFlipPlayAgainText": [
+      102,
+      17247
+    ],
+    "_CardFlipPlayWithThreeCoinsText": [
+      102,
+      17171
+    ],
+    "_CardFlipShuffledText": [
+      102,
+      17268
+    ],
+    "_CardFlipYeahText": [
+      102,
+      17299
+    ],
+    "_CaughtAskNicknameText": [
+      101,
+      19555
+    ],
+    "_ChangeBoxSaveText": [
+      101,
+      23232
+    ],
+    "_ChangeWhichNumberText": [
+      100,
+      17145
+    ],
+    "_ClearAllSaveDataText": [
+      102,
+      16838
+    ],
+    "_ClockHasResetText": [
+      101,
+      22815
+    ],
+    "_ClockIsThisOKText": [
+      101,
+      22802
+    ],
+    "_ClockSetWithControlPadText": [
+      101,
+      22739
+    ],
+    "_ClockTimeMayBeWrongText": [
+      101,
+      22685
+    ],
+    "_CoinCaseCountText": [
+      102,
+      17827
     ],
     "_ComeAgainText": [
       100,
@@ -17331,6 +18767,78 @@
     "_ComeBackLaterText": [
       100,
       22576
+    ],
+    "_ComeBackText": [
+      100,
+      24291
+    ],
+    "_CompatibilityShouldTheyBreedText": [
+      100,
+      17267
+    ],
+    "_CongratulationsYourPokemonText": [
+      101,
+      23542
+    ],
+    "_ContainedMoveText": [
+      100,
+      24361
+    ],
+    "_ContestAlreadyCaughtText": [
+      101,
+      19013
+    ],
+    "_ContestAskSwitchText": [
+      101,
+      18999
+    ],
+    "_ContestCaughtMonText": [
+      101,
+      18984
+    ],
+    "_ContestJudging_FirstPlaceScoreText": [
+      101,
+      19111
+    ],
+    "_ContestJudging_FirstPlaceText": [
+      101,
+      19042
+    ],
+    "_ContestJudging_SecondPlaceScoreText": [
+      101,
+      19198
+    ],
+    "_ContestJudging_SecondPlaceText": [
+      101,
+      19150
+    ],
+    "_ContestJudging_ThirdPlaceScoreText": [
+      101,
+      19276
+    ],
+    "_ContestJudging_ThirdPlaceText": [
+      101,
+      19229
+    ],
+    "_CoordinatesEventText": [
+      101,
+      23453
+    ],
+    "_CorruptedEventText": [
+      101,
+      23410
+    ],
+    "_CuredOfPoisonText": [
+      100,
+      16516
+    ],
+    "_CutNothingText": [
+      100,
+      24818
+    ],
+    "_DSTIsThatOKText": [
+      102,
+      18693
     ],
     "_DayCareLadyIntroEggText": [
       100,
@@ -17352,21 +18860,169 @@
       100,
       21900
     ],
+    "_DeleterAskWhichMonText": [
+      102,
+      18680
+    ],
+    "_DeleterAskWhichMoveText": [
+      102,
+      18551
+    ],
+    "_DeleterEggText": [
+      102,
+      18494
+    ],
+    "_DeleterForgotMoveText": [
+      102,
+      18460
+    ],
+    "_DeleterIntroText": [
+      102,
+      18587
+    ],
+    "_DeleterNoComeAgainText": [
+      102,
+      18525
+    ],
+    "_DidNotLearnMoveText": [
+      102,
+      16943
+    ],
+    "_DoItMonText": [
+      100,
+      24157
+    ],
+    "_EggPhotoText": [
+      100,
+      23443
+    ],
     "_EmptyMailboxText": [
       101,
       18563
+    ],
+    "_EndUsedMove1Text": [
+      101,
+      18062
+    ],
+    "_EndUsedMove2Text": [
+      101,
+      18065
+    ],
+    "_EndUsedMove3Text": [
+      101,
+      18068
+    ],
+    "_EndUsedMove4Text": [
+      101,
+      18071
+    ],
+    "_EndUsedMove5Text": [
+      101,
+      18074
+    ],
+    "_EnemyUsedOnText": [
+      100,
+      16970
+    ],
+    "_EnemyWithdrewText": [
+      100,
+      16951
+    ],
+    "_EnterTheAmountText": [
+      100,
+      17524
+    ],
+    "_EnterTheIDNoText": [
+      100,
+      17506
+    ],
+    "_EvolvedIntoText": [
+      101,
+      23571
+    ],
+    "_EvolvingText": [
+      101,
+      23623
+    ],
+    "_ExpPointsText": [
+      100,
+      24123
+    ],
+    "_FernIntroText1": [
+      100,
+      19015
+    ],
+    "_FernIntroText2": [
+      100,
+      19031
+    ],
+    "_FluteWakeUpText": [
+      102,
+      17773
     ],
     "_ForYourMonSendsText": [
       100,
       18255
     ],
+    "_ForYourMonWillTradeText": [
+      100,
+      18314
+    ],
     "_FoundAnEggText": [
       100,
       23013
     ],
+    "_FoundItemText": [
+      101,
+      17376
+    ],
+    "_FruitBearingTreeText": [
+      100,
+      16384
+    ],
+    "_FruitPackIsFullText": [
+      100,
+      16446
+    ],
+    "_GearEllipseText": [
+      102,
+      16486
+    ],
+    "_GearOutOfServiceText": [
+      102,
+      16489
+    ],
+    "_GearTodayText": [
+      102,
+      16484
+    ],
+    "_GoForItMonText": [
+      100,
+      24172
+    ],
+    "_GoMonText": [
+      100,
+      24145
+    ],
+    "_GoodComeBackText": [
+      100,
+      24272
+    ],
     "_GotBackMonText": [
       100,
       22788
+    ],
+    "_GotOffBikeText": [
+      101,
+      17291
+    ],
+    "_GotOnBikeText": [
+      101,
+      17270
+    ],
+    "_GrewToLevelText": [
+      100,
+      16664
     ],
     "_HallOfFamePC.HOFMaster": [
       33,
@@ -17379,6 +19035,14 @@
     "_HaveNoRoomText": [
       100,
       22919
+    ],
+    "_HeadbuttNothingText": [
+      101,
+      17005
+    ],
+    "_HealthReturnedText": [
+      100,
+      16620
     ],
     "_HerbShopLadyIntroText": [
       101,
@@ -17408,6 +19072,18 @@
       101,
       23858
     ],
+    "_HeyItsFruitText": [
+      100,
+      16412
+    ],
+    "_HoldStillText": [
+      100,
+      23340
+    ],
+    "_HugeWaterfallText": [
+      101,
+      16484
+    ],
     "_IllKeepItThanksText": [
       100,
       23222
@@ -17416,9 +19092,165 @@
       100,
       22549
     ],
+    "_IsThisOKText": [
+      100,
+      17493
+    ],
+    "_ItemBelongsToSomeoneElseText": [
+      102,
+      18110
+    ],
+    "_ItemCantGetOnText": [
+      102,
+      18244
+    ],
+    "_ItemCantHeldText": [
+      101,
+      21732
+    ],
+    "_ItemCantUseOnEggText": [
+      102,
+      18039
+    ],
+    "_ItemCantUseOnMonText": [
+      102,
+      17649
+    ],
+    "_ItemGotOffText": [
+      102,
+      18359
+    ],
+    "_ItemGotOnText": [
+      102,
+      18338
+    ],
+    "_ItemLooksBitterText": [
+      102,
+      18021
+    ],
+    "_ItemOakWarningText": [
+      102,
+      18069
+    ],
+    "_ItemStatRoseText": [
+      102,
+      17631
+    ],
+    "_ItemStorageFullText": [
+      101,
+      21637
+    ],
+    "_ItemUsedText": [
+      102,
+      18319
+    ],
+    "_ItemWontHaveEffectText": [
+      102,
+      18141
+    ],
+    "_ItemfinderItemNearbyText": [
+      101,
+      17467
+    ],
+    "_ItemfinderNopeText": [
+      101,
+      17517
+    ],
+    "_ItemsDiscardedText": [
+      101,
+      21413
+    ],
+    "_ItemsOakWarningText": [
+      101,
+      21470
+    ],
+    "_ItemsThrowAwayText": [
+      101,
+      21384
+    ],
+    "_ItemsTooImportantText": [
+      101,
+      21434
+    ],
+    "_ItemsTossOutHowManyText": [
+      101,
+      21355
+    ],
+    "_ItsGoingToHatchText": [
+      100,
+      17335
+    ],
+    "_JustSawSomeRareMonText": [
+      100,
+      20096
+    ],
+    "_KarpGuruRecordText": [
+      101,
+      19362
+    ],
+    "_KnowsMoveText": [
+      102,
+      18383
+    ],
+    "_LC_DragText1": [
+      100,
+      19344
+    ],
+    "_LC_DragText2": [
+      100,
+      19364
+    ],
+    "_LC_Text1": [
+      100,
+      19128
+    ],
+    "_LC_Text10": [
+      100,
+      19304
+    ],
+    "_LC_Text11": [
+      100,
+      19325
+    ],
+    "_LC_Text2": [
+      100,
+      19148
+    ],
+    "_LC_Text3": [
+      100,
+      19167
+    ],
+    "_LC_Text4": [
+      100,
+      19186
+    ],
+    "_LC_Text5": [
+      100,
+      19205
+    ],
+    "_LC_Text6": [
+      100,
+      19225
+    ],
+    "_LC_Text7": [
+      100,
+      19246
+    ],
+    "_LC_Text8": [
+      100,
+      19265
+    ],
+    "_LC_Text9": [
+      100,
+      19285
+    ],
     "_LastHealthyMonText": [
       100,
       22500
+    ],
+    "_LearnedMoveText": [
+      102,
+      16865
     ],
     "_LeftWithDayCareLadyText": [
       101,
@@ -17427,6 +19259,58 @@
     "_LeftWithDayCareManText": [
       101,
       18372
+    ],
+    "_LinkAbnormalMonText": [
+      101,
+      22941
+    ],
+    "_LinkAskTradeForText": [
+      101,
+      22985
+    ],
+    "_LinkTimeoutText": [
+      101,
+      22842
+    ],
+    "_LinkTradeCantBattleText": [
+      101,
+      22888
+    ],
+    "_LookAdorableDecoText": [
+      100,
+      17901
+    ],
+    "_LookClefairyPosterText": [
+      100,
+      17831
+    ],
+    "_LookGiantDecoText": [
+      100,
+      17925
+    ],
+    "_LookJigglypuffPosterText": [
+      100,
+      17865
+    ],
+    "_LookPikachuPosterText": [
+      100,
+      17798
+    ],
+    "_LookTownMapText": [
+      100,
+      17779
+    ],
+    "_LuckyNumberMatchPCText": [
+      101,
+      19477
+    ],
+    "_LuckyNumberMatchPartyText": [
+      101,
+      19400
+    ],
+    "_MagikarpGuruMeasureText": [
+      101,
+      19307
     ],
     "_MailAlreadyHoldingItemText": [
       101,
@@ -17476,6 +19360,10 @@
       101,
       21892
     ],
+    "_MainMenuTimeUnknownText": [
+      101,
+      22032
+    ],
     "_MartAskMoreText": [
       101,
       24689
@@ -17524,21 +19412,321 @@
       101,
       24518
     ],
+    "_MayPassWhirlpoolText": [
+      101,
+      16876
+    ],
+    "_MayRegisterItemText": [
+      101,
+      21966
+    ],
+    "_MaySmashText": [
+      101,
+      17095
+    ],
+    "_MemoryGameDarnText": [
+      101,
+      21312
+    ],
+    "_MemoryGameYeahText": [
+      101,
+      21302
+    ],
+    "_MomBankWhatDoYouWantToDoText": [
+      100,
+      21543
+    ],
+    "_MomBoughtWithYourMoneyText": [
+      100,
+      18020
+    ],
+    "_MomFoundADollText": [
+      100,
+      18089
+    ],
+    "_MomFoundAnItemText": [
+      100,
+      17984
+    ],
+    "_MomHaventSavedThatMuchText": [
+      100,
+      21663
+    ],
+    "_MomHiHowAreYouText": [
+      100,
+      17963
+    ],
+    "_MomInsufficientFundsInWalletText": [
+      100,
+      21718
+    ],
+    "_MomIsThisAboutYourMoneyText": [
+      100,
+      21439
+    ],
+    "_MomItsInPCText": [
+      100,
+      18057
+    ],
+    "_MomItsInYourRoomText": [
+      100,
+      18141
+    ],
+    "_MomJustDoWhatYouCanText": [
+      100,
+      21877
+    ],
+    "_MomLeavingText1": [
+      100,
+      21092
+    ],
+    "_MomLeavingText2": [
+      100,
+      21325
+    ],
+    "_MomLeavingText3": [
+      100,
+      21363
+    ],
+    "_MomLostGearBookletText": [
+      102,
+      18936
+    ],
+    "_MomNotEnoughRoomInBankText": [
+      100,
+      21744
+    ],
+    "_MomNotEnoughRoomInWalletText": [
+      100,
+      21692
+    ],
+    "_MomSaveMoneyText": [
+      100,
+      21630
+    ],
+    "_MomStartSavingMoneyText": [
+      100,
+      21770
+    ],
+    "_MomStoreMoneyText": [
+      100,
+      21568
+    ],
+    "_MomStoredMoneyText": [
+      100,
+      21824
+    ],
+    "_MomTakeMoneyText": [
+      100,
+      21599
+    ],
+    "_MomTakenMoneyText": [
+      100,
+      21859
+    ],
     "_MonNameBidsFarewellText": [
       100,
       18223
+    ],
+    "_MonNameSentToText": [
+      100,
+      18199
     ],
     "_MonWasSentToText": [
       100,
       18175
     ],
+    "_MoveAskForgetText": [
+      102,
+      16888
+    ],
+    "_MoveBoulderText": [
+      101,
+      16713
+    ],
+    "_MoveCantForgetHMText": [
+      102,
+      17138
+    ],
+    "_MoveForgotText": [
+      102,
+      17102
+    ],
+    "_MoveKnowsOneText": [
+      102,
+      18401
+    ],
+    "_MoveMonWOMailSaveText": [
+      101,
+      23285
+    ],
+    "_MoveNameText": [
+      101,
+      18057
+    ],
+    "_MysteryGiftCanceledText": [
+      100,
+      24521
+    ],
+    "_MysteryGiftCommErrorText": [
+      100,
+      24551
+    ],
+    "_MysteryGiftFiveADayText": [
+      100,
+      24634
+    ],
+    "_MysteryGiftOneADayText": [
+      100,
+      24665
+    ],
+    "_MysteryGiftSentHomeText": [
+      100,
+      24717
+    ],
+    "_MysteryGiftSentText": [
+      100,
+      24700
+    ],
+    "_NPCTradeAfterText1": [
+      100,
+      20519
+    ],
+    "_NPCTradeAfterText2": [
+      100,
+      20775
+    ],
+    "_NPCTradeAfterText3": [
+      100,
+      21032
+    ],
+    "_NPCTradeCableText": [
+      100,
+      20283
+    ],
+    "_NPCTradeCancelText1": [
+      100,
+      20415
+    ],
+    "_NPCTradeCancelText2": [
+      100,
+      20632
+    ],
+    "_NPCTradeCancelText3": [
+      100,
+      20902
+    ],
+    "_NPCTradeCompleteText1": [
+      100,
+      20485
+    ],
+    "_NPCTradeCompleteText2": [
+      100,
+      20735
+    ],
+    "_NPCTradeCompleteText3": [
+      100,
+      20992
+    ],
+    "_NPCTradeFanfareText": [
+      100,
+      20345
+    ],
+    "_NPCTradeIntroText1": [
+      100,
+      20348
+    ],
+    "_NPCTradeIntroText2": [
+      100,
+      20549
+    ],
+    "_NPCTradeIntroText3": [
+      100,
+      20820
+    ],
+    "_NPCTradeWrongText1": [
+      100,
+      20445
+    ],
+    "_NPCTradeWrongText2": [
+      100,
+      20692
+    ],
+    "_NPCTradeWrongText3": [
+      100,
+      20937
+    ],
+    "_NameRaterBetterNameText": [
+      100,
+      23615
+    ],
+    "_NameRaterComeAgainText": [
+      100,
+      23824
+    ],
+    "_NameRaterEggText": [
+      100,
+      23930
+    ],
+    "_NameRaterFinishedText": [
+      100,
+      23779
+    ],
+    "_NameRaterHelloText": [
+      100,
+      23477
+    ],
+    "_NameRaterNamedText": [
+      100,
+      24036
+    ],
+    "_NameRaterPerfectNameText": [
+      100,
+      23856
+    ],
+    "_NameRaterSameNameText": [
+      100,
+      23956
+    ],
+    "_NameRaterWhatNameText": [
+      100,
+      23732
+    ],
+    "_NameRaterWhichMonText": [
+      100,
+      23570
+    ],
+    "_NewDexDataText": [
+      102,
+      17561
+    ],
     "_NewPokedexEntry": [
       16,
       23170
     ],
+    "_NoCoinCaseText": [
+      100,
+      20255
+    ],
+    "_NoCoinsText": [
+      100,
+      20235
+    ],
+    "_NoCyclingText": [
+      102,
+      18216
+    ],
+    "_NoPhotoText": [
+      100,
+      23410
+    ],
     "_NoRoomForEggText": [
       100,
       23255
+    ],
+    "_NoRoomTMHMText": [
+      100,
+      24461
     ],
     "_NotEnoughMoneyText": [
       100,
@@ -17548,13 +19736,281 @@
       100,
       23003
     ],
+    "_NothingHereText": [
+      100,
+      16469
+    ],
+    "_NothingToChooseText": [
+      100,
+      17543
+    ],
+    "_NothingToPutAwayText": [
+      100,
+      17666
+    ],
     "_NothingToSellText": [
       101,
       24438
     ],
+    "_OKComeBackText": [
+      100,
+      24255
+    ],
+    "_OPT_AddictivelyText": [
+      100,
+      18641
+    ],
+    "_OPT_AlmostPoisonouslyText": [
+      100,
+      18561
+    ],
+    "_OPT_AptlyNamedText": [
+      100,
+      18482
+    ],
+    "_OPT_BoldSortOfText": [
+      100,
+      18784
+    ],
+    "_OPT_CuteText": [
+      100,
+      18755
+    ],
+    "_OPT_EvolutionMustBeText": [
+      100,
+      18680
+    ],
+    "_OPT_ExcitingText": [
+      100,
+      18848
+    ],
+    "_OPT_FlippedOutText": [
+      100,
+      18716
+    ],
+    "_OPT_FriendlyText": [
+      100,
+      18880
+    ],
+    "_OPT_FrighteningText": [
+      100,
+      18801
+    ],
+    "_OPT_GuardedText": [
+      100,
+      18924
+    ],
+    "_OPT_HeartMeltinglyText": [
+      100,
+      18737
+    ],
+    "_OPT_HotHotHotText": [
+      100,
+      18892
+    ],
+    "_OPT_InspiringText": [
+      100,
+      18867
+    ],
+    "_OPT_IntroText1": [
+      100,
+      18333
+    ],
+    "_OPT_IntroText2": [
+      100,
+      18352
+    ],
+    "_OPT_IntroText3": [
+      100,
+      18365
+    ],
+    "_OPT_LooksInWaterText": [
+      100,
+      18660
+    ],
+    "_OPT_LovelyText": [
+      100,
+      18935
+    ],
+    "_OPT_MaryText1": [
+      100,
+      18425
+    ],
+    "_OPT_MischievouslyText": [
+      100,
+      18602
+    ],
+    "_OPT_NowText": [
+      100,
+      18860
+    ],
+    "_OPT_OakText1": [
+      100,
+      18382
+    ],
+    "_OPT_OakText2": [
+      100,
+      18395
+    ],
+    "_OPT_OakText3": [
+      100,
+      18416
+    ],
+    "_OPT_PleasantText": [
+      100,
+      18772
+    ],
+    "_OPT_PokemonChannelText": [
+      100,
+      18955
+    ],
+    "_OPT_PowerfulText": [
+      100,
+      18836
+    ],
+    "_OPT_ProvocativelyText": [
+      100,
+      18700
+    ],
+    "_OPT_SensuallyText": [
+      100,
+      18582
+    ],
+    "_OPT_SpeedyText": [
+      100,
+      18945
+    ],
+    "_OPT_StimulatingText": [
+      100,
+      18909
+    ],
+    "_OPT_SuaveDebonairText": [
+      100,
+      18816
+    ],
+    "_OPT_SweetAdorablyText": [
+      100,
+      18440
+    ],
+    "_OPT_TopicallyText": [
+      100,
+      18621
+    ],
+    "_OPT_UnbearablyText": [
+      100,
+      18521
+    ],
+    "_OPT_UndeniablyKindOfText": [
+      100,
+      18500
+    ],
+    "_OPT_WeirdText": [
+      100,
+      18763
+    ],
+    "_OPT_WigglySlicklyText": [
+      100,
+      18461
+    ],
+    "_OPT_WowImpressivelyText": [
+      100,
+      18541
+    ],
     "_OTSendsText": [
       100,
       18274
+    ],
+    "_OakPCText1": [
+      101,
+      20092
+    ],
+    "_OakPCText2": [
+      101,
+      20122
+    ],
+    "_OakPCText3": [
+      101,
+      20154
+    ],
+    "_OakPCText4": [
+      101,
+      21267
+    ],
+    "_OakRating01": [
+      101,
+      20204
+    ],
+    "_OakRating02": [
+      101,
+      20236
+    ],
+    "_OakRating03": [
+      101,
+      20284
+    ],
+    "_OakRating04": [
+      101,
+      20344
+    ],
+    "_OakRating05": [
+      101,
+      20406
+    ],
+    "_OakRating06": [
+      101,
+      20467
+    ],
+    "_OakRating07": [
+      101,
+      20529
+    ],
+    "_OakRating08": [
+      101,
+      20592
+    ],
+    "_OakRating09": [
+      101,
+      20642
+    ],
+    "_OakRating10": [
+      101,
+      20698
+    ],
+    "_OakRating11": [
+      101,
+      20747
+    ],
+    "_OakRating12": [
+      101,
+      20807
+    ],
+    "_OakRating13": [
+      101,
+      20859
+    ],
+    "_OakRating14": [
+      101,
+      20924
+    ],
+    "_OakRating15": [
+      101,
+      20980
+    ],
+    "_OakRating16": [
+      101,
+      21029
+    ],
+    "_OakRating17": [
+      101,
+      21088
+    ],
+    "_OakRating18": [
+      101,
+      21147
+    ],
+    "_OakRating19": [
+      101,
+      21204
     ],
     "_OakText1": [
       101,
@@ -17584,6 +20040,70 @@
       101,
       22493
     ],
+    "_OakThisIsntTheTimeText": [
+      101,
+      17842
+    ],
+    "_OakTimeHoursQuestionMarkText": [
+      100,
+      16824
+    ],
+    "_OakTimeHowManyMinutesText": [
+      100,
+      16827
+    ],
+    "_OakTimeIsItText": [
+      100,
+      16941
+    ],
+    "_OakTimeMinutesQuestionMarkText": [
+      100,
+      16854
+    ],
+    "_OakTimeOversleptText": [
+      100,
+      16857
+    ],
+    "_OakTimeSoDarkText": [
+      100,
+      16898
+    ],
+    "_OakTimeWhatDayIsItText": [
+      100,
+      16924
+    ],
+    "_OakTimeWhatHoursText": [
+      100,
+      16816
+    ],
+    "_OakTimeWhatTimeIsItText": [
+      100,
+      16798
+    ],
+    "_OakTimeWhoaMinutesText": [
+      100,
+      16846
+    ],
+    "_OakTimeWokeUpText": [
+      100,
+      16719
+    ],
+    "_OakTimeYikesText": [
+      100,
+      16873
+    ],
+    "_ObjectEventText": [
+      101,
+      23428
+    ],
+    "_ObtainedFruitText": [
+      100,
+      16429
+    ],
+    "_ObtainedTheVoltorbBadgeText": [
+      100,
+      17446
+    ],
     "_OhFineThenText": [
       100,
       22974
@@ -17592,9 +20112,65 @@
       100,
       22396
     ],
+    "_PCCantDepositLastMonText": [
+      101,
+      18920
+    ],
+    "_PCCantTakeText": [
+      101,
+      18954
+    ],
+    "_PCGottaHavePokemonText": [
+      101,
+      18798
+    ],
     "_PCMonHoldingMailText": [
       101,
       18835
+    ],
+    "_PCNoSingleMonText": [
+      101,
+      18890
+    ],
+    "_PCWhatText": [
+      101,
+      18828
+    ],
+    "_PPIsMaxedOutText": [
+      102,
+      17901
+    ],
+    "_PPRestoredText": [
+      102,
+      17944
+    ],
+    "_PPsIncreasedText": [
+      102,
+      17924
+    ],
+    "_PackEmptyText": [
+      101,
+      17991
+    ],
+    "_PackNoItemText": [
+      101,
+      17758
+    ],
+    "_PasswordAskEnterText": [
+      102,
+      16810
+    ],
+    "_PasswordAskResetClockText": [
+      102,
+      16792
+    ],
+    "_PasswordAskResetText": [
+      102,
+      16727
+    ],
+    "_PasswordWrongText": [
+      102,
+      16775
     ],
     "_PerfectHeresYourMonText": [
       100,
@@ -17628,21 +20204,453 @@
       101,
       24335
     ],
+    "_PhoneClickText": [
+      102,
+      16636
+    ],
+    "_PhoneEllipseText": [
+      102,
+      16644
+    ],
+    "_PhoneJustTalkToThemText": [
+      102,
+      16680
+    ],
+    "_PhoneOutOfAreaText": [
+      102,
+      16647
+    ],
+    "_PhoneThankYouText": [
+      102,
+      16710
+    ],
+    "_PhoneWrongNumberText": [
+      102,
+      16609
+    ],
+    "_PlayedFluteText": [
+      102,
+      17726
+    ],
+    "_PlayerFoundItemText": [
+      100,
+      20054
+    ],
+    "_PlayerPickedUpPayDayMoney": [
+      100,
+      24304
+    ],
+    "_PlayersPCAskWhatDoText": [
+      101,
+      19663
+    ],
+    "_PlayersPCDepositItemsText": [
+      101,
+      19832
+    ],
+    "_PlayersPCHowManyDepositText": [
+      101,
+      19798
+    ],
+    "_PlayersPCHowManyWithdrawText": [
+      101,
+      19688
+    ],
+    "_PlayersPCNoItemsText": [
+      101,
+      19782
+    ],
+    "_PlayersPCNoRoomDepositText": [
+      101,
+      19860
+    ],
+    "_PlayersPCNoRoomWithdrawText": [
+      101,
+      19750
+    ],
+    "_PlayersPCTurnOnText": [
+      101,
+      19642
+    ],
+    "_PlayersPCWithdrewItemsText": [
+      101,
+      19723
+    ],
+    "_PnP_BoldText": [
+      100,
+      19539
+    ],
+    "_PnP_CoolText": [
+      100,
+      19649
+    ],
+    "_PnP_CuteText": [
+      100,
+      19455
+    ],
+    "_PnP_GreatText": [
+      100,
+      19609
+    ],
+    "_PnP_HappyText": [
+      100,
+      19485
+    ],
+    "_PnP_InspiringText": [
+      100,
+      19667
+    ],
+    "_PnP_LazyText": [
+      100,
+      19466
+    ],
+    "_PnP_MyTypeText": [
+      100,
+      19630
+    ],
+    "_PnP_NoisyText": [
+      100,
+      19504
+    ],
+    "_PnP_OddText": [
+      100,
+      19722
+    ],
+    "_PnP_PickyText": [
+      100,
+      19559
+    ],
+    "_PnP_PrecociousText": [
+      100,
+      19522
+    ],
+    "_PnP_RightForMeText": [
+      100,
+      19703
+    ],
+    "_PnP_SoSoText": [
+      100,
+      19592
+    ],
+    "_PnP_SortOfOKText": [
+      100,
+      19575
+    ],
+    "_PnP_Text1": [
+      100,
+      19385
+    ],
+    "_PnP_Text2": [
+      100,
+      19406
+    ],
+    "_PnP_Text3": [
+      100,
+      19426
+    ],
+    "_PnP_Text4": [
+      100,
+      19441
+    ],
+    "_PnP_Text5": [
+      100,
+      19743
+    ],
+    "_PnP_WeirdText": [
+      100,
+      19683
+    ],
+    "_PocketIsFullText": [
+      101,
+      23522
+    ],
+    "_PoisonFaintText": [
+      101,
+      17552
+    ],
+    "_PoisonWhiteoutText": [
+      101,
+      17566
+    ],
+    "_PokecenterBillsPCText": [
+      101,
+      19931
+    ],
+    "_PokecenterOaksPCText": [
+      101,
+      20025
+    ],
+    "_PokecenterPCCantUseText": [
+      101,
+      19599
+    ],
+    "_PokecenterPCOaksClosedText": [
+      101,
+      20076
+    ],
+    "_PokecenterPCTurnOnText": [
+      101,
+      19892
+    ],
+    "_PokecenterPCWhoseText": [
+      101,
+      19913
+    ],
+    "_PokecenterPlayersPCText": [
+      101,
+      19979
+    ],
+    "_PokedexShowText": [
+      100,
+      18961
+    ],
+    "_PokegearAskDeleteText": [
+      102,
+      16575
+    ],
+    "_PokegearAskWhoCallText": [
+      102,
+      16521
+    ],
+    "_PokegearPressButtonText": [
+      102,
+      16548
+    ],
+    "_PokemonAskSwapItemText": [
+      101,
+      21687
+    ],
+    "_PokemonHoldItemText": [
+      101,
+      21554
+    ],
+    "_PokemonNotEnoughHPText": [
+      101,
+      21950
+    ],
+    "_PokemonNotHoldingText": [
+      101,
+      21609
+    ],
     "_PokemonRemoveMailText": [
       101,
       21578
+    ],
+    "_PokemonSwapItemText": [
+      101,
+      21511
+    ],
+    "_PokemonTookItemText": [
+      101,
+      21663
     ],
     "_PrepMonFrontpic": [
       0,
       14783
     ],
+    "_PrestoAllDoneText": [
+      100,
+      23375
+    ],
+    "_PutAwayAndSetUpText": [
+      100,
+      17714
+    ],
+    "_PutAwayTheDecoText": [
+      100,
+      17645
+    ],
+    "_PutItemInPocketText": [
+      101,
+      23491
+    ],
+    "_RaiseThePPOfWhichMoveText": [
+      102,
+      17841
+    ],
+    "_ReceiveItemText": [
+      100,
+      20211
+    ],
     "_ReceivedEggText": [
       100,
       23178
     ],
+    "_ReceivedItemText": [
+      101,
+      23472
+    ],
+    "_ReceivedTMHMText": [
+      100,
+      24500
+    ],
+    "_RecoveredSomeHPText": [
+      100,
+      16491
+    ],
+    "_RegisteredItemText": [
+      101,
+      17906
+    ],
+    "_RemainingTimeText": [
+      100,
+      17092
+    ],
     "_RemoveMailText": [
       100,
       22463
+    ],
+    "_RepelUsedEarlierIsStillInEffectText": [
+      102,
+      17682
+    ],
+    "_RepelWoreOffText": [
+      100,
+      20029
+    ],
+    "_RestoreThePPOfWhichMoveText": [
+      102,
+      17870
+    ],
+    "_RetrieveMysteryGiftText": [
+      100,
+      24573
+    ],
+    "_RevitalizedText": [
+      100,
+      16643
+    ],
+    "_RidOfParalysisText": [
+      100,
+      16539
+    ],
+    "_RocketRadioText1": [
+      100,
+      19751
+    ],
+    "_RocketRadioText10": [
+      100,
+      19931
+    ],
+    "_RocketRadioText2": [
+      100,
+      19769
+    ],
+    "_RocketRadioText3": [
+      100,
+      19784
+    ],
+    "_RocketRadioText4": [
+      100,
+      19804
+    ],
+    "_RocketRadioText5": [
+      100,
+      19825
+    ],
+    "_RocketRadioText6": [
+      100,
+      19844
+    ],
+    "_RocketRadioText7": [
+      100,
+      19862
+    ],
+    "_RocketRadioText8": [
+      100,
+      19885
+    ],
+    "_RocketRadioText9": [
+      100,
+      19907
+    ],
+    "_RodBiteText": [
+      101,
+      17180
+    ],
+    "_RodNothingText": [
+      101,
+      17193
+    ],
+    "_SaveFileCorruptedText": [
+      101,
+      23203
+    ],
+    "_SavedTheGameText": [
+      101,
+      23078
+    ],
+    "_SavingDontTurnOffThePowerText": [
+      101,
+      23043
+    ],
+    "_SavingRecordText": [
+      100,
+      20179
+    ],
+    "_SentTrophyHomeText": [
+      102,
+      17962
+    ],
+    "_SetUpTheDecoText": [
+      100,
+      17695
+    ],
+    "_SlotsBetHowManyCoinsText": [
+      101,
+      24749
+    ],
+    "_SlotsDarnText": [
+      102,
+      16477
+    ],
+    "_SlotsLinedUpText": [
+      102,
+      16449
+    ],
+    "_SlotsNotEnoughCoinsText": [
+      102,
+      16392
+    ],
+    "_SlotsPlayAgainText": [
+      102,
+      16436
+    ],
+    "_SlotsRanOutOfCoinsText": [
+      102,
+      16411
+    ],
+    "_SlotsStartText": [
+      102,
+      16384
+    ],
+    "_SpaceSpaceColonText": [
+      102,
+      16722
+    ],
+    "_SquirtbottleNothingText": [
+      101,
+      17663
+    ],
+    "_StartMenuContestEndText": [
+      101,
+      21319
+    ],
+    "_StopLearningMoveText": [
+      102,
+      16921
+    ],
+    "_StoppedEvolvingText": [
+      101,
+      23593
+    ],
+    "_SweetScentNothingText": [
+      101,
+      17630
+    ],
+    "_TMHMNotCompatibleText": [
+      100,
+      24405
     ],
     "_TakeGoodCareOfEggText": [
       100,
@@ -17652,13 +20660,225 @@
       100,
       18229
     ],
+    "_TeleportReturnText": [
+      101,
+      16603
+    ],
+    "_TestEventText": [
+      100,
+      17356
+    ],
+    "_ThatCantBeUsedRightNowText": [
+      100,
+      16994
+    ],
+    "_ThatItemCantBePutInThePackText": [
+      100,
+      17024
+    ],
+    "_ThatsEnoughComeBackText": [
+      100,
+      24228
+    ],
+    "_TheBoxIsFullText": [
+      100,
+      17428
+    ],
+    "_TheItemWasPutInThePackText": [
+      100,
+      17060
+    ],
+    "_ThePasswordIsText": [
+      100,
+      17474
+    ],
+    "_ThereIsNoEggText": [
+      100,
+      17316
+    ],
+    "_ThrewAwayText": [
+      101,
+      17820
+    ],
+    "_TimeAskOkayText": [
+      102,
+      18712
+    ],
+    "_TimesetAskAdjustDSTText": [
+      102,
+      18876
+    ],
+    "_TimesetAskDSTText": [
+      102,
+      18727
+    ],
+    "_TimesetAskNotDSTText": [
+      102,
+      18813
+    ],
+    "_TimesetDSTText": [
+      102,
+      18775
+    ],
+    "_TimesetNotDSTText": [
+      102,
+      18844
+    ],
+    "_UnusedNothingHereText": [
+      101,
+      17213
+    ],
+    "_UseCutText": [
+      100,
+      24803
+    ],
+    "_UseDigText": [
+      101,
+      16543
+    ],
+    "_UseEscapeRopeText": [
+      101,
+      16558
+    ],
+    "_UseHeadbuttText": [
+      101,
+      16984
+    ],
+    "_UseRockSmashText": [
+      101,
+      17073
+    ],
+    "_UseSacredAshText": [
+      101,
+      17705
+    ],
+    "_UseStrengthText": [
+      101,
+      16693
+    ],
+    "_UseSweetScentText": [
+      101,
+      17607
+    ],
+    "_UseWaterfallText": [
+      101,
+      16463
+    ],
+    "_UseWhirlpoolText": [
+      101,
+      16855
+    ],
+    "_UsedInsteadText": [
+      101,
+      18045
+    ],
+    "_UsedMove1Text": [
+      101,
+      18027
+    ],
+    "_UsedMove2Text": [
+      101,
+      18036
+    ],
+    "_UsedSurfText": [
+      100,
+      24885
+    ],
+    "_WaitButtonText": [
+      102,
+      17532
+    ],
+    "_WarpingText": [
+      100,
+      17135
+    ],
+    "_WasDefrostedText": [
+      100,
+      16586
+    ],
+    "_WasSentToBillsPCText": [
+      101,
+      18771
+    ],
+    "_WhatDoYouWantToPlayWithText": [
+      100,
+      17376
+    ],
     "_WhatShouldIRaiseText": [
       100,
       22366
     ],
+    "_WhichMonPhotoText": [
+      100,
+      23305
+    ],
+    "_WhichSidePutAwayText": [
+      100,
+      17608
+    ],
+    "_WhichSidePutOnText": [
+      100,
+      17570
+    ],
+    "_WhitedOutText": [
+      101,
+      17426
+    ],
+    "_WillTradeText": [
+      100,
+      18292
+    ],
+    "_WillYouPlayWithMonText": [
+      100,
+      17178
+    ],
+    "_WindowAreaExceededErrorText": [
+      101,
+      23337
+    ],
+    "_WindowPoppingErrorText": [
+      101,
+      23373
+    ],
+    "_WokeUpText": [
+      100,
+      16606
+    ],
+    "_WouldYouLikeToSaveTheGameText": [
+      101,
+      23009
+    ],
+    "_YouCanHaveThisText": [
+      100,
+      17408
+    ],
+    "_YouCantUseItInABattleText": [
+      101,
+      17993
+    ],
+    "_YouDontHaveAMonText": [
+      101,
+      17883
+    ],
+    "_YouNeedTwoMonForBreedingText": [
+      100,
+      17205
+    ],
+    "_YourFoesWeakGetmMonText": [
+      100,
+      24191
+    ],
+    "_YourFriendIsNotReadyText": [
+      100,
+      24609
+    ],
     "_YourMonHasGrownText": [
       100,
       22651
+    ],
+    "_YourMonsHPWasHealedText": [
+      100,
+      17108
     ],
     "wBaseUnusedBackpic": [
       1,
@@ -17667,46 +20887,899 @@
     "wBaseUnusedFrontpic": [
       1,
       53554
-    ],
-    "Slots1LZ": [
-      36,
-      31138
-    ],
-    "Slots2LZ": [
-      36,
-      31522
-    ],
-    "Slots3LZ": [
-      36,
-      32130
-    ],
-    "SlotsTilemap": [
-      36,
-      30898
-    ],
-    "CardFlipLZ01": [
-      56,
-      21795
-    ],
-    "CardFlipLZ02": [
-      56,
-      22197
-    ],
-    "CardFlipLZ03": [
-      56,
-      21736
-    ],
-    "CardFlipOnButtonGFX": [
-      56,
-      21779
-    ],
-    "CardFlipOffButtonGFX": [
-      56,
-      21763
-    ],
-    "CardFlipTilemap": [
-      56,
-      22809
+    ]
+  },
+  "text": {
+    "labels": [
+      "AlreadyAsleepText",
+      "AlreadyConfusedText",
+      "AlreadyParalyzedText",
+      "AlreadyPoisonedText",
+      "AskNumber1FText",
+      "AskNumber1MText",
+      "AskNumber2FText",
+      "AskNumber2MText",
+      "AttackMissed2Text",
+      "AttackMissedText",
+      "BadlyPoisonedText",
+      "BattleText_AnEGGCantBattle",
+      "BattleText_CantEscape",
+      "BattleText_CantEscape2",
+      "BattleText_EnemyFled",
+      "BattleText_EnemyIsAboutToUseWillPlayerChangeMon",
+      "BattleText_EnemyMonFainted",
+      "BattleText_EnemySentOut",
+      "BattleText_EnemyWasDefeated",
+      "BattleText_GotAwaySafely",
+      "BattleText_ItemHealedConfusion",
+      "BattleText_ItemsCantBeUsedHere",
+      "BattleText_MonCantBeRecalled",
+      "BattleText_MonFainted",
+      "BattleText_MonHasNoMovesLeft",
+      "BattleText_MonIsAlreadyOut",
+      "BattleText_MonsLightScreenFell",
+      "BattleText_MonsReflectFaded",
+      "BattleText_PlayerPickedUpPayDayMoney",
+      "BattleText_RainContinuesToFall",
+      "BattleText_SafeguardFaded",
+      "BattleText_StringBuffer1GrewToLevel",
+      "BattleText_TargetRecoveredWithItem",
+      "BattleText_TargetWasHitByFutureSight",
+      "BattleText_TargetsEncoreEnded",
+      "BattleText_TheMoveIsDisabled",
+      "BattleText_TheRainStopped",
+      "BattleText_TheSandstormRages",
+      "BattleText_TheSandstormSubsided",
+      "BattleText_TheSunlightFaded",
+      "BattleText_TheSunlightIsStrong",
+      "BattleText_TheresNoEscapeFromTrainerBattle",
+      "BattleText_TheresNoPPLeftForThisMove",
+      "BattleText_TheresNoWillToBattle",
+      "BattleText_UseNextMon",
+      "BattleText_UserFledUsingAStringBuffer1",
+      "BattleText_UserHurtBySpikes",
+      "BattleText_UserRecoveredPPUsing",
+      "BattleText_UserWasReleasedFromStringBuffer1",
+      "BattleText_UsersHurtByStringBuffer1",
+      "BattleText_UsersStringBuffer1Activated",
+      "BattleText_WildFled",
+      "BattleText_WildMonIsAngry",
+      "BattleText_WildMonIsEating",
+      "BeatUpAttackText",
+      "BecameConfusedText",
+      "BeganToNapText",
+      "BellChimedText",
+      "BellyDrumText",
+      "BlewSpikesText",
+      "BlownAwayText",
+      "BracedItselfText",
+      "BugContestPrizeNoRoomText",
+      "ButItFailedText",
+      "CantEscapeNowText",
+      "ClampedByText",
+      "CoinVendor_Buy500CoinsText",
+      "CoinVendor_Buy50CoinsText",
+      "CoinVendor_CancelText",
+      "CoinVendor_CoinCaseFullText",
+      "CoinVendor_IntroText",
+      "CoinVendor_NoCoinCaseText",
+      "CoinVendor_NotEnoughMoneyText",
+      "CoinVendor_WelcomeText",
+      "CoinsScatteredText",
+      "ConfusedNoMoreText",
+      "ContestResults_ConsolationPrizeText",
+      "ContestResults_DidNotWinText",
+      "ContestResults_JoinUsNextTimeText",
+      "ContestResults_PartyFullText",
+      "ContestResults_PlayerWonAPrizeText",
+      "ContestResults_ReadyToJudgeText",
+      "ContestResults_ReturnPartyText",
+      "CopiedStatsText",
+      "CoveredByVeilText",
+      "CrashedText",
+      "CriticalHitText",
+      "DefrostedOpponentText",
+      "DestinyBondEffectText",
+      "DidntAffect1Text",
+      "DidntAffect2Text",
+      "DifficultBookshelfText",
+      "DisabledMoveText",
+      "DisabledNoMoreText",
+      "DoesntAffectText",
+      "DownpourText",
+      "DraggedOutText",
+      "DreamEatenText",
+      "EliminatedStatsText",
+      "EnduredText",
+      "EnemyHitTimesText",
+      "EvadedText",
+      "FastAsleepText",
+      "FellAsleepText",
+      "FellInLoveText",
+      "FledFromBattleText",
+      "FledInFearText",
+      "FlinchedText",
+      "ForesawAttackText",
+      "FrozenSolidText",
+      "FullyParalyzedText",
+      "GettingPumpedText",
+      "GotAnEncoreText",
+      "GotMoneyForWinningText",
+      "GymStatue_CityGymText",
+      "GymStatue_WinningTrainersText",
+      "HPIsFullText",
+      "HappinessText1",
+      "HappinessText2",
+      "HappinessText3",
+      "HasANightmareText",
+      "HasNoPPLeftText",
+      "HasSubstituteText",
+      "HomepageText",
+      "HookedPokemonAttackedText",
+      "HungOnText",
+      "HurtByBurnText",
+      "HurtByCurseText",
+      "HurtByPoisonText",
+      "HurtItselfText",
+      "IdentifiedText",
+      "IgnoredOrders2Text",
+      "IgnoredOrdersText",
+      "IgnoredSleepingText",
+      "InLoveWithText",
+      "IncenseBurnerText",
+      "InfatuationText",
+      "IsConfusedText",
+      "ItFailedText",
+      "LeechSeedSapsText",
+      "LightScreenEffectText",
+      "LoafingAroundText",
+      "LookTownMapText",
+      "LostAgainstText",
+      "MadeSubstituteText",
+      "MagazineBookshelfText",
+      "MagnitudeText",
+      "MartSignText",
+      "MerchandiseShelfText",
+      "MimicLearnedMoveText",
+      "MirrorMoveFailedText",
+      "MistText",
+      "MustRechargeText",
+      "NoPPLeftText",
+      "NotVeryEffectiveText",
+      "NothingHappenedText",
+      "NumberAcceptedFText",
+      "NumberAcceptedMText",
+      "NumberDeclinedFText",
+      "NumberDeclinedMText",
+      "NurseAskHealText",
+      "NurseDayText",
+      "NurseGoodbyeText",
+      "NurseMornText",
+      "NurseNiteText",
+      "NursePokerusText",
+      "NurseReturnPokemonText",
+      "NurseTakePokemonText",
+      "OneHitKOText",
+      "ParalyzedText",
+      "PerishCountText",
+      "PhoneFullFText",
+      "PhoneFullMText",
+      "PictureBookshelfText",
+      "PlayerHitTimesText",
+      "PokecenterSignText",
+      "PokemonFellFromTreeText",
+      "PresentFailedText",
+      "ProtectedByMistText",
+      "ProtectedByText",
+      "ProtectedItselfText",
+      "ProtectingItselfText",
+      "PutACurseText",
+      "RageBuildingText",
+      "ReceivedItemText",
+      "RecoilText",
+      "RecoveredUsingText",
+      "ReflectEffectText",
+      "RegainedHealthText",
+      "RegisteredNumberFText",
+      "RegisteredNumberMText",
+      "ReleasedByText",
+      "RematchFText",
+      "RematchMText",
+      "RestedText",
+      "SafeguardProtectText",
+      "SandstormBrewedText",
+      "SandstormHitsText",
+      "SentAllToMomText",
+      "SentHalfToMomText",
+      "SentSomeToMomText",
+      "SharedPainText",
+      "ShedLeechSeedText",
+      "SketchedText",
+      "SpikesText",
+      "SpiteEffectText",
+      "StartPerishText",
+      "StartedNightmareText",
+      "StoleText",
+      "StoringEnergyText",
+      "SubFadedText",
+      "SubTookDamageText",
+      "SuckedHealthText",
+      "SunGotBrightText",
+      "SuperEffectiveText",
+      "TVText",
+      "TeamRocketOathText",
+      "Text_BallCaught",
+      "Text_BattleEffectActivate",
+      "Text_BattleFoeEffectActivate",
+      "Text_BattleUser",
+      "Text_BreedHuh",
+      "Text_Gained",
+      "Text_MoveForgetCount",
+      "Text_NPCTraded",
+      "Text_PlayedPokeFlute",
+      "TiedAgainstText",
+      "TooWeakSubText",
+      "TookAimText",
+      "TookDownWithItText",
+      "TransformedText",
+      "TransformedTypeText",
+      "TrashCanText",
+      "TurnedAwayText",
+      "UnaffectedText",
+      "UnleashedEnergyText",
+      "UnusedRivalLossText",
+      "UnusedRivalWinText",
+      "UsedBindText",
+      "WantsToBattleText",
+      "WasBurnedText",
+      "WasDefrostedText",
+      "WasDisabledText",
+      "WasFrozenText",
+      "WasPoisonedText",
+      "WasSeededText",
+      "WasTrappedText",
+      "WentToSleepText",
+      "WildPokemonAppearedText",
+      "WindowText",
+      "WokeUpText",
+      "WontDropAnymoreText",
+      "WontObeyText",
+      "WontRiseAnymoreText",
+      "WrappedByText",
+      "_ActorNameText",
+      "_AlreadyASaveFileText",
+      "_AlreadySetUpText",
+      "_AlreadySurfingText",
+      "_AlreadyUsingStrengthText",
+      "_AnEggCantHoldAnItemText",
+      "_AnotherSaveFileText",
+      "_AreWeGeniusesText",
+      "_AskCutText",
+      "_AskDeleteMoveText",
+      "_AskFloorElevatorText",
+      "_AskForgetMoveText",
+      "_AskGiveNicknameText",
+      "_AskHeadbuttText",
+      "_AskItemMoveText",
+      "_AskQuantityThrowAwayText",
+      "_AskRockSmashText",
+      "_AskStrengthText",
+      "_AskSurfText",
+      "_AskThrowAwayText",
+      "_AskWaterfallText",
+      "_AskWhirlpoolText",
+      "_BGEventText",
+      "_BackAlreadyText",
+      "_BadgeRequiredText",
+      "_BallAlmostHadItText",
+      "_BallAppearedCaughtText",
+      "_BallBlockedText",
+      "_BallBoxFullText",
+      "_BallBrokeFreeText",
+      "_BallDodgedText",
+      "_BallDontBeAThiefText",
+      "_BallMissedText",
+      "_BallSentToPCText",
+      "_BallSoCloseText",
+      "_BargainShopComeAgainText",
+      "_BargainShopFinalPriceText",
+      "_BargainShopIntroText",
+      "_BargainShopNoFundsText",
+      "_BargainShopPackFullText",
+      "_BargainShopSoldOutText",
+      "_BargainShopThanksText",
+      "_BattleDugText",
+      "_BattleFlewText",
+      "_BattleGlowingText",
+      "_BattleLoweredHeadText",
+      "_BattleMadeWhirlwindText",
+      "_BattleMonNickCommaText",
+      "_BattleStatFellText",
+      "_BattleStatSharplyFellText",
+      "_BattleStatWentUpText",
+      "_BattleStatWentWayUpText",
+      "_BattleTookSunlightText",
+      "_BenFernText1",
+      "_BenFernText2A",
+      "_BenFernText2B",
+      "_BenFernText3A",
+      "_BenFernText3B",
+      "_BenIntroText1",
+      "_BenIntroText2",
+      "_BenIntroText3",
+      "_BidsFarewellToMonText",
+      "_BlindingFlashText",
+      "_BoostedExpPointsText",
+      "_BootedHMText",
+      "_BootedTMText",
+      "_BouldersMayMoveText",
+      "_BouldersMoveText",
+      "_BreedAppearsToCareForText",
+      "_BreedAskNicknameText",
+      "_BreedBrimmingWithEnergyText",
+      "_BreedClearboxText",
+      "_BreedEggHatchText",
+      "_BreedFriendlyText",
+      "_BreedNoInterestText",
+      "_BreedShowsInterestText",
+      "_BreedingIsNotPossibleText",
+      "_BugCatchingContestIsOverText",
+      "_BugCatchingContestTimeUpText",
+      "_BurnWasHealedText",
+      "_ButNoSpaceText",
+      "_CameToItsSensesText",
+      "_CanCutText",
+      "_CantAcceptEggText",
+      "_CantCarryItemText",
+      "_CantGetOffBikeText",
+      "_CantRegisterText",
+      "_CantSurfText",
+      "_CantUseDigText",
+      "_CantUseItemText",
+      "_CantUseTeleportText",
+      "_CardFlipChooseACardText",
+      "_CardFlipDarnText",
+      "_CardFlipNotEnoughCoinsText",
+      "_CardFlipPlaceYourBetText",
+      "_CardFlipPlayAgainText",
+      "_CardFlipPlayWithThreeCoinsText",
+      "_CardFlipShuffledText",
+      "_CardFlipYeahText",
+      "_CaughtAskNicknameText",
+      "_ChangeBoxSaveText",
+      "_ChangeWhichNumberText",
+      "_ClearAllSaveDataText",
+      "_ClockHasResetText",
+      "_ClockIsThisOKText",
+      "_ClockSetWithControlPadText",
+      "_ClockTimeMayBeWrongText",
+      "_CoinCaseCountText",
+      "_ComeAgainText",
+      "_ComeBackLaterText",
+      "_ComeBackText",
+      "_CompatibilityShouldTheyBreedText",
+      "_CongratulationsYourPokemonText",
+      "_ContainedMoveText",
+      "_ContestAlreadyCaughtText",
+      "_ContestAskSwitchText",
+      "_ContestCaughtMonText",
+      "_ContestJudging_FirstPlaceScoreText",
+      "_ContestJudging_FirstPlaceText",
+      "_ContestJudging_SecondPlaceScoreText",
+      "_ContestJudging_SecondPlaceText",
+      "_ContestJudging_ThirdPlaceScoreText",
+      "_ContestJudging_ThirdPlaceText",
+      "_CoordinatesEventText",
+      "_CorruptedEventText",
+      "_CuredOfPoisonText",
+      "_CutNothingText",
+      "_DSTIsThatOKText",
+      "_DayCareLadyIntroEggText",
+      "_DayCareLadyIntroText",
+      "_DayCareManIntroEggText",
+      "_DayCareManIntroText",
+      "_DaycareDummyText",
+      "_DeleterAskWhichMonText",
+      "_DeleterAskWhichMoveText",
+      "_DeleterEggText",
+      "_DeleterForgotMoveText",
+      "_DeleterIntroText",
+      "_DeleterNoComeAgainText",
+      "_DidNotLearnMoveText",
+      "_DoItMonText",
+      "_EggPhotoText",
+      "_EmptyMailboxText",
+      "_EndUsedMove1Text",
+      "_EndUsedMove2Text",
+      "_EndUsedMove3Text",
+      "_EndUsedMove4Text",
+      "_EndUsedMove5Text",
+      "_EnemyUsedOnText",
+      "_EnemyWithdrewText",
+      "_EnterTheAmountText",
+      "_EnterTheIDNoText",
+      "_EvolvedIntoText",
+      "_EvolvingText",
+      "_ExpPointsText",
+      "_FernIntroText1",
+      "_FernIntroText2",
+      "_FluteWakeUpText",
+      "_ForYourMonSendsText",
+      "_ForYourMonWillTradeText",
+      "_FoundAnEggText",
+      "_FoundItemText",
+      "_FruitBearingTreeText",
+      "_FruitPackIsFullText",
+      "_GearEllipseText",
+      "_GearOutOfServiceText",
+      "_GearTodayText",
+      "_GoForItMonText",
+      "_GoMonText",
+      "_GoodComeBackText",
+      "_GotBackMonText",
+      "_GotOffBikeText",
+      "_GotOnBikeText",
+      "_GrewToLevelText",
+      "_HaveNoRoomText",
+      "_HeadbuttNothingText",
+      "_HealthReturnedText",
+      "_HerbShopLadyIntroText",
+      "_HerbalLadyComeAgainText",
+      "_HerbalLadyFinalPriceText",
+      "_HerbalLadyHowManyText",
+      "_HerbalLadyNoMoneyText",
+      "_HerbalLadyPackFullText",
+      "_HerbalLadyThanksText",
+      "_HeyItsFruitText",
+      "_HoldStillText",
+      "_HugeWaterfallText",
+      "_IllKeepItThanksText",
+      "_IllRaiseYourMonText",
+      "_IsThisOKText",
+      "_ItemBelongsToSomeoneElseText",
+      "_ItemCantGetOnText",
+      "_ItemCantHeldText",
+      "_ItemCantUseOnEggText",
+      "_ItemCantUseOnMonText",
+      "_ItemGotOffText",
+      "_ItemGotOnText",
+      "_ItemLooksBitterText",
+      "_ItemOakWarningText",
+      "_ItemStatRoseText",
+      "_ItemStorageFullText",
+      "_ItemUsedText",
+      "_ItemWontHaveEffectText",
+      "_ItemfinderItemNearbyText",
+      "_ItemfinderNopeText",
+      "_ItemsDiscardedText",
+      "_ItemsOakWarningText",
+      "_ItemsThrowAwayText",
+      "_ItemsTooImportantText",
+      "_ItemsTossOutHowManyText",
+      "_ItsGoingToHatchText",
+      "_JustSawSomeRareMonText",
+      "_KarpGuruRecordText",
+      "_KnowsMoveText",
+      "_LC_DragText1",
+      "_LC_DragText2",
+      "_LC_Text1",
+      "_LC_Text10",
+      "_LC_Text11",
+      "_LC_Text2",
+      "_LC_Text3",
+      "_LC_Text4",
+      "_LC_Text5",
+      "_LC_Text6",
+      "_LC_Text7",
+      "_LC_Text8",
+      "_LC_Text9",
+      "_LastHealthyMonText",
+      "_LearnedMoveText",
+      "_LeftWithDayCareLadyText",
+      "_LeftWithDayCareManText",
+      "_LinkAbnormalMonText",
+      "_LinkAskTradeForText",
+      "_LinkTimeoutText",
+      "_LinkTradeCantBattleText",
+      "_LookAdorableDecoText",
+      "_LookClefairyPosterText",
+      "_LookGiantDecoText",
+      "_LookJigglypuffPosterText",
+      "_LookPikachuPosterText",
+      "_LookTownMapText",
+      "_LuckyNumberMatchPCText",
+      "_LuckyNumberMatchPartyText",
+      "_MagikarpGuruMeasureText",
+      "_MailAlreadyHoldingItemText",
+      "_MailAskSendToPCText",
+      "_MailClearedPutAwayText",
+      "_MailDetachedText",
+      "_MailEggText",
+      "_MailLoseMessageText",
+      "_MailMessageLostText",
+      "_MailMovedFromBoxText",
+      "_MailNoSpaceText",
+      "_MailPackFullText",
+      "_MailSentToPCText",
+      "_MailboxFullText",
+      "_MainMenuTimeUnknownText",
+      "_MartAskMoreText",
+      "_MartBoughtText",
+      "_MartCantBuyText",
+      "_MartComeAgainText",
+      "_MartFinalPriceText",
+      "_MartHowManyText",
+      "_MartNoMoneyText",
+      "_MartPackFullText",
+      "_MartSellHowManyText",
+      "_MartSellPriceText",
+      "_MartThanksText",
+      "_MartWelcomeText",
+      "_MayPassWhirlpoolText",
+      "_MayRegisterItemText",
+      "_MaySmashText",
+      "_MemoryGameDarnText",
+      "_MemoryGameYeahText",
+      "_MomBankWhatDoYouWantToDoText",
+      "_MomBoughtWithYourMoneyText",
+      "_MomFoundADollText",
+      "_MomFoundAnItemText",
+      "_MomHaventSavedThatMuchText",
+      "_MomHiHowAreYouText",
+      "_MomInsufficientFundsInWalletText",
+      "_MomIsThisAboutYourMoneyText",
+      "_MomItsInPCText",
+      "_MomItsInYourRoomText",
+      "_MomJustDoWhatYouCanText",
+      "_MomLeavingText1",
+      "_MomLeavingText2",
+      "_MomLeavingText3",
+      "_MomLostGearBookletText",
+      "_MomNotEnoughRoomInBankText",
+      "_MomNotEnoughRoomInWalletText",
+      "_MomSaveMoneyText",
+      "_MomStartSavingMoneyText",
+      "_MomStoreMoneyText",
+      "_MomStoredMoneyText",
+      "_MomTakeMoneyText",
+      "_MomTakenMoneyText",
+      "_MonNameBidsFarewellText",
+      "_MonNameSentToText",
+      "_MonWasSentToText",
+      "_MoveAskForgetText",
+      "_MoveBoulderText",
+      "_MoveCantForgetHMText",
+      "_MoveForgotText",
+      "_MoveKnowsOneText",
+      "_MoveMonWOMailSaveText",
+      "_MoveNameText",
+      "_MysteryGiftCanceledText",
+      "_MysteryGiftCommErrorText",
+      "_MysteryGiftFiveADayText",
+      "_MysteryGiftOneADayText",
+      "_MysteryGiftSentHomeText",
+      "_MysteryGiftSentText",
+      "_NPCTradeAfterText1",
+      "_NPCTradeAfterText2",
+      "_NPCTradeAfterText3",
+      "_NPCTradeCableText",
+      "_NPCTradeCancelText1",
+      "_NPCTradeCancelText2",
+      "_NPCTradeCancelText3",
+      "_NPCTradeCompleteText1",
+      "_NPCTradeCompleteText2",
+      "_NPCTradeCompleteText3",
+      "_NPCTradeFanfareText",
+      "_NPCTradeIntroText1",
+      "_NPCTradeIntroText2",
+      "_NPCTradeIntroText3",
+      "_NPCTradeWrongText1",
+      "_NPCTradeWrongText2",
+      "_NPCTradeWrongText3",
+      "_NameRaterBetterNameText",
+      "_NameRaterComeAgainText",
+      "_NameRaterEggText",
+      "_NameRaterFinishedText",
+      "_NameRaterHelloText",
+      "_NameRaterNamedText",
+      "_NameRaterPerfectNameText",
+      "_NameRaterSameNameText",
+      "_NameRaterWhatNameText",
+      "_NameRaterWhichMonText",
+      "_NewDexDataText",
+      "_NoCoinCaseText",
+      "_NoCoinsText",
+      "_NoCyclingText",
+      "_NoPhotoText",
+      "_NoRoomForEggText",
+      "_NoRoomTMHMText",
+      "_NotEnoughMoneyText",
+      "_NotYetText",
+      "_NothingHereText",
+      "_NothingToChooseText",
+      "_NothingToPutAwayText",
+      "_NothingToSellText",
+      "_OKComeBackText",
+      "_OPT_AddictivelyText",
+      "_OPT_AlmostPoisonouslyText",
+      "_OPT_AptlyNamedText",
+      "_OPT_BoldSortOfText",
+      "_OPT_CuteText",
+      "_OPT_EvolutionMustBeText",
+      "_OPT_ExcitingText",
+      "_OPT_FlippedOutText",
+      "_OPT_FriendlyText",
+      "_OPT_FrighteningText",
+      "_OPT_GuardedText",
+      "_OPT_HeartMeltinglyText",
+      "_OPT_HotHotHotText",
+      "_OPT_InspiringText",
+      "_OPT_IntroText1",
+      "_OPT_IntroText2",
+      "_OPT_IntroText3",
+      "_OPT_LooksInWaterText",
+      "_OPT_LovelyText",
+      "_OPT_MaryText1",
+      "_OPT_MischievouslyText",
+      "_OPT_NowText",
+      "_OPT_OakText1",
+      "_OPT_OakText2",
+      "_OPT_OakText3",
+      "_OPT_PleasantText",
+      "_OPT_PokemonChannelText",
+      "_OPT_PowerfulText",
+      "_OPT_ProvocativelyText",
+      "_OPT_SensuallyText",
+      "_OPT_SpeedyText",
+      "_OPT_StimulatingText",
+      "_OPT_SuaveDebonairText",
+      "_OPT_SweetAdorablyText",
+      "_OPT_TopicallyText",
+      "_OPT_UnbearablyText",
+      "_OPT_UndeniablyKindOfText",
+      "_OPT_WeirdText",
+      "_OPT_WigglySlicklyText",
+      "_OPT_WowImpressivelyText",
+      "_OTSendsText",
+      "_OakPCText1",
+      "_OakPCText2",
+      "_OakPCText3",
+      "_OakPCText4",
+      "_OakRating01",
+      "_OakRating02",
+      "_OakRating03",
+      "_OakRating04",
+      "_OakRating05",
+      "_OakRating06",
+      "_OakRating07",
+      "_OakRating08",
+      "_OakRating09",
+      "_OakRating10",
+      "_OakRating11",
+      "_OakRating12",
+      "_OakRating13",
+      "_OakRating14",
+      "_OakRating15",
+      "_OakRating16",
+      "_OakRating17",
+      "_OakRating18",
+      "_OakRating19",
+      "_OakText1",
+      "_OakText2",
+      "_OakText3",
+      "_OakText4",
+      "_OakText5",
+      "_OakText6",
+      "_OakText7",
+      "_OakThisIsntTheTimeText",
+      "_OakTimeHoursQuestionMarkText",
+      "_OakTimeHowManyMinutesText",
+      "_OakTimeIsItText",
+      "_OakTimeMinutesQuestionMarkText",
+      "_OakTimeOversleptText",
+      "_OakTimeSoDarkText",
+      "_OakTimeWhatDayIsItText",
+      "_OakTimeWhatHoursText",
+      "_OakTimeWhatTimeIsItText",
+      "_OakTimeWhoaMinutesText",
+      "_OakTimeWokeUpText",
+      "_OakTimeYikesText",
+      "_ObjectEventText",
+      "_ObtainedFruitText",
+      "_ObtainedTheVoltorbBadgeText",
+      "_OhFineThenText",
+      "_OnlyOneMonText",
+      "_PCCantDepositLastMonText",
+      "_PCCantTakeText",
+      "_PCGottaHavePokemonText",
+      "_PCMonHoldingMailText",
+      "_PCNoSingleMonText",
+      "_PCWhatText",
+      "_PPIsMaxedOutText",
+      "_PPRestoredText",
+      "_PPsIncreasedText",
+      "_PackEmptyText",
+      "_PackNoItemText",
+      "_PasswordAskEnterText",
+      "_PasswordAskResetClockText",
+      "_PasswordAskResetText",
+      "_PasswordWrongText",
+      "_PerfectHeresYourMonText",
+      "_PharmacyComeAgainText",
+      "_PharmacyFinalPriceText",
+      "_PharmacyHowManyText",
+      "_PharmacyIntroText",
+      "_PharmacyNoMoneyText",
+      "_PharmacyPackFullText",
+      "_PharmacyThanksText",
+      "_PhoneClickText",
+      "_PhoneEllipseText",
+      "_PhoneJustTalkToThemText",
+      "_PhoneOutOfAreaText",
+      "_PhoneThankYouText",
+      "_PhoneWrongNumberText",
+      "_PlayedFluteText",
+      "_PlayerFoundItemText",
+      "_PlayerPickedUpPayDayMoney",
+      "_PlayersPCAskWhatDoText",
+      "_PlayersPCDepositItemsText",
+      "_PlayersPCHowManyDepositText",
+      "_PlayersPCHowManyWithdrawText",
+      "_PlayersPCNoItemsText",
+      "_PlayersPCNoRoomDepositText",
+      "_PlayersPCNoRoomWithdrawText",
+      "_PlayersPCTurnOnText",
+      "_PlayersPCWithdrewItemsText",
+      "_PnP_BoldText",
+      "_PnP_CoolText",
+      "_PnP_CuteText",
+      "_PnP_GreatText",
+      "_PnP_HappyText",
+      "_PnP_InspiringText",
+      "_PnP_LazyText",
+      "_PnP_MyTypeText",
+      "_PnP_NoisyText",
+      "_PnP_OddText",
+      "_PnP_PickyText",
+      "_PnP_PrecociousText",
+      "_PnP_RightForMeText",
+      "_PnP_SoSoText",
+      "_PnP_SortOfOKText",
+      "_PnP_Text1",
+      "_PnP_Text2",
+      "_PnP_Text3",
+      "_PnP_Text4",
+      "_PnP_Text5",
+      "_PnP_WeirdText",
+      "_PocketIsFullText",
+      "_PoisonFaintText",
+      "_PoisonWhiteoutText",
+      "_PokecenterBillsPCText",
+      "_PokecenterOaksPCText",
+      "_PokecenterPCCantUseText",
+      "_PokecenterPCOaksClosedText",
+      "_PokecenterPCTurnOnText",
+      "_PokecenterPCWhoseText",
+      "_PokecenterPlayersPCText",
+      "_PokedexShowText",
+      "_PokegearAskDeleteText",
+      "_PokegearAskWhoCallText",
+      "_PokegearPressButtonText",
+      "_PokemonAskSwapItemText",
+      "_PokemonHoldItemText",
+      "_PokemonNotEnoughHPText",
+      "_PokemonNotHoldingText",
+      "_PokemonRemoveMailText",
+      "_PokemonSwapItemText",
+      "_PokemonTookItemText",
+      "_PrestoAllDoneText",
+      "_PutAwayAndSetUpText",
+      "_PutAwayTheDecoText",
+      "_PutItemInPocketText",
+      "_RaiseThePPOfWhichMoveText",
+      "_ReceiveItemText",
+      "_ReceivedEggText",
+      "_ReceivedItemText",
+      "_ReceivedTMHMText",
+      "_RecoveredSomeHPText",
+      "_RegisteredItemText",
+      "_RemainingTimeText",
+      "_RemoveMailText",
+      "_RepelUsedEarlierIsStillInEffectText",
+      "_RepelWoreOffText",
+      "_RestoreThePPOfWhichMoveText",
+      "_RetrieveMysteryGiftText",
+      "_RevitalizedText",
+      "_RidOfParalysisText",
+      "_RocketRadioText1",
+      "_RocketRadioText10",
+      "_RocketRadioText2",
+      "_RocketRadioText3",
+      "_RocketRadioText4",
+      "_RocketRadioText5",
+      "_RocketRadioText6",
+      "_RocketRadioText7",
+      "_RocketRadioText8",
+      "_RocketRadioText9",
+      "_RodBiteText",
+      "_RodNothingText",
+      "_SaveFileCorruptedText",
+      "_SavedTheGameText",
+      "_SavingDontTurnOffThePowerText",
+      "_SavingRecordText",
+      "_SentTrophyHomeText",
+      "_SetUpTheDecoText",
+      "_SlotsBetHowManyCoinsText",
+      "_SlotsDarnText",
+      "_SlotsLinedUpText",
+      "_SlotsNotEnoughCoinsText",
+      "_SlotsPlayAgainText",
+      "_SlotsRanOutOfCoinsText",
+      "_SlotsStartText",
+      "_SpaceSpaceColonText",
+      "_SquirtbottleNothingText",
+      "_StartMenuContestEndText",
+      "_StopLearningMoveText",
+      "_StoppedEvolvingText",
+      "_SweetScentNothingText",
+      "_TMHMNotCompatibleText",
+      "_TakeGoodCareOfEggText",
+      "_TakeGoodCareOfMonText",
+      "_TeleportReturnText",
+      "_TestEventText",
+      "_ThatCantBeUsedRightNowText",
+      "_ThatItemCantBePutInThePackText",
+      "_ThatsEnoughComeBackText",
+      "_TheBoxIsFullText",
+      "_TheItemWasPutInThePackText",
+      "_ThePasswordIsText",
+      "_ThereIsNoEggText",
+      "_ThrewAwayText",
+      "_TimeAskOkayText",
+      "_TimesetAskAdjustDSTText",
+      "_TimesetAskDSTText",
+      "_TimesetAskNotDSTText",
+      "_TimesetDSTText",
+      "_TimesetNotDSTText",
+      "_UnusedNothingHereText",
+      "_UseCutText",
+      "_UseDigText",
+      "_UseEscapeRopeText",
+      "_UseHeadbuttText",
+      "_UseRockSmashText",
+      "_UseSacredAshText",
+      "_UseStrengthText",
+      "_UseSweetScentText",
+      "_UseWaterfallText",
+      "_UseWhirlpoolText",
+      "_UsedInsteadText",
+      "_UsedMove1Text",
+      "_UsedMove2Text",
+      "_UsedSurfText",
+      "_WaitButtonText",
+      "_WarpingText",
+      "_WasDefrostedText",
+      "_WasSentToBillsPCText",
+      "_WhatDoYouWantToPlayWithText",
+      "_WhatShouldIRaiseText",
+      "_WhichMonPhotoText",
+      "_WhichSidePutAwayText",
+      "_WhichSidePutOnText",
+      "_WhitedOutText",
+      "_WillTradeText",
+      "_WillYouPlayWithMonText",
+      "_WindowAreaExceededErrorText",
+      "_WindowPoppingErrorText",
+      "_WokeUpText",
+      "_WouldYouLikeToSaveTheGameText",
+      "_YouCanHaveThisText",
+      "_YouCantUseItInABattleText",
+      "_YouDontHaveAMonText",
+      "_YouNeedTwoMonForBreedingText",
+      "_YourFoesWeakGetmMonText",
+      "_YourFriendIsNotReadyText",
+      "_YourMonHasGrownText",
+      "_YourMonsHPWasHealedText"
     ]
   },
   "tilesets": {

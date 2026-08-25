@@ -18,7 +18,8 @@ function RomManifest.decode(version)
   if not manifest then
     error("ROM import metadata is invalid: " .. tostring(decodeError))
   end
-  assert(manifest.romSha1 == info.sha1, "ROM import metadata version mismatch")
+  assert(GameVersion.acceptsSha1(version, manifest.romSha1),
+    "ROM import metadata version mismatch")
   return manifest
 end
 

@@ -73,14 +73,14 @@ end
 
 -- === #250: the CATERPIE / WEEDLE description ===
 -- pokered/text/ViridianCity.asm declares this one without the leading
--- underscore the extractor keys on, so it is not in data/generated/text.lua
--- and the port carries a literal.  That makes the literal load-bearing.
+-- underscore, and the extractor now keys on both spellings, so the port's
+-- literal has to keep agreeing with what the cart actually says.
 do
-  check(Data.text.ViridianCityYoungster2CaterpieAndWeedleDescriptionText == nil
-        and Data.text._ViridianCityYoungster2CaterpieAndWeedleDescriptionText == nil,
-        "the description really is absent from generated text (hence a literal)")
-
   local desc = "CATERPIE has no\npoison, but\vWEEDLE does.\fWatch out for its\nPOISON STING!"
+  local extracted = Data.text.ViridianCityYoungster2CaterpieAndWeedleDescriptionText
+    or Data.text._ViridianCityYoungster2CaterpieAndWeedleDescriptionText
+  if extracted then eq(extracted, desc, "the literal still matches the cart") end
+
   local pages = assertPlayable("caterpillar description", desc)
   eq(#pages, 2, "para breaks the description into two pages (#250)")
   eq(#pages[1], 3, "page 1 is text + line + cont")

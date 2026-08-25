@@ -95,11 +95,28 @@ function EvolutionState.new(game, mon, newSpecies, onDone, via)
   self.t = 0
   self.done = false
   self.canceled = false
-  Music.play(game.data, Music.special(game.data, "evolution"))
+  -- engine/movie/evolution.asm:41-46
+  Music.stop()
+  self.crySrc = require("src.core.Sound").playCry(game.data, mon.species)
+  self.cryT = 0
+  self.cryWait = self.crySrc ~= nil
+  if not self.cryWait then
+    Music.play(game.data, Music.special(game.data, "evolution"))
+  end
   return self
 end
 
 function EvolutionState:update(dt)
+  if self.cryWait then
+    self.cryT = self.cryT + 1
+    local src = self.crySrc
+    local playing = src and src.isPlaying and src:isPlaying()
+    if self.cryT >= 3 and (not playing or self.cryT > 180) then
+      self.cryWait, self.crySrc = false, nil
+      Music.play(self.game.data, Music.special(self.game.data, "evolution"))
+    end
+    return
+  end
   self.t = self.t + 1
   if self.done then return end
   local game = self.game

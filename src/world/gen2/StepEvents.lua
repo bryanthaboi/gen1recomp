@@ -23,7 +23,7 @@
 --
 -- Everything here is love-free and takes its state as arguments so the whole
 -- chain is testable without a world.
-local Bike = require("src.world.gen2.Bike")
+local FieldMoves = require("src.world.gen2.FieldMoves")
 local Breeding = require("src.core.gen2.Breeding")
 local Happiness = require("src.core.gen2.Happiness")
 local Phone = require("src.core.gen2.Phone")
@@ -118,7 +118,7 @@ end
 local function bikeShopCallEnabled(save)
   local flags = save.engineFlags
   if type(flags) == "table" then
-    local set = flags[Bike.ENGINE_BIKE_SHOP_CALL_ENABLED]
+    local set = flags[FieldMoves.BIKE_SHOP_CALL_FLAG]
     if set ~= nil then return set == true end
   end
   return save.bikeShopCall == true
@@ -137,7 +137,7 @@ function StepEvents.bikeStep(save, opts)
   Phone.queueSpecialCall(save, Phone.SPECIALCALL.SPECIALCALL_BIKESHOP)
   -- `res STATUSFLAGS2_BIKE_SHOP_CALL_F`: one call, ever.
   if type(save.engineFlags) == "table" then
-    save.engineFlags[Bike.ENGINE_BIKE_SHOP_CALL_ENABLED] = nil
+    save.engineFlags[FieldMoves.BIKE_SHOP_CALL_FLAG] = nil
   end
   save.bikeShopCall = false
   return true

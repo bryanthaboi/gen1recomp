@@ -6,6 +6,9 @@ local FixedStep = {}
 
 FixedStep.STEP = 1 / 60
 local MAX_ACCUM = 0.25 -- avoid spiral of death after a stall
+local SMOOTH_FRAMES = 4
+local SMOOTH_MAX = 1 / 60 * 2.5
+local STEP_EPS = 1 / 60 * 0.02
 
 -- Phase the accumulator is re-seeded with once an absorbed hitch frame has
 -- been paid for.  Half a step is the balanced point: a frame has to come in
@@ -23,6 +26,7 @@ function FixedStep:init(callback)
   self.accum = 0
   self.callback = callback
   self.suppressCatchup = false
+  self.dtHistory, self.dtSum = nil, 0
 end
 
 -- The anti-spiral clamp doubles as a steps-per-frame ceiling (0.25s = 15
@@ -39,12 +43,26 @@ function FixedStep:update(dt)
   -- the burst it would otherwise release doesn't play out as a slide.
   if self.suppressCatchup then
     self.suppressCatchup = false
+    self.dtHistory, self.dtSum = nil, 0
     self.accum = self.STEP * RESEED_PHASE
     self.callback(self.STEP)
     return
   end
+  if dt > 0 and dt <= SMOOTH_MAX then
+    local hist = self.dtHistory
+    if not hist then hist = {}; self.dtHistory = hist; self.dtSum = 0 end
+    hist[#hist + 1] = dt
+    self.dtSum = self.dtSum + dt
+    if #hist > SMOOTH_FRAMES then
+      self.dtSum = self.dtSum - hist[1]
+      table.remove(hist, 1)
+    end
+    dt = self.dtSum / #hist
+  else
+    self.dtHistory, self.dtSum = nil, 0
+  end
   self.accum = math.min(self.accum + dt, self.maxAccum or MAX_ACCUM)
-  while self.accum >= self.STEP do
+  while self.accum >= self.STEP - STEP_EPS do
     self.accum = self.accum - self.STEP
     self.callback(self.STEP)
   end

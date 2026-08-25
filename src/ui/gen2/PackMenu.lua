@@ -12,9 +12,13 @@
 
 local Bag = require("src.inventory.Bag")
 local Chrome = require("src.ui.gen2.Chrome")
+local Gen2Save = require("src.core.gen2.Save")
 local PackGfx = require("src.ui.gen2.PackGfx")
 local Screens = require("src.ui.Screens")
 local Strings = require("src.core.Strings")
+
+-- constants/sfx_constants.asm:3, :28
+local SFX_DEX_FANFARE_50_79, SFX_WRONG = 0, 25
 
 local PackMenu = {}
 PackMenu.__index = PackMenu
@@ -74,6 +78,21 @@ local ASK_ITEM_MOVE = { "Where should this", "be moved to?" }
 -- _YouDontHaveAMonText and .AnEggCantHoldAnItemText, GiveItem's two refusals.
 local NO_POKEMON = { "You don't have a", "#MON!" }
 local EGG_CANT_HOLD = { "An EGG can't hold", "an item." }
+
+-- _CGB_PackPals' .KrisPackPals arm, and the BATTLETYPE_TUTORIAL test above it
+-- that forces the DUDE's (../pokecrystal/engine/gfx/cgb_layouts.asm:770-786).
+local function packGfxFor(menuGfx, save, tutorial)
+  local pack = menuGfx and menuGfx.pack
+  if not (pack and pack.palettesFemale) then return menuGfx end
+  if tutorial or not Gen2Save.isFemale(save) then return menuGfx end
+  local female = {}
+  for key, value in pairs(pack) do female[key] = value end
+  female.palettes = pack.palettesFemale
+  local out = {}
+  for key, value in pairs(menuGfx) do out[key] = value end
+  out.pack = female
+  return out
+end
 
 -- The PACK's cursor bytes.  Every pocket menu restores its own cursor and
 -- scroll before ScrollingMenu and writes them back after -- `ld a,
@@ -154,7 +173,8 @@ function PackMenu.new(game, opts)
   end
   self:restoreCursor()
   -- The cart's own PACK tiles, when the cache has them.
-  self.gfx = PackGfx.new(game and game.data and game.data.gen2MenuGfx)
+  self.gfx = PackGfx.new(packGfxFor(
+    game and game.data and game.data.gen2MenuGfx, self.save, opts.tutorial))
   self:rebuild()
   return self
 end
@@ -192,6 +212,14 @@ function PackMenu:pocketOf(itemId)
   return (def and def.pocket) or "ITEM"
 end
 
+-- engine/items/tmhm.asm:341
+function PackMenu:tmhmKey(itemId)
+  local def = self.items and self.items[itemId]
+  local n = def and tonumber(def.tmNumber)
+  if n then return n end
+  return 1000 + ((def and tonumber(def.index)) or 0)
+end
+
 -- The name on the row.  An inventory key with no ItemAttributes row behind it
 -- (an older cache, a mod's own item, a driver seeding an id that is not in
 -- items.lua) still has to draw something a person can read, so the id stands
@@ -201,14 +229,25 @@ function PackMenu.label(itemId, def)
   return (tostring(itemId):gsub("_", " "))
 end
 
--- TMHMPocket (engine/items/tmhm.asm) writes GetMoveName's string under the
--- TM's own name, so the second line of a TM row is the MOVE's name and not the
--- constant the attributes row carries.
+-- TMHM_DisplayPocketItems (engine/items/tmhm.asm:381-385) places GetMoveName's
+-- string three tiles right of the row's number, so a TM/HM row reads as the
+-- MOVE's name and the TM's own item name is never printed.
 function PackMenu:moveLabel(moveId)
   if not moveId then return nil end
   local moves = self.game and self.game.data and self.game.data.moves
   local def = moves and moves[moveId]
   return (def and def.name) or (tostring(moveId):gsub("_", " "))
+end
+
+-- engine/items/tmhm.asm:357-375 -- the number a TM/HM row prints: a TM with
+-- PRINTNUM_LEADINGZEROS, an HM as 'H' and its own left-aligned ordinal.
+local function tmhmLabelFor(itemId, def)
+  local digits = tostring((def and def.tmLabel) or (def and def.name)
+    or itemId):match("(%d+)")
+  local n = tonumber(digits)
+  if not n then return nil end
+  if tostring(itemId):sub(1, 3) == "HM_" then return "H" .. n end
+  return ("%02d"):format(n)
 end
 
 function PackMenu:rebuild()
@@ -232,12 +271,21 @@ function PackMenu:rebuild()
         name = PackMenu.label(itemId, def),
         teaches = self:moveLabel(def and def.teaches),
         tmNumber = def and def.tmNumber,
+        tmhmLabel = (pocket == "TM_HM" and tmhmLabelFor(itemId, def)) or nil,
         -- A KEY_ITEM never shows one, and engine/items/tmhm.asm:390 skips the
         -- count for an HM only -- a TM prints ×NN like any other stack.
         showCount = pocket == "ITEM" or pocket == "BALL"
           or (pocket == "TM_HM" and tostring(itemId):sub(1, 3) ~= "HM_"),
       }
     end
+  end
+  -- engine/items/tmhm.asm:341
+  if pocket == "TM_HM" then
+    table.sort(rows, function(a, b)
+      local ka, kb = self:tmhmKey(a.id), self:tmhmKey(b.id)
+      if ka ~= kb then return ka < kb end
+      return a.id < b.id
+    end)
   end
   self.rows = rows
   self.index = math.min(self.index, #rows + 1)
@@ -359,6 +407,9 @@ function PackMenu:useSelected()
       -- with sound_dex_fanfare_50_79 between them; the PACK's box here holds
       -- all four rows at once, the way OAK_THIS_ISNT_THE_TIME's three fit.
       -- World has already set the decoration's flag and taken the box.
+      if world.playSfxNamed then
+        world:playSfxNamed("Sfx_DexFanfare5079", SFX_DEX_FANFARE_50_79)
+      end
       self.message = { "There was a trophy", "inside!",
                        "{PLAYER} sent the", "trophy home." }
       self:rebuild()
@@ -641,6 +692,11 @@ function PackMenu:openTeachParty(row)
         if id == moveId then allowed = true end
       end
       if not allowed then
+        -- engine/items/tmhm.asm:131
+        local world = game.world
+        if world and world.playSfxNamed then
+          world:playSfxNamed("Sfx_Wrong", SFX_WRONG)
+        end
         if game.say then
           game:say(("%s can't learn %s!"):format(
             require("src.battle.gen2.Mon").displayName(mon), moveName))
@@ -740,7 +796,9 @@ function PackMenu:update(_dt)
 end
 
 -- engine/items/pack.asm:1290 Pack_InterpretJoypad .select
+-- engine/items/tmhm.asm:207 -- the TM/HM pocket's joypad filter drops SELECT.
 function PackMenu:armSwitch()
+  if self:pocket().id == "TM_HM" then return end
   if self:isCancel() then return end
   if not self.rows[self.index] then return end
   self.switching = self.index
@@ -883,13 +941,27 @@ function PackMenu:description()
   return def and def.description or nil
 end
 
+-- engine/gfx/cgb_layouts.asm:723-726 -- the cursor column (7,2) 1x9 takes
+-- palette $3, whose colour 3 is red (gfx/pack/pack.pal).
+function PackMenu:cursorAt(tx, ty, hollow)
+  local palette = self.gfx and self.gfx:available()
+    and self.gfx:colorsAt(tx, ty)
+  if palette then
+    Chrome.cursorThrough(tx, ty, palette, false, hollow)
+  else
+    Chrome.cursor(tx, ty, hollow)
+  end
+end
+
 -- The list, description and cursor, on top of whatever chrome was drawn.
 --
--- PlaceMenuItemQuantity (engine/menus/menu_2.asm:10) writes the ×N one row
--- DOWN and one column RIGHT of the name -- the quantity is the entry's second
--- line, not a right-aligned column, which is why every PACK row is two tiles
--- tall.  Its `lb bc, 1, 2` is a TWO-digit field with the leading digit blanked,
--- so the ones digit sits at name + 3 whether the count is 5 or 50.
+-- ScrollingMenu_CallFunctions1and2 (engine/menus/scrolling_menu.asm:424-429)
+-- steps the coord on by the header's `db 5, 8` COLUMN count before
+-- PlaceMenuItemQuantity (engine/menus/menu_2.asm:19-25) adds SCREEN_WIDTH + 1,
+-- so the ×N sits at name + 9 on the row BELOW the name, flush right in every
+-- pocket (#1425, #1693).  Its `lb bc, 1, 2` is a TWO-digit field with the
+-- leading digit blanked.  engine/items/tmhm.asm:392-403 writes that same
+-- column for a TM.
 --
 -- ScrollingMenu_PlaceCursor (engine/menus/scrolling_menu.asm:438) marks the
 -- row SELECT armed with the hollow ▷ while the solid ▶ goes on looking.
@@ -899,27 +971,23 @@ function PackMenu:drawList(listX, listY)
     local ty = listY + (row - 1) * LIST_SPACING
     if i <= #self.rows then
       local entry = self.rows[i]
-      if i == self.index then
-        Chrome.cursor(listX - 1, ty)
-      elseif i == self.switching then
-        Chrome.cursor(listX - 1, ty, true)
+      -- engine/items/tmhm.asm:355-385 (#1695)
+      if entry.tmhmLabel then
+        Chrome.print(entry.tmhmLabel, listX - 3, ty)
       end
-      Chrome.print(entry.name, listX, ty)
-      if entry.teaches then
-        -- The TM pocket puts the move the TM teaches on that second line, and
-        -- its count at listX + 9 (engine/items/tmhm.asm:392) -- on the LABEL's
-        -- line here, since the move name owns the one below it.
-        Chrome.print(entry.teaches, listX + 1, ty + 1)
-        if entry.showCount then
-          Chrome.print("\xc3\x97" .. Chrome.number(entry.count, 2),
-            listX + 9, ty)
-        end
-      elseif entry.showCount then
+      if i == self.index then
+        self:cursorAt(listX - 1, ty)
+      elseif i == self.switching then
+        self:cursorAt(listX - 1, ty, true)
+      end
+      Chrome.print((entry.tmhmLabel and entry.teaches) or entry.name,
+        listX, ty)
+      if entry.showCount then
         Chrome.print("\xc3\x97" .. Chrome.number(entry.count, 2),
-          listX + 1, ty + 1)
+          listX + 9, ty + 1)
       end
     elseif i == self:total() then
-      if i == self.index then Chrome.cursor(listX - 1, ty) end
+      if i == self.index then self:cursorAt(listX - 1, ty) end
       Chrome.print("CANCEL", listX, ty)
     end
   end
@@ -933,8 +1001,12 @@ function PackMenu:drawDescription(ty)
   local lines = self.message or (self.confirm and self.confirm.prompt)
   if lines then
     local name = self:playerName()
+    -- TEXTBOX_INNERY and home/text.asm:397 LineChar: rows 14 and 16 (#1725).
+    -- Only a message too tall for those two packs its rows one apart.
+    local top, step = ty, 2
+    if #lines > 2 then top, step = ty - 1, 1 end
     for i, line in ipairs(lines) do
-      Chrome.print((line:gsub("{PLAYER}", name)), 1, ty + i - 2)
+      Chrome.print((line:gsub("{PLAYER}", name)), 1, top + (i - 1) * step)
     end
     return
   end
@@ -1010,7 +1082,7 @@ function PackMenu:drawPanel()
   Chrome.box(0, 0, 20, 3)
   Chrome.print(self:pocket().label, 2, 1)
   Chrome.box(0, 3, 20, 12)
-  self:drawList(2, 4)
+  self:drawList(5, 4)
   Chrome.box(0, 12, 20, 6)
   self:drawDescription(14)
   self:drawOverlays()

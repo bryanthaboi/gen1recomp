@@ -265,4 +265,32 @@ check(update and update:find("_pumpSkinFetch", 1, true) ~= nil,
 check(TouchSkin.ARCHIVE_EXTS.deltaskin == true,
       "and the installer accepts the extension")
 
+-- Turning skins off must leave the pad on. `enabled` is the pad's own switch,
+-- and the button that calls this only exists while a skin is active, which
+-- already requires the pad to be enabled.
+do
+  local SaveData = require("src.core.SaveData")
+  local TouchControls = require("src.core.TouchControls")
+
+  local opts = SaveData.loadOptions()
+  opts.touchControls = { enabled = true, skin = "some_skin" }
+  SaveData.saveOptions(opts)
+
+  local imp = RomImporter.new(function() end, { launcher = true })
+  imp:_disableSkins()
+
+  local after = SaveData.loadOptions().touchControls
+  eq(after.skin, nil, "turning skins off clears the selected skin")
+  check(after.enabled ~= false, "and leaves the touch pad enabled")
+
+  local cfg = TouchControls.normalizeConfig(after)
+  check(cfg.enabled, "so the pad is on after normalizing")
+  eq(cfg.skin, nil, "with no skin behind it")
+
+  check(imp._skinNotice ~= nil and imp._skinNotice.ok == true,
+    "and the notice reports success")
+  check(tostring(imp._skinNotice.text):find("built-in pad", 1, true) ~= nil,
+    "promising the built-in pad, which is now what happens")
+end
+
 T.finish("launcher_skins_ux")

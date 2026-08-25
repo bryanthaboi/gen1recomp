@@ -22,6 +22,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 if not _G.love then _G.love = require("tests.love_stub") end
 local BattleState = require("src.battle.BattleState")
+local Runtime = require("src.mods.Runtime")
 local S = require("tests.harness").suite("parity double faint")
 local check, eq = S.check, S.eq
 
@@ -105,6 +106,23 @@ do
   BattleState.playerMonFainted(b)
   eq(b.result, nil, "a faint with reserves left does not decide the battle")
   check(not saidBlackout(b), "and does not black out")
+end
+
+-- enemyMonFainted is also a native authority path used by move effects.  A
+-- field-residual hook must not change what that path does when no hook is
+-- installed, even if both active mons are already at zero HP.
+do
+  Runtime.reset()
+  local b = battleWith({ 0 }, nil)
+  b.player = { mon = b.game.save.party[1] }
+  b.enemy = { mon = { hp = 0 } }
+  b.awards = 0
+  b.awardExp = function(self) self.awards = self.awards + 1 end
+  BattleState.enemyMonFainted(b)
+  eq(b.awards, 1,
+    "no-hook simultaneous faint still enters native enemy EXP authority")
+  eq(b.result, "win",
+    "no-hook simultaneous faint preserves native enemy-faint resolution")
 end
 
 S.finish()

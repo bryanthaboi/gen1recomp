@@ -24,6 +24,37 @@ function Gen.of(save, version)
   return GameVersion.generation()
 end
 
+local function versionOf(save, version)
+  if type(save) == "table" and GameVersion.VERSIONS[save.version] then
+    return save.version
+  end
+  if type(version) == "string" and GameVersion.VERSIONS[version] then
+    return version
+  end
+  return GameVersion.get()
+end
+Gen.versionOf = versionOf
+
+function Gen.engineOf(save, version)
+  return GameVersion.engine(versionOf(save, version))
+end
+
+function Gen.editionLabel(save, version)
+  local info = GameVersion.info(versionOf(save, version))
+  return tostring((info and info.label) or "GEN 2"):upper()
+end
+
+function Gen.hasCaughtData(save, version)
+  if Gen.of(save, version) ~= 2 then return false end
+  return require("src.battle.gen2.Mon").hasCaughtData(versionOf(save, version))
+end
+
+-- engine/menus/init_gender.asm:23-38
+function Gen.hasPlayerGender(save, version)
+  if Gen.of(save, version) ~= 2 then return false end
+  return Gen.engineOf(save, version) == "crystal"
+end
+
 function Gen.ofState(S)
   if not S then return GameVersion.generation() end
   return Gen.of(S.save, S.version)
@@ -110,10 +141,17 @@ function Gen.bindGoldData(data)
 end
 
 function Gen.newGame(version)
-  if (versionGeneration(version) or GameVersion.generation(version)) == 2 then
-    return require("src.core.gen2.Save").newGame()
+  local id = type(version) == "string" and GameVersion.VERSIONS[version] and version
+    or nil
+  if (versionGeneration(id) or GameVersion.generation()) == 2 then
+    local Save2 = require("src.core.gen2.Save")
+    local save = Save2.newGame({
+      playerName = id and Save2.defaultPlayerName(id) or nil,
+    })
+    if id then save.version = id end
+    return save
   end
-  return require("src.core.SaveData").newGame()
+  return require("src.core.SaveData").newGame({ version = id })
 end
 
 function Gen.validate(save, data)
@@ -223,6 +261,34 @@ function Gen.setCoins(save, amount)
   end
 end
 
+-- constants/ram_constants.asm:176-177
+function Gen.playerGender(save)
+  local stored = save and save.player and save.player.gender
+  return stored == "female" and "female" or "male"
+end
+
+function Gen.setPlayerGender(save, gender)
+  save.player = save.player or {}
+  save.player.gender = (gender == "female") and "female" or "male"
+  return save.player.gender
+end
+
+-- constants/landmark_constants.asm:3, :111-113
+function Gen.landmarkName(data, index)
+  index = math.floor(tonumber(index) or 0)
+  local Mon = require("src.battle.gen2.Mon")
+  if index == Mon.LANDMARK_EVENT then return "EVENT" end
+  if index == Mon.LANDMARK_GIFT then return "GIFT" end
+  if index == 0 then return "UNKNOWN" end
+  local rows = data and data.gen2Landmarks and data.gen2Landmarks.landmarks
+  for _, rec in pairs(rows or {}) do
+    if type(rec) == "table" and rec.index == index then
+      return (tostring(rec.name or rec.id):gsub("\n", " "))
+    end
+  end
+  return ("#%d"):format(index)
+end
+
 function Gen.dexOwnedKey(save)
   if Gen.of(save) == 2 then return "caught" end
   return "owned"
@@ -317,14 +383,13 @@ function Gen.toggleBadge(save, id)
   return not on
 end
 
-local function goldFlagId(name)
-  local flags = require("src.core.gen2.FlagNames")
-  return flags.events and flags.events[name]
+local function gen2FlagId(save, name)
+  return require("Gen2Flags").byName(Gen.engineOf(save))[name]
 end
 
 function Gen.getFlag(save, name)
   if Gen.of(save) == 2 then
-    local id = goldFlagId(name)
+    local id = gen2FlagId(save, name)
     if id then
       local Events2 = require("src.world.gen2.Events")
       local ev = Events2.new()
@@ -338,7 +403,7 @@ end
 
 function Gen.setFlag(save, name, on)
   if Gen.of(save) == 2 then
-    local id = goldFlagId(name)
+    local id = gen2FlagId(save, name)
     if id then
       local Events2 = require("src.world.gen2.Events")
       local ev = Events2.new()

@@ -100,11 +100,11 @@ end
 -- The 4-colour palette the HP-bar cells draw with: white, the bar's own light
 -- colour, the state's fill colour, black -- which is HPBarPals' two colours
 -- bracketed the way every Gen 2 palette is.
-function BattleHud:barColors(key)
+function BattleHud:barColors(key, zero)
   local pal = self.palettes and self.palettes.hpBar and self.palettes.hpBar[key]
   if not pal then return nil end
   return {
-    { 255, 255, 255 },
+    zero or { 255, 255, 255 },
     { pal[1][1], pal[1][2], pal[1][3] },
     { pal[2][1], pal[2][2], pal[2][3] },
     { 0, 0, 0 },
@@ -145,9 +145,9 @@ end
 -- HUD's bar minus the "HP:" prefix -- same tiles, same HPBarPals colour, same
 -- one-pixel-at-a-time fill.  Sharing this method is what keeps the two screens
 -- from ever disagreeing about how full a bar looks.
-function BattleHud:drawBar(hp, maxHp, tx, ty)
+function BattleHud:drawBar(hp, maxHp, tx, ty, zero)
   local pixels = HpBar.pixels(hp, maxHp)
-  local colors = self:barColors(HpBar.palette(pixels))
+  local colors = self:barColors(HpBar.palette(pixels), zero)
   for cell = 0, HpBar.LENGTH_TILES - 1 do
     local remaining = pixels - cell * 8
     local filled = math.max(0, math.min(8, remaining))
@@ -160,9 +160,11 @@ end
 -- "HP:" plus the six bar cells plus the end cap, starting at tile (tx, ty).
 -- Returns the column just past the assembly (tx + 9), so the caller can put the
 -- frame's vertical stub there.
-function BattleHud:drawHpBar(hp, maxHp, tx, ty)
+-- `zero` overrides colour 0: the stats screen puts the page tint there
+-- (engine/gfx/color.asm:386-390).  #1693
+function BattleHud:drawHpBar(hp, maxHp, tx, ty, zero)
   local pixels = HpBar.pixels(hp, maxHp)
-  local colors = self:barColors(HpBar.palette(pixels))
+  local colors = self:barColors(HpBar.palette(pixels), zero)
   -- The "HP:" badge sits inside the bar's own attrmap region, so it wears the
   -- HP palette too: its background is HPBarPals' light colour (the cream the
   -- cart shows) and its letters are black.  Drawing it white-on-black was the
@@ -170,7 +172,7 @@ function BattleHud:drawHpBar(hp, maxHp, tx, ty)
   self:drawTile("hpBar", FIRST_BATTLE_EXTRA, TILE_HP_LABEL, tx, ty, colors)
   self:drawTile("hpBar", FIRST_BATTLE_EXTRA, TILE_HP_LABEL + 1, tx + 1, ty,
     colors)
-  self:drawBar(hp, maxHp, tx + 2, ty)
+  self:drawBar(hp, maxHp, tx + 2, ty, zero)
   self:drawTile("hpBar", FIRST_BATTLE_EXTRA, TILE_BAR_END,
     tx + 2 + HpBar.LENGTH_TILES, ty, colors)
   return tx + 3 + HpBar.LENGTH_TILES
@@ -198,23 +200,23 @@ local EXP_PARTIAL_BASE = 0x54 -- $54 + remainder lands in ExpBarGFX
 
 -- PAL_BATTLE_BG_EXP, which the attrmap lays over (10,11)..(18,11)
 -- (engine/gfx/cgb_layouts.asm:142-145).
-function BattleHud:expColors()
+function BattleHud:expColors(zero)
   local pal = self.palettes and self.palettes.expBar
   if not pal then return nil end
   return {
-    { 255, 255, 255 },
+    zero or { 255, 255, 255 },
     { pal[1][1], pal[1][2], pal[1][3] },
     { pal[2][1], pal[2][2], pal[2][3] },
     { 0, 0, 0 },
   }
 end
 
-function BattleHud:drawExpBar(fraction, tx, ty)
+function BattleHud:drawExpBar(fraction, tx, ty, zero)
   if not self:image("hpBar") then return false end
   fraction = math.max(0, math.min(1, fraction or 0))
   local pixels = math.floor(fraction * BattleHud.EXP_LENGTH_PX)
   -- The whole row wears the exp bar's palette, full and empty cells included.
-  local colors = self:expColors()
+  local colors = self:expColors(zero)
 
   local remaining = pixels
   for cell = BattleHud.EXP_CELLS - 1, 0, -1 do

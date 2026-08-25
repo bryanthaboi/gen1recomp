@@ -101,6 +101,31 @@ local function drawMoney(S, Kit, x, y, w, h)
   end
 end
 
+-- engine/menus/init_gender.asm:55-56
+local GENDERS = { { "BOY", "male" }, { "GIRL", "female" } }
+
+local function trainerHeight(Kit, s, pad)
+  return pad * 2 + Kit.textHeight("caption") + 10 * s + 28 * s
+end
+
+local function drawTrainer(S, Kit, x, y, w, h)
+  local s = Kit.scale
+  local pad = 16 * s
+  Kit.card(x, y, w, h)
+  Kit.caption(x + pad, y + pad, "TRAINER")
+  Kit.textRight("mono", tostring((S.save.player and S.save.player.name) or "?"),
+    x + w - pad, y + pad, PAL.caption)
+  local cy = y + pad + Kit.textHeight("caption") + 10 * s
+  local chipW = (w - 2 * pad - 8 * s) / 2
+  local gender = Gen.playerGender(S.save)
+  for i, pair in ipairs(GENDERS) do
+    if Kit.chip(x + pad + (i - 1) * (chipW + 8 * s), cy, chipW, 28 * s,
+        pair[1], gender == pair[2], PAL.green, PAL.steel) then
+      Ops.setPlayerGender(S, pair[2])
+    end
+  end
+end
+
 local BADGE_COLS = 4
 
 local function badgeHeight(S, Kit, s, pad)
@@ -273,6 +298,10 @@ function M.draw(S, Kit, x, y, w, h)
     local listH = 300 * s
     Kit.pushClip(x, y, w, h)
     local cy = y - off
+    if Gen.hasPlayerGender(S.save, S.version) then
+      local trainerH = trainerHeight(Kit, s, pad)
+      drawTrainer(S, Kit, x, cy, w, trainerH); cy = cy + trainerH + gap
+    end
     drawMoney(S, Kit, x, cy, w, moneyH);      cy = cy + moneyH + gap
     drawPicker(S, Kit, x, cy, w, pickH);      cy = cy + pickH + gap
     drawBadges(S, Kit, x, cy, w, badgeH);     cy = cy + badgeH + gap
@@ -294,8 +323,14 @@ function M.draw(S, Kit, x, y, w, h)
   -- made the old panel unusable.
   local moneyH = moneyHeight(Kit, s, pad, S)
   local badgeH = badgeHeight(S, Kit, s, pad)
-  drawMoney(S, Kit, x, y, leftW, moneyH)
-  drawPicker(S, Kit, x, y + moneyH + gap, leftW, h - moneyH - badgeH - 2 * gap)
+  local topH = 0
+  if Gen.hasPlayerGender(S.save, S.version) then
+    topH = trainerHeight(Kit, s, pad) + gap
+    drawTrainer(S, Kit, x, y, leftW, topH - gap)
+  end
+  drawMoney(S, Kit, x, y + topH, leftW, moneyH)
+  drawPicker(S, Kit, x, y + topH + moneyH + gap, leftW,
+    h - topH - moneyH - badgeH - 2 * gap)
   drawBadges(S, Kit, x, y + h - badgeH, leftW, badgeH)
   drawBag(S, Kit, bagX, y, listW, h)
   drawPc(S, Kit, pcX, y, listW, h)

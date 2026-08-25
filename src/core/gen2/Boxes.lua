@@ -109,6 +109,17 @@ function Boxes.restorePP(mon)
   end
 end
 
+-- box_struct has no MON_STATUS and no MON_HP (macros/ram.asm:7-26), so
+-- CalcTempmonStats refills a BOXMON from MAXHP (engine/pokemon/tempmon.asm:56-83).
+function Boxes.enterBox(mon)
+  if not mon then return mon end
+  Boxes.restorePP(mon)
+  mon.status = nil
+  mon.statusTurns = nil
+  mon.hp = mon.isEgg and 0 or (mon.maxHp or mon.hp)
+  return mon
+end
+
 function Boxes.deposit(save, partyIndex, boxIndex)
   local ok, reason = Boxes.canDeposit(save, partyIndex, boxIndex)
   if not ok then return false, reason end
@@ -122,7 +133,7 @@ function Boxes.deposit(save, partyIndex, boxIndex)
   box[#box + 1] = mon
   -- SendGetMonIntoFromBox's PC_DEPOSIT arm ends in RestorePPOfDepositedPokemon
   -- (engine/pokemon/move_mon.asm:633-635, :696-700).
-  Boxes.restorePP(mon)
+  Boxes.enterBox(mon)
   return true, mon
 end
 

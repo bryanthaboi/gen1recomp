@@ -132,6 +132,9 @@ do
   o:handleInput()
   check(not o.player.moving, "and holding A there changes nothing")
   Input:reset()
+  -- a scripted step now reads the live bike state (#1754), so do not leak
+  -- the mount into whatever suite runs next
+  Game.save.onBike = false
 end
 
 S.finish()

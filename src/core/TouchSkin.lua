@@ -294,7 +294,6 @@ function TouchSkin.parse(text)
       page.viewport = { x = num(vp[1], 0), y = num(vp[2], 0),
                         w = num(vp[3], 1), h = num(vp[4], 1) }
       page.viewportFill = toBool(kv[p .. "_viewport_fill"])
-      page.viewportExpand = toBool(kv[p .. "_viewport_expand"])
     end
 
     page.pixelCoords = not page.normalized
@@ -447,7 +446,6 @@ function TouchSkin.parseNative(text)
       page.viewport = { x = num(raw.viewport.x, 0), y = num(raw.viewport.y, 0),
                         w = num(raw.viewport.w, 1), h = num(raw.viewport.h, 1) }
       page.viewportFill = raw.viewport.fill == true
-      page.viewportExpand = raw.viewport.expand == true
     end
     for _, c in ipairs(raw.controls or {}) do
       local buttons, hotkeys, keys, decorative = parseBinds(c.bind or "nul")
@@ -526,7 +524,6 @@ function TouchSkin.toNative(skin)
         x = page.viewport.x, y = page.viewport.y,
         w = page.viewport.w, h = page.viewport.h,
         fill = page.viewportFill or nil,
-        expand = page.viewportExpand or nil,
       }
     end
     for _, ctl in ipairs(page.controls or {}) do
@@ -636,6 +633,19 @@ local function applyPixelScale(page)
   return true
 end
 
+-- An overlay image is its own design canvas.  Older RetroArch cfg files often
+-- omit `aspect_ratio`; reading the dimensions here keeps that legacy art and
+-- all of its normalized controls on the same uniform scale.
+function TouchSkin.applyImageAspect(page)
+  if not page or page.aspectFromCfg or not page.image
+     or not page.image.getDimensions then return false end
+  local iw, ih = page.image:getDimensions()
+  if not iw or not ih or iw <= 0 or ih <= 0 then return false end
+  page.aspect = iw / ih
+  page.aspectFromImage = true
+  return true
+end
+
 function TouchSkin.load(root, id)
   local cfgPath, format, prefix = findConfig(root)
   if not cfgPath then return nil, "no skin.lua, .cfg or info.json in " .. root end
@@ -665,6 +675,7 @@ function TouchSkin.load(root, id)
     elseif page.pdfPath then
       rasterizePdfPage(page, root)
     end
+    TouchSkin.applyImageAspect(page)
     if not applyPixelScale(page) then
       return nil, "could not read " .. tostring(page.imagePath)
         .. ", which " .. page.name .. " measures its coordinates against"
@@ -769,6 +780,28 @@ function TouchSkin.find(id)
     if entry.id == id then return entry end
   end
   return nil
+end
+
+-- Remove only a user-installed skin.  Bundled skins are shipped with the
+-- game and intentionally have no delete affordance.
+function TouchSkin.remove(id)
+  local entry = TouchSkin.find(id)
+  if not entry then return nil, "no skin " .. tostring(id) end
+  if entry.source ~= "user" then return nil, "bundled skins cannot be deleted" end
+  if not (love and love.filesystem and love.filesystem.remove) then
+    return nil, "no writable filesystem"
+  end
+  local function removeTree(path)
+    if isDir(path) and love.filesystem.getDirectoryItems then
+      for _, name in ipairs(love.filesystem.getDirectoryItems(path)) do
+        local ok, err = removeTree(path .. "/" .. name)
+        if not ok then return nil, err end
+      end
+    end
+    local ok, err = love.filesystem.remove(path)
+    return ok and true or nil, err
+  end
+  return removeTree(entry.archive or (TouchSkin.USER_ROOT .. "/" .. entry.id))
 end
 
 function TouchSkin.assetPaths(skin)
@@ -886,7 +919,6 @@ function TouchSkin.toRetroArchConfig(skin)
     if page.viewport then
       out[#out + 1] = p .. "_viewport = " .. fmtRect(page.viewport)
       if page.viewportFill then out[#out + 1] = p .. "_viewport_fill = true" end
-      if page.viewportExpand then out[#out + 1] = p .. "_viewport_expand = true" end
     end
     local controls = {}
     for _, ctl in ipairs(page.controls or {}) do
@@ -1284,7 +1316,7 @@ function TouchSkin.pageBox(page, w, h, ox, oy)
   -- full_screen means "relative to the window, not the game viewport".
   -- When the cfg also names an aspect_ratio, that window is then fitted
   -- to the overlay's design aspect so buttons do not stretch.  #1503
-  local fit = ((not page.fullScreen) or page.aspectFromCfg)
+  local fit = ((not page.fullScreen) or page.aspectFromCfg or page.aspectFromImage)
     and page.aspect and page.aspect > 0 and h > 0
   if fit then
     local displayAspect = w / h
@@ -1306,6 +1338,11 @@ function TouchSkin.pageBox(page, w, h, ox, oy)
         by = oy + extra
       elseif anchor == "top" then
         by = oy
+      elseif page.aspect < 1 then
+        -- A portrait bezel with controls is a controller deck.  On an
+        -- unusually tall display, pin the deck to the lower edge and leave
+        -- the additional room for the game above it.
+        by = oy + extra
       else
         by = oy + extra * 0.5
       end
@@ -1359,8 +1396,10 @@ function TouchSkin.decorativeOnly()
 end
 
 function TouchSkin.drawable()
-  if not TouchSkin.active then return false end
-  return TouchSkin.overlayLive or TouchSkin.decorativeOnly()
+  -- A selected skin is a presentation choice, not a mobile-only input mode.
+  -- Its artwork and screen placement therefore belong on every platform;
+  -- `overlayLive` still controls whether touch input is available.
+  return TouchSkin.active ~= nil
 end
 
 function TouchSkin.hasViewport()
@@ -1391,6 +1430,16 @@ local function remainderBox(ox, oy, w, h, bx, by, bw, bh)
   return best[1], best[2], best[3], best[4]
 end
 
+-- The deck box pinned to the lower edge (see pageBox) leaves room above it
+-- that belongs to the game, so a screen rect flush with the top of the deck
+-- grows into it instead of showing a black band.
+local function deckHeadroom(y, vh, by, bh, oy, h)
+  if by <= oy + 0.5 then return y, vh end
+  if by + bh < oy + h - 0.5 then return y, vh end
+  if y - by > math.max(2, bh * 0.01) then return y, vh end
+  return oy, vh + (y - oy)
+end
+
 function TouchSkin.pageViewport(page, w, h, ox, oy)
   if not page then return nil end
   ox, oy = ox or 0, oy or 0
@@ -1400,14 +1449,25 @@ function TouchSkin.pageViewport(page, w, h, ox, oy)
     local x, y = bx + v.x * bw, by + v.y * bh
     local vw, vh = v.w * bw, v.h * bh
     if vw <= 0 or vh <= 0 then return nil end
-    return x, y, vw, vh, page.viewportFill == true, page.viewportExpand == true
+    y, vh = deckHeadroom(y, vh, by, bh, oy, h)
+    return x, y, vw, vh, page.viewportFill == true
   end
   if page.screenFit == "remainder" then
     local x, y, vw, vh = remainderBox(ox, oy, w, h, bx, by, bw, bh)
     if not x then return nil end
-    return x, y, vw, vh, false, false
+    return x, y, vw, vh, false
   end
   return nil
+end
+
+-- Centre of the page's screen cutout.  The renderer fits the 160x144
+-- picture into that rect; this helper is for the studio preview.
+function TouchSkin.screenCenter(w, h, ox, oy, page)
+  page = page or TouchSkin.page()
+  if not page then return nil end
+  local x, y, vw, vh = TouchSkin.pageViewport(page, w, h, ox, oy)
+  if not x then return nil end
+  return x + vw * 0.5, y + vh * 0.5
 end
 
 function TouchSkin.viewport(w, h, ox, oy)

@@ -363,6 +363,21 @@ function Sound.sfxBusy()
   return true
 end
 
+-- WaitSFX (home/audio.asm), the drain above GiveItemScript's `specialsound`
+-- (engine/overworld/scripting.asm:445), so ch5-ch8 are free for it (#1483).
+function Sound.waitSfxDone()
+  if not curSfx then return end
+  pcall(curSfx.src.stop, curSfx.src)
+  curSfx = nil
+end
+
+-- SFXChannelsOff (home/audio.asm:545)
+function Sound.sfxChannelsOff()
+  if not curSfx then return end
+  pcall(curSfx.src.stop, curSfx.src)
+  curSfx = nil
+end
+
 local function startSfx(data, name, def)
   local src = playPath(data, name, def)
   if not src then return end

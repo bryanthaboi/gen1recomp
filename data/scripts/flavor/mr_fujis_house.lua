@@ -31,16 +31,15 @@ M.MR_FUJIS_HOUSE = {
       { "show_text", "_MrFujisHouseLittleGirlPokemonAreNiceToHugText" },    -- 6
     },
 
-    -- scripts/MrFujisHouse.asm MrFujisHousePsyduckText: text_far then
-    -- PlayCry(PSYDUCK). Cry playback isn't modeled by Commands, so just
-    -- show the flavor text.
+    -- scripts/MrFujisHouse.asm:56
     TEXT_MRFUJISHOUSE_PSYDUCK = {
+      { "play_cry", "PSYDUCK", true },
       { "show_text", "_MrFujisHousePsyduckText" },
     },
 
-    -- scripts/MrFujisHouse.asm MrFujisHouseNidorinoText: text_far then
-    -- PlayCry(NIDORINO).
+    -- scripts/MrFujisHouse.asm:63
     TEXT_MRFUJISHOUSE_NIDORINO = {
+      { "play_cry", "NIDORINO", true },
       { "show_text", "_MrFujisHouseNidorinoText" },
     },
   },

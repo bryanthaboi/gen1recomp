@@ -37,6 +37,31 @@ eq(FieldMoves.BADGE_FLAG[26].store, "badges", "Johto badges go to player.badges"
 eq(FieldMoves.BADGE_FLAG[34].store, "kantoBadges",
    "ENGINE_BOULDERBADGE goes to player.kantoBadges")
 
+-- pokecrystal/constants/engine_flags.asm:39 declares 162 flags to pokegold's
+-- 93, moving the whole badge block up one.
+do
+  local order = {}
+  for i = 1, 43 do order[i] = "ENGINE_UNRELATED" .. i end
+  order[10] = nil -- a const_skip hole must not truncate the map
+  for index, name in ipairs(FieldMoves.JOHTO_BADGES) do
+    order[27 + index] = "ENGINE_" .. name .. "BADGE"
+  end
+  for index, name in ipairs(FieldMoves.KANTO_BADGES) do
+    order[35 + index] = "ENGINE_" .. name .. "BADGE"
+  end
+  FieldMoves.bindEngineFlags(order)
+  eq(FieldMoves.BADGE_FLAG[27].name, "ZEPHYR", "crystal ZEPHYRBADGE is 27")
+  eq(FieldMoves.BADGE_FLAG[28].name, "HIVE", "crystal HIVEBADGE is 28")
+  eq(FieldMoves.BADGE_FLAG[34].name, "RISING", "crystal RISINGBADGE is 34")
+  eq(FieldMoves.BADGE_FLAG[35].name, "BOULDER", "crystal BOULDERBADGE is 35")
+  eq(FieldMoves.BADGE_FLAG[35].store, "kantoBadges",
+     "a renumbered Kanto badge still lands in kantoBadges")
+  eq(FieldMoves.BADGE_FLAG[26], nil, "Gold's ZEPHYR slot is vacated")
+
+  FieldMoves.bindEngineFlags(nil)
+  eq(FieldMoves.BADGE_FLAG[26].name, "ZEPHYR", "no map falls back to Gold")
+end
+
 -- ---------------------------------------------------------------------------
 -- The round trip: what a gym script writes is what a field move reads.
 -- ---------------------------------------------------------------------------

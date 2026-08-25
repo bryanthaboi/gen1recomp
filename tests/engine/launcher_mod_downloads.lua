@@ -75,7 +75,8 @@ end
 do
   local ri = launcher()
   check(ri:_findStats(entry("nulled", nil, "someone/nulled")) == nil,
-        "a null count is not an answer; the repo is still consulted")
+        "a null count is not an answer")
+  ri:_requestFindStats(entry("nulled", nil, "someone/nulled"))
   eq(#fetched, 1, "which is the fetch the panel already made for dates")
 
   local bare = launcher()
@@ -83,7 +84,7 @@ do
   check(stats ~= nil and stats.total == nil,
         "a listing with neither counts nor a repo is resolved-but-unknown")
   check(stats.recent == nil, "and has nothing to trend on")
-  eq(#fetched, 1, "and queues nothing of its own")
+  eq(#fetched, 1, "and the explicit scheduler queues nothing without a repo")
 end
 
 -- A real zero is not unknown: the index has seen the releases and counted

@@ -221,6 +221,13 @@ return function(game)
     stored[i] = mon(species, 10 + i)
   end
   Boxes.rename(save, 2, "GRASS")
+  -- $5d for a held item, $5c for MAIL (engine/pokemon/bills_pc.asm:1079-1094).
+  -- A boxed mon can never hold mail, so the letter goes on a party mon.
+  stored[1].item = "BERRY"
+  save.party[2].item = "FLOWER_MAIL"
+  local Mail = require("src.core.gen2.Mail")
+  Mail.set(save, 2, Mail.entry("FLOWER_MAIL", "HI THERE!",
+    save.player.name or "GOLD", save.player.id or 0, save.party[2].species))
 
   local pc = PcMenu.new(game, { save = save })
   show("20-pc-menu", pc)
@@ -228,12 +235,27 @@ return function(game)
   pc.pickIndex = 2
   show("21-pc-changebox", pc)
 
-  show("22-pc-withdraw", BoxMenu.new(game, {
-    save = save, mode = "withdraw",
-  }))
-  show("23-pc-deposit", BoxMenu.new(game, {
-    save = save, mode = "deposit",
-  }))
+  -- Browsing paints the 7x7 block in BillsPCOrangePalette and only .PrepSubmenu
+  -- swaps the mon's colours in (engine/pokemon/bills_pc.asm:305-309, :356-369,
+  -- engine/gfx/cgb_layouts.asm:284-289); the icon is BG palette 0 either way.
+  local wd = BoxMenu.new(game, { save = save, mode = "withdraw" })
+  show("22-pc-withdraw", wd)
+  wd.index = wd:total() -- CANCEL
+  wd:ensureVisible()
+  show("22b-pc-withdraw-cancel", wd)
+  wd.index = 1
+  wd:ensureVisible()
+  wd.phase = "submenu"
+  show("22c-pc-withdraw-submenu", wd)
+  local dep = BoxMenu.new(game, { save = save, mode = "deposit" })
+  show("23-pc-deposit", dep)
+  dep.index = 2 -- the mon holding FLOWER MAIL
+  show("23b-pc-deposit-mail", dep)
+
+  -- Only the move list gets the box-name arrows, $5f left and $5e right
+  -- (engine/pokemon/bills_pc.asm:957-963); 22 and 23 above are the controls.
+  local mv = BoxMenu.new(game, { save = save, mode = "move" })
+  show("23c-pc-move-arrows", mv)
 
   -- The two clock screens NEW GAME and Mom open (timeset.asm InitClock and
   -- SetDayOfWeek), each at its picker rather than at its opening page.

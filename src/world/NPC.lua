@@ -42,6 +42,23 @@ function NPC.new(data, mapId, objDef)
   return self
 end
 
+-- LoadMapHeader .loadSpriteData zeroes the sprite state data and re-seeds
+-- MAPY/MAPX from the map header -- home/overworld.asm:2133
+function NPC:resetToSpawn()
+  local def = self.def
+  self.cellX, self.cellY = def.x, def.y
+  self.px, self.py = self.cellX * 16, self.cellY * 16
+  self.facing = FACING_FROM_RANGE[def.range] or "down"
+  self.targetX, self.targetY = nil, nil
+  self.moving = false
+  self.marching = false
+  self.hopStep = nil
+  self.progress = 0
+  self.animClock = 0
+  self.stepFlip = false
+  self.timer = love.math.random(30, 120)
+end
+
 function NPC:facePlayer(player)
   local dx = player.cellX - self.cellX
   local dy = player.cellY - self.cellY

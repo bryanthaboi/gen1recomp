@@ -471,6 +471,20 @@ discover = function()
   return out
 end
 
+-- installedVersions() -> id -> installed version.  MOD INDEX only needs to
+-- know whether a listing is already present; it does not need enablement,
+-- dependency/conflict status, required-import validation, or migration.  Keep
+-- that cheap read separate from list(), whose richer work belongs to MODS.
+function LauncherMods.installedVersions()
+  local out = {}
+  local ok, manifests = pcall(discover)
+  if not ok then return out end
+  for _, manifest in ipairs(manifests or {}) do
+    out[manifest.id] = manifest.version or true
+  end
+  return out
+end
+
 -- list([version]) -> the mods-panel rows for the current install.  Reads the
 -- same enable-state the loader persists, so a toggle here is what the game
 -- sees on its next boot; `version` narrows that to one game's answers.

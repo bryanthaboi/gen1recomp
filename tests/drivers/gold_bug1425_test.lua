@@ -70,15 +70,18 @@ return function(game)
   U.tap(game, "right")
   shot("03-tmhm")             -- TMs carry ×NN, the two HMs carry none
 
-  -- SELECT arms the row instead of registering it (#1427): the hollow ▷ marks
-  -- TM_HEADBUTT while "Where should this be moved to?" holds the box.
+  -- SELECT armed the row here for #1427; since #1567 it is filtered out of the
+  -- TM/HM pocket entirely (engine/items/tmhm.asm:207), so these taps must leave
+  -- the list exactly as shot 03 has it: no hollow ▷, no "Where should this be
+  -- moved to?", no reorder.
   U.tap(game, "down")
   U.tap(game, "select")
-  shot("04-tmhm-armed")
+  shot("04-tmhm-select-ignored")
   U.tap(game, "up")
-  shot("05-tmhm-destination")
+  shot("05-tmhm-still-numbered")
   U.tap(game, "a")
-  shot("06-tmhm-moved")       -- HEADBUTT is now the first TM row
+  U.tap(game, "b")
+  shot("06-tmhm-unchanged")
 
   U.log("[driver] bag order:", table.concat(Bag.order(save), " "))
 

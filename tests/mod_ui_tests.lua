@@ -285,8 +285,8 @@ local WANT_IDS = { "textSpeed", "animations", "battleStyle", "battleLayout",
                    "battleFit", "battleHud", "battleBg", "uiLayout",
                    "ruleset", "musicVol", "sfxVol", "musicFilter",
                    "performance", "colors",
-                   "tilt", "gbcfx", "zoom", "voidFill", "videoMode",
-                   "faithfulRes", "fpsCap",
+                   "tilt", "shaderfx", "shaderfx2", "zoom", "voidFill",
+                   "videoMode", "faithfulRes", "screenPos", "fpsCap",
                    "speedOverworld", "speedBattle", "speedMenu",
                    "mods", "controls", "dateFormat", "timeFormat" }
 local function orow(menu, id)
@@ -331,7 +331,9 @@ check(om.game.save.options.musicVol == 6, "music volume steps down")
 for _ = 1, 10 do orow(om, "musicVol").step(om.game, -1) end
 check(om.game.save.options.musicVol == 0, "music volume clamps at 0")
 
--- ZOOM / VOID FILL rows (looked up by id; WANT_IDS above pins the order)
+-- ZOOM / VOID FILL rows (looked up by id; WANT_IDS above pins the order,
+-- with SHADER FX / SHADER FX 2 right after TILT now that GBCFX.lua and
+-- its row are gone)
 local Zoom = require("src.render.Zoom")
 local TileRenderer = require("src.render.TileRenderer")
 om.game.save.options.zoom = 0
@@ -341,6 +343,15 @@ check(orow(om, "zoom").value(om.game) == "FIT",
 orow(om, "zoom").step(om.game, 1)
 check(om.game.save.options.zoom == 1 and Zoom.offset == 1,
   "ZOOM row steps to IN1")
+orow(om, "zoom").step(om.game, -1)
+check(om.game.save.options.zoom == 0, "ZOOM row steps back to FIT")
+orow(om, "zoom").step(om.game, -1)
+check(om.game.save.options.zoom == -1 and Zoom.offset == -1,
+  "ZOOM row steps to OUT1")
+check(orow(om, "zoom").value(om.game) == "OUT1",
+  "ZOOM row shows OUT1")
+orow(om, "zoom").step(om.game, 1)
+check(om.game.save.options.zoom == 0, "ZOOM row steps back to FIT from OUT")
 orow(om, "voidFill").step(om.game, 1)
 check(om.game.save.options.voidFill == "water"
       and TileRenderer.voidFill == "water",
@@ -349,6 +360,39 @@ orow(om, "voidFill").step(om.game, 1)
 check(om.game.save.options.voidFill == "black", "VOID FILL steps to BLACK")
 orow(om, "voidFill").step(om.game, 1)
 check(om.game.save.options.voidFill == "trees", "VOID FILL wraps to TREES")
+
+-- the SHADER FX row now pushes a real ShaderFXScreen list instead of
+-- cycling in place. With no presets under ShaderFX.presetDir() (nothing
+-- is dropped in for this stub love.filesystem), the pushed screen must
+-- show OFF plus the permanent DOWNLOAD SHADERS row and stay a safe
+-- no-op rather than crash. SHADER FX 2 (the dual-shader secondary slot)
+-- mirrors it one row down, opening the same shared screen on
+-- "secondary" instead.
+local ShaderFX = require("src.render.ShaderFX")
+check(om.rows[16].id == "shaderfx", "row 16 is the SHADER FX row")
+check(om.rows[16].value(om.game) == "OFF", "SHADER FX shows OFF with no presets")
+check(om.rows[16].step == nil, "SHADER FX row has no step() any more")
+om.rows[16].activate(om.game)
+local sfxScreen = om.game.stack:top()
+check(sfxScreen and sfxScreen.title == "SHADER FX",
+  "SHADER FX row.activate() pushes a ShaderFXScreen")
+check(#sfxScreen.items == 2 and sfxScreen.items[1].label == "OFF"
+  and sfxScreen.items[2].download == true,
+  "ShaderFXScreen shows OFF + DOWNLOAD SHADERS with zero presets found")
+sfxScreen.onChoose(sfxScreen.items[1])
+check(ShaderFX.active("main") == false, "choosing OFF on an empty list stays a safe no-op")
+check(om.game.stack:top() == nil, "ShaderFXScreen pops itself after onChoose")
+
+check(om.rows[17].id == "shaderfx2", "row 17 is the SHADER FX 2 row")
+check(om.rows[17].value(om.game) == "OFF", "SHADER FX 2 shows OFF with no presets")
+om.rows[17].activate(om.game)
+local sfx2Screen = om.game.stack:top()
+check(sfx2Screen and sfx2Screen.title == "SHADER FX 2",
+  "SHADER FX 2 row.activate() pushes the shared ShaderFXScreen on the secondary slot")
+sfx2Screen.onChoose(sfx2Screen.items[1])
+check(ShaderFX.active("secondary") == false, "choosing OFF on the secondary slot is a safe no-op")
+check(ShaderFX.active() == false, "neither slot active means ShaderFX.active() is false")
+check(om.game.stack:top() == nil, "the secondary ShaderFXScreen pops itself after onChoose")
 
 -- the MAX FPS row cycles the render-cap steps and shows the value plain
 om.game.save.options.fpsCap = nil

@@ -189,6 +189,34 @@ if bundled then
   eq(bundled.pages[1].name, "GameBoy", "gb_anim page 1")
   check(bundled.pages[1].viewport ~= nil, "gb_anim declares a screen viewport")
   eq(bundled.pages[1].imagePath, "img/gb_back.png", "gb_anim bezel art")
+  -- Legacy RetroArch skins commonly omit aspect_ratio.  Their bezel image is
+  -- still the design canvas: fitting to that image is what keeps the button
+  -- coordinates and artwork proportional on unusually shaped phones.
+  check(bundled.pages[1].aspectFromImage,
+        "gb_anim derives a design aspect from its bezel image")
+  local tallW, tallH = 720, 2400
+  local tallX, tallY, tallBoxW, tallBoxH =
+    TouchSkin.pageBox(bundled.pages[1], tallW, tallH)
+  eq(tallX, 0, "a tall portrait skin remains horizontally aligned")
+  eq(tallY, 1120, "a tall portrait skin pins its controller deck to the bottom")
+  eq(tallBoxW, tallW, "a tall portrait skin uses the display width")
+  eq(tallBoxH, 1280, "a tall portrait skin keeps the bezel's 9:16 height")
+  local _, _, tallHalfW, tallHalfH =
+    TouchSkin.controlGeometry(bundled.pages[1], bundled.pages[1].controls[9], tallW, tallH)
+  check(math.abs(tallHalfW - tallHalfH) < 0.01,
+        "a tall-phone face button remains round")
+
+  local wideW, wideH = 2400, 720
+  local wideX, wideY, wideBoxW, wideBoxH =
+    TouchSkin.pageBox(bundled.pages[1], wideW, wideH)
+  eq(wideX, 997.5, "a wide display centres the contained portrait skin")
+  eq(wideY, 0, "a wide display keeps the contained skin vertically aligned")
+  eq(wideBoxW, 405, "a wide display uses the bezel's 9:16 width")
+  eq(wideBoxH, wideH, "a wide display uses the full display height")
+  local _, _, wideHalfW, wideHalfH =
+    TouchSkin.controlGeometry(bundled.pages[1], bundled.pages[1].controls[9], wideW, wideH)
+  check(math.abs(wideHalfW - wideHalfH) < 0.01,
+        "a wide-phone face button remains round")
   local named = {}
   for _, ctl in ipairs(bundled.pages[1].controls) do
     for _, btn in ipairs(ctl.buttons) do named[btn] = true end
@@ -239,13 +267,14 @@ TouchControls.enabled = true
 TouchControls.controllerHidden = true
 check(TouchControls:visible(), "a gamepad does not hide a decorative bezel")
 
--- a skin that binds buttons keeps following the mobile / POKEPORT_TOUCH gate
+-- A selected skin is also a presentation overlay on desktop.  The touch
+-- input gate remains separate from whether its artwork is drawn.
 TouchSkin.setActive(skin)
 TouchSkin.setOverlayLive(false)
 check(not TouchSkin.decorativeOnly(), "a skin with binds is not decoration")
-check(not TouchSkin.drawable(), "and it does not draw where the overlay is off")
-check(not TouchSkin.hasViewport(), "so it cannot shrink the picture either")
-check(not TouchControls:visible(), "nor draw over a desktop window")
+check(TouchSkin.drawable(), "and it still draws where touch input is off")
+check(TouchSkin.hasViewport(), "so its screen placement stays available")
+check(TouchControls:visible(), "and it draws over a desktop window")
 TouchSkin.setOverlayLive(true)
 check(TouchSkin.drawable(), "with the overlay live it draws again")
 TouchControls.active = true

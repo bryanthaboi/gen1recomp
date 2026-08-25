@@ -48,7 +48,7 @@ end
 
 -- #1461: saves that passed through 0.1.82-0.1.9x already have the player's
 -- own id written onto traded mons, so stamping correctly from now on does
--- not help them.  The repair runs on every load, not behind a format gate.
+-- not help them.  The repair is a one-shot pre-format-5 migration.
 do
   local SaveData = require("src.core.SaveData")
   local save = newSave()

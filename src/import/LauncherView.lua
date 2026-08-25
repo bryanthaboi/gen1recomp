@@ -405,37 +405,88 @@ end
 local CART_COLOR = {
   red = PAL.railRed, blue = PAL.railBlue, yellow = PAL.railGold,
   gold = PAL.railAmber, silver = PAL.railSilver,
+  crystal = PAL.railCrystal,
 }
 local function cartColor(version)
   return CART_COLOR[version] or PAL.green
 end
 
+local function shellColor(hex)
+  local r, g, b = tostring(hex):match("^#(%x%x)(%x%x)(%x%x)$")
+  if not r then return nil end
+  return { tonumber(r, 16), tonumber(g, 16), tonumber(b, 16) }
+end
+
+-- The real Crystal shell is glitter-flecked translucent plastic over a foil
+-- label, so it is the one stock cart that ships with a finish.
+local STOCK_FINISH = { crystal = "sparkle+holo" }
+
+local function finishFlags(name)
+  name = tostring(name or "")
+  return name:find("sparkle", 1, true) ~= nil, name:find("holo", 1, true) ~= nil
+end
+
+local function cartSkin(imp, version)
+  local row = imp.activeCartRow and imp:activeCartRow(version) or nil
+  if not row then
+    local sparkle, holo = finishFlags(STOCK_FINISH[version])
+    return { cacheKey = version, color = cartColor(version),
+             sparkle = sparkle, holo = holo,
+             labelPath = "assets/labels/" .. tostring(version) .. ".png" }
+  end
+  local sparkle, holo = finishFlags(row.finish)
+  return { cacheKey = "cart:" .. tostring(row.id),
+           color = shellColor(row.shell) or cartColor(version),
+           sparkle = sparkle, holo = holo,
+           name = row.title, cart = row, cartId = row.id }
+end
+
 local CART_DRAG_SLOP = 8
 local TAU = math.pi * 2
 
-local function cartridgeState(imp, version)
+local function cartridgeState(imp, key)
   imp._cartridge = imp._cartridge or {}
-  local state = imp._cartridge[version]
+  local state = imp._cartridge[key]
   if not state then
     state = { spin = 0, lastTime = Kit.time }
-    imp._cartridge[version] = state
+    imp._cartridge[key] = state
   end
   return state
 end
 
-local function cartridgeLabel(imp, version)
+local function cartLabelImage(cartId)
+  local CartStore = require("src.carts.CartStore")
+  local got, bytes = pcall(CartStore.labelArt, cartId)
+  if not got or type(bytes) ~= "string" or bytes == "" then return nil end
+  if not (love.filesystem and love.filesystem.newFileData) then return nil end
+  local made, image = pcall(function()
+    return love.graphics.newImage(
+      love.filesystem.newFileData(bytes, tostring(cartId) .. ".png"))
+  end)
+  if not made then return nil end
+  return image
+end
+
+local function cartridgeLabel(imp, key, path, cartId)
   imp._cartridgeLabels = imp._cartridgeLabels or {}
-  local label = imp._cartridgeLabels[version]
+  local label = imp._cartridgeLabels[key]
   if label ~= nil then return label or nil end
-  local ok, image = pcall(love.graphics.newImage,
-    "assets/labels/" .. tostring(version) .. ".png")
-  if not ok then
-    imp._cartridgeLabels[version] = false
+  local image
+  if cartId then
+    image = cartLabelImage(cartId)
+  elseif path then
+    local ok, art = pcall(love.graphics.newImage, path)
+    if ok then image = art end
+  end
+  local sized, iw, ih = false, nil, nil
+  if image then sized, iw, ih = pcall(image.getDimensions, image) end
+  if not (sized and type(iw) == "number" and type(ih) == "number"
+      and iw > 0 and ih > 0) then
+    imp._cartridgeLabels[key] = false
     return nil
   end
-  local iw, ih = image:getDimensions()
   label = { image = image, width = iw, height = ih }
-  imp._cartridgeLabels[version] = label
+  imp._cartridgeLabels[key] = label
   return label
 end
 
@@ -491,10 +542,10 @@ local function cartPill(project, x, y, w, h, z, color, alpha)
   cartPolygon(points, color, alpha)
 end
 
-local function cartLabelMesh(imp, version, label, points)
+local function cartLabelMesh(imp, key, label, points)
   if not love.graphics.newMesh then return nil end
   imp._cartridgeLabelMeshes = imp._cartridgeLabelMeshes or {}
-  local mesh = imp._cartridgeLabelMeshes[version]
+  local mesh = imp._cartridgeLabelMeshes[key]
   if not mesh then
     mesh = love.graphics.newMesh({
       { 0, 0, 0, 0, 255, 255, 255, 255 },
@@ -503,7 +554,7 @@ local function cartLabelMesh(imp, version, label, points)
       { 0, 0, 0, 1, 255, 255, 255, 255 },
     }, "fan", "dynamic")
     mesh:setTexture(label.image)
-    imp._cartridgeLabelMeshes[version] = mesh
+    imp._cartridgeLabelMeshes[key] = mesh
   end
   mesh:setVertices({
     { points[1][1], points[1][2], 0, 0, 255, 255, 255, 255 },
@@ -534,8 +585,56 @@ vec4 position(mat4 transform_projection, vec4 vertex_position) {
 #endif
 
 #ifdef PIXEL
+// finish: 0 plain, 1 sparkle (glitter suspended in the shell), 2 holographic
+// label sweep.  Both are ours, not ported from anywhere.
+extern float finish;
+extern float finish_time;
+extern float finish_spin;
+
+float sparkHash(vec2 p) {
+  return fract(sin(dot(p, vec2(41.7321, 289.113))) * 43758.5453);
+}
+
+// Flecks live on a jittered lattice so they read as suspended grains rather
+// than a regular grid, and each one twinkles on its own phase.
+vec3 sparkle(vec2 screen_coords) {
+  vec2 cell = screen_coords / 19.0;
+  vec2 id = floor(cell);
+  vec2 f = fract(cell);
+  float peak = 0.0;
+  for (int oy = -1; oy <= 1; oy++) {
+    for (int ox = -1; ox <= 1; ox++) {
+      vec2 n = vec2(float(ox), float(oy));
+      vec2 h = vec2(sparkHash(id + n), sparkHash(id + n + 17.0));
+      float phase = sparkHash(id + n + 71.0) * 6.2831;
+      float tw = sin(finish_time * 2.6 + phase + finish_spin * 3.0) * 0.5 + 0.5;
+      float d = length(f - (n + h));
+      peak = max(peak, smoothstep(0.13, 0.0, d) * pow(tw, 16.0));
+    }
+  }
+  return vec3(peak);
+}
+
+// Angle-dependent spectral sweep: a diagonal band whose hue walks with view
+// angle, so tilting the cart moves the rainbow the way real foil does.
+vec3 holo(vec2 uv) {
+  float band = uv.x * 0.9 + uv.y * 0.6 + finish_spin * 0.55 + finish_time * 0.06;
+  vec3 hue = 0.5 + 0.5 * cos(6.2831 * (band + vec3(0.0, 0.33, 0.67)));
+  float interference = 0.5 + 0.5 * sin((uv.x - uv.y) * 62.0 + finish_time * 0.9);
+  return hue * (0.55 + 0.45 * interference);
+}
+
 vec4 effect(vec4 color, Image tex, vec2 texture_coords, vec2 screen_coords) {
-  return Texel(tex, texture_coords) * color;
+  vec4 px = Texel(tex, texture_coords) * color;
+  if (finish > 1.5) {
+    vec3 sheen = holo(texture_coords);
+    float lum = dot(px.rgb, vec3(0.299, 0.587, 0.114));
+    px.rgb = mix(px.rgb, px.rgb * (0.65 + sheen), 0.30 * (0.35 + 0.65 * lum));
+    px.rgb += sheen * 0.05 * px.a;
+  } else if (finish > 0.5) {
+    px.rgb += sparkle(screen_coords) * 0.70 * px.a;
+  }
+  return px;
 }
 #endif
 ]]
@@ -563,8 +662,20 @@ local function cartSendHover(shader, mx, my, hovering, screenScale)
   return ok
 end
 
-local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
-  local state = cartridgeState(imp, version)
+-- FINISH_* match the shader's `finish` uniform.
+local FINISH_NONE, FINISH_SPARKLE, FINISH_HOLO = 0, 1, 2
+
+local function cartSendFinish(shader, mode, spin)
+  if not shader or not shader.send then return end
+  pcall(function()
+    shader:send("finish", mode)
+    shader:send("finish_time", Kit.time or 0)
+    shader:send("finish_spin", spin or 0)
+  end)
+end
+
+local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action)
+  local state = cartridgeState(imp, skin.cacheKey)
   markNoDrag(imp, x, y, w, h)
   local focused = Kit.focusable(key, x, y, w, h)
   local hot = Kit.hover(x, y, w, h)
@@ -639,7 +750,7 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
   local ease = math.exp(-60 * dt)
   state.visScale = ease * state.visScale + (1 - ease) * desScale
   if not state.animId then
-    local n, s = 0, tostring(version)
+    local n, s = 0, tostring(skin.cacheKey)
     for i = 1, #s do n = n + s:byte(i) * i end
     state.animId = n
   end
@@ -685,6 +796,10 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
   love.graphics.rotate(juiceR * 2)
   love.graphics.translate(-cx, -cy)
   if useHover then love.graphics.setShader(shader) end
+  if useHover then
+    cartSendFinish(shader, skin.sparkle and FINISH_SPARKLE or FINISH_NONE,
+      state.spin)
+  end
 
   local capH = h * 3 / 65
   local mainTop = -halfH + capH
@@ -695,7 +810,7 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
     capRight + halfW, capH, depth)
   local capBack = cartQuad(project, -halfW, -halfH,
     capRight + halfW, capH, -depth)
-  local shell = cartColor(version)
+  local shell = skin.color
   local side = { math.floor(shell[1] * 0.54), math.floor(shell[2] * 0.54),
     math.floor(shell[3] * 0.54) }
 
@@ -753,12 +868,15 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
     -- and one below the top-right corner notch, like the DMG cart.
     local grooveW = w * 0.115
     local grooveH = math.max(1, h * 0.009)
+    local grooveScale = { 1.22, 1.10, 1.00, 1.00, 1.10, 1.22 }
+    local grooveInset = w * 0.02
     for i = 0, 5 do
       local ry = mainTop + h * 0.014 + i * h * 0.021
-      cartPolygon(cartQuad(project, -halfW + w * 0.02, ry,
-        grooveW, grooveH, faceZ), side, 0.7)
-      cartPolygon(cartQuad(project, halfW - grooveW - w * 0.02, ry,
-        grooveW, grooveH, faceZ), side, 0.7)
+      local gw = grooveW * grooveScale[i + 1]
+      cartPolygon(cartQuad(project, -halfW + grooveInset, ry,
+        gw, grooveH, faceZ), side, 0.7)
+      cartPolygon(cartQuad(project, halfW - gw - grooveInset, ry,
+        gw, grooveH, faceZ), side, 0.7)
     end
     -- The thin diagonal mold ridge cut into each long side a little below
     -- the grip grooves, mirrored left/right.
@@ -774,12 +892,14 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
         { project(x1 + nx * t, y1 + ny * t, faceZ) },
       }, side, 0.7)
     end
-    local dgY = mainTop + h * 0.20
+    local dgY = mainTop + h * 0.25
     diagonal(-halfW + w * 0.006, dgY, -halfW + w * 0.085, dgY + h * 0.038)
     diagonal(halfW - w * 0.006, dgY, halfW - w * 0.085, dgY + h * 0.038)
-    -- The Nintendo GAME BOY recess: one stadium pill sunk into the shell.
-    local pillX, pillW = -halfW + w * 0.17, w * 0.62
-    local pillY, pillH = mainTop + h * 0.024, h * 0.115
+    -- The pill recess: one stadium pill sunk into the shell.
+    local pillX, pillW = -halfW + w * 0.19, w * 0.62
+    local pillY, pillH = mainTop + h * 0.015, h * 0.115
+    -- log out pillH
+ 
     cartPill(project, pillX, pillY, pillW, pillH, faceZ + 0.5, side, 0.55)
     local inX, inY = w * 0.008, h * 0.008
     cartPill(project, pillX + inX, pillY + inY,
@@ -792,8 +912,11 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
     local plate = cartQuad(project, labelX - 2, labelY - 2, labelW + 4, labelH + 4, faceZ + 0.8)
     cartPolygon(plate, side, 0.95)
     local labelPoints = cartQuad(project, labelX, labelY, labelW, labelH, faceZ + 1.2)
-    local label = cartridgeLabel(imp, version)
-    local mesh = label and cartLabelMesh(imp, version, label, labelPoints)
+    local label = cartridgeLabel(imp, skin.cacheKey, skin.labelPath, skin.cartId)
+    local mesh = label and cartLabelMesh(imp, skin.cacheKey, label, labelPoints)
+    if useHover and skin.holo then
+      cartSendFinish(shader, FINISH_HOLO, state.spin)
+    end
     if mesh then
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(mesh)
@@ -801,6 +924,10 @@ local function cartridgeButton(imp, x, y, w, h, key, version, gameName, action)
       local artScale = math.min(labelW / label.width, labelH / label.height)
       love.graphics.draw(label.image, labelPoints[1][1], labelPoints[1][2],
         0, artScale, artScale)
+    end
+    if useHover and skin.holo then
+      cartSendFinish(shader, skin.sparkle and FINISH_SPARKLE or FINISH_NONE,
+        state.spin)
     end
     cartPolygon({
       { project(-w * 0.07, h * 0.37, faceZ + 1) },
@@ -820,6 +947,8 @@ local function modStatusColor(status)
   if status == "safe_mode" then return Strings("Safe mode"), PAL.yellow end
   if status == "needs_import" then return Strings("Import required"), PAL.yellow end
   if status == "conflict" then return Strings("Conflict"), PAL.red end
+  -- a cart pins it, but nothing on this install provides it
+  if status == "missing" then return Strings("Not installed"), PAL.red end
   -- not a fault: the mod is intact, this is simply not a game it is for
   -- (src/mods/ModTargets.lua)
   if status == "other_game" then return Strings("Not for this game"), PAL.muted end
@@ -855,6 +984,17 @@ local function modScopeChipsWidth(options, gap, m)
   return need
 end
 
+local function profileState(imp)
+  if imp._profileCache == nil then
+    local LauncherMods = require("src.mods.LauncherMods")
+    local SaveData = require("src.core.SaveData")
+    local options = SaveData.loadOptions()
+    local list, cur = LauncherMods.getProfiles(options)
+    imp._profileCache = { options = options, list = list, active = cur }
+  end
+  return imp._profileCache
+end
+
 local function buildModScopeRow(imp, x, y, w, m)
   local LauncherMods = require("src.mods.LauncherMods")
   local h = math.max(Kit.tapMin(), math.floor(26 * m.s))
@@ -865,7 +1005,7 @@ local function buildModScopeRow(imp, x, y, w, m)
   local options = modScopeOptions(imp)
 
   -- Dedicated Profile control section (cycle button + gear icon button) on right side of Scope Bar
-  local _, activeProf = LauncherMods.getProfiles()
+  local activeProf = profileState(imp).active
   local isCompact = (w < math.floor(500 * m.s))
   local nameText = tostring(activeProf or "Default")
   local profLabel = isCompact and nameText or Strings("Profile: %s", nameText)
@@ -926,6 +1066,63 @@ local function buildModScopeRow(imp, x, y, w, m)
     end
   end
   return h + math.floor(8 * m.s)
+end
+
+-- Says whose mod list is on screen when a cart owns it, and what its seal
+-- lets the player do with it.
+local function buildModCartRow(imp, x, y, w, m, cartId, report)
+  if not cartId then return 0 end
+  local title = (report and report.title) or cartId
+  local seal = (report and report.seal) or "sealed"
+  local line
+  if seal == "sealed+" then
+    line = Strings("%s pins these mods. You may switch any of them on or off, but not add or remove any.",
+      title)
+  elseif seal == "open" then
+    line = Strings("%s pins these mods. Anything it ships switched off is yours to switch on.",
+      title)
+  else
+    line = Strings("%s is sealed: these are its mods, and they run exactly as pinned. Break the seal on the cart's own page to change that.",
+      title)
+  end
+  local h = Kit.textWrapped("small", line, x, y, w,
+    seal == "sealed" and PAL.yellow or PAL.blue, 3)
+  return h + math.floor(8 * m.s)
+end
+
+local function buildSaveCartRow(imp, x, y, w, m)
+  local version = imp.modScope
+  local h = m.btnH
+  local gap = math.floor(8 * m.s)
+  local label = Strings("Save as cart")
+  local bw = math.min(w, Kit.textWidth("small", label) + math.floor(28 * m.s))
+  local enabled = version ~= nil and imp:_cartCaptureCount(version) > 0
+  btn(imp, x, y, bw, h, "mods-save-cart", label, {
+    kind = "accent", font = "small", enabled = enabled,
+    action = enabled and function() imp:_beginCartSave(version) end or nil })
+  local hint
+  if version == nil then
+    hint = Strings("Pick one game above to save its enabled mods as a cart.")
+  elseif not enabled then
+    hint = Strings("Enable a mod for this game first.")
+  else
+    local info = GameVersion.info(version)
+    hint = Strings("Freeze the mods enabled for %s into a cart.",
+      (info and (info.launcherName or info.displayName)) or tostring(version))
+  end
+  local hx = x + bw + gap
+  local hw = math.max(0, x + w - hx)
+  if hw > 0 then
+    Kit.text("small", Kit.ellipsize("small", hint, hw), hx,
+      y + (h - Kit.textHeight("small")) / 2, PAL.muted)
+  end
+  return h + gap
+end
+
+-- The launcher's name for a game id, where all a row has is the id.
+local function gameLabel(version)
+  local info = GameVersion.info(version)
+  return (info and (info.launcherName or info.displayName)) or tostring(version)
 end
 
 local function findActionFor(entry, installedVersion)
@@ -1057,14 +1254,29 @@ local GAME_TABS = {
     label = "Gold" },
   { id = "silver", key = "tab-silver", letter = "S", color = PAL.railSilver,
     label = "Silver" },
+  { id = "crystal", key = "tab-crystal", letter = "C",
+    color = PAL.railCrystal, label = "Crystal" },
 }
 
 local HEADER_TABS = {
   { id = "mods",   key = "tab-mods" },
   { id = "find",   key = "tab-find" },
-  { id = "skins",  key = "tab-skins", glyph = true },
+  { id = "skins",  key = "tab-skins", glyph = true, beta = true },
   { id = "bug",    key = "tab-bug" },
 }
+
+local BETA_TAG_OPTS = { fill = true, bold = true, ink = PAL.inverse }
+
+local function drawBetaTag(x, y, w, h)
+  Kit.tag(x, y, w, h, "BETA", PAL.yellow, BETA_TAG_OPTS)
+end
+
+local function overlayBeta(tx, ty, w, tabH, m)
+  local bh = math.floor(11 * m.s)
+  local bw = math.min(w, Kit.textWidth("micro", "BETA") + math.floor(10 * m.s))
+  drawBetaTag(tx + (w - bw) / 2, ty + tabH - bh - math.floor(2 * m.s), bw, bh)
+end
+
 for _, t in ipairs(HEADER_TABS) do
   t.opts = { face = "tab", font = "tab", color = t.color, letter = t.letter }
   if t.glyph then
@@ -1268,6 +1480,7 @@ local function buildHeader(imp, m)
     o.image = t.icon
     o.action = chrome.tab[t.id]
     btn(imp, tx, ty, w, tabH, t.key, "", o)
+    if t.beta then overlayBeta(tx, ty, w, tabH, m) end
     tx = tx + w + tabGap
   end
   -- The bug-report chip sits LAST, past the sync chip.
@@ -1285,10 +1498,7 @@ local function buildHeader(imp, m)
     local o = chrome.sync
     o.active = imp._syncModal ~= nil
     btn(imp, tx, ty, w, tabH, "tab-sync", "", o)
-    local bh = math.floor(11 * m.s)
-    local bw = math.min(w, Kit.textWidth("micro", "BETA") + math.floor(10 * m.s))
-    Kit.tag(tx + (w - bw) / 2, ty + tabH - bh - math.floor(2 * m.s), bw, bh,
-      "BETA", o.active and PAL.inverse or PAL.yellow)
+    overlayBeta(tx, ty, w, tabH, m)
     local eng = imp._sync
     if eng and eng.busy and eng:busy() then
       Kit.spinner(tx + w - math.floor(8 * m.s), ty + math.floor(8 * m.s),
@@ -1304,7 +1514,7 @@ local function buildHeader(imp, m)
   return y + math.floor(10 * m.s)
 end
 
--- The state of the self-updater, as a top-right control.
+-- The state of the self-updater, shown in the launcher footer.
 -- Returns status, label, action, glow.
 function LauncherView._updateControl(imp)
   if not imp.Check then return nil end
@@ -1493,9 +1703,11 @@ local function chipWidth(label, m)
 end
 
 local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
-  imp:_ensureSlots(version)
-  local slots = imp.slots[version] or {}
-  local active = imp.activeSlot[version]
+  local scope = imp.slotScope and imp:slotScope(version) or version
+  local onCart = scope ~= version
+  imp:_ensureSlots(scope)
+  local slots = imp.slots[scope] or {}
+  local active = imp.activeSlot[scope]
   local n = #slots
   local pad = math.floor(14 * m.s)
   local iw = w - 2 * pad
@@ -1551,7 +1763,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   local headH = math.max(Kit.textHeight("caption"), m.btnH) + math.floor(8 * m.s)
   local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
   local newBtnH = m.btnH
-  local sfNotice = imp.saveNotice[version]
+  local sfNotice = imp.saveNotice[scope]
   local hintText, hintCol
   if sfNotice then
     hintText, hintCol = sfNotice.text, (sfNotice.ok and PAL.green or PAL.red)
@@ -1567,7 +1779,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   local listH = availH
     - (pad * 2 + headH + hintH + pagerH + gap + newBtnH + gap)
   local perPage = Kit.rowsThatFit(listH, rowH, gap, 1, 12)
-  local pageKey = "slots-" .. version
+  local pageKey = "slots-" .. scope
   local first, last, cur, pages = Kit.pageBounds(page(imp, pageKey), n, perPage)
   setPage(imp, pageKey, cur)
 
@@ -1584,10 +1796,12 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   local savImportLabel = imp.isNX and Strings("Scan again")
     or Strings("Import save")
   local impW = chipWidth(savImportLabel, m) + math.floor(8 * m.s)
-  btn(imp, x + w - pad - impW, cy, impW, m.btnH, "sav-import-" .. version,
+  btn(imp, x + w - pad - impW, cy, impW, m.btnH, "sav-import-" .. scope,
     savImportLabel, {
-      kind = "accent", font = "small", enabled = ready and true or false,
-      action = ready and function() imp:chooseSaveImport(version) end or nil,
+      kind = "accent", font = "small",
+      enabled = (ready and not onCart) and true or false,
+      action = (ready and not onCart)
+        and function() imp:chooseSaveImport(version) end or nil,
     })
   local countW = (x + w - pad - impW - math.floor(8 * m.s))
     - (x + pad + Kit.captionWidth(Strings("SAVE SLOT")) + math.floor(8 * m.s))
@@ -1610,10 +1824,10 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
     for i = first, last do
       local slot = slots[i]
       local selected = slot.id == active
-      local rowKey = "slot-" .. version .. "-" .. slot.id
+      local rowKey = "slot-" .. scope .. "-" .. slot.id
       local ry = cy + (i - first) * (rowH + gap)
       local ink = rowHit(imp, x + pad, ry, iw, rowH, selected, rowKey,
-        function() imp:_selectSlot(version, slot.id) end)
+        function() imp:_selectSlot(scope, slot.id) end)
 
       local px = x + pad + math.floor(10 * m.s)
       local inner = iw - math.floor(20 * m.s)
@@ -1642,6 +1856,9 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
       else
         metaTxt = Strings("empty slot")
       end
+      if slot.sealBroken then
+        metaTxt = Strings("%s - seal broken", metaTxt)
+      end
       Kit.text("small", Kit.ellipsize("small", metaTxt, textW), px, ly,
         selected and PAL.inverse or PAL.muted)
       -- Where the chip block starts: centred on the row beside the text, or
@@ -1654,22 +1871,22 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
       -- an export is a property of a slot, so the control belongs on the slot
       -- it exports (it selects the row first, since the exporter writes
       -- whichever slot is active).
-      local armed = deleteArmed(imp, "slot", slot.id, version)
+      local armed = deleteArmed(imp, "slot", slot.id, scope)
       local chips = {}
-      if slot.exists then
+      if slot.exists and not onCart then
         chips[#chips + 1] = { label = Strings("Export"), kind = "accent",
           key = rowKey .. "-export",
           action = function()
-            imp:_selectSlot(version, slot.id)
+            imp:_selectSlot(scope, slot.id)
             imp:exportSave(version)
           end }
       end
       if not imp.android then
         chips[#chips + 1] = { label = Strings("Rename"), kind = "accent",
           key = rowKey .. "-rename",
-          action = function() imp:_beginRename(version, slot.id) end }
+          action = function() imp:_beginRename(scope, slot.id) end }
       end
-      if imp.onEditSave and slot.exists then
+      if imp.onEditSave and slot.exists and not onCart then
         chips[#chips + 1] = { label = Strings("Edit"), kind = "accent",
           key = rowKey .. "-edit",
           action = function() imp.onEditSave(version, slot.id) end }
@@ -1680,8 +1897,8 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
         w = math.max(chipWidth(DELETE_LABEL(false), m),
           chipWidth(DELETE_LABEL(true), m)),
         action = function()
-          imp:pressDelete("slot", slot.id, version, function()
-            imp:_deleteSlot(version, slot.id)
+          imp:pressDelete("slot", slot.id, scope, function()
+            imp:_deleteSlot(scope, slot.id)
           end)
         end }
       for _, c in ipairs(chips) do c.w = c.w or chipWidth(c.label, m) end
@@ -1710,7 +1927,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
     cy = cy + Kit.textWrapped("small", hintText, x + pad, cy, iw, hintCol, 2)
     if folderRow then
       cy = cy + math.floor(4 * m.s)
-      local key = "sav-folder-" .. version
+      local key = "sav-folder-" .. scope
       local label = Strings("Open folder")
       local lw = Kit.textWidth("small", label)
       local lh = Kit.textHeight("small")
@@ -1733,11 +1950,141 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
     setPage(imp, pageKey, newPage)
     cy = cy + pagerH + gap
   end
-  btn(imp, x + pad, cy, iw, newBtnH, "slot-new-" .. version,
+  btn(imp, x + pad, cy, iw, newBtnH, "slot-new-" .. scope,
     Strings("+ New save slot"), {
       kind = "good",
-      action = function() imp:_newSlot(version) end,
+      action = function() imp:_newSlot(scope) end,
     })
+  return h
+end
+
+local function SEAL_LABEL(armed)
+  return armed and Strings("Break it") or Strings("Break the seal")
+end
+
+local function FILL_LABEL(count)
+  if count > 1 then return Strings("Install %d required mods", count) end
+  return Strings("Install required mods")
+end
+
+local function sealSlotName(slot)
+  if not slot then return nil end
+  if type(slot.label) == "string" and slot.label ~= "" then return slot.label end
+  return tostring(slot.id):match("^slot(%d+)$") or tostring(slot.id)
+end
+
+local function buildCartCard(imp, x, y, w, m, version)
+  if not imp.cartPlan then return 0 end
+  local report, slot = imp:cartPlan(version)
+  if not report then return 0 end
+  local title = tostring(report.title or report.id or "")
+  local broken = (slot and slot.sealBroken == true) or false
+  local fillCount = imp.cartFillRows and #imp:cartFillRows(version) or 0
+  local state, stateCol, body = nil, PAL.green, {}
+  if report.refused then
+    state, stateCol = Strings("This cart will not start"), PAL.red
+    body[#body + 1] = { report.message, PAL.detail }
+    if fillCount > 0 then
+      body[#body + 1] = { Strings("Install the mods it pins to play it the way its author built it."),
+        PAL.detail }
+    end
+    body[#body + 1] = { Strings("Break the seal to play it with the mods you have."),
+      PAL.detail }
+  elseif broken then
+    state, stateCol = Strings("Seal broken"), PAL.yellow
+    body[#body + 1] = { Strings("This save loads the cart's pinned mods first, then your other enabled mods. It is marked modified."),
+      PAL.detail }
+  elseif report.seal == "sealed+" then
+    state = Strings("Sealed - ready to play")
+    body[#body + 1] = { Strings("This cart loads only the mods it pins. You can switch any of them on or off."),
+      PAL.detail }
+  elseif report.sealed then
+    state = Strings("Sealed - ready to play")
+    body[#body + 1] = { Strings("This cart loads only the mods it pins."),
+      PAL.detail }
+  else
+    state = Strings("Open cart - ready to play")
+    body[#body + 1] = { Strings("This cart's pinned mods load first, then your other enabled mods."),
+      PAL.detail }
+  end
+  local scope = imp:slotScope(version)
+  local offer = report.sealed and not broken
+  local armed = offer and deleteArmed(imp, "seal", slot and slot.id or nil, scope)
+  if armed then
+    local name = sealSlotName(slot)
+    body[#body + 1] = { name
+      and Strings("Break the seal on %s, save slot %s?", title, name)
+      or Strings("Break the seal on %s, on a new save slot?", title),
+      PAL.yellow }
+    body[#body + 1] = { Strings("This is permanent and cannot be undone. That save is marked modified from then on."),
+      PAL.yellow }
+    body[#body + 1] = { Strings("%s still loads its pinned mods first, with your other enabled mods on top.", title),
+      PAL.yellow }
+    body[#body + 1] = { Strings("Press Break it again to do it."), PAL.yellow }
+  end
+  -- What the last install run managed, and per mod what it could not.
+  local fillNotice = imp.cartFillNotice
+  if fillNotice then
+    body[#body + 1] = { fillNotice.text,
+      fillNotice.ok and PAL.green or PAL.red }
+    for _, line in ipairs(fillNotice.failures or {}) do
+      body[#body + 1] = { line, PAL.red }
+    end
+  end
+
+  local pad = math.floor(14 * m.s)
+  local iw = w - 2 * pad
+  local fillLabel = FILL_LABEL(fillCount)
+  local chipGap = math.floor(8 * m.s)
+  local chipH = math.max(Kit.tapMin(), math.floor(30 * m.s))
+  local fillW = fillCount > 0
+    and math.min(iw, chipWidth(fillLabel, m)) or 0
+  local sealW = offer and math.min(iw, math.max(chipWidth(SEAL_LABEL(false), m),
+    chipWidth(SEAL_LABEL(true), m))) or 0
+  -- Both chips share a row when they fit; a narrow card stacks them instead.
+  local sideBySide = fillW > 0 and sealW > 0
+    and (fillW + chipGap + sealW) <= iw
+  local chipRows = 0
+  if fillW > 0 then chipRows = chipRows + 1 end
+  if sealW > 0 then chipRows = chipRows + 1 end
+  if sideBySide then chipRows = 1 end
+  if chipRows == 0 then chipH = 0 end
+
+  local h = pad + Kit.textHeight("button") + math.floor(4 * m.s)
+  for _, line in ipairs(body) do
+    h = h + Kit.wrapHeight("small", line[1] or "", iw, 3)
+  end
+  if chipRows > 0 then
+    h = h + math.floor(8 * m.s) + chipRows * chipH + (chipRows - 1) * chipGap
+  end
+  h = h + pad
+
+  Kit.card(x, y, w, h)
+  local cy = y + pad
+  Kit.text("button", Kit.ellipsize("button", state, iw), x + pad, cy, stateCol)
+  cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
+  for _, line in ipairs(body) do
+    cy = cy + Kit.textWrapped("small", line[1] or "", x + pad, cy, iw,
+      line[2], 3)
+  end
+  if chipRows > 0 then
+    cy = cy + math.floor(8 * m.s)
+    local bx = x + pad
+    if fillW > 0 then
+      btn(imp, bx, cy, fillW, chipH, "cart-fill-" .. scope, fillLabel, {
+        kind = "primary", font = "small",
+        action = function() imp:pressInstallCartMods(version) end,
+      })
+      if sideBySide then bx = bx + fillW + chipGap
+      else cy = cy + chipH + chipGap end
+    end
+    if sealW > 0 then
+      btn(imp, bx, cy, sealW, chipH, "seal-" .. scope, SEAL_LABEL(armed), {
+        kind = "danger", font = "small", keepArm = true,
+        action = function() imp:pressBreakSeal(version) end,
+      })
+    end
+  end
   return h
 end
 
@@ -1745,7 +2092,8 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
   imp.panelVersion = version
   local info = GameVersion.info(version)
   local locked = info == nil
-  local gameName = info and (info.launcherName or info.displayName)
+  local skin = cartSkin(imp, version)
+  local gameName = skin.name or (info and (info.launcherName or info.displayName))
     or tostring(version)
   local ready = (not locked) and imp.ready[version] or false
 
@@ -1823,7 +2171,7 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
     local cartW = math.min(cartAreaW, math.floor(playH * 0.88))
     local cartX = lx + math.floor((cartAreaW - cartW) / 2)
     cartridgeButton(imp, cartX, ly, cartW, playH, "play-" .. version,
-      version, gameName, function() imp:play(version, true) end)
+      skin, gameName, function() imp:play(version, true) end)
     imp._gearIcon = imp._gearIcon
       or love.graphics.newImage("assets/launcher/gear.png")
     btn(imp, lx + lw - mgW, ly, mgW, mgW, "manage-" .. version, "", {
@@ -1831,6 +2179,17 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
       action = function() imp._gameManage = version end,
     })
     ly = ly + playH + gap
+    btn(imp, lx, ly, lw, m.btnH, "carts-" .. version,
+      Strings("Custom Carts"), {
+        kind = "accent", font = "small",
+        action = function()
+          imp._cartPopup = version
+          imp._cartNotice = nil
+        end,
+      })
+    ly = ly + m.btnH + gap
+    local sealH = buildCartCard(imp, lx, ly, lw, m, version)
+    if sealH > 0 then ly = ly + sealH + gap end
   end
 
   -- The ROM card, which now only exists while there is something to report:
@@ -1997,6 +2356,10 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   local mods = imp.mods or {}
   local gap = m.gap
   local cy = y
+  local cartId, cartReport
+  if imp.modCartPlan then cartId, cartReport = imp:modCartPlan() end
+  -- a cart owns its mod set: only the pins it already ships may be switched
+  local bulkOk = not safeMode and cartId == nil
 
   -- header: progressive action cluster. Surfaces primary/frequent actions
   -- (Import, Updates, Sort) directly on the bar across screen sizes, placing
@@ -2025,11 +2388,11 @@ local function buildModsPanel(imp, x, y, w, availH, m)
         action = function() imp:chooseMod() end })
       btn(imp, place(disableW), cy, disableW, bh, "mods-disable-all", Strings("Disable all"), {
         kind = "warn", font = "small",
-        enabled = not safeMode,
+        enabled = bulkOk,
         action = function() imp:_setAllMods(false) end })
       btn(imp, place(enableW), cy, enableW, bh, "mods-enable-all", Strings("Enable all"), {
         kind = "good", font = "small",
-        enabled = not safeMode,
+        enabled = bulkOk,
         action = function() imp:_setAllMods(true) end })
       btn(imp, place(checkFullW), cy, checkFullW, bh, "mods-check-updates", Strings("Check for updates"), {
         font = "small",
@@ -2090,6 +2453,8 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     + math.floor(8 * m.s)
 
   cy = cy + buildModScopeRow(imp, x, cy, w, m)
+  cy = cy + buildModCartRow(imp, x, cy, w, m, cartId, cartReport)
+  cy = cy + buildSaveCartRow(imp, x, cy, w, m)
 
   if #mods == 0 then
     Kit.emptyBox(x, cy, w, math.floor(110 * m.s), imp:_modsEmptyHint())
@@ -2182,22 +2547,40 @@ local function buildModsPanel(imp, x, y, w, availH, m)
 
     -- These answer separate games, not a single shared install flag.  The
     -- importer receives the game id so an experimental confirmation also
-    -- applies only to the checkbox the player pressed.
+    -- applies only to the checkbox the player pressed.  A cart's pin answers
+    -- one game -- the cart's -- so it gets one switch instead of the row.
     local flipped = false
     local gamesY = ry + math.floor(8 * m.s) + textH + math.floor(8 * m.s)
-    Kit.text("micro", gamesLabel, px,
-      gamesY + (togH - Kit.textHeight("micro")) / 2, PAL.muted)
-    local tx = px + Kit.textWidth("micro", gamesLabel) + math.floor(10 * m.s)
-    for _, game in ipairs(GameVersion.ORDER) do
-      local togKey = "mod-toggle-" .. mod.id .. "-" .. game
-      if modGameCheckbox(tx, gamesY, togH,
-          mod.enabledByVersion and mod.enabledByVersion[game] == true,
-          game, togKey, not safeMode) then
-        local version = game
-        queueAction(imp, togKey, function() imp:_toggleMod(mod.id, nil, version) end)
+    local rowLabel = gamesLabel
+    if mod.cartPin then
+      rowLabel = mod.cartTogglable and Strings("In this cart:")
+        or Strings("Pinned, sealed:")
+    end
+    Kit.text("micro", rowLabel, px,
+      gamesY + (togH - Kit.textHeight("micro")) / 2,
+      mod.cartPin and not mod.cartTogglable and PAL.yellow or PAL.muted)
+    local tx = px + Kit.textWidth("micro", rowLabel) + math.floor(10 * m.s)
+    if mod.cartPin then
+      local togKey = "mod-toggle-" .. mod.id .. "-cart"
+      -- pressable even when the seal refuses it, so the panel can say why
+      if modGameCheckbox(tx, gamesY, togH, mod.enabled == true,
+          mod.cartBase or "red", togKey, not safeMode) then
+        queueAction(imp, togKey, function() imp:_toggleMod(mod.id, nil, nil) end)
         flipped = true
       end
       tx = tx + togH + togGap
+    else
+      for _, game in ipairs(GameVersion.ORDER) do
+        local togKey = "mod-toggle-" .. mod.id .. "-" .. game
+        if modGameCheckbox(tx, gamesY, togH,
+            mod.enabledByVersion and mod.enabledByVersion[game] == true,
+            game, togKey, not safeMode) then
+          local version = game
+          queueAction(imp, togKey, function() imp:_toggleMod(mod.id, nil, version) end)
+          flipped = true
+        end
+        tx = tx + togH + togGap
+      end
     end
     -- The checkboxes sit inside the row's rect, so their press also passes the
     -- row hit test; `flipped` gates the row action to everywhere else.
@@ -2213,17 +2596,27 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     -- in-game manager shows (src/mods/ModTargets.lua)
     local gamesW = mod.targets
       and Kit.textWidth("micro", mod.targets) + math.floor(12 * m.s) or 0
+    -- the cart's own list, not the player's: every row says so
+    local pinLabel = mod.cartPin and Strings("PINNED") or nil
+    local pinW = pinLabel
+      and Kit.textWidth("micro", pinLabel) + math.floor(12 * m.s) or 0
     local nameShown = Kit.ellipsize("button", mod.name,
-      textW - badgeW - gamesW - math.floor(12 * m.s))
+      textW - badgeW - gamesW - pinW - math.floor(12 * m.s))
     local headingCol = isFullyDisabled and PAL.muted or PAL.heading
     Kit.text("button", nameShown, px, ly, headingCol)
     local tagX = px + Kit.textWidth("button", nameShown) + math.floor(8 * m.s)
     Kit.tag(tagX, ly, badgeW, Kit.textHeight("button"), mod.badge,
       mod.experimental and PAL.yellow or PAL.muted)
+    tagX = tagX + badgeW + math.floor(4 * m.s)
     if mod.targets then
-      Kit.tag(tagX + badgeW + math.floor(4 * m.s), ly, gamesW,
+      Kit.tag(tagX, ly, gamesW,
         Kit.textHeight("button"), mod.targets,
         mod.targetsHere == false and PAL.steel or PAL.blue)
+      tagX = tagX + gamesW + math.floor(4 * m.s)
+    end
+    if pinLabel then
+      Kit.tag(tagX, ly, pinW, Kit.textHeight("button"), pinLabel,
+        mod.cartTogglable and PAL.blue or PAL.yellow)
     end
     ly = ly + Kit.textHeight("button") + math.floor(4 * m.s)
 
@@ -2272,8 +2665,8 @@ end
 
 -- ---------------------------------------------------------- find mods panel
 
--- SKINS tab: pick the on-screen skin, import one, or open the desktop studio.
-local function buildSkinsPanel(imp, x, y, w, availH, m)
+-- SKINS tab: pick the on-screen skin, import one, or open Skin Studio.
+local function buildSkinsPanelLegacy(imp, x, y, w, availH, m)
   local skins = imp:_ensureSkins()
   local active = imp:_activeSkin()
   local gap = m.gap
@@ -2327,7 +2720,7 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
   end
   cy = cy + urlH + math.floor(8 * m.s)
 
-  -- Studio button.  Desktop only: the host supplies the hook nowhere else.
+  -- The Studio reflows to a touch-first canvas plus inspector on phones.
   if imp.onOpenSkinStudio then
     local label = Strings("Open Skin Studio")
     local bw = math.min(w, Kit.textWidth("small", label) + math.floor(40 * m.s))
@@ -2346,6 +2739,64 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
 
   Kit.caption(x, cy, Strings("INSTALLED"))
   cy = cy + Kit.textHeight("small") + math.floor(6 * m.s)
+
+  -- Keep the actionable list below for detailed metadata and exports, but
+  -- lead with a visual picker: skins are much easier to recognize by their
+  -- bezel than by a folder name.  Cards use the same loaded art that the
+  -- runtime draws, so they cannot drift from the selected skin.
+  local previewGap = math.floor(8 * m.s)
+  local previewCols = w >= math.floor(420 * m.s) and 2 or 1
+  local previewW = (w - previewGap * (previewCols - 1)) / previewCols
+  local previewH = math.max(108 * m.s, Kit.tapMin() * 2)
+  local previewCount = #skins
+  for i, entry in ipairs(skins) do
+    local n = i - 1
+    local px = x + (n % previewCols) * (previewW + previewGap)
+    local py = cy + math.floor(n / previewCols) * (previewH + previewGap)
+    local key = "skin-preview-" .. entry.id
+    local selected = active == entry.id
+    local focused = Kit.focusable(key, px, py, previewW, previewH)
+    Kit.card(px, py, previewW, previewH, selected and "selected"
+      or (focused or Kit.hover(px, py, previewW, previewH)))
+    local pad = math.floor(8 * m.s)
+    local artH = math.floor(previewH * 0.60)
+    Theme.fillRounded(px + pad, py + pad, previewW - pad * 2, artH,
+      PAL.bg, 1, Theme.cardRadius() * 0.6)
+    local art = entry.preview
+    if art and art.getDimensions then
+      local iw, ih = art:getDimensions()
+      if iw > 0 and ih > 0 then
+        local scale = math.min((previewW - pad * 4) / iw, (artH - pad * 2) / ih)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(art, px + (previewW - iw * scale) * 0.5,
+          py + pad + (artH - ih * scale) * 0.5, 0, scale, scale)
+      end
+    else
+      Theme.strokeRounded(px + previewW * 0.23, py + pad + artH * 0.15,
+        previewW * 0.54, artH * 0.42, PAL.line, Theme.A.hairline, 1, 2)
+      Theme.fillRounded(px + previewW * 0.20, py + pad + artH * 0.64,
+        previewW * 0.22, artH * 0.17, PAL.steel, 0.75, 3)
+      Theme.fillRounded(px + previewW * 0.60, py + pad + artH * 0.61,
+        previewW * 0.12, artH * 0.22, PAL.steel, 0.75, artH * 0.11)
+      Theme.fillRounded(px + previewW * 0.75, py + pad + artH * 0.56,
+        previewW * 0.12, artH * 0.22, PAL.steel, 0.75, artH * 0.11)
+    end
+    Kit.text("mono", Kit.ellipsize("mono", entry.id, previewW - pad * 2),
+      px + pad, py + pad + artH + math.floor(5 * m.s),
+      selected and PAL.green or PAL.heading)
+    if selected then
+      Kit.text("micro", Strings("IN USE"), px + pad,
+        py + previewH - pad - Kit.textHeight("micro"), PAL.green)
+    end
+    if Kit.press(px, py, previewW, previewH) or Kit._activateId == key then
+      queueAction(imp, key, function() imp:_useSkin(entry.id) end)
+    end
+  end
+  if previewCount > 0 then
+    cy = cy + math.ceil(previewCount / previewCols) * previewH
+      + math.max(0, math.ceil(previewCount / previewCols) - 1) * previewGap
+      + gap
+  end
 
   local rowH = math.max(Kit.tapMin(), math.floor(44 * m.s))
   imp._skinGear = imp._skinGear
@@ -2460,6 +2911,69 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
   return cy + hintH - y
 end
 
+-- The launcher is the short path: bring a skin in, see what is enabled, or
+-- turn skin use off.  Browsing, pagination and per-skin editing/export live
+-- together in My Skins, where they are useful instead of competing here.
+local function buildSkinsPanel(imp, x, y, w, availH, m)
+  local cy, gap, bh = y, m.gap, m.btnH
+  local active = imp:_activeSkin()
+
+  Kit.text("button", Strings("Skins"), x, cy, PAL.heading)
+  local importW = math.min(w * 0.46,
+    Kit.textWidth("small", imp:_skinsImportButtonLabel()) + math.floor(24 * m.s))
+  btn(imp, x + w - importW, cy, importW, bh, "skins-import",
+    imp:_skinsImportButtonLabel(), { kind = "accent", font = "small",
+      action = function() imp:chooseSkin() end })
+  cy = cy + bh + gap
+
+  if imp._skinNotice then
+    cy = cy + Kit.textWrapped("small", imp._skinNotice.text, x, cy, w,
+      imp._skinNotice.ok and PAL.green or PAL.red, 2) + gap
+  end
+
+  local addW = Kit.textWidth("small", Strings("Add")) + math.floor(24 * m.s)
+  if imp._skinFetch then
+    Loader.inline(x, cy, w, bh, Strings("Downloading %s...",
+      tostring(imp._skinFetch.name or "")))
+  else
+    btn(imp, x + w - addW, cy, addW, bh, "skins-url-add", Strings("Add"), {
+      kind = "accent", font = "small", action = function() imp:_addSkinFromUrl() end })
+    textField(imp, x, cy, w - addW - gap, bh, "skins-url", imp.skinUrl or "",
+      Strings("Paste a skin link (.zip, .cfg, .deltaskin)"),
+      imp._skinUrlFocus == true, function() imp:_toggleSkinUrlFocus() end)
+  end
+  cy = cy + bh + gap
+
+  local currentH = active and (bh * 2 + gap * 2) or (bh + gap * 2)
+  Kit.card(x, cy, w, currentH)
+  Kit.caption(x + gap, cy + gap, "CURRENT SKIN")
+  local current = active and tostring(active) or Strings("No skin enabled")
+  Kit.text("mono", Kit.ellipsize("mono", current, w - gap * 2), x + gap,
+    cy + gap + Kit.textHeight("small") + math.floor(4 * m.s),
+    active and PAL.green or PAL.muted)
+  local buttonY = cy + bh + gap
+  local half = (w - gap * 3) * 0.5
+  if active then
+    btn(imp, x + gap, buttonY, half, bh, "skins-export-current",
+      Strings("Export current"), { font = "small",
+        action = function() imp:_exportSkin(active, "native") end })
+    btn(imp, x + gap * 2 + half, buttonY, half, bh, "skins-off",
+      Strings("Turn skins off"), { kind = "danger", font = "small",
+        action = function() imp:_disableSkins() end })
+  end
+  cy = cy + currentH + gap
+
+  if imp.onOpenSkinStudio then
+    btn(imp, x, cy, w, bh, "skins-my-skins", Strings("My Skins"), {
+      kind = "accent", font = "small",
+      action = function() imp.onOpenSkinStudio(imp.modScope or "red", active) end })
+    cy = cy + bh + gap
+  end
+  Kit.textWrapped("small", Strings("Import from a file or link, then manage, edit and export individual skins in My Skins."),
+    x, cy, w, PAL.muted, 3)
+  return cy + Kit.wrapHeight("small", Strings("Import from a file or link, then manage, edit and export individual skins in My Skins."), w, 3) - y
+end
+
 local function buildBugPanel(imp, x, y, w, availH, m)
   local SaveData = require("src.core.SaveData")
   local gap = m.gap
@@ -2523,14 +3037,45 @@ local function buildBugPanel(imp, x, y, w, availH, m)
       end })
 end
 
+-- FIND tab: which half of the feed is on screen, in the same chip idiom the
+-- MODS tab's scope row uses.  The counts say which half is worth pressing.
+local function buildFindKindRow(imp, x, y, w, m)
+  local h = math.max(Kit.tapMin(), math.floor(26 * m.s))
+  local gap = math.floor(6 * m.s)
+  local label = Strings("Browse:")
+  Kit.text("small", label, x, y + (h - Kit.textHeight("small")) / 2, PAL.muted)
+  local cx = x + Kit.textWidth("small", label) + math.floor(10 * m.s)
+  local options = {
+    { id = "mods", label = Strings("Mods"),
+      n = #((imp.findIndex and imp.findIndex.mods) or {}) },
+    { id = "carts", label = Strings("Carts"),
+      n = #((imp.findIndex and imp.findIndex.carts) or {}) },
+  }
+  for _, opt in ipairs(options) do
+    local text = ("%s (%d)"):format(opt.label, opt.n)
+    local cw = Kit.textWidth("micro", text) + math.floor(18 * m.s)
+    if cx + cw > x + w then break end
+    if Kit.chip(cx, y, cw, h, text, imp.findKind == opt.id, PAL.lineStrong,
+                "find-kind-" .. opt.id) then
+      local want = opt.id
+      queueAction(imp, "find-kind-" .. want,
+        function() imp:_setFindKind(want) end)
+    end
+    cx = cx + cw + gap
+  end
+  return h + math.floor(8 * m.s)
+end
+
 local function buildFindPanel(imp, x, y, w, availH, m)
+  imp._findVisibleEntries = nil
   imp:_ensureFind()
-  imp:_ensureMods()
   local ModIndex = require("src.mods.ModIndex")
   local ModUpdate = require("src.mods.ModUpdate")
   local sources = imp.findSources or {}
+  local carts = imp.findKind == "carts"
   local rows = imp:_findRows()
-  local total = #((imp.findIndex and imp.findIndex.mods) or {})
+  local total = #((imp.findIndex
+    and (carts and imp.findIndex.carts or imp.findIndex.mods)) or {})
   local gap = m.gap
   local cy = y
 
@@ -2561,6 +3106,8 @@ local function buildFindPanel(imp, x, y, w, availH, m)
     return (cy - y) + h
   end
 
+  cy = cy + buildFindKindRow(imp, x, cy, w, m)
+
   -- One row: the search field, then Filter / Sort / Indexes popup buttons.
   local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
   local bgap = math.floor(6 * m.s)
@@ -2573,22 +3120,33 @@ local function buildFindPanel(imp, x, y, w, availH, m)
   btn(imp, place(sw), cy, sw, fieldH, "find-sort", Strings("Sort"), {
     font = "small",
     action = function() imp._sortPopup = "find" end })
-  -- The Filter button carries its state: blue while a category is active,
-  -- so a filtered-down list never reads as "the index shrank".
+  -- The Filter button carries its state: blue while a category (mods) or a
+  -- base game (carts) is active, so a filtered-down list never reads as "the
+  -- index shrank".
+  local activeFilter = carts and imp.findBase or imp.findCategory
   local fw = Kit.textWidth("small", Strings("Filter")) + math.floor(20 * m.s)
   btn(imp, place(fw), cy, fw, fieldH, "find-filter", Strings("Filter"), {
-    kind = imp.findCategory and "accent" or "ghost", font = "small",
+    kind = activeFilter and "accent" or "ghost", font = "small",
     action = function() imp._filterPopup = true end })
   local searchW = place(0) - x - bgap
   textField(imp, x, cy, searchW, fieldH, "find-search", imp.findQuery or "",
-    Strings("Search mods"), imp._findSearchFocus == true,
+    carts and Strings("Search carts") or Strings("Search mods"),
+    imp._findSearchFocus == true,
     function() imp:_toggleFindSearchFocus() end)
   cy = cy + fieldH + math.floor(8 * m.s)
 
   if #rows == 0 then
-    Kit.emptyBox(x, cy, w, math.floor(110 * m.s),
-      (total == 0) and Strings("This index lists no mods yet.")
-        or Strings("No mods match that search."))
+    local empty
+    if imp._findFetch then
+      empty = Strings("Loading mod index...")
+    elseif carts then
+      empty = (total == 0) and Strings("This index lists no carts yet.")
+        or Strings("No carts match that search.")
+    else
+      empty = (total == 0) and Strings("This index lists no mods yet.")
+        or Strings("No mods match that search.")
+    end
+    Kit.emptyBox(x, cy, w, math.floor(110 * m.s), empty)
     return (cy - y) + math.floor(110 * m.s)
   end
 
@@ -2646,6 +3204,11 @@ local function buildFindPanel(imp, x, y, w, availH, m)
   local listTop = cy
   setPage(imp, "find", Kit.wheelPage(x, listTop, w, listH, cur, #rows, perPage))
 
+  local visible = imp._findVisibleEntries or {}
+  for i = #visible, 1, -1 do visible[i] = nil end
+  for i = first, last do visible[#visible + 1] = rows[i] end
+  imp._findVisibleEntries = visible
+
   for i = first, last do
     local entry = rows[i]
     local ry = listTop + (i - first) * (rowH + gap)
@@ -2688,7 +3251,7 @@ local function buildFindPanel(imp, x, y, w, availH, m)
       if imp:_findThumbPending(entry.id) then
         Kit.spinner(px + thumb / 2, ly + thumb / 2, thumb * 0.28)
       else
-        Kit.textCenter("micro", "MOD", px,
+        Kit.textCenter("micro", carts and "CART" or "MOD", px,
           ly + (thumb - Kit.textHeight("micro")) / 2, thumb, PAL.faint)
       end
     end
@@ -2711,7 +3274,12 @@ local function buildFindPanel(imp, x, y, w, availH, m)
       or nil
     local rest = {}
     if entry.author then rest[#rest + 1] = entry.author end
-    if entry.categories and entry.categories[1] then
+    if carts then
+      -- A cart has no categories; the game it plays as and its seal are what
+      -- a reader is actually choosing between.
+      rest[#rest + 1] = gameLabel(entry.base)
+      if entry.seal then rest[#rest + 1] = entry.seal end
+    elseif entry.categories and entry.categories[1] then
       rest[#rest + 1] = entry.categories[1]
     end
     if dates then
@@ -2993,6 +3561,8 @@ local function buildConfirmModal(imp, m)
         imp._modConfirm = nil
         if c.indexEntry then
           imp:_findInstall(c.indexEntry)
+        elseif c.kind == "cartPins" then
+          imp:_installCartPins(c.version, c.id)
         elseif c.kind == "update" then
           imp:_confirmModUpdate(c.id, c.release)
         elseif c.kind == "enableAll" then
@@ -3139,9 +3709,8 @@ local function buildSingleProfileActionsModal(imp, m)
   if not pName then imp._singleProfileActions = nil return end
 
   local LauncherMods = require("src.mods.LauncherMods")
-  local SaveData = require("src.core.SaveData")
-  local options = SaveData.loadOptions()
-  local profiles, active = LauncherMods.getProfiles(options)
+  local prof = profileState(imp)
+  local options, profiles = prof.options, prof.list
 
   local pad = math.floor(18 * m.s)
   local w = math.min(math.floor(380 * m.s), m.w - 2 * m.pad)
@@ -3156,6 +3725,7 @@ local function buildSingleProfileActionsModal(imp, m)
       action = function()
         LauncherMods.duplicateProfile(pName, options)
         imp._singleProfileActions = nil
+        if imp._refreshMods then imp:_refreshMods() end
       end
     },
     {
@@ -3177,6 +3747,7 @@ local function buildSingleProfileActionsModal(imp, m)
         imp:pressDelete("profile", pName, nil, function()
           LauncherMods.deleteProfile(pName, options)
           imp._singleProfileActions = nil
+          if imp._refreshMods then imp:_refreshMods() end
         end)
       end
     }
@@ -3212,9 +3783,8 @@ end
 -- Modal for Mod Profiles (#593) - interactive profile manager (switch, edit, duplicate, delete)
 local function buildProfilesModal(imp, m)
   local LauncherMods = require("src.mods.LauncherMods")
-  local SaveData = require("src.core.SaveData")
-  local options = SaveData.loadOptions()
-  local profiles, active = LauncherMods.getProfiles(options)
+  local prof = profileState(imp)
+  local options, profiles, active = prof.options, prof.list, prof.active
 
   local pad = math.floor(18 * m.s)
   local w = math.min(math.floor(460 * m.s), m.w - 2 * m.pad)
@@ -3317,12 +3887,15 @@ local function buildModHeaderActionsModal(imp, m)
   local pad = math.floor(18 * m.s)
   local w = math.floor(380 * m.s)
   local gap = math.floor(8 * m.s)
+  -- same gate as the header cluster: a cart's mod set is not bulk-editable
+  local bulkOk = not imp.safeMode
+    and not (imp.modCartPlan and imp:modCartPlan())
   local btns = {
     { label = Strings("Mod profiles..."), action = function() imp._profilesPopup = true end },
     { label = Strings("Check for updates"), action = function() imp:_syncModUpdateInfo(true) end },
-    { label = Strings("Enable all mods"), kind = "good", enabled = not imp.safeMode,
+    { label = Strings("Enable all mods"), kind = "good", enabled = bulkOk,
       action = function() imp:_setAllMods(true) end },
-    { label = Strings("Disable all mods"), kind = "warn", enabled = not imp.safeMode,
+    { label = Strings("Disable all mods"), kind = "warn", enabled = bulkOk,
       action = function() imp:_setAllMods(false) end },
     { label = Strings("Sort mods..."), action = function() imp._sortPopup = "mods" end },
   }
@@ -3418,34 +3991,244 @@ end
 -- also what a controller reaches after the tab row.
 local function buildGameModal(imp, m)
   local pad = math.floor(18 * m.s)
-  local gap = math.floor(8 * m.s)
-  local w = math.floor(360 * m.s)
-  local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
-    + #GAME_TABS * (m.btnH + gap) + m.btnH + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local headH = Kit.textHeight("button") + math.floor(12 * m.s)
+  local avail = m.H - 2 * m.pad
+  local cols, gap, btnH = 1, math.floor(8 * m.s), m.btnH
+  local function rows() return math.ceil(#GAME_TABS / cols) + 1 end
+  local function total() return 2 * pad + headH + rows() * btnH
+    + (rows() - 1) * gap end
+  if total() > avail then cols = 2 end
+  if total() > avail then gap = math.max(2, math.floor(3 * m.s)) end
+  if total() > avail then
+    btnH = math.max(Kit.tapMin(),
+      btnH - math.ceil((total() - avail) / rows()))
+  end
+  local nrows = rows() - 1
+  local w = math.floor((cols > 1 and 440 or 360) * m.s)
+  local px, py, pw = modalPanel(m, w, total())
   local cy = py + pad
   Kit.text("button", Strings("Choose game"), px + pad, cy, PAL.heading)
-  cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
+  cy = cy + headH
   local chrome = headerChrome(imp)
-  for _, g in ipairs(GAME_TABS) do
-    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "gamepop-" .. g.id,
+  local colW = math.floor((pw - 2 * pad - (cols - 1) * gap) / cols)
+  for i, g in ipairs(GAME_TABS) do
+    local bx = px + pad + ((i - 1) % cols) * (colW + gap)
+    local by = cy + math.floor((i - 1) / cols) * (btnH + gap)
+    btn(imp, bx, by, colW, btnH, "gamepop-" .. g.id,
       Strings(g.label), {
         face = "tab", font = "small", letter = g.letter, color = g.color,
         active = imp.tab == g.id,
         action = chrome.tab[g.id] })
-    cy = cy + m.btnH + gap
   end
-  btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "gamepop-close",
+  cy = cy + nrows * (btnH + gap)
+  btn(imp, px + pad, cy, pw - 2 * pad, btnH, "gamepop-close",
     Strings("Close"), { font = "small",
       action = function() imp._gamePopup = nil end })
 end
 
--- Category filter for FIND MODS.  Two columns, because an index can list
--- enough categories to overflow a single stacked column on a short window.
+local SEAL_WORD = { open = "open", ["sealed+"] = "sealed+" }
+
+local function cartRowLabel(row)
+  local seal = Strings(SEAL_WORD[row.seal] or "sealed")
+  return Strings("%s - v%s - %s", tostring(row.title or row.id),
+    tostring(row.version or "?"), seal)
+end
+
+local function buildCartModal(imp, m)
+  local version = imp._cartPopup
+  local rows = imp:_ensureCarts(version)
+  local info = GameVersion.info(version)
+  local baseName = info and (info.displayName or info.launcherName)
+    or tostring(version)
+  local active = imp.activeCart[version]
+  local pad = math.floor(18 * m.s)
+  local gap = math.floor(8 * m.s)
+  local w = math.floor(420 * m.s)
+  local rowH = m.btnH
+  local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
+  local notice = imp._cartNotice
+  local noticeH = notice
+    and (Kit.wrapHeight("small", notice, w - 2 * pad, 2) + gap) or 0
+  local emptyH = (#rows == 0) and (Kit.textHeight("small") + gap) or 0
+  local fixed = pad + Kit.textHeight("button") + math.floor(12 * m.s)
+    + noticeH + emptyH + 2 * (rowH + gap) + rowH + pad
+  local perPage = Kit.rowsThatFit(m.H - 2 * m.pad - fixed, rowH, gap, 1, 8)
+  local pageKey = "cartpop-" .. tostring(version)
+  local first, last, cur, pages = Kit.pageBounds(page(imp, pageKey), #rows, perPage)
+  setPage(imp, pageKey, cur)
+  local shown = math.max(0, last - first + 1)
+  local h = fixed + shown * (rowH + gap) + (pages > 1 and (pagerH + gap) or 0)
+
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = py + pad
+  Kit.text("button", Strings("Custom Carts"), px + pad, cy, PAL.heading)
+  cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
+  if notice then
+    cy = cy + Kit.textWrapped("small", notice, px + pad, cy,
+      pw - 2 * pad, PAL.detail, 2) + gap
+  end
+  btn(imp, px + pad, cy, pw - 2 * pad, rowH, "cartpop-vanilla", baseName, {
+    kind = (active == nil) and "primary" or "ghost", font = "small",
+    action = function() imp:_selectCart(version, nil) end })
+  cy = cy + rowH + gap
+  if #rows == 0 then
+    Kit.text("small", Strings("No carts installed for this game yet."),
+      px + pad, cy, PAL.muted)
+    cy = cy + Kit.textHeight("small") + gap
+  end
+  local expGap = math.floor(6 * m.s)
+  local expW = math.min(chipWidth(Strings("Export"), m),
+    math.floor((pw - 2 * pad) * 0.35))
+  for i = first, last do
+    local row = rows[i]
+    local rowKey = "cartpop-id-" .. tostring(row.id)
+    local pickW = pw - 2 * pad - expW - expGap
+    btn(imp, px + pad, cy, pickW, rowH, rowKey, cartRowLabel(row), {
+        kind = (active == row.id) and "primary" or "ghost", font = "small",
+        action = function() imp:_selectCart(version, row.id) end })
+    btn(imp, px + pad + pickW + expGap, cy, expW, rowH, rowKey .. "-export",
+      Strings("Export"), { kind = "accent", font = "small",
+        action = function() imp:exportCart(row.id) end })
+    cy = cy + rowH + gap
+  end
+  if pages > 1 then
+    setPage(imp, pageKey,
+      Kit.pager(px + pad, cy, pw - 2 * pad, cur, #rows, perPage, pageKey))
+    cy = cy + pagerH + gap
+  end
+  local FilePicker = require("src.core.FilePicker")
+  btn(imp, px + pad, cy, pw - 2 * pad, rowH, "cartpop-more",
+    FilePicker.available() and Strings("Import a cart")
+      or Strings("Get more carts"),
+    { kind = "accent", font = "small",
+      action = function() imp:importCartFile(version) end })
+  cy = cy + rowH + gap
+  btn(imp, px + pad, cy, pw - 2 * pad, rowH, "cartpop-close",
+    Strings("Close"), { font = "small",
+      action = function()
+        imp._cartPopup = nil
+        imp._cartNotice = nil
+      end })
+end
+
+local CART_PIN_LINES = 4
+
+local function cartPinLines(pins)
+  local out = {}
+  for i = 1, math.min(#pins, CART_PIN_LINES) do
+    local pin = pins[i]
+    out[#out + 1] = Strings("%s - %s", tostring(pin.name or pin.id),
+      tostring(pin.reason or ""))
+  end
+  if #pins > CART_PIN_LINES then
+    out[#out + 1] = Strings("...and %d more.", #pins - CART_PIN_LINES)
+  end
+  return out
+end
+
+local function buildCartSaveModal(imp, m)
+  local st = imp._cartSave
+  local info = GameVersion.info(st.version)
+  local gameName = (info and (info.launcherName or info.displayName))
+    or tostring(st.version)
+  local pad = math.floor(18 * m.s)
+  local gap = math.floor(8 * m.s)
+  local w = math.floor(500 * m.s)
+  local inner = w - 2 * pad
+  local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
+
+  local hint = (st.count == 1)
+    and Strings("This freezes the 1 mod enabled for %s into a cart.", gameName)
+    or Strings("This freezes the %d mods enabled for %s into a cart.",
+      st.count, gameName)
+  local id = imp:_cartSaveId()
+  local meta = id
+    and Strings("id %s - v%s - by %s", id, st.cartVersion, st.author)
+    or Strings("Type a title - the cart id is built from it.")
+
+  local pins = st.unresolved or {}
+  local pinHead = (#pins > 0) and ((#pins == 1)
+    and Strings("1 mod could only be pinned to this install:")
+    or Strings("%d mods could only be pinned to this install:", #pins)) or nil
+  local pinRows = pinHead and cartPinLines(pins) or {}
+  local share = st.publishable
+    and Strings("Every mod is pinned to a release, so this cart can be shared.")
+    or Strings("This cart can be saved and played here while those mods stay installed at these versions, and cannot be shared.")
+  local shareCol = st.publishable and PAL.green or PAL.yellow
+
+  local pinIndent = math.floor(10 * m.s)
+  local hintH = Kit.wrapHeight("small", hint, inner, 3) + gap
+  local metaH = Kit.textHeight("micro") + gap
+  local errH = st.error
+    and (Kit.wrapHeight("small", st.error, inner, 2) + gap) or 0
+  local pinH = 0
+  if pinHead then
+    pinH = Kit.textHeight("small") + math.floor(4 * m.s)
+    for _, line in ipairs(pinRows) do
+      pinH = pinH + Kit.wrapHeight("small", line, inner - pinIndent, 2)
+        + math.floor(2 * m.s)
+    end
+    pinH = pinH + gap
+  end
+  local shareH = Kit.wrapHeight("small", share, inner, 2) + gap
+  local footH = Kit.textHeight("micro") + math.floor(8 * m.s)
+  local h = pad + Kit.textHeight("button") + math.floor(10 * m.s) + hintH
+    + fieldH + gap + metaH + errH + pinH + shareH + m.btnH + footH + pad
+
+  local px, py, pw = modalPanel(m, w, h)
+  local cy = py + pad
+  Kit.text("button", Strings("Save as cart"), px + pad, cy, PAL.heading)
+  cy = cy + Kit.textHeight("button") + math.floor(10 * m.s)
+  cy = cy + Kit.textWrapped("small", hint, px + pad, cy, pw - 2 * pad,
+    PAL.detail, 3) + gap
+  textField(imp, px + pad, cy, pw - 2 * pad, fieldH, "cartsave-field",
+    st.text or "", Strings("Cart title"), true)
+  cy = cy + fieldH + gap
+  Kit.text("micro", Kit.ellipsize("micro", meta, pw - 2 * pad), px + pad, cy,
+    PAL.muted)
+  cy = cy + Kit.textHeight("micro") + gap
+  if st.error then
+    cy = cy + Kit.textWrapped("small", st.error, px + pad, cy, pw - 2 * pad,
+      PAL.red, 2) + gap
+  end
+  if pinHead then
+    Kit.text("small", Kit.ellipsize("small", pinHead, pw - 2 * pad),
+      px + pad, cy, PAL.yellow)
+    cy = cy + Kit.textHeight("small") + math.floor(4 * m.s)
+    for _, line in ipairs(pinRows) do
+      cy = cy + Kit.textWrapped("small", line, px + pad + pinIndent, cy,
+        pw - 2 * pad - pinIndent, PAL.detail, 2) + math.floor(2 * m.s)
+    end
+    cy = cy + gap
+  end
+  cy = cy + Kit.textWrapped("small", share, px + pad, cy, pw - 2 * pad,
+    shareCol, 2) + gap
+
+  local place = Layout.rightCluster(px + pad, pw - 2 * pad, math.floor(8 * m.s))
+  local okLabel = Strings("Save as cart")
+  local okW = Kit.textWidth("small", okLabel) + math.floor(28 * m.s)
+  btn(imp, place(okW), cy, okW, m.btnH, "cartsave-ok", okLabel,
+    { kind = "primary", font = "small",
+      action = function() imp:_commitCartSave() end })
+  local cw = Kit.textWidth("small", Strings("Cancel")) + math.floor(28 * m.s)
+  btn(imp, place(cw), cy, cw, m.btnH, "cartsave-cancel", Strings("Cancel"),
+    { font = "small", action = function() imp:_cancelCartSave() end })
+  cy = cy + m.btnH + math.floor(8 * m.s)
+  Kit.text("micro", Strings("Enter to save - Esc to cancel"), px + pad, cy,
+    PAL.muted)
+end
+
+-- Category filter for FIND MODS, base-game filter for FIND CARTS (a cart has
+-- no categories).  Two columns, because an index can list enough categories
+-- to overflow a single stacked column on a short window.
 local function buildFilterModal(imp, m)
-  local cats = (imp.findIndex and imp.findIndex.categories) or {}
+  local carts = imp.findKind == "carts"
+  local keys = (imp.findIndex
+    and (carts and imp.findIndex.baseGames or imp.findIndex.categories)) or {}
   local items = { { key = nil, label = Strings("All") } }
-  for _, c in ipairs(cats) do items[#items + 1] = { key = c, label = c } end
+  for _, c in ipairs(keys) do
+    items[#items + 1] = { key = c, label = carts and gameLabel(c) or c }
+  end
   local pad = math.floor(18 * m.s)
   local w = math.floor(440 * m.s)
   local gap = math.floor(8 * m.s)
@@ -3454,18 +4237,20 @@ local function buildFilterModal(imp, m)
     + nrows * (m.btnH + gap) + m.btnH + pad
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("button", Strings("Filter by category"), px + pad, cy, PAL.heading)
+  Kit.text("button", carts and Strings("Filter by base game")
+    or Strings("Filter by category"), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
   local colW = math.floor((pw - 2 * pad - gap) / 2)
+  local active = carts and imp.findBase or imp.findCategory
   for i, it in ipairs(items) do
     local bx = px + pad + ((i - 1) % 2) * (colW + gap)
     local by = cy + math.floor((i - 1) / 2) * (m.btnH + gap)
     local key = it.key
     btn(imp, bx, by, colW, m.btnH, "filterpop-" .. (key or "all"), it.label, {
-      kind = (imp.findCategory == key) and "primary" or "ghost",
+      kind = (active == key) and "primary" or "ghost",
       font = "small",
       action = function()
-        imp.findCategory = key
+        if carts then imp.findBase = key else imp.findCategory = key end
         setPage(imp, "find", 1)
         imp._filterPopup = nil
       end })
@@ -3823,8 +4608,14 @@ local function buildFindEntryModal(imp, m)
   end
   trend = (#trend > 0) and table.concat(trend, "  -  ") or nil
   local trendH = trend and (Kit.textHeight("small") + math.floor(2 * m.s)) or 0
+  -- What a cart actually is: a pinned mod list.  Its own page installs them;
+  -- this popup only ever installs the cart file.
+  local pins = ModIndex.isCart(entry)
+    and Strings("Pins %d mod(s) - install them from the cart's own page",
+      #(entry.mods or {})) or nil
+  local pinsH = pins and (Kit.textHeight("small") + math.floor(2 * m.s)) or 0
   local h = pad + Kit.textHeight("button") + math.floor(4 * m.s)
-    + Kit.textHeight("small") + trendH + noteH + math.floor(12 * m.s)
+    + Kit.textHeight("small") + trendH + pinsH + noteH + math.floor(12 * m.s)
     + nBtns * (m.btnH + gap) - gap + pad
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
@@ -3833,7 +4624,10 @@ local function buildFindEntryModal(imp, m)
   cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
   local lead = "v" .. tostring(ModIndex.displayVersion(entry))
   if entry.author then lead = lead .. "  -  " .. entry.author end
-  if entry.categories and entry.categories[1] then
+  if ModIndex.isCart(entry) then
+    lead = lead .. "  -  " .. gameLabel(entry.base)
+    if entry.seal then lead = lead .. "  -  " .. entry.seal end
+  elseif entry.categories and entry.categories[1] then
     lead = lead .. "  -  " .. entry.categories[1]
   end
   local dl = stats and ModUpdate.downloadsShort(stats.total) or nil
@@ -3847,6 +4641,12 @@ local function buildFindEntryModal(imp, m)
   if trend then
     cy = cy + math.floor(2 * m.s)
     Kit.text("small", Kit.ellipsize("small", trend, pw - 2 * pad),
+      px + pad, cy, PAL.muted)
+    cy = cy + Kit.textHeight("small")
+  end
+  if pins then
+    cy = cy + math.floor(2 * m.s)
+    Kit.text("small", Kit.ellipsize("small", pins, pw - 2 * pad),
       px + pad, cy, PAL.muted)
     cy = cy + Kit.textHeight("small")
   end
@@ -4364,8 +5164,8 @@ local function syncTitle(imp, m, px, py, pw, pad)
   Kit.text("button", label, px + pad, py, PAL.heading)
   local bh = math.floor(15 * m.s)
   local bw = Kit.textWidth("micro", "BETA") + math.floor(14 * m.s)
-  Kit.tag(px + pad + Kit.textWidth("button", label) + math.floor(8 * m.s),
-    py + (Kit.textHeight("button") - bh) / 2, bw, bh, "BETA", PAL.yellow)
+  drawBetaTag(px + pad + Kit.textWidth("button", label) + math.floor(8 * m.s),
+    py + (Kit.textHeight("button") - bh) / 2, bw, bh)
   return py + Kit.textHeight("button") + math.floor(12 * m.s)
 end
 
@@ -4809,7 +5609,7 @@ local function modalUp(imp)
     or imp._appPatchNotes
     or imp._findDetails or imp._modVersions or imp._modDepResolver or imp._sortPopup
     or imp._filterPopup or imp._modScopePopup or imp._indexManage
-    or imp._gamePopup
+    or imp._gamePopup or imp._cartPopup or imp._cartSave
     or imp._modActions or imp._modImports or imp._skinActions or imp._syncModal
     or imp._modHeaderActionsPopup or imp._profilesPopup or imp._singleProfileActions or imp._profileSavePrompt
     or imp._profileRenamePrompt or imp._findEntry or imp._gameManage) ~= nil
@@ -4877,6 +5677,7 @@ local function buildModals(imp, m)
     })
     return true
   end
+  if imp._cartSave then buildCartSaveModal(imp, m) return true end
   if imp._settings then buildSettingsModal(imp, m) return true end
   if imp._rename then
     buildPrompt(imp, m, {
@@ -4952,6 +5753,7 @@ local function buildModals(imp, m)
   if imp._modHeaderActionsPopup then buildModHeaderActionsModal(imp, m) return true end
   if imp._sortPopup then buildSortModal(imp, m) return true end
   if imp._gamePopup then buildGameModal(imp, m) return true end
+  if imp._cartPopup then buildCartModal(imp, m) return true end
   if imp._modScopePopup then buildModScopeModal(imp, m) return true end
   if imp._filterPopup then buildFilterModal(imp, m) return true end
   if imp._indexManage then buildIndexesModal(imp, m) return true end
@@ -4979,12 +5781,6 @@ local function loaderSpec(imp)
   if b then
     return { title = b.title, detail = b.detail, progress = b.progress,
              onCancel = b.cancel }
-  end
-  -- The boot prewarm runs without an overlay (the user did not ask for it and
-  -- must be able to use the launcher meanwhile), but if they reach the Find
-  -- Mods tab before it lands, THEN they are waiting on it and it earns one.
-  if imp.tab == "find" and imp._findFetch and not imp.findLoaded then
-    return { title = Strings("Loading mod index") }
   end
   return nil
 end

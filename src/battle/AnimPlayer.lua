@@ -348,6 +348,12 @@ local EMITTERS = {
   SE_PETALS_FALLING = function() return fallingObjectSteps(20, PETAL_TILE, "e4") end,
 }
 
+-- home/copy2.asm:62 CopyVideoData -- 8 tiles a frame plus the tail frame
+local function tilesetLoadFrames(data, ts)
+  local sheet = data and data.tilesheets and data.tilesheets[ts or 0]
+  return math.floor((sheet and sheet.tiles or 79) / 8) + 1
+end
+
 -- One OAM entry for tile `t` of a frame block anchored at base coord `bc`,
 -- with the subanimation transform applied (DrawFrameBlock).
 local function placeTile(transform, bc, t, tileset)
@@ -456,6 +462,11 @@ function AnimPlayer:start(moveId, attackerIsPlayer, opts)
   local obp0Flip = false
 
   for _, row in ipairs(anim.seq) do
+    -- engine/battle/animations.asm:252 LoadMoveAnimationTiles, before the
+    -- row's sound and its first frame block (#1653)
+    if not row.effect then
+      emit(tilesetLoadFrames(self.data, row.tileset))
+    end
     -- PlayAnimation/PlaySubanimation: each row's sound byte is a move id
     -- whose MoveSoundTable entry (sfx + pitch/tempo modifiers) plays as
     -- the row starts (GetMoveSound)

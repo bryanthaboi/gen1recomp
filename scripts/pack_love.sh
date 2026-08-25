@@ -50,7 +50,7 @@ rm -f "$OUTPUT"
   main.lua conf.lua src data assets tools/save-editor \
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
-  tools/rom_manifest_silver.json \
+  tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
 if [ -f "$ROOT/PATCH_NOTES.md" ]; then
   (cd "$ROOT" && zip -q "$OUTPUT" PATCH_NOTES.md)
@@ -96,6 +96,7 @@ for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 tools/rom_manifest.json tools/rom_manifest_blue.json \
                 tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
                 tools/rom_manifest_silver.json \
+                tools/rom_manifest_crystal.json \
                 src/ui/kit/Kit.lua \
                 src/import/LauncherView.lua; do
   grep -qxF "$required" "$LISTING" \

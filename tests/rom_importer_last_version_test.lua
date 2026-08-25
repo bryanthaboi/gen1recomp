@@ -76,11 +76,12 @@ eq(ri4.tab, "blue", "an explicit --game tab beats the remembered version")
 LaunchOptions.pendingTab = nil   -- module is a singleton: do not leak this
 
 -- A junk value in options.lua (hand-edited file, a build that knew other
--- versions) must not select a tab that does not exist.  "gold" used to be
--- the stand-in for this (Gen 2's Gold/Silver support was still unwritten);
--- now that Gold is a real version, "crystal" is the still-unknown one.
+-- versions) must not select a tab that does not exist.  Real version ids
+-- stood here twice -- "gold", then "crystal" -- and each had to be swapped
+-- out the day that game shipped, so this is "nonesuch": a deliberate
+-- never-a-game token, not a version anyone is waiting on.
 local opts = SaveData.loadOptions()
-opts.lastVersion = "crystal"
+opts.lastVersion = "nonesuch"
 SaveData.saveOptions(opts)
 local ri5 = newImporter({ tab = "red", ready = { red = true, yellow = true } })
 ri5:_applyLastVersionTab()

@@ -39,14 +39,33 @@ local BUILTIN = {
 -- screens and do have ids.
 local GEN2 = {
   "BankOfMom",
-  "BattleState", "BattleTransition", "BoxMenu", "CardFlip",
+  "BattleState",
+  -- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:1 the CHALLENGE
+  -- / EXPLANATION / CANCEL desk menu, Crystal only.
+  "BattleTowerMenu",
+  "BattleTransition", "BoxMenu",
+  -- ../pokecrystal/engine/events/buena.asm:1 the radio-password prompt behind
+  -- `special BuenasPassword`, Crystal only.
+  "BuenaPassword",
+  "CardFlip",
   -- The Pokecenter PC's whose-PC top menu and the player's item PC behind it;
   -- Gen2PcMenu below is the storage system both BILL's PC rows open.
   "CenterPcMenu",
   "ContestMenu",
-  "CopyrightSplash", "Credits", "DayCareMenu", "DecorationMenu", "Diploma",
+  "CopyrightSplash", "Credits",
+  -- ../pokecrystal/engine/movie/intro.asm:1 CrystalIntro, the Crystal-only
+  -- peer of GoldSilverIntro below.
+  "CrystalIntro",
+  -- ../pokecrystal/engine/movie/splash.asm:1 SplashScreen, the Crystal-only
+  -- Ditto peer of GameFreakPresents below.
+  "CrystalSplash",
+  "DayCareMenu", "DecorationMenu", "Diploma",
   "EggHatchAnim", "ElevatorMenu", "EvolutionAnim",
-  "GameFreakPresents", "GoldSilverIntro", "HallOfFame", "HeldItemMenu",
+  "GameFreakPresents",
+  -- ../pokecrystal/engine/menus/init_gender.asm:23 InitGender, the Crystal-only
+  -- screen PlayerProfileSetup runs before Oak's speech.
+  "GenderSelect",
+  "GoldSilverIntro", "HallOfFame", "HeldItemMenu",
   -- Gen2InitClock is both timeset.asm screens: the new-game hour/minute pair
   -- OakSpeech opens with, and Mom's day-of-week wheel.
   "InitClock",
@@ -57,7 +76,11 @@ local GEN2 = {
   "MailCompose", "MailMenu", "MailRead", "MailboxMenu",
   -- Gen2MapRadio is the in-house wall radio (`special MapRadio`), not a card.
   "MapRadio",
-  "MainMenu", "MartMenu", "MoveDeleter", "NamePick", "NamingScreen", "OakSpeech",
+  "MainMenu", "MartMenu", "MoveDeleter",
+  -- ../pokecrystal/engine/events/move_tutor.asm:1 the Goldenrod tutor's own
+  -- move/party pages, Crystal only.
+  "MoveTutor",
+  "NamePick", "NamingScreen", "OakSpeech",
   "OptionsMenu", "PackMenu", "PartyMenu", "PcMenu", "PhotoStudio", "PokedexMenu",
   "Pokegear", "SaveMenu", "ScriptMenu", "SlotMachine",
   "StartMenu", "SummaryMenu", "TitleState", "TradeAnim", "TradeMenu",
@@ -66,12 +89,31 @@ local GEN2 = {
   "UnownPrinter", "UnownPuzzle",
 }
 
+local GEN2_PENDING = {
+  BattleTowerMenu = true,
+  BuenaPassword = true,
+  MoveTutor = true,
+}
+
+local function moduleExists(name)
+  local path = "src/ui/gen2/" .. name .. ".lua"
+  local handle = io.open(path, "r")
+  if handle then
+    handle:close()
+    return true
+  end
+  local lfs = love and love.filesystem
+  return (lfs and lfs.getInfo and lfs.getInfo(path)) ~= nil
+end
+
 -- The full ids, in the same order, for tests and for the mod docs.
 Screens.GEN2_IDS = {}
 for _, name in ipairs(GEN2) do
   local id = "Gen2" .. name
   BUILTIN[id] = "src.ui.gen2." .. name
-  Screens.GEN2_IDS[#Screens.GEN2_IDS + 1] = id
+  if not GEN2_PENDING[name] or moduleExists(name) then
+    Screens.GEN2_IDS[#Screens.GEN2_IDS + 1] = id
+  end
 end
 
 local cache = {}
@@ -124,6 +166,14 @@ local function build(game, id, ...)
     inst = factory.new(game, ...)
   end
   inst.screenId = inst.screenId or id
+  -- Standardized opt-in marker for mod-created options/settings screens.
+  -- A mod may declare `isModOptions = true` on its screen factory table or
+  -- on the returned instance.  Either way the flag is propagated so that other
+  -- UI mods can detect mod options screens reliably without brittle screenId
+  -- string-matching (issue #1697).
+  if factory.isModOptions and inst.isModOptions == nil then
+    inst.isModOptions = true
+  end
   return inst
 end
 

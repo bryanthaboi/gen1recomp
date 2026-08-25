@@ -88,8 +88,13 @@ check(destroy < destroyTeardown and destroyTeardown < destroySuper,
 local mainFile = assert(io.open("main.lua", "rb"))
 local main = mainFile:read("*a")
 mainFile:close()
-check(main:find('require("src.render.SecondScreen").setEnabled(false)', 1, true),
-  "returning from a game disables mod-owned secondary output")
+check(main:find("SessionLifecycle.endGameSession", 1, true),
+  "returning from a game goes through SessionLifecycle.endGameSession")
+local lifecycleFile = assert(io.open("src/core/SessionLifecycle.lua", "rb"))
+local lifecycle = lifecycleFile:read("*a")
+lifecycleFile:close()
+check(lifecycle:find('require("src.render.SecondScreen").setEnabled(false)', 1, true),
+  "endGameSession disables mod-owned secondary output")
 
 check(not source:lower():find("openxr", 1, true),
   "generic Android activity must not require OpenXR")

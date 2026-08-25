@@ -266,6 +266,18 @@ do
     "and with no hook at all the special is a no-op, not a clobber")
 end
 
+-- ---- MagnetTrainRide UI screen --------------------------------------------
+do
+  local MagnetTrainRide = require("src.ui.gen2.MagnetTrainRide")
+  check(MagnetTrainRide.isOpaque, "MagnetTrainRide is opaque")
+  local ride = MagnetTrainRide.new(nil, { toGoldenrod = false })
+  check(ride:wantsFillScale(), "wantsFillScale returns true")
+  check(ride:drawsWidescreen(), "drawsWidescreen returns true")
+  check(type(ride.drawBands) == "function", "drawBands exists")
+  check(type(ride.backgrounds) == "function", "backgrounds exists for OAM_PRIO")
+end
+
+
 -- ---- the arrival, from `warpcheck` to the officer's line -------------------
 --
 -- The ride is only half the feature: the two station scripts end

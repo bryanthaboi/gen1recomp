@@ -17,6 +17,7 @@
 -- with a sign bit on the n^2 term.  pokemon.lua carries those five numbers per
 -- GROWTH_* so this needs no hardcoded table.
 
+local GameVersion = require("src.core.GameVersion")
 local Unown = require("src.core.gen2.Unown")
 -- The mod event bus.  pokemon.level_up and pokemon.move_learned are the SAME
 -- names src/battle/Experience.lua and src/battle/BattleState.lua raise on
@@ -31,6 +32,102 @@ Mon.PARTY_SIZE = 6
 
 -- DVs are 0..15 each; Attack's low bit pair also decides gender and shininess.
 Mon.MAX_DV = 15
+
+-- MON_CAUGHTDATA's two packed bytes and their masks --
+-- constants/pokemon_data_constants.asm:93-99, :120-130.
+Mon.CAUGHT_TIME_MASK = 0xc0
+Mon.CAUGHT_LEVEL_MASK = 0x3f
+Mon.CAUGHT_GENDER_MASK = 0x80
+Mon.CAUGHT_LOCATION_MASK = 0x7f
+Mon.CAUGHT_EGG_LEVEL = 1
+-- constants/landmark_constants.asm:111-113
+Mon.LANDMARK_EVENT = 0x7f
+Mon.LANDMARK_GIFT = 0x7e
+
+-- Gold spends the same word on `rb_skip 2` and has no SetCaughtData --
+-- pokegold constants/pokemon_data_constants.asm:93.
+function Mon.hasCaughtData(version)
+  return GameVersion.engine(version) == "crystal"
+end
+
+-- wTimeOfDay is only MORN / DAY / NITE (engine/rtc/rtc.asm:48-55), stored
+-- `inc a`'d so 0 stays free -- engine/pokemon/caught_data.asm:169-172.
+local CAUGHT_TIME = { MORN = 1, DAY = 2, NITE = 3, DARK = 3 }
+
+function Mon.caughtTimeOf(timeOfDay)
+  if type(timeOfDay) == "string" then return CAUGHT_TIME[timeOfDay] or 0 end
+  if type(timeOfDay) ~= "number" then return 0 end
+  local id = math.floor(timeOfDay)
+  if id < 0 or id > 3 then return 0 end
+  if id > 2 then id = 2 end
+  return id + 1
+end
+
+-- wPlayerGender's bit 0 is PLAYERGENDER_FEMALE_F (constants/ram_constants.asm:177).
+local CAUGHT_GENDER = {
+  girl = "girl", female = "girl", boy = "boy", male = "boy",
+}
+
+function Mon.caughtGenderOf(gender)
+  if gender == true then return "girl" end
+  if gender == false then return "boy" end
+  if type(gender) ~= "string" then return nil end
+  return CAUGHT_GENDER[gender:lower()]
+end
+
+local function landmarkByte(landmark)
+  if type(landmark) ~= "number" then return 0 end
+  return math.floor(landmark) % 0x80
+end
+
+-- SetBoxmonOrEggmonCaughtData (engine/pokemon/caught_data.asm:168-199); the
+-- egg path hands CAUGHT_EGG_LEVEL in as `level` (:239-242).
+function Mon.setCaughtData(mon, opts)
+  if type(mon) ~= "table" then return mon end
+  opts = opts or {}
+  mon.caughtTime = Mon.caughtTimeOf(opts.timeOfDay)
+  mon.caughtLevel = math.max(0, math.floor(opts.level or mon.level or 0))
+  mon.caughtLocation = landmarkByte(opts.landmark)
+  mon.caughtByGender = Mon.caughtGenderOf(opts.playerGender) or "boy"
+  return mon
+end
+
+-- CAUGHT_BY_UNKNOWN / GIRL / BOY, the code SetGiftMonCaughtData takes in `b`
+-- (constants/pokemon_data_constants.asm:126-128).
+Mon.CAUGHT_BY = { unknown = 0, girl = 1, boy = 2 }
+
+-- SetGiftMonCaughtData (engine/pokemon/caught_data.asm:226-233): `rrc b / or
+-- LANDMARK_GIFT` puts CAUGHT_BY_BOY on $7f, LANDMARK_EVENT, not on a gender bit.
+function Mon.setGiftCaughtData(mon, caughtBy)
+  if type(mon) ~= "table" then return mon end
+  local code = Mon.CAUGHT_BY[tostring(caughtBy):lower()] or 0
+  local rotated = math.floor(code / 2) + (code % 2) * Mon.CAUGHT_GENDER_MASK
+  local unpacked = Mon.unpackCaughtData(0, Mon.LANDMARK_GIFT + rotated)
+  mon.caughtTime, mon.caughtLevel = 0, 0
+  mon.caughtLocation = unpacked.caughtLocation
+  mon.caughtByGender = unpacked.caughtByGender
+  return mon
+end
+
+-- The packed pair, as engine/pokemon/caught_data.asm:169-199 stores it.
+function Mon.packCaughtData(mon)
+  mon = type(mon) == "table" and mon or {}
+  local time = math.floor(tonumber(mon.caughtTime) or 0) % 4
+  local level = math.floor(tonumber(mon.caughtLevel) or 0) % 0x40
+  local location = landmarkByte(tonumber(mon.caughtLocation) or 0)
+  local female = Mon.caughtGenderOf(mon.caughtByGender) == "girl"
+  return time * 0x40 + level, (female and Mon.CAUGHT_GENDER_MASK or 0) + location
+end
+
+function Mon.unpackCaughtData(byte0, byte1)
+  byte0, byte1 = math.floor(byte0 or 0) % 256, math.floor(byte1 or 0) % 256
+  return {
+    caughtTime = math.floor(byte0 / 0x40),
+    caughtLevel = byte0 % 0x40,
+    caughtLocation = byte1 % 0x80,
+    caughtByGender = (byte1 >= Mon.CAUGHT_GENDER_MASK) and "girl" or "boy",
+  }
+end
 
 local function rand(a, b)
   if love and love.math and love.math.random then
@@ -362,7 +459,11 @@ function Mon.new(data, species, level, opts)
     status = nil,
     -- 70 for a caught mon, 120 for a gift/hatched one.
     happiness = opts.happiness or 70,
-    caughtLevel = level,
+    caughtLevel = opts.caughtLevel or level,
+    -- MON_CAUGHTDATA, absent on Gold -- constants/pokemon_data_constants.asm:93-99.
+    caughtTime = opts.caughtTime,
+    caughtLocation = opts.caughtLocation,
+    caughtByGender = opts.caughtByGender,
     -- shiny.roll / gender.roll get the species and level as context; opts.shiny
     -- still wins, because a FORCED shiny battle (Red Gyarados) is the cart
     -- overriding the roll rather than a roll to be hooked.

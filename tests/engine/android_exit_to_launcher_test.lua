@@ -77,4 +77,41 @@ do
   check(Runtime.modRequire == nil, "Runtime.reset clears modRequire")
 end
 
+-- 4. returnToLauncher / closeEditor also clear Assets.loader (orphaned Loader)
+do
+  local Assets = require("src.render.Assets")
+  Assets.installLoader({
+    overrideOrder = function() return { { id = "x", path = "mods/x" } } end,
+    derivedPath = function() return nil end,
+  })
+  check(Assets.loader ~= nil, "Assets.loader installed for the session")
+  Assets.installLoader(nil)
+  check(Assets.loader == nil, "session teardown clears Assets.loader")
+end
+
+-- 5. Gen1 Game:reset exists so main.lua need not guess field names
+do
+  local Game = require("src.core.Game")
+  check(type(Game.reset) == "function", "Game:reset is defined for in-process return")
+  Game.mods = { stale = true }
+  Game:reset()
+  check(Game.mods == nil, "Game:reset clears session fields")
+  check(type(Game.load) == "function", "Game:reset keeps methods")
+end
+
+-- 6. Play-again after endGameSession: Game.load must still be callable
+--    (Android crash: main.lua bootGame → Game:load with load == nil)
+do
+  local Game = require("src.core.Game")
+  local SessionLifecycle = require("src.core.SessionLifecycle")
+  Game.save = {}
+  Game.stack = { clear = function() end }
+  -- Mimic a shared net module parked on the singleton (handle-style release).
+  Game.net = { release = function(id) end }
+  SessionLifecycle.endGameSession(Game)
+  local again = require("src.core.Game")
+  check(type(again.load) == "function",
+    "Play-again can call Game:load after endGameSession")
+end
+
 T.finish("android_exit_to_launcher_test")

@@ -23,4 +23,6 @@ return {
   -- (core.asm:426-464): poison/burn/leech seed tick before the slower
   -- mon acts, not in an end-of-round sweep like Gen 3+.
   residualAfterMove = true,
+  -- engine/battle/effects.asm:498,689
+  badgeBoostReapplyBug = true,
 }

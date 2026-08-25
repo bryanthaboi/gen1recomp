@@ -50,7 +50,9 @@ local function runEscort(sync, steps)
   npc.cellX, npc.cellY, npc.px, npc.py = 10, 4, 160, 64
   npc.moving, npc.progress, npc.targetX, npc.targetY = false, 0, nil, nil
   ow.scriptMoves = {}
-  npc.stepFrames = sync and (p.stepFramesCur or p.stepFrames) or nil
+  -- a scripted step re-derives its length from the live walk/bike state
+  -- (home/overworld.asm:276, #1754), so sync off that, not a stale latch
+  npc.stepFrames = sync and p:stepLength() or nil
   local worstDrift, done, i = 0, false, 0
   local function tick()
     i = i + 1

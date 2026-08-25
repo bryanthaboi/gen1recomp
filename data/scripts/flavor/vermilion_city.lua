@@ -18,10 +18,11 @@ return {
 
       -- VermilionCityMachopText: cries out, then follows up with a
       -- second line about stomping the land flat.
-      -- (pokered/scripts/VermilionCity.asm)
+      -- (pokered/scripts/VermilionCity.asm:224, PlayCry at :228)
       TEXT_VERMILIONCITY_MACHOP = {
-        { "show_text", "_VermilionCityMachopText" },                     -- 1
-        { "show_text", "_VermilionCityMachopStompingTheLandFlatText" },  -- 2
+        { "play_cry", "MACHOP", true },                                  -- 1 PlayCry (#1649)
+        { "show_text", "_VermilionCityMachopText" },                     -- 2
+        { "show_text", "_VermilionCityMachopStompingTheLandFlatText" },  -- 3
       },
     },
   },

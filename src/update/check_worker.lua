@@ -243,6 +243,12 @@ local function doCheck(target)
     return
   end
 
+  if Check.androidNeedsInstallerBootstrap(osName,
+      type(love.system.installApk) == "function") then
+    postFullRequirement(rel, "native_installer_missing")
+    return
+  end
+
   if compareVersions(rel.version, currentEngine) <= 0 then
     -- We are now running a native shell at least as new as GitHub's latest
     -- release, so a former minShell/payloadHost prompt no longer applies.

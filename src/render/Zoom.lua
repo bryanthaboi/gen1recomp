@@ -17,8 +17,29 @@ Zoom.offset = 0
 -- close-up.  Nil/true keeps the historical full range.
 Zoom.allowSurvey = true
 
+-- The deepest legal survey step (offset = 1-S, effective scale s' = S+lo =
+-- 1 px/world px) plus an active SHADER FX chain crashes the app on real
+-- hardware (Pixel 10 Pro XL, "OUT7" == this exact step at that device's own
+-- fit scale of 8 -- reported by the user, 2026-08-21). A quantifying repro
+-- (TrueFX/zoom-mem-scan/) ruled out ShaderFX's own per-pass canvases as the
+-- driver (worst real-corpus case at that step: ~31MB, not crash-sized) --
+-- the actual cost is almost certainly the world canvas/tile-render path
+-- itself at that resolution (a preexisting cost of deep survey zoom,
+-- unrelated to ShaderFX), which a shader chain reading that same
+-- full-resolution canvas as its own input then pushes over some real
+-- device/driver ceiling this project cannot measure without the device
+-- in hand. Removing just the single deepest step while a preset is active
+-- is the smallest change that directly targets what was actually reported
+-- ("OUT7 + any shader", not "OUT7 alone" and not "OUT6 or shallower") --
+-- not a guessed-at general zoom restriction. Needs the user's own on-device
+-- confirmation; extend the margin (currently 1 step) if OUT6 turns out to
+-- be risky too.
+local ShaderFX
+
 -- legal offset range for a given fit scale (vanilla: survey at 1 px/world
 -- through 2× fit).  zoom.range may widen or shrink the window.
+-- When the window only fits 1×, 1-S is 0 and there would be no OUT
+-- levels; keep three survey steps so OPTIONS always has zoom-out.
 function Zoom.offsetRange(S)
   S = math.max(1, math.floor(tonumber(S) or 1))
   local lo, hi = 1 - S, S
@@ -30,7 +51,19 @@ function Zoom.offsetRange(S)
   end
   -- LOW performance tier: no survey (negative offsets), even if a mod's
   -- zoom.range widened it.  == false so nil/true stays permissive.
-  if Zoom.allowSurvey == false and lo < 0 then lo = 0 end
+  if Zoom.allowSurvey == false then
+    if lo < 0 then lo = 0 end
+  elseif lo > -3 then
+    lo = -3
+  end
+  -- SHADER FX + the single deepest survey step: see the comment above.
+  -- The floor is one step above the deepest this call would otherwise
+  -- allow, so the three-step minimum above still keeps a zoom-out.
+  ShaderFX = ShaderFX or require("src.render.ShaderFX")
+  if ShaderFX.active() then
+    local floor = math.min(2 - S, lo + 1)
+    if lo < floor then lo = floor end
+  end
   return lo, hi
 end
 
@@ -44,6 +77,8 @@ function Zoom.scale(S)
   local maxScale = math.max(minScale, S + hi)
   if s < minScale then s = minScale end
   if s > maxScale then s = maxScale end
+  -- Integer offset below 1px/world (OPTIONS OUT on a 1× window): 1/2, 1/4, …
+  if s < 1 then s = 0.5 ^ (1 - s) end
   if s < 0.25 then s = 0.25 end
   return s
 end
@@ -77,6 +112,30 @@ end
 
 function Zoom.applyOptions(opts)
   Zoom.offset = math.floor(tonumber(opts and opts.zoom) or 0)
+end
+
+-- Integer fit used when OPTIONS has no live renderer (launcher, title).
+function Zoom.windowFitScale()
+  if love and love.graphics and love.graphics.getDimensions then
+    local ww, wh = love.graphics.getDimensions()
+    ww, wh = tonumber(ww) or 0, tonumber(wh) or 0
+    if ww >= 160 and wh >= 144 then
+      return math.max(1, math.floor(math.min(ww / 160, wh / 144)))
+    end
+  end
+  return 1
+end
+
+-- One step of the OPTIONS ZOOM row (dir +1 in, -1 out).  Shared by Red
+-- and Gold so both ladders offer OUT / FIT / IN.
+function Zoom.nudgeOptions(options, dir, S)
+  S = math.max(1, math.floor(tonumber(S) or Zoom.windowFitScale()))
+  local lo, hi = Zoom.offsetRange(S)
+  local off = math.floor(tonumber(options and options.zoom) or 0) + (dir or 1)
+  if off > hi then off = lo elseif off < lo then off = hi end
+  if options then options.zoom = off end
+  Zoom.offset = off
+  return off
 end
 
 -- FIT / OUT1 / OUT2 / … / IN1 / IN2 / …

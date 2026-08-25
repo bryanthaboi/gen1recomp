@@ -371,7 +371,7 @@ function ChipAudio.shutdown()
   if workerReady and cmdCh then cmdCh:push({ cmd = "quit" }) end
   if worker then pcall(function() worker:wait() end) end
   worker, cmdCh, outCh = nil, nil, nil
-  workerReady = false
+  workerReady = nil
 end
 
 function ChipAudio.currentSource()
@@ -497,6 +497,8 @@ end
 -- a stale song must not keep sounding past the flush that replaced its
 -- program (20 §2 cache contract, chip music row)
 Assets.register(ChipAudio.invalidate)
+
+require("src.core.SessionLifecycle").registerProcessShutdown(ChipAudio.shutdown)
 
 -- ---------------------------------------------------------------------------
 -- one-shot effects (SFX, cries, low-health alarm): synchronous static Sources

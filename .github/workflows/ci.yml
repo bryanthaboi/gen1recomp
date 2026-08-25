@@ -468,3 +468,24 @@ jobs:
           if [ "$found" = "0" ]; then
             echo "no committed mods to lint"
           fi
+
+  luacheck:
+    name: engine lint (luacheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install luacheck
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 liblua5.4-dev luarocks
+          sudo luarocks install luacheck || sudo apt-get install -y lua-check
+          luacheck --version
+
+      - name: luacheck gate (undefined globals, unreachable code)
+        run: ./scripts/lint.sh --gate
+
+      - name: luacheck full report (advisory)
+        continue-on-error: true
+        run: ./scripts/lint.sh

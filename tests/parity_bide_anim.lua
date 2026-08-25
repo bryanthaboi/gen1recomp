@@ -42,7 +42,8 @@ local function trace(tb)
     if row.text then
       out[#out + 1] = { text = (row.text:gsub("\n", " ")) }
     elseif row.anim then
-      out[#out + 1] = { anim = row.anim, isPlayer = row.attackerIsPlayer }
+      out[#out + 1] = { anim = row.anim, isPlayer = row.attackerIsPlayer,
+                        hit = row.hit }
     elseif row.drain then
       out[#out + 1] = { drain = true }
     end
@@ -95,6 +96,9 @@ do
   check(spiral ~= nil, "the storing turn plays XSTATITEM_ANIM")
   eq(rows[spiral] and rows[spiral].isPlayer, true,
      "on the player's side of the field")
+  -- effects.asm:1461-1471
+  eq(rows[spiral] and rows[spiral].hit and rows[spiral].hit.animType, 6,
+     "PlayBattleAnimation2 stamps wAnimationType 6 on the player's turn (#1564)")
   local used = indexOfText(rows, "used BIDE!")
   local storing = indexOfText(rows, "storing energy!")
   check(used and spiral and used < spiral,
@@ -119,6 +123,8 @@ do
   local dup = indexOfAnim(rows, "XSTATITEM_DUPLICATE_ANIM")
   check(dup ~= nil, "the foe's storing turn plays XSTATITEM_DUPLICATE_ANIM")
   check(dup and not rows[dup].isPlayer, "attributed to the enemy side")
+  eq(rows[dup] and rows[dup].hit and rows[dup].hit.animType, 3,
+     "and wAnimationType 3 on the enemy's turn (#1564)")
 end
 
 -- locked turns: .BideCheck decrements with no text of its own in pokered and
@@ -151,6 +157,10 @@ do
   check(unleashed ~= nil, "the release prints UnleashedEnergyText")
   check(hit ~= nil, "the release plays BIDE's own animation (#375)")
   eq(rows[hit] and rows[hit].isPlayer, true, "from the player's side")
+  -- core.asm:3526-3528 -> effects.asm:1476-1477
+  check(rows[hit] and rows[hit].hit == nil,
+        ".UnleashEnergy rejoins PlayCurrentMoveAnimation, which zeroes "
+        .. "wAnimationType")
   check(unleashed and hit and unleashed < hit,
         "the animation follows the text")
   local drainAt

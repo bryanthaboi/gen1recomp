@@ -7,7 +7,7 @@ SyncMods.MAX_OPTION_TEXT = 256
 local function versions()
   local ok, GameVersion = pcall(require, "src.core.GameVersion")
   if ok and GameVersion and GameVersion.ORDER then return GameVersion.ORDER end
-  return { "red", "blue", "yellow", "gold", "silver" }
+  return { "red", "blue", "yellow", "gold", "silver", "crystal" }
 end
 
 local function defaultDeps()

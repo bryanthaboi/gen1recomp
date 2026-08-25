@@ -4,7 +4,7 @@
 -- quirks), plus the port's audio rows and display rows: music/SFX
 -- volume (0-7), PIKACHU VOL (0-7, Yellow only: trims the PCM voice clips
 -- under SFX VOL), music low-pass filter (OFF/1X/2X/3X), COLORS / TILT /
--- GBC FX / ZOOM / VOID FILL / VIDEO MODE, and the MODS row that opens
+-- SHADER FX / ZOOM / VOID FILL / VIDEO MODE, and the MODS row that opens
 -- the mod manager.
 -- Rows are descriptors fed through the ui.options.rows hook, so mods can
 -- add their own; CANCEL is appended after the hook and stays fixed on the
@@ -13,7 +13,7 @@
 local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
 local Tilt = require("src.render.Tilt")
-local GBCFX = require("src.render.GBCFX")
+local ShaderFX = require("src.render.ShaderFX")
 local Zoom = require("src.render.Zoom")
 local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
@@ -143,6 +143,25 @@ end
 
 local function sameRows(_, rows) return rows end
 
+-- "OFF" plus every entry's display name, extension stripped -- a
+-- Strings() lookup like RULESET's own record.name so a translation catalog
+-- could rewrite "OFF" without needing to know about arbitrary preset
+-- filenames.
+local function shaderfxLabel(entry)
+  if not entry then return Strings("OFF") end
+  return Strings((entry.name:gsub("%.slangp$", "")))
+end
+
+-- Dual-shader slots: "main" backs the original SHADER
+-- FX row (unchanged save key, unchanged default OFF), "secondary" backs the
+-- new SHADER FX 2 row below it -- when both are set, ShaderFX.render() runs
+-- main's chain into secondary's, same as stacking two RetroArch presets.
+
+local function bgLocked(o)
+  return o.battleLayout == "wide" and o.battleFit == "fill"
+     and o.battleHud == "extended"
+end
+
 -- the vanilla rows as descriptors; each step body is the old per-index
 -- ladder's, so the save.options mutations are unchanged
 local function buildRows(game)
@@ -183,8 +202,6 @@ local function buildRows(game)
         o.battleLayout = o.battleLayout == "wide" and "og" or "wide"
         if o.battleLayout ~= "wide" then
           o.battleHud = "standard"
-        elseif o.battleFit == "fill" and o.battleHud == "extended" then
-          o.battleBg = "white"
         end
         return true
       end },
@@ -201,10 +218,6 @@ local function buildRows(game)
       step = function(g)
         local o = g.save.options
         o.battleFit = o.battleFit == "fill" and "fixed" or "fill"
-        if o.battleFit == "fill" and o.battleLayout == "wide"
-           and o.battleHud == "extended" then
-          o.battleBg = "white"
-        end
         return true
       end },
     { id = "battleHud", label = Strings("BATTLE HUD"),
@@ -223,9 +236,6 @@ local function buildRows(game)
           return false
         end
         o.battleHud = o.battleHud == "extended" and "standard" or "extended"
-        if o.battleHud == "extended" and o.battleFit == "fill" then
-          o.battleBg = "white"
-        end
         return true
       end },
     -- What sits behind and around the battle.  WHITE is the classic paper
@@ -235,11 +245,7 @@ local function buildRows(game)
     { id = "battleBg", label = Strings("BATTLE BG"),
       value = function(g)
         local o = g.save.options
-        if o.battleLayout == "wide" and o.battleFit == "fill"
-           and o.battleHud == "extended" then
-          o.battleBg = "white"
-          return Strings("AUTO")
-        end
+        if bgLocked(o) then return Strings("AUTO (FILL HUD)") end
         local m = o.battleBg
         if m == "black" then return Strings("BLACK") end
         if m == "world" then return Strings("WORLD") end
@@ -247,11 +253,7 @@ local function buildRows(game)
       end,
       step = function(g, dir)
         local o = g.save.options
-        if o.battleLayout == "wide" and o.battleFit == "fill"
-           and o.battleHud == "extended" then
-          o.battleBg = "white"
-          return false
-        end
+        if bgLocked(o) then return false end
         local order = { "white", "black", "world" }
         local cur = 1
         for i, m in ipairs(order) do if o.battleBg == m then cur = i break end end
@@ -323,10 +325,10 @@ local function buildRows(game)
         return true
       end },
     -- Heads the port's display group: one tier that scales the heavy extras
-    -- (TILT / GBC FX / survey ZOOM) and the FPS ceiling for weaker devices.
+    -- (TILT / survey ZOOM) and the FPS ceiling for weaker devices.
     -- AUTO picks a default from the hardware; every tier is overridable.
     -- Re-applies live so the extras clamp (or, on a higher tier, restore to
-    -- the player's stored TILT / GBC FX / ZOOM) the moment the row changes.
+    -- the player's stored TILT / ZOOM) the moment the row changes.
     { id = "performance", label = Strings("PERFORMANCE"),
       value = function(g)
         return Strings(Performance.label(g.save.options.performance))
@@ -366,29 +368,37 @@ local function buildRows(game)
         end
         return true
       end },
-    { id = "gbcfx", label = Strings("GBC FX"),
+    -- The generalized slang-shader-preset feature: a picker over
+    -- ShaderFX.list()'s real drop-in presets -- replaced GBCFX.lua's fixed
+    -- level ladder entirely (GBCFX.lua removed). A pushes a real list
+    -- screen -- OFF plus one row per .slangp found -- the same
+    -- "activate, not step" shape CONTROLS/MODS already use, rather than
+    -- cycling in place on this row.
+    -- ShaderFXScreen.lua does the actual list/activate; this row only opens
+    -- it and shows what is currently active.
+    { id = "shaderfx", label = Strings("SHADER FX"),
       value = function(g)
-        return GBCFX.levelLabel(g.save.options.gbcfx or 0)
+        return shaderfxLabel(ShaderFX.activeEntry("main"))
       end,
-      step = function(g, dir)
-        local o = g.save.options
-        o.gbcfx = wrapIndex((o.gbcfx or 0) + dir, 5)
-        GBCFX.setLevel(o.gbcfx)
-        return true
+      activate = function(g)
+        require("src.ui.Screens").push(g, "ShaderFXScreen", "main")
+      end },
+    -- The secondary slot: same picker screen, opened on "secondary" instead
+    -- -- its own row so both slots are visible/settable independently
+    -- without a submenu inside a submenu.
+    { id = "shaderfx2", label = Strings("SHADER FX 2"),
+      value = function(g)
+        return shaderfxLabel(ShaderFX.activeEntry("secondary"))
+      end,
+      activate = function(g)
+        require("src.ui.Screens").push(g, "ShaderFXScreen", "secondary")
       end },
     { id = "zoom", label = Strings("ZOOM"),
       value = function(g)
         return Zoom.offsetLabel(g.save.options.zoom or 0)
       end,
       step = function(g, dir)
-        local o = g.save.options
-        local S = Renderer:fitScale()
-        local lo, hi = Zoom.offsetRange(S)
-        local off = (o.zoom or 0) + dir
-        if off > hi then off = lo
-        elseif off < lo then off = hi end
-        o.zoom = off
-        Zoom.offset = off
+        Zoom.nudgeOptions(g.save.options, dir, Renderer:fitScale())
         return true
       end },
     { id = "voidFill", label = Strings("VOID FILL"),
@@ -572,14 +582,6 @@ local function buildRows(game)
         return true
       end },
   }
-  -- issue #136: hide GBC FX on Android/iOS -- the present shader soft-bricks
-  if not GBCFX.isSupported() then
-    local filtered = {}
-    for _, row in ipairs(rows) do
-      if row.id ~= "gbcfx" then filtered[#filtered + 1] = row end
-    end
-    rows = filtered
-  end
   -- ORIENTATION only on the platforms Orientation.apply reaches (#1638).
   if not (Orientation.isAndroid() or Orientation.isIOS()) then
     local filtered = {}

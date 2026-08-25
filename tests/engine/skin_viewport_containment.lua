@@ -136,11 +136,16 @@ for off = lo, hi do
 end
 Zoom.offset = 0
 
-local capped = select(1, Renderer:worldViewSize())
-useSkin("0.25,0.1,0.5,0.6", "overlay0_viewport_expand = true")
-local expanded = select(1, Renderer:worldViewSize())
-check(expanded > capped,
-  "viewport_expand lets the survey world fill the cutout instead of the GB box")
+useSkin("0.25,0.1,0.3,0.8")
+local tallR = Renderer:frameRects()
+local tallVw, tallVh = Renderer:worldViewSize()
+local tallSp = Zoom.scale(tallR.Sp)
+check(tallVw * tallSp >= tallR.vuw and tallVh * tallSp >= tallR.vuh,
+  "the world pass covers the whole cutout, not just the GB box inside it")
+check(tallVh * tallSp > tallR.uvph,
+  "so a cutout taller than 160x144 shows map where the UI letterbox ends")
+check(tallR.uvph < tallR.vuh and tallR.uvpw <= tallR.vuw,
+  "while the UI keeps its whole-pixel letterbox inside that cutout")
 useSkin("0.25,0.1,0.5,0.6")
 
 setWindow(480, 800)
@@ -159,22 +164,14 @@ setWindow(1280, 720)
 useSkin("0.25,0.1,0.5,0.6")
 local px, py, pw, ph, active = Playfield.rect(1280, 720)
 eq(active, true, "Gold sees the cutout too")
-eq(pw, 480, "the playfield is a whole multiple of 160")
-eq(ph, 432, "and of 144")
-check(inside(px, py, pw, ph, 320, 72, 640, 432),
-  "centred inside the cutout")
-eq(Chrome.fitScale(1280, 720), 3, "Chrome fits the playfield")
+eq(px, 320, "the playfield is the cutout, at its origin")
+eq(py, 72, "on both axes")
+eq(pw, 640, "with its full width")
+eq(ph, 432, "and its full height")
+eq(Chrome.fitScale(1280, 720), 3, "Chrome fits whole GB pixels in it")
 local cox, coy = Chrome.fitOrigin(1280, 720)
-eq(cox, px, "and centres the panel on it")
-eq(coy, py, "on both axes")
-
-useSkin("0.25,0.1,0.5,0.6", "overlay0_viewport_expand = true")
-local ex, ey, ew, eh = Playfield.rect(1280, 720)
-eq(ew, 640, "expand hands the picture the full cutout width")
-eq(eh, 432, "and its full height")
-eq(ex, 320, "at the cutout origin")
-eq(ey, 72, "on both axes")
-useSkin("0.25,0.1,0.5,0.6")
+eq(cox, 320 + 80, "and centres the panel on the cutout")
+eq(coy, 72, "on both axes")
 
 local ew2, eh2, ex2, ey2, act2 = Playfield.push(1280, 720)
 eq(act2, true, "push reports the frame is contained")
@@ -184,12 +181,29 @@ eq(ew2, pw, "and hands the scene the playfield size")
 eq(Playfield.cutout(ew2, eh2), nil, "inside the frame there is no cutout left")
 eq(select(3, Playfield.rect(ew2, eh2)), pw, "so the playfield is the surface")
 eq(Chrome.fitScale(ew2, eh2), 3, "and Chrome fits it without re-applying")
-eq(select(1, Chrome.fitOrigin(ew2, eh2)), 0, "at a local origin")
+eq(select(1, Chrome.fitOrigin(ew2, eh2)), 80, "centred on that surface alone")
 eq(select(1, Playfield.dimensions()), pw, "screens read the playfield as the display")
 Playfield.pop()
 eq(Playfield.entered, false, "pop leaves the frame")
 eq(select(1, Playfield.cutout(1280, 720)), 320, "and the cutout is visible again")
 
+setWindow(960, 1901)
+useSkin("0,0,1,0.5", "overlay0_aspect_ratio = 0.5625")
+local deck = TouchSkin.page()
+local _, dy, _, dh = TouchSkin.pageBox(deck, 960, 1901)
+check(dy > 0 and math.abs(dy + dh - 1901) < 1,
+  "a portrait deck taller than the display pins to the lower edge")
+local hx, hy, hw, hh = Playfield.cutout(960, 1901)
+eq(hy, 0, "and the screen rect it left flush takes the room above it")
+eq(hx, 0, "without moving sideways")
+eq(hw, 960, "or changing width")
+eq(hh, math.floor(dy + dh * 0.5), "growing by exactly the headroom")
+
+useSkin("0,0.1,1,0.5", "overlay0_aspect_ratio = 0.5625")
+check(select(2, Playfield.cutout(960, 1901)) > dy,
+  "a screen rect the author inset from the top keeps that bezel margin")
+
+setWindow(1280, 720)
 useSkin("0.4,0.4,0.1,0.1")
 local sx, sy, sw, sh = Playfield.rect(1280, 720)
 check(inside(sx, sy, sw, sh, 512, 288, 128, 72),

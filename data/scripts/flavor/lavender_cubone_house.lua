@@ -4,11 +4,10 @@
 return {
   LAVENDER_CUBONE_HOUSE = {
     talk = {
-      -- LavenderCuboneHouseCuboneText: text_far _LavenderCuboneHouseCuboneText,
-      -- then text_asm plays the CUBONE cry. Cry playback has no Commands
-      -- equivalent in this port, so just show the line.
+      -- LavenderCuboneHouse.asm:10
       TEXT_LAVENDERCUBONEHOUSE_CUBONE = {
         { "face_player" },
+        { "play_cry", "CUBONE", true },
         { "show_text", "_LavenderCuboneHouseCuboneText" },
       },
 

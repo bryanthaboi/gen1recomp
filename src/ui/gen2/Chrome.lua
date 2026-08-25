@@ -138,11 +138,39 @@ function Chrome.printThrough(text, tx, ty, palette, invert)
   local paper = pal[1] or { 255, 255, 255 }
   love.graphics.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
   love.graphics.rectangle("fill", tx * 8, ty * 8, width, 8)
-  love.graphics.setColor(1, 1, 1, 1)
+  -- Per glyph, not per string: a TTF-mod build still keeps the multi-byte
+  -- charmap sequences (the naming screen's <PK>/<MN>, the 'd/'l/'s ligatures)
+  -- and anything the mod names in ttf.tiles (Font.lua's own note on keeping
+  -- digits tile-based for column alignment) on their ROM tiles, so a string
+  -- can freely mix the two kinds of glyph.
+  local ink = pal[4] or { 0, 0, 0 }
   local previous = love.graphics.getShader()
-  GbcPalette.useRaw(pal)
-  Font.draw(text, tx * 8, ty * 8)
-  love.graphics.setShader(previous)
+  local shaded = false
+  local pen = tx * 8
+  for _, code in ipairs(Font.encode(text)) do
+    if code >= Font.TTF_BASE then
+      -- The shader below recovers a shade from the RED CHANNEL of an already
+      -- flat-shaded 2bpp tile sheet -- exactly what a TTF glyph is not.
+      -- LÖVE's font rasterizer stores glyph coverage as alpha over a plain
+      -- white texture, which this shader reads back as shade 0 no matter how
+      -- solid the glyph looks, painting the character the SAME colour as the
+      -- paper rect just drawn above it: invisible (reported against a real
+      -- Gold build with a TTF translation mod active, gen1recomp#1642). A TTF
+      -- glyph has no discrete shade to recover in the first place, so skip
+      -- the shader for it and tint it with the palette's own ink colour
+      -- (shade 3, the same entry `rgb = pal3` would have mapped a black tile
+      -- pixel to) directly.
+      if shaded then love.graphics.setShader(previous); shaded = false end
+      love.graphics.setColor(ink[1] / 255, ink[2] / 255, ink[3] / 255, 1)
+    elseif not shaded then
+      love.graphics.setColor(1, 1, 1, 1)
+      GbcPalette.useRaw(pal)
+      shaded = true
+    end
+    Font.drawCode(code, pen, ty * 8)
+    pen = pen + Font.advanceOf(code)
+  end
+  if shaded then love.graphics.setShader(previous) end
   love.graphics.setColor(0, 0, 0, 1)
   return width
 end

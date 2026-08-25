@@ -51,11 +51,20 @@ end
 -- (engine/pokemon/status_screen.asm:66-76, "mon is in a box or daycare" ->
 -- CalcStats) and when one is moved back into the party
 -- (engine/pokemon/add_mon.asm _MoveMon tail).  The stored current HP is
--- kept (box_struct does hold it) but clamped to the recalculated maximum so
--- a tampered save cannot overfill the bar.  A mon that already has stats is
--- returned untouched, so a vanilla save round-trips.  #233, #304
+-- kept (box_struct does hold it) but clamped to the recalculated maximum.
+-- A complete stat block is returned untouched; an incomplete one is rebuilt,
+-- because CalcStats writes all NUM_STATS stats or none
+-- (home/move_mon.asm:33-48).  #233, #304, #1517
+local function statsComplete(stats)
+  for _, key in ipairs(ORDER) do
+    if type(stats[key]) ~= "number" then return false end
+  end
+  return true
+end
+
 function Stats.ensure(speciesDef, mon)
-  if type(mon) ~= "table" or type(mon.stats) == "table" then return mon end
+  if type(mon) ~= "table" then return mon end
+  if type(mon.stats) == "table" and statsComplete(mon.stats) then return mon end
   if type(speciesDef) ~= "table" or type(speciesDef.baseStats) ~= "table" then
     return mon
   end

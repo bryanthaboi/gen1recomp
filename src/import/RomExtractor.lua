@@ -1637,6 +1637,113 @@ function RomExtractor:extractYellowTitleArt()
   end
 end
 
+function RomExtractor:extractSurfingPikachuTitleArt()
+  -- engine/minigame/surfing_pikachu.asm
+  -- DrawSurfingPikachuMinigameIntroBackground: compose the 160x144
+  -- "Pikachu's Beach" title from SurfingMinigame_* tilemaps over
+  -- SurfingPikachu1Graphics3 tiles (mirrors tools/build_rom_data.py).
+  if not self.symbols["SurfingPikachu1Graphics3"] then return end
+  if not self.symbols["SurfingMinigame_BeachIntroTilemap"] then return end
+
+  local beachIntro = self:symbol("SurfingMinigame_BeachIntroTilemap")
+  local useCtrlPad = self:symbol("SurfingMinigame_UseControlPadTilemap")
+  local toSurfRad = self:symbol("SurfingMinigame_ToSurfRadTilemap")
+  local titleMap = self:symbol("SurfingMinigame_TitleTilemap")
+
+  local beachBytes = self.rom:bytes(
+    beachIntro.bank, beachIntro.address, 12 * 20)
+  local useCtrlBytes = self.rom:bytes(
+    useCtrlPad.bank, useCtrlPad.address, 15)
+  local toSurfRadBytes = self.rom:bytes(
+    toSurfRad.bank, toSurfRad.address, 13)
+  local titleMapBytes = self.rom:bytes(
+    titleMap.bank, titleMap.address, 6 * 12)
+
+  local screen = {}
+  for _ = 1, 20 * 18 do screen[#screen + 1] = 0xff end
+
+  for i = 1, #beachBytes do
+    screen[6 * 20 + i] = beachBytes[i]
+  end
+  for r = 0, 5 do
+    for c = 0, 11 do
+      screen[r * 20 + (4 + c) + 1] = titleMapBytes[r * 12 + c + 1]
+    end
+  end
+  for r = 0, 2 do
+    for c = 0, 14 do
+      screen[(7 + r) * 20 + (3 + c) + 1] = 0xff
+    end
+  end
+  for i = 1, #useCtrlBytes do
+    screen[7 * 20 + 3 + i] = useCtrlBytes[i]
+  end
+  for i = 1, #toSurfRadBytes do
+    screen[9 * 20 + 4 + i] = toSurfRadBytes[i]
+  end
+
+  local gfx3 = self:symbol("SurfingPikachu1Graphics3")
+  local rawGfx3 = self.rom:bytes(gfx3.bank, gfx3.address, 144 * 16)
+  local tiles = {}
+  for tile = 0, 143 do
+    local one = {}
+    for j = 1, 16 do one[j] = rawGfx3[tile * 16 + j] end
+    tiles[tile + 1] = ImageWriter.decode2bpp(one, 8, 8, false)
+  end
+  local blank = ImageWriter.blank(8, 8, 1, 1, 1, 1)
+
+  local titleBg = ImageWriter.blank(160, 144, 1, 1, 1, 1)
+  for r = 0, 17 do
+    for c = 0, 19 do
+      local tileId = screen[r * 20 + c + 1]
+      local tileImg = blank
+      if tileId ~= 0xff then
+        local idx = tileId >= 0x80 and (tileId - 0x80 + 1) or (128 + tileId + 1)
+        if idx >= 1 and idx <= 144 then tileImg = tiles[idx] end
+      end
+      ImageWriter.blit(titleBg, tileImg, c * 8, r * 8)
+    end
+  end
+  self:save(titleBg, "minigame/title_bg.png")
+
+  -- Intro paddling Pikachu frames (surfing_pikachu_oam.asm .IntroPikachu).
+  local INTRO_PIKA_FRAME_BASE = { 0x80, 0x84, 0x88, 0x8c }
+  local INTRO_PIKA_OAM = {
+    { -12, -16, 0x03, true }, { -12, -8, 0x02, true },
+    { -12, 0, 0x01, true }, { -12, 8, 0x00, true },
+    { -4, -16, 0x13, true }, { -4, -8, 0x12, true },
+    { -4, 0, 0x11, true }, { -4, 8, 0x10, true },
+    { 4, -16, 0x23, true }, { 4, -8, 0x22, true },
+    { 4, 0, 0x21, true }, { 4, 8, 0x20, true },
+  }
+  local function blitIntroTile(target, tile, tx, ty, flipX)
+    for y = 0, 7 do
+      for x = 0, 7 do
+        local sx = flipX and (7 - x) or x
+        local r, g, b, a = tile:getPixel(sx, y)
+        local px, py = tx + x, ty + y
+        if a ~= 0 and px >= 0 and py >= 0
+            and px < target:getWidth() and py < target:getHeight() then
+          target:setPixel(px, py, r, g, b, a)
+        end
+      end
+    end
+  end
+  for frame, vramBase in ipairs(INTRO_PIKA_FRAME_BASE) do
+    local pose = ImageWriter.blank(32, 24, 1, 1, 1, 0)
+    local sheetBase = vramBase - 0x80
+    for _, sp in ipairs(INTRO_PIKA_OAM) do
+      local dy, dx, rel, flipX = sp[1], sp[2], sp[3], sp[4]
+      local tileImg = tiles[sheetBase + rel + 1]
+      if tileImg then
+        blitIntroTile(pose, tileImg,
+          16 + dx + (flipX and 8 or 0), 12 + dy, flipX)
+      end
+    end
+    self:save(pose, ("minigame/intro_pika_%d.png"):format(frame - 1))
+  end
+end
+
 function RomExtractor:raw2bpp(label, width, height, relative, options)
   options = options or {}
   local expected = width * height / 4
@@ -1978,6 +2085,7 @@ function RomExtractor:extractField()
       self:save(image, spec[5])
     end
   end
+  self:extractSurfingPikachuTitleArt()
 
   -- Yellow-only: TalkToPikachu's framed portrait, one 5x5 base frame per
   -- PikaPicAnimScript -- each script's FIRST pikapic_loadgfx in

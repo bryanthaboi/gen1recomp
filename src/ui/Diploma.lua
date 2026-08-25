@@ -8,7 +8,12 @@ local Assets = require("src.render.Assets")
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
 local Sprites = require("src.pokemon.Sprites")
+local SpriteRenderer = require("src.render.SpriteRenderer")
 local Strings = require("src.core.Strings")
+
+-- engine/events/diploma.asm:65
+local OBP0_90 = { { 255, 255, 255 }, { 255, 255, 255 },
+                  { 170, 170, 170 }, { 85, 85, 85 } }
 
 local Diploma = {}
 Diploma.__index = Diploma
@@ -49,20 +54,18 @@ local function drawFrameBox(frame, tx, ty, tw, th)
   local img = frame.img
   local q = frame.quads
   love.graphics.setColor(1, 1, 1, 1)
-  -- corners
-  love.graphics.draw(img, q[0], tx * 8, ty * 8)
-  love.graphics.draw(img, q[2], (tx + tw - 1) * 8, ty * 8)
+  -- engine/link/cable_club.asm:937
+  love.graphics.draw(img, q[2], tx * 8, ty * 8)
+  love.graphics.draw(img, q[4], (tx + tw - 1) * 8, ty * 8)
   love.graphics.draw(img, q[6], tx * 8, (ty + th - 1) * 8)
-  love.graphics.draw(img, q[8], (tx + tw - 1) * 8, (ty + th - 1) * 8)
-  -- horizontal edges
+  love.graphics.draw(img, q[7], (tx + tw - 1) * 8, (ty + th - 1) * 8)
   for x = 1, tw - 2 do
-    love.graphics.draw(img, q[1], (tx + x) * 8, ty * 8)
-    love.graphics.draw(img, q[7], (tx + x) * 8, (ty + th - 1) * 8)
+    love.graphics.draw(img, q[3], (tx + x) * 8, ty * 8)
+    love.graphics.draw(img, q[0], (tx + x) * 8, (ty + th - 1) * 8)
   end
-  -- vertical edges
   for y = 1, th - 2 do
-    love.graphics.draw(img, q[3], tx * 8, (ty + y) * 8)
-    love.graphics.draw(img, q[5], (tx + tw - 1) * 8, (ty + y) * 8)
+    love.graphics.draw(img, q[5], tx * 8, (ty + y) * 8)
+    love.graphics.draw(img, q[1], (tx + tw - 1) * 8, (ty + y) * 8)
   end
 end
 
@@ -91,13 +94,31 @@ function Diploma.render(game)
   drawFrameBox(frame, 0, 0, 20, 18)
 
   -- 2. Draw Player character sprite: farcall DrawPlayerCharacter
-  -- Shifted +33 px right from title screen base (82 + 33 = 115, y = 80)
-  local picPath, picTrueColor = Sprites.playerPath(
-    game.data, "front", { kind = "diploma" })
-  local pic = tryImage(picPath)
+  -- engine/movie/title.asm:321
+  local title = (game.data and game.data.field and game.data.field.title) or {}
+  local titlePlayer = title.player
+  if type(titlePlayer) == "table" then titlePlayer = titlePlayer.path end
+  local picPath, picTrueColor = Sprites.playerPic(
+    titlePlayer or "assets/generated/title/player.png",
+    { side = "front", kind = "diploma", data = game.data })
+  local pic
+  if picPath then
+    if picTrueColor then
+      pic = tryImage(picPath)
+    else
+      local ok, faded = pcall(SpriteRenderer.obpImage, picPath, OBP0_90,
+                              "diploma")
+      pic = (ok and faded) or tryImage(picPath)
+    end
+  end
   if pic then
     love.graphics.setColor(1, 1, 1, 1)
+    local sx, sy, sw, sh = love.graphics.getScissor()
+    -- engine/events/diploma.asm:44
+    love.graphics.setScissor(8, 8, 144, 128)
     love.graphics.draw(pic, 115, 80)
+    if sx then love.graphics.setScissor(sx, sy, sw, sh)
+    else love.graphics.setScissor() end
     if picTrueColor then
       PaletteFX.markTrueColor(115, 80, pic:getDimensions())
     end

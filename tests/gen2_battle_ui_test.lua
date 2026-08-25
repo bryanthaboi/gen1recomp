@@ -175,7 +175,7 @@ do
       dealt = event.amount
     end
     if event.kind == "message"
-        and event.text == "It's not very effective..." then
+        and event.text == "It's not very\neffective…" then
       sawNve = true
     end
   end

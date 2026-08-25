@@ -803,7 +803,9 @@ function BugContest.collectCaughtMon(save, partySize, boxes)
   end
   boxes = boxes or require("src.core.gen2.Boxes")
   local box = boxes.box(save, save.currentBox or 1)
-  if box then box[#box + 1] = mon end
+  -- .TryAddToBox copies BOXMON_STRUCT_LENGTH and tails into
+  -- RestorePPOfDepositedPokemon (engine/pokemon/caught_nickname.asm:72-90).
+  if box then box[#box + 1] = boxes.enterBox(mon) end
   return BugContest.BOXED_MON, mon
 end
 

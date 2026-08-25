@@ -110,6 +110,26 @@ function Player:turnWindow()
   return frames
 end
 
+-- the bicycle doubles walking speed (8 frames per step); movement.speed
+-- lets a mod multiply or replace that (running shoes, dash, etc.)
+-- DoBikeSpeedup is skipped mid-hop -- home/overworld.asm:283
+function Player:stepLength()
+  local Game = require("src.core.Game")
+  local save = Game.save
+  local onBike = (save and save.onBike and not self.ledgeHop) or false
+  local frames = onBike and self.bikeStepFrames or self.stepFrames or STEP_FRAMES
+  if Runtime.wantsHook("movement.speed") then
+    frames = Runtime.call("movement.speed", function(f) return f end, frames, {
+      onBike = onBike,
+      surfing = self.surfing and true or false,
+      player = self,
+      input = Game.input,
+      save = save,
+    })
+  end
+  return math.max(1, math.floor(tonumber(frames) or STEP_FRAMES))
+end
+
 -- Attempt to start a step; returns "moved"|"turned"|"blocked"|nil.
 function Player:tryMove(dir, map, entities)
   if self.moving or self.inputLocked then return nil end
@@ -145,22 +165,7 @@ function Player:tryMove(dir, map, entities)
   self.moving = true
   self.bumpFrames = nil -- a real step supersedes any in-place bonk
   self.progress = 0
-  -- the bicycle doubles walking speed (8 frames per step); movement.speed
-  -- lets a mod multiply or replace that (running shoes, dash, etc.)
-  local Game = require("src.core.Game")
-  local save = Game.save
-  local frames = (save and save.onBike) and self.bikeStepFrames
-                 or self.stepFrames or STEP_FRAMES
-  if Runtime.wantsHook("movement.speed") then
-    frames = Runtime.call("movement.speed", function(f) return f end, frames, {
-      onBike = save and save.onBike or false,
-      surfing = self.surfing and true or false,
-      player = self,
-      input = Game.input,
-      save = save,
-    })
-  end
-  self.stepFramesCur = math.max(1, math.floor(tonumber(frames) or STEP_FRAMES))
+  self.stepFramesCur = self:stepLength()
   return "moved"
 end
 

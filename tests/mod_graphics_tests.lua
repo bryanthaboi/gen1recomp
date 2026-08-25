@@ -134,9 +134,7 @@ love.graphics = {
 
 -- Fresh copies of the modules that cache a compiled shader or a page set
 -- at first use, so they see the recorder above -- and so the originals
--- every other suite holds never see it.  GBCFX is in the list because
--- Renderer:endFrame reaches it and parity_gbcfx asserts on its unset
--- shader cache.
+-- every other suite holds never see it.
 -- The tile/sprite renderers join them because they report trueColor rects
 -- to PaletteFX and resolve through Assets, and the loader because it holds
 -- Assets as an upvalue: an earlier suite's copy of any of the three would
@@ -144,7 +142,7 @@ love.graphics = {
 local savedLoaded = {}
 for _, name in ipairs({ "src.render.PaletteFX", "src.render.Renderer",
                         "src.render.Font", "src.render.Assets",
-                        "src.render.GBCFX", "src.render.SpriteRenderer",
+                        "src.render.SpriteRenderer",
                         "src.render.TileRenderer", "src.mods.Loader" }) do
   savedLoaded[name] = package.loaded[name]
   package.loaded[name] = nil
@@ -218,8 +216,12 @@ for name, module in pairs({ Assets = Assets, TileRenderer = TileRenderer,
 end
 check(type(require("src.world.MapLoader").invalidateAll) == "function",
       "MapLoader keeps its wave-1 invalidateAll")
+check(type(require("src.world.MapLoader").releaseAll) == "function",
+      "MapLoader exposes releaseAll for session end")
 check(type(require("src.core.Sound").invalidate) == "function",
       "Sound keeps its wave-1 invalidate")
+check(type(Assets.releaseSession) == "function",
+      "Assets exposes releaseSession for in-process session end")
 
 -- the central cache hands back one image per resolved path, and flush
 -- fans out to every registered downstream cache
@@ -239,6 +241,14 @@ Assets.register(function() error("boom") end)
 Assets.register(function() reached = true end)
 Assets.flush()
 check(reached, "a throwing invalidator does not stop the fan-out")
+
+-- flush/invalidate must not run release hooks (HotReload / live overworld safe)
+local releaseCalls = 0
+Assets.register({ release = function() releaseCalls = releaseCalls + 1 end })
+Assets.flush()
+check(releaseCalls == 0, "flush() does not call release hooks")
+Assets.releaseSession()
+check(releaseCalls == 1, "releaseSession() calls registered release hooks")
 
 -- ------- animated tiles as tileset data
 

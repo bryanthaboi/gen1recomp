@@ -340,10 +340,8 @@ function Commands.start_battle(ctx, kind, a, b)
     ctx.lastBattleResult = result
     ctx.lastCheck = result == "win"
     if ctx.overworld then
-      -- A map script often follows a trainer battle with its own text.
-      -- Keep a level evolution behind that text: otherwise afterBattle
-      -- pushes the evolution screen, then this runner resumes and pushes
-      -- the trainer's text on top of it.
+      -- The map-side follow-up (stampClosedDoors, #372) rides behind the
+      -- script's own text; the evolution now runs in BattleState:finish.
       if result == "win" then
         ctx.afterScript = ctx.afterScript or {}
         table.insert(ctx.afterScript, function()
@@ -529,6 +527,16 @@ function Commands.set_field(ctx, key, value)
     return
   end
   ctx.save[key] = value
+end
+
+-- scripts/ChampionsRoom.asm:57
+function Commands.set_option(ctx, key, value)
+  local o = ctx.save.options
+  if not o then
+    o = {}
+    ctx.save.options = o
+  end
+  o[key] = value
 end
 
 function Commands.load_player_starter_name(ctx)
@@ -722,7 +730,8 @@ end
 -- Box deposits also print SentToBoxText (give_pokemon.asm:36-37).
 -- skipNickname suppresses AskName for callers that name the gift themselves;
 -- no vanilla script uses it (pokeyellow scripts/OaksLab.asm, #1013)
-function Commands.give_pokemon(ctx, species, level, skipNickname)
+-- gotText prints GotMonText ahead of AskName (give_pokemon.asm:46).
+function Commands.give_pokemon(ctx, species, level, skipNickname, gotText)
   -- Native mods can transform a gift before the Pokémon object is created.
   -- This is intentionally an event rather than a special-case starter hook:
   -- mods can use the same seam for story gifts, fossils, or custom scripts.
@@ -756,6 +765,11 @@ function Commands.give_pokemon(ctx, species, level, skipNickname)
   ctx.lastCheck = true
   ctx.addedToParty = addedToParty
   ctx.boxNum = boxNum
+  -- engine/events/give_pokemon.asm:46
+  if gotText and ctx.runner then
+    Commands.text_sound(ctx, "Get_Item1")
+    Commands.show_text(ctx, "_GotMonText", { RAM = species })
+  end
   -- AskName: both AddPartyMon and SendNewMonToBox; skip mod-set nicks
   -- and callback-style callers with no script runner to yield on.
   if not gift.nickname and not skipNickname and ctx.runner then
@@ -1211,6 +1225,16 @@ function Commands.replace_block(ctx, bx, by, blockId)
   if ctx.overworld then ctx.overworld:replaceBlock(bx, by, blockId) end
 end
 
+-- ss_anne_departs: scripts/VermilionDock.asm:80 .shift_columns_up, blocking
+-- until she has cleared her own width
+function Commands.ss_anne_departs(ctx)
+  local ow = ctx.overworld
+  if not ow or not ow.startSsAnneDeparture then return end
+  local runner = ctx.runner
+  ow:startSsAnneDeparture(function() runner:resume() end)
+  runner:yield()
+end
+
 -- set_tile_anim <anim|false>: override the current tileset's animation
 -- ("TILEANIM_WATER"; false stops it) until the next map change restores
 -- the record (setMap)
@@ -1295,11 +1319,14 @@ function FadeOverlay:update()
 end
 
 function FadeOverlay:draw()
-  if self.color == "white" then
-    love.graphics.setColor(1, 1, 1, self.alpha)
-  else
-    love.graphics.setColor(0, 0, 0, self.alpha)
+  local shade = (self.color == "white") and 1 or 0
+  -- home/fade.asm:26
+  local r = self.game and self.game.renderer
+  if r then
+    r.screenVeil = { shade, self.alpha }
+    return
   end
+  love.graphics.setColor(shade, shade, shade, self.alpha)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -1422,7 +1449,7 @@ Commands.meta = {}
 for _, verb in ipairs({ "show_text", "ask", "choice", "start_battle", "warp",
     "open_mart", "trade", "push_screen", "record_hall_of_fame",
     "old_man_demo", "static_battle", "rival_battle", "give_item",
-    "give_pokemon", "fade", "pan_camera" }) do
+    "give_pokemon", "fade", "pan_camera", "ss_anne_departs" }) do
   Commands.meta[verb] = { foreground = true }
 end
 for _, verb in ipairs({ "show_text", "ask", "choice", "start_battle", "warp",
@@ -1430,7 +1457,8 @@ for _, verb in ipairs({ "show_text", "ask", "choice", "start_battle", "warp",
     "old_man_demo", "static_battle", "rival_battle", "give_item",
     "give_pokemon", "wait",
     "wait_flag", "move_player", "move_npc", "move_npc_to", "walk_npc",
-    "emote", "fade", "pan_camera", "play_once", "pikachu_make_way" }) do
+    "emote", "fade", "pan_camera", "play_once", "pikachu_make_way",
+    "ss_anne_departs" }) do
   local meta = Commands.meta[verb] or {}
   Commands.meta[verb] = meta
   meta.blocking = true

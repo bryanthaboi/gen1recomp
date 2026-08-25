@@ -10,13 +10,14 @@
 local Bag = {}
 
 -- MAX_ITEMS / MAX_BALLS / MAX_KEY_ITEMS, and the TM/HM pocket holds one of
--- every TM plus the seven HMs (NUM_TMS + NUM_HMS).  A `mods` bagSize override
+-- every TM plus the seven HMs (NUM_TMS + NUM_HMS -- ram/wram.asm:2421 is
+-- `wTMsHMs:: ds NUM_TMS + NUM_HMS`, 57 bytes).  A `mods` bagSize override
 -- replaces the ITEM pocket only, the way the Gen 1 single-bag config did.
 local POCKET_CAPACITY = {
   ITEM = 20,
   BALL = 12,
   KEY_ITEM = 25,
-  TM_HM = 64,
+  TM_HM = 57,
 }
 local DEFAULT_CAPACITY = 20
 

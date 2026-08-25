@@ -21,6 +21,21 @@ for p = 1, 3 do
   end
 end
 
+-- gfx/stats/stats.pal, the colour LoadStatsScreenPals drops into colour 0 of
+-- BG palettes 0 and 2 (engine/gfx/color.asm:386-390)
+local ROM_TINTS = { { 31, 19, 31 }, { 21, 31, 14 }, { 17, 31, 31 } }
+for p = 1, 3 do
+  for ch = 1, 3 do
+    T.eq(SummaryMenu.PAGE_TINTS[p][ch], up(ROM_TINTS[p][ch]),
+      ("stats.pal tint %d channel %d"):format(p, ch))
+  end
+  local page = setmetatable({ page = p }, { __index = SummaryMenu })
+  local lower = page:lowerColors()
+  T.eq(lower[1][1], SummaryMenu.PAGE_TINTS[p][1],
+    ("lower half palette %d takes the page tint as colour 0"):format(p))
+  T.eq(lower[4][1], 0, ("lower half palette %d keeps black ink"):format(p))
+end
+
 -- the quads: 17 tiles from $31, one 8x8 cell each off the 136x8 sheet
 love.graphics = love.graphics or {}
 local realNewQuad = love.graphics.newQuad
@@ -48,4 +63,4 @@ local old = setmetatable({ menuGfx = {} }, { __index = SummaryMenu })
 T.check(old:statsTiles() == nil, "no menu_gfx.stats falls back, not crashes")
 love.graphics.newQuad = realNewQuad
 
-T.finish("gen2 stats tiles and page palettes (#1558)")
+T.finish("gen2 stats tiles and page palettes (#1558, #1693)")

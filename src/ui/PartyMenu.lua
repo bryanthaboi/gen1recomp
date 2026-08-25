@@ -305,6 +305,7 @@ function PartyMenu.new(game, opts)
   self.onSwitch = opts.onSwitch
   self.onCancel = opts.onCancel
   self.pickOnly = opts.pickOnly
+  self.itemUse = opts.itemUse -- USE_ITEM_PARTY_MENU (item_effects.asm:813)
   -- Medicine keeps the picker on screen: item_effects.asm .doneHealing
   -- animates the party HP bar and then prints the message through
   -- RedrawPartyMenu with the menu STILL up, so BagMenu asks for keepOpen and
@@ -725,16 +726,19 @@ end
 -- the party menu always prints a message in the bottom text box.  With the
 -- normal message id that is PartyMenuBattleText ("Bring out which POKéMON?")
 -- when IsInBattle else PartyMenuNormalText ("Choose a POKéMON."); the swap /
--- item / TM-HM ids print their own strings, which draw() handles inline.
--- Pure (no side effects) so drivers can assert it. #147
+-- item / TM-HM ids print their own strings, and EVO_STONE shares
+-- PartyMenuItemUseText (party_menu.asm:229 PartyMenuMessagePointers).
+-- Pure (no side effects) so drivers can assert it. #147 #1610
 function PartyMenu:bottomMessage()
   if self.swapFrom then
-    return "Move to where?"
-  elseif self.softboiledFrom or self.pickOnly then
-    return "Use on which one?"
+    return self.game.data.text._PartyMenuSwapMonText
+      or Strings("Move POKéMON\nwhere?")
   elseif self.tmhm then
     return self.game.data.text._PartyMenuUseTMText
       or Strings("Use TM on which\nPOKéMON?")
+  elseif self.softboiledFrom or self.itemUse then
+    return self.game.data.text._PartyMenuItemUseText
+      or Strings("Use item on which\nPOKéMON?")
   elseif self.battle then
     return self.game.data.text._PartyMenuBattleText
       or Strings("Bring out which\nPOKéMON?")
@@ -858,38 +862,14 @@ function PartyMenu:draw()
       Font.drawCode(Theme.cursorHollow, 0, cursorY)
     end
   end
-  if self.swapFrom then
-    Font.draw(Strings("Move to where?"), 8, 136)
-  elseif self.softboiledFrom then
-    Font.draw(Strings("Use on which one?"), 8, 136)
-  elseif self.tmhm then
-    -- "Use TM on which\nPOKeMON?" in the standard bottom text box
-    -- (party_menu.asm keeps the message box for the TM/HM menu); box + line
-    -- geometry match TextBox's default (rows 12-17, text on rows 14/16). #210
-    Font.drawBox(0, 12, 20, 6)
-    love.graphics.setColor(0, 0, 0, 1)
-    local prompt = self.game.data.text._PartyMenuUseTMText
-      or Strings("Use TM on which\nPOKéMON?")
-    local ly = 112
-    for line in (prompt .. "\n"):gmatch("([^\n]*)\n") do
-      Font.draw(line, 8, ly)
-      ly = ly + 16
-    end
-  elseif self.pickOnly then
-    Font.draw(Strings("Use on which one?"), 8, 136)
-  else
-    -- default field party menu (StartMenu) and the battle voluntary-switch
-    -- (BattleState:openParty): Gen1 prints PartyMenuNormalText / PartyMenuBattleText
-    -- in the standard bottom text box (party_menu.asm PartyMenuMessage), not
-    -- plain bottom-row text.  Box + line geometry match the #210 TM/HM case and
-    -- TextBox's default (rows 12-17, text on rows 14/16). #147
-    Font.drawBox(0, 12, 20, 6)
-    love.graphics.setColor(0, 0, 0, 1)
-    local ly = 112
-    for line in (self:bottomMessage() .. "\n"):gmatch("([^\n]*)\n") do
-      Font.draw(line, 8, ly)
-      ly = ly + 16
-    end
+  -- every message id prints through PrintText, so it lands in the standard
+  -- bottom text box, rows 12-17 (party_menu.asm:174). #147 #210 #1610
+  Font.drawBox(0, 12, 20, 6)
+  love.graphics.setColor(0, 0, 0, 1)
+  local ly = 112
+  for line in (self:bottomMessage() .. "\n"):gmatch("([^\n]*)\n") do
+    Font.draw(line, 8, ly)
+    ly = ly + 16
   end
   if self.submenu then
     local n = #self.subItems

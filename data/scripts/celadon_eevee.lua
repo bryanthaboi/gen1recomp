@@ -42,27 +42,29 @@ local LINK_HEADINGS = { "HOW TO LINK", "COLOSSEUM", "TRADE CENTER" }
 
 local function linkCableHelp(game)
   local text = game.data.text or {}
-  local items, showMenu, askHeading
-  function showMenu()
-    game.stack:push(Menu.new(game, items,
-      { tx = 0, ty = 0, tw = 15, th = 10, rowStep = 1 }))
-  end
-  function askHeading()
-    game.stack:push(TextBox.new(game,
-      text._LinkCableHelpText2 or "Which heading do\nyou want to read?",
-      showMenu))
+  local items, menu, openMenu
+  local function closeAll()
+    game.stack:pop()
   end
   items = {}
   for i, label in ipairs(LINK_HEADINGS) do
-    items[i] = { label = label, onSelect = function()
+    items[i] = { label = label, keepOpen = true, onSelect = function()
       game.stack:push(TextBox.new(game,
-        text["_LinkCableInfoText" .. i] or label, askHeading))
+        text["_LinkCableInfoText" .. i] or label))
     end }
   end
-  items[#items + 1] = { label = "STOP READING" }
+  items[#items + 1] = { label = "STOP READING", onSelect = closeAll }
+  menu = Menu.new(game, items,
+    { tx = 0, ty = 0, tw = 15, th = 10, rowStep = 2, itemY = 2,
+      onCancel = closeAll })
+  function openMenu() game.stack:push(menu) end
   game.stack:push(TextBox.new(game,
     text._LinkCableHelpText1 or "TRAINER TIPS\fUsing a Game Link\nCable",
-    askHeading))
+    function()
+      game.stack:push(TextBox.new(game,
+        text._LinkCableHelpText2 or "Which heading do\nyou want to read?",
+        nil, { stay = { onShown = openMenu } }))
+    end))
 end
 
 return {
@@ -84,21 +86,15 @@ return {
       { "jump_if_false", 5 },                                  -- 2
       { "hide_object", "CELADON_MANSION_ROOF_HOUSE",
         "CELADONMANSION_ROOF_HOUSE_EEVEE_POKEBALL" },          -- 3 (old saves)
-      { "jump", 13 },                                          -- 4
-      { "give_pokemon", "EEVEE", 25 },                         -- 5
-      { "jump_if_false", 12 },                                 -- 6 (party+box full)
-      -- flag + HideObject before the jingle and GotMonText: the nickname
-      -- prompt inside give_pokemon and the text row both yield, and a
-      -- script that dies there would leave the EEVEE taken with the ball
-      -- still on the table and the gift claimable again (#426).  The row
-      -- count is unchanged, so the numeric jump targets still hold.
+      { "jump", 11 },                                          -- 4
+      { "give_pokemon", "EEVEE", 25, false, true },            -- 5
+      { "jump_if_false", 10 },                                 -- 6 (party+box full)
+      -- scripts/CeladonMansionRoofHouse.asm:17-20 (#426)
       { "set_flag", "EVENT_GOT_EEVEE" },                       -- 7
       { "hide_object", "CELADON_MANSION_ROOF_HOUSE",
         "CELADONMANSION_ROOF_HOUSE_EEVEE_POKEBALL" },          -- 8
-      { "text_sound", "Get_Item1" },                           -- 9 (GotMonText jingle)
-      { "show_text", "_GotMonText", { RAM = "EEVEE" } },       -- 10
-      { "jump", 13 },                                          -- 11
-      { "show_text", "_BoxIsFullText" },                       -- 12
+      { "jump", 11 },                                          -- 9
+      { "show_text", "_BoxIsFullText" },                       -- 10
     },
   },
 }

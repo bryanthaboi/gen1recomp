@@ -34,13 +34,25 @@ local NamePick = {}
 NamePick.__index = NamePick
 NamePick.isOpaque = true
 
--- data/player_names.asm PlayerNameArray, one half of the IF per edition.
-local PRESETS = { "GOLD", "HIRO", "TAYLOR", "KARL" }
-local PRESETS_SILVER = { "SILVER", "KAMON", "OSCAR", "MAX" }
+-- data/player_names.asm PlayerNameArray, one half of the IF per edition, and
+-- Crystal's two arrays at ../pokecrystal/data/player_names.asm:12-16, :31-35.
+local PRESETS = {
+  gold = { "GOLD", "HIRO", "TAYLOR", "KARL" },
+  silver = { "SILVER", "KAMON", "OSCAR", "MAX" },
+  crystal = { "CHRIS", "MAT", "ALLAN", "JON" },
+}
+local PRESETS_FEMALE = {
+  crystal = { "KRIS", "AMANDA", "JUANA", "JODI" },
+}
 
-local function presetsFor()
-  local silver = require("src.core.GameVersion").get() == "silver"
-  return silver and PRESETS_SILVER or PRESETS
+-- ShowPlayerNamingChoices picks the header off wPlayerGender
+-- (../pokecrystal/engine/gfx/player_gfx.asm:57-62).
+local function presetsFor(gender)
+  local version = require("src.core.GameVersion").get()
+  if gender == "female" and PRESETS_FEMALE[version] then
+    return PRESETS_FEMALE[version]
+  end
+  return PRESETS[version] or PRESETS.gold
 end
 
 -- menu_coords 0, 0, 10, TEXTBOX_Y - 1 (TEXTBOX_Y = 12).
@@ -59,14 +71,16 @@ function NamePick:wantsFillScale() return true end
 function NamePick:drawsWidescreen() return true end
 
 -- opts: onDone(name), font, pic (the CAL frontpic already loaded by the Oak
--- speech), picColors, presets
+-- speech), picColors, presets, gender
 function NamePick.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, NamePick)
   self.game = game
   self.onDone = opts.onDone
+  self.gender = opts.gender
+    or (game and game.save and game.save.player and game.save.player.gender)
   self.items = { "NEW NAME" }
-  for _, name in ipairs(opts.presets or presetsFor()) do
+  for _, name in ipairs(opts.presets or presetsFor(self.gender)) do
     self.items[#self.items + 1] = name
   end
   -- `db 1 ; default option`: the cursor starts on NEW NAME, not on a preset.
@@ -96,15 +110,19 @@ end
 function NamePick:openNaming()
   local data = self.game and self.game.data or {}
   local sprites = data.gen2Sprites
-  local chris = sprites and sprites.SPRITE_CHRIS
+  local NamingScreen = require("src.ui.gen2.NamingScreen")
+  local def = sprites and sprites[NamingScreen.playerSprite(self.gender)]
   local Palettes = require("src.world.gen2.Palettes")
   Screens.push(self.game, "Gen2NamingScreen", {
     type = "player",
+    gender = self.gender,
     menuGfx = data.gen2MenuGfx,
-    iconPath = chris and chris.image or nil,
-    -- Chris is PAL_OW_RED; the naming screen is lit like day.
+    iconPath = def and def.image or nil,
+    -- Chris is PAL_OW_RED and Kris PAL_OW_BLUE
+    -- (../pokecrystal/engine/overworld/player_object.asm:32-39); the naming
+    -- screen is lit like day.
     iconColors = data.gen2Palettes
-      and Palettes.spritePalette(data.gen2Palettes, "DAY", chris) or nil,
+      and Palettes.spritePalette(data.gen2Palettes, "DAY", def) or nil,
     onDone = function(name)
       -- An empty name keeps the default, the way ending entry with nothing
       -- typed leaves wPlayerName at its preset.
@@ -112,7 +130,7 @@ function NamePick:openNaming()
       if name and #name > 0 then
         self:choose(name)
       else
-        self:choose(self.items[2] or presetsFor()[1])
+        self:choose(self.items[2] or presetsFor(self.gender)[1])
       end
     end,
   })
@@ -152,7 +170,7 @@ function NamePick:update(_dt)
       if self.fontOk then
         self:openNaming()
       else
-        self:choose(self.items[2] or presetsFor()[1])
+        self:choose(self.items[2] or presetsFor(self.gender)[1])
       end
     else
       -- A preset returns through MovePlayerPicLeft, so the pic walks back
@@ -232,7 +250,7 @@ function NamePick:drawWidescreen(winW, winH)
 end
 
 NamePick.PRESETS = PRESETS
-NamePick.PRESETS_SILVER = PRESETS_SILVER
+NamePick.PRESETS_FEMALE = PRESETS_FEMALE
 NamePick.presetsFor = presetsFor
 
 return NamePick

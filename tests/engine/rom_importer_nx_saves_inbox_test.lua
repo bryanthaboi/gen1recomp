@@ -57,9 +57,10 @@ end
 package.loaded["src.core.Platform"] = nil
 package.loaded["src.import.RomImporter"] = nil
 RomImporter = require("src.import.RomImporter")
+local GameVersion = require("src.core.GameVersion")
 
 local function clearSavesInbox()
-  for _, ver in ipairs({ "red", "blue", "yellow", "gold", "silver" }) do
+  for _, ver in ipairs(GameVersion.ORDER) do
     local dir = "imports/saves/" .. ver
     for _, name in ipairs(love.filesystem.getDirectoryItems(dir) or {}) do
       love.filesystem.remove(dir .. "/" .. name)

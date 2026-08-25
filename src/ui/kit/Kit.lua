@@ -749,12 +749,23 @@ function Kit.chip(x, y, w, h, label, on, color, id)
 end
 
 -- A status label with no interaction: outlined text, the "INSTALLED"/"UPDATE"
--- markers on mod rows.
-function Kit.tag(x, y, w, h, label, color)
+-- markers on mod rows.  Pass opts.fill for a solid chip (BETA badges); ink
+-- then defaults to PAL.inverse so the label stays readable on the fill.
+function Kit.tag(x, y, w, h, label, color, opts)
   if not G then return end
-  Theme.strokeRounded(x, y, w, h, color or PAL.line, 0.7, 1)
-  Kit.textCenter("micro", label, x, y + (h - Kit.textHeight("micro")) / 2, w,
-    color or PAL.muted)
+  opts = opts or {}
+  if opts.fill then
+    Theme.fillRounded(x, y, w, h, color or PAL.yellow, 1, h / 2)
+  else
+    Theme.strokeRounded(x, y, w, h, color or PAL.line, 0.7, 1)
+  end
+  local ink = opts.ink or (opts.fill and PAL.inverse) or color or PAL.muted
+  local ty = y + (h - Kit.textHeight("micro")) / 2
+  if opts.bold then
+    Kit.textCenterBold("micro", label, x, ty, w, ink)
+  else
+    Kit.textCenter("micro", label, x, ty, w, ink)
+  end
 end
 
 -- Checkbox row.  Returns (newChecked, changed).

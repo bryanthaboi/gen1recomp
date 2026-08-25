@@ -14,6 +14,8 @@ local Assets = {}
 local cache = {}
 -- downstream caches that must empty when the search path changes
 local invalidators = {}
+-- optional GPU release hooks for session end (never run on hot reload flush)
+local releasers = {}
 
 -- The loader bridge: overrideOrder() yields mods highest-priority-first
 -- and derivedPath(rel) yields an existing save/mod-derived/<id>/<rel>.
@@ -68,8 +70,18 @@ function Assets.imageData(path)
   return love.image.newImageData(Assets.resolve(path))
 end
 
-function Assets.register(invalidate)
-  invalidators[#invalidators + 1] = invalidate
+-- Register a cache invalidator, or { invalidate = fn, release = fn } when a
+-- module caches LOVE Images/Canvases and can eagerly free them at session end.
+-- release is optional and is NOT run on flush/invalidate (HotReload safe).
+-- MapLoader is the canonical split-hook example: invalidateAll clears tables
+-- without GPU release; releaseAll evicts every resident map renderer.
+function Assets.register(hooks)
+  if type(hooks) == "function" then
+    invalidators[#invalidators + 1] = hooks
+    return
+  end
+  if hooks.invalidate then invalidators[#invalidators + 1] = hooks.invalidate end
+  if hooks.release then releasers[#releasers + 1] = hooks.release end
 end
 
 -- hot reload's single entry point (20-developer-tooling): drop the central
@@ -81,6 +93,17 @@ function Assets.invalidate()
 end
 
 Assets.flush = Assets.invalidate
+
+-- In-process return-to-launcher / editor close: release central Images and
+-- run release hooks only.  Does not call invalidate hooks (MapLoader must
+-- keep invalidateAll separate from releaseAll).
+function Assets.releaseSession()
+  for _, img in pairs(cache) do
+    if img and img.release then pcall(img.release, img) end
+  end
+  cache = {}
+  for _, fn in ipairs(releasers) do pcall(fn) end
+end
 
 -- Loader:load hands over the live mod set once the merge is done.  Load
 -- order is priority ascending, so the search walks it backwards: the mod

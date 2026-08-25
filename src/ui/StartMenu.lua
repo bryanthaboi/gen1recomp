@@ -42,9 +42,14 @@ function StartMenu.new(game)
     Screens.push(game, "PartyMenu", { onCancel = reopen })
   end })
 
-  table.insert(items, { label = Strings("ITEM"), onSelect = function()
-    Screens.push(game, "BagMenu", { onCancel = reopen })
-  end })
+  -- StartMenu_Item draws LIST_MENU_BOX over the still-drawn START menu and
+  -- only redisplays it on the way out (start_sub_menus.asm:302-329) #1745
+  table.insert(items, { label = Strings("ITEM"), keepOpen = true,
+    onSelect = function()
+      Screens.push(game, "BagMenu", { onClose = function()
+        if menu and game.stack:top() == menu then game.stack:pop() end
+      end })
+    end })
 
   -- the player's name opens the trainer card (StartMenu_TrainerInfo)
   table.insert(items, { label = game.save.player.name or "RED",

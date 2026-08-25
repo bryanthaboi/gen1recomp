@@ -883,6 +883,11 @@ function Breeding.withdraw(data, save, which)
   rebuilt.status = nil
   for _, move in ipairs(rebuilt.moves) do move.pp = move.maxPp end
   rebuilt.caughtLevel = mon.caughtLevel or rebuilt.caughtLevel
+  -- RetrieveBreedmon copies the stored struct back whole, MON_CAUGHTDATA
+  -- included -- engine/pokemon/move_mon.asm:805.
+  rebuilt.caughtTime = mon.caughtTime
+  rebuilt.caughtLocation = mon.caughtLocation
+  rebuilt.caughtByGender = mon.caughtByGender
   rebuilt.ot, rebuilt.otId = mon.ot, mon.otId
   -- CalcExpAtLevel, which is the experience loss.
   rebuilt.experience = Mon.experienceForLevel(growthOf(data, def), newLevel)
@@ -1077,7 +1082,9 @@ end
 -- Returns the new record plus a table of side effects the caller owes:
 --   { species = , togepi = bool } -- SetSeenAndCaughtMon, and the
 --   EVENT_TOGEPI_HATCHED flag the ASM sets by hand for exactly one species.
-function Breeding.hatch(data, save, index, nickname)
+-- `where` is the hatch site for SetEggMonCaughtData: landmark, timeOfDay and
+-- playerGender -- engine/pokemon/breeding.asm:228.
+function Breeding.hatch(data, save, index, nickname, where)
   local party = (save and save.party) or {}
   local egg = party[index]
   if not Breeding.isEgg(egg) then return nil end
@@ -1097,6 +1104,18 @@ function Breeding.hatch(data, save, index, nickname)
   hatched.ot = egg.ot or (save.player and save.player.name)
   hatched.otId = egg.otId or (save.player and save.player.id)
   hatched.caughtLevel = egg.level or Breeding.EGG_LEVEL
+  -- SetEggMonCaughtData swaps wCurPartyLevel for CAUGHT_EGG_LEVEL around the
+  -- shared setter -- engine/pokemon/caught_data.asm:235-246.
+  if Mon.hasCaughtData(save and save.version) then
+    where = where or {}
+    Mon.setCaughtData(hatched, {
+      level = Mon.CAUGHT_EGG_LEVEL,
+      timeOfDay = where.timeOfDay,
+      landmark = where.landmark,
+      playerGender = where.playerGender
+        or (save.player and save.player.gender),
+    })
+  end
   party[index] = hatched
 
   Breeding.markPokedex(save, egg.species)

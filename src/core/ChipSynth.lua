@@ -1147,6 +1147,7 @@ function Engine:drumInstrumentGen2(kit, pitch)
       ticks = ticks + duration
     end
   end
+  extendDrumEnvelope(segments)
   self.noiseInstruments[key] = segments
   return segments
 end
