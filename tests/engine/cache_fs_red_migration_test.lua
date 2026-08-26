@@ -57,6 +57,36 @@ eq(love.filesystem.read("assets/generated/fonts/font.png"), "font-bytes",
 eq(love.filesystem.read("data/generated/constants.lua"), "return {}",
   "post-mount probe reads red data at the un-prefixed path")
 
+-- unmountVersion peels generated overlays (LIFO) then the version folder, so
+-- a later Play/Edit on another game cannot resolve this version's files.
+do
+  local mounts = love.filesystem._mounts
+  local archives = {}
+  for _, m in ipairs(mounts) do archives[#archives + 1] = m.archive end
+  local function indexOf(name)
+    for i, a in ipairs(archives) do if a == name then return i end end
+  end
+  local dataIdx = indexOf("red/data/generated")
+  local assetsIdx = indexOf("red/assets/generated")
+  check(dataIdx and assetsIdx, "mountVersion recorded generated-tree overlays")
+  check(assetsIdx > dataIdx,
+    "assets/generated was mounted after data/generated (LIFO unmount peels it first)")
+end
+check(CacheFs.unmountVersion("red") == true, "unmountVersion(red) returns true")
+check(love.filesystem.read("assets/generated/fonts/font.png") == nil,
+  "post-unmount probe no longer sees red assets at the un-prefixed path")
+check(love.filesystem.read("data/generated/constants.lua") == nil,
+  "post-unmount probe no longer sees red data at the un-prefixed path")
+do
+  local left = {}
+  for _, m in ipairs(love.filesystem._mounts) do
+    if tostring(m.archive):find("red", 1, true) then
+      left[#left + 1] = m.archive
+    end
+  end
+  eq(#left, 0, "no red/ mounts remain after unmountVersion")
+end
+
 -- no legacy cache at all: migration is a no-op, not an error
 love.filesystem.remove("red/rom-cache.complete")
 love.filesystem.remove("red/data/generated/maps.lua")

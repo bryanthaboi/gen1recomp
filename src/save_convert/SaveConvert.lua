@@ -21,6 +21,7 @@
 -- require alone cannot see them there (#420).
 
 local GenSave = require("src.save_convert.GenSave")
+local GameVersion = require("src.core.GameVersion")
 
 local SaveConvert = {}
 
@@ -192,7 +193,7 @@ local function defaultsSave()
       battleLayout = "og",
       ruleset = "gen1_faithful", musicVol = 7, sfxVol = 7, pikaVol = 7,
       musicFilter = 0,
-      speed = 1, colors = "gbc", tilt = 0, gbcfx = 0,
+      speed = 1, colors = "gbc", tilt = 0,
       videoMode = "windowed", mods = {},
     },
   }
@@ -228,10 +229,11 @@ SaveConvert.mergeDefaults = mergeDefaults
 -- codec exists yet.  Both directions answer with a plain message the
 -- launcher's save card renders as-is, instead of pushing a Gen 2 save
 -- table through Gen 1 offsets and surfacing a codec traceback.
-local GEN2_SAV_UNSUPPORTED = {
-  gold = "Pokemon Gold",
-  silver = "Pokemon Silver",
-}
+local function gen2CartName(gameVersion)
+  if not GameVersion.VERSIONS[gameVersion] then return nil end
+  if GameVersion.generation(gameVersion) ~= 2 then return nil end
+  return GameVersion.info(gameVersion).displayName
+end
 
 -- importSav(bytes, version, gameVersion) -> saveTable, err
 -- bytes: the raw 32768-byte SRAM string. Validates size and the main-data
@@ -245,7 +247,7 @@ function SaveConvert.importSav(bytes, version, gameVersion)
   if type(bytes) ~= "string" then
     return nil, "expected raw save bytes as a string"
   end
-  local gen2Name = GEN2_SAV_UNSUPPORTED[gameVersion]
+  local gen2Name = gen2CartName(gameVersion)
   if gen2Name then
     return nil, gen2Name .. " uses a Gen 2 cart save; importing one is not supported yet."
   end
@@ -281,7 +283,7 @@ function SaveConvert.exportSav(saveTable, gameVersion)
   if type(saveTable) ~= "table" then
     return nil, "expected a save table"
   end
-  local gen2Name = GEN2_SAV_UNSUPPORTED[gameVersion]
+  local gen2Name = gen2CartName(gameVersion)
   if gen2Name then
     return nil, gen2Name .. " uses a Gen 2 cart save; exporting one is not supported yet."
   end

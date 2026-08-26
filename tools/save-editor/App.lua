@@ -103,6 +103,9 @@ local function applyLoaded(path, statusVerb)
     S.loadError = false
     S.allowSave = true
   end
+  if Gen.of(S.save, S.version) == 2 then
+    S.events = Catalog.gen2EventList(Gen.engineOf(S.save, S.version), S.modRoots)
+  end
   local mapId = Gen.playerMap(S.save)
   S.mapId = mapId
   S.dirty = false
@@ -169,16 +172,14 @@ function App.load(pathOverride, opts)
   for _, mod in ipairs(S.mods:status().loaded) do
     modRoots[#modRoots + 1] = mod.path
   end
+  S.modRoots = modRoots
   if Gen.of(nil, opts.version) == 2 or require("src.core.GameVersion").generation() == 2 then
-    S.events = Catalog.goldEventList(modRoots)
+    S.events = Catalog.gen2EventList(Gen.engineOf(nil, opts.version), modRoots)
   else
     S.events = Catalog.scrapeEvents("data/scripts", "data/generated/trainer_headers.lua",
                                     nil, modRoots)
   end
   applyLoaded(pathOverride or SaveIO.defaultPath(), "Loaded")
-  if Gen.of(S.save, S.version) == 2 then
-    S.events = Catalog.goldEventList(modRoots)
-  end
 end
 
 -- Switch to another save file (Open button, drag-drop, or --save arg).

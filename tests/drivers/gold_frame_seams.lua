@@ -8,22 +8,27 @@
 -- Two halves, and the second is the one that matters.  A hook that fires is
 -- easy; a hook that fires and MOVES A PIXEL is worse than no hook at all,
 -- because it silently changes what every existing Gold screenshot means.  So
--- this shoots the overworld, a menu over the overworld, CLASSIC, and CLASSIC +
--- GBC FX with nothing subscribed, wraps all six hooks with pass-throughs that
--- draw nothing, shoots the same four frames again, and compares the PNG bytes.
+-- this shoots the overworld, CLASSIC, and a menu over the overworld with
+-- nothing subscribed, wraps all six hooks with pass-throughs that draw
+-- nothing, shoots the same three frames again, and compares the PNG bytes.
 -- Identical files are the claim; the shots are left on disk either way so a
 -- human can look at the picture the port is actually producing.
 --
--- The four frames are chosen to cover every branch of Game2:draw: no canvas at
--- all, the zone pass alone, the zone pass into a texture GBC FX then reads, and
--- (once the wraps are on) the render.compose path that forces a canvas even
--- when no display mode wanted one.
+-- The three frames are chosen to cover every branch of Game2:draw: no canvas
+-- at all, the zone pass alone, and (once the wraps are on) the render.compose
+-- path that forces a canvas even when no display mode wanted one.
+--
+-- The zone-pass-into-a-texture-then-reread branch (`reread` in
+-- Game2:drawViewportFrame, formerly exercised by CLASSIC + GBC FX before
+-- GBCFX.lua's removal) is not covered here any more:
+-- ShaderFX is the only thing left that triggers it, and activating it needs
+-- a converted on-disk preset this headless driver does not set up. Flagged,
+-- not silently dropped.
 local U = require("tests.drivers.util")
 
 local Runtime = require("src.mods.Runtime")
 local Hooks = require("src.mods.Hooks")
 local GbcPalette = require("src.render.GbcPalette")
-local GBCFX = require("src.render.GBCFX")
 
 local OWNER = "driver_frame_seams"
 
@@ -50,23 +55,17 @@ return function(game)
   U.wait(45)
   assert(game.world and game.world.map, "gold world did not boot")
 
-  -- The four frames, each named for the display state it exercises.  `fx` is
-  -- requested rather than asserted: GBCFX.isSupported refuses on mobile GPUs
-  -- and a headless checkout may have no shader at all, in which case that
-  -- frame simply repeats the CLASSIC one and the comparison still means
-  -- something.
+  -- The three frames, each named for the display state it exercises.
   local frames = {
-    { name = "world", color = "gbc", fx = 0 },
-    { name = "classic", color = "classic", fx = 0 },
-    { name = "classicfx", color = "classic", fx = 2 },
-    { name = "menu", color = "gbc", fx = 0, menu = true },
+    { name = "world", color = "gbc" },
+    { name = "classic", color = "classic" },
+    { name = "menu", color = "gbc", menu = true },
   }
 
   local function shoot(tag)
     local menuOpen = false
     for _, frame in ipairs(frames) do
       GbcPalette.setMode(frame.color)
-      GBCFX.setLevel(frame.fx)
       if frame.menu and not menuOpen then
         game:openStartMenu()
         menuOpen = true
@@ -82,7 +81,6 @@ return function(game)
       U.wait(8)
     end
     GbcPalette.setMode("gbc")
-    GBCFX.setLevel(0)
   end
 
   -- POKEPORT_SEAM_BASELINE=<tag> shoots the four frames under that tag and

@@ -4,10 +4,9 @@
 return {
   ROUTE_16_FLY_HOUSE = {
     talk = {
-      -- Route16FlyHouseFearowText: text_asm just prints the one line and
-      -- plays the FEAROW cry (no cry-playback command exists in this
-      -- port's Commands vocabulary, so only the text is ported).
+      -- scripts/Route16FlyHouse.asm:45-51
       TEXT_ROUTE16FLYHOUSE_FEAROW = {
+        { "play_cry", "FEAROW", true },
         { "show_text", "_Route16FlyHouseFearowText" },
       },
     },

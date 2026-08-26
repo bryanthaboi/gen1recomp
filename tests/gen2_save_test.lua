@@ -117,15 +117,33 @@ check("a Gen 2 version already on the table is kept",
   Save.normalize({ version = "silver", player = {} }).version, "silver")
 check("and a Gen 1 one is replaced by the running edition",
   Save.normalize({ version = "red", player = {} }).version, "gold")
+check("and Crystal is a Gen 2 version, so it keeps its own",
+  Save.normalize({ version = "crystal", player = {} }).version, "crystal")
+-- "nonesuch" is the deliberate never-a-game token: "gold" stood here until
+-- Gold shipped, "crystal" until Crystal did.  This one never becomes a game.
 check("as is a version this engine does not have",
-  Save.normalize({ version = "crystal", player = {} }).version, "gold")
+  Save.normalize({ version = "nonesuch", player = {} }).version, "gold")
 check("party exists", type(sparse.party), "table")
 check("inventory exists", type(sparse.inventory), "table")
 check("pokedex seen exists", type(sparse.pokedex.seen), "table")
 check("phone book exists", type(sparse.phoneContacts), "table")
 check("play time exists", type(sparse.playTime), "table")
 check("name defaulted", sparse.player.name, "GOLD")
+-- wPlayerGender is zeroed by _ResetWRAM and Gold never writes it, so a
+-- normalized save has to come back with the field present rather than nil.
+check("gender defaulted", sparse.player.gender, "male")
+check("and a recorded gender is kept",
+  Save.normalize({ player = { gender = "female" } }).player.gender, "female")
 check("normalize rejects a non-table", Save.normalize("nope"), nil)
+
+-- The blank-name fallback is table driven so Crystal can be a row rather than
+-- a third arm of a two-way test (data/player_names.asm).
+check("Gold's PlayerNameArray row", Save.defaultPlayerName("gold"), "GOLD")
+check("Silver's", Save.defaultPlayerName("silver"), "SILVER")
+check("Crystal's MalePlayerNameArray row",
+  Save.defaultPlayerName("crystal"), "CHRIS")
+check("and an unknown edition falls back to Gold's",
+  Save.defaultPlayerName("nonesuch"), "GOLD")
 
 -- Money and coins are clamped to their caps, and a negative is floored at 0.
 local rich = Save.normalize({ player = { money = 9999999, coins = 99999 } })

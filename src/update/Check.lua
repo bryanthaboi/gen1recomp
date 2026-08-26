@@ -58,6 +58,13 @@ function Check.fullAssetName(version, osName, arch, port)
   return fullAssetName(version, osName, arch, port)
 end
 
+-- A legacy Android APK can run a newer downloaded payload while still lacking
+-- the native bridge that installs future APK updates. It needs one manual
+-- package update even when that payload already reports the latest engine.
+function Check.androidNeedsInstallerBootstrap(osName, hasInstaller)
+  return osName == "Android" and not hasInstaller
+end
+
 local CMD = "update_check_cmd"
 local STATE = "update_check_state"
 
@@ -266,12 +273,15 @@ function Check.fullUpdateAction()
   local st = Check.state()
   if st.status ~= "needs_full" and st.status ~= "full_ready" then return nil end
   local osName = love and love.system and love.system.getOS and love.system.getOS() or ""
-  if osName == "Android" and type(love.system.installApk) == "function"
-      and type(st.full) == "table" and type(st.full.url) == "string" then
-    if st.status == "full_ready" and type(st.full.path) == "string" then
-      return { label = "Install Android update", kind = "install" }
+  if osName == "Android" and type(st.full) == "table"
+      and type(st.full.url) == "string" then
+    if type(love.system.installApk) == "function" then
+      if st.status == "full_ready" and type(st.full.path) == "string" then
+        return { label = "Install Android update", kind = "install" }
+      end
+      return { label = "Download Android update", kind = "download" }
     end
-    return { label = "Download Android update", kind = "download" }
+    return { label = "Update app manually", url = st.full.url }
   end
   if osName == "iOS" then
     return { label = "Re-sideload app", url =
@@ -333,7 +343,9 @@ function Check.shutdown()
   if cmdCh then cmdCh:push({ cmd = "quit" }) end
   if worker then pcall(function() worker:wait() end) end
   worker, cmdCh, stateCh = nil, nil, nil
-  workerReady = false
+  workerReady = nil
 end
+
+require("src.core.SessionLifecycle").registerProcessShutdown(Check.shutdown)
 
 return Check

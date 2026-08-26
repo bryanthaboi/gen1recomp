@@ -160,9 +160,8 @@ return function(game)
   if check("the bag opened", isBag) then
     if stepTo(bag, function(b) return b.items[b.index].value == "BICYCLE" end,
               "BICYCLE") then
-      U.tap(game, "a") -- USE / TOSS submenu
-      U.wait(20)
-      U.tap(game, "a") -- USE is the first row
+      -- the BICYCLE skips USE/TOSS (start_sub_menus.asm:340-342)
+      U.tap(game, "a")
       U.wait(30)
     end
   end

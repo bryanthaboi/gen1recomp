@@ -1108,7 +1108,7 @@ do
       "function World:bugContestBattleOver",
       "self:bugContestBattleOver()",
       "BugContestResultsWarpScript",
-      "BugContest.ENGINE_BUG_CONTEST_TIMER",
+      "FieldMoves.BUG_CONTEST_FLAG",
       -- Kurt's menu and the item pair the ladder needs.
       "scriptMenu = function(header, onChoose)",
       "itemIndex = function(id)",

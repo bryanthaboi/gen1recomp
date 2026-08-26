@@ -21,6 +21,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local NamingScreen = {}
 NamingScreen.__index = NamingScreen
@@ -67,8 +68,15 @@ local BOX_INPUT_LOWER = {
 -- case target names the board it SWITCHES TO, not the one it is on: the last
 -- row of NameInputUpper is "lower  DEL   END" and the last row of
 -- NameInputLower is "UPPER  DEL   END" (data/text/name_input_chars.asm).
-local BOTTOM_UPPER_LABELS = { "lower", "DEL", "END" }
-local BOTTOM_LOWER_LABELS = { "UPPER", "DEL", "END" }
+-- Wrapped in Strings.source, not Strings: both tables are built once at
+-- require time, before any mod's Strings.load has a catalog to answer from
+-- (src/core/Strings.lua's own note on this); drawPanel resolves them live.
+local BOTTOM_UPPER_LABELS = {
+  Strings.source("lower"), Strings.source("DEL"), Strings.source("END"),
+}
+local BOTTOM_LOWER_LABELS = {
+  Strings.source("UPPER"), Strings.source("DEL"), Strings.source("END"),
+}
 -- Cursor tile for each target: NamingScreen_AnimateCursor's .CaseDelEnd adds
 -- pixel $00 / $30 / $60 to the cursor's own XCOORD of 24 (`depixel 10, 3`),
 -- which is OAM x 24 / 72 / 120 and so screen tile 2 / 8 / 14.  The bracket is
@@ -81,19 +89,28 @@ local BOTTOM_CURSOR_TILES = 5
 -- NAME_* types (constants/menu_constants.asm order) as prompts + field sizes.
 -- Lengths are the ASM's *_NAME_LENGTH - 1, i.e. usable characters.
 NamingScreen.TYPES = {
-  player = { prompt = "YOUR NAME?", maxLength = 7, sprite = "SPRITE_CHRIS" },
-  rival = { prompt = "RIVAL'S NAME?", maxLength = 7, sprite = "SPRITE_RIVAL" },
-  mom = { prompt = "MOTHER'S NAME?", maxLength = 7, sprite = "SPRITE_MOM" },
-  box = { prompt = "BOX NAME?", maxLength = 8, isBox = true },
+  player = { prompt = Strings.source("YOUR NAME?"), maxLength = 7,
+    sprite = "SPRITE_CHRIS", spriteFemale = "SPRITE_KRIS" },
+  rival = { prompt = Strings.source("RIVAL'S NAME?"), maxLength = 7, sprite = "SPRITE_RIVAL" },
+  mom = { prompt = Strings.source("MOTHER'S NAME?"), maxLength = 7, sprite = "SPRITE_MOM" },
+  box = { prompt = Strings.source("BOX NAME?"), maxLength = 8, isBox = true },
   nickname = { prompt = nil, maxLength = 10 },
 }
+
+-- GetPlayerIcon's two sheets (../pokecrystal/engine/gfx/player_gfx.asm:85-93),
+-- which is also the pair the header icon here is cut from.
+function NamingScreen.playerSprite(gender)
+  local kind = NamingScreen.TYPES.player
+  if gender == "female" and kind.spriteFemale then return kind.spriteFemale end
+  return kind.sprite
+end
 
 function NamingScreen:wantsFillScale() return true end
 function NamingScreen:drawsWidescreen() return true end
 
 -- opts: type ("player"/"rival"/"mom"/"box"/"nickname"), prompt, maxLength,
--- initial, monName (nickname header), icon/sprite image path, onDone(name),
--- onCancel().
+-- initial, monName (nickname header), icon/sprite image path, gender,
+-- onDone(name), onCancel().
 function NamingScreen.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, NamingScreen)
@@ -101,9 +118,11 @@ function NamingScreen.new(game, opts)
   local kind = NamingScreen.TYPES[opts.type or "player"]
     or NamingScreen.TYPES.player
   self.kind = kind
+  self.gender = opts.gender
+    or (game and game.save and game.save.player and game.save.player.gender)
   self.isBox = opts.isBox or kind.isBox or false
   self.maxLength = opts.maxLength or kind.maxLength or 7
-  self.prompt = opts.prompt or kind.prompt or "NICKNAME?"
+  self.prompt = opts.prompt or kind.prompt or Strings.source("NICKNAME?")
   self.monName = opts.monName
   self.onDone = opts.onDone
   self.onCancel = opts.onCancel
@@ -493,11 +512,15 @@ function NamingScreen:drawPanel()
   end
   local pal = self.palette
   if self.monName then
-    -- Nickname header is two lines: "<MON>'S" then "NICKNAME?".
-    Chrome.printThrough(self.monName .. "'S", 5, 2, pal)
-    Chrome.printThrough("NICKNAME?", 5, 4, pal)
+    -- Nickname header is two lines: "<MON>'S" then "NICKNAME?".  Kept as two
+    -- Strings() calls, one per line (Chrome.printThrough draws a single row),
+    -- with the mon name folded into the first line's own format string so a
+    -- language whose possessive is not a bare suffix can restructure that
+    -- line rather than being stuck splicing one on.
+    Chrome.printThrough(Strings("%s'S", self.monName), 5, 2, pal)
+    Chrome.printThrough(Strings("NICKNAME?"), 5, 4, pal)
   else
-    Chrome.printThrough(self.prompt, 5, 2, pal)
+    Chrome.printThrough(Strings(self.prompt), 5, 2, pal)
   end
   self:drawEntry(5, self.isBox and 4 or 6)
 
@@ -509,14 +532,18 @@ function NamingScreen:drawPanel()
     for col = 0, 8 do
       local ch = line[col + 1]
       if ch and ch ~= " " and ch ~= "" then
-        Chrome.printThrough(ch, 2 + col * 2, keyboardTop + row * 2, pal)
+        -- Same seam the Gen 1 board's cells go through (src/ui/NamingScreen
+        -- .lua's own Strings(cell)): a script whose alphabet does not fit
+        -- A-Z can swap a cell's glyph without needing the heavier
+        -- ui.naming.grid hook this screen also offers.
+        Chrome.printThrough(Strings(ch), 2 + col * 2, keyboardTop + row * 2, pal)
       end
     end
   end
   local labels = self.lower and BOTTOM_LOWER_LABELS or BOTTOM_UPPER_LABELS
   local bottomY = keyboardTop + bottom * 2
   for i, label in ipairs(labels) do
-    Chrome.printThrough(label, BOTTOM_LABEL_TX[i], bottomY, pal)
+    Chrome.printThrough(Strings(label), BOTTOM_LABEL_TX[i], bottomY, pal)
   end
 
   local function cursor() self:drawCursorBox(self:cursorTile()) end

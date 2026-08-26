@@ -143,6 +143,28 @@ local ok, err = pcall(function()
   check(#report.lostMons == 0 and probe.party[1].species == "EDITMON",
     "validate keeps the modded mon while the mod is enabled")
 
+  -- Second editor session in the same process (launcher Close → Edit again):
+  -- host teardown must leave Runtime/Assets clean and Data unloaded so the
+  -- next App.load remounts mods instead of serving vanilla catalogs.
+  App.unload()
+  if Data._pristineKeys or Data.pokemon then Data:unloadGenerated() end
+  Runtime.reset()
+  Assets.installLoader(nil)
+  package.loaded["App"] = nil
+  package.loaded["Catalog"] = nil
+  App = require("App")
+  App.load(tmpPath)
+  S = App.getState()
+  loaded = S.mods:status().loaded
+  check(#loaded == 1 and loaded[1].id == "zz_editor_fixture",
+    "fixture mod loads again after host-style teardown")
+  hasSpecies = false
+  for _, id in ipairs(S.cat.species) do
+    if id == "EDITMON" then hasSpecies = true end
+  end
+  check(hasSpecies, "second App.load catalog still carries the mod's mon")
+  check(Data.pokemon.EDITMON ~= nil, "second merge lands EDITMON in Data again")
+
   -- Gold-targeted mods: spa/spd records are usable, and a Gen 1-only
   -- manifest stays out of Gold (no ROM cache / App.load("gold") required).
   local ModTargets = require("src.mods.ModTargets")

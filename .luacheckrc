@@ -23,6 +23,10 @@ read_globals = {
   -- LuaJIT 2.1 ships table.unpack even though the bare 5.1 `table` std lacks
   -- it; without this, every `table.unpack` reads as an undefined field.
   table = { fields = { "unpack" } },
+  "POKEPORT_DISPLAY_COMPANION",
+  "POKEPORT_EDITOR_MODE",
+  "rawlen",
+  package = { fields = { "searchers" } },
 }
 
 -- Vendored/native trees and the test suites have their own conventions.
@@ -30,6 +34,7 @@ exclude_files = {
   "mobile/",
   "tests/",
   "tools/save-editor/",
+  "tools/save_convert/vendor/",
 }
 
 ignore = {

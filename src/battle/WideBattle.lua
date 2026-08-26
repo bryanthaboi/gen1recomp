@@ -97,6 +97,19 @@ local function battleIsTopState(battle)
   return not (stack and stack.top) or stack:top() == battle
 end
 
+-- engine/menus/party_menu.asm:4
+local function coveredByOpaqueState(battle)
+  local stack = battle.game and battle.game.stack
+  local states = stack and stack.states
+  if not states then return false end
+  local above = false
+  for i = 1, #states do
+    if above and states[i] and states[i].isOpaque then return true end
+    if states[i] == battle then above = true end
+  end
+  return false
+end
+
 local function anchorHUD(battle, x, y, w, h, anchor)
   if not battle:extendedHUD() or not battleIsTopState(battle) then return end
   local renderer = battle.game and battle.game.renderer
@@ -161,8 +174,10 @@ local function drawHUDs(battle, slide)
   -- item, not a HUD element (DisplayBattleMenu prints wNumSafariBalls inside
   -- the battle menu box, engine/battle/core.asm:2074-2079), so it rides in
   -- drawCommandMenu below like the classic layout's (#540).
+  -- RemoveFaintedPlayerMon clears the player HUD (core.asm:1024-1026) (#1721)
   if showStatus and not battle.safari and battle.player and not battle.demo
-      and not battle.showPlayerBack and slide == 0 then
+      and not battle.showPlayerBack and slide == 0
+      and not battle.player.fainted then
     drawStatusPanel(battle, battle.player, 184, 56, true)
   end
 end
@@ -349,7 +364,7 @@ function WideBattle.draw(battle)
     g.rectangle("fill", 0, 0, WideBattle.WIDTH, WideBattle.HEIGHT)
   end
   -- AskName clears the field the same way the classic layout does
-  if battle.blankForAskName then return end
+  if battle.blankForAskName or coveredByOpaqueState(battle) then return end
 
   local fx = battle.fx
   local sx = (fx and fx.shakeX) or 0

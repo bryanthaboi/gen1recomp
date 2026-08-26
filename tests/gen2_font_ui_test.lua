@@ -158,10 +158,17 @@ else
     if path:find("font%.png$") then
       images[path].getDimensions = function() return 128, 64 end
     end
+    -- One row per frame style, all eight (pokegold/gfx/font.asm:10).
+    if path:find("frames%.png$") then
+      images[path].getDimensions = function() return 48, 64 end
+    end
     return images[path]
   end
   Font.load({ font = fontDef })
   require("src.render.Assets").image = realImage
+  -- currentFrame is a Font module-local that outlives a suite, and this file
+  -- is also dofile'd into tests/run_tests.lua after screens that cycle it.
+  Font.setFrame(1)
 
   -- Which sheet a code lands on, by the image drawCode reaches for.
   local drawn
@@ -186,11 +193,18 @@ else
     "the swap runs to the last of the 25 tiles it loads")
   -- `jr LoadFrame` at the end of _LoadFontsBattleExtra: $79-$7e are the
   -- textbox frame on a battle-sheet screen too, so a box drawn there is the
-  -- same box as everywhere else.
-  for code, name in pairs({ [0x79] = "tl", [0x7a] = "h", [0x7b] = "tr",
-      [0x7c] = "v", [0x7d] = "bl", [0x7e] = "br" }) do
-    eq(sheetOf(code), "font_extra.png",
-      ("LoadFrame keeps the %s border glyph off the battle sheet"):format(name))
+  -- same box as everywhere else.  LoadFrame reads the `Frames` label, not
+  -- FontExtra (pokegold/engine/gfx/load_font.asm:29-39).
+  -- A cache built before the extractor split Frames out has no imageFrames
+  -- row, and its $79-$7e fall back to the extra sheet's baked-in frame 1.
+  if not fontDef.imageFrames then
+    check(true, "cache predates the frames sheet (SKIP the border routing)")
+  else
+    for code, name in pairs({ [0x79] = "tl", [0x7a] = "h", [0x7b] = "tr",
+        [0x7c] = "v", [0x7d] = "bl", [0x7e] = "br" }) do
+      eq(sheetOf(code), "frames.png",
+        ("LoadFrame keeps the %s border glyph off the battle sheet"):format(name))
+    end
   end
   Font.useBattleExtra(false)
   love.graphics.draw = realDraw
@@ -369,11 +383,16 @@ stopRecording()
 
 local dexLine = findPrint("№.")
 check(dexLine ~= nil, "the roster line places the No ligature")
-check(dexLine and dexLine.battleExtra == true,
-  "with the battle sheet in the $60 slot, where that glyph lives")
 local idLine = findPrint("<ID>№/")
-check(idLine ~= nil and idLine.battleExtra == true,
-  "and so does the trainer id line")
+-- Which sheet a glyph resolves against needs the cache's real font rows.
+if not fontDef then
+  check(true, "no Gold cache (SKIP the battle-sheet routing)")
+else
+  check(dexLine and dexLine.battleExtra == true,
+    "with the battle sheet in the $60 slot, where that glyph lives")
+  check(idLine ~= nil and idLine.battleExtra == true,
+    "and so does the trainer id line")
+end
 eq(Font.battleExtraActive(), false,
   "the sheet the caller had is put back when the screen is done")
 
@@ -392,10 +411,14 @@ photo:draw()
 stopRecording()
 
 local photoDex = findPrint("№.")
-check(photoDex ~= nil and photoDex.battleExtra == true,
-  "the photo card's No ligature resolves against the battle sheet")
 local photoId = findPrint("<ID>№")
-check(photoId ~= nil and photoId.battleExtra == true, "and its <ID> does too")
+if not fontDef then
+  check(true, "no Gold cache (SKIP the photo card's battle-sheet routing)")
+else
+  check(photoDex ~= nil and photoDex.battleExtra == true,
+    "the photo card's No ligature resolves against the battle sheet")
+  check(photoId ~= nil and photoId.battleExtra == true, "and its <ID> does too")
+end
 eq(Font.battleExtraActive(), false, "and the card puts the sheet back")
 
 S.finish()

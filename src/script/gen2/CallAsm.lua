@@ -120,6 +120,67 @@ CallAsm.SITES = {
   ["04:66d1"] = "TryReceiveItem",
 }
 
+-- pokegold-symbols/pokesilver.sym: bank $03 sits two bytes earlier in Silver.
+CallAsm.SITES_SILVER = {
+  ["03:4749"] = "GetPartyNickname",
+  ["03:4853"] = "CutDownTreeOrGrass",
+  ["03:4b47"] = "CheckContinueWaterfall",
+  ["03:4d13"] = "SetStrengthFlag",
+  ["03:4d79"] = "TryStrengthOW",
+  ["03:4e1e"] = "DisappearWhirlpool",
+  ["03:4f7d"] = "HasRockSmash",
+  ["03:5094"] = "PutTheRodAway",
+  ["03:506b"] = "Fishing_CheckFacingUp",
+  ["03:51c5"] = "AskCutScript_CheckMap",
+}
+
+-- pokecrystal-symbols/pokecrystal.sym: Crystal's own addresses for the same sites.
+CallAsm.SITES_CRYSTAL = {
+  ["25:6f76"] = "GiveItemScript_DummyFunction",
+  ["04:65cd"] = "StartMenu",
+  ["04:7327"] = "SelectMenu",
+  ["05:6f5e"] = "OverworldHatchEgg",
+  ["25:6706"] = "EnableWildEncounters",
+  ["24:426f"] = "RingTwice_StartCall",
+  ["24:42eb"] = "HangUp",
+  ["04:53e5"] = "InitCallReceiveDelay",
+  ["24:425c"] = "LoadBillScript",
+  ["24:426a"] = "LoadElmScript",
+  ["3f:5017"] = "MomTriesToBuySomething_ASMFunction",
+  ["04:6599"] = "ItemfinderSound",
+  ["14:46ef"] = "SweetScentEncounter",
+  ["02:431e"] = "TrainerWalkToPlayer",
+  ["14:4753"] = "CheckCanUseSquirtbottle",
+  ["04:764f"] = "SetMemEvent",
+  ["14:4658"] = "PlayPoisonSFX",
+  ["14:467b"] = "CheckWhitedOut",
+  ["04:64fa"] = "OverworldBGMap",
+  ["04:650a"] = "BattleBGMap",
+  ["04:6513"] = "HalveMoney",
+  ["04:6527"] = "GetWhiteoutSpawn",
+  ["03:4706"] = "GetPartyNickname",
+  ["03:4810"] = "CutDownTreeOrGrass",
+  ["23:47e1"] = "BlindingFlash",
+  ["00:3016"] = "HideSprites",
+  ["23:4aed"] = "FlyFromAnim",
+  ["05:54f1"] = "SkipUpdateMapSprites",
+  ["23:4b33"] = "FlyToAnim",
+  ["05:4157"] = "LoadWalkingSpritesGFX",
+  ["03:4b38"] = "CheckContinueWaterfall",
+  ["03:4d12"] = "SetStrengthFlag",
+  ["03:4d78"] = "TryStrengthOW",
+  ["03:4e1d"] = "DisappearWhirlpool",
+  ["23:480a"] = "ShakeHeadbuttTree",
+  ["03:4f7c"] = "HasRockSmash",
+  ["03:5095"] = "PutTheRodAway",
+  ["03:506c"] = "Fishing_CheckFacingUp",
+  ["2e:44b3"] = "LoadFishingGFX",
+  ["03:51ba"] = "AskCutScript_CheckMap",
+  ["2e:41ea"] = "TreeMonEncounter",
+  ["2e:4219"] = "RockMonEncounter",
+  ["04:62f8"] = "TryReceiveItem",
+}
+
 -- The three WRAM addresses `memcall` / `memcallasm` / `memjump` take instead of
 -- a routine.  Not sites: the pointer AT the address is written at run time
 -- (LoadMemScript for the queued script, the phone engine for the other two),
@@ -390,9 +451,12 @@ function H.CutDownTreeOrGrass(ctx)
 end
 
 -- DisappearWhirlpool is CutDownTreeOrGrass with PlayWhirlpoolSound in place of
--- OWCutAnimation: the same block write, the same redraw.
+-- OWCutAnimation: the same block write, the same redraw, then the surf wash the
+-- port owns as World:playWhirlpoolSound.  #1717
 function H.DisappearWhirlpool(ctx)
-  return H.CutDownTreeOrGrass(ctx)
+  local ret = H.CutDownTreeOrGrass(ctx)
+  call(ctx, "playWhirlpoolSound")
+  return ret
 end
 
 -- BlindingFlash sets STATUSFLAGS_FLASH_F and reloads the palettes.  Setting
@@ -711,7 +775,8 @@ end
 -- at import time), and the address pair is the fallback that always works.
 function CallAsm.nameFor(label, bank, addr)
   if label and CallAsm.ALL[label] then return label end
-  return CallAsm.SITES[CallAsm.key(bank, addr)]
+  local key = CallAsm.key(bank, addr)
+  return CallAsm.SITES[key] or CallAsm.SITES_SILVER[key] or CallAsm.SITES_CRYSTAL[key]
 end
 
 -- Run a routine by name.  Returns the byte the asm leaves in wScriptVar, or

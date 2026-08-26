@@ -285,8 +285,9 @@ end
 check(Specials.HANDLERS.UnownPrinter ~= nil,
   "UnownPrinter has a handler: the viewer half needs no printer")
 eq(Specials.STUBS.UnownPrinter, nil, "and is not also stubbed")
-check(Specials.STUBS.PrintDiploma ~= nil,
-  "PrintDiploma, which is nothing but a print, still is")
+check(Specials.HANDLERS.PrintDiploma ~= nil,
+  "PrintDiploma took the same route: the diploma page is drawn on the "
+  .. "cartridge and only the send wanted a printer")
 
 -- The hook a Specials handler reaches for lives in World:specialHooks, NOT in
 -- the table handed to Vm.new -- a hook registered in the wrong one is

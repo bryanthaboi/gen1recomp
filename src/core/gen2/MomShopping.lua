@@ -164,14 +164,12 @@ local function receiveItemToPc(save, id, data)
   save.pcItems = save.pcItems or {}
   local pc = save.pcItems
   local held = pc[id] or 0
-  if held == 0 then
-    local cap = (data and data.field and data.field.pcItemCap) or PC_ITEM_CAPACITY
-    local stacks = 0
-    for _ in pairs(pc) do stacks = stacks + 1 end
-    if stacks >= cap then return false end
-  elseif held + 1 > MAX_STACK then
-    return false
-  end
+  local cap = (data and data.field and data.field.pcItemCap) or PC_ITEM_CAPACITY
+  local function stacksFor(n) return math.ceil((n or 0) / MAX_STACK) end
+  local used = 0
+  for _, count in pairs(pc) do used = used + stacksFor(count) end
+  -- engine/items/items.asm:156 PutItemInPocket
+  if used + stacksFor(held + 1) - stacksFor(held) > cap then return false end
   pc[id] = held + 1
   return true
 end

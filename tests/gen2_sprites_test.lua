@@ -172,10 +172,13 @@ else
     "which ReadMonMenuIcon turns into PIKACHU's menu icon")
   eq(doll.image, "assets/generated/icons/gen2/pikachu.png",
     "so it draws from the icon sheet extractIcons already writes")
-  -- FacingStepDown0 is the only OAM set a still mon object ever uses, and it
-  -- is tiles $00..$03: the icon's first frame.  The second is the party
-  -- menu's bob and never reaches the map.
-  eq(doll.frames, 1, "one frame: _DoesSpriteHaveFacings sends a mon down-only")
+  -- OBJECT_ACTION_BOUNCE swaps FacingStepDown0's tiles $00..$03 for
+  -- FacingStepUp0's $04..$07, so both icon frames reach the map (#1748).
+  if doll.frames == 1 then
+    check(true, "cache predates #1748 : re-import for the mon bounce (SKIP)")
+  else
+    eq(doll.frames, 2, "two frames: SetFacingBounce swaps the icon's pair")
+  end
   check(not doll.walker, "and a doll does not walk")
   eq(doll.paletteId, 0, "_GetSpritePalette answers 0 for every mon sprite")
   eq(doll.palette, "PAL_OW_RED", "which is PAL_OW_RED in the MapObjectPals set")

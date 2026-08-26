@@ -357,6 +357,7 @@ Evolution.MON_FIELDS = {
   experience = true, dvs = true, stats = true, hp = true, maxHp = true,
   types = true, moves = true, item = true, status = true, happiness = true,
   caughtLevel = true, shiny = true, gender = true,
+  caughtTime = true, caughtLocation = true, caughtByGender = true,
 }
 
 -- Turn `mon` into `entry.into`.  Returns the NEW record; the caller writes it
@@ -410,6 +411,11 @@ function Evolution.apply(data, mon, entry)
   evolved.experience = mon.experience
   evolved.status = mon.status
   evolved.caughtLevel = mon.caughtLevel
+  -- Nothing between GetBaseData and the PARTYMON_STRUCT_LENGTH copy back
+  -- touches MON_CAUGHTDATA -- engine/pokemon/evolve.asm:291-293.
+  evolved.caughtTime = mon.caughtTime
+  evolved.caughtLocation = mon.caughtLocation
+  evolved.caughtByGender = mon.caughtByGender
   -- Anything a future field adds to a party record (mail, pokerus) rides along
   -- rather than being silently dropped.  Only fields Mon.new does NOT own may
   -- be carried: copying `nickname` back would undo

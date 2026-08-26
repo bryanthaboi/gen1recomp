@@ -45,9 +45,9 @@ local SCREEN_W, SCREEN_H = 160, 144
 -- wSpriteAnimDict[SPRITE_ANIM_DICT_GS_SPLASH] = $8d (GameFreakPresentsInit).
 local DICT_VTILE = 0x8d
 
--- `depixel 10, 11, 4, 0` and `depixel 11, 11`: the macro is
--- (x tile, y tile, x pixel, y pixel) and lands in de as x, y.
-local LOGO_X, LOGO_Y = 10 * 8 + 4, 11 * 8 + 0
+-- `depixel 10, 11, 4, 0` and `depixel 11, 11` are y-first: x=e, y=d
+-- (engine/sprite_anims/core.asm:113).
+local LOGO_X, LOGO_Y = 11 * 8 + 0, 10 * 8 + 4
 local SPARKLE_X, SPARKLE_Y = 11 * 8, 11 * 8
 
 -- GameFreakPresents_PlaceGameFreak / _PlacePresents.  $8d is the logo's own
@@ -152,7 +152,7 @@ end
 function GameFreakPresents:finish()
   if self.done then return end
   self.done = true
-  if self.onDone then self.onDone() end
+  if self.onDone then self.onDone(self.skipped) end
 end
 
 -- PlaceString into the sparse tilemap.
@@ -280,6 +280,7 @@ function GameFreakPresents:update(_dt)
   if input and (input:wasPressed("a") or input:wasPressed("b")
       or input:wasPressed("start") or input:wasPressed("select")) then
     -- .pressed_button: everything is torn down and the splash is over.
+    self.skipped = true
     self:beginExit()
     return
   end

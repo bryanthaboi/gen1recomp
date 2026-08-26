@@ -48,6 +48,15 @@ eq(Check.fullAssetName("1.4.2", "iOS", "arm64"),
 eq(Check.fullAssetName("not-a-version", "Android", "arm64"), nil,
   "invalid full-package version rejected")
 
+-- A legacy Android shell needs one manual package update even when its
+-- downloaded payload already reports the latest engine version.
+eq(Check.androidNeedsInstallerBootstrap("Android", false), true,
+  "legacy Android shell requires one bootstrap package")
+eq(Check.androidNeedsInstallerBootstrap("Android", true), false,
+  "current Android shell keeps the selective updater")
+eq(Check.androidNeedsInstallerBootstrap("Windows", false), false,
+  "non-Android update behavior remains unchanged")
+
 local withNotes = Check.parseRelease(Json.encode({
   tag_name = "v1.4.2",
   body = "## Issues closed\n\n- #1 cart padding",

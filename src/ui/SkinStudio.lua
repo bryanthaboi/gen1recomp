@@ -5,12 +5,16 @@ local TouchSkin = require("src.core.TouchSkin")
 local TouchControls = require("src.core.TouchControls")
 local SaveData = require("src.core.SaveData")
 local FilePicker = require("src.core.FilePicker")
+local SafeArea = require("src.core.SafeArea")
+local GamepadMap = require("src.core.GamepadMap")
+local PadCursor = require("src.ui.PadCursor")
 
 local Studio = {}
 
 Studio.CANVASES = {
   { id = "phone_portrait", label = "Phone portrait", w = 1080, h = 1920 },
   { id = "phone_landscape", label = "Phone landscape", w = 1920, h = 1080 },
+  { id = "this_device", label = "This screen", live = true },
   { id = "tablet_portrait", label = "Tablet portrait", w = 1536, h = 2048 },
   { id = "tablet_landscape", label = "Tablet landscape", w = 2048, h = 1536 },
   { id = "steamdeck", label = "Steam Deck", w = 1280, h = 800 },
@@ -19,6 +23,17 @@ Studio.CANVASES = {
   { id = "sgb_border", label = "Super Game Boy border", w = 256, h = 224,
     lockViewport = { x = 48 / 256, y = 40 / 224, w = 160 / 256, h = 144 / 224 } },
 }
+
+-- Editor view zoom: 1 is contain-fit.  Smaller values shrink the mock
+-- device inside the workspace so the screen hole can be dragged past the
+-- bezel and you can still grab the handles.
+Studio.ZOOM_LEVELS = { 1, 0.75, 0.5, 0.35 }
+Studio.viewZoom = 1
+
+-- Hydrated live canvas; canvas() is called many times a frame so this is
+-- mutated in place instead of allocating a new table.
+local liveCanvas = { id = "this_device", label = "This screen", live = true,
+                     w = 1080, h = 1920 }
 
 -- Per-page lock, and whether the canvas preset follows it.  Match is on
 -- by default so a portrait/landscape overlay pair does not need two
@@ -70,6 +85,12 @@ Studio.BIND_GROUPS = {
               "pause_toggle", "screenshot", "exit_emulator" } },
   { title = "KEYBOARD",
     specs = { "key:escape", "key:return", "key:space", "key:tab", "key:f1" } },
+  -- These are deliberately keyboard binds rather than new skin-only actions.
+  -- They therefore take the exact same path as their desktop counterparts in
+  -- Game:keypressed, including any future changes to those shortcuts.
+  { title = "DESKTOP HOTKEYS",
+    specs = { "key:-", "key:=", "key:1", "key:2", "key:3", "key:4",
+              "key:5", "key:f1", "key:f2", "key:f10" } },
   { title = "NO INPUT", specs = { "nul" } },
 }
 
@@ -94,8 +115,92 @@ end
 
 local function round(v) return math.floor(v + 0.5) end
 
+function Studio.deviceSize()
+  if love and love.graphics and love.graphics.getDimensions then
+    local w, h = love.graphics.getDimensions()
+    w, h = tonumber(w), tonumber(h)
+    if w and h and w > 1 and h > 1 then return w, h end
+  end
+  return 1080, 1920
+end
+
+function Studio.canvasIndexById(id)
+  for i, c in ipairs(Studio.CANVASES) do
+    if c.id == id then return i end
+  end
+  return nil
+end
+
 function Studio.canvas()
-  return Studio.CANVASES[Studio.canvasIndex] or Studio.CANVASES[1]
+  local spec = Studio.CANVASES[Studio.canvasIndex] or Studio.CANVASES[1]
+  if spec.live then
+    local w, h = Studio.deviceSize()
+    liveCanvas.id = spec.id
+    liveCanvas.label = spec.label
+    liveCanvas.w, liveCanvas.h = w, h
+    liveCanvas.live = true
+    liveCanvas.lockViewport = spec.lockViewport
+    return liveCanvas
+  end
+  return spec
+end
+
+function Studio.zoomIndex()
+  local z = Studio.viewZoom or 1
+  local best, dist = 1, math.huge
+  for i, v in ipairs(Studio.ZOOM_LEVELS) do
+    local d = math.abs(v - z)
+    if d < dist then best, dist = i, d end
+  end
+  return best
+end
+
+function Studio.zoomOut()
+  local i = Studio.zoomIndex()
+  if i < #Studio.ZOOM_LEVELS then
+    Studio.viewZoom = Studio.ZOOM_LEVELS[i + 1]
+  end
+  return Studio.viewZoom
+end
+
+function Studio.zoomIn()
+  local i = Studio.zoomIndex()
+  if i > 1 then
+    Studio.viewZoom = Studio.ZOOM_LEVELS[i - 1]
+  end
+  return Studio.viewZoom
+end
+
+function Studio.zoomFit()
+  Studio.viewZoom = Studio.ZOOM_LEVELS[1]
+  return Studio.viewZoom
+end
+
+function Studio.detectDeviceCanvas()
+  local idx = Studio.canvasIndexById("this_device")
+  if not idx then return nil end
+  Studio.setCanvas(idx)
+  local canvas = Studio.canvas()
+  Studio.setStatus(("This screen: %dx%d"):format(canvas.w, canvas.h))
+  return canvas
+end
+
+-- Usable chrome rect.  Background still fills the window so the notch
+-- band is the same colour as the rest of the studio; every button and
+-- the mock device live inside the safe area, matching the launcher.
+function Studio.safeFrame()
+  local W, H = 0, 0
+  if love and love.graphics and love.graphics.getDimensions then
+    W, H = love.graphics.getDimensions()
+  end
+  W, H = math.max(1, tonumber(W) or 1), math.max(1, tonumber(H) or 1)
+  local ox, oy, sw, sh = SafeArea.rect()
+  ox = math.max(0, tonumber(ox) or 0)
+  oy = math.max(0, tonumber(oy) or 0)
+  sw = math.max(1, tonumber(sw) or W)
+  sh = math.max(1, tonumber(sh) or H)
+  Studio._frame = { W = W, H = H, x = ox, y = oy, w = sw, h = sh }
+  return W, H, ox, oy, sw, sh
 end
 
 function Studio.page()
@@ -250,11 +355,19 @@ end
 local function canvasOrientation(canvas)
   canvas = canvas or Studio.canvas()
   if not canvas then return nil end
-  return canvas.w > canvas.h and "landscape" or "portrait"
+  local w, h = canvas.w, canvas.h
+  if canvas.live and (not w or not h) then
+    w, h = Studio.deviceSize()
+  end
+  if not w or not h then return nil end
+  return w > h and "landscape" or "portrait"
 end
 
 local function pickCanvasIndex(want)
   local cur = Studio.canvas()
+  -- A live "this screen" canvas already is the window; keep it so Match
+  -- canvas cannot yank a phone author back onto a generic 16:9 preset.
+  if cur and cur.live then return Studio.canvasIndex end
   if canvasOrientation(cur) == want then return Studio.canvasIndex end
   if cur and cur.id then
     local hint = cur.id:gsub("portrait", want):gsub("landscape", want)
@@ -263,7 +376,10 @@ local function pickCanvasIndex(want)
     end
   end
   for i, c in ipairs(Studio.CANVASES) do
-    if canvasOrientation(c) == want and not c.lockViewport then return i end
+    if not c.live and not c.lockViewport
+       and canvasOrientation(c) == want then
+      return i
+    end
   end
   return nil
 end
@@ -342,9 +458,10 @@ function Studio.setCanvas(index, fromSync)
     page.viewportFill = false
     markDirty()
   end
-  -- A cfg-authored aspect_ratio is the overlay's design aspect; keep it so
-  -- the preview letterboxes like RetroArch instead of stretching (#1503).
-  if page and not page.aspectFromCfg then
+  -- A cfg-authored aspect_ratio is the overlay's design aspect, and bezel art
+  -- is its own design canvas (TouchSkin.applyImageAspect); keep either so the
+  -- preview lays the page out exactly the way the game does (#1503).
+  if page and not (page.aspectFromCfg or page.aspectFromImage) then
     page.aspect = canvas.w / canvas.h
   end
 end
@@ -362,7 +479,17 @@ function Studio.load(opts)
   Studio.drag = nil
   Studio.pendingPlay = false
   Studio.canvasIndex = 1
-  Studio.aspectLock = true
+  Studio.viewZoom = 1
+  -- On a phone the mock device should be this screen's form factor, not a
+  -- generic 1080x1920 16:9, so the hole and the pad land where they will
+  -- at play time.
+  if Studio.isMobile() then
+    local live = Studio.canvasIndexById("this_device")
+    if live then Studio.canvasIndex = live end
+  end
+  -- A free-form screen is the default.  10:9 is an optional convenience,
+  -- never a restriction on imported or custom skins.
+  Studio.aspectLock = false
   Studio.skinIdField = ""
   Studio.available = TouchSkin.list()
   Studio.availableMeta = {}
@@ -374,6 +501,14 @@ function Studio.load(opts)
   Studio.showLabels = true
   Studio.statusErr = false
   Studio.thumbs = {}
+  Studio.pointerX, Studio.pointerY = nil, nil
+  Studio.pointerDown, Studio.touchId = false, nil
+  PadCursor.reset()
+  -- Studio always opens on the library.  Creating and choosing a skin are
+  -- first-class tasks, not controls buried inside the editor workspace.
+  Studio.mode = "library"
+  Studio.libraryThumbs = {}
+  Studio.libraryPage = 1
 
   TouchControls:init()
   TouchControls.active = true
@@ -413,6 +548,7 @@ function Studio.open(id)
   Studio.undoStack, Studio.redoStack = {}, {}
   Studio.undoTag = nil
   Studio.thumbs = {}
+  Studio.libraryThumbs = {}
   syncActive()
   Studio.applyImportedOrient()
   return true
@@ -425,6 +561,7 @@ function Studio.newSkin()
   Studio.pageIndex, Studio.selected = 1, nil
   Studio.images = {}
   Studio.thumbs = {}
+  Studio.libraryThumbs = {}
   syncActive()
   markDirty()
 end
@@ -468,7 +605,122 @@ end
 function Studio.refreshAvailable()
   Studio.available = TouchSkin.list()
   Studio.availableMeta = {}
+  Studio.libraryThumbs = {}
   return Studio.available
+end
+
+function Studio.enterEditor()
+  Studio.mode = "editor"
+  Studio.selected = nil
+  Studio.modal, Studio.confirm = nil, nil
+  Studio.drag, Studio.guides = nil, nil
+end
+
+function Studio.backToLibrary()
+  Studio.guard("Return to My Skins and lose the unsaved changes?", function()
+    Studio.refreshAvailable()
+    Studio.mode = "library"
+    Studio.selected = nil
+    Studio.modal, Studio.confirm = nil, nil
+    Studio.drag, Studio.guides = nil, nil
+  end)
+end
+
+function Studio.libraryThumb(entry)
+  if not entry then return nil end
+  Studio.libraryThumbs = Studio.libraryThumbs or {}
+  local cached = Studio.libraryThumbs[entry.id]
+  if cached ~= nil then return cached or nil end
+  local skin = TouchSkin.load(entry.root, entry.id)
+  local image = skin and skin.pages and skin.pages[1] and skin.pages[1].image
+  Studio.libraryThumbs[entry.id] = image or false
+  return image
+end
+
+function Studio.exportEntry(id)
+  local entry = TouchSkin.find(id)
+  local skin = entry and TouchSkin.load(entry.root, entry.id)
+  if not skin then
+    setStatus("Could not read " .. tostring(id), true)
+    return nil
+  end
+  local path, missing = TouchSkin.export(skin)
+  if not path then
+    setStatus("Export failed: " .. tostring(missing), true)
+    return nil
+  end
+  Studio.lastExport = path
+  setStatus("Exported " .. path)
+  return path
+end
+
+function Studio.selectEntry(id)
+  local entry = TouchSkin.find(id)
+  if not entry then
+    setStatus("Could not find " .. tostring(id), true)
+    return false
+  end
+  local opts = SaveData.loadOptions()
+  local tc = type(opts.touchControls) == "table" and opts.touchControls or {}
+  tc.enabled, tc.skin = true, id
+  opts.touchControls = tc
+  SaveData.saveOptions(opts)
+  TouchControls:applyOptions(opts)
+  setStatus("Using " .. id)
+  return true
+end
+
+function Studio.deleteEntry(id)
+  local entry = TouchSkin.find(id)
+  if not entry then return false end
+  if entry.source ~= "user" then
+    setStatus("Bundled skins cannot be deleted.", true)
+    return false
+  end
+  Studio.ask("Delete " .. tostring(id) .. "? This removes its artwork and cannot be undone.",
+    function()
+      local ok, err = TouchSkin.remove(id)
+      if not ok then
+        setStatus("Delete failed: " .. tostring(err), true)
+        return
+      end
+      local opts = SaveData.loadOptions()
+      local tc = type(opts.touchControls) == "table" and opts.touchControls or {}
+      if tc.skin == id then
+        tc.enabled, tc.skin = true, nil
+        opts.touchControls = tc
+        SaveData.saveOptions(opts)
+        TouchControls:applyOptions(opts)
+      end
+      Studio.refreshAvailable()
+      setStatus("Deleted " .. id)
+    end, "Delete")
+  return true
+end
+
+function Studio.importSkinFile()
+  if not FilePicker.available() then
+    setStatus("On mobile, use Import in the Skins tab to add a downloaded skin.", true)
+    return false
+  end
+  local kind = { label = "Skin", exts = { "zip", "deltaskin", "cfg" } }
+  local path = FilePicker.open("Choose a skin", kind)
+  if not path then return false end
+  local name, data = FilePicker.basename(path), FilePicker.read(path)
+  if not data then
+    setStatus("Could not read " .. name, true)
+    return false
+  end
+  local id, note = TouchSkin.installArchive(name, data)
+  if not id then
+    setStatus("Import failed: " .. tostring(note), true)
+    return false
+  end
+  Studio.refreshAvailable()
+  Studio.open(id)
+  Studio.enterEditor()
+  setStatus("Imported " .. id)
+  return true
 end
 
 function Studio.openLoadPicker()
@@ -509,6 +761,30 @@ function Studio.unload()
   Studio.modal, Studio.confirm = nil, nil
   Studio.guides = nil
   Studio.undoStack, Studio.redoStack = {}, {}
+  Studio.pointerX, Studio.pointerY = nil, nil
+  Studio.pointerDown, Studio.touchId = false, nil
+  PadCursor.reset()
+end
+
+-- The Studio is a real touch editor on Android and iOS.  Keeping this here,
+-- instead of asking the host to synthesize a mouse, makes the drag state and
+-- the immediate-mode hit tests agree on the same finger position.
+function Studio.isMobile()
+  local osName = love.system and love.system.getOS and love.system.getOS()
+  return osName == "Android" or osName == "iOS"
+end
+
+function Studio.disableTouchControls()
+  local opts = SaveData.loadOptions()
+  local tc = type(opts.touchControls) == "table" and opts.touchControls or {}
+  tc.enabled, tc.skin = false, nil
+  opts.touchControls = tc
+  SaveData.saveOptions(opts)
+  TouchControls:applyOptions(opts)
+  TouchSkin.setActive(nil)
+  Studio.closeModal()
+  setStatus("On-screen controls are off.")
+  return true
 end
 
 -- --------------------------------------------------------------- editing
@@ -678,7 +954,12 @@ function Studio.cycleImage(dir)
   local rel = (next_ >= 1) and list[next_] or nil
   owner[key] = rel
   local img = rel and TouchSkin.resolveImage(Studio.skin.root, rel) or nil
-  if field == "pressed" then owner.pressedImage = img else owner.image = img end
+  if field == "pressed" then
+    owner.pressedImage = img
+  else
+    owner.image = img
+    if field == "bezel" then TouchSkin.applyImageAspect(owner) end
+  end
   markDirty()
 end
 
@@ -748,6 +1029,7 @@ function Studio.assignImage(rel)
     ctl.imagePath, ctl.image = rel, img
   elseif page then
     page.imagePath, page.image = rel, img
+    TouchSkin.applyImageAspect(page)
   end
   Studio.images = TouchSkin.listImages(Studio.skin.root)
   Studio.dirty = true
@@ -903,6 +1185,11 @@ function Studio.openPageMenu()
   if not skin then return false end
   Studio.pageNameField = tostring(Studio.page() and Studio.page().name or "")
   Studio.openModal("page")
+  return true
+end
+
+function Studio.openScreenMenu()
+  Studio.openModal("screen")
   return true
 end
 
@@ -1063,8 +1350,13 @@ end
 function Studio.canvasRect(x, y, w, h)
   local canvas = Studio.canvas()
   local aspect = canvas.w / canvas.h
+  if not aspect or aspect <= 0 then aspect = 1 end
   local cw, ch = w, w / aspect
   if ch > h then ch, cw = h, h * aspect end
+  local z = Studio.viewZoom or 1
+  if z < 0.999 then
+    cw, ch = cw * z, ch * z
+  end
   return x + (w - cw) * 0.5, y + (h - ch) * 0.5, cw, ch
 end
 
@@ -1228,8 +1520,11 @@ function Studio.updateDrag(mx, my, r)
     ctl.rangeX = math.max(0.002, (bw * 0.5) / pw)
     ctl.rangeY = math.max(0.002, (bh * 0.5) / ph)
   else
+    -- Permit an anchor to live beyond every canvas edge.  That is useful for
+    -- intentional off-centre compositions and mirrors the normal Screen Pos
+    -- behaviour at runtime; only a non-zero size is required.
     page.viewport = {
-      x = clamp01((bx - px) / pw), y = clamp01((by - py) / ph),
+      x = (bx - px) / pw, y = (by - py) / ph,
       w = math.max(0.02, bw / pw), h = math.max(0.02, bh / ph),
     }
   end
@@ -1238,11 +1533,42 @@ end
 
 -- ----------------------------------------------------------------- draw
 
+local function drawGameTest(r, page)
+  -- Test letterboxes a 160x144 picture inside the screen cutout, the same
+  -- way gameplay fits the Game Boy surface into the hole.
+  local vx, vy, vw, vh = TouchSkin.pageViewport(page, r.w, r.h, r.x, r.y)
+  if not vx then vx, vy, vw, vh = r.x, r.y, r.w, r.h end
+  local s = math.min(vw / 160, vh / 144)
+  local gw, gh = 160 * s, 144 * s
+  local gx, gy = vx + (vw - gw) * 0.5, vy + (vh - gh) * 0.5
+  Theme.fill(r.x, r.y, r.w, r.h, { 8, 12, 8 }, 1)
+  Theme.fill(gx, gy, gw, gh, { 155, 188, 15 }, 1)
+  local tile = math.max(2, math.floor(16 * s))
+  for row = 0, 8 do
+    for col = 0, 9 do
+      if (row + col) % 2 == 0 then
+        Theme.fill(gx + col * tile, gy + row * tile, tile, tile,
+          { 139, 172, 15 }, 0.45)
+      end
+    end
+  end
+  Theme.fill(gx + gw * 0.10, gy + gh * 0.15, gw * 0.22, gh * 0.18,
+    { 48, 98, 48 }, 0.9)
+  Theme.fill(gx + gw * 0.58, gy + gh * 0.49, gw * 0.12, gh * 0.18,
+    { 48, 98, 48 }, 0.9)
+  Theme.fill(gx + gw * 0.14, gy + gh * 0.70, gw * 0.72, gh * 0.16,
+    { 224, 248, 208 }, 1)
+  Kit.text("small", "TEST BATTLE", gx + gw * 0.18, gy + gh * 0.74,
+    { 24, 56, 24 })
+end
+
 local function drawCanvas(x, y, w, h)
+  Studio.canvasWorkspace = { x = x, y = y, w = w, h = h }
   local page = Studio.page()
   local r = { }
   r.x, r.y, r.w, r.h = Studio.canvasRect(x, y, w, h)
   Studio.lastCanvas = r
+  Theme.fill(x, y, w, h, { 10, 12, 18 }, 1)
   if not page then return r end
 
   Theme.fill(r.x, r.y, r.w, r.h, { 0, 0, 0 }, 1)
@@ -1251,7 +1577,9 @@ local function drawCanvas(x, y, w, h)
   syncActive()
 
   local vx, vy, vw, vh = viewportRect(page, r)
-  if vx then
+  if Studio.testing then
+    drawGameTest(r, page)
+  elseif vx then
     local scale = math.min(vw / 160, vh / 144)
     local gw, gh = 160 * scale, 144 * scale
     local gx, gy = vx + (vw - gw) * 0.5, vy + (vh - gh) * 0.5
@@ -1552,12 +1880,18 @@ function Studio.commitField(id, text)
 end
 
 local function modalFrame(W, H, title, wFrac, hFrac)
-  Theme.fill(0, 0, W, H, PAL.bg, 0.85)
+  local ox, oy, sw, sh, winW, winH = 0, 0, W, H, W, H
+  local f = Studio._frame
+  if f then
+    ox, oy, sw, sh = f.x, f.y, f.w, f.h
+    winW, winH = f.W, f.H
+  end
+  Theme.fill(0, 0, winW, winH, PAL.bg, 0.85)
   local pad = 14 * Kit.scale
-  local mw = math.min(W - pad * 2, math.max(320 * Kit.scale, (wFrac or 0.6) * W))
-  local mh = math.min(H - pad * 2, math.max(220 * Kit.scale, (hFrac or 0.72) * H))
-  local mx = math.floor((W - mw) * 0.5)
-  local my = math.floor((H - mh) * 0.5)
+  local mw = math.min(sw - pad * 2, math.max(320 * Kit.scale, (wFrac or 0.6) * sw))
+  local mh = math.min(sh - pad * 2, math.max(220 * Kit.scale, (hFrac or 0.72) * sh))
+  local mx = math.floor(ox + (sw - mw) * 0.5)
+  local my = math.floor(oy + (sh - mh) * 0.5)
   Kit.card(mx, my, mw, mh)
   Kit.textBold("title", title, mx + pad, my + pad * 0.7, PAL.heading)
   return mx, my, mw, mh, pad
@@ -1714,13 +2048,24 @@ local function drawOpenModal(W, H)
   local rowH = math.max(Kit.tapMin(), 46 * Kit.scale)
   local gap = 4 * Kit.scale
   local list = Studio.available or {}
-  local contentH = #list * (rowH + gap)
+  -- A visible Off choice is more intentional than making people infer that
+  -- an empty selection disables the overlay.  It also works from the skin
+  -- grid on phones, where the normal pad editor is not the destination.
+  local offH = rowH + gap
+  local contentH = offH + #list * (rowH + gap)
   local at = modalScroll(modal, mx + pad, top, mw - pad * 2, viewH, contentH)
   local maxScroll = Kit.scrollExtent(contentH, viewH)
   local baseY = Kit.scrollBegin(mx + pad, top, mw - pad * 2, viewH, at, maxScroll)
 
+  local offClicked = Kit.row(mx + pad, baseY, mw - pad * 2, rowH, false,
+    "open-off")
+  Kit.text("mono", "Off", mx + pad * 2, baseY + 6 * Kit.scale, PAL.red)
+  Kit.text("small", "Hide all on-screen controls.", mx + pad * 2,
+    baseY + 6 * Kit.scale + Kit.textHeight("mono"), PAL.muted)
+  if offClicked then Studio.disableTouchControls() end
+
   for i, entry in ipairs(list) do
-    local py = baseY + (i - 1) * (rowH + gap)
+    local py = baseY + offH + (i - 1) * (rowH + gap)
     local selected = Studio.skin and Studio.skin.id == entry.id
     local clicked = Kit.row(mx + pad, py, mw - pad * 2, rowH, selected,
       "open-" .. entry.id)
@@ -1744,14 +2089,19 @@ local function drawPageModal(W, H)
   local top = my + pad + Kit.textHeight("title") + pad * 0.5
   local by, bh = modalFooter(mx, my, mw, mh, pad)
   local gap = 6 * Kit.scale
-  local fieldW = math.min(220 * Kit.scale, (mw - pad * 2) * 0.5)
-  Studio.pageNameField = Kit.textfield("pagename", mx + pad, by, fieldW, bh,
+  -- Keep the page name easy to edit: one full-width field, then its actions
+  -- below it, with Close retaining its own footer row.
+  local fieldY = by - bh * 2 - gap * 2
+  local actionY = by - bh - gap
+  local innerW = mw - pad * 2
+  local actionW = (innerW - gap) * 0.5
+  Studio.pageNameField = Kit.textfield("pagename", mx + pad, fieldY, innerW, bh,
     Studio.pageNameField or "", "page name")
-  if Kit.button(mx + pad + fieldW + gap, by, 100 * Kit.scale, bh, "Rename",
+  if Kit.button(mx + pad, actionY, actionW, bh, "Rename",
                 { id = "page-rename" }) then
     Studio.renamePage(Studio.pageNameField)
   end
-  if Kit.button(mx + pad + fieldW + gap + 106 * Kit.scale, by, 100 * Kit.scale,
+  if Kit.button(mx + pad + actionW + gap, actionY, actionW,
                 bh, "Delete", { id = "page-del", kind = "danger",
                   enabled = skin and #skin.pages > 1 }) then
     local index = Studio.pageIndex
@@ -1760,7 +2110,7 @@ local function drawPageModal(W, H)
       function() Studio.deletePage(index) end, "Delete")
   end
 
-  local viewH = by - top - pad
+  local viewH = fieldY - top - pad
   local rowH = math.max(Kit.tapMin(), 44 * Kit.scale)
   local pages = (skin and skin.pages) or {}
   local contentH = #pages * (rowH + gap)
@@ -1813,6 +2163,79 @@ local function drawExportModal(W, H)
     mx + pad, cy, mw - pad * 2, PAL.faint, 2)
 end
 
+local function drawScreenModal(W, H)
+  local modal = Studio.modal
+  local mx, my, mw, mh, pad = modalFrame(W, H, "Screen & canvas", 0.62, 0.82)
+  local top = my + pad + Kit.textHeight("title") + pad * 0.5
+  local by, bh = modalFooter(mx, my, mw, mh, pad)
+  local gap = 6 * Kit.scale
+  local rowH = math.max(Kit.tapMin(), 34 * Kit.scale)
+  local innerW = mw - pad * 2
+  local half = (innerW - gap) * 0.5
+  local page = Studio.page()
+  local locked = Studio.canvas().lockViewport
+
+  local vpOn = page and (page.viewport or page.screenFit == "remainder")
+  if Kit.button(mx + pad, top, half, rowH,
+                vpOn and "Cutout: ON" or "Cutout: OFF",
+                { id = "screen-cutout", active = vpOn == true,
+                  enabled = not locked }) then
+    Studio.toggleViewport()
+  end
+  if Kit.button(mx + pad + half + gap, top, half, rowH,
+                Studio.aspectLock and "Shape: 10:9" or "Shape: Free",
+                { id = "screen-shape", active = Studio.aspectLock }) then
+    Studio.aspectLock = not Studio.aspectLock
+  end
+  top = top + rowH + gap
+  if Kit.button(mx + pad, top, innerW, rowH, "Detect screen from bezel",
+                { id = "screen-bezel",
+                  enabled = page ~= nil and page.imagePath ~= nil and not locked }) then
+    Studio.detectViewport()
+  end
+  top = top + rowH + gap
+  local live = Studio.canvas()
+  local detectLabel = ("Detect this screen (%dx%d)"):format(live.w, live.h)
+  if live.id ~= "this_device" then
+    local w, h = Studio.deviceSize()
+    detectLabel = ("Detect this screen (%dx%d)"):format(w, h)
+  end
+  if Kit.button(mx + pad, top, innerW, rowH, detectLabel,
+                { id = "screen-device", kind = "accent" }) then
+    Studio.detectDeviceCanvas()
+  end
+  top = top + rowH + gap * 1.5
+  Kit.caption(mx + pad, top, "CANVAS")
+  top = top + Kit.textHeight("small") + gap
+
+  local viewH = by - top - pad
+  local canvases = Studio.CANVASES
+  local contentH = #canvases * (rowH + gap)
+  local at = modalScroll(modal, mx + pad, top, innerW, viewH, contentH)
+  local maxScroll = Kit.scrollExtent(contentH, viewH)
+  local baseY = Kit.scrollBegin(mx + pad, top, innerW, viewH, at, maxScroll)
+  for i, spec in ipairs(canvases) do
+    local py = baseY + (i - 1) * (rowH + gap)
+    local selected = i == Studio.canvasIndex
+    local clicked = Kit.row(mx + pad, py, innerW, rowH, selected,
+      "canvas-" .. spec.id)
+    local label = spec.label
+    local detail
+    if spec.live then
+      local w, h = Studio.deviceSize()
+      detail = ("%dx%d  ·  this window"):format(w, h)
+    else
+      detail = ("%dx%d"):format(spec.w, spec.h)
+    end
+    Kit.text("mono", Kit.ellipsize("mono", label, innerW - pad),
+      mx + pad * 2, py + 4 * Kit.scale, selected and PAL.green or PAL.heading)
+    Kit.text("small", Kit.ellipsize("small", detail, innerW - pad),
+      mx + pad * 2, py + 4 * Kit.scale + Kit.textHeight("mono"), PAL.muted)
+    if clicked then Studio.setCanvas(i) end
+  end
+  Kit.scrollEnd(mx + pad, top, innerW, viewH, at, maxScroll)
+end
+
 local function drawConfirm(W, H)
   local c = Studio.confirm
   local mx, my, mw, mh, pad = modalFrame(W, H, "Unsaved changes", 0.42, 0.3)
@@ -1848,66 +2271,84 @@ function Studio.drawOverlay(W, H)
   elseif modal.kind == "open" then drawOpenModal(W, H)
   elseif modal.kind == "page" then drawPageModal(W, H)
   elseif modal.kind == "export" then drawExportModal(W, H)
+  elseif modal.kind == "screen" then drawScreenModal(W, H)
   else Studio.closeModal() end
   return true
 end
 
-function Studio.draw()
-  local W, H = love.graphics.getDimensions()
+local function drawLegacyStudio()
+  local winW, winH, ox, oy, W, H = Studio.safeFrame()
   Kit.layout(W, H)
   local mx, my = love.mouse.getPosition()
-  Kit.beginFrame(mx, my, Studio.clicked, Studio.wheel)
+  if Studio.pointerX ~= nil then mx, my = Studio.pointerX, Studio.pointerY end
+  Kit.beginFrame(mx - ox, my - oy, Studio.clicked, Studio.wheel)
   Studio.clicked, Studio.wheel = false, 0
 
-  Theme.fill(0, 0, W, H, PAL.bg, 1)
+  Theme.fill(0, 0, winW, winH, PAL.bg, 1)
   Studio.expireStatus()
   Kit.blockClicks = Studio.modalUp()
+  love.graphics.push()
+  love.graphics.translate(ox, oy)
 
   local pad = 14 * Kit.scale
-  local barH = math.max(Kit.tapMin(), 34 * Kit.scale) + pad
+  local mobile = Studio.isMobile()
+  local btnH = math.max(Kit.tapMin(), 32 * Kit.scale)
+  -- A phone gets an intentional two-row toolbar.  The desktop's single row
+  -- is excellent at a wide monitor, but it would run its canvas/test/history
+  -- controls beneath Close on a portrait display.
+  local barH = mobile and (btnH * 2 + pad * 1.5) or (btnH + pad)
 
   Kit.textBold("title", "Skin Studio", pad, pad * 0.6, PAL.heading)
   local titleW = Kit.textWidth("title", "Skin Studio") + pad * 2
 
-  local btnH = math.max(Kit.tapMin(), 32 * Kit.scale)
-  local bx = titleW
+  local toolY = mobile and (pad * 0.5 + btnH + pad * 0.25) or (pad * 0.5)
+  local bx = mobile and pad or titleW
   local canvas = Studio.canvas()
-  if Kit.button(bx, pad * 0.5, 200 * Kit.scale, btnH,
+  local canvasW = mobile and math.min(200 * Kit.scale, W * 0.4) or 200 * Kit.scale
+  if Kit.button(bx, toolY, canvasW, btnH,
                 canvas.label, { id = "canvas" }) then
     Studio.setCanvas(Studio.canvasIndex + 1)
   end
-  bx = bx + 208 * Kit.scale
-  if Kit.button(bx, pad * 0.5, 110 * Kit.scale, btnH,
+  bx = bx + canvasW + 8 * Kit.scale
+  local testW = mobile and math.min(110 * Kit.scale, W * 0.21) or 110 * Kit.scale
+  if Kit.button(bx, toolY, testW, btnH,
                 Studio.testing and "Test: ON" or "Test: OFF",
                 { id = "test", active = Studio.testing }) then
     Studio.testing = not Studio.testing
     TouchControls:setPreview(not Studio.testing)
     TouchControls:reset()
   end
-  bx = bx + 118 * Kit.scale
+  bx = bx + testW + 8 * Kit.scale
   local smallW = 74 * Kit.scale
-  if Kit.button(bx, pad * 0.5, smallW, btnH, "Undo",
+  if Kit.button(bx, toolY, smallW, btnH, "Undo",
                 { id = "undo", font = "small", enabled = Studio.canUndo() }) then
     Studio.undo()
   end
   bx = bx + smallW + 6 * Kit.scale
-  if Kit.button(bx, pad * 0.5, smallW, btnH, "Redo",
+  if Kit.button(bx, toolY, smallW, btnH, "Redo",
                 { id = "redo", font = "small", enabled = Studio.canRedo() }) then
     Studio.redo()
   end
   bx = bx + smallW + 6 * Kit.scale
-  if Kit.button(bx, pad * 0.5, smallW + 20 * Kit.scale, btnH,
-                Studio.showLabels and "Labels: ON" or "Labels: OFF",
-                { id = "labels", font = "small", active = Studio.showLabels }) then
-    Studio.showLabels = not Studio.showLabels
+  if not mobile then
+    if Kit.button(bx, toolY, smallW + 20 * Kit.scale, btnH,
+                  Studio.showLabels and "Labels: ON" or "Labels: OFF",
+                  { id = "labels", font = "small", active = Studio.showLabels }) then
+      Studio.showLabels = not Studio.showLabels
+    end
+    bx = bx + smallW + 26 * Kit.scale
   end
-  bx = bx + smallW + 26 * Kit.scale
 
   if Studio.dirty then
-    Kit.text("small", "unsaved", bx, pad * 0.5 + btnH * 0.3, PAL.yellow)
+    Kit.text("small", "unsaved", bx, toolY + btnH * 0.3, PAL.yellow)
   end
 
   local closeW = 100 * Kit.scale
+  local offW = 74 * Kit.scale
+  if Kit.button(W - pad - closeW - offW - 6 * Kit.scale, pad * 0.5, offW, btnH,
+                "Off", { id = "off", kind = "danger" }) then
+    Studio.disableTouchControls()
+  end
   local closed = false
   if Kit.button(W - pad - closeW, pad * 0.5, closeW, btnH, "Close",
                 { id = "close" }) then
@@ -1918,21 +2359,33 @@ function Studio.draw()
   end
   if closed then
     Kit.blockClicks = false
+    love.graphics.pop()
     Kit.endFrame()
     return
   end
 
-  local panelW = math.min(360 * Kit.scale, W * 0.34)
   local bodyY = barH + pad * 0.5
   local bodyH = H - bodyY - pad
-
-  drawInspector(pad, bodyY, panelW, bodyH)
-
-  local cx = pad * 2 + panelW
-  local cw = W - cx - pad
-  local r = drawCanvas(cx, bodyY, cw, bodyH - 40 * Kit.scale)
-
-  local footY = bodyY + bodyH - 30 * Kit.scale
+  local r, cx, cw, footY
+  if Studio.isMobile() then
+    -- On a phone the canvas stays wide and the inspector becomes the lower
+    -- sheet.  Both remain on screen, so a tapped control can be adjusted
+    -- without swapping modes or hiding the preview.
+    cx, cw = pad, W - pad * 2
+    local canvasH = math.max(180 * Kit.scale, (bodyH - 46 * Kit.scale) * 0.46)
+    r = drawCanvas(cx, bodyY, cw, canvasH)
+    local inspectorY = bodyY + canvasH + 8 * Kit.scale
+    local inspectorH = math.max(0, H - inspectorY - pad - 30 * Kit.scale)
+    drawInspector(pad, inspectorY, W - pad * 2, inspectorH)
+    footY = H - pad - 24 * Kit.scale
+  else
+    local panelW = math.min(360 * Kit.scale, W * 0.34)
+    drawInspector(pad, bodyY, panelW, bodyH)
+    cx = pad * 2 + panelW
+    cw = W - cx - pad
+    r = drawCanvas(cx, bodyY, cw, bodyH - 40 * Kit.scale)
+    footY = bodyY + bodyH - 30 * Kit.scale
+  end
   local msg = Studio.status
   if not msg and Studio.testing then
     local held = {}
@@ -1948,25 +2401,332 @@ function Studio.draw()
     Studio.statusErr and PAL.red or PAL.detail)
 
   Kit.blockClicks = false
+  love.graphics.pop()
+  if r then r.x, r.y = r.x + ox, r.y + oy end
+  if Studio.lastCanvas then
+    Studio.lastCanvas.x = Studio.lastCanvas.x + ox
+    Studio.lastCanvas.y = Studio.lastCanvas.y + oy
+  end
+  if Studio.canvasWorkspace then
+    Studio.canvasWorkspace.x = Studio.canvasWorkspace.x + ox
+    Studio.canvasWorkspace.y = Studio.canvasWorkspace.y + oy
+  end
   Studio.drawOverlay(W, H)
 
   Kit.endFrame()
   Studio.canvasArea = r
 end
 
+-- ------------------------------------------------------ mobile-first studio
+
+-- Kept as an opt-in diagnostic renderer while downstream tools migrate; the
+-- active Studio path below is the library/editor flow.
+Studio.drawLegacy = drawLegacyStudio
+
+local function studioCard(x, y, w, h, id, active)
+  local focused = Kit.focusable(id, x, y, w, h)
+  Kit.card(x, y, w, h, active and "selected"
+    or (focused or Kit.hover(x, y, w, h)))
+  return Kit.press(x, y, w, h) or Kit._activateId == id
+end
+
+local function drawSkinArtwork(image, x, y, w, h)
+  Theme.fillRounded(x, y, w, h, PAL.bg, 1, Theme.cardRadius() * 0.65)
+  if image and image.getDimensions then
+    local iw, ih = image:getDimensions()
+    if iw > 0 and ih > 0 then
+      local s = math.min((w - 14 * Kit.scale) / iw, (h - 14 * Kit.scale) / ih)
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(image, x + (w - iw * s) * 0.5,
+        y + (h - ih * s) * 0.5, 0, s, s)
+      return
+    end
+  end
+  -- A neutral mock reads as a touch skin even before it has artwork.
+  Theme.strokeRounded(x + w * 0.19, y + h * 0.10, w * 0.62, h * 0.44,
+    PAL.line, Theme.A.hairline, 1, 3)
+  Theme.fillRounded(x + w * 0.13, y + h * 0.64, w * 0.26, h * 0.18,
+    PAL.steel, 0.8, 3)
+  Theme.fillRounded(x + w * 0.60, y + h * 0.59, w * 0.13, h * 0.24,
+    PAL.steel, 0.8, h * 0.12)
+  Theme.fillRounded(x + w * 0.77, y + h * 0.54, w * 0.13, h * 0.24,
+    PAL.steel, 0.8, h * 0.12)
+end
+
+local function drawLibrary()
+  local f = Studio._frame
+  local ox, oy, W, H = f.x, f.y, f.w, f.h
+  local pad = 14 * Kit.scale
+  local btnH = math.max(Kit.tapMin(), 32 * Kit.scale)
+  local titleY = oy + pad * 0.55
+  Kit.textBold("title", "My Skins", ox + pad, titleY, PAL.heading)
+  local closeW = math.min(112 * Kit.scale, W * 0.24)
+  if Kit.button(ox + W - pad - closeW, oy + pad * 0.5, closeW, btnH, "Close",
+                { id = "library-close" }) then
+    if Studio.onClose then Studio.onClose() end
+    return
+  end
+
+  local y = oy + pad * 0.5 + btnH + pad
+  local gap = 8 * Kit.scale
+  local half = (W - pad * 2 - gap) * 0.5
+  if Kit.button(ox + pad, y, half, btnH * 1.12, "+  New skin",
+                { id = "library-new", kind = "accent" }) then
+    Studio.newSkin()
+    Studio.enterEditor()
+    return
+  end
+  if Kit.button(ox + pad + half + gap, y, half, btnH * 1.12, "Import skin",
+                { id = "library-import" }) then
+    Studio.importSkinFile()
+    return
+  end
+  y = y + btnH * 1.12 + pad
+
+  Kit.caption(ox + pad, y, "YOUR SKINS")
+  y = y + Kit.textHeight("small") + gap
+
+  local entries = Studio.available or {}
+  local cols = W >= 520 * Kit.scale and 3 or 2
+  local cardGap = 10 * Kit.scale
+  local cardW = (W - pad * 2 - cardGap * (cols - 1)) / cols
+  local cardH = math.max(182 * Kit.scale, cardW * 1.42)
+  local saved = SaveData.loadOptions()
+  local tc = type(saved.touchControls) == "table" and saved.touchControls or {}
+  local activeId = tc.enabled == false and nil or tc.skin
+  local total = #entries
+  local maxRows = math.max(1, math.floor((oy + H - y - pad - btnH - gap)
+    / (cardH + cardGap)))
+  local perPage = maxRows * cols
+  local pages = math.max(1, math.ceil(total / perPage))
+  Studio.libraryPage = math.max(1, math.min(Studio.libraryPage or 1, pages))
+  local first = (Studio.libraryPage - 1) * perPage + 1
+  local last = math.min(total, first + perPage - 1)
+
+  for slot = first, last do
+    local index = slot - first
+    local cx = ox + pad + (index % cols) * (cardW + cardGap)
+    local cy = y + math.floor(index / cols) * (cardH + cardGap)
+    do
+      local entry = entries[slot]
+      local selected = entry.id == activeId
+      Kit.card(cx, cy, cardW, cardH, selected and "selected" or nil)
+      local artH = cardH * 0.45
+      drawSkinArtwork(Studio.libraryThumb(entry), cx + 7 * Kit.scale,
+        cy + 7 * Kit.scale, cardW - 14 * Kit.scale, artH)
+      Kit.text("mono", Kit.ellipsize("mono", entry.id, cardW - 20 * Kit.scale),
+        cx + 10 * Kit.scale, cy + artH + 15 * Kit.scale,
+        selected and PAL.green or PAL.heading)
+      local meta = Studio.skinSummary(entry)
+      Kit.text("small", Kit.ellipsize("small", meta, cardW - 20 * Kit.scale),
+        cx + 10 * Kit.scale, cy + artH + 15 * Kit.scale + Kit.textHeight("mono"),
+        PAL.muted)
+      local actionGap = 4 * Kit.scale
+      local actionW = (cardW - 20 * Kit.scale - actionGap) * 0.5
+      local actionY = cy + cardH - btnH * 2 - actionGap - 8 * Kit.scale
+      if Kit.button(cx + 8 * Kit.scale, actionY, actionW, btnH,
+                    selected and "Selected" or "Select",
+                    { id = "skin-select-" .. entry.id,
+                      kind = selected and "good" or "accent" }) then
+        Studio.selectEntry(entry.id)
+      end
+      if Kit.button(cx + 8 * Kit.scale + actionW + actionGap, actionY, actionW, btnH,
+                    "Edit", { id = "skin-edit-" .. entry.id, kind = "accent" }) then
+        Studio.loadEntry(entry.id)
+        Studio.enterEditor()
+        return
+      end
+      actionY = actionY + btnH + actionGap
+      if Kit.button(cx + 8 * Kit.scale, actionY, actionW, btnH,
+                    "Export", { id = "skin-export-" .. entry.id }) then
+        Studio.exportEntry(entry.id)
+      end
+      if Kit.button(cx + 8 * Kit.scale + actionW + actionGap, actionY, actionW, btnH,
+                    "Delete", { id = "skin-delete-" .. entry.id,
+                      kind = "danger", enabled = entry.source == "user" }) then
+        Studio.deleteEntry(entry.id)
+      end
+    end
+  end
+
+  if pages > 1 then
+    local pagerY = oy + H - pad - btnH
+    local prevW, nextW = (W - pad * 2 - gap) * 0.5, (W - pad * 2 - gap) * 0.5
+    if Kit.button(ox + pad, pagerY, prevW, btnH, "Previous",
+                  { id = "library-prev", enabled = Studio.libraryPage > 1 }) then
+      Studio.libraryPage = Studio.libraryPage - 1
+    end
+    if Kit.button(ox + pad + prevW + gap, pagerY, nextW, btnH, "Next",
+                  { id = "library-next", enabled = Studio.libraryPage < pages }) then
+      Studio.libraryPage = Studio.libraryPage + 1
+    end
+  end
+
+  if #entries == 0 then
+    Kit.text("small", "Create a blank skin or import one to get started.",
+      ox + pad, y + cardH + gap, PAL.muted)
+  end
+end
+
+local function drawEditor()
+  local f = Studio._frame
+  local ox, oy, W, H = f.x, f.y, f.w, f.h
+  local pad = 14 * Kit.scale
+  local btnH = math.max(Kit.tapMin(), 32 * Kit.scale)
+  local gap = 7 * Kit.scale
+  local backW = math.min(120 * Kit.scale, W * 0.23)
+  if Kit.button(ox + pad, oy + pad * 0.5, backW, btnH, "My Skins",
+                { id = "editor-back" }) then
+    Studio.backToLibrary()
+  end
+  local closeW = math.min(90 * Kit.scale, W * 0.17)
+  local saveW = math.min(90 * Kit.scale, W * 0.17)
+  local testW = math.min(100 * Kit.scale, W * 0.18)
+  local right = ox + W - pad
+  if Kit.button(right - closeW, oy + pad * 0.5, closeW, btnH, "Close",
+                { id = "editor-close" }) then
+    Studio.guard("Close the studio and lose the unsaved changes?", function()
+      if Studio.onClose then Studio.onClose() end
+    end)
+  end
+  right = right - closeW - gap
+  if Kit.button(right - saveW, oy + pad * 0.5, saveW, btnH, "Save",
+                { id = "editor-save", kind = "accent" }) then Studio.save() end
+  right = right - saveW - gap
+  if Kit.button(right - testW, oy + pad * 0.5, testW, btnH,
+                Studio.testing and "Test: ON" or "Test",
+                { id = "editor-test", active = Studio.testing }) then
+    Studio.testing = not Studio.testing
+    TouchControls:setPreview(not Studio.testing)
+    TouchControls:reset()
+  end
+  local titleX = ox + pad + backW + gap
+  local titleW = math.max(0, right - testW - gap - titleX)
+  Kit.textBold("button", Kit.ellipsize("button",
+    (Studio.skin and Studio.skin.name) or "Untitled skin", titleW),
+    titleX, oy + pad * 0.5 + (btnH - Kit.textHeight("button")) * 0.5, PAL.heading)
+
+  local zH = math.max(Kit.tapMin(), 28 * Kit.scale)
+  local trayH = btnH * 2 + zH + gap * 4 + Kit.textHeight("small") + gap
+  local bodyY = oy + pad * 0.5 + btnH + pad
+  local trayY = oy + H - pad - trayH
+  local canvasH = math.max(120 * Kit.scale, trayY - bodyY - pad)
+  drawCanvas(ox + pad, bodyY, W - pad * 2, canvasH)
+
+  Kit.card(ox + pad, trayY, W - pad * 2, trayH)
+  local innerX, innerW = ox + pad + gap, W - pad * 2 - gap * 2
+  local actionW = (innerW - gap * 3) / 4
+  local ctl = Studio.selectedControl()
+  if Kit.button(innerX, trayY + gap, actionW, btnH, "+ Control",
+                { id = "tray-add", kind = "accent" }) then
+    Studio.addControl()
+    Studio.openBindPicker()
+  end
+  if Kit.button(innerX + (actionW + gap), trayY + gap, actionW, btnH,
+                ctl and ("Bind: " .. ctl.spec) or "Bind",
+                { id = "tray-bind", enabled = ctl ~= nil }) then
+    Studio.openBindPicker()
+  end
+  if Kit.button(innerX + (actionW + gap) * 2, trayY + gap, actionW, btnH,
+                "Button art", { id = "tray-art", enabled = ctl ~= nil }) then
+    Studio.openImagePicker("idle")
+  end
+  if Kit.button(innerX + (actionW + gap) * 3, trayY + gap, actionW, btnH,
+                "Bezel art", { id = "tray-bezel" }) then
+    Studio.openImagePicker("bezel")
+  end
+
+  local row2 = trayY + gap * 2 + btnH
+  if Kit.button(innerX, row2, actionW, btnH, "Pages",
+                { id = "tray-pages" }) then Studio.openPageMenu() end
+  if Kit.button(innerX + (actionW + gap), row2, actionW, btnH,
+                "Screen", { id = "tray-screen" }) then Studio.openScreenMenu() end
+  if Kit.button(innerX + (actionW + gap) * 2, row2, actionW, btnH,
+                Studio.aspectLock and "Shape: 10:9" or "Shape: Free",
+                { id = "tray-shape", active = Studio.aspectLock }) then
+    Studio.aspectLock = not Studio.aspectLock
+  end
+  if Kit.button(innerX + (actionW + gap) * 3, row2, actionW, btnH,
+                "Delete", { id = "tray-delete", kind = "danger", enabled = ctl ~= nil }) then
+    Studio.deleteControl()
+  end
+
+  local row3 = row2 + btnH + gap
+  local zoomAt = Studio.zoomIndex()
+  if Kit.button(innerX, row3, actionW, zH, "Detect screen",
+                { id = "tray-detect" }) then
+    Studio.detectDeviceCanvas()
+  end
+  if Kit.button(innerX + (actionW + gap), row3, actionW, zH, "Zoom −",
+                { id = "zoom-out", enabled = zoomAt < #Studio.ZOOM_LEVELS }) then
+    Studio.zoomOut()
+  end
+  local pct = math.floor((Studio.viewZoom or 1) * 100 + 0.5) .. "%"
+  if Kit.button(innerX + (actionW + gap) * 2, row3, actionW, zH, "Fit " .. pct,
+                { id = "zoom-fit", active = zoomAt == 1 }) then
+    Studio.zoomFit()
+  end
+  if Kit.button(innerX + (actionW + gap) * 3, row3, actionW, zH, "Zoom +",
+                { id = "zoom-in", enabled = zoomAt > 1 }) then
+    Studio.zoomIn()
+  end
+
+  local hint = ctl and ("Selected: " .. TouchSkin.describeBind(ctl.spec)
+    .. " — drag to move; use blue handles to resize.")
+    or "Tap a control to select it. Drag to move; use blue handles to resize."
+  Kit.text("small", Kit.ellipsize("small", Studio.status or hint, innerW),
+    innerX, trayY + trayH - Kit.textHeight("small") - gap,
+    Studio.statusErr and PAL.red or PAL.muted)
+end
+
+function Studio.draw()
+  local W, H = Studio.safeFrame()
+  local f = Studio._frame
+  Kit.layout(f.w, f.h)
+  local mx, my = love.mouse.getPosition()
+  local px, py, padActive = PadCursor.pointer()
+  if padActive then
+    mx, my = px, py
+  elseif Studio.pointerX ~= nil then
+    mx, my = Studio.pointerX, Studio.pointerY
+  end
+  Kit.beginFrame(mx, my, Studio.clicked, Studio.wheel)
+  Studio.clicked, Studio.wheel = false, 0
+  Theme.fill(0, 0, W, H, PAL.bg, 1)
+  Studio.expireStatus()
+  Kit.blockClicks = Studio.modalUp()
+
+  if Studio.mode == "library" then drawLibrary()
+  else drawEditor() end
+
+  Kit.blockClicks = false
+  Studio.drawOverlay(f.w, f.h)
+  Kit.endFrame()
+  PadCursor.draw()
+end
+
 -- ---------------------------------------------------------------- input
 
-function Studio.update()
+function Studio.update(dt)
+  PadCursor.update(dt or 0)
+  local x, y, active = PadCursor.pointer()
+  if active and Studio.pointerDown then Studio.mousemoved(x, y) end
+  local wheel = PadCursor.takeWheel()
+  if wheel ~= 0 then Studio.wheelmoved(0, wheel) end
   if not Studio.pendingPlay then return end
   Studio.pendingPlay = false
   local onPlay, version, canvas = Studio.onPlay, Studio.version, Studio.canvas()
   if onPlay then onPlay(version, canvas) end
 end
 
-function Studio.mousepressed(x, y, button)
+function Studio.mousepressed(x, y, button, fromPad)
   if button ~= 1 then return end
+  if not fromPad then PadCursor.yieldToPointer() end
+  Studio.pointerX, Studio.pointerY = x, y
+  Studio.pointerDown = true
   Studio.clicked = true
   if Studio.modalUp() then return end
+  if Studio.mode == "library" then return end
   local r = Studio.lastCanvas
   if not r then return end
   if Studio.testing then
@@ -1976,26 +2736,34 @@ function Studio.mousepressed(x, y, button)
     return
   end
   local slop = HANDLE * 2 * Kit.scale
-  if x < r.x - slop or x > r.x + r.w + slop
-     or y < r.y - slop or y > r.y + r.h + slop then
+  local work = Studio.canvasWorkspace
+  local insideDevice = x >= r.x - slop and x <= r.x + r.w + slop
+    and y >= r.y - slop and y <= r.y + r.h + slop
+  local insideWork = work and x >= work.x and x <= work.x + work.w
+    and y >= work.y and y <= work.y + work.h
+  if not insideDevice and not insideWork then
     return
   end
   Studio.beginCanvasDrag(x, y, r)
 end
 
 function Studio.mousemoved(x, y)
+  Studio.pointerX, Studio.pointerY = x, y
   if Studio.modalUp() then return end
+  if Studio.mode == "library" then return end
   if Studio.testing then
     TouchControls:touchmoved("studio", x, y)
     return
   end
-  if Studio.drag and love.mouse.isDown(1) and Studio.lastCanvas then
+  if Studio.drag and (Studio.pointerDown or love.mouse.isDown(1)) and Studio.lastCanvas then
     Studio.updateDrag(x, y, Studio.lastCanvas)
   end
 end
 
 function Studio.mousereleased(x, y, button)
   if button ~= 1 then return end
+  Studio.pointerX, Studio.pointerY = x, y
+  Studio.pointerDown = false
   if Studio.testing then
     TouchControls:touchreleased("studio", x, y)
     return
@@ -2004,13 +2772,104 @@ function Studio.mousereleased(x, y, button)
   Studio.guides = nil
 end
 
+function Studio.touchpressed(id, x, y)
+  if Studio.touchId and Studio.touchId ~= id then return end
+  Studio.touchId = id
+  return Studio.mousepressed(x, y, 1)
+end
+
+local function closeFromPad()
+  if Studio.confirm then
+    Studio.confirmNo()
+  elseif Studio.modal then
+    Studio.closeModal()
+  elseif Studio.mode == "editor" then
+    Studio.backToLibrary()
+  elseif Studio.onClose then
+    Studio.onClose()
+  end
+end
+
+local function handlePadAction(action)
+  if action == "a" then
+    local x, y = PadCursor.pointer()
+    Studio.mousepressed(x, y, 1, true)
+  elseif action == "b" then
+    closeFromPad()
+  end
+end
+
+function Studio.gamepadpressed(joystick, button)
+  handlePadAction(PadCursor.gamepadpressed(joystick, button))
+end
+
+function Studio.gamepadreleased(joystick, button)
+  PadCursor.gamepadreleased(joystick, button)
+  if GamepadMap.mapGamepadButton(button) == "a" then
+    local x, y = PadCursor.pointer()
+    Studio.mousereleased(x, y, 1)
+  end
+end
+
+function Studio.gamepadaxis(joystick, axis, value)
+  PadCursor.gamepadaxis(joystick, axis, value)
+end
+
+function Studio.joystickpressed(joystick, button)
+  handlePadAction(PadCursor.joystickpressed(joystick, button))
+end
+
+function Studio.joystickreleased(joystick, button)
+  PadCursor.joystickreleased(joystick, button)
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  local padButton = GamepadMap.mapRawToGamepadButton(button)
+  if padButton and GamepadMap.mapGamepadButton(padButton) == "a" then
+    local x, y = PadCursor.pointer()
+    Studio.mousereleased(x, y, 1)
+  end
+end
+
+function Studio.joystickaxis(joystick, axis, value)
+  PadCursor.joystickaxis(joystick, axis, value)
+end
+
+function Studio.joystickhat(joystick, hat, direction)
+  PadCursor.joystickhat(joystick, hat, direction)
+end
+
+function Studio.touchmoved(id, x, y)
+  if Studio.touchId ~= id then return end
+  return Studio.mousemoved(x, y)
+end
+
+function Studio.touchreleased(id, x, y)
+  if Studio.touchId ~= id then return end
+  Studio.touchId = nil
+  return Studio.mousereleased(x, y, 1)
+end
+
 function Studio.wheelmoved(_, dy)
+  if Studio.mode == "editor" and not Studio.modalUp() and dy and dy ~= 0 then
+    local work = Studio.canvasWorkspace
+    local mx, my, active = PadCursor.pointer()
+    if not active then mx, my = Studio.pointerX, Studio.pointerY end
+    if (not mx or not my) and love and love.mouse and love.mouse.getPosition then
+      mx, my = love.mouse.getPosition()
+    end
+    if work and mx and my
+       and mx >= work.x and mx <= work.x + work.w
+       and my >= work.y and my <= work.y + work.h then
+      if dy > 0 then Studio.zoomIn() else Studio.zoomOut() end
+      return
+    end
+  end
   Studio.wheel = dy
 end
 
 function Studio.focus()
   Studio.drag = nil
   Studio.clicked = false
+  Studio.pointerDown, Studio.touchId = false, nil
   if Studio.testing then TouchControls:reset() end
 end
 
@@ -2081,6 +2940,12 @@ function Studio.keypressed(key)
     Studio.testing = not Studio.testing
     TouchControls:setPreview(not Studio.testing)
     TouchControls:reset()
+  elseif key == "-" or key == "kp-" then
+    Studio.zoomOut()
+  elseif key == "=" or key == "+" or key == "kp+" then
+    Studio.zoomIn()
+  elseif key == "0" or key == "kp0" then
+    Studio.zoomFit()
   elseif key == "s" then
     Studio.save()
   elseif key == "tab" then
@@ -2094,8 +2959,9 @@ function Studio.keypressed(key)
 end
 
 function Studio.available_desktop()
-  local osName = love.system and love.system.getOS and love.system.getOS()
-  return osName ~= "Android" and osName ~= "iOS"
+  -- Kept as the compatibility name for launcher integrations.  The Studio
+  -- now has a touch layout and is available on every supported platform.
+  return true
 end
 
 return Studio

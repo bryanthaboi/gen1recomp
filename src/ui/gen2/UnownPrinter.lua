@@ -9,7 +9,7 @@
 -- is drawn and driven entirely on the cartridge, and only the A press
 -- (`farcall PrintUnownStamp`, engine/printer/printer.asm) walks the screen
 -- out the serial port to a Game Boy Printer.  There is no printer here, the
--- same reason PrintDiploma stays stubbed in Specials.lua, so A lands on the
+-- same reason PrintDiploma's own print goes nowhere, so A lands on the
 -- same arm a cartridge with nothing plugged into its link port takes: the
 -- stamp does not print and the screen stays up.  Everything else is the
 -- cart's.

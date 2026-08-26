@@ -356,9 +356,11 @@ local optionsGame, optionsInput = newGame(Save.newGame())
 local options = OptionsMenu.new(optionsGame, {
   options = Save.defaultOptions(),
 })
--- The cart's seven rows, then the port's: CONTROLS, audio, speed, display,
--- video mode, the mobile-gated touch three (buildRows), MAX FPS and CANCEL.
-check("twenty-three rows", #OptionsMenu.ROWS, 23)
+-- The cart's seven rows, then the port's: CONTROLS, audio, PERFORMANCE,
+-- speed, display, SHADER FX + SHADER FX 2 (the second slot added alongside
+-- the dual-shader feature), video mode, screen position, the mobile-gated
+-- touch three (buildRows), MAX FPS, BATTLE BG and CANCEL.
+check("twenty-seven rows", #OptionsMenu.ROWS, 27)
 check("the cart's rows come first", OptionsMenu.ROWS[7].key, "frame")
 check("then the rebind screen", OptionsMenu.ROWS[8].id, "controls")
 check("then the port's audio group", OptionsMenu.ROWS[9].key, "musicVol")
@@ -482,6 +484,99 @@ check("TM row names its move", pack.rows[1].teaches, "HEADBUTT")
 packInput:press("right")
 pack:update(0)
 check("pocket wraps around", pack:pocket().id, "ITEM")
+
+-- engine/items/tmhm.asm:341 -- TMHM_DisplayPocketItems walks wTMsHMs 1..57, so
+-- the pocket is TM01..TM50 then HM01..HM07 whatever order the player picked
+-- them up in, and tmhm.asm:207 keeps SELECT out of it entirely.
+do
+  local tmSave2 = Save.newGame()
+  tmSave2.inventory = {
+    HM_WATERFALL = 1, TM_NIGHTMARE = 2, HM_CUT = 1, TM_ROAR = 3,
+    TM_DYNAMICPUNCH = 12, TM_LEGACY = 1,
+  }
+  tmSave2.bagOrder = {
+    "HM_WATERFALL", "TM_NIGHTMARE", "HM_CUT", "TM_ROAR", "TM_DYNAMICPUNCH",
+    "TM_LEGACY",
+  }
+  local tmGame2, tmInput2 = newGame(tmSave2)
+  tmGame2.data.items = {
+    TM_DYNAMICPUNCH = { id = "TM_DYNAMICPUNCH", name = "TM01",
+      pocket = "TM_HM", index = 191, tmNumber = 1 },
+    TM_ROAR = { id = "TM_ROAR", name = "TM05", pocket = "TM_HM",
+      index = 195, tmNumber = 5 },
+    TM_NIGHTMARE = { id = "TM_NIGHTMARE", name = "TM50", pocket = "TM_HM",
+      index = 240, tmNumber = 50 },
+    HM_CUT = { id = "HM_CUT", name = "HM01", pocket = "TM_HM",
+      index = 241, tmNumber = 51 },
+    HM_WATERFALL = { id = "HM_WATERFALL", name = "HM07", pocket = "TM_HM",
+      index = 247, tmNumber = 57 },
+    -- A cache (or a mod) with no tmNumber falls back to the ItemNames index.
+    TM_LEGACY = { id = "TM_LEGACY", name = "TM??", pocket = "TM_HM",
+      index = 300 },
+  }
+  local tmPack = PackMenu.new(tmGame2, { pocket = "TM_HM" })
+  local function ids(rows)
+    local out = {}
+    for i = 1, #rows do out[i] = rows[i].id end
+    return table.concat(out, ",")
+  end
+  check("TM/HM pocket is TM-number ordered, not pickup ordered",
+    ids(tmPack.rows),
+    "TM_DYNAMICPUNCH,TM_ROAR,TM_NIGHTMARE,HM_CUT,HM_WATERFALL,TM_LEGACY")
+  check("the first row is TM01", tmPack.rows[1].id, "TM_DYNAMICPUNCH")
+  check("and a tmNumber-less item lands after HM07",
+    tmPack.rows[#tmPack.rows].id, "TM_LEGACY")
+  check("the TM keeps its count", tmPack.rows[1].showCount, true)
+  check("the HM shows none", tmPack.rows[4].showCount, false)
+
+  tmPack.index = 1
+  tmInput2:press("select")
+  tmPack:update(0)
+  check("SELECT cannot arm a TM/HM row", tmPack.switching, nil)
+  check("and prints no move prompt", tmPack.message, nil)
+
+  -- The other three pockets still reorder on SELECT (pack.asm:1290).
+  tmSave2.inventory.POTION = 1
+  tmSave2.inventory.SUPER_POTION = 1
+  tmSave2.bagOrder = { "POTION", "SUPER_POTION" }
+  tmGame2.data.items.POTION =
+    { id = "POTION", name = "POTION", pocket = "ITEM", index = 1 }
+  tmGame2.data.items.SUPER_POTION =
+    { id = "SUPER_POTION", name = "SUPER POTION", pocket = "ITEM", index = 2 }
+  tmPack.pocketIndex = 1
+  tmPack:rebuild()
+  tmPack.index = 1
+  tmInput2:press("select")
+  tmPack:update(0)
+  check("but the ITEM pocket still arms", tmPack.switching, 1)
+end
+
+-- item_data_constants.asm:47 MAX_ITEMS / MAX_BALLS / MAX_KEY_ITEMS, and the
+-- TM/HM pocket is wTMsHMs (ram/wram.asm:2421), NUM_TMS + NUM_HMS = 57 bytes:
+-- 50 add_tm rows and 7 add_hm rows in constants/item_constants.asm:220-293.
+do
+  local Bag = require("src.inventory.Bag")
+  check("ITEM pocket is MAX_ITEMS", Bag.capacity(packGame.data, "ITEM"), 20)
+  check("BALL pocket is MAX_BALLS", Bag.capacity(packGame.data, "BALL"), 12)
+  check("KEY_ITEM pocket is MAX_KEY_ITEMS",
+    Bag.capacity(packGame.data, "KEY_ITEM"), 25)
+  check("TM/HM pocket is NUM_TMS + NUM_HMS",
+    Bag.capacity(packGame.data, "TM_HM"), 57)
+
+  -- Bag.add tests the cap before inserting, so all 57 cart TM/HMs fit.
+  local tmData = { items = {}, constants = { bagSize = 2 } }
+  for i = 1, 58 do
+    tmData.items["TM_FIX_" .. i] = { id = "TM_FIX_" .. i, name = "TM" .. i,
+      pocket = "TM_HM", index = 200 + i }
+  end
+  check("a mod's bagSize resizes the ITEM pocket only",
+    Bag.capacity(tmData, "TM_HM"), 57)
+  local tmSave = { inventory = {}, bagOrder = {} }
+  for i = 1, 57 do Bag.add(tmSave, "TM_FIX_" .. i, 1, tmData) end
+  check("all 57 of them fit", Bag.slots(tmSave, tmData, "TM_HM"), 57)
+  check("and a 58th TM/HM id has no byte to live in",
+    Bag.add(tmSave, "TM_FIX_58", 1, tmData), false)
+end
 
 -- CANCEL sits one past the last row.
 check("cancel is past the end", pack:total(), #pack.rows + 1)
@@ -861,18 +956,24 @@ check("GBC leaves a palette alone",
     1)[1], 1)
 check("and has no present pass", GbcPalette.presentColors(), nil)
 
-local zoomIndex, gbcfxIndex
+local zoomIndex, tiltIndex
 for i, row in ipairs(OptionsMenu.ROWS) do
   if row.label == "ZOOM" then zoomIndex = i end
-  if row.label == "GBC FX" then gbcfxIndex = i end
+  if row.label == "TILT" then tiltIndex = i end
 end
 check("VOID FILL follows ZOOM", OptionsMenu.ROWS[zoomIndex + 1].label,
   "VOID FILL")
 check("and TILT follows VOID FILL", OptionsMenu.ROWS[zoomIndex + 2].label,
   "TILT")
-check("VIDEO MODE follows GBC FX", OptionsMenu.ROWS[gbcfxIndex + 1].label,
+check("SHADER FX follows COLOR follows TILT", OptionsMenu.ROWS[tiltIndex + 2].label,
+  "SHADER FX")
+check("SHADER FX 2 follows SHADER FX", OptionsMenu.ROWS[tiltIndex + 3].label,
+  "SHADER FX 2")
+check("VIDEO MODE follows SHADER FX 2", OptionsMenu.ROWS[tiltIndex + 4].label,
   "VIDEO MODE")
-check("and TOUCH PAD follows it", OptionsMenu.ROWS[gbcfxIndex + 2].label,
+check("and SCREEN POS follows it", OptionsMenu.ROWS[tiltIndex + 5].label,
+  "SCREEN POS")
+check("and TOUCH PAD follows that", OptionsMenu.ROWS[tiltIndex + 6].label,
   "TOUCH PAD")
 
 local videoRow = select(2, rowNamed("VIDEO MODE"))

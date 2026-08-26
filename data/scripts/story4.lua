@@ -359,18 +359,22 @@ M.ROUTE_16_FLY_HOUSE = {
     TEXT_ROUTE16FLYHOUSE_BRUNETTE_GIRL = function(game, ow, npc, done)
       local t = text(game)
       if game.save.flags.EVENT_GOT_HM02 then
-        push(game, t._Route16FlyHouseBrunetteGirlHm02ExplanationText
-          or "HM02 is FLY!\fIt will whisk you\nback to any town!", done)
+        push(game, t._Route16FlyHouseBrunetteGirlHM02ExplanationText
+          or "HM02 is FLY.\nIt will take you\vback to any town.\fPut it to good\nuse!", done)
         return
       end
       push(game, t._Route16FlyHouseBrunetteGirlText
-        or "Shh! It's a\nsecret!\fMy POKéMON's\nHM02, take it!", function()
+        or "Oh, you found my\nsecret retreat!", function()
         if not require("src.inventory.Bag").add(game.save, "HM_FLY", 1) then
-          push(game, "You don't have\nroom for HM02!", done)
+          push(game, t._Route16FlyHouseBrunetteGirlHM02NoRoomText
+            or "You don't have any\nroom for this.", done)
           return
         end
         game.save.flags.EVENT_GOT_HM02 = true
-        push(game, ("%s got\nHM02!"):format(game.save.player.name), done)
+        -- scripts/Route16FlyHouse.asm:32-35
+        push(game, fill(t._Route16FlyHouseBrunetteGirlReceivedHM02Text
+          or "{PLAYER} received\nHM02!", { player = game.save.player.name }),
+          done, require("src.render.TextBox").soundOpts(game, "Get_Key_Item"))
       end)
     end,
   },
@@ -734,7 +738,7 @@ local function e4ExitSeal(flag, closedBlock, openBlock, dontRunText, autoFlag)
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
         game.data.text[dontRunText] or "Don't run away!", function()
-        ow:scriptMove(ow.player, "up", 1)
+        ow:scriptMove(ow.player, "up", 1, nil, { collide = true })
       end))
       return true
     end,

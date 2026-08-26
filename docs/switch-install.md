@@ -183,7 +183,6 @@ hotkeys (`2`/`3`/`5` are claimed before any mod pipeline hotkey runs).
 | ----- | -------------- | ------------------- |
 | Select + **A** | `2` | COLORS |
 | Select + **B** | `3` | TILT |
-| Select + **Y** | `5` | GBC FX |
 | Select + **X** | `6` | Mod pipeline hotkey (if a mod registers `6`) |
 | Select + **L** | `7` | Mod pipeline hotkey (if a mod registers `7`) |
 

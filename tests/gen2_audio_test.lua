@@ -74,6 +74,12 @@ if ok then
     peak = math.max(peak, math.abs(l), math.abs(r))
   end
   check(peak > 0.01, "TitleScreen renders audible samples (peak=" .. peak .. ")")
+  -- audio/drumkits.asm kit 5: the NR42 envelope rings on past the noise_note
+  -- script, so a snare must outlast the one frame its script occupies.
+  local frame = ChipSynth.SAMPLE_RATE / 60
+  local snare = engine:drumInstrumentGen2(5, 1)
+  check(snare[#snare].endSample > frame * 2,
+    "kit 5 snare rings past its script (" .. snare[#snare].endSample .. " samples)")
 end
 
 local bark = audio.songs.Music_NewBarkTown

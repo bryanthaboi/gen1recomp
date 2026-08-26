@@ -310,6 +310,11 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
           "Nothing happened!") }
       end
       b.stages[stat] = cur + 1
+      b.hazeStatReset = nil
+      if battle.ruleset and battle.ruleset.badgeBoostReapplyBug
+         and battle.kind ~= "link" then
+        require("src.battle.Damage").reapplyBadgeBoosts(b, stat)
+      end
       return "consumed", { Strings("%s's\n%s rose!", b.name, Strings(STAT_LABEL[stat])) }
     end
     -- ItemUseDireHit/ItemUseGuardSpec always set the bit and consume

@@ -25,6 +25,7 @@
 -- names src/battle/BattleState.lua raises on Gen 1, with the same argument
 -- order and the same payload keys (docs/mod-api-gen2-compat.md).
 local Runtime = require("src.mods.Runtime")
+local Mon = require("src.battle.gen2.Mon")
 
 local Catching = {}
 
@@ -335,6 +336,47 @@ function Catching.statusBonus(status, opts)
   local bonuses = (opts and opts.fixBugs) and Catching.STATUS_BONUS_FIXED
     or Catching.STATUS_BONUS
   return bonuses[status] or 0
+end
+
+-- constants/landmark_constants.asm:24, the fallback when no cache is passed.
+Catching.LANDMARK_NATIONAL_PARK = 19
+
+local function landmarkIndex(opts, id, fallback)
+  local data = opts and (opts.data or (opts.battle and opts.battle.data))
+  local rows = (opts and opts.landmarks)
+    or (data and data.gen2Landmarks and data.gen2Landmarks.landmarks)
+  local row = rows and rows[id]
+  return (row and row.index) or fallback
+end
+
+-- GetWorldMapLocation with the POKECENTER_2F backup-map swap
+-- (engine/pokemon/caught_data.asm:177-193) and the Bug Contest override (:73-81).
+function Catching.caughtLandmark(opts)
+  opts = opts or {}
+  if opts.bugContest then
+    return landmarkIndex(opts, "LANDMARK_NATIONAL_PARK",
+      Catching.LANDMARK_NATIONAL_PARK)
+  end
+  if opts.landmark then return opts.landmark end
+  local map = opts.map
+  if map and map.id == "POKECENTER_2F" and opts.backupMap then
+    map = opts.backupMap
+  end
+  return (map and map.landmark) or 0
+end
+
+-- SetCaughtData (engine/pokemon/caught_data.asm:163-199); no-op off Crystal.
+function Catching.stampCaughtData(mon, opts)
+  opts = opts or {}
+  if not Mon.hasCaughtData(opts.version) then return mon end
+  local save = opts.save or (opts.battle and opts.battle.save)
+  return Mon.setCaughtData(mon, {
+    level = opts.level or (type(mon) == "table" and mon.level) or 0,
+    timeOfDay = opts.timeOfDay,
+    landmark = Catching.caughtLandmark(opts),
+    playerGender = opts.playerGender
+      or (save and save.player and save.player.gender),
+  })
 end
 
 -- Does the ball catch?  Returns caught and the final rate (wFinalCatchRate).

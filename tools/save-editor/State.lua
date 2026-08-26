@@ -26,6 +26,7 @@ function State.new()
     -- App.load's opts; nil in a bare `love . --editor` run.
     version = nil,
     slotId = nil,
+    modRoots = nil,
     -- Hosted inside the launcher process (Edit on a save row) rather than a
     -- standalone `--editor` window: Close returns to the launcher instead of
     -- quitting, and App calls onClose() to do it.

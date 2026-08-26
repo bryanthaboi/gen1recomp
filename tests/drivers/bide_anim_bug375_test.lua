@@ -83,15 +83,36 @@ return function(game)
   -- the announcement-time row performMove inserts directly as well as the
   -- ones animNext adds, which is the whole difference the fix makes.
   local function watchAnims(battle)
-    local seen, mark = {}, {}
+    local seen, mark, types = {}, {}, {}
     return seen, function()
       for _, row in ipairs(battle.queue) do
         if row.anim and not mark[row] then
           mark[row] = true
           seen[#seen + 1] = row.anim
+          types[row.anim] = row.hit and row.hit.animType or false
         end
       end
+    end, types
+  end
+
+  -- engine/battle/animations.asm:427-437
+  local function rideAndSample(battle, poll, frames, shotPath)
+    local peak, shot = 0, false
+    for i = 1, frames do
+      poll()
+      if i % 6 == 0 then U.tap(battle.game, "a") end
+      local fx = battle.fx
+      if fx and fx.shakeX and not battle.animPlaying then
+        local dx = math.abs(fx.shakeX)
+        if dx > peak then peak = dx end
+        if dx > 0 and not shot then
+          shot = true
+          U.shot(battle.game, shotPath)
+        end
+      end
+      U.wait(1)
     end
+    return peak
   end
 
   local function listOf(seen)
@@ -136,23 +157,28 @@ return function(game)
   local battle = BattleState.newWild(game, "PIDGEY", 8)
   battle.onFinish = function() end
   ow:pushBattle(battle)
-  local seen, poll = watchAnims(battle)
+  local seen, poll, types = watchAnims(battle)
   check("the battle reached the menu", waitPhase(battle, "menu", 60, poll))
   check("BIDE is the move on the list", pickBide(battle, poll))
   for _ = 1, 20 do poll() U.wait(1) end
   U.shot(game, DIR .. "/bug375_store_spiral.png")
-  for _ = 1, 30 do poll() U.wait(1) end
+
+  local peak = rideAndSample(battle, poll, 180,
+                             DIR .. "/bug1564_store_shake.png")
   U.shot(game, DIR .. "/bug375_store_text.png")
 
   check("the storing turn queued XSTATITEM_ANIM", has(seen, "XSTATITEM_ANIM"))
   check("and not BIDE's hit animation: " .. listOf(seen), not has(seen, "BIDE"))
   check("BIDE locked in for " .. tostring(battle.player.bideTurns) .. " turns",
         battle.player.bideTurns ~= nil)
+  check("the storing spiral carries wAnimationType 6 (#1564)",
+        types["XSTATITEM_ANIM"] == 6)
+  check(("the screen shook, peak dx = %d px (want 3)"):format(peak), peak == 3)
 
   -- ride out the locked turns: the storing text needs A presses and the menu
   -- never comes back until BIDE unleashes
   local released = false
-  for _ = 1, 120 do
+  for _ = 1, 220 do
     U.tap(game, "a")
     for _ = 1, 6 do poll() U.wait(1) end
     if has(seen, "BIDE") then
@@ -179,7 +205,7 @@ return function(game)
   foeBattle.enemy.mon.moves = { { id = "BIDE", pp = 10 } }
   foeBattle.enemy.curMoves = foeBattle.enemy.mon.moves
   ow:pushBattle(foeBattle)
-  local foeSeen, foePoll = watchAnims(foeBattle)
+  local foeSeen, foePoll, foeTypes = watchAnims(foeBattle)
   check("the foe's battle reached the menu",
         waitPhase(foeBattle, "menu", 60, foePoll))
   pickBide(foeBattle, foePoll) -- ours does not matter here, the foe's does
@@ -192,10 +218,20 @@ return function(game)
   check("the foe's storing turn queued XSTATITEM_DUPLICATE_ANIM: "
           .. listOf(foeSeen), has(foeSeen, "XSTATITEM_DUPLICATE_ANIM"))
 
+  local foePeak = rideAndSample(foeBattle, foePoll, 180,
+                                DIR .. "/bug1564_enemy_store_shake.png")
+  check("the foe's spiral carries wAnimationType 3 (#1564)",
+        foeTypes["XSTATITEM_DUPLICATE_ANIM"] == 3)
+  check(("the foe's shake peaked at %d px (want 6)"):format(foePeak),
+        foePeak == 6)
+
   U.log("The pad is yours in a battle where both sides know only BIDE, so")
   U.log("pick FIGHT then BIDE and watch turn one: the screen palette flashes")
-  U.log("white and balls spiral inward, silently, and then it says storing")
-  U.log("energy. No flash on the RATTATA and no BIDE thud until the turn it")
+  U.log("white and balls spiral inward, silently. Then, still in silence, the")
+  U.log("whole battle screen creeps sideways 1 px at a time out to 3 px and")
+  U.log("back, twice, and only then does it say storing energy. On the foe's")
+  U.log("turn the same creep goes out to 6 px and takes twice as long.")
+  U.log("No flash on the RATTATA and no BIDE thud until the turn it")
   U.log("unleashes, where the thud and its animation come after the text and")
   U.log("before the enemy HP bar slides down. The foe's spiral looks the same.")
 

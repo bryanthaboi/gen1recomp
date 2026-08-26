@@ -33,6 +33,8 @@ body:
         - Blue
         - Yellow
         - Gold
+        - Silver
+        - Crystal
         - N/A
     validations:
       required: true

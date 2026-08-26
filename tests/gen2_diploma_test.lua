@@ -42,7 +42,7 @@ check(type(RomExtractorGen2.extractDiploma) == "function",
   "RomExtractorGen2:extractDiploma exists")
 check(extractorSource:find("results.diploma = self:extractDiploma()", 1, true)
   ~= nil, "and RomExtractorGen2:run calls it")
-check(extractorSource:find("local STAGE_COUNT = 26", 1, true) ~= nil,
+check(extractorSource:find("local STAGE_COUNT = 27", 1, true) ~= nil,
   "STAGE_COUNT counts the new stage, so the progress bar still ends at 1")
 
 -- The three symbols the stage reads have to be in the curated manifest set or

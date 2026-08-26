@@ -5,8 +5,8 @@
 # them fails.  The tier split is what makes that possible: T1/T2/T4 need
 # nothing but the committed fixture dataset, so they run anywhere --
 # including CI, which has no ROM.  T3 asserts Pokemon Red facts and needs
-# data/generated/, so it is skipped automatically when the ROM has never
-# been imported rather than failing the run.
+# data/generated/ or an imported Red cache, so it is skipped automatically
+# when neither exists rather than failing the run.
 #
 #   scripts/test.sh                 every tier this checkout can run
 #   scripts/test.sh --quick         skip the slow content tier
@@ -16,6 +16,13 @@
 #
 # LUA overrides the interpreter (luajit here; CI installs lua5.4 too, but
 # the engine targets LuaJIT/5.1 semantics so luajit is the default).
+#
+# POKEPORT_TEST_CACHES points at one LOVE identity holding an imported cache
+# per version (red/ blue/ yellow/ gold/ silver/ crystal/); each is exported as
+# RED_CACHE .. CRYSTAL_CACHE for the suites that read one.  Build it with:
+#   POKEPORT_IDENTITY=pokeport-test-caches POKEPORT_VERSION=<version> \
+#   POKEPORT_IMPORT_ONLY=1 POKEPORT_IMPORT_ROM="<rom>" love .
+# An explicit RED_CACHE/GOLD_CACHE/... in the environment always wins.
 
 set -uo pipefail
 
@@ -32,7 +39,7 @@ for arg in "$@"; do
     --bless) BLESS=1 ;;
     --bless-shots) SHOTS=1; BLESS=1 ;;
     --quick) QUICK=1 ;;
-    --help|-h) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -48,6 +55,36 @@ fi
 # whole run instead would change what SaveIO.defaultPath() returns, and the
 # save-editor suite pins that to the default identity.
 SANDBOX_IDENTITY="ci-$$"
+
+# Per-version caches.  POKEPORT_TEST_CACHES names one LOVE identity holding an
+# imported cache per version (red/ blue/ yellow/ gold/ silver/ crystal/).
+CACHE_IDENTITY=${POKEPORT_TEST_CACHE_IDENTITY:-pokeport-test-caches}
+if [ -n "${POKEPORT_TEST_CACHES:-}" ]; then
+  CACHE_ROOT="$POKEPORT_TEST_CACHES"
+elif [ -d "$HOME/Library/Application Support/LOVE/$CACHE_IDENTITY" ]; then
+  CACHE_ROOT="$HOME/Library/Application Support/LOVE/$CACHE_IDENTITY"
+else
+  CACHE_ROOT="$HOME/.local/share/love/$CACHE_IDENTITY"
+fi
+
+# Only a cache with the importer's completion marker is offered: a half-written
+# one would fail suites that are meant to self-skip.
+adopt_cache() {
+  local var="$1" dir="$CACHE_ROOT/$2"
+  [ -z "${!var:-}" ] || return 0
+  [ -f "$dir/rom-cache.complete" ] || return 0
+  export "$var=$dir"
+  echo "   $var=$dir"
+}
+
+echo ""
+echo "-- per-version caches under $CACHE_ROOT"
+adopt_cache RED_CACHE red
+adopt_cache BLUE_CACHE blue
+adopt_cache YELLOW_CACHE yellow
+adopt_cache GOLD_CACHE gold
+adopt_cache SILVER_CACHE silver
+adopt_cache CRYSTAL_CACHE crystal
 
 FAILED=()
 run_tier() {
@@ -66,8 +103,18 @@ run_tier() {
 
 # ------- ROM-free tiers: these are what CI runs
 
+if command -v luacheck >/dev/null 2>&1; then
+  run_tier "T0 luacheck gate (undefined globals, unreachable code)" \
+    ./scripts/lint.sh --gate
+else
+  echo ""
+  echo "-- T0 luacheck gate: skipped (no luacheck on PATH --"
+  echo "   luarocks install luacheck; CI installs and gates on it regardless)"
+fi
+
 run_tier "T0 ROM builder version routing" python3 tests/build_rom_data_cli_test.py
 run_tier "T0 ROM manifest generator pin/overrides" python3 tests/rom_manifest_generator_test.py
+run_tier "T0 Crystal manifest + specials coverage" "$LUA" tests/crystal_import_test.lua
 run_tier "T0 switch CI workflow content gate" "$LUA" tests/switch_ci_workflows_test.lua
 run_tier "T0 switch transfer docs gate" "$LUA" tests/switch_transfer_docs_test.lua
 # NX Blue/Yellow asset overlay: ROM-free, must run on every checkout so a
@@ -78,6 +125,9 @@ run_tier "T0 NX Yellow/Blue boot (dynamic paths)" "$LUA" tests/engine/nx_yellow_
 run_tier "T0 NX Gold cache load (maps.lua prefix)" "$LUA" tests/engine/cache_fs_gold_nx_load_test.lua
 run_tier "T0 touch-controls pad cursor" "$LUA" tests/engine/touch_controls_pad_cursor_test.lua
 run_tier "T1/T2 engine invariants + parity gates" "$LUA" tests/run_engine.lua
+# Gen 2 / Crystal: ROM-free (own fixtures, or a self-skip on a missing cache),
+# so it runs here rather than behind the Red content gate below.
+run_tier "T2 Gen 2 / Crystal suites" "$LUA" tests/run_gen2.lua
 run_tier "T4 mod-SDK" "$LUA" tests/run_modkit.lua
 run_tier "T4 title checkpoint cold restart" \
   bash tests/integration/title_checkpoint_cold_start.sh
@@ -124,7 +174,19 @@ run_content_behavior() {
   return 1
 }
 
+# The Red dataset is the source tree's when tools/build_data.py wrote one, and
+# otherwise the imported Red cache, through Data:load's POKEPORT_DATA_DIR hook.
+HAVE_RED_DATA=0
 if [ -f data/generated/maps.lua ]; then
+  HAVE_RED_DATA=1
+elif [ -n "${RED_CACHE:-}" ] && [ -f "$RED_CACHE/data/generated/maps.lua" ]; then
+  HAVE_RED_DATA=1
+  export POKEPORT_DATA_DIR="$RED_CACHE/data/generated"
+  echo ""
+  echo "-- T3 content: reading Red from $POKEPORT_DATA_DIR"
+fi
+
+if [ "$HAVE_RED_DATA" = "1" ]; then
   if [ "$QUICK" = "1" ]; then
     echo ""
     echo "-- T3 content: skipped (--quick)"
@@ -154,8 +216,9 @@ if [ -f data/generated/maps.lua ]; then
   fi
 else
   echo ""
-  echo "-- T3 content + run_link_tests: skipped (no data/generated/ --"
-  echo "   import a ROM to run them; the modded-link cases ran in T4)"
+  echo "-- T3 content + run_link_tests: skipped (no data/generated/ and no"
+  echo "   RED_CACHE -- import a ROM to run them; the modded-link cases ran"
+  echo "   in T4 and the Gen 2 suites in T2)"
 fi
 
 # ------- golden screenshots: needs love + a display

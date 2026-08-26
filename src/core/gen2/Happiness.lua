@@ -86,8 +86,11 @@ Happiness.EVENT = {
   ENERGYROOT = 16,        -- 10
   REVIVALHERB = 17,       -- 11
   GROOMING = 18,          -- 12
+  -- Crystal only; Gold's enum stops at GROOMING
+  -- (pokegold constants/pokemon_data_constants.asm:205).
+  GAINLEVELATHOME = 19,   -- 13
 }
-Happiness.NUM_EVENTS = 18
+Happiness.NUM_EVENTS = 19
 
 -- data/events/happiness_changes.asm, transcribed row for row.  The three
 -- columns are the three tiers below, in order.
@@ -110,6 +113,7 @@ Happiness.CHANGES = {
   { -10, -10, -15 }, -- 10 Used Energy Root (bitter)
   { -15, -15, -20 }, -- 11 Used Revival Herb (bitter)
   {  3,  3,  1 }, -- 12 Grooming
+  { 10,  6,  4 }, -- 13 Gained a level where it was caught (Crystal)
 }
 
 -- Which of HappinessChanges' three columns a CURRENT value reads.  The cart
@@ -172,6 +176,23 @@ function Happiness.change(mon, event)
   mon.happiness = value
   emitChanged(mon, event, "event", current, value)
   return value
+end
+
+-- LevelUpHappinessMod: the caught location masked with CAUGHT_LOCATION_MASK
+-- against the current landmark -- engine/pokemon/level_up_happiness.asm:1-20.
+function Happiness.levelUpEvent(mon, landmark)
+  local caught = type(mon) == "table" and tonumber(mon.caughtLocation) or nil
+  landmark = tonumber(landmark)
+  if not (caught and landmark) then return "GAINLEVEL" end
+  if math.floor(caught) % 0x80 ~= math.floor(landmark) % 0x80 then
+    return "GAINLEVEL"
+  end
+  return "GAINLEVELATHOME"
+end
+
+-- The `callfar ChangeHappiness` that follows -- level_up_happiness.asm:19.
+function Happiness.levelUp(mon, landmark)
+  return Happiness.change(mon, Happiness.levelUpEvent(mon, landmark))
 end
 
 -- The same event across a party, which is how the Gym Leader award is written

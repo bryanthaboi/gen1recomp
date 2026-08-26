@@ -100,6 +100,11 @@ love-android 11.5a expects:
 Set `ANDROID_SDK_ROOT` (or `ANDROID_HOME`), or let the script write
 `local.properties` when it finds `~/Library/Android/sdk`.
 
+**ShaderFX bridge**: `scripts/build_android.sh` bundles
+`liblibrashader_bridge.so` for arm64-v8a and armeabi-v7a via `cargo ndk` (or
+from `SHADERFX_BRIDGE_ANDROID_DIR`), and warns and continues when neither is
+available; see `docs/shaderfx.md`.
+
 Gradle flavor used: **`embedNoRecord`** (game fused into the APK, no microphone).
 Build task: `assembleEmbedNoRecordDebug`.
 

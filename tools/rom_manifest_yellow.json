@@ -8861,6 +8861,39 @@
         }
       ]
     },
+    "surfingPikachu": {
+      "music": "Music_SurfingPikachu",
+      "sheets": {
+        "bg": {
+          "height": 104,
+          "path": "assets/generated/minigame/surf_1a.png",
+          "width": 40
+        },
+        "intro": {
+          "height": 96,
+          "introPikaFrames": [
+            "assets/generated/minigame/intro_pika_0.png",
+            "assets/generated/minigame/intro_pika_1.png",
+            "assets/generated/minigame/intro_pika_2.png",
+            "assets/generated/minigame/intro_pika_3.png"
+          ],
+          "path": "assets/generated/minigame/surf_1c.png",
+          "source": "data/sprite_anims/surfing_pikachu_oam.asm .IntroPikachu",
+          "width": 96
+        },
+        "oam": {
+          "height": 128,
+          "path": "assets/generated/minigame/surf_1b.png",
+          "width": 128
+        },
+        "titleBg": {
+          "height": 144,
+          "path": "assets/generated/minigame/title_bg.png",
+          "width": 160
+        }
+      },
+      "source": "engine/minigame/surfing_pikachu.asm (DrawSurfingPikachuMinigameIntroBackground), gfx/surfing_pikachu.asm"
+    },
     "tilePairs": {
       "land": [
         {
@@ -26287,6 +26320,22 @@
     "SurfingPikachu1Graphics3": [
       32,
       25380
+    ],
+    "SurfingMinigame_BeachIntroTilemap": [
+      62,
+      20668
+    ],
+    "SurfingMinigame_TitleTilemap": [
+      62,
+      20936
+    ],
+    "SurfingMinigame_ToSurfRadTilemap": [
+      62,
+      20923
+    ],
+    "SurfingMinigame_UseControlPadTilemap": [
+      62,
+      20908
     ],
     "SurfingPikachuSprite": [
       63,

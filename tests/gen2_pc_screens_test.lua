@@ -310,7 +310,8 @@ do
   eq(save.inventory.TM_HEADBUTT, nil, "and leaves the bag")
 end
 
--- .TryDepositItem's .no_toss: a KEY ITEM stays in the bag, silently.
+-- .DepositItem: CANT_TOSS only skips .AskQuantity.  A KEY ITEM deposits x1,
+-- and .Submenu withdraws it back the same way (issue #1486).
 do
   local save = newSave(1)
   local game, input = newGame(save)
@@ -320,9 +321,63 @@ do
   press(pc, input, "right", "right")       -- ITEM -> BALL -> KEY_ITEM pocket
   press(pc, input, "a")                    -- choose the BICYCLE
   eq(pc.qtyState, nil, "no quantity selector for a KEY ITEM")
-  eq(pc.message, nil, "no message either: .no_toss is a bare ret")
-  eq(save.pcItems.BICYCLE, nil, "and the BICYCLE never leaves the bag")
-  eq(save.inventory.BICYCLE, 1, "still there")
+  eq(save.pcItems.BICYCLE, 1, "the BICYCLE lands in the PC")
+  eq(save.inventory.BICYCLE, nil, "and leaves the bag")
+  eq(pc.message.pages[1][1], "Deposited 1", "_PlayersPCDepositItemsText")
+  press(pc, input, "a")                    -- clear it
+  press(pc, input, "b")                    -- close the PACK
+  press(pc, input, "up", "a")              -- WITHDRAW ITEM
+  eq(pc.phase, "withdraw", "the PC item list opens on the KEY ITEM")
+  press(pc, input, "a")                    -- the BICYCLE row
+  eq(pc.qtyState, nil, "no quantity selector on the way back either")
+  eq(save.inventory.BICYCLE, 1, "the BICYCLE is back in the bag")
+  eq(save.pcItems.BICYCLE, nil, "and out of the PC")
+end
+
+-- The TM_HM pocket's HMs are CANT_TOSS too, and deposit prompt-free x1.
+do
+  local save = newSave(1)
+  local game, input = newGame(save)
+  Bag.add(save, "HM_CUT", 1, game.data)
+  local pc = ItemPcMenu.new(game, { save = save, items = ITEMS })
+  press(pc, input, "down", "a")                -- DEPOSIT ITEM
+  press(pc, input, "right", "right", "right")  -- ITEM -> BALL -> KEY_ITEM -> TM_HM
+  press(pc, input, "a")                        -- choose HM01
+  eq(pc.qtyState, nil, "no quantity selector for an HM")
+  eq(save.pcItems.HM_CUT, 1, "HM01 lands in the PC")
+  eq(save.inventory.HM_CUT, nil, "and leaves the bag")
+end
+
+-- PlaceMenuItemQuantity: the PC list draws no xNN for a CANT_TOSS row.
+do
+  local save = newSave(1)
+  local game = newGame(save)
+  save.pcItems = { POTION = 3, HM_CUT = 1 }
+  local pc = ItemPcMenu.new(game, { save = save, items = ITEMS })
+  local Chrome = require("src.ui.gen2.Chrome")
+  local TIMES = "\xc3\x97"
+  local saved = { print = Chrome.print, box = Chrome.box,
+    cursor = Chrome.cursor }
+  local printed = {}
+  Chrome.print = function(text, x, y)
+    printed[#printed + 1] = { text = text, x = x, y = y }
+  end
+  Chrome.box = function() end
+  Chrome.cursor = function() end
+  pc.phase = "withdraw"
+  pc:rebuild()
+  local drew, err = pcall(function() pc:drawList() end)
+  Chrome.print, Chrome.box, Chrome.cursor = saved.print, saved.box, saved.cursor
+  check(drew, "the PC list draws: " .. tostring(err))
+  local rowY = {}
+  for i, row in ipairs(pc.rows) do rowY[row.id] = i * 2 end
+  local counts = {}
+  for _, p in ipairs(printed) do
+    if p.x == 7 then counts[p.y] = p.text end
+  end
+  eq(counts[rowY.POTION + 1], TIMES .. " 3", "the POTION stack keeps its xNN")
+  eq(counts[rowY.HM_CUT + 1], nil,
+    "and the HM row draws none (PlaceMenuItemQuantity .done)")
 end
 
 -- An empty bag never opens the PACK (.CheckItemsInBag).

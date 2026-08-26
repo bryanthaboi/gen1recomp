@@ -19,17 +19,22 @@ local function itemName(game, id)
   return def and def.name or id
 end
 
-local function buildItems(game, store)
+local function buildItems(game, store, order)
   local items = {}
-  local ids = {}
-  for id in pairs(store) do table.insert(ids, id) end
-  table.sort(ids)
+  local ids = order
+  if not ids then
+    ids = {}
+    for id in pairs(store) do table.insert(ids, id) end
+    table.sort(ids)
+  end
   for _, id in ipairs(ids) do
-    table.insert(items, {
-      value = id,
-      label = itemName(game, id),
-      right = "x" .. store[id],
-    })
+    if store[id] then
+      table.insert(items, {
+        value = id,
+        label = itemName(game, id),
+        right = "x" .. store[id],
+      })
+    end
   end
   return items
 end
@@ -105,12 +110,9 @@ local function deposit(game)
   local pc = game.save.pcItems
   local inv = game.save.inventory
   local Bag = require("src.inventory.Bag")
-  -- badges live in save.inventory alongside items but are not depositable
-  local depositable = {}
-  for id, count in pairs(inv) do
-    if not Bag.isBadge(id) then depositable[id] = count end
-  end
-  game.stack:push(ListMenu.new(game, "DEPOSIT ITEM", buildItems(game, depositable), {
+  -- engine/menus/players_pc.asm:99 wListPointer = wNumBagItems, so deposit order == bag order
+  local order = Bag.order(game.save, game.data)
+  game.stack:push(ListMenu.new(game, "DEPOSIT ITEM", buildItems(game, inv, order), {
     kind = "pc_item_deposit",
     messageBox = true,
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)

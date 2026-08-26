@@ -41,6 +41,8 @@ ItemPcMenu.isOpaque = true
 local PC_ITEM_CAPACITY = 50
 local MAX_STACK = 99
 
+local function stacksFor(n) return math.ceil((n or 0) / MAX_STACK) end
+
 -- PlayersPCMenuData .PlayersPCMenuPointers strings, verbatim.  .WhichPC picks
 -- which rows a caller sees: PLAYERSPC_NORMAL ends on LOG OFF, PLAYERSPC_HOUSE
 -- carries DECORATION and ends on TURN OFF.
@@ -167,18 +169,24 @@ function ItemPcMenu:rebuild()
   for id, count in pairs(pc) do
     if (count or 0) > 0 then
       local def = self:def(id)
-      rows[#rows + 1] = {
-        id = id, count = count,
-        name = (def and def.name) or id,
-        index = def and def.index or math.huge,
-      }
+      local remaining = count
+      while remaining > 0 do
+        local n = math.min(remaining, MAX_STACK)
+        rows[#rows + 1] = {
+          id = id, count = n,
+          name = (def and def.name) or id,
+          index = def and def.index or math.huge,
+        }
+        remaining = remaining - n
+      end
     end
   end
   -- wPCItems keeps acquisition order; without that recorded, item id order is
   -- the stable choice, the same sort the PACK uses.
   table.sort(rows, function(a, b)
     if a.index ~= b.index then return a.index < b.index end
-    return a.id < b.id
+    if a.id ~= b.id then return a.id < b.id end
+    return a.count > b.count
   end)
   self.rows = rows
   if self.listIndex > #rows + 1 then self.listIndex = #rows + 1 end
@@ -200,20 +208,18 @@ function ItemPcMenu:ensureVisible()
     math.max(0, self:listTotal() - VISIBLE_ROWS)))
 end
 
--- ReceiveItem over wPCItems: a new id needs one of the fifty stacks, a grown
--- one may not pass 99.  False is the no-carry the deposit turns into
+-- ReceiveItem over wPCItems: the add tops up every existing stack of that id
+-- and spills the rest into a new one, so it only needs a free stack when the
+-- room in place is short.  False is the no-carry the deposit turns into
 -- _PlayersPCNoRoomDepositText.
+-- engine/items/items.asm:156 PutItemInPocket
 function ItemPcMenu:pcAdd(id, qty)
   local pc = self.save.pcItems
   local held = pc[id] or 0
-  if held == 0 then
-    local stacks = 0
-    for _, count in pairs(pc) do
-      if (count or 0) > 0 then stacks = stacks + 1 end
-    end
-    if stacks >= PC_ITEM_CAPACITY then return false end
-  end
-  if held + qty > MAX_STACK then return false end
+  local used = 0
+  for _, count in pairs(pc) do used = used + stacksFor(count) end
+  local need = stacksFor(held + qty) - stacksFor(held)
+  if used + need > PC_ITEM_CAPACITY then return false end
   pc[id] = held + qty
   return true
 end
@@ -320,12 +326,15 @@ function ItemPcMenu:leaveDeposit()
 end
 
 function ItemPcMenu:offerToDeposit(id, count)
-  -- .TryDepositItem's `.no_toss` arm is a bare ret: a KEY ITEM or HM stays in
-  -- the bag with no message at all.
-  if self:cantToss(id) then return end
   if (count or 0) < 1 then return end
   local def = self:def(id)
   local name = (def and def.name) or id
+  -- .DepositItem (engine/events/pokecenter_pc.asm:504): an item with no
+  -- quantity is always x1 and never reaches .AskQuantity.
+  if self:cantToss(id) then
+    self:deposit(id, name, 1)
+    return
+  end
   self:askQuantity(count,
     { "How many do you", "want to deposit?" },
     function(qty) self:deposit(id, name, qty) end)
@@ -518,9 +527,10 @@ function ItemPcMenu:drawList()
       local entry = self.rows[i]
       if i == self.listIndex then Chrome.cursor(5, ty) end
       Chrome.print(entry.name, 6, ty)
-      -- PlaceMenuItemQuantity (engine/menus/menu_2.asm:24): the xNN is the
-      -- entry's second line, right-aligned in a blank-padded 2-digit field.
-      Chrome.print(TIMES .. Chrome.number(entry.count, 2), 7, ty + 1)
+      -- PlaceMenuItemQuantity (engine/menus/menu_2.asm:18, :24)
+      if not self:cantToss(entry.id) then
+        Chrome.print(TIMES .. Chrome.number(entry.count, 2), 7, ty + 1)
+      end
     elseif i == self:listTotal() then
       if i == self.listIndex then Chrome.cursor(5, ty) end
       Chrome.print("CANCEL", 6, ty)

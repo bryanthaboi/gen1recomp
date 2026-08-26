@@ -16,6 +16,34 @@ function ListMenu:sgbPalettes(game)
   return require("src.render.PaletteFX").wholeNamed(game.data, "MEWMON")
 end
 
+local BLACK = { 0, 0, 0, 1 }
+local MUTED_TEXT = { 0.55, 0.55, 0.55, 1 }
+
+-- row text runs from x=16 to the 160px screen's right margin (160-8, same
+-- margin item.right right-aligns against); GAP is the blank strip kept
+-- between a truncated label and item.right so the two never touch.
+local ROW_LEFT = 16
+local ROW_RIGHT_MARGIN = 160 - 8
+local LABEL_GAP = 4
+
+-- Truncate `text` to `pixels`, same convention as WideBattle.lua's own
+-- fitName (HP-bar names facing the identical "arbitrary text vs. fixed
+-- pixel budget" problem): cut on a whole glyph span, never mid-character,
+-- and mark the cut with a trailing '.'. ShaderFXScreen's preset names are
+-- player-supplied filenames of arbitrary length -- unclipped, a long one
+-- either overlapped/garbled item.right's "CONVERT" hint or ran past the
+-- screen's right edge outright.
+local function fitLabel(text, pixels)
+  local spans = Font.split(text or "")
+  local n = Font.spansFitting(spans, pixels)
+  if n >= #spans then return text or "" end
+  local out = {}
+  for i = 1, math.max(0, n - 1) do
+    out[#out + 1] = (text or ""):sub(spans[i].from, spans[i].to)
+  end
+  return table.concat(out) .. "."
+end
+
 local ROWS = 7
 -- LIST_MENU_BOX 4,2 - 19,12 (data/text_boxes.asm:13); 4 names from
 -- hlcoord 6,4 two rows apart (home/list_menu.asm:51-52, 364-365, 471-479)
@@ -237,12 +265,13 @@ function ListMenu:drawItemBox()
   if #self.items == 0 then
     Font.draw(Strings("Nothing here."), ITEM_NAME_X, ITEM_TOP_Y)
   end
-  local shown = 0
+  local shown, sawCancel = 0, false
   for row = 1, self.rows do
     local i = self.scroll + row
     local item = self.items[i]
     if not item then break end
     shown = shown + 1
+    if item.cancel then sawCancel = true end
     local y = ITEM_TOP_Y + (row - 1) * 16
     Font.draw(item.label, ITEM_NAME_X, y)
     if item.right then
@@ -262,7 +291,7 @@ function ListMenu:drawItemBox()
   end
   -- the terminator prints CANCEL and returns before the '▼'
   -- (home/list_menu.asm:372, 518-524)
-  if shown == self.rows then
+  if shown == self.rows and not sawCancel then
     Font.drawCode(Theme.moreArrow, ITEM_MORE_X, ITEM_MORE_Y)
   end
   love.graphics.setColor(1, 1, 1, 1)
@@ -282,22 +311,33 @@ function ListMenu:draw()
     local item = self.items[i]
     if not item then break end
     local y = 8 + row * 16
-    Font.draw(item.label, 16, y)
+    -- item.muted: a real, selectable row that isn't fully "ready" yet (e.g.
+    -- ShaderFXScreen's unconverted presets) -- readable, never hidden, same
+    -- "always still readable" convention kit/Theme.lua's own disabled state
+    -- documents, just not the generic list-item shape that lived here
+    -- before ShaderFXScreen needed it.
+    local textColor = item.muted and MUTED_TEXT or BLACK
+    love.graphics.setColor(unpack(textColor))
+    local budget = ROW_RIGHT_MARGIN - ROW_LEFT
+    if item.right then budget = budget - Font.width(item.right) - LABEL_GAP end
+    local label = fitLabel(item.label, budget)
+    Font.draw(label, 16, y)
     if item.ball then -- the Pokédex owned-ball marker tile
       -- one blank glyph after the name, measured in glyph advances rather
       -- than bytes: NIDORAN♂/♀ carry a multi-byte charmap entry, so
       -- `#item.label` overcounted by 2 and pushed their ball 16px right (#285)
-      local bx = 16 + Font.width(item.label) + 8 + 3
+      local bx = 16 + Font.width(label) + 8 + 3
       local by = y + 3
       love.graphics.circle("fill", bx, by, 3.5)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.rectangle("fill", bx - 3.5, by - 0.5, 7, 1)
       love.graphics.circle("fill", bx, by, 1.2)
-      love.graphics.setColor(0, 0, 0, 1)
+      love.graphics.setColor(unpack(textColor))
     end
     if item.right then
       Font.draw(item.right, 160 - 8 - Font.width(item.right), y)
     end
+    love.graphics.setColor(unpack(BLACK))
     if i == self.index then
       -- hollowIndex: a chosen row keeps the hollow '▷' left behind by
       -- pokered's PlaceUnfilledArrowMenuCursor (the old man demo's

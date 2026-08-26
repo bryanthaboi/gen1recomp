@@ -324,9 +324,9 @@ function CacheFs.openWrite(rel)
   return file
 end
 
--- read cache-relative `rel`; returns the bytes or nil
-function CacheFs.read(rel)
-  rel = withPrefix(rel)
+-- Read an exact version-qualified path without consulting CacheFs.prefix.
+-- Readiness checks use this to inspect another version without global state.
+function CacheFs.readAt(rel)
   local root = CacheFs.root()
   if root then
     local f = io.open(realPath(root, rel), "rb")
@@ -339,6 +339,11 @@ function CacheFs.read(rel)
   -- no save directory to read from, so a cache miss is nil, not a crash
   if not (love and love.filesystem) then return nil end
   return love.filesystem.read(rel)
+end
+
+-- read cache-relative `rel`; returns the bytes or nil
+function CacheFs.read(rel)
+  return CacheFs.readAt(withPrefix(rel))
 end
 
 -- Read cache-relative `rel` for the active GameVersion when PhysFS may hide
@@ -386,8 +391,7 @@ function CacheFs.loadActive(rel)
 end
 
 -- does cache-relative `rel` exist as a file?
-function CacheFs.exists(rel)
-  rel = withPrefix(rel)
+function CacheFs.existsAt(rel)
   local root = CacheFs.root()
   if root then
     local f = io.open(realPath(root, rel), "rb")
@@ -396,6 +400,11 @@ function CacheFs.exists(rel)
     return true
   end
   return love.filesystem.getInfo(rel, "file") ~= nil
+end
+
+
+function CacheFs.exists(rel)
+  return CacheFs.existsAt(withPrefix(rel))
 end
 
 -- remove a single cache-relative file
@@ -614,14 +623,18 @@ function CacheFs.mountVersion(version)
   return true
 end
 
--- Undo mountVersion.  A process normally mounts exactly one version and then
--- boots it, but the launcher can open the save editor on one game's save,
--- close it, and press Play on another: with the first version's subtree
--- still prepended, the other's require("data.generated.*") and generated
--- art would silently resolve to the first game's files.  Callers must also
--- drop the generated modules from package.loaded
--- (src.core.Data:unloadGenerated) -- unmounting alone only fixes the read
--- path, not what require already cached.
+-- Undo mountVersion in LIFO order relative to mountVersion: generated-tree
+-- overlays first (assets, then data -- reverse of mountGeneratedTrees), then
+-- the version folder.  PHYSFS resolves by stack order; peeling the wrong
+-- layer first can leave another version's generated files winning a name.
+--
+-- A process normally mounts exactly one version and then boots it, but the
+-- launcher can open the save editor on one game's save, close it, and press
+-- Play on another: with the first version's subtree still prepended, the
+-- other's require("data.generated.*") and generated art would silently
+-- resolve to the first game's files.  Callers must also drop the generated
+-- modules from package.loaded (src.core.Data:unloadGenerated) -- unmounting
+-- alone only fixes the read path, not what require already cached.
 --
 -- Returns true when nothing was mounted or the unmount took.
 function CacheFs.unmountVersion(version)
@@ -633,6 +646,16 @@ function CacheFs.unmountVersion(version)
     base = love.filesystem.getSaveDirectory()
   end
   local done = false
+  -- LIFO vs mountGeneratedTrees: assets/generated, then data/generated.
+  if love.filesystem and love.filesystem.unmount then
+    local generated = {
+      prefix .. "assets/generated",
+      prefix .. "data/generated",
+    }
+    for _, src in ipairs(generated) do
+      done = love.filesystem.unmount(src) or done
+    end
+  end
   local fn = resolveUnmount()
   if fn and base then
     done = fn(base .. SEP .. sub) or done

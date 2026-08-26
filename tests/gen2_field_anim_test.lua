@@ -71,9 +71,14 @@ check("$30 jump_step DOWN is a jump", Movement.decodeByte(0x30).kind, "jump")
 check("and it keeps its facing", Movement.decodeByte(0x33).dir, "right")
 check("$2c slow_jump_step is one too", Movement.decodeByte(0x2c).kind, "jump")
 check("$34 fast_jump_step as well", Movement.decodeByte(0x34).kind, "jump")
--- The neighbouring families are still plain steps / turns.
-check("$28 turn_waterfall is untouched",
-  Movement.decodeByte(0x28).kind, "turn")
+-- $20 turn_away / $24 turn_in / $28 turn_waterfall all `jp TurningStep`
+-- (engine/overworld/movement.asm:483-513), which is InitStep with
+-- OBJECT_ACTION_SPIN (:693-715): one cell crossed, spinning, not a facing
+-- change.  Script_ForcedMovement's bounce out of a whirlpool is that step.
+check("$28 turn_waterfall is a spinning step",
+  Movement.decodeByte(0x28).kind, "step")
+check("$24 turn_in is one too", Movement.decodeByte(0x24).kind, "step")
+check("and it carries the spin", Movement.decodeByte(0x24).spin, true)
 check("$10 big_step is untouched", Movement.decodeByte(0x10).kind, "step")
 
 -- ------------------------------------------ sliding, fixed facing, tree shake

@@ -34,6 +34,28 @@ DATASETS = (
     "text", "field", "battle_anims",
 )
 
+# Sound is decoded by the Lua importer (src/import/RomExtractor.lua), not here,
+# so --clean must step around it rather than delete what it cannot rebuild.
+UNOWNED_DATA = ("audio.lua",)
+UNOWNED_ASSETS = ("audio",)
+
+
+def clean_generated(out_dir, assets_dir):
+    """Empty the generated dirs, keeping artifacts this tool never writes."""
+    kept = []
+    for path, spared in ((out_dir, UNOWNED_DATA), (assets_dir, UNOWNED_ASSETS)):
+        if not os.path.isdir(path):
+            continue
+        for name in os.listdir(path):
+            target = os.path.join(path, name)
+            if name in spared:
+                kept.append(target)
+            elif os.path.isdir(target):
+                shutil.rmtree(target)
+            else:
+                os.remove(target)
+    return kept
+
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 VERSION_MANIFESTS = {
     "red": os.path.join(_TOOLS_DIR, "rom_manifest.json"),
@@ -2042,10 +2064,14 @@ def extract_field(rom, symbols, manifest, out_dir, assets_dir):
         raw_2bpp("SurfingPikachu1Graphics2", 128, 128, "minigame/surf_1b.png", transparent=True)
         raw_2bpp("SurfingPikachu1Graphics3", 96, 96, "minigame/surf_1c.png", transparent=True)
 
-        beach_intro = rom.bytes(62, 0x50bc, 240)
-        use_ctrl_pad = rom.bytes(62, 0x51ac, 15)
-        to_surf_rad = rom.bytes(62, 0x51bb, 13)
-        title_map = rom.bytes(62, 0x51c8, 72)
+        beach_sym = _symbol(symbols, "SurfingMinigame_BeachIntroTilemap")
+        use_ctrl_sym = _symbol(symbols, "SurfingMinigame_UseControlPadTilemap")
+        to_surf_sym = _symbol(symbols, "SurfingMinigame_ToSurfRadTilemap")
+        title_sym = _symbol(symbols, "SurfingMinigame_TitleTilemap")
+        beach_intro = rom.bytes(beach_sym.bank, beach_sym.address, 240)
+        use_ctrl_pad = rom.bytes(use_ctrl_sym.bank, use_ctrl_sym.address, 15)
+        to_surf_rad = rom.bytes(to_surf_sym.bank, to_surf_sym.address, 13)
+        title_map = rom.bytes(title_sym.bank, title_sym.address, 72)
         screen = [0xff] * (20 * 18)
         for i in range(240):
             screen[6 * 20 + i] = beach_intro[i]
@@ -2207,9 +2233,9 @@ def main(argv=None):
     out_dir = args.out or prefix + os.path.join("data", "generated")
     assets_dir = args.assets or prefix + os.path.join("assets", "generated")
     if args.clean:
-        for path in (out_dir, assets_dir):
-            if os.path.isdir(path):
-                shutil.rmtree(path)
+        kept = clean_generated(out_dir, assets_dir)
+        for path in kept:
+            print(f"kept {path} (not produced by this tool)")
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(assets_dir, exist_ok=True)
     datasets = tuple(args.only) if args.only else DATASETS

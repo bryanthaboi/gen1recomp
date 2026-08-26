@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v<version> tag to build and publish."
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CART_ID: "{{CART_ID}}"
+  CARTKIT_REPO: bryanthaboi/gen1recomp
+  CARTKIT_REF: dev
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Fetch cartkit
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/cartkit.py" \
+            "https://raw.githubusercontent.com/${CARTKIT_REPO}/${CARTKIT_REF}/tools/cartkit.py"
+          python3 "$RUNNER_TEMP/cartkit.py" selftest --quiet
+
+      - name: Check the tag against cart.json
+        id: cart
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, sys
+
+          with open("cart.json", encoding="utf-8") as fh:
+              cart = json.load(fh)
+          version = str(cart.get("version", ""))
+          cart_id = str(cart.get("id", ""))
+          tag = os.environ["TAG"]
+          if tag != f"v{version}":
+              print(f"::error::tag {tag} does not match cart.json version "
+                    f"{version} (expected v{version})", file=sys.stderr)
+              raise SystemExit(1)
+          stamped = os.environ["CART_ID"]
+          if cart_id != stamped:
+              print(f"::error::cart.json id is {cart_id}, but this workflow "
+                    f"was stamped for {stamped}; rerun cartkit "
+                    "add-release-workflow", file=sys.stderr)
+              raise SystemExit(1)
+          print(f"version={version}")
+          print(f"id={cart_id}")
+          print(f"tag={tag}")
+          PY
+
+      - name: Validate every pin
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 "$RUNNER_TEMP/cartkit.py" validate . --online --strict
+
+      - name: Pack the cart
+        env:
+          CART_VERSION: ${{ steps.cart.outputs.version }}
+          CART_NAME: ${{ steps.cart.outputs.id }}
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/dist"
+          rm -rf "$out"
+          mkdir -p "$out"
+          python3 "$RUNNER_TEMP/cartkit.py" pack . \
+            -o "$out/${CART_NAME}-${CART_VERSION}.g1rcart"
+          (cd "$out" && sha256sum ./*.g1rcart > sha256sums.txt)
+          cat "$out/sha256sums.txt"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CART_VERSION: ${{ steps.cart.outputs.version }}
+          CART_NAME: ${{ steps.cart.outputs.id }}
+          TAG: ${{ steps.cart.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          prev="$(git tag -l 'v*' --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)"
+          range="${prev:+${prev}..}${TAG}"
+          changes="$(git log --no-merges --pretty='- %s' "$range" | head -50 || true)"
+
+          notes=$'Download the .g1rcart and open it from the game to install this cart.'
+          notes+=$'\n\nThe cart is a manifest: it pins each mod to the exact build listed in cart.json and ships no code of its own.'
+          if [ -n "$changes" ]; then
+            notes+=$'\n\n## Changes\n\n'"$changes"
+          fi
+
+          asset="dist/${CART_NAME}-${CART_VERSION}.g1rcart"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$asset" "dist/sha256sums.txt" --clobber
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "$CART_VERSION" \
+              --notes "$notes" \
+              "$asset" \
+              "dist/sha256sums.txt"
+          fi
+
+          echo "Published $TAG"

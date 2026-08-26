@@ -1,5 +1,5 @@
 -- The two pieces of Gen 2 world state that override where a wild mon comes
--- from: the three roaming legendaries, and swarms.
+-- from: the roaming legendaries, and swarms.
 --
 -- Both live in one module because they are the same KIND of thing -- a
 -- persistent record that sits in front of a map's own encounter table -- and
@@ -26,6 +26,7 @@
 -- pair InitRoamMons never writes and BattleEnd_HandleRoamMons writes when a
 -- beast is caught or beaten -- is nil.
 
+local GameVersion = require("src.core.GameVersion")
 local Mon = require("src.battle.gen2.Mon")
 local Runtime = require("src.mods.Runtime")
 
@@ -37,7 +38,7 @@ local Roamers = {}
 -- map connection or a door triggers) and JumpRoamMons (the scatter a fly or a
 -- teleport triggers) -- so a tracker mod sees every hop.
 --
---   index    the roamer slot, 1 Raikou / 2 Entei / 3 Suicune
+--   index    the roamer slot, 1 Raikou / 2 Entei / 3 Suicune (Gold only)
 --   slot     that roamer record, already carrying the new map
 --   species  the beast's species id
 --   from     the map id it left
@@ -68,8 +69,30 @@ Roamers.SPECIES = {
   { species = "ENTEI", level = 40, map = "ROUTE_37" },
   { species = "SUICUNE", level = 40, map = "ROUTE_38" },
 }
-Roamers.COUNT = 3
 Roamers.LEVEL = 40
+
+-- pokecrystal/engine/overworld/wildmons.asm:493 seeds Raikou and Entei only,
+-- so the roster is read out of the cache when the cache carries one.
+local function startMapFor(species)
+  for _, row in ipairs(Roamers.SPECIES) do
+    if row.species == species then return row.map end
+  end
+  return nil
+end
+
+function Roamers.roster(encounters)
+  local extracted = encounters and encounters.roamMons
+  if type(extracted) ~= "table" or #extracted == 0 then return Roamers.SPECIES end
+  local rows = {}
+  for _, row in ipairs(extracted) do
+    rows[#rows + 1] = {
+      species = row.species,
+      level = row.level or Roamers.LEVEL,
+      map = row.map or startMapFor(row.species),
+    }
+  end
+  return rows
+end
 
 -- data/wild/roammon_maps.asm, entry for entry and in order.  The order matters
 -- twice over: `.Update` picks a connection by a two-bit index into the list, so
@@ -185,7 +208,7 @@ end
 -- The save record
 --------------------------------------------------------------------------
 --
--- save.roamers is a three-slot array in the order above, written first by the
+-- save.roamers is a slot array in the roster order above, written first by the
 -- InitRoamMons special (src/script/gen2/Specials.lua) when the Burned Tower
 -- basement script fires.  Each slot:
 --
@@ -215,13 +238,15 @@ function Roamers.slot(save, index)
 end
 
 -- InitRoamMons.  Safe to call twice: the Burned Tower script is behind a scene
--- flag, but a re-init would hand the player three fresh beasts, so this only
--- writes when there is nothing there.
+-- flag, but a re-init would hand the player fresh beasts, so this only writes
+-- when there is nothing there.
 function Roamers.init(save, opts)
   if type(save) ~= "table" then return nil end
   if save.roamers and not (opts and opts.force) then return save.roamers end
+  local encounters = opts and (opts.encounters
+    or (opts.data and opts.data.gen2Encounters))
   local list = {}
-  for _, row in ipairs(Roamers.SPECIES) do
+  for _, row in ipairs(Roamers.roster(encounters)) do
     list[#list + 1] = {
       species = row.species,
       level = row.level,
@@ -413,7 +438,23 @@ end
 -- -- the roaming battle is one attack long unless it is trapped.  The other
 -- two lists are the same routine's 50% and 10% gates and live here so the
 -- battle engine has one place to read them from.
-Roamers.ALWAYS_FLEE = { RAIKOU = true, ENTEI = true, SUICUNE = true }
+-- pokegold/data/wild/flee_mons.asm:34 lists Suicune; pokecrystal's:34 ends the
+-- list at Entei, which is what makes maps/TinTower1F.asm:119 catchable.
+Roamers.ALWAYS_FLEE_BY_ENGINE = {
+  gs = { RAIKOU = true, ENTEI = true, SUICUNE = true },
+  crystal = { RAIKOU = true, ENTEI = true },
+}
+
+function Roamers.alwaysFleeMons(versionId)
+  return Roamers.ALWAYS_FLEE_BY_ENGINE[GameVersion.engine(versionId)]
+    or Roamers.ALWAYS_FLEE_BY_ENGINE.gs
+end
+
+-- src/battle/gen2/Battle.lua:4070 reads AlwaysFleeMons by species name.
+Roamers.ALWAYS_FLEE = setmetatable({}, {
+  __index = function(_, species) return Roamers.alwaysFleeMons()[species] end,
+})
+
 Roamers.OFTEN_FLEE = {
   CUBONE = true, ARTICUNO = true, ZAPDOS = true, MOLTRES = true,
   QUAGSIRE = true, DELIBIRD = true, PHANPY = true, TEDDIURSA = true,
@@ -433,29 +474,79 @@ local Swarm = {}
 Roamers.Swarm = Swarm
 
 -- The state, on the save:
---   save.swarmMap             wSwarmMapGroup / wSwarmMapNumber, as a map id
+--   save.swarmMaps            the stored map pairs, keyed by swarm kind
+--   save.swarmMap             the Gold single pair, kept as the legacy alias
 --   save.dailyFlags.swarm     DAILYFLAGS1_SWARM_F
 --   save.dailyFlags.fishingSwarm  wFishingSwarmFlag (FISHSWARM_* 0/1/2)
 --   save.dailyResetDay        the day wDailyResetTimer was last restarted
 --
 -- src/world/gen2/World.lua:setSwarm and the ActivateFishingSwarm special
--- already write the first three; this module is where they are READ and where
--- they expire.
+-- already write the flags and the alias; this module is where they are READ
+-- and where they expire.
 
 -- constants/script_constants.asm, ActivateFishingSwarm setval arguments.
 Swarm.FISH_NONE = 0
 Swarm.FISH_QWILFISH = 1
 Swarm.FISH_REMORAID = 2
 
+-- pokecrystal/constants/script_constants.asm:256-257 -- the kind byte Crystal
+-- puts in front of a `swarm` map, choosing between its two stored pairs.
+Swarm.KIND_ORDER = { "DUNSPARCE", "YANMA" }
+Swarm.KINDS = { [0] = "DUNSPARCE", [1] = "YANMA" }
+Swarm.DEFAULT_KIND = "DUNSPARCE"
+
+local KIND_NAMES = { DUNSPARCE = true, YANMA = true }
+
+local function kindName(kind)
+  if type(kind) == "number" then return Swarm.KINDS[kind] or Swarm.DEFAULT_KIND end
+  if KIND_NAMES[kind] then return kind end
+  return Swarm.DEFAULT_KIND
+end
+
+-- pokegold/engine/events/specials.asm:288-293 has the one pair, so a Gold save
+-- (and every save written before this record was keyed) folds onto that key.
+local function goldShape(maps)
+  return maps.YANMA == nil
+end
+
+function Swarm.maps(save)
+  if type(save) ~= "table" then return nil end
+  local maps = save.swarmMaps
+  if type(maps) ~= "table" then
+    maps = {}
+    save.swarmMaps = maps
+  end
+  if save.swarmMap ~= nil and goldShape(maps) then
+    maps[Swarm.DEFAULT_KIND] = save.swarmMap
+  end
+  return maps
+end
+
+local function anyMap(save)
+  if type(save) ~= "table" then return false end
+  if save.swarmMap ~= nil then return true end
+  local maps = save.swarmMaps
+  if type(maps) ~= "table" then return false end
+  for _, name in ipairs(Swarm.KIND_ORDER) do
+    if maps[name] ~= nil then return true end
+  end
+  return false
+end
+
 -- StoreSwarmMapIndices, which FALLS THROUGH into SetSwarmFlag: one command
 -- writes the map pair AND the daily flag.  A port that stored only the map
 -- would leave the Dunsparce call live for the rest of the game, because
 -- CheckSwarmFlag answers off the flag and clears the pair itself.
-function Swarm.set(save, mapId)
+--
+-- pokecrystal/engine/events/specials.asm:290-306 picks the pair off c instead.
+function Swarm.set(save, mapId, kind)
   if type(save) ~= "table" then return false end
   save.dailyFlags = save.dailyFlags or {}
   save.dailyFlags.swarm = true
-  save.swarmMap = mapId
+  local name = kindName(kind)
+  local maps = Swarm.maps(save)
+  maps[name] = mapId
+  if name == Swarm.DEFAULT_KIND then save.swarmMap = mapId end
   return true
 end
 
@@ -475,9 +566,22 @@ function Swarm.active(save)
     and save.dailyFlags.swarm == true
 end
 
-function Swarm.mapId(save)
+function Swarm.mapId(save, kind)
   if not Swarm.active(save) then return nil end
-  return save.swarmMap
+  local maps = Swarm.maps(save)
+  return maps and maps[kindName(kind)] or nil
+end
+
+-- pokecrystal/engine/overworld/wildmons.asm:414-451 tests Dunsparce first and
+-- falls through to Yanma, so a map both are on answers Dunsparce.
+function Swarm.onMap(save, mapId)
+  if mapId == nil or not Swarm.active(save) then return nil end
+  local maps = Swarm.maps(save)
+  if not maps then return nil end
+  for _, name in ipairs(Swarm.KIND_ORDER) do
+    if maps[name] == mapId then return name end
+  end
+  return nil
 end
 
 function Swarm.fishing(save)
@@ -493,6 +597,12 @@ function Swarm.check(save)
   if type(save) ~= "table" then return 1 end
   if Swarm.active(save) then return 0 end
   if save.dailyFlags then save.dailyFlags.fishingSwarm = nil end
+  -- pokecrystal/engine/overworld/time.asm:103-112 zeroes wSwarmFlags whole,
+  -- which strands both of Crystal's pairs on the one daily tick.
+  local maps = save.swarmMaps
+  if type(maps) == "table" then
+    for _, name in ipairs(Swarm.KIND_ORDER) do maps[name] = nil end
+  end
   save.swarmMap = nil
   return 1
 end
@@ -518,10 +628,10 @@ end
 -- rather than needing its own timer.  Returns true when the swarm ended on
 -- this call.
 function Swarm.timeEvents(save, day)
+  local hadMap = anyMap(save)
   local reset = Swarm.checkDailyReset(save, day)
-  local hadMap = save and save.swarmMap ~= nil
   Swarm.check(save)
-  return reset and hadMap and (save.swarmMap == nil)
+  return reset and hadMap and not anyMap(save)
 end
 
 -- _SwarmWildmonCheck: the swarm table is searched BEFORE the Johto/Kanto one,
@@ -538,7 +648,7 @@ end
 -- lookup here falls through to the map's own list.
 function Swarm.entry(save, encounters, mapId, kind)
   if not encounters then return nil end
-  if Swarm.mapId(save) ~= mapId then return nil end
+  if not Swarm.onMap(save, mapId) then return nil end
   local table_ = (kind == "water") and encounters.swarmWater
     or encounters.swarmGrass
   return table_ and table_[mapId] or nil

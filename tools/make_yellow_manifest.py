@@ -98,6 +98,12 @@ YELLOW_EXTRA_SYMBOLS = (
     "SurfingPikachu1Graphics1",
     "SurfingPikachu1Graphics2",
     "SurfingPikachu1Graphics3",
+    # Surfing Pikachu title screen tilemaps
+    # (engine/minigame/surfing_pikachu.asm DrawSurfingPikachuMinigameIntroBackground)
+    "SurfingMinigame_BeachIntroTilemap",
+    "SurfingMinigame_TitleTilemap",
+    "SurfingMinigame_ToSurfRadTilemap",
+    "SurfingMinigame_UseControlPadTilemap",
     # Oak's own battle back pic.  LoadPlayerBackPic (engine/battle/core.asm)
     # picks OldManPicBack for BATTLE_TYPE_OLD_MAN but ProfOakPicBack for
     # BATTLE_TYPE_PIKACHU, the Pallet Town catch scene (#557).
@@ -504,6 +510,41 @@ def derive(red, pokeyellow, symbols_path):
         locations["CERULEAN_MELANIES_HOUSE"] = dict(locations["CERULEAN_CITY"])
     if "SUMMER_BEACH_HOUSE" not in locations and "ROUTE_19" in locations:
         locations["SUMMER_BEACH_HOUSE"] = dict(locations["ROUTE_19"])
+
+    # Surfing Pikachu minigame asset index (src/ui/SurfingMinigame.lua).
+    yellow["field"]["surfingPikachu"] = {
+        "music": "Music_SurfingPikachu",
+        "sheets": {
+            "bg": {
+                "path": "assets/generated/minigame/surf_1a.png",
+                "width": 40, "height": 104,
+            },
+            "oam": {
+                "path": "assets/generated/minigame/surf_1b.png",
+                "width": 128, "height": 128,
+            },
+            "intro": {
+                "path": "assets/generated/minigame/surf_1c.png",
+                "width": 96, "height": 96,
+                "introPikaFrames": [
+                    "assets/generated/minigame/intro_pika_0.png",
+                    "assets/generated/minigame/intro_pika_1.png",
+                    "assets/generated/minigame/intro_pika_2.png",
+                    "assets/generated/minigame/intro_pika_3.png",
+                ],
+                "source": "data/sprite_anims/surfing_pikachu_oam.asm .IntroPikachu",
+            },
+            "titleBg": {
+                "path": "assets/generated/minigame/title_bg.png",
+                "width": 160, "height": 144,
+            },
+        },
+        "source": (
+            "engine/minigame/surfing_pikachu.asm "
+            "(DrawSurfingPikachuMinigameIntroBackground), "
+            "gfx/surfing_pikachu.asm"
+        ),
+    }
 
     meta = {
         "aliasCount": alias_hits,

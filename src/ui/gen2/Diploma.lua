@@ -2,9 +2,9 @@
 -- reached through `special Diploma` after Celadon Mansion 3F's game designer
 -- checks VAR_DEXCAUGHT == 251).  Only page 1 is ever shown in play --
 -- PrintDiplomaPage2 is the Game Boy Printer's second sheet
--- (engine/printer/printer.asm _PrintDiploma), stubbed separately as
--- "printer: no Game Boy Printer" -- so this transcribes PlaceDiplomaOnScreen
--- alone, not diploma2.asm.
+-- (engine/printer/printer.asm:420), built with hBGMapMode zeroed and undone by
+-- SafeLoadTempTilemapToTilemap, so it never reaches the screen on the cart
+-- either -- so this transcribes PlaceDiplomaOnScreen alone, not diploma2.asm.
 --
 -- THE CERTIFICATE IS A TILEMAP, NOT A TEXT BOX.  PlaceDiplomaOnScreen
 -- decompresses DiplomaGFX into vTiles2 and then CopyBytes' DiplomaPage1Tilemap

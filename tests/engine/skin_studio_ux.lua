@@ -18,6 +18,7 @@ local function session()
   Studio.pageIndex = 1
   Studio.selected = nil
   Studio.canvasIndex = 1
+  Studio.viewZoom = 1
   Studio.aspectLock = true
   Studio.drag = nil
   Studio.dirty = false
@@ -162,6 +163,10 @@ check(specs["overlay_previous"], "overlay_previous is reachable at last")
 check(specs["pause_toggle"] and specs["exit_emulator"],
       "so are the hotkeys the old cycle could not reach")
 check(specs["key:escape"], "and a keyboard bind can be picked")
+check(specs["key:-"] and specs["key:="] and specs["key:1"]
+    and specs["key:5"] and specs["key:f1"] and specs["key:f2"]
+    and specs["key:f10"],
+  "desktop hotkeys can be placed on a mobile skin button")
 check(specs["nul"], "decoration is still an option")
 
 session()
@@ -321,10 +326,51 @@ love.graphics.getDimensions = love.graphics.getDimensions
   or function() return 1280, 720 end
 session()
 Studio.addControl()
-for _, kind in ipairs({ "bind", "image", "open", "page", "export" }) do
+for _, kind in ipairs({ "bind", "image", "open", "page", "export", "screen" }) do
   Studio.openModal(kind)
   check(pcall(Studio.draw), "the studio draws with the " .. kind .. " modal up")
 end
+Studio.closeModal()
+check(Studio.openScreenMenu(), "Screen opens the canvas/screen modal")
+eq(Studio.modal.kind, "screen", "as the screen modal")
+Studio.closeModal()
+
+-- chrome stays inside the platform safe area (notch / home indicator)
+local Kit = require("src.ui.kit.Kit")
+local oldDims = love.graphics.getDimensions
+local oldSafe = love.window.getSafeArea
+love.graphics.getDimensions = function() return 400, 800 end
+love.window.getSafeArea = function() return 12, 48, 376, 704 end
+session()
+Studio.mode = "library"
+Studio.available = {}
+Kit.audit = {}
+check(pcall(Studio.draw), "My Skins draws inside an inset safe area")
+local function insideSafe(rects, ox, oy, sw, sh, where)
+  for _, r in ipairs(rects or {}) do
+    check(r.x >= ox - 0.5,
+      where .. " control '" .. r.label .. "' is right of the left inset")
+    check(r.y >= oy - 0.5,
+      where .. " control '" .. r.label .. "' is below the notch")
+    check(r.x + r.w <= ox + sw + 0.5,
+      where .. " control '" .. r.label .. "' stays left of the right inset")
+    check(r.y + r.h <= oy + sh + 0.5,
+      where .. " control '" .. r.label .. "' stays above the home indicator")
+  end
+end
+insideSafe(Kit.audit, 12, 48, 376, 704, "library")
+Studio.mode = "editor"
+Studio.addControl()
+Kit.audit = {}
+check(pcall(Studio.draw), "the editor draws inside an inset safe area")
+insideSafe(Kit.audit, 12, 48, 376, 704, "editor")
+check(Studio.lastCanvas ~= nil, "the editor still has a mock device")
+check(Studio.lastCanvas.y >= 48 - 0.5, "the mock device is below the notch")
+check(Studio.lastCanvas.y + Studio.lastCanvas.h <= 48 + 704 + 0.5,
+      "and above the home indicator")
+Kit.audit = nil
+love.graphics.getDimensions = oldDims
+love.window.getSafeArea = oldSafe
 Studio.closeModal()
 Studio.ask("sure?", function() end)
 check(pcall(Studio.draw), "and with the confirm prompt up")

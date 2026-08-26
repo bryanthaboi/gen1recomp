@@ -39,6 +39,7 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
+local Gen2Save = require("src.core.gen2.Save")
 local TileSheet = require("src.ui.gen2.TileSheet")
 
 local TrainerCard = {}
@@ -68,6 +69,19 @@ local KANTO_BADGES = {
   "EARTH",
 }
 
+-- The two slots _CGB_TrainerCard swaps by gender: CHRIS and FALKNER/KrisPalette.
+-- ../pokecrystal/engine/gfx/cgb_layouts.asm:619-624, data/trainers/palettes.asm:9-12
+local PLAYER_PALETTE, BORDER_PALETTE = 1, 2
+
+-- Kris's attrmap: the border takes CHRIS's palette, the portrait takes hers,
+-- the top-right corner follows the border, and Clair's face borrows hers
+-- (../pokecrystal/engine/gfx/cgb_layouts.asm:649-666, :698-712).
+local FEMALE_ZONES = {
+  { 14, 1, 5, 7, BORDER_PALETTE },
+  { 18, 1, 1, 1, PLAYER_PALETTE },
+  { 14, 14, 4, 2, BORDER_PALETTE },
+}
+
 -- TrainerCard_JohtoBadgesOAM lists the badges in wJohtoBadges bit order,
 -- which is not the order they are drawn in: Mineral comes before Storm.
 local BADGE_OAM_ORDER = {
@@ -92,10 +106,13 @@ function TrainerCard.new(game, opts)
 
   local gfx = (opts.menuGfx or data.gen2MenuGfx or {}).trainerCard
   self.gfx = gfx
+  self.female = Gen2Save.isFemale(self.save) and gfx ~= nil
+    and gfx.cardFemale ~= nil
   if gfx then
     -- One palette lookup per cell, flattened from the FillBoxCGB zones the
     -- way PackGfx does it.  Anything outside a zone is palette 1.
     self.zone = {}
+    self.zoneDefault = BORDER_PALETTE
     for _, z in ipairs(gfx.paletteZones or {}) do
       for y = z[2], z[2] + z[4] - 1 do
         for x = z[1], z[1] + z[3] - 1 do
@@ -103,11 +120,22 @@ function TrainerCard.new(game, opts)
         end
       end
     end
+    if self.female then
+      self.zoneDefault = PLAYER_PALETTE
+      for _, z in ipairs(FEMALE_ZONES) do
+        for y = z[2], z[2] + z[4] - 1 do
+          for x = z[1], z[1] + z[3] - 1 do
+            self.zone[y * SCREEN_W + x] = z[5]
+          end
+        end
+      end
+    end
     local function paletteFor(_, tx, ty)
       return self:colorsAt(tx, ty)
     end
     self.card = TileSheet.new({
-      path = gfx.card, wide = gfx.cardTilesWide or 16, firstTile = 0,
+      path = (self.female and gfx.cardFemale) or gfx.card,
+      wide = gfx.cardTilesWide or 16, firstTile = 0,
       paletteFor = paletteFor,
     })
     self.status = TileSheet.new({
@@ -152,7 +180,8 @@ function TrainerCard:pair(colors)
 end
 
 function TrainerCard:colorsAt(tx, ty)
-  local index = (self.zone and self.zone[ty * SCREEN_W + tx]) or 2
+  local index = (self.zone and self.zone[ty * SCREEN_W + tx])
+    or self.zoneDefault or BORDER_PALETTE
   return self:palette(index)
 end
 

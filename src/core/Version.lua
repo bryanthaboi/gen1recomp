@@ -18,7 +18,7 @@ local Version = {
                           -- exceeds the shell it provides.
   modApi = 2,             -- mod API major (manifest `api`)
   linkProtocol = 2,       -- link handshake wire version (Handshake.PROTOCOL)
-  saveFormat = 4,         -- save.meta.format
+  saveFormat = 5,         -- save.meta.format
   cache = "rom-cache-v5", -- ROM import cache generation (RomImporter marker)
 }
 

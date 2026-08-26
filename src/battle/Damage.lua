@@ -41,6 +41,34 @@ local function badgeBoost(battler, stat)
   return nil
 end
 
+-- engine/battle/core.asm:6454
+function Damage.applyBadgeBoost(battler, stat, value)
+  if battler.hazeStatReset then return value end
+  local row = badgeBoost(battler, stat)
+  if not row then return value end
+  local extra = battler.badgeExtraBoosts and battler.badgeExtraBoosts[stat] or 0
+  for _ = 1, 1 + extra do
+    value = math.min(999, math.floor(value * (row.num or 9) / (row.den or 8)))
+  end
+  return value
+end
+
+-- engine/battle/effects.asm:498,689
+function Damage.reapplyBadgeBoosts(battler, changedStat)
+  if not battler or not battler.badges then return end
+  local extra = battler.badgeExtraBoosts
+  if not extra then extra = {} battler.badgeExtraBoosts = extra end
+  for _, row in ipairs(battler.badgeBoosts or Damage.BADGE_BOOSTS) do
+    if battler.badges[row.badge] then
+      if row.stat == changedStat then
+        extra[row.stat] = 0
+      else
+        extra[row.stat] = (extra[row.stat] or 0) + 1
+      end
+    end
+  end
+end
+
 -- the merged status record for a battler's persistent condition, or nil
 local function statusRecord(battler)
   return Status.recordFor(battler.statuses, battler.mon.status)
@@ -178,14 +206,8 @@ function Damage.compute(ruleset, attacker, defender, move, opts)
     -- badge boosts (x9/8), engine/battle/core.asm ApplyBadgeStatBoosts:
     -- Boulder -> attack, Thunder -> defense, Soul -> speed (TurnOrder),
     -- Volcano -> special
-    local atkBoost = badgeBoost(attacker, atkStat)
-    if atkBoost then
-      atk = math.floor(atk * (atkBoost.num or 9) / (atkBoost.den or 8))
-    end
-    local defBoost = badgeBoost(defender, defStat)
-    if defBoost then
-      dfn = math.floor(dfn * (defBoost.num or 9) / (defBoost.den or 8))
-    end
+    atk = Damage.applyBadgeBoost(attacker, atkStat, atk)
+    dfn = Damage.applyBadgeBoost(defender, defStat, dfn)
     -- burn halves physical attack (applied as part of the stat in Gen 1;
     -- the status record's statPenalty names the stat it cuts).
     -- hazeStatReset suppresses it: Haze (haze.asm ResetStats) copied the

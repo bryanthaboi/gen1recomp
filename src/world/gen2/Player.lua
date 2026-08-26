@@ -23,6 +23,19 @@ local JUMP_Y = {
   -11, -10, -9, -8, -6, -4, 0, 0,
 }
 
+-- FacingFish*'s loose rod OAM, offset from the sprite's top-left, and which
+-- 8x8 of the sheet's rod row it draws (data/sprites/facings.asm:122-152).
+local ROD_OAM = {
+  down  = { dx =  0, dy = 16, tile = 0 },
+  up    = { dx =  0, dy = -8, tile = 0 },
+  left  = { dx = -8, dy =  5, tile = 1, flip = true },
+  right = { dx = 16, dy =  5, tile = 1 },
+}
+
+-- The sheet row LoadFishingGFX lays over each standing frame's bottom tiles
+-- (engine/events/fishing_gfx.asm:2-20).
+local FISH_ROW = { down = 0, up = 1, left = 2, right = 2 }
+
 function Player.new(cx, cy, facing, spriteDef)
   local self = setmetatable({
     cellX = cx, cellY = cy,
@@ -138,6 +151,17 @@ function Player:scriptStep(dir)
   return true
 end
 
+-- CounterclockwiseSpinAction's .facings, seeded from the current direction by
+-- Movement_step_dig -- map_object_action.asm:96-152, movement.asm:113-116
+local SPIN_FACINGS = { "down", "right", "up", "left" }
+local SPIN_START = { down = 0, right = 1, up = 2, left = 3 }
+
+function Player:scriptSpin(frames)
+  if not frames or frames <= 0 then return end
+  self.spinFrames = frames
+  self.spinTimer = (SPIN_START[self.facing] or 0) * 4
+end
+
 -- Gen 1's name for the cell being faced (src/world/Player.lua), so a mod that
 -- wraps World:interact asks one question of either generation.
 function Player:facingCell()
@@ -158,6 +182,11 @@ function Player:update()
   if self.turnTimer > 0 then
     self.turnTimer = self.turnTimer - 1
   end
+  if self.spinFrames then
+    self.spinTimer = (self.spinTimer or 0) + 1
+    self.spinFrames = self.spinFrames - 1
+    if self.spinFrames <= 0 then self.spinFrames = nil end
+  end
   if not self.moving then
     -- Re-arm turn-in-place once a poll finds no held direction (caller
     -- clears this while a dir is held; we only set it from idle).
@@ -170,17 +199,27 @@ function Player:update()
   -- and the facing-delta math walked only half of it, leaving the sprite a
   -- cell behind where the grid said the player was.
   local frames = self.stepFrames or STEP_FRAMES
-  local adv = math.floor(self.progress * 16 / frames)
   local dx = (self.targetX or self.cellX) - self.cellX
   local dy = (self.targetY or self.cellY) - self.cellY
-  self.px = self.cellX * 16 + dx * adv
-  self.py = self.cellY * 16 + dy * adv
+  -- engine/overworld/map_objects.asm:331 -- AddStepVector moves the object
+  -- every frame, so the span is the whole move, not one cell scaled by dx.
+  local span = math.max(math.abs(dx), math.abs(dy), 1)
+  local adv = math.floor(self.progress * 16 * span / frames)
+  self.px = self.cellX * 16 + (dx / span) * adv
+  self.py = self.cellY * 16 + (dy / span) * adv
   if self.jumping then
-    -- engine/overworld/map_objects.asm:1815
-    local idx = math.floor((self.progress - 1) / 2) + 1
+    -- engine/overworld/map_objects.asm:1796 -- one table entry per cart frame,
+    -- tweened across our doubled step (#1713)
+    local t = (self.progress - 1) * (#JUMP_Y - 1)
+      / math.max(frames - 1, 1) + 1
+    local idx = math.floor(t)
     if idx < 1 then idx = 1 end
-    if idx > #JUMP_Y then idx = #JUMP_Y end
-    self.spriteYOffset = JUMP_Y[idx]
+    if idx >= #JUMP_Y then
+      self.spriteYOffset = JUMP_Y[#JUMP_Y]
+    else
+      self.spriteYOffset = math.floor(
+        JUMP_Y[idx] + (JUMP_Y[idx + 1] - JUMP_Y[idx]) * (t - idx) + 0.5)
+    end
   end
   if self.progress >= frames then
     self.cellX, self.cellY = self.targetX, self.targetY
@@ -195,12 +234,36 @@ function Player:update()
   return false
 end
 
+-- FacingFishDown/Up/Left/Right: the standing frame's bottom tile row swapped
+-- for the fishing sheet, plus the loose rod tile -- facings.asm:122-152 (#1708)
+function Player:drawFishing(yOffset)
+  local sprite = self.sprite
+  local py = self.py + yOffset
+  local facing = self.facing
+  sprite:draw(self.px, py, 0, 0, facing, 0, false, true)
+  if not self.fishQuads then
+    self.fishQuads = { pose = {}, rod = {} }
+    for i = 0, 2 do
+      self.fishQuads.pose[i] = love.graphics.newQuad(0, i * 8, 16, 8, 16, 32)
+    end
+    for i = 0, 1 do
+      self.fishQuads.rod[i] = love.graphics.newQuad(i * 8, 24, 8, 8, 16, 32)
+    end
+  end
+  local sx, sy = sprite:getScreenOrigin(self.px, py, 0, 0)
+  sprite:drawTile(self.fishSheet, sx,
+    sy + math.max(0, sprite.frameHeight - 8), facing == "right",
+    self.fishQuads.pose[FISH_ROW[facing] or 0])
+  local oam = ROD_OAM[facing] or ROD_OAM.down
+  sprite:drawTile(self.fishSheet, sx + oam.dx, sy + oam.dy, oam.flip,
+    self.fishQuads.rod[oam.tile])
+end
+
 function Player:draw(ox, oy, scale)
   local G = love.graphics
   -- OBJECT_SPRITE_Y_OFFSET: added to the OBJ's y as it is written to OAM, so
   -- it moves the sprite without moving the player off the tile they are
-  -- standing on.  StepFunction_GotBite's `xor 1` rod bob and the fly take-off
-  -- lift both ride this one byte.
+  -- standing on.  StepFunction_GotBite's `xor 1` rod bob rides this one byte.
   local yOffset = self.spriteYOffset or 0
   if self.jumping then
     -- engine/overworld/map_objects.asm:1995
@@ -217,9 +280,18 @@ function Player:draw(ox, oy, scale)
     G.scale(scale, scale)
     -- Chris is PAL_OW_RED; World:applyPalettes keeps the SpriteRenderer's
     -- OBJ palette current.
-    self.sprite:draw(
-      self.px, self.py + yOffset, 0, 0,
-      self.facing, self:walkPhase(), self.stepFlip)
+    if self.fishing and self.fishSheet then
+      self:drawFishing(yOffset)
+    else
+      local facing, phase = self.facing, self:walkPhase()
+      -- OBJECT_ACTION_SPIN (map_object_action.asm:96-152), for step_dig.
+      if self.spinFrames then
+        facing = SPIN_FACINGS[math.floor(self.spinTimer / 4) % 4 + 1]
+        phase = 0
+      end
+      self.sprite:draw(
+        self.px, self.py + yOffset, 0, 0, facing, phase, self.stepFlip)
+    end
     G.pop()
     return
   end

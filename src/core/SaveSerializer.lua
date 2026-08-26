@@ -70,9 +70,27 @@ local function fail(state, why)
   error(("parse error at byte %d: %s"):format(state.pos, why), 0)
 end
 
+local function limit(state, name)
+  return state.limits and state.limits[name]
+end
+
+local function bumpNode(state)
+  state.nodes = state.nodes + 1
+  local maximum = limit(state, "maxNodes")
+  if maximum and state.nodes > maximum then fail(state, "too many values") end
+end
+
 local function skip(state)
-  local _, last = state.src:find("^[ \t\r\n]*", state.pos)
-  state.pos = last + 1
+  while true do
+    local _, last = state.src:find("^[ \t\r\n]*", state.pos)
+    state.pos = last + 1
+    if not (state.limits and state.limits.allowComments
+        and state.src:sub(state.pos, state.pos + 1) == "--") then
+      return
+    end
+    local newline = state.src:find("\n", state.pos + 2, true)
+    state.pos = newline and newline + 1 or (#state.src + 1)
+  end
 end
 
 local function peek(state)
@@ -90,7 +108,10 @@ local function readString(state)
       fail(state, "unterminated string")
     elseif c == '"' then
       state.pos = i + 1
-      return table.concat(out)
+      local value = table.concat(out)
+      local maximum = limit(state, "maxStringBytes")
+      if maximum and #value > maximum then fail(state, "string too long") end
+      return value
     elseif c == "\\" then
       local nxt = src:sub(i + 1, i + 1)
       if nxt:match("%d") then
@@ -136,10 +157,14 @@ end
 local readValue
 
 local function readTable(state)
+  bumpNode(state)
   state.depth = state.depth + 1
-  if state.depth > MAX_DEPTH then fail(state, "table nesting too deep") end
+  if state.depth > (limit(state, "maxDepth") or MAX_DEPTH) then
+    fail(state, "table nesting too deep")
+  end
   state.pos = state.pos + 1
   local out = {}
+  local entries, nextArray = 0, 1
   skip(state)
   if peek(state) == "}" then
     state.pos = state.pos + 1
@@ -148,7 +173,7 @@ local function readTable(state)
   end
   while true do
     skip(state)
-    local key
+    local key, value
     local c = peek(state)
     if c == "[" then
       state.pos = state.pos + 1
@@ -156,15 +181,38 @@ local function readTable(state)
       skip(state)
       if peek(state) ~= "]" then fail(state, "expected ]") end
       state.pos = state.pos + 1
+      skip(state)
+      if peek(state) ~= "=" then fail(state, "expected =") end
+      state.pos = state.pos + 1
+      value = readValue(state)
     elseif c:match("[%a_]") then
-      key = readIdent(state)
+      local start = state.pos
+      local ident = readIdent(state)
+      skip(state)
+      if peek(state) == "=" then
+        key = ident
+        state.pos = state.pos + 1
+        value = readValue(state)
+      elseif state.limits and state.limits.allowArray then
+        state.pos = start
+        key = nextArray
+        value = readValue(state)
+      else
+        fail(state, "expected =")
+      end
+    elseif state.limits and state.limits.allowArray then
+      key = nextArray
+      value = readValue(state)
     else
       fail(state, "expected key")
     end
-    skip(state)
-    if peek(state) ~= "=" then fail(state, "expected =") end
-    state.pos = state.pos + 1
-    out[key] = readValue(state)
+    if key == nil then fail(state, "nil table key") end
+    if out[key] ~= nil then fail(state, "duplicate table key") end
+    entries = entries + 1
+    local maximum = limit(state, "maxTableEntries")
+    if maximum and entries > maximum then fail(state, "too many table entries") end
+    out[key] = value
+    if type(key) == "number" and key == nextArray then nextArray = nextArray + 1 end
     skip(state)
     local sep = peek(state)
     if sep == "," then
@@ -189,25 +237,30 @@ readValue = function(state)
   skip(state)
   local c = peek(state)
   if c == '"' then
+    bumpNode(state)
     return readString(state)
   elseif c == "{" then
     return readTable(state)
   elseif c:match("[%a_]") then
     -- the only bare words in the grammar are the boolean literals
     local word = readIdent(state)
-    if word == "true" then return true end
-    if word == "false" then return false end
+    if word == "true" then bumpNode(state); return true end
+    if word == "false" then bumpNode(state); return false end
     state.pos = state.pos - #word
     fail(state, "unexpected name '" .. word .. "'")
   elseif c:match("[%-%d%.]") then
+    bumpNode(state)
     return readNumber(state)
   end
   fail(state, c == "" and "unexpected end of input" or "unexpected character")
 end
 
-function SaveSerializer.decode(str)
+function SaveSerializer.decode(str, limits)
   if type(str) ~= "string" then return nil, "save must be a string" end
-  local state = { src = str, pos = 1, depth = 0 }
+  if limits and limits.maxBytes and #str > limits.maxBytes then
+    return nil, ("input is %d bytes (max %d)"):format(#str, limits.maxBytes)
+  end
+  local state = { src = str, pos = 1, depth = 0, nodes = 0, limits = limits }
   local ok, result = pcall(function()
     skip(state)
     local word = state.src:match("^[%a_][%w_]*", state.pos)
@@ -219,7 +272,9 @@ function SaveSerializer.decode(str)
     return value
   end)
   if not ok then return nil, result end
-  if type(result) ~= "table" then return nil, "save root must be a table" end
+  if type(result) ~= "table" then
+    return nil, (limits and limits.rootName or "save") .. " root must be a table"
+  end
   return result
 end
 

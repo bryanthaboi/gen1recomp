@@ -12,6 +12,12 @@ Registry.__index = Registry
 -- exposed to mods as mod.DELETE: a patch value that unsets a field
 Registry.DELETE = Merge.DELETE
 
+local function assertWritable(self, id)
+  if self.spec.reservedIds and self.spec.reservedIds[id] then
+    error(("%s id is reserved engine metadata: %s"):format(self.name, id))
+  end
+end
+
 -- spec comes from Schemas.REGISTRIES[name]; bare Registry.new(name) keeps
 -- the v1 record behavior for standalone use in tests and tools
 function Registry.new(name, spec)
@@ -33,6 +39,7 @@ local function append(self, id, op, value, owner)
     error(self.name .. ": content is frozen after load")
   end
   assert(type(id) == "string" and id ~= "", self.name .. " id is required")
+  assertWritable(self, id)
   local list = self.ops[id]
   if not list then
     list = {}

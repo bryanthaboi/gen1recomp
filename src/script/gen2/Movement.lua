@@ -32,6 +32,12 @@ local FIX_FACING = 0x3b
 -- STEP_TYPE_SLEEP with OBJECT_ACTION set to OBJECT_ACTION_WEIRD_TREE.
 local TREE_SHAKE = 0x56
 local TREE_SHAKE_FRAMES = 24
+-- engine/events/forced_movement.asm:25-51; step_dig's frame count is the
+-- byte after it (macros/scripts/movement.asm:163-167)
+local TURN_HEAD = 0x00
+local TURN_IN = 0x24
+local STEP_DIG = 0x4f
+local STEP_DIG_FRAMES = 16
 
 function Movement.dir(nibble)
   return DIR[nibble % 4] or "down"
@@ -57,8 +63,10 @@ function Movement.decodeByte(b)
     return { kind = "step", dir = dir }
   elseif family == 0x14 or family == 0x18 or family == 0x1c then -- slides
     return { kind = "step", dir = dir }
-  elseif family == 0x20 or family == 0x24 or family == 0x28 then -- turn_away/in/waterfall
-    return { kind = "turn", dir = dir }
+  elseif family == 0x20 or family == 0x24 or family == 0x28 then
+    -- turn_away / turn_in / turn_waterfall all `jp TurningStep`, which steps a
+    -- cell under OBJECT_ACTION_SPIN -- movement.asm:483-513, :693-715 (#1716)
+    return { kind = "step", dir = dir, spin = true }
   elseif family == 0x2c or family == 0x30 or family == 0x34 then
     -- slow_jump_step / jump_step / fast_jump_step, all of which reach
     -- JumpStep (engine/overworld/movement.asm:741) and so run under
@@ -141,6 +149,8 @@ Movement.REMOVE_FIXED_FACING = REMOVE_FIXED_FACING
 Movement.FIX_FACING = FIX_FACING
 Movement.TREE_SHAKE = TREE_SHAKE
 Movement.TREE_SHAKE_FRAMES = TREE_SHAKE_FRAMES
+Movement.STEP_DIG = STEP_DIG
+Movement.STEP_DIG_FRAMES = STEP_DIG_FRAMES
 
 -- SetFacingWeirdTree's own index: it increments OBJECT_STEP_FRAME BEFORE
 -- masking (`inc a / maskbits NUM_DIRECTIONS, 2 / rrca / rrca`), so the count
@@ -175,6 +185,17 @@ local DIR_BYTE = { down = 0, up = 1, left = 2, right = 3 }
 -- for a trainer walking up to the player.
 function Movement.stepByte(dir)
   return 0x0c + (DIR_BYTE[dir] or 0)
+end
+
+-- Script_ForcedMovement's stream, `back` being the direction thrown in
+-- -- engine/events/forced_movement.asm:25-51
+function Movement.forcedMovementBytes(back)
+  local d = DIR_BYTE[back] or 0
+  return {
+    STEP_DIG, STEP_DIG_FRAMES, TURN_IN + d,
+    STEP_DIG, STEP_DIG_FRAMES, TURN_HEAD + d,
+    STEP_END,
+  }
 end
 
 return Movement

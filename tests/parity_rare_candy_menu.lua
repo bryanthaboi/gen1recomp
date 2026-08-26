@@ -175,7 +175,7 @@ do
   check(isBox(box), "the last candy levels too")
   finishLevelUp(game, box)
   eq(game.stack:top(), list, "the bag stays open after the last candy")
-  eq(#list.items, 0, "the emptied row left the list")
+  eq(#list.items, 1, "the emptied row left the list, leaving only CANCEL")
   eq(game.save.inventory.RARE_CANDY, nil, "no candies left in the inventory")
 end
 

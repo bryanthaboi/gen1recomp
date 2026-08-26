@@ -316,6 +316,8 @@ check(view:find('"tab-sync"', 1, true) ~= nil,
 local header = view:match("local HEADER_TABS = %{(.-)%}\n")
 check(header and header:find('id = "skins"', 1, true) ~= nil,
       "and it sits beside the skins tab")
+check(header and header:find("beta = true", 1, true) ~= nil,
+      "the skins tab carries a BETA badge too")
 check(view:find('"BETA"', 1, true) ~= nil,
       "the button and the modal are labelled BETA")
 check(view:find("buildSyncModal", 1, true) ~= nil,

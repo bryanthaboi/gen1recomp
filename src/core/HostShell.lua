@@ -376,7 +376,19 @@ end
 -- notice a quit command until curl returns.  With the launcher's default 300s
 -- ceiling, closing the window during a mod download hung the process for
 -- minutes.  Callers on the interactive fetch pool pass something short.
-function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
+--
+-- `etagPath` (optional, absolute host path) turns this into a conditional
+-- GET: curl sends `If-None-Match` from whatever ETag is already saved there
+-- (`--etag-compare`) and overwrites it with the response's own ETag on
+-- success (`--etag-save`), same file for both so a first call with no prior
+-- ETag degrades to a plain unconditional download. A server that replies 304
+-- Not Modified is reported as a third return value (`notModified`), and --
+-- confirmed empirically against the real buildbot.libretro.com endpoint
+-- (TrueFX/etag-cache-repro/) before this was wired in here -- curl does NOT
+-- write `absPath` at all in that case (not even an empty file), matching
+-- HTTP: a 304 carries no body. A caller must not treat a missing file as an
+-- error when `notModified` comes back true.
+function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime, etagPath)
   if type(url) ~= "string" or url == "" then return nil, "missing url" end
   if type(absPath) ~= "string" or absPath == "" then return nil, "missing path" end
   userAgent = userAgent or "gen1recomp"
@@ -387,6 +399,10 @@ function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
       .. "-H " .. HostShell.quote("User-Agent: " .. userAgent) .. " "
     if accept then
       cmd = cmd .. "-H " .. HostShell.quote("Accept: " .. accept) .. " "
+    end
+    if type(etagPath) == "string" and etagPath ~= "" then
+      cmd = cmd .. "--etag-compare " .. HostShell.quote(etagPath) .. " "
+        .. "--etag-save " .. HostShell.quote(etagPath) .. " "
     end
     cmd = cmd .. "-o " .. HostShell.quote(absPath) .. " "
       .. "-w " .. HostShell.quote(HTTP_MARK_FMT) .. " "
@@ -400,6 +416,9 @@ function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
     -- status is here purely so the failure can NAME itself: "download failed"
     -- with no URL and no code is the report this whole change exists to fix.
     local body, status, noise = splitCurlOutput(readOk and out or "")
+    if status == 304 then
+      return true, nil, true
+    end
     if status and (status < 200 or status >= 300) then
       return nil, fetchError(url, status, body)
     end
@@ -411,6 +430,10 @@ function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime)
   if not haveBridge() then
     return nil, "no network transport on this platform"
   end
+  -- The Android/iOS bridge has no conditional-GET support -- etagPath is
+  -- silently ignored here, so a downloaded preset re-fetches in full every
+  -- time on those platforms.  No transport-level ETag/If-None-Match hook
+  -- exists on the bridge to hang one off, and it's low-priority for now.
   local ok, done = pcall(love.system.httpDownload, url, absPath, userAgent, accept)
   if ok and done then return true end
   return nil, "download failed for " .. url

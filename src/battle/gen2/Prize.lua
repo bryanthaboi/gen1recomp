@@ -58,9 +58,12 @@ Prize.AMULET_COIN = "AMULET_COIN"
 -- data/text/battle.asm.  Declared here and formatted at the call site so
 -- Strings.source is what registers them, the same way Decorations declares
 -- its own five.  No line markers: every battle message in this port is one
--- flowing string that Chrome.wrap breaks to the box.
+-- flowing string that Chrome.wrap breaks to the box, except SentSomeToMomText,
+-- which keeps the cart's own `line`/`cont` breaks because it does not fit two
+-- rows.
 local GOT_MONEY = Strings.source("%s got %s%d for winning!")
-local SENT_SOME = Strings.source("%s got %s%d for winning! Sent some to MOM!")
+-- data/text/battle.asm:179-185
+local SENT_SOME = Strings.source("%s got %s%d\nfor winning!\vSent some to MOM!")
 -- The half and all texts really are this short on the cart: they replace the
 -- money line rather than following it, which is a quirk no Gold player can
 -- see because BankOfMom only ever writes MOM_SAVING_SOME_MONEY_F.

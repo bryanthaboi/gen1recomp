@@ -173,6 +173,113 @@ local Opcodes = {
   [0xa1] = { name = "warpfacing", size = 5 },
 }
 
+-- pokegold/macros/scripts/events.asm:1015 DEF NUM_EVENT_COMMANDS EQU $a2
+Opcodes.NUM_EVENT_COMMANDS = 0xa2
+
+-- pokecrystal/macros/scripts/events.asm:1-539 is identical to pokegold's, so
+-- $00..$51 is copied; :541 inserts farjumptext and shifts everything after it.
+local CRYSTAL = {}
+for byte = 0x00, 0x51 do
+  local row = Opcodes[byte]
+  CRYSTAL[byte] = { name = row.name, size = row.size }
+end
+
+-- pokecrystal/macros/scripts/events.asm:541-1066, cross-checked against
+-- ScriptCommandTable at pokecrystal/engine/overworld/scripting.asm:64-237.
+CRYSTAL[0x52] = { name = "farjumptext", size = 3 }
+CRYSTAL[0x53] = { name = "jumptext", size = 2 }
+CRYSTAL[0x54] = { name = "waitbutton", size = 0 }
+CRYSTAL[0x55] = { name = "promptbutton", size = 0 }
+CRYSTAL[0x56] = { name = "pokepic", size = 1 }
+CRYSTAL[0x57] = { name = "closepokepic", size = 0 }
+CRYSTAL[0x58] = { name = "_2dmenu", size = 0 }
+CRYSTAL[0x59] = { name = "verticalmenu", size = 0 }
+CRYSTAL[0x5a] = { name = "loadpikachudata", size = 0 }
+CRYSTAL[0x5b] = { name = "randomwildmon", size = 0 }
+CRYSTAL[0x5c] = { name = "loadtemptrainer", size = 0 }
+CRYSTAL[0x5d] = { name = "loadwildmon", size = 2 }
+CRYSTAL[0x5e] = { name = "loadtrainer", size = 2 }
+CRYSTAL[0x5f] = { name = "startbattle", size = 0 }
+CRYSTAL[0x60] = { name = "reloadmapafterbattle", size = 0 }
+CRYSTAL[0x61] = { name = "catchtutorial", size = 1 }
+CRYSTAL[0x62] = { name = "trainertext", size = 1 }
+CRYSTAL[0x63] = { name = "trainerflagaction", size = 1 }
+CRYSTAL[0x64] = { name = "winlosstext", size = 4 }
+CRYSTAL[0x65] = { name = "scripttalkafter", size = 0 }
+CRYSTAL[0x66] = { name = "endifjustbattled", size = 0 }
+CRYSTAL[0x67] = { name = "checkjustbattled", size = 0 }
+CRYSTAL[0x68] = { name = "setlasttalked", size = 1 }
+CRYSTAL[0x69] = { name = "applymovement", size = 3 }
+CRYSTAL[0x6a] = { name = "applymovementlasttalked", size = 2 }
+CRYSTAL[0x6b] = { name = "faceplayer", size = 0 }
+CRYSTAL[0x6c] = { name = "faceobject", size = 2 }
+CRYSTAL[0x6d] = { name = "variablesprite", size = 2 }
+CRYSTAL[0x6e] = { name = "disappear", size = 1 }
+CRYSTAL[0x6f] = { name = "appear", size = 1 }
+CRYSTAL[0x70] = { name = "follow", size = 2 }
+CRYSTAL[0x71] = { name = "stopfollow", size = 0 }
+CRYSTAL[0x72] = { name = "moveobject", size = 3 }
+CRYSTAL[0x73] = { name = "writeobjectxy", size = 1 }
+CRYSTAL[0x74] = { name = "loademote", size = 1 }
+CRYSTAL[0x75] = { name = "showemote", size = 3 }
+CRYSTAL[0x76] = { name = "turnobject", size = 2 }
+CRYSTAL[0x77] = { name = "follownotexact", size = 2 }
+CRYSTAL[0x78] = { name = "earthquake", size = 1 }
+CRYSTAL[0x79] = { name = "changemapblocks", size = 3 }
+CRYSTAL[0x7a] = { name = "changeblock", size = 3 }
+CRYSTAL[0x7b] = { name = "reloadmap", size = 0 }
+CRYSTAL[0x7c] = { name = "refreshmap", size = 0 }
+CRYSTAL[0x7d] = { name = "writecmdqueue", size = 2 }
+CRYSTAL[0x7e] = { name = "delcmdqueue", size = 1 }
+CRYSTAL[0x7f] = { name = "playmusic", size = 2 }
+CRYSTAL[0x80] = { name = "encountermusic", size = 0 }
+CRYSTAL[0x81] = { name = "musicfadeout", size = 3 }
+CRYSTAL[0x82] = { name = "playmapmusic", size = 0 }
+CRYSTAL[0x83] = { name = "dontrestartmapmusic", size = 0 }
+CRYSTAL[0x84] = { name = "cry", size = 2 }
+CRYSTAL[0x85] = { name = "playsound", size = 2 }
+CRYSTAL[0x86] = { name = "waitsfx", size = 0 }
+CRYSTAL[0x87] = { name = "warpsound", size = 0 }
+CRYSTAL[0x88] = { name = "specialsound", size = 0 }
+CRYSTAL[0x89] = { name = "autoinput", size = 3 }
+CRYSTAL[0x8a] = { name = "newloadmap", size = 1 }
+CRYSTAL[0x8b] = { name = "pause", size = 1 }
+CRYSTAL[0x8c] = { name = "deactivatefacing", size = 1 }
+CRYSTAL[0x8d] = { name = "sdefer", size = 2 }
+CRYSTAL[0x8e] = { name = "warpcheck", size = 0 }
+CRYSTAL[0x8f] = { name = "stopandsjump", size = 2 }
+CRYSTAL[0x90] = { name = "endcallback", size = 0 }
+CRYSTAL[0x91] = { name = "end", size = 0 }
+CRYSTAL[0x92] = { name = "reloadend", size = 1 }
+CRYSTAL[0x93] = { name = "endall", size = 0 }
+CRYSTAL[0x94] = { name = "pokemart", size = 3 }
+CRYSTAL[0x95] = { name = "elevator", size = 2 }
+CRYSTAL[0x96] = { name = "trade", size = 1 }
+CRYSTAL[0x97] = { name = "askforphonenumber", size = 1 }
+CRYSTAL[0x98] = { name = "phonecall", size = 2 }
+CRYSTAL[0x99] = { name = "hangup", size = 0 }
+CRYSTAL[0x9a] = { name = "describedecoration", size = 1 }
+CRYSTAL[0x9b] = { name = "fruittree", size = 1 }
+CRYSTAL[0x9c] = { name = "specialphonecall", size = 2 }
+CRYSTAL[0x9d] = { name = "checkphonecall", size = 0 }
+CRYSTAL[0x9e] = { name = "verbosegiveitem", size = 2 }
+CRYSTAL[0x9f] = { name = "verbosegiveitemvar", size = 2 }
+-- events.asm:1003-1008: Crystal's swarm is `db flag` then `map_id`, not a bare
+-- map_id; Script_swarm makes three GetScriptByte calls (scripting.asm:654-662).
+CRYSTAL[0xa0] = { name = "swarm", size = 3 }
+CRYSTAL[0xa1] = { name = "halloffame", size = 0 }
+CRYSTAL[0xa2] = { name = "credits", size = 0 }
+CRYSTAL[0xa3] = { name = "warpfacing", size = 5 }
+CRYSTAL[0xa4] = { name = "battletowertext", size = 1 }
+CRYSTAL[0xa5] = { name = "getlandmarkname", size = 2 }
+CRYSTAL[0xa6] = { name = "gettrainerclassname", size = 2 }
+CRYSTAL[0xa7] = { name = "getname", size = 3 }
+CRYSTAL[0xa8] = { name = "wait", size = 1 }
+CRYSTAL[0xa9] = { name = "checksave", size = 0 }
+
+-- pokecrystal/macros/scripts/events.asm:1068 DEF NUM_EVENT_COMMANDS EQU $aa
+CRYSTAL.NUM_EVENT_COMMANDS = 0xaa
+
 -- Commands that end the current linear path (jumps transfer control).
 --
 -- `fruittree` and `describedecoration` are ScriptJumps (Script_fruittree does
@@ -185,9 +292,13 @@ local Opcodes = {
 -- these four regardless.  `catchtutorial` is deliberately NOT here: it ends on
 -- `jp Script_reloadmap` and the script really does continue afterwards, the
 -- same way `reloadmap` itself does.
+--
+-- `farjumptext` is Crystal-only and joins them for the same reason `jumptext`
+-- is here: pokecrystal/engine/overworld/scripting.asm:318-327 ends on
+-- `jp ScriptJump` into JumpTextScript.
 Opcodes.TERMINATORS = {
   sjump = true, farsjump = true, memjump = true, jumpstd = true,
-  jumptext = true, jumptextfaceplayer = true,
+  jumptext = true, farjumptext = true, jumptextfaceplayer = true,
   stopandsjump = true, ["end"] = true, endall = true, endcallback = true,
   reloadend = true,
   fruittree = true, describedecoration = true,
@@ -198,10 +309,12 @@ Opcodes.TERMINATORS = {
 -- behind it.  Every row above is keyed by the opcode byte the cart carries, and
 -- src/import/RomExtractorGen2.lua resolves a command as Opcodes[byte]: a byte
 -- that is not in that table breaks the pointer walk into an `unknown` row.  Give
--- a mod verb one of the free bytes ($a2..$ff) and ROM data that happens to start
--- with it would decode as a mod call instead of ending the walk, so the free
--- space stays free and the extension op is reachable only by NAME -- which is to
--- say, only from a row a mod wrote, never from one the extractor did.
+-- a mod verb one of the free bytes and ROM data that happens to start with it
+-- would decode as a mod call instead of ending the walk, so the free space stays
+-- free and the extension op is reachable only by NAME -- which is to say, only
+-- from a row a mod wrote, never from one the extractor did.  The free space is
+-- per dialect and the intersection is what matters: Gold leaves $a2..$ff
+-- (events.asm:1015), Crystal only $aa..$ff (events.asm:1068).
 --
 -- src/script/gen2/Vm.lua:runModCommand is the only reader; the contract for the
 -- row shapes and the verb table is documented there.
@@ -209,6 +322,17 @@ Opcodes.MOD_COMMAND = "modcommand"
 
 function Opcodes.key(bank, address)
   return string.format("%02x:%04x", bank, address)
+end
+
+CRYSTAL.TERMINATORS = Opcodes.TERMINATORS
+CRYSTAL.MOD_COMMAND = Opcodes.MOD_COMMAND
+CRYSTAL.key = Opcodes.key
+
+-- Gold and Silver share one dialect (pokegold/macros/scripts/events.asm:540);
+-- Crystal renumbers from $52 (pokecrystal/macros/scripts/events.asm:541).
+function Opcodes.forEdition(edition)
+  if edition == "crystal" then return CRYSTAL end
+  return Opcodes
 end
 
 return Opcodes

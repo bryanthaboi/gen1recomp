@@ -976,8 +976,10 @@ do
   check(battle.leveledUp and battle.leveledUp[caterpie],
     "awardExp records the level-up for EvolveAfterBattle")
 
-  game.stack:pop()
-  battle.onFinish("win")
+  -- EndOfBattle evolves on the battle screen (end_of_battle.asm:42-45),
+  -- so drive finish() rather than calling onFinish by hand
+  battle.result = "win"
+  battle:finish()
   -- the "is evolving!" box types out and holds DelayFrames 50 before the
   -- movie (evos_moves.asm:120-134) (#1596), so drive frames to reach it
   game.input.wasPressed = function() return false end

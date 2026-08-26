@@ -1,5 +1,9 @@
-# Generated from a user-provided Pokemon Red ROM.
-# Regenerate with: python3 tools/build_data.py --rom /path/to/pokemon-red.gb --clean
+# Generated from a user-provided Pokemon ROM (Red/Blue/Yellow/Gold/Silver/Crystal).
+# Regenerate with: python3 tools/build_data.py --rom /path/to/rom.gb --clean
+# Yellow Surfing Pikachu minigame art also lands here on import:
+#   assets/generated/minigame/surf_1{a,b,c}.png
+#   assets/generated/minigame/title_bg.png
+#   assets/generated/minigame/intro_pika_{0,1,2,3}.png
 data/generated/
 assets/generated/
 
@@ -61,6 +65,9 @@ mobile/dist/
 # Tiled map-editing workspace (tools/tiled_export.py). Derived from the imported
 # ROM cache exactly like data/generated/, so it is never committable.
 /build/tiled/
+
+# Local visual scratch from minigame development (not wired to CI).
+/tests/fixtures/
 
 # per-machine iOS bundle-id pin (see scripts/build_ios.sh)
 mobile/ios/bundle_id.local

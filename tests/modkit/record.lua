@@ -61,8 +61,8 @@ function Record.events(target, opts)
   return capture
 end
 
--- the sanctioned draw-capture pattern from tests/parity_gbcfx.lua, lifted
--- so sprite/tileset mods can assert on what reached the screen
+-- the sanctioned love.graphics.draw-capture pattern, lifted so sprite/
+-- tileset mods can assert on what reached the screen
 function Record.draw()
   local original = love.graphics.draw
   local capture = { draws = {} }

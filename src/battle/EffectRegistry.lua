@@ -260,6 +260,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
 
   local totalDealt = 0
   local landed, brokeSub = 0, false
+  local critPending, ohkoPending = info.crit, info.ohko
   for h = 1, hits do
     if target.mon.hp <= 0 then break end
     local hitRow
@@ -280,12 +281,16 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     totalDealt = totalDealt + dealt
     landed = h
     if dealt > 0 then hitRow.hit = hitFx end
-    -- PrintCriticalOHKOText + DisplayEffectiveness run inside the
-    -- multi-hit loop (core.asm .moveDidNotMiss before the jump back
-    -- to GetPlayerAnimationType), so crit/effectiveness reprint on
-    -- every strike -- damage was only rolled once
-    if info.crit then battle:sayNext(romText(battle.data, "_CriticalHitText", "Critical hit!")) end
-    if info.ohko then battle:sayNext(romText(battle.data, "_OHKOText", "One-hit KO!")) end
+    -- PrintCriticalOHKOText zeroes wCriticalHitOrOHKO after printing
+    -- (core.asm:3809-3811); DisplayEffectiveness re-reads its own flag (#1720)
+    if critPending then
+      battle:sayNext(romText(battle.data, "_CriticalHitText", "Critical hit!"))
+      critPending = false
+    end
+    if ohkoPending then
+      battle:sayNext(romText(battle.data, "_OHKOText", "One-hit KO!"))
+      ohkoPending = false
+    end
     -- PrintCriticalOHKOText closes with `ld c, 20 / jp DelayFrames` at its
     -- .done label (core.asm:3812-3814) -- and the no-crit path jumps to that
     -- same label (:3799), so this hold is paid on EVERY landed hit, not just
@@ -323,6 +328,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   -- post-damage effect bookkeeping (recoil/drain/trap/thrash/...)
   ctx.rawDamage, ctx.totalDealt = dmg, totalDealt
   ctx.brokeSub, ctx.hits = brokeSub, hits
+  ctx.hitSfx = hitSfx
   if record and record.afterDamage then
     record.afterDamage(ctx, totalDealt)
   elseif moveInst.struggle then

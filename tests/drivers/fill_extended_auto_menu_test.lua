@@ -23,10 +23,10 @@ return function(game)
 
   fitRow.step(game, 1)
   assert(options.battleFit == "fill", "battle size switched to FILL")
-  assert(options.battleBg == "white", "FILL + EXTENDED normalized background to WHITE")
-  assert(bgRow.value(game) == "AUTO", "adaptive background is labeled AUTO")
+  assert(options.battleBg == "black", "FILL + EXTENDED preserves the stored background")
+  assert(bgRow.value(game) == "AUTO (FILL HUD)", "adaptive background is labeled AUTO")
   assert(bgRow.step(game, 1) == false, "AUTO background row is locked")
-  assert(options.battleBg == "white", "locked AUTO retains the WHITE value")
+  assert(options.battleBg == "black", "locked AUTO does not overwrite the stored value")
 
   menu.index = bgIndex
   menu.scroll = math.max(0, bgIndex - 5)
@@ -37,11 +37,11 @@ return function(game)
 
   fitRow.step(game, -1)
   assert(options.battleFit == "fixed", "battle size switched back to FIXED")
-  assert(bgRow.value(game) == "WHITE", "FIXED exposes the stored WHITE choice")
-  assert(bgRow.step(game, 1) == true and options.battleBg == "black",
-    "FIXED can select BLACK")
+  assert(bgRow.value(game) == "BLACK", "FIXED exposes the stored BLACK choice")
   assert(bgRow.step(game, 1) == true and options.battleBg == "world",
     "FIXED can select WORLD")
+  assert(bgRow.step(game, 1) == true and options.battleBg == "white",
+    "FIXED can select WHITE")
   U.wait(2)
   local fixedPath = DIR .. "/fixed_extended_background_choices.png"
   os.remove(fixedPath)

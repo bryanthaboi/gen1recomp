@@ -59,6 +59,7 @@ local textBoxStub = {
   end,
 }
 local realTextBox = getUpvalue(OW.trashCanSwitch, "TextBox")
+textBoxStub.soundOpts = realTextBox.soundOpts
 local fakeGame = { data = Data, save = SaveData.newGame(), stack = { push = function() end } }
 check(setUpvalue(OW.trashCanSwitch, "TextBox", textBoxStub), "TextBox upvalue rewired")
 check(setUpvalue(OW.trashCanSwitch, "Game", fakeGame), "Game upvalue rewired")

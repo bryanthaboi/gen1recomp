@@ -52,6 +52,7 @@ The script verifies the final app before packaging it:
 
 - the public Documents plist settings are present
 - the native picker bridge is present
+- the SHADER FX librashader bridge is linked into the app binary, when this build produced one
 - `game.love` exists and is non-empty
 
 If the payload is missing, the build fails instead of producing a blank app.

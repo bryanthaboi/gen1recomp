@@ -118,7 +118,10 @@ return function(game)
   for _, row in ipairs(FieldMoves.FLYPOINTS) do
     save.engineFlags[row.flag] = true
   end
-  ok("openFlyMap opens a screen", world:openFlyMap() == true)
+  -- The mon that used the move: FlyFunction_InitGFX and TownMapMon both draw
+  -- wCurPartyMon's icon (engine/events/field_moves.asm:390).
+  local flyMon = (save.party and save.party[1]) or { species = "PIDGEY" }
+  ok("openFlyMap opens a screen", world:openFlyMap(flyMon) == true)
   U.wait(4)
   local picker = game.stack:top()
   ok("and it is the town-map picker, not a yes/no box",
@@ -130,18 +133,26 @@ return function(game)
   U.wait(4)
   U.shot(game, out .. "/06-flymap-moved.png")
 
-  -- A takes the destination: the fade out lifts the player off the map first.
+  -- A takes the destination: FlyFromAnim hovers over the tile for 64 frames,
+  -- climbs off the top of the screen, and FlyToAnim drops back in after the warp.
   U.tap(game, "a")
-  local lifted = 0
-  for frame = 1, 40 do
+  U.wait(4)
+  ok("FLY starts the take-off animation", world.flyAnim ~= nil)
+  U.shot(game, out .. "/07-fly-takeoff.png")
+  local risen, landing = 0, false
+  for _ = 1, 300 do
     U.wait(1)
-    lifted = math.min(lifted, (world.player and world.player.spriteYOffset) or 0)
-    if frame == 4 then U.shot(game, out .. "/07-fly-takeoff.png") end
+    local fa = world.flyAnim
+    if fa then
+      risen = math.min(risen, fa.y or 0)
+      if fa.phase == "to" then landing = true end
+    elseif landing then
+      break
+    end
   end
-  ok("FLY lifts the player under the fade", lifted < 0, lifted)
-  U.wait(30)
-  ok("and lands them back on the tile",
-    (world.player.spriteYOffset or 0) == 0)
+  ok("the mon climbs off the map", risen < 0, risen)
+  ok("and FlyToAnim brings it back down", landing)
+  ok("with the player standing again", world.flyAnim == nil)
   U.shot(game, out .. "/08-fly-landed.png")
 
   -- --------------------------------------------------- tilt and the void

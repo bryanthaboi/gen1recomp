@@ -213,4 +213,115 @@ do
     "all four arms compose in the cart's order")
 end
 
+-- ---- battle.exp_award: applyShare's third argument ------------------------
+--
+-- Gen 1's applyShare(mon, split, announce) pays the mon and prints its
+-- GainedText only when `announce` is truthy (src/battle/BattleState.lua).
+-- Gold accepted the argument and ignored it, so a mod that pays the whole
+-- party -- the Exp Share mod's own documented behaviour -- could not print one
+-- summary line here; it got a box per recipient.
+--
+-- Two tests, per Route B in CONTRIBUTING-mods.md: vanilla is unchanged with no
+-- subscriber, and the seam is driven through the public hook API.
+
+local Events = require("src.mods.Events")
+local Hooks = require("src.mods.Hooks")
+local Runtime = require("src.mods.Runtime")
+
+-- Counts the GainedText boxes an award produced.
+local function expLines(events)
+  local out = {}
+  for _, event in ipairs(events) do
+    if event.kind == "experience" then out[#out + 1] = event.text end
+  end
+  return out
+end
+
+local function kindsOf(events)
+  local out = {}
+  for _, event in ipairs(events) do out[#out + 1] = event.kind end
+  return table.concat(out, ",")
+end
+
+-- ---- the no-mod test: nothing subscribed, nothing changes -----------------
+do
+  local _, events = award({ { otId = PLAYER_ID, participant = true } })
+  eq(#expLines(events), 1, "no subscriber: a solo participant still prints one line")
+
+  local _, twoPass = award({
+    { otId = PLAYER_ID, participant = true },
+    { otId = PLAYER_ID, item = "EXP_SHARE" },
+  })
+  eq(#expLines(twoPass), 2,
+    "no subscriber: the EXP.SHARE double pass still prints both lines")
+end
+
+-- ---- the mod-API test: driven through hooks:wrap, not internals -----------
+do
+  local savedEvents, savedHooks = Runtime.events, Runtime.hooks
+  local hooks = Hooks.new()
+  Runtime.install(Events.new(), hooks)
+
+  -- Each case pays a two-mon party through ctx.applyShare and reports the
+  -- GainedText boxes that survived.  The party mon in slot 2 never fights, so
+  -- it stands in for the bench a party-wide mod pays.
+  local function awardVia(payer)
+    local unsub = hooks:wrap("battle.exp_award", function(_nextFn, ctx)
+      payer(ctx)
+    end)
+    local gained, events, party = award({
+      { otId = PLAYER_ID, participant = true },
+      { otId = PLAYER_ID },
+    })
+    unsub()
+    return gained, events, party
+  end
+
+  -- omitted: the Gen 2-era call, which has always announced
+  local gained, events = awardVia(function(ctx)
+    ctx.applyShare(ctx.battle.party[1], 1)
+    ctx.applyShare(ctx.battle.party[2], 1)
+  end)
+  eq(#expLines(events), 2,
+    "applyShare(mon, split) still announces -- no existing mod changes")
+  check(gained[1] > 0 and gained[2] > 0, "and both mons were paid")
+
+  -- passed nil: "pay this one quietly", Gen 1's reading
+  local quietGained, quietEvents = awardVia(function(ctx)
+    ctx.applyShare(ctx.battle.party[1], 1, true)
+    ctx.applyShare(ctx.battle.party[2], 1, nil)
+  end)
+  eq(#expLines(quietEvents), 1,
+    "an explicit nil third argument pays the mon silently")
+  eq(expLines(quietEvents)[1], "MACHOP gained 110 EXP. Points!",
+    "and the announced participant keeps its own line")
+  check(quietGained[2] > 0, "the silent mon is still paid the same exp")
+  eq(quietGained[1], gained[1], "and the announced mon's exp is untouched")
+  eq(quietGained[2], gained[2], "as is the silent one's")
+
+  -- false reads the same as nil; a truthy string is Gen 1's EXP.ALL variant
+  local _, falseEvents = awardVia(function(ctx)
+    ctx.applyShare(ctx.battle.party[1], 1, false)
+  end)
+  eq(#expLines(falseEvents), 0, "false is silent too")
+
+  local _, expAllEvents = awardVia(function(ctx)
+    ctx.applyShare(ctx.battle.party[1], 1, "expAll")
+  end)
+  eq(#expLines(expAllEvents), 1,
+    "any truthy value announces, so Gen 1's \"expAll\" carries over")
+
+  -- a silent award is still a whole award: only the line goes
+  local _, levelEvents, levelParty = awardVia(function(ctx)
+    ctx.applyShare(ctx.battle.party[2], 1, nil)
+  end)
+  eq(#expLines(levelEvents), 0, "the silent pass prints no GainedText")
+  check(levelParty[2].statExp.attack > 0,
+    "but stat exp is still awarded on a silent pass")
+  check(not kindsOf(levelEvents):find("experience", 1, true),
+    "and no experience event leaks into the queue")
+
+  Runtime.install(savedEvents, savedHooks)
+end
+
 S.finish()

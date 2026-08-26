@@ -36,19 +36,29 @@ M.POKEMON_FAN_CLUB = {
       { "clear_flag", "EVENT_SEEL_FAN_BOAST" },                       -- 8
     },
 
-    -- PokemonFanClubPikachuText (scripts/PokemonFanClub.asm): the
-    -- PIKACHU itself, just a flavor line (its cry isn't playable in the
-    -- port's talk pipeline, so it's dropped like other cry-only lines).
+    -- PokemonFanClubPikachuText (scripts/PokemonFanClub.asm:71): PrintText,
+    -- then ld a, PIKACHU / call PlayCry (:76) / call WaitForSoundToFinish.
     TEXT_POKEMONFANCLUB_PIKACHU = {
-      { "show_text", "_PokemonFanClubPikachuText" },
+      { "play_cry", "PIKACHU", true },                                -- 1 PlayCry (#1649)
+      { "show_text", "_PokemonFanClubPikachuText" },                  -- 2 PrintText
     },
 
-    -- PokemonFanClubSeelText (scripts/PokemonFanClub.asm): the SEEL
-    -- itself, flavor line only.
+    -- PokemonFanClubSeelText (scripts/PokemonFanClub.asm:84): the same
+    -- shape with SEEL, PlayCry at :89.
     TEXT_POKEMONFANCLUB_SEEL = {
-      { "show_text", "_PokemonFanClubSeelText" },
+      { "play_cry", "SEEL", true },                                   -- 1 PlayCry (#1649)
+      { "show_text", "_PokemonFanClubSeelText" },                     -- 2 PrintText
     },
   },
 }
+
+-- pokeyellow/scripts/PokemonFanClub.asm:149 PokemonFanClubClefairyText: Yellow's
+-- pet is a CLEFAIRY on its own TEXT_POKEMONFANCLUB_CLEFAIRY, PlayCry at :154.
+if require("src.core.GameVersion").isYellow() then
+  M.POKEMON_FAN_CLUB.talk.TEXT_POKEMONFANCLUB_CLEFAIRY = {
+    { "play_cry", "CLEFAIRY", true },                                 -- 1 PlayCry
+    { "show_text", "_PokemonFanClubClefairyText" },                   -- 2 PrintText
+  }
+end
 
 return M

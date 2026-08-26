@@ -90,11 +90,23 @@ check(imp:find('if self.tab == "skins" then', 1, true) ~= nil,
 check(imp:find("_installSkinZip", 1, true) ~= nil, "skin zip installer exists")
 check(imp:find("_installMod", 1, true) ~= nil,
       "and a zip elsewhere still installs a mod")
-local cycle = imp:match("local order = %{(.-)%}")
-check(cycle and cycle:find('"skins"', 1, true) ~= nil,
+local RomImporter = require("src.import.RomImporter")
+local GameVersion = require("src.core.GameVersion")
+local cycled, probe = {}, nil
+probe = setmetatable({ tab = GameVersion.ORDER[1] }, { __index = RomImporter })
+probe._switchTab = function(self, id) self.tab = id; cycled[#cycled + 1] = id end
+for _ = 1, #GameVersion.ORDER + 3 do RomImporter._cycleTab(probe, 1) end
+local reached = " " .. table.concat(cycled, " ") .. " "
+check(reached:find(" skins ", 1, true) ~= nil,
       "shoulder-button tab cycling reaches the skins tab")
-check(cycle and cycle:find('"bug"', 1, true) ~= nil,
+check(reached:find(" bug ", 1, true) ~= nil,
       "shoulder-button tab cycling reaches the bug tab")
+for _, id in ipairs(GameVersion.ORDER) do
+  if id ~= GameVersion.ORDER[1] then
+    check(reached:find(" " .. id .. " ", 1, true) ~= nil,
+          "shoulder-button tab cycling reaches " .. id)
+  end
+end
 local switch = imp:match("function RomImporter:_switchTab%(id%)(.-)\nend")
 check(switch and switch:find("_ensureSkins(true)", 1, true) ~= nil,
       "switching to the tab re-reads the skin list")

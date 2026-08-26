@@ -615,6 +615,138 @@ verify_game_payload() {
   say "game.love present ($(du -h "$app/game.love" | cut -f1))"
 }
 
+SHADER_BRIDGE_LIB=""
+SHADER_BRIDGE_NAME="liblibrashader_bridge.a"
+SHADER_BRIDGE_OBJ="librashader_bridge.o"
+
+SHADER_BRIDGE_ARCHS=""
+
+rust_targets_for_sdk() {
+  if [ "$1" = "iphoneos" ]; then
+    printf 'aarch64-apple-ios'
+  else
+    printf 'aarch64-apple-ios-sim x86_64-apple-ios'
+  fi
+}
+
+build_shader_bridge_slice() {
+  local rust_target="$1"
+  local crate="$ROOT/tools/shaderfx-bridge"
+  local built="$crate/target/$rust_target/release/$SHADER_BRIDGE_NAME"
+  if [ -f "$built" ]; then
+    printf '%s' "$built"
+    return 0
+  fi
+  if command -v cargo >/dev/null 2>&1 \
+      && rustup target list --installed 2>/dev/null \
+         | grep -x "$rust_target" >/dev/null; then
+    say "building the ShaderFX bridge with cargo ($rust_target)" >&2
+    if (cd "$crate" && IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+        cargo build --release --target "$rust_target" >/dev/null 2>&1); then
+      printf '%s' "$built"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+prelink_shader_bridge_slice() {
+  local archive="$1" sdk="$2" out="$3"
+  local arch platform sdk_version syms objcopy tmp
+  arch="$(lipo -archs "$archive" 2>/dev/null | awk '{print $1}')"
+  [ -n "$arch" ] || return 1
+  if [ "$sdk" = "iphoneos" ]; then platform="ios"; else platform="ios-simulator"; fi
+  sdk_version="$(xcrun --sdk "$sdk" --show-sdk-version 2>/dev/null)"
+  [ -n "$sdk_version" ] || return 1
+  syms="$LIBS_DIR/librashader_bridge.exports"
+  printf '_librashader_translate_preset\n_librashader_free_string\n' > "$syms"
+  tmp="$out.tmp"
+  xcrun ld -r -arch "$arch" -platform_version "$platform" 15.0 "$sdk_version" \
+    -all_load -exported_symbols_list "$syms" -o "$tmp" "$archive" || return 1
+  objcopy="$(ls "$(rustc --print sysroot 2>/dev/null)"/lib/rustlib/*/bin/rust-objcopy 2>/dev/null | head -1)"
+  if [ -n "$objcopy" ] && "$objcopy" --remove-section __LLVM,__bitcode \
+       --remove-section __LLVM,__cmdline "$tmp" "$out" 2>/dev/null; then
+    rm -f "$tmp"
+  else
+    mv "$tmp" "$out"
+  fi
+}
+
+bundle_shader_bridge_ios() {
+  local rust_targets="$1" sdk="$2"
+  local src="${SHADERFX_BRIDGE_IOS:-}"
+  local slices=() objs=() target slice obj i
+  SHADER_BRIDGE_LIB=""
+  SHADER_BRIDGE_ARCHS=""
+  rm -f "$LIBS_DIR/$SHADER_BRIDGE_NAME" "$LIBS_DIR/$SHADER_BRIDGE_OBJ" "$LIBS_DIR"/librashader_bridge.*.o
+  if [ -n "$src" ]; then
+    if [ -f "$src" ]; then
+      slices+=("$src")
+    else
+      warn "SHADERFX_BRIDGE_IOS=$src does not exist"
+    fi
+  else
+    for target in $rust_targets; do
+      if slice="$(build_shader_bridge_slice "$target")"; then
+        slices+=("$slice")
+      fi
+    done
+  fi
+  if [ "${#slices[@]}" -gt 0 ]; then
+    mkdir -p "$LIBS_DIR"
+    i=0
+    for slice in "${slices[@]}"; do
+      i=$((i + 1))
+      obj="$LIBS_DIR/librashader_bridge.$i.o"
+      if prelink_shader_bridge_slice "$slice" "$sdk" "$obj"; then
+        objs+=("$obj")
+      else
+        warn "could not prelink $(basename "$slice") for $sdk"
+      fi
+    done
+  fi
+  if [ "${#objs[@]}" -eq 1 ]; then
+    mv "${objs[0]}" "$LIBS_DIR/$SHADER_BRIDGE_OBJ"
+  elif [ "${#objs[@]}" -gt 1 ]; then
+    lipo -create "${objs[@]}" -output "$LIBS_DIR/$SHADER_BRIDGE_OBJ"
+    rm -f "${objs[@]}"
+  fi
+  if [ -f "$LIBS_DIR/$SHADER_BRIDGE_OBJ" ]; then
+    SHADER_BRIDGE_LIB="$LIBS_DIR/$SHADER_BRIDGE_OBJ"
+    SHADER_BRIDGE_ARCHS="$(lipo -archs "$SHADER_BRIDGE_LIB" 2>/dev/null || true)"
+    say "linking $SHADER_BRIDGE_OBJ for SHADER FX preset conversion (${SHADER_BRIDGE_ARCHS:-unknown arch})"
+  else
+    warn "$SHADER_BRIDGE_NAME not found: this build can run converted presets but not CONVERT new ones (set SHADERFX_BRIDGE_IOS, or install cargo plus one of: rustup target add $rust_targets)"
+  fi
+}
+
+verify_shader_bridge() {
+  local app="$1"
+  local exe bin
+  if [ -z "$SHADER_BRIDGE_LIB" ]; then
+    warn "no SHADER FX bridge in this build: CONVERT stays unavailable, converted presets still run"
+    return 0
+  fi
+  exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' \
+         "$app/Info.plist" 2>/dev/null || true)"
+  bin="$app/${exe:-love}"
+  [ -f "$bin" ] || bin="$app/love"
+  if [ ! -f "$bin" ]; then
+    warn "no executable inside $(basename "$app"); skipping SHADER FX bridge check"
+    return 0
+  fi
+  if nm "$bin" 2>/dev/null | grep -E ' _librashader_translate_preset$' >/dev/null \
+     || xcrun dyld_info -exports "$bin" 2>/dev/null \
+        | grep -E ' _librashader_translate_preset$' >/dev/null; then
+    say "SHADER FX bridge present (librashader_translate_preset)"
+    return 0
+  fi
+  fail "built app does not carry the SHADER FX bridge symbols.
+  $SHADER_BRIDGE_OBJ was linked but librashader_translate_preset is absent,
+  so SHADER FX CONVERT would fail at runtime.
+  Rebuild after: rm -rf tools/shaderfx-bridge/target"
+}
+
 run_xcodebuild() {
   local config sdk destination
   if $RELEASE; then
@@ -632,6 +764,8 @@ run_xcodebuild() {
   fi
 
   mkdir -p "$BUILD_DIR"
+
+  bundle_shader_bridge_ios "$(rust_targets_for_sdk "$sdk")" "$sdk"
 
   # Prefer -target + SYMROOT over -derivedDataPath: modern Xcode requires
   # -scheme whenever -derivedDataPath is set, and love-ios ships no shared schemes.
@@ -661,6 +795,13 @@ run_xcodebuild() {
     ONLY_ACTIVE_ARCH=NO
     DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING=YES
   )
+  if [ -n "$SHADER_BRIDGE_LIB" ]; then
+    args+=(OTHER_LDFLAGS="-Wl,-u,_librashader_translate_preset -Wl,-u,_librashader_free_string \"$SHADER_BRIDGE_LIB\" -lc++")
+    if [ -n "$SHADER_BRIDGE_ARCHS" ]; then
+      args+=(ARCHS="$SHADER_BRIDGE_ARCHS")
+    fi
+  fi
+
   if ! $DEVICE; then
     # Simulator: ad-hoc signing (no certificate needed). A plain unsigned
     # build would drop the entitlements file, and HealthKit refuses to run
@@ -723,11 +864,14 @@ run_xcodebuild() {
 
   local products="$BUILD_DIR/Build/Products/${config}-${sdk}"
   local app=""
-  local candidate
+  local candidate newest=0 mtime
   for candidate in "$products/$PRODUCT_NAME.app" "$products/$APP_NAME.app" "$products/love.app"; do
     if [ -d "$candidate" ]; then
-      app="$candidate"
-      break
+      mtime="$(stat -f %m "$candidate" 2>/dev/null || echo 0)"
+      if [ "$mtime" -gt "$newest" ]; then
+        newest="$mtime"
+        app="$candidate"
+      fi
     fi
   done
   if [ -z "$app" ]; then
@@ -736,6 +880,7 @@ run_xcodebuild() {
     return 0
   fi
   if [ "$app" != "$products/$APP_NAME.app" ]; then
+    rm -rf "$products/$APP_NAME.app"
     mv "$app" "$products/$APP_NAME.app"
     app="$products/$APP_NAME.app"
   fi
@@ -754,6 +899,7 @@ run_xcodebuild() {
 
   verify_game_payload "$app"
   verify_native_bridge "$app"
+  verify_shader_bridge "$app"
 
   local dist_dir="$DIST/${config}-${sdk}"
   rm -rf "$dist_dir"

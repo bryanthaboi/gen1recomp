@@ -37,7 +37,9 @@
 -- love.graphics.newImage skips overrides/ and AssetTransform output.
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
+local FieldMoves = require("src.world.gen2.FieldMoves")
 local Font = require("src.render.Font")
+local Gen2Save = require("src.core.gen2.Save")
 local GbcPalette = require("src.render.GbcPalette")
 local Logger = require("src.core.Logger")
 local Music = require("src.core.Music")
@@ -98,6 +100,11 @@ function OakSpeech.new(game, opts)
   self.playerPic = tryImage(require("src.pokemon.Sprites").playerPic(
     data.playerPic or "assets/generated/intro/cal.png",
     { side = "front", kind = "intro", data = game and game.data }))
+  -- DrawIntroPlayerPic's other arm, KrisPic under trainer class KRIS
+  -- (../pokecrystal/engine/gfx/player_gfx.asm:170-188).
+  self.playerPicFemale = tryImage(require("src.pokemon.Sprites").playerPic(
+    data.playerPicFemale or "assets/generated/intro/kris.png",
+    { side = "front", kind = "intro", data = game and game.data }))
   self.marillPic = tryImage(data.marillPic
     or "assets/generated/battle/front/marill.png")
   self.shrinkPic1 = tryImage(data.shrink1 or "assets/generated/intro/shrink1.png")
@@ -114,6 +121,9 @@ function OakSpeech.new(game, opts)
   self.palettes = palettes
   self.oakColors = Palettes.trainerColors(palettes, "POKEMON_PROF")
   self.playerColors = Palettes.trainerColors(palettes, "CAL")
+  -- KrisPalette is Falkner's row, shared rather than shipped
+  -- (../pokecrystal/data/trainers/palettes.asm:11-12).
+  self.playerColorsFemale = Palettes.trainerColors(palettes, "FALKNER")
   self.marillColors = Palettes.monColors(palettes, self.demoSpecies)
   self.picColors = nil
   self.fontOk = false
@@ -134,6 +144,23 @@ function OakSpeech.new(game, opts)
   return self
 end
 
+-- wPlayerGender, the byte the gender step below writes
+-- (../pokecrystal/engine/menus/init_gender.asm:36-38).
+function OakSpeech:gender()
+  local save = self.game and self.game.save
+  return save and save.player and save.player.gender or nil
+end
+
+-- DrawIntroPlayerPic reads the byte every time it runs, so the pic follows the
+-- answer rather than whatever was loaded when the speech opened
+-- (../pokecrystal/engine/gfx/player_gfx.asm:170-188).
+function OakSpeech:playerPicNow()
+  if self:gender() == "female" and self.playerPicFemale then
+    return self.playerPicFemale, self.playerColorsFemale or self.playerColors
+  end
+  return self.playerPic, self.playerColors
+end
+
 function OakSpeech:text(key)
   local t = self.texts[key]
   if type(t) == "string" and #t > 0 then return t end
@@ -144,8 +171,8 @@ end
 
 -- The vanilla beat list.  Ids are the stable anchors a build wrapper inserts
 -- around; see the header for which of them are shared with Gen 1.
-function OakSpeech.defaultSteps(_speech)
-  return {
+function OakSpeech.defaultSteps(speech)
+  local steps = {
     -- `farcall InitClock` is the first line of OakSpeech.
     { id = "init_clock", kind = "initclock" },
     -- Intro_PrepTrainerPic POKEMON_PROF, FadeInIntroPic, OakText1.
@@ -170,6 +197,14 @@ function OakSpeech.defaultSteps(_speech)
     { id = "legend", kind = "say", textKey = "_OakText7", pic = "player" },
     { id = "shrink", kind = "shrink", textKey = "_OakText7" },
   }
+  -- PlayerProfileSetup's `farcall InitGender` runs before OakSpeech is called.
+  -- ../pokecrystal/engine/menus/intro_menu.asm:61-67, :79-83
+  local data = speech and speech.game and speech.game.data
+  if FieldMoves.hasGenderChoice(data and data.gen2Sprites) then
+    table.insert(steps, 1, { id = "gender_select", kind = "gender",
+      saveKey = "gender" })
+  end
+  return steps
 end
 
 local function sameSteps(steps) return steps end
@@ -190,14 +225,24 @@ function OakSpeech:buildSteps()
   return hooked
 end
 
-function OakSpeech:enter()
+-- `ld de, MUSIC_ROUTE_30 / call PlayMusic`, after InitGender's fade.
+-- ../pokecrystal/engine/menus/intro_menu.asm:632-633, init_gender.asm:59-65
+function OakSpeech:startMusic()
+  if self.musicStarted then return end
+  self.musicStarted = true
   local data = self.game and self.game.data
   if data and data.audio and data.audio.runtime then
     Music.play(data, self.music, true, { reason = "oak_speech" })
   end
+end
+
+function OakSpeech:enter()
   self.step = 0
   self.answers = {}
   self.steps = self:buildSteps()
+  if not (self.steps[1] and self.steps[1].kind == "gender") then
+    self:startMusic()
+  end
   if Runtime.wants("intro.oak_speech.started") then
     Runtime.emit("intro.oak_speech.started", { speech = self, steps = self.steps })
   end
@@ -211,7 +256,7 @@ end
 -- same way every pic on this screen does (two shipped colours, bracketed).
 function OakSpeech:resolvePic(desc)
   if desc == "oak" then return self.oakPic, self.oakColors end
-  if desc == "player" then return self.playerPic, self.playerColors end
+  if desc == "player" then return self:playerPicNow() end
   if desc == "demo" then return self.marillPic, self.marillColors end
   if type(desc) ~= "table" then return nil, nil end
   if desc.type == "pokemon" then
@@ -339,21 +384,59 @@ function OakSpeech:openInitClock()
   end
 end
 
+-- InitGender, pushed where PlayerProfileSetup farcalls it: before the speech
+-- says anything and before its music starts
+-- (../pokecrystal/engine/menus/intro_menu.asm:79-83).
+function OakSpeech:openGenderSelect(step)
+  local game = self.game
+  if not (game and game.stack) then
+    self:startMusic()
+    return self:advance()
+  end
+  self.busy = true
+  local pushed = Screens.push(game, "Gen2GenderSelect", {
+    save = game.save,
+    onDone = function(gender)
+      game.stack:pop()
+      self.busy = false
+      -- `ld hl, wPlayerName / ld de, .Chris|.Kris / call InitName`, the default
+      -- NamePlayer lays down before the menu opens
+      -- (../pokecrystal/engine/menus/intro_menu.asm:768-781).
+      local save = game.save
+      if save and save.player then
+        save.player.name = Gen2Save.defaultPlayerName(save.version, gender)
+      end
+      self:recordAnswer(step, gender == "female" and 2 or 1,
+        gender == "female" and "Girl" or "Boy", gender)
+      self:startMusic()
+      self:advance()
+    end,
+  })
+  if not pushed then
+    self.busy = false
+    self:startMusic()
+    self:advance()
+  end
+end
+
 function OakSpeech:openNamePick(step)
   self.busy = true
   local NamePick = require("src.ui.gen2.NamePick")
+  local gender = self:gender()
+  local pic, picColors = self:playerPicNow()
   Screens.push(self.game, "Gen2NamePick", {
     font = self.game.fontData,
+    gender = gender,
     -- NamePlayer opens with MovePlayerPicRight, so the name menu owns the
     -- pic while it is up: it is the same CAL frontpic this speech has been
     -- showing, walked over to make room for the box.
-    pic = self.playerPic,
-    picColors = self.playerColors,
+    pic = pic,
+    picColors = picColors,
     presets = step.presets
       or namePresets(self.game, step.presetsWho or step.who or "player",
-                     step.presetsFallback or NamePick.presetsFor()),
+                     step.presetsFallback or NamePick.presetsFor(gender)),
     onDone = function(name)
-      name = name or NamePick.presetsFor()[1]
+      name = name or NamePick.presetsFor(gender)[1]
       self.game.save.player.name = name
       self.game.stack:pop() -- NamePick
       self.busy = false
@@ -450,7 +533,9 @@ end
 
 function OakSpeech:runStep(step)
   local kind = step.kind or "say"
-  if kind == "initclock" then
+  if kind == "gender" then
+    self:openGenderSelect(step)
+  elseif kind == "initclock" then
     self:openInitClock()
   elseif kind == "say" then
     self:applyPic(step)

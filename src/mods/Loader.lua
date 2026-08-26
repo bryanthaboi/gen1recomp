@@ -1,6 +1,8 @@
 local Json = require("src.link.Json")
 local Logger = require("src.core.Logger")
 local SaveData = require("src.core.SaveData")
+local CartManifest = require("src.carts.CartManifest")
+local CartStore = require("src.carts.CartStore")
 local Data = require("src.core.Data")
 local GameVersion = require("src.core.GameVersion")
 local Version = require("src.core.Version")
@@ -119,6 +121,17 @@ local GEN1_ONLY_MODULES = {
   ["src.ui.OptionsMenu"] = true,
 }
 
+local function crossGenerationDenial(name, generation)
+  if type(name) ~= "string" or generation ~= 1 then return nil end
+  if not (name:find("^src%.[%w_]+%.gen2%.") or name == "src.core.Game2") then
+    return nil
+  end
+  return ("%s is a Gen 2 engine module and this is a Gen 1 game; the structs "
+    .. "it reads and writes are not this game's, so anything it stores lands "
+    .. "on the save in the wrong shape. Take the game from mod.game and the "
+    .. "world from mod.world, which resolve per generation"):format(name)
+end
+
 -- the src.* modules the mod surface points authors at: another mod's
 -- exports carry a version string that wants range-checking before use, and
 -- ChipAsm is the authoring path for chip music and sfx
@@ -214,6 +227,7 @@ function Loader:_installDevShim()
       if owner or callerIsMod(3) then
         local id = type(owner) == "string" and owner or nil
         local denial = Sandbox.moduleDenial(name, devShim.permissions[id])
+          or (id and crossGenerationDenial(name, devShim.generation))
         if denial then error(("[%s] %s"):format(id or "mod", denial), 0) end
       end
       if devShim.dev or devShim.generation ~= 1 then scanRequire(name) end
@@ -256,9 +270,10 @@ function Loader.new(opts)
     events = Events.new(), hooks = Hooks.new(), content = {}, assets = {},
     exports = {}, migrations = {}, order = {},
     modSave = {}, modOptions = {}, optionSchemas = {}, imageCache = {},
-    modInput = {}, modEnv = {}, stepsQueues = {},
+    modInput = {}, modEnv = {}, stepsQueues = {}, cartSwitches = {},
     fs = (opts and opts.fs) or (love and love.filesystem),
-    dev = dev,
+    cart = opts and opts.cart or nil,
+    dev = dev == true,
     safeMode = false,
     -- Which generation this boot is (1 or 2).  Fixed at construction: the
     -- active version is set once in main.lua's bootGame before anything
@@ -355,7 +370,11 @@ function Loader:_saveState()
   local scope = self:_enableScope()
   local version = self:_targetVersion()
   for id in pairs(self.mods) do
-    SaveData.setModEnabled(options, id, not self.disabled[id], scope)
+    -- a switch the cart owns is answered in the cart's scope by setEnabled,
+    -- so it never rewrites what the base game runs
+    if not self.cartSwitches[id] then
+      SaveData.setModEnabled(options, id, not self.disabled[id], scope)
+    end
     -- only the games this boot can answer for: another version's overrides
     -- are not this run's to rewrite.  With no version (an injected-generation
     -- harness) the override stays in memory for this boot only.
@@ -422,6 +441,9 @@ function Loader:setEnabled(id, enabled)
   if not self.mods[id] then return false end
   self.disabled[id] = not enabled
   self.mods[id].enabled = enabled
+  if self.cartSwitches[id] and self.cartReport then
+    SaveData.setCartModEnabled(self.cartReport.id, id, enabled, self.fs)
+  end
   self:_saveState()
   return true
 end
@@ -474,6 +496,161 @@ function Loader:_discover()
       end
     end
   end
+end
+
+-- ------- custom carts
+
+local function installedVersions(installed)
+  local out = {}
+  for key, entry in pairs(installed or {}) do
+    if type(entry) == "table" then
+      local manifest = type(entry.manifest) == "table" and entry.manifest or entry
+      local id = manifest.id or (type(key) == "string" and key or nil)
+      if type(id) == "string" then out[id] = manifest.version end
+    end
+  end
+  return out
+end
+
+local function pinnedVersion(pin)
+  local version = pin.version
+  if type(version) ~= "string" or version == "" then return nil end
+  if pin.source == "local" and version == CartStore.UNPINNED_VERSION then return nil end
+  return version
+end
+
+local function sameVersion(want, have)
+  local order = Semver.compare(want, have)
+  if order ~= nil then return order == 0 end
+  return want == have
+end
+
+local function cartComplaints(report)
+  local parts = {}
+  for _, row in ipairs(report.missing) do
+    parts[#parts + 1] = ("%s %s is not installed")
+      :format(row.id, row.version or "(any version)")
+  end
+  for _, row in ipairs(report.mismatched) do
+    parts[#parts + 1] = ("%s is pinned at %s but %s is installed")
+      :format(row.id, row.version, row.installed)
+  end
+  return parts
+end
+
+-- Whether the player's own enable flag decides a pinned mod.  "sealed+" hands
+-- every pin over; any other seal hands over only the pins the cart ships off.
+function Loader.pinTogglable(report, pin)
+  if type(report) ~= "table" or type(pin) ~= "table" then return false end
+  if report.seal == "sealed+" then return true end
+  if pin.enabled ~= false then return false end
+  return not (report.seal == "sealed" and not report.broken)
+end
+
+function Loader.planCart(cart, installed, broken)
+  local report = { seal = "sealed", sealed = true, broken = broken == true,
+    order = {}, rank = {}, pins = {}, missing = {}, mismatched = {},
+    floor = 1, refused = false }
+  if type(cart) ~= "table" then
+    report.enforced = true
+    report.refused = true
+    report.message = "this cart is not installed"
+    return report
+  end
+  report.id, report.title = cart.id, cart.title
+  report.seal = CartManifest.SEALS[cart.seal] and cart.seal or "sealed"
+  report.sealed = report.seal ~= "open"
+  report.enforced = report.sealed and not report.broken
+  local have = installedVersions(installed)
+  local pins = {}
+  for _, pin in ipairs(cart.mods or {}) do
+    if type(pin) == "table" and type(pin.id) == "string" then pins[pin.id] = pin end
+  end
+  for _, id in ipairs(cart.load_order or {}) do
+    local pin = pins[id]
+    if pin and not report.pins[id] then
+      report.order[#report.order + 1] = id
+      report.rank[id] = #report.order
+      report.pins[id] = pin
+      local want, got = pinnedVersion(pin), have[id]
+      if got == nil then
+        report.missing[#report.missing + 1] =
+          { id = id, version = want, source = pin.source }
+      elseif want and not sameVersion(want, got) then
+        report.mismatched[#report.mismatched + 1] =
+          { id = id, version = want, installed = got }
+      end
+    end
+  end
+  report.floor = #report.order + 1
+  local parts = cartComplaints(report)
+  if #parts > 0 then
+    report.message = ("%s: %s"):format(cart.title or cart.id or "cart",
+      table.concat(parts, "; "))
+    report.refused = report.enforced
+  end
+  return report
+end
+
+function Loader:cartStatus()
+  return self.cartReport
+end
+
+function Loader:_applyCart()
+  local cartId = SaveData.getCart()
+  if not cartId or self.safeMode then return end
+  local cart, err = self.cart, nil
+  if not cart then cart, err = CartStore.get(cartId, self.fs) end
+  local report = Loader.planCart(cart, self.mods, SaveData.isSealBroken())
+  report.id = cartId
+  if not cart then
+    report.message = ("%s: %s"):format(cartId, tostring(err or "this cart is not installed"))
+  end
+  self.cartReport = report
+  if report.refused then
+    for _, mod in pairs(self.mods) do
+      mod.enabled, mod.state = false, "disabled"
+    end
+    self.errors[#self.errors + 1] = report.message
+    Logger.error("cart %s refused: %s", cartId, report.message)
+    return
+  end
+  if report.message then Logger.warn("cart %s: %s", cartId, report.message) end
+  -- the pins whose switch the cart hands to the player: their answer lives in
+  -- the cart's own scope, never in the per-game flags
+  self.cartSwitches = {}
+  local options = SaveData.loadOptions(self.fs)
+  for id, mod in pairs(self.mods) do
+    local pin = report.pins[id]
+    if pin then
+      local on = CartManifest.modEnabled(pin)
+      if Loader.pinTogglable(report, pin) then
+        local chosen = SaveData.cartModEnabled(options, cartId, id)
+        if type(chosen) == "boolean" then on = chosen end
+        self.cartSwitches[id] = true
+      end
+      mod.enabled, mod.state = on, on and "pending" or "disabled"
+    elseif report.enforced then
+      mod.enabled, mod.state = false, "disabled"
+    end
+  end
+  local merged = {}
+  for id, bucket in pairs(self.modOptions) do merged[id] = bucket end
+  for id, pin in pairs(report.pins) do
+    local bucket = {}
+    for key, value in pairs(pin.options or {}) do bucket[key] = value end
+    if not report.enforced then
+      for key, value in pairs(self.modOptions[id] or {}) do bucket[key] = value end
+    end
+    merged[id] = bucket
+  end
+  self.modOptions = merged
+end
+
+function Loader:_cartRank(id)
+  local report = self.cartReport
+  if not report then return 0 end
+  return report.rank[id] or report.floor
 end
 
 -- ------- validate and resolve
@@ -761,9 +938,12 @@ function Loader:_order()
         if not best then
           best = id
         else
+          local ra, rb = self:_cartRank(id), self:_cartRank(best)
           local pa, pb = self.mods[id].manifest.priority,
             self.mods[best].manifest.priority
-          if pa < pb or (pa == pb and id < best) then best = id end
+          if ra < rb or (ra == rb and (pa < pb or (pa == pb and id < best))) then
+            best = id
+          end
         end
       end
     end
@@ -968,8 +1148,21 @@ function Loader:_api(mod)
     id = modId,
     version = mod.manifest.version,
     path = mod.path,
+    -- Fixed at Loader construction and copied as plain data: a sandboxed
+    -- entry chunk can decide whether to register developer-only diagnostics
+    -- without receiving the process environment or the loader itself.
+    developer = loader.dev == true,
     -- a deep copy: what a mod does to its own view never reaches the loader
     manifest = Merge.deepCopy(mod.manifest),
+    datasets = {
+      open = function(_, version)
+        if not loader.datasetViews then
+          local DatasetViews = engineRequire("src.mods.DatasetViews")
+          loader.datasetViews = DatasetViews.new(loader.fs, engineRequire)
+        end
+        return loader.datasetViews:open(version)
+      end,
+    },
     content = {},
     exports = {},
     DELETE = Registry.DELETE,
@@ -1598,6 +1791,7 @@ function Loader:load(data)
     mod.enabled = not self.disabled[id]
     mod.state = mod.enabled and "pending" or "disabled"
   end
+  self:_applyCart()
   -- engine call sites reach these buses -- and this error feed, for failures
   -- that only surface at play time -- through Runtime from here on
   Runtime.install(self.events, self.hooks, self.errors)
@@ -1771,7 +1965,7 @@ function Loader:status()
   table.sort(available, function(a, b) return a.id < b.id end)
   table.sort(loaded, function(a, b) return a.id < b.id end)
   return { available = available, loaded = loaded, errors = self.errors,
-    order = self.order }
+    order = self.order, cart = self.cartReport }
 end
 
 return Loader

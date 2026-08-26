@@ -6,8 +6,8 @@
 -- options.lua table (src/core/SaveData.loadOptions/saveOptions) and lets the
 -- next boot's applyOptions pick the values up.  Every ladder mirrors
 -- OptionsMenu's semantics and stored values; when editing one, keep the two
--- in sync.  ZOOM is deliberately absent: its range depends on the live
--- renderer's fit scale (Renderer:fitScale), which does not exist here.
+-- in sync.  ZOOM uses the live window's integer fit (same 160×144 rule as
+-- Renderer:fitScale) so the row can offer OUT/FIT/IN without a running game.
 --
 -- Rows are the same descriptor idiom OptionRows draws in game:
 --   { label, value = fn() -> string, step = fn(dir) -> changed,
@@ -22,6 +22,11 @@ local Strings = require("src.core.Strings")
 local SaveData = require("src.core.SaveData")
 
 local LauncherSettings = {}
+
+local function bgLocked(opts)
+  return opts.battleLayout == "wide" and opts.battleFit == "fill"
+     and opts.battleHud == "extended"
+end
 
 local function wrapIndex(i, n)
   i = i % n
@@ -156,8 +161,6 @@ local function coreRows(opts, hooks)
       opts.battleLayout = opts.battleLayout == "wide" and "og" or "wide"
       if opts.battleLayout ~= "wide" then
         opts.battleHud = "standard"
-      elseif opts.battleFit == "fill" and opts.battleHud == "extended" then
-        opts.battleBg = "white"
       end
       return true
     end)
@@ -167,10 +170,6 @@ local function coreRows(opts, hooks)
     end,
     function()
       opts.battleFit = opts.battleFit == "fill" and "fixed" or "fill"
-      if opts.battleFit == "fill" and opts.battleLayout == "wide"
-         and opts.battleHud == "extended" then
-        opts.battleBg = "white"
-      end
       return true
     end)
   add(Strings("BATTLE HUD"),
@@ -185,28 +184,17 @@ local function coreRows(opts, hooks)
         return false
       end
       opts.battleHud = opts.battleHud == "extended" and "standard" or "extended"
-      if opts.battleHud == "extended" and opts.battleFit == "fill" then
-        opts.battleBg = "white"
-      end
       return true
     end)
   add(Strings("BATTLE BG"),
     function()
-      if opts.battleLayout == "wide" and opts.battleFit == "fill"
-         and opts.battleHud == "extended" then
-        opts.battleBg = "white"
-        return Strings("AUTO")
-      end
+      if bgLocked(opts) then return Strings("AUTO (FILL HUD)") end
       if opts.battleBg == "black" then return Strings("BLACK") end
       if opts.battleBg == "world" then return Strings("WORLD") end
       return Strings("WHITE")
     end,
     function(dir)
-      if opts.battleLayout == "wide" and opts.battleFit == "fill"
-         and opts.battleHud == "extended" then
-        opts.battleBg = "white"
-        return false
-      end
+      if bgLocked(opts) then return false end
       local order = { "white", "black", "world" }
       local cur = 1
       for i, mode in ipairs(order) do
@@ -266,14 +254,12 @@ local function coreRows(opts, hooks)
       end)
   end
 
-  -- issue #136: GBC FX soft-bricks the mobile present shader; same gate as
-  -- the in-game row.
-  local okFx, GBCFX = pcall(require, "src.render.GBCFX")
-  if okFx and GBCFX.isSupported() then
-    add(Strings("GBC FX"),
-      function() return GBCFX.levelLabel(opts.gbcfx or 0) end,
+  local okZ, Zoom = pcall(require, "src.render.Zoom")
+  if okZ then
+    add(Strings("ZOOM"),
+      function() return Zoom.offsetLabel(opts.zoom or 0) end,
       function(dir)
-        opts.gbcfx = wrapIndex((opts.gbcfx or 0) + dir, 5)
+        Zoom.nudgeOptions(opts, dir, Zoom.windowFitScale())
         return true
       end)
   end
@@ -565,7 +551,7 @@ end
 -- src/ui/gen2/OptionsMenu.lua's ROWS; when editing one, keep the two in sync.
 local GEN2_KEY = "gold"
 
-local function gen2Rows(opts, hooks)
+local function gen2Rows(opts, hooks, shared)
   local rows = {}
   local function add(label, value, step)
     rows[#rows + 1] = { label = label, value = value, step = step }
@@ -643,6 +629,16 @@ local function gen2Rows(opts, hooks)
       end)
   end
 
+  local okZ, Zoom = pcall(require, "src.render.Zoom")
+  if okZ then
+    add(Strings("ZOOM"),
+      function() return Zoom.offsetLabel(opts.zoom or 0) end,
+      function(dir)
+        Zoom.nudgeOptions(opts, dir, Zoom.windowFitScale())
+        return true
+      end)
+  end
+
   local okFill, BorderFill = pcall(require, "src.world.gen2.BorderFill")
   if okFill and BorderFill.VOID_FILLS then
     add(Strings("VOID FILL"),
@@ -658,23 +654,12 @@ local function gen2Rows(opts, hooks)
       end)
   end
 
-  -- Same #136 gate as the Gen 1 row and the in-game one.
-  local okFx, GBCFX = pcall(require, "src.render.GBCFX")
-  if okFx and GBCFX.isSupported() then
-    add(Strings("GBC FX"),
-      function() return GBCFX.levelLabel(opts.gbcfx or 0) end,
-      function(dir)
-        opts.gbcfx = wrapIndex((opts.gbcfx or 0) + dir, 5)
-        return true
-      end)
-  end
-
   local okVm, VideoMode = pcall(require, "src.core.VideoMode")
   if okVm then
     add(Strings("VIDEO MODE"),
-      function() return VideoMode.modeLabel(opts.videoMode) end,
+      function() return VideoMode.modeLabel(shared.videoMode) end,
       function(dir)
-        opts.videoMode = VideoMode.cycle(opts.videoMode, dir)
+        shared.videoMode = VideoMode.cycle(shared.videoMode, dir)
         return true
       end)
   end
@@ -689,7 +674,11 @@ local function gen2Rows(opts, hooks)
       end)
   end
 
-  addTouchRows(rows, add, opts, hooks)
+  -- BATTLE BG (#1709): the WHITE/BLACK pair Gold's battle screen honours.
+  add(Strings("BATTLE BG"), ladder(opts, "battleBg",
+    { { "white", "WHITE" }, { "black", "BLACK" } }, "white"))
+
+  addTouchRows(rows, add, shared, hooks)
 
   return rows
 end
@@ -717,7 +706,7 @@ function LauncherSettings.open(hooks, version)
       opts[GEN2_KEY] = block
     end
     sections = {
-      { title = Strings("OPTIONS"), rows = gen2Rows(block, hooks) },
+      { title = Strings("OPTIONS"), rows = gen2Rows(block, hooks, opts) },
     }
   else
     sections = {

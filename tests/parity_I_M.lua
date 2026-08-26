@@ -311,6 +311,46 @@ ow.transitioning = false -- undo the queued warp transition
 Game.save.onBike = false
 Game.save.inventory.BICYCLE = nil
 
+-- home/overworld.asm:1224
+local function settle(o)
+  drainText()
+  for _ = 1, 60 do o:updateScriptMoves(); o.player:update() end
+end
+for _, c in ipairs({ { "ROUTE_16", 17, 10 }, { "ROUTE_16", 17, 11 },
+                     { "ROUTE_18", 33,  8 }, { "ROUTE_18", 33,  9 } }) do
+  Game.save.inventory.BICYCLE = nil
+  Game.save.onBike, Game.save.forcedBike = false, nil
+  pushOW(c[1], c[2], c[3], "left")
+  ow = OW
+  check(not ow.map:isWalkableCell(c[2] + 1, c[3]),
+        ("%s (%d,%d): the cell behind a left-facing arrival is the gate wall")
+        :format(c[1], c[2], c[3]))
+  settle(ow)
+  eq(#ow.scriptMoves, 0,
+     ("%s (%d,%d): the refusal shove settles"):format(c[1], c[2], c[3]))
+  check(ow.map:isWalkableCell(ow.player.cellX, ow.player.cellY),
+        ("%s (%d,%d): the bikeless Cycling Road refusal never shoves into the "
+         .. "gate wall"):format(c[1], c[2], c[3]))
+end
+
+Game.save.onBike, Game.save.forcedBike = false, nil
+pushOW("ROUTE_16", 17, 10, "right")
+ow = OW
+settle(ow)
+eq(ow.player.cellX, 16, "an unobstructed refusal shove still moves one cell")
+eq(ow.player.cellY, 10, "and only along the arrival axis")
+
+Game.save.onBike, Game.save.forcedBike = false, nil
+ow:setMap("ROUTE_16", 18, 10, "left", { via = "boot" })
+check(ow.map:isWalkableCell(ow.player.cellX, ow.player.cellY),
+      "a save parked inside the Route 16 gate wall is lifted out on load")
+eq(ow.player.cellY, 10, "the repair stays on the row it was saved on")
+settle(ow)
+check(ow.map:isWalkableCell(ow.player.cellX, ow.player.cellY),
+      "and the refusal it lands on cannot push it back in")
+popToOW()
+Game.save.onBike, Game.save.forcedBike = false, nil
+
 -- Seafoam B4F: only the stairs square (dbmapcoord 7,11) refuses, and only
 -- until BOTH boulders are down (CheckBothEventsSet)
 Game.save.flags["EVENT_SEAFOAM4_BOULDER1_DOWN_HOLE"] = nil

@@ -38,9 +38,12 @@ local MON_HOLDING_MAIL = {
   Strings.source("Please remove the\nMAIL."),
 }
 
--- _ChangeBoxSaveText (data/text/common_2.asm:1306) is three lines whose `cont`
--- has already scrolled by the time YesNoBox goes up over its last two.
-local CHANGE_BOX_SAVE = { "#MON BOX, data", "will be saved. OK?" }
+-- _ChangeBoxSaveText (data/text/common_2.asm:1306) is three lines whose first
+-- `cont` ("When you change a") has already scrolled by the time YesNoBox goes
+-- up over its last two -- confirmed against poke-corpus GoldSilver
+-- en_msg.txt:4897. One \n-joined translatable key, same pattern as
+-- SaveMenu.lua's OVERWRITE_PROMPT_SOURCE/SAVING_PROMPT_SOURCE.
+local CHANGE_BOX_SAVE_SOURCE = Strings.source("#MON BOX, data\nwill be saved. OK?")
 
 -- YesNoBox's own `lb bc, SCREEN_WIDTH - 6, 7` (home/menu.asm:382-383).
 local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
@@ -212,16 +215,20 @@ function PcMenu:writeChangeBox()
 end
 
 function PcMenu:savePrompt()
-  if self.savePhase == "overwrite" then return SaveMenu.OVERWRITE_PROMPT end
-  if self.savePhase == "saving" then return SaveMenu.SAVING_PROMPT end
+  if self.savePhase == "overwrite" then
+    return SaveMenu.twoLines(Strings(SaveMenu.OVERWRITE_PROMPT_SOURCE))
+  end
+  if self.savePhase == "saving" then
+    return SaveMenu.twoLines(Strings(SaveMenu.SAVING_PROMPT_SOURCE))
+  end
   if self.savePhase == "done" then
     if self.saved then
       local name = (self.save.player and self.save.player.name) or "GOLD"
-      return { name .. " saved", "the game." }
+      return SaveMenu.twoLines(Strings("%s saved\nthe game.", name))
     end
-    return { "Could not save.", "" }
+    return SaveMenu.twoLines(Strings("Could not save."))
   end
-  return CHANGE_BOX_SAVE
+  return SaveMenu.twoLines(Strings(CHANGE_BOX_SAVE_SOURCE))
 end
 
 function PcMenu:updateChangeBox()
@@ -404,8 +411,8 @@ function PcMenu:drawPanel()
       Chrome.print(lines[2] or "", 1, 16)
       if self.savePhase == "confirm" or self.savePhase == "overwrite" then
         Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-        Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
-        Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+        Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+        Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
         Chrome.cursor(YESNO_X + 1,
           YESNO_Y + (self.saveChoice == 1 and 1 or 3))
       end

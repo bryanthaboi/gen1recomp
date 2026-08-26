@@ -397,9 +397,12 @@ function PaletteFX.uiSpriteRedraws()
 end
 
 -- Active named-palette table for COLORS: RED++ uses data/palettes_gbc.lua,
--- everything else uses the ROM-imported data.palettes.
+-- Yellow uses data/palettes_yellow.lua, everything else uses the ROM-imported data.palettes.
 function PaletteFX.pack(data)
-  if PaletteFX.usesGbcPack() then
+  if GameVersion.isYellow() then
+    local y = PaletteFX.yellowPack()
+    if y then return y end
+  elseif PaletteFX.usesGbcPack() then
     local g = PaletteFX.gbcPack()
     if g then return g end
   end
@@ -449,23 +452,26 @@ function PaletteFX.pal(data, name)
     local fromRom = romNamedPal(data, name)
     if fromRom then return fromRom end
   end
-  if PaletteFX.usesYellowCgb() then
-    local fromCgb = yellowCgbNamedPal(data, name)
-    if fromCgb then return fromCgb end
+  if GameVersion.isYellow() then
+    if PaletteFX.usesYellowCgb() then
+      local fromCgb = yellowCgbNamedPal(data, name)
+      if fromCgb then return fromCgb end
+    end
+    local y = PaletteFX.yellowPack()
+    local yc = y and y.palettes and y.palettes[name]
+    if yc then return yc end
+    local fromRom = romNamedPal(data, name)
+    if fromRom then return fromRom end
   end
   local p = PaletteFX.pack(data)
   local c = p and p.palettes and p.palettes[name]
   if c then return c end
-  if GameVersion.isYellow() then
-    local y = PaletteFX.yellowPack()
-    local yc = y and y.palettes and y.palettes[name]
-    if yc then return yc end
-  end
   if PaletteFX.usesGbcPack() then
     return romNamedPal(data, name)
   end
   return nil
 end
+
 
 -- the species' palette (data/pokemon/palettes.asm), MEWMON for unknowns.
 -- transformed forces PAL_GRAYMON (Ditto's palette) regardless of species

@@ -30,6 +30,7 @@ local MapOverview = require("src.world.MapOverview")
 local Bike = require("src.world.gen2.Bike")
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Permissions = require("src.world.gen2.Permissions")
+local Mail = require("src.core.gen2.Mail")
 
 local WorldAPI = {}
 WorldAPI.__index = WorldAPI
@@ -49,6 +50,11 @@ local FIELD_ACTIONS = {
   { id = "teleport", move = "TELEPORT" },
 }
 
+local function validPartySlot(party, slot)
+  return type(slot) == "number" and slot == math.floor(slot)
+    and party[slot] ~= nil
+end
+
 function WorldAPI.new(game, modId)
   return setmetatable({ game = game, modId = modId }, WorldAPI)
 end
@@ -66,6 +72,32 @@ function WorldAPI:current()
   local p = world.player
   return { mapId = world.map.id, x = p and p.cellX, y = p and p.cellY,
            facing = p and p.facing }
+end
+
+-- Keep the public party-ordering contract identical across generations.
+-- Gen 2 stores mail by party slot, so it must move with the Pokemon just as
+-- the native PartyMenu's SwitchPartyMons path does.
+function WorldAPI:canReorderParty()
+  local world, game = self:overworld(), self.game
+  local party = game and game.save and game.save.party or {}
+  return #party > 1 and world ~= nil and world:acceptsMenuInput()
+end
+
+function WorldAPI:reorderParty(fromSlot, toSlot)
+  local world, game = self:overworld(), self.game
+  if not world then return nil, NO_OVERWORLD end
+  if not world:acceptsMenuInput() then return nil, "world is busy" end
+  local party = game.save and game.save.party or {}
+  if not validPartySlot(party, fromSlot)
+      or not validPartySlot(party, toSlot) then
+    return nil, "invalid party slot"
+  end
+  if fromSlot ~= toSlot then
+    party[fromSlot], party[toSlot] = party[toSlot], party[fromSlot]
+    Mail.swapSlots(game.save, fromSlot, toSlot)
+    require("src.core.Sound").play(game.data, "Sfx_SwitchPokemon")
+  end
+  return true
 end
 
 local function itemLabel(game, id)

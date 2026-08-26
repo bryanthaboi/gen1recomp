@@ -111,7 +111,7 @@ local function joinPrompt(game, ow, done)
   local t = game.data.text
   local back = function(text)
     game.stack:push(TextBox.new(game, text, function()
-      ow:scriptMove(ow.player, "down", 1, done)
+      ow:scriptMove(ow.player, "down", 1, done, { collide = true })
     end))
   end
   game.stack:push(TextBox.new(game,

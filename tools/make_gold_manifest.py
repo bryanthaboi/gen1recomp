@@ -69,8 +69,14 @@ def strip_comment(line):
     return "".join(out).rstrip()
 
 
-def read_asm(path):
-    """Read an asm file as (lineno, text), comments stripped, IF resolved."""
+def read_asm(path, defines=None):
+    """Read an asm file as (lineno, text), comments stripped, IF resolved.
+
+    `defines` overrides ASM_DEFINES for another tree; pokecrystal's retail
+    v1.0 target passes no -D at all (../pokecrystal/Makefile:129).
+    """
+    if defines is None:
+        defines = ASM_DEFINES
     lines = []
     stack = []  # stack of [taking, condition_known]
     with open(path, encoding="utf-8") as f:
@@ -79,7 +85,7 @@ def read_asm(path):
             s = line.strip()
             m = re.match(r"IF\s+(!)?DEF\((\w+)\)\s*$", s, re.IGNORECASE)
             if m:
-                defined = m.group(2) in ASM_DEFINES
+                defined = m.group(2) in defines
                 taking = (not defined) if m.group(1) else defined
                 stack.append([taking, True])
                 continue
@@ -115,7 +121,7 @@ def parse_number(tok):
     return -val if neg else val
 
 
-def parse_const_block(path, stop_at=None):
+def parse_const_block(path, stop_at=None, defines=None):
     """Parse a linear const_def/const/const_skip block into an ordered list.
 
     Index i of the returned list is the constant's value (None for a gap);
@@ -123,7 +129,7 @@ def parse_const_block(path, stop_at=None):
     """
     names = []
     value = None
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         if not s:
             continue
@@ -153,7 +159,7 @@ def parse_const_block(path, stop_at=None):
     return names
 
 
-def parse_const_block_at(path, first_const, stop_at=None):
+def parse_const_block_at(path, first_const, stop_at=None, defines=None):
     """Parse the one const_def block whose first `const` is `first_const`.
 
     parse_const_block walks a file linearly and a second `const_def` in the
@@ -166,7 +172,7 @@ def parse_const_block_at(path, first_const, stop_at=None):
     names = []
     value = None
     started = False
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         if not s:
             continue
@@ -201,7 +207,7 @@ def parse_const_block_at(path, first_const, stop_at=None):
     return names
 
 
-def parse_prefixed_consts(path, prefixes, exact=()):
+def parse_prefixed_consts(path, prefixes, exact=(), defines=None):
     """Ordered const names from a file, filtered by prefix (mixed blocks).
 
     map_data_constants.asm and friends stack several unrelated const_def
@@ -210,7 +216,7 @@ def parse_prefixed_consts(path, prefixes, exact=()):
     even when they carry no shared prefix (TOWN, BALL, ...).
     """
     out = []
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         m = re.match(r"const\s+(\w+)", line.strip())
         if not m:
             continue
@@ -220,7 +226,7 @@ def parse_prefixed_consts(path, prefixes, exact=()):
     return out
 
 
-def parse_sparse_consts(path, prefixes):
+def parse_sparse_consts(path, prefixes, defines=None):
     """Ordered const names where index IS the const value (sparse blocks).
 
     parse_prefixed_consts packs a block densely, which is wrong for a block
@@ -233,7 +239,7 @@ def parse_sparse_consts(path, prefixes):
     """
     out = []
     value = None
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         m = re.match(r"const_def(?:\s+(\d+))?\s*$", s)
         if m:
@@ -259,7 +265,7 @@ def parse_sparse_consts(path, prefixes):
     return out
 
 
-def extract_trainer_classes(pokegold):
+def extract_trainer_classes(pokegold, defines=None):
     """Ordered trainer class names (constants/trainer_constants.asm).
 
     `trainerclass NAME` bumps its own counter and resets the const_def used
@@ -271,7 +277,7 @@ def extract_trainer_classes(pokegold):
     classes = []
     members = {}
     current = None
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         m = re.match(r"trainerclass\s+(\w+)", s)
         if m:
@@ -287,7 +293,7 @@ def extract_trainer_classes(pokegold):
     return classes, members
 
 
-def extract_items(pokegold):
+def extract_items(pokegold, defines=None):
     """Ordered item ids, and how many of them ItemNames actually covers.
 
     parse_const_block cannot do this file: after NUM_ITEMS the TM and HM items
@@ -304,7 +310,7 @@ def extract_items(pokegold):
     order = []
     name_count = None
     in_macro = False
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         # The add_tm / add_hm macro bodies contain `const TM_\1` themselves;
         # counting those would insert a phantom "TM_" item before the real run.
@@ -340,7 +346,7 @@ def extract_items(pokegold):
     return order[1:], name_count - 1
 
 
-def extract_specials(pokegold):
+def extract_specials(pokegold, defines=None):
     """Ordered SpecialsPointers labels (data/events/special_pointers.asm).
 
     The `special` script command carries an index into this table, not a name,
@@ -350,7 +356,7 @@ def extract_specials(pokegold):
     path = os.path.join(pokegold, "data/events/special_pointers.asm")
     names = []
     in_macro = False
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         if re.match(r"MACRO\b", s):
             in_macro = True
@@ -368,11 +374,11 @@ def extract_specials(pokegold):
     return names
 
 
-def extract_std_scripts(pokegold):
+def extract_std_scripts(pokegold, defines=None):
     """Ordered StdScripts labels (engine/events/std_scripts.asm)."""
     path = os.path.join(pokegold, "engine/events/std_scripts.asm")
     names = []
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         m = re.match(r"add_stdscript\s+(\w+)", line.strip())
         if m:
             names.append(m.group(1))
@@ -381,14 +387,14 @@ def extract_std_scripts(pokegold):
     return names
 
 
-def extract_map_groups(pokegold):
+def extract_map_groups(pokegold, defines=None):
     """Parse constants/map_constants.asm's newgroup/map_const/endgroup."""
     path = os.path.join(pokegold, "constants/map_constants.asm")
     order = []
     groups = {}
     group = 0
     map_index = 0
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         if re.match(r"newgroup\s+\w+", s):
             group += 1
@@ -411,12 +417,12 @@ def extract_map_groups(pokegold):
     return order, groups
 
 
-def extract_types(pokegold):
+def extract_types(pokegold, defines=None):
     """Type constants are physical IDs, a gap, then special IDs (Gen 1-style)."""
     path = os.path.join(pokegold, "constants/type_constants.asm")
     types = {}
     value = None
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         m = re.match(r"const_def(?:\s+(\$?\w+))?$", s)
         if m:
@@ -435,12 +441,14 @@ def extract_types(pokegold):
     return types
 
 
-def charmap(pokegold):
+def charmap(pokegold, defines=None):
     """Byte -> text charmap, same shape as make_rom_manifest.charmap."""
     expansions = {
         "<DOT>": ".",
         "<LV>": "{LV}",
         "<ID>": "{ID}",
+        # ../pokecrystal/constants/charmap.asm:6 -- $14 is "<PLAYER>" in English
+        "<PLAY_G>": "<PLAYER>",
         # Compression bytes: the cart stores one byte and PlaceString expands
         # it into several glyphs.  The font sheet only starts at $60, so these
         # three have no tile of their own and MUST be expanded here or the
@@ -453,10 +461,15 @@ def charmap(pokegold):
     }
     out = {}
     path = os.path.join(pokegold, "constants/charmap.asm")
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
+        stripped = line.strip()
+        # ../pokecrystal/constants/charmap.asm:423,433 -- the unown and ascii
+        # charmaps are separate RGBDS charmaps, not more rows of the main one.
+        if re.match(r"(pushc|newcharmap)\b", stripped):
+            break
         m = re.match(
             r'charmap\s+"((?:[^"\\]|\\.)*)",\s*(\$[0-9a-fA-F]+)',
-            line.strip())
+            stripped)
         if not m:
             continue
         value = int(m.group(2)[1:], 16)
@@ -478,22 +491,22 @@ def species_label(species_id):
     return "".join(part.capitalize() for part in parts)
 
 
-def pokemon_names(pokegold):
+def pokemon_names(pokegold, defines=None):
     """PokemonNames dname entries, in declared (dex) order."""
     names = []
     path = os.path.join(pokegold, "data/pokemon/names.asm")
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         m = re.match(r'dname\s+"([^"]*)"', line.strip())
         if m:
             names.append(m.group(1))
     return names
 
 
-def music_order(pokegold):
+def music_order(pokegold, defines=None):
     """Music_* labels in MUSIC_* id order from audio/music_pointers.asm."""
     path = os.path.join(pokegold, "audio/music_pointers.asm")
     order = []
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         m = re.match(r"dba\s+(Music_\w+)\s*$", line.strip())
         if m:
             order.append(m.group(1))
@@ -502,11 +515,11 @@ def music_order(pokegold):
     return order
 
 
-def sfx_order(pokegold):
+def sfx_order(pokegold, defines=None):
     """Sfx_* labels in SFX_* id order from audio/sfx_pointers.asm."""
     path = os.path.join(pokegold, "audio/sfx_pointers.asm")
     order = []
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         m = re.match(r"dba\s+(Sfx_\w+)\s*$", line.strip())
         if m:
             order.append(m.group(1))
@@ -515,7 +528,27 @@ def sfx_order(pokegold):
     return order
 
 
-def pokemon_assets(pokegold, species_order, symbols):
+# ../pokecrystal/main.asm:425-448 -- the four per-species pic-animation
+# tables; field name in the manifest, symbol suffix in pokecrystal.sym.
+ANIM_LABEL_SUFFIXES = (
+    ("animLabel", "Animation"),
+    ("idleLabel", "AnimationIdle"),
+    ("bitmaskLabel", "Bitmasks"),
+    ("framesLabel", "Frames"),
+)
+
+
+def _anim_labels(base, symbols):
+    """{animLabel/idleLabel/bitmaskLabel/framesLabel: label or None}."""
+    out = {}
+    for field, suffix in ANIM_LABEL_SUFFIXES:
+        label = base + suffix
+        out[field] = label if label in symbols.by_name else None
+    return out
+
+
+def pokemon_assets(pokegold, species_order, symbols, defines=None,
+                   anim_labels=False):
     """{species: {id, name, front, back, frontLabel, backLabel}}.
 
     Unown shares one pic per letter through UnownPicPointers (its
@@ -523,11 +556,15 @@ def pokemon_assets(pokegold, species_order, symbols):
     per-species Frontpic/Backpic label, so its front/back/labels are left
     null; the extractor's own Unown handling (if any) goes through
     UnownPicPointers directly instead of this table.
+
+    `anim_labels` adds the four pic-animation labels per species; off by
+    default because pokegold.sym carries none of them.
     """
-    names = pokemon_names(pokegold)
+    names = pokemon_names(pokegold, defines)
     assets = {}
     for index, species in enumerate(species_order):
         name = names[index] if index < len(names) else species
+        base = species_label(species)
         if species == "UNOWN":
             # No per-species pic, but it does have a dex entry like anything
             # else, so the #DEX screen can still read it.
@@ -537,8 +574,9 @@ def pokemon_assets(pokegold, species_order, symbols):
                 "frontLabel": None, "backLabel": None,
                 "dexLabel": "UnownPokedexEntry",
             }
+            if anim_labels:
+                assets[species].update(_anim_labels(base, symbols))
             continue
-        base = species_label(species)
         front_label, back_label = base + "Frontpic", base + "Backpic"
         if front_label not in symbols.by_name or back_label not in symbols.by_name:
             raise ValueError(
@@ -554,6 +592,8 @@ def pokemon_assets(pokegold, species_order, symbols):
             "frontLabel": front_label, "backLabel": back_label,
             "dexLabel": dex_label if dex_label in symbols.by_name else None,
         }
+        if anim_labels:
+            assets[species].update(_anim_labels(base, symbols))
     return assets
 
 
@@ -699,6 +739,9 @@ REQUIRED_SYMBOLS = {
     # marker without this symbol.
     "MonMenuIcons", "Icons", "IconPointers", "HeldItemIcons",
     "PokedexDataPointerTable",
+    # engine/pokemon/bills_pc.asm:2170-2173 (the four vTiles2 $5c tiles
+    # PCMonInfo prints at :1086/:1091) and engine/gfx/cgb_layouts.asm:287.
+    "PCMailGFX", "BillsPCOrangePalette",
     # New-game / Pokecenter respawn table (data/maps/spawn_points.asm)
     "SpawnPoints",
     "NewPokedexOrder", "AlphabeticalPokedexOrder", "Landmarks",
@@ -735,6 +778,9 @@ REQUIRED_SYMBOLS = {
     # nine fill cells.  "HP:" and the ten HP-bar cells come from
     # FontBattleExtra, which is already extracted.
     "EnemyHPBarBorderGFX", "HPExpBarBorderGFX", "ExpBarGFX",
+    # gfx/battle/balls.2bpp, the four party-ball OAM tiles
+    # (engine/battle/trainer_huds.asm LoadBallIconGFX).
+    "LoadBallIconGFX.gfx",
     # gfx/stats/stats_tiles.png + gfx/stats/pages.pal, StatsScreen_LoadFont
     # and _CGB_StatsScreenHPPals (#1558)
     "StatsScreenPageTilesGFX", "StatsScreenPagePals",
@@ -797,6 +843,9 @@ REQUIRED_SYMBOLS = {
     # who just spotted the player, and the other faces scripts use.
     "ShockEmote", "QuestionEmote", "HappyEmote", "SadEmote",
     "HeartEmote", "BoltEmote", "SleepEmote", "FishEmote",
+    # gfx/overworld/chris_fish.2bpp (engine/events/fishing_gfx.asm:23): the
+    # fishing pose rows and the rod tiles FacingFish* parks by the player.
+    "FishingGFX",
     # The Pokecenter heal machine's OBJ art (engine/events/
     # heal_machine_anim.asm): two tiles -- the machine's light ($7c) and the
     # ball ($7d) -- plus the CGB palette .LoadPalettes copies over
@@ -904,9 +953,64 @@ REQUIRED_SYMBOLS = {
 }
 
 
-def embedded_symbols(symbols, pokemon_labels, song_labels=()):
-    """Resolve REQUIRED_SYMBOLS + pic labels + Music_* song headers."""
-    names = set(REQUIRED_SYMBOLS) | set(pokemon_labels) | set(song_labels)
+# The engine's own text, the counterpart to make_rom_manifest.text_metadata.
+#
+# Only these five carry dialogue.  data/text/'s other files are character
+# tables rather than strings: dakutens.asm and name_input_chars.asm /
+# mail_input_chars.asm are keyboard layouts, and unused_gen1_trainer_names.asm
+# is a dead Gen 1 leftover.  Decoding those as text yields keyboard rows and
+# kana runs, so they are left out by name rather than filtered afterwards.
+#
+# None of the five carries an IF DEF(_GOLD) / IF DEF(_SILVER) arm, so the
+# label set is one list for both editions and make_silver_manifest.py inherits
+# it with the addresses re-resolved from pokesilver.sym.
+TEXT_SOURCES = (
+    "battle.asm",
+    "common_1.asm",
+    "common_2.asm",
+    "common_3.asm",
+    "std_text.asm",
+)
+
+
+def text_labels(pokegold, defines=None):
+    """Every text label in TEXT_SOURCES, in sorted order.
+
+    Unlike Gen 1 there is no `dynamic` map beside this.  pokered's decoder is
+    told which runtime token each label carries; RomExtractorGen2's reads the
+    cart's own TX_RAM / TX_DECIMAL command bytes and emits {STRBUF} / {NUM}
+    itself, so the label alone is enough.
+    """
+    labels = set()
+    for name in TEXT_SOURCES:
+        path = os.path.join(pokegold, "data/text", name)
+        pending = None
+        for _, line in read_asm(path, defines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            match = re.match(r"(\w+)::?\s*$", stripped)
+            if match:
+                # A label whose next line is another label owns no string of
+                # its own.  `BattleText::` is the one in this set: its own
+                # comment says "used only for BANK(BattleText)", and it shares
+                # an address with the first real label under it, so taking it
+                # would decode that neighbour's string a second time.
+                pending = match.group(1)
+                continue
+            if pending:
+                labels.add(pending)
+                pending = None
+    return sorted(labels)
+
+
+def embedded_symbols(symbols, pokemon_labels, song_labels=(),
+                     text_label_names=(), required=None):
+    """Resolve REQUIRED_SYMBOLS + pic labels + songs + text labels."""
+    if required is None:
+        required = REQUIRED_SYMBOLS
+    names = (set(required) | set(pokemon_labels)
+             | set(song_labels) | set(text_label_names))
     for symbol_name in symbols.by_name:
         # Pokedex entries are split across four banks and the game derives the
         # bank arithmetically from the species id (radio.asm's rlca/maskbits
@@ -929,23 +1033,24 @@ def embedded_symbols(symbols, pokemon_labels, song_labels=()):
     }
 
 
-def generate(pokegold, symbols_path):
+def generate(pokegold, symbols_path, defines=None, required=None,
+             sha1=None, anim_labels=False):
     symbols = SymbolTable(symbols_path)
 
     species = parse_const_block(
         os.path.join(pokegold, "constants/pokemon_constants.asm"),
-        stop_at="NUM_POKEMON")
+        stop_at="NUM_POKEMON", defines=defines)
     species_order = [n or "UNUSED" for n in species[1:]]
 
-    map_order, map_groups = extract_map_groups(pokegold)
+    map_order, map_groups = extract_map_groups(pokegold, defines)
 
     tilesets = [n for n in parse_const_block(
         os.path.join(pokegold, "constants/tileset_constants.asm"),
-        stop_at="NUM_TILESETS") if n]
+        stop_at="NUM_TILESETS", defines=defines) if n]
 
     moves = parse_const_block(
         os.path.join(pokegold, "constants/move_constants.asm"),
-        stop_at="NUM_ATTACKS")
+        stop_at="NUM_ATTACKS", defines=defines)
     move_order = [n or "UNUSED" for n in moves[1:]]
 
     # sprite_constants.asm stacks the ids of two different tables.  $01..
@@ -963,26 +1068,29 @@ def generate(pokegold, symbols_path):
     # wVariableSprites, so naming them here would let World:resolveSprite hand
     # a slot id back as though it were something that could be drawn.
     sprite_path = os.path.join(pokegold, "constants/sprite_constants.asm")
-    sprites = parse_const_block(sprite_path, stop_at="NUM_POKEMON_SPRITES")
+    sprites = parse_const_block(
+        sprite_path, stop_at="NUM_POKEMON_SPRITES", defines=defines)
     sprite_order = [n or "UNUSED" for n in sprites[1:]]
     # The two DEFs the block itself ends its halves on.  The $60..$7f hole
     # between them stays in sprite_order as UNUSED rows so the ids line up.
     num_overworld_sprites = len(
-        parse_const_block(sprite_path, stop_at="NUM_OVERWORLD_SPRITES")) - 1
+        parse_const_block(
+            sprite_path, stop_at="NUM_OVERWORLD_SPRITES",
+            defines=defines)) - 1
     sprite_pokemon = sprites.index("SPRITE_UNOWN")
     if len(sprites) - sprite_pokemon != 35:
         raise SystemExit(
             f"{sprite_path}: expected 35 SpriteMons ids, got "
             f"{len(sprites) - sprite_pokemon}")
 
-    types = extract_types(pokegold)
+    types = extract_types(pokegold, defines)
 
     # Environment (1-based), palette (0-based), fish-group (0-based) name
     # tables -- scraped by prefix so the mixed const_def blocks in
     # map_data_constants.asm cannot collide with each other.
     environments, palettes, fish_groups, spawns = [], [], [], []
     path = os.path.join(pokegold, "constants/map_data_constants.asm")
-    for _, line in read_asm(path):
+    for _, line in read_asm(path, defines):
         s = line.strip()
         m = re.match(r"const\s+(\w+)", s)
         if not m:
@@ -1004,7 +1112,8 @@ def generate(pokegold, symbols_path):
     # Moves' effect byte into one of these names so the battle engine can
     # switch on a readable id instead of a raw number.
     move_effects = parse_const_block(
-        os.path.join(pokegold, "constants/move_effect_constants.asm"))
+        os.path.join(pokegold, "constants/move_effect_constants.asm"),
+        defines=defines)
     move_effect_order = [n or "EFFECT_UNUSED" for n in move_effects]
 
     # Battle animations.  constants/battle_anim_constants.asm stacks nine
@@ -1014,55 +1123,66 @@ def generate(pokegold, symbols_path):
     # framesets, OAM sets, GFX sheets) plus the BG-effect and palette enums a
     # disassembled animation refers to by number.
     battle_anim = os.path.join(pokegold, "constants/battle_anim_constants.asm")
-    battle_anim_objects = parse_prefixed_consts(battle_anim, ("BATTLE_ANIM_OBJ_",))
-    battle_anim_funcs = parse_prefixed_consts(battle_anim, ("BATTLE_ANIM_FUNC_",))
+    battle_anim_objects = parse_prefixed_consts(
+        battle_anim, ("BATTLE_ANIM_OBJ_",), defines=defines)
+    battle_anim_funcs = parse_prefixed_consts(
+        battle_anim, ("BATTLE_ANIM_FUNC_",), defines=defines)
     battle_anim_framesets = parse_prefixed_consts(
-        battle_anim, ("BATTLE_ANIM_FRAMESET_",))
-    battle_anim_oamsets = parse_prefixed_consts(battle_anim, ("BATTLE_ANIM_OAMSET_",))
+        battle_anim, ("BATTLE_ANIM_FRAMESET_",), defines=defines)
+    battle_anim_oamsets = parse_prefixed_consts(
+        battle_anim, ("BATTLE_ANIM_OAMSET_",), defines=defines)
     # BATTLE_ANIM_GFX_* is the one block here that does not start at zero
     # (`const_def 1`, because AnimObjGFX row 0 is the empty AnimObj00GFX).
     # A placeholder in front keeps every list in this group indexable as
     # value + 1, so the extractor never has to remember which is which.
     battle_anim_gfx = ["BATTLE_ANIM_GFX_NONE"] + parse_prefixed_consts(
-        battle_anim, ("BATTLE_ANIM_GFX_",))
-    battle_bg_effects = parse_prefixed_consts(battle_anim, ("BATTLE_BG_EFFECT_",))
+        battle_anim, ("BATTLE_ANIM_GFX_",), defines=defines)
+    battle_bg_effects = parse_prefixed_consts(
+        battle_anim, ("BATTLE_BG_EFFECT_",), defines=defines)
     # Two separate blocks, each starting at zero: a BG palette 4 and an OBJ
     # palette 4 are different colours, so they cannot share one list.
-    battle_anim_bg_pals = parse_prefixed_consts(battle_anim, ("PAL_BATTLE_BG_",))
-    battle_anim_ob_pals = parse_prefixed_consts(battle_anim, ("PAL_BATTLE_OB_",))
+    battle_anim_bg_pals = parse_prefixed_consts(
+        battle_anim, ("PAL_BATTLE_BG_",), defines=defines)
+    battle_anim_ob_pals = parse_prefixed_consts(
+        battle_anim, ("PAL_BATTLE_OB_",), defines=defines)
 
     item_data = os.path.join(pokegold, "constants/item_data_constants.asm")
     # Pocket ids are 0-based (ITEM, KEY_ITEM, BALL, TM_HM); the ITEM_* /
     # ITEMMENU_* / HELD_* blocks share the file, hence the prefix scrape.
     pocket_order = parse_prefixed_consts(
-        item_data, (), exact=("ITEM", "KEY_ITEM", "BALL", "TM_HM"))
-    item_menu_order = parse_prefixed_consts(item_data, ("ITEMMENU_",))
+        item_data, (), exact=("ITEM", "KEY_ITEM", "BALL", "TM_HM"),
+        defines=defines)
+    item_menu_order = parse_prefixed_consts(
+        item_data, ("ITEMMENU_",), defines=defines)
     # The HELD_* block is sparse (const_skip / const_next), so the index of
     # this list must BE the ItemAttributes effect byte or every held effect
     # past HELD_CLEANSE_TAG lands on the wrong item.
-    held_effect_order = parse_sparse_consts(item_data, ("HELD_",))
+    held_effect_order = parse_sparse_consts(
+        item_data, ("HELD_",), defines=defines)
 
     mon_data = os.path.join(pokegold, "constants/pokemon_data_constants.asm")
-    growth_order = parse_prefixed_consts(mon_data, ("GROWTH_",))
-    egg_group_order = parse_prefixed_consts(mon_data, ("EGG_",))
-    evolve_order = parse_prefixed_consts(mon_data, ("EVOLVE_",))
+    growth_order = parse_prefixed_consts(mon_data, ("GROWTH_",), defines=defines)
+    egg_group_order = parse_prefixed_consts(mon_data, ("EGG_",), defines=defines)
+    evolve_order = parse_prefixed_consts(mon_data, ("EVOLVE_",), defines=defines)
 
     # Map callbacks (constants/map_setup_constants.asm).  That block is
     # `const_def 1`, so MAPCALLBACK_TILES is 1 and index 0 of this list is a
     # placeholder -- the same "value + 1" indexing BATTLE_ANIM_GFX_* uses.
     map_setup = os.path.join(pokegold, "constants/map_setup_constants.asm")
     map_callback_order = ["MAPCALLBACK_NONE"] + parse_prefixed_consts(
-        map_setup, ("MAPCALLBACK_",))
+        map_setup, ("MAPCALLBACK_",), defines=defines)
 
     # constants/script_constants.asm stacks a dozen unrelated blocks, so each
     # of these is found by the name its own block opens with.
     script_consts = os.path.join(pokegold, "constants/script_constants.asm")
     cmd_queue_order = parse_const_block_at(
-        script_consts, "CMDQUEUE_NULL", stop_at="NUM_CMDQUEUE_TYPES")
+        script_consts, "CMDQUEUE_NULL", stop_at="NUM_CMDQUEUE_TYPES",
+        defines=defines)
     floor_order = parse_const_block_at(
-        script_consts, "FLOOR_B4F", stop_at="NUM_FLOORS")
+        script_consts, "FLOOR_B4F", stop_at="NUM_FLOORS", defines=defines)
     deco_desc_order = parse_const_block_at(
-        script_consts, "DECODESC_POSTER", stop_at="NUM_DECODESCS")
+        script_consts, "DECODESC_POSTER", stop_at="NUM_DECODESCS",
+        defines=defines)
 
     # The phone.  PHONE_* doubles as the PhoneContacts row index and carries
     # four const_skip holes that are real rows (the wrong-number fillers), so
@@ -1073,33 +1193,41 @@ def generate(pokegold, symbols_path):
     # every contact past a hole four rows down its own table.
     phone_contact_order = [
         n or "PHONE_UNUSED" for n in parse_const_block_at(
-            phone_consts, "PHONE_00", stop_at="NUM_PHONE_CONTACTS")]
+            phone_consts, "PHONE_00", stop_at="NUM_PHONE_CONTACTS",
+            defines=defines)]
     special_call_order = parse_const_block_at(
-        phone_consts, "SPECIALCALL_NONE", stop_at="NUM_SPECIALCALLS")
+        phone_consts, "SPECIALCALL_NONE", stop_at="NUM_SPECIALCALLS",
+        defines=defines)
 
     npc_trade = os.path.join(pokegold, "constants/npc_trade_constants.asm")
-    trade_gender_order = parse_prefixed_consts(npc_trade, ("TRADE_GENDER_",))
-    trade_dialog_order = parse_prefixed_consts(npc_trade, ("TRADE_DIALOGSET_",))
+    trade_gender_order = parse_prefixed_consts(
+        npc_trade, ("TRADE_GENDER_",), defines=defines)
+    trade_dialog_order = parse_prefixed_consts(
+        npc_trade, ("TRADE_DIALOGSET_",), defines=defines)
 
-    trainer_classes, trainer_members = extract_trainer_classes(pokegold)
+    trainer_classes, trainer_members = extract_trainer_classes(
+        pokegold, defines)
     trainer_types = parse_prefixed_consts(
         os.path.join(pokegold, "constants/trainer_data_constants.asm"),
-        ("TRAINERTYPE_",))
+        ("TRAINERTYPE_",), defines=defines)
 
     landmarks = parse_const_block(
         os.path.join(pokegold, "constants/landmark_constants.asm"),
-        stop_at="NUM_LANDMARKS")
+        stop_at="NUM_LANDMARKS", defines=defines)
     landmark_order = [n or "UNUSED" for n in landmarks]
 
     icons = parse_prefixed_consts(
-        os.path.join(pokegold, "constants/icon_constants.asm"), ("ICON_",))
+        os.path.join(pokegold, "constants/icon_constants.asm"), ("ICON_",),
+        defines=defines)
 
-    tree_sets = parse_prefixed_consts(mon_data, ("TREEMON_SET_",))
+    tree_sets = parse_prefixed_consts(
+        mon_data, ("TREEMON_SET_",), defines=defines)
 
-    std_scripts = extract_std_scripts(pokegold)
-    specials = extract_specials(pokegold)
+    std_scripts = extract_std_scripts(pokegold, defines)
+    specials = extract_specials(pokegold, defines)
 
-    assets = pokemon_assets(pokegold, species_order, symbols)
+    assets = pokemon_assets(pokegold, species_order, symbols, defines,
+                            anim_labels=anim_labels)
     pokemon_labels = []
     for asset in assets.values():
         if asset["frontLabel"]:
@@ -1107,18 +1235,19 @@ def generate(pokegold, symbols_path):
         if asset["backLabel"]:
             pokemon_labels.append(asset["backLabel"])
 
-    songs = music_order(pokegold)
-    sfx = sfx_order(pokegold)
+    songs = music_order(pokegold, defines)
+    text_label_names = text_labels(pokegold, defines)
+    sfx = sfx_order(pokegold, defines)
 
     # Index 0 is NO_ITEM, so the parsed list is already 1-based on item id.
     # ItemNames only has rows for the first `item_name_count` of them; the TM
     # and HM items past that are named from their TM number instead.
-    item_order, item_name_count = extract_items(pokegold)
+    item_order, item_name_count = extract_items(pokegold, defines)
 
     data = {
         "format": 3,
         "generation": 2,
-        "romSha1": CANONICAL_GOLD_SHA1,
+        "romSha1": sha1 or CANONICAL_GOLD_SHA1,
         "constants": {
             "source": "pret/pokegold constants/*.asm",
             "speciesOrder": species_order,
@@ -1199,7 +1328,10 @@ def generate(pokegold, symbols_path):
             "battleAnimBgPaletteOrder": battle_anim_bg_pals,
             "battleAnimObPaletteOrder": battle_anim_ob_pals,
         },
-        "charmap": charmap(pokegold),
+        # Label -> decoded string is built at import time from these, the
+        # same way Gen 1 builds data/generated/text.lua from its own list.
+        "text": {"labels": text_label_names},
+        "charmap": charmap(pokegold, defines),
         "fontCharmap": font_extract.parse_charmap(pokegold),
         "pokemonAssets": assets,
         # Per-map metadata (group/map/width/height/name).  RomExtractorGen2
@@ -1207,7 +1339,8 @@ def generate(pokegold, symbols_path):
         "maps": {name: map_groups[name] for name in map_order},
         "tilesets": {name: {} for name in tilesets},
     }
-    data["symbols"] = embedded_symbols(symbols, pokemon_labels, songs)
+    data["symbols"] = embedded_symbols(
+        symbols, pokemon_labels, songs, text_label_names, required=required)
     return data
 
 

@@ -90,11 +90,11 @@ return function(game)
     if r[2] == "SS_Anne_Horn" then horns = horns + 1 end
   end
   check("the departure blows the horn twice", horns == 2)
-  local slide = 0
-  for _, w in ipairs(rowsOfKind(dockRows, "wait")) do
-    if w[2] == 20 then slide = slide + 1 end
-  end
-  check("she sails in eight beats, not one frame", slide == 8)
+  check("she sails as one blocking slide, not a block shuffle",
+        #rowsOfKind(dockRows, "ss_anne_departs") == 1
+        and #rowsOfKind(dockRows, "replace_block") == 0)
+  check("he keeps facing down until he walks out",
+        (rowsOfKind(dockRows, "face_player_dir")[1] or {})[2] == "down")
   check("no keepMusic override into the city", (function()
     for _, r in ipairs(rowsOfKind(dockRows, "play_music")) do
       if r[3] and r[3].keep then return false end
@@ -130,10 +130,12 @@ return function(game)
         and game.save.flags.EVENT_SS_ANNE_LEFT == nil
         and game.save.flags.EVENT_BEAT_SS_ANNE_RIVAL == nil)
 
-  U.log("Watch for: she idles a couple of seconds with smoke off the funnel,")
-  U.log("one horn, then travels WEST a block at a time with the water closing")
-  U.log("in behind her, a second horn once she is gone, and the surf loop")
-  U.log("gives way to the Vermilion theme the moment you cross into town.")
+  U.log("Watch for: he turns to face DOWN and stays that way, she idles two")
+  U.log("seconds, one horn, then she slides WEST smoothly for about seventeen")
+  U.log("seconds with white smoke puffing off the front funnel and drifting")
+  U.log("east, the dock row he stands on never moving; a second horn once she")
+  U.log("is gone, the gangway stub still under his feet, then he walks up and")
+  U.log("the surf loop gives way to the Vermilion theme as you cross in.")
 
   U.teleport(game, DOCK, DOCK_CELL.x, DOCK_CELL.y, "up")
   local ow = game.overworld

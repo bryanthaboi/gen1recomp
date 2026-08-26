@@ -2,6 +2,8 @@
 -- ghost, elevators, the Game Corner coins/prizes, the SS Anne departure
 -- and the Hall of Fame record.  Each cites its pokered source.
 
+local Runtime = require("src.mods.Runtime")
+
 local M = {}
 
 -- -------------------------------------------------------------------
@@ -9,20 +11,30 @@ local M = {}
 -- FuchsiaGoodRodHouse.asm, Route12SuperRodHouse.asm)
 -- -------------------------------------------------------------------
 
-local function rodGiver(askText, receivedText, afterText, rodItem, flag)
-  return {
-    { "face_player" },                -- 1
-    { "check_flag", flag },           -- 2
-    { "jump_if_true", 9 },            -- 3
-    { "ask", askText },               -- 4
-    { "jump_if_false", 10 },          -- 5
+-- refusedText is the .ThatsSoDisappointingText tail on NO; followText is
+-- the second half of the received chain (scripts/VermilionOldRodHouse.asm:45)
+local function rodGiver(askText, receivedText, afterText, rodItem, flag,
+                        refusedText, followText)
+  local rows = {
+    { "face_player" },
+    { "check_flag", flag },
+    { "jump_if_true", "already_got" },
+    { "ask", askText },
+    { "jump_if_false", "refused" },
     -- give-then-print like the three rod-house scripts (GiveItem fills
     -- wStringBuffer; the received texts read OLD/GOOD/SUPER ROD from it)
-    { "give_item", rodItem, 1, false },  -- 6
-    { "show_text", receivedText },       -- 7
-    { "set_flag", flag },             -- 8
-    { "jump", 10 },                   -- 9 is below
+    { "give_item", rodItem, 1, false },
+    { "set_flag", flag },
+    { "show_text", receivedText },
   }
+  if followText then rows[#rows + 1] = { "show_text", followText } end
+  rows[#rows + 1] = { "jump", "end" }
+  rows[#rows + 1] = { "label", "refused" }
+  rows[#rows + 1] = { "show_text", refusedText }
+  rows[#rows + 1] = { "jump", "end" }
+  rows[#rows + 1] = { "label", "already_got" }
+  rows[#rows + 1] = { "show_text", afterText }
+  return rows
 end
 
 M.VERMILION_OLD_ROD_HOUSE = {
@@ -31,11 +43,11 @@ M.VERMILION_OLD_ROD_HOUSE = {
       "_VermilionOldRodHouseFishingGuruDoYouLikeToFishText",
       "_VermilionOldRodHouseFishingGuruTakeThisText",
       "_VermilionOldRodHouseFishingGuruHowAreTheFishBitingText",
-      "OLD_ROD", "EVENT_GOT_OLD_ROD"),
+      "OLD_ROD", "EVENT_GOT_OLD_ROD",
+      "_VermilionOldRodHouseFishingGuruThatsSoDisappointingText",
+      "_VermilionOldRodHouseFishingGuruFishingIsAWayOfLifeText"),
   },
 }
-M.VERMILION_OLD_ROD_HOUSE.talk.TEXT_VERMILIONOLDRODHOUSE_FISHING_GURU[9] =
-  { "show_text", "_VermilionOldRodHouseFishingGuruHowAreTheFishBitingText" }
 
 M.FUCHSIA_GOOD_ROD_HOUSE = {
   talk = {
@@ -43,11 +55,10 @@ M.FUCHSIA_GOOD_ROD_HOUSE = {
       "_FuchsiaGoodRodHouseFishingGuruText",
       "_FuchsiaGoodRodHouseFishingGuruReceivedGoodRodText",
       "_FuchsiaGoodRodHouseFishingGuruHowAreTheFishText",
-      "GOOD_ROD", "EVENT_GOT_GOOD_ROD"),
+      "GOOD_ROD", "EVENT_GOT_GOOD_ROD",
+      "_FuchsiaGoodRodHouseFishingGuruThatsSoDisappointingText"),
   },
 }
-M.FUCHSIA_GOOD_ROD_HOUSE.talk.TEXT_FUCHSIAGOODRODHOUSE_FISHING_GURU[9] =
-  { "show_text", "_FuchsiaGoodRodHouseFishingGuruHowAreTheFishText" }
 
 M.ROUTE_12_SUPER_ROD_HOUSE = {
   talk = {
@@ -55,11 +66,11 @@ M.ROUTE_12_SUPER_ROD_HOUSE = {
       "_Route12SuperRodHouseFishingGuruDoYouLikeToFishText",
       "_Route12SuperRodHouseFishingGuruReceivedSuperRodText",
       "_Route12SuperRodHouseFishingGuruTryFishingText",
-      "SUPER_ROD", "EVENT_GOT_SUPER_ROD"),
+      "SUPER_ROD", "EVENT_GOT_SUPER_ROD",
+      "_Route12SuperRodHouseFishingGuruThatsDisappointingText",
+      "_Route12SuperRodHouseFishingGuruFishingWayOfLifeText"),
   },
 }
-M.ROUTE_12_SUPER_ROD_HOUSE.talk.TEXT_ROUTE12SUPERRODHOUSE_FISHING_GURU[9] =
-  { "show_text", "_Route12SuperRodHouseFishingGuruTryFishingText" }
 
 -- -------------------------------------------------------------------
 -- Pokemon Tower 5F purified zone (scripts/PokemonTower5F.asm
@@ -176,7 +187,7 @@ M.POKEMON_TOWER_6F = {
           -- .did_not_defeat: one simulated step right, off the trigger,
           -- so fleeing does not leave you standing on a cell that
           -- immediately re-fires.
-          ow:scriptMove(ow.player, "right", 1)
+          ow:scriptMove(ow.player, "right", 1, nil, { collide = true })
         end
         ow:afterBattle(result, battle)
       end
@@ -893,81 +904,65 @@ local DOCK_SHIP_BLOCKS = {
   { bx = 7, by = 2, water = 13 }, { bx = 8, by = 2, water = 13 },
 }
 
--- her four hull columns bow-to-stern (upper-half / lower-half block ids)
--- and the open-water ids of the rows she sits in
-local DOCK_SHIP_COLUMNS = {
-  { bx = 5, top = 4, bottom = 8 },
-  { bx = 6, top = 5, bottom = 9 },
-  { bx = 7, top = 6, bottom = 10 },
-  { bx = 8, top = 7, bottom = 11 },
-}
-local DOCK_WATER_TOP, DOCK_WATER_BOTTOM = 1, 13
-
 M.VERMILION_DOCK = {
   onEnter = function(game, ow)
     local Flags = require("src.script.Flags")
     local f = game.save.flags
     if Flags.get(game.save, "EVENT_SS_ANNE_LEFT") then
       -- the ship is long gone: erase her right away, and anyone who
-      -- still lands here is sent back out past the guard
+      -- still lands here is sent back out past the guard unless a mod
+      -- explicitly permits this occupied map state.  This hook surrounds
+      -- only the ejection decision; map-script registration and dispatch
+      -- stay unchanged, and the departed ship remains erased.
       for _, b in ipairs(DOCK_SHIP_BLOCKS) do
         ow.map:setBlock(b.bx, b.by, b.water)
       end
       ow.map.renderer:rebuild()
-      local TextBox = require("src.render.TextBox")
-      game.stack:push(TextBox.new(game,
-        game.data.text._VermilionCitySailor1ShipSetSailText
-        or "The ship set sail.", function()
-        ow:startWarpTo("VERMILION_CITY", 18, 29, "up")
-      end))
+      local occupancyAllowed = false
+      if Runtime.wantsHook("map.occupancy_allowed") then
+        local player = ow.player or {}
+        occupancyAllowed = Runtime.call("map.occupancy_allowed",
+          function() return false end, game, {
+            mapId = "VERMILION_DOCK",
+            reason = "ss_anne_departed",
+            gameVersion = game.save and game.save.version,
+            x = player.cellX,
+            y = player.cellY,
+          }) == true
+      end
+      if not occupancyAllowed then
+        local TextBox = require("src.render.TextBox")
+        game.stack:push(TextBox.new(game,
+          game.data.text._VermilionCitySailor1ShipSetSailText
+          or "The ship set sail.", function()
+          ow:startWarpTo("VERMILION_CITY", 18, 29, "up")
+        end))
+      end
     elseif f.EVENT_GOT_HM01 and ow.player.cellY == 2 then
       -- VermilionDockSSAnneLeavesScript: only stepping OFF the ship
-      -- triggers the departure (wDestinationWarpID == 1 in pokered) --
-      -- Music_Surfing plays for the sail-away cutscene, smoke puffs
-      -- drift off the funnel, the horn blows, the ship is erased to
-      -- open water, and the player is walked off the dock into the
-      -- city past the guard (VermilionCity's
-      -- SCRIPT_VERMILIONCITY_PLAYER_EXIT_SHIP walk)
+      -- triggers the departure (wDestinationWarpID == 1 in pokered)
       Flags.set(game.save, "EVENT_SS_ANNE_LEFT")
       local Music = require("src.core.Music")
       Music.stop()
       Music.play(game.data, "Music_Surfing")
-      local function puff(n, cx)
-        if n <= 0 then return end
-        ow:startDustAnim(cx, 1, function() puff(n - 1, cx + 2) end)
-      end
-      puff(3, 15)
-      -- scripts/VermilionDock.asm:182-203
-      local rows = {}
-      local function setBlock(bx, by, block)
-        if bx < 1 or bx > 8 then return end
-        rows[#rows + 1] = { "replace_block", bx, by, block }
-      end
-      rows[#rows + 1] = { "wait", 120 }
-      rows[#rows + 1] = { "play_sound", "SS_Anne_Horn" }
-      -- .shift_columns_up slides her tile columns west behind a mid-frame
-      -- rSCX split; with no split scroll here she sails one block per beat
-      -- and the water closes in astern (#360)
-      for step = 1, 8 do
-        for _, col in ipairs(DOCK_SHIP_COLUMNS) do
-          setBlock(col.bx - step, 1, col.top)
-          setBlock(col.bx - step, 2, col.bottom)
-        end
-        setBlock(9 - step, 1, DOCK_WATER_TOP)
-        setBlock(9 - step, 2, DOCK_WATER_BOTTOM)
-        rows[#rows + 1] = { "wait", 20 }
-      end
-      -- the second horn as she clears the dock, then EraseSSAnne's 120
-      -- frames before the walk out
-      rows[#rows + 1] = { "play_sound", "SS_Anne_Horn" }
-      rows[#rows + 1] = { "wait", 120 }
-      rows[#rows + 1] = { "move_player", "up", 2 }
-      -- no keepMusic on this warp: Music_Surfing belongs to the dock's
-      -- cutscene, and VERMILION_CITY's own theme has to take over as the
-      -- player crosses in (EnterMap's PlayDefaultMusic)
-      rows[#rows + 1] = { "warp", "VERMILION_CITY", 18, 31, "up" }
-      rows[#rows + 1] = { "move_player", "up", 2 }
-      ow:queueScript(rows)
+      ow:queueScript({
+        -- scripts/VermilionDock.asm:50 zeroes the player image index and
+        -- :77 freezes sprite updates, so he faces DOWN throughout (#1689)
+        { "face_player_dir", "down" },
+        { "wait", 120 },
+        { "play_sound", "SS_Anne_Horn" },
+        -- scripts/VermilionDock.asm:80 .shift_columns_up
+        { "ss_anne_departs" },
+        -- scripts/VermilionDock.asm:205 VermilionDock_EraseSSAnne
+        { "play_sound", "SS_Anne_Horn" },
+        { "wait", 120 },
+        { "move_player", "up", 2 },
+        -- no keepMusic on this warp: Music_Surfing belongs to the dock's
+        -- cutscene, and VERMILION_CITY's own theme has to take over as the
+        -- player crosses in (EnterMap's PlayDefaultMusic)
+        { "warp", "VERMILION_CITY", 18, 31, "up" },
+        { "move_player", "up", 2 },
+      })
     end
   end,
 }

@@ -3,8 +3,6 @@ local TouchSkin = require("src.core.TouchSkin")
 
 local Playfield = {}
 
-Playfield.WIDTH, Playfield.HEIGHT = 160, 144
-
 Playfield.entered = false
 Playfield.box = nil
 
@@ -35,14 +33,9 @@ function Playfield.cutout(sw, sh)
 end
 
 function Playfield.rect(sw, sh)
-  local x, y, w, h, _, expand = Playfield.cutout(sw, sh)
+  local x, y, w, h = Playfield.cutout(sw, sh)
   if not x then return 0, 0, sw or 0, sh or 0, false end
-  if expand then return x, y, w, h, true end
-  local s = math.max(1, math.floor(math.min(w / Playfield.WIDTH,
-    h / Playfield.HEIGHT)))
-  local pw = math.min(w, Playfield.WIDTH * s)
-  local ph = math.min(h, Playfield.HEIGHT * s)
-  return x + math.floor((w - pw) / 2), y + math.floor((h - ph) / 2), pw, ph, true
+  return x, y, w, h, true
 end
 
 function Playfield.enter(x, y, w, h)

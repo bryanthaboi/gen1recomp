@@ -2,11 +2,22 @@
 # Packages the LÖVE2D Pokémon Red port into an Android APK via love-android 11.5a.
 #
 # Usage: scripts/build_android.sh [--version X.Y.Z] [--release] [--package-only]
+#                                 [--test-application-id ID]
 #
-#   --version X.Y.Z  set app.version_name / app.version_code (else left as-is)
-#   --release        build the production-signed release APK (requires the
-#                    GEN1RECOMP_ANDROID_* signing environment variables)
-#   --package-only   zip game.love + apply branding; skip gradle
+#   --version X.Y.Z          set app.version_name / app.version_code (else left as-is)
+#   --release                build the production-signed release APK (requires the
+#                            GEN1RECOMP_ANDROID_* signing environment variables)
+#   --package-only           zip game.love + apply branding; skip gradle
+#   --test-application-id ID install under a distinct application id (e.g.
+#                             com.theboisclub.pokemonred.shaderfxtest) so a
+#                             test build installs side by side with a real
+#                             played copy instead of overwriting it. App name
+#                             gets a " (test)" suffix so it's distinguishable
+#                             in the launcher too. Without this flag,
+#                             apply_android_branding always writes back the
+#                             real shipping identity, which previously had to
+#                             be restored by hand in gradle.properties after
+#                             every test build.
 #
 # Prerequisites:
 #   - mobile/android vendored love-android tree at tag 11.5a (in-repo; see mobile/ANDROID.md)
@@ -34,10 +45,13 @@ GOLD_MANIFEST_RELATIVE="tools/rom_manifest_gold.json"
 GOLD_MANIFEST_URL="${GOLD_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_gold.json}"
 SILVER_MANIFEST_RELATIVE="tools/rom_manifest_silver.json"
 SILVER_MANIFEST_URL="${SILVER_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_silver.json}"
+CRYSTAL_MANIFEST_RELATIVE="tools/rom_manifest_crystal.json"
+CRYSTAL_MANIFEST_URL="${CRYSTAL_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_crystal.json}"
 
 VERSION=""
 PACKAGE_ONLY=false
 RELEASE=false
+TEST_APPLICATION_ID=""
 
 say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
@@ -48,11 +62,12 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift ;;
     --package-only) PACKAGE_ONLY=true ;;
     --release) RELEASE=true ;;
+    --test-application-id) TEST_APPLICATION_ID="$2"; shift ;;
     -h|--help)
-      sed -n '2,20p' "$0"
+      sed -n '2,28p' "$0"
       exit 0
       ;;
-    *) fail "unknown argument: $1 (try --version X.Y.Z, --release, or --package-only)" ;;
+    *) fail "unknown argument: $1 (try --version X.Y.Z, --release, --package-only, or --test-application-id ID)" ;;
   esac
   shift
 done
@@ -82,6 +97,14 @@ if $RELEASE; then
   done
   [ -f "$GEN1RECOMP_ANDROID_KEYSTORE" ] \
     || fail "Android signing keystore does not exist: $GEN1RECOMP_ANDROID_KEYSTORE"
+fi
+
+if [ -n "$TEST_APPLICATION_ID" ]; then
+  if ! printf '%s' "$TEST_APPLICATION_ID" | grep -Eq '^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$'; then
+    fail "invalid --test-application-id '$TEST_APPLICATION_ID' (expected a dotted package id, e.g. com.theboisclub.pokemonred.shaderfxtest)"
+  fi
+  APPLICATION_ID="$TEST_APPLICATION_ID"
+  APP_NAME="$APP_NAME (test)"
 fi
 
 # --------------------------------------------------------------- preconditions
@@ -246,6 +269,54 @@ ensure_silver_manifest() {
   fail "Silver import manifest is unavailable. Git recovery failed and could not download $SILVER_MANIFEST_URL"
 }
 
+crystal_manifest_is_valid() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json, pathlib, sys
+
+try:
+    manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
+except (OSError, ValueError):
+    raise SystemExit(1)
+
+raise SystemExit(0 if manifest.get("romSha1") ==
+                 "f4cd194bdee0d04ca4eac29e09b8e4e9d818c133" else 1)
+PY
+}
+
+ensure_crystal_manifest() {
+  local manifest="$ROOT/$CRYSTAL_MANIFEST_RELATIVE"
+  local staged
+  staged="$(mktemp)"
+
+  if crystal_manifest_is_valid "$manifest"; then
+    rm -f "$staged"
+    return
+  fi
+
+  warn "Crystal import manifest is missing or invalid; recovering it before packaging"
+  if git -C "$ROOT" show "HEAD:$CRYSTAL_MANIFEST_RELATIVE" > "$staged" 2>/dev/null \
+      && crystal_manifest_is_valid "$staged"; then
+    mkdir -p "$(dirname "$manifest")"
+    mv "$staged" "$manifest"
+    say "restored Crystal import manifest from this checkout's Git data"
+    return
+  fi
+
+  if command -v curl >/dev/null 2>&1 \
+      && curl --fail --location --retry 2 --connect-timeout 15 \
+          --output "$staged" "$CRYSTAL_MANIFEST_URL" \
+      && crystal_manifest_is_valid "$staged"; then
+    mkdir -p "$(dirname "$manifest")"
+    mv "$staged" "$manifest"
+    say "downloaded Crystal import manifest from the project repository"
+    return
+  fi
+
+  rm -f "$staged"
+  fail "Crystal import manifest is unavailable. Git recovery failed and could not download $CRYSTAL_MANIFEST_URL"
+}
+
 # --------------------------------------------------------------- branding
 # love-android 11.5+ reads app id / name / orientation from gradle.properties.
 # Manifest still gets permission trims. Re-applied every build so refreshing
@@ -312,6 +383,7 @@ pack_game_love() {
   ensure_yellow_manifest
   ensure_gold_manifest
   ensure_silver_manifest
+  ensure_crystal_manifest
   mkdir -p "$EMBED_ASSETS"
   rm -f "$LOVE_FILE"
   # tools/save-editor ships with the app: the launcher's Edit button on a save
@@ -326,7 +398,7 @@ pack_game_love() {
     main.lua conf.lua src data assets tools/save-editor \
     tools/rom_manifest.json tools/rom_manifest_blue.json \
     tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
-    tools/rom_manifest_silver.json \
+    tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
   # List once and match against the captured text: piping unzip straight into
@@ -350,6 +422,8 @@ pack_game_love() {
     || fail "game.love is missing the Gold ROM import manifest"
   grep -qx 'tools/rom_manifest_silver.json' <<< "$archive_entries" \
     || fail "game.love is missing the Silver ROM import manifest"
+  grep -qx 'tools/rom_manifest_crystal.json' <<< "$archive_entries" \
+    || fail "game.love is missing the Crystal ROM import manifest"
   # This gate exists because the launcher's UI toolkit once lived outside
   # src/ (libs/flexlove) and was added to scripts/build.sh's payload and to
   # no other packager, so Android and iOS built an APK/IPA whose launcher
@@ -384,6 +458,115 @@ pack_game_love() {
     say "stamped engine version: $VERSION"
   else
     say "no X.Y.Z --version,  shipping default engine (no stamp)"
+  fi
+}
+
+# --------------------------------------------------------------- ShaderFX bridge
+SHADER_BRIDGE_LIB="liblibrashader_bridge.so"
+SHADER_BRIDGE_ABIS="arm64-v8a armeabi-v7a"
+
+shader_bridge_rust_target() {
+  case "$1" in
+    arm64-v8a)   printf 'aarch64-linux-android' ;;
+    armeabi-v7a) printf 'armv7-linux-androideabi' ;;
+    x86_64)      printf 'x86_64-linux-android' ;;
+    x86)         printf 'i686-linux-android' ;;
+    *)           printf '' ;;
+  esac
+}
+
+shader_bridge_staged_count() {
+  local jni="$1" abi count=0
+  for abi in $SHADER_BRIDGE_ABIS; do
+    [ -f "$jni/$abi/$SHADER_BRIDGE_LIB" ] && count=$((count + 1))
+  done
+  printf '%s' "$count"
+}
+
+bundle_shader_bridge_android() {
+  local jni="$ANDROID_DIR/app/src/main/jniLibs"
+  local crate="$ROOT/tools/shaderfx-bridge"
+  local abi target
+
+  for abi in $SHADER_BRIDGE_ABIS; do
+    rm -f "$jni/$abi/$SHADER_BRIDGE_LIB"
+  done
+
+  local prebuilt="${SHADERFX_BRIDGE_ANDROID_DIR:-}"
+  if [ -n "$prebuilt" ]; then
+    for abi in $SHADER_BRIDGE_ABIS; do
+      if [ -f "$prebuilt/$abi/$SHADER_BRIDGE_LIB" ]; then
+        mkdir -p "$jni/$abi"
+        cp "$prebuilt/$abi/$SHADER_BRIDGE_LIB" "$jni/$abi/$SHADER_BRIDGE_LIB"
+      else
+        warn "SHADERFX_BRIDGE_ANDROID_DIR has no $abi/$SHADER_BRIDGE_LIB"
+      fi
+    done
+    if [ "$(shader_bridge_staged_count "$jni")" -gt 0 ]; then
+      say "bundled $SHADER_BRIDGE_LIB for SHADER FX preset conversion (prebuilt)"
+      return
+    fi
+  fi
+
+  if [ ! -f "$crate/Cargo.toml" ]; then
+    warn "$SHADER_BRIDGE_LIB not found: this build can run converted presets but not CONVERT new ones (tools/shaderfx-bridge is missing)"
+    return
+  fi
+
+  if ! command -v cargo >/dev/null 2>&1 || ! cargo ndk --version >/dev/null 2>&1; then
+    warn "$SHADER_BRIDGE_LIB not found: this build can run converted presets but not CONVERT new ones (set SHADERFX_BRIDGE_ANDROID_DIR or run 'cargo install cargo-ndk')"
+    return
+  fi
+
+  local ndk="${ANDROID_NDK_HOME:-}"
+  if [ -z "$ndk" ] || [ ! -d "$ndk" ]; then
+    ndk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}/ndk/$NDK_VERSION"
+  fi
+  if [ ! -d "$ndk" ]; then
+    warn "$SHADER_BRIDGE_LIB not built: NDK $NDK_VERSION not found (set ANDROID_NDK_HOME)"
+    return
+  fi
+
+  local installed missing="" buildable=""
+  installed="$(rustup target list --installed 2>/dev/null || true)"
+  for abi in $SHADER_BRIDGE_ABIS; do
+    target="$(shader_bridge_rust_target "$abi")"
+    if grep -qx "$target" <<< "$installed"; then
+      buildable="$buildable $abi"
+    else
+      missing="$missing $target"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    warn "$SHADER_BRIDGE_LIB: skipping$missing. Run: rustup target add$missing"
+  fi
+  if [ -z "$buildable" ]; then
+    warn "$SHADER_BRIDGE_LIB not built: this build can run converted presets but not CONVERT new ones (no Android Rust targets installed)"
+    return
+  fi
+
+  local args=()
+  for abi in $buildable; do
+    args+=(-t "$abi")
+  done
+
+  say "building the ShaderFX bridge with cargo-ndk (${buildable# })"
+  mkdir -p "$jni"
+  if ! (
+    cd "$crate"
+    export ANDROID_NDK_HOME="$ndk"
+    export ANDROID_NDK_ROOT="$ndk"
+    export CARGO_PROFILE_RELEASE_STRIP="symbols"
+    cargo ndk "${args[@]}" -o "$jni" build --release
+  ); then
+    warn "$SHADER_BRIDGE_LIB failed to cross-compile: this build can run converted presets but not CONVERT new ones"
+    return
+  fi
+
+  if [ "$(shader_bridge_staged_count "$jni")" -gt 0 ]; then
+    say "bundled $SHADER_BRIDGE_LIB for SHADER FX preset conversion"
+  else
+    warn "$SHADER_BRIDGE_LIB not found after cargo-ndk: this build can run converted presets but not CONVERT new ones"
   fi
 }
 
@@ -501,5 +684,6 @@ if $PACKAGE_ONLY; then
 fi
 
 require_android_sdk
+bundle_shader_bridge_android
 run_gradle
 say "done"

@@ -65,6 +65,7 @@ local PAL = {
   railGold    = { 255, 203, 5 },   -- Yellow cartridge (bright)
   railAmber   = { 218, 145, 32 },  -- Gold cartridge (deeper metal)
   railSilver  = { 190, 198, 210 }, -- Silver cartridge (cool light metal)
+  railCrystal = { 132, 196, 228 }, -- Crystal cartridge (translucent ice blue)
 }
 -- Semantic aliases kept so ported call sites read the same as before.
 PAL.cardBorder = PAL.line
@@ -322,11 +323,13 @@ function Theme.meter(x, y, w, h, pct, c)
 end
 
 -- The 4px version rail across the top of both windows: the only brand
--- colour on screen (Red / Blue / Yellow / Gold / Silver cartridge colours).
+-- colour on screen (Red / Blue / Yellow / Gold / Silver / Crystal cartridge
+-- colours).
 function Theme.versionRail(x, y, w, h)
   if not G then return end
   local bars = {
     PAL.railRed, PAL.railBlue, PAL.railGold, PAL.railAmber, PAL.railSilver,
+    PAL.railCrystal,
   }
   local seg = w / #bars
   for i, c in ipairs(bars) do

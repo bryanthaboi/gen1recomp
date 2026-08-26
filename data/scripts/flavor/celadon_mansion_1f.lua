@@ -2,30 +2,24 @@
 return {
   CELADON_MANSION_1F = {
     talk = {
-      -- CeladonMansion1FClefairyText (scripts/CeladonMansion1F.asm): text_far
-      -- _CeladonMansion1FClefairyText, then plays the CLEFAIRY cry and ends.
-      -- The cry playback has no port-side equivalent command, so we just
-      -- show the flavor line.
       TEXT_CELADONMANSION1F_CLEFAIRY = {
         {"face_player"},
+        -- pokered/scripts/CeladonMansion1F.asm:27
+        {"play_cry", "CLEFAIRY", true},
         {"show_text", "_CeladonMansion1FClefairyText"},
       },
 
-      -- CeladonMansion1FMeowthText (scripts/CeladonMansion1F.asm): text_far
-      -- _CeladonMansion1FMeowthText, then plays the MEOWTH cry and ends.
-      -- The cry playback has no port-side equivalent command, so we just
-      -- show the flavor line.
       TEXT_CELADONMANSION1F_MEOWTH = {
         {"face_player"},
+        -- pokered/scripts/CeladonMansion1F.asm:18
+        {"play_cry", "MEOWTH", true},
         {"show_text", "_CeladonMansion1FMeowthText"},
       },
 
-      -- CeladonMansion1FNidoranFText (scripts/CeladonMansion1F.asm): text_far
-      -- _CeladonMansion1FNidoranFText, then plays the NIDORAN_F cry and ends.
-      -- The cry playback has no port-side equivalent command, so we just
-      -- show the flavor line.
       TEXT_CELADONMANSION1F_NIDORANF = {
         {"face_player"},
+        -- pokered/scripts/CeladonMansion1F.asm:33
+        {"play_cry", "NIDORAN_F", true},
         {"show_text", "_CeladonMansion1FNidoranFText"},
       },
     },

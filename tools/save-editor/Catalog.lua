@@ -125,15 +125,8 @@ function Catalog.scrapeEvents(scriptDir, headerPath, listFiles, extraDirs)
   return sortedKeys(found)
 end
 
-function Catalog.goldEventList(extraDirs)
-  local names = {}
-  local ok, flags = pcall(require, "src.core.gen2.FlagNames")
-  if ok and flags and flags.events then
-    for name in pairs(flags.events) do
-      names[#names + 1] = name
-    end
-  end
-  table.sort(names)
+function Catalog.gen2EventList(engine, extraDirs)
+  local names = require("Gen2Flags").names(engine)
   local modFlags = Catalog.scrapeEvents(nil, nil, nil, extraDirs)
   local seen = {}
   for _, name in ipairs(names) do seen[name] = true end
@@ -144,6 +137,10 @@ function Catalog.goldEventList(extraDirs)
     end
   end
   return names
+end
+
+function Catalog.goldEventList(extraDirs)
+  return Catalog.gen2EventList("gs", extraDirs)
 end
 
 return Catalog

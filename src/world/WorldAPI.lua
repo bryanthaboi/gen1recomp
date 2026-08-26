@@ -5,6 +5,7 @@
 -- quiet no-op, never a crash.  Reaching into OverworldState internals
 -- stays unsupported; anything a mod legitimately needs belongs here.
 
+local Collision = require("src.world.Collision")
 local Logger = require("src.core.Logger")
 local FieldDefaults = require("src.world.FieldDefaults")
 local Map = require("src.world.Map")
@@ -115,6 +116,47 @@ function WorldAPI:current()
   local p = ow.player
   return { mapId = ow.map.id, x = p and p.cellX, y = p and p.cellY,
            facing = p and p.facing }
+end
+
+local function validBlockCoordinate(value)
+  return type(value) == "number" and value == value
+    and value ~= math.huge and value ~= -math.huge
+    and value == math.floor(value)
+end
+
+-- Read one block from the active Gen 1 map without exposing the mutable block
+-- array.  Requiring the expected map id makes a stale signature fail closed
+-- if a warp or reload moved the player before the caller completed its check.
+-- Block coordinates are zero-based, matching replaceBlock.
+function WorldAPI:activeBlockAt(mapId, bx, by)
+  local ow = self:overworld()
+  if not ow or not ow.map then return nil, NO_OVERWORLD end
+  local map = ow.map
+  if map.id ~= mapId then return nil, "map is not active" end
+  if not validBlockCoordinate(bx) or not validBlockCoordinate(by) then
+    return nil, "invalid block coordinates"
+  end
+  local def = map.def
+  if not def or not validBlockCoordinate(def.width) or def.width <= 0
+      or not validBlockCoordinate(def.height) or def.height <= 0 then
+    return nil, "block unavailable"
+  end
+  if bx < 0 or by < 0 or bx >= def.width or by >= def.height then
+    return nil, "block coordinates out of bounds"
+  end
+  if type(def.blocks) ~= "table" or type(map.blockAt) ~= "function" then
+    return nil, "block unavailable"
+  end
+  local stored = def.blocks[by * def.width + bx + 1]
+  if not validBlockCoordinate(stored) or stored < 0 then
+    return nil, "block unavailable"
+  end
+  local ok, blockId = pcall(map.blockAt, map, bx, by)
+  if not ok or not validBlockCoordinate(blockId) or blockId < 0
+      or blockId ~= stored then
+    return nil, "block unavailable"
+  end
+  return blockId
 end
 
 -- Companion UIs may offer party ordering while the player is in free roam.
@@ -405,6 +447,72 @@ end
 
 function Handle:position()
   return self.npc.cellX, self.npc.cellY
+end
+
+-- Walk one tile starting NOW, outside the scripted-movement queue.
+--
+-- scriptMove queues onto OverworldState.scriptMoves, and a non-empty
+-- scriptMoves is how the overworld knows a cutscene is running -- it gates
+-- handleInput (OverworldController "local scripted = ... #self.scriptMoves >
+-- 0"), so an actor animated that way freezes the player's controls for as
+-- long as it walks.  That is right for Oak marching to his lab and wrong for
+-- an actor that moves on its own schedule: a networked player's ghost, an
+-- ambient walker.  This is the same per-tile state scriptMove sets, minus
+-- the queue and therefore minus the lockout.
+--
+-- Collision is deliberately not checked.  The caller is replaying a move
+-- that was already decided somewhere else (validated on the peer's machine,
+-- or authored), and re-judging it here would let the two copies disagree
+-- about where the actor is.  Use canStep first if you want the check.
+function Handle:stepNow(dir)
+  local npc = self.npc
+  if not Collision.DELTA[dir] then return nil, "bad direction: " .. tostring(dir) end
+  if npc.moving then return nil, "already moving" end
+  npc.facing = dir
+  npc.targetX, npc.targetY = Collision.target(npc.cellX, npc.cellY, dir)
+  npc.moving = true
+  npc.progress = 0
+  return true
+end
+
+-- Would stepNow land somewhere legal?  Exposed separately so a caller that
+-- does want the map's opinion can ask for it without giving up the "replay
+-- verbatim" default above.
+function Handle:canStep(dir)
+  local ow = self.ow
+  if not (ow and ow.map) then return false end
+  return Collision.canMove(ow.map, ow.entities, self.npc, dir) and true or false
+end
+
+-- Snap to a cell with no animation: a warp arrival, or a resync that has
+-- drifted too far to walk off.  Clears any step in flight so the entity
+-- cannot land on its old target a frame later.
+function Handle:placeAt(x, y, facing)
+  local npc = self.npc
+  npc.moving = false
+  npc.marching = false
+  npc.targetX, npc.targetY = nil, nil
+  npc.progress = 0
+  npc.cellX, npc.cellY = x, y
+  npc.px, npc.py = x * 16, y * 16
+  if facing then npc.facing = facing end
+  return true
+end
+
+-- True while a step is still animating, so a driver can pace itself rather
+-- than stomping a move in flight.
+function Handle:isMoving()
+  return self.npc.moving and true or false
+end
+
+-- Whether the player may walk through this object (Collision.occupied skips
+-- passable entities -- Yellow's companion Pikachu is the engine's own user
+-- of the flag).  It still draws and can still be talked to; it just stops
+-- being an obstacle, which is what a dynamic actor wants when standing in a
+-- doorway would otherwise wall someone in.
+function Handle:setPassable(passable)
+  self.npc.passable = passable and true or false
+  return true
 end
 
 function WorldAPI:npc(mapId, indexOrName)

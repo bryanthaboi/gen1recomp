@@ -10,7 +10,9 @@ return function(game)
   local dir = os.getenv("SHOT_DIR") or "/tmp/skin"
   local skinId = os.getenv("SKIN") or "gb_anim"
 
-  love.window.setMode(432, 768, { resizable = true, highdpi = true })
+  local shotW = tonumber(os.getenv("SHOT_W")) or 432
+  local shotH = tonumber(os.getenv("SHOT_H")) or 768
+  love.window.setMode(shotW, shotH, { resizable = true, highdpi = true })
   U.wait(2)
 
   game.save.party = { Pokemon.new(game.data, "CHARIZARD", 50) }
@@ -43,10 +45,26 @@ return function(game)
   U.shot(game, dir .. "/skin_idle.png")
 
   local ww, wh = love.graphics.getDimensions()
-  local function at(nx, ny) return nx * ww, ny * wh end
+  local function centerFor(button)
+    local current = TouchSkin.page()
+    for _, ctl in ipairs(current and current.controls or {}) do
+      for _, bind in ipairs(ctl.buttons or {}) do
+        if bind == button then
+          local x, y = TouchSkin.controlGeometry(current, ctl, ww, wh)
+          return x, y
+        end
+      end
+      for _, hotkey in ipairs(ctl.hotkeys or {}) do
+        if hotkey == button then
+          local x, y = TouchSkin.controlGeometry(current, ctl, ww, wh)
+          return x, y
+        end
+      end
+    end
+  end
 
-  TouchControls:touchpressed("t1", at(0.87407, 0.72417))
-  TouchControls:touchpressed("t2", at(0.24074, 0.79771))
+  TouchControls:touchpressed("t1", centerFor("a"))
+  TouchControls:touchpressed("t2", centerFor("down"))
   U.wait(4)
   U.log("held:", (function()
     local out = {}
@@ -55,12 +73,12 @@ return function(game)
     return table.concat(out, ",")
   end)())
   U.shot(game, dir .. "/skin_pressed.png")
-  TouchControls:touchreleased("t1", at(0.87407, 0.72417))
-  TouchControls:touchreleased("t2", at(0.24074, 0.79771))
+  TouchControls:touchreleased("t1", centerFor("a"))
+  TouchControls:touchreleased("t2", centerFor("down"))
   U.wait(4)
 
-  TouchControls:touchpressed("t3", at(0.95, 0.528))
-  TouchControls:touchreleased("t3", at(0.95, 0.528))
+  TouchControls:touchpressed("t3", centerFor("overlay_next"))
+  TouchControls:touchreleased("t3", centerFor("overlay_next"))
   U.wait(6)
   U.log("page after overlay_next:", TouchSkin.page() and TouchSkin.page().name)
   U.shot(game, dir .. "/skin_page2.png")

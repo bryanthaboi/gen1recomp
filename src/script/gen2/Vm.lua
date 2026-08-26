@@ -49,6 +49,14 @@ local MAX_MONEY, MAX_COINS = 999999, 9999
 local SFX_ITEM, SFX_HANG_UP = 0x01, 0x6b
 -- constants/script_constants.asm: EMOTE_FROM_MEM is -1, i.e. the byte $ff.
 local EMOTE_FROM_MEM = 0xff
+-- constants/item_constants.asm:300 DEF ITEM_FROM_MEM EQU $ff
+local ITEM_FROM_MEM = 0xff
+-- pokecrystal/constants/script_constants.asm:254-257 StoreSwarmMapIndices args.
+local SWARM_DUNSPARCE = 0
+-- pokecrystal/constants/text_constants.asm:13-19 wNamedObjectType values.
+local NAMED_MON, NAMED_ITEM, NAMED_TRAINER = 1, 4, 7
+-- pokecrystal/engine/overworld/scripting.asm:2336-2347 Script_wait
+local WAIT_FRAMES_PER_UNIT = 6
 -- constants/misc_constants.asm GS_VERSION: 0 Gold, 1 Silver.
 local GS_VERSION_GOLD = 0
 -- engine/overworld/variables.asm .VarActionTable rows for wMapGroup and
@@ -204,7 +212,9 @@ local function runCmd(self, cmd, op)
       local value = self.callAsmFn(cmd.label, arg1(cmd) or 0, wordArg(cmd, 2))
       if value ~= nil then self.scriptVar = value % 256 end
     end
-  elseif op == "jumptext" then
+  elseif op == "jumptext" or op == "farjumptext" then
+    -- pokecrystal/engine/overworld/scripting.asm:318-327 Script_farjumptext:
+    -- Script_jumptext with a `dba` for the `dw`, same JumpTextScript.
     self:emitFace(false)
     self:showText(cmd.text)
     return "end"
@@ -519,6 +529,36 @@ local function runCmd(self, cmd, op)
     -- town map draws them two rows deep).
     local name = self.getLandmarkNameFn and self.getLandmarkNameFn()
     if name then self:setStringBuffer(name) end
+  elseif op == "getlandmarkname" then
+    -- pokecrystal/engine/overworld/scripting.asm:1615-1623: the landmark id
+    -- comes off the script, then ConvertLandmarkToText and a buffer byte.
+    local id = cmd.landmark or arg1(cmd) or 0
+    local name = self.getLandmarkNameFn and self.getLandmarkNameFn(id)
+    if name then self:setStringBuffer(name) end
+  elseif op == "gettrainerclassname" then
+    -- pokecrystal/engine/overworld/scripting.asm:1644-1647: TRAINER_NAME is
+    -- preset, so the one id byte ContinueToGetName reads is a trainer group.
+    if self.getTrainerClassNameFn then
+      local name = self.getTrainerClassNameFn(cmd.class or arg1(cmd) or 0)
+      if name then self:setStringBuffer(name) end
+    end
+  elseif op == "getname" then
+    -- pokecrystal/engine/overworld/scripting.asm:1633-1641: a
+    -- wNamedObjectType byte, an id byte, then GetStringBuffer's buffer byte.
+    local args = cmd.args or {}
+    local kind = cmd.kind or args[1] or 0
+    local id = cmd.id or args[2] or 0
+    local name
+    if kind == NAMED_MON and self.getMonNameFn then
+      name = self.getMonNameFn(id)
+    elseif kind == NAMED_ITEM and self.getItemNameFn then
+      name = self.getItemNameFn(id)
+    elseif kind == NAMED_TRAINER and self.getTrainerClassNameFn then
+      name = self.getTrainerClassNameFn(id)
+    elseif self.getNameFn then
+      name = self.getNameFn(kind, id)
+    end
+    if name then self:setStringBuffer(name) end
   elseif op == "getnum" then
     -- Script_getnum: PrintNum of wScriptVar (PRINTNUM_LEFTALIGN | 1 byte,
     -- 3 chars) into wStringBuffer1, then GetStringBuffer copies that into
@@ -599,9 +639,17 @@ local function runCmd(self, cmd, op)
     else
       self.scriptVar = POKEMAIL_REFUSED
     end
-  elseif op == "giveitem" or op == "verbosegiveitem" then
+  elseif op == "giveitem" or op == "verbosegiveitem"
+      or op == "verbosegiveitemvar" then
     local item = cmd.item or arg1(cmd) or 0
     local qty = cmd.quantity or (cmd.args and cmd.args[2]) or 1
+    if op == "verbosegiveitemvar" then
+      -- pokecrystal/engine/overworld/scripting.asm:486-510: ITEM_FROM_MEM
+      -- takes the item from wScriptVar, and byte two is a VAR_* id.
+      if item == ITEM_FROM_MEM then item = (self.scriptVar or 0) % 256 end
+      local varId = cmd.var or (cmd.args and cmd.args[2]) or 0
+      qty = self.readVarFn and self.readVarFn(varId) or 0
+    end
     -- Script_giveitem's own `ld [wCurItem], a` (scripting.asm:1612).  It is
     -- what the standalone `specialsound` inside GiveItemScript reads back:
     -- CheckItemPocket runs on wCurItem, not on anything the opcode carries.
@@ -611,7 +659,7 @@ local function runCmd(self, cmd, op)
       ok = self.giveItemFn(item, qty) ~= false
     end
     self.scriptVar = ok and 1 or 0
-    if op == "verbosegiveitem" then
+    if op == "verbosegiveitem" or op == "verbosegiveitemvar" then
       local name = self.getItemNameFn and self.getItemNameFn(item) or "?"
       self:setStringBuffer(name)
       -- GiveItemScript (engine/overworld/scripting.asm:441-449), command for
@@ -1048,10 +1096,20 @@ local function runCmd(self, cmd, op)
     -- SetSwarmFlag -> DAILYFLAGS1_SWARM.  Both halves matter: CheckSwarmFlag
     -- is what makes the swarm expire, so a port that only stores the map
     -- leaves the Dunsparce call permanently live.
+    --
+    -- pokecrystal/macros/scripts/events.asm:1003-1008 adds a leading flag byte
+    -- and specials.asm:290-298 picks the index pair off it, so three operand
+    -- bytes means the map_id has moved along one.
     local args = cmd.args or {}
-    local group = cmd.group or args[1]
-    local mapNum = cmd.map or args[2]
-    if self.setSwarmFn then self.setSwarmFn(group, mapNum) end
+    local kind, group, mapNum
+    if #args >= 3 then
+      kind, group, mapNum = args[1], args[2], args[3]
+    else
+      kind = SWARM_DUNSPARCE
+      group = cmd.group or args[1]
+      mapNum = cmd.map or args[2]
+    end
+    if self.setSwarmFn then self.setSwarmFn(group, mapNum, kind) end
   elseif op == "reloadmapafterbattle" or op == "reloadmap"
       or op == "refreshmap" then
     -- Losing ENDS the script.  Script_reloadmapafterbattle reads wBattleResult
@@ -1617,6 +1675,21 @@ local function runCmd(self, cmd, op)
       coroutine.yield({ kind = "credits" })
     end
     return "end"
+  -- ---- Crystal-only verbs ------------------------------------------------
+  elseif op == "wait" then
+    -- pokecrystal/engine/overworld/scripting.asm:2336-2347 Script_wait: SIX
+    -- frames of DelayFrames per operand unit, not Script_pause's two.
+    self:waitFrames((cmd.frames or arg1(cmd) or 0) * WAIT_FRAMES_PER_UNIT)
+  elseif op == "checksave" then
+    -- pokecrystal/engine/overworld/scripting.asm:2349-2353 writes CheckSave's
+    -- c: 1 when both sCheckValue bytes match (events/checksave.asm:1-20).
+    local ok = true
+    if self.checkSaveFn then ok = self.checkSaveFn() and true or false end
+    self.scriptVar = ok and 1 or 0
+  elseif op == "battletowertext" then
+    -- pokecrystal/engine/overworld/scripting.asm:447-452 BattleTowerText.
+    -- Unported: the table consumes the operand and the verb warns once.
+    self:noteUnknownOp(op)
   -- ---- commands with no engine behind them yet ---------------------------
   elseif op == "deactivatefacing" then
     -- Script_deactivatefacing: wScriptDelay = the byte (left ALONE when the
@@ -1960,6 +2033,11 @@ function Vm.new(scripts, text, events, hooks)
     givePokeMailFn = hooks.givePokeMail,
     checkPokeMailFn = hooks.checkPokeMail,
     getLandmarkNameFn = hooks.getLandmarkName,
+    -- pokecrystal/engine/overworld/scripting.asm:1633-1647, and 2349-2353.
+    -- Absent on a Gold boot, where no opcode reaches them.
+    getTrainerClassNameFn = hooks.getTrainerClassName,
+    getNameFn = hooks.getName,
+    checkSaveFn = hooks.checkSave,
     -- loadmenu stashes a header for the verticalmenu / _2dmenu that follows;
     -- openMenu is the blocking half, modelled on yesorno.
     openMenuFn = hooks.openMenu,

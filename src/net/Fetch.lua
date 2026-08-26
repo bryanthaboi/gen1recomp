@@ -87,6 +87,7 @@ local function drain()
           j.status = msg.ok and "ok" or "error"
           j.body, j.err, j.path = msg.body, msg.err, msg.path
           j.code = msg.code
+          j.notModified = msg.notModified
           j.progress = msg.ok and 1 or j.progress
         end
       end
@@ -154,12 +155,18 @@ end
 
 -- Download a URL to `saveRel`, a path relative to the LOVE save directory.
 -- Progress is reported as a 0..1 fraction when `size` is known.
+-- opts.etagRel (optional, relative to the save directory like saveRel itself)
+-- turns this into a conditional GET against a cached ETag at that path --
+-- see HostShell.httpDownload's own comment for the 304/notModified contract.
+-- A caller checks Fetch.poll(job).notModified once status is "ok" to tell a
+-- real download apart from a no-op cache hit (no file was written for the
+-- latter).
 function Fetch.download(url, saveRel, opts)
   opts = opts or {}
   return submit({ kind = "download", url = url, dest = saveRel,
     size = opts.size,
     userAgent = opts.userAgent or "gen1recomp",
-    accept = opts.accept, maxSeconds = opts.maxSeconds })
+    accept = opts.accept, maxSeconds = opts.maxSeconds, etagRel = opts.etagRel })
 end
 
 -- Non-blocking status.  Returns a table; never nil, even for an unknown id
@@ -227,7 +234,9 @@ function Fetch.shutdown()
   end
   for _, th in ipairs(workers) do pcall(function() th:wait() end) end
   workers = {}
-  cmdCh, resCh, quitCh, ready = nil, nil, nil, false
+  cmdCh, resCh, quitCh, ready = nil, nil, nil, nil
 end
+
+require("src.core.SessionLifecycle").registerProcessShutdown(Fetch.shutdown)
 
 return Fetch

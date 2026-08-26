@@ -342,6 +342,7 @@ accepted and merged as-is.
 | `source` | string |
 | `swarmGrass` | map of string -> {map?, rates, slots} |
 | `swarmWater` | map of string -> {map?, rate, slots} |
+| `timeFishGroups` | map of string | integer 0..255 -> {day, nite} |
 | `treeSets` | map of string -> {common, rare} |
 | `trees` | map of string -> string |
 | `water` | map of string -> {map?, rate, slots} |
@@ -509,6 +510,26 @@ mod.content.item_effects:register("MOON_FLUTE", { use = fn, field = true })
 mod.content.items:patch("POTION", { price = 100 })
 ```
 
+### On Gold (Gen 2)
+
+- semantics: `record`
+- target: `Data.items`
+
+The record differs; the registry name, the verbs and the id space
+do not.
+
+| field | type | required |
+|---|---|---|
+| `ball` | balls id | no |
+| `effect` | item_effects id | no |
+| `id` | string | yes |
+| `index` | integer 0..255 | no |
+| `machine` | {kind, move, number} | no |
+| `name` | string | yes |
+| `needsTarget` | boolean | no |
+| `price` | integer >= 0 | yes |
+| `tossable` | boolean | no |
+
 ## landmarks
 
 - semantics: `record`
@@ -598,7 +619,7 @@ mod.content.map_songs:override("PALLET_TOWN", "Music_Routes1")
 | `id` | string | yes |
 | `index` | integer >= 0 | no |
 | `label` | string | no |
-| `objects` | list of any value | no |
+| `objects` | list of {pokemon?, ...} | no |
 | `palette` | string | no |
 | `signs` | list of any value | no |
 | `tileset` | tilesets id | yes |
@@ -672,6 +693,34 @@ mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = f
 ```lua
 mod.content.moves:patch("BLIZZARD", { accuracy = 70 })
 ```
+
+### On Gold (Gen 2)
+
+- semantics: `record`
+- target: `Data.moves`
+
+The record differs; the registry name, the verbs and the id space
+do not.
+
+| field | type | required |
+|---|---|---|
+| `accuracy` | integer 0..100 | yes |
+| `anim` | any value | no |
+| `category` | one of "physical" | "special" | "status" | no |
+| `chargeText` | string | no |
+| `counterable` | boolean | no |
+| `effect` | move_effects id | yes |
+| `fixedDamage` | integer >= 1 | function | no |
+| `highCrit` | boolean | no |
+| `id` | string | yes |
+| `index` | integer 0..255 | no |
+| `multiHit` | integer >= 1 | list of integer >= 1 | no |
+| `name` | string | yes |
+| `power` | integer 0..255 | yes |
+| `pp` | integer 0..64 | yes |
+| `priority` | integer -7..7 | no |
+| `semiInvulnerable` | boolean | no |
+| `type` | type_chart id | yes |
 
 ## music
 

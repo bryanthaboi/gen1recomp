@@ -385,4 +385,152 @@ do
   eq(cats[1], "GAMEPLAY", "and they keep the feed's declared order")
 end
 
+-- ------- carts: a second array on the same feed, at the same schema_version
+--
+-- The published index added carts without bumping schema_version, so an older
+-- build has to keep reading the feed and this one has to read both halves.
+-- The fixture below is the shape carts/<Author>@<id>/meta.json validates to.
+
+local OMEGA = {
+  folder = "bryanthaboi@omega_random_competition",
+  id = "omega_random_competition",
+  title = "OMEGA RANDOM COMPETITION",
+  author = "bryanthaboi",
+  summary = "Bois Club Randomizer as its own cartridge.",
+  version = "1.0.0",
+  base = "red",
+  seal = "sealed",
+  shell = "#7B1B22",
+  finish = "holo",
+  speeds = { 1, 2 },
+  tags = { "randomizer", "competition" },
+  repo = "https://github.com/bryanthaboi/omega-random-competition",
+  github = "bryanthaboi/omega-random-competition",
+  automatic_version_check = true,
+  mods = { { id = "bcr", source = "github", repo = "bryanthaboi/bcr",
+             version = "1.0.0", sha256 = ("83a111b4"):rep(8) } },
+  load_order = { "bcr" },
+  license = "MIT",
+  description_url = "data/carts/bryanthaboi@omega_random_competition/description.md",
+  update_check = "pending",
+}
+
+local JOHTO_CART = {
+  id = "johto_run", title = "Johto Run", author = "Ren", version = "2.1.0",
+  base = "gold", seal = "open",
+  repo = "https://github.com/ren/johto-run",
+  github = "ren/johto-run",
+  mods = { { id = "steps", source = "gamebanana", mod = 42, file = 99,
+             md5 = ("ab"):rep(16), enabled = false,
+             options = { pace = "fast" } } },
+  update_check = "ok",
+  latest = { version = "2.1.0", tag = "v2.1.0",
+             zip = { name = "johto_run-2.1.0.zip",
+                     url = "https://example.test/johto_run-2.1.0.zip" } },
+}
+
+local function cartFeed(carts, overrides)
+  local doc = { schema_version = 1, count = 1, cart_count = #carts,
+                categories = { "GAMEPLAY" },
+                base_games = { "red", "blue", "yellow", "gold", "silver" },
+                mods = { NUZLOCKE }, carts = carts }
+  for k, v in pairs(overrides or {}) do doc[k] = v end
+  return Json.encode(doc)
+end
+
+do
+  local index, err = ModIndex.parse(cartFeed({ OMEGA, JOHTO_CART }))
+  check(index ~= nil, "a feed carrying carts parses: " .. tostring(err))
+  eq(index.schemaVersion, 1, "carts arrive at schema_version 1, unbumped")
+  eq(#index.mods, 1, "the mods array still parses")
+  eq(#index.carts, 2, "and the carts array parses beside it")
+  local c = index.carts[1]
+  eq(c.id, "omega_random_competition", "cart id")
+  eq(c.title, "OMEGA RANDOM COMPETITION", "cart title")
+  eq(c.base, "red", "the game the cart plays as")
+  eq(c.seal, "sealed", "its seal")
+  eq(c.shell, "#7B1B22", "its shell colour")
+  eq(c.finish, "holo", "its finish")
+  eq(c.speeds[2], 2, "its speed ladder")
+  eq(c.tags[1], "randomizer", "its tags")
+  eq(c.license, "MIT", "its license")
+  eq(c.load_order[1], "bcr", "its load order")
+  eq(#c.mods, 1, "its pinned mod set")
+  eq(c.mods[1].source, "github", "a github pin keeps its source")
+  eq(c.mods[1].repo, "bryanthaboi/bcr", "with the repo it comes from")
+  eq(c.mods[1].version, "1.0.0", "the exact pinned version")
+  eq(#c.mods[1].sha256, 64, "and the digest that gates it")
+  check(ModIndex.isCart(c), "a parsed cart is marked as one")
+  check(not ModIndex.isCart(index.mods[1]), "a mod is not")
+
+  local g = index.carts[2]
+  eq(g.mods[1].source, "gamebanana", "a gamebanana pin keeps its source")
+  eq(g.mods[1].mod, 42, "with its mod page id")
+  eq(g.mods[1].file, 99, "and its file id")
+  eq(#g.mods[1].md5, 32, "and the digest GameBanana reports")
+  eq(g.mods[1].enabled, false, "a pin shipped switched off stays off")
+  eq(g.mods[1].options.pace, "fast", "frozen options survive")
+  eq(ModIndex.installUrl(g), "https://example.test/johto_run-2.1.0.zip",
+    "a cart resolves its release asset the same way a mod does")
+end
+
+-- the old-feed case: no carts key at all
+do
+  local index, err = ModIndex.parse(feed({ NUZLOCKE }))
+  check(index ~= nil, "a feed with no carts key still parses: " .. tostring(err))
+  eq(#index.mods, 1, "its mods are unaffected")
+  eq(type(index.carts), "table", "and carts is a list, never nil")
+  eq(#index.carts, 0, "an absent carts array is an empty one")
+end
+
+-- a broken cart row costs itself, not the whole feed
+do
+  local noBase = {}
+  for k, v in pairs(OMEGA) do noBase[k] = v end
+  noBase.base = nil
+  local noMods = {}
+  for k, v in pairs(JOHTO_CART) do noMods[k] = v end
+  noMods.id, noMods.mods = "empty_pins", {}
+  local index, err = ModIndex.parse(cartFeed({
+    noBase, "not even an object", { id = "bare" }, noMods, OMEGA }))
+  check(index ~= nil, "a feed with malformed carts still parses: " .. tostring(err))
+  eq(#index.carts, 1, "only the well-formed cart is listed")
+  eq(index.carts[1].id, "omega_random_competition", "and it is the intact one")
+  eq(#index.mods, 1, "the mods array is untouched by a bad cart")
+end
+
+-- search and filter: matches() already spans title / author / summary / id,
+-- so the cart half reuses it wholesale.  The category filter does not apply
+-- (a cart has none); base does.
+do
+  local index = ModIndex.parse(cartFeed({ OMEGA, JOHTO_CART }))
+  local carts = index.carts
+  eq(#ModIndex.filter(carts, {}), 2, "no filter keeps every cart")
+  eq(ModIndex.filter(carts, { query = "omega" })[1].id,
+    "omega_random_competition", "search matches a cart by title")
+  eq(ModIndex.filter(carts, { query = "Ren" })[1].id, "johto_run",
+    "search matches a cart by author")
+  eq(ModIndex.filter(carts, { query = "randomizer" })[1].id,
+    "omega_random_competition", "and by summary")
+  eq(#ModIndex.filter(carts, { query = "omega johto" }), 0,
+    "cart search terms are ANDed too")
+  eq(ModIndex.filter(carts, { base = "gold" })[1].id, "johto_run",
+    "filtering by base game keeps the carts for that game")
+  eq(#ModIndex.filter(carts, { base = "RED" }), 1,
+    "and compares case-insensitively")
+  eq(#ModIndex.filter(carts, { base = "silver" }), 0,
+    "a base no cart plays as filters everything out")
+  eq(#ModIndex.filter(carts, { category = "GAMEPLAY" }), 0,
+    "a cart carries no categories, so a category filter never matches one")
+  eq(ModIndex.filter(carts, { tag = "competition" })[1].id,
+    "omega_random_competition", "cart tags filter")
+
+  local bases = ModIndex.baseGamesIn(index)
+  eq(#bases, 2, "only base games a cart actually plays as are offered")
+  eq(bases[1], "red", "and they keep the feed's declared base_games order")
+  eq(bases[2], "gold", "in that order")
+  eq(#ModIndex.baseGamesIn(ModIndex.parse(feed({ NUZLOCKE }))), 0,
+    "a cartless feed offers no base games")
+end
+
 print("ok mod_index_tests")

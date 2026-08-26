@@ -24,10 +24,10 @@ local GameViewport = require("src.render.GameViewport")
 
 -- Lua errors: persist a redacted trace in the save dir and surface a hint.
 do
-  local defaultErrorHandler = love.errorhandler
+  local defaultErrorHandler = love.errorhandler or love.errhand
   function love.errorhandler(msg)
-    local hint = SwitchDiagnostics.logLuaError(msg)
-    if hint and type(msg) == "string" then
+    local ok, hint = pcall(SwitchDiagnostics.logLuaError, msg)
+    if ok and hint and type(msg) == "string" then
       msg = msg .. "\n\n" .. hint
     end
     if defaultErrorHandler then
@@ -81,6 +81,11 @@ end
 -- cache the editor mounted (so closing can put the read path back).
 local editorHost, editorVersion, editorWindow
 local closeEditor  -- forward declaration: openEditor hands it to the editor
+
+-- Drop CacheFs / Data / mod Runtime / Assets / LegacyCompat for one mounted
+-- version session (save editor or game).  closeEditor and returnToLauncher
+-- both go through SessionLifecycle so neither path forgets a singleton.
+local SessionLifecycle = require("src.core.SessionLifecycle")
 
 -- The editor's modules use flat names (require("Kit"), require("Party")), so
 -- their directories have to be on the require path.  It must be
@@ -157,9 +162,7 @@ local function openEditor(version, slotId)
   local okReq, appOrErr = pcall(require, "App")
   if not okReq then
     editorMode = false
-    if version then
-      require("src.import.CacheFs").unmountVersion(version)
-    end
+    SessionLifecycle.endEditorSession({ version = version, app = nil })
     restoreWindow()
     Importer = editorHost
     editorHost = nil
@@ -179,10 +182,7 @@ local function openEditor(version, slotId)
     editorMode = false
     if EditorApp.unload then pcall(EditorApp.unload) end
     EditorApp = nil
-    if version then
-      require("src.import.CacheFs").unmountVersion(version)
-      require("src.core.Data"):unloadGenerated()
-    end
+    SessionLifecycle.endEditorSession({ version = version, app = nil })
     restoreWindow()
     Importer = editorHost
     editorHost = nil
@@ -197,21 +197,14 @@ end
 -- Back to the launcher.  Everything the editor mounted or cached has to come
 -- back out: the version overlay (CacheFs) and the generated modules require
 -- cached behind it (Data), or pressing Play on the OTHER game would boot it
--- with this one's data.
+-- with this one's data.  Also reset Runtime / Assets / LegacyCompat so the
+-- next Edit or Play does not inherit the editor's dead mod loader.
 function closeEditor()
   local version = editorVersion
+  local app = EditorApp
   editorMode = false
-  if EditorApp and EditorApp.unload then EditorApp.unload() end
   EditorApp = nil
-  if version then
-    require("src.import.CacheFs").unmountVersion(version)
-    require("src.core.Data"):unloadGenerated()
-  end
-  for k in pairs(package.loaded) do
-    if type(k) == "string" and (k:find("save%-editor") or k == "App" or k == "Kit" or k == "State" or k == "Catalog" or k == "SaveIO" or k == "Ops" or k == "MonOps" or k == "ItemOps" or k == "PadInput" or k == "Gen" or k == "Theme") then
-      package.loaded[k] = nil
-    end
-  end
+  SessionLifecycle.endEditorSession({ version = version, app = app })
   editorVersion = nil
   restoreWindow()
   Importer = editorHost
@@ -294,14 +287,16 @@ end
 local function makeLauncher()
   local RomImporter = require("src.import.RomImporter")
   local forceImport = os.getenv("POKEPORT_FORCE_IMPORT") == "1"
-  return RomImporter.new(function(version)
+  return RomImporter.new(function(version, cartId)
     Importer = nil
-    bootGame(version)
+    bootGame(version, cartId)
   end, {
     launcher = true,
     forceImport = forceImport,
     onEditSave = openEditor,
     onEditTouchControls = openTouchControlsEditor,
+    -- Skin Studio owns a touch-first layout as well as the desktop workspace.
+    -- Keep the compatibility predicate so external hosts using it still work.
     onOpenSkinStudio = require("src.ui.SkinStudio").available_desktop()
       and openSkinStudio or nil,
   })
@@ -310,45 +305,19 @@ end
 local function returnToLauncher()
   if not Game then return end
 
-  pcall(function() require("src.core.Music").stop() end)
-  pcall(function() require("src.core.Sound").stop() end)
-  if package.loaded["src.core.ChipAudio"] then
-    pcall(package.loaded["src.core.ChipAudio"].shutdown)
-  end
-  if package.loaded["src.core.DiscordPresence"] then
-    pcall(package.loaded["src.core.DiscordPresence"].shutdown)
-  end
-  if package.loaded["src.core.gen2.Clock"] then
-    pcall(package.loaded["src.core.gen2.Clock"].shutdown)
-  end
-  if package.loaded["src.net.Gen1Tls"] then
-    pcall(package.loaded["src.net.Gen1Tls"].shutdown)
-  end
-  if love.audio and love.audio.stop then
-    pcall(love.audio.stop)
-  end
-  pcall(function() require("src.render.SecondScreen").setEnabled(false) end)
-
   local GameVersion = require("src.core.GameVersion")
   local currentVersion = GameVersion.get()
-  if currentVersion then
-    require("src.import.CacheFs").unmountVersion(currentVersion)
-  end
-  require("src.core.Data"):unloadGenerated()
-
-  local Runtime = require("src.mods.Runtime")
-  if Runtime.reset then
-    Runtime.reset()
-  end
-
+  SessionLifecycle.endGameSession(Game)
   Game = nil
   autopilot = nil
   driverCo = nil
+  -- Leave the cart's scope behind: the launcher's own settings and slots are
+  -- the base game's, not the cart's.  The speed ladder is cart state too, so
+  -- a 1x/2x cart must not pin the launcher or the next game.
+  require("src.core.SaveData").setCart(nil)
+  require("src.core.GameSpeed").setAllowed(nil)
 
-  local Input = require("src.core.Input")
-  local TouchControls = require("src.core.TouchControls")
-  Input:reset()
-  TouchControls:reset()
+  SessionLifecycle.endMountedSession(currentVersion)
 
   require("src.core.Orientation").applyOptions(
     require("src.core.SaveData").loadOptions())
@@ -364,7 +333,7 @@ local function returnToLauncher()
   Importer = makeLauncher()
 end
 
-function bootGame(version)
+function bootGame(version, cartId)
   -- The launcher hands us the chosen game (Red / Blue / Yellow / Gold);
   -- scripted and headless runs fall back to POKEPORT_VERSION, then Red.
   -- Set the active version and overlay its extracted cache BEFORE anything
@@ -377,6 +346,25 @@ function bootGame(version)
   -- (Blue/Yellow/Gold caches live under blue/ / yellow/ / gold/).
   CacheFs.prefix = GameVersion.cachePrefix()
   CacheFs.mountVersion(GameVersion.get())
+  local cartHash, cartSpeeds, cartOptions
+  if cartId then
+    local ok, cart, hash = pcall(function()
+      return require("src.carts.CartStore").get(cartId)
+    end)
+    if ok and cart then
+      cartHash, cartSpeeds, cartOptions = hash, cart.speeds, cart.options
+    else
+      cartId = nil
+    end
+  end
+  local SaveData = require("src.core.SaveData")
+  SaveData.setCart(cartId, cartHash)
+  -- The author's settings land in the cart's own scope the first time only;
+  -- after that the player owns them.
+  if cartOptions then SaveData.seedCartOptions(cartOptions) end
+  -- A cart may narrow or pin the speed ladder; nil restores the full one.
+  require("src.core.GameSpeed").setAllowed(cartSpeeds)
+  if cartId then SaveData.adoptCartSeal(cartId) end
   -- NX: always write nx-asset-probe.log so Yellow/Blue art failures are
   -- diagnosable from the SD without enabling switch-debug.txt.
   pcall(function()
@@ -396,7 +384,14 @@ function bootGame(version)
     Game = require("src.core.Game2").new()
     Game:load()
   else
-    Game = require("src.core.Game")
+    -- Gen1 Game is a module singleton.  In-process EXIT GAME resets it in
+    -- place; if a prior teardown left load missing, rebuild from source.
+    local gameMod = require("src.core.Game")
+    if type(gameMod.load) ~= "function" then
+      package.loaded["src.core.Game"] = nil
+      gameMod = require("src.core.Game")
+    end
+    Game = gameMod
     Game:load()
     if os.getenv("POKEPORT_AUTOPILOT") then
       autopilot = require("tests.autopilot")
@@ -692,7 +687,7 @@ function love.gamepadpressed(joystick, button)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.gamepadpressed(joystick, button) end
   if Importer then return Importer:gamepadpressed(joystick, button) end
   if not Game then return end
   Game:gamepadpressed(joystick, button)
@@ -712,7 +707,7 @@ function love.gamepadreleased(joystick, button)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.gamepadreleased(joystick, button) end
   if Importer then return Importer:gamepadreleased(joystick, button) end
   if not Game then return end
   Game:gamepadreleased(joystick, button)
@@ -732,7 +727,7 @@ function love.gamepadaxis(joystick, axis, value)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.gamepadaxis(joystick, axis, value) end
   if Importer then return Importer:gamepadaxis(joystick, axis, value) end
   if not Game then return end
   Game:gamepadaxis(joystick, axis, value)
@@ -752,7 +747,7 @@ function love.joystickpressed(joystick, button)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.joystickpressed(joystick, button) end
   if Importer then return Importer:joystickpressed(joystick, button) end
   if not Game then return end
   Game:joystickpressed(joystick, button)
@@ -772,7 +767,7 @@ function love.joystickreleased(joystick, button)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.joystickreleased(joystick, button) end
   if Importer then return Importer:joystickreleased(joystick, button) end
   if not Game then return end
   Game:joystickreleased(joystick, button)
@@ -792,7 +787,7 @@ function love.joystickaxis(joystick, axis, value)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.joystickaxis(joystick, axis, value) end
   if Importer then return Importer:joystickaxis(joystick, axis, value) end
   if not Game then return end
   Game:joystickaxis(joystick, axis, value)
@@ -812,7 +807,7 @@ function love.joystickhat(joystick, hat, direction)
     end
     return
   end
-  if Studio then return end
+  if Studio then return Studio.joystickhat(joystick, hat, direction) end
   if Importer then return Importer:joystickhat(joystick, hat, direction) end
   if not Game then return end
   Game:joystickhat(joystick, hat, direction)
@@ -931,7 +926,7 @@ function love.touchpressed(id, x, y, dx, dy, pressure)
     if love.system.getOS() == "iOS" then return end
     return TouchEditor.touchpressed(id, x, y)
   end
-  if Studio then return end
+  if Studio then return Studio.touchpressed(id, x, y) end
   if Importer then
     -- Both mobiles: FlexLove scroll needs the real touch stream. Clicks are
     -- polled inside the view; the istouch filter on mousepressed still drops
@@ -948,7 +943,7 @@ function love.touchmoved(id, x, y, dx, dy, pressure)
     if love.system.getOS() == "iOS" then return end
     return TouchEditor.touchmoved(id, x, y)
   end
-  if Studio then return end
+  if Studio then return Studio.touchmoved(id, x, y) end
   if Importer then
     return Importer:touchmoved(id, x, y, dx, dy, pressure)
   end
@@ -962,7 +957,7 @@ function love.touchreleased(id, x, y, dx, dy, pressure)
     if love.system.getOS() == "iOS" then return end
     return TouchEditor.touchreleased(id, x, y)
   end
-  if Studio then return end
+  if Studio then return Studio.touchreleased(id, x, y) end
   if Importer then
     return Importer:touchreleased(id, x, y, dx, dy, pressure)
   end
@@ -1015,7 +1010,12 @@ function love.mousepressed(x, y, button, istouch)
     if love.system.getOS() == "Android" then return end
     return TouchEditor.mousepressed(x, y, button)
   end
-  if Studio then return Studio.mousepressed(x, y, button) end
+  if Studio then
+    -- Mobile LÖVE sends both a touch event and an `istouch` mouse twin.
+    -- Studio consumes the real finger stream above, so discard the twin.
+    if istouch and (love.system.getOS() == "Android" or love.system.getOS() == "iOS") then return end
+    return Studio.mousepressed(x, y, button)
+  end
   if Importer then
     -- love.touchpressed already forwards the primary touch into FlexLove for
     -- scroll. LÖVE ALSO synthesizes a mouse press for that same touch; if both
@@ -1050,7 +1050,10 @@ function love.mousereleased(x, y, button, istouch)
     if love.system.getOS() == "Android" then return end
     return TouchEditor.mousereleased(x, y, button)
   end
-  if Studio then return Studio.mousereleased(x, y, button) end
+  if Studio then
+    if istouch and (love.system.getOS() == "Android" or love.system.getOS() == "iOS") then return end
+    return Studio.mousereleased(x, y, button)
+  end
   if Importer then return end
   if editorMode and EditorApp.mousereleased then
     return EditorApp.mousereleased(x, y, button)
@@ -1068,7 +1071,10 @@ function love.mousemoved(x, y, dx, dy, istouch)
     if love.system.getOS() == "Android" then return end
     return TouchEditor.mousemoved(x, y)
   end
-  if Studio then return Studio.mousemoved(x, y) end
+  if Studio then
+    if istouch and (love.system.getOS() == "Android" or love.system.getOS() == "iOS") then return end
+    return Studio.mousemoved(x, y)
+  end
   if editorMode or Importer then return end
   if mouseTouch then
     if Game and love.mouse.isDown(1) then Game:touchmoved("mouse", x, y) end
@@ -1140,22 +1146,7 @@ function love.quit()
   pcall(function()
     require("src.core.DiscordPresence").shutdown()
   end)
-  -- LOVE waits for every live love.thread before the process exits, and both
-  -- background workers idle in a loop that only a "quit" command breaks, so
-  -- without this the process outlived the window and the next launch re-entered
-  -- the dead one instead of starting fresh (#339)
-  if package.loaded["src.core.ChipAudio"] then
-    pcall(package.loaded["src.core.ChipAudio"].shutdown)
-  end
-  if package.loaded["src.update.Check"] then
-    pcall(package.loaded["src.update.Check"].shutdown)
-  end
-  -- The launcher's fetch pool is the same story: its workers idle in
-  -- Channel:demand(), which never returns on its own, so a launcher that ever
-  -- touched the network would hang the process on exit (#339's shape again).
-  if package.loaded["src.net.Fetch"] then
-    pcall(package.loaded["src.net.Fetch"].shutdown)
-  end
+  SessionLifecycle.endProcess()
 end
 
 function love.filedropped(file)
@@ -1186,6 +1177,17 @@ function love.run()
   -- per-frame sleep-granularity jitter.
   local nextFrame = love.timer and love.timer.getTime() or 0
   local dt = 0
+  local idleFor = 0
+  local SLEEP_FLOOR = 0.001
+  local WAKE = {
+    keypressed = true, keyreleased = true, textinput = true,
+    mousepressed = true, mousereleased = true, mousemoved = true,
+    wheelmoved = true, touchpressed = true, touchreleased = true,
+    touchmoved = true, joystickpressed = true, joystickreleased = true,
+    joystickhat = true, gamepadpressed = true, gamepadreleased = true,
+    joystickadded = true, joystickremoved = true, filedropped = true,
+    directorydropped = true, focus = true, visible = true, resize = true,
+  }
 
   return function()
     -- process events
@@ -1204,17 +1206,34 @@ function love.run()
             return a or 0
           end
         end
+        if WAKE[name] then
+          idleFor = 0
+        elseif name == "joystickaxis" and type(c) == "number" and math.abs(c) > 0.5 then
+          idleFor = 0
+        end
         love.handlers[name](a, b, c, d, e, f)
       end
     end
 
     -- update dt
     if love.timer then dt = love.timer.step() end
+    idleFor = idleFor + dt
 
     -- call update and draw
     if love.update then love.update(dt) end
 
-    if love.graphics and love.graphics.isActive() then
+    local visible = not (love.window and love.window.isVisible)
+      or love.window.isVisible()
+    local focused = not (love.window and love.window.hasFocus)
+      or love.window.hasFocus()
+    local cap = FrameCap.current
+    if not visible then
+      cap = 10
+    elseif Importer and (not focused or idleFor > 30) then
+      cap = 15
+    end
+
+    if visible and love.graphics and love.graphics.isActive() then
       love.graphics.origin()
       love.graphics.clear(love.graphics.getBackgroundColor())
       if love.draw then love.draw() end
@@ -1225,9 +1244,9 @@ function love.run()
       if paced then
         -- Sleep out the remainder of the frame budget, measured from the
         -- carried deadline, in small chunks so the OS timer stays
-        -- responsive.  vsync is untouched: when it already paces slower
-        -- than the cap the remainder is <= 0 and this rounds to a no-op.
-        local budget = 1 / FrameCap.current
+        -- responsive.  The pacer yields to vsync inside a 1ms dead band, so
+        -- when the panel already paces at or below the cap it is a no-op.
+        local budget = 1 / cap
         nextFrame = nextFrame + budget
         local now = love.timer.getTime()
         -- A stall (alt-tab, a GC pause, a blocked import) can leave the
@@ -1238,8 +1257,8 @@ function love.run()
         end
         while true do
           local remaining = nextFrame - love.timer.getTime()
-          if remaining <= 0 then break end
-          love.timer.sleep(remaining < 0.001 and remaining or 0.001)
+          if remaining <= SLEEP_FLOOR then break end
+          love.timer.sleep(0.001)
         end
       else
         love.timer.sleep(0.001)

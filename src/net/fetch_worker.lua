@@ -73,6 +73,12 @@ end
 -- inside the call.  Where the caller knows the expected size we poll the
 -- growing file from a second pass instead; where it does not, the job simply
 -- reports indeterminate progress and the UI shows a spinner.
+--
+-- job.etagRel (optional, relative to saveDir like job.dest) turns this into
+-- a conditional GET -- see HostShell.httpDownload's own comment for the
+-- 304/notModified contract. A notModified result never writes `rel` at all
+-- (confirmed empirically, not assumed -- see TrueFX/etag-cache-repro/), so
+-- the usual "did a file actually land" check below is skipped for it.
 local function doDownload(job)
   if not HostShell then
     post({ id = job.id, ok = false, err = "no transport" })
@@ -84,10 +90,15 @@ local function doDownload(job)
   if dir then love.filesystem.createDirectory(dir) end
   love.filesystem.remove(rel)
 
-  local ok, err = HostShell.httpDownload(job.url, abs, job.userAgent,
-    job.accept, tonumber(job.maxSeconds) or DOWNLOAD_MAX_SECONDS)
+  local etagAbs = job.etagRel and (saveDir .. "/" .. job.etagRel) or nil
+  local ok, err, notModified = HostShell.httpDownload(job.url, abs, job.userAgent,
+    job.accept, tonumber(job.maxSeconds) or DOWNLOAD_MAX_SECONDS, etagAbs)
   if not ok then
     post({ id = job.id, ok = false, err = err or "download failed" })
+    return
+  end
+  if notModified then
+    post({ id = job.id, ok = true, path = rel, done = true, notModified = true })
     return
   end
   local info = love.filesystem.getInfo(rel)

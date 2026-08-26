@@ -114,12 +114,25 @@ function MapLoader.invalidateAll()
   lru = {}
 end
 
+-- Eagerly release every resident map's TileRenderer GPU objects.  Only safe
+-- when nothing live holds map instances (session end after game:reset).
+function MapLoader.releaseAll()
+  local ids = {}
+  for id in pairs(cache) do ids[#ids + 1] = id end
+  for _, id in ipairs(ids) do MapLoader.evict(id) end
+end
+
 -- kept as the pre-v2 name
 MapLoader.clearCache = MapLoader.invalidateAll
 
 -- the cached Map objects own the per-map TileRenderer instances, so a flush
 -- that skipped this one would leave live SpriteBatches built from the old
--- search path (14 cache-invalidation contract, rows 1 and 3)
-Assets.register(MapLoader.invalidateAll)
+-- search path (14 cache-invalidation contract, rows 1 and 3).  invalidateAll
+-- deliberately does NOT release GPU (hot reload / live overworld); releaseAll
+-- is the session-end path only.
+Assets.register({
+  invalidate = MapLoader.invalidateAll,
+  release = MapLoader.releaseAll,
+})
 
 return MapLoader

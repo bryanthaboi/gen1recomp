@@ -240,6 +240,8 @@ local function rareCandy(mon, data)
     used = true,
     level = newLevel,
     learned = learned,
+    -- data/text/common_1.asm:86
+    sfx = "Sfx_DexFanfare5079",
     text = ("%s grew to\nlevel %d!"):format(monName(mon), newLevel),
   }
 end

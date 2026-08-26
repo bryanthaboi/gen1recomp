@@ -85,7 +85,9 @@ function Transition.new(game, onMidpoint, onDone, warp)
 end
 
 function Transition:finish()
-  self.game.stack:pop()
+  if self.done then return end
+  self.done = true
+  if not self.offStack then self.game.stack:pop() end
   if self.onDone then self.onDone() end
 end
 
@@ -96,10 +98,16 @@ function Transition:update(dt)
     self.t = 0
     if self.phase == "out" then
       self.phase = "in"
-      if self.onMidpoint then self.onMidpoint() end
       -- LoadGBPal restores the palettes in one write, so with no fade in the
       -- map is simply there on the next frame
-      if (self.framesIn or 0) <= 0 then self:finish() end
+      if (self.framesIn or 0) <= 0 then
+        self.offStack = true
+        self.game.stack:pop()
+        if self.onMidpoint then self.onMidpoint() end
+        self:finish()
+      elseif self.onMidpoint then
+        self.onMidpoint()
+      end
     else
       self:finish()
     end

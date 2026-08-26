@@ -1141,4 +1141,74 @@ function Ops.setPokerus(S, mon, value)
   return Ops.mark(S, ("%s pokerus byte %d"):format(mon.species, want))
 end
 
+-- engine/pokemon/caught_data.asm:169-172
+Ops.CAUGHT_TIMES = { "UNKNOWN", "MORN", "DAY", "NITE" }
+
+local function caughtGuard(S, mon)
+  if not mon then return false end
+  if not Gen.hasCaughtData(S.save, S.version) then
+    return Ops.say(S, "This game has no caught data")
+  end
+  return true
+end
+
+function Ops.setCaughtTime(S, mon, value)
+  if not caughtGuard(S, mon) then return false end
+  local want = clamp(math.floor(tonumber(value) or 0), 0, 3)
+  if want == (mon.caughtTime or 0) then
+    return Ops.say(S, ("Caught time is already %s"):format(Ops.CAUGHT_TIMES[want + 1]))
+  end
+  mon.caughtTime = want
+  return Ops.mark(S, ("%s caught time %s")
+    :format(mon.species, Ops.CAUGHT_TIMES[want + 1]))
+end
+
+-- constants/pokemon_data_constants.asm:120-121
+function Ops.setCaughtLevel(S, mon, value)
+  if not caughtGuard(S, mon) then return false end
+  local Mon = require("src.battle.gen2.Mon")
+  local want = clamp(math.floor(tonumber(value) or 0), 0, Mon.CAUGHT_LEVEL_MASK)
+  if want == (mon.caughtLevel or 0) then
+    return Ops.say(S, ("Caught level is already %d"):format(want))
+  end
+  mon.caughtLevel = want
+  return Ops.mark(S, ("%s caught level %d"):format(mon.species, want))
+end
+
+-- constants/landmark_constants.asm:111-113
+function Ops.setCaughtLocation(S, mon, value)
+  if not caughtGuard(S, mon) then return false end
+  local Mon = require("src.battle.gen2.Mon")
+  local span = Mon.CAUGHT_LOCATION_MASK + 1
+  local want = math.floor(tonumber(value) or 0) % span
+  if want == (mon.caughtLocation or 0) then
+    return Ops.say(S, ("Caught location is already %s")
+      :format(Gen.landmarkName(S.data, want)))
+  end
+  mon.caughtLocation = want
+  return Ops.mark(S, ("%s caught at %s")
+    :format(mon.species, Gen.landmarkName(S.data, want)))
+end
+
+function Ops.setCaughtByGender(S, mon, gender)
+  if not caughtGuard(S, mon) then return false end
+  local Mon = require("src.battle.gen2.Mon")
+  local want = Mon.caughtGenderOf(gender)
+  if want == mon.caughtByGender then
+    return Ops.say(S, ("Caught by is already %s"):format(tostring(want or "none")))
+  end
+  mon.caughtByGender = want
+  return Ops.mark(S, ("%s caught by %s"):format(mon.species, tostring(want or "none")))
+end
+
+function Ops.setPlayerGender(S, gender)
+  if not Gen.hasPlayerGender(S.save, S.version) then
+    return Ops.say(S, "This game has no player gender")
+  end
+  if Gen.playerGender(S.save) == gender then
+    return Ops.say(S, ("Player is already %s"):format(tostring(gender)))
+  end
+  return Ops.mark(S, ("Player gender %s"):format(Gen.setPlayerGender(S.save, gender)))
+end
+
 return Ops

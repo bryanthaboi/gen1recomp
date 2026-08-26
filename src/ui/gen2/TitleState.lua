@@ -11,6 +11,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
 local Music = require("src.core.Music")
 local Runtime = require("src.mods.Runtime")
+local Sound = require("src.core.Sound")
 local SpriteAnims = require("src.ui.gen2.SpriteAnims")
 
 local TitleState = {}
@@ -121,14 +122,76 @@ function TitleState.new(game, opts)
   -- How far past the 160px frame trails may fly (GB pixels); set each draw.
   self.trailMaxX = 200
   self.musicStarted = false
+
+  -- engine/movie/title.asm:104-127,217-273,304-338
+  self.suicuneColor, self.suicuneGray = {}, {}
+  if type(title.suicuneFrames) == "table" then
+    for i, path in ipairs(title.suicuneFrames) do
+      self.suicuneColor[i] = tryImage(path)
+    end
+  end
+  if type(title.suicuneFramesGray) == "table" then
+    for i, path in ipairs(title.suicuneFramesGray) do
+      self.suicuneGray[i] = tryImage(path)
+    end
+  end
+  self.suicuneX = tonumber(title.suicuneX) or 48
+  self.suicuneY = tonumber(title.suicuneY) or 96
+  -- SuicuneFrameIterator's `and %111` clock (engine/movie/title.asm:217-243).
+  self.suicuneEvery = tonumber(title.suicuneEvery) or 8
+  self.suicuneTick = 0
+  self.suicuneFrame = 1
+  self.gemColor = tryImage(title.gem)
+  self.gemGray = tryImage(title.gemGray)
+  self.gemX = tonumber(title.gemX) or 56
+  self.gemRestY = tonumber(title.gemY) or 6
+  self.gemStep = tonumber(title.gemStep) or 2
+  -- TitleScreenEntrance (engine/menus/intro_menu.asm:1078-1123): hSCX walks
+  -- to 0 while alternating logo lines converge and the gem descends.
+  local entrance = type(title.entrance) == "table" and title.entrance or nil
+  self.entrance = entrance
+  self.entranceScx = entrance and (tonumber(entrance.scx) or 112) or 0
+  self.entranceStep = entrance and (tonumber(entrance.step) or 4) or 4
+  self.entranceLines = entrance and (tonumber(entrance.lines) or 80) or 0
+  self.entranceHideBelow = entrance and tonumber(entrance.hideBelow) or nil
+  self.gemY = entrance and (tonumber(title.gemFromY) or -50) or self.gemRestY
+  self.entranceSfx = title.entranceSfx
+  -- engine/menus/intro_menu.asm:951-966
+  self.timeoutFrames = tonumber(title.timeoutFrames)
+    or ((self.trailMode == "silver") and (73 * 60 + 36) or (84 * 60 + 16))
+  self.onTimeout = opts.onTimeout
+  -- The copyright window line is pal 7 (engine/movie/title.asm:40-43); its
+  -- colour 0 backs the whole band.
+  local pals = type(title.palettes) == "table" and title.palettes.bg or nil
+  local band = type(pals) == "table" and type(pals[8]) == "table"
+    and pals[8][1] or nil
+  self.bandColor = (type(band) == "table" and #band >= 3)
+    and { band[1] / 255, band[2] / 255, band[3] / 255, 1 } or { 0, 0, 0, 1 }
   return self
 end
 
-function TitleState:enter()
+function TitleState:startMusic()
+  if self.musicStarted then return end
   local data = self.game and self.game.data
-  if data and data.audio and data.audio.runtime and not self.musicStarted then
+  if data and data.audio and data.audio.runtime then
     Music.play(data, "Music_TitleScreen", true, { reason = "title" })
     self.musicStarted = true
+  end
+end
+
+function TitleState:enter()
+  if self.entrance then
+    -- _TitleScreen silences the channels and plays the entrance sting;
+    -- MUSIC_TITLE waits for the entrance to land
+    -- (engine/movie/title.asm:184,210-213; engine/menus/intro_menu.asm:1118-1119).
+    Music.stop()
+    local data = self.game and self.game.data
+    if data and data.audio and data.audio.runtime and self.entranceSfx
+        and data.audio.sfx and data.audio.sfx[self.entranceSfx] then
+      Sound.play(data, self.entranceSfx)
+    end
+  else
+    self:startMusic()
   end
   -- intro.boot.title: the last card of the GS boot cinema, up with its music
   -- started.  Gen 2 only, like the rest of intro.boot.* (see
@@ -197,14 +260,55 @@ function TitleState:stepTrails()
   self.trails = alive
 end
 
+-- SuicuneFrameIterator (engine/movie/title.asm:217-249): advance once per
+-- `suicuneEvery` frames, cycling the four frame bases.
+function TitleState:advanceSuicune()
+  if #self.suicuneColor == 0 then return end
+  local c = self.suicuneTick
+  self.suicuneTick = (c + 1) % 256
+  if c % self.suicuneEvery ~= 0 then return end
+  self.suicuneFrame = math.floor(c % (self.suicuneEvery * 4)
+    / self.suicuneEvery) + 1
+end
+
 function TitleState:update(_dt)
   self.frameCounter = self.frameCounter + 1
   self:advanceHooh()
+  self:advanceSuicune()
   if self.frameCounter % self.cloudScrollEvery == 0 then
     self.cloudScroll = (self.cloudScroll - 1) % 160
   end
   self:spawnTrail()
   self:stepTrails()
+
+  if self.entranceScx > 0 then
+    -- TitleScreenEntrance polls no buttons and moves the gem by 2 a frame
+    -- (engine/menus/intro_menu.asm:1078-1107; engine/movie/title.asm:340-362).
+    self.entranceScx = math.max(0, self.entranceScx - self.entranceStep)
+    if self.gemY < self.gemRestY then
+      self.gemY = math.min(self.gemRestY, self.gemY + self.gemStep)
+    end
+    if self.entranceScx == 0 then
+      self:startMusic()
+      -- TitleScreenTimer only starts once the entrance scene hands over
+      -- (engine/menus/intro_menu.asm:1110-1136).
+      self.timeoutStart = self.frameCounter
+    end
+    return
+  end
+
+  -- engine/menus/intro_menu.asm:1023-1059
+  if self.timeoutFrames and self.onTimeout then
+    if self.fadeStart then
+      if self.frameCounter - self.fadeStart >= 60 then self.onTimeout() end
+      return
+    end
+    if self.frameCounter - (self.timeoutStart or 0) >= self.timeoutFrames then
+      self.fadeStart = self.frameCounter
+      Music.fadeOut(8)
+      return
+    end
+  end
 
   local input = self.game.input
   if input and (input:wasPressed("a") or input:wasPressed("start")) then
@@ -242,10 +346,71 @@ function TitleState:drawCloudSpan(x0, x1)
   end
 end
 
+-- TitleScreenEntrance's interlace: even lines slide in from the left, odd
+-- from the right, converging as hSCX walks to 0
+-- (engine/menus/intro_menu.asm:1084-1103).
+function TitleState:drawEntranceScreen(screen)
+  local G = love.graphics
+  local scx = self.entranceScx
+  if scx <= 0 then
+    G.draw(screen, 0, 0)
+    return
+  end
+  local w, h = screen:getDimensions()
+  local lines = math.min(self.entranceLines, h)
+  self.entranceQuad = self.entranceQuad or G.newQuad(0, 0, w, 1, w, h)
+  for line = 0, lines - 1 do
+    self.entranceQuad:setViewport(0, line, w, 1, w, h)
+    G.draw(screen, self.entranceQuad, line % 2 == 0 and -scx or scx, line)
+  end
+  -- hWY holds the copyright window off screen until the entrance lands
+  -- (engine/movie/title.asm:198-199; engine/menus/intro_menu.asm:1121-1122).
+  local bottom = (self.entranceHideBelow or h) - lines
+  if bottom > 0 then
+    self.entranceQuad:setViewport(0, lines, w, bottom, w, h)
+    G.draw(screen, self.entranceQuad, 0, lines)
+  end
+end
+
 function TitleState:drawContent()
   local G = love.graphics
   local screen, _, trail, hoohFrames = self:art()
   G.setColor(1, 1, 1, 1)
+
+  local gem = self:gray() and (self.gemGray or self.gemColor) or self.gemColor
+  local suicuneFrames = nil
+  if #self.suicuneColor > 0 then
+    suicuneFrames = (self:gray() and #self.suicuneGray > 0)
+      and self.suicuneGray or self.suicuneColor
+  end
+  if gem or suicuneFrames then
+    -- Crystal's layering: the gem is OAM_PRIO so every BG colour 1-3 pixel
+    -- beats it; Suicune is BG; the window copyright covers Suicune's last
+    -- row (engine/movie/title.asm:81-85,334; engine/menus/intro_menu.asm:1121-1122).
+    local fill = self:gray() and SKY_GRAY or self.sky
+    G.setColor(fill[1], fill[2], fill[3], 1)
+    G.rectangle("fill", 0, 0, 160, 144)
+    G.setColor(1, 1, 1, 1)
+    if gem then G.draw(gem, self.gemX, self.gemY) end
+    if suicuneFrames then
+      local frame = suicuneFrames[self.suicuneFrame] or suicuneFrames[1]
+      if frame then G.draw(frame, self.suicuneX, self.suicuneY) end
+    end
+    if self.entranceScx <= 0 then
+      -- The pal-7 window line covers the BG once hWY lands at $88
+      -- (engine/movie/title.asm:40-43; engine/menus/intro_menu.asm:1121-1122).
+      local bandTop = self.entranceHideBelow or 136
+      local band = self.bandColor
+      G.setColor(band[1], band[2], band[3], 1)
+      G.rectangle("fill", 0, bandTop, 160, 144 - bandTop)
+      G.setColor(1, 1, 1, 1)
+    end
+    if screen then
+      self:drawEntranceScreen(screen)
+    end
+    return
+  end
+
   if screen then
     -- title_screen.png already carries the cart's © GAME FREAK line on row 17.
     G.draw(screen, 0, 0)

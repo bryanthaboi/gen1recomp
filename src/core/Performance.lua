@@ -3,9 +3,12 @@
 --
 -- The heavy extras are all things the Game Boy never had and this port
 -- adds on top: the whole-screen 3D TILT (transforms the entire map as a
--- ground plane), the GBC FX post-process shader (a fullscreen pass), and
--- survey ZOOM (zooming out renders the connected neighbor maps -- a lot of
--- extra overdraw).  A hard FPS ceiling caps present cost on top of that.
+-- ground plane), survey ZOOM (zooming out renders the connected
+-- neighbor maps -- a lot of extra overdraw), and SHADER FX (a live-
+-- translated libretro slang-shader chain, reasoned -- not yet measured --
+-- to be heavier per-frame than GBCFX.lua's old fixed shader it replaced).
+-- A hard FPS ceiling caps present cost on
+-- top of that.
 -- None of this touches game logic, which is fixed-step off dt
 -- (src/core/FixedStep.lua), so every tier plays identically; they differ
 -- only in how much optional eye-candy the renderer is allowed to do.
@@ -13,14 +16,15 @@
 -- The tier is persisted as save.options.performance:
 --   auto      pick a default from the device (see detect())
 --   high      everything on -- the historical behavior
---   balanced  no TILT, no GBC FX (kept: survey zoom, colors, uncapped FPS)
---   low       no TILT, no GBC FX, no survey zoom, FPS capped
+--   balanced  no TILT, no SHADER FX (kept: survey zoom, colors, uncapped FPS)
+--   low       no TILT, no survey zoom, no SHADER FX, FPS capped
 --
 -- AUTO only chooses the *default* for the current device; every tier is
 -- selectable in OPTIONS, so a heuristic that guesses wrong is one row away
 -- from being overridden.  The clamps are applied live in Game:applyOptions
--- against the stored options without rewriting them, so raising the tier
--- restores exactly the TILT / GBC FX / ZOOM / FPS the player had.
+-- (Gen 1) / Game2:applyOptions (Gen 2) against the stored options without
+-- rewriting them, so raising the tier restores exactly the TILT / SHADER FX
+-- / ZOOM / FPS the player had. Wired into both generations.
 --
 -- Zero requires: loads during love.conf and under plain Lua for tools and
 -- tests, the same way src/core/GameVersion.lua does.
@@ -40,10 +44,24 @@ Performance.LABELS = {
 -- What each concrete tier permits.  `auto` is resolved to one of these
 -- before caps are read, so it has no row here.  fpsMax = false means no
 -- extra ceiling (the player's own MAX FPS still applies).
+--
+-- `shaderfx` is `false` (fully off) or a positive number: an internal
+-- chain-resolution multiplier (1.0 = native, e.g. 0.5 = render the whole
+-- SHADER FX pass chain at half resolution, then stretch up for display --
+-- src/render/ShaderFX.lua's ShaderFX.render already stretch-blits its
+-- final output to the real display rect regardless of the chain's own
+-- internal size, so shrinking the chain's working
+-- resolution costs nothing extra at that final blit). Every existing
+-- truthy/falsy call site (`if not caps.shaderfx then ... end`) still works
+-- unchanged: `false` stays falsy, any positive number stays truthy -- only
+-- `ShaderFX.render` itself reads the actual number. No tier is
+-- set below 1.0 yet -- tuning the actual per-tier value for real low-end
+-- hardware needs a device this project doesn't have to hand right now; this
+-- is the mechanism, not the tuning.
 Performance.CAPS = {
-  high     = { tilt = true,  gbcfx = true,  survey = true,  fpsMax = false },
-  balanced = { tilt = false, gbcfx = false, survey = true,  fpsMax = false },
-  low      = { tilt = false, gbcfx = false, survey = false, fpsMax = 60 },
+  high     = { tilt = true,  survey = true,  shaderfx = 1.0,   fpsMax = false },
+  balanced = { tilt = false, survey = true,  shaderfx = false, fpsMax = false },
+  low      = { tilt = false, survey = false, shaderfx = false, fpsMax = 60 },
 }
 
 -- Live resolved tier (never "auto"); Game:applyOptions sets it and the
@@ -86,12 +104,14 @@ function Performance.detect()
   local cores = processorCount()
 
   -- PortMaster-style ARM Linux handhelds (e.g. the RG34XXSP the project
-  -- already ships a build for): the weakest target here.
-  if isArm and os ~= "Android" and os ~= "iOS" then
+  -- already ships a build for): the weakest target here.  Desktop ARM
+  -- (Apple Silicon "OS X", Windows-on-ARM) is not a handheld — those
+  -- used to resolve AUTO → LOW, which stripped survey zoom-out from
+  -- OPTIONS so the ZOOM row only offered IN.
+  if isArm and os == "Linux" then
     return "low"
   end
-  -- Phones and tablets: GBC FX is already force-disabled here (issue #136);
-  -- balanced additionally drops the 3D tilt, the heaviest remaining extra.
+  -- Phones and tablets: balanced drops the 3D tilt, the heaviest extra.
   if os == "Android" or os == "iOS" then
     return "balanced"
   end

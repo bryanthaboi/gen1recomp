@@ -24,6 +24,7 @@ T.eq(GameVersion.generation("blue"), 1, "Blue is Gen 1")
 T.eq(GameVersion.generation("yellow"), 1, "Yellow is Gen 1")
 T.eq(GameVersion.generation("gold"), 2, "Gold is Gen 2")
 T.eq(GameVersion.generation("silver"), 2, "Silver is Gen 2")
+T.eq(GameVersion.generation("crystal"), 2, "Crystal is Gen 2")
 
 -- ------- 2. manifest: gen2compat is opt-in and defaults off
 

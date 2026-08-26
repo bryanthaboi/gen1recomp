@@ -83,9 +83,10 @@ do
     for _, r in ipairs(rowsOfKind(rows, "show_text")) do
       said[#said + 1] = r[2]
     end
+    -- SSAnne2FRivalText's text_asm arms SaveEndBattleTextPointers, so the
+    -- defeat line prints in battle, not on the map (scripts/SSAnne2F.asm:199)
     local order = {
       "_SSAnne2FRivalText",
-      "_SSAnne2FRivalDefeatedText",
       "_SSAnne2FRivalCutMasterText",
     }
     local pi = 1
@@ -93,7 +94,10 @@ do
       if pi <= #order and id == order[pi] then pi = pi + 1 end
     end
     eq(pi, #order + 1,
-       ("x=%d text order: greeting, defeated, CUT master"):format(x))
+       ("x=%d text order: greeting, then CUT master"):format(x))
+    local armed = rowsOfKind(rows, "save_end_battle_text")[1]
+    check(armed ~= nil and armed[2] == "_SSAnne2FRivalDefeatedText",
+       ("x=%d arms the defeat line for the battle screen (#1688)"):format(x))
 
     local walk = rowsOfKind(rows, "walk_npc")[1]
     check(walk ~= nil, ("x=%d exit is a walk_npc list"):format(x))
@@ -123,13 +127,9 @@ local function dockBlock(bx, by)
 end
 
 local function sail(cellX, cellY)
-  local rows, puffs = nil, 0
+  local rows = nil
   local ow = {
     player = { cellX = cellX, cellY = cellY },
-    startDustAnim = function(_, _, _, done)
-      puffs = puffs + 1
-      if done then done() end
-    end,
     queueScript = function(_, r) rows = r end,
   }
   local game = {
@@ -139,8 +139,13 @@ local function sail(cellX, cellY)
   story3.VERMILION_DOCK.onEnter(game, ow)
   check(rows ~= nil, "stepping off the gangway queues the departure")
   check(game.save.flags.EVENT_SS_ANNE_LEFT == true, "EVENT_SS_ANNE_LEFT set")
-  eq(puffs, 3, "three funnel smoke puffs (LoadSmokeTileFourTimes)")
   return rows
+end
+
+local function kindIndex(rows, kind, from)
+  for i = from or 1, #rows do
+    if rows[i][1] == kind then return i end
+  end
 end
 
 do
@@ -165,52 +170,25 @@ do
   local waits = rowsOfKind(rows, "wait")
   eq(waits[1][2], 120, "120 frames before the first horn")
   eq(waits[#waits][2], 120, "EraseSSAnne's 120 frames before the walk out")
-  local slide = 0
-  for _, w in ipairs(waits) do
-    if w[2] == 20 then slide = slide + 1 end
-  end
-  eq(slide, 8, "eight column shifts, .shift_columns_up's ld e, $8")
 
-  -- the bug was the whole hull blinking to water in a single frame with no
-  -- travel at all: her bow block has to be written one column further west
-  -- each step, and the water has to close in astern behind her
-  local bow, wake = {}, {}
-  for _, r in ipairs(rowsOfKind(rows, "replace_block")) do
-    if r[3] == 1 and r[4] == dockBlock(DOCK_HULL.x0, 1) then
-      bow[#bow + 1] = r[2]
-    elseif r[3] == 1 and r[4] == 1 then
-      wake[#wake + 1] = r[2]
-    end
-  end
-  check(dirsEqual(bow, { 4, 3, 2, 1 }), "the bow sails west a column a step")
-  check(dirsEqual(wake, { 8, 7, 6, 5, 4, 3, 2, 1 }),
-        "water closes in astern, stern column first")
+  -- scripts/VermilionDock.asm:50 zeroes wSpritePlayerStateData1ImageIndex and
+  -- :77 freezes sprite updates: he faces DOWN until he walks out (#1689)
+  eq(rows[1][1], "face_player_dir", "he is turned before the first delay")
+  eq(rows[1][2], "down", "and he is turned to face DOWN")
 
-  for _, r in ipairs(rowsOfKind(rows, "replace_block")) do
-    check(r[2] >= 1 and r[2] <= DOCK_HULL.x1,
-          "the slide stays inside the dock's water, off the pier column 0")
-  end
+  -- she used to be shuffled west one whole 32px block per beat, which read as
+  -- teleporting; .shift_columns_up is a 1px-per-8-frames slide (#1689)
+  eq(#rowsOfKind(rows, "replace_block"), 0,
+     "no block shuffle: the hull slides, it does not jump")
+  eq(#rowsOfKind(rows, "ss_anne_departs"), 1, "one blocking sail-away beat")
 
-  -- scripts/VermilionDock.asm:182-203: the tile fill covers the whole ship,
-  -- the gangway block under the player included (#1211)
-  local final = {}
-  for _, r in ipairs(rowsOfKind(rows, "replace_block")) do
-    final[r[2] .. "," .. r[3]] = r[4]
-  end
-  for bx = DOCK_HULL.x0, DOCK_HULL.x1 do
-    for by = DOCK_HULL.y0, DOCK_HULL.y1 do
-      check(WATER[final[bx .. "," .. by]],
-            ("hull block (%d,%d) ends as open water"):format(bx, by))
-    end
-  end
-
-  -- and she has to have travelled: the westmost water column of the map
-  -- carried hull blocks partway through
-  local sawWest = false
-  for _, r in ipairs(rowsOfKind(rows, "replace_block")) do
-    if r[2] == 1 and not WATER[r[4]] then sawWest = true end
-  end
-  check(sawWest, "the hull reaches the west edge of the water before it goes")
+  local horn1 = kindIndex(rows, "play_sound")
+  local sailIdx = kindIndex(rows, "ss_anne_departs")
+  local horn2 = kindIndex(rows, "play_sound", (horn1 or 0) + 1)
+  check(horn1 and sailIdx and horn2 and horn1 < sailIdx and sailIdx < horn2,
+        "horn, then she sails, then the horn again")
+  check(kindIndex(rows, "warp") > sailIdx,
+        "the walk out only starts once she has gone")
 end
 
 do

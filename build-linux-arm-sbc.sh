@@ -134,7 +134,7 @@ mkdir -p "$GAME_SRC"
   main.lua conf.lua src libs data assets tools/save-editor \
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
-  tools/rom_manifest_silver.json \
+  tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
 if unzip -Z1 "$WORK/game-payload.zip" \
     | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then

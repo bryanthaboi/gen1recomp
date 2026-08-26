@@ -12,10 +12,12 @@ function ScreenPosition.normalize(v)
 end
 
 function ScreenPosition.label(v)
+  if ScreenPosition.skinActive() then return "SKIN" end
   return LABELS[ScreenPosition.normalize(v)]
 end
 
 function ScreenPosition.cycle(v, dir)
+  if ScreenPosition.skinActive() then return ScreenPosition.normalize(v) end
   v = ScreenPosition.normalize(v)
   local modes = ScreenPosition.MODES
   local cur = 1
@@ -44,6 +46,9 @@ end
 function ScreenPosition.skinActive(w, h)
   local ok, TouchSkin = pcall(require, "src.core.TouchSkin")
   if not ok or type(TouchSkin.viewport) ~= "function" then return false end
+  if (not w or not h) and love and love.graphics and love.graphics.getDimensions then
+    w, h = love.graphics.getDimensions()
+  end
   local okv, x = pcall(TouchSkin.viewport, w, h)
   return okv and x ~= nil
 end

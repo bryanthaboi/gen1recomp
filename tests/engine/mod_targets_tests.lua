@@ -27,18 +27,25 @@ end
 
 -- ------- tokens expand off GameVersion, never a literal list
 
+-- "nonesuch" is the deliberate never-a-game token for every unknown-version
+-- case below.  A real version id was used here twice ("gold", then "crystal")
+-- and both had to be swapped the day that game shipped; this one never will.
+local NO_SUCH_GAME = "nonesuch"
+
 do
   eq(table.concat(ModTargets.expand("red"), ","), "red",
     "a version id names exactly that game")
   eq(table.concat(ModTargets.expand("GEN1"), ","), "red,blue,yellow",
     "gen1 is every Gen 1 game, case-insensitive")
-  eq(table.concat(ModTargets.expand("gen2"), ","), "gold,silver",
+  eq(table.concat(ModTargets.expand("gen2"), ","), "gold,silver,crystal",
     "gen2 is every Gen 2 game")
   eq(table.concat(ModTargets.expand("silver"), ","), "silver",
     "and each of them names itself")
+  eq(table.concat(ModTargets.expand("crystal"), ","), "crystal",
+    "Crystal included, the day its VERSIONS row landed")
   eq(table.concat(ModTargets.expand("all"), ","),
     table.concat(GameVersion.ORDER, ","), "all is the launcher order itself")
-  eq(ModTargets.expand("crystal"), nil, "a game this engine has no cache for")
+  eq(ModTargets.expand(NO_SUCH_GAME), nil, "a game this engine has no cache for")
   eq(ModTargets.expand("gen9"), nil, "a generation with no games is unknown")
   eq(ModTargets.expand(7), nil, "a non-string token is not a game")
 end
@@ -48,9 +55,9 @@ do
   eq(table.concat(versions, ","), "red,gold",
     "normalize dedupes and sorts into GameVersion.ORDER")
   eq(#unknown, 0, "known tokens leave nothing unreported")
-  local _, bad = ModTargets.normalize({ "crystal", "gen1" })
+  local _, bad = ModTargets.normalize({ NO_SUCH_GAME, "gen1" })
   eq(#bad, 1, "an unknown token comes back for the caller to report")
-  eq(bad[1], "crystal", "by name")
+  eq(bad[1], NO_SUCH_GAME, "by name")
 end
 
 -- ------- the legacy reading: gen2compat only ever ADDS Gen 2
@@ -58,7 +65,7 @@ end
 do
   eq(list(mf({})), "red,blue,yellow",
     "a manifest with no games key is Gen 1, which is what it was tested as")
-  eq(list(mf({ gen2compat = true })), "red,blue,yellow,gold,silver",
+  eq(list(mf({ gen2compat = true })), "red,blue,yellow,gold,silver,crystal",
     "gen2compat keeps Gen 1 and adds Gen 2")
   eq(mf({}).gen2compat, false, "and the derived flag agrees")
   eq(mf({ gen2compat = true }).gen2compat, true, "both ways")
@@ -69,23 +76,23 @@ end
 
 do
   local gen2 = mf({ games = { "gen2" } })
-  eq(list(gen2), "gold,silver", "games can name Gen 2 alone")
+  eq(list(gen2), "gold,silver,crystal", "games can name Gen 2 alone")
   eq(gen2.gen2compat, true, "which IS the gen2compat claim the gate reads")
   local both = mf({ games = { "gen1", "gen2" } })
-  eq(list(both), "red,blue,yellow,gold,silver", "or both generations")
+  eq(list(both), "red,blue,yellow,gold,silver,crystal", "or both generations")
   local one = mf({ games = { "blue" } })
   eq(list(one), "blue", "or one single game")
   eq(one.gen2compat, false, "a Gen 1 game is not a Gen 2 claim")
-  eq(list(mf({ games = { "red" }, gen2compat = true })), "red,gold,silver",
+  eq(list(mf({ games = { "red" }, gen2compat = true })), "red,gold,silver,crystal",
     "an old gen2compat beside a new games list still adds its game")
 end
 
 do
   -- vocabulary: api 1 warns and keeps loading, api 2 refuses, exactly like
   -- every other manifest vocabulary (Manifest.violation)
-  local lenient = mf({ games = { "crystal", "red" } })
+  local lenient = mf({ games = { NO_SUCH_GAME, "red" } })
   eq(list(lenient), "red", "api 1 drops the unknown game and keeps the rest")
-  check(not pcall(mf, { api = 2, games = { "crystal" } }),
+  check(not pcall(mf, { api = 2, games = { NO_SUCH_GAME } }),
     "api 2 refuses a game it does not have")
   check(not pcall(mf, { games = "gen1" }),
     "games must be an array, not a bare string")
@@ -226,12 +233,13 @@ do
   local bad = ModProfile.decode(require("src.core.SaveSerializer").encode({
     format = "g1rmodlist", formatVersion = 1,
     profile = { name = "P", enabledByVersion = {
-      gold = { a = true }, silver = { a = true }, crystal = { a = true },
+      gold = { a = true }, silver = { a = true },
+      [NO_SUCH_GAME] = { a = true },
       red = "nope" } },
   }))
   eq(bad.enabledByVersion.gold.a, true, "a shared file's known game is kept")
   eq(bad.enabledByVersion.silver.a, true, "every one of them, not just the first")
-  eq(bad.enabledByVersion.crystal, nil, "an unknown game is dropped on read")
+  eq(bad.enabledByVersion[NO_SUCH_GAME], nil, "an unknown game is dropped on read")
   eq(bad.enabledByVersion.red, nil, "and so is a bucket that is not a table")
 end
 

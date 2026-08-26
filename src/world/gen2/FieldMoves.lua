@@ -36,6 +36,7 @@
 -- `action` names the World method that carries it out; everything else in the
 -- table is that action's argument.
 
+local GameVersion = require("src.core.GameVersion")
 local Permissions = require("src.world.gen2.Permissions")
 local Runtime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
@@ -101,8 +102,8 @@ FieldMoves.TEXT = {
                      .. "\fA #MON may be\nable to pass it."),
   ASK_WHIRLPOOL    = Strings.source("A whirlpool is in\nthe way."
                      .. "\fWant to use\nWHIRLPOOL?"),
-  -- Not a cart line: the stand-in destination prompt World:askFlyPoint uses
-  -- until the POKeGEAR's MAP card grows _FlyMap's cursor mode.
+  -- Not a cart line: the prompt World:askFlyPoint falls back to when there is
+  -- no screen at all to push -- a headless probe, never a real run.
   ASK_FLY_TO       = Strings.source("Fly to %s?"),
 }
 
@@ -152,13 +153,44 @@ FieldMoves.KANTO_BADGES = {
 -- World:setEngineFlag / World:engineFlag route badge ids here so there is one
 -- store again, the same way ENGINE_BUG_CONTEST_TIMER is routed to
 -- save.bugContest rather than kept as a second copy.
-FieldMoves.BADGE_FLAG = {}
-for index, name in ipairs(FieldMoves.JOHTO_BADGES) do
-  FieldMoves.BADGE_FLAG[25 + index] = { store = "badges", name = name }
+-- Crystal declares 162 engine flags to Gold's 93 and the badge block sits one
+-- higher (constants/engine_flags.asm:39 vs pokegold's :38), so the ids come
+-- from the cache's engineFlagOrder when it has one.
+-- Crystal only; pokegold constants/engine_flags.asm:4-111 has no such row.
+FieldMoves.FEMALE_FLAG_NAME = "ENGINE_PLAYER_IS_FEMALE"
+
+function FieldMoves.bindEngineFlags(order)
+  local byName = {}
+  if type(order) == "table" then
+    -- pairs, not ipairs: a const_skip leaves a hole and ipairs would stop
+    -- there, silently dropping every badge past it.
+    for index, name in pairs(order) do
+      if type(index) == "number" and type(name) == "string" then
+        byName[name] = index - 1
+      end
+    end
+  end
+  local flags = {}
+  local function place(names, store, goldBase)
+    for index, name in ipairs(names) do
+      local id = byName["ENGINE_" .. name .. "BADGE"] or (goldBase + index)
+      flags[id] = { store = store, name = name }
+    end
+  end
+  place(FieldMoves.JOHTO_BADGES, "badges", 25)
+  place(FieldMoves.KANTO_BADGES, "kantoBadges", 33)
+  FieldMoves.BADGE_FLAG = flags
+  -- The flag IS wPlayerGender's bit 0, so World routes it to the gender byte
+  -- (data/events/engine_flags.asm:131, constants/engine_flags.asm:121).
+  FieldMoves.FEMALE_FLAG = byName[FieldMoves.FEMALE_FLAG_NAME]
+  -- Crystal's ENGINE_MOBILE_SYSTEM (constants/engine_flags.asm:25) has no Gold
+  -- row, so every id from BUG_CONTEST_TIMER up shifts one.
+  FieldMoves.BUG_CONTEST_FLAG = byName["ENGINE_BUG_CONTEST_TIMER"] or 16
+  FieldMoves.BIKE_SHOP_CALL_FLAG = byName["ENGINE_BIKE_SHOP_CALL_ENABLED"] or 19
+  return flags
 end
-for index, name in ipairs(FieldMoves.KANTO_BADGES) do
-  FieldMoves.BADGE_FLAG[33 + index] = { store = "kantoBadges", name = name }
-end
+
+FieldMoves.bindEngineFlags(nil)
 
 function FieldMoves.hasBadge(save, badge)
   if not badge then return true end
@@ -357,6 +389,39 @@ FieldMoves.STATE_SPRITE = {
   surf_pika = "SPRITE_SURFING_PIKACHU",
 }
 
+-- data/sprites/player_sprites.asm:8-13 KrisStateSprites, the other half of the
+-- table GetPlayerSprite picks between (engine/overworld/overworld.asm:55-64).
+FieldMoves.STATE_SPRITE_FEMALE = {
+  normal = "SPRITE_KRIS",
+  bike = "SPRITE_KRIS_BIKE",
+  surf = "SPRITE_SURF",
+  surf_pika = "SPRITE_SURFING_PIKACHU",
+}
+
+-- wPlayerGender's PLAYERGENDER_FEMALE_F, as the save spells it
+-- (constants/ram_constants.asm:176-177).
+function FieldMoves.isFemale(gender)
+  return gender == "female"
+end
+
+-- GetPlayerSprite's table pick and row walk
+-- (engine/overworld/overworld.asm:57-64, :67-75).
+function FieldMoves.stateSprite(state, gender)
+  local table_ = FieldMoves.isFemale(gender)
+    and FieldMoves.STATE_SPRITE_FEMALE or FieldMoves.STATE_SPRITE
+  return table_[state] or table_[FieldMoves.PLAYER_NORMAL]
+end
+
+function FieldMoves.playerSprite(gender)
+  return FieldMoves.stateSprite(FieldMoves.PLAYER_NORMAL, gender)
+end
+
+-- Whether the cache carries Kris at all; Gold and Silver have no
+-- KrisStateSprites to extract (pokegold data/sprites/player_sprites.asm:1-6).
+function FieldMoves.hasGenderChoice(sprites)
+  return (sprites and sprites[FieldMoves.STATE_SPRITE_FEMALE.normal]) ~= nil
+end
+
 function FieldMoves.isBiking(state)
   return state == FieldMoves.PLAYER_BIKE
 end
@@ -536,10 +601,14 @@ end
 -- FlashFunction.CheckUseFlash: badge, then wTimeOfDayPalset == DARKNESS_PALSET
 -- -- so FLASH is refused in a lit cave and on a route alike, and the refusal
 -- is FieldMoveFailed's generic "Can't use that here."
+--
+-- ../pokecrystal/engine/events/overworld.asm:284-287 puts SpecialAerodactylChamber
+-- between the two, and its carry is a second way into `.useflash`.
 function FieldMoves.flashFromMenu(ctx)
   local refused = badgeGate(ctx, "FLASH")
   if refused then return refused end
-  if not ctx.dark then
+  local chamber = ctx.openAerodactylWall and ctx.openAerodactylWall()
+  if not ctx.dark and not chamber then
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
   return { ok = true, action = "flash", text = FieldMoves.TEXT.BLINDING_FLASH }
@@ -560,6 +629,11 @@ function FieldMoves.surfFromMenu(ctx)
   end
   if not Permissions.isWater(ctx.facingColl)
       or FieldMoves.directionBlocked(ctx.playerColl, ctx.facing) then
+    return { ok = false, text = FieldMoves.TEXT.CANT_SURF }
+  end
+  -- Crystal's added `farcall CheckFacingObject`, which pokegold's :339 tags
+  -- BUG (../pokecrystal/engine/events/overworld.asm:364-365).
+  if ctx.facingObject and GameVersion.fixes().surfOntoNpc then
     return { ok = false, text = FieldMoves.TEXT.CANT_SURF }
   end
   return {

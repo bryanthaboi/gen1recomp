@@ -998,6 +998,13 @@ function TileRenderer.invalidate()
   frameImages = {}
   toggleImages = {}
   stripData = {}
+  -- RED++ per-map atlases are large Images; clear and release so an
+  -- in-process Play → launcher → Play loop does not keep every prior
+  -- session's bake in VRAM / Lua heap.
+  for key, img in pairs(gbcAtlasCache) do
+    safeRelease(img)
+    gbcAtlasCache[key] = nil
+  end
 end
 
 -- Drop the per-map GBC atlas cache so a tileset graft (which grows the

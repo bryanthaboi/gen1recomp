@@ -13,7 +13,7 @@ require("love.math")
 require("love.system")
 require("love.timer")
 
-local version, prefix, romData, progressName, resultName = ...
+local version, prefix, romData, progressName, resultName, romSha1 = ...
 
 local progressChannel = love.thread.getChannel(progressName)
 local resultChannel = love.thread.getChannel(resultName)
@@ -44,7 +44,7 @@ local ok, err = pcall(function()
           current = current, stageTotal = stageTotal,
         })
       end
-    end)
+    end, romSha1)
   extractor:run()
 end)
 
