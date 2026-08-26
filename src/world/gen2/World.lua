@@ -7434,6 +7434,31 @@ function World:interactBody()
     interacted(self, fx, fy, "boulder", npc)
     return self:tryStrengthOW()
   end
+  -- mapamap's placed BERRY TREES: an object carrying berryItem hands it out
+  -- once per real-world day (the cart's berry trees regrow daily too) via
+  -- the same pickup script a hidden item uses.  There is no ROM script behind
+  -- a placed tree, so this arm sits beside the strength-boulder one.
+  if npc and npc.def and npc.def.berryItem then
+    self.talkNpc = npc
+    interacted(self, fx, fy, "berrytree", npc)
+    local save = self.game and self.game.save
+    if save then
+      save.mapamapBerries = save.mapamapBerries or {}
+      local berryId = (self.map.id or "?") .. "_obj_"
+        .. tostring(npc.def.index or 0)
+      local today = os.date("%Y%m%d")
+      if save.mapamapBerries[berryId] == today then
+        self:showText(Strings(
+          "The tree is empty.\nIt might have berries\ntomorrow."))
+        return true
+      end
+      save.mapamapBerries[berryId] = today
+    end
+    return self.vm:start(HiddenItems.ballPickupScript(
+      npc.def.berryItem, tonumber(npc.def.berryCount) or 1,
+      (npc.def.index or 0) + 1,
+      function(want, id2) return self:sfxIdNamed(want, id2) end))
+  end
   -- OBJECTTYPE_ITEMBALL: no scriptKey to start -- the object's pointer is the
   -- raw (item, quantity) pair, read by the extractor into `itemball`.  Every
   -- plain Poke Ball on the floor comes through here; without this arm the

@@ -3363,7 +3363,15 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
   local battleText = header and header.battle and Game.data.text[header.battle]
   if not battleText then
     battleText = select(1, Game.data:resolveText(self.map.def.label, d.text))
-                 or Strings("I like shorts!\nThey're comfy and\neasy to wear!")
+    -- Editor-placed trainers carry their intro as a RAW string on the def
+    -- (not a TEXT_* constant), so resolveText answers nil for them: use it
+    -- verbatim instead of falling through to the placeholder line.
+    if not battleText and type(d.text) == "string" and d.text ~= "" then
+      battleText = d.text
+    end
+  end
+  if not battleText then
+    battleText = Strings("I like shorts!\nThey're comfy and\neasy to wear!")
   end
   -- `endBattleText` is a caller-supplied stand-in for header.won: the
   -- text_asm trainers that hand their loss line to the battle through
@@ -3374,6 +3382,8 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
   -- TrainerDefeatedText and MoneyForWinningText, on the battle screen (#862).
   local wonText = endBattleText
                   or (header and header.won and Game.data.text[header.won])
+                  or (type(d.winText) == "string" and d.winText ~= ""
+                      and d.winText)
 
   local BattleState = require("src.battle.BattleState")
   local function startBattle(options)
@@ -3423,6 +3433,17 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
         Game.save.defeatedTrainers[npc.id] = true
         if header and header.event then
           Game.save.flags[header.event] = true
+        end
+        -- Per-placement recompense: a one-time prize item handed over right
+        -- after the victory flag lands (give_item bags it, jingles and shows
+        -- its received box; bag-full halts with the vanilla notice).
+        if type(d.prizeItem) == "string" and d.prizeItem ~= ""
+            and Game.data.items[d.prizeItem] then
+          pcall(function()
+            local Commands = require("src.script.Commands")
+            Commands.give_item({ game = Game, save = Game.save },
+              d.prizeItem, tonumber(d.prizeCount) or 1)
+          end)
         end
         -- checkVictoryRewards pushes the badge/prize box and starts the map's
         -- onVictory script UNDER whatever runs next, so the player still sees
@@ -3681,7 +3702,9 @@ function OverworldState:checkTrainerSight()
        and not mapScripts.talkScript(self.map.id, d.text)
        and trainerSpriteOnScreen(npc, p) then
       local header = Game.data:trainerHeader(self.map.def.label, d.index)
-      local range = header and header.range or 0
+      -- Editor-placed trainers have no ROM header; d.sight carries their
+      -- sight range instead (0/nil = talk-only, the old behavior).
+      local range = (header and header.range) or tonumber(d.sight) or 0
       local vec = DIRVEC[npc.facing]
       if range > 0 and vec then
         local dist, horizontal
