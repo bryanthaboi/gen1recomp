@@ -916,6 +916,7 @@ mod.content.radio_channels:register("PIRATE_RADIO", { channel = 9, name = "PIRAT
 | field | type | required |
 |---|---|---|
 | `available` | function | no |
+| `drawBillboards` | function | no |
 | `drawWorld` | function | no |
 | `gate` | function | no |
 | `hotkey` | string | no |

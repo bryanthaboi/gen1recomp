@@ -73,6 +73,10 @@ do
     { label = "GRADE", present = function() end }, "register")
   check(okPresent, "a present-only record validates")
 
+  local okBillboards = Schemas.check(spec, "render_pipelines", "billboards",
+    { label = "BILLBOARDS", drawBillboards = function() end }, "register")
+  check(okBillboards, "a drawBillboards-only record validates")
+
   -- the whole point of the record is to draw something
   local bad, err = Schemas.check(spec, "render_pipelines", "inert",
     { label = "INERT" }, "register")
@@ -334,6 +338,30 @@ eq(love.graphics.getCanvas(), "engine-canvas",
 eq(love.graphics.getBlendMode(), "alpha",
   "a present that changed blend mode cannot leak it past the fold")
 Pipelines.setLevel("dirty", 0)
+
+-- ------- additive TILT billboards dispatch without claiming the world
+
+local billboardCtx = { tag = "tilt" }
+local billboardSeen, billboardLevel = nil, nil
+Pipelines.install({
+  render_pipelines = {
+    billboards = {
+      label = "BILLBOARDS",
+      drawBillboards = function(ctx)
+        billboardSeen = ctx
+        billboardLevel = ctx.level
+      end,
+    },
+  },
+})
+Pipelines.setLevel("billboards", 1)
+check(Pipelines.wantsBillboards(),
+  "an enabled additive billboard stage is discoverable")
+Pipelines.drawBillboards(billboardCtx)
+eq(billboardSeen, billboardCtx,
+  "drawBillboards receives the owning TILT frame context")
+eq(billboardLevel, 1,
+  "drawBillboards receives its pipeline's configured level")
 
 Pipelines.reset()
 Pipelines.install(nil)

@@ -3,7 +3,9 @@
 -- (the ring plays the role of the GB border blocks around small maps).
 
 local Assets = require("src.render.Assets")
+local BillboardCutout = require("src.render.BillboardCutout")
 local PaletteFX = require("src.render.PaletteFX")
+local PixelCanvas = require("src.render.PixelCanvas")
 
 local TileRenderer = {}
 TileRenderer.__index = TileRenderer
@@ -830,6 +832,112 @@ function TileRenderer:drawWindow(camX, camY, vw, vh)
   self:drawAnimated(camX, camY)
 end
 
+-- Draw a cached alpha card for one map-space rectangle. The capture is stable
+-- across frames so camera motion cannot make the card's sampled edge swim.
+function TileRenderer:drawCutoutRegion(camX, camY, vw, vh, dx, dy, seed)
+  if type(camX) ~= "number" or type(camY) ~= "number"
+      or type(vw) ~= "number" or type(vh) ~= "number"
+      or vw <= 0 or vh <= 0 then return false end
+
+  local cw, ch = math.ceil(vw), math.ceil(vh)
+  local key = table.concat({ camX, camY, cw, ch,
+    type(seed) == "table" and seed.x or "",
+    type(seed) == "table" and seed.y or "",
+    type(seed) == "table" and seed.width or "",
+    type(seed) == "table" and seed.height or "",
+  }, ":")
+  self.billboardCutouts = self.billboardCutouts or {}
+  local image = self.billboardCutouts[key]
+  if image == false then return false end
+
+  local G = love.graphics
+  if not image then
+    local ok, result = pcall(function()
+      local canvas = PixelCanvas.new(cw, ch, "nearest")
+      G.push("all")
+      local captured, data = pcall(function()
+        G.setCanvas(canvas)
+        G.origin()
+        G.setScissor()
+        G.setShader()
+        G.setColor(1, 1, 1, 1)
+        G.clear(0, 0, 0, 0)
+        self:drawWindow(camX, camY, vw, vh)
+        return canvas:newImageData()
+      end)
+      G.pop()
+      if canvas.release then canvas:release() end
+      if not captured then return false end
+      if not BillboardCutout.mask(data, seed) then return false end
+      local cutout = G.newImage(data)
+      cutout:setFilter("nearest", "nearest")
+      return cutout
+    end)
+    image = ok and result or false
+    self.billboardCutouts[key] = image
+    if not image then return false end
+  end
+
+  G.setColor(1, 1, 1, 1)
+  G.draw(image, dx or 0, dy or 0)
+  return true
+end
+
+-- Draw a source-preserving version of a map crop over the rendered ground.
+-- Replace blending clears only the selected component and restores every
+-- neighbouring pixel from the original source capture.
+function TileRenderer:drawUnderlayRegion(camX, camY, vw, vh, dx, dy, seed)
+  if type(camX) ~= "number" or type(camY) ~= "number"
+      or type(vw) ~= "number" or type(vh) ~= "number"
+      or vw <= 0 or vh <= 0 then return false end
+
+  local cw, ch = math.ceil(vw), math.ceil(vh)
+  local key = table.concat({ camX, camY, cw, ch,
+    type(seed) == "table" and seed.x or "",
+    type(seed) == "table" and seed.y or "",
+    type(seed) == "table" and seed.width or "",
+    type(seed) == "table" and seed.height or "",
+  }, ":")
+  self.billboardUnderlays = self.billboardUnderlays or {}
+  local image = self.billboardUnderlays[key]
+  if image == false then return false end
+
+  local G = love.graphics
+  if not image then
+    local ok, result = pcall(function()
+      local canvas = PixelCanvas.new(cw, ch, "nearest")
+      G.push("all")
+      local captured, data = pcall(function()
+        G.setCanvas(canvas)
+        G.origin()
+        G.setScissor()
+        G.setShader()
+        G.setColor(1, 1, 1, 1)
+        G.clear(0, 0, 0, 0)
+        self:drawWindow(camX, camY, vw, vh)
+        return canvas:newImageData()
+      end)
+      G.pop()
+      if canvas.release then canvas:release() end
+      if not captured then return false end
+      if not BillboardCutout.erase(data, seed) then return false end
+      local underlay = G.newImage(data)
+      underlay:setFilter("nearest", "nearest")
+      return underlay
+    end)
+    image = ok and result or false
+    self.billboardUnderlays[key] = image
+    if not image then return false end
+  end
+
+  G.push("all")
+  G.setBlendMode("replace")
+  G.setColor(1, 1, 1, 1)
+  G.draw(image, dx or 0, dy or 0)
+  G.pop()
+  return true
+end
+
 -- animated overdraw at the current step, over the static window batch.  The
 -- cells were gathered for the current camera window by :ensureWindow, so this
 -- only ever touches on-screen animated tiles.
@@ -892,6 +1000,14 @@ function TileRenderer:releaseBatches()
   safeRelease(self.winBatch); self.winBatch = nil
   safeRelease(self.borderFill); self.borderFill = nil
   safeRelease(self.borderQuad); self.borderQuad = nil
+  if self.billboardCutouts then
+    for _, image in pairs(self.billboardCutouts) do safeRelease(image) end
+    self.billboardCutouts = nil
+  end
+  if self.billboardUnderlays then
+    for _, image in pairs(self.billboardUnderlays) do safeRelease(image) end
+    self.billboardUnderlays = nil
+  end
   -- shared shift-variant cache; only drop the reference
   self.borderWaterTextures = nil
   self.borderFillMode = nil

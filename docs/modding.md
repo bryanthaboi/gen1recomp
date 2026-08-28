@@ -591,11 +591,12 @@ mod.content.render_pipelines:register("diorama", {
 })
 ```
 
-Three draw stages, each optional; a record needs at least one:
+Four draw stages, each optional; a record needs at least one:
 
 | stage | signature | runs |
 | --- | --- | --- |
 | `drawWorld` | `(ctx) -> canvas \| nil` | instead of the flat/tilt world pass |
+| `drawBillboards` | `(ctx)` | between the ground and upright-object passes of built-in TILT |
 | `worldPresent` | `(canvas, ctx) -> canvas` | over the world, **before** the UI composites |
 | `present` | `(canvas, ctx) -> canvas` | over the whole frame, world and UI alike |
 
@@ -605,7 +606,26 @@ boxes and menus crisp — a depth-of-field or colour grade on the world only.
 
 `ctx` carries the frame: `state`, `cam`, `vw`/`vh` (world-pixel view),
 `width`/`height` (window pixels), `scale`, `level`, `paletteFor(map)` and
-`spriteColors(map)`. It also carries `ctx.drawFx(project, scale)` — call it
+`spriteColors(map)`.
+
+During `drawBillboards`, `ctx.map` is a read-only semantic map view with
+`id`, `width`, `height`, `cellSize`, `outdoor`, and `cell(x, y)`. A cell
+reports `inside`, `walkable`, `water`, `grass`, `warp`, and `solid`, allowing
+mods to classify map geometry without depending on ROM-specific tile IDs.
+`ctx.mapScale` converts map pixels to world pixels.
+
+Use `ctx.drawMapCutout(x, y, width, height, offsetX, offsetY, seed)` to cache
+an alpha card from the map, then call
+`ctx.maskMapCutout(x, y, width, height, seed)` while the TILT ground canvas is
+active. The mask call removes that same silhouette from the ground pass and
+returns `false` when the region cannot safely be masked; in that case, do not
+queue the card. Otherwise, queue it with
+`ctx.billboard(worldX, worldY, drawFn)`. The rectangle's bottom centre should
+correspond to that billboard anchor. Queued cards join the engine's existing
+upright-object Y-sort, so actors and map objects occlude one another normally.
+This stage is available in Gen 1 and in Gold, Silver, and Crystal.
+
+The general pipeline context also carries `ctx.drawFx(project, scale)` — call it
 with your own projection and the engine draws every active field effect
 (the "!" bubble, the Poké Center heal machine, the Fly bird, the fishing
 rod, Rock Tunnel darkness) at its correct anchor under your camera. There

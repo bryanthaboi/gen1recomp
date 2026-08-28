@@ -1,12 +1,13 @@
 -- Rendering pipelines: the engine side of the render_pipelines registry.
 --
 -- A pipeline is a display mode a mod owns.  It may replace the overworld's
--- world pass with geometry of its own (drawWorld) and/or post-process the
--- finished composite (present).  Everything else about being a display mode
+-- world pass with geometry of its own (drawWorld), add upright objects to
+-- TILT (drawBillboards), and/or post-process the finished composite (present).
+-- Everything else about being a display mode
 -- -- the OFF/1/2/3 ladder, the options row, the hotkey, persistence, the
 -- free-roam gate, and never letting a mod's error take the frame down -- is
--- engine plumbing and lives here, so a renderer mod writes the two draw
--- functions and declares the rest.
+-- engine plumbing and lives here, so a renderer mod supplies only the stages
+-- it owns and declares the rest.
 --
 -- The two halves compose independently and in priority order: the highest
 -- priority eligible drawWorld renders the world, then every eligible
@@ -316,6 +317,31 @@ function Pipelines.drawWorld(id, ctx)
   local def = Pipelines.get(id)
   if not (def and def.drawWorld) then return nil end
   return guardRender(id, def.drawWorld, ctx)
+end
+
+-- Additive upright objects for the engine's own TILT pass. Unlike drawWorld,
+-- this stage does not claim the ground or return a Canvas: every eligible
+-- callback queues billboards on ctx and may mask their source on the active
+-- ground canvas, while the world renderer drains that queue into its existing
+-- upright pass.
+function Pipelines.drawBillboards(ctx)
+  for _, entry in ipairs(Pipelines.list()) do
+    if entry.def.drawBillboards and Pipelines.eligible(entry.id) then
+      local previousLevel = ctx.level
+      ctx.level = Pipelines.level(entry.id)
+      guardRender(entry.id, entry.def.drawBillboards, ctx)
+      ctx.level = previousLevel
+    end
+  end
+end
+
+function Pipelines.wantsBillboards()
+  for _, entry in ipairs(Pipelines.list()) do
+    if entry.def.drawBillboards and Pipelines.eligible(entry.id) then
+      return true
+    end
+  end
+  return false
 end
 
 -- Fold every eligible world post-process over a pipeline's world image,

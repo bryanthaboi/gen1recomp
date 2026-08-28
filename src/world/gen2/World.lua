@@ -12,6 +12,7 @@ local Bag = require("src.inventory.Bag")
 local Battle = require("src.battle.gen2.Battle")
 local BattleMusic = require("src.battle.gen2.BattleMusic")
 local Bike = require("src.world.gen2.Bike")
+local BillboardCutout = require("src.render.BillboardCutout")
 local BorderFill = require("src.world.gen2.BorderFill")
 local Boxes = require("src.core.gen2.Boxes")
 local Breeding = require("src.core.gen2.Breeding")
@@ -51,6 +52,7 @@ local Permissions = require("src.world.gen2.Permissions")
 local Pipelines = require("src.render.Pipelines")
 local PixelCanvas = require("src.render.PixelCanvas")
 local Player = require("src.world.gen2.Player")
+local OverworldBillboards = require("src.render.OverworldBillboards")
 local Pokerus = require("src.core.gen2.Pokerus")
 local Roamers = require("src.core.gen2.Roamers")
 local Runtime = require("src.mods.Runtime")
@@ -5501,6 +5503,16 @@ function World:release()
   end
   safeRelease(self.tiltCanvas)
   self.tiltCanvas = nil
+  if self.billboardCutouts then
+    for _, image in pairs(self.billboardCutouts) do safeRelease(image) end
+    self.billboardCutouts = nil
+    self.billboardCutoutImage = nil
+  end
+  if self.billboardUnderlays then
+    for _, image in pairs(self.billboardUnderlays) do safeRelease(image) end
+    self.billboardUnderlays = nil
+    self.billboardUnderlayImage = nil
+  end
   if self.grassAtlases then
     for _, atlas in pairs(self.grassAtlases) do safeRelease(atlas) end
     self.grassAtlases = {}
@@ -10294,7 +10306,7 @@ end
 -- takes a foot point in flat screen pixels and a draw callback, and slides the
 -- draw onto that point's projection: only the ground tilts, so a standing
 -- thing stays upright and unscaled and the one thing that moves is its anchor.
-function World:drawPeople(s, billboard)
+function World:drawPeople(s, billboard, extra)
   local G = love.graphics
   local p = self.player
   local cam = self.camera
@@ -10314,34 +10326,56 @@ function World:drawPeople(s, billboard)
       }
     end
   end
+  if type(extra) == "table" then
+    for _, entry in ipairs(extra) do
+      if type(entry) == "table" and entry.kind == "custom"
+          and type(entry.py) == "number" and type(entry.wx) == "number"
+          and type(entry.wy) == "number" and type(entry.draw) == "function" then
+        drawList[#drawList + 1] = entry
+      end
+    end
+  end
   table.sort(drawList, function(a, b) return a.py < b.py end)
 
   for _, entry in ipairs(drawList) do
-    local ox = math.floor((entry.ox - cam.x) * s)
-    local oy = math.floor((entry.oy - cam.y) * s)
-    local entity = entry.kind == "player" and p or entry.npc
-    local function body()
-      if entry.kind == "player" then
-        self.player:draw(ox, oy, s)
+    if entry.kind == "custom" then
+      local fx, fy = OverworldBillboards.gen2GroundScreenPoint(
+        entry.wx, entry.wy, cam.x, cam.y, s)
+      local function drawLocal()
+        OverworldBillboards.drawLocal(love.graphics, fx, fy, entry.draw)
+      end
+      if billboard then
+        billboard(fx, fy, drawLocal)
       else
-        entry.npc:draw(ox, oy, s)
+        drawLocal()
       end
-      -- ShakeGrass rustle only while moving; drawGrassOver when standing/in grass
-      -- so the BG tuft covers the feet.
-      -- Only the current map's own entities: a ghost's cells belong to a
-      -- neighbour's block list.
-      if entry.ox == 0 and entry.oy == 0 then
-        if entity.inGrass and not (entity.grassShake and entity.moving) then
-          self:drawGrassOver(entity, ox, oy, s)
-        end
-        self:drawGrassShake(entity, ox, oy, s)
-      end
-    end
-    if billboard then
-      -- The foot is the baseline centre of the sprite's own cell.
-      billboard(ox + (entity.px + 8) * s, oy + (entity.py + 16) * s, body)
     else
-      body()
+      local ox = math.floor((entry.ox - cam.x) * s)
+      local oy = math.floor((entry.oy - cam.y) * s)
+      local entity = entry.kind == "player" and p or entry.npc
+      local function body()
+        if entry.kind == "player" then
+          self.player:draw(ox, oy, s)
+        else
+          entry.npc:draw(ox, oy, s)
+        end
+        -- ShakeGrass rustle only while moving; drawGrassOver when standing/in grass
+        -- so the BG tuft covers the feet.
+        -- Only the current map's own entities: a ghost's cells belong to a
+        -- neighbour's block list.
+        if entry.ox == 0 and entry.oy == 0 then
+          if entity.inGrass and not (entity.grassShake and entity.moving) then
+            self:drawGrassOver(entity, ox, oy, s)
+          end
+          self:drawGrassShake(entity, ox, oy, s)
+        end
+      end
+      if billboard then
+        -- The foot is the baseline centre of the sprite's own cell.
+        billboard(ox + (entity.px + 8) * s, oy + (entity.py + 16) * s, body)
+      else
+        body()
+      end
     end
   end
 
@@ -10457,6 +10491,117 @@ function World:tiltMesh()
   return mesh, shader
 end
 
+function World:drawMapCutout(x, y, rw, rh, ox, oy, s, seed)
+  if type(x) ~= "number" or type(y) ~= "number"
+      or type(rw) ~= "number" or type(rh) ~= "number"
+      or rw <= 0 or rh <= 0 then return false end
+  local source = self.mapImage
+  if not source or type(source.getDimensions) ~= "function" then return false end
+  local iw, ih = source:getDimensions()
+  if x < 0 or y < 0 or x + rw > iw or y + rh > ih then return false end
+
+  if self.billboardCutoutImage ~= source then
+    for _, old in pairs(self.billboardCutouts or {}) do safeRelease(old) end
+    self.billboardCutoutImage = source
+    self.billboardCutouts = {}
+  end
+  local key = table.concat({ x, y, rw, rh,
+    type(seed) == "table" and seed.x or "",
+    type(seed) == "table" and seed.y or "",
+    type(seed) == "table" and seed.width or "",
+    type(seed) == "table" and seed.height or "",
+  }, ":")
+  local cutout = self.billboardCutouts[key]
+  if cutout == false then return false end
+
+  local G = love.graphics
+  if not cutout then
+    local ok, result = pcall(function()
+      local canvas = PixelCanvas.new(math.ceil(rw), math.ceil(rh), "nearest")
+      canvas:renderTo(function()
+        G.clear(0, 0, 0, 0)
+        G.setColor(1, 1, 1, 1)
+        G.push()
+        G.origin()
+        G.draw(source, -x, -y)
+        G.pop()
+      end)
+      local data = canvas:newImageData()
+      safeRelease(canvas)
+      if not BillboardCutout.mask(data, seed) then return false end
+      local image = G.newImage(data)
+      image:setFilter("nearest", "nearest")
+      return image
+    end)
+    cutout = ok and result or false
+    self.billboardCutouts[key] = cutout
+    if not cutout then return false end
+  end
+
+  s = tonumber(s) or 1
+  G.setColor(1, 1, 1, 1)
+  G.draw(cutout, (ox or 0) * s, (oy or 0) * s, 0, s, s)
+  return true
+end
+
+function World:drawMapUnderlay(x, y, rw, rh, s, seed)
+  if type(x) ~= "number" or type(y) ~= "number"
+      or type(rw) ~= "number" or type(rh) ~= "number"
+      or rw <= 0 or rh <= 0 then return false end
+  local source = self.mapImage
+  if not source or type(source.getDimensions) ~= "function" then return false end
+  local iw, ih = source:getDimensions()
+  if x < 0 or y < 0 or x + rw > iw or y + rh > ih then return false end
+
+  if self.billboardUnderlayImage ~= source then
+    for _, old in pairs(self.billboardUnderlays or {}) do safeRelease(old) end
+    self.billboardUnderlayImage = source
+    self.billboardUnderlays = {}
+  end
+  local key = table.concat({ x, y, rw, rh,
+    type(seed) == "table" and seed.x or "",
+    type(seed) == "table" and seed.y or "",
+    type(seed) == "table" and seed.width or "",
+    type(seed) == "table" and seed.height or "",
+  }, ":")
+  local underlay = self.billboardUnderlays[key]
+  if underlay == false then return false end
+
+  local G = love.graphics
+  if not underlay then
+    local ok, result = pcall(function()
+      local canvas = PixelCanvas.new(math.ceil(rw), math.ceil(rh), "nearest")
+      canvas:renderTo(function()
+        G.clear(0, 0, 0, 0)
+        G.setColor(1, 1, 1, 1)
+        G.push()
+        G.origin()
+        G.draw(source, -x, -y)
+        G.pop()
+      end)
+      local data = canvas:newImageData()
+      safeRelease(canvas)
+      if not BillboardCutout.erase(data, seed) then return false end
+      local image = G.newImage(data)
+      image:setFilter("nearest", "nearest")
+      return image
+    end)
+    underlay = ok and result or false
+    self.billboardUnderlays[key] = underlay
+    if not underlay then return false end
+  end
+
+  s = tonumber(s) or 1
+  local cam = self.camera or { x = 0, y = 0 }
+  G.push("all")
+  G.setBlendMode("replace")
+  G.setColor(1, 1, 1, 1)
+  G.draw(underlay, math.floor((x - (cam.x or 0)) * s),
+    math.floor((y - (cam.y or 0)) * s), 0, s, s)
+  G.pop()
+  return true
+end
+
 -- `gw, gh` are the grown capture size from World:draw (Tilt.viewGrowth),
 -- matching Renderer:worldViewSize.  Camera is already followed for that view.
 function World:drawTilted(w, h, s, gw, gh)
@@ -10487,6 +10632,54 @@ function World:drawTilted(w, h, s, gw, gh)
   G.origin()
   self:drawGround(s)
   G.pop()
+
+  -- Run additive callbacks while the ground canvas is active. Masks apply
+  -- immediately; queued cards are drained with the ordinary upright actors
+  -- after this ground canvas has been projected.
+  local custom = {}
+  if Pipelines.wantsBillboards() then
+    local function queueBillboard(wx, wy, drawFn)
+      if type(wx) ~= "number" or type(wy) ~= "number"
+          or type(drawFn) ~= "function" then return false end
+      custom[#custom + 1] = {
+        kind = "custom", py = wy, wx = wx, wy = wy, draw = drawFn,
+      }
+      return true
+    end
+    local function drawMapCutout(x, y, rw, rh, ox, oy, seed)
+      return self:drawMapCutout(x, y, rw, rh, ox, oy, s, seed)
+    end
+    local function maskMapCutout(x, y, rw, rh, seed)
+      if type(x) ~= "number" or type(y) ~= "number"
+          or type(rw) ~= "number" or type(rh) ~= "number"
+          or rw <= 0 or rh <= 0 then return false end
+      local dx, dy = OverworldBillboards.gen2GroundScreenPoint(
+        x, y, self.camera.x, self.camera.y, s)
+      local aw, ah = rw * s, rh * s
+      if dx + aw < -32 * s or dy + ah < -32 * s
+          or dx > gw + 32 * s or dy > gh + 32 * s then return false end
+      local fx, fy = OverworldBillboards.gen2GroundScreenPoint(
+        x + rw / 2, y + rh, self.camera.x, self.camera.y, s)
+      if not Tilt.onGround(fx, fy, gw, gh, 32 * s) then return false end
+      return self:drawMapUnderlay(x, y, rw, rh, s, seed)
+    end
+    Pipelines.drawBillboards({
+      state = self,
+      cam = self.camera,
+      vw = self.viewW,
+      vh = self.viewH,
+      width = w,
+      height = h,
+      scale = s,
+      mapScale = s,
+      tiltLevel = Tilt.level,
+      map = OverworldBillboards.mapView(
+        self.map, Map.isOutdoor(self.map.def)),
+      billboard = queueBillboard,
+      drawMapCutout = drawMapCutout,
+      maskMapCutout = maskMapCutout,
+    })
+  end
   G.setCanvas(previous)
 
   mesh:setTexture(self.tiltCanvas)
@@ -10512,7 +10705,7 @@ function World:drawTilted(w, h, s, gw, gh)
     G.translate(sx - fx + (w - gw) / 2, sy - fy + (h - gh) / 2)
     body()
     G.pop()
-  end)
+  end, custom)
 end
 
 -- The COLOR option can change under a standing world (the hotkey, or the
