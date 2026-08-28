@@ -1536,14 +1536,15 @@ R.transitions = {
 -- ------- rendering pipelines
 --
 -- A pipeline is a display mode that owns part of the frame: it may replace
--- the overworld's world pass with geometry of its own (drawWorld) and/or
--- post-process the finished composite (present).  Everything around that --
+-- the overworld's world pass with geometry of its own (drawWorld), add
+-- upright objects to TILT (drawBillboards), and/or post-process the finished
+-- composite (present).  Everything around that --
 -- the OFF/1/2/3 ladder, its options row, its hotkey, persistence in
 -- save.options.pipelines and the gating that keeps it out of battles and
 -- menus -- is engine plumbing driven from this record, so a renderer mod
--- declares what it is and writes only the two draw functions.
+-- declares what it is and supplies only the stages it owns.
 --
--- Both callbacks are optional and independent: a present-only pipeline is a
+-- All callbacks are optional and independent: a present-only pipeline is a
 -- post-process (bloom, tilt-shift, a CRT curve) that leaves whatever
 -- rendered the frame alone, and a drawWorld-only pipeline is a world
 -- renderer that composites straight.  See src/render/Pipelines.lua for the
@@ -1577,6 +1578,10 @@ R.render_pipelines = {
     -- (ctx) -> canvas | nil: render the world.  nil falls back to the
     -- vanilla flat/tilt draw for this frame.
     drawWorld = f.opt(f.fn),
+    -- (ctx) -> nil: add upright objects to the vanilla TILT pass. The
+    -- callback queues through ctx.billboard and may remove source pixels
+    -- from the active ground canvas through ctx.maskMapCutout.
+    drawBillboards = f.opt(f.fn),
     -- (canvas, ctx) -> canvas: post-process the WORLD image, before the UI
     -- composites over it -- a depth-of-field or colour grade that must not
     -- touch the dialog boxes and menus sitting on top.  Only runs when some
@@ -1594,9 +1599,11 @@ R.render_pipelines = {
   -- a pipeline that does neither half is dead weight and would silently
   -- occupy an options row and a hotkey
   extra = function(_, value)
-    if value.drawWorld == nil and value.present == nil
+    if value.drawWorld == nil and value.drawBillboards == nil
+        and value.present == nil
         and value.worldPresent == nil then
-      return "a render pipeline needs drawWorld, worldPresent or present"
+      return "a render pipeline needs drawWorld, drawBillboards, "
+        .. "worldPresent or present"
     end
   end,
   -- A pipeline callback fails at play time, long after the load phase has

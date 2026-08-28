@@ -328,6 +328,13 @@ you write against it:
   (`Pipelines.rows` is read only from `src/ui/OptionsMenu.lua`), so a Gold
   player reaches one by its `hotkey`.
 
+  The additive **`drawBillboards` stage is live on Gold, Silver, and Crystal**
+  when the built-in TILT mode is active. It receives the same semantic
+  collision-map view as Gen 1 plus `drawMapCutout`, `maskMapCutout`, and
+  `billboard` helpers. Source silhouettes are masked from the tilted ground
+  before queued cards join the normal upright-object Y-sort, preventing the
+  flat and upright copies from being drawn together.
+
 **Content registries at a Gen 2 path.** `maps`, `tilesets`, `sprites`, `text`,
 `encounters`, `trainers`, `palettes`, `icons`, `battle_anims`, `constants`,
 `statuses`, `move_effects`, `item_effects`, `balls`, `ai_classes` and

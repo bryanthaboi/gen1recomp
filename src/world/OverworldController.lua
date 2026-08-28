@@ -13,6 +13,7 @@ local Logger = require("src.core.Logger")
 local Map = require("src.world.Map")
 local MapLoader = require("src.world.MapLoader")
 local NPC = require("src.world.NPC")
+local OverworldBillboards = require("src.render.OverworldBillboards")
 local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
 local Player = require("src.world.Player")
@@ -5669,13 +5670,62 @@ function OverworldState:drawWorld()
     fxDust()
     fxCutTree()
 
-    Game.renderer:beginUprightPass()
-
     -- One y-sorted list of ALL upright billboards -- sprites (player, NPCs,
     -- ghosts) -- keyed on baseline world y (the foot / base row).  Farther
     -- rows project higher/smaller, so back-to-front is just ascending
     -- baseline y.
     local items = {}
+
+    -- Run additive billboard callbacks while the ground canvas is active.
+    -- Source masks apply immediately; upright cards join the actor Y-sort and
+    -- draw only after the renderer switches to its upright pass.
+    if Pipelines.wantsBillboards() then
+      local function queueBillboard(wx, wy, drawFn)
+        if type(wx) ~= "number" or type(wy) ~= "number"
+            or type(drawFn) ~= "function" then return false end
+        local fx, fy = OverworldBillboards.gen1GroundScreenPoint(
+          wx, wy, cam.x, cam.y)
+        items[#items + 1] = {
+          y = wy, kind = "custom", fx = fx, fy = fy, draw = drawFn,
+        }
+        return true
+      end
+      local function drawMapCutout(x, y, w, h, ox, oy, seed)
+        if type(x) ~= "number" or type(y) ~= "number"
+            or type(w) ~= "number" or type(h) ~= "number"
+            or w <= 0 or h <= 0 then return false end
+        return self.map.renderer:drawCutoutRegion(x, y, w, h, ox, oy, seed)
+      end
+      local function maskMapCutout(x, y, w, h, seed)
+        if type(x) ~= "number" or type(y) ~= "number"
+            or type(w) ~= "number" or type(h) ~= "number"
+            or w <= 0 or h <= 0 then return false end
+        local dx, dy = x - cam.x, y - bgY
+        if dx + w < -32 or dy + h < -32
+            or dx > vw + 32 or dy > vh + 32 then return false end
+        return self.map.renderer:drawUnderlayRegion(
+          x, y, w, h, dx, dy, seed)
+      end
+      Pipelines.drawBillboards({
+        state = self,
+        cam = cam,
+        vw = vw,
+        vh = vh,
+        width = vw,
+        height = vh,
+        scale = 1,
+        mapScale = 1,
+        tiltLevel = Tilt.level,
+        map = OverworldBillboards.mapView(
+          self.map, Map.isOutdoor(self.map.def)),
+        billboard = queueBillboard,
+        drawMapCutout = drawMapCutout,
+        maskMapCutout = maskMapCutout,
+      })
+    end
+
+    Game.renderer:beginUprightPass()
+
     for _, g in ipairs(self.ghosts) do
       items[#items + 1] = { y = g.npc.py + g.oy + 16, kind = "ghost", g = g }
     end
@@ -5688,7 +5738,13 @@ function OverworldState:drawWorld()
     table.sort(items, function(a, b) return a.y < b.y end)
 
     for _, it in ipairs(items) do
-      if it.kind == "ghost" then
+      if it.kind == "custom" then
+        self:billboard(it.fx, it.fy, vw, vh,
+                       zoneColorsAt(zones, it.fx, it.fy), false, function()
+          OverworldBillboards.drawLocal(
+            love.graphics, it.fx, it.fy, it.draw)
+        end)
+      elseif it.kind == "ghost" then
         -- ghosts billboard just like real entities (foot offset folds in the
         -- neighbour map's ox/oy that ghost draws already apply via the camera)
         local g = it.g
