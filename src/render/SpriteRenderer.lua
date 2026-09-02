@@ -286,9 +286,10 @@ end
 -- row's: FacingWeirdTree3 is FacingWeirdTree1's four tiles with the columns
 -- swapped and OAM_XFLIP on each (data/sprites/facings.asm:192-197).  Optional
 -- and trailing, so every existing call site is unchanged.
+-- `oamRow`: nil draws the whole frame; "top" / "bottom" draw only the
+-- facings.asm row at y=0 or y=8 (InitSprite + RELATIVE_ATTRIBUTES).
 function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip,
-    topHalf, forceFlip, frameOverride)
-  local x, y = self:getScreenOrigin(px, py, camX, camY)
+    topHalf, forceFlip, frameOverride, oamRow)
   local image = self.image
   local redraw = false
   -- True-color sheets bypass every palette bake; the screen-space exemption
@@ -341,17 +342,34 @@ function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip,
   if forceFlip then flip = true end
   local quad = self.frames[frame]
   local drawHeight = self.frameHeight
-  if topHalf and self.frameCount > 1 then
+  local rowH = math.min(8, self.frameHeight)
+  local bottomSkip = math.max(0, self.frameHeight - rowH)
+  if oamRow == "bottom" then topHalf = false
+  elseif oamRow == "top" then topHalf = true end
+  -- facings.asm splits at y = 8 inside a 16 px-tall frame; do not require
+  -- multiple animation frames (standing sheets are often frames = 1).
+  if topHalf and self.frameHeight > rowH then
     self.halfFrames = self.halfFrames or {}
     if not self.halfFrames[frame] then
       local iw, ih = self.image:getDimensions()
-      local topHeight = math.max(1, self.frameHeight - math.min(8, self.frameHeight))
+      local topHeight = math.max(1, self.frameHeight - rowH)
       self.halfFrames[frame] = love.graphics.newQuad(
         0, frame * self.frameHeight, self.frameWidth, topHeight, iw, ih)
     end
     quad = self.halfFrames[frame]
-    drawHeight = math.max(1, self.frameHeight - math.min(8, self.frameHeight))
+    drawHeight = math.max(1, self.frameHeight - rowH)
+  elseif oamRow == "bottom" and self.frameHeight > rowH then
+    self.bottomFrames = self.bottomFrames or {}
+    if not self.bottomFrames[frame] then
+      local iw, ih = self.image:getDimensions()
+      self.bottomFrames[frame] = love.graphics.newQuad(
+        0, frame * self.frameHeight + bottomSkip, self.frameWidth, rowH, iw, ih)
+    end
+    quad = self.bottomFrames[frame]
+    drawHeight = rowH
   end
+  local x, y = self:getScreenOrigin(px, py, camX, camY)
+  if oamRow == "bottom" then y = y + bottomSkip end
   -- Full-color art claims exactly the portion of the frame that was drawn.
   if liveTrueColor(self.def) then
     PaletteFX.markTrueColor(x, y, self.frameWidth, drawHeight)

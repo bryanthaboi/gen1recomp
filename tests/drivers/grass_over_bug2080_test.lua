@@ -50,8 +50,8 @@ return function(game)
   ok(p and p.inGrass == true, "player.inGrass is set standing in the grass")
   ok(p and not p.moving, "player is standing still")
 
-  local atlas = world:grassAtlasFor(world.map.def)
-  ok(atlas ~= nil, "the colour-0 keyed grass atlas exists")
+  local atlas = world:atlasFor(world.map.def)
+  ok(atlas ~= nil, "the map tileset atlas exists for feet overdraw")
 
   local records = {}
   local origDraw = love.graphics.draw
@@ -75,11 +75,12 @@ return function(game)
   end
   local distinctYs = 0
   for _ in pairs(ys) do distinctYs = distinctYs + 1 end
-  ok(maxH == 4,
-    "strip is tile-unaligned (py+4): every slice is 4 px tall, saw max "
+  ok(maxH == 8,
+    "each blit is a full 8x8 tile (not a sub-quad sliver), saw max h="
     .. tostring(maxH))
   ok(distinctYs >= 2,
-    "strip crosses both tile rows: " .. distinctYs .. " distinct slice rows")
+    "feet strip crosses two tile rows when py is not 8-aligned: "
+    .. distinctYs .. " distinct rows")
 
   U.shot(game, SHOT_DIR .. "/2080-grass-over.png")
   say("compare the shot against issue #2080's expected screenshot: grass "

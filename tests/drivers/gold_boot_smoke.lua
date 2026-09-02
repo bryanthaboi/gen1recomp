@@ -143,10 +143,21 @@ return function(game)
   -- Back into Oak for the last text page and the shrink, then the world.  This
   -- one has to keep pressing A: the remaining pages are text boxes waiting on a
   -- button, so a passive wait would sit there forever.
+  local shrinkShot = false
   for _ = 1, 500 do
     if game.phase == "play" and game.world and game.world.map then break end
+    local state = top()
+    if not shrinkShot and isA(OakSpeech) and state.shrinkText then
+      shrinkShot = true
+      local shown = table.concat(state.shrinkText, "|")
+      assert(not shown:find("DONE", 1, true),
+        "shrink page prints the text terminator: " .. shown)
+      U.wait(6)
+      U.shot(game, out .. "/08b-shrink.png")
+    end
     tap("a", 2)
   end
+  assert(shrinkShot, "never saw the ShrinkPlayer page of _OakText7")
   assert(game.phase == "play" and game.world and game.world.map,
     "never reached the overworld (top is " .. tostring(top()) .. ")")
   assert(game.save.player.name == "AB",

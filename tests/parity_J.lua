@@ -421,7 +421,7 @@ do
   local bag = stack:top()
   eq(bag.items and #bag.items, 1, "the old man's bag lists exactly one item")
   eq(bag.items[1].label, "POKé BALL", "the item is a POKé BALL")
-  eq(bag.items[1].right, "x50", "with quantity x50 (OldManItemList)")
+  eq(bag.items[1].count, 50, "with quantity x50 (OldManItemList)")
   -- the list script (home/list_menu.asm:65-80): input is never read --
   -- B can't back out -- and the '▶' hovers POKé BALL for 80 frames
   local enemyHP = demo.enemy.mon.hp
@@ -513,7 +513,7 @@ do
       demo:update(1 / 60)
     end
     local bag = stack:top()
-    eq(bag.items and bag.items[1] and bag.items[1].right, "x1",
+    eq(bag.items and bag.items[1] and bag.items[1].count, 1,
        "Yellow's old-man-style bag lists x1 (SimulatedInputBattleItemList)")
   end)
   GameVersion.set(oldVersion)

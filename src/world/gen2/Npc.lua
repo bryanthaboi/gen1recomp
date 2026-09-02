@@ -741,12 +741,12 @@ function NPC:drawBigAsym()
   end
 end
 
-function NPC:draw(ox, oy, scale)
+function NPC:draw(ox, oy, scale, oamRow)
   -- Gen 1 spells this draw(camX, camY) and SpriteRenderer subtracts them
   -- (src/world/NPC.lua:129).  Two arguments means that call, not a missing
   -- scale: G.scale(nil, nil) would either raise or draw unscaled at an
   -- offset, which is the silent wrong answer.
-  if scale == nil then return self:draw(-(ox or 0), -(oy or 0), 1) end
+  if scale == nil then return self:draw(-(ox or 0), -(oy or 0), 1, oamRow) end
   local G = love.graphics
   G.push()
   G.translate(ox, oy)
@@ -769,7 +769,7 @@ function NPC:draw(ox, oy, scale)
     local facing = (q == 1 or q == 3) and "up" or "down"
     self.sprite:draw(
       self.px, self.py + yOffset, 0, 0,
-      facing, 0, false, false, q == 3)
+      facing, 0, false, false, q == 3, oamRow)
   elseif self.rockSmash then
     -- engine/overworld/map_objects.asm:1462
     if (self.rockSmash.frame % 2) == 0 then
@@ -778,12 +778,12 @@ function NPC:draw(ox, oy, scale)
     end
     self.sprite:draw(
       self.px, self.py + yOffset, 0, 0,
-      self.facing, self:walkPhase(), self.stepFlip)
+      self.facing, self:walkPhase(), self.stepFlip, nil, nil, nil, oamRow)
   else
     self.sprite:draw(
       self.px, self.py + yOffset, 0, 0,
       self.facing, self:walkPhase(), self.stepFlip,
-      false, false, self:bounceFrame())
+      false, false, self:bounceFrame(), oamRow)
   end
   G.pop()
 end

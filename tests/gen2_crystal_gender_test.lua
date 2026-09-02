@@ -190,6 +190,28 @@ do
   Chrome.print = priorPrint
 end
 
+-- home/text.asm:566
+do
+  local Chrome = require("src.ui.gen2.Chrome")
+  local priorPrint, priorWrapped = Chrome.print, Chrome.printWrapped
+  local printed = {}
+  Chrome.print = function(text) printed[#printed + 1] = text end
+  Chrome.printWrapped = function(text) printed[#printed + 1] = text end
+  local done = GenderSelect.new({ data = { text = {
+    _AreYouABoyOrAreYouAGirlText = "Are you a boy?\nOr are you a girl?{DONE}",
+  } } })
+  eq(done.text, "Are you a boy?\nOr are you a girl?",
+    "the {DONE} terminator is stripped from the prompt")
+  done:drawPanel()
+  check(not table.concat(printed, "|"):find("DONE", 1, true),
+    "and never reaches the tile grid")
+  local prompt = GenderSelect.new({ data = { text = {
+    _AreYouABoyOrAreYouAGirlText = "Are you a boy?{PROMPT}",
+  } } })
+  eq(prompt.text, "Are you a boy?", "nor is {PROMPT}")
+  Chrome.print, Chrome.printWrapped = priorPrint, priorWrapped
+end
+
 -- ------------------------------------------------- the beat in Oak's speech
 
 local function speechFor(sprites)

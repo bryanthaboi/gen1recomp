@@ -149,6 +149,12 @@ eq(kanto and kanto.palMap and kanto.palMap.bank, 0x13,
 eq(kanto and kanto.palMap and kanto.palMap.address, 0x4075, "at $4075")
 check(johto and johto.tilePalettes and #johto.tilePalettes > 0,
   "and the map decoded to a per-tile palette list")
+check(johto and johto.tileAttrs ~= nil,
+  "Crystal Johto carries per-tile GBC attrs")
+if johto and johto.tileAttrs then
+  check(johto.tileAttrs[0x80 + 1] ~= nil,
+    "bank-1 tile $80 has attrs from the second PalMap section")
+end
 
 -- ---- 5. the special table the cache pins
 

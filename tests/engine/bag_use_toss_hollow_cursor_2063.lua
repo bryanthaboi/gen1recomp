@@ -153,7 +153,7 @@ do
   local game = freshGame()
   local ListMenu = require("src.ui.ListMenu")
   local list = ListMenu.new(game, "ITEMS", {
-    { value = "POKE_BALL", label = "POKé BALL", right = "x50" },
+    { value = "POKE_BALL", label = "POKé BALL", count = 50 },
   }, { itemBox = true, script = function(l) l.hollowIndex = l.index end })
   game.stack:push(list)
   list:update(1 / 60)

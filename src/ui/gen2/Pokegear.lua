@@ -26,6 +26,7 @@ local FlagNames = require("src.core.gen2.FlagNames")
 local GbcPalette = require("src.render.GbcPalette")
 local Gen2Save = require("src.core.gen2.Save")
 local Clock = require("src.core.gen2.Clock")
+local CommonText = require("src.core.gen2.CommonText")
 local Font = require("src.render.Font")
 local Palettes = require("src.world.gen2.Palettes")
 local Phone = require("src.core.gen2.Phone")
@@ -1141,7 +1142,7 @@ function Pokegear:phoneText(name)
   if not entry then return "" end
   local text = self.textData
     or (self.game and self.game.world and self.game.world.text)
-  local extracted = text and text[entry.key]
+  local extracted = CommonText.plain(text and text[entry.key])
   if extracted and extracted ~= "" then return extracted end
   return Strings(entry.body)
 end

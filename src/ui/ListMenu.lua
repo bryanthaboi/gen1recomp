@@ -310,12 +310,14 @@ function ListMenu:drawItemBox()
     elseif item.price then
       -- home/list_menu.asm:410-424
       Font.draw(item.price, ITEM_QTY_END - Font.width(item.price), y + 8)
-    elseif item.right then
+    elseif item.count then
       -- '×' at column 14, PrintNumber's two right-aligned digits after it
       -- (home/list_menu.asm:479-490)
-      local count = item.right:sub(2)
-      Font.draw(item.right:sub(1, 1), ITEM_QTY_X, y + 8)
+      local count = tostring(item.count)
+      Font.draw("\xc3\x97", ITEM_QTY_X, y + 8)
       Font.draw(count, ITEM_QTY_END - Font.width(count), y + 8)
+    elseif item.right then
+      Font.draw(item.right, ITEM_QTY_END - Font.width(item.right), y + 8)
     end
     if i == self.index and (self.cursorBlank or 0) == 0 then
       Font.drawCode(self.hollowIndex == i

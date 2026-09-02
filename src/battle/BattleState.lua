@@ -2612,11 +2612,11 @@ function BattleState:openOldManBag()
     -- inventory) differs by version: pokered's OldManItemList has 50
     -- POKé BALLs; pokeyellow's SimulatedInputBattleItemList, shared by
     -- the Viridian tutorial and Oak's catch, has one.
-    local qty = require("src.core.GameVersion").isYellow() and "x1" or "x50"
+    local qty = require("src.core.GameVersion").isYellow() and 1 or 50
     -- the tutorial bag rides DisplayBagMenu's LIST_MENU_BOX over the battle
     -- screen (engine/battle/core.asm:2210)
     list = ListMenu.new(game, "ITEMS", {
-      { value = "POKE_BALL", label = Strings("POKé BALL"), right = qty },
+      { value = "POKE_BALL", label = Strings("POKé BALL"), count = qty },
     }, {
       itemBox = true,
       script = function(l)

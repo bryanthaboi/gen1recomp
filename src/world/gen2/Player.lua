@@ -284,7 +284,7 @@ function Player:drawFishing(yOffset)
     self.fishQuads.rod[oam.tile])
 end
 
-function Player:draw(ox, oy, scale)
+function Player:draw(ox, oy, scale, oamRow)
   local G = love.graphics
   -- OBJECT_SPRITE_Y_OFFSET: added to the OBJ's y as it is written to OAM, so
   -- it moves the sprite without moving the player off the tile they are
@@ -307,7 +307,8 @@ function Player:draw(ox, oy, scale)
         phase = 0
       end
       self.sprite:draw(
-        self.px, self.py + yOffset, 0, 0, facing, phase, flip)
+        self.px, self.py + yOffset, 0, 0, facing, phase, flip,
+        nil, nil, nil, oamRow)
     end
     G.pop()
     return

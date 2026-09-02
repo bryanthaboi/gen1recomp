@@ -30,7 +30,7 @@ local input = {
 local function newList(count)
   local items = {}
   for i = 1, count do
-    items[i] = { value = "ITEM_" .. i, label = "ITEM " .. i, right = "x" .. i }
+    items[i] = { value = "ITEM_" .. i, label = "ITEM " .. i, count = i }
   end
   local list = ListMenu.new({ input = input }, "ITEMS", items,
                             { kind = "bag", itemBox = true })

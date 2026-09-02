@@ -153,6 +153,8 @@ do
     1, true) ~= nil, "and extractTilesets uses it")
   check(source:find("local CRYSTAL_PAL_MAP_BYTES = 112", 1, true) ~= nil,
     "the PalMap read covers the bank 1 rows too")
+  check(source:find("function RomExtractorGen2:readCrystalPalMap", 1, true)
+    ~= nil, "Crystal PalMap skips $ff padding and maps bank 1 to $80+")
   check(source:find("out.unownWalls = walls", 1, true) ~= nil,
     "and readEventTables emits the wall words")
 end
@@ -226,7 +228,16 @@ else
     eq(roa.imageWidth, 128, "the sheet is 16 tiles across")
     eq(roa.imageHeight, 128, "and 16 down: 256 tile ids, both VRAM banks")
     eq(roa.tilesPerRow, 16, "so a tile id indexes it directly")
-    eq(#roa.tilePalettes, 224, "the PalMap covers every id the blocks use")
+    check(roa.tileAttrs ~= nil, "Crystal tilesets carry tileAttrs")
+    local bank1 = roa.tileAttrs and roa.tileAttrs[0x80 + 1]
+    check(bank1 ~= nil, "bank-1 tile $80 has attrs after re-import")
+    if bank1 then
+      eq(bank1.vramBank, 1, "bank-1 tile $80 maps to VRAM bank 1")
+    end
+    check(roa.tilePalettes[0x80 + 1] ~= nil,
+      "bank-1 palette slot is not shifted by $ff padding")
+    eq(roa.tilePalettes[97], nil,
+      "padding bytes do not assign palettes to tile 96")
     local png = readFile(cache .. "/assets/generated/tilesets/ruins_of_alph.png")
     if not png then
       check(false, "the sheet PNG is actually in the cache")

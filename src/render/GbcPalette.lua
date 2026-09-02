@@ -66,6 +66,30 @@ vec4 effect(vec4 tint, Image tex, vec2 uv, vec2 screen) {
 }
 ]]
 
+-- BG drawn over OBJ with OAM priority: palette index 0 is transparent to the
+-- sprite underneath (hardware OBJ-behind-BG rule), colours 1-3 are opaque.
+local KEYED_SHADER_SOURCE = [[
+extern vec3 pal0;
+extern vec3 pal1;
+extern vec3 pal2;
+extern vec3 pal3;
+
+vec4 effect(vec4 tint, Image tex, vec2 uv, vec2 screen) {
+  vec4 px = Texel(tex, uv);
+  float shade = floor((1.0 - px.r) * 3.0 + 0.5);
+  vec3 rgb = pal0;
+  if (shade > 2.5) {
+    rgb = pal3;
+  } else if (shade > 1.5) {
+    rgb = pal2;
+  } else if (shade > 0.5) {
+    rgb = pal1;
+  }
+  float alpha = shade < 0.5 ? 0.0 : px.a;
+  return vec4(rgb, alpha) * tint;
+}
+]]
+
 -- rBGP, the DMG background palette register, as a remap of an ALREADY DRAWN
 -- texture.
 --
@@ -117,6 +141,8 @@ GbcPalette.REMAP_TOLERANCE = (3 / 255) ^ 2
 
 local shader = nil
 local failed = false
+local keyedShader = nil
+local keyedFailed = false
 local remapShader = nil
 local remapFailed = false
 
@@ -135,6 +161,21 @@ function GbcPalette.shader()
   end
   shader = result
   return shader
+end
+
+function GbcPalette.keyedShader()
+  if keyedShader or keyedFailed then return keyedShader end
+  if not (love and love.graphics and love.graphics.newShader) then
+    keyedFailed = true
+    return nil
+  end
+  local ok, result = pcall(love.graphics.newShader, KEYED_SHADER_SOURCE)
+  if not ok then
+    keyedFailed = true
+    return nil
+  end
+  keyedShader = result
+  return keyedShader
 end
 
 -- The same contract as GbcPalette.shader for the backwards pass: nil rather
@@ -331,6 +372,18 @@ function GbcPalette.useRaw(colors)
   return true
 end
 
+function GbcPalette.useKeyed(colors)
+  local sh = GbcPalette.keyedShader()
+  if not sh then return false end
+  local resolved = GbcPalette.remap(GbcPalette.resolve(colors), GbcPalette.bgp)
+  for i = 0, 3 do
+    local r, g, b = channel(resolved, i + 1)
+    sh:send("pal" .. i, { r, g, b })
+  end
+  love.graphics.setShader(sh)
+  return true
+end
+
 function GbcPalette.clear()
   if love and love.graphics then love.graphics.setShader() end
 end
@@ -470,6 +523,16 @@ function GbcPalette.with(colors, body)
   local previous = love and love.graphics and love.graphics.getShader
     and love.graphics.getShader() or nil
   local applied = GbcPalette.use(colors)
+  local ok, err = pcall(body)
+  if love and love.graphics then love.graphics.setShader(previous) end
+  if not ok then error(err, 0) end
+  return applied
+end
+
+function GbcPalette.keyedWith(colors, body)
+  local previous = love and love.graphics and love.graphics.getShader
+    and love.graphics.getShader() or nil
+  local applied = GbcPalette.useKeyed(colors)
   local ok, err = pcall(body)
   if love and love.graphics then love.graphics.setShader(previous) end
   if not ok then error(err, 0) end

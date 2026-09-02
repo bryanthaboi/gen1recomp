@@ -153,7 +153,7 @@ do
 
     local row = rowFor(list, "RARE_CANDY")
     if check(row ~= nil, "the RARE CANDY row survived the use") then
-      eq(list.items[row].right, "x2", "and its count followed the inventory")
+      eq(list.items[row].count, 2, "and its count followed the inventory")
       eq(list.index, row, "with the cursor left on it (wBagSavedMenuItem), "
                           .. "so the next candy is one A press away")
     end

@@ -123,7 +123,7 @@ local function sellItems(game)
     table.insert(items, {
       value = id,
       label = def and def.name or id,
-      right = (not keyed) and ("x" .. game.save.inventory[id]) or nil,
+      count = (not keyed) and game.save.inventory[id] or nil,
     })
   end
   items[#items + 1] = { cancel = true, label = Strings("CANCEL") }
@@ -207,7 +207,7 @@ local function sell(game, menu)
             Bag.remove(game.save, item.value, qty)
             local left = game.save.inventory[item.value]
             if left then
-              item.right = "x" .. left
+              item.count = left
             else
               list:removeCurrent()
             end

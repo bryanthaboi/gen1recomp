@@ -37,6 +37,7 @@
 -- love.graphics.newImage skips overrides/ and AssetTransform output.
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Font = require("src.render.Font")
 local Gen2Save = require("src.core.gen2.Save")
@@ -447,7 +448,7 @@ function OakSpeech:openNamePick(step)
 end
 
 function OakSpeech:lastPageLines(key)
-  local body = self:text(key)
+  local body = CommonText.plain(self:text(key))
   local pages = {}
   for page in (body .. "\f"):gmatch("(.-)\f") do
     pages[#pages + 1] = page

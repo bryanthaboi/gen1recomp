@@ -60,6 +60,9 @@ local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
 local SpriteRenderer = require("src.render.SpriteRenderer")
 local StepEvents = require("src.world.gen2.StepEvents")
+local TileAttrs = require("src.world.gen2.TileAttrs")
+local OamFootprint = require("src.world.gen2.OamFootprint")
+local MapAttrGrid = require("src.world.gen2.MapAttrGrid")
 local Tilt = require("src.render.Tilt")
 local Strings = require("src.core.Strings")
 local TextBox = require("src.render.TextBox")
@@ -1769,6 +1772,14 @@ function World:gsVersion()
   local save = self.game and self.game.save
   local version = (save and save.version) or GameVersion.get()
   return version == "silver" and 1 or 0
+end
+
+function World:isCrystal()
+  local GameVersion = require("src.core.GameVersion")
+  -- Rendering follows the loaded ROM column (BorderFill / MapPreview do the
+  -- same), not save.version — a Crystal save under the Gold column still bakes
+  -- and draws with Gold's single-bank tilesets.
+  return GameVersion.engine() == "crystal"
 end
 
 -- ENGINE_* flags (data/events/engine_flags.asm), the namespace `setflag` /
@@ -5771,6 +5782,7 @@ function World:refreshMapImages()
   if not self.mapImage then return false end
   self:dropMapImages(self.map and self.map.id)
   self.mapImage = self:imageFor(self.map.id)
+  self:rebuildAttrGrid()
   self:rebuildNeighbors()
   return true
 end
@@ -8546,7 +8558,12 @@ function World:bakeMapImage(map, daytime, flicker)
   -- (#208, see src/render/PixelCanvas.lua).
   local canvas = PixelCanvas.new(pw, ph, "nearest")
   local quads = {}
+  local crystal = self:isCrystal()
   local function quadFor(tile)
+    if crystal then
+      local attr = TileAttrs.forTile(tileset, tile)
+      return TileAttrs.quadFor(atlas, tile, attr, tilesPerRow, quads)
+    end
     local q = quads[tile]
     if q then return q end
     local sx = (tile % tilesPerRow) * 8
@@ -8593,13 +8610,18 @@ function World:bakeMapImage(map, daytime, flicker)
         if block then
           for i = 0, 15 do
             local tile = block[i + 1] or 0
-            -- tilePalettes is 1-based over the 96 sheet tiles; anything past
-            -- the sheet (window/text tiles) has no entry and takes slot 1.
-            local tileSlot = tilePalettes and tilePalettes[tile + 1] or 1
+            local tileSlot = crystal
+              and TileAttrs.paletteSlot(tileset, tile)
+              or (tilePalettes and tilePalettes[tile + 1] or 1)
             if not slot or tileSlot == slot then
               local tx = bx * 32 + (i % 4) * 8
               local ty = by * 32 + math.floor(i / 4) * 8
-              love.graphics.draw(atlas, quadFor(tile), tx, ty)
+              if crystal then
+                local attr = TileAttrs.forTile(tileset, tile)
+                TileAttrs.drawFlippedTile(atlas, quadFor(tile), tx, ty, attr)
+              else
+                love.graphics.draw(atlas, quadFor(tile), tx, ty)
+              end
             end
           end
         end
@@ -8685,6 +8707,7 @@ function World:animCellsFor(map, tileset)
   if not wanted then return nil end
   local blocks = tileset.blocks
   local tilePalettes = tileset.tilePalettes
+  local crystal = self:isCrystal()
   local out = nil
   for by = 0, map.height - 1 do
     for bx = 0, map.width - 1 do
@@ -8702,7 +8725,8 @@ function World:animCellsFor(map, tileset)
               list = {
                 layer = layer,
                 tile = tile,
-                slot = tilePalettes and tilePalettes[tile + 1] or 1,
+                slot = crystal and TileAttrs.paletteSlot(tileset, tile)
+                  or (tilePalettes and tilePalettes[tile + 1] or 1),
                 cells = {},
               }
               out[tile] = list
@@ -8804,12 +8828,217 @@ function World:bgTileAt(map, tileset, mx, my)
   return block[i + 1]
 end
 
--- IN_GRASS puts OAM_PRIO on the sprite's lower 16x8 only: .InitSprite ORs it
--- into hCurSpriteOAMFlags (engine/overworld/map_objects.asm:2850) and only the
--- bottom two OAM entries of a walking facing carry RELATIVE_ATTRIBUTES
--- (data/sprites/facings.asm:45-56).  The strip starts at py+4 because a sprite
--- draws 4 px above its cell (map_objects.asm:2876).
-function World:drawGrassOver(entity, ox, oy, s)
+function World:rebuildAttrGrid()
+  if not self:isCrystal() then
+    self.attrGrid = nil
+    return
+  end
+  if not self.map then
+    self.attrGrid = nil
+    return
+  end
+  local _, tileset = self:atlasFor(self.map.def)
+  if not tileset then
+    self.attrGrid = nil
+    return
+  end
+  self.attrGrid = MapAttrGrid.build(self.map, tileset)
+end
+
+function World:bgTileAttrAt(map, tileset, mx, my)
+  local cell = self.attrGrid and MapAttrGrid.lookup(self.attrGrid, mx, my)
+  if cell then return cell end
+  local tile = self:bgTileAt(map, tileset, mx, my)
+  if not tile then return nil end
+  local tileId, attr = MapAttrGrid.normalizeTile(tile, tileset)
+  return { tileId = tileId, rawTileId = tile, attr = attr }
+end
+
+-- LÖVE scissor is window/canvas space; Playfield.push translates draws but not
+-- scissor rects.  Map-local (ox, oy, s) feet/bbox regions must be lifted.
+local function playfieldOrigin()
+  if Playfield.entered and Playfield.box then
+    return Playfield.box.x or 0, Playfield.box.y or 0
+  end
+  return 0, 0
+end
+
+local function intersectScissor(x, y, w, h, prev)
+  if not prev then return x, y, w, h end
+  local px, py, pw, ph = prev[1], prev[2], prev[3], prev[4]
+  if px == nil then px, py, pw, ph = prev.x, prev.y, prev.width, prev.height end
+  if not (px and py and pw and ph) then return x, y, w, h end
+  local x2 = math.max(x, px)
+  local y2 = math.max(y, py)
+  local x3 = math.min(x + w, px + pw)
+  local y3 = math.min(y + h, py + ph)
+  local iw, ih = x3 - x2, y3 - y2
+  if iw < 1 or ih < 1 then return nil end
+  return x2, y2, iw, ih
+end
+
+function World:feetCompositeCanvas(w, h)
+  local G = love.graphics
+  if not (G and G.newCanvas) then return nil end
+  self._feetCanvases = self._feetCanvases or {}
+  local key = w .. "x" .. h
+  local canvas = self._feetCanvases[key]
+  if canvas and canvas:getWidth() == w and canvas:getHeight() == h then
+    return canvas
+  end
+  if canvas and canvas.release then canvas:release() end
+  local ok, made = pcall(G.newCanvas, w, h)
+  if not ok or not made then return nil end
+  made:setFilter("nearest", "nearest")
+  self._feetCanvases[key] = made
+  return made
+end
+
+-- Blit BG tiles over a map-pixel region already in the current transform.
+function World:blitBgOverRegionLocal(mapDef, originX, originY, rx0, ry0, rx1, ry1,
+    keyed, tileFilter, scale)
+  local atlas, tileset = self:atlasFor(mapDef)
+  if not (atlas and tileset) then return end
+  local G = love.graphics
+  local cacheKey = self:mapCacheKey(self.map.id)
+  local bgSet = self.bgSets[cacheKey] or nil
+  local animCells = self.animCells and self.animCells[cacheKey] or nil
+  local tilesPerRow = tileset.tilesPerRow or 16
+  self.bgOverQuads = self.bgOverQuads or {}
+  local map = self.map
+  scale = scale or 1
+  G.setColor(1, 1, 1, 1)
+
+  for ty = math.floor(ry0 / 8) * 8, math.floor((ry1 - 1) / 8) * 8, 8 do
+    for tx = math.floor(rx0 / 8) * 8, math.floor((rx1 - 1) / 8) * 8, 8 do
+      local info = self:bgTileAttrAt(map, tileset, tx, ty)
+      if info and tileFilter(info) then
+        local attr = info.attr
+        local drawX = math.floor(originX + (tx - rx0) * scale)
+        local drawY = math.floor(originY + (ty - ry0) * scale)
+        local animList = self:animListAt(animCells, tx, ty)
+
+        local function blitTile(img, quad, drawAttr)
+          TileAttrs.drawFlippedTile(img, quad, drawX, drawY, drawAttr, scale, scale)
+        end
+
+        local paletteSlot = attr.palette
+        if animList and animList.slot then paletteSlot = animList.slot end
+        local set = bgSet and bgSet[paletteSlot]
+
+        local function runBlit(img, quad)
+          local function body() blitTile(img, quad, attr) end
+          if set and GbcPalette.available() then
+            if keyed then GbcPalette.keyedWith(set, body)
+            else GbcPalette.with(set, body) end
+          else
+            body()
+          end
+        end
+
+        if animList then
+          local layer = animList.layer
+          local sheet
+          if layer.kind == "scroll" then
+            sheet = self:scrollStrip(mapDef, tileset, animList.tile, layer.scroll)
+          else
+            sheet = self:animSheet(layer.sheet)
+          end
+          if sheet then
+            local row = self:animRow(layer)
+            local quad = self:animQuad(
+              layer.sheet or ("scroll|" .. animList.tile), row, layer.frames)
+            runBlit(sheet, quad)
+          else
+            local tile = info.tileId
+            local quad = TileAttrs.quadFor(
+              atlas, tile, attr, tilesPerRow, self.bgOverQuads)
+            runBlit(atlas, quad)
+          end
+        else
+          local tile = info.tileId
+          local quad = TileAttrs.quadFor(
+            atlas, tile, attr, tilesPerRow, self.bgOverQuads)
+          runBlit(atlas, quad)
+        end
+      end
+    end
+  end
+end
+
+-- Whether (tx, ty) is repainted by this map's tileset anim program.
+function World:animListAt(animCells, tx, ty)
+  if not animCells then return nil end
+  for _, list in pairs(animCells) do
+    local xy = list.cells
+    for i = 1, #xy, 2 do
+      if xy[i] == tx and xy[i + 1] == ty then return list end
+    end
+  end
+  return nil
+end
+
+-- Shared BG-over-OBJ blit.  Each intersecting 8x8 cell is drawn whole; the
+-- hardware clips to the region via scissor (scanline compositing), not sub-quad
+-- viewports.  `keyed` selects the OBJ-behind-BG rule for IN_GRASS feet;
+-- BG_PRIO tiles draw fully opaque.
+function World:blitBgOverRegion(mapDef, ox, oy, s, rx0, ry0, rx1, ry1, keyed, tileFilter)
+  local G = love.graphics
+  local pfX, pfY = playfieldOrigin()
+  local scissorX = pfX + math.floor(ox + rx0 * s)
+  local scissorY = pfY + math.floor(oy + ry0 * s)
+  local scissorW = math.ceil((rx1 - rx0) * s)
+  local scissorH = math.ceil((ry1 - ry0) * s)
+  local prevScissor = G.getScissor and G.getScissor()
+  local clipX, clipY, clipW, clipH =
+    intersectScissor(scissorX, scissorY, scissorW, scissorH, prevScissor)
+  if G.setScissor and clipX then G.setScissor(clipX, clipY, clipW, clipH) end
+
+  -- originX/Y is the screen position of map pixel (rx0, ry0): ox/oy are the
+  -- playfield-local offset of map (0,0), so a tile at (tx, ty) lands at
+  -- origin + (tx - rx0) * s — same convention as drawGrassOverGoldSilver's
+  -- ox + cx0 * s with absolute map coordinates.
+  self:blitBgOverRegionLocal(mapDef,
+    math.floor(ox + rx0 * s), math.floor(oy + ry0 * s),
+    rx0, ry0, rx1, ry1, keyed, tileFilter, s)
+
+  if G.setScissor then
+    if prevScissor then G.setScissor(prevScissor) else G.setScissor() end
+  end
+end
+
+-- IN_GRASS feet strip: bottom OAM + keyed grass on a 16x8 canvas, then one blit.
+-- Avoids scissor/transform bugs under Playfield letterboxing (issue #2080).
+function World:drawFeetComposite(entity, ox, oy, s, drawBottomOam)
+  local G = love.graphics
+  local x0, y0, x1, y1 = OamFootprint.feetStrip(entity)
+  local fw, fh = x1 - x0, y1 - y0
+  local canvas = self:feetCompositeCanvas(fw, fh)
+  if not canvas then
+    drawBottomOam()
+    self:blitBgOverRegion(self.map.def, ox, oy, s,
+      x0, y0, x1, y1, true, function() return true end)
+    return
+  end
+
+  local prev = G.getCanvas()
+  G.push("all")
+  G.origin()
+  G.setCanvas(canvas)
+  G.clear(0, 0, 0, 0)
+  G.translate(-x0, -y0)
+  drawBottomOam()
+  self:blitBgOverRegionLocal(self.map.def, 0, 0, x0, y0, x1, y1,
+    true, function() return true end, 1)
+  G.setCanvas(prev)
+  G.pop()
+
+  G.setColor(1, 1, 1, 1)
+  G.draw(canvas, ox + x0 * s, oy + y0 * s, 0, s, s)
+end
+
+-- Gold/Silver: keyed grass atlas + feet-strip sub-quad blit (no attrmap / OAM split).
+function World:drawGrassOverGoldSilver(entity, ox, oy, s)
   local map = self.map
   if not (entity and entity.inGrass and map) then return end
   local atlas, tileset = self:grassAtlasFor(map.def)
@@ -8819,7 +9048,6 @@ function World:drawGrassOver(entity, ox, oy, s)
   local tilePalettes = tileset.tilePalettes
   local tilesPerRow = tileset.tilesPerRow or 16
   local aw, ah = atlas:getDimensions()
-  -- engine/overworld/map_objects.asm:2876, data/sprites/facings.asm:45-56
   local rx, ry = entity.px, entity.py + 4
   self.grassQuad = self.grassQuad or G.newQuad(0, 0, 8, 8, aw, ah)
   local quad = self.grassQuad
@@ -8850,6 +9078,38 @@ function World:drawGrassOver(entity, ox, oy, s)
         end
       end
     end
+  end
+end
+
+-- Crystal: attrmap tiles, full 8x8 cells, keyed BG-over-OAM in the feet strip.
+function World:drawGrassOverCrystal(entity, ox, oy, s)
+  if not (entity and entity.inGrass and self.map) then return end
+  local x0, y0, x1, y1 = OamFootprint.feetStrip(entity)
+  self:blitBgOverRegion(self.map.def, ox, oy, s,
+    x0, y0, x1, y1, true, function() return true end)
+end
+
+function World:drawGrassOver(entity, ox, oy, s)
+  if self:isCrystal() then
+    self:drawGrassOverCrystal(entity, ox, oy, s)
+  else
+    self:drawGrassOverGoldSilver(entity, ox, oy, s)
+  end
+end
+
+-- wAttrmap BG_PRIO (attribute bit 7): BG draws over the full sprite footprint.
+function World:drawBgPriorityOver(entity, ox, oy, s)
+  if not self:isCrystal() then return end
+  local x0, y0, x1, y1 = OamFootprint.spriteBBox(entity)
+  self:blitBgOverRegion(self.map.def, ox, oy, s,
+    x0, y0, x1, y1, false, function(info) return info.attr.priority end)
+end
+
+function World:drawPriorityOver(entity, ox, oy, s)
+  if not self:isCrystal() then return end
+  self:drawBgPriorityOver(entity, ox, oy, s)
+  if entity.inGrass and not (entity.grassShake and entity.moving) then
+    self:drawGrassOver(entity, ox, oy, s)
   end
 end
 
@@ -9457,6 +9717,7 @@ function World:setMap(mapId, cx, cy, facing, opts)
   self.fade = nil
   self.shake = nil
   self.map = Map.new(def, tileset)
+  self:rebuildAttrGrid()
   -- A follow pairing points at two live objects, and a map load rebuilds them
   -- (RefreshMapSprites); nothing on the cart survives that either.
   self.followState = nil
@@ -10808,6 +11069,30 @@ end
 -- takes a foot point in flat screen pixels and a draw callback, and slides the
 -- draw onto that point's projection: only the ground tilts, so a standing
 -- thing stays upright and unscaled and the one thing that moves is its anchor.
+-- GoldSilverIntro order for one standing map object: optional jump shadow,
+-- bottom OAM (when IN_GRASS), keyed grass feet, top OAM, then BG_PRIO + shake.
+-- Exposed for World:drawPipeline mods so 3D passes reuse the same compositor.
+function World:drawEntityComposite(entity, ox, oy, s, drawSpriteFn, withExtras)
+  if not self:isCrystal() then return end
+  local grassComposite = entity.inGrass
+    and not (entity.grassShake and entity.moving)
+  if grassComposite then
+    -- Pret / GoldSilverIntro: composite on the framebuffer so keyed grass shade
+    -- 0 reveals the bottom-OAM pixels already there.  An offscreen feet canvas
+    -- left shade-0 holes transparent and showed baked ground through the legs
+    -- instead of grass over the feet (issue #2080).
+    drawSpriteFn("bottom", ox, oy, s)
+    self:drawGrassOver(entity, ox, oy, s)
+    drawSpriteFn("top", ox, oy, s)
+  else
+    drawSpriteFn(nil, ox, oy, s)
+  end
+  if withExtras then
+    self:drawBgPriorityOver(entity, ox, oy, s)
+    self:drawGrassShake(entity, ox, oy, s)
+  end
+end
+
 function World:drawPeople(s, billboard)
   local G = love.graphics
   local p = self.player
@@ -10845,20 +11130,31 @@ function World:drawPeople(s, billboard)
     local function body()
       -- map_objects.asm:221-227
       self:drawJumpShadow(entity, ox, oy, s)
-      if entry.kind == "player" then
-        self.player:draw(ox, oy, s)
-      else
-        entry.npc:draw(ox, oy, s)
-      end
-      -- ShakeGrass rustle only while moving; drawGrassOver when standing/in grass
-      -- so the BG tuft covers the feet.
-      -- Only the current map's own entities: a ghost's cells belong to a
-      -- neighbour's block list.
-      if entry.ox == 0 and entry.oy == 0 then
-        if entity.inGrass and not (entity.grassShake and entity.moving) then
-          self:drawGrassOver(entity, ox, oy, s)
+      local onMap = entry.ox == 0 and entry.oy == 0
+      if self:isCrystal() then
+        local function drawSprite(oamRow, localOx, localOy, localS)
+          local lx = localOx or ox
+          local ly = localOy or oy
+          local ls = localS or s
+          if entry.kind == "player" then
+            self.player:draw(lx, ly, ls, oamRow)
+          else
+            entry.npc:draw(lx, ly, ls, oamRow)
+          end
         end
-        self:drawGrassShake(entity, ox, oy, s)
+        self:drawEntityComposite(entity, ox, oy, s, drawSprite, onMap)
+      else
+        if entry.kind == "player" then
+          self.player:draw(ox, oy, s)
+        else
+          entry.npc:draw(ox, oy, s)
+        end
+        if onMap then
+          if entity.inGrass and not (entity.grassShake and entity.moving) then
+            self:drawGrassOver(entity, ox, oy, s)
+          end
+          self:drawGrassShake(entity, ox, oy, s)
+        end
       end
     end
     if billboard then
@@ -10947,6 +11243,10 @@ function World:drawPipeline(id, w, h, s)
       heal = function() self:drawHealAnim(1, nil) end,
       bird = function() self:drawFlyAnim(1, nil) end,
     },
+    -- Crystal-only: IN_GRASS OAM split + attrmap BG_PRIO (not on Gold/Silver).
+    drawEntity = self:isCrystal() and function(entity, ox, oy, scale, drawSpriteFn, withExtras)
+      self:drawEntityComposite(entity, ox, oy, scale or s, drawSpriteFn, withExtras)
+    end or nil,
   }
   -- `project(wx, wy)` -> canvas pixels, nil behind the camera.  s = 1 lays the
   -- closures out in world pixels off the flat foot, the unit Gen 1 uses.

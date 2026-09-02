@@ -33,7 +33,7 @@ end
 local function newList(count)
   local items = {}
   for i = 1, count do
-    items[i] = { value = "ITEM_" .. i, label = "ITEM " .. i, right = "x" .. i }
+    items[i] = { value = "ITEM_" .. i, label = "ITEM " .. i, count = i }
   end
   return ListMenu.new({}, "ITEMS", items, { kind = "bag", itemBox = true })
 end
@@ -67,7 +67,7 @@ do
 
   -- the quantity: '×' at column 14, the count right-aligned after it
   check(found("draw", function(c)
-    return c[2] == "x" and c[3] == 112 and c[4] == 40
+    return c[2] == "\xc3\x97" and c[3] == 112 and c[4] == 40
   end) ~= nil, "the first quantity's '×' is a row down at column 14")
   check(found("draw", function(c)
     return c[2] == "1" and c[3] == 128 and c[4] == 40

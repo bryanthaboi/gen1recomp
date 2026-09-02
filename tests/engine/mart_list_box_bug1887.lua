@@ -142,8 +142,8 @@ do
   for _, it in ipairs(list.items) do
     if it.value then byId[it.value] = it end
   end
-  eq(byId.POTION.right, "x3", "ordinary stock keeps its quantity")
-  eq(byId.TOWN_MAP.right, nil, "IsKeyItem_ skips the quantity")
+  eq(byId.POTION.count, 3, "ordinary stock keeps its quantity")
+  eq(byId.TOWN_MAP.count, nil, "IsKeyItem_ skips the quantity")
   eq(byId.HM_CUT.right, nil, "and so do the HMs")
   eq(list.items[#list.items].cancel, true, "CANCEL closes the sell list too")
   game.save.inventory = {}

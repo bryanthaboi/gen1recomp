@@ -34,7 +34,7 @@ local function buildItems(game, store, order)
       table.insert(items, {
         value = id,
         label = itemName(game, id),
-        right = "x" .. store[id],
+        count = store[id],
       })
     end
   end
@@ -77,7 +77,7 @@ local function refreshRow(list, store, id)
   for i, it in ipairs(list.items) do
     if it.value == id then
       if store[id] then
-        it.right = "x" .. store[id]
+        it.count = store[id]
       else
         table.remove(list.items, i)
       end

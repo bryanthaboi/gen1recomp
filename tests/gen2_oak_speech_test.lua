@@ -8,6 +8,30 @@ local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
 
+do
+  local OakSpeech = require("src.ui.gen2.OakSpeech")
+  local stub = {
+    save = { player = { name = "GOLD", rival = "???" } },
+    data = { tokens = require("src.render.TextBox").TOKENS, audio = {} },
+    stack = { push = function() end, pop = function() end, top = function() end },
+    input = { wasPressed = function() return false end },
+  }
+  local speech = OakSpeech.new(stub, { data = { text = {
+    _OakText7 = "{PLAYER}, are you\nready?\fI'll be seeing you\nlater!{DONE}",
+  } } })
+  local lines = speech:lastPageLines("_OakText7")
+  eq(#lines, 2, "the shrink page keeps its two rows")
+  eq(lines[1], "I'll be seeing you", "row one of the shrink page")
+  eq(lines[2], "later!", "DoneText leaves no glyph on row two")
+  check(not table.concat(lines, "|"):find("DONE", 1, true),
+    "the {DONE} terminator never reaches Font.draw")
+  local prompt = OakSpeech.new(stub, { data = { text = {
+    _OakText7 = "See you!{PROMPT}",
+  } } })
+  eq(prompt:lastPageLines("_OakText7")[1], "See you!",
+    "nor does {PROMPT}")
+end
+
 local cache = os.getenv("GOLD_CACHE")
 if not cache then
   local home = os.getenv("HOME") or ""

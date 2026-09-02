@@ -157,7 +157,7 @@ do
   eq(game.stack:top(), list,
      "after the stat window the bag is back on top (StartMenu_Item)")
   eq(list.index, row, "the cursor is still on the RARE CANDY row")
-  eq(list.items[row] and list.items[row].right, "x2",
+  eq(list.items[row] and list.items[row].count, 2,
      "the count refreshed in place")
 
   -- the point of the original's behavior: a second candy needs no menu trip

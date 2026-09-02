@@ -25,6 +25,8 @@
 
 local GbcPalette = require("src.render.GbcPalette")
 local PixelCanvas = require("src.render.PixelCanvas")
+local GameVersion = require("src.core.GameVersion")
+local TileAttrs = require("src.world.gen2.TileAttrs")
 
 local BorderFill = {}
 
@@ -83,7 +85,12 @@ function BorderFill.bake(atlas, tileset, blockId, bgSet, waterFrame)
   local colored = bgSet and tilePalettes and GbcPalette.available()
   local aw, ah = atlas:getDimensions()
   local quads = {}
+  local crystal = GameVersion.engine() == "crystal"
   local function quadFor(tile)
+    if crystal then
+      local attr = TileAttrs.forTile(tileset, tile)
+      return TileAttrs.quadFor(atlas, tile, attr, tilesPerRow, quads)
+    end
     local q = quads[tile]
     if q then return q end
     q = love.graphics.newQuad((tile % tilesPerRow) * 8,
@@ -94,12 +101,18 @@ function BorderFill.bake(atlas, tileset, blockId, bgSet, waterFrame)
   local function drawTiles(slot)
     for i = 0, 15 do
       local tile = block[i + 1] or 0
-      -- tilePalettes is 1-based over the sheet tiles; anything past it takes
-      -- slot 1, exactly as the map bake does.
-      local tileSlot = tilePalettes and tilePalettes[tile + 1] or 1
+      local tileSlot = crystal
+        and TileAttrs.paletteSlot(tileset, tile)
+        or (tilePalettes and tilePalettes[tile + 1] or 1)
       if not slot or tileSlot == slot then
-        love.graphics.draw(atlas, quadFor(tile),
-          (i % 4) * 8, math.floor(i / 4) * 8)
+        local tx = (i % 4) * 8
+        local ty = math.floor(i / 4) * 8
+        if crystal then
+          local attr = TileAttrs.forTile(tileset, tile)
+          TileAttrs.drawFlippedTile(atlas, quadFor(tile), tx, ty, attr)
+        else
+          love.graphics.draw(atlas, quadFor(tile), tx, ty)
+        end
       end
     end
   end

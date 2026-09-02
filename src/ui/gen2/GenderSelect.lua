@@ -2,6 +2,7 @@
 -- PlayerProfileSetup runs before OakSpeech (engine/menus/intro_menu.asm:61-83).
 
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
 local Music = require("src.core.Music")
 local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
@@ -56,8 +57,8 @@ function GenderSelect.new(game, opts)
   -- `db 1 ; default option`: the cursor opens on Boy.
   self.cursor = 1
   self.exit = nil
-  self.text = RomText(self.data, "_AreYouABoyOrAreYouAGirlText",
-    FALLBACK)
+  self.text = CommonText.plain(RomText(self.data,
+    "_AreYouABoyOrAreYouAGirlText", FALLBACK))
   return self
 end
 

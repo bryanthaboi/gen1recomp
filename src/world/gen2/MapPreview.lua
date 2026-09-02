@@ -5,8 +5,10 @@
 local Assets = require("src.render.Assets")
 local BorderFill = require("src.world.gen2.BorderFill")
 local GbcPalette = require("src.render.GbcPalette")
+local GameVersion = require("src.core.GameVersion")
 local Palettes = require("src.world.gen2.Palettes")
 local PixelCanvas = require("src.render.PixelCanvas")
+local TileAttrs = require("src.world.gen2.TileAttrs")
 
 local MapPreview = {}
 
@@ -100,7 +102,12 @@ function MapPreview.bake(baker, map, daytime)
   local okCanvas, canvas = pcall(PixelCanvas.new, pw, ph, "nearest")
   if not okCanvas or not canvas then return nil end
   local quads = {}
+  local crystal = GameVersion.engine() == "crystal"
   local function quadFor(tile)
+    if crystal then
+      local attr = TileAttrs.forTile(tileset, tile)
+      return TileAttrs.quadFor(atlas, tile, attr, tilesPerRow, quads)
+    end
     local q = quads[tile]
     if q then return q end
     local sx = (tile % tilesPerRow) * 8
@@ -129,11 +136,18 @@ function MapPreview.bake(baker, map, daytime)
         if block then
           for i = 0, 15 do
             local tile = block[i + 1] or 0
-            local tileSlot = tilePalettes and tilePalettes[tile + 1] or 1
+            local tileSlot = crystal
+              and TileAttrs.paletteSlot(tileset, tile)
+              or (tilePalettes and tilePalettes[tile + 1] or 1)
             if not slot or tileSlot == slot then
               local tx = bx * 32 + (i % 4) * 8
               local ty = by * 32 + math.floor(i / 4) * 8
-              love.graphics.draw(atlas, quadFor(tile), tx, ty)
+              if crystal then
+                local attr = TileAttrs.forTile(tileset, tile)
+                TileAttrs.drawFlippedTile(atlas, quadFor(tile), tx, ty, attr)
+              else
+                love.graphics.draw(atlas, quadFor(tile), tx, ty)
+              end
             end
           end
         end

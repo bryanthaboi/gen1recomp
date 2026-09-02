@@ -613,14 +613,94 @@ function RomExtractorGen2:battleObjectPals()
   return out
 end
 
+-- GBC BG attribute bits (constants/hardware.inc B_BG_*).
+local BG_BANK1_BIT = 0x08
+local BG_XFLIP_BIT = 0x20
+local BG_YFLIP_BIT = 0x40
+local BG_PRIO_BIT  = 0x80
+
+local function decodePalNibble(n)
+  n = n % 16
+  return {
+    palette = (n % 8) + 1,
+    vramBank = math.floor(n / 8) % 2,
+    xFlip = false,
+    yFlip = false,
+    priority = false,
+  }
+end
+
+local function decodePalByte(b)
+  return {
+    palette = (b % 8) + 1,
+    vramBank = math.floor(b / BG_BANK1_BIT) % 2,
+    xFlip = bit.band(b, BG_XFLIP_BIT) ~= 0,
+    yFlip = bit.band(b, BG_YFLIP_BIT) ~= 0,
+    priority = bit.band(b, BG_PRIO_BIT) ~= 0,
+  }
+end
+
+local function assignPalPair(tileId, byte, palettes, attrs, useBytes)
+  if useBytes then
+    local a = decodePalByte(byte)
+    attrs[tileId + 1] = a
+    palettes[tileId + 1] = a.palette
+    return
+  end
+  local low = byte % 16
+  local high = math.floor(byte / 16) % 16
+  for i, n in ipairs({ low, high }) do
+    local id = tileId + (i - 1)
+    local a = decodePalNibble(n)
+    attrs[id + 1] = a
+    palettes[id + 1] = a.palette
+  end
+end
+
+-- Crystal: 48 bytes bank-0 + 16 bytes $ff + 48 bytes bank-1 (gfx/tilesets/*_palette_map.asm).
+-- Bank-1 attrs land on tile ids $80-$df, not on the linear indices after padding.
+function RomExtractorGen2:readCrystalPalMap(address)
+  local raw = self.rom:bytes(self:palMapBank(), address, CRYSTAL_PAL_MAP_BYTES)
+  local palettes = {}
+  local attrs = {}
+  local i = 1
+  local tileId = 0
+  local bank0Count = 0
+  while i <= #raw and bank0Count < 48 do
+    local byte = raw[i]
+    if byte == 0xff then break end
+    assignPalPair(tileId, byte, palettes, attrs, false)
+    tileId = tileId + 2
+    bank0Count = bank0Count + 1
+    i = i + 1
+  end
+  while i <= #raw and raw[i] == 0xff do
+    i = i + 1
+  end
+  tileId = 0x80
+  local bank1Count = 0
+  while i <= #raw and bank1Count < 48 do
+    local byte = raw[i]
+    if byte == 0xff then break end
+    assignPalPair(tileId, byte, palettes, attrs, false)
+    tileId = tileId + 2
+    bank1Count = bank1Count + 1
+    i = i + 1
+  end
+  return palettes, attrs
+end
+
 -- A tileset's PalMap: 48 bytes on Gold and 112 on Crystal, two tiles apiece.
 -- `tilepal` emits `dn (bank | PAL_BG_second), (bank | PAL_BG_first)`, so the
 -- low nibble is the even tile and the high nibble the odd one; masking to 3
 -- bits drops the OAM_BANK flag and leaves the PAL_BG_* slot.  Returned 1-based
 -- so the value indexes an 8-entry Lua palette set directly.
 function RomExtractorGen2:readPalMap(address)
+  if self.edition == "crystal" then
+    local palettes = self:readCrystalPalMap(address)
+    return palettes
+  end
   local length = TILESET_TILE_COUNT / 2
-  if self.edition == "crystal" then length = CRYSTAL_PAL_MAP_BYTES end
   local raw = self.rom:bytes(self:palMapBank(), address, length)
   local out = {}
   for i, byte in ipairs(raw) do
@@ -1002,6 +1082,13 @@ function RomExtractorGen2:extractTilesets()
       }
     end
 
+    local tilePalettes, tileAttrs
+    if twoBank then
+      tilePalettes, tileAttrs = self:readCrystalPalMap(palMapAddress)
+    else
+      tilePalettes = self:readPalMap(palMapAddress)
+    end
+
     out[constName] = {
       id = constName,
       generation = 2,
@@ -1017,7 +1104,9 @@ function RomExtractorGen2:extractTilesets()
       palMap = { bank = self:palMapBank(), address = palMapAddress },
       -- Which of the eight loaded BG palettes each sheet tile draws with,
       -- 1-based into palettes.bg slots (see readPalMap).
-      tilePalettes = self:readPalMap(palMapAddress),
+      tilePalettes = tilePalettes,
+      -- Crystal only: full GBC attribute byte per tile id (palette, bank, flip, priority).
+      tileAttrs = tileAttrs,
     }
     self:tick("World tiles", index, #order)
   end

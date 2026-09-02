@@ -24,7 +24,7 @@ local function buildItems(game)
     table.insert(items, {
       value = id,
       label = def and def.name or id,
-      right = (not unsellable) and ("x" .. game.save.inventory[id]) or nil,
+      count = (not unsellable) and game.save.inventory[id] or nil,
     })
   end
   -- the $ff terminator's row: CANCEL is selectable and exits like B
@@ -346,7 +346,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     for i, it in ipairs(list.items) do
       if it.value == id then
         local left = game.save.inventory[id]
-        if left then it.right = "x" .. left else table.remove(list.items, i) end
+        if left then it.count = left else table.remove(list.items, i) end
         break
       end
     end
