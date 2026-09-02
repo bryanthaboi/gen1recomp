@@ -241,8 +241,18 @@ function OverworldState.computeNeighbors(maps, rootId, hops, reachW, reachH)
   while queue[qi] do
     local cur = queue[qi]
     qi = qi + 1
-    for dir, conn in pairs(cur.def.connections or {}) do
-      local destDef = maps[conn.map]
+    for dir, side in pairs(cur.def.connections or {}) do
+      -- A side may hold a single connection object or an array (when the
+      -- editor stacked extra connections); iterate either form.
+      local conns
+      if type(side) == "table" and (side.map or side.mapId) then
+        conns = { side }
+      else
+        conns = side
+      end
+      if type(conns) == "table" then
+        for _, conn in ipairs(conns) do
+          local destDef = maps[conn.map]
       if destDef and not placed[conn.map] then
         placed[conn.map] = true
         local ox, oy
@@ -265,6 +275,8 @@ function OverworldState.computeNeighbors(maps, rootId, hops, reachW, reachH)
           end
         end
       end
+      end
+    end
     end
   end
   return out
@@ -1804,18 +1816,41 @@ function OverworldState:checkEdgeExit(dir)
     return true
   end
 
-  local conn = self.map:connection(COMPASS[dir])
+  local conn = self:connectionAt(COMPASS[dir])
   if conn then
     return self:crossConnection(dir, conn)
   end
   return false
 end
 
+-- Picks the connection on `dir` the player is actually stepping across.  A side
+-- may carry several connections (editor-only extras); the one whose seam sits
+-- under the player's position along the edge is the correct destination.  For
+-- single-connection sides this just returns that connection.
+function OverworldState:connectionAt(dir)
+  local side = self.map:connection(dir)
+  if type(side) ~= "table" then return nil end
+  if side.map or side.mapId then return side end
+  local p = self.player
+  local isH = (dir == "north" or dir == "south")
+  local cell = isH and p.cellX or p.cellY
+  for _, c in ipairs(side) do
+    if c and (c.map or c.mapId) then
+      local destDef = Game.data.maps[c.map or c.mapId]
+      local along = cell - (c.offset or 0) * 2
+      local dim = destDef
+        and (((isH and destDef.width) or destDef.height) * 2) or math.huge
+      if along >= 0 and along < dim then return c end
+    end
+  end
+  return side[1]
+end
+
 -- Landing cell on the connected map for a step off this map's edge in
 -- `dir` (same math as crossConnection).  Returns destDef, tilesetDef, x, y
 -- or nil when there is no usable connection.
 function OverworldState:connectionLanding(dir)
-  local conn = self.map:connection(COMPASS[dir])
+  local conn = self:connectionAt(COMPASS[dir])
   if not conn then return nil end
   local dest = Game.data.maps[conn.map]
   if not dest then return nil end
@@ -3717,7 +3752,15 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
   local battleText = header and header.battle and Game.data.text[header.battle]
   if not battleText then
     battleText = select(1, Game.data:resolveText(self.map.def.label, d.text))
-                 or Strings("I like shorts!\nThey're comfy and\neasy to wear!")
+    -- Editor-placed trainers carry their intro as a RAW string on the def
+    -- (not a TEXT_* constant), so resolveText answers nil for them: use it
+    -- verbatim instead of falling through to the placeholder line.
+    if not battleText and type(d.text) == "string" and d.text ~= "" then
+      battleText = d.text
+    end
+  end
+  if not battleText then
+    battleText = Strings("I like shorts!\nThey're comfy and\neasy to wear!")
   end
   -- `endBattleText` is a caller-supplied stand-in for header.won: the
   -- text_asm trainers that hand their loss line to the battle through
@@ -3728,6 +3771,8 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
   -- TrainerDefeatedText and MoneyForWinningText, on the battle screen (#862).
   local wonText = endBattleText
                   or (header and header.won and Game.data.text[header.won])
+                  or (type(d.winText) == "string" and d.winText ~= ""
+                      and d.winText)
 
   local BattleState = require("src.battle.BattleState")
   local stingPlayed = false
@@ -3773,6 +3818,17 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
         Game.save.defeatedTrainers[npc.id] = true
         if header and header.event then
           Flags.set(Game.save, header.event)
+        end
+        -- Per-placement recompense: a one-time prize item handed over right
+        -- after the victory flag lands (give_item bags it, jingles and shows
+        -- its received box; bag-full halts with the vanilla notice).
+        if type(d.prizeItem) == "string" and d.prizeItem ~= ""
+            and Game.data.items[d.prizeItem] then
+          pcall(function()
+            local Commands = require("src.script.Commands")
+            Commands.give_item({ game = Game, save = Game.save },
+              d.prizeItem, tonumber(d.prizeCount) or 1)
+          end)
         end
         -- checkVictoryRewards pushes the badge/prize box and starts the map's
         -- onVictory script UNDER whatever runs next, so the player still sees
@@ -4036,7 +4092,9 @@ function OverworldState:checkTrainerSight()
        and not (noSight and d.text and noSight[d.text])
        and trainerSpriteOnScreen(npc, p) then
       local header = Game.data:trainerHeader(self.map.def.label, d.index)
-      local range = header and header.range or 0
+      -- Editor-placed trainers have no ROM header; d.sight carries their
+      -- sight range instead (0/nil = talk-only, the old behavior).
+      local range = (header and header.range) or tonumber(d.sight) or 0
       local vec = DIRVEC[npc.facing]
       if range > 0 and vec then
         local dist, horizontal

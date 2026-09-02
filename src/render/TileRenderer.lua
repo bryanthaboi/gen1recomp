@@ -4,6 +4,7 @@
 
 local Assets = require("src.render.Assets")
 local PaletteFX = require("src.render.PaletteFX")
+local Map = require("src.world.Map")
 
 local TileRenderer = {}
 TileRenderer.__index = TileRenderer
@@ -68,6 +69,25 @@ local function getImage(path)
     imageCache[path] = Assets.image(path)
   end
   return imageCache[path]
+end
+
+-- ImageData for a tileset's atlas: the vanilla decode, or the GROWN atlas
+-- when a cross-tileset graft materialized appended rows on the record
+-- (ts.graftImageData -- mods/mapamap).  Every atlas-derived bake and the
+-- animated-tile builders read through this, so a grown tileset draws its
+-- imported rows instead of dropping back to the untouched vanilla pixels.
+local function tilesetImageData(tileset)
+  if tileset and tileset.graftImageData then return tileset.graftImageData end
+  return Assets.imageData(tileset.image)
+end
+TileRenderer.tilesetImageData = tilesetImageData
+
+-- cache-key token that distinguishes a grown atlas from the vanilla one (set
+-- only after a graft materializes), so bakes/variants refill when the atlas
+-- grows instead of handing out a stale early-build
+local function growthToken(tileset)
+  if tileset and tileset.graftImageData then return "#grown" end
+  return ""
 end
 
 -- ------------------------------------------------------------------
@@ -184,14 +204,14 @@ TileRenderer.recolorSample = recolorSample
 -- the 8 shifted variants of one tile (built once per sheet + tile id [+
 -- gbcKey, when `colors` recolors it for RED++ -- see buildAnim])
 local shiftVariants = {}
-local function getShiftVariants(tilesetImagePath, perRow, tile, colors, gbcKey)
-  local key = tilesetImagePath .. "#" .. tile .. (gbcKey or "")
+local function getShiftVariants(tileset, perRow, tile, colors, gbcKey)
+  local key = tileset.image .. growthToken(tileset) .. "#" .. tile .. (gbcKey or "")
   if shiftVariants[key] ~= nil then return shiftVariants[key] end
   if not (love.image and love.image.newImageData) then
     shiftVariants[key] = false
     return false
   end
-  local id = Assets.imageData(tilesetImagePath)
+  local id = tilesetImageData(tileset)
   local sx = (tile % perRow) * 8
   local sy = math.floor(tile / perRow) * 8
   local out = {}
@@ -247,8 +267,8 @@ end
 -- extracted from gfx/overworld/spinners.png); cached per tileset + strip
 local toggleImages = {}
 local stripData = {}
-local function getToggleImage(spec, tilesetImagePath, perRow)
-  local key = tilesetImagePath .. "#" .. tostring(spec.image)
+local function getToggleImage(spec, tileset, perRow)
+  local key = tileset.image .. growthToken(tileset) .. "#" .. tostring(spec.image)
   if toggleImages[key] ~= nil then return toggleImages[key] end
   local offsets = spec.stripOffsets
   if not (love.image and love.image.newImageData) or not offsets then
@@ -264,7 +284,7 @@ local function getToggleImage(spec, tilesetImagePath, perRow)
     toggleImages[key] = false
     return false
   end
-  local atlas = Assets.imageData(tilesetImagePath)
+  local atlas = tilesetImageData(tileset)
   local clone = love.image.newImageData(atlas:getWidth(), atlas:getHeight())
   clone:paste(atlas, 0, 0, 0, 0, atlas:getWidth(), atlas:getHeight())
   for id, offset in pairs(offsets) do
@@ -337,7 +357,7 @@ end
 -- gameplay-gated blur -- it is skipped under gbc, same as the buildAnim
 -- caller already does for a texture-build failure (the static, correctly-
 -- colored tile shows through unanimated).
-local function buildAnim(spec, tilesetImagePath, perRow, quads, gbc)
+local function buildAnim(spec, tileset, perRow, quads, gbc)
   local tiles = spec.tiles
   if not tiles then
     if spec.tile == nil then return nil end
@@ -352,7 +372,7 @@ local function buildAnim(spec, tilesetImagePath, perRow, quads, gbc)
   if spec.kind == "hshift" then
     local offsets = spec.offsets
     if not offsets or #offsets == 0 then return nil end
-    local textures = getShiftVariants(tilesetImagePath, perRow, tiles[1],
+    local textures = getShiftVariants(tileset, perRow, tiles[1],
                                       colors, gbc and gbc.key)
     if not textures then return nil end
     local sequence = {}
@@ -368,7 +388,7 @@ local function buildAnim(spec, tilesetImagePath, perRow, quads, gbc)
              period = period }
   elseif spec.kind == "toggle" then
     if gbc then return nil end
-    local image = getToggleImage(spec, tilesetImagePath, perRow)
+    local image = getToggleImage(spec, tileset, perRow)
     if not image then return nil end
     -- the patch texture is a whole-atlas clone, so each cell needs the
     -- quad of the tile it stands in rather than a single-tile image
@@ -406,23 +426,41 @@ local function gbcKeyFor(mapId)
   return "#gbc:" .. mapId .. PaletteFX.darkKey()
 end
 
-local function getGbcAtlas(imagePath, tilesetId, mapId, perRow, data)
-  local key = imagePath .. gbcKeyFor(mapId)
+local function getGbcAtlas(tileset, mapId, perRow, data)
+  local key = tileset.image .. growthToken(tileset) .. gbcKeyFor(mapId)
   if gbcAtlasCache[key] ~= nil then return gbcAtlasCache[key] or nil end
   local img = false
   if love.image and love.image.newImageData then
-    local groupColors = PaletteFX.worldGroupColors(data, tilesetId, mapId, nil)
+    local groupColors = PaletteFX.worldGroupColors(data, tileset.id, mapId, nil)
     if groupColors then
-      local src = Assets.imageData(imagePath)
+      local src = tilesetImageData(tileset)
       local iw, ih = src:getDimensions()
       local total = (iw / 8) * (ih / 8)
+      local nativeTotal = tileset.graftBase or total
       local out = love.image.newImageData(iw, ih)
+      -- foreign (grafted) rows bake through their SOURCE tileset's palette
+      -- groups (mods/mapamap materializes ts.graftRowPalettes): the source's
+      -- own groupColors array, mapId nil so the DESTINATION map's per-map
+      -- exceptions never leak onto a foreign tile.  Resolved fresh per bake
+      -- so cave lighting (darkKey) tracks it exactly like native rows.
+      local rows = tileset.graftRowPalettes
+      local srcColors = {}
       local tileColors = {}
       for t = 0, total - 1 do
         local colors = tileColors[t]
         if colors == nil then
-          local group = PaletteFX.worldGroupAt(tilesetId, mapId, t)
-          colors = (group and groupColors[group + 1]) or false
+          local row = rows and rows[t]
+          if row then
+            local sc = srcColors[row.srcTs]
+            if sc == nil then
+              sc = PaletteFX.worldGroupColors(data, row.srcTs, nil, nil)
+              srcColors[row.srcTs] = sc
+            end
+            colors = (row.group ~= nil and sc and sc[row.group + 1]) or false
+          else
+            local group = PaletteFX.worldGroupAt(tileset.id, mapId, t)
+            colors = (group and groupColors[group + 1]) or false
+          end
           tileColors[t] = colors
         end
         local ox, oy = (t % perRow) * 8, math.floor(t / perRow) * 8
@@ -467,35 +505,37 @@ function TileRenderer.new(map, data)
   local self = setmetatable({}, TileRenderer)
   self.map = map
   self.data = data
-  self.image = getImage(map.tileset.image)
+  local tileset = map.tileset
+  self.image = tileset.graftImage or getImage(tileset.image)
   local gbcCtx
-  if data and PaletteFX.usesGbcPack() and PaletteFX.hasWorldTileset(map.tileset.id) then
-    local gbc = getGbcAtlas(map.tileset.image, map.tileset.id, map.id,
-                            map.tileset.tilesPerRow, data)
+  if data and PaletteFX.usesGbcPack() and PaletteFX.hasWorldTileset(tileset.id) then
+    local gbc = getGbcAtlas(tileset, map.id, tileset.tilesPerRow, data)
     if gbc then
       self.image = gbc
       self.gbcAtlas = true
       -- also recolors the animated water/flower entries below, so they
       -- match the atlas's static tiles instead of showing raw grayscale
-      gbcCtx = { tilesetId = map.tileset.id, mapId = map.id, key = gbcKeyFor(map.id),
-                groupColors = PaletteFX.worldGroupColors(data, map.tileset.id, map.id, nil) }
+      gbcCtx = { tilesetId = tileset.id, mapId = map.id, key = gbcKeyFor(map.id),
+                groupColors = PaletteFX.worldGroupColors(data, tileset.id, map.id, nil) }
       -- ...and feeds the color-0-keyed single tiles the feet overdraw needs
       -- (see getKeyedTile): same source image and palette groups, so keep the
-      -- context rather than re-deriving it per draw.
-      gbcCtx.imagePath = map.tileset.image
-      gbcCtx.perRow = map.tileset.tilesPerRow
+      -- context rather than re-deriving it per draw.  imageData is the grown
+      -- atlas when a graft appended rows, so keyed feet tiles read them.
+      gbcCtx.imageData = tilesetImageData(tileset)
+      gbcCtx.perRow = tileset.tilesPerRow
+      gbcCtx.nativeTotal = tileset.graftBase or nil
       self.gbcCtx = gbcCtx
-      self.gbcAtlasKey = map.tileset.image .. gbcCtx.key
+      self.gbcAtlasKey = tileset.image .. growthToken(tileset) .. gbcCtx.key
       self.gbcKeyed = {}
     end
   end
   -- a full-color atlas colors everything it paints, ring and border fill
   -- included, so every draw entry point claims its rect out of the pass
-  self.trueColor = map.tileset.trueColor or nil
+  self.trueColor = tileset.trueColor or nil
 
   local iw, ih = self.image:getDimensions()
   self.quads = {}
-  local perRow = map.tileset.tilesPerRow
+  local perRow = tileset.tilesPerRow
   for t = 0, (iw / 8) * (ih / 8) - 1 do
     self.quads[t] = love.graphics.newQuad((t % perRow) * 8,
                                           math.floor(t / perRow) * 8, 8, 8, iw, ih)
@@ -515,10 +555,10 @@ function TileRenderer.new(map, data)
   -- map size either.  Entry order decides which entry claims a tile listed
   -- twice (the vanilla water-then-flower-then-spinner precedence).
   local anims, claimedBy = {}, {}
-  local declared = map.tileset.animatedTiles
-                   or TileRenderer.defaultAnimatedTiles(map.tileset)
+  local declared = tileset.animatedTiles
+                   or TileRenderer.defaultAnimatedTiles(tileset)
   for _, spec in ipairs(declared) do
-    local anim = buildAnim(spec, map.tileset.image, perRow, self.quads, gbcCtx)
+    local anim = buildAnim(spec, tileset, perRow, self.quads, gbcCtx)
     if anim then
       anims[#anims + 1] = anim
       for _, tile in ipairs(anim.tiles) do
@@ -589,7 +629,7 @@ local function ensureWaterBorderFill(self)
     colors = group and groupColors and groupColors[group + 1] or nil
     gbcKey = gbcKeyFor(map.id)
   end
-  local textures = getShiftVariants(map.tileset.image, perRow, WATER_TILE,
+  local textures = getShiftVariants(map.tileset, perRow, WATER_TILE,
                                     colors, gbcKey)
   if not textures then return false end
   for _, img in ipairs(textures) do
@@ -690,24 +730,30 @@ local function getKeyedTile(self, tile)
   local cached = self.gbcKeyed[tile]
   if cached ~= nil then return cached or nil end
   local img = false
-  if ctx.groupColors and love.image and love.image.newImageData then
-    local group = PaletteFX.worldGroupAt(ctx.tilesetId, ctx.mapId, tile)
-    local colors = group and ctx.groupColors[group + 1]
-    local src = Assets.imageData(ctx.imagePath)
-    local ox = (tile % ctx.perRow) * 8
-    local oy = math.floor(tile / ctx.perRow) * 8
-    local out = love.image.newImageData(8, 8)
-    for py = 0, 7 do
-      for px = 0, 7 do
-        local r, g, b, a = src:getPixel(ox + px, oy + py)
-        -- read shade 0 off the RAW sheet, on recolorSample's own cutoff, so
-        -- the keyed pixels are exactly the ones the shader path keys
-        local shade0 = r > 0.83
-        r, g, b, a = recolorSample(r, g, b, a, colors)
-        out:setPixel(px, py, r, g, b, shade0 and 0 or a)
+  -- Grafted rows (tile ids past the tileset's native count) fall back to the
+  -- plain baked-atlas quad -- the whole grown atlas is already recolored, so
+  -- a foreign tile's own keyed single-tile texture would need its source
+  -- palette context for no draw-time gain on a rare feet-overdraw case.
+  if ctx.nativeTotal == nil or tile < ctx.nativeTotal then
+    if ctx.groupColors and love.image and love.image.newImageData then
+      local group = PaletteFX.worldGroupAt(ctx.tilesetId, ctx.mapId, tile)
+      local colors = group and ctx.groupColors[group + 1]
+      local src = ctx.imageData
+      local ox = (tile % ctx.perRow) * 8
+      local oy = math.floor(tile / ctx.perRow) * 8
+      local out = love.image.newImageData(8, 8)
+      for py = 0, 7 do
+        for px = 0, 7 do
+          local r, g, b, a = src:getPixel(ox + px, oy + py)
+          -- read shade 0 off the RAW sheet, on recolorSample's own cutoff, so
+          -- the keyed pixels are exactly the ones the shader path keys
+          local shade0 = r > 0.83
+          r, g, b, a = recolorSample(r, g, b, a, colors)
+          out:setPixel(px, py, r, g, b, shade0 and 0 or a)
+        end
       end
+      img = love.graphics.newImage(out)
     end
-    img = love.graphics.newImage(out)
   end
   self.gbcKeyed[tile] = img
   return img or nil
@@ -798,7 +844,7 @@ function TileRenderer:ensureWindow(camX, camY, vw, vh)
     local ty4 = ty % 4
     for tx = tx0, tx1 - 1 do
       local blockId = map:blockAt(math.floor(tx / 4), by)
-      local block = map.tileset.blocks[blockId + 1]
+      local block = Map.blockTiles(map.def, map.tileset, blockId)
       if block then
         local ci = ty4 * 4 + (tx % 4)
         local tile = block[ci + 1]
@@ -920,7 +966,8 @@ function TileRenderer:release()
     self.gbcCtx = nil
   end
   if self.gbcAtlas and self.image then
-    local key = self.gbcAtlasKey or (self.map.tileset.image .. gbcKeyFor(self.map.id))
+    local key = self.gbcAtlasKey or (self.map.tileset.image
+                 .. growthToken(self.map.tileset) .. gbcKeyFor(self.map.id))
     if gbcAtlasCache[key] == self.image then gbcAtlasCache[key] = nil end
     self.gbcAtlasKey = nil
     safeRelease(self.image)
@@ -955,6 +1002,12 @@ function TileRenderer.invalidate()
     safeRelease(img)
     gbcAtlasCache[key] = nil
   end
+end
+
+-- Drop the per-map GBC atlas cache so a tileset graft (which grows the
+-- atlas) forces a fresh bake on the next TileRenderer.new.
+function TileRenderer.invalidateGbcAtlas()
+  for k in pairs(gbcAtlasCache) do gbcAtlasCache[k] = nil end
 end
 
 Assets.register(TileRenderer.invalidate)

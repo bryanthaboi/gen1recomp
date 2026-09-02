@@ -81,11 +81,14 @@ function Trainers.party(data, entry)
     end
     -- Trainer mons roll no DVs: the cart gives every one of them 9/8/8/8/8
     -- (wEnemyMonDVs is fixed in MakeTrainerPartyMon), which is why a trainer's
-    -- Rattata is always the same Rattata.
+    -- Rattata is always the same Rattata.  A row MAY carry its own dvs block
+    -- (mapamap's team editor synthesizes one to pin gender/shininess); it
+    -- replaces the fixed byte exactly where the cart would have written it.
+    local dvs = row.dvs or { attack = 9, defense = 8, speed = 8, special = 8 }
     local mon = Mon.new(data, row.species, row.level, {
       moves = moves,
       item = row.item,
-      dvs = { attack = 9, defense = 8, speed = 8, special = 8 },
+      dvs = dvs,
     })
     if mon then party[#party + 1] = mon end
   end

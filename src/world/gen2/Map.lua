@@ -10,6 +10,36 @@ Map.__index = Map
 local DELTA = { up = { 0, -1 }, down = { 0, 1 }, left = { -1, 0 }, right = { 1, 0 } }
 Map.DELTA = DELTA
 
+-- The 16-tile content of a block id, through the same graft contract as
+-- src/world/Map.lua:53 (mods/mapamap): native block ids resolve through the
+-- tileset's `blocks` array; a block id at/above the native count is a GRAFTED
+-- block (a cross-tileset paint) and resolves through the map def's
+-- `graftBlocks` list, which stores the tileset-atlas slots the imported
+-- graphic occupies.  Returns the tile array, or nil when unknown.
+function Map.blockTiles(def, tilesetDef, id)
+  if not (def and tilesetDef and tilesetDef.blocks) then return nil end
+  if id == nil then return nil end
+  local native = #tilesetDef.blocks
+  if id < native then
+    return tilesetDef.blocks[id + 1]
+  end
+  local g = def.graftBlocks and def.graftBlocks[id - native]
+  return g and g.tiles
+end
+
+-- The warp-lookup table a Map builds once; extracted so a warp edit (place,
+-- move, remove -- mods/mapamap domain/warps.lua) can rebuild the index on the
+-- LIVE instance instead of recreating the Map.
+function Map.buildWarpIndex(warps)
+  local warpAt = {}
+  for i, w in ipairs(warps or {}) do
+    if w and w.x ~= nil and w.y ~= nil then
+      warpAt[w.y * 1024 + w.x] = { index = i, def = w }
+    end
+  end
+  return warpAt
+end
+
 function Map.new(def, tileset)
   local self = setmetatable({}, Map)
   self.def = def
@@ -31,10 +61,41 @@ function Map.new(def, tileset)
     if type(conn) == "table" and conn.map == nil then conn.map = conn.mapId end
   end
   -- Warp lookup by cell.
-  self._warpAt = {}
-  for i, w in ipairs(self.warps) do
-    self._warpAt[w.y * 1024 + w.x] = { index = i, def = w }
+  self._warpAt = Map.buildWarpIndex(self.warps)
+  return self
+end
+
+-- Warp placement/move/remove edits land in def.warps after Map.new built the
+-- index, so the lookup rebuilt on the live instance (deferred to the draw
+-- frame by WorldAdapter.flushLiveRebuild -- never inside the input event).
+function Map:rebuildWarpIndex()
+  self.warps = self.def and self.def.warps or {}
+  self._warpAt = Map.buildWarpIndex(self.warps)
+  return self
+end
+
+-- Re-captures every field Map.new snapshots out of the def.  Patch replay
+-- (mods/mapamap on save.loaded) and editor expansion REPLACE def.blocks /
+-- def.connections / width with fresh tables, but this instance kept its
+-- building-time references -- cellCollision and the seam walks kept answering
+-- the PRE-edit grid until the player re-entered the map.  Tileset/collision
+-- are untouched: grafts rebuild through their own path.
+function Map:refreshFromDef()
+  local def = self.def
+  if not def then return self end
+  self.id = def.id
+  self.width = def.width
+  self.height = def.height
+  self.widthCells = def.width * 2
+  self.heightCells = def.height * 2
+  self.blocks = def.blocks
+  self.borderBlock = def.borderBlock or 0
+  self.warps = def.warps or {}
+  self.connections = def.connections or {}
+  for _, conn in pairs(self.connections) do
+    if type(conn) == "table" and conn.map == nil then conn.map = conn.mapId end
   end
+  self._warpAt = Map.buildWarpIndex(self.warps)
   return self
 end
 
@@ -231,7 +292,7 @@ function Map:tileAt(tx, ty)
   local blocks = self.tileset and self.tileset.blocks
   if not blocks then return nil end
   local id = self:blockId(math.floor(tx / 4), math.floor(ty / 4))
-  local block = blocks[id + 1]
+  local block = Map.blockTiles(self.def, self.tileset, id)
   if not block then return nil end
   return block[(ty % 4) * 4 + (tx % 4) + 1]
 end

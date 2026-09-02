@@ -445,29 +445,6 @@ local function loadGenerated(path)
   return CacheFs.loadActive(path)
 end
 
--- Paste the 9-tile roof sheet over atlas tiles $0a-$12.
-local function applyRoofOverlay(atlasPath, roofPath, tilesPerRow)
-  -- Assets.resolve, not the raw path: an overrides/ file or an AssetTransform
-  -- output has to feed the derivation rather than be bypassed by it.
-  local atlasData = love.image.newImageData(Assets.resolve(atlasPath))
-  local roofData = love.image.newImageData(Assets.resolve(roofPath))
-  for t = 0, 8 do
-    local destId = 0x0a + t
-    local dx = (destId % tilesPerRow) * 8
-    local dy = math.floor(destId / tilesPerRow) * 8
-    local sx = t * 8
-    for y = 0, 7 do
-      for x = 0, 7 do
-        local r, g, b, a = roofData:getPixel(sx + x, y)
-        atlasData:setPixel(dx + x, dy + y, r, g, b, a)
-      end
-    end
-  end
-  local image = love.graphics.newImage(atlasData)
-  image:setFilter("nearest", "nearest")
-  return image
-end
-
 -- Gen 2 connections use mapId (name); offsets are in blocks (32 px),
 -- same strip math as Gen 1 OverworldState.computeNeighbors.
 function World.computeNeighbors(maps, rootId, hops, reachW, reachH)
@@ -487,9 +464,19 @@ function World.computeNeighbors(maps, rootId, hops, reachW, reachH)
   while queue[qi] do
     local cur = queue[qi]
     qi = qi + 1
-    for dir, conn in pairs(cur.def.connections or {}) do
-      local destId = conn.mapId or conn.map
-      local destDef = type(destId) == "string" and maps[destId] or nil
+    for dir, side in pairs(cur.def.connections or {}) do
+      -- A side may hold a single connection object or an array (editor-only
+      -- extra connections); iterate either form.
+      local conns
+      if type(side) == "table" and (side.map or side.mapId) then
+        conns = { side }
+      else
+        conns = side
+      end
+      if type(conns) == "table" then
+        for _, conn in ipairs(conns) do
+          local destId = conn.mapId or conn.map
+          local destDef = type(destId) == "string" and maps[destId] or nil
       if destDef and not placed[destId] then
         placed[destId] = true
         local offset = conn.offset or 0
@@ -514,6 +501,8 @@ function World.computeNeighbors(maps, rootId, hops, reachW, reachH)
           end
         end
       end
+      end
+    end
     end
   end
   return out
@@ -8389,6 +8378,31 @@ function World:interactBody()
     interacted(self, fx, fy, "boulder", npc)
     return self:tryStrengthOW()
   end
+  -- mapamap's placed BERRY TREES: an object carrying berryItem hands it out
+  -- once per real-world day (the cart's berry trees regrow daily too) via
+  -- the same pickup script a hidden item uses.  There is no ROM script behind
+  -- a placed tree, so this arm sits beside the strength-boulder one.
+  if npc and npc.def and npc.def.berryItem then
+    self.talkNpc = npc
+    interacted(self, fx, fy, "berrytree", npc)
+    local save = self.game and self.game.save
+    if save then
+      save.mapamapBerries = save.mapamapBerries or {}
+      local berryId = (self.map.id or "?") .. "_obj_"
+        .. tostring(npc.def.index or 0)
+      local today = os.date("%Y%m%d")
+      if save.mapamapBerries[berryId] == today then
+        self:showText(Strings(
+          "The tree is empty.\nIt might have berries\ntomorrow."))
+        return true
+      end
+      save.mapamapBerries[berryId] = today
+    end
+    return self.vm:start(HiddenItems.ballPickupScript(
+      npc.def.berryItem, tonumber(npc.def.berryCount) or 1,
+      (npc.def.index or 0) + 1,
+      function(want, id2) return self:sfxIdNamed(want, id2) end))
+  end
   -- OBJECTTYPE_ITEMBALL: no scriptKey to start -- the object's pointer is the
   -- raw (item, quantity) pair, read by the extractor into `itemball`.  Every
   -- plain Poke Ball on the floor comes through here; without this arm the
@@ -8494,6 +8508,50 @@ local ROOF_TILESETS = {
   TILESET_JOHTO_MODERN = true,
 }
 
+-- The number of 8px tile slots an atlas holds -- native, or the grown count
+-- once mods/mapamap materialized the tileset's graft rows.  Used in the atlas
+-- cache key so a grown atlas never serves a stale native bake.
+local function atlasSlotCount(tileset, tilesPerRow)
+  local img = tileset.graftImageData or tileset.graftImage
+  if not img then return nil end
+  local w, h
+  if img.getDimensions then
+    w, h = img:getDimensions()
+  else
+    w, h = img.w, img.h
+  end
+  return (w and h and w >= 8 and h >= 8) and (w / 8) * (h / 8) or nil
+end
+
+-- Paste the 9-tile roof sheet over atlas tiles $0a-$12.  `atlasData` is the
+-- base ImageData to paste onto -- the vanilla atlas, or the GROWN atlas when
+-- the tileset carries graft rows, so the roof lands on a full-size sheet
+-- (stamping onto a stale-dimension base would leave the appended rows without
+-- a roof pass at all).  The base is COPIED first: the grown data is shared by
+-- every map using the tileset, and a roof overlay must be that map's own
+-- texture rather than a mutation every roofed neighbor inherits.
+local function applyRoofOverlayData(atlasData, roofPath, tilesPerRow)
+  local w, h = atlasData:getDimensions()
+  local base = love.image.newImageData(w, h)
+  base:paste(atlasData, 0, 0, 0, 0, w, h)
+  local roofData = love.image.newImageData(Assets.resolve(roofPath))
+  for t = 0, 8 do
+    local destId = 0x0a + t
+    local dx = (destId % tilesPerRow) * 8
+    local dy = math.floor(destId / tilesPerRow) * 8
+    local sx = t * 8
+    for y = 0, 7 do
+      for x = 0, 7 do
+        local r, g, b, a = roofData:getPixel(sx + x, y)
+        base:setPixel(dx + x, dy + y, r, g, b, a)
+      end
+    end
+  end
+  local image = love.graphics.newImage(base)
+  image:setFilter("nearest", "nearest")
+  return image
+end
+
 function World:atlasFor(mapDef)
   local tileset = self.tilesets[mapDef.tileset]
   if not tileset then return nil end
@@ -8504,21 +8562,42 @@ function World:atlasFor(mapDef)
       and self.roofs.mapGroupRoofs[mapDef.group]
   end
   if roofName then cacheKey = cacheKey .. "|" .. roofName end
+  -- The atlas cache is keyed by tileset (+ roof); a GROWN atlas (graft rows)
+  -- is a different texture than the native one, so its slot count joins the
+  -- key -- materializing a graft mid-session must not hand bake paths a stale
+  -- native atlas (every grafted block id would read past its end).
+  local perRow = tileset.tilesPerRow or 16
+  local slots = atlasSlotCount(tileset, perRow)
+  if slots then cacheKey = cacheKey .. "|slots:" .. tostring(slots) end
   local cached = self.atlasCache[cacheKey]
   if cached then return cached, tileset end
 
-  local tilesPerRow = tileset.tilesPerRow or 16
   local atlas
-  local roofSpec = roofName and self.roofs.roofs and self.roofs.roofs[roofName]
-  if roofSpec and roofSpec.image then
-    local ok, img = pcall(applyRoofOverlay, tileset.image, roofSpec.image, tilesPerRow)
-    if ok then atlas = img end
-  end
-  if not atlas then
+  -- A grown atlas textures the appended rows the grafted blocks read; the
+  -- vanilla path is only a fallback when the pixels are unreachable (headless).
+  if tileset.graftImage then
+    atlas = tileset.graftImage
+  else
     local ok, img = pcall(Assets.image, tileset.image)
     if not ok then return nil, tileset end
     atlas = img
-    atlas:setFilter("nearest", "nearest")
+  end
+  atlas:setFilter("nearest", "nearest")
+  -- Roof overlay runs on the atlas TEXTURE it will be drawn from: grown data
+  -- when the tileset carries grafts, the raw assets otherwise.
+  local roofSpec = roofName and self.roofs.roofs and self.roofs.roofs[roofName]
+  if roofSpec and roofSpec.image and love.image and love.image.newImageData then
+    local grownData = tileset.graftImageData
+    local baseData = grownData
+    if not baseData and type(tileset.image) == "string" then
+      local ok, d = pcall(Assets.imageData, tileset.image)
+      if ok and d then baseData = d end
+    end
+    if baseData then
+      local ok, img = pcall(applyRoofOverlayData,
+        baseData, roofSpec.image, perRow)
+      if ok and img then atlas = img end
+    end
   end
   self.atlasCache[cacheKey] = atlas
   return atlas, tileset
@@ -8539,7 +8618,6 @@ end
 function World:bakeMapImage(map, daytime, flicker)
   local atlas, tileset = self:atlasFor(map.def)
   if not atlas or not tileset then return nil end
-  local blocks = tileset.blocks
   local tilesPerRow = tileset.tilesPerRow or 16
   local pw, ph = map.width * 32, map.height * 32
   -- Map pixels, not the screen's: a DPI-scaled canvas bakes them non-square
@@ -8581,21 +8659,28 @@ function World:bakeMapImage(map, daytime, flicker)
     clearColor = { c[1] / 255, c[2] / 255, c[3] / 255 }
   end
 
+  local function blockTiles(blockId)
+    -- LoadMetatiles reads block id 0 as the map header's border block, not as
+    -- tileset block 0 (see src/world/gen2/BorderFill.lua), so a hole in the
+    -- block list paints the same wall the margin does.  Block ids at/above the
+    -- tileset's native count are GRAFTED blocks (cross-tileset paint,
+    -- mods/mapamap): they resolve through the map def's graftBlocks list and
+    -- draw from the GROWN atlas that atlasFor handed back.
+    return Map.blockTiles(map.def, tileset, BorderFill.blockFor(blockId, map.borderBlock))
+  end
   local function drawTiles(slot)
     for by = 0, map.height - 1 do
       for bx = 0, map.width - 1 do
-        -- LoadMetatiles reads block id 0 as the map header's border block,
-        -- not as tileset block 0 (see src/world/gen2/BorderFill.lua), so a
-        -- hole in the block list paints the same wall the margin does.
-        local blockId = BorderFill.blockFor(
-          map.blocks[by * map.width + bx + 1], map.borderBlock)
-        local block = blocks and blocks[(blockId or 0) + 1]
+        local block = blockTiles(map.blocks[by * map.width + bx + 1])
         if block then
           for i = 0, 15 do
             local tile = block[i + 1] or 0
             -- tilePalettes is 1-based over the 96 sheet tiles; anything past
-            -- the sheet (window/text tiles) has no entry and takes slot 1.
-            local tileSlot = tilePalettes and tilePalettes[tile + 1] or 1
+            -- the sheet takes slot 1.  A grafted tile is past the sheet but
+            -- carries its SOURCE slot (Graft.applyBgSlots) so it colors with
+            -- the palette row it came from instead of the fallback.
+            local tileSlot = (tileset.graftBgSlots and tileset.graftBgSlots[tile])
+              or (tilePalettes and tilePalettes[tile + 1]) or 1
             if not slot or tileSlot == slot then
               local tx = bx * 32 + (i % 4) * 8
               local ty = by * 32 + math.floor(i / 4) * 8
@@ -8683,14 +8768,14 @@ end
 function World:animCellsFor(map, tileset)
   local wanted = self:animLayers(tileset)
   if not wanted then return nil end
-  local blocks = tileset.blocks
   local tilePalettes = tileset.tilePalettes
   local out = nil
   for by = 0, map.height - 1 do
     for bx = 0, map.width - 1 do
-      local blockId = BorderFill.blockFor(
-        map.blocks[by * map.width + bx + 1], map.borderBlock)
-      local block = blocks and blocks[(blockId or 0) + 1]
+      -- Same graft-aware resolution as the map bake: a grafted block's cells
+      -- animate exactly like a native block's when they hold an animated tile.
+      local block = Map.blockTiles(map.def, tileset,
+        BorderFill.blockFor(map.blocks[by * map.width + bx + 1], map.borderBlock))
       if block then
         for i = 0, 15 do
           local tile = block[i + 1] or 0
@@ -8702,7 +8787,8 @@ function World:animCellsFor(map, tileset)
               list = {
                 layer = layer,
                 tile = tile,
-                slot = tilePalettes and tilePalettes[tile + 1] or 1,
+                slot = (tileset.graftBgSlots and tileset.graftBgSlots[tile])
+                  or (tilePalettes and tilePalettes[tile + 1]) or 1,
                 cells = {},
               }
               out[tile] = list
@@ -8766,17 +8852,33 @@ end
 -- The tileset atlas with BG colour 0 keyed to alpha.  The grass tile is about
 -- two-fifths colour 0 and those pixels are the gaps the legs show through, so
 -- the redraw over a sprite needs the key -- same `r > 0.83` rule
--- src/render/SpriteRenderer.lua uses on OBJ sheets.
+-- src/render/SpriteRenderer.lua uses on OBJ sheets.  A grafted grass tile is
+-- sampled from the GROWN atlas (its appended rows), so the keyed copy is built
+-- from graftImageData when the tileset carries grafts -- keyed by slot count
+-- exactly like atlasFor so a materialize hands a fresh sheet.
 function World:grassAtlasFor(mapDef)
   local tileset = self.tilesets and self.tilesets[mapDef and mapDef.tileset]
-  if not (tileset and tileset.image) then return nil end
+  if not tileset then return nil end
+  local perRow = tileset.tilesPerRow or 16
+  local slots = atlasSlotCount(tileset, perRow)
+  local cacheKey = tileset.image
+  if slots then cacheKey = cacheKey .. "|slots:" .. tostring(slots) end
   self.grassAtlases = self.grassAtlases or {}
-  local cached = self.grassAtlases[tileset.image]
+  local cached = self.grassAtlases[cacheKey]
   if cached ~= nil then return cached or nil, tileset end
   local made = false
   if love.image and love.image.newImageData then
-    local ok, data = pcall(Assets.imageData, tileset.image)
-    if ok and data and data.mapPixel then
+    local source = tileset.graftImageData
+    if (source == nil) and type(tileset.image) == "string" then
+      local ok, d = pcall(Assets.imageData, tileset.image)
+      if ok then source = d end
+    end
+    if source and source.mapPixel then
+      -- Copy so the grown data shared by every map never loses its grass rows
+      -- to the keyed redraw.
+      local w, h = source:getDimensions()
+      local data = love.image.newImageData(w, h)
+      data:paste(source, 0, 0, 0, 0, w, h)
       data:mapPixel(function(_, _, r, g, b, a)
         if r > 0.83 then return r, g, b, 0 end
         return r, g, b, a
@@ -8788,7 +8890,7 @@ function World:grassAtlasFor(mapDef)
       end
     end
   end
-  self.grassAtlases[tileset.image] = made
+  self.grassAtlases[cacheKey] = made
   return made or nil, tileset
 end
 
@@ -8796,9 +8898,8 @@ end
 function World:bgTileAt(map, tileset, mx, my)
   local bx, by = math.floor(mx / 32), math.floor(my / 32)
   if bx < 0 or by < 0 or bx >= map.width or by >= map.height then return nil end
-  local blockId = BorderFill.blockFor(
-    map.blocks[by * map.width + bx + 1], map.borderBlock)
-  local block = tileset.blocks and tileset.blocks[(blockId or 0) + 1]
+  local block = Map.blockTiles(map.def, tileset,
+    BorderFill.blockFor(map.blocks[by * map.width + bx + 1], map.borderBlock))
   if not block then return nil end
   local i = math.floor((my % 32) / 8) * 4 + math.floor((mx % 32) / 8)
   return block[i + 1]
@@ -9805,7 +9906,25 @@ end
 -- the step running so the seam does not hitch.
 function World:tryConnection(dir)
   local connKey = DIR_CONN[dir]
-  local conn = self.map:connection(connKey)
+  local side = self.map:connection(connKey)
+  -- A side may hold several connections (editor-only extras); pick the one
+  -- whose seam sits under the player's position along the edge.
+  local conn = side
+  if type(side) == "table" and not (side.mapId or side.map) then
+    local isH = (connKey == "north" or connKey == "south")
+    local cell = isH and self.player.cellX or self.player.cellY
+    conn = nil
+    for _, c in ipairs(side) do
+      if c and (c.mapId or c.map) then
+        local destDef = self.maps[c.mapId or c.map]
+        local along = cell - (c.offset or 0) * 2
+        local dim = destDef
+          and (((isH and destDef.width) or destDef.height) * 2) or math.huge
+        if along >= 0 and along < dim then conn = c; break end
+      end
+    end
+    conn = conn or side[1]
+  end
   if not conn or not conn.mapId then return false end
   local dest = self.maps[conn.mapId]
   if not dest then return false end
