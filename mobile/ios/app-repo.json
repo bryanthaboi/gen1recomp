@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.54",
+          "date": "2026-09-03",
+          "size": 21600332,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.54/gen1recomp++-0.2.54-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2119 Prof. Oak's sprite disappears in battle transition before Pikachu\n- #2121 Rival missing dialogue after winning first fight\n- #2122 Old Man's position wrong after catching tutorial\n- #2123 Nurse broken in Yellow again\n- #2127 Pokeballs don't adapt to caught Pokemon's color in Yellow\n- #2130 (GSC) White screen during dialogues after battles\n- #2131 (GSC) Game unable to show the whole dialogue for overwriting the previous save\n- #2132 (GSC) Missing transparency sorrounding the arrow in some dialogues\n- #2134 (GSC) Some instances of incomplete message for sending out a pokémon\n- #2135 (GSC) Player sprite shouldn't be visible right before the Hall of Fame\n- #2136 (GSC) Missing animation for being kicked by the rival at the start of the game\n- #2137 (GSC) Uncentered text in the intro before Prof. Oak appears\n- #2138 (GSC) White screen while choosing the day of the week\n- #2139 (GSC) Dig in battles still causing issues\n- #2140 (GSC) Curse animation issues\n- #2142 (GSC) Missing double beep when switching pokémon\n- #2143 (GSC) Text speed is instant when changing boxes\n- #2144 shader applies to entire screen not just the inner square of gameboy fandom someone once called the \"eternal square of lustful visions\" (abraham lincoln)\n- #2145 add LOGIC CLOCK option so people can have their era accurate framerate-emulating-logic\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.2.53",
           "date": "2026-09-03",
           "size": 21595269,
