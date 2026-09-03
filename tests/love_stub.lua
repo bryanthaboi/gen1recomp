@@ -58,6 +58,9 @@ stub.graphics = {
   newCanvas = function(w, h)
     local canvas = setmetatable({ w = w, h = h, setFilter = noop, released = false }, Image)
     function canvas:release() self.released = true end
+    function canvas:newImageData()
+      return love.image.newImageData(self.w or 8, self.h or 8)
+    end
     return canvas
   end,
   newSpriteBatch = function(image, size)
@@ -352,7 +355,13 @@ function ImageData:getPixel() return 0, 0, 0, 1 end
 function ImageData:setPixel() end
 function ImageData:mapPixel() end
 function ImageData:paste() end
-function ImageData:encode() return { getString = function() return "" end } end
+function ImageData:encode(format, filename)
+  local bytes = "\137PNG\r\n\26\n"
+  if type(filename) == "string" and love.filesystem and love.filesystem.write then
+    love.filesystem.write(filename, bytes)
+  end
+  return { getString = function() return bytes end }
+end
 
 stub.image = {
   newImageData = function(a, b)

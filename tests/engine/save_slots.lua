@@ -300,6 +300,47 @@ do
     "saveFilename still resolves the flat name with no slot in use")
 end
 
+-- ---------------------------------------------- returnToLauncher slot refresh
+-- In-process EXIT GAME (Android/iOS) keeps the process-wide slotsChecked
+-- cache.  Without refreshSlotResolution, a flat SAVE written after the
+-- launcher already resolved "no slots" stays invisible until cold start.
+
+do
+  local files = fresh()
+  T.eq(#SaveData.listSlots("red"), 0, "session starts with no slots resolved")
+
+  local save = SaveData.newGame()
+  save.player.name = "EXIT"
+  T.check(SaveData.save(save), "in-game SAVE writes the flat legacy file")
+  T.check(files["save.lua"] ~= nil, "flat save.lua exists")
+
+  T.eq(#SaveData.listSlots("red"), 0,
+    "without a refresh the cached 'no slots' answer sticks")
+  T.eq(files["saves/red/slot1.lua"], nil, "and migration has not run yet")
+
+  SaveData.setCart("nuzlocke", "abc")
+  SaveData.refreshSlotResolution("red")
+  T.eq(SaveData.getCart(), "nuzlocke",
+    "refreshSlotResolution leaves the active cart alone")
+
+  local slots = SaveData.listSlots("red")
+  T.eq(#slots, 1, "after refresh, listSlots migrates the flat save")
+  T.eq(slots[1].id, "slot1", "into slot1")
+  T.eq(slots[1].name, "EXIT", "with the saved player name")
+  T.eq(files["save.lua"], nil, "and removes the flat legacy file")
+  T.check(files["saves/red/slot1.lua"] ~= nil, "as saves/red/slot1.lua")
+end
+
+do
+  local main = assert(io.open("main.lua")):read("*a")
+  local body = main:match("local function returnToLauncher%(opts%)(.-)\nend\n")
+  T.check(body ~= nil, "main.lua still has returnToLauncher")
+  T.check(body:find("refreshSlotResolution%(currentVersion%)", 1, false) ~= nil,
+    "EXIT GAME refreshes only the version just left")
+  T.check(body:find("resetSlotState", 1, true) == nil,
+    "and does not call resetSlotState (that would clear cart/seal state)")
+end
+
 love.filesystem = realFS
 
 T.finish("save_slots")

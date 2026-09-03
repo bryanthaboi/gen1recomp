@@ -1440,13 +1440,26 @@ function SaveData.deleteSlot(version, slotId)
   return deleteSlotIn(version, slotId)
 end
 
--- Test seam: drop the process-global slot cache (and the active cart) so a
--- suite can exercise migration/resolution against a freshly injected
--- filesystem.  Unused by the game, which resolves each scope exactly once per
--- boot.
-function SaveData.resetSlotState()
+-- Drop the process-global "have we resolved slots for this scope" cache so
+-- the next listSlots/saveNames re-reads disk (and can migrate a flat legacy
+-- SAVE into slot1).  Pass a version id or cart scope key to invalidate just
+-- that list; nil clears every scope (test seam / resetSlotState).
+-- Does not touch carts, seals, options.lua, or any other launcher setup.
+function SaveData.refreshSlotResolution(scope)
+  if scope ~= nil then
+    if type(scope) ~= "string" or scope == "" then return end
+    activeSlotCache[scope] = nil
+    slotsChecked[scope] = nil
+    return
+  end
   for k in pairs(activeSlotCache) do activeSlotCache[k] = nil end
   for k in pairs(slotsChecked) do slotsChecked[k] = nil end
+end
+
+-- Test seam: full process-global reset (slot resolution + cart + seal) so a
+-- suite can exercise migration against a freshly injected filesystem.
+function SaveData.resetSlotState()
+  SaveData.refreshSlotResolution()
   freshPlaythrough = nil
   activeCart, activeCartHash = nil, nil
   sealBroken = false

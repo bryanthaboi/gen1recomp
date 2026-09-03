@@ -76,7 +76,7 @@ function BattleTowerMenu.new(game, opts)
   -- `ld a, $1 / ld [wcd4f], a` (../pokecrystal/mobile/mobile_46.asm:1152-1153)
   self.cursor = 1
   self.phase = "pick"
-  self.message = PICK_TEXT
+  self.message = Strings(PICK_TEXT)
   return self
 end
 
@@ -116,17 +116,17 @@ function BattleTowerMenu:confirm()
   if not row then
     -- ../pokecrystal/mobile/mobile_46.asm:1291-1303 `.asm_118a3c`
     self.phase = "quit"
-    self.message = QUIT_TEXT
+    self.message = Strings(QUIT_TEXT)
     self.yes = true
     return
   end
   if BattleTower.levelCheck(self.party, row.group) then
-    return self:refuse(TOPS_TEXT)
+    return self:refuse(Strings(TOPS_TEXT))
   end
   local uber = BattleTower.ubersCheck(self.party, row.group)
   if uber then
     local name = (self.monName and self.monName(uber)) or uber
-    return self:refuse(string.format(UBER_TEXT, name))
+    return self:refuse(Strings(UBER_TEXT, name))
   end
   self:finish(row.group)
 end
@@ -147,7 +147,7 @@ function BattleTowerMenu:updatePick()
   elseif input:wasPressed("b") then
     self:playSfx("Sfx_ReadText2")
     self.phase = "quit"
-    self.message = QUIT_TEXT
+    self.message = Strings(QUIT_TEXT)
     self.yes = true
   end
 end
@@ -165,12 +165,12 @@ function BattleTowerMenu:updateQuit()
     self:playSfx("Sfx_ReadText2")
     if self.yes then return self:finish(nil) end
     self.phase = "pick"
-    self.message = PICK_TEXT
+    self.message = Strings(PICK_TEXT)
     self.cursor = 1
   elseif input:wasPressed("b") then
     self:playSfx("Sfx_ReadText2")
     self.phase = "pick"
-    self.message = PICK_TEXT
+    self.message = Strings(PICK_TEXT)
     self.cursor = 1
   end
 end
@@ -181,7 +181,7 @@ function BattleTowerMenu:update(_dt)
     self.wait = (self.wait or 0) - 1
     if self.wait > 0 then return end
     self.phase = "pick"
-    self.message = PICK_TEXT
+    self.message = Strings(PICK_TEXT)
     self.cursor = 1
     return
   end
@@ -198,15 +198,15 @@ function BattleTowerMenu:drawPanel()
   end
   if self.phase == "quit" then
     Chrome.box(YN_X, YN_Y, YN_W, YN_H)
-    Chrome.print(YES_LABEL, YN_TEXT_X, YES_Y)
-    Chrome.print(NO_LABEL, YN_TEXT_X, NO_Y)
+    Chrome.print(Strings(YES_LABEL), YN_TEXT_X, YES_Y)
+    Chrome.print(Strings(NO_LABEL), YN_TEXT_X, NO_Y)
     Chrome.cursor(YN_TEXT_X - 1, self.yes and YES_Y or NO_Y)
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
   Chrome.box(PICK_X, PICK_Y, PICK_W, PICK_H)
   local row = self.rows[self.cursor]
-  Chrome.print(row and BattleTowerMenu.levelLabel(row.group) or CANCEL_LABEL,
+  Chrome.print(row and BattleTowerMenu.levelLabel(row.group) or Strings(CANCEL_LABEL),
     ROW_X, ROW_Y)
   Chrome.print(UP_ARROW, ARROW_X, UP_Y)
   Chrome.print(DOWN_ARROW, ARROW_X, DOWN_Y)

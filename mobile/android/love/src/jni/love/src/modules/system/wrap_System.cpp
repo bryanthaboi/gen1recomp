@@ -119,6 +119,13 @@ int w_createFile(lua_State *L)
 	return 1;
 }
 
+int w_exportImage(lua_State *L)
+{
+	const char *path = luaL_checkstring(L, 1);
+	luax_pushboolean(L, instance()->exportImage(path));
+	return 1;
+}
+
 int w_syncHealthSteps(lua_State *L)
 {
 	luax_pushboolean(L, instance()->syncHealthSteps());
@@ -341,6 +348,7 @@ static const luaL_Reg functions[] =
 	{ "pickFile", w_pickFile },
 	{ "pickFileKinds", w_pickFileKinds },
 	{ "createFile", w_createFile },
+	{ "exportImage", w_exportImage },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
 	{ "installApk", w_installApk },

@@ -249,6 +249,32 @@ bool showCreateDocument(const char *suggestedName)
 	return result;
 }
 
+bool exportImageToGallery(const char *relativePath)
+{
+	if (relativePath == nullptr || relativePath[0] == '\0')
+		return false;
+
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	jmethodID method = env->GetStaticMethodID(activity, "exportImageToGallery",
+		"(Ljava/lang/String;Ljava/lang/String;)Z");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return false;
+	}
+	jstring jpath = env->NewStringUTF(relativePath);
+	jstring jsavedir = env->NewStringUTF(bridgeSaveDirectory());
+	jboolean result = env->CallStaticBooleanMethod(activity, method, jpath, jsavedir);
+	env->DeleteLocalRef(jsavedir);
+	env->DeleteLocalRef(jpath);
+
+	env->DeleteLocalRef(activity);
+	return result;
+}
+
 bool syncHealthSteps()
 {
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();

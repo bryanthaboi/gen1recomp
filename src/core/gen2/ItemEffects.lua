@@ -16,6 +16,7 @@
 
 local Happiness = require("src.core.gen2.Happiness")
 local Mon = require("src.battle.gen2.Mon")
+local Strings = require("src.core.Strings")
 
 local ItemEffects = {}
 
@@ -72,26 +73,33 @@ local BITTER = {
 }
 
 -- _ItemWontHaveEffectText / _ItemCantUseOnEggText (data/text/common_3.asm).
-ItemEffects.TEXT_NO_EFFECT = "It won't have any\neffect."
-ItemEffects.TEXT_CANT_USE_ON_EGG = "That can't be used\non an EGG."
+-- Strings.source keeps these in the catalog harvest even though they are
+-- declared here and only formatted/looked up at each use site below (#186,
+-- #245): every use site was a bare table read or a direct :format() call
+-- until now, which meant a mod's translation catalog never had a chance to
+-- apply -- every language showed this same English text.
+ItemEffects.TEXT_NO_EFFECT = Strings.source("It won't have any\neffect.")
+ItemEffects.TEXT_CANT_USE_ON_EGG = Strings.source("That can't be used\non an EGG.")
 -- _ItemCantUseOnMonText (data/text/common_3.asm:1265).
-ItemEffects.TEXT_CANT_USE_ON_MON = "That can't be used\non this #MON."
+ItemEffects.TEXT_CANT_USE_ON_MON = Strings.source("That can't be used\non this #MON.")
 -- _PPRestoredText (data/text/common_3.asm).
-ItemEffects.TEXT_PP_RESTORED = "PP was restored."
+ItemEffects.TEXT_PP_RESTORED = Strings.source("PP was restored.")
 -- _PPIsMaxedOutText / _PPsIncreasedText (data/text/common_3.asm).
-ItemEffects.TEXT_PP_MAXED = "%s's PP\nis maxed out."
-ItemEffects.TEXT_PP_INCREASED = "%s's PP\nincreased."
+ItemEffects.TEXT_PP_MAXED = Strings.source("%s's PP\nis maxed out.")
+ItemEffects.TEXT_PP_INCREASED = Strings.source("%s's PP\nincreased.")
 
 -- PrintPartyMenuActionText's .MenuActionTexts (engine/pokemon/party_menu.asm),
 -- keyed by the class GetItemHealingAction resolves.  Each is the two rows the
--- cart prints: the nickname line, then the fixed line.
+-- cart prints: the nickname line, then the fixed line.  Strings.source for
+-- the same reason as the constants above: healStatus() below formats these
+-- directly at each use, so without it a mod's catalog never sees them.
 local STATUS_TEXT = {
-  psn = "%s's\ncured of poison.",
-  par = "%s's\nrid of paralysis.",
-  brn = "%s's\nburn was healed.",
-  frz = "%s\nwas defrosted.",
-  slp = "%s\nwoke up.",
-  all = "%s's\nhealth returned.",
+  psn = Strings.source("%s's\ncured of poison."),
+  par = Strings.source("%s's\nrid of paralysis."),
+  brn = Strings.source("%s's\nburn was healed."),
+  frz = Strings.source("%s\nwas defrosted."),
+  slp = Strings.source("%s\nwoke up."),
+  all = Strings.source("%s's\nhealth returned."),
 }
 
 -- The port's party records spell status several ways (the battle writes the
@@ -145,7 +153,7 @@ local function restoreHp(itemId, mon)
   local amount = ItemEffects.HEAL_HP[itemId]
   local maxHp = maxHpOf(mon)
   if fainted(mon) or (mon.hp or 0) >= maxHp then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   local healed = math.min(maxHp, (mon.hp or 0) + amount)
   local gained = healed - (mon.hp or 0)
@@ -157,7 +165,7 @@ local function restoreHp(itemId, mon)
     used = true,
     -- data/text/common_1.asm:30
     -- home/text.asm:772
-    text = ("%s\nrecovered %dHP!"):format(monName(mon), gained),
+    text = Strings("%s\nrecovered %dHP!", monName(mon), gained),
   }
 end
 
@@ -181,23 +189,23 @@ end
 -- confusion arm reads wPlayerSubStatus3, which does not exist out of battle.
 local function healStatus(itemId, mon, class, data)
   if fainted(mon) then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   local have = ItemEffects.healClassOf(mon.status, data)
   if not have or (class ~= "all" and have ~= class) then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   clearStatus(mon)
   bitterHappiness(itemId, mon)
   local shape = STATUS_TEXT[class == "all" and "all" or have]
-  return { used = true, text = shape:format(monName(mon)) }
+  return { used = true, text = Strings(shape, monName(mon)) }
 end
 
 -- RevivePokemon: only a fainted mon accepts; REVIVE stands it up at half max
 -- HP (ReviveHalfHP's `srl d / rr e`), the other two at full.
 local function revive(itemId, mon)
   if not fainted(mon) then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   local maxHp = maxHpOf(mon)
   mon.hp = (ItemEffects.REVIVE[itemId] == "half")
@@ -206,7 +214,7 @@ local function revive(itemId, mon)
   bitterHappiness(itemId, mon)
   return {
     used = true,
-    text = ("%s\nis revitalized."):format(monName(mon)),
+    text = Strings("%s\nis revitalized.", monName(mon)),
   }
 end
 
@@ -218,7 +226,7 @@ end
 -- exactly the new level, for the caller to offer.
 local function rareCandy(mon, data)
   if (mon.level or 0) >= Mon.MAX_LEVEL then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   local def = data and data.pokemon and data.pokemon[mon.species]
   -- through Mon.growthFor, so a growth_rates record a mod registered is the
@@ -245,14 +253,18 @@ local function rareCandy(mon, data)
     learned = learned,
     -- data/text/common_1.asm:86
     sfx = "Sfx_DexFanfare5079",
-    text = ("%s grew to\nlevel %d!"):format(monName(mon), newLevel),
+    text = Strings("%s grew to\nlevel %d!", monName(mon), newLevel),
   }
 end
 
--- engine/items/item_effects.asm:1216 StatStrings.
+-- engine/items/item_effects.asm:1216 StatStrings. Strings.source per entry,
+-- the same pattern as the identical stat-name tables in MoveEffects.lua/
+-- TrainerAI.lua/gen2/Effects.lua/ContestMenu.lua/SummaryMenu.lua, so a mod's
+-- catalog harvest finds these independently of any other stat-name call site.
 local VITAMIN_LABEL = {
-  hp = "HEALTH", attack = "ATTACK", defense = "DEFENSE",
-  speed = "SPEED", special = "SPECIAL",
+  hp = Strings.source("HEALTH"), attack = Strings.source("ATTACK"),
+  defense = Strings.source("DEFENSE"), speed = Strings.source("SPEED"),
+  special = Strings.source("SPECIAL"),
 }
 
 -- engine/items/item_effects.asm:1149 VitaminEffect.
@@ -261,7 +273,7 @@ local function vitamin(itemId, mon, data)
   mon.statExp = mon.statExp or Mon.newStatExp()
   local cur = mon.statExp[stat] or 0
   if cur >= 25600 then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   mon.statExp[stat] = math.min(Mon.MAX_STAT_EXP, cur + 2560)
   local def = data and data.pokemon and data.pokemon[mon.species]
@@ -272,7 +284,7 @@ local function vitamin(itemId, mon, data)
   Happiness.change(mon, "USEDITEM")
   return {
     used = true,
-    text = ("%s's\n%s rose."):format(monName(mon), VITAMIN_LABEL[stat]),
+    text = Strings("%s's\n%s rose.", monName(mon), Strings(VITAMIN_LABEL[stat])),
   }
 end
 
@@ -392,15 +404,15 @@ end
 -- The one-call families (everything but PP, which needs a move pick first).
 -- Returns { used, text, learned?, level? }.
 function ItemEffects.useOnMon(itemId, mon, data)
-  if not mon then return { used = false, text = ItemEffects.TEXT_NO_EFFECT } end
+  if not mon then return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) } end
   if mon.isEgg then
-    return { used = false, text = ItemEffects.TEXT_CANT_USE_ON_EGG }
+    return { used = false, text = Strings(ItemEffects.TEXT_CANT_USE_ON_EGG) }
   end
   local record = ItemEffects.recordFor(itemId, data)
   -- The PP family has its own entry point; reaching it here is the same
   -- "nothing happens" the unported items get.
   if not record or not record.use or record.action == "pp" then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   return record.use({ item = itemId, mon = mon, data = data })
 end
@@ -423,13 +435,13 @@ end
 -- the ELIXER family (Elixer_RestorePPofAllMoves) walks every slot and counts
 -- -- one restored move is enough for the item to be spent.
 function ItemEffects.usePpItem(itemId, mon, slot, data)
-  if not mon then return { used = false, text = ItemEffects.TEXT_NO_EFFECT } end
+  if not mon then return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) } end
   if mon.isEgg then
-    return { used = false, text = ItemEffects.TEXT_CANT_USE_ON_EGG }
+    return { used = false, text = Strings(ItemEffects.TEXT_CANT_USE_ON_EGG) }
   end
   local record = ItemEffects.recordFor(itemId, data)
   if not record or not record.use or record.action ~= "pp" then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   return record.use({ item = itemId, mon = mon, data = data, slot = slot })
 end
@@ -478,9 +490,9 @@ for itemId, row in pairs(ItemEffects.RESTORE_PP) do
       any = restoreMove(moves[ctx.slot], row.amount)
     end
     if not any then
-      return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+      return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
     end
-    return { used = true, text = ItemEffects.TEXT_PP_RESTORED }
+    return { used = true, text = Strings(ItemEffects.TEXT_PP_RESTORED) }
   end)
 end
 
@@ -488,24 +500,24 @@ end
 record("PP_UP", "pp", function(ctx)
   local move = (ctx.mon.moves or {})[ctx.slot]
   if type(move) ~= "table" or not move.id then
-    return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+    return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   local row = ((ctx.data and ctx.data.moves) or {})[move.id]
   local name = (row and row.name) or move.id
   -- constants/pokemon_data_constants.asm:216 PP_UP_MASK.
   if move.id == "SKETCH" or (move.ppUps or 0) >= 3 then
-    return { used = false, text = ItemEffects.TEXT_PP_MAXED:format(name) }
+    return { used = false, text = Strings(ItemEffects.TEXT_PP_MAXED, name) }
   end
   local base = (row and row.pp) or move.maxPp
   if not base then
-    return { used = false, text = ItemEffects.TEXT_PP_MAXED:format(name) }
+    return { used = false, text = Strings(ItemEffects.TEXT_PP_MAXED, name) }
   end
   -- engine/items/item_effects.asm:2736 ComputeMaxPP.
   local bonus = math.min(math.floor(base / 5), 7)
   move.ppUps = (move.ppUps or 0) + 1
   move.maxPp = base + move.ppUps * bonus
   move.pp = (move.pp or 0) + bonus
-  return { used = true, text = ItemEffects.TEXT_PP_INCREASED:format(name) }
+  return { used = true, text = Strings(ItemEffects.TEXT_PP_INCREASED, name) }
 end)
 
 for itemId in pairs(ItemEffects.VITAMIN) do
@@ -522,12 +534,12 @@ for _, itemId in ipairs({ "SUN_STONE", "MOON_STONE", "FIRE_STONE",
                           "THUNDERSTONE", "WATER_STONE", "LEAF_STONE" }) do
   record(itemId, "stone", function(ctx)
     if ctx.mon.item == "EVERSTONE" then
-      return { used = false, text = ItemEffects.TEXT_NO_EFFECT }
+      return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
     end
     local Evolution = require("src.core.gen2.Evolution")
     local entry = Evolution.checkMon(ctx.data, ctx.mon,
       { force = true, item = ctx.item })
-    if not entry then return { used = false, text = ItemEffects.TEXT_NO_EFFECT } end
+    if not entry then return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) } end
     return { used = true, evolution = entry }
   end)
 end

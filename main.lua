@@ -428,10 +428,18 @@ local function returnToLauncher(opts)
   -- Leave the cart's scope behind: the launcher's own settings and slots are
   -- the base game's, not the cart's.  The speed ladder is cart state too, so
   -- a 1x/2x cart must not pin the launcher or the next game.
-  require("src.core.SaveData").setCart(nil)
+  local SaveData = require("src.core.SaveData")
+  local cartId = SaveData.getCart()
+  SaveData.setCart(nil)
   require("src.core.GameSpeed").setAllowed(nil)
 
   SessionLifecycle.endMountedSession(currentVersion)
+
+  -- Slot lists are resolved once per process.  Invalidate only the game
+  -- (and cart, if any) we just left so the new launcher can migrate a flat
+  -- in-game SAVE into a visible slot -- nothing else is rewritten.
+  SaveData.refreshSlotResolution(currentVersion)
+  if cartId then SaveData.refreshSlotResolution("cart_" .. cartId) end
 
   applySavedOrientation()
 
@@ -444,6 +452,10 @@ local function returnToLauncher(opts)
   end
 
   Importer = makeLauncher({ initialTab = opts and opts.tab or nil })
+  -- Finger that confirmed EXIT GAME is often still down over Import Save.
+  if Importer.ignoreReturningPointer then
+    Importer:ignoreReturningPointer()
+  end
 end
 
 local pendingLauncherReturn

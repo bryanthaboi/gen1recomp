@@ -237,8 +237,8 @@ local function chooseEntry(item, dexList)
           DexEntryMenu.render(game, def, ok and sprite or nil, false)
         end)
       game.stack:push(TextBox.new(game, saved
-        and Strings("Printed %s's\ndata!\fSaved as\n%s\vin the save\nfolder.",
-                    def.name, saved)
+        and (Strings("Printed %s's\ndata!\f", def.name)
+             .. Printer.savedWhereText(saved))
         or Strings("Printer error!\n%s", tostring(err))))
     end }
   end

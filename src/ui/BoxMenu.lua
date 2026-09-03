@@ -321,8 +321,8 @@ local function printBox(game)
       love.graphics.setColor(1, 1, 1, 1)
     end)
   game.stack:push(TextBox.new(game, saved
-    and Strings("Printed BOX %d!\fSaved as\n%s\vin the save\nfolder.",
-                game.save.currentBox or 1, saved)
+    and (Strings("Printed BOX %d!\f", game.save.currentBox or 1)
+         .. Printer.savedWhereText(saved))
     or Strings("Printer error!\n%s", tostring(err))))
 end
 

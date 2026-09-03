@@ -75,6 +75,13 @@ bool showFilePicker(const char *destFilename = nullptr);
 bool showCreateDocument(const char *suggestedName = nullptr);
 
 /**
+ * Copy a PNG/JPEG under the LOVE save identity (relative path, e.g.
+ * prints/diploma_….png) into Pictures/Gen1Recomp and media-scan the
+ * in-app copy so USB / file managers can see it (#2103).
+ **/
+bool exportImageToGallery(const char *relativePath = nullptr);
+
+/**
  * Pokéwalker step bridge: asks GameActivity to read the hardware step
  * counter and stage steps_pending.json in the save identity dir (see
  * GameActivity.syncHealthSteps). Returns whether a sync could start.

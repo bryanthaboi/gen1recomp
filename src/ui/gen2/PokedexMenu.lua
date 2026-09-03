@@ -825,8 +825,7 @@ function PokedexMenu:printEntry()
   -- Word for word what Yellow's PRNT says (src/ui/PokedexMenu.lua), so the two
   -- generations share one catalog entry and a translation covers both.
   local text = saved
-    and Strings("Printed %s's\ndata!\fSaved as\n%s\vin the save\nfolder.",
-                name, tostring(saved))
+    and (Strings("Printed %s's\ndata!\f", name) .. Printer.savedWhereText(saved))
     or Strings("Printer error!\n%s", tostring(err))
   if self.game and self.game.stack then
     self.game.stack:push(TextBox.new(self.game, text))

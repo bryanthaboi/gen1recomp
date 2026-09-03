@@ -228,6 +228,16 @@ bool System::createFile(const char *suggestedName) const
 #endif
 }
 
+bool System::exportImage(const char *relativePath) const
+{
+#ifdef LOVE_ANDROID
+	return love::android::exportImageToGallery(relativePath);
+#else
+	LOVE_UNUSED(relativePath);
+	return false;
+#endif
+}
+
 bool System::syncHealthSteps() const
 {
 #ifdef LOVE_ANDROID

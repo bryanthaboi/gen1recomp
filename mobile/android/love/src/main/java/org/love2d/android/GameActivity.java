@@ -46,6 +46,8 @@ import android.app.AlarmManager;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.app.UiModeManager;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.ClipData;
 import android.content.DialogInterface;
@@ -64,12 +66,15 @@ import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Log;
 import android.util.DisplayMetrics;
@@ -1328,7 +1333,13 @@ public class GameActivity extends SDLActivity {
         self.pendingCreateSuggestedName = suggestedName;
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/octet-stream");
+        // PNG exports (diploma / dex prints) should open as images so the
+        // picker offers Photos / Gallery, not only generic "Documents".
+        String mime = "application/octet-stream";
+        String lower = suggestedName.toLowerCase(Locale.US);
+        if (lower.endsWith(".png")) mime = "image/png";
+        else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) mime = "image/jpeg";
+        intent.setType(mime);
         intent.putExtra(Intent.EXTRA_TITLE, suggestedName);
         try {
             self.startActivityForResult(intent, FILE_CREATE_REQUEST_CODE);
@@ -1336,6 +1347,116 @@ public class GameActivity extends SDLActivity {
         } catch (Exception e) {
             Log.d("GameActivity", "could not open create-document picker: " + e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Copy a PNG/JPEG already written under the LOVE save identity (e.g.
+     * prints/diploma_….png) into the public Pictures/Gen1Recomp album and
+     * media-scan the in-app copy so USB / file managers can see it (#2103).
+     * No picker: diploma / dex print should not interrupt the game.
+     */
+    @Keep
+    public static boolean exportImageToGallery(String relativePath, String saveDir) {
+        GameActivity self = (GameActivity) mSingleton;
+        if (self == null) return false;
+        if (relativePath == null || relativePath.length() == 0) return false;
+        if (relativePath.indexOf("..") >= 0) {
+            Log.d("GameActivity", "refusing unsafe export path: " + relativePath);
+            return false;
+        }
+        self.pendingPickSaveDir = (saveDir != null) ? saveDir : "";
+        File source = new File(self.saveIdentityDir(), relativePath);
+        if (!source.isFile()) {
+            Log.d("GameActivity", "exportImage missing at " + source);
+            return false;
+        }
+        String name = source.getName();
+        String lower = name.toLowerCase(Locale.US);
+        String mime = "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) mime = "image/jpeg";
+        else if (!lower.endsWith(".png")) {
+            Log.d("GameActivity", "exportImage refusing non-image: " + name);
+            return false;
+        }
+
+        // Make the app-private prints/ copy visible over MTP / file managers.
+        MediaScannerConnection.scanFile(self,
+            new String[]{ source.getAbsolutePath() },
+            new String[]{ mime },
+            null);
+
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                ContentResolver resolver = self.getContentResolver();
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                    Environment.DIRECTORY_PICTURES + "/Gen1Recomp");
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                Uri collection = MediaStore.Images.Media
+                    .getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                Uri uri = resolver.insert(collection, values);
+                if (uri == null) {
+                    Log.d("GameActivity", "MediaStore insert returned null");
+                    return false;
+                }
+                OutputStream out = resolver.openOutputStream(uri);
+                if (out == null) {
+                    resolver.delete(uri, null, null);
+                    return false;
+                }
+                try {
+                    copyStream(new FileInputStream(source), out);
+                } finally {
+                    out.close();
+                }
+                values.clear();
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                resolver.update(uri, values, null, null);
+                return true;
+            }
+
+            // Pre-Q: write into public Pictures and ask the scanner to index it.
+            File pictures = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES);
+            File album = new File(pictures, "Gen1Recomp");
+            if (!album.exists() && !album.mkdirs()) {
+                Log.d("GameActivity", "could not create " + album);
+                return false;
+            }
+            File dest = new File(album, name);
+            copyFileToFile(source, dest);
+            MediaScannerConnection.scanFile(self,
+                new String[]{ dest.getAbsolutePath() },
+                new String[]{ mime },
+                null);
+            return true;
+        } catch (Exception e) {
+            Log.d("GameActivity", "exportImage failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static void copyStream(InputStream in, OutputStream out) throws IOException {
+        try {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) >= 0) {
+                if (n > 0) out.write(buf, 0, n);
+            }
+        } finally {
+            try { in.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    private static void copyFileToFile(File source, File dest) throws IOException {
+        FileOutputStream out = new FileOutputStream(dest);
+        try {
+            copyStream(new FileInputStream(source), out);
+        } finally {
+            out.close();
         }
     }
 

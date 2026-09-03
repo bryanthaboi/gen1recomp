@@ -396,7 +396,7 @@ function PartyMenu:finishSoftboiled()
   local before, after =
     FieldMoves.softboiledTransfer(user, target, self.softboiledCost or 0)
   if not before then
-    self:showItemResult(slot, { text = ItemEffects.TEXT_CANT_USE_ON_MON })
+    self:showItemResult(slot, { text = Strings(ItemEffects.TEXT_CANT_USE_ON_MON) })
     return
   end
   self.softboiledFrom, self.softboiledCost = nil, nil

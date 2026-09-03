@@ -79,7 +79,7 @@ return {
               end)
               -- the PRNT stand-in always reports where the PNG landed
               game.stack:push(TextBox.new(game, saved
-                and Strings("There you go!\fSaved as\n%s\vin the save\nfolder.", saved)
+                and (Strings("There you go!\f") .. Printer.savedWhereText(saved))
                 or Strings("Printer error!\n%s", tostring(err)), done))
             end))
           end))

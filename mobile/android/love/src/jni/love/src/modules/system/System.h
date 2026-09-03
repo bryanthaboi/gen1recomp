@@ -130,6 +130,12 @@ public:
 	virtual bool createFile(const char *suggestedName = nullptr) const;
 
 	/**
+	 * Copy a PNG/JPEG from the LOVE save identity into Pictures/Gen1Recomp
+	 * and media-scan the in-app file (#2103). Android only; false elsewhere.
+	 **/
+	virtual bool exportImage(const char *relativePath = nullptr) const;
+
+	/**
 	 * Pokéwalker: stage pending real-world steps (steps_pending.json in the
 	 * save dir) from the platform step source. Android-only; false elsewhere.
 	 */

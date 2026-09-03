@@ -3176,10 +3176,48 @@ function RomImporter:prepareOverlayHandoff()
   end
 end
 
+-- EXIT GAME / Close editor leave the confirming finger still down, often
+-- sitting where Import Save is drawn.  The launcher must not treat that
+-- leftover hold as a new press once a short suppress window expires
+-- (#2079): update() would then arm on the still-down pointer and the
+-- later lift would open the system file picker.  Swallow this gesture
+-- (held mouse, already-down touches) and debounce clicks briefly.
+local RETURN_POINTER_HOLD = 0.5
+
+function RomImporter:ignoreReturningPointer()
+  local now = 0
+  if love.timer and love.timer.getTime then
+    now = love.timer.getTime()
+  end
+  self._suppressClickUntil = now + RETURN_POINTER_HOLD
+  self._suppressMouseUntil = now + RETURN_POINTER_HOLD
+  self._clickPt = nil
+  self._mouseAt = nil
+  self._touchAt = nil
+  -- Already-down is not a rising edge.  Always mark the poll as held so
+  -- the first frame after remount cannot mint a press from a leftover.
+  self._prevMouseDown = true
+  local ignore = {}
+  if love.touch and love.touch.getTouches then
+    local ok, ids = pcall(love.touch.getTouches)
+    if ok and type(ids) == "table" then
+      for i = 1, #ids do
+        ignore[tostring(ids[i])] = true
+      end
+    end
+  end
+  self._ignoreTouch = ignore
+  if package.loaded["src.ui.kit.Kit"] then
+    local Kit = require("src.ui.kit.Kit")
+    if Kit.dragEnd then pcall(Kit.dragEnd) end
+  end
+end
+
 -- After an overlay closes: re-arm the pad cursor when a stick is already
 -- connected so NX / handhelds are not stranded without a pointer until the
 -- next stick bump (same class of bug as opening Touch Controls).
 function RomImporter:resumeAfterOverlay()
+  self:ignoreReturningPointer()
   if not self.launcher then return end
   if not (love.joystick and love.joystick.getJoystickCount) then return end
   if love.joystick.getJoystickCount() <= 0 then return end

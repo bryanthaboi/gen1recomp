@@ -249,6 +249,10 @@ end
 
 function LauncherView.touchpressed(imp, id, x, y)
   if not imp._flex then return end
+  -- Leftover finger from EXIT GAME / Close editor: do not start a tap.
+  if imp._ignoreTouch and imp._ignoreTouch[tostring(id)] then
+    return
+  end
   imp._touchAt = imp._touchAt or {}
   imp._touchAt[tostring(id)] = {
     x = x, y = y, started = love.timer.getTime(),
@@ -284,8 +288,21 @@ end
 -- A tap dispatches on RELEASE (not press) so a drag can disqualify it.
 function LauncherView.touchreleased(imp, id, x, y)
   if not imp._flex then return end
-  local start = imp._touchAt and imp._touchAt[tostring(id)]
-  if imp._touchAt then imp._touchAt[tostring(id)] = nil end
+  local tid = tostring(id)
+  if imp._ignoreTouch and imp._ignoreTouch[tid] then
+    imp._ignoreTouch[tid] = nil
+    if imp._touchAt then imp._touchAt[tid] = nil end
+    imp._suppressMouseUntil = love.timer.getTime() + ACT_DEDUP
+    return
+  end
+  local start = imp._touchAt and imp._touchAt[tid]
+  if imp._touchAt then imp._touchAt[tid] = nil end
+  -- A release with no matching press is leftover from the previous host
+  -- (game / save editor), not a launcher tap (#2079).
+  if not start then
+    imp._suppressMouseUntil = love.timer.getTime() + ACT_DEDUP
+    return
+  end
   if start and (start.dragged or start.longPressed) then
     -- Suppress the mouse click SDL will synthesize for this same gesture.
     imp._suppressClickUntil = love.timer.getTime() + ACT_DEDUP

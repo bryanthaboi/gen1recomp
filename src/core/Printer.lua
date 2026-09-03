@@ -4,17 +4,45 @@
 -- under prints/ in the save directory instead, and the caller shows a
 -- dialog with where it landed.  Scaled up 4x so the "print" is legible
 -- on a modern screen.
+--
+-- On Android the app-private prints/ folder is often invisible over USB /
+-- file managers even when the write succeeded (#2103).  After the PNG is
+-- written, love.system.exportImage copies it into Pictures/Gen1Recomp and
+-- media-scans the in-app copy so both Gallery and the save folder work.
 
 local Logger = require("src.core.Logger")
 
 local Printer = {}
 
 local SCALE = 4
+local ANDROID_ALBUM = "Pictures/Gen1Recomp"
+
+-- After a successful Android gallery export, the public album path shown
+-- in the "Printed!" dialog.  Nil on desktop / when the bridge is absent.
+Printer.lastAlbumPath = nil
+
+local function exportToAndroidGallery(relPath)
+  Printer.lastAlbumPath = nil
+  if not (love.system and love.system.getOS
+      and love.system.getOS() == "Android") then
+    return false
+  end
+  local exportImage = love.system.exportImage
+  if type(exportImage) ~= "function" then return false end
+  local ok, exported = pcall(exportImage, relPath)
+  if ok and exported then
+    Printer.lastAlbumPath = ANDROID_ALBUM
+    return true
+  end
+  return false
+end
 
 -- Render drawFn (which draws a w x h GB-pixel image at 0,0) into
 -- prints/<name>_<stamp>.png.  Returns the save-dir-relative path, or nil
 -- and an error string (headless / no canvas support degrades gracefully).
+-- On Android a successful gallery copy also sets Printer.lastAlbumPath.
 function Printer.save(name, w, h, drawFn)
+  Printer.lastAlbumPath = nil
   if not (love.graphics and love.graphics.newCanvas) then
     return nil, "no graphics"
   end
@@ -38,7 +66,18 @@ function Printer.save(name, w, h, drawFn)
   if not encOk then return nil, tostring(err) end
   Logger.info("printed %s -> %s/%s",
     name, love.filesystem.getSaveDirectory(), path)
+  exportToAndroidGallery(path)
   return path
+end
+
+-- Second page of the "Printed!" dialog: public album on Android when the
+-- gallery bridge worked, otherwise the save-dir-relative PNG path.
+function Printer.savedWhereText(path)
+  local Strings = require("src.core.Strings")
+  if Printer.lastAlbumPath then
+    return Strings("Saved to\n%s.", Printer.lastAlbumPath)
+  end
+  return Strings("Saved as\n%s\vin the save\nfolder.", path)
 end
 
 return Printer

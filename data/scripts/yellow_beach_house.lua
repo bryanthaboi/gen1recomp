@@ -119,8 +119,7 @@ return {
                   Font.draw(Strings("%d pts", hi), 96, 40)
                 end)
               push(game, saved
-                and Strings("Printed!\fSaved as\n%s\vin the save\nfolder.",
-                            saved)
+                and (Strings("Printed!\f") .. Printer.savedWhereText(saved))
                 or Strings("Printer error!\n%s", tostring(err)), done)
             end))
           end)
