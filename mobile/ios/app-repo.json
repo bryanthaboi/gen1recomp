@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.53",
+          "date": "2026-09-03",
+          "size": 21595269,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.53/gen1recomp++-0.2.53-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2038 Skins screen is extremely slow on handheld devices (options file re-read and decoded every frame)\n- #2080 (GSC) Issues with grass transparency\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- flowers"
+        },
+        {
           "version": "0.2.52",
           "date": "2026-09-02",
           "size": 21587460,
