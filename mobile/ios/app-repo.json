@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.55",
+          "date": "2026-09-03",
+          "size": 21602159,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.55/gen1recomp++-0.2.55-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2079 issues with touch controls.\n- #2103 saving out images doesnt work on android\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @thibautbus"
+        },
+        {
           "version": "0.2.54",
           "date": "2026-09-03",
           "size": 21600332,
