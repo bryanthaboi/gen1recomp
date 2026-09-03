@@ -297,11 +297,11 @@ end
 -- wipe for the battle kind. Some tests provide only a partial overworld
 -- double, so retain a logged fallback even though it skips the transition
 -- and battle music.
-function Commands.pushBattle(ctx, battle)
+function Commands.pushBattle(ctx, battle, keepNpc)
   if ctx.overworld and ctx.overworld.pushBattle then
-    -- engine/battle/battle_transitions.asm:28
-    ctx.overworld:pushBattle(battle,
-                             battle.kind == "trainer" and ctx.npc or nil)
+    -- home/text_script.asm:8
+    -- engine/battle/battle_transitions.asm:14
+    ctx.overworld:pushBattle(battle, keepNpc or ctx.npc or nil)
   else
     Logger.warn("pushBattle: no overworld:pushBattle, skipping the transition wipe")
     ctx.game.stack:push(battle)

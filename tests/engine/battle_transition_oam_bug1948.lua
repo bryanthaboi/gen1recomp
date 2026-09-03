@@ -37,8 +37,20 @@ do
   Commands.pushBattle(ctx, { kind = "trainer" })
   eq(got, trainer, "a scripted trainer battle keeps the talked-to NPC")
   got = "unset"
+  -- home/text_script.asm:8
   Commands.pushBattle(ctx, { kind = "wild" })
-  eq(got, nil, "a wild battle keeps the player only")
+  eq(got, trainer, "a scripted wild battle keeps the talked-to NPC (#2119)")
+  local oak = { id = "oak" }
+  local bare = { overworld = ctx.overworld }
+  got = "unset"
+  Commands.pushBattle(bare, { kind = "wild" }, oak)
+  eq(got, oak, "an explicit keep wins when the ctx has no npc")
+  got = "unset"
+  Commands.pushBattle(ctx, { kind = "wild" }, oak)
+  eq(got, oak, "an explicit keep wins over ctx.npc")
+  got = "unset"
+  Commands.pushBattle(bare, { kind = "wild" })
+  eq(got, nil, "no npc and no keep: the player only")
 end
 
 do

@@ -359,6 +359,86 @@ check("the copy reordered", copy[1].nickname, "TOTODILE")
 check("but the save's own party did not", save.party[1].nickname, "CYNDAQUIL")
 check("and the mail stayed put", Mail.get(save, 2) ~= nil, true)
 
+-- engine/pokemon/switchpartymons.asm:13
+do
+  local Sound = require("src.core.Sound")
+  local realPlay, realResolve, realBusy, realFrames =
+    Sound.play, Sound.resolve, Sound.sfxBusy, Sound.waitFramesFor
+  local rang = {}
+  Sound.play = function(_, name) rang[#rang + 1] = name end
+  Sound.resolve = function(_, name) return name end
+  Sound.sfxBusy = function() return false end
+  Sound.waitFramesFor = function() return 0 end
+
+  local function switchGame(withCue)
+    local s = newSave()
+    local g = newGame(s)
+    g.data = setmetatable({
+      audio = withCue and { sfx = { Sfx_SwitchPokemon = {} } } or { sfx = {} },
+    }, { __index = DATA })
+    return g, s
+  end
+
+  local g, s = switchGame(true)
+  local p = PartyMenu.new(g, { party = s.party, submenu = true, save = s })
+  p:beginSwitch(1)
+  p.index = 2
+  g.input:press("a")
+  p:update(0)
+  check("the switch swapped the slots", s.party[1].nickname, "TOTODILE")
+  check("and beeps once in that frame", #rang, 1)
+  p:update(0)
+  check("the second beep follows on the next tick", #rang, 2)
+  check("both are the switch cue",
+    rang[1] == "Sfx_SwitchPokemon" and rang[2] == "Sfx_SwitchPokemon", true)
+  p:update(0)
+  check("and there is no third", #rang, 2)
+
+  -- engine/pokemon/switchpartymons.asm:10
+  rang = {}
+  p:beginSwitch(1)
+  p.index = 1
+  g.input:press("a")
+  p:update(0)
+  p:update(0)
+  check("the same slot rings nothing", #rang, 0)
+
+  rang = {}
+  g, s = switchGame(false)
+  p = PartyMenu.new(g, { party = s.party, submenu = true, save = s })
+  p:beginSwitch(1)
+  p.index = 2
+  g.input:press("a")
+  p:update(0)
+  p:update(0)
+  check("no cue in the cache rings nothing", #rang, 0)
+  check("and nothing is pending", p.repeatSfx, nil)
+
+  -- home/audio.asm:225 WaitSFX
+  Sound.sfxBusy = function() return true end
+  Sound.waitFramesFor = function() return 3 end
+  rang = {}
+  g, s = switchGame(true)
+  p = PartyMenu.new(g, { party = s.party, submenu = true, save = s })
+  p:beginSwitch(1)
+  p.index = 2
+  g.input:press("a")
+  p:update(0)
+  check("the place beeps", #rang, 1)
+  local held = p.index
+  g.input:press("down")
+  p:update(0)
+  check("the pending beep holds the list", p.index, held)
+  check("with no second beep yet", #rang, 1)
+  p:update(0)
+  check("still waiting", #rang, 1)
+  p:update(0)
+  check("the budget releases the second beep", #rang, 2)
+
+  Sound.play, Sound.resolve, Sound.sfxBusy, Sound.waitFramesFor =
+    realPlay, realResolve, realBusy, realFrames
+end
+
 -- ------------------------------------------------------------- egg summary
 
 local at = SummaryMenu.at

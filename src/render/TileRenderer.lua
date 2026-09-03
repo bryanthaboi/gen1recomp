@@ -94,7 +94,7 @@ local SPINNER_STRIP = "assets/generated/tilesets/spinners.png"
 
 local animFrame = 0
 local animAccum = 0
-local ANIM_STEP = 1 / 60 -- Game Boy logic rate (matches FixedStep.STEP)
+local FixedStep = require("src.core.FixedStep")
 
 -- Advance water/flower/spinner tile animation.  Called from the overworld
 -- draw path so it keeps running under dialogs (overworld update does not),
@@ -111,9 +111,10 @@ function TileRenderer.tick(dt)
     return
   end
   -- Cap catch-up so a long stall cannot jump many water/flower periods
+  local step = FixedStep.STEP
   animAccum = math.min(animAccum + dt, 0.25)
-  while animAccum >= ANIM_STEP do
-    animAccum = animAccum - ANIM_STEP
+  while animAccum >= step do
+    animAccum = animAccum - step
     animFrame = animFrame + 1
   end
 end

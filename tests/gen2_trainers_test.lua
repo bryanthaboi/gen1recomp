@@ -161,6 +161,9 @@ local vm = Vm.new(scripts, texts, events, {
 vm.trainerObject = record
 check(vm:start(SEEN_SCRIPT), "an inline command list runs")
 for _ = 1, 60 do vm:update() end
+check(battled and vm:running() and #shown == 1,
+  "reloadmapafterbattle parks the script for the map setup")
+vm:update()
 check(not vm:running(), "the trainer script finished")
 eq(emoted, -2, "the bubble goes over LAST_TALKED")
 check(approached, "the trainer walked up")
@@ -169,6 +172,40 @@ eq(battled.name, "JOEY", "the battle is against the struct's trainer")
 eq(shown[1], "Wait! Let's battle!", "TRAINERTEXT_SEEN is the struct's seen text")
 eq(shown[2], "Train harder.", "the after-battle script ran")
 check(events:get(BEAT_FLAG), "SET_FLAG marked the trainer beaten")
+
+-- engine/overworld/scripting.asm:1209
+do
+  local reloaded, opened = {}, {}
+  local rvm = Vm.new(scripts, texts, events, {
+    showText = function(body, onDone) opened[#opened + 1] = body onDone() end,
+    reloadMap = function(setup) reloaded[#reloaded + 1] = setup end,
+    startBattle = function(_trainer, _wild, onDone) onDone("win") end,
+  })
+  check(rvm:start({
+    { op = "startbattle" },
+    { op = "reloadmapafterbattle" },
+    { op = "opentext" },
+    { op = "writetext", text = "t:after" },
+    { op = "closetext" },
+    { op = "end" },
+  }), "battle-then-text script runs")
+  eq(#reloaded, 1, "reloadmapafterbattle ran the reload hook")
+  eq(reloaded[1], true, "as a map setup")
+  eq(#opened, 0, "and parked the script before the text")
+  check(rvm:running(), "the script is still live")
+  rvm:update()
+  eq(#opened, 1, "the text opens on the next VM tick")
+  check(not rvm:running(), "and the script runs out")
+
+  reloaded, opened = {}, {}
+  rvm:start({
+    { op = "refreshmap" },
+    { op = "writetext", text = "t:after" },
+    { op = "end" },
+  })
+  eq(reloaded[1], false, "refreshmap runs no setup script")
+  eq(#opened, 1, "and does not park")
+end
 
 -- A beaten trainer takes the CHECK_FLAG branch straight to its after script.
 local TALK_SCRIPT = {

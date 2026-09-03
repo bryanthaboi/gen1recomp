@@ -116,10 +116,16 @@ do
 end
 
 
+local function printedPrompt(menu)
+  menu.typer = nil
+  menu.savePage = #menu:savePages()
+end
+
 do
   local menu, game = openPc()
   menu.picking = true
   menu:beginChangeBox(2)
+  printedPrompt(menu)
   menu.saveChoice = 2
   game.input:press("a")
   menu:update(0)
@@ -130,6 +136,7 @@ do
   local menu, game = openPc()
   menu.picking = true
   menu:beginChangeBox(2)
+  printedPrompt(menu)
   game.input:press("b")
   menu:update(0)
   eq(last(), "Sfx_ReadText2", "and on B")

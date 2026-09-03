@@ -322,6 +322,7 @@ function SaveData.defaultOptions()
     screenPos = "center",
     -- hard render frame-rate cap; render-only pacing (issue #88, FrameCap.lua)
     fpsCap = 60,
+    logicClock = "60",
     -- graphics performance tier: auto | high | balanced | low.  "auto"
     -- picks a default from the device (ARM handhelds/phones drop the heavy
     -- extras); scales TILT / survey ZOOM / FPS but never game logic.  See

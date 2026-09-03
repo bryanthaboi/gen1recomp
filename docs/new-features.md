@@ -8,6 +8,7 @@ Features intentionally added beyond the original Pokémon Red, Blue, and Yellow 
 * **Optional GBC screen effects**, including pixel grids, shadows, glare, and transparency
 * **Performance presets** and configurable FPS limits
 * **V-SYNC row and a DISPLAY frame cap**, for panels whose refresh is not a multiple of 60Hz
+* **LOGIC CLOCK option** (60HZ or the cart's 59.73HZ vblank rate) on every game's options screen
 * **Peer-to-peer LAN link play** for trades and battles between Red, Blue, and Yellow
 * **Online lobby** in the launcher for battles, spectating and tournaments
 * **Persistent custom options** stored separately from game saves

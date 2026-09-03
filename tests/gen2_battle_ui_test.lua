@@ -1754,7 +1754,7 @@ end
 do
   local screen, lead = learnScreen()
   screen:push({ kind = "send", side = "enemy", mon = { hp = 1 }, hp = 1,
-    text = "JOE sent out PIDGEY!" })
+    text = Battle.sentOutText("JOE", "PIDGEY") })
   check(runToPhase(screen, "ask-forget"), "the pages reach the question")
   local tap = tapper(screen)
   tap("a")                      -- read the question
@@ -1777,6 +1777,72 @@ do
   check(poofed, "the forgot line follows the pause with no press between")
   check(screen.message and screen.message:find("forgot", 1, true) ~= nil,
     "and its line prints ahead of the send-out that was already queued")
+end
+
+-- ../pokecrystal/data/text/battle.asm:240-246
+-- ../pokecrystal/engine/battle/core.asm:3146-3147
+-- ../pokecrystal/home/text.asm:502-526
+do
+  local function typed(screen)
+    for _ = 1, 400 do
+      if not screen:syncTyper() then break end
+      Input:step()
+      screen:update(1 / 60)
+    end
+    return table.concat(screen:messageLines(), "|")
+  end
+  local function sendOutScreen(trainer, monName)
+    local screen, battle = newScreen()
+    check(runToMenu(screen), "reached the menu")
+    battle:takeEvents()
+    local mon = Mon.new(DATA, "PIDGEY", 5, { dvs = perfect })
+    mon.nickname = monName
+    screen.phase = "resolving"
+    screen.showEnemyHud = false
+    screen:push({ kind = "send", side = "enemy", mon = mon, hp = mon.hp,
+      text = Battle.sentOutText(trainer, monName) })
+    screen:advanceQueue()
+    return screen
+  end
+  local function sendStarted(screen)
+    return screen.afterSendOut ~= nil or screen.showEnemyHud == true
+  end
+
+  local screen = sendOutScreen("CHAMPION LANCE", "DRAGONITE")
+  eq(typed(screen), "CHAMPION LANCE|sent out",
+    "the trainer and 'sent out' are the first page, no name on it")
+  check(not sendStarted(screen) and screen.pendingSendOut ~= nil,
+    "the ball stays shut while the first page waits for A")
+  local tap = tapper(screen)
+  tap("a")
+  Input:step()
+  screen:update(1 / 60)
+  local lines = screen:messageLines()
+  eq(lines[1], "sent out", "cont scrolls 'sent out' up already printed")
+  check(lines[2] ~= "DRAGONITE!", "and only the name types")
+  eq(typed(screen), "sent out|DRAGONITE!",
+    "a nine-letter name lands whole on the scrolled row")
+  check(sendStarted(screen) and screen.pendingSendOut == nil,
+    "and ANIM_SEND_OUT_MON starts with the name page")
+
+  local short = sendOutScreen("CHAMPION LANCE", "PIDGEY")
+  eq(typed(short), "CHAMPION LANCE|sent out",
+    "a short name still gets the cart's unconditional third row")
+  tapper(short)("a")
+  eq(typed(short), "sent out|PIDGEY!", "and lands on the scrolled page")
+
+  local long = newScreen()
+  check(runToMenu(long), "reached the menu")
+  long.battle:takeEvents()
+  long.phase = "resolving"
+  long:push({ kind = "message",
+    text = "SOMELONGNAME gained 12345 EXP. Points!" })
+  long:advanceQueue()
+  eq(typed(long), "SOMELONGNAME|gained 12345 EXP.",
+    "an overlong line shows its first two rows")
+  tapper(long)("a")
+  eq(typed(long), "gained 12345 EXP.|Points!",
+    "and the third row scrolls in instead of being cut")
 end
 
 -- ---- MoveSelectionScreen's two boxes (#1478) ------------------------------

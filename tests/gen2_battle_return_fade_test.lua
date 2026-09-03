@@ -51,14 +51,37 @@ eq(armed.mapSetup.phase, "out",
   "a chain already running is left alone")
 eq(armed.fade, nil, "and its sheet untouched")
 
-local ticks = 0
-while w.mapSetup and ticks < 32 do
+local ticks, white = 0, 0
+while w.mapSetup and ticks < 64 do
+  if w.fadeLevel == 1 then white = white + 1 end
   World.updateMapSetup(w)
   ticks = ticks + 1
 end
-eq(ticks, 8, "the fade in runs four steps of two frames")
+eq(World.MAP_LOAD_WHITE_FRAMES, 4, "the LCD-off map load is held as four white frames")
+eq(white, World.MAP_LOAD_WHITE_FRAMES + World.FADE_STEP_FRAMES,
+  "white holds for the load plus FadeInFromWhite's first row")
+eq(ticks, 8 + World.MAP_LOAD_WHITE_FRAMES,
+  "the fade in runs four steps of two frames after the hold")
 eq(w.mapSetup, nil, "then the chain ends")
 eq(w.fade, nil, "with nothing left over the world")
 check(not World.busy(w), "and control back")
+
+-- data/maps/setup_scripts.asm:102-125
+local door = { mapSetup = { phase = "out", step = 0, wait = 2,
+  load = function() return true end } }
+local levels, whiteRun = {}, 0
+ticks = 0
+while door.mapSetup and ticks < 64 do
+  World.updateMapSetup(door)
+  ticks = ticks + 1
+  levels[#levels + 1] = door.fadeLevel or 0
+  if door.mapSetup and door.fadeLevel == 1 then whiteRun = whiteRun + 1 end
+end
+eq(whiteRun, World.FADE_STEP_FRAMES + World.MAP_LOAD_WHITE_FRAMES
+  + World.FADE_STEP_FRAMES, "a door holds white: last out row, load, first in row")
+eq(ticks, 8 + (2 * World.FADE_STEP_FRAMES + World.MAP_LOAD_WHITE_FRAMES)
+  + 3 * World.FADE_STEP_FRAMES, "out ramp, hold, in ramp")
+eq(levels[World.FADE_STEP_FRAMES], 0.25, "the out ramp opens on the identity row")
+eq(levels[#levels], 0, "and the in ramp closes on nothing")
 
 S.finish()

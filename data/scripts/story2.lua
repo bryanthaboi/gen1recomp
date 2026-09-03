@@ -290,7 +290,8 @@ M.PALLET_TOWN = {
               afterPikaBattle()
             end
             -- Use the standard wild-battle entry transition.
-            Commands.pushBattle(ctx, battle)
+            -- scripts/PalletTown.asm:117
+            Commands.pushBattle(ctx, battle, oak)
           end)
         end))
     end

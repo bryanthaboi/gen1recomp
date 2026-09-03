@@ -870,9 +870,6 @@ function Renderer:endFrame(zones, worldZones)
   local Ux, Uy = R.Ux, R.Uy
   local uvpw, uvph, uox, uoy = R.uvpw, R.uvph, R.uox, R.uoy
   local Up = R.Up
-  -- Physical-pixel numerators for ShaderFX's per-frame rect; derived from
-  -- the unit rects frameRects already lifted so both agree.
-  local uoxPx, uoyPx = uox * dpiX, uoy * dpiY
   local ShaderFX = require("src.render.ShaderFX")
   -- Forced mono/Classic modes still need a whole-screen zone when a state
   -- exposes no SGB packets (raw DMG canvas), so sendColors can remap.
@@ -1033,16 +1030,12 @@ function Renderer:endFrame(zones, worldZones)
     return Renderer.clipToView(R, x, y, w, h)
   end
 
-  -- Real per-frame ShaderFX game rect + source content size, in PHYSICAL
-  -- framebuffer pixels -- what ShaderFX.render below actually draws through
-  -- the chain, instead of it reconstructing a fixed 160x144-at-base-Sp
-  -- approximation of its own. Defaults to this frame's real UI rect, which
-  -- is already correct whenever neither branch below overrides it
-  -- (title/menu/credits, no world active) -- uiFill is already folded into
-  -- Up above, so that case needs no extra handling here.
-  local fxRectPxX, fxRectPxY, fxRectPxW, fxRectPxH, fxScale =
-    uoxPx, uoyPx, uiw * Up, uih * Up, Up
-  local fxSrcW, fxSrcH = uiw, uih
+  -- ShaderFX shades the whole window at the UI's fixed GB-pixel scale, so
+  -- menus and text boxes keep the same LCD/grid geometry at any survey zoom.
+  -- A zoomed live world instead gets its own pass at the zoom scale, with
+  -- the UI shaded separately on a transparent layer and masked over it.
+  local fxScale = Up
+  local fxWorldScale = nil
 
   if self.worldOverride then
     -- A render pipeline already produced the whole world -- terrain,
@@ -1051,13 +1044,6 @@ function Renderer:endFrame(zones, worldZones)
     -- skipped entirely (nothing drew into it).  The UI blit below still
     -- runs, so dialogs, menus and the HUD sit on top as usual.
     love.graphics.setColor(1, 1, 1, 1)
-    -- worldOverride is already a window-resolution image drawn 1:1 at the
-    -- origin -- ShaderFX's real rect degenerates to the whole image, no
-    -- crop needed (source size == rect size).
-    fxRectPxX, fxRectPxY = 0, 0
-    fxRectPxW, fxRectPxH = self.worldOverride:getPixelWidth(), self.worldOverride:getPixelHeight()
-    fxScale = 1
-    fxSrcW, fxSrcH = fxRectPxW, fxRectPxH
     love.graphics.setScissor(vux, vuy, vuw, vuh)
     local loveMajor = love.getVersion()
     if love.system and love.system.getOS and love.system.getOS() == "iOS" and loveMajor >= 12 then
@@ -1082,17 +1068,7 @@ function Renderer:endFrame(zones, worldZones)
     local woxPx = vx + math.floor((pw - wvw * sp) / 2)
     local woyPx = vy + math.floor((ph - wvh * sp) / 2) - R.lift
     local wox, woy = woxPx / dpiX, woyPx / dpiY
-    -- The real on-screen world rect at the CURRENT survey zoom -- can be
-    -- larger (zoomed out, more map revealed) or smaller than the UI's own
-    -- default rect above. ShaderFX.render below now shades this real rect
-    -- against this real wvw x wvh source, not a fixed 160x144 box, so a
-    -- grid/LCD-style effect's own math lines up with true on-screen pixels
-    -- at any zoom level. Covers both the flat blit below and the
-    -- Tilt-projected blit -- both share this wox/woy/sp/wvw/wvh.
-    fxRectPxX, fxRectPxY = woxPx, woyPx
-    fxRectPxW, fxRectPxH = wvw * sp, wvh * sp
-    fxScale = sp
-    fxSrcW, fxSrcH = wvw, wvh
+    if present and ShaderFX.active() and sp ~= Up then fxWorldScale = sp end
     -- Tilt mode projects the ground world pass through the perspective mesh
     -- (SGB zones baked in beforehand -- see drawTiltedWorld -- so no zone
     -- scissoring here).  drawTiltedWorld returns false when tilt is off or
@@ -1203,6 +1179,18 @@ function Renderer:endFrame(zones, worldZones)
     love.graphics.setColor(PaletteFX.paperShade(ok and Game and Game.data))
     love.graphics.rectangle("fill", uox, vuy, uvpw, vuh)
     love.graphics.setColor(1, 1, 1, 1)
+  end
+
+  local uiLayer = nil
+  if fxWorldScale then
+    if not self.uiLayerCanvas or self.uiLayerCanvas:getWidth() ~= ww
+       or self.uiLayerCanvas:getHeight() ~= wh then
+      self.uiLayerCanvas = love.graphics.newCanvas(ww, wh)
+      self.uiLayerCanvas:setFilter("linear", "linear")
+    end
+    uiLayer = self.uiLayerCanvas
+    love.graphics.setCanvas(uiLayer)
+    love.graphics.clear(0, 0, 0, 0)
   end
 
   -- UI: anchored regions against their screen edges, the rest in the classic
@@ -1337,18 +1325,19 @@ function Renderer:endFrame(zones, worldZones)
     if not outputHandled then
       if cut then love.graphics.setScissor(vux, vuy, vuw, vuh) end
       if ShaderFX.active() then
-        -- The ShaderFX feature replaced GBCFX.lua's fixed level ladder
-        -- with a preset picker (GBCFX.lua itself removed). fxRectPx*/fxScale/fxSrc*
-        -- are this frame's REAL game rect + source size, set above by
-        -- whichever branch actually ran (worldOverride, worldActive at the
-        -- current survey zoom, or the UI-rect default for no-world/uiFill
-        -- states) -- not a fixed 160x144-at-base-Sp reconstruction, so the
-        -- chain sees true on-screen pixel geometry at any zoom/Faithful
-        -- Ratio state.
+        -- Shades the whole window, letterbox included, not just the game rect.
+        local fxPxW, fxPxH = ww * dpiX, wh * dpiY
+        local worldScale = fxWorldScale or fxScale
         ShaderFX.render(composed,
-          { x = fxRectPxX, y = fxRectPxY, w = fxRectPxW, h = fxRectPxH, scale = fxScale },
-          { w = fxSrcW, h = fxSrcH },
+          { x = 0, y = 0, w = fxPxW, h = fxPxH, scale = worldScale },
+          { w = fxPxW / worldScale, h = fxPxH / worldScale },
           dpiX, dpiY)
+        if uiLayer then
+          ShaderFX.render(uiLayer,
+            { x = 0, y = 0, w = fxPxW, h = fxPxH, scale = fxScale },
+            { w = fxPxW / fxScale, h = fxPxH / fxScale },
+            dpiX, dpiY, { layer = "ui", mask = true })
+        end
       else
         -- the present canvas only existed for the post-process, so put the
         -- result on the screen at the same 1:1 unit mapping it was built at
@@ -1356,6 +1345,9 @@ function Renderer:endFrame(zones, worldZones)
         love.graphics.draw(composed, 0, 0)
       end
       if cut then love.graphics.setScissor() end
+    elseif uiLayer then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(uiLayer, 0, 0)
     end
   end
   self.worldActive = false

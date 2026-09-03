@@ -850,7 +850,8 @@ do
     if event.kind == "send" then sentOut = event.text end
   end
   check("EnemyWithdrewText comes first", withdrew, "JOEY withdrew GEODUDE!")
-  check("then the send-out line", sentOut, "JOEY sent out PIDGEY!")
+  -- ../pokecrystal/data/text/battle.asm:240-246
+  check("then the send-out line", sentOut, "JOEY\nsent out\vPIDGEY!")
 
   -- A refused RUN costs nothing.  .cant_run_from_trainer leaves
   -- wBattlePlayerAction at BATTLEPLAYERACTION_USEMOVE, so BattleMenu_Run's

@@ -640,10 +640,19 @@ function TextBox:draw()
     and (self.game.save.generation == 2 or self.game.save.version == "gold")
   local Chrome = gold and Chrome2 or nil
   local drawGlyph, finishGlyph = Font.drawCode, nil
+  -- pokegold home/joypad.asm:430
+  local arrowOn = self.blink % 60 < 30
+  if gold then arrowOn = self.blink % 32 < 16 end
+  local arrowX = (self.boxTx + self.boxTw - 2) * 8
+  local arrowY = (self.boxTy + self.boxTh - 1) * 8 - (gold and 0 or 4)
   if Chrome then
     local base = paper and { paper, paper, paper, { 0, 0, 0 } }
       or Chrome.DEFAULT_BOX_PALETTE
     Chrome.paletteBox(self.boxTx, self.boxTy, self.boxTw, self.boxTh, base)
+    if arrowOn and self:arrowVisible() then
+      -- ../pokecrystal/home/text.asm:630
+      Chrome.paletteFill(arrowX, arrowY, 8, 8, base)
+    end
     local _, dg, fg = Chrome.paletteGlyphs(base)
     drawGlyph, finishGlyph = dg, fg
   else
@@ -697,16 +706,11 @@ function TextBox:draw()
       pen = pen + Font.advanceOf(code)
     end
   end
-  -- pokegold home/joypad.asm:430
-  local arrowOn = self.blink % 60 < 30
-  if gold then arrowOn = self.blink % 32 < 16 end
   if self:arrowVisible() and arrowOn then
     -- page-advance cursor: glyph $EE by default, the blinking down arrow
     -- the original prints via `ld a, "▼"` (home/text.asm)
     -- pokegold home/text.asm:549
-    drawGlyph(Theme.moreArrow or 0xEE,
-              (self.boxTx + self.boxTw - 2) * 8,
-              (self.boxTy + self.boxTh - 1) * 8 - (gold and 0 or 4))
+    drawGlyph(Theme.moreArrow or 0xEE, arrowX, arrowY)
   end
   if finishGlyph then finishGlyph() end
   love.graphics.setColor(1, 1, 1, 1)

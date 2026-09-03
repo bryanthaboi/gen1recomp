@@ -359,6 +359,26 @@ function NPC:scriptStep(dir)
   return true
 end
 
+-- engine/overworld/movement.asm:741
+function NPC:scriptJump(dir)
+  if self.moving then return false end
+  self.stepDir = dir or self.facing
+  if not self.fixedFacing and not self.sliding then
+    self.facing = self.stepDir
+  end
+  local d = Map.DELTA[self.stepDir]
+  if not d then
+    self.stepDir = nil
+    return false
+  end
+  self.targetX, self.targetY = self.cellX + d[1] * 2, self.cellY + d[2] * 2
+  self.moving, self.jumping = true, true
+  self.inGrass, self.grassShake = false, nil
+  self.progress = 0
+  self.frozen = true
+  return true
+end
+
 -- StepFunction_TeleportFrom / _TeleportTo (engine/overworld/map_objects.asm).
 -- `from` is sixteen frames of OBJECT_ACTION_SPIN on the spot and then sixteen
 -- more spinning while OBJECT_JUMP_HEIGHT walks OBJECT_SPRITE_Y_OFFSET up a
@@ -575,7 +595,7 @@ function NPC:update(map, entities)
   if self.moving then
     -- NormalStep's begin-of-step grass work (engine/overworld/movement.asm:657-674);
     -- UpdateTallGrassFlags only RE-tests while IN_GRASS is set (map_objects.asm:226).
-    if self.progress == 0 and map then
+    if self.progress == 0 and map and not self.jumping then
       local grass = NPC.grassAt(map, self.targetX, self.targetY)
       if self.inGrass then self.inGrass = grass end
       self.grassShake = grass or nil
@@ -585,17 +605,26 @@ function NPC:update(map, entities)
     -- a two-cell move over one step (src/world/gen2/Player.lua:150 does the
     -- same), and `stepFrames` is what lets it keep pace with a bike.
     local frames = self.stepFrames or STEP_FRAMES
+    -- engine/overworld/map_objects.asm:1129
+    if self.jumping then frames = STEP_FRAMES * 2 end
     local moved = math.floor(self.progress * 16 / frames)
     local dx = (self.targetX or self.cellX) - self.cellX
     local dy = (self.targetY or self.cellY) - self.cellY
     self.px = self.cellX * 16 + dx * moved
     self.py = self.cellY * 16 + dy * moved
+    if self.jumping then
+      self.spriteYOffset = Movement.jumpYOffset(self.progress, frames)
+    end
     if self.progress >= frames then
       self.cellX, self.cellY = self.targetX, self.targetY
       self.targetX, self.targetY = nil, nil
       self.px, self.py = self.cellX * 16, self.cellY * 16
       self.moving = false
       self.stepDir = nil
+      if self.jumping then
+        self.jumping = nil
+        self.spriteYOffset = 0
+      end
       self.stepFlip = not self.stepFlip
       -- CopyCoordsTileToLastCoordsTile -> SetTallGrassFlags at the step's end
       -- (map_objects.asm:196-208, :247).

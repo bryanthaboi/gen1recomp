@@ -67,8 +67,9 @@ local MORN_HOUR, DAY_HOUR, NITE_HOUR = 4, 10, 18
 local DAYS = Clock.DAY_NAMES
 InitClock.DAYS = DAYS
 
-function InitClock:wantsFillScale() return true end
-function InitClock:drawsWidescreen() return true end
+-- ../pokecrystal/engine/rtc/timeset.asm:385
+function InitClock:wantsFillScale() return self.mode ~= "day" end
+function InitClock:drawsWidescreen() return self.mode ~= "day" end
 
 -- PrintHour (engine/rtc/timeset.asm:672) is GetTimeOfDayString + PlaceString,
 -- then AdjustHourForAMorPM as a left-aligned two-digit number.  So the cart
@@ -123,6 +124,8 @@ function InitClock.new(game, opts)
   local self = setmetatable({}, InitClock)
   self.game = game
   self.mode = opts.mode == "day" and "day" or "clock"
+  -- ../pokecrystal/engine/rtc/timeset.asm:385
+  self.isOpaque = self.mode ~= "day"
   self.save = opts.save or (game and game.save)
   self.onDone = opts.onDone
   self.autoConfirm = opts.autoConfirm or false
@@ -144,11 +147,24 @@ end
 
 -- The current question, split into its pages.
 function InitClock:pages()
+  local question = self:question()
+  if self.pagesText == question and self.pagesCache then
+    return self.pagesCache
+  end
   local out = {}
-  for page in (self:question() .. "\f"):gmatch("(.-)\f") do
-    if page ~= "" then out[#out + 1] = page end
+  for page in (question .. "\f"):gmatch("(.-)\f") do
+    if page ~= "" then
+      local lines = {}
+      for line in (page .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
+      -- ../pokecrystal/home/text.asm:502
+      out[#out + 1] = table.concat({ lines[1], lines[2] }, "\n")
+      for i = 3, #lines do
+        out[#out + 1] = table.concat({ lines[i - 1], lines[i] }, "\n")
+      end
+    end
   end
   if #out == 0 then out[1] = "" end
+  self.pagesText, self.pagesCache = question, out
   return out
 end
 
@@ -329,7 +345,8 @@ local function arrow(tx, ty, up)
 end
 
 function InitClock:drawPanel()
-  Chrome.clear()
+  -- ../pokecrystal/engine/rtc/timeset.asm:22
+  if self.mode ~= "day" then Chrome.clear() end
   local value = self:display()
   if value then
     local bx, by, bw, bh, arrowX, tx, ty = self:pickerBox()
@@ -343,12 +360,14 @@ function InitClock:drawPanel()
   -- The question (and the confirmations) share the bottom textbox every other
   -- Gold prompt uses.
   Chrome.textbox(0, 12, 18, 4)
-  Chrome.printWrapped(self:pageText(), 1, 14, 18, 3)
+  -- ../pokecrystal/home/text.asm:473
+  Chrome.printWrapped(self:pageText(), 1, 14, 18, 2, 2)
   if self:confirming() then
-    Chrome.box(14, 6, 6, 5)
-    Chrome.print(Strings("YES"), 16, 7)
-    Chrome.print(Strings("NO"), 16, 9)
-    Chrome.cursor(15, self.yesNo == 1 and 7 or 9)
+    -- ../pokecrystal/home/menu.asm:418
+    Chrome.box(14, 7, 6, 5)
+    Chrome.print(Strings("YES"), 16, 8)
+    Chrome.print(Strings("NO"), 16, 10)
+    Chrome.cursor(15, self.yesNo == 1 and 8 or 10)
   end
 end
 

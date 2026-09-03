@@ -2,6 +2,7 @@
 -- Draws via shared SpriteRenderer (same 16x96 facing layout as Gen 1).
 
 local Map = require("src.world.gen2.Map")
+local Movement = require("src.script.gen2.Movement")
 local Runtime = require("src.mods.Runtime")
 local SpriteRenderer = require("src.render.SpriteRenderer")
 
@@ -16,12 +17,6 @@ local TURN_FRAMES = 4
 -- cadence below deliberately does NOT scale with it: animClock keeps counting
 -- at the walking rate, which is what stops a bike step flickering the legs.
 Player.STEP_FRAMES = STEP_FRAMES
-
--- engine/overworld/map_objects.asm:1815
-local JUMP_Y = {
-  -4, -6, -8, -10, -11, -12, -12, -12,
-  -11, -10, -9, -8, -6, -4, 0, 0,
-}
 
 -- FacingFish*'s loose rod OAM, offset from the sprite's top-left, and which
 -- 8x8 of the sheet's rod row it draws (data/sprites/facings.asm:122-152).
@@ -149,13 +144,29 @@ function Player:scriptStep(dir)
   -- A scripted step names its own STEP_* on the cart (SurfStartStep is a slow
   -- step), so it never inherits the bike's shorter one.
   self.stepFrames = STEP_FRAMES
-  self.facing = dir or self.facing
-  local d = Map.DELTA[self.facing]
+  -- engine/overworld/map_objects.asm:284-294
+  if not self.fixedFacing then self.facing = dir or self.facing end
+  local d = Map.DELTA[dir or self.facing]
   if not d then return false end
   self.targetX, self.targetY = self.cellX + d[1], self.cellY + d[2]
   self.moving = true
   self.bumpFrames = nil
   self.progress = 0
+  return true
+end
+
+-- engine/overworld/movement.asm:741
+function Player:scriptJump(dir)
+  if self.moving then return false end
+  if not self.fixedFacing then self.facing = dir or self.facing end
+  local d = Map.DELTA[dir or self.facing]
+  if not d then return false end
+  self.targetX, self.targetY = self.cellX + d[1] * 2, self.cellY + d[2] * 2
+  self.moving, self.jumping = true, true
+  self.bumpFrames = nil
+  self.inGrass, self.grassShake = false, nil
+  self.progress = 0
+  self.stepFrames = STEP_FRAMES * 2
   return true
 end
 
@@ -235,16 +246,7 @@ function Player:update()
   if self.jumping then
     -- engine/overworld/map_objects.asm:1796 -- one table entry per cart frame,
     -- tweened across our doubled step (#1713)
-    local t = (self.progress - 1) * (#JUMP_Y - 1)
-      / math.max(frames - 1, 1) + 1
-    local idx = math.floor(t)
-    if idx < 1 then idx = 1 end
-    if idx >= #JUMP_Y then
-      self.spriteYOffset = JUMP_Y[#JUMP_Y]
-    else
-      self.spriteYOffset = math.floor(
-        JUMP_Y[idx] + (JUMP_Y[idx + 1] - JUMP_Y[idx]) * (t - idx) + 0.5)
-    end
+    self.spriteYOffset = Movement.jumpYOffset(self.progress, frames)
   end
   if self.progress >= frames then
     self.cellX, self.cellY = self.targetX, self.targetY

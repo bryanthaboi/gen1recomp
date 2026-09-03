@@ -74,6 +74,12 @@ local MOVES = {
     type = "NORMAL", accuracy = 0, pp = 10, effect = "EFFECT_TRANSFORM" },
   SWORDS_DANCE = { id = "SWORDS_DANCE", name = "SWORDS DANCE", power = 0,
     type = "NORMAL", accuracy = 0, pp = 30, effect = "EFFECT_ATTACK_UP_2" },
+  RECOVER = { id = "RECOVER", name = "RECOVER", power = 0, type = "NORMAL",
+    accuracy = 0, pp = 20, effect = "EFFECT_HEAL" },
+  SAFEGUARD = { id = "SAFEGUARD", name = "SAFEGUARD", power = 0,
+    type = "NORMAL", accuracy = 0, pp = 25, effect = "EFFECT_SAFEGUARD" },
+  EARTHQUAKE = { id = "EARTHQUAKE", name = "EARTHQUAKE", power = 100,
+    type = "GROUND", accuracy = 100, pp = 10, effect = "EFFECT_EARTHQUAKE" },
   -- STRUGGLE is in the move table like any other move and in nobody's move
   -- list, which is the whole of what makes Battle.STRUGGLE work.
   STRUGGLE = { id = "STRUGGLE", name = "STRUGGLE", power = 50, type = "NORMAL",
@@ -286,6 +292,135 @@ do
     "AttackUp2 has no checkhit and reaches its stat change")
   check(not findText(battle:takeEvents(), "MACHOP's attack missed!"),
     "no invented miss against a dug-in target")
+end
+
+-- ../pokecrystal/data/moves/effects.asm:1011-1016 LightScreen
+do
+  local battle, player, wild = newBattle({
+    playerMoves = { { id = "REFLECT", pp = 20, maxPp = 20 } },
+    random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  battle:useMove(player, wild, "REFLECT")
+  eq(battle.screens.player.reflect, Battle.SCREEN_TURNS,
+    "Reflect goes up against a dug-in target")
+  check(not findText(battle:takeEvents(), "MACHOP's attack missed!"),
+    "Reflect has no checkhit: no invented miss")
+end
+
+do
+  local battle, player, wild = newBattle({
+    playerMoves = { { id = "LIGHT_SCREEN", pp = 30, maxPp = 30 } },
+    random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  battle:useMove(player, wild, "LIGHT_SCREEN")
+  eq(battle.screens.player.lightScreen, Battle.SCREEN_TURNS,
+    "Light Screen goes up against a dug-in target")
+  check(not findText(battle:takeEvents(), "MACHOP's attack missed!"),
+    "Light Screen has no checkhit: no invented miss")
+end
+
+-- ../pokecrystal/data/moves/effects.asm Heal
+do
+  local battle, player, wild = newBattle({
+    playerMoves = { { id = "RECOVER", pp = 20, maxPp = 20 } },
+    random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  player.hp = 1
+  battle:useMove(player, wild, "RECOVER")
+  check(player.hp > 1, "Recover heals while the target is underground")
+  check(not findText(battle:takeEvents(), "MACHOP's attack missed!"),
+    "Heal has no checkhit: no invented miss")
+end
+
+-- ../pokecrystal/data/moves/effects.asm Safeguard
+do
+  local battle, player, wild = newBattle({
+    playerMoves = { { id = "SAFEGUARD", pp = 25, maxPp = 25 } },
+    random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  battle:useMove(player, wild, "SAFEGUARD")
+  eq(battle.screens.player.safeguard, Battle.SCREEN_TURNS,
+    "Safeguard goes up against a dug-in target")
+  check(not findText(battle:takeEvents(), "MACHOP's attack missed!"),
+    "Safeguard has no checkhit: no invented miss")
+end
+
+-- ../pokecrystal/engine/battle/effect_commands.asm:1713-1746
+do
+  local battle, player, wild = newBattle({ random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  local before = wild.hp
+  battle:useMove(player, wild, "TACKLE")
+  eq(wild.hp, before, "Tackle still cannot reach a dug-in target")
+  check(findText(battle:takeEvents(), "MACHOP's attack missed!"),
+    ".DigMoves: a checkhit chain misses")
+end
+
+do
+  local battle, player, wild = newBattle({
+    playerMoves = { { id = "EARTHQUAKE", pp = 10, maxPp = 10 } },
+    random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  local before = wild.hp
+  battle:useMove(player, wild, "EARTHQUAKE")
+  check(wild.hp < before, "Earthquake reaches a dug-in target")
+  check(not findText(battle:takeEvents(), "MACHOP's attack missed!"),
+    ".DigMoves lets EARTHQUAKE through")
+end
+
+-- ../pokecrystal/engine/battle/move_effects/transform.asm:7
+do
+  local battle, player, wild = newBattle({
+    playerMoves = { { id = "TRANSFORM", pp = 10, maxPp = 10 } },
+    random = rolls({}, 0) })
+  battle:volatile(wild).vanished = true
+  battle:volatile(wild).chargeMove = "DIG"
+  battle:useMove(player, wild, "TRANSFORM")
+  local events = battle:takeEvents()
+  check(findText(events, "But it failed!"),
+    "CheckHiddenOpponent fails Transform with the fail line")
+  check(not findText(events, "MACHOP's attack missed!"),
+    "and never with the miss line")
+  eq(battle:volatile(player).transformed, nil, "no copy lands")
+end
+
+-- ../pokecrystal/data/moves/effects.asm
+-- ../pokecrystal/engine/battle/effect_commands.asm:5448
+do
+  local Effects = require("src.battle.gen2.Effects")
+  local expected = {
+    "EFFECT_MIRROR_MOVE", "EFFECT_ATTACK_UP", "EFFECT_DEFENSE_UP",
+    "EFFECT_SPEED_UP", "EFFECT_SP_ATK_UP", "EFFECT_SP_DEF_UP",
+    "EFFECT_ACCURACY_UP", "EFFECT_EVASION_UP", "EFFECT_RESET_STATS",
+    "EFFECT_CONVERSION", "EFFECT_HEAL", "EFFECT_LIGHT_SCREEN", "EFFECT_MIST",
+    "EFFECT_FOCUS_ENERGY", "EFFECT_ATTACK_UP_2", "EFFECT_DEFENSE_UP_2",
+    "EFFECT_SPEED_UP_2", "EFFECT_SP_ATK_UP_2", "EFFECT_SP_DEF_UP_2",
+    "EFFECT_ACCURACY_UP_2", "EFFECT_EVASION_UP_2", "EFFECT_TRANSFORM",
+    "EFFECT_REFLECT", "EFFECT_SUBSTITUTE", "EFFECT_METRONOME",
+    "EFFECT_SPLASH", "EFFECT_COUNTER", "EFFECT_SKETCH",
+    "EFFECT_DEFROST_OPPONENT", "EFFECT_SLEEP_TALK", "EFFECT_DESTINY_BOND",
+    "EFFECT_HEAL_BELL", "EFFECT_MEAN_LOOK", "EFFECT_NIGHTMARE",
+    "EFFECT_CURSE", "EFFECT_PROTECT", "EFFECT_SPIKES", "EFFECT_PERISH_SONG",
+    "EFFECT_SANDSTORM", "EFFECT_ENDURE", "EFFECT_SAFEGUARD",
+    "EFFECT_BATON_PASS", "EFFECT_MORNING_SUN", "EFFECT_SYNTHESIS",
+    "EFFECT_MOONLIGHT", "EFFECT_RAIN_DANCE", "EFFECT_SUNNY_DAY",
+    "EFFECT_BELLY_DRUM", "EFFECT_PSYCH_UP", "EFFECT_MIRROR_COAT",
+    "EFFECT_TELEPORT", "EFFECT_DEFENSE_CURL",
+  }
+  local count = 0
+  for _ in pairs(Effects.NO_CHECKHIT) do count = count + 1 end
+  eq(count, #expected, "NO_CHECKHIT lists the 52 chains without checkhit")
+  for _, effect in ipairs(expected) do
+    eq(Effects.NO_CHECKHIT[effect], true, effect .. " has no checkhit")
+  end
+  eq(Effects.NO_CHECKHIT.EFFECT_OHKO, nil, "OHKO stays behind CheckHit")
+  eq(Effects.NO_CHECKHIT.EFFECT_MIMIC, nil, "Mimic carries checkhit")
 end
 
 -- ---- Reflect and Light Screen ---------------------------------------------

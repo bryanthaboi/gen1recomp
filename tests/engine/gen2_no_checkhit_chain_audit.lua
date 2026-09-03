@@ -19,10 +19,8 @@ local CART = {
   EFFECT_RESET_STATS = true, -- data/moves/effects.asm:788
   EFFECT_CONVERSION = true, -- data/moves/effects.asm:781
   EFFECT_HEAL = true, -- data/moves/effects.asm:997
-  EFFECT_TOXIC = true, -- data/moves/effects.asm:1039
   EFFECT_LIGHT_SCREEN = true, -- data/moves/effects.asm:1011
   EFFECT_OHKO = true, -- data/moves/effects.asm:917
-  EFFECT_SUPER_FANG = true, -- data/moves/effects.asm:1237
   EFFECT_MIST = true, -- data/moves/effects.asm:953
   EFFECT_FOCUS_ENERGY = true, -- data/moves/effects.asm:960
   EFFECT_ATTACK_UP_2 = true, -- data/moves/effects.asm:272
@@ -37,7 +35,6 @@ local CART = {
   EFFECT_SUBSTITUTE = true, -- data/moves/effects.asm:1084
   EFFECT_METRONOME = true, -- data/moves/effects.asm:1141
   EFFECT_SPLASH = true, -- data/moves/effects.asm:1156
-  EFFECT_PSYWAVE = true, -- data/moves/effects.asm:1238
   EFFECT_COUNTER = true, -- data/moves/effects.asm:1270
   EFFECT_SKETCH = true, -- data/moves/effects.asm:1338
   EFFECT_DEFROST_OPPONENT = true, -- data/moves/effects.asm:1345
@@ -66,53 +63,9 @@ local CART = {
   EFFECT_DEFENSE_CURL = true, -- data/moves/effects.asm:2068
 }
 
+-- engine/battle/effect_commands.asm:5448
 local DEFERRED = {
-  EFFECT_MIRROR_MOVE = true,
-  EFFECT_SPEED_UP = true,
-  EFFECT_SP_DEF_UP = true,
-  EFFECT_ACCURACY_UP = true,
-  EFFECT_RESET_STATS = true,
-  EFFECT_CONVERSION = true,
-  EFFECT_HEAL = true,
-  EFFECT_TOXIC = true,
-  EFFECT_LIGHT_SCREEN = true,
   EFFECT_OHKO = true,
-  EFFECT_SUPER_FANG = true,
-  EFFECT_MIST = true,
-  EFFECT_FOCUS_ENERGY = true,
-  EFFECT_SP_ATK_UP_2 = true,
-  EFFECT_ACCURACY_UP_2 = true,
-  EFFECT_EVASION_UP_2 = true,
-  EFFECT_TRANSFORM = true,
-  EFFECT_REFLECT = true,
-  EFFECT_SUBSTITUTE = true,
-  EFFECT_METRONOME = true,
-  EFFECT_SPLASH = true,
-  EFFECT_PSYWAVE = true,
-  EFFECT_COUNTER = true,
-  EFFECT_SKETCH = true,
-  EFFECT_DEFROST_OPPONENT = true,
-  EFFECT_SLEEP_TALK = true,
-  EFFECT_DESTINY_BOND = true,
-  EFFECT_HEAL_BELL = true,
-  EFFECT_MEAN_LOOK = true,
-  EFFECT_NIGHTMARE = true,
-  EFFECT_PROTECT = true,
-  EFFECT_SPIKES = true,
-  EFFECT_PERISH_SONG = true,
-  EFFECT_SANDSTORM = true,
-  EFFECT_ENDURE = true,
-  EFFECT_SAFEGUARD = true,
-  EFFECT_BATON_PASS = true,
-  EFFECT_MORNING_SUN = true,
-  EFFECT_SYNTHESIS = true,
-  EFFECT_MOONLIGHT = true,
-  EFFECT_RAIN_DANCE = true,
-  EFFECT_SUNNY_DAY = true,
-  EFFECT_BELLY_DRUM = true,
-  EFFECT_PSYCH_UP = true,
-  EFFECT_MIRROR_COAT = true,
-  EFFECT_TELEPORT = true,
 }
 
 local function count(t)
@@ -121,7 +74,7 @@ local function count(t)
   return n
 end
 
-eq(count(CART), 56, "the cart has 56 effect chains with no checkhit")
+eq(count(CART), 53, "the cart has 53 effect chains with no checkhit")
 
 for effect in pairs(Effects.NO_CHECKHIT) do
   check(CART[effect], effect .. ": NO_CHECKHIT names a chain the cart runs without checkhit")
@@ -165,16 +118,20 @@ local function chainsWithoutCheckhit(pret)
   end
   pf:close()
   if #consts ~= #labels then return nil end
-  local chains, current = {}, nil
+  local chains, current = {}, {}
   for raw in (src .. "\n"):gmatch("([^\n]*)\n") do
     local line = raw:gsub(";.*$", "")
     local label = line:match("^([%a_][%w_]*):")
     if label then
-      current = label
-      chains[current] = chains[current] or {}
+      local last = current[#current]
+      if last and next(chains[last]) ~= nil then current = {} end
+      current[#current + 1] = label
+      chains[label] = chains[label] or {}
     else
       local cmd = line:match("^%s+([a-z][%w_]*)")
-      if cmd and current then chains[current][cmd] = true end
+      if cmd then
+        for _, name in ipairs(current) do chains[name][cmd] = true end
+      end
     end
   end
   local out = {}

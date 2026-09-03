@@ -700,7 +700,16 @@ end
 -- BattleState keeps drawing it via drawSprites.
 function AnimPlayer:finalSprites()
   local last = self.steps[#self.steps]
-  return last and last.sprites or nil
+  if not last then return nil end
+  -- engine/battle/animations.asm:258-260
+  local out = {}
+  for i, s in ipairs(last.sprites) do
+    local c = {}
+    for k, v in pairs(s) do c[k] = v end
+    if c.obp == "f0" or c.obp == "f0x" then c.obp = "e4" end
+    out[i] = c
+  end
+  return out
 end
 
 -- two colorFn results (three 0-1 RGB triples) resolve the same palette?

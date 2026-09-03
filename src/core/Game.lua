@@ -1333,6 +1333,7 @@ function Game:applyOptions(opts)
   require("src.core.ScreenPosition").applyOptions(opts)
   require("src.core.VSync").applyOptions(opts)
   require("src.core.FrameCap").applyOptions(opts)
+  require("src.core.LogicClock").applyOptions(opts)
   require("src.core.PresentSync").applyFixedStepPeriod()
   -- Scale the optional presentation extras to the device's performance
   -- tier.  Every heavy feature was just applied from the stored options

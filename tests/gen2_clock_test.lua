@@ -255,6 +255,51 @@ do
   end
 end
 
+-- ../pokecrystal/home/text.asm:473
+do
+  local Chrome = require("src.ui.gen2.Chrome")
+  local priorPrint = Chrome.print
+  local rows = {}
+  Chrome.print = function(text, _tx, ty) rows[text] = ty end
+  local screen = InitClock.new({}, { save = {} })
+  screen:drawPanel()
+  Chrome.print = priorPrint
+  eq(rows["Zzz... Hm? Wha...?"], 14, "Oak's first line prints on row 14")
+  eq(rows["You woke me up!"], 16, "and `line` puts the second on row 16")
+end
+
+-- ../pokecrystal/engine/rtc/timeset.asm:385
+do
+  local Chrome = require("src.ui.gen2.Chrome")
+  local day = InitClock.new({}, { mode = "day", save = {} })
+  eq(day.isOpaque, false, "SetDayOfWeek draws over the map")
+  eq(day:drawsWidescreen(), false, "and paints no surround of its own")
+  eq(day:wantsFillScale(), false, "nor asks for the fill scale")
+  local clock = InitClock.new({}, { mode = "clock", save = {} })
+  eq(clock.isOpaque, true, "InitClock still runs on a cleared page")
+  eq(clock:drawsWidescreen(), true, "with its own widescreen surround")
+  local priorClear, cleared = Chrome.clear, 0
+  Chrome.clear = function() cleared = cleared + 1 end
+  day:drawPanel()
+  eq(cleared, 0, "the day wheel never clears the tilemap")
+  clock:drawPanel()
+  eq(cleared, 1, "the clock does")
+  Chrome.clear = priorClear
+end
+
+-- ../pokecrystal/home/text.asm:502
+do
+  local screen = InitClock.new({}, { save = {}, hour = 12, minute = 0 })
+  screen.phase = "response"
+  eq(InitClock.responseKey(12), "yikes", "noon is the three-line response")
+  local pages = screen:pages()
+  eq(#pages, 2, "`cont` scrolls the third line in as a second page")
+  check(pages[1]:find("Yikes! I over-", 1, true) ~= nil
+    and not pages[1]:find("slept!", 1, true), "page one holds lines 1-2")
+  check(pages[2]:find("^Yikes! I over%-\nslept!$") ~= nil,
+    "page two keeps line 2 on top and scrolls line 3 under it")
+end
+
 -- Clock.DAY_NAMES / Clock.weekdayName / Clock.daytimeLabel: the single home
 -- InitClock, MainMenu and the Pokegear clock card all share, so a weekday
 -- cannot be named one way on one screen and another way on the next.

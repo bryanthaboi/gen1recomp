@@ -501,6 +501,11 @@ function Battle:monName(mon)
   return mon.nickname or mon.name or mon.species or "?"
 end
 
+-- ../pokecrystal/data/text/battle.asm:240-246
+function Battle.sentOutText(trainerName, monName)
+  return Strings("%s\nsent out\v%s!", trainerName, monName)
+end
+
 function Battle:moveDef(moveId)
   return self.data.moves and self.data.moves[moveId] or nil
 end
@@ -1548,6 +1553,7 @@ function Battle:useMove(attacker, defender, moveId)
   -- move that missed or failed burns the delay and plays nothing at all.
   self.moveEvent = self:emit({ kind = "move", side = self:sideOf(attacker),
     move = moveId, wasVanished = wasVanished,
+    afterAnim = Effects.AFTER_ANIM[def.effect],
     text = Strings("%s\nused %s!", name, def.name or moveId) })
 
   -- battle.move_used, where BattleState:executeMove raises it on Gen 1: after
@@ -1663,7 +1669,7 @@ function Battle:useMove(attacker, defender, moveId)
     -- engine/battle/effect_commands.asm:5456-5458
     if self.moveEvent then
       self.moveEvent.animParam = 1
-      self.moveEvent.noAfterAnim = true
+      self.moveEvent.afterAnim = nil
     end
     -- BattleCommand_Charge picks the line off the MOVE, not the shared
     -- EFFECT_FLY (`cp DIG`, effect_commands.asm:5464).
@@ -2379,7 +2385,9 @@ end
 -- and stats, keeping its own HP and level.  Every copied move gets 5 PP.
 Battle.MOVE_EFFECTS.EFFECT_TRANSFORM = function(self, attacker, defender)
   local state = self:volatile(attacker)
-  if state.transformed or self:volatile(defender).substitute then
+  -- engine/battle/move_effects/transform.asm:7
+  if state.transformed or self:volatile(defender).substitute
+      or self:volatile(defender).vanished then
     return fail(self)
   end
   state.transformed = true
@@ -3554,8 +3562,7 @@ function Battle:resolveFaints()
       replacement = true,
       hp = self.enemy.hp or 0, status = self.enemy.status or false,
       level = self.enemy.level, experience = self.enemy.experience,
-      text = Strings("%s sent out %s!",
-        self.trainer and self.trainer.name or "Foe",
+      text = Battle.sentOutText(self.trainer and self.trainer.name or "Foe",
         self:monName(self.enemy)) })
     Runtime.emit("battle.battler_switched", {
       battle = self, side = self:sideRecord(self.enemy), battler = self.enemy,
@@ -4546,8 +4553,7 @@ function Battle:switchEnemy(index)
   self:emit({ kind = "send", side = "enemy", mon = self.enemy,
     hp = self.enemy.hp or 0, status = self.enemy.status or false,
     level = self.enemy.level, experience = self.enemy.experience,
-    text = Strings("%s sent out %s!", trainerName,
-      self:monName(self.enemy)) })
+    text = Battle.sentOutText(trainerName, self:monName(self.enemy)) })
   Runtime.emit("battle.battler_switched", {
     battle = self, side = self:sideRecord(self.enemy), battler = self.enemy,
     previous = outgoing,
@@ -5313,8 +5319,8 @@ function Battle:forcedReplacement(side, index)
     self:emit({ kind = "send", side = "enemy", mon = mon, replacement = true,
       hp = mon.hp or 0, status = mon.status or false,
       level = mon.level, experience = mon.experience,
-      text = Strings("%s sent out %s!",
-        (self.trainer and self.trainer.name) or "Foe", self:monName(mon)) })
+      text = Battle.sentOutText((self.trainer and self.trainer.name) or "Foe",
+        self:monName(mon)) })
     Runtime.emit("battle.battler_switched", {
       battle = self, side = self:sideRecord(mon), battler = mon,
       previous = previous,

@@ -3530,39 +3530,77 @@ function OverworldState:nurseHeal(onDone, npc)
     -- updates.  No follower (or not Yellow) calls straight through (#417).
     Follower.hopToCounter(self, function()
       Game.stack:push(TextBox.new(Game, need, function()
-        -- the nurse turns to the machine, the map music stops, and the
-        -- party heals before the machine runs (predef HealParty)
-        if npc then npc.facing = "left" end
-        -- DisablePikachuOverworldSpriteDrawing: Pikachu goes behind the
-        -- counter with the party for the machine animation
-        Follower.setVisible(self, false)
-        require("src.core.Music").stop()
-        local Pokemon = require("src.pokemon.Pokemon")
-        for _, mon in ipairs(Game.save.party) do
-          Pokemon.heal(mon)
+        local yellow = GameVersion.isYellow()
+        local pika = yellow and Follower.current(self) ~= nil
+        local function hold(frames, next)
+          self.emote = { npc = npc, frames = frames, bubble = false, onDone = next }
         end
-        Game.save.lastHeal = { -- SetLastBlackoutMap
-          map = self.map.id, x = self.player.cellX, y = self.player.cellY,
-          -- the town door of this interior, for LAST_MAP exits after a
-          -- blackout/ESCAPE ROPE warp here
-          outdoor = self.lastOutdoor
-            and { id = self.lastOutdoor.id, x = self.lastOutdoor.x, y = self.lastOutdoor.y }
-            or nil,
-        }
-        self.healAnim = { balls = #Game.save.party, lit = 0, timer = 0,
-                          visible = true,
-                          -- map anchor: the player's cell when healing
-                          -- began (the GB's fixed screen coords assume it
-                          -- BG-aligned at (64,64))
-                          px = self.player.cellX * 16,
-                          py = self.player.cellY * 16 }
-        self.healAnim.onDone = function()
-          -- EnablePikachuOverworldSpriteDrawing, before the fighting-fit
-          -- line: it comes back on the counter facing the player
-          Follower.setVisible(self, true)
-          if npc then npc:facePlayer(self.player) end
-          self:finishNurseHeal(bye, onDone, npc)
+        local function machine()
+          -- the map music stops, and the party heals before the machine
+          -- runs (predef HealParty)
+          require("src.core.Music").stop()
+          local Pokemon = require("src.pokemon.Pokemon")
+          for _, mon in ipairs(Game.save.party) do
+            Pokemon.heal(mon)
+          end
+          Game.save.lastHeal = { -- SetLastBlackoutMap
+            map = self.map.id, x = self.player.cellX, y = self.player.cellY,
+            -- the town door of this interior, for LAST_MAP exits after a
+            -- blackout/ESCAPE ROPE warp here
+            outdoor = self.lastOutdoor
+              and { id = self.lastOutdoor.id, x = self.lastOutdoor.x, y = self.lastOutdoor.y }
+              or nil,
+          }
+          self.healAnim = { balls = #Game.save.party, lit = 0, timer = 0,
+                            visible = true,
+                            -- map anchor: the player's cell when healing
+                            -- began (the GB's fixed screen coords assume it
+                            -- BG-aligned at (64,64))
+                            px = self.player.cellX * 16,
+                            py = self.player.cellY * 16 }
+          self.healAnim.onDone = function()
+            if pika and npc then
+              -- pokeyellow engine/events/pokecenter.asm:64
+              npc.facing = "up"
+              hold(64, function()
+                -- pokeyellow engine/events/pokecenter.asm:67
+                Follower.setVisible(self, true)
+                -- pokeyellow engine/events/pokecenter.asm:69
+                npc.facing = "down"
+                hold(6, function() self:finishNurseHeal(bye, onDone, npc) end)
+              end)
+              return
+            end
+            -- EnablePikachuOverworldSpriteDrawing, before the fighting-fit
+            -- line: it comes back on the counter facing the player
+            Follower.setVisible(self, true)
+            if npc then npc:facePlayer(self.player) end
+            self:finishNurseHeal(bye, onDone, npc)
+          end
         end
+        local function turnLeft()
+          -- pokeyellow engine/events/pokecenter.asm:47
+          if npc then npc.facing = "left" end
+          -- pokeyellow engine/events/pokecenter.asm:49
+          -- engine/events/pokecenter.asm:23
+          hold(yellow and 36 or 3, machine)
+        end
+        if not yellow then
+          turnLeft()
+          return
+        end
+        -- pokeyellow engine/events/pokecenter.asm:39
+        hold(64, function()
+          if not pika then
+            turnLeft()
+            return
+          end
+          -- pokeyellow engine/events/pokecenter.asm:43
+          Follower.setVisible(self, false)
+          -- pokeyellow engine/events/pokecenter.asm:100
+          if npc then npc.facing = "up" end
+          hold(64, turnLeft)
+        end)
       end))
     end)
   end, choiceLabels = { Strings("HEAL"), Strings("CANCEL") },
@@ -3581,16 +3619,24 @@ function OverworldState:finishNurseHeal(bye, onDone, npc)
       end))
     end
     if not npc then farewell() return end
-    -- engine/events/pokecenter.asm:36-39; Yellow's walk-down pose when the
-    -- sheet has it (pokeyellow engine/events/pokecenter.asm:82-88)
     local yellow = GameVersion.isYellow()
-    npc.frameOverride = (yellow and npc.sprite.frames[3]) and 3 or 1
-    -- bubble = false is the silent world hold, this port's DelayFrames
-    self.emote = { npc = npc, frames = yellow and 40 or 20, bubble = false, onDone = function()
-      npc.frameOverride = nil
-      npc:facePlayer(self.player)
-      farewell()
-    end }
+    local function bow()
+      -- engine/events/pokecenter.asm:36
+      -- pokeyellow engine/events/pokecenter.asm:82
+      npc.frameOverride = yellow and 3 or 1
+      -- bubble = false is the silent world hold, this port's DelayFrames
+      self.emote = { npc = npc, frames = yellow and 40 or 20, bubble = false, onDone = function()
+        npc.frameOverride = nil
+        npc:facePlayer(self.player)
+        farewell()
+      end }
+    end
+    if not yellow then bow() return end
+    -- pokeyellow engine/events/pokecenter.asm:75
+    -- pokeyellow engine/events/pokecenter.asm:79
+    local Follower = require("src.world.PikachuFollower")
+    self.emote = { npc = npc, bubble = false, onDone = bow,
+                   frames = (Follower.starterInParty(Game.save, true) and 6 or 0) + 3 }
   end))
 end
 

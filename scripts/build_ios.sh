@@ -155,15 +155,29 @@ if ! $PACKAGE_ONLY; then
 fi
 
 # --------------------------------------------------------------- fetch love-src
+clone_shallow() {
+  local ref="$1" repo="$2" dest="$3" attempt
+  for attempt in 1 2 3 4; do
+    rm -rf "$dest"
+    if git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=120 \
+        clone --depth 1 --branch "$ref" "$repo" "$dest"; then
+      return 0
+    fi
+    say "clone of $repo failed (attempt $attempt), retrying"
+    sleep $((attempt * 10))
+  done
+  return 1
+}
+
 fetch_love_ios() {
   mkdir -p "$CACHE"
   local tmp
   tmp="$(mktemp -d "$CACHE/extract.XXXXXX")"
   say "fetching LÖVE $LOVE_VERSION sources ($LOVE_SOURCE_REF)"
-  git clone --depth 1 --branch "$LOVE_SOURCE_REF" "$LOVE_SOURCE_REPO" "$tmp/love" \
+  clone_shallow "$LOVE_SOURCE_REF" "$LOVE_SOURCE_REPO" "$tmp/love" \
     || fail "failed to fetch LÖVE sources from $LOVE_SOURCE_REPO"
   say "fetching Apple dependencies ($APPLE_DEPENDENCIES_REF)"
-  git clone --depth 1 --branch "$APPLE_DEPENDENCIES_REF" "$APPLE_DEPENDENCIES_REPO" "$tmp/dependencies" \
+  clone_shallow "$APPLE_DEPENDENCIES_REF" "$APPLE_DEPENDENCIES_REPO" "$tmp/dependencies" \
     || fail "failed to fetch Apple dependencies from $APPLE_DEPENDENCIES_REPO"
   rm -rf "$LOVE_SRC"
   mv "$tmp/love" "$LOVE_SRC"

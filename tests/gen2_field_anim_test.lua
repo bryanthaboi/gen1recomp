@@ -240,6 +240,65 @@ previous, alpha = BorderFill.crossfade(bare, trees, nil)
 check("a caller with no map key never fades", previous, nil)
 check("and draws opaque", alpha, 1)
 
+-- JumpStep engine/overworld/movement.asm:747-776
+-- map_objects.asm:1828-1849
+check("the curve starts four pixels up", Movement.jumpYOffset(1, 16), -4)
+check("peaks at twelve", Movement.jumpYOffset(6, 16), -12)
+check("and lands on the tile", Movement.jumpYOffset(16, 16), 0)
+check("a doubled step reads the same peak", Movement.jumpYOffset(12, 32), -12)
+
+local Player = require("src.world.gen2.Player")
+local hopper = Player.new(3, 4, "down")
+hopper.fixedFacing = true
+hopper:scriptFace("up")
+check("a scripted jump starts", hopper:scriptJump("down"), true)
+check("it targets two cells", hopper.targetY, 6)
+check("keeps a fixed facing", hopper.facing, "up")
+check("and is a jump", hopper.jumping, true)
+check("over one doubled step", hopper.stepFrames, 32)
+local lowest, shadowFrames = 0, 0
+for _ = 1, 32 do
+  hopper:update()
+  lowest = math.min(lowest, hopper.spriteYOffset or 0)
+  if hopper.jumping then shadowFrames = shadowFrames + 1 end
+end
+check("the player arc peaks at -12", lowest, -12)
+check("the shadow flag holds for the whole hop", shadowFrames, 31)
+check("it lands two cells down", hopper.cellY, 6)
+check("with the offset cleared", hopper.spriteYOffset, 0)
+check("and the jump over", hopper.jumping, nil)
+check("a fixed-facing scripted step also keeps its facing",
+  hopper:scriptStep("left") and hopper.facing, "up")
+check("while still moving left", hopper.targetX, 2)
+hopper.fixedFacing = nil
+
+local jumper = NPC.new("NEW_BARK_TOWN", { index = 2, x = 4, y = 5,
+  movement = 1 }, SPRITE)
+jumper.fixedFacing = nil
+check("an NPC jump starts", jumper:scriptJump("right"), true)
+check("it targets two cells", jumper.targetX, 6)
+check("faces the way it jumps", jumper.facing, "right")
+check("and is a jump", jumper.jumping, true)
+local npcLowest, npcFrames = 0, 0
+while jumper.moving and npcFrames < 64 do
+  jumper:update(nil, {})
+  npcFrames = npcFrames + 1
+  npcLowest = math.min(npcLowest, jumper.spriteYOffset or 0)
+end
+check("the NPC arc peaks at -12", npcLowest, -12)
+check("over the doubled step", npcFrames, 32)
+check("it lands two cells right", jumper.cellX, 6)
+check("on the tile", jumper.spriteYOffset, 0)
+check("with the jump over", jumper.jumping, nil)
+check("a following plain step is back to one cell",
+  jumper:scriptStep("down") and jumper.targetY, 6)
+local plainFrames = 0
+while jumper.moving and plainFrames < 64 do
+  jumper:update(nil, {})
+  plainFrames = plainFrames + 1
+end
+check("at the walking pace", plainFrames, 16)
+
 print(("gen2 field anim: %d checks, %d failures"):format(checks, failures))
 if failures > 0 then
   error(("%d assertion(s) failed"):format(failures), 0)

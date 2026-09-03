@@ -139,9 +139,14 @@ do
   })
   vm:start("s:t")
   eq(table.concat(order, ","),
+    "start:CATCH_TUTORIAL,battle,stop,reload",
+    "the battle runs inside the lockout, and the script parks on the "
+    .. "map reload")
+  check(vm:running(), "catchtutorial is not a terminator")
+  vm:update()
+  eq(table.concat(order, ","),
     "start:CATCH_TUTORIAL,battle,stop,reload,text",
-    "the battle runs inside the lockout, and the script continues after the "
-    .. "map reload -- catchtutorial is not a terminator")
+    "and the script continues once the map setup has run")
   eq(got and got.battleType, 3, "wBattleType is the command's own byte")
   eq(got and got.wild and got.wild.species, 19,
     "and the wild mon is the one loadwildmon left behind")

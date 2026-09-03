@@ -233,6 +233,8 @@ local MAPSETUP_ROAM_JUMP = { [MAPSETUP.TELEPORT] = true }
 -- World:draw already holds for the fade specials.
 local FADE_STEPS = 4
 local FADE_STEP_FRAMES = 2
+-- data/maps/setup_scripts.asm:102-139
+local MAP_LOAD_WHITE_FRAMES = 4
 
 -- home/map.asm:1927-1940 over home/tilemap.asm:12-25
 local MENU_EXIT_RELOAD_FRAMES = 9
@@ -1941,6 +1943,11 @@ end
 -- command -- unlike a plain `setevent`, which the cart only reads back on the
 -- next map load.
 function World:appearObject(objectId)
+  -- home/map_objects.asm:309
+  if objectId == 0 then
+    self.playerMasked = nil
+    return
+  end
   local index = (objectId or 0) - 1
   local def = self.map and self.map.def
   local obj = def and def.objects and def.objects[index]
@@ -3522,6 +3529,8 @@ function World:runMapSetup(method, load, fly)
   self:roamMonsBeforeLoad(method)
   local wrapped = function()
     local ok = load()
+    -- engine/overworld/map_objects_2.asm:1
+    self.playerMasked = nil
     self:roamMonsAfterLoad(method)
     return ok
   end
@@ -3531,7 +3540,8 @@ function World:runMapSetup(method, load, fly)
     -- only the way back in is a fade.
     local ok = wrapped()
     self.fade, self.fadeLevel = "white", 1
-    self.mapSetup = { phase = "in", step = FADE_STEPS, wait = FADE_STEP_FRAMES }
+    self.mapSetup = { phase = "in", step = FADE_STEPS,
+      wait = MAP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES }
     return ok
   end
   self.mapSetup = {
@@ -3566,6 +3576,9 @@ World.FADE_RAMP = {
   white = { { 3, 2, 1, 0 }, { 2, 1, 0, 0 }, { 1, 0, 0, 0 }, { 0, 0, 0, 0 } },
   black = { { 3, 2, 1, 0 }, { 3, 3, 2, 1 }, { 3, 3, 3, 2 }, { 3, 3, 3, 3 } },
 }
+World.FADE_STEPS = FADE_STEPS
+World.FADE_STEP_FRAMES = FADE_STEP_FRAMES
+World.MAP_LOAD_WHITE_FRAMES = MAP_LOAD_WHITE_FRAMES
 
 function World.fadeRampRow(fade, level)
   local ramp = fade and World.FADE_RAMP[fade]
@@ -3584,7 +3597,8 @@ end
 function World:battleReturnFade()
   if self.mapSetup then return end
   self.fade, self.fadeLevel = "white", 1
-  self.mapSetup = { phase = "in", step = FADE_STEPS, wait = FADE_STEP_FRAMES }
+  self.mapSetup = { phase = "in", step = FADE_STEPS,
+    wait = MAP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES }
 end
 
 -- ---------------------------------------------------------------------------
@@ -3666,6 +3680,8 @@ function World:updateMapSetup()
       ms.load()
       ms.phase = "in"
       self.fade, self.fadeLevel = "white", 1
+      -- engine/tilesets/timeofday_pals.asm:277-299
+      ms.wait = FADE_STEP_FRAMES + MAP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES
     end
     return
   end
@@ -3893,6 +3909,11 @@ function World:turnObject(objectId, facing)
 end
 
 function World:disappearObject(objectId)
+  -- home/map_objects.asm:317
+  if objectId == 0 then
+    self.playerMasked = true
+    return
+  end
   local index = (objectId or 0) - 1
   local def = self.map and self.map.def
   local obj = def and def.objects and def.objects[index]
@@ -4021,9 +4042,7 @@ function World:updateMovement()
     return
   end
   if ent.moving then return end
-  -- StepFunction_NPCJump's `.Land` beat (engine/overworld/map_objects.asm:1150):
-  -- `.Jump` already walked one cell and ran GetNextTile again, so the second
-  -- cell belongs to the jump and not to the next movement byte.
+  -- engine/overworld/map_objects.asm:1150
   if st.pendingStep then
     local dir = st.pendingStep
     st.pendingStep = nil
@@ -4083,7 +4102,9 @@ function World:updateMovement()
       -- GetNextTile only record the tile for the grass flag and never block
       -- scripted movement.
       local fromX, fromY = ent.cellX, ent.cellY
-      if ent:scriptStep(act.dir) then
+      if ent.scriptJump and ent:scriptJump(act.dir) then
+        self:followStep(ent, fromX, fromY)
+      elseif not ent.scriptJump and ent:scriptStep(act.dir) then
         st.pendingStep = act.dir
         self:followStep(ent, fromX, fromY)
       end
@@ -9721,6 +9742,7 @@ function World:setMap(mapId, cx, cy, facing, opts)
   -- A follow pairing points at two live objects, and a map load rebuilds them
   -- (RefreshMapSprites); nothing on the cart survives that either.
   self.followState = nil
+  self.playerMasked = nil
   -- EnterMap's SetUpFiveStepWildEncounterCooldown (engine/overworld/events.asm:
   -- 110, :367-370): four encounter-free steps after every map entry.
   self.wildCooldown = 5
@@ -11102,7 +11124,7 @@ function World:drawPeople(s, billboard)
   local filter = self.spriteFilter
   local drawList = {}
   if not hideAll then
-    if not hidePlayer then
+    if not hidePlayer and not self.playerMasked then
       drawList[1] = { kind = "player", py = p.py, ox = 0, oy = 0 }
     end
     for _, npc in ipairs(self.npcs) do
@@ -11496,6 +11518,14 @@ function World:draw()
     if not fadeStepped then self:drawWorldBody(s) end
   end
 
+  -- Fixed-scale overlays go to the UI layer when Game2 split one off.
+  local uiLayer = self.game and self.game.fxUiDrawn and self.game.fxUiLayer
+  local worldCanvas
+  if uiLayer then
+    worldCanvas = G.getCanvas()
+    G.setCanvas(uiLayer)
+  end
+
   -- ../pokecrystal/engine/events/map_name_sign.asm:114
   -- ../pokecrystal/constants/ram_constants.asm:389
   MapNameSign.draw(self, w, h, posLift)
@@ -11524,6 +11554,7 @@ function World:draw()
     G.pop()
     G.setColor(1, 1, 1, 1)
   end
+  if uiLayer then G.setCanvas(worldCanvas) end
 
   -- engine/events/poisonstep_pals.asm:9-42
   if self.poisonFlash and self.poisonFlash > 0 then

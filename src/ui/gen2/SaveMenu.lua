@@ -24,7 +24,6 @@
 -- one-line call.
 
 local Chrome = require("src.ui.gen2.Chrome")
-local Logger = require("src.core.Logger")
 local Save = require("src.core.gen2.Save")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
@@ -64,7 +63,7 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
 -- AlreadyASaveFileText (AskOverwriteSaveFile, engine/menus/save.asm:47) and
 -- SavingDontTurnOffThePower's own line -- one \n-joined translatable key
 -- each, used both by this screen's own prompt() below and, through the
--- SOURCE/twoLines() exports at the bottom of this file, by the PC's CHANGE
+-- SOURCE/pagesOf() exports at the bottom of this file, by the PC's CHANGE
 -- BOX save (src/ui/gen2/PcMenu.lua:savePrompt()), which shares these exact
 -- same two cart messages. One key per prompt lets a translation write one
 -- whole, freely reordered sentence instead of two fragments translated in
@@ -77,27 +76,46 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
 -- string harvester only recognizes a literal inside Strings.source(...),
 -- not a computed expression, so a concat call here would quietly never
 -- reach a translator.
-local OVERWRITE_PROMPT_SOURCE = Strings.source("There is already a\nsave file. Is it")
+-- ../pokecrystal/data/text/common_3.asm:202 _AlreadyASaveFileText
+local OVERWRITE_PROMPT_SOURCE = Strings.source("There is already a\nsave file. Is it\vOK to overwrite?")
 local SAVING_PROMPT_SOURCE = Strings.source("SAVING… DON'T TURN\nOFF THE POWER.")
 
--- Splits a translated "line one\nline two" string back into the two-slot
--- table drawPanel's fixed Chrome.print calls expect. No "\n" at all (a
--- single-line message, or German's one-line SAVING prompt) lands whole on
--- the first slot, matching the untranslated code's own { text, "" } shape.
---
--- Only the first "\n" splits, since this box has room for exactly two
--- lines. A third line would otherwise draw as a raw newline byte -- garbage
--- glyph data -- with no other sign anything went wrong, so this warns once
--- per string instead.
-local warnedTooManyLines = {}
-local function twoLines(text)
-  local first, second = text:match("^(.-)\n(.*)$")
-  if second and second:find("\n", 1, true) and not warnedTooManyLines[text] then
-    warnedTooManyLines[text] = true
-    Logger.warn("SaveMenu: translation of %q has more than two lines; " ..
-      "only the first two fit this box", text)
+-- ../pokecrystal/home/text.asm:630 LoadBlinkingCursor
+local DOWN_ARROW = "\xe2\x96\xbc"
+local ARROW_X, ARROW_Y = 18, 17
+
+-- ../pokecrystal/home/text.asm:479 Paragraph
+-- ../pokecrystal/home/text.asm:520 _ContTextNoPause
+local function pagesOf(body)
+  local pages = {}
+  for chunk in (tostring(body) .. "\f"):gmatch("(.-)\f") do
+    local flat, pos, scrolled = {}, 1, false
+    while true do
+      local brk = chunk:find("[\n\v]", pos)
+      local line = brk and chunk:sub(pos, brk - 1) or chunk:sub(pos)
+      if line ~= "" then flat[#flat + 1] = { line, scrolled } end
+      if not brk then break end
+      scrolled = chunk:sub(brk, brk) == "\v"
+      pos = brk + 1
+    end
+    local page
+    for _, entry in ipairs(flat) do
+      if not page then
+        page = { entry[1] }
+        pages[#pages + 1] = page
+      elseif entry[2] then
+        page = { page[#page], entry[1], scrolled = true }
+        pages[#pages + 1] = page
+      elseif #page >= 2 then
+        page = { entry[1] }
+        pages[#pages + 1] = page
+      else
+        page[#page + 1] = entry[1]
+      end
+    end
   end
-  return { first or text, second or "" }
+  if #pages == 0 then pages[1] = { "" } end
+  return pages
 end
 
 function SaveMenu:wantsFillScale() return true end
@@ -132,6 +150,13 @@ function SaveMenu:playSfx(id)
   SaveMenu.playSaveSfx(self.game, id)
 end
 
+-- ../pokecrystal/home/joypad.asm:392
+function SaveMenu:playSfxNamed(name)
+  local data = self.game and self.game.data
+  local sfx = data and data.audio and data.audio.sfx
+  if sfx and sfx[Sound.resolve(data, name)] then Sound.play(data, name) end
+end
+
 function SaveMenu:finish(saved)
   if self.onDone then self.onDone(saved) end
 end
@@ -152,9 +177,11 @@ function SaveMenu:enterPhase(phase)
   self.phase = phase
   self.timer = 0
   self.typedPhase = phase
+  self.pages = pagesOf(self:promptText())
+  self.page = 1
   local pinned = (phase == "saving" or phase == "done") and "MID" or nil
   self.typer = Typer.new(self.game, { speed = pinned })
-  self.typer:start(self:prompt())
+  self.typer:start(self.pages[1])
 end
 
 function SaveMenu:accept()
@@ -215,6 +242,15 @@ function SaveMenu:update(_dt)
   local input = self.game and self.game.input
   if not input then return end
   if Typer.typing(self) then return end
+  -- ../pokecrystal/home/text.asm:502 _ContText
+  if self.page < #self.pages then
+    if input:wasPressed("a") or input:wasPressed("b") then
+      self.page = self.page + 1
+      self.typer:start(self.pages[self.page])
+      self:playSfxNamed("Sfx_ReadText2")
+    end
+    return
+  end
   if input:wasPressed("up") or input:wasPressed("down") then
     self.choice = self.choice == 1 and 2 or 1
     return
@@ -230,28 +266,36 @@ end
 -- The two lines the speech box holds, in the cart's own wording.  `line` puts
 -- the second one on the box's lower line; `cont` scrolls, which the overwrite
 -- prompt uses for its third line and which this shows as a second page.
-function SaveMenu:prompt()
+function SaveMenu:promptText()
   if self.phase == "overwrite" then
     -- AlreadyASaveFileText when the file is this player's; AnotherSaveFileText
     -- when the ID differs.  Only the first can happen here.
-    return twoLines(Strings(OVERWRITE_PROMPT_SOURCE))
+    return Strings(OVERWRITE_PROMPT_SOURCE)
   end
   if self.phase == "saving" then
-    return twoLines(Strings(SAVING_PROMPT_SOURCE))
+    return Strings(SAVING_PROMPT_SOURCE)
   end
   if self.phase == "done" then
     if self.saved then
-      return twoLines(Strings("%s saved\nthe game.", self:playerName()))
+      return Strings("%s saved\nthe game.", self:playerName())
     end
-    return twoLines(Strings("Could not save."))
+    return Strings("Could not save.")
   end
-  return twoLines(Strings("Would you like to\nsave the game?"))
+  return Strings("Would you like to\nsave the game?")
+end
+
+function SaveMenu:prompt()
+  if self.typedPhase == self.phase and self.pages then
+    return self.pages[self.page] or self.pages[1]
+  end
+  return pagesOf(self:promptText())[1]
 end
 
 -- ../pokecrystal/engine/menus/save.asm:209 SaveTheGame_yesorno
 function SaveMenu:yesNoVisible()
   if self.phase ~= "confirm" and self.phase ~= "overwrite" then return false end
-  return self.typedPhase == self.phase and not Typer.typing(self)
+  if self.typedPhase ~= self.phase or Typer.typing(self) then return false end
+  return self.page >= #self.pages
 end
 
 function SaveMenu:drawPanel()
@@ -277,6 +321,11 @@ function SaveMenu:drawPanel()
   if self.typedPhase == self.phase then lines = Typer.text(self, lines) end
   Chrome.print(lines[1] or "", 1, 14)
   Chrome.print(lines[2] or "", 1, 16)
+
+  if self.typedPhase == self.phase and not Typer.typing(self)
+    and self.page < #self.pages and Typer.arrowOn(self) then
+    Chrome.print(DOWN_ARROW, ARROW_X, ARROW_Y)
+  end
 
   if self:yesNoVisible() then
     Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
@@ -307,6 +356,8 @@ SaveMenu.SAVED_TAIL_FRAMES = SAVED_TAIL_FRAMES
 SaveMenu.SAVED_FRAMES = SAVED_FRAMES
 SaveMenu.OVERWRITE_PROMPT_SOURCE = OVERWRITE_PROMPT_SOURCE
 SaveMenu.SAVING_PROMPT_SOURCE = SAVING_PROMPT_SOURCE
-SaveMenu.twoLines = twoLines
+SaveMenu.pagesOf = pagesOf
+SaveMenu.DOWN_ARROW = DOWN_ARROW
+SaveMenu.ARROW_X, SaveMenu.ARROW_Y = ARROW_X, ARROW_Y
 
 return SaveMenu

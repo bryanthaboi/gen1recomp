@@ -172,10 +172,11 @@ do
   for _ = 1, 30 do world:updatePeople() end
   eq(npc.facing, before, "his spin cannot roll a new facing mid-script")
   -- Drain the engagement: the emote's 30-frame hold, the seen text, the
-  -- battle, the after script.  updatePeople keeps running under it, which is
-  -- exactly when an unfrozen spinner would drift.
+  -- battle, the reload's FadeInFromWhite, the after script.  updatePeople
+  -- keeps running under it, which is exactly when an unfrozen spinner would
+  -- drift.
   local drifted = false
-  for _ = 1, 60 do
+  for _ = 1, 90 do
     world:step()
     world:updatePeople()
     if world.vm:running() and npc.facing ~= before then drifted = true end

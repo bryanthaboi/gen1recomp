@@ -27,6 +27,7 @@ package.loaded["src.render.Font"] = {
 }
 
 local SaveMenu = require("src.ui.gen2.SaveMenu")
+local Typer = require("src.ui.gen2.Typer")
 local Strings = require("src.core.Strings")
 
 local function drawnAt(x, y)
@@ -103,7 +104,7 @@ do
       ["YES"] = "OUI",
       ["NO"] = "NON",
       ["Would you like to\nsave the game?"] = "Voulez-vous\nsauvegarder ?",
-      ["There is already a\nsave file. Is it"] = "Un fichier existe\ndeja. Est-ce",
+      ["There is already a\nsave file. Is it\vOK to overwrite?"] = "Un fichier existe\ndeja. Est-ce\vOK pour ecraser?",
       ["SAVING… DON'T TURN\nOFF THE POWER."] = "SAUVEGARDE...\nN'ETEIGNEZ PAS.",
       ["%s saved\nthe game."] = "%s a sauvegarde\nla partie.",
       ["Could not save."] = "Echec de sauvegarde.",
@@ -156,32 +157,124 @@ do
   T.check(not Strings.active(), "the catalog is unloaded for the checks after this one")
 end
 
--- src/ui/gen2/PcMenu.lua:savePrompt() shares SaveMenu's overwrite/saving
+-- src/ui/gen2/PcMenu.lua:savePages() shares SaveMenu's overwrite/saving
 -- prompts through SaveMenu.OVERWRITE_PROMPT_SOURCE/SAVING_PROMPT_SOURCE and
--- SaveMenu.twoLines(), rather than duplicating them -- both exported below,
+-- SaveMenu.pagesOf(), rather than duplicating them -- both exported below,
 -- both used by PcMenu's own translation test
 -- (tests/engine/gen2_pcmenu_changebox_save_translation_test.lua). Checked
--- here that they stay callable the shape twoLines() expects: a table in,
--- one \n-joined string out with the split back on load.
+-- here that they stay callable the shape pagesOf() expects: one
+-- \n/\v-joined string in, a list of two-line pages out.
+-- ../pokecrystal/data/text/common_3.asm:202 _AlreadyASaveFileText
 do
-  T.eq(SaveMenu.OVERWRITE_PROMPT_SOURCE, "There is already a\nsave file. Is it",
-    "OVERWRITE_PROMPT_SOURCE stays the cart's own \\n-joined text")
-  T.eq(SaveMenu.twoLines(Strings(SaveMenu.OVERWRITE_PROMPT_SOURCE))[1], "There is already a",
-    "and twoLines() splits its untranslated fallback back to the first line")
-  T.eq(SaveMenu.twoLines(Strings(SaveMenu.OVERWRITE_PROMPT_SOURCE))[2], "save file. Is it",
-    "and its second line")
+  T.eq(SaveMenu.OVERWRITE_PROMPT_SOURCE,
+    "There is already a\nsave file. Is it\vOK to overwrite?",
+    "OVERWRITE_PROMPT_SOURCE is the cart's whole text, cont line included")
+  local pages = SaveMenu.pagesOf(Strings(SaveMenu.OVERWRITE_PROMPT_SOURCE))
+  T.eq(#pages, 2, "and pagesOf() turns the cont into a second page")
+  T.eq(pages[1][1], "There is already a", "page one, first line")
+  T.eq(pages[1][2], "save file. Is it", "page one, second line")
+  T.eq(pages[2][1], "save file. Is it", "page two scrolls the old second line up")
+  T.eq(pages[2][2], "OK to overwrite?", "and prints the cont line under it")
   T.eq(SaveMenu.SAVING_PROMPT_SOURCE, "SAVING… DON'T TURN\nOFF THE POWER.",
     "SAVING_PROMPT_SOURCE stays the cart's own \\n-joined text")
-  T.eq(SaveMenu.twoLines(Strings(SaveMenu.SAVING_PROMPT_SOURCE))[1], "SAVING… DON'T TURN",
-    "and twoLines() splits its untranslated fallback back to the first line")
-  T.eq(SaveMenu.twoLines(Strings(SaveMenu.SAVING_PROMPT_SOURCE))[2], "OFF THE POWER.",
-    "and its second line")
+  pages = SaveMenu.pagesOf(Strings(SaveMenu.SAVING_PROMPT_SOURCE))
+  T.eq(#pages, 1, "a \\n-only message is a single page")
+  T.eq(pages[1][1], "SAVING… DON'T TURN", "with its first line")
+  T.eq(pages[1][2], "OFF THE POWER.", "and its second line")
+  T.eq(SaveMenu.pagesOf("Could not save.")[1][2], nil,
+    "a one-line message leaves the second slot empty")
 end
 
--- A translation with a THIRD line (a second embedded "\n") has nowhere on
--- screen to go -- drawPanel's box has room for exactly two Chrome.print
--- calls -- so it must not silently draw the literal newline byte as glyph
--- garbage on the second line, and should warn so a translator notices.
+-- ../pokecrystal/engine/menus/save.asm:209 SaveTheGame_yesorno
+local ARROW_X, ARROW_Y = 18 * 8, 17 * 8
+local function newInput()
+  local input = { pressed = {} }
+  function input:press(button) self.pressed[button] = true end
+  function input:wasPressed(button)
+    if self.pressed[button] then
+      self.pressed[button] = nil
+      return true
+    end
+    return false
+  end
+  function input:isDown() return false end
+  return input
+end
+
+do
+  local input = newInput()
+  local menu = SaveMenu.new({ input = input }, { save = SAVE, existed = true })
+  typeOut(menu)
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.phase, "overwrite", "YES on an existing file asks to overwrite")
+  typeOut(menu)
+  menu.arrowBlink = 0
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "There is already a", "page one, first line")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "save file. Is it", "page one, second line")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES on page one")
+  T.eq(drawnAt(ARROW_X, ARROW_Y), "\xe2\x96\xbc", "the cont arrow blinks at (18,17)")
+
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.page, 2, "A turns to the cont page")
+
+  -- ../pokecrystal/home/text.asm:520 _ContTextNoPause
+  T.check(menu.pages[2].scrolled, "the cont page is tagged scrolled")
+  T.eq(menu.pages[2][1], menu.pages[1][2], "its first row is page one's second line")
+  T.eq(menu.typer.shown, #"save file. Is it",
+    "the typer starts past the scrolled line, on the second row")
+  T.eq(menu.typer.total, #"save file. Is it" + #"OK to overwrite?",
+    "with only the cont line left to type")
+  T.check(Typer.typing(menu), "so the cont line is still typing")
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "save file. Is it",
+    "the scrolled line is whole before a single tick")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y) or "", "", "and the cont row is empty")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES while the cont line types")
+  for _ = 1, Typer.DELAYS.MID do menu:update(0) end
+  T.eq(menu.typer.shown, #"save file. Is it" + 1,
+    "the first letter delay prints the cont line's first letter")
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "save file. Is it", "the scrolled line stays whole")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "O", "and the cont row types from its first letter")
+
+  typeOut(menu)
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "save file. Is it", "page two scrolls the second line up")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "OK to overwrite?", "and prints the cont line")
+  T.eq(drawnAt(YES_X, YES_Y), "YES", "YES is up on the last page")
+  T.eq(drawnAt(NO_X, NO_Y), "NO", "and NO")
+  T.eq(drawnAt(ARROW_X, ARROW_Y), nil, "and the arrow is gone")
+end
+
+do
+  Strings.load({
+    strings = {
+      ["There is already a\nsave file. Is it\vOK to overwrite?"] = "Ecraser la\nsauvegarde?",
+    },
+  })
+  local input = newInput()
+  local menu = SaveMenu.new({ input = input }, { save = SAVE, existed = true })
+  typeOut(menu)
+  input:press("a")
+  menu:update(0)
+  typeOut(menu)
+  T.eq(#menu.pages, 1, "a translation without \\v is one page")
+  T.check(menu:yesNoVisible(), "and its YES/NO goes straight up")
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Ecraser la", "the translated first line")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "sauvegarde?", "and second")
+  T.eq(drawnAt(YES_X, YES_Y), "YES", "with YES drawn")
+  Strings.load({})
+end
+
 do
   Strings.load({
     strings = {
@@ -189,24 +282,24 @@ do
     },
   })
 
-  local warned = {}
-  require("src.core.Logger").warn = function(fmt, ...)
-    warned[#warned + 1] = select("#", ...) > 0 and fmt:format(...) or fmt
-  end
-
-  local menu = SaveMenu.new({}, { save = SAVE, existed = false })
+  local input = newInput()
+  local menu = SaveMenu.new({ input = input }, { save = SAVE, existed = false })
+  typeOut(menu)
   drawn = {}
   menu:drawPanel()
-  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Ligne un", "only the first line reaches the box")
-  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "Ligne deux\nLigne trois",
-    "the rest lands in the second slot rather than vanishing")
-  T.check(#warned == 1, "and a single warning is logged")
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Ligne un", "the first line reaches the box")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "Ligne deux", "and the second, without the third")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES while a page is still to come")
 
+  input:press("a")
+  menu:update(0)
+  typeOut(menu)
   drawn = {}
   menu:drawPanel()
-  T.check(#warned == 1, "the warning does not repeat for the same text")
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Ligne trois", "the third line gets its own page")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y) or "", "", "with an empty second slot")
+  T.eq(drawnAt(YES_X, YES_Y), "YES", "and YES on the last page")
 
-  require("src.core.Logger").warn = function() end
   Strings.load({})
 end
 

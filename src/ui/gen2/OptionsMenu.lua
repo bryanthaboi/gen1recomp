@@ -410,6 +410,15 @@ local ROWS = {
       end
       return Strings(require("src.core.VSync").label(options.vsync))
     end },
+  { label = Strings.source("LOGIC CLOCK"), key = "logicClock", port = true,
+    cycle = function(options, delta)
+      local LogicClock = require("src.core.LogicClock")
+      options.logicClock = LogicClock.cycle(options.logicClock, delta)
+      LogicClock.apply(options.logicClock)
+    end,
+    text = function(options)
+      return Strings(require("src.core.LogicClock").label(options.logicClock))
+    end },
   { label = Strings.source("BATTLE SIZE"), key = "battleFit", port = true,
     values = { "fixed", "fill" },
     display = {
@@ -439,7 +448,7 @@ local GROUPS = {
   { id = "group.speed", label = Strings.source("SPEED"),
     members = { "textSpeed", "speed" } },
   { id = "group.video", label = Strings.source("VIDEO"),
-    members = { "videoMode", "screenPos", "fpsCap", "vsync" } },
+    members = { "videoMode", "screenPos", "fpsCap", "vsync", "logicClock" } },
   { id = "group.graphics", label = Strings.source("GRAPHICS"),
     members = { "color", "uiLetterbox", "shaderfx", "shaderfx2", "frame" } },
   { id = "group.audio", label = Strings.source("AUDIO"),

@@ -64,6 +64,24 @@ while Typer.typing(menu) and frames < 600 do
   frames = frames + 1
 end
 check(frames > 0 and frames < 600, "the overwrite question finishes typing")
+-- ../pokecrystal/data/text/common_3.asm:205
+eq(menu.page, 1, "the overwrite prompt's first page is up")
+eq(#menu.pages, 2, "and it has a cont page after it")
+check(not menu:yesNoVisible(), "no YES/NO while the cont page waits for a button")
+
+input:press("a")
+menu:update(0)
+eq(menu.page, 2, "A turns to the cont page")
+eq(menu.phase, "overwrite", "without answering the question")
+check(Typer.typing(menu), "the cont page types letter by letter")
+check(not menu:yesNoVisible(), "and the YES/NO waits for it")
+
+frames = 0
+while Typer.typing(menu) and frames < 600 do
+  menu:update(0)
+  frames = frames + 1
+end
+check(frames > 0 and frames < 600, "the cont page finishes typing")
 check(menu:yesNoVisible(), "then the overwrite YES/NO goes up")
 
 input:press("a")

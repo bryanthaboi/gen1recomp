@@ -1151,6 +1151,8 @@ local function runCmd(self, cmd, op)
       return "end"
     end
     if self.reloadMapFn then self.reloadMapFn(op ~= "refreshmap") end
+    -- engine/overworld/scripting.asm:1209
+    if op ~= "refreshmap" then self:waitFrames(1) end
   elseif op == "catchtutorial" then
     -- `catchtutorial battle_type` runs the DUDE's catch demo
     -- (engine/events/catch_tutorial.asm): the player's name is parked in
@@ -1182,6 +1184,8 @@ local function runCmd(self, cmd, op)
     -- `jp Script_reloadmap`, so the setup script (and its ForceMapMusic row)
     -- really does run here.
     if self.reloadMapFn then self.reloadMapFn(true) end
+    -- engine/overworld/scripting.asm:1209
+    self:waitFrames(1)
   elseif op == "winlosstext" then
     -- Overrides the struct's win/loss text for this battle only; a 0
     -- argument zeroes that pointer (engine/overworld/scripting.asm:651)

@@ -179,6 +179,22 @@ end
 Movement.TELEPORT_RISE_HEIGHT = 0x10
 Movement.TELEPORT_FALL_HEIGHT = 0
 
+-- engine/overworld/map_objects.asm:1796-1817
+Movement.JUMP_Y = {
+  -4, -6, -8, -10, -11, -12, -12, -12,
+  -11, -10, -9, -8, -6, -4, 0, 0,
+}
+
+function Movement.jumpYOffset(progress, frames)
+  local curve = Movement.JUMP_Y
+  local n = #curve
+  local t = ((progress or 0) - 1) * (n - 1) / math.max((frames or n) - 1, 1) + 1
+  local idx = math.floor(t)
+  if idx < 1 then idx = 1 end
+  if idx >= n then return curve[n] end
+  return math.floor(curve[idx] + (curve[idx + 1] - curve[idx]) * (t - idx) + 0.5)
+end
+
 local DIR_BYTE = { down = 0, up = 1, left = 2, right = 3 }
 
 -- The `step <dir>` family ($0c-$0f), which is what InitMovementBuffer fills

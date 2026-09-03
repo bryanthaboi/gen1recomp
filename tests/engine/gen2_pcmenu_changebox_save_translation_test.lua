@@ -54,6 +54,27 @@ local function newMenu()
   })
 end
 
+local function newInput()
+  local input = { pressed = {} }
+  function input:press(button) self.pressed[button] = true end
+  function input:wasPressed(button)
+    if self.pressed[button] then
+      self.pressed[button] = nil
+      return true
+    end
+    return false
+  end
+  return input
+end
+
+local function settle(menu)
+  for i = 1, 400 do
+    if not (menu.typer and not menu.typer:done()) then return i - 1 end
+    menu:update(0)
+  end
+  return 400
+end
+
 -- ---------------------------------------------- vanilla: no mod catalog
 do
   local menu = newMenu()
@@ -62,10 +83,17 @@ do
   menu.savePhase = "confirm"
   drawn = {}
   menu:drawPanel()
-  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "#MON BOX, data", "the confirm prompt draws in English with no mod loaded")
-  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "will be saved. OK?", "and its second line")
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "When you change a", "the confirm prompt draws in English with no mod loaded")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "#MON BOX, data", "and its second line")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES before the cont page")
+  menu.savePage = 2
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "#MON BOX, data", "the cont page scrolls the second line up")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "will be saved. OK?", "and prints the cont line")
   T.eq(drawnAt(YES_X, YES_Y), "YES", "and YES")
   T.eq(drawnAt(NO_X, NO_Y), "NO", "and NO")
+  menu.savePage = 1
 
   menu.savePhase = "overwrite"
   drawn = {}
@@ -92,6 +120,147 @@ do
   T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Could not save.", "the failed-save message")
 end
 
+-- ../pokecrystal/engine/menus/save.asm:39 ChangeBoxSaveGame
+local ARROW_X, ARROW_Y = 18 * 8, 17 * 8
+do
+  local input = newInput()
+  local menu = PcMenu.new({ input = input }, {
+    save = SAVE,
+    saveExists = true,
+    writer = function() return true end,
+  })
+  menu.picking = true
+  menu.pickIndex = 2
+  menu:beginChangeBox(2)
+  T.eq(menu.savePhase, "confirm", "CHANGE BOX asks to save first")
+  T.check(menu.typer ~= nil and not menu.typer:done(), "and starts typing the prompt")
+  T.eq(#menu:savePages(), 2, "_ChangeBoxSaveText is two pages: line, then cont")
+  T.eq(menu:saveYesNoVisible(), false, "no YES/NO while it types")
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "", "nothing printed before the first letter delay")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "and no YES box")
+  for _ = 1, 6 do menu:update(0) end
+  drawn = {}
+  menu:drawPanel()
+  local prefix = drawnAt(PROMPT1_X, PROMPT1_Y)
+  T.check(prefix ~= "" and prefix ~= "When you change a"
+    and ("When you change a"):sub(1, #prefix) == prefix,
+    "six frames in, a prefix of the first line is up (got '" .. tostring(prefix) .. "')")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "", "and none of the second line yet")
+
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.savePage, 1, "A while typing does not turn the page")
+  T.eq(menu.savePhase, "confirm", "nor answer")
+  input.pressed = {}
+  local ticks = settle(menu)
+  T.check(ticks > 30, "the two-line prompt takes more than 30 frames at MID (took " .. ticks .. ")")
+  T.eq(menu.savePage, 1, "page 1 once typed")
+  T.eq(menu:saveYesNoVisible(), false, "still no YES/NO: the cont page waits")
+  menu.arrowBlink = 0
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "When you change a", "page one, first line")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "#MON BOX, data", "page one, second line")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES on page one")
+  T.eq(drawnAt(ARROW_X, ARROW_Y), "\xe2\x96\xbc", "the cont arrow blinks at (18,17)")
+
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.savePhase, "confirm", "A on the cont arrow turns the page rather than answering")
+  T.eq(menu.savePage, 2, "to the cont page")
+  T.check(menu.typer and not menu.typer:done(), "which types in turn")
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "#MON BOX, data", "the scrolled line is already whole")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "", "the cont line starts empty")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES while the cont line types")
+  settle(menu)
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "will be saved. OK?", "the cont line, typed")
+  T.eq(drawnAt(YES_X, YES_Y), "YES", "YES/NO goes up once it has printed")
+
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.savePhase, "overwrite", "YES on an existing file asks to overwrite")
+  T.eq(menu.savePage, 1, "on the prompt's first page")
+  T.eq(menu:saveYesNoVisible(), false, "no YES/NO while the overwrite prompt types")
+  settle(menu)
+  menu.arrowBlink = 0
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "There is already a", "page one, first line")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "save file. Is it", "page one, second line")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES on page one")
+  T.eq(drawnAt(ARROW_X, ARROW_Y), "\xe2\x96\xbc", "the cont arrow blinks at (18,17)")
+
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.savePhase, "overwrite", "A turns the page rather than answering")
+  T.eq(menu.savePage, 2, "to the cont page")
+  settle(menu)
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "save file. Is it", "page two scrolls the second line up")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "OK to overwrite?", "and prints the cont line")
+  T.eq(drawnAt(YES_X, YES_Y), "YES", "YES is up on the last page")
+  T.eq(drawnAt(ARROW_X, ARROW_Y), nil, "and the arrow is gone")
+
+  input:press("b")
+  menu:update(0)
+  T.eq(menu.savePhase, nil, "B on the YES/NO is NO and drops the change")
+  T.eq(menu.picking, true, "with the box picker still up")
+  T.eq(menu.typer, nil, "and no typer left behind for the picker")
+end
+
+-- ../pokecrystal/home/print_text.asm:1 PrintLetterDelay
+-- ../pokecrystal/engine/menus/save.asm:336 SavingDontTurnOffThePower
+do
+  local function promptTicks(textSpeed)
+    local menu = PcMenu.new({ input = newInput(), save = { options = { textSpeed = textSpeed } } }, {
+      save = SAVE,
+      saveExists = false,
+      writer = function() return true end,
+    })
+    menu.picking = true
+    menu.pickIndex = 2
+    menu:beginChangeBox(2)
+    return settle(menu), menu
+  end
+  local fast = promptTicks("FAST")
+  local mid = promptTicks("MID")
+  local slow = promptTicks("SLOW")
+  T.check(fast < mid and mid < slow,
+    ("the confirm prompt follows the OPTIONS text speed (%d < %d < %d)"):format(fast, mid, slow))
+  T.eq(mid, fast * 3, "MID is three frames a letter to FAST's one")
+
+  local _, menu = promptTicks("FAST")
+  local input = menu.game.input
+  input:press("a")
+  menu:update(0)
+  settle(menu)
+  input:press("a")
+  menu:update(0)
+  T.eq(menu.savePhase, "saving", "YES with no file goes straight to SAVING")
+  T.eq(menu.typer.speed, "MID", "SAVING… is pinned to MID whatever the option says")
+  T.check(menu.typer and not menu.typer:done(), "and types")
+  local before = menu.saveTimer
+  for _ = 1, 10 do menu:update(0) end
+  T.eq(menu.saveTimer, before, "the 16-frame hold does not count while the text types")
+  T.eq(menu.savePhase, "saving", "so the write waits")
+  settle(menu)
+  for _ = 1, 16 do menu:update(0) end
+  T.eq(menu.savePhase, "done", "the write lands once the message has printed and held")
+  T.eq(menu.typer.speed, "MID", "'saved the game.' is pinned to MID too")
+  local saveTicks = settle(menu)
+  T.check(saveTicks > 0, "and types rather than appearing whole")
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "GOLD saved", "the saved message")
+end
+
 -- ------------------------------------------------- a translation mod's turn
 --
 -- Same catalog values as gen2_save_menu_translation_test.lua's own
@@ -104,8 +273,8 @@ do
     strings = {
       ["YES"] = "OUI",
       ["NO"] = "NON",
-      ["#MON BOX, data\nwill be saved. OK?"] = "Les donnees de la\nBOITE seront sauv.",
-      ["There is already a\nsave file. Is it"] = "Un fichier existe\ndeja. Est-ce",
+      ["When you change a\n#MON BOX, data\vwill be saved. OK?"] = "Quand vous changez\nde BOITE, donnees\vseront sauv. OK?",
+      ["There is already a\nsave file. Is it\vOK to overwrite?"] = "Un fichier existe\ndeja. Est-ce\vOK pour ecraser?",
       ["SAVING… DON'T TURN\nOFF THE POWER."] = "SAUVEGARDE...\nN'ETEIGNEZ PAS.",
       ["%s saved\nthe game."] = "%s a sauvegarde\nla partie.",
       ["Could not save."] = "Echec de sauvegarde.",
@@ -118,10 +287,17 @@ do
   menu.savePhase = "confirm"
   drawn = {}
   menu:drawPanel()
-  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Les donnees de la", "the confirm prompt")
-  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "BOITE seront sauv.", "its second line")
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "Quand vous changez", "the confirm prompt")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "de BOITE, donnees", "its second line")
+  T.eq(drawnAt(YES_X, YES_Y), nil, "no YES before the translated cont page")
+  menu.savePage = 2
+  drawn = {}
+  menu:drawPanel()
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "de BOITE, donnees", "the cont page")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "seront sauv. OK?", "its cont line")
   T.eq(drawnAt(YES_X, YES_Y), "OUI", "and YES")
   T.eq(drawnAt(NO_X, NO_Y), "NON", "and NO")
+  menu.savePage = 1
 
   menu.savePhase = "overwrite"
   drawn = {}

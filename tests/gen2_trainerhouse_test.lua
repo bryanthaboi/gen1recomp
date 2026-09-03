@@ -221,8 +221,11 @@ local function runScript(opts)
     reloadMap = function() log.reloaded = (log.reloaded or 0) + 1 end,
   })
   local started = vm:start(map.coordEvents[1].scriptKey)
+  local parkedAfterReload = log.reloaded and vm.busy and #moves == 1
+  for _ = 1, 4 do vm:update() end
   return {
     started = started, busy = vm.busy, log = log, moves = moves,
+    parkedAfterReload = parkedAfterReload,
     battles = battles, save = save,
   }
 end
@@ -237,7 +240,9 @@ end
 do -- the first visit of the day, accepted
   local run = runScript({ accept = true })
   check(run.started, "the script starts")
-  check(not run.busy, "and runs to completion without parking on a command")
+  check(run.parkedAfterReload,
+    "reloadmapafterbattle parks the script for the map setup")
+  check(not run.busy, "then it runs to completion")
   eq(run.log.turned and run.log.turned.facing, "up",
     "turnobject PLAYER, UP squares the player up to the desk")
   check(saw(run.log, "TRAINING HALL"), "the welcome")

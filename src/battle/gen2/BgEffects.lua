@@ -45,7 +45,7 @@ local Pool = {}
 Pool.__index = Pool
 
 local function newEffect()
-  return { func = nil, jt = 0, turn = 0, param = 0 }
+  return { func = nil, jt = 0, turn = 0, param = 0, side = nil }
 end
 
 -- `env` is shared with the object pool: env.battleTurn is hBattleTurn, and
@@ -109,6 +109,7 @@ function Pool:queue(effectId, jumptableIndex, turn, param)
       st.jt = u8(jumptableIndex or 0)
       st.turn = u8(turn or 0)
       st.param = u8(param or 0)
+      st.side = nil
       return st
     end
   end
@@ -598,14 +599,16 @@ end
 -- (the struct's side) rather than to the whole background, which is what the
 -- per-mon fades want; the port keeps that and leaves wBGP alone.
 local function rapidCyclePals(self, st, pals)
-  local side = self:sideKey(st)
   local jt = st.jt
   if jt == 0 then
+    -- engine/battle_anims/bg_effects.asm:2480-2494
     incJt(st)
+    st.side = self:sideKey(st)
     st.turn = st.param
     st.param = 0
     return
   end
+  local side = st.side or self:sideKey(st)
   if jt == 1 then
     if bit.band(st.turn, 0xf) ~= 0 then
       st.turn = u8(st.turn - 1)
@@ -615,8 +618,8 @@ local function rapidCyclePals(self, st, pals)
     st.turn = bit.bor(swap(st.turn), st.turn)
     local value = nextPal(st, pals)
     if value == nil then
+      -- engine/battle_anims/bg_effects.asm:2515-2519
       st.param = u8(st.param - 1)
-      incJt(st)
       return
     end
     self.monShade[side] = value

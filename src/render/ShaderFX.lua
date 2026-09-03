@@ -654,7 +654,7 @@ end
 
 -- Runs pass `i`, drawing `srcImg` into a freshly sized canvas. `lutByName`
 -- resolves a User-semantic sampler by the name the translation reported.
-local function runPass(state, i, pass, outputs, frameSource, lutByName, viewport, original)
+local function runPass(state, i, pass, outputs, frameSource, lutByName, viewport, original, layer)
   local dims = computePassDims(state, i, pass, viewport, original)
   state.outputDims[i] = dims
 
@@ -685,15 +685,21 @@ local function runPass(state, i, pass, outputs, frameSource, lutByName, viewport
   local srcDims = passInputDims(state, i, original)
   local drawScaleX, drawScaleY = dims.w / srcDims.w, dims.h / srcDims.h
 
-  -- Reallocated only when this pass's resolved size actually changes.
-  local cc = state.canvasCache[i]
+  -- Reallocated only when this pass's resolved size actually changes; each
+  -- layer keeps its own set so a split world/UI frame does not thrash.
+  local layerCache = state.canvasCache[layer]
+  if not layerCache then
+    layerCache = {}
+    state.canvasCache[layer] = layerCache
+  end
+  local cc = layerCache[i]
   local canvas
   if cc and cc.w == dims.w and cc.h == dims.h then
     canvas = cc.canvas
   else
     canvas = love.graphics.newCanvas(dims.w, dims.h)
     canvas:setFilter("nearest", "nearest")
-    state.canvasCache[i] = { canvas = canvas, w = dims.w, h = dims.h }
+    layerCache[i] = { canvas = canvas, w = dims.w, h = dims.h }
   end
 
   love.graphics.push("all")
@@ -713,11 +719,12 @@ end
 
 -- Runs the whole chain once over `frameSource` (sized `original`), with
 -- `viewport` the size "viewport" scale_type passes resolve against.
-function ShaderFX.runChain(state, frameSource, lutByName, viewport, original)
+function ShaderFX.runChain(state, frameSource, lutByName, viewport, original, layer)
+  layer = layer or "main"
   local outputs = {}
   state.outputDims = {}
   for i = 0, state.preset.pass_count - 1 do
-    runPass(state, i, state.preset.passes[i + 1], outputs, frameSource, lutByName, viewport, original)
+    runPass(state, i, state.preset.passes[i + 1], outputs, frameSource, lutByName, viewport, original, layer)
   end
   return outputs[state.preset.pass_count - 1]
 end
@@ -1056,8 +1063,8 @@ end
 
 -- Crops the playfield rect out of `canvas` at `renderScale`. The output canvas
 -- is cached module-wide and reallocated only on a real size change.
-local cropCanvasCache
-local function cropToGbSource(canvas, rect, srcW, srcH, renderScale)
+local cropCanvasCache = {}
+local function cropToGbSource(canvas, rect, srcW, srcH, renderScale, layer)
   -- Cheap insurance against a read-after-write hazard between this draw and
   -- whatever last rendered into `canvas`.
   love.graphics.flushBatch()
@@ -1065,12 +1072,13 @@ local function cropToGbSource(canvas, rect, srcW, srcH, renderScale)
   local quad = love.graphics.newQuad(rect.x, rect.y, rect.w, rect.h,
     canvas:getPixelWidth(), canvas:getPixelHeight())
   local out
-  if cropCanvasCache and cropCanvasCache.w == outW and cropCanvasCache.h == outH then
-    out = cropCanvasCache.canvas
+  local cached = cropCanvasCache[layer]
+  if cached and cached.w == outW and cached.h == outH then
+    out = cached.canvas
   else
     out = love.graphics.newCanvas(outW, outH)
     out:setFilter("nearest", "nearest")
-    cropCanvasCache = { canvas = out, w = outW, h = outH }
+    cropCanvasCache[layer] = { canvas = out, w = outW, h = outH }
   end
   local invScale = renderScale / rect.scale
   love.graphics.push("all")
@@ -1092,11 +1100,31 @@ local function chainRenderScale()
   return (caps and tonumber(caps.shaderfx)) or 1.0
 end
 
+local maskShader
+local function maskedDraw()
+  if maskShader == nil then
+    local ok, sh = pcall(love.graphics.newShader, [[
+      extern Image mask;
+      vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
+        vec4 c = Texel(tex, uv);
+        return vec4(c.rgb, Texel(mask, uv).a) * color;
+      }
+    ]])
+    maskShader = ok and sh or false
+  end
+  return maskShader or nil
+end
+
 -- Renderer.lua's endFrame entry point. `canvas` is the finished window-size
 -- composite; `rect` is this frame's real game rect in PHYSICAL framebuffer
 -- pixels and `source` the content size it frames. See docs/shaderfx.md.
-function ShaderFX.render(canvas, rect, source, dpiX, dpiY)
+-- `opts.layer` names a second chain of the same frame (its own canvases);
+-- `opts.mask` composites that layer over what is already on screen, keyed
+-- by `canvas`'s own alpha, instead of replacing the screen with it.
+function ShaderFX.render(canvas, rect, source, dpiX, dpiY, opts)
   if not autoActivateTried then tryAutoActivateFromEnv() end
+  local layer = opts and opts.layer or "main"
+  local masked = opts and opts.mask and maskedDraw() or nil
   if not slots.main.state and not slots.secondary.state then
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(canvas, 0, 0)
@@ -1113,30 +1141,32 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY)
   local scale = chainRenderScale()
   local viewport = { w = roundDim(uRect.w * scale), h = roundDim(uRect.h * scale) }
 
-  -- exposed for tests only (tests/drivers/gold_shaderfx_zoom_sizing_test.lua)
-  ShaderFX._lastRect, ShaderFX._lastSource = rect, source
+  if layer == "main" then
+    -- exposed for tests only (tests/drivers/gold_shaderfx_zoom_sizing_test.lua)
+    ShaderFX._lastRect, ShaderFX._lastSource = rect, source
 
-  local dt = love.timer and love.timer.getDelta() or 0
-  updateYawTwist(slots.main.state, dt)
-  updateYawTwist(slots.secondary.state, dt)
-  -- Test seam: the live per-frame integration, before it rides into the shader.
-  ShaderFX._lastYawTwist = {
-    main = slots.main.state and slots.main.state.yawTwist,
-    secondary = slots.secondary.state and slots.secondary.state.yawTwist,
-  }
+    local dt = love.timer and love.timer.getDelta() or 0
+    updateYawTwist(slots.main.state, dt)
+    updateYawTwist(slots.secondary.state, dt)
+    -- Test seam: the live per-frame integration, before it rides into the shader.
+    ShaderFX._lastYawTwist = {
+      main = slots.main.state and slots.main.state.yawTwist,
+      secondary = slots.secondary.state and slots.secondary.state.yawTwist,
+    }
+  end
 
   local chainOut, chainPreset
-  local okCrop, frameSource = pcall(cropToGbSource, canvas, rect, source.w, source.h, scale)
+  local okCrop, frameSource = pcall(cropToGbSource, canvas, rect, source.w, source.h, scale, layer)
   if okCrop then
     lastCropError = nil
     -- exposed for tests only (gold_shaderfx_menu_black_crop_test.lua)
-    ShaderFX._lastCrop = frameSource
+    if layer == "main" then ShaderFX._lastCrop = frameSource end
     local dims = { w = frameSource:getWidth(), h = frameSource:getHeight() }
     local img = frameSource
     for _, slotName in ipairs(ShaderFX.SLOTS) do
       local s = slots[slotName]
       if s.state then
-        local okChain, out = pcall(ShaderFX.runChain, s.state, img, s.state.luts, viewport, dims)
+        local okChain, out = pcall(ShaderFX.runChain, s.state, img, s.state.luts, viewport, dims, layer)
         if okChain and out then
           img, chainOut, chainPreset = out, out, s.state.preset
           dims = { w = out:getWidth(), h = out:getHeight() }
@@ -1157,8 +1187,15 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY)
   end
 
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.setBlendMode("replace")
-  love.graphics.draw(canvas, 0, 0)
+  if masked then
+    if not chainOut then
+      love.graphics.setBlendMode("alpha")
+      love.graphics.draw(canvas, 0, 0)
+    end
+  else
+    love.graphics.setBlendMode("replace")
+    love.graphics.draw(canvas, 0, 0)
+  end
   if chainOut then
     -- A chain's final pass need not land on the viewport size (most presets end
     -- at scale_type="source"), so stretch, using that pass's own filter.
@@ -1168,7 +1205,12 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY)
     chainOut:setFilter(mode, mode)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setBlendMode("alpha")
+    if masked then
+      love.graphics.setShader(masked)
+      masked:send("mask", canvas)
+    end
     love.graphics.draw(chainOut, uRect.x, uRect.y, 0, uRect.w / cw, uRect.h / ch)
+    if masked then love.graphics.setShader() end
   end
   love.graphics.setBlendMode("alpha")
   -- Test seam; set only after the real chain ran.

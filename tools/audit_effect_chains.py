@@ -39,20 +39,24 @@ def effect_pointers(pret):
 def effect_chains(pret):
     chains = {}
     lines = {}
-    current = None
+    current = []
     for number, raw in enumerate(read_lines(os.path.join(pret, "data", "moves", "effects.asm")), 1):
         line = raw.split(";", 1)[0].rstrip()
         if not line.strip():
             continue
         label = LABEL_RE.match(line)
         if label:
-            current = label.group(1)
-            chains.setdefault(current, [])
-            lines.setdefault(current, number)
+            name = label.group(1)
+            if current and chains[current[-1]]:
+                current = []
+            current.append(name)
+            chains.setdefault(name, [])
+            lines.setdefault(name, number)
             continue
         cmd = CMD_RE.match(line)
-        if cmd and current is not None:
-            chains[current].append(cmd.group(1))
+        if cmd and current:
+            for name in current:
+                chains[name].append(cmd.group(1))
     return chains, lines
 
 

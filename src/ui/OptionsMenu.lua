@@ -26,6 +26,7 @@ local FaithfulRes = require("src.core.FaithfulRes")
 local ScreenPosition = require("src.core.ScreenPosition")
 local FrameCap = require("src.core.FrameCap")
 local VSync = require("src.core.VSync")
+local LogicClock = require("src.core.LogicClock")
 local Performance = require("src.core.Performance")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
@@ -517,6 +518,16 @@ local function buildRows(game)
         VSync.apply(o.vsync)
         return true
       end },
+    { id = "logicClock", label = Strings("LOGIC CLOCK"),
+      value = function(g)
+        return Strings(LogicClock.label(g.save.options.logicClock))
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.logicClock = LogicClock.cycle(o.logicClock, dir)
+        LogicClock.apply(o.logicClock)
+        return true
+      end },
     -- fast-forward the logic clock only; music and sfx keep their tempo
     -- (src/core/GameSpeed.lua), so this is safe to leave on. Per-category
     -- (RFC 0007): overworld walking, battle turns and menu navigation each
@@ -713,7 +724,7 @@ local GROUPS = {
     members = { "musicVol", "sfxVol", "pikaVol", "musicFilter" } },
   { id = "group.video", label = "VIDEO",
     members = { "uiLayout", "videoMode", "orientation", "faithfulRes",
-                "screenPos", "fpsCap", "vsync" } },
+                "screenPos", "fpsCap", "vsync", "logicClock" } },
   { id = "group.speed", label = "SPEED",
     members = { "textSpeed", "speedOverworld", "speedBattle", "speedMenu" } },
   { id = "group.graphics", label = "GRAPHICS",

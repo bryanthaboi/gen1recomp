@@ -4,8 +4,7 @@
 -- data/scripts/init.lua on a Yellow boot.
 --
 -- Yellow has TWO gambler objects where Red/Blue have one:
---   * VIRIDIANCITY_OLD_MAN    at (17,5) -- a Red/Blue leftover; its
---     toggle stays OFF forever in Yellow, no script ever shows it.
+--   * VIRIDIANCITY_OLD_MAN    at (17,5) -- scripts/ViridianMart.asm:64
 --   * VIRIDIANCITY_OLD_MAN2   at (18,9) -- replaces the sleeper the
 --     moment the Pokédex is given (OaksLabOakGivesPokedexScript:
 --     HideObject TOGGLE_LYING_OLD_MAN / ShowObject TOGGLE_OLD_MAN_2).
@@ -41,6 +40,7 @@ local OLD_MAN2 = "VIRIDIANCITY_OLD_MAN2"
 -- story5's VIRIDIAN_CITY.onStep chains story.lua's sleeping-old-man
 -- gate and its own gym-lock step (same pattern as yellow_jessie_james).
 local baseViridianStep = require("data.scripts.story5").VIRIDIAN_CITY.onStep
+local baseMartEnter = require("data.scripts.story").VIRIDIAN_MART.onEnter
 
 -- pokeyellow text/ViridianCity.asm, _ViridianCityOldManHadMyCoffeeNowText
 -- and _ViridianCityOldManLosingMyTouchText, spelled with the extractor's
@@ -107,22 +107,46 @@ end
 M.VIRIDIAN_CITY = {
   talk = {
     TEXT_VIRIDIANCITY_OLD_MAN2 = oldMan2Talk,
+
+    -- scripts/ViridianCity_2.asm:126
+    TEXT_VIRIDIANCITY_OLD_MAN = {
+      { "face_player" },                                                   -- 1
+      { "ask", "_ViridianCityOldManWantMeToShowYouAgainText" },            -- 2
+      { "jump_if_false", 9 },                                              -- 3
+      { "show_text", "_ViridianCityOldManWatchCloselyText" },              -- 4
+      -- scripts/ViridianCity.asm:90
+      { "old_man_demo" },                                                  -- 5
+      -- scripts/ViridianCity.asm:124
+      { "set_flag", "EVENT_COMPLETED_CATCH_TRAINING_AGAIN" },              -- 6
+      { "show_text", "_ViridianCityOldManYouNeedToWeakenTheTargetText" },  -- 7
+      { "jump", "end" },                                                   -- 8
+      { "show_text", "_ViridianCityOldManNotGoodEnoughForYouText" },       -- 9
+    },
   },
 
   -- Re-apply the Pokédex swap for a save that already holds the flag but
   -- was never standing here when it fired (converted .sav imports, same
-  -- shape as story.lua's VIRIDIAN_CITY.onEnter).  Yellow shows OLD_MAN2,
-  -- not the Red/Blue OLD_MAN at (17,5), and also puts away a stray
-  -- OLD_MAN a save made by the pre-#617 build left standing.
+  -- shape as story.lua's VIRIDIAN_CITY.onEnter).
   onEnter = function(game, ow)
-    if not (game.save.flags and game.save.flags.EVENT_GOT_POKEDEX) then
-      return
-    end
+    local flags = game.save.flags or {}
+    if not flags.EVENT_GOT_POKEDEX then return end
     local Commands = require("src.script.Commands")
     local ctx = { save = game.save, game = game, overworld = ow }
+    -- scripts/OaksLab.asm:591
     Commands.hide_object(ctx, "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN_SLEEPY")
-    Commands.hide_object(ctx, "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN")
-    Commands.show_object(ctx, "VIRIDIAN_CITY", OLD_MAN2)
+    if flags.EVENT_SPAWNED_OLD_MAN_1 then
+      -- scripts/ViridianMart.asm:69
+      Commands.hide_object(ctx, "VIRIDIAN_CITY", OLD_MAN2)
+      Commands.show_object(ctx, "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN")
+    elseif flags.EVENT_COMPLETED_CATCH_TRAINING then
+      -- scripts/ViridianCity.asm:249
+      Commands.hide_object(ctx, "VIRIDIAN_CITY", OLD_MAN2)
+      Commands.hide_object(ctx, "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN")
+    else
+      -- scripts/OaksLab.asm:594
+      Commands.hide_object(ctx, "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN")
+      Commands.show_object(ctx, "VIRIDIAN_CITY", OLD_MAN2)
+    end
   end,
 
   -- ViridianCityCheckWaitingOldMan: with the Pokédex held and the
@@ -146,6 +170,24 @@ M.VIRIDIAN_CITY = {
     ow.player.facing = "left"
     oldMan2Talk(game, ow, man, nil)
     return true
+  end,
+}
+
+M.VIRIDIAN_MART = {
+  onEnter = function(game, ow, ...)
+    if baseMartEnter then baseMartEnter(game, ow, ...) end
+    local flags = game.save.flags or {}
+    -- scripts/ViridianMart.asm:60
+    if not flags.EVENT_GOT_OAKS_PARCEL then return end
+    -- scripts/ViridianMart.asm:64
+    if not flags.EVENT_COMPLETED_CATCH_TRAINING then return end
+    if flags.EVENT_SPAWNED_OLD_MAN_1 then return end
+    local Flags = require("src.script.Flags")
+    Flags.set(game.save, "EVENT_SPAWNED_OLD_MAN_1")
+    local Commands = require("src.script.Commands")
+    local ctx = { save = game.save, game = game, overworld = ow }
+    Commands.hide_object(ctx, "VIRIDIAN_CITY", OLD_MAN2)
+    Commands.show_object(ctx, "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN")
   end,
 }
 

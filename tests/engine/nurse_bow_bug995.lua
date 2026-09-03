@@ -100,4 +100,35 @@ T.eq(farewell.text, BYE, "npc-less caller still closes with the farewell")
 if farewell.onDone then farewell.onDone() end
 T.eq(finished, 1, "npc-less caller returns control once")
 
+-- === Yellow: pokeyellow engine/events/pokecenter.asm:75-88 (#2123)
+local yellowStub = { isYellow = function() return true end }
+T.check(setUpvalue(OW.finishNurseHeal, "GameVersion", yellowStub),
+  "GameVersion upvalue on finishNurseHeal")
+fakeGame.save = { party = { { species = "PIKACHU", hp = 12 } } }
+reset()
+nurse = newNurse()
+nurse.sprite = { frames = { [0] = true, true, true, true } }
+finished = 0
+fakeSelf:finishNurseHeal(BYE, function() finished = finished + 1 end, nurse)
+pushed[1].onDone()
+hold = fakeSelf.emote or {}
+T.eq(hold.frames, 9, "Pikachu faces down (6) plus Delay3 before the bow")
+T.eq(nurse.frameOverride, nil, "no bow yet during that hold")
+if hold.onDone then hold.onDone() end
+hold = fakeSelf.emote or {}
+T.eq(nurse.frameOverride, 3, "image index 1: the 4th sheet frame is the bow")
+T.eq(hold.frames, 40, "DelayFrames 40")
+T.eq(#pushed, 1, "the farewell waits for the bow")
+if hold.onDone then hold.onDone() end
+T.eq(#pushed, 2, "the farewell follows the bow")
+T.eq(nurse.frameOverride, nil, "the bow ends before the farewell prints")
+
+fakeGame.save = { party = {} }
+reset()
+nurse = newNurse()
+fakeSelf:finishNurseHeal(BYE, function() end, nurse)
+pushed[1].onDone()
+hold = fakeSelf.emote or {}
+T.eq(hold.frames, 3, "no PIKACHU in the party: Delay3 only")
+
 T.finish("nurse_bow_bug995")

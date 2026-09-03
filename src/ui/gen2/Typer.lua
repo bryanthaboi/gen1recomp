@@ -54,16 +54,20 @@ function Typer.new(game, opts)
   }, Typer)
 end
 
+-- ../pokecrystal/home/text.asm:520 _ContTextNoPause
 function Typer:start(page)
-  local out, total = {}, 0
+  local out, total, kept = {}, 0, 0
+  local scrolled = type(page) == "table" and page.scrolled
   for i, line in ipairs(linesOf(page)) do
     local text = self.expand and self.expand(line) or line
     out[i] = text
-    total = total + #spansOf(text)
+    local n = #spansOf(text)
+    total = total + n
+    if scrolled and i == 1 then kept = n end
   end
   self.page = out
   self.total = total
-  self.shown = self.instant and total or 0
+  self.shown = self.instant and total or kept
   self.timer = 0
 end
 

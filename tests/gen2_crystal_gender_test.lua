@@ -193,10 +193,12 @@ end
 -- home/text.asm:566
 do
   local Chrome = require("src.ui.gen2.Chrome")
-  local priorPrint, priorWrapped = Chrome.print, Chrome.printWrapped
-  local printed = {}
-  Chrome.print = function(text) printed[#printed + 1] = text end
-  Chrome.printWrapped = function(text) printed[#printed + 1] = text end
+  local priorPrint = Chrome.print
+  local printed, rows = {}, {}
+  Chrome.print = function(text, _tx, ty)
+    printed[#printed + 1] = text
+    rows[text] = ty
+  end
   local done = GenderSelect.new({ data = { text = {
     _AreYouABoyOrAreYouAGirlText = "Are you a boy?\nOr are you a girl?{DONE}",
   } } })
@@ -205,11 +207,14 @@ do
   done:drawPanel()
   check(not table.concat(printed, "|"):find("DONE", 1, true),
     "and never reaches the tile grid")
+  -- ../pokecrystal/home/text.asm:473
+  eq(rows["Are you a boy?"], 14, "the prompt's first line sits on row 14")
+  eq(rows["Or are you a girl?"], 16, "and `line` drops the second to row 16")
   local prompt = GenderSelect.new({ data = { text = {
     _AreYouABoyOrAreYouAGirlText = "Are you a boy?{PROMPT}",
   } } })
   eq(prompt.text, "Are you a boy?", "nor is {PROMPT}")
-  Chrome.print, Chrome.printWrapped = priorPrint, priorWrapped
+  Chrome.print = priorPrint
 end
 
 -- ------------------------------------------------- the beat in Oak's speech

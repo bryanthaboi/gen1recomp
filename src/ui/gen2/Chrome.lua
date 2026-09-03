@@ -341,10 +341,12 @@ function Chrome.wrap(text, width)
 end
 
 -- Print wrapped text from (tx, ty) downward, at most `rows` lines.
-function Chrome.printWrapped(text, tx, ty, width, rows)
+-- ../pokecrystal/home/text.asm:473
+function Chrome.printWrapped(text, tx, ty, width, rows, step)
+  step = step or 1
   local lines = Chrome.wrap(text, width)
   for i = 1, math.min(#lines, rows or #lines) do
-    Chrome.print(lines[i], tx, ty + i - 1)
+    Chrome.print(lines[i], tx, ty + (i - 1) * step)
   end
   return #lines
 end

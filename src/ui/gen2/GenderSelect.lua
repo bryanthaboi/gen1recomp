@@ -111,7 +111,8 @@ function GenderSelect:drawPanel()
   G.rectangle("fill", 0, 0, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
   G.setColor(1, 1, 1, 1)
   Chrome.textbox(SAY_X, SAY_Y, SAY_W, SAY_H)
-  Chrome.printWrapped(self.text, SAY_TEXT_X, SAY_TEXT_Y, SAY_W, SAY_H - 1)
+  -- ../pokecrystal/home/text.asm:473
+  Chrome.printWrapped(self.text, SAY_TEXT_X, SAY_TEXT_Y, SAY_W, 2, 2)
   Chrome.box(BOX_X, BOX_Y, BOX_W, BOX_H)
   for i, option in ipairs(GenderSelect.OPTIONS) do
     local row = TEXT_Y + (i - 1) * ROW_STEP

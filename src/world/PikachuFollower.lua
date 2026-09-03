@@ -973,11 +973,12 @@ end
 -- player (.PikaMovementData1: walk up left, hop up right), left of it
 -- (.PikaMovementData2: hop up right) or right of it (.PikaMovementData3:
 -- hop up left) -- and all three land on the counter tile directly in
--- front of the player, so the port animates that one hop.  Pikachu
--- already above the player yields zero movement bytes: no beat (#417).
+-- front of the player.  Pikachu already above the player yields zero
+-- movement bytes: no beat (#417).
 -- ---------------------------------------------------------------------
 
-local HOP_FRAMES = 32 -- the port's ledge-hop arc (Player:pose hopTotal)
+local HOP_FRAMES = 32 -- engine/pikachu/pikachu_movement.asm:106
+local HOP_HEIGHT = 8 -- engine/pikachu/pikachu_movement.asm:815
 
 function PikachuFollower.hopToCounter(ow, done)
   local npc = GameVersion.isYellow() and findFollower(ow) or nil
@@ -989,32 +990,59 @@ function PikachuFollower.hopToCounter(ow, done)
     if done then done() end
     return
   end
+  local x, y = npc.cellX, npc.cellY
+  local legs
+  -- engine/pikachu/pikachu_emotions.asm:428
+  if y > p.cellY then
+    -- engine/pikachu/pikachu_emotions.asm:460
+    legs = { { x = x - 1, y = y - 1 }, { x = x, y = y - 2, hop = true } }
+  elseif y == p.cellY and p.cellX < x then
+    -- engine/pikachu/pikachu_emotions.asm:473
+    legs = { { x = x - 1, y = y - 1, hop = true } }
+  elseif y == p.cellY then
+    -- engine/pikachu/pikachu_emotions.asm:467
+    legs = { { x = x + 1, y = y - 1, hop = true } }
+  else
+    if done then done() end
+    return
+  end
   npc.goalX, npc.goalY = nil, nil
   npc.targetX, npc.targetY = nil, nil
   npc.moving, npc.progress, npc.hopStep = false, 0, nil
   npc.idle = nil
   npc.facing = "up" -- $36, look up
   ow.pikaHop = {
-    npc = npc, frames = 0, cellX = cx, cellY = cy, onDone = done,
-    fromX = npc.px, fromY = npc.py, toX = cx * 16, toY = cy * 16,
+    npc = npc, frames = 0, legs = legs, leg = 0, onDone = done,
+    fromX = npc.px, fromY = npc.py,
   }
 end
 
 -- One frame of that hop.  OverworldState:update holds the world for it the
 -- way it holds for the heal machine (only the top state updates, so this
--- has to sit between the two text boxes); the arc matches Player:pose's
--- ledge hop -- a 10px sine over 32 frames.
+-- has to sit between the two text boxes).
 function PikachuFollower.updateHop(ow)
   local h = ow.pikaHop
   if not h then return end
   h.frames = h.frames + 1
-  local t = math.min(1, h.frames / HOP_FRAMES)
-  h.npc.px = h.fromX + (h.toX - h.fromX) * t
-  h.npc.py = h.fromY + (h.toY - h.fromY) * t
-             - math.floor(10 * math.sin(t * math.pi) + 0.5)
+  local leg = h.legs[h.leg]
+  if leg then
+    local t = math.min(1, h.frames / HOP_FRAMES)
+    h.npc.px = h.fromX + (leg.x * 16 - h.fromX) * t
+    h.npc.py = h.fromY + (leg.y * 16 - h.fromY) * t
+    if leg.hop then
+      h.npc.py = h.npc.py - math.floor(HOP_HEIGHT * math.sin(t * math.pi) + 0.5)
+    end
+  end
   if h.frames < HOP_FRAMES then return end
-  h.npc.cellX, h.npc.cellY = h.cellX, h.cellY
-  h.npc.px, h.npc.py = h.toX, h.toY
+  if leg then
+    h.npc.cellX, h.npc.cellY = leg.x, leg.y
+    h.npc.px, h.npc.py = leg.x * 16, leg.y * 16
+  end
+  h.leg, h.frames = h.leg + 1, 0
+  if h.legs[h.leg] then
+    h.fromX, h.fromY = h.npc.px, h.npc.py
+    return
+  end
   ow.pikaHop = nil
   -- the player has not moved, so the trail restarts under his feet and the
   -- follower only steps back off the counter once he walks away

@@ -312,6 +312,8 @@ return {
                            target and target[2] < y and "down"
                            or target and target[2] > y and "up"
                            or target and target[1] < x and "right" or "left" })
+      -- pokeyellow scripts/OaksLab.asm:352-354
+      table.insert(rows, { "save_end_battle_text", "_OaksLabRivalIPickedTheWrongPokemonText" })
       table.insert(rows, { "start_battle", "trainer", "OPP_RIVAL1", 1 })
       table.insert(rows, { "heal_party" })
       table.insert(rows, { "set_flag", "EVENT_BATTLED_RIVAL_IN_OAKS_LAB" })

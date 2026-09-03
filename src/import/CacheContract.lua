@@ -17,6 +17,8 @@ CacheContract.VERSION_FORMAT = {
   gold = "rom-cache-v12:",
   silver = "rom-cache-v12:",
   crystal = "rom-cache-v12-crystal4:",
+  -- engine/overworld/map_sprites.asm:181
+  yellow = "rom-cache-v10-yellow1:",
 }
 CacheContract.MARKER_PATH = "rom-cache.complete"
 

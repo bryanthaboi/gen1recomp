@@ -46,6 +46,7 @@ return function(game)
   game.save.player.name = "bryan"
   game.save.flags = game.save.flags or {}
   game.save.flags.EVENT_GOT_STARTER = true
+  game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
   game.save.usedPokecenter = false -- BIT_USED_POKECENTER: get the full prompt
   game.save.party = {
     Pokemon.new(game.data, "PIKACHU", 16),
@@ -246,19 +247,59 @@ return function(game)
   U.tap(game, "a")
   U.wait(10)
   local sawHop, sawMachine, hopFrames = false, false, 0
-  local shotHop, shotMachine = false, false
-  for _ = 1, 600 do
+  local shotHop, shotMachine, shotLeg, shotBack, shotBow = false, false, false, false, false
+  local overlapFrames, hopLegs = 0, 0
+  local runs = {}
+  local sawBowFrame, bowSheetOk = false, false
+  local function noteFacing(phase)
+    if not nurse then return end
+    local last = runs[#runs]
+    if last and last.facing == nurse.facing and last.phase == phase then
+      last.n = last.n + 1
+    else
+      runs[#runs + 1] = { facing = nurse.facing, phase = phase, n = 1 }
+    end
+  end
+  local phase = "talk"
+  for _ = 1, 800 do
     local cur = game.overworld
+    local pika = follower()
     if cur.pikaHop then
       sawHop = true
       hopFrames = hopFrames + 1
-      if not shotHop and hopFrames > 16 then
+      -- engine/pikachu/pikachu_emotions.asm:460
+      if pika then
+        local p = cur.player
+        local cx, cy = pika.px + 8, pika.py + 8
+        if cx >= p.px and cx < p.px + 16 and cy >= p.py and cy < p.py + 16 then
+          overlapFrames = overlapFrames + 1
+        end
+      end
+      if cur.pikaHop.leg and cur.pikaHop.leg > hopLegs then
+        hopLegs = cur.pikaHop.leg
+        if hopLegs == 2 and not shotLeg then shotLeg = shot("bug2123_hop_leg2") end
+      end
+      if not shotHop and hopFrames > 48 then
         shotHop = shot("bug417_hop")
       end
     end
     if cur.healAnim then
+      phase = "machine"
       sawMachine = true
       if not shotMachine then shotMachine = shot("bug417_machine") end
+    elseif phase == "machine" and not cur.healAnim then
+      phase = "after"
+    elseif phase == "talk" and cur.emote and game.stack:top() == cur then
+      phase = "before"
+    end
+    if phase ~= "talk" then noteFacing(phase) end
+    if nurse and phase == "before" and nurse.facing == "up" and not shotBack then
+      shotBack = shot("bug2123_nurse_back")
+    end
+    if nurse and nurse.frameOverride == 3 then
+      sawBowFrame = true
+      bowSheetOk = nurse.sprite and nurse.sprite.frames and nurse.sprite.frames[3] ~= nil
+      if not shotBow then shotBow = shot("bug2123_nurse_bow") end
     end
     -- the hop deliberately runs with the overworld back on top (both text
     -- boxes have popped themselves by then), so "overworld is top" alone is
@@ -268,7 +309,7 @@ return function(game)
     for _, mon in ipairs(game.save.party) do
       if mon.hp ~= mon.stats.hp then partyUp = false end
     end
-    if partyUp and not cur.pikaHop and not cur.healAnim
+    if partyUp and not cur.pikaHop and not cur.healAnim and not cur.emote
        and game.stack:top() == cur then
       break
     end
@@ -280,7 +321,37 @@ return function(game)
   check("the heal script ran back out to the overworld",
         game.stack:top() == game.overworld)
   check("Pikachu hopped to the counter (#417)", sawHop)
+  check("Pikachu went around the player, never through him (#2123)",
+        sawHop and overlapFrames == 0)
+  check("the hop from behind the player is two legs (#2123)", hopLegs == 2)
+  U.log(("hop: %d frames, %d legs, %d frames overlapping the player")
+          :format(hopFrames, hopLegs, overlapFrames))
   check("the healing machine ran", sawMachine)
+  local seq = {}
+  for _, r in ipairs(runs) do seq[#seq + 1] = r.phase .. ":" .. tostring(r.facing) .. "x" .. r.n end
+  U.log("nurse facing runs (samples of 5 frames):", table.concat(seq, " "))
+  local function run(phaseName, facing, index)
+    local seen = 0
+    for _, r in ipairs(runs) do
+      if r.phase == phaseName and r.facing == facing then
+        seen = seen + 1
+        if seen == index then return r end
+      end
+    end
+    return nil
+  end
+  local backBefore = run("before", "up", 1)
+  check("she shows her back before turning to the machine (#2123)",
+        backBefore ~= nil and backBefore.n >= 10)
+  local leftBefore = run("before", "left", 1)
+  check("then turns left for the machine", leftBefore ~= nil)
+  local backAfter = run("after", "up", 1)
+  check("she shows her back again after the machine (#2123)",
+        backAfter ~= nil and backAfter.n >= 10)
+  local downAfter = run("after", "down", 1)
+  check("then faces the player before fighting fit", downAfter ~= nil)
+  check("the bow uses the 4th sheet frame (#2123)", sawBowFrame)
+  check("the Yellow nurse sheet has that 4th frame", bowSheetOk)
   local healed = #game.save.party > 0
   for _, mon in ipairs(game.save.party) do
     if mon.hp ~= mon.stats.hp or mon.status ~= nil then healed = false end

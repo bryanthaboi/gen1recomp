@@ -4,6 +4,7 @@
 
 local FixedStep = {}
 
+FixedStep.GB_HZ = 4194304 / 70224
 FixedStep.STEP = 1 / 60
 -- Hard ceiling on catch-up debt (seconds of logic time drained in one
 -- rendered frame).  0.25s = 15 GB steps.  Game:update may lower this for the
@@ -14,6 +15,16 @@ local MAX_ACCUM = FixedStep.MAX_ACCUM
 local SMOOTH_FRAMES = 4
 local SMOOTH_MAX = 1 / 60 * 2.5
 local STEP_EPS = 1 / 60 * 0.02
+
+function FixedStep.setHz(hz)
+  hz = tonumber(hz)
+  if not hz or hz <= 0 then hz = 60 end
+  FixedStep.STEP = 1 / hz
+  SMOOTH_MAX = FixedStep.STEP * 2.5
+  STEP_EPS = FixedStep.STEP * 0.02
+  FixedStep.phasedFor = nil
+  return hz
+end
 
 -- Phase the accumulator is re-seeded with once an absorbed hitch frame has
 -- been paid for.  Half a step is the balanced point: a frame has to come in
