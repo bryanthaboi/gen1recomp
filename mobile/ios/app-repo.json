@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.56",
+          "date": "2026-09-04",
+          "size": 21614868,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.56/gen1recomp++-0.2.56-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2114 Always the same speed on Cycling Road\n- #2115 Not automatically getting off the slope at the end of Cycling Road\n- #2116 Visual Indicator for Text\n- #2117 Bill dont do Face Rotation\n- #2118 Name & HP bar of opposing trainer's Pokemon appear along with the sprite\n- #2124 Pokemon Box different Details\n- #2125 Using Heal Items in Bag missing Transition\n- #2126 Pokemon 2nd Pokemon Switch is Missing\n- #2141 (GSC) Transitions are broken/too fast\n- #2148 Paralysis/speed modification interaction is off.\n- #2149 Rival can spawn incorrectly at Nugget Bridge\n- #2150 Rival's sprite not visible during battle transition\n- #2151 Dialogue issue after rival fight at Nugget Bridge\n- #2152 Map coloring in Yellow incorrect\n- #2153 Poison Sting miss using the Modern Clean ruleset\n- #2155 Item Bag - Using Elixir / Max Elixir is Missing Sound and Pokemon Menu is closing to early\n- #2156 Jingles before Nugget Bridge Rocket\n- #2158 Item Bag - Ether / Max Ether Different Layout\n- #2159 Text & jingle missing when receiving Charmander\n- #2161 Old text when using rare candy\n- #2162 Buying Items if Item is Max Closes menu instant\n- #2163 Pokedex Seen Pokemon is different\n- #2164 S.S Anne Player already looking to Rivals Path Spot\n- #2165 Pikachu in Bill's house\n- #2170 (GSC) Talking to an NPC doesn't cancel the walking animation\n- #2171 (GSC) Various issues in the intro\n- #2173 (GSC) The first pokémon in a trainer battle is being sent out two times\n- #2174 (GSC) Missing dialogue arrow in some situations\n- #2175 (GSC) Switching to a pokémon that is already in battle should keep you in the party menu\n- #2176 (GSC) Missing SFX and animation for falling into a hole\n- #2178 (GSC) Missing animation for DIG in the overworld\n- #2179 (RBY) Dig animation in the overworld is sped up\n- #2180 (RBY) Incorrrect transition effect for entering/exiting places\n- #2181 (RBY) Incorrect SFX for climbing ladders and sometimes for getting out of places\n- #2182 (RBY) Wrong SFX and missing animation for falling from boulder holes\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.2.55",
           "date": "2026-09-03",
           "size": 21602159,
