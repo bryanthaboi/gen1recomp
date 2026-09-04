@@ -316,6 +316,7 @@ Save.DEFAULT_OPTIONS = {
   palette = "",
   videoMode = "windowed",
   fpsCap = 60,
+  battleLayout = "og",
   -- BATTLE SIZE (#1709): fixed | fill
   battleFit = "fixed",
   battleBg = "white",

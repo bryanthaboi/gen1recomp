@@ -42,6 +42,7 @@ local FieldMoves = require("src.world.gen2.FieldMoves")
 local Font = require("src.render.Font")
 local Gen2Save = require("src.core.gen2.Save")
 local GbcPalette = require("src.render.GbcPalette")
+local IntroFade = require("src.ui.gen2.IntroFade")
 local Logger = require("src.core.Logger")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
@@ -57,6 +58,21 @@ OakSpeech.isOpaque = true
 
 local FADE_FRAMES = 24
 local WIPE_FRAMES = 32
+
+-- ../pokecrystal/engine/menus/intro_menu.asm:802-851 ShrinkPlayer
+OakSpeech.SHRINK_MUSIC_FADE = 32
+local SHRINK_PIC1 = 8
+local SHRINK_PIC2 = 16
+local SHRINK_CLEAR = 24
+local SHRINK_ICON = 27
+local SHRINK_END = 77
+OakSpeech.SHRINK_PIC1 = SHRINK_PIC1
+OakSpeech.SHRINK_PIC2 = SHRINK_PIC2
+OakSpeech.SHRINK_CLEAR = SHRINK_CLEAR
+OakSpeech.SHRINK_ICON = SHRINK_ICON
+OakSpeech.SHRINK_END = SHRINK_END
+-- ../pokecrystal/engine/menus/intro_menu.asm:945-948
+local ICON_X, ICON_Y = 64, 60
 
 local FALLBACKS = {
   _OakText1 = Strings("Hello! Sorry to\nkeep you waiting!\fWelcome to the\nworld of POKéMON!\fMy name is OAK.\fPeople call me the\nPOKéMON PROF."),
@@ -369,14 +385,25 @@ function OakSpeech:openInitClock()
   local game = self.game
   if not (game and game.stack) then return self:advance() end
   self.busy = true
+  local faded = self.faded
+  self.faded = false
   local pushed = Screens.push(game, "Gen2InitClock", {
     mode = "clock",
     save = game.save,
     autoConfirm = self.autoConfirm,
+    fades = not self.autoConfirm,
+    faded = faded,
     onDone = function()
       game.stack:pop()
-      self.busy = false
-      self:advance()
+      -- ../pokecrystal/engine/menus/intro_menu.asm:629-635
+      if self.autoConfirm then
+        self.busy = false
+        return self:advance()
+      end
+      IntroFade.run(self, { "inBlack", "outWhite" }, function()
+        self.busy = false
+        self:advance()
+      end)
     end,
   })
   if not pushed then
@@ -397,9 +424,12 @@ function OakSpeech:openGenderSelect(step)
   self.busy = true
   local pushed = Screens.push(game, "Gen2GenderSelect", {
     save = game.save,
+    fades = not self.autoConfirm,
     onDone = function(gender)
       game.stack:pop()
       self.busy = false
+      -- ../pokecrystal/engine/rtc/timeset.asm:22
+      self.faded = not self.autoConfirm
       -- `ld hl, wPlayerName / ld de, .Chris|.Kris / call InitName`, the default
       -- NamePlayer lays down before the menu opens
       -- (../pokecrystal/engine/menus/intro_menu.asm:768-781).
@@ -465,11 +495,26 @@ end
 function OakSpeech:startShrink(step)
   self.shrinkText = self:lastPageLines((step and step.textKey) or "_OakText7")
   self.shrink = { frame = 0 }
+  self.playerIcon = nil
   local data = self.game and self.game.data
+  -- ../pokecrystal/engine/menus/intro_menu.asm:806-812
+  Music.fadeOut(OakSpeech.SHRINK_MUSIC_FADE)
   if data and data.audio and data.audio.sfx
       and data.audio.sfx.Sfx_EscapeRope then
     Sound.play(data, "Sfx_EscapeRope")
   end
+end
+
+-- ../pokecrystal/engine/menus/intro_menu.asm:911-950 Intro_PlacePlayerSprite
+function OakSpeech:overworldIcon()
+  local data = self.game and self.game.data
+  local sprites = data and data.gen2Sprites
+  local def = sprites and sprites[FieldMoves.playerSprite(self:gender())]
+  local image = def and tryImage(def.image)
+  if not image then return nil end
+  local colors = data.gen2Palettes
+    and Palettes.spritePalette(data.gen2Palettes, "DAY", def) or nil
+  return { image = image, colors = colors }
 end
 
 -- A beat that produced a value: the name menu, and any choice/yesno a build
@@ -637,6 +682,8 @@ function OakSpeech:finish()
 end
 
 function OakSpeech:update(_dt)
+  -- ../pokecrystal/home/fade.asm:22-101
+  if IntroFade.advance(self) then return end
   local r = self.picReveal
   if r then
     r.t = r.t + 1
@@ -646,23 +693,26 @@ function OakSpeech:update(_dt)
     end
     return
   end
-  -- ShrinkPlayer timeline (intro_menu.asm ShrinkPlayer): pic1 → pic2 →
-  -- clear → chris sprite beat → fade music → overworld.
+  -- ../pokecrystal/engine/menus/intro_menu.asm:820-851
   local s = self.shrink
   if not s then return end
   s.frame = s.frame + 1
-  if s.frame == 8 then
+  if s.frame == SHRINK_PIC1 then
     self.pic = self.shrinkPic1 or self.pic
-  elseif s.frame == 16 then
+  elseif s.frame == SHRINK_PIC2 then
     self.pic = self.shrinkPic2 or self.pic
-  elseif s.frame == 24 then
+  elseif s.frame == SHRINK_CLEAR then
     self.pic = nil
-  elseif s.frame == 32 then
-    Music.fadeOut(10)
-  elseif s.frame >= 80 then
+  elseif s.frame == SHRINK_ICON then
+    self.playerIcon = self:overworldIcon()
+  elseif s.frame >= SHRINK_END then
     self.shrink = nil
-    self.shrinkText = nil
-    self:finish()
+    -- ../pokecrystal/engine/menus/intro_menu.asm:849-850
+    IntroFade.run(self, { "outWhite" }, function()
+      self.shrinkText = nil
+      self.playerIcon = nil
+      self:finish()
+    end)
   end
 end
 
@@ -700,34 +750,54 @@ function OakSpeech:drawPic()
   G.setColor(1, 1, 1, 1)
 end
 
+-- ../pokecrystal/engine/menus/intro_menu.asm:911-950
+function OakSpeech:drawPlayerIcon()
+  local icon = self.playerIcon
+  if not icon or not icon.image then return end
+  local G = love.graphics
+  G.setColor(1, 1, 1, 1)
+  local w, h = icon.image:getDimensions()
+  local quad = love.graphics.newQuad(0, 0, math.min(16, w), math.min(16, h),
+    w, h)
+  if icon.colors and GbcPalette.available() then
+    GbcPalette.with(icon.colors,
+      function() G.draw(icon.image, quad, ICON_X, ICON_Y) end)
+  else
+    G.draw(icon.image, quad, ICON_X, ICON_Y)
+  end
+end
+
 function OakSpeech:drawPanel()
   local G = love.graphics
   G.setColor(1, 1, 1, 1)
   G.rectangle("fill", 0, 0, 160, 144)
   self:drawPic()
+  self:drawPlayerIcon()
   if self.shrinkText and self.fontOk then
-    G.setColor(0, 0, 0, 1)
-    for i, line in ipairs(self.shrinkText) do
-      Font.draw(line, 16, 104 + (i - 1) * 16)
+    -- home/text.asm:142 PrintText -> SetUpTextbox -> SpeechTextbox
+    Chrome.textbox(0, 12, 18, 4)
+    local row = 14
+    for _, line in ipairs(self.shrinkText) do
+      if row <= 16 then Chrome.print(line, 1, row) end
+      row = row + 2
     end
     G.setColor(1, 1, 1, 1)
   end
 end
 
-function OakSpeech:draw()
+function OakSpeech:drawBody()
   self:drawPanel()
+  IntroFade.paint(self, 160, 144)
+end
+
+-- ../pokecrystal/engine/menus/intro_menu.asm:875
+function OakSpeech:draw()
+  Chrome.withClip(function() self:drawBody() end)
 end
 
 function OakSpeech:drawWidescreen(winW, winH)
-  local G = love.graphics
-  Chrome.letterbox(winW, winH, 1, 1, 1)
-  local scale = Chrome.fitScale(winW, winH)
-  local ox, oy = Chrome.fitOrigin(winW, winH, scale)
-  G.push()
-  G.translate(ox, oy)
-  G.scale(scale, scale)
-  self:drawPanel()
-  G.pop()
+  local r, g, b = IntroFade.surround(self, 1, 1, 1)
+  Chrome.withPanel(winW, winH, r, g, b, function() self:drawBody() end)
 end
 
 return OakSpeech

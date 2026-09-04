@@ -69,11 +69,6 @@ function Damage.reapplyBadgeBoosts(battler, changedStat)
   end
 end
 
--- the merged status record for a battler's persistent condition, or nil
-local function statusRecord(battler)
-  return Status.recordFor(battler.statuses, battler.mon.status)
-end
-
 -- Critical chance test, following CriticalHitTest's shift chain exactly
 -- (each left shift caps at 255): b = speed/2, then x2 (or /2 with
 -- Focus Energy's famous right-shift bug), then x4 for high-crit moves
@@ -213,11 +208,8 @@ function Damage.compute(ruleset, attacker, defender, move, opts)
     -- hazeStatReset suppresses it: Haze (haze.asm ResetStats) copied the
     -- unmodified attack over the burn-halved battle stat, lifting the
     -- penalty until the next stat recompute.
-    local record = statusRecord(attacker)
-    local penalty = record and record.statPenalty
-    if penalty and penalty.stat == atkStat and not attacker.hazeStatReset then
-      atk = math.max(1, math.floor(atk / penalty.div))
-    end
+    -- core.asm:6326, effects.asm:634-635
+    atk = Status.applyPenalty(attacker, atkStat, atk)
     -- screens double the effective defense (crits bypass them).  The
     -- confusion self-hit is the quirk case: HandleSelfConfusionDamage
     -- swaps the user's own defense in but leaves the screen check
@@ -274,7 +266,12 @@ function Damage.compute(ruleset, attacker, defender, move, opts)
     if d == 0 then
       -- a 2-3 damage hit at 0.25x floors to zero: the original flags
       -- the move as missed rather than dealing a minimum 1
-      return 0, { crit = false, typeMult = mult, missed = true }
+      -- engine/battle/core.asm:5169-5176
+      if ruleset.zeroDamageMiss == false then
+        d = 1
+      else
+        return 0, { crit = false, typeMult = mult, missed = true }
+      end
     end
   end
 

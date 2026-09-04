@@ -633,8 +633,7 @@ M.ROUTE_24 = {
       end
       if not flags.EVENT_GOT_NUGGET then
         local t = text(game)
-        push(game, t._Route24CooltrainerM1YouBeatOurContestText .. "\f"
-          .. t._Route24CooltrainerM1YouJustEarnedAPrizeText, function()
+        local function prize()
           if not require("src.inventory.Bag").add(game.save, "NUGGET", 1,
               game.data) then
             push(game, t._Route24CooltrainerM1NoRoomText, done)
@@ -642,10 +641,18 @@ M.ROUTE_24 = {
           end
           flags.EVENT_GOT_NUGGET = true
           game.stringBuffer = game.data.items.NUGGET.name
+          -- pokeyellow scripts/Route24.asm:157
+          -- pokered scripts/Route24.asm:156
+          local jingle = require("src.core.GameVersion").isYellow()
+            and "Get_Key_Item" or "Get_Item1"
           push(game, t._Route24CooltrainerM1ReceivedNuggetText, function()
             push(game, t._Route24CooltrainerM1JoinTeamRocketText,
               battleOrDone)
-          end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
+          end, require("src.render.TextBox").soundOpts(game, jingle))
+        end
+        -- scripts/Route24.asm:149-153
+        push(game, t._Route24CooltrainerM1YouBeatOurContestText, function()
+          push(game, t._Route24CooltrainerM1YouJustEarnedAPrizeText, prize)
         end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
         return
       end

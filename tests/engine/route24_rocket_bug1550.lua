@@ -84,4 +84,46 @@ engaged.onDone()
 T.eq(#pushed, 0, "a loss prints nothing")
 T.eq(doneCalls, 1, "and just unfreezes the player")
 
-T.finish("Nugget Bridge Rocket battle text (#1550, #1551)")
+-- the prize arm: scripts/Route24.asm:149-158
+local GameVersion = require("src.core.GameVersion")
+local savedVersion = GameVersion.current
+
+local function runPrizeArm(version)
+  GameVersion.current = version
+  pushed, defeated, doneCalls = {}, false, 0
+  game.save = SaveData.newGame()
+  game.save.flags.EVENT_GOT_NUGGET = nil
+  handler(game, ow, npc, function() doneCalls = doneCalls + 1 end)
+  return pushed
+end
+
+local p = runPrizeArm("red")
+T.eq(p[1].text, Data.text._Route24CooltrainerM1YouBeatOurContestText,
+  "the contest line is its own box")
+T.eq(p[1].opts and p[1].opts.auto and p[1].opts.auto.sound, "Get_Item1",
+  "and it carries sound_get_item_1 (#2156)")
+p[1].onDone()
+T.eq(p[2].text, Data.text._Route24CooltrainerM1YouJustEarnedAPrizeText,
+  "the prize line is the second box")
+T.eq(p[2].opts, nil, "with no jingle of its own (#2156)")
+p[2].onDone()
+T.eq(p[3].text, Data.text._Route24CooltrainerM1ReceivedNuggetText,
+  "then the receipt box")
+T.eq(p[3].opts and p[3].opts.auto and p[3].opts.auto.sound, "Get_Item1",
+  "which plays sound_get_item_1 on Red")
+p[3].onDone()
+T.eq(p[4].text, Data.text._Route24CooltrainerM1JoinTeamRocketText,
+  "then the Team Rocket pitch")
+
+local y = runPrizeArm("yellow")
+T.eq(y[1].opts and y[1].opts.auto and y[1].opts.auto.sound, "Get_Item1",
+  "Yellow arms the contest box the same way")
+y[1].onDone()
+T.eq(y[2].opts, nil, "and leaves the prize box silent")
+y[2].onDone()
+T.eq(y[3].opts and y[3].opts.auto and y[3].opts.auto.sound, "Get_Key_Item",
+  "the receipt box plays sound_get_key_item on Yellow (#2156)")
+
+GameVersion.current = savedVersion
+
+T.finish("Nugget Bridge Rocket battle text (#1550, #1551, #2156)")

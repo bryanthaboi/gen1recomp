@@ -76,7 +76,7 @@ end
 -- underscore, and the extractor now keys on both spellings, so the port's
 -- literal has to keep agreeing with what the cart actually says.
 do
-  local desc = "CATERPIE has no\npoison, but\vWEEDLE does.\fWatch out for its\nPOISON STING!"
+  local desc = "CATERPIE has no\npoison, but\vWEEDLE does.\fWatch out for its\nPOISON STING!{DONE}"
   local extracted = Data.text.ViridianCityYoungster2CaterpieAndWeedleDescriptionText
     or Data.text._ViridianCityYoungster2CaterpieAndWeedleDescriptionText
   if extracted then eq(extracted, desc, "the literal still matches the cart") end

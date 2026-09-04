@@ -104,6 +104,9 @@ return function(game)
     end
     eq(speech.steps and speech.steps[1] and speech.steps[1].id, "init_clock",
       "the first beat")
+    -- ../pokecrystal/engine/menus/intro_menu.asm:629-635
+    waitFor("the clock hand-off rotations",
+      function() return top().fade == nil end, 200)
     U.wait(40)
     U.shot(game, out .. "/01-oak.png")
     eq(game.save.player.gender, "male", "save.player.gender")
@@ -132,7 +135,14 @@ return function(game)
     "wPlayerGender after the answer")
   eq(game.save.player.name, want == "girl" and "KRIS" or "CHRIS",
     "NamePlayer's InitName default")
+  -- ../pokecrystal/engine/rtc/timeset.asm:22-32, :42-43: PrintText only runs
+  -- once RotateFourPalettesRight is done, so wait the rotation out.
+  waitFor("the clock's fade in",
+    function() return isA(InitClock) and top().fade == nil end, 200)
+  U.wait(20)
+  U.shot(game, out .. "/02b-initclock.png")
 
+  local shotDemo = false
   for _ = 1, 200 do
     if isA(OakSpeech) then break end
     tap("a", 2)
@@ -144,6 +154,12 @@ return function(game)
   local shotPic = false
   for _ = 1, 500 do
     if isA(NamePick) then break end
+    -- ../pokecrystal/engine/menus/intro_menu.asm:875
+    if not shotDemo and isA(OakSpeech) and top().pic == top().marillPic then
+      U.wait(6)
+      U.shot(game, out .. "/02c-demowipe.png")
+      shotDemo = true
+    end
     if not shotPic and isA(OakSpeech) then
       local at = top().steps and top().steps[top().step]
       if at and at.id == "ask_player_name" then

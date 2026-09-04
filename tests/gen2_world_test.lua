@@ -188,6 +188,71 @@ local function fakePlayer(x, y, facing)
   }
 end
 
+-- ../pokecrystal/engine/overworld/events.asm:349-353
+do
+  local Movement = require("src.script.gen2.Movement")
+  local w = World.new({ data = { audio = { sfxOrder = {} } },
+    save = { player = {} } })
+  w.player = { cellX = 0, cellY = 0, facing = "down" }
+  local sfx = {}
+  w.playSfxNamed = function(_, name) sfx[#sfx + 1] = name end
+
+  w:startSkyfall()
+  eq(sfx[1], "Sfx_Kinesis", "the fall opens on SFX_KINESIS")
+  check(w.playerMasked, "OBJECT_ACTION_00 is SetFacingStanding: nothing drawn")
+  check(w:busy(), "and the applymovement holds the overworld")
+  for _ = 1, 16 do w:updateSkyfall() end
+  check(not w.playerMasked, "the sprite comes back for the descent")
+  eq(w.player.spriteYOffset, nil, "and has not moved yet")
+
+  w:updateSkyfall()
+  eq(w.player.spriteYOffset, Movement.teleportYOffset(1),
+    "the first falling frame is off the top of the screen")
+  local last = w.player.spriteYOffset
+  for _ = 1, 14 do
+    w:updateSkyfall()
+    check(w.player.spriteYOffset > last, "the drop eases down every frame")
+    last = w.player.spriteYOffset
+  end
+  w:updateSkyfall()
+  eq(w.player.spriteYOffset, 0, "landing flush on the tile")
+  check(w.skyfall == nil, "and the state is done")
+  check(not w:busy(), "so the world is walkable again")
+  eq(sfx[2], "Sfx_Strength", "SFX_STRENGTH on the landing")
+  eq(#sfx, 2, "and no warpsound anywhere in the fall")
+  eq(w.shake and w.shake.amplitude, 1, "earthquake 16 is a one-pixel shake")
+  eq(w.shake and w.shake.left, 16, "for sixteen frames")
+end
+
+-- engine/events/overworld.asm:864-872
+do
+  local Movement = require("src.script.gen2.Movement")
+  local w = World.new({ data = { audio = { sfxOrder = {} } },
+    save = { player = {} } })
+  local spins = {}
+  w.player = {
+    cellX = 0, cellY = 0, facing = "down", moving = false,
+    scriptSpin = function(_, frames, flicker)
+      spins[#spins + 1] = { frames = frames, flicker = flicker }
+    end,
+  }
+  w:beginMovement(0, Movement.digOutBytes())
+  w:updateMovement()
+  eq(spins[1] and spins[1].frames, 32, "step_dig 32 spins for 32 frames")
+  check(not spins[1].flicker, "and the out-spin does not strobe")
+  check(not w.playerHidden, "hide_object has not been read yet")
+  for _ = 1, 33 do w:updateMovement() end
+  check(w.playerHidden, "hide_object hides the player for the fade")
+  check(w.moveState == nil, "and the stream ends on step_end")
+
+  w:beginMovement(0, Movement.digReturnBytes())
+  w:updateMovement()
+  check(not w.playerHidden, "show_object brings them back on the far side")
+  eq(spins[2] and spins[2].frames, 32, "return_dig 32 spins for 32 too")
+  eq(spins[2] and spins[2].flicker, true,
+    "and StepFunction_DigTo strobes it on the odd frames")
+end
+
 -- A world with the render half replaced: no love here, so the seams that would
 -- push a TextBox, a ChoiceBox or the battle screen record instead.  `log` is
 -- the script trace the assertions read.
@@ -424,7 +489,6 @@ end
 -- that differs between the three items, wRepelEffect already set refuses
 -- without touching either the counter or the bag, and only the success arm
 -- goes through UseDisposableItem.
---
 -- Scoped in its own `do` block: the file is already brushing Lua's 200-local
 -- ceiling, and this test needs its own world/game/pack rather than reusing
 -- the rod fixtures above.
@@ -1760,13 +1824,11 @@ else
 end
 
 -- ------------------------------------------------------- the script VM hooks
---
 -- The 81 opcodes the interpreter grew are inert without these: an `appear` that
 -- reaches no World never spawns the object, a `changeblock` never opens the
 -- door, and a `warpcheck` never drops the player through the hole.  Every hook
 -- the VM guards with `if self.xFn then` is asserted here against real World
 -- behaviour rather than against the closure that forwards to it.
---
 -- The world under test is built with World.new and then poked directly: the
 -- constructor is love-free, and each method below is the WORLD half of one
 -- transcribed command, so a stub map and a stub save are the whole rig.
@@ -1852,7 +1914,6 @@ eq(hookWorld({ version = "silver" }):gsVersion(), 1, "and a Silver save is 1")
 -- reload comes back with every flag the player set and with each map still on
 -- the scene it had reached.  World:load runs this before the first setMap;
 -- these are the halves of it on their own.
---
 -- The seed is InitializeEventsScript's setevent list, which the cache carries
 -- as data/generated/initial_events.lua.  Three of its ids stand in for it here:
 -- EVENT_ILEX_FOREST_APPRENTICE 1794, EVENT_EARLS_ACADEMY_EARL 1739, and
@@ -1912,7 +1973,6 @@ end
 -- it rode the save, a reload walked the player off the BICYCLE and off the
 -- water: everything the state decides follows from this one field, so all
 -- three of the things it decides are checked here.
---
 -- Wrapped in a function for the same reason bikeChecks is, and called on the
 -- spot rather than through a name of its own: block locals count against the
 -- main chunk's 200-local ceiling and this file has none left.
@@ -2363,21 +2423,36 @@ check(doorWorld:busy(),
   "the setup script is a blocking call, so the world is busy for it")
 -- engine/tilesets/timeofday_pals.asm:115-128
 do
-  local doorOut = World.FADE_STEPS * World.FADE_STEP_FRAMES
-  local doorHold = World.FADE_STEP_FRAMES + World.MAP_LOAD_WHITE_FRAMES
-    + World.FADE_STEP_FRAMES
+  -- (engine/tilesets/timeofday_pals.asm:160-187)
+  -- follows it is pure white (home/lcd.asm:35-72)
+  local doorOut = (World.FADE_STEPS + 1) * World.FADE_STEP_FRAMES
+  local doorHold = World.MAP_LOAD_WHITE_FRAMES + World.FADE_STEP_FRAMES
   local doorIn = (World.FADE_STEPS - 1) * World.FADE_STEP_FRAMES
   local doorChain = doorOut + doorHold + doorIn
   for _ = 1, doorOut - 1 do doorWorld:updateMapSetup() end
   check(doorLoad == nil, "one frame short of the fade out, it is still running")
   eq(doorWorld.fade, "white", "and the sheet it fades to is FillWhiteBGColor's")
+  eq(doorWorld.fadeLevel, 1, "whose last row is the colour-0 plane")
+  check(doorWorld.fadeWhiten,
+    "drawn through the remap with pals 1-6 whitened, not as a white sheet")
+  eq(doorWorld.fadeHold, nil, "so nothing holds the flat sheet yet")
   doorWorld:updateMapSetup()
-  check(doorLoad ~= nil, "the last fade-out frame is where the load lands")
+  check(doorLoad ~= nil, "the load lands after that last row, under the LCD")
   eq(doorLoad.id, "OTHER_MAP", "on the destination map")
   eq(doorLoad.x, 1, "at the destination WARP's own cell")
   eq(doorWorld.fadeLevel, 1,
     "with the sheet re-armed, because the load cleared it")
-  for _ = 1, doorHold + doorIn - 1 do doorWorld:updateMapSetup() end
+  eq(doorWorld.fadeHold, World.MAP_LOAD_WHITE_FRAMES,
+    "and the pure white held for the LCD-off window alone")
+  eq(doorWorld.fadeWhiten, nil,
+    "LoadMapPalettes put the plain time-of-day set back")
+  for _ = 1, World.MAP_LOAD_WHITE_FRAMES do doorWorld:updateMapSetup() end
+  eq(doorWorld.fadeHold, nil, "the LCD comes back on")
+  eq(doorWorld.fadeLevel, 1,
+    "on FadeInFromWhite's own first row, a palette row again")
+  for _ = 1, doorHold + doorIn - 1 - World.MAP_LOAD_WHITE_FRAMES do
+    doorWorld:updateMapSetup()
+  end
   check(doorWorld.mapSetup ~= nil, "the fade in runs out the remaining rows")
   doorWorld:updateMapSetup()
   check(doorWorld.mapSetup == nil,
@@ -2569,11 +2644,9 @@ phoneWorld:setSpecialCall(0)
 eq(phoneWorld:specialCall(), 0, "and SPECIALCALL_NONE clears it")
 
 -- ---- roaming legendaries --------------------------------------------------
---
 -- engine/overworld/wildmons.asm InitRoamMons / CheckEncounterRoamMon /
 -- UpdateRoamMons / JumpRoamMons, and data/wild/roammon_maps.asm.  All of it is
 -- pure state, so none of these need a map loaded.
---
 -- Wrapped in a function because Lua 5.1 caps a chunk at 200 active locals and
 -- this suite is already close to it; the alternative is renaming everything
 -- above, which would make the diff lie about what changed.
@@ -2795,7 +2868,6 @@ check(Roamers.afterWildBattle(driftSave, "ROUTE_30", seeded({ 16, 2, 1, 1 })),
   "and the sixteenth moves them")
 
 -- ---- swarms ---------------------------------------------------------------
---
 -- engine/events/specials.asm StoreSwarmMapIndices / SetSwarmFlag /
 -- CheckSwarmFlag, and _SwarmWildmonCheck's place in front of the normal table.
 
@@ -3109,10 +3181,8 @@ check(selGame.save.registeredItem == nil,
 end
 
 -- ---- the BICYCLE ----------------------------------------------------------
---
 -- BikeFunction (engine/events/overworld.asm) end to end: where the bike may be
 -- got on, what the queued script does, and the Cycling Road's two flags.
---
 -- Wrapped in a function rather than a `do` block: block locals still count
 -- against the main chunk's 200-local ceiling and this file is already near it.
 local function bikeChecks()

@@ -16,6 +16,7 @@ love = require("tests.love_stub")
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local GameVersion = require("src.core.GameVersion")
 local GenderSelect = require("src.ui.gen2.GenderSelect")
+local InitClock = require("src.ui.gen2.InitClock")
 local NamePick = require("src.ui.gen2.NamePick")
 local NamingScreen = require("src.ui.gen2.NamingScreen")
 local OakSpeech = require("src.ui.gen2.OakSpeech")
@@ -204,6 +205,10 @@ do
   } } })
   eq(done.text, "Are you a boy?\nOr are you a girl?",
     "the {DONE} terminator is stripped from the prompt")
+  for _ = 1, 300 do
+    if done.typer:done() then break end
+    done:update(0)
+  end
   done:drawPanel()
   check(not table.concat(printed, "|"):find("DONE", 1, true),
     "and never reaches the tile grid")
@@ -214,6 +219,26 @@ do
     _AreYouABoyOrAreYouAGirlText = "Are you a boy?{PROMPT}",
   } } })
   eq(prompt.text, "Are you a boy?", "nor is {PROMPT}")
+  -- ../pokecrystal/home/print_text.asm:5
+  local slow = GenderSelect.new({
+    save = { options = { textSpeed = "SLOW" } },
+    data = { text = { _AreYouABoyOrAreYouAGirlText = "Are you a boy?" } },
+  })
+  check(slow.typer ~= nil and not slow.typer:done(),
+    "the prompt opens with nothing shown")
+  for _ = 1, 15 do slow:update(0) end
+  eq(slow.typer.shown, 3, "SLOW is one character every five frames")
+  printed = {}
+  slow:drawPanel()
+  check(table.concat(printed, "|"):find("Are", 1, true) ~= nil
+    and not table.concat(printed, "|"):find("boy", 1, true),
+    "and only the typed part reaches the tile grid")
+  local fast = GenderSelect.new({
+    save = { options = { textSpeed = "FAST" } },
+    data = { text = { _AreYouABoyOrAreYouAGirlText = "Are you a boy?" } },
+  })
+  for _ = 1, 15 do fast:update(0) end
+  eq(fast.typer.shown, 14, "FAST is one a frame, and the line is 14 long")
   Chrome.print = priorPrint
 end
 
@@ -237,6 +262,27 @@ end
 eq(OakSpeech.defaultSteps()[1].id, "init_clock",
   "a bare call (no speech) is the Gold list")
 eq(#goldSteps + 1, #crystalSteps, "the Crystal list is the Gold list plus one")
+
+-- ../pokecrystal/engine/menus/intro_menu.asm:875
+do
+  local G = love.graphics
+  local priorScissor, clips = G.setScissor, {}
+  G.setScissor = function(x, y, w, h) clips[#clips + 1] = { x, y, w, h } end
+  for _, screen in ipairs({
+    setmetatable({}, OakSpeech),
+    GenderSelect.new({ data = {} }),
+    InitClock.new({}, { save = {} }),
+  }) do
+    clips = {}
+    screen:draw()
+    eq(#clips, 1, "draw scissors once")
+    eq(clips[1][1], 0, "at the panel origin")
+    eq(clips[1][2], 0, "at the panel origin")
+    eq(clips[1][3], 160, "over the LCD's own width")
+    eq(clips[1][4], 144, "and its height")
+  end
+  G.setScissor = priorScissor
+end
 
 -- ------------------------------------------------- the trainer card
 

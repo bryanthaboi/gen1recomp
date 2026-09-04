@@ -648,13 +648,22 @@ function PartyMenu:showItemResult(slot, opts)
     shown = opts.fromHp,
     target = opts.toHp,
     text = opts.text,
-    delay = PartyMenu.ACTION_TEXT_DELAY,
+    delay = opts.delay or PartyMenu.ACTION_TEXT_DELAY,
     onDone = opts.onDone,
     auto = opts.auto,
     holdSlot = opts.holdSlot,
     holdHp = opts.holdHp,
   }
   if opts.sfx then self:playSfx(opts.sfx) end
+end
+
+-- ../pokecrystal/engine/battle/core.asm:5156
+-- ../pokecrystal/home/text.asm:124
+function PartyMenu:refuse(text)
+  self:closeSubmenu()
+  local lines = Chrome.wrap(text, 18)
+  for i = #lines, 3, -1 do lines[i] = nil end
+  self:showItemResult(nil, { text = table.concat(lines, "\n"), delay = 0 })
 end
 
 function PartyMenu:itemResultClimbing()

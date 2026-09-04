@@ -46,12 +46,13 @@ local game = {
 local box = TextBox.new(game, "OAK: Er-hem!\nCongratulations\vCHAMP!")
 local floorY = box.line2Y
 
--- The page-advance arrow is the one glyph that belongs on the border: the
--- original prints ▼ into the bottom-right border tile (home/text.asm), and
--- TextBox draws it at a fixed slot 4px into that row.  Everything else is
--- body text and must stay inside.
-local arrowX = (box.boxTx + box.boxTw - 2) * 8
-local arrowY = (box.boxTy + box.boxTh - 1) * 8 - 4
+-- pokered home/text.asm:214
+local arrowX, arrowY = 144, 128
+do
+  local px, py = box:arrowPos()
+  eq(px, arrowX, "arrowPos x is hlcoord 18 (home/text.asm:214)")
+  eq(py, arrowY, "arrowPos y is hlcoord 16 (home/text.asm:214)")
+end
 
 local sawScroll, sawArrow, worst = false, false, -math.huge
 for _ = 1, 600 do
@@ -78,7 +79,8 @@ check(sawScroll, "the box really did scroll (otherwise this proves nothing)")
 check(worst > -math.huge, "body glyphs were drawn")
 check(worst <= floorY,
       ("no body glyph drawn below line2Y (worst y=%d, line2Y=%d)"):format(worst, floorY))
-check(sawArrow, "the page-advance arrow still prints in the border row")
+check(sawArrow, "the page-advance arrow still prints on the second text row")
+eq(arrowY, floorY, "and shares that row's y")
 eq(box.line1Y + 16, box.line2Y, "the two text rows stay two tiles apart")
 
 S.finish()

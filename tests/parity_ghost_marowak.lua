@@ -38,7 +38,7 @@ do
   local b = RealBattleState.newWild(game, "MAROWAK", 30)
   b:makeGhost()
   eq(b.enemy.name, "GHOST", "the disguise renames the foe")
-  eq(b.introText, "GHOST\nappeared!",
+  eq(b.introText, "GHOST\nappeared!{PROMPT}",
     "_EnemyAppearedText has no article in front of the nick")
 end
 

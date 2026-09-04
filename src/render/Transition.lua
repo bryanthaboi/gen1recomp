@@ -21,6 +21,17 @@ local FLASH_FRAMES = 7
 -- `ld c, 8 / call DelayFrames`, so eight frames is the step of all of them.
 local FADE_STEP_FRAMES = 8
 
+-- FadePal1..FadePal8, pokered home/fade.asm:65-73
+local FADE_BGP = {
+  -- GBFadeOutToBlack / GBFadeInFromBlack, pokered home/fade.asm:43-46
+  black = { out = { 0xE4, 0xF9, 0xFE, 0xFF },
+            ["in"] = { 0xFF, 0xFE, 0xF9, 0xE4 } },
+  -- GBFadeOutToWhite / GBFadeInFromWhite, pokered home/fade.asm:26-28
+  white = { out = { 0x90, 0x40, 0x00 },
+            ["in"] = { 0x40, 0x90, 0xE4 } },
+}
+local BGP_IDENTITY = 0xE4
+
 -- Veil alpha `t` frames into a `len`-frame fade out.  GBFadeOutToBlack
 -- (home/fade.asm:43-46) walks FadePal4 -> FadePal3 -> FadePal2 -> FadePal1
 -- with b = 4, and FadePal4 IS the normal palette while FadePal1 is solid
@@ -131,7 +142,35 @@ function Transition:alpha()
   return a
 end
 
+-- the $E4 identity BGP, pokered engine/gfx/palettes.asm:517-518
+function Transition.shadeMapFor(byte)
+  if not byte or byte == BGP_IDENTITY then return nil end
+  local map = {}
+  for i = 0, 3 do map[i] = math.floor(byte / (4 ^ i)) % 4 end
+  return map
+end
+
+function Transition:fadeTable()
+  local c = self.color or { 0, 0, 0 }
+  local white = (c[1] or 0) > 0.5 and (c[2] or 0) > 0.5 and (c[3] or 0) > 0.5
+  local set = FADE_BGP[white and "white" or "black"]
+  return set[self.phase == "in" and "in" or "out"]
+end
+
+-- pokered home/fade.asm:58
+function Transition:bgp()
+  local len = (self.phase == "out") and self.frames or self.framesIn
+  local tab = self:fadeTable()
+  local step = math.min(#tab,
+    math.floor(fadeAlpha(self.t, len) * (#tab - 1) + 0.5) + 1)
+  return tab[step] or 0xFF
+end
+
 function Transition:draw()
+  if self.paletteStepped then
+    self.paletteStepped = false
+    return
+  end
   local alpha = self:alpha()
   local c = self.color or { 0, 0, 0 }
   -- Survey zoom draws the overworld into a window-filling world canvas

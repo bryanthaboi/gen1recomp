@@ -94,6 +94,10 @@ local TEXT_WIDTH = 18
 local TEXT_ROWS = 2
 local TEXT_ROW_STEP = 2
 
+-- ../pokecrystal/home/text.asm:630
+local DOWN_ARROW = "\xe2\x96\xbc"
+local ARROW_X, ARROW_Y = 18, 17
+
 -- ../pokecrystal/engine/battle/core.asm:9119-9137
 -- ../pokecrystal/data/text/battle.asm:10-35
 function BattleState.battleStartText(name, battleType)
@@ -282,8 +286,32 @@ function BattleState:wantsFillScale()
   return (options and options.battleFit) == "fill"
 end
 
+local function isWide(self)
+  local options = self.game and self.game.options
+  return (options and options.battleLayout) == "wide"
+end
+
+BattleState.isWideBattleLayout = isWide
+BattleState.wideLayout = isWide
+
+function BattleState:panelSize()
+  if isWide(self) then
+    local WideBattle = require("src.ui.gen2.WideBattle")
+    return WideBattle.WIDTH, WideBattle.HEIGHT
+  end
+  return Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8
+end
+
 function BattleState:battlePanelScale(winW, winH)
-  return BattleState.panelScale(winW, winH, self:wantsFillScale())
+  if isWide(self) then
+    local WideBattle = require("src.ui.gen2.WideBattle")
+    if BattleState.wantsFillScale(self) then
+      return WideBattle.fillScale(winW, winH)
+    end
+    return Chrome.fitScaleFor(winW, winH, WideBattle.WIDTH / 8,
+      WideBattle.HEIGHT / 8)
+  end
+  return BattleState.panelScale(winW, winH, BattleState.wantsFillScale(self))
 end
 
 function BattleState:drawsWidescreen() return true end
@@ -351,6 +379,8 @@ function BattleState.new(game, opts)
   self.queue = {}
   self.message = nil
   self.messageTimer = 0
+  -- ../pokecrystal/home/joypad.asm:428
+  self.arrowBlink = 0
   self.phase = "intro" -- intro | menu | moves | resolving | evolving | done
   -- wEvolvableFlags (ram/wram.asm, one bit per party slot).
   -- engine/battle/core.asm sets a mon's bit the moment it levels up, right
@@ -510,6 +540,9 @@ function BattleState.new(game, opts)
       -- announced.  Nothing to slide when the cache has no trainer pic.
       if self.showEnemyTrainer then
         self:push({ kind = "trainer-slide" })
+      else
+        -- ../pokecrystal/engine/battle/core.asm:3549
+        self.picHidden.enemy = true
       end
       -- ShowBattleTextEnemySentOut, then ShowSetEnemyMonAndSendOutAnimation
       -- (core.asm:2978-2980, 3354): this is where the mon's frontpic first
@@ -2546,6 +2579,8 @@ function BattleState:update(_dt)
   if self.phase == "fadeout" then return self:stepExitFade() end
   self:updateAlarm()
   self:stepFrontAnim()
+  -- ../pokecrystal/home/joypad.asm:428
+  self.arrowBlink = ((self.arrowBlink or 0) + 1) % 32
   local input = self.game and self.game.input
   if not input then return end
 
@@ -2574,6 +2609,8 @@ function BattleState:update(_dt)
     if self.trainerSlide >= TRAINER_SLIDE_FRAMES then
       self.trainerSlide = nil
       self.showEnemyTrainer = false
+      -- ../pokecrystal/engine/battle/core.asm:3221
+      self.picHidden.enemy = true
       self:advanceQueue()
     end
     return
@@ -2884,10 +2921,7 @@ function BattleState:update(_dt)
     return
   end
 
-  -- CheckIfCurPartyMonIsFitToFight said no.  Its text is read with the list
-  -- CLOSED here rather than over it (the party menu is its own screen in this
-  -- port), and the list comes back the moment the line is done -- which is
-  -- what ForcePickPartyMonInBattle's `jr c, .loop` does with the carry.
+  -- stack the refusal prints over the list itself (core.asm:2852-2857)
   if self.phase == "refuse-switch" then
     if self.messageTimer > 0 then
       if input:wasPressed("a") or input:wasPressed("b") then
@@ -3009,7 +3043,8 @@ function BattleState:openParty(forced)
   local stack = self.game and self.game.stack
   if not stack then return false end
   self.phase = "submenu"
-  Screens.push(self.game, "Gen2PartyMenu", {
+  local list
+  list = Screens.push(self.game, "Gen2PartyMenu", {
     -- PARTYMENUACTION_CHOOSE_POKEMON for the voluntary list and
     -- PARTYMENUACTION_SWITCH for the forced one (engine/battle/core.asm:4795,
     -- :2702; engine/pokemon/party_menu.asm:660-679).  Only the voluntary list
@@ -3025,31 +3060,33 @@ function BattleState:openParty(forced)
       self.phase = forced and "forced-switch" or "menu"
     end,
     onChoose = function(index, mon)
-      stack:pop()
       -- TryPlayerSwitch's own order, every arm ending on
       -- `jp BattleMenuPKMN_Loop` (engine/battle/core.asm:4863-4888).
+      local refused, key, arg
       if not forced and mon == self.battle.player then
-        return self:refuseSwitch(false, TEXT_ALREADY_OUT, self:name(mon))
-      end
-      if not forced and self.battle:switchLocked() then
-        return self:refuseSwitch(false, TEXT_CANT_BE_RECALLED,
-          self:name(self.battle.player))
-      end
-      -- CheckIfCurPartyMonIsFitToFight's `cp EGG` arm (core.asm:3450-3456).
-      if mon.isEgg then
-        return self:refuseSwitch(forced, TEXT_EGG_CANT_BATTLE)
-      end
-      if (mon.hp or 0) <= 0 then
+        refused, key, arg = true, TEXT_ALREADY_OUT, self:name(mon)
+      elseif not forced and self.battle:switchLocked() then
+        refused, key, arg = true, TEXT_CANT_BE_RECALLED,
+          self:name(self.battle.player)
+      elseif mon.isEgg then
+        -- CheckIfCurPartyMonIsFitToFight's `cp EGG` arm (core.asm:3450-3456)
+        refused, key = true, TEXT_EGG_CANT_BATTLE
+      elseif (mon.hp or 0) <= 0 then
         -- CheckIfCurPartyMonIsFitToFight (engine/pokemon/party_menu.asm):
         -- a fainted pick prints Text_TheresNoWillToFight and returns carry, so
         -- the caller re-opens the list -- BattleMenu_PKMN's own loop for a
         -- voluntary switch, ForcePickPartyMonInBattle's `jr c` after a faint.
-        -- Silently dropping the player back on the list (or, worse, back on
-        -- the battle menu) is what made the forced switch read as taking two
-        -- or three presses: the cursor opens on the mon that just fainted, and
-        -- pressing A on it did nothing a player could see.
-        return self:refuseSwitch(forced)
+        refused = true
       end
+      -- Only the accepted switch tears the list down (core.asm:5186-5192)
+      if refused then
+        if list then
+          return list:refuse(Strings(key or TEXT_NO_WILL_TO_FIGHT, arg))
+        end
+        stack:pop()
+        return self:refuseSwitch(forced, key, arg)
+      end
+      stack:pop()
       if forced then
         -- ForcePickPartyMonInBattle loops on carry: a pick the engine will not
         -- take has to come back as the list again, never as the battle menu
@@ -3528,7 +3565,8 @@ function BattleState:openShiftParty()
     return self:advanceQueue()
   end
   self.phase = "submenu"
-  Screens.push(self.game, "Gen2PartyMenu", {
+  local list
+  list = Screens.push(self.game, "Gen2PartyMenu", {
     prompt = "which",
     battle = true,
     onCancel = function()
@@ -3537,12 +3575,23 @@ function BattleState:openShiftParty()
       self:advanceQueue()
     end,
     onChoose = function(index, mon)
-      stack:pop()
+      -- SwitchMonAlreadyOut (core.asm:2864)
+      local refused, key, arg
       if mon == self.battle.player then
-        return self:refuseShift(TEXT_ALREADY_OUT, self:name(mon))
+        refused, key, arg = true, TEXT_ALREADY_OUT, self:name(mon)
+      elseif mon.isEgg then
+        refused, key = true, TEXT_EGG_CANT_BATTLE
+      elseif (mon.hp or 0) <= 0 then
+        refused = true
       end
-      if mon.isEgg then return self:refuseShift(TEXT_EGG_CANT_BATTLE) end
-      if (mon.hp or 0) <= 0 then return self:refuseShift(nil) end
+      if refused then
+        if list then
+          return list:refuse(Strings(key or TEXT_NO_WILL_TO_FIGHT, arg))
+        end
+        stack:pop()
+        return self:refuseShift(key, arg)
+      end
+      stack:pop()
       self.shiftSwitchIndex = index
       self.phase = "resolving"
       self:advanceQueue()
@@ -4091,7 +4140,9 @@ end
 -- above it, not inside a border.
 function BattleState:drawFrame(tx, ty, width, stubRight)
   local G = love.graphics
-  G.setColor(0, 0, 0, 1)
+  -- home/fade.asm:35 (RotateThreePalettesRight)
+  local ink = GbcPalette.color(GbcPalette.DMG_SHADES, 4) or { 0, 0, 0 }
+  G.setColor(ink[1] / 255, ink[2] / 255, ink[3] / 255, 1)
   -- The bottom rule ($76 repeated, capped by $74/$78 or $6f/$77) sits at the
   -- top of its own tile row, immediately under the bar above it.
   G.rectangle("fill", tx * 8, ty * 8, width * 8, 2)
@@ -4099,6 +4150,7 @@ function BattleState:drawFrame(tx, ty, width, stubRight)
   -- climbs from the rule past the bar row.
   local stubX = stubRight and ((tx + width - 2) * 8 + 6) or (tx * 8)
   G.rectangle("fill", stubX, ty * 8 - 8, 2, 10)
+  G.setColor(1, 1, 1, 1)
 end
 
 -- LoadBattleFontsHPBar puts FontBattleExtra in the $60 slot for the whole
@@ -4117,7 +4169,20 @@ end
 
 function BattleState:drawHud()
   local wasBattle = Font.useBattleExtra(true)
-  local enemy, player = self:activeMon("enemy"), self:activeMon("player")
+  self:drawEnemyHud()
+  self:drawPics()
+  self:drawPlayerHud()
+  Font.useBattleExtra(wasBattle)
+end
+
+function BattleState:drawPics()
+  self:drawPic(self:activeMon("enemy"), false)
+  self:drawPic(self:activeMon("player"), true)
+end
+
+function BattleState:drawEnemyHud()
+  local wasBattle = Font.useBattleExtra(true)
+  local enemy = self:activeMon("enemy")
   local showStatus = self:statusHUDVisible()
 
   -- Enemy HUD (DrawEnemyHUD clears (1,0) 4 rows x 11 cols):
@@ -4164,14 +4229,13 @@ function BattleState:drawHud()
     end
     self.hud:drawBallRow(self.battle and self.battle.enemyParty, 8, 2, -1)
   end
+  Font.useBattleExtra(wasBattle)
+end
 
-  self:drawPic(enemy, false)
-
-  -- Player HUD (DrawPlayerHUD clears (9,7) 5 rows x 11 cols):
-  --   name at (10,7); PrintLevel at (14,8) with the gender at (17,8);
-  --   the HP bar at (10,9), its numbers below; the vertical bar at (18,9), the
-  --   border from (18,10) going left, and the exp bar at (10,11).
-  self:drawPic(player, true)
+function BattleState:drawPlayerHud()
+  local wasBattle = Font.useBattleExtra(true)
+  local player = self:activeMon("player")
+  local showStatus = self:statusHUDVisible()
   -- ShowPlayerMonsRemaining (engine/battle/trainer_huds.asm:17-30): balls
   -- walking RIGHT from OAM (96, 96), i.e. tile (11, 10).
   if showStatus and self.ballRows.player then
@@ -4301,13 +4365,27 @@ end
 -- The message on the cart's own two rows: 14 and 16, with 15 blank between
 -- them (home/text.asm:143 and :397).  A string that will not fit two 18-tile
 -- lines is cut rather than spilling onto the rows Paragraph clears.
-function BattleState:printMessage()
+function BattleState:printMessage(ox)
+  ox = ox or 0
   self:syncTyper()
   local lines = self:messageLines()
   for i = 1, math.min(#lines, TEXT_ROWS) do
     Chrome.printThrough(lines[i], TEXT_INNER_X,
       TEXT_INNER_Y + (i - 1) * TEXT_ROW_STEP, Chrome.DEFAULT_BOX_PALETTE)
   end
+  if self:messageArrowVisible() then
+    Chrome.printThrough(DOWN_ARROW, ARROW_X + ox, ARROW_Y,
+      Chrome.DEFAULT_BOX_PALETTE)
+  end
+end
+
+-- ../pokecrystal/home/text.asm:548
+-- ../pokecrystal/home/joypad.asm:428
+function BattleState:messageArrowVisible()
+  if (self.messageTimer or 0) <= 0 then return false end
+  if self.waitSfx or (self.messageDelay or 0) > 0 then return false end
+  if Typer.typing(self) then return false end
+  return Typer.arrowOn(self)
 end
 
 -- ../pokecrystal/home/text.asm:660 StdBattleTextbox -> PrintText
@@ -4363,18 +4441,26 @@ function BattleState:drawMoveInfoBox(move)
     5, 11, Chrome.DEFAULT_BOX_PALETTE)
 end
 
+local function hasBattleSides(self)
+  local hasPlayer = self.battle and (self.battle.player or self.tutorial)
+  return not not (self.battle and hasPlayer and self.battle.enemy)
+end
+
+BattleState.hasBattleSides = hasBattleSides
+
 function BattleState:drawPanel()
   Chrome.clear()
-  -- A tutorial battle legitimately has no player mon, so only the enemy is
-  -- required there; everywhere else a missing side is a caller bug.
-  local hasPlayer = self.battle and (self.battle.player or self.tutorial)
-  if not (self.battle and hasPlayer and self.battle.enemy) then
+  if not hasBattleSides(self) then
     Chrome.printThrough(Strings("NO BATTLE"), 1, 1,
       Chrome.DEFAULT_BOX_PALETTE)
     return
   end
   self:drawHud()
+  self:drawBottom(0)
+end
 
+function BattleState:drawBottom(ox)
+  ox = ox or 0
   if not self:bottomUIVisible() then
     love.graphics.setColor(1, 1, 1, 1)
     return
@@ -4391,18 +4477,18 @@ function BattleState:drawPanel()
   local moveMenu = self.phase == "moves"
   local forgetting = self.phase == "choose-forget"
     and (self.messageTimer or 0) <= 0
-  Chrome.box(0, 12, 20, 6)
+  Chrome.box(0, 12, 20 + ox, 6)
   if moveMenu then
     -- List box first (core.asm:5074-5084), MoveInfoBox on top (:5157).
-    Chrome.box(4, 12, 16, 6)
+    Chrome.box(4, 12, 16 + ox, 6)
     Chrome.box(0, 8, 11, 5)
   end
   if self.phase == "menu" then
-    self:printMessage()
-    local boxX = self.contest and CONTEST_MENU_BOX_X or MENU_BOX_X
+    self:printMessage(ox)
+    local boxX = (self.contest and CONTEST_MENU_BOX_X or MENU_BOX_X) + ox
     local spacing = self.contest and CONTEST_MENU_COL_SPACING
       or MENU_COL_SPACING
-    Chrome.box(boxX, 12, 20 - boxX, 6)
+    Chrome.box(boxX, 12, 20 + ox - boxX, 6)
     for i, label in ipairs(self:menuLabels()) do
       local col = ((i - 1) % 2) * spacing
       local row = math.floor((i - 1) / 2) * 2
@@ -4414,7 +4500,7 @@ function BattleState:drawPanel()
     end
   elseif forgetting then
     -- engine/pokemon/learn.asm:136-146
-    self:printMessage()
+    self:printMessage(ox)
     local learn = self.pendingLearn
     local mon = learn and self.battle.party[learn.index]
     local moves = (mon and mon.moves) or self:playerMoves()
@@ -4447,7 +4533,7 @@ function BattleState:drawPanel()
     self:drawMoveInfoBox(moves[cursorRow])
   else
     -- Battle messages wrap inside the box rather than running off the frame.
-    self:printMessage()
+    self:printMessage(ox)
     -- YesNoBox: `lb bc, SCREEN_WIDTH - 6, 7`, a 6x5 box at (14,7) with YES at
     -- (16,8) and NO at (16,10), drawn over the battle while the question
     -- stands.
@@ -4458,7 +4544,7 @@ function BattleState:drawPanel()
       -- OfferSwitch calls PlaceYesNoBox with `lb bc, 1, 7`, so its box is at
       -- (1,7) instead (engine/battle/core.asm:3303, home/menu.asm:392-410).
       local left = (self.phase == "ask-shift" or self.phase == "ask-next-mon")
-        and 1 or 14
+        and 1 or (14 + ox)
       Chrome.box(left, 7, 6, 5)
       Chrome.printThrough(Strings("YES"), left + 2, 8,
         Chrome.DEFAULT_BOX_PALETTE)
@@ -4474,7 +4560,7 @@ function BattleState:drawPanel()
   end
   GbcPalette.setBgp(previousBgp)
   if self.phase == "stats-box" and self.statsBoxMon then
-    self:drawStatsBox(self.statsBoxMon)
+    self:drawStatsBox(self.statsBoxMon, math.floor(ox / 2))
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -4487,7 +4573,8 @@ local STATS_BOX_ROWS = {
 }
 
 -- pokegold engine/battle/core.asm:7060-7066 (box at hlcoord 9,0, stats at 11,y).
-function BattleState:drawStatsBox(mon)
+function BattleState:drawStatsBox(mon, ox)
+  ox = ox or 0
   if not mon then return end
   local stats = mon.stats
   local data = self.game and self.game.data
@@ -4496,11 +4583,12 @@ function BattleState:drawStatsBox(mon)
     stats = Mon.stats(def.baseStats, mon.dvs, mon.level, mon.statExp)
   end
   if not stats then return end
-  Chrome.textbox(9, 0, 9, 10)
+  Chrome.textbox(9 + ox, 0, 9, 10)
   for i, row in ipairs(STATS_BOX_ROWS) do
     local ty = 1 + (i - 1) * 2
-    Chrome.printThrough(Strings(row[1]), 11, ty, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printRightThrough(("%d"):format(stats[row[2]] or 0), 19, ty + 1,
+    Chrome.printThrough(Strings(row[1]), 11 + ox, ty,
+      Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printRightThrough(("%d"):format(stats[row[2]] or 0), 19 + ox, ty + 1,
       Chrome.DEFAULT_BOX_PALETTE)
   end
 end
@@ -4508,9 +4596,9 @@ end
 -- The BG layer, plus whatever the animation is doing to it, plus the OBJ
 -- layer on top.  OBJs are not affected by SCX/SCY, which is why they are drawn
 -- after the scanline blit rather than into the canvas with everything else.
-function BattleState:drawScene()
+function BattleState:drawScene(bodyFn)
   local previousBgp = GbcPalette.setBgp(self:exitFadeBgp() or GbcPalette.bgp)
-  self:drawSceneBody()
+  if bodyFn then bodyFn() else self:drawSceneBody() end
   GbcPalette.setBgp(previousBgp)
   -- battle.overlay: shiny sparkles, custom HUD chrome, and so on.  Draw-only,
   -- and the same name, the same payload (the battle screen) and the same place
@@ -4560,8 +4648,8 @@ function BattleState:drawLiftedRows()
   G.draw(self.liftCanvas, 0, 0)
 end
 
-function BattleState:drawSceneBody()
-  local panel = function() self:drawPanel() end
+function BattleState:drawSceneBody(panelFn)
+  local panel = panelFn or function() self:drawPanel() end
   if self.animView and self.slideFrame < BattleAnimView.SLIDE_FRAMES then
     -- The back pic is lifted out of the sliding bands and drawn the way the
     -- cart's OAM copy is: one intact piece riding in from the right, so it
@@ -4593,10 +4681,14 @@ function BattleState:drawSceneBody()
 end
 
 function BattleState:draw()
+  if self:wideLayout() then return end
   Chrome.withClip(function() self:drawScene() end)
 end
 
 function BattleState:drawWidescreen(winW, winH)
+  if self:wideLayout() then
+    return require("src.ui.gen2.WideBattle").draw(self, winW, winH)
+  end
   Chrome.withPanel(winW, winH, 1, 1, 1, function() self:drawScene() end,
     self:battlePanelScale(winW, winH))
 end

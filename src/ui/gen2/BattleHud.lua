@@ -128,8 +128,9 @@ function BattleHud:drawTile(key, firstTile, tile, tx, ty, colors, mirror)
       G.draw(image, self:quad(image, index), tx * 8, ty * 8)
     end
   end
-  if colors and GbcPalette.available() then
-    GbcPalette.with(colors, body)
+  -- home/fade.asm:35 (RotateThreePalettesRight)
+  if GbcPalette.available() then
+    GbcPalette.with(colors or GbcPalette.DMG_SHADES, body)
   else
     G.setColor(0, 0, 0, 1)
     body()

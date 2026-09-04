@@ -88,6 +88,8 @@ local SFX = {
   FLASH = 169,
   ENTER_DOOR = 31,
   WARP_TO = 19,
+  WARP_FROM = 20,
+  KINESIS = 47,
   EXIT_BUILDING = 35,
   JUMP_OVER_LEDGE = 0x16,
   BUMP = 0x24,
@@ -159,7 +161,15 @@ local BATTLETYPE = {
 local COLL = {
   DOOR = 0x71,
   WARP_PANEL = 0x7c,
+  -- CheckPitTile (home/map_objects.asm:162)
+  -- engine/overworld/events.asm:349-353
+  PIT = 0x60,
+  PIT_68 = 0x68,
 }
+
+local function isPitCollision(coll)
+  return coll == COLL.PIT or coll == COLL.PIT_68
+end
 
 local SPRITE = {
   VARS = 0xf0,
@@ -190,6 +200,8 @@ local MAPSETUP = {
 local MAPSETUP_FADE_OUT = {
   [MAPSETUP.DOOR] = true, [MAPSETUP.FALL] = true, [MAPSETUP.TELEPORT] = true,
 }
+-- data/maps/setup_scripts.asm:27-32
+local MAPSETUP_WARP_WINDOW = { [MAPSETUP.TELEPORT] = true }
 local MAPSETUP_FADE_IN = {
   [MAPSETUP.DOOR] = true, [MAPSETUP.FALL] = true, [MAPSETUP.TELEPORT] = true,
   [MAPSETUP.WARP] = true, [MAPSETUP.BADWARP] = true, [MAPSETUP.TRAIN] = true,
@@ -233,8 +245,10 @@ local MAPSETUP_ROAM_JUMP = { [MAPSETUP.TELEPORT] = true }
 -- World:draw already holds for the fade specials.
 local FADE_STEPS = 4
 local FADE_STEP_FRAMES = 2
--- data/maps/setup_scripts.asm:102-139
-local MAP_LOAD_WHITE_FRAMES = 4
+-- data/maps/setup_scripts.asm:102-125, home/init.asm:149-153
+local MAP_LOAD_WHITE_FRAMES = 13
+-- data/maps/setup_scripts.asm:32-55
+local WARP_LOAD_WHITE_FRAMES = 15
 
 -- home/map.asm:1927-1940 over home/tilemap.asm:12-25
 local MENU_EXIT_RELOAD_FRAMES = 9
@@ -1513,6 +1527,8 @@ function World:busy()
     -- FlyFromAnim and FlyToAnim are blocking `callasm`s inside .FlyScript
     -- (engine/events/overworld.asm:599, :605).
     or self.flyAnim ~= nil
+    -- engine/overworld/events.asm:1011
+    or self.skyfall ~= nil
 end
 
 -- CheckMenuOW (engine/overworld/events.asm:802) is the tail of OWPlayerInput,
@@ -2297,6 +2313,40 @@ function World:updateShake()
   end
   -- `.GetSign`: the offset flips with the parity of the frames left.
   shake.phase = (shake.left % 2 == 0) and shake.amplitude or -shake.amplitude
+end
+
+-- :1008-1021.  StepFunction_Skyfall (engine/overworld/map_objects.asm:1368)
+local SKYFALL_BEAT_FRAMES = 16
+local PITFALL_EARTHQUAKE = 0x10
+
+function World:startSkyfall()
+  self:playSfxNamed("Sfx_Kinesis", SFX.KINESIS)
+  self.skyfall = { phase = "hidden", timer = SKYFALL_BEAT_FRAMES, height = 0 }
+  self.playerMasked = true
+end
+
+function World:updateSkyfall()
+  local st = self.skyfall
+  if not st then return end
+  if st.phase == "hidden" then
+    st.timer = st.timer - 1
+    if st.timer <= 0 then
+      st.phase = "fall"
+      st.timer = SKYFALL_BEAT_FRAMES
+      self.playerMasked = nil
+    end
+    return
+  end
+  st.height = st.height + 1
+  if self.player then
+    self.player.spriteYOffset = Movement.teleportYOffset(st.height)
+  end
+  st.timer = st.timer - 1
+  if st.timer > 0 then return end
+  if self.player then self.player.spriteYOffset = 0 end
+  self.skyfall = nil
+  self:playSfxNamed("Sfx_Strength", SFX.STRENGTH)
+  self:earthquake(PITFALL_EARTHQUAKE)
 end
 
 -- engine/events/poisonstep_pals.asm:9
@@ -3501,10 +3551,14 @@ function World:screenFade(kind)
   -- kind: "outWhite" | "outBlack" | "inWhite" | "inBlack"
   if kind == "inWhite" or kind == "inBlack" then
     self.fade, self.fadeLevel = nil, nil
+    self.fadeHold, self.fadeWhiten = nil, nil
     return
   end
   self.fade = (kind == "outWhite") and "white" or "black"
   self.fadeLevel = 1
+  self.fadeHold = nil
+  -- engine/tilesets/timeofday_pals.asm:122-128
+  self.fadeWhiten = (kind == "outWhite") or nil
 end
 
 -- RunMapSetupScript (engine/overworld/map_setup.asm): every map entry runs one
@@ -3540,12 +3594,19 @@ function World:runMapSetup(method, load, fly)
     -- only the way back in is a fade.
     local ok = wrapped()
     self.fade, self.fadeLevel = "white", 1
+    self.fadeWhiten = nil
+    self.fadeHold = WARP_LOAD_WHITE_FRAMES
     self.mapSetup = { phase = "in", step = FADE_STEPS,
-      wait = MAP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES }
+      wait = WARP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES }
     return ok
   end
+  -- engine/tilesets/timeofday_pals.asm:122-128
+  self.fadeWhiten = true
+  self.fadeHold = nil
   self.mapSetup = {
     phase = "out", step = 0, wait = FADE_STEP_FRAMES, load = wrapped,
+    white = MAPSETUP_WARP_WINDOW[method] and WARP_LOAD_WHITE_FRAMES
+      or MAP_LOAD_WHITE_FRAMES,
   }
   return true
 end
@@ -3553,6 +3614,8 @@ end
 -- ramp with no load between the halves (home/map.asm:2281-2292).
 function World:exitMenusFade(whiteFrames)
   self.fade, self.fadeLevel = "white", 1
+  self.fadeWhiten = nil
+  self.fadeHold = whiteFrames or MENU_EXIT_WHITE_FRAMES
   self.mapSetup = {
     phase = "in", step = FADE_STEPS,
     wait = whiteFrames or MENU_EXIT_WHITE_FRAMES,
@@ -3579,6 +3642,7 @@ World.FADE_RAMP = {
 World.FADE_STEPS = FADE_STEPS
 World.FADE_STEP_FRAMES = FADE_STEP_FRAMES
 World.MAP_LOAD_WHITE_FRAMES = MAP_LOAD_WHITE_FRAMES
+World.WARP_LOAD_WHITE_FRAMES = WARP_LOAD_WHITE_FRAMES
 
 function World.fadeRampRow(fade, level)
   local ramp = fade and World.FADE_RAMP[fade]
@@ -3597,8 +3661,26 @@ end
 function World:battleReturnFade()
   if self.mapSetup then return end
   self.fade, self.fadeLevel = "white", 1
+  self.fadeWhiten = nil
+  self.fadeHold = WARP_LOAD_WHITE_FRAMES
   self.mapSetup = { phase = "in", step = FADE_STEPS,
-    wait = MAP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES }
+    wait = WARP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES }
+end
+
+-- engine/tilesets/timeofday_pals.asm:160-187
+function World:fadeBgSet()
+  local def = self.map and self.map.def
+  local bg = def and Palettes.bgSet(self.palettes, def, self.daytime)
+  if not (bg and self.fadeWhiten) then return bg end
+  local out = {}
+  for i, colors in ipairs(bg) do
+    if i >= 2 and i <= 7 and bg[1] and bg[1][1] then
+      out[i] = { bg[1][1], colors[2], colors[3], colors[4] }
+    else
+      out[i] = colors
+    end
+  end
+  return out
 end
 
 -- ---------------------------------------------------------------------------
@@ -3667,27 +3749,36 @@ end
 
 function World:updateMapSetup()
   local ms = self.mapSetup
+  if self.fadeHold then
+    self.fadeHold = self.fadeHold - 1
+    if self.fadeHold <= 0 then self.fadeHold = nil end
+  end
   ms.wait = ms.wait - 1
   if ms.wait > 0 then return end
   ms.wait = FADE_STEP_FRAMES
   if ms.phase == "out" then
     ms.step = ms.step + 1
-    self.fade, self.fadeLevel = "white", ms.step / FADE_STEPS
-    if ms.step >= FADE_STEPS then
-      -- setMap clears self.fade (a map load repaints everything), so the sheet
-      -- has to be re-armed at full strength on the far side for the fade in to
-      -- take back down.
-      ms.load()
-      ms.phase = "in"
-      self.fade, self.fadeLevel = "white", 1
-      -- engine/tilesets/timeofday_pals.asm:277-299
-      ms.wait = FADE_STEP_FRAMES + MAP_LOAD_WHITE_FRAMES + FADE_STEP_FRAMES
+    -- engine/tilesets/timeofday_pals.asm:122-128
+    if ms.step <= FADE_STEPS then
+      self.fade, self.fadeLevel = "white", ms.step / FADE_STEPS
+      return
     end
+    ms.load()
+    ms.phase = "in"
+    ms.step = FADE_STEPS
+    self.fade, self.fadeLevel = "white", 1
+    self.fadeWhiten = nil
+    local white = ms.white or MAP_LOAD_WHITE_FRAMES
+    -- home/lcd.asm:35-72
+    self.fadeHold = white
+    -- engine/tilesets/timeofday_pals.asm:277-299
+    ms.wait = white + FADE_STEP_FRAMES
     return
   end
   ms.step = ms.step - 1
   if ms.step <= 0 then
     self.fade, self.fadeLevel = nil, nil
+    self.fadeHold, self.fadeWhiten = nil, nil
     self.mapSetup = nil
     -- `callasm FlyToAnim` is the command straight after `newloadmap
     -- MAPSETUP_TELEPORT` (engine/events/overworld.asm:604-605).
@@ -3696,6 +3787,10 @@ function World:updateMapSetup()
       local function respawn() self.flyHidden = nil end
       if not self:startFlyAnim("to", ms.flyIn, respawn) then respawn() end
     end
+    -- engine/events/overworld.asm:869-870
+    if ms.digIn then self:digReturn() end
+    -- engine/overworld/events.asm:1008-1021
+    if ms.fallIn then self:startSkyfall() end
     return
   end
   self.fadeLevel = ms.step / FADE_STEPS
@@ -4062,6 +4157,14 @@ function World:updateMovement()
       st.sleep = duration
       return
     end
+    -- engine/overworld/movement.asm:142-160, map_objects.asm:1481-1493
+    if b == Movement.RETURN_DIG then
+      local duration = st.bytes[st.i] or 0
+      st.i = st.i + 1
+      if ent.scriptSpin then ent:scriptSpin(duration, true) end
+      st.sleep = duration
+      return
+    end
     -- engine/overworld/movement.asm:163
     if b == 0x57 then
       local duration = st.bytes[st.i] or 0
@@ -4135,6 +4238,13 @@ function World:updateMovement()
       -- (engine/overworld/map_objects.asm:284-294), so the object steps
       -- without turning.  ContinueReadingMovement again, so no frame here.
       ent.fixedFacing = act.fixed
+    elseif act.kind == "visible" then
+      -- macros/scripts/movement.asm:99-106
+      if st.objectId == 0 then
+        self.playerHidden = (not act.on) or nil
+      else
+        ent.hiddenByMovement = (not act.on) or nil
+      end
     elseif act.kind == "treeshake" then
       -- Movement_tree_shake: 24 frames of STEP_TYPE_SLEEP with OBJECT_ACTION
       -- set to OBJECT_ACTION_WEIRD_TREE (engine/overworld/movement.asm:334).
@@ -4764,20 +4874,32 @@ function World:escapeRopeTarget()
   return backup.map, destWarp
 end
 
--- The shared tail of .UsedEscapeRopeScript / .UsedDigScript: SFX.WARP_TO,
--- `loadvar VAR.MOVEMENT, PLAYER_NORMAL`, then `newloadmap MAPSETUP.DOOR` with
--- the triple already in wNextWarp -- EnterMapWarp and GetWarpDestCoords land
--- the player on the destination warp's own tile.  The dig-spin sprite work is
--- not ported, the same standing decision World:flyTo records for the two fly
--- animations.
+-- .UsedDigScript -- engine/events/overworld.asm:851-872
+-- engine/overworld/events.asm:1034
 function World:runEscapeWarp(destMapId, destWarp)
   self:playSfxNamed("Sfx_WarpTo", SFX.WARP_TO)
-  self:applyPlayerState(FieldMoves.PLAYER_NORMAL)
-  return self:runMapSetup(MAPSETUP.DOOR, function()
-    local ok = self:setMap(destMapId, destWarp.x, destWarp.y, "down")
-    if ok then self:spawnFacing() end
+  local function load()
+    self:applyPlayerState(FieldMoves.PLAYER_NORMAL)
+    local ok = self:runMapSetup(MAPSETUP.DOOR, function()
+      local loaded = self:setMap(destMapId, destWarp.x, destWarp.y, "down")
+      if loaded then self:spawnFacing() end
+      return loaded
+    end)
+    if self.mapSetup then
+      self.mapSetup.digIn = true
+    else
+      self:digReturn()
+    end
     return ok
-  end)
+  end
+  self:beginMovement(0, Movement.digOutBytes(), load)
+  return true
+end
+
+-- The half after `newloadmap`: engine/events/overworld.asm:869-870
+function World:digReturn()
+  self:playSfxNamed("Sfx_WarpFrom", SFX.WARP_FROM)
+  self:beginMovement(0, Movement.digReturnBytes())
 end
 
 -- EscapeRopeEffect (engine/items/item_effects.asm): EscapeRopeFunction, and
@@ -6073,7 +6195,7 @@ end
 -- which is exactly what World:warpToSpawn resolves (blackoutmod override
 -- first, then the SPAWN_* table).  PLAYER_NORMAL first, so a teleport off a
 -- bike arrives on foot the way `loadvar VAR.MOVEMENT, PLAYER_NORMAL` leaves
--- it.  The teleport spin, like the dig spin, is sprite work and not ported.
+-- engine/events/overworld.asm:940-955
 function World:runTeleport(result)
   self:setNickname(result.mon)
   self:showText(Strings(result.text), function()
@@ -6808,8 +6930,13 @@ function World:startBattle(opts, onDone)
         self.wildCooldown = 5
         self.battleActive = nil
         game.stack:pop()
+        -- engine/overworld/scripting.asm:1178-1184, engine/events/whiteout.asm:1-21
+        local whiteout = outcome == "lose"
+          and opts.battleType ~= BATTLETYPE.CANLOSE
         -- engine/overworld/events.asm:1158-1162, data/maps/setup_scripts.asm:124
-        if not self:scriptRunning() then self:battleReturnFade() end
+        if not whiteout and not self:scriptRunning() then
+          self:battleReturnFade()
+        end
         -- wBattleResult (constants/battle_constants.asm): WIN 0, LOSE 1, DRAW 2.
         -- The port never forfeits or draws a battle, so "lose" is the only
         -- other outcome startBattle's onDone hands back; VAR.BATTLERESULT
@@ -6871,7 +6998,7 @@ function World:startBattle(opts, onDone)
         -- .FinishRival is what heals the party, not a whiteout.  Warping here
         -- moved the loser to the spawn point and then ran that walk-off over
         -- whatever stood there.
-        if outcome == "lose" and opts.battleType ~= BATTLETYPE.CANLOSE then
+        if whiteout then
           self:healParty()
           if not BugContest.isActive(game.save) then
             CallAsm.run(self, "HalveMoney")
@@ -6884,7 +7011,11 @@ function World:startBattle(opts, onDone)
             Runtime.emit("world.blacked_out",
               { save = game.save, healTarget = self:healPoint() })
           end
-          self:warpToSpawn()
+          -- engine/events/whiteout.asm:19-20
+          self:runMapSetup(MAPSETUP.WARP, function()
+            self:warpToSpawn()
+            return true
+          end)
         end
         -- RestartMapMusic: the map theme comes back with the overworld, over
         -- whatever the battle left playing (the victory jingle loops until
@@ -8382,6 +8513,9 @@ function World:interactBody()
   if self:busy() or not self.player or not self.vm then return false end
   local p = self.player
   if p.moving then return false end
+  -- engine/overworld/events.asm:505-510
+  if p.stopForEvent then p:stopForEvent() end
+  self.turningDirection = nil
   local d = Map.DELTA[p.facing]
   local fx, fy = p.cellX + d[1], p.cellY + d[2]
   local npc = self:npcAt(self:facingObjectCell())
@@ -9736,7 +9870,10 @@ function World:setMap(mapId, cx, cy, facing, opts)
   -- over from the script that warped cannot survive it -- LoadMapPalettes and
   -- DeleteMapObject are what end both on the cart.
   self.fade = nil
+  self.fadeHold, self.fadeWhiten = nil, nil
   self.shake = nil
+  self.skyfall = nil
+  if self.player then self.player.spriteYOffset = nil end
   self.map = Map.new(def, tileset)
   self:rebuildAttrGrid()
   -- A follow pairing points at two live objects, and a map load rebuilds them
@@ -9996,7 +10133,11 @@ function World:takeWarp(warpDef)
       return false
     end
   end
-  self:warpSound()
+  -- loads under MAPSETUP_FALL -- engine/overworld/events.asm:349-353
+  local p = self.player
+  local falling = p and self.map
+    and isPitCollision(self.map:cellCollision(p.cellX, p.cellY)) or false
+  if not falling then self:warpSound() end
   -- wBackupMapGroup / wBackupMapNumber: the map being LEFT.  The elevator's
   -- .FindCurrentFloor is the only thing that reads it, and it is what makes
   -- "Now on:" say the floor you got in from.
@@ -10012,15 +10153,20 @@ function World:takeWarp(warpDef)
   Runtime.emit("player.warped", { fromMap = prevMapId, toMap = destMapId,
                                   x = destX, y = destY, warp = warpDef,
                                   toWarp = destWarpNumber })
-  return self:runMapSetup(MAPSETUP.DOOR, function()
-    local ok = self:setMap(destMapId, destX, destY,
-      (self.player and self.player.facing) or "down")
-    if ok then
-      self:spawnFacing()
-      self:recordWarpBackup(prevMapId, prevWarpIndex, destWarp, destMapId)
-    end
-    return ok
-  end)
+  local taken = self:runMapSetup(falling and MAPSETUP.FALL or MAPSETUP.DOOR,
+    function()
+      local ok = self:setMap(destMapId, destX, destY,
+        (self.player and self.player.facing) or "down")
+      if ok then
+        self:spawnFacing()
+        self:recordWarpBackup(prevMapId, prevWarpIndex, destWarp, destMapId)
+      end
+      return ok
+    end)
+  if falling then
+    if self.mapSetup then self.mapSetup.fallIn = true else self:startSkyfall() end
+  end
+  return taken
 end
 
 -- RefreshPlayerSprite (engine/overworld/map_objects.asm) is the whole rule for
@@ -10582,7 +10728,11 @@ function World:whiteOut()
       Runtime.emit("world.blacked_out",
         { save = self.game and self.game.save, healTarget = self:healPoint() })
     end
-    self:warpToSpawn()
+    -- engine/events/whiteout.asm:19-20
+    self:runMapSetup(MAPSETUP.WARP, function()
+      self:warpToSpawn()
+      return true
+    end)
   end)
 end
 
@@ -10799,6 +10949,7 @@ function World:stepBody()
   -- parked on the earthquake's own waitFrames while the screen is still
   -- rattling), so both tick above the busy() gate rather than below it.
   if self.shake then self:updateShake() end
+  if self.skyfall then self:updateSkyfall() end
   -- The map setup chain ticks above the busy() gate for the same reason: it IS
   -- what closes that gate, so nothing below can be allowed to advance it.
   if self.mapSetup then
@@ -10905,6 +11056,9 @@ function World:stepBody()
         self.player.inGrass =
           self:grassAt(self.player.cellX, self.player.cellY)
       end
+    elseif self.player and self.player.stopForEvent then
+      -- engine/overworld/map_objects.asm:1851-1860
+      self.player:stopForEvent()
     end
     self:updatePeople()
     return
@@ -11124,11 +11278,11 @@ function World:drawPeople(s, billboard)
   local filter = self.spriteFilter
   local drawList = {}
   if not hideAll then
-    if not hidePlayer and not self.playerMasked then
+    if not hidePlayer and not self.playerMasked and not self.playerHidden then
       drawList[1] = { kind = "player", py = p.py, ox = 0, oy = 0 }
     end
     for _, npc in ipairs(self.npcs) do
-      if not filter or filter(npc) then
+      if (not filter or filter(npc)) and not npc.hiddenByMovement then
         drawList[#drawList + 1] = {
           kind = "npc", npc = npc, ox = 0, oy = 0, py = npc.py,
         }
@@ -11390,11 +11544,12 @@ function World:drawFadeRemap(s, w, h)
   local def = self.map and self.map.def
   if not (def and self.palettes) then return false end
   local cache = self.fadeRemapCache
+  local whiten = self.fadeWhiten or false
   if not (cache and cache.byte == byte and cache.def == def
       and cache.daytime == self.daytime and cache.palettes == self.palettes
-      and cache.mode == GbcPalette.mode
+      and cache.mode == GbcPalette.mode and cache.whiten == whiten
       and cache.custom == GbcPalette.customRamp) then
-    local bg = Palettes.bgSet(self.palettes, def, self.daytime)
+    local bg = self:fadeBgSet()
     if not bg then return false end
     -- home/fade.asm:32-38
     local pals = {}
@@ -11406,7 +11561,7 @@ function World:drawFadeRemap(s, w, h)
     local uniforms = GbcPalette.remapUniforms(pals, byte)
     if not uniforms then return false end
     cache = { byte = byte, def = def, daytime = self.daytime,
-      palettes = self.palettes, mode = GbcPalette.mode,
+      palettes = self.palettes, mode = GbcPalette.mode, whiten = whiten,
       custom = GbcPalette.customRamp, uniforms = uniforms }
     self.fadeRemapCache = cache
   end
@@ -11512,7 +11667,8 @@ function World:draw()
   elseif tilt then
     self:drawTilted(w, h, s, gw, gh)
   else
-    if self.fade and (self.fadeLevel or 1) < 1 then
+    -- engine/tilesets/timeofday_pals.asm:65-91, home/lcd.asm:35-72
+    if self.fade and not self.fadeHold then
       fadeStepped = self:drawFadeRemap(s, w, h)
     end
     if not fadeStepped then self:drawWorldBody(s) end

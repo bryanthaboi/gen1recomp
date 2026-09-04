@@ -35,6 +35,20 @@ local function fakeInput()
   }
 end
 
+-- (../pokecrystal/home/print_text.asm:5)
+local function settle(screen)
+  for _ = 1, 900 do
+    if not screen.typer or screen.typer:done() then break end
+    screen:update(0)
+  end
+end
+
+local function press(screen, input, button)
+  settle(screen)
+  input:press(button)
+  screen:update(0)
+end
+
 -- --------------------------------------------------------------- the offsets
 do
   local save = {}
@@ -92,73 +106,57 @@ do
   -- OakTimeWokeUpText is two `para` pages, so A turns the page before it takes
   -- the box down.
   eq(#screen:pages(), 2, "Oak's opening is two pages")
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "intro", "the first A turns the page")
   check(screen:pageText():find("clock", 1, true) ~= nil,
     "onto the one that asks about the clock")
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "hour", "and the second opens the hour picker")
   -- DisplayHourOClock is PrintHour + String_oclock, so the word rides along
   eq(screen:display(), "DAY 10 o'clock", "which shows the hour DisplayHourOClock does")
 
-  input:press("up")
-  screen:update(0)
+  press(screen, input, "up")
   eq(screen.hour, 11, "up walks the hour forward")
-  input:press("down")
-  screen:update(0)
-  input:press("down")
-  screen:update(0)
+  press(screen, input, "down")
+  press(screen, input, "down")
   eq(screen.hour, 9, "down walks it back")
   -- .DecreaseThroughMidnight / .AdvanceThroughMidnight: both ends wrap.
   screen.hour = 0
-  input:press("down")
-  screen:update(0)
+  press(screen, input, "down")
   eq(screen.hour, 23, "and midnight wraps to 11 PM")
-  input:press("up")
-  screen:update(0)
+  press(screen, input, "up")
   eq(screen.hour, 0, "and back again")
 
   screen.hour = 7
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "confirm-hour", "A confirms the hour")
   check(screen:question():find("o'clock", 1, true) ~= nil,
     "and the question reads it back")
   -- NO drops back to the picker (`jr c, .loop`).
   screen.yesNo = 2
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "hour", "NO goes back to the picker")
-  input:press("a")
-  screen:update(0)
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
+  press(screen, input, "a")
   eq(screen.phase, "minute", "YES moves on to the minutes")
 
-  input:press("up")
-  screen:update(0)
+  press(screen, input, "up")
   eq(screen.minute, 1, "up walks the minutes")
   screen.minute = 0
-  input:press("down")
-  screen:update(0)
+  press(screen, input, "down")
   eq(screen.minute, 59, "and they wrap at the hour")
   screen.minute = 30
   eq(screen:display(), "30 min.", "DisplayMinutesWithMinString's own string")
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "confirm-minute", "A confirms them")
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "response", "and Oak answers with the time")
   -- "MORN 7:30", not "7 AM:30": OakText_ResponseToSetTime is PrintHour (the
   -- time-of-day word then the 1-12 hour) then ':' then two-digit minutes, so
   -- the meridiem never appears and cannot land between the hour and them.
   check(screen:question():find("MORN 7:30", 1, true) ~= nil,
     "which is the pair the player just set")
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(done.hour, 7, "the screen hands the hour back")
   eq(done.minute, 30, "and the minutes")
   eq(Clock.hour(save), 7, "and the save now reads that hour")
@@ -200,27 +198,19 @@ do
   eq(screen.day, 0, "`xor a / ld [wTempDayOfWeek], a`: SUNDAY")
   eq(screen:display(), "SUNDAY", "which is what the box shows")
   for _ = 1, 2 do
-    input:press("up")
-    screen:update(0)
+    press(screen, input, "up")
   end
   eq(screen:display(), "TUESDAY", "up walks the wheel forward")
-  input:press("down")
-  screen:update(0)
-  input:press("down")
-  screen:update(0)
-  input:press("down")
-  screen:update(0)
+  press(screen, input, "down")
+  press(screen, input, "down")
+  press(screen, input, "down")
   eq(screen:display(), "SATURDAY", "and it wraps past SUNDAY")
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
   eq(screen.phase, "confirm-day", "A confirms it")
-  input:press("b")
-  screen:update(0)
+  press(screen, input, "b")
   eq(screen.phase, "day", "B is NO and drops back to the wheel")
-  input:press("a")
-  screen:update(0)
-  input:press("a")
-  screen:update(0)
+  press(screen, input, "a")
+  press(screen, input, "a")
   eq(picked, 6, "YES hands the day back")
   eq(Clock.weekday(save), 6, "and the save reads it")
 end
@@ -262,6 +252,7 @@ do
   local rows = {}
   Chrome.print = function(text, _tx, ty) rows[text] = ty end
   local screen = InitClock.new({}, { save = {} })
+  settle(screen)
   screen:drawPanel()
   Chrome.print = priorPrint
   eq(rows["Zzz... Hm? Wha...?"], 14, "Oak's first line prints on row 14")
@@ -278,13 +269,70 @@ do
   local clock = InitClock.new({}, { mode = "clock", save = {} })
   eq(clock.isOpaque, true, "InitClock still runs on a cleared page")
   eq(clock:drawsWidescreen(), true, "with its own widescreen surround")
-  local priorClear, cleared = Chrome.clear, 0
-  Chrome.clear = function() cleared = cleared + 1 end
-  day:drawPanel()
-  eq(cleared, 0, "the day wheel never clears the tilemap")
+  -- ../pokecrystal/engine/rtc/timeset.asm:22-32
+  local G = love.graphics
+  local priorColor, priorRect = G.setColor, G.rectangle
+  local held, fills = nil, {}
+  G.setColor = function(r, g, b, a)
+    held = { r, g, b }
+    priorColor(r, g, b, a)
+  end
+  G.rectangle = function(mode, x, y, w, h)
+    fills[#fills + 1] = { color = held, x = x, y = y, w = w, h = h }
+    priorRect(mode, x, y, w, h)
+  end
+  local function groundFill(list)
+    local first = list[1]
+    if not first then return nil end
+    if first.x ~= 0 or first.y ~= 0 or first.w ~= 160 or first.h ~= 144 then
+      return nil
+    end
+    return first.color
+  end
   clock:drawPanel()
-  eq(cleared, 1, "the clock does")
-  Chrome.clear = priorClear
+  local ground = groundFill(fills)
+  check(ground ~= nil, "the clock screen fills the whole tilemap first")
+  eq(ground[1], 0, "with black")
+  eq(ground[2], 0, "and black")
+  eq(ground[3], 0, "and black")
+  fills = {}
+  day:drawPanel()
+  check(groundFill(fills) == nil, "the day wheel never clears the tilemap")
+  G.setColor, G.rectangle = priorColor, priorRect
+  eq(InitClock.GROUND[1] + InitClock.GROUND[2] + InitClock.GROUND[3], 0,
+    "gfx/diploma/diploma.pal colour 3")
+end
+
+-- ../pokecrystal/home/print_text.asm:5
+do
+  local slow = InitClock.new(
+    { input = fakeInput(), save = { options = { textSpeed = "SLOW" } } },
+    { save = {} })
+  check(slow.typer ~= nil, "the clock screen types its text")
+  check(not slow.typer:done(), "and opens with nothing shown")
+  for _ = 1, 25 do slow:update(0) end
+  eq(slow.typer.shown, 5, "SLOW is one character every five frames")
+
+  local input = fakeInput()
+  local fast = InitClock.new(
+    { input = input, save = { options = { textSpeed = "FAST" } } },
+    { save = {} })
+  for _ = 1, 25 do fast:update(0) end
+  eq(fast.typer.shown, 25, "FAST is one a frame")
+  check(not fast.typer:done(), "the page is still going")
+  input:press("a")
+  fast:update(0)
+  eq(fast.page, 1, "A mid-line does not turn the page")
+  check(fast.typer:done(), "it finishes the line instead")
+  input:press("a")
+  fast:update(0)
+  eq(fast.page, 2, "the next A turns it")
+  check(not fast.typer:done(), "and the new page starts from nothing")
+
+  local driven = InitClock.new({}, { save = {}, autoConfirm = true })
+  check(driven.typer.instant, "autoConfirm takes the whole line at once")
+  local wheel = InitClock.new({}, { mode = "day", save = {} })
+  check(wheel.typer.instant, "and so does SetDayOfWeek")
 end
 
 -- ../pokecrystal/home/text.asm:502

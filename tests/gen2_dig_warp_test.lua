@@ -71,12 +71,10 @@ local function world(mapId)
   return w
 end
 
--- MAPSETUP_DOOR fades out before the load, so the take is parked in
--- world.mapSetup; this drains it the way World:step does.
 local function pump(w)
-  for _ = 1, 64 do
-    if not w.mapSetup then return end
-    w:updateMapSetup()
+  for _ = 1, 256 do
+    if not (w.mapSetup or w.moveState) then return end
+    if w.mapSetup then w:updateMapSetup() else w:updateMovement() end
   end
 end
 

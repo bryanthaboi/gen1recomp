@@ -233,20 +233,36 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
   Font.draw(Strings("No.") .. ("%0" .. digits .. "d"):format(def.dex or 0),
             16, 64)
   local owned = ownedFor(game, def, forceOwned)
+  local metric = e.heightM ~= nil
+  local numbers = owned and e.heightFt
+  -- engine/menus/pokedex.asm:449
+  if not metric then
+    Font.draw(Strings("HT"), 72, 48)
+    Font.draw("′", 112, 48)
+    Font.draw("″", 136, 48)
+    Font.draw(Strings("WT"), 72, 64)
+    Font.draw(Strings("lb"), 136, 64)
+    if not numbers then
+      Font.draw("?", 104, 48)
+      Font.draw("??", 120, 48)
+      Font.draw("???", 112, 64)
+    end
+  end
   -- engine/menus/pokedex.asm:516: everything below the divider waits on the
   -- cry the line above it started
   if state.crying then
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
-  -- engine/menus/pokedex.asm:449, numbers only once owned
-  if owned and e.heightFt then
-    if e.heightM then
+  -- engine/menus/pokedex.asm:515-566
+  if numbers then
+    if metric then
       Font.draw((Strings("GR. %.1fm", e.heightM):gsub("(%d)%.(%d)", "%1,%2")), 72, 48)
       Font.draw((Strings("GEW. %.1fkg", e.weightKg or 0):gsub("(%d)%.(%d)", "%1,%2")), 72, 64)
     else
-      Font.draw(Strings("HT %d′%02d″", e.heightFt, e.heightIn or 0), 72, 48)
-      Font.draw(Strings("WT %.1flb", (e.weight or 0) / 10), 72, 64)
+      Font.draw(("%2d"):format(e.heightFt), 96, 48)
+      Font.draw(("%02d"):format(e.heightIn or 0), 120, 48)
+      Font.draw(("%6.1f"):format((e.weight or 0) / 10), 88, 64)
     end
   end
   local pages = descPages(game, def, forceOwned)
@@ -260,8 +276,6 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
     if page < #pages and state.arrow ~= false then
       Font.drawCode(Theme.moreArrow, 144, 128)
     end
-  else
-    Font.draw(Strings("Data unknown."), 8, 88)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

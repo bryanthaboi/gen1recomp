@@ -37,6 +37,20 @@ local function findWalk(rows)
   end
 end
 
+local function lastWalk(rows)
+  local found
+  for _, r in ipairs(rows) do
+    if r[1] == "walk_npc" then found = r end
+  end
+  return found
+end
+
+local function findRow(rows, name)
+  for i, r in ipairs(rows) do
+    if r[1] == name then return r, i end
+  end
+end
+
 local function texts(rows)
   local out = {}
   for _, r in ipairs(rows) do
@@ -114,15 +128,14 @@ do
   check(hasBill, "Cerulean post-battle includes Bill dialogue")
   local order = {
     "_CeruleanCityRivalPreBattleText",
-    "_CeruleanCityRivalDefeatedText",
     "_CeruleanCityRivalIWentToBillsText",
   }
   local pi = 1
   for _, id in ipairs(t) do
     if pi <= #order and id == order[pi] then pi = pi + 1 end
   end
-  eq(pi, #order + 1, "Cerulean text order: pre, defeated, Bill")
-  check(dirsEqual(findWalk(rows)[3], CER_X20),
+  eq(pi, #order + 1, "Cerulean text order: pre, Bill")
+  check(dirsEqual(lastWalk(rows)[3], CER_X20),
         "Cerulean x=20 exit: right then into town")
   for _, r in ipairs(rows) do
     check(not (r[1] == "move_npc_to" and r[4] == 2),
@@ -132,8 +145,99 @@ end
 
 do
   local rows = capture(story5.CERULEAN_CITY, { save = { flags = {} }, data = {} }, 21, 6)
-  check(dirsEqual(findWalk(rows)[3], CER_X21),
+  check(dirsEqual(lastWalk(rows)[3], CER_X21),
         "Cerulean x=21 exit: left then into town")
+end
+
+-- #2149 scripts/CeruleanCity.asm:84-99
+for _, px in ipairs({ 20, 21 }) do
+  local rows = capture(story5.CERULEAN_CITY, { save = { flags = {} }, data = {} }, px, 6)
+  local place = findRow(rows, "place_npc")
+  check(place ~= nil, ("Cerulean x=%d places the rival before he walks"):format(px))
+  eq(place[2], 1, "place_npc addresses CERULEANCITY_RIVAL (object 1)")
+  eq(place[3], px, ("the rival spawns in the player's column (x=%d)"):format(px))
+  eq(place[4], 2, "the rival spawns on the object_event home row 2")
+  check(dirsEqual(findWalk(rows)[3], { "down", "down", "down" }),
+        ("Cerulean x=%d approach is CeruleanCityMovement1"):format(px))
+  check(findRow(rows, "move_npc_to") == nil,
+        "the BFS walk is gone, so no fourth sideways step")
+end
+
+-- #2151 scripts/CeruleanCity.asm:141
+local function assertEndBattleText(rows, what)
+  local save, si = findRow(rows, "save_end_battle_text")
+  check(save ~= nil, what .. " arms save_end_battle_text")
+  eq(save[2], "_CeruleanCityRivalDefeatedText", what .. " arms the loss line")
+  local _, bi = findRow(rows, "rival_battle")
+  eq(si, bi - 1, what .. " arms it on the row before rival_battle")
+  for _, r in ipairs(rows) do
+    check(not (r[1] == "show_text" and r[2] == "_CeruleanCityRivalDefeatedText"),
+          what .. " no longer prints the loss line from the script queue")
+  end
+end
+
+do
+  local rows = capture(story5.CERULEAN_CITY, { save = { flags = {} }, data = {} }, 21, 6)
+  assertEndBattleText(rows, "the Cerulean ambush")
+  assertEndBattleText(story.CERULEAN_CITY.talk.TEXT_CERULEANCITY_RIVAL,
+                      "the Cerulean talk path")
+end
+
+do
+  local ScriptRunner = require("src.script.ScriptRunner")
+  local anyVerb = function() return true end
+  local scenes = {
+    ["Cerulean ambush x=20"] =
+      capture(story5.CERULEAN_CITY, { save = { flags = {} }, data = {} }, 20, 6),
+    ["Cerulean ambush x=21"] =
+      capture(story5.CERULEAN_CITY, { save = { flags = {} }, data = {} }, 21, 6),
+    ["Cerulean talk"] = story.CERULEAN_CITY.talk.TEXT_CERULEANCITY_RIVAL,
+    ["S.S. Anne 2F x=36"] =
+      capture(story5.SS_ANNE_2F, { save = { flags = {} }, data = {} }, 36, 8),
+    ["S.S. Anne 2F x=37"] =
+      capture(story5.SS_ANNE_2F, { save = { flags = {} }, data = {} }, 37, 8),
+  }
+  for name, rows in pairs(scenes) do
+    local problems = ScriptRunner.validate(rows, anyVerb)
+    eq(#problems, 0, name .. " jump targets resolve: "
+       .. table.concat(problems, "; "))
+  end
+end
+
+-- #2164 scripts/SSAnne2F.asm:73
+do
+  local game = { save = { flags = {} }, data = {} }
+  local kept
+  local function captureFacing(x)
+    local rows
+    local ow = {
+      runner = {
+        isRunning = function() return false end,
+        run = function(_, r) rows = r end,
+      },
+      player = { facing = "right" },
+      npcByIndex = function() return { def = { name = "X" } } end,
+    }
+    check(story5.SS_ANNE_2F.onStep(game, ow, x, 8),
+          ("SS Anne onStep fires at (%d,8)"):format(x))
+    kept = ow.player.facing
+    return rows
+  end
+
+  local right = captureFacing(37)
+  eq(kept, "right", "the player keeps his walking facing while the rival comes down")
+  local turn, ti = findRow(right, "face_player_dir")
+  check(turn ~= nil, "x=37 turns the player as a scripted row")
+  eq(turn[2], "left", "x=37 turns the player left")
+  local _, mi = findRow(right, "move_npc_to")
+  local _, xi = findRow(right, "show_text")
+  check(ti > mi, "the turn happens after the rival's walk")
+  check(ti < xi, "the turn happens before the dialogue box")
+
+  local left = captureFacing(36)
+  eq(kept, "right", "x=36 leaves the player's facing alone")
+  check(findRow(left, "face_player_dir") == nil,
+        "x=36 never writes wPlayerMovingDirection")
 end
 
 do

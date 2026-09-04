@@ -97,10 +97,13 @@ end
 -- (engine/items/item_effects.asm:1392-1418); .useVitamin ends at
 -- RemoveUsedItem the same way (engine/items/item_effects.asm:1315-1322);
 -- stones keep the menu on screen (engine/items/item_effects.asm:772-793,
--- engine/pokemon/evos_moves.asm:120-128)
+-- engine/pokemon/evos_moves.asm:120-128
+-- (engine/items/item_effects.asm:2022-2039)
 function ItemEffects.keepsPartyMenuOpen(id)
   return ItemEffects.healsHP(id) or id == "RARE_CANDY"
       or VITAMINS[id] ~= nil or ItemEffects.isStone(id)
+      or id == "ELIXER" or id == "MAX_ELIXER"
+      or id == "ETHER" or id == "MAX_ETHER" or id == "PP_UP"
 end
 
 function ItemEffects.isBattleMedicine(id)
@@ -327,6 +330,9 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
         }
       end
       b.stages[stat] = cur + 1
+      -- effects.asm:414-415
+      require("src.battle.Status")
+        .afterStatChange(battle, b, stat, battle.enemy)
       b.hazeStatReset = nil
       if battle.ruleset and battle.ruleset.badgeBoostReapplyBug
          and battle.kind ~= "link" then
@@ -388,7 +394,9 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
       return "failed", { noEffect(data) }
     end
     -- pokered's line names no mon, so the extracted text takes no args
-    return "consumed", { romText(data, "_PPRestoredText", "PP was restored.") }
+    -- engine/items/item_effects.asm:2035
+    return "consumed", { romText(data, "_PPRestoredText", "PP was restored.") },
+           USE_JINGLE
   end
 
   -- PIKAHAPPY_USEDITEM (item_effects.asm ItemUseMedicine, item id up to

@@ -633,20 +633,40 @@ do
     local game = uiGame({ mon })
     Bag.add(game.save, "RARE_CANDY", 1)
     game.stack:push(BagMenu.new(game))
-    for _ = 1, 800 do
+    local pickerMessages = {}
+    for _ = 1, 1000 do
       local top = game.stack:top()
       if not top then break end
+      for _, s in ipairs(game.stack.states) do
+        if s.bottomMessage then
+          pickerMessages[s:bottomMessage()] = true
+        end
+      end
       pressed = { a = true }
       top:update(1)
       pressed = {}
     end
     check(game.stack:top() == nil, "the candy flow runs to completion")
-    return mon
+    return mon, pickerMessages
   end
 
-  local fed = candyFlow()
+  local fed, seenMessages = candyFlow()
   check(fed.level == 16, "the candy levels the mon")
   check(fed.species == "CHARMELEON", "the level evolution fires afterwards")
+
+  -- engine/items/item_effects.asm:1392-1394
+  local sawLevelText, sawMarker = false, false
+  for msg in pairs(seenMessages) do
+    if msg:find("grew", 1, true) and msg:find("level 16", 1, true) then
+      sawLevelText = true
+    end
+    if msg:find("{DONE}", 1, true) or msg:find("{PROMPT}", 1, true) then
+      sawMarker = true
+    end
+  end
+  check(sawLevelText, "the party picker's bottom box holds the level text")
+  check(not sawMarker,
+        "and no bottom message carries a {DONE}/{PROMPT} terminator")
 
   local unsub = hooks:wrap("evolution.check", function() return false end)
   local blocked = candyFlow()

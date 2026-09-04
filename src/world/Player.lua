@@ -113,14 +113,20 @@ end
 -- the bicycle doubles walking speed (8 frames per step); movement.speed
 -- lets a mod multiply or replace that (running shoes, dash, etc.)
 -- DoBikeSpeedup is skipped mid-hop -- home/overworld.asm:283
-function Player:stepLength()
+function Player:stepLength(dir)
   local Game = require("src.core.Game")
   local save = Game.save
   local onBike = (save and save.onBike and not self.ledgeHop) or false
   local frames = onBike and self.bikeStepFrames or self.stepFrames or STEP_FRAMES
+  -- held, so those three cost a walking step -- home/overworld.asm:377
+  dir = dir or self.facing
+  local slope = onBike and self.slopeMap and dir ~= "down" or false
+  if slope then frames = self.stepFrames or STEP_FRAMES end
   if Runtime.wantsHook("movement.speed") then
     frames = Runtime.call("movement.speed", function(f) return f end, frames, {
       onBike = onBike,
+      slope = slope and true or false,
+      dir = dir,
       surfing = self.surfing and true or false,
       player = self,
       input = Game.input,
@@ -165,7 +171,7 @@ function Player:tryMove(dir, map, entities)
   self.moving = true
   self.bumpFrames = nil -- a real step supersedes any in-place bonk
   self.progress = 0
-  self.stepFramesCur = self:stepLength()
+  self.stepFramesCur = self:stepLength(dir)
   return "moved"
 end
 
@@ -184,6 +190,14 @@ function Player:update()
   end
   if self.spinning then
     self.spinTimer = (self.spinTimer or 0) + 1
+    -- engine/overworld/player_animations.asm:298
+    if self.spinHolds then
+      self.spinHold = (self.spinHold or 0) - 1
+      while self.spinHold <= 0 and (self.spinStep or 0) < #self.spinHolds - 1 do
+        self.spinStep = (self.spinStep or 0) + 1
+        self.spinHold = self.spinHolds[self.spinStep + 1]
+      end
+    end
   end
   if self.spinFrames then
     self.spinFrames = self.spinFrames - 1
@@ -192,6 +206,11 @@ function Player:update()
       self.spinDrop = nil
       self.spinRise = nil -- teleport-out departure lift (#196)
       self.spinning = false
+      self.spinHolds = nil
+      self.spinStep = nil
+      self.spinHold = nil
+      self.spinRiseFrom = nil
+      self.spinDropSteps = nil
     end
   end
   -- wall-bonk walk-in-place (issue #230): while pushing into a wall the
@@ -287,7 +306,19 @@ function Player:pose()
   -- fixed-rate animation clock so the bike's shorter steps don't double
   -- the leg cadence
   local flip = math.floor((self.animClock or 0) / 16) % 2 == 1
-  if self.spinning then
+  if self.spinning and self.spinHolds then
+    -- engine/overworld/player_animations.asm:279
+    local step = self.spinStep or 0
+    facing = SPIN_ORDER[step % 4 + 1]
+    phase, flip = 0, false
+    -- engine/overworld/player_animations.asm:319
+    if self.spinRiseFrom and step > self.spinRiseFrom then
+      py = py - (step - self.spinRiseFrom) * 16
+    elseif self.spinDropSteps then
+      local left = self.spinDropSteps - step
+      if left > 0 then py = py - left * 16 end
+    end
+  elseif self.spinning then
     -- spinners.asm:1-11, home/overworld.asm:41-44, :268-272
     facing = SPIN_ORDER[math.floor((self.spinTimer or 0) / 2) % 4 + 1]
     phase, flip = 0, false
@@ -304,6 +335,8 @@ function Player:pose()
       py = py - math.floor((total - self.spinFrames) * 24 / total)
     end
   end
+  -- engine/overworld/player_animations.asm:204
+  if self.holeSink then py = py + 8 end
   -- RodResponse (engine/items/item_effects.asm) zeroes wWalkBikeSurfState
   -- across FishingAnim, so casting from the water shows the on-foot sheet
   local sprite = (self.fishing and self.sprite)

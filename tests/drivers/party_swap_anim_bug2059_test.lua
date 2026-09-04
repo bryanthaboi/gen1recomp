@@ -52,12 +52,19 @@ return function(game)
         pm.swapAnim ~= nil and pm.swapAnim.blank[1] == true)
   U.shot(game, DIR .. "/bug2059_blank.png")
 
+  -- the second SwitchPartyMon_ClearGfx (start_sub_menus.asm:664-666)
+  U.wait(1)
+  check("the destination row blanks too (#2126)",
+        pm.swapAnim ~= nil and pm.swapAnim.blank[3] == true)
+  U.shot(game, DIR .. "/bug2126_both_blank.png")
+
   U.wait(40)
   check("the row is back after the second SFX_SWAP", pm.swapAnim == nil)
   U.shot(game, DIR .. "/bug2059_redrawn.png")
 
   U.log("bug2059_blank.png should show row 1 EMPTY (no icon, no name, no HP")
-  U.log("bar, no cursor) while the swap sound plays; bug2059_redrawn.png")
+  U.log("bar, no cursor) while the swap sound plays; bug2126_both_blank.png")
+  U.log("should show rows 1 AND 3 empty at the same time; bug2059_redrawn.png")
   U.log("should show the full list with MAGIKARP first and RATTATA third.")
   U.log("Listen for TWO swap beeps, not one.  Input is yours now: press A")
   U.log("twice on the same slot -- the row should still blank and beep.")

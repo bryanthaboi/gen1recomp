@@ -96,6 +96,15 @@ eq(p:walkPhase(), 0, "and .Standing drops to the standing pose on release")
 eq(p:drawFlip(), p.stepFlip, "with the sprite unmirrored again")
 
 p = newPlayer()
+p.animClock = 16
+p:tryMove("right", MAP, nil)
+-- engine/overworld/player_movement.asm:807
+p:stopForEvent()
+eq(p.bumpFrames, nil, "an event cancels the queued bump")
+eq(p:walkPhase(), 0, "and the talk starts on the standing pose")
+eq(p:drawFlip(), p.stepFlip, "unmirrored, whatever the clock read")
+
+p = newPlayer()
 p:tryMove("right", MAP, nil)
 eq(p:tryMove("right", OPEN, nil), "moved", "an open tile steps")
 eq(p.bumpFrames, nil, "a step clears the bump")

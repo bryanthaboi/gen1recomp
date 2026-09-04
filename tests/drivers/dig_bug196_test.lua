@@ -83,8 +83,24 @@ return function(game)
   local sawDepartureSpin = false
   local spinShotTaken = false
   local leftCave = false
-  for _ = 1, 240 do
+  local facingRuns, lastFacing, lastTick, maxTick = {}, nil, -1, 0
+  local function sampleSpin()
+    if not ow.player.spinning then return end
+    local tick = ow.player.spinTimer or 0
+    if tick == lastTick then return end
+    lastTick = tick
+    if tick > maxTick then maxTick = tick end
+    local _, _, _, facing = ow.player:pose()
+    if facing ~= lastFacing then
+      lastFacing = facing
+      facingRuns[#facingRuns + 1] = 1
+    else
+      facingRuns[#facingRuns] = facingRuns[#facingRuns] + 1
+    end
+  end
+  for _ = 1, 400 do
     local stillCave = ow.map and ow.map.id == "MT_MOON_1F"
+    if stillCave then sampleSpin() end
     -- departure-only markers: ow.teleportOut is the new pre-warp spin state,
     -- and player.spinRise is the rising spin (the arrival uses spinDrop), so
     -- neither can be confused with the interior arrival spin-down
@@ -123,6 +139,30 @@ return function(game)
 
   check(sawDepartureSpin,
     "DIG: departure spin appears in the cave before the fade (FIX A)")
+
+  do
+    local runs = {}
+    for i, n in ipairs(facingRuns) do runs[i] = n end
+    U.log("departure fixed steps:", tostring(maxTick),
+          "facing runs:", table.concat(runs, ","))
+    check(maxTick >= 130,
+      "DIG: the departure spin runs the cart's 135 fixed steps -- got "
+      .. tostring(maxTick))
+    check((runs[2] or 0) >= 12,
+      "DIG: the spin starts slow (>=12 frames a facing) -- got "
+      .. tostring(runs[2]))
+    local monotonic, prev = true, math.huge
+    for i = 2, math.min(#runs, 15) do
+      if runs[i] > prev then monotonic = false end
+      prev = runs[i]
+    end
+    check(monotonic,
+      "DIG: PlayerSpinInPlace accelerates (run lengths never grow)")
+    local sawRise = false
+    for i = 12, #runs do if runs[i] == 3 then sawRise = true end end
+    check(sawRise,
+      "DIG: the rise runs at PlayerSpinWhileMovingUp's 3 frames a step")
+  end
   check(landedMap == "VIRIDIAN_CITY",
     "DIG: lands OUTSIDE at VIRIDIAN_CITY, not the interior (FIX B) -- got "
     .. tostring(landedMap))
@@ -151,7 +191,7 @@ return function(game)
   U.wait(2)
 
   local ropeSpin = false
-  for _ = 1, 240 do
+  for _ = 1, 400 do
     local stillCave = ow.map and ow.map.id == "MT_MOON_1F"
     if stillCave and (ow.teleportOut ~= nil or ow.player.spinRise) then
       ropeSpin = true

@@ -200,4 +200,64 @@ return function(game)
   U.shot(game, DIR .. "/cer_4_done.png")
   U.log("cer beat:", tostring(game.save.flags.EVENT_BEAT_CERULEAN_RIVAL),
         "billShot:", tostring(billShot), "exitShot:", tostring(exitShot))
+
+  Flags.clear(game.save, "EVENT_BEAT_CERULEAN_RIVAL")
+  game.save.party = { tank() }
+
+  U.teleport(game, "CERULEAN_CITY", 21, 7, "up")
+  ow = game.overworld
+  U.shot(game, DIR .. "/cer21_0_before.png")
+  U.hold(game, "up", 20)
+
+  local firstX, firstY, spawnShot = nil, nil, false
+  local path, lastCell = {}, nil
+  local keptSprite, wipeShot = nil, false
+  for _ = 1, 1200 do
+    local r = rivalNpc()
+    if r and r.cellX then
+      if not firstX then
+        firstX, firstY = r.cellX, r.cellY
+        U.log("cer21 rival first visible at", firstX, firstY)
+      end
+      local cell = r.cellX .. "," .. r.cellY
+      if cell ~= lastCell then
+        lastCell = cell
+        path[#path + 1] = cell
+      end
+      if not spawnShot then
+        spawnShot = true
+        U.shot(game, DIR .. "/cer21_1_spawn.png")
+      end
+    end
+    if ow.battleOamKeep ~= nil and not keptSprite then
+      keptSprite = ow.battleOamKeep
+      U.log("cer21 battleOamKeep:",
+            tostring(keptSprite and keptSprite.def and keptSprite.def.name))
+    end
+    local wipe = game.renderer and game.renderer.battleWipe
+    if wipe and wipe.prog and wipe.prog > 0.2 and wipe.prog < 0.8
+       and not wipeShot then
+      wipeShot = true
+      U.shot(game, DIR .. "/cer21_2_wipe.png")
+    end
+    local top = game.stack:top()
+    if top ~= ow then
+      if top.phase then break end
+      U.tap(game, "a") -- advance the pre-battle box
+    end
+    U.wait(1)
+  end
+  U.log("cer21 approach path:", table.concat(path, " -> "))
+  U.log(firstX == 21 and "PASS #2149 rival spawns in the player's column"
+        or ("FAIL #2149 rival first seen at x=" .. tostring(firstX)))
+  U.log(#path <= 4 and "PASS #2149 approach is three straight steps"
+        or ("FAIL #2149 approach took " .. (#path - 1) .. " steps"))
+  U.log(keptSprite and keptSprite ~= false
+        and "PASS #2150 the rival's OAM block survives the wipe"
+        or "FAIL #2150 battleOamKeep was false, the rival is culled")
+  U.log(wipeShot and "wipe frame captured" or "no wipe frame captured")
+
+  winBattle("cerulean21")
+  mashUntil(function() return idle(ow) end, "cerulean21 done", 2000)
+  U.shot(game, DIR .. "/cer21_3_done.png")
 end

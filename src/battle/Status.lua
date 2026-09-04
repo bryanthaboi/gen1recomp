@@ -167,6 +167,89 @@ function Status.recordFor(statuses, id)
   return (statuses or Status.RECORDS)[id]
 end
 
+-- engine/battle/core.asm:6283
+local function penaltyOf(battler)
+  local record = Status.recordFor(battler.statuses, battler.mon.status)
+  return record and record.statPenalty
+end
+
+local MAX_PENALTY_STACKS = 32
+
+function Status.penaltyStacks(battler, stat)
+  local p = penaltyOf(battler)
+  if not p or p.stat ~= stat then return 0 end
+  local t = battler.statusPenaltyStacks
+  local n = t and (t[stat] or 0) or (battler.hazeStatReset and 0 or 1)
+  if type(n) ~= "number" or n ~= n or n < 0 then return 0 end
+  return math.min(n, MAX_PENALTY_STACKS)
+end
+
+function Status.applyPenalty(battler, stat, value)
+  local p = penaltyOf(battler)
+  if not p or p.stat ~= stat then return value end
+  local div = math.max(1, p.div or 1)
+  for _ = 1, Status.penaltyStacks(battler, stat) do
+    value = math.max(1, math.floor(value / div))
+  end
+  return value
+end
+
+-- core.asm:1658
+-- experience.asm:237
+function Status.bakePenalty(battler)
+  local t = {}
+  battler.statusPenaltyStacks = t
+  local p = penaltyOf(battler)
+  if p then t[p.stat] = 1 end
+end
+
+-- engine/battle/effects.asm:414-415
+function Status.clearPenalty(battler, stat)
+  local t = battler.statusPenaltyStacks
+  if t then t[stat] = 0 end
+end
+
+-- engine/battle/effects.asm:505-506
+function Status.stackPenalty(battler)
+  local t = battler.statusPenaltyStacks
+  if not t then return end
+  local p = penaltyOf(battler)
+  if p then t[p.stat] = (t[p.stat] or 0) + 1 end
+end
+
+-- pokered engine/battle/core.asm:6283
+function Status.rulesetBakes(ruleset)
+  return ruleset ~= nil and ruleset.statusPenaltyIsBaked ~= false
+end
+
+local function ensureStacks(battle, battler)
+  if battler.statusPenaltyStacks then return true end
+  if not Status.rulesetBakes(battle and battle.ruleset) then return false end
+  Status.bakePenalty(battler)
+  if battler.hazeStatReset then battler.statusPenaltyStacks = {} end
+  return true
+end
+
+-- move_effects/paralyze.asm:35
+function Status.bakeOnInflict(battle, battler)
+  if not (battler.statusPenaltyStacks
+          or Status.rulesetBakes(battle and battle.ruleset)) then
+    return
+  end
+  Status.bakePenalty(battler)
+end
+
+-- effects.asm:414-415
+function Status.afterStatChange(battle, who, stat, nonUser)
+  if not ensureStacks(battle, who) then return end
+  if stat ~= "accuracy" and stat ~= "evasion" then
+    Status.clearPenalty(who, stat)
+  end
+  if nonUser and ensureStacks(battle, nonUser) then
+    Status.stackPenalty(nonUser)
+  end
+end
+
 -- the HUD label for a status id: a mod's patched hudLabel/label if the
 -- merged registry has one, the raw id otherwise (BattleState.statusLabel,
 -- SummaryMenu.draw and PartyMenu.draw all read this the same way)

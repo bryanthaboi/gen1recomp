@@ -72,6 +72,19 @@ return function(game)
   end
   U.shot(game, SHOT_DIR .. "/candy_statbox_1_stats.png")
 
+  -- pokered engine/items/item_effects.asm:1392-1394
+  local PartyMenu = require("src.ui.PartyMenu")
+  local picker
+  for _, s in ipairs(game.stack.states) do
+    if getmetatable(s) == PartyMenu then picker = s end
+  end
+  if check("the party menu is still under the stat window", picker ~= nil) then
+    local msg = picker:bottomMessage() or ""
+    check("its bottom box still holds the level line, not the item prompt "
+          .. "(#2161): " .. msg:gsub("\n", " "),
+          msg:find("Use item") == nil)
+  end
+
   U.tap(game, "a")
   check("the stat window is still on the stack after its A press",
         findStat() ~= nil)

@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import shutil
 import sys
 from collections import deque
@@ -1673,7 +1674,8 @@ def _text_glyph(value, charmap):
     if value in TEXT_GLYPH_OVERRIDES:
         return TEXT_GLYPH_OVERRIDES[value]
     glyph = charmap.get(str(value), f"{{BYTE:{value:02X}}}")
-    if glyph.startswith("<") and glyph.endswith(">"):
+    # home/text.asm:186
+    if re.match(r"^<[^<>]*>$", glyph):
         return "{" + glyph[1:-1] + "}"
     return glyph
 
@@ -1689,6 +1691,9 @@ def _decode_text_commands(rom, symbol, charmap, substitutions):
             if pending:
                 raise ValueError(
                     f"{symbol.name}: unused dynamic text substitutions")
+            # home/text.asm:221
+            if out:
+                out.append("{DONE}")
             return "".join(out)
         if command == 0:
             while True:
@@ -1700,6 +1705,9 @@ def _decode_text_commands(rom, symbol, charmap, substitutions):
                     if pending:
                         raise ValueError(
                             f"{symbol.name}: unused dynamic text substitutions")
+                    # constants/charmap.asm:19-20
+                    if value != 0x5F and out:
+                        out.append("{PROMPT}" if value == 0x58 else "{DONE}")
                     return "".join(out)
                 out.append(_text_glyph(value, charmap))
             continue

@@ -1452,7 +1452,8 @@ function RomExtractor:textGlyph(value)
   if TEXT_GLYPH_OVERRIDES[value] then return TEXT_GLYPH_OVERRIDES[value] end
   local glyph = self.manifest.charmap[tostring(value)]
     or ("{BYTE:%02X}"):format(value)
-  if glyph:sub(1, 1) == "<" and glyph:sub(-1) == ">" then
+  -- home/text.asm:186
+  if glyph:match("^<[^<>]*>$") then
     return "{" .. glyph:sub(2, -2) .. "}"
   end
   return glyph
@@ -1468,6 +1469,8 @@ function RomExtractor:decodeTextCommands(symbol, substitutions)
     if command == 0x50 then
       assert(pending > #substitutions,
         symbol.name .. ": unused dynamic text substitutions")
+      -- home/text.asm:221
+      if #out > 0 then out[#out + 1] = "{DONE}" end
       return table.concat(out)
     elseif command == 0 then
       while true do
@@ -1477,6 +1480,10 @@ function RomExtractor:decodeTextCommands(symbol, substitutions)
         if value == 0x57 or value == 0x58 or value == 0x5F then
           assert(pending > #substitutions,
             symbol.name .. ": unused dynamic text substitutions")
+          -- constants/charmap.asm:19-20
+          if value ~= 0x5F and #out > 0 then
+            out[#out + 1] = (value == 0x58) and "{PROMPT}" or "{DONE}"
+          end
           return table.concat(out)
         end
         out[#out + 1] = self:textGlyph(value)

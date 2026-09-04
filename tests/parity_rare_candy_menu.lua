@@ -31,9 +31,11 @@ local realBag = package.loaded["src.ui.BagMenu"]
 local realParty = package.loaded["src.ui.PartyMenu"]
 -- soundOpts only builds an opts table, so the real one runs against the stub.
 local soundOpts = require("src.render.TextBox").soundOpts
+local strip = require("src.render.TextBox").strip
 package.loaded["src.render.TextBox"] = {
   new = function(_, text, done) return { textBox = true, text = text, done = done } end,
   soundOpts = soundOpts,
+  strip = strip,
 }
 package.loaded["src.ui.BagMenu"] = nil
 package.loaded["src.ui.PartyMenu"] = nil
@@ -118,6 +120,22 @@ local function useCandy(game, list)
   return game.stack:top()
 end
 
+-- engine/menus/start_sub_menus.asm:414-416
+local function isFlash(s)
+  return type(s) == "table" and s.t ~= nil and s.frames ~= nil
+end
+
+local function drainFlash(game)
+  local top = game.stack:top()
+  if not isFlash(top) then return false end
+  local n = 0
+  while game.stack:top() == top and n < 240 do
+    top:update(1 / 60)
+    n = n + 1
+  end
+  return true
+end
+
 -- Walk the rest of the level-up sequence: dismiss the level text, then A
 -- through the stat window (PrintStatsBox).
 local function finishLevelUp(game, box)
@@ -129,6 +147,7 @@ local function finishLevelUp(game, box)
     top:update(1 / 60)
     game.input.pressed = nil
   end
+  return drainFlash(game)
 end
 
 -- ---- the report: one candy closed the whole menu -------------------------
@@ -149,8 +168,21 @@ do
   -- (item_effects.asm:1392-1418) #1594
   check(isPicker(game.stack.states[2]),
         "the party picker is the backdrop for the level text (#1594)")
-
-  finishLevelUp(game, box)
+  -- (pokered engine/items/item_effects.asm:1392-1394)
+  local picker = game.stack.states[2]
+  local levelLine = box.text:gsub("{DONE}%s*$", ""):gsub("{PROMPT}%s*$", "")
+  eq(picker:bottomMessage(), levelLine,
+     "the party menu's bottom box holds the level text, not the item prompt (#2161)")
+  dismiss(game.stack, box)
+  check(not isPicker(game.stack:top()),
+        "PrintStatsBox is up over the party menu")
+  eq(picker:bottomMessage(), levelLine,
+     "and it survives into PrintStatsBox (item_effects.asm:1403-1404)")
+  game.input.pressed = "a"
+  game.stack:top():update(1 / 60)
+  game.input.pressed = nil
+  check(drainFlash(game),
+        "the bag return whites out (start_sub_menus.asm:414-416) #2125")
   for _, s in ipairs(game.stack.states) do
     check(not isPicker(s), "the picker comes down when the sequence ends")
   end

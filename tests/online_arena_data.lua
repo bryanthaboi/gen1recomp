@@ -259,8 +259,10 @@ do
     "data differs", "and reports the dataset")
   T.eq(ArenaData.describeMismatch(a, profile({ engineVersion = "9.9.9" })),
     "engine version differs", "an engine release is named first")
-  T.eq(ArenaData.describeMismatch(a, profile({ version = "blue" })),
-    "game differs", "so is the game")
+  T.eq(ArenaData.equal(a, profile({ version = "blue" })), true,
+    "red and blue share a link surface, so they pair")
+  T.eq(ArenaData.equal(a, profile({ version = "yellow" })), true,
+    "and so does yellow (#511)")
   T.eq(ArenaData.describeMismatch(a, profile({ rulesetId = "gen1_fixed" })),
     "ruleset differs", "and the ruleset")
   T.eq(ArenaData.describeMismatch(a, profile({ engine = 2 })),

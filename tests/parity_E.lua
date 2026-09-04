@@ -129,7 +129,7 @@ do
   check(not game.save.flags.EVENT_GAVE_FOSSIL_TO_LAB, "no fossil: GAVE_FOSSIL_TO_LAB not set")
   check(not game.save.flags.EVENT_LAB_STILL_REVIVING_FOSSIL, "no fossil: STILL_REVIVING not set")
   eq(#game.save.party, 0, "no fossil: party unchanged")
-  eq(shownTexts[#shownTexts], "No! Is too bad!", "no fossil shows NoFossilsText")
+  eq(shownTexts[#shownTexts], "No! Is too bad!{DONE}", "no fossil shows NoFossilsText")
 end
 
 -- === 2)-5) full deposit -> pending -> re-entry -> grant cycle ===
@@ -163,7 +163,7 @@ do
   check(game.save.flags.EVENT_LAB_STILL_REVIVING_FOSSIL == true,
         "same-visit re-talk: STILL_REVIVING still set")
   eq(#game.save.party, 0, "same-visit re-talk: still no mon granted")
-  eq(shownTexts[#shownTexts], "I take a little\ntime!\fYou go for walk a\nlittle while!",
+  eq(shownTexts[#shownTexts], "I take a little\ntime!\fYou go for walk a\nlittle while!{DONE}",
      "same-visit re-talk shows GoForAWalkText")
 
   -- 4) leaving and re-entering CINNABAR_ISLAND (its onEnter) clears
@@ -219,7 +219,7 @@ do
   game.save.inventory.DOME_FOSSIL = 1
   menuPick = "cancel"
   check(talk(game), "menu-cancel talk completes")
-  eq(shownTexts[#shownTexts], "Aiyah! You come\nagain!", "menu B-out shows ComeAgainText")
+  eq(shownTexts[#shownTexts], "Aiyah! You come\nagain!{DONE}", "menu B-out shows ComeAgainText")
   eq(game.save.inventory.DOME_FOSSIL, 1, "fossil kept after menu cancel")
   check(not game.save.flags.EVENT_GAVE_FOSSIL_TO_LAB, "menu cancel sets no quest flags")
   eq(game.save.labFossilMon, nil, "menu cancel leaves no pending species")
@@ -231,7 +231,7 @@ do
   game.save.inventory.DOME_FOSSIL = 1
   menuPick, choiceAnswer = 1, false
   check(talk(game), "confirm-NO talk completes")
-  eq(shownTexts[#shownTexts], "Aiyah! You come\nagain!", "NO on the confirm shows ComeAgainText")
+  eq(shownTexts[#shownTexts], "Aiyah! You come\nagain!{DONE}", "NO on the confirm shows ComeAgainText")
   eq(game.save.inventory.DOME_FOSSIL, 1, "fossil kept after NO")
   check(not game.save.flags.EVENT_GAVE_FOSSIL_TO_LAB, "NO sets no quest flags")
   eq(game.save.labFossilMon, nil, "NO leaves no pending species")

@@ -24,6 +24,7 @@ local Mon = require("src.battle.gen2.Mon")
 local PackMenu = require("src.ui.gen2.PackMenu")
 local PartyMenu = require("src.ui.gen2.PartyMenu")
 local Sound = require("src.core.Sound")
+local Typer = require("src.ui.gen2.Typer")
 
 -- ---------------------------------------------------------------- fixtures
 
@@ -878,10 +879,20 @@ do
   list3.index = 2
   list3:openSubmenu()
   list3:updateSubmenu({ wasPressed = function(_, b) return b == "a" end })
-  eq(screen.phase, "refuse-switch", "the mon already out is refused")
-  check((screen.message or ""):find("is already out"),
-    "with BattleText_MonIsAlreadyOut")
+  eq(screen.phase, "submenu", "the mon already out is refused in the list")
+  eq(pushed[#pushed], list3, "with the party list still up")
+  eq(list3.submenu, nil, "and the SWITCH/STATS/CANCEL box gone")
+  local refused = (list3.itemResult or {}).text or ""
+  check(refused:find("already"), "with BattleText_MonIsAlreadyOut")
+  -- SpeechTextbox's 18-tile interior (home/text.asm:124)
+  for line in refused:gmatch("[^\n]+") do
+    check(#line <= 18, "the refusal wraps inside the textbox")
+  end
   eq(battle.turn, turn0, "and no turn is spent on it")
+  list3:updateItemResult({ wasPressed = function(_, b) return b == "a" end })
+  eq(list3.itemResult, nil, "A dismisses it back to a live list")
+  eq(pushed[#pushed], list3, "which is still the top of the stack")
+  list3.onCancel()
 
   -- The forced list is PickPartyMonInBattle: WhichPKMNString, no submenu.
   check(screen:openParty(true), "the forced list opens")
@@ -2042,6 +2053,74 @@ do
   bare:startSendOut("player", bare.battle.player)
   check(not bare:picBoxCleared("player") and bare.showPlayerHud,
     "without scripts the mon and the HUD come up together")
+end
+
+-- SlideBattlePicOut + EmptyBattleTextbox (core.asm:3221)
+do
+  local screen, battle = newScreen()
+  check(runToMenu(screen), "the intro drains")
+  screen.showEnemyTrainer = true
+  screen.picHidden.enemy = false
+  screen.trainerSlide = 0
+  for _ = 1, 400 do
+    run(screen, 1)
+    if not screen.trainerSlide then break end
+  end
+  eq(screen.showEnemyTrainer, false, "the trainer pic slides off")
+  eq(screen.picHidden.enemy, true, "and the box it emptied stays empty")
+  check(screen:picBoxCleared("enemy"), "so drawPic paints nothing there")
+
+  screen:startSendOut("enemy", battle.enemy)
+  for _ = 1, 400 do
+    if not screen.afterSendOut then break end
+    run(screen, 1)
+  end
+  check(not screen:picBoxCleared("enemy"),
+    "the send-out animation is the only thing that brings the mon back")
+end
+
+-- home/text.asm:630
+-- (home/joypad.asm:428)
+do
+  local screen = newScreen()
+  local held = false
+  for _ = 1, 600 do
+    run(screen, 1)
+    if (screen.messageTimer or 0) > 0 and not Typer.typing(screen) then
+      held = true
+      break
+    end
+  end
+  check(held, "WildPokemonAppearedText holds for PromptButton")
+
+  screen.arrowBlink = 0
+  check(screen:messageArrowVisible(), "the cursor is on at phase 0")
+  screen.arrowBlink = 15
+  check(screen:messageArrowVisible(), "and through phase 15")
+  screen.arrowBlink = 16
+  check(not screen:messageArrowVisible(), "UnloadBlinkingCursor at phase 16")
+  screen.arrowBlink = 31
+  check(not screen:messageArrowVisible(), "and through phase 31")
+
+  -- byte (home/text.asm:887-902)
+  screen.arrowBlink = 0
+  screen.waitSfx = "SFX_TACKLE"
+  check(not screen:messageArrowVisible(), "no cursor under a held SFX")
+  screen.waitSfx = nil
+  screen.messageDelay = 10
+  check(not screen:messageArrowVisible(), "none through a text_pause")
+  screen.messageDelay = 0
+  check(screen:messageArrowVisible(), "back on once the pause is done")
+
+  -- DoneText / text_end lines never load it (home/text.asm:566)
+  screen.messageTimer = 0
+  check(not screen:messageArrowVisible(), "and never on a `done` line")
+
+  local sliding = newScreen()
+  local before = sliding.arrowBlink
+  run(sliding, 1)
+  check(sliding.slideFrame > 0 and sliding.arrowBlink ~= before,
+    "the blink phase advances through update's early returns")
 end
 
 S.finish()

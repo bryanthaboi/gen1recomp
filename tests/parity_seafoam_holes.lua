@@ -20,8 +20,12 @@ local function owRecording()
   local warps = {}
   return {
     player = { facing = "up" },
-    startWarpTo = function(_, mapId, x, y, facing)
+    -- player_animations.asm:204
+    fallThroughHole = function(_, mapId, x, y, facing)
       warps[#warps + 1] = { mapId = mapId, x = x, y = y, facing = facing }
+    end,
+    startWarpTo = function()
+      error("a hole fall must not take the plain door-warp path (#2182)")
     end,
   }, warps
 end

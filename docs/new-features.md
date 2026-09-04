@@ -35,3 +35,4 @@ Features intentionally added beyond the original Pokémon Red, Blue, and Yellow 
 * **Mod manager** with Gen 1 mod adapters, per-game targeting, and `modkit gen2check`
 * **Followers** for mods, plus Gen 2-only registries and hooks
 * **Battle screen options** on Gold, Silver and Crystal: BATTLE SIZE (fixed or window-filling) and BATTLE BG (white, black or the dimmed map as the surround)
+* **Widescreen battle layout** on Gold, Silver and Crystal: BATTLE LAYOUT -> WIDE spreads the HUDs and bottom windows across a 304-wide screen

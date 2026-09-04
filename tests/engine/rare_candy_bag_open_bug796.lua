@@ -37,6 +37,11 @@ package.loaded["src.core.Sound"] = {
 local jingles = {}
 package.loaded["src.render.TextBox"] = {
   new = function(_, text, done) return { textBox = true, text = text, done = done } end,
+  -- constants/charmap.asm:19-20
+  strip = function(text)
+    if type(text) ~= "string" then return text end
+    return (text:gsub("{DONE}", ""):gsub("{PROMPT}", ""))
+  end,
   soundOpts = function(_, sound, opts)
     jingles[#jingles + 1] = sound
     opts = opts or {}

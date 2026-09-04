@@ -15,16 +15,8 @@ local function effectiveSpeed(battler)
   -- ApplyBadgeStatBoosts: the SOULBADGE boosts speed; the rows come from
   -- the battler's merged badgeBoosts with the vanilla list as fallback
   spd = Damage.applyBadgeBoost(battler, "speed", spd)
-  -- paralysis quarters speed (the status record's statPenalty);
-  -- hazeStatReset suppresses it because Haze (haze.asm ResetStats)
-  -- copied the unmodified speed over the quartered battle stat, lifting
-  -- the penalty until the next stat recompute.
-  local record = Status.recordFor(battler.statuses, battler.mon.status)
-  local penalty = record and record.statPenalty
-  if penalty and penalty.stat == "speed" and not battler.hazeStatReset then
-    spd = math.max(1, math.floor(spd / penalty.div))
-  end
-  return spd
+  -- core.asm:6283, effects.asm:414-415
+  return Status.applyPenalty(battler, "speed", spd)
 end
 
 local PRIORITY = { QUICK_ATTACK = 1, COUNTER = -1 }

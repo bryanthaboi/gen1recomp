@@ -1100,6 +1100,11 @@ do
     end
     return false
   end
+  -- constants/charmap.asm:19-20
+  local function plain(s)
+    if type(s) ~= "string" then return s end
+    return (s:gsub("{DONE}%s*$", ""):gsub("{PROMPT}%s*$", ""))
+  end
   local function hasDrain(b)
     for _, it in ipairs(b.queue) do
       if it.drain then return true end
@@ -1131,9 +1136,14 @@ do
     { rng = mkseq({}) }, pb.player, pb.enemy, Data.moves.THUNDER_WAVE)
   eq(parMsgs[1], "Enemy RATTATA's\nparalyzed! It may\nnot attack!",
      "_ParalyzedMayNotAttackText wording + prefix")
+  -- move_effects/paralyze.asm:12
   local failMsgs = MoveFx.primary.PARALYZE_EFFECT(
     { rng = mkseq({}) }, pb.player, pb.enemy, Data.moves.THUNDER_WAVE)
-  eq(failMsgs[1], "But, it failed!", "_ButItFailedText has the comma")
+  eq(failMsgs[1], "It didn't affect\nEnemy RATTATA!",
+     "an already-statused target is DidntAffect, not ButItFailed")
+  local TextBox = require("src.render.TextBox")
+  eq(TextBox.strip(Data.text._ButItFailedText):gsub("%s+$", ""),
+     "But, it failed!", "_ButItFailedText has the comma")
 
   -- send-out shout buckets (PrintSendOutMonMessage thresholds)
   pb.enemy.mon.stats = { hp = 20 }
@@ -1211,7 +1221,7 @@ do
     for _, r in ipairs(mhk.queue) do
       if r.anim == "DOUBLE_KICK" then seq[#seq + 1] = "anim"
       elseif r.drain then seq[#seq + 1] = "drain"
-      elseif r.text == "It's super\neffective!" then seq[#seq + 1] = "se"
+      elseif plain(r.text) == "It's super\neffective!" then seq[#seq + 1] = "se"
       elseif r.text and r.text:find("times!", 1, true) then seq[#seq + 1] = "count"
       end
     end
@@ -1234,8 +1244,8 @@ do
     for _, r in ipairs(mhc.queue) do
       if r.anim == "DOUBLE_KICK" then cseq[#cseq + 1] = "anim"
       elseif r.drain then cseq[#cseq + 1] = "drain"
-      elseif r.text == "Critical hit!" then cseq[#cseq + 1] = "crit"
-      elseif r.text == "It's super\neffective!" then cseq[#cseq + 1] = "se"
+      elseif plain(r.text) == "Critical hit!" then cseq[#cseq + 1] = "crit"
+      elseif plain(r.text) == "It's super\neffective!" then cseq[#cseq + 1] = "se"
       end
     end
     eq(table.concat(cseq, ","), "anim,drain,crit,se,anim,drain,se",
@@ -1243,7 +1253,7 @@ do
     -- data/text/text_2.asm:1144
     local function rowFor(b, s)
       for _, r in ipairs(b.queue) do
-        if r.text == s then return r end
+        if plain(r.text) == s then return r end
       end
       return nil
     end
@@ -1297,7 +1307,7 @@ do
   do
     local countRow
     for _, r in ipairs(mh2.queue) do
-      if r.text == "Hit 5 times!" then countRow = r end
+      if plain(r.text) == "Hit 5 times!" then countRow = r end
     end
     check(countRow ~= nil and countRow.auto ~= true,
           "the hit-count line stays readable until the command menu redraws")
@@ -1492,10 +1502,14 @@ do
     check(pm.swapFrom == nil, "the swap arrow clears on the confirming A")
     check(pm.swapAnim ~= nil and pm.swapAnim.blank[1] == true,
           "wSwappedMenuItem's row blanks while SFX_SWAP plays")
+    check(pm.swapAnim.blank[3] ~= true,
+          "wCurrentMenuItem's row is still up on the first ClearGfx")
     StateStack:update(1 / 60)
     check(pm.swapAnim ~= nil, "the blank outlives the frame it started on")
+    check(pm.swapAnim.blank[3] == true,
+          "the second ClearGfx blanks wCurrentMenuItem's row too (#2126)")
     for _ = 1, 12 do StateStack:update(1 / 60) end
-    check(pm.swapAnim == nil, "RedrawPartyMenu_ restores the row")
+    check(pm.swapAnim == nil, "RedrawPartyMenu_ restores both rows")
     -- .pickedMonsToSwap (start_sub_menus.asm:711)
     pm.swapFrom, pm.index = 2, 2
     Input.pressed = { a = true }
@@ -1504,6 +1518,9 @@ do
     eq(Game.save.party[2].species, "CHARMANDER", "self-swap leaves the party alone")
     check(pm.swapAnim ~= nil and pm.swapAnim.blank[2] == true,
           "self-swap still blanks its own row")
+    StateStack:update(1 / 60)
+    check(pm.swapAnim.blank[2] == true and pm.swapAnim.to == 2,
+          "self-swap's second ClearGfx hits the same row (#2126)")
     for _ = 1, 12 do StateStack:update(1 / 60) end
     StateStack:pop()
   end

@@ -17,7 +17,6 @@ class RbyTranslationHarvestTest(TestCase):
                      modkit.harvest_engine_strings(str(REPO))}
         expected = {
             '"FLY TO?"',
-            '"Which move?"',
             '"ITEMS"',
             '"HEAL"',
             '"WITHDRAW"',

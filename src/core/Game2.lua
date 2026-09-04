@@ -436,6 +436,8 @@ function Game2:openStartMenu()
   if self.world and self.world.cancelMapNameSign then
     self.world:cancelMapNameSign()
   end
+  -- ../pokecrystal/engine/overworld/events.asm:494-510
+  if self.world and self.world.player then self.world.player:stopForEvent() end
   Screens.push(self, "Gen2StartMenu", {
     save = self.save,
     onClose = function() self.stack:pop() end,
@@ -854,6 +856,8 @@ end
 -- the cart's fixed messages to print, the same way the START handler above
 -- is the whole of .MenuReturns for its own button.
 function Game2:useSelectItem()
+  -- ../pokecrystal/engine/overworld/events.asm:494-510
+  if self.world.player then self.world.player:stopForEvent() end
   local outcome, itemId = self.world:useSelectItem()
   if outcome == "not_registered" then
     -- MayRegisterItemText.
@@ -1723,19 +1727,32 @@ local function battleSurround(stack)
   for i = #states, 1, -1 do
     local state = states[i]
     if state and state.bgMode then
-      return state:bgMode(), state.BG_WORLD_DIM or 0.55
+      return state:bgMode(), state.BG_WORLD_DIM or 0.55, state, i
     end
   end
 end
 
 function Game2:paintBattleSurround(w, h)
-  local mode, dim = battleSurround(self.stack)
+  local mode, dim, owner, at = battleSurround(self.stack)
   if mode ~= "black" and mode ~= "world" then return end
   local alpha = mode == "world" and dim or 1
   if not alpha or alpha <= 0 then return end
   local G = love.graphics
   local scale, ox, oy = panelBlit(self.stack, w, h)
-  local pw, ph = 160 * scale, 144 * scale
+  local stack = self.stack
+  if at and stack and stack.visibleBase then
+    local base = stack:visibleBase()
+    if base and base > at then owner = stack.states[base] end
+  end
+  local sw, sh = 160, 144
+  if owner and owner.panelSize then sw, sh = owner:panelSize() end
+  if sw ~= 160 then
+    if owner.battlePanelScale then
+      scale = owner:battlePanelScale(w, h) or scale
+    end
+    ox, oy = Chrome.fitOriginFor(w, h, scale, sw / 8, sh / 8)
+  end
+  local pw, ph = sw * scale, sh * scale
   G.setColor(0, 0, 0, alpha)
   if oy > 0 then G.rectangle("fill", 0, 0, w, oy) end
   if oy + ph < h then G.rectangle("fill", 0, oy + ph, w, h - oy - ph) end

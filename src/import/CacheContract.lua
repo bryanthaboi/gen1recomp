@@ -8,7 +8,7 @@ local GameVersion = require("src.core.GameVersion")
 
 local CacheContract = {}
 
-CacheContract.FORMAT = "rom-cache-v10:"
+CacheContract.FORMAT = "rom-cache-v11:"
 CacheContract.VERSION_FORMAT = {
   -- v11: Gen 2 maps carry their object list's ROM address, which a .sav
   -- export re-anchoring a save onto another map writes back into
@@ -18,7 +18,7 @@ CacheContract.VERSION_FORMAT = {
   silver = "rom-cache-v12:",
   crystal = "rom-cache-v12-crystal4:",
   -- engine/overworld/map_sprites.asm:181
-  yellow = "rom-cache-v10-yellow1:",
+  yellow = "rom-cache-v11-yellow1:",
 }
 CacheContract.MARKER_PATH = "rom-cache.complete"
 

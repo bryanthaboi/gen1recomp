@@ -517,7 +517,7 @@ M.PEWTER_CITY = {
 -- skipped (the blackout rebuilds the map mid-script).
 local function runAmbush(game, ow, rows, playerFacing, musicOpts)
   if ow.runner:isRunning() then return false end
-  ow.player.facing = playerFacing
+  if playerFacing then ow.player.facing = playerFacing end
   -- the rival encounter sting (MUSIC_MEET_RIVAL); the battle music
   -- takes over and the map theme returns after the victory jingle
   require("src.core.Music").play(game.data, "Music_MeetRival", nil, musicOpts)
@@ -622,21 +622,28 @@ local function ceruleanRivalExitDirs(px)
   return { "left", "down", "down", "down", "down", "down", "down" }
 end
 
-local function ceruleanRivalScene(px, py)
+-- CeruleanCityMovement1 (scripts/CeruleanCity.asm:114)
+local CERULEAN_RIVAL_APPROACH = { "down", "down", "down" }
+
+local function ceruleanRivalScene(px)
   return {
-    { "show_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },  -- 1
-    { "move_npc_to", 1, px, py - 1 },                          -- 2
-    { "face_object", 1, "down" },                              -- 3
-    { "show_text", "_CeruleanCityRivalPreBattleText" },        -- 4
-    { "rival_battle", "OPP_RIVAL1", 7 },                       -- 5
-    { "jump_if_false", 13 },                                   -- 6
-    { "set_flag", "EVENT_BEAT_CERULEAN_RIVAL" },               -- 7
-    { "show_text", "_CeruleanCityRivalDefeatedText" },         -- 8
-    { "show_text", "_CeruleanCityRivalIWentToBillsText" },     -- 9
-    { "play_music", "Music_MeetRival", { start = "rival" } }, -- 10
-    { "walk_npc", 1, ceruleanRivalExitDirs(px) },              -- 11
+    { "show_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },
+    -- x 20 (scripts/CeruleanCity.asm:84-91)
+    { "place_npc", 1, px, 2, "down" },
+    { "walk_npc", 1, CERULEAN_RIVAL_APPROACH },
+    { "face_object", 1, "down" },              -- CeruleanCityFaceRivalScript
+    { "show_text", "_CeruleanCityRivalPreBattleText" },
+    -- SaveEndBattleTextPointers (scripts/CeruleanCity.asm:141)
+    { "save_end_battle_text", "_CeruleanCityRivalDefeatedText" },
+    { "rival_battle", "OPP_RIVAL1", 7 },
+    { "jump_if_false", "leave" },
+    { "set_flag", "EVENT_BEAT_CERULEAN_RIVAL" },
+    { "show_text", "_CeruleanCityRivalIWentToBillsText" },
+    { "play_music", "Music_MeetRival", { start = "rival" } },
+    { "walk_npc", 1, ceruleanRivalExitDirs(px) },
     { "play_default_music" },                -- scripts/CeruleanCity.asm:230
-    { "hide_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },  -- 13
+    { "label", "leave" },
+    { "hide_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },
   }
 end
 
@@ -698,7 +705,7 @@ M.CERULEAN_CITY = {
     end
     if not f.EVENT_BEAT_CERULEAN_RIVAL
        and inCoords({ { 20, 6 }, { 21, 6 } }, x, y) then
-      return runAmbush(game, ow, ceruleanRivalScene(x, y), "up")
+      return runAmbush(game, ow, ceruleanRivalScene(x), "up")
     end
     return false
   end,
@@ -917,23 +924,29 @@ M.SS_ANNE_2F = {
     if game.save.flags.EVENT_BEAT_SS_ANNE_RIVAL then return false end
     if not inCoords({ { 36, 8 }, { 37, 8 } }, x, y) then return false end
     local onLeft = x == 36
-    return runAmbush(game, ow, {
-      { "show_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },       -- 1
-      { "move_npc_to", 2, 36, onLeft and 7 or 8 },             -- 2
-      { "face_object", 2, onLeft and "down" or "right" },      -- 3
-      { "show_text", "_SSAnne2FRivalText" },                   -- 4
+    local rows = {
+      { "show_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },
+      { "move_npc_to", 2, 36, onLeft and 7 or 8 },
+      { "face_object", 2, onLeft and "down" or "right" },
+      { "show_text", "_SSAnne2FRivalText" },
       -- SSAnne2FRivalText's text_asm arms SaveEndBattleTextPointers
       -- (scripts/SSAnne2F.asm:199), so the line prints in battle (#1688)
-      { "save_end_battle_text", "_SSAnne2FRivalDefeatedText" }, -- 5
-      { "rival_battle", "OPP_RIVAL2", 1 },                     -- 6
-      { "jump_if_false", 13 },                                 -- 7
-      { "set_flag", "EVENT_BEAT_SS_ANNE_RIVAL" },              -- 8
-      { "show_text", "_SSAnne2FRivalCutMasterText" },          -- 9
-      { "play_music", "Music_MeetRival", { start = "rival" } }, -- 10
-      { "walk_npc", 2, ssAnne2FRivalExitDirs(onLeft) },        -- 11
+      { "save_end_battle_text", "_SSAnne2FRivalDefeatedText" },
+      { "rival_battle", "OPP_RIVAL2", 1 },
+      { "jump_if_false", "leave" },
+      { "set_flag", "EVENT_BEAT_SS_ANNE_RIVAL" },
+      { "show_text", "_SSAnne2FRivalCutMasterText" },
+      { "play_music", "Music_MeetRival", { start = "rival" } },
+      { "walk_npc", 2, ssAnne2FRivalExitDirs(onLeft) },
       { "play_default_music" },                 -- scripts/SSAnne2F.asm:175
-      { "hide_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },       -- 13
-    }, onLeft and "up" or "left")
+      { "label", "leave" },
+      { "hide_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },
+    }
+    -- the wXCoord == 37 branch (scripts/SSAnne2F.asm:73-77)
+    if not onLeft then
+      table.insert(rows, 4, { "face_player_dir", "left" })
+    end
+    return runAmbush(game, ow, rows)
   end,
 }
 

@@ -681,6 +681,9 @@ local function gen2Rows(opts, hooks, shared)
       end)
   end
 
+  add(Strings("BATTLE LAYOUT"), ladder(opts, "battleLayout",
+    { { "og", "OG" }, { "wide", "WIDE" } }, "og"))
+
   add(Strings("BATTLE SIZE"), ladder(opts, "battleFit",
     { { "fixed", "FIXED" }, { "fill", "FILL" } }, "fixed"))
 

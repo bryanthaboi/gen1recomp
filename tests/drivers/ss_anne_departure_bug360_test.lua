@@ -49,7 +49,7 @@ return function(game)
     }
     run(ow)
     Music.play = realPlay
-    return rows
+    return rows, ow
   end
 
   -- ---------------------------------------------------------- rival exit
@@ -63,9 +63,27 @@ return function(game)
 
   for _, side in ipairs({ { 37, 4 }, { 36, 6 } }) do
     local x, steps = side[1], side[2]
-    local rows = capture(function(ow)
+    local rows, capturedOw = capture(function(ow)
       story5[ANNE2F].onStep({ save = { flags = {} }, data = game.data }, ow, x, 8)
     end)
+    -- SSAnne2FSetFacingDirectionScript (scripts/SSAnne2F.asm:73)
+    check(("x=%d the player keeps his walking facing at trigger time"):format(x),
+          capturedOw.player.facing == "down")
+    local turnIndex, moveIndex, textIndex
+    for i, r in ipairs(rows) do
+      if r[1] == "face_player_dir" and not turnIndex then turnIndex = i end
+      if r[1] == "move_npc_to" and not moveIndex then moveIndex = i end
+      if r[1] == "show_text" and not textIndex then textIndex = i end
+    end
+    if x == 37 then
+      check("x=37 turns the player LEFT as a scripted row",
+            turnIndex ~= nil and rows[turnIndex][2] == "left")
+      check("x=37 turns him after the walk and before the dialogue",
+            turnIndex ~= nil and moveIndex ~= nil and textIndex ~= nil
+            and turnIndex > moveIndex and turnIndex < textIndex)
+    else
+      check("x=36 never writes the player's direction", turnIndex == nil)
+    end
     local said = rowsOfKind(rows, "show_text")
     check(("x=%d the goodbye is the last thing he says"):format(x),
           said[#said] ~= nil and said[#said][2] == CUT)

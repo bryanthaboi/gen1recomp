@@ -267,7 +267,7 @@ end
 
 local harvestCalls = {
   ["src/ui/BagMenu.lua"] = {
-    'Strings.source("Which move?")', 'Strings.source("ITEMS")',
+    'Strings.source("ITEMS")',
   },
   ["src/ui/BoxMenu.lua"] = {
     'Strings("WITHDRAW")', 'Strings("DEPOSIT")',

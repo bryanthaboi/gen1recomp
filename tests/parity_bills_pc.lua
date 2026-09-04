@@ -85,8 +85,9 @@ check(setUpvalue(OW.billsHousePokemonList, "TextBox", textBoxStub),
 local realMenu = package.loaded["src.ui.Menu"]
 package.loaded["src.ui.Menu"] = menuStub
 
+local queued
 local fakeSelf = setmetatable({
-  queueScript = function() end,
+  queueScript = function(_, script, extra) queued = { script, extra } end,
   billsHouseBillExits = function() end,
 }, { __index = OW })
 
@@ -127,11 +128,45 @@ package.loaded["src.core.Sound"] = {
   play = function() end,
   playCry = function() end,
 }
+queued = nil
 runPC()
 check(musicStopped, "cell separator stops map music")
 check(tostring(lastPush().text):find("Cell", 1, true)
       or tostring(lastPush().text):find("TELEPORTER", 1, true),
       "separator path prints initiated text")
+
+-- bills_house_pc.asm:14-40 plus BillsHouseInitiatedText's text_asm at :51-63:
+-- 268 delay frames, and every PlaySound is followed by WaitForSoundToFinish
+-- before the next delay starts.
+local wantSeparator = {
+  { "wait", 16 },
+  { "play_sound", "Switch" }, { "wait_sound" },
+  { "wait", 60 },
+  { "wait", 32 },
+  { "play_sound", "Tink" }, { "wait_sound" },
+  { "wait", 80 },
+  { "play_sound", "Shrink" }, { "wait_sound" },
+  { "wait", 48 },
+  { "play_sound", "Tink" }, { "wait_sound" },
+  { "wait", 32 },
+  { "play_sound", "Get_Item1" }, { "wait_sound" },
+}
+check(queued ~= nil, "the separator queues its cutscene script")
+local gotRows, delayFrames = {}, 0
+for _, row in ipairs(queued and queued[1] or {}) do
+  gotRows[#gotRows + 1] = table.concat({ tostring(row[1]), tostring(row[2]) }, " ")
+  if row[1] == "wait" then delayFrames = delayFrames + row[2] end
+end
+local wantRows = {}
+for _, row in ipairs(wantSeparator) do
+  wantRows[#wantRows + 1] = table.concat({ tostring(row[1]), tostring(row[2]) }, " ")
+end
+eq(table.concat(gotRows, " | "), table.concat(wantRows, " | "),
+   "the separator chain matches bills_house_pc.asm delay for delay")
+eq(delayFrames, 268, "268 delay frames, DelayFrames call for DelayFrames call")
+check(not fakeGame.save.flags.EVENT_USED_CELL_SEPARATOR_ON_BILL,
+      "SetEvent waits for the chain, not the text box")
+queued[2].onDone()
 check(fakeGame.save.flags.EVENT_USED_CELL_SEPARATOR_ON_BILL,
       "separator path sets EVENT_USED_CELL_SEPARATOR_ON_BILL")
 

@@ -25,4 +25,8 @@ return {
   residualAfterMove = true,
   -- engine/battle/effects.asm:498,689
   badgeBoostReapplyBug = true,
+  -- engine/battle/core.asm:5169-5176
+  zeroDamageMiss = true,
+  -- engine/battle/core.asm:6283,6326 and effects.asm:414-415
+  statusPenaltyIsBaked = true,
 }

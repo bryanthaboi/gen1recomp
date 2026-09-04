@@ -158,7 +158,10 @@ function Menu:draw()
     if not item then break end
     Font.draw(item.label, (self.tx + 2) * 8, rowY(row))
   end
-  Font.drawCode(Theme.cursor, (self.tx + 1) * 8, rowY(self.index - self.scroll))
+  -- hollowIndex: home/window.asm:198
+  Font.drawCode(self.hollowIndex == self.index
+                and Theme.cursorHollow or Theme.cursor,
+    (self.tx + 1) * 8, rowY(self.index - self.scroll))
   -- moreArrow ($EE): the same "more below" glyph OptionRows/ManagerState
   -- use, sat on the bottom border like TextBox's page-advance cursor.  It
   -- has to be the border row, not ty + th - 2: that is the last interior

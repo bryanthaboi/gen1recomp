@@ -119,8 +119,12 @@ return function(game)
     rulesetId = "gen1_faithful", kind = "vanilla", rule = { partySize = 1 },
   }
 
+  local YELLOW = {}
+  for k, v in pairs(PROFILE) do YELLOW[k] = v end
+  YELLOW.version = "yellow"
+
   Host.connect({ name = "RED", profiles = { PROFILE } })
-  Guest.connect({ name = "BLUE", profiles = { PROFILE } })
+  Guest.connect({ name = "BLUE", profiles = { YELLOW } })
   if not waitFor(function()
         return Host.state() == "online" and Guest.state() == "online"
       end, 600, "both clients to come online") then
@@ -141,9 +145,10 @@ return function(game)
     return finish()
   end
 
-  local joined = Guest.joinRoom(room.code, "player", PROFILE)
+  local joined = Guest.joinRoom(room.code, "player", YELLOW)
   waitFor(function() return joined.done end, 600, "room_join to answer")
-  check(joined.error == nil, "the guest joins the room: " .. tostring(joined.error))
+  check(joined.error == nil,
+        "a yellow guest joins a red room: " .. tostring(joined.error))
   waitFor(function()
     return Host.room() and #Host.room().players == 2
   end, 600, "the host to see two players")

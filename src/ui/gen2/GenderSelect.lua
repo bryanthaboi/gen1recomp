@@ -3,10 +3,12 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
+local IntroFade = require("src.ui.gen2.IntroFade")
 local Music = require("src.core.Music")
 local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
+local Typer = require("src.ui.gen2.Typer")
 
 local GenderSelect = {}
 GenderSelect.__index = GenderSelect
@@ -57,8 +59,12 @@ function GenderSelect.new(game, opts)
   -- `db 1 ; default option`: the cursor opens on Boy.
   self.cursor = 1
   self.exit = nil
+  self.fades = opts.fades and true or false
   self.text = CommonText.plain(RomText(self.data,
     "_AreYouABoyOrAreYouAGirlText", FALLBACK))
+  -- ../pokecrystal/home/print_text.asm:5, ../pokecrystal/engine/menus/init_gender.asm:30-34
+  self.typer = Typer.new(game, {})
+  self.typer:start(self.text)
   return self
 end
 
@@ -82,12 +88,24 @@ function GenderSelect:choose(index)
   self.exit = EXIT_FRAMES
 end
 
+function GenderSelect:leave()
+  local function done()
+    if self.onDone then self.onDone(self.chosen) end
+  end
+  -- ../pokecrystal/engine/rtc/timeset.asm:22
+  if self.fades then return IntroFade.run(self, { "outBlack" }, done) end
+  done()
+end
+
 function GenderSelect:update(_dt)
+  -- ../pokecrystal/home/fade.asm:22-101
+  if IntroFade.advance(self) then return end
+  if self.typer then self.typer:tick() end
   if self.exit then
     self.exit = self.exit - 1
     if self.exit > 0 then return end
     self.exit = nil
-    if self.onDone then self.onDone(self.chosen) end
+    self:leave()
     return
   end
   local input = self.game and self.game.input
@@ -112,7 +130,8 @@ function GenderSelect:drawPanel()
   G.setColor(1, 1, 1, 1)
   Chrome.textbox(SAY_X, SAY_Y, SAY_W, SAY_H)
   -- ../pokecrystal/home/text.asm:473
-  Chrome.printWrapped(self.text, SAY_TEXT_X, SAY_TEXT_Y, SAY_W, 2, 2)
+  Chrome.printWrapped(table.concat(Typer.text(self, {}), "\n"),
+    SAY_TEXT_X, SAY_TEXT_Y, SAY_W, 2, 2)
   Chrome.box(BOX_X, BOX_Y, BOX_W, BOX_H)
   for i, option in ipairs(GenderSelect.OPTIONS) do
     local row = TEXT_Y + (i - 1) * ROW_STEP
@@ -121,20 +140,18 @@ function GenderSelect:drawPanel()
   end
 end
 
-function GenderSelect:draw()
+function GenderSelect:drawBody()
   self:drawPanel()
+  IntroFade.paint(self, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
+end
+
+function GenderSelect:draw()
+  Chrome.withClip(function() self:drawBody() end)
 end
 
 function GenderSelect:drawWidescreen(winW, winH)
-  local G = love.graphics
-  Chrome.letterbox(winW, winH, 1, 1, 1)
-  local scale = Chrome.fitScale(winW, winH)
-  local ox, oy = Chrome.fitOrigin(winW, winH, scale)
-  G.push()
-  G.translate(ox, oy)
-  G.scale(scale, scale)
-  self:drawPanel()
-  G.pop()
+  local r, g, b = IntroFade.surround(self, 1, 1, 1)
+  Chrome.withPanel(winW, winH, r, g, b, function() self:drawBody() end)
 end
 
 return GenderSelect

@@ -21,7 +21,8 @@ M.CERULEAN_MELANIES_HOUSE = {
         rows[#rows + 1] = { "show_text", "MelanieText1" }
         rows[#rows + 1] = { "ask", "MelanieText2" }
         rows[#rows + 1] = { "jump_if_false", "declined" }
-        rows[#rows + 1] = { "give_pokemon", "BULBASAUR", 10 }
+        -- engine/events/give_pokemon.asm:45-46
+        rows[#rows + 1] = { "give_pokemon", "BULBASAUR", 10, false, true }
         rows[#rows + 1] = { "jump_if_false", "end" } -- party + box full
         -- Event and HideObject before MelanieText3: give_pokemon's nickname
         -- prompt and the received text both yield, and a script that dies
@@ -64,7 +65,8 @@ M.ROUTE_24 = {
       { "jump_if_true", "after" },
       { "ask", "_Route24DamianText1" },
       { "jump_if_false", "declined" },
-      { "give_pokemon", "CHARMANDER", 10 },
+      -- engine/events/give_pokemon.asm:45-46
+      { "give_pokemon", "CHARMANDER", 10, false, true },
       { "jump_if_false", "end" },
       -- SetEvent hoisted ahead of the received text (Route24.asm writes it
       -- after Route24Text_515e3, where nothing in between can fail): the
@@ -96,7 +98,8 @@ M.VERMILION_CITY = {
       else
         rows[#rows + 1] = { "ask", "_OfficerJennyText2" }
         rows[#rows + 1] = { "jump_if_false", "declined" }
-        rows[#rows + 1] = { "give_pokemon", "SQUIRTLE", 10 }
+        -- engine/events/give_pokemon.asm:45-46
+        rows[#rows + 1] = { "give_pokemon", "SQUIRTLE", 10, false, true }
         rows[#rows + 1] = { "jump_if_false", "end" }
         -- event before the received text, as above (#426)
         rows[#rows + 1] = { "set_flag",

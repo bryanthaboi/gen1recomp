@@ -18,7 +18,7 @@ Sound.play = function() return nil end
 
 local function newGame()
   local game = {
-    save = { player = {}, options = { textSpeed = "FAST" } },
+    save = { player = {}, options = { textSpeed = "FAST" }, generation = 2 },
     data = { text = {} },
   }
   game.stack = {

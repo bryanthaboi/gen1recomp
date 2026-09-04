@@ -57,7 +57,38 @@ check("three sixteen-frame beats", to.frames, 48)
 check("$47 is still step_end", Movement.decodeByte(0x47).kind, "end")
 check("$46 is still the last step_sleep",
   Movement.decodeByte(0x46).kind, "sleep")
-check("$4e skyfall is still unmodelled", Movement.decodeByte(0x4e).kind, "nop")
+
+-- written out of (engine/events/overworld.asm:864-872)
+-- engine/overworld/events.asm:1008-1021
+local sky = Movement.decodeByte(0x4e)
+check("$4e decodes as a skyfall", sky.kind, "skyfall")
+check("sixteen hidden frames then sixteen falling", sky.frames, 32)
+check("$59 is the skyfall_top half", Movement.decodeByte(0x59).kind,
+  "skyfalltop")
+check("one beat only", Movement.decodeByte(0x59).frames, 16)
+local shown = Movement.decodeByte(0x3c)
+check("$3c show_object is a visibility byte", shown.kind, "visible")
+check("and it shows", shown.on, true)
+local hidden = Movement.decodeByte(0x3d)
+check("$3d hide_object is the same byte", hidden.kind, "visible")
+check("and it hides", hidden.on, false)
+check("$58 return_dig has its own kind", Movement.decodeByte(0x58).kind,
+  "returndig")
+
+local out = Movement.digOutBytes()
+check(".DigOut opens on step_dig", out[1], 0x4f)
+check("spinning for 32 frames, not forced movement's 16", out[2], 32)
+check("then hide_object", out[3], 0x3d)
+check("and step_end", out[4], 0x47)
+local back = Movement.digReturnBytes()
+check(".DigReturn opens on show_object", back[1], 0x3c)
+check("then return_dig", back[2], 0x58)
+check("for the same 32 frames", back[3], 32)
+check("and step_end", back[4], 0x47)
+
+check("the fall starts off the top of the screen",
+  Movement.teleportYOffset(1), -87)
+check("and lands flush on the tile", Movement.teleportYOffset(16), 0)
 
 -- ---------------------------------------------------------- the jump families
 --

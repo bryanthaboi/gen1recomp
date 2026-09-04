@@ -1305,7 +1305,8 @@ function BattleState:startMessage(item)
   self.current = item
   self.lines = {}
   self.total = 0
-  local text = item.text or ""
+  -- constants/charmap.asm:19-20
+  local text = require("src.render.TextBox").strip(item.text or "")
   local pos, cont = 1, false
   while true do
     local npos = text:find("[\n\v]", pos)
@@ -1982,7 +1983,7 @@ function BattleState:enter()
       self.enemySendingOut = false
       self:startGrowIn(self.enemy)
     end)
-    queueEnemyCry()
+    self:queueEnemySendOutCry(true)
   end
   -- StartBattle .foundFirstAliveEnemyMon (core.asm:152-156): the `call nz`
   -- gates only EnemySendOutFirstMon -- the `ld c, 40 / call DelayFrames`
@@ -2025,6 +2026,7 @@ end
 -- any pop (finish, script teardown) must silence the alarm loop
 -- (end_of_battle.asm clears wLowHealthAlarm when a battle ends)
 function BattleState:exit()
+  self.enemyHudPending = nil
   require("src.core.Sound").stopLoop("Low_Health_Alarm")
   -- end_of_battle.asm clears wPartyAndBillsPCSavedMenuItem as well, so the
   -- field party menu comes back on slot 1 after a battle. #768
@@ -3569,6 +3571,17 @@ function BattleState:startGrowIn(battler)
   table.insert(self.queue, self.nextInsert, { wait = 12 })
 end
 
+-- EnemySendOutFirstMon (core.asm:1432-1435)
+-- WaitForSoundToFinish (home/pokemon.asm:145-149)
+function BattleState:queueEnemySendOutCry(append)
+  self.enemyHudPending = true
+  local fn = function()
+    self:waitSfxNext(self:playEntranceCry(self.enemy))
+    self:actNext(function() self.enemyHudPending = nil end)
+  end
+  if append then self:act(fn) else self:actNext(fn) end
+end
+
 -- SendOutMon branches on IsThisPartyMonStarterPikachu before the animation:
 -- the starter gets no ball and no grow-in -- pokeyellow core.asm:1798-1819
 function BattleState:starterPikachuSendOut()
@@ -3991,9 +4004,7 @@ function BattleState:executeAction(user, target, action)
       self:actNext(function()
         self.enemySendingOut = false
         self:startGrowIn(self.enemy)
-        self:actNext(function()
-          self:waitSfxNext(self:playEntranceCry(self.enemy))
-        end)
+        self:queueEnemySendOutCry(false)
       end)
       return
     end
@@ -4188,13 +4199,14 @@ local function primaryEffectFailed(msgs)
   if not msgs or #msgs == 0 then return true end
   if msgs.failed then return true end
   -- the extracted lines keep the ROM's own trailing blank ("But, it
-  -- failed! "), so match with it trimmed or a refused status animates
-  local m = msgs[1]:gsub("%s+$", "")
+  -- failed! ") and its terminator, so strip both or a refused status animates
+  local m = require("src.render.TextBox").strip(msgs[1]):gsub("%s+$", "")
   if m == "But, it failed!" or m == "Nothing happened!" then return true end
   if m:find("didn't affect", 1, true) then return true end
   if m:find("is unaffected", 1, true) then return true end
   if m:find("protected by MIST", 1, true) then return true end
-  if m:find("Already", 1, true) then return true end
+  -- engine/battle/effects.asm:46-47
+  if m:lower():find("already asleep", 1, true) then return true end
   return false
 end
 
@@ -4611,6 +4623,7 @@ function BattleState:awardExp()
         if mon == self.player.mon then
           -- engine/battle/experience.asm:236-239
           self.player.badgeExtraBoosts = nil
+          require("src.battle.Status").bakeOnInflict(self, self.player)
           self.player.shownHP = mon.hp
           self.player.shownPx = Timing.hpBarPixels(mon.hp,
                                                    math.max(1, mon.stats.hp))
@@ -4786,9 +4799,7 @@ function BattleState:enemyMonFainted()
         self:actNext(function()
           self.enemySendingOut = false
           self:startGrowIn(self.enemy)
-          self:actNext(function()
-            self:waitSfxNext(self:playEntranceCry(self.enemy))
-          end)
+          self:queueEnemySendOutCry(false)
         end)
       end)
       -- SwitchPlayerMon after the enemy is out (core.asm:1436-1443)
@@ -6539,7 +6550,7 @@ function BattleState:drawHUDs(slide)
   -- AFTER PrintBeginningBattleText returns, so "Wild X appeared!" shows the
   -- player's ball row with no enemy HUD beside it (#317)
   if showStatus and self.enemy and not self.showEnemyTrainer
-     and not self.enemySendingOut
+     and not self.enemySendingOut and not self.enemyHudPending
      and not self:growInScale(self.enemy) and slide == 0
      and not self.introBalls and not self.enemy.fainted then
     -- enemy HUD (DrawEnemyHUDAndHPBar): name row 0, <LV>+level (4,1),

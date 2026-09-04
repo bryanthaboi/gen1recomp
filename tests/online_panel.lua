@@ -156,8 +156,8 @@ T.eq(OnlinePanel.joinReason({ profile = copy(base) }, copy(base)), nil,
   "matching profiles are joinable")
 T.eq(OnlinePanel.joinReason({ profile = copy(base, { fingerprint = "zzz" }) },
   copy(base)), "data differs", "a fingerprint split names the data")
-T.eq(OnlinePanel.joinReason({ profile = copy(base, { version = "blue" }) },
-  copy(base)), "game differs", "a different cart names the game")
+T.eq(OnlinePanel.joinReason({ profile = copy(base, { version = "yellow" }) },
+  copy(base)), nil, "another gen 1 game with the same surface is joinable")
 T.eq(OnlinePanel.joinReason({ profile = copy(base) }, nil),
   "pick a game first", "with no profile of our own we cannot judge")
 T.check(ArenaData.equal(copy(base), copy(base, { rule = { partySize = 6 } })),

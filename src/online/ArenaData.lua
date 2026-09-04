@@ -15,7 +15,6 @@ local speciesMemo = {}
 
 local FIELDS = {
   { key = "engine", text = "engine differs" },
-  { key = "version", text = "game differs" },
   { key = "engineVersion", text = "engine version differs" },
   { key = "apiVersion", text = "mod api differs" },
   { key = "kind", text = "arena kind differs" },

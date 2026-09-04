@@ -41,6 +41,8 @@ function StatusRegistry.inflict(battle, target, status, opts)
     return {}
   end
   target.mon.status = status
+  -- move_effects/paralyze.asm:35, effects.asm:236
+  Status.bakeOnInflict(battle, target)
   local msgs
   local display = displayName(target)
   if record and record.onInflict then

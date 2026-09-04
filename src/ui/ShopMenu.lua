@@ -23,16 +23,16 @@ local function txt(game, key, fallback)
   return game.data.text[key] or fallback
 end
 
--- engine/events/pokemart.asm:204 (.returnToMainPokemartMenu)
+-- pokered engine/events/pokemart.asm:204
 local function anythingElse(game)
   return txt(game, "_PokemartAnythingElseText",
              Strings("Is there anything\nelse I can do?"))
 end
 
--- prompt refusals leave the list for the mart menu -- pokemart.asm:113
+-- .returnToMainPokemartMenu -- pokered engine/events/pokemart.asm:199-206
 local function refuse(game, menu, list, text)
-  if list then list:close() end
   game.stack:push(TextBox.new(game, text, function()
+    if list then list:close() end
     menu.footer = anythingElse(game)
   end))
 end

@@ -13,6 +13,9 @@ local BagMenu = {}
 local Bag = require("src.inventory.Bag")
 local Strings = require("src.core.Strings")
 
+-- (engine/menus/start_sub_menus.asm:414-416, home/list_menu.asm:56-82)
+local BAG_RETURN_WHITE = 19
+
 -- acquisition order like wBagItems (Bag.order), not alphabetical
 local function buildItems(game)
   local items = {}
@@ -86,8 +89,14 @@ end
 local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
   local result, payload, extra = ItemEffects.use(game.data, game.save, id, target,
                                                  battle, moveIndex, game.overworld)
+  -- engine/menus/start_sub_menus.asm:410-416, home/list_menu.asm:56-82
+  -- engine/items/item_effects.asm:1244
   local function closePicker()
-    if picker then picker:close() end
+    if not picker then return end
+    picker:close()
+    if battle then return end
+    local Transition = require("src.render.Transition")
+    game.stack:push(Transition.whiteFlash(game, BAG_RETURN_WHITE))
   end
 
   -- .useItem_closeMenu ends at CloseStartMenu, so the START menu kept open
@@ -376,8 +385,9 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
       -- mashing A burns through a stack of them (#796)
       -- RareCandyText carries sound_get_item_1
       -- (engine/menus/party_menu.asm:289-293)
-      -- engine/items/item_effects.asm:1394
+      -- pokered engine/items/item_effects.asm:1392-1394
       if picker and picker.eraseCursors then picker:eraseCursors() end
+      if picker and picker.setMessage then picker:setMessage(payload[1]) end
       showMessages(game, payload, function()
         local StatBox = require("src.battle.BattleState").StatBox
         local statBox
@@ -489,7 +499,8 @@ local function pickTargetAndUse(game, battle, id, list)
     -- the party menu (item_effects.asm:1392-1418); TM/HM stays up through
     -- `predef LearnMove` (item_effects.asm:2238) (#1686)
     -- engine/items/item_effects.asm:805 ItemUseMedicine, :1244 .done (#1946)
-    keepOpen = ItemEffects.healsHP(id)
+    -- engine/items/item_effects.asm:1959
+    keepOpen = ItemEffects.healsHP(id) or wantsMove
       or ((not battle)
           and (ItemEffects.keepsPartyMenuOpen(id) or (def and def.machine ~= nil))),
     onSwitch = function(mon, picker)
@@ -497,21 +508,16 @@ local function pickTargetAndUse(game, battle, id, list)
         useOn(game, battle, id, mon, list, nil, picker)
         return
       end
-      local rows = {}
-      for mi, mv in ipairs(mon.moves) do
-        local mdef = game.data.moves[mv.id]
-        table.insert(rows, {
-          value = mi,
-          label = mdef and mdef.name or mv.id,
-          right = ("%d"):format(mv.pp),
-        })
-      end
-      game.stack:push(ListMenu.new(game, Strings.source("Which move?"), rows, {
-        onChoose = function(row, l)
-          l:close()
-          useOn(game, battle, id, mon, list, row.value)
-        end,
-      }))
+      -- engine/items/item_effects.asm:1973
+      local prompt = (id == "PP_UP")
+        and romText(game.data, "_RaisePPWhichTechniqueText",
+                    "Raise PP of which\ntechnique?")
+        or romText(game.data, "_RestorePPWhichTechniqueText",
+                   "Restore PP of\nwhich technique?")
+      require("src.ui.Screens").push(game, "MoveSelectMenu", mon, prompt,
+        function(moveIndex)
+          useOn(game, battle, id, mon, list, moveIndex, picker)
+        end)
     end,
   }
   -- TM/HM: open the party menu in Gen 1's TM/HM display mode so each mon

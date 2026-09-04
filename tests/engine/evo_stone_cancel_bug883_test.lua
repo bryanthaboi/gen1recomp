@@ -102,6 +102,20 @@ end
 
 local function isPicker(s) return getmetatable(s) == PartyMenu end
 
+-- engine/menus/start_sub_menus.asm:414-416
+local function drainFlash(game)
+  local top = game.stack:top()
+  if not (type(top) == "table" and top.t ~= nil and top.frames ~= nil) then
+    return false
+  end
+  local n = 0
+  while game.stack:top() == top and n < 240 do
+    top:update(1 / 60)
+    n = n + 1
+  end
+  return true
+end
+
 local function rowFor(list, id)
   for i, r in ipairs(list.items) do
     if r.value == id then return i end
@@ -176,6 +190,8 @@ do
       pushed.onDone()
       check(game.stack:top() ~= picker and not isPicker(game.stack:top()),
             "and the picker comes down when the evolution finishes (#2070)")
+      check(drainFlash(game),
+            "with GBPalWhiteOutWithDelay3 over the seam (#2125)")
       eq(game.stack:top(), list,
          "landing on the ITEM list, the way .useItem_partyMenu returns to "
          .. "StartMenu_Item (engine/menus/start_sub_menus.asm:419)")
@@ -205,6 +221,8 @@ do
       game.stack:pop()
       box.done()
     end
+    check(drainFlash(game),
+          "the refusal whites out on the way back too (#2125)")
     eq(game.stack:top(), list,
        "closing the box drops the picker back to the ITEM list")
   end

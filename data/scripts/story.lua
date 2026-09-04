@@ -1004,8 +1004,7 @@ M.VICTORY_ROAD_3F = {
   -- fall is onStep, not a collision block.
   onStep = function(game, ow, x, y)
     if x == 23 and y == 15 then
-      require("src.core.Sound").play(game.data, "Faint_Fall")
-      ow:startWarpTo("VICTORY_ROAD_2F", 22, 16, ow.player.facing)
+      ow:fallThroughHole("VICTORY_ROAD_2F", 22, 16, ow.player.facing)
       return true
     end
     return false
@@ -1220,20 +1219,22 @@ M.CERULEAN_CITY = {
     -- CeruleanCityRivalText: Bill line once beaten; pre-battle otherwise.
     -- Post-fight walk matches CeruleanCityMovement4 (right then into town).
     TEXT_CERULEANCITY_RIVAL = {
-      { "face_player" },                                         -- 1
-      { "check_flag", "EVENT_BEAT_CERULEAN_RIVAL" },             -- 2
-      { "jump_if_true", 13 },                                    -- 3
-      { "show_text", "_CeruleanCityRivalPreBattleText" },        -- 4
-      { "rival_battle", "OPP_RIVAL1", 7 },                       -- 5
-      { "jump_if_false", "end" },                                -- 6
-      { "set_flag", "EVENT_BEAT_CERULEAN_RIVAL" },               -- 7
-      { "show_text", "_CeruleanCityRivalDefeatedText" },         -- 8
-      { "show_text", "_CeruleanCityRivalIWentToBillsText" },     -- 9
+      { "face_player" },
+      { "check_flag", "EVENT_BEAT_CERULEAN_RIVAL" },
+      { "jump_if_true", "beaten" },
+      { "show_text", "_CeruleanCityRivalPreBattleText" },
+      -- SaveEndBattleTextPointers (scripts/CeruleanCity.asm:141)
+      { "save_end_battle_text", "_CeruleanCityRivalDefeatedText" },
+      { "rival_battle", "OPP_RIVAL1", 7 },
+      { "jump_if_false", "end" },
+      { "set_flag", "EVENT_BEAT_CERULEAN_RIVAL" },
+      { "show_text", "_CeruleanCityRivalIWentToBillsText" },
       { "walk_npc", 1, { "right", "down", "down", "down",
-                         "down", "down", "down" } },             -- 10
-      { "hide_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },  -- 11
-      { "jump", "end" },                                         -- 12
-      { "show_text", "_CeruleanCityRivalIWentToBillsText" },     -- 13
+                         "down", "down", "down" } },
+      { "hide_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },
+      { "jump", "end" },
+      { "label", "beaten" },
+      { "show_text", "_CeruleanCityRivalIWentToBillsText" },
     },
   },
 }

@@ -54,7 +54,7 @@ return function(game)
   check(("sfx volume %d"):format(vol), vol > 0)
 
   -- the record and the staircase it drives, before any of it is on screen
-  local fade = Transition.new(game)
+  local fade = Transition.new(game, nil, nil, true)
   check("the warp fade runs 32 frames with no fade in",
         fade.frames == 32 and (fade.framesIn or 0) == 0)
   fade.phase = "out"
@@ -111,6 +111,7 @@ return function(game)
     return getmetatable(top) == Transition and top or nil
   end
   local seen, order = {}, {}
+  local bytes = {}
   for _ = 1, 140 do
     table.insert(game.input.pressQueue, "down")
     game.input.state.down = true
@@ -119,6 +120,8 @@ return function(game)
       local a = live:alpha()
       if not seen[a] then seen[a] = 0; order[#order + 1] = a end
       seen[a] = seen[a] + 1
+      local b = live:bgp()
+      if bytes[#bytes] ~= b then bytes[#bytes + 1] = b end
     elseif #order > 0 then
       break
     end
@@ -140,6 +143,15 @@ return function(game)
   end
   check("each shade holds its eight frames", held)
   check("we are back outside on " .. MAP, ow.map.id == MAP)
+
+  -- staircase has to be FadePal4/3/2/1 (home/fade.asm:49)
+  local hex = {}
+  for _, b in ipairs(bytes) do hex[#hex + 1] = ("$%02X"):format(b) end
+  U.log("rBGP bytes written on the way out:", table.concat(hex, ", "))
+  local want = { 0xE4, 0xF9, 0xFE, 0xFF }
+  local walked = #bytes == #want
+  for i, b in ipairs(want) do if bytes[i] ~= b then walked = false end end
+  check("the exit fade walks FadePal4 -> FadePal3 -> FadePal2 -> FadePal1", walked)
 
   -- hand the doorstep back so this can be re-triggered by hand
   U.teleport(game, MAP, STAND.x, STAND.y, STAND.facing)

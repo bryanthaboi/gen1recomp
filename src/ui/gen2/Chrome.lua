@@ -83,19 +83,28 @@ local function playfieldRect(winW, winH)
   return 0, 0, winW or 0, winH or 0
 end
 
-function Chrome.fitScale(winW, winH)
+function Chrome.fitScaleFor(winW, winH, tilesW, tilesH)
   local _, _, w, h = playfieldRect(winW, winH)
-  return math.max(1, math.floor(math.min(w / (Chrome.SCREEN_W * 8),
-    h / (Chrome.SCREEN_H * 8))))
+  return math.max(1, math.floor(math.min(w / (tilesW * 8), h / (tilesH * 8))))
+end
+
+function Chrome.fitOriginFor(winW, winH, scale, tilesW, tilesH)
+  scale = scale or Chrome.fitScaleFor(winW, winH, tilesW, tilesH)
+  local x, y, w, h = playfieldRect(winW, winH)
+  return x + math.floor((w - tilesW * 8 * scale) / 2),
+    y + math.floor((h - tilesH * 8 * scale) / 2)
+      - Chrome.positionLift(winW, winH, scale)
+end
+
+function Chrome.fitScale(winW, winH)
+  return Chrome.fitScaleFor(winW, winH, Chrome.SCREEN_W, Chrome.SCREEN_H)
 end
 
 -- The centred origin that goes with it, so a caller does not re-derive it.
 function Chrome.fitOrigin(winW, winH, scale)
   scale = scale or Chrome.fitScale(winW, winH)
-  local x, y, w, h = playfieldRect(winW, winH)
-  return x + math.floor((w - Chrome.SCREEN_W * 8 * scale) / 2),
-    y + math.floor((h - Chrome.SCREEN_H * 8 * scale) / 2)
-      - Chrome.positionLift(winW, winH, scale)
+  return Chrome.fitOriginFor(winW, winH, scale, Chrome.SCREEN_W,
+    Chrome.SCREEN_H)
 end
 
 function Chrome.positionLift(winW, winH, scale)
@@ -112,6 +121,8 @@ local function clipTo(x, y, w, h)
   if G.intersectScissor then G.intersectScissor(x, y, w, h)
   else G.setScissor(x, y, w, h) end
 end
+
+Chrome.clipTo = clipTo
 
 function Chrome.withPanel(winW, winH, r, g, b, drawFn, scale)
   local G = love.graphics

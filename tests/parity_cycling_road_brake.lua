@@ -137,4 +137,98 @@ do
   Game.save.onBike = false
 end
 
+-- DoBikeSpeedup (home/overworld.asm:377)
+do
+  local o = freshRoad()
+  check(o.player.slopeMap, "the Cycling Road player is flagged as on a slope map")
+  o:handleInput()
+  check(o.player.moving, "the forced roll starts a step")
+  eq(o.player.stepFramesCur, o.player.bikeStepFrames,
+     "rolling DOWN the slope is a full-speed bike step")
+  check(o.player.bikeStepFrames < o.player.stepFrames,
+        "the bike step is shorter than the walking step")
+end
+
+for _, d in ipairs({ "up", "left", "right" }) do
+  Input:reset()
+  Game.save.onBike = true
+  while Game.stack:top() do Game.stack:pop() end
+  Game.stack:push(OW, "ROUTE_17", 7, 20, "down")
+  local o = Game.stack:top()
+  o.player.moving = false
+  o.player.turnTimer = 0
+  check(o.map:isWalkableCell(7 + (d == "left" and -1 or d == "right" and 1 or 0),
+                             20 + (d == "up" and -1 or 0)),
+        "the cell " .. d .. " of the test cell is open road")
+  Input.state[d] = true
+  Input.pressed = {}
+  o:handleInput()
+  o.player.turnTimer = 0
+  o:handleInput()
+  check(o.player.moving, d .. " starts a step on the slope")
+  eq(o.player.facing, d, d .. " is the step direction")
+  eq(o.player.stepFramesCur, o.player.stepFrames,
+     d .. " across the slope costs a WALKING step")
+  Input:reset()
+end
+
+do
+  Input:reset()
+  Game.save.onBike = true
+  while Game.stack:top() do Game.stack:pop() end
+  Game.stack:push(OW, "ROUTE_16", 11, 4, "up")
+  local o = Game.stack:top()
+  eq(o.map.id, "ROUTE_16", "standing on Route 16")
+  check(not o.player.slopeMap, "Route 16 is not a slope map")
+  check(o.map:isWalkableCell(11, 3), "the cell north is open")
+  Input.state.up = true
+  Input.pressed = {}
+  o:handleInput()
+  o.player.turnTimer = 0
+  o:handleInput()
+  check(o.player.moving, "UP starts a step off the slope")
+  eq(o.player.stepFramesCur, o.player.bikeStepFrames,
+     "UP off the slope is still a full-speed bike step")
+  Input:reset()
+  Game.save.onBike = false
+end
+
+-- The roll is an injected hJoyHeld bit (home/overworld.asm:1817)
+do
+  Input:reset()
+  Game.save.onBike = true
+  while Game.stack:top() do Game.stack:pop() end
+  Game.stack:push(OW, "ROUTE_17", 7, 135, "down")
+  local o = Game.stack:top()
+  o.player.moving = false
+  o.player.turnTimer = 0
+  check(o.map:isWalkableCell(7, 142), "the road runs down to cy 142")
+  check(not o.map:isWalkableCell(7, 143),
+        "the row below it is the impassable ledge tile")
+  for _ = 1, 900 do
+    if o.map.id ~= "ROUTE_17" then break end
+    o:update(1 / 60)
+    o = Game.stack:top()
+  end
+  eq(o.map.id, "ROUTE_18", "the roll hops the bottom ledge onto Route 18")
+  Input:reset()
+  Game.save.onBike = false
+end
+
+do
+  Input:reset()
+  Game.save.onBike = true
+  while Game.stack:top() do Game.stack:pop() end
+  Game.stack:push(OW, "ROUTE_17", 9, 140, "down")
+  local o = Game.stack:top()
+  o.player.moving = false
+  o.player.turnTimer = 0
+  check(not o.map:isWalkableCell(9, 141), "the cell below is a wall, not a ledge")
+  for _ = 1, 120 do o:update(1 / 60) end
+  eq(o.map.id, "ROUTE_17", "a blocked roll does not teleport anywhere")
+  eq(o.player.cellY, 140, "and the player has not moved")
+  Input:reset()
+  Game.save.onBike = false
+end
+
 S.finish()

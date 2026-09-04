@@ -96,6 +96,10 @@ if type(audio.sfx) == "table" and audio.sfx.Sfx_CaughtMon then
   check(audio.sfx.Sfx_CaughtMon.generation == 2, "Sfx_CaughtMon is Gen 2 header")
   check(audio.sfxOrder and audio.sfxOrder[3] == "Sfx_CaughtMon",
     "sfxOrder[3] is Sfx_CaughtMon (SFX id 2)")
+  check(audio.sfxOrder and audio.sfxOrder[48] == "Sfx_Kinesis",
+    "sfxOrder[48] is Sfx_Kinesis (SFX id 47)")
+  check(audio.sfxOrder and audio.sfxOrder[21] == "Sfx_WarpFrom",
+    "sfxOrder[21] is Sfx_WarpFrom (SFX id 20)")
   local sfxOk, sfxEng = pcall(ChipSynth.newEngine, data, audio.sfx.Sfx_CaughtMon, {
     sfx = true, allowLoops = false,
   })

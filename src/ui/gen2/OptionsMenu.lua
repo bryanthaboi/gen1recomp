@@ -419,6 +419,11 @@ local ROWS = {
     text = function(options)
       return Strings(require("src.core.LogicClock").label(options.logicClock))
     end },
+  { label = Strings.source("BATTLE LAYOUT"), key = "battleLayout", port = true,
+    values = { "og", "wide" },
+    display = {
+      og = Strings.source("OG  "), wide = Strings.source("WIDE"),
+    } },
   { label = Strings.source("BATTLE SIZE"), key = "battleFit", port = true,
     values = { "fixed", "fill" },
     display = {
@@ -454,7 +459,8 @@ local GROUPS = {
   { id = "group.audio", label = Strings.source("AUDIO"),
     members = { "sound", "musicVol", "sfxVol", "musicFilter" } },
   { id = "group.battle", label = Strings.source("BATTLE OPTIONS"),
-    members = { "battleScene", "battleStyle", "battleFit", "battleBg" } },
+    members = { "battleScene", "battleStyle", "battleLayout", "battleFit",
+      "battleBg" } },
   { id = "group.extras", label = Strings.source("EXTRAS"),
     members = { "zoom", "voidFill", "tilt" } },
 }

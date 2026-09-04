@@ -299,9 +299,9 @@ end
 -- and battle music.
 function Commands.pushBattle(ctx, battle, keepNpc)
   if ctx.overworld and ctx.overworld.pushBattle then
-    -- home/text_script.asm:8
-    -- engine/battle/battle_transitions.asm:14
-    ctx.overworld:pushBattle(battle, keepNpc or ctx.npc or nil)
+    -- hSpriteIndex -- pokered home/text_script.asm:2
+    -- pokered engine/battle/battle_transitions.asm:14
+    ctx.overworld:pushBattle(battle, keepNpc or ctx.npc or ctx.scriptSprite or nil)
   else
     Logger.warn("pushBattle: no overworld:pushBattle, skipping the transition wipe")
     ctx.game.stack:push(battle)
@@ -439,10 +439,17 @@ local function bfsPath(map, sx, sy, tx, ty, entities, mover)
   return nil
 end
 
+-- hSpriteIndex (pokered home/text_script.asm:2)
+-- OAM block over the wipe (pokered engine/battle/battle_transitions.asm:14)
+local function stampSpriteIndex(ctx, npc)
+  ctx.scriptSprite = npc
+  return npc
+end
+
 function Commands.move_npc_to(ctx, objIndex, tx, ty)
   local ow = ctx.overworld
   if not ow then return end
-  local npc = ow:npcByIndex(objIndex)
+  local npc = stampSpriteIndex(ctx, ow:npcByIndex(objIndex))
   if not npc then return end
   local path = bfsPath(ow.map, npc.cellX, npc.cellY, tx, ty, ow.entities, npc)
   if not path then
@@ -469,7 +476,8 @@ end
 
 -- face an arbitrary map object (by object_event index)
 function Commands.face_object(ctx, objIndex, dir)
-  local npc = ctx.overworld and ctx.overworld:npcByIndex(objIndex)
+  local npc = stampSpriteIndex(ctx,
+    ctx.overworld and ctx.overworld:npcByIndex(objIndex))
   if npc then npc.facing = dir end
 end
 
@@ -478,7 +486,7 @@ end
 function Commands.place_npc(ctx, objIndex, x, y, facing)
   local ow = ctx.overworld
   if not ow then return end
-  local npc = ow:npcByIndex(objIndex)
+  local npc = stampSpriteIndex(ctx, ow:npcByIndex(objIndex))
   if not npc then return end
   npc.cellX, npc.cellY = x, y
   npc.px, npc.py = x * 16, y * 16
@@ -610,6 +618,23 @@ end
 
 function Commands.play_sound(ctx, soundId)
   require("src.core.Sound").play(ctx.game.data, soundId)
+end
+
+-- wait_sound: WaitForSoundToFinish (home/delay.asm:15), the drain that
+-- follows every PlaySound in the cell-separator chain
+-- (engine/events/hidden_events/bills_house_pc.asm:22)
+local WAIT_SOUND_CEILING = 600
+
+function Commands.wait_sound(ctx)
+  local Sound = require("src.core.Sound")
+  if not Sound.sfxBusy() then return end
+  local runner = ctx.runner
+  local left = WAIT_SOUND_CEILING
+  runner.waitingCheck = function()
+    left = left - 1
+    return left <= 0 or not Sound.sfxBusy()
+  end
+  runner:yield()
 end
 
 -- text_sound <soundId>: the jingle the ROM parks at the END of a string as
@@ -1149,7 +1174,8 @@ end
 function Commands.walk_npc(ctx, objIndex, dirs, opts)
   local ow = ctx.overworld
   if not ow then return end
-  local entity = objIndex == "player" and ow.player or ow:npcByIndex(objIndex)
+  local entity = objIndex == "player" and ow.player
+    or stampSpriteIndex(ctx, ow:npcByIndex(objIndex))
   if not entity then return end
   claimMove(ctx, entity)
   local runner = ctx.runner
@@ -1467,7 +1493,7 @@ end
 for _, verb in ipairs({ "show_text", "ask", "choice", "start_battle", "warp",
     "open_mart", "trade", "push_screen", "record_hall_of_fame",
     "old_man_demo", "static_battle", "rival_battle", "give_item",
-    "give_pokemon", "wait",
+    "give_pokemon", "wait", "wait_sound",
     "wait_flag", "move_player", "move_npc", "move_npc_to", "walk_npc",
     "emote", "fade", "pan_camera", "play_once", "pikachu_make_way",
     "ss_anne_departs" }) do

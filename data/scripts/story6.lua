@@ -122,8 +122,7 @@ local MANSION_HOLES = {
 M.POKEMON_MANSION_3F.onStep = function(game, ow, x, y)
   for _, h in ipairs(MANSION_HOLES) do
     if x == h[1] and y == h[2] then
-      require("src.core.Sound").play(game.data, "Faint_Fall")
-      ow:startWarpTo(h[3], h[4], h[5], ow.player.facing)
+      ow:fallThroughHole(h[3], h[4], h[5], ow.player.facing)
       return true
     end
   end

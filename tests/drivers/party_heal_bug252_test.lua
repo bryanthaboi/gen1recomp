@@ -24,6 +24,10 @@ return function(game)
     return s ~= nil and (s.screenId == "PartyMenu" or getmetatable(s) == PartyMenu)
   end
   local function isBox(s) return getmetatable(s) == TextBox end
+  -- engine/menus/start_sub_menus.asm:414-416
+  local function isFlash(s)
+    return type(s) == "table" and s.t ~= nil and s.frames ~= nil
+  end
   local function inStack(pred)
     for _, s in ipairs(game.stack.states or {}) do
       if pred(s) then return true end
@@ -240,6 +244,13 @@ return function(game)
       U.wait(8)
     end
     check("the picker is gone once the message is dismissed", not inStack(isPicker))
+    local flashed = isFlash(top())
+    check("the return to the bag whites out (#2125)", flashed)
+    if flashed then U.shot(game, DIR .. "/bug2125_white.png") end
+    for _ = 1, 40 do
+      if not isFlash(top()) then break end
+      U.wait(1)
+    end
     local back = top()
     check("and we are back on the ITEM list", back ~= nil and back.screenId == "BagMenu")
     U.shot(game, DIR .. "/bug252_back_on_bag.png")

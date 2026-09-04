@@ -143,15 +143,12 @@ end
 
 -- ------- map record properties (authored maps set them; vanilla falls back)
 
--- town/route surface: door SFX, the walk-out step, the Fly menu and the
--- town map all mean this one
 function Map.isOutdoor(def)
   if def.outdoor ~= nil then return def.outdoor end
   return def.tileset == "OVERWORLD"
 end
 
 -- CheckIfInOutsideMap, a strictly wider set: Route 23 / Indigo Plateau are
--- outside for the wLastMap memory without being outdoor for the door SFX
 function Map.isOutside(def, tilesets)
   if Map.isOutdoor(def) then return true end
   for _, ts in ipairs(tilesets or OUTSIDE_TILESETS) do

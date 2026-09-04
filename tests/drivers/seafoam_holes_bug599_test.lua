@@ -127,6 +127,14 @@ return function(game)
       if landed and not o.transitioning then break end
       U.wait(1)
     end
+    -- spins the player down -- player_animations.asm:41-45
+    local hidden = false
+    for _ = 1, 200 do
+      local o = game.overworld
+      if o.holeArrive then hidden = hidden or o.playerHidden end
+      if not (o.holeArrive or o.player.spinning) then break end
+      U.wait(1)
+    end
     U.wait(20)
     watching = false
 
@@ -152,6 +160,15 @@ return function(game)
     check("no door chime over the fall (heard: " ..
             (#cues > 0 and table.concat(cues, ", ") or "nothing") .. ")",
           #doors == 0)
+    -- player_animations.asm:12
+    local faint, enter = false, false
+    for _, c in ipairs(cues) do
+      if c == "Faint_Fall" then faint = true end
+      if c == "Teleport_Enter1" then enter = true end
+    end
+    check("the departure is silent (no invented Faint_Fall)", not faint)
+    check("the arrival rings Teleport_Enter1", enter)
+    check("the player is parked offscreen through the 50-frame hold", hidden)
     U.shot(game, f.shot)
     U.log("captured", f.shot)
   end
@@ -165,8 +182,10 @@ return function(game)
   U.wait(10)
 
   U.log("Both falls have already run; press up from where you are standing to")
-  U.log("do the 1F one again. It should be a plain fade to black and back with")
-  U.log("the player on B1F at (18,7) still facing up, no door chime, and no")
+  U.log("do the 1F one again. It should sink the sprite, fade to WHITE, hold")
+  U.log("about a second on an empty B1F (18,7) with the player offscreen, ring")
+  U.log("Teleport_Enter1 and spin him down into the cell still facing up -- no")
+  U.log("faint sound, no door chime, and no")
   U.log("step out of a doorway on the far side. The near miss to watch for is")
   U.log("landing one cell off, on the boulder's own spot from field.seafoam")
   U.log("landsAt, which strands you inside the rock; and dropping onto the B3F")

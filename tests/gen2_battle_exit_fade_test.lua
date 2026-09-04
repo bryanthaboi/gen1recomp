@@ -170,4 +170,38 @@ do
   eq(screen:exitFadeLength(), 24, "over 24 frames")
 end
 
+-- engine/battle/core.asm DrawEnemyHUDBorder / DrawPlayerHUDBorder: the frame is
+-- BG tiles, so RotateThreePalettesRight washes it out with everything else.
+do
+  local G = love.graphics
+  local sent = {}
+  G.newShader = function()
+    return { send = function(_, name, value) sent[name] = value end }
+  end
+  local BattleHud = require("src.ui.gen2.BattleHud")
+  local hud = BattleHud.new({ battleHud = {
+    enemyBorder = "enemy_border.png", playerBorder = "player_border.png",
+  } }, nil)
+  local sheet = { getDimensions = function() return 48, 8 end }
+  hud.images["enemy_border.png"] = sheet
+  hud.images["player_border.png"] = sheet
+  check(GbcPalette.available(), "the harness has a shader to remap through")
+
+  local function frameInk(byte)
+    sent.pal3 = nil
+    local previous = GbcPalette.setBgp(byte)
+    hud:drawEnemyFrame()
+    hud:drawPlayerFrame()
+    GbcPalette.setBgp(previous)
+    return sent.pal3
+  end
+
+  local ink = frameInk(0xe4)
+  check(ink and ink[1] == 0 and ink[2] == 0 and ink[3] == 0,
+    "the HUD frame is black on the identity row")
+  ink = frameInk(0x00)
+  check(ink and ink[1] == 1 and ink[2] == 1 and ink[3] == 1,
+    "and white on the last fade row, not a black skeleton left standing")
+end
+
 S.finish()

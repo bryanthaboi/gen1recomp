@@ -134,6 +134,11 @@ function Player:tryMove(dir, map, entities)
   return "moved"
 end
 
+-- engine/overworld/player_movement.asm:807
+function Player:stopForEvent()
+  self.bumpFrames = nil
+end
+
 -- Cutscene step: ignores collision so Elm walk-up / after-pick paths play.
 function Player:scriptFace(dir)
   if dir then self.facing = dir end
@@ -175,9 +180,11 @@ end
 local SPIN_FACINGS = { "down", "right", "up", "left" }
 local SPIN_START = { down = 0, right = 1, up = 2, left = 3 }
 
-function Player:scriptSpin(frames)
+-- map_objects.asm:1481-1493, map_object_action.asm:133
+function Player:scriptSpin(frames, flicker)
   if not frames or frames <= 0 then return end
   self.spinFrames = frames
+  self.spinFlicker = flicker or nil
   self.spinTimer = (SPIN_START[self.facing] or 0) * 4
 end
 
@@ -216,7 +223,10 @@ function Player:update()
   if self.spinFrames then
     self.spinTimer = (self.spinTimer or 0) + 1
     self.spinFrames = self.spinFrames - 1
-    if self.spinFrames <= 0 then self.spinFrames = nil end
+    if self.spinFrames <= 0 then
+      self.spinFrames = nil
+      self.spinFlicker = nil
+    end
   end
   if not self.moving then
     -- map_objects.asm:1517-1525
@@ -305,6 +315,11 @@ function Player:draw(ox, oy, scale, oamRow)
       local flip = self:drawFlip()
       -- OBJECT_ACTION_SPIN (map_object_action.asm:96-152), for step_dig.
       if self.spinFrames then
+        -- map_objects.asm:1481-1493
+        if self.spinFlicker and self.spinFrames % 2 == 1 then
+          G.pop()
+          return
+        end
         facing = SPIN_FACINGS[math.floor(self.spinTimer / 4) % 4 + 1]
         phase = 0
       end

@@ -366,7 +366,7 @@ local options = OptionsMenu.new(optionsGame, {
 })
 -- The cart's seven rows, then the port's: CONTROLS, audio, PERFORMANCE,
 -- speed, display, SHADER FX + SHADER FX 2 (the second slot added alongside
-check("thirty-two rows", #OptionsMenu.ROWS, 32)
+check("thirty-three rows", #OptionsMenu.ROWS, 33)
 check("the cart's rows come first", OptionsMenu.ROWS[7].key, "frame")
 check("then the rebind screen", OptionsMenu.ROWS[8].id, "controls")
 check("then the port's audio group", OptionsMenu.ROWS[9].key, "musicVol")

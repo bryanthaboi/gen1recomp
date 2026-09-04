@@ -38,6 +38,17 @@ local TURN_HEAD = 0x00
 local TURN_IN = 0x24
 local STEP_DIG = 0x4f
 local STEP_DIG_FRAMES = 16
+-- macros/scripts/movement.asm:99-106
+local SHOW_OBJECT = 0x3c
+local HIDE_OBJECT = 0x3d
+-- macros/scripts/movement.asm:211-214, engine/overworld/movement.asm:142-160
+local RETURN_DIG = 0x58
+-- engine/events/overworld.asm:864-872
+local DIG_SPIN_FRAMES = 32
+-- macros/scripts/movement.asm:158-160, engine/overworld/map_objects.asm:1368
+local SKYFALL = 0x4e
+local SKYFALL_TOP = 0x59
+local SKYFALL_BEAT_FRAMES = 16
 
 function Movement.dir(nibble)
   return DIR[nibble % 4] or "down"
@@ -100,8 +111,10 @@ function Movement.decodeByte(b)
     -- turn one either.  Route 30's two Rattata lunge under it
     -- (maps/Route30.asm:183-193) and ended up facing away from the fight.
     return { kind = "fixfacing", fixed = (b == FIX_FACING) }
-  elseif b == 0x3c or b == 0x3d then -- show/hide object
-    return { kind = "nop" }
+  elseif b == SHOW_OBJECT or b == HIDE_OBJECT then
+    -- OBJECT_FLAGS1 (macros/scripts/movement.asm:99-106)
+    -- (engine/events/overworld.asm:864-872)
+    return { kind = "visible", on = (b == SHOW_OBJECT) }
   elseif b >= 0x3e and b <= 0x46 then -- step_sleep N
     return { kind = "sleep", frames = (b - 0x3e + 1) * 16 }
   elseif b == TELEPORT_FROM or b == TELEPORT_TO then
@@ -130,6 +143,17 @@ function Movement.decodeByte(b)
     -- pass and Sudowoodo's shake played in zero frames
     -- (maps/Route36.asm:260-262 SudowoodoShakeMovement is this byte alone).
     return { kind = "treeshake", frames = TREE_SHAKE_FRAMES }
+  elseif b == RETURN_DIG then
+    -- Movement_return_dig (engine/overworld/movement.asm:142-160)
+    -- (engine/overworld/map_objects.asm:1481-1493)
+    return { kind = "returndig" }
+  elseif b == SKYFALL or b == SKYFALL_TOP then
+    -- StepFunction_Skyfall (engine/overworld/map_objects.asm:1368)
+    return {
+      kind = (b == SKYFALL) and "skyfall" or "skyfalltop",
+      frames = (b == SKYFALL) and (2 * SKYFALL_BEAT_FRAMES)
+        or SKYFALL_BEAT_FRAMES,
+    }
   end
   return { kind = "nop" }
 end
@@ -151,6 +175,13 @@ Movement.TREE_SHAKE = TREE_SHAKE
 Movement.TREE_SHAKE_FRAMES = TREE_SHAKE_FRAMES
 Movement.STEP_DIG = STEP_DIG
 Movement.STEP_DIG_FRAMES = STEP_DIG_FRAMES
+Movement.SHOW_OBJECT = SHOW_OBJECT
+Movement.HIDE_OBJECT = HIDE_OBJECT
+Movement.RETURN_DIG = RETURN_DIG
+Movement.DIG_SPIN_FRAMES = DIG_SPIN_FRAMES
+Movement.SKYFALL = SKYFALL
+Movement.SKYFALL_TOP = SKYFALL_TOP
+Movement.SKYFALL_BEAT_FRAMES = SKYFALL_BEAT_FRAMES
 
 -- SetFacingWeirdTree's own index: it increments OBJECT_STEP_FRAME BEFORE
 -- masking (`inc a / maskbits NUM_DIRECTIONS, 2 / rrca / rrca`), so the count
@@ -212,6 +243,15 @@ function Movement.forcedMovementBytes(back)
     STEP_DIG, STEP_DIG_FRAMES, TURN_HEAD + d,
     STEP_END,
   }
+end
+
+-- .DigOut / .DigReturn -- engine/events/overworld.asm:864-872
+function Movement.digOutBytes()
+  return { STEP_DIG, DIG_SPIN_FRAMES, HIDE_OBJECT, STEP_END }
+end
+
+function Movement.digReturnBytes()
+  return { SHOW_OBJECT, RETURN_DIG, DIG_SPIN_FRAMES, STEP_END }
 end
 
 return Movement

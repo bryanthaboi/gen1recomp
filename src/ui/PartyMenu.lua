@@ -330,6 +330,8 @@ function PartyMenu.new(game, opts)
   self.party = party -- link/scoped battles pass their local party view
   self.swapFrom = nil
   self.swapAnim = nil
+  -- wPartyMenuTypeOrMessageID (engine/menus/party_menu.asm:182)
+  self.message = nil
   self.submenu = nil
   self.subIndex = 1
   self.blink = 0
@@ -402,6 +404,12 @@ function PartyMenu:update(dt)
   local anim = self.swapAnim
   if anim then
     anim.frames = anim.frames + 1
+    -- engine/menus/start_sub_menus.asm:664-666
+    if anim.phase == 1 then
+      anim.blank[anim.to] = true
+      anim.phase = 2
+      return
+    end
     local playing = false
     if anim.src then
       local ok, p = pcall(anim.src.isPlaying, anim.src)
@@ -687,7 +695,9 @@ function PartyMenu:update(dt)
       if from ~= self.index then
         party[from], party[self.index] = party[self.index], party[from]
       end
-      self.swapAnim = { blank = { [from] = true }, frames = 0 }
+      -- wCurrentMenuItem (engine/menus/start_sub_menus.asm:662-666)
+      self.swapAnim = { blank = { [from] = true }, to = self.index,
+                        phase = 1, frames = 0 }
       if self.game.data then
         self.swapAnim.src = require("src.core.Sound").play(self.game.data, "Swap")
       end
@@ -776,23 +786,35 @@ function PartyMenu:update(dt)
 end
 
 -- engine/menus/party_menu.asm:229 (#147 #1610 #1901)
+-- engine/menus/party_menu.asm:226-235
+function PartyMenu:setMessage(text)
+  if type(text) ~= "string" then self.message = nil return end
+  -- constants/charmap.asm:19-20
+  self.message = require("src.render.TextBox").strip(text)
+end
+
 function PartyMenu:bottomMessage()
-  if self.swapFrom then
-    return self.game.data.text._PartyMenuSwapMonText
+  local text
+  if self.message then
+    text = self.message
+  elseif self.swapFrom then
+    text = self.game.data.text._PartyMenuSwapMonText
       or Strings("Move POKéMON\nwhere?")
   elseif self.tmhm then
-    return self.game.data.text._PartyMenuUseTMText
+    text = self.game.data.text._PartyMenuUseTMText
       or Strings("Use TM on which\nPOKéMON?")
   elseif self.softboiledFrom or self.itemUse then
-    return self.game.data.text._PartyMenuItemUseText
+    text = self.game.data.text._PartyMenuItemUseText
       or Strings("Use item on which\nPOKéMON?")
   elseif self.forceSwitch then
-    return self.game.data.text._PartyMenuBattleText
+    text = self.game.data.text._PartyMenuBattleText
       or Strings("Bring out which\nPOKéMON?")
   else
-    return self.game.data.text._PartyMenuNormalText
+    text = self.game.data.text._PartyMenuNormalText
       or Strings("Choose a POKéMON.")
   end
+  -- constants/charmap.asm:19-20
+  return require("src.render.TextBox").strip(text)
 end
 
 -- Name-row pixel Y for party slot i (1-based).

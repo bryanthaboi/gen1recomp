@@ -27,7 +27,7 @@ local BATTLER_FIELDS = {
   "chargeReady", "invulnerable", "mustRecharge",
   "thrashTurns", "thrashAnnounced", "focusEnergy", "leechSeeded",
   "lightScreen", "reflect", "mist", "xAccuracy", "lastMove", "flinched",
-  "skipMove", "hazeStatReset", "badgeExtraBoosts", "drainFloor", "drainHold", "trappingTurns",
+  "skipMove", "hazeStatReset", "badgeExtraBoosts", "statusPenaltyStacks", "drainFloor", "drainHold", "trappingTurns",
   "trapMove", "trapDamage", "fainted",
   "aiLayer2",
 }

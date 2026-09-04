@@ -76,6 +76,13 @@ function TextBox.ending(text)
   return nil
 end
 
+-- pokered constants/charmap.asm:19-20
+function TextBox.strip(text)
+  if type(text) ~= "string" then return text end
+  text = text:gsub("{DONE}%s*$", ""):gsub("{PROMPT}%s*$", "")
+  return (text:gsub("{DONE}", ""):gsub("{PROMPT}", ""))
+end
+
 -- glyph offsets into the whole text -> [page][line][char]
 local function mapPauses(pages, marks)
   local at, acc, mi = {}, 0, 1
@@ -278,6 +285,7 @@ end
 -- pokered ContText waits for A/B + ▼ before scrolling that line in.
 function TextBox.paginate(text, maxCols)
   maxCols = maxCols or (Theme.textBox and Theme.textBox.maxCols) or MAX_COLS
+  text = TextBox.strip(text)
   -- maxCols is a column count, so the budget is that many vanilla 8px
   -- cells.  Measuring in pixels rather than columns is what lets a mod's
   -- variable-advance page wrap correctly (#186).
@@ -373,17 +381,31 @@ function TextBox:sfxHeld()
   return false
 end
 
--- TextCommand_PROMPT_BUTTON's LoadBlinkingCursor (home/text.asm:749)
+function TextBox:isGold()
+  local save = self.game and self.game.save
+  return not not (save and (save.generation == 2 or save.version == "gold"))
+end
+
+-- TextCommand_PROMPT_BUTTON's LoadBlinkingCursor (pokered home/text.asm:749)
 function TextBox:arrowVisible()
   if self.sfxWait then return false end
   if self.waiting then return true end
   -- ../pokecrystal/home/text.asm:566 DoneText
-  if self.waitButton then return false end
+  -- pokered home/text_script.asm:96 -> home/joypad2.asm:71-72
+  if self.waitButton and self:isGold() then return false end
   return not not (self.done and not self.choice
     and (not self.auto
          or (self.auto.promptFirst and not self.autoPrompted))
     and (not self.stay
          or (self.stay.prompt and not self.stayShown)))
+end
+
+-- home/text.asm:209
+-- ../pokecrystal/home/text.asm:631
+function TextBox:arrowPos()
+  local gold = self:isGold()
+  return (self.boxTx + self.boxTw - 2) * 8,
+    gold and (self.boxTy + self.boxTh - 1) * 8 or self.line2Y
 end
 
 -- scripts/MtMoonPokecenter.asm:30
@@ -643,8 +665,7 @@ function TextBox:draw()
   -- pokegold home/joypad.asm:430
   local arrowOn = self.blink % 60 < 30
   if gold then arrowOn = self.blink % 32 < 16 end
-  local arrowX = (self.boxTx + self.boxTw - 2) * 8
-  local arrowY = (self.boxTy + self.boxTh - 1) * 8 - (gold and 0 or 4)
+  local arrowX, arrowY = self:arrowPos()
   if Chrome then
     local base = paper and { paper, paper, paper, { 0, 0, 0 } }
       or Chrome.DEFAULT_BOX_PALETTE

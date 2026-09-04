@@ -16,4 +16,8 @@ return {
   -- Gen 3+ style: poison/burn/leech seed tick in an end-of-round sweep
   -- after both sides have moved.
   residualAfterMove = false,
+  -- engine/battle/core.asm:5169-5176
+  zeroDamageMiss = false,
+  -- engine/battle/core.asm:6283,6326 and effects.asm:414-415
+  statusPenaltyIsBaked = false,
 }

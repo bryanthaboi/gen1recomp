@@ -67,7 +67,7 @@ local function ambush(x)
   check(story5.SS_ANNE_2F.onStep(game, ow, x, 8),
         ("SS Anne 2F ambush fires at (%d,8)"):format(x))
   check(rows ~= nil, "the ambush queued rows")
-  return rows
+  return rows, ow
 end
 
 do
@@ -78,7 +78,25 @@ do
 
   for _, case in ipairs({ { 37, RIGHT_OF_HIM }, { 36, AROUND_HIM } }) do
     local x, dirs = case[1], case[2]
-    local rows = ambush(x)
+    local rows, ow = ambush(x)
+    -- scripts/SSAnne2F.asm:93
+    eq(ow.player.facing, "down",
+       ("x=%d the trigger leaves the player's facing alone"):format(x))
+    local function rowIndex(kind)
+      for i, r in ipairs(rows) do if r[1] == kind then return i end end
+    end
+    local turns = rowsOfKind(rows, "face_player_dir")
+    if x == 37 then
+      -- scripts/SSAnne2F.asm:73-77
+      eq(#turns, 1, "x=37 turns the player as a script row")
+      eq(turns[1][2], "left", "and it turns him LEFT")
+      local at, moved, spoke =
+        rowIndex("face_player_dir"), rowIndex("move_npc_to"), rowIndex("show_text")
+      check(moved and at and spoke and moved < at and at < spoke,
+            "the turn lands after the rival's walk and before the dialogue")
+    else
+      eq(#turns, 0, "x=36 never touches the player's facing")
+    end
     local said = {}
     for _, r in ipairs(rowsOfKind(rows, "show_text")) do
       said[#said + 1] = r[2]
@@ -111,7 +129,17 @@ do
     end
     -- jump_if_false on a lost battle has to clear the whole tail
     local jump = rowsOfKind(rows, "jump_if_false")[1]
-    eq(jump and jump[2], #rows, "a lost battle jumps past the exit walk")
+    local target = jump and jump[2]
+    if type(target) == "string" then
+      for i, r in ipairs(rows) do
+        if r[1] == "label" and r[2] == target then target = i break end
+      end
+    end
+    while type(target) == "number" and rows[target]
+          and rows[target][1] == "label" do
+      target = target + 1
+    end
+    eq(target, #rows, "a lost battle jumps past the exit walk")
   end
 end
 

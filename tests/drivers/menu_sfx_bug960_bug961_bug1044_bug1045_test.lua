@@ -260,8 +260,8 @@ return function(game)
   if houseStairs then
     local sx, sy = cellBehind(houseStairs.x, houseStairs.y, "up")
     stand("REDS_HOUSE_1F", sx, sy, "up")
-    -- the destination decides the cue here, not the tile underfoot, so an
-    takeDoor("up", "Go_Inside", "taking the stairs up")
+    -- home/overworld.asm:689-703
+    takeDoor("up", "Go_Outside", "taking the stairs up")
   end
 
   -- ---- the bedroom PC (#960) ---------------------------------------------

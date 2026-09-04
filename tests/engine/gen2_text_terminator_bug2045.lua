@@ -54,7 +54,7 @@ eq(TextBox.ending("Hi"), nil, "and nothing for an untagged text")
 
 local function newGame()
   local game = {
-    save = { player = {}, options = { textSpeed = "FAST" } },
+    save = { player = {}, options = { textSpeed = "FAST" }, generation = 2 },
     data = { text = {} },
   }
   game.stack = {

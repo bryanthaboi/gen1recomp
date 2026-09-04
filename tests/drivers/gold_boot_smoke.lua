@@ -103,6 +103,11 @@ return function(game)
   -- `farcall InitClock` opens OakSpeech, so the clock screen is what NEW GAME
   -- lands on and Oak is underneath it.
   waitFor("the clock screen", function() return isA(InitClock) end, 300)
+  -- ../pokecrystal/engine/rtc/timeset.asm:22, :42: PrintText is on the far side
+  -- of RotateFourPalettesLeft and RotateFourPalettesRight.
+  waitFor("the clock's fade in",
+    function() return isA(InitClock) and top().fade == nil end, 200)
+  U.wait(20)
   U.shot(game, out .. "/06b-initclock.png")
   for _ = 1, 60 do
     if isA(OakSpeech) then break end

@@ -40,6 +40,7 @@ GbcPalette.CUSTOM_MODE = "custom"
 local DMG_SHADES = {
   { 255, 255, 255 }, { 170, 170, 170 }, { 85, 85, 85 }, { 0, 0, 0 },
 }
+GbcPalette.DMG_SHADES = DMG_SHADES
 -- #9BBC0F / #8BAC0F / #306230 / #0F380F, the same ramp Gen 1's CLASSIC uses.
 local CLASSIC_SHADES = {
   { 155, 188, 15 }, { 139, 172, 15 }, { 48, 98, 48 }, { 15, 56, 15 },

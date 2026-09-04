@@ -246,7 +246,14 @@ local function paint(states, w, h)
   G.rectangle = function(_, x, y, rw, rh)
     rects[#rects + 1] = { x = x, y = y, w = rw, h = rh, pen = pen }
   end
-  local ok, err = pcall(painter, { stack = { states = states } }, w, h)
+  local stack = { states = states }
+  function stack:visibleBase()
+    for i = #self.states, 1, -1 do
+      if self.states[i].isOpaque then return i end
+    end
+    return 1
+  end
+  local ok, err = pcall(painter, { stack = stack }, w, h)
   G.rectangle, G.setColor = realRect, realSetColor
   if not ok then
     check("paintBattleSurround ran: " .. tostring(err), false, true)
@@ -463,6 +470,256 @@ do
   check("and stands down for a WORLD surround", okUp and painted, 1)
 end
 check("and the flag is down by default", Chrome.worldSurround, false)
+
+
+local WideBattle = require("src.ui.gen2.WideBattle")
+
+check("the default layout is the cart's panel",
+  Save.DEFAULT_OPTIONS.battleLayout, "og")
+check("and a fresh options table carries it",
+  Save.defaultOptions().battleLayout, "og")
+
+local layoutIndex, layoutRow = rowNamed("BATTLE LAYOUT")
+check("OPTION has a BATTLE LAYOUT row", layoutRow ~= nil, true)
+if layoutRow then
+  check("it edits battleLayout", layoutRow.key, "battleLayout")
+  check("it is a port row, not one of the cart's seven", layoutRow.port, true)
+  check("OG and WIDE are the whole ladder", #layoutRow.values, 2)
+  check("stored lowercase, shown OG, padded to the value column",
+    layoutRow.display.og, "OG  ")
+  check("and WIDE", layoutRow.display.wide, "WIDE")
+  check("it sits straight before BATTLE SIZE", layoutIndex + 1, sizeIndex)
+end
+
+local builtLayout, viewedLayout
+for _, row in ipairs(menu.rows) do
+  if row.key == "battleLayout" then builtLayout = row end
+end
+for _, row in ipairs(menu.view or {}) do
+  if row.id == "battleLayout" then viewedLayout = row end
+end
+check("buildRows keeps BATTLE LAYOUT", builtLayout ~= nil, true)
+check("and files it under the BATTLE OPTIONS group", viewedLayout, nil)
+if builtLayout then
+  check("and gives it the mod-facing id battleLayout", builtLayout.id,
+    "battleLayout")
+  menu.options.battleLayout = "og"
+  menu:cycle(builtLayout, 1)
+  check("right stores wide, not the display string",
+    menu.options.battleLayout, "wide")
+  menu:cycle(builtLayout, 1)
+  check("right again wraps to og", menu.options.battleLayout, "og")
+  menu:cycle(builtLayout, -1)
+  check("left walks the ladder the other way", menu.options.battleLayout,
+    "wide")
+  menu:cycle(builtLayout, -1)
+  check("and back", menu.options.battleLayout, "og")
+end
+
+local gearLayout
+for _, section in ipairs(model.sections) do
+  for _, row in ipairs(section.rows) do
+    if row.label == "BATTLE LAYOUT" then gearLayout = row end
+  end
+end
+check("the gold gear offers BATTLE LAYOUT", gearLayout ~= nil, true)
+if gearLayout then
+  model.opts.gold.battleLayout = nil
+  check("an options.lua with no battleLayout reads OG", gearLayout.value(),
+    "OG")
+  gearLayout.step(1)
+  check("stepping writes the gold block, not the flat Gen 1 one",
+    model.opts.gold.battleLayout, "wide")
+  check("and the row reads WIDE", gearLayout.value(), "WIDE")
+  gearLayout.step(1)
+  check("stepping again returns to og", model.opts.gold.battleLayout, "og")
+end
+
+local wideLayout = BattleState.wideLayout
+check("the Gold battle screen answers wideLayout", type(wideLayout), "function")
+check("under the same name Gen 1 uses",
+  BattleState.isWideBattleLayout, wideLayout)
+if type(wideLayout) == "function" then
+  check("WIDE asks for the wide surface",
+    wideLayout({ game = { options = { battleLayout = "wide" } } }), true)
+  check("OG does not",
+    wideLayout({ game = { options = { battleLayout = "og" } } }), false)
+  check("nor does an options table that predates the key",
+    wideLayout({ game = { options = {} } }), false)
+  check("nor a screen with no game at all", wideLayout({}), false)
+end
+
+check("and mods are told wideLayout is backed on this side",
+  Gen2Compat.memberStatus("src.battle.BattleState", "wideLayout"), "backed")
+check("as is isWideBattleLayout",
+  Gen2Compat.memberStatus("src.battle.BattleState", "isWideBattleLayout"),
+  "backed")
+
+check("the wide surface is 304 pixels across", WideBattle.WIDTH, 304)
+check("and the cart's 144 tall", WideBattle.HEIGHT, 144)
+check("the classic field sits 9 tiles in", WideBattle.FIELD_X, 72)
+check("which leaves 18 tiles of extra width", WideBattle.EXTRA_TILES, 18)
+check("38 tiles across", WideBattle.TILES_W, 38)
+
+local ogScreen = { game = { options = { battleLayout = "og" } } }
+local wideScreen = { game = { options = { battleLayout = "wide" } } }
+local pw, ph = BattleState.panelSize(ogScreen)
+check("OG composes on the cart's panel", pw, 160)
+check("and its height", ph, 144)
+pw, ph = BattleState.panelSize(wideScreen)
+check("WIDE composes on the wide one", pw, 304)
+check("at the same height", ph, 144)
+
+check("WIDE takes the fit its own width allows",
+  BattleState.battlePanelScale(wideScreen, 640, 480),
+  Chrome.fitScaleFor(640, 480, 38, 18))
+check("which is a step under the classic fit here",
+  BattleState.battlePanelScale(wideScreen, 640, 480)
+    < Chrome.fitScale(640, 480), true)
+check("OG is unchanged", BattleState.battlePanelScale(ogScreen, 640, 480),
+  Chrome.fitScale(640, 480))
+check("Chrome.fitScale is still the 20x18 fit",
+  Chrome.fitScale(640, 480), Chrome.fitScaleFor(640, 480, 20, 18))
+check("and fitOrigin still the 20x18 origin",
+  select(1, Chrome.fitOrigin(640, 480, 2)),
+  select(1, Chrome.fitOriginFor(640, 480, 2, 20, 18)))
+
+local wideFill = {
+  game = { options = { battleLayout = "wide", battleFit = "fill" } },
+}
+check("WIDE + FILL measures against 304 too",
+  BattleState.battlePanelScale(wideFill, 1280, 840),
+  WideBattle.fillScale(1280, 840))
+check("and that is not the classic fill",
+  WideBattle.fillScale(1280, 840) ~= BattleState.fillScale(1280, 840), true)
+check("WIDE + FILL never goes below one whole pixel",
+  WideBattle.fillScale(100, 90), 1)
+
+local function wideSafe(states, w, h, scale, label)
+  local ox, oy = Chrome.fitOriginFor(w, h, scale, 38, 18)
+  local pw, ph = 304 * scale, 144 * scale
+  local rects = paint(states, w, h)
+  local covered, overlap = 0, 0
+  for _, r in ipairs(rects) do
+    covered = covered + r.w * r.h
+    local ix = math.max(0, math.min(r.x + r.w, ox + pw) - math.max(r.x, ox))
+    local iy = math.max(0, math.min(r.y + r.h, oy + ph) - math.max(r.y, oy))
+    overlap = overlap + ix * iy
+  end
+  local want = 0
+  for _, on in ipairs({ oy > 0, oy + ph < h, ox > 0, ox + pw < w }) do
+    if on then want = want + 1 end
+  end
+  check(label .. ": every void edge gets a band", #rects, want)
+  check(label .. ": no band touches the wide panel", overlap, 0)
+  check(label .. ": the void is covered edge to edge",
+    math.abs(covered - (w * h - pw * ph)) < 1, true)
+end
+
+for _, size in ipairs({ { 1280, 840 }, { 1366, 768 }, { 1920, 1080 } }) do
+  local w, h = size[1], size[2]
+  local fit = Chrome.fitScaleFor(w, h, 38, 18)
+  local wideBattleState = {
+    bgMode = function() return "black" end,
+    panelSize = function() return 304, 144 end,
+    battlePanelScale = function() return fit end,
+  }
+  local wideFillBattle = {
+    bgMode = function() return "black" end,
+    panelSize = function() return 304, 144 end,
+    battlePanelScale = function() return WideBattle.fillScale(w, h) end,
+  }
+  local listOverBattle = {
+    drawsWidescreen = function() return true end,
+    drawWidescreen = function() end,
+  }
+  wideSafe({ wideBattleState }, w, h, fit, ("WIDE %dx%d"):format(w, h))
+  wideSafe({ wideBattleState, listOverBattle }, w, h, fit,
+    ("WIDE under a party list %dx%d"):format(w, h))
+  wideSafe({ wideBattleState, plainMenu }, w, h, fit,
+    ("WIDE under a plain menu %dx%d"):format(w, h))
+  wideSafe({ wideFillBattle, listOverBattle }, w, h,
+    WideBattle.fillScale(w, h),
+    ("WIDE + FILL under a party list %dx%d"):format(w, h))
+
+  local opaqueList = {
+    isOpaque = true,
+    drawsWidescreen = function() return true end,
+    drawWidescreen = function() end,
+  }
+  local rects = paint({ wideBattleState, opaqueList }, w, h)
+  local fit = Chrome.fitScale(w, h)
+  local bx, by = Chrome.fitOrigin(w, h, fit)
+  local bw, bh = 160 * fit, 144 * fit
+  local covered, overlap = 0, 0
+  for _, r in ipairs(rects) do
+    covered = covered + r.w * r.h
+    local ix = math.max(0, math.min(r.x + r.w, bx + bw) - math.max(r.x, bx))
+    local iy = math.max(0, math.min(r.y + r.h, by + bh) - math.max(r.y, by))
+    overlap = overlap + ix * iy
+  end
+  check(("an opaque list over WIDE %dx%d: no band clips the list"):format(w, h),
+    overlap, 0)
+  check(("an opaque list over WIDE %dx%d: the void is covered"):format(w, h),
+    math.abs(covered - (w * h - bw * bh)) < 1, true)
+end
+
+do
+  local clips, scenes = 0, 0
+  local realClip = Chrome.withClip
+  Chrome.withClip = function(fn) clips = clips + 1; fn() end
+  local screen = {
+    wideLayout = function() return false end,
+    drawScene = function() scenes = scenes + 1 end,
+  }
+  BattleState.draw(screen)
+  check("OG still draws through Chrome.withClip", clips, 1)
+  check("and reaches the scene", scenes, 1)
+  screen.wideLayout = function() return true end
+  BattleState.draw(screen)
+  check("WIDE draws nothing a second time", clips, 1)
+  check("and never re-enters the scene", scenes, 1)
+  Chrome.withClip = realClip
+end
+
+do
+  local drawn = {}
+  local screen = {
+    wideLayout = function() return false end,
+    drawScene = function() drawn[#drawn + 1] = "scene" end,
+    battlePanelScale = function() return 2 end,
+  }
+  local realPanel = Chrome.withPanel
+  Chrome.withPanel = function(_, _, _, _, _, fn) drawn[#drawn + 1] = "panel"
+    fn() end
+  local realWide = WideBattle.draw
+  WideBattle.draw = function() drawn[#drawn + 1] = "wide" end
+  BattleState.drawWidescreen(screen, 1280, 840)
+  check("OG goes through Chrome.withPanel", table.concat(drawn, ","),
+    "panel,scene")
+  screen.wideLayout = function() return true end
+  BattleState.drawWidescreen(screen, 1280, 840)
+  check("WIDE hands the frame to WideBattle", table.concat(drawn, ","),
+    "panel,scene,wide")
+  Chrome.withPanel, WideBattle.draw = realPanel, realWide
+end
+
+do
+  local order = {}
+  local screen = {
+    drawEnemyHud = function() order[#order + 1] = "enemy" end,
+    drawPics = function() order[#order + 1] = "pics" end,
+    drawPlayerHud = function() order[#order + 1] = "player" end,
+  }
+  BattleState.drawHud(screen)
+  check("drawHud draws enemy HUD, pics, player HUD in that order",
+    table.concat(order, ","), "enemy,pics,player")
+end
+
+check("drawBottom takes the extra tiles as an argument",
+  type(BattleState.drawBottom), "function")
+check("and WIDE hands it the 18 the wide surface adds",
+  WideBattle.EXTRA_TILES, 38 - Chrome.SCREEN_W)
 
 print(("gen2 battle options: %d checks, %d failures"):format(checks, failures))
 if failures > 0 then

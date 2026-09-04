@@ -20,6 +20,7 @@
 
 local TypeChart = require("src.battle.TypeChart")
 local Strings = require("src.core.Strings")
+local Status = require("src.battle.Status")
 local romText = require("src.core.RomText")
 
 local TrainerAI = {}
@@ -131,6 +132,9 @@ function TrainerAI.useItem(battle, item)
   elseif X_STAT[item] then
     local stat = X_STAT[item]
     enemy.stages[stat] = math.min(6, (enemy.stages[stat] or 0) + 1)
+    -- trainer_ai.asm:719 -> effects.asm:414-415
+    Status.afterStatChange(battle, enemy, stat, battle.player)
+    enemy.hazeStatReset = nil
     table.insert(msgs, Strings("%s's\n%s rose!", displayName(enemy), Strings(STAT_LABEL[stat])))
   elseif item == "GUARD_SPEC" then
     enemy.mist = true

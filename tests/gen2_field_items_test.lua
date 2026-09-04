@@ -813,10 +813,11 @@ local function world(mapId, x, y, save)
   return w, game
 end
 
+-- ../pokecrystal/engine/events/overworld.asm:851-872
 local function pump(w)
-  for _ = 1, 64 do
-    if not w.mapSetup then return end
-    w:updateMapSetup()
+  for _ = 1, 256 do
+    if not (w.mapSetup or w.moveState) then return end
+    if w.mapSetup then w:updateMapSetup() else w:updateMovement() end
   end
 end
 

@@ -257,16 +257,25 @@ end
 do
   local World = require("src.world.gen2.World")
   local healed, warped = false, false
-  local fakeSelf = {
+  local fakeSelf = setmetatable({
     game = { save = { player = { money = 5001 } } },
     showText = function(_self, _text, onDone) onDone() end,
     healParty = function() healed = true end,
-    warpToSpawn = function() warped = true end,
-  }
+    warpToSpawn = function(self)
+      warped = true
+      self.fade, self.fadeHold = nil, nil
+    end,
+  }, { __index = World })
   World.whiteOut(fakeSelf)
   eq(fakeSelf.game.save.player.money, 2500, "halved and floored")
   check(healed, "HealParty still runs")
   check(warped, "and WarpToSpawnPoint still runs")
+  -- back in is a fade -- engine/events/whiteout.asm:19-20
+  eq(fakeSelf.fade, "white", "and the warp brings a FadeInFromWhite with it")
+  eq(fakeSelf.mapSetup and fakeSelf.mapSetup.phase, "in",
+    "armed AFTER the load, so the load cannot clear it")
+  eq(fakeSelf.fadeHold, World.WARP_LOAD_WHITE_FRAMES,
+    "holding the LCD-off window first")
 end
 
 S.finish()

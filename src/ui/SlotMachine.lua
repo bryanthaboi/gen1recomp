@@ -358,8 +358,10 @@ function SlotMachine:resolveWin(win)
   -- SlotReward300Func prints "Yeah!" (text_pause) before the flash; the port
   -- shows it in the box while the screen flashes.  LinedUpText follows.
   self.yeah = (sym == "7")
-  self.message = sym .. romText(self.game.data, "_LinedUpText",
-    " lined up!\nScored %d coins!", pay)
+  -- constants/charmap.asm:19-20
+  self.message = sym .. require("src.render.TextBox").strip(
+    romText(self.game.data, "_LinedUpText",
+      " lined up!\nScored %d coins!", pay))
   -- .flashScreenLoop: flip rBGP, wait 5 frames, b times.  The coins are not
   -- credited until the player dismisses the "lined up" text (see startPayout).
   self.stage = "flash"
