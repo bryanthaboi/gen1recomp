@@ -137,6 +137,15 @@ function Chrome.withPanel(winW, winH, r, g, b, drawFn, scale)
   G.pop()
 end
 
+-- Clip to the GB field, for a screen that OWNS the frame.
+--
+-- The rectangle is WINDOW pixels -- a LOVE scissor ignores the transform in
+-- force, which is why withPanel above computes ox/oy/scale and clips before it
+-- translates.  So this is only correct where the panel really is at (0,0) at
+-- scale 1, or where a correct scissor is already in force and this one merely
+-- intersects it.  An OVERLAY drawn through `stack:draw()` -- inside Game2's
+-- own translate/scale -- must NOT use it: the scissor lands in the corner of
+-- the window and the whole screen is clipped away.  See InitClock:draw.
 function Chrome.withClip(drawFn)
   local G = love.graphics
   G.push("all")

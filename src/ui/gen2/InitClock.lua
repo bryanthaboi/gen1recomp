@@ -446,6 +446,32 @@ function InitClock:drawBody()
 end
 
 function InitClock:draw()
+  -- The day wheel is an OVERLAY and must not clip.
+  --
+  -- `Chrome.withClip` clips to (0, 0, 160, 144), and a LOVE scissor is in
+  -- WINDOW pixels: it ignores the transform in force.  That is why
+  -- `Chrome.withPanel` computes ox/oy/scale and clips BEFORE it translates.
+  --
+  -- Every other screen that calls withClip -- OakSpeech, Credits,
+  -- GenderSelect, BattleState, HallOfFame, and this file in "clock" mode -- is
+  -- opaque AND answers true to `drawsWidescreen`, so Game2:drawScene paints it
+  -- through `drawWidescreen` -> `Chrome.withPanel`, which sets the right
+  -- scissor.  Their `draw()` pass is the redundant second one the stack makes
+  -- on top, and the wrong scissor quietly threw it away -- which is why this
+  -- has never shown.
+  --
+  -- Day mode is the one screen here that answers FALSE (timeset.asm:385 --
+  -- SetDayOfWeek stands over the living room, it does not replace it), so
+  -- `stack:draw()` is its ONLY paint, inside Game2's own translate/scale.  The
+  -- window-space scissor then sat in the top-left 160x144 of the window while
+  -- the wheel drew into a panel scaled six times that: every box outside its
+  -- own clip.  Alive, taking A and B, and invisible -- reported as "nothing
+  -- pops up for me to answer mom, but if I spam a it continues".
+  --
+  -- It needs no clip of its own: every box it draws is inside the 160x144
+  -- field already, and every other overlay on Gold -- the START menu, the text
+  -- box, the caller strip -- draws with none.
+  if self.mode == "day" then return self:drawBody() end
   Chrome.withClip(function() self:drawBody() end)
 end
 
