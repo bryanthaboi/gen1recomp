@@ -215,6 +215,48 @@ do
   eq(Clock.weekday(save), 6, "and the save reads it")
 end
 
+-- ------------------------------------------- the wheel is an OVERLAY, unclipped
+--
+-- SetDayOfWeek stands OVER the living room (timeset.asm:385), so day mode is
+-- the one screen in this file that answers false to `drawsWidescreen` -- which
+-- means Game2:drawScene never paints it through `drawWidescreen` /
+-- `Chrome.withPanel`, and `stack:draw()` is its ONLY paint, inside Game2's own
+-- translate/scale.
+--
+-- `Chrome.withClip` clips to (0, 0, 160, 144) and a LOVE scissor is in WINDOW
+-- pixels, ignoring that transform.  So clipping here put the wheel in the
+-- top-left corner of the window while it drew into a panel scaled several
+-- times that: alive, taking A and B, and invisible.  Reported as "nothing pops
+-- up for me to answer mom, but if I spam a it continues".
+--
+-- Clock mode keeps its clip: it owns the frame, and its own `drawWidescreen`
+-- has already set a correct scissor that this one only intersects.
+do
+  local scissors = {}
+  local realIntersect = love.graphics.intersectScissor
+  local realSet = love.graphics.setScissor
+  love.graphics.intersectScissor = function(x, y, w, h)
+    scissors[#scissors + 1] = { x, y, w, h }
+  end
+  love.graphics.setScissor = love.graphics.intersectScissor
+
+  local day = InitClock.new({}, { mode = "day", save = {} })
+  day:draw()
+  eq(#scissors, 0, "the day wheel sets no scissor of its own")
+
+  local clock = InitClock.new({}, { mode = "clock", save = {} })
+  clock:draw()
+  eq(#scissors, 1, "clock mode still clips to the field it owns")
+  if scissors[1] then
+    eq(("%d,%d,%d,%d"):format(scissors[1][1], scissors[1][2],
+                              scissors[1][3], scissors[1][4]),
+       "0,0,160,144", "at the GB field's own rectangle")
+  end
+
+  love.graphics.intersectScissor = realIntersect
+  love.graphics.setScissor = realSet
+end
+
 -- The driven path: a screen this new must not stall a scripted run, so it
 -- walks itself to the end on its defaults.
 do
