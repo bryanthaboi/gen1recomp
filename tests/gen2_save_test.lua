@@ -59,6 +59,60 @@ check("silver suffix", GameVersion.saveSuffix("silver"), "_silver")
 -- Red keeps its historical un-suffixed name, so the two can never collide.
 check("red is unsuffixed", GameVersion.saveSuffix("red"), "")
 
+-- --------------------------------------------------------------- cart scope
+--
+-- A cart's saves are keyed by cart id rather than by version.  SaveData
+-- resolves every path that way through `activeScopeKey`, and the launcher
+-- lists, creates and selects a cart's slots from the `cartSlots` registry --
+-- so this module has to ask in the same scope, or a Gen 2 cart reads and
+-- writes the BASE GAME's playthrough.  Gen 1 never showed it because Gen 1
+-- saves through SaveData itself.
+do
+  local SaveData = require("src.core.SaveData")
+  local CART = "wild_crystal_nightly"
+
+  SaveData.setCart(CART, "hash")
+  -- Before the cart has a slot of its own: SaveData.legacyNames' cart shape.
+  check("a cart's flat save", (Save.filenames("gold")),
+    "save_cart_" .. CART .. ".lua")
+  check("its backup", (select(2, Save.filenames("gold"))),
+    "save_cart_" .. CART .. ".lua.bak")
+
+  -- Save.save registers a slot when the scope has none, and in a cart that
+  -- has to be the CART's registry: otherwise the cart's playthrough turns up
+  -- in the launcher's list for the base version, and the player's own save
+  -- there is what the cart then overwrites.
+  Save.save(Save.newGame({ playerName = "GOLD" }))
+  local opts = SaveData.loadOptions()
+  check("no phantom slot against the base game",
+    opts.saveSlots and opts.saveSlots.gold, nil)
+  local reg = opts.cartSlots and opts.cartSlots[CART]
+  local slot = reg and reg.list and reg.list[1]
+  check("one slot in the cart's own registry", reg and #reg.list, 1)
+
+  -- And it resolves to SaveData.slotDir's cart shape, which is exactly where
+  -- the launcher's cart slot list looks for it.
+  check("a cart's slot save", (Save.filenames("gold")),
+    "saves/cart_" .. CART .. "/" .. slot .. ".lua")
+
+  -- A slot the base game has of its own does not win over the cart's, and the
+  -- cart's does not follow the base game back out of the cart.
+  local baseSlot = SaveData.createSlot("gold")
+  SaveData.setActiveSlot("gold", baseSlot)
+  check("the cart's scope still wins", (Save.filenames("gold")),
+    "saves/cart_" .. CART .. "/" .. slot .. ".lua")
+  SaveData.setCart(nil)
+  check("and the base game keeps its own", (Save.filenames("gold")),
+    "saves/gold/" .. baseSlot .. ".lua")
+
+  -- Leave no registry behind: the checks below expect the flat name, which is
+  -- what a scope with no slot registered resolves to.
+  SaveData.deleteCartSlot(CART, slot)
+  SaveData.deleteSlot("gold", baseSlot)
+  SaveData.resetSlotState()
+  check("nothing is left registered", (Save.filenames("gold")), "save_gold.lua")
+end
+
 -- ----------------------------------------------------------------- new game
 
 local fresh = Save.newGame({ playerName = "GOLD", rivalName = "SILVER" })
