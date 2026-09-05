@@ -2942,7 +2942,23 @@ public class GameActivity extends SDLActivity {
                     activePointer = event.getPointerId(0);
                     enqueueTouch("down," + logicalX(event.getX()) + ","
                         + logicalY(event.getY()));
-                } else if (action == android.view.MotionEvent.ACTION_UP
+                } else if (action == android.view.MotionEvent.ACTION_MOVE
+                        && activePointer >= 0) {
+                    int index = event.findPointerIndex(activePointer);
+                    if (index >= 0 && fw > 0) {
+                        for (int sample = 0; sample < event.getHistorySize(); sample++) {
+                            enqueueTouch("move," + logicalX(event.getHistoricalX(index, sample))
+                                + "," + logicalY(event.getHistoricalY(index, sample)));
+                        }
+                        enqueueTouch("move," + logicalX(event.getX(index)) + ","
+                            + logicalY(event.getY(index)));
+                    } else {
+                        activePointer = -1;
+                        enqueueTouch("cancel,0,0");
+                    }
+                } else if ((action == android.view.MotionEvent.ACTION_UP
+                        || (action == android.view.MotionEvent.ACTION_POINTER_UP
+                            && event.getPointerId(event.getActionIndex()) == activePointer))
                         && activePointer >= 0) {
                     int index = event.findPointerIndex(activePointer);
                     if (index >= 0 && fw > 0) {
