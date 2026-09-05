@@ -353,11 +353,15 @@ end
 
 -- Print wrapped text from (tx, ty) downward, at most `rows` lines.
 -- ../pokecrystal/home/text.asm:473
-function Chrome.printWrapped(text, tx, ty, width, rows, step)
+function Chrome.printWrapped(text, tx, ty, width, rows, step, palette)
   step = step or 1
   local lines = Chrome.wrap(text, width)
   for i = 1, math.min(#lines, rows or #lines) do
-    Chrome.print(lines[i], tx, ty + (i - 1) * step)
+    if palette then
+      Chrome.printThrough(lines[i], tx, ty + (i - 1) * step, palette)
+    else
+      Chrome.print(lines[i], tx, ty + (i - 1) * step)
+    end
   end
   return #lines
 end

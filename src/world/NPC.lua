@@ -20,6 +20,15 @@ local ROAM_DIRS = {
   LEFT_RIGHT = { "left", "right" },
 }
 
+local shadowCache = {}
+local function shadowImage(path)
+  local hit = shadowCache[path]
+  if hit ~= nil then return hit or nil end
+  local ok, img = pcall(love.graphics.newImage, path)
+  shadowCache[path] = ok and img or false
+  return shadowCache[path] or nil
+end
+
 function NPC.new(data, mapId, objDef)
   local self = setmetatable({}, NPC)
   self.def = objDef
@@ -27,6 +36,11 @@ function NPC.new(data, mapId, objDef)
   local spriteDef = data.sprites[objDef.sprite]
   assert(spriteDef, "unknown sprite " .. tostring(objDef.sprite))
   self.sprite = SpriteRenderer.new(spriteDef, self.id)
+  -- pokeyellow engine/pikachu/pikachu_movement.asm:917
+  local fx = data.field and data.field.overworldFx
+  if fx and fx.shadow then
+    self.shadowImg = shadowImage(fx.shadow.path)
+  end
   -- object_event coordinates are already walk-grid cells
   self.cellX, self.cellY = objDef.x, objDef.y
   self.px, self.py = self.cellX * 16, self.cellY * 16
@@ -155,6 +169,13 @@ end
 
 function NPC:draw(camX, camY)
   local sprite, px, py, facing, phase, flip = self:pose()
+  -- pokeyellow engine/pikachu/pikachu_movement.asm:865
+  if self.hopShadowY and self.shadowImg then
+    local sx, sy = sprite:getScreenOrigin(px, self.hopShadowY, camX, camY)
+    sy = sy + 12
+    love.graphics.draw(self.shadowImg, sx, sy)
+    love.graphics.draw(self.shadowImg, sx + 16, sy, 0, -1, 1)
+  end
   sprite:draw(px, py, camX, camY, facing, phase, flip, nil, nil,
               self.frameOverride)
 end

@@ -622,7 +622,10 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   -- fromMapId lets elevators seed a valid walk-out floor when the ROM
   -- car warps still point at a missing map (Silph's UNUSED_MAP_ED) and
   -- the player B-cancels the floor menu without .UpdateWarp.
+  self.prizeWindow = nil
   if not (opts and opts.checkpoint) then
+    -- home/overworld.asm:33
+    self.noNpcFacePlayer = nil
     local hooks = mapScripts.get(mapId)
     if hooks and hooks.onEnter then
       hooks.onEnter(Game, self, fromMapId)
@@ -2088,8 +2091,10 @@ function OverworldState:showPikachuAfterWarp()
   self.pikachuWarpHidden = nil
   self.pikachuTrail = { x = self.player.cellX, y = self.player.cellY }
   local Follower = require("src.world.PikachuFollower")
+  local state = self.pikachuShowState
+  self.pikachuShowState = nil
   local npc = Follower.current(self)
-  if npc then
+  if npc and not state then
     npc.cellX, npc.cellY = self.player.cellX, self.player.cellY
     npc.px, npc.py = npc.cellX * 16, npc.cellY * 16
     npc.targetX, npc.targetY = nil, nil
@@ -2097,6 +2102,7 @@ function OverworldState:showPikachuAfterWarp()
     npc.moving = false
   end
   Follower.setVisible(self, true)
+  if state then Follower.placeAtSpawnState(self, state) end
 end
 
 -- The rejection loop shared by the Good and Super Rods
@@ -3294,7 +3300,7 @@ function OverworldState:talkTo(npc)
   -- static wild encounters (object_event species+level args: the
   -- legendary birds, Mewtwo, the Vermilion Machop, ...)
   if d.pokemon then
-    npc:facePlayer(self.player)
+    self:makeNpcFacePlayer(npc)
     local text = select(1, Game.data:resolveText(self.map.def.label, d.text))
                  or Strings("Gyaoo!")
     local BattleState = require("src.battle.BattleState")
@@ -3320,7 +3326,7 @@ function OverworldState:talkTo(npc)
 
   -- generic trainers (object_event trainer args + extracted headers)
   if d.trainerClass and not self:trainerDefeated(npc) then
-    npc:facePlayer(self.player)
+    self:makeNpcFacePlayer(npc)
     self:engageTrainer(npc, unfreeze)
     return
   end
@@ -3328,7 +3334,7 @@ function OverworldState:talkTo(npc)
     local header = Game.data:trainerHeader(self.map.def.label, d.index)
     local after = header and header.after and Game.data.text[header.after]
     if after then
-      npc:facePlayer(self.player)
+      self:makeNpcFacePlayer(npc)
       Game.stack:push(TextBox.new(Game, after, unfreeze))
       return
     end
@@ -3338,7 +3344,7 @@ function OverworldState:talkTo(npc)
   local entry = Game.data:textEntry(self.map.def.label, d.text)
   if entry then
     if entry.mart then
-      npc:facePlayer(self.player)
+      self:makeNpcFacePlayer(npc)
       -- the greeting stays in the box under the menu, so ShopMenu owns it
       -- now -- home/text_script.asm:143
       Screens.push(Game, "ShopMenu", entry.mart)
@@ -3346,7 +3352,7 @@ function OverworldState:talkTo(npc)
       return
     end
     if entry.nurse then
-      npc:facePlayer(self.player)
+      self:makeNpcFacePlayer(npc)
       self:nurseHeal(unfreeze, npc)
       return
     end
@@ -3355,7 +3361,7 @@ function OverworldState:talkTo(npc)
       return
     end
     if entry.cableClub then
-      npc:facePlayer(self.player)
+      self:makeNpcFacePlayer(npc)
       self:cableClubReceptionist(unfreeze)
       return
     end
@@ -4252,12 +4258,25 @@ function OverworldState:startTrainerApproach(npc, dist)
   }
 end
 
+-- engine/overworld/movement.asm:406-414
+function OverworldState:makeNpcFacePlayer(npc)
+  if not npc or self.noNpcFacePlayer then return end
+  npc:facePlayer(self.player)
+end
+
 -- Dispatch a TEXT_* constant: hand-ported script first, then extracted text.
 function OverworldState:showMapText(textConst, npc, onDone)
   local mapLabel = self.map.def.label
   local script = mapScripts.talkScript(self.map.id, textConst)
   if script then
-    if npc then npc:facePlayer(self.player) end
+    local suppressed = npc and self.noNpcFacePlayer
+    self:makeNpcFacePlayer(npc)
+    -- home/text_script.asm:139
+    local finish = onDone
+    onDone = function()
+      if suppressed then self:makeNpcFacePlayer(npc) end
+      if finish then finish() end
+    end
     if type(script) == "function" then
       -- Lua talk handlers for logic that doesn't fit command rows
       script(Game, self, npc, onDone or function() end)
@@ -4266,7 +4285,7 @@ function OverworldState:showMapText(textConst, npc, onDone)
     -- the winning contribution's rows run as their owner (09 §4.4): mod:
     -- field routing, strict dispatch and error reports all read the source
     self.runner:run(script, { npc = npc, onDone = onDone,
-      checkpointOnDone = onDone and "release_npc" or nil,
+      checkpointOnDone = finish and "release_npc" or nil,
       source = mapScripts.talkSource(self.map.id, textConst) })
     return
   end
@@ -4276,7 +4295,7 @@ function OverworldState:showMapText(textConst, npc, onDone)
       Logger.warn("%s/%s uses text_asm; showing plain text (port a script in data/scripts/)",
                   mapLabel, textConst)
     end
-    if npc then npc:facePlayer(self.player) end
+    self:makeNpcFacePlayer(npc)
     Game.stack:push(TextBox.new(Game, text, onDone))
   else
     Logger.warn("no text for %s/%s", mapLabel, textConst)
@@ -5054,6 +5073,10 @@ function OverworldState:takeWarp(warpDef)
   -- facing carries across the warp (leaving a gate sideways keeps you
   -- walking sideways; house exit mats are stepped onto facing down)
   local facing = self.player.facing
+  -- home/overworld.asm:476,503,507
+  local spawn = require("src.world.PikachuFollower").warpSpawnState(
+    Map.isOutside(self.map.def, FieldDefaults.field(Game.data, "outsideTilesets")),
+    fromMap, destMap, warpDef.destMap == "LAST_MAP", facing)
   -- warp pads and fall-through holes are not doors (WarpFound2
   -- .indoorMaps: IsPlayerStandingOnWarpPadOrHole routes them through
   -- LeaveMapAnim/EnterMapAnim instead of the door SFX)
@@ -5066,14 +5089,14 @@ function OverworldState:takeWarp(warpDef)
     self.player.spinning = true
     self.player.spinTimer = 0
     self.arriveWarp = "teleport"
-    self:startWarpTo(destMap, x, y, facing)
+    self:startWarpTo(destMap, x, y, facing, nil, { pikachuSpawn = spawn })
     return
   elseif pad == "hole" then
     self:fallThroughHole(destMap, x, y, facing)
     return
   end
   self.doorWarp = true -- door SFX + PlayerStepOutFromDoor walk-out
-  self:startWarpTo(destMap, x, y, facing)
+  self:startWarpTo(destMap, x, y, facing, nil, { pikachuSpawn = spawn })
 end
 
 -- (engine/overworld/player_animations.asm:204-228)
@@ -5199,6 +5222,14 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
     -- suppression runs until EnterMapAnim lands (home/pikachu.asm:1)
     if self.pikachuWarpHidden then
       require("src.world.PikachuFollower").setVisible(self, false)
+      -- engine/overworld/player_animations.asm:37,48,65
+      if arriveWarp == "hole" then
+        self.pikachuShowState = 0
+      elseif arriveWarp == "fly" then
+        self.pikachuShowState = 1
+      elseif arriveWarp == "teleport" then
+        self.pikachuShowState = opts and opts.pikachuSpawn or 1
+      end
     end
     -- The warp we land ON stays inert for the completed-step check until we
     -- physically step off it, so a warp whose destination cell is itself a
@@ -6196,6 +6227,11 @@ end
 
 -- screen-space overlays: drawn to the UI canvas at normal scale
 function OverworldState:drawUI()
+  -- engine/events/prize_menu.asm:24-28
+  if self.prizeWindow then
+    require("src.ui.PrizeCounter").drawWindow(
+      Game, self.prizeWindow.prizes, self.prizeWindow.index)
+  end
   -- TalkToPikachu's picture box (engine/pikachu/pikachu_pic_animation.asm
   -- PlacePikapicTextBoxBorder: TextBoxBorder at (6,5) with b,c = 5,5, so a
   -- 7x7 box holding the 5x5 pic at (7,6) -- PikaAnimTilemap_1).  The

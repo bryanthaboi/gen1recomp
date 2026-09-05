@@ -86,9 +86,12 @@ local MOVES = {
     accuracy = 100, pp = 1, effect = "EFFECT_RECOIL_HIT" },
 }
 
+-- pokecrystal/data/growth_rates.asm
 local GROWTH = {
   GROWTH_MEDIUM_FAST = { numerator = 1, denominator = 1, squared = 0,
     linear = 0, constant = 0 },
+  GROWTH_MEDIUM_SLOW = { numerator = 6, denominator = 5, squared = -15,
+    linear = 100, constant = 140 },
 }
 
 local POKEMON = {
@@ -116,6 +119,26 @@ local POKEMON = {
     types = { "GRASS", "GRASS" }, catchRate = 45, baseExp = 166,
     growthRate = "GROWTH_MEDIUM_FAST", genderRatio = 127,
     levelMoves = { { level = 1, move = "TACKLE" } }, evolutions = {},
+  },
+  -- pokecrystal/data/pokemon/base_stats/ditto.asm
+  DITTO = {
+    id = "DITTO", index = 132, name = "DITTO",
+    baseStats = { hp = 48, attack = 48, defense = 48, speed = 48,
+      specialAttack = 48, specialDefense = 48 },
+    types = { "NORMAL", "NORMAL" }, catchRate = 35, baseExp = 61,
+    growthRate = "GROWTH_MEDIUM_FAST", genderRatio = 255,
+    levelMoves = { { level = 1, move = "TRANSFORM" },
+      { level = 10, move = "SWORDS_DANCE" } }, evolutions = {},
+  },
+  -- pokecrystal/data/pokemon/base_stats/pidgey.asm
+  PIDGEY = {
+    id = "PIDGEY", index = 16, name = "PIDGEY",
+    baseStats = { hp = 40, attack = 45, defense = 40, speed = 56,
+      specialAttack = 35, specialDefense = 35 },
+    types = { "NORMAL", "NORMAL" }, catchRate = 255, baseExp = 55,
+    growthRate = "GROWTH_MEDIUM_SLOW", genderRatio = 127,
+    levelMoves = { { level = 1, move = "TACKLE" },
+      { level = 11, move = "EMBER" } }, evolutions = {},
   },
 }
 
@@ -747,6 +770,83 @@ do
   eq(player.moves[1].id, "TRANSFORM", "with its own moves")
   eq(player.stats.attack, ownAttack, "and its own stats")
   eq(player.volatile, nil, "and no volatile left on a save table")
+end
+
+do
+  -- pokecrystal/engine/battle/core.asm:6983
+  local battle, player, wild = newBattle({
+    playerSpecies = "DITTO", playerLevel = 9,
+    playerMoves = { { id = "TRANSFORM", pp = 10, maxPp = 10 } },
+    wildSpecies = "PIDGEY", wildLevel = 3,
+    random = rolls({}, 0) })
+  player.experience = 729
+  local ownMaxHp = Mon.stats(POKEMON.DITTO.baseStats, player.dvs, 9,
+    player.statExp).hp
+  battle:useMove(player, wild, "TRANSFORM")
+  eq(player.species, "PIDGEY", "the copy is live while the battle runs")
+  wild.hp = 0
+  battle:resolveFaints()
+  eq(player.experience, 752, "23 EXP from a level 3 PIDGEY, banked on 729")
+  eq(player.level, 9, "DITTO's own MEDIUM_FAST curve does not reach 10 yet")
+  eq(player.maxHp, ownMaxHp, "and maxHP is still DITTO's base 48, not PIDGEY's")
+  eq(player.species, "DITTO", "the battle ends with the party slot itself")
+
+  -- pokecrystal/engine/battle/core.asm:8294
+  local pinned = false
+  for _, event in ipairs(battle:takeEvents()) do
+    if event.kind == "identity" then
+      pinned = true
+      eq(event.side, "player", "the side whose pic must not change")
+      eq(event.species, "PIDGEY", "stays the copy for the rest of the screen")
+      eq(event.partySpecies, "DITTO", "over the mon that is really there")
+    end
+  end
+  check(pinned, "endBattle emits the identity the screen keeps drawing")
+end
+
+do
+  local battle, player, wild = newBattle({
+    playerSpecies = "DITTO", playerLevel = 9,
+    playerMoves = { { id = "TRANSFORM", pp = 10, maxPp = 10 } },
+    wildSpecies = "PIDGEY", wildLevel = 3,
+    random = rolls({}, 0) })
+  player.experience = 729
+  battle:useMove(player, wild, "TRANSFORM")
+  local copiedAttack = player.stats.attack
+  Mon.gainExperience(player, 271, DATA)
+  eq(player.level, 10, "1000 EXP is level 10 on MEDIUM_FAST, 12 on MEDIUM_SLOW")
+  eq(player.maxHp, Mon.stats(POKEMON.DITTO.baseStats, player.dvs, 10,
+    player.statExp).hp, "recomputed off DITTO's base stats")
+  eq(player.stats.attack, copiedAttack,
+    "the copied battle stats stay in play while transformed")
+
+  -- pokecrystal/engine/pokemon/learn.asm:88
+  eq(battle:learnPartyMove(player, "SWORDS_DANCE"), true, "the party learns it")
+  eq(#player.moves, 1, "the copied moveset is untouched")
+  eq(player.moves[1].id, "TACKLE", "and still the target's move")
+
+  battle:untransform(player)
+  eq(player.level, 10, "the level survives the unwind")
+  eq(player.stats.attack, Mon.stats(POKEMON.DITTO.baseStats, player.dvs, 10,
+    player.statExp).attack, "and the restored stats are the new ones")
+  eq(player.moves[2].id, "SWORDS_DANCE", "with the move it learned mid-copy")
+end
+
+do
+  local ItemEffects = require("src.core.gen2.ItemEffects")
+  local battle, player, wild = newBattle({
+    playerSpecies = "DITTO", playerLevel = 9,
+    playerMoves = { { id = "TRANSFORM", pp = 10, maxPp = 10 } },
+    wildSpecies = "PIDGEY", wildLevel = 3,
+    random = rolls({}, 0) })
+  player.experience = 729
+  battle:useMove(player, wild, "TRANSFORM")
+  local result = ItemEffects.useOnMon("RARE_CANDY", player, DATA)
+  eq(result.used, true, "the candy is spent")
+  eq(player.level, 10, "one level, as always")
+  eq(player.experience, 1000, "DITTO's MEDIUM_FAST threshold, not PIDGEY's 742")
+  eq(player.maxHp, Mon.stats(POKEMON.DITTO.baseStats, player.dvs, 10,
+    player.statExp).hp, "and DITTO's base stats behind the new maxHP")
 end
 
 -- ---- a DITTO caught while transformed is caught as a DITTO -----------------

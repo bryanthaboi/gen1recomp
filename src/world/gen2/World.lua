@@ -3585,6 +3585,9 @@ function World:runMapSetup(method, load, fly)
     local ok = load()
     -- engine/overworld/map_objects_2.asm:1
     self.playerMasked = nil
+    -- data/maps/setup_scripts.asm:100; engine/overworld/map_setup.asm:88
+    -- engine/overworld/map_objects.asm:2481
+    if method == MAPSETUP.FALL then self.playerMasked = true end
     self:roamMonsAfterLoad(method)
     return ok
   end
@@ -9144,10 +9147,13 @@ function World:blitBgOverRegion(mapDef, ox, oy, s, rx0, ry0, rx1, ry1, keyed, ti
   local scissorY = pfY + math.floor(oy + ry0 * s)
   local scissorW = math.ceil((rx1 - rx0) * s)
   local scissorH = math.ceil((ry1 - ry0) * s)
-  local prevScissor = G.getScissor and G.getScissor()
+  local psx, psy, psw, psh
+  if G.getScissor then psx, psy, psw, psh = G.getScissor() end
+  local prevScissor = psx and { psx, psy, psw, psh } or nil
   local clipX, clipY, clipW, clipH =
     intersectScissor(scissorX, scissorY, scissorW, scissorH, prevScissor)
-  if G.setScissor and clipX then G.setScissor(clipX, clipY, clipW, clipH) end
+  if not clipX then return end
+  if G.setScissor then G.setScissor(clipX, clipY, clipW, clipH) end
 
   -- originX/Y is the screen position of map pixel (rx0, ry0): ox/oy are the
   -- playfield-local offset of map (0,0), so a tile at (tx, ty) lands at
@@ -9158,7 +9164,7 @@ function World:blitBgOverRegion(mapDef, ox, oy, s, rx0, ry0, rx1, ry1, keyed, ti
     rx0, ry0, rx1, ry1, keyed, tileFilter, s)
 
   if G.setScissor then
-    if prevScissor then G.setScissor(prevScissor) else G.setScissor() end
+    if prevScissor then G.setScissor(psx, psy, psw, psh) else G.setScissor() end
   end
 end
 

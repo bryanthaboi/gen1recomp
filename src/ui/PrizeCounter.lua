@@ -40,8 +40,9 @@ function PrizeCounter:update(dt)
   end
 end
 
-function PrizeCounter:draw()
-  local coins = tostring((self.game.save and self.game.save.coins) or 0)
+-- engine/events/prize_menu.asm:24-28
+function PrizeCounter.drawWindow(game, prizes, index)
+  local coins = tostring((game.save and game.save.coins) or 0)
   love.graphics.setColor(1, 1, 1, 1)
   Font.drawBox(11, 0, 9, 3)
   love.graphics.rectangle("fill", 12 * 8, 0, 4 * 8, 8)
@@ -51,7 +52,7 @@ function PrizeCounter:draw()
   love.graphics.setColor(1, 1, 1, 1)
   Font.drawBox(0, 2, 18, 10)
   love.graphics.setColor(0, 0, 0, 1)
-  for i, p in ipairs(self.prizes) do
+  for i, p in ipairs(prizes) do
     local y = TOP_Y + (i - 1) * ROW_STEP
     Font.draw(p.name, NAME_X, y)
     local cost = tostring(p.cost)
@@ -59,8 +60,14 @@ function PrizeCounter:draw()
   end
   -- data/events/prizes.asm
   Font.draw(Strings("NO THANKS"), NAME_X, TOP_Y + 3 * ROW_STEP)
-  Font.drawCode(Theme.cursor, CURSOR_X, TOP_Y + (self.index - 1) * ROW_STEP)
+  if index then
+    Font.drawCode(Theme.cursor, CURSOR_X, TOP_Y + (index - 1) * ROW_STEP)
+  end
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+function PrizeCounter:draw()
+  PrizeCounter.drawWindow(self.game, self.prizes, self.index)
 end
 
 return PrizeCounter

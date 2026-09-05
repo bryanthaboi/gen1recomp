@@ -143,10 +143,15 @@ function Transition:alpha()
 end
 
 -- the $E4 identity BGP, pokered engine/gfx/palettes.asm:517-518
+local shadeMaps = {}
 function Transition.shadeMapFor(byte)
   if not byte or byte == BGP_IDENTITY then return nil end
-  local map = {}
-  for i = 0, 3 do map[i] = math.floor(byte / (4 ^ i)) % 4 end
+  local map = shadeMaps[byte]
+  if not map then
+    map = {}
+    for i = 0, 3 do map[i] = math.floor(byte / (4 ^ i)) % 4 end
+    shadeMaps[byte] = map
+  end
   return map
 end
 
@@ -220,6 +225,36 @@ end
 function WhiteFlash:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
+end
+
+-- home/fade.asm:26-41
+local BgpFade = {}
+BgpFade.__index = BgpFade
+BgpFade.isOpaque = false
+
+function Transition.whiteOut(game, onDone)
+  return setmetatable({ game = game, onDone = onDone, t = 0,
+                        bytes = FADE_BGP.white.out,
+                        step = FADE_STEP_FRAMES }, BgpFade)
+end
+
+function BgpFade:update(dt)
+  self.t = self.t + 1
+  if self.t >= #self.bytes * self.step then
+    self.game.stack:pop()
+    if self.onDone then self.onDone() end
+  end
+end
+
+-- home/fade.asm:58
+function BgpFade:bgpByte()
+  local i = math.floor((math.max(1, self.t) - 1) / self.step) + 1
+  return self.bytes[math.min(#self.bytes, i)]
+end
+
+function BgpFade:draw()
+  require("src.render.PaletteFX")
+    .setShadeMap(Transition.shadeMapFor(self:bgpByte()))
 end
 
 -- Coming back to the overworld after a battle.

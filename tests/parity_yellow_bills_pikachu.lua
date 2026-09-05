@@ -310,10 +310,11 @@ held = {}
 tick()
 yellowGame.input = nil
 
--- CalculatePikachuPlacementCoords never leaves the companion on the
--- player's own cell (engine/pikachu/pikachu_follow.asm:59), so
--- BillsHousePikachuConfused's three STEP_RIGHTs start one cell east of the
--- door and land it directly below Bill.
+-- engine/pikachu/pikachu_follow.asm:227,119
+check(PikachuFollower.warpSpawnState(true, "ROUTE_25", "BILLS_HOUSE", false,
+                                     "up") == 1,
+  "Bill's House door from Route 25 is spawn state 1")
+
 local emergeMoves = {}
 local emergeOw = {
   map = {
@@ -331,7 +332,7 @@ local emergeOw = {
   end,
 }
 local emergeNpc = {
-  pikachuFollower = true, cellX = 2, cellY = 7, px = 32, py = 112,
+  pikachuFollower = true, cellX = 3, cellY = 7, px = 48, py = 112,
   facing = "up", passable = true,
 }
 emergeOw.npcs[1], emergeOw.entities[1] = emergeNpc, emergeNpc
@@ -339,13 +340,22 @@ yellowGame.save.flags = {}
 yellowGame.save.pikachuMapScriptActive = nil
 PikachuFollower.onBillsHouseEnter(yellowGame, emergeOw)
 check(#emergeMoves == 1 and emergeMoves[1].dir == "right"
-      and emergeMoves[1].tiles == 1,
-  "a companion still stacked on the player steps off before the walk")
-emergeNpc.cellX = 3
+      and emergeMoves[1].tiles == 3,
+  "the confused walk runs PikachuMovement_Confused's three STEP_RIGHTs first")
 emergeMoves[1].onDone()
-check(#emergeMoves == 2 and emergeMoves[2].dir == "right"
-      and emergeMoves[2].tiles == 3,
-  "then runs PikachuMovement_Confused's three STEP_RIGHTs")
+check(#emergeMoves == 2 and emergeMoves[2].dir == "up"
+      and emergeMoves[2].tiles == 1,
+  "and ends one cell up, directly below Bill")
+
+-- engine/overworld/player_animations.asm:37
+PikachuFollower.placeAtSpawnState(emergeOw, 1)
+check(emergeNpc.cellX == 3 and emergeNpc.cellY == 7
+      and emergeNpc.facing == "up",
+  "a warp-pad arrival puts the companion back east of the player")
+PikachuFollower.placeAtSpawnState(emergeOw, 3)
+check(emergeNpc.cellX == 2 and emergeNpc.cellY == 7
+      and emergeNpc.facing == "down",
+  "and state 3 is the player's own cell facing down")
 
 GameVersion.set("red")
 S.finish()

@@ -79,13 +79,14 @@ end
 
 local function open(n, coins)
   local game = mkGame(coins or 5000)
+  local ow = mkOw(game)
   counters["TEXT_GAMECORNERPRIZEROOM_PRIZE_VENDOR_" .. n](
-    game, mkOw(game), nil, function() done = true end)
+    game, ow, nil, function() done = true end)
   local exchange = game.stack:pop()
   exchange.onDone()
   local which = game.stack:top()
   which.opts.stay.onShown()
-  return game, which, game.stack:top()
+  return game, which, game.stack:top(), ow
 end
 
 local function pick(game, window, index, yes)
@@ -98,11 +99,15 @@ local function pick(game, window, index, yes)
 end
 
 do
-  local game, which, window = open(1)
+  local game, which, window, ow = open(1)
   local cost = window.prizes[1].cost
   pick(game, window, 1, true)
 
   check(ran ~= nil, "the mon gift runs on the script runner")
+  -- engine/events/prize_menu.asm:24-28,42
+  check(ow.prizeWindow ~= nil,
+        "the prize list is still drawn while the gift script runs")
+  eq(ow.prizeWindow.index, 1, "with the cursor on the picked row")
   eq(ran.depth, 0,
      "WhichPrizeText and the menu come down first, so nothing is orphaned")
   eq(#game.stack.states, 0, "and the callback pushed nothing of its own")
@@ -112,6 +117,9 @@ do
   eq(game.save.coins, 5000, "coins are the script's job, not the callback's")
   check(type(ran.extra.onDone) == "function",
         "the runner releases the sign when the script ends")
+  ran.extra.onDone()
+  eq(ow.prizeWindow, nil, "and the window's rows go back with it")
+  check(done, "the conversation ends there")
 
   local rows = ran.script
   eq(rows[1][1], "give_pokemon", "GivePokemon first (prize_menu.asm:224)")

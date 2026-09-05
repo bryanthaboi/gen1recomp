@@ -431,26 +431,67 @@ M.SS_ANNE_2F = {
   },
 }
 
+-- scripts/SSAnneCaptainsRoom.asm:45-68
+local function captainRubOpts()
+  local Music = require("src.core.Music")
+  return { auto = { wait = false, delay = 0, sound = function()
+    local Game = require("src.core.Game")
+    if not Music.playOnce(Game.data, "Music_PkmnHealed") then return nil end
+    return {
+      isPlaying = function() return Music.oneShotPlaying() end,
+      getDuration = function() return 10 end,
+    }
+  end } }
+end
+
 M.SS_ANNE_CAPTAINS_ROOM = {
+  -- scripts/SSAnneCaptainsRoom.asm:5-10
+  onEnter = function(game, ow)
+    local f = game.save.flags
+    local done
+    if require("src.core.GameVersion").isYellow() then
+      done = f.EVENT_GOT_HM01
+    else
+      done = f.EVENT_RUBBED_CAPTAINS_BACK or f.EVENT_GOT_HM01
+    end
+    ow.noNpcFacePlayer = not done or nil
+  end,
   talk = {
-    -- SSAnneCaptainsRoomCaptainText: after the rub line's text_asm tail,
-    -- pokered plays MUSIC_PKMN_HEALED (scripts/SSAnneCaptainsRoom.asm).
     TEXT_SSANNECAPTAINSROOM_CAPTAIN = {
       { "check_flag", "EVENT_GOT_HM01" },                                 -- 1
-      { "jump_if_true", 10 },                                             -- 2
-      { "show_text", "_SSAnneCaptainsRoomRubCaptainsBackText" },          -- 3
-      { "play_once", "Music_PkmnHealed" },                                -- 4
-      { "show_text", "_SSAnneCaptainsRoomCaptainIFeelMuchBetterText" },   -- 5
+      { "jump_if_true", 0 },
+      { "text_opts", captainRubOpts() },
+      { "show_text", "_SSAnneCaptainsRoomRubCaptainsBackText" },
+      -- pokeyellow scripts/SSAnneCaptainsRoom.asm:64-66; pokered scripts/SSAnneCaptainsRoom.asm:66-68
+      { "set_flag", "EVENT_RUBBED_CAPTAINS_BACK" },
+      { "no_npc_face_player", false },
+      { "show_text", "_SSAnneCaptainsRoomCaptainIFeelMuchBetterText" },
       -- give-then-print like scripts/SSAnneCaptainsRoom.asm (GiveItem
       -- fills wStringBuffer; the received text reads it)
-      { "give_item", "HM_CUT", 1, false },                                -- 6
-      { "show_text", "_SSAnneCaptainsRoomCaptainReceivedHM01Text" },      -- 7
-      { "set_flag", "EVENT_GOT_HM01" },                                   -- 8
-      { "jump", 11 },                                                     -- 9
-      { "show_text", "_SSAnneCaptainsRoomCaptainNotSickAnymoreText" },    -- 10
+      { "give_item", "HM_CUT", 1, false },
+      { "show_text", "_SSAnneCaptainsRoomCaptainReceivedHM01Text" },
+      { "set_flag", "EVENT_GOT_HM01" },
+      -- pokeyellow scripts/SSAnneCaptainsRoom.asm:32-33
+      { "no_npc_face_player", false },
+      { "jump", "end" },
+      { "show_text", "_SSAnneCaptainsRoomCaptainNotSickAnymoreText" },
     },
   },
 }
+
+do
+  local rows = M.SS_ANNE_CAPTAINS_ROOM.talk.TEXT_SSANNECAPTAINSROOM_CAPTAIN
+  if not require("src.core.GameVersion").isYellow() then
+    for i, row in ipairs(rows) do
+      if row[1] == "give_item" then
+        -- pokered scripts/SSAnneCaptainsRoom.asm:34-37
+        table.insert(rows, i, { "no_npc_face_player", true })
+        break
+      end
+    end
+  end
+  rows[2][2] = #rows
+end
 
 -- -------------------------------------------------------------------
 -- Pokémon Tower / Poké Flute (scripts/PokemonTower7F.asm,

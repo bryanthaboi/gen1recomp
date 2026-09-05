@@ -188,17 +188,108 @@ local function remove(ow)
   end
 end
 
+-- pokeyellow engine/pikachu/pikachu_follow.asm:237
+local OUTSIDE_BELOW = {
+  VICTORY_ROAD_2F = true, ROUTE_7_GATE = true, ROUTE_8_GATE = true,
+  ROUTE_16_GATE_1F = true, ROUTE_18_GATE_1F = true, ROUTE_15_GATE_1F = true,
+  ROUTE_11_GATE_1F = true,
+}
+-- pokeyellow engine/pikachu/pikachu_follow.asm:247
+local OUTSIDE_DOWN_ON_CELL = {
+  VIRIDIAN_FOREST_NORTH_GATE = true, CERULEAN_BADGE_HOUSE = true,
+  CERULEAN_TRASHED_HOUSE = true, VERMILION_DOCK = true,
+  CELADON_MANSION_1F = true, ROUTE_2_GATE = true,
+  FUCHSIA_GOOD_ROD_HOUSE = true,
+}
+-- pokeyellow engine/pikachu/pikachu_follow.asm:291
+local INDOOR_RIGHT = {
+  VIRIDIAN_FOREST = true, SAFARI_ZONE_CENTER_REST_HOUSE = true,
+  SAFARI_ZONE_WEST_REST_HOUSE = true, SAFARI_ZONE_EAST_REST_HOUSE = true,
+  SAFARI_ZONE_NORTH_REST_HOUSE = true, SAFARI_ZONE_SECRET_HOUSE = true,
+  SILPH_CO_ELEVATOR = true, CELADON_MART_ELEVATOR = true,
+  CINNABAR_LAB_TRADE_ROOM = true, CINNABAR_LAB_METRONOME_ROOM = true,
+  CINNABAR_LAB_FOSSIL_ROOM = true,
+}
+
+-- pokeyellow home/overworld.asm:476,503,507
+function PikachuFollower.warpSpawnState(fromOutside, fromMap, toMap, lastMap,
+                                        facing)
+  if fromOutside then
+    -- pokeyellow engine/pikachu/pikachu_follow.asm:185
+    if toMap == "OAKS_LAB" then return 6 end
+    if toMap == "ROUTE_22_GATE" then return facing == "down" and 3 or 1 end
+    if toMap == "MT_MOON_B1F" or toMap == "ROCK_TUNNEL_1F" then return 3 end
+    if OUTSIDE_BELOW[toMap] then return 4 end
+    if OUTSIDE_DOWN_ON_CELL[toMap] and facing == "down" then return 3 end
+    return 1
+  end
+  if lastMap then
+    -- pokeyellow engine/pikachu/pikachu_follow.asm:305
+    if (fromMap == "ROUTE_22_GATE" or fromMap == "ROUTE_2_GATE")
+       and facing == "up" then
+      return 1
+    end
+    return 3
+  end
+  -- pokeyellow engine/pikachu/pikachu_follow.asm:257
+  if toMap == "VIRIDIAN_FOREST_NORTH_GATE" then
+    return facing == "up" and 1 or 0
+  end
+  if toMap == "VIRIDIAN_FOREST_SOUTH_GATE" then
+    return facing == "down" and 0 or 1
+  end
+  if INDOOR_RIGHT[toMap] then return 1 end
+  return 0
+end
+
+local BEHIND = { down = { 0, -1 }, up = { 0, 1 },
+                 left = { 1, 0 }, right = { -1, 0 } }
+local AHEAD = { down = { 0, 1 }, up = { 0, -1 },
+                left = { -1, 0 }, right = { 1, 0 } }
+
+-- pokeyellow engine/pikachu/pikachu_follow.asm:59
+local function placementCell(ow, state)
+  local p = ow.player
+  local d
+  if state == 1 then d = { 1, 0 }
+  elseif state == 4 then d = { 0, 1 }
+  elseif state == 5 then d = { 0, -1 }
+  elseif state == 6 then d = { -1, 0 }
+  elseif state == 2 then d = BEHIND[p.facing]
+  elseif state == 7 then d = AHEAD[p.facing]
+  else d = { 0, 0 } end
+  d = d or { 0, 0 }
+  local x, y = p.cellX + d[1], p.cellY + d[2]
+  if (d[1] ~= 0 or d[2] ~= 0)
+     and not (ow.map:inBounds(x, y) and ow.map:isWalkableCell(x, y)) then
+    return p.cellX, p.cellY
+  end
+  return x, y
+end
+
+-- pokeyellow engine/pikachu/pikachu_follow.asm:148
+local function placementFacing(ow, state)
+  if state == 3 then return "down" end
+  if state == 7 then return OPPOSITE[ow.player.facing] end
+  return ow.player.facing
+end
+
 -- spawn cell: directly behind the player's facing when that cell is
 -- walkable, else the player's own cell (it trails out on the next step)
 local function spawnCell(ow)
-  local p = ow.player
-  local dx = p.facing == "left" and 1 or p.facing == "right" and -1 or 0
-  local dy = p.facing == "up" and 1 or p.facing == "down" and -1 or 0
-  local bx, by = p.cellX + dx, p.cellY + dy
-  if ow.map:inBounds(bx, by) and ow.map:isWalkableCell(bx, by) then
-    return bx, by
-  end
-  return p.cellX, p.cellY
+  return placementCell(ow, 2)
+end
+
+-- pokeyellow engine/overworld/player_animations.asm:37
+function PikachuFollower.placeAtSpawnState(ow, state)
+  local npc = findFollower(ow)
+  if not npc then return end
+  npc.cellX, npc.cellY = placementCell(ow, state)
+  npc.px, npc.py = npc.cellX * 16, npc.cellY * 16
+  npc.facing = placementFacing(ow, state)
+  npc.targetX, npc.targetY = nil, nil
+  npc.goalX, npc.goalY = nil, nil
+  npc.moving = false
 end
 
 -- the live follower, for a caller that has to carry it across a setMap
@@ -229,14 +320,18 @@ function PikachuFollower.onMapEntered(game, ow, opts, viaMapLoad)
     table.insert(ow.entities, keep)
     return
   end
-  local x, y = spawnCell(ow)
-  -- a fresh map entry (warp, boot) parks the follower ON the player's
-  -- cell instead: it stays hidden under him (the draw-sort tie-break in
-  -- OverworldController) and walks out of the warp behind him as the
-  -- trail opens up.  Mid-map respawns (bike dismount, revive) keep the
-  -- behind-the-facing cell (#863)
-  if viaMapLoad then x, y = ow.player.cellX, ow.player.cellY end
-  local npc = makeFollower(game, ow, x, y, ow.player.facing)
+  -- pokeyellow engine/pikachu/pikachu_follow.asm:52
+  local state = opts and opts.pikachuSpawn
+  if state == nil and viaMapLoad then state = 0 end
+  local x, y, facing
+  if state then
+    x, y = placementCell(ow, state)
+    facing = placementFacing(ow, state)
+  else
+    x, y = spawnCell(ow)
+    facing = ow.player.facing
+  end
+  local npc = makeFollower(game, ow, x, y, facing)
   table.insert(ow.npcs, npc)
   -- entities is the draw list; passable keeps it out of collision
   table.insert(ow.entities, npc)
@@ -614,7 +709,6 @@ end
 
 -- PikachuEmotionTable, reduced to each entry's bubble + pikaemotion_pcm
 -- clip (bubble names are the *_BUBBLE constants; nil cry = silent).
--- turnAway is pikaemotion_9 (face away from the player, emotion 30).
 local EMOTIONS = {
   [1] = {},
   [2] = { bubble = "SMILE_BUBBLE", cry = 35 },
@@ -624,7 +718,7 @@ local EMOTIONS = {
   [6] = { bubble = "SKULL_BUBBLE" },
   [7] = { cry = 1 },
   [8] = { cry = 39 },
-  [9] = { bubble = "SKULL_BUBBLE", cry = 6 },
+  [9] = { bubble = "SKULL_BUBBLE", cry = 6, cryFirst = true },
   [10] = { bubble = "HEART_BUBBLE", cry = 5 },
   [11] = { bubble = "ZZZ_BUBBLE", cry = 37 },
   [12] = {},
@@ -740,8 +834,14 @@ end
 -- MapSpecificPikachuExpression + TalkToPikachu's selection order
 local function selectEmotion(game, ow, save)
   local mapId = ow.map.id
-  if mapId == "POKEMON_FAN_CLUB" then return 30 end
-  if mapId == "PEWTER_POKECENTER" then return 26 end
+  -- engine/pikachu/pikachu_emotions.asm:303
+  if mapId == "POKEMON_FAN_CLUB" then
+    if not save.pikachuMapScriptActive then return 29 end
+    if ow.pikachuFanClubScene then return 30 end
+  elseif mapId == "PEWTER_POKECENTER" then
+    -- engine/pikachu/pikachu_emotions.asm:320
+    if ow.pikachuPewterSleepScene then return 26 end
+  end
   -- BillsHouse_CheckPikachuEmotion -- scripts/BillsHouse_2.asm:88
   if mapId == "BILLS_HOUSE" then
     if ow.pikachuBillsScene
@@ -789,8 +889,7 @@ function PikachuFollower.talk(game, ow, npc, done)
     npc.hopStep = nil
   end
   idleReset(npc) -- the bubble anchor reads px/py, and the hold freezes it
-  npc:facePlayer(ow.player)
-  ow.player.facing = OPPOSITE[npc.facing] or ow.player.facing
+  -- engine/pikachu/pikachu_emotions.asm:196
   local save = game.save
   local emotion = selectEmotion(game, ow, save)
   if ow.pikachuPewterSleepScene then
@@ -808,42 +907,61 @@ function playEmotion(game, ow, npc, emotion, opts)
   opts = opts or {}
   local done = opts.onDone
   local e = EMOTIONS[emotion] or EMOTIONS[1]
-  if e.turnAway then
-    npc.facing = ow.player.facing -- pikaemotion_9: back to the player
-  end
-  local Sound = require("src.core.Sound")
-  if e.cry then
-    if not Sound.playPikaCry(game.data, e.cry) then
-      Sound.playCry(game.data, "PIKACHU")
+
+  -- data/pikachu/pikachu_emotions.asm
+  local function pikapic()
+    local Sprites = require("src.pokemon.Sprites")
+    local script = PIKAPIC_SCRIPT[emotion] or emotion
+    local pic = "assets/generated/pikachu/pikapic_" .. script .. ".png"
+    if not require("src.render.Assets").exists(pic) then
+      pic = Sprites.path(game.data, "PIKACHU", "front",
+                         { kind = "overworld" })
     end
+    local anim = PIKAPIC[script] or PIKAPIC[1]
+    local hold = anim.dur * PIKAPIC_TICK
+    ow.emote = {
+      npc = npc, frames = hold, bubble = false, pikaPic = pic,
+      pikaSeq = anim.seq, pikaTotal = hold, skippable = opts.skippable,
+      onDone = done,
+    }
+    return ow.emote
   end
+
+  local function cry()
+    if e.turnAway then
+      -- engine/pikachu/pikachu_emotions.asm:203
+      npc.facing = OPPOSITE[ow.player.facing] or npc.facing
+    end
+    local Sound = require("src.core.Sound")
+    if e.cry then
+      if not Sound.playPikaCry(game.data, e.cry) then
+        Sound.playCry(game.data, "PIKACHU")
+      end
+    end
+    return pikapic()
+  end
+
   -- caches built before the Yellow bubble sheet only carry the three
   -- shared bubbles; a missing crop degrades to a silent hold
   local bi = e.bubble and bubbleIndex(game, e.bubble)
-  -- pikaemotion_pikapic: every entry in data/pikachu/pikachu_emotions.asm
-  -- ends with one, and its box is the only thing most of them put on
-  -- screen (emotion 5, the fresh-save cell, has no bubble at all).  The
-  -- 40x40 front pic is the size of PikaAnimTilemap_1's 5x5 base frame;
-  -- Sprites.path keeps a mod's replacement skin in play.
-  local Sprites = require("src.pokemon.Sprites")
-  -- The chosen script's own base frame (its first pikapic_loadgfx, ripped as
-  -- pikachu/pikapic_N.png).  Red/Blue have no such art and Yellow caches
-  -- built before the rip do not carry it, so both fall back to the battle
-  -- front pic that stood in for every script before (#561).
-  local script = PIKAPIC_SCRIPT[emotion] or emotion
-  local pic = "assets/generated/pikachu/pikapic_" .. script .. ".png"
-  if not require("src.render.Assets").exists(pic) then
-    pic = Sprites.path(game.data, "PIKACHU", "front",
-                       { kind = "overworld" })
+  -- engine/overworld/emotion_bubbles.asm:60
+  -- data/pikachu/pikachu_emotions.asm:69
+  local function bubbleHold(after)
+    ow.emote = { npc = npc, frames = 60, bubble = bi, onDone = after }
+    return ow.emote
   end
-  local anim = PIKAPIC[script] or PIKAPIC[1]
-  local hold = anim.dur * PIKAPIC_TICK
-  ow.emote = {
-    npc = npc, frames = hold, bubble = bi or false, pikaPic = pic,
-    pikaSeq = anim.seq, pikaTotal = hold, skippable = opts.skippable,
-    onDone = done,
-  }
-  return ow.emote
+  if e.cryFirst then
+    if not bi then return cry() end
+    if e.cry then
+      local Sound = require("src.core.Sound")
+      if not Sound.playPikaCry(game.data, e.cry) then
+        Sound.playCry(game.data, "PIKACHU")
+      end
+    end
+    return bubbleHold(pikapic)
+  end
+  if bi then return bubbleHold(cry) end
+  return cry()
 end
 
 -- Where the framed pic sits this frame.  The overlay a pikaframe run draws
@@ -886,6 +1004,8 @@ end
 
 -- pokeyellow engine/pikachu/pikachu_movement.asm:208-229
 local PIKA_STEP_FRAMES = 16
+-- pokeyellow engine/pikachu/pikachu_movement.asm:89,209
+local PIKA_SLIDE_FRAMES = 32
 
 local function movePikachu(ow, npc, steps, onDone)
   npc.goalX, npc.goalY = nil, nil
@@ -897,6 +1017,7 @@ local function movePikachu(ow, npc, steps, onDone)
       if onDone then onDone() end
       return
     end
+    npc.stepFrames = step[3] or PIKA_STEP_FRAMES
     ow:scriptMove(npc, step[1], step[2], function() nextStep(i + 1) end)
   end
   nextStep(1)
@@ -905,25 +1026,41 @@ end
 function PikachuFollower.onFanClubEntered(game, ow)
   if not (GameVersion.isYellow() and ow.map
       and ow.map.id == "POKEMON_FAN_CLUB") then return end
-  local active = game.save.pikachuMapScriptActive
-  game.save.pikachuMapScriptActive = true
-  if active then return end
+  if game.save.pikachuMapScriptActive then return end
+  -- scripts/PokemonFanClub.asm:40
   local starter = PikachuFollower.starterInParty(game.save)
   local npc = findFollower(ow)
-  if not npc or (starter and starter.status) then return end
-  ow.pikachuFanClubScene = true
-  ow.player.facing = "down"
-  for _, other in ipairs(ow.npcs or {}) do
-    if other.def and other.def.name == "POKEMONFANCLUB_SEEL" then
-      other.movementStatus = 2
-      other.facing = "down"
-      break
-    end
+  if not npc or (starter and starter.status) then
+    game.save.pikachuMapScriptActive = true
+    return
   end
-  billsHouseEmotion(game, ow, npc, "EXCLAMATION_BUBBLE", 30)
-  movePikachu(ow, npc, { { "up", 1 }, { "right", 3 }, { "up", 1 } }, function()
-    npc.facing = "up"
-  end)
+  ow.pikachuFanClubScene = true
+  -- scripts/PokemonFanClub.asm:48-60
+  ow.emote = {
+    npc = npc, frames = 60,
+    bubble = bubbleIndex(game, "EXCLAMATION_BUBBLE") or false,
+    onDone = function()
+      -- scripts/PokemonFanClub.asm:63
+      local steps = { { "up", 1, PIKA_SLIDE_FRAMES }, { "right", 3 },
+                      { "up", 1 } }
+      movePikachu(ow, npc, steps, function()
+        npc.facing = "up"
+        -- data/maps/objects/PokemonFanClub.asm:21
+        for _, other in ipairs(ow.npcs or {}) do
+          if other.def and other.def.index == 3 then
+            other.movementStatus = 2
+            other.facing = "down"
+            break
+          end
+        end
+        -- engine/pikachu/pikachu_emotions.asm:309
+        playEmotion(game, ow, npc, 29, { onDone = function()
+          -- scripts/PokemonFanClub.asm:18
+          game.save.pikachuMapScriptActive = true
+        end })
+      end)
+    end,
+  }
 end
 
 function PikachuFollower.onBillsHouseEnter(game, ow)
@@ -949,13 +1086,7 @@ function PikachuFollower.onBillsHouseEnter(game, ow)
   local npc = findFollower(ow)
   if not npc then return end
   ow.pikachuBillsScene = true
-  local steps = { { "right", 3 }, { "up", 1 } }
-  -- engine/pikachu/pikachu_follow.asm:59
-  if npc.cellX == ow.player.cellX and npc.cellY == ow.player.cellY
-     and Collision.canMove(ow.map, ow.entities, npc, "right") then
-    table.insert(steps, 1, { "right", 1 })
-  end
-  movePikachu(ow, npc, steps, function()
+  movePikachu(ow, npc, { { "right", 3 }, { "up", 1 } }, function()
     -- BillsHouse_CheckPikachuEmotion SCRIPT0 -- scripts/BillsHouse_2.asm:88
     billsHouseEmotion(game, ow, npc, "QUESTION_BUBBLE", 23)
   end)
@@ -1101,6 +1232,7 @@ function PikachuFollower.hopToCounter(ow, done)
   npc.goalX, npc.goalY = nil, nil
   npc.targetX, npc.targetY = nil, nil
   npc.moving, npc.progress, npc.hopStep = false, 0, nil
+  npc.hopShadowY = nil
   npc.idle = nil
   npc.facing = "up" -- $36, look up
   ow.pikaHop = {
@@ -1122,13 +1254,19 @@ function PikachuFollower.updateHop(ow)
     h.npc.px = h.fromX + (leg.x * 16 - h.fromX) * t
     h.npc.py = h.fromY + (leg.y * 16 - h.fromY) * t
     if leg.hop then
-      h.npc.py = h.npc.py - math.floor(HOP_HEIGHT * math.sin(t * math.pi) + 0.5)
+      local lift = math.floor(HOP_HEIGHT * math.sin(t * math.pi) + 0.5)
+      -- pokeyellow engine/pikachu/pikachu_movement.asm:153,648
+      h.npc.hopShadowY = lift > 0 and h.npc.py or nil
+      h.npc.py = h.npc.py - lift
+    else
+      h.npc.hopShadowY = nil
     end
   end
   if h.frames < HOP_FRAMES then return end
   if leg then
     h.npc.cellX, h.npc.cellY = leg.x, leg.y
     h.npc.px, h.npc.py = leg.x * 16, leg.y * 16
+    h.npc.hopShadowY = nil
   end
   h.leg, h.frames = h.leg + 1, 0
   if h.legs[h.leg] then
@@ -1136,6 +1274,7 @@ function PikachuFollower.updateHop(ow)
     return
   end
   ow.pikaHop = nil
+  h.npc.hopShadowY = nil
   -- the player has not moved, so the trail restarts under his feet and the
   -- follower only steps back off the counter once he walks away
   ow.pikachuTrail = { x = ow.player.cellX, y = ow.player.cellY }

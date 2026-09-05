@@ -92,8 +92,9 @@ return function(game)
   if isA(GenderSelect) then
     -- Crystal: InitGender answers, and InitClock's RotateFourPalettesLeft runs
     -- with the gender screen still on the LCD.
-    waitFor("the gender prompt to finish typing",
-      function() return top().typer == nil or top().typer:done() end, 300)
+    -- pokecrystal/engine/menus/init_gender.asm:29-34
+    waitFor("the gender menu to open",
+      function() return isA(GenderSelect) and top():menuOpen() end, 300)
     tap("a")
     shootFade(GenderSelect, "outBlack", 20,
       "2171_04_gender_to_clock_mid.png", "gender -> clock, half faded out")

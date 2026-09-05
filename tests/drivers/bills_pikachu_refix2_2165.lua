@@ -178,10 +178,37 @@ return function(game)
   --    (scripts/BillsHouse_2.asm:125 from the emerged cell)
   -- =====================================================================
   resetSave()
-  U.teleport(game, MAP, 2, 7, "up")
+  do
+    local wx, wy
+    for _, w in ipairs(game.data.maps.ROUTE_25.warps or {}) do
+      if w.destMap == MAP then wx, wy = w.x, w.y end
+    end
+    if not check("Route 25 has Bill's front door", wx ~= nil) then finish() end
+    U.teleport(game, "ROUTE_25", wx, wy + 1, "up")
+    U.wait(20)
+    for _ = 1, 300 do
+      ow = game.overworld
+      if ow and ow.map and ow.map.id == MAP then break end
+      table.insert(game.input.pressQueue, "up")
+      game.input.state.up = true
+      coroutine.yield()
+    end
+    game.input.state.up = false
+    for _ = 1, 240 do
+      ow = game.overworld
+      if ow and ow.map and ow.map.id == MAP and not ow.transitioning then
+        break
+      end
+      coroutine.yield()
+    end
+  end
   U.wait(20)
   ow = game.overworld
   npc = follower()
+  if not check("walked in through Bill's front door",
+               ow and ow.map and ow.map.id == MAP) then
+    finish()
+  end
   if not check("the follower spawned for the confused beat", npc ~= nil) then
     finish()
   end

@@ -825,9 +825,11 @@ function Game:keypressed(key)
     return
   end
   if key == "f1" then
+    if not self:quickSaveAllowed() then return end
     self:writeSave()
     return
   elseif key == "f2" then
+    if not self:quickSaveAllowed() then return end
     local loaded, recovered = SaveData.load()
     if loaded then
       -- F2 jumps straight to the loaded save's map/position, with no
@@ -1253,6 +1255,26 @@ function Game:writeSave()
     if eng then pcall(eng.noteSaveWritten, eng) end
   end
   return written
+end
+
+function Game:quickSaveAllowed()
+  local ow = self.overworld
+  if not (ow and ow.player) then return true end
+  local states = self.stack.states
+  local top = states[#states]
+  if not top then return true end
+  if top ~= ow then
+    for i = #states - 1, 1, -1 do
+      if states[i] == ow then return false end
+    end
+    return true
+  end
+  if ow.transitioning then return false end
+  if ow.runner and ow.runner.isRunning and ow.runner:isRunning() then return false end
+  if ow.scriptMoves and #ow.scriptMoves > 0 then return false end
+  if ow.engaging or ow.emote then return false end
+  if ow.player.moving then return false end
+  return true
 end
 
 function Game:syncEngine()

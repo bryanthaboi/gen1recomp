@@ -25,6 +25,7 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local Clock = require("src.core.gen2.Clock")
+local GbcPalette = require("src.render.GbcPalette")
 local IntroFade = require("src.ui.gen2.IntroFade")
 local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
@@ -64,6 +65,11 @@ local MORN_HOUR, DAY_HOUR, NITE_HOUR = 4, 10, 18
 
 -- ../pokecrystal/engine/rtc/timeset.asm:24
 InitClock.GROUND = { 0, 0, 0 }
+
+-- pokecrystal/engine/gfx/cgb_layouts.asm:509-521
+InitClock.PALETTE = {
+  { 222, 255, 222 }, { 173, 173, 173 }, { 107, 107, 107 }, { 0, 0, 0 },
+}
 
 -- Clock.DAY_NAMES / Clock.weekdayName is the single translated home for this
 -- table: MainMenu's clock box and the Pokegear's clock card read the same
@@ -378,11 +384,14 @@ local ARROW_ROWS = { 1, 3, 5, 7 }
 local function arrow(tx, ty, up)
   local G = love.graphics
   local x, y = tx * 8, ty * 8
+  local pal = InitClock.PALETTE
+  local paper = GbcPalette.color(pal, 1) or pal[1]
+  local ink = GbcPalette.color(pal, 4) or pal[4]
   -- The arrow tile REPLACES the border tile it lands on (hlcoord 11, 7 is the
   -- box's own top row), so the cell is cleared before it is drawn.
-  G.setColor(1, 1, 1, 1)
+  G.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
   G.rectangle("fill", x, y, 8, 8)
-  G.setColor(0, 0, 0, 1)
+  G.setColor(ink[1] / 255, ink[2] / 255, ink[3] / 255, 1)
   for i, width in ipairs(ARROW_ROWS) do
     local row = up and (i - 1) or (#ARROW_ROWS - i)
     G.rectangle("fill", x + math.floor((8 - width) / 2), y + 2 + row, width, 1)
@@ -392,16 +401,16 @@ end
 
 function InitClock:drawPanel()
   -- ../pokecrystal/engine/menus/intro_menu.asm:42-49
+  local palette = InitClock.PALETTE
   if self.blank then
-    local G = love.graphics
-    G.setColor(1, 1, 1, 1)
-    G.rectangle("fill", 0, 0, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
+    Chrome.paletteFill(0, 0, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8, palette)
+    love.graphics.setColor(1, 1, 1, 1)
     return
   end
   -- ../pokecrystal/engine/rtc/timeset.asm:22-32
   if self.mode ~= "day" then
     local G = love.graphics
-    local ground = InitClock.GROUND
+    local ground = GbcPalette.color(palette, 4) or InitClock.GROUND
     G.setColor(ground[1] / 255, ground[2] / 255, ground[3] / 255, 1)
     G.rectangle("fill", 0, 0, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
     G.setColor(1, 1, 1, 1)
@@ -409,30 +418,31 @@ function InitClock:drawPanel()
   local value = self:display()
   if value then
     local bx, by, bw, bh, arrowX, tx, ty = self:pickerBox()
-    Chrome.textbox(bx, by, bw, bh)
+    Chrome.paletteBox(bx, by, bw + 2, bh + 2, palette)
     -- The two arrows sit ON the border rows, which is why they are placed
     -- after the box rather than inside it.
     arrow(arrowX, by, true)
     arrow(arrowX, by + bh + 1, false)
-    Chrome.print(value, tx, ty)
+    Chrome.printThrough(value, tx, ty, palette)
   end
   -- The question (and the confirmations) share the bottom textbox every other
   -- Gold prompt uses.
-  Chrome.textbox(0, 12, 18, 4)
+  Chrome.paletteBox(0, 12, 20, 6, palette)
   -- ../pokecrystal/home/text.asm:473
-  Chrome.printWrapped(table.concat(Typer.text(self, {}), "\n"), 1, 14, 18, 2, 2)
+  Chrome.printWrapped(table.concat(Typer.text(self, {}), "\n"), 1, 14, 18, 2, 2,
+    palette)
   if self:confirming() then
     -- ../pokecrystal/home/menu.asm:418
-    Chrome.box(14, 7, 6, 5)
-    Chrome.print(Strings("YES"), 16, 8)
-    Chrome.print(Strings("NO"), 16, 10)
-    Chrome.cursor(15, self.yesNo == 1 and 8 or 10)
+    Chrome.paletteBox(14, 7, 6, 5, palette)
+    Chrome.printThrough(Strings("YES"), 16, 8, palette)
+    Chrome.printThrough(Strings("NO"), 16, 10, palette)
+    Chrome.cursorThrough(15, self.yesNo == 1 and 8 or 10, palette)
   end
 end
 
 function InitClock:drawBody()
-  self:drawPanel()
-  IntroFade.paint(self, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
+  IntroFade.paint(self, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8,
+    function() self:drawPanel() end)
 end
 
 function InitClock:draw()
@@ -443,7 +453,8 @@ function InitClock:drawWidescreen(winW, winH)
   local ground = InitClock.GROUND
   local r, g, b = ground[1] / 255, ground[2] / 255, ground[3] / 255
   if self.blank then r, g, b = 1, 1, 1 end
-  r, g, b = IntroFade.surround(self, r, g, b)
+  local index = self.blank and 1 or 4
+  r, g, b = IntroFade.surround(self, InitClock.PALETTE, r, g, b, index)
   Chrome.withPanel(winW, winH, r, g, b, function() self:drawBody() end)
 end
 

@@ -173,6 +173,13 @@ function Commands.face_player(ctx)
   end
 end
 
+-- engine/overworld/movement.asm:411; scripts/SSAnneCaptainsRoom.asm:8,32
+function Commands.no_npc_face_player(ctx, on)
+  if ctx.overworld then
+    ctx.overworld.noNpcFacePlayer = on and true or nil
+  end
+end
+
 function Commands.set_flag(ctx, name)
   Flags.set(ctx.save, name)
 end

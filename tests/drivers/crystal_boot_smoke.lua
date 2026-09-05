@@ -131,6 +131,9 @@ return function(game)
   -- ../pokecrystal/engine/menus/init_gender.asm:23 InitGender, which
   -- PlayerProfileSetup runs first (engine/menus/intro_menu.asm:80-84).
   waitFor("the gender screen", function() return isA(GenderSelect) end, 300)
+  -- init_gender.asm:29-34
+  waitFor("the gender menu",
+    function() return isA(GenderSelect) and top():menuOpen() end, 600)
   say("OK gender select")
   U.shot(game, out .. "/07b-gender.png")
   tap("a")

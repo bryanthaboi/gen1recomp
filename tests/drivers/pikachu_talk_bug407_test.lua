@@ -12,15 +12,19 @@ return function(game)
   local Pokemon = require("src.pokemon.Pokemon")
   local Sound = require("src.core.Sound")
 
-  local SHOT_DIR = os.getenv("SHOT_DIR") or "/tmp/shots"
+  local SHOT_DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR") or "/tmp/shots"
   local OPPOSITE = { up = "down", down = "up", left = "right", right = "left" }
+  local failures = 0
 
   local function check(label, ok)
     U.log(ok and "PASS" or "FAIL", label)
+    if not ok then failures = failures + 1 end
     return ok
   end
 
   local function idle()
+    U.log(failures == 0 and "ALL PASS" or ("DONE " .. failures .. " check(s) failed"))
+    love.event.quit(failures == 0 and 0 or 1)
     while true do coroutine.yield() end
   end
 
@@ -41,6 +45,8 @@ return function(game)
   game.save.player.name = "bryan"
   game.save.flags = game.save.flags or {}
   game.save.flags.EVENT_GOT_STARTER = true
+  game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
+  game.save.pikachuInBall = false
 
   -- pokeyellow data/maps/objects/PalletTown.asm: the town's objects sit at
   -- (10,4), (3,8) and (11,14) and its warps at (5,5), (13,5), (12,11), so
@@ -233,19 +239,23 @@ return function(game)
   if emote then
     check("emotion 25 carries a bubble index", type(emote.bubble) == "number")
     bubbleReport(emote)
-    check("emotion 25 played a cry", reportCries(before))
+    -- engine/overworld/emotion_bubbles.asm:60
+    check("the bubble holds before the cry", not emote.pikaPic)
     if U.shot(game, SHOT_DIR .. "/bug407_talk_bolt.png") then
       U.log("captured", SHOT_DIR .. "/bug407_talk_bolt.png")
     end
+    for _ = 1, 240 do
+      if ow.emote and ow.emote.pikaPic then break end
+      U.wait(1)
+    end
+    check("emotion 25 played a cry once the bubble ended", reportCries(before))
+    check("and the framed pic follows it",
+          ow.emote ~= nil and ow.emote.pikaPic ~= nil)
+    if U.shot(game, SHOT_DIR .. "/bug407_talk_bolt_pic.png") then
+      U.log("captured", SHOT_DIR .. "/bug407_talk_bolt_pic.png")
+    end
   end
   restoreSound()
-
-  U.log("Both presses have already happened; the screen shows the second.")
-  U.log("A framed Pikachu picture sits over the map with a lightning bubble")
-  U.log("above the follower and a voiced squeak plays. Face it and press A")
-  U.log("again for the mood-picked one: on a fresh save that emotion has a")
-  U.log("cry but no bubble, which is right. Nothing at all -- no box, no")
-  U.log("picture, no sound -- is #407 still biting.")
 
   idle()
 end

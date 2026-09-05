@@ -136,11 +136,23 @@ local function screenGame(save, button)
   return { save = save, data = {}, input = fakeInput(button) }
 end
 
+-- pokecrystal/engine/menus/init_gender.asm:29-34
+local function openMenu(screen)
+  for _ = 1, 600 do
+    if screen:menuOpen() then break end
+    screen:update(0)
+  end
+  return screen
+end
+
 local save = Save.newGame({})
 local answered
 local game = screenGame(save, "a")
 local screen = GenderSelect.new(game, { onDone = function(g) answered = g end })
 eq(screen.cursor, 1, "`db 1 ; default option` opens on Boy")
+screen:update(0)
+eq(screen.chosen, nil, "A while the prompt types answers nothing")
+openMenu(screen)
 screen:update(0)
 eq(save.player.gender, "male", "A on Boy writes PLAYERGENDER_MALE")
 eq(answered, nil, "and the DelayFrames 10 has not run out yet")
@@ -150,6 +162,7 @@ eq(answered, "male", "onDone fires once the ten frames are gone")
 save = Save.newGame({})
 game = screenGame(save, "down")
 screen = GenderSelect.new(game, { onDone = function() end })
+openMenu(screen)
 screen:update(0)
 eq(screen.cursor, 2, "down walks to Girl")
 game.input = fakeInput("down")
@@ -182,6 +195,7 @@ do
   eq(translated.text, "ROM prompt stays intact",
     "the extracted RomText prompt is not replaced by a catalog fallback")
   translated.text = ""
+  openMenu(translated)
   translated:drawPanel()
   check(table.concat(printed, "|"):find("Garçon", 1, true) ~= nil,
     "Boy is translated when drawn")

@@ -228,7 +228,8 @@ local function rareCandy(mon, data)
   if (mon.level or 0) >= Mon.MAX_LEVEL then
     return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
-  local def = data and data.pokemon and data.pokemon[mon.species]
+  -- pokecrystal/engine/items/item_effects.asm:1208
+  local def = data and data.pokemon and data.pokemon[Mon.partySpecies(mon)]
   -- through Mon.growthFor, so a growth_rates record a mod registered is the
   -- curve a Rare Candy uses too; wiring only some of the six readers would let
   -- a mod curve drive battle EXP but not the candy
@@ -238,8 +239,9 @@ local function rareCandy(mon, data)
   mon.experience = Mon.experienceForLevel(growth, newLevel)
   local previousMax = maxHpOf(mon)
   if def and def.baseStats then
-    mon.stats = Mon.stats(def.baseStats, mon.dvs, newLevel, mon.statExp)
-    mon.maxHp = mon.stats.hp
+    local stats = Mon.writeStats(mon,
+      Mon.stats(def.baseStats, mon.dvs, newLevel, mon.statExp))
+    mon.maxHp = stats.hp
     mon.hp = (mon.hp or previousMax) + (mon.maxHp - previousMax)
   end
   Happiness.change(mon, "GAINLEVEL")
@@ -276,10 +278,12 @@ local function vitamin(itemId, mon, data)
     return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   mon.statExp[stat] = math.min(Mon.MAX_STAT_EXP, cur + 2560)
-  local def = data and data.pokemon and data.pokemon[mon.species]
+  -- pokecrystal/engine/items/item_effects.asm:1208
+  local def = data and data.pokemon and data.pokemon[Mon.partySpecies(mon)]
   if def and def.baseStats then
-    mon.stats = Mon.stats(def.baseStats, mon.dvs, mon.level, mon.statExp)
-    mon.maxHp = mon.stats.hp
+    local stats = Mon.writeStats(mon,
+      Mon.stats(def.baseStats, mon.dvs, mon.level, mon.statExp))
+    mon.maxHp = stats.hp
   end
   Happiness.change(mon, "USEDITEM")
   return {

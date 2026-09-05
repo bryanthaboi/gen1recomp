@@ -32,8 +32,18 @@ OakSpeech.letterboxWhite = true
 
 -- FadeInIntroPic runs a 6-step palette fade; MovePicLeft wipes the mon
 -- sprite in from the right.  Both play out before the beat's text prints.
-local FADE_FRAMES = 24
+-- engine/movie/oak_speech/oak_speech.asm:191-209
+local INTRO_FADE_BGP = { 0x54, 0xA8, 0xFC, 0xF8, 0xF4, 0xE4 }
+local INTRO_FADE_STEP = 10
+-- home/fade.asm:48-62,65-73
+local WHITE_IN_BGP = { 0x40, 0x90, 0xE4 }
+local WHITE_FADE_STEP = 8
 local WIPE_FRAMES = 32
+
+OakSpeech.INTRO_FADE_BGP = INTRO_FADE_BGP
+OakSpeech.INTRO_FADE_STEP = INTRO_FADE_STEP
+OakSpeech.WHITE_IN_BGP = WHITE_IN_BGP
+OakSpeech.WHITE_FADE_STEP = WHITE_FADE_STEP
 
 -- OakSpeechSlidePicRight / OakSpeechSlidePicLeft (oak_speech2.asm:67-89)
 local SLIDE_TILES = 6
@@ -162,7 +172,10 @@ function OakSpeech.defaultSteps(speech)
       kind = "say",
       textKey = "_OakSpeechText1",
       pic = "oak",
+      -- text_2.asm:1704
+      -- oak_speech.asm:73
       reveal = "fade",
+      fadeOut = true,
     },
     {
       id = "demo_mon",
@@ -172,6 +185,9 @@ function OakSpeech.defaultSteps(speech)
       id = "world_spiel",
       kind = "say",
       textKey = "_OakSpeechText2B",
+      -- text_2.asm:1725
+      -- oak_speech.asm:84
+      fadeOut = true,
     },
     {
       id = "ask_player_name",
@@ -235,6 +251,8 @@ function OakSpeech.defaultSteps(speech)
       kind = "say",
       textKey = "_OakSpeechText3",
       pic = "player",
+      -- oak_speech.asm:106-108
+      reveal = "fade_white_in",
     },
     {
       id = "shrink",
@@ -421,8 +439,10 @@ function OakSpeech:runStep(step)
           { stay = { prompt = true, onShown = function()
             if step.fadeOut then
               -- GBFadeOutToWhite / ClearScreen (oak_speech.asm:93-94)
+              self.bgpFade = true
               self.game.stack:push(require("src.render.Transition")
-                .whiteFlash(self.game, nil, function()
+                .whiteOut(self.game, function()
+                  self.bgpFade = nil
                   self:closeHoldBox()
                   self:advance()
                 end))
@@ -583,12 +603,24 @@ end
 -- update() while OakSpeech is the top state (before the beat's text box is
 -- pushed), so the fade/wipe plays out ahead of the text like the ROM.
 function OakSpeech:revealPic(kind, next)
+  local tab = (kind == "fade" and INTRO_FADE_BGP)
+              or (kind == "fade_white_in" and WHITE_IN_BGP) or nil
+  local step = (kind == "fade") and INTRO_FADE_STEP or WHITE_FADE_STEP
   self.picReveal = {
     kind = kind,
     t = 0,
-    dur = kind == "fade" and FADE_FRAMES or WIPE_FRAMES,
+    bgp = tab,
+    step = step,
+    dur = tab and (#tab * step) or WIPE_FRAMES,
     next = next,
   }
+end
+
+-- engine/movie/oak_speech/oak_speech.asm:195-198
+function OakSpeech.revealBgp(r)
+  if not (r and r.bgp) then return nil end
+  local i = math.floor((math.max(1, r.t) - 1) / r.step) + 1
+  return r.bgp[math.min(#r.bgp, i)]
 end
 
 -- ..(engine/movie/oak_speech/oak_speech2.asm ln 67)
@@ -698,6 +730,12 @@ end
 function OakSpeech:draw()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
+  -- home/fade.asm:58
+  local revealBgp = OakSpeech.revealBgp(self.picReveal)
+  if revealBgp then
+    require("src.render.PaletteFX").setShadeMap(
+      require("src.render.Transition").shadeMapFor(revealBgp))
+  end
   if self.pic then
     -- IntroDisplayPicCenteredOrUpperRight centered: the 7x7-tile pic
     -- area sits at hlcoord 6,4 = (48,32); smaller mon pics pad inside
@@ -708,10 +746,7 @@ function OakSpeech:draw()
     local y = 32 + (7 - h / 8) * 8
     local reveal = self.picReveal
     local off = 0
-    if reveal and reveal.kind == "fade" then
-      -- FadeInIntroPic: ramp the pic's alpha up over the fade window
-      love.graphics.setColor(1, 1, 1, math.min(1, reveal.t / reveal.dur))
-    elseif reveal and reveal.kind == "wipe" then
+    if reveal and reveal.kind == "wipe" then
       -- MovePicLeft: the pic slides in from the right edge to its spot
       off = math.floor((160 - x) * (1 - math.min(1, reveal.t / reveal.dur)))
     end
@@ -722,7 +757,7 @@ function OakSpeech:draw()
     else
       love.graphics.draw(self.pic, x + off, y)
     end
-    if self.picTrueColor then
+    if self.picTrueColor and not revealBgp and not self.bgpFade then
       require("src.render.PaletteFX").markTrueColor(x + off, y, w, h)
     end
     love.graphics.setColor(1, 1, 1, 1)

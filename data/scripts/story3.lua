@@ -830,9 +830,13 @@ local function prizeCounter(window)
           local st = game.stack
           while st:top() == menu or st:top() == whichBox do st:pop() end
         end
+        -- engine/events/prize_menu.asm:42
+        local function endTalk()
+          if ow then ow.prizeWindow = nil end
+          done()
+        end
         local function finish(msg)
-          close()
-          game.stack:push(TextBox.new(game, msg, done))
+          game.stack:push(TextBox.new(game, msg, endTalk))
         end
         local function buy(p)
           if (game.save.coins or 0) < p.cost then
@@ -844,7 +848,6 @@ local function prizeCounter(window)
           -- the bag is full, or when both the party and every box are full
           if p.kind == "mon" then
             -- engine/events/prize_menu.asm:217-243
-            close()
             ow.runner:run({
               { "give_pokemon", p.species, p.level, false, true },
               { "jump_if_false", "boxfull" },
@@ -854,7 +857,7 @@ local function prizeCounter(window)
               -- engine/events/give_pokemon.asm:40-42
               { "show_text", "_BoxIsFullText" },
               { "label", "out" },
-            }, { onDone = done })
+            }, { onDone = endTalk })
             return
           end
           if not require("src.inventory.Bag").add(
@@ -867,8 +870,7 @@ local function prizeCounter(window)
           game.save.coins = game.save.coins - p.cost
           -- no thank-you line: HereYouGoText is unreferenced in the asm,
           -- which just redraws the coin box (PrintPrizePrice) and returns
-          close()
-          done()
+          endTalk()
         end
         whichBox = TextBox.new(game,
           t._WhichPrizeText or "Which prize do\nyou want?", nil, {
@@ -879,8 +881,12 @@ local function prizeCounter(window)
                   close()
                   done()
                 end,
-                onPick = function(row)
+                onPick = function(row, idx)
                   local p = row.prize
+                  if ow then
+                    ow.prizeWindow = { prizes = rows, index = idx }
+                  end
+                  close()
                   local ask = (t._SoYouWantPrizeText
                                or "So, you want\n{RAM:wNameBuffer}?")
                               :gsub("{RAM:wNameBuffer}", row.name)

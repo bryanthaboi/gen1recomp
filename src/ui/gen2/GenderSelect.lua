@@ -3,6 +3,7 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
+local GbcPalette = require("src.render.GbcPalette")
 local IntroFade = require("src.ui.gen2.IntroFade")
 local Music = require("src.core.Music")
 local RomText = require("src.core.RomText")
@@ -33,8 +34,14 @@ local SAY_X, SAY_Y, SAY_W, SAY_H = 0, 12, 18, 4
 local SAY_TEXT_X, SAY_TEXT_Y = 1, 14
 
 -- gfx/new_game/gender_screen.pal:1-4, the one palette LoadGenderScreenPal
--- writes; colour 1 is the tile the screen is filled with.
-GenderSelect.GROUND = { 74, 247, 255 }
+GenderSelect.PALETTE = {
+  { 255, 255, 255 }, { 74, 247, 255 }, { 8, 90, 255 }, { 0, 0, 0 },
+}
+GenderSelect.GROUND = GenderSelect.PALETTE[2]
+
+-- pokecrystal/engine/menus/init_gender.asm:31-33
+local MENU_OPEN_FRAMES = 4
+GenderSelect.MENU_OPEN_FRAMES = MENU_OPEN_FRAMES
 
 -- `ld a, $10 / ld [wMusicFade]` with MUSIC_NONE as the fade target
 -- (../pokecrystal/engine/menus/init_gender.asm:59-65).
@@ -97,6 +104,12 @@ function GenderSelect:leave()
   done()
 end
 
+-- pokecrystal/engine/menus/init_gender.asm:29-34
+function GenderSelect:menuOpen()
+  if not self.typer then return true end
+  return self.typer:done() and (self.menuWait or MENU_OPEN_FRAMES) <= 0
+end
+
 function GenderSelect:update(_dt)
   -- ../pokecrystal/home/fade.asm:22-101
   if IntroFade.advance(self) then return end
@@ -106,6 +119,16 @@ function GenderSelect:update(_dt)
     if self.exit > 0 then return end
     self.exit = nil
     self:leave()
+    return
+  end
+  if not self:menuOpen() then
+    if self.typer:done() then
+      if self.menuWait then
+        self.menuWait = self.menuWait - 1
+      else
+        self.menuWait = MENU_OPEN_FRAMES
+      end
+    end
     return
   end
   local input = self.game and self.game.input
@@ -124,25 +147,31 @@ end
 
 function GenderSelect:drawPanel()
   local G = love.graphics
-  local ground = GenderSelect.GROUND
+  local palette = GenderSelect.PALETTE
+  -- pokecrystal/engine/menus/init_gender.asm:93-101
+  local ground = GbcPalette.color(palette, 2) or GenderSelect.GROUND
   G.setColor(ground[1] / 255, ground[2] / 255, ground[3] / 255, 1)
   G.rectangle("fill", 0, 0, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
   G.setColor(1, 1, 1, 1)
-  Chrome.textbox(SAY_X, SAY_Y, SAY_W, SAY_H)
+  Chrome.paletteBox(SAY_X, SAY_Y, SAY_W + 2, SAY_H + 2, palette)
   -- ../pokecrystal/home/text.asm:473
   Chrome.printWrapped(table.concat(Typer.text(self, {}), "\n"),
-    SAY_TEXT_X, SAY_TEXT_Y, SAY_W, 2, 2)
-  Chrome.box(BOX_X, BOX_Y, BOX_W, BOX_H)
+    SAY_TEXT_X, SAY_TEXT_Y, SAY_W, 2, 2, palette)
+  -- pokecrystal/engine/menus/init_gender.asm:31-34
+  if not self:menuOpen() then return end
+  Chrome.paletteBox(BOX_X, BOX_Y, BOX_W, BOX_H, palette)
   for i, option in ipairs(GenderSelect.OPTIONS) do
     local row = TEXT_Y + (i - 1) * ROW_STEP
-    Chrome.print(Strings(option.label), TEXT_X, row)
-    if i == self.cursor then Chrome.cursor(CURSOR_X, row) end
+    Chrome.printThrough(Strings(option.label), TEXT_X, row, palette)
+    if i == self.cursor then
+      Chrome.cursorThrough(CURSOR_X, row, palette)
+    end
   end
 end
 
 function GenderSelect:drawBody()
-  self:drawPanel()
-  IntroFade.paint(self, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
+  IntroFade.paint(self, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8,
+    function() self:drawPanel() end)
 end
 
 function GenderSelect:draw()
@@ -150,7 +179,7 @@ function GenderSelect:draw()
 end
 
 function GenderSelect:drawWidescreen(winW, winH)
-  local r, g, b = IntroFade.surround(self, 1, 1, 1)
+  local r, g, b = IntroFade.surround(self, GenderSelect.PALETTE, 1, 1, 1)
   Chrome.withPanel(winW, winH, r, g, b, function() self:drawBody() end)
 end
 

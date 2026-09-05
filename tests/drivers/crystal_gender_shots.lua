@@ -118,7 +118,9 @@ return function(game)
 
   waitFor("the gender screen", function() return isA(GenderSelect) end, 600)
   local gender = top()
-  U.wait(20)
+  -- pokecrystal/engine/menus/init_gender.asm:29-34
+  waitFor("the prompt to finish and the menu to open",
+    function() return isA(GenderSelect) and top():menuOpen() end, 600)
   say("OK gender screen, cursor = " .. tostring(gender.cursor))
   U.shot(game, out .. "/01-genderselect.png")
   if want == "girl" then

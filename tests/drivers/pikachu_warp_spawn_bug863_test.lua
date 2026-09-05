@@ -9,10 +9,12 @@ return function(game)
   local Pokemon = require("src.pokemon.Pokemon")
   local GameVersion = require("src.core.GameVersion")
   local PF = require("src.world.PikachuFollower")
-  local SHOT_DIR = os.getenv("SHOT_DIR") or "/tmp/shots"
+  local SHOT_DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR") or "/tmp/shots"
+  local failures = 0
 
   local function check(label, ok)
     U.log(ok and "PASS" or "FAIL", label)
+    if not ok then failures = failures + 1 end
     return ok
   end
 
@@ -23,6 +25,8 @@ return function(game)
   -- PIKACHU in the party (PikachuFollower shouldSpawn)
   game.save.flags = game.save.flags or {}
   game.save.flags.EVENT_GOT_STARTER = true
+  game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
+  game.save.pikachuInBall = false
   game.save.party = { Pokemon.new(game.data, "PIKACHU", 20) }
   game.save.onBike = false
   game.save.player.name = "bryan"
@@ -152,13 +156,7 @@ return function(game)
     U.log("note: sfxVol is 0, Pikachu's steps and voice will be silent")
   end
 
-  U.log("The shots above tell the story: on both stair arrivals only the")
-  U.log("player should be visible, Pikachu is tucked under him until he")
-  U.log("steps away, then it follows one cell behind facing his way.")
-  U.log("If a Pikachu sits beside him the moment a warp lands, that is")
-  U.log("the old bug.  The pad is yours; warp around and watch spawns.")
-
-  while true do
-    coroutine.yield()
-  end
+  U.log(failures == 0 and "ALL PASS" or ("DONE " .. failures .. " check(s) failed"))
+  love.event.quit(failures == 0 and 0 or 1)
+  while true do coroutine.yield() end
 end

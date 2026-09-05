@@ -82,13 +82,14 @@ end
 
 local function open(n, coins)
   local game = mkGame(coins or 5000)
+  local ow = {}
   counters["TEXT_GAMECORNERPRIZEROOM_PRIZE_VENDOR_" .. n](
-    game, nil, nil, function() done = true end)
+    game, ow, nil, function() done = true end)
   local exchange = game.stack:pop()
   exchange.onDone()
   local which = game.stack:top()
   which.opts.stay.onShown()
-  return game, which, game.stack:top()
+  return game, which, game.stack:top(), ow
 end
 
 do
@@ -187,7 +188,7 @@ do
 end
 
 do
-  local game, _, window = open(1, 5000)
+  local game, _, window, ow = open(1, 5000)
   window.index = 1
   pressed = "a"
   window:update(1 / 60)
@@ -198,9 +199,38 @@ do
   check(tostring(ask.text):find("wNameBuffer", 1, true) == nil,
         "with the token filled in")
   check(ask.opts.choice ~= nil, "and a YES/NO over it")
-  eq(game.stack.states[#game.stack.states - 1], window,
-     "the window is still up underneath")
+  -- engine/events/prize_menu.asm:24-28,42
+  check(ow.prizeWindow ~= nil, "the overworld takes the window's pixels over")
+  eq(ow.prizeWindow.prizes, window.prizes, "with the same three prizes")
+  eq(ow.prizeWindow.index, 1, "and the cursor parked on the picked row")
+  eq(#game.stack.states, 1, "the menu state itself is off the stack")
   eq(game.save.coins, 5000, "no coins move before the answer")
+
+  ask.opts.choice(false)
+  local oh = game.stack:top()
+  check(oh.isTextBox and tostring(oh.text):find("fine then", 1, true) ~= nil,
+        "answering NO prints OhFineThenText")
+  check(ow.prizeWindow ~= nil, "with the window still drawn underneath it")
+  check(not done, "and the conversation not over yet")
+  oh.onDone()
+  eq(ow.prizeWindow, nil, "only that box closing gives the rows back")
+  check(done, "and ends the conversation")
+end
+
+do
+  local _, _, window = open(1, 5000)
+  calls = {}
+  window:draw()
+  local withCursor = #calls
+  local cursors = 0
+  for _, c in ipairs(calls) do if c[1] == "code" then cursors = cursors + 1 end end
+  eq(cursors, 1, "the live menu draws the cursor")
+  calls = {}
+  PrizeCounter.drawWindow(window.game, window.prizes, nil)
+  eq(#calls, withCursor - 1, "the persistent window draws the same boxes and rows")
+  for _, c in ipairs(calls) do
+    check(c[1] ~= "code", "minus the cursor, which the menu owns")
+  end
 end
 
 package.loaded["src.render.Font"] = realFont

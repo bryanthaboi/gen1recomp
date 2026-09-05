@@ -1,6 +1,8 @@
 -- ../pokecrystal/home/fade.asm:22-101 RotateFourPalettes* / RotateThreePalettes*
 -- (src/ui/gen2/MenuFade.lua is the other ramp, home/map.asm:1910-1940.)
 
+local GbcPalette = require("src.render.GbcPalette")
+
 local IntroFade = {}
 IntroFade.__index = IntroFade
 
@@ -8,11 +10,19 @@ IntroFade.__index = IntroFade
 local STEP_FRAMES = 8
 IntroFade.STEP_FRAMES = STEP_FRAMES
 
--- ../pokecrystal/home/fade.asm:106-113
+-- pokecrystal/home/fade.asm:106-113; pokecrystal/home/palettes.asm:69-113
 -- outBlack  RotateFourPalettesLeft   03 02 01 00
 -- inBlack   RotateFourPalettesRight  00 01 02 03
 -- outWhite  RotateThreePalettesRight 05 06 07
 -- inWhite   RotateThreePalettesLeft  06 05 04
+local ROWS = {
+  outBlack = { 0xe4, 0xf9, 0xfe, 0xff },
+  inBlack = { 0xff, 0xfe, 0xf9, 0xe4 },
+  outWhite = { 0x90, 0x40, 0x00 },
+  inWhite = { 0x40, 0x90, 0xe4 },
+}
+IntroFade.ROWS = ROWS
+
 local LEVELS = {
   outBlack = { 0, 1 / 3, 2 / 3, 1 },
   inBlack = { 1, 2 / 3, 1 / 3, 0 },
@@ -29,19 +39,20 @@ IntroFade.FOUR_FRAMES = 4 * STEP_FRAMES
 IntroFade.THREE_FRAMES = 3 * STEP_FRAMES
 
 function IntroFade.frames(kind)
-  local levels = LEVELS[kind]
-  return levels and #levels * STEP_FRAMES or 0
+  local rows = ROWS[kind]
+  return rows and #rows * STEP_FRAMES or 0
 end
 
 function IntroFade.new(kind)
-  local levels = LEVELS[kind]
-  if not levels then return nil end
+  local rows = ROWS[kind]
+  if not rows then return nil end
   return setmetatable({
     kind = kind,
-    levels = levels,
+    rows = rows,
+    levels = LEVELS[kind],
     color = COLORS[kind],
     frame = 0,
-    total = #levels * STEP_FRAMES,
+    total = #rows * STEP_FRAMES,
   }, IntroFade)
 end
 
@@ -52,10 +63,19 @@ function IntroFade:tick()
   return self:done()
 end
 
-function IntroFade:level()
+function IntroFade:index()
   local k = math.floor(self.frame / STEP_FRAMES) + 1
-  if k > #self.levels then k = #self.levels end
-  return self.levels[k]
+  if k > #self.rows then k = #self.rows end
+  return k
+end
+
+-- pokecrystal/home/palettes.asm:69-113
+function IntroFade:bgp()
+  return self.rows[self:index()]
+end
+
+function IntroFade:level()
+  return self.levels[self:index()]
 end
 
 function IntroFade:draw(w, h)
@@ -105,13 +125,29 @@ function IntroFade.advance(owner)
   return true
 end
 
-function IntroFade.paint(owner, w, h)
-  if owner.fade then owner.fade:draw(w, h) end
+-- pokecrystal/home/palettes.asm:69-113
+function IntroFade.paint(owner, w, h, drawFn)
+  local fade = owner.fade
+  if not fade then return drawFn() end
+  if not GbcPalette.available() then
+    drawFn()
+    return fade:draw(w, h)
+  end
+  local previous = GbcPalette.setBgp(fade:bgp())
+  local ok, err = pcall(drawFn)
+  GbcPalette.setBgp(previous)
+  if not ok then error(err, 0) end
 end
 
-function IntroFade.surround(owner, r, g, b)
-  if not owner.fade then return r, g, b end
-  return owner.fade:blend(r, g, b)
+function IntroFade.surround(owner, palette, r, g, b, index)
+  local fade = owner.fade
+  if not fade then return r, g, b end
+  if GbcPalette.available() and palette then
+    local c = GbcPalette.remap(GbcPalette.resolve(palette), fade:bgp())
+    c = c and c[index or 1]
+    if c then return c[1] / 255, c[2] / 255, c[3] / 255 end
+  end
+  return fade:blend(r, g, b)
 end
 
 return IntroFade

@@ -977,6 +977,15 @@ function Game2:writeSave()
   return written, err
 end
 
+-- engine/overworld/events.asm:241-244
+function Game2:quickSaveAllowed()
+  local w = self.world
+  if not w then return true end
+  if not (w.map and w.player) then return true end
+  if not w.acceptsMenuInput then return true end
+  return w:acceptsMenuInput() == true
+end
+
 function Game2:syncEngine()
   if self._syncOff then return nil end
   local eng = self._syncEngineRef
@@ -1963,9 +1972,11 @@ function Game2:hotkey(key)
     self:persistOptions()
   end
   if key == "f1" then
+    if not self:quickSaveAllowed() then return true end
     self:writeSave()
     return true
   elseif key == "f2" then
+    if not self:quickSaveAllowed() then return true end
     local loaded = Save.load()
     if loaded then self:continueGame(loaded) end
     return true

@@ -586,10 +586,30 @@ function Mon.experienceGain(loserDef, loserLevel, participants, trainer, opts)
   return math.max(1, value)
 end
 
+-- pokecrystal/engine/battle/core.asm:7151
+function Mon.partySpecies(mon)
+  if not mon then return nil end
+  local state = mon.volatile and mon.volatile.preTransform
+  return (state and state.species) or mon.partySpecies or mon.species
+end
+
+-- pokecrystal/engine/battle/core.asm:7251,7266
+function Mon.writeStats(mon, stats)
+  local state = mon.volatile and mon.volatile.preTransform
+  if state and state.stats then
+    for key in pairs(state.stats) do state.stats[key] = stats[key] end
+    mon.stats = mon.stats or {}
+    mon.stats.hp = stats.hp
+  else
+    mon.stats = stats
+  end
+  return stats
+end
+
 -- Award experience, level up as far as it reaches, and report what happened so
 -- the battle can print "grew to level N!" and offer new moves.
 function Mon.gainExperience(mon, amount, data)
-  local def = data and data.pokemon and data.pokemon[mon.species]
+  local def = data and data.pokemon and data.pokemon[Mon.partySpecies(mon)]
   local growth = Mon.growthFor(data, def and def.growthRate)
   mon.experience = (mon.experience or 0) + math.max(0, amount or 0)
   local before = mon.level
@@ -603,8 +623,9 @@ function Mon.gainExperience(mon, amount, data)
   -- Recompute stats and carry the HP gain, the way the cart adds the delta
   -- rather than refilling.
   local previousMax = mon.maxHp or (mon.stats and mon.stats.hp) or 1
-  mon.stats = Mon.stats(def and def.baseStats, mon.dvs, after, mon.statExp)
-  mon.maxHp = mon.stats.hp
+  local recalculated = Mon.writeStats(mon,
+    Mon.stats(def and def.baseStats, mon.dvs, after, mon.statExp))
+  mon.maxHp = recalculated.hp
   mon.hp = math.min(mon.maxHp, (mon.hp or previousMax)
     + (mon.maxHp - previousMax))
 

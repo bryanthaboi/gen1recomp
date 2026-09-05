@@ -87,6 +87,11 @@ return function(game)
   if GameVersion.engine() == "crystal" then
     if not gendered then bail("Crystal never offered InitGender") end
     local pick = top()
+    -- pokecrystal/engine/menus/init_gender.asm:29-34
+    for _ = 1, 600 do
+      if pick:menuOpen() then break end
+      U.wait(1)
+    end
     pick.cursor = (want == "girl") and 2 or 1
     U.shot(game, out .. "/00-gender.png")
     say("OK gender screen, choosing " .. want)

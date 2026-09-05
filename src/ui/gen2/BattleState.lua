@@ -677,6 +677,15 @@ function BattleState:push(event)
     self.shownMon[event.side] =
       setmetatable({ species = event.from }, { __index = event.mon })
   end
+  -- pokecrystal/engine/battle/core.asm:8294
+  if event.kind == "identity" and event.side and event.species
+      and self.shownMon then
+    self.identityPin = self.identityPin or {}
+    self.identityPin[event.side] = true
+    self.shownMon[event.side] = setmetatable(
+      { species = event.species, partySpecies = event.partySpecies },
+      { __index = event.mon })
+  end
   self.queue[#self.queue + 1] = event
 end
 
@@ -1915,7 +1924,8 @@ function BattleState:advanceQueue()
   end
   -- ../pokecrystal/engine/battle/move_effects/transform.asm:118-136
   if event.kind == "transform" and event.side and event.mon
-      and self.shownMon then
+      and self.shownMon
+      and not (self.identityPin and self.identityPin[event.side]) then
     self.shownMon[event.side] = event.mon
   end
   if event.kind == "send" and event.side and event.mon then
@@ -4338,7 +4348,8 @@ end
 -- The growth record for a mon's species, for the exp bar's "how far to the next
 -- level" fraction.
 function BattleState:growthOf(mon)
-  local def = self.pokemon and mon and self.pokemon[mon.species]
+  -- pokecrystal/engine/battle/core.asm:7151
+  local def = self.pokemon and mon and self.pokemon[Mon.partySpecies(mon)]
   if not def then return nil end
   -- Mon.growthFor off the LIVE game.data, so the exp bar's fraction is drawn
   -- against the very curve Mon.gainExperience just used; a mod-registered
@@ -4503,7 +4514,7 @@ function BattleState:drawBottom(ox)
     self:printMessage(ox)
     local learn = self.pendingLearn
     local mon = learn and self.battle.party[learn.index]
-    local moves = (mon and mon.moves) or self:playerMoves()
+    local moves = (mon and self.battle:partyMoves(mon)) or self:playerMoves()
     ForgetMoveList.draw(moves, self.forgetIndex,
       self.game and self.game.data and self.game.data.moves,
       Chrome.DEFAULT_BOX_PALETTE)
@@ -4578,7 +4589,8 @@ function BattleState:drawStatsBox(mon, ox)
   if not mon then return end
   local stats = mon.stats
   local data = self.game and self.game.data
-  local def = data and data.pokemon and data.pokemon[mon.species]
+  -- pokecrystal/engine/battle/core.asm:7208-7213
+  local def = data and data.pokemon and data.pokemon[Mon.partySpecies(mon)]
   if def and def.baseStats then
     stats = Mon.stats(def.baseStats, mon.dvs, mon.level, mon.statExp)
   end

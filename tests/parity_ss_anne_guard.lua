@@ -210,18 +210,21 @@ do
   eq(faced, true, "he keeps facing down until he walks out")
 end
 
--- Captain rub jingle: play_once Music_PkmnHealed sits after the rub text.
+-- scripts/SSAnneCaptainsRoom.asm:45-68
 do
   local rows = story.SS_ANNE_CAPTAINS_ROOM.talk.TEXT_SSANNECAPTAINSROOM_CAPTAIN
   local found = false
   for i, row in ipairs(rows) do
-    if row[1] == "play_once" and row[2] == "Music_PkmnHealed" then
+    if row[1] == "show_text"
+       and row[2] == "_SSAnneCaptainsRoomRubCaptainsBackText" then
+      local armed = rows[i - 1]
+      check(armed and armed[1] == "text_opts" and armed[2].auto
+            and type(armed[2].auto.sound) == "function",
+            "a text_opts row arms the rub box with the jingle")
       found = true
-      check(rows[i - 1] and rows[i - 1][2] == "_SSAnneCaptainsRoomRubCaptainsBackText",
-            "play_once follows the rub-back text")
     end
   end
-  check(found, "captain script plays Music_PkmnHealed after the rub")
+  check(found, "captain script still shows the rub-back text")
 end
 
 package.loaded["src.render.TextBox"] = realTextBox

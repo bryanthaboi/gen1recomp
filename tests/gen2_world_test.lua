@@ -224,6 +224,52 @@ do
   eq(w.shake and w.shake.left, 16, "for sixteen frames")
 end
 
+-- pokecrystal/data/maps/setup_scripts.asm:100-102
+-- pokecrystal/engine/overworld/map_objects.asm:2474-2494
+do
+  local MAPSETUP_FALL, MAPSETUP_DOOR = 0xf6, 0xf5
+
+  local function setupWorld()
+    local w = World.new({ data = { audio = { sfxOrder = {} } },
+      save = { player = {} } })
+    w.player = { cellX = 0, cellY = 0, facing = "down" }
+    w.playSfxNamed = function() end
+    return w
+  end
+
+  local function runSetup(method, fallIn)
+    local w = setupWorld()
+    local loaded = false
+    w:runMapSetup(method, function()
+      loaded = true
+      w.playerMasked = nil
+      return true
+    end)
+    if fallIn then w.mapSetup.fallIn = true end
+    local maskedEveryFrameAfterLoad = true
+    for _ = 1, 200 do
+      if not w.mapSetup then break end
+      w:updateMapSetup()
+      if loaded and w.mapSetup and not w.playerMasked then
+        maskedEveryFrameAfterLoad = false
+      end
+    end
+    return w, loaded, maskedEveryFrameAfterLoad
+  end
+
+  local w, loaded, masked = runSetup(MAPSETUP_FALL, true)
+  check(loaded, "the FALL setup ran its load")
+  check(masked,
+    "ResetPlayerObjectAction keeps the player off-screen through the fade-in")
+  check(w.skyfall ~= nil, "and the skyfall arms at the end of the chain")
+  check(w.playerMasked, "with the mask still up for the hidden beat")
+
+  local w2, loaded2, _ = runSetup(MAPSETUP_DOOR, false)
+  check(loaded2, "the DOOR setup ran its load")
+  check(not w2.playerMasked, "an ordinary door warp still shows the player")
+  check(w2.skyfall == nil, "and never falls")
+end
+
 -- engine/events/overworld.asm:864-872
 do
   local Movement = require("src.script.gen2.Movement")
