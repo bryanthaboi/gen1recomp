@@ -767,12 +767,19 @@ function Game:zoomStep(delta)
   end
 end
 
+-- RFC 0020: input.wheel is a plain observer, contract-identical to
+-- input.pointer -- nothing else depends on suppressing a wheel event, so
+-- there is no real behavior to gate here, only to watch.
 function Game:wheelmoved(_, dy)
-  if dy > 0 then
-    self:zoomStep(1)
-  elseif dy < 0 then
-    self:zoomStep(-1)
+  local function vanilla()
+    if dy > 0 then
+      self:zoomStep(1)
+    elseif dy < 0 then
+      self:zoomStep(-1)
+    end
   end
+  if not ModRuntime.wantsHook("input.wheel") then return vanilla() end
+  return ModRuntime.call("input.wheel", vanilla, self, dy)
 end
 
 function Game:_cycleSpeed(dir)
@@ -800,102 +807,119 @@ function Game:_cycleSpeed(dir)
   self:writeOptions()
 end
 
+-- RFC 0020: input.key fires before ANY of this method's own logic runs --
+-- including the top-of-stack capture two lines down, which is itself an
+-- engine-owned "first refusal" system (BindingsMenu et al). This mirrors
+-- the exact precedence a mod had before the sandbox changes (commit
+-- 83682f01), when a mod's Lua chunk ran with the real, unsandboxed love.*
+-- globals and could simply reassign love.keypressed itself -- there was
+-- nothing an engine-internal capture could do to go first, because the mod
+-- WAS the entry point. `vanilla` below is this method's entire pre-RFC-0020
+-- body, unchanged; a mod that returns without calling `next(...)` prevents
+-- every bit of it -- the stack capture, every hotkey, Input:keypressed --
+-- from running for this key at all, same as the old global override always
+-- could. See RFC 0020's Motivation section for the comparison this was
+-- cross-referenced against.
 function Game:keypressed(key)
-  if self.stack and self.stack:top() and self.stack:top().onKeyPressed then
-    self.stack:top():onKeyPressed(key)
-    return
-  end
-  if devMode and key == "f5" then
-    require("src.dev.HotReload").run(self)
-    return
-  end
-  if devMode and key == "`" then
-    self.stack:push(require("src.dev.Console").new(self))
-    return
-  end
-  if key == "f10" then
-    -- toggle: the manager no longer swallows the keyboard, so a second
-    -- press reaches this branch and closes it instead of stacking another
-    local top = self.stack:top()
-    if top and top.screenId == "ManagerState" then
-      self.stack:pop()
-    else
-      Screens.push(self, "ManagerState")
+  local function vanilla()
+    if self.stack and self.stack:top() and self.stack:top().onKeyPressed then
+      self.stack:top():onKeyPressed(key)
+      return
     end
-    return
-  end
-  if key == "f1" then
-    if not self:quickSaveAllowed() then return end
-    self:writeSave()
-    return
-  elseif key == "f2" then
-    if not self:quickSaveAllowed() then return end
-    local loaded, recovered = SaveData.load()
-    if loaded then
-      -- F2 jumps straight to the loaded save's map/position, with no
-      -- walking transition -- a hard state teleport like Continue, not a
-      -- smooth warp -- whether pressed at the title screen or mid-session.
-      self:restoreSave(loaded, recovered, { freshBoot = true })
+    if devMode and key == "f5" then
+      require("src.dev.HotReload").run(self)
+      return
     end
-    return
-  elseif key == "-" then
-    self:zoomStep(-1)
-    return
-  elseif key == "=" then
-    self:zoomStep(1)
-    return
-  elseif key == "1" then
-    -- cycle GAME SPEED (0.25X → 200X, logic only; audio unaffected);
-    -- shoulders/triggers on gamepad do the same (see gamepadpressed)
-    self:_cycleSpeed(1)
-    return
-  elseif key == "2" then
-    -- cycle COLORS (GBC / OG / OG INV / GBC INV / CLASSIC); the pack change
-    -- forces Game.overworld:reloadMap, which rebuilds the live NPC array, so
-    -- hold it while a warp/transition or an on-screen scripted cutscene is
-    -- driving the overworld rather than tear the escort's NPCs out mid-move
-    local ow = self.overworld
-    local top = self.stack:top()
-    local busy = ow and (ow.transitioning
-      or (top == ow and (
-           (ow.runner and ow.runner.isRunning and ow.runner:isRunning())
-        or (ow.scriptMoves and #ow.scriptMoves > 0)
-        or ow.engaging or ow.emote)))
-    if not busy then
-      local PaletteFX = require("src.render.PaletteFX")
-      self.save.options.colors = PaletteFX.cycleMode()
+    if devMode and key == "`" then
+      self.stack:push(require("src.dev.Console").new(self))
+      return
+    end
+    if key == "f10" then
+      -- toggle: the manager no longer swallows the keyboard, so a second
+      -- press reaches this branch and closes it instead of stacking another
+      local top = self.stack:top()
+      if top and top.screenId == "ManagerState" then
+        self.stack:pop()
+      else
+        Screens.push(self, "ManagerState")
+      end
+      return
+    end
+    if key == "f1" then
+      if not self:quickSaveAllowed() then return end
+      self:writeSave()
+      return
+    elseif key == "f2" then
+      if not self:quickSaveAllowed() then return end
+      local loaded, recovered = SaveData.load()
+      if loaded then
+        -- F2 jumps straight to the loaded save's map/position, with no
+        -- walking transition -- a hard state teleport like Continue, not a
+        -- smooth warp -- whether pressed at the title screen or mid-session.
+        self:restoreSave(loaded, recovered, { freshBoot = true })
+      end
+      return
+    elseif key == "-" then
+      self:zoomStep(-1)
+      return
+    elseif key == "=" then
+      self:zoomStep(1)
+      return
+    elseif key == "1" then
+      -- cycle GAME SPEED (0.25X → 200X, logic only; audio unaffected);
+      -- shoulders/triggers on gamepad do the same (see gamepadpressed)
+      self:_cycleSpeed(1)
+      return
+    elseif key == "2" then
+      -- cycle COLORS (GBC / OG / OG INV / GBC INV / CLASSIC); the pack change
+      -- forces Game.overworld:reloadMap, which rebuilds the live NPC array, so
+      -- hold it while a warp/transition or an on-screen scripted cutscene is
+      -- driving the overworld rather than tear the escort's NPCs out mid-move
+      local ow = self.overworld
+      local top = self.stack:top()
+      local busy = ow and (ow.transitioning
+        or (top == ow and (
+             (ow.runner and ow.runner.isRunning and ow.runner:isRunning())
+          or (ow.scriptMoves and #ow.scriptMoves > 0)
+          or ow.engaging or ow.emote)))
+      if not busy then
+        local PaletteFX = require("src.render.PaletteFX")
+        self.save.options.colors = PaletteFX.cycleMode()
+        self:writeOptions()
+      end
+      return
+    elseif key == "3" then
+      -- cycle TILT OFF → 15 → 35 → 50 → OFF (mnemonic: 3D), free-roam only
+      local Tilt = require("src.render.Tilt")
+      if Tilt.gateOK(self.stack:top(), self.overworld) then
+        self.save.options.tilt = Tilt.cycle()
+        self:writeOptions()
+      end
+      return
+    elseif key == "4" then
+      -- cycle ZOOM through every integer level (survey → FIT → close-up → wrap)
+      local Zoom = require("src.render.Zoom")
+      if Zoom.gateOK(self.stack:top(), self.overworld) then
+        self.save.options.zoom = Zoom.cycle(Renderer:fitScale())
+        self:writeOptions()
+      end
+      return
+    end
+    -- Mod render pipelines claim their hotkeys last, so one can never shadow
+    -- an engine display key however a mod declares it (12 §rendering
+    -- pipelines).  syncOptions writes the whole ladder back, including the
+    -- tilt exclusion a world pipeline forces.
+    local Pipelines = require("src.render.Pipelines")
+    if Pipelines.hotkey(key, self.stack:top(), self.overworld) then
+      Pipelines.syncOptions(self.save.options)
+      require("src.render.Tilt").setLevel(self.save.options.tilt or 0)
       self:writeOptions()
+      return
     end
-    return
-  elseif key == "3" then
-    -- cycle TILT OFF → 15 → 35 → 50 → OFF (mnemonic: 3D), free-roam only
-    local Tilt = require("src.render.Tilt")
-    if Tilt.gateOK(self.stack:top(), self.overworld) then
-      self.save.options.tilt = Tilt.cycle()
-      self:writeOptions()
-    end
-    return
-  elseif key == "4" then
-    -- cycle ZOOM through every integer level (survey → FIT → close-up → wrap)
-    local Zoom = require("src.render.Zoom")
-    if Zoom.gateOK(self.stack:top(), self.overworld) then
-      self.save.options.zoom = Zoom.cycle(Renderer:fitScale())
-      self:writeOptions()
-    end
-    return
+    Input:keypressed(key)
   end
-  -- Mod render pipelines claim their hotkeys last, so one can never shadow
-  -- an engine display key however a mod declares it (12 §rendering
-  -- pipelines).  syncOptions writes the whole ladder back, including the
-  -- tilt exclusion a world pipeline forces.
-  local Pipelines = require("src.render.Pipelines")
-  if Pipelines.hotkey(key, self.stack:top(), self.overworld) then
-    Pipelines.syncOptions(self.save.options)
-    require("src.render.Tilt").setLevel(self.save.options.tilt or 0)
-    self:writeOptions()
-    return
-  end
-  Input:keypressed(key)
+  if not ModRuntime.wantsHook("input.key") then return vanilla() end
+  return ModRuntime.call("input.key", vanilla, self, { phase = "pressed", key = key })
 end
 
 -- Mod enablement is stored with persistent options.  Restarting the actual
@@ -911,64 +935,100 @@ end
 -- exists for).  The top state only OBSERVES the release afterwards,
 -- unlike onKeyPressed above which owns the press, so BindingsMenu can
 -- commit a capture on the key-up (#589).
+-- RFC 0020: same "fires before everything, vanilla is the untouched whole
+-- body" contract as Game:keypressed above -- including here, before
+-- Input:keyreleased. Before the sandbox changes, a mod's love.keyreleased
+-- override had this same absolute precedence; #589's own "release must
+-- still reach Input even under a top-state capture" hazard was about the
+-- ENGINE's internal capture ladder, not about a mod -- mods could already
+-- swallow a release outright before the sandbox changes (kanto_companion's own
+-- Game:gamepadreleased-era override did exactly this for its active-drag
+-- case, see RFC 0020), so a mod choosing to do the same here via
+-- input.key is restoring that power, not introducing a new hazard class.
 function Game:keyreleased(key)
-  Input:keyreleased(key)
-  local top = self.stack and self.stack:top()
-  if top and top.onKeyReleased then top:onKeyReleased(key) end
+  local function vanilla()
+    Input:keyreleased(key)
+    local top = self.stack and self.stack:top()
+    if top and top.onKeyReleased then top:onKeyReleased(key) end
+  end
+  if not ModRuntime.wantsHook("input.key") then return vanilla() end
+  return ModRuntime.call("input.key", vanilla, self, { phase = "released", key = key })
 end
 
+-- RFC 0020: input.gamepad covers press/release/axis (see this method,
+-- Game:gamepadreleased, and Game:gamepadaxis below) -- three raw callbacks
+-- feeding one hook, because the motivating use case (a stick-driven
+-- cursor) needs raw axis values a button-only hook could never deliver.
+-- Same "fires first, vanilla is the whole untouched body" contract as
+-- Game:keypressed; see its comment and RFC 0020 for the precedent this
+-- restores.
 function Game:gamepadpressed(joystick, button)
-  -- a controller is being used: the touch overlay steps aside until the
-  -- next screen touch (mobile only; a no-op elsewhere)
-  TouchControls:noteGamepad()
-  -- Select held? Needed both to suppress shoulder speed hotkeys (Select+L
-  -- is a display chord on NX) and for the chord path below.
-  local selectHeld = Input:isDown("select")
-  if not selectHeld and joystick and joystick.isGamepadDown then
-    local ok, down = pcall(function()
-      return joystick:isGamepadDown("back")
-    end)
-    selectHeld = ok and down == true
-  end
-  local top = self.stack and self.stack:top()
-  if top and top.onGamepadPressed then
-    top:onGamepadPressed(button)
-    return
-  end
-  if not selectHeld then
-    local action = Input:padAction(button)
-    if action == "speedUp" then
-      self:_cycleSpeed(1)
-      return
-    elseif action == "speedDown" then
-      self:_cycleSpeed(-1)
+  local function vanilla()
+    -- a controller is being used: the touch overlay steps aside until the
+    -- next screen touch (mobile only; a no-op elsewhere)
+    TouchControls:noteGamepad()
+    -- Select held? Needed both to suppress shoulder speed hotkeys (Select+L
+    -- is a display chord on NX) and for the chord path below.
+    local selectHeld = Input:isDown("select")
+    if not selectHeld and joystick and joystick.isGamepadDown then
+      local ok, down = pcall(function()
+        return joystick:isGamepadDown("back")
+      end)
+      selectHeld = ok and down == true
+    end
+    local top = self.stack and self.stack:top()
+    if top and top.onGamepadPressed then
+      top:onGamepadPressed(button)
       return
     end
-  end
-  -- Select+face display chords → same digit path as Game:keypressed
-  -- (COLORS/TILT/pipelines). Intercept before Input so face does not
-  -- also fire GB A/B. Dual-path: raw already ignored when isGamepad().
-  if selectHeld then
-    local digit = GamepadMap.displayChordDigit(button)
-    if digit then
-      self:keypressed(digit)
-      return
+    if not selectHeld then
+      local action = Input:padAction(button)
+      if action == "speedUp" then
+        self:_cycleSpeed(1)
+        return
+      elseif action == "speedDown" then
+        self:_cycleSpeed(-1)
+        return
+      end
     end
+    -- Select+face display chords → same digit path as Game:keypressed
+    -- (COLORS/TILT/pipelines). Intercept before Input so face does not
+    -- also fire GB A/B. Dual-path: raw already ignored when isGamepad().
+    if selectHeld then
+      local digit = GamepadMap.displayChordDigit(button)
+      if digit then
+        self:keypressed(digit)
+        return
+      end
+    end
+    Input:gamepadpressed(joystick, button)
   end
-  Input:gamepadpressed(joystick, button)
+  if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
+  return ModRuntime.call("input.gamepad", vanilla, self,
+    { phase = "pressed", joystick = joystick, button = button })
 end
 
 function Game:gamepadreleased(joystick, button)
-  -- same observe-after-Input contract as Game:keyreleased (#589)
-  Input:gamepadreleased(joystick, button)
-  local top = self.stack and self.stack:top()
-  if top and top.onGamepadReleased then top:onGamepadReleased(button) end
+  local function vanilla()
+    -- same observe-after-Input contract as Game:keyreleased (#589)
+    Input:gamepadreleased(joystick, button)
+    local top = self.stack and self.stack:top()
+    if top and top.onGamepadReleased then top:onGamepadReleased(button) end
+  end
+  if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
+  return ModRuntime.call("input.gamepad", vanilla, self,
+    { phase = "released", joystick = joystick, button = button })
 end
 
 function Game:gamepadaxis(joystick, axis, value)
-  -- past-deadzone only, so resting-stick drift can't hide the overlay
-  if math.abs(value) > 0.5 then TouchControls:noteGamepad() end
-  Input:gamepadaxis(joystick, axis, value)
+  local function vanilla()
+    -- past-deadzone only, so resting-stick drift can't hide the overlay
+    if math.abs(value) > 0.5 then TouchControls:noteGamepad() end
+    Input:gamepadaxis(joystick, axis, value)
+  end
+  if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
+  return ModRuntime.call("input.gamepad", vanilla, self,
+    { phase = "axis", joystick = joystick, axis = axis, value = value })
 end
 
 local isAccelerometer = GamepadMap.isAccelerometer

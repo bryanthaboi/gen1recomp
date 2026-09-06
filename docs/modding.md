@@ -1035,6 +1035,37 @@ a mobile touch fires once), and focus or visibility loss and input recovery
 deliver a `"cancelled"` for every pointer the hook saw pressed but not yet
 released. Return `true` without calling `next` to consume the event.
 
+`input.key` (RFC 0020) and `input.gamepad` (RFC 0020) deliver raw keyboard
+and gamepad events *before* anything else in the engine sees them --
+before the top-of-stack capture a screen like the bindings menu uses,
+before every built-in hotkey (save/load, zoom, speed, color/tilt display
+cycling), before the button reaches `Input`. The callback receives
+`(next, game, ev)`. For `input.key`, `ev` is `{ phase, key }` with `phase`
+`"pressed"` or `"released"` and `key` the same string `love.keypressed`/
+`love.keyreleased` reports. For `input.gamepad`, `ev` is `{ phase, joystick,
+button, axis, value }` with `phase` `"pressed"`, `"released"`, or `"axis"`;
+`button` is set on `"pressed"`/`"released"` and nil on `"axis"`; `axis` and
+`value` are set on `"axis"` and nil otherwise. Unlike `input.pointer`,
+calling `next(game, ev)` here is not optional decoration: `next` runs the
+engine's own handling for this event in full (the capture, the hotkeys,
+`Input:keypressed`/`Input:gamepadpressed`), and a wrapper that returns
+without calling it prevents all of that -- the key or button never
+reaches the game this frame. This mirrors the precedence a mod always had
+before the sandbox changes, when a mod could assign `love.keypressed`/
+`love.gamepadpressed` directly; there is no separate "vanilla ran anyway"
+outcome to opt out of, so wrap sparingly and only while you actually need
+to own the input (e.g. while your own UI is capturing keyboard/gamepad
+navigation), calling `next` immediately otherwise.
+
+`input.wheel` (RFC 0020) delivers the mouse wheel. The callback receives
+`(next, game, dy)`, where `dy` is the same vertical delta
+`love.wheelmoved`'s second argument carries (the engine does not currently
+read the horizontal delta either). Contract-identical to `input.pointer`:
+return `true` without calling `next` to consume. As with `input.pointer`,
+no current engine behavior reads what the hook chain returns -- "consume"
+here means "stop other mods in the chain from also seeing this event," not
+"suppress the zoom," which today has no way to be gated at all.
+
 `mod.input` presses GB buttons source-safely. `mod.input:tap(game, btn)`
 queues exactly one `wasPressed` edge for the next fixed step and holds
 nothing; `local token = mod.input:press(game, btn)` holds the button until

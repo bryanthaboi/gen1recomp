@@ -445,6 +445,10 @@ local GEN2_HOOKS = {
   -- pointer with the touch overlay given first refusal, the palette zone list
   -- handed to the present pass, the letterbox and the HUD rect.
   "input.step", "input.pointer",
+  -- RFC 0020: keyboard, gamepad (press/release/axis), and wheel -- raised
+  -- from Game2.lua's keypressed/keyreleased/gamepadpressed/gamepadreleased/
+  -- gamepadaxis/wheelmoved, same call-site shape as input.pointer above.
+  "input.key", "input.gamepad", "input.wheel",
   "render.zones", "render.compose", "render.output_enabled", "render.output",
   "render.letterbox", "render.hud",
 }
