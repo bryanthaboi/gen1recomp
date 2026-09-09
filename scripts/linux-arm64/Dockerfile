@@ -29,7 +29,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # runtime linkage: SDL detects each backend at compile time and then dlopens
 # it, so these headers decide which backends exist at all while adding no
 # DT_NEEDED entry to the shipped library.
-RUN apt-get update -qq \
+RUN printf 'deb http://snapshot.debian.org/archive/debian/20260831T000000Z bullseye main\ndeb http://snapshot.debian.org/archive/debian-security/20260831T000000Z bullseye-security main\n' > /etc/apt/sources.list \
+ && apt-get -o Acquire::Check-Valid-Until=false update -qq \
  && apt-get install -y --no-install-recommends \
       build-essential pkg-config autoconf automake libtool cmake \
       ca-certificates curl file xz-utils bzip2 zip unzip squashfs-tools \
