@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.57",
+          "date": "2026-09-09",
+          "size": 21626440,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.57/gen1recomp++-0.2.57-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2166 camera zooms all the way in after leaving options menu\n- #2185 locked myself in the tower with the dogs\n- #2188 Fading issues during intro\n- #2189 Captain on S.S. Anne turning around\n- #2190 Pikachu cutscene & interaction in Fan Club inaccurate\n- #2191 Crash with Custom Touch Skin\n- #2192 Ditto/Transform XP bug in Crystal\n- #2193 (GSC) Falling from a hole has the player sprite at the bottom at the begning of the animation\n- #2194 (GSC) Some issues in the intro\n- #2195 Prize box at the Game Corner closes right away\n- #2196 Pikachu's shadow missing before healing\n- #2197 Pikachu not spawning next to the player when entering buildings\n- #2199 Small errors when opening Pokedex entry\n- #2200 Player stays visible during map change\n- #2203 (GSC) Wrong HUD behavior when depositing pokémon\n- #2204 No X item animation\n- #2205 Couple of issues with entering the Safari Zone\n- #2206 Couple of issues with leaving the Safari Zone\n- #2212 Trainer Card looks inaccurate\n- #2214 Escape Rope can be used mid-battle\n- #2218 Menu width & Safari Ball count\n- #2219 Fuchsia City Warden bugs\n- #2223 Jingle not played when giving drink to Saffron City guard\n- #2224 Pokeballs have wrong color in Pokemon Center & fights\n- #2225 Errors when using teleporters\n- #2226 Card Key jingle too late\n- #2230 Various graphical glitches and subsequencially crash during the New Game sequence when using a Skin/Overlay\n- #2232 Game Softlock after receiving Pokegear from Mom\n\n## Contributors\n\n- @AverageConsumer\n- @BountyHunterKanden\n- @bryanthaboi\n- @claude\n- @HighDrexler"
+        },
+        {
           "version": "0.2.56",
           "date": "2026-09-04",
           "size": 21614868,
