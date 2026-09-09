@@ -1086,23 +1086,19 @@ function BattleState:drawPic(mon, back)
   local bandY = (back and BattleState.PLAYER_PIC_TILE_Y
     or BattleState.ENEMY_PIC_TILE_Y) * 8 + lifted[1] * 8
   local bandH = lifted[2] * 8
-  local psx, psy, psw, psh
-  if G.getScissor then psx, psy, psw, psh = G.getScissor() end
-  if self.liftedPass then
-    G.setScissor(0, bandY, 160, bandH)
+  local function band(y, h)
+    G.push("all")
+    Chrome.clipTo(0, y, 160, h)
     paint()
-  else
-    if bandY > 0 then
-      G.setScissor(0, 0, 160, bandY)
-      paint()
-    end
-    local below = 144 - bandY - bandH
-    if below > 0 then
-      G.setScissor(0, bandY + bandH, 160, below)
-      paint()
-    end
+    G.pop()
   end
-  if psx then G.setScissor(psx, psy, psw, psh) else G.setScissor() end
+  if self.liftedPass then
+    band(bandY, bandH)
+  else
+    if bandY > 0 then band(0, bandY) end
+    local below = 144 - bandY - bandH
+    if below > 0 then band(bandY + bandH, below) end
+  end
 end
 
 -- MonsterSpriteGFX (gfx/sprites.asm:82): the facing-DOWN 16x16 frame for the

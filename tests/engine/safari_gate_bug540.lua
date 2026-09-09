@@ -30,7 +30,22 @@ local ScriptRunner = require("src.script.ScriptRunner")
 
 local answer = true
 package.loaded["src.render.TextBox"] = {
-  new = function(_, text, done) return { text = text, done = done } end,
+  new = function(_, text, done, opts)
+    local box = { text = text, opts = opts }
+    box.done = function()
+      if opts and opts.choice then
+        opts.choice(answer)
+      elseif done then
+        done()
+      end
+    end
+    return box
+  end,
+  soundOpts = function(_, sound, opts)
+    opts = opts or {}
+    opts.auto = { sound = sound, wait = true }
+    return opts
+  end,
 }
 package.loaded["src.ui.ChoiceBox"] = {
   new = function(_, cb) return { done = function() cb(answer) end } end,
@@ -96,10 +111,41 @@ answer = true
 local ow = newWorld(4, 2)
 local game = newGame(ow)
 T.eq(gate.onStep(game, ow, 4, 2), true, "the trigger cell claims the step")
+-- SafariZoneGateDefaultScript displays TEXT_..._WORKER1_1 before dispatching
+-- to the join prompt (scripts/SafariZoneGate.asm:22-24) (#2205)
+T.check(ow.pushed[1] and ow.pushed[1].text:find("SAFARI ZONE"),
+  "the worker welcomes you before the join prompt")
+T.eq(ow.player.facing, "right", "SPRITE_FACING_RIGHT is written on both branches")
+local joinBox = ow.pushed[2]
+T.check(joinBox ~= nil and joinBox.opts ~= nil and joinBox.opts.choice ~= nil,
+  "the YES/NO rides over the still-visible join text")
+T.check(joinBox and joinBox.opts and joinBox.opts.money ~= nil
+        and joinBox.opts.moneyWithChoice == true,
+  "MONEY_BOX goes up with the YES/NO")
 T.check(game.save.safari ~= nil, "paying starts the game")
 T.eq(game.save.safari.steps, 502, "wSafariSteps is written as 502")
 T.eq(game.save.safari.balls, 30, "SAFARI_BALLS_RECEIVED is 30")
 T.eq(game.save.money, 2500, "the ¥500 fee is taken")
+
+-- .MakePaymentText carries sound_get_item_1 between the "received 30 SAFARI
+-- BALLs!" page and the PA page (scripts/SafariZoneGate.asm:213-217), and the
+-- MONEY box is redrawn with the reduced total (:181-183) (#2205)
+local paidBox = ow.pushed[3]
+T.check(paidBox ~= nil and paidBox.text:find("SAFARI BALLs"),
+  "the payment text is its own box")
+T.check(paidBox and paidBox.opts and paidBox.opts.auto
+        and paidBox.opts.auto.sound == "Get_Item1",
+  "the Get_Item1 fanfare holds the box the balls were handed over in")
+T.check(paidBox and paidBox.opts and paidBox.opts.money ~= nil,
+  "the MONEY box stays up through the payment text")
+local paBox = ow.pushed[4]
+T.check(paBox ~= nil and paBox.text:find("PA"), "the PA line follows it")
+T.check(paBox and paBox.opts and paBox.opts.money ~= nil,
+  "and the MONEY box is still up for it")
+for _, box in ipairs(ow.pushed) do
+  T.check(not box.text:find("Good Luck"),
+    "\"Good Luck!\" belongs to the leaving script, never the entry path")
+end
 
 T.eq(#ow.moves, 1, "the payment text is followed by the entrance auto-walk")
 T.eq(ow.moves[1].dir, "up", "SafariZoneEntranceAutoWalk walks PAD_UP")
@@ -110,6 +156,20 @@ T.eq(game.save.safari.steps, 500,
   "the two gate steps are charged, so the counter reads 500/500 on arrival")
 T.eq(ow.warps[1], NORTH_WARP,
   "a scripted step skips CheckWarpsNoCollision, so the script takes the warp")
+
+-- the LEFT trigger cell auto-walks one step right to the counter first:
+-- wCoordIndex is 1-based (home/map_objects.asm:107-121), so `cp 1` is (3,2)
+-- (scripts/SafariZoneGate.asm:31-40) (#2205)
+answer = true
+local leftCell = newWorld(3, 2)
+local leftCellGame = newGame(leftCell)
+T.eq(gate.onStep(leftCellGame, leftCell, 3, 2), true, "the left cell triggers too")
+T.eq(leftCellGame.save.safari, nil, "nothing is paid until the walk finishes")
+T.eq(#leftCell.moves, 1, "the welcome text is followed by the walk right")
+T.eq(leftCell.moves[1].dir, "right", "PAD_RIGHT, c = 1")
+T.eq(leftCell.moves[1].tiles, 1, "one cell reaches (4,2)")
+leftCell.moves[1].onDone()
+T.check(leftCellGame.save.safari ~= nil, "the join prompt runs from (4,2)")
 
 -- talking to the worker from anywhere else has no warp above the player, so
 -- the auto-walk stays out of the way and he walks in himself
@@ -188,8 +248,9 @@ T.eq(yes.texts[1], "_SafariZoneGateSafariZoneWorker1LeavingEarlyText",
   "the worker asks first")
 T.eq(yes.texts[2], "_SafariZoneGateSafariZoneWorker1ReturnSafariBallsText",
   "YES takes the leftover balls back")
-T.eq(yes.texts[3], "_SafariZoneGateSafariZoneWorker1GoodHaulComeAgainText",
-  "the good-haul sign-off stays reachable on this branch")
+-- .leaving_early prints the return-balls text and nothing else; the good-haul
+-- sign-off belongs to the game-over branch (scripts/SafariZoneGate.asm:85-99)
+T.eq(yes.texts[3], nil, "no good-haul sign-off on the leaving-early branch")
 T.eq(#yes.fields, 1, "the game state is cleared once")
 T.eq(yes.fields[1].key, "safari", "save.safari is the field cleared")
 T.eq(yes.fields[1].value, nil, "set_field with no value assigns nil")
@@ -214,6 +275,36 @@ leftGame.save.safari = { balls = 7, steps = 300 }
 gate.onEnter(leftGame, left)
 local leftStay = runRows(left.queued[1], false)
 T.eq(leftStay.warps[1].x, 14, "the left-hand warp column comes back on 14")
+
+-- ---- the game-over return: EVENT_SAFARI_GAME_OVER takes the other branch
+-- (scripts/SafariZoneGate.asm:79-94) (#2206)
+
+local over = newWorld(4, 0)
+local overGame = newGame(over)
+overGame.save.safariGameOver = true
+gate.onEnter(overGame, over)
+T.eq(#over.pushed, 0, "the game-over branch queues rather than pushes too")
+T.eq(#over.queued, 1, "the sign-off script is queued")
+T.eq(overGame.save.safariGameOver, nil,
+  "CheckAndResetEvent clears the flag, so the next arrival asks normally")
+local overRows = over.queued[1]
+T.eq(#ScriptRunner.validate(overRows), 0, "the queued rows validate")
+local overOut = runRows(overRows, true)
+T.eq(overOut.texts[1], "_SafariZoneGateSafariZoneWorker1GoodHaulComeAgainText",
+  "the worker signs off with the good-haul text")
+T.eq(#overOut.moves, 1, "then the exit auto-walk runs")
+T.eq(overOut.moves[1].dir, "down", "PAD_DOWN")
+T.eq(overOut.moves[1].tiles, 3, "c = 3, from the warp row down to the counter")
+T.eq(#overOut.warps, 0, "the game-over branch never warps back into the zone")
+
+-- wDestinationWarpID $3 is warp_event 4,0
+-- (data/maps/objects/SafariZoneGate.asm:12), the walk's START, not its end
+local FieldDefaults = require("src.world.FieldDefaults")
+local exitWarp = FieldDefaults.fieldValue(nil, "safari", "exitWarp")
+T.check(exitWarp ~= nil, "the safari exit warp is defined")
+T.eq(exitWarp and exitWarp.map, "SAFARI_ZONE_GATE", "it lands in the gate")
+T.eq(exitWarp and exitWarp.x, 4, "on the right-hand north warp column")
+T.eq(exitWarp and exitWarp.y, 0, "on the warp row, not the counter row")
 
 -- no game running, or arriving from the town side, asks nothing
 local idle = newWorld(4, 0)

@@ -75,6 +75,13 @@ function TrainerCard.new(game, opts)
     game.data, "front", { kind = "trainer_card" })
   self.pic          = tryImage(picPath)
   self.picTrueColor = self.pic and picTrueColor or false
+  -- engine/menus/start_sub_menus.asm:480-487
+  if self.pic then
+    local pw, ph = self.pic:getDimensions()
+    self.picW = math.max(0, math.min(40, pw))
+    self.picH = math.min(56, ph)
+    self.picQuad = love.graphics.newQuad(0, 0, self.picW, self.picH, pw, ph)
+  end
 
   return self
 end
@@ -123,9 +130,9 @@ function TrainerCard:draw()
 
   -- top card (rows 0-7): NAME / MONEY / TIME, pic upper-right
   self:frameBox(0, 0, 20, 8)
-  if self.pic then
+  if self.pic and self.picQuad then
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(self.pic, 104, 4)
+    love.graphics.draw(self.pic, self.picQuad, 120, 8)
     -- True-colour portraits (e.g. mod-injected custom characters) carry their
     -- own colours and must not be re-mapped by the MEWMON zone shader.
     -- markTrueColor appends a colors=false zone that the Renderer splices at
@@ -133,19 +140,19 @@ function TrainerCard:draw()
     -- the palette shader on top of the already-colourised frame.
     -- This matches the pattern used by OakSpeech, HallOfFame and SummaryMenu.
     if self.picTrueColor then
-      local w, h = self.pic:getDimensions()
-      require("src.render.PaletteFX").markTrueColor(104, 4, w, h)
+      require("src.render.PaletteFX").markTrueColor(120, 8, self.picW, self.picH)
     end
   end
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(Strings("NAME/%s", save.player.name or "RED"), 16, 16)
   Font.draw(Strings("MONEY/¥%d", save.money or 0), 16, 32)
   local t = math.floor(save.playTime or 0)
-  Font.draw(Strings("TIME/%3d:%02d", math.floor(t / 3600),
+  -- home/print_num.asm:217
+  Font.draw(Strings("TIME/  %d:%02d", math.floor(t / 3600),
                     math.floor(t / 60) % 60), 16, 48)
 
   -- the circle-dotted BADGES banner (TrainerInfo_BadgesText)
-  self:frameBox(0, 8, 20, 3)
+  -- engine/menus/start_sub_menus.asm:544
   love.graphics.setColor(0, 0, 0, 1)
   Font.draw(Strings("BADGES"), 56, 72)
   if self.circle then
@@ -155,12 +162,21 @@ function TrainerCard:draw()
     love.graphics.setColor(0, 0, 0, 1)
   end
 
-  -- numbered badge grid (rows 11-17): face by default, badge when owned
-  self:frameBox(0, 11, 20, 7)
+  -- numbered badge grid (rows 10-17): face by default, badge when owned
+  -- engine/menus/start_sub_menus.asm:537
+  self:frameBox(1, 10, 18, 8)
+  if self.frame then
+    love.graphics.setColor(1, 1, 1, 1)
+    for j = 0, 7 do
+      love.graphics.draw(self.frame.img, self.frame.quads[8], 0, (10 + j) * 8)
+      love.graphics.draw(self.frame.img, self.frame.quads[8], 152, (10 + j) * 8)
+    end
+  end
   local badges = Badges.list(self.game.data)
   for i = 1, #badges do
     local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-    local tx, ty = 16 + col * 32, 94 + row * 24
+    -- engine/menus/draw_badges.asm:46
+    local tx, ty = 16 + col * 32, 88 + row * 24
     -- the extracted sheets cover the eight Kanto slots; a longer badge
     -- list draws its extra entries unnumbered rather than crashing
     if self.nums and self.nums.quads[i - 1] then
@@ -171,7 +187,7 @@ function TrainerCard:draw()
       love.graphics.setColor(1, 1, 1, 1)
       local owned = save.inventory[Badges.itemFor(badges[i])]
       local sheet = owned and self.badges or self.faces
-      love.graphics.draw(sheet.img, sheet.quads[i - 1], tx + 4, ty + 6)
+      love.graphics.draw(sheet.img, sheet.quads[i - 1], tx + 8, ty + 8)
     end
   end
   love.graphics.setColor(1, 1, 1, 1)

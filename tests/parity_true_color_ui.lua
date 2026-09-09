@@ -48,6 +48,8 @@ local game = {
 local dex = DexEntryMenu.new(game, "PIKACHU")
 check(dex.spriteTrueColor == true,
       "Pokedex keeps a Pokemon sprite's trueColor flag")
+-- engine/menus/pokedex.asm:500-506
+dex.picDelay = 0
 local dexRects = uiRects(function() dex:draw() end)
 -- engine/menus/pokedex.asm:503: the pic sits in the 7x7 window at (8,8)
 local dw, dh = dex.sprite:getDimensions()

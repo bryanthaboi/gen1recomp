@@ -136,6 +136,9 @@ local RELEASED = Strings.source("Released <PK><MN>.\fBye,\n%s!")
 local GOT_MON = Strings.source("Got %s!")
 local STORED_MON = Strings.source("Stored %s!")
 
+-- engine/pokemon/bills_pc.asm:1804 `ld c, 50 / call DelayFrames`
+local STORE_MESSAGE_FRAMES = 50
+
 -- Boxes.lua owns the storage mutation, so its finite refusals arrive here as
 -- return values.  Mark their complete text for the catalog and look them up
 -- when they cross this UI boundary.
@@ -184,6 +187,7 @@ function BoxMenu.new(game, opts)
   self.scroll = 0
   self.picCache = {}
   self.message = nil
+  self.messageFrames = nil
   -- nil while the list is being browsed; "submenu" while MOVE/STATS/CANCEL is
   -- up, "insert" while the insert cursor is picking a destination.  Only the
   -- move screen has phases -- the other two lists act on A.
@@ -364,6 +368,15 @@ function BoxMenu:openStats()
   })
 end
 
+-- engine/pokemon/bills_pc.asm:1785-1787 ClearBox over the left panel, then the
+-- timed hold at :1804; .Init (:161) only runs after it.
+function BoxMenu:holdMessage(text)
+  self.message = text
+  self.messagePage = 1
+  self.messageFrames = STORE_MESSAGE_FRAMES
+  self.panelCleared = true
+end
+
 -- engine/pokemon/bills_pc.asm:397-411: failed withdraw stays on the submenu.
 function BoxMenu:doWithdraw()
   local ok, result = Boxes.withdraw(self.save, self.boxIndex, self.index)
@@ -376,9 +389,7 @@ function BoxMenu:doWithdraw()
   -- engine/pokemon/bills_pc.asm:1817
   self:playMonCry(result)
   local name = result.nickname or result.name or result.species or "?"
-  self.message = Strings(GOT_MON, name)
-  self.phase = nil
-  self:clampIndex()
+  self:holdMessage(Strings(GOT_MON, name))
 end
 
 -- engine/pokemon/bills_pc.asm:155 BillsPCDepositFuncDeposit
@@ -394,10 +405,7 @@ function BoxMenu:doDeposit()
   end
   -- engine/pokemon/bills_pc.asm:1762
   self:playMonCry(result)
-  self.message = Strings(STORED_MON, name)
-  self.phase = nil
-  self.index, self.scroll = 1, 0
-  self:clampIndex()
+  self:holdMessage(Strings(STORED_MON, name))
 end
 
 function BoxMenu:chooseSubmenu()
@@ -521,6 +529,20 @@ end
 function BoxMenu:update(_dt)
   local input = self.game and self.game.input
   if not input then return end
+
+  -- engine/pokemon/bills_pc.asm:1804 DelayFrames reads no joypad; :161 zeroes
+  -- wJumptableIndex / cursor / scroll only once it returns.
+  if self.messageFrames then
+    self.messageFrames = self.messageFrames - 1
+    if self.messageFrames > 0 then return end
+    self.messageFrames = nil
+    self.message, self.messagePage = nil, nil
+    self.panelCleared = nil
+    self.phase = nil
+    self.index, self.scroll = 1, 0
+    self:clampIndex()
+    return
+  end
 
   if self.message then
     if input:wasPressed("a") or input:wasPressed("b") then
@@ -954,7 +976,7 @@ function BoxMenu:drawPanel()
 
   -- The left panel: pic, level, gender, species -- blank on CANCEL, the way
   -- PCMonInfo clears it when the selection is not a mon.
-  local mon = self:panelMon()
+  local mon = not self.panelCleared and self:panelMon() or nil
   if mon then
     -- `cp EGG / ret z` right after the frontpic: no name, no level, no gender
     -- (engine/pokemon/bills_pc.asm:1057-1058).

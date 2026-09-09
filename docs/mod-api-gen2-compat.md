@@ -592,13 +592,21 @@ gains a field instead of the name gaining a prefix.
   each row's decision in `evolution.check`. The hook passes `data` where Gen 1
   passes `game`; positions 2-4 (mon, row, trigger) match.
 - *The frame (`src/core/Game2.lua`):* hooks `input.step`, `input.pointer`,
-  `render.zones`, `render.compose`, `render.output_enabled`, `render.output`,
+  `input.key`, `input.gamepad`, `input.wheel` (RFC 0020), `render.zones`,
+  `render.compose`, `render.output_enabled`, `render.output`,
   `render.letterbox`, `render.hud`, `render.viewport`, `render.window`. Each sits
   at the same moment `src/core/Game.lua` and `src/render/Renderer.lua` raise it
   -- the logic tick before the pad is read, a pointer the touch overlay gets
-  first refusal on, the palette zone list handed to the present pass, the
-  composed frame before ShaderFX, the letterbox, and the finished playfield rect
-  -- and carries the same payload.
+  first refusal on, a key/gamepad/wheel event before any of this method's own
+  hotkey or capture logic runs, the palette zone list handed to the present
+  pass, the composed frame before ShaderFX, the letterbox, and the finished
+  playfield rect -- and carries the same payload. `input.key`/`input.gamepad`
+  differ from the others in one way worth flagging: their `vanilla` argument
+  is this method's *entire* pre-existing body, not a stub, so a wrapper that
+  never calls `next` prevents that body from running for this event
+  (top-of-stack capture, hotkeys, `Input:*`, all of it) -- see RFC 0020 for
+  why that's a deliberate departure from `input.pointer`'s (inert) consume
+  contract, with real precedent from before the sandbox changes.
   `render.hud`'s `gameX` / `gameY` really is where Gold's dialogue boxes and
   menus land, because `Chrome.fitScale` / `fitOrigin` and `World:fitScale`
   compute the same number. `render.zones` is handed `nil` in GBC mode (Gold

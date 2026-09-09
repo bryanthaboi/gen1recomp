@@ -34,7 +34,14 @@ local check, eq = S.check, S.eq
 -- suite that sorts after this one.
 local realTextBox = package.loaded["src.render.TextBox"]
 package.loaded["src.render.TextBox"] = {
-  new = function(_, text, done) return { text = text, done = done } end,
+  new = function(_, text, done, opts)
+    return { text = text, done = done, opts = opts }
+  end,
+  soundOpts = function(_, sound, opts)
+    opts = opts or {}
+    opts.sound = sound
+    return opts
+  end,
 }
 
 local M = dofile("data/scripts/story2.lua")
@@ -73,6 +80,9 @@ for _, drink in ipairs({ "FRESH_WATER", "SODA_POP", "LEMONADE" }) do
         drink .. ": the guards are marked as having been given a drink")
   eq(game.save.inventory[drink], nil, drink .. ": exactly one was removed")
   check(#pushed == 1, drink .. ": the thanks text is shown")
+  -- scripts/Route5Gate.asm:104
+  check(pushed[1] and pushed[1].opts and pushed[1].opts.sound == "Get_Key_Item",
+        drink .. ": the thanks box carries the key-item jingle")
   check(#moved == 0, drink .. ": we are NOT walked back")
 end
 

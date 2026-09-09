@@ -3970,7 +3970,11 @@ function BattleState:executeAction(user, target, action)
       -- nickname on purpose (no "Enemy " in AIPrintItemUseText), so the
       -- prefix splice must not touch them.
       for _, m in ipairs(TrainerAI.useItem(self, action.item)) do
-        self:sayNext(m)
+        if type(m) == "table" then
+          self:animNext(m.anim, false)
+        else
+          self:sayNext(m)
+        end
       end
       self:drainNext()
       require("src.core.Sound").play(self.data, "Heal_Ailment")
@@ -5764,6 +5768,18 @@ local function balls()
   return ballQuads or nil
 end
 
+-- engine/battle/draw_hud_pokeball_gfx.asm:97-108
+local function ballObpSheet()
+  local PaletteFX = require("src.render.PaletteFX")
+  if not PaletteFX.usesSpriteObp() then return nil end
+  local colors, group = PaletteFX.ogObj()
+  if not colors then return nil end
+  local SpriteRenderer = require("src.render.SpriteRenderer")
+  local ok, img = pcall(SpriteRenderer.obpImage,
+                        "assets/generated/battle/balls.png", colors, group)
+  return ok and img or nil
+end
+
 function BattleState:drawCaughtBall(x, y)
   local quads = balls()
   if not quads then return end
@@ -5774,10 +5790,16 @@ end
 function BattleState:drawBallRow(party, x, y, dx)
   local quads = balls()
   if not quads then return end
+  local obp = ballObpSheet()
+  local img = obp or quads.img
   for i = 1, 6 do
     local mon = party[i]
     local tile = not mon and 3 or mon.hp <= 0 and 2 or mon.status and 1 or 0
-    love.graphics.draw(quads.img, quads[tile], x + (i - 1) * dx, y)
+    love.graphics.draw(img, quads[tile], x + (i - 1) * dx, y)
+    if obp then
+      require("src.render.PaletteFX")
+        .markUiSpriteRedraw(img, quads[tile], x + (i - 1) * dx, y)
+    end
   end
 end
 

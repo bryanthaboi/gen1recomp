@@ -15,6 +15,7 @@ local T = require("tests.harness")
 -- every suite below is dofile'd in this process, so a suite that reaches for
 -- T.finish must raise into runSuites' pcall instead of os.exit(0)-ing the tier
 _G.POKEPORT_TEST_CHILD = true
+_G.POKEPORT_LOOP_PANEL_SYNC = true
 -- this suite has always streamed a line per check, and it is the one a
 -- developer watches for progress through ~1600 assertions
 T.verbose = true

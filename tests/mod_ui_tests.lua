@@ -11,6 +11,7 @@ local check = S.check
 
 local love = _G.love or require("tests.love_stub")
 _G.love = love
+_G.POKEPORT_LOOP_PANEL_SYNC = true
 
 local Events = require("src.mods.Events")
 local Hooks = require("src.mods.Hooks")

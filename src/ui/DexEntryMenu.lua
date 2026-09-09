@@ -124,6 +124,9 @@ local DIVIDER = {
   0x6B, 0x6B, 0x69, 0x6B, 0x69, 0x6B, 0x69, 0x6B, 0x69, 0x6A,
 }
 
+-- engine/menus/pokedex.asm:500-504
+local PIC_DELAY = 36
+
 function DexEntryMenu.new(game, speciesOrOpts, onDone)
   local species, forceOwned = resolveArgs(speciesOrOpts)
   local self = setmetatable({ game = game, forceOwned = forceOwned,
@@ -140,8 +143,8 @@ function DexEntryMenu.new(game, speciesOrOpts, onDone)
   self.blink = 0
   local pages = descPages(game, self.def, forceOwned)
   self.pageCount = pages and #pages or 1
-  -- engine/menus/pokedex.asm:500-506, home/pokemon.asm:145-148
-  self.crySrc = require("src.core.Sound").playCry(game.data, species)
+  self.species = species
+  self.picDelay = PIC_DELAY
   return self
 end
 
@@ -158,6 +161,15 @@ end
 function DexEntryMenu:update(dt)
   local input = self.game.input
   self.blink = ((self.blink or 0) + 1) % 60
+  if (self.picDelay or 0) > 0 then
+    self.picDelay = self.picDelay - 1
+    if self.picDelay == 0 then
+      -- engine/menus/pokedex.asm:504-506, home/pokemon.asm:145-148
+      self.crySrc = require("src.core.Sound").playCry(self.game.data,
+                                                      self.species)
+    end
+    return
+  end
   if self:crying() then return end
   if input:wasPressed("a") or input:wasPressed("b") then
     -- home/text.asm:245
@@ -171,9 +183,10 @@ function DexEntryMenu:update(dt)
 end
 
 function DexEntryMenu:draw()
-  DexEntryMenu.render(self.game, self.def, self.sprite, self.forceOwned,
-                      self.spriteTrueColor, self.page,
-                      { crying = self:crying(),
+  local waiting = (self.picDelay or 0) > 0
+  DexEntryMenu.render(self.game, self.def, not waiting and self.sprite or nil,
+                      self.forceOwned, self.spriteTrueColor, self.page,
+                      { crying = self:crying(), waiting = waiting,
                         arrow = (self.blink or 0) < 30 })
 end
 
@@ -242,7 +255,8 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
     Font.draw("″", 136, 48)
     Font.draw(Strings("WT"), 72, 64)
     Font.draw(Strings("lb"), 136, 64)
-    if not numbers then
+    -- engine/menus/pokedex.asm:449-450, overwritten at :518-520
+    if not numbers or state.crying or state.waiting then
       Font.draw("?", 104, 48)
       Font.draw("??", 120, 48)
       Font.draw("???", 112, 64)
@@ -250,7 +264,7 @@ function DexEntryMenu.render(game, def, sprite, forceOwned, trueColor, page, sta
   end
   -- engine/menus/pokedex.asm:516: everything below the divider waits on the
   -- cry the line above it started
-  if state.crying then
+  if state.crying or state.waiting then
     love.graphics.setColor(1, 1, 1, 1)
     return
   end

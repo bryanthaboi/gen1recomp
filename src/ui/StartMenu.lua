@@ -185,10 +185,11 @@ function StartMenu.new(game)
   local maxVisible = math.floor((Renderer.HEIGHT / 8 - 2) / rowStep)
   menu = Menu.new(game, items,
     -- the START menu hugs the top-right corner of the SCREEN, not of a
-    -- centred letterbox: at 9,0 x 11 it is already flush with the top and
-    -- right of the 20x18 grid, so the anchor keeps it flush when the view
-    -- is zoomed out and the letterbox no longer fills the window
-    { tx = 9, ty = 0, tw = 11, maxVisible = maxVisible, startCloses = true,
+    -- centred letterbox: at 10,0 x 10 (engine/menus/draw_start_menu.asm:5-12)
+    -- it is already flush with the top and right of the 20x18 grid, so the
+    -- anchor keeps it flush when the view is zoomed out and the letterbox no
+    -- longer fills the window
+    { tx = 10, ty = 0, tw = 10, maxVisible = maxVisible, startCloses = true,
       anchor = "topright" })
   -- the cursor position survives closing the menu
   -- (wBattleAndStartSavedMenuItem, home/start_menu.asm)
@@ -202,7 +203,7 @@ function StartMenu.new(game)
 
   -- inside the Safari Zone the start menu also shows remaining steps and
   -- SAFARI BALLs (PrintSafariZoneSteps, engine/overworld/player_state.asm:
-  -- 219-224): a 9x5 border at the top-left with "steps/500" and "BALL xx".
+  -- 219-224): a 9x5 border at the top-left with "steps/500" and "BALL×xx".
   -- It opens with `cp SAFARI_ZONE_EAST / ret c`, so only the nine interior
   -- maps ($D9..$E1) get it -- SAFARI_ZONE_GATE is $9C and falls under that
   -- early out, and used to show "502/500" while the player was still
@@ -220,7 +221,11 @@ function StartMenu.new(game)
       Font.draw(("%3d"):format(math.floor(safari.steps or 0)), 8, 8)
       Font.draw("/500", 32, 8)
       Font.draw(Strings("BALL"), 8, 24)
-      Font.draw(("%2d"):format(math.floor(safari.balls or 0)), 48, 24)
+      -- engine/overworld/player_state.asm:236-249, home/print_num.asm:205-217
+      local digits = tostring(math.max(0, math.floor(safari.balls or 0)))
+      local bx = (7 - #digits) * 8
+      Font.draw("\xc3\x97", bx, 24)
+      Font.draw(digits, bx + 8, 24)
       love.graphics.setColor(1, 1, 1, 1)
     end
   end

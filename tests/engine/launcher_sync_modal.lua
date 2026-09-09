@@ -385,8 +385,12 @@ check(header and header:find('id = "skins"', 1, true) ~= nil,
       "and it sits beside the skins tab")
 check(header and header:find("beta = true", 1, true) ~= nil,
       "the skins tab carries a BETA badge too")
-check(view:find('"BETA"', 1, true) ~= nil,
-      "the button and the modal are labelled BETA")
+local syncTab = view:match('btn%(imp, tx, ty, w, tabH, "tab%-sync", "", o%)\n(.-)\n')
+check(syncTab and not syncTab:find("overlayBeta", 1, true),
+      "the Save Sync button carries no BETA badge")
+local title = view:match("local function syncTitle%(.-\nend")
+check(title and not title:find("Beta", 1, true),
+      "nor does the Save Sync popup title")
 check(view:find("buildSyncModal", 1, true) ~= nil,
       "the sync UI is a modal, so it works from any tab")
 local modals = view:match("local function modalUp%(imp%)(.-)\nend")

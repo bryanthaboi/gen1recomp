@@ -1,7 +1,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
-local T = require("tests.harness")
-local eq = T.eq
+local S = require("tests.harness").suite("gen2 arrow blink")
+local eq = S.eq
 love = love or require("tests.love_stub")
 
 local Typer = require("src.ui.gen2.Typer")
@@ -23,4 +23,4 @@ Typer.say(screen, { "HELLO", "WORLD" })
 Typer.step(screen)
 eq(screen.arrowBlink, 1, "step keeps counting while a typer runs")
 
-T.finish()
+S.finish()

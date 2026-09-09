@@ -281,11 +281,7 @@ local function buildGame()
   function translate.zoomStep()
     return function(delta)
       local g = live()
-      if not (g and g.world and g.world.map) then return end
-      g.world:zoomStep(delta)
-      g.options = g.options or {}
-      g.options.zoom = rawRequire("src.render.Zoom").offset
-      if g.persistOptions then g:persistOptions() end
+      if g and g.zoomStep then g:zoomStep(delta) end
     end
   end
 

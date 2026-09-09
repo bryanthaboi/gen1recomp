@@ -146,10 +146,23 @@ local keyedShader = nil
 local keyedFailed = false
 local remapShader = nil
 local remapFailed = false
+local shaderCtor = nil
+
+local function compiler()
+  local ctor = love and love.graphics and love.graphics.newShader or nil
+  if ctor ~= shaderCtor then
+    shaderCtor = ctor
+    shader, failed = nil, false
+    keyedShader, keyedFailed = nil, false
+    remapShader, remapFailed = nil, false
+  end
+  return ctor
+end
 
 -- nil (and a one-shot warning) if shaders are unavailable, so callers can fall
 -- back to the plain grayscale draw instead of crashing a whole boot.
 function GbcPalette.shader()
+  compiler()
   if shader or failed then return shader end
   if not (love and love.graphics and love.graphics.newShader) then
     failed = true
@@ -165,6 +178,7 @@ function GbcPalette.shader()
 end
 
 function GbcPalette.keyedShader()
+  compiler()
   if keyedShader or keyedFailed then return keyedShader end
   if not (love and love.graphics and love.graphics.newShader) then
     keyedFailed = true
@@ -182,6 +196,7 @@ end
 -- The same contract as GbcPalette.shader for the backwards pass: nil rather
 -- than an error, so a caller can fall back to its own approximation.
 function GbcPalette.remapShader()
+  compiler()
   if remapShader or remapFailed then return remapShader end
   if not (love and love.graphics and love.graphics.newShader) then
     remapFailed = true

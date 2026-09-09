@@ -16,6 +16,7 @@
 -- same work as making a new one.
 
 local SafePath = require("src.mods.SafePath")
+local JobAssetIO = require("src.mods.JobAssetIO")
 
 local Job = {}
 
@@ -23,6 +24,7 @@ Job.MAX_INFLIGHT = 2       -- per mod
 Job.MAX_GLOBAL = 4         -- across all mods, so jobs cannot eat every core
 Job.DEFAULT_SECONDS = 5
 Job.MAX_SECONDS = 30
+Job.MAX_ASSET_SECONDS = 300 -- explicit source/cache preprocessing jobs
 -- Depth cap on the data crossing the channel.  A cycle is caught by the seen
 -- set; this catches the merely absurd.
 Job.MAX_DEPTH = 16
@@ -109,9 +111,24 @@ function Job.run(loader, modId, modPath, script, arg, opts)
   end
 
   opts = type(opts) == "table" and opts or {}
+  local assetIO = opts.assetIO == true
   local seconds = tonumber(opts.maxSeconds) or Job.DEFAULT_SECONDS
-  if seconds > Job.MAX_SECONDS then seconds = Job.MAX_SECONDS end
+  local maxSeconds = assetIO and Job.MAX_ASSET_SECONDS or Job.MAX_SECONDS
+  if seconds > maxSeconds then seconds = maxSeconds end
   if seconds < 1 then seconds = 1 end
+
+  -- Asset-I/O is opt-in per job. Only a data-only copy of this mod's own
+  -- import declarations and root crosses the thread boundary; the worker
+  -- reconstructs the actual capability with engine-owned validation.
+  local assetDescriptor = nil
+  if assetIO then
+    local mod = loader.mods and loader.mods[modId]
+    local descriptor, descriptorErr = JobAssetIO.descriptor(
+      mod and mod.manifest, modPath)
+    if not descriptor then return nil, descriptorErr end
+    assetDescriptor, dataErr = plain(descriptor)
+    if dataErr then return nil, dataErr end
+  end
 
   nextId = nextId + 1
   local argName = "modjob_arg_" .. nextId
@@ -128,8 +145,14 @@ function Job.run(loader, modId, modPath, script, arg, opts)
   local permissions = select(2, pcall(Json.encode,
     loader.mods and loader.mods[modId]
       and loader.mods[modId].manifest.permissionSet or {})) or "{}"
+  local assetJson = ""
+  if assetDescriptor then
+    local okAsset, encoded = pcall(Json.encode, assetDescriptor)
+    if not okAsset then return nil, "could not encode asset-I/O descriptor" end
+    assetJson = encoded
+  end
   local started = pcall(thread.start, thread, modId, safe, argName, resultName,
-    permissions)
+    permissions, assetJson)
   if not started then return nil, "could not start a job thread" end
 
   liveGlobal = liveGlobal + 1

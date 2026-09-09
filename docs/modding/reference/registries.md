@@ -9,6 +9,31 @@ different record, or no home at all -- the registry carries a Gen 2
 subsection built from the same catalog entry. Concepts and verbs:
 [Concepts: Registries](Concepts-Registries).
 
+## Reading this reference
+
+Use the wiki's `Choose-A-Registry` guide when you know what you want
+to make but not the registry name. This page is the precise schema
+catalog once you have chosen one.
+
+### Type notation
+
+- `string`, `number`, `boolean`, and `function` name the Lua value to
+  supply. A function is code the engine calls later; see the linked
+  concept/reference page for its arguments and return value.
+- `{ field, otherField? }` is a record (a Lua table with named fields).
+  A `?` means that field is optional. `list of T` is an ordered Lua
+  table of values shaped like `T`; `map of K -> V` maps each key to a
+  value shaped like `V`.
+- `A | B` means either shape is accepted. `moves id`, `items id`, and
+  similar phrases mean the internal id of a record in that registry,
+  not its displayed name.
+
+### Example status
+
+Every example below is **shape only**. Put an adapted call in your mod
+entry file. Replace `...` and names such as `fn` with real values, and
+supply every field marked required when registering a new record.
+
 ## ai_classes
 
 - semantics: `record`
@@ -21,7 +46,7 @@ subsection built from the same catalog entry. Concepts and verbs:
 | `choose` | function | no |
 | `hpBelow` | integer >= 1 | no |
 | `item` | items id | no |
-| `kind` | one of "class" | "layer" | "brain" | no |
+| `kind` | one of "class" \| "layer" \| "brain" | no |
 | `onStatus` | boolean | no |
 | `score` | function | no |
 | `switch` | boolean | no |
@@ -29,6 +54,7 @@ subsection built from the same catalog entry. Concepts and verbs:
 | `switchChance` | integer 0..256 | no |
 | `uses` | integer >= 0 | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.ai_classes:patch("OPP_BROCK", { uses = 9 })
 ```
@@ -54,6 +80,7 @@ and reported. See the Gold subsection below for where it does land.
 | `event` | integer >= 0 | yes |
 | `index` | integer >= 1 | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.apricorns:override("RED_APRICORN", { apricorn = "RED_APRICORN", ball = "ULTRA_BALL", event = 600, index = 1 })
 ```
@@ -70,6 +97,7 @@ mod.content.apricorns:override("RED_APRICORN", { apricorn = "RED_APRICORN", ball
 - **deprecated** -- use sfx / cries / map_songs / music
 - value: any value
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.audio:override("mapSongs", { ... })
 ```
@@ -89,6 +117,7 @@ mod.content.audio:override("mapSongs", { ... })
 | `tossAnim` | string | no |
 | `wobbleFactor` | integer >= 1 | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.balls:override("GREAT_BALL", { randMax = 180, hpFactor = 12 })
 ```
@@ -104,6 +133,7 @@ mod.content.balls:override("GREAT_BALL", { randMax = 180, hpFactor = 12 })
 - target: `Data.battle_anims`
 - value: {seq, source?} | {blocks, type?} | {height, path, source?, tiles, width}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.battle_anims:register("SHADOW_BALL", { seq = { ... } })
 ```
@@ -133,6 +163,7 @@ accepted and merged as-is.
 | `scripts` | map of string -> list of list of any value |
 | `source` | string |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.battle_anims:patch("moves", { SHADOW_BALL = "5e86" })
 ```
@@ -147,6 +178,7 @@ mod.content.battle_anims:patch("moves", { SHADOW_BALL = "5e86" })
 | `path` | file path | yes |
 | `scale` | number 0.25..4 | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.battle_sprite_scales:register("abra_back", {
   path = "assets/generated/battle/back/abrab.png",
@@ -169,6 +201,7 @@ scale composes with the send-out grow animation.
 - target: `Data.commands`
 - value: function | {blocking?, fn, foreground?}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.commands:register("shake_screen", function(ctx, frames) ... end)
 ```
@@ -197,6 +230,7 @@ accepted and merged as-is.
 | `moveMax` | integer >= 1 |
 | `partyMax` | integer >= 1 |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.constants:patch("levelCap", 80)
 ```
@@ -265,6 +299,7 @@ accepted and merged as-is.
 | `treeMonSetOrder` | list of string |
 | `types` | map of string -> integer >= 0 |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.constants:patch("speciesOrder", { [252] = "MODMON" })
 ```
@@ -275,6 +310,7 @@ mod.content.constants:patch("speciesOrder", { [252] = "MODMON" })
 - target: `Data.audio.cries`
 - value: {header, length, pitch} | {file} | {base, length?, pitch?} | {chip, length?, pitch?}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.cries:patch("PIKACHU", { pitch = 200 })
 ```
@@ -296,6 +332,7 @@ and reported. See the Gold subsection below for where it does land.
 | `sprite` | integer 0..255 | yes |
 | `type` | integer 1..6 | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.decorations:patch("deco:2", { name = "COZY" })
 ```
@@ -316,6 +353,7 @@ mod.content.decorations:patch("deco:2", { name = "COZY" })
 | `id` | string | no |
 | `water` | {rate, slots} | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.encounters:patch("ROUTE_1", { grass = { rate = 30 } })
 ```
@@ -342,12 +380,13 @@ accepted and merged as-is.
 | `source` | string |
 | `swarmGrass` | map of string -> {map?, rates, slots} |
 | `swarmWater` | map of string -> {map?, rate, slots} |
-| `timeFishGroups` | map of string | integer 0..255 -> {day, nite} |
+| `timeFishGroups` | map of string \| integer 0..255 -> {day, nite} |
 | `treeMonsAsleep` | {DAY, MORN, NITE} |
 | `treeSets` | map of string -> {common, rare?} |
 | `trees` | map of string -> string |
 | `water` | map of string -> {map?, rate, slots} |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.encounters:patch("grass", { ROUTE_29 = { rates = { NITE = 40 } } })
 ```
@@ -362,6 +401,7 @@ mod.content.encounters:patch("grass", { ROUTE_29 = { rates = { NITE = 40 } } })
 | `check` | function | yes |
 | `describe` | function | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.evolution_methods:register("FRIENDSHIP", { check = fn })
 ```
@@ -389,6 +429,7 @@ accepted and merged as-is.
 | `playerPics` | {back?, demoBack?, front?, oakBack?} |
 | `townMap` | {background?, cursorOrder?, gridPixelSize?, locations?, nest?, upArrow?} |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.field:patch("boot", { startMap = "SABLE_COVE" })
 ```
@@ -406,6 +447,7 @@ to do for each one.
 - target: `Data.font`
 - value: {advance?, base, charmap?, glyphsPerRow?, image} | {code, seq} | {bold?, file?, size?, spacing?, tiles?, yOffset?}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.font:register("charmap:hiragana_a", { seq = "あ", code = 256 })
 ```
@@ -419,6 +461,7 @@ mod.content.font:register("charmap:hiragana_a", { seq = "あ", code = 256 })
 |---|---|---|
 | `expForLevel` | function | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.growth_rates:register("ERRATIC", { expForLevel = fn })
 ```
@@ -437,6 +480,7 @@ and reported. See the Gold subsection below for where it does land.
 | `heldEffect` | string | yes |
 | `heldParameter` | integer 0..255 | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.held_items:override("LEFTOVERS", { heldEffect = "HELD_LEFTOVERS", heldParameter = 0 })
 ```
@@ -452,6 +496,7 @@ mod.content.held_items:override("LEFTOVERS", { heldEffect = "HELD_LEFTOVERS", he
 - target: `Data.icons.bySpecies`
 - value: string | {frames?, image}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.icons:register("MODMON", "QUADRUPED")  -- a built-in name, or { image = mod.assets:path("icon.png"), frames = 2 }
 ```
@@ -465,6 +510,7 @@ The record differs; the registry name, the verbs and the id space
 do not.
 - value: string | {frames, height, id?, image, index?, width}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.icons:override("TOTODILE", "ICON_MONSTER")
 ```
@@ -481,6 +527,7 @@ mod.content.icons:override("TOTODILE", "ICON_MONSTER")
 | `needsTarget` | boolean | no |
 | `use` | function | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.item_effects:register("MOON_FLUTE", { use = fn, field = true })
 ```
@@ -507,6 +554,7 @@ mod.content.item_effects:register("MOON_FLUTE", { use = fn, field = true })
 | `price` | integer >= 0 | yes |
 | `tossable` | boolean | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.items:patch("POTION", { price = 100 })
 ```
@@ -548,6 +596,7 @@ and reported. See the Gold subsection below for where it does land.
 | `x` | integer >= 0 | yes |
 | `y` | integer >= 0 | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.landmarks:patch("LANDMARK_ROUTE_29", { x = 12 })
 ```
@@ -562,12 +611,17 @@ mod.content.landmarks:patch("LANDMARK_ROUTE_29", { x = 12 })
 - semantics: `record`
 - target: `Data.link_fields`
 
+**Cart protocol only:** this registry does not make a freely enabled
+loose mod eligible for player link play. Player links are set up in the
+launcher with a vanilla cart or a sealed custom cart.
+
 | field | type | required |
 |---|---|---|
 | `pack` | function | no |
-| `rev` | integer >= 0 | string | yes |
+| `rev` | integer >= 0 \| string | yes |
 | `unpack` | function | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.link_fields:register("held_item", { rev = 1, pack = fn, unpack = fn })
 ```
@@ -585,6 +639,7 @@ to do for each one.
 - target: `Data.map_scripts`
 - value: {onBoulderMoved?, onEnter?, onInteract?, onStep?, onVictory?, priority?, scripts?, snorlaxWake?, talk?}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.map_scripts:register("PALLET_TOWN", { talk = { ... } })
 ```
@@ -602,6 +657,7 @@ to do for each one.
 - target: `Data.audio.mapSongs`
 - value: music id
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.map_songs:override("PALLET_TOWN", "Music_Routes1")
 ```
@@ -615,7 +671,7 @@ mod.content.map_songs:override("PALLET_TOWN", "Music_Routes1")
 |---|---|---|
 | `blocks` | list of integer 0..255 | yes |
 | `borderBlock` | integer 0..255 | no |
-| `connections` | map of one of "north" | "south" | "east" | "west" -> any value | no |
+| `connections` | map of one of "north" \| "south" \| "east" \| "west" -> any value | no |
 | `height` | integer >= 1 | yes |
 | `id` | string | yes |
 | `index` | integer >= 0 | no |
@@ -627,6 +683,7 @@ mod.content.map_songs:override("PALLET_TOWN", "Music_Routes1")
 | `warps` | list of {destGroup?, destMap, destMapNum?, destWarp, x, y} | no |
 | `width` | integer >= 1 | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.maps:register("MY_CAVE", { tileset = "CAVERN", ... })
 ```
@@ -642,6 +699,7 @@ mod.content.maps:register("MY_CAVE", { tileset = "CAVERN", ... })
 - target: none
 - value: {run, since}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.migrations:register("my_mod", { since = "1.0.0", run = fn })
 ```
@@ -654,9 +712,10 @@ mod.content.migrations:register("my_mod", { since = "1.0.0", run = fn })
 | field | type | required |
 |---|---|---|
 | `accuracyChecked` | boolean | no |
-| `kind` | one of "primary" | "secondary" | "full" | yes |
+| `kind` | one of "primary" \| "secondary" \| "full" | yes |
 | `run` | function | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = fn })
 ```
@@ -675,15 +734,15 @@ mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = f
 |---|---|---|
 | `accuracy` | integer 0..100 | yes |
 | `anim` | any value | no |
-| `category` | one of "physical" | "special" | "status" | no |
+| `category` | one of "physical" \| "special" \| "status" | no |
 | `chargeText` | string | no |
 | `counterable` | boolean | no |
 | `effect` | move_effects id | yes |
-| `fixedDamage` | integer >= 1 | function | no |
+| `fixedDamage` | integer >= 1 \| function | no |
 | `highCrit` | boolean | no |
 | `id` | string | yes |
 | `index` | integer 0..255 | no |
-| `multiHit` | integer >= 1 | list of integer >= 1 | no |
+| `multiHit` | integer >= 1 \| list of integer >= 1 | no |
 | `name` | string | yes |
 | `power` | integer 0..255 | yes |
 | `pp` | integer 0..64 | yes |
@@ -691,6 +750,7 @@ mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = f
 | `semiInvulnerable` | boolean | no |
 | `type` | type_chart id | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.moves:patch("BLIZZARD", { accuracy = 70 })
 ```
@@ -707,15 +767,15 @@ do not.
 |---|---|---|
 | `accuracy` | integer 0..100 | yes |
 | `anim` | any value | no |
-| `category` | one of "physical" | "special" | "status" | no |
+| `category` | one of "physical" \| "special" \| "status" | no |
 | `chargeText` | string | no |
 | `counterable` | boolean | no |
 | `effect` | move_effects id | yes |
-| `fixedDamage` | integer >= 1 | function | no |
+| `fixedDamage` | integer >= 1 \| function | no |
 | `highCrit` | boolean | no |
 | `id` | string | yes |
 | `index` | integer 0..255 | no |
-| `multiHit` | integer >= 1 | list of integer >= 1 | no |
+| `multiHit` | integer >= 1 \| list of integer >= 1 | no |
 | `name` | string | yes |
 | `power` | integer 0..255 | yes |
 | `pp` | integer 0..64 | yes |
@@ -729,6 +789,7 @@ do not.
 - target: `Data.audio.songs`
 - value: {address, bank, engine?} | {file, intro?, loopFile?, loopSeconds?, seconds?} | {channels, drums?, program, waves?} | {chip}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.music:register("MOD_SONG", { file = "song.ogg" })
 ```
@@ -739,6 +800,7 @@ mod.content.music:register("MOD_SONG", { file = "song.ogg" })
 - target: `Data.palettes.palettes`
 - value: list of list of integer 0..255 | {colors}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.palettes:override("MEWMON", { {255,255,255}, ... })
 ```
@@ -759,11 +821,11 @@ accepted and merged as-is.
 | `battleObjects` | map of string -> list of list of integer 0..255 |
 | `bg` | list of list of list of integer 0..255 |
 | `daytimes` | list of string |
-| `environments` | map of string -> map of one of "MORN" | "DAY" | "NITE" | "DARK" -> list of integer >= 0 |
+| `environments` | map of string -> map of one of "MORN" \| "DAY" \| "NITE" \| "DARK" -> list of integer >= 0 |
 | `expBar` | list of list of integer 0..255 |
 | `generation` | integer >= 1 |
-| `hpBar` | map of one of "green" | "yellow" | "red" | "blue" -> list of list of integer 0..255 |
-| `objects` | map of one of "MORN" | "DAY" | "NITE" | "DARK" -> list of list of list of integer 0..255 |
+| `hpBar` | map of one of "green" \| "yellow" \| "red" \| "blue" -> list of list of integer 0..255 |
+| `objects` | map of one of "MORN" \| "DAY" \| "NITE" \| "DARK" -> list of list of list of integer 0..255 |
 | `partyMenu` | list of list of list of integer 0..255 |
 | `pokemon` | map of string -> {normal, shiny} |
 | `roofSlot` | integer 0..7 |
@@ -772,6 +834,7 @@ accepted and merged as-is.
 | `source` | string |
 | `trainers` | map of string -> list of list of integer 0..255 |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.palettes:patch("pokemon", { TOTODILE = { shiny = { {255,255,255}, {255,0,0} } } })
 ```
@@ -800,6 +863,7 @@ and reported. See the Gold subsection below for where it does land.
 | `name` | string | no |
 | `number` | integer 0..255 | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.phone_contacts:patch("PHONE_YOUNGSTER_JOEY", { map = "ROUTE_31" })
 ```
@@ -828,7 +892,7 @@ mod.content.phone_contacts:patch("PHONE_YOUNGSTER_JOEY", { map = "ROUTE_31" })
 | `evolutions` | list of {item?, level?, method, species} | yes |
 | `frontSize` | integer 1..7 | yes |
 | `growthRate` | growth_rates id | yes |
-| `icon` | string | {frames?, image} | no |
+| `icon` | string \| {frames?, image} | no |
 | `id` | string | yes |
 | `index` | integer 0..255 | no |
 | `learnset` | list of {level, move} | yes |
@@ -841,6 +905,7 @@ mod.content.phone_contacts:patch("PHONE_YOUNGSTER_JOEY", { map = "ROUTE_31" })
 | `trueColor` | boolean | no |
 | `types` | list of type_chart id | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.pokemon:patch("MEW", { baseStats = { attack = 120 } })
 ```
@@ -885,6 +950,7 @@ do not.
 | `trueColor` | boolean | no |
 | `types` | list of type_chart id | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.pokemon:patch("TOTODILE", { baseStats = { specialAttack = 80 } })
 ```
@@ -903,6 +969,7 @@ and reported. See the Gold subsection below for where it does land.
 | `channel` | integer 0..255 | no |
 | `name` | string | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.radio_channels:register("PIRATE_RADIO", { channel = 9, name = "PIRATE RADIO" })
 ```
@@ -931,6 +998,7 @@ mod.content.radio_channels:register("PIRATE_RADIO", { channel = 9, name = "PIRAT
 | `update` | function | no |
 | `worldPresent` | function | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.render_pipelines:register("voxel", { label = "VOXEL", levels = { "OFF", "15", "35", "50" }, drawWorld = fn })
 ```
@@ -945,6 +1013,7 @@ Gen 1 table to merge into and a write here on a Gen 1 boot is dropped
 and reported. See the Gold subsection below for where it does land.
 - value: string
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.rom_text:override("_WokeUpText", "%s se réveille !")
 ```
@@ -963,6 +1032,7 @@ mod.content.rom_text:override("_WokeUpText", "%s se réveille !")
 |---|---|---|
 | `name` | string | yes |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.rulesets:register("no_crits", { name = "no crits", critRate = 0 })
 ```
@@ -980,6 +1050,7 @@ to do for each one.
 - target: `Data.screens`
 - value: function | {new}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.screens:register("QuestLog", { new = function(game) ... end })
 ```
@@ -990,6 +1061,7 @@ mod.content.screens:register("QuestLog", { new = function(game) ... end })
 - target: `Data.audio.sfx`
 - value: string | {address, bank, engine?} | {file} | {chip}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.sfx:register("SFX_MOD_CHIME", { file = "chime.ogg" })
 ```
@@ -1012,6 +1084,7 @@ mod.content.sfx:register("SFX_MOD_CHIME", { file = "chime.ogg" })
 | `trueColor` | boolean | no |
 | `walker` | boolean | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.sprites:register("SPRITE_HERO", { image = "...", frames = 6 })
 ```
@@ -1035,10 +1108,11 @@ do not.
 | `paletteSource` | string | no |
 | `source` | string | no |
 | `species` | pokemon id | no |
-| `spriteType` | one of "WALKING_SPRITE" | "STANDING_SPRITE" | "STILL_SPRITE" | "POKEMON_SPRITE" | no |
+| `spriteType` | one of "WALKING_SPRITE" \| "STANDING_SPRITE" \| "STILL_SPRITE" \| "POKEMON_SPRITE" | no |
 | `trueColor` | boolean | no |
 | `walker` | boolean | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.sprites:patch("SPRITE_BEAUTY", { palette = "PAL_OW_RED", paletteId = 0 })
 ```
@@ -1063,6 +1137,7 @@ mod.content.sprites:patch("SPRITE_BEAUTY", { palette = "PAL_OW_RED", paletteId =
 | `shakeBonus` | integer 0..255 | no |
 | `statPenalty` | {div, stat} | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.statuses:patch("BRN", { catchBonus = 12 })
 ```
@@ -1078,6 +1153,7 @@ mod.content.statuses:patch("BRN", { catchBonus = 12 })
 - target: `Data.strings`
 - value: string
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.strings:override("But, it failed!", "Echec !")
 ```
@@ -1088,6 +1164,7 @@ mod.content.strings:override("But, it failed!", "Echec !")
 - target: `Data.text`
 - value: string
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.text:override("_PalletTownText1", "HELLO!")
 ```
@@ -1107,6 +1184,7 @@ shape.
 
 - value: map of string -> {asm?, cableClub?, label?, mart?, nurse?, pc?, text?}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.text_pointers:patch("PalletTown", { TEXT_PALLETTOWN_SIGN = { text = "_MySign" } })
 ```
@@ -1138,6 +1216,7 @@ to do for each one.
 | `walkable` | any value | no |
 | `warpTiles` | any value | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.tilesets:register("MY_TILES", { image = "...", blocks = { ... } })
 ```
@@ -1153,6 +1232,7 @@ mod.content.tilesets:register("MY_TILES", { image = "...", blocks = { ... } })
 - target: `Data.tokens`
 - value: function
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.tokens:register("CLOCK", function(game) return "12" end)
 ```
@@ -1180,6 +1260,7 @@ mod.content.tokens:register("CLOCK", function(game) return "12" end)
 | `pic` | file path | no |
 | `trueColor` | boolean | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.trainers:patch("OPP_BROCK", { baseMoney = 99 })
 ```
@@ -1206,6 +1287,7 @@ do not.
 | `trainers` | list of {id?, index?, name, party, trainerType?} | yes |
 | `trueColor` | boolean | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.trainers:patch("BEAUTY", { baseMoney = 99 })
 ```
@@ -1222,6 +1304,7 @@ mod.content.trainers:patch("BEAUTY", { baseMoney = 99 })
 | `frames` | integer >= 1 | yes |
 | `sound` | string | no |
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.transitions:register("dissolve", { frames = 30, draw = fn })
 ```
@@ -1239,6 +1322,7 @@ to do for each one.
 - target: `Data.type_chart`
 - value: {multiplier} | {category, index?, name?}
 
+<!-- snippet: illustrative -->
 ```lua
 mod.content.type_chart:register("BUG>PSYCHIC_TYPE", { multiplier = 20 })
 ```

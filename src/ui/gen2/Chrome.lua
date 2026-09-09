@@ -118,6 +118,12 @@ end
 -- pokegold engine/battle/core.asm:8646, engine/events/halloffame.asm:270
 local function clipTo(x, y, w, h)
   local G = love.graphics
+  if G.transformPoint then
+    local x1, y1 = G.transformPoint(x, y)
+    local x2, y2 = G.transformPoint(x + w, y + h)
+    x, y = math.floor(math.min(x1, x2)), math.floor(math.min(y1, y2))
+    w, h = math.ceil(math.abs(x2 - x1)), math.ceil(math.abs(y2 - y1))
+  end
   if G.intersectScissor then G.intersectScissor(x, y, w, h)
   else G.setScissor(x, y, w, h) end
 end

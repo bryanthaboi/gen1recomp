@@ -627,6 +627,10 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   end
 
   if itemId == "ESCAPE_ROPE" then
+    -- ItemUseEscapeRope: engine/items/item_effects.asm:1492
+    if battle then
+      return "failed", { notTime(data, save) }
+    end
     return "escape_rope"
   end
   if itemId == "TOWN_MAP" then

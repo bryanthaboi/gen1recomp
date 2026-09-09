@@ -49,6 +49,41 @@ line("writes, and the value schema. Where Gold differs -- a different table, a")
 line("different record, or no home at all -- the registry carries a Gen 2")
 line("subsection built from the same catalog entry. Concepts and verbs:")
 line("[Concepts: Registries](Concepts-Registries).")
+line("")
+line("## Reading this reference")
+line("")
+if explicit then
+  line("Start with [Choose a Registry](Choose-A-Registry) when you know what")
+  line("you want to make but not the registry name. This page is the precise")
+  line("schema catalog once you have chosen one.")
+else
+  line("Use the wiki's `Choose-A-Registry` guide when you know what you want")
+  line("to make but not the registry name. This page is the precise schema")
+  line("catalog once you have chosen one.")
+end
+line("")
+line("### Type notation")
+line("")
+line("- `string`, `number`, `boolean`, and `function` name the Lua value to")
+line("  supply. A function is code the engine calls later; see the linked")
+line("  concept/reference page for its arguments and return value.")
+line("- `{ field, otherField? }` is a record (a Lua table with named fields).")
+line("  A `?` means that field is optional. `list of T` is an ordered Lua")
+line("  table of values shaped like `T`; `map of K -> V` maps each key to a")
+line("  value shaped like `V`.")
+line("- `A | B` means either shape is accepted. `moves id`, `items id`, and")
+line("  similar phrases mean the internal id of a record in that registry,")
+line("  not its displayed name.")
+line("")
+line("### Example status")
+line("")
+line("Every example below is **shape only**. Put an adapted call in your mod")
+line("entry file. Replace `...` and names such as `fn` with real values, and")
+line("supply every field marked required when registering a new record.")
+
+local function tableCell(value)
+  return tostring(value):gsub("|", "\\|")
+end
 
 -- the value schema of one spec, whichever generation's shape it carries.
 -- Schemas.check reads keys/keyValue, then value, then fields in that order,
@@ -66,7 +101,7 @@ local function renderSchema(spec)
     for keyName in pairs(spec.keys) do keyNames[#keyNames + 1] = keyName end
     table.sort(keyNames)
     for _, keyName in ipairs(keyNames) do
-      line("| `%s` | %s |", keyName, spec.keys[keyName].desc)
+      line("| `%s` | %s |", keyName, tableCell(spec.keys[keyName].desc))
     end
   elseif spec.fields then
     line("")
@@ -77,7 +112,7 @@ local function renderSchema(spec)
     table.sort(fieldNames)
     for _, fieldName in ipairs(fieldNames) do
       local ft = spec.fields[fieldName]
-      line("| `%s` | %s | %s |", fieldName, ft.desc,
+      line("| `%s` | %s | %s |", fieldName, tableCell(ft.desc),
         ft.kind == "opt" and "no" or "yes")
     end
   elseif spec.keyValue then
@@ -98,6 +133,7 @@ end
 local function renderExample(example, notes)
   if example then
     line("")
+    line("<!-- snippet: illustrative -->")
     line("```lua")
     line("%s", example)
     line("```")
@@ -117,6 +153,12 @@ for _, name in ipairs(names) do
   line("- target: %s", spec.target and ("`Data." .. spec.target .. "`") or "none")
   if spec.deprecated then
     line("- **deprecated** -- use %s", spec.deprecated.useInstead)
+  end
+  if name == "link_fields" then
+    line("")
+    line("**Cart protocol only:** this registry does not make a freely enabled")
+    line("loose mod eligible for player link play. Player links are set up in the")
+    line("launcher with a vanilla cart or a sealed custom cart.")
   end
   -- The mirror of the Gen 2 gating below.  Six registries exist because GOLD
   -- does (the phone book, the decorations, the radio dial), so they carry no

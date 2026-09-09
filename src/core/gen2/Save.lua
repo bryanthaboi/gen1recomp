@@ -118,13 +118,34 @@ local function saveNames(version)
   -- no save and dropped CONTINUE (and a following SAVE wrote a second copy to
   -- the flat path the launcher no longer looks at).  Reading through the same
   -- slot resolution keeps the in-game load/save and the launcher on one file.
+  --
+  -- Resolve the SCOPE the same way as well.  A cart's saves are keyed by cart
+  -- id rather than by version: SaveData resolves every path through
+  -- `activeScopeKey`, which answers `cart_<id>` while one is active, and the
+  -- launcher lists, creates and selects a cart's slots from the `cartSlots`
+  -- registry (RomImporter._refreshSlots / _selectSlot / _newSlot).  This
+  -- module asked in the version's name alone, so a Gen 2 cart read and wrote
+  -- the BASE GAME's playthrough.  Gen 1 was unaffected because it saves
+  -- through SaveData, which is already cart-scoped.
   local ok, SaveData = pcall(require, "src.core.SaveData")
-  local slot = ok and SaveData.activeSlot and SaveData.activeSlot(version) or nil
+  SaveData = ok and SaveData or nil
+  local cart = SaveData and SaveData.getCart and SaveData.getCart() or nil
+  if type(cart) ~= "string" or cart == "" then cart = nil end
+  local slot
+  if cart then
+    slot = SaveData.activeCartSlot and SaveData.activeCartSlot(cart) or nil
+  elseif SaveData then
+    slot = SaveData.activeSlot and SaveData.activeSlot(version) or nil
+  end
   if slot then
-    local main = "saves/" .. version .. "/" .. slot .. ".lua"
+    local scope = cart and ("cart_" .. cart) or version
+    local main = "saves/" .. scope .. "/" .. slot .. ".lua"
     return main, main .. ".bak", main .. ".tmp"
   end
-  local main = "save" .. GameVersion.saveSuffix(version) .. ".lua"
+  -- SaveData.legacyNames names a cart "save_cart_<id>.lua" and a version by
+  -- its own suffix; this is that, so the two ends agree before slots exist.
+  local suffix = cart and ("_cart_" .. cart) or GameVersion.saveSuffix(version)
+  local main = "save" .. suffix .. ".lua"
   return main, main .. ".bak", main .. ".tmp"
 end
 
@@ -911,7 +932,21 @@ function Save.save(save)
   local version = save.version
   do
     local ok, SaveData = pcall(require, "src.core.SaveData")
-    if ok and SaveData.activeSlot and not SaveData.activeSlot(version) then
+    -- In the CART's registry when one is active, for the same reason
+    -- saveNames resolves the cart's scope: otherwise the first save inside a
+    -- cart registers a slot against the base game and makes it active, so the
+    -- cart's playthrough appears in the launcher's list for the base version
+    -- and the player's own save there is what it overwrites.
+    local cart = ok and SaveData.getCart and SaveData.getCart() or nil
+    if type(cart) ~= "string" or cart == "" then cart = nil end
+    if ok and cart then
+      if SaveData.activeCartSlot and not SaveData.activeCartSlot(cart) then
+        local id = SaveData.createCartSlot and SaveData.createCartSlot(cart)
+        if id and SaveData.setActiveCartSlot then
+          SaveData.setActiveCartSlot(cart, id)
+        end
+      end
+    elseif ok and SaveData.activeSlot and not SaveData.activeSlot(version) then
       local id = SaveData.createSlot and SaveData.createSlot(version)
       if id and SaveData.setActiveSlot then
         SaveData.setActiveSlot(version, id)

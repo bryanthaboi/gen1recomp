@@ -135,6 +135,8 @@ function TrainerAI.useItem(battle, item)
     -- trainer_ai.asm:719 -> effects.asm:414-415
     Status.afterStatChange(battle, enemy, stat, battle.player)
     enemy.hazeStatReset = nil
+    -- trainer_ai.asm:716 -> effects.asm:484 (PlayCurrentMoveAnimation)
+    table.insert(msgs, { anim = "XSTATITEM_DUPLICATE_ANIM" })
     table.insert(msgs, Strings("%s's\n%s rose!", displayName(enemy), Strings(STAT_LABEL[stat])))
   elseif item == "GUARD_SPEC" then
     enemy.mist = true

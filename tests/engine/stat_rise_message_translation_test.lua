@@ -70,7 +70,9 @@ local aiBattle = { enemy = enemy, trainer = { name = "TRAINER" }, data = Data }
 
 withCatalog({ SPEED = "VITESSE" }, function()
   local msgs = TrainerAI.useItem(aiBattle, "X_SPEED")
-  T.check(msgs[2]:find("VITESSE", 1, true) ~= nil,
+  T.check(type(msgs[2]) == "table" and msgs[2].anim == "XSTATITEM_DUPLICATE_ANIM",
+    "the AI trainer's X item plays the stat-up animation before the rose! page")
+  T.check(msgs[3]:find("VITESSE", 1, true) ~= nil,
     "a catalog translating SPEED reaches the AI trainer's X SPEED rose! message")
 end)
 

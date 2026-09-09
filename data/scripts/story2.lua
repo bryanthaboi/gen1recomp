@@ -357,13 +357,15 @@ local function saffronGate(guardText, triggers, horizontal)
           return
         end
         if takeGuardDrink(game) then
+          -- SaffronGateGuardGiveDrinkText: sound_get_key_item sits between the
+          -- two text_far halves (scripts/Route5Gate.asm:102-106)
           game.stack:push(TextBox.new(game,
             t._SaffronGateGuardImParchedText or "Whoa, boy!\nI'm parched!",
             function()
               game.stack:push(TextBox.new(game,
                 (t._SaffronGateGuardYouCanGoOnThroughText or
                  "You can go on\nthrough!"), done))
-            end))
+            end, TextBox.soundOpts(game, "Get_Key_Item")))
           return
         end
         game.stack:push(TextBox.new(game,
@@ -403,7 +405,7 @@ local function saffronGate(guardText, triggers, horizontal)
             game.stack:push(TextBox.new(game,
               (t._SaffronGateGuardYouCanGoOnThroughText or
                "You can go on\nthrough!")))
-          end))
+          end, TextBox.soundOpts(game, "Get_Key_Item")))
         return true
       end
       local back

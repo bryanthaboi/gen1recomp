@@ -50,19 +50,30 @@ end
 local function startGame(game, ow, t, done, balls, introText)
   game.save.safari = { balls = balls or BALLS, steps = STEPS }
   game.save.safariNags = nil
+  -- ResetEventReuseHL EVENT_SAFARI_GAME_OVER -- scripts/SafariZoneGate.asm:196
+  game.save.safariGameOver = nil
   local TextBox = require("src.render.TextBox")
   local paid = introText
     or (t._SafariZoneGateSafariZoneWorker1ThatllBe500PleaseText
         or "That'll be ¥500\nplease!\f{PLAYER} received\n30 SAFARI BALLs!")
        :gsub("{NUM:[^}]*}", "500")
   paid = paid:gsub("{PLAYER}", game.save.player.name)
-  local pa = t._SafariZoneGateSafariZoneWorker1CallYouOnThePAText
-             or "\fWe'll call you on\nthe PA when you\nrun out of time\nor SAFARI BALLs!"
-  local luck = t._SafariZoneGateSafariZoneWorker1GoodLuckText or "Good Luck!"
-  game.stack:push(TextBox.new(game, paid .. pa .. "\f" .. luck, function()
-    if done then done() end
-    walkIntoZone(game, ow)
-  end))
+  local pa = (t._SafariZoneGateSafariZoneWorker1CallYouOnThePAText
+              or "\fWe'll call you on\nthe PA when you\nrun out of time\nor SAFARI BALLs!")
+             :gsub("^\f", "")
+  local money = function() return game.save.money end
+  -- scripts/SafariZoneGate.asm:181
+  local opts = { money = money }
+  -- scripts/SafariZoneGate.asm:215, pokeyellow scripts/SafariZoneGate_2.asm:57
+  if not introText then
+    opts = TextBox.soundOpts(game, "Get_Item1", opts)
+  end
+  game.stack:push(TextBox.new(game, paid, function()
+    game.stack:push(TextBox.new(game, pa, function()
+      if done then done() end
+      walkIntoZone(game, ow)
+    end, { money = money }))
+  end, opts))
 end
 
 -- Yellow's soft-lock fix (scripts/SafariZoneGate_2.asm): a player short of
@@ -107,18 +118,20 @@ end
 local function joinPrompt(game, ow, done)
   done = done or function() end
   local TextBox = require("src.render.TextBox")
-  local ChoiceBox = require("src.ui.ChoiceBox")
   local t = game.data.text
   local back = function(text)
     game.stack:push(TextBox.new(game, text, function()
       ow:scriptMove(ow.player, "down", 1, done, { collide = true })
     end))
   end
+  -- scripts/SafariZoneGate.asm:150-154
   game.stack:push(TextBox.new(game,
     t._SafariZoneGateSafariZoneWorker1WouldYouLikeToJoinText
     or "For just ¥500 you\ncan join the hunt!\fWould you like to\njoin the hunt?",
-    function()
-      game.stack:push(ChoiceBox.new(game, function(yes)
+    nil,
+    { money = function() return game.save.money end,
+      moneyWithChoice = true,
+      choice = function(yes)
         if not yes then
           back(t._SafariZoneGateSafariZoneWorker1PleaseComeAgainText
                or "OK! Please come\nagain!")
@@ -133,8 +146,7 @@ local function joinPrompt(game, ow, done)
           game.save.money = game.save.money - FEE
           startGame(game, ow, t, done)
         end
-      end))
-    end))
+      end }))
 end
 
 M.SAFARI_ZONE_GATE = {
@@ -154,10 +166,26 @@ M.SAFARI_ZONE_GATE = {
   },
 
   -- the join trigger cells in front of the worker
+  -- (SafariZoneGateDefaultScript, scripts/SafariZoneGate.asm:18-50)
   onStep = function(game, ow, x, y)
     if y ~= 2 or (x ~= 3 and x ~= 4) then return false end
     if game.save.safari then return false end -- paid, walking in
-    joinPrompt(game, ow, nil)
+    local TextBox = require("src.render.TextBox")
+    game.stack:push(TextBox.new(game,
+      game.data.text._SafariZoneGateSafariZoneWorker1Text
+      or "Welcome to the\nSAFARI ZONE!",
+      function()
+        -- scripts/SafariZoneGate.asm:29
+        ow.player.facing = "right"
+        -- scripts/SafariZoneGate.asm:31-40, home/map_objects.asm:107-121
+        if x == 3 then
+          ow:scriptMove(ow.player, "right", 1, function()
+            joinPrompt(game, ow, nil)
+          end)
+        else
+          joinPrompt(game, ow, nil)
+        end
+      end))
     return true
   end,
 
@@ -165,6 +193,15 @@ M.SAFARI_ZONE_GATE = {
   -- "Leaving early?" -- yes ends the game and takes the leftover balls,
   -- no walks you back into the zone
   onEnter = function(game, ow)
+    -- scripts/SafariZoneGate.asm:79-94
+    if game.save.safariGameOver then
+      game.save.safariGameOver = nil
+      ow:queueScript({
+        { "show_text", "_SafariZoneGateSafariZoneWorker1GoodHaulComeAgainText" },
+        { "move_player", "down", 3 },
+      })
+      return
+    end
     if not game.save.safari or ow.player.cellY > 1 then return end
     -- QUEUED, never pushed: onEnter runs inside the arriving warp's
     -- Transition midpoint, and Transition:finish pops whatever is on top
@@ -183,11 +220,7 @@ M.SAFARI_ZONE_GATE = {
     ow:queueScript({
       { "ask", "_SafariZoneGateSafariZoneWorker1LeavingEarlyText" },
       { "jump_if_false", "stay" },
-      -- the port never reaches SafariZoneGateLeavingSafariScript's own
-      -- GOOD_HAUL_COME_AGAIN branch (safariGameOver warps straight to the
-      -- counter), so the sign-off rides on this path
       { "show_text", "_SafariZoneGateSafariZoneWorker1ReturnSafariBallsText" },
-      { "show_text", "_SafariZoneGateSafariZoneWorker1GoodHaulComeAgainText" },
       -- no value: set_field assigns nil, which is how save.safari is cleared
       { "set_field", "safari" },
       -- move_player runs through scriptMove, which skips onStepComplete, so

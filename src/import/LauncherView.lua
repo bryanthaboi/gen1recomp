@@ -1703,7 +1703,6 @@ local function buildHeader(imp, m)
     local o = chrome.sync
     o.active = imp._syncModal ~= nil
     btn(imp, tx, ty, w, tabH, "tab-sync", "", o)
-    overlayBeta(tx, ty, w, tabH, m)
     local eng = imp._sync
     if eng and eng.busy and eng:busy() then
       Kit.spinner(tx + w - math.floor(8 * m.s), ty + math.floor(8 * m.s),
@@ -5619,15 +5618,11 @@ local function buildDepResolverModal(imp, m)
   end
 end
 
-local SYNC_HINT = "Save sync keeps your saves and your mod list on our server so another device can pick them up. It is brand new, so keep your own backups too."
+local SYNC_HINT = "Save sync keeps your saves and your mod list on our server so another device can pick them up. Keep your own backups too."
 
 local function syncTitle(imp, m, px, py, pw, pad)
   local label = Strings("SAVE SYNC")
   Kit.text("button", label, px + pad, py, PAL.heading)
-  local bh = math.floor(15 * m.s)
-  local bw = Kit.textWidth("micro", "BETA") + math.floor(14 * m.s)
-  drawBetaTag(px + pad + Kit.textWidth("button", label) + math.floor(8 * m.s),
-    py + (Kit.textHeight("button") - bh) / 2, bw, bh)
   return py + Kit.textHeight("button") + math.floor(12 * m.s)
 end
 
@@ -5901,7 +5896,7 @@ local function buildSyncHome(imp, m, eng)
   local pad = math.floor(18 * m.s)
   local w = syncWidth(m, math.floor(460 * m.s))
   local linked = eng:linked()
-  local codes = eng.codes
+  local codes = linked and eng.codes or nil
   local body = linked
     and Strings("This device is linked. Saves sync when the launcher opens, a few seconds after each save, and every few minutes while the app is running.")
     or Strings(SYNC_HINT)
@@ -5918,7 +5913,7 @@ local function buildSyncHome(imp, m, eng)
     fit = syncFit(m,
       2 * pad + Kit.textHeight("button") + math.floor(22 * m.s) + codesH
         + devicesH + syncReserve(m, eng),
-      (linked and 4 or 3) + #devices, (linked and 4 or 3) + #devices,
+      (linked and 5 or 3) + #devices, (linked and 5 or 3) + #devices,
       { { font = "small", str = body, w = innerW, max = 5 } })
     if fit.over <= 0 or #devices == 0 then break end
     table.remove(devices)
@@ -5930,7 +5925,7 @@ local function buildSyncHome(imp, m, eng)
     fit.lines[1]) + math.floor(10 * m.s)
 
   if codes then
-    Kit.text("small", Strings("Enter these on your other device:"), px + pad,
+    Kit.text("small", Strings("Your sync codes, enter these on another device:"), px + pad,
       cy, PAL.muted)
     cy = cy + Kit.textHeight("small") + math.floor(6 * m.s)
     Kit.text("title", codes.code1, px + pad, cy, PAL.heading)
@@ -5967,6 +5962,10 @@ local function buildSyncHome(imp, m, eng)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-mods",
       Strings("Share or get a mod list"), { kind = "accent",
         action = function() imp:_syncView("mods") end }, fit)
+    cy = syncRow(imp, m, px + pad, cy, innerW, "sync-codes",
+      codes and Strings("Get new sync codes") or Strings("Show my sync codes"),
+      { enabled = not eng:busy(),
+        action = function() imp:_syncCodes() end }, fit)
     cy = syncRow(imp, m, px + pad, cy, innerW, "sync-unlink",
       Strings("Unlink this device"), { kind = "danger",
         action = function() imp:_syncUnlink() end }, fit)

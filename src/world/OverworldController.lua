@@ -84,9 +84,15 @@ local TELEPORT_OUT_SFX = {
   [4] = "Teleport_Exit2", [8] = "Teleport_Exit2", [12] = "Teleport_Exit2",
   [TELEPORT_OUT_INPLACE] = "Teleport_Exit1",
 }
+-- engine/overworld/player_animations.asm:104-118
+local WARP_PAD_OUT_HOLDS = { 3, 3, 3, 3, 3, 0 }
+local WARP_PAD_OUT_FRAMES = 15
 -- counting 0 up to 8 -- engine/overworld/player_animations.asm:20
 local TELEPORT_IN_HOLDS = { 3, 3, 3, 3, 3, 0, 1, 2, 3, 4, 5, 6, 7, 0 }
 local TELEPORT_IN_FRAMES = 43
+-- engine/overworld/player_animations.asm:22-25
+local TELEPORT_IN_PAD_HOLDS = { 3, 3, 3, 3, 3, 3, 0 }
+local TELEPORT_IN_PAD_FRAMES = 18
 local SPIN_DOWN_STEPS = 6
 -- engine/overworld/player_animations.asm:41-45
 local HOLE_IN_HOLDS = { 3, 3, 3, 3, 3, 0 }
@@ -108,20 +114,31 @@ local HEAL_FLASH_MAP = { [0] = 0, [1] = 2, [2] = 1, [3] = 3 }
 -- engine/overworld/healing_machine.asm:54
 local HEAL_FLASH_MAP_GBC = { [0] = 0, [1] = 0, [2] = 1, [3] = 2 }
 
+-- engine/overworld/healing_machine.asm:13-14
+local HEAL_OBP1_MAP = { [0] = 0, [1] = 0, [2] = 2, [3] = 3 }
+-- engine/overworld/healing_machine.asm:50
+local HEAL_OBP1_FLASH_MAP = { [0] = 0, [1] = 2, [2] = 0, [3] = 3 }
+
 -- engine/overworld/healing_machine.asm:74
 local function healMachineShader(visible)
   local base = PaletteFX.usesGbcPack() and PaletteFX.healMachineObp() or nil
+  local ogColors = nil
+  if not base and PaletteFX.usesSpriteObp() then
+    ogColors = PaletteFX.ogObj()
+    base = ogColors and PaletteFX.permute(ogColors,
+      visible and HEAL_OBP1_MAP or HEAL_OBP1_FLASH_MAP)
+  end
   if not base and visible then return nil end
   local shader = PaletteFX.shader()
   if not shader then return nil end
   local colors = base or PaletteFX.GRAYS
-  if not visible then
+  if not visible and not ogColors then
     colors = PaletteFX.permute(colors,
       base and HEAL_FLASH_MAP_GBC or HEAL_FLASH_MAP)
   end
   PaletteFX.sendColors(shader, colors)
   love.graphics.setShader(shader)
-  return shader
+  return shader, ogColors and colors or nil
 end
 
 -- scripts/VermilionDock.asm:39 VermilionDockSSAnneLeavesScript: her hull is
@@ -388,6 +405,7 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   end
   self.marchers = {}
   self.shipAnim = nil
+  self.spinnerSliding = nil
   local queue = self.pendingScripts
   if queue then
     for i = #queue, 1, -1 do
@@ -1338,12 +1356,13 @@ function OverworldState:update(dt)
     local step = self.player.spinStep or 0
     if step ~= self.teleportOut.step then
       self.teleportOut.step = step
-      local key = TELEPORT_OUT_SFX[step]
+      local key = (self.teleportOut.sfx or TELEPORT_OUT_SFX)[step]
       if key then require("src.core.Sound").play(Game.data, key) end
     end
     self.teleportOut.frames = self.teleportOut.frames - 1
     if self.teleportOut.frames <= 0 then
       local onDone = self.teleportOut.onDone
+      local go = self.teleportOut.go
       self.teleportOut = nil
       self.player.spinning = false
       self.player.spinFrames = nil
@@ -1356,7 +1375,7 @@ function OverworldState:update(dt)
       -- over but the arrival spin-drop is not armed until startWarpTo's
       -- midpoint, so without this the standing trainer shows under the veil
       self.playerHidden = true
-      self:warpToHealPoint(onDone, { arrive = "teleport" })
+      if go then go() else self:warpToHealPoint(onDone, { arrive = "teleport" }) end
       return
     end
   end
@@ -2777,9 +2796,10 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   end
   -- ../pokered/engine/events/card_key.asm:63-67
   Game.stack:push(TextBox.new(Game,
-    (t._CardKeySuccessText1 or Strings("Bingo!"))
+    TextBox.strip(t._CardKeySuccessText1 or Strings("Bingo!"))
+    .. TextBox.PAUSE
     .. (t._CardKeySuccessText2 or romText(Game.data, "_CardKeySuccessText2", "\nThe CARD KEY\nopened the door!")),
-    openDoor, TextBox.soundOpts(Game, "Get_Item1")))
+    openDoor, { pauseSounds = { "Get_Item1" }, pauseSoundWait = true }))
   return true
 end
 
@@ -4620,6 +4640,7 @@ function OverworldState:runSpinnerMoves(moves, i)
   local mv = moves[i]
   if not mv then
     self.player.spinning = false
+    self.spinnerSliding = nil
     -- Scripted steps skip onStepComplete while they run; once the RLE
     -- finishes, re-enter the normal landing pipeline so chained spinners,
     -- Seafoam currents, and CheckWarpsNoCollision (incl. BIT_FORCED_WARP)
@@ -4628,6 +4649,8 @@ function OverworldState:runSpinnerMoves(moves, i)
     return
   end
   self.player.spinning = true -- spin the sprite while sliding
+  -- home/overworld.asm:268-273
+  self.spinnerSliding = true
   self:scriptMove(self.player, mv.dir, mv.count, function()
     self:runSpinnerMoves(moves, i + 1)
   end)
@@ -4932,6 +4955,8 @@ end
 function OverworldState:safariGameOver(text)
   require("src.core.Sound").play(Game.data, "Safari_Zone_PA")
   Game.save.safari = nil
+  -- SetEvent EVENT_SAFARI_GAME_OVER -- engine/events/hidden_events/safari_game.asm:54
+  Game.save.safariGameOver = true
   local t = Game.data.text
   Game.stack:push(TextBox.new(Game,
     (text or "") .. "\f" .. (t._GameOverText or romText(Game.data, "_GameOverText", "PA: Your SAFARI\nGAME is over!")),
@@ -5085,11 +5110,24 @@ function OverworldState:takeWarp(warpDef)
   if pad == "pad" then
     -- teleporter: spin out with the exit SFX, spin back in on arrival
     -- (player_animations.asm _LeaveMapAnim / EnterMapAnim)
+    -- engine/overworld/player_animations.asm:104-118
     require("src.core.Sound").play(Game.data, "Teleport_Exit1")
+    self:hidePikachuForWarp()
+    self.arriveWarp = "teleport"
+    self.player.inputLocked = true
     self.player.spinning = true
     self.player.spinTimer = 0
-    self.arriveWarp = "teleport"
-    self:startWarpTo(destMap, x, y, facing, nil, { pikachuSpawn = spawn })
+    self.player.spinFrames = WARP_PAD_OUT_FRAMES
+    self.player.spinTotal = WARP_PAD_OUT_FRAMES
+    self.player.spinRise = true
+    self.player.spinHolds = WARP_PAD_OUT_HOLDS
+    self.player.spinStep = 0
+    self.player.spinHold = WARP_PAD_OUT_HOLDS[1]
+    self.player.spinRiseFrom = -1
+    self.teleportOut = { frames = WARP_PAD_OUT_FRAMES, step = 0, sfx = {},
+      go = function()
+        self:startWarpTo(destMap, x, y, facing, nil, { pikachuSpawn = spawn })
+      end }
     return
   elseif pad == "hole" then
     self:fallThroughHole(destMap, x, y, facing)
@@ -5253,14 +5291,19 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
       self.delaySfx = { frames = HOLE_IN_FRAMES, key = "Teleport_Enter2" }
       -- the sprite spins down into place (EnterMapAnim
       -- PlayerSpinWhileMovingDown), not just the SFX
+      -- engine/overworld/player_animations.asm:22-25
+      local onPad = self.map.warpPadOrHoleAt
+                    and self.map:warpPadOrHoleAt(x, y) == "pad"
+      local holds = onPad and TELEPORT_IN_PAD_HOLDS or TELEPORT_IN_HOLDS
+      local frames = onPad and TELEPORT_IN_PAD_FRAMES or TELEPORT_IN_FRAMES
       self.player.spinning = true
       self.player.spinTimer = 0
-      self.player.spinFrames = TELEPORT_IN_FRAMES
-      self.player.spinTotal = TELEPORT_IN_FRAMES
+      self.player.spinFrames = frames
+      self.player.spinTotal = frames
       self.player.spinDrop = true
-      self.player.spinHolds = TELEPORT_IN_HOLDS
+      self.player.spinHolds = holds
       self.player.spinStep = 0
-      self.player.spinHold = TELEPORT_IN_HOLDS[1]
+      self.player.spinHold = holds[1]
       self.player.spinDropSteps = SPIN_DOWN_STEPS
       -- engine/overworld/player_animations.asm:19
       self.spinArrive = true
@@ -5678,6 +5721,10 @@ function OverworldState:drawWorld()
   local fadeMap = fadeBgp and Transition.shadeMapFor(fadeBgp)
   if fadeBgp and not self:bakedWorldColors() then
     PaletteFX.setShadeMap(fadeMap)
+    -- home/fade.asm:52-58
+    -- home/fade.asm:65-73
+    local fadeObp = fade.obp0 and fade:obp0() or fadeBgp
+    PaletteFX.setFadeObp(Transition.shadeMapFor(fadeObp))
     fade.paletteStepped = true
   else
     PaletteFX.setShadeMap((self.dark and not battleOverWorld)
@@ -5690,7 +5737,7 @@ function OverworldState:drawWorld()
   -- let the renderer know whether a spinner puzzle is currently sliding
   -- the player, so it can flicker the arrow tiles between the blur and
   -- static graphic (engine/overworld/spinners.asm LoadSpinnerArrowTiles)
-  require("src.render.TileRenderer").setSpinning(self.player.spinning)
+  require("src.render.TileRenderer").setSpinning(self.spinnerSliding or false)
   local cam = self.camera
   -- ShakeElevator's oscillation (engine/overworld/elevator.asm) writes
   -- hSCY, which scrolls the BG layer only -- tiles bounce while OAM
@@ -5774,7 +5821,8 @@ function OverworldState:drawWorld()
           love.graphics.newQuad(0, 8, 8, 8, w, h), -- ball ($7d)
         }
       end
-      local shader = healMachineShader(ha.visible)
+      local shader, redrawColors = healMachineShader(ha.visible)
+      local mark = redrawColors and PaletteFX.spriteRedrawPassActive()
       -- TileRenderer windows with -floor(cam), so the overlay must use the
       -- same snap or a fractional camera (odd fill/tilt view sizes) parks
       -- the balls a pixel off the machine tiles
@@ -5782,14 +5830,26 @@ function OverworldState:drawWorld()
       local oy = ha.py - 64 - math.floor(cam.y)
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(img, self.healMachineQuads[1], ox + 44, oy + 20)
+      if mark then
+        PaletteFX.markSpriteRedraw(img, self.healMachineQuads[1],
+                                   ox + 44, oy + 20, 1, redrawColors)
+      end
       for i = 1, math.min(ha.lit, #HEAL_BALL_XY) do
         local b = HEAL_BALL_XY[i]
         if b[3] then -- right column: OAM_XFLIP
           love.graphics.draw(img, self.healMachineQuads[2],
                              ox + b[1] + 8, oy + b[2], 0, -1, 1)
+          if mark then
+            PaletteFX.markSpriteRedraw(img, self.healMachineQuads[2],
+                                       ox + b[1] + 8, oy + b[2], -1, redrawColors)
+          end
         else
           love.graphics.draw(img, self.healMachineQuads[2],
                              ox + b[1], oy + b[2])
+          if mark then
+            PaletteFX.markSpriteRedraw(img, self.healMachineQuads[2],
+                                       ox + b[1], oy + b[2], 1, redrawColors)
+          end
         end
       end
       if shader then love.graphics.setShader() end

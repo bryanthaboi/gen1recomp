@@ -7,16 +7,16 @@
 -- are as absent here as they are there -- even though this state required
 -- love.filesystem to bootstrap itself.
 --
--- A job is pure compute: plain data in, plain data out, no engine API, no
--- game state, no storage.  require is refused outright rather than reaching
--- src.* -- an engine module loaded in a second state would be a second
--- instance writing the same files as the main thread's.
+-- A normal job is pure compute: plain data in, plain data out, no engine API
+-- or game state. An explicit asset-I/O job additionally receives only the
+-- owning mod's declared-import/private-cache facade; raw filesystem access
+-- remains hidden. require is refused outright rather than reaching src.*.
 
 require("love.thread")
 require("love.filesystem")
 require("love.timer")
 
-local modId, scriptPath, argChannel, resultChannel, permissionsJson = ...
+local modId, scriptPath, argChannel, resultChannel, permissionsJson, assetJson = ...
 
 -- Fresh love threads have no "src.*" searcher (see src/net/fetch_worker.lua),
 -- so install one before Sandbox's own requires run.
@@ -43,8 +43,24 @@ local ok, err = pcall(function()
   end
 
   local env = Sandbox.envFor({ modId = modId, permissions = permissions })
-  -- A job cannot reach the engine.  Anything it needs comes in through its
-  -- argument and goes back through its return value.
+
+  -- Asset preprocessors get a capability object, never love.filesystem. The
+  -- descriptor was assembled by Job.run from this mod's validated manifest;
+  -- JobAssetIO re-checks ownership and routes every operation through the same
+  -- ImportAccess bounds/safe paths as mod.imports and mod.cache.
+  if type(assetJson) == "string" and assetJson ~= "" then
+    local descriptor = select(2, pcall(Json.decode, assetJson))
+    if type(descriptor) ~= "table" then
+      error("invalid asset-I/O descriptor", 0)
+    end
+    local JobAssetIO = require("src.mods.JobAssetIO")
+    local assetApi, assetErr = JobAssetIO.open(descriptor, love.filesystem, modId)
+    if not assetApi then error(assetErr or "asset-I/O unavailable", 0) end
+    env.job = assetApi
+  end
+
+  -- A job cannot reach the engine. Anything else it needs comes in through
+  -- its argument and goes back through its return value.
   env.require = function(name)
     error(("[%s] require(%q) is not available inside a background job; a job "
       .. "takes plain data and returns plain data"):format(modId,

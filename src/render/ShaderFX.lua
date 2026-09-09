@@ -1156,6 +1156,8 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY, opts)
   end
 
   local chainOut, chainPreset
+  local clipX, clipY, clipW, clipH = love.graphics.getScissor()
+  love.graphics.setScissor()
   local okCrop, frameSource = pcall(cropToGbSource, canvas, rect, source.w, source.h, scale, layer)
   if okCrop then
     lastCropError = nil
@@ -1186,6 +1188,7 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY, opts)
     end
   end
 
+  if clipX then love.graphics.setScissor(clipX, clipY, clipW, clipH) end
   love.graphics.setColor(1, 1, 1, 1)
   if masked then
     if not chainOut then

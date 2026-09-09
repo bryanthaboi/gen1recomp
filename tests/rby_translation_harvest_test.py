@@ -23,7 +23,7 @@ class RbyTranslationHarvestTest(TestCase):
             '"DEPOSIT"',
             '"The party is full!"',
             '"MONEY/¥%d"',
-            '"TIME/%3d:%02d"',
+            '"TIME/  %d:%02d"',
             '"No.%03d"',
             '"IDNo.%05d"',
             '"BILL\'S PC"',

@@ -751,35 +751,39 @@ M.WARDENS_HOUSE = {
       { "jump_if_true", "got_hm04" },                                -- 3
       { "check_item", "GOLD_TEETH" },                                -- 4
       { "jump_if_false", "no_teeth" },                               -- 5
-      { "show_text", "_WardensHouseWardenGaveTheGoldTeethText" },    -- 6
-      { "take_item", "GOLD_TEETH", 1 },                              -- 7
-      { "set_flag", "EVENT_GAVE_GOLD_TEETH" },                       -- 8
-      { "show_text", "_WardensHouseWardenThanksText" },              -- 9
+      -- .GaveTheGoldTeethText has no text_end and falls through into
+      -- .PoppedInHisTeethText -- scripts/WardensHouse.asm:71
+      { "text_sound", "Get_Item1" },                                 -- 6
+      { "show_text", "_WardensHouseWardenGaveTheGoldTeethText" },    -- 7
+      { "show_text", "_WardensHouseWardenTeethPoppedInHisTeethText" }, -- 8
+      { "take_item", "GOLD_TEETH", 1 },                              -- 9
+      { "set_flag", "EVENT_GAVE_GOLD_TEETH" },                       -- 10
+      { "show_text", "_WardensHouseWardenThanksText" },              -- 11
       -- give-then-print like scripts/WardensHouse.asm
-      { "give_item", "HM_STRENGTH", 1, false },                      -- 10
-      { "show_text", "_WardensHouseWardenReceivedHM04Text" },        -- 11
-      { "set_flag", "EVENT_GOT_HM04" },                              -- 12
-      { "jump", "end" },                                             -- 13 (jp .done)
+      { "give_item", "HM_STRENGTH", 1, false },                      -- 12
+      { "show_text", "_WardensHouseWardenReceivedHM04Text" },        -- 13
+      { "set_flag", "EVENT_GOT_HM04" },                              -- 14
+      { "jump", "end" },                                             -- 15 (jp .done)
 
       -- #645: WardensHouseWardenText prints Gibberish1, then YesNoChoice,
       -- and the warden answers the same gibberish either way -- Gibberish2
       -- on yes, Gibberish3 on no (scripts/WardensHouse.asm).  The port
       -- printed the question and walked off before the answer.
-      { "label", "no_teeth" },                                       -- 14
-      { "ask", "_WardensHouseWardenGibberish1Text" },                -- 15
-      { "jump_if_true", "gibberish_yes" },                           -- 16
-      { "show_text", "_WardensHouseWardenGibberish3Text" },          -- 17
-      { "jump", "end" },                                             -- 18
-      { "label", "gibberish_yes" },                                  -- 19
-      { "show_text", "_WardensHouseWardenGibberish2Text" },          -- 20
-      { "jump", "end" },                                             -- 21
+      { "label", "no_teeth" },                                       -- 16
+      { "ask", "_WardensHouseWardenGibberish1Text" },                -- 17
+      { "jump_if_true", "gibberish_yes" },                           -- 18
+      { "show_text", "_WardensHouseWardenGibberish3Text" },          -- 19
+      { "jump", "end" },                                             -- 20
+      { "label", "gibberish_yes" },                                  -- 21
+      { "show_text", "_WardensHouseWardenGibberish2Text" },          -- 22
+      { "jump", "end" },                                             -- 23
 
       -- #535: pokered .got_item branch (scripts/WardensHouse.asm) --
       -- printed on every subsequent talk once EVENT_GOT_HM04 is set.
       -- Text is _WardensHouseWardenHM04ExplanationText (text/WardensHouse.asm):
       -- HM04 teaches Strength, and hints at the Safari Zone secret house.
-      { "label", "got_hm04" },                                       -- 22
-      { "show_text", "_WardensHouseWardenHM04ExplanationText" },     -- 23
+      { "label", "got_hm04" },                                       -- 24
+      { "show_text", "_WardensHouseWardenHM04ExplanationText" },     -- 25
     },
   },
 }

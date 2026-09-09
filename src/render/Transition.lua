@@ -30,6 +30,13 @@ local FADE_BGP = {
   white = { out = { 0x90, 0x40, 0x00 },
             ["in"] = { 0x40, 0x90, 0xE4 } },
 }
+-- FadePal1..FadePal8 rOBP0 column, pokered home/fade.asm:65-73
+local FADE_OBP0 = {
+  black = { out = { 0xD0, 0xE4, 0xFE, 0xFF },
+            ["in"] = { 0xFF, 0xFE, 0xE4, 0xD0 } },
+  white = { out = { 0x80, 0x40, 0x00 },
+            ["in"] = { 0x40, 0x80, 0xD0 } },
+}
 local BGP_IDENTITY = 0xE4
 
 -- Veil alpha `t` frames into a `len`-frame fade out.  GBFadeOutToBlack
@@ -155,20 +162,28 @@ function Transition.shadeMapFor(byte)
   return map
 end
 
-function Transition:fadeTable()
+function Transition:fadeTable(column)
   local c = self.color or { 0, 0, 0 }
   local white = (c[1] or 0) > 0.5 and (c[2] or 0) > 0.5 and (c[3] or 0) > 0.5
-  local set = FADE_BGP[white and "white" or "black"]
+  local set = (column or FADE_BGP)[white and "white" or "black"]
   return set[self.phase == "in" and "in" or "out"]
+end
+
+local function fadeByte(self, tab)
+  local len = (self.phase == "out") and self.frames or self.framesIn
+  local step = math.min(#tab,
+    math.floor(fadeAlpha(self.t, len) * (#tab - 1) + 0.5) + 1)
+  return tab[step] or 0xFF
 end
 
 -- pokered home/fade.asm:58
 function Transition:bgp()
-  local len = (self.phase == "out") and self.frames or self.framesIn
-  local tab = self:fadeTable()
-  local step = math.min(#tab,
-    math.floor(fadeAlpha(self.t, len) * (#tab - 1) + 0.5) + 1)
-  return tab[step] or 0xFF
+  return fadeByte(self, self:fadeTable())
+end
+
+-- pokered home/fade.asm:55
+function Transition:obp0()
+  return fadeByte(self, self:fadeTable(FADE_OBP0))
 end
 
 function Transition:draw()

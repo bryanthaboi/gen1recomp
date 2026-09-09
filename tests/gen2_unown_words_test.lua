@@ -178,8 +178,12 @@ if not cache then
     .. "/Library/Application Support/LOVE/crystal-dev/crystal"
 end
 
-local events = loadTable(cache .. "/data/generated/events.lua")
-local tilesets = loadTable(cache .. "/data/generated/tilesets.lua")
+local CacheContract = require("src.import.CacheContract")
+local stale = not CacheContract.markerMatches(
+  "crystal", readFile(cache .. "/rom-cache.complete"))
+
+local events = not stale and loadTable(cache .. "/data/generated/events.lua") or nil
+local tilesets = not stale and loadTable(cache .. "/data/generated/tilesets.lua") or nil
 
 -- data/events/unown_walls.asm:2-5
 local EXPECTED = {

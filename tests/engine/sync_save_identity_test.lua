@@ -249,4 +249,29 @@ love.filesystem = realFS
 SaveData.resetSlotState()
 GameVersion.set("red")
 
+do
+  fresh()
+  local provider = SyncEngine.defaultSaves()
+  local slotId = SaveData.createSlot("red")
+  SaveData.setActiveSlot("red", slotId)
+  local save = SaveData.newGame()
+  save.player.name = "ASH"
+  save.meta = SaveData.buildMeta({}, save.meta, os.time() - 60)
+  SaveData.save(save)
+  local id = provider.list()[1].playthroughId
+  T.eq(provider.keyForSlot("red", slotId), "red/" .. id,
+    "keyForSlot answers the sync key the launcher deletes under")
+  T.eq(provider.keyForSlot("red", "slot9"), nil, "and nil for an empty slot")
+
+  local gone, cart = provider.remove("red", id)
+  T.eq(gone, slotId, "remove deletes the slot that carries the playthrough")
+  T.eq(cart, nil, "a plain version slot has no cart")
+  T.eq(#SaveData.listSlots("red"), 0, "so the slot is gone")
+  local ids = SaveData.loadOptions().playthroughIds
+  T.eq(((ids or {}).red or {})[slotId], nil,
+    "and its identity mapping with it")
+  T.eq(#provider.list(), 0, "nothing is left to sync")
+  T.eq(provider.remove("red", id), false, "removing it again finds nothing")
+end
+
 T.finish("sync_save_identity")

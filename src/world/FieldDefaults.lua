@@ -69,7 +69,8 @@ local SAFARI = {
     "SAFARI_ZONE_NORTH_REST_HOUSE", "SAFARI_ZONE_WEST_REST_HOUSE",
     "SAFARI_ZONE_SECRET_HOUSE",
   },
-  exitWarp = { map = "SAFARI_ZONE_GATE", x = 4, y = 3, facing = "down" },
+  -- wDestinationWarpID $3 = warp_event 4,0 (data/maps/objects/SafariZoneGate.asm:12)
+  exitWarp = { map = "SAFARI_ZONE_GATE", x = 4, y = 0, facing = "down" },
 }
 
 -- home/overworld.asm LoadPlayerSpriteGraphics / LoadSurfingPlayerSprite-

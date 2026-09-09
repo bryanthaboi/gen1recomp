@@ -65,6 +65,8 @@ for _, c in ipairs({
         "the preview marks " .. c.species .. " seen")
   check(not game.save.pokedex.owned[c.species],
         "the preview does not mark " .. c.species .. " owned")
+  -- engine/menus/pokedex.asm:500-506
+  top.picDelay = 0
   game.pressed = true
   top:update(0)
   local ask = game.stack:top()

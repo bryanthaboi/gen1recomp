@@ -65,6 +65,16 @@ if not mapsFile then
 end
 mapsFile:close()
 
+local CacheContract = require("src.import.CacheContract")
+local markerFile = io.open(cache .. "/rom-cache.complete", "rb")
+local marker = markerFile and markerFile:read("*a")
+if markerFile then markerFile:close() end
+if not CacheContract.markerMatches("crystal", marker) then
+  check(true, "crystal cache predates the current format : SKIP")
+  S.finish()
+  return
+end
+
 local function loadLua(rel)
   local chunk = loadfile(cache .. "/" .. rel)
   if not chunk then return nil end

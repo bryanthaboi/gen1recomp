@@ -117,8 +117,58 @@ local function slotForPlaythrough(options, version, playthroughId)
   return bestKey, bestSlot
 end
 
+local function slotKey(scopeKey, slotId)
+  local SaveData = saveApi()
+  local cart = cartOfScope(scopeKey)
+  local source
+  if cart then
+    source = SaveData.readCartSlotSource(cart, slotId)
+  else
+    source = SaveData.readSlotSource(scopeKey, slotId)
+  end
+  local save = source and SaveData.decode(source)
+  if type(save) ~= "table" then return nil end
+  local id
+  local scope = { key = scopeKey, cart = cart, version = scopeKey }
+  if cart then
+    id = SaveData.cartSlotPlaythroughId(cart, slotId, save)
+    local okOpts, options = pcall(SaveData.loadOptions)
+    local reg = (okOpts and type(options) == "table"
+      and type(options.carts) == "table") and options.carts[cart] or nil
+    scope.version = type(reg) == "table" and reg.base or nil
+  else
+    id = SaveData.slotPlaythroughId(scopeKey, slotId, save)
+  end
+  if not id then return nil end
+  return SyncState.key(wireVersion(save, scope), id)
+end
+
 function SyncEngine.defaultSaves()
   return {
+    keyForSlot = slotKey,
+
+    remove = function(version, playthroughId)
+      local SaveData = saveApi()
+      local options = SaveData.loadOptions()
+      local scopeKey, slotId = slotForPlaythrough(options, version, playthroughId)
+      if not slotId then return false, "no such save" end
+      local cart = cartOfScope(scopeKey)
+      local ok, err
+      if cart then
+        ok, err = SaveData.deleteCartSlot(cart, slotId)
+      else
+        ok, err = SaveData.deleteSlot(scopeKey, slotId)
+      end
+      if not ok then return nil, err or "could not delete the save" end
+      options = SaveData.loadOptions()
+      if type(options.playthroughIds) == "table"
+          and type(options.playthroughIds[scopeKey]) == "table" then
+        options.playthroughIds[scopeKey][slotId] = nil
+        SaveData.saveOptions(options)
+      end
+      return slotId, cart
+    end,
+
     list = function()
       local SaveData = saveApi()
       local out = {}
@@ -299,7 +349,7 @@ function SyncEngine.new(opts)
   eng.phase = "idle"
   eng.error = nil
   eng.conflicts = {}
-  eng.codes = nil
+  eng.codes = SyncEngine.formatCodes(eng.state)
   eng.modPlan = nil
   eng.shareCode = nil
   eng.clock = 0
@@ -402,6 +452,22 @@ function SyncEngine:noteSaveWritten()
   self.uploadAt = self.clock + SyncEngine.UPLOAD_DEBOUNCE
 end
 
+function SyncEngine:noteSaveDeleted(key)
+  if type(key) ~= "string" or key == "" then return false end
+  local rev = SyncState.rev(self.state, key)
+  SyncState.forget(self.state, key)
+  if rev == nil or not self:linked() then
+    self:_persist()
+    return false
+  end
+  SyncState.markDeleted(self.state, key, rev, self.now())
+  self:_persist()
+  if self.state.enabled then
+    self.uploadAt = self.clock + SyncEngine.UPLOAD_DEBOUNCE
+  end
+  return true
+end
+
 function SyncEngine:update(dt)
   self.clock = self.clock + (tonumber(dt) or 0)
   if self.pending then
@@ -450,6 +516,14 @@ function SyncEngine:update(dt)
   end
 end
 
+function SyncEngine.formatCodes(state)
+  if type(state) ~= "table" then return nil end
+  local a = SyncClient.formatCode(state.code1)
+  local b = SyncClient.formatCode(state.code2)
+  if not a or not b then return nil end
+  return { code1 = a, code2 = b }
+end
+
 function SyncEngine:createAccount(label)
   if self:busy() then return false, "sync is busy" end
   self.phase = "checking"
@@ -462,9 +536,11 @@ function SyncEngine:createAccount(label)
       eng:_fail("the server sent an unexpected reply")
       return
     end
-    eng.codes = {
-      code1 = SyncClient.formatCode(data.code1) or tostring(data.code1 or ""),
-      code2 = SyncClient.formatCode(data.code2) or tostring(data.code2 or ""),
+    eng.state.code1 = SyncClient.normalizeCode(data.code1)
+    eng.state.code2 = SyncClient.normalizeCode(data.code2)
+    eng.codes = SyncEngine.formatCodes(eng.state) or {
+      code1 = tostring(data.code1 or ""),
+      code2 = tostring(data.code2 or ""),
     }
     eng.state.account = data.account
     eng.state.deviceToken = data.deviceToken
@@ -502,6 +578,8 @@ function SyncEngine:linkDevice(code1, code2, label)
     eng.state.deviceId = type(data.device) == "string" and data.device or nil
     eng.state.deviceLabel = label
     eng.state.enabled = true
+    eng.state.code1, eng.state.code2 = a, b
+    eng.codes = SyncEngine.formatCodes(eng.state)
     eng.client:setAuth(data.account, data.deviceToken)
     eng.status = "This device is linked"
     eng:_persist()
@@ -560,6 +638,29 @@ function SyncEngine:unlinkDevice(deviceId)
   end)
 end
 
+function SyncEngine:reissueCodes()
+  if not self:linked() then return false, "this device is not linked" end
+  if self:busy() then return false, "sync is busy" end
+  self.phase = "checking"
+  self.status = "Fetching new sync codes..."
+  self.error = nil
+  local handle, err = self.client:reissueCodes()
+  return self:_request(handle, err, function(eng, res)
+    local data = res.data or {}
+    local a = SyncClient.normalizeCode(data.code1)
+    local b = SyncClient.normalizeCode(data.code2)
+    if not a or not b then
+      eng:_fail("the server sent an unexpected reply")
+      return
+    end
+    eng.state.code1, eng.state.code2 = a, b
+    eng.codes = SyncEngine.formatCodes(eng.state)
+    eng.phase = "idle"
+    eng.status = "New sync codes issued, the old pair no longer links"
+    eng:_persist()
+  end)
+end
+
 function SyncEngine:setEnabled(enabled)
   self.state.enabled = enabled and true or false
   self:_persist()
@@ -615,12 +716,14 @@ function SyncEngine:_planFrom(remoteState)
     self.devices = list
   end
   local remote = type(remoteState.saves) == "table" and remoteState.saves or {}
+  local tombs = type(remoteState.deleted) == "table" and remoteState.deleted or {}
   local locals = self.saves.list() or {}
   local seen = {}
   for _, entry in ipairs(locals) do
     local key = SyncState.key(entry.version, entry.playthroughId)
     if key then
       seen[key] = true
+      SyncState.clearDeleted(self.state, key)
       local row = remote[key]
       local knownRev = SyncState.rev(self.state, key)
       local stamp = unixSeconds(SyncState.stamp(self.state, key))
@@ -633,7 +736,14 @@ function SyncEngine:_planFrom(remoteState)
       end
       local remoteRev = row and tonumber(row.rev)
       local remoteChanged = row ~= nil and remoteRev ~= knownRev
-      if not row then
+      local tomb = not row and type(tombs[key]) == "table" and tombs[key] or nil
+      local buried = tomb ~= nil and knownRev ~= nil
+        and (tonumber(tomb.rev) or 0) >= knownRev
+        and not (localChanged and liveStamp
+          and liveStamp > (unixSeconds(tomb.deletedAt) or 0))
+      if buried then
+        self:_removeLocal(entry, key, tomb)
+      elseif not row then
         self:_queueUpload(entry, key, false)
       elseif localChanged and remoteChanged then
         if SyncEngine.sameProgress(entry.meta, SyncEngine.metaOf(row)) then
@@ -648,6 +758,17 @@ function SyncEngine:_planFrom(remoteState)
       end
     end
   end
+  for key, pending in pairs(self.state.pendingDeletes or {}) do
+    local row = remote[key]
+    if not seen[key] then
+      if row and (tonumber(row.rev) or 0) > (tonumber(pending.rev) or 0) then
+        SyncState.clearDeleted(self.state, key)
+      else
+        seen[key] = true
+        self:_queueDelete(key, pending.rev)
+      end
+    end
+  end
   for key, row in pairs(remote) do
     if not seen[key] and key ~= self.protectedKey then
       local version, id = SyncState.splitKey(key)
@@ -657,6 +778,42 @@ function SyncEngine:_planFrom(remoteState)
     end
   end
   if #self.queue == 0 then self:_finish() end
+end
+
+function SyncEngine:_removeLocal(entry, key, tomb)
+  if key == self.protectedKey then return end
+  local slotId, cartId
+  if type(self.saves.remove) == "function" then
+    slotId, cartId = self.saves.remove(entry.version, entry.playthroughId)
+  end
+  SyncState.forget(self.state, key)
+  if slotId then
+    self.lastDownloads = self.lastDownloads or {}
+    self.lastDownloads[#self.lastDownloads + 1] = {
+      version = entry.version,
+      cart = cartId or entry.cart,
+      slot = slotId,
+      removed = true,
+      device = type(tomb.device) == "string" and tomb.device ~= ""
+        and tomb.device or nil,
+    }
+    self.changed = true
+  end
+end
+
+function SyncEngine:_queueDelete(key, rev)
+  self:_enqueue(function(eng)
+    eng.phase = "uploading"
+    eng.status = "Removing deleted saves..."
+    local version, id = SyncState.splitKey(key)
+    local handle, err = eng.client:deleteSave(version, id, rev)
+    eng:_request(handle, err, function(e)
+      SyncState.clearDeleted(e.state, key)
+      SyncState.forget(e.state, key)
+      e:_persist()
+      if not e:busy() then e:_finish() end
+    end)
+  end)
 end
 
 function SyncEngine:_addConflict(entry, key, row)

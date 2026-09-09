@@ -427,11 +427,7 @@ function MagnetTrainRide:drawPanel()
 end
 
 function MagnetTrainRide:draw()
-  local G = love.graphics
-  G.push("all")
-  G.setScissor(0, 0, SCREEN_W, SCREEN_H)
-  self:drawPanel()
-  G.pop()
+  Chrome.withClip(function() self:drawPanel() end)
 end
 
 -- MagnetTrain_LoadGFX_PlayMusic opens on ClearBGPalettes / ClearSprites
@@ -449,7 +445,7 @@ function MagnetTrainRide:drawWidescreen(winW, winH)
   local scale = Chrome.fitScale(winW, winH)
   local ox, oy = Chrome.fitOrigin(winW, winH, scale)
   G.push("all")
-  G.setScissor(ox, oy, SCREEN_W * scale, SCREEN_H * scale)
+  Chrome.clipTo(ox, oy, SCREEN_W * scale, SCREEN_H * scale)
   G.translate(ox, oy)
   G.scale(scale, scale)
   self:drawPanel()

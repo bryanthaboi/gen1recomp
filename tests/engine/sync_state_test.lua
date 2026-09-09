@@ -58,8 +58,12 @@ do
   T.eq(dirty.account, "aa11bb22cc33dd44", "the account id survives")
   T.eq(dirty.deviceLabel, nil, "an empty device label is dropped")
   T.eq(dirty.lastSyncAt, 0, "a NaN lastSyncAt is refused")
-  T.eq(dirty.code1, nil, "the first account code is never kept")
-  T.eq(dirty.code2, nil, "nor the second")
+  T.eq(dirty.code1, "12345678", "the first account code is kept")
+  T.eq(dirty.code2, "87654321", "and the second")
+  T.eq(SyncState.sanitize({ code1 = "1234", code2 = "8765-4321" }).code1, nil,
+    "a code that is not 8 digits is dropped")
+  T.eq(SyncState.sanitize({ code1 = "1234", code2 = "8765-4321" }).code2,
+    "87654321", "and a grouped code is stored as bare digits")
   T.eq(dirty.revs["red/aaa"], 4, "numeric revs survive")
   T.eq(dirty.revs["red/bad"], nil, "a non-numeric rev is dropped")
   T.eq(dirty.revs[7], nil, "a non-string rev key is dropped")
@@ -83,8 +87,8 @@ do
   SyncState.save(state)
 
   T.check(files["options.lua"] ~= nil, "the state lands in options.lua")
-  T.eq(files["options.lua"]:find("12345678", 1, true), nil,
-    "the account codes are never written to disk")
+  T.check(files["options.lua"]:find("12345678", 1, true) ~= nil,
+    "the account codes are written with the state so the popup can show them")
 
   local back = SyncState.load()
   T.eq(SyncState.linked(back), true, "the linked account survives a reload")
@@ -93,7 +97,7 @@ do
     "and the device id the server revokes tokens by")
   T.eq(SyncState.rev(back, "red/abc"), 3, "and the last synced rev")
   T.eq(SyncState.stamp(back, "red/abc"), 1700000000, "and the savedAt stamp")
-  T.eq(back.code1, nil, "the code is gone from the reloaded state")
+  T.eq(back.code1, "12345678", "the code survives the reload")
 
   local opts = SaveData.loadOptions()
   T.eq(opts.textSpeed, 3, "writing sync state leaves other options alone")
@@ -116,5 +120,17 @@ do
 end
 
 love.filesystem = realFS
+
+do
+  local state = SyncState.defaults()
+  SyncState.markDeleted(state, "red/abc", 3, 900)
+  local back = SyncState.sanitize(state)
+  T.eq(back.pendingDeletes["red/abc"].rev, 3, "a pending delete survives sanitize")
+  T.eq(back.pendingDeletes["red/abc"].deletedAt, 900, "with its time")
+  SyncState.clearDeleted(back, "red/abc")
+  T.eq(next(back.pendingDeletes), nil, "and can be cleared")
+  T.eq(next(SyncState.sanitize({ pendingDeletes = { [7] = {}, x = "no" } })
+    .pendingDeletes), nil, "malformed pending deletes are dropped")
+end
 
 T.finish("sync_state")

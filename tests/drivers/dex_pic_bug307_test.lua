@@ -50,7 +50,7 @@ return function(game)
   for _, species in ipairs(CASES) do
     while game.stack:top() do game.stack:pop() end
     Screens.push(game, "DexEntryMenu", { species = species, forceOwned = true })
-    U.wait(30)
+    U.wait(60)
     U.shot(game, SHOT_DIR .. "/dex_" .. species:lower() .. ".png")
     U.log("captured", SHOT_DIR .. "/dex_" .. species:lower() .. ".png")
   end

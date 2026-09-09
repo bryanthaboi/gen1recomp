@@ -82,6 +82,25 @@ local function darkGroups(groups)
   return out
 end
 
+-- home/fade.asm:52-58
+local fadeObpMap = nil
+local fadeObpGroups = setmetatable({}, { __mode = "k" })
+
+function PaletteFX.setFadeObp(map)
+  fadeObpMap = map
+end
+
+function PaletteFX.fadeObp(colors, group)
+  if not (colors and fadeObpMap) then return colors, group end
+  local suffix = fadeObpGroups[fadeObpMap]
+  if not suffix then
+    suffix = "#fade" .. fadeObpMap[0] .. fadeObpMap[1]
+             .. fadeObpMap[2] .. fadeObpMap[3]
+    fadeObpGroups[fadeObpMap] = suffix
+  end
+  return PaletteFX.permute(colors, fadeObpMap), tostring(group) .. suffix
+end
+
 -- Classic DMG pea-soup greens (#9BBC0F / #8BAC0F / #306230 / #0F380F)
 PaletteFX.CLASSIC = {
   { 155, 188, 15 }, { 139, 172, 15 }, { 48, 98, 48 }, { 15, 56, 15 },
@@ -143,9 +162,9 @@ end
 -- is unused there and kept as Red green only as a safe leftover.
 function PaletteFX.ogObj()
   if GameVersion.isBlue() then
-    return PaletteFX.darkObp(PaletteFX.GBC_OBJ_BLUE, "gbcobj_blue")
+    return PaletteFX.fadeObp(PaletteFX.darkObp(PaletteFX.GBC_OBJ_BLUE, "gbcobj_blue"))
   end
-  return PaletteFX.darkObp(PaletteFX.GBC_OBJ, "gbcobj")
+  return PaletteFX.fadeObp(PaletteFX.darkObp(PaletteFX.GBC_OBJ, "gbcobj"))
 end
 
 -- The DMG object ramp every mode except OG RED bakes onto overworld sprites,

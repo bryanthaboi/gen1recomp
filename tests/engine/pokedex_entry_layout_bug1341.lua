@@ -62,6 +62,9 @@ local ns = DexEntryMenu.new(game, "BULBASAUR")
 eq(ns.pageCount, 2, "the entry has two <PAGE>-separated pages")
 eq(ns.page, 1, "starts on page 1")
 
+-- engine/menus/pokedex.asm:500-506
+ns.picDelay = 0
+
 ns:draw()
 check(hasText("BULBASAUR", 72, 16), "name at (72,16), not the port's old (72,8)")
 check(hasText("SEED POKEMON", 72, 32), "kind at (72,32)")

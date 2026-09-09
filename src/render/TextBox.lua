@@ -173,6 +173,9 @@ function TextBox.new(game, text, onDone, opts)
   -- opts.pauseSounds[i] is the sfx the i-th marker fires once its wait is
   -- over (text_asm SFX_SWAP, engine/pokemon/learn_move.asm:210-213)
   self.pauseSounds = opts and opts.pauseSounds
+  -- opts.pauseSoundWait: the mark is TextCommand_SOUND, not TextCommand_PAUSE
+  -- (home/text.asm:506-534)
+  self.pauseSoundWait = opts and opts.pauseSoundWait
   self.pauseAt = marks and mapPauses(self.pages, marks) or nil
   self.pageIndex = 1
   self.lineIndex = 1
@@ -445,11 +448,24 @@ function TextBox:update(dt)
     end
     self.pauseFrames = nil
     local snd = self.pauseSounds and self.pauseSounds[self.pauseMark]
+    local src
     if type(snd) == "function" then
-      snd()
+      src = snd()
     elseif snd then
-      require("src.core.Sound").play(self.game.data, snd)
+      src = require("src.core.Sound").play(self.game.data, snd)
     end
+    -- home/text.asm:530
+    if src and self.pauseSoundWait then
+      self.pauseSrc = src
+      self.pauseSrcLeft = sfxWaitFrames(src)
+    end
+  end
+  if self.pauseSrc then
+    self.pauseSrcLeft = (self.pauseSrcLeft or 0) - sfxWaitStep(self.game)
+    local playing = self.pauseSrc.isPlaying and self.pauseSrc:isPlaying()
+    if playing and self.pauseSrcLeft > 0 then return end
+    if playing then pcall(self.pauseSrc.stop, self.pauseSrc) end
+    self.pauseSrc, self.pauseSrcLeft = nil, nil
   end
   if self.done then
     -- opts.stay: the box is finished but stays up under whatever the caller
@@ -607,7 +623,8 @@ function TextBox:update(dt)
       if marks and marks[self.charIndex] then
         self.pauseMark = marks[self.charIndex]
         -- TextCommand_PAUSE reads hJoyHeld, so a held A/B skips the wait
-        self.pauseFrames = (input:isDown("a") or input:isDown("b"))
+        self.pauseFrames = (self.pauseSoundWait
+          or input:isDown("a") or input:isDown("b"))
           and 0 or PAUSE_FRAMES
         break
       end
