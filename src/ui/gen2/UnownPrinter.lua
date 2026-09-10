@@ -45,6 +45,7 @@ local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
 local Palettes = require("src.world.gen2.Palettes")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 local Unown = require("src.core.gen2.Unown")
 
@@ -132,6 +133,14 @@ end
 function UnownPrinter:picFor(letter)
   local path = Unown.formSprite(self.pokemon, letter, false)
   if not path then return nil end
+  local trueColor
+  path, trueColor = Sprites.pic(path, {
+    species = Unown.SPECIES,
+    side = "front",
+    kind = "unown_printer",
+    data = self.game and self.game.data,
+    letter = letter,
+  })
   local cached = self.picCache[path]
   if cached == nil then
     -- `and` truncates a multi-return, so the pcall has to stand alone.
@@ -139,19 +148,20 @@ function UnownPrinter:picFor(letter)
     cached = (ok and image) or false
     self.picCache[path] = cached
   end
-  return cached or nil
+  return cached or nil, trueColor
 end
 
 -- .UpdateUnownFrontpic: PlaceGraphic of the form's 7x7 pic at hlcoord 1, 6.
 function UnownPrinter:drawPic(letter)
-  local image = self:picFor(letter)
+  local image, trueColor = self:picFor(letter)
   if not image then return end
   local colors = self.palettes
     and Palettes.monColors(self.palettes, Unown.SPECIES)
   local G = love.graphics
   G.setColor(1, 1, 1, 1)
   local function body() G.draw(image, 1 * 8, 6 * 8) end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()

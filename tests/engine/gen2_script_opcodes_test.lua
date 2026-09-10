@@ -289,4 +289,35 @@ do
   eq(frames, 18, "`wait 3` holds the script for 3 * 6 frames")
 end
 
+-- pokecrystal/maps/BattleTower1F.asm:128-129, scripting.asm:1597-1601 and :1722-1727
+do
+  local names, gives = {}, {}
+  local vm = Vm.new({
+    generation = 2,
+    ["s:prize"] = {
+      { op = "setval", args = { 26 } },
+      { op = "getitemname", buffer = 1, item = 0 },
+      { op = "giveitem", item = 255, quantity = 5 },
+      { op = "setval", args = { 27 } },
+      { op = "verbosegiveitem", item = 255, quantity = 1 },
+      { op = "getitemname", buffer = 1, item = 18 },
+    },
+  }, {}, Events.new(), {
+    getItemName = function(item) names[#names + 1] = item return "HP UP" end,
+    giveItem = function(item, qty) gives[#gives + 1] = { item, qty } return true end,
+    showText = function(_body, onDone) onDone() end,
+  })
+
+  check(vm:start("s:prize"), "the prize script starts")
+  for _ = 1, 40 do vm:update() end
+  check(not vm:running(), "and runs to completion")
+
+  eq(names[1], 26, "getitemname USE_SCRIPT_VAR reads the item out of wScriptVar")
+  eq(vm.stringBuffer, "HP UP", "into the string buffer the prize text prints")
+  eq(gives[1] and gives[1][1], 26, "giveitem ITEM_FROM_MEM gives the same item")
+  eq(gives[1] and gives[1][2], 5, "five of it")
+  eq(gives[2] and gives[2][1], 27, "verbosegiveitem resolves ITEM_FROM_MEM too")
+  eq(names[#names], 18, "and a real item byte is passed through untouched")
+end
+
 T.finish()

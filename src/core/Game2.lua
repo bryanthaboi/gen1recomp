@@ -1762,6 +1762,15 @@ function Game2:paintBattleSurround(w, h)
     ox, oy = Chrome.fitOriginFor(w, h, scale, sw / 8, sh / 8)
   end
   local pw, ph = sw * scale, sh * scale
+  if owner and owner.extendedHUD and owner:extendedHUD()
+     and stack and stack.top and stack:top() == owner then
+    if mode == "world" then return end
+    G.setColor(0, 0, 0, 1)
+    if ox > 0 then G.rectangle("fill", 0, 0, ox, h) end
+    if ox + pw < w then G.rectangle("fill", ox + pw, 0, w - ox - pw, h) end
+    G.setColor(1, 1, 1, 1)
+    return
+  end
   G.setColor(0, 0, 0, alpha)
   if oy > 0 then G.rectangle("fill", 0, 0, w, oy) end
   if oy + ph < h then G.rectangle("fill", 0, oy + ph, w, h - oy - ph) end

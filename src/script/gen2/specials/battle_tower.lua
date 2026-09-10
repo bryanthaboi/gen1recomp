@@ -285,7 +285,7 @@ M.LoadOpponentTrainerAndPokemonWithOTSprite = function(vm)
   -- wBT_OTTrainer is WRAM bank 3, so the drawn opponent rides the VM and not
   -- the save; only the sBTTrainers slot and the two previous teams persist.
   local opponent = BattleTower.drawOpponent(
-    S.data(vm), record, Specials.random)
+    S.data(vm), record, Specials.random, vm.btLevelGroup)
   vm.btOpponent = opponent
   if not opponent then return end
   -- :1552-1575: BTTrainerClassSprites[class - 1] goes into the map object
@@ -313,7 +313,8 @@ M.BattleTowerBattle = function(vm)
   local h = S.hooks(vm)
   local opponent = vm.btOpponent
   if not opponent and record then
-    opponent = BattleTower.drawOpponent(data, record, Specials.random)
+    opponent = BattleTower.drawOpponent(data, record, Specials.random,
+      vm.btLevelGroup)
     vm.btOpponent = opponent
   end
   -- A cache with no `battleTower` block on trainers.lua has nobody to send

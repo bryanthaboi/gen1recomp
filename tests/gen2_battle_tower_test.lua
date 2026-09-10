@@ -520,6 +520,13 @@ do
   eq(screen.phase, "message", "an uber under L70 is refused below the L70 room")
   check(screen.message:find("LUGIA", 1, true) ~= nil,
     "and the refusal names it, the way text_ram wcd49 does")
+  -- mobile/mobile_46.asm:5464-5471, home/text.asm:479
+  eq(screen.pages and #screen.pages, 2, "Text_UberRestriction's para is a second page")
+  for _ = 1, 0x80 do pressed = {}; screen:update() end
+  eq(screen.phase, "message", "the first page waits on a button, not the countdown")
+  press("a"); screen:update()
+  eq(screen.page, 2, "A turns the page")
+  check(screen.message:find("Lv.70", 1, true) ~= nil, "to the Lv.70 half")
 
   for _ = 1, 0x80 do pressed = {}; screen:update() end
   eq(screen.cursor, 1, "the refusal restarts the menu at L:10")
@@ -537,6 +544,29 @@ do
   press("a"); screen:update()
   eq(answered, true, "YES ends the menu")
   eq(result, nil, "with no level group, which the handler turns into $a")
+end
+
+-- mobile/mobile_46.asm:5303 hlcoord 1, 14 and home/text.asm:473-477 LineChar
+do
+  local Chrome = require("src.ui.gen2.Chrome")
+  local seen
+  local basePrint, baseBox = Chrome.printWrapped, Chrome.textbox
+  Chrome.printWrapped = function(text, tx, ty, _width, rows, step)
+    seen = { text = text, tx = tx, ty = ty, rows = rows, step = step }
+    return 2
+  end
+  Chrome.textbox = function() end
+  local save = crystalSave()
+  local screen = BattleTowerMenu.new(nil, {
+    save = save, party = {}, rows = BattleTower.levelGroupRows(save),
+  })
+  screen:refuse("Cancel your BATTLE\nROOM challenge?")
+  screen:drawPanel()
+  Chrome.printWrapped, Chrome.textbox = basePrint, baseBox
+  eq(seen and seen.tx, 1, "the message starts at column 1")
+  eq(seen and seen.ty, 14, "on row 14")
+  eq(seen and seen.step, 2, "and its second line lands on row 16")
+  eq(seen and seen.rows, 2, "two lines fit the box")
 end
 
 -- ================================ wInBattleTowerBattle and the badge boosts

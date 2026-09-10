@@ -336,9 +336,9 @@ end
 -- ../pokecrystal/engine/events/battle_tower/load_trainer.asm:104-105 reads the
 -- room back as `ld a, [wBTChoiceOfLvlGroup] / dec a`, so group 0 indexes
 -- BEFORE the table; battle_tower.asm:1129-1141 is what can only save 1..10.
-function BattleTower.opponentGroup(save, roster)
+function BattleTower.opponentGroup(levelGroup, roster)
   local groups = (roster and roster.levelGroups) or BattleTower.MAX_LEVEL_GROUP
-  local group = counter(BattleTower.state(save).levelGroup)
+  local group = counter(levelGroup)
   if group < 1 then return 1 end
   if group > groups then return groups end
   return group
@@ -419,10 +419,10 @@ end
 -- The whole of `special LoadOpponentTrainerAndPokemon`, as one record.  The
 -- cart keeps it in wBT_OTTrainer, which is WRAM bank 3 and is NOT saved --
 -- only the sBTTrainers slot and the two previous teams this walk writes are.
-function BattleTower.drawOpponent(data, save, random)
+function BattleTower.drawOpponent(data, save, random, levelGroup)
   local roster = BattleTower.roster(data)
   if not roster then return nil end
-  local group = BattleTower.opponentGroup(save, roster)
+  local group = BattleTower.opponentGroup(levelGroup, roster)
   local trainer = BattleTower.chooseTrainer(save, roster, random)
   if not trainer then return nil end
   local rows = BattleTower.chooseTeam(save, roster, group, random)

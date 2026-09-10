@@ -201,22 +201,28 @@ do
   eq(sfx[1], "Sfx_Kinesis", "the fall opens on SFX_KINESIS")
   check(w.playerMasked, "OBJECT_ACTION_00 is SetFacingStanding: nothing drawn")
   check(w:busy(), "and the applymovement holds the overworld")
-  for _ = 1, 16 do w:updateSkyfall() end
+  local onTile = false
+  local function step()
+    w:updateSkyfall()
+    if w.skyfall and not w.playerMasked
+      and (w.player.spriteYOffset or 0) >= 0 then onTile = true end
+  end
+  for _ = 1, 15 do step() end
+  check(w.playerMasked, "still nothing drawn on the fifteenth hidden frame")
+  step()
   check(not w.playerMasked, "the sprite comes back for the descent")
-  eq(w.player.spriteYOffset, nil, "and has not moved yet")
-
-  w:updateSkyfall()
   eq(w.player.spriteYOffset, Movement.teleportYOffset(1),
-    "the first falling frame is off the top of the screen")
+    ".Step falls through to .Fall: the first visible frame is off the top")
   local last = w.player.spriteYOffset
   for _ = 1, 14 do
-    w:updateSkyfall()
+    step()
     check(w.player.spriteYOffset > last, "the drop eases down every frame")
     last = w.player.spriteYOffset
   end
-  w:updateSkyfall()
+  step()
   eq(w.player.spriteYOffset, 0, "landing flush on the tile")
   check(w.skyfall == nil, "and the state is done")
+  check(not onTile, "no live frame is both unmasked and on the tile")
   check(not w:busy(), "so the world is walkable again")
   eq(sfx[2], "Sfx_Strength", "SFX_STRENGTH on the landing")
   eq(#sfx, 2, "and no warpsound anywhere in the fall")

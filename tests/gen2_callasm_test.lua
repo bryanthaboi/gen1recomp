@@ -83,12 +83,14 @@ local WRITES_SCRIPT_VAR = {
   Fishing_CheckFacingUp = true,     -- engine/events/overworld.asm
   TreeMonEncounter = true,          -- engine/events/treemons.asm
   TryReceiveItem = true,            -- engine/events/misc_scripts.asm
+  ["BattleTowerHallwayChooseBattleRoomScript.asm_load_battle_room"] = true,
+                                    -- maps/BattleTowerHallway.asm:23-32
 }
 
 do
   local writers = 0
   for _ in pairs(WRITES_SCRIPT_VAR) do writers = writers + 1 end
-  eq(writers, 11, "eleven of the fifty-seven sites write wScriptVar")
+  eq(writers, 12, "twelve of the fifty-eight sites write wScriptVar")
 
   -- An empty ctx: no map, no party, no save.  Every routine still has to come
   -- back with the right SHAPE of answer, which is the whole contract.  A
@@ -104,6 +106,13 @@ do
       eq(value, nil, name .. " leaves wScriptVar alone")
     end
   end
+
+  -- maps/BattleTowerHallway.asm:23-32, pokecrystal.sym 27:75cb
+  local hallway = "BattleTowerHallwayChooseBattleRoomScript.asm_load_battle_room"
+  eq(CallAsm.nameFor(nil, 0x27, 0x75cb), hallway,
+    "the hallway receptionist's callasm resolves on Crystal")
+  eq(CallAsm.dispatch({ vm = { btLevelGroup = 5 } }, nil, 0x27, 0x75cb), 5,
+    "and answers wBTChoiceOfLvlGroup for the door walk")
 
   -- TryReceiveItem is the one wScriptVar writer that is a STUB, and it is the
   -- reason the stub table carries a nil value rather than a 0: the "no room"

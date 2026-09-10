@@ -681,15 +681,53 @@ local function gen2Rows(opts, hooks, shared)
       end)
   end
 
-  add(Strings("BATTLE LAYOUT"), ladder(opts, "battleLayout",
-    { { "og", "OG" }, { "wide", "WIDE" } }, "og"))
+  add(Strings("BATTLE LAYOUT"),
+    function()
+      return opts.battleLayout == "wide" and Strings("WIDE") or Strings("OG")
+    end,
+    function()
+      opts.battleLayout = opts.battleLayout == "wide" and "og" or "wide"
+      if opts.battleLayout ~= "wide" then
+        opts.battleHud = "standard"
+      end
+      return true
+    end)
+
+  add(Strings("BATTLE HUD"),
+    function()
+      return opts.battleLayout == "wide" and opts.battleHud == "extended"
+             and Strings("EXTENDED")
+             or Strings("STANDARD")
+    end,
+    function()
+      if opts.battleLayout ~= "wide" then
+        opts.battleHud = "standard"
+        return false
+      end
+      opts.battleHud = opts.battleHud == "extended" and "standard" or "extended"
+      return true
+    end)
 
   add(Strings("BATTLE SIZE"), ladder(opts, "battleFit",
     { { "fixed", "FIXED" }, { "fill", "FILL" } }, "fixed"))
 
-  add(Strings("BATTLE BG"), ladder(opts, "battleBg",
-    { { "white", "WHITE" }, { "black", "BLACK" }, { "world", "WORLD" } },
-    "white"))
+  add(Strings("BATTLE BG"),
+    function()
+      if bgLocked(opts) then return Strings("AUTO (FILL HUD)") end
+      if opts.battleBg == "black" then return Strings("BLACK") end
+      if opts.battleBg == "world" then return Strings("WORLD") end
+      return Strings("WHITE")
+    end,
+    function(dir)
+      if bgLocked(opts) then return false end
+      local order = { "white", "black", "world" }
+      local cur = 1
+      for i, mode in ipairs(order) do
+        if opts.battleBg == mode then cur = i break end
+      end
+      opts.battleBg = order[wrapIndex(cur - 1 + (dir or 1), #order) + 1]
+      return true
+    end)
 
   addTouchRows(rows, add, shared, hooks)
 

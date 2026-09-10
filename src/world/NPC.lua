@@ -53,7 +53,11 @@ function NPC.new(data, mapId, objDef)
   -- pokered engine/overworld/movement.asm:611
   local turnDirs = ROAM_DIRS[objDef.range or "NONE"]
   self.steps = objDef.movement == "WALK"
-  self.wanders = (self.steps or objDef.movement == "STAY") and turnDirs ~= nil
+  -- .determineDirection -- pokered engine/overworld/movement.asm:193
+  self.pinnedFacing = objDef.movement == "STAY"
+                      and FACING_FROM_RANGE[objDef.range] or nil
+  self.wanders = (self.steps or objDef.movement == "STAY")
+                 and (turnDirs ~= nil or self.pinnedFacing ~= nil)
   self.roamDirs = turnDirs or ROAM_DIRS.ANY_DIR
   self.timer = love.math.random(30, 120)
   return self
@@ -125,6 +129,12 @@ function NPC:update(map, entities)
   if self.frozen or not self.wanders then return end
   self.timer = self.timer - 1
   if self.timer > 0 then return end
+  -- TryWalking + CanWalkOntoTile .impassable -- movement.asm:262, 673
+  if self.pinnedFacing then
+    self.timer = love.math.random(1, 128)
+    self.facing = self.pinnedFacing
+    return
+  end
   self.timer = love.math.random(30, 180)
   local dir = self.roamDirs[love.math.random(#self.roamDirs)]
   self.facing = dir

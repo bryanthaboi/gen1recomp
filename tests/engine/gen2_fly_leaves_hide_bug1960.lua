@@ -74,8 +74,8 @@ do
   check(drainFadeOut(world), "the white fade out drains")
   eq(world.flyHidden, "to", "the load moved the hide to the arrival side")
   local hideAll, hidePlayer = world:flyHides()
-  check(not hideAll, "RefreshMapSprites has the objects back")
-  check(hidePlayer, "but SkipUpdateMapSprites still holds the player")
+  check(hideAll, "SkipUpdateMapSprites keeps the objects out of OAM")
+  check(hidePlayer, "and the player with them")
   check(drainMapSetup(world), "the fade in drains")
   eq(world.flyHidden, nil, ".ReturnFromFly respawns him")
   local allB, playerB = world:flyHides()
@@ -103,22 +103,37 @@ do
   check(world.mapSetup ~= nil, "and hands over to the teleport fade")
   eq(world.flyHidden, "from", "the departure map stays empty through the fade")
   check(drainFadeOut(world), "the white fade out drains")
-  eq(world.flyHidden, "to", "the load side hides the player alone")
+  eq(world.flyHidden, "to", "the load side keeps the hide up")
   local allMid, playerMid = world:flyHides()
-  check(not allMid, "the map's objects are drawn through the fade in")
-  check(playerMid, "the player is not")
+  check(allMid, "nothing is drawn through the fade in")
+  check(playerMid, "the player included")
 
-  check(drainMapSetup(world), "the fade in drains")
+  local hiddenEveryFrame = true
+  guard = 0
+  while world.mapSetup and guard < 4000 do
+    world:updateMapSetup()
+    local a, p = world:flyHides()
+    if not (a and p) then hiddenEveryFrame = false end
+    guard = guard + 1
+  end
+  check(guard < 4000, "the fade in drains")
   check(world.flyAnim ~= nil and world.flyAnim.phase == "to",
     "FlyToAnim takes over")
   eq(world.flyHidden, "to", "and the player is still hidden under the bird")
   guard = 0
   while world.flyAnim and guard < 4000 do
     world:stepFlyAnim()
+    if world.flyAnim then
+      local a, p = world:flyHides()
+      if not (a and p) then hiddenEveryFrame = false end
+    end
     guard = guard + 1
   end
   check(guard < 4000, "FlyToAnim finishes")
+  check(hiddenEveryFrame, "everything stays hidden until the bird lands")
   eq(world.flyHidden, nil, "and .ReturnFromFly clears the hide")
+  local allEnd, playerEnd = world:flyHides()
+  check(not allEnd and not playerEnd, "then everyone is drawn again")
 end
 
 do

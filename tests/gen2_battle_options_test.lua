@@ -247,6 +247,7 @@ local function paint(states, w, h)
     rects[#rects + 1] = { x = x, y = y, w = rw, h = rh, pen = pen }
   end
   local stack = { states = states }
+  function stack:top() return self.states[#self.states] end
   function stack:visibleBase()
     for i = #self.states, 1, -1 do
       if self.states[i].isOpaque then return i end
@@ -488,7 +489,10 @@ if layoutRow then
   check("stored lowercase, shown OG, padded to the value column",
     layoutRow.display.og, "OG  ")
   check("and WIDE", layoutRow.display.wide, "WIDE")
-  check("it sits straight before BATTLE SIZE", layoutIndex + 1, sizeIndex)
+  check("BATTLE HUD sits between it and BATTLE SIZE", layoutIndex + 2,
+    sizeIndex)
+  check("and that row is BATTLE HUD",
+    OptionsMenu.ROWS[layoutIndex + 1].label, "BATTLE HUD")
 end
 
 local builtLayout, viewedLayout
@@ -720,6 +724,292 @@ check("drawBottom takes the extra tiles as an argument",
   type(BattleState.drawBottom), "function")
 check("and WIDE hands it the 18 the wide surface adds",
   WideBattle.EXTRA_TILES, 38 - Chrome.SCREEN_W)
+
+
+check("the default HUD is the cart's placement",
+  Save.DEFAULT_OPTIONS.battleHud, "standard")
+check("and a fresh options table carries it",
+  Save.defaultOptions().battleHud, "standard")
+
+local hudIndex, hudRow = rowNamed("BATTLE HUD")
+check("OPTION has a BATTLE HUD row", hudRow ~= nil, true)
+if hudRow then
+  check("it edits battleHud", hudRow.key, "battleHud")
+  check("it is a port row", hudRow.port, true)
+  check("it follows BATTLE LAYOUT", hudIndex - 1, layoutIndex)
+  check("OG reads STANDARD even with extended stored",
+    hudRow.text({ battleLayout = "og", battleHud = "extended" }), "STANDARD")
+  check("WIDE + extended reads EXTENDED",
+    hudRow.text({ battleLayout = "wide", battleHud = "extended" }), "EXTENDED")
+  check("WIDE + standard reads STANDARD",
+    hudRow.text({ battleLayout = "wide", battleHud = "standard" }), "STANDARD")
+end
+
+local builtHud, viewedHud
+for _, row in ipairs(menu.rows) do
+  if row.key == "battleHud" then builtHud = row end
+end
+for _, row in ipairs(menu.view or {}) do
+  if row.id == "battleHud" then viewedHud = row end
+end
+check("buildRows keeps BATTLE HUD", builtHud ~= nil, true)
+check("and files it under the BATTLE OPTIONS group", viewedHud, nil)
+if builtHud and builtLayout then
+  menu.options.battleLayout = "og"
+  menu.options.battleHud = "extended"
+  menu:cycle(builtHud, 1)
+  check("under OG the row resets to standard", menu.options.battleHud,
+    "standard")
+  menu:cycle(builtHud, 1)
+  check("and does not toggle", menu.options.battleHud, "standard")
+  menu.options.battleLayout = "wide"
+  menu:cycle(builtHud, 1)
+  check("under WIDE it toggles to extended", menu.options.battleHud,
+    "extended")
+  menu:cycle(builtHud, -1)
+  check("and back", menu.options.battleHud, "standard")
+  menu:cycle(builtHud, 1)
+  menu:cycle(builtLayout, 1)
+  check("stepping LAYOUT to og", menu.options.battleLayout, "og")
+  check("resets the HUD", menu.options.battleHud, "standard")
+  menu:cycle(builtLayout, 1)
+  check("LAYOUT still walks back to wide", menu.options.battleLayout, "wide")
+  check("without touching the HUD", menu.options.battleHud, "standard")
+  menu.options.battleLayout = "og"
+end
+
+local gearHud, gearBg
+for _, section in ipairs(model.sections) do
+  for _, row in ipairs(section.rows) do
+    if row.label == "BATTLE HUD" then gearHud = row end
+    if row.label == "BATTLE BG" then gearBg = row end
+  end
+end
+check("the gold gear offers BATTLE HUD", gearHud ~= nil, true)
+if gearHud and gearLayout and gearBg then
+  local gold = model.opts.gold
+  gold.battleLayout, gold.battleHud = "og", "extended"
+  check("the gear reads STANDARD under OG", gearHud.value(), "STANDARD")
+  check("stepping under OG changes nothing", gearHud.step(1), false)
+  check("but writes standard back", gold.battleHud, "standard")
+  gold.battleLayout = "wide"
+  gearHud.step(1)
+  check("under WIDE it toggles", gold.battleHud, "extended")
+  check("and reads EXTENDED", gearHud.value(), "EXTENDED")
+  gold.battleFit, gold.battleBg = "fill", "black"
+  check("FILL + EXTENDED locks BATTLE BG", gearBg.value(), "AUTO (FILL HUD)")
+  check("and its step is refused", gearBg.step(1), false)
+  check("so the stored bg is untouched", gold.battleBg, "black")
+  gold.battleFit = "fixed"
+  check("FIXED unlocks it again", gearBg.value(), "BLACK")
+  gearLayout.step(1)
+  check("stepping LAYOUT to og", gold.battleLayout, "og")
+  check("resets the HUD in the gear too", gold.battleHud, "standard")
+  gold.battleBg = "white"
+end
+
+local extendedHUD = BattleState.extendedHUD
+check("the Gold battle screen answers extendedHUD", type(extendedHUD),
+  "function")
+if type(extendedHUD) == "function" then
+  local function screen(layout, hud, fit, bg)
+    return { game = { options = { battleLayout = layout, battleHud = hud,
+      battleFit = fit, battleBg = bg } } }
+  end
+  check("OG never extends", extendedHUD(screen("og", "extended", "fixed",
+    "white")), false)
+  check("nor does WIDE + standard", extendedHUD(screen("wide", "standard",
+    "fixed", "white")), false)
+  check("FIXED + WHITE extends", extendedHUD(screen("wide", "extended",
+    "fixed", "white")), true)
+  check("FIXED + BLACK extends", extendedHUD(screen("wide", "extended",
+    "fixed", "black")), true)
+  check("FIXED + WORLD extends", extendedHUD(screen("wide", "extended",
+    "fixed", "world")), true)
+  check("FILL + WHITE extends", extendedHUD(screen("wide", "extended",
+    "fill", "white")), true)
+  check("FILL + BLACK extends, because the bg is forced white",
+    extendedHUD(screen("wide", "extended", "fill", "black")), true)
+  check("and bgMode reads white there",
+    BattleState.bgMode(screen("wide", "extended", "fill", "black")), "white")
+  check("FILL + standard keeps its black",
+    BattleState.bgMode(screen("wide", "standard", "fill", "black")), "black")
+  check("OG + FILL + extended keeps its black too",
+    BattleState.bgMode(screen("og", "extended", "fill", "black")), "black")
+  check("a screen with no game does not extend", extendedHUD({}), false)
+  local worldScreen = screen("wide", "extended", "fixed", "world")
+  local blackScreen = screen("wide", "extended", "fixed", "black")
+  check("extendedWorldHUD on FIXED + WORLD",
+    BattleState.extendedWorldHUD(worldScreen), true)
+  check("not extendedBlackHUD",
+    BattleState.extendedBlackHUD(worldScreen), false)
+  check("extendedBlackHUD on FIXED + BLACK",
+    BattleState.extendedBlackHUD(blackScreen), true)
+  check("not extendedWorldHUD",
+    BattleState.extendedWorldHUD(blackScreen), false)
+  check("FILL + WORLD is neither, it is white",
+    BattleState.extendedWorldHUD(screen("wide", "extended", "fill", "world")),
+    false)
+end
+
+for _, name in ipairs({ "extendedHUD", "extendedWorldHUD",
+    "extendedBlackHUD" }) do
+  check("mods are told " .. name .. " is backed",
+    Gen2Compat.memberStatus("src.battle.BattleState", name), "backed")
+end
+
+for _, size in ipairs({ { 1280, 840 }, { 1920, 1080 } }) do
+  local w, h = size[1], size[2]
+  local fit = Chrome.fitScaleFor(w, h, 38, 18)
+  local ox = Chrome.fitOriginFor(w, h, fit, 38, 18)
+  local pw = 304 * fit
+  local function extendedOwner(mode)
+    return {
+      bgMode = function() return mode end,
+      BG_WORLD_DIM = BattleState.BG_WORLD_DIM,
+      panelSize = function() return 304, 144 end,
+      battlePanelScale = function() return fit end,
+      extendedHUD = function() return true end,
+    }
+  end
+  local rects = paint({ extendedOwner("black") }, w, h)
+  local label = ("EXTENDED + BLACK %dx%d"):format(w, h)
+  check(label .. ": two side bars only", #rects, 2)
+  local covered, overlap, offColour = 0, 0, 0
+  for _, r in ipairs(rects) do
+    covered = covered + r.w * r.h
+    if r.pen[1] ~= 0 or r.pen[2] ~= 0 or r.pen[3] ~= 0 or r.pen[4] ~= 1 then
+      offColour = offColour + 1
+    end
+    local ix = math.max(0, math.min(r.x + r.w, ox + pw) - math.max(r.x, ox))
+    overlap = overlap + ix * math.max(0, math.min(r.y + r.h, h) - r.y)
+    check(label .. ": the bar runs the full height", r.h, h)
+  end
+  check(label .. ": no bar touches the paper column", overlap, 0)
+  check(label .. ": the sides are covered", covered, w * h - pw * h)
+  check(label .. ": every bar is opaque black", offColour, 0)
+  check(("EXTENDED + WORLD %dx%d paints nothing"):format(w, h),
+    #paint({ extendedOwner("world") }, w, h), 0)
+  wideSafe({ extendedOwner("black"), plainMenu }, w, h, fit,
+    ("EXTENDED + BLACK under a plain menu %dx%d"):format(w, h))
+  wideSafe({ extendedOwner("world"), plainMenu }, w, h, fit,
+    ("EXTENDED + WORLD under a plain menu %dx%d"):format(w, h))
+end
+
+do
+  local w, h = 1280, 840
+  local scale = Chrome.fitScaleFor(w, h, 38, 18)
+  local ox, oy = Chrome.fitOriginFor(w, h, scale, 38, 18)
+  local _, py, _, ph = Chrome.playfieldRect(w, h)
+  local tx, ty, ts = 0, 0, 1
+  local saved = {}
+  local realPush, realPop = G.push, G.pop
+  local realTranslate, realScale = G.translate, G.scale
+  G.push = function() saved[#saved + 1] = { tx, ty, ts } end
+  G.pop = function()
+    local s = table.remove(saved)
+    tx, ty, ts = s[1], s[2], s[3]
+  end
+  G.translate = function(dx, dy) tx, ty = tx + dx * ts, ty + dy * ts end
+  G.scale = function(s) ts = ts * s end
+  local realClip, realLetterbox, realFill = Chrome.clipTo, Chrome.letterbox,
+    Chrome.paletteFill
+  local columns = {}
+  Chrome.clipTo = function() end
+  Chrome.letterbox = function() end
+  Chrome.paletteFill = function(x, y, fw, fh)
+    if ts == 1 then columns[#columns + 1] = { x, y, fw, fh } end
+  end
+
+  local function fakeBattle(opts, onTop)
+    local placed = {}
+    local b = { game = { options = opts }, phase = "menu",
+      statsBoxMon = { level = 5 } }
+    b.game.stack = { top = function() return onTop and b or {} end }
+    b.battlePanelScale = function() return scale end
+    b.hasBattleSides = function() return true end
+    b.drawSceneBody = function() end
+    b.drawPics = function() end
+    b.drawScene = function(_, fn) fn() end
+    b.drawEnemyHud = function() placed.enemy = { tx, ty, ts } end
+    b.drawPlayerHud = function() placed.player = { tx, ty, ts } end
+    b.drawBottom = function(_, extra, noStats)
+      placed.bottom = { tx, ty, ts, extra, noStats }
+    end
+    b.extendedHUD = BattleState.extendedHUD
+    b.bgMode = BattleState.bgMode
+    return b, placed
+  end
+
+  local standard, placedStd = fakeBattle({ battleLayout = "wide",
+    battleHud = "standard", battleFit = "fixed", battleBg = "white" }, true)
+  WideBattle.draw(standard, w, h)
+  check("standard WIDE puts the enemy HUD on the surface origin",
+    placedStd.enemy and placedStd.enemy[1] .. "," .. placedStd.enemy[2],
+    ox .. "," .. oy)
+  check("and the player HUD 18 tiles in on the same row",
+    placedStd.player and placedStd.player[1] .. "," .. placedStd.player[2],
+    (ox + 144 * scale) .. "," .. oy)
+  check("and the bottom on the surface origin",
+    placedStd.bottom and placedStd.bottom[1] .. "," .. placedStd.bottom[2],
+    ox .. "," .. oy)
+  check("with its 18 extra tiles", placedStd.bottom and placedStd.bottom[4], 18)
+  check("and nothing more", placedStd.bottom and placedStd.bottom[5], nil)
+  check("standard WIDE paints no paper column", #columns, 0)
+
+  local extended, placedExt = fakeBattle({ battleLayout = "wide",
+    battleHud = "extended", battleFit = "fixed", battleBg = "black" }, true)
+  WideBattle.draw(extended, w, h)
+  local topY = oy + math.ceil((py - oy) / scale) * scale
+  local bottomY = oy + math.floor((py + ph - 144 * scale - oy) / scale) * scale
+  check("EXTENDED docks the enemy HUD at the playfield top",
+    placedExt.enemy and placedExt.enemy[1] .. "," .. placedExt.enemy[2],
+    ox .. "," .. topY)
+  check("which is the top edge itself at 1280x840", topY, py)
+  check("the bottom windows sit flush on the playfield bottom",
+    placedExt.bottom and placedExt.bottom[1] .. "," .. placedExt.bottom[2],
+    ox .. "," .. bottomY)
+  check("which is 144 scaled rows up from it", bottomY + 144 * scale, py + ph)
+  check("the player HUD rides with the bottom group",
+    placedExt.player and placedExt.player[1] .. "," .. placedExt.player[2],
+    (ox + 144 * scale) .. "," .. bottomY)
+  check("drawBottom keeps its one argument",
+    placedExt.bottom and placedExt.bottom[5], nil)
+  check("and the same scale", placedExt.enemy and placedExt.enemy[3], scale)
+
+  -- engine/battle/core.asm:7060
+  local levelUp, placedLevel = fakeBattle({ battleLayout = "wide",
+    battleHud = "extended", battleFit = "fixed", battleBg = "white" }, true)
+  levelUp.phase = "stats-box"
+  WideBattle.draw(levelUp, w, h)
+  check("the level-up stats box brings the foe HUD back to the surface",
+    placedLevel.enemy and placedLevel.enemy[1] .. "," .. placedLevel.enemy[2],
+    ox .. "," .. oy)
+  check("and the player HUD under the box, where the cart draws it",
+    placedLevel.player and placedLevel.player[1] .. ","
+      .. placedLevel.player[2], (ox + 144 * scale) .. "," .. oy)
+  check("bottom too", placedLevel.bottom and placedLevel.bottom[2], oy)
+  check("and no paper column while it is up", #columns, 1)
+  check("EXTENDED paints one paper column", #columns, 1)
+  check("the composition's width", columns[1] and columns[1][3], 304 * scale)
+  check("through the whole playfield", columns[1] and columns[1][4], ph)
+  check("from the letterbox x", columns[1] and columns[1][1], ox)
+
+  local covered, placedCov = fakeBattle({ battleLayout = "wide",
+    battleHud = "extended", battleFit = "fixed", battleBg = "white" }, false)
+  WideBattle.draw(covered, w, h)
+  check("a battle under a menu falls back to the surface",
+    placedCov.enemy and placedCov.enemy[1] .. "," .. placedCov.enemy[2],
+    ox .. "," .. oy)
+  check("bottom included",
+    placedCov.bottom and placedCov.bottom[2], oy)
+  check("and paints no column", #columns, 1)
+
+  G.push, G.pop, G.translate, G.scale = realPush, realPop, realTranslate,
+    realScale
+  Chrome.clipTo, Chrome.letterbox, Chrome.paletteFill = realClip,
+    realLetterbox, realFill
+end
 
 print(("gen2 battle options: %d checks, %d failures"):format(checks, failures))
 if failures > 0 then

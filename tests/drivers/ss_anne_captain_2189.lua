@@ -74,6 +74,7 @@ return function(game)
     U.wait(1)
   end
 
+  captain.timer = 128
   for _ = 1, 400 do
     if game.stack:top() == ow then break end
     U.tap(game, "a")
@@ -83,9 +84,17 @@ return function(game)
   check("HM01 handed over", game.save.flags.EVENT_GOT_HM01 == true)
   check("EVENT_RUBBED_CAPTAINS_BACK set",
         game.save.flags.EVENT_RUBBED_CAPTAINS_BACK == true)
-  U.wait(10)
   check("and only now does he turn around", captain.facing == "down")
   U.shot(game, SHOT_DIR .. "/2189_03_captain_turned_after_rub.png")
+
+  -- engine/overworld/movement.asm:193,262
+  local back
+  for i = 1, 140 do
+    U.wait(1)
+    if captain.facing == "up" then back = i break end
+  end
+  check("then his STAY, UP pin turns him back within 130 frames",
+        back ~= nil and back <= 130)
 
   quit()
 end

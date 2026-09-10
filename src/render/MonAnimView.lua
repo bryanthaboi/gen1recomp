@@ -1,10 +1,18 @@
 -- ../pokecrystal/engine/gfx/pic_animation.asm:79-89 AnimateFrontpic
 
+local Assets = require("src.render.Assets")
 local MonAnim = require("src.render.MonAnim")
 local Unown = require("src.core.gen2.Unown")
 
 local MonAnimView = {}
 MonAnimView.__index = MonAnimView
+
+-- ../pokecrystal/engine/gfx/load_pics.asm:105-131
+function MonAnimView.replaced(vanilla, resolved)
+  if type(vanilla) ~= "string" then return false end
+  if type(resolved) == "string" and resolved ~= vanilla then return true end
+  return Assets.resolve(vanilla) ~= vanilla
+end
 
 -- ../pokecrystal/engine/events/halloffame.asm:225-238
 function MonAnimView.animData(def, mon)
@@ -17,10 +25,20 @@ function MonAnimView.animData(def, mon)
   return data
 end
 
-function MonAnimView.start(def, mon, scene, imageFn, onCry)
+-- ../pokecrystal/engine/gfx/load_pics.asm:132-158
+function MonAnimView.start(def, mon, scene, imageFn, onCry, opts)
   local data = MonAnimView.animData(def, mon)
   if not (data and data.tiles and imageFn) then return nil end
-  local sheet = imageFn(data.sheet)
+  local path, trueColor = data.sheet, false
+  if opts and opts.resolve and type(path) == "string" then
+    path, trueColor = opts.resolve(path)
+    if type(path) ~= "string" or path == "" then path = data.sheet end
+  end
+  if opts and opts.staticReplaced
+     and not MonAnimView.replaced(data.sheet, path) then
+    return nil
+  end
+  local sheet = imageFn(path)
   if not sheet then return nil end
   local runner = MonAnim.new(data, scene, onCry)
   if not runner then return nil end
@@ -29,6 +47,7 @@ function MonAnimView.start(def, mon, scene, imageFn, onCry)
     sheet = sheet,
     size = data.tiles * 8,
     quads = {},
+    trueColor = trueColor and true or false,
   }, MonAnimView)
 end
 

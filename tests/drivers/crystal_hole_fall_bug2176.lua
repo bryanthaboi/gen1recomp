@@ -79,17 +79,36 @@ return function(game)
   ok(world.map and world.map.id == BELOW, "landed on " .. BELOW)
   ok(world:busy(), "and the applymovement holds the overworld")
   U.shot(game, "/tmp/pokeport-shots/hole2176_hidden.png")
-  U.wait(20)
-  U.shot(game, "/tmp/pokeport-shots/hole2176_falling.png")
-  ok(world.skyfall and world.skyfall.phase == "fall",
-    "the sprite only reappears once it is dropping")
-  ok((world.player.spriteYOffset or 0) < 0, "from above the landing cell")
-  U.shot(game, SHOTS .. "/2193_02_falling.png")
-
+  os.execute('mkdir -p "' .. SHOTS .. '" 2>/dev/null')
+  local FIRST = SHOTS .. "/2240_01_first_unmasked_frame.png"
+  local FALLING = SHOTS .. "/2193_02_falling.png"
+  local onTile, sawFall, shotFirst, shotFalling = 0, false, false, false
   for _ = 1, 120 do
     if not world.skyfall then break end
+    if not world.playerMasked then
+      if world.skyfall.phase == "fall" then sawFall = true end
+      if (world.player.spriteYOffset or 0) >= 0 then onTile = onTile + 1 end
+      if not shotFirst then
+        shotFirst = true
+        game.capturePath = FIRST
+      elseif not shotFalling and (world.player.spriteYOffset or 0) > -40 then
+        shotFalling = true
+        game.capturePath = FALLING
+      end
+    end
     U.wait(1)
   end
+  ok(sawFall, "the sprite only reappears once it is dropping")
+  ok(onTile == 0, "no skyfall frame draws the player on the landing cell ("
+    .. onTile .. " did)")
+  U.wait(2)
+  local function onDisk(path)
+    local f = io.open(path, "rb")
+    if f then f:close() return true end
+    return false
+  end
+  ok(onDisk(FIRST) and onDisk(FALLING),
+    "captured the first unmasked and a falling frame")
   ok(world.shake ~= nil, "earthquake 16 fires on the landing")
   ok(world.shake and world.shake.amplitude == 1, "one pixel of it")
   U.shot(game, "/tmp/pokeport-shots/hole2176_landed.png")

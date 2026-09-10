@@ -138,13 +138,12 @@ M.MT_MOON_POKECENTER = {
       { "jump_if_false", "declined" },
       { "check_money", 500 },
       { "jump_if_false", "no_money" },
-      { "give_pokemon", "MAGIKARP", 5 },
+      -- engine/events/give_pokemon.asm:45-46
+      { "give_pokemon", "MAGIKARP", 5, false, true },
       -- MtMoonPokecenter.asm:49 `jr nc, .done`: a refused gift is never charged
       { "jump_if_false", "box_full" },
       { "take_money", 500 },
       { "set_flag", "EVENT_BOUGHT_MAGIKARP" },
-      { "text_sound", "Get_Item1" },
-      { "show_text", "_GotMonText", { RAM = "MAGIKARP" } },
       { "jump", "end" },
       { "label", "box_full" },
       { "show_text", "_BoxIsFullText" },
@@ -250,17 +249,24 @@ M.FIGHTING_DOJO = {
                "FIGHTINGDOJO_HITMONLEE_POKE_BALL",
                "_FightingDojoHitmonchanPokeBallText"),
   },
-  -- The two dojo posters on the north wall (FightingDojo.asm bg_events at
-  -- the top of the room, cells (4,0)/(5,0) directly above the prize balls)
-  -- print _EnemiesOnEverySideText.  The map extractor dropped the dojo
-  -- bg_events (signs = {}), so wire the poster read here, the same
-  -- facing-up + coord shape the mansion switches use.  Reachable only once
-  -- a claimed prize frees the ball cell below the poster (#197).
+  -- data/events/hidden_events.asm:526-531
   onInteract = function(game, ow, fx, fy)
     if ow.player.facing ~= "up" then return false end
-    if fy == 0 and (fx == 4 or fx == 5) then
+    -- ../pokered/data/events/hidden_events.asm:527-528
+    if fy == 9 and (fx == 3 or fx == 6) then
+      push(game, text(game)._FightingDojoText or "FIGHTING DOJO")
+      return true
+    end
+    -- ../pokered/data/events/hidden_events.asm:529
+    if fy == 0 and fx == 4 then
       push(game, text(game)._EnemiesOnEverySideText
         or "Enemies on every\nside!")
+      return true
+    end
+    -- ../pokered/data/events/hidden_events.asm:530
+    if fy == 0 and fx == 5 then
+      push(game, text(game)._WhatGoesAroundComesAroundText
+        or "What goes around\ncomes around!")
       return true
     end
     return false
@@ -281,12 +287,10 @@ M.SILPH_CO_7F = {
       { "check_flag", "EVENT_GOT_LAPRAS" },
       { "jump_if_true", "has_lapras" },
       { "show_text", "_SilphCo7FSilphWorkerM1HaveThisPokemonText" },
-      { "give_pokemon", "LAPRAS", 15 },
+      -- engine/events/give_pokemon.asm:45-46
+      { "give_pokemon", "LAPRAS", 15, false, true },
       { "jump_if_false", "box_full" },
-      -- flag ahead of the jingle, like the Celadon EEVEE (#426)
       { "set_flag", "EVENT_GOT_LAPRAS" },
-      { "text_sound", "Get_Item1" },
-      { "show_text", "_GotMonText", { RAM = "LAPRAS" } },
       { "show_text", "_SilphCo7FSilphWorkerM1LaprasDescriptionText" },
       { "jump", "end" },
       { "label", "box_full" },

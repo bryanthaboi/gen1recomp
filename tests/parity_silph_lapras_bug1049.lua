@@ -38,7 +38,8 @@ for _, row in ipairs(type(script) == "table" and script or {}) do
     gives = gives + 1
     eq(row[2], "LAPRAS", "the gift species is LAPRAS")
     eq(row[3], 15, "the gift is level 15 (lb bc, LAPRAS, 15)")
-    check(row[4] == nil, "no skipNickname: AskName is left to run")
+    check(row[4] ~= true, "no skipNickname: AskName is left to run")
+    eq(row[5], true, "GotMonText + jingle come from GivePokemon (give_pokemon.asm:45-46)")
   end
 end
 eq(gives, 1, "exactly one give_pokemon row")
@@ -74,13 +75,14 @@ local function shownIs(want, msg)
   eq(table.concat(shown, ","), table.concat(want, ","), msg)
 end
 
--- === 2) the gift itself: thanks, nickname prompt, GotMonText, blurb ===
+-- === 2) the gift itself: thanks, GotMonText, nickname prompt, blurb ===
+-- engine/events/give_pokemon.asm:45-46 then add_mon.asm:52 (#2243)
 Game.save = SaveData.newGame()
 check(runScript(), "LAPRAS gift script completes")
 shownIs({ "_SilphCo7FSilphWorkerM1HaveThisPokemonText",
-          "_DoYouWantToNicknameText", "_GotMonText",
+          "_GotMonText", "_DoYouWantToNicknameText",
           "_SilphCo7FSilphWorkerM1LaprasDescriptionText" },
-        "thanks, nickname prompt, got-mon line, then the LAPRAS blurb")
+        "thanks, got-mon line, nickname prompt, then the LAPRAS blurb")
 eq(#Game.save.party, 1, "LAPRAS joins the party")
 local lapras = Game.save.party[1] or {}
 eq(lapras.species, "LAPRAS", "gift species is LAPRAS")
@@ -106,9 +108,9 @@ Game.save = SaveData.newGame()
 for i = 1, 6 do Game.save.party[i] = Pokemon.new(Data, "PIDGEY", 5) end
 check(runScript(), "full-party gift script completes")
 shownIs({ "_SilphCo7FSilphWorkerM1HaveThisPokemonText",
-          "_DoYouWantToNicknameText", "_SentToBoxText", "_GotMonText",
+          "_GotMonText", "_DoYouWantToNicknameText", "_SentToBoxText",
           "_SilphCo7FSilphWorkerM1LaprasDescriptionText" },
-        "full party: nickname, sent-to-box, got-mon line, blurb")
+        "full party: got-mon line, nickname, sent-to-box, blurb")
 local boxed = false
 for _, box in ipairs(Boxes.ensure(Game.save)) do
   for _, m in ipairs(box) do

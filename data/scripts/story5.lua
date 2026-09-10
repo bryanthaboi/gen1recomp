@@ -573,16 +573,18 @@ local function route22Scene(n, objIndex, objName, oppClass, baseParty, beatFlag,
     { "move_npc_to", objIndex, rx, 5 },                        -- 2
     { "face_object", objIndex, rivalFacing },                  -- 3
     { "show_text", "_Route22RivalBeforeBattleText" .. n },     -- 4
-    { "rival_battle", oppClass, baseParty },                   -- 5
-    { "jump_if_false", 13 },                                   -- 6
-    { "set_flag", beatFlag },                                  -- 7
-    { "show_text", "_Route22Rival" .. n .. "DefeatedText" },   -- 8
-    { "show_text", "_Route22RivalAfterBattleText" .. n },      -- 9
+    -- scripts/Route22.asm:132-134, 288-290
+    { "save_end_battle_text", "_Route22Rival" .. n .. "DefeatedText" },
+    { "rival_battle", oppClass, baseParty },
+    { "jump_if_false", "leave" },
+    { "set_flag", beatFlag },
+    { "show_text", "_Route22RivalAfterBattleText" .. n },
     { "play_music", "Music_MeetRival", { start = "rival",
-      tempo = n == 2 and 100 or nil } },                     -- 10
-    { "walk_npc", objIndex, route22ExitDirs(n, py) },          -- 11
+      tempo = n == 2 and 100 or nil } },
+    { "walk_npc", objIndex, route22ExitDirs(n, py) },
     { "play_default_music" },                    -- scripts/Route22.asm:230
-    { "hide_object", "ROUTE_22", objName },                    -- 13
+    { "label", "leave" },
+    { "hide_object", "ROUTE_22", objName },
   }
 end
 
@@ -880,27 +882,37 @@ M.ROUTE_18_GATE_1F = {
 -- Silph Co. 7F rival ambush (scripts/SilphCo7F.asm
 -- SilphCo7FDefaultScript: coords (3,2)/(3,3), the rival at (3,7) walks
 -- up, MUSIC_MEET_RIVAL, OPP_RIVAL2 parties 7-9 by starter, then he
--- wishes you luck, walks off right and disappears; one-time via
--- EVENT_BEAT_SILPH_CO_RIVAL)
+-- wishes you luck, walks to the (5,3) teleporter and disappears; one-time
+-- via EVENT_BEAT_SILPH_CO_RIVAL)
+
+-- scripts/SilphCo7F.asm:239 .RivalExitRightMovement (coord index 1, (3,2))
+-- scripts/SilphCo7F.asm:244 .RivalWalkAroundPlayerMovement (index 2, (3,3))
+local function silphCo7FRivalExitDirs(py)
+  if py == 2 then return { "right", "right" } end
+  return { "left", "up", "up", "right", "right", "right", "down" }
+end
+
 M.SILPH_CO_7F = {
   onStep = function(game, ow, x, y)
     if game.save.flags.EVENT_BEAT_SILPH_CO_RIVAL then return false end
     if not inCoords({ { 3, 2 }, { 3, 3 } }, x, y) then return false end
     return runAmbush(game, ow, {
-      { "show_object", "SILPH_CO_7F", "SILPHCO7F_RIVAL" },     -- 1
-      { "show_text", "_SilphCo7FRivalText" },                  -- 2
-      { "move_npc_to", 9, 3, y + 1 },                          -- 3
-      { "face_object", 9, "up" },                              -- 4
-      { "show_text", "_SilphCo7FRivalWaitedHereText" },        -- 5
-      { "rival_battle", "OPP_RIVAL2", 7 },                     -- 6
-      { "jump_if_false", 14 },                                 -- 7
-      { "set_flag", "EVENT_BEAT_SILPH_CO_RIVAL" },             -- 8
-      { "show_text", "_SilphCo7FRivalDefeatedText" },          -- 9
-      { "show_text", "_SilphCo7FRivalGoodLuckToYouText" },     -- 10
-      { "play_music", "Music_MeetRival", { start = "rival" } }, -- 11
-      { "move_npc_to", 9, 5, y + 1 },                          -- 12
+      { "show_object", "SILPH_CO_7F", "SILPHCO7F_RIVAL" },
+      { "show_text", "_SilphCo7FRivalText" },
+      { "move_npc_to", 9, 3, y + 1 },
+      { "face_object", 9, "up" },
+      { "show_text", "_SilphCo7FRivalWaitedHereText" },
+      -- scripts/SilphCo7F.asm:184-186
+      { "save_end_battle_text", "_SilphCo7FRivalDefeatedText" },
+      { "rival_battle", "OPP_RIVAL2", 7 },
+      { "jump_if_false", "leave" },
+      { "set_flag", "EVENT_BEAT_SILPH_CO_RIVAL" },
+      { "show_text", "_SilphCo7FRivalGoodLuckToYouText" },
+      { "play_music", "Music_MeetRival", { start = "rival" } },
+      { "walk_npc", 9, silphCo7FRivalExitDirs(y) },
       { "play_default_music" },                -- scripts/SilphCo7F.asm:261
-      { "hide_object", "SILPH_CO_7F", "SILPHCO7F_RIVAL" },     -- 14
+      { "label", "leave" },
+      { "hide_object", "SILPH_CO_7F", "SILPHCO7F_RIVAL" },
     }, "down")
   end,
 }

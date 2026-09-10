@@ -319,12 +319,36 @@ function BattleState:drawsWidescreen() return true end
 -- engine/battle/core.asm:8754
 function BattleState:bgMode()
   local options = self.game and self.game.options
+  if options and isWide(self) and options.battleFit == "fill"
+     and options.battleHud == "extended" then
+    return "white"
+  end
   local mode = options and options.battleBg
   if mode == "black" or mode == "world" then return mode end
   return "white"
 end
 
 BattleState.BG_WORLD_DIM = 0.55
+
+function BattleState:extendedHUD()
+  local options = self.game and self.game.options
+  if not (options and isWide(self) and options.battleHud == "extended") then
+    return false
+  end
+  local bg = BattleState.bgMode(self)
+  if options.battleFit == "fill" then return bg == "white" end
+  return bg == "white" or bg == "black" or bg == "world"
+end
+
+function BattleState:extendedWorldHUD()
+  local options = self.game and self.game.options
+  return BattleState.extendedHUD(self) and options.battleFit ~= "fill"
+     and BattleState.bgMode(self) == "world"
+end
+
+function BattleState:extendedBlackHUD()
+  return BattleState.extendedHUD(self) and BattleState.bgMode(self) == "black"
+end
 
 function BattleState:bottomUIVisible()
   if not Runtime.wantsHook("battle.bottom_ui_visible") then return true end
@@ -725,21 +749,17 @@ function BattleState:pic(mon, back)
   -- picked -- resolving the species row again would throw the form away.  The
   -- two extra keys are what Gen 2 genuinely carries more of: the Unown letter
   -- and the shiny flag that decides the palette.
-  if path and Runtime.wantsHook("pokemon.sprite") then
-    local ctx = {
+  if path then
+    path, trueColor = Sprites.pic(path, {
       species = mon.species,
       side = back and "back" or "front",
       kind = "battle",
       mon = mon,
-      trueColor = (def and def.trueColor) and true or false,
+      trueColor = trueColor,
       data = (self.game and self.game.data) or nil,
       letter = letter,
       shiny = mon.shiny and true or false,
-    }
-    local hooked = Runtime.call("pokemon.sprite",
-      function(value) return value end, path, ctx)
-    if type(hooked) == "string" and hooked ~= "" then path = hooked end
-    trueColor = ctx.trueColor and true or false
+    })
   end
   if not path then return nil, false end
   local cached = self.picCache[path]
@@ -782,24 +802,18 @@ end
 function BattleState:animSheetPath(mon, data)
   local path = data and data.sheet
   if type(path) ~= "string" then return nil, false end
-  if not Runtime.wantsHook("pokemon.sprite") then
-    return path, Assets.resolve(path) ~= path
-  end
   local letter
   if mon and mon.species == Unown.SPECIES then letter = Unown.monLetter(mon) end
-  local hooked = Runtime.call("pokemon.sprite",
-    function(value) return value end, path, {
-      species = mon and mon.species,
-      side = "front",
-      kind = "battle_anim",
-      mon = mon,
-      data = (self.game and self.game.data) or nil,
-      letter = letter,
-      shiny = mon and mon.shiny and true or false,
-    })
-  if type(hooked) == "string" and hooked ~= "" and hooked ~= path then
-    return hooked, true
-  end
+  local hooked = Sprites.pic(path, {
+    species = mon and mon.species,
+    side = "front",
+    kind = "battle_anim",
+    mon = mon,
+    data = (self.game and self.game.data) or nil,
+    letter = letter,
+    shiny = mon and mon.shiny and true or false,
+  })
+  if hooked ~= path then return hooked, true end
   return path, Assets.resolve(path) ~= path
 end
 

@@ -73,6 +73,7 @@ end
 -- generation gate has to see them as such.
 local INDIRECT_HOOKS = {
   ["player.sprite"] = "playerPic%(",
+  ["pokemon.sprite"] = "Sprites%.pic%(",
 }
 
 function Catalog.hooks()

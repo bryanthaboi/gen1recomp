@@ -51,6 +51,7 @@ local MonAnimView = require("src.render.MonAnimView")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
+local Sprites = require("src.pokemon.Sprites")
 local TileSheet = require("src.ui.gen2.TileSheet")
 local Unown = require("src.core.gen2.Unown")
 
@@ -371,9 +372,15 @@ end
 -- ../pokegold/engine/events/halloffame.asm:124-125
 function HallOfFame:startPicAnim()
   local mon = self:currentMon()
+  local path, _, vanilla = self:monPicPath(mon, false)
   self.picAnim = MonAnimView.start(
     mon and self:speciesDef(mon.species), mon, "hof",
-    function(path) return self:image(path) end)
+    function(p) return self:image(p) end, nil, {
+      resolve = function(sheet)
+        return Sprites.pic(sheet, self:picCtx(mon, false, "hof_anim"))
+      end,
+      staticReplaced = MonAnimView.replaced(vanilla, path),
+    })
 end
 
 -- ../pokecrystal/engine/gfx/pic_animation.asm:79-89
@@ -550,14 +557,34 @@ end
 -- into wTempMonDVs and runs `predef GetUnownLetter` before GetMonBackpic
 -- (engine/events/halloffame.asm:225-238); the frontpic path at :458-468 does
 -- the same before _PrepMonFrontpic.
-function HallOfFame:monPic(mon, back)
+function HallOfFame:picCtx(mon, back, kind)
+  return {
+    species = mon and mon.species,
+    side = back and "back" or "front",
+    kind = kind,
+    mon = mon,
+    data = self.data,
+    letter = Unown.monLetter(mon),
+    shiny = mon and mon.shiny and true or false,
+  }
+end
+
+function HallOfFame:monPicPath(mon, back)
   local def = self:speciesDef(mon and mon.species)
   if not def then return nil end
-  local path = back and def.spriteBack or def.spriteFront
+  local vanilla = back and def.spriteBack or def.spriteFront
   if mon.species == Unown.SPECIES then
-    path = Unown.formSprite(self.pokemon, Unown.monLetter(mon), back) or path
+    vanilla = Unown.formSprite(self.pokemon, Unown.monLetter(mon), back)
+      or vanilla
   end
-  return self:image(path)
+  local path, trueColor = Sprites.pic(vanilla, self:picCtx(mon, back, "hof"))
+  return path, trueColor, vanilla
+end
+
+function HallOfFame:monPic(mon, back)
+  local path, trueColor = self:monPicPath(mon, back)
+  if not path then return nil end
+  return self:image(path), trueColor
 end
 
 function HallOfFame:monColors(mon)
@@ -575,8 +602,10 @@ end
 
 -- Draw an image at a tile coordinate through the current scroll, padded into
 -- the 7x7 block the way PlaceGraphic pads it.
-function HallOfFame:drawScrolled(image, tileX, tileY, colors, quad, size)
+function HallOfFame:drawScrolled(image, tileX, tileY, colors, quad, size,
+    trueColor)
   if not image then return end
+  if trueColor and GbcPalette.mode == "gbc" then colors = nil end
   local G = love.graphics
   local wide = math.floor((size or image:getWidth()) / 8)
   local pad = PIC_PAD[wide] or PIC_PAD[PIC_TILES]
@@ -645,10 +674,11 @@ function HallOfFame:drawMonPanel()
   local sheet, quad, size = self:picAnimFrame()
   if sheet then
     self:drawScrolled(sheet, FRONTPIC_X, FRONTPIC_Y, self:monColors(mon),
-      quad, size)
+      quad, size, self.picAnim.trueColor)
   else
-    self:drawScrolled(self:monPic(mon, false),
-      FRONTPIC_X, FRONTPIC_Y, self:monColors(mon))
+    local image, trueColor = self:monPic(mon, false)
+    self:drawScrolled(image, FRONTPIC_X, FRONTPIC_Y, self:monColors(mon),
+      nil, nil, trueColor)
   end
   self:drawPlacements(HallOfFame.headerPlacements(self.mode,
     self.entry and self.entry.winCount, self.textData))
@@ -679,12 +709,14 @@ function HallOfFame:drawPanel()
 
   if self.phase == "backpic" then
     local mon = self:currentMon()
-    self:drawScrolled(self:monPic(mon, true),
-      BACKPIC_X, BACKPIC_Y, self:monColors(mon))
+    local image, trueColor = self:monPic(mon, true)
+    self:drawScrolled(image, BACKPIC_X, BACKPIC_Y, self:monColors(mon),
+      nil, nil, trueColor)
   elseif self.phase == "frontpic" then
     local mon = self:currentMon()
-    self:drawScrolled(self:monPic(mon, false),
-      FRONTPIC_X, FRONTPIC_Y, self:monColors(mon))
+    local image, trueColor = self:monPic(mon, false)
+    self:drawScrolled(image, FRONTPIC_X, FRONTPIC_Y, self:monColors(mon),
+      nil, nil, trueColor)
   elseif self.phase == "display" then
     self:drawMonPanel()
   elseif self.phase == "playerBack" then

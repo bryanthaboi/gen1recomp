@@ -423,7 +423,25 @@ local ROWS = {
     values = { "og", "wide" },
     display = {
       og = Strings.source("OG  "), wide = Strings.source("WIDE"),
-    } },
+    },
+    cycle = function(o, delta)
+      local at = o.battleLayout == "wide" and 2 or 1
+      local next_ = (at - 1 + (delta or 1)) % 2 + 1
+      o.battleLayout = next_ == 2 and "wide" or "og"
+      if o.battleLayout ~= "wide" then o.battleHud = "standard" end
+    end },
+  { label = Strings.source("BATTLE HUD"), key = "battleHud", port = true,
+    text = function(o)
+      return o.battleLayout == "wide" and o.battleHud == "extended"
+        and Strings("EXTENDED") or Strings("STANDARD")
+    end,
+    cycle = function(o)
+      if o.battleLayout ~= "wide" then
+        o.battleHud = "standard"
+        return
+      end
+      o.battleHud = o.battleHud == "extended" and "standard" or "extended"
+    end },
   { label = Strings.source("BATTLE SIZE"), key = "battleFit", port = true,
     values = { "fixed", "fill" },
     display = {
@@ -459,8 +477,8 @@ local GROUPS = {
   { id = "group.audio", label = Strings.source("AUDIO"),
     members = { "sound", "musicVol", "sfxVol", "musicFilter" } },
   { id = "group.battle", label = Strings.source("BATTLE OPTIONS"),
-    members = { "battleScene", "battleStyle", "battleLayout", "battleFit",
-      "battleBg" } },
+    members = { "battleScene", "battleStyle", "battleLayout", "battleHud",
+      "battleFit", "battleBg" } },
   { id = "group.extras", label = Strings.source("EXTRAS"),
     members = { "zoom", "voidFill", "tilt" } },
 }

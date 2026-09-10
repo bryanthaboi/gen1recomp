@@ -83,6 +83,8 @@ local function playfieldRect(winW, winH)
   return 0, 0, winW or 0, winH or 0
 end
 
+Chrome.playfieldRect = playfieldRect
+
 function Chrome.fitScaleFor(winW, winH, tilesW, tilesH)
   local _, _, w, h = playfieldRect(winW, winH)
   return math.max(1, math.floor(math.min(w / (tilesW * 8), h / (tilesH * 8))))

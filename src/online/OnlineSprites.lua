@@ -3,6 +3,7 @@
 
 local CacheFs = require("src.import.CacheFs")
 local GameVersion = require("src.core.GameVersion")
+local Sprites = require("src.pokemon.Sprites")
 
 local OnlineSprites = {}
 
@@ -165,8 +166,22 @@ function OnlineSprites.ensure(version, mon)
   else
     entry.icon = false
   end
-  entry.front = def and def.spriteFront
-    and image(version, def.spriteFront, palette) or false
+  local front, trueColor = Sprites.pic(def and def.spriteFront, {
+    species = mon.species,
+    side = "front",
+    kind = "online",
+    mon = mon,
+    data = cat,
+    shiny = mon.shiny == true,
+  })
+  if trueColor then palette = nil end
+  entry.front = front and image(version, front, palette) or false
+  if entry.front == false and front and front ~= (def and def.spriteFront)
+     and love and love.filesystem and love.filesystem.read then
+    local bytes = love.filesystem.read(front)
+    entry.front = bytes and OnlineSprites.makeImage(bytes, front, palette)
+      or false
+  end
   cache[key] = entry
   return entry
 end

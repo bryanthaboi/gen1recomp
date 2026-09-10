@@ -32,6 +32,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
 local Mail = require("src.core.gen2.Mail")
 local Screens = require("src.ui.Screens")
+local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
@@ -160,13 +161,22 @@ function HeldItemMenu:close()
   if self.onClose then self.onClose() end
 end
 
+-- home/menu.asm:793
+function HeldItemMenu:playSfx(name)
+  local data = self.game and self.game.data
+  local sfx = data and data.audio and data.audio.sfx
+  if sfx and sfx[Sound.resolve(data, name)] then Sound.play(data, name) end
+end
+
+-- home/menu.asm:348
 function HeldItemMenu:say(list, onDone)
-  self.message = { pages = list or {}, page = 1, onDone = onDone }
+  Typer.say(self, list, onDone)
 end
 
 function HeldItemMenu:ask(list, onYes, onNo)
   self.confirm = { pages = list or {}, page = 1, choice = 1,
     onYes = onYes, onNo = onNo }
+  Typer.begin(self, self.confirm)
 end
 
 -- ------------------------------------------------------------------- GIVE
@@ -293,22 +303,28 @@ end
 
 function HeldItemMenu:updateMessage(input)
   Typer.step(self)
+  if Typer.typing(self) then return end
   if not (input:wasPressed("a") or input:wasPressed("b")) then return end
+  -- home/joypad.asm:392
+  self:playSfx("Sfx_ReadText2")
   local message = self.message
   if message.page < #message.pages then
-    message.page = message.page + 1
+    Typer.turn(self, message)
     return
   end
   self.message = nil
+  self.typer = nil
   if message.onDone then message.onDone() end
 end
 
 function HeldItemMenu:updateConfirm(input)
   Typer.step(self)
+  if Typer.typing(self) then return end
   local confirm = self.confirm
   if confirm.page < #confirm.pages then
     if input:wasPressed("a") or input:wasPressed("b") then
-      confirm.page = confirm.page + 1
+      self:playSfx("Sfx_ReadText2")
+      Typer.turn(self, confirm)
     end
     return
   end
@@ -317,13 +333,19 @@ function HeldItemMenu:updateConfirm(input)
     return
   end
   if input:wasPressed("b") then
+    -- home/menu.asm:520
+    self:playSfx("Sfx_ReadText2")
     self.confirm = nil
+    self.typer = nil
     if confirm.onNo then confirm.onNo() end
     return
   end
   if input:wasPressed("a") then
+    -- home/menu.asm:520
+    self:playSfx("Sfx_ReadText2")
     local yes = confirm.choice == 1
     self.confirm = nil
+    self.typer = nil
     if yes then
       if confirm.onYes then confirm.onYes() end
     elseif confirm.onNo then
@@ -346,8 +368,12 @@ function HeldItemMenu:update(_dt)
   elseif input:wasPressed("down") then
     self.index = self.index < total and self.index + 1 or 1
   elseif input:wasPressed("a") then
+    -- home/menu.asm:381
+    self:playSfx("Sfx_ReadText2")
     self:choose()
   elseif input:wasPressed("b") then
+    -- home/menu.asm:381
+    self:playSfx("Sfx_ReadText2")
     self:close()
   end
 end
@@ -370,16 +396,20 @@ end
 
 function HeldItemMenu:drawPanel()
   if self.message then
-    self:drawTextBox(self.message.pages[self.message.page])
+    self:drawTextBox(Typer.text(self, self.message.pages[self.message.page]))
     if self.message.page < #self.message.pages
-      and Typer.arrowOn(self) then
+      and not Typer.typing(self) and Typer.arrowOn(self) then
       Chrome.print(DOWN_ARROW, ARROW_X, ARROW_Y)
     end
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
   if self.confirm then
-    self:drawTextBox(self.confirm.pages[self.confirm.page])
+    self:drawTextBox(Typer.text(self, self.confirm.pages[self.confirm.page]))
+    if Typer.typing(self) then
+      love.graphics.setColor(1, 1, 1, 1)
+      return
+    end
     if self.confirm.page >= #self.confirm.pages then
       self:drawYesNo(self.confirm.choice)
     elseif Typer.arrowOn(self) then

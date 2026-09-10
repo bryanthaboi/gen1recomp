@@ -51,6 +51,7 @@ local MonAnimView = require("src.render.MonAnimView")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 local TradeMenu = require("src.ui.gen2.TradeMenu")
 local Unown = require("src.core.gen2.Unown")
@@ -290,10 +291,41 @@ end
 function TradeAnimView:startPicAnim()
   local record = self.get
   local species = record and record.species
+  local path, _, vanilla = self:picPath(record)
   self.picAnim = MonAnimView.start(
     species and self.data.pokemon and self.data.pokemon[species], record,
-    "trade", function(path) return self:image(path) end,
-    function() self:playCry(species) end)
+    "trade", function(p) return self:image(p) end,
+    function() self:playCry(species) end, {
+      resolve = function(sheet)
+        return Sprites.pic(sheet, self:picCtx(record, "trade_anim"))
+      end,
+      staticReplaced = MonAnimView.replaced(vanilla, path),
+    })
+end
+
+function TradeAnimView:picCtx(record, kind)
+  return {
+    species = record and record.species,
+    side = "front",
+    kind = kind,
+    mon = record,
+    data = self.data,
+    letter = Unown.monLetter(record),
+    shiny = record and record.shiny and true or false,
+  }
+end
+
+function TradeAnimView:picPath(record)
+  local species = record and record.species
+  local def = species and self.data.pokemon and self.data.pokemon[species]
+  local vanilla = def and def.spriteFront
+  -- engine/movie/trade_animation.asm:795-804
+  if species == Unown.SPECIES then
+    vanilla = Unown.formSprite(self.data.pokemon, Unown.monLetter(record))
+      or vanilla
+  end
+  local path, trueColor = Sprites.pic(vanilla, self:picCtx(record, "trade"))
+  return path, trueColor, vanilla
 end
 
 function TradeAnimView:getAnimData()
@@ -537,16 +569,7 @@ function TradeAnimView:drawQuadrant(image, across, first, side, x, y)
 end
 
 function TradeAnimView:pic(record)
-  local species = record and record.species
-  local def = species and self.data.pokemon and self.data.pokemon[species]
-  local path = def and def.spriteFront
-  -- TradeAnim_GetFrontpic (engine/movie/trade_animation.asm:795-804) runs
-  -- `predef GetUnownLetter` before GetBaseData and GetMonFrontpic, so the mon
-  -- in the tube is the form that was actually traded.  TradeAnim.records
-  -- carries the DVs across for exactly this.
-  if species == Unown.SPECIES then
-    path = Unown.formSprite(self.data.pokemon, Unown.monLetter(record)) or path
-  end
+  local path, trueColor = self:picPath(record)
   if not path then return nil end
   local cached = self.picCache[path]
   if cached == nil then
@@ -556,13 +579,13 @@ function TradeAnimView:pic(record)
     cached = ok and image or false
     self.picCache[path] = cached
   end
-  return cached or nil
+  return cached or nil, trueColor
 end
 
 -- TradeAnim_ShowFrontpic's PlaceGraphic: the pic is padded into the 7x7 box
 -- bottom-first, so a short mon still stands on the box's floor.
 function TradeAnimView:drawPic(record, offset)
-  local image = self:pic(record)
+  local image, trueColor = self:pic(record)
   if not image then return end
   local G = love.graphics
   local w, h = image:getDimensions()
@@ -582,7 +605,9 @@ function TradeAnimView:drawPic(record, offset)
     if sheet then return G.draw(sheet, quad, px, py) end
     G.draw(image, px, py)
   end
-  if colors and GbcPalette.available() then
+  if sheet then trueColor = self.picAnim.trueColor end
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()

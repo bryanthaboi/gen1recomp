@@ -450,6 +450,43 @@ do
     "unwrapped pokemon.icon is vanilla")
 end
 
+
+do
+  local Sprites = require("src.pokemon.Sprites")
+  local data = { pokemon = { UNOWN = { spriteFront = "a.png", trueColor = true } } }
+  local path, tc = Sprites.pic("assets/generated/battle/front/unown_d.png",
+    { species = "UNOWN", kind = "summary", data = data, letter = 4 })
+  check(path == "assets/generated/battle/front/unown_d.png" and tc == true,
+    "unhooked Sprites.pic returns its input and the species trueColor")
+  path, tc = Sprites.pic("x.png", { species = "UNOWN", trueColor = false,
+    data = data })
+  check(tc == false, "an explicit ctx.trueColor is not overridden")
+
+  local got
+  local unsub = wrap("pokemon.sprite", function(next, p, ctx)
+    got = { path = p, kind = ctx.kind, side = ctx.side, letter = ctx.letter }
+    if ctx.kind == "box" then
+      ctx.trueColor = true
+      return "mods/skin/box.png"
+    end
+    return next(p, ctx)
+  end)
+  path, tc = Sprites.pic("v.png", { species = "UNOWN", kind = "box",
+    letter = 4, trueColor = false })
+  check(path == "mods/skin/box.png" and tc == true,
+    "Sprites.pic hands the wrapper's path and trueColor back")
+  check(got and got.path == "v.png" and got.kind == "box"
+    and got.side == "front" and got.letter == 4,
+    "Sprites.pic ctx carries kind/side/letter and the vanilla path")
+  path, tc = Sprites.pic("v.png", { species = "UNOWN", kind = "hof",
+    side = "back", trueColor = false })
+  check(path == "v.png" and tc == false and got.side == "back",
+    "a pass-through wrap leaves Sprites.pic's answer alone")
+  check(select(1, Sprites.pic(nil, { kind = "box" })) == nil,
+    "Sprites.pic with no path stays nil")
+  unsub()
+end
+
 -- ------- field.playerPics / player.sprite (the player's own trainer art)
 
 do

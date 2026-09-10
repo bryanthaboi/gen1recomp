@@ -508,6 +508,8 @@ local function runCmd(self, cmd, op)
     end
   elseif op == "getitemname" then
     local item = cmd.item or arg1(cmd) or 0
+    -- pokecrystal/engine/overworld/scripting.asm:1597-1601 USE_SCRIPT_VAR
+    if item == 0 then item = (self.scriptVar or 0) % 256 end
     if self.getItemNameFn then
       self:setStringBuffer(self.getItemNameFn(item))
     end
@@ -642,11 +644,11 @@ local function runCmd(self, cmd, op)
   elseif op == "giveitem" or op == "verbosegiveitem"
       or op == "verbosegiveitemvar" then
     local item = cmd.item or arg1(cmd) or 0
+    -- pokecrystal/engine/overworld/scripting.asm:1722-1727 ITEM_FROM_MEM
+    if item == ITEM_FROM_MEM then item = (self.scriptVar or 0) % 256 end
     local qty = cmd.quantity or (cmd.args and cmd.args[2]) or 1
     if op == "verbosegiveitemvar" then
-      -- pokecrystal/engine/overworld/scripting.asm:486-510: ITEM_FROM_MEM
-      -- takes the item from wScriptVar, and byte two is a VAR_* id.
-      if item == ITEM_FROM_MEM then item = (self.scriptVar or 0) % 256 end
+      -- pokecrystal/engine/overworld/scripting.asm:486-510
       local varId = cmd.var or (cmd.args and cmd.args[2]) or 0
       qty = self.readVarFn and self.readVarFn(varId) or 0
     end

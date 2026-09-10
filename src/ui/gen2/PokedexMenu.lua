@@ -37,6 +37,7 @@ local Palettes = require("src.world.gen2.Palettes")
 local TileSheet = require("src.ui.gen2.TileSheet")
 local Nests = require("src.core.gen2.Nests")
 local Sound = require("src.core.Sound")
+local Sprites = require("src.pokemon.Sprites")
 local Unown = require("src.core.gen2.Unown")
 local Strings = require("src.core.Strings")
 local MenuRepeat = require("src.ui.MenuRepeat")
@@ -468,20 +469,30 @@ function PokedexMenu:picFor(species)
   -- the form the player FIRST met.  The species' own row is letter A's pic
   -- (src/import/RomExtractorGen2.lua fills it that way), which is exactly what
   -- the cart draws while the byte is still 0.
+  local letter
   if species == Unown.SPECIES then
     local first = self.save and tonumber(self.save.firstUnownSeen) or 0
     if first ~= 0 then
+      letter = first
       path = Unown.formSprite(self.pokemon, first, false) or path
     end
   end
   if not path then return nil end
+  local trueColor
+  path, trueColor = Sprites.pic(path, {
+    species = species,
+    side = "front",
+    kind = "dex",
+    data = self.game and self.game.data,
+    letter = letter,
+  })
   local cached = self.picCache[path]
   if cached == nil then
     local ok, image = pcall(Assets.image, path)
     cached = ok and image or false
     self.picCache[path] = cached
   end
-  return cached or nil
+  return cached or nil, trueColor
 end
 
 function PokedexMenu:questionMark()
@@ -516,9 +527,9 @@ local PIC_PAD = { [7] = { 0, 0 }, [6] = { 1, 1 }, [5] = { 1, 2 } }
 
 function PokedexMenu:drawPic(row, tx, ty, ownColors)
   local G = love.graphics
-  local image, colors
+  local image, colors, trueColor
   if row and row.seen then
-    image = self:picFor(row.species)
+    image, trueColor = self:picFor(row.species)
     if ownColors then
       colors = self.palettes and Palettes.monColors(self.palettes, row.species)
     else
@@ -540,7 +551,8 @@ function PokedexMenu:drawPic(row, tx, ty, ownColors)
   local function body()
     G.draw(image, (tx + pad[1]) * 8, (ty + pad[2]) * 8)
   end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()
@@ -1352,6 +1364,14 @@ end
 function PokedexMenu:drawUnownPic(letter, tx, ty)
   local path = Unown.formSprite(self.pokemon, letter, false)
   if not path then return end
+  local trueColor
+  path, trueColor = Sprites.pic(path, {
+    species = Unown.SPECIES,
+    side = "front",
+    kind = "dex",
+    data = self.game and self.game.data,
+    letter = letter,
+  })
   local cached = self.picCache[path]
   if cached == nil then
     local ok, image = pcall(Assets.image, path)
@@ -1364,7 +1384,8 @@ function PokedexMenu:drawUnownPic(letter, tx, ty)
   local G = love.graphics
   G.setColor(1, 1, 1, 1)
   local function body() G.draw(cached, tx * 8, ty * 8) end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()

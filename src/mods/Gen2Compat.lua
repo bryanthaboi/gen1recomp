@@ -1937,7 +1937,8 @@ COVERAGE["src.battle.BattleState"] = {
     .. "lowHealthAlarmActive playVictoryMusic say sayAuto openItems "
     .. "openReplacementMenu finish askNicknameUI playEntranceCry stampOT "
     .. "tryRun wantsFillScale bgMode BG_WORLD_DIM "
-    .. "isWideBattleLayout wideLayout",
+    .. "isWideBattleLayout wideLayout "
+    .. "extendedHUD extendedWorldHUD extendedBlackHUD",
   warned = "tryRun askNicknameUI",
   absent = "newWild newTrainer makeSafari makeGhost makeBattler resolveTurn "
     .. "computeDamage catchAttempt runRoll enter exit sgbPalettes "

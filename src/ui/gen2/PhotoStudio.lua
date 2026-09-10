@@ -44,6 +44,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Palettes = require("src.world.gen2.Palettes")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 
 local PhotoStudio = {}
@@ -101,6 +102,16 @@ function PhotoStudio:picFor(species)
   local def = species and self.pokemon and self.pokemon[species]
   local path = def and def.spriteFront
   if not path then return nil end
+  local mon = self.mon
+  local trueColor
+  path, trueColor = Sprites.pic(path, {
+    species = species,
+    side = "front",
+    kind = "photo",
+    mon = mon,
+    data = self.game and self.game.data,
+    shiny = mon and mon.shiny and true or false,
+  })
   local cached = self.picCache[path]
   if cached == nil then
     -- `and` truncates a multi-return, so the pcall has to stand alone.
@@ -108,13 +119,14 @@ function PhotoStudio:picFor(species)
     cached = (ok and image) or false
     self.picCache[path] = cached
   end
-  return cached or nil
+  return cached or nil, trueColor
 end
 
 -- PrepMonFrontpic at hlcoord 0, 0: a 7x7 block with the pic centred in it.
 function PhotoStudio:drawPic()
   local mon = self.mon
-  local image = mon and self:picFor(mon.species)
+  if not mon then return end
+  local image, trueColor = self:picFor(mon.species)
   if not image then return end
   local G = love.graphics
   local colors = self.palettes and mon.species
@@ -127,7 +139,8 @@ function PhotoStudio:drawPic()
   local pad = PIC_PAD[wide] or PIC_PAD[7]
   G.setColor(1, 1, 1, 1)
   local function body() G.draw(image, pad[1] * 8, pad[2] * 8) end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()

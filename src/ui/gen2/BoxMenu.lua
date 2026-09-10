@@ -45,12 +45,14 @@ local Boxes = require("src.core.gen2.Boxes")
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
 local Font = require("src.render.Font")
+local GameVersion = require("src.core.GameVersion")
 local GbcPalette = require("src.render.GbcPalette")
 local Mail = require("src.core.gen2.Mail")
 local Palettes = require("src.world.gen2.Palettes")
 local PartyMenu = require("src.ui.gen2.PartyMenu")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 local Unown = require("src.core.gen2.Unown")
 
@@ -188,6 +190,7 @@ function BoxMenu.new(game, opts)
   self.picCache = {}
   self.message = nil
   self.messageFrames = nil
+  self.cryWait = nil
   -- nil while the list is being browsed; "submenu" while MOVE/STATS/CANCEL is
   -- up, "insert" while the insert cursor is picking a destination.  Only the
   -- move screen has phases -- the other two lists act on A.
@@ -377,6 +380,19 @@ function BoxMenu:holdMessage(text)
   self.panelCleared = true
 end
 
+function BoxMenu:isCrystal()
+  local version = (self.save and self.save.version) or GameVersion.get()
+  return GameVersion.engine(version) == "crystal"
+end
+
+-- ../pokecrystal/home/pokemon.asm:124-127; ../pokegold/home/pokemon.asm:101-107
+function BoxMenu:cryThenHold(src, mon, text)
+  if not (self:isCrystal() and src and src.isPlaying) then
+    return self:holdMessage(text)
+  end
+  self.cryWait = { src = src, mon = mon, text = text, t = 0 }
+end
+
 -- engine/pokemon/bills_pc.asm:397-411: failed withdraw stays on the submenu.
 function BoxMenu:doWithdraw()
   local ok, result = Boxes.withdraw(self.save, self.boxIndex, self.index)
@@ -387,9 +403,8 @@ function BoxMenu:doWithdraw()
     return
   end
   -- engine/pokemon/bills_pc.asm:1817
-  self:playMonCry(result)
   local name = result.nickname or result.name or result.species or "?"
-  self:holdMessage(Strings(GOT_MON, name))
+  self:cryThenHold(self:playMonCry(result), result, Strings(GOT_MON, name))
 end
 
 -- engine/pokemon/bills_pc.asm:155 BillsPCDepositFuncDeposit
@@ -404,8 +419,7 @@ function BoxMenu:doDeposit()
     return
   end
   -- engine/pokemon/bills_pc.asm:1762
-  self:playMonCry(result)
-  self:holdMessage(Strings(STORED_MON, name))
+  self:cryThenHold(self:playMonCry(result), result, Strings(STORED_MON, name))
 end
 
 function BoxMenu:chooseSubmenu()
@@ -530,6 +544,16 @@ function BoxMenu:update(_dt)
   local input = self.game and self.game.input
   if not input then return end
 
+  if self.cryWait then
+    local w = self.cryWait
+    w.t = w.t + 1
+    local playing = w.src:isPlaying()
+    if w.t < 3 or (playing and w.t <= 180) then return end
+    self.cryWait = nil
+    self:holdMessage(w.text)
+    return
+  end
+
   -- engine/pokemon/bills_pc.asm:1804 DelayFrames reads no joypad; :161 zeroes
   -- wJumptableIndex / cursor / scroll only once it returns.
   if self.messageFrames then
@@ -652,7 +676,9 @@ function BoxMenu:playMonCry(mon)
   local data = self.game and self.game.data
   if not (data and mon and mon.species) or mon.isEgg then return end
   local cries = data.audio and data.audio.cries
-  if cries and cries[mon.species] then Sound.playCry(data, mon.species) end
+  if cries and cries[mon.species] then
+    return Sound.playCry(data, mon.species)
+  end
 end
 
 -- BillsPC's RELEASE, which the model has always supported and nothing on
@@ -757,7 +783,17 @@ function BoxMenu:picFor(mon)
   if mon.species == Unown.SPECIES then
     path = Unown.formSprite(self.pokemon, Unown.monLetter(mon)) or path
   end
-  return self:image(path)
+  local trueColor
+  path, trueColor = Sprites.pic(path, {
+    species = mon.species,
+    side = "front",
+    kind = "box",
+    mon = mon,
+    data = self.game and self.game.data,
+    letter = Unown.monLetter(mon),
+    shiny = mon.shiny and true or false,
+  })
+  return self:image(path), trueColor
 end
 
 -- engine/gfx/cgb_layouts.asm:284-300, engine/pokemon/bills_pc.asm:356-369
@@ -781,7 +817,7 @@ end
 
 -- PCMonInfo lays the padded pic as one 7x7 block at hlcoord 1, 4
 -- (engine/pokemon/bills_pc.asm:1023-1042), the pad tiles at the palette's 0.
-function BoxMenu:drawPicBlock(image, colors)
+function BoxMenu:drawPicBlock(image, colors, trueColor)
   if not image then return end
   local G = love.graphics
   self:fillPicBlock(colors)
@@ -791,7 +827,8 @@ function BoxMenu:drawPicBlock(image, colors)
   local function body()
     G.draw(image, (PIC_X + pad[1]) * 8, (PIC_Y + pad[2]) * 8)
   end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()
@@ -803,10 +840,10 @@ function BoxMenu:drawPic(mon)
   -- _CGB_BillsPC hands wTempMonDVs to GetPlayerOrMonPalettePointer, so the box
   -- pic takes the shiny row (engine/gfx/cgb_layouts.asm:292-293).
   local colors = self:panelColors(mon.species, mon.shiny)
-  local image = self:picFor(mon)
+  local image, trueColor = self:picFor(mon)
   -- engine/pokemon/bills_pc.asm:1009-1011
   if not image then return self:fillPicBlock(colors) end
-  self:drawPicBlock(image, colors)
+  self:drawPicBlock(image, colors, trueColor)
 end
 
 -- GetFrontpic's `cp EGG / jr nz, .not_egg` arm hands back EggPic, never the
@@ -893,18 +930,39 @@ function BoxMenu:drawBoxArrows()
   G.setColor(1, 1, 1, 1)
 end
 
--- The PC does not mark the selected row with a ▶: BillsPC_UpdateSelectionCursor
--- lays 20 OBJs as a frame *around* the row -- ten tiles wide by two tall, top
--- left at pixel (71, 25), stepping 16 pixels per row.  Those cursor tiles are
--- not extracted, so the frame is drawn as an outline at exactly those pixels,
--- which is what the sprite frame looks like.
+-- ../pokegold/engine/pokemon/bills_pc.asm:1439-1490
+-- ../pokecrystal/engine/pokemon/bills_pc.asm:1479-1503
+function BoxMenu:selectionFrameRect(row)
+  if self:isCrystal() then
+    return { x = 70, y = 29 + (row - 1) * 16, w = 83, h = 13, rounded = true }
+  end
+  return { x = 71, y = 25 + (row - 1) * 16, w = 80, h = 16, rounded = false }
+end
+
 function BoxMenu:drawSelectionFrame(row)
   local G = love.graphics
-  local x, y = 71, 25 + (row - 1) * 16
+  local r = self:selectionFrameRect(row)
   G.setColor(0, 0, 0, 1)
-  G.setLineWidth(1)
-  G.rectangle("line", x + 0.5, y + 0.5, 80 - 1, 16 - 1)
-  G.setLineWidth(1)
+  if not r.rounded then
+    G.setLineWidth(1)
+    G.rectangle("line", r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1)
+    G.setLineWidth(1)
+    return
+  end
+  local x, y = r.x, r.y
+  G.rectangle("fill", x + 2, y, r.w - 4, 1)
+  G.rectangle("fill", x + 2, y + r.h - 1, r.w - 4, 1)
+  G.rectangle("fill", x, y + 2, 1, r.h - 4)
+  G.rectangle("fill", x + r.w - 1, y + 2, 1, r.h - 4)
+  G.rectangle("fill", x + 1, y + 1, 1, 1)
+  G.rectangle("fill", x + r.w - 2, y + 1, 1, 1)
+  G.rectangle("fill", x + 1, y + r.h - 2, 1, 1)
+  G.rectangle("fill", x + r.w - 2, y + r.h - 2, 1, 1)
+end
+
+-- ../pokecrystal/engine/pokemon/bills_pc.asm:68, :117
+function BoxMenu:selectionFrameVisible()
+  return self.phase == nil and not self.message and not self.cryWait
 end
 
 -- BillsPC_UpdateInsertCursor lays a DIFFERENT sprite frame from the selection
@@ -922,11 +980,18 @@ end
 -- ran PCMonInfo over it and .PrepInsertCursor does NOT run it again, so the
 -- left panel keeps showing the mon in flight.
 function BoxMenu:panelMon()
+  if self.cryWait then return self.cryWait.mon end
   local from = self.moveFrom
   if self.phase == "insert" and from then
     return self:listAt(from.box)[from.slot]
   end
   return self:selected()
+end
+
+-- engine/pokemon/bills_pc.asm:962-970, :1791-1793
+function BoxMenu:messageBox(page)
+  if #page <= 1 then return { 0, 15, 20, 3 } end
+  return { 0, 12, 20, 6 }
 end
 
 function BoxMenu:drawPanel()
@@ -935,20 +1000,16 @@ function BoxMenu:drawPanel()
   local wasBattle = Font.useBattleExtra(true)
   Chrome.clear()
 
-  -- Box name header, then the list box hanging off it.  BillsPC_BoxName is a
-  -- Textbox at (8,0) with a 10x1 interior and the name at (10,1).
+  -- engine/pokemon/bills_pc.asm:1220-1227
+  Chrome.box(8, 2, 12, 12)
+  -- engine/pokemon/bills_pc.asm:981-983
   Chrome.box(8, 0, 12, 3)
   Chrome.print(self:title(), 10, 1)
   self:drawBoxArrows()
-  Chrome.box(8, 2, 12, 12)
-  -- BillsPC_RefreshTextboxes overwrites its own top corners with '└'/'┘'
-  -- (engine/pokemon/bills_pc.asm:1204-1211) so the list reads as hanging
-  -- off the name box above it.
-  Font.drawCode(Font.BORDER.bl, 8 * 8, 2 * 8)
-  Font.drawCode(Font.BORDER.br, 19 * 8, 2 * 8)
 
   local list = self:list()
   local inserting = self.phase == "insert"
+  local frameUp = self:selectionFrameVisible()
   for row = 1, VISIBLE_ROWS do
     local i = row + self.scroll
     local ty = LIST_Y + (row - 1) * LIST_SPACING
@@ -957,7 +1018,7 @@ function BoxMenu:drawPanel()
       if i == self.index then
         if inserting then
           self:drawInsertCursor(row)
-        else
+        elseif frameUp then
           self:drawSelectionFrame(row)
         end
       end
@@ -969,7 +1030,7 @@ function BoxMenu:drawPanel()
       -- An empty destination: the cursor is the only thing on the list.
       if i == self.index then self:drawInsertCursor(row) end
     elseif i == self:total() then
-      if i == self.index then self:drawSelectionFrame(row) end
+      if i == self.index and frameUp then self:drawSelectionFrame(row) end
       Chrome.print(Strings("CANCEL"), LIST_X, ty)
     end
   end
@@ -1003,11 +1064,11 @@ function BoxMenu:drawPanel()
   -- (1,16).  A refusal is two lines on the cart, so those get a taller box of
   -- their own rather than being cut to fit this one.
   if self.message then
-    Chrome.box(0, 12, 20, 6)
-    -- Two lines, two tile rows apart, the way every other text box lays out.
     local page = messagePages(self.message)[self.messagePage or 1] or {}
+    local box = self:messageBox(page)
+    Chrome.box(box[1], box[2], box[3], box[4])
     for i, part in ipairs(page) do
-      Chrome.print(part, 1, 14 + (i - 1) * 2)
+      Chrome.print(part, 1, box[2] + 1 + (i - 1) * 2)
     end
   else
     Chrome.box(0, 15, 20, 3)

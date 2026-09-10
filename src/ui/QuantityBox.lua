@@ -15,6 +15,7 @@ function QuantityBox.new(game, opts)
   self.qty = math.min(opts.start or 1, self.max)
   self.unitPrice = opts.unitPrice
   self.onDone = opts.onDone -- onDone(qty | nil on cancel)
+  self.keepOpen = opts.keepOpen
   return self
 end
 
@@ -38,10 +39,10 @@ function QuantityBox:update(dt)
   elseif input:wasPressed("down") then
     self.qty = wrap(self.qty - 1, self.max)
   elseif input:wasPressed("a") then
-    self.game.stack:pop()
+    if not self.keepOpen then self.game.stack:pop() end
     if self.onDone then self.onDone(self.qty) end
   elseif input:wasPressed("b") then
-    self.game.stack:pop()
+    if not self.keepOpen then self.game.stack:pop() end
     if self.onDone then self.onDone(nil) end
   end
 end

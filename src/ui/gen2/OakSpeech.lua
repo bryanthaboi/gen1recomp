@@ -49,6 +49,7 @@ local Palettes = require("src.world.gen2.Palettes")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 local TextBox = require("src.render.TextBox")
 
@@ -139,12 +140,19 @@ function OakSpeech.new(game, opts)
   self.playerPicFemale = tryImage(require("src.pokemon.Sprites").playerPic(
     data.playerPicFemale or "assets/generated/intro/kris.png",
     { side = "front", kind = "intro", data = game and game.data }))
-  self.marillPic = tryImage(data.marillPic
-    or "assets/generated/battle/front/marill.png")
+  self.demoSpecies = data.demoSpecies or "MARILL"
+  local marillPath, marillTrueColor = Sprites.pic(data.marillPic
+    or "assets/generated/battle/front/marill.png", {
+      species = self.demoSpecies,
+      side = "front",
+      kind = "oak",
+      data = game and game.data,
+    })
+  self.marillPic = tryImage(marillPath)
+  self.marillTrueColor = marillTrueColor
   self.shrinkPic1 = tryImage(data.shrink1 or "assets/generated/intro/shrink1.png")
   self.shrinkPic2 = tryImage(data.shrink2 or "assets/generated/intro/shrink2.png")
   self.music = data.music or "Music_Route30"
-  self.demoSpecies = data.demoSpecies or "MARILL"
   -- Every pic on this screen is loaded under SCGB_TRAINER_OR_MON_FRONTPIC_PALS,
   -- which is _CGB_PlayerOrMonFrontpicPals -- the pic's own two shipped colours
   -- bracketed by white and black, exactly as a battle pic gets them.  The
@@ -159,6 +167,9 @@ function OakSpeech.new(game, opts)
   -- (../pokecrystal/data/trainers/palettes.asm:11-12).
   self.playerColorsFemale = Palettes.trainerColors(palettes, "FALKNER")
   self.marillColors = Palettes.monColors(palettes, self.demoSpecies)
+  if marillTrueColor and GbcPalette.mode == "gbc" then
+    self.marillColors = nil
+  end
   self.picColors = nil
   self.fontOk = false
   local font = opts.font
@@ -297,8 +308,15 @@ function OakSpeech:resolvePic(desc)
   if desc.type == "pokemon" then
     local mon = self.game and self.game.data and self.game.data.pokemon
     local def = mon and mon[desc.id]
-    return tryImage(def and def.spriteFront),
-      desc.colors or Palettes.monColors(self.palettes, desc.id)
+    local path, trueColor = Sprites.pic(def and def.spriteFront, {
+      species = desc.id,
+      side = "front",
+      kind = "oak",
+      data = self.game and self.game.data,
+    })
+    local colors = desc.colors or Palettes.monColors(self.palettes, desc.id)
+    if trueColor and GbcPalette.mode == "gbc" then colors = nil end
+    return tryImage(path), colors
   end
   if desc.type == "trainer" then
     return tryImage(desc.path),

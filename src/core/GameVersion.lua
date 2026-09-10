@@ -155,6 +155,12 @@ function GameVersion.engine(id)
   return GameVersion.info(id).engine or "gen1"
 end
 
+-- Launcher shell; defaults to GB.
+function GameVersion.cartShape(id)
+  local info = GameVersion.info(id)
+  return info and info.cartShape == "gba" and "gba" or "gb"
+end
+
 -- Cart bugs a version FIXED, by fix name; an absent row reads {} and stays bugged.
 function GameVersion.fixes(id)
   local info = GameVersion.info(id)

@@ -1351,6 +1351,7 @@ function RomImporter.new(onComplete, opts)
   local self = setmetatable({
     onComplete = onComplete,
     launcher = opts.launcher or false,
+    cartShape = os.getenv("POKEPORT_CART_SHAPE") == "gba" and "gba" or nil,
     forceImport = opts.forceImport or false,
     onEditSave = opts.onEditSave,
     onEditTouchControls = opts.onEditTouchControls,
@@ -6402,6 +6403,7 @@ function RomImporter:_pumpCartInstall()
   self:_refreshCarts(cart.base)
   self._cartPlan = nil
   self._cartridgeLabels = nil
+  self._gbaLabels = nil
   if not job.quiet then
     self.findNotice = { ok = true,
       text = Strings("Installed %s v%s. It is in this game's cart list now.",

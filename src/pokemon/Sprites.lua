@@ -18,22 +18,33 @@ local function samePath(path) return path end
 -- side: "front" | "back"
 -- opts.mon: the live mon when available (per-instance skins)
 -- opts.kind: "battle" | "summary" | "dex" | "evolution" | "hof" | "trade"
---            | "title" | "oak" | "credits" | "overworld" (informational
---            for wrappers)
+--            | "title" | "oak" | "credits" | "overworld" | "box" | "hatch"
+--            | "photo" | "unown_printer" | "online", or "<kind>_anim"
 -- Returns path, trueColor.
 function Sprites.path(data, species, side, opts)
   opts = opts or {}
   local def = data and data.pokemon and data.pokemon[species]
   if not def then return nil, false end
   local path = side == "back" and def.spriteBack or def.spriteFront
-  local ctx = {
+  return Sprites.pic(path, {
     species = species,
-    side = side == "back" and "back" or "front",
-    kind = opts.kind or "battle",
+    side = side,
+    kind = opts.kind,
     mon = opts.mon,
     trueColor = def.trueColor and true or false,
     data = data,
-  }
+  })
+end
+
+function Sprites.pic(path, ctx)
+  ctx = ctx or {}
+  ctx.side = ctx.side == "back" and "back" or "front"
+  ctx.kind = ctx.kind or "battle"
+  if ctx.trueColor == nil then
+    local def = ctx.data and ctx.data.pokemon and ctx.species
+      and ctx.data.pokemon[ctx.species]
+    ctx.trueColor = (def and def.trueColor) and true or false
+  end
   if path and Runtime.wantsHook("pokemon.sprite") then
     local hooked = Runtime.call("pokemon.sprite", samePath, path, ctx)
     if type(hooked) == "string" and hooked ~= "" then path = hooked end

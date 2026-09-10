@@ -1,24 +1,10 @@
--- Driver: Fighting Dojo Karate Master bundle (#197).
--- Six sub-bugs live in FIGHTING_DOJO (scripts/FightingDojo.asm):
---   BUG1 gate       -- the master stops the player on the tile to his left
---   BUG2 no speech  -- no won text + no prize dialogue after the win
---   BUG3 wrong re-talk -- shows the pre-battle challenge, not the after line
---   BUG4 (verify)   -- the ball ask() is the Gen1 descriptor, shown after
---                      the species' dex entry (DisplayPokedex)
---   BUG5 both balls -- the chosen ball AND the other one both vanish; the
---                      other should stay and give the "greedy" refusal
---   BUG6 poster     -- the north-wall posters ("Enemies on every side!") are
---                      inert (bg_events dropped by the extractor)
---
--- Every scenario screenshots the moment and records a pass/fail; the driver
--- asserts once at the end, so a single run captures before-evidence for all
--- six while still failing red until the fixes land.
---
---   SHOT_DIR=/tmp/dojo POKEPORT_DRIVER=tests/drivers/fighting_dojo_bug197_test.lua \
+-- scripts/FightingDojo.asm
+-- data/events/hidden_events.asm:526-531
+--   POKEPORT_SHOT_DIR=/tmp/dojo POKEPORT_DRIVER=tests/drivers/fighting_dojo_bug197_test.lua \
 --   POKEPORT_IDENTITY=bug197 POKEPORT_TOUCH=0 love .
 return function(game)
   local U = dofile("tests/drivers/util.lua")
-  local DIR = os.getenv("SHOT_DIR") or "/tmp/shots"
+  local DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR") or "/tmp/shots"
   local TextBox = require("src.render.TextBox")
   local ChoiceBox = require("src.ui.ChoiceBox")
   local OW = require("src.world.OverworldController")
@@ -216,10 +202,34 @@ return function(game)
   U.shot(game, DIR .. "/dojo_6_poster.png")
   mashUntil(function() return game.stack:top() == ow end)
 
+  ow = resetDojo(5, 1, "up",
+    { EVENT_BEAT_KARATE_MASTER = true, EVENT_GOT_HITMONCHAN = true })
+  Commands.hide_object({ game = game, save = game.save, overworld = ow },
+                       "FIGHTING_DOJO", "FIGHTINGDOJO_HITMONCHAN_POKE_BALL")
+  U.wait(3)
+  ow:interact()
+  check(sawText("What goes around"),
+    "#2251: the (5,0) poster prints 'What goes around comes around!'")
+  U.shot(game, DIR .. "/2251_01_what_goes_around_poster.png")
+  mashUntil(function() return game.stack:top() == ow end)
+
+  for i, sx in ipairs({ 3, 6 }) do
+    ow = resetDojo(sx, 10, "up", {})
+    ow:interact()
+    check(sawText("FIGHTING DOJO"),
+      "#2251: the statue at (" .. sx .. ",9) prints 'FIGHTING DOJO'")
+    U.shot(game, DIR .. "/2251_0" .. (i + 1) .. "_statue_" .. sx .. "_fighting_dojo.png")
+    mashUntil(function() return game.stack:top() == ow end)
+  end
+
   ------------------------------------------------------------------
   U.log("fighting_dojo_bug197_test: failures =", #failures)
   for _, m in ipairs(failures) do U.log("  -", m) end
-  assert(#failures == 0,
-    "#197 unresolved:\n  " .. table.concat(failures, "\n  "))
-  U.log("fighting_dojo_bug197_test: ok")
+  if #failures == 0 then
+    U.log("PASS fighting_dojo_bug197_test")
+    love.event.quit(0)
+  else
+    U.log("FAIL fighting_dojo_bug197_test")
+    love.event.quit(1)
+  end
 end

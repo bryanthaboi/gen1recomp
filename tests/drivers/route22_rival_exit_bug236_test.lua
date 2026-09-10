@@ -236,8 +236,6 @@ return function(game)
         game.save.flags.EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE == true)
 
   -- ---- stop on the LAST post-battle box ----------------------------------
-  -- Rows 8 and 9 are DefeatedText then AfterBattleText; the walk (row 10)
-  -- starts when row 9's box closes, so hand over with row 9 on screen.
   local after = t._Route22RivalAfterBattleText1 or ""
   local needle = after:match("dawdling") and "dawdling" or "LEAGUE"
   local onLastBox = false

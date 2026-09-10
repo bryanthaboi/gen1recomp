@@ -49,6 +49,7 @@ local Movement = require("src.script.gen2.Movement")
 local Music = require("src.core.Music")
 local NPC = require("src.world.gen2.Npc")
 local Party = require("src.pokemon.Party")
+local Sprites = require("src.pokemon.Sprites")
 local Permissions = require("src.world.gen2.Permissions")
 local Pipelines = require("src.render.Pipelines")
 local PixelCanvas = require("src.render.PixelCanvas")
@@ -2330,12 +2331,11 @@ function World:updateSkyfall()
   if not st then return end
   if st.phase == "hidden" then
     st.timer = st.timer - 1
-    if st.timer <= 0 then
-      st.phase = "fall"
-      st.timer = SKYFALL_BEAT_FRAMES
-      self.playerMasked = nil
-    end
-    return
+    if st.timer > 0 then return end
+    -- engine/overworld/map_objects.asm:1390-1402
+    st.phase = "fall"
+    st.timer = SKYFALL_BEAT_FRAMES
+    self.playerMasked = nil
   end
   st.height = st.height + 1
   if self.player then
@@ -4326,8 +4326,16 @@ function World:showPokePic(speciesIndex)
     self.game and self.game.data and self.game.data.pokemon, speciesIndex)
   local path = def and def.spriteFront
   if not path then self.pokePic = nil return end
+  local trueColor
+  path, trueColor = Sprites.pic(path, {
+    species = id,
+    side = "front",
+    kind = "overworld",
+    data = self.game and self.game.data,
+  })
   local ok, img = pcall(Assets.image, path)
   self.pokePic = ok and img or nil
+  self.pokePicTrueColor = trueColor
   self.pokePicName = id
   -- _CGB_Pokepic (engine/gfx/cgb_layouts.asm:744) fills the whole menu box with
   -- PAL_BG_GRAY, so the window is the map's grey ramp, not the mon's colors.
@@ -6514,10 +6522,10 @@ function World:spawnFlyLeaves(fa)
   end
 end
 
--- engine/events/overworld.asm:597
+-- engine/events/overworld.asm:597; engine/overworld/warp_connection.asm:315-331
 function World:flyHides()
-  local all = self.flyAnim ~= nil or self.flyHidden == "from"
-  return all, all or self.flyHidden ~= nil
+  local all = self.flyAnim ~= nil or self.flyHidden ~= nil
+  return all, all
 end
 
 -- engine/events/field_moves.asm:429-446
@@ -11703,16 +11711,21 @@ function World:draw()
       math.floor((h - 144 * sPic) / 2) - posLift)
     G.scale(sPic, sPic)
     G.setColor(1, 1, 1, 1)
-    local function body()
-      Font.drawBox(POKEPIC.left, POKEPIC.top, POKEPIC.w, POKEPIC.h)
+    local raw = self.pokePicTrueColor and GbcPalette.mode == "gbc"
+    local function pic()
       G.draw(self.pokePic, (POKEPIC.left + 1 + pad[1]) * 8,
         (POKEPIC.top + 1 + pad[2]) * 8)
+    end
+    local function body()
+      Font.drawBox(POKEPIC.left, POKEPIC.top, POKEPIC.w, POKEPIC.h)
+      if not raw then pic() end
     end
     if self.pokePicColors then
       GbcPalette.with(self.pokePicColors, body)
     else
       body()
     end
+    if raw then pic() end
     G.pop()
     G.setColor(1, 1, 1, 1)
   end

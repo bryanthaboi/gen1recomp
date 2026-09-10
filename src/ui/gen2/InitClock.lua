@@ -66,10 +66,16 @@ local MORN_HOUR, DAY_HOUR, NITE_HOUR = 4, 10, 18
 -- ../pokecrystal/engine/rtc/timeset.asm:24
 InitClock.GROUND = { 0, 0, 0 }
 
--- pokecrystal/engine/gfx/cgb_layouts.asm:509-521
+-- pokecrystal/engine/gfx/cgb_layouts.asm:517
 InitClock.PALETTE = {
-  { 222, 255, 222 }, { 173, 173, 173 }, { 107, 107, 107 }, { 0, 0, 0 },
+  { 255, 255, 255 }, { 247, 181, 140 }, { 132, 115, 156 }, { 0, 0, 0 },
 }
+
+-- ../pokecrystal/home/text.asm:108
+function InitClock:palette()
+  if self.mode == "day" then return Chrome.DEFAULT_BOX_PALETTE end
+  return InitClock.PALETTE
+end
 
 -- Clock.DAY_NAMES / Clock.weekdayName is the single translated home for this
 -- table: MainMenu's clock box and the Pokegear's clock card read the same
@@ -381,10 +387,9 @@ end
 -- Four pixel rows, widest at the base, which is what the two 1bpp tiles are.
 local ARROW_ROWS = { 1, 3, 5, 7 }
 
-local function arrow(tx, ty, up)
+local function arrow(tx, ty, up, pal)
   local G = love.graphics
   local x, y = tx * 8, ty * 8
-  local pal = InitClock.PALETTE
   local paper = GbcPalette.color(pal, 1) or pal[1]
   local ink = GbcPalette.color(pal, 4) or pal[4]
   -- The arrow tile REPLACES the border tile it lands on (hlcoord 11, 7 is the
@@ -401,7 +406,7 @@ end
 
 function InitClock:drawPanel()
   -- ../pokecrystal/engine/menus/intro_menu.asm:42-49
-  local palette = InitClock.PALETTE
+  local palette = self:palette()
   if self.blank then
     Chrome.paletteFill(0, 0, Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8, palette)
     love.graphics.setColor(1, 1, 1, 1)
@@ -421,8 +426,8 @@ function InitClock:drawPanel()
     Chrome.paletteBox(bx, by, bw + 2, bh + 2, palette)
     -- The two arrows sit ON the border rows, which is why they are placed
     -- after the box rather than inside it.
-    arrow(arrowX, by, true)
-    arrow(arrowX, by + bh + 1, false)
+    arrow(arrowX, by, true, palette)
+    arrow(arrowX, by + bh + 1, false, palette)
     Chrome.printThrough(value, tx, ty, palette)
   end
   -- The question (and the confirmations) share the bottom textbox every other
@@ -454,7 +459,7 @@ function InitClock:drawWidescreen(winW, winH)
   local r, g, b = ground[1] / 255, ground[2] / 255, ground[3] / 255
   if self.blank then r, g, b = 1, 1, 1 end
   local index = self.blank and 1 or 4
-  r, g, b = IntroFade.surround(self, InitClock.PALETTE, r, g, b, index)
+  r, g, b = IntroFade.surround(self, self:palette(), r, g, b, index)
   Chrome.withPanel(winW, winH, r, g, b, function() self:drawBody() end)
 end
 

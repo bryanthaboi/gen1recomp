@@ -347,14 +347,45 @@ do
   eq(BattleTower.roster({ trainers = { battleTower = { trainers = {} } } }), nil,
     "and half a block is not one either")
 
-  local save = crystalSave(0)
-  eq(BattleTower.opponentGroup(save, ROSTER), 1,
+  eq(BattleTower.opponentGroup(0, ROSTER), 1,
     "a level group of 0 cannot index before the table")
-  save.battleTower.levelGroup = 9
-  eq(BattleTower.opponentGroup(save, ROSTER), 2,
+  eq(BattleTower.opponentGroup(9, ROSTER), 2,
     "nor past the last group the roster carries")
-  save.battleTower.levelGroup = 2
-  eq(BattleTower.opponentGroup(save, ROSTER), 2, "a real group is kept")
+  eq(BattleTower.opponentGroup(2, ROSTER), 2, "a real group is kept")
+end
+
+-- load_trainer.asm:104
+local GROUP2 = {}
+for i, base in ipairs(GROUP1) do
+  local copy = {}
+  for key, value in pairs(base) do copy[key] = value end
+  copy.level = 20
+  GROUP2[i] = copy
+end
+local ROSTER2 = {}
+for key, value in pairs(ROSTER) do ROSTER2[key] = value end
+ROSTER2.groups = { GROUP1, GROUP2 }
+local DATA2 = { pokemon = POKEMON, moves = MOVES,
+  trainers = { battleTower = ROSTER2, classes = DATA.trainers.classes } }
+
+do
+  local save = crystalSave(1)
+  local opponent = BattleTower.drawOpponent(DATA2, save, rolls({ 1, 1, 1, 1 }), 2)
+  eq(opponent and opponent.group, 2, "the draw takes the WRAM level group")
+  eq(opponent and opponent.rows[1].level, 20, "and the rows come from that group")
+  eq(save.battleTower.levelGroup, 1, "while the SRAM byte stays untouched")
+
+  local vm = fakeVm(crystalSave(1), {
+    data = function() return DATA2 end,
+    pushScreen = function(_id, opts) opts.onDone(2) return true end,
+  })
+  Specials.ALL.BattleTowerRoomMenu(vm)
+  eq(vm.btLevelGroup, 2, "the room menu writes wBTChoiceOfLvlGroup")
+  Specials.random = rolls({ 1, 1, 1, 1 })
+  Specials.ALL.LoadOpponentTrainerAndPokemonWithOTSprite(vm)
+  eq(vm.btOpponent and vm.btOpponent.group, 2,
+    "and the next draw reads it without SAVELEVELGROUP ever running")
+  eq(vm.btOpponent and vm.btOpponent.rows[1].level, 20, "L20 mons")
 end
 
 -- ============================================== the trainer draw and sBTTrainers

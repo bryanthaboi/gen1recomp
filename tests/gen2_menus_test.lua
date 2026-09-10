@@ -366,7 +366,7 @@ local options = OptionsMenu.new(optionsGame, {
 })
 -- The cart's seven rows, then the port's: CONTROLS, audio, PERFORMANCE,
 -- speed, display, SHADER FX + SHADER FX 2 (the second slot added alongside
-check("thirty-three rows", #OptionsMenu.ROWS, 33)
+check("thirty-four rows", #OptionsMenu.ROWS, 34)
 check("the cart's rows come first", OptionsMenu.ROWS[7].key, "frame")
 check("then the rebind screen", OptionsMenu.ROWS[8].id, "controls")
 check("then the port's audio group", OptionsMenu.ROWS[9].key, "musicVol")
@@ -2725,6 +2725,118 @@ local function modRowChecks()
   Runtime.install(prevEvents, prevHooks, prevErrors)
 end
 modRowChecks()
+
+-- engine/pokemon/party_menu.asm:694, engine/pokemon/mon_submenu.asm:50,
+-- home/menu.asm:381, home/joypad.asm:392
+;(function()
+  local Sound = require("src.core.Sound")
+  local Typer = require("src.ui.gen2.Typer")
+  local HeldItemMenu = require("src.ui.gen2.HeldItemMenu")
+  local PartyMenu = require("src.ui.gen2.PartyMenu")
+  local realPlay = Sound.play
+  local rang = {}
+  Sound.play = function(_, name) rang[#rang + 1] = name end
+  local function clicks()
+    local n = 0
+    for _, name in ipairs(rang) do
+      if name == "Sfx_ReadText2" then n = n + 1 end
+    end
+    return n
+  end
+
+  local save = Save.newGame({ playerName = "GOLD" })
+  save.party = { { species = "CYNDAQUIL", level = 5, hp = 20, maxHp = 20,
+                   moves = {}, nickname = "CYNDA", item = "BERRY" } }
+  save.inventory = { POTION = 1 }
+  local game, input = newGame(save)
+  game.data.items = {
+    BERRY = { id = "BERRY", name = "BERRY", pocket = "ITEM", index = 1 },
+    POTION = { id = "POTION", name = "POTION", pocket = "ITEM", index = 2 },
+  }
+  game.data.audio = { sfx = { Sfx_ReadText2 = {} } }
+
+  local closed = 0
+  local held = HeldItemMenu.new(game, { save = save, slot = 1,
+    items = game.data.items, onClose = function() closed = closed + 1 end })
+  held.index = 2
+  input:press("a")
+  held:update(0)
+  check("TAKE clicks", clicks(), 1)
+  check("TAKE hands its text to a typer", held.typer ~= nil, true)
+  check("the text is still typing on its first frame", Typer.typing(held), true)
+  check("the berry went back to the bag", save.inventory.BERRY, 1)
+  input:press("a")
+  held:update(0)
+  check("A while typing does not dismiss", closed, 0)
+  check("nor clicks", clicks(), 1)
+  input.pressed = {}
+  for _ = 1, 400 do
+    held:update(0)
+    if not Typer.typing(held) then break end
+  end
+  check("the text finishes on its own", Typer.typing(held), false)
+  check("and waits for the prompt", closed, 0)
+  input:press("a")
+  held:update(0)
+  check("the prompt's A clicks", clicks(), 2)
+  check("and runs onDone", closed, 1)
+
+  -- engine/pokemon/mon_menu.asm:298
+  save.party[1].item = "BERRY"
+  held.index = 1
+  held:giveItem("POTION")
+  check("the swap question hands its text to a typer", held.confirm ~= nil
+    and Typer.typing(held), true)
+  input.pressed = {}
+  for _ = 1, 400 do
+    held:update(0)
+    if not Typer.typing(held) then break end
+  end
+  input:press("a")
+  held:update(0)
+  check("the page turn clicks", clicks(), 3)
+  check("and typed the second page", Typer.typing(held), true)
+  for _ = 1, 400 do
+    held:update(0)
+    if not Typer.typing(held) then break end
+  end
+  input:press("a")
+  held:update(0)
+  check("YES clicks", clicks(), 4)
+  check("and swaps the items", save.party[1].item, "POTION")
+
+  input:press("b")
+  held.message, held.confirm, held.typer = nil, nil, nil
+  held:update(0)
+  check("B out of GIVE / TAKE clicks", clicks(), 5)
+  check("and closes", closed, 2)
+
+  -- engine/pokemon/party_menu.asm:669, engine/pokemon/mon_submenu.asm:40
+  local cancelled = 0
+  local pm = PartyMenu.new(game, { save = save, submenu = true,
+    onCancel = function() cancelled = cancelled + 1 end })
+  input:press("a")
+  pm:update(0)
+  check("A on a party row clicks", clicks(), 6)
+  check("and opens the submenu", pm.submenu ~= nil, true)
+  pm.submenu.index = #pm.submenu.items
+  input:press("a")
+  pm:update(0)
+  check("A on the submenu clicks", clicks(), 7)
+  check("CANCEL closed it", pm.submenu, nil)
+  input:press("a")
+  pm:update(0)
+  pm.submenu.index = 1
+  input:press("b")
+  pm:update(0)
+  check("B out of the submenu clicks", clicks(), 9)
+  input:press("b")
+  pm:update(0)
+  check("B out of the list clicks", clicks(), 10)
+  check("and cancels", cancelled, 1)
+
+  Sound.play = realPlay
+end)()
 
 print(("gen2 menus: %d checks, %d failures"):format(checks, failures))
 -- Raise rather than os.exit: tests/run_tests.lua dofiles this file, so an

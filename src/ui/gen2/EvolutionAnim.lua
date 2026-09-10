@@ -36,6 +36,7 @@ local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
 local SpriteAnims = require("src.ui.gen2.SpriteAnims")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 
 local EvolutionAnim = {}
@@ -268,10 +269,17 @@ function EvolutionAnim:setPhase(phase)
     self.balls = {}
     self.picAnim = nil
     if not self:statused() then
+      local path, _, vanilla = self:picPath(self.newSpecies)
       self.picAnim = MonAnimView.start(self:speciesDef(self.newSpecies),
         self.mon, "evolve",
-        function(path) return self:image(path) end,
-        function() self:playCry(self.newSpecies) end)
+        function(p) return self:image(p) end,
+        function() self:playCry(self.newSpecies) end, {
+          resolve = function(sheet)
+            return Sprites.pic(sheet,
+              self:picCtx(self.newSpecies, "evolution_anim"))
+          end,
+          staticReplaced = MonAnimView.replaced(vanilla, path),
+        })
     end
     if self.picAnim then return end
     if self:statused() then return self:setPhase("congrats") end
@@ -573,9 +581,28 @@ function EvolutionAnim:image(path)
   return cached or nil
 end
 
-function EvolutionAnim:pic(species)
+function EvolutionAnim:picCtx(species, kind)
+  return {
+    species = species,
+    side = "front",
+    kind = kind,
+    mon = self.mon,
+    data = self.data,
+    shiny = self.mon and self.mon.shiny and true or false,
+  }
+end
+
+function EvolutionAnim:picPath(species)
   local def = self:speciesDef(species)
-  return self:image(def and def.spriteFront)
+  local vanilla = def and def.spriteFront
+  local path, trueColor = Sprites.pic(vanilla,
+    self:picCtx(species, "evolution"))
+  return path, trueColor, vanilla
+end
+
+function EvolutionAnim:pic(species)
+  local path, trueColor = self:picPath(species)
+  return self:image(path), trueColor
 end
 
 -- The four colours the box draws through right now: the mon's own while the
@@ -590,14 +617,14 @@ end
 
 function EvolutionAnim:drawPic()
   local species = self.showNew and self.newSpecies or self.oldSpecies
-  local image = self:pic(species)
+  local image, trueColor = self:pic(species)
   if not image then return end
   local G = love.graphics
   local w, h = image:getDimensions()
   -- ../pokecrystal/engine/gfx/pic_animation.asm:431-435
   local sheet, quad, size
   if self.picAnim then sheet, quad, size = self.picAnim:frame() end
-  if sheet then w, h = size, size end
+  if sheet then w, h = size, size; trueColor = self.picAnim.trueColor end
   -- PlaceGraphic pads the pic into the 7x7 box bottom-first, so a 40x40
   -- Cyndaquil stands on the same ground line a 56x56 Onix does.
   local box = PIC_TILES * 8
@@ -609,7 +636,8 @@ function EvolutionAnim:drawPic()
     if sheet then return G.draw(sheet, quad, px, py) end
     G.draw(image, px, py)
   end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()

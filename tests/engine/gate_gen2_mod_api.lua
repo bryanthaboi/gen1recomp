@@ -471,6 +471,25 @@ for _, name in ipairs(GEN2_HOOKS) do
   assertShared(name, Catalog.hookSites(name), "hook")
 end
 
+local POKEMON_SPRITE_SITES = {
+  "src/ui/gen2/BattleState.lua", "src/ui/gen2/SummaryMenu.lua",
+  "src/ui/gen2/BoxMenu.lua", "src/ui/gen2/PokedexMenu.lua",
+  "src/ui/gen2/TradeAnim.lua", "src/ui/gen2/EvolutionAnim.lua",
+  "src/ui/gen2/EggHatchAnim.lua", "src/ui/gen2/HallOfFame.lua",
+  "src/ui/gen2/PhotoStudio.lua", "src/ui/gen2/UnownPrinter.lua",
+  "src/ui/gen2/OakSpeech.lua", "src/world/gen2/World.lua",
+  "src/online/OnlineSprites.lua",
+}
+do
+  local seen = {}
+  for _, path in ipairs(Catalog.hookSites("pokemon.sprite")) do
+    seen[path] = true
+  end
+  for _, path in ipairs(POKEMON_SPRITE_SITES) do
+    T.check(seen[path], "pokemon.sprite is raised by " .. path)
+  end
+end
+
 -- and the lists are COMPLETE, not a sample.  Without this half the gate only
 -- catches a seam being taken away; a Gen 2 site landing for a Gen 1 name and
 -- never reaching docs/mod-api-gen2-compat.md is the other drift, and it is the

@@ -178,6 +178,8 @@ CallAsm.SITES_CRYSTAL = {
   ["03:51ba"] = "AskCutScript_CheckMap",
   ["2e:41ea"] = "TreeMonEncounter",
   ["2e:4219"] = "RockMonEncounter",
+  -- maps/BattleTowerHallway.asm:23-32
+  ["27:75cb"] = "BattleTowerHallwayChooseBattleRoomScript.asm_load_battle_room",
   ["04:62f8"] = "TryReceiveItem",
 }
 
@@ -692,6 +694,14 @@ function H.GetWhiteoutSpawn(ctx)
   end
   ctx.defaultSpawnpoint = answer
   return nil
+end
+
+-- ---- maps/BattleTowerHallway.asm
+
+-- maps/BattleTowerHallway.asm:23-32
+H["BattleTowerHallwayChooseBattleRoomScript.asm_load_battle_room"] = function(ctx)
+  local vm = ctx and ctx.vm
+  return math.floor(tonumber(vm and vm.btLevelGroup) or 0)
 end
 
 -- ---- stubs -----------------------------------------------------------------

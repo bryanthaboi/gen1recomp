@@ -28,6 +28,7 @@
 --   * Layout is explicit pixels off Layout.metrics.  No percentages.
 
 local Kit = require("src.ui.kit.Kit")
+local CartShape = require("src.import.CartShape")
 local Theme = require("src.ui.kit.Theme")
 local Layout = require("src.ui.kit.Layout")
 local Loader = require("src.ui.kit.Loader")
@@ -512,16 +513,26 @@ local function finishFlags(name)
 end
 
 local function cartSkin(imp, version)
+  local info = GameVersion.info(version) or {}
+  local shape = imp.cartShape or GameVersion.cartShape(version)
+  local prefix = shape == "gba" and "gba:" or ""
+  local shellOverride = shape == "gba"
+    and shellColor(os.getenv("POKEPORT_CART_SHELL")) or nil
   local row = imp.activeCartRow and imp:activeCartRow(version) or nil
+  local color = shellOverride or shellColor(info.cartShell)
+    or (shape == "gba" and { 50, 171, 99 }) or cartColor(version)
   if not row then
     local sparkle, holo = finishFlags(STOCK_FINISH[version])
-    return { cacheKey = version, color = cartColor(version),
+    return { cacheKey = prefix .. version, shape = shape,
+             color = color,
              sparkle = sparkle, holo = holo,
-             labelPath = "assets/labels/" .. tostring(version) .. ".png" }
+             labelPath = info.cartLabel or (shape == "gba"
+               and "assets/labels/gba-green-blue.png"
+               or "assets/labels/" .. tostring(version) .. ".png") }
   end
   local sparkle, holo = finishFlags(row.finish)
-  return { cacheKey = "cart:" .. tostring(row.id),
-           color = shellColor(row.shell) or cartColor(version),
+  return { cacheKey = prefix .. "cart:" .. tostring(row.id), shape = shape,
+           color = shellOverride or shellColor(row.shell) or color,
            sparkle = sparkle, holo = holo,
            name = row.title, cart = row, cartId = row.id }
 end
@@ -686,26 +697,39 @@ local function cartPill(project, x, y, w, h, z, color, alpha)
   cartPolygon(points, color, alpha)
 end
 
+-- Project rounded corners with the label.
+local function cartRoundedQuad(project, x, y, w, h, z, radius)
+  local points = {}
+  for corner = 0, 3 do
+    local cx = (corner == 0 or corner == 3) and w - radius or radius
+    local cy = corner < 2 and h - radius or radius
+    for i = 0, 5 do
+      local angle = (corner + i / 5) * math.pi / 2
+      local px, py = cx + math.cos(angle) * radius, cy + math.sin(angle) * radius
+      local sx, sy = project(x + px, y + py, z)
+      points[#points + 1] = { sx, sy, px / w, py / h }
+    end
+  end
+  return points
+end
+
 local function cartLabelMesh(imp, key, label, points)
   if not love.graphics.newMesh then return nil end
+  local corners = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } }
+  local vertices = {}
+  for i, p in ipairs(points) do
+    vertices[i] = { p[1], p[2], p[3] or corners[i][1],
+      p[4] or corners[i][2], 255, 255, 255, 255 }
+  end
   imp._cartridgeLabelMeshes = imp._cartridgeLabelMeshes or {}
   local mesh = imp._cartridgeLabelMeshes[key]
   if not mesh then
-    mesh = love.graphics.newMesh({
-      { 0, 0, 0, 0, 255, 255, 255, 255 },
-      { 0, 0, 1, 0, 255, 255, 255, 255 },
-      { 0, 0, 1, 1, 255, 255, 255, 255 },
-      { 0, 0, 0, 1, 255, 255, 255, 255 },
-    }, "fan", "dynamic")
-    mesh:setTexture(label.image)
+    mesh = love.graphics.newMesh(vertices, "fan", "dynamic")
     imp._cartridgeLabelMeshes[key] = mesh
+  else
+    mesh:setVertices(vertices)
   end
-  mesh:setVertices({
-    { points[1][1], points[1][2], 0, 0, 255, 255, 255, 255 },
-    { points[2][1], points[2][2], 1, 0, 255, 255, 255, 255 },
-    { points[3][1], points[3][2], 1, 1, 255, 255, 255, 255 },
-    { points[4][1], points[4][2], 0, 1, 255, 255, 255, 255 },
-  })
+  mesh:setTexture(label.image)
   return mesh
 end
 
@@ -866,7 +890,30 @@ LauncherView.cartShaderError = function() return cartShaderError end
 LauncherView.cartFinishPhases = cartFinishPhases
 LauncherView.cartHull = cartHull
 
-local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action, version)
+-- GBA lip and grip recess.
+local function drawGbaMolding(project, w, h, z, shell, side)
+  local highlight = { math.min(255, shell[1] * 1.12),
+    math.min(255, shell[2] * 1.12), math.min(255, shell[3] * 1.12) }
+  for i = 0, 27 do
+    local a, b = i / 28, (i + 1) / 28
+    local function edge(t, lower)
+      local arch = math.sin(t * math.pi)
+      return { project((t - 0.5) * w * 0.76,
+        h * (-0.355 - arch * (lower and 0.045 or 0.105)), z + 0.5) }
+    end
+    cartPolygon({ edge(a, false), edge(b, false), edge(b, true), edge(a, true) },
+      side, 0.9)
+  end
+  -- Rim and rail seams.
+  cartPolygon(cartQuad(project, -w * 0.45, -h * 0.483,
+    w * 0.90, h * 0.008, z), highlight, 0.7)
+  for _, sign in ipairs({ -1, 1 }) do
+    cartPolygon(cartQuad(project, sign * w * 0.452, -h * 0.30,
+      w * 0.004, h * 0.76, z), side, 0.5)
+  end
+end
+
+local function cartridgeButton(imp, x, y, w, h, key, skin, action, version)
   local state = cartridgeState(imp, skin.cacheKey)
   markNoDrag(imp, x, y, w, h)
   local focused = Kit.focusable(key, x, y, w, h)
@@ -968,7 +1015,8 @@ local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action, ver
   Kit._audit("control", x, y, w, h, key)
 
   local halfW, halfH = w / 2, h / 2
-  local depth = math.max(6, w * 0.10)
+  local gba = skin.shape == "gba"
+  local depth = math.max(gba and 3 or 6, w * (gba and 0.035 or 0.10))
   local project = function(px, py, pz)
     return cartProject(cx + pressX, cy + pressY, yaw, pitch,
       px * pressedScale, py * pressedScale, pz * pressedScale)
@@ -988,13 +1036,16 @@ local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action, ver
 
   local capH = h * 3 / 65
   local mainTop = -halfH + capH
-  local capRight = halfW - w * 5 / 57
-  local mainFront = cartQuad(project, -halfW, mainTop, w, h - capH, depth)
-  local mainBack = cartQuad(project, -halfW, mainTop, w, h - capH, -depth)
-  local capFront = cartQuad(project, -halfW, -halfH,
-    capRight + halfW, capH, depth)
-  local capBack = cartQuad(project, -halfW, -halfH,
-    capRight + halfW, capH, -depth)
+  local main, cap = CartShape.outlines(skin.shape)
+  local function face(outline, z)
+    local points = {}
+    for i, p in ipairs(outline) do
+      points[i] = { project(p[1] * w, p[2] * h, z) }
+    end
+    return points
+  end
+  local mainFront, mainBack = face(main, depth), face(main, -depth)
+  local capFront, capBack = face(cap, depth), face(cap, -depth)
   if shader then love.graphics.setShader(shader) end
   if focused then
     cartSendFinish(shader, FINISH_NONE, state.spin)
@@ -1015,13 +1066,14 @@ local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action, ver
     cartPolygon(mainFront, shell, 1)
     cartPolygon(capFront, shell, 1)
   end
-  cartPolygon({ mainFront[2], mainFront[3], mainBack[3], mainBack[2] }, side, 1)
-  cartPolygon({ mainFront[3], mainFront[4], mainBack[4], mainBack[3] }, side, 1)
-  cartPolygon({ mainFront[1], mainFront[2], mainBack[2], mainBack[1] }, side, 1)
-  cartPolygon({ mainFront[4], mainFront[1], mainBack[1], mainBack[4] }, side, 1)
-  cartPolygon({ capFront[2], capFront[3], capBack[3], capBack[2] }, side, 1)
-  cartPolygon({ capFront[1], capFront[2], capBack[2], capBack[1] }, side, 1)
-  cartPolygon({ capFront[4], capFront[1], capBack[1], capBack[4] }, side, 1)
+  local function walls(front, back)
+    for i = 1, #front do
+      local j = i % #front + 1
+      cartPolygon({ front[i], front[j], back[j], back[i] }, side, 1)
+    end
+  end
+  walls(mainFront, mainBack)
+  walls(capFront, capBack)
   if frontFacing then
     cartPolygon(mainFront, shell, 1)
     cartPolygon(capFront, shell, 1)
@@ -1057,55 +1109,63 @@ local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action, ver
 
   if frontFacing then
     local faceZ = depth + 0.8
-    -- The shell's grip grooves: a stack beside the label recess on the left,
-    -- and one below the top-right corner notch, like the DMG cart.
-    local grooveW = w * 0.115
-    local grooveH = math.max(1, h * 0.009)
-    local grooveScale = { 1.22, 1.10, 1.00, 1.00, 1.10, 1.22 }
-    local grooveInset = w * 0.02
-    for i = 0, 5 do
-      local ry = mainTop + h * 0.014 + i * h * 0.021
-      local gw = grooveW * grooveScale[i + 1]
-      cartPolygon(cartQuad(project, -halfW + grooveInset, ry,
-        gw, grooveH, faceZ), side, 0.7)
-      cartPolygon(cartQuad(project, halfW - gw - grooveInset, ry,
-        gw, grooveH, faceZ), side, 0.7)
-    end
-    -- The thin diagonal mold ridge cut into each long side a little below
-    -- the grip grooves, mirrored left/right.
-    local function diagonal(x0, y0, x1, y1)
-      local dx, dy = x1 - x0, y1 - y0
-      local len = math.sqrt(dx * dx + dy * dy)
-      local nx, ny = -dy / len, dx / len
-      local t = math.max(0.6, h * 0.004)
-      cartPolygon({
-        { project(x0 + nx * t, y0 + ny * t, faceZ) },
-        { project(x0 - nx * t, y0 - ny * t, faceZ) },
-        { project(x1 - nx * t, y1 - ny * t, faceZ) },
-        { project(x1 + nx * t, y1 + ny * t, faceZ) },
-      }, side, 0.7)
-    end
-    local dgY = mainTop + h * 0.25
-    diagonal(-halfW + w * 0.006, dgY, -halfW + w * 0.085, dgY + h * 0.038)
-    diagonal(halfW - w * 0.006, dgY, halfW - w * 0.085, dgY + h * 0.038)
-    -- The pill recess: one stadium pill sunk into the shell.
-    local pillX, pillW = -halfW + w * 0.19, w * 0.62
-    local pillY, pillH = mainTop + h * 0.015, h * 0.115
-    -- log out pillH
- 
-    cartPill(project, pillX, pillY, pillW, pillH, faceZ + 0.5, side, 0.55)
-    local inX, inY = w * 0.008, h * 0.008
-    cartPill(project, pillX + inX, pillY + inY,
-      pillW - 2 * inX, pillH - 2 * inY, faceZ + 0.8,
-      { math.floor(shell[1] * 0.92), math.floor(shell[2] * 0.92),
-        math.floor(shell[3] * 0.92) }, 1)
+    if gba then
+      drawGbaMolding(project, w, h, faceZ, shell, side)
+    else
+      -- GB grip grooves.
+      local grooveW = w * 0.115
+      local grooveH = math.max(1, h * 0.009)
+      local grooveScale = { 1.22, 1.10, 1.00, 1.00, 1.10, 1.22 }
+      local grooveInset = w * 0.02
+      for i = 0, 5 do
+        local ry = mainTop + h * 0.014 + i * h * 0.021
+        local gw = grooveW * grooveScale[i + 1]
+        cartPolygon(cartQuad(project, -halfW + grooveInset, ry,
+          gw, grooveH, faceZ), side, 0.7)
+        cartPolygon(cartQuad(project, halfW - gw - grooveInset, ry,
+          gw, grooveH, faceZ), side, 0.7)
+      end
+      -- Side ridges.
+      local function diagonal(x0, y0, x1, y1)
+        local dx, dy = x1 - x0, y1 - y0
+        local len = math.sqrt(dx * dx + dy * dy)
+        local nx, ny = -dy / len, dx / len
+        local t = math.max(0.6, h * 0.004)
+        cartPolygon({
+          { project(x0 + nx * t, y0 + ny * t, faceZ) },
+          { project(x0 - nx * t, y0 - ny * t, faceZ) },
+          { project(x1 - nx * t, y1 - ny * t, faceZ) },
+          { project(x1 + nx * t, y1 + ny * t, faceZ) },
+        }, side, 0.7)
+      end
+      local dgY = mainTop + h * 0.25
+      diagonal(-halfW + w * 0.006, dgY, -halfW + w * 0.085, dgY + h * 0.038)
+      diagonal(halfW - w * 0.006, dgY, halfW - w * 0.085, dgY + h * 0.038)
+      -- Pill recess.
+      local pillX, pillW = -halfW + w * 0.19, w * 0.62
+      local pillY, pillH = mainTop + h * 0.015, h * 0.115
 
-    local labelX, labelY = -w * 0.33, -h * 0.20
-    local labelW, labelH = w * 0.66, h * 0.55
-    local plate = cartQuad(project, labelX - 2, labelY - 2, labelW + 4, labelH + 4, faceZ + 0.8)
+      cartPill(project, pillX, pillY, pillW, pillH, faceZ + 0.5, side, 0.55)
+      local inX, inY = w * 0.008, h * 0.008
+      cartPill(project, pillX + inX, pillY + inY,
+        pillW - 2 * inX, pillH - 2 * inY, faceZ + 0.8,
+        { math.floor(shell[1] * 0.92), math.floor(shell[2] * 0.92),
+          math.floor(shell[3] * 0.92) }, 1)
+    end
+
+    local rect = CartShape.labelRect(skin.shape)
+    local labelX, labelY = rect[1] * w, rect[2] * h
+    local labelW, labelH = rect[3] * w, rect[4] * h
+    local labelQuad = gba and cartRoundedQuad or cartQuad
+    local plate = labelQuad(project, labelX - 2, labelY - 2,
+      labelW + 4, labelH + 4, faceZ + 0.8, w * 0.018)
     cartPolygon(plate, side, 0.95)
-    local labelPoints = cartQuad(project, labelX, labelY, labelW, labelH, faceZ + 1.2)
+    local labelPoints = labelQuad(project, labelX, labelY, labelW, labelH,
+      faceZ + 1.2, w * 0.014)
     local label = cartridgeLabel(imp, skin.cacheKey, skin.labelPath, skin.cartId)
+    if gba then
+      label = require("src.import.CartLabelArt").label(imp, skin, label)
+    end
     local mesh = label and cartLabelMesh(imp, skin.cacheKey, label, labelPoints)
     if skin.holo then
       cartSendFinish(shader, FINISH_HOLO, state.spin)
@@ -1115,17 +1175,17 @@ local function cartridgeButton(imp, x, y, w, h, key, skin, gameName, action, ver
       love.graphics.draw(mesh)
     elseif label then
       local artScale = math.min(labelW / label.width, labelH / label.height)
-      love.graphics.draw(label.image, labelPoints[1][1], labelPoints[1][2],
-        0, artScale, artScale)
+      local labelLeft, labelTop = project(labelX, labelY, faceZ + 1.2)
+      love.graphics.draw(label.image, labelLeft, labelTop, 0, artScale, artScale)
     end
     if skin.holo then
       cartSendFinish(shader, skin.sparkle and FINISH_SPARKLE or FINISH_NONE,
         state.spin)
     end
     cartPolygon({
-      { project(-w * 0.07, h * 0.37, faceZ + 1) },
-      { project(w * 0.07, h * 0.37, faceZ + 1) },
-      { project(0, h * 0.43, faceZ + 1) },
+      { project(-w * (gba and 0.045 or 0.07), h * (gba and 0.425 or 0.37), faceZ + 1) },
+      { project(w * (gba and 0.045 or 0.07), h * (gba and 0.425 or 0.37), faceZ + 1) },
+      { project(0, h * (gba and 0.475 or 0.43), faceZ + 1) },
     }, side, 0.70)
   end
   love.graphics.pop()
@@ -2366,17 +2426,23 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
   local ly = cy
 
   if ready then
-    -- The cartridge takes the Play button's former place.  Its portrait
-    -- ratio comes from a real Game Boy cart rather than stretching the old
-    -- horizontal control, and its body colour comes from the active game.
+    -- Preserve shell proportions.
     local playH = math.floor(clamp(remaining * 0.52, 112 * m.s, 260 * m.s))
     local mgW = math.max(Kit.tapMin(), math.floor(34 * m.s))
     local bgap = math.floor(8 * m.s)
     local cartAreaW = lw - mgW - bgap
-    local cartW = math.min(cartAreaW, math.floor(playH * 0.88))
+    local cartW
+    if skin.shape == "gba" then
+      -- Reserve hover clearance.
+      cartW = math.min(cartAreaW * 0.90, playH * CartShape.GBA_ASPECT)
+      playH = cartW / CartShape.GBA_ASPECT
+      ly = ly + math.floor(cartW * 0.07)
+    else
+      cartW = math.min(cartAreaW, math.floor(playH * 0.88))
+    end
     local cartX = lx + math.floor((cartAreaW - cartW) / 2)
     cartridgeButton(imp, cartX, ly, cartW, playH, "play-" .. version,
-      skin, gameName, function() imp:play(version, true) end, version)
+      skin, function() imp:play(version, true) end, version)
     imp._gearIcon = imp._gearIcon
       or love.graphics.newImage("assets/launcher/gear.png")
     btn(imp, lx + lw - mgW, ly, mgW, mgW, "manage-" .. version, "", {

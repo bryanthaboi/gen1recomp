@@ -88,6 +88,45 @@ do
   local sequence = table.concat(cmds(rows), ",")
   check(sequence:find("heal_party,fade,wait,fade,show_text", 1, true),
         "Silph heal rest sequence is heal → fade out → wait → fade in → text")
+
+  -- pokered/text/SilphCo9F.asm:1
+  local iTired = find(rows, "show_text", "SilphCo9FNurseYouLookTiredText")
+  check(iTired and iTired < iHeal,
+        "Silph nurse shows SilphCo9FNurseYouLookTiredText before heal_party")
+  local iDontGiveUp = find(rows, "show_text", "SilphCo9FNurseDontGiveUpText")
+  check(iDontGiveUp and iDontGiveUp > iFadeIn,
+        "Silph nurse shows SilphCo9FNurseDontGiveUpText after the fade-in")
+  local iThanks = find(rows, "show_text", "SilphCo9FNurseThankYouText")
+  local jumpRow
+  for _, row in ipairs(rows) do
+    if row[1] == "jump_if_true" then jumpRow = row break end
+  end
+  check(jumpRow and iThanks and jumpRow[2] == iThanks,
+        "EVENT_BEAT_SILPH_CO_GIOVANNI jumps to SilphCo9FNurseThankYouText")
+  for _, row in ipairs(rows) do
+    if row[1] == "show_text" then
+      check(row[2]:find("^SilphCo9F"),
+            "Silph nurse show_text uses an extracted label: " .. row[2])
+    end
+  end
+end
+
+-- pokered/home/text.asm ContText / TextCommand_PROMPT_BUTTON
+do
+  local TextBox = require("src.render.TextBox")
+  local extracted = "You look tired!\nYou should take a\vquick nap!{PROMPT}"
+  local pages = TextBox.paginate(extracted, 18)
+  eq(#pages, 1, "nurse tired text is one page")
+  eq(#pages[1], 3, "nurse tired text has three lines")
+  eq(pages[1][3], "quick nap!", "third line is the cont line")
+  eq(pages.contBefore[1][3], true, "\\v before 'quick nap!' waits for A/B")
+  eq(pages.contBefore[1][2], false, "\\n before 'You should take a' does not")
+  eq(TextBox.ending(extracted), "prompt", "nurse tired text ends with {PROMPT}")
+
+  local literal = TextBox.paginate("You look tired!\nYou should take a\nquick nap!", 18)
+  eq(literal.contBefore[1][3], false, "\\n\\n literal auto-scrolls the third line")
+  eq(TextBox.ending("You look tired!\nYou should take a\nquick nap!"), nil,
+     "untagged literal has no prompt ending")
 end
 
 -- --- play_once is a blocking command (Mom / captain wait loops)

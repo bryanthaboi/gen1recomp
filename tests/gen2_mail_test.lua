@@ -59,6 +59,15 @@ local PartyMenu = require("src.ui.gen2.PartyMenu")
 local PcMenu = require("src.ui.gen2.PcMenu")
 local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
+local Typer = require("src.ui.gen2.Typer")
+
+-- home/print_text.asm:1
+local function typeOut(menu)
+  for _ = 1, 600 do
+    if not Typer.typing(menu) then return end
+    menu:update()
+  end
+end
 
 local failures, checks = 0, 0
 local function check(name, got, want)
@@ -757,6 +766,7 @@ do
   check("the mon is holding it", save.party[1].item, "FLOWER_MAIL")
   check("and it left the bag", save.inventory.FLOWER_MAIL, nil)
   check("with a line to read", menu.message ~= nil, true)
+  typeOut(menu)
   input:press("a")
   menu:update()
   local compose = game.stack:top()
@@ -801,6 +811,7 @@ do
   menu:giveItem("BICYCLE")
   check("a key item cannot be held", menu.message ~= nil, true)
   check("and the mon holds nothing", save.party[1].item, nil)
+  typeOut(menu)
   input:press("a")
   menu:update()
   check("the PACK reopens", game.stack:top() ~= nil, true)
@@ -853,8 +864,10 @@ do
   })
   menu:giveItem("POTION")
   check("a held item asks about the swap", menu.confirm ~= nil, true)
+  typeOut(menu)
   input:press("a")
   menu:update()
+  typeOut(menu)
   input:press("a")
   menu:update()
   check("a full bag keeps the old item on the mon", save.party[1].item, "BERRY")
@@ -875,8 +888,10 @@ do
   menu:giveItem("POTION")
   -- _PokemonAskSwapItemText has a `para` in it, so the box turns a page before
   -- the YES/NO comes up.
+  typeOut(menu)
   input:press("a")
   menu:update()
+  typeOut(menu)
   input:press("a")
   menu:update()
   check("the mon holds the new item", save.party[1].item, "POTION")

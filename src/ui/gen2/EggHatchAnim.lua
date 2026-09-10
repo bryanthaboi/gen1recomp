@@ -39,6 +39,7 @@ local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
 local SpriteAnims = require("src.ui.gen2.SpriteAnims")
+local Sprites = require("src.pokemon.Sprites")
 
 local EggHatchAnim = {}
 EggHatchAnim.__index = EggHatchAnim
@@ -197,9 +198,15 @@ end
 function EggHatchAnim:startPicAnim()
   local def = self.species and self.data.pokemon
     and self.data.pokemon[self.species]
+  local path, _, vanilla = self:picPath()
   self.picAnim = MonAnimView.start(def, self.mon, "hatch",
-    function(path) return self:image(path) end,
-    function() self:playCry() end)
+    function(p) return self:image(p) end,
+    function() self:playCry() end, {
+      resolve = function(sheet)
+        return Sprites.pic(sheet, self:picCtx("hatch_anim"))
+      end,
+      staticReplaced = MonAnimView.replaced(vanilla, path),
+    })
   if not self.picAnim then self:playCry() end
 end
 
@@ -350,11 +357,29 @@ function EggHatchAnim:image(path)
   return cached or nil
 end
 
+function EggHatchAnim:picCtx(kind)
+  return {
+    species = self.species,
+    side = "front",
+    kind = kind,
+    mon = self.mon,
+    data = self.data,
+    shiny = self.mon and self.mon.shiny and true or false,
+  }
+end
+
+function EggHatchAnim:picPath()
+  local def = self.species and self.data.pokemon
+    and self.data.pokemon[self.species]
+  local vanilla = def and def.spriteFront
+  local path, trueColor = Sprites.pic(vanilla, self:picCtx("hatch"))
+  return path, trueColor, vanilla
+end
+
 function EggHatchAnim:pic()
   if self.showMon then
-    local def = self.species and self.data.pokemon
-      and self.data.pokemon[self.species]
-    return self:image(def and def.spriteFront)
+    local path, trueColor = self:picPath()
+    return self:image(path), trueColor
   end
   return self:image(self.eggPath)
 end
@@ -375,14 +400,14 @@ function EggHatchAnim:picColors()
 end
 
 function EggHatchAnim:drawPic()
-  local image = self:pic()
+  local image, trueColor = self:pic()
   if not image then return end
   local G = love.graphics
   local w = image:getWidth()
   -- ../pokecrystal/engine/gfx/pic_animation.asm:431-435
   local sheet, quad, size
   if self.picAnim then sheet, quad, size = self.picAnim:frame() end
-  if sheet then w = size end
+  if sheet then w = size; trueColor = self.picAnim.trueColor end
   local tx = self.showMon and MON_TILE_X or EGG_TILE_X
   local ty = self.showMon and MON_TILE_Y or EGG_TILE_Y
   -- PadFrontpic's own placement, not a centring rule: the two agree at 7 and
@@ -396,7 +421,8 @@ function EggHatchAnim:drawPic()
     if sheet then return G.draw(sheet, quad, px, py) end
     G.draw(image, px, py)
   end
-  if colors and GbcPalette.available() then
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()

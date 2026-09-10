@@ -69,6 +69,7 @@ local Mon = require("src.battle.gen2.Mon")
 local MonAnimView = require("src.render.MonAnimView")
 local Palettes = require("src.world.gen2.Palettes")
 local Pokerus = require("src.core.gen2.Pokerus")
+local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 local Unown = require("src.core.gen2.Unown")
 
@@ -346,9 +347,15 @@ end
 -- ../pokecrystal/engine/pokemon/stats_screen.asm:889-901
 function SummaryMenu:startPicAnim()
   local mon = self.mon
+  local path, _, vanilla = SummaryMenu.picPath(self, mon)
   self.picAnim = MonAnimView.start(
     mon and self.pokemon and self.pokemon[mon.species], mon, "menu",
-    function(path) return self:picImage(path) end)
+    function(p) return self:picImage(p) end, nil, {
+      resolve = function(sheet)
+        return Sprites.pic(sheet, SummaryMenu.picCtx(self, mon, "summary_anim"))
+      end,
+      staticReplaced = MonAnimView.replaced(vanilla, path),
+    })
 end
 
 -- AnimateFrontpic's .loop, one scene command per frame.
@@ -1017,22 +1024,42 @@ function SummaryMenu:picImage(path)
   return cached or nil
 end
 
-function SummaryMenu:picFor(mon)
+function SummaryMenu:picCtx(mon, kind)
+  return {
+    species = mon and mon.species,
+    side = "front",
+    kind = kind,
+    mon = mon,
+    data = self.game and self.game.data,
+    letter = Unown.monLetter(mon),
+    shiny = mon and mon.shiny and true or false,
+  }
+end
+
+function SummaryMenu:picPath(mon)
   local def = mon and self.pokemon and self.pokemon[mon.species]
-  local path = def and def.spriteFront
+  local vanilla = def and def.spriteFront
   -- StatsScreen_PlaceFrontpic (engine/pokemon/stats_screen.asm:722): `ld hl,
   -- wTempMonDVs / call GetUnownLetter` runs before the frontpic, so a party
   -- Unown's page shows its own form, not letter A.
   if mon and mon.species == Unown.SPECIES then
-    path = Unown.formSprite(self.pokemon, Unown.monLetter(mon)) or path
+    vanilla = Unown.formSprite(self.pokemon, Unown.monLetter(mon)) or vanilla
   end
-  return self:picImage(path)
+  local path, trueColor = Sprites.pic(vanilla,
+    SummaryMenu.picCtx(self, mon, "summary"))
+  return path, trueColor, vanilla
+end
+
+function SummaryMenu:picFor(mon)
+  local path, trueColor = self:picPath(mon)
+  return self:picImage(path), trueColor
 end
 
 -- PrepMonFrontpic at hlcoord 0, 0: a 7x7 block with the pic padded into it and
 -- the rest of the block left at the palette's colour 0.
-function SummaryMenu:drawPicBlock(image, colors, quad, size)
+function SummaryMenu:drawPicBlock(image, colors, quad, size, trueColor)
   if not image then return end
+  local paletted = colors and not (trueColor and GbcPalette.mode == "gbc")
   local G = love.graphics
   -- A fill behind the pic reads a palette colour directly, so it has to come
   -- through GbcPalette.color rather than off the raw table.
@@ -1050,7 +1077,7 @@ function SummaryMenu:drawPicBlock(image, colors, quad, size)
       G.draw(image, pad[1] * 8, pad[2] * 8)
     end
   end
-  if colors and GbcPalette.available() then
+  if paletted and GbcPalette.available() then
     GbcPalette.with(colors, body)
   else
     body()
@@ -1060,13 +1087,16 @@ end
 
 function SummaryMenu:drawPic()
   local mon = self.mon
-  local image = mon and self:picFor(mon)
+  if not mon then return end
+  local image, trueColor = self:picFor(mon)
   if not image then return end
   local colors = self.palettes and mon.species
     and Palettes.monColors(self.palettes, mon.species, mon.shiny) or nil
   local sheet, quad, size = self:picAnimFrame()
-  if sheet then return self:drawPicBlock(sheet, colors, quad, size) end
-  self:drawPicBlock(image, colors)
+  if sheet then
+    return self:drawPicBlock(sheet, colors, quad, size, self.picAnim.trueColor)
+  end
+  self:drawPicBlock(image, colors, nil, nil, trueColor)
 end
 
 -- EggStatsScreen ends on `hlcoord 0, 0 / call PrepMonFrontpic` as well

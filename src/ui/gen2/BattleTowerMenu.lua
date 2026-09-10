@@ -43,7 +43,7 @@ local PICK_TEXT = Strings.source("What level do you\nwant to challenge?")
 local TOPS_TEXT = Strings.source("A party POKéMON\ntops this level.")
 -- ../pokecrystal/mobile/mobile_46.asm:5464-5471
 local UBER_TEXT = Strings.source(
-  "%s may go\nonly to BATTLE\nROOMS that are\nLv.70 or higher.")
+  "%s may go\nonly to BATTLE\n\nROOMS that are\nLv.70 or higher.")
 -- ../pokecrystal/mobile/mobile_46.asm:5473-5476
 local QUIT_TEXT = Strings.source("Cancel your BATTLE\nROOM challenge?")
 -- ../pokecrystal/constants/charmap.asm:89 and :192, tiles $61 and $ee.
@@ -106,7 +106,14 @@ end
 -- for $80 frames and the menu restarts at jumptable index 0.
 function BattleTowerMenu:refuse(text)
   self.phase = "message"
-  self.message = text
+  -- ../pokecrystal/home/text.asm:479 Paragraph
+  self.pages = {}
+  for page in (tostring(text) .. "\n\n"):gmatch("(.-)\n\n") do
+    self.pages[#self.pages + 1] = page
+  end
+  if #self.pages == 0 then self.pages[1] = tostring(text) end
+  self.page = 1
+  self.message = self.pages[1]
   self.wait = MESSAGE_FRAMES
 end
 
@@ -178,6 +185,14 @@ end
 function BattleTowerMenu:update(_dt)
   if self.done then return end
   if self.phase == "message" then
+    if self.pages and self.page < #self.pages then
+      local input = self.game and self.game.input
+      if input and (input:wasPressed("a") or input:wasPressed("b")) then
+        self.page = self.page + 1
+        self.message = self.pages[self.page]
+      end
+      return
+    end
     self.wait = (self.wait or 0) - 1
     if self.wait > 0 then return end
     self.phase = "pick"
@@ -191,7 +206,8 @@ end
 
 function BattleTowerMenu:drawPanel()
   Chrome.textbox(SAY_X, SAY_Y, SAY_W, SAY_H)
-  Chrome.printWrapped(self.message, SAY_TEXT_X, SAY_TEXT_Y, SAY_W, SAY_H)
+  -- ../pokecrystal/home/text.asm:473-477 LineChar
+  Chrome.printWrapped(self.message, SAY_TEXT_X, SAY_TEXT_Y, SAY_W, 2, 2)
   if self.phase == "message" then
     love.graphics.setColor(1, 1, 1, 1)
     return
