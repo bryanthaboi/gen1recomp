@@ -29,18 +29,24 @@ ENV DEBIAN_FRONTEND=noninteractive
 # runtime linkage: SDL detects each backend at compile time and then dlopens
 # it, so these headers decide which backends exist at all while adding no
 # DT_NEEDED entry to the shipped library.
-RUN printf 'deb http://snapshot.debian.org/archive/debian/20260831T000000Z bullseye main\ndeb http://snapshot.debian.org/archive/debian-security/20260831T000000Z bullseye-security main\n' > /etc/apt/sources.list \
- && apt-get -o Acquire::Check-Valid-Until=false update -qq \
- && apt-get install -y --no-install-recommends \
-      build-essential pkg-config autoconf automake libtool cmake \
-      ca-certificates curl file xz-utils bzip2 zip unzip squashfs-tools \
-      libogg-dev libvorbis-dev \
-      libmodplug-dev libmpg123-dev libfreetype6-dev libluajit-5.1-dev \
-      zlib1g-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
-      libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
-      libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
-      libxinerama-dev libxss-dev libxkbcommon-dev \
-      libwayland-dev wayland-protocols libdrm-dev libgbm-dev \
+RUN printf 'deb http://archive.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian bullseye-updates main\ndeb http://snapshot.debian.org/archive/debian-security/20260831T000000Z bullseye-security main\n' > /etc/apt/sources.list \
+ && printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "5";\nAcquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\n' > /etc/apt/apt.conf.d/99builder \
+ && apt-get update -qq \
+ && for attempt in 1 2 3; do \
+      apt-get install -y --no-install-recommends \
+        build-essential pkg-config autoconf automake libtool cmake \
+        ca-certificates curl file xz-utils bzip2 zip unzip squashfs-tools \
+        libogg-dev libvorbis-dev \
+        libmodplug-dev libmpg123-dev libfreetype6-dev libluajit-5.1-dev \
+        zlib1g-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+        libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
+        libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+        libxinerama-dev libxss-dev libxkbcommon-dev \
+        libwayland-dev wayland-protocols libdrm-dev libgbm-dev \
+      && break; \
+      [ "$attempt" = 3 ] && exit 1; \
+      echo "apt install attempt $attempt failed, retrying"; sleep 15; \
+    done \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work
