@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.58",
+          "date": "2026-09-11",
+          "size": 22583485,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.58/gen1recomp++-0.2.58-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #1709 (GSC) Missing some battle options\n- #2202 (Crystal) Various issues in the Battle Tower\n- #2217 (Modding API) function SummaryMenu.new inaccessible for pokemon.sprite hook\n- #2234 (GSC) Missing SFX and instant text when giving/taking items and clicking on pokémon in your party\n- #2237 (GSC) Darker dialogue box when choosing day of the week and time of the day\n- #2238 (GSC) Issues when depositing pokémon\n- #2239 (GSC) NPCs appearing before they should when landing from FLY\n- #2240 (GSC) Issue #2193 not properly fixed\n- #2241 Rival dialogue issue in the Silph Co. Office Building\n- #2242 Wrong rival path in Silph Co. Office Building\n- #2243 Wrong order of messages when getting Lapras\n- #2244 Silph Co. nurse dialogue progresses automatically\n- #2247 Menu inaccurate when tossing\n- #2248 Pidgey cry missing in Saffron City\n- #2249 Chansey cry missing in Saffron City\n- #2250 Copycat's dolls not turning to face original direction\n- #2251 Missing text in the Fighting Dojo\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.2.57",
           "date": "2026-09-09",
           "size": 21626440,
