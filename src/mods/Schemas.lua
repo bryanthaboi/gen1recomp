@@ -1819,14 +1819,19 @@ end
 
 R.icons = {
   semantics = "record", target = "icons.bySpecies",
-  value = f.union{ f.str, f.rec{ image = f.path, frames = f.opt(f.int(1)) } },
+  -- trueColor is the same 4-shade opt-out the pokemon and trainers records
+  -- carry: flagged art skips the OBP bake and reports its rect so the SGB
+  -- pass re-blits it unshaded, instead of being bucketed by red channel.
+  value = f.union{ f.str, f.rec{ image = f.path, frames = f.opt(f.int(1)),
+                                 trueColor = f.opt(f.bool) } },
   gen2Value = f.union{
     -- the assignment form: a species id mapped to a sheet name
     f.str,
     -- the sheet form: width/height are the sheet's pixel size, and every
     -- vanilla sheet is a 16x32 two-frame strip
     f.rec{ id = f.opt(f.str), index = f.opt(f.int(0, 255)), image = f.path,
-           width = f.int(1), height = f.int(1), frames = f.int(1) },
+           width = f.int(1), height = f.int(1), frames = f.int(1),
+           trueColor = f.opt(f.bool) },
   },
   gen2Extra = function(id, value)
     if gen2IconIsSheet(id) then

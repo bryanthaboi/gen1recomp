@@ -259,12 +259,27 @@ local ROWS = {
     cycle = function(options, delta)
       local Tilt = require("src.render.Tilt")
       -- Four levels (OFF, 15, 35, 50); left steps back through them.
-      local level = ((options.tilt or 0) + delta) % 4
+      local caps = Performance.caps(options.performance)
+      local shown = options.tilt or 0
+      if not caps.tilt then shown = 0 end
+      local level = (shown + delta) % 4
       options.tilt = level
       Tilt.setLevel(level)
+      if level > 0 and not caps.tilt then
+        options.performance = "high"
+      end
     end,
     text = function(options)
-      return Strings(require("src.render.Tilt").levelLabel(options.tilt or 0))
+      local Tilt = require("src.render.Tilt")
+      local saved = options.tilt or 0
+      local live = Tilt.level or 0
+      if not Performance.caps(options.performance).tilt then
+        return Strings(Tilt.levelLabel(0))
+      end
+      if live ~= saved then
+        return Strings(Tilt.levelLabel(live))
+      end
+      return Strings(Tilt.levelLabel(saved))
     end },
   { label = Strings.source("COLOR"), key = "color", port = true,
     text = function(options)

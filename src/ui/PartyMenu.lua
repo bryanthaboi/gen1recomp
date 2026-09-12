@@ -221,18 +221,20 @@ function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt)
   -- change its menu icon.
   local entry = (icons.bySpecies and icons.bySpecies[mon.species])
              or (def and def.icon)
-  local name, path
+  local name, path, trueColor
   if type(entry) == "string" then
     name = entry
     path = icons.icons and icons.icons[entry]
   elseif type(entry) == "table" then
     path = entry.image
+    trueColor = entry.trueColor
   end
   if not path then
     name = def and def.dex and icons.byDex and icons.byDex[def.dex]
     path = name and icons.icons and icons.icons[name]
   end
-  path = require("src.pokemon.Sprites").iconPath(game.data, mon, path, { name = name })
+  path, trueColor = require("src.pokemon.Sprites")
+    .iconPath(game.data, mon, path, { name = name, trueColor = trueColor })
   if not path then return end
   -- Built-in icon classes are DMG 2bpp OBJ art and get the OBP0 bake; a
   -- mod's own image (an entry table rather than an icon name) is authored
@@ -240,13 +242,20 @@ function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt)
   -- split PartyMenu.mirrorsIcon makes for the OAM mirror.  Both live in one
   -- cache under different keys, so a mod pointing a table entry at a
   -- built-in path still gets its unbaked copy. #274
-  local key = name and (path .. "#obp") or path
+  --
+  -- trueColor art is unbaked for the same reason it is unshaded: obpIcon is
+  -- itself a 4-shade remap keyed off the red channel, so running it over
+  -- full-colour art destroys exactly what the flag asks to keep.  The flag
+  -- overrides `name`, because a pokemon.icon hook can substitute full-colour
+  -- art for a path that resolved to a built-in class and still carries one.
+  local baked = name ~= nil and not trueColor
+  local key = baked and (path .. "#obp") or path
   if iconImages[key] == nil then
     -- resolve through Assets so an overrides/ or transform-derived icon
     -- (e.g. a per-species image at assets/generated/icons/<name>.png) is
     -- picked up the same way battle sprites are
     local ok, img
-    if name then
+    if baked then
       ok, img = pcall(obpIcon, path)
     else
       ok, img = pcall(love.graphics.newImage, Assets.resolve(path))
@@ -289,6 +298,16 @@ function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt)
     -- HELIX and any mod art that is a single frame: drawn whole, at
     -- whatever size the file is (unchanged path)
     love.graphics.draw(img, x, y)
+  end
+  -- Report the covering rect so Renderer:endFrame can re-blit it unshaded
+  -- over the colorized pass.  Every branch above lays a frame into a 16x16
+  -- OAM block except the last, which draws the file at its own size.
+  -- No vanilla icon record sets the flag, so this stays dead code without a
+  -- mod and the zone lists are exactly the ones the states returned.
+  if trueColor then
+    local mw, mh = 16, 16
+    if not (PartyMenu.mirrorsIcon(name) or ih > 16) then mw, mh = iw, ih end
+    require("src.render.PaletteFX").markTrueColor(x, y, mw, mh)
   end
   return true
 end

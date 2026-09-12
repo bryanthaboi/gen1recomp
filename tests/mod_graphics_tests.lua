@@ -143,7 +143,8 @@ local savedLoaded = {}
 for _, name in ipairs({ "src.render.PaletteFX", "src.render.Renderer",
                         "src.render.Font", "src.render.Assets",
                         "src.render.SpriteRenderer",
-                        "src.render.TileRenderer", "src.mods.Loader" }) do
+                        "src.render.TileRenderer", "src.mods.Loader",
+                        "src.ui.PartyMenu" }) do
   savedLoaded[name] = package.loaded[name]
   package.loaded[name] = nil
 end
@@ -157,6 +158,7 @@ local Font = require("src.render.Font")
 local Hooks = require("src.mods.Hooks")
 local HudTiles = require("src.render.HudTiles")
 local PaletteFX = require("src.render.PaletteFX")
+local PartyMenu = require("src.ui.PartyMenu")
 local Registry = require("src.mods.Registry")
 local Renderer = require("src.render.Renderer")
 local Runtime = require("src.mods.Runtime")
@@ -408,6 +410,51 @@ check(BattleState.trainerTrueColor(trainerPicData,
         trainerPicData.trainers.REUSED) == true,
       "a basePic reuse inherits the base portrait's trueColor flag")
 PaletteFX.setMode(savedColors)
+
+-- ------- trueColor: mon menu icons take the same opt-out
+-- Icons were the one art class that never had it.  Seven records in
+-- Schemas carry trueColor; icons.bySpecies did not, and Sprites.iconPath
+-- returned a path alone where every sibling returns path, trueColor.  So
+-- no icon draw site could know its art was full colour, none reported a
+-- rect, and on any screen declaring an SGB zone the art met the shade-remap
+-- shader -- which buckets on the RED channel, so a warm pixel clears 0.83
+-- and comes back c0, white in every named palette.
+do
+  local iconData = {
+    pokemon = { PLAINMON = { dex = 1 }, FULLMON = { dex = 2 } },
+    icons = {
+      icons = { QUADRUPED = "assets/generated/icons/mon/quadruped.png" },
+      byDex = { [1] = "QUADRUPED", [2] = "QUADRUPED" },
+      bySpecies = {
+        FULLMON = { image = "mods/skin/full_icon.png", trueColor = true },
+      },
+    },
+  }
+  local game = { data = iconData }
+
+  PaletteFX.clearTrueColor()
+  PaletteFX.setPass("ui")
+
+  PartyMenu.drawIcon(game, { species = "PLAINMON" }, 24, 40, false, 0, false)
+  check(#PaletteFX.trueColorRects("ui") == 0,
+        "a built-in icon class reports no trueColor rect")
+
+  resetLog()
+  PartyMenu.drawIcon(game, { species = "FULLMON" }, 24, 40, false, 0, false)
+  local rects = PaletteFX.trueColorRects("ui")
+  check(#rects == 1 and rects[1].x == 24 and rects[1].y == 40
+        and rects[1].w == 16 and rects[1].h == 16,
+        "a trueColor icon reports its rectangle so the shader skips it")
+  -- the OBP bake is itself a 4-shade remap (obpIcon keys off the red
+  -- channel exactly as the shader does), so full-colour art must not take
+  -- it either.  A baked icon is built from ImageData and carries .data;
+  -- art loaded straight from its path does not.
+  check(log.draws[1] and log.draws[1].what and log.draws[1].what.data == nil,
+        "and it is not run through the OBP bake")
+
+  PaletteFX.setPass(nil)
+  PaletteFX.clearTrueColor()
+end
 
 -- ------- trueColor: the colors == false zone sentinel
 

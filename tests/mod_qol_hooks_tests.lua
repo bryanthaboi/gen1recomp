@@ -448,6 +448,29 @@ do
   check(Sprites.iconPath(data, mon, "assets/generated/icons/mon/quadruped.png")
           == "assets/generated/icons/mon/quadruped.png",
     "unwrapped pokemon.icon is vanilla")
+
+  -- the icon seam carries the same trueColor contract the sprite seam does:
+  -- a hook substituting full-colour art flags it on ctx, and the flag comes
+  -- back beside the path so the draw site can skip the OBP bake and report
+  -- the rect.  Without it a pack's icons are bucketed by red channel and
+  -- come out white under any screen that declares an SGB zone.
+  unsub = wrap("pokemon.icon", function(next, p, ctx)
+    if ctx.mon and ctx.mon.skin == "alt" then
+      ctx.trueColor = true
+      return "mods/skinpicker/assets/pika_icon_hd.png"
+    end
+    return next(p, ctx)
+  end)
+  local hdIcon, hdTC = Sprites.iconPath(data, mon,
+    "assets/generated/icons/mon/quadruped.png", { name = "QUADRUPED" })
+  check(hdIcon == "mods/skinpicker/assets/pika_icon_hd.png" and hdTC == true,
+    "pokemon.icon can swap path + trueColor from mon state")
+  local plainIcon, plainTC = Sprites.iconPath(data, { species = "PIKACHU" },
+    "assets/generated/icons/mon/quadruped.png", { name = "QUADRUPED" })
+  check(plainIcon == "assets/generated/icons/mon/quadruped.png"
+        and plainTC == false,
+    "and an unflagged icon stays unflagged through the same hook")
+  unsub()
 end
 
 

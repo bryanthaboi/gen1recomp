@@ -11494,16 +11494,23 @@ function World:drawTilted(w, h, s, gw, gh)
   end
 
   local previous = G.getCanvas()
+  local prevScissor = { G.getScissor() }
   G.setCanvas(self.tiltCanvas)
-  G.clear(0, 0, 0, 0)
+  G.clear(0, 0, 0, 1)
   -- A canvas does not reset the transform, so anything drawn into one from
   -- inside a draw call needs push()/origin() around it.
-  G.push()
+  G.push("all")
   G.origin()
+  G.setScissor()
   self:drawGround(s)
   if self.bgOverlay then self.bgOverlay(s) end
   G.pop()
   G.setCanvas(previous)
+  if prevScissor[1] then
+    G.setScissor(prevScissor[1], prevScissor[2], prevScissor[3], prevScissor[4])
+  else
+    G.setScissor()
+  end
 
   mesh:setTexture(self.tiltCanvas)
   mesh:setVertices(Tilt.meshCorners(gw, gh))
