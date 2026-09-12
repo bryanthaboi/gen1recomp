@@ -130,6 +130,58 @@ do
     T.eq(world.draws, boot and 0 or 1,
       "Gold reveals its external world (boot=" .. tostring(boot) .. ")")
   end
+  -- A mirrored menu leaves the complete widescreen battle visible. Drawing
+  -- its ordinary panel again can cover a mod-provided scene with opaque paper.
+  local stack = setmetatable({}, { __index = StateStack })
+  stack:init()
+  local wide = {
+    isOpaque = true, draws = 0, wideDraws = 0,
+    drawsWidescreen = function() return true end,
+    drawWidescreen = function(self) self.wideDraws = self.wideDraws + 1 end,
+    draw = function(self) self.draws = self.draws + 1 end,
+  }
+  local hidden = {
+    screenId = "BagMenu", isOpaque = true, updates = 0,
+    update = function(self) self.updates = self.updates + 1 end,
+    draw = function() error("hidden menu drawn") end,
+  }
+  local overlay = { draws = 0,
+    draw = function(self) self.draws = self.draws + 1 end }
+  game = setmetatable({
+    stack = stack, world = { map = {} }, save = { options = {} },
+    inFillBoot = function() return false end,
+    letterbox = function() end, paintBattleSurround = function() end,
+  }, { __index = Game2 })
+  local function draw(states)
+    stack.states = states
+    wide.draws, wide.wideDraws, overlay.draws = 0, 0, 0
+    game:drawScene(1280, 720)
+    T.eq(wide.wideDraws, 1, "the widescreen base is composed once")
+  end
+  draw({ wide })
+  T.eq(wide.draws, 0, "an unobscured widescreen scene needs no panel pass")
+  draw({ wide, hidden })
+  T.eq(wide.draws, 0, "a hidden menu must not repaint the widescreen base")
+  T.eq(stack:top(), hidden, "rendering does not change native menu ownership")
+  stack:update(1 / 60)
+  T.eq(hidden.updates, 1, "the hidden menu still receives input updates")
+  local hiddenChild = { screenId = "BagMenu", isOpaque = true,
+    draw = function() error("hidden child drawn") end }
+  draw({ wide, hidden, hiddenChild })
+  T.eq(wide.draws, 0, "multiple hidden menus must not trigger a panel pass")
+  draw({ wide, overlay })
+  T.eq(wide.draws, 1, "a visible overlay retains the existing panel pass")
+  T.eq(overlay.draws, 1, "visible text is still drawn above the base")
+  draw({ wide, hidden, overlay })
+  T.eq(overlay.draws, 1, "visible text above a mirrored menu remains visible")
+  draw({ wide, overlay, hidden })
+  T.eq(overlay.draws, 1, "a hidden top must not suppress a visible lower overlay")
+  overlay.isOpaque = true
+  stack.states = { wide, overlay }
+  wide.draws, wide.wideDraws, overlay.draws = 0, 0, 0
+  game:drawScene(1280, 720)
+  T.eq(wide.wideDraws, 0, "an opaque visible menu still replaces the battle")
+  T.eq(overlay.draws, 1, "the opaque visible menu is drawn")
   run.release()
 end
 

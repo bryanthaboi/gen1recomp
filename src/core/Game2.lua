@@ -1779,6 +1779,17 @@ function Game2:paintBattleSurround(w, h)
   G.setColor(1, 1, 1, 1)
 end
 
+-- Mirrored menus stay on the input stack. They must not trigger another
+-- panel pass over a completed widescreen scene when none is visible.
+local function hasVisibleOverlay(stack, base)
+  for i = #stack.states, 1, -1 do
+    local screen = stack.states[i]
+    if screen == base then return false end
+    if stack:renderVisible(screen) then return true end
+  end
+  return false
+end
+
 function Game2:drawScene(w, h)
   local G = love.graphics
   -- render.compose reads this after the scene is drawn; the plain overworld
@@ -1858,7 +1869,7 @@ function Game2:drawScene(w, h)
       self:paintBattleSurround(w, h)
       Chrome.worldSurround = false
       self:letterbox(w, h, false)
-      if wide ~= top then
+      if wide ~= top and hasVisibleOverlay(self.stack, wide) then
         local scale, ox, oy = panelBlit(self.stack, w, h)
         G.push()
         G.translate(ox, oy)
