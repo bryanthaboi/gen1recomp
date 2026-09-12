@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.59",
+          "date": "2026-09-12",
+          "size": 22584503,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.59/gen1recomp++-0.2.59-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #274 Monster Party Sprites coloration\n- #2120 Tilt screen in 2 gen pokèmon\n\n## Contributors\n\n- @bryanthaboi\n- @Code-Grub"
+        },
+        {
           "version": "0.2.58",
           "date": "2026-09-11",
           "size": 22583485,
