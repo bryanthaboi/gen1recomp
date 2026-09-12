@@ -434,7 +434,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
