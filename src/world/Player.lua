@@ -211,6 +211,7 @@ function Player:update()
       self.spinHold = nil
       self.spinRiseFrom = nil
       self.spinDropSteps = nil
+      self.spinImageIndex = nil
     end
   end
   -- wall-bonk walk-in-place (issue #230): while pushing into a wall the
@@ -275,6 +276,8 @@ function Player:walkPhase()
 end
 
 local SPIN_ORDER = { "down", "left", "up", "right" }
+-- constants/sprite_data_constants.asm:3
+local IMAGE_FACING = { [0] = "down", [1] = "up", [2] = "left", [3] = "right" }
 
 -- What this frame renders to: the sheet, where it sits, which way it faces
 -- and how far through a step it is.  Shared by the 2D draw below and by a
@@ -311,6 +314,13 @@ function Player:pose()
     local step = self.spinStep or 0
     facing = SPIN_ORDER[step % 4 + 1]
     phase, flip = 0, false
+    -- engine/overworld/player_animations.asm:286
+    local img = self.spinImageIndex
+    if img then
+      local frame = img % 4
+      facing = IMAGE_FACING[math.floor(img / 4) % 4]
+      phase, flip = frame % 2, frame == 3
+    end
     -- engine/overworld/player_animations.asm:319
     if self.spinRiseFrom and step > self.spinRiseFrom then
       py = py - (step - self.spinRiseFrom) * 16

@@ -506,6 +506,8 @@ local function defaultEs()
 end
 
 local function roundDim(x) return math.max(1, math.floor(x + 0.5)) end
+local VIEWPORT_TIE_BIAS = 0.25
+local CROP_SAMPLE_BIAS = 0.25
 
 local function resolveScale(scaling, viewportDim, inputDim, originalDim)
   local st = scaling.scale_type
@@ -684,6 +686,10 @@ local function runPass(state, i, pass, outputs, frameSource, lutByName, viewport
   local srcImg = (i == 0) and frameSource or outputs[i - 1]
   local srcDims = passInputDims(state, i, original)
   local drawScaleX, drawScaleY = dims.w / srcDims.w, dims.h / srcDims.h
+  local biasX = (pass.scale_x.scale_type == "viewport" and drawScaleX >= 2
+    and drawScaleX == math.floor(drawScaleX)) and VIEWPORT_TIE_BIAS or 0
+  local biasY = (pass.scale_y.scale_type == "viewport" and drawScaleY >= 2
+    and drawScaleY == math.floor(drawScaleY)) and VIEWPORT_TIE_BIAS or 0
 
   -- Reallocated only when this pass's resolved size actually changes; each
   -- layer keeps its own set so a split world/UI frame does not thrash.
@@ -711,7 +717,7 @@ local function runPass(state, i, pass, outputs, frameSource, lutByName, viewport
   else
     love.graphics.setBlendMode("replace")
   end
-  love.graphics.draw(srcImg, 0, 0, 0, drawScaleX, drawScaleY)
+  love.graphics.draw(srcImg, biasX, biasY, 0, drawScaleX, drawScaleY)
   love.graphics.pop()
 
   outputs[i] = canvas
@@ -1064,13 +1070,39 @@ end
 -- Crops the playfield rect out of `canvas` at `renderScale`. The output canvas
 -- is cached module-wide and reallocated only on a real size change.
 local cropCanvasCache = {}
-local function cropToGbSource(canvas, rect, srcW, srcH, renderScale, layer)
+
+local function gridGeometry(rect, renderScale, originX, originY)
+  local s = tonumber(rect.scale)
+  if not s or s < 1 or s ~= math.floor(s) then return nil end
+  local phaseX = (math.floor((tonumber(originX) or rect.x) + 0.5) - rect.x) % s
+  local phaseY = (math.floor((tonumber(originY) or rect.y) + 0.5) - rect.y) % s
+  local x0 = phaseX > 0 and phaseX - s or 0
+  local y0 = phaseY > 0 and phaseY - s or 0
+  local cols = math.max(1, math.ceil((rect.w - x0) / s))
+  local rows = math.max(1, math.ceil((rect.h - y0) / s))
+  return {
+    scale = s, x0 = x0, y0 = y0, cols = cols, rows = rows,
+    crop = { w = roundDim(cols * renderScale), h = roundDim(rows * renderScale) },
+    viewport = { w = roundDim(cols * s * renderScale), h = roundDim(rows * s * renderScale) },
+  }
+end
+ShaderFX._gridGeometry = gridGeometry
+
+local function cropToGbSource(canvas, rect, srcW, srcH, renderScale, layer, geo)
   -- Cheap insurance against a read-after-write hazard between this draw and
   -- whatever last rendered into `canvas`.
   love.graphics.flushBatch()
-  local outW, outH = roundDim(srcW * renderScale), roundDim(srcH * renderScale)
-  local quad = love.graphics.newQuad(rect.x, rect.y, rect.w, rect.h,
-    canvas:getPixelWidth(), canvas:getPixelHeight())
+  local outW, outH, quad
+  if geo then
+    outW, outH = geo.crop.w, geo.crop.h
+    quad = love.graphics.newQuad(rect.x + geo.x0 + CROP_SAMPLE_BIAS,
+      rect.y + geo.y0 + CROP_SAMPLE_BIAS, geo.cols * geo.scale, geo.rows * geo.scale,
+      canvas:getPixelWidth(), canvas:getPixelHeight())
+  else
+    outW, outH = roundDim(srcW * renderScale), roundDim(srcH * renderScale)
+    quad = love.graphics.newQuad(rect.x, rect.y, rect.w, rect.h,
+      canvas:getPixelWidth(), canvas:getPixelHeight())
+  end
   local out
   local cached = cropCanvasCache[layer]
   if cached and cached.w == outW and cached.h == outH then
@@ -1105,9 +1137,10 @@ local function maskedDraw()
   if maskShader == nil then
     local ok, sh = pcall(love.graphics.newShader, [[
       extern Image mask;
+      extern vec4 maskRect;
       vec4 effect(vec4 color, Image tex, vec2 uv, vec2 sc) {
         vec4 c = Texel(tex, uv);
-        return vec4(c.rgb, Texel(mask, uv).a) * color;
+        return vec4(c.rgb, Texel(mask, maskRect.xy + uv * maskRect.zw).a) * color;
       }
     ]])
     maskShader = ok and sh or false
@@ -1139,7 +1172,9 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY, opts)
   }
   -- Runs the chain at a reduced internal resolution on tiers that ask for one.
   local scale = chainRenderScale()
-  local viewport = { w = roundDim(uRect.w * scale), h = roundDim(uRect.h * scale) }
+  local geo = gridGeometry(rect, scale, opts and opts.originX, opts and opts.originY)
+  local viewport = geo and geo.viewport
+    or { w = roundDim(uRect.w * scale), h = roundDim(uRect.h * scale) }
 
   if layer == "main" then
     -- exposed for tests only (tests/drivers/gold_shaderfx_zoom_sizing_test.lua)
@@ -1158,7 +1193,7 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY, opts)
   local chainOut, chainPreset
   local clipX, clipY, clipW, clipH = love.graphics.getScissor()
   love.graphics.setScissor()
-  local okCrop, frameSource = pcall(cropToGbSource, canvas, rect, source.w, source.h, scale, layer)
+  local okCrop, frameSource = pcall(cropToGbSource, canvas, rect, source.w, source.h, scale, layer, geo)
   if okCrop then
     lastCropError = nil
     -- exposed for tests only (gold_shaderfx_menu_black_crop_test.lua)
@@ -1208,12 +1243,27 @@ function ShaderFX.render(canvas, rect, source, dpiX, dpiY, opts)
     chainOut:setFilter(mode, mode)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setBlendMode("alpha")
+    local dx, dy, dw, dh = uRect.x, uRect.y, uRect.w, uRect.h
+    local maskRect = { 0, 0, 1, 1 }
+    if geo then
+      local gx, gy = rect.x + geo.x0, rect.y + geo.y0
+      local gw, gh = geo.cols * geo.scale, geo.rows * geo.scale
+      dx, dy, dw, dh = gx / dpiX, gy / dpiY, gw / dpiX, gh / dpiY
+      local mw, mh = canvas:getPixelWidth(), canvas:getPixelHeight()
+      maskRect = { gx / mw, gy / mh, gw / mw, gh / mh }
+      if not clipX then
+        love.graphics.setScissor(uRect.x, uRect.y,
+          math.ceil(rect.w / dpiX), math.ceil(rect.h / dpiY))
+      end
+    end
     if masked then
       love.graphics.setShader(masked)
       masked:send("mask", canvas)
+      pcall(masked.send, masked, "maskRect", maskRect)
     end
-    love.graphics.draw(chainOut, uRect.x, uRect.y, 0, uRect.w / cw, uRect.h / ch)
+    love.graphics.draw(chainOut, dx, dy, 0, dw / cw, dh / ch)
     if masked then love.graphics.setShader() end
+    if geo and not clipX then love.graphics.setScissor() end
   end
   love.graphics.setBlendMode("alpha")
   -- Test seam; set only after the real chain ran.

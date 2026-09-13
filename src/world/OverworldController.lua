@@ -570,6 +570,15 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
     -- ponytail: re-derived rather than persisted.
     self:syncSurfingPikachu()
   end
+  local dungeonWarp = opts and opts.dungeonWarp
+  if dungeonWarp then
+    -- home/overworld.asm:788
+    self.player.surfing = false
+    Game.save.onBike = false
+    Game.save.forcedBike = nil
+    self:syncSurfingPikachu()
+  end
+  self.pendingEnterMapTail = dungeonWarp or nil
   -- crossConnection re-arms this after setMap; clear so a warp/reload
   -- cannot leave a stale deferred PlayMapMusic pending
   self.pendingSeamMusic = nil
@@ -589,6 +598,8 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   self.keepMusicOnce = nil
   -- home/overworld.asm ln 2340, player_animations.asm ln 64
   if opts and opts.via == "fly" then keepMusic = true end
+  -- home/overworld.asm:2341
+  if dungeonWarp then keepMusic = true end
   if not keepMusic then
     -- ..(home/overworld.asm ln 2346)
     local Music = require("src.core.Music")
@@ -611,13 +622,17 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   -- (home/overworld.asm) -- a warp can land directly on one (the Route
   -- 16/18 gate exits), and the scripted door-mat walkout that follows
   -- suppresses onStepComplete, so waiting for a plain step never mounts
-  if not (opts and opts.checkpoint) then self:checkForcedMovement() end
+  if not (opts and (opts.checkpoint or opts.dungeonWarp)) then
+    self:checkForcedMovement()
+  end
   -- Seafoam B4F's map script pushes off the B3F stair warps every frame
   -- while the upper plugs are out (SeafoamIslandsB4FDefaultScript); the
   -- B3F/B4F force-surf mouths also arm their MOVE_OBJECT current scripts
   -- from CheckForceBikeOrSurf.  Re-check here so a warp-in does not sit
   -- idle on those cells waiting for a player step.
-  if not (opts and opts.checkpoint) then self:checkSeafoamCurrent() end
+  if not (opts and (opts.checkpoint or opts.dungeonWarp)) then
+    self:checkSeafoamCurrent()
+  end
 
   -- snap the camera immediately: the overworld doesn't update while a
   -- Transition is on top, so a stale camera would show the new map at
@@ -1208,6 +1223,10 @@ function OverworldState:update(dt)
   if self.dustAnim then
     local da = self.dustAnim
     da.frames = da.frames - 1
+    if da.step then
+      local k = math.min(8, math.floor((da.total - da.frames) / 3) + 1)
+      da.ox, da.oy, da.faded = da.step[1] * k, da.step[2] * k, k % 2 == 1
+    end
     if da.frames <= 0 then
       self.dustAnim = nil
       if da.onDone then da.onDone() end
@@ -1331,11 +1350,6 @@ function OverworldState:update(dt)
         Game.data, self.map.id, Game.save.onBike, self.player.surfing, nil)
     end
   end
-  if self.spinArrive and not self.player.spinFrames then
-    self.spinArrive = nil
-    self.player.inputLocked = false
-  end
-
   -- EnterMapAnim's .done tail re-enables the companion once the swoop or the
   -- spin-down has landed (player_animations.asm:40)
   if self.pikachuWarpHidden and not (self.flyAnim or self.flyArrive
@@ -1389,18 +1403,20 @@ function OverworldState:update(dt)
       self.player.holeSink = nil
       self.playerHidden = true
       self.arriveWarp = "hole"
-      self:startWarpTo(f.map, f.x, f.y, f.facing)
+      self:startWarpTo(f.map, f.x, f.y, f.facing, nil, { dungeonWarp = true })
       return
     end
   end
 
-  -- offscreen, then spins him down -- player_animations.asm:41-45
+  -- offscreen, then drops him down -- player_animations.asm:41-45
   if self.holeArrive then
     self.holeArrive.frames = self.holeArrive.frames - 1
     if self.holeArrive.frames <= 0 then
       self.holeArrive = nil
       self.playerHidden = false
       self.player.spinning = true
+      -- engine/overworld/player_animations.asm:90
+      self.player.spinImageIndex = 3
       self.player.spinTimer = 0
       self.player.spinFrames = HOLE_IN_FRAMES
       self.player.spinTotal = HOLE_IN_FRAMES
@@ -1462,6 +1478,7 @@ function OverworldState:update(dt)
                    or self.flyAnim or self.flyArrive or self.spinArrive
                or self.holeFall or self.holeArrive
                    or self.holeFall or self.holeArrive
+                   or (self.dustAnim and self.dustAnim.boulder)
   if not scripted and not self.transitioning then
     self:checkTrainerSight()
     -- CheckFightingMapTrainers (home/trainers.asm) zeroes hJoyHeld and
@@ -1473,6 +1490,7 @@ function OverworldState:update(dt)
                or self.engaging or self.emote or self.teleportOut
                or self.flyAnim or self.flyArrive or self.spinArrive
                or self.holeFall or self.holeArrive
+               or (self.dustAnim and self.dustAnim.boulder)
   end
   -- a scriptMove's onDone can push a text box on the frame it retires, and
   -- DisplayTextID owns the loop from there (home/text_script.asm:3)
@@ -1482,6 +1500,17 @@ function OverworldState:update(dt)
   if (self.hopLand or 0) > 0 then self.hopLand = self.hopLand - 1 end
 
   local stepped = self.player:update()
+  -- engine/overworld/player_animations.asm:329
+  if self.spinArrive and not self.player.spinFrames then
+    self.spinArrive = nil
+    self.player.inputLocked = false
+    if self.pendingEnterMapTail then
+      self.pendingEnterMapTail = nil
+      -- home/overworld.asm:31
+      self:checkForcedMovement()
+      self:checkSeafoamCurrent()
+    end
+  end
   -- the warp-arrival cell goes stale the instant the player's real cell
   -- leaves it, scripted walk-outs included -- pokered re-checks warps
   -- after simulated steps too (CheckWarpsNoCollision), so a forced
@@ -1624,6 +1653,7 @@ function OverworldState:handleInput()
         if self:checkBoulderPush(dir) then return end
       end
       local result = self.player:tryMove(dir, self.map, self.entities)
+      if result == "moved" then self:stopSurfingOntoLand() end
       -- a collision while standing on a warp square fires the warp when the
       -- extra check passes (CheckWarpsCollision: route-gate doorways, dock
       -- entrances, ...), and only while BIT_STANDING_ON_WARP is set (issue
@@ -1740,9 +1770,9 @@ function OverworldState:checkBoulderPush(dir)
   self:scriptMove(npc, dir, 1, function()
     self.boulderTried = nil
     -- dust smoke + SFX_CUT once the boulder settles (DoBoulderDustAnimation)
-    self:startDustAnim(fx, fy, function()
+    self:startDustAnim(bx, by, function()
       require("src.core.Sound").play(Game.data, "Cut")
-    end)
+    end, dir)
     if self:boulderIntoHole(npc) then return end
     Runtime.emit("world.boulder_moved", { mapId = self.map.id, npcId = npc.id,
                                           x = npc.cellX, y = npc.cellY })
@@ -1754,11 +1784,18 @@ function OverworldState:checkBoulderPush(dir)
   return true
 end
 
--- The dust puff (engine/overworld/dust_smoke.asm AnimateBoulderDust):
--- the 8x8 smoke tile drawn as a 2x2 block over the vacated cell,
--- flickering for 8 steps of ~4 frames.
-function OverworldState:startDustAnim(cx, cy, onDone)
-  self.dustAnim = { x = cx, y = cy, frames = 32, onDone = onDone }
+-- engine/overworld/dust_smoke.asm:1
+function OverworldState:startDustAnim(cx, cy, onDone, dir)
+  -- engine/overworld/dust_smoke.asm:59
+  local step = ({ down = { 0, -1 }, up = { 0, 1 },
+                  left = { 1, 0 }, right = { -1, 0 } })[dir or ""]
+  if step then
+    self.dustAnim = { x = cx, y = cy, frames = 24, total = 24, step = step,
+                      boulder = true, ox = step[1], oy = step[2], faded = true,
+                      onDone = onDone }
+  else
+    self.dustAnim = { x = cx, y = cy, frames = 32, onDone = onDone }
+  end
 end
 
 -- scripts/VermilionDock.asm:39 VermilionDockSSAnneLeavesScript: snapshot her
@@ -2000,6 +2037,7 @@ function OverworldState:crossConnection(dir, conn)
   -- (mid-cycle stand phase would otherwise look like a slide)
   p.animClock = 0
   p.stepFramesCur = p:stepLength(dir)
+  self:stopSurfingOntoLand()
   require("src.core.FixedStep"):discardCatchup()
   return true
 end
@@ -2600,24 +2638,10 @@ function OverworldState:tryHiddenObject(fx, fy)
     end
   end
 
-  for _, h in ipairs(field.hiddenCoins and field.hiddenCoins[self.map.id] or {}) do
-    if h.x == fx and h.y == fy then
-      save.hiddenTaken = save.hiddenTaken or {}
-      if save.hiddenTaken[key] then return false end
-      if not save.inventory.COIN_CASE then return false end
-      save.hiddenTaken[key] = true
-      local paid = OverworldState.hiddenCoinPayout(h.coins)
-      save.coins = math.min(9999, (save.coins or 0) + paid)
-      Game.stack:push(TextBox.new(Game,
-        Strings("%s found\n%d coins!", save.player.name, paid),
-        nil, TextBox.soundOpts(Game, "Get_Item2")))
-      return true
-    end
-  end
-
   -- broken-machine and can't-play texts are pokered's exact strings
   -- (_GameCornerOutOfOrderText etc., data/text/text_2.asm)
   local txt = Game.data.text or {}
+  -- data/events/hidden_events.asm:262
   for seatIndex, h in ipairs(field.slotMachines and field.slotMachines[self.map.id] or {}) do
     if h.x == fx and h.y == fy then
       if h.state == "out_of_order" then
@@ -2653,6 +2677,21 @@ function OverworldState:tryHiddenObject(fx, fy)
           end,
         }))
       end
+      return true
+    end
+  end
+
+  for _, h in ipairs(field.hiddenCoins and field.hiddenCoins[self.map.id] or {}) do
+    if h.x == fx and h.y == fy then
+      save.hiddenTaken = save.hiddenTaken or {}
+      if save.hiddenTaken[key] then return false end
+      if not save.inventory.COIN_CASE then return false end
+      save.hiddenTaken[key] = true
+      local paid = OverworldState.hiddenCoinPayout(h.coins)
+      save.coins = math.min(9999, (save.coins or 0) + paid)
+      Game.stack:push(TextBox.new(Game,
+        Strings("%s found\n%d coins!", save.player.name, paid),
+        nil, TextBox.soundOpts(Game, "Get_Item2")))
       return true
     end
   end
@@ -3087,24 +3126,25 @@ function OverworldState:trySurf(fx, fy, onClose)
   -- (start_sub_menus.asm .surf), so the text reads over the menu and the
   -- blink is the menu closing, not a flashbang on the empty map (#320,
   -- #385).  The mount rides the blink, so nothing paddles on land.
+  -- walking / biking / surfing is ONE state byte in the original:
+  -- ItemUseSurfboard (engine/items/item_effects.asm) writes 2 over
+  -- whatever wWalkBikeSurfState held, so mounting a surf ends the bike
+  -- outright -- no bike step cadence in Player:tryMove and no bike
+  -- theme on the water (#846).  Music.playMap re-picks the override
+  -- with BOTH flags, which setSurfing alone cannot do: effectiveMapSong
+  -- (src/core/Music.lua) prefers state.onBike over state.surfing.
+  Game.save.onBike = false
+  local Music = require("src.core.Music")
+  -- engine/items/item_effects.asm:686
+  if self.map then
+    Music.playMap(Game.data, self.map.id, false, true)
+  else
+    Music.setSurfing(Game.data, true)
+  end
   Game.stack:push(TextBox.new(Game, text, function()
     if onClose then onClose() end
     p.surfing = true
-    -- walking / biking / surfing is ONE state byte in the original:
-    -- ItemUseSurfboard (engine/items/item_effects.asm) writes 2 over
-    -- whatever wWalkBikeSurfState held, so mounting a surf ends the bike
-    -- outright -- no bike step cadence in Player:tryMove and no bike
-    -- theme on the water (#846).  Music.playMap re-picks the override
-    -- with BOTH flags, which setSurfing alone cannot do: effectiveMapSong
-    -- (src/core/Music.lua) prefers state.onBike over state.surfing.
-    Game.save.onBike = false
     self:syncSurfingPikachu()
-    local Music = require("src.core.Music")
-    if self.map then
-      Music.playMap(Game.data, self.map.id, false, true)
-    else
-      Music.setSurfing(Game.data, true) -- headless harness with no map loaded
-    end
     Game.stack:push(require("src.render.Transition").whiteFlash(Game, nil,
       function() self:stepForwardOrCrossEdge(p.facing) end))
   end))
@@ -3117,6 +3157,16 @@ function OverworldState:stopSurfing(onClose)
   Game.stack:push(Transition.whiteFlash(Game, nil, function()
     self:stepForwardOrCrossEdge(self.player.facing)
   end))
+end
+
+-- home/overworld.asm:1934
+function OverworldState:stopSurfingOntoLand()
+  local p = self.player
+  if not (p.surfing and p.moving and p.targetX) then return end
+  if not self.map:isWalkableCell(p.targetX, p.targetY) then return end
+  p.surfing = false
+  self:syncSurfingPikachu()
+  require("src.core.Music").setSurfing(Game.data, false)
 end
 
 function OverworldState:tryCut(fx, fy)
@@ -4636,7 +4686,7 @@ function OverworldState:checkSpinner()
   return false
 end
 
-function OverworldState:runSpinnerMoves(moves, i)
+function OverworldState:runSpinnerMoves(moves, i, noSpin)
   local mv = moves[i]
   if not mv then
     self.player.spinning = false
@@ -4648,11 +4698,13 @@ function OverworldState:runSpinnerMoves(moves, i)
     self:onStepComplete()
     return
   end
-  self.player.spinning = true -- spin the sprite while sliding
-  -- home/overworld.asm:268-273
-  self.spinnerSliding = true
+  if not noSpin then
+    self.player.spinning = true
+    -- home/overworld.asm:268-273
+    self.spinnerSliding = true
+  end
   self:scriptMove(self.player, mv.dir, mv.count, function()
-    self:runSpinnerMoves(moves, i + 1)
+    self:runSpinnerMoves(moves, i + 1, noSpin)
   end)
 end
 
@@ -4856,7 +4908,7 @@ function OverworldState:checkSeafoamCurrent()
                                   "setsForcedWarp") then
         self.forcedWarp = true
       end
-      self:runSpinnerMoves(c.moves, 1)
+      self:runSpinnerMoves(c.moves, 1, true)
       return true
     end
   end
@@ -5869,9 +5921,10 @@ function OverworldState:drawWorld()
       end
       if self.smokeImg then
         local da = self.dustAnim
-        local dx = da.x * 16 - cam.x
-        local dy = da.y * 16 - cam.y
+        local dx = da.x * 16 + (da.ox or 0) - cam.x
+        local dy = da.y * 16 + (da.oy or 0) - cam.y
         local flicker = math.floor(da.frames / 4) % 2 == 0
+        if da.boulder then flicker = not da.faded end
         love.graphics.setColor(1, 1, 1, flicker and 1 or 0.55)
         for i = 0, 1 do
           for j = 0, 1 do
@@ -6105,7 +6158,8 @@ function OverworldState:drawWorld()
       end
       -- ground-hugging effects sit on the cell they belong to
       if self.dustAnim then
-        at(fxDust, self.dustAnim.x * 16 + 8, self.dustAnim.y * 16 + 8)
+        local da = self.dustAnim
+        at(fxDust, da.x * 16 + 8 + (da.ox or 0), da.y * 16 + 8 + (da.oy or 0))
       end
       if self.cutAnim then
         at(fxCutTree, self.cutAnim.x * 16 + 8, self.cutAnim.y * 16 + 16)
@@ -6157,6 +6211,8 @@ function OverworldState:drawWorld()
     -- the final one.
     local grassColors = PaletteFX.usesSpriteObp()
       and PaletteFX.pal(Game.data, self:paletteNameFor(self.map)) or nil
+    local boulderDust = self.dustAnim and self.dustAnim.boulder
+    if boulderDust then fxDust() end
     for _, g in ipairs(self.ghosts) do
       if self.battleOamKeep == nil then
         g.npc:draw(cam.x - g.ox, cam.y - g.oy)
@@ -6186,7 +6242,7 @@ function OverworldState:drawWorld()
       end
     end
     fxHeal()
-    fxDust()
+    if not boulderDust then fxDust() end
     fxCutTree()
     fxEmote()
     fxBird()

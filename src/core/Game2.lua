@@ -1517,6 +1517,24 @@ function Game2:compose(scene, zones, w, h)
   return handled
 end
 
+function Game2:fxWorldOrigin(w, h, scale)
+  local cam = self.world and self.world.camera
+  if not cam then return nil end
+  local fx, fy = Playfield.rect(w, h)
+  return fx + math.floor(-cam.x * scale), fy + math.floor(-cam.y * scale)
+end
+
+function Game2:fxSplitsUi(w, h)
+  local world = self.world
+  if not (world and world.map) then return false end
+  local fs = world:fitScale()
+  if world:zoomScale() ~= fs then return true end
+  local wx, wy = self:fxWorldOrigin(w, h, fs)
+  if not wx then return false end
+  local ox, oy = Chrome.fitOrigin(w, h, fs)
+  return (ox - wx) % fs ~= 0 or (oy - wy) % fs ~= 0
+end
+
 -- Gold's frame, and then the passes that run over it.
 --
 -- The Gen 1 path gets these for free because everything it draws goes through
@@ -1591,8 +1609,7 @@ function Game2:drawViewportFrame()
   -- sits over it is drawn onto a transparent layer and shaded at FIT instead.
   self.fxUiLayer = nil
   self.fxUiDrawn = false
-  if shaderfx and self.world and self.world.map
-     and self.world:zoomScale() ~= self.world:fitScale() then
+  if shaderfx and self:fxSplitsUi(w, h) then
     self.fxUiLayer = self:presentCanvas(3, w, h)
   end
   self:drawContained(w, h)
@@ -1662,11 +1679,17 @@ function Game2:drawViewportFrame()
         -- when the UI was split off, otherwise everything at FIT.
         local s = scale * dpi
         local ws = uiLayer and self.world:zoomScale() * dpi or s
+        local wox, woy = ox * dpi, oy * dpi
+        if self.frameWorldActive then
+          local wx, wy = self:fxWorldOrigin(w, h, ws / dpi)
+          if wx then wox, woy = wx * dpi, wy * dpi end
+        end
         ShaderFX.render(source, { x = 0, y = 0, w = pw, h = ph, scale = ws },
-          { w = pw / ws, h = ph / ws }, dpi, dpi)
+          { w = pw / ws, h = ph / ws }, dpi, dpi, { originX = wox, originY = woy })
         if uiLayer then
           ShaderFX.render(uiLayer, { x = 0, y = 0, w = pw, h = ph, scale = s },
-            { w = pw / s, h = ph / s }, dpi, dpi, { layer = "ui", mask = true })
+            { w = pw / s, h = ph / s }, dpi, dpi,
+            { layer = "ui", mask = true, originX = ox * dpi, originY = oy * dpi })
         end
       else
         G.setColor(1, 1, 1, 1)
@@ -1779,6 +1802,17 @@ function Game2:paintBattleSurround(w, h)
   G.setColor(1, 1, 1, 1)
 end
 
+-- Mirrored menus stay on the input stack. They must not trigger another
+-- panel pass over a completed widescreen scene when none is visible.
+local function hasVisibleOverlay(stack, base)
+  for i = #stack.states, 1, -1 do
+    local screen = stack.states[i]
+    if screen == base then return false end
+    if stack:renderVisible(screen) then return true end
+  end
+  return false
+end
+
 function Game2:drawScene(w, h)
   local G = love.graphics
   -- render.compose reads this after the scene is drawn; the plain overworld
@@ -1858,7 +1892,7 @@ function Game2:drawScene(w, h)
       self:paintBattleSurround(w, h)
       Chrome.worldSurround = false
       self:letterbox(w, h, false)
-      if wide ~= top then
+      if wide ~= top and hasVisibleOverlay(self.stack, wide) then
         local scale, ox, oy = panelBlit(self.stack, w, h)
         G.push()
         G.translate(ox, oy)

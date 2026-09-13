@@ -38,7 +38,7 @@ M.VERMILION_GYM = {
 -- sets wDungeonWarpDestinationMap and calls IsPlayerOnDungeonWarp, and
 -- wCoordIndex picks that floor's DungeonWarpData row.  Unconditional in
 -- the original: a plugged hole still drops the player.  The B3F and B4F
--- landings are water; setMap's CheckForceBikeOrSurf pass
+-- landings are water; the CheckForceBikeOrSurf pass after the drop
 -- (OverworldState:checkForcedMovement) mounts SURF on arrival.
 local HOLE_FALLS = {
   SEAFOAM_ISLANDS_1F  = { { 17, 6, "SEAFOAM_ISLANDS_B1F", 18, 7 },

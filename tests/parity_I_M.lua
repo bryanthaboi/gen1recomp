@@ -118,6 +118,7 @@ eq(boulder.cellX, 18, "boulder unmoved while STRENGTH is inactive")
 clearCaptured()
 local pmStr = PartyMenu.new(Game)
 selectSubItem(pmStr, 1)
+check(not pmStr.submenu, "options box erased before _UsedStrengthText")
 eq(Game.overworld.strengthActive, true, "party-menu STRENGTH sets strengthActive")
 check(onStack(pmStr), "party menu stays under the STRENGTH texts (#385)")
 check(sawText("used") and sawText("STRENGTH"), "_UsedStrengthText shown")
@@ -128,6 +129,32 @@ check(not onStack(pmStr), "party menu closes with the blink after the texts")
 -- now the same two bumps push the boulder (gate passes -> arm -> move)
 eq(ow:checkBoulderPush("right"), false, "first bump arms the push after activation")
 eq(ow:checkBoulderPush("right"), true, "boulder pushes after activation")
+
+-- engine/overworld/cut.asm:170
+for _ = 1, 60 do
+  if ow.dustAnim then break end
+  frame()
+end
+local dust = ow.dustAnim or {}
+check(ow.dustAnim ~= nil and dust.boulder, "boulder dust starts once the push settles")
+eq(dust.x, 19, "boulder dust anchored on the boulder's new cell")
+eq(dust.y, 10, "boulder dust stays on the push row")
+eq(dust.frames, 24, "boulder dust runs 8 steps x Delay3")
+eq(dust.ox, -1, "first dust step slides 1px toward the player")
+eq(dust.faded, true, "first dust step shows the XORed palette")
+frame({ "right" })
+eq(ow.player.moving, false, "no player step while the boulder dust plays")
+eq(ow.player.cellX, 17, "player holds position during the boulder dust")
+for _ = 1, 20 do frame() end
+eq(dust.ox, -8, "boulder dust slid 8px by the last step")
+eq(dust.faded, false, "palette restored on the last dust step")
+for _ = 1, 3 do frame() end
+eq(ow.dustAnim, nil, "boulder dust ends after 24 frames")
+ow:startDustAnim(5, 5, nil)
+eq(ow.dustAnim.frames, 32, "cut puff keeps its static timing")
+eq(ow.dustAnim.ox, nil, "cut puff never slides")
+check(not ow.dustAnim.boulder, "cut puff is not boulder dust")
+ow.dustAnim = nil
 
 -- every real map load clears the flag (ResetUsingStrengthOutOfBattleBit)
 ow:setMap("SEAFOAM_ISLANDS_1F", 17, 10, "right")
@@ -166,10 +193,19 @@ popToOW()
 ow.player.facing = "down"; ow.player.surfing = false
 clearCaptured()
 local pmSurf = PartyMenu.new(Game)
+local MusicSpy = require("src.core.Music")
+local realPlayMap, surfSongAsked = MusicSpy.playMap, nil
+MusicSpy.playMap = function(data, mapId, onBike, surfing, ...)
+  surfSongAsked = surfing
+  return realPlayMap(data, mapId, onBike, surfing, ...)
+end
 selectSubItem(pmSurf, 1)
+MusicSpy.playMap = realPlayMap
 -- the got-on text prints over the menu (#385); dismissing it closes the
 -- menu and mounts, and the blink that follows carries the step
 check(onStack(pmSurf), "party menu stays under the got-on text")
+check(not pmSurf.submenu, "options box erased before _SurfingGotOnText")
+eq(surfSongAsked, true, "surf music is already playing while the got-on text prints")
 Game.stack:pop().onDone() -- a TextBox pops itself before firing onDone
 eq(ow.player.surfing, true, "SURF from the party menu sets player.surfing")
 check(not onStack(pmSurf), "party menu closes after a successful SURF")
@@ -409,6 +445,26 @@ check(offFlash ~= nil and offFlash ~= ow and offFlash.pages == nil,
 for _ = 1, 60 do frame({}) end -- blink pops, the queued step walks out
 eq(Game.stack:top(), ow, "back on the map after the blink")
 eq(ow.player.cellY, 13, "the player stepped forward onto land")
+
+ow.player.cellX, ow.player.cellY = 4, 14
+ow.player.px, ow.player.py = 4 * 16, 14 * 16
+ow.player.facing = "up"
+ow.player.surfing = true
+local WalkOffMusic = require("src.core.Music")
+WalkOffMusic.setSurfing(Data, true)
+local realSetSurfing, surfMusicNow = WalkOffMusic.setSurfing, true
+WalkOffMusic.setSurfing = function(data, surfing)
+  surfMusicNow = surfing
+  return realSetSurfing(data, surfing)
+end
+frame({ "up" })
+WalkOffMusic.setSurfing = realSetSurfing
+eq(ow.player.moving, true, "the d-pad walk-off step has started")
+eq(ow.player.cellY, 14, "and has not landed yet")
+eq(ow.player.surfing, false, "walking sprite is back before the step onto land")
+eq(surfMusicNow, false, "map music is back before the step onto land")
+for _ = 1, 30 do frame({}) end
+eq(ow.player.cellY, 13, "the walk-off step lands ashore")
 
 -- "no place to get off": the text shows, and the menu STILL closes
 -- (.cannotStopSurfing leaves wActionResultOrTookBattleTurn at 1)

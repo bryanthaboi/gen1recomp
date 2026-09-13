@@ -167,6 +167,18 @@ function PaletteFX.ogObj()
   return PaletteFX.fadeObp(PaletteFX.darkObp(PaletteFX.GBC_OBJ, "gbcobj"))
 end
 
+local function obp3100(c) return { c[1], c[1], c[2], c[4] } end
+local OG_OBJ_NORMAL = obp3100(PaletteFX.GBC_OBJ)
+local OG_OBJ_NORMAL_BLUE = obp3100(PaletteFX.GBC_OBJ_BLUE)
+
+-- home/palettes.asm:24
+function PaletteFX.ogObjNormal()
+  if GameVersion.isBlue() then
+    return OG_OBJ_NORMAL_BLUE, "gbcobjnormal_blue"
+  end
+  return OG_OBJ_NORMAL, "gbcobjnormal"
+end
+
 -- The DMG object ramp every mode except OG RED bakes onto overworld sprites,
 -- plus its cache group (same two-value contract as ogObj).  Entry 1 is never
 -- read -- SpriteRenderer.getObpImage keys OBJ color 0 to alpha, the hardware's
@@ -443,10 +455,14 @@ function PaletteFX.spriteRedraws()
   return spriteRedraws
 end
 
-function PaletteFX.markUiSpriteRedraw(image, quad, x, y)
+function PaletteFX.markUiSpriteRedraw(image, quad, x, y, opts)
   if currentPass ~= "ui" then return end
+  local clip = opts and opts.clip
+  if clip then clip = { clip[1] + markOffsetX, clip[2], clip[3], clip[4] } end
   uiSpriteRedraws[#uiSpriteRedraws + 1] =
-    { image = image, quad = quad, x = x + markOffsetX, y = y }
+    { image = image, quad = quad, x = x + markOffsetX, y = y,
+      sx = opts and opts.sx or 1, sy = opts and opts.sy or 1,
+      clip = clip, color = opts and opts.color }
 end
 
 function PaletteFX.uiSpriteRedraws()

@@ -2111,6 +2111,19 @@ function BattleState:menuLockedAction(battler)
   return nil
 end
 
+-- engine/battle/core.asm:293
+function BattleState:enterCommandMenu()
+  self.phase = "menu"
+  if self.kind == "link" or self.safari or self.demo then return end
+  if not (self.player and self.player.mon and self.player.mon.hp > 0) then return end
+  local locked = self:menuLockedAction(self.player)
+  if locked then
+    self:snapIdleBars()
+    self:clearTurnFlinches()
+    self:resolveTurn(locked)
+  end
+end
+
 -- After FIGHT: skip MoveSelectionMenu (core.asm:320-329).  Own
 -- trapping/Bide continues; foe trapping forces CANNOT_MOVE ($ff).
 function BattleState:fightLockedAction(battler)
@@ -2284,6 +2297,19 @@ function BattleState:tickFx()
   self:updateFx()
 end
 
+function BattleState:snapIdleBars()
+  for _, b in ipairs({ self.player, self.enemy }) do
+    if b then
+      if b.shownHP then
+        b.shownHP = b.mon.hp
+        b.shownPx = Timing.hpBarPixels(b.mon.hp, math.max(1, b.mon.stats.hp))
+      end
+      b.drainFloor = nil
+      b.shownStatus = b.mon.status
+    end
+  end
+end
+
 function BattleState:update(dt)
   self:tickFx()
   local input = self.game.input
@@ -2291,16 +2317,7 @@ function BattleState:update(dt)
   -- safety net: HP/status changed outside a queued drain (level-up heals,
   -- field effects, bag cures) snaps once the queue is idle
   if self.phase == "menu" then
-    for _, b in ipairs({ self.player, self.enemy }) do
-      if b then
-        if b.shownHP then
-          b.shownHP = b.mon.hp
-          b.shownPx = Timing.hpBarPixels(b.mon.hp, math.max(1, b.mon.stats.hp))
-        end
-        b.drainFloor = nil
-        b.shownStatus = b.mon.status
-      end
-    end
+    self:snapIdleBars()
   end
 
   if self.phase == "messages" then
@@ -2327,7 +2344,7 @@ function BattleState:update(dt)
         -- engine/battle/core.asm:2007
         self.msgHold = nil
         self.shown = nil
-        self.phase = "menu"
+        self:enterCommandMenu()
       elseif destination == "finish" then
         self:finish()
       end

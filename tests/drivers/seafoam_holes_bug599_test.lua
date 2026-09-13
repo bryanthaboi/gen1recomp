@@ -127,7 +127,7 @@ return function(game)
       if landed and not o.transitioning then break end
       U.wait(1)
     end
-    -- spins the player down -- player_animations.asm:41-45
+    -- drops the player down -- player_animations.asm:41-45
     local hidden = false
     for _ = 1, 200 do
       local o = game.overworld
@@ -135,6 +135,7 @@ return function(game)
       if not (o.holeArrive or o.player.spinning) then break end
       U.wait(1)
     end
+    local surfedAfterDrop = game.overworld.player.surfing == true
     U.wait(20)
     watching = false
 
@@ -149,9 +150,9 @@ return function(game)
     check("facing carried through the fall (" .. tostring(landed.facing) .. ")",
           landed.facing == dir)
     if f.water then
-      -- the landing is sea, so setMap's CheckForceBikeOrSurf pass
-      -- (OverworldState:checkForcedMovement) has to mount SURF on arrival
-      check("arrived already surfing on the B3F water", landed.surfing == true)
+      -- home/overworld.asm:31
+      check("dropped onto the B3F water on foot", landed.surfing ~= true)
+      check("SURF mounted once the drop landed", surfedAfterDrop)
     end
     local doors = {}
     for _, c in ipairs(cues) do
@@ -184,13 +185,13 @@ return function(game)
   U.log("Both falls have already run; press up from where you are standing to")
   U.log("do the 1F one again. It should sink the sprite, fade to WHITE, hold")
   U.log("about a second on an empty B1F (18,7) with the player offscreen, ring")
-  U.log("Teleport_Enter1 and spin him down into the cell still facing up -- no")
+  U.log("Teleport_Enter1 and drop him into the cell facing down, no spin -- no")
   U.log("faint sound, no door chime, and no")
   U.log("step out of a doorway on the far side. The near miss to watch for is")
   U.log("landing one cell off, on the boulder's own spot from field.seafoam")
-  U.log("landsAt, which strands you inside the rock; and dropping onto the B3F")
-  U.log("sea standing up instead of surfing, which shows as the player on top")
-  U.log("of the water until the next step. The other three holes are 1F (24,6),")
+  U.log("landsAt, which strands you inside the rock; and on B3F, the surf sprite")
+  U.log("or the current showing up before the drop has landed. The other three")
+  U.log("holes are 1F (24,6),")
   U.log("B1F (18,6)/(23,6) and B2F (22,6) if you want to walk the cascade down.")
 
   while true do

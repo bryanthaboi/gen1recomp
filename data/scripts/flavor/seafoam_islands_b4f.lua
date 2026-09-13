@@ -17,11 +17,16 @@ local M = {}
 M.SEAFOAM_ISLANDS_B4F = {
   talk = {
     TEXT_SEAFOAMISLANDSB4F_ARTICUNO = {
-      { "play_cry", "ARTICUNO" },                                 -- 1 text_asm PlayCry
-      { "show_text", "_SeafoamIslandsB4FArticunoBattleText" },    -- 2 "Gyaoo!"
-      { "check_flag", "EVENT_BEAT_ARTICUNO" },                    -- 3
-      { "jump_if_true", 6 },                                      -- 4 already beaten: text only
-      { "static_battle", "ARTICUNO", 50, "EVENT_BEAT_ARTICUNO" }, -- 5
+      { "check_flag", "EVENT_BEAT_ARTICUNO" },
+      { "jump_if_true", "beaten" },
+      { "play_cry", "ARTICUNO", true },
+      { "engage_music", "Music_MeetMaleTrainer" },                -- home/trainers.asm:123
+      { "show_text", "_SeafoamIslandsB4FArticunoBattleText" },
+      { "static_battle", "ARTICUNO", 50, "EVENT_BEAT_ARTICUNO" },
+      { "jump", "end" },
+      { "label", "beaten" },
+      { "play_cry", "ARTICUNO", true },
+      { "show_text", "_SeafoamIslandsB4FArticunoBattleText" },
     },
   },
 }

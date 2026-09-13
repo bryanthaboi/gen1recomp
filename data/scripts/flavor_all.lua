@@ -42,6 +42,7 @@ local files = {
   "data.scripts.flavor.route_23",
   "data.scripts.flavor.route_2_trade_house",
   "data.scripts.flavor.safari_zone_gate",
+  "data.scripts.flavor.saffron_city",
   "data.scripts.flavor.saffron_pidgey_house",
   "data.scripts.flavor.seafoam_islands_b4f",
   "data.scripts.flavor.silph_co_10f",

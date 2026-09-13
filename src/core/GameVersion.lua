@@ -87,9 +87,7 @@ GameVersion.VERSIONS = {
     id = "crystal",
     label = "Crystal",
     displayName = "Pokemon Crystal",
-    -- Still Gen 2 Phase work; the launcher panel / Play button say Beta so
-    -- players do not treat it like the shipped Gold and Silver columns.
-    launcherName = "Crystal (Beta)",
+    launcherName = "Crystal",
     sha1 = "f4cd194bdee0d04ca4eac29e09b8e4e9d818c133",
     manifest = "tools/rom_manifest_crystal.json",
     cachePrefix = "crystal/",  -- crystal/data/generated, crystal/assets/generated

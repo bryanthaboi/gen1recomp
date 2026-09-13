@@ -385,6 +385,16 @@ local function decodeVariableSprites(bytes, at, count)
   return out
 end
 
+-- data/maps/scenes.asm:7
+local function decodeMapScenes(bytes, L)
+  local out = {}
+  for mapId, at in pairs(L.sceneVars or {}) do
+    local b = u8(bytes, at)
+    if b and b ~= 0 then out[mapId] = b end
+  end
+  return out
+end
+
 Gen2Save.NUM_SPECIES = 251
 Gen2Save.EVENT_BYTES = 256
 
@@ -458,6 +468,7 @@ function Gen2Save.decode(bytes, gameVersion, data)
       seen = decodeDex(bytes, L.wPokedexSeen, x),
     },
     events = decodeFlagBytes(bytes, L.wEventFlags, Gen2Save.EVENT_BYTES),
+    mapScenes = decodeMapScenes(bytes, L),
     engineFlags = decodeEngineFlags(bytes, L, gameVersion),
     variableSprites = decodeVariableSprites(bytes, L.wVariableSprites,
                                             Gen2Save.VARIABLE_SPRITES),
@@ -783,6 +794,12 @@ function Gen2Save.encode(save, gameVersion, template, data)
   for i = 0, Gen2Save.EVENT_BYTES - 1 do
     local byte = (save.events or {})[i]
     if type(byte) == "number" then putU8(t, L.wEventFlags + i, byte) end
+  end
+  if L.sceneVars and type(save.mapScenes) == "table" then
+    for mapId, at in pairs(L.sceneVars) do
+      local scene = tonumber(save.mapScenes[mapId])
+      if scene then putU8(t, at, math.floor(scene)) end
+    end
   end
   if type(save.engineFlags) == "table" then
     putEngineFlags(t, L, save.engineFlags, gameVersion)

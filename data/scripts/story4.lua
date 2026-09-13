@@ -238,8 +238,29 @@ local function dojoMasterGate(game, ow, x, y)
   return true
 end
 
+local function dojoMaster(game, ow, npc, done)
+  local t = text(game)
+  local flags = game.save.flags
+  -- ../pokered/scripts/FightingDojo.asm:108
+  if flags.EVENT_DEFEATED_FIGHTING_DOJO then
+    push(game, t._FightingDojoKarateMasterStayAndTrainWithUsText
+      or "Ho!\fStay and train at\nKarate with us!", done)
+    return
+  end
+  -- ../pokered/scripts/FightingDojo.asm:110
+  if flags.EVENT_BEAT_KARATE_MASTER or ow:trainerDefeated(npc) then
+    push(game, t._FightingDojoKarateMasterIWillGiveYouAPokemonText
+      or "Indeed, I have\nlost!", done)
+    return
+  end
+  -- ../pokered/scripts/FightingDojo.asm:122
+  ow:engageTrainer(npc, done, t._FightingDojoKarateMasterDefeatedText,
+    nil, nil, false)
+end
+
 M.FIGHTING_DOJO = {
   talk = {
+    TEXT_FIGHTINGDOJO_KARATE_MASTER = dojoMaster,
     TEXT_FIGHTINGDOJO_HITMONLEE_POKE_BALL =
       dojoBall("HITMONLEE", "FIGHTINGDOJO_HITMONLEE_POKE_BALL",
                "FIGHTINGDOJO_HITMONCHAN_POKE_BALL",

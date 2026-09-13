@@ -15,10 +15,14 @@
 -- header order in scripts/PowerPlant.asm: text_asm n uses header n-1
 local function ballMon(species, level, flag)
   return {
-    { "show_text", "_PowerPlantVoltorbBattleText" },   -- 1 "Bzzzt!"
-    { "check_flag", flag },                            -- 2
-    { "jump_if_true", 5 },                             -- 3 already beaten: text only
-    { "static_battle", species, level, flag },         -- 4
+    { "check_flag", flag },
+    { "jump_if_true", "beaten" },
+    { "engage_music", "Music_MeetMaleTrainer" },       -- home/trainers.asm:123
+    { "show_text", "_PowerPlantVoltorbBattleText" },
+    { "static_battle", species, level, flag },
+    { "jump", "end" },
+    { "label", "beaten" },
+    { "show_text", "_PowerPlantVoltorbBattleText" },
   }
 end
 
@@ -35,11 +39,16 @@ M.POWER_PLANT = {
     TEXT_POWERPLANT_ELECTRODE2 = ballMon("ELECTRODE", 43, "EVENT_BEAT_POWER_PLANT_VOLTORB_6"),
     TEXT_POWERPLANT_VOLTORB6 = ballMon("VOLTORB", 40, "EVENT_BEAT_POWER_PLANT_VOLTORB_7"),
     TEXT_POWERPLANT_ZAPDOS = {
-      { "play_cry", "ZAPDOS" },                        -- 1 text_asm PlayCry
-      { "show_text", "_PowerPlantZapdosBattleText" },  -- 2 "Gyaoo!"
-      { "check_flag", "EVENT_BEAT_ZAPDOS" },           -- 3
-      { "jump_if_true", 6 },                           -- 4 already beaten: text only
-      { "static_battle", "ZAPDOS", 50, "EVENT_BEAT_ZAPDOS" }, -- 5
+      { "check_flag", "EVENT_BEAT_ZAPDOS" },
+      { "jump_if_true", "beaten" },
+      { "play_cry", "ZAPDOS", true },
+      { "engage_music", "Music_MeetMaleTrainer" },     -- home/trainers.asm:123
+      { "show_text", "_PowerPlantZapdosBattleText" },
+      { "static_battle", "ZAPDOS", 50, "EVENT_BEAT_ZAPDOS" },
+      { "jump", "end" },
+      { "label", "beaten" },
+      { "play_cry", "ZAPDOS", true },
+      { "show_text", "_PowerPlantZapdosBattleText" },
     },
   },
 }

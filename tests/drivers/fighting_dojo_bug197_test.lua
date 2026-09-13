@@ -118,11 +118,8 @@ return function(game)
   check(engaged, "BUG1: Karate Master stops the player at his left")
 
   ------------------------------------------------------------------
-  -- BUG3: talk to the already-beaten master -> "Stay and train..." and
-  -- NOT the "I am the LEADER here!" pre-battle challenge.
+  -- ../pokered/scripts/FightingDojo.asm:106-136
   ------------------------------------------------------------------
-  -- talk from (4,3) facing right: beside the master (5,3), off his DOWN
-  -- sight line so he can't (post-fix) aggro before we set him defeated
   ow = resetDojo(4, 3, "right", { EVENT_BEAT_KARATE_MASTER = true })
   game.save.defeatedTrainers["FIGHTING_DOJO_obj_1"] = true
   local master = npcByName(ow, "FIGHTINGDOJO_KARATE_MASTER")
@@ -131,9 +128,23 @@ return function(game)
     local first = waitReadyPage()
     check(not first:find("LEADER", 1, true) and not first:find("Grunt", 1, true),
       "BUG3: beaten master no longer shows the challenge (page1='" .. first .. "')")
+    check(first:find("Indeed, I have", 1, true) ~= nil,
+      "#2253: beaten master before a prize repeats 'Indeed, I have lost!' (page1='" .. first .. "')")
+    check(not first:find("Stay and train", 1, true),
+      "#2253: no 'Stay and train' before a prize is chosen")
+    U.shot(game, DIR .. "/2253_01_master_prize_offer_before_choosing.png")
+    mashUntil(function() return game.stack:top() == ow end)
+  end
+
+  ow = resetDojo(4, 3, "right",
+    { EVENT_BEAT_KARATE_MASTER = true, EVENT_DEFEATED_FIGHTING_DOJO = true })
+  game.save.defeatedTrainers["FIGHTING_DOJO_obj_1"] = true
+  master = npcByName(ow, "FIGHTINGDOJO_KARATE_MASTER")
+  if check(master ~= nil, "#2253: master npc present after the prize") then
+    ow:talkTo(master)
     check(sawText("Stay and train"),
-      "BUG3: beaten master says 'Stay and train at Karate with us!'")
-    U.shot(game, DIR .. "/dojo_3_retalk.png")
+      "#2253: after the prize the master says 'Stay and train at Karate with us!'")
+    U.shot(game, DIR .. "/2253_02_master_stay_and_train_after_prize.png")
     mashUntil(function() return game.stack:top() == ow end)
   end
 
@@ -182,6 +193,15 @@ return function(game)
       check(not game.save.flags.EVENT_GOT_HITMONCHAN,
         "BUG5: talking the other ball does NOT hand a second POKeMON")
       U.shot(game, DIR .. "/dojo_5_greedy.png")
+      mashUntil(function() return game.stack:top() == ow end)
+    end
+    local flowMaster = npcByName(ow, "FIGHTINGDOJO_KARATE_MASTER")
+    if check(flowMaster ~= nil, "#2253: master still present after taking a prize") then
+      ow:talkTo(flowMaster)
+      local page = waitReadyPage()
+      check(page:find("Ho!", 1, true) ~= nil or page:find("Stay and train", 1, true) ~= nil,
+        "#2253: after taking HITMONLEE the master says 'Stay and train' (page1='" .. page .. "')")
+      U.shot(game, DIR .. "/2253_03_master_after_taking_hitmonlee.png")
       mashUntil(function() return game.stack:top() == ow end)
     end
   end

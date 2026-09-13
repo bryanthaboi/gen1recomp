@@ -3485,7 +3485,7 @@ Battle.RESIDUAL_ANIM = {
   burn = "ANIM_BRN", poison = "ANIM_PSN", toxic = "ANIM_PSN",
 }
 
--- End of turn: burn and poison chip damage, through the merged record's
+-- ResidualDamage: burn and poison chip damage, through the merged record's
 -- `residual`.  The record computes and advances its own counter; the emit pair
 -- stays here because the event shape belongs to this engine, not to the status.
 function Battle:tickStatus(mon)
@@ -4961,6 +4961,15 @@ local function runTurn(self, action, enemyAction)
     self:useMove(self.enemy, self.player, enemyMoveId)
   end
 
+  local function residualHalf(mon)
+    if self.faintInterrupt or self.forcedSwitch then return true end
+    -- engine/battle/core.asm:1005
+    self:tickStatus(mon)
+    self:tickSeedAndCurse(mon)
+    if self:resolveFaints() then return true end
+    return self.faintInterrupt and true or false
+  end
+
   if playerFirst then
     playerAttack()
     -- A wild Roar or Whirlwind ends the battle from THIS half of the turn the
@@ -4977,10 +4986,12 @@ local function runTurn(self, action, enemyAction)
     -- happens to be standing there now.  The end-of-turn block below still
     -- runs -- HandleEnemyMonFaint returns into BattleTurn's `.proceed`, which
     -- calls HandleBetweenTurnEffects (core.asm:196).
-    if self.faintInterrupt then
-      self.faintInterrupt = nil
-    elseif (self.player.hp or 0) > 0 then
+    if not residualHalf(self.player) and not self.over
+        and (self.player.hp or 0) > 0 then
       enemyAttack()
+      if self.over then return self:takeEvents() end
+      if self:resolveFaints() then return self:takeEvents() end
+      residualHalf(self.enemy)
     end
   else
     enemyAttack()
@@ -4991,10 +5002,12 @@ local function runTurn(self, action, enemyAction)
     if self:resolveFaints() then return self:takeEvents() end
     -- Same `jp` (core.asm:834-837): a mon that fainted to the enemy's move
     -- takes the rest of the attack phase with it.
-    if self.faintInterrupt then
-      self.faintInterrupt = nil
-    elseif (self.player.hp or 0) > 0 then
+    if not residualHalf(self.enemy) and not self.over
+        and (self.player.hp or 0) > 0 then
       playerAttack()
+      if self.over then return self:takeEvents() end
+      if self:resolveFaints() then return self:takeEvents() end
+      residualHalf(self.player)
     end
   end
   if self.over then return self:takeEvents() end
@@ -5009,18 +5022,9 @@ local function runTurn(self, action, enemyAction)
     return self:takeEvents()
   end
 
-  -- End of turn, in the cart's own order (HandleWeather runs before the
-  -- residual damage, and the counters that end a mon come last):
-  --   weather, then status chip and the Leech Seed / Curse residuals, then
-  --   the wrap ticks, then held items, then Future Sight and Perish Song,
-  --   then the screens and the per-turn counters.
   local firstMon, secondMon = self.player, self.enemy
   if self.mirrored then firstMon, secondMon = self.enemy, self.player end
   self:tickWeather()
-  self:tickStatus(firstMon)
-  self:tickSeedAndCurse(firstMon)
-  self:tickStatus(secondMon)
-  self:tickSeedAndCurse(secondMon)
   self:tickWrap(firstMon)
   self:tickWrap(secondMon)
   self:tickHeldItem(firstMon)

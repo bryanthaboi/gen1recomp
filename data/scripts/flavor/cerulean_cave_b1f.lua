@@ -15,11 +15,16 @@ local M = {}
 M.CERULEAN_CAVE_B1F = {
   talk = {
     TEXT_CERULEANCAVEB1F_MEWTWO = {
-      { "play_cry", "MEWTWO" },                               -- 1 text_asm PlayCry
-      { "show_text", "_MewtwoBattleText" },                   -- 2 "Mew!"
-      { "check_flag", "EVENT_BEAT_MEWTWO" },                  -- 3
-      { "jump_if_true", 6 },                                  -- 4 already beaten: text only
-      { "static_battle", "MEWTWO", 70, "EVENT_BEAT_MEWTWO" }, -- 5
+      { "check_flag", "EVENT_BEAT_MEWTWO" },
+      { "jump_if_true", "beaten" },
+      { "play_cry", "MEWTWO", true },
+      { "engage_music", "Music_MeetMaleTrainer" },            -- home/trainers.asm:123
+      { "show_text", "_MewtwoBattleText" },
+      { "static_battle", "MEWTWO", 70, "EVENT_BEAT_MEWTWO" },
+      { "jump", "end" },
+      { "label", "beaten" },
+      { "play_cry", "MEWTWO", true },
+      { "show_text", "_MewtwoBattleText" },
     },
   },
 }

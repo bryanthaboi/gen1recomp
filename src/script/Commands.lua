@@ -111,6 +111,16 @@ function Commands.show_text(ctx, textId, subs, extraOpts)
       return require("src.core.Sound").playCry(ctx.game.data, species)
     end, delay = 0, wait = waitForButton } }
   end
+  if ctx.pendingEngageMusic then
+    local song = ctx.pendingEngageMusic
+    ctx.pendingEngageMusic = nil
+    opts = opts or {}
+    opts.auto = opts.auto or { delay = 0, wait = true }
+    -- home/trainers.asm:399
+    opts.auto.afterSound = function()
+      require("src.core.Music").play(ctx.game.data, song)
+    end
+  end
   -- text_opts armed the next box: auto = true is the plain no-button-wait
   -- form, overlap folds under auto, everything else passes through
   if ctx.textOpts then
@@ -676,8 +686,7 @@ end
 -- (no A press) the instant the cry finishes, rather than firing immediately
 -- alongside the typewriter effect. Script rows run strictly in order, so
 -- this stashes the species on ctx for the show_text row that always
--- immediately follows it (Power Plant Zapdos, Seafoam Articuno, Victory
--- Road Moltres, Cerulean Cave Mewtwo battle text) to play once its box is
+-- immediately follows it to play once its box is
 -- done typing (see show_text's opts.auto).  Headless-safe no-op there.
 --
 -- waitForButton is the pet-NPC form (scripts/PewterNidoranHouse.asm and
@@ -689,6 +698,11 @@ end
 function Commands.play_cry(ctx, species, waitForButton)
   ctx.pendingCry = species
   ctx.pendingCryWait = waitForButton or nil
+end
+
+-- home/trainers.asm:327
+function Commands.engage_music(ctx, songId)
+  ctx.pendingEngageMusic = songId
 end
 
 -- mark_seen <species>: DisplayPokedex (pokedex.asm) records the species as

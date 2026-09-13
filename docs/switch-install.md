@@ -97,8 +97,8 @@ This project ships **no** game data. On first launch:
    same folder.
 2. Use **Scan again** on that game's tab (Red / Blue / Yellow / Gold /
    Silver). Rescan matches by ROM SHA-1 for the open tab only. A Red dump
-   never imports from the Yellow tab (and vice versa). Gold and Silver are
-   Beta in the launcher; a clean US dump of either is enough to Play.
+   never imports from the Yellow tab (and vice versa). A clean US Gold or
+   Silver dump is enough to Play.
 
 ## 5. Import / Export a raw `.sav`
 

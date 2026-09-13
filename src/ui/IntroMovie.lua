@@ -177,9 +177,14 @@ function IntroMovie.new(game, onDone)
   self.smallStar = img(intro.fallingStar)
   self.smallStarBlink = img(intro.fallingStarBlink)
   self.gengarFrames, self.nidoFrames = {}, {}
+  self.gengarPaths, self.nidoPaths = {}, {}
   for i = 1, 3 do
-    self.gengarFrames[i] = img(intro.gengar and intro.gengar["frame" .. i])
-    self.nidoFrames[i] = img(intro.nidorino and intro.nidorino["frame" .. i])
+    local g = intro.gengar and intro.gengar["frame" .. i]
+    local n = intro.nidorino and intro.nidorino["frame" .. i]
+    self.gengarFrames[i] = img(g)
+    self.nidoFrames[i] = img(n)
+    self.gengarPaths[i] = g and g.path
+    self.nidoPaths[i] = n and n.path
   end
 
   -- fight state (PlayIntroScene entry, intro.asm:30-39): Gengar BG pose at
@@ -417,6 +422,40 @@ function IntroMovie:drawFight()
     love.graphics.setColor(1, 1, 1, math.min(1, self.fade))
     love.graphics.rectangle("fill", 0, 0, 160, 144)
     love.graphics.setColor(1, 1, 1, 1)
+  end
+  self:replayObjLayer(nido, gengar)
+end
+
+local whitePixel
+
+local FIGHT_CLIP = { 0, 32, 160, 80 }
+
+function IntroMovie:replayObjLayer(nido, gengar)
+  local P = require("src.render.PaletteFX")
+  local nidoPath = self.nidoPaths and self.nidoPaths[self.nidoFrame]
+  if not (nido and nidoPath and P.usesSpriteObp()) then return end
+  local SR = require("src.render.SpriteRenderer")
+  local blue = GameVersion.isBlue()
+  local opts = { clip = FIGHT_CLIP }
+  -- engine/movie/intro.asm:28
+  P.markUiSpriteRedraw(SR.obpImage(nidoPath,
+    blue and P.GBC_OBJ_BLUE or P.GBC_OBJ, blue and "gbcobj_blue" or "gbcobj"),
+    nil, self.nidoX, self.nidoY, opts)
+  local gengarPath = self.gengarPaths[self.gengarPose]
+  if gengar and gengarPath then
+    -- engine/movie/intro.asm:195
+    P.markUiSpriteRedraw(SR.obpImage(gengarPath, P.ogBg(),
+      blue and "ogbg_blue" or "ogbg"), nil, self.gengarX, self.gengarY, opts)
+  end
+  if self.fade > 0 then
+    if not whitePixel then
+      local id = love.image.newImageData(1, 1)
+      id:setPixel(0, 0, 1, 1, 1, 1)
+      whitePixel = love.graphics.newImage(id)
+    end
+    P.markUiSpriteRedraw(whitePixel, nil, FIGHT_CLIP[1], FIGHT_CLIP[2],
+      { clip = FIGHT_CLIP, sx = FIGHT_CLIP[3], sy = FIGHT_CLIP[4],
+        color = { 1, 1, 1, math.min(1, self.fade) } })
   end
 end
 

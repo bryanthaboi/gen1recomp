@@ -64,8 +64,7 @@ not copied into the cache. Later launches load the private generated cache and
 do not ask for the ROM again. Red, Blue, Yellow, Gold, Silver, and Crystal can
 all be imported side by side. Gold, Silver, and Crystal are Gen 2 Phase 1
 (import + launcher; see `docs/gold-phase1.md`): the Gen 2 engine is still under
-construction, and Crystal is the newest of the three, so the launcher lists it
-as Crystal (Beta).
+construction.
 
 ## Quick Start
 

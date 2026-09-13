@@ -516,6 +516,11 @@ function TextBox:update(dt)
           pcall(self.autoSrc.stop, self.autoSrc)
         end
       end
+      -- home/trainers.asm:123
+      if self.auto.afterSound and not self.afterSoundFired then
+        self.afterSoundFired = true
+        self.auto.afterSound()
+      end
       -- auto.wait: the pet-NPC cries (PewterNidoranHouseNidoranText,
       -- ViridianNicknameHouseSpearowText) have nothing queued behind the
       -- cry, so DisplayTextID's trailing WaitForTextScrollButtonPress still

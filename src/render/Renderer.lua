@@ -1037,6 +1037,7 @@ function Renderer:endFrame(zones, worldZones)
   -- the UI shaded separately on a transparent layer and masked over it.
   local fxScale = Up
   local fxWorldScale = nil
+  local fxWorldOx, fxWorldOy = nil, nil
 
   if self.worldOverride then
     -- A render pipeline already produced the whole world -- terrain,
@@ -1069,7 +1070,9 @@ function Renderer:endFrame(zones, worldZones)
     local woxPx = vx + math.floor((pw - wvw * sp) / 2)
     local woyPx = vy + math.floor((ph - wvh * sp) / 2) - R.lift
     local wox, woy = woxPx / dpiX, woyPx / dpiY
-    if present and ShaderFX.active() and sp ~= Up then fxWorldScale = sp end
+    if present and ShaderFX.active() and sp ~= Up then
+      fxWorldScale, fxWorldOx, fxWorldOy = sp, woxPx, woyPx
+    end
     -- Tilt mode projects the ground world pass through the perspective mesh
     -- (SGB zones baked in beforehand -- see drawTiltedWorld -- so no zone
     -- scissoring here).  drawTiltedWorld returns false when tilt is off or
@@ -1248,16 +1251,34 @@ function Renderer:endFrame(zones, worldZones)
   end
   local uiRedraws = PaletteFX.uiSpriteRedraws()
   if uiRedraws[1] then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setScissor(clipToView(uox, uoy, uvpw, uvph))
+    local bx, by, bw, bh = clipToView(uox, uoy, uvpw, uvph)
     for _, r in ipairs(uiRedraws) do
+      local c = r.clip
+      if c then
+        local x1 = math.max(bx, uox + c[1] * Ux)
+        local y1 = math.max(by, uoy + c[2] * Uy)
+        local x2 = math.min(bx + bw, uox + (c[1] + c[3]) * Ux)
+        local y2 = math.min(by + bh, uoy + (c[2] + c[4]) * Uy)
+        love.graphics.setScissor(x1, y1, math.max(0, x2 - x1),
+                                 math.max(0, y2 - y1))
+      else
+        love.graphics.setScissor(bx, by, bw, bh)
+      end
+      local col = r.color
+      if col then
+        love.graphics.setColor(col[1], col[2], col[3], col[4] or 1)
+      else
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+      local rsx, rsy = Ux * (r.sx or 1), Uy * (r.sy or 1)
       if r.quad then
         love.graphics.draw(r.image, r.quad, uox + r.x * Ux, uoy + r.y * Uy,
-                           0, Ux, Uy)
+                           0, rsx, rsy)
       else
-        love.graphics.draw(r.image, uox + r.x * Ux, uoy + r.y * Uy, 0, Ux, Uy)
+        love.graphics.draw(r.image, uox + r.x * Ux, uoy + r.y * Uy, 0, rsx, rsy)
       end
     end
+    love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setScissor()
   end
 
@@ -1332,12 +1353,12 @@ function Renderer:endFrame(zones, worldZones)
         ShaderFX.render(composed,
           { x = 0, y = 0, w = fxPxW, h = fxPxH, scale = worldScale },
           { w = fxPxW / worldScale, h = fxPxH / worldScale },
-          dpiX, dpiY)
+          dpiX, dpiY, { originX = fxWorldOx or uox * dpiX, originY = fxWorldOy or uoy * dpiY })
         if uiLayer then
           ShaderFX.render(uiLayer,
             { x = 0, y = 0, w = fxPxW, h = fxPxH, scale = fxScale },
             { w = fxPxW / fxScale, h = fxPxH / fxScale },
-            dpiX, dpiY, { layer = "ui", mask = true })
+            dpiX, dpiY, { layer = "ui", mask = true, originX = uox * dpiX, originY = uoy * dpiY })
         end
       else
         -- the present canvas only existed for the post-process, so put the

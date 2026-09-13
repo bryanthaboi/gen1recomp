@@ -145,8 +145,8 @@ return function(game)
   -- around to its south side
   holdUntil("down", playerAt(18, 7), 120)
   holdUntil("left", playerAt(17, 7), 120)
-  -- up column 17 onto her row
-  holdUntil("up", boulderAt(17, 3), 400)
+  -- up column 17 onto her row -- engine/overworld/push_boulder.asm:66
+  holdUntil("up", playerAt(17, 4), 400)
   check("boulder pushed up column 17 onto row 3 at (17,3)",
         rock.cellX == 17 and rock.cellY == 3)
   if not pass then

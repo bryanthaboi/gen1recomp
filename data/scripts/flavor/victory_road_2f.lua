@@ -15,11 +15,16 @@ local M = {}
 M.VICTORY_ROAD_2F = {
   talk = {
     TEXT_VICTORYROAD2F_MOLTRES = {
-      { "play_cry", "MOLTRES" },                                -- 1 text_asm PlayCry
-      { "show_text", "_VictoryRoad2FMoltresBattleText" },       -- 2 "Gyaoo!"
-      { "check_flag", "EVENT_BEAT_MOLTRES" },                   -- 3
-      { "jump_if_true", 6 },                                    -- 4 already beaten: text only
-      { "static_battle", "MOLTRES", 50, "EVENT_BEAT_MOLTRES" }, -- 5
+      { "check_flag", "EVENT_BEAT_MOLTRES" },
+      { "jump_if_true", "beaten" },
+      { "play_cry", "MOLTRES", true },
+      { "engage_music", "Music_MeetMaleTrainer" },              -- home/trainers.asm:123
+      { "show_text", "_VictoryRoad2FMoltresBattleText" },
+      { "static_battle", "MOLTRES", 50, "EVENT_BEAT_MOLTRES" },
+      { "jump", "end" },
+      { "label", "beaten" },
+      { "play_cry", "MOLTRES", true },
+      { "show_text", "_VictoryRoad2FMoltresBattleText" },
     },
   },
 }
