@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.60",
+          "date": "2026-09-13",
+          "size": 22589573,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.60/gen1recomp++-0.2.60-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2235 some shaders have artifacts\n- #2245 GSC save import doesn't correctly set world event flags\n- #2252 Menu visible during Trash\n- #2253 Dojo Master dialogue wrong before choosing Pokemon\n- #2257 status effect damege timing\n- #2261 Music missing when interacting with Voltorb or Electrode in the Power Plant\n- #2262 Pidgeot cry not played in Saffron City\n- #2263 Dust animation after moving boulder incorrect\n- #2264 Nidorino's & Jigglypuff's colors are wrong in opening cutscene\n- #2267 Surfing bugs\n- #2268 Pokemon sprites don't have the correct color in the menu\n- #2272 Game Corner 12th Hidden Item\n- #2273 Pokemon's options don't close after using Strength\n- #2274 Falling into the current on Seafoam Islands is broken\n- #2275 Articuno fight starts right after its cry\n\n## Contributors\n\n- @AverageConsumer\n- @bryanthaboi"
+        },
+        {
           "version": "0.2.59",
           "date": "2026-09-12",
           "size": 22584503,
