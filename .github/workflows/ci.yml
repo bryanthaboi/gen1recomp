@@ -439,7 +439,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           # The action's default package list is "tools platform-tools".
           # Google's repository no longer serves the legacy `tools`
