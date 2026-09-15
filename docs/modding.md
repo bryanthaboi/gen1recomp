@@ -453,6 +453,34 @@ state has no use for Oak's speech. `CodeEntry.new` takes an optional
 `{ length = , charset = }`, so the slot-scrub widget that enters a link code
 can also carry a room code or an address.
 
+## Items on the link cable
+
+A link battle runs under cable rules -- no items -- and keeps them by
+default. A mode built on link battles can ask for the bag back:
+
+```lua
+local battle = LinkBattle.newHost(game, net, {
+  myParty = packed, theirParty = theirPacked, theirName = name, seed = seed,
+  items = true,      -- the bag opens; an item is the turn's action
+})
+```
+
+With `items`, the FIGHT menu's ITEM row opens the vanilla bag against the
+lockstep copies (the target picker offers `battle.playerParty`), the effect
+lands through `ItemEffects.use` as in any fight, and instead of the AI's
+reply the item rides the wire as the turn's action. Both machines -- and a
+spectator -- resolve it before switches and moves: the other side applies
+the same effect to its own copies of that side (`src/link/LinkItems.lua`),
+prints "<name> used <ITEM>!" and the effect's lines, and the per-turn state
+hash still agrees. The side that used the item makes no attack that turn.
+
+Set it on **both** machines, as with `turnLimit`: a peer that did not opt in
+never sends one, and one that receives an item it cannot decode desyncs on
+the next hash. What the bag allows is what a trainer battle allows --
+medicines, X items, the flute; balls, the doll, stones, TMs and candy are
+refused. `turnLimit`'s clock ticks only at the menu, so it waits while the
+bag is open. Gen 1 only; `LinkBattle2` keeps its cable rules. RFC 0021.
+
 ## Read-only battle snapshots
 
 `mod.battle:snapshot()` returns `nil` outside a battle and a copied battle
