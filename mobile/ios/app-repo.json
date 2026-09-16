@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.61",
+          "date": "2026-09-16",
+          "size": 22599085,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.61/gen1recomp++-0.2.61-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2089 Update all mods doesn’t actually update anything when you have a custom cart selected\n- #2198 Trading inaccurate\n- #2227 shaders fail to convert when portable.txt is active\n- #2246 The game may freeze when an other audio source is playing on Android\n- #2277 Lift key is not dropping game corner bapsement\n- #2278 More inaccuracies when trading\n- #2280 Crystal Surf Sprite Incorrect\n- #2281 Fossil menu issues\n- #2282 Wrong message for Hypnosis failing\n- #2283 Export save slot failing for 2nd generation\n- #2286 [Audio] Bicycle music restarts on zone transition instead of playing new zone track\n\n## Contributors\n\n- @bryanthaboi\n- @campavao"
+        },
+        {
           "version": "0.2.60",
           "date": "2026-09-13",
           "size": 22589573,
