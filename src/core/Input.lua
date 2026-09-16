@@ -114,14 +114,24 @@ function Input:applyBindings(overlay)
     local n = tonumber(padName:match("^joy(%d+)$"))
     if n then joys[n] = action end
   end
+  local joyActs = {}
+  for padName, action in pairs(acts) do
+    local n = tonumber(padName:match("^joy(%d+)$"))
+    if n then joyActs[n] = action end
+  end
   self.keyBindings = keys
   self.padBindings = pads
   self.joyBindings = joys
   self.padActions = acts
+  self.joyActions = joyActs
 end
 
 function Input:padAction(button)
   return self.padActions and self.padActions[button] or nil
+end
+
+function Input:joyAction(index)
+  return self.joyActions and self.joyActions[index] or nil
 end
 
 -- Purely event-driven state (press sets true, release sets false) has no
@@ -137,6 +147,7 @@ function Input:reset()
   self.stickAxis = { x = 0, y = 0 }
   self.stickDir = nil
   self.hatDirs = {}
+  self.triggerHeld = {}
   self.captureArmed = false
   self.captureEvents = nil
 end
@@ -313,9 +324,33 @@ function Input:joystickreleased(joystick, button)
   if btn then release(self, btn, "joy:" .. button) end
 end
 
+function Input:triggerAxis(axis, value)
+  local name = GamepadMap.TRIGGER_AXES[axis]
+  if not name then return nil end
+  self.triggerHeld = self.triggerHeld or {}
+  local was = self.triggerHeld[name]
+  if not was and value >= GamepadMap.TRIGGER_ON then
+    self.triggerHeld[name] = true
+    return name, "pressed"
+  elseif was and value <= GamepadMap.TRIGGER_OFF then
+    self.triggerHeld[name] = nil
+    return name, "released"
+  end
+  return name
+end
+
 -- left stick treated as a continuous held direction, same 4-way rule as
 -- the touch swipe d-pad: whichever axis has the larger magnitude wins.
 function Input:gamepadaxis(joystick, axis, value)
+  local trigger, phase = self:triggerAxis(axis, value)
+  if trigger then
+    if phase == "pressed" then
+      self:gamepadpressed(joystick, trigger)
+    elseif phase == "released" then
+      self:gamepadreleased(joystick, trigger)
+    end
+    return
+  end
   if axis == "leftx" then
     self.stickAxis.x = value
   elseif axis == "lefty" then
@@ -412,7 +447,8 @@ function Input:reconcile()
         end
       end
       if j.getGamepadAxis then
-        for _, axis in ipairs({ "leftx", "lefty" }) do
+        local axes = { "leftx", "lefty", "triggerleft", "triggerright" }
+        for _, axis in ipairs(axes) do
           local ok2, v = pcall(j.getGamepadAxis, j, axis)
           if ok2 and type(v) == "number" then self:gamepadaxis(j, axis, v) end
         end

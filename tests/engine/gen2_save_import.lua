@@ -457,12 +457,29 @@ do
     "and a save from before the dex was given still hides it")
 end
 
--- A save with no cartridge image behind it is refused, not invented.
+-- A save with no cartridge image behind it gets one synthesized, but only
 do
   local out, err = Gen2Save.encode({ player = { name = "A" } }, "gold", nil, {})
-  eq(out, nil, "encode refuses a save with no lineage")
-  check(type(err) == "string" and err:find("no cartridge image", 1, true) ~= nil,
-    "and says why -- " .. tostring(err))
+  eq(out, nil, "encode refuses a save with no lineage AND no position")
+  check(type(err) == "string" and err:find("does not name one", 1, true) ~= nil,
+    "and says which half is missing -- " .. tostring(err))
+
+  local data = {
+    maps = { A_HOUSE = {
+      group = 21, map = 14, objectEventsAddr = 0x5A17,
+      width = 2, height = 2, blocks = { 1, 2, 3, 4 }, objects = {},
+    } },
+  }
+  local built, why = Gen2Save.encode({
+    player = { name = "A" },
+    position = { mapGroup = 21, mapNumber = 14, x = 1, y = 1 },
+  }, "gold", nil, data)
+  check(built ~= nil, "a positioned save builds its own image -- " .. tostring(why))
+  eq(#built, Gen2Save.SAVE_SIZE, "and it is a full battery image")
+  eq(Gen2Save.checksumValid(built, Gen2Save.layoutFor("gold")), true,
+    "sealed with the check values and sum the cartridge verifies")
+  local back = Gen2Save.decode(built, "gold")
+  check(back ~= nil and back.player.name == "A", "and decodes back to itself")
 end
 
 -- ------------------------------------------------------------------
@@ -524,11 +541,13 @@ do
     check(type(save.phoneContacts) == "table", "and the phone book")
     eq(save.mapScenes.ELMS_LAB, 2, "and the cart's map scenes survive the merge")
   end
-  -- Export needs the cartridge image the save came from. Without one it is
-  -- refused rather than built from nothing.
-  local _, expErr = SaveConvert.exportSav({ meta = {} }, "gold")
-  check(type(expErr) == "string" and expErr:find("no cartridge image", 1, true) ~= nil,
-    "a save with no cartridge behind it is refused -- got: " .. tostring(expErr))
+  local out, expErr = SaveConvert.exportSav({ meta = {} }, "gold")
+  eq(out, nil, "a save that names no map is still refused")
+  check(type(expErr) == "string" and expErr:find("does not name one", 1, true) ~= nil,
+    "and the reason is the missing map, not a missing cartridge -- got: "
+      .. tostring(expErr))
+  check(type(expErr) == "string" and expErr:find("no cartridge image to write", 1, true) == nil,
+    "the old refusal is gone -- got: " .. tostring(expErr))
 end
 
 -- ------------------------------------------------------------------

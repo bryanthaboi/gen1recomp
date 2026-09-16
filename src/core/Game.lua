@@ -955,6 +955,46 @@ function Game:keyreleased(key)
   return ModRuntime.call("input.key", vanilla, self, { phase = "released", key = key })
 end
 
+local function padPressedBody(self, joystick, button)
+  TouchControls:noteGamepad()
+  local selectHeld = Input:isDown("select")
+  if not selectHeld and joystick and joystick.isGamepadDown then
+    local ok, down = pcall(function()
+      return joystick:isGamepadDown("back")
+    end)
+    selectHeld = ok and down == true
+  end
+  local top = self.stack and self.stack:top()
+  if top and top.onGamepadPressed then
+    top:onGamepadPressed(button)
+    return
+  end
+  if not selectHeld then
+    local action = Input:padAction(button)
+    if action == "speedUp" then
+      self:_cycleSpeed(1)
+      return
+    elseif action == "speedDown" then
+      self:_cycleSpeed(-1)
+      return
+    end
+  end
+  if selectHeld then
+    local digit = GamepadMap.displayChordDigit(button)
+    if digit then
+      self:keypressed(digit)
+      return
+    end
+  end
+  Input:gamepadpressed(joystick, button)
+end
+
+local function padReleasedBody(self, joystick, button)
+  Input:gamepadreleased(joystick, button)
+  local top = self.stack and self.stack:top()
+  if top and top.onGamepadReleased then top:onGamepadReleased(button) end
+end
+
 -- RFC 0020: input.gamepad covers press/release/axis (see this method,
 -- Game:gamepadreleased, and Game:gamepadaxis below) -- three raw callbacks
 -- feeding one hook, because the motivating use case (a stick-driven
@@ -964,44 +1004,7 @@ end
 -- restores.
 function Game:gamepadpressed(joystick, button)
   local function vanilla()
-    -- a controller is being used: the touch overlay steps aside until the
-    -- next screen touch (mobile only; a no-op elsewhere)
-    TouchControls:noteGamepad()
-    -- Select held? Needed both to suppress shoulder speed hotkeys (Select+L
-    -- is a display chord on NX) and for the chord path below.
-    local selectHeld = Input:isDown("select")
-    if not selectHeld and joystick and joystick.isGamepadDown then
-      local ok, down = pcall(function()
-        return joystick:isGamepadDown("back")
-      end)
-      selectHeld = ok and down == true
-    end
-    local top = self.stack and self.stack:top()
-    if top and top.onGamepadPressed then
-      top:onGamepadPressed(button)
-      return
-    end
-    if not selectHeld then
-      local action = Input:padAction(button)
-      if action == "speedUp" then
-        self:_cycleSpeed(1)
-        return
-      elseif action == "speedDown" then
-        self:_cycleSpeed(-1)
-        return
-      end
-    end
-    -- Select+face display chords → same digit path as Game:keypressed
-    -- (COLORS/TILT/pipelines). Intercept before Input so face does not
-    -- also fire GB A/B. Dual-path: raw already ignored when isGamepad().
-    if selectHeld then
-      local digit = GamepadMap.displayChordDigit(button)
-      if digit then
-        self:keypressed(digit)
-        return
-      end
-    end
-    Input:gamepadpressed(joystick, button)
+    padPressedBody(self, joystick, button)
   end
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
   return ModRuntime.call("input.gamepad", vanilla, self,
@@ -1010,10 +1013,7 @@ end
 
 function Game:gamepadreleased(joystick, button)
   local function vanilla()
-    -- same observe-after-Input contract as Game:keyreleased (#589)
-    Input:gamepadreleased(joystick, button)
-    local top = self.stack and self.stack:top()
-    if top and top.onGamepadReleased then top:onGamepadReleased(button) end
+    padReleasedBody(self, joystick, button)
   end
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
   return ModRuntime.call("input.gamepad", vanilla, self,
@@ -1024,6 +1024,15 @@ function Game:gamepadaxis(joystick, axis, value)
   local function vanilla()
     -- past-deadzone only, so resting-stick drift can't hide the overlay
     if math.abs(value) > 0.5 then TouchControls:noteGamepad() end
+    local trigger, phase = Input:triggerAxis(axis, value)
+    if trigger then
+      if phase == "pressed" then
+        padPressedBody(self, joystick, trigger)
+      elseif phase == "released" then
+        padReleasedBody(self, joystick, trigger)
+      end
+      return
+    end
     Input:gamepadaxis(joystick, axis, value)
   end
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
@@ -1051,6 +1060,16 @@ function Game:joystickpressed(joystick, button)
   if isRawStick(joystick) and top and top.onJoystickPressed then
     top:onJoystickPressed(button)
     return
+  end
+  if not Input:isDown("select") then
+    local action = Input:joyAction(button)
+    if action == "speedUp" then
+      self:_cycleSpeed(1)
+      return
+    elseif action == "speedDown" then
+      self:_cycleSpeed(-1)
+      return
+    end
   end
   Input:joystickpressed(joystick, button)
 end

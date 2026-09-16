@@ -110,18 +110,20 @@ do
 end
 
 -- ------------------------------------------------------------------
--- Export needs the cartridge image behind the save
--- ------------------------------------------------------------------
+-- Export needs the map the save stands on, not a cartridge behind it
 
--- Export goes through the codec now, but only for a save that came from a
--- cartridge: the regions it does not model are the ones the real game trusts
--- on CONTINUE.
+-- A save begun in this port has no cartridge image, and one is synthesized
+-- for it. What export cannot invent is the map window the real game trusts
+-- on CONTINUE, so a save that names no map is refused, in a line that says so.
 for _, version in ipairs({ "gold", "silver", "crystal" }) do
   eq(SaveConvert.exportSupported(version), true, version .. ": export is supported")
   local out, why = SaveConvert.exportSav({ meta = {}, player = { name = "A" } }, version)
-  eq(out, nil, version .. ": a save with no cartridge behind it is refused")
-  check(type(why) == "string" and why:find("no cartridge image", 1, true) ~= nil,
-    version .. ": and the reason is the missing image -- " .. tostring(why))
+  eq(out, nil, version .. ": a save that names no map is refused")
+  check(type(why) == "string" and why:find("does not name one", 1, true) ~= nil,
+    version .. ": and the reason is the missing map -- " .. tostring(why))
+  check(type(why) == "string"
+        and why:find("no cartridge image to write", 1, true) == nil,
+    version .. ": the lineage refusal is gone -- " .. tostring(why))
 end
 
 T.finish()

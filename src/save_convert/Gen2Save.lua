@@ -694,21 +694,122 @@ local function putFlagSet(t, at, set, count, indexFor)
   end
 end
 
+-- data/default_options.asm, as engine/menus/save.asm:384
+local DEFAULT_OPTIONS = { 0x03, 0x01, 0x00, 0x01, 0x40, 0x01, 0x00, 0x00 }
+
+-- engine/overworld/player_object.asm:39, home/map_objects.asm:352
+local PLAYER_MAP_OBJECT = {
+  0x00, 0x01, 0x00, 0x00, 0x0B, 0xFF, 0xFF, 0xFF,
+  0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xD5, 0x78,
+}
+
+-- engine/overworld/player_object.asm:411, home/map_objects.asm:485,
+-- data/sprites/map_objects.asm:93
+local PLAYER_STRUCT = {
+  0x01, 0x00, 0x00, 0x0B, 0x02, 0x00, 0x00, 0xFF,
+  0x00, 0x01, 0x00, 0x01, 0x00, 0xFF, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x40,
+}
+local STRUCT_X_AT = { 16, 18, 20 }
+local STRUCT_Y_AT = { 17, 19, 21 }
+
+-- pokecrystal engine/overworld/player_object.asm:32
+local PLAYER_PAL_MALE, PLAYER_PAL_FEMALE = 0x80, 0x90
+
+-- constants/deco_constants.asm:123,140
+local DECO_FEATHERY_BED, DECO_TOWN_MAP = 2, 16
+
+-- (engine/menus/intro_menu.asm:28) and ErasePreviousSave
+-- (engine/menus/save.asm:333) zero-fill, plus the bytes
+-- MapSetupScript_Continue (data/maps/setup_scripts.asm:161) never rebuilds.
+function Gen2Save.blankImage(gameVersion, save, data)
+  local L = Gen2Save.layoutFor(gameVersion)
+  if not L then return nil, "no Gen 2 layout for " .. tostring(gameVersion) end
+  local O = require("src.save_convert.Gen2MapContext").offsetsFor(gameVersion)
+  if not O then return nil, "no Gen 2 layout for " .. tostring(gameVersion) end
+
+  local x = Gen2Save.crosswalks(data)
+  local pos = (type(save) == "table" and save.position) or nil
+  local ids = pos and pos.map and x.mapIds[pos.map]
+  local group = (ids and ids[1]) or (pos and tonumber(pos.mapGroup))
+  local number = (ids and ids[2]) or (pos and tonumber(pos.mapNumber))
+  if not (group and number) then
+    return nil, "a save begun in this game needs the map it stands on to "
+      .. "build a cartridge image from, and this save does not name one"
+  end
+  local px = math.floor(tonumber(pos.x) or 0) + 4
+  local py = math.floor(tonumber(pos.y) or 0) + 4
+
+  local t = {}
+  for i = 0, Gen2Save.SAVE_SIZE - 1 do t[i] = 0 end
+  for i = 1, #DEFAULT_OPTIONS do t[L.sOptions + i - 1] = DEFAULT_OPTIONS[i] end
+  putU8(t, L.wSavedAtLeastOnce, 1)
+  putText(t, L.wRedsName, "RED", Gen2Save.NAME_LENGTH)
+  putText(t, L.wGreensName, "GREEN", Gen2Save.NAME_LENGTH)
+  putBE(t, L.wMomItemTriggerBalance, 2300, 3)
+  for _, at in ipairs({ L.wRoamMon1MapGroup, L.wRoamMon2MapGroup,
+                        L.wRoamMon3MapGroup }) do
+    putU8(t, at, 0xFF)
+    putU8(t, at + 1, 0xFF)
+  end
+  putU8(t, L.wBestMagikarpLengthFeet, 3)
+  putU8(t, L.wBestMagikarpLengthInches, 6)
+  putText(t, L.wMagikarpRecordHoldersName, "RALPH", Gen2Save.NAME_LENGTH)
+  putU8(t, L.wNumPCItems, 0)
+  putU8(t, L.wNumPCItems + 1, 0xFF)
+  putU8(t, L.sMysteryGiftUnlocked, 0xFF)
+  -- engine/overworld/decorations.asm:1, :1080
+  putU8(t, L.wDecoBed, DECO_FEATHERY_BED)
+  putU8(t, L.wDecoPoster, DECO_TOWN_MAP)
+  -- engine/menus/intro_menu.asm:148 SetDefaultBoxNames
+  if L.wBoxNames then
+    for i = 1, 14 do
+      putText(t, L.wBoxNames + (i - 1) * 9, "BOX" .. i, 9)
+    end
+  end
+
+  for i = 1, #PLAYER_MAP_OBJECT do
+    t[O.mapObjects + i - 1] = PLAYER_MAP_OBJECT[i]
+  end
+  putU8(t, O.mapObjects + 2, py)
+  putU8(t, O.mapObjects + 3, px)
+  if L.wPlayerGender then
+    local female = ((type(save) == "table" and save.player) or {}).gender == "female"
+    putU8(t, O.mapObjects + 8, female and PLAYER_PAL_FEMALE or PLAYER_PAL_MALE)
+  end
+  for i = 1, #PLAYER_STRUCT do
+    t[O.objectStructs + i - 1] = PLAYER_STRUCT[i]
+  end
+  for _, at in ipairs(STRUCT_X_AT) do putU8(t, O.objectStructs + at, px) end
+  for _, at in ipairs(STRUCT_Y_AT) do putU8(t, O.objectStructs + at, py) end
+
+  putU8(t, L.wMapGroup, group)
+  putU8(t, L.wMapNumber, number)
+
+  local out = {}
+  for i = 0, Gen2Save.SAVE_SIZE - 1 do out[i + 1] = string.char(t[i]) end
+  return table.concat(out)
+end
+
 -- encode(save, gameVersion, template, data) -> bytes, err
 --
--- Writes into the cartridge image the save came from: Gen 2 SRAM holds a great
--- deal this codec does not model and the real game trusts it on CONTINUE, so a
--- save with no image behind it is refused rather than built from nothing.
---
--- Only the primary copy is written. TryLoadSaveFile rewrites the backup from
--- the primary on every successful load.
+-- Writes into the cartridge image the save came from.  A save begun in this
+-- port has none, so Gen2Save.blankImage builds one and the map window is
+-- always rebuilt for where it stands.
 function Gen2Save.encode(save, gameVersion, template, data)
   local L = Gen2Save.layoutFor(gameVersion)
   if not L then return nil, "no Gen 2 layout for " .. tostring(gameVersion) end
   if type(save) ~= "table" then return nil, "expected a save table" end
-  if type(template) ~= "string" or #template < Gen2Save.SAVE_SIZE then
-    return nil, "this save has no cartridge image to write back into, and a "
-      .. "Gen 2 save built from nothing does not boot on real hardware"
+  local fresh = type(template) ~= "string"
+  if not fresh and #template < Gen2Save.SAVE_SIZE then
+    return nil, ("the cartridge image beside this save is %d bytes and a Gen 2 "
+      .. "save file is %d; it is truncated or is not a save file")
+      :format(#template, Gen2Save.SAVE_SIZE)
+  end
+  if fresh then
+    local built, why = Gen2Save.blankImage(gameVersion, save, data)
+    if not built then return nil, why end
+    template = built
   end
 
   local x = Gen2Save.crosswalks(data)
@@ -780,9 +881,13 @@ function Gen2Save.encode(save, gameVersion, template, data)
       :format(overflow[1], overflow[2], overflow[3])
   end
   if save.currentBox then putU8(t, L.wCurBox, (save.currentBox - 1) % 16) end
-  if save.boxNames and L.wBoxNames then
+  -- engine/menus/intro_menu.asm:148 SetDefaultBoxNames
+  if L.wBoxNames then
+    local names = save.boxNames or {}
     for i = 1, 14 do
-      putText(t, L.wBoxNames + (i - 1) * 9, save.boxNames[i] or "", 9)
+      local name = names[i]
+      if type(name) ~= "string" or name == "" then name = "BOX" .. i end
+      putText(t, L.wBoxNames + (i - 1) * 9, name, 9)
     end
   end
 
@@ -831,7 +936,8 @@ function Gen2Save.encode(save, gameVersion, template, data)
   -- the template's window untouched, byte for byte.
   local templateGroup = template:byte(L.wMapGroup + 1)
   local templateNumber = template:byte(L.wMapNumber + 1)
-  if t[L.wMapGroup] ~= templateGroup or t[L.wMapNumber] ~= templateNumber then
+  if fresh or t[L.wMapGroup] ~= templateGroup
+      or t[L.wMapNumber] ~= templateNumber then
     local Gen2MapContext = require("src.save_convert.Gen2MapContext")
     local ctx, why = Gen2MapContext.build(data, gameVersion,
       t[L.wMapGroup], t[L.wMapNumber], t[L.wXCoord], t[L.wYCoord])

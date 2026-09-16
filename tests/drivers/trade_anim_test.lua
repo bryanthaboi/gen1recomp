@@ -1,11 +1,12 @@
 -- Driver: NPC in-game trade cable animation (InternalClockTradeAnim).
 -- Vermilion Trade House: SPEAROW -> FARFETCH'D (DUX).
 --
---   SHOT_DIR=/tmp/trade_shots POKEPORT_DRIVER=tests/drivers/trade_anim_test.lua love .
+--   POKEPORT_SHOT_DIR=/tmp/trade_shots POKEPORT_DRIVER=tests/drivers/trade_anim_test.lua love .
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
-  local DIR = os.getenv("SHOT_DIR") or "/tmp/trade_shots"
+  local DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR")
+    or "/tmp/trade_shots"
   local Pokemon = require("src.pokemon.Pokemon")
   local TradeAnim = require("src.ui.TradeAnim")
   local TextBox = require("src.render.TextBox")
@@ -16,7 +17,14 @@ return function(game)
     return getmetatable(game.stack:top()) == cls
   end
 
-  game.save.party = { Pokemon.new(game.data, "SPEAROW", 10) }
+  game.save.options.colors = "ogred"
+  require("src.render.PaletteFX").setMode("ogred")
+
+  -- engine/movie/trade.asm:186 -- wNameBuffer holds the SPECIES, so a
+  -- nicknamed sender proves the dialog is not reading mon.nickname
+  local sent = Pokemon.new(game.data, "SPEAROW", 10)
+  sent.nickname = "CRINKLES"
+  game.save.party = { sent }
   U.teleport(game, "VERMILION_TRADE_HOUSE", 3, 6, "up")
   U.wait(5)
   U.shot(game, DIR .. "/trade_00_house.png")
@@ -48,7 +56,8 @@ return function(game)
   end
   local anim = game.stack:top()
   if getmetatable(anim) ~= TradeAnim then
-    U.log("FAIL: TradeAnim never appeared")
+    U.log("FAIL trade_anim_2278: TradeAnim never appeared")
+    love.event.quit(1)
     return
   end
   U.log("TradeAnim phase:", anim.phase)
@@ -65,8 +74,23 @@ return function(game)
     U.wait(1)
   end
 
-  -- hold mid show_player (scx settled, mon visible)
   ffUntil("show_player", 1)
+  -- engine/movie/trade.asm:245 -- rWX carries the info box in from the right
+  -- while hSCX carries the mon in from the left
+  while anim.phase == "show_player" and anim.sub == "slide" and anim.scx > 92 do
+    anim:update(1 / 60)
+  end
+  U.wait(1)
+  U.shot(game, DIR .. "/2278_01_box_enters_right.png")
+  U.log("box enter scx=", anim.scx, "sub=", anim.sub)
+
+  while anim.phase == "show_player" and anim.sub == "slide" and anim.scx > 60 do
+    anim:update(1 / 60)
+  end
+  U.wait(1)
+  U.shot(game, DIR .. "/2278_02_show_player_slide.png")
+  U.log("slide scx=", anim.scx)
+
   while anim.phase == "show_player" and (anim.sub ~= "hold" or anim.scx > 0) do
     anim:update(1 / 60)
   end
@@ -97,33 +121,36 @@ return function(game)
   U.wait(1)
   U.shot(game, DIR .. "/trade_06_transfer_lr.png")
 
+  -- engine/movie/trade.asm:602
+  anim.waitingText = true
+  anim.cableFlash = false
+  U.shot(game, DIR .. "/2278_07_bgp_normal.png")
+  anim.cableFlash = true
+  U.shot(game, DIR .. "/2278_07_bgp_flash.png")
+  anim.cableFlash = false
+  anim.waitingText = false
+
   ffUntil("went_to", 800)
-  for _ = 1, 600 do
-    if topIs(TextBox) then
-      local tb = game.stack:top()
-      if tb.done then break end
-      -- finish typewriter so both lines are visible
-      if tb.codes then tb.charIndex = #tb.codes end
-      if tb.pages and tb.pageIndex and tb.lineIndex then
-        local page = tb.pages[tb.pageIndex]
-        if page and tb.lineIndex < #page then
-          tb.lineIndex = #page
-          tb.shown = {}
-          for _, line in ipairs(page) do
-            local codes = require("src.render.Font").encode(line)
-            tb.shown[#tb.shown + 1] = codes
-          end
-          tb.charIndex = #(tb.shown[#tb.shown] or {})
-          tb.done = true
-        end
-      end
+  -- engine/movie/trade.asm:186 -- the dialog is TradeAnim's own box, not a
+  -- TextBox on the stack, and it draws whole (no typewriter)
+  for _ = 1, 400 do
+    if anim.phase == "went_to" and anim.sub == "text" and anim.dialogText then
       break
     end
     U.wait(1)
   end
-  U.wait(2)
-  U.shot(game, DIR .. "/trade_07_went_to.png")
-  U.log("went-to:", topIs(TextBox))
+  U.shot(game, DIR .. "/2278_09_went_to_species.png")
+  U.log("went-to text:", anim.dialogText and anim.dialogText:gsub("\n", " / "))
+
+  for _ = 1, 600 do
+    if anim.phase == "for_sends" and anim.sub == "sends_text"
+       and anim.dialogText then
+      break
+    end
+    U.wait(1)
+  end
+  U.shot(game, DIR .. "/2278_09_sends_species.png")
+  U.log("sends text:", anim.dialogText and anim.dialogText:gsub("\n", " / "))
 
   ffUntil("transfer_rl", 2500)
   for _ = 1, 16 do anim:update(1 / 60) end
@@ -131,6 +158,31 @@ return function(game)
   U.shot(game, DIR .. "/trade_08_transfer_rl.png")
 
   ffUntil("show_enemy", 800)
+  -- engine/movie/trade.asm:358
+  while anim.phase == "show_enemy" and anim.sub ~= "ball_rest" do
+    anim:update(1 / 60)
+  end
+  U.wait(1)
+  U.shot(game, DIR .. "/2278_10_ball_rest.png")
+  U.log("ball_rest sub=", anim.sub, "box=", anim.boxVisible,
+        "mon=", anim.monVisible, "t=", anim.t)
+
+  -- engine/movie/trade.asm:361 -- the ball holds 60 frames on the box before
+  -- the poof, so shoot the tail of the hold too
+  while anim.phase == "show_enemy" and anim.sub == "ball_rest" and anim.t < 50 do
+    anim:update(1 / 60)
+  end
+  U.wait(1)
+  U.shot(game, DIR .. "/2278_10_ball_rest_hold.png")
+  U.log("ball_rest hold sub=", anim.sub, "t=", anim.t,
+        "mon=", anim.monVisible)
+
+  while anim.phase == "show_enemy" and anim.sub == "ball_rest" do
+    anim:update(1 / 60)
+  end
+  U.wait(1)
+  U.shot(game, DIR .. "/2278_10_poof.png")
+
   while anim.phase == "show_enemy" and not anim.monVisible do
     anim:update(1 / 60)
   end
@@ -151,5 +203,7 @@ return function(game)
   local mon = game.save.party[1]
   U.log("party:", mon and mon.species, "nick:", mon and mon.nickname,
         "ot:", mon and mon.ot)
-  U.log("done")
+  local ok = mon ~= nil and mon.species == "FARFETCHD"
+  U.log(ok and "PASS trade_anim_2278" or "FAIL trade_anim_2278")
+  love.event.quit(ok and 0 or 1)
 end

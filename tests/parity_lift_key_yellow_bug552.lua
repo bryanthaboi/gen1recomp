@@ -135,6 +135,66 @@ do
   eq(save.objectToggles[MAP][BALL], true, "the ball is not re-toggled")
 end
 
+-- home/trainers.asm:341
+do
+  local GameVersion = require("src.core.GameVersion")
+  local prior = GameVersion.current
+  local game, ow, npc, save = newWorld(false)
+  local view = mapScripts.get(MAP)
+  check(type(view and view.onVictory) == "function",
+        "ROCKET_HIDEOUT_B4F declares an onVictory hook (#2277)")
+
+  save.defeatedTrainers[npc.id] = true
+  save.flags.EVENT_BEAT_ROCKET_HIDEOUT_4_TRAINER_2 = true
+
+  GameVersion.set("yellow")
+  if type(view and view.onVictory) == "function" then view.onVictory(game, ow) end
+  GameVersion.set(prior)
+
+  check(save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY == true,
+        "a sight battle sets EVENT_ROCKET_DROPPED_LIFT_KEY too")
+  eq(save.objectToggles[MAP] and save.objectToggles[MAP][BALL], true,
+     "and ShowObject reveals the ball with no conversation")
+  check(OverworldState.objectVisible(save, MAP, ballObj),
+        "the LIFT KEY ball is on the floor after the sight battle")
+end
+
+-- pokered/scripts/RocketHideoutB4F.asm:190
+do
+  local GameVersion = require("src.core.GameVersion")
+  local prior = GameVersion.current
+  local game, ow, npc, save = newWorld(false)
+  save.defeatedTrainers[npc.id] = true
+  save.flags.EVENT_BEAT_ROCKET_HIDEOUT_4_TRAINER_2 = true
+  local onVictory = mapScripts.get(MAP).onVictory
+  GameVersion.set("red")
+  if type(onVictory) == "function" then onVictory(game, ow) end
+  GameVersion.set(prior)
+  check(not save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY,
+        "Red/Blue do not gain the ball a conversation early")
+  check(not OverworldState.objectVisible(save, MAP, ballObj),
+        "the Red/Blue ball stays hidden until Rocket3's after-battle text")
+end
+
+-- pokered/scripts/RocketHideoutB4F.asm:193
+do
+  local game, ow, npc, save, pushed = newWorld(true)
+  save.flags.EVENT_BEAT_ROCKET_HIDEOUT_4_TRAINER_2 = true
+  local done = false
+  check(not save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY,
+        "the stuck save has the win but not the drop")
+  script(game, ow, npc, function() done = true end)
+  eq(ow.engagements, 0, "a beaten grunt does not re-engage")
+  eq(#pushed, 1, "he still says his after-battle line")
+  eq(pushed[1] and getmetatable(pushed[1]), TextBox, "in a text box")
+  if pushed[1] and pushed[1].onDone then pushed[1].onDone() end
+  check(done, "closing that box hands input back to the overworld")
+  check(save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY == true,
+        "and that talk sets EVENT_ROCKET_DROPPED_LIFT_KEY (#2277)")
+  check(OverworldState.objectVisible(save, MAP, ballObj),
+        "the ball a sight win swallowed is on the floor again")
+end
+
 -- ------------------------------------------ the ball itself, #105's half
 -- talkTo's item-ball branch is what turns the revealed object into a bag
 -- entry; without it the fix above only puts a sprite on the floor.  Same

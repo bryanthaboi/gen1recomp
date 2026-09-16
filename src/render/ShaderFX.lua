@@ -21,9 +21,28 @@ function ShaderFX.presetDir()
   return base .. sep .. "shaders"
 end
 
+local function realFullPath(rel, fallbackDir)
+  local fs = love and love.filesystem
+  local getReal = fs and fs.getRealDirectory
+  if getReal then
+    local ok, root = pcall(getReal, rel)
+    if ok and type(root) == "string" and root ~= "" then
+      local sep = package.config:sub(1, 1)
+      local path = (root:gsub("[/\\]+$", "")) .. sep .. rel
+      local f = io.open(path, "rb")
+      if f then
+        f:close()
+        return path
+      end
+    end
+  end
+  return fallbackDir .. rel:gsub("^shaders", "")
+end
+
 function ShaderFX.list()
   local dir = ShaderFX.presetDir()
   if not dir then return {} end
+  pcall(function() require("src.import.CacheFs").root() end)
   love.filesystem.createDirectory("shaders")
   local out = {}
   local function scan(relPath)
@@ -34,7 +53,7 @@ function ShaderFX.list()
       if info and info.type == "directory" then
         scan(rel)
       elseif name:match("%.slangp$") then
-        local entry = { name = name, relPath = rel, fullPath = dir .. rel:gsub("^shaders", "") }
+        local entry = { name = name, relPath = rel, fullPath = realFullPath(rel, dir) }
         entry.converted = ShaderFX.isConverted(entry)
         out[#out + 1] = entry
       end
@@ -216,24 +235,21 @@ local function extractClosure(mountRoot)
     end
   end
 
-  -- love.filesystem.write does not create intermediate directories.
-  local madeDirs = {}
-  local function ensureDir(destPath)
-    local dir = dirname(destPath)
-    if dir == "" or madeDirs[dir] then return end
-    madeDirs[dir] = true
-    love.filesystem.createDirectory(dir)
-  end
-
+  local CacheFs = require("src.import.CacheFs")
+  local savedPrefix = CacheFs.prefix
+  CacheFs.prefix = ""
   local copied = 0
-  for rel in pairs(closure) do
-    local destPath = "shaders/" .. rel:sub(#mountRoot + 2)
-    local bytes = love.filesystem.read(rel)
-    if bytes then
-      ensureDir(destPath)
-      if love.filesystem.write(destPath, bytes) then copied = copied + 1 end
+  local ok, err = pcall(function()
+    for rel in pairs(closure) do
+      local destPath = "shaders/" .. rel:sub(#mountRoot + 2)
+      local bytes = love.filesystem.read(rel)
+      if bytes then
+        if CacheFs.write(destPath, bytes) then copied = copied + 1 end
+      end
     end
-  end
+  end)
+  CacheFs.prefix = savedPrefix
+  if not ok then error(err, 0) end
   return copied
 end
 
@@ -412,6 +428,7 @@ local function ensureLib()
   if #tried > 0 then
     libError = libError .. "; looked in " .. table.concat(tried, ", ")
   end
+  ShaderFX.recordError("bridge", libError)
   return nil, libError
 end
 

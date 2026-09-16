@@ -187,6 +187,9 @@ public class GameActivity extends SDLActivity {
     private Object audioDeviceCallback = null;
     private boolean audioFocusHeld = false;
     private boolean audioDeviceCallbackPrimed = false;
+    private static final long AUDIO_FOCUS_RECOVERY_DELAY_MS = 2000;
+    private final Handler audioFocusHandler = new Handler(Looper.getMainLooper());
+    private Runnable audioFocusRecovery = null;
 
     /**
      * Native libraries required by an optional Android host extension.
@@ -2193,7 +2196,6 @@ public class GameActivity extends SDLActivity {
                 .build();
             audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(attributes)
-                .setWillPauseWhenDucked(true)
                 .setOnAudioFocusChangeListener(audioFocusListener)
                 .build();
         }
@@ -2202,6 +2204,8 @@ public class GameActivity extends SDLActivity {
     }
 
     private void abandonAudioFocus() {
+        cancelAudioFocusRecovery();
+
         if (!audioFocusHeld) {
             return;
         }
@@ -2231,15 +2235,18 @@ public class GameActivity extends SDLActivity {
                 case AudioManager.AUDIOFOCUS_LOSS:
                     audioFocusHeld = false;
                     nativeAudioFocusLost();
+                    scheduleAudioFocusRecovery();
                     break;
                 case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                     nativeAudioFocusLost();
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                     break;
                 case AudioManager.AUDIOFOCUS_GAIN:
                 case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT:
                 case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK:
                     audioFocusHeld = true;
+                    cancelAudioFocusRecovery();
                     nativeAudioFocusGained();
                     break;
                 default:
@@ -2248,6 +2255,33 @@ public class GameActivity extends SDLActivity {
         } catch (UnsatisfiedLinkError e) {
             Log.d("GameActivity", "audio focus change before liblove was ready", e);
         }
+    }
+
+    private void scheduleAudioFocusRecovery() {
+        cancelAudioFocusRecovery();
+        audioFocusRecovery = new Runnable() {
+            @Override
+            public void run() {
+                audioFocusRecovery = null;
+                if (audioFocusHeld) {
+                    return;
+                }
+                try {
+                    nativeAudioFocusGained();
+                } catch (UnsatisfiedLinkError e) {
+                    Log.d("GameActivity", "audio focus recovery before liblove was ready", e);
+                }
+            }
+        };
+        audioFocusHandler.postDelayed(audioFocusRecovery, AUDIO_FOCUS_RECOVERY_DELAY_MS);
+    }
+
+    private void cancelAudioFocusRecovery() {
+        if (audioFocusRecovery == null) {
+            return;
+        }
+        audioFocusHandler.removeCallbacks(audioFocusRecovery);
+        audioFocusRecovery = null;
     }
 
     private void registerAudioDeviceCallback() {

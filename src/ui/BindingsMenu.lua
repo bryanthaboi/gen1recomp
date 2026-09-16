@@ -56,11 +56,14 @@ local KEY_SHORT = {
 local PAD_SHORT = {
   dpup = "D-UP", dpdown = "D-DN", dpleft = "D-LT", dpright = "D-RT",
   leftshoulder = "LB", rightshoulder = "RB",
+  triggerleft = "L2", triggerright = "R2",
   leftstick = "LS", rightstick = "RS", guide = "GUIDE",
 }
 local function shortName(name, shorts)
   local s = shorts[name]
   if s then return s end
+  local n = name:match("^joy(%d+)$")
+  if n and #n > 2 then return "J" .. n end
   s = name:upper()
   return #s > 5 and s:sub(1, 5) or s
 end

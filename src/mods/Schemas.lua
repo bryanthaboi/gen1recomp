@@ -1416,6 +1416,7 @@ R.move_effects = {
   fields = {
     kind = f.enum{ "primary", "secondary", "full" },
     accuracyChecked = f.opt(f.bool),
+    missText = f.opt(f.enum{ "didntAffect", "butItFailed", "evadedAttack" }),
     run = f.opt(f.fn),
   },
   example = 'mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = fn })',

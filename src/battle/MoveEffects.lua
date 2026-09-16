@@ -210,11 +210,14 @@ MoveEffects.primary = {
 
   LEECH_SEED_EFFECT = function(battle, user, target)
     -- leech_seed.asm has no substitute check: seeding lands through one
+    -- engine/battle/move_effects/leech_seed.asm:28
     if target.leechSeeded then
-      return { romText(battle.data, "_ButItFailedText", "But, it failed!") }
+      return { romText(battle.data, "_EvadedAttackText", "%s\nevaded attack!", displayName(target)) }
     end
     for _, t in ipairs(target.curTypes) do
-      if t == "GRASS" then return { romText(battle.data, "_ButItFailedText", "But, it failed!") } end
+      if t == "GRASS" then
+        return { romText(battle.data, "_EvadedAttackText", "%s\nevaded attack!", displayName(target)) }
+      end
     end
     target.leechSeeded = true
     return { romText(battle.data, "_WasSeededText", "%s\nwas seeded!", displayName(target)) }
@@ -451,6 +454,20 @@ local ACC_CHECKED = {
   DEFENSE_DOWN2_EFFECT = true, SPEED_DOWN1_EFFECT = true,
   ACCURACY_DOWN1_EFFECT = true,
 }
+
+-- engine/battle/effects.asm:67, :159, move_effects/paralyze.asm:40
+-- engine/battle/effects.asm:1158, :1366, :712
+-- engine/battle/move_effects/leech_seed.asm:28
+local MISS_TEXT = {
+  SLEEP_EFFECT = "didntAffect", POISON_EFFECT = "didntAffect",
+  PARALYZE_EFFECT = "didntAffect",
+  CONFUSION_EFFECT = "butItFailed", DISABLE_EFFECT = "butItFailed",
+  ATTACK_DOWN1_EFFECT = "butItFailed", DEFENSE_DOWN1_EFFECT = "butItFailed",
+  DEFENSE_DOWN2_EFFECT = "butItFailed", SPEED_DOWN1_EFFECT = "butItFailed",
+  ACCURACY_DOWN1_EFFECT = "butItFailed",
+  LEECH_SEED_EFFECT = "evadedAttack",
+}
+MoveEffects.MISS_TEXT = MISS_TEXT
 
 -- fixed-damage moves (engine/battle/core.asm SpecialDamage); the move
 -- field wins, previously imported caches fall back to the id table
@@ -801,7 +818,8 @@ local RECORDS = {}
 MoveEffects.RECORDS = RECORDS
 for id, fn in pairs(MoveEffects.primary) do
   RECORDS[id] = { kind = "primary", run = shim(fn),
-                  accuracyChecked = ACC_CHECKED[id] or nil }
+                  accuracyChecked = ACC_CHECKED[id] or nil,
+                  missText = MISS_TEXT[id] or nil }
 end
 for id, fn in pairs(MoveEffects.secondary) do
   RECORDS[id] = { kind = "secondary", run = shim(fn) }

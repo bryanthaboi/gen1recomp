@@ -92,6 +92,7 @@ local function fixtureData()
     audio = {
       songs = {
         Music_PalletTown = chipSong(4),
+        Music_Other = chipSong(5),
         Music_Streamed = { file = "assets/song.ogg",
                            loopFile = "assets/song_loop.ogg" },
       },
@@ -230,6 +231,60 @@ check(newLoop ~= loop and not newLoop.playing,
       "its rebuilt loop body still waits its turn")
 check(not intro.playing, "the streamed source from the dead device was stopped")
 eq(Music.current(), "Music_Streamed", "and the song label is unchanged")
+
+Music.stop()
+clearSources()
+audioSuspend()
+check(not Music.playOnce(data, "Music_Other"),
+      "playOnce refuses to start a jingle on a suspended device")
+check(not Music.oneShotPlaying(),
+      "no wait is armed for a jingle that never started")
+check(not ChipAudio.awaitingFirstBuffer(),
+      "a suspended worker never claims to be awaiting its first buffer")
+ChipAudio.setSuspended(false)
+
+local CEILING = Music.ONE_SHOT_CEILING
+check(CEILING ~= nil, "Music bounds the one-shot wait")
+CEILING = CEILING or 600
+
+Music.playMap(data, "PALLET_TOWN", false, false)
+check(Music.playOnce(data, "Music_Other"), "playOnce starts a chip jingle")
+check(Music.oneShotPlaying(), "and arms the one-shot wait")
+local clearAwait = ChipAudio._simulateAwaitingFirstBufferForTest()
+check(clearAwait ~= nil, "the never-finishing jingle window is forced")
+for _ = 1, CEILING - 1 do Music.update(data) end
+check(Music.oneShotPlaying(), "the wait is never cut short before the ceiling")
+Music.update(data)
+check(not Music.oneShotPlaying(),
+      "a one-shot jingle that never sounds still releases its waiters")
+eq(Music.current(), "Music_PalletTown", "and the map theme came back")
+if clearAwait then clearAwait() end
+
+Music.playMap(data, "PALLET_TOWN", false, false)
+check(Music.playOnce(data, "Music_Other"), "playOnce starts the jingle again")
+ChipAudio.stopMusic()
+Music.update(data)
+check(not Music.oneShotPlaying(),
+      "a jingle that really ends restores on the very next frame")
+
+do
+  local ScriptRunner = require("src.script.ScriptRunner")
+  local game = { data = data, save = { flags = {}, inventory = {} } }
+  local runner = ScriptRunner.new(game, nil)
+  Music.playMap(data, "PALLET_TOWN", false, false)
+  runner:run({ { "play_once", "Music_Other" },
+               { "set_field", "healed", 1 } }, {})
+  local await = ChipAudio._simulateAwaitingFirstBufferForTest()
+  check(await ~= nil and runner:isRunning(),
+        "the script parks on the jingle while it can never finish")
+  for _ = 1, CEILING + 60 do
+    Music.update(data)
+    runner:update()
+  end
+  if await then await() end
+  check(not runner:isRunning() and game.save.healed == 1,
+        "the heal script advances past a jingle that never sounds (#2246)")
+end
 
 ChipAudio = freshChipAudio(false)
 Music.reload()

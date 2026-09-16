@@ -65,9 +65,12 @@ check(files["saves/gold/" .. tostring(slotId) .. ".lua"] ~= nil,
       "the slot file the launcher lists is on disk")
 
 local ok, res = SaveFileIO.exportActiveSlot("gold")
-eq(ok, false, "Export on a Gold slot is refused, not crashed")
-check(type(res) == "string" and res:find("no cartridge image", 1, true),
-      "the refusal names the missing cartridge image: " .. tostring(res))
+eq(ok, false, "Export on a cacheless Gold slot is refused, not crashed")
+check(type(res) == "string" and res:find("does not name one", 1, true),
+      "the refusal names the unresolved map: " .. tostring(res))
+check(type(res) == "string"
+      and not res:find("no cartridge image to write", 1, true),
+      "and not the old lineage refusal: " .. tostring(res))
 check(not tostring(res):find("GenSave", 1, true)
       and not tostring(res):find("attempt to index", 1, true),
       "no codec traceback leaks into the notice line")
@@ -75,7 +78,36 @@ local exported = false
 for path in pairs(files) do
   if path:find("^exports/") then exported = true end
 end
-eq(exported, false, "no export file is written for a Gold slot")
+eq(exported, false, "no export file is written when the map cannot be resolved")
+
+do
+  local Gen2Save = require("src.save_convert.Gen2Save")
+  local placed = GoldSave.newGame({ playerName = "BLAKE", rivalName = "SILVER" })
+  placed.position = { mapGroup = 24, mapNumber = 7, x = 3, y = 3 }
+  local data = { maps = { HOME = {
+    group = 24, map = 7, objectEventsAddr = 0x5CF0,
+    width = 4, height = 3,
+    blocks = { 4, 1, 3, 2, 5, 6, 5, 5, 5, 5, 7, 5 },
+    objects = {},
+  } } }
+  local bytes, why = Gen2Save.encode(placed, "gold", nil, data)
+  check(bytes ~= nil, "a fresh Gold slot exports -- " .. tostring(why))
+  if bytes then
+    eq(#bytes, 32768, "a full battery image")
+    eq(Gen2Save.checksumValid(bytes, Gen2Save.layoutFor("gold")), true,
+       "sealed the way the cartridge verifies it")
+    local L = Gen2Save.layoutFor("gold")
+    -- data/default_options.asm, engine/overworld/player_object.asm:411
+    eq(bytes:byte(L.sOptions + 1), 0x03, "sOptions carries DefaultOptions")
+    eq(bytes:byte(L.wPlayerStruct + 1), 0x01, "the player struct has a sprite")
+    eq(bytes:byte(L.wPlayerStruct + 4), 0x0B, "and SPRITEMOVEDATA_PLAYER")
+    eq(bytes:byte(L.wScreenSave + 1 + 7), 4,
+       "and the restored screen window holds the map's own blocks")
+    local back = Gen2Save.decode(bytes, "gold")
+    check(back ~= nil and back.player.name == "BLAKE",
+          "and the bytes decode back to the save they came from")
+  end
+end
 
 -- The import direction no longer matches the export one. Gold imports through
 -- Gen2Save now, so a 32 KB image aimed at Gold is decoded rather than turned

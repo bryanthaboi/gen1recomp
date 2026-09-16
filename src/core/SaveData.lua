@@ -1407,6 +1407,7 @@ local function deleteSlotIn(key, slotId)
   remove(fs, main)
   remove(fs, bak)
   remove(fs, tmp)
+  remove(fs, slotDir(key) .. "/" .. slotId .. ".cart")
 
   table.remove(reg.list, idx)
   if reg.names then reg.names[slotId] = nil end

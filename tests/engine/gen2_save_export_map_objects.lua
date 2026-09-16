@@ -50,6 +50,12 @@ local function fixtureData(group, number)
       FIX_HOUSE = {
         group = group, map = number,
         objectEventsAddr = 0x5A17,
+        width = 4, height = 3,
+        blocks = {
+          0x01, 0x02, 0x03, 0x04,
+          0x11, 0x12, 0x13, 0x14,
+          0x21, 0x22, 0x23, 0x24,
+        },
         objects = {
           {
             index = 1, spriteId = 0x2F, x = 3, y = 5, movement = 0x07,
@@ -106,7 +112,8 @@ for _, spec in ipairs({
     fixtureData(21, 15))
   T.check(bytes, spec.version .. " moved export succeeds: " .. tostring(err))
 
-  local slot1 = O.mapObjects + MAPOBJECT
+  -- home/map.asm:941 ReadObjectEvents (pokecrystal home/map.asm:572)
+  local slot1 = O.mapObjects + O.firstObjectSlot * MAPOBJECT
   local expected = {
     0xFF, 0x2F, 5 + 4, 3 + 4, 0x07,
     2 * 16 + 1, 0xFF, 20, 4 * 16 + 2, 0x00,
@@ -120,10 +127,26 @@ for _, spec in ipairs({
   -- An object with no event flag writes the -1 the game uses for "none".
   T.eq(u8(bytes, slot1 + MAPOBJECT + 12), 0xFF, spec.version .. ": no-flag object writes $FFFF")
   T.eq(u8(bytes, slot1 + MAPOBJECT + 13), 0xFF, spec.version .. ": no-flag object writes $FFFF hi")
-  -- The first empty slot carries ReadObjectEvents' 0 / -1 pattern.
   local empty = slot1 + 2 * MAPOBJECT
   T.eq(u8(bytes, empty), 0, spec.version .. ": empty slot struct id")
-  T.eq(u8(bytes, empty + 1), 0xFF, spec.version .. ": empty slot sprite")
+  T.eq(u8(bytes, empty + 1), 0, spec.version .. ": empty slot sprite")
+  T.eq(u8(bytes, empty + 2), 0xFF, spec.version .. ": empty slot y coord")
+  if O.firstObjectSlot > 1 then
+    T.eq(u8(bytes, O.mapObjects + MAPOBJECT + 1), 0,
+      spec.version .. ": the slot Gold and Silver skip stays empty")
+  end
+
+  local screen = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x02, 0x03, 0x04, 0x00, 0x00, 0x00,
+    0x12, 0x13, 0x14, 0x00, 0x00, 0x00,
+    0x22, 0x23, 0x24, 0x00, 0x00, 0x00,
+  }
+  for i, want in ipairs(screen) do
+    T.eq(u8(bytes, O.screenSave + i - 1), want,
+      ("%s: screen block %d"):format(spec.version, i))
+  end
 
   -- The player: map object coordinates re-anchored, sprite untouched.
   T.eq(u8(bytes, O.mapObjects + 2), 1 + 4, spec.version .. ": player map object y")
@@ -164,6 +187,107 @@ for _, spec in ipairs({
   refused, why = Gen2Save.encode(save(21, 15, 0, 0), spec.version, tpl, stale)
   T.check(refused == nil and why:find("re%-import the ROM"),
     spec.version .. ": stale cache refuses with the re-import hint: " .. tostring(why))
+
+  local noBlocks = fixtureData(21, 15)
+  noBlocks.maps.FIX_HOUSE.blocks = nil
+  refused, why = Gen2Save.encode(save(21, 15, 0, 0), spec.version, tpl, noBlocks)
+  T.check(refused == nil and why:find("no block data", 1, true),
+    spec.version .. ": a cache with no blocks refuses rather than exporting a "
+      .. "save that continues into an empty room: " .. tostring(why))
+end
+
+-- home/map.asm:1169, :1829
+local function connectedData()
+  local function neighbour(group, number, base)
+    local blocks = {}
+    for i = 1, 16 do blocks[i] = base + i end
+    return {
+      group = group, map = number, objectEventsAddr = 0x4000,
+      width = 4, height = 4, blocks = blocks, objects = {},
+    }
+  end
+  return {
+    pokemon = {}, moves = {}, items = {},
+    maps = {
+      FIX_TOWN = {
+        group = 30, map = 1, objectEventsAddr = 0x4A00,
+        width = 4, height = 4, objects = {},
+        blocks = {
+          0x11, 0x12, 0x13, 0x14,
+          0x21, 0x22, 0x23, 0x24,
+          0x31, 0x32, 0x33, 0x34,
+          0x41, 0x42, 0x43, 0x44,
+        },
+        connections = {
+          north = { group = 30, map = 2, mapId = "FIX_NORTH",
+                    stripLength = 4, width = 4, offset = 0 },
+          south = { group = 30, map = 3, mapId = "FIX_SOUTH",
+                    stripLength = 4, width = 4, offset = 0 },
+          west  = { group = 30, map = 4, mapId = "FIX_WEST",
+                    stripLength = 4, width = 4, offset = 0 },
+          east  = { group = 30, map = 5, mapId = "FIX_EAST",
+                    stripLength = 4, width = 4, offset = 0 },
+        },
+      },
+      FIX_NORTH = neighbour(30, 2, 0x50),
+      FIX_SOUTH = neighbour(30, 3, 0x60),
+      FIX_WEST = neighbour(30, 4, 0x70),
+      FIX_EAST = neighbour(30, 5, 0x80),
+    },
+  }
+end
+
+for _, spec in ipairs({
+  { version = "crystal", L = Gen2Layout.crystal, O = Gen2MapContext.OFFSETS.crystal },
+  { version = "gold", L = Gen2Layout.goldSilver, O = Gen2MapContext.OFFSETS.goldSilver },
+}) do
+  local L, O = spec.L, spec.O
+  local tpl = template(L, O, 21, 14)
+  local bytes, err = Gen2Save.encode(save(30, 1, 0, 0), spec.version, tpl,
+    connectedData())
+  T.check(bytes, spec.version .. " moved onto a connected map: " .. tostring(err))
+  if bytes then
+    local northWest = {
+      0x00, 0x00, 0x59, 0x5A, 0x5B, 0x5C,
+      0x00, 0x00, 0x5D, 0x5E, 0x5F, 0x60,
+      0x73, 0x74, 0x11, 0x12, 0x13, 0x14,
+      0x77, 0x78, 0x21, 0x22, 0x23, 0x24,
+      0x7B, 0x7C, 0x31, 0x32, 0x33, 0x34,
+    }
+    for i, want in ipairs(northWest) do
+      T.eq(u8(bytes, O.screenSave + i - 1), want,
+        ("%s: connected screen block %d"):format(spec.version, i))
+    end
+  end
+
+  bytes, err = Gen2Save.encode(save(30, 1, 7, 7), spec.version, tpl, connectedData())
+  T.check(bytes, spec.version .. " moved to the far corner: " .. tostring(err))
+  if bytes then
+    local southEast = {
+      0x22, 0x23, 0x24, 0x85, 0x86, 0x87,
+      0x32, 0x33, 0x34, 0x89, 0x8A, 0x8B,
+      0x42, 0x43, 0x44, 0x8D, 0x8E, 0x8F,
+      0x62, 0x63, 0x64, 0x00, 0x00, 0x00,
+      0x66, 0x67, 0x68, 0x00, 0x00, 0x00,
+    }
+    for i, want in ipairs(southEast) do
+      T.eq(u8(bytes, O.screenSave + i - 1), want,
+        ("%s: far-corner screen block %d"):format(spec.version, i))
+    end
+  end
+
+  -- engine/menus/intro_menu.asm:148
+  bytes = Gen2Save.encode(save(21, 15, 0, 0), spec.version, tpl, fixtureData(21, 15))
+  T.check(bytes, spec.version .. ": an export with no box names at all")
+  if bytes then
+    local box1 = { 0x81, 0x8E, 0x97, 0xF7, 0x50 }
+    for i, want in ipairs(box1) do
+      T.eq(u8(bytes, L.wBoxNames + i - 1), want,
+        ("%s: default box 1 name byte %d"):format(spec.version, i))
+    end
+    T.eq(u8(bytes, L.wBoxNames + 13 * 9 + 4), 0xFA,
+      spec.version .. ": and box 14 ends in a 4")
+  end
 end
 
 T.finish("gen2 save export map objects")

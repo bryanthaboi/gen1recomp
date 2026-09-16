@@ -99,6 +99,15 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     game.stack:push(Transition.whiteFlash(game, BAG_RETURN_WHITE))
   end
 
+  -- spending the turn: the battle learns which item, on whom, and which
+  -- move -- a link battle that allows items puts exactly that on the wire
+  -- (src/link/LinkItems.lua); a local one reads none of it
+  local function spent(messages, o)
+    o = o or {}
+    o.item, o.target, o.moveIndex = id, target, moveIndex
+    battle:itemUsed(messages, o)
+  end
+
   -- .useItem_closeMenu ends at CloseStartMenu, so the START menu kept open
   -- behind the bag comes down with it (start_sub_menus.asm:400-407) #1745
   local function closeBag()
@@ -306,7 +315,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
         { auto = { wait = false, delay = 0, promptFirst = true } })
     end
     showMessages(game, head, function()
-      showMessages(game, tail, function() battle:itemUsed({}) end)
+      showMessages(game, tail, function() spent({}) end)
     end, opts)
     return
   end
@@ -341,7 +350,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     if battle then
         list:close()
         showMessages(game, payload, function()
-            battle:itemUsed({})
+            spent({})
         end)
     else
         showMessages(game, payload, closePicker)
@@ -450,7 +459,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
           closePicker()
           if battle then
             list:close()
-            battle:itemUsed({}, { barShown = true })
+            spent({}, { barShown = true })
           end
         end)
       end)
@@ -459,7 +468,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     if battle then
       closePicker()
       list:close()
-      showUseMessages(game, payload, function() battle:itemUsed({}) end, extra)
+      showUseMessages(game, payload, function() spent({}) end, extra)
     else
       showUseMessages(game, payload, closePicker, extra)
     end

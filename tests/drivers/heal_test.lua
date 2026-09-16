@@ -85,6 +85,11 @@ return function(game)
   U.shot(game, DIR .. "/heal_08_end.png")
 
   -- -------- Mom (Reds House) --------
+  local SUSPEND = os.getenv("HEAL_SUSPEND")
+  if SUSPEND then
+    require("src.core.ChipAudio").setSuspended(true)
+    U.log("audio suspended before the Mom heal")
+  end
   require("src.script.Flags").set(game.save, "EVENT_GOT_STARTER")
   for _, m in ipairs(game.save.party) do
     m.hp = 1
@@ -102,7 +107,7 @@ return function(game)
   U.shot(game, DIR .. "/heal_mom_01_fade.png")
   local Music = require("src.core.Music")
   local sawJingle, jingleDoneFrame, fadeGone, greatFrame = false
-  for _ = 1, 600 do
+  for _ = 1, SUSPEND and 1200 or 600 do
     if Music.oneShotPlaying() then sawJingle = true end
     if sawJingle and not Music.oneShotPlaying() and not jingleDoneFrame then
       jingleDoneFrame = U.frame()
@@ -118,6 +123,9 @@ return function(game)
     U.wait(1)
   end
   U.shot(game, DIR .. "/heal_mom_02_great.png")
+  if SUSPEND then
+    U.shot(game, DIR .. "/2246_01_heal_completes_with_audio_suspended.png")
+  end
   U.log("mom saw_jingle:", sawJingle,
         "jingle_done_frame:", jingleDoneFrame,
         "fade_gone_frame:", fadeGone,
@@ -128,5 +136,7 @@ return function(game)
     return game.stack:top() == ow
   end)
   U.shot(game, DIR .. "/heal_mom_03_end.png")
+  U.log("2246 heal driver PASS:", greatFrame ~= nil)
+  love.event.quit(greatFrame and 0 or 1)
 end
 

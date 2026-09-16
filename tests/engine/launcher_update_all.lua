@@ -25,6 +25,16 @@ local FEED_CART = {
                      url = "https://example.invalid/wild_green.g1rcart" } },
 }
 
+local function feedAt(version)
+  local entry = {}
+  for k, v in pairs(FEED_CART) do entry[k] = v end
+  entry.version = version
+  entry.latest = { version = version, tag = "v" .. version,
+                   zip = { name = "wild_green-" .. version .. ".g1rcart",
+                           url = "https://example.invalid/wild_green.g1rcart" } }
+  return entry
+end
+
 local oldBeginFetch = ModUpdate.beginFetchReleases
 local oldBeginZip = ModUpdate.beginDownloadZip
 local oldPumpZip = ModUpdate.pumpDownloadZip
@@ -105,6 +115,9 @@ local function run(ri, frames)
   for _ = 1, frames or 40 do
     if not ri._updateAll then break end
     ri:_pumpUpdateAll()
+    if ri._updateAll and ri._updateAll.stage == "confirm" then
+      ri:_confirmUpdateAll()
+    end
     ri:_pumpModInstall()
     ri:_pumpCartInstall()
   end
@@ -138,8 +151,10 @@ do
     "a cart of the same id from another repo is never overwritten")
 
   cartRows = { { id = "wild_green", title = "Wild Green", version = "0.2.0" } }
-  eq(#launcher(nil, { FEED_CART }):_updateAllCartRows(), 0,
-    "nor one whose manifest names no repo at all")
+  local noRepo = launcher(nil, { FEED_CART }):_updateAllCartRows()
+  eq(#noRepo, 1,
+    "a manifest that names no repo matches by id, as the Find tab does")
+  eq((noRepo[1] or {}).to, "0.29.1", "and is offered the listed version")
 
   cartRows = installedCart("0.29.1", "ren/wild-green")
   eq(#launcher(nil, { FEED_CART }):_updateAllCartRows(), 0,
@@ -148,6 +163,131 @@ do
   cartRows = installedCart("1.0.0", "ren/wild-green")
   eq(#launcher(nil, { FEED_CART }):_updateAllCartRows(), 0,
     "and one ahead of it is never downgraded")
+  cartRows = {}
+end
+
+
+do
+  installs, cartInstalls = {}, {}
+  cartRows = installedCart("0.2.0", "someoneelse/wild-green")
+  local ri = launcher(nil, { FEED_CART })
+  ri.modUpdateInfo = {}
+  ri:pressUpdateAllMods()
+  ri._modInfoFetch = nil
+  run(ri)
+  eq(#cartInstalls, 0, "a cart from another repo is still never overwritten")
+  check(ri.modNotice.text ~= "Everything is up to date.",
+    "but the sweep no longer reports the skip as up to date")
+  eq(#(ri.modNotice.failures or {}), 1, "it names the cart it passed over")
+  check(tostring((ri.modNotice.failures or {})[1]):find(
+    "ren/wild-green", 1, true) ~= nil, "with the repo the feed lists it under")
+  cartRows = {}
+end
+
+
+do
+  installs, cartInstalls = {}, {}
+  cartRows = installedCart("0.29.1", "ren/wild-green")
+  local ri = launcher(nil, { FEED_CART })
+  ri.modUpdateInfo = {}
+  local refreshes = {}
+  ri._refreshFindSources = function(self)
+    self.findSources = { { feed = "https://example.invalid/index.json" } }
+  end
+  ri._refreshFind = function(self, force, opts)
+    refreshes[#refreshes + 1] = { force = force, quiet = opts and opts.quiet }
+    self._findFetch = {}
+  end
+  check(ri:pressUpdateAllMods(), "the press starts the queue")
+  ri._modInfoFetch = nil
+  ri:_pumpUpdateAll()
+  eq(#refreshes, 1, "the sweep fetches the cart feed itself")
+  eq((refreshes[1] or {}).force, true,
+    "forced, not served from the day-old cache")
+  eq((refreshes[1] or {}).quiet, true,
+    "and quiet, since the sweep owns the overlay")
+  eq((ri._updateAll or {}).stage, "check", "the queue waits for that fetch")
+  eq(#cartInstalls, 0, "installing nothing against the cached listing")
+
+  ri._findFetch = nil
+  ri.findIndex = { mods = {}, carts = { feedAt("0.30.0") } }
+  run(ri)
+  eq(#refreshes, 1, "one forced fetch per sweep, never one per row")
+  eq(#cartInstalls, 1, "the release the fresh feed lists is installed")
+  eq(ri.findNotice, nil, "with no FIND notice left behind")
+  eq(ri.modNotice.text, "Updated 1 items.", "and the run is reported")
+  cartRows = {}
+end
+
+
+do
+  cartInstalls = {}
+  cartRows = { { id = "wild_green", title = "Wild Green", version = "0.2.0",
+                 cart = { id = "wild_green", version = "0.2.0" } } }
+  local function sweep()
+    local ri = launcher(nil, { feedAt("0.2.0") })
+    ri.modUpdateInfo = {}
+    ri._refreshFindSources = function(self)
+      self.findSources = { { feed = "https://example.invalid/index.json" } }
+    end
+    ri._refreshFind = function(self) self._findFetch = {} end
+    ri:pressUpdateAllMods()
+    ri._modInfoFetch = nil
+    ri:_pumpUpdateAll()
+    ri._findFetch = nil
+    ri.findIndex = { mods = {}, carts = { feedAt("0.29.1") } }
+    for _ = 1, 40 do
+      if not ri._updateAll or ri._updateAll.stage == "confirm" then break end
+      ri:_pumpUpdateAll(); ri:_pumpModInstall(); ri:_pumpCartInstall()
+    end
+    return ri
+  end
+
+  local ri = sweep()
+  eq((ri._updateAll or {}).stage, "confirm",
+    "a launcher-authored cart the fresh feed lists ahead is asked about first")
+  eq(#cartInstalls, 0, "and nothing is installed before the answer")
+  eq((ri._modConfirm or {}).kind, "updateAllRun", "the dialog is on screen")
+  eq(((ri._modConfirm or {}).lines or {})[1], "Update 1 items?",
+    "built from the fresh feed, not the cached one")
+  eq(((ri._modConfirm or {}).lines or {})[2], "Wild Green",
+    "naming the cart that would be replaced")
+  eq(ri._busy, nil, "with the overlay down")
+  ri._modConfirm = nil
+  run(ri)
+  eq(ri._updateAll, nil, "declining ends the sweep")
+  eq(#cartInstalls, 0, "with the cart left alone")
+  eq(ri.modNotice, nil, "and no notice for a run that never started")
+
+  ri = sweep()
+  check(ri:_confirmUpdateAll(), "accepting the dialog")
+  run(ri)
+  eq(#cartInstalls, 1, "installs the listed release")
+  eq(ri.modNotice.text, "Updated 1 items.", "and reports it")
+  cartRows = {}
+end
+
+
+do
+  cartInstalls = {}
+  cartRows = installedCart("0.2.0", "ren/wild-green")
+  local ri = launcher(nil, { FEED_CART })
+  ri.modUpdateInfo = {}
+  ri._refreshFindSources = function(self)
+    self.findSources = { { feed = "https://example.invalid/index.json" } }
+  end
+  ri._refreshFind = function(self) self._findFetch = {} end
+  ri:pressUpdateAllMods()
+  ri._modInfoFetch = nil
+  ri:_pumpUpdateAll()
+  check(ri._findFetch ~= nil, "the feed fetch is in flight")
+  check(type(ri._busy.cancel) == "function", "behind a cancellable overlay")
+  ri:_cancelUpdateAll()
+  eq(ri._updateAll, nil, "cancelling there ends the sweep on the spot")
+  eq(#cartInstalls, 0, "with nothing installed")
+  check(ri._findFetch ~= nil, "and the fetch left to finish on its own")
+  check(ri.modNotice.text:find("Stopped after updating", 1, true) ~= nil,
+    "and says how far it got")
   cartRows = {}
 end
 
@@ -229,8 +369,18 @@ do
   ri._modInfoFetch = nil
   ri:_pumpUpdateAll()
   eq(ri._updateAll.total, 2, "then queues every outdated mod")
-
+  eq(ri._updateAll.stage, "confirm", "and stops to ask before installing")
+  eq(ri._busy, nil, "with the overlay down so the dialog can be answered")
+  eq((ri._modConfirm or {}).kind, "updateAllRun", "the dialog is up")
+  eq(((ri._modConfirm or {}).lines or {})[1], "Update 2 items?",
+    "counting the rows built after the release checks")
+  eq(((ri._modConfirm or {}).lines or {})[2], "One", "and naming them")
   ri:_pumpUpdateAll()
+  eq(ri._updateAll.index, 0, "no row starts while the dialog waits")
+
+  check(ri:_confirmUpdateAll(), "accepting the dialog")
+  eq(ri._modConfirm, nil, "takes it down")
+  check(ri._busy ~= nil, "and puts the overlay back")
   eq(ri._updateAll.index, 1, "one row is started")
   ri:_pumpUpdateAll()
   eq(ri._updateAll.index, 1, "and the next waits for it, not for the frame")
@@ -277,8 +427,11 @@ end
 do
   Platform.canFetchRemote = function() return false end
   local ri = launcher("available")
+  local refreshed = false
+  ri._refreshFind = function() refreshed = true end
   check(ri:pressUpdateAllMods() == false, "no remote fetch, no queue")
   eq(ri._updateAll, nil, "nothing is started")
+  eq(refreshed, false, "and the cart feed is not fetched either")
   check(ri.modNotice and not ri.modNotice.ok, "and the refusal is on screen")
   Platform.canFetchRemote = function() return true end
 end
@@ -290,7 +443,7 @@ do
   ri:pressUpdateAllMods()
   ri._modInfoFetch = nil
   ri:_pumpUpdateAll()
-  ri:_pumpUpdateAll()
+  ri:_confirmUpdateAll()
   ri:_pumpModInstall()
   eq(#installs, 1, "one row is through")
   ri:_cancelUpdateAll()
@@ -308,7 +461,7 @@ do
   ri:pressUpdateAllMods()
   ri._modInfoFetch = nil
   ri:_pumpUpdateAll()
-  ri:_pumpUpdateAll()
+  ri:_confirmUpdateAll()
   check(ri._modInstall ~= nil, "a row is downloading")
   ri:_cancelUpdateAll()
   check(ri._busy ~= nil,

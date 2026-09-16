@@ -38,8 +38,10 @@ local ROW_A, ROW_SPEED_DOWN, ROW_SPEED_UP = 5, 9, 10
 Input:init()
 eq(Input:padAction("rightshoulder"), "speedUp", "R1 speeds up by default")
 eq(Input:padAction("leftshoulder"), "speedDown", "L1 slows down by default")
-eq(Input:padAction("righttrigger"), "speedUp", "R2 alongside it")
-eq(Input:padAction("lefttrigger"), "speedDown", "L2 alongside it")
+eq(Input:padAction("triggerright"), "speedUp", "R2 alongside it")
+eq(Input:padAction("triggerleft"), "speedDown", "L2 alongside it")
+eq(Input:padAction("righttrigger"), nil,
+   "under the axis spelling LOVE actually emits, not the reversed one")
 eq(Input:padAction("a"), nil, "a face button is not a pad action")
 check(Input.padBindings["rightshoulder"] == nil,
       "a pad action never enters the Game Boy button map")
@@ -55,7 +57,7 @@ eq(held, 0, "pressing R1 presses no Game Boy button")
 Input:applyBindings({ speedUp = { pad = "y" } })
 eq(Input:padAction("y"), "speedUp", "the overlay moves SPEED + to Y")
 eq(Input:padAction("rightshoulder"), nil, "and leaves R1 inert")
-eq(Input:padAction("righttrigger"), nil, "including its trigger alias")
+eq(Input:padAction("triggerright"), nil, "including its trigger alias")
 eq(Input:padAction("leftshoulder"), "speedDown", "SPEED - keeps its default")
 check(Input.padBindings["y"] == nil,
       "the moved action does not press a Game Boy button either")
@@ -64,7 +66,7 @@ check(Input.padBindings["y"] == nil,
 Input:applyBindings({ speedUp = false, speedDown = false, a = { pad = "y" } })
 eq(Input:padAction("rightshoulder"), nil, "unbound: R1 does nothing")
 eq(Input:padAction("leftshoulder"), nil, "unbound: L1 does nothing")
-eq(Input:padAction("righttrigger"), nil, "unbound: R2 does nothing")
+eq(Input:padAction("triggerright"), nil, "unbound: R2 does nothing")
 eq(Input.padBindings["y"], "a", "a GB rebind in the same overlay still lands")
 Input:init()
 
@@ -132,6 +134,47 @@ local fresh = BindingsMenu.new(game)
 eq(fresh.items[ROW_SPEED_UP].right, "RB", "a cleared overlay restores SPEED +")
 Input:applyBindings(nil)
 eq(Input:padAction("rightshoulder"), "speedUp", "and the live map with it")
+
+
+local Game = require("src.core.Game")
+Input:init()
+local tgame = newGame()
+local tbm = BindingsMenu.new(tgame)
+tgame.stack:push(tbm)
+
+tbm.index = ROW_SPEED_UP
+press(tbm, "a")
+eq(tbm.capture, tbm.items[ROW_SPEED_UP], "A arms the SPEED + row")
+Game.gamepadaxis(tgame, nil, "triggerright", 1.0)
+check(tbm.capture ~= nil, "the trigger press alone does not commit")
+Game.gamepadaxis(tgame, nil, "triggerright", 0.0)
+eq(tgame.save.options.bindings.speedUp.pad, "triggerright",
+   "the release stores R2 in the same free-form pad slot joyN uses")
+eq(tbm.items[ROW_SPEED_UP].right, "R2", "and the row reads R2")
+
+tbm.index = ROW_A
+press(tbm, "a")
+Game.gamepadaxis(tgame, nil, "triggerleft", 1.0)
+Game.gamepadaxis(tgame, nil, "triggerleft", 0.0)
+eq(tgame.save.options.bindings.a.pad, "triggerleft", "GB A can take L2 too")
+tbm:commitBindings()
+eq(Input.padBindings["triggerleft"], "a", "applied: L2 is Game Boy A")
+eq(Input:padAction("triggerright"), "speedUp", "and R2 is SPEED +")
+Input:init()
+
+
+Input:applyBindings({ speedUp = { pad = "joy12" } })
+eq(Input:joyAction(12), "speedUp", "joy12 resolves to the action")
+eq(Input:joyAction(1), nil, "and the truncated index does not")
+local rawGame = newGame()
+rawGame.save.options.bindings =
+  { speedUp = { pad = "joy12" }, speedDown = { pad = "joy104" } }
+local rawBm = BindingsMenu.new(rawGame)
+eq(rawBm.items[ROW_SPEED_UP].right, "JOY12",
+   "the CONTROLS row tells JOY12 apart from JOY1")
+eq(rawBm.items[ROW_SPEED_DOWN].right, "J104",
+   "and a three-digit index no longer truncates into another button's name")
+Input:init()
 
 
 local SaveData = require("src.core.SaveData")

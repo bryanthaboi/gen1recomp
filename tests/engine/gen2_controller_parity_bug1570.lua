@@ -102,4 +102,29 @@ gold:joystickremoved(rawJoy)
 Input:step()
 check(not Input:isDown("a"), "joystickremoved drops stranded holds in Gold")
 
+Input:init()
+local dirs = {}
+gold = newGold(nil)
+gold._cycleSpeed = function(_, dir) dirs[#dirs + 1] = dir end
+gold:gamepadaxis(gamepadJoy, "triggerright", 1.0)
+eq(dirs[#dirs], 1, "R2 speeds up in Gold")
+gold:gamepadaxis(gamepadJoy, "triggerright", 1.0)
+eq(#dirs, 1, "on the crossing only")
+gold:gamepadaxis(gamepadJoy, "triggerleft", 1.0)
+eq(dirs[#dirs], -1, "L2 slows down in Gold")
+
+Input:applyBindings({ speedUp = { pad = "joy12" } })
+gold:joystickpressed(rawJoy, 12)
+eq(dirs[#dirs], 1, "a raw-stick SPEED + binding fires in Gold")
+eq(#dirs, 3, "once")
+Input:step()
+check(not Input:wasPressed("a"), "without also pressing a Game Boy button")
+
+Input:init()
+captured = {}
+gold = newGold(capturingTop)
+gold:gamepadaxis(gamepadJoy, "triggerleft", 1.0)
+eq(captured.pad, "triggerleft", "an armed CONTROLS row captures L2 in Gold")
+Input:init()
+
 T.finish()

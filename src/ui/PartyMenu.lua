@@ -210,7 +210,8 @@ end
 -- selection cursor of their own: Trade_AnimCircledMon
 -- (engine/movie/trade.asm) cycles the party sprite's two frames the whole
 -- time the mon rides the link cable (#750).
-function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt)
+-- `obp` overrides the OBP0 bake: engine/movie/trade.asm:385
+function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt, obp)
   local icons = game.data.icons
   if not icons then return end
   local def = game.data.pokemon[mon.species]
@@ -254,7 +255,11 @@ function PartyMenu.drawIcon(game, mon, x, y, selected, counter, forceAlt)
   local PaletteFX = require("src.render.PaletteFX")
   local ogColors, ogGroup
   if baked and PaletteFX.usesSpriteObp() then
-    ogColors, ogGroup = PaletteFX.ogObjNormal()
+    if obp then
+      ogColors, ogGroup = obp[1], obp[2]
+    else
+      ogColors, ogGroup = PaletteFX.ogObjNormal()
+    end
   end
   local key = baked and (path .. "#obp" .. (ogGroup or "")) or path
   if iconImages[key] == nil then

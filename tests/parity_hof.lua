@@ -150,9 +150,10 @@ check(guard > expected, "credits pages were not skippable by holding A")
 
 -- the autosave (SaveGameData while THE END is up)
 check(wrote, "autosave ran during THE END")
-local savedRaw = love.filesystem.read("save.lua")
-local saved = savedRaw and SaveData.decode(savedRaw) or nil
-check(saved ~= nil, "save.lua written and decodable")
+-- Read it back the way it was written: once a slot is registered, SaveData.save
+-- targets saves/<version>/<slot>.lua, not the pre-slots flat file.
+local saved = SaveData.load(game2.save.version)
+check(saved ~= nil, "the autosave is written and decodable")
 eq(saved and saved.lastHeal and saved.lastHeal.map, "PALLET_TOWN",
    "wLastBlackoutMap := PALLET_TOWN before the save")
 -- #103 parked CONTINUE in the upstairs bedroom; #253 corrected that to the

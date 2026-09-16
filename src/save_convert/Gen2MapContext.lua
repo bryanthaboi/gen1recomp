@@ -29,14 +29,12 @@
 --   * wObjectMasks is zeroed and wObjectFollow_Leader/Follower reset to -1;
 --   * wCurMapObjectEventCount and wCurMapObjectEventsPointer are set to the
 --     new map's count and its object list's ROM address, which is what a
---     later ReloadMapEvents reads.
---
--- The player keeps the template's own struct and map object, standing and
--- idle exactly as an in-game SAVE leaves them, with only the four map
--- coordinate bytes re-anchored to the new position.
---
--- Offsets are .sav file offsets. The anchor is the same one
--- tools/gen2_sram_offsets.py uses (wMoney against Gen2Layout), and every
+--     later ReloadMapEvents reads;
+--     (home/map.asm:1829) copies back OVER the block grid on CONTINUE, so it
+--     FillMapConnections (home/map.asm:1169) lays around them.
+-- The player's map object and struct stay as the image already carries them
+-- (the template's on an imported save, Gen2Save.blankImage's on one begun in
+-- this port), standing and idle exactly as an in-game SAVE leaves them, with
 -- value below was summed from the pret .sym files and cross-checked against
 -- Gen2Layout's own rows: pokecrystal wMapGroup $DCB5 lands at 0x2843 and
 -- pokegold's at 0x2868, which are the numbers Gen2Layout already ships.
@@ -65,6 +63,11 @@ local STRUCT_MAP_Y = 17
 local STRUCT_LAST_MAP_X = 18
 local STRUCT_LAST_MAP_Y = 19
 
+-- constants/gfx_constants.asm:6
+local SCREEN_META_WIDTH = 6
+local SCREEN_META_HEIGHT = 5
+local MAP_PADDING = 6
+
 Gen2MapContext.OFFSETS = {
   goldSilver = {
     objectFollow = 0x205C,       -- wObjectFollow_Leader, then _Follower
@@ -73,6 +76,8 @@ Gen2MapContext.OFFSETS = {
     objectMasks = 0x23AD,        -- wObjectMasks
     objectEventCount = 0x27B6,   -- wCurMapObjectEventCount
     objectEventsPointer = 0x27B7,
+    firstObjectSlot = 2,         -- home/map.asm:941 wMap2Object
+    screenSave = 0x286C,
   },
   crystal = {
     objectFollow = 0x205B,
@@ -81,6 +86,8 @@ Gen2MapContext.OFFSETS = {
     objectMasks = 0x23AC,
     objectEventCount = 0x2792,
     objectEventsPointer = 0x2793,
+    firstObjectSlot = 1,         -- pokecrystal home/map.asm:572 wMap1Object
+    screenSave = 0x2847,
   },
 }
 
@@ -136,6 +143,104 @@ local function mapObjectSlot(obj)
   }
 end
 
+-- home/map.asm:1169
+local CONNECTION_ORDER = { "north", "south", "west", "east" }
+
+local function neighbourDef(data, conn)
+  local maps = (data and data.maps) or {}
+  local def = conn.mapId and maps[conn.mapId]
+  if type(def) == "table" then return def end
+  local _, byIds = findMap(data, conn.group, conn.map)
+  return byIds
+end
+
+-- data/maps/attributes.asm:23
+local function connectionRect(dir, conn, w, h)
+  local length = math.floor(tonumber(conn.stripLength) or 0)
+  if length <= 0 then return nil end
+  local src, tgt = 0, math.floor(tonumber(conn.offset) or 0) + 3
+  if tgt < 0 then src, tgt = -tgt, 0 end
+  if dir == "north" then
+    return { row = 0, col = tgt, rows = 3, cols = length, src = src }
+  elseif dir == "south" then
+    return { row = h + 3, col = tgt, rows = 3, cols = length, src = src }
+  elseif dir == "west" then
+    return { row = tgt, col = 0, rows = length, cols = 3, src = src }
+  elseif dir == "east" then
+    return { row = tgt, col = w + 3, rows = length, cols = 3, src = src }
+  end
+  return nil
+end
+
+-- data/maps/attributes.asm:23 connection, the `dw \2_Blocks + _blk` half.
+local function connectionSource(dir, rect, nw, nh)
+  if dir == "north" then return nw * (nh - 3) + rect.src end
+  if dir == "south" then return rect.src end
+  if dir == "west" then return nw * rect.src + nw - 3 end
+  return nw * rect.src
+end
+
+-- home/map.asm:1829, :1065
+local function screenWindow(data, def, x, y)
+  local blocks, w, h = def.blocks, tonumber(def.width), tonumber(def.height)
+  if type(blocks) ~= "table" or not w or not h then
+    return nil, "map cache has no block data (re-import the ROM)"
+  end
+  local stride = w + MAP_PADDING
+
+  local fill, unknown = {}, {}
+  for _, dir in ipairs(CONNECTION_ORDER) do
+    local conn = (def.connections or {})[dir]
+    local rect = conn and connectionRect(dir, conn, w, h)
+    if rect then
+      local nb = neighbourDef(data, conn)
+      local nw = nb and tonumber(nb.width)
+      local nh = nb and tonumber(nb.height)
+      if type(nb) ~= "table" or type(nb.blocks) ~= "table" or not nw or not nh then
+        unknown[#unknown + 1] = { rect = rect, id = conn.mapId or dir }
+      else
+        local base = connectionSource(dir, rect, nw, nh)
+        for r = 0, rect.rows - 1 do
+          for c = 0, rect.cols - 1 do
+            local row, col = rect.row + r, rect.col + c
+            if row >= 0 and col >= 0 and col < stride then
+              fill[row * stride + col] = nb.blocks[base + r * nw + c + 1] or 0
+            end
+          end
+        end
+      end
+    end
+  end
+
+  local anchor = (math.floor(y / 2) + 1) * stride + math.floor(x / 2) + 1
+  local out = {}
+  for r = 0, SCREEN_META_HEIGHT - 1 do
+    for c = 0, SCREEN_META_WIDTH - 1 do
+      local at = anchor + r * stride + c
+      local row = math.floor(at / stride) - 3
+      local col = at % stride - 3
+      local block
+      if row >= 0 and row < h and col >= 0 and col < w then
+        block = blocks[row * w + col + 1] or 0
+      else
+        block = fill[at]
+      end
+      if not block then
+        for _, miss in ipairs(unknown) do
+          local rr, cc = row + 3 - miss.rect.row, col + 3 - miss.rect.col
+          if rr >= 0 and rr < miss.rect.rows and cc >= 0 and cc < miss.rect.cols then
+            return nil, ("map cache has no block data for the connected map %s "
+              .. "(re-import the ROM)"):format(tostring(miss.id))
+          end
+        end
+        block = 0
+      end
+      out[#out + 1] = u8(block)
+    end
+  end
+  return out
+end
+
 -- build(data, gameVersion, group, number, x, y) -> ctx, err
 --
 -- ctx.writes  [.sav offset] = array of bytes
@@ -151,9 +256,10 @@ function Gen2MapContext.build(data, gameVersion, group, number, x, y)
     return nil, ("unknown map %d/%d"):format(tonumber(group) or -1, tonumber(number) or -1)
   end
   local objects = def.objects or {}
-  if #objects > NUM_OBJECTS - 1 then
+  local first = O.firstObjectSlot
+  if #objects > NUM_OBJECTS - first then
     return nil, ("%s declares %d objects and a save holds %d")
-      :format(tostring(id), #objects, NUM_OBJECTS - 1)
+      :format(tostring(id), #objects, NUM_OBJECTS - first)
   end
   if type(def.objectEventsAddr) ~= "number" then
     return nil, "map cache has no object-table address (re-import the ROM)"
@@ -162,16 +268,20 @@ function Gen2MapContext.build(data, gameVersion, group, number, x, y)
 
   local writes = {}
 
-  -- The NPC map objects, then the empty pattern ReadObjectEvents pads with.
+  -- home/map.asm:937 ReadObjectEvents (pokecrystal home/map.asm:568)
   local slots = {}
+  for _ = 2, first do
+    for _ = 1, MAPOBJECT_LENGTH do slots[#slots + 1] = 0 end
+  end
   for _, obj in ipairs(objects) do
     local slot = mapObjectSlot(obj)
     for i = 1, MAPOBJECT_LENGTH do slots[#slots + 1] = slot[i] end
   end
-  for _ = #objects + 1, NUM_OBJECTS - 1 do
+  for _ = #objects + first, NUM_OBJECTS - 1 do
+    slots[#slots + 1] = 0
     slots[#slots + 1] = 0
     slots[#slots + 1] = 0xFF
-    for _ = 3, MAPOBJECT_LENGTH do slots[#slots + 1] = 0 end
+    for _ = 4, MAPOBJECT_LENGTH do slots[#slots + 1] = 0 end
   end
   writes[O.mapObjects + MAPOBJECT_LENGTH] = slots
 
@@ -205,6 +315,10 @@ function Gen2MapContext.build(data, gameVersion, group, number, x, y)
     def.objectEventsAddr % 256,
     math.floor(def.objectEventsAddr / 256) % 256,
   }
+
+  local screen, why = screenWindow(data, def, x, y)
+  if not screen then return nil, why end
+  writes[O.screenSave] = screen
 
   return { writes = writes, mapId = id }
 end

@@ -53,6 +53,7 @@ function ShaderFXScreen.new(game, slot)
   slot = slot or "main"
   local optKey = ShaderFX.OPTION_KEY[slot]
   local title = (slot == "secondary") and "SHADER FX 2" or "SHADER FX"
+  ShaderFX.clearBridgeQuarantine()
   local canConvert = ShaderFX.canConvert()
   local items, selected = buildItems(ShaderFX.activeEntry(slot), canConvert)
 
@@ -126,6 +127,7 @@ function ShaderFXScreen.new(game, slot)
       if not ok then
         require("src.core.Logger").error("ShaderFXScreen: convert failed for %s: %s",
           item.entry.name, tostring(err))
+        ShaderFX.recordError(item.entry.name, err)
       end
       applyRowState(item, canConvert)
       if not ok then item.right = Strings("FAILED") end
@@ -145,6 +147,7 @@ function ShaderFXScreen.new(game, slot)
         if not convOk then
           require("src.core.Logger").error("ShaderFXScreen: reconvert failed for %s: %s",
             item.entry.name, tostring(convErr))
+          ShaderFX.recordError(item.entry.name, convErr)
         end
       end
       local overrides = opts and opts.shaderfxParams and opts.shaderfxParams[item.entry.name]

@@ -5,10 +5,25 @@
 -- (ComeAgainText path) to prove nothing is taken on cancel.
 return function(game)
   local U = dofile("tests/drivers/util.lua")
-  local DIR = os.getenv("SHOT_DIR") or "/tmp/shots"
+  local DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR")
+    or "/tmp/shots"
   local Menu = require("src.ui.Menu")
+  local TextBox = require("src.render.TextBox")
   local ChoiceBox = require("src.ui.ChoiceBox")
   local Bag = require("src.inventory.Bag")
+
+  local failures = 0
+  local function ok(cond, what)
+    if not cond then failures = failures + 1 end
+    U.log((cond and "PASS " or "FAIL ") .. what)
+    return cond
+  end
+  local function inStack(cls)
+    for _, s in ipairs(game.stack.states) do
+      if getmetatable(s) == cls then return true end
+    end
+    return false
+  end
 
   Bag.add(game.save, "DOME_FOSSIL", 1)
   Bag.add(game.save, "OLD_AMBER", 1)
@@ -42,15 +57,27 @@ return function(game)
   U.tap(game, "a")
   U.wait(20)
   U.shot(game, DIR .. "/fossil_1_intro.png")
-  U.log("menu reached:", mash("a", function() return topIs(Menu) end))
+  ok(mash("a", function() return topIs(Menu) end), "the fossil menu opens")
+  -- box still on screen under the menu (engine/events/cinnabar_lab.asm:22-24)
+  local under = game.stack.states[#game.stack.states - 1]
+  ok(getmetatable(under) == TextBox,
+     "the intro dialogue box is still on the stack under the menu")
   U.shot(game, DIR .. "/fossil_2_menu.png")
+  U.shot(game, DIR .. "/2281_01_menu_over_textbox.png")
   U.tap(game, "a") -- choose the first entry (DOME FOSSIL)
-  U.log("confirm reached:", mash("a", function() return topIs(ChoiceBox) end))
+  -- prints under it (engine/events/cinnabar_lab.asm:55-67)
+  U.wait(90)
+  ok(inStack(Menu), "the menu is still up after a fossil is picked")
+  ok(topIs(TextBox), "with SeesFossilText printing over it")
+  U.shot(game, DIR .. "/2281_02_after_select_menu_stays.png")
+  ok(mash("a", function() return topIs(ChoiceBox) end), "the YES/NO confirm opens")
+  ok(inStack(Menu), "and the menu border is still up at the confirm")
   U.shot(game, DIR .. "/fossil_3_confirm.png")
   U.tap(game, "a") -- YES
-  U.log("deposit texts done:", mash("a", function()
-    return game.stack:top() == ow
-  end))
+  -- both boxes go only at CloseTextDisplay (home/text_script.asm:105-130)
+  ok(mash("a", function() return game.stack:top() == ow end),
+     "the deposit texts end back on the overworld with both boxes popped")
+  ok(#game.stack.states == 1, "and nothing is left on the stack over it")
   U.shot(game, DIR .. "/fossil_4_done.png")
   U.log("GAVE_FOSSIL_TO_LAB:", tostring(game.save.flags.EVENT_GAVE_FOSSIL_TO_LAB),
         "STILL_REVIVING:", tostring(game.save.flags.EVENT_LAB_STILL_REVIVING_FOSSIL),
@@ -65,15 +92,18 @@ return function(game)
   game.save.labFossilMon = nil
   U.tap(game, "a")
   U.wait(20)
-  U.log("menu reached again:", mash("a", function() return topIs(Menu) end))
+  ok(mash("a", function() return topIs(Menu) end), "the fossil menu opens again")
   U.shot(game, DIR .. "/fossil_5_menu_again.png")
   U.tap(game, "b") -- back out
-  U.log("cancel text done:", mash("a", function()
-    return game.stack:top() == ow
-  end))
+  -- (engine/events/cinnabar_lab.asm:70-73)
+  U.wait(30)
+  ok(inStack(Menu), "B leaves the menu border up over ComeAgainText")
+  ok(mash("a", function() return game.stack:top() == ow end),
+     "and the cancel path still unwinds to the overworld")
+  ok(#game.stack.states == 1, "with no ghost box left behind")
   U.shot(game, DIR .. "/fossil_6_cancelled.png")
   U.log("after cancel OLD_AMBER:", tostring(game.save.inventory.OLD_AMBER),
         "GAVE_FOSSIL_TO_LAB:", tostring(game.save.flags.EVENT_GAVE_FOSSIL_TO_LAB))
-  U.log("DONE")
-  love.event.quit()
+  U.log("DONE", failures == 0 and "PASS" or (failures .. " FAILURES"))
+  love.event.quit(failures == 0 and 0 or 1)
 end

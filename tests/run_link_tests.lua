@@ -412,6 +412,17 @@ tC:confirm(true)
 tC:handle({ type = "confirm", ok = false })
 eq(tC.stage, "cancelled", "declined trade cancels")
 
+-- TradeCenter_PrintPartyListNames (engine/link/cable_club.asm:657) reads
+local LinkStateMod = require("src.link.LinkState")
+local labelState = setmetatable({ game = { data = Data } }, LinkStateMod)
+local nicked = Pokemon.new(Data, "SANDSHREW", 5)
+nicked.nickname = "FLUFFY"
+eq(labelState:listLabel(nicked), "SANDSHREW", "the list shows the species, not the nickname")
+eq(#labelState:listLabel(nicked), 9, "a 9-char species name is not truncated")
+local pickStub = { canPick = function() return false end }
+eq(labelState:listLabel(nicked, pickStub, 1), "SANDSHREWX",
+   "an unpickable mon keeps its X mark")
+
 -- ---------------------------------------------------------------- link battle (lockstep)
 -- Both sides run the full engine locally on a shared seed; this drives
 -- two simulations over a loopback and checks they agree.

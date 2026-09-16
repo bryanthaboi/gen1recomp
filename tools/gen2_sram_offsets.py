@@ -33,8 +33,18 @@ FIELDS = [
     "wXCoord", "wYCoord", "wEventFlags", "wPlayerState",
     "wStatusFlags", "wStatusFlags2", "wPokegearFlags", "wVisitedSpawns",
     "wVariableSprites", "wGameTimeHours", "wGameTimeMinutes",
+    # engine/menus/intro_menu.asm:28 _ResetWRAM, engine/overworld/player_object.asm:19
+    "wRedsName", "wGreensName", "wSavedAtLeastOnce", "wSpawnAfterChampion",
+    "wCenteredObject", "wPlayerStruct", "wMapObjects", "wNumPCItems",
+    "wMomItemTriggerBalance", "wRoamMon1MapGroup", "wRoamMon2MapGroup",
+    "wRoamMon3MapGroup", "wBestMagikarpLengthFeet", "wBestMagikarpLengthInches",
+    "wMagikarpRecordHoldersName", "wDecoBed", "wDecoPoster", "wScreenSave",
 ]
 GUARDS = ["sCheckValue1", "sCheckValue2", "sChecksum", "sGameData", "sGameDataEnd"]
+
+# ram/sram.asm -- bank 0 labels, outside the copied WRAM block: file offset is
+# bank * 0x2000 + (addr - $A000).
+RAW_SRAM = ["sOptions", "sMysteryGiftUnlocked"]
 
 # ram/sram.asm:138-144
 SRAM_FIELDS = [("wPlayerGender", "sCrystalData", "wCrystalData")]
@@ -84,7 +94,7 @@ def backup_table(sym, rows, label):
               "sChecksum": off("sBackupChecksum"),
               "sGameData": off("sBackupGameData"),
               "sGameDataEnd": off("sBackupGameDataEnd")}
-    absolute = {n for n, _, _ in SRAM_FIELDS}
+    absolute = {n for n, _, _ in SRAM_FIELDS} | set(RAW_SRAM)
     out = []
     for name, value in rows:
         if name in guards:
@@ -128,6 +138,11 @@ def table(sym, label):
         if name in sym and sbase in sym and wbase in sym:
             at = sym[sbase][0] * 0x2000 + (sym[sbase][1] - 0xA000)
             rows.append((name, at + (sym[name][1] - sym[wbase][1])))
+    for name in RAW_SRAM:
+        s = sym.get(name)
+        if not s:
+            sys.exit(f"{label}: {name} is missing from the symbol file")
+        rows.append((name, s[0] * 0x2000 + (s[1] - 0xA000)))
     boxes = []
     for i in range(1, BOX_COUNT + 1):
         b = sym.get("sBox%d" % i)

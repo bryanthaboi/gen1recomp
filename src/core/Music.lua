@@ -341,6 +341,7 @@ function Music.stop()
   state.data, state.loop = nil, nil
   state.chip = false
   state.pendingRestore = nil
+  state.restoreLeft = nil
   if previous and Runtime.wants("music.stopped") then
     Runtime.emit("music.stopped", { song = previous })
   end
@@ -438,15 +439,26 @@ function Music.playVictory(data, kind, trainerId)
   return false
 end
 
+local function deviceSuspended()
+  local ChipAudio = package.loaded["src.core.ChipAudio"]
+  return ChipAudio ~= nil and ChipAudio.isSuspended()
+end
+
+-- scripts/RedsHouse1F.asm:35-38
+local ONE_SHOT_CEILING = 600
+Music.ONE_SHOT_CEILING = ONE_SHOT_CEILING
+
 -- one-shot jingle (PkmnHealed, Jigglypuff's song): the map theme
 -- resumes when it ends, via update()
 function Music.playOnce(data, song)
   if not songDef(data, song) then return false end
+  if deviceSuspended() then return false end
   Music.play(data, song, false, { reason = "once" })
   -- play() can no-op (hook silence, failed def); only arm restore when
   -- the jingle actually became current
   if state.current ~= song then return false end
   state.pendingRestore = true
+  state.restoreLeft = ONE_SHOT_CEILING
   return true
 end
 
@@ -479,6 +491,7 @@ end
 function Music.restoreMap(data, reason)
   state.current = nil
   state.pendingRestore = nil
+  state.restoreLeft = nil
   local play = effectiveMapSong(data, state.mapSong)
   if play then Music.play(data, play, nil, { reason = reason or "map" }) end
 end
@@ -621,9 +634,18 @@ function Music.update(data)
   end
   -- do not treat "threaded source still waiting on its first buffer" as
   -- ended, or playOnce jingles get restored over before they can sound
-  if state.pendingRestore and sourceStopped(state.source)
-     and not state.loopSource and not chipAwaitingFirstBuffer() then
-    Music.restoreMap(data)
+  if state.pendingRestore then
+    state.restoreLeft = (state.restoreLeft or ONE_SHOT_CEILING) - 1
+    local ended = sourceStopped(state.source) and not state.loopSource
+      and not chipAwaitingFirstBuffer()
+    if ended then
+      Music.restoreMap(data)
+    elseif state.restoreLeft <= 0 then
+      require("src.core.Logger").warn(
+        "music: one-shot %s never finished; restoring map theme",
+        tostring(state.current))
+      Music.restoreMap(data)
+    end
   end
 end
 

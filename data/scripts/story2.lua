@@ -907,76 +907,85 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
       -- No fossil deposited yet: the intro always plays first (.Text),
       -- then either the fossil-select menu (GiveFossilToCinnabarLab)
       -- or NoFossilsText.
-      game.stack:push(TextBox.new(game,
-        t._CinnabarLabFossilRoomScientist1Text or
-        "Hiya!\fI am important\ndoctor!\fI study here rare\nPOKéMON fossils!\fYou! Have you a\nfossil for me?",
-        function()
-          -- Lab4Script_GetFossilsInBag: every carried fossil, in
-          -- FossilsList order
-          local carried = {}
-          for _, fossil in ipairs(FOSSIL_ORDER) do
-            if (game.save.inventory[fossil] or 0) > 0 then
-              carried[#carried + 1] = fossil
-            end
-          end
-          if #carried == 0 then
+      local introText = t._CinnabarLabFossilRoomScientist1Text or
+        "Hiya!\fI am important\ndoctor!\fI study here rare\nPOKéMON fossils!\fYou! Have you a\nfossil for me?"
+
+      local carried = {}
+      for _, fossil in ipairs(FOSSIL_ORDER) do
+        if (game.save.inventory[fossil] or 0) > 0 then
+          carried[#carried + 1] = fossil
+        end
+      end
+
+      if #carried == 0 then
+        game.stack:push(TextBox.new(game, introText, function()
+          game.stack:push(TextBox.new(game,
+            t._CinnabarLabFossilRoomScientist1NoFossilsText or
+            "No! Is too bad!", done))
+        end))
+        return
+      end
+
+      local Menu = require("src.ui.Menu")
+      local menu
+      -- home/text_script.asm:105
+      local function finish()
+        if menu then game.stack:pop() end
+        game.stack:pop()
+        done()
+      end
+      local function comeAgain()
+        game.stack:push(TextBox.new(game,
+          t._CinnabarLabFossilRoomScientist1ComeAgainText or
+          "Aiyah! You come\nagain!", finish))
+      end
+      local items = {}
+      for _, fossil in ipairs(carried) do
+        items[#items + 1] = {
+          -- engine/events/cinnabar_lab.asm:29
+          keepOpen = true,
+          label = game.data.items[fossil].name,
+          onSelect = function()
+            if menu then menu.frozen = true end
+            local species = FOSSIL_MONS[fossil]
+            local def = game.data.pokemon[species]
+            subs.wNameBuffer = game.data.items[fossil].name
+            subs.wStringBuffer = def and def.name or species
             game.stack:push(TextBox.new(game,
-              t._CinnabarLabFossilRoomScientist1NoFossilsText or
-              "No! Is too bad!", done))
-            return
-          end
-          -- .cancelledGivingFossil: B on the menu and NO on the
-          -- confirm both land here
-          local function comeAgain()
-            game.stack:push(TextBox.new(game,
-              t._CinnabarLabFossilRoomScientist1ComeAgainText or
-              "Aiyah! You come\nagain!", done))
-          end
-          local items = {}
-          for _, fossil in ipairs(carried) do
-            items[#items + 1] = {
-              label = game.data.items[fossil].name,
-              onSelect = function()
-                -- LoadFossilItemAndMonName: wNameBuffer = item name,
-                -- wStringBuffer = mon name; then .ScientistSeesFossilText
-                -- with YesNoChoice (cursor starts on YES)
-                local species = FOSSIL_MONS[fossil]
-                local def = game.data.pokemon[species]
-                subs.wNameBuffer = game.data.items[fossil].name
-                subs.wStringBuffer = def and def.name or species
+              fillFossilText(
+                t._CinnabarLabFossilRoomScientist1SeesFossilText or
+                "Oh! That is\n{RAM:wNameBuffer}!\fIt is fossil of\n{RAM:wStringBuffer}, a\nPOKéMON that is\nalready extinct!\fMy Resurrection\nMachine will make\nthat POKéMON live\nagain!",
+                subs),
+              nil, { choice = function(yes)
+                if not yes then comeAgain() return end
+                require("src.inventory.Bag").remove(game.save, fossil, 1)
+                game.save.labFossilMon = species
+                f.EVENT_GAVE_FOSSIL_TO_LAB = true
+                f.EVENT_LAB_STILL_REVIVING_FOSSIL = true
                 game.stack:push(TextBox.new(game,
                   fillFossilText(
-                    t._CinnabarLabFossilRoomScientist1SeesFossilText or
-                    "Oh! That is\n{RAM:wNameBuffer}!\fIt is fossil of\n{RAM:wStringBuffer}, a\nPOKéMON that is\nalready extinct!\fMy Resurrection\nMachine will make\nthat POKéMON live\nagain!",
+                    t._CinnabarLabFossilRoomScientist1TakesFossilText or
+                    "So! You hurry and\ngive me that!\f{PLAYER} handed\nover {RAM:wNameBuffer}!",
                     subs),
-                  nil, { choice = function(yes)
-                    if not yes then comeAgain() return end
-                    -- YES: TakesFossilText, RemoveItemByID, GoForAWalk2,
-                    -- SetEvents GAVE_FOSSIL_TO_LAB + STILL_REVIVING
-                    require("src.inventory.Bag").remove(game.save, fossil, 1)
-                    game.save.labFossilMon = species
-                    f.EVENT_GAVE_FOSSIL_TO_LAB = true
-                    f.EVENT_LAB_STILL_REVIVING_FOSSIL = true
+                  function()
                     game.stack:push(TextBox.new(game,
-                      fillFossilText(
-                        t._CinnabarLabFossilRoomScientist1TakesFossilText or
-                        "So! You hurry and\ngive me that!\f{PLAYER} handed\nover {RAM:wNameBuffer}!",
-                        subs),
-                      function()
-                        game.stack:push(TextBox.new(game,
-                          t._CinnabarLabFossilRoomScientist1GoForAWalkText2 or
-                          "I take a little\ntime!\fYou go for walk a\nlittle while!", done))
-                      end))
-                  end }))
-              end,
-            }
-          end
+                      t._CinnabarLabFossilRoomScientist1GoForAWalkText2 or
+                      "I take a little\ntime!\fYou go for walk a\nlittle while!", finish))
+                  end))
+              end }))
+          end,
+        }
+      end
+      -- text/CinnabarLabFossilRoom.asm:12
+      game.stack:push(TextBox.new(game, introText, nil, {
+        stay = { prompt = true, onShown = function()
           -- GiveFossilToCinnabarLab's menu: TextBoxBorder at 0,0
           -- (interior width $d, height 2 per fossil), A|B watched
-          local Menu = require("src.ui.Menu")
-          game.stack:push(Menu.new(game, items,
-            { tx = 0, ty = 0, tw = 15, onCancel = comeAgain }))
-        end))
+          menu = Menu.new(game, items, { tx = 0, ty = 0, tw = 15,
+            keepOnCancel = true, onCancel = comeAgain })
+          game.stack:push(menu)
+        end },
+      }))
     end,
     -- the other scientist trades SAILOR: Ponyta -> Seel
     -- (scripts/CinnabarLabFossilRoom.asm TRADE_FOR_SAILOR)

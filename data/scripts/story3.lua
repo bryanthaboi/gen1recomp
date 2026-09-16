@@ -382,7 +382,27 @@ M.ROCKET_HIDEOUT_ELEVATOR = elevator("ROCKET_HIDEOUT_ELEVATOR",
 --   after the hope-we-meet-again line (TOGGLE_ROCKET_HIDEOUT_B4F_ITEM_4).
 -- -------------------------------------------------------------------
 
+-- pokeyellow/scripts/RocketHideoutB4F.asm:401
+local function dropLiftKey(game, ow)
+  if game.save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY then return end
+  game.save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY = true
+  require("src.script.Commands").show_object(
+    { game = game, save = game.save, overworld = ow },
+    "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_LIFT_KEY")
+end
+
+-- pokeyellow/scripts/RocketHideoutB4F.asm:308
+local function liftKeyGruntBeaten(save)
+  if save.flags.EVENT_BEAT_ROCKET_HIDEOUT_4_TRAINER_2 then return true end
+  return (save.defeatedTrainers or {})["ROCKET_HIDEOUT_B4F_obj_4"] == true
+end
+
 M.ROCKET_HIDEOUT_B4F = {
+  -- (home/trainers.asm:341, pokeyellow/scripts/RocketHideoutB4F.asm:401)
+  onVictory = function(game, ow)
+    if not require("src.core.GameVersion").isYellow() then return end
+    if liftKeyGruntBeaten(game.save) then dropLiftKey(game, ow) end
+  end,
   talk = {
     TEXT_ROCKETHIDEOUTB4F_ROCKET3 = function(game, ow, npc, done)
       if not ow:trainerDefeated(npc) then
@@ -421,23 +441,17 @@ M.ROCKET_HIDEOUT_B4F = {
         ow:engageTrainer(npc, function()
           -- engageTrainer records the win before it calls back, so this
           -- is the end-battle text's SetEvent + ShowObject
-          if ow:trainerDefeated(npc)
-             and not game.save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY then
-            game.save.flags.EVENT_ROCKET_DROPPED_LIFT_KEY = true
-            local Commands = require("src.script.Commands")
-            Commands.show_object(
-              { game = game, save = game.save, overworld = ow },
-              "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_LIFT_KEY")
-          end
+          if ow:trainerDefeated(npc) then dropLiftKey(game, ow) end
           done()
         end)
         return
       end
-      -- RocketHideoutB4FRocketAfterBattleText: later talks only reprint
+      -- pokered/scripts/RocketHideoutB4F.asm:193 (#2277)
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
         game.data.text._RocketHideoutB4FRocketAfterBattleText
-        or "Oh no! I dropped\nthe LIFT KEY!", done))
+        or "Oh no! I dropped\nthe LIFT KEY!",
+        function() dropLiftKey(game, ow); done() end))
     end,
 
     TEXT_ROCKETHIDEOUTB4F_GIOVANNI = function(game, ow, npc, done)

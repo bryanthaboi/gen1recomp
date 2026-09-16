@@ -2632,14 +2632,6 @@ local function updateAllRows(imp)
   return (ok and type(rows) == "table") and rows or {}
 end
 
-local function modsWithUpdates(imp)
-  local names = {}
-  for _, row in ipairs(updateAllRows(imp)) do
-    names[#names + 1] = row.name or row.id
-  end
-  return names
-end
-
 local function modsWithUpdatesCount(imp)
   local mods = imp.mods or {}
   local rev = imp._modUpdateRev or 0
@@ -2657,18 +2649,7 @@ local function modsWithUpdatesCount(imp)
 end
 
 local function askUpdateAllMods(imp)
-  local names = modsWithUpdates(imp)
-  if #names == 0 then
-    imp:pressUpdateAllMods()
-    return
-  end
-  local lines = { Strings("Update %d items?", #names) }
-  for i = 1, math.min(3, #names) do lines[#lines + 1] = names[i] end
-  if #names > 3 then
-    lines[#lines + 1] = Strings("and %d more", #names - 3)
-  end
-  imp._modConfirm = { kind = "updateAll", title = Strings("Update all"),
-    yesLabel = Strings("Update all"), lines = lines }
+  imp:pressUpdateAllMods()
 end
 
 local function buildModsPanel(imp, x, y, w, availH, m)
@@ -3962,8 +3943,8 @@ local function buildConfirmModal(imp, m)
           imp:_installCartPins(c.version, c.id)
         elseif c.kind == "update" then
           imp:_confirmModUpdate(c.id, c.release)
-        elseif c.kind == "updateAll" then
-          imp:pressUpdateAllMods()
+        elseif c.kind == "updateAllRun" then
+          imp:_confirmUpdateAll()
         elseif c.kind == "enableAll" then
           imp:_setAllMods(true, true)
         elseif c.kind == "importOversize" then

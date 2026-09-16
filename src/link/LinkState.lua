@@ -2,6 +2,7 @@
 -- the other joins by typing that address in.  Direct peer-to-peer over
 -- lua-enet (bundled with LÖVE),  no relay server.
 
+local CableFrame = require("src.render.CableFrame")
 local CodeEntry = require("src.link.CodeEntry")
 local DiscordPresence = require("src.core.DiscordPresence")
 local Font = require("src.render.Font")
@@ -454,7 +455,37 @@ function LinkState:openStats(mon)
   Screens.push(self.game, "SummaryMenu", mon)
 end
 
+-- engine/link/cable_club.asm:657
+function LinkState:listLabel(mon, t, index)
+  local def = mon and self.game.data.pokemon[mon.species]
+  local label = (def and def.name) or (mon and mon.species) or ""
+  if t and index and not t:canPick(index) then label = label .. "X" end
+  return label
+end
+
+-- engine/link/cable_club.asm:26
+function LinkState:beginRound()
+  self.roundBusy = false
+  if self.game.linkNet == self.net then self.game.linkNet = nil end
+  if not self.net or self.net:getStatus() == "closed" then
+    self:exitWith(Strings("The link was\nbroken."))
+    return
+  end
+  self.trade = Protocol.TradeSession.new(self.game.data, self.game.save.party, {
+    subset = self.verdict == "subset",
+    strict = Handshake.strict(self.verdict),
+    peerName = self.peerName,
+  })
+  self.net:send(self.trade:opening())
+  self.index = 1
+  self.theirIndex = 1
+  self.side = "mine"
+  self.pickChoice = nil
+  self.confirmed = nil
+end
+
 function LinkState:updateTrade(input)
+  if self.roundBusy then return end
   if self.game.linkNet == self.net then self.game.linkNet = nil end
   for _, msg in ipairs(self.net:poll()) do
     local reply = self.trade:handle(msg)
@@ -479,12 +510,19 @@ function LinkState:updateTrade(input)
     -- headless LinkBattle-style fake games with no writeSave are unaffected.
     if self.game.writeSave then self.game:writeSave() end
     local name = received.nickname or self.game.data.pokemon[received.species].name
-    Runtime.emit("link.ended", { reason = "done" })
-    self.game.linkSession = nil -- this path pops without exitWith
-    self.net:close()
-    self.game.stack:pop()
     local game = self.game
-    require("src.core.Sound").play(game.data, "Trade_Machine")
+    -- engine/link/cable_club.asm:870  #758
+    local again = self.verdict == "full" and self.net ~= nil
+                  and self.net:getStatus() ~= "closed"
+    if again then
+      self.roundBusy = true
+      game.linkNet = self.net
+    else
+      Runtime.emit("link.ended", { reason = "done" })
+      game.linkSession = nil
+      self.net:close()
+      game.stack:pop()
+    end
     Screens.push(game, "TradeAnim", {
       sent = sent, received = received,
       enemyName = (self.peerName or "TRAINER"),
@@ -495,6 +533,9 @@ function LinkState:updateTrade(input)
         game.stack:push(TextBox.new(game,
           Strings("Trade completed!\f%s received\n%s!", game.save.player.name, name),
           function()
+            local nextRound = function()
+              if again then self:beginRound() end
+            end
             if evoTo then
               -- via="TRADE": a trade evolution cannot be B-cancelled
               -- (pokered LINK_STATE_TRADING skips the flash B-poll) (#213).
@@ -502,7 +543,12 @@ function LinkState:updateTrade(input)
               -- species (not the pre-evo landed by t:apply) is what persists,
               -- keeping disk in step with the autosave above (#222).
               require("src.pokemon.Evolution").evolve(game, received, evoTo,
-                function() if game.writeSave then game:writeSave() end end, "TRADE")
+                function()
+                  if game.writeSave then game:writeSave() end
+                  nextRound()
+                end, "TRADE")
+            else
+              nextRound()
             end
           end))
       end,
@@ -537,16 +583,28 @@ function LinkState:updateTrade(input)
       end
     end
   elseif t.stage == "picking" and input:wasPressed("up") then
-    if self.side == "theirs" then
+    -- engine/link/cable_club.asm:537
+    if self.side == "cancel" then
+      self.side = "mine"
+      self.index = math.max(1, #self.game.save.party)
+    elseif self.side == "theirs" then
       self.theirIndex = math.max(1, self.theirIndex - 1)
     else
       self.index = math.max(1, self.index - 1)
     end
   elseif t.stage == "picking" and input:wasPressed("down") then
-    if self.side == "theirs" then
-      self.theirIndex = math.min(#(t.theirParty or {}), self.theirIndex + 1)
+    if self.side == "cancel" then
+      self.side = "cancel"
+    elseif self.side == "theirs" then
+      if self.theirIndex >= #(t.theirParty or {}) then
+        self.side = "cancel"
+      else
+        self.theirIndex = self.theirIndex + 1
+      end
+    elseif self.index >= #self.game.save.party then
+      self.side = "cancel"
     else
-      self.index = math.min(#self.game.save.party, self.index + 1)
+      self.index = self.index + 1
     end
   elseif t.stage == "picking" and input:wasPressed("right") then
     if t.theirParty and #t.theirParty > 0 then
@@ -563,7 +621,11 @@ function LinkState:updateTrade(input)
     self.net:send({ type = "bye" })
     self:exitWith(Strings("The trade was\ncancelled."))
   elseif t.stage == "picking" and input:wasPressed("a") then
-    if self.side == "theirs" then
+    if self.side == "cancel" then
+      -- engine/link/cable_club.asm:537
+      self.net:send({ type = "bye" })
+      self:exitWith(Strings("The trade was\ncancelled."))
+    elseif self.side == "theirs" then
       self:openStats((t.theirParty or {})[self.theirIndex])
     else
       self.pickChoice = 1
@@ -658,48 +720,64 @@ function LinkState:draw()
     Font.draw(self.noticeExits and "A: back" or Strings("A: trade anyway"), 8, 128)
 
   elseif self.stage == "trade" then
-    drawTitle("TRADE")
+    -- engine/link/cable_club.asm:635
     local t = self.trade
-    Font.draw(Strings("YOURS"), 8, 20)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, 160, 144)
+    CableFrame.box(0, 0, 20, 8)
+    CableFrame.box(0, 8, 20, 8)
+    -- engine/link/cable_club.asm:643
+    local function nameOnBorder(name, y)
+      if not name or name == "" then return end
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.rectangle("fill", 40, y, Font.width(name), 8)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(name, 40, y)
+    end
+    nameOnBorder((self.game.save.player and self.game.save.player.name), 0)
+    nameOnBorder(self.peerName, 64)
+    love.graphics.setColor(0, 0, 0, 1)
+    -- engine/link/cable_club.asm:657
     for i, mon in ipairs(self.game.save.party) do
-      local def = self.game.data.pokemon[mon.species]
-      local label = (mon.nickname or def.name):sub(1, 8)
-      if not t:canPick(i) then label = label .. "X" end
-      Font.draw(label, 16, 20 + i * 12)
-      if i == self.index and self.side ~= "theirs" then
-        Font.drawCode(CURSOR, 8, 20 + i * 12)
+      Font.draw(self:listLabel(mon, t, i), 16, i * 8)
+      if i == self.index and self.side == "mine" then
+        Font.drawCode(CURSOR, 8, i * 8)
       end
     end
-    Font.draw(Strings("THEIRS"), 84, 20)
     for i, mon in ipairs(t.theirParty or {}) do
-      local def = self.game.data.pokemon[mon.species]
-      Font.draw((mon.nickname or def.name):sub(1, 8), 92, 20 + i * 12)
+      Font.draw(self:listLabel(mon), 16, 64 + i * 8)
+      -- engine/link/cable_club.asm:617
       if self.side == "theirs" and i == self.theirIndex then
-        Font.drawCode(CURSOR, 84, 20 + i * 12)
+        Font.drawCode(CURSOR, 8, 64 + i * 8)
       elseif t.theirPick == i then
-        Font.drawCode(CURSOR_HOLLOW, 84, 20 + i * 12)
+        Font.drawCode(CURSOR_HOLLOW, 8, 64 + i * 8)
       end
     end
     if self.pickChoice then
+      -- engine/link/cable_club.asm:468
+      CableFrame.box(0, 14, 20, 4)
+      love.graphics.setColor(0, 0, 0, 1)
       Font.draw(Strings("STATS"), 16, 128)
       Font.draw(Strings("TRADE"), 96, 128)
       Font.drawCode(CURSOR, self.pickChoice == 1 and 8 or 88, 128)
     else
-      local hint
-      if t.stage == "waitRecords" then hint = "Comparing games..."
-      elseif t.stage == "waitParty" then hint = "Exchanging data..."
-      elseif t.stage == "picking" then
-        if self.side == "theirs" then hint = Strings("A: stats")
-        else
-          hint = t:canPick(self.index) and "Pick one to trade"
-                 or Strings("X: not on theirs")
-        end
-      elseif t.stage == "waitPick" then hint = "Waiting for them..."
-      elseif t.stage == "confirming" then
-        hint = self.confirmed and "Waiting..." or Strings("A: trade  B: cancel")
-      end
-      Font.draw(hint or "", 8, 132)
+      -- engine/link/cable_club.asm:601
+      CableFrame.fill(11, 15, 9, 1)
+      CableFrame.fill(0, 16, 20, 2)
+      CableFrame.box(0, 15, 11, 3)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(Strings("CANCEL"), 16, 128)
+      -- engine/link/cable_club.asm:552
+      if self.side == "cancel" then Font.drawCode(CURSOR, 8, 128) end
     end
+    if t.stage == "waitRecords" or t.stage == "waitParty"
+       or t.stage == "waitPick" or (t.stage == "confirming" and self.confirmed) then
+      -- engine/link/print_waiting_text.asm
+      CableFrame.box(3, 10, 13, 3)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(Strings("Waiting...!"), 32, 88)
+    end
+    love.graphics.setColor(0, 0, 0, 1)
 
   elseif self.stage == "battleWait" or self.stage == "battleRunning" then
     drawTitle("LINK BATTLE")

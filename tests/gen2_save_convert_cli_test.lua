@@ -62,13 +62,16 @@ write(goldPath, SaveSerializer.encode({
 
 local out = run(("luajit tools/save_convert/convert.lua export %q %q")
   :format(goldPath, outPath))
--- Gen 2 exports through Gen2Save now, but only for a save that carries the
--- cartridge image it came from. A slot built in the launcher has none.
-check(out:find("no cartridge image", 1, true) ~= nil,
-  "exporting a Gold slot with no cartridge behind it is refused, and says why: "
+-- Gen 2 no longer needs the cartridge image the save came from (#2283): one
+-- is synthesized. What it does need is the map the save stands on, which this
+check(out:find("does not name one", 1, true) ~= nil,
+  "exporting a Gold slot that names no map is refused, and says why: "
     .. (out:gsub("%s+$", "")))
+check(out:find("no cartridge image to write", 1, true) == nil,
+  "and not with the old lineage refusal: " .. (out:gsub("%s+$", "")))
 check(not exists(outPath),
   "and no 32768-byte file that looks like a Red battery is written")
+
 
 -- The way IN is no longer a gate: Gen 2 imports through
 -- src/save_convert/Gen2Save.lua now.  What this pins is that the bytes reach

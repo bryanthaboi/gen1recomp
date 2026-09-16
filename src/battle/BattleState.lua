@@ -4226,9 +4226,25 @@ local function primaryEffectFailed(msgs)
   if m:find("didn't affect", 1, true) then return true end
   if m:find("is unaffected", 1, true) then return true end
   if m:find("protected by MIST", 1, true) then return true end
+  -- engine/battle/move_effects/leech_seed.asm:28
+  if m:find("evaded attack", 1, true) then return true end
   -- engine/battle/effects.asm:46-47
   if m:lower():find("already asleep", 1, true) then return true end
   return false
+end
+
+-- engine/battle/effects.asm:67, :159, :1158, :712, :1366
+-- engine/battle/move_effects/paralyze.asm:40, leech_seed.asm:28
+local function statusMissText(self, record, user, target)
+  local kind = record and record.missText
+  if kind == "didntAffect" then
+    return self:romText("_DidntAffectText", "It didn't affect\n%s!", displayName(target))
+  elseif kind == "butItFailed" then
+    return self:romText("_ButItFailedText", "But, it failed!")
+  elseif kind == "evadedAttack" then
+    return self:romText("_EvadedAttackText", "%s\nevaded attack!", displayName(target))
+  end
+  return self:romText("_AttackMissedText", "%s's\nattack missed!", displayName(user))
 end
 
 function BattleState:performMove(user, target, moveInst, isCalled)
@@ -4368,7 +4384,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
     if ENEMY_STAT_DOWN_MISS[move.effect] and not user.isPlayer
        and self.kind ~= "link" and self.rng(0, 255) < 64 then
       self:cancelMoveAnim()
-      self:sayNext(self:romText("_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+      self:sayNext(statusMissText(self, record, user, target))
       return
     end
     -- accuracy-checked status effects run MoveHitTest, which has no
@@ -4381,7 +4397,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
       -- SleepEffect/PoisonEffect/... call PlayCurrentMoveAnimation only
       -- after the effect lands; a miss skips it
       self:cancelMoveAnim()
-      self:sayNext(self:romText("_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+      self:sayNext(statusMissText(self, record, user, target))
       return
     end
     local msgs = record.run(ctx)

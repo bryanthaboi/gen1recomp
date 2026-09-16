@@ -27,10 +27,13 @@ package.loaded["src.core.Sound"] = { play = function() end }
 
 local converts = {}
 local activated = {}
+local recorded = {}
+local trace = {}
 local fake
 fake = {
   OPTION_KEY = { main = "shaderfx", secondary = "shaderfx2" },
-  canConvert = function() return fake.can end,
+  canConvert = function() trace[#trace + 1] = "canConvert"; return fake.can end,
+  recordError = function(name, err) recorded[#recorded + 1] = tostring(name) .. ": " .. tostring(err) end,
   bridgeError = function() return fake.can and nil or "librashader bridge not found" end,
   list = function()
     return {
@@ -45,7 +48,7 @@ fake = {
   end,
   activate = function(_, entry) activated[#activated + 1] = entry.name; return true end,
   deactivate = function() end,
-  clearBridgeQuarantine = function() end,
+  clearBridgeQuarantine = function() trace[#trace + 1] = "clear" end,
   downloadPresets = function() return {} end,
   downloadStatus = function() return { status = "pending" } end,
   installDownloaded = function() return 0 end,
@@ -64,12 +67,14 @@ local function newGame()
 end
 
 local function open()
-  converts, activated = {}, {}
+  converts, activated, recorded, trace = {}, {}, {}, {}
   return ShaderFXScreen.new(newGame(), "main")
 end
 
 fake.can, fake.convertOk = false, false
 local screen = open()
+eq(trace[1], "clear", "a stale bridge quarantine is cleared before the picker asks canConvert")
+eq(trace[2], "canConvert", "and canConvert is what follows the clear")
 eq(screen.items[3].right, "UPDATE", "an unconvertible preset says what would fix it")
 check(#screen.items[3].right <= #"CONVERT",
   "the no-bridge label leaves at least as much room for the name as CONVERT")
@@ -97,6 +102,8 @@ fake.convertOk = false
 screen = open()
 screen.onChoose(screen.items[3])
 eq(screen.items[3].right, "FAILED", "a real convert failure still reads FAILED")
+eq(recorded[1], "zfast-lcd.slangp: no bridge",
+  "and the real error string reaches shaderfx-error.log, not just log.txt")
 
 do
   fake.can, fake.convertOk = true, true

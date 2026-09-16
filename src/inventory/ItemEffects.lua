@@ -242,6 +242,11 @@ function ItemEffects.use(data, save, itemId, target, battle, moveIndex, ow)
   end
 
   if BALLS[itemId] then
+    -- a ball has nothing to catch on the cable: a link battle that allows
+    -- items (RFC 0021) still refuses one, the way a trainer's mon blocks it
+    if battle and battle.kind == "link" then
+      return "failed", { notTime(data, save) }
+    end
     return "ball"
   end
 

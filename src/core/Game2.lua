@@ -2362,6 +2362,47 @@ function Game2:_cycleSpeed(dir)
   self:persistOptions()
 end
 
+local function padPressedBody(self, joystick, button)
+  TouchControls:noteGamepad()
+  local selectHeld = Input:isDown("select")
+  if not selectHeld and joystick and joystick.isGamepadDown then
+    local ok, down = pcall(function()
+      return joystick:isGamepadDown("back")
+    end)
+    selectHeld = ok and down == true
+  end
+  local top = self.stack and self.stack:top()
+  if top and top.onGamepadPressed then
+    top:onGamepadPressed(button)
+    return
+  end
+  if not selectHeld then
+    local action = Input:padAction(button)
+    if action == "speedUp" then
+      self:_cycleSpeed(1)
+      return
+    elseif action == "speedDown" then
+      self:_cycleSpeed(-1)
+      return
+    end
+  end
+  if selectHeld then
+    local digit = GamepadMap.displayChordDigit(button)
+    if digit then
+      self:keypressed(digit)
+      return
+    end
+  end
+
+  Input:gamepadpressed(joystick, button)
+end
+
+local function padReleasedBody(self, joystick, button)
+  Input:gamepadreleased(joystick, button)
+  local top = self.stack and self.stack:top()
+  if top and top.onGamepadReleased then top:onGamepadReleased(button) end
+end
+
 -- `back` -- SDL's name for the small left-hand menu button: Xbox VIEW, the PS
 -- CREATE/SHARE beside the touchpad, the Switch MINUS -- is SELECT, and has been
 -- since src/core/GamepadMap.lua's DEFAULT_GAMEPAD_BINDINGS was written
@@ -2377,42 +2418,7 @@ end
 -- restores.
 function Game2:gamepadpressed(joystick, button)
   local function vanilla()
-    -- a controller is being used: the touch overlay steps aside until the next
-    -- screen touch (mobile only; a no-op elsewhere)
-    TouchControls:noteGamepad()
-    local selectHeld = Input:isDown("select")
-    if not selectHeld and joystick and joystick.isGamepadDown then
-      local ok, down = pcall(function()
-        return joystick:isGamepadDown("back")
-      end)
-      selectHeld = ok and down == true
-    end
-    local top = self.stack and self.stack:top()
-    if top and top.onGamepadPressed then
-      top:onGamepadPressed(button)
-      return
-    end
-    if not selectHeld then
-      local action = Input:padAction(button)
-      if action == "speedUp" then
-        self:_cycleSpeed(1)
-        return
-      elseif action == "speedDown" then
-        self:_cycleSpeed(-1)
-        return
-      end
-    end
-    if selectHeld then
-      local digit = GamepadMap.displayChordDigit(button)
-      if digit then
-        self:keypressed(digit)
-        return
-      end
-    end
-    -- START opens the start menu in the overworld; it used to quit, from before
-    -- there was a menu to open.
-
-    Input:gamepadpressed(joystick, button)
+    padPressedBody(self, joystick, button)
   end
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
   return ModRuntime.call("input.gamepad", vanilla, self,
@@ -2421,9 +2427,7 @@ end
 
 function Game2:gamepadreleased(joystick, button)
   local function vanilla()
-    Input:gamepadreleased(joystick, button)
-    local top = self.stack and self.stack:top()
-    if top and top.onGamepadReleased then top:onGamepadReleased(button) end
+    padReleasedBody(self, joystick, button)
   end
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
   return ModRuntime.call("input.gamepad", vanilla, self,
@@ -2434,6 +2438,15 @@ function Game2:gamepadaxis(joystick, axis, value)
   local function vanilla()
     -- past-deadzone only, so resting-stick drift cannot hide the overlay
     if math.abs(value) > 0.5 then TouchControls:noteGamepad() end
+    local trigger, phase = Input:triggerAxis(axis, value)
+    if trigger then
+      if phase == "pressed" then
+        padPressedBody(self, joystick, trigger)
+      elseif phase == "released" then
+        padReleasedBody(self, joystick, trigger)
+      end
+      return
+    end
     Input:gamepadaxis(joystick, axis, value)
   end
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
@@ -2453,6 +2466,16 @@ function Game2:joystickpressed(joystick, button)
   if isRawStick(joystick) and top and top.onJoystickPressed then
     top:onJoystickPressed(button)
     return
+  end
+  if not Input:isDown("select") then
+    local action = Input:joyAction(button)
+    if action == "speedUp" then
+      self:_cycleSpeed(1)
+      return
+    elseif action == "speedDown" then
+      self:_cycleSpeed(-1)
+      return
+    end
   end
   Input:joystickpressed(joystick, button)
 end

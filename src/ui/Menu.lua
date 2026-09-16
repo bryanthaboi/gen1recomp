@@ -1,8 +1,8 @@
 -- Generic bordered list menu with the blinking ▶ cursor.
 -- items: { { label=..., onSelect=function }, ... }
--- Pops itself on B (unless cancelable=false); also on START only when
--- opts.startCloses is set -- pokered's wMenuWatchedKeys mask varies per
--- menu and only the start menu's adds PAD_START.
+-- Pops itself on B (unless cancelable=false or opts.keepOnCancel); also on
+-- START only when opts.startCloses is set -- pokered's wMenuWatchedKeys mask
+-- varies per menu and only the start menu's adds PAD_START.
 
 local Font = require("src.render.Font")
 local Theme = require("src.ui.Theme")
@@ -59,6 +59,8 @@ function Menu.new(game, items, opts)
   -- classic centred letterbox
   self.anchor = opts.anchor
   self.onCancel = opts.onCancel
+  -- engine/events/cinnabar_lab.asm:70-73
+  self.keepOnCancel = opts.keepOnCancel or false
   -- BIT_NO_MENU_BUTTON_SOUND (wMiscFlags): the PC session runs its
   -- menus silent (home/window.asm HandleMenuInput_)
   self.noSound = opts.noSound or false
@@ -83,6 +85,8 @@ end
 
 function Menu:update(dt)
   local input = self.game.input
+  -- engine/events/cinnabar_lab.asm:29
+  if self.frozen then return end
   if input:wasPressed("up") then
     self.index = self.index > 1 and self.index - 1
       or (self.noWrap and 1 or #self.items)
@@ -107,7 +111,7 @@ function Menu:update(dt)
     if input:wasPressed("b") and not self.noSound then
       require("src.core.Sound").play(self.game.data, "Press_AB")
     end
-    self.game.stack:pop()
+    if not self.keepOnCancel then self.game.stack:pop() end
     if self.onCancel then self.onCancel() end
   end
   self:clampScroll()

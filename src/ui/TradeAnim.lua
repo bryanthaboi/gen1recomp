@@ -13,13 +13,19 @@ TradeAnim.isOpaque = true
 -- Trade_LoadMonSprite runs SET_PAL_POKEMON_WHOLE_SCREEN for the mon it puts
 -- on screen; every other step of the sequence runs SET_PAL_GENERIC, which is
 -- PAL_MEWMON (data/sgb/sgb_packets.asm PalPacket_Generic).  #750
+-- engine/movie/trade.asm:602
+local FLASH_BGP = { [0] = 0, [1] = 2, [2] = 1, [3] = 3 }
+
 function TradeAnim:sgbPalettes(game)
   local P = require("src.render.PaletteFX")
   local mon = (self.phase == "show_player" and self.sent)
     or (self.phase == "show_enemy" and self.received)
   local colors = mon and P.monPal(game.data, mon.species)
-  if colors then return { P.whole(colors) } end
-  return P.wholeNamed(game.data, "MEWMON")
+  local zones = colors and { P.whole(colors) } or P.wholeNamed(game.data, "MEWMON")
+  if self.cableFlash and zones and zones[1] and zones[1].colors then
+    zones[1].colors = P.permute(zones[1].colors, FLASH_BGP)
+  end
+  return zones
 end
 
 local DEFAULT_ART = {
@@ -44,9 +50,26 @@ local function tryImage(path)
   return ok and img or nil
 end
 
-local function nameOf(game, mon)
-  local def = game.data.pokemon[mon.species]
-  return mon.nickname or (def and def.name) or mon.species
+-- engine/movie/trade.asm:304
+local function objSheet(path)
+  local P = require("src.render.PaletteFX")
+  if not (path and P.usesSpriteObp()) then return nil end
+  local ok, img = pcall(require("src.render.SpriteRenderer").obpImage,
+                        path, P.ogObj())
+  return ok and img or nil
+end
+
+-- engine/movie/trade.asm:199
+local D0 = { [0] = 0, [1] = 0, [2] = 1, [3] = 3 }
+
+local function bubbleSheet(path)
+  local P = require("src.render.PaletteFX")
+  if not (path and P.usesSpriteObp()) then return nil end
+  local group = "tradeobp1"
+    .. (require("src.core.GameVersion").isBlue() and "_blue" or "")
+  local ok, img = pcall(require("src.render.SpriteRenderer").obpImage,
+                        path, P.permute(P.ogBg(), D0), group)
+  return ok and img or nil
 end
 
 local function speciesName(game, mon)
@@ -196,6 +219,12 @@ function TradeAnim.new(game, opts)
     or love.math.random(0, 65535)
 
   local art = (game.data.field and game.data.field.tradeArt) or DEFAULT_ART
+  self.artPath = {
+    cableBall = art.cableBall or DEFAULT_ART.cableBall,
+    cableBallAlt = art.cableBallAlt or DEFAULT_ART.cableBallAlt,
+    bubble = art.bubble or DEFAULT_ART.bubble,
+    moveAnim0 = DEFAULT_ART.moveAnim0,
+  }
   self.img = {
     gameBoy = tryImage(art.gameBoy or DEFAULT_ART.gameBoy),
     openCable = tryImage(art.openCable or DEFAULT_ART.openCable),
@@ -224,6 +253,7 @@ function TradeAnim.new(game, opts)
   self.monY = 0
   self.flash = false
   self.monVisible = true
+  self.boxVisible = false
   self.waitingText = false
   self.cableFlash = false
   self.activeBallBlock = nil
@@ -237,8 +267,8 @@ function TradeAnim.new(game, opts)
   return self
 end
 
+-- engine/movie/trade.asm:72
 function TradeAnim:enter()
-  Sound.play(self.game.data, "Trade_Machine")
 end
 
 function TradeAnim:advance()
@@ -259,6 +289,7 @@ function TradeAnim:advance()
     if self.onDone then self.onDone() end
   elseif self.phase == "show_enemy" then
     self.monVisible = false
+    self.boxVisible = false
     self.activeBallBlock = 4
     self.activeBallX, self.activeBallY = 72, 40
     self.activePoofBlock = nil
@@ -306,8 +337,11 @@ end
 function TradeAnim:drawFrameBlock(blockId, x, y)
   local block = FRAME_BLOCKS[blockId]
   if not block then return end
-  if self.img.moveAnim0 then
-    local iw, ih = self.img.moveAnim0:getDimensions()
+  local baked = objSheet(self.artPath and self.artPath.moveAnim0)
+  local sheet = baked or self.img.moveAnim0
+  if sheet then
+    local P = baked and require("src.render.PaletteFX")
+    local iw, ih = sheet:getDimensions()
     for _, tile in ipairs(block) do
       local tx = (tile.tile % 16) * 8
       local ty = math.floor(tile.tile / 16) * 8
@@ -316,7 +350,11 @@ function TradeAnim:drawFrameBlock(blockId, x, y)
       local sy = tile.yflip and -1 or 1
       local ox = tile.xflip and 8 or 0
       local oy = tile.yflip and 8 or 0
-      love.graphics.draw(self.img.moveAnim0, quad, x + tile.dx + ox, y + tile.dy + oy, 0, sx, sy)
+      love.graphics.draw(sheet, quad, x + tile.dx + ox, y + tile.dy + oy, 0, sx, sy)
+      if P then
+        P.markUiSpriteRedraw(sheet, quad, x + tile.dx + ox, y + tile.dy + oy,
+                             { sx = sx, sy = sy })
+      end
     end
   else
     if blockId == 3 or blockId == 4 or blockId == 5 then
@@ -361,10 +399,10 @@ function TradeAnim:update(dt)
         self.t = 0
       end
     elseif self.sub == "hold" then
+      -- data/moves/animations.asm:1198
       if skip or self.t >= 80 then
         self.sub = "poof"
         self.t = 0
-        Sound.play(self.game.data, "Ball_Poof")
       end
     elseif self.sub == "poof" then
       local step = math.floor(self.t / 6)
@@ -574,9 +612,10 @@ function TradeAnim:update(dt)
       if skip or self.t >= 80 then
         self.sub = "sends_text"
         self.t = 0
+        -- engine/movie/trade.asm:186
         self.dialogText = expand(self.game, "_TradeSendsText", {
           ["RAM:wLinkEnemyTrainerName"] = self.enemyName,
-          ["RAM:wNameBuffer"] = nameOf(self.game, self.received),
+          ["RAM:wNameBuffer"] = speciesName(self.game, self.received),
         })
       end
     elseif self.sub == "sends_text" then
@@ -600,8 +639,9 @@ function TradeAnim:update(dt)
       if skip or self.t >= 80 then
         self.sub = "transferred_text"
         self.t = 0
+        -- engine/movie/trade.asm:186
         self.dialogText = expand(self.game, "_TradeTransferredText", {
-          ["RAM:wNameBuffer"] = nameOf(self.game, self.received),
+          ["RAM:wNameBuffer"] = speciesName(self.game, self.received),
         })
       end
     elseif self.sub == "transferred_text" then
@@ -655,12 +695,13 @@ function TradeAnim:update(dt)
     if self.sub == "ball_bounce" then
       local step = math.floor(self.t / 5) + 1
       if step > #BALL_BOUNCE_DISTANCES or skip then
-        self.sub = "poof"
+        -- engine/movie/trade.asm:358
+        self.sub = "ball_rest"
         self.t = 0
-        self.activeBallBlock = nil
-        self.monVisible = true
         self.cableSlideOut = nil
-        Sound.play(self.game.data, "Ball_Poof")
+        self.boxVisible = true
+        self.activeBallBlock = 4
+        self.activeBallX, self.activeBallY = 72, 63
       else
         local yPos = 40
         for i = 1, step do
@@ -673,12 +714,21 @@ function TradeAnim:update(dt)
           Sound.play(self.game.data, "Swap")
         end
       end
+    elseif self.sub == "ball_rest" then
+      -- engine/movie/trade.asm:361
+      if skip or self.t >= 60 then
+        self.sub = "poof"
+        self.t = 0
+        self.activeBallBlock = nil
+      end
     elseif self.sub == "poof" then
       local step = math.floor(self.t / 6)
       if step >= 3 or skip then
         self.sub = "cry"
         self.t = 0
         self.activePoofBlock = nil
+        -- engine/movie/trade.asm:370
+        self.monVisible = true
         Sound.playCry(self.game.data, self.received.species)
       else
         self.activePoofBlock = 6 + step
@@ -688,8 +738,9 @@ function TradeAnim:update(dt)
       if skip or self.t >= 100 then
         self.sub = "take_care"
         self.t = 0
+        -- engine/movie/trade.asm:186
         self.dialogText = expand(self.game, "_TradeTakeCareText", {
-          ["RAM:wNameBuffer"] = nameOf(self.game, self.received),
+          ["RAM:wNameBuffer"] = speciesName(self.game, self.received),
         })
       end
     elseif self.sub == "take_care" then
@@ -710,11 +761,7 @@ end
 local function drawCableHoriz(self, y, x0, x1)
   local w = math.max(0, x1 - x0)
   if w <= 0 then return end
-  if self.cableFlash then
-    love.graphics.setColor(0.65, 0.65, 0.65, 1)
-  else
-    love.graphics.setColor(1, 1, 1, 1)
-  end
+  love.graphics.setColor(1, 1, 1, 1)
   if self.img.cableHoriz then
     local iw, ih = self.img.cableHoriz:getDimensions()
     for x = x0, x1 - 1, iw do
@@ -748,9 +795,11 @@ function TradeAnim:drawMonInfo(mon, ot, otId, boxTy)
 end
 
 function TradeAnim:drawIconInBubble(mon, x, y)
-  if self.img.bubble then
+  local baked = bubbleSheet(self.artPath.bubble)
+  local bubble = baked or self.img.bubble
+  if bubble then
     if not self.bubbleQuad then
-      local iw, ih = self.img.bubble:getDimensions()
+      local iw, ih = bubble:getDimensions()
       self.bubbleQuad = love.graphics.newQuad(0, 0, 16, 16, iw, ih)
       self.bubbleQuadAlt = ih >= 32
         and love.graphics.newQuad(0, 16, 16, 16, iw, ih)
@@ -759,13 +808,23 @@ function TradeAnim:drawIconInBubble(mon, x, y)
     local q = self.cableFlash and self.bubbleQuadAlt or self.bubbleQuad
     local left, top = x - 8, y - 8
     local right, bottom = left + 32, top + 32
-    love.graphics.draw(self.img.bubble, q, left, top)
-    love.graphics.draw(self.img.bubble, q, right, top, 0, -1, 1)
-    love.graphics.draw(self.img.bubble, q, left, bottom, 0, 1, -1)
-    love.graphics.draw(self.img.bubble, q, right, bottom, 0, -1, -1)
+    local P = baked and require("src.render.PaletteFX")
+    love.graphics.draw(bubble, q, left, top)
+    love.graphics.draw(bubble, q, right, top, 0, -1, 1)
+    love.graphics.draw(bubble, q, left, bottom, 0, 1, -1)
+    love.graphics.draw(bubble, q, right, bottom, 0, -1, -1)
+    if P then
+      P.markUiSpriteRedraw(bubble, q, left, top)
+      P.markUiSpriteRedraw(bubble, q, right, top, { sx = -1 })
+      P.markUiSpriteRedraw(bubble, q, left, bottom, { sy = -1 })
+      P.markUiSpriteRedraw(bubble, q, right, bottom, { sx = -1, sy = -1 })
+    end
   end
+  -- engine/movie/trade.asm:385
+  local PF = require("src.render.PaletteFX")
+  local obp = PF.usesSpriteObp() and { PF.ogObj() } or nil
   local drawn = mon and require("src.ui.PartyMenu").drawIcon(
-    self.game, mon, x, y, false, 0, self.cableFlash)
+    self.game, mon, x, y, false, 0, self.cableFlash, obp)
   if not drawn then
     love.graphics.setColor(0, 0, 0, 1)
     love.graphics.rectangle("fill", x + 4, y + 4, 8, 8)
@@ -784,9 +843,6 @@ function TradeAnim:drawGameBoy(x, y)
 end
 
 function TradeAnim:drawLeftGB()
-  if self.cableFlash then
-    love.graphics.setColor(0.65, 0.65, 0.65, 1)
-  end
   if self.img.cableConn then
     love.graphics.draw(self.img.cableConn, 88, 32)
   end
@@ -801,9 +857,6 @@ end
 
 function TradeAnim:drawRightGB()
   drawCableHoriz(self, 32, 0, 112)
-  if self.cableFlash then
-    love.graphics.setColor(0.65, 0.65, 0.65, 1)
-  end
   if self.img.cableCorner then love.graphics.draw(self.img.cableCorner, 112, 32) end
   if self.img.cableVert then
     for i = 1, 4 do
@@ -844,6 +897,7 @@ function TradeAnim:draw()
   local p = self.phase
 
   if p == "show_player" then
+    -- engine/movie/trade.asm:245
     love.graphics.push()
     love.graphics.translate(-self.scx, 0)
     if self.monVisible and self.sentSprite then
@@ -853,6 +907,9 @@ function TradeAnim:draw()
           56 - self.scx, 16, self.sentSprite:getDimensions())
       end
     end
+    love.graphics.pop()
+    love.graphics.push()
+    love.graphics.translate(self.scx, 0)
     self:drawMonInfo(self.sent, self.playerOt, self.playerOtId, 10)
     love.graphics.pop()
 
@@ -881,10 +938,18 @@ function TradeAnim:draw()
     if self.activeBallBlock then
       self:drawFrameBlock(self.activeBallBlock, self.activeBallX, self.activeBallY)
     elseif self.sub == "suction" or self.sub == "exit_pause" then
-      local ball = self.flash and (self.img.cableBallAlt or self.img.cableBall)
+      local path = self.flash and (self.artPath.cableBallAlt or self.artPath.cableBall)
+                  or self.artPath.cableBall
+      local baked = objSheet(path)
+      local ball = baked
+                  or (self.flash and (self.img.cableBallAlt or self.img.cableBall))
                   or self.img.cableBall
       if ball then
         love.graphics.draw(ball, self.ballX - 8, self.ballY - 16)
+        if baked then
+          require("src.render.PaletteFX").markUiSpriteRedraw(
+            ball, nil, self.ballX - 8, self.ballY - 16)
+        end
       else
         love.graphics.setColor(0, 0, 0, 1)
         love.graphics.circle("fill", self.ballX, self.ballY - 8, 6)
@@ -916,7 +981,7 @@ function TradeAnim:draw()
           56, 16, self.recvSprite:getDimensions())
       end
     end
-    if self.monVisible and self.sub ~= "take_care" and self.sub ~= "delay_end" then
+    if self.boxVisible and self.sub ~= "take_care" and self.sub ~= "delay_end" then
       self:drawMonInfo(self.received, self.enemyName, self.enemyOtId, 10)
     end
     if self.activeBallBlock then

@@ -215,6 +215,12 @@ local MAPSETUP_NO_FADE = {
   [MAPSETUP.CONNECTION] = true, [MAPSETUP.SUBMENU] = true,
 }
 
+-- data/maps/setup_scripts.asm:48, :154, :175, :26-30; home/audio.asm:281, :335, :412
+local MAPSETUP_MUSIC_BIKE = {
+  [MAPSETUP.WARP] = true, [MAPSETUP.TELEPORT] = true,
+  [MAPSETUP.CONTINUE] = true, [MAPSETUP.LINKRETURN] = true,
+}
+
 -- MapSetupCommands $26 UpdateRoamMons and $27 JumpRoamMons, read off the same
 -- eleven scripts with the same fallthroughs honoured.  This is the ONLY thing
 -- that moves the three legendary beasts around Johto, and where each sits in
@@ -271,6 +277,10 @@ local SPAWN_HOME = "SPAWN_HOME"
 local START_MAP = "PLAYERS_HOUSE_2F"
 local START_X, START_Y, START_FACING = 3, 3, "down"
 local PLAYER_SPRITE = "SPRITE_CHRIS"
+
+-- engine/overworld/player_object.asm:29-41
+local PLAYER_PAL_MALE = { palette = 8 }
+local PLAYER_PAL_FEMALE = { palette = 9 }
 
 -- constants/event_flags.asm.  HatchEggs sets this one by hand, for exactly one
 -- species, right after SetSeenAndCaughtMon.  wEventFlags is keyed by NUMBER
@@ -2676,20 +2686,23 @@ function World:playMapMusic()
   end
 end
 
--- data/maps/setup_scripts.asm:48
+-- data/maps/setup_scripts.asm:48, :117
 -- home/audio.asm:335
 -- home/audio.asm:281
-function World:setMapMusic(mapId, seamless)
+-- engine/overworld/events.asm:993
+function World:setMapMusic(mapId, seamless, method)
   local data = self.game and self.game.data
   local audio = data and data.audio
   if not (audio and audio.runtime) then return end
-  local bike = not seamless
+  method = method or self.setupMethod or MAPSETUP.WARP
+  local bikeRow = (not seamless) and MAPSETUP_MUSIC_BIKE[method] or false
+  local bike = bikeRow
     and FieldMoves.isBiking(self.playerState)
     and self:playBikeMusic()
   if bike then return end
   Music.playMap(data, mapId, nil,
                 FieldMoves.isSurfing(self.playerState),
-                seamless and Music.MAP_FADE or nil,
+                (not bikeRow) and Music.MAP_FADE or nil,
                 self:mapMusicSong(mapId))
 end
 
@@ -3582,7 +3595,11 @@ function World:runMapSetup(method, load, fly)
   -- the cart puts it -- in the setup SCRIPT, not in the map load.
   self:roamMonsBeforeLoad(method)
   local wrapped = function()
+    -- data/maps/setup_scripts.asm
+    local prevMethod = self.setupMethod
+    self.setupMethod = method
     local ok = load()
+    self.setupMethod = prevMethod
     -- engine/overworld/map_objects_2.asm:1
     self.playerMasked = nil
     -- data/maps/setup_scripts.asm:100; engine/overworld/map_setup.asm:88
@@ -5946,6 +5963,13 @@ end
 function World:playerGender()
   local save = self.game and self.game.save
   return save and save.player and save.player.gender or nil
+end
+
+-- engine/overworld/player_object.asm:29-41; pokegold player_object.asm:19
+function World:playerObjectDef()
+  if not self:isCrystal() then return nil end
+  return FieldMoves.isFemale(self:playerGender())
+    and PLAYER_PAL_FEMALE or PLAYER_PAL_MALE
 end
 
 -- The Chris/Kris sheet the player wears with no state on it
@@ -9661,14 +9685,15 @@ function World:applySpritePalette(entity)
       self.flashUsed)
   -- entity.def is the object_event, whose own palette field OVERRIDES the
   -- sprite's (Palettes.objectPaletteId; AddMapObject, player_object.asm:187).
-  -- The player has no object_event here, so it falls through to the sheet.
+  local def = entity.def
+  if entity == self.player then def = self:playerObjectDef() end
   local colors = Palettes.spritePalette(self.palettes, daytime,
-    entity.spriteDef, entity.def)
+    entity.spriteDef, def)
   if not colors then return end
   -- The bake cache key has to be the palette actually chosen, or the three
   -- beasts -- one sheet, three object palettes -- would all share the first
   -- bake taken.
-  local id = Palettes.objectPaletteId(entity.def)
+  local id = Palettes.objectPaletteId(def)
     or entity.spriteDef.paletteId or 0
   entity.sprite:setObjPalette(colors,
     ("gen2:%s:%d"):format(tostring(daytime), id))

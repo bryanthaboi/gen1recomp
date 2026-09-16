@@ -17,6 +17,7 @@
 local Fingerprint = require("src.link.Fingerprint")
 local Font = require("src.render.Font")
 local Handshake = require("src.link.Handshake")
+local LinkItems = require("src.link.LinkItems")
 local Logger = require("src.core.Logger")
 local Party = require("src.pokemon.Party")
 local Protocol = require("src.link.Protocol")
@@ -95,6 +96,8 @@ local function decodeWireAction(s, msg, battler)
   elseif msg.kind == "locked" then
     return s:lockedAction(battler)
   end
+  -- "item" (RFC 0021) and "switch" are not moves: the side that used one
+  -- makes no attack this turn
   return nil
 end
 
@@ -496,6 +499,19 @@ function LinkBattle.new(game, net, opts)
                                                  math.floor(theirMsg.index or 1)))
                         or nil
 
+    -- items go first (RFC 0021).  Ours is already on our copies -- the
+    -- bag applied it before the turn was submitted -- so only the peer's
+    -- is applied here, on our copies of their side, with their lines.
+    if theirMsg.kind == "item" then
+      s:act(function()
+        local lines = LinkItems.apply(s, theirMsg, {
+          battler = s.enemy, party = theirParty,
+          opponent = s.player, opponentParty = myParty, name = theirName,
+        })
+        for _, line in ipairs(lines) do s:sayNext(line) end
+      end)
+    end
+
     -- switches happen before attacks (both may switch)
     if myMsg.kind == "switch" then
       local idx = myMsg.index
@@ -646,6 +662,34 @@ function LinkBattle.new(game, net, opts)
     s:say(Strings("Items can't be\nused in a link\nbattle!"))
     s.phase = "messages"
     s.afterQueue = "menu"
+  end
+
+  -- Items on the cable (RFC 0021), for a mode that asks (opts.items).
+  -- The bag is the vanilla one -- BattleState.openItems pushes BagMenu
+  -- with this battle, whose picker already offers the clamped copies
+  -- (PartyMenu reads battle.playerParty) -- and ItemEffects applies the
+  -- effect to those copies the way it applies one in any fight.  What
+  -- changes is what spending the turn means: instead of the AI's move,
+  -- the item rides the wire as the turn's action, and both machines
+  -- resolve it before the moves (resolveLockstep).  The clock: a bag open
+  -- over the menu is not the menu, so opts.turnLimit waits at the bag.
+  if opts.items then
+    self.openItems = BattleState.openItems
+    self.itemUsed = function(s, messages, o)
+      s:syncShownStatus()
+      if o and o.barShown then
+        for _, b in ipairs({ s.player, s.enemy }) do
+          if b and b.shownHP then
+            b.shownHP = b.mon.hp
+            b.shownPx = require("src.core.Timing")
+              .hpBarPixels(b.mon.hp, math.max(1, b.mon.stats.hp))
+          end
+        end
+      end
+      for _, m in ipairs(messages or {}) do s:say(m) end
+      submit(s, LinkItems.wire(o and o.item, myParty, o and o.target,
+                               o and o.moveIndex), nil)
+    end
   end
 
   self.tryRun = function(s)
@@ -928,6 +972,24 @@ function LinkBattle.newSpectator(game, net, opts)
     s.phase = "messages"
     s.afterQueue = "linkNext"
     s.turnCount = (s.turnCount or 0) + 1
+
+    -- items first, as the two players resolve them (RFC 0021); a
+    -- spectator applied nothing ahead of time, so both sides' go here
+    for _, entry in ipairs({
+      { hostMsg, s.player, hostParty, s.enemy, guestParty, hostName },
+      { guestMsg, s.enemy, guestParty, s.player, hostParty, guestName },
+    }) do
+      local msg = entry[1]
+      if msg.kind == "item" then
+        s:act(function()
+          local lines = LinkItems.apply(s, msg, {
+            battler = entry[2], party = entry[3],
+            opponent = entry[4], opponentParty = entry[5], name = entry[6],
+          })
+          for _, line in ipairs(lines) do s:sayNext(line) end
+        end)
+      end
+    end
 
     if hostMsg.kind == "switch" then
       local idx = hostMsg.index

@@ -423,6 +423,7 @@ end
 local forceAwaitingFirstBuffer -- test-only override (see _simulate*)
 
 function ChipAudio.awaitingFirstBuffer()
+  if suspended then return false end
   if forceAwaitingFirstBuffer then return true end
   local m = currentMusic
   if not (m and m.threaded and not m.started and not m.finished) then
