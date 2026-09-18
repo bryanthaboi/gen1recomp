@@ -217,6 +217,35 @@ local function parseImports(value, field, required)
   return out
 end
 
+local function parseAssetPacks(value, field, required)
+  local out, seen = {}, {}
+  for _, entry in ipairs(array(value)) do
+    assert(type(entry) == "table", field .. " entries must be objects")
+    local importer, pack = entry.importer, entry.pack
+    assert(type(importer) == "string" and importer:match("^[%l%d_%-]+$"),
+      field .. " importer must be lowercase letters, numbers, _ or -")
+    assert(type(pack) == "string" and pack:match("^[%l%d_%-]+$"),
+      field .. " pack must be lowercase letters, numbers, _ or -")
+    local key = importer .. "/" .. pack
+    assert(not seen[key], "duplicate " .. field .. " entry: " .. key)
+    seen[key] = true
+    local range = entry.version
+    if range ~= nil then
+      assert(type(range) == "string" and range ~= "",
+        field .. " version must be a semver range string")
+      local ok, err = Semver.validRange(range)
+      assert(ok, field .. " version range is malformed: " .. tostring(err))
+    end
+    out[#out + 1] = {
+      importer = importer,
+      pack = pack,
+      version = range,
+      required = required ~= false,
+    }
+  end
+  return out
+end
+
 -- Drop bytes that are not valid UTF-8 (malformed sequences, overlongs,
 -- surrogates, > U+10FFFF) and a leading BOM.  LÖVE's text renderer raises
 -- "Invalid UTF-8" from love.graphics.print/printf, so any manifest string a
@@ -397,6 +426,18 @@ function Manifest.validate(raw, path)
     "required_imports", true)
   local optionalImports = parseImports(raw.optional_imports,
     "optional_imports", false)
+  local requiredAssets = parseAssetPacks(raw.required_assets,
+    "required_assets", true)
+  local optionalAssets = parseAssetPacks(raw.optional_assets,
+    "optional_assets", false)
+  local assetKeys = {}
+  for _, list in ipairs({ requiredAssets, optionalAssets }) do
+    for _, spec in ipairs(list) do
+      local key = spec.importer .. "/" .. spec.pack
+      assert(not assetKeys[key], "duplicate asset pack: " .. key)
+      assetKeys[key] = true
+    end
+  end
   local importIds, importFiles = {}, {}
   for _, list in ipairs({ requiredImports, optionalImports }) do
     for _, import in ipairs(list) do
@@ -437,6 +478,8 @@ function Manifest.validate(raw, path)
     assets_transforms = optionalFile(raw.assets_transforms, "assets_transforms"),
     required_imports = requiredImports,
     optional_imports = optionalImports,
+    required_assets = requiredAssets,
+    optional_assets = optionalAssets,
     -- an env var name, not a path, so it keeps the plain string check
     force_enable_env = optionalString(raw.force_enable_env, "force_enable_env"),
     path = path,

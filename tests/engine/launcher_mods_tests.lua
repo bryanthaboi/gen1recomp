@@ -197,6 +197,8 @@ do
     mf({ id = "two", name = "Two", version = "1.0.0", entry = "m.lua",
          games = { "gen2" } }),
     mf({ id = "both", name = "Both", version = "1.0.0", entry = "m.lua",
+         games = { "gen1", "gen2" } }),
+    mf({ id = "allg", name = "All", version = "1.0.0", entry = "m.lua",
          games = { "all" } }),
   }
   -- no game named: the pre-per-game view, where every row is just ready
@@ -204,6 +206,7 @@ do
   eq(all.one.targets, "GEN 1", "the chip says which games the mod is for")
   eq(all.two.targets, "GEN 2", "for each of them")
   eq(all.both.targets, "GEN 1+2", "including both")
+  eq(all.allg.targets, "GEN 1+2+3", "including all supported generations")
   eq(all.one.targetsHere, nil, "with no game to answer for, nothing is claimed")
   eq(all.two.status, "ok", "and no row is judged against a game")
 

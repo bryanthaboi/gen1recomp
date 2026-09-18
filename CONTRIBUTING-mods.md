@@ -254,6 +254,87 @@ with a `MK4xx` finding per site and an `unresolved:` note, with a file and a
 line, for every reach a static scan could not follow. Neither substitutes for a
 real Gold boot.
 
+### 4b. Imported asset packs (`required_assets`)
+
+`required_imports` is a file *you* ask the player for and parse yourself. An
+**asset pack** is the other direction: the launcher's IMPORTERS tab runs an
+engine-owned importer over a dump the player supplies, and that importer
+exports a named pack of finished assets that any mod may consume. One dump,
+imported once, shared by every mod that declares it.
+
+The importers and the packs they export are the registry in
+`src/import/Importers.lua`. A pack has a `kind`, and the kind fixes what the
+files in it may be:
+
+| Kind | Files | Typical contents |
+| --- | --- | --- |
+| `sprite` | `.png` | sprite sheets |
+| `tileset` | `.png` | tile sheets |
+| `palette` | `.png`, `.lua` | palettes |
+| `font` | `.png` | glyph sheets |
+| `sfx` | `.wav`, `.ogg` | one file per effect |
+| `music` | `.ogg`, `.wav` | one file per track |
+| `sample` | `.wav`, `.ogg` | instrument samples |
+
+Packs are installation-wide, not per playthrough. They live at
+`asset_packs/<importer>/<pack>/`, next to a `pack.lua` the importer writes:
+
+```lua
+return {
+  format = 1,
+  importer = "lttp",
+  pack = "sprites",
+  kind = "sprite",
+  version = "1.2.0",
+  source = { name = "A Link to the Past (USA)", md5 = "...", size = 1048576 },
+  entries = {
+    ["link/walk_down"] = { file = "link/walk_down.png", size = 2048,
+      width = 16, height = 24, frames = 4 },
+  },
+}
+```
+
+`version` is the *export* version: bump it when the importer changes what it
+writes, so a mod can pin what it was built against. `source` records the dump
+the pack came from, which is how a pack built from a different regional dump
+is told apart from yours.
+
+Declare what you need in the manifest:
+
+```json
+"required_assets": [
+  { "importer": "lttp", "pack": "sprites", "version": ">=1.2.0" }
+],
+"optional_assets": [
+  { "importer": "lttp", "pack": "music" }
+]
+```
+
+A `required_assets` entry that is not installed, or that is installed at a
+version outside your range, fails the mod at load with a reason that points
+the player at the IMPORTERS tab. Your entry file never runs half-configured.
+An `optional_assets` entry is yours to feature-detect.
+
+Read them through `mod.packs`, which can only address packs you declared:
+
+```lua
+local info = mod.packs:info("lttp", "sprites")        -- kind, version, count
+for _, entry in ipairs(mod.packs:entries("lttp", "sprites")) do
+  print(entry.id, entry.width, entry.height, entry.frames)
+end
+local png = mod.packs:read("lttp", "sprites", "link/walk_down")
+```
+
+`:read` returns bytes, capped at 8 MiB per entry, and refuses an entry whose
+size does not match what the pack manifest recorded. `mod.packs:list()` answers
+for every pack you declared, installed or not, so a settings screen can say
+what is missing. No host path crosses out, and an undeclared importer or pack
+is refused the same way an undeclared import id is.
+
+Legal posture is unchanged and non-negotiable: no pack, and nothing derived
+from one, is ever redistributed. An importer reads a dump the player already
+owns, on their machine, into their own save directory.
+
 ### 5. What a mod's code can reach
 
 Your code runs in a sandbox (`src/mods/Sandbox.lua`), not against the

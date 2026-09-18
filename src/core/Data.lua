@@ -109,6 +109,7 @@ end
 -- stamp one of these keys silently takes over from the engine.
 function Data:seedDefaults(version)
   version = version or require("src.core.GameVersion").get()
+  local gen = require("src.core.GameVersion").generation()
   local constants = self.constants or {}
   self.constants = constants
   self.field = self.field or {}
@@ -116,6 +117,11 @@ function Data:seedDefaults(version)
   self.pokemon = self.pokemon or {}
   for key, value in pairs(CONSTANT_DEFAULTS) do
     if constants[key] == nil then constants[key] = copy(value) end
+  end
+  if gen == 3 then
+    constants.dexSize = constants.dexSize or 386
+    constants.dexDigits = 3
+    return
   end
   -- derived, not literal: a dataset with a different roster gets the right
   -- upper bound without 151 being written down anywhere
@@ -271,7 +277,25 @@ end
 
 function Data:load()
   local dir = os.getenv("POKEPORT_DATA_DIR")
-  local gen2 = require("src.core.GameVersion").generation() == 2
+  local gen = require("src.core.GameVersion").generation()
+  local gen2 = gen == 2
+  local gen3 = gen == 3
+
+  if gen3 then
+    for _, name in ipairs(MODULES) do
+      self[name] = {}
+    end
+    for _, name in ipairs(OPTIONAL) do
+      self[name] = {}
+    end
+    self:seedDefaults()
+    local pristine = {}
+    self._pristineKeys = pristine
+    for key in pairs(self) do pristine[key] = true end
+    Logger.info("generated data initialized for gen3 (self-contained runtime)")
+    return
+  end
+
   for _, name in ipairs(MODULES) do
     local ok, mod = loadModule(dir, name)
     if not ok then

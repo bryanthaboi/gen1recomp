@@ -27,6 +27,16 @@
 local FaithfulRes = {}
 
 FaithfulRes.WIDTH, FaithfulRes.HEIGHT = 160, 144
+FaithfulRes.NATIVE_W, FaithfulRes.NATIVE_H = 160, 144
+
+function FaithfulRes.setNativeSize(w, h)
+  w, h = tonumber(w), tonumber(h)
+  if not w or not h or w < 1 or h < 1 then
+    w, h = 160, 144
+  end
+  FaithfulRes.WIDTH, FaithfulRes.HEIGHT = math.floor(w), math.floor(h)
+  FaithfulRes.NATIVE_W, FaithfulRes.NATIVE_H = FaithfulRes.WIDTH, FaithfulRes.HEIGHT
+end
 FaithfulRes.LEVELS = { 0, 1, 2, 3, 4 }
 FaithfulRes.DEFAULT = 0
 

@@ -449,11 +449,17 @@ local MODS_INBOX_DIR = "imports/mods"
 local SAVES_INBOX_DIR = "imports/saves"
 local ROM_BYTES_GEN1 = 1024 * 1024
 local ROM_BYTES_GEN2 = 2 * 1024 * 1024
+local ROM_BYTES_GEN3 = 16 * 1024 * 1024
 -- Historical alias: Gen 1 helpers and tests still refer to ROM_BYTES.
 local ROM_BYTES = ROM_BYTES_GEN1
 
 local function isAcceptedRomSize(n)
-  return n == ROM_BYTES_GEN1 or n == ROM_BYTES_GEN2
+  return n == ROM_BYTES_GEN1 or n == ROM_BYTES_GEN2 or n == ROM_BYTES_GEN3
+end
+
+-- .gb / .gbc / .gba (case-insensitive after lowercasing the name).
+local function isRomFilename(name)
+  return type(name) == "string" and name:lower():match("%.gb[ac]?$") ~= nil
 end
 
 local function cartLabels(generation)
@@ -553,7 +559,7 @@ function RomImporter:_setNxInboxNotice(version)
   if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
   self.notice = {
     version = version,
-    status = Strings("Copy your .gb/.gbc into:"),
+    status = Strings("Copy your .gb/.gbc/.gba into:"),
     detail = Strings("%s/imports/\nDBI MTP → 1: SD Card/%simports/", saveDir, rel),
   }
 end
@@ -597,7 +603,7 @@ local function listRomPaths(dir)
     -- but is not a ROM -- rescan would try it first and block the real dump).
     if name:sub(1, 1) ~= "." then
       local path = (dir == "" or dir == "/") and name or (dir .. "/" .. name)
-      if name:lower():match("%.gbc?$")
+      if isRomFilename(name)
           and love.filesystem.getInfo(path, "file") then
         paths[#paths + 1] = path
       end
@@ -959,11 +965,11 @@ end
 -- it directly through love.filesystem -- already mounted at the physfs
 -- root, so no io.* absolute-path handling is needed.
 --
--- Only a .gb/.gbc whose SHA maps to a version that is not yet ready counts as
--- pending.  GameActivity always writes the SAF pick to picked_rom.gb, so a
--- naive "first ROM wins" scan would re-import Red when the player tries to
--- add Blue (issue #167).  Yellow and Gold carts are typically .gbc (Gold is
--- 2 MiB).
+-- Only a .gb/.gbc/.gba whose SHA maps to a version that is not yet ready
+-- counts as pending.  GameActivity always writes the SAF pick to
+-- picked_rom.gb, so a naive "first ROM wins" scan would re-import Red when
+-- the player tries to add Blue (issue #167).  Yellow and Gold carts are
+-- typically .gbc (Gold is 2 MiB); FireRed is a 16 MiB .gba.
 -- `wanted` narrows the scan to one version.  A Choose names the cart it is
 -- for, so without it several dumps sitting in the save directory answered in
 -- listing order and the selection was dropped: picking Red imported Blue
@@ -971,7 +977,7 @@ end
 -- pass nothing and still take the first pending cart of any version.
 local function findPendingRom(ready, wanted)
   for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
-    if name:lower():match("%.gbc?$") and love.filesystem.getInfo(name, "file") then
+    if isRomFilename(name) and love.filesystem.getInfo(name, "file") then
       local data = love.filesystem.read(name)
       if type(data) == "string" and isAcceptedRomSize(#data) then
         local version = GameVersion.forSha1(sha1(data))
@@ -1104,14 +1110,14 @@ local function chooseRom(promptName)
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
-      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"gb", "gbc"})' 2>/dev/null]])
+      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"gb", "gbc", "gba"})' 2>/dev/null]])
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
       "Add-Type -AssemblyName System.Windows.Forms;",
       "$d=New-Object System.Windows.Forms.OpenFileDialog;",
       "$d.Title='" .. prompt .. "';",
-      "$d.Filter='Game Boy ROM (*.gb;*.gbc)|*.gb;*.gbc|All files (*.*)|*.*';",
+      "$d.Filter='Game Boy / GBA ROM (*.gb;*.gbc;*.gba)|*.gb;*.gbc;*.gba|All files (*.*)|*.*';",
       -- copy the pick to a plain-ASCII temp name and answer with that:
       -- the console's OEM codepage would mangle a non-ASCII path
       -- (Pokémon -> Pok\x82mon) and io.open on Windows needs ANSI bytes,
@@ -1127,11 +1133,51 @@ local function chooseRom(promptName)
       'powershell -NoProfile -STA -Command "' .. script .. '"')
   elseif platform == "Linux" then
     local path = commandOutput(
-      ([[zenity --file-selection --title="%s" --file-filter="Game Boy ROM | *.gb *.gbc" 2>/dev/null]])
+      ([[zenity --file-selection --title="%s" --file-filter="Game Boy / GBA ROM | *.gb *.gbc *.gba" 2>/dev/null]])
         :format(prompt))
     if path then return path end
     return commandOutput(
-      [[kdialog --getopenfilename "$HOME" "*.gb *.gbc|Game Boy ROM" 2>/dev/null]])
+      [[kdialog --getopenfilename "$HOME" "*.gb *.gbc *.gba|Game Boy / GBA ROM" 2>/dev/null]])
+  end
+  return nil
+end
+
+-- chooseRom for an importer's own dump: same per-OS dialogs, but the file
+-- types come from the importer descriptor rather than being Game Boy ROMs.
+local function chooseImporterFile(promptName, exts)
+  local prompt = shellSafe("Choose your " .. (promptName or "game") .. " dump")
+  local platform = love.system.getOS()
+  local quoted, globs, semis = {}, {}, {}
+  for _, ext in ipairs(exts) do
+    quoted[#quoted + 1] = ('"%s"'):format(ext)
+    globs[#globs + 1] = "*." .. ext
+    semis[#semis + 1] = "*." .. ext
+  end
+  if platform == "OS X" then
+    return commandOutput(
+      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {%s})' 2>/dev/null]])
+        :format(prompt, table.concat(quoted, ", ")))
+  elseif platform == "Windows" then
+    local script = table.concat({
+      "Add-Type -AssemblyName System.Windows.Forms;",
+      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      "$d.Title='" .. prompt .. "';",
+      "$d.Filter='Cartridge dump (" .. table.concat(semis, ";") .. ")|"
+        .. table.concat(semis, ";") .. "|All files (*.*)|*.*';",
+      "if($d.ShowDialog() -eq 'OK'){",
+      "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
+      "[Console]::Write($d.FileName)}",
+    })
+    return commandOutput(
+      'powershell -NoProfile -STA -Command "' .. script .. '"')
+  elseif platform == "Linux" then
+    local path = commandOutput(
+      ([[zenity --file-selection --title="%s" --file-filter="Cartridge dump | %s" 2>/dev/null]])
+        :format(prompt, table.concat(globs, " ")))
+    if path then return path end
+    return commandOutput(
+      ([[kdialog --getopenfilename "$HOME" "%s|Cartridge dump" 2>/dev/null]])
+        :format(table.concat(globs, " ")))
   end
   return nil
 end
@@ -1470,9 +1516,14 @@ function RomImporter.new(onComplete, opts)
     local marker = CacheContract.readMarker(version, CacheFs)
     self.returning[version] =
       (not ready) and marker ~= nil and not CacheContract.markerMatches(version, marker)
-    self.romName[version] = "pokemon_" .. info.id
-      .. ((info.id == "yellow" or GameVersion.generation(version) == 2)
-        and ".gbc" or ".gb")
+    local gen = GameVersion.generation(version)
+    local ext = ".gb"
+    if gen == 3 then
+      ext = ".gba"
+    elseif info.id == "yellow" or gen == 2 then
+      ext = ".gbc"
+    end
+    self.romName[version] = "pokemon_" .. info.id .. ext
   end
   RomImporter.syncAndroidShortcuts()
   Transition.reset()
@@ -1495,7 +1546,7 @@ function RomImporter.new(onComplete, opts)
   end
   self:_queueBaseRomScan()
 
-  -- Android: import a save-dir .gb/.gbc that is not yet ready (USB drop or a
+  -- Android: import a save-dir .gb/.gbc/.gba that is not yet ready (USB drop or a
   -- leftover SAF pick), routed by SHA-1.  Already-imported carts are skipped
   -- so a stale picked_rom.gb cannot block another version.
   local needRom = false
@@ -1786,9 +1837,11 @@ function RomImporter:startData(data, displayName)
     return
   end
   if not isAcceptedRomSize(#data) then
-    self:setError(("Expected a 1 MiB Game Boy ROM (%s) or a "
-      .. "2 MiB Game Boy Color ROM (%s); this file is %.2f MiB.")
-      :format(cartsSlashed(1), cartsSlashed(2), #data / 1024 / 1024))
+    self:setError(("Expected a 1 MiB Game Boy ROM (%s), a "
+      .. "2 MiB Game Boy Color ROM (%s), or a 16 MiB Game Boy Advance ROM (%s); "
+      .. "this file is %.2f MiB.")
+      :format(cartsSlashed(1), cartsSlashed(2), cartsSlashed(3),
+        #data / 1024 / 1024))
     return
   end
   local actualHash = sha1(data)
@@ -1863,7 +1916,7 @@ function RomImporter:_startExtractThread(version, prefix, data, displayName)
     progress = love.thread.getChannel(progressName),
     result = love.thread.getChannel(resultName),
   }
-  -- The worker owns the bytes now; drop ours so the 1-2 MiB string can go.
+  -- The worker owns the bytes now; drop ours so the 1-16 MiB string can go.
   self.romData = nil
   return true
 end
@@ -1874,7 +1927,10 @@ function RomImporter:_startExtractCoroutine(version, info, prefix, displayName)
     local CacheFs = require("src.import.CacheFs")
     CacheFs.prefix = prefix
     local manifest = require("src.import.RomManifest").decode(version)
-    local RomExtractor = GameVersion.generation(version) == 2
+    local gen = GameVersion.generation(version)
+    local RomExtractor = gen == 3
+      and require("src.import.RomExtractorGen3")
+      or gen == 2
       and require("src.import.RomExtractorGen2")
       or require("src.import.RomExtractor")
     local extractor = RomExtractor.new(self.romData, manifest,
@@ -1911,7 +1967,7 @@ function RomImporter:_completeImport(version, prefix, displayName)
   self.returning[version] = false
   self.romName[version] = (displayName
     and (displayName:match("[^/\\]+$") or displayName)) or self.romName[version]
-  -- Android: drop the consumed save-dir .gb/.gbc (picked_rom.gb or a USB copy)
+  -- Android: drop the consumed save-dir .gb/.gbc/.gba (picked_rom.gb or a USB copy)
   -- so the next Choose / focus cannot treat it as a fresh pending ROM.
   if self.mobileFileBridge and type(displayName) == "string"
       and not displayName:find("[/\\]") then
@@ -2014,6 +2070,12 @@ function RomImporter:filedropped(file)
   local data, readError = readDroppedFile(file)
   if not data then
     self:setError("Could not read the dropped file: " .. tostring(readError))
+    return
+  end
+  if self._importerDropFor then
+    local importerId = self._importerDropFor
+    self._importerDropFor = nil
+    self:_runImporterData(importerId, data)
     return
   end
   self:startData(data, file:getFilename())
@@ -2728,7 +2790,7 @@ function RomImporter:choose(version)
     return
   end
   if self.android then
-    -- Prefer a not-yet-imported .gb/.gbc already in the save dir (USB copy, or
+    -- Prefer a not-yet-imported .gb/.gbc/.gba already in the save dir (USB copy, or
     -- a fresh SAF pick).  Never reuse an already-imported cart's file -- that
     -- was the #167 failure mode (second Choose just re-extracted Red).  This
     -- is a Choose, so it takes the cart that was asked for and nothing else.
@@ -2797,13 +2859,13 @@ function RomImporter:choose(version)
       or "the game folder"
     self.notice = {
       version = self.chooseVersion,
-      status = "No file picker. Copy your .gb/.gbc into:",
+      status = "No file picker. Copy your .gb/.gbc/.gba into:",
       detail = where,
     }
     return
   end
   if love.system.getOS() ~= "OS X" and love.system.getOS() ~= "Windows" then
-    self:setError("File selection is unavailable here. Drop the .gb/.gbc file onto the window.")
+    self:setError("File selection is unavailable here. Drop the .gb/.gbc/.gba file onto the window.")
   end
 end
 
@@ -2853,7 +2915,7 @@ function RomImporter:_pollPickedFiles(dt)
   if not found then
     for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
       local n = name:lower()
-      if n:match("%.gbc?$") or n == "picked_mod.zip" or n == "picked_save.sav"
+      if isRomFilename(n) or n == "picked_mod.zip" or n == "picked_save.sav"
           or n == "picked_required_import.bin" or n == "picked_stadium.z64" then
         found = true
         break
@@ -2868,6 +2930,7 @@ end
 
 function RomImporter:update(dt)
   self.pulse = self.pulse + dt
+  if self._importerJob then self:_stepImporter() end
   if not Transition.armed then
     self._motionFrames = (self._motionFrames or 0) + 1
     if self._motionFrames > 1 then Transition.armed = true end
@@ -3057,6 +3120,11 @@ function RomImporter:update(dt)
         if Platform.isUWP() and self.modNotice and self.modNotice.ok then
           os.remove(path)
         end
+      elseif kind == "importer" then
+        local importerId = self.pickerPendingImporterId
+        self.pickerPendingImporterId = nil
+        if importerId then self:_runImporter(importerId, path) end
+        if Platform.isUWP() then os.remove(path) end
       elseif kind == "skin" then
         self:_installSkinZip(path)
         if Platform.isUWP() and self._skinNotice and self._skinNotice.ok then
@@ -3236,7 +3304,7 @@ function RomImporter:resumeAfterOverlay()
 end
 
 function RomImporter:_cycleTab(delta)
-  local order = { "mods", "find", "skins" }
+  local order = { "mods", "find", "skins", "importers" }
   for i = #GameVersion.ORDER, 1, -1 do
     table.insert(order, 1, GameVersion.ORDER[i])
   end
@@ -3878,6 +3946,104 @@ end
 -- Switch the active tab (chips, shoulder buttons).  The find search caret and
 -- the soft keyboard drop with the panel they belonged to; each tab's scroll
 -- offset persists inside the view's per-tab scroll container.
+function RomImporter:_beginImporterImport(importerId)
+  local Importers = require("src.import.Importers")
+  local desc = Importers.get(importerId)
+  if not desc or desc.status == "planned" then return end
+  if self._importerJob then return end
+  self._importerNotice = nil
+  if self.nativePicker and love.system.getPickedFile then
+    self.pickerPendingKind = "importer"
+    self.pickerPendingImporterId = importerId
+    if not pickFile("rom") then
+      self.pickerPendingKind, self.pickerPendingImporterId = nil, nil
+      self._importerNotice = { text = "Could not open the file picker." }
+    end
+    return
+  end
+  local path = chooseImporterFile(desc.name, desc.source.formats or { "sfc" })
+  if path then
+    self:_runImporter(importerId, path)
+    return
+  end
+  local okKit, Kit = pcall(require, "src.ui.kit.Kit")
+  if okKit and Kit.FileBrowser then
+    self._padCursorActive = false
+    Kit.FileBrowser.open({
+      title = "Select " .. desc.name,
+      mode = "rom",
+      onSelect = function(pickedPath)
+        self:_runImporter(importerId, pickedPath)
+      end,
+    })
+    return
+  end
+  self._importerNotice = {
+    text = "Drop your " .. desc.name .. " dump onto this window.",
+  }
+  self._importerDropFor = importerId
+end
+
+function RomImporter:_runImporter(importerId, path)
+  local data, readErr = readExternalPath(path)
+  if not data then
+    self._importerNotice = { text = "Could not read that file: "
+      .. tostring(readErr) }
+    return
+  end
+  return self:_runImporterData(importerId, data)
+end
+
+function RomImporter:_runImporterData(importerId, data)
+  local LttpImport = require("src.import.lttp.LttpImport")
+  if importerId ~= LttpImport.IMPORTER then return end
+  local source, err = LttpImport.identify(data)
+  if not source then
+    self._importerNotice = { text = tostring(err) }
+    return
+  end
+  self._importerJob = {
+    id = importerId,
+    co = LttpImport.job(data),
+    progress = 0,
+    status = "Reading " .. source.name,
+  }
+  self._importerNotice = nil
+end
+
+function RomImporter:_stepImporter()
+  local job = self._importerJob
+  if not job then return end
+  local budget = 24
+  while budget > 0 do
+    budget = budget - 1
+    if coroutine.status(job.co) == "dead" then break end
+    local ok, value = coroutine.resume(job.co)
+    if not ok then
+      self._importerJob = nil
+      self._importerNotice = { text = "Import failed: " .. tostring(value) }
+      self._importerRows = nil
+      return
+    end
+    if coroutine.status(job.co) == "dead" then
+      self._importerJob = nil
+      self._importerRows = nil
+      local packs = {}
+      for id, count in pairs(type(value) == "table" and value.packs or {}) do
+        packs[#packs + 1] = id .. " (" .. count .. ")"
+      end
+      table.sort(packs)
+      self._importerNotice = { ok = true,
+        text = "Imported " .. table.concat(packs, ", ") }
+      return
+    end
+    if type(value) == "table" and value.total and value.total > 0 then
+      job.progress = value.done / value.total
+      job.status = value.status or job.status
+    end
+  end
+end
+
 function RomImporter:_switchTab(id)
   if id == "bug" then return self:_openBugPanel() end
   if self.tab and self.tab ~= id then
@@ -3896,6 +4062,7 @@ function RomImporter:_switchTab(id)
   -- the skins list is cheap and can change behind the launcher's back
   -- (an export, a hand-dropped folder), so re-read it on every visit
   if id == "skins" then self:_ensureSkins(true) end
+  if id == "importers" then self._importerRows = nil end
   if GameVersion.VERSIONS[id] then
     self:_setModScope(id)
   end

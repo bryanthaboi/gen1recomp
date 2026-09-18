@@ -1,0 +1,20 @@
+{
+  "id": "example_lttp_overhaul",
+  "name": "Link to the Past Import Example",
+  "version": "1.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "games": ["red", "blue", "yellow"],
+  "required_assets": [
+    { "importer": "lttp", "pack": "sprites", "version": ">=1.1.0" },
+    { "importer": "lttp", "pack": "tiles", "version": ">=1.1.0" }
+  ],
+  "optional_assets": [
+    { "importer": "lttp", "pack": "palettes" }
+  ],
+  "description": "Draws the player and Pallet Town from asset packs you imported off your own A Link to the Past cartridge dump. Ships no art of its own: every pixel is read at runtime from your own import, and the mod refuses to load without it."
+}

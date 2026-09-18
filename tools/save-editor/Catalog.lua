@@ -15,7 +15,9 @@ end
 local function sortedRecordKeys(t)
   local keys = {}
   for k, v in pairs(t or {}) do
-    if type(v) == "table" then table.insert(keys, k) end
+    if type(k) == "string" and type(v) == "table" then
+      table.insert(keys, k)
+    end
   end
   table.sort(keys)
   return keys
@@ -141,6 +143,29 @@ end
 
 function Catalog.goldEventList(extraDirs)
   return Catalog.gen2EventList("gs", extraDirs)
+end
+
+function Catalog.game3EventList(extraDirs)
+  local okF, FlagsTable = pcall(require, "src.core.game3.scripting.flags_table")
+  local names = {}
+  local seen = {}
+  if okF and FlagsTable and FlagsTable.FLAGS then
+    for name, id in pairs(FlagsTable.FLAGS) do
+      if type(name) == "string" and not seen[name] then
+        names[#names + 1] = name
+        seen[name] = true
+      end
+    end
+  end
+  local modFlags = Catalog.scrapeEvents(nil, nil, nil, extraDirs)
+  for _, name in ipairs(modFlags) do
+    if not seen[name] then
+      names[#names + 1] = name
+      seen[name] = true
+    end
+  end
+  table.sort(names)
+  return names
 end
 
 return Catalog

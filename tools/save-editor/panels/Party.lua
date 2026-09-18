@@ -106,7 +106,12 @@ local function drawRoster(S, Kit, x, y, listW, h)
 
       local tx = cx + rpad + icon + 12 * s
       local tw = math.max(40 * s, (cx + innerW - rightW - 10 * s) - tx)
-      local name = Kit.ellipsize("monoRow", mon.species, tw - 34 * s)
+      local monName = (mon.nickname and mon.nickname ~= "" and mon.nickname)
+        or (type(mon.species) == "string" and mon.species)
+        or (type(mon.name) == "string" and mon.name ~= "" and mon.name)
+        or (S.data and S.data.pokemon and S.data.pokemon[mon.species or mon.speciesId] and S.data.pokemon[mon.species or mon.speciesId].name)
+        or tostring(mon.species or "POKEMON")
+      local name = Kit.ellipsize("monoRow", monName, tw - 34 * s)
       Kit.text("monoRow", name, tx, ry + 10 * s, PAL.heading)
       Kit.text("tiny", ("#%d"):format(slot),
         tx + Kit.textWidth("monoRow", name) + 8 * s, ry + 12 * s, PAL.caption)

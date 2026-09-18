@@ -8,5 +8,7 @@
   "dependencies": [],
   "optional_dependencies": [],
   "conflicts": [],
+  "games": ["gen1", "gen3"],
+  "force_enable_env": "POKEPORT_MEW_STARTER",
   "description": "Turns the Oak's Lab Charmander gift into a level 20 Mew with inverted battle sprites."
 }

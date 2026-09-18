@@ -58,7 +58,7 @@ local OUTSIDE_TILESETS = { OVERWORLD = true, PLATEAU = true }
 
 local function goToWarp(S, warp)
   local def = warp.def
-  if Gen.of(S.save) == 2 then
+  if Gen.of(S.save) == 3 or Gen.of(S.save) == 2 then
     local dest = def.destMap or def.map
     if dest then
       S.mapId = dest
@@ -151,7 +151,13 @@ local function drawOverlays(S, map)
     love.graphics.setColor(1, 0.36, 0.4, 0.9)
     love.graphics.rectangle("fill", cellRect(px, py))
   end
-  if Gen.of(S.save) ~= 2 then
+  if Gen.of(S.save) == 3 then
+    local healMap = S.save.healMap
+    if healMap == S.mapId and S.save.healX and S.save.healY then
+      love.graphics.setColor(0.24, 0.88, 0.54, 0.9)
+      love.graphics.rectangle("line", cellRect(S.save.healX, S.save.healY))
+    end
+  elseif Gen.of(S.save) ~= 2 then
     local heal = S.save.lastHeal
     if heal and heal.map == S.mapId then
       love.graphics.setColor(0.24, 0.88, 0.54, 0.9)
@@ -279,7 +285,82 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
     vr.y + vpad + (headH - Kit.textHeight("monoBig")) / 2, PAL.heading)
 
   local ok, map
-  if Gen.of(S.save) == 2 then
+  if Gen.of(S.save) == 3 then
+    local def = Gen.maps(S.data)[S.mapId]
+    if def then
+      local mw = def.width or 20
+      local mh = def.height or 18
+      local midLayout = def.midLayout
+      local pair = def.pair or (midLayout and midLayout.pair)
+      map = {
+        id = S.mapId,
+        def = def,
+        width = mw,
+        height = mh,
+        widthCells = mw,
+        heightCells = mh,
+        warps = def.warps or {},
+        inBounds = function(self, cx, cy)
+          return cx >= 0 and cx < self.width and cy >= 0 and cy < self.height
+        end,
+        warpAtCell = function(self, cx, cy)
+          for _, w in ipairs(self.warps or {}) do
+            if w.x == cx and w.y == cy then
+              return { def = w }
+            end
+          end
+          return nil
+        end,
+        tileAtCell = function(self, cx, cy)
+          if midLayout and midLayout.midAt then
+            return midLayout:midAt(cx, cy) or 0
+          end
+          return 0
+        end,
+      }
+
+      local okN, NativeTileset = pcall(require, "src.core.game3.tileset_native")
+      if okN and NativeTileset and pair and midLayout and midLayout.midAt then
+        local ts = NativeTileset.get(pair)
+        if ts and ts.image then
+          map.renderer = {
+            draw = function(self, camX, camY)
+              local viewW = S._mapViewW or 480
+              local viewH = S._mapViewH or 432
+              local zoom = S.mapZoom or 1
+              local startCx = math.max(0, math.floor(camX / CELL) - 1)
+              local endCx = math.min(mw - 1, math.ceil((camX + viewW / zoom) / CELL) + 1)
+              local startCy = math.max(0, math.floor(camY / CELL) - 1)
+              local endCy = math.min(mh - 1, math.ceil((camY + viewH / zoom) / CELL) + 1)
+
+              love.graphics.setColor(1, 1, 1, 1)
+              for cy = startCy, endCy do
+                for cx = startCx, endCx do
+                  local mid = midLayout:midAt(cx, cy)
+                  if mid and mid >= 0 then
+                    local slot = NativeTileset.slotFor(ts, mid)
+                    local q = NativeTileset.quad(ts, slot)
+                    if q then
+                      love.graphics.draw(ts.image, q, cx * CELL - camX, cy * CELL - camY)
+                    end
+                    if ts.layered and ts.overImage then
+                      local oq = NativeTileset.overQuad(ts, slot)
+                      if oq then
+                        love.graphics.draw(ts.overImage, oq, cx * CELL - camX, cy * CELL - camY)
+                      end
+                    end
+                  end
+                end
+              end
+            end
+          }
+        end
+      end
+      ok = true
+    else
+      ok, map = false, "unknown map"
+    end
+  elseif Gen.of(S.save) == 2 then
     local def = Gen.maps(S.data)[S.mapId]
     if def then
       local Map2 = require("src.world.gen2.Map")
@@ -474,7 +555,18 @@ function MapBrowser.draw(S, Kit, x, y, w, h)
   local pmap2, px2, py2 = playerPos(S)
   local playerValue = pmap2 and ("%s (%d,%d)"):format(pmap2, px2, py2) or "unset"
   local spawns
-  if Gen.of(S.save) == 2 then
+  if Gen.of(S.save) == 3 then
+    local healMap = S.save.healMap
+    local healX = S.save.healX or 0
+    local healY = S.save.healY or 0
+    spawns = {
+      { key = "PLAYER", color = PAL.red, value = playerValue,
+        set = function() Ops.setPlayerHere(S) end },
+      { key = "LAST HEAL", color = PAL.green,
+        value = healMap and ("%s (%d,%d)"):format(healMap, healX, healY) or "unset",
+        set = function() Ops.setLastHeal(S) end },
+    }
+  elseif Gen.of(S.save) == 2 then
     spawns = {
       { key = "PLAYER", color = PAL.red, value = playerValue,
         set = function() Ops.setPlayerHere(S) end },

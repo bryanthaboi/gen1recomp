@@ -145,11 +145,52 @@ function SpriteRenderer.new(spriteDef, seed)
   self.anchorX = numberOr(spriteDef.anchorX, self.frameWidth / 2)
   self.anchorY = numberOr(spriteDef.anchorY, self.frameHeight)
   local iw, ih = self.image:getDimensions()
+  -- Vanilla sheets are a single column of frames, so both default to the
+  -- original arithmetic.  Grid sheets (imported art) set frameColumns to
+  -- walk across a row before stepping down, and frameOffset to start past
+  -- whatever leads the sheet.
+  self.frameColumns = positiveInteger(spriteDef.frameColumns, 1)
+  self.frameOffset = math.max(0, math.floor(numberOr(spriteDef.frameOffset, 0)))
   self.frames = {}
   for f = 0, self.frameCount - 1 do
-    self.frames[f] = love.graphics.newQuad(0, f * self.frameHeight,
+    local index = f + self.frameOffset
+    local col = index % self.frameColumns
+    local row = math.floor(index / self.frameColumns)
+    self.frames[f] = love.graphics.newQuad(col * self.frameWidth,
+                                           row * self.frameHeight,
                                            self.frameWidth, self.frameHeight,
                                            iw, ih)
+  end
+
+  -- Multi-part frames: each cell is a piece of the sheet placed at an offset
+  -- inside the frame, so parts that move independently stay separate art.
+  if type(spriteDef.cells) == "table" and #spriteDef.cells > 0 then
+    local cw = positiveInteger(spriteDef.cellWidth, 8)
+    local ch = positiveInteger(spriteDef.cellHeight, 8)
+    local cols = positiveInteger(spriteDef.cellColumns,
+      math.max(1, math.floor(iw / cw)))
+    self.cellFrames = {}
+    for f = 0, self.frameCount - 1 do
+      local spec = spriteDef.cells[f + 1]
+      if type(spec) == "table" and #spec > 0 then
+        local built = {}
+        for i, cell in ipairs(spec) do
+          local index = math.max(0, math.floor(finiteNumber(cell.tile) or 0))
+          local col = index % cols
+          local row = math.floor(index / cols)
+          built[i] = {
+            quad = love.graphics.newQuad(col * cw, row * ch, cw, ch, iw, ih),
+            dx = math.floor(numberOr(cell.dx, 0)),
+            dy = math.floor(numberOr(cell.dy, 0)),
+            flipX = cell.flipX == true,
+            flipY = cell.flipY == true,
+            w = cw, h = ch,
+            sourceX = col * cw, sourceY = row * ch,
+          }
+        end
+        self.cellFrames[f] = built
+      end
+    end
   end
   return self
 end
@@ -276,6 +317,55 @@ local function blitFrame(image, quad, x, y, flip, redraw, frameWidth)
   end
 end
 
+-- Composite a multi-part frame.  A whole-frame `flip` mirrors the layout as
+-- well as each piece, so a facing built by mirroring another lands its parts
+-- on the correct side.
+-- Where a cell lands when the whole frame is mirrored, and whether the piece
+-- itself is then drawn flipped.
+function SpriteRenderer.mirrorCell(dx, width, frameWidth, flipX)
+  return frameWidth - dx - width, not flipX
+end
+
+local function blitCells(image, cells, x, y, flip, redraw, frameWidth)
+  for _, c in ipairs(cells) do
+    local dx, flipX = c.dx, c.flipX
+    if flip then
+      dx, flipX = SpriteRenderer.mirrorCell(c.dx, c.w, frameWidth, c.flipX)
+    end
+    local sx = flipX and -1 or 1
+    local sy = c.flipY and -1 or 1
+    local ox = flipX and c.w or 0
+    local oy = c.flipY and c.h or 0
+    love.graphics.draw(image, c.quad, x + dx + ox, y + c.dy + oy, 0, sx, sy)
+    if redraw then
+      PaletteFX.markSpriteRedraw(image, c.quad, x + dx + ox, y + c.dy + oy, sx)
+    end
+  end
+end
+
+local function clippedCells(self, frame, first, last)
+  self.clippedCells = self.clippedCells or {}
+  local key = frame .. ":" .. first .. ":" .. last
+  if self.clippedCells[key] then return self.clippedCells[key] end
+  local result = {}
+  local iw, ih = self.image:getDimensions()
+  for _, cell in ipairs(self.cellFrames[frame]) do
+    local top = math.max(first, cell.dy)
+    local bottom = math.min(last, cell.dy + cell.h)
+    if bottom > top then
+      local sourceY = cell.flipY and cell.h - (bottom - cell.dy) or top - cell.dy
+      result[#result + 1] = {
+        quad = love.graphics.newQuad(cell.sourceX, cell.sourceY + sourceY,
+          cell.w, bottom - top, iw, ih),
+        dx = cell.dx, dy = top - first, w = cell.w, h = bottom - top,
+        flipX = cell.flipX, flipY = cell.flipY,
+      }
+    end
+  end
+  self.clippedCells[key] = result
+  return result
+end
+
 -- topHalf blits everything above the bottom 8-pixel tile row: FishingAnim
 -- overwrites that row of the standing frames with fishing pose art, which the
 -- caller then draws itself through :drawTile (Player:draw, #384).  Vanilla
@@ -346,6 +436,22 @@ function SpriteRenderer:draw(px, py, camX, camY, facing, walkPhase, stepFlip,
   local bottomSkip = math.max(0, self.frameHeight - rowH)
   if oamRow == "bottom" then topHalf = false
   elseif oamRow == "top" then topHalf = true end
+  local cells = self.cellFrames and self.cellFrames[frame]
+  if cells then
+    local first, last = 0, self.frameHeight
+    if topHalf then last = bottomSkip
+    elseif oamRow == "bottom" then first = bottomSkip end
+    local x, y = self:getScreenOrigin(px, py, camX, camY)
+    y = y + first
+    if liveTrueColor(self.def) then
+      PaletteFX.markTrueColor(x, y, self.frameWidth, last - first)
+    end
+    if first ~= 0 or last ~= self.frameHeight then
+      cells = clippedCells(self, frame, first, last)
+    end
+    blitCells(image, cells, x, y, flip, redraw, self.frameWidth)
+    return
+  end
   -- facings.asm splits at y = 8 inside a 16 px-tall frame; do not require
   -- multiple animation frames (standing sheets are often frames = 1).
   if topHalf and self.frameHeight > rowH then

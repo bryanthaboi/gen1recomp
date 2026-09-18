@@ -45,8 +45,22 @@ local STAT_KEYS_G2 = {
 -- which re-decoded a PNG sixty times a second.
 local spriteCache = {}
 function MonEditor.sprite(S, species)
+  if not species then return nil end
   if spriteCache[species] ~= nil then return spriteCache[species] or nil end
-  local def = S.data.pokemon[species]
+  if Gen.ofState(S) == 3 then
+    local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
+    if okP and Pokemon then
+      local spId = tonumber(species) or (Pokemon.speciesFromName and Pokemon.speciesFromName(tostring(species)))
+      if spId then
+        local pic = (Pokemon.frontPic and Pokemon.frontPic(spId)) or (Pokemon.icon and Pokemon.icon(spId))
+        if pic and pic.image then
+          spriteCache[species] = pic.image
+          return pic.image
+        end
+      end
+    end
+  end
+  local def = S.data and S.data.pokemon and (S.data.pokemon[species] or (type(species) == "number" and S.data.pokemon[species]))
   local path = def and def.spriteFront
   if not path or not love.graphics.newImage then
     spriteCache[species] = false
@@ -75,7 +89,7 @@ function MonEditor.drawSprite(S, Kit, species, x, y, size)
   love.graphics.rectangle("fill", x, y, size, size, 8 * Kit.scale, 8 * Kit.scale)
   Theme.col(PAL.cardBorder, 0.35)
   Theme.dashed(x, y, size, size, 8 * Kit.scale, 5 * Kit.scale, 4 * Kit.scale)
-  Kit.textCenter("micro", (species or "?"):sub(1, 3), x,
+  Kit.textCenter("micro", tostring(species or "?"):sub(1, 3), x,
     y + size / 2 - Kit.textHeight("micro") / 2, size, PAL.muted)
 end
 
@@ -120,10 +134,11 @@ end
 
 local function drawDvRows(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
   local s = Kit.scale
+  mon.dvs = mon.dvs or { attack = 0, defense = 0, speed = 0, special = 0, hp = 0 }
   for i, key in ipairs(DV_KEYS) do
     local ry = rowY + (i - 1) * (rowH + rowGap)
     Theme.row(cx, ry, colW, rowH, 10 * s, 0.6)
-    local v = mon.dvs[key] or 0
+    local v = (mon.dvs and mon.dvs[key]) or 0
     Kit.text("tiny", key:upper(), cx + 10 * s,
       ry + (rowH - Kit.textHeight("tiny")) / 2, PAL.muted)
     local btn = 26 * s
@@ -215,13 +230,24 @@ local function drawMoveRows(S, Kit, mon, rightX, rowY, colW, rowH, rowGap)
     local mv = mon.moves and mon.moves[slot]
     local clear = Kit.tapMin()
     local clearX = rightX + colW - 10 * s - clear
-    local ppText = mv and ("PP %d"):format(mv.pp or 0) or ""
+    local mvId = nil
+    local mvPp = 0
+    if type(mv) == "table" then
+      mvId = mv.id or mv.name or (mv.moveId and (S.data and S.data.moves and S.data.moves[mv.moveId] and S.data.moves[mv.moveId].name))
+      mvPp = mv.pp or 0
+    elseif type(mv) == "number" then
+      mvId = S.data and S.data.moves and S.data.moves[mv] and S.data.moves[mv].name
+      mvPp = S.data and S.data.moves and S.data.moves[mv] and S.data.moves[mv].pp or 10
+    elseif type(mv) == "string" then
+      mvId = mv
+    end
+    local ppText = mv and ("PP %d"):format(mvPp) or ""
     local ppW = Kit.textWidth("tiny", ppText)
     Kit.text("mono", tostring(slot), rightX + 10 * s,
       ry + (rowH - Kit.textHeight("mono")) / 2, PAL.faint)
     local nameX = rightX + 28 * s
     local nameW2 = math.max(20 * s, clearX - 12 * s - ppW - nameX)
-    Kit.text("monoRow", Kit.ellipsize("monoRow", mv and mv.id or "-- --", nameW2),
+    Kit.text("monoRow", Kit.ellipsize("monoRow", mvId or "-- --", nameW2),
       nameX, ry + (rowH - Kit.textHeight("monoRow")) / 2,
       mv and PAL.text or PAL.faint)
     Kit.textRight("tiny", ppText, clearX - 10 * s,
@@ -253,7 +279,8 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     return
   end
 
-  local def = S.data.pokemon[mon.species]
+  mon.dvs = mon.dvs or { attack = 0, defense = 0, speed = 0, special = 0, hp = 0 }
+  local def = (S.data and S.data.pokemon and (S.data.pokemon[mon.species] or S.data.pokemon[mon.speciesId])) or {}
   local inner = w - 2 * pad
   local capH = Kit.textHeight("caption")
   local titleH = Kit.textHeight("title")
@@ -307,7 +334,7 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   local cy = y + pad - S.inspectorScroll
 
   -- ---------------------------------------------------------- header row
-  MonEditor.drawSprite(S, Kit, mon.species, cx, cy, sprite)
+  MonEditor.drawSprite(S, Kit, mon.species or mon.speciesId, cx, cy, sprite)
   local hx = cx + sprite + 18 * s
 
   -- One control instead of a pair of arrows: cycling walked the catalog an
@@ -321,11 +348,12 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   local py = cy + (titleH - pickH) / 2
 
   -- the species name yields to the button instead of running under it (#715)
-  local name = Kit.ellipsize("title", mon.species, math.max(40 * s, px - hx - 12 * s))
+  local spName = (type(mon.species) == "string" and mon.species) or def.name or tostring(mon.species or "POKEMON")
+  local name = Kit.ellipsize("title", spName, math.max(40 * s, px - hx - 12 * s))
   Kit.text("title", name, hx, cy, PAL.heading)
   local nameW = Kit.textWidth("title", name)
   if nameW + Kit.textWidth("tiny", "#000") + 12 * s < px - hx - 12 * s then
-    Kit.text("tiny", ("#%03d"):format(def and def.dex or 0), hx + nameW + 12 * s,
+    Kit.text("tiny", ("#%03d"):format(tonumber(def and def.dex) or (tonumber(mon.speciesId) or 0)), hx + nameW + 12 * s,
       cy + titleH - Kit.textHeight("tiny") - 2 * s, PAL.caption)
   end
 
@@ -384,13 +412,13 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   local statsY = nickY + capH + 10 * s + nickFieldH + 18 * s
   Kit.caption(cx, statsY, "STATS . recalculated from level + DVs")
   statsY = statsY + capH + 10 * s
-  local STAT_KEYS = Gen.ofState(S) == 2 and STAT_KEYS_G2 or STAT_KEYS_G1
+  local STAT_KEYS = Gen.ofState(S) >= 2 and STAT_KEYS_G2 or STAT_KEYS_G1
   local gap = 12 * s
   local cellW = (inner - gap * (#STAT_KEYS - 1)) / #STAT_KEYS
   for i, st in ipairs(STAT_KEYS) do
     local bx = cx + (i - 1) * (cellW + gap)
     Theme.row(bx, statsY, cellW, cellH, 10 * s, 0.6)
-    local value = (mon.stats and mon.stats[st.field]) or 0
+    local value = (mon.stats and (mon.stats[st.field] or mon.stats[st.field:lower()])) or mon[st.field] or 0
     Kit.text("micro", st.key, bx + 12 * s, statsY + 8 * s, PAL.caption)
     Kit.text("stat", tostring(value), bx + 12 * s,
       statsY + 8 * s + Kit.textHeight("micro") + 2 * s, PAL.heading)
@@ -442,7 +470,7 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     -- stacked: DVs first, then moves, then the two actions side by side at
     -- full width (#715)
     Kit.caption(cx, colY, "DVs")
-    Kit.textRight("tiny", ("HP DV auto-derived . %d"):format(mon.dvs.hp or 0),
+    Kit.textRight("tiny", ("HP DV auto-derived . %d"):format((mon.dvs and mon.dvs.hp) or 0),
       cx + inner, colY, PAL.caption)
     local rowY = colY + capH + 10 * s
     drawDvRows(S, Kit, mon, cx, rowY, inner, rowH, rowGap)
@@ -469,7 +497,7 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     local rightX = cx + colW + colGap
 
     Kit.caption(cx, colY, "DVs")
-    Kit.textRight("tiny", ("HP DV auto-derived . %d"):format(mon.dvs.hp or 0),
+    Kit.textRight("tiny", ("HP DV auto-derived . %d"):format((mon.dvs and mon.dvs.hp) or 0),
       cx + colW, colY, PAL.caption)
     Kit.caption(rightX, colY, "MOVES")
     Kit.textRight("tiny", "click a slot to search", rightX + colW, colY, PAL.caption)

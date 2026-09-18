@@ -714,6 +714,34 @@ function OverworldState:rebuildNeighbors()
   -- a drawn neighbor, releasing their window batch / border image / atlas
   MapLoader.trim(keep)
 
+  self.preparingLiveMaps = true
+  Runtime.emit("world.live_maps_preparing",
+    { mapId = mapId, maps = self:liveMaps() })
+  self.preparingLiveMaps = nil
+  self:rebuildGhosts()
+  Runtime.emit("world.live_maps_updated",
+    { mapId = mapId, maps = self:liveMaps() })
+end
+
+function OverworldState:liveMaps()
+  local out = {}
+  if not self.map then return out end
+  out[1] = { mapId = self.map.id, ox = 0, oy = 0, active = true }
+  for _, nb in ipairs(self.neighbors or {}) do
+    out[#out + 1] = { mapId = nb.map.id, ox = nb.ox, oy = nb.oy,
+                      active = false }
+  end
+  return out
+end
+
+function OverworldState:isNeighborMap(mapId)
+  for _, nb in ipairs(self.neighbors or {}) do
+    if nb.map.id == mapId then return nb end
+  end
+  return nil
+end
+
+function OverworldState:rebuildGhosts()
   -- visual-only NPCs on connected maps (survey zoom): same spawn filter
   -- as a real map entry, but they never join self.entities -- no sight
   -- lines, triggers, dialogue or player collision.  Instances are
@@ -5446,6 +5474,9 @@ function OverworldState:addRuntimeObject(mapId, objDef, owner)
     npc.frozen = false
     table.insert(self.npcs, npc)
     table.insert(self.entities, npc)
+  elseif not self.preparingLiveMaps and self.npcPool
+      and self:isNeighborMap(mapId) then
+    self:rebuildGhosts()
   end
   return npcId
 end
@@ -5465,6 +5496,10 @@ function OverworldState:removeRuntimeObject(npcId, owner)
           for j = #list, 1, -1 do
             if list[j].id == npcId then table.remove(list, j) end
           end
+        end
+        if not self.preparingLiveMaps and self.npcPool
+            and self:isNeighborMap(mapId) then
+          self:rebuildGhosts()
         end
         return true
       end

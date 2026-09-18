@@ -101,6 +101,9 @@ do
     end
 
     if love.window and love.window.isOpen and love.window.isOpen() and love.graphics and love.graphics.isActive() then
+      -- Ensure no Canvas is left bound (errors during Display.present).
+      pcall(function() love.graphics.setCanvas() end)
+      pcall(function() love.graphics.origin() end)
       local fullMsg = tostring(msg) .. "\n\n" .. tostring(debug.traceback()) .. "\n\n[Hold START + SELECT for 5s to Force Quit]"
       return function()
         love.event.pump()
@@ -515,8 +518,12 @@ function bootGame(version, cartId, opts)
   -- connections) and the Gen 2 screens instead of src/core/Game.lua's Gen 1
   -- wiring.
   local arena = opts.arena
-  local loadOpts = { arena = arena, cartId = cartId }
-  if GameVersion.generation() == 2 then
+  local loadOpts = { arena = arena, cartId = cartId, onExit = opts.onExit }
+  if GameVersion.generation() == 3 then
+    Game = require("src.core.Game3").new()
+    Game.returnToLauncher = function(o) pendingLauncherReturn = o or {} end
+    Game:load(loadOpts)
+  elseif GameVersion.generation() == 2 then
     Game = require("src.core.Game2").new()
     if arena then
       Game.returnToLauncher = function(o) pendingLauncherReturn = o or {} end
@@ -1112,6 +1119,8 @@ function love.handlers.audiosuspend()
   if ChipAudio then pcall(ChipAudio.setSuspended, true) end
   local Sound = package.loaded["src.core.Sound"]
   if Sound then pcall(Sound.onDeviceReset) end
+  local Game3Audio = package.loaded["src.core.game3.audio"]
+  if Game3Audio then pcall(Game3Audio.setSuspended, true) end
 end
 
 function love.handlers.audioreset()
@@ -1124,6 +1133,11 @@ function love.handlers.audioreset()
   if Music then pcall(Music.onDeviceReset) end
   local Sound = package.loaded["src.core.Sound"]
   if Sound then pcall(Sound.onDeviceReset) end
+  local Game3Audio = package.loaded["src.core.game3.audio"]
+  if Game3Audio then
+    pcall(Game3Audio.setSuspended, false)
+    pcall(Game3Audio.rebuildPlayback)
+  end
 end
 
 function love.handlers.intent_game(version)

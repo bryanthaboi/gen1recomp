@@ -48,13 +48,18 @@ local function quantityRow(S, Kit, x, y, w, h, id, qty, selected, onMinus, onPlu
       { kind = "danger", font = "tiny", radius = 6 * s }) then
     onDrop()
   end
-  local qtyText = ("x%d"):format(qty)
+  local qtyText = ("x%d"):format(tonumber(qty) or 0)
   local qtyW = Kit.textWidth("monoRow", qtyText)
   Kit.textRight("monoRow", qtyText, bx - 10 * s,
     y + (h - Kit.textHeight("monoRow")) / 2, PAL.heading)
-  local label = id
-  if Gen.of(S.save) == 2 then
-    label = (Bag.pocketOf(id, S.data) or "ITEM") .. "  " .. id
+  local label = tostring(id)
+  if Gen.of(S.save) == 3 then
+    local def = S.data and S.data.items and S.data.items[id]
+    local pName = (def and def.pocket) or "ITEM"
+    local name = (def and (def.name or def.id)) or tostring(id)
+    label = pName .. "  " .. name
+  elseif Gen.of(S.save) == 2 then
+    label = (Bag.pocketOf(id, S.data) or "ITEM") .. "  " .. tostring(id)
   end
   Kit.text("mono", Kit.ellipsize("mono", label, bx - qtyW - 30 * s - (x + 10 * s)),
     x + 10 * s, y + (h - Kit.textHeight("mono")) / 2, PAL.text)
@@ -134,8 +139,8 @@ local function drawTrainer(S, Kit, x, y, w, h)
   local pad = 16 * s
   Kit.card(x, y, w, h)
   Kit.caption(x + pad, y + pad, "TRAINER")
-  Kit.textRight("mono", tostring((S.save.player and S.save.player.name) or "?"),
-    x + w - pad, y + pad, PAL.caption)
+  local trainerName = (S.save.player and S.save.player.name) or S.save.name or S.save.playerName or "?"
+  Kit.textRight("mono", tostring(trainerName), x + w - pad, y + pad, PAL.caption)
   local cy = y + pad + Kit.textHeight("caption") + 10 * s
   local chipW = (w - 2 * pad - 8 * s) / 2
   local gender = Gen.playerGender(S.save)
@@ -218,15 +223,15 @@ local function drawQuantityCard(S, Kit, x, y, w, h, cfg)
   local s = Kit.scale
   local pad = 16 * s
   Kit.card(x, y, w, h)
-  Kit.caption(x + pad, y + pad, cfg.title)
+  Kit.caption(x + pad, y + pad, tostring(cfg.title or ""))
   local hx = x + w - pad
   local hy = y + pad - 4 * s
   local maxW = Kit.textWidth("tiny", "Max all") + 22 * s
   hx = hx - maxW
   if Kit.button(hx, hy, maxW, 24 * s, "Max all",
       { kind = "accent", font = "tiny", radius = 7 * s,
-        enabled = cfg.canMaxAll() }) then
-    cfg.maxAll()
+        enabled = cfg.canMaxAll and cfg.canMaxAll() }) then
+    if cfg.maxAll then cfg.maxAll() end
   end
   for i = #SORT_MODES, 1, -1 do
     local mode = SORT_MODES[i]
@@ -234,18 +239,19 @@ local function drawQuantityCard(S, Kit, x, y, w, h, cfg)
     hx = hx - 6 * s - bw
     if Kit.button(hx, hy, bw, 24 * s, mode[1],
         { kind = "ghost", font = "tiny", radius = 6 * s }) then
-      cfg.sort(mode[2])
+      if cfg.sort then cfg.sort(mode[2]) end
     end
   end
+  local counterStr = tostring(cfg.counter or "")
   local counterX = hx - 8 * s
-  if counterX - Kit.textWidth("mono", cfg.counter)
-      >= x + pad + Kit.captionWidth(cfg.title) + 8 * s then
-    Kit.textRight("mono", cfg.counter, counterX, y + pad, PAL.caption)
+  if counterX - Kit.textWidth("mono", counterStr)
+      >= x + pad + Kit.captionWidth(tostring(cfg.title or "")) + 8 * s then
+    Kit.textRight("mono", counterStr, counterX, y + pad, PAL.caption)
   end
   local rowsTop = y + pad + Kit.textHeight("caption") + 8 * s
   if cfg.meterFrac then
-    Kit.meter(x + pad, rowsTop, w - 2 * pad, 5 * s, cfg.meterFrac * 100,
-      cfg.meterFrac >= 1 and PAL.yellow or PAL.blue)
+    Kit.meter(x + pad, rowsTop, w - 2 * pad, 5 * s, (tonumber(cfg.meterFrac) or 0) * 100,
+      (tonumber(cfg.meterFrac) or 0) >= 1 and PAL.yellow or PAL.blue)
     rowsTop = rowsTop + 5 * s + 12 * s
   else
     rowsTop = rowsTop + 12 * s
@@ -255,49 +261,57 @@ local function drawQuantityCard(S, Kit, x, y, w, h, cfg)
   local pagerY = y + h - pad - pagerH
   local rowH = 36 * s
   local rowGap = 6 * s
-  local listH = pagerY - 12 * s - rowsTop
+  local listH = math.max(0, pagerY - 12 * s - rowsTop)
   local perPage = math.max(1, math.floor(listH / (rowH + rowGap)))
-  local order = cfg.order
+  local order = cfg.order or {}
   local offset = Ops.clamp(cfg.offset or 0, 0, math.max(0, #order - perPage))
   -- the wheel moves the same offset the pager below does (#595)
-  offset = Kit.scroll(x + pad, rowsTop, w - 2 * pad, listH, offset, #order, perPage)
+  if listH > 0 then
+    offset = Kit.scroll(x + pad, rowsTop, w - 2 * pad, listH, offset, #order, perPage)
+  end
 
-  if #order == 0 then
-    Kit.emptyBox(x + pad, rowsTop, w - 2 * pad, math.min(listH, 70 * s), cfg.empty)
+  if #order == 0 and listH > 0 then
+    Kit.emptyBox(x + pad, rowsTop, w - 2 * pad, math.min(listH, 70 * s), cfg.empty or "")
   end
-  Kit.pushClip(x + pad, rowsTop, w - 2 * pad, listH)
-  for i = 1, math.min(perPage, #order - offset) do
-    local id = order[offset + i]
-    local ry = rowsTop + (i - 1) * (rowH + rowGap)
-    if quantityRow(S, Kit, x + pad, ry, w - 2 * pad, rowH, id,
-        cfg.qty(id), id == cfg.selected(),
-        function() cfg.adjust(id, -1) end,
-        function() cfg.adjust(id, 1) end,
-        function() cfg.max(id) end, cfg.canMax(id),
-        function() cfg.drop(id) end) then
-      cfg.select(id)
+  if listH > 0 then
+    Kit.pushClip(x + pad, rowsTop, w - 2 * pad, listH)
+    for i = 1, math.min(perPage, #order - offset) do
+      local id = order[offset + i]
+      local ry = rowsTop + (i - 1) * (rowH + rowGap)
+      if id ~= nil and quantityRow(S, Kit, x + pad, ry, w - 2 * pad, rowH, id,
+          cfg.qty and cfg.qty(id) or 0, id == (cfg.selected and cfg.selected()),
+          function() if cfg.adjust then cfg.adjust(id, -1) end end,
+          function() if cfg.adjust then cfg.adjust(id, 1) end end,
+          function() if cfg.max then cfg.max(id) end end, cfg.canMax and cfg.canMax(id),
+          function() if cfg.drop then cfg.drop(id) end end) then
+        if cfg.select then cfg.select(id) end
+      end
     end
+    Kit.popClip()
   end
-  Kit.popClip()
-  Kit.scrollbar(x + pad, rowsTop, w - 2 * pad, listH, offset, #order, perPage)
+  if listH > 0 then
+    Kit.scrollbar(x + pad, rowsTop, w - 2 * pad, listH, offset, #order, perPage)
+  end
   return Kit.pager(x + pad, pagerY, w - 2 * pad, offset, #order, perPage)
 end
 
 local function drawBag(S, Kit, x, y, w, h)
-  local order = Bag.order(S.save)
-  local capacity = Bag.capacity(S.data)
+  S.save.inventory = S.save.inventory or {}
+  local order = Bag.order(S.save, S.data) or {}
+  local capacity = Bag.capacity(S.data) or 20
+  local slots = Bag.slots(S.save, S.data) or 0
   S.bagOffset = drawQuantityCard(S, Kit, x, y, w, h, {
     title = "BAG",
-    counter = ("%d/%d slots"):format(Bag.slots(S.save), capacity),
-    meterFrac = Bag.slots(S.save) / capacity,
+    counter = ("%d/%d slots"):format(slots, capacity),
+    meterFrac = slots / math.max(1, capacity),
     order = order,
-    offset = S.bagOffset,
+    offset = S.bagOffset or 0,
     empty = "Bag is empty.",
-    qty = function(id) return S.save.inventory[id] or 0 end,
+    qty = function(id) return (S.save.inventory and S.save.inventory[id]) or 0 end,
     selected = function() return S.selectedBagId end,
     select = function(id)
       S.selectedBagId = id
-      Ops.say(S, ("Selected %s in the bag"):format(id))
+      Ops.say(S, ("Selected %s in the bag"):format(tostring(id)))
     end,
     adjust = function(id, d) Ops.bagAdjust(S, id, d) end,
     max = function(id) Ops.bagMax(S, id) end,
@@ -310,18 +324,18 @@ local function drawBag(S, Kit, x, y, w, h)
 end
 
 local function drawPc(S, Kit, x, y, w, h)
-  local pcOrder = Ops.pcOrder(S)
+  local pcOrder = Ops.pcOrder(S) or {}
   S.pcOffset = drawQuantityCard(S, Kit, x, y, w, h, {
     title = "PC STORAGE",
     counter = ("%d kinds"):format(#pcOrder),
     order = pcOrder,
-    offset = S.pcOffset,
+    offset = S.pcOffset or 0,
     empty = "PC storage is empty. Items sent here have no slot cap.",
-    qty = function(id) return S.save.pcItems[id] or 0 end,
+    qty = function(id) return (S.save.pcItems and S.save.pcItems[id]) or 0 end,
     selected = function() return S.selectedPcId end,
     select = function(id)
       S.selectedPcId = id
-      Ops.say(S, ("Selected %s in PC storage"):format(id))
+      Ops.say(S, ("Selected %s in PC storage"):format(tostring(id)))
     end,
     adjust = function(id, d) Ops.pcAdjust(S, id, d) end,
     max = function(id) Ops.pcMax(S, id) end,

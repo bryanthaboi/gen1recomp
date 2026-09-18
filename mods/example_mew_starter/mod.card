@@ -13,7 +13,8 @@ return {
   differences = {
     changed = {
       "the Oak's Lab starter gift becomes a level 20 Mew nicknamed HOGHEAD",
-      "MEW's front and back battle sprites point at inverted copies",
+      "MEW's front and back battle sprites point at inverted copies "
+        .. "(64x64 on FireRed)",
     },
     added = {},
     known = {
@@ -24,6 +25,7 @@ return {
   },
   credits = {
     { who = "pret/pokered", for_ = "the Mew sprites the local generator inverts" },
+    { who = "pret/pokefirered", for_ = "the FireRed Mew pics the local generator inverts" },
   },
   compat = { engine = ">=1.0.0 <2.0.0", modApi = 1 },
 }

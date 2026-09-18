@@ -47,6 +47,8 @@ SILVER_MANIFEST_RELATIVE="tools/rom_manifest_silver.json"
 SILVER_MANIFEST_URL="${SILVER_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_silver.json}"
 CRYSTAL_MANIFEST_RELATIVE="tools/rom_manifest_crystal.json"
 CRYSTAL_MANIFEST_URL="${CRYSTAL_MANIFEST_URL:-https://raw.githubusercontent.com/bryanthaboi/gen1recomp/main/tools/rom_manifest_crystal.json}"
+FIRERED_MANIFEST_RELATIVE="tools/rom_manifest_firered.json"
+FIRERED_MANIFEST_URL="${FIRERED_MANIFEST_URL:-https://raw.githubusercontent.com/1Jamie/gen1recomp-gaia/grandpas-garage/tools/rom_manifest_firered.json}"
 
 VERSION=""
 PACKAGE_ONLY=false
@@ -100,12 +102,17 @@ if $RELEASE; then
     || fail "Android signing keystore does not exist: $GEN1RECOMP_ANDROID_KEYSTORE"
 fi
 
+if ! $RELEASE; then
+  APPLICATION_ID="com.theboisclub.pokemonred.dev"
+  APP_NAME="$APP_NAME (dev)"
+fi
+
 if [ -n "$TEST_APPLICATION_ID" ]; then
   if ! printf '%s' "$TEST_APPLICATION_ID" | grep -Eq '^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$'; then
     fail "invalid --test-application-id '$TEST_APPLICATION_ID' (expected a dotted package id, e.g. com.theboisclub.pokemonred.shaderfxtest)"
   fi
   APPLICATION_ID="$TEST_APPLICATION_ID"
-  APP_NAME="$APP_NAME (test)"
+  APP_NAME="gen1recomp (test)"
 fi
 # Optional overrides for side-by-side test APKs (never used by CI shipping builds).
 if [ -n "${GEN1RECOMP_ANDROID_APPLICATION_ID:-}" ]; then
@@ -325,6 +332,54 @@ ensure_crystal_manifest() {
   fail "Crystal import manifest is unavailable. Git recovery failed and could not download $CRYSTAL_MANIFEST_URL"
 }
 
+firered_manifest_is_valid() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json, pathlib, sys
+
+try:
+    manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
+except (OSError, ValueError):
+    raise SystemExit(1)
+
+raise SystemExit(0 if manifest.get("romSha1") ==
+                 "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc" else 1)
+PY
+}
+
+ensure_firered_manifest() {
+  local manifest="$ROOT/$FIRERED_MANIFEST_RELATIVE"
+  local staged
+  staged="$(mktemp)"
+
+  if firered_manifest_is_valid "$manifest"; then
+    rm -f "$staged"
+    return
+  fi
+
+  warn "FireRed import manifest is missing or invalid; recovering it before packaging"
+  if git -C "$ROOT" show "HEAD:$FIRERED_MANIFEST_RELATIVE" > "$staged" 2>/dev/null \
+      && firered_manifest_is_valid "$staged"; then
+    mkdir -p "$(dirname "$manifest")"
+    mv "$staged" "$manifest"
+    say "restored FireRed import manifest from this checkout's Git data"
+    return
+  fi
+
+  if command -v curl >/dev/null 2>&1 \
+      && curl --fail --location --retry 2 --connect-timeout 15 \
+          --output "$staged" "$FIRERED_MANIFEST_URL" \
+      && firered_manifest_is_valid "$staged"; then
+    mkdir -p "$(dirname "$manifest")"
+    mv "$staged" "$manifest"
+    say "downloaded FireRed import manifest from the project repository"
+    return
+  fi
+
+  rm -f "$staged"
+  fail "FireRed import manifest is unavailable. Git recovery failed and could not download $FIRERED_MANIFEST_URL"
+}
+
 # --------------------------------------------------------------- branding
 # love-android 11.5+ reads app id / name / orientation from gradle.properties.
 # Manifest still gets permission trims. Re-applied every build so refreshing
@@ -392,6 +447,7 @@ pack_game_love() {
   ensure_gold_manifest
   ensure_silver_manifest
   ensure_crystal_manifest
+  ensure_firered_manifest
   mkdir -p "$EMBED_ASSETS"
   rm -f "$LOVE_FILE"
   # tools/save-editor ships with the app: the launcher's Edit button on a save
@@ -407,6 +463,7 @@ pack_game_love() {
     tools/rom_manifest.json tools/rom_manifest_blue.json \
     tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
     tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
+    tools/rom_manifest_firered.json \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
   # List once and match against the captured text: piping unzip straight into
@@ -432,6 +489,8 @@ pack_game_love() {
     || fail "game.love is missing the Silver ROM import manifest"
   grep -qx 'tools/rom_manifest_crystal.json' <<< "$archive_entries" \
     || fail "game.love is missing the Crystal ROM import manifest"
+  grep -qx "$FIRERED_MANIFEST_RELATIVE" <<< "$archive_entries" \
+    || fail "game.love is missing the FireRed ROM import manifest"
   # This gate exists because the launcher's UI toolkit once lived outside
   # src/ (libs/flexlove) and was added to scripts/build.sh's payload and to
   # no other packager, so Android and iOS built an APK/IPA whose launcher
@@ -624,8 +683,10 @@ require_android_sdk() {
   local sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
   if [ -z "$sdk" ]; then
     for candidate in \
-      "$HOME/Library/Android/sdk" \
+      "$HOME/android-sdk" \
       "$HOME/Android/Sdk" \
+      "$HOME/Android/sdk" \
+      "$HOME/Library/Android/sdk" \
       /usr/local/lib/android/sdk; do
       if [ -d "$candidate" ]; then
         sdk="$candidate"

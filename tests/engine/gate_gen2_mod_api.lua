@@ -362,9 +362,19 @@ local Catalog = T.catalog
 
 -- Gold's modules live under a gen2/ directory, except the two that own the
 -- boot and the extractor and carry the generation in their name
+local function isGen3Site(path)
+  return path:match("game3") ~= nil or path:match("Game3") ~= nil
+    or path:match("Gen3") ~= nil
+end
+
 local function isGen2Site(path)
+  if isGen3Site(path) then return false end
   return path:match("gen2") ~= nil or path:match("Gen2") ~= nil
     or path:match("Game2") ~= nil
+end
+
+local function isGen1Site(path)
+  return not isGen2Site(path) and not isGen3Site(path)
 end
 
 local GEN2_EVENTS = {
@@ -373,6 +383,7 @@ local GEN2_EVENTS = {
   "world.stepped", "world.interacted", "world.npc_spawned",
   "world.trainer_engaged", "world.blacked_out", "world.block_replaced",
   "world.boulder_moved", "world.tod_changed", "world.object_toggled",
+  "world.live_maps_preparing", "world.live_maps_updated",
   "flag.changed",
   -- battle
   "battle.started", "battle.ended", "battle.turn_started", "battle.turn_ended",
@@ -456,7 +467,8 @@ local GEN2_HOOKS = {
 local function assertShared(name, sites, kind)
   local gen2, gen1 = 0, 0
   for _, path in ipairs(sites) do
-    if isGen2Site(path) then gen2 = gen2 + 1 else gen1 = gen1 + 1 end
+    if isGen2Site(path) then gen2 = gen2 + 1
+    elseif isGen1Site(path) then gen1 = gen1 + 1 end
   end
   T.check(gen2 > 0, ("Gold raises the %s: %s"):format(kind, name))
   T.check(gen1 > 0,
@@ -502,7 +514,8 @@ local function assertListed(names, catalogNames, sites, kind)
     if not Catalog.isModEvent(name) then
       local gen2, gen1 = false, false
       for _, path in ipairs(sites(name)) do
-        if isGen2Site(path) then gen2 = true else gen1 = true end
+        if isGen2Site(path) then gen2 = true
+        elseif isGen1Site(path) then gen1 = true end
       end
       if gen2 and gen1 then
         T.check(listed[name],
@@ -591,13 +604,17 @@ local function sourceOf(path)
 end
 
 local function assertGen2Only(name, sites, kind, guard)
-  T.check(#sites > 0, ("Gold raises the Gen 2-only %s: %s"):format(kind, name))
+  local gen2Sites = 0
+  for _, path in ipairs(sites) do
+    if isGen2Site(path) then gen2Sites = gen2Sites + 1 end
+  end
+  T.check(gen2Sites > 0, ("Gold raises the Gen 2-only %s: %s"):format(kind, name))
   local guarded = false
   for _, path in ipairs(sites) do
-    T.check(isGen2Site(path),
+    T.check(not isGen1Site(path),
       ("a Gen 2-only %s is raised from a Gen 2 module (%s is not one): %s")
         :format(kind, path, name))
-    local body = sourceOf(path)
+    local body = isGen2Site(path) and sourceOf(path)
     if body and body:find(('%s("%s")'):format(guard, name), 1, true) then
       guarded = true
     end
@@ -623,11 +640,12 @@ local function assertGen2OnlyListed(names, catalogNames, sites, kind)
   for _, name in ipairs(names) do listed[name] = true end
   for _, name in ipairs(catalogNames) do
     if not Catalog.isModEvent(name) then
-      local anyGen1 = false
+      local anyGen1, anyGen2 = false, false
       for _, path in ipairs(sites(name)) do
-        if not isGen2Site(path) then anyGen1 = true end
+        if isGen1Site(path) then anyGen1 = true end
+        if isGen2Site(path) then anyGen2 = true end
       end
-      if not anyGen1 then
+      if anyGen2 and not anyGen1 then
         T.check(listed[name],
           ("%s %s is raised from Gen 2 modules alone but is not listed as a "
             .. "Gen 2-only seam; add it here and to "

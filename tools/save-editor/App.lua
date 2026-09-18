@@ -109,7 +109,9 @@ local function applyLoaded(path, statusVerb)
     S.loadError = false
     S.allowSave = true
   end
-  if Gen.of(S.save, S.version) == 2 then
+  if Gen.of(S.save, S.version) == 3 then
+    S.events = Catalog.game3EventList(S.modRoots)
+  elseif Gen.of(S.save, S.version) == 2 then
     S.events = Catalog.gen2EventList(Gen.engineOf(S.save, S.version), S.modRoots)
   end
   local mapId = Gen.playerMap(S.save)
@@ -130,7 +132,7 @@ local function applyLoaded(path, statusVerb)
         #(S.validation.lostScriptMem or {}),
         #(S.validation.lostMail or {}),
         #(S.validation.lostEvents or {}))
-    else
+    elseif Gen.of(S.save, S.version) ~= 3 then
       S.status = S.status .. string.format(",  game would quarantine: %d mons, %d items, %d maps",
         #S.validation.lostMons, #S.validation.lostItems, #S.validation.remappedMaps)
     end
@@ -163,7 +165,10 @@ function App.load(pathOverride, opts)
     -- loaded at least once, so it doubles as the "needs evicting" marker.
     if Data._pristineKeys then Data:unloadGenerated() end
     Data:load()
-    if Gen.of(nil, opts.version) == 2
+    if Gen.of(nil, opts.version) == 3
+        or require("src.core.GameVersion").generation() == 3 then
+      Gen.bindGame3Data(Data)
+    elseif Gen.of(nil, opts.version) == 2
         or require("src.core.GameVersion").generation() == 2 then
       Gen.bindGoldData(Data)
     end
@@ -179,7 +184,9 @@ function App.load(pathOverride, opts)
     modRoots[#modRoots + 1] = mod.path
   end
   S.modRoots = modRoots
-  if Gen.of(nil, opts.version) == 2 or require("src.core.GameVersion").generation() == 2 then
+  if Gen.of(nil, opts.version) == 3 or require("src.core.GameVersion").generation() == 3 then
+    S.events = Catalog.game3EventList(modRoots)
+  elseif Gen.of(nil, opts.version) == 2 or require("src.core.GameVersion").generation() == 2 then
     S.events = Catalog.gen2EventList(Gen.engineOf(nil, opts.version), modRoots)
   else
     S.events = Catalog.scrapeEvents("data/scripts", "data/generated/trainer_headers.lua",
@@ -829,8 +836,15 @@ function App.draw()
   local contentH = sh - railH - titleH - tabH - statusH
   local panel = PANELS[S.tab]
   if panel then
-    panel.draw(S, Kit, ox + 22 * s, contentY + 20 * s,
-      sw - 44 * s, contentH - 38 * s)
+    local ok, err = xpcall(function()
+      panel.draw(S, Kit, ox + 22 * s, contentY + 20 * s,
+        sw - 44 * s, contentH - 38 * s)
+    end, debug.traceback)
+    if not ok then
+      Kit.resetClip()
+      print(string.format("[SAVE-EDITOR ERROR in %s panel]\n%s", tostring(S.tab), tostring(err)))
+      Kit.text("mono", "Error rendering " .. tostring(S.tab) .. " panel", ox + 22 * s, contentY + 20 * s, PAL.red)
+    end
   end
 
   drawStatusBar(ox, oy + sh - statusH, sw, statusH)

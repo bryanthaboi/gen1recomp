@@ -123,7 +123,6 @@ local DEBT = {
 
   ["event:link.connected"] = "M12",
   ["event:link.ended"] = "M12",
-  ["event:pokemon.before_give"] = "M7",
   ["event:trade.completed"] = "M12",
 }
 

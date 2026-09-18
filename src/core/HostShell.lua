@@ -263,30 +263,39 @@ function HostShell.restart()
     love.event.quit()
     return
   end
-
-  local appimage = os.getenv("APPIMAGE")
-  if not appimage then
-    -- Flatpak and plain desktop: love.event.quit("restart") uses
-    -- execv(/proc/self/exe). Inside bwrap that path is valid, but PhysFS
-    -- locks on a mounted .love payload can survive the exec boundary and
-    -- hang the next Boot.mount. Callers that just wrote updates/*.love
-    -- should already have closed archive handles; Boot.run still owns
-    -- crash-guard rollback if a mid-handoff restart dies.
+  if osName == "Linux" then
+    local appimage = os.getenv("APPIMAGE")
+    local exe = appimage or "/proc/self/exe"
+    local f = io.open("/proc/self/cmdline", "rb")
+    if f then
+      local raw = f:read("*a")
+      f:close()
+      local parts = {}
+      for p in raw:gmatch("[^%z]+") do
+        parts[#parts + 1] = p
+      end
+      if #parts > 0 then
+        local ffi = require("ffi")
+        pcall(ffi.cdef, [[
+          int execv(const char *path, char *const argv[]);
+          int unsetenv(const char *name);
+        ]])
+        if appimage then
+          ffi.C.unsetenv("LD_LIBRARY_PATH")
+        end
+        local argv = ffi.new("const char *[" .. (#parts + 1) .. "]")
+        for i, p in ipairs(parts) do
+          argv[i - 1] = p
+        end
+        argv[#parts] = nil
+        ffi.C.execv(exe, ffi.cast("char *const *", argv))
+      end
+    end
     love.event.quit("restart")
     return
   end
 
-  -- We have to restart the process with this cursed execv call to prevent the
-  -- PID from changing, which might cause SteamOS and other Linux launchers to
-  -- think the app has crashed.
-  local ffi = require("ffi")
-  pcall(ffi.cdef, [[
-    int execv(const char *path, char *const argv[]);
-    int unsetenv(const char *name);
-  ]])
-  ffi.C.unsetenv("LD_LIBRARY_PATH")
-  local argv = ffi.new("const char *[2]", appimage, nil)
-  ffi.C.execv(appimage, ffi.cast("char *const *", argv))
+  love.event.quit("restart")
 end
 
 -- ------- HTTP transport ----------------------------------------------------

@@ -48,6 +48,44 @@ local GEN2_ROOTS = {
   gen2Constants = "constants", gen2Landmarks = "landmarks",
 }
 
+local GEN3_ROOTS = {
+  maps = "maps",
+  gen3Pokemon = {
+    names = "gba/pokemon/names", types = "gba/pokemon/types",
+    stats = "gba/pokemon/stats", abilities = "gba/pokemon/abilities",
+    abilityNames = "gba/pokemon/ability_names", meta = "gba/pokemon/meta",
+    learnsets = "gba/pokemon/learnsets", evolutions = "gba/pokemon/evolutions",
+    dex = "gba/pokemon/dex", moveNames = "gba/pokemon/move_names",
+  },
+  gen3Moves = { rom = "gba/pokemon/battle_moves", names = "gba/pokemon/move_names" },
+  gen3Items = "gba/items/pack",
+  gen3Encounters = "gba/encounters",
+  gen3Text = "gba/scripts/text",
+  gen3Scripts = "gba/scripts/scripts",
+}
+
+local ROOTS = { [1] = GEN1_ROOTS, [2] = GEN2_ROOTS, [3] = GEN3_ROOTS }
+
+local function rootsFor(generation)
+  return ROOTS[generation] or GEN1_ROOTS
+end
+
+local function extraModules(generation)
+  local names, seen = {}, {}
+  if generation ~= 3 then return names end
+  for _, entry in pairs(GEN3_ROOTS) do
+    local parts = type(entry) == "table" and entry or { entry }
+    for _, name in pairs(parts) do
+      if name:find("/", 1, true) and not seen[name] then
+        seen[name] = true
+        names[#names + 1] = name
+      end
+    end
+  end
+  table.sort(names)
+  return names
+end
+
 local function resolvePath(root, suffix)
   local node = root
   for key in suffix:gmatch("[^.]+") do
@@ -141,6 +179,10 @@ function DatasetViews:_preflight(version, inspected)
     local path = inspected.prefix .. "data/generated/" .. name .. ".lua"
     if self.fs.getInfo(path, "file") then modules[#modules + 1] = name end
   end
+  for _, name in ipairs(extraModules(GameVersion.generation(version))) do
+    local path = inspected.prefix .. "data/generated/" .. name .. ".lua"
+    if self.fs.getInfo(path, "file") then modules[#modules + 1] = name end
+  end
   for _, name in ipairs(modules) do
     local path = inspected.prefix .. "data/generated/" .. name .. ".lua"
     local info = self.fs.getInfo(path, "file")
@@ -200,15 +242,14 @@ function DatasetViews:_ready(view)
   return not view.invalid
 end
 
-function DatasetViews:_module(view, root)
-  local moduleName = view.modules[root]
-  if not moduleName then return nil end
+function DatasetViews:_decode(view, moduleName, soft)
   local cached = view.moduleCache[moduleName]
   if cached then return cached.value end
   local path = view.plan.paths[moduleName]
   if not path then return nil end
   local source = self.fs.read(path)
   if type(source) ~= "string" then
+    if soft then return nil end
     return self:_reject(view, moduleName, source,
       moduleName .. ": unreadable generated module")
   end
@@ -219,11 +260,36 @@ function DatasetViews:_module(view, root)
   end
   local value, err = self.decoder(source, DECODE_LIMITS)
   if type(value) ~= "table" then
+    if soft then
+      Logger.warn("dataset %s: %s skipped: %s", view.version, moduleName,
+        tostring(err or "non-table root"))
+      return nil
+    end
     return self:_reject(view, moduleName, source,
       moduleName .. ": " .. tostring(err or "non-table root"))
   end
   view.moduleCache[moduleName] = { source = source, value = value }
   return value
+end
+
+function DatasetViews:_module(view, root)
+  local moduleName = view.modules[root]
+  if not moduleName then return nil end
+  local soft = view.generation == 3
+  if type(moduleName) ~= "table" then
+    return self:_decode(view, moduleName, soft and moduleName:find("/", 1, true) ~= nil)
+  end
+  local composite, any = {}, false
+  for key, name in pairs(moduleName) do
+    local value = self:_decode(view, name, true)
+    if view.invalid then return nil end
+    if value ~= nil then
+      composite[key] = value
+      any = true
+    end
+  end
+  if not any then return nil end
+  return composite
 end
 
 function DatasetViews:_data(view)
@@ -236,6 +302,7 @@ function DatasetViews:_data(view)
       return value
     end,
   })
+  if view.generation == 3 then Schemas.bindGen3(data) end
   DatasetHydration.apply(data, view.version, self.engineRequire)
   if view.invalid then error(view.invalid.detail, 0) end
   view.data = data
@@ -284,6 +351,7 @@ function DatasetViews:_registry(view, name)
       or Schemas.targetFor(registry.name, registry.spec, view.generation)
     local root = target and target:match("^[^%.]+")
     local moduleName = root and view.modules[root]
+    if type(moduleName) ~= "string" then moduleName = nil end
     if root == "gen2HeldItems" then moduleName = "items" end
     local cached = moduleName and view.moduleCache[moduleName]
     service:_reject(view, moduleName, cached and cached.source,
@@ -391,7 +459,7 @@ function DatasetViews:open(version)
       generation = GameVersion.generation(version),
       prefix = inspected.prefix,
       plan = plan,
-      modules = GameVersion.generation(version) == 2 and GEN2_ROOTS or GEN1_ROOTS,
+      modules = rootsFor(GameVersion.generation(version)),
       moduleCache = {},
     }
     self.datasets[version] = internal

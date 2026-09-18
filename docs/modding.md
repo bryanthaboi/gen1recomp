@@ -425,6 +425,27 @@ end)
 With no subscriber the A press reaches `talkTo` exactly as before. An object
 mid-step raises no hook, matching the vanilla gate.
 
+`handle:setAppearance(spriteId)` swaps a live NPC to another registered
+sprite (its own sheet, frames and anchors) without touching its identity,
+cell, step in flight or passability. Every handle method here works the same
+on Gen 1 and Gen 2.
+
+### Live map neighborhood
+
+`mod.world:liveMaps()` returns the active map plus every connected map the
+engine is currently drawing, as `{ mapId, ox, oy, active }` rows (`ox`/`oy`
+are pixel offsets from the active map). Two events bracket each rebuild:
+
+- `world.live_maps_preparing` `{ mapId, maps }`: the neighborhood is known
+  but connected-map ghosts are not built yet. `spawnNpc`/`removeNpc` here
+  land in this same pass, so a dynamic actor exists before its ghost does.
+- `world.live_maps_updated` `{ mapId, maps }`: ghosts are materialized.
+
+`mod.world:npc(mapId, id)` also resolves ghosts on a live neighbor map, and
+the same pooled NPC becomes the real one when the player crosses the seam.
+Both fire on map load and on survey-zoom resizes (and, in Gen 2, on the
+hourly object refresh), so handlers should be idempotent.
+
 ## Adopting an already-paired link session
 
 `LinkState.newFromSession(game, transport, mode, isHost, opts)` starts a link

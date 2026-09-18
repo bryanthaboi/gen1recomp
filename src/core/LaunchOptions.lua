@@ -3,6 +3,7 @@
 --   love . --game=red               -- boot Red
 --   love . --game=yellow --slot=2   -- boot Yellow on save slot 2
 --   love . --game=gold              -- boot Gold (src/core/Game2.lua)
+--   love . --game=firered           -- boot FireRed (src/core/game3.lua)
 --   love . --game=red --launcher    -- open the launcher anyway (a shortcut
 --                                      the player wants to edit)
 --   POKEPORT_GAME=blue love .       -- same, for launchers that only pass env
@@ -96,6 +97,7 @@ normalizeVersion = function(v)
     g = "gold", gold = "gold",
     s = "silver", silver = "silver",
     c = "crystal", crystal = "crystal",
+    firered = "firered", fr = "firered", fire_red = "firered",
   }
   v = alias[v] or v
   if GameVersion.VERSIONS and not GameVersion.VERSIONS[v] then return nil end

@@ -70,7 +70,7 @@ stub.graphics = {
     function batch:setTexture(tex) self.texture = tex end
     return batch
   end,
-  draw = noop, rectangle = noop, clear = noop,
+  draw = noop, rectangle = noop, clear = noop, polygon = noop,
   setDefaultFilter = noop, print = noop, printf = noop,
   line = noop, circle = noop, setLineWidth = noop,
   -- Fonts: the save editor lays itself out from font metrics, so a headless

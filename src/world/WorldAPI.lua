@@ -474,6 +474,12 @@ function WorldAPI:spawnNpc(mapId, objDef)
   return ow:addRuntimeObject(mapId, copy, self.modId)
 end
 
+function WorldAPI:liveMaps()
+  local ow = self:overworld()
+  if not ow or not ow.map then return nil, NO_OVERWORLD end
+  return ow:liveMaps()
+end
+
 function WorldAPI:removeNpc(npcId)
   local ow = self:overworld()
   if not ow then return nil, NO_OVERWORLD end
@@ -536,6 +542,10 @@ end
 function Handle:canStep(dir)
   local ow = self.ow
   if not (ow and ow.map) then return false end
+  if self.ghost then
+    return Collision.canMove(self.ghost.map, self.ghost.peers, self.npc, dir)
+      and true or false
+  end
   return Collision.canMove(ow.map, ow.entities, self.npc, dir) and true or false
 end
 
@@ -570,14 +580,38 @@ function Handle:setPassable(passable)
   return true
 end
 
+function Handle:setAppearance(spriteId)
+  local data = self.game and self.game.data
+  local spriteDef = data and data.sprites and data.sprites[spriteId]
+  if not spriteDef then return nil, "unknown sprite: " .. tostring(spriteId) end
+  self.npc:setAppearance(spriteId, spriteDef)
+  return true
+end
+
+local function matches(npc, indexOrName)
+  return npc.def.index == indexOrName or npc.def.name == indexOrName
+    or npc.id == indexOrName
+end
+
 function WorldAPI:npc(mapId, indexOrName)
   local ow = self:overworld()
   if not ow then return nil, NO_OVERWORLD end
-  if ow.map and ow.map.id ~= mapId then return nil, "map is not active" end
+  if ow.map and ow.map.id ~= mapId then
+    if not (ow.isNeighborMap and ow:isNeighborMap(mapId)) then
+      return nil, "map is not live"
+    end
+    for _, g in ipairs(ow.ghosts or {}) do
+      if g.map.id == mapId and matches(g.npc, indexOrName) then
+        return setmetatable({ ow = ow, game = self.game, npc = g.npc,
+                              id = g.npc.id, ghost = g }, Handle)
+      end
+    end
+    return nil, "no such object: " .. tostring(indexOrName)
+  end
   for _, npc in ipairs(ow.npcs or {}) do
-    if npc.def.index == indexOrName or npc.def.name == indexOrName
-       or npc.id == indexOrName then
-      return setmetatable({ ow = ow, npc = npc, id = npc.id }, Handle)
+    if matches(npc, indexOrName) then
+      return setmetatable({ ow = ow, game = self.game, npc = npc, id = npc.id },
+                          Handle)
     end
   end
   return nil, "no such object: " .. tostring(indexOrName)

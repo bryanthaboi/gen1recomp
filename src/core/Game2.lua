@@ -2303,6 +2303,7 @@ end
 -- left.
 function Game2:applyOptions()
   local options = self.options or {}
+  require("src.core.FaithfulRes").setNativeSize(160, 144)
   Music.applyOptions(options)
   require("src.core.Sound").applyOptions(options)
   local Zoom = require("src.render.Zoom")

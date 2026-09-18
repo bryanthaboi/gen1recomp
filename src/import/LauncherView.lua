@@ -491,7 +491,7 @@ end
 local CART_COLOR = {
   red = PAL.railRed, blue = PAL.railBlue, yellow = PAL.railGold,
   gold = PAL.railAmber, silver = PAL.railSilver,
-  crystal = PAL.railCrystal,
+  crystal = PAL.railCrystal, firered = PAL.railFireRed,
 }
 local function cartColor(version)
   return CART_COLOR[version] or PAL.green
@@ -1462,6 +1462,32 @@ local function drawSyncGlyph(x, y, w, h, hot)
   end
 end
 
+local function drawImporterGlyph(x, y, w, h, hot)
+  local box = math.min(w, h)
+  local bx = x + (w - box) / 2
+  local by = y + (h - box) / 2
+  local pad = box * 0.24
+  local ink = hot and PAL.inverse or PAL.ink
+  local lw = math.max(1, math.floor(Kit.scale + 0.5))
+  local d = box - 2 * pad
+  local cx = bx + box / 2
+
+  local trayTop = by + pad + d * 0.48
+  Theme.strokeRounded(bx + pad, trayTop, d, by + pad + d - trayTop,
+    ink, 1, lw, d * 0.18)
+
+  local head = d * 0.30
+  local tipY = trayTop - d * 0.06
+  Theme.fill(cx - lw / 2, by + pad, lw, tipY - head * 0.7 - (by + pad), ink, 1)
+  if love.graphics.polygon then
+    Theme.col(ink, 1)
+    love.graphics.polygon("fill",
+      cx - head * 0.5, tipY - head * 0.7, cx + head * 0.5, tipY - head * 0.7,
+      cx, tipY)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+end
+
 local function drawCross(x, y, size, color)
   love.graphics.push("all")
   love.graphics.setColor(color)
@@ -1509,6 +1535,8 @@ local GAME_TABS = {
     label = "Silver" },
   { id = "crystal", key = "tab-crystal", letter = "C",
     color = PAL.railCrystal, label = "Crystal" },
+  { id = "firered", key = "tab-firered", letter = "F",
+    color = PAL.railFireRed, label = "Fire Red" },
 }
 
 local function drawOnlineGlyph(x, y, w, h, hot)
@@ -1530,6 +1558,7 @@ local HEADER_TABS = {
   { id = "find",   key = "tab-find" },
   { id = "online", key = "tab-online", glyph = true, beta = true },
   { id = "skins",  key = "tab-skins", glyph = true, beta = true },
+  { id = "importers", key = "tab-importers", glyph = true },
 }
 
 LauncherView.HEADER_TABS = HEADER_TABS
@@ -1549,7 +1578,8 @@ end
 for _, t in ipairs(HEADER_TABS) do
   t.opts = { face = "tab", font = "tab", color = t.color, letter = t.letter }
   if t.glyph then
-    t.opts.drawFn = t.id == "online" and drawOnlineGlyph or drawSkinGlyph
+    t.opts.drawFn = (t.id == "online" and drawOnlineGlyph)
+      or (t.id == "importers" and drawImporterGlyph) or drawSkinGlyph
   end
 end
 
@@ -1587,7 +1617,7 @@ local function headerChrome(imp)
           hot and QUIT_INK_HOT or QUIT_INK_REST)
       end },
     tab = {},
-    sync = { face = "tab", drawFn = drawSyncGlyph,
+    sync = { face = "invert", drawFn = drawSyncGlyph,
       action = function() imp:_openSync() end },
     game = { face = "tab", font = "tab",
       action = function()
@@ -1632,16 +1662,20 @@ local function buildHeader(imp, m)
   -- overlap at any window size.
   -- iOS has no quit button (the OS owns app exit), so the cluster is the
   -- gear alone and the wordmark gets that width back
-  local clusterW = (imp.ios and gear or 2 * gear + math.floor(6 * m.s)) + m.pad
-  local boxX = m.x + clusterW
-  local boxW = math.max(0, m.w - 2 * clusterW)
+  local clusterN = imp.ios and 2 or 3
+  local clusterW = clusterN * gear + (clusterN - 1) * math.floor(6 * m.s) + m.pad
+  local mobile = not m.twoCol
+  local boxX = mobile and (m.x + m.pad) or (m.x + clusterW)
+  local boxW = mobile and math.max(0, m.w - clusterW - m.pad)
+    or math.max(0, m.w - 2 * clusterW)
   if imp.logo and boxW > 0 then
     local lw, lh = imp.logo:getDimensions()
     local maxW = math.min(320 * m.s, boxW)
     local scale = math.min(maxW / lw, m.logoH / lh)
     local dw, dh = lw * scale, lh * scale
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(imp.logo, Theme.snap(boxX + (boxW - dw) / 2),
+    love.graphics.draw(imp.logo,
+      Theme.snap(mobile and boxX or (boxX + (boxW - dw) / 2)),
       Theme.snap(y + (rowH - dh) / 2), 0, scale, scale)
   end
 
@@ -1678,6 +1712,16 @@ local function buildHeader(imp, m)
   local chrome = headerChrome(imp)
   chrome.gear.image = imp._gearIcon
   btn(imp, rx, by, gear, gear, "gear", "", chrome.gear)
+
+  rx = rx - math.floor(6 * m.s) - gear
+  btn(imp, rx, by, gear, gear, "tab-sync", "", chrome.sync)
+  do
+    local eng = imp._sync
+    if eng and eng.busy and eng:busy() then
+      Kit.spinner(rx + gear - math.floor(8 * m.s), by + math.floor(8 * m.s),
+        math.max(2, math.floor(4 * m.s)))
+    end
+  end
 
   if quitX then btn(imp, quitX, by, gear, gear, "quit", "", chrome.quit) end
 
@@ -1753,23 +1797,6 @@ local function buildHeader(imp, m)
     tx = tx + w + tabGap
   end
   for _, t in ipairs(tabs) do headerTab(t) end
-
-  do
-    local w = tabH
-    if tx > tabLeft and tx + w > tabRight then
-      tx = tabLeft
-      ty = ty + tabH + tabRowGap
-    end
-    local o = chrome.sync
-    o.active = imp._syncModal ~= nil
-    btn(imp, tx, ty, w, tabH, "tab-sync", "", o)
-    local eng = imp._sync
-    if eng and eng.busy and eng:busy() then
-      Kit.spinner(tx + w - math.floor(8 * m.s), ty + math.floor(8 * m.s),
-        math.max(2, math.floor(4 * m.s)))
-    end
-    tx = tx + w + tabGap
-  end
 
   -- `ty` has walked down with the wraps, so this stays correct at one row too.
   y = ty + tabH + math.floor(8 * m.s)
@@ -2360,6 +2387,7 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
   local skin = cartSkin(imp, version)
   local gameName = skin.name or (info and (info.launcherName or info.displayName))
     or tostring(version)
+  if info and info.beta then gameName = gameName .. " (Beta)" end
   local ready = (not locked) and imp.ready[version] or false
 
   -- title + status tag.  Ready is a check chip (the font has no tick glyph);
@@ -2431,17 +2459,20 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
     local mgW = math.max(Kit.tapMin(), math.floor(34 * m.s))
     local bgap = math.floor(8 * m.s)
     local cartAreaW = lw - mgW - bgap
+    local cartH = playH
     local cartW
     if skin.shape == "gba" then
-      -- Reserve hover clearance.
-      cartW = math.min(cartAreaW * 0.90, playH * CartShape.GBA_ASPECT)
-      playH = cartW / CartShape.GBA_ASPECT
-      ly = ly + math.floor(cartW * 0.07)
+      -- GBA carts are wider (aspect 1.74:1) but have a smaller physical footprint than GB carts.
+      -- Scale height to ~62% of column height budget so visual mass is balanced and doesn't overwhelm the column.
+      local targetH = playH * 0.62
+      cartW = math.min(cartAreaW * 0.72, targetH * CartShape.GBA_ASPECT)
+      cartH = cartW / CartShape.GBA_ASPECT
+      ly = ly + math.floor((playH - cartH) * 0.35)
     else
       cartW = math.min(cartAreaW, math.floor(playH * 0.88))
     end
     local cartX = lx + math.floor((cartAreaW - cartW) / 2)
-    cartridgeButton(imp, cartX, ly, cartW, playH, "play-" .. version,
+    cartridgeButton(imp, cartX, ly, cartW, cartH, "play-" .. version,
       skin, function() imp:play(version, true) end, version)
     imp._gearIcon = imp._gearIcon
       or love.graphics.newImage("assets/launcher/gear.png")
@@ -2449,7 +2480,7 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
       face = "invert", image = imp._gearIcon,
       action = function() imp._gameManage = version end,
     })
-    ly = ly + playH + gap
+    ly = ly + cartH + gap
     btn(imp, lx, ly, lw, m.btnH, "carts-" .. version,
       Strings("Custom Carts"), {
         kind = "accent", font = "small",
@@ -2987,6 +3018,138 @@ local function buildModsPanel(imp, x, y, w, availH, m)
 
   local contentH = #mods * rowH + (#mods - 1) * gap
   return (listTop + contentH + gap) - y
+end
+
+-- --------------------------------------------------------- importers panel
+
+local IMPORTER_STATE_TEXT = {
+  planned = { "Not available yet", "steel" },
+  missing = { "No dump imported", "yellow" },
+  partial = { "Partly imported", "yellow" },
+  ready = { "Imported", "green" },
+}
+
+local function importerStateLine(state, have, total)
+  local row = IMPORTER_STATE_TEXT[state] or IMPORTER_STATE_TEXT.planned
+  local text = Strings(row[1])
+  if state == "partial" or state == "ready" then
+    text = text .. Strings("   %d of %d packs", have, total)
+  end
+  return text, PAL[row[2]] or PAL.steel
+end
+
+local IMPORTER_RESCAN = 3
+
+local function importerRows(imp)
+  local rows = imp._importerRows
+  if rows and (Kit.time - (imp._importerRowsAt or 0)) < IMPORTER_RESCAN then
+    return rows
+  end
+  local Importers = require("src.import.Importers")
+  rows = {}
+  for _, desc in ipairs(Importers.all()) do
+    local installed = Importers.installed(desc.id)
+    local have, total = 0, 0
+    for _, pack in ipairs(desc.packs) do
+      if not pack.planned then
+        total = total + 1
+        if installed[pack.id] then have = have + 1 end
+      end
+    end
+    rows[#rows + 1] = { desc = desc, state = Importers.state(desc.id),
+      have = have, total = total }
+  end
+  imp._importerRows, imp._importerRowsAt = rows, Kit.time
+  return rows
+end
+
+local function buildImportersPanel(imp, x, y, w, availH, m)
+  local gap = m.gap
+  local cy = y
+
+  Kit.text("title", Strings("IMPORTERS"), x, cy, PAL.heading)
+  cy = cy + Kit.textHeight("title") + math.floor(10 * m.s)
+
+  local listTop = cy
+  local pad = math.floor(12 * m.s)
+
+  for _, row in ipairs(importerRows(imp)) do
+    local desc, state = row.desc, row.state
+    local packsText = {}
+    for _, p in ipairs(desc.packs) do
+      packsText[#packsText + 1] = p.planned
+        and (p.name .. Strings(" (soon)")) or p.name
+    end
+    local textH = Kit.textHeight("button") + math.floor(4 * m.s)
+      + Kit.textHeight("small") + math.floor(2 * m.s)
+      + Kit.textHeight("small") + math.floor(2 * m.s) + Kit.textHeight("small")
+    local running0 = imp._importerJob ~= nil and imp._importerJob.id == desc.id
+    local rowH = math.floor(8 * m.s) + textH + math.floor(8 * m.s) + m.btnH
+      + math.floor(8 * m.s)
+      + (running0 and math.floor(8 * m.s) or 0)
+    local ry = cy
+    Kit.card(x, ry, w, rowH, "muted")
+    local px, inner = x + pad, w - 2 * pad
+    local ly = ry + math.floor(10 * m.s)
+
+    local badge = Strings(desc.status:upper())
+    local badgeW = Kit.textWidth("micro", badge) + math.floor(12 * m.s)
+    local nameShown = Kit.ellipsize("button", desc.name,
+      inner - badgeW - math.floor(12 * m.s))
+    Kit.text("button", nameShown, px, ly, PAL.muted)
+    Kit.tag(px + Kit.textWidth("button", nameShown) + math.floor(8 * m.s), ly,
+      badgeW, Kit.textHeight("button"), badge,
+      state == "ready" and PAL.green or PAL.steel)
+    ly = ly + Kit.textHeight("button") + math.floor(4 * m.s)
+
+    local stateText, stateCol = importerStateLine(state, row.have, row.total)
+    Kit.text("small", stateText, px, ly, stateCol)
+    ly = ly + Kit.textHeight("small") + math.floor(2 * m.s)
+    Kit.text("small", Kit.ellipsize("small", Strings(desc.summary), inner),
+      px, ly, PAL.detail)
+    ly = ly + Kit.textHeight("small") + math.floor(2 * m.s)
+    Kit.text("small", Kit.ellipsize("small",
+      Strings("Packs: ") .. table.concat(packsText, ", "), inner),
+      px, ly, PAL.muted)
+    ly = ly + Kit.textHeight("small") + math.floor(8 * m.s)
+
+    local job = imp._importerJob
+    local running = job ~= nil and job.id == desc.id
+    local runnable = desc.status ~= "planned" and not imp._importerJob
+    local label = running and Strings("Importing...") or Strings("Import dump")
+    local bw = math.min(inner,
+      Kit.textWidth("small", label) + math.floor(28 * m.s))
+    btn(imp, px, ly, bw, m.btnH, "importer-" .. desc.id, label, {
+      kind = runnable and "accent" or "ghost", font = "small",
+      enabled = runnable,
+      action = runnable
+        and function() imp:_beginImporterImport(desc.id) end or nil })
+    local hx = px + bw + math.floor(8 * m.s)
+    local hw = math.max(0, px + inner - hx)
+    if hw > 0 then
+      local hint, hintCol
+      if running then
+        hint, hintCol = job.status or Strings("Working..."), PAL.yellow
+      elseif imp._importerNotice then
+        hint = imp._importerNotice.text
+        hintCol = imp._importerNotice.ok and PAL.green or PAL.red
+      elseif desc.status == "planned" then
+        hint, hintCol = Strings("Not wired up yet."), PAL.muted
+      else
+        hint, hintCol = Strings("Reads %s.", desc.source.name), PAL.muted
+      end
+      Kit.text("small", Kit.ellipsize("small", hint, hw), hx,
+        ly + (m.btnH - Kit.textHeight("small")) / 2, hintCol)
+    end
+    if running then
+      ly = ly + m.btnH + math.floor(4 * m.s)
+      Kit.progress(px, ly, inner, math.floor(4 * m.s), job.progress or 0)
+    end
+
+    cy = ry + rowH + gap
+  end
+
+  return (cy - y)
 end
 
 -- ---------------------------------------------------------- find mods panel
@@ -6404,6 +6567,8 @@ local function buildTabPanel(imp, x, y, w, availH, budgetH, m)
     return buildFindPanel(imp, x, y, w, budgetH, m)
   elseif imp.tab == "skins" then
     return buildSkinsPanel(imp, x, y, w, budgetH, m)
+  elseif imp.tab == "importers" then
+    return buildImportersPanel(imp, x, y, w, budgetH, m)
   elseif imp.tab == "online" then
     return require("src.import.OnlinePanel")
       .buildOnlinePanel(imp, x, y, w, budgetH, m)

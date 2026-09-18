@@ -518,6 +518,67 @@ local function wanderVerdict(self, map, entities, tx, ty)
   return true
 end
 
+function NPC:canStep(map, entities, dir)
+  local d = Map.DELTA[dir]
+  if not (d and map) then return false end
+  local tx, ty = self.cellX + d[1], self.cellY + d[2]
+  local allowed, why = true, nil
+  if not map:isWalkable(tx, ty) then allowed, why = false, "tile"
+  elseif occupied(entities, tx, ty, self) then allowed, why = false, "entity" end
+  if Runtime.wantsHook("movement.collision") then
+    local ctx = { map = map, mover = self, dir = dir,
+                  fromX = self.cellX, fromY = self.cellY,
+                  toX = tx, toY = ty, reason = why }
+    allowed = Runtime.call("movement.collision", passthrough, allowed, ctx)
+  end
+  return allowed and true or false
+end
+
+function NPC:stepNow(dir)
+  local d = Map.DELTA[dir]
+  if not d or self.moving then return false end
+  self.facing, self.stepDir = dir, dir
+  self.targetX, self.targetY = self.cellX + d[1], self.cellY + d[2]
+  self.moving = true
+  self.progress = 0
+  return true
+end
+
+function NPC:placeAt(x, y, facing)
+  self.moving, self.marching, self.jumping = false, false, nil
+  self.targetX, self.targetY, self.stepDir = nil, nil, nil
+  self.progress = 0
+  self.spriteYOffset = 0
+  self.cellX, self.cellY = x, y
+  self.px, self.py = x * 16, y * 16
+  if facing then self.facing = facing end
+end
+
+function NPC:queueApiMoves(moves, onDone)
+  if self.apiMoves then return false end
+  moves.onDone = onDone
+  self.apiMoves = moves
+  return true
+end
+
+function NPC:runApiMoves()
+  local q = self.apiMoves
+  local move = table.remove(q, 1)
+  if move == nil then
+    self.apiMoves = nil
+    if q.onDone then q.onDone() end
+    return false
+  end
+  if move == "march" then
+    self.marching = true
+    self.progress = 0
+  elseif not self:stepNow(move) then
+    self.apiMoves = nil
+    return false
+  end
+  return true
+end
+
 function NPC:walkPhase()
   -- SetFacingStepAction bails to SetFacingCurrent BEFORE it increments
   -- OBJECT_STEP_FRAME (engine/overworld/map_object_action.asm:48), so a
@@ -589,6 +650,7 @@ function NPC:update(map, entities)
       self.moving = false
       self.marching = false
       self.stepFlip = not self.stepFlip
+      if self.apiMoves then self:runApiMoves() end
     end
     return
   end
@@ -631,9 +693,12 @@ function NPC:update(map, entities)
       if map then
         self.inGrass = NPC.grassAt(map, self.cellX, self.cellY)
       end
+      if self.apiMoves then self:runApiMoves() end
     end
     return
   end
+
+  if self.apiMoves and self:runApiMoves() then return end
 
   if self.frozen or self.kind == "stand" then return end
 

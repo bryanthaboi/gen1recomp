@@ -21,6 +21,7 @@ local Schemas = require("src.mods.Schemas")
 local Semver = require("src.mods.Semver")
 local Events = require("src.mods.Events")
 local Gen2Compat = require("src.mods.Gen2Compat")
+local Gen3Compat = require("src.mods.Gen3Compat")
 local Hooks = require("src.mods.Hooks")
 local LegacyCompat = require("src.mods.LegacyCompat")
 local Runtime = require("src.mods.Runtime")
@@ -121,16 +122,33 @@ local GEN1_ONLY_MODULES = {
   ["src.ui.OptionsMenu"] = true,
 }
 
-local function crossGenerationDenial(name, generation)
-  if type(name) ~= "string" or generation ~= 1 then return nil end
-  if not (name:find("^src%.[%w_]+%.gen2%.") or name == "src.core.Game2") then
-    return nil
+local function moduleGeneration(name)
+  if name:find("^src%.[%w_]+%.gen2%.") or name == "src.core.Game2" then
+    return 2
   end
-  return ("%s is a Gen 2 engine module and this is a Gen 1 game; the structs "
+  if name:find("^src%.[%w_]+%.game3%.") or name == "src.core.Game3" then
+    return 3
+  end
+  return nil
+end
+
+local function crossGenerationDenial(name, generation)
+  if type(name) ~= "string" then return nil end
+  local owner = moduleGeneration(name)
+  if owner == nil or owner == generation then return nil end
+  if owner == 2 and generation ~= 1 and generation ~= 3 then return nil end
+  if owner == 3 and generation ~= 1 and generation ~= 2 then return nil end
+  return ("%s is a Gen %d engine module and this is a Gen %d game; the structs "
     .. "it reads and writes are not this game's, so anything it stores lands "
     .. "on the save in the wrong shape. Take the game from mod.game and the "
-    .. "world from mod.world, which resolve per generation"):format(name)
+    .. "world from mod.world, which resolve per generation")
+    :format(name, owner, generation)
 end
+
+local COMPAT = {
+  [2] = { module = Gen2Compat, file = "src/mods/Gen2Compat.lua", tag = "gen2" },
+  [3] = { module = Gen3Compat, file = "src/mods/Gen3Compat.lua", tag = "gen3" },
+}
 
 -- the src.* modules the mod surface points authors at: another mod's
 -- exports carry a version string that wants range-checking before use, and
@@ -176,15 +194,17 @@ local function scanRequire(name)
   -- A Gen 1-only module on a Gold boot is not a permissions question, it is a
   -- dead patch: reported once, attributed, and onto the boot error feed the
   -- manager shows the player rather than a dev-only log line.
+  local compat = COMPAT[devShim.generation]
   if devShim.generation ~= 1 and GEN1_ONLY_MODULES[name]
-      and not Gen2Compat.serves(name) then
-    local key = modId .. "|gen2|" .. name
+      and not (compat and compat.module.serves(name)) then
+    local key = modId .. "|" .. (compat and compat.tag or "gen?") .. "|" .. name
     if not devShim.warned[key] then
       devShim.warned[key] = true
-      local message = ("%s: requires %s, which a Gen 2 game never runs and "
-        .. "src/mods/Gen2Compat.lua has no adapter for; take the game from "
+      local message = ("%s: requires %s, which a Gen %s game never runs and "
+        .. "%s has no adapter for; take the game from "
         .. "the game.ready payload and mod.world")
-        :format(modId, name)
+        :format(modId, name, tostring(devShim.generation),
+          compat and compat.file or "no compat layer")
       local errors = devShim.errors
       if errors then errors[#errors + 1] = message end
       Logger.error("%s", message)
@@ -243,18 +263,19 @@ function Loader:_installDevShim()
         if denial then error(("[%s] %s"):format(id or "mod", denial), 0) end
       end
       if devShim.dev or devShim.generation ~= 1 then scanRequire(name) end
-      -- The Gen 1 name a mod asked for, answered by the Gen 2 arm behind it.
+      -- The Gen 1 name a mod asked for, answered by this generation's compat arm.
       -- Engine code keeps the real module: src/render/PaletteFX.lua:776
       -- requires src.core.Game on both generations and means it.
-      if devShim.generation == 2 and Gen2Compat.serves(name)
+      local compat = COMPAT[devShim.generation]
+      if compat and compat.module.serves(name)
           and (owner or callerIsMod(3)) then
-        local adapter = Gen2Compat.resolve(name, Runtime.currentMod)
+        local adapter = compat.module.resolve(name, Runtime.currentMod)
         if adapter then
-          local key = "adapter|" .. name
+          local key = "adapter|" .. compat.tag .. "|" .. name
           if not devShim.warned[key] then
             devShim.warned[key] = true
-            Logger.info("gen2 facade: %s -> %s", name,
-              tostring(Gen2Compat.ADAPTERS[name]))
+            Logger.info("%s facade: %s -> %s", compat.tag, name,
+              tostring(compat.module.ADAPTERS[name]))
           end
           return adapter
         end
@@ -869,6 +890,17 @@ function Loader:_validate()
         end
       end
     end
+    if not reason and #(manifest.required_assets or {}) > 0 then
+      local Importers = engineRequire("src.import.Importers")
+      for _, spec in ipairs(Importers and manifest.required_assets or {}) do
+        local pack, packErr = Importers.resolve(spec, self.fs)
+        if not pack then
+          reason = "required asset pack unavailable: " .. tostring(packErr)
+            .. " -- import it from the launcher's IMPORTERS tab"
+          break
+        end
+      end
+    end
     if not reason and manifest.game_version and not devEngine() then
       local ok, err = Semver.satisfies(Version.engine, manifest.game_version)
       if not ok then
@@ -1245,6 +1277,8 @@ function Loader:_api(mod)
   local Checkpoint = engineRequire("src.core.Checkpoint")
   local ImportAccess = engineRequire("src.mods.ImportAccess")
   local importApi, installCache = ImportAccess.new(mod.manifest, loader.fs)
+  local AssetPacks = engineRequire("src.mods.AssetPacks")
+  local packApi = AssetPacks and AssetPacks.new(mod.manifest, loader.fs)
   local api = {
     id = modId,
     version = mod.manifest.version,
@@ -1253,6 +1287,7 @@ function Loader:_api(mod)
     -- entry chunk can decide whether to register developer-only diagnostics
     -- without receiving the process environment or the loader itself.
     developer = loader.dev == true,
+    generation = loader.generation,
     -- a deep copy: what a mod does to its own view never reaches the loader
     manifest = Merge.deepCopy(mod.manifest),
     datasets = {
@@ -1460,6 +1495,7 @@ function Loader:_api(mod)
     -- Read-only bounded access to this mod's manifest-declared, launcher-validated
     -- imports. No host path is exposed; large sources are read in bounded ranges.
     imports = importApi,
+    packs = packApi,
     -- Installation-scoped generated data, independent from Pokémon save slots.
     -- This is where ROM-derived caches belong; mod.storage remains playthrough-scoped.
     cache = installCache,
@@ -1627,7 +1663,8 @@ function Loader:_api(mod)
     local game = loader:_game()
     if key == "battle" then
       if battle then return battle end
-      local module = game and engineRequire(loader.generation == 2
+      local module = game and engineRequire(loader.generation == 3
+        and "src.battle.game3.BattleAPI" or loader.generation == 2
         and "src.battle.gen2.BattleAPI" or "src.battle.BattleAPI")
       if not module then return nil end
       battle = module.new(game)
@@ -1638,7 +1675,8 @@ function Loader:_api(mod)
     -- one facade name, one arm per generation: Gold's world is not a stack
     -- state and its flags are a bitfield, so the resolution differs even
     -- where the method set does not (src/world/gen2/WorldAPI.lua)
-    local module = game and engineRequire(loader.generation == 2
+    local module = game and engineRequire(loader.generation == 3
+      and "src.world.game3.WorldAPI" or loader.generation == 2
       and "src.world.gen2.WorldAPI" or "src.world.WorldAPI")
     if not module then return nil end
     world = module.new(game, modId)
@@ -1756,6 +1794,7 @@ end
 function Loader:_validateScripts()
   local registry = self.content.map_scripts
   if not registry or next(registry.ops) == nil then return end
+  if registry.spec.semantics ~= "compose" then return end
   local MapScripts = engineRequire("src.script.MapScripts")
   if not MapScripts then return end
   local commands = self.content.commands
@@ -1836,6 +1875,7 @@ function Loader:load(data, opts)
   self.arenaCartId = mode == "cartOnly" and opts.cartId or nil
   self.arenaSealBroken = opts.sealBroken == true
   self.baseData = data
+  if self.generation == 3 then Schemas.bindGen3(data) end
   -- every registry folds against the pristine view of its Data target;
   -- resolution is lazy so optional namespaces may appear later
   for name, registry in pairs(self.content) do
@@ -1925,6 +1965,7 @@ function Loader:load(data, opts)
   -- every touch: a mod captures the facade at file scope, before Game2 has a
   -- save or a world (src/mods/Gen2Compat.lua).
   Gen2Compat.bind(function() return self:_game() end)
+  Gen3Compat.bind(function() return self:_game() end)
   -- Any boot with mods on it needs the gate, because require("io") is how a
   -- mod would walk out of Sandbox.envFor.  Dev mode adds the permissions
   -- tripwire on top, and a Gold boot the Gen 1-only require report -- the

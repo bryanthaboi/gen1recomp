@@ -141,8 +141,13 @@ local function drawGrid(S, Kit, box, gridX, y, gridW, h)
       Kit.text("micro", tostring(i), bx + 10 * s, by + 8 * s, PAL.faint)
       Kit.textRight("micro", ("Lv%d"):format(mon.level), bx + cellW - 10 * s,
         by + 8 * s, PAL.caption)
+      local monName = (mon.nickname and mon.nickname ~= "" and mon.nickname)
+        or (type(mon.species) == "string" and mon.species)
+        or (type(mon.name) == "string" and mon.name ~= "" and mon.name)
+        or (S.data and S.data.pokemon and S.data.pokemon[mon.species or mon.speciesId] and S.data.pokemon[mon.species or mon.speciesId].name)
+        or tostring(mon.species or "POKEMON")
       Kit.textCenter("mono",
-        Kit.ellipsize("mono", mon.species, cellW - 12 * s), bx,
+        Kit.ellipsize("mono", monName, cellW - 12 * s), bx,
         by + cellH / 2 - Kit.textHeight("mono") / 2, cellW, PAL.text)
     else
       -- empty slots are dashed and clickable: clicking one opens the species
@@ -200,7 +205,12 @@ local function drawDock(S, Kit, dx, y, dockW, h)
       local lvW = Kit.textWidth("tiny", lv)
       Kit.textRight("tiny", lv, dx + pad + dInner - 10 * s,
         ry + (dRowH - Kit.textHeight("tiny")) / 2, PAL.caption)
-      Kit.text("mono", Kit.ellipsize("mono", mon.species, dInner - 30 * s - lvW),
+      local monName = (mon.nickname and mon.nickname ~= "" and mon.nickname)
+        or (type(mon.species) == "string" and mon.species)
+        or (type(mon.name) == "string" and mon.name ~= "" and mon.name)
+        or (S.data and S.data.pokemon and S.data.pokemon[mon.species or mon.speciesId] and S.data.pokemon[mon.species or mon.speciesId].name)
+        or tostring(mon.species or "POKEMON")
+      Kit.text("mono", Kit.ellipsize("mono", monName, dInner - 30 * s - lvW),
         dx + pad + 10 * s, ry + (dRowH - Kit.textHeight("mono")) / 2, PAL.text)
     end
     Kit.popClip()

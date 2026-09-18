@@ -643,12 +643,31 @@ Schemas.GEN1 = {
   rom_text = false,
 }
 
+Schemas.GEN3 = {
+  pokemon = "gen3Pokemon", moves = "gen3Moves", items = "gen3Items",
+  encounters = "gen3Encounters", trainers = "gen3Trainers",
+  text = "gen3Text", map_scripts = "gen3Scripts",
+  tilesets = false, sprites = false, rom_text = false,
+  palettes = false, icons = false, battle_anims = false, constants = false,
+  statuses = false, move_effects = false, item_effects = false,
+  balls = false, ai_classes = false, evolution_methods = false,
+  growth_rates = false, type_chart = false,
+  rulesets = false, transitions = false, field = false,
+  text_pointers = false, link_fields = false,
+  battle_sprite_scales = false, render_pipelines = false,
+  font = false, audio = false, music = false, sfx = false, cries = false,
+  map_songs = false, screens = false, tokens = false,
+  held_items = false, phone_contacts = false, decorations = false,
+  apricorns = false, landmarks = false, radio_channels = false,
+}
+
 -- The routing table for a generation: which one is consulted is the only
 -- difference between the two directions.  An unknown generation routes
 -- nothing, so every registry keeps its catalog target.
 local NO_ROUTING = {}
 
 function Schemas.routing(generation)
+  if generation == 3 then return Schemas.GEN3 end
   if generation == 2 then return Schemas.GEN2 end
   if generation == 1 then return Schemas.GEN1 end
   return NO_ROUTING
@@ -701,14 +720,23 @@ end
 -- resolve is one table lookup after the first call.  Everything downstream --
 -- Schemas.check, Registry's fold and baseAt, the loader's merge and write --
 -- then reads one spec and never learns about generations.
-local GEN2_SHAPE = {
-  gen2Value = "value", gen2Fields = "fields", gen2Keys = "keys",
-  gen2KeyValue = "keyValue", gen2Extra = "extra",
-  gen2Semantics = "semantics", gen2Write = "write",
-  gen2BaseAt = "baseAt", gen2BaseIds = "baseIds",
-  gen2ReservedIds = "reservedIds",
-  gen2Example = "example", gen2Notes = "notes",
+local SHAPE_SLOTS = {
+  Value = "value", Fields = "fields", Keys = "keys",
+  KeyValue = "keyValue", Extra = "extra",
+  Semantics = "semantics", Write = "write",
+  BaseAt = "baseAt", BaseIds = "baseIds",
+  ReservedIds = "reservedIds",
+  Example = "example", Notes = "notes",
 }
+
+local SHAPES = {}
+for _, generation in ipairs({ 2, 3 }) do
+  local map = {}
+  for suffix, slot in pairs(SHAPE_SLOTS) do
+    map["gen" .. generation .. suffix] = slot
+  end
+  SHAPES[generation] = map
+end
 
 -- Schemas.check reads these four in a fixed order (keys/keyValue, then value,
 -- then fields), so a Gen 2 shape that describes its records with `keys` must
@@ -722,34 +750,49 @@ local VALUE_SLOTS = { value = true, fields = true, keys = true, keyValue = true 
 -- registry its own table -- the two ALIASES resolve to the canonical name
 -- before anything reaches here, and `target` is the only name-dependent
 -- field a derived spec carries.
-local derivedSpecs = setmetatable({}, { __mode = "k" })
+local derivedSpecs = {}
+for generation in pairs(SHAPES) do
+  derivedSpecs[generation] = setmetatable({}, { __mode = "k" })
+end
 
--- does this registry describe its Gen 2 records differently at all?
-function Schemas.hasGen2Shape(spec)
-  if type(spec) ~= "table" then return false end
-  for source in pairs(GEN2_SHAPE) do
+function Schemas.hasShape(spec, generation)
+  local map = SHAPES[generation]
+  if type(spec) ~= "table" or not map then return false end
+  for source in pairs(map) do
     if spec[source] ~= nil then return true end
   end
   return false
 end
 
+-- does this registry describe its Gen 2 records differently at all?
+function Schemas.hasGen2Shape(spec)
+  return Schemas.hasShape(spec, 2)
+end
+
+function Schemas.hasGen3Shape(spec)
+  return Schemas.hasShape(spec, 3)
+end
+
 -- The spec to validate and merge `name` with under `generation`.  Idempotent:
 -- a derived spec carries no gen2* keys, so resolving one again returns it.
 function Schemas.shapeFor(name, spec, generation)
-  if generation ~= 2 or not Schemas.hasGen2Shape(spec) then return spec end
-  local hit = derivedSpecs[spec]
+  local map = SHAPES[generation]
+  if not map or not Schemas.hasShape(spec, generation) then return spec end
+  local hit = derivedSpecs[generation][spec]
   if hit then return hit end
   local out = {}
   for key, value in pairs(spec) do out[key] = value end
   local replacesValue = false
-  for source, slot in pairs(GEN2_SHAPE) do
+  for source, slot in pairs(map) do
     if spec[source] ~= nil and VALUE_SLOTS[slot] then replacesValue = true end
   end
   if replacesValue then
     for slot in pairs(VALUE_SLOTS) do out[slot] = nil end
   end
-  for source, slot in pairs(GEN2_SHAPE) do
-    out[source] = nil
+  for _, other in pairs(SHAPES) do
+    for source in pairs(other) do out[source] = nil end
+  end
+  for source, slot in pairs(map) do
     -- `or nil` is the clear: gen2Write = false leaves the slot empty
     if spec[source] ~= nil then out[slot] = spec[source] or nil end
   end
@@ -757,7 +800,7 @@ function Schemas.shapeFor(name, spec, generation)
   -- holding it alone never reads the Gen 1 path by accident.  targetFor stays
   -- authoritative and stays idempotent over the result.
   out.target = Schemas.targetFor(name, spec, generation)
-  derivedSpecs[spec] = out
+  derivedSpecs[generation][spec] = out
   return out
 end
 
@@ -789,6 +832,810 @@ local movesGen2BaseAt, movesGen2BaseIds, movesGen2ReservedIds =
   recordMapExcept("generation", "source")
 local itemsGen2BaseAt, itemsGen2BaseIds, itemsGen2ReservedIds =
   recordMapExcept("generation", "source", "pockets")
+
+local G3 = {}
+Schemas.gen3View = G3
+
+G3.TYPES = {
+  [0] = "NORMAL", "FIGHTING", "FLYING", "POISON", "GROUND", "ROCK", "BUG",
+  "GHOST", "STEEL", "MYSTERY", "FIRE", "WATER", "GRASS", "ELECTRIC",
+  "PSYCHIC", "ICE", "DRAGON", "DARK",
+}
+G3.GROWTH = {
+  [0] = "MEDIUM_FAST", "ERRATIC", "FLUCTUATING", "MEDIUM_SLOW", "FAST", "SLOW",
+}
+G3.EVOLUTIONS = {
+  "EVO_FRIENDSHIP", "EVO_FRIENDSHIP_DAY", "EVO_FRIENDSHIP_NIGHT",
+  "EVO_LEVEL", "EVO_TRADE", "EVO_TRADE_ITEM", "EVO_ITEM",
+  "EVO_LEVEL_ATK_GT_DEF", "EVO_LEVEL_ATK_EQ_DEF", "EVO_LEVEL_ATK_LT_DEF",
+  "EVO_LEVEL_SILCOON", "EVO_LEVEL_CASCOON", "EVO_LEVEL_NINJASK",
+  "EVO_LEVEL_SHEDINJA", "EVO_BEAUTY",
+}
+local EVO_LEVEL_METHODS = { [4] = true, [8] = true, [9] = true, [10] = true,
+                            [11] = true, [12] = true, [13] = true, [14] = true }
+local EVO_ITEM_METHODS = { [6] = true, [7] = true }
+local PHYSICAL_TYPES = { [0] = true, [1] = true, [2] = true, [3] = true,
+                         [4] = true, [5] = true, [6] = true, [7] = true,
+                         [8] = true }
+G3.SPRITE_ROOT = "data/generated/gba/pokemon"
+
+local function reverse(list)
+  local out = {}
+  for num, name in pairs(list) do out[name] = num end
+  return out
+end
+local TYPE_NUMS = reverse(G3.TYPES)
+local GROWTH_NUMS = reverse(G3.GROWTH)
+local EVO_NUMS = reverse(G3.EVOLUTIONS)
+
+function G3.idOf(name)
+  if type(name) ~= "string" then return nil end
+  local s = name:gsub("\195\169", "E"):gsub("\195\137", "E")
+    :gsub("\226\153\128", "_F"):gsub("\226\153\130", "_M"):gsub("'", "")
+  s = s:upper():gsub("[^%w]+", "_"):gsub("^_+", ""):gsub("_+$", "")
+  if s == "" then return nil end
+  return s
+end
+
+function G3.vanillaSprite(side, species)
+  return ("%s/%s/%d.rgba"):format(G3.SPRITE_ROOT,
+    side == "back" and "back" or "front", species)
+end
+
+local function tableAt(base, ...)
+  if type(base) ~= "table" then return nil end
+  for i = 1, select("#", ...) do
+    local value = rawget(base, (select(i, ...)))
+    if value == nil then value = base[(select(i, ...))] end
+    if type(value) == "table" then return value end
+  end
+  return nil
+end
+
+local bound = setmetatable({}, { __mode = "k" })
+local ROOT_KEYS = { "gen3Pokemon", "gen3Moves", "gen3Items", "gen3Encounters",
+                    "gen3Trainers", "gen3Text", "gen3Scripts" }
+local LIVE_MODULES = {
+  gen3Pokemon = "src.core.game3.pokemon",
+  gen3Moves = "src.core.game3.battle.moves",
+  gen3Items = "src.core.game3.items_data",
+  gen3Encounters = "src.core.game3.encounters",
+  gen3Trainers = "src.core.game3.scripting.trainers",
+}
+
+function Schemas.bindGen3(data)
+  if type(data) == "table" then bound[data] = true end
+end
+
+local function sibling(base, key)
+  for data in pairs(bound) do
+    for _, root in ipairs(ROOT_KEYS) do
+      if base ~= nil and rawget(data, root) == base then
+        local value = data[key]
+        if value ~= nil then return value end
+      end
+    end
+  end
+  return package.loaded[LIVE_MODULES[key] or ""]
+end
+
+local indexCache = { species = setmetatable({}, { __mode = "k" }),
+                     moves = setmetatable({}, { __mode = "k" }),
+                     items = setmetatable({}, { __mode = "k" }),
+                     abilities = setmetatable({}, { __mode = "k" }) }
+local EMPTY_INDEX = { ids = {}, num = {}, id = {} }
+
+local function nameIndex(kind, source, field)
+  if type(source) ~= "table" then return EMPTY_INDEX end
+  local cache = indexCache[kind]
+  local hit = cache[source]
+  if hit then return hit end
+  local nums = {}
+  for key in pairs(source) do
+    if type(key) == "number" and key > 0 then nums[#nums + 1] = key end
+  end
+  table.sort(nums)
+  local out = { ids = {}, num = {}, id = {} }
+  for _, num in ipairs(nums) do
+    local entry = source[num]
+    local id = G3.idOf(field and type(entry) == "table" and entry[field] or entry)
+    if id and not out.num[id] then
+      out.num[id], out.id[num] = num, id
+      out.ids[#out.ids + 1] = id
+    end
+  end
+  cache[source] = out
+  return out
+end
+
+local function toNum(index, id)
+  if type(id) == "number" then return id end
+  return index.num[id] or tonumber(id)
+end
+
+local function toId(index, num)
+  num = tonumber(num)
+  if not num or num == 0 then return nil end
+  return index.id[num] or tostring(num)
+end
+
+local function monTables(base)
+  return {
+    names = tableAt(base, "_names", "names"),
+    types = tableAt(base, "_types", "types"),
+    stats = tableAt(base, "_stats", "stats"),
+    abilities = tableAt(base, "_abilities", "abilities"),
+    abilityNames = tableAt(base, "_abilityNames", "abilityNames"),
+    meta = tableAt(base, "_speciesMeta", "speciesMeta", "meta"),
+    learnsets = tableAt(base, "_learnsets", "learnsets"),
+    evolutions = tableAt(base, "_evolutions", "evolutions"),
+    tmhm = tableAt(base, "_tmhm", "tmhm"),
+    dex = tableAt(base, "_dex", "dex"),
+    national = tableAt(base, "_national", "national"),
+    moveNames = tableAt(base, "_moveNames", "moveNames"),
+    battleMoves = tableAt(base, "_battleMoves", "battleMoves"),
+  }
+end
+
+local function itemRows(base)
+  if type(base) ~= "table" then return nil end
+  if type(base.ensureLoaded) == "function" or type(base.info) == "function" then
+    if type(rawget(base, "_byId")) ~= "table" then
+      pcall(base.ensureLoaded or base.info, 1)
+    end
+    return tableAt(base, "_byId")
+  end
+  local byId = rawget(base, "_byId")
+  if type(byId) == "table" then return byId end
+  local items = rawget(base, "items")
+  if type(items) == "table" then return items end
+  return base
+end
+
+local function moveRows(base)
+  if type(base) ~= "table" then return nil end
+  if type(base.romReady) == "function" then
+    if type(rawget(base, "_rom")) ~= "table" then pcall(base.romReady) end
+    return tableAt(base, "_rom")
+  end
+  local rom = rawget(base, "_rom")
+  if type(rom) == "table" then return rom end
+  local moves = rawget(base, "moves")
+  if type(moves) == "table" then return moves end
+  rom = rawget(base, "rom")
+  if type(rom) == "table" then
+    return type(rom.moves) == "table" and rom.moves or rom
+  end
+  return base
+end
+
+local function trainerRows(base)
+  if type(base) ~= "table" then return nil end
+  if type(base.pack) == "function" then
+    local pack = rawget(base, "_pack")
+    if pack == nil then
+      local ok, loaded = pcall(base.pack)
+      pack = ok and loaded or nil
+    end
+    return type(pack) == "table" and pack.trainers or nil
+  end
+  local pack = rawget(base, "_pack")
+  if type(pack) == "table" then return pack.trainers end
+  local trainers = rawget(base, "trainers")
+  if type(trainers) == "table" then return trainers end
+  return base
+end
+
+local function encounterRows(base)
+  if type(base) ~= "table" then return nil end
+  local tables = rawget(base, "_tables")
+  if type(tables) == "table" then return tables end
+  return base
+end
+
+local function speciesIndex(base)
+  local pokemon = sibling(base, "gen3Pokemon")
+  return nameIndex("species", monTables(pokemon).names)
+end
+
+local function moveNamesFor(base, moveNames)
+  if moveNames then return moveNames end
+  local own = tableAt(base, "_moveNames", "moveNames", "names")
+  if own then return own end
+  return monTables(sibling(base, "gen3Pokemon")).moveNames
+end
+
+local function moveIndexFor(base, moveNames)
+  return nameIndex("moves", moveNamesFor(base, moveNames))
+end
+
+local function itemIndex(base)
+  return nameIndex("items", itemRows(sibling(base, "gen3Items")), "name")
+end
+
+G3.itemRows, G3.moveRows, G3.trainerRows = itemRows, moveRows, trainerRows
+G3.encounterRows, G3.monTables = encounterRows, monTables
+
+function G3.speciesNum(pokemonBase, id)
+  return toNum(nameIndex("species", monTables(pokemonBase).names), id)
+end
+
+function G3.speciesId(pokemonBase, num)
+  return toId(nameIndex("species", monTables(pokemonBase).names), num)
+end
+
+function G3.moveNum(base, id) return toNum(moveIndexFor(base), id) end
+function G3.moveId(base, num) return toId(moveIndexFor(base), num) end
+function G3.itemNum(base, id) return toNum(itemIndex(base), id) end
+function G3.itemId(base, num) return toId(itemIndex(base), num) end
+
+local function bitSet(lo, hi, bit)
+  local word = bit < 32 and (lo or 0) or (hi or 0)
+  local shift = bit < 32 and bit or bit - 32
+  return math.floor(word / 2 ^ shift) % 2 == 1
+end
+
+local function monRecord(base, id)
+  local t = monTables(base)
+  local index = nameIndex("species", t.names)
+  local num = index.num[id]
+  local stats = num and t.stats and t.stats[num]
+  local meta = num and t.meta and t.meta[num]
+  if not (stats and meta) then return nil end
+  local moveIndex = moveIndexFor(sibling(base, "gen3Moves"), t.moveNames)
+  local items = itemIndex(base)
+  local national = t.national and t.national.toNational
+    and t.national.toNational[num]
+  if national == nil and num <= 251 then national = num end
+  local record = {
+    id = id, name = t.names[num], index = num, dex = national,
+    baseStats = { hp = stats.hp, attack = stats.atk, defense = stats.def,
+                  speed = stats.spe, specialAttack = stats.spa,
+                  specialDefense = stats.spd },
+    catchRate = meta.catchRate, baseExp = meta.expYield,
+    growthRate = G3.GROWTH[meta.growthRate] or tostring(meta.growthRate),
+    genderRatio = meta.genderRatio, eggCycles = meta.eggCycles,
+    friendship = meta.friendship,
+    eggGroups = { meta.eggGroup1 or 0, meta.eggGroup2 or 0 },
+    itemCommon = toId(items, meta.itemCommon),
+    itemRare = toId(items, meta.itemRare),
+    spriteFront = G3.vanillaSprite("front", num),
+    spriteBack = G3.vanillaSprite("back", num),
+  }
+  local pair = t.types and t.types[num]
+  local types = {}
+  if pair then
+    types[1] = G3.TYPES[pair[1]] or tostring(pair[1])
+    if pair[2] ~= nil and pair[2] ~= pair[1] then
+      types[2] = G3.TYPES[pair[2]] or tostring(pair[2])
+    end
+  end
+  record.types = types
+  local abilityPair = t.abilities and t.abilities[num]
+  if abilityPair then
+    local abilityIndex = nameIndex("abilities", t.abilityNames)
+    local abilities = {}
+    for slot = 1, 2 do
+      local ability = abilityPair[slot]
+      if ability and ability ~= 0 then
+        abilities[#abilities + 1] = abilityIndex.id[ability] or ability
+      end
+    end
+    record.abilities = abilities
+  end
+  local learnset = {}
+  for _, row in ipairs(t.learnsets and t.learnsets[num] or {}) do
+    local level = row[1] or row.level
+    local move = row[2] or row.move
+    if level and move and move ~= 0 then
+      learnset[#learnset + 1] = { level = level, move = toId(moveIndex, move) }
+    end
+  end
+  record.learnset = learnset
+  local evolutions = {}
+  for _, row in ipairs(t.evolutions and t.evolutions[num] or {}) do
+    local method = row.method or row[1]
+    local param = row.param or row[2] or 0
+    local entry = {
+      method = G3.EVOLUTIONS[method] or tostring(method),
+      species = toId(index, row.target or row[3]) or "0",
+    }
+    if EVO_LEVEL_METHODS[method] then
+      entry.level = param
+    elseif EVO_ITEM_METHODS[method] then
+      entry.item = toId(items, param)
+    else
+      entry.param = param
+    end
+    evolutions[#evolutions + 1] = entry
+  end
+  record.evolutions = evolutions
+  local tmhm = t.tmhm
+  if tmhm and type(tmhm.machines) == "table" and type(tmhm.learnsets) == "table" then
+    local bits = tmhm.learnsets[num]
+    local list = {}
+    if bits then
+      for bit = 0, 63 do
+        local move = tmhm.machines[bit]
+        if move == nil then break end
+        if move ~= 0 and bitSet(bits.lo, bits.hi, bit) then
+          list[#list + 1] = toId(moveIndex, move)
+        end
+      end
+    end
+    record.tmhm = list
+  end
+  local entry = national and t.dex and t.dex[national]
+  if entry then
+    record.dexEntry = { kind = entry.category or "", height = entry.height or 0,
+                        weight = entry.weight or 0 }
+  end
+  return record
+end
+
+local function monIds(base)
+  local t = monTables(base)
+  local ids = {}
+  for _, id in ipairs(nameIndex("species", t.names).ids) do
+    local num = nameIndex("species", t.names).num[id]
+    if t.stats and t.stats[num] and t.meta and t.meta[num] then
+      ids[#ids + 1] = id
+    end
+  end
+  return ids
+end
+
+local function sideTable(target, key)
+  local side = rawget(target, key)
+  if type(side) ~= "table" then
+    side = {}
+    rawset(target, key, side)
+  end
+  return side
+end
+
+local function ensureSlot(t, key)
+  if t[key] == nil then t[key] = {} end
+  return t[key]
+end
+
+local function writeMon(target, t, num, value)
+  local moveIndex = moveIndexFor(sibling(target, "gen3Moves"), t.moveNames)
+  local items = itemIndex(target)
+  if type(value.name) == "string" and t.names then t.names[num] = value.name end
+  if type(value.types) == "table" and t.types then
+    local first = TYPE_NUMS[value.types[1]] or tonumber(value.types[1]) or 0
+    local second = TYPE_NUMS[value.types[2]] or tonumber(value.types[2]) or first
+    t.types[num] = { first, second }
+  end
+  if type(value.baseStats) == "table" and t.stats then
+    local old = t.stats[num] or {}
+    local s = value.baseStats
+    t.stats[num] = {
+      hp = s.hp or old.hp, atk = s.attack or old.atk, def = s.defense or old.def,
+      spe = s.speed or old.spe, spa = s.specialAttack or old.spa,
+      spd = s.specialDefense or old.spd,
+    }
+  end
+  if t.meta then
+    local meta = {}
+    for key, v in pairs(t.meta[num] or {}) do meta[key] = v end
+    if value.catchRate ~= nil then meta.catchRate = value.catchRate end
+    if value.baseExp ~= nil then meta.expYield = value.baseExp end
+    if value.growthRate ~= nil then
+      meta.growthRate = GROWTH_NUMS[value.growthRate]
+        or tonumber(value.growthRate) or meta.growthRate
+    end
+    for _, key in ipairs({ "genderRatio", "eggCycles", "friendship" }) do
+      if value[key] ~= nil then meta[key] = value[key] end
+    end
+    if type(value.eggGroups) == "table" then
+      meta.eggGroup1 = value.eggGroups[1] or 0
+      meta.eggGroup2 = value.eggGroups[2] or meta.eggGroup1
+    end
+    meta.itemCommon = value.itemCommon and toNum(items, value.itemCommon) or 0
+    meta.itemRare = value.itemRare and toNum(items, value.itemRare) or 0
+    t.meta[num] = meta
+  end
+  if type(value.abilities) == "table" and t.abilities then
+    local abilityIndex = nameIndex("abilities", t.abilityNames)
+    local pair = {}
+    for slot = 1, 2 do
+      pair[slot] = toNum(abilityIndex, value.abilities[slot]) or 0
+    end
+    t.abilities[num] = pair
+  end
+  if type(value.learnset) == "table" and t.learnsets then
+    local rows = {}
+    for _, row in ipairs(value.learnset) do
+      rows[#rows + 1] = { row.level, toNum(moveIndex, row.move) or 0 }
+    end
+    t.learnsets[num] = rows
+  end
+  if type(value.evolutions) == "table" and t.evolutions then
+    local rows = {}
+    for _, row in ipairs(value.evolutions) do
+      local method = EVO_NUMS[row.method] or tonumber(row.method) or 0
+      local param = row.param or 0
+      if row.level ~= nil then param = row.level end
+      if row.item ~= nil then param = toNum(items, row.item) or 0 end
+      rows[#rows + 1] = { method = method, param = param,
+        target = G3.speciesNum(target, row.species) or 0 }
+    end
+    t.evolutions[num] = rows
+  end
+  local tmhm = t.tmhm
+  if type(value.tmhm) == "table" and tmhm and type(tmhm.machines) == "table"
+      and type(tmhm.learnsets) == "table" then
+    local slotOf = {}
+    for bit, move in pairs(tmhm.machines) do slotOf[move] = bit end
+    local lo, hi = 0, 0
+    for _, move in ipairs(value.tmhm) do
+      local bit = slotOf[toNum(moveIndex, move)]
+      if bit and bit < 32 then lo = lo + 2 ^ bit
+      elseif bit then hi = hi + 2 ^ (bit - 32) end
+    end
+    tmhm.learnsets[num] = { lo = lo, hi = hi }
+  end
+  local national = value.dex or (num <= 251 and num or nil)
+  if type(value.dexEntry) == "table" and t.dex and national then
+    local old = t.dex[national] or {}
+    t.dex[national] = {
+      category = value.dexEntry.kind or old.category,
+      height = value.dexEntry.height or old.height,
+      weight = value.dexEntry.weight or old.weight,
+    }
+  end
+  local sprites = sideTable(target, "spriteOverrides")
+  local front = value.spriteFront ~= G3.vanillaSprite("front", num)
+    and value.spriteFront or nil
+  local back = value.spriteBack ~= G3.vanillaSprite("back", num)
+    and value.spriteBack or nil
+  if front or back then
+    sprites[num] = { front = front, back = back }
+  else
+    sprites[num] = nil
+  end
+end
+
+local function monWrite(target, registry)
+  local t = monTables(target)
+  local index = nameIndex("species", t.names)
+  local records = sideTable(target, "modRecords")
+  for id in pairs(registry.ops) do
+    local value = registry:get(id)
+    local num = index.num[id]
+    if value == nil then
+      records[id] = nil
+    else
+      if not num and type(value.index) == "number" and index ~= EMPTY_INDEX then
+        num = value.index
+        index.num[id], index.id[num] = id, id
+        index.ids[#index.ids + 1] = id
+      end
+      if num then writeMon(target, t, num, value) end
+      records[id] = value
+    end
+  end
+end
+
+local function moveRecord(base, id)
+  local names = moveNamesFor(base)
+  local index = nameIndex("moves", names)
+  local num = index.num[id]
+  local rows = moveRows(base)
+  local row = num and rows and rows[num]
+  if type(row) ~= "table" then return nil end
+  local category = PHYSICAL_TYPES[row.type] and "physical" or "special"
+  if (row.power or 0) == 0 then category = "status" end
+  return {
+    id = id, name = names[num] or id, index = num,
+    type = G3.TYPES[row.type] or tostring(row.type),
+    power = row.power or 0, accuracy = row.accuracy or 0, pp = row.pp or 0,
+    effect = row.effect, secondaryChance = row.secondaryChance,
+    target = row.target, priority = row.priority, flags = row.flags,
+    category = category,
+  }
+end
+
+local function moveIds(base)
+  local rows = moveRows(base)
+  local ids = {}
+  if not rows then return ids end
+  local index = moveIndexFor(base)
+  for _, id in ipairs(index.ids) do
+    if type(rows[index.num[id]]) == "table" then ids[#ids + 1] = id end
+  end
+  return ids
+end
+
+local function moveWrite(target, registry)
+  local rows = moveRows(target)
+  if not rows then return end
+  local names = moveNamesFor(target)
+  local index = nameIndex("moves", names)
+  local pokemon = monTables(sibling(target, "gen3Pokemon"))
+  local extra = pokemon.battleMoves ~= rows and pokemon.battleMoves or nil
+  local records = sideTable(target, "modRecords")
+  for id in pairs(registry.ops) do
+    local value = registry:get(id)
+    local num = index.num[id]
+    if value == nil then
+      records[id] = nil
+    else
+      if not num and type(value.index) == "number" and index ~= EMPTY_INDEX then
+        num = value.index
+        index.num[id], index.id[num] = id, id
+        index.ids[#index.ids + 1] = id
+      end
+      if num then
+        local row = {}
+        for key, v in pairs(type(rows[num]) == "table" and rows[num] or {}) do
+          row[key] = v
+        end
+        for _, key in ipairs({ "power", "accuracy", "pp", "effect",
+                               "secondaryChance", "target", "priority",
+                               "flags" }) do
+          if value[key] ~= nil then row[key] = value[key] end
+        end
+        if value.type ~= nil then
+          row.type = TYPE_NUMS[value.type] or tonumber(value.type) or row.type
+        end
+        rows[num] = row
+        if extra then extra[num] = row end
+        if names and type(value.name) == "string" then names[num] = value.name end
+      end
+      records[id] = value
+    end
+  end
+end
+
+local function itemRecord(base, id)
+  local rows = itemRows(base)
+  local index = nameIndex("items", rows, "name")
+  local num = index.num[id]
+  local row = num and rows and rows[num]
+  if type(row) ~= "table" then return nil end
+  local record = Merge.deepCopy(row)
+  record.id, record.index = id, num
+  record.price = record.price or 0
+  return record
+end
+
+local function itemIds(base)
+  return nameIndex("items", itemRows(base), "name").ids
+end
+
+local function itemWrite(target, registry)
+  local rows = itemRows(target)
+  if not rows then return end
+  local index = nameIndex("items", rows, "name")
+  local records = sideTable(target, "modRecords")
+  for id in pairs(registry.ops) do
+    local value = registry:get(id)
+    local num = index.num[id]
+    if value == nil then
+      records[id] = nil
+    else
+      if not num and type(value.index) == "number" and index ~= EMPTY_INDEX then
+        num = value.index
+        index.num[id], index.id[num] = id, id
+        index.ids[#index.ids + 1] = id
+      end
+      if num then
+        local row = Merge.deepCopy(value)
+        row.id, row.index = nil, nil
+        rows[num] = row
+      end
+      records[id] = value
+    end
+  end
+end
+
+local function encounterArea(area, translate)
+  if type(area) ~= "table" then return area end
+  local out = Merge.deepCopy(area)
+  local slots = out.slots or out.mons or (#out > 0 and out) or nil
+  for _, slot in ipairs(slots or {}) do
+    if type(slot) == "table" then
+      if slot.species ~= nil then slot.species = translate(slot.species)
+      elseif slot[1] ~= nil then slot[1] = translate(slot[1]) end
+    end
+  end
+  return out
+end
+
+local AREA_KEYS = { "land", "grass", "water", "rocks", "fishing" }
+
+local function encounterRecord(base, id)
+  local rows = encounterRows(base)
+  local row = rows and rows[id]
+  if type(row) ~= "table" then return nil end
+  local index = speciesIndex(base)
+  local record = Merge.deepCopy(row)
+  for _, key in ipairs(AREA_KEYS) do
+    if record[key] ~= nil then
+      record[key] = encounterArea(row[key], function(num)
+        return toId(index, num) or "0"
+      end)
+    end
+  end
+  return record
+end
+
+local function encounterIds(base)
+  local ids = {}
+  for key, value in pairs(encounterRows(base) or {}) do
+    if type(key) == "string" and type(value) == "table" then ids[#ids + 1] = key end
+  end
+  table.sort(ids)
+  return ids
+end
+
+local function encounterWrite(target, registry)
+  local rows = encounterRows(target)
+  if not rows then return end
+  local index = speciesIndex(target)
+  local function toRow(value)
+    local row = Merge.deepCopy(value)
+    for _, key in ipairs(AREA_KEYS) do
+      if row[key] ~= nil then
+        row[key] = encounterArea(value[key], function(id)
+          return toNum(index, id) or 0
+        end)
+      end
+    end
+    return row
+  end
+  local function aliasesOf(id, row)
+    local out = {}
+    if type(row) ~= "table" or row.mapGroup == nil or row.mapNum == nil then
+      return out
+    end
+    for key, other in pairs(rows) do
+      if key ~= id and registry.ops[key] == nil and type(other) == "table"
+          and other.mapGroup == row.mapGroup and other.mapNum == row.mapNum then
+        out[#out + 1] = key
+      end
+    end
+    return out
+  end
+  local writes, tombstones = {}, {}
+  for id in pairs(registry.ops) do
+    local value = registry:get(id)
+    if value == nil then
+      tombstones[#tombstones + 1] = id
+    else
+      writes[id] = toRow(value)
+    end
+  end
+  for id, row in pairs(writes) do
+    for _, alias in ipairs(aliasesOf(id, rows[id] or row)) do rows[alias] = row end
+    rows[id] = row
+  end
+  for _, id in ipairs(tombstones) do
+    for _, alias in ipairs(aliasesOf(id, rows[id])) do rows[alias] = nil end
+    rows[id] = nil
+  end
+end
+
+local function trainerRecord(base, id)
+  local rows = trainerRows(base)
+  local num = tonumber(id)
+  local row = num and tostring(num) == id and rows and rows[num]
+  if type(row) ~= "table" then return nil end
+  local species = speciesIndex(base)
+  local moves = moveIndexFor(sibling(base, "gen3Moves"))
+  local items = itemIndex(base)
+  local record = Merge.deepCopy(row)
+  record.id = id
+  record.name = record.name or ""
+  record.party = record.party or {}
+  for _, mon in ipairs(record.party) do
+    mon.species = toId(species, mon.species) or "0"
+    mon.heldItem = toId(items, mon.heldItem)
+    if type(mon.moves) == "table" then
+      local list = {}
+      for _, move in ipairs(mon.moves) do
+        local moveId = toId(moves, move)
+        if moveId then list[#list + 1] = moveId end
+      end
+      mon.moves = list
+    end
+  end
+  return record
+end
+
+local function trainerIds(base)
+  local nums = {}
+  for key, value in pairs(trainerRows(base) or {}) do
+    if type(key) == "number" and type(value) == "table" then nums[#nums + 1] = key end
+  end
+  table.sort(nums)
+  local ids = {}
+  for i, num in ipairs(nums) do ids[i] = tostring(num) end
+  return ids
+end
+
+local function trainerWrite(target, registry)
+  local rows = trainerRows(target)
+  if not rows then return end
+  local species = speciesIndex(target)
+  local moves = moveIndexFor(sibling(target, "gen3Moves"))
+  local items = itemIndex(target)
+  for id in pairs(registry.ops) do
+    local num = tonumber(id)
+    if num then
+      local value = registry:get(id)
+      if value == nil then
+        rows[num] = nil
+      else
+        local row = Merge.deepCopy(value)
+        row.id = nil
+        for _, mon in ipairs(row.party or {}) do
+          mon.species = toNum(species, mon.species) or 0
+          mon.heldItem = mon.heldItem and toNum(items, mon.heldItem) or nil
+          if type(mon.moves) == "table" then
+            local list = {}
+            for i = 1, math.max(4, #mon.moves) do
+              list[i] = mon.moves[i] and toNum(moves, mon.moves[i]) or 0
+            end
+            mon.moves = list
+          end
+        end
+        row.partySize = #(row.party or {})
+        rows[num] = row
+      end
+    end
+  end
+end
+
+function G3.textIr(value)
+  if type(value) ~= "string" then return value end
+  local ir = {}
+  local rest = value
+  while rest ~= "" do
+    local cut, token, width
+    local para = rest:find("\n\n", 1, true)
+    local line = rest:find("\n", 1, true)
+    if para and para == line then
+      cut, token, width = para, "para", 2
+    elseif line then
+      cut, token, width = line, "nl", 1
+    end
+    if not cut then
+      ir[#ir + 1] = { t = "text", s = rest }
+      break
+    end
+    if cut > 1 then ir[#ir + 1] = { t = "text", s = rest:sub(1, cut - 1) } end
+    ir[#ir + 1] = { t = token }
+    rest = rest:sub(cut + width)
+  end
+  ir[#ir + 1] = { t = "eos" }
+  return ir
+end
+
+local function textWrite(target, registry)
+  local tombstones = {}
+  for id in pairs(registry.ops) do
+    local value = registry:get(id)
+    if value == nil then
+      tombstones[#tombstones + 1] = id
+    else
+      target[id] = G3.textIr(value)
+    end
+  end
+  for _, id in ipairs(tombstones) do target[id] = nil end
+end
+
+G3.monRecord, G3.monIds, G3.monWrite = monRecord, monIds, monWrite
+G3.moveRecord, G3.moveIds, G3.moveWrite = moveRecord, moveIds, moveWrite
+G3.itemRecord, G3.itemIds, G3.itemWrite = itemRecord, itemIds, itemWrite
+G3.encounterRecord, G3.encounterIds = encounterRecord, encounterIds
+G3.encounterWrite = encounterWrite
+G3.trainerRecord, G3.trainerIds, G3.trainerWrite =
+  trainerRecord, trainerIds, trainerWrite
+G3.textWrite = textWrite
 
 -- ------- shared Gen 2 leaves
 --
@@ -907,6 +1754,36 @@ R.pokemon = {
   example = 'mod.content.pokemon:patch("MEW", { baseStats = { attack = 120 } })',
   gen2Example = 'mod.content.pokemon:patch("TOTODILE", '
     .. '{ baseStats = { specialAttack = 80 } })',
+  gen3BaseAt = G3.monRecord, gen3BaseIds = G3.monIds, gen3Write = G3.monWrite,
+  gen3Fields = {
+    id = f.str, name = f.str, dex = f.opt(f.int(1)),
+    index = f.opt(f.int(1, 1023)),
+    types = f.list(f.id("type_chart")),
+    baseStats = f.rec{ hp = f.int(1, 255), attack = f.int(1, 255),
+                       defense = f.int(1, 255), speed = f.int(1, 255),
+                       specialAttack = f.int(1, 255),
+                       specialDefense = f.int(1, 255) },
+    catchRate = f.int(0, 255), baseExp = f.int(0, 255),
+    growthRate = f.id("growth_rates"),
+    genderRatio = f.opt(f.int(0, 255)), eggCycles = f.opt(f.int(0, 255)),
+    friendship = f.opt(f.int(0, 255)),
+    eggGroups = f.opt(f.list(f.int(0, 255))),
+    itemCommon = f.opt(f.id("items")), itemRare = f.opt(f.id("items")),
+    abilities = f.opt(f.list(f.union{ f.str, f.int(0, 255) })),
+    learnset = f.list(f.rec{ level = f.int(1, 100), move = f.id("moves") }),
+    tmhm = f.opt(f.list(f.id("moves"))),
+    evolutions = f.list(f.rec{ method = f.id("evolution_methods"),
+                               species = f.id("pokemon"),
+                               level = f.opt(f.int(0, 100)),
+                               item = f.opt(f.id("items")),
+                               param = f.opt(f.int(0)) }),
+    dexEntry = f.opt(f.rec{ kind = f.str, height = f.int(0),
+                            weight = f.int(0) }),
+    spriteFront = f.path, spriteBack = f.path,
+    trueColor = f.opt(f.bool),
+  },
+  gen3Example = 'mod.content.pokemon:patch("MEW", '
+    .. '{ baseStats = { specialAttack = 120 } })',
 }
 
 R.moves = {
@@ -933,6 +1810,17 @@ R.moves = {
     counterable = f.opt(f.bool),
   },
   example = 'mod.content.moves:patch("BLIZZARD", { accuracy = 70 })',
+  gen3BaseAt = G3.moveRecord, gen3BaseIds = G3.moveIds, gen3Write = G3.moveWrite,
+  gen3Fields = {
+    id = f.str, name = f.str,
+    index = f.opt(f.int(1, 1023)),
+    type = f.id("type_chart"),
+    power = f.int(0, 255), accuracy = f.int(0, 100), pp = f.int(0, 64),
+    effect = f.opt(f.int(0, 255)), secondaryChance = f.opt(f.int(0, 100)),
+    target = f.opt(f.int(0, 255)), priority = f.opt(f.int(-7, 7)),
+    flags = f.opt(f.int(0, 255)),
+    category = f.opt(f.enum{ "physical", "special", "status" }),
+  },
 }
 
 R.items = {
@@ -951,6 +1839,17 @@ R.items = {
     needsTarget = f.opt(f.bool),
   },
   example = 'mod.content.items:patch("POTION", { price = 100 })',
+  gen3BaseAt = G3.itemRecord, gen3BaseIds = G3.itemIds, gen3Write = G3.itemWrite,
+  gen3Fields = {
+    id = f.str, name = f.str,
+    index = f.opt(f.int(1, 1023)),
+    price = f.int(0),
+    pocket = f.opt(f.str), fieldUse = f.opt(f.str),
+    holdEffect = f.opt(f.int(0, 255)), holdEffectParam = f.opt(f.int(0, 255)),
+    importance = f.opt(f.int(0, 255)), registrability = f.opt(f.int(0, 255)),
+    battleUsage = f.opt(f.int(0, 255)), secondaryId = f.opt(f.int(0)),
+    description = f.opt(f.str),
+  },
 }
 
 R.maps = {
@@ -1000,6 +1899,15 @@ R.maps = {
     end
   end,
   example = 'mod.content.maps:register("MY_CAVE", { tileset = "CAVERN", ... })',
+  gen3Fields = {
+    id = f.opt(f.str), name = f.opt(f.str),
+    width = f.opt(f.int(0)), height = f.opt(f.int(0)),
+    tileset = f.opt(f.any),
+    warps = f.opt(f.list(f.any)), objects = f.opt(f.list(f.any)),
+    connections = f.opt(f.any),
+  },
+  gen3Extra = false,
+  gen3Example = 'mod.content.maps:patch("FR_PALLET_TOWN", { weather = 2 })',
 }
 
 R.tilesets = {
@@ -1061,6 +1969,13 @@ local gen2WaterRow = f.rec{
   map = f.opt(f.str), rate = f.int(0, 255), slots = f.list(gen2Slot),
 }
 
+local gen3Area = f.partial{
+  rate = f.int(0, 255),
+  slots = f.list(f.partial{ species = f.id("pokemon"),
+                            minLevel = f.opt(f.int(0, 255)),
+                            maxLevel = f.opt(f.int(0, 255)) }),
+}
+
 R.encounters = {
   semantics = "record", target = "encounters",
   fields = {
@@ -1119,6 +2034,16 @@ R.encounters = {
   example = 'mod.content.encounters:patch("ROUTE_1", { grass = { rate = 30 } })',
   gen2Example = 'mod.content.encounters:patch("grass", '
     .. '{ ROUTE_29 = { rates = { NITE = 40 } } })',
+  gen3BaseAt = G3.encounterRecord, gen3BaseIds = G3.encounterIds,
+  gen3Write = G3.encounterWrite,
+  gen3Fields = {
+    id = f.opt(f.str),
+    mapGroup = f.opt(f.int(0)), mapNum = f.opt(f.int(0)),
+    land = f.opt(gen3Area), grass = f.opt(gen3Area), water = f.opt(gen3Area),
+    rocks = f.opt(gen3Area), fishing = f.opt(gen3Area),
+  },
+  gen3Example = 'mod.content.encounters:patch("FR_ROUTE_1", '
+    .. '{ land = { rate = 30 } })',
 }
 
 R.trainers = {
@@ -1215,6 +2140,22 @@ R.trainers = {
   },
   example = 'mod.content.trainers:patch("OPP_BROCK", { baseMoney = 99 })',
   gen2Example = 'mod.content.trainers:patch("BEAUTY", { baseMoney = 99 })',
+  gen3BaseAt = G3.trainerRecord, gen3BaseIds = G3.trainerIds,
+  gen3Write = G3.trainerWrite,
+  gen3Fields = {
+    id = f.opt(f.str), name = f.str,
+    class = f.opt(f.int(0, 255)), className = f.opt(f.str),
+    pic = f.opt(f.int(0, 255)), gender = f.opt(f.int(0, 255)),
+    doubleBattle = f.opt(f.bool), aiFlags = f.opt(f.int(0)),
+    items = f.opt(f.list(f.int(0))),
+    party = f.list(f.partial{ species = f.id("pokemon"),
+                              level = f.int(1, 100),
+                              heldItem = f.opt(f.id("items")),
+                              moves = f.opt(f.list(f.id("moves"))) }),
+    dialogs = f.opt(f.any),
+  },
+  gen3Example = 'mod.content.trainers:patch("326", '
+    .. '{ party = { { species = "MEW", level = 5 } } })',
 }
 
 R.sprites = {
@@ -1229,6 +2170,27 @@ R.sprites = {
     -- top-left in pixels (default: bottom-center).
     frameWidth = f.opt(f.int(1)),
     frameHeight = f.opt(f.int(1)),
+    -- how many frames to skip from the start of the sheet, for art whose
+    -- usable frames do not begin at index 0
+    frameOffset = f.opt(f.int(0)),
+    -- frames per sheet row; 1 (the default) is the vanilla vertical strip
+    frameColumns = f.opt(f.int(1)),
+    -- Multi-part frames: `cells` is one list per animation frame, and each
+    -- cell blits a piece of the sheet at an offset inside the frame.  A sprite
+    -- whose parts move independently (a head over a body) is assembled here
+    -- rather than being baked into the sheet.  cellWidth/cellHeight give the
+    -- piece size and cellColumns how many pieces a sheet row holds, so `tile`
+    -- is an index into that grid.
+    cells = f.opt(f.list(f.list(f.rec{
+      tile = f.int(0),
+      dx = f.opt(f.int(-256, 256)),
+      dy = f.opt(f.int(-256, 256)),
+      flipX = f.opt(f.bool),
+      flipY = f.opt(f.bool),
+    }))),
+    cellWidth = f.opt(f.int(1)),
+    cellHeight = f.opt(f.int(1)),
+    cellColumns = f.opt(f.int(1)),
     anchorX = f.opt(f.num),
     anchorY = f.opt(f.num),
     trueColor = f.opt(f.bool),
@@ -1269,6 +2231,9 @@ R.text = {
   semantics = "record", target = "text",
   value = f.str,
   example = 'mod.content.text:override("_PalletTownText1", "HELLO!")',
+  gen3Value = f.union{ f.str, f.list(f.any) },
+  gen3Write = G3.textWrite,
+  gen3Example = 'mod.content.text:override("Text_BootedUpPC", "HELLO!")',
 }
 
 -- Gen 2's data/generated/text.lua is VM script text keyed by bank:address;
@@ -1349,6 +2314,10 @@ R.map_scripts = {
     priority = f.opt(f.num),
   },
   example = 'mod.content.map_scripts:register("PALLET_TOWN", { talk = { ... } })',
+  gen3Semantics = "record",
+  gen3Value = f.list(f.any),
+  gen3Example = 'mod.content.map_scripts:override("EventScript_BufferItemsPocket", '
+    .. '{ { op = "return" } })',
 }
 
 R.screens = {

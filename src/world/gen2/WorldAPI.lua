@@ -481,7 +481,7 @@ function WorldAPI:replaceBlock(bx, by, block)
   return true
 end
 
-local UNSUPPORTED = "not supported in Gen 2 yet"
+local DIRS = { up = true, down = true, left = true, right = true }
 
 -- objDef uses the same shape as an extracted map's objects list (sprite, x, y,
 -- movement, hours, ...), which is the Gen 1 arm's contract too.  Runtime
@@ -493,6 +493,12 @@ function WorldAPI:spawnNpc(mapId, objDef)
   local copy = {}
   for k, v in pairs(objDef) do copy[k] = v end
   return world:addRuntimeObject(mapId, copy, self.modId)
+end
+
+function WorldAPI:liveMaps()
+  local world = self:overworld()
+  if not world then return nil, NO_OVERWORLD end
+  return world:liveMaps()
 end
 
 function WorldAPI:removeNpc(npcId)
@@ -513,6 +519,17 @@ Handle.__index = Handle
 -- silently replacing the first and stranding its onDone.
 function Handle:scriptMove(dir, tiles, onDone)
   local world = self.world
+  if self.ghost then
+    if not DIRS[dir] then
+      return nil, "unknown direction: " .. tostring(dir)
+    end
+    local moves = {}
+    for i = 1, math.max(0, tiles or 1) do moves[i] = dir end
+    if not self.npc:queueApiMoves(moves, onDone) then
+      return nil, "a movement is already running"
+    end
+    return true
+  end
   if world.moveState then return nil, "a movement is already running" end
   local step = Movement.stepByte(dir)
   if not step then return nil, "unknown direction: " .. tostring(dir) end
@@ -523,11 +540,11 @@ function Handle:scriptMove(dir, tiles, onDone)
   return true
 end
 
--- Gen 1's marchInPlace is step_sleep-with-animation; the Gen 2 stream has no
--- single byte for it, and faking one out of turn bytes would march the wrong
--- way.  Left explicit rather than approximated.
-function Handle:marchInPlace()
-  return nil, UNSUPPORTED
+function Handle:marchInPlace(onDone)
+  if not self.npc:queueApiMoves({ "march" }, onDone) then
+    return nil, "a movement is already running"
+  end
+  return true
 end
 
 function Handle:face(dir)
@@ -539,15 +556,72 @@ function Handle:position()
   return self.npc.cellX, self.npc.cellY
 end
 
+function Handle:stepNow(dir)
+  local npc = self.npc
+  if not DIRS[dir] then return nil, "bad direction: " .. tostring(dir) end
+  if npc.moving then return nil, "already moving" end
+  npc:stepNow(dir)
+  return true
+end
+
+function Handle:canStep(dir)
+  local world = self.world
+  if self.ghost then
+    return self.npc:canStep(self.ghost.map, self.ghost.peers, dir)
+  end
+  if not (world and world.map) then return false end
+  return self.npc:canStep(world.map, world.entities, dir)
+end
+
+function Handle:placeAt(x, y, facing)
+  self.npc:placeAt(x, y, facing)
+  return true
+end
+
+function Handle:isMoving()
+  return self.npc.moving and true or false
+end
+
+function Handle:setPassable(passable)
+  self.npc.passable = passable and true or false
+  return true
+end
+
+function Handle:setAppearance(spriteId)
+  local world = self.world
+  local data = world.game and world.game.data
+  local spriteDef = (world.sprites and world.sprites[spriteId])
+    or (data and data.sprites and data.sprites[spriteId])
+  if not spriteDef then return nil, "unknown sprite: " .. tostring(spriteId) end
+  if self.npc:setSpriteDef(spriteDef) then world:applySpritePalette(self.npc) end
+  self.npc.appearance = spriteId
+  return true
+end
+
+local function matches(npc, indexOrName)
+  local def = npc.def
+  return def and (def.index == indexOrName or def.name == indexOrName
+    or npc.id == indexOrName)
+end
+
 function WorldAPI:npc(mapId, indexOrName)
   local world = self:overworld()
   if not world then return nil, NO_OVERWORLD end
-  if world.map and world.map.id ~= mapId then return nil, "map is not active" end
+  if world.map and world.map.id ~= mapId then
+    if not world:isNeighborMap(mapId) then return nil, "map is not live" end
+    for _, g in ipairs(world.ghosts or {}) do
+      if g.npc.mapId == mapId and matches(g.npc, indexOrName) then
+        return setmetatable({ world = world, npc = g.npc, ghost = g,
+          objectId = (g.npc.def.index or 0) + 1 }, Handle)
+      end
+    end
+    return nil, "no such object: " .. tostring(indexOrName)
+  end
   for _, npc in ipairs(world.npcs or {}) do
-    local def = npc.def
-    if def and (def.index == indexOrName or def.name == indexOrName) then
+    if matches(npc, indexOrName) then
       return setmetatable(
-        { world = world, npc = npc, objectId = (def.index or 0) + 1 }, Handle)
+        { world = world, npc = npc, objectId = (npc.def.index or 0) + 1 },
+        Handle)
     end
   end
   return nil, "no such object: " .. tostring(indexOrName)

@@ -12,6 +12,7 @@ require("love.image")
 require("love.math")
 require("love.system")
 require("love.timer")
+require("love.data")
 
 local version, prefix, romData, progressName, resultName, romSha1 = ...
 
@@ -27,8 +28,11 @@ local ok, err = pcall(function()
   CacheFs.prefix = prefix
 
   local manifest = require("src.import.RomManifest").decode(version)
-  local RomExtractor =
-    require("src.core.GameVersion").generation(version) == 2
+  local GameVersion = require("src.core.GameVersion")
+  local gen = GameVersion.generation(version)
+  local RomExtractor = gen == 3
+    and require("src.import.RomExtractorGen3")
+    or gen == 2
     and require("src.import.RomExtractorGen2")
     or require("src.import.RomExtractor")
 

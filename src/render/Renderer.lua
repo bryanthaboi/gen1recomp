@@ -141,6 +141,8 @@ function Renderer:init()
   -- (see src/render/Pipelines.lua).  nil is "no pipeline rendered this
   -- frame", which is every vanilla frame.
   self.worldOverride = nil
+  self.surroundState = nil
+  self.paperShade = nil
 end
 
 -- Hand endFrame a pipeline's world image to composite instead of the world
@@ -952,6 +954,13 @@ function Renderer:endFrame(zones, worldZones)
     local stack = ok and Game and Game.stack
     local base = stack and stack.visibleBase and stack:visibleBase()
     local state = base and stack.states and stack.states[base]
+    local ownState = self.surroundState
+    local paperShade = self.paperShade
+      or function() return PaletteFX.paperShade(Game and Game.data) end
+    if ownState ~= nil then
+      state = ownState or nil
+      stack = nil
+    end
     -- A battle owns the surround it established until it leaves the stack.
     -- Reading it off visibleBase alone loses that the moment the battle opens
     -- an OPAQUE state -- the party menu, the bag -- because that state becomes
@@ -980,18 +989,17 @@ function Renderer:endFrame(zones, worldZones)
       -- The band uses the exact centred fixed-width composition bounds, so
       -- only vertical black bars remain at the sides.
       extendedBlackBand = true
-      bandR, bandG, bandB = PaletteFX.paperShade(Game and Game.data)
+      bandR, bandG, bandB = paperShade()
     elseif state and state.letterboxWhite
        and not (state.bgMode and state:bgMode() == "black")
        and not FaithfulRes.scaleCap() then
-      clearR, clearG, clearB = PaletteFX.paperShade(Game and Game.data)
+      clearR, clearG, clearB = paperShade()
     end
     -- UI LETTERBOX overrides whatever the rules above settled on, except
     -- under FAITHFUL RATIO's mobile lock, which promises black bars.
     if not FaithfulRes.scaleCap() then
       local Letterbox = require("src.render.Letterbox")
-      clearR, clearG, clearB = Letterbox.fill(clearR, clearG, clearB,
-        function() return PaletteFX.paperShade(Game and Game.data) end)
+      clearR, clearG, clearB = Letterbox.fill(clearR, clearG, clearB, paperShade)
     end
   end
   if cut then

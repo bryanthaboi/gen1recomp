@@ -419,8 +419,8 @@ end
 do
   eq(ModIndex.targetLabel({ games = { "red", "blue", "yellow" } }), "GEN 1",
     "a whole generation chips as GEN 1")
-  eq(ModIndex.targetLabel({ games = { "all" } }), "GEN 1+2",
-    "every game chips as both generations")
+  eq(ModIndex.targetLabel({ games = { "all" } }), "GEN 1+2+3",
+    "every game chips as every generation")
   eq(ModIndex.targetLabel({ games = { "gold" } }), "GOLD",
     "a lone game chips as its own name")
   check(ModIndex.targetLabel({}) == nil, "a listing with no games has no chip")

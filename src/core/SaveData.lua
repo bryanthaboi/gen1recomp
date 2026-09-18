@@ -1124,13 +1124,20 @@ end
 -- flat launcher meta line needs.
 function SaveData.slotSummary(save)
   if type(save) ~= "table" then return nil, nil end
-  local name = save.player and save.player.name or nil
+  local name = (save.player and save.player.name) or save.name or save.playerName or nil
   -- A Gen 2 slot carries no badge items and fills pokedex.caught, so both
   -- counts come off wJohtoBadges/wPokedexCaught (engine/menus/intro_menu.asm:461).
   local vinfo = type(save.version) == "string" and GameVersion.info(save.version)
   local gen2 = save.generation == 2 or (vinfo and vinfo.generation == 2) or false
+  local gen3 = save.generation == 3 or (vinfo and vinfo.generation == 3) or (save.engine == "game3") or (save.version == "firered") or false
   local dexCount = 0
-  if gen2 then
+  if gen3 then
+    local dex = save.dex or save.pokedex or {}
+    local owned = dex.owned or dex.caught or {}
+    for _, has in pairs(owned) do
+      if has then dexCount = dexCount + 1 end
+    end
+  elseif gen2 then
     for _, has in pairs((save.pokedex and save.pokedex.caught) or {}) do
       if has then dexCount = dexCount + 1 end
     end
@@ -1140,11 +1147,10 @@ function SaveData.slotSummary(save)
     end
   end
   -- playTime is a plain seconds count in a Gen 1 save but a
-  -- { hours, minutes, seconds, frames } table in a Gen 2 (Gold) save, matching
-  -- the cart's wGameTime* bytes.  The launcher calls slotSummary on EVERY
-  -- version's slot, so this has to read both shapes or the whole launcher
-  -- crashes the moment a Gold save exists (math.floor on the table).
-  local pt = save.playTime
+  -- { hours, minutes, seconds, frames } table in a Gen 2 (Gold) or Gen 3 (FireRed) save,
+  -- matching the cart's time structure. The launcher calls slotSummary on EVERY
+  -- version's slot, so this has to read both shapes.
+  local pt = save.playTime or save.playtime or (save.player and save.player.playtime)
   local t
   if type(pt) == "table" then
     t = (tonumber(pt.hours) or 0) * 3600
@@ -1156,7 +1162,25 @@ function SaveData.slotSummary(save)
   local timeText = ("%d:%02d"):format(math.floor(t / 3600),
                                       math.floor(t / 60) % 60)
   local badges
-  if gen2 then
+  if gen3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    badges = 0
+    if okF and Flags and Flags.BADGES then
+      for _, b in ipairs(Flags.BADGES) do
+        if Flags.getFlag(save, nil, b.flag) or Flags.getFlag(save, nil, b.name) then
+          badges = badges + 1
+        end
+      end
+    elseif type(save.flags) == "table" then
+      for id = 0x820, 0x827 do
+        if save.flags[id] or save.flags[tostring(id)] then badges = badges + 1 end
+      end
+    end
+    if badges == 0 and (save.badges or (save.player and save.player.badges)) then
+      local bList = save.badges or (save.player and save.player.badges) or {}
+      for _, has in pairs(bList) do if has then badges = badges + 1 end end
+    end
+  elseif gen2 then
     -- Continue_DisplayBadgeCount walks TWO bytes, Johto then Kanto
     -- (engine/menus/intro_menu.asm:461-469).
     badges = 0

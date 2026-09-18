@@ -750,7 +750,7 @@ COVERAGE["src.pokemon.Boxes"] = {
 COVERAGE["src.world.WorldAPI"] = {
   kind = "alias", target = "src.world.gen2.WorldAPI",
   backed = "new __index overworld current mapOverview warpTo toggleObject replaceBlock "
-    .. "spawnNpc removeNpc npc queueScript invalidateMap "
+    .. "spawnNpc removeNpc npc liveMaps queueScript invalidateMap "
     .. "availableFieldActions useFieldAction",
   warned = "setFlag getFlag",
   absent = "",
@@ -764,9 +764,9 @@ COVERAGE["src.world.WorldAPI"] = {
       .. "toggle is refused where Gen 1 accepts it",
     setFlag = "Gen 2 event flags are NUMERIC indices into wEventFlags; a "
       .. "string is refused by name rather than written where nothing reads it",
-    npc = "looks up def.index or def.name only, NOT npc.id; the handle's "
-      .. "marchInPlace is refused outright and scriptMove refuses a second "
-      .. "concurrent movement (World.moveState is one slot)",
+    npc = "resolves active-map objects and neighbor-strip ghosts; on the "
+      .. "active map scriptMove refuses a second concurrent movement "
+      .. "(World.moveState is one slot), and marchInPlace does not lock input",
     queueScript = "validates the WHOLE row list against a five-verb allow "
       .. "list and refuses by name before the first row runs",
   },

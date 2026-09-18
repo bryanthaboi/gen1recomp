@@ -65,6 +65,19 @@ end
 
 -- LoadMapHeader .loadSpriteData zeroes the sprite state data and re-seeds
 -- MAPY/MAPX from the map header -- home/overworld.asm:2133
+function NPC:setAppearance(spriteId, spriteDef)
+  if not spriteDef then return false end
+  self.appearances = self.appearances or { [self.def.sprite] = self.sprite }
+  local renderer = self.appearances[spriteId]
+  if not renderer then
+    renderer = SpriteRenderer.new(spriteDef, self.id)
+    self.appearances[spriteId] = renderer
+  end
+  self.sprite = renderer
+  self.appearance = spriteId
+  return true
+end
+
 function NPC:resetToSpawn()
   local def = self.def
   self.cellX, self.cellY = def.x, def.y

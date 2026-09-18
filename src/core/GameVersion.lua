@@ -1,16 +1,17 @@
 -- Which game this process is running: Red (the historical default), Blue,
--- Yellow, Gold, Silver, or Crystal.  One source of truth for everything that
--- differs by version -- the accepted ROM hash, the import manifest, where the
--- extracted cache lives, and the save-file suffix -- so the importer,
--- cache mount, SaveData, title screen and palette all agree.
+-- Yellow, Gold, Silver, Crystal, or FireRed.  One source of truth for
+-- everything that differs by version -- the accepted ROM hash, the import
+-- manifest, where the extracted cache lives, and the save-file suffix -- so
+-- the importer, cache mount, SaveData, title screen and palette all agree.
 --
 -- Red keeps the un-suffixed save paths it always used (save.lua) so existing
 -- saves are untouched, but its extracted cache lives under red/ like Blue,
 -- Yellow, and Gold (issue #899); a legacy root cache is moved into red/ once
 -- by CacheFs.migrateLegacyRedCache.  All supported versions can be imported
 -- and selected side by side.  Gold, Silver and Crystal are Gen 2 (see
--- docs/gold-phase1.md); `generation` splits Gen 1 from Gen 2 and `engine`
--- splits Gold/Silver from Crystal within Gen 2.
+-- docs/gold-phase1.md); FireRed is Gen 3 (`engine` "game3").  `generation`
+-- splits Gen 1 / Gen 2 / Gen 3 and `engine` splits Gold/Silver from Crystal
+-- within Gen 2.
 --
 -- Zero requires, so it loads during love.conf and under plain Lua for tools
 -- and tests.  The active version is a process-global set once at boot from
@@ -109,12 +110,29 @@ GameVersion.VERSIONS = {
       sideWallArms = true,
     },
   },
+  -- Gen 3: FireRed USA 1.0 (16 MiB GBA), imported through RomExtractorGen3.
+  firered = {
+    id = "firered",
+    label = "FireRed",
+    displayName = "Pokemon FireRed",
+    launcherName = "Fire Red",
+    beta = true,
+    sha1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc",
+    manifest = "tools/rom_manifest_firered.json",
+    cachePrefix = "firered/",
+    saveSuffix = "_firered",
+    generation = 3,
+    engine = "game3",
+    cartShape = "gba",
+    cartShell = "#e64110",
+    cartLabel = "assets/labels/firered.png",
+  },
 }
 
 local NO_FIXES = {}
 
 -- Launcher column order.  Append only (src/mods/ModProfile.lua encodes by index).
-GameVersion.ORDER = { "red", "blue", "yellow", "gold", "silver", "crystal" }
+GameVersion.ORDER = { "red", "blue", "yellow", "gold", "silver", "crystal", "firered" }
 
 GameVersion.current = "red"
 
@@ -139,16 +157,17 @@ function GameVersion.isGold()
   return GameVersion.current == "gold"
 end
 
--- 1 or 2.  The mod API is shared across both (same hook names, same registry
--- names), so the pieces that must branch -- the manifest gen2compat gate, the
--- registry target routing, the mod.world arm -- ask this rather than each
--- spelling out its own isGold() test.  A third generation adds a `generation`
--- to its VERSIONS row and nothing else changes shape.
+-- 1, 2, or 3.  The mod API is shared across generations (same hook names,
+-- same registry names), so the pieces that must branch -- the manifest
+-- gen2compat gate, the registry target routing, the mod.world arm -- ask
+-- this rather than each spelling out its own isGold() test.  A new
+-- generation adds a `generation` to its VERSIONS row and nothing else
+-- changes shape.
 function GameVersion.generation(id)
   return GameVersion.info(id).generation or 1
 end
 
--- "gen1" | "gs" | "crystal": lineage within a generation.
+-- "gen1" | "gs" | "crystal" | "game3": lineage within a generation.
 function GameVersion.engine(id)
   return GameVersion.info(id).engine or "gen1"
 end

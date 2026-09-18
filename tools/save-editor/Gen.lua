@@ -1,6 +1,6 @@
--- Generation adapter for the save editor.  Panels stay generation-blind;
--- Ops and App read Gold vs RBY through this module so a Gold write never
--- lands in Gen 1 fields (save.money, pokedex.owned, 12 boxes, ...).
+-- Generation adapter for the save editor. Panels stay generation-blind;
+-- Ops and App read Gold vs RBY vs FRLG through this module so a write never
+-- lands in wrong-generation fields.
 
 local GameVersion = require("src.core.GameVersion")
 
@@ -15,6 +15,8 @@ end
 
 function Gen.of(save, version)
   if type(save) == "table" then
+    if save.generation == 3 or save.engine == "game3" or save.version == "firered" then return 3 end
+    if save.healMap ~= nil or (save.bag and save.bag.pockets ~= nil) or (save.dex and save.dex.national ~= nil) then return 3 end
     if save.generation == 2 then return 2 end
     local fromVersion = versionGeneration(save.version)
     if fromVersion then return fromVersion end
@@ -41,6 +43,9 @@ end
 
 function Gen.editionLabel(save, version)
   local info = GameVersion.info(versionOf(save, version))
+  if Gen.of(save, version) == 3 then
+    return tostring((info and info.label) or "FIRE RED"):upper()
+  end
   return tostring((info and info.label) or "GEN 2"):upper()
 end
 
@@ -49,10 +54,12 @@ function Gen.hasCaughtData(save, version)
   return require("src.battle.gen2.Mon").hasCaughtData(versionOf(save, version))
 end
 
--- engine/menus/init_gender.asm:23-38
+-- engine/menus/init_gender.asm:23-38 (Crystal), FRLG Oak intro (gender 0/1)
 function Gen.hasPlayerGender(save, version)
-  if Gen.of(save, version) ~= 2 then return false end
-  return Gen.engineOf(save, version) == "crystal"
+  local g = Gen.of(save, version)
+  if g == 3 then return true end
+  if g == 2 then return Gen.engineOf(save, version) == "crystal" end
+  return false
 end
 
 function Gen.ofState(S)
@@ -64,11 +71,10 @@ function Gen.is2(save, version)
   return Gen.of(save, version) == 2
 end
 
--- Data:load writes Gold maps/tilesets to the Gen 1 keys; Game2 and the mod
--- merge write gen2Maps / gen2Tilesets.  Overlay the gen2 table on the loaded
--- cache so a mod patch that landed on an empty gen2Maps (objects only, no
--- width) does not hide the extractor's record, and a new map like BERRY_FARM
--- still appears.
+function Gen.is3(save, version)
+  return Gen.of(save, version) == 3
+end
+
 local function overlayRecords(base, overlay)
   if not overlay then return base or {} end
   if not base or base == overlay then return overlay end
@@ -90,16 +96,17 @@ end
 
 function Gen.maps(data)
   if type(data) ~= "table" then return {} end
-  return overlayRecords(data.maps, data.gen2Maps)
+  local m = overlayRecords(data.maps, data.gen2Maps)
+  return overlayRecords(m, data.game3Maps)
 end
 
 function Gen.tilesets(data)
   if type(data) ~= "table" then return {} end
-  return overlayRecords(data.tilesets, data.gen2Tilesets)
+  local t = overlayRecords(data.tilesets, data.gen2Tilesets)
+  return overlayRecords(t, data.game3Tilesets)
 end
 
--- Point the Gen 2 Data keys at the tables Data:load already filled, before
--- mods:load folds into gen2Maps.  Same wiring Game2 does when it boots Gold.
+-- Point the Gen 2 Data keys at the tables Data:load already filled
 function Gen.bindGoldData(data)
   if type(data) ~= "table" then return data end
   if data.maps and data.gen2Maps == nil then data.gen2Maps = data.maps end
@@ -126,11 +133,6 @@ function Gen.bindGoldData(data)
   end
 
   data.gen2Palettes = data.gen2Palettes or loadGen("palettes")
-  -- Namespaced AND differently shaped in Schemas.GEN2 (the cart's ordered
-  -- name lists, not Gen 1's rule table), same as palettes/icons below --
-  -- omitting it left mod.content.constants:get(...) reading an empty table
-  -- under a Gold save-editor boot, which is what misreads "generation" and
-  -- rejects every record a mod shapes off it.
   data.gen2Constants = data.gen2Constants or loadGen("constants")
   data.gen2Icons = data.gen2Icons or loadGen("icons")
   data.gen2Pokedex = data.gen2Pokedex or loadGen("pokedex")
@@ -140,10 +142,94 @@ function Gen.bindGoldData(data)
   return data
 end
 
+-- Bind Game 3 (FireRed) data into Data table for Save Editor
+function Gen.bindGame3Data(data)
+  if type(data) ~= "table" then return data end
+  local okD, Dataset = pcall(require, "src.core.game3.dataset")
+  if okD and Dataset then
+    if Dataset.mountExtractRoots then pcall(Dataset.mountExtractRoots) end
+    local g3Maps = Dataset.buildMaps()
+    if g3Maps then
+      local cache = Dataset.cache and Dataset.cache()
+      if cache and Dataset.attachMidLayouts then
+        pcall(Dataset.attachMidLayouts, g3Maps, cache)
+      end
+      local okN, NativeTileset = pcall(require, "src.core.game3.tileset_native")
+      if okN and NativeTileset and NativeTileset.install and cache then
+        pcall(NativeTileset.install, cache, nil)
+      end
+      data.game3Maps = g3Maps
+      data.maps = overlayRecords(data.maps, g3Maps)
+    end
+  end
+
+  local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
+  if okP and Pokemon then
+    pcall(Pokemon.install, nil)
+    data.pokemon = data.pokemon or {}
+    for id = 1, 412 do
+      local name = Pokemon.name(id)
+      if name and name ~= "??????????" and name ~= "" then
+        local def = {
+          id = name,
+          name = name,
+          species = id,
+          speciesId = id,
+          dex = id,
+          growthRate = (Pokemon.speciesMeta and Pokemon.speciesMeta(id) and Pokemon.speciesMeta(id).growthRate) or 0,
+        }
+        data.pokemon[name] = def
+        data.pokemon[id] = def
+      end
+    end
+
+    data.moves = data.moves or {}
+    for id = 1, 354 do
+      local mName = Pokemon.moveName(id)
+      local bMove = Pokemon.battleMove(id)
+      if mName and mName ~= "-------" and not mName:find("^MOVE %d+") then
+        local mDef = {
+          id = mName,
+          moveId = id,
+          name = mName,
+          pp = (bMove and tonumber(bMove.pp)) or 10,
+          power = (bMove and tonumber(bMove.power)) or 40,
+          type = (bMove and bMove.type) or "NORMAL",
+        }
+        data.moves[mName] = mDef
+        data.moves[id] = mDef
+      end
+    end
+  end
+
+  local okI, ItemsData = pcall(require, "src.core.game3.items_data")
+  if okI and ItemsData then
+    data.items = data.items or {}
+    for k, v in pairs(ItemsData.BY_HOST or {}) do
+      local iDef = { id = k, name = v.name or k, pocket = v.pocket, itemId = v.frlg }
+      data.items[k] = iDef
+    end
+    for num = 1, 375 do
+      local info = ItemsData.info(num)
+      if info and info.name and info.name ~= "none" and info.name ~= "" then
+        local normName = info.name:upper():gsub("[^A-Z0-9_]", "_"):gsub("_+", "_")
+        local iDef = { id = normName, name = info.name, pocket = info.pocket, itemId = num }
+        data.items[normName] = iDef
+        data.items[num] = iDef
+      end
+    end
+  end
+
+  return data
+end
+
 function Gen.newGame(version)
   local id = type(version) == "string" and GameVersion.VERSIONS[version] and version
     or nil
-  if (versionGeneration(id) or GameVersion.generation()) == 2 then
+  local g = versionGeneration(id) or GameVersion.generation()
+  if g == 3 then
+    return require("src.core.game3.save_schema_firered").newGame({ version = id })
+  elseif g == 2 then
     local Save2 = require("src.core.gen2.Save")
     local save = Save2.newGame({
       playerName = id and Save2.defaultPlayerName(id) or nil,
@@ -155,14 +241,21 @@ function Gen.newGame(version)
 end
 
 function Gen.validate(save, data)
-  if Gen.of(save) == 2 then
+  local g = Gen.of(save)
+  if g == 3 then
+    return { lostMons = {}, lostItems = {}, remappedMaps = {} }
+  elseif g == 2 then
     return require("src.core.gen2.Save").validate(save)
   end
   return require("src.core.SaveData").validate(save, data)
 end
 
 function Gen.emptyReport(save, report)
-  if Gen.of(save) == 2 then
+  local g = Gen.of(save)
+  if g == 3 then
+    if not report then return true end
+    return #(report.lostMons or {}) == 0 and #(report.lostItems or {}) == 0 and #(report.remappedMaps or {}) == 0
+  elseif g == 2 then
     return require("src.core.gen2.Save").emptyReport(report)
   end
   return require("src.core.SaveData").emptyReport(report)
@@ -170,6 +263,42 @@ end
 
 function Gen.hydrateMon(data, mon)
   if type(mon) ~= "table" then return mon end
+  local isG3 = mon.speciesId ~= nil or mon.personality ~= nil or mon.ivs ~= nil or (mon.evs ~= nil and mon.evs.spa ~= nil)
+  if isG3 then
+    local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
+    if okP and Pokemon then
+      local spId = tonumber(mon.speciesId or mon.species)
+        or (Pokemon.speciesFromName and Pokemon.speciesFromName(tostring(mon.species)))
+      if spId then
+        mon.speciesId = spId
+        local name = Pokemon.name(spId)
+        if name and name ~= "" and name ~= "??????????" then
+          mon.species = name
+        end
+      end
+      mon.ivs = mon.ivs or { hp = 0, atk = 0, def = 0, spe = 0, spa = 0, spd = 0 }
+      mon.evs = mon.evs or { hp = 0, atk = 0, def = 0, spe = 0, spa = 0, spd = 0 }
+      mon.dvs = mon.dvs or {
+        attack = math.floor((mon.ivs.atk or 0) / 2),
+        defense = math.floor((mon.ivs.def or 0) / 2),
+        speed = math.floor((mon.ivs.spe or 0) / 2),
+        special = math.floor(((mon.ivs.spa or 0) + (mon.ivs.spd or 0)) / 4),
+        hp = math.floor((mon.ivs.hp or 0) / 2),
+      }
+      Pokemon.applyStats(mon)
+      mon.stats = {
+        hp = mon.maxHp or mon.hp or 10,
+        attack = mon.attack or 10,
+        defense = mon.defense or 10,
+        speed = mon.speed or 10,
+        spAtk = mon.spAtk or mon.spa or 10,
+        spDef = mon.spDef or mon.spd or 10,
+        specialAttack = mon.spAtk or mon.spa or 10,
+        specialDefense = mon.spDef or mon.spd or 10,
+      }
+    end
+    return mon
+  end
   local def = data and data.pokemon and data.pokemon[mon.species]
   local gen2 = (mon.stats and mon.stats.specialAttack)
     or (def and def.baseStats and def.baseStats.specialAttack)
@@ -182,10 +311,103 @@ function Gen.hydrateMon(data, mon)
   return mon
 end
 
--- Party, boxes, Day-Care.  Gold's dayCare.man/lady/egg are not save.daycare.
 function Gen.hydrateSave(data, save)
   if type(save) ~= "table" then return save end
-  if Gen.of(save) == 2 then
+  local g = Gen.of(save)
+  if g == 3 then
+    save.inventory = save.inventory or {}
+    save.bagOrder = save.bagOrder or {}
+    save.pcItems = save.pcItems or {}
+    save.bag = save.bag or require("src.core.game3.bag").new()
+
+    if save.inventory then
+      local arraySlots = {}
+      for k, v in pairs(save.inventory) do
+        if type(k) == "number" and type(v) == "table" then
+          arraySlots[#arraySlots + 1] = k
+          local sId = v.id or v.itemId or v.name or v[1]
+          local sQty = tonumber(v.qty or v.quantity or v.count or v[2]) or 1
+          if sId and sQty > 0 then
+            local okD, ItemsData = pcall(require, "src.core.game3.items_data")
+            local okI, Items = pcall(require, "src.core.game3.items")
+            local num = okD and ItemsData and ItemsData.toNumericId(sId)
+            local name = (num and okI and Items and Items.FRLG_TO_HOST[num]) or (okD and ItemsData and ItemsData.bagKey(sId)) or tostring(sId)
+            save.inventory[name] = sQty
+          end
+        end
+      end
+      for _, k in ipairs(arraySlots) do
+        save.inventory[k] = nil
+      end
+    end
+
+    if save.bag and save.bag.pockets then
+      local okD, ItemsData = pcall(require, "src.core.game3.items_data")
+      local okI, Items = pcall(require, "src.core.game3.items")
+      if okD and ItemsData and okI and Items then
+        for _, pocketList in pairs(save.bag.pockets) do
+          for _, slot in ipairs(pocketList or {}) do
+            if slot.id and (tonumber(slot.qty) or 0) > 0 then
+              local num = ItemsData.toNumericId(slot.id)
+              local name = (num and Items.FRLG_TO_HOST[num]) or ItemsData.bagKey(slot.id) or tostring(slot.id)
+              save.inventory[name] = tonumber(slot.qty) or 1
+            end
+          end
+        end
+      end
+    end
+
+    if save.pcItems then
+      local arraySlots = {}
+      for k, v in pairs(save.pcItems) do
+        if type(k) == "number" and type(v) == "table" then
+          arraySlots[#arraySlots + 1] = k
+          local sId = v.id or v.itemId or v.name or v[1]
+          local sQty = tonumber(v.qty or v.quantity or v.count or v[2]) or 1
+          if sId and sQty > 0 then
+            local okD, ItemsData = pcall(require, "src.core.game3.items_data")
+            local okI, Items = pcall(require, "src.core.game3.items")
+            local num = okD and ItemsData and ItemsData.toNumericId(sId)
+            local name = (num and okI and Items and Items.FRLG_TO_HOST[num]) or (okD and ItemsData and ItemsData.bagKey(sId)) or tostring(sId)
+            save.pcItems[name] = sQty
+          end
+        end
+      end
+      for _, k in ipairs(arraySlots) do
+        save.pcItems[k] = nil
+      end
+    end
+
+    local pcLists = {}
+    if type(save.storage) == "table" and type(save.storage.items) == "table" then
+      pcLists[1] = save.storage.items
+    elseif type(save.pc) == "table" and type(save.pc.items) == "table" then
+      pcLists[1] = save.pc.items
+    end
+    for _, pcList in ipairs(pcLists) do
+      local okD, ItemsData = pcall(require, "src.core.game3.items_data")
+      local okI, Items = pcall(require, "src.core.game3.items")
+      if okD and ItemsData and okI and Items then
+        for _, slot in ipairs(pcList) do
+          local id = slot.id or slot.itemId
+          local qty = slot.qty or slot.quantity or 1
+          if id and (tonumber(qty) or 0) > 0 then
+            local num = ItemsData.toNumericId(id)
+            local name = (num and Items.FRLG_TO_HOST[num]) or ItemsData.bagKey(id) or tostring(id)
+            save.pcItems[name] = tonumber(qty) or 1
+          end
+        end
+      end
+    end
+
+    for _, mon in ipairs(save.party or {}) do Gen.hydrateMon(data, mon) end
+    for _, box in ipairs(save.boxes or {}) do
+      if type(box) == "table" then
+        for _, mon in ipairs(box) do Gen.hydrateMon(data, mon) end
+      end
+    end
+    return save
+  elseif g == 2 then
     local Mon = require("src.battle.gen2.Mon")
     Mon.eachSaveMon(save, function(mon) Mon.refreshStats(mon, data) end)
     return save
@@ -203,7 +425,15 @@ function Gen.hydrateSave(data, save)
 end
 
 function Gen.ensureBoxes(save)
-  if Gen.of(save) == 2 then
+  local g = Gen.of(save)
+  if g == 3 then
+    save.boxes = save.boxes or {}
+    for i = 1, 14 do
+      save.boxes[i] = save.boxes[i] or {}
+    end
+    save.currentBox = math.max(1, math.min(14, save.currentBox or 1))
+    return save.boxes
+  elseif g == 2 then
     local Boxes2 = require("src.core.gen2.Boxes")
     save.boxes = save.boxes or {}
     for i = 1, Boxes2.NUM_BOXES do
@@ -216,20 +446,21 @@ function Gen.ensureBoxes(save)
 end
 
 function Gen.boxCount(save)
-  if Gen.of(save) == 2 then
-    return require("src.core.gen2.Boxes").NUM_BOXES
-  end
+  local g = Gen.of(save)
+  if g == 3 then return 14 end
+  if g == 2 then return require("src.core.gen2.Boxes").NUM_BOXES end
   return require("src.pokemon.Boxes").COUNT
 end
 
 function Gen.boxCapacity(save)
-  if Gen.of(save) == 2 then
-    return require("src.core.gen2.Boxes").MONS_PER_BOX
-  end
+  local g = Gen.of(save)
+  if g == 3 then return 30 end
+  if g == 2 then return require("src.core.gen2.Boxes").MONS_PER_BOX end
   return require("src.pokemon.Boxes").CAPACITY
 end
 
 function Gen.money(save)
+  if type(save) ~= "table" then return 0 end
   if Gen.of(save) == 2 then
     return (save.player and save.player.money) or 0
   end
@@ -237,6 +468,7 @@ function Gen.money(save)
 end
 
 function Gen.setMoney(save, amount)
+  if type(save) ~= "table" then return end
   if Gen.of(save) == 2 then
     save.player = save.player or {}
     save.player.money = amount
@@ -246,6 +478,7 @@ function Gen.setMoney(save, amount)
 end
 
 function Gen.coins(save)
+  if type(save) ~= "table" then return 0 end
   if Gen.of(save) == 2 then
     return (save.player and save.player.coins) or 0
   end
@@ -253,6 +486,7 @@ function Gen.coins(save)
 end
 
 function Gen.setCoins(save, amount)
+  if type(save) ~= "table" then return end
   if Gen.of(save) == 2 then
     save.player = save.player or {}
     save.player.coins = amount
@@ -261,19 +495,24 @@ function Gen.setCoins(save, amount)
   end
 end
 
--- constants/ram_constants.asm:176-177
 function Gen.playerGender(save)
-  local stored = save and save.player and save.player.gender
-  return stored == "female" and "female" or "male"
+  if type(save) ~= "table" then return "male" end
+  if save.gender == 1 or (save.player and (save.player.gender == 1 or save.player.gender == "female")) then
+    return "female"
+  end
+  return "male"
 end
 
 function Gen.setPlayerGender(save, gender)
-  save.player = save.player or {}
-  save.player.gender = (gender == "female") and "female" or "male"
-  return save.player.gender
+  if type(save) ~= "table" then return "male" end
+  local isFemale = (gender == "female" or gender == 1)
+  save.gender = isFemale and 1 or 0
+  if save.player then
+    save.player.gender = isFemale and "female" or "male"
+  end
+  return isFemale and "female" or "male"
 end
 
--- constants/landmark_constants.asm:3, :111-113
 function Gen.landmarkName(data, index)
   index = math.floor(tonumber(index) or 0)
   local Mon = require("src.battle.gen2.Mon")
@@ -295,7 +534,15 @@ function Gen.dexOwnedKey(save)
 end
 
 function Gen.playerMap(save)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return "FR_PALLET_TOWN", 0, 0 end
+  local g = Gen.of(save)
+  if g == 3 then
+    local map = save.map or (save.position and save.position.map) or (save.player and save.player.map) or "FR_PALLET_TOWN"
+    local x = save.x or (save.position and save.position.x) or (save.player and save.player.x) or 0
+    local y = save.y or (save.position and save.position.y) or (save.player and save.player.y) or 0
+    local facing = save.facing or (save.position and save.position.facing) or "down"
+    return map, x, y, facing
+  elseif g == 2 then
     local p = save.position
     if p and p.map then return p.map, p.x or 0, p.y or 0, p.facing end
     if type(save.spawn) == "table" then
@@ -310,7 +557,26 @@ function Gen.playerMap(save)
 end
 
 function Gen.setPlayerHere(save, mapId, x, y, facing)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return end
+  local g = Gen.of(save)
+  if g == 3 then
+    save.map = mapId
+    save.x = x
+    save.y = y
+    save.facing = facing or save.facing or "down"
+    save.position = {
+      map = mapId,
+      x = x,
+      y = y,
+      facing = save.facing,
+    }
+    if save.player then
+      save.player.map = mapId
+      save.player.x = x
+      save.player.y = y
+    end
+    return
+  elseif g == 2 then
     local prev = save.position or {}
     save.position = {
       map = mapId,
@@ -335,7 +601,12 @@ local KANTO = {
 }
 
 function Gen.badgeIds(save, cat)
-  if Gen.of(save) == 2 then
+  local g = Gen.of(save)
+  if g == 3 then
+    local ids = {}
+    for _, name in ipairs(KANTO) do ids[#ids + 1] = name .. "BADGE" end
+    return ids
+  elseif g == 2 then
     local ids = {}
     for _, name in ipairs(JOHTO) do ids[#ids + 1] = name end
     for _, name in ipairs(KANTO) do ids[#ids + 1] = name end
@@ -352,7 +623,15 @@ local KANTO_SET = {}
 for _, name in ipairs(KANTO) do KANTO_SET[name] = true end
 
 function Gen.hasBadge(save, id)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return false end
+  local g = Gen.of(save)
+  if g == 3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags then
+      return Flags.hasBadge(save, id)
+    end
+    return save.flags and (save.flags[id] or save.flags[id:gsub("BADGE$", "")]) == true
+  elseif g == 2 then
     local p = save.player or {}
     local store = KANTO_SET[id] and (p.kantoBadges or {}) or (p.badges or {})
     if store[id] then return true end
@@ -366,7 +645,20 @@ function Gen.hasBadge(save, id)
 end
 
 function Gen.toggleBadge(save, id)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return false end
+  local g = Gen.of(save)
+  if g == 3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags then
+      local on = Flags.hasBadge(save, id)
+      Flags.setBadge(save, id, not on)
+      return not on
+    end
+    local on = Gen.hasBadge(save, id)
+    save.flags = save.flags or {}
+    save.flags[id] = (not on) and true or nil
+    return not on
+  elseif g == 2 then
     save.player = save.player or {}
     local storeName = KANTO_SET[id] and "kantoBadges" or "badges"
     save.player[storeName] = save.player[storeName] or {}
@@ -378,6 +670,7 @@ function Gen.toggleBadge(save, id)
     end
     return not on
   end
+  save.inventory = save.inventory or {}
   local on = save.inventory[id] and true or false
   save.inventory[id] = (not on) and 1 or nil
   return not on
@@ -388,7 +681,15 @@ local function gen2FlagId(save, name)
 end
 
 function Gen.getFlag(save, name)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return false end
+  local g = Gen.of(save)
+  if g == 3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags then
+      return Flags.getFlag(save, nil, name)
+    end
+    return save.flags and (save.flags[name] == true or save.flags[tostring(name)] == true)
+  elseif g == 2 then
     local id = gen2FlagId(save, name)
     if id then
       local Events2 = require("src.world.gen2.Events")
@@ -402,7 +703,18 @@ function Gen.getFlag(save, name)
 end
 
 function Gen.setFlag(save, name, on)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return end
+  local g = Gen.of(save)
+  if g == 3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags then
+      Flags.setFlag(save, nil, name, on)
+      return
+    end
+    save.flags = save.flags or {}
+    save.flags[name] = on and true or nil
+    return
+  elseif g == 2 then
     local id = gen2FlagId(save, name)
     if id then
       local Events2 = require("src.world.gen2.Events")
@@ -421,7 +733,9 @@ function Gen.setFlag(save, name, on)
 end
 
 function Gen.flagCount(save)
-  if Gen.of(save) == 2 then
+  if type(save) ~= "table" then return 0 end
+  local g = Gen.of(save)
+  if g == 2 then
     local n = 0
     for _ in pairs(save.events or {}) do n = n + 1 end
     for _ in pairs(save.flags or {}) do n = n + 1 end
@@ -433,7 +747,7 @@ function Gen.flagCount(save)
 end
 
 function Gen.exp(mon)
-  return mon.experience or mon.exp or 0
+  return mon.exp or mon.experience or 0
 end
 
 return Gen

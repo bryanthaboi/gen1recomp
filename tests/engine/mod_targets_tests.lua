@@ -43,6 +43,10 @@ do
     "and each of them names itself")
   eq(table.concat(ModTargets.expand("crystal"), ","), "crystal",
     "Crystal included, the day its VERSIONS row landed")
+  eq(table.concat(ModTargets.expand("gen3"), ","), "firered",
+    "gen3 is every Gen 3 game")
+  eq(table.concat(ModTargets.expand("FireRed"), ","), "firered",
+    "and FireRed names itself, case-insensitive")
   eq(table.concat(ModTargets.expand("all"), ","),
     table.concat(GameVersion.ORDER, ","), "all is the launcher order itself")
   eq(ModTargets.expand(NO_SUCH_GAME), nil, "a game this engine has no cache for")
@@ -109,6 +113,13 @@ do
   check(not ModTargets.supports(gen1, "gold"), "and not Gold")
   check(ModTargets.supports(gen2, "gold"), "a Gen 2 mod supports Gold")
   check(not ModTargets.supports(gen2, "red"), "and not Red")
+  local gen3 = mf({ id = "three", games = { "gen3" } })
+  check(ModTargets.supports(gen3, "firered"), "a Gen 3 mod supports FireRed")
+  check(not ModTargets.supports(gen3, "red"), "and not Red")
+  check(not ModTargets.supports(gen1, "firered"), "a Gen 1 mod does not support FireRed")
+  check(not ModTargets.supports(gen2, "firered"), "and neither does a Gen 2 one")
+  check(ModTargets.supports(gen3, nil, 3), "Gen 3 can be asked directly")
+  eq(gen3.gen2compat, false, "a Gen 3 claim is not a Gen 2 claim")
   check(ModTargets.supports(gen1, nil, 1), "a generation can be asked directly")
   check(not ModTargets.supports(gen1, nil, 2), "and answers the same way")
   check(not ModTargets.runsHere(gen1, "gold"), "no claim, no run")
@@ -120,7 +131,15 @@ end
 
 do
   eq(ModTargets.label(mf({})), "Gen 1", "whole generations read as generations")
-  eq(ModTargets.label(mf({ games = { "all" } })), "Gen 1+2", "both of them")
+  eq(ModTargets.label(mf({ games = { "all" } })), "Gen 1+2+3", "all of them")
+  eq(ModTargets.label(mf({ games = { "gen1", "gen2" } })), "Gen 1+2", "both of them")
+  eq(ModTargets.label(mf({ games = { "gen3" } })), "Gen 3", "FireRed's generation")
+  eq(ModTargets.label(mf({ games = { "firered" } })), "Gen 3",
+    "one game that is its whole generation reads as the generation")
+  eq(ModTargets.label(mf({ games = { "gen1", "gen3" } })), "Gen 1+3",
+    "generations need not be contiguous")
+  eq(ModTargets.detail(mf({}), "firered"), "For Gen 1, not FireRed",
+    "and the launcher line names FireRed")
   eq(ModTargets.label(mf({ games = { "gen2" } })), "Gen 2", "or just the one")
   eq(ModTargets.label(mf({ games = { "red", "gold" } })), "Red/Gold",
     "part of a generation reads as the games themselves")

@@ -22,6 +22,7 @@ local POCKET_CAPACITY = {
 local DEFAULT_CAPACITY = 20
 
 local function isBadge(id)
+  if type(id) ~= "string" then return false end
   return id:find("BADGE", 1, true) ~= nil
 end
 
@@ -57,6 +58,7 @@ Bag.isBadge = isBadge
 
 -- Occupied slots, of one pocket when named or of the whole inventory when not.
 function Bag.slots(save, data, pocket)
+  if not save or not save.inventory then return 0 end
   local n = 0
   for id in pairs(save.inventory) do
     if not isBadge(id)
@@ -70,6 +72,8 @@ end
 -- Acquisition-ordered id list (wBagItems).  Rebuilt sorted once for
 -- saves from before the order existed, then maintained incrementally.
 function Bag.order(save, data)
+  if not save then return {} end
+  save.inventory = save.inventory or {}
   local order = save.bagOrder
   if not order then
     local items = (data or require("src.core.Data")).items
@@ -78,10 +82,14 @@ function Bag.order(save, data)
       if not isBadge(id) then table.insert(order, id) end
     end
     table.sort(order, function(a, b)
-      local ia = (items and items[a] and items[a].index) or math.huge
-      local ib = (items and items[b] and items[b].index) or math.huge
-      if ia ~= ib then return ia < ib end
-      return a < b
+      local ia = (items and items[a] and (items[a].index or items[a].itemId)) or math.huge
+      local ib = (items and items[b] and (items[b].index or items[b].itemId)) or math.huge
+      if ia ~= ib then
+        if type(ia) == type(ib) then return ia < ib end
+        return tostring(ia) < tostring(ib)
+      end
+      if type(a) == type(b) then return a < b end
+      return tostring(a) < tostring(b)
     end)
     save.bagOrder = order
   end
@@ -129,6 +137,8 @@ end
 -- is needed and the bag is full, or when the stack would pass 99
 -- (AddItemToInventory's per-slot quantity cap).
 function Bag.add(save, id, qty, data)
+  if not save then return false end
+  save.inventory = save.inventory or {}
   local inv = save.inventory
   -- Only the item's OWN pocket has to have room -- a full ITEM pocket does not
   -- keep a KEY_ITEM or an HM out, which is the whole point of pockets.
@@ -146,7 +156,7 @@ function Bag.add(save, id, qty, data)
   -- next order() pass deduped it (and a save taken in between kept both).
   local isNew = not inv[id]
   if isNew and not isBadge(id) then
-    table.insert(Bag.order(save), id)
+    table.insert(Bag.order(save, data), id)
   end
   inv[id] = (inv[id] or 0) + (qty or 1)
   return true
@@ -154,6 +164,7 @@ end
 
 -- Remove qty (default 1); clears the slot and its order entry at zero.
 function Bag.remove(save, id, qty)
+  if not save or not save.inventory then return end
   local inv = save.inventory
   inv[id] = (inv[id] or 0) - (qty or 1)
   if inv[id] <= 0 then

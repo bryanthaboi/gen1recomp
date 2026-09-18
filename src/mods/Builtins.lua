@@ -118,7 +118,10 @@ local GEN2_REGISTRANTS = {
 local GEN2_ONLY_ORDER = { "item_effects", "phone_contacts", "decorations",
                           "apricorns", "radio_channels" }
 
+local GEN3_REGISTRANTS = {}
+
 local function registrantsFor(generation)
+  if generation == 3 then return GEN3_REGISTRANTS end
   if generation ~= 2 then return REGISTRANTS end
   local out, taken = {}, {}
   for _, entry in ipairs(REGISTRANTS) do

@@ -17,6 +17,8 @@ CANONICAL_SILVER_SHA1 = "49b163f7e57702bc939d642a18f591de55d92dae"
 # Crystal is the retail international v1.0 cart, also 2 MiB.
 CANONICAL_CRYSTAL_SHA1 = "f4cd194bdee0d04ca4eac29e09b8e4e9d818c133"
 CANONICAL_CRYSTAL11_SHA1 = "f2f52230b536214ef7c9924f483392993e226cfb"
+# FireRed USA 1.0: 16 MiB GBA cart (Gen 3 / game3).
+CANONICAL_FIRERED_SHA1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc"
 ROM_BANK_SIZE = 0x4000
 
 
