@@ -745,20 +745,6 @@ local function bob(k, freq)
   return v < 0 and math.ceil(v) or math.floor(v)
 end
 
-local function draw_spaced(text, x, y, colors)
-  -- src/item_menu.c:756
-  local cx, cy = x, y
-  for ttype, val in FrlgFont.scanTokens(text) do
-    if ttype == "nl" or ttype == "page" then
-      cx = x
-      cy = cy + 14
-    elseif ttype == "char" then
-      FrlgFont.draw(val, cx, cy, { colors = colors })
-      cx = cx + FrlgFont.advance(FrlgFont.glyphId(val)) + 2
-    end
-  end
-end
-
 function BagMenu.draw()
   if not BagMenu.open then return end
   local pocket = BagMenu.currentPocket()
@@ -880,7 +866,8 @@ function BagMenu.draw()
     local desc = sel and sel.description
     if not sel then desc = "CLOSE BAG" end
     if desc then
-      draw_spaced(desc, 40, 115, WIN_WHITE)
+      -- src/item_menu.c:756 (window 1 at (5, 14), x=0, y=3, maxWidth=200, linePitch=14)
+      FrlgFont.draw(desc, 40, 115, { colors = WIN_WHITE, maxWidth = 200, linePitch = 14 })
     end
   end
 

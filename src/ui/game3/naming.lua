@@ -125,6 +125,9 @@ local L = {
   -- BACK/OK CreateSprite(204,116/140) + subsprite (-20,-12) → (184,104/128)
   backX = 184, backY = 104,
   okX = 184, okY = 128,
+  -- Button pill cursor coordinates (32×13 pill at center 204, Y=88/116/140)
+  btnCursorX = 188,
+  btnCursorY = { 77, 106, 128 },
 }
 
 local function playSe(id)
@@ -308,11 +311,12 @@ local function drawPlayerIcon(st)
           local iw = entry.w or entry.image:getWidth()
           local ih = entry.h or (entry.quads and entry.h) or entry.image:getHeight()
           local sc = math.min(L.iconW / iw, L.iconH / ih)
-          local q = entry.quads and entry.quads[0]
+          local q = entry.quads and (entry.quads[1] or entry.quads[0])
+          local cx, cy = L.iconCX, 40 -- pokefirered/src/naming_screen.c:1422
           if q then
-            love.graphics.draw(entry.image, q, L.iconCX, L.iconCY, 0, sc, sc, iw / 2, ih / 2)
+            love.graphics.draw(entry.image, q, cx, cy, 0, sc, sc, iw / 2, ih / 2)
           else
-            love.graphics.draw(entry.image, L.iconCX, L.iconCY, 0, sc, sc, iw / 2, ih / 2)
+            love.graphics.draw(entry.image, cx, cy, 0, sc, sc, iw / 2, ih / 2)
           end
           return
         end
@@ -369,6 +373,10 @@ end
 
 function Naming.open(opts)
   opts = opts or {}
+  local okF, Fade = pcall(require, "src.ui.game3.fade")
+  if okF and Fade and Fade.clear then
+    Fade.clear()
+  end
   NamingChrome.ready()
   local st = {
     title = opts.title or "YOUR NAME?",
@@ -538,15 +546,95 @@ local function pulseAmt(st)
   return 0.5 + 0.5 * math.sin((st.blink or 0) * math.pi * 3)
 end
 
-local function blitPillGlow(key, x, y)
-  local img = NamingChrome.get(key)
-  if not img then return end
-  local a = 0.22 + pulseAmt(Naming._state) * 0.55
-  love.graphics.setBlendMode("add")
-  love.graphics.setColor(a, a, a, 1)
-  love.graphics.draw(img, x, y)
-  love.graphics.setBlendMode("alpha")
-  love.graphics.setColor(1, 1, 1, 1)
+-- 32×13 pixel-perfect outline mask matching GBA button index 14 outline (78 pixels)
+local BTN_MASK_32x13 = {
+  "  ############################  ",
+  " #                            # ",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  "#                              #",
+  " #                            # ",
+  "  ############################  ",
+}
+
+local btnCursorImg = nil
+local function getButtonCursorImage()
+  if btnCursorImg then return btnCursorImg end
+  if not (love and love.image and love.image.newImageData and love.graphics and love.graphics.newImage) then
+    return nil
+  end
+  local ok, imgData = pcall(love.image.newImageData, 32, 13)
+  if not ok or not imgData then return nil end
+  for y = 0, 12 do
+    local row = BTN_MASK_32x13[y + 1] or ""
+    for x = 0, 31 do
+      local ch = row:sub(x + 1, x + 1)
+      if ch == "#" then
+        imgData:setPixel(x, y, 1, 1, 1, 1)
+      else
+        imgData:setPixel(x, y, 0, 0, 0, 0)
+      end
+    end
+  end
+  local ok2, img = pcall(love.graphics.newImage, imgData)
+  if ok2 and img then
+    if img.setFilter then img:setFilter("nearest", "nearest") end
+    btnCursorImg = img
+    return btnCursorImg
+  end
+  return nil
+end
+
+local function blitButtonBorder(btnIdx)
+  local st = Naming._state
+  local pulse = pulseAmt(st)
+  local bx = L.btnCursorX or 188
+  local by = (L.btnCursorY and L.btnCursorY[btnIdx]) or (btnIdx == 1 and 77 or (btnIdx == 2 and 106 or 128))
+  local glowKey = (btnIdx == 1 and "page_swap_button_glow") or (btnIdx == 2 and "back_button_glow") or "ok_button_glow"
+  local frameX = (btnIdx == 1 and L.pageFrameX) or (btnIdx == 2 and L.backX) or L.okX
+  local frameY = (btnIdx == 1 and L.pageFrameY) or (btnIdx == 2 and L.backY) or L.okY
+
+  local r = 1.0
+  local gb = (8 / 255) + pulse * (220 / 255)
+
+  local glowImg = NamingChrome.get(glowKey)
+  if glowImg then
+    love.graphics.setColor(r, gb, gb, 1.0)
+    love.graphics.draw(glowImg, frameX, frameY)
+    love.graphics.setColor(1, 1, 1, 1)
+    return
+  end
+
+  local cursorImg = getButtonCursorImage()
+  if cursorImg then
+    love.graphics.setColor(r, gb, gb, 1.0)
+    love.graphics.draw(cursorImg, bx, by)
+    love.graphics.setColor(1, 1, 1, 1)
+    return
+  end
+
+  -- Procedural 32×13 pixel-perfect fallback matching 78-pixel index 14 outline
+  if love.graphics and love.graphics.rectangle then
+    love.graphics.setColor(r, gb, gb, 1.0)
+    -- Top & bottom horizontal bars (1px thick, 28px wide from x=2 to 29)
+    love.graphics.rectangle("fill", bx + 2, by, 28, 1)
+    love.graphics.rectangle("fill", bx + 2, by + 12, 28, 1)
+    -- Left & right vertical bars (1px thick, 9px high from y=2 to 10)
+    love.graphics.rectangle("fill", bx, by + 2, 1, 9)
+    love.graphics.rectangle("fill", bx + 31, by + 2, 1, 9)
+    -- Corner bevel pixels at y=1 and y=11
+    love.graphics.rectangle("fill", bx + 1, by + 1, 1, 1)
+    love.graphics.rectangle("fill", bx + 30, by + 1, 1, 1)
+    love.graphics.rectangle("fill", bx + 1, by + 11, 1, 1)
+    love.graphics.rectangle("fill", bx + 30, by + 11, 1, 1)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
 end
 
 function Naming.draw()
@@ -611,10 +699,8 @@ function Naming.draw()
   end
   blit("back_button", L.backX, L.backY)
   blit("ok_button", L.okX, L.okY)
-  if onSide and st.btn == 2 then
-    blitPillGlow("back_button_glow", L.backX, L.backY)
-  elseif onSide and st.btn == 3 then
-    blitPillGlow("ok_button_glow", L.okX, L.okY)
+  if onSide and st.btn then
+    blitButtonBorder(st.btn)
   end
 
   -- 5) Title + icon + typed name (above KB)
@@ -699,5 +785,7 @@ function Naming.begin(opts)
     onDone = opts.onDone,
   }
 end
+
+Naming.L = L
 
 return Naming

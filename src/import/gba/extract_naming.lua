@@ -218,11 +218,16 @@ function ExtractNaming.run(rom, cache, opts)
     if png then write(cache, out(fname), png) end
   end
 
-  local pill = { [12] = true, [13] = true }
+  local glowPal = {}
+  for i = 0, 15 do glowPal[i] = 0 end
+  glowPal[14] = 0x7FFF -- White mask for index 14 (tinted by naming screen cursor pulse)
+
+  local pillBorder = { [14] = true }
   sheet(A.back_button, 0x1E0, 5, 3, btnPal, "back_button.png")
   sheet(A.ok_button, 0x1E0, 5, 3, btnPal, "ok_button.png")
-  sheet(A.back_button, 0x1E0, 5, 3, btnPal, "back_button_glow.png", true, pill)
-  sheet(A.ok_button, 0x1E0, 5, 3, btnPal, "ok_button_glow.png", true, pill)
+  sheet(A.page_swap_frame, 0x280, 5, 4, glowPal, "page_swap_button_glow.png", true, pillBorder)
+  sheet(A.back_button, 0x1E0, 5, 3, glowPal, "back_button_glow.png", true, pillBorder)
+  sheet(A.ok_button, 0x1E0, 5, 3, glowPal, "ok_button_glow.png", true, pillBorder)
   sheet(A.page_swap_frame, 0x280, 5, 4, btnPal, "page_swap_frame.png")
   sheet(A.page_swap_button, 0x100, 4, 2, menuBanks[1] or btnPal, "page_swap_button.png")
   sheet(A.page_swap_button, 0x100, 4, 2, menuBanks[1] or btnPal, "page_swap_button_upper.png")
@@ -276,6 +281,7 @@ return {
   page_swap_upper = %q,
   page_swap_lower = %q,
   page_swap_others = %q,
+  page_swap_button_glow = %q,
   back_button_glow = %q,
   ok_button_glow = %q,
   cursor = %q,
@@ -293,7 +299,7 @@ return {
     out("page_swap_button.png"), out("page_swap_button_upper.png"),
     out("page_swap_button_lower.png"), out("page_swap_button_others.png"),
     out("page_swap_upper.png"), out("page_swap_lower.png"), out("page_swap_others.png"),
-    out("back_button_glow.png"), out("ok_button_glow.png"),
+    out("page_swap_button_glow.png"), out("back_button_glow.png"), out("ok_button_glow.png"),
     out("cursor.png"), out("input_arrow.png"),
     out("underscore.png"), out("rival.png"))
   write(cache, out("manifest.lua"), manifest)

@@ -50,6 +50,12 @@ Audio._bgmSource = nil
 Audio._bgmGen = nil
 Audio._bgmLocal = nil -- sync fallback slot
 
+local function fanfare_entry(id)
+  local ff = Audio._pack and Audio._pack.index and Audio._pack.index.fanfares
+  if not ff then return nil, false end
+  return ff[id] or ff[tostring(id)], true
+end
+
 local function log(msg)
   if Audio._log then
     print("[game3.audio] " .. tostring(msg))
@@ -316,6 +322,9 @@ function Audio.playSong(id, opts)
     stop_bgm_source()
     Audio._currentSong = nil
     return true
+  end
+  if opts.fanfare or (Audio.songInfo(id) and Audio.songInfo(id).kind == "fanfare") or (fanfare_entry(id) ~= nil) then
+    return Audio.playFanfare(id)
   end
   if not opts.restart and Audio._currentSong and Audio._currentSong.id == id then
     return true
@@ -752,12 +761,6 @@ function Audio.waitSe(id, cb)
   Audio._waitSe[#Audio._waitSe + 1] = { id = id, cb = cb }
 end
 
-local function fanfare_entry(id)
-  local ff = Audio._pack and Audio._pack.index and Audio._pack.index.fanfares
-  if not ff then return nil, false end
-  return ff[id] or ff[tostring(id)], true
-end
-
 local function start_fanfare_source(id, mplay)
   Audio._fanfarePending = nil
   local old = Audio._fanfareSource
@@ -830,6 +833,7 @@ function Audio.playFanfare(id)
   end
   Audio._fanfareActive = true
   Audio._fanfareFrames = frames
+  Audio.stopCry()
   if Audio.isReady() then
     start_fanfare_source(id, tonumber(info.player) or 2)
   end

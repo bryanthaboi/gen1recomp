@@ -31,21 +31,22 @@ local function loadManifest(root)
   return nil
 end
 
+NamingChrome.KEYS = {
+  "bg", "kb_upper", "kb_lower", "kb_symbols",
+  "back_button", "ok_button", "page_swap_frame", "page_swap_button",
+  "page_swap_button_upper", "page_swap_button_lower", "page_swap_button_others",
+  "page_swap_upper", "page_swap_lower", "page_swap_others",
+  "page_swap_button_glow", "back_button_glow", "ok_button_glow",
+  "cursor", "input_arrow", "underscore", "rival",
+}
+
 function NamingChrome.install(_cache)
   NamingChrome._images = {}
   NamingChrome._ready = false
   for _, root in ipairs(ROOTS) do
     local man = loadManifest(root)
     if man then
-      local keys = {
-        "bg", "kb_upper", "kb_lower", "kb_symbols",
-        "back_button", "ok_button", "page_swap_frame", "page_swap_button",
-        "page_swap_button_upper", "page_swap_button_lower", "page_swap_button_others",
-        "page_swap_upper", "page_swap_lower", "page_swap_others",
-        "back_button_glow", "ok_button_glow",
-        "cursor", "input_arrow", "underscore", "rival",
-      }
-      for _, k in ipairs(keys) do
+      for _, k in ipairs(NamingChrome.KEYS) do
         local p = man[k] or (root .. "/" .. k .. ".png")
         NamingChrome._images[k] = tryLoad(p)
       end
@@ -68,6 +69,7 @@ function NamingChrome.install(_cache)
       NamingChrome._images.page_swap_upper = tryLoad(root .. "/page_swap_upper.png")
       NamingChrome._images.page_swap_lower = tryLoad(root .. "/page_swap_lower.png")
       NamingChrome._images.page_swap_others = tryLoad(root .. "/page_swap_others.png")
+      NamingChrome._images.page_swap_button_glow = tryLoad(root .. "/page_swap_button_glow.png")
       NamingChrome._images.back_button_glow = tryLoad(root .. "/back_button_glow.png")
       NamingChrome._images.ok_button_glow = tryLoad(root .. "/ok_button_glow.png")
       NamingChrome._images.cursor = tryLoad(root .. "/cursor.png")

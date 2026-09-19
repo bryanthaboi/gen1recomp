@@ -161,7 +161,12 @@ end
 function Runtime.update(dt)
   if not Runtime.active then return end
   local game = Runtime._game
-  Runtime.pumpRtc(game, dt)
+  local Hud = require("src.ui.game3.hud")
+  local inMenu = Hud.isMenuOpen and Hud.isMenuOpen() or false
+
+  if not inMenu then
+    Runtime.pumpRtc(game, dt)
+  end
 
   local okF, Fade = pcall(require, "src.ui.game3.fade")
   if okF and Fade.tick then Fade.tick(dt) end
@@ -190,7 +195,6 @@ function Runtime.update(dt)
     end
     local Message = package.loaded["src.ui.game3.message"]
     if Message and Message.tick then Message.tick() end
-    local Hud = require("src.ui.game3.hud")
     Hud.update(game, dt)
     return
   end
@@ -200,9 +204,10 @@ function Runtime.update(dt)
     Naming.update(game and game.input, dt)
   end
 
-  local Field = require("src.core.game3.field")
-  Field.update(dt)
-  local Hud = require("src.ui.game3.hud")
+  if not inMenu then
+    local Field = require("src.core.game3.field")
+    Field.update(dt)
+  end
   Hud.update(game, dt)
 end
 

@@ -119,6 +119,21 @@ RegionMapExtract.DUNGEON_GRID = {
   [14] = { [4] = "MAPSEC_POKEMON_MANSION", [8] = "MAPSEC_SEAFOAM_ISLANDS" },
 }
 
+-- Authentic FRLG Area Descriptions (pokefirered/src/strings.c gText_RegionMap_AreaDesc_*)
+RegionMapExtract.DUNGEON_DESCRIPTIONS = {
+  MAPSEC_VIRIDIAN_FOREST = "A deep and sprawling forest that extends around VIRIDIAN CITY. A natural maze, many people become lost inside.",
+  MAPSEC_MT_MOON = "A mystical mountain that is known for its frequent meteor falls. The shards of stars that fall here are known as MOON STONES.",
+  MAPSEC_DIGLETTS_CAVE = "A seemingly plain tunnel that was dug by wild DIGLETT. It is famous for connecting ROUTES 2 and 11.",
+  MAPSEC_KANTO_VICTORY_ROAD = "A tunnel situated on ROUTE 23. It earned its name because it must be traveled by all TRAINERS aiming for the top.",
+  MAPSEC_POKEMON_MANSION = "A decrepit, burned-down mansion on CINNABAR ISLAND. It got its name because a famous POKéMON researcher lived there.",
+  MAPSEC_KANTO_SAFARI_ZONE = "An amusement park outside FUCHSIA CITY where many rare POKéMON can be observed in the wild. Catch them in a popular game!",
+  MAPSEC_ROCK_TUNNEL = "A naturally formed underground tunnel. Because it has not been developed, it is inky dark inside. A light is needed to get through.",
+  MAPSEC_SEAFOAM_ISLANDS = "A pair of islands that is situated on ROUTE 20. The two islands are shaped the same, as if they were twins.",
+  MAPSEC_POKEMON_TOWER = "A tower that houses the graves of countless POKéMON. Many people visit it daily to pay their respects to the fallen.",
+  MAPSEC_CERULEAN_CAVE = "A mysterious cave that is filled with terribly tough POKéMON. It is so dangerous, the POKéMON LEAGUE is in charge of it.",
+  MAPSEC_POWER_PLANT = "A power plant that was abandoned years ago, though some of the machines still work. It is infested with electric POKéMON.",
+}
+
 -- Host Map ID -> (x, y) grid coords for player icon
 RegionMapExtract.HOST_MAP_TO_GRID = {
   PALLET_TOWN = { 4, 11 },

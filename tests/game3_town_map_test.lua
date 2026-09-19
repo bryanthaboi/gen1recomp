@@ -103,6 +103,49 @@ do
   check(RegionMap.isOpen() == false, "RegionMap closed cleanly")
 end
 
+print("=== [TEST 4] Start Snapping & Dungeon Guide Modal ===")
+do
+  local session = { map = "VIRIDIAN_CITY", gender = 0 }
+  RegionMap.show({ session = session })
+
+  local function press(btn)
+    local inp = {
+      wasPressed = function(_, k) return k == btn end,
+      isDown = function() return false end,
+    }
+    RegionMap.handleInput(inp)
+  end
+
+  check(RegionMap.cursorX == 4 and RegionMap.cursorY == 8, "cursor at Viridian City (4, 8)")
+
+  -- Press START: Snaps to Cancel Button (21, 13)
+  press("start")
+  check(RegionMap.cursorX == 21 and RegionMap.cursorY == 13, "START snapped to Cancel button (21, 13)")
+
+  -- Press START again: Snaps back to Player Icon (4, 8)
+  press("start")
+  check(RegionMap.cursorX == 4 and RegionMap.cursorY == 8, "START snapped back to Player Icon (4, 8)")
+
+  -- Move UP to (4, 6) (Viridian Forest dungeon)
+  press("up")
+  press("up")
+  check(RegionMap.cursorX == 4 and RegionMap.cursorY == 6, "cursor at Viridian Forest (4, 6)")
+  check(RegionMap.currentDungeonName() == "VIRIDIAN FOREST", "current dungeon is VIRIDIAN FOREST")
+
+  -- Press A on dungeon: Opens Dungeon Preview Modal
+  press("a")
+  check(RegionMap.previewDungeon == "MAPSEC_VIRIDIAN_FOREST", "Dungeon Preview Modal opened for Viridian Forest")
+
+  -- Press B on modal: Closes Dungeon Preview Modal
+  press("b")
+  check(RegionMap.previewDungeon == nil, "Dungeon Preview Modal closed on B")
+  check(RegionMap.isOpen() == true, "RegionMap still open after closing modal")
+
+  -- Press B on map: Closes RegionMap
+  press("b")
+  check(RegionMap.isOpen() == false, "RegionMap closed on B")
+end
+
 if failed > 0 then
   print(string.format("\n[FAILED] %d test(s) failed", failed))
   os.exit(1)

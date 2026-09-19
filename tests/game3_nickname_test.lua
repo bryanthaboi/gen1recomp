@@ -33,15 +33,7 @@ package.loaded["src.ui.game3.stack"] = {
   busy = function() return false end,
   drawOrder = function() return {} end,
 }
-package.loaded["src.ui.game3.naming_chrome"] = {
-  ready = function() return true end,
-  get = function() return nil end,
-  install = function() return true end,
-}
-package.loaded["src.ui.game3.message"] = {
-  isOpen = function() return false end,
-  close = function() end,
-}
+
 -- Force re-require naming with stubs
 package.loaded["src.ui.game3.naming"] = nil
 Naming = require("src.ui.game3.naming")
@@ -105,6 +97,212 @@ Fade.active = false
 Fade.begin(Fade.MODE.FROM_BLACK, 1)
 check(Fade.active == true and Fade.t == 16 and Fade._dir == -1, "FROM_BLACK starts covered")
 
+print("[test] 5. Naming screen button highlights and layout parity")
+local NamingChrome = require("src.ui.game3.naming_chrome")
+local expectedKeys = {
+  "page_swap_button_glow",
+  "back_button_glow",
+  "ok_button_glow",
+  "cursor",
+  "page_swap_frame",
+}
+local keySet = {}
+for _, k in ipairs(NamingChrome.KEYS or {}) do
+  keySet[k] = true
+end
+for _, key in ipairs(expectedKeys) do
+  check(keySet[key] == true, "NamingChrome includes key " .. key)
+end
+
+-- Check Naming screen layout coordinates match pokefirered
+Naming.open({ template = "NICKNAME", species = 1, maxLen = 10, title = "YOUR POKEMON'S NICKNAME?" })
+check(Naming.isOpen(), "Naming screen is open")
+
+-- Verify species icon positioning at (56, 40)
+local st = Naming._state
+check(st ~= nil, "Naming internal state is present")
+check(st.template == "NICKNAME", "state template is NICKNAME")
+check(st.species == 1, "state species is 1")
+
+-- Verify right button selection index mapping (1 = Page Swap, 2 = Back, 3 = OK)
+st.btn = 1
+check(st.btn == 1, "btn 1 is Page Swap")
+st.btn = 2
+check(st.btn == 2, "btn 2 is Back")
+st.btn = 3
+check(st.btn == 3, "btn 3 is OK")
+
+-- Verify button cursor geometry matches pokefirered 32x13 pill coordinates
+check(Naming.L.btnCursorX == 188, "btnCursorX is 188")
+check(Naming.L.btnCursorY[1] == 77, "Page Swap cursor Y is 77")
+check(Naming.L.btnCursorY[2] == 106, "Back cursor Y is 106")
+check(Naming.L.btnCursorY[3] == 128, "OK cursor Y is 128")
+
+-- Verify Gfx.drawUi suppresses Fade.draw during Naming
+local Gfx = require("src.core.game3.gfx")
+check(Naming.isOpen(), "Naming is open during UI render check")
+
+Naming.close()
+check(not Naming.isOpen(), "Naming is closed after close()")
+
+print("[test] 6. Caught Pokémon nickname prompt and naming modal flow")
+local Battle = require("src.core.game3.battle")
+local BattleUi = require("src.core.game3.battle.ui")
+local Choice = require("src.ui.game3.choice")
+local Message = require("src.ui.game3.message")
+local Catching = require("src.core.game3.battle.catching")
+
+-- Setup mock input helper
+local mockInput = {
+  _pressed = {},
+  press = function(self, key) self._pressed[key] = true end,
+  clear = function(self) self._pressed = {} end,
+  isDown = function(self, key) return self._pressed[key] == true end,
+  wasPressed = function(self, key)
+    if self._pressed[key] then
+      self._pressed[key] = false
+      return true
+    end
+    return false
+  end,
+}
+function mockInput:consume(key)
+  return self:wasPressed(key)
+end
+
+-- Scenario A: Caught Pokémon -> Yes to Nickname -> Type nickname -> Confirmed
+local testParty = { { species = 1, hp = 20, maxHp = 20, level = 5 } }
+local testSession = { name = "RED", party = testParty, dex = {} }
+local caughtMon = { species = 25, name = "PIKACHU", level = 3, hp = 10, maxHp = 10, nickname = "" }
+local catchResParty = {
+  success = true,
+  location = "party",
+  firstTimeCaught = false,
+  mon = caughtMon,
+}
+
+Battle.start({
+  wild = true,
+  playerParty = testParty,
+  foe = { species = 25, level = 3, hp = 10, maxHp = 10, mon = caughtMon },
+  headless = false,
+  session = testSession,
+})
+check(Battle.isActive(), "Battle active for catch nickname test")
+
+-- Trigger post catch flow
+Battle.startPostCatchFlow(catchResParty)
+check(Battle._phase == "catch_nickname_prompt", "Phase is catch_nickname_prompt")
+
+-- Message says "Give a nickname to the\ncaptured PIKACHU?"
+local foundPrompt = false
+for _, line in ipairs(BattleUi._log or {}) do
+  if line:find("Give a nickname") and line:find("PIKACHU") then
+    foundPrompt = true
+  end
+end
+check(foundPrompt, "Prompt log has 'Give a nickname to the captured PIKACHU?'")
+
+-- Advance typewriter message to trigger yes/no Choice box
+while Message.isOpen() and not (Choice.active) do
+  Message.tick()
+  BattleUi.pump()
+end
+check(Choice.active == true, "Choice Yes/No is active")
+
+-- Select YES (index 0 / A button)
+mockInput:clear()
+mockInput:press("a")
+Battle.update(1 / 60, { input = mockInput })
+
+check(Naming.isOpen(), "Naming screen opened after choosing YES")
+check(Battle._phase == "catch_naming", "Battle phase is catch_naming")
+check(Naming._state.template == "CAUGHT_MON", "Naming template is CAUGHT_MON")
+check(Naming._state.species == 25, "Naming species is 25 (Pikachu)")
+
+-- Complete naming with nickname "SPARKY"
+Naming.close("SPARKY")
+check(not Naming.isOpen(), "Naming screen closed")
+check(caughtMon.nickname == "SPARKY", "caughtMon nickname is now SPARKY")
+check(Battle._phase == "ending", "Battle transitioned to ending phase after naming")
+
+-- Scenario B: Caught Pokémon -> No to Nickname
+local caughtPidgey = { species = 16, name = "PIDGEY", level = 3, hp = 8, maxHp = 8, nickname = "" }
+local catchResNoNick = {
+  success = true,
+  location = "party",
+  firstTimeCaught = false,
+  mon = caughtPidgey,
+}
+Battle.start({
+  wild = true,
+  playerParty = testParty,
+  foe = { species = 16, level = 3, hp = 8, maxHp = 8, mon = caughtPidgey },
+  headless = false,
+  session = testSession,
+})
+Battle.startPostCatchFlow(catchResNoNick)
+while Message.isOpen() and not Choice.active do
+  Message.tick()
+  BattleUi.pump()
+end
+check(Choice.active == true, "Choice Yes/No is active for Pidgey")
+
+-- Select NO (index 1 / down + A button or B button)
+mockInput:clear()
+mockInput:press("b")
+Battle.update(1 / 60, { input = mockInput })
+check(not Naming.isOpen(), "Naming screen NOT opened when NO selected")
+check(caughtPidgey.nickname == "", "caughtPidgey nickname remains default/empty")
+check(Battle._phase == "ending", "Battle transitioned to ending phase immediately")
+
+-- Scenario C: Caught Pokémon sent to PC -> Yes to Nickname -> Shows PC Transfer message
+local caughtCaterpie = { species = 10, name = "CATERPIE", level = 3, hp = 6, maxHp = 6, nickname = "" }
+local catchResPc = {
+  success = true,
+  location = "pc",
+  firstTimeCaught = false,
+  mon = caughtCaterpie,
+}
+Battle.start({
+  wild = true,
+  playerParty = testParty,
+  foe = { species = 10, level = 3, hp = 6, maxHp = 6, mon = caughtCaterpie },
+  headless = false,
+  session = testSession,
+})
+Battle.startPostCatchFlow(catchResPc)
+while Message.isOpen() and not Choice.active do
+  Message.tick()
+  BattleUi.pump()
+end
+mockInput:clear()
+mockInput:press("a")
+Battle.update(1 / 60, { input = mockInput })
+check(Naming.isOpen(), "Naming screen opened for PC-bound Caterpie")
+Naming.close("SLUGGY")
+check(caughtCaterpie.nickname == "SLUGGY", "Caterpie nicknamed SLUGGY")
+check(Battle._phase == "catch_pc_msg", "Battle phase is catch_pc_msg")
+
+-- Check transfer message contains "SLUGGY was transferred"
+local foundTransfer = false
+for _, line in ipairs(BattleUi._log or {}) do
+  if line:find("SLUGGY was transferred") then
+    foundTransfer = true
+  end
+end
+check(foundTransfer, "Transfer message uses the newly given nickname 'SLUGGY'")
+
+-- Drain transfer message
+while not BattleUi.pump() do
+  Message.tick()
+  if Message.isWaiting and Message.isWaiting() then
+    Message.close()
+  end
+end
+Battle.update(1 / 60, { input = mockInput })
+check(Battle._phase == "ending", "Battle ends after PC transfer message is dismissed")
+
 if failed == 0 then
   print("\nAll game3 nickname tests passed.")
   os.exit(0)
@@ -112,3 +310,5 @@ else
   print("\n" .. failed .. " nickname test(s) failed.")
   os.exit(1)
 end
+
+

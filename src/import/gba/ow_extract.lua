@@ -189,11 +189,22 @@ function OwExtract.extractOne(rom, graphicsId, palsByTag, version)
   if w < 8 or h < 8 or w > 128 or h > 128 then
     return nil, "bad dimensions"
   end
-  -- Only ANIM_STD_* (0..19). Run/spin anims can reference higher indices
-  -- that aren't in the base pic table for ordinary NPCs.
-  local maxFrame = max_anim_frame(rom, info.animsPtr, 20)
-  local frameCount = math.max(1, maxFrame + 1)
-  if frameCount > 18 then frameCount = 18 end
+  local frameCount
+  if info.inanimate then
+    frameCount = 1
+  else
+    -- Only ANIM_STD_* (0..19). Run/spin anims can reference higher indices
+    -- that aren't in the base pic table for ordinary NPCs.
+    local maxFrame = max_anim_frame(rom, info.animsPtr, 20)
+    frameCount = math.max(1, maxFrame + 1)
+    if frameCount > 18 then frameCount = 18 end
+  end
+
+  -- For Town Map (OBJ_EVENT_GFX_TOWN_MAP = 93) or 16x16 inanimate objects with 32x16 OAM allocation:
+  -- The sprite is a 16x16 tile image on the left; adjust width to 16 for proper 1:1 tile grid alignment.
+  if info.inanimate and w == 32 and h == 16 then
+    w = 16
+  end
 
   local imagesOff = gba_off(info.imagesPtr)
   if not imagesOff then return nil, "bad images ptr" end

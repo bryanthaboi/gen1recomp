@@ -190,4 +190,63 @@ do
   end
 end
 
+-- Test 7: Hud.isMenuOpen reflects pause menu and other modal menus
+do
+  local Hud = require("src.ui.game3.hud")
+  StartMenu.close()
+  check(not Hud.isMenuOpen(), "isMenuOpen is false when no menu open")
+
+  StartMenu.show({ session = {}, game = {} })
+  check(Hud.isMenuOpen(), "isMenuOpen is true when StartMenu open")
+  check(Hud.busy(), "Hud.busy is true when StartMenu open")
+
+  StartMenu.close()
+  check(not Hud.isMenuOpen(), "isMenuOpen is false after closing StartMenu")
+end
+
+-- Test 8: Runtime.update pauses field and pumpRtc while pause menu is open
+do
+  local Runtime = require("src.core.game3.runtime")
+  local Field = require("src.core.game3.field")
+  local session = {
+    map = "FR_PALLET_TOWN",
+    x = 5, y = 5,
+    playtime = { hours = 1, minutes = 20, seconds = 30, vblanks = 0 },
+  }
+  local game = { session = session, save = {} }
+  Runtime.start(nil, game, session, { reason = "test", alreadyOnMap = true })
+
+  local fieldUpdateCount = 0
+  local origFieldUpdate = Field.update
+  Field.update = function(dt)
+    fieldUpdateCount = fieldUpdateCount + 1
+  end
+
+  -- 1. Normal field tick (unpaused)
+  Runtime.update(1 / 60)
+  eq(fieldUpdateCount, 1, "Field.update called when unpaused")
+
+  -- 2. Open pause menu (StartMenu)
+  StartMenu.show({ session = session, game = game })
+  local prevSeconds = session.playtime.seconds
+  local prevAcc = Runtime._playTimeAcc or 0
+
+  -- Tick many frames while pause menu is open (simulating fast-forward logic ticks)
+  for _ = 1, 120 do
+    Runtime.update(1 / 60)
+  end
+
+  eq(fieldUpdateCount, 1, "Field.update was NOT called while pause menu open")
+  eq(session.playtime.seconds, prevSeconds, "Playtime seconds did NOT tick while pause menu open")
+  eq(Runtime._playTimeAcc, prevAcc, "Playtime accumulator did NOT advance while pause menu open")
+
+  -- 3. Close pause menu
+  StartMenu.close()
+  Runtime.update(1 / 60)
+  eq(fieldUpdateCount, 2, "Field.update resumed after closing pause menu")
+
+  Field.update = origFieldUpdate
+  Runtime.stop(nil, game)
+end
+
 T.finish("game3_pause_and_main_menu_exit_test")

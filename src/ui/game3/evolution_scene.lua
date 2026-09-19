@@ -489,10 +489,13 @@ function EvolutionScene.update(dt)
       EvolutionScene._preScale = 0
       EvolutionScene._postScale = 1.0
 
+      -- Stop evolution BGM on burst (pokefirered m4aMPlayAllStop)
+      Audio.playSong(0)
+
       -- POINT OF NO RETURN: Mutate species, stats, nickname, dex, Shedinja now
       Evolution.apply(EvolutionScene._mon, EvolutionScene._postSpecies, EvolutionScene._session, EvolutionScene._bag, EvolutionScene._via)
 
-      pcall(function() Audio.playSe(SE.SE_EXP or 1) end)
+      pcall(function() Audio.playSe(SE.SE_M_PETAL_DANCE or 195) end)
       spawn_flash_spray()
     end
 
@@ -510,7 +513,8 @@ function EvolutionScene.update(dt)
     if EvolutionScene._timer >= 45 then
       EvolutionScene._state = "congrats"
       EvolutionScene._timer = 0
-      Audio.playSong(259, { restart = true, loop = false }) -- MUS_EVOLVED
+      Audio.stopCry()
+      Audio.playFanfare(259) -- MUS_EVOLVED
 
       local fromName = EvolutionScene._nick or clean_string(Pokemon.name(EvolutionScene._preSpecies))
       local intoName = Pokemon.name(EvolutionScene._postSpecies) or "POKéMON"

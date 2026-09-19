@@ -982,12 +982,8 @@ function Adapters.host(mod, game, world)
       if Message.isOpen and Message.isOpen() and Message.close then
         Message.close()
       end
+      Fade.clear()
       Naming.open(opts)
-      -- fadescreen FADE_TO_BLACK leaves Fade.t=16 while inactive; without
-      -- FROM_BLACK the keyboard stays covered (Oak lab nickname soft-lock).
-      if (Fade.t or 0) > 0 or (Fade.isActive and Fade.isActive()) then
-        Fade.begin(Fade.MODE.FROM_BLACK, tonumber(opts.fadeSpeed) or 1)
-      end
     end,
     warp = function(group, num, warpId, x, y, done)
       local Versions = require("src.import.gba.versions")

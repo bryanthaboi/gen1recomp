@@ -271,9 +271,166 @@ do
   Audio.playSong = origPlaySong
 end
 
+print("=== [TEST 9] In-Battle Evolution Flow, Input Routing & Ending Transition ===")
+do
+  local Battle = require("src.core.game3.battle")
+  local mon = { species = 10, speciesId = 10, level = 7, hp = 20, maxHp = 20, moves = { 33, 81 } }
+  local session = { party = { mon } }
+
+  -- Initialize battle state
+  Battle.start({
+    playerParty = { mon },
+    foe = { species = 16, level = 3, hp = 10, maxHp = 10, moves = { 33 } },
+    session = session,
+    headless = false,
+    wild = true,
+  })
+
+  -- Simulate winning battle with level-up to 7 (Caterpie evolves at 7 -> Metapod)
+  Battle._leveledUp = { [1] = true }
+  Battle._pendingEnd = "win"
+  Battle._phase = "awarding"
+  local EvoSeq = require("src.core.game3.battle.evo_seq")
+  local Evolution = require("src.core.game3.evolution")
+  local pending = Evolution.pending(session.party, Battle._leveledUp, session)
+  local hooks = Battle._choiceHooksForTests()
+  hooks.session = session
+  local started = EvoSeq.begin(pending, hooks)
+  check(started == true, "EvoSeq began pending evolution for Caterpie")
+  Battle._phase = "evolving"
+
+  local mockGame = {
+    input = {
+      wasPressed = function(_, k) return k == "a" end,
+      isDown = function() return false end,
+    }
+  }
+
+  -- First tick of Battle.update runs EvoSeq.update() -> launches EvolutionScene.start()
+  Battle.update(1 / 60, mockGame)
+
+  check(Battle._phase == "evolving", "Battle transitioned to 'evolving' phase")
+  check(EvolutionScene.isOpen() == true, "EvolutionScene opened during battle")
+
+  -- Pump Battle.update through all animation frames until evolution completes
+  local guard = 0
+  while (Battle._phase == "evolving" or EvolutionScene.isOpen()) and guard < 1000 do
+    guard = guard + 1
+    Battle.update(1 / 60, mockGame)
+    if EvolutionScene.isOpen() then
+      EvolutionScene.update(1 / 60)
+    end
+  end
+
+  check(EvolutionScene.isOpen() == false, "EvolutionScene closed cleanly without softlock")
+  check(mon.species == 11, "Caterpie evolved into Metapod (species 11)")
+  check(Battle._phase == "ending", "Battle transitioned to 'ending' phase after evolution")
+end
+
+print("=== [TEST 10] Evolution Audio Choreography Flow (pokefirered Parity) ===")
+do
+  local Audio = require("src.core.game3.audio")
+  local events = {}
+  local origPlaySong = Audio.playSong
+  local origPlayFanfare = Audio.playFanfare
+  local origPlaySe = Audio.playSe
+  local origPlayCry = Audio.playCry
+
+  Audio.playSong = function(id, opts)
+    events[#events + 1] = { kind = "song", id = id }
+    return origPlaySong(id, opts)
+  end
+  Audio.playFanfare = function(id)
+    events[#events + 1] = { kind = "fanfare", id = id }
+    return origPlayFanfare(id)
+  end
+  Audio.playSe = function(id)
+    events[#events + 1] = { kind = "se", id = id }
+    return origPlaySe(id)
+  end
+  Audio.playCry = function(species)
+    events[#events + 1] = { kind = "cry", species = species }
+    return origPlayCry(species)
+  end
+
+  Audio._mapSong = 279
+  Audio._currentSong = { id = 279 }
+
+  local mon = { species = 1, speciesId = 1, level = 16, hp = 40, maxHp = 40, moves = { 33, 39, 43, 99 } }
+  EvolutionScene.start(mon, 2, {
+    canStop = false,
+    headless = true,
+    savedSong = 279,
+  })
+
+  for _ = 1, 800 do
+    EvolutionScene.update(1 / 60)
+    if EvolutionScene._state == "congrats" or EvolutionScene._state == "learn_moves" then
+      local mockInput = {
+        wasPressed = function(_, k) return k == "a" end,
+        isDown = function() return false end,
+      }
+      EvolutionScene.handleInput(mockInput)
+    end
+  end
+
+  -- Verify audio event sequence:
+  -- 1. Pre-evo cry
+  -- 2. MUS_EVOLUTION_INTRO (263)
+  -- 3. MUS_EVOLUTION (264)
+  -- 4. Stop evolution BGM (song 0) + SE_M_PETAL_DANCE (195) (NOT SE_EXP!)
+  -- 5. Post-evo cry
+  -- 6. MUS_EVOLVED (259)
+  local foundPreCry, foundIntroSong, foundEvoSong, foundBurstSe, foundPostCry, foundEvolvedFanfare = false, false, false, false, false, false
+  local hasWrongSeExp = false
+
+  for _, ev in ipairs(events) do
+    if ev.kind == "se" and ev.id == 27 then -- SE_EXP
+      hasWrongSeExp = true
+    end
+  end
+  check(not hasWrongSeExp, "SE_EXP (27) is NOT played before or during evolution fanfare")
+
+  -- Check ordering
+  local idx = 1
+  for _, ev in ipairs(events) do
+    if idx == 1 and ev.kind == "cry" and ev.species == 1 then
+      foundPreCry = true
+      idx = 2
+    elseif idx == 2 and ev.kind == "song" and ev.id == 263 then
+      foundIntroSong = true
+      idx = 3
+    elseif idx == 3 and ev.kind == "song" and ev.id == 264 then
+      foundEvoSong = true
+      idx = 4
+    elseif idx == 4 and ev.kind == "se" and ev.id == 195 then -- SE_M_PETAL_DANCE
+      foundBurstSe = true
+      idx = 5
+    elseif idx == 5 and ev.kind == "cry" and ev.species == 2 then
+      foundPostCry = true
+      idx = 6
+    elseif idx == 6 and (ev.kind == "song" or ev.kind == "fanfare") and ev.id == 259 then
+      foundEvolvedFanfare = true
+      idx = 7
+    end
+  end
+
+  check(foundPreCry, "1. Pre-evo cry played first")
+  check(foundIntroSong, "2. MUS_EVOLUTION_INTRO (263) played")
+  check(foundEvoSong, "3. MUS_EVOLUTION (264) played")
+  check(foundBurstSe, "4. SE_M_PETAL_DANCE (195) played on burst")
+  check(foundPostCry, "5. Post-evo cry played after burst")
+  check(foundEvolvedFanfare, "6. MUS_EVOLVED (259) fanfare played on congratulations")
+
+  Audio.playSong = origPlaySong
+  Audio.playFanfare = origPlayFanfare
+  Audio.playSe = origPlaySe
+  Audio.playCry = origPlayCry
+end
+
 if failed > 0 then
   print(string.format("\n[FAILED] %d test(s) failed", failed))
   os.exit(1)
 else
-  print("\nALL 8 EVOLUTION SCENE TESTS PASSED CLEANLY!")
+  print("\nALL 10 EVOLUTION SCENE TESTS PASSED CLEANLY!")
 end

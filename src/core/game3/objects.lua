@@ -665,6 +665,10 @@ local function idleTick(eo, game, ctx)
   if eo.frozen or eo.scriptBusy or eo.moving or eo.hidden or not eo.visible then
     return
   end
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field.locked then return end
+  local Hud = package.loaded["src.ui.game3.hud"]
+  if Hud and Hud.isMenuOpen and Hud.isMenuOpen() then return end
   if eo.movement == "RAISE_HAND" then
     raiseHandTick(eo)
     return

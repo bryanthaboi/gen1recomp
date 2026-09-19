@@ -768,9 +768,6 @@ local function run_step(step)
       if res and res.firstTimeCaught then
         CatchSeq._pushMsg(ename .. "'s data was\nadded to the POKéDEX.")
       end
-      if res and res.location == "pc" then
-        CatchSeq._pushMsg(ename .. " was transferred\nto the PC.")
-      end
     end
     advance()
     return

@@ -146,7 +146,7 @@ function Gfx.drawUi()
   end
 
   local okF, Fade = pcall(require, "src.ui.game3.fade")
-  if okF and Fade.draw then
+  if okF and Fade.draw and not (okN and Naming.isOpen and Naming.isOpen()) then
     Fade.draw()
   end
 

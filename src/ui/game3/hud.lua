@@ -22,19 +22,23 @@ local function log(msg)
   print("[game3] " .. tostring(msg))
 end
 
-function Hud.busy()
-  local Battle = package.loaded["src.core.game3.battle"]
-  if Battle and Battle.isActive and Battle.isActive() then return true end
+function Hud.isMenuOpen()
   local Naming = package.loaded["src.ui.game3.naming"]
-  local Fade = package.loaded["src.ui.game3.fade"]
-  return Message.isOpen() or Choice.active or Stack.busy()
-    or (Naming and Naming.isOpen and Naming.isOpen())
-    or (Fade and Fade.isActive and Fade.isActive())
+  return Stack.busy()
     or StartMenu.isOpen() or BagMenu.isOpen() or RegionMap.isOpen()
     or PartyMenu.isOpen() or SummaryMenu.isOpen() or Pokedex.isOpen()
     or OptionMenu.isOpen() or SaveMenu.isOpen()
     or TrainerCard.isOpen() or PcMenu.isOpen()
     or ShopMenu.isOpen()
+    or (Naming and Naming.isOpen and Naming.isOpen())
+end
+
+function Hud.busy()
+  local Battle = package.loaded["src.core.game3.battle"]
+  if Battle and Battle.isActive and Battle.isActive() then return true end
+  local Fade = package.loaded["src.ui.game3.fade"]
+  return Message.isOpen() or Choice.active or Hud.isMenuOpen()
+    or (Fade and Fade.isActive and Fade.isActive())
     or Hud._waitButton ~= nil
 end
 
@@ -168,11 +172,14 @@ function Hud.update(game, _dt)
     end
   end
 
-  -- Active stack modal menu input takes top precedence when NOT in battle.
-  -- When battle is active, Battle.update is the sole dispatcher for battle menus.
-  if not inBattle and Stack.busy() then
-    if update_top_menu(input) then
-      return
+  -- Active stack modal menu input takes top precedence.
+  -- When battle is active, overlays like EvolutionScene or modal stack menus still receive input.
+  if Stack.busy() then
+    local top = Stack.top()
+    if (not inBattle) or (top and (top.id == "evolution_scene" or top.id == "naming" or top.id == "summary_menu")) then
+      if update_top_menu(input) then
+        return
+      end
     end
   end
 

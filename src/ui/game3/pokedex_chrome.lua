@@ -250,6 +250,8 @@ function PokedexChrome.drawKeypadIcon(iconName, x, y)
 end
 
 local ICON_TAG_MAP = {
+  ["{DPAD_ANY}"] = { icon = "dpad_updown", w = 8 },
+  ["{DPAD_ALL}"] = { icon = "dpad_updown", w = 8 },
   ["{DPAD_UPDOWN}"] = { icon = "dpad_updown", w = 8 },
   ["{DPAD_UD}"] = { icon = "dpad_updown", w = 8 },
   ["{DPAD_LEFTRIGHT}"] = { icon = "dpad_leftright", w = 8 },

@@ -46,7 +46,16 @@ local testBag = Bag.new()
 Bag.add(testBag, 1, 5) -- Master Ball (POKE_BALLS)
 Bag.add(testBag, 4, 10) -- Poke Ball (POKE_BALLS)
 Bag.add(testBag, 13, 3) -- Potion (ITEMS)
-Bag.add(testBag, 375, 1) -- Town Map (KEY_ITEMS)
+Bag.add(testBag, 360, 1) -- Bicycle (KEY_ITEMS)
+Bag.add(testBag, 361, 1) -- Town Map (KEY_ITEMS)
+
+local playedSe = {}
+local Audio = require("src.core.game3.audio")
+local origPlaySe = Audio.playSe
+Audio.playSe = function(id)
+  table.insert(playedSe, id)
+  if origPlaySe then pcall(origPlaySe, id) end
+end
 
 local closed = false
 local session = {
@@ -76,13 +85,30 @@ local mockInput = {
   clear = function(self) self._pressed = {} end,
 }
 
+playedSe = {}
 mockInput:set("right")
 BagMenu.handleInput(mockInput)
 check(BagMenu.currentPocket() == "KEY_ITEMS", "right advances to KEY_ITEMS pocket")
+check(#playedSe > 0 and playedSe[#playedSe] == 246, "SE_BAG_POCKET (246) played on pocket switch right")
 
+playedSe = {}
 mockInput:set("right")
 BagMenu.handleInput(mockInput)
 check(BagMenu.currentPocket() == "POKE_BALLS", "right advances to POKE_BALLS pocket")
+check(#playedSe > 0 and playedSe[#playedSe] == 246, "SE_BAG_POCKET (246) played on second pocket switch right")
+
+playedSe = {}
+mockInput:set("left")
+BagMenu.handleInput(mockInput)
+check(BagMenu.currentPocket() == "KEY_ITEMS", "left advances to KEY_ITEMS pocket")
+check(#playedSe > 0 and playedSe[#playedSe] == 246, "SE_BAG_POCKET (246) played on pocket switch left")
+
+-- Vertical cursor movement
+BagMenu.settle()
+playedSe = {}
+mockInput:set("down")
+BagMenu.handleInput(mockInput)
+check(#playedSe > 0 and playedSe[#playedSe] == 245, "SE_BAG_CURSOR (245) played on cursor move down")
 
 BagMenu.settle()
 mockInput:set("b")
@@ -90,6 +116,8 @@ BagMenu.handleInput(mockInput)
 BagMenu.settle()
 check(BagMenu.isOpen() == false, "B closes bag menu")
 check(closed == true, "onClose called")
+
+Audio.playSe = origPlaySe
 
 print("[test] 4. ShopMenu Purchasing, Selling, and Premier Ball Bonus")
 local ShopMenu = require("src.ui.game3.shop_menu")

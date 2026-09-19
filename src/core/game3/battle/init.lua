@@ -15,6 +15,7 @@ local EvoSeq = require("src.core.game3.battle.evo_seq")
 local IntroSeq = require("src.core.game3.battle.intro_seq")
 local CatchSeq = require("src.core.game3.battle.catch_seq")
 local Experience = require("src.core.game3.battle.experience")
+local Pokemon = require("src.core.game3.pokemon")
 local Evolution = require("src.core.game3.evolution")
 local LearnMove = require("src.core.game3.battle.learn_move")
 local Task = require("src.core.game3.task")
@@ -2018,6 +2019,89 @@ function D.run(act)
   return D.afterEach()
 end
 
+local function finish_catch_flow(catchRes, ename)
+  if catchRes and catchRes.location == "pc" then
+    Battle._phase = "catch_pc_msg"
+    local name = (catchRes.mon and (catchRes.mon.nickname ~= "" and catchRes.mon.nickname or catchRes.mon.name))
+      or ename or "POKéMON"
+    Ui.push(name .. " was transferred\nto the PC.")
+    return
+  end
+  Battle._actions = {}
+  Battle._pendingEnd = "catch"
+  Battle._phase = "ending"
+end
+
+local function start_post_catch_flow(catchRes)
+  if Battle._headless then
+    Battle._actions = {}
+    Battle._pendingEnd = "catch"
+    Battle._phase = "ending"
+    return
+  end
+
+  local enemy = Battle._st and Battle._st.enemy
+  local mon = (catchRes and catchRes.mon) or (enemy and enemy.mon)
+  local sp = (enemy and enemy.mon and (enemy.mon.species or enemy.mon.speciesId))
+    or (catchRes and catchRes.mon and (catchRes.mon.species or catchRes.mon.speciesId))
+    or (enemy and enemy.species) or 1
+  local ename = (mon and (mon.nickname ~= "" and mon.nickname or mon.name))
+    or Pokemon.name(sp) or "POKéMON"
+  local gender = (mon and (mon.gender or (mon.isFemale and 1))) or (enemy and enemy.gender) or 0
+  local personality = (mon and mon.personality) or 0
+
+  local function prompt_nickname()
+    Battle._phase = "catch_nickname_prompt"
+    -- pokefirered/src/battle_message.c:477
+    Ui.askYesNo("Give a nickname to the\ncaptured " .. ename .. "?", function(yes)
+      if yes then
+        local okN, Naming = pcall(require, "src.ui.game3.naming")
+        if okN and Naming and Naming.open then
+          Battle._phase = "catch_naming"
+          Naming.open({
+            template = "CAUGHT_MON",
+            maxLen = 10,
+            species = sp,
+            gender = gender,
+            personality = personality,
+            seed = ename,
+            title = "YOUR POKEMON'S NICKNAME?",
+            onDone = function(nick)
+              if nick and nick ~= "" and nick ~= ename then
+                if mon then mon.nickname = nick end
+              end
+              finish_catch_flow(catchRes, ename)
+            end,
+          })
+          return
+        end
+      end
+      finish_catch_flow(catchRes, ename)
+    end)
+  end
+
+  if catchRes and catchRes.firstTimeCaught and sp then
+    local okP, Pokedex = pcall(require, "src.ui.game3.pokedex")
+    if okP and Pokedex and Pokedex.showRegistration then
+      Battle._phase = "pokedex_reg"
+      local Runtime = package.loaded["src.core.game3.runtime"]
+      local session = Runtime and Runtime.getSession and Runtime.getSession()
+      Pokedex.showRegistration(sp, {
+        session = session,
+        onDone = function()
+          prompt_nickname()
+        end,
+      })
+      return
+    end
+  end
+
+  prompt_nickname()
+end
+
+Battle.startPostCatchFlow = start_post_catch_flow
+Battle.finishCatchFlow = finish_catch_flow
+
 function Battle.update(dt, game)
   if not Battle._active then return end
 
@@ -2025,6 +2109,12 @@ function Battle.update(dt, game)
   local Pokedex = package.loaded["src.ui.game3.pokedex"]
   if Pokedex and Pokedex.isOpen and Pokedex.isOpen() then
     if input then Pokedex.handleInput(input) end
+    return
+  end
+
+  local Naming = package.loaded["src.ui.game3.naming"]
+  if Naming and Naming.isOpen and Naming.isOpen() then
+    if input then Naming.update(input, dt or (1 / 60)) end
     return
   end
 
@@ -2077,9 +2167,15 @@ function Battle.update(dt, game)
     return
   end
 
-  -- Choice input during award / shift prompt / evolution learn-move prompts
-  if (Battle._phase == "awarding" or Battle._phase == "evolving" or Battle._phase == "switching" or Battle._phase == "shift_prompt")
+  -- Choice input during award / shift prompt / evolution learn-move prompts / catch nickname prompt / evolving
+  if (Battle._phase == "awarding" or Battle._phase == "evolving" or Battle._phase == "switching"
+      or Battle._phase == "shift_prompt" or Battle._phase == "catch_nickname_prompt")
       and not Battle._auto and game and game.input then
+    local EvolutionScene = package.loaded["src.ui.game3.evolution_scene"]
+    if EvolutionScene and EvolutionScene.isOpen and EvolutionScene.isOpen() then
+      EvolutionScene.handleInput(game.input)
+      return
+    end
     local StatGrowth = package.loaded["src.ui.game3.stat_growth"]
     if StatGrowth and StatGrowth.isOpen and StatGrowth.isOpen() then
       if StatGrowth.handleInput(game.input) then
@@ -2118,12 +2214,34 @@ function Battle.update(dt, game)
   if Battle._phase == "startfx" then
     if Anim.busy() then return end
     if not Ui.pump() then return end
-    if not AnimSeq.update() then return end
-    Battle._phase = "command"
-    if Battle._auto then
-      begin_turn_with(Commands.playerAction(Battle._st, 1, 1))
-    else
-      Ui.openMenu()
+    if AnimSeq.update() then
+      Battle._phase = "command"
+      if Battle._auto then
+        begin_turn_with(Commands.playerAction(Battle._st, 1, 1))
+      else
+        Ui.openMenu()
+      end
+    end
+    return
+  end
+
+  -- Mid-turn switch-in during faint / pursuit
+  if Battle._phase == "faint_switch" then
+    local PartyMenu = package.loaded["src.ui.game3.party_menu"]
+    if PartyMenu and PartyMenu.isOpen and PartyMenu.isOpen() then
+      if input then party_menu_input(PartyMenu, input) end
+      return
+    end
+    if Anim.busy() then return end
+    if Ui.choiceActive and Ui.choiceActive() then
+      return
+    end
+    if not Ui.pump() then return end
+    if SwitchSeq.update() then
+      Battle._phase = "actions"
+      if not Battle._actions or not Battle._actions[Battle._actionI] then
+        after_actions()
+      end
     end
     return
   end
@@ -2220,28 +2338,7 @@ function Battle.update(dt, game)
       local res = CatchSeq.result()
       if res == "catch" then
         local catchRes = CatchSeq.catchResult and CatchSeq.catchResult()
-        local enemy = Battle._st and Battle._st.enemy
-        local sp = enemy and enemy.mon and (enemy.mon.species or enemy.mon.speciesId)
-        if catchRes and catchRes.firstTimeCaught and sp and not Battle._headless then
-          local okP, Pokedex = pcall(require, "src.ui.game3.pokedex")
-          if okP and Pokedex and Pokedex.showRegistration then
-            Battle._phase = "pokedex_reg"
-            local Runtime = package.loaded["src.core.game3.runtime"]
-            local session = Runtime and Runtime.getSession and Runtime.getSession()
-            Pokedex.showRegistration(sp, {
-              session = session,
-              onDone = function()
-                Battle._actions = {}
-                Battle._pendingEnd = "catch"
-                Battle._phase = "ending"
-              end,
-            })
-            return
-          end
-        end
-        Battle._actions = {}
-        Battle._pendingEnd = "catch"
-        Battle._phase = "ending"
+        start_post_catch_flow(catchRes)
       else
         Battle._phase = "actions"
         if not Battle._actions or not Battle._actions[Battle._actionI] then
@@ -2253,6 +2350,23 @@ function Battle.update(dt, game)
   end
 
   if Battle._phase == "pokedex_reg" then
+    return
+  end
+
+  if Battle._phase == "catch_nickname_prompt" then
+    if not Ui.pump() then return end
+    return
+  end
+
+  if Battle._phase == "catch_naming" then
+    return
+  end
+
+  if Battle._phase == "catch_pc_msg" then
+    if not Ui.pump() then return end
+    Battle._actions = {}
+    Battle._pendingEnd = "catch"
+    Battle._phase = "ending"
     return
   end
 
@@ -2277,6 +2391,13 @@ function Battle.update(dt, game)
 
   -- Post-battle evolution (EVO_LEVEL)
   if Battle._phase == "evolving" then
+    local EvolutionScene = package.loaded["src.ui.game3.evolution_scene"]
+    if EvolutionScene and EvolutionScene.isOpen and EvolutionScene.isOpen() then
+      if not Battle._auto and game and game.input then
+        EvolutionScene.handleInput(game.input)
+      end
+      return
+    end
     if Ui.choiceActive and Ui.choiceActive() then return end
     if not Ui.pump() then return end
     local done = EvoSeq.update()
