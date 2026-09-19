@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.64",
+          "date": "2026-09-19",
+          "size": 24153580,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.64/gen1recomp++-0.2.64-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #1039 Encounter rate grace period not working\n- #1229 Encounter rate grace period not working\n- #2297 FireRed: Leaving the house through a wall\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @Nexhas28"
+        },
+        {
           "version": "0.2.63",
           "date": "2026-09-19",
           "size": 24142328,
