@@ -507,11 +507,12 @@ local function finishStep(game)
     Field.tryCoordEvents(game, Player.cellX, Player.cellY)
   end
 
-  -- Wild encounters on grass when step completes (pret StandardWildEncounter).
+  -- Wild encounters on grass/water when step completes (pret StandardWildEncounter).
   local onGrass = Collision.isGrass and Collision.isGrass(Player.cellX, Player.cellY)
+  local onWater = Player.surfing and (Collision.isWater and Collision.isWater(Player.cellX, Player.cellY))
   local okE, Encounters = pcall(require, "src.core.game3.encounters")
   local triggeredBattle = false
-  if onGrass and okE and Encounters and Encounters.onStep then
+  if (onGrass or onWater) and okE and Encounters and Encounters.onStep then
     local Battle = package.loaded["src.core.game3.battle"]
     local busy = (Battle and Battle.isActive and Battle.isActive()) or Field.locked
     local Space = package.loaded["src.core.game3.scripting.space"]
@@ -525,23 +526,33 @@ local function finishStep(game)
         mapId = Map and Map.current
       end
       local enterFromOther = not (Encounters._prevGrass)
-      local enc = Encounters.onStep(mapId, "land", { enterFromOther = enterFromOther })
+      local terrain = onWater and "water" or "land"
+      local enc = Encounters.onStep(mapId, terrain, { enterFromOther = enterFromOther })
       if enc then
-        local Runtime = package.loaded["src.core.game3.runtime"]
-        local BattleBridge = require("src.core.game3.battle_bridge")
-        local mod = Runtime and Runtime._mod
-        local g = game or (Runtime and Runtime._game)
-        local okB, errB = BattleBridge.startWild(mod, g, enc, {})
-        if not okB then
-          print("[game3/encounters] startWild failed: " .. tostring(errB))
-        else
-          triggeredBattle = true
+        -- Repel gating: pokefirered/src/wild_encounter.c:215
+        local repelSteps = tonumber(session and (session.repelSteps or (session.vars and session.vars[0x4020]))) or 0
+        local leadLevel = 1
+        if session and session.party and session.party[1] then
+          leadLevel = tonumber(session.party[1].level) or 1
+        end
+        local repelled = (repelSteps > 0) and (tonumber(enc.level) or 1) <= leadLevel
+        if not repelled then
+          local Runtime = package.loaded["src.core.game3.runtime"]
+          local BattleBridge = require("src.core.game3.battle_bridge")
+          local mod = Runtime and Runtime._mod
+          local g = game or (Runtime and Runtime._game)
+          local okB, errB = BattleBridge.startWild(mod, g, enc, {})
+          if not okB then
+            print("[game3/encounters] startWild failed: " .. tostring(errB))
+          else
+            triggeredBattle = true
+          end
         end
       end
     end
   end
   if okE and Encounters and Encounters.noteGrass then
-    Encounters.noteGrass(onGrass)
+    Encounters.noteGrass(onGrass or onWater)
   end
   if onGrass then
     local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")

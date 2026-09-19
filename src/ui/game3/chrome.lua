@@ -325,6 +325,8 @@ local function ensureUser(frameType)
   local img, path = loadImage({
     { path = rel, w = 24, h = 24 },
     { path = "data/generated/gba/" .. rel, w = 24, h = 24 },
+    { path = "src/import/gba/chrome/user_frame_" .. n .. ".png", w = 24, h = 24 },
+    { path = "src/import/gba/chrome/user_frame_rgba.png", w = 24, h = 24 },
   })
   Chrome._user[n] = img and { image = img, quads = makeQuads(img, 3, 3), path = path } or false
   return Chrome._user[n] or nil
@@ -352,10 +354,9 @@ end
 
 --- pret std 9-slice around content (tx,ty,tw,th) in tiles.
 function Chrome.stdFrame(tx, ty, tw, th)
-  if (Chrome._frameType or 0) > 0 then
-    local user = ensureUser(Chrome._frameType)
-    if user then return drawNineSlice(user, tx, ty, tw, th) end
-  end
+  local ft = Chrome._frameType or 0
+  local user = ensureUser(ft)
+  if user then return drawNineSlice(user, tx, ty, tw, th) end
   local atlas = ensureStd()
   if atlas then return drawNineSlice(atlas, tx, ty, tw, th) end
   fillRect(tx * T - 8, ty * T - 8, (tw + 2) * T, (th + 2) * T, 98 / 255, 115 / 255, 123 / 255, 1)
@@ -399,7 +400,7 @@ end
 
 --- pret MapNamePopupCreateWindow 9-slice banner at pixel coordinates (px, py).
 -- Content size is (widthTiles * 8) wide by 16 high.
--- Outer border spans: x in [px, px + (widthTiles + 2)*8], y in [py - 8, py + 24].
+-- Outer border spans: x in [px, px + (widthTiles + 2)*8], y in [py, py + 24].
 function Chrome.mapPopupFrame(px, py, widthTiles)
   widthTiles = tonumber(widthTiles) or 14
   local contentW = widthTiles * 8
@@ -407,38 +408,36 @@ function Chrome.mapPopupFrame(px, py, widthTiles)
 
   if atlas then
     love.graphics.setColor(1, 1, 1, 1)
-    local function cell(tile, cx, cy)
-      blitTile(atlas, tile, cx, cy, false)
+    local function cell(tile, cx, cy, vflip)
+      blitTile(atlas, tile, cx, cy, vflip)
     end
-    local function hspan(tile, cx, cy, n)
-      for i = 0, n - 1 do cell(tile, cx + i * 8, cy) end
+    local function hspan(tile, cx, cy, n, vflip)
+      for i = 0, n - 1 do cell(tile, cx + i * 8, cy, vflip) end
     end
 
     -- 1. Content background: pure white PIXEL_FILL(1)
-    fillRect(px + 8, py, contentW, 16, 1, 1, 1, 1)
+    fillRect(px + 8, py + 4, contentW, 16, 1, 1, 1, 1)
 
-    -- 2. Top edge (row -1, y = py - 8)
-    cell(0, px, py - 8)
-    hspan(1, px + 8, py - 8, widthTiles)
-    cell(2, px + 8 + contentW, py - 8)
+    -- 2. Top edge (row 0, y = py) — mirrored from bottom edge (tiles 6, 7, 8 vflipped)
+    cell(6, px, py, true)
+    hspan(7, px + 8, py, widthTiles, true)
+    cell(8, px + 8 + contentW, py, true)
 
-    -- 3. Left & Right borders (height = 2 tiles / 16px)
-    cell(3, px, py)
+    -- 3. Left & Right borders (height = 1 tile / 8px middle row, y = py + 8)
     cell(3, px, py + 8)
-    cell(5, px + 8 + contentW, py)
     cell(5, px + 8 + contentW, py + 8)
 
-    -- 4. Bottom edge (row +2, y = py + 16)
-    cell(6, px, py + 16)
-    hspan(7, px + 8, py + 16, widthTiles)
-    cell(8, px + 8 + contentW, py + 16)
+    -- 4. Bottom edge (row 2, y = py + 16)
+    cell(6, px, py + 16, false)
+    hspan(7, px + 8, py + 16, widthTiles, false)
+    cell(8, px + 8 + contentW, py + 16, false)
     return
   end
 
   -- Fallback if atlas missing
-  fillRect(px, py - 8, contentW + 16, 32, 98 / 255, 115 / 255, 123 / 255, 1)
-  fillRect(px + 2, py - 6, contentW + 12, 28, 205 / 255, 213 / 255, 213 / 255, 1)
-  fillRect(px + 8, py, contentW, 16, 1, 1, 1, 1)
+  fillRect(px, py, contentW + 16, 24, 98 / 255, 115 / 255, 123 / 255, 1)
+  fillRect(px + 2, py + 2, contentW + 12, 20, 205 / 255, 213 / 255, 213 / 255, 1)
+  fillRect(px + 8, py + 4, contentW, 16, 1, 1, 1, 1)
 end
 
 function Chrome.invalidate()

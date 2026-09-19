@@ -1142,7 +1142,15 @@ function PartyMenu.handleInput(input)
     if input:wasPressed("a") then
       if PartyMenu.cursor == 7 then
         se(9)
-        PartyMenu.close()
+        if PartyMenu._onSelect then
+          PartyMenu._onSelect(nil)
+        else
+          PartyMenu.close()
+        end
+        return
+      end
+      if PartyMenu._onSelect then
+        PartyMenu._onSelect(PartyMenu.cursor)
         return
       end
       local mon = PartyMenu._party and PartyMenu._party[PartyMenu.cursor]

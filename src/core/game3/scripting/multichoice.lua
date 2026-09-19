@@ -4,24 +4,7 @@
 
 local Multichoice = {}
 
--- Common FRLG list ids used on Sevii / centers (approximate; extract overrides).
-Multichoice.LISTS = {
-  -- Generic YES/NO style already uses Choice.yesNo; keep lists for multichoice ops.
-  [0] = { labels = { "YES", "NO" }, left = 22, top = 8 },
-  [1] = { labels = { "SEE YA!", "INFO" }, left = 20, top = 6 },
-  [2] = { labels = { "ONE ISLAND", "TWO ISLAND", "THREE ISLAND", "EXIT" }, left = 14, top = 4 },
-  [3] = { labels = { "FOUR ISLAND", "FIVE ISLAND", "SIX ISLAND", "SEVEN ISLAND", "EXIT" }, left = 12, top = 3 },
-  [4] = { labels = { "TRADE CENTER", "COLOSSEUM", "EVOLUTION", "EXIT" }, left = 14, top = 5 },
-  [5] = { labels = { "JOIN ROOM", "INFO", "EXIT" }, left = 18, top = 6 },
-  [6] = { labels = { "POKéMON JUMP", "DODRIO BERRY", "EXIT" }, left = 16, top = 6 },
-  [7] = { labels = { "YES", "NO" }, left = 22, top = 8 },
-  [8] = { labels = { "NORMAL", "DIRECT", "EXIT" }, left = 18, top = 6 },
-  [9] = { labels = { "MAKE A GROUP", "ACCEPT INVITE", "EXIT" }, left = 14, top = 6 },
-  -- Ferry / island travel (Sevii)
-  [10] = { labels = { "VERMILION", "ONE ISLAND", "EXIT" }, left = 16, top = 6 },
-  [11] = { labels = { "ONE ISLAND", "TWO ISLAND", "THREE ISLAND", "EXIT" }, left = 14, top = 4 },
-  [12] = { labels = { "GO ON", "INFO", "EXIT" }, left = 18, top = 6 },
-}
+Multichoice.LISTS = {}
 
 --- Override/merge from extract cache if present.
 function Multichoice.loadExtract(tbl)
@@ -43,8 +26,8 @@ function Multichoice.tryLoadCache()
     return true
   end
   -- CacheFS fallback for offline / test loads.
-  local Extract = require("src.import.gba.extract_island1")
-  local root = (Extract.CACHE_ROOT or "data/generated/gba") .. "/scripts/multichoice.lua"
+  local okE, Extract = pcall(require, "src.import.gba.extract_island1")
+  local root = ((okE and Extract and Extract.CACHE_ROOT) or "data/generated/gba") .. "/scripts/multichoice.lua"
   local chunk = loadfile(root)
   if chunk then
     local d = chunk()
@@ -53,8 +36,13 @@ function Multichoice.tryLoadCache()
   return false
 end
 
+-- Preload cache immediately
+Multichoice.tryLoadCache()
+
 function Multichoice.resolve(listId, countHint)
-  Multichoice.tryLoadCache()
+  if not next(Multichoice.LISTS) then
+    Multichoice.tryLoadCache()
+  end
   local id = tonumber(listId) or 0
   local entry = Multichoice.LISTS[id]
   if entry and entry.labels and #entry.labels > 0 then

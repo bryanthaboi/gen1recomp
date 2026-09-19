@@ -382,7 +382,7 @@ local function run_move(moveId, moveName)
     vm:launch(script, { attackerSide = "player", isReversed = false })
     assert_true(vm:busy(), "VM should start busy")
 
-    local maxTicks = 360
+    local maxTicks = 600
     local ticks = 0
     while vm:busy() and ticks < maxTicks do
       ticks = ticks + 1

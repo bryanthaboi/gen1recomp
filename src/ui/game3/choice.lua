@@ -1,4 +1,4 @@
--- Yes/No + multichoice (pret yesnobox / multichoice). Writes VAR_RESULT via callback.
+-- Yes/No + multichoice (pret yesnobox / multichoice / multichoicegrid). Writes VAR_RESULT via callback.
 
 local Window = require("src.ui.game3.window")
 local Display = require("src.core.game3.display")
@@ -12,6 +12,8 @@ Choice.cursor = 1
 Choice.done = nil
 Choice.left = nil
 Choice.top = nil
+Choice.cols = 1
+Choice.ignoreBPress = false
 
 function Choice.yesNo(cb, layout)
   Choice.active = true
@@ -30,6 +32,8 @@ function Choice.yesNo(cb, layout)
   Choice.left = tonumber(layout.left) or (Display.COLS - 8)
   Choice.top = tonumber(layout.top) or 8
   Choice.maxRight = nil
+  Choice.cols = 1
+  Choice.ignoreBPress = layout.ignoreBPress or false
 end
 
 function Choice.multi(options, defaultIdx, cb, layout)
@@ -45,13 +49,46 @@ function Choice.multi(options, defaultIdx, cb, layout)
   Choice.left = tonumber(layout.left) or (Display.COLS - 10)
   Choice.top = tonumber(layout.top) or 5
   Choice.maxRight = tonumber(layout.maxRight)
+  Choice.cols = tonumber(layout.cols) or 1
+  Choice.ignoreBPress = layout.ignoreBPress or false
 end
 
-function Choice.move(delta)
+function Choice.move(dy, dx)
   if not Choice.active or not Choice.options then return end
   local n = #Choice.options
   if n < 1 then return end
-  Choice.cursor = ((Choice.cursor - 1 + delta) % n) + 1
+  local cols = Choice.cols or 1
+  if cols <= 1 then
+    local delta = dy or 0
+    if delta == 0 and dx then delta = dx end
+    if delta ~= 0 then
+      Choice.cursor = ((Choice.cursor - 1 + delta) % n) + 1
+      pcall(function() require("src.core.game3.audio").playSe(5) end)
+    end
+    return
+  end
+
+  -- 2D Grid navigation
+  local rows = math.ceil(n / cols)
+  local cur = Choice.cursor - 1
+  local curCol = cur % cols
+  local curRow = math.floor(cur / cols)
+
+  if dy and dy ~= 0 then
+    curRow = (curRow + dy) % rows
+  end
+  if dx and dx ~= 0 then
+    curCol = (curCol + dx) % cols
+  end
+
+  local target = curRow * cols + curCol
+  if target >= n then
+    target = n - 1
+  end
+  if target + 1 ~= Choice.cursor then
+    Choice.cursor = target + 1
+    pcall(function() require("src.core.game3.audio").playSe(5) end)
+  end
 end
 
 function Choice.confirm()
@@ -63,6 +100,8 @@ function Choice.confirm()
   Choice.active = false
   Choice.kind = nil
   Choice.options = nil
+  Choice.cols = 1
+  Choice.ignoreBPress = false
   Choice.done = nil
   if not cb then return end
   if kind == "yesno" then
@@ -74,12 +113,17 @@ end
 
 function Choice.cancel()
   if not Choice.active then return end
+  if Choice.ignoreBPress then
+    return
+  end
   pcall(function() require("src.core.game3.audio").playSe(9) end)
   local cb = Choice.done
   local kind = Choice.kind
   Choice.active = false
   Choice.kind = nil
   Choice.options = nil
+  Choice.cols = 1
+  Choice.ignoreBPress = false
   Choice.done = nil
   if not cb then return end
   if kind == "yesno" then
@@ -118,25 +162,76 @@ function Choice.draw()
     end
     return
   end
+
   local n = #Choice.options
-  local tw = 8
-  for _, lab in ipairs(Choice.options) do
-    local need = math.min(18, math.max(6, math.floor(#tostring(lab) * 0.7) + 2))
-    if need > tw then tw = need end
-  end
-  local th = math.max(2, math.ceil((n * Window.OPTION_HEIGHT) / 8))
-  local tx = Choice.left or (Display.COLS - tw - 2)
-  if Choice.kind == "multi" and Choice.maxRight and tx + tw > Choice.maxRight then
-    tx = Choice.maxRight - tw
-  end
-  local ty = Choice.top or 5
-  Window.stdFrame(Window.template(tx, ty, tw, th))
-  local leftPx = tx * 8
-  local topPx = ty * 8
-  for i, lab in ipairs(Choice.options) do
-    local yPx = Window.menuRowPx(topPx, i)
-    if i == Choice.cursor then Window.cursorPx(leftPx, yPx) end
-    Window.printPx(lab, leftPx + Window.CURSOR_WIDTH, yPx)
+  local cols = Choice.cols or 1
+  if cols <= 1 then
+    local tw = 8
+    for _, lab in ipairs(Choice.options) do
+      local need = math.min(18, math.max(6, math.floor(#tostring(lab) * 0.7) + 2))
+      if need > tw then tw = need end
+    end
+    local th = math.max(2, math.ceil((n * Window.OPTION_HEIGHT) / 8))
+    local tx = Choice.left or (Display.COLS - tw - 2)
+    if Choice.kind == "multi" and Choice.maxRight and tx + tw > Choice.maxRight then
+      tx = Choice.maxRight - tw
+    end
+    local ty = Choice.top or 5
+    Window.stdFrame(Window.template(tx, ty, tw, th))
+    local leftPx = tx * 8
+    local topPx = ty * 8
+    for i, lab in ipairs(Choice.options) do
+      local yPx = Window.menuRowPx(topPx, i)
+      if i == Choice.cursor then Window.cursorPx(leftPx, yPx) end
+      Window.printPx(lab, leftPx + Window.CURSOR_WIDTH, yPx)
+    end
+  else
+    -- Multi-column grid
+    local rows = math.ceil(n / cols)
+    local colTileWidths = {}
+    for c = 1, cols do
+      local maxW = 4
+      for r = 1, rows do
+        local idx = (r - 1) * cols + c
+        if idx <= n then
+          local lab = tostring(Choice.options[idx] or "")
+          local need = math.floor(#lab * 0.7) + 2
+          if need > maxW then maxW = need end
+        end
+      end
+      colTileWidths[c] = maxW
+    end
+    local totalTileW = 0
+    for c = 1, cols do
+      totalTileW = totalTileW + colTileWidths[c]
+    end
+    local th = math.max(2, math.ceil((rows * Window.OPTION_HEIGHT) / 8))
+    local tx = Choice.left or 2
+    if Choice.maxRight and tx + totalTileW > Choice.maxRight then
+      tx = Choice.maxRight - totalTileW
+    end
+    if tx < 0 then tx = 0 end
+    local ty = Choice.top or 5
+    Window.stdFrame(Window.template(tx, ty, totalTileW, th))
+
+    local topPx = ty * 8
+    for i, lab in ipairs(Choice.options) do
+      local idx0 = i - 1
+      local c = (idx0 % cols) + 1
+      local r = math.floor(idx0 / cols) + 1
+
+      local colOffsetTiles = 0
+      for prevC = 1, c - 1 do
+        colOffsetTiles = colOffsetTiles + colTileWidths[prevC]
+      end
+      local colLeftPx = (tx + colOffsetTiles) * 8
+      local yPx = Window.menuRowPx(topPx, r)
+
+      if i == Choice.cursor then
+        Window.cursorPx(colLeftPx, yPx)
+      end
+      Window.printPx(lab, colLeftPx + Window.CURSOR_WIDTH, yPx)
+    end
   end
 end
 

@@ -68,26 +68,90 @@ function PokedexData.init()
   return true
 end
 
+local AREA_TO_MAP = {
+  DEX_AREA_ONE_ISLAND = "one_island",
+  DEX_AREA_KINDLE_ROAD = "one_island",
+  DEX_AREA_TREASURE_BEACH = "one_island",
+  DEX_AREA_MT_EMBER = "one_island",
+
+  DEX_AREA_TWO_ISLAND = "two_island",
+  DEX_AREA_CAPE_BRINK = "two_island",
+
+  DEX_AREA_THREE_ISLAND = "three_island",
+  DEX_AREA_BOND_BRIDGE = "three_island",
+  DEX_AREA_THREE_ISLE_PATH = "three_island",
+  DEX_AREA_BERRY_FOREST = "three_island",
+
+  DEX_AREA_FOUR_ISLAND = "four_island",
+  DEX_AREA_ICEFALL_CAVE = "four_island",
+
+  DEX_AREA_FIVE_ISLAND = "five_island",
+  DEX_AREA_RESORT_GORGEOUS = "five_island",
+  DEX_AREA_WATER_LABYRINTH = "five_island",
+  DEX_AREA_FIVE_ISLE_MEADOW = "five_island",
+  DEX_AREA_MEMORIAL_PILLAR = "five_island",
+  DEX_AREA_LOST_CAVE = "five_island",
+
+  DEX_AREA_SIX_ISLAND = "six_island",
+  DEX_AREA_OUTCAST_ISLAND = "six_island",
+  DEX_AREA_GREEN_PATH = "six_island",
+  DEX_AREA_WATER_PATH = "six_island",
+  DEX_AREA_RUIN_VALLEY = "six_island",
+  DEX_AREA_DOTTED_HOLE = "six_island",
+  DEX_AREA_PATTERN_BUSH = "six_island",
+  DEX_AREA_ALTERING_CAVE = "six_island",
+
+  DEX_AREA_SEVEN_ISLAND = "seven_island",
+  DEX_AREA_TRAINER_TOWER = "seven_island",
+  DEX_AREA_CANYON_ENTRANCE = "seven_island",
+  DEX_AREA_SEVAULT_CANYON = "seven_island",
+  DEX_AREA_TANOBY_RUINS = "seven_island",
+  DEX_AREA_TANOBY_CHAMBER = "seven_island",
+}
+
+function PokedexData.getAreaMapKey(dexAreaKey)
+  if not dexAreaKey then return "kanto" end
+  return AREA_TO_MAP[dexAreaKey] or "kanto"
+end
+
 --- Map wild encounter tables to species DEX_AREA locations
 function PokedexData._buildSpeciesWildAreas()
   PokedexData._speciesWildAreas = {}
   local encounters = load_lua("data/generated/gba/encounters.lua") or load_lua("data/generated/encounters.lua")
   local mapGroups = load_lua("src/import/gba/map_groups_firered.lua")
   local mapsecToArea = PokedexData._areaData and PokedexData._areaData.mapsecToArea or {}
+  local markers = PokedexData._areaData and PokedexData._areaData.markers or {}
+  local MapSectionsExtract = package.loaded["src.import.gba.map_sections_extract"]
+  if not MapSectionsExtract then
+    local okMs, ms = pcall(require, "src.import.gba.map_sections_extract")
+    if okMs then MapSectionsExtract = ms end
+  end
 
   if encounters and mapGroups and mapGroups.groups then
     for key, header in pairs(encounters) do
       local gIdx, mIdx = header.mapGroup, header.mapNum
       if not gIdx or not mIdx then
-        gIdx, mIdx = key:match("^(%d+):(%d+)$")
-        gIdx, mIdx = tonumber(gIdx), tonumber(mIdx)
+        local gStr, mStr = tostring(key):match("^(%d+):(%d+)$")
+        if gStr and mStr then
+          gIdx, mIdx = tonumber(gStr), tonumber(mStr)
+        end
       end
       if gIdx and mIdx then
-        local gTable = mapGroups.groups[gIdx + 1] or mapGroups.groups[gIdx]
-        local mapInfo = gTable and (gTable[mIdx + 1] or gTable[mIdx])
-        local mapSec = mapInfo and (mapInfo.mapSec or mapInfo.region_map_section or mapInfo.id)
-        local dexArea = mapSec and mapsecToArea[mapSec]
-        if dexArea then
+        local gTable = mapGroups.groups[gIdx] or mapGroups.groups[gIdx + 1]
+        local pretName = gTable and gTable.maps and (gTable.maps[mIdx + 1] or gTable.maps[mIdx])
+        local secIdStr = nil
+        if MapSectionsExtract and MapSectionsExtract.getInfo then
+          local info = MapSectionsExtract.getInfo(nil, pretName)
+          secIdStr = info and info.id
+        end
+
+        local dexArea = secIdStr and mapsecToArea[secIdStr]
+        if not dexArea and pretName then
+          local norm = "DEX_AREA_" .. tostring(pretName):gsub("^FR_", ""):gsub("^SEVII_", ""):gsub("([a-z])([A-Z])", "%1_%2"):upper()
+          if markers[norm] then dexArea = norm end
+        end
+
+        if dexArea and (markers[dexArea] or mapsecToArea[secIdStr]) then
           local function addSpecies(sp)
             if not sp or sp == 0 then return end
             PokedexData._speciesWildAreas[sp] = PokedexData._speciesWildAreas[sp] or {}
@@ -263,8 +327,9 @@ end
 function PokedexData.getWildAreasForSpecies(speciesId)
   PokedexData.init()
   local sp = tonumber(speciesId) or 1
+  local dynamic = PokedexData._speciesWildAreas and PokedexData._speciesWildAreas[sp]
+  if dynamic and #dynamic > 0 then return dynamic end
   return (PokedexData._areaData and PokedexData._areaData.speciesAreas and PokedexData._areaData.speciesAreas[sp])
-    or (PokedexData._speciesWildAreas and PokedexData._speciesWildAreas[sp])
     or {}
 end
 

@@ -92,6 +92,9 @@ Encounters._loaded = true
 local function run_seq()
   Rng.SeedRng(0xC0DE)
   Rng.SeedWildEncounterRng(0xBEEF)
+  -- pret resets the encounter rate modifiers on map load / battle start; the
+  -- banked failure rate is history-dependent, so a replay needs the same reset.
+  Encounters.resetRateModifiers()
   local out = {}
   for i = 1, 40 do
     local enc = Encounters.rollLand("TEST_MAP", nil, i == 1)

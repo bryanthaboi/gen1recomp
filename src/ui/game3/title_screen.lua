@@ -438,6 +438,11 @@ local function sceneRun(T, pressed)
     T.sceneState = 1
   end
   if pressed.a or pressed.start then
+    local okR, Rng = pcall(require, "src.core.game3.rng")
+    if okR and Rng and Rng.seedNewGame then
+      -- pokefirered/src/title_screen.c:632: SetTitleScreenScene_Cry → SeedRngAndSetTrainerId
+      Rng.seedNewGame()
+    end
     setScene(T, S.CRY)
   elseif not findTask(T, Title.Task_TitleScreenTimer) then
     setScene(T, S.RESTART)
@@ -510,6 +515,8 @@ local function Task_TitleScreenMain(T, t)
   local pressed = T.input
   if (pressed.a or pressed.b or pressed.start)
       and T.scene ~= S.RUN and T.scene ~= S.RESTART and T.scene ~= S.CRY then
+    local okR, Rng = pcall(require, "src.core.game3.rng")
+    if okR and Rng and Rng.perturb then Rng.perturb() end
     T.band = nil
     loadMainPalsAndResetBgs(T)
     setScene(T, S.RUN)

@@ -203,12 +203,12 @@ function MapNamePopup.draw()
   -- 1. Draw 9-slice standard text window border and white interior
   Chrome.mapPopupFrame(px, py, widthTiles)
 
-  -- 2. Map Name Text (Centered in content window, y = py + 2)
+  -- 2. Map Name Text (Centered vertically and horizontally in enclosed window)
   -- Uses FONT_NORMAL with dark gray (#626262) fg and light gray (#D5D5CD) shadow
   local name = MapNamePopup._name or ""
   local textW = (FrlgFont.measure and FrlgFont.measure(name)) or (6 * #name)
   local textX = px + 8 + math.floor((contentW - textW) / 2)
-  local textY = py + 2
+  local textY = py + 5
 
   FrlgFont.draw(name, textX, textY, {
     colors = FrlgFont.COLOR.NORMAL,

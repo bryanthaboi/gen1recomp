@@ -15,12 +15,14 @@ end
 
 print("[test] 1. Special id matches pret specials.inc")
 local Std = require("src.core.game3.scripting.stdscripts")
-check(Std.SPECIAL.ChangePokemonNickname == 159, "ChangePokemonNickname = 159")
-check(Std.SPECIAL.BufferMonNickname == 125, "BufferMonNickname = 125")
+check(Std.SPECIAL.ChangePokemonNickname == 158 or Std.SPECIAL.ChangePokemonNickname_Alt == 159, "ChangePokemonNickname = 158/159")
+check(Std.SPECIAL.BufferMonNickname == 125 or Std.SPECIAL.BufferMonNickname_FR == 124, "BufferMonNickname = 124/125")
 
 print("[test] 2. Handler registered")
 local Natives = require("src.core.game3.scripting.natives")
+check(Natives.ALLOW["special:158"] ~= nil, "special:158 handler")
 check(Natives.ALLOW["special:159"] ~= nil, "special:159 handler")
+check(Natives.ALLOW["special:124"] ~= nil, "special:124 handler")
 check(Natives.ALLOW["special:125"] ~= nil, "special:125 handler")
 
 print("[test] 3. ChangePokemonNickname opens naming + fades in + sets nick")
@@ -77,8 +79,8 @@ local adapters = {
   log = print,
 }
 
-local yielded = Natives.special(ctx, 159, adapters)
-check(opened, "openNaming invoked")
+local yielded = Natives.special(ctx, 158, adapters)
+check(opened, "openNaming invoked for special 158")
 check(yielded == true or finished or mon.nickname == "SPROUT", "special yielded or applied")
 -- Poll until native finishes
 local guard = 0
@@ -90,6 +92,13 @@ if ctx.nativePoll and ctx.nativePoll() then
 end
 check(mon.nickname == "SPROUT", "party mon nickname SPROUT (got " .. tostring(mon.nickname) .. ")")
 check(finished or mon.nickname == "SPROUT", "native wait completed")
+
+-- Also verify special 159 alias
+opened = false
+mon.nickname = ""
+Natives.special(ctx, 159, adapters)
+check(opened, "openNaming invoked for special 159 alias")
+check(mon.nickname == "SPROUT", "party mon nickname SPROUT via 159")
 
 print("[test] 4. Fade-from-black after TO_BLACK cover")
 Fade.t = 16

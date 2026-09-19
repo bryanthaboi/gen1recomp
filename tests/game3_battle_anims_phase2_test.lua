@@ -376,7 +376,7 @@ if packSrc then
       local vm = AnimVm.new()
       vm:setPack(pack)
       vm:launch(script, { attackerSide = "player", isReversed = false })
-      local maxTicks = 360
+      local maxTicks = 600
       local ticks = 0
       while vm:busy() and ticks < maxTicks do
         ticks = ticks + 1

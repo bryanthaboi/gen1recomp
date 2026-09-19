@@ -119,8 +119,24 @@ local function isWarpBehavior(coll)
   return (coll >= 0x60 and coll <= 0x7F)
 end
 
+-- pokefirered/src/field_control_avatar.c: a map-header warp event only fires
+-- when the metatile behavior is a live warp behavior. That is the arrow warps
+-- 0x62-0x65 (TryArrowWarp), the directional stair warps 0x6C-0x6F
+-- (IsDirectionalStairWarpMetatileBehavior), and everything IsWarpMetatileBehavior
+-- accepts: MB_CAVE_DOOR 0x60, MB_LADDER 0x61, MB_FALL_WARP 0x66,
+-- MB_REGULAR_WARP 0x67, MB_LAVARIDGE_1F_WARP 0x68, MB_WARP_DOOR 0x69,
+-- escalators 0x6A-0x6B, MB_UNION_ROOM_WARP 0x71. Together: 0x60-0x6F plus 0x71.
+function Collision.isWarpMetatileBehavior(beh)
+  if not beh then return false end
+  return (beh >= 0x60 and beh <= 0x6F) or beh == 0x71
+end
+
 -- Index warps and force door/warp cells walkable. Extract can leave outdoor
--- MB_WARP_DOOR tiles as solid when tileset attrs were read past EOF.
+-- MB_WARP_DOOR tiles as solid when tileset attrs were read past EOF — there the
+-- behavior is unknown (nil) and the repair still applies. A *readable* non-warp
+-- behavior means the cell is a real wall that merely happens to carry a (dead)
+-- warp event, e.g. PalletTown_PlayersHouse_1F (3,9): pret never lets the player
+-- stand on it, so opening it would let the player walk out through the wall.
 local COLL_DOOR = 0x71
 function Collision.installWarps(mapDef)
   Collision._warps = Collision._warps or {}
@@ -132,7 +148,9 @@ function Collision.installWarps(mapDef)
       if Collision._grid and Collision._widthCells > 0 then
         local i = y * Collision._widthCells + x + 1
         cur = Collision._grid[i]
-        if cur == nil or cur == 0x07 or cur == 0xff then
+        local beh = Collision.behavior(x, y)
+        local repair = beh == nil or Collision.isWarpMetatileBehavior(beh)
+        if repair and (cur == nil or cur == 0x07 or cur == 0xff) then
           Collision._grid[i] = COLL_DOOR
           cur = COLL_DOOR
           if layout and layout.applyOverride then

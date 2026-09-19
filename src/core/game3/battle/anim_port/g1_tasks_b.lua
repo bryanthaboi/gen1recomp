@@ -30,7 +30,7 @@ local function shake_mon_step(t)
     if (p.oy or 0) == 0 then p.oy = d[5] else p.oy = 0 end
     d[3] = d[2]
     d[1] = d[1] - 1
-    if d[1] == 0 then
+    if d[1] <= 0 then
       p.ox = 0
       p.oy = 0
       K.destroy(t)
@@ -64,7 +64,7 @@ local function shake_mon2_step(t)
     if (p.oy or 0) == d[5] then p.oy = -d[5] else p.oy = d[5] end
     d[3] = d[2]
     d[1] = d[1] - 1
-    if d[1] == 0 then
+    if d[1] <= 0 then
       p.ox = 0
       p.oy = 0
       K.destroy(t)

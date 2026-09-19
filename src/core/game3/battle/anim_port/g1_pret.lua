@@ -708,7 +708,11 @@ end
 
 function P.destroyTask(t)
   local AnimTasks = package.loaded["src.core.game3.battle.anim_tasks"]
-  if AnimTasks and AnimTasks._destroy then AnimTasks._destroy(t) else t.active = false end
+  if AnimTasks and (AnimTasks.destroy or AnimTasks._destroy) then
+    (AnimTasks.destroy or AnimTasks._destroy)(t)
+  else
+    t.active = false
+  end
 end
 
 function P.setBldAlpha(vm, eva, evb)

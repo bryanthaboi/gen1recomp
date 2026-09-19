@@ -155,14 +155,16 @@ end
 do
   local vm = fresh_vm(pack)
   for _, kind in ipairs({ "general", "special", "status" }) do
-    for i = 0, 40 do
-      if pack[kind][i] then
-        for _, sides in ipairs({ { "player", "enemy" }, { "enemy", "player" } }) do
-          Anim.present("player").visible = true
-          Anim.present("enemy").visible = true
-          local frames, ok, e = run_table(vm, kind, i, { a = sides[1], t = sides[2] })
-          local name = (pack[kind .. "Names"] and pack[kind .. "Names"][i]) or i
-          check(ok and #e == 0, string.format("%s[%d] %s (%s) ends cleanly in %d frames %s", kind, i, tostring(name), sides[1], frames, table.concat(e, " | ")))
+    if pack[kind] then
+      for i = 0, 40 do
+        if pack[kind][i] then
+          for _, sides in ipairs({ { "player", "enemy" }, { "enemy", "player" } }) do
+            Anim.present("player").visible = true
+            Anim.present("enemy").visible = true
+            local frames, ok, e = run_table(vm, kind, i, { a = sides[1], t = sides[2] })
+            local name = (pack[kind .. "Names"] and pack[kind .. "Names"][i]) or i
+            check(ok and #e == 0, string.format("%s[%d] %s (%s) ends cleanly in %d frames %s", kind, i, tostring(name), sides[1], frames, table.concat(e, " | ")))
+          end
         end
       end
     end

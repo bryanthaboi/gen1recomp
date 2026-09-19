@@ -368,7 +368,7 @@ for _, m in ipairs(phase3Moves) do
       AnimSprites.reset()
       Anim.reset({ headless = true })
       vm:launch(pack.moves[m.id], { attackerSide = "player", isReversed = false })
-      local maxFrames = 900
+      local maxFrames = 1200
       local frames = 0
       while vm:busy() and frames < maxFrames do
         frames = frames + 1

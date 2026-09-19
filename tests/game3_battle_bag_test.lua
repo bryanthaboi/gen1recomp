@@ -160,6 +160,64 @@ end
 check(Runtime._lastResult == "catch" or #Runtime._session.party >= 2,
   "onDone catch or mon stored")
 
+print("[test] 6. Battle Bag exit restores menu mode cleanly")
+local BagMenu = require("src.ui.game3.bag_menu")
+Bag.add(Runtime._session.bag, 13, 5) -- Add potions so bag is not empty
+Ui._session = Runtime._session
+Ui._queue = {}
+Ui._showing = false
+Ui._linger = false
+Ui._timed = nil
+Ui._headless = false
+Battle._active = true
+Battle._phase = "command"
+Battle._st = { player = State.makeBattler(Runtime._session.party[1], "player"), playerParty = Runtime._session.party }
+Ui.bindState(Battle._st)
+Ui.openMenu()
+check(Ui._mode == "menu", "initial battle UI mode is menu")
+local fakeInputA = { wasPressed = function(self, k) local key = (k ~= nil) and k or self; return key == "a" end }
+local fakeInputB = { wasPressed = function(self, k) local key = (k ~= nil) and k or self; return key == "b" end }
+local fakeInputNone = { wasPressed = function() return false end }
+
+-- Select BAG
+Ui._menuIndex = 2
+Ui.handleInput(fakeInputA)
+check(Ui._mode == "bag", "Ui._mode transitioned to bag")
+check(BagMenu.isOpen() == true, "BagMenu is open")
+
+-- Allow opening curtain animation to finish
+BagMenu.settle()
+
+-- Simulate pressing B in BagMenu
+BagMenu.handleInput(fakeInputB)
+-- Allow closing transition to finish
+BagMenu.settle()
+check(BagMenu.isOpen() == false, "BagMenu closed after B press")
+check(Ui._mode == "menu", "Ui._mode restored to menu after bag exit")
+
+-- Verify battle update accepts subsequent command input without freeze
+Battle.update(0, { input = fakeInputNone })
+check(Ui._mode == "menu", "Ui._mode remains menu in command phase")
+
+print("[test] 7. In-battle Party Item Selection validation")
+Bag.add(Runtime._session.bag, 13, 1) -- Potion
+local monFull = { species = 1, hp = 20, maxHp = 20 }
+local monHurt = { species = 1, hp = 5, maxHp = 20 }
+local monFaint = { species = 1, hp = 0, maxHp = 20 }
+local canHurt, _ = BattleItems.canUseOn(nil, 13, 1, monHurt)
+local canFull, _ = BattleItems.canUseOn(nil, 13, 1, monFull)
+local canFaint, _ = BattleItems.canUseOn(nil, 13, 1, monFaint)
+check(canHurt == true, "Potion can be used on hurt mon")
+check(canFull == false, "Potion cannot be used on full HP mon")
+check(canFaint == false, "Potion cannot be used on fainted mon")
+
+local canReviveFaint, _ = BattleItems.canUseOn(nil, 24, 1, monFaint) -- Revive
+local canReviveHurt, _ = BattleItems.canUseOn(nil, 24, 1, monHurt)
+check(canReviveFaint == true, "Revive can be used on fainted mon")
+check(canReviveHurt == false, "Revive cannot be used on alive mon")
+
+Battle._active = false
+
 if failed > 0 then
   print(string.format("\n%d FAILED", failed))
   os.exit(1)

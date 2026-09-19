@@ -443,13 +443,42 @@ local function handle_menu_input(input)
               bag = BagMenu._bag,
               item = row.id,
               mode = "use",
+              battle = true,
               battleOrder = st and st.playerParty and PartyMenu.battleOrder(st) or nil,
               layout = (st and st.double) and "double" or nil,
+              onSelect = function(slot)
+                if not slot or slot == 7 then
+                  PartyMenu.close()
+                  return
+                end
+                local realSlot = (PartyMenu._order and PartyMenu._order[slot]) or slot
+                local mon = party and party[realSlot]
+                local canUse, err = BattleItems.canUseOn(st, row.id, realSlot, mon)
+                if not canUse then
+                  se(9)
+                  PartyMenu.showMessage(err or "It won't have any effect.", function()
+                    PartyMenu.mode = "use"
+                  end)
+                  return
+                end
+                PartyMenu.close()
+                begin_exit(true, function()
+                  save_pos()
+                  local cb = BagMenu._onBattleUse
+                  BagMenu._battleUsed = true
+                  BagMenu.open = false
+                  BagMenu._battle = false
+                  BagMenu._onBattleUse = nil
+                  Stack.pop("bag")
+                  if cb then cb(row.id, realSlot) end
+                end)
+              end,
               onClose = function()
                 BagMenu.mode = "list"
                 clamp_cursor()
               end,
             })
+            return
           else
             -- src/item_use.c:742
             begin_exit(true, function()

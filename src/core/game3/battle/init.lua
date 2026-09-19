@@ -129,6 +129,38 @@ local function foe_mon_from(foe)
   if gender ~= "M" and gender ~= "F" and gender ~= "U" then
     gender = Pokemon.gender and Pokemon.gender(species, personality) or "U"
   end
+  local ivs = foe.ivs
+  if ivs == nil then
+    local iv1 = Rng.Random()
+    local iv2 = Rng.Random()
+    ivs = {
+      hp  = iv1 % 32,
+      atk = math.floor(iv1 / 32) % 32,
+      def = math.floor(iv1 / 1024) % 32,
+      spe = iv2 % 32,
+      spa = math.floor(iv2 / 32) % 32,
+      spd = math.floor(iv2 / 1024) % 32,
+    }
+  end
+  local item = foe.item
+  if item == nil then
+    local meta = Pokemon.speciesMeta and Pokemon.speciesMeta(species)
+    if meta then
+      local common = tonumber(meta.itemCommon) or 0
+      local rare = tonumber(meta.itemRare) or 0
+      if common ~= 0 or rare ~= 0 then
+        local r = Rng.Random() % 100
+        if common ~= 0 and rare ~= 0 then
+          if r < 50 then item = common
+          elseif r < 55 then item = rare end
+        elseif common ~= 0 then
+          if r < 50 then item = common end
+        elseif rare ~= 0 then
+          if r < 5 then item = rare end
+        end
+      end
+    end
+  end
   local mon = {
     species = species,
     level = foe.level or 5,
@@ -142,9 +174,9 @@ local function foe_mon_from(foe)
     spAtk = foe.spAtk or foe.spa,
     spDef = foe.spDef or foe.spd,
     speed = foe.speed or foe.spe,
-    item = foe.item,
+    item = item,
     gender = gender,
-    ivs = foe.ivs,
+    ivs = ivs,
     evs = foe.evs,
     personality = personality,
     nature = foe.nature or (Pokemon.natureId and Pokemon.natureId(personality)) or 0,
@@ -1555,6 +1587,9 @@ function D.commandUpdate(input)
     if input then party_menu_input(PartyMenu, input) end
     return
   end
+  if Ui._mode == "bag" or Ui._mode == "party" then
+    Ui._mode = "menu"
+  end
   if Ui.selectionPump() then
     local scmd = Ui.takeCommand()
     if scmd then D.onCommand(scmd) end
@@ -2144,6 +2179,9 @@ function Battle.update(dt, game)
     if PartyMenu.isOpen and PartyMenu.isOpen() then
       if input then party_menu_input(PartyMenu, input) end
       return
+    end
+    if Ui._mode == "bag" or Ui._mode == "party" then
+      Ui._mode = "menu"
     end
     if Ui.selectionPump() then
       local scmd = Ui.takeCommand()

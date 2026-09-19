@@ -20,10 +20,13 @@ Std.SPECIAL = {
   GetQuestLogState = 0x187,
   QuestLog_CutRecording = 0x188,
   ShowPokemonStorageSystemPC = 0x3C,
-  BufferMonNickname = 0x7D, -- 125
-  ChangePokemonNickname = 0x9F, -- 159
+  BufferMonNickname = 0x7D, -- 125 (0x7C / 124 in some FRLG scripts)
+  BufferMonNickname_FR = 0x7C, -- 124
+  ChangePokemonNickname = 0x9E, -- 158 in FireRed (pokefirered)
+  ChangePokemonNickname_Alt = 0x9F, -- 159 (Emerald/aliases)
   -- ShowRegionMap / Sevii town map (Tier A special → game3 region UI).
   ShowRegionMap = 0xAF,
+  FieldShowRegionMap = 0xFB, -- 251 (pokefirered special FieldShowRegionMap)
   AnimatePcTurnOn = 0xD6,
   AnimatePcTurnOff = 0xD7,
   BedroomPC = 0xF9, -- pokefirered/data/specials.inc:260
@@ -56,6 +59,8 @@ Std.SPECIAL = {
 }
 
 Std.TEXT = {
+  Text_TownMap = T([[
+It's a TOWN MAP.]]),
   Text_WelcomeWantToHealPkmn = T([[
 Welcome to our POKéMON CENTER!
 Would you like me to rest your
@@ -93,6 +98,16 @@ The BAG is full…]]),
 
 -- Cart EventScript_PC (simplified host path: open full storage UI).
 Std.SCRIPTS = {
+  EventScript_WallTownMap = {
+    { op = "lockall" },
+    { op = "loadword", dest = 0, value = "Text_TownMap" },
+    { op = "callstd", std = Opcodes.STD.MSGBOX_DEFAULT },
+    { op = "fadescreen", [1] = 1 },
+    { op = "special", id = Std.SPECIAL.FieldShowRegionMap },
+    { op = "waitstate" },
+    { op = "releaseall" },
+    { op = "end" },
+  },
   EventScript_PC = {
     { op = "lockall" },
     { op = "special", id = Std.SPECIAL.AnimatePcTurnOn },

@@ -40,6 +40,10 @@ local function roll(rng, lo, hi)
     local ok, v = pcall(rng, lo, hi)
     if ok and type(v) == "number" then return v end
   end
+  local okR, Rng = pcall(require, "src.core.game3.rng")
+  if okR and Rng and Rng.compat then
+    return Rng.compat(lo, hi)
+  end
   return math.random(lo, hi)
 end
 
@@ -72,6 +76,28 @@ function BattleItems.needsPartySelect(id)
     return true
   end
   return false
+end
+
+function BattleItems.canUseOn(st, itemId, partySlot, mon)
+  if not mon or not itemId then return false, "It won't have any effect." end
+  if mon.isEgg then return false, "An EGG can't be used on." end
+  local hp = tonumber(mon.hp) or 0
+  local maxHp = tonumber(mon.maxHp or mon.maxhp) or 1
+  local mk = ItemsData.medicineKind(itemId)
+  local use = ItemsData.fieldUseKind(itemId)
+  if mk == "revive" or use == "revive" then
+    if hp > 0 then return false, "It won't have any effect." end
+    return true
+  elseif hp <= 0 then
+    return false, "It won't have any effect."
+  elseif mk == "status" or use == "status" then
+    local s = mon.status
+    if not s or s == 0 or s == "" then return false, "It won't have any effect." end
+    return true
+  else
+    if hp >= maxHp then return false, "It won't have any effect." end
+    return true
+  end
 end
 
 function BattleItems.ballMultiplier(itemId, foeBattler, st, session)

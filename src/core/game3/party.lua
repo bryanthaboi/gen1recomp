@@ -161,20 +161,18 @@ function Party.giveMon(session, species, level, nickname)
   local Pokemon = require("src.core.game3.pokemon")
   if not Pokemon._names then pcall(Pokemon.install, nil) end
 
-  local personality
-  if love and love.math and love.math.random then
-    personality = love.math.random(0, 0xFFFFFFFF)
-  else
-    personality = math.floor(math.random() * 0x100000000) % 0x100000000
-  end
-  local ivs = {}
-  for _, k in ipairs({ "hp", "atk", "def", "spe", "spa", "spd" }) do
-    if love and love.math and love.math.random then
-      ivs[k] = love.math.random(0, 31)
-    else
-      ivs[k] = math.random(0, 31)
-    end
-  end
+  local Rng = require("src.core.game3.rng")
+  local personality = Rng.Random32()
+  local iv1 = Rng.Random()
+  local iv2 = Rng.Random()
+  local ivs = {
+    hp  = iv1 % 32,
+    atk = math.floor(iv1 / 32) % 32,
+    def = math.floor(iv1 / 1024) % 32,
+    spe = iv2 % 32,
+    spa = math.floor(iv2 / 32) % 32,
+    spd = math.floor(iv2 / 1024) % 32,
+  }
 
   local meta = Pokemon.speciesMeta and Pokemon.speciesMeta(species)
   local friendship = (meta and meta.friendship) or 70

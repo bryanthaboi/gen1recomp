@@ -9,10 +9,13 @@ local CollisionStd = {}
 CollisionStd.COLL_PC = 0x93
 CollisionStd.COLL_COUNTER = 0x90
 CollisionStd.COLL_BOOKSHELF = 0x91
+CollisionStd.COLL_TOWN_MAP = 0x95
 
 -- Facing this collision runs the named game3 script (shared, not map-local).
 CollisionStd.SCRIPTS = {
   [0x93] = "EventScript_PC", -- MB_PC → COLL_PC
+  [0x85] = "EventScript_WallTownMap", -- MB_TOWN_MAP
+  [0x95] = "EventScript_WallTownMap", -- COLL_TOWN_MAP
 }
 
 function CollisionStd.scriptFor(coll)

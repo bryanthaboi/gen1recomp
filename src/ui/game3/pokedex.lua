@@ -1023,14 +1023,16 @@ local function draw_data_screen()
     local mapX, mapY = 136, 64
     PokedexChrome.drawMap("kanto", mapX, mapY)
 
-    -- Route Area Markers (Static)
+    -- Route Area Markers
     local areas = PokedexData.getWildAreasForSpecies(sp)
 
     if #areas > 0 then
       for _, aKey in ipairs(areas) do
-        local m = PokedexData.getAreaMarker(aKey)
-        if m then
-          PokedexChrome.drawAreaMarker(m.shape, mapX + (m.x - 32), mapY + m.y)
+        if PokedexData.getAreaMapKey(aKey) == "kanto" then
+          local m = PokedexData.getAreaMarker(aKey)
+          if m then
+            PokedexChrome.drawAreaMarker(m.shape, mapX + (m.x - 32), mapY + m.y)
+          end
         end
       end
     else
@@ -1188,15 +1190,18 @@ local function draw_area_screen()
 
   -- Right Map Panel
   local mapX, mapY = 136, 64
-  PokedexChrome.drawMap(Pokedex.areaMapKey or "kanto", mapX, mapY)
+  local curMap = Pokedex.areaMapKey or "kanto"
+  PokedexChrome.drawMap(curMap, mapX, mapY)
 
-  -- Route Markers (Static)
+  -- Route Markers
   if #areas > 0 then
     for _, aKey in ipairs(areas) do
-      local m = PokedexData.getAreaMarker(aKey)
-      if m then
-        local xOff = (Pokedex.areaMapKey == "kanto" or not Pokedex.areaMapKey) and (m.x - 32) or m.x
-        PokedexChrome.drawAreaMarker(m.shape, mapX + xOff, mapY + m.y)
+      if PokedexData.getAreaMapKey(aKey) == curMap then
+        local m = PokedexData.getAreaMarker(aKey)
+        if m then
+          local xOff = (curMap == "kanto") and (m.x - 32) or m.x
+          PokedexChrome.drawAreaMarker(m.shape, mapX + xOff, mapY + m.y)
+        end
       end
     end
   else

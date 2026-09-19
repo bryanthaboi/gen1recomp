@@ -217,6 +217,18 @@ Natives.ALLOW = {
     if not (adapters and adapters.showTownMap) then return false end
     return yield_host(ctx, adapters, adapters.showTownMap)
   end,
+  ["special:" .. Std.SPECIAL.FieldShowRegionMap] = function(ctx, adapters)
+    if not (adapters and adapters.showTownMap) then return false end
+    return yield_host(ctx, adapters, adapters.showTownMap)
+  end,
+  ["special:251"] = function(ctx, adapters)
+    if not (adapters and adapters.showTownMap) then return false end
+    return yield_host(ctx, adapters, adapters.showTownMap)
+  end,
+  ["special:0xFB"] = function(ctx, adapters)
+    if not (adapters and adapters.showTownMap) then return false end
+    return yield_host(ctx, adapters, adapters.showTownMap)
+  end,
   -- Shared intro/field primitives (fade / naming / cry)
   ["special:" .. Std.SPECIAL.FadeScreen] = function(ctx, adapters)
     if not (adapters and adapters.fadeScreen) then return false end
@@ -232,7 +244,7 @@ Natives.ALLOW = {
   end,
   -- pret EventScript_ChangePokemonNickname: fadescreen TO_BLACK → this → waitstate.
   -- Opens naming under the held black, fades in, writes nickname on confirm.
-  ["special:" .. Std.SPECIAL.ChangePokemonNickname] = function(ctx, adapters)
+  ["special:158"] = function(ctx, adapters)
     if not (adapters and adapters.openNaming) then return false end
     return yield_host(ctx, adapters, function(done)
       local slot = 0
@@ -263,7 +275,10 @@ Natives.ALLOW = {
       end)
     end)
   end,
-  ["special:" .. Std.SPECIAL.BufferMonNickname] = function(ctx, adapters)
+  ["special:159"] = function(ctx, adapters)
+    return Natives.ALLOW["special:158"](ctx, adapters)
+  end,
+  ["special:124"] = function(ctx, adapters)
     -- pret BufferMonNickname → gStringVar1; host buffers for {STR_VAR_1}.
     local slot = 0
     if ctx and ctx.getVar then
@@ -290,6 +305,9 @@ Natives.ALLOW = {
       ctx.stringVars[1] = nick
     end
     return false
+  end,
+  ["special:125"] = function(ctx, adapters)
+    return Natives.ALLOW["special:124"](ctx, adapters)
   end,
   ["special:" .. Std.SPECIAL.PlayCry] = function(ctx, adapters)
     local Audio = require("src.core.game3.audio")

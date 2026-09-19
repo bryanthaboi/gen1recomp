@@ -30,6 +30,32 @@ local SWITCH_BUTTON_Y = 11
 
 local function try_load_image(path)
   if not (love and love.graphics and love.graphics.newImage) then return nil end
+  local okC, CacheFs = pcall(require, "src.import.CacheFs")
+  if okC and CacheFs and CacheFs.read then
+    local data = CacheFs.read(path)
+    if data and type(data) == "string" and #data > 0 then
+      if love.filesystem and love.filesystem.newFileData and love.image and love.image.newImageData then
+        local okFd, fd = pcall(love.filesystem.newFileData, data, path)
+        if okFd and fd then
+          local okId, id = pcall(love.image.newImageData, fd)
+          if okId and id then
+            local okImg, img = pcall(love.graphics.newImage, id)
+            if okImg and img then
+              if img.setFilter then img:setFilter("nearest", "nearest") end
+              return img
+            end
+          end
+        end
+      end
+    end
+  end
+  if love.filesystem and love.filesystem.getInfo and love.filesystem.getInfo(path) then
+    local ok, img = pcall(love.graphics.newImage, path)
+    if ok and img then
+      if img.setFilter then img:setFilter("nearest", "nearest") end
+      return img
+    end
+  end
   local ok, img = pcall(love.graphics.newImage, path)
   if ok and img then
     if img.setFilter then img:setFilter("nearest", "nearest") end

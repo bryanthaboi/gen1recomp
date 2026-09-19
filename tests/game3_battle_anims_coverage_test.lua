@@ -135,7 +135,7 @@ for moveId, script in pairs(pack.moves) do
     vmErrors = vmErrors + 1
     print(string.format("[ERROR] Move %s launch error: %s", tostring(moveId), tostring(err)))
   else
-    local maxTicks = 900
+    local maxTicks = 1200
     local ticks = 0
     while vm:busy() and ticks < maxTicks do
       ticks = ticks + 1

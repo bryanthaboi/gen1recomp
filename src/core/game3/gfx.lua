@@ -146,7 +146,10 @@ function Gfx.drawUi()
   end
 
   local okF, Fade = pcall(require, "src.ui.game3.fade")
-  if okF and Fade.draw and not (okN and Naming.isOpen and Naming.isOpen()) then
+  local isNamingOpen = okN and Naming.isOpen and Naming.isOpen()
+  local okR, RegionMap = pcall(require, "src.ui.game3.region_map")
+  local isRegionMapOpen = okR and RegionMap.isOpen and RegionMap.isOpen()
+  if okF and Fade.draw and not isNamingOpen and not isRegionMapOpen then
     Fade.draw()
   end
 

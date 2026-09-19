@@ -98,11 +98,10 @@ local function update_top_menu(input)
     return true
   end
   if RegionMap.isOpen() then
-    if input:wasPressed("left") then RegionMap.togglePage(-1)
-    elseif input:wasPressed("right") then RegionMap.togglePage(1)
-    elseif input:wasPressed("up") then RegionMap.moveCursor(-1)
-    elseif input:wasPressed("down") then RegionMap.moveCursor(1)
-    elseif input:wasPressed("b") or input:wasPressed("start") then RegionMap.close()
+    if RegionMap.handleInput then
+      RegionMap.handleInput(input)
+    else
+      if input:wasPressed("b") or input:wasPressed("start") then RegionMap.close() end
     end
     return true
   end
@@ -185,8 +184,10 @@ function Hud.update(game, _dt)
 
   -- Choice in field/scripting (in battle, Choice is driven by Battle.update).
   if not inBattle and Choice.active then
-    if input:wasPressed("up") then Choice.move(-1)
-    elseif input:wasPressed("down") then Choice.move(1)
+    if input:wasPressed("up") then Choice.move(-1, 0)
+    elseif input:wasPressed("down") then Choice.move(1, 0)
+    elseif input:wasPressed("left") then Choice.move(0, -1)
+    elseif input:wasPressed("right") then Choice.move(0, 1)
     elseif input:wasPressed("a") then Choice.confirm()
     elseif input:wasPressed("b") then Choice.cancel()
     end
@@ -278,9 +279,12 @@ function Hud.openStartMenu(game, session)
       or require("src.core.game3.scripting.flags")
     local store = Space and Space.store
     if store and Flags.IDS and Flags.IDS.OPENED_START_MENU then
-      Flags.setFlag(store, nil, Flags.IDS.OPENED_START_MENU, true)
-      if Space.persistSession then
-        pcall(Space.persistSession)
+      local scene = Flags.getVar(store, nil, 0x4070)
+      if scene >= 1 then
+        Flags.setFlag(store, nil, Flags.IDS.OPENED_START_MENU, true)
+        if Space.persistSession then
+          pcall(Space.persistSession)
+        end
       end
     end
   end

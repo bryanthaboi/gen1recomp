@@ -961,9 +961,9 @@ return function(K)
 
   -- pokefirered/src/battle_anim_water.c:696
   local function runSinTimer(t, vm)
-    vm.args[7] = P.band(vm.args[7] + 3, 0xFF)
-    t.data[0] = t.data[0] - 1
-    if t.data[0] == 0 then D(t) end
+    vm.args[7] = P.band((vm.args[7] or 0) + 3, 0xFF)
+    t.data[0] = (t.data[0] or 0) - 1
+    if t.data[0] <= 0 then D(t) end
   end
 
   -- pokefirered/src/battle_anim_mons.c:1831
@@ -1251,6 +1251,7 @@ return function(K)
     if P.translateHArc(s) then
       s.x = s.x + s.ox
       s.y = s.y + s.oy
+      s.ox, s.oy = 0, 0
       s.data[0] = 6
       s.data[2] = P.band(P.Random(), 0x1F) - 16 + s.x
       s.data[4] = P.band(P.Random(), 0x1F) - 16 + s.y
@@ -1285,7 +1286,7 @@ return function(K)
     local st = d[0]
     if st == 0 then
       waterSportCreate(t, vm)
-      if d[10] ~= 0 then d[0] = d[0] + 1 end
+      if d[10] == 0 then d[0] = d[0] + 1 else d[0] = d[0] + 2 end
     elseif st == 1 then
       waterSportCreate(t, vm)
       d[1] = d[1] + 1
@@ -1323,7 +1324,8 @@ return function(K)
         d[0] = d[0] + 1
       end
     elseif st == 6 then
-      if d[8] == 0 then d[0] = d[0] + 1 end
+      d[1] = (d[1] or 0) + 1
+      if d[8] <= 0 or d[1] > 60 then d[0] = d[0] + 1 end
     else
       D(t)
     end
@@ -1332,6 +1334,7 @@ return function(K)
   -- pokefirered/src/battle_anim_water.c:1343
   TK.WaterSport = function(t, vm)
     local d = t.data
+    d[10] = vm.args[0] or 0
     d[3] = P.coord(vm, P.atk(vm), P.X_2)
     d[4] = P.coord(vm, P.atk(vm), P.Y_PIC_OFFSET)
     d[7] = (P.atk(vm) == "player") and 1 or -1

@@ -15,9 +15,11 @@ local function pret_to_engine(pret)
   -- Existing hand aliases first.
   local hand = Versions.PRET_TO_FR and Versions.PRET_TO_FR[pret]
   if hand then return hand end
+  -- Route1 → Route_1, Route22 → Route_22
+  local s = pret:gsub("Route(%d+)", "Route_%1")
   -- PalletTown → FR_PALLET_TOWN; ViridianCity_PokemonCenter_1F → FR_VIRIDIAN_CITY_POKEMON_CENTER_1F
   -- Only split lower→Upper (not digit→Upper) so "1F" stays "1F".
-  local s = pret:gsub("(%l)(%u)", "%1_%2")
+  s = s:gsub("(%l)(%u)", "%1_%2")
   s = s:gsub("-", "_"):upper()
   s = s:gsub("_+", "_")
   return "FR_" .. s

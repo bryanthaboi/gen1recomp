@@ -754,7 +754,7 @@ function PokedexChrome.drawMap(mapKey, x, y, scale)
   end
 end
 
---- Draw Area Route Marker (Static partially transparent red overlay)
+--- Draw Area Route Marker (Steady slightly transparent red overlay)
 function PokedexChrome.drawAreaMarker(shape, x, y)
   if not (love and love.graphics) then return end
 
@@ -770,7 +770,7 @@ function PokedexChrome.drawAreaMarker(shape, x, y)
   local imgKey = shapeMap[shape] or "marker_0"
   local img = PokedexChrome.getImage(imgKey)
 
-  love.graphics.setColor(1, 0.35, 0.35, 0.75)
+  love.graphics.setColor(1, 0.3, 0.3, 0.75)
   if img then
     love.graphics.draw(img, x, y)
   else

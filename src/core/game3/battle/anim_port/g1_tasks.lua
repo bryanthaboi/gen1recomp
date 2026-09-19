@@ -157,7 +157,7 @@ local function shake_terrain_step(t, vm)
     if y == -d[1] then y = 0 else y = -d[1] end
     d[3] = d[8]
     d[2] = d[2] - 1
-    if d[2] == 0 then
+    if d[2] <= 0 then
       shake_terrain_set(vm, 0, 0)
       K.destroy(t)
       return
@@ -205,10 +205,17 @@ local function start_blend_anim_sprite_color(t, keys)
   local A, d = t._A, t.data
   t._keys = keys
   d[2] = A[1]
-  d[3] = A[2]
-  d[4] = A[3]
-  d[5] = A[4]
-  d[10] = A[2]
+  if (A[2] or 0) > 16 then
+    d[3] = 0
+    d[4] = 16
+    d[5] = A[2]
+    d[10] = 0
+  else
+    d[3] = A[2]
+    d[4] = A[3]
+    d[5] = A[4]
+    d[10] = A[2]
+  end
   t._fn = blend_sprite_color_step2
   t._fn(t)
 end

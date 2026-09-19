@@ -765,6 +765,10 @@ function Adapters.host(mod, game, world)
           G3.setObjectXY(lid, row[2], row[3])
         elseif op == "setobjectmovementtype" then
           G3.setMovementType(lid, row[2])
+        elseif op == "copyobjectxytoperm" then
+          if G3.copyObjectXYToPerm then
+            G3.copyObjectXYToPerm(lid)
+          end
         end
         return
       end
@@ -779,6 +783,10 @@ function Adapters.host(mod, game, world)
           if npc.def then
             npc.def.x, npc.def.y = x, y
           end
+        end
+      elseif op == "copyobjectxytoperm" then
+        if npc.cellX and npc.cellY and npc.def then
+          npc.def.x, npc.def.y = npc.cellX, npc.cellY
         end
       elseif op == "setobjectmovementtype" then
         -- Cosmetic on host; facing types 7–10 are FACE_*.
@@ -1118,23 +1126,35 @@ function Adapters.host(mod, game, world)
       local listId = 0
       local n = 3
       if row then
-        -- pret: multichoice x, y, listId [, default]
+        -- pret:
+        -- multichoice left, top, listId, ignoreBPress
+        -- multichoicedefault left, top, listId, default, ignoreBPress
+        -- multichoicegrid left, top, listId, numColumns, ignoreBPress
         listId = tonumber(row.listId or row[3] or row[1]) or 0
         n = tonumber(row.count or row[4]) or n
       end
       local opts, layout = Multi.resolve(listId, n)
+      layout = layout or {}
       local def = 0
       if row and row.op == "multichoicedefault" then
         def = tonumber(row.default or row[4] or row[5]) or 0
       end
-      if layout and row then
+      if row then
         -- pokefirered/src/script_menu.c:1195
-        local x, y = tonumber(row.x or row[1]), tonumber(row.y or row[2])
+        local x, y = tonumber(row.x or row.left or row[1]), tonumber(row.y or row.top or row[2])
         if x then layout.left = x + 1 end
         if y then layout.top = y + 1 end
-        if row.op ~= "multichoicegrid" then
+        if row.op == "multichoicegrid" then
+          layout.cols = tonumber(row.cols or row.numColumns or row[4]) or 1
+          layout.ignoreBPress = row.ignoreBPress or (row[5] and tonumber(row[5]) ~= 0) or false
+        else
           -- pokefirered/src/script_menu.c:737
           layout.maxRight = 29
+          if row.op == "multichoicedefault" then
+            layout.ignoreBPress = row.ignoreBPress or (row[5] and tonumber(row[5]) ~= 0) or false
+          else
+            layout.ignoreBPress = row.ignoreBPress or (row[4] and tonumber(row[4]) ~= 0) or false
+          end
         end
       end
       local Runtime = package.loaded["src.core.game3.runtime"]
@@ -1150,7 +1170,7 @@ function Adapters.host(mod, game, world)
       Choice.multi(opts, def, function(sel)
         if cb then cb(sel) end
         tick_vm()
-      end)
+      end, layout)
       Choice.autoPick(def)
     end,
     setMetatile = function(x, y, metatile, impassable)
@@ -1185,10 +1205,17 @@ function Adapters.host(mod, game, world)
       local Runtime = package.loaded["src.core.game3.runtime"]
       local session = (Runtime and Runtime.getSession and Runtime.getSession()) or (resolveGame() and resolveGame().session)
       local RegionMap = require("src.ui.game3.region_map")
+      local Fade = require("src.ui.game3.fade")
+      local Message = require("src.ui.game3.message")
+      if Message.isOpen and Message.isOpen() and Message.close then
+        Message.close()
+      end
+      Fade.clear()
       a.log("[game3] showTownMap via RegionMap")
       RegionMap.show({
         session = session,
         onClose = function()
+          Fade.clear()
           if done then done() end
           tick_vm()
         end,

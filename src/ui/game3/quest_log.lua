@@ -85,6 +85,7 @@ function UI.draw(playback,session)
     love.graphics.rectangle('fill',0,y,240,144-y)
     Font.draw(text,4,y,{colors=Font.COLOR.WHITE})
   end
-  Font.draw('A: NEXT   B: SKIP',4,146,{small=true,colors=Font.COLOR.WHITE})
+  local PokedexChrome = require('src.ui.game3.pokedex_chrome')
+  PokedexChrome.drawControlInfoLeft('{A_BUTTON}NEXT   {B_BUTTON}SKIP', 4, 146)
 end
 return UI

@@ -264,6 +264,15 @@ function Map.load(mod, game, mapId, opts)
   if not MapIds.isGame3Map(mapId) then
     return nil, "not a game3 map"
   end
+  -- pret RestartWildEncounterImmunitySteps on LoadMap / LoadMapFromWarp: every
+  -- map entry restarts the wild encounter grace period. Unconditional, so the
+  -- seamless connection crossing between two routes resets it too.
+  do
+    local okE, Encounters = pcall(require, "src.core.game3.encounters")
+    if okE and Encounters and Encounters.resetRateModifiers then
+      Encounters.resetRateModifiers()
+    end
+  end
   local Ghosts = require("src.core.game3.ghosts")
   local fromMapId = Map._announced
   if Map.current and Map.current ~= mapId then

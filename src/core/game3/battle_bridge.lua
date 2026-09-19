@@ -392,6 +392,13 @@ end
 function BattleBridge.startWild(mod, game, encounter, opts)
   opts = opts or {}
   opts.wild = true
+  -- pret battle_setup.c resets the encounter cooldown when a battle starts, so
+  -- the grace period re-arms after every wild battle -- including ones nothing
+  -- stepped into (scripted battles, fishing).
+  local okE, Encounters = pcall(require, "src.core.game3.encounters")
+  if okE and Encounters and Encounters.resetRateModifiers then
+    Encounters.resetRateModifiers()
+  end
   return BattleBridge.start(mod, game, encounter, opts)
 end
 

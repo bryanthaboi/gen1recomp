@@ -117,6 +117,17 @@ local function build_tables(entries)
     local alias = Versions.frMapFor(e.mapGroup, e.mapNum)
     if alias then
       tables[alias] = packed
+      if alias:sub(1, 3) == "FR_" then
+        local noFr = alias:sub(4)
+        tables[noFr] = packed
+        local routeNum = noFr:match("^ROUTE_(%d+)$")
+        if routeNum then
+          tables["ROUTE" .. routeNum] = packed
+          tables["FR_ROUTE" .. routeNum] = packed
+        end
+      elseif alias:sub(1, 6) == "SEVII_" then
+        tables[alias:sub(7)] = packed
+      end
     end
   end
   return tables

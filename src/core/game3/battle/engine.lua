@@ -89,8 +89,14 @@ end
 Engine.hasFlag = has_flag
 
 local function roll(adapter, lo, hi)
-  local ok, v = pcall(adapter:rng(), lo, hi)
-  if ok and type(v) == "number" then return v end
+  if adapter and adapter.rng then
+    local ok, v = pcall(adapter:rng(), lo, hi)
+    if ok and type(v) == "number" then return v end
+  end
+  local okR, Rng = pcall(require, "src.core.game3.rng")
+  if okR and Rng and Rng.compat then
+    return Rng.compat(lo, hi)
+  end
   return math.random(lo, hi)
 end
 Engine.roll = roll

@@ -353,7 +353,16 @@ function Commands.tryFlee(st, adapter)
   local roll = adapter:rng()
   local r
   local ok, v = pcall(roll, 0, 255)
-  if ok and type(v) == "number" then r = v else r = math.random(0, 255) end
+  if ok and type(v) == "number" then
+    r = v
+  else
+    local okR, Rng = pcall(require, "src.core.game3.rng")
+    if okR and Rng and Rng.compat then
+      r = Rng.compat(0, 255)
+    else
+      r = math.random(0, 255)
+    end
+  end
   if r < odds then
     adapter:say("Got away safely!")
     return true

@@ -268,6 +268,109 @@ local function applyPerm(eo, mapId)
     end
     local face = ({ [7] = "up", [8] = "down", [9] = "left", [10] = "right" })[row.movementType]
     if face then eo.facing = face end
+    if eo.def then eo.def.movementType = row.movementType end
+  end
+  if row.facing ~= nil then
+    eo.facing = row.facing
+    if eo.def then eo.def.facing = row.facing end
+  end
+end
+
+local function resolveContextualMapObjects(mapId)
+  if mapId == "FR_OAKS_LAB" or mapId == "PalletTown_ProfessorOaksLab" then
+    local Sp = Space()
+    local store = Sp and Sp.store
+    local Flags = package.loaded["src.core.game3.scripting.flags"]
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+
+    local oakScene = 0
+    if Flags and Flags.getVar and store then
+      oakScene = Flags.getVar(store, nil, 0x4055)
+    elseif session and session.vars then
+      oakScene = tonumber(session.vars[0x4055]) or 0
+    end
+
+    local starter = 0
+    if Flags and Flags.getVar and store then
+      starter = Flags.getVar(store, nil, 0x4031)
+    elseif session and session.vars then
+      starter = tonumber(session.vars[0x4031]) or 0
+    end
+
+    if starter == 0 and session and session.party and session.party[1] then
+      local sp = session.party[1].species
+      if sp == 4 then starter = 2      -- Charmander -> Rival has Squirtle
+      elseif sp == 7 then starter = 1  -- Squirtle -> Rival has Bulbasaur
+      elseif sp == 1 then starter = 0  -- Bulbasaur -> Rival has Charmander
+      end
+    end
+
+    if oakScene == 1 or oakScene == 2 then
+      rememberPerm(mapId, 4, { x = 6, y = 3, movementType = 8, facing = "down" })
+      rememberPerm(mapId, 8, { x = 5, y = 4, movementType = 7, facing = "up" })
+    elseif oakScene == 3 then
+      rememberPerm(mapId, 4, { x = 6, y = 3, movementType = 8, facing = "down" })
+      local rx, ry = 10, 5
+      if starter == 1 then
+        rx, ry = 8, 5
+      elseif starter == 2 then
+        rx, ry = 9, 5
+      end
+      rememberPerm(mapId, 8, { x = rx, y = ry, movementType = 7, facing = "up" })
+    elseif (oakScene >= 4 and oakScene <= 6) or oakScene >= 8 then
+      rememberPerm(mapId, 4, { x = 6, y = 3, movementType = 8, facing = "down" })
+    end
+  end
+  if mapId == "FR_PALLET_TOWN" or mapId == "PalletTown" then
+    local Sp = Space()
+    local store = Sp and Sp.store
+    local Flags = package.loaded["src.core.game3.scripting.flags"]
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+
+    local signLadyScene = 0
+    if Flags and Flags.getVar and store then
+      signLadyScene = Flags.getVar(store, nil, 0x4070)
+    elseif session and session.vars then
+      signLadyScene = tonumber(session.vars[0x4070]) or 0
+    end
+
+    local hasStarter = false
+    if Flags and Flags.getFlag and store then
+      hasStarter = Flags.getFlag(store, nil, 0x291) or Flags.getFlag(store, nil, 0x828)
+    end
+    if not hasStarter and session and session.flags then
+      hasStarter = session.flags[0x291] == true or session.flags["0x291"] == true
+        or session.flags[657] == true or session.flags["657"] == true
+        or session.flags[0x828] == true or session.flags["0x828"] == true
+        or session.flags[2088] == true or session.flags["2088"] == true
+    end
+    if not hasStarter and session and session.party and #session.party > 0 then
+      hasStarter = true
+    end
+
+    if signLadyScene == 0 then
+      if hasStarter then
+        rememberPerm(mapId, 1, { x = 12, y = 2, movementType = 8, facing = "down" })
+        if Flags and store then
+          Flags.setVar(store, nil, 0x4002, 1) -- VAR_TEMP_2 = 1 (SIGN_LADY_READY)
+          Flags.setFlag(store, nil, 0x291, true)
+          Flags.setFlag(store, nil, 0x83E, false) -- FLAG_OPENED_START_MENU = false until scene completes
+        end
+        if session then
+          if session.vars then session.vars[0x4002] = 1 end
+          if session.flags then
+            session.flags[0x291] = true
+            session.flags[657] = true
+            session.flags[0x83E] = nil
+            session.flags[2110] = nil
+          end
+        end
+      else
+        rememberPerm(mapId, 1, { x = 5, y = 15, movementType = 7, facing = "up" })
+      end
+    end
   end
 end
 
@@ -305,6 +408,7 @@ function Objects.loadMap(game, mapId, mapDef)
       end
     end
   end
+  resolveContextualMapObjects(mapId)
   local announce = ModRuntime.wants("world.npc_spawned")
   for _, def in ipairs(Objects._defs) do
     local eo = newEventObject(def)
@@ -682,11 +786,13 @@ local function idleTick(eo, game, ctx)
     return
   end
 
+  local Rng = require("src.core.game3.rng")
   local dirs = dirsForRange(eo.range)
   if mv == "LOOK" or mv == "LOOK_AROUND" then
     local oldFacing = eo.facing
-    eo.facing = dirs[math.random(#dirs)]
-    eo.idleTimer = 48 + math.random(48)
+    local pickIdx = Rng.compat(1, #dirs)
+    eo.facing = dirs[pickIdx] or dirs[1]
+    eo.idleTimer = 48 + Rng.compat(0, 47)
     if not ctx and eo.facing ~= oldFacing and eo.sight and eo.sight > 0 then
       local okTs, TrainerSight = pcall(require, "src.core.game3.trainer_sight")
       if okTs and TrainerSight and TrainerSight.check then
@@ -697,13 +803,14 @@ local function idleTick(eo, game, ctx)
   end
 
   if mv == "WALK" then
-    local dir = dirs[math.random(#dirs)]
+    local pickIdx = Rng.compat(1, #dirs)
+    local dir = dirs[pickIdx] or dirs[1]
     local d = DELTA[dir]
     local tx, ty = eo.cellX + d[1], eo.cellY + d[2]
     local rx = (eo.radius and eo.radius.x) or 1
     local ry = (eo.radius and eo.radius.y) or 1
     if math.abs(tx - eo.homeX) > rx or math.abs(ty - eo.homeY) > ry then
-      eo.idleTimer = 30 + math.random(30)
+      eo.idleTimer = 30 + Rng.compat(0, 29)
       return
     end
     local ok
@@ -723,7 +830,7 @@ local function idleTick(eo, game, ctx)
     else
       eo.facing = dir -- turn toward blocked anyway
     end
-    eo.idleTimer = 40 + math.random(50)
+    eo.idleTimer = 40 + Rng.compat(0, 49)
   end
 end
 
@@ -933,6 +1040,17 @@ function Objects.setObjectXY(localId, x, y)
   eo.px, eo.py = eo.cellX * CELL, eo.cellY * CELL
   eo.targetX, eo.targetY = eo.cellX, eo.cellY
   eo.moving = false
+  if eo.def then eo.def.x, eo.def.y = eo.cellX, eo.cellY end
+end
+
+function Objects.copyObjectXYToPerm(localId)
+  local lid = tonumber(localId) or 0
+  local eo = Objects._byId[lid]
+  if not eo then return end
+  local Sp = Space()
+  local mapKey = (Sp and Sp.mapId) or Objects._mapId
+  rememberPerm(mapKey, lid, { x = eo.cellX, y = eo.cellY })
+  eo.homeX, eo.homeY = eo.cellX, eo.cellY
   if eo.def then eo.def.x, eo.def.y = eo.cellX, eo.cellY end
 end
 

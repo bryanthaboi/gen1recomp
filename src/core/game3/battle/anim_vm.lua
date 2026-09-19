@@ -113,14 +113,6 @@ local function se12_panpot(pan)
 end
 AnimVm.se12PanpotControl = se12_panpot
 
-local function se_playing()
-  local ok, Audio = pcall(require, "src.core.game3.audio")
-  if ok and Audio and Audio.isSePlaying then
-    local ok2, v = pcall(Audio.isSePlaying)
-    return ok2 and v or false
-  end
-  return false
-end
 
 local function default_pal()
   local p = {}
@@ -350,11 +342,6 @@ function AnimVm:visualCount()
   for i = 1, AnimTasks.MAX do
     local t = AnimTasks._pool[i]
     if t.active and t._g4kind ~= "sound" and t._g4kind ~= "aux" and not t._uncounted then n = n + 1 end
-  end
-  AnimSprites.init()
-  for i = 1, AnimSprites.MAX do
-    local s = AnimSprites._pool[i]
-    if s.active and s._g4counted then n = n + 1 end
   end
   return n
 end
@@ -1333,19 +1320,9 @@ end
 -- pokefirered/src/battle_anim.c:1526
 OPS.waitsound = function(vm)
   if vm:soundCount() ~= 0 then
-    vm._soundWait = 0
     vm.framesToWait = 1
     return false
-  elseif se_playing() then
-    vm._soundWait = (vm._soundWait or 0) + 1
-    if vm._soundWait > 90 then
-      vm._soundWait = 0
-    else
-      vm.framesToWait = 1
-      return false
-    end
   end
-  vm._soundWait = 0
   vm.framesToWait = 0
   return true
 end
@@ -1378,19 +1355,10 @@ OPS["end"] = function(vm)
   vm._endWait = (vm._endWait or 0) + 1
   local capped = vm._endWait > WAIT_CAP
   if not capped and (vm:visualCount() ~= 0 or vm:soundCount() ~= 0 or next(vm._monbg) ~= nil) then
-    vm._soundWait = 0
     vm.framesToWait = 1
     return false
   end
-  if not capped and se_playing() then
-    vm._soundWait = (vm._soundWait or 0) + 1
-    if vm._soundWait <= 90 then
-      vm.framesToWait = 1
-      return false
-    end
-  end
   if capped then print("[battle.anim] end wait cap") end
-  vm._soundWait = 0
   vm._endWait = 0
   finish(vm)
   return "end"
@@ -1592,6 +1560,7 @@ end
 
 -- pokefirered/src/battle_anim.c:1114
 OPS.restorebg = function(vm)
+  vm.args[7] = -1
   start_bg_fade(vm, -1)
   return true
 end

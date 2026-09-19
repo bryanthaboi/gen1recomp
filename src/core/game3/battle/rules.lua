@@ -125,6 +125,55 @@ function Rules.weather.effective(st, adapter)
   return kind
 end
 
+local function fallback_rng(lo, hi)
+  local okR, Rng = pcall(require, "src.core.game3.rng")
+  if okR and Rng and Rng.compat then
+    return Rng.compat(lo, hi)
+  end
+  return math.random(lo, hi)
+end
+
+-- Partial trap (Gen3)
+Rules.partialTrap = {}
+
+function Rules.partialTrap.chipAmount(maxHp)
+  return math.max(1, math.floor((maxHp or 16) / Capabilities.partialTrapChipDenom))
+end
+
+-- pokefirered/src/battle_script_commands.c:2490
+function Rules.partialTrap.rollTurns(rng)
+  rng = rng or fallback_rng
+  local ok, n = pcall(rng, 0, 3)
+  if not (ok and type(n) == "number") then n = fallback_rng(0, 3) end
+  return (math.floor(n) % 4) + 3
+end
+
+local function partial_trap_name(moveId)
+  local ok, Moves = pcall(require, "src.core.game3.battle.moves")
+  if ok and Moves and Moves.displayName then
+    return Moves.displayName(moveId)
+  end
+  return tostring(moveId or "the attack")
+end
+
+-- pokefirered/src/battle_message.c:1263
+function Rules.partialTrap.message(moveId)
+  local name = partial_trap_name(moveId)
+  return string.format("{DEFENDER} was trapped by %s!", name)
+end
+
+-- pokefirered/src/battle_message.c:1268
+function Rules.partialTrap.squeezeMessage(moveId)
+  local name = partial_trap_name(moveId)
+  return string.format("{DEFENDER} is hurt by %s!", name)
+end
+
+-- pokefirered/src/battle_message.c:1274
+function Rules.partialTrap.freedMessage(moveId)
+  local name = partial_trap_name(moveId)
+  return string.format("{DEFENDER} was freed from %s!", name)
+end
+
 function Rules.weather.typeModifier(weather, moveTypeName)
   local kind = Rules.weather.kind(weather)
   local mods = {
@@ -140,7 +189,7 @@ function Rules.weather.chipAmount(maxHp)
   return math.max(1, math.floor((maxHp or 16) / Capabilities.weatherChipDenom))
 end
 
--- pokefirered/src/battle_script_commands.c:588
+-- Critical hit (Gen3)
 Rules.crit = {}
 
 Rules.crit.CHANCE = { [0] = 16, [1] = 8, [2] = 4, [3] = 3, [4] = 2 }
@@ -180,11 +229,11 @@ end
 local function rollZeroTo(rng, den)
   if den <= 1 then return 0 end
   if type(rng) ~= "function" then
-    return math.random(0, den - 1)
+    return fallback_rng(0, den - 1)
   end
   local ok, a = pcall(rng, 0, den - 1)
   if ok and type(a) == "number" then return a % den end
-  return math.random(0, den - 1)
+  return fallback_rng(0, den - 1)
 end
 
 -- pokefirered/src/battle_script_commands.c:1199

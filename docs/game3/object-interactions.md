@@ -28,6 +28,22 @@ This restores descriptive object text. Specialized interactive screens such as
 the questionnaire, wireless monitor, battle records and Trainer Tower time monitor
 are outside this change.
 
+## Warp collision uses the same behavior table
+
+`Collision.installWarps` repairs cells that extract left solid even though the
+map header lists a warp there — outdoor `MB_WARP_DOOR` tiles, which classify as
+doors but can land on a tile whose extracted collision nibble is impassable.
+That repair is now gated on the extracted behavior: it only opens a solid cell
+when the behavior is unreadable (the tileset attrs stopped before that mid, so
+`Collision.behavior` returns nil) or is a behavior pret would actually warp on —
+`Collision.isWarpMetatileBehavior`, i.e. `0x60`–`0x6F` plus `0x71`, the arrow
+warps, directional stair warps, doors, ladders, escalators and union-room warp
+from `field_control_avatar.c`. A map header warp event can sit on a real wall —
+`PalletTown_PlayersHouse_1F` has a dead warp at `(3,9)`, the wall tile left of
+the door mat, whose behavior is `MB_NORMAL` — and opening it let the player walk
+out of the house through the wall. The warp event itself stays indexed as
+before; only the forced-walkable write is gated.
+
 ## Verification
 
 Run with LuaJIT from the repository root:
@@ -36,6 +52,7 @@ Run with LuaJIT from the repository root:
 luajit tests/game3_object_interactions_test.lua
 luajit tests/game3_object_interactions_rom_test.lua '/path/to/FireRed.gba'
 luajit tests/game3_object_interactions_cache_test.lua '/path/to/cache/firered'
+luajit tests/engine/firered_house_wall_warp_bug2297.lua
 ```
 
 The cache integration test audits all 425 imported layouts (1,578 furniture cells),

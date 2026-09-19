@@ -135,6 +135,8 @@ end
 local function rng_fn(st, opts)
   if opts and opts.rng then return opts.rng end
   if st and type(st.rng) == "function" then return st.rng end
+  local okR, Rng = pcall(require, "src.core.game3.rng")
+  if okR and Rng and Rng.compat then return Rng.compat end
   return math.random
 end
 
@@ -144,6 +146,10 @@ local function roll(rng, lo, hi)
   ok, v = pcall(rng)
   if ok and type(v) == "number" then
     return lo + (math.floor(v) % (hi - lo + 1))
+  end
+  local okR, Rng = pcall(require, "src.core.game3.rng")
+  if okR and Rng and Rng.compat then
+    return Rng.compat(lo, hi)
   end
   return math.random(lo, hi)
 end

@@ -115,6 +115,10 @@ Versions.POKEDEX_ORDERS = {
   type = 0x4448FE,
 }
 
+-- Multichoice list table (FireRed USA 1.0). gMultichoiceLists (65 lists).
+Versions.MULTICHOICE_LISTS = 0x3E04B0
+Versions.MULTICHOICE_COUNT = 65
+
 -- Items table (FireRed USA 1.0). 375 entries × 44 bytes stride.
 Versions.ITEMS = 0x3DB028
 Versions.ITEMS_COUNT = 375
