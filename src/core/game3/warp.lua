@@ -31,6 +31,43 @@ local function announce(game, destMap, destX, destY, kind)
   return destMap, destX, destY
 end
 
+--- WarpFadeOutScreen / WarpFadeInScreen (pokefirered/src/field_fadetransition.c:95
+--- and :54). Every warp-out in pret routes through WarpFadeOutScreen, so the
+--- colour rule is shared: a changed map section whose destination owns a cave
+--- preview screen forces black, otherwise MapTransitionIsEnter decides, which is
+--- true only when a warp drops the player into a MAP_TYPE_UNDERGROUND map from
+--- somewhere above ground (fldeff_flash.c sTransitionTypes). The fade-in mirrors
+--- it with MapTransitionIsExit, true only when leaving MAP_TYPE_UNDERGROUND.
+--- Fade is passed in because warp.lua loads src.ui.game3.fade lazily per sequence.
+local MAP_TYPE_UNDERGROUND = 4
+
+local function sectionAndType(game, mapId)
+  local def = game and game.data and game.data.maps and game.data.maps[mapId]
+  if not def then return nil, 0 end
+  return tonumber(def.regionMapSectionId), tonumber(def.mapType) or 0
+end
+
+local function warpFadeModes(Fade, game, destMap)
+  local MODE = (Fade and Fade.MODE) or {}
+  local toBlack, toWhite = MODE.TO_BLACK or 1, MODE.TO_WHITE or 3
+  local fromBlack, fromWhite = MODE.FROM_BLACK or 0, MODE.FROM_WHITE or 2
+  local Map = package.loaded["src.core.game3.map"]
+  local fromSec, fromType = sectionAndType(game, Map and Map.current)
+  local toSec, toType = sectionAndType(game, destMap)
+  if fromSec and toSec and fromSec ~= toSec then
+    local ok, MapPreviewScreen = pcall(require, "src.ui.game3.map_preview_screen")
+    if ok and MapPreviewScreen and MapPreviewScreen.has then
+      local okT, MapPreviewExtract = pcall(require, "src.import.gba.map_preview_extract")
+      if okT and MapPreviewExtract and MapPreviewScreen.has(toSec, MapPreviewExtract.TYPE_CAVE) then
+        return toBlack, fromBlack
+      end
+    end
+  end
+  local enter = fromType ~= toType and toType == MAP_TYPE_UNDERGROUND
+  local exit = fromType ~= toType and fromType == MAP_TYPE_UNDERGROUND
+  return (enter and toWhite or toBlack), (exit and fromWhite or fromBlack)
+end
+
 --- Complete door entrance sequence (walking UP into a building)
 function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
   if Warp._busy then return false end
@@ -45,6 +82,7 @@ function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
   local Fade = require("src.ui.game3.fade")
   local curMap = (game and game.currentMap) or destMap
   local sound = Doors.getSoundForWarp(curMap, doorX, doorY, destMap, true)
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
 
   -- Step 1: Animate door open (Frame 0 -> 1 -> 2)
   Doors.open(curMap, doorX, doorY, { sound = sound, destMap = destMap }, function()
@@ -56,7 +94,7 @@ function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
       -- Step 4: Short beat, then door animates closed (Frame 2 -> 1 -> 0)
       Doors.closeAfterDelay(curMap, doorX, doorY, 8, { sound = sound, playSound = false }, function()
         -- Step 5: Screen fades to black
-        Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+        Fade.begin(toMode, 1, function()
           -- Step 6: Inside black, load the indoor map
           local Map = require("src.core.game3.map")
           Map.load(mod, game, destMap, {
@@ -69,7 +107,7 @@ function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
           Doors.reset()
 
           -- Step 7: Fade screen back in from black inside the building
-          Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+          Fade.begin(fromMode, 1, function()
             Warp._busy = false
             if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
                 and package.loaded["src.core.game3.scripting.space"].vm
@@ -100,6 +138,7 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
   local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
   local curMap = (game and game.currentMap) or destMap
   local sound = Doors.getSoundForWarp(destMap, destX, destY, curMap, true)
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
 
   -- Step 1: Play exit sound (SE_EXIT)
   if Audio and Audio.playSe then
@@ -107,7 +146,7 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
   end
 
   -- Step 2: Screen fades to black
-  Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+  Fade.begin(toMode, 1, function()
     -- Step 3: Inside black, load the destination outdoor map at (destX, destY) facing down
     local Map = require("src.core.game3.map")
     Map.load(mod, game, destMap, {
@@ -121,7 +160,7 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
     Doors.holdOpen(destMap, destX, destY, { destMap = curMap })
 
     -- Step 4: Fade screen in from black showing player in the open doorway
-    Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+    Fade.begin(fromMode, 1, function()
       -- Step 5: Force player to take 1 step DOWN out of the doorway onto (destX, destY + 1)
       Player.forceStep("down", function()
         -- Step 6: Player landed on (destX, destY + 1). Short beat, then door closes behind them!
@@ -163,6 +202,7 @@ function Warp.startEscalator(mod, game, destMap, destX, destY, dir, approachDir,
   local SpecialAnim = require("src.core.game3.special_field_anim")
 
   local goingUp = (dir ~= "down")
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
 
   -- GBA pret trig offsets for escalator (field_effect.c)
   local function getOffsets(amp, isGoingUp, isLanding)
@@ -201,7 +241,7 @@ function Warp.startEscalator(mod, game, destMap, destX, destY, dir, approachDir,
     local destLayout = Map._def and Map._def.midLayout
     SpecialAnim.startEscalator(destLayout, destX, destY, goingUp)
 
-    Fade.begin(Fade.MODE.FROM_BLACK, 1, function() end)
+    Fade.begin(fromMode, 1, function() end)
 
     Task.spawn(function(t)
       -- 16 amp steps over 32 frames (every 2 frames advances 1 amp)
@@ -256,7 +296,7 @@ function Warp.startEscalator(mod, game, destMap, destX, destY, dir, approachDir,
       -- In FRLG: when task->data[2] > 3 (after ~8 frames), begin fade out
       if t.frames >= 8 and not fadeStarted then
         fadeStarted = true
-        Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+        Fade.begin(toMode, 1, function()
           fadeDone = true
         end)
       end
@@ -308,6 +348,7 @@ function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
   local SE = require("src.core.game3.se_ids")
   local Map = require("src.core.game3.map")
   local Task = require("src.core.game3.task")
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
 
   local function finish()
     Warp._busy = false
@@ -336,7 +377,7 @@ function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
     Player.spriteXOffset = math.floor(offX / 32)
     Player.spriteYOffset = math.floor(offY / 32)
 
-    Fade.begin(Fade.MODE.FROM_BLACK, 1, function() end)
+    Fade.begin(fromMode, 1, function() end)
 
     Task.spawn(function()
       if timer > 0 then
@@ -376,7 +417,7 @@ function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
 
     if timer >= 12 and not fadeStarted then
       fadeStarted = true
-      Fade.begin(Fade.MODE.TO_BLACK, 1, function() fadeDone = true end)
+      Fade.begin(toMode, 1, function() fadeDone = true end)
     end
 
     if fadeDone then
@@ -417,7 +458,9 @@ function Warp.startTeleport(mod, game, destMap, destX, destY)
     pcall(function() Audio.playSe(SE.SE_WARP_IN or 39) end)
   end
 
-  Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
+
+  Fade.begin(toMode, 1, function()
     local Map = require("src.core.game3.map")
     Map.load(mod, game, destMap, {
       x = destX,
@@ -431,7 +474,7 @@ function Warp.startTeleport(mod, game, destMap, destX, destY)
       pcall(function() Audio.playSe(SE.SE_WARP_OUT or 40) end)
     end
 
-    Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+    Fade.begin(fromMode, 1, function()
       Warp._busy = false
       if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
           and package.loaded["src.core.game3.scripting.space"].vm
@@ -462,7 +505,9 @@ function Warp.startFall(mod, game, destMap, destX, destY)
     pcall(function() Audio.playSe(SE.SE_FALL or 37) end)
   end
 
-  Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
+
+  Fade.begin(toMode, 1, function()
     local Map = require("src.core.game3.map")
     Map.load(mod, game, destMap, {
       x = destX,
@@ -476,7 +521,7 @@ function Warp.startFall(mod, game, destMap, destX, destY)
       pcall(function() Audio.playSe(SE.SE_LEDGE or 10) end)
     end
 
-    Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+    Fade.begin(fromMode, 1, function()
       Warp._busy = false
       if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
           and package.loaded["src.core.game3.scripting.space"].vm
@@ -559,19 +604,20 @@ function Warp.request(mod, game, mapId, x, y, facing, opts)
   Warp._busy = true
   local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
   if Field and Field.lock then Field.lock() end
+  local toMode, fromMode = warpFadeModes(Fade, game, mapId)
 
   if opts.se ~= false then
     local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
     if Audio and Audio.playSe then pcall(function() Audio.playSe(sound) end) end
   end
 
-  Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+  Fade.begin(toMode, 1, function()
     doLoad()
     if Player and Player.setVisible then
       Player.setVisible(true)
     end
     Doors.reset()
-    Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+    Fade.begin(fromMode, 1, function()
       Warp._busy = false
       if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
           and package.loaded["src.core.game3.scripting.space"].vm

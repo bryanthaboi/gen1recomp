@@ -156,6 +156,12 @@ function Hud.update(game, _dt)
     MapNamePopup.update(dt)
   end
 
+  -- Tick location preview screen (map_preview_screen.c Task_RunMapPreviewScreenForest)
+  local okPrev, MapPreviewScreen = pcall(require, "src.ui.game3.map_preview_screen")
+  if okPrev and MapPreviewScreen and MapPreviewScreen.update then
+    MapPreviewScreen.update(dt)
+  end
+
   local input = game and game.input
   if not input then return end
 
@@ -168,6 +174,9 @@ function Hud.update(game, _dt)
   if inBattle or Message.isOpen() or Stack.busy() then
     if okPop and MapNamePopup and MapNamePopup.dismiss then
       MapNamePopup.dismiss()
+    end
+    if okPrev and MapPreviewScreen and MapPreviewScreen.dismiss then
+      MapPreviewScreen.dismiss()
     end
   end
 

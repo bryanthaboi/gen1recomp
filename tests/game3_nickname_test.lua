@@ -124,7 +124,7 @@ for _, key in ipairs(expectedKeys) do
 end
 
 -- Check Naming screen layout coordinates match pokefirered
-Naming.open({ template = "NICKNAME", species = 1, maxLen = 10, title = "YOUR POKEMON'S NICKNAME?" })
+Naming.open({ template = "NICKNAME", species = 1, maxLen = 10, title = Naming.monTitle("BULBASAUR") })
 check(Naming.isOpen(), "Naming screen is open")
 
 -- Verify species icon positioning at (56, 40)

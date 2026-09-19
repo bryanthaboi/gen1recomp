@@ -24,7 +24,10 @@ Versions.ROM_SIZE = 16777216
 -- v90: fanfare audio cues, emote cues (0x62-0x66), pause menu YES/NO exit & main menu launcher exit
 -- v91: ROM-native Help topics, context lists, text and chrome.
 -- v93: original furniture/sign scripts and metatile interaction behaviors.
-Versions.CACHE_VERSION = 98
+-- v99: gEggMoves → pokemon/egg_moves.lua (hidden-mon egg moves were inert).
+-- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
+--       mapsec names and sDungeonInfo dungeon descriptions.
+Versions.CACHE_VERSION = 100
 Versions.NATIVE_VERSION = 5
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1
@@ -97,6 +100,15 @@ Versions.MOVE_NAMES = 0x247094            -- gMoveNames
 Versions.MOVE_NAME_LENGTH = 12            -- +1 EOS → 13-byte stride
 Versions.MOVE_DESCRIPTIONS = 0x4886E8     -- gMoveDescriptionPointers (354 pointers)
 Versions.LEVEL_UP_LEARNSETS = 0x25D7B4    -- gLevelUpLearnsets pointer table
+-- gEggMoves (pokefirered/src/data/pokemon/egg_moves.h).  Not a pointer table:
+-- one flat u16 stream of `{ species + EGG_MOVES_SPECIES_OFFSET, move…, 0xFFFF }`
+-- runs, each run ended by EGG_MOVES_TERMINATOR; the table simply stops after the
+-- last run, so the following symbol's data ends the scan.  Only species that
+-- actually have an egg move appear, so it is sparse.
+Versions.EGG_MOVES = 0x25EF0C             -- gEggMoves (FireRed USA 1.0)
+Versions.EGG_MOVES_SPECIES_OFFSET = 20000
+Versions.EGG_MOVES_TERMINATOR = 0xFFFF
+Versions.EGG_MOVES_MAX = 16               -- per species; the ROM's real max is 8
 Versions.EVOLUTION_TABLE = 0x259754       -- gEvolutionTable
 Versions.EVOS_PER_MON = 5
 Versions.EVOLUTION_ENTRY_SIZE = 8         -- method,u16 param,u16 target,u16 pad
@@ -114,6 +126,43 @@ Versions.POKEDEX_ORDERS = {
   height = 0x4445FA,
   type = 0x4448FE,
 }
+
+-- Region map & location preview screens (pokefirered src/region_map.c,
+-- src/map_preview_screen.c, include/map_preview_screen.h).
+-- sMapPreviewScreenData[]: struct MapPreviewScreen { u8 mapsec; u8 type;
+-- u16 flagId; const void *tilesptr; const void *tilemapptr; const void *palptr; }
+Versions.MAP_PREVIEW_SCREEN_DATA = 0x43E9E8
+Versions.MAP_PREVIEW_COUNT = 28
+Versions.MAP_PREVIEW_ENTRY_SIZE = 16
+Versions.MAP_PREVIEW_TYPE_CAVE = 0         -- MPS_TYPE_CAVE
+Versions.MAP_PREVIEW_TYPE_FOREST = 1       -- MPS_TYPE_FOREST
+-- CopyToBgTilemapBufferRect(2, tilemap, 0, 0, 32, 20) — 640 u16 = 1280 bytes.
+Versions.MAP_PREVIEW_TILEMAP_W = 32
+Versions.MAP_PREVIEW_TILEMAP_H = 20
+-- Each entry's palptr holds 0x40 bytes (32 BGR555 colours = BG banks 13 and 14);
+-- palptr + 0x40 == tilesptr for all 28 entries and tilesptr starts with its LZ77
+-- header, so the palette cannot be longer. pret's MapPreview_LoadGfx asks for 3
+-- banks (0x60 bytes) and so also copies that LZ77 header into bank 15, but no
+-- tilemap entry in the visible area references bank 15.
+Versions.MAP_PREVIEW_PALETTE_COUNT = 32
+Versions.MAP_PREVIEW_PALETTE_BYTES = 0x40
+Versions.MAP_PREVIEW_PALETTE_BANKS = 2
+-- Tilemap entries reference banks 13 and 14 only across visible columns 0-29;
+-- the sole bank-0 references sit in the off-screen padding columns 30-31.
+Versions.MAP_PREVIEW_BANK_LO = 13
+Versions.MAP_PREVIEW_BANK_HI = 14
+-- sMapsecName_* — one 0xFF-terminated string per mapsec, ascending, contiguous.
+Versions.MAPSEC_NAMES = 0x3EECFC
+-- sRegionMapSectionIdToName[] — 109 pointers into the block above; usable as a
+-- defensive cross-check (table[i] == offset of the i-th string).
+Versions.MAPSEC_NAME_POINTERS = 0x3F1CAC
+Versions.MAPSEC_FIRST = 88                 -- MAPSEC_PALLET_TOWN
+Versions.MAPSEC_LAST = 196                 -- MAPSEC_SPECIAL_AREA
+Versions.MAPSEC_COUNT = 109
+-- sDungeonInfo[]: struct DungeonMapInfo { u32 id; const u8 *name; const u8 *desc; }
+Versions.DUNGEON_INFO = 0x3F1B3C
+Versions.DUNGEON_INFO_COUNT = 19
+Versions.DUNGEON_INFO_ENTRY_SIZE = 12
 
 -- Multichoice list table (FireRed USA 1.0). gMultichoiceLists (65 lists).
 Versions.MULTICHOICE_LISTS = 0x3E04B0

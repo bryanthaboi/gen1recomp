@@ -568,6 +568,17 @@ do
   check(StatGrowth.isOpen(), "StatGrowth window opened on level up")
   eq(StatGrowth._page, 1, "StatGrowth starts on Page 1 (diffs)")
 
+  -- #2324: the sequence must WAIT on the window, not run past it.
+  local stepBefore = ExpSeq._i
+  local msgsBefore = #messages
+  for _ = 1, 20 do
+    eq(ExpSeq.update(), false, "ExpSeq.update() reports busy while the stat window is open")
+  end
+  eq(ExpSeq._i, stepBefore, "ExpSeq did not advance past the open stat window")
+  eq(#messages, msgsBefore, "no battle text pushed while the stat window is open")
+  check(StatGrowth.isOpen(), "StatGrowth still open after idle pumps")
+  eq(StatGrowth._page, 1, "StatGrowth still on Page 1 after idle pumps")
+
   -- Advance to Page 2
   local fakeInput = {
     wasPressed = function(self, key) return key == "a" end,
@@ -576,9 +587,29 @@ do
   check(StatGrowth.isOpen(), "StatGrowth still open on Page 2")
   eq(StatGrowth._page, 2, "StatGrowth on Page 2 (new values)")
 
+  -- #2324: Page 2 is still a wait
+  for _ = 1, 20 do
+    eq(ExpSeq.update(), false, "ExpSeq.update() reports busy on stat window Page 2")
+  end
+  eq(ExpSeq._i, stepBefore, "ExpSeq still did not advance on Page 2")
+  check(StatGrowth.isOpen(), "StatGrowth still open after idle pumps on Page 2")
+  eq(#messages, msgsBefore, "still no battle text while Page 2 is up")
+
   -- Confirm Page 2 -> closes window and advances sequence
   StatGrowth.handleInput(fakeInput)
   check(not StatGrowth.isOpen(), "StatGrowth closed after confirmation")
+  eq(ExpSeq._i, stepBefore + 1, "ExpSeq advanced only once the window closed")
+
+  -- #2324: a window whose phase can no longer dismiss it must be torn down.
+  local savedActive, savedPhase, savedHeadless = Battle._active, Battle._phase, Battle._headless
+  Battle._active, Battle._phase, Battle._headless = true, nil, true
+  StatGrowth.open(mon, res.steps[1].oldStats, res.steps[1].newStats, function()
+    error("[FAIL] a torn-down stat window must not fire its onDone callback")
+  end)
+  check(StatGrowth.isOpen(), "stale stat window open before Battle.update")
+  Battle.update(1 / 60, { input = fakeInput })
+  check(not StatGrowth.isOpen(), "Battle.update closed a stat window outside its phases")
+  Battle._active, Battle._phase, Battle._headless = savedActive, savedPhase, savedHeadless
 end
 
 print("\nALL BATTLE SWITCH & FAINT TESTS PASSED! (100%)")

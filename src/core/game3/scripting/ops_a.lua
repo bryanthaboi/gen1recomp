@@ -448,6 +448,14 @@ local function dispatch(vm, row)
     return false
   elseif op == "setworldmapflag" then
     local flag = row.flag or row[1]
+    -- MapPreview_SetFlag: capture the pre-visit state for the forest preview
+    -- duration, then set the flag (map_preview_screen.c:605).
+    do
+      local ok, MapPreviewScreen = pcall(require, "src.ui.game3.map_preview_screen")
+      if ok and MapPreviewScreen and MapPreviewScreen.setVisitedFlag then
+        MapPreviewScreen.setVisitedFlag(flag, Flags.getFlag(store, ctx, flag) == true)
+      end
+    end
     Flags.setFlag(store, ctx, flag, true)
     -- Host Sevii Town Map unlock (One Island region map page).
     if tonumber(flag) == Flags.IDS.WORLD_MAP_ONE_ISLAND

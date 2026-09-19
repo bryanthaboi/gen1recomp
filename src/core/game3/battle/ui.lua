@@ -24,6 +24,15 @@ local BallOpen = require("src.core.game3.battle.ball_open")
 
 local Ui = {}
 
+-- The stat window may only be on screen while the battle is in a phase that can
+-- still dismiss it; init.lua owns the list (#2324).  Resolved lazily because
+-- init.lua requires this module.
+local function stat_window_phase()
+  local Battle = package.loaded["src.core.game3.battle.init"]
+  if not (Battle and Battle.statWindowPhase) then return true end
+  return Battle.statWindowPhase()
+end
+
 Ui._queue = {}
 Ui._showing = false
 Ui._headless = false
@@ -2032,7 +2041,8 @@ function Ui.draw(w, h)
   end
 
   local StatGrowth = package.loaded["src.ui.game3.stat_growth"]
-  if StatGrowth and StatGrowth.isOpen and StatGrowth.isOpen() and StatGrowth.draw then
+  if StatGrowth and StatGrowth.isOpen and StatGrowth.isOpen() and StatGrowth.draw
+      and stat_window_phase() then
     StatGrowth.draw()
   end
 

@@ -150,7 +150,7 @@ function StartMenu.confirm()
     TrainerCard.show({ session = session })
   elseif e.id == "save" then
     local SaveMenu = require("src.ui.game3.save_menu")
-    SaveMenu.show({ session = session })
+    SaveMenu.show({ session = session, game = StartMenu._game })
   elseif e.id == "option" then
     local OptionMenu = require("src.ui.game3.option_menu")
     OptionMenu.show({ session = session })

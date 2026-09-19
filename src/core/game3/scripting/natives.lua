@@ -261,7 +261,7 @@ Natives.ALLOW = {
       end)
       local sname = (Pokemon.name and Pokemon.name(species)) or "POKéMON"
       adapters.openNaming({
-        title = sname .. "'s nickname?",
+        title = require("src.ui.game3.naming").monTitle(sname),
         template = "NICKNAME",
         maxLen = 10, -- pret POKEMON_NAME_LENGTH
         species = species,

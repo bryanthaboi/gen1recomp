@@ -9,6 +9,7 @@ local Bag = require("src.core.game3.bag")
 local ItemUse = require("src.core.game3.item_use")
 local Options = require("src.core.game3.options")
 local Trig = require("src.core.game3.trig")
+local PartyView = require("src.core.game3.battle.party_view")
 
 local BagMenu = {}
 
@@ -204,6 +205,22 @@ end
 
 local function reshow()
   if BagMenu.open then begin_open(false) end
+end
+
+-- Close the bag and report the chosen item to the battle system.  partySlot is
+-- the real party index for party-targeted items, or nil otherwise.  Shared with
+-- the Berry Pouch so a berry picked there takes the same route as a potion.
+function BagMenu.battleUse(itemId, partySlot)
+  begin_exit(true, function()
+    save_pos()
+    local cb = BagMenu._onBattleUse
+    BagMenu._battleUsed = true
+    BagMenu.open = false
+    BagMenu._battle = false
+    BagMenu._onBattleUse = nil
+    Stack.pop("bag")
+    if cb then cb(itemId, partySlot) end
+  end)
 end
 
 function BagMenu.show(sessionBag, opts)
@@ -437,8 +454,13 @@ local function handle_menu_input(input)
             local PartyMenu = require("src.ui.game3.party_menu")
             local Battle = package.loaded["src.core.game3.battle"]
             local st = Battle and Battle._st
+            -- Mid-battle the party list has to come from the live battle copy:
+            -- session.party is only written back once the battle ends, so
+            -- reading it here shows pre-battle HP and refuses heals that would
+            -- in fact work.
+            local liveParty = PartyView.live(BagMenu._session)
             -- pokefirered/src/party_menu.c:5878
-            PartyMenu.show(party, BagMenu._session and BagMenu._session.moveOverlay, {
+            PartyMenu.show(liveParty, BagMenu._session and BagMenu._session.moveOverlay, {
               session = BagMenu._session,
               bag = BagMenu._bag,
               item = row.id,
@@ -451,8 +473,11 @@ local function handle_menu_input(input)
                   PartyMenu.close()
                   return
                 end
-                local realSlot = (PartyMenu._order and PartyMenu._order[slot]) or slot
-                local mon = party and party[realSlot]
+                -- PartyMenu.show's battleOrder wrapper (party_menu.lua
+                -- apply_battle_order) already turned the tapped row into a real
+                -- party slot, so translating again would heal the wrong mon.
+                local realSlot = slot
+                local mon = liveParty and liveParty[realSlot]
                 local canUse, err = BattleItems.canUseOn(st, row.id, realSlot, mon)
                 if not canUse then
                   se(9)
@@ -462,16 +487,7 @@ local function handle_menu_input(input)
                   return
                 end
                 PartyMenu.close()
-                begin_exit(true, function()
-                  save_pos()
-                  local cb = BagMenu._onBattleUse
-                  BagMenu._battleUsed = true
-                  BagMenu.open = false
-                  BagMenu._battle = false
-                  BagMenu._onBattleUse = nil
-                  Stack.pop("bag")
-                  if cb then cb(row.id, realSlot) end
-                end)
+                BagMenu.battleUse(row.id, realSlot)
               end,
               onClose = function()
                 BagMenu.mode = "list"
@@ -481,16 +497,7 @@ local function handle_menu_input(input)
             return
           else
             -- src/item_use.c:742
-            begin_exit(true, function()
-              save_pos()
-              local cb = BagMenu._onBattleUse
-              BagMenu._battleUsed = true
-              BagMenu.open = false
-              BagMenu._battle = false
-              BagMenu._onBattleUse = nil
-              Stack.pop("bag")
-              cb(row.id, nil)
-            end)
+            BagMenu.battleUse(row.id, nil)
             return
           end
         else

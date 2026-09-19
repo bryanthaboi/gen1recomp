@@ -968,6 +968,7 @@ local function monTables(base)
     abilityNames = tableAt(base, "_abilityNames", "abilityNames"),
     meta = tableAt(base, "_speciesMeta", "speciesMeta", "meta"),
     learnsets = tableAt(base, "_learnsets", "learnsets"),
+    eggMoves = tableAt(base, "_eggMoves", "eggMoves"),
     evolutions = tableAt(base, "_evolutions", "evolutions"),
     tmhm = tableAt(base, "_tmhm", "tmhm"),
     dex = tableAt(base, "_dex", "dex"),
@@ -1132,6 +1133,13 @@ local function monRecord(base, id)
     end
   end
   record.learnset = learnset
+  -- gEggMoves is sparse: a species with no egg move has no key at all.
+  local eggMoves = {}
+  for _, move in ipairs(t.eggMoves and t.eggMoves[num] or {}) do
+    local id = toId(moveIndex, move)
+    if id then eggMoves[#eggMoves + 1] = id end
+  end
+  if #eggMoves > 0 then record.eggMoves = eggMoves end
   local evolutions = {}
   for _, row in ipairs(t.evolutions and t.evolutions[num] or {}) do
     local method = row.method or row[1]
@@ -1251,6 +1259,14 @@ local function writeMon(target, t, num, value)
       rows[#rows + 1] = { row.level, toNum(moveIndex, row.move) or 0 }
     end
     t.learnsets[num] = rows
+  end
+  if type(value.eggMoves) == "table" and t.eggMoves then
+    local list = {}
+    for _, move in ipairs(value.eggMoves) do
+      local moveNum = toNum(moveIndex, move)
+      if moveNum then list[#list + 1] = moveNum end
+    end
+    t.eggMoves[num] = list
   end
   if type(value.evolutions) == "table" and t.evolutions then
     local rows = {}
@@ -1772,6 +1788,7 @@ R.pokemon = {
     abilities = f.opt(f.list(f.union{ f.str, f.int(0, 255) })),
     learnset = f.list(f.rec{ level = f.int(1, 100), move = f.id("moves") }),
     tmhm = f.opt(f.list(f.id("moves"))),
+    eggMoves = f.opt(f.list(f.id("moves"))),
     evolutions = f.list(f.rec{ method = f.id("evolution_methods"),
                                species = f.id("pokemon"),
                                level = f.opt(f.int(0, 100)),

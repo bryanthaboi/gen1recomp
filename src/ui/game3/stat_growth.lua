@@ -39,7 +39,9 @@ function StatGrowth.isOpen()
   return StatGrowth._open
 end
 
-function StatGrowth.close()
+--- opts.silent drops the window without firing its onDone callback, for callers
+--- tearing down a step that no longer exists (#2324).
+function StatGrowth.close(opts)
   local wasOpen = StatGrowth._open
   StatGrowth._open = false
   StatGrowth._mon = nil
@@ -48,7 +50,7 @@ function StatGrowth.close()
   StatGrowth._page = 1
   local cb = StatGrowth._onDone
   StatGrowth._onDone = nil
-  if wasOpen and cb then cb() end
+  if wasOpen and cb and not (opts and opts.silent) then cb() end
 end
 
 function StatGrowth.handleInput(input)

@@ -22,6 +22,7 @@ Pokemon._abilityNames = nil
 Pokemon._speciesMeta = nil
 Pokemon._moveNames = nil
 Pokemon._learnsets = nil
+Pokemon._eggMoves = nil
 Pokemon._evolutions = nil
 Pokemon._tmhm = nil
 Pokemon._dex = nil
@@ -124,6 +125,7 @@ function Pokemon.install(cache)
   Pokemon._speciesMeta = nil
   Pokemon._moveNames = nil
   Pokemon._learnsets = nil
+  Pokemon._eggMoves = nil
   Pokemon._evolutions = nil
   Pokemon._tmhm = nil
   Pokemon._dex = nil
@@ -144,6 +146,7 @@ function Pokemon.install(cache)
   Pokemon._speciesMeta = load_lua(c, root .. "/meta.lua")
   Pokemon._moveNames = load_lua(c, root .. "/move_names.lua")
   Pokemon._learnsets = load_lua(c, root .. "/learnsets.lua")
+  Pokemon._eggMoves = load_lua(c, root .. "/egg_moves.lua")
   Pokemon._evolutions = load_lua(c, root .. "/evolutions.lua")
   Pokemon._tmhm = load_lua(c, root .. "/tmhm.lua")
   Pokemon._dex = load_lua(c, root .. "/dex.lua")
@@ -203,6 +206,7 @@ function Pokemon.invalidate()
   Pokemon._speciesMeta = nil
   Pokemon._moveNames = nil
   Pokemon._learnsets = nil
+  Pokemon._eggMoves = nil
   Pokemon._evolutions = nil
   Pokemon._tmhm = nil
   Pokemon._dex = nil
@@ -496,6 +500,19 @@ function Pokemon.learnset(species)
   if not species then return {} end
   if not Pokemon._learnsets then Pokemon.install(Pokemon._cache) end
   return (Pokemon._learnsets and Pokemon._learnsets[species]) or {}
+end
+
+--- Egg move ids for a species (FRLG gEggMoves), or nil when it has none.
+--- Mirrors Pokemon.learnset's species coercion so mods can pass either form.
+function Pokemon.eggMoves(species)
+  if type(species) == "table" then species = Pokemon.speciesOf(species) end
+  if type(species) == "string" then species = Pokemon.speciesFromName(species) or tonumber(species) end
+  species = tonumber(species)
+  if not species then return nil end
+  if not Pokemon._eggMoves then Pokemon.install(Pokemon._cache) end
+  local list = Pokemon._eggMoves and Pokemon._eggMoves[species]
+  if type(list) ~= "table" or #list == 0 then return nil end
+  return list
 end
 
 function Pokemon.evolutions(species)

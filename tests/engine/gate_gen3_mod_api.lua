@@ -92,6 +92,8 @@ do
     "resolving a derived spec again is a no-op")
   T.check(gen3.fields.learnset ~= nil and gen3.fields.baseStats.fields.specialAttack ~= nil,
     "the Gen 3 species shape is folded onto `fields`")
+  T.check(gen3.fields.eggMoves ~= nil,
+    "the Gen 3 species shape carries the gEggMoves field")
   T.eq(gen3.gen3Fields, nil, "the gen3* keys are gone from the derived spec")
   T.eq(gen3.gen2Fields, nil, "and so are the gen2* keys")
   T.eq(gen3.target, "gen3Pokemon", "the derived spec carries the routed path")
@@ -277,6 +279,9 @@ local GEN3_READY = fixture("fix_gen3_ready", { "gen1", "gen3" }, [[
   local mew = mod.content.pokemon:get("MEW")
   mod.exports.mewIndex = mew and mew.index
   mod.exports.mewStats = mew and mew.baseStats.specialAttack
+  local pidgey = mod.content.pokemon:get("PIDGEY")
+  mod.exports.pidgeyEggMoves = pidgey and pidgey.eggMoves
+  mod.exports.mewEggMoves = mew and mew.eggMoves
   local copy = {}
   for key, value in pairs(mew) do copy[key] = value end
   copy.spriteFront = mod.path .. "/front.png"
@@ -284,6 +289,7 @@ local GEN3_READY = fixture("fix_gen3_ready", { "gen1", "gen3" }, [[
   mod.content.pokemon:patch("CHARMANDER", {
     catchRate = 3,
     learnset = { { level = 1, move = "SURF" } },
+    eggMoves = { "EMBER" },
     evolutions = { { method = "EVO_ITEM", item = "THUNDERSTONE",
                      species = "CHARMELEON" } },
   })
@@ -318,6 +324,10 @@ do
   local exports = run.loader.exports.fix_gen3_ready or {}
   T.eq(exports.mewIndex, 151, "Gen 3: MEW resolves by name to species 151")
   T.eq(exports.mewStats, 100, "Gen 3: with the split special stats")
+  T.eq(table.concat(exports.pidgeyEggMoves or {}, ","), "SCRATCH,TACKLE",
+    "Gen 3: the species record carries its egg moves as move ids")
+  T.eq(exports.mewEggMoves, nil,
+    "Gen 3: a species with no gEggMoves entry carries no eggMoves field")
   local seen = {}
   for _, id in ipairs(exports.species or {}) do seen[id] = true end
   T.check(seen.NIDORAN_F and seen.CHARMANDER and not seen["?"],
@@ -327,6 +337,7 @@ do
   T.eq(P._speciesMeta[4].catchRate, 3, "Gen 3: a patch lands in the numeric meta table")
   T.eq(P._speciesMeta[151].catchRate, 45, "Gen 3: the skipped mod's patch left no trace")
   T.eq(P._learnsets[4][1][2], 57, "Gen 3: a learnset move name writes back as its number")
+  T.eq(P._eggMoves[4][1], 52, "Gen 3: an egg move name writes back as its number")
   T.eq(P._evolutions[4][1].method, 7, "Gen 3: an evolution method writes back as EVO_ITEM")
   T.eq(P._evolutions[4][1].param, 96, "Gen 3: and its item as the item number")
   T.eq(P._evolutions[4][1].target, 5, "Gen 3: and its species as the species number")

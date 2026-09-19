@@ -190,6 +190,13 @@ SCHEMAS.action = function(m)
     kind = Wire.str(m.kind, "", MAX_STRING),
     slot = Wire.num(m.slot, nil, 1, MAX_MOVES),
     index = Wire.num(m.index, nil, 1, MAX_PARTY),
+    -- an ITEM action (RFC 0021) is the turn, and the peer cannot apply
+    -- one it cannot name: the item id, and for the ETHERs the move slot.
+    -- Dropped here, the action still arrives and still spends the turn,
+    -- so the two sides diverge by a heal with nothing on screen to say
+    -- so -- the quietest desync there is.
+    item = Wire.str(m.item, nil, MAX_STRING),
+    move = Wire.num(m.move, nil, 1, MAX_MOVES),
   }
 end
 

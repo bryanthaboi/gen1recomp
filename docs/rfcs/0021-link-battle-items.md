@@ -91,6 +91,22 @@ The per-turn state hash is unchanged in shape and still agrees: every
 effect reachable in a battle is deterministic (no roll in `ItemEffects`),
 and both simulations apply it before the turn's first move.
 
+### ...and the wire schema has to name its fields
+
+`Wire.sanitize` rebuilds every inbound message field by field from
+`SCHEMAS[type]` and drops anything the schema does not name, so a new
+field on an existing message type is invisible until the schema knows
+about it. `SCHEMAS.action` named `kind`, `slot` and `index`; `item` and
+`move` are added beside them.
+
+Without that, the failure is the quiet one. A loopback `Net` pair hands
+the table straight over and every in-process test passes; a real
+transport goes through `Session` -> `Wire.sanitize`, and the peer
+receives `{ kind = "item" }` with no item in it. `LinkItems.apply`
+returns `{}`, the turn is still spent, nothing is printed, and the two
+machines are one heal apart with nothing on either screen to say so --
+until the next hash, several turns later, blames the wrong turn.
+
 ### `ItemEffects.use`: a ball on the cable is refused
 
 `BALLS[itemId]` returned `"ball"` unconditionally; in a link battle it now

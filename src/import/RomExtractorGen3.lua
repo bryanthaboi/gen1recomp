@@ -93,7 +93,8 @@ local SUBTASK_RANGES = {
   ["bag_chrome"]        = { min = 0.80, max = 0.83, label = "Bag & Items Graphics" },
   ["shop_chrome"]       = { min = 0.83, max = 0.85, label = "Mart & Shop Graphics" },
   ["trainers"]          = { min = 0.85, max = 0.86, label = "Trainer Data & Parties" },
-  ["battle_ai"]         = { min = 0.86, max = 0.88, label = "Battle AI Scripts" },
+  ["battle_ai"]         = { min = 0.86, max = 0.875, label = "Battle AI Scripts" },
+  ["map_preview"]       = { min = 0.875, max = 0.88, label = "Location Previews" },
 }
 
 function RomExtractorGen3.new(romData, manifest, progressCb, romSha1)
@@ -252,6 +253,16 @@ function RomExtractorGen3:runPokemonExtract(sha1)
     TextChromeExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     local TrainerCardExtract = require("src.import.gba.trainer_card_extract")
     TrainerCardExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    local MapPreviewExtract = require("src.import.gba.map_preview_extract")
+    local mpOk, mpErr = pcall(MapPreviewExtract.run, rom, cache, {
+      cacheRoot = GBA_ROOT,
+      progress = function(name, cur, total)
+        self:tick(name or "map_preview", cur or 0, total or 1)
+      end,
+    })
+    if not mpOk then
+      print("[map_preview] warn: " .. tostring(mpErr))
+    end
     return pRes
   end)
 

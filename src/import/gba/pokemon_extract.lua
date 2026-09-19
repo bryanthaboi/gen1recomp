@@ -9,7 +9,7 @@ local Lz77 = require("src.import.gba.lz77")
 local PokemonExtract = {}
 
 PokemonExtract.MAGIC = "SVPK"
-PokemonExtract.FORMAT_VERSION = 3
+PokemonExtract.FORMAT_VERSION = 4
 PokemonExtract.CACHE_SUB = "pokemon"
 
 local function default_cache_root()
@@ -390,6 +390,28 @@ local function write_learnsets_lua(learnsets)
   return table.concat(lines, "\n")
 end
 
+local function write_egg_moves_lua(eggMoves)
+  local lines = {
+    "-- Auto-generated FRLG gEggMoves: [species] = { move ids }.",
+    "return {",
+  }
+  local ids = {}
+  for id in pairs(eggMoves) do
+    if type(id) == "number" then ids[#ids + 1] = id end
+  end
+  table.sort(ids)
+  for _, id in ipairs(ids) do
+    local list = eggMoves[id] or {}
+    if #list > 0 then
+      lines[#lines + 1] = string.format("  [%d] = { %s },",
+        id, table.concat(list, ", "))
+    end
+  end
+  lines[#lines + 1] = "}"
+  lines[#lines + 1] = ""
+  return table.concat(lines, "\n")
+end
+
 local function write_evolutions_lua(evos)
   local lines = {
     "-- Auto-generated FRLG gEvolutionTable (method, param, targetSpecies).",
@@ -463,6 +485,48 @@ local function write_dex_lua(dex)
   lines[#lines + 1] = ""
   return table.concat(lines, "\n")
 end
+
+--- Decode gEggMoves into `{ [species] = { moveId, … } }`.
+---
+--- Not a pointer table: one flat u16 stream of runs, each opened by
+--- `species + EGG_MOVES_SPECIES_OFFSET` (a move id is always < 355, so the
+--- offset is what tells a header from a move) and closed by 0xFFFF.  The table
+--- stops after its last run, so the first word that is neither a header nor a
+--- plausible move id ends the scan.  Species without egg moves are absent.
+local function extract_egg_moves(rom, num)
+  local eggMoves = {}
+  local base = Versions.EGG_MOVES
+  if not base then return eggMoves end
+  local offset = Versions.EGG_MOVES_SPECIES_OFFSET or 20000
+  local terminator = Versions.EGG_MOVES_TERMINATOR or 0xFFFF
+  local maxMoves = Versions.EGG_MOVES_MAX or 16
+  local moveCount = Versions.MOVES_COUNT or 355
+  local limit = math.min(rom.size or Versions.ROM_SIZE or base, base + 0x10000)
+  local species
+  local o = base
+  while o + 1 < limit do
+    local word = rom:u16(o)
+    o = o + 2
+    if word == terminator then
+      if not species then break end -- the table's own terminator
+      species = nil
+    elseif word >= offset then
+      local id = word - offset
+      species = (id < num) and id or nil
+      if species then eggMoves[species] = eggMoves[species] or {} end
+    elseif species and word > 0 and word < moveCount then
+      local list = eggMoves[species]
+      if #list < maxMoves then list[#list + 1] = word end
+    else
+      break -- not a gEggMoves stream: stop rather than invent data
+    end
+  end
+  return eggMoves
+end
+
+-- Exposed for tests (tests/engine/game3_egg_moves.lua).
+PokemonExtract.eggMovesFromRom = extract_egg_moves
+PokemonExtract.writeEggMovesLua = write_egg_moves_lua
 
 --- Extract full pack into cache under {cacheRoot}/pokemon/.
 function PokemonExtract.run(rom, cache, opts)
@@ -674,6 +738,10 @@ function PokemonExtract.run(rom, cache, opts)
     }
   end
 
+  -- Egg moves (gEggMoves): sparse, so a species with no egg move is absent
+  -- rather than an empty list.
+  local eggMoves = extract_egg_moves(rom, num)
+
   -- National dex entries (category / height / weight)
   local dex = {}
   local dexBase = Versions.POKEDEX_ENTRIES or 0x44E850
@@ -751,6 +819,7 @@ function PokemonExtract.run(rom, cache, opts)
   cache:write(root .. "/learnsets.lua", write_learnsets_lua(learnsets))
   cache:write(root .. "/evolutions.lua", write_evolutions_lua(evolutions))
   cache:write(root .. "/tmhm.lua", write_tmhm_lua(tmhm, tmMoves))
+  cache:write(root .. "/egg_moves.lua", write_egg_moves_lua(eggMoves))
   cache:write(root .. "/dex.lua", write_dex_lua(dex))
   cache:write(root .. "/manifest.lua", write_manifest(num, Versions.POKEMON_VERSION))
 
@@ -859,6 +928,7 @@ function PokemonExtract.run(rom, cache, opts)
     abilityNames = abilityNames,
     moveNames = moveNames,
     learnsets = learnsets,
+    eggMoves = eggMoves,
     evolutions = evolutions,
     battleMoves = battle and battle.pack,
     partyChrome = chrome,
@@ -906,6 +976,7 @@ function PokemonExtract.ready(cache, cacheRoot)
       and valid_file(root .. "/names.lua", 20)
       and valid_file(root .. "/stats.lua", 20)
       and valid_file(root .. "/learnsets.lua", 20)
+      and valid_file(root .. "/egg_moves.lua", 20)
       and valid_file(root .. "/move_names.lua", 20)
       and valid_file(root .. "/party/slot_main.rgba", 80 * 56 * 4)
       and valid_file(root .. "/summary/page_info.rgba", 240 * 160 * 4)

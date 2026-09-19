@@ -22,6 +22,7 @@ local FrlgFont = require("src.ui.game3.frlg_font")
 local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
 local ItemUse = require("src.core.game3.item_use")
+local PartyView = require("src.core.game3.battle.party_view")
 
 local BerryPouch = {}
 
@@ -75,6 +76,60 @@ local function clamp_cursor()
   if BerryPouch.scroll > maxScroll then BerryPouch.scroll = maxScroll end
 
   return rows, total
+end
+
+-- Party-menu options for using/giving the selected berry.
+--
+-- In battle this has to go through the battle system: ItemUse.useField, which
+-- the party menu falls back to, only knows session.party, and that snapshot is
+-- not written back until the battle ends.  A berry used there would be eaten
+-- with no effect on the live battler, so hand it to BagMenu instead - the same
+-- route a potion takes from the bag.
+local function party_opts(row, mode, party)
+  local opts = {
+    session = BerryPouch._session,
+    bag = BerryPouch._bag,
+    item = row.id,
+    mode = mode,
+    onClose = function()
+      BerryPouch.mode = "list"
+      clamp_cursor()
+    end,
+  }
+  if mode ~= "use" then return opts end
+
+  local BagMenu = require("src.ui.game3.bag_menu")
+  local Battle = package.loaded["src.core.game3.battle"]
+  local st = Battle and Battle._st
+  local BattleItems = require("src.core.game3.battle.items")
+  if not (st and st.playerParty and BagMenu._battle and BagMenu._onBattleUse
+          and BattleItems.needsPartySelect(row.id)) then
+    return opts
+  end
+
+  local PartyMenu = require("src.ui.game3.party_menu")
+  opts.battle = true
+  opts.battleOrder = PartyMenu.battleOrder(st)
+  opts.layout = st.double and "double" or nil
+  opts.onSelect = function(slot)
+    if not slot or slot == 7 then
+      PartyMenu.close()
+      return
+    end
+    local mon = party[slot]
+    local canUse, err = BattleItems.canUseOn(st, row.id, slot, mon)
+    if not canUse then
+      se(9)
+      PartyMenu.showMessage(err or "It won't have any effect.", function()
+        PartyMenu.mode = "use"
+      end)
+      return
+    end
+    PartyMenu.close()
+    BerryPouch.close()
+    BagMenu.battleUse(row.id, slot)
+  end
+  return opts
 end
 
 function BerryPouch.show(session, bag, opts)
@@ -193,7 +248,7 @@ function BerryPouch.handleInput(input)
     elseif input:wasPressed("a") then
       se(5)
       local act = ACTIONS[BerryPouch.actionCursor]
-      local party = (BerryPouch._session and BerryPouch._session.party) or {}
+      local party = PartyView.live(BerryPouch._session)
       if act == "EXIT" or not row then
         BerryPouch.mode = "list"
       elseif act == "USE" then
@@ -203,16 +258,8 @@ function BerryPouch.handleInput(input)
             BerryPouch.messageText = "There is no POKéMON."
           else
             local PartyMenu = require("src.ui.game3.party_menu")
-            PartyMenu.show(party, BerryPouch._session and BerryPouch._session.moveOverlay, {
-              session = BerryPouch._session,
-              bag = BerryPouch._bag,
-              item = row.id,
-              mode = "use",
-              onClose = function()
-                BerryPouch.mode = "list"
-                clamp_cursor()
-              end,
-            })
+            PartyMenu.show(party, BerryPouch._session and BerryPouch._session.moveOverlay,
+              party_opts(row, "use", party))
           end
         else
           BerryPouch.mode = "message"

@@ -35,6 +35,7 @@ body:
         - Gold
         - Silver
         - Crystal
+        - FireRed
         - N/A
     validations:
       required: true

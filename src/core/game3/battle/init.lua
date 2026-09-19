@@ -44,6 +44,21 @@ Battle._residualStepState = nil
 
 local D = {}
 
+-- Phases in which the level-up stat window can still be dismissed by the
+-- player.  Input routing and drawing both key off this, so the window can never
+-- linger somewhere it can no longer be dismissed (#2324).
+local STAT_WINDOW_PHASES = {
+  awarding = true,
+  evolving = true,
+  switching = true,
+  shift_prompt = true,
+  catch_nickname_prompt = true,
+}
+
+function Battle.statWindowPhase()
+  return STAT_WINDOW_PHASES[Battle._phase] == true
+end
+
 -- pokefirered/src/battle_interface.c:2168
 local function hp_bar_red(hp, maxHp)
   local ok, BattleChrome = pcall(require, "src.ui.game3.battle_chrome")
@@ -2100,7 +2115,10 @@ local function start_post_catch_flow(catchRes)
             gender = gender,
             personality = personality,
             seed = ename,
-            title = "YOUR POKEMON'S NICKNAME?",
+            -- pret naming_screen.c:1712 DrawMonTextEntryBox: gSpeciesNames[mon]
+            -- + gText_PkmnsNickname. The hand-written "YOUR POKEMON'S NICKNAME?"
+            -- was 141px wide and spilled over the frame's right edge.
+            title = Naming.monTitle(Pokemon.name(sp)),
             onDone = function(nick)
               if nick and nick ~= "" and nick ~= ename then
                 if mon then mon.nickname = nick end
@@ -2139,6 +2157,14 @@ Battle.finishCatchFlow = finish_catch_flow
 
 function Battle.update(dt, game)
   if not Battle._active then return end
+
+  -- A stat window whose phase can no longer dismiss it must not linger (#2324).
+  if not Battle.statWindowPhase() then
+    local StatGrowth = package.loaded["src.ui.game3.stat_growth"]
+    if StatGrowth and StatGrowth.isOpen and StatGrowth.isOpen() then
+      StatGrowth.close({ silent = true })
+    end
+  end
 
   local input = game and game.input
   local Pokedex = package.loaded["src.ui.game3.pokedex"]
@@ -2206,8 +2232,7 @@ function Battle.update(dt, game)
   end
 
   -- Choice input during award / shift prompt / evolution learn-move prompts / catch nickname prompt / evolving
-  if (Battle._phase == "awarding" or Battle._phase == "evolving" or Battle._phase == "switching"
-      or Battle._phase == "shift_prompt" or Battle._phase == "catch_nickname_prompt")
+  if Battle.statWindowPhase()
       and not Battle._auto and game and game.input then
     local EvolutionScene = package.loaded["src.ui.game3.evolution_scene"]
     if EvolutionScene and EvolutionScene.isOpen and EvolutionScene.isOpen() then

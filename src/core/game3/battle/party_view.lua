@@ -54,6 +54,32 @@ function PartyView.fromSession(sessionParty, moveOverlay)
   return battleParty, remap
 end
 
+--- The party an item UI must read while it is open.
+---
+--- The battle runs on the copy built by fromSession, and battle_bridge only
+--- writes it back into session.party when the battle ends.  Anything that
+--- opens mid-battle and shows HP (the bag's party-select screen, the Berry
+--- Pouch) has to read the copy or it shows pre-battle HP and refuses heals
+--- that would in fact work.
+function PartyView.live(session)
+  local Battle = package.loaded["src.core.game3.battle"]
+  local st = Battle and Battle._st
+  if not (st and st.playerParty) then
+    return (session and session.party) or {}
+  end
+  local State = require("src.core.game3.battle.state")
+  -- Flush the active battlers' HP/status first, exactly as the switch path
+  -- does (battle/ui.lua open_battle_party).  battlers[2] is the second player
+  -- battler in doubles and nil in singles, so this is safe either way.
+  for _, id in ipairs({ 0, 2 }) do
+    local b = State.battler(st, id)
+    if b and b.side == "player" then
+      State.syncBattlerToParty(b, st.playerParty)
+    end
+  end
+  return st.playerParty
+end
+
 function PartyView.firstAliveIndex(party)
   if type(party) ~= "table" then return nil end
   for i, mon in ipairs(party) do

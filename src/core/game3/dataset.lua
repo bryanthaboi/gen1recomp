@@ -314,6 +314,10 @@ function Dataset.hydrate(game)
   if okBc and BagChrome and BagChrome.install then
     BagChrome.install(cache)
   end
+  local okMp, MapPreviewScreen = pcall(require, "src.ui.game3.map_preview_screen")
+  if okMp and MapPreviewScreen and MapPreviewScreen.install then
+    MapPreviewScreen.install(cache)
+  end
 
   local Audio = require("src.core.game3.audio")
   -- Explicit firered audio root — never inherit Sevii Extract.CACHE_ROOT default.

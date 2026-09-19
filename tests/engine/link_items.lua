@@ -182,4 +182,33 @@ do
   T.check(has(seenS, "RED used"), "spectator: prints the host's used line")
 end
 
+-- ------- ...and the item survives the wire, not just a loopback Net
+--
+-- The blocks above hand the message straight to the peer.  A real
+-- transport does not: Session pushes every inbound message through
+-- Wire.sanitize first, which rebuilds it field by field from a schema
+-- and drops anything the schema does not name.  An `action` that keeps
+-- only kind/slot/index arrives as an item with no item in it -- the
+-- turn is still spent, nothing is applied, nothing is printed, and the
+-- two sides are a heal apart with no way to tell.  So the schema is
+-- pinned here, where a link test can see it.
+
+do
+  local Wire = require("src.link.Wire")
+  local out = Wire.sanitize({ type = "action", kind = "item", item = "POTION",
+                              index = 2, move = 3 })
+  T.check(out ~= nil, "wire: an item action survives sanitize")
+  T.eq(out and out.kind, "item", "wire: ...as an item")
+  T.eq(out and out.item, "POTION", "wire: ...carrying WHICH item")
+  T.eq(out and out.index, 2, "wire: ...the party slot it was used on")
+  T.eq(out and out.move, 3, "wire: ...and the move it picked")
+  local spec = Wire.sanitize({ type = "spectate", side = "host",
+                               msg = { type = "action", kind = "item",
+                                       item = "FULL_HEAL" } })
+  T.eq(spec and spec.msg and spec.msg.item, "FULL_HEAL",
+    "wire: ...through a spectate wrapper too")
+  local moveOnly = Wire.sanitize({ type = "action", kind = "move", slot = 2 })
+  T.eq(moveOnly and moveOnly.item, nil, "wire: a move action carries no item")
+end
+
 T.finish("items ride the link cable when a mode asks (RFC 0021)")

@@ -7,6 +7,17 @@ local Pokemon = require("src.core.game3.pokemon")
 
 local ExpSeq = {}
 
+local function stat_growth()
+  local ok, SG = pcall(require, "src.ui.game3.stat_growth")
+  if ok and SG then return SG end
+  return nil
+end
+
+local function stat_window_open()
+  local SG = stat_growth()
+  return (SG and SG.isOpen and SG.isOpen()) and true or false
+end
+
 ExpSeq._steps = nil
 ExpSeq._i = 1
 ExpSeq._waiting = false
@@ -34,18 +45,13 @@ function ExpSeq.reset()
   if okA and okS and Audio.stopSe and SE and SE.SE_EXP then
     Audio.stopSe(SE.SE_EXP)
   end
-  local okSG, StatGrowth = pcall(require, "src.ui.game3.stat_growth")
-  if okSG and StatGrowth and StatGrowth.close then
-    StatGrowth.close()
-  end
+  local StatGrowth = stat_growth()
+  if StatGrowth and StatGrowth.close then StatGrowth.close({ silent = true }) end
   LearnMove.reset()
 end
 
 function ExpSeq.busy()
-  local okSG, StatGrowth = pcall(require, "src.ui.game3.stat_growth")
-  if okSG and StatGrowth and StatGrowth.isOpen and StatGrowth.isOpen() then
-    return true
-  end
+  if stat_window_open() then return true end
   return ExpSeq._steps ~= nil or LearnMove.busy()
 end
 
@@ -58,6 +64,10 @@ local function finish()
   ExpSeq._i = 1
   ExpSeq._waiting = false
   ExpSeq._waitingMsg = false
+  -- The step that owned the stat window is over; drop it without letting its
+  -- stale callback advance a sequence that has already ended (#2324).
+  local StatGrowth = stat_growth()
+  if StatGrowth and StatGrowth.close then StatGrowth.close({ silent = true }) end
   local okA, Audio = pcall(require, "src.core.game3.audio")
   local okS, SE = pcall(require, "src.core.game3.se_ids")
   if okA and okS and Audio.stopSe and SE and SE.SE_EXP then
@@ -332,6 +342,12 @@ function ExpSeq.update()
 
   if ExpSeq._waiting then
     if LearnMove.busy() then
+      return false
+    end
+    -- The level-up stat window waits for the player; its onDone callback clears
+    -- _waiting and advances.  Without this the sequence ran straight past the
+    -- open window, leaving it on screen (#2324).
+    if stat_window_open() then
       return false
     end
     if not Anim.busy() then

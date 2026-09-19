@@ -452,15 +452,30 @@ function Map.load(mod, game, mapId, opts)
 
   -- Location change overlay (pokefirered/src/overworld.c:785, 1687, 1922)
   -- Strict arbiter: gMapHeader.showMapName == TRUE. If 0/false, strictly suppress popup.
+  -- overworld.c:1913 gives a changed map section with a FOREST preview screen
+  -- precedence over the popup; pret gates that on a real warp, not a connection.
   do
+    local currSec = def and (def.regionMapSectionId or def.region_map_section_id)
+    local lastSec = Map._lastSectionId
+    local showFlag = def and (def.showMapName or def.show_map_name)
+    local previewed = false
+
+    if currSec and not opts.seamless and lastSec ~= currSec then
+      local okPreview, MapPreviewScreen = pcall(require, "src.ui.game3.map_preview_screen")
+      if okPreview and MapPreviewScreen then
+        MapPreviewScreen.dismiss()
+        previewed = MapPreviewScreen.show(currSec) == true
+      end
+    end
+
     local okPop, MapNamePopup = pcall(require, "src.ui.game3.map_name_popup")
     if okPop and MapNamePopup then
-      local showFlag = def and (def.showMapName or def.show_map_name)
-      if showFlag == 0 or showFlag == false then
+      if previewed then
+        MapNamePopup.dismiss()
+      elseif showFlag == 0 or showFlag == false then
         MapNamePopup.dismiss()
       elseif showFlag == 1 or showFlag == true then
-        local currSec = def and (def.regionMapSectionId or def.region_map_section_id)
-        if Map._lastSectionId == nil or Map._lastSectionId ~= currSec or not opts.seamless then
+        if lastSec == nil or lastSec ~= currSec or not opts.seamless then
           MapNamePopup.show(def)
         end
       end

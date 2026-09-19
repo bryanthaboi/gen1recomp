@@ -8,6 +8,7 @@ local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local Chrome = require("src.ui.game3.chrome")
 local FrlgFont = require("src.ui.game3.frlg_font")
+local MapSectionsExtract = require("src.import.gba.map_sections_extract")
 
 local SaveMenu = {}
 
@@ -15,6 +16,7 @@ SaveMenu.open = false
 SaveMenu.cursor = 1 -- 1=YES 2=NO
 SaveMenu._phase = "confirm" -- confirm | overwrite | saving | saved
 SaveMenu._session = nil
+SaveMenu._game = nil
 SaveMenu._onClose = nil
 
 local function se(id)
@@ -62,6 +64,7 @@ function SaveMenu.show(opts)
   SaveMenu.cursor = 1
   SaveMenu._phase = "confirm"
   SaveMenu._session = opts.session
+  SaveMenu._game = opts.game
   SaveMenu._onClose = opts.onClose
   Stack.push("save", SaveMenu, { hideBelow = true })
   se(6) -- SE_WIN_OPEN
@@ -138,11 +141,34 @@ function SaveMenu.cancel()
   SaveMenu.close()
 end
 
+-- pret resolves the header through save_menu_util.c SAVE_STAT_LOCATION ->
+-- GetMapNameGeneric(dest, gMapHeader.regionMapSectionId) -> region_map.c
+-- GetMapName(dst, mapsec, 0), i.e. the sMapNames place name and never the
+-- engine's internal map id (which is what session.map holds).
+function SaveMenu.locationName(session)
+  session = session or {}
+  if type(session.mapName) == "string" and session.mapName ~= "" then
+    return session.mapName:upper()
+  end
+  local mapId = session.map
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = SaveMenu._game or (Runtime and Runtime._game)
+  local def = mapId and game and game.data and game.data.maps and game.data.maps[mapId]
+  -- floorNum 0: save_menu_util.c passes fill = 0, like map_name_popup.c.
+  local info = MapSectionsExtract.getInfo(def and def.regionMapSectionId, mapId, 0)
+  if info and info.resolved and type(info.name) == "string" and info.name ~= "" then
+    return info.name:upper()
+  end
+  -- Not a map we can identify (a mod's map, or one with no header data): show
+  -- a readable form of the id rather than getInfo's Pallet Town placeholder.
+  return tostring(mapId or "PALLET TOWN"):gsub("^FR_", ""):gsub("^SEVII_", ""):gsub("_", " ")
+end
+
 function SaveMenu.draw()
   if not SaveMenu.open then return end
   local session = SaveMenu._session or {}
   local name = tostring(session.name or session.playerName or "RED")
-  local map = tostring(session.mapName or session.map or "PALLET TOWN"):upper()
+  local map = SaveMenu.locationName(session)
   local badges = count_badges(session)
   local caught = count_caught(session.dex) or tonumber(session.caughtMonsCount) or 0
   local hours = tonumber(session.playTimeHours or session.hours) or 0
@@ -150,8 +176,12 @@ function SaveMenu.draw()
 
   -- 1. Top-Left Save Stats Box (pret sSaveStatsWindowTemplate at (1, 1, 14, 9))
   Window.stdFrame(Window.template(1, 1, 14, 9))
-  -- Location Header
-  FrlgFont.draw(map, 1 * 8 + 4, 1 * 8 + 2, { maxWidth = 14 * 8, colors = FrlgFont.COLOR.NORMAL })
+  -- Location Header.  pret start_menu.c PrintSaveStats centres it in the
+  -- 14-tile window: x = (112 - GetStringWidth(FONT_NORMAL, text)) / 2.
+  local headerW = 14 * 8
+  local mapW = FrlgFont.measure(map)
+  local mapX = 1 * 8 + math.max(0, math.floor((headerW - mapW) / 2))
+  FrlgFont.draw(map, mapX, 1 * 8 + 2, { maxWidth = headerW, colors = FrlgFont.COLOR.NORMAL })
   -- PLAYER
   FrlgFont.draw("PLAYER", 1 * 8 + 4, 1 * 8 + 18, { colors = FrlgFont.COLOR.NORMAL })
   FrlgFont.draw(name, 1 * 8 + 56, 1 * 8 + 18, { colors = FrlgFont.COLOR.NORMAL })

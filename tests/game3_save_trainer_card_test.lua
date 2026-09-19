@@ -21,7 +21,9 @@ local session = {
   playTimeHours = 2,
   playTimeMinutes = 45,
   badges = { true, true, false, false, false, false, false, false },
-  mapName = "PALLET TOWN",
+  -- sessions carry the engine's map id; the save screen resolves the place name
+  -- from it (see tests/engine/save_menu_location_bug2328.lua)
+  map = "FR_PALLET_TOWN",
 }
 
 local closed = false

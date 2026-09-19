@@ -199,6 +199,9 @@ function Sdk.gen3Data()
       _learnsets = { [4] = { { 1, 10 }, { 7, 52 } }, [5] = { { 1, 10 } },
                      [16] = { { 1, 33 } }, [29] = { { 1, 33 } },
                      [151] = { { 1, 1 } } },
+      -- sparse, exactly like the extractor: a species with no egg move has
+      -- no key rather than an empty list
+      _eggMoves = { [4] = { 57 }, [16] = { 10, 33 } },
       _evolutions = { [4] = { { method = 4, param = 16, target = 5 } } },
       _dex = { [4] = { category = "LIZARD", height = 6, weight = 85 },
                [151] = { category = "NEW SPECIES", height = 4, weight = 40 } },
