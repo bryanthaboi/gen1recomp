@@ -52,6 +52,14 @@ Std.SPECIAL = {
   VsSeekerResetObjectMovementAfterChargeComplete = 0x164, -- pokefirered/data/specials.inc:367
   VsSeekerFreezeObjectsAfterChargeComplete = 0x172, -- pokefirered/data/specials.inc:381
   SetBattledTrainerFlag = 0x18F, -- pokefirered/data/specials.inc:410
+  ShowEasyChatScreen = 0x5F, -- 95 pokefirered/data/specials.inc:106
+  ShowEasyChatMessage = 0x60, -- 96 pokefirered/data/specials.inc:107
+  GetBattleOutcome = 0xB6, -- 182 (pokefirered/data/specials.inc:191)
+  StartOldManTutorialBattle = 0xA8, -- 168 (pokefirered/data/specials.inc:168)
+  StartGroudonKyogreBattle = 0x137, -- 311 (pokefirered/data/specials.inc:322)
+  StartLegendaryBattle = 0x138, -- 312 (pokefirered/data/specials.inc:323)
+  StartRegiBattle = 0x139, -- 313 (pokefirered/data/specials.inc:324)
+  StartSouthernIslandBattle = 0x143, -- 323 (pokefirered/data/specials.inc:334)
   -- Engine-extension specials (not cart indices) for shared primitives.
   FadeScreen = 0xF001,
   OpenNaming = 0xF002,
@@ -62,16 +70,14 @@ Std.TEXT = {
   Text_TownMap = T([[
 It's a TOWN MAP.]]),
   Text_WelcomeWantToHealPkmn = T([[
-Welcome to our POKéMON CENTER!
-Would you like me to rest your
-POKéMON to good health?]]),
+Welcome to our POKéMON CENTER!\p
+Would you like me to heal your
+POKéMON to perfect health?]]),
   Text_TakeYourPkmnForFewSeconds = T([[
-OK. I'll take your POKéMON for a
-few seconds.]]),
+OK, may I see your POKéMON?]]),
   Text_RestoredPkmnToFullHealth = T([[
 Thank you for waiting.
-We've restored your POKéMON to
-full health.]]),
+Your POKéMON are fully healed.]]),
   Text_WeHopeToSeeYouAgain = T([[
 We hope to see you again!]]),
   Text_BootedUpPC = T([[
@@ -110,6 +116,7 @@ Std.SCRIPTS = {
   },
   EventScript_PC = {
     { op = "lockall" },
+    { op = "setvar", var = 0x8004, value = 0 },
     { op = "special", id = Std.SPECIAL.AnimatePcTurnOn },
     { op = "loadword", dest = 0, value = "Text_BootedUpPC" },
     { op = "message", ptr = 0 },
@@ -117,6 +124,7 @@ Std.SCRIPTS = {
     { op = "waitbuttonpress" },
     { op = "special", id = Std.SPECIAL.CreatePCMenu },
     { op = "waitstate" },
+    { op = "setvar", var = 0x8004, value = 0 },
     { op = "special", id = Std.SPECIAL.AnimatePcTurnOff },
     { op = "releaseall" },
     { op = "end" },
@@ -260,10 +268,40 @@ Std.SCRIPTS = {
     { op = "setvar", var = 0x800D, value = 1 },
     { op = "return" },
   },
-  ["std:6"] = { -- MSGBOX_AUTOCLOSE
+  ["std:2"] = { -- MSGBOX_NPC, data/scripts/std_msgbox.inc:6
+    { op = "lock" },
+    { op = "faceplayer" },
     { op = "message", ptr = 0 },
     { op = "waitmessage" },
     { op = "waitbuttonpress" },
+    { op = "release" },
+    { op = "return" },
+  },
+  ["std:3"] = { -- MSGBOX_SIGN, data/scripts/std_msgbox.inc:14
+    { op = "lockall" },
+    { op = "message", ptr = 0 },
+    { op = "waitmessage" },
+    { op = "waitbuttonpress" },
+    { op = "releaseall" },
+    { op = "return" },
+  },
+  ["std:4"] = { -- MSGBOX_DEFAULT, data/scripts/std_msgbox.inc:22
+    { op = "message", ptr = 0 },
+    { op = "waitmessage" },
+    { op = "waitbuttonpress" },
+    { op = "return" },
+  },
+  ["std:5"] = { -- MSGBOX_YESNO, data/scripts/std_msgbox.inc:27
+    { op = "message", ptr = 0 },
+    { op = "waitmessage" },
+    { op = "yesnobox", [1] = 20, [2] = 8 },
+    { op = "return" },
+  },
+  ["std:6"] = { -- MSGBOX_AUTOCLOSE, data/scripts/std_msgbox.inc:32
+    { op = "message", ptr = 0 },
+    { op = "waitmessage" },
+    { op = "waitbuttonpress" },
+    { op = "release" },
     { op = "return" },
   },
   ["std:8"] = { -- STD_PUT_ITEM_AWAY

@@ -334,8 +334,167 @@ stS.monToSwitchInto = {}
 local aS2 = Ai.chooseAction(stS, 1, { pack = pack })
 check(aS2 and aS2.kind == "move", "wild mons never switch")
 
+print("[test] 12. Complete 743 Trainer aiFlags ROM parity vs pokefirered/src/data/trainers.h")
+do
+  local f = io.open("pokefirered/src/data/trainers.h", "r")
+  if f then
+    local content = f:read("*a")
+    f:close()
+    local trainerPack = require("data.generated.gba.trainers")
+    local trainerBlocks = {}
+    local currentId = nil
+    local currentAiFlags = 0
+    for line in content:gmatch("[^\r\n]+") do
+      local tid = line:match("%[([%w_]+)%]%s*=%s*{")
+      if tid then
+        currentId = tid
+        currentAiFlags = 0
+      elseif line:match("%.aiFlags%s*=%s*(.-),") then
+        local expr = line:match("%.aiFlags%s*=%s*(.-),")
+        local val = 0
+        if expr:find("AI_SCRIPT_CHECK_BAD_MOVE") then val = val + 1 end
+        if expr:find("AI_SCRIPT_CHECK_VIABILITY") then val = val + 2 end
+        if expr:find("AI_SCRIPT_TRY_TO_FAINT") then val = val + 4 end
+        if expr:find("AI_SCRIPT_SETUP_FIRST_TURN") then val = val + 8 end
+        if expr:find("AI_SCRIPT_RISKY") then val = val + 16 end
+        if expr:find("AI_SCRIPT_PREFER_STRONGEST_MOVE") then val = val + 32 end
+        if expr:find("AI_SCRIPT_PREFER_BATON_PASS") then val = val + 64 end
+        if expr:find("AI_SCRIPT_DOUBLE_BATTLE") then val = val + 128 end
+        if expr:find("AI_SCRIPT_HP_AWARE") then val = val + 256 end
+        if expr:find("AI_SCRIPT_ROAMING") then val = val + 0x20000000 end
+        if expr:find("AI_SCRIPT_SAFARI") then val = val + 0x40000000 end
+        if expr:find("AI_SCRIPT_FIRST_BATTLE") then val = val + 0x80000000 end
+        currentAiFlags = val
+        trainerBlocks[#trainerBlocks + 1] = { id = currentId, aiFlags = currentAiFlags }
+      elseif currentId and line:match("^%s*},") then
+        if #trainerBlocks == 0 or trainerBlocks[#trainerBlocks].id ~= currentId then
+          trainerBlocks[#trainerBlocks + 1] = { id = currentId, aiFlags = 0 }
+        end
+        currentId = nil
+      end
+    end
+    check(#trainerBlocks == 743, "found 743 pret trainer definitions")
+    local mismatches = 0
+    for idx, pretT in ipairs(trainerBlocks) do
+      local tid = idx - 1
+      local romT = trainerPack.trainers[tid]
+      if not romT or romT.aiFlags ~= pretT.aiFlags then
+        mismatches = mismatches + 1
+      end
+    end
+    check(mismatches == 0, "all 743 ROM-extracted trainer aiFlags match pret (0 mismatches)")
+  else
+    check(true, "pokefirered headers missing; skip parity scan")
+  end
+end
+
+print("[test] 13. Scripted Wild Battles: dowildbattle sets wildScripted -> aiFlags = 1 (AI_SCRIPT_CHECK_BAD_MOVE)")
+do
+  local stScripted = State.new({
+    wild = true,
+    playerParty = { { species = 16, level = 20, hp = 50, maxHp = 50, moves = { 33 }, pp = { 35 } } },
+    foeMon = {
+      species = 74, level = 20, hp = 50, maxHp = 50,
+      moves = { 89, 33 }, pp = { 10, 35 }, -- EQ (Ground) and Tackle (Normal)
+    },
+  })
+  stScripted.player.type1 = 2 -- FLYING
+  stScripted.player.type2 = nil
+  stScripted.enemy.type1 = 4 -- GROUND
+  stScripted.enemy.type2 = 5 -- ROCK
+  stScripted.wildScripted = true
+
+  local actScripted = Ai.chooseMove(stScripted, {
+    pack = pack,
+    rng = function(a, b)
+      if a and b then return a end
+      return 0
+    end,
+  })
+  check(actScripted and actScripted.scores ~= nil, "scripted wild battle executed AI scripts")
+  check(actScripted.move == 33 or actScripted.slot == 2, "scripted wild avoids ineffective Earthquake vs Flying")
+end
+
+print("[test] 14. Legendary Wild Battles: StartLegendaryBattle sets legendary -> aiFlags = 7")
+do
+  local stLegend = State.new({
+    wild = true,
+    playerParty = { { species = 19, level = 5, hp = 5, maxHp = 40, moves = { 33 }, pp = { 35 } } },
+    foeMon = {
+      species = 146, level = 50, hp = 150, maxHp = 150, -- Moltres
+      moves = { 52, 45 }, -- Ember, Growl
+      pp = { 25, 40 },
+    },
+  })
+  stLegend.player.type1 = 0
+  stLegend.enemy.type1 = 10 -- FIRE
+  stLegend.legendary = true
+
+  local actLegend = Ai.chooseMove(stLegend, {
+    pack = pack,
+    rng = function(a, b)
+      if a and b then return a end
+      return 0
+    end,
+  })
+  check(actLegend and actLegend.scores ~= nil, "legendary battle executed AI scripts (flags=7)")
+  check(actLegend.slot == 1 or actLegend.move == 52, "legendary prefers KO Ember over Growl")
+  check(actLegend.scores[1] > actLegend.scores[2], "Ember score > Growl score under legendary AI")
+end
+
+print("[test] 15. 32-bit unsigned AI_SCRIPT_FIRST_BATTLE (0x80000000) safety")
+do
+  local stFirst = State.new({
+    wild = false,
+    playerParty = { { species = 1, level = 5, hp = 20, maxHp = 20, moves = { 33 }, pp = { 35 } } },
+    foeMon = { species = 4, level = 5, hp = 20, maxHp = 20, moves = { 33 }, pp = { 35 } },
+  })
+  stFirst.firstBattle = true
+  stFirst.aiFlags = 0x80000000
+  local actFirst = Ai.chooseMove(stFirst, { pack = pack })
+  check(actFirst and actFirst.kind == "move", "firstBattle (0x80000000) evaluates safely without sign overflow")
+end
+
+print("[test] 16. GetBattleOutcome (special 0xB6) and B_OUTCOME constants")
+do
+  local Natives = require("src.core.game3.scripting.natives")
+  local Flags = require("src.core.game3.scripting.flags")
+  check(Natives.B_OUTCOME.WON == 1, "B_OUTCOME.WON == 1")
+  check(Natives.B_OUTCOME.LOST == 2, "B_OUTCOME.LOST == 2")
+  check(Natives.B_OUTCOME.RAN == 4, "B_OUTCOME.RAN == 4")
+  check(Natives.B_OUTCOME.CAUGHT == 7, "B_OUTCOME.CAUGHT == 7")
+
+  check(Natives.outcome_to_code("win") == 1, "win -> 1")
+  check(Natives.outcome_to_code("caught") == 7, "caught -> 7")
+  check(Natives.outcome_to_code("ran") == 4, "ran -> 4")
+
+  local ctx = { specialVars = {} }
+  ctx.lastBattleOutcome = Natives.B_OUTCOME.CAUGHT
+  Natives.special(ctx, 0xB6, nil)
+  check(Flags.getVar(nil, ctx, 0x800D) == 7, "GetBattleOutcome writes CAUGHT (7) to VAR_RESULT (0x800D)")
+end
+
+print("[test] 17. Oak's Tutorial Battle (oldManTutorial) skips AI item/switch")
+do
+  local stTut = State.new({
+    wild = false,
+    playerParty = { { species = 16, level = 20, hp = 50, maxHp = 50, moves = { 33 }, pp = { 35 } } },
+    foeParty = {
+      { species = 13, level = 5, hp = 5, maxHp = 20, moves = { 33 }, pp = { 20 } },
+      { species = 13, level = 5, hp = 20, maxHp = 20, moves = { 33 }, pp = { 20 } },
+    },
+    foeMon = nil,
+  })
+  stTut.oldManTutorial = true
+  stTut.enemy.perishSong, stTut.enemy.expPerishTurns = true, 0
+  stTut.enemyItems = { 13, 0, 0, 0 }
+  local actTut = Ai.chooseAction(stTut, 1, { pack = pack })
+  check(actTut and actTut.kind == "move", "oldManTutorial skips tactical switches and item use")
+end
+
 if failed > 0 then
   print(string.format("\n%d FAILED", failed))
   os.exit(1)
 end
 print("\nAll game3 battle AI tests passed.")
+

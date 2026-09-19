@@ -20,7 +20,7 @@ CacheContract.VERSION_FORMAT = {
   -- engine/overworld/map_sprites.asm:181
   yellow = "rom-cache-v11-yellow1:",
   -- v8: M4A tracks retain reachable patterns and explicit entry offsets.
-  firered = "rom-cache-v14-firered:",
+  firered = "rom-cache-v15-firered:",
 }
 CacheContract.MARKER_PATH = "rom-cache.complete"
 

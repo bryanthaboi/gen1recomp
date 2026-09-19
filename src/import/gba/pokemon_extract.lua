@@ -904,6 +904,11 @@ function PokemonExtract.run(rom, cache, opts)
     BerryPouchExtract.run(rom, cache, { cacheRoot = cacheRoot })
   end)
 
+  local EasyChatExtract = require("src.import.gba.easy_chat_extract")
+  pcall(function()
+    EasyChatExtract.run(rom, cache, { cacheRoot = cacheRoot })
+  end)
+
   if progress then progress("trainers", 0, 1) end
   local TrainerExtract = require("src.import.gba.trainer_extract")
   local trainers = TrainerExtract.run(rom, cache, { cacheRoot = cacheRoot })

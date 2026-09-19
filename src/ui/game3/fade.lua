@@ -77,6 +77,12 @@ function Fade:_finish()
   Fade.lockInput = nil
   local cb = Fade.doneCb
   Fade.doneCb = nil
+  if (Fade.t or 0) <= 0 then
+    local okR, Renderer = pcall(require, "src.render.Renderer")
+    if okR and Renderer then
+      Renderer.screenVeil = nil
+    end
+  end
   if cb then cb() end
 end
 
@@ -85,8 +91,24 @@ function Fade.draw()
   local a = (Fade.t or 0) / 16
   if a <= 0 then return end
   local r, g, b = targetColor(Fade.mode)
+
+  local okR, Renderer = pcall(require, "src.render.Renderer")
+  if okR and Renderer and Renderer.canvas then
+    Renderer.screenVeil = { r, g, b, a }
+    return
+  end
+
   love.graphics.setColor(r, g, b, a)
-  love.graphics.rectangle("fill", 0, 0, Display.W, Display.H)
+  local w, h = Display.W, Display.H
+  local curCanvas = love.graphics.getCanvas()
+  if curCanvas then
+    local okW, cw, ch = pcall(function() return curCanvas:getWidth(), curCanvas:getHeight() end)
+    if okW and cw and ch then w, h = cw, ch end
+  elseif love and love.graphics and love.graphics.getDimensions then
+    local gw, gh = love.graphics.getDimensions()
+    if gw and gh and gw > 0 and gh > 0 then w, h = gw, gh end
+  end
+  love.graphics.rectangle("fill", 0, 0, w, h)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -96,6 +118,10 @@ function Fade.clear()
   Fade.active = false
   Fade.t = 0
   Fade.doneCb = nil
+  local okR, Renderer = pcall(require, "src.render.Renderer")
+  if okR and Renderer then
+    Renderer.screenVeil = nil
+  end
 end
 
 return Fade

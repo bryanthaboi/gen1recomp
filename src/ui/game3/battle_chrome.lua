@@ -556,14 +556,25 @@ local PARTY_BALL_TILE = {
   empty = 67,
   status = 68,
   faint = 69,
+  caught = 70,
 }
 
 function BattleChrome.drawPartyBall(x, y, kind)
   local ti = PARTY_BALL_TILE[kind or "ok"] or PARTY_BALL_TILE.ok
   local q = elements_tile_quad(ti)
-  if not q or not BattleChrome._elements then return end
+  if not q or not BattleChrome._elements then
+    local okP, PokedexChrome = pcall(require, "src.ui.game3.pokedex_chrome")
+    if okP and PokedexChrome and PokedexChrome.drawCaughtMarker then
+      PokedexChrome.drawCaughtMarker(x, y)
+    end
+    return
+  end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(BattleChrome._elements, q, x, y)
+end
+
+function BattleChrome.drawCaughtBall(x, y)
+  BattleChrome.drawPartyBall(x, y, "caught")
 end
 
 --- Draw party summary bar and 6 ball slots (1:1 with pokefirered CreatePartyStatusSummarySprites).

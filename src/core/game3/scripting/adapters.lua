@@ -69,6 +69,10 @@ function Adapters.stub(opts)
   a.askYesNo = opts.askYesNo or function(cb) if cb then cb(true) end end
   a.fadeScreen = opts.fadeScreen or function(_mode, _speed, done) if done then done() end end
   a.openNaming = opts.openNaming or function(_opts, done) if done then done("RED") end end
+  a.openEasyChat = opts.openEasyChat or function(o, done)
+    local def = { 2601, 4128, 526, 2611 }
+    if done then done(true, (o and o.words) or def) end
+  end
   a.hallOfFame = opts.hallOfFame or function(done)
     local HallOfFame = require("src.ui.game3.hall_of_fame")
     HallOfFame.start({
@@ -993,6 +997,21 @@ function Adapters.host(mod, game, world)
       Fade.clear()
       Naming.open(opts)
     end,
+    openEasyChat = function(opts, done)
+      local EasyChat = require("src.ui.game3.easy_chat")
+      local Fade = require("src.ui.game3.fade")
+      local Message = require("src.ui.game3.message")
+      opts = opts or {}
+      opts.onDone = function(confirmed, words)
+        if done then done(confirmed, words) end
+        tick_vm()
+      end
+      if Message.isOpen and Message.isOpen() and Message.close then
+        Message.close()
+      end
+      Fade.clear()
+      EasyChat.open(opts)
+    end,
     warp = function(group, num, warpId, x, y, done)
       local Versions = require("src.import.gba.versions")
       -- Prefer FR standalone ids; fall back to Sevii ferry maps.
@@ -1252,9 +1271,17 @@ function Adapters.host(mod, game, world)
         end,
       })
     end,
-    startWildBattle = function(foe, done)
+    startWildBattle = function(foe, done, battleOpts)
       local BattleBridge = require("src.core.game3.battle_bridge")
+      battleOpts = battleOpts or {}
       BattleBridge.startWild(mod, resolveGame(), foe, {
+        wildScripted = (foe and foe.wildScripted) or battleOpts.wildScripted,
+        legendary = (foe and foe.legendary) or battleOpts.legendary,
+        oldManTutorial = (foe and foe.oldManTutorial) or battleOpts.oldManTutorial,
+        safari = (foe and foe.safari) or battleOpts.safari,
+        roamer = (foe and foe.roamer) or battleOpts.roamer,
+        firstBattle = (foe and foe.firstBattle) or battleOpts.firstBattle,
+        aiFlags = (foe and foe.aiFlags) or battleOpts.aiFlags,
         done = function(result)
           if done then done(result or "win") end
           tick_vm()

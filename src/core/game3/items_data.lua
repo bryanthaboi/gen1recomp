@@ -46,6 +46,7 @@ ItemsData.CAPACITY = {
   BERRY_POUCH = 43,
 }
 
+ItemsData.ITEM_ITEMFINDER = 356
 ItemsData.ITEM_TM_CASE = 364
 ItemsData.ITEM_BERRY_POUCH = 365
 ItemsData.ITEM_VS_SEEKER = 374
@@ -103,6 +104,7 @@ ItemsData.BY_HOST = {
   LEPPA_BERRY = { name = "LEPPA BERRY", pocket = "BERRY_POUCH", fieldUse = "pp", frlg = 138 },
   NUGGET = { name = "NUGGET", pocket = "ITEMS", fieldUse = "none", frlg = 110 },
   METEORITE = { name = "METEORITE", pocket = "KEY_ITEMS", fieldUse = "key", frlg = 280 },
+  ITEMFINDER = { name = "ITEMFINDER", pocket = "KEY_ITEMS", fieldUse = "itemfinder", frlg = 356 },
   TOWN_MAP = { name = "TOWN MAP", pocket = "KEY_ITEMS", fieldUse = "map", frlg = 361 },
   BICYCLE = { name = "BICYCLE", pocket = "KEY_ITEMS", fieldUse = "bike", frlg = 360 },
   TRI_PASS = { name = "TRI-PASS", pocket = "KEY_ITEMS", fieldUse = "key", frlg = 367 },
@@ -114,6 +116,7 @@ local FALLBACK = {
   [1] = { name = "MASTER BALL", pocket = "POKE_BALLS", fieldUse = "battle" },
   [4] = { name = "POKé BALL", pocket = "POKE_BALLS", fieldUse = "battle" },
   [13] = { name = "POTION", pocket = "ITEMS", fieldUse = "heal" },
+  [356] = { name = "ITEMFINDER", pocket = "KEY_ITEMS", fieldUse = "itemfinder" },
   [364] = { name = "TM CASE", pocket = "KEY_ITEMS", fieldUse = "key" },
   [365] = { name = "BERRY POUCH", pocket = "KEY_ITEMS", fieldUse = "key" },
   [374] = { name = "VS SEEKER", pocket = "KEY_ITEMS", fieldUse = "vs_seeker" },

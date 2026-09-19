@@ -42,28 +42,42 @@ PcChrome.WALLPAPER_NAMES = {
   [16] = "simple",
 }
 
+local function read_bytes(rel)
+  local okD, Dataset = pcall(require, "src.core.game3.dataset")
+  if okD and Dataset and Dataset.mountExtractRoots then
+    Dataset.mountExtractRoots()
+  end
+  if okD and Dataset and Dataset.cache then
+    local cacheObj = Dataset.cache()
+    if cacheObj and cacheObj.read then
+      local d = cacheObj:read(rel)
+      if type(d) == "string" and #d > 0 then return d end
+    end
+  end
+  local okC, CacheFs = pcall(require, "src.import.CacheFs")
+  if okC and CacheFs and CacheFs.readActive then
+    local d = CacheFs.readActive(rel)
+    if type(d) == "string" and #d > 0 then return d end
+  end
+  if love and love.filesystem and love.filesystem.read then
+    local ok, d = pcall(love.filesystem.read, rel)
+    if ok and type(d) == "string" and #d > 0 then return d end
+  end
+  local f = io.open(rel, "rb")
+  if f then
+    local d = f:read("*a")
+    f:close()
+    if type(d) == "string" and #d > 0 then return d end
+  end
+  return nil
+end
+
 local function load_texture(name)
   local candidates = {
     "pokemon/storage/" .. name,
     "data/generated/gba/pokemon/storage/" .. name,
     "src/import/gba/chrome/menus/storage/" .. name,
   }
-  local okC, CacheFs = pcall(require, "src.import.CacheFs")
-  if okC and CacheFs and CacheFs.readActive then
-    for _, path in ipairs(candidates) do
-      local bytes = CacheFs.readActive(path)
-      if bytes and #bytes > 0 and love and love.image and love.graphics and love.filesystem then
-        local ok, img = pcall(function()
-          local fd = love.filesystem.newFileData(bytes, name)
-          local id = love.image.newImageData(fd)
-          local image = love.graphics.newImage(id)
-          if image.setFilter then image:setFilter("nearest", "nearest") end
-          return image
-        end)
-        if ok and img then return img end
-      end
-    end
-  end
   local okA, Assets = pcall(require, "src.render.Assets")
   for _, path in ipairs(candidates) do
     if okA and Assets and Assets.image then
@@ -73,35 +87,16 @@ local function load_texture(name)
         return img
       end
     end
-    if love and love.filesystem and love.filesystem.read then
-      local bytes = love.filesystem.read(path)
-      if bytes and #bytes > 0 and love.image and love.graphics then
-        local ok, img = pcall(function()
-          local fd = love.filesystem.newFileData(bytes, name)
-          local id = love.image.newImageData(fd)
-          local image = love.graphics.newImage(id)
-          if image.setFilter then image:setFilter("nearest", "nearest") end
-          return image
-        end)
-        if ok and img then return img end
-      end
-    end
-    if love and love.image and love.graphics and love.filesystem then
-      local f = io.open(path, "rb")
-      if f then
-        local bytes = f:read("*a")
-        f:close()
-        if bytes and #bytes > 0 then
-          local ok, img = pcall(function()
-            local fd = love.filesystem.newFileData(bytes, name)
-            local id = love.image.newImageData(fd)
-            local image = love.graphics.newImage(id)
-            if image.setFilter then image:setFilter("nearest", "nearest") end
-            return image
-          end)
-          if ok and img then return img end
-        end
-      end
+    local bytes = read_bytes(path)
+    if bytes and #bytes > 0 and love and love.image and love.graphics and love.filesystem then
+      local ok, img = pcall(function()
+        local fd = love.filesystem.newFileData(bytes, name)
+        local id = love.image.newImageData(fd)
+        local image = love.graphics.newImage(id)
+        if image.setFilter then image:setFilter("nearest", "nearest") end
+        return image
+      end)
+      if ok and img then return img end
     end
     if love and love.graphics and love.graphics.newImage then
       local ok, img = pcall(love.graphics.newImage, path)

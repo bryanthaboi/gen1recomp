@@ -309,8 +309,22 @@ end
 --- Render screen flash if poison triggered.
 function StepEvents.draw()
   if StepEvents._poisonFlashTimer > 0 then
+    local okR, Renderer = pcall(require, "src.render.Renderer")
+    if okR and Renderer and Renderer.canvas then
+      Renderer.screenVeil = { 0.85, 0.15, 0.15, 0.45 }
+      return
+    end
     love.graphics.setColor(0.85, 0.15, 0.15, 0.45)
-    love.graphics.rectangle("fill", 0, 0, 240, 160)
+    local w, h = 240, 160
+    local curCanvas = love.graphics.getCanvas()
+    if curCanvas then
+      local okW, cw, ch = pcall(function() return curCanvas:getWidth(), curCanvas:getHeight() end)
+      if okW and cw and ch then w, h = cw, ch end
+    elseif love and love.graphics and love.graphics.getDimensions then
+      local gw, gh = love.graphics.getDimensions()
+      if gw and gh and gw > 0 and gh > 0 then w, h = gw, gh end
+    end
+    love.graphics.rectangle("fill", 0, 0, w, h)
     love.graphics.setColor(1, 1, 1, 1)
   end
 end

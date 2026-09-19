@@ -204,4 +204,22 @@ test("Runtime.pumpRtc increments and synchronizes playtime", function()
   assert(game.save.playTimeMinutes == 0, "Save minutes should synchronize to 0")
 end)
 
+print("[test] 7. SaveMenu location header resolution from ROM mapsec")
+test("SaveMenu location resolution does not print engine internal map IDs", function()
+  local MapSectionsExtract = require("src.import.gba.map_sections_extract")
+  local tests = {
+    { map = "FR_ROUTE_22", want = "ROUTE 22" },
+    { map = "FR_PALLET_TOWN", want = "PALLET TOWN" },
+    { map = "FR_VIRIDIAN_CITY", want = "VIRIDIAN CITY" },
+    { map = "FR_CELADON_CITY_DEPARTMENT_STORE_2F", want = "CELADON DEPT." },
+    { map = "FR_POKEMON_TOWER_3F", want = "POKéMON TOWER" },
+    { map = "FR_ROUTE_1", want = "ROUTE 1" },
+  }
+
+  for _, item in ipairs(tests) do
+    local place = MapSectionsExtract.getPlaceName(item.map)
+    assert(place == item.want, string.format("Expected %s for map %s, got %s", item.want, item.map, tostring(place)))
+  end
+end)
+
 print("[test] all passed")

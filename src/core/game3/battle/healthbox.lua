@@ -469,8 +469,67 @@ function Healthbox.draw(side, battler, opts)
     if ailment >= 1 and ailment <= 6 then
       -- pokefirered/src/battle_interface.c:1614
       SummaryChrome.drawStatusIcon(tlX + 2, tlY + 16, ailment)
+    else
+      -- pokefirered/src/battle_interface.c:1551 TryAddPokeballIconToHealthbox
+      if Healthbox.shouldShowCaughtMarker(bst, battler) then
+        BattleChrome.drawPartyBall(tlX + 8, tlY + 16, "caught")
+      end
     end
   end
+end
+
+function Healthbox.shouldShowCaughtMarker(st, battler)
+  if not battler then return false end
+  if battler.isPlayer or battler.side == "player" then return false end
+
+  -- Must not be first battle / tutorial / pokedude
+  if st and (st.firstBattle or st.oldManTutorial or st.pokedude) then
+    return false
+  end
+
+  -- Must not be trainer battle (wild only, matching pokefirered BATTLE_TYPE_TRAINER check)
+  if st and (st.trainer or st.trainerId or st.isTrainerBattle or st.kind == "trainer") then
+    return false
+  end
+  if battler.isTrainer or (battler.trainer and true) then
+    return false
+  end
+
+  -- Ghost battles: un-identified ghosts (name == "GHOST") do not show caught ball
+  if st and st.ghostBattle and not st.ghostUnveiled then
+    return false
+  end
+  local name = State.displayName(battler)
+  if name == "GHOST" then
+    return false
+  end
+
+  local species = battler.species or (battler.mon and (battler.mon.species or battler.mon.speciesId))
+  if not species or species == 0 then return false end
+
+  local dex = (st and (st.dex or (st.session and st.session.dex)))
+  if not dex then
+    local Battle = package.loaded["src.core.game3.battle"]
+    local bst = Battle and Battle._st
+    dex = bst and (bst.dex or (bst.session and bst.session.dex))
+  end
+  if not dex then
+    local okR, Runtime = pcall(require, "src.core.game3.runtime")
+    if okR and Runtime and Runtime.getSession then
+      local s = Runtime.getSession()
+      dex = s and s.dex
+    end
+  end
+  if not dex then
+    local okF, Field = pcall(require, "src.core.game3.field")
+    if okF and Field and Field._session then
+      dex = Field._session.dex
+    end
+  end
+  if not dex then return false end
+
+  local Dex = require("src.core.game3.dex")
+  return Dex.isCaught(dex, species) == true
 end
 
 function Healthbox.syncOam(_st)

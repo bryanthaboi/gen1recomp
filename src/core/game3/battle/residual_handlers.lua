@@ -301,13 +301,15 @@ function Handlers.registerAll()
   Residuals.register("partial_trap_chip", function(ctx)
     local ad, b = ctx.adapter, ctx.target
     if not b or not b.expTrapTurns or ad:hp(b) <= 0 then return end
-    if not Rules.partialTrap.active() then return end
+    local R = package.loaded["src.core.game3.battle.rules"] or Rules
+    if R.partialTrap and R.partialTrap.active and not R.partialTrap.active() then return end
     b.expTrapTurns = b.expTrapTurns - 1
     local moveName = tostring(b.expTrapMoveName or "BIND")
     if b.expTrapTurns > 0 then
       ad:playAnim("general", "TURN_TRAP", b, b, b.expTrapMove)
       ad:say(name(ad, b) .. " is hurt\nby " .. moveName .. "!")
-      ad:applyHpLoss(b, Rules.partialTrap.chipAmount(ad:maxHp(b)))
+      local chip = (R.partialTrap and R.partialTrap.chipAmount and R.partialTrap.chipAmount(ad:maxHp(b))) or math.max(1, math.floor(ad:maxHp(b) / 16))
+      ad:applyHpLoss(b, chip)
     else
       b.expTrapTurns = nil
       b.expTrapMove = nil

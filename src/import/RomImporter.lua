@@ -1089,6 +1089,30 @@ local function findPendingRequiredImport(self)
   return nil
 end
 
+local function importerPickName(importerId)
+  return "picked_importer_" .. tostring(importerId) .. ".bin"
+end
+
+local function findPendingImporter(self)
+  if self and self.pickerPendingImporterId then
+    local name = importerPickName(self.pickerPendingImporterId)
+    if love.filesystem.getInfo(name, "file") then
+      return name, self.pickerPendingImporterId
+    end
+  end
+
+  local Importers = require("src.import.Importers")
+  for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
+    local importerId = name:lower():match(
+      "^picked_importer_([%l%d_%-]+)%.bin$")
+    if importerId and Importers.get(importerId)
+        and love.filesystem.getInfo(name, "file") then
+      return name, importerId
+    end
+  end
+  return nil
+end
+
 -- Retire an Android pick once it has been through the installer / importer,
 -- whether or not it worked: a pick left on disk wins the scans above forever,
 -- so the next tap re-runs the same failing file and the picker never reopens
@@ -1692,7 +1716,13 @@ function RomImporter:focus(f)
     end
     local legacyRequiredPick = self.requiredImportLegacyRomPick
       and self.pickerPendingKind == "required_import"
-    if self.pickerPendingKind == "required_import"
+    if self.pickerPendingKind == "importer"
+        or pickError:find("picked_importer_", 1, true) then
+      self._importerNotice = { ok = false, text = text }
+      self.pickPending = nil
+      self.pickerPendingKind = nil
+      self.pickerPendingImporterId = nil
+    elseif self.pickerPendingKind == "required_import"
         or pickError:find("picked_required_import", 1, true)
         or pickError:find("picked_stadium", 1, true)
         or pickError:find("/baseroms/", 1, true)
@@ -1732,6 +1762,24 @@ function RomImporter:focus(f)
     self.pickerPendingModId = nil
     self.pickerPendingImportId = nil
     self.requiredImportLegacyRomPick = nil
+    return
+  end
+
+  local importerName, importerId = findPendingImporter(self)
+  if importerName then
+    local data = love.filesystem.read(importerName)
+    love.filesystem.remove(importerName)
+    self.pickPending = nil
+    self.pickerPendingKind = nil
+    self.pickerPendingImporterId = nil
+    if type(data) ~= "string" then
+      self._importerNotice = {
+        ok = false,
+        text = "Could not read the picked importer file.",
+      }
+    else
+      self:_runImporterData(importerId, data)
+    end
     return
   end
 
@@ -2916,7 +2964,8 @@ function RomImporter:_pollPickedFiles(dt)
     for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
       local n = name:lower()
       if isRomFilename(n) or n == "picked_mod.zip" or n == "picked_save.sav"
-          or n == "picked_required_import.bin" or n == "picked_stadium.z64" then
+          or n == "picked_required_import.bin" or n == "picked_stadium.z64"
+          or n:match("^picked_importer_[%l%d_%-]+%.bin$") then
         found = true
         break
       end
@@ -3961,6 +4010,17 @@ function RomImporter:_beginImporterImport(importerId)
     end
     return
   end
+  if self.android then
+    self.pickerPendingKind = "importer"
+    self.pickerPendingImporterId = importerId
+    if pickFile("required_import", importerPickName(importerId)) then
+      self.pickPending = true
+      self.pickTimer = 0
+      return
+    end
+    self.pickerPendingKind = nil
+    self.pickerPendingImporterId = nil
+  end
   local path = chooseImporterFile(desc.name, desc.source.formats or { "sfc" })
   if path then
     self:_runImporter(importerId, path)
@@ -3971,7 +4031,7 @@ function RomImporter:_beginImporterImport(importerId)
     self._padCursorActive = false
     Kit.FileBrowser.open({
       title = "Select " .. desc.name,
-      mode = "rom",
+      mode = "all",
       onSelect = function(pickedPath)
         self:_runImporter(importerId, pickedPath)
       end,

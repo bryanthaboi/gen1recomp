@@ -161,9 +161,9 @@ local function facing_object_cell(fx, fy, facing)
   return fx, fy
 end
 
-local function bg_event_at(game, fx, fy, elevation, facingDir)
+local function get_map_bg_events(game, mapId)
   local session = Field._session
-  local mapId = session and session.map
+  mapId = mapId or (session and session.map)
   local data = game and game.data and game.data.maps
   local def = mapId and data and data[mapId]
   local events = def and def.bgEvents
@@ -172,13 +172,156 @@ local function bg_event_at(game, fx, fy, elevation, facingDir)
     local ev = Space and Space.bundle and Space.bundle.events and Space.bundle.events[mapId]
     events = ev and ev.bgEvents
   end
-  if not events then return nil end
+  return events or {}
+end
+
+local function bg_event_at(game, fx, fy, elevation, facingDir)
+  local events = get_map_bg_events(game)
   for _, ev in ipairs(events) do
     if ev.scriptKey and require("src.core.game3.scripting.interaction_scripts").backgroundMatches(ev,fx,fy,elevation,facingDir) then
       return ev
     end
   end
   return nil
+end
+
+local function hidden_item_at(game, x, y, elevation)
+  local session = Field._session
+  local events = get_map_bg_events(game)
+  local Flags = require("src.core.game3.scripting.flags")
+  local store = session and (session.store or session)
+  for _, ev in ipairs(events) do
+    if (ev.type == "hidden_item" or ev.kind == 7) and ev.x == x and ev.y == y then
+      local flag = ev.flag or (ev.hiddenItemId and (0x3E8 + ev.hiddenItemId))
+      if flag and not Flags.getFlag(store, nil, flag) then
+        return ev
+      end
+    end
+  end
+  return nil
+end
+
+function Field.hiddenItemAt(game, x, y, elevation)
+  return hidden_item_at(game or Field._game, x, y, elevation)
+end
+
+function Field.pickUpHiddenItem(game, hidden)
+  if not hidden then return false end
+  local session = Field._session
+  local Bag = require("src.core.game3.bag")
+  local Flags = require("src.core.game3.scripting.flags")
+  local Items = require("src.core.game3.items")
+  local ItemsData = require("src.core.game3.items_data")
+  local Message = require("src.ui.game3.message")
+  local Audio = require("src.core.game3.audio")
+  local store = session and (session.store or session)
+
+  local flag = hidden.flag or (hidden.hiddenItemId and (0x3E8 + hidden.hiddenItemId))
+  if flag and Flags.getFlag(store, nil, flag) then
+    return false
+  end
+
+  local itemId = hidden.item
+  local qty = hidden.quantity or 1
+  local bag = session and session.bag
+
+  if bag and not Bag.canAdd(bag, itemId, qty) then
+    Message.show("Too bad!\nThe BAG is full…", {
+      done = function()
+        Message.close()
+      end,
+    })
+    return true
+  end
+
+  if bag then
+    Bag.add(bag, itemId, qty)
+  end
+  if flag and store then
+    Flags.setFlag(store, nil, flag, true)
+  end
+
+  Audio.playFanfare(257)
+
+  local playerName = (session and (session.playerName or session.name)) or "RED"
+  local itemName = Items.displayName(itemId)
+  local pocket = ItemsData.pocketOf(itemId)
+  local pocketLabel = ItemsData.POCKET_LABEL[pocket] or "ITEMS POCKET"
+  local text = string.format("%s found one\n%s!\f%s put away the\n%s in the %s.", playerName, itemName, playerName, itemName, pocketLabel)
+
+  Message.show(text, {
+    done = function()
+      Message.close()
+    end,
+  })
+
+  if session then
+    local okQ, Q = pcall(require, "src.core.game3.quest_log_recorder")
+    if okQ and Q and Q.event then
+      Q.event(session, "UsedTheItem", { itemName, "" })
+    end
+  end
+
+  return true
+end
+
+function Field.useItemfinder(session, showOWMessage)
+  session = session or Field._session
+  local P = package.loaded["src.core.game3.player"]
+  local px = (session and (session.playerX or session.x)) or (P and (P.cellX or P.x)) or 0
+  local py = (session and (session.playerY or session.y)) or (P and (P.cellY or P.y)) or 0
+  local events = get_map_bg_events(Field._game, session and session.map)
+  local Flags = require("src.core.game3.scripting.flags")
+  local Audio = require("src.core.game3.audio")
+  local Message = require("src.ui.game3.message")
+  local store = session and (session.store or session)
+
+  local found = nil
+  local underfoot = false
+  local minDistance = 999999
+
+  for _, ev in ipairs(events) do
+    if (ev.type == "hidden_item" or ev.kind == 7) then
+      local flag = ev.flag or (ev.hiddenItemId and (0x3E8 + ev.hiddenItemId))
+      if flag and not Flags.getFlag(store, nil, flag) then
+        local dx = ev.x - px
+        local dy = ev.y - py
+        local dist = math.abs(dx) + math.abs(dy)
+        if math.abs(dx) <= 7 and math.abs(dy) <= 7 then
+          if dx == 0 and dy == 0 then
+            found = ev
+            underfoot = true
+            minDistance = 0
+            break
+          elseif dist < minDistance then
+            found = ev
+            underfoot = false
+            minDistance = dist
+          end
+        end
+      end
+    end
+  end
+
+  if found then
+    Audio.playSe(65) -- SE_ITEMFINDER
+    local text
+    if underfoot then
+      text = "Oh! The ITEMFINDER's responding!\nThere's an item buried right beneath your feet!"
+    else
+      text = "Huh? The ITEMFINDER's responding!\nThere's an item buried around here!"
+    end
+    if showOWMessage then
+      Message.show(text, { done = function() Message.close() end })
+    end
+    return true, "itemfinder", text, { x = found.x, y = found.y, underfoot = underfoot }
+  else
+    local text = "… … … …Nope!\nThere's no response."
+    if showOWMessage then
+      Message.show(text, { done = function() Message.close() end })
+    end
+    return false, "itemfinder", text, nil
+  end
 end
 
 --- Step-onto coord events (Pallet Oak gate, etc.). Returns true if a script started.
@@ -373,6 +516,19 @@ function Field.interact(game)
   if sign and sign.scriptKey then
     if Space.startScript(sign.scriptKey, nil, facingDir) then
       interacted(fx, fy, "sign", sign)
+      return true
+    end
+  end
+
+  -- Hidden items: check facing tile first, then underfoot tile
+  local hidden = hidden_item_at(game, fx, fy, elevation)
+  if not hidden then
+    local pElev = layout and layout:elevAt(P.cellX, P.cellY) or P.elevation or 0
+    hidden = hidden_item_at(game, P.cellX, P.cellY, pElev)
+  end
+  if hidden then
+    if Field.pickUpHiddenItem(game, hidden) then
+      interacted(hidden.x, hidden.y, "hidden_item", hidden)
       return true
     end
   end

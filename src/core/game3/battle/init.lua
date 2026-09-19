@@ -181,8 +181,8 @@ local function foe_mon_from(foe)
     level = foe.level or 5,
     hp = foe.hp,
     maxHp = foe.maxHp,
-    moves = foe.moves or { 33 },
-    pp = foe.pp or { 35, 40, 0, 0 },
+    moves = foe.moves,
+    pp = foe.pp,
     status = foe.status,
     attack = foe.attack or foe.atk,
     defense = foe.defense or foe.def,
@@ -207,6 +207,23 @@ local function foe_mon_from(foe)
         mon.pp = pp
         mon.maxPp = maxPp
       end
+    end
+  end
+  if not mon.moves or #mon.moves == 0 then
+    mon.moves = { 33 }
+    mon.pp = { 35 }
+    mon.maxPp = { 35 }
+  end
+  if not mon.maxPp or #mon.maxPp == 0 then
+    mon.maxPp = {}
+    for i, m in ipairs(mon.moves) do
+      mon.maxPp[i] = Pokemon.movePp and Pokemon.movePp(m) or 35
+    end
+  end
+  if not mon.pp or #mon.pp == 0 then
+    mon.pp = {}
+    for i, m in ipairs(mon.moves) do
+      mon.pp[i] = mon.maxPp[i] or 35
     end
   end
   return Damage.ensureStats(mon, mon.level)
@@ -389,6 +406,8 @@ function Battle.start(opts)
     local Runtime = package.loaded["src.core.game3.runtime"]
     local session = opts.session
       or (Runtime and Runtime.getSession and Runtime.getSession())
+    st.session = session
+    st.dex = opts.dex or (session and session.dex)
     Ui.bindState(st, session)
     st.playerName = session and session.name or "PLAYER"
     -- pokefirered/src/battle_main.c:2618
@@ -458,8 +477,19 @@ function Battle.start(opts)
   st.trainerPartySize = trainerInfo and trainerInfo.partySize
   st.defeatText = opts.defeatText
   st.victoryText = opts.victoryText
+  st.wildScripted = opts.wildScripted or (opts.foe and opts.foe.wildScripted) or false
+  st.legendary = opts.legendary or (opts.foe and opts.foe.legendary) or false
+  st.safari = opts.safari or (opts.foe and opts.foe.safari) or false
+  st.roamer = opts.roamer or (opts.foe and opts.foe.roamer) or false
+  st.firstBattle = opts.firstBattle or (opts.foe and opts.foe.firstBattle) or false
+  st.oldManTutorial = opts.oldManTutorial or (opts.foe and opts.foe.oldManTutorial) or false
   -- pret gTrainers[].aiFlags / items[4] — drive battle AI scripts + item use.
   st.aiFlags = opts.aiFlags
+    or (st.safari and 0x40000000)
+    or (st.roamer and 0x20000000)
+    or (st.firstBattle and 0x80000000)
+    or (st.legendary and 7) -- CHECK_BAD_MOVE | TRY_TO_FAINT | CHECK_VIABILITY
+    or (st.wildScripted and 1) -- CHECK_BAD_MOVE
     or (trainerInfo and trainerInfo.aiFlags)
     or (st.wild and 0 or 1) -- wild: no scripts; fallback trainer: CHECK_BAD_MOVE
   st.trainerItems = opts.trainerItems

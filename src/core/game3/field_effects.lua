@@ -645,9 +645,23 @@ function FieldEffects.drawOverlay(camX, camY)
   -- 1) Flash screen illumination
   for _, anim in ipairs(FieldEffects._anims) do
     if anim.kind == "flash" and anim.alpha > 0 then
-      love.graphics.setColor(1, 1, 1, anim.alpha)
-      love.graphics.rectangle("fill", 0, 0, 240, 160)
-      love.graphics.setColor(1, 1, 1, 1)
+      local okR, Renderer = pcall(require, "src.render.Renderer")
+      if okR and Renderer and Renderer.canvas then
+        Renderer.screenVeil = { 1, 1, 1, anim.alpha }
+      else
+        love.graphics.setColor(1, 1, 1, anim.alpha)
+        local w, h = 240, 160
+        local curCanvas = love.graphics.getCanvas()
+        if curCanvas then
+          local okW, cw, ch = pcall(function() return curCanvas:getWidth(), curCanvas:getHeight() end)
+          if okW and cw and ch then w, h = cw, ch end
+        elseif love and love.graphics and love.graphics.getDimensions then
+          local gw, gh = love.graphics.getDimensions()
+          if gw and gh and gw > 0 and gh > 0 then w, h = gw, gh end
+        end
+        love.graphics.rectangle("fill", 0, 0, w, h)
+        love.graphics.setColor(1, 1, 1, 1)
+      end
     elseif anim.kind == "sweet_scent" then
       love.graphics.setColor(1, 0.7, 0.9, 0.6 * (1.0 - (anim.timer / anim.maxDur)))
       love.graphics.circle("line", 120, 80, anim.radius)

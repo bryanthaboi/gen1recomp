@@ -78,11 +78,17 @@ local function simplify_events(ev)
   local bgs = {}
   for _, b in ipairs(ev.bgEvents or {}) do
     bgs[#bgs + 1] = {
+      type = b.type,
       x = b.x,
       y = b.y,
       elevation = b.elevation,
       kind = b.kind,
       scriptKey = b.scriptKey,
+      item = b.item,
+      hiddenItemId = b.hiddenItemId,
+      quantity = b.quantity,
+      underfoot = b.underfoot,
+      flag = b.flag,
     }
   end
   local coords = {}

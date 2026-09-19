@@ -154,9 +154,15 @@ local function roll(rng, lo, hi)
   return math.random(lo, hi)
 end
 
+local function to_u32(n)
+  n = tonumber(n) or 0
+  n = math.floor(n) % 4294967296
+  if n < 0 then n = n + 4294967296 end
+  return n
+end
+
 local function bit_and_flags(a, b)
-  a = math.floor(a or 0)
-  b = math.floor(b or 0)
+  a, b = to_u32(a), to_u32(b)
   local r, bitv = 0, 1
   for _ = 1, 32 do
     if (a % 2) > 0 and (b % 2) > 0 then r = r + bitv end
@@ -166,15 +172,16 @@ local function bit_and_flags(a, b)
 end
 
 local function bit_or_flags(a, b)
-  return a + b - bit_and_flags(a, b)
+  a, b = to_u32(a), to_u32(b)
+  return to_u32(a + b - bit_and_flags(a, b))
 end
 
 local function run_scripts(pack, aiFlags, st, user, target, userSide, targetSide, scores, simulatedRNG, rng)
   local aiAction = 0
   local logicId = 0
-  local flags = aiFlags
-  while flags ~= 0 do
-    if bit_and_flags(flags, 1) ~= 0 then
+  local flags = to_u32(aiFlags)
+  while flags ~= 0 and logicId < 32 do
+    if (flags % 2) == 1 then
       local scriptName = pack.table[logicId + 1] -- Lua 1-based; pret index 0
       if scriptName and pack.scripts[scriptName] then
         for movesetIndex = 1, 4 do
@@ -198,7 +205,6 @@ local function run_scripts(pack, aiFlags, st, user, target, userSide, targetSide
     end
     flags = math.floor(flags / 2)
     logicId = logicId + 1
-    if logicId > 31 then break end
   end
   return aiAction
 end
@@ -264,11 +270,25 @@ local function double_first_usable(mon, id, bad)
   return { kind = "move", move = "STRUGGLE", slot = nil, user = "enemy", battler = id }
 end
 
+local AI_SCRIPT_CHECK_BAD_MOVE = 0x00000001
+local AI_SCRIPT_CHECK_VIABILITY = 0x00000002
+local AI_SCRIPT_TRY_TO_FAINT = 0x00000004
+local AI_SCRIPT_SETUP_FIRST_TURN = 0x00000008
+local AI_SCRIPT_RISKY = 0x00000010
+local AI_SCRIPT_PREFER_STRONGEST_MOVE = 0x00000020
+local AI_SCRIPT_PREFER_BATON_PASS = 0x00000040
+local AI_SCRIPT_DOUBLE_BATTLE = 0x00000080
+local AI_SCRIPT_HP_AWARE = 0x00000100
 local AI_SCRIPT_ROAMING = 0x20000000
 local AI_SCRIPT_SAFARI = 0x40000000
+local AI_SCRIPT_FIRST_BATTLE = 0x80000000
 
 local function uses_ai(st)
-  return not st.wild or st.roamer or st.safari or st.firstBattle
+  if not st then return false end
+  if not st.wild then return true end
+  if st.roamer or st.safari or st.firstBattle or st.wildScripted or st.legendary then return true end
+  local flags = to_u32(st.aiFlags)
+  return flags ~= 0
 end
 
 -- src/battle_controller_opponent.c:1350
@@ -324,6 +344,12 @@ function choose_move_core(st, id, opts)
     aiFlags = AI_SCRIPT_SAFARI
   elseif st.roamer then
     aiFlags = AI_SCRIPT_ROAMING
+  elseif st.firstBattle then
+    aiFlags = AI_SCRIPT_FIRST_BATTLE
+  elseif st.legendary then
+    aiFlags = bit_or_flags(AI_SCRIPT_CHECK_BAD_MOVE, bit_or_flags(AI_SCRIPT_TRY_TO_FAINT, AI_SCRIPT_CHECK_VIABILITY))
+  elseif st.wildScripted then
+    aiFlags = AI_SCRIPT_CHECK_BAD_MOVE
   else
     aiFlags = tonumber(opts.aiFlags or st.aiFlags) or 0
   end
@@ -411,7 +437,7 @@ function Ai.chooseAction(st, id, opts)
   local rng = rng_fn(st, opts)
   local ad = adapter_for(st, opts)
   -- src/battle_ai_switch_items.c:358
-  if not st.wild and not st.pokedude then
+  if not st.wild and not st.pokedude and not st.oldManTutorial then
     local AiSwitch = require("src.core.game3.battle.ai_switch")
     local pick = AiSwitch.trySwitch(st, ad, id, rng)
     if pick then

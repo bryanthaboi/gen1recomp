@@ -1,12 +1,31 @@
 -- Pokémon Storage System Chrome Extractor from pokefirered / FRLG assets.
--- Bakes/vendors PC storage UI textures into CacheFS (data/generated/gba/pokemon/storage/).
+-- Bakes/vendors PC storage UI textures and 16 box wallpapers into CacheFS (data/generated/gba/pokemon/storage/).
 
 local Versions = require("src.import.gba.versions")
 
 local StorageChromeExtract = {}
 
 StorageChromeExtract.CACHE_SUB = "pokemon/storage"
-StorageChromeExtract.FORMAT_VERSION = 1
+StorageChromeExtract.FORMAT_VERSION = 2
+
+local WALLPAPER_NAMES = {
+  "forest",
+  "city",
+  "desert",
+  "savanna",
+  "crag",
+  "volcano",
+  "snow",
+  "cave",
+  "beach",
+  "seafloor",
+  "river",
+  "sky",
+  "stars",
+  "pokecenter",
+  "tiles",
+  "simple",
+}
 
 local function default_cache_root()
   local ok, Extract = pcall(require, "src.import.gba.extract_island1")
@@ -95,8 +114,11 @@ function StorageChromeExtract.ready(cache, root)
     return false
   end
 
-  return valid_file(outDir .. "/manifest.lua", 20)
-    and valid_file(outDir .. "/cursor.png", 30)
+  if not valid_file(outDir .. "/manifest.lua", 20) then return false end
+  if not valid_file(outDir .. "/cursor.png", 30) then return false end
+  if not valid_file(outDir .. "/wallpapers/forest.png", 50) then return false end
+  if not valid_file(outDir .. "/wallpapers/simple.png", 50) then return false end
+  return true
 end
 
 function StorageChromeExtract.run(rom, cache, opts)
@@ -112,22 +134,25 @@ function StorageChromeExtract.extract(romBytes, opts)
   local outDir = cacheRoot .. "/" .. StorageChromeExtract.CACHE_SUB
 
   if not opts.force and StorageChromeExtract.ready(cache, cacheRoot) then
-    return true
+    return { ok = true, root = outDir, skipped = true }
   end
 
   ensure_dir(outDir)
+  ensure_dir(outDir .. "/wallpapers")
 
   local files = {
     "cursor.png",
     "cursor_shadow.png",
     "box_scroll_arrow.png",
     "menu.png",
+    "menu_pal0.png",
     "scrolling_bg.png",
     "waveform.png",
     "interface_frame.png",
     "button_party.png",
     "button_close.png",
     "party_drawer_bg.png",
+    "party_drawer_full.png",
     "party_slot_filled.png",
     "party_slot_empty.png",
   }
@@ -135,8 +160,10 @@ function StorageChromeExtract.extract(romBytes, opts)
   local manifest = {
     version = StorageChromeExtract.FORMAT_VERSION,
     textures = {},
+    wallpapers = {},
   }
 
+  local writtenCount = 0
   for _, file in ipairs(files) do
     local data = read_file("src/import/gba/chrome/menus/storage/" .. file)
       or read_file(outDir .. "/" .. file)
@@ -145,7 +172,26 @@ function StorageChromeExtract.extract(romBytes, opts)
       local dstPath = outDir .. "/" .. file
       write_file(cache, dstPath, data)
       manifest.textures[file] = file
+      writtenCount = writtenCount + 1
     end
+  end
+
+  for _, wp in ipairs(WALLPAPER_NAMES) do
+    local relWp = "wallpapers/" .. wp .. ".png"
+    local data = read_file("src/import/gba/chrome/menus/storage/" .. relWp)
+      or read_file(outDir .. "/" .. relWp)
+      or read_file("data/generated/gba/pokemon/storage/" .. relWp)
+    if data then
+      local dstPath = outDir .. "/" .. relWp
+      write_file(cache, dstPath, data)
+      manifest.wallpapers[wp] = relWp
+      writtenCount = writtenCount + 1
+    end
+  end
+
+  local wallpaperEntries = {}
+  for _, wp in ipairs(WALLPAPER_NAMES) do
+    wallpaperEntries[#wallpaperEntries + 1] = string.format("    %s = \"wallpapers/%s.png\",", wp, wp)
   end
 
   local manifestSrc = string.format([[
@@ -156,21 +202,26 @@ return {
     cursor_shadow = "cursor_shadow.png",
     arrow = "box_scroll_arrow.png",
     menu = "menu.png",
+    menu_pal0 = "menu_pal0.png",
     scrolling_bg = "scrolling_bg.png",
     waveform = "waveform.png",
     frame = "interface_frame.png",
     button_party = "button_party.png",
     button_close = "button_close.png",
     party_drawer_bg = "party_drawer_bg.png",
+    party_drawer_full = "party_drawer_full.png",
     party_slot_filled = "party_slot_filled.png",
     party_slot_empty = "party_slot_empty.png",
+  },
+  wallpapers = {
+%s
   }
 }
-]], StorageChromeExtract.FORMAT_VERSION)
+]], StorageChromeExtract.FORMAT_VERSION, table.concat(wallpaperEntries, "\n"))
 
   write_file(cache, outDir .. "/manifest.lua", manifestSrc)
-  print("[game3/storage_chrome_extract] storage chrome ready (" .. outDir .. ")")
-  return true
+  print("[game3/storage_chrome_extract] storage chrome ready (" .. outDir .. ", " .. writtenCount .. " assets)")
+  return { ok = true, root = outDir, count = writtenCount }
 end
 
 return StorageChromeExtract

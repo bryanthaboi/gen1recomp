@@ -120,6 +120,8 @@ Versions.POKEDEX_ENTRY_SIZE = 36
 Versions.NATIONAL_DEX_COUNT = 386         -- Deoxys; entries are 0..386 inclusive → 387
 Versions.SPECIES_TO_KANTO = 0x251EE0      -- sSpeciesToKantoPokedexNum (411 u16s)
 Versions.DEX_CATEGORIES = 0x452C4C        -- gDexCategories (9 categories)
+Versions.EASY_CHAT_GROUPS = 0x3ECED4       -- sEasyChatGroups (22 entries × 8 bytes)
+Versions.EASY_CHAT_GROUP_COUNT = 22
 Versions.POKEDEX_ORDERS = {
   alphabetical = 0x443FF2,
   weight = 0x4442F6,
@@ -172,6 +174,10 @@ Versions.MULTICHOICE_COUNT = 65
 Versions.ITEMS = 0x3DB028
 Versions.ITEMS_COUNT = 375
 Versions.ITEM_STRIDE = 44
+
+-- Region map section names table (FireRed USA 1.0).
+Versions.KANTO_MAPSEC_START = 88   -- 0x58 (MAPSEC_PALLET_TOWN)
+Versions.KANTO_MAPSEC_COUNT = 109  -- 88..196 (MAPSEC_PALLET_TOWN .. MAPSEC_SPECIAL_AREA)
 
 -- gBattleMoves (FireRed USA 1.0). Rows are 12 bytes (9-byte BattleMove + pad).
 Versions.BATTLE_MOVES_VERSION = 1

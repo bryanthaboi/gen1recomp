@@ -57,6 +57,7 @@ local mapTreeOnly = false
 local martsOnly = false
 local scriptsOnly = false
 local bagChromeOnly = false
+local storageChromeOnly = false
 local dumpMid = nil -- { pair, mid, outPath }
 local romPath = nil
 local ai = 1
@@ -81,6 +82,9 @@ while ai <= #arg do
     ai = ai + 1
   elseif arg[ai] == "--bag-chrome" then
     bagChromeOnly = true
+    ai = ai + 1
+  elseif arg[ai] == "--storage-chrome" or arg[ai] == "--storage" then
+    storageChromeOnly = true
     ai = ai + 1
   elseif arg[ai] == "--map-tree" then
     mapTreeOnly = true
@@ -441,6 +445,21 @@ if bagChromeOnly then
   rom:clearCache()
   imports:_close()
   print("OK bag-chrome icons=", detail.iconsBaked, "→", detail.root)
+  os.exit(0)
+end
+
+if storageChromeOnly then
+  local Rom = require("src.import.gba.rom")
+  local StorageChromeExtract = require("src.import.gba.storage_chrome_extract")
+  local rom = assert(Rom.open(imports, "firered"))
+  print("Extracting storage chrome + wallpapers →", outDir .. "/data/generated/gba/pokemon/storage")
+  local detail = StorageChromeExtract.run(rom, cache, {
+    cacheRoot = Extract.CACHE_ROOT,
+    force = true,
+  })
+  rom:clearCache()
+  imports:_close()
+  print("OK storage-chrome assets=", detail.count or "?", "→", detail.root or (Extract.CACHE_ROOT .. "/pokemon/storage"))
   os.exit(0)
 end
 

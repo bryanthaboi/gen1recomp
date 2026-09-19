@@ -562,6 +562,34 @@ assert_eq(partyActionSession.party[1].nickname, "RATTATA", "Rattata back in slot
 BoxStorageUI.close()
 print("[ok] Party Drawer Action Menu interaction and persistence verified")
 
+print("=== [TEST 15] Storage Chrome & Wallpapers Extraction and Manifest Integrity ===")
+local StorageChromeExtract = require("src.import.gba.storage_chrome_extract")
+assert_true(StorageChromeExtract.ready(), "StorageChromeExtract ready check passed")
+
+local resExtract = StorageChromeExtract.extract(nil, { force = true })
+assert_true(resExtract.ok, "StorageChromeExtract executed successfully")
+assert_eq(resExtract.count, 30, "Extracted 14 UI textures + 16 box wallpapers (total 30 assets)")
+
+local manifestChunk = assert(loadfile("data/generated/gba/pokemon/storage/manifest.lua"))
+local manifest = manifestChunk()
+assert_eq(manifest.version, 2, "Manifest version is 2")
+assert_true(manifest.textures.cursor ~= nil, "Manifest includes cursor texture")
+assert_true(manifest.textures.party_drawer_bg ~= nil, "Manifest includes party_drawer_bg")
+assert_true(manifest.textures.scrolling_bg ~= nil, "Manifest includes scrolling_bg")
+assert_true(manifest.wallpapers.forest ~= nil, "Manifest includes forest wallpaper")
+assert_true(manifest.wallpapers.stars ~= nil, "Manifest includes stars wallpaper")
+assert_true(manifest.wallpapers.simple ~= nil, "Manifest includes simple wallpaper")
+
+for _, wpName in ipairs(PcChrome.WALLPAPER_NAMES) do
+  assert_true(manifest.wallpapers[wpName] ~= nil, "Wallpaper " .. wpName .. " present in manifest")
+  local f = io.open("data/generated/gba/pokemon/storage/wallpapers/" .. wpName .. ".png", "rb")
+  assert_true(f ~= nil, "Wallpaper file " .. wpName .. ".png exists on disk")
+  local header = f:read(8)
+  f:close()
+  assert_true(header ~= nil and header:sub(2, 4) == "PNG", "Wallpaper " .. wpName .. " is valid PNG")
+end
+print("[ok] All 14 UI textures and 16 wallpapers validated in manifest and file system")
+
 print("\n========================================================")
-print("ALL 14 POKÉMON STORAGE & PC SYSTEM TESTS PASSED CLEANLY!")
+print("ALL 15 POKÉMON STORAGE & PC SYSTEM TESTS PASSED CLEANLY!")
 print("========================================================")
