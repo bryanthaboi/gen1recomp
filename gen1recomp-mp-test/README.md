@@ -57,6 +57,7 @@ scoping document for it is in the session scratch folder, not in this repo.
 | `bin/relay.sh` | Start / stop / watch the container. |
 | `bin/play.sh` | Launch the game pointed at the container. |
 | `bin/smoke-test.sh` | Runs the repository's own end-to-end test against the server. |
+| `bin/container-test.sh` | Battles two real clients through the **running container**, over its published port. |
 
 Nothing here touches your existing `loghook` container. `loghook` is a
 **write-only log sink** on port 8090 — it receives log lines and stores them.
@@ -112,6 +113,14 @@ In the game's **launcher**, open the **Online** panel:
 You will appear as `test_4821` and they will appear as `test_9037` — random
 names, assigned automatically, no account and no password.
 
+> **A cosmetic wrinkle, and how to fix it.** The Gen 1 font has no underscore
+> glyph — `src/render/Font.lua` draws any character it doesn't know as a
+> space — so the game shows `test_4821` as **"test 4821"**. The name is still
+> unique and everything still works; only the drawing is off. If the gap
+> bothers you, set `RELAY_TEST_NAME_SEP=-` in `docker-compose.yml` and rebuild,
+> and you'll get `test-4821`, which renders exactly as sent. (`-` is in the
+> font; `_`, `~`, `=`, `+`, `@`, `%`, `&`, `$`, `<`, `>`, `|` and `\` are not.)
+
 ---
 
 ## What "working" is measured by
@@ -137,6 +146,13 @@ connects two real clients, and checks all of this:
 - the room returns to a **waiting** state, ready for a rematch.
 
 If that script exits 0, the server is doing its job.
+
+`./bin/container-test.sh` covers the other half. That test proves the *server
+logic*; this one proves the **container**: it starts nothing, points two real
+game clients at the running container's published port, checks the seats came
+back named `test<sep><digits>`, and plays the same battle through it. It also
+covers the container's read-only filesystem and the port mapping, which an
+in-process server never exercises. Run it after `./bin/relay.sh up`.
 
 It needs an imported ROM (a real game must boot before the driver can run), so
 it seeds a scratch LÖVE identity called `gen1recomp-mp-smoke` from whichever
@@ -175,7 +191,8 @@ re-run `./bin/relay.sh up`.
 |---|---|---|
 | `PORT` | `7778` | Lobby port inside the container. |
 | `HTTP_PORT` | `7779` | Control surface inside the container. |
-| `RELAY_TEST_NAMES` | `1` | Rename every arrival to `test_<random>`. Set to `0` to keep the player's own name. |
+| `RELAY_TEST_NAMES` | `1` | Rename every arrival to `test<sep><random>`. Set to `0` to keep the player's own name. |
+| `RELAY_TEST_NAME_SEP` | `_` | The separator in those names. Use `-` for one the Gen 1 font can actually draw (see the note above). |
 | `BIND` | `0.0.0.0` | Which interface to listen on. |
 
 On the game side, one variable matters: **`POKEPORT_RELAY_ADDR`**. That is

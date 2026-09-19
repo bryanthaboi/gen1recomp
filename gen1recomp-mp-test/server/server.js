@@ -28,6 +28,12 @@ const BIND = process.env.BIND || '0.0.0.0';
 // relay only invents one when the client sends none.
 const TEST_NAMES = /^(1|true|yes|on)$/i.test(process.env.RELAY_TEST_NAMES || '');
 
+// The separator between "test" and the number.  `_` is the POC default, but
+// the Gen 1 font has no underscore glyph -- src/render/Font.lua encodes an
+// unknown character as a space -- so `test_6316` is drawn as "test 6316" in
+// game.  Set RELAY_TEST_NAME_SEP=- for a name that renders exactly as sent.
+const TEST_NAME_SEP = (process.env.RELAY_TEST_NAME_SEP ?? '_').slice(0, 1);
+
 const MAX_LINE = 256 * 1024;
 const MAX_RX_PER_SEC = 600;
 const MAX_CONNS = 512;
@@ -158,16 +164,17 @@ let connections = 0;
 function allocTestName() {
   const taken = new Set();
   for (const seat of seats.values()) taken.add(seat.name);
+  const tag = (n) => `test${TEST_NAME_SEP}${n}`;
   // A random 4-digit tag keeps two testers from looking alike; fall back to a
   // counted name if every slot in the range happens to be busy.
   for (let i = 0; i < 64; i += 1) {
-    const candidate = `test_${crypto.randomInt(1000, 10000)}`;
+    const candidate = tag(crypto.randomInt(1000, 10000));
     if (!taken.has(candidate)) return candidate;
   }
   let n = nextTestName;
-  while (taken.has(`test_${n}`)) n += 1;
+  while (taken.has(tag(n))) n += 1;
   nextTestName = n + 1;
-  return `test_${n}`;
+  return tag(n);
 }
 
 // ---------------------------------------------------------------- wire
@@ -989,6 +996,7 @@ const httpServer = http.createServer((req, res) => {
       players: seats.size,
       rooms: rooms.size,
       testNames: TEST_NAMES,
+      testNameSep: TEST_NAME_SEP,
       uptimeMs: Math.round(process.uptime() * 1000),
     });
   }
@@ -1049,7 +1057,7 @@ process.on('unhandledRejection', (err) => log(`unhandled: ${err}`));
 
 tcpServer.listen(PORT, BIND, () => {
   log(`relay listening on ${BIND}:${PORT} (protocol v2, ${MAX_NAME}-char names)`);
-  log(`name mode: ${TEST_NAMES ? 'every seat becomes test_<random>' : 'client-supplied, test_<n> when absent'}`);
+  log(`name mode: ${TEST_NAMES ? `every seat becomes test${TEST_NAME_SEP}<random>` : `client-supplied, test${TEST_NAME_SEP}<n> when absent`}`);
 });
 httpServer.listen(HTTP_PORT, BIND, () => {
   log(`control surface on ${BIND}:${HTTP_PORT}`);
