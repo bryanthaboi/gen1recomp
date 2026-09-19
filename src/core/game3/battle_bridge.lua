@@ -267,6 +267,13 @@ function BattleBridge.start(mod, game, foe, opts)
 
   local startOpts = {
     wild = opts.wild,
+    wildScripted = opts.wildScripted or (foe and foe.wildScripted),
+    legendary = opts.legendary or (foe and foe.legendary),
+    safari = opts.safari or (foe and foe.safari),
+    roamer = opts.roamer or (foe and foe.roamer),
+    firstBattle = opts.firstBattle or (foe and foe.firstBattle),
+    oldManTutorial = opts.oldManTutorial or (foe and foe.oldManTutorial),
+    aiFlags = opts.aiFlags or (foe and foe.aiFlags),
     double = isDouble,
     playerParty = battleParty,
     foe = foe,

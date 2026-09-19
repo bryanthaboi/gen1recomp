@@ -1318,20 +1318,30 @@ function Renderer:endFrame(zones, worldZones)
   -- surrounding window untouched, which read as the effect happening inside
   -- a window rather than to the whole screen.  { shade, alpha }.
   local veil = self.screenVeil
-  if veil and veil[2] > 0 then
-    love.graphics.setColor(veil[1], veil[1], veil[1], veil[2])
-    -- FAITHFUL RATIO's mobile lock: the surface the player sees is the
-    -- locked viewport and the bars around it are dead display, not screen
-    -- (src/core/FaithfulRes.lua).  A whole-window veil lit the entire phone
-    -- for the battle flash and the post-battle fade (#864), so under the
-    -- lock the veil stops at the letterbox.  The desktop lock is unaffected:
-    -- there the window IS the viewport.
-    if FaithfulRes.scaleCap() then
-      love.graphics.rectangle("fill", ox, oy, vpw, vph)
-    else
-      love.graphics.rectangle("fill", vux, vuy, vuw, vuh)
+  if veil then
+    local vr, vg, vb, va
+    if #veil >= 4 then
+      vr, vg, vb, va = veil[1], veil[2], veil[3], veil[4]
+    elseif type(veil[1]) == "table" then
+      vr, vg, vb, va = veil[1][1], veil[1][2], veil[1][3], veil[2]
+    elseif veil[2] then
+      vr, vg, vb, va = veil[1], veil[1], veil[1], veil[2]
     end
-    love.graphics.setColor(1, 1, 1, 1)
+    if va and va > 0 then
+      love.graphics.setColor(vr, vg, vb, va)
+      -- FAITHFUL RATIO's mobile lock: the surface the player sees is the
+      -- locked viewport and the bars around it are dead display, not screen
+      -- (src/core/FaithfulRes.lua).  A whole-window veil lit the entire phone
+      -- for the battle flash and the post-battle fade (#864), so under the
+      -- lock the veil stops at the letterbox.  The desktop lock is unaffected:
+      -- there the window IS the viewport.
+      if FaithfulRes.scaleCap() then
+        love.graphics.rectangle("fill", ox, oy, vpw, vph)
+      else
+        love.graphics.rectangle("fill", vux, vuy, vuw, vuh)
+      end
+      love.graphics.setColor(1, 1, 1, 1)
+    end
   end
 
   if present then

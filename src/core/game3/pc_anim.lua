@@ -53,7 +53,6 @@ local function set_mid(mid)
 end
 
 function PcAnim.turnOn(ctx)
-  if PcAnim.task then return end
   PcAnim.task = { state = 0, timer = 0, ctx = ctx }
 end
 
@@ -61,14 +60,15 @@ end
 function PcAnim.update()
   local t = PcAnim.task
   if not t then return end
-  if t.timer == 6 then
+  if t.timer >= 6 then
     local var = var8004(t.ctx)
     local flickerOff = (t.state % 2) == 1
     set_mid((flickerOff and PcAnim.METATILE_OFF[var] or PcAnim.METATILE_ON[var]) or 0)
     t.timer = 0
     t.state = t.state + 1
-    if t.state == 5 then
+    if t.state >= 5 then
       PcAnim.task = nil
+      return
     end
   end
   t.timer = t.timer + 1
@@ -76,7 +76,10 @@ end
 
 -- pokefirered/src/field_specials.c:286
 function PcAnim.turnOff(ctx)
-  set_mid(PcAnim.METATILE_OFF[var8004(ctx)] or 0)
+  local t = PcAnim.task
+  local effectiveCtx = ctx or (t and t.ctx)
+  PcAnim.task = nil
+  set_mid(PcAnim.METATILE_OFF[var8004(effectiveCtx)] or 0)
 end
 
 function PcAnim.reset()

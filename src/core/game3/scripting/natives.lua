@@ -34,6 +34,47 @@ local function setResult(ctx, v)
   flagsMod().setVar(nil, ctx, 0x800D, v)
 end
 
+local B_OUTCOME_WON = 1
+local B_OUTCOME_LOST = 2
+local B_OUTCOME_DREW = 3
+local B_OUTCOME_RAN = 4
+local B_OUTCOME_PLAYER_TELEPORTED = 5
+local B_OUTCOME_MON_FLED = 6
+local B_OUTCOME_CAUGHT = 7
+local B_OUTCOME_NO_SAFARI_BALLS = 8
+local B_OUTCOME_FORFEITED = 9
+local B_OUTCOME_MON_TELEPORTED = 10
+
+local function outcome_to_code(result)
+  if type(result) == "number" then return result end
+  if result == "win" or result == "won" then return B_OUTCOME_WON
+  elseif result == "lose" or result == "lost" or result == "whiteout" or result == "blackout" then return B_OUTCOME_LOST
+  elseif result == "draw" or result == "drew" then return B_OUTCOME_DREW
+  elseif result == "run" or result == "ran" or result == "fled_player" then return B_OUTCOME_RAN
+  elseif result == "teleport_player" or result == "player_teleported" then return B_OUTCOME_PLAYER_TELEPORTED
+  elseif result == "fled" or result == "mon_fled" then return B_OUTCOME_MON_FLED
+  elseif result == "caught" or result == "catch" then return B_OUTCOME_CAUGHT
+  elseif result == "no_safari_balls" then return B_OUTCOME_NO_SAFARI_BALLS
+  elseif result == "forfeited" then return B_OUTCOME_FORFEITED
+  elseif result == "mon_teleported" then return B_OUTCOME_MON_TELEPORTED
+  end
+  return B_OUTCOME_WON
+end
+
+Natives.B_OUTCOME = {
+  WON = B_OUTCOME_WON,
+  LOST = B_OUTCOME_LOST,
+  DREW = B_OUTCOME_DREW,
+  RAN = B_OUTCOME_RAN,
+  PLAYER_TELEPORTED = B_OUTCOME_PLAYER_TELEPORTED,
+  MON_FLED = B_OUTCOME_MON_FLED,
+  CAUGHT = B_OUTCOME_CAUGHT,
+  NO_SAFARI_BALLS = B_OUTCOME_NO_SAFARI_BALLS,
+  FORFEITED = B_OUTCOME_FORFEITED,
+  MON_TELEPORTED = B_OUTCOME_MON_TELEPORTED,
+}
+Natives.outcome_to_code = outcome_to_code
+
 Natives.ALLOW = {
   -- pokefirered/src/battle_setup.c:865
   ["special:" .. Std.SPECIAL.Script_HasTrainerBeenFought] = function(ctx)
@@ -149,6 +190,12 @@ Natives.ALLOW = {
     require("src.ui.game3.help_system").enabled = true
     return false
   end,
+  -- pokefirered/src/battle_setup.c:458 GetBattleOutcome (special 0xB6 / 182)
+  ["special:" .. Std.SPECIAL.GetBattleOutcome] = function(ctx)
+    local outcome = ctx and ctx.lastBattleOutcome or B_OUTCOME_WON
+    setResult(ctx, outcome)
+    return false
+  end,
   -- pokefirered/src/battle_setup.c:320
   ["special:" .. Std.SPECIAL.StartMarowakBattle] = function(ctx, adapters)
     local Enc = require("src.core.game3.encounters")
@@ -160,6 +207,7 @@ Natives.ALLOW = {
     local scope = okB and session and session.bag and Bag.has(session.bag, 359, 1) or false
     foe.ghost = true
     foe.ghostUnveiled = scope
+    foe.wildScripted = true
     if scope then
       -- pokefirered/src/battle_setup.c:327
       foe.gender, foe.nature = "F", 12
@@ -167,10 +215,57 @@ Natives.ALLOW = {
     end
     return yield_host(ctx, adapters, function(done)
       adapters.startWildBattle(foe, function(result)
-        -- pokefirered/src/battle_setup.c:458
-        require("src.core.game3.scripting.flags").setVar(nil, ctx, 0x800D, (result == "win") and 0 or 1)
+        local code = outcome_to_code(result)
+        if ctx then ctx.lastBattleOutcome = code end
+        setResult(ctx, code)
         if done then done() end
-      end)
+      end, { wildScripted = true })
+    end)
+  end,
+  -- pokefirered/src/battle_setup.c:349 StartLegendaryBattle (special 0x138 / 312)
+  ["special:" .. Std.SPECIAL.StartLegendaryBattle] = function(ctx, adapters)
+    local Enc = require("src.core.game3.encounters")
+    local foe = Enc.takePendingWild()
+    if not (foe and adapters and adapters.startWildBattle) then return false end
+    foe.legendary = true
+    foe.specialWild = true
+    return yield_host(ctx, adapters, function(done)
+      adapters.startWildBattle(foe, function(result)
+        local code = outcome_to_code(result)
+        if ctx then ctx.lastBattleOutcome = code end
+        setResult(ctx, code)
+        if done then done() end
+      end, { legendary = true })
+    end)
+  end,
+  -- pokefirered/src/battle_setup.c:378 StartGroudonKyogreBattle (special 0x137 / 311)
+  ["special:" .. Std.SPECIAL.StartGroudonKyogreBattle] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.StartLegendaryBattle](ctx, adapters)
+  end,
+  -- pokefirered/src/battle_setup.c:393 StartRegiBattle (special 0x139 / 313)
+  ["special:" .. Std.SPECIAL.StartRegiBattle] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.StartLegendaryBattle](ctx, adapters)
+  end,
+  -- pokefirered/src/battle_setup.c:339 StartSouthernIslandBattle (special 0x143 / 323)
+  ["special:" .. Std.SPECIAL.StartSouthernIslandBattle] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.StartLegendaryBattle](ctx, adapters)
+  end,
+  -- pokefirered/src/battle_setup.c:301 StartOldManTutorialBattle (special 0xA8 / 168)
+  ["special:" .. Std.SPECIAL.StartOldManTutorialBattle] = function(ctx, adapters)
+    local foe = {
+      species = 13, -- WEEDLE
+      level = 5,
+      gender = "M",
+      oldManTutorial = true,
+    }
+    if not (adapters and adapters.startWildBattle) then return false end
+    return yield_host(ctx, adapters, function(done)
+      adapters.startWildBattle(foe, function(result)
+        local code = outcome_to_code(result)
+        if ctx then ctx.lastBattleOutcome = code end
+        setResult(ctx, code)
+        if done then done() end
+      end, { oldManTutorial = true })
     end)
   end,
   ["special:" .. Std.SPECIAL.HealPlayerParty] = function(ctx, adapters)
@@ -241,6 +336,92 @@ Natives.ALLOW = {
     return yield_host(ctx, adapters, function(done)
       adapters.openNaming({ title = "NAME?" }, done)
     end)
+  end,
+  -- pokefirered/src/easy_chat_2.c:256 ShowEasyChatScreen (special 0x5F / 95)
+  ["special:" .. Std.SPECIAL.ShowEasyChatScreen] = function(ctx, adapters)
+    if not (adapters and adapters.openEasyChat) then
+      setResult(ctx, 0)
+      flagsMod().setVar(nil, ctx, 0x8004, 1)
+      return false
+    end
+    return yield_host(ctx, adapters, function(done)
+      local chatType = flagsMod().getVar(nil, ctx, 0x8004) or 0
+      local Runtime = package.loaded["src.core.game3.runtime"]
+      local session = Runtime and Runtime.getSession and Runtime.getSession()
+      local EasyChatData = require("src.core.game3.easy_chat_data")
+      local currentWords = (session and session.easyChatProfile) or EasyChatData.DEFAULT_PROFILE
+      adapters.openEasyChat({
+        type = chatType,
+        words = currentWords,
+        session = session,
+      }, function(confirmed, words)
+        if confirmed then
+          if session then
+            session.easyChatProfile = words
+            if session.flags then
+              session.flags[0x82D] = true
+              session.flags["FLAG_SYS_SET_TRAINER_CARD_PROFILE"] = true
+            end
+          end
+          local Flags = flagsMod()
+          local Space = package.loaded["src.core.game3.scripting.space"]
+          local store = (Space and Space.store) or (session and session.store)
+          if store then
+            Flags.setFlag(store, ctx, 0x82D, true)
+          end
+          if chatType == 0 then -- EASY_CHAT_TYPE_PROFILE
+            local matches = true
+            for i = 1, 4 do
+              if words[i] ~= EasyChatData.PASSPHRASE_MYSTERY_EVENT[i] then
+                matches = false
+                break
+              end
+            end
+            Flags.setVar(nil, ctx, 0x8004, matches and 0 or 1)
+          elseif chatType == 14 then -- EASY_CHAT_TYPE_QUESTIONNAIRE
+            local matches = true
+            for i = 1, 4 do
+              if words[i] ~= EasyChatData.PASSPHRASE_QUESTIONNAIRE[i] then
+                matches = false
+                break
+              end
+            end
+            Flags.setVar(nil, ctx, 0x8004, matches and 0 or 1)
+          else
+            Flags.setVar(nil, ctx, 0x8004, 1)
+          end
+          setResult(ctx, 1)
+        else
+          setResult(ctx, 0)
+          flagsMod().setVar(nil, ctx, 0x8004, 1)
+        end
+        done()
+      end)
+    end)
+  end,
+  ["special:0x5f"] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.ShowEasyChatScreen](ctx, adapters)
+  end,
+  ["special:0x5F"] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.ShowEasyChatScreen](ctx, adapters)
+  end,
+  -- pokefirered/src/easy_chat.c:276 ShowEasyChatMessage (special 0x60 / 96 or 0x61 / 97)
+  ["special:" .. Std.SPECIAL.ShowEasyChatMessage] = function(ctx, adapters)
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local EasyChatData = require("src.core.game3.easy_chat_data")
+    local words = (session and session.easyChatProfile) or EasyChatData.DEFAULT_PROFILE
+    local text = EasyChatData.formatPhrase(words, 2, 2)
+    if adapters and adapters.openMessage then
+      adapters.openMessage(text)
+    end
+    return false
+  end,
+  ["special:97"] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.ShowEasyChatMessage](ctx, adapters)
+  end,
+  ["special:0x61"] = function(ctx, adapters)
+    return Natives.ALLOW["special:" .. Std.SPECIAL.ShowEasyChatMessage](ctx, adapters)
   end,
   -- pret EventScript_ChangePokemonNickname: fadescreen TO_BLACK → this → waitstate.
   -- Opens naming under the held black, fades in, writes nickname on confirm.

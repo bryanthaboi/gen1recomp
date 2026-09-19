@@ -550,40 +550,52 @@ function Pokemon.movePp(moveId)
 end
 Pokemon.moveMaxPp = Pokemon.movePp
 
---- FRLG GiveBoxMonInitialMoveset: learn all ≤ level; if full, drop first.
+--- FRLG GiveBoxMonInitialMoveset: learn all ≤ level; if full, drop first; avoid duplicates.
 function Pokemon.movesAtLevel(species, level)
   if type(species) == "table" then species = Pokemon.speciesOf(species) end
   if type(species) == "string" then species = Pokemon.speciesFromName(species) or tonumber(species) end
   species = tonumber(species)
   level = tonumber(level) or 1
   local set = Pokemon.learnset(species)
-  local pool = {}
-  for _, e in ipairs(set) do
-    local lv = e[1] or e.level or 0
-    local mv = tonumber(e[2] or e.move) or 0
-    if lv <= level and mv > 0 then
-      pool[#pool + 1] = mv
-    end
-  end
   local moves = {}
   local pp = {}
   local maxPp = {}
-  for _, m in ipairs(pool) do
+
+  local function giveMove(moveId)
+    if not moveId or moveId <= 0 then return end
+    for i = 1, #moves do
+      if moves[i] == moveId then
+        return -- already knows this move (pret GiveMoveToBoxMon)
+      end
+    end
+    local mpp = Pokemon.movePp(moveId)
     if #moves < 4 then
-      moves[#moves + 1] = m
-      local mpp = Pokemon.movePp(m)
+      moves[#moves + 1] = moveId
       pp[#pp + 1] = mpp
       maxPp[#maxPp + 1] = mpp
     else
       table.remove(moves, 1)
       table.remove(pp, 1)
       table.remove(maxPp, 1)
-      moves[4] = m
-      local mpp = Pokemon.movePp(m)
+      moves[4] = moveId
       pp[4] = mpp
       maxPp[4] = mpp
     end
   end
+
+  for _, e in ipairs(set) do
+    local lv = e[1] or e.level or 0
+    local mv = tonumber(e[2] or e.move) or 0
+    if lv > level then
+      break
+    end
+    giveMove(mv)
+  end
+
+  if #moves == 0 then
+    giveMove(33) -- fallback to Tackle if learnset empty
+  end
+
   return moves, pp, maxPp
 end
 

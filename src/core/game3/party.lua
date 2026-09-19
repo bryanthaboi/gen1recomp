@@ -184,6 +184,11 @@ function Party.giveMon(session, species, level, nickname)
   if Pokemon.movesAtLevel then
     moves, pp, maxPp = Pokemon.movesAtLevel(species, level)
   end
+  if not moves or #moves == 0 then
+    moves = { 33 }
+    pp = { 35 }
+    maxPp = { 35 }
+  end
 
   local SummaryData = require("src.core.game3.summary_data")
   local mon = {
@@ -222,6 +227,24 @@ function Party.giveMon(session, species, level, nickname)
   session.dex.seen[species] = true
   session.dex.owned[species] = true
   return true
+end
+
+--- Give an egg for script giveegg.
+function Party.giveEgg(session, species)
+  if not session or not session.party then return false end
+  if #session.party >= 6 then return false end
+  species = tonumber(species) or 1
+  local Pokemon = require("src.core.game3.pokemon")
+  local ok = Party.giveMon(session, species, 5, "EGG")
+  if ok then
+    local egg = session.party[#session.party]
+    if egg then
+      egg.isEgg = true
+      egg.name = "EGG"
+      egg.nickname = "EGG"
+    end
+  end
+  return ok
 end
 
 --- Prove DVs/Stat Exp bit-identical between two opaque snapshots.

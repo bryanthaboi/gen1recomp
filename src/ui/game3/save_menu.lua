@@ -147,21 +147,25 @@ end
 -- engine's internal map id (which is what session.map holds).
 function SaveMenu.locationName(session)
   session = session or {}
-  if type(session.mapName) == "string" and session.mapName ~= "" then
+  if type(session.mapName) == "string" and session.mapName ~= "" and not session.mapName:find("^FR_") and not session.mapName:find("^SEVII_") then
     return session.mapName:upper()
   end
   local mapId = session.map
   local Runtime = package.loaded["src.core.game3.runtime"]
   local game = SaveMenu._game or (Runtime and Runtime._game)
   local def = mapId and game and game.data and game.data.maps and game.data.maps[mapId]
+  local secId = session.regionMapSectionId or session.mapSec or (def and def.regionMapSectionId)
   -- floorNum 0: save_menu_util.c passes fill = 0, like map_name_popup.c.
-  local info = MapSectionsExtract.getInfo(def and def.regionMapSectionId, mapId, 0)
+  local info = MapSectionsExtract.getInfo(secId, mapId, 0)
   if info and info.resolved and type(info.name) == "string" and info.name ~= "" then
-    return info.name:upper()
+    return (info.rawName or info.name):upper()
+  end
+  if info and type(info.name) == "string" and info.name ~= "" and info.name ~= "PALLET TOWN" then
+    return (info.rawName or info.name):upper()
   end
   -- Not a map we can identify (a mod's map, or one with no header data): show
   -- a readable form of the id rather than getInfo's Pallet Town placeholder.
-  return tostring(mapId or "PALLET TOWN"):gsub("^FR_", ""):gsub("^SEVII_", ""):gsub("_", " ")
+  return tostring(mapId or "PALLET TOWN"):gsub("^FR_", ""):gsub("^SEVII_", ""):gsub("_", " "):upper()
 end
 
 function SaveMenu.draw()

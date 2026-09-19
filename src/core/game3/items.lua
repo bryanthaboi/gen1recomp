@@ -43,6 +43,7 @@ Items.FRLG_TO_HOST = {
   [86] = "REPEL",
   [110] = "NUGGET",
   [280] = "METEORITE",
+  [356] = "ITEMFINDER",
   [360] = "BICYCLE",
   [361] = "TOWN_MAP",
   [367] = "TRI_PASS",
@@ -63,8 +64,8 @@ Items.HOST_SAFE = {
   MAX_REVIVE = true, FRESH_WATER = true, SODA_POP = true, LEMONADE = true,
   SUPER_REPEL = true, MAX_REPEL = true, ESCAPE_ROPE = true, REPEL = true,
   X_ATTACK = true, X_DEFEND = true, X_SPEED = true, X_ACCURACY = true,
-  X_SPECIAL = true, POKE_DOLL = true, NUGGET = true, TOWN_MAP = true,
-  TRI_PASS = true, RAINBOW_PASS = true, BICYCLE = true,
+  X_SPECIAL = true, POKE_DOLL = true, NUGGET = true, ITEMFINDER = true,
+  TOWN_MAP = true, TRI_PASS = true, RAINBOW_PASS = true, BICYCLE = true,
 }
 
 function Items.resolveHostId(itemId)

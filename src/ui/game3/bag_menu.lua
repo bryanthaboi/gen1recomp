@@ -578,6 +578,21 @@ local function handle_menu_input(input)
                 require("src.core.game3.vs_seeker").use(session, nil)
               end)
               return
+            elseif kind == "itemfinder" then
+              local session = BagMenu._session
+              begin_exit(true, function()
+                BagMenu.close()
+                local StartMenu = package.loaded["src.ui.game3.start_menu"]
+                if StartMenu and StartMenu.isOpen and StartMenu.isOpen() then
+                  StartMenu.open = false
+                  StartMenu._onClose = nil
+                  Stack.pop("start")
+                end
+                field_fade_in()
+                local Field = require("src.core.game3.field")
+                Field.useItemfinder(session, true)
+              end)
+              return
             else
               BagMenu.mode = "list"
               clamp_cursor()

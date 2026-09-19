@@ -448,6 +448,13 @@ local function useField(session, bag, id, partySlot)
     return true, "vs_seeker", nil
   end
 
+  if use == "itemfinder" or id == ItemsData.ITEM_ITEMFINDER or id == "ITEMFINDER"
+      or ItemsData.toNumericId(id) == ItemsData.ITEM_ITEMFINDER then
+    local Field = require("src.core.game3.field")
+    local ok, kind, text = Field.useItemfinder(session)
+    return ok, kind or "itemfinder", text
+  end
+
   if id == ItemsData.ITEM_TM_CASE or id == "TM_CASE"
       or ItemsData.toNumericId(id) == ItemsData.ITEM_TM_CASE then
     local TmCase = require("src.ui.game3.tm_case")

@@ -1803,6 +1803,9 @@ local function _dormant_quantize_run(imports, cache, progressCb)
       local MapSectionsExtract = require("src.import.gba.map_sections_extract")
       local okMs, errMs = pcall(MapSectionsExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
       if not okMs then print("[map_sections] warn: " .. tostring(errMs)) end
+      local EasyChatExtract = require("src.import.gba.easy_chat_extract")
+      local okEc, errEc = pcall(EasyChatExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
+      if not okEc then print("[easy_chat] warn: " .. tostring(errEc)) end
       local MapPreviewExtract = require("src.import.gba.map_preview_extract")
       local okMp, errMp = pcall(MapPreviewExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
       if not okMp then print("[map_preview] warn: " .. tostring(errMp)) end

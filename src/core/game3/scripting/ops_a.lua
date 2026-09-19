@@ -432,6 +432,21 @@ local function dispatch(vm, row)
     end
     Flags.setVar(store, ctx, Ctx.VAR_RESULT, ok and 0 or 2) -- 0=party, 2=fail
     return false
+  elseif op == "giveegg" then
+    local species = var_get(store, ctx, row[1] or row.species)
+    local ok = false
+    if a.giveEgg then
+      ok = a.giveEgg(species)
+    else
+      local Party = require("src.core.game3.party")
+      local Runtime = package.loaded["src.core.game3.runtime"]
+      local session = Runtime and Runtime.getSession and Runtime.getSession()
+      if session then
+        ok = Party.giveEgg(session, species)
+      end
+    end
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, ok and 0 or 1) -- 0=success, 1=fail
+    return false
   elseif op == "textcolor" then
     Flags.setVar(store, ctx, Ctx.VAR_PREV_TEXT_COLOR, Flags.getVar(store, ctx, Ctx.VAR_TEXT_COLOR)) -- src/scrcmd.c:1257
     Flags.setVar(store, ctx, Ctx.VAR_TEXT_COLOR, row.color or row[1] or 0)
@@ -779,11 +794,18 @@ local function dispatch(vm, row)
     local Enc = require("src.core.game3.encounters")
     local foe = Enc.takePendingWild()
     if a.startWildBattle and foe then
+      foe.wildScripted = true
       ctx.mode = "native"
       ctx.status = "waiting"
       local done = false
       ctx.nativePoll = function() return done end
-      a.startWildBattle(foe, function() done = true end)
+      a.startWildBattle(foe, function(result)
+        local Natives = require("src.core.game3.scripting.natives")
+        local code = Natives.outcome_to_code and Natives.outcome_to_code(result) or 1
+        if ctx then ctx.lastBattleOutcome = code end
+        Flags.setVar(store, ctx, 0x800D, code)
+        done = true
+      end, { wildScripted = true })
       if done then
         ctx.mode = "bytecode"
         ctx.status = "running"

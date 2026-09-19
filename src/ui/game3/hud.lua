@@ -24,6 +24,7 @@ end
 
 function Hud.isMenuOpen()
   local Naming = package.loaded["src.ui.game3.naming"]
+  local EasyChat = package.loaded["src.ui.game3.easy_chat"]
   return Stack.busy()
     or StartMenu.isOpen() or BagMenu.isOpen() or RegionMap.isOpen()
     or PartyMenu.isOpen() or SummaryMenu.isOpen() or Pokedex.isOpen()
@@ -31,6 +32,7 @@ function Hud.isMenuOpen()
     or TrainerCard.isOpen() or PcMenu.isOpen()
     or ShopMenu.isOpen()
     or (Naming and Naming.isOpen and Naming.isOpen())
+    or (EasyChat and EasyChat.isOpen and EasyChat.isOpen())
 end
 
 function Hud.busy()
