@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.65",
+          "date": "2026-09-19",
+          "size": 24174611,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.65/gen1recomp++-0.2.65-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2316 FireRed: in-battle item use shows stale (pre-battle) party HP, so a Potion is refused with \"It won't have any effect.\"\n- #2319 FireRed: Pokémon sprite in the nickname window renders at half size (16×16 instead of 32×32)\n- #2323 Most locations never show their Location Preview — preview art is never extracted from the ROM\n- #2324 Level-up stat box stays on screen after the battle moves on and can no longer be dismissed\n- #2328 Save screen shows the engine's internal map id (FR_ROUTE_22) instead of the location name, and the names aren't read from the ROM\n\n## Contributors\n\n- @bryanthaboi\n- @campavao\n- @Nexhas28"
+        },
+        {
           "version": "0.2.64",
           "date": "2026-09-19",
           "size": 24153580,
