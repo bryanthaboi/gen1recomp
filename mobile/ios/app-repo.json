@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.66",
+          "date": "2026-09-19",
+          "size": 24206470,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.66/gen1recomp++-0.2.66-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2313 FireRed: no \"caught Pokémon\" Poké Ball marker on the opponent's battle HUD\n- #2314 FireRed: hidden items are unreachable — no hidden-item runtime or ITEMFINDER (e.g. Viridian Forest hidden Antidote)\n- #2315 FireRed: default-moveset trainer Pokémon all use Tackle — Charmander never uses Scratch\n- #2322 PC box UI is broken — Gen 3 (FireRed) storage screen renders without any chrome\n- #2325 Pewter City Pokecenter woman skips the profile phrase picker and replies as if you already gave her a phrase\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @TheRealSolidusSnake\n- @thibautbus"
+        },
+        {
           "version": "0.2.65",
           "date": "2026-09-19",
           "size": 24174611,
