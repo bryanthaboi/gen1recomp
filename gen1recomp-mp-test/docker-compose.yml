@@ -1,0 +1,27 @@
+# gen1recomp multiplayer relay -- proof of concept.
+#
+#   docker compose up -d --build      start it (Orbstack picks this file up)
+#   docker compose logs -f relay      watch players arrive
+#   docker compose down               stop it
+#
+# This is a NEW service.  It is not the `loghook` container and does not touch
+# it: loghook is a one-way log sink on 8090, this is a game lobby on 17778.
+services:
+  relay:
+    build: .
+    container_name: gen1recomp-relay
+    ports:
+      # host:container.  The host side is 17778, not 7778, so this can run
+      # next to the real relay (relay.gen1re.com:7778) without a clash.
+      - "17778:7778"   # lobby -- the game connects here
+      - "17779:7779"   # http control surface -- /health, /players, /rooms
+    environment:
+      # Every player who arrives is renamed test_<random>.  No account, no
+      # password, no name to type.  Set to "0" to use the client's own name.
+      RELAY_TEST_NAMES: "1"
+    # The relay keeps nothing on disk, so give it no writable filesystem at
+    # all.  /tmp is the one place node may still want.
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
