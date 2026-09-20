@@ -603,8 +603,11 @@ Natives.ALLOW = {
     local Runtime = package.loaded["src.core.game3.runtime"]
     local session = Runtime and Runtime.getSession and Runtime.getSession()
     local EasyChatData = require("src.core.game3.easy_chat_data")
+    local EasyChatText = require("src.core.game3.easy_chat_text")
     local words = (session and session.easyChatProfile) or EasyChatData.DEFAULT_PROFILE
-    local text = EasyChatData.formatPhrase(words, 2, 2)
+    -- The saved profile is a list of word ids; the words themselves are drawn
+    -- here, so they go through the catalog like the picker's own list.
+    local text = EasyChatText.phrase(words, 2, 2)
     if adapters and adapters.openMessage then
       adapters.openMessage(text)
     end

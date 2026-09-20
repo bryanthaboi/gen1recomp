@@ -6,6 +6,7 @@ local FrlgFont = require("src.ui.game3.frlg_font")
 local Stack = require("src.ui.game3.stack")
 local Audio = require("src.core.game3.audio")
 local EasyChatData = require("src.core.game3.easy_chat_data")
+local EasyChatText = require("src.core.game3.easy_chat_text")
 local Chrome = require("src.ui.game3.chrome")
 local Strings = require("src.core.Strings")
 
@@ -21,6 +22,22 @@ local SLOTS_LAYOUT = {
   { x = 36, y = 52, w = 84, h = 16 },
   { x = 126, y = 52, w = 84, h = 16 },
 }
+
+-- The cart's own words fit the boxes they are drawn in -- the widest is
+-- 72 px -- a translated one need not, so every word is clipped to its box.
+-- In the picker that box is the red selection rectangle, which starts 12 px
+-- left of the pen and is 92 px wide.  In the phrase frame it is the slot's
+-- own frame (SLOTS_LAYOUT), which also keeps a left word clear of the right
+-- slot's cursor.  Group names get the room up to the scroll arrows (centred
+-- at +112, 8 px wide) instead: an official translation already needs it --
+-- the French cart's VIE QUOTIDIEN. is 83 px.
+local CELL_WIDTH = 80
+local GROUP_CELL_WIDTH = 88
+
+local function slotWidth(index, penX)
+  local frame = SLOTS_LAYOUT[index]
+  return frame.x + frame.w - penX
+end
 
 -- Strings.source, not Strings: this table is built at require time, before a
 -- catalog is loaded, so the draw below looks each label up at use time.
@@ -502,9 +519,9 @@ function EasyChat.draw()
       -- 7 Red underscores matching pret CHAR_EXTRA_SYMBOL + CHAR_UNDERSCORE (7 glyphs in FONT_NORMAL_COPY_1)
       FrlgFont.draw("_______", s.x, s.y, { colors = FrlgFont.COLOR.RED })
     else
-      local wText = EasyChatData.getWord(wid)
+      local wText = EasyChatText.word(wid)
       if wText and wText ~= "" then
-        FrlgFont.draw(wText, s.x, s.y, { colors = FrlgFont.COLOR.NORMAL })
+        FrlgFont.draw(wText, s.x, s.y, { maxWidth = slotWidth(i, s.x), colors = FrlgFont.COLOR.NORMAL })
       else
         FrlgFont.draw("_______", s.x, s.y, { colors = FrlgFont.COLOR.RED })
       end
@@ -595,9 +612,9 @@ function EasyChat.draw()
             love.graphics.setColor(224 / 255, 32 / 255, 32 / 255, 1)
             love.graphics.rectangle("line", xPos - 12, yPos - 1, 92, 14, 2, 2)
             drawTriangleCursor(xPos - 10, yPos + 3, st.animTimer)
-            FrlgFont.draw(grp.name, xPos, yPos, { colors = FrlgFont.COLOR.NORMAL })
+            FrlgFont.draw(EasyChatText.groupName(grp), xPos, yPos, { maxWidth = GROUP_CELL_WIDTH, colors = FrlgFont.COLOR.NORMAL })
           else
-            FrlgFont.draw(grp.name, xPos, yPos, { colors = FrlgFont.COLOR.NORMAL })
+            FrlgFont.draw(EasyChatText.groupName(grp), xPos, yPos, { maxWidth = GROUP_CELL_WIDTH, colors = FrlgFont.COLOR.NORMAL })
           end
         end
       end
@@ -616,7 +633,7 @@ function EasyChat.draw()
     local pageOffset = st.wordPage * pageSize
 
     -- Top group title
-    local grpHeader = string.format("%s", curGroup and curGroup.name or "")
+    local grpHeader = EasyChatText.groupName(curGroup)
     FrlgFont.draw(grpHeader, wX + 8, wY + 4, { colors = FrlgFont.COLOR.NORMAL })
 
     -- Page indicator
@@ -646,9 +663,9 @@ function EasyChat.draw()
             love.graphics.setColor(224 / 255, 32 / 255, 32 / 255, 1)
             love.graphics.rectangle("line", xPos - 12, yPos - 1, 92, 14, 2, 2)
             drawTriangleCursor(xPos - 10, yPos + 3, st.animTimer)
-            FrlgFont.draw(wEntry.text, xPos, yPos, { colors = FrlgFont.COLOR.NORMAL })
+            FrlgFont.draw(EasyChatText.wordInGroup(wEntry, curGroup), xPos, yPos, { maxWidth = CELL_WIDTH, colors = FrlgFont.COLOR.NORMAL })
           else
-            FrlgFont.draw(wEntry.text, xPos, yPos, { colors = FrlgFont.COLOR.NORMAL })
+            FrlgFont.draw(EasyChatText.wordInGroup(wEntry, curGroup), xPos, yPos, { maxWidth = CELL_WIDTH, colors = FrlgFont.COLOR.NORMAL })
           end
         end
       end

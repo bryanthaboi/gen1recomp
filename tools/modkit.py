@@ -1457,6 +1457,24 @@ for id, def in pairs(statuses or {}) do
     emit("status_hud", id, def.hudLabel)
   end
 end
+-- The Easy Chat vocabulary is engine data, not a Strings() call site, so the
+-- literal harvester below cannot see it: the picker looks each word up at
+-- draw time under its group's context (src/core/game3/easy_chat_text.lua).
+-- Emit those keys here so a catalog carries them like any other engine text.
+local okEasyChat, EasyChatData = pcall(require, "src.core.game3.easy_chat_data")
+if okEasyChat and type(EasyChatData) == "table" and type(EasyChatData.GROUPS) == "table" then
+  for _, group in pairs(EasyChatData.GROUPS) do
+    if type(group) == "table" and type(group.name) == "string" and group.name ~= "" then
+      emit("easy_chat", "easyChat.group|" .. group.name, group.name)
+      for _, word in ipairs(group.words or {}) do
+        if type(word) == "table" and type(word.text) == "string" and word.text ~= "" then
+          emit("easy_chat", "easyChat." .. group.name .. "|" .. word.text, word.text)
+        end
+      end
+    end
+  end
+end
+
 -- dex entries carry their own prose (species flavour text)
 for id, def in pairs(D.pokemon or {}) do
   if type(def.dexEntry) == "table" then
@@ -1878,9 +1896,14 @@ def cmd_translation(args, repo):
     catalogs = [
         ("dialogue", "Script text", grouped.get("dialogue", []), False,
          "Keyed by the original text label. The English is in the comment."),
-        ("strings", "Engine text", [(lit, where) for lit, where in engine], True,
+        ("strings", "Engine text",
+         [(lit, where) for lit, where in engine] + sorted(grouped.get("easy_chat", [])), True,
          "Keyed by the English source, which is also what draws if you leave\n"
-         "an entry empty. Keep any %s / %d directives."),
+         "an entry empty. Keep any %s / %d directives.\n"
+         "The easyChat.* keys are the Easy Chat vocabulary: a group's name, or\n"
+         "one of its words. They carry the group as a context because the same\n"
+         "word means different things in different groups; an entry keyed by\n"
+         "the bare word still applies where no context-specific one exists."),
         ("species_names", "Species names", grouped.get("species", []), False, ""),
         ("move_names", "Move names", grouped.get("move", []), False, ""),
         ("item_names", "Item names", grouped.get("item", []), False, ""),
