@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.67",
+          "date": "2026-09-20",
+          "size": 24250287,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.67/gen1recomp++-0.2.67-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2339 Wrong jingle for receiving the Boulderbadge\n\n## Contributors\n\n- @bryanthaboi\n- @Nexhas28\n- @thibautbus"
+        },
+        {
           "version": "0.2.66",
           "date": "2026-09-19",
           "size": 24206470,
