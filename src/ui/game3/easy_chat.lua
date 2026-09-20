@@ -648,8 +648,15 @@ function EasyChat.draw()
       drawScrollArrow(wX + 112, wY + wH - 8, false)
     end
 
-    for r = 0, 2 do
-      local yPos = wY + 18 + r * 16
+    -- Four rows of two, the way the cart pages this list: easy_chat_2.c
+    -- scrolls selectWordRowsAbove by 4, and easy_chat_3.c's PrintECRowsWin2
+    -- prints row * 16 + 96 for each of them.  The navigation below already
+    -- moves through four rows (row < 3) and the page holds eight words, so
+    -- drawing three left the last two of every page selectable but invisible.
+    -- The first row starts 2 px higher than it used to so the fourth one's
+    -- 14 px of glyphs stay inside the 78 px frame.
+    for r = 0, 3 do
+      local yPos = wY + 16 + r * 16
       for c = 0, 1 do
         local idxOnPage = r * 2 + c + 1
         local wIdx = pageOffset + idxOnPage
