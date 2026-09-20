@@ -1,6 +1,7 @@
 -- Hazards (FRLG Spikes only; Gen4+ not registered).
 
 local H = require("src.core.game3.battle.effects._helpers")
+local Strings = require("src.core.Strings")
 
 local Hazards = {}
 
@@ -48,7 +49,7 @@ function Hazards.spikes(ctx)
   if n >= 3 then return H.sayFail(ctx) end
   Hazards.set(side, n + 1)
   H.attackAnim(ctx)
-  ctx.adapter:say("SPIKES were scattered all around\nthe opponent's side!")
+  ctx.adapter:say(Strings("SPIKES were scattered all around\nthe opponent's side!"))
 end
 
 return Hazards

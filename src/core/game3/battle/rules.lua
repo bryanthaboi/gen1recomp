@@ -1,6 +1,7 @@
 -- Game3 battle rules (owned). Crit / weather mods / residual phase labels.
 
 local Capabilities = require("src.core.game3.battle.capabilities")
+local Strings = require("src.core.Strings")
 
 local Rules = {}
 
@@ -153,25 +154,25 @@ local function partial_trap_name(moveId)
   if ok and Moves and Moves.displayName then
     return Moves.displayName(moveId)
   end
-  return tostring(moveId or "the attack")
+  return tostring(moveId or Strings("the attack"))
 end
 
 -- pokefirered/src/battle_message.c:1263
 function Rules.partialTrap.message(moveId)
   local name = partial_trap_name(moveId)
-  return string.format("{DEFENDER} was trapped by %s!", name)
+  return Strings("{DEFENDER} was trapped by %s!", name)
 end
 
 -- pokefirered/src/battle_message.c:1268
 function Rules.partialTrap.squeezeMessage(moveId)
   local name = partial_trap_name(moveId)
-  return string.format("{DEFENDER} is hurt by %s!", name)
+  return Strings("{DEFENDER} is hurt by %s!", name)
 end
 
 -- pokefirered/src/battle_message.c:1274
 function Rules.partialTrap.freedMessage(moveId)
   local name = partial_trap_name(moveId)
-  return string.format("{DEFENDER} was freed from %s!", name)
+  return Strings("{DEFENDER} was freed from %s!", name)
 end
 
 function Rules.weather.typeModifier(weather, moveTypeName)

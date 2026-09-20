@@ -1,5 +1,6 @@
 local Display = require("src.core.game3.display")
 local Audio = require("src.core.game3.audio")
+local Strings = require("src.core.Strings")
 local Oam = require("src.core.game3.oam")
 local Pal = require("src.core.game3.pal_fade")
 local Fx = require("src.core.game3.gba_fx")
@@ -81,6 +82,8 @@ local AFFINE_EMERGE = { { v = 0x28, dur = 0 }, { v = 0x12, dur = 12 }, "end" }
 local AFFINE_RETURN = { { v = -0x2, dur = 18 }, { v = -0x10, dur = 15 }, "end" }
 local AFFINE_NORMAL = { { v = 0x100, dur = 0 }, "end" }
 
+-- CONTROLS_TEXT, PIKA_TEXT and OAK_TEXT hold English sources: they exist
+-- before any translation catalog, so each is passed to Strings() when shown.
 -- pokefirered/data/text/new_game_intro.inc:127
 local CONTROLS_TEXT = {
   intro = "The various buttons will be explained in\nthe order of their importance.",
@@ -122,6 +125,11 @@ local OAK_TEXT = {
 local MALE_NAMES = { "RED", "FIRE", "ASH", "KENE", "GEKI", "JAK", "JANNE", "JONN", "KAMON", "KARL", "TAYLOR", "OSCAR", "HIRO", "MAX", "JON", "RALPH", "KAY", "TOSH", "ROAK" }
 local FEMALE_NAMES = { "RED", "FIRE", "OMI", "JODI", "AMANDA", "HILLARY", "MAKEY", "MICHI", "PAULA", "JUNE", "CASSIE", "REY", "SEDA", "KIKO", "MINA", "NORIE", "SAI", "MOMO", "SUZI" }
 local RIVAL_NAMES = { "GREEN", "GARY", "KAZ", "TORU" }
+-- The name lists are the cart's English choices; translations localise them
+-- (gNameChoice_*: GREEN is GRÜN in German), so they go through Strings()
+-- where they are listed and picked, under a context of their own: FIRE the
+-- name is not FIRE the type.
+local NAME_CONTEXT = "intro.nameChoice"
 
 local function idiv(a, b)
   local q = a / b
@@ -390,7 +398,7 @@ function Scene:_answered(label, value, saveKey)
 end
 
 function Scene:oakPrint(key, speed)
-  local text = OAK_TEXT[key] or key
+  local text = OAK_TEXT[key] and Strings(OAK_TEXT[key]) or key
   text = text:gsub("{PLAYER}", self.playerName):gsub("{RIVAL}", self.rivalName)
   if self.section == "oak" then
     self._oakStep = (self._oakStep or 0) + 1
@@ -811,7 +819,7 @@ function Scene.Task_PikachuIntro_LoadPage1(self, t)
   self.currentPage = 1
   t.state = 0
   d.blendTarget = 16
-  self.win.pika = { text = PIKA_TEXT[1] }
+  self.win.pika = { text = Strings(PIKA_TEXT[1]) }
   d.cursor = self:createTextCursor(226, 145, 0)
   if d.cursor then d.cursor.objBlend = true end
   self:createPikachuOrPlatform(t, "pikachu")
@@ -850,7 +858,7 @@ function Scene.Task_PikachuIntro_HandleInput(self, t)
     d.blendTarget = d.blendTarget - 2
     self.bldAlpha = { eva = d.blendTarget, evb = 16 - d.blendTarget }
     if d.blendTarget <= 0 then
-      self.win.pika = { text = PIKA_TEXT[self.currentPage] }
+      self.win.pika = { text = Strings(PIKA_TEXT[self.currentPage]) }
       if self.currentPage == 1 then
         self:setTopBar(nil, HINT_NEXT)
       else
@@ -1040,7 +1048,7 @@ function Scene.Task_OakSpeech_ShowGenderOptions(self, t)
   -- pokefirered/src/oak_speech.c:1291
   self.win.menu = {
     kind = "gender", left = 18, top = 9, width = 9, height = 4,
-    items = { { "BOY", 8, 1 }, { "GIRL", 8, 17 } },
+    items = { { Strings("BOY"), 8, 1 }, { Strings("GIRL"), 8, 17 } },
     cursorX = 0, cursorY = 1, pitch = 16, cursor = 0, wrap = false,
   }
   t.func = Scene.Task_OakSpeech_HandleGenderInput
@@ -1144,8 +1152,8 @@ function Scene:printNameChoices()
   else
     names = RIVAL_NAMES
   end
-  local items = { { "NEW NAME", 8, 1 } }
-  for i = 1, 4 do items[#items + 1] = { names[i], 8, 16 * i + 1 } end
+  local items = { { Strings("NEW NAME"), 8, 1 } }
+  for i = 1, 4 do items[#items + 1] = { Strings(names[i], NAME_CONTEXT), 8, 16 * i + 1 } end
   self.win.menu = {
     kind = "names", left = 2, top = 2, width = 12, height = 10,
     items = items, cursorX = 0, cursorY = 1, pitch = 16, cursor = 0,
@@ -1168,10 +1176,10 @@ function Scene:getDefaultName(choice)
   if not self.hasPlayerBeenNamed then
     local list = self.gender == MALE and MALE_NAMES or FEMALE_NAMES
     local r = require("src.core.game3.rng").Random()
-    self.playerName = list[(r % #list) + 1]
+    self.playerName = Strings(list[(r % #list) + 1], NAME_CONTEXT)
     self:_answered("name", self.playerName, "name")
   else
-    self.rivalName = RIVAL_NAMES[choice + 1]
+    self.rivalName = Strings(RIVAL_NAMES[choice + 1], NAME_CONTEXT)
     self:_answered("rivalName", self.rivalName, "rivalName")
   end
 end
@@ -1212,7 +1220,7 @@ function Scene:enterNaming(rival)
   self.naming.pal:blend(Pal.ALL, 16, Pal.BLACK)
   local scene = self
   Naming.open({
-    title = rival and "RIVAL's NAME?" or "YOUR NAME?",
+    title = rival and Strings("RIVAL's NAME?") or Strings("YOUR NAME?"),
     maxLen = 7,
     seed = rival and self.rivalName or self.playerName,
     template = rival and "RIVAL" or "PLAYER",
@@ -1312,7 +1320,7 @@ function Scene.Task_OakSpeech_ConfirmName(self, t)
       -- pokefirered/src/menu.c:531
       self.win.menu = {
         kind = "yesno", left = 2, top = 2, width = 6, height = 4,
-        items = { { "YES", 8, 2 }, { "NO", 8, 2 + FrlgFont.LINE_PITCH } },
+        items = { { Strings("YES"), 8, 2 }, { Strings("NO"), 8, 2 + FrlgFont.LINE_PITCH } },
         cursorX = 0, cursorY = 2, pitch = 16, cursor = 0,
       }
       t.func = Scene.Task_OakSpeech_HandleConfirmNameInput
@@ -1572,12 +1580,12 @@ function Scene:drawTopBar()
   if not tb then return end
   local white = FrlgFont.COLOR.WHITE
   if tb.title then
-    FrlgFont.draw(tb.title, 4, 1, { colors = white, maxWidth = 120 })
+    FrlgFont.draw(Strings(tb.title), 4, 1, { colors = white, maxWidth = 120 })
   end
   if tb.hint then
     local w = 0
     for _, part in ipairs(tb.hint) do
-      w = w + (type(part) == "table" and part.w or FrlgFont.measure(part, { small = true }))
+      w = w + (type(part) == "table" and part.w or FrlgFont.measure(Strings(part), { small = true }))
     end
     local x = 236 - w
     local Pokedex = require("src.ui.game3.pokedex_chrome")
@@ -1586,8 +1594,9 @@ function Scene:drawTopBar()
         Pokedex.drawKeypadIcon(part.icon, x, 1)
         x = x + part.w
       else
-        FrlgFont.draw(part, x, 1, { colors = white, maxWidth = 200, small = true })
-        x = x + FrlgFont.measure(part, { small = true })
+        local label = Strings(part)
+        FrlgFont.draw(label, x, 1, { colors = white, maxWidth = 200, small = true })
+        x = x + FrlgFont.measure(label, { small = true })
       end
     end
   end
@@ -1599,11 +1608,11 @@ function Scene:drawBg0Text()
   if win.guide then
     -- pokefirered/src/oak_speech.c:803
     if win.guide.page == 1 then
-      FrlgFont.draw(CONTROLS_TEXT.intro, 2, 7 * 8, { colors = white, maxWidth = 238 })
+      FrlgFont.draw(Strings(CONTROLS_TEXT.intro), 2, 7 * 8, { colors = white, maxWidth = 238 })
     else
       local base = (win.guide.page - 2) * 3
       for i, w in ipairs(CONTROLS_WINDOWS[win.guide.page]) do
-        FrlgFont.draw(CONTROLS_TEXT[base + i], w[1] * 8 + 6, w[2] * 8, { colors = white, maxWidth = 192 })
+        FrlgFont.draw(Strings(CONTROLS_TEXT[base + i]), w[1] * 8 + 6, w[2] * 8, { colors = white, maxWidth = 192 })
       end
     end
   end

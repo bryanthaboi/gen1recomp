@@ -17,9 +17,12 @@ local function cartCycle(ctx, key, n, dir)
   return true
 end
 
+-- The option key is the Strings() context, so a mod can tell apart values that
+-- share an English word (the "SHIFT" battle style from other uses).
 local function cartLabel(ctx, key, values)
   local o = cart(ctx)
-  return values[(tonumber(o[key]) or 0) + 1] or "?"
+  local label = values[(tonumber(o[key]) or 0) + 1]
+  return label and Strings(label, "option." .. key) or "?"
 end
 
 local function volLabel(v)

@@ -10,6 +10,7 @@ local Audio = require("src.core.game3.audio")
 local NamingChrome = require("src.ui.game3.naming_chrome")
 local OwSprites = require("src.core.game3.ow_sprites")
 local Versions = require("src.import.gba.versions")
+local Strings = require("src.core.Strings")
 
 local Naming = {}
 
@@ -31,7 +32,7 @@ Naming.TEMPLATE = {
 function Naming.monTitle(speciesName)
   local s = tostring(speciesName or "")
   if s == "" then s = "POKéMON" end
-  return s .. "'s nickname?"
+  return Strings("%s's nickname?", s)
 end
 
 -- pret sKeyboardChars + sPageColumnXPos (cursor). Letters drawn via ROW_TEXT CLEARs.
@@ -400,7 +401,7 @@ function Naming.open(opts)
   end
   NamingChrome.ready()
   local st = {
-    title = opts.title or "YOUR NAME?",
+    title = opts.title or Strings("YOUR NAME?"),
     maxLen = opts.maxLen or Naming.MAX_LEN,
     name = "",
     seed = opts.seed,
@@ -788,7 +789,7 @@ function Naming.draw()
   -- gText_MoveOkBack right-aligned in FONT_SMALL (keypad icons ≈ + / A / B).
   love.graphics.setColor(L.bannerR, L.bannerG, L.bannerB, 1)
   love.graphics.rectangle("fill", 0, 0, W, L.bannerH)
-  local banner = "+MOVE  A OK  B BACK"
+  local banner = Strings("+MOVE  A OK  B BACK")
   local tw = FrlgFont.measure(banner, { small = true })
   if tw < 1 then tw = FrlgFont.measure(banner) end
   drawText(banner, W - 4 - tw, 0, {
@@ -800,7 +801,7 @@ end
 function Naming.begin(opts)
   opts = opts or {}
   return {
-    title = opts.title or "YOUR NAME?",
+    title = opts.title or Strings("YOUR NAME?"),
     maxLen = opts.maxLen or Naming.MAX_LEN,
     name = "",
     seed = opts.default or opts.seed,

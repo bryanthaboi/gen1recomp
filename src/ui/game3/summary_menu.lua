@@ -86,7 +86,7 @@ local function moves_for_mon(mon)
       if not pp then pp = maxPp end
       local name = Pokemon.moveName(moveId)
       if not name or name == "" or name:match("^MOVE ") then
-        name = (mdef and mdef.name) or name or ("MOVE " .. tostring(moveId))
+        name = (mdef and mdef.name) or name or Strings("MOVE %s", tostring(moveId))
       end
       local mType = (mdef and (mdef.type or mdef.kind)) or "NORMAL"
       local power = (mdef and mdef.power and mdef.power > 0) and tostring(mdef.power) or "---"
@@ -108,7 +108,7 @@ local function moves_for_mon(mon)
     local mdef = Pokemon.battleMove(newId)
     local name = Pokemon.moveName(newId)
     if not name or name == "" or name:match("^MOVE ") then
-      name = (mdef and mdef.name) or name or ("MOVE " .. tostring(newId))
+      name = (mdef and mdef.name) or name or Strings("MOVE %s", tostring(newId))
     end
     local maxPp = (mdef and mdef.pp) or 5
     local mType = (mdef and (mdef.type or mdef.kind)) or "NORMAL"
@@ -417,7 +417,7 @@ local function draw_header(mon)
   if SummaryMenu._page ~= PAGE_MOVES_INFO then
     local lv = tonumber(mon.level) or 1
     local lx, ly = cxy("level", 4, 18)
-    draw_text(string.format("Lv%d", lv), lx, ly, 36, "NORMAL")
+    draw_text(Strings("Lv%d", lv), lx, ly, 36, "NORMAL")
   end
 
   local gender = SummaryData.gender(mon)
@@ -511,7 +511,7 @@ local function draw_page_info(mon)
   local ix, iy = cxy("otId", 167, 80)
   draw_text(string.format("%05d", bit.band(otId, 0xFFFF)), ix, iy, 48, "NORMAL")
 
-  local item = mon.item or mon.heldItem or "NONE"
+  local item = mon.item or mon.heldItem or Strings("NONE")
   local itx, ity = cxy("item", 167, 95)
   draw_text(tostring(item), itx, ity, 64, "NORMAL")
 
@@ -552,9 +552,9 @@ local function draw_page_skills(mon)
   end
 
   local lx, ly = cxy("expPointsLabel", 74, 103)
-  draw_text("EXP. POINTS", lx, ly, 96, "NORMAL")
+  draw_text(Strings("EXP. POINTS"), lx, ly, 96, "NORMAL")
   local nlx, nly = cxy("nextLvLabel", 74, 116)
-  draw_text("NEXT LV.", nlx, nly, 96, "NORMAL")
+  draw_text(Strings("NEXT LV."), nlx, nly, 96, "NORMAL")
 
   local prog = SummaryData.expProgress(mon)
   local ex, ey = cxy("expTotal", 175, 103)
@@ -583,7 +583,8 @@ local function draw_page_skills(mon)
   end
   ability = ability or "—"
   local ax, ay = cxy("abilityName", 74, 129)
-  draw_text(tostring(ability), ax, ay, 80, "NORMAL")
+  -- No registry renames abilities; a translation reaches the name through Strings().
+  draw_text(Strings(tostring(ability)), ax, ay, 80, "NORMAL")
   local desc = SummaryData.abilityDescription(abilityId, tostring(ability))
   local ad = coords().abilityDesc or { x = 10, y = 143, w = 232 }
   draw_text(desc, ad.x or 10, ad.y or 143, ad.w or 232, "NORMAL")
@@ -641,7 +642,7 @@ end
 local function draw_page_egg(mon)
   local species = Pokemon.speciesOf(mon)
   local nx, ny = cxy("name", 40, 18)
-  draw_text("EGG", nx, ny, 64, "NORMAL")
+  draw_text(Strings("EGG"), nx, ny, 64, "NORMAL")
 
   local pic = coords().monPic or { x = 60, y = 65 }
   local cx, cy = pic.x or 60, pic.y or 65
@@ -673,25 +674,25 @@ local PAGE_TITLES = {
 
 local function get_controls_str(page, isEgg)
   if SummaryMenu._mode == "select_move" then
-    return "{DPAD_UPDOWN}PICK"
+    return Strings("{DPAD_UPDOWN}PICK")
   end
   if isEgg then
-    return "{A_BUTTON}CANCEL"
+    return Strings("{A_BUTTON}CANCEL")
   end
   if page == PAGE_INFO then
-    return "{DPAD_RIGHT}PAGE {A_BUTTON}CANCEL"
+    return Strings("{DPAD_RIGHT}PAGE {A_BUTTON}CANCEL")
   elseif page == PAGE_SKILLS then
-    return "{DPAD_LEFTRIGHT}PAGE"
+    return Strings("{DPAD_LEFTRIGHT}PAGE")
   elseif page == PAGE_MOVES then
-    return "{DPAD_LEFT}PAGE {A_BUTTON}DETAIL"
+    return Strings("{DPAD_LEFT}PAGE {A_BUTTON}DETAIL")
   elseif page == PAGE_MOVES_INFO then
-    return "{DPAD_UPDOWN}PICK {A_BUTTON}SWITCH"
+    return Strings("{DPAD_UPDOWN}PICK {A_BUTTON}SWITCH")
   end
   return "{DPAD_LEFTRIGHT}PAGE"
 end
 
 local function draw_top_bar_text(page, isEgg)
-  local title = PAGE_TITLES[page] or "POKéMON INFO"
+  local title = Strings(PAGE_TITLES[page] or "POKéMON INFO")
   FrlgFont.draw(title, 4, 1, {
     colors = FrlgFont.COLOR.WHITE,
     small = false,

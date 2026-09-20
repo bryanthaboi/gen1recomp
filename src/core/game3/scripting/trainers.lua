@@ -1,5 +1,6 @@
 -- Trainer party lookup + ROM-derived class/name/pic/party/dialog info for battles and overworld.
 
+local Strings = require("src.core.Strings")
 local Trainers = {}
 
 -- Fallbacks when trainers.lua cache is missing (Oak's Lab rivals).
@@ -11,26 +12,39 @@ local TRAINER_RIVAL_OAKS_LAB_SQUIRTLE = 326
 local TRAINER_RIVAL_OAKS_LAB_BULBASAUR = 327
 local TRAINER_RIVAL_OAKS_LAB_CHARMANDER = 328
 
+-- Translated when a trainer is built (fallback_dialogs): this table exists
+-- before any translation catalog.
+local RIVAL_LAB_DIALOGS = {
+  defeat = Strings.source("WHAT?\nUnbelievable!\n\nI picked the wrong POKéMON!"),
+  victory = Strings.source("RIVAL: Yeah!\nAm I great or what?"),
+}
+
 local FALLBACK_TRAINERS = {
   [TRAINER_RIVAL_OAKS_LAB_SQUIRTLE] = {
     class = 81, className = "RIVAL", pic = 106, name = "TERRY", gender = 0, doubleBattle = false,
     partySize = 1, lastLevel = 5, aiFlags = 7, items = { 0, 0, 0, 0 },
     party = { { species = SPECIES_SQUIRTLE, level = 5, rawIv = 0, iv = 0, ivs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 }, evs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 } } },
-    dialogs = { defeat = "WHAT?\nUnbelievable!\n\nI picked the wrong POKéMON!", victory = "RIVAL: Yeah!\nAm I great or what?" },
+    dialogs = RIVAL_LAB_DIALOGS,
   },
   [TRAINER_RIVAL_OAKS_LAB_BULBASAUR] = {
     class = 81, className = "RIVAL", pic = 106, name = "TERRY", gender = 0, doubleBattle = false,
     partySize = 1, lastLevel = 5, aiFlags = 7, items = { 0, 0, 0, 0 },
     party = { { species = SPECIES_BULBASAUR, level = 5, rawIv = 0, iv = 0, ivs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 }, evs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 } } },
-    dialogs = { defeat = "WHAT?\nUnbelievable!\n\nI picked the wrong POKéMON!", victory = "RIVAL: Yeah!\nAm I great or what?" },
+    dialogs = RIVAL_LAB_DIALOGS,
   },
   [TRAINER_RIVAL_OAKS_LAB_CHARMANDER] = {
     class = 81, className = "RIVAL", pic = 106, name = "TERRY", gender = 0, doubleBattle = false,
     partySize = 1, lastLevel = 5, aiFlags = 7, items = { 0, 0, 0, 0 },
     party = { { species = SPECIES_CHARMANDER, level = 5, rawIv = 0, iv = 0, ivs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 }, evs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 } } },
-    dialogs = { defeat = "WHAT?\nUnbelievable!\n\nI picked the wrong POKéMON!", victory = "RIVAL: Yeah!\nAm I great or what?" },
+    dialogs = RIVAL_LAB_DIALOGS,
   },
 }
+
+local function fallback_dialogs(fb)
+  local out = {}
+  for key, text in pairs(fb.dialogs or {}) do out[key] = Strings(text) end
+  return out
+end
 
 Trainers._pack = nil
 
@@ -97,10 +111,11 @@ function Trainers.get(trainerId)
     local fb = FALLBACK_TRAINERS[trainerId]
     local dlgs = row.dialogs or {}
     if (not dlgs.defeat or dlgs.defeat == "") and fb and fb.dialogs and fb.dialogs.defeat then
+      local fbDialogs = fallback_dialogs(fb)
       dlgs = {
-        intro = dlgs.intro or fb.dialogs.intro,
-        defeat = dlgs.defeat or fb.dialogs.defeat,
-        victory = dlgs.victory or fb.dialogs.victory,
+        intro = dlgs.intro or fbDialogs.intro,
+        defeat = dlgs.defeat or fbDialogs.defeat,
+        victory = dlgs.victory or fbDialogs.victory,
       }
     end
     return {
@@ -143,7 +158,7 @@ function Trainers.get(trainerId)
       ai = decompose_ai_flags(fb.aiFlags),
       items = fb.items,
       party = fb.party,
-      dialogs = fb.dialogs,
+      dialogs = fallback_dialogs(fb),
     }
   end
 
@@ -289,19 +304,22 @@ end
 --- FRLG intro string pieces for a trainer battle.
 function Trainers.introStrings(trainerId, monName, opts)
   local info = Trainers.info(trainerId, opts) or {
-    className = "POKéMON TRAINER",
+    className = Strings("POKéMON TRAINER"),
     name = "",
   }
-  local class = info.className or "POKéMON TRAINER"
+  local class = info.className or Strings("POKéMON TRAINER")
   local name = info.name or ""
-  local who = class
-  if name ~= "" then
-    who = class .. " " .. name
-  end
   monName = monName or "POKéMON"
+  if name ~= "" then
+    return {
+      wants = Strings("%s %s\nwould like to battle!", class, name),
+      sentOut = Strings("%s %s sent\nout %s!", class, name, monName),
+      info = info,
+    }
+  end
   return {
-    wants = who .. "\nwould like to battle!",
-    sentOut = who .. " sent\nout " .. monName .. "!",
+    wants = Strings("%s\nwould like to battle!", class),
+    sentOut = Strings("%s sent\nout %s!", class, monName),
     info = info,
   }
 end

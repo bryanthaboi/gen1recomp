@@ -1,15 +1,24 @@
 # Updater
 
-A fused build (`love.filesystem.isFused()` true) ships a bundled `game.love`
-baked into the executable, but that bundled copy is only ever the *fallback*.
-On every launch, before anything else runs, `Boot.run` (`src/update/Boot.lua`)
-looks in the save directory's `updates/` folder for a downloaded
+A packaged build carries a fixed engine plus the game source it starts from,
+and that source is only ever the *fallback*. It ships in one of two shapes:
+**fused** (a `game.love` baked into the executable, so LÖVE reports
+`love.filesystem.isFused()` true) or **unpacked** (a source directory the
+launcher hands to the runtime, `love <dir>`, which is what every
+PortMaster-style port does and which reports `isFused()` false). On every
+launch, before anything else runs, `Boot.run` (`src/update/Boot.lua`) looks in
+the save directory's `updates/` folder for a downloaded
 `gen1recomp-X.Y.Z.love` payload that is both strictly newer than the bundled
 engine version and runnable on this shell. If one qualifies, it is mounted
-over `/` (so its files win over the fused source for every subsequent
+over `/` (so its files win over the bundled source for every subsequent
 `require`) and chainloaded in place: the payload's `main.lua` and `love.load`
-run as if they had shipped in the executable. A dev/source checkout is never
-fused, so `Boot.run` no-ops there and the working tree always runs itself.
+run as if they had shipped in the executable. Nothing on disk is rewritten
+either way -- an update is a mount layered over the source -- so the handoff is
+sound for a fused archive and for an unpacked directory alike.
+`Boot.canUpdateInPlace` decides whether a build may update at all: a fused
+build always may, an unpacked build may when its `engine` is a released
+`X.Y.Z`, and a dev/source checkout never may (its engine is the
+`"0.0.0-dev"` placeholder, so the working tree always runs itself).
 
 The pieces are deliberately layered so the risky part is small. `Boot.select`
 is a pure function (no `love.*` calls) that, given probed candidates and the
@@ -86,9 +95,10 @@ every launch, including offline launches.
 Under the save directory (identity `pokemon-love2d`):
 
 ```
-updates/gen1recomp-<X.Y.Z>.love   downloaded payload(s)
-updates/pending.txt                crash-guard marker
-updates/full-update.json           persistent native-package requirement
+updates/gen1recomp-<X.Y.Z>.love                 downloaded payload(s)
+updates/gen1recomp-<X.Y.Z>-sbc-portmaster.zip   downloaded port package (ports)
+updates/pending.txt                             crash-guard marker
+updates/full-update.json                        persistent native-package requirement
 ```
 
 `pending.txt` holds the filename of the payload currently being chainloaded.
@@ -101,7 +111,7 @@ bundled game, in that case.
 
 ## Update flow
 
-1. **Boot** (every launch, fused builds only): crash-guard check, enumerate
+1. **Boot** (every launch, packaged builds only): crash-guard check, enumerate
    and probe every `updates/*.love`, pick the highest engine that is
    strictly newer than the bundled one and whose `minShell` this shell
    satisfies, delete stale payloads, chainload the winner (or run the
@@ -138,9 +148,16 @@ bundled game, in that case.
    version-code, and signing-certificate compatibility. A legacy APK without
    the installer bridge links its full package for one manual bootstrap
    update, including when its downloaded payload already reports the latest
-   engine version. iOS links the sideload repository for a re-sideload; Xbox,
-   desktop, and PortMaster builds link their correctly named full package.
-   Switch keeps its native OTA flow.
+   engine version. iOS links the sideload repository for a re-sideload; Xbox
+   and desktop builds link their correctly named full package. A
+   PortMaster-style port has no browser to open a download in, so it fetches
+   its own package (`-sbc-portmaster.zip`, `-rg34xxsp-stockos64-mod.zip`) into
+   the save directory through the same verified download, and the player
+   re-extracts it over the port folder — see
+   [linux-arm-sbc.md](linux-arm-sbc.md). Switch keeps its native OTA flow.
+   Which package a port offers comes from the launcher's environment
+   (`POKEPORT_PORTMASTER`, `POKEPORT_RG34XXSP`, with `POKEPORT_HANDHELD`
+   honoured as a legacy fallback), which is what `Check.hostPort()` reads.
 
 ## Known limitations
 
@@ -171,10 +188,18 @@ bundled game, in that case.
   release job must use the original long-lived Android signing key; a new key
   causes Android to reject an in-place update and requires a one-time manual
   reinstall. See [mobile/ANDROID.md](../mobile/ANDROID.md).
-- **Dev/source runs never self-update.** `Boot.run` returns immediately when
-  `love.filesystem.isFused()` is false, and a working tree's `engine` is the
-  `"0.0.0-dev"` placeholder that always reports up to date, so a source
-  checkout is always "the game" itself; updating it means pulling the repo.
+- **Dev/source runs never self-update.** `Boot.canUpdateInPlace` is false for a
+  working tree -- its `engine` is the `"0.0.0-dev"` placeholder, which also
+  always reports up to date -- so `Boot.run` returns immediately and
+  `Prelaunch`'s `--update` shortcut refuses to act. A source checkout is always
+  "the game" itself; updating it means pulling the repo.
+- **An unpacked port updates the Lua, not the runtime.** The PortMaster SBC and
+  RG34XXSP packages ship a fixed `love.aarch64` runtime beside a `lovegame/`
+  source directory. A payload layers new Lua and data over that source, so a
+  LÖVE version bump, a new required system binary, or a `love.run` change still
+  needs a full port package: the `minShell` gate reports `needs_full`, the chip
+  fetches the port package into the save directory, and the player re-extracts
+  it over the port folder.
 - **Nintendo Switch does not use this LÖVE self-updater.** On NX,
   `Platform.networkValidated()` is `false`, so `Boot.run` / `Check` never
   download `.love` payloads. In-console OTA uses the **native OTA launcher**

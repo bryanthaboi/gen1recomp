@@ -87,6 +87,12 @@ return function(mod)
   mod.content.strings:override("OFF", "NON")
   mod.content.strings:override("options.musicFilter|OFF", "AUCUN")
   mod.content.strings:override("%d of %d", "%d perdus")
+  mod.content.strings:override("%s's %s\nrose!", "%2$s de\n%1$s monte!")
+  mod.content.strings:override("%s gave %s\n%d items.", "%3$03d objets\ndonnes a %2$s par %1$s (%%).")
+  mod.content.strings:override("%s's %s\nfell!", "%2$s de\n%s baisse!")
+  mod.content.strings:override("%s's %s\nhurt %s!", "%2$s de %1$s\nblesse %4$s!")
+  mod.content.strings:override("%s is\nabout to use %s.\nWill %s change?", "%2$s va être envoyé\npar %1$s. Changer?")
+  mod.content.strings:override("Got %s!", "%1$d obtenu!")
 end
 ]],
 }
@@ -142,6 +148,26 @@ do
   local mid = complaints()
   Strings("%d of %d", 1, 2)
   eq(complaints(), mid, "the arity complaint is not repeated")
+end
+
+-- ------- a translation can number its directives to reorder the values
+
+do
+  eq(Strings("%s's %s\nrose!", "PIKACHU", "ATTACK"), "ATTACK de\nPIKACHU monte!",
+     "numbered directives take the arguments in the order they name")
+  eq(Strings("%s gave %s\n%d items.", "RED", "BLUE", 7), "007 objets\ndonnes a BLUE par RED (%).",
+     "numbered directives keep their flags, and %% stays a literal percent")
+
+  local before = complaints()
+  eq(Strings("%s's %s\nfell!", "PIKACHU", "ATTACK"), "PIKACHU's ATTACK\nfell!",
+     "mixing numbered and plain directives falls back to the English source")
+  eq(Strings("%s's %s\nhurt %s!", "A", "B", "C"), "A's B\nhurt C!",
+     "a numbered translation that names a missing argument falls back to the English source")
+  check(complaints() >= before + 2, "both numbering mistakes are reported")
+  eq(Strings("%s is\nabout to use %s.\nWill %s change?", "BLUE", "PIDGEY", "RED"), "PIDGEY va être envoyé\npar BLUE. Changer?",
+     "a numbered translation may leave an argument out")
+  eq(Strings("Got %s!", "POTION"), "Got POTION!",
+     "a translation that cannot format its arguments falls back to the formatted English")
 end
 
 -- The catalog is module state, and the aggregator runs every suite in one

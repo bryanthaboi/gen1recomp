@@ -39,7 +39,10 @@ local function retryTmGive(game, ow, victoryKey, done)
 end
 
 -- The badge line + its jingle, armed for the battle screen the way
--- SaveEndBattleTextPointers does (PewterGym.asm:117-119) (#1606)
+-- SaveEndBattleTextPointers does (PewterGym.asm:117-119) (#1606).  The jingle
+-- comes from victories.badgeSoundFor, which knows that a badge line is read by
+-- the battle sound engine and so does not sound like its overworld name
+-- (#2339).
 local function pageCount(s)
   local n = 0
   for page in (s .. "\f"):gmatch("(.-)\f") do
@@ -49,7 +52,8 @@ local function pageCount(s)
 end
 
 local function badgeEndBattleText(game, victoryKey)
-  local reward = victoryKey and require("data.scripts.victories")[victoryKey]
+  local victories = victoryKey and require("data.scripts.victories")
+  local reward = victories and victories[victoryKey]
   if not (reward and reward.dialogue) then return nil end
   local text = game.data.text or {}
   local pages, soundPage = {}, nil
@@ -64,8 +68,8 @@ local function badgeEndBattleText(game, victoryKey)
     end
   end
   if #pages == 0 then return nil end
-  return table.concat(pages, "\f"), reward.badgeSound,
-         reward.badgeSound and soundPage or nil
+  local sound = victories.badgeSoundFor(victoryKey)
+  return table.concat(pages, "\f"), sound, sound and soundPage or nil
 end
 
 -- scripts/PewterGym.asm PewterGymBrockText (text_asm): CheckEvent

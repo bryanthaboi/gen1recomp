@@ -1,6 +1,7 @@
 -- Pokémon Summary Screen Data & Mechanics.
 -- Faithful replication of FRLG experience tables, natures, trainer memo logic, and move/ability descriptions.
 
+local Strings = require("src.core.Strings")
 local SummaryData = {}
 
 -- 25 Natures in FireRed index order (personality % 25).
@@ -217,26 +218,27 @@ end
 
 --- Trainer Memo formatting (pokefirered/src/pokemon_summary_screen.c PokeSum_PrintTrainerMemo)
 function SummaryData.formatTrainerMemo(mon, playerState)
-  if not mon then return { "No data" } end
+  if not mon then return { Strings("No data") } end
 
   -- Egg memo
   if mon.isEgg then
-    local origin = "An odd POKéMON EGG found by the\nDAY-CARE couple."
+    local origin = Strings("An odd POKéMON EGG found by the\nDAY-CARE couple.")
     local hatchMsg
     local cycles = tonumber(mon.eggCycles or mon.friendship) or 40
     if cycles > 40 then
-      hatchMsg = "It looks like this\nEGG will take a\nlong time to hatch."
+      hatchMsg = Strings("It looks like this\nEGG will take a\nlong time to hatch.")
     elseif cycles > 10 then
-      hatchMsg = "What will hatch\nfrom this? It will\ntake some time."
+      hatchMsg = Strings("What will hatch\nfrom this? It will\ntake some time.")
     elseif cycles > 5 then
-      hatchMsg = "It occasionally\nmoves. It should\nhatch soon."
+      hatchMsg = Strings("It occasionally\nmoves. It should\nhatch soon.")
     else
-      hatchMsg = "It's making sounds.\nIt's almost ready\nto hatch!"
+      hatchMsg = Strings("It's making sounds.\nIt's almost ready\nto hatch!")
     end
     return { origin, hatchMsg }
   end
 
   local _, natureName = SummaryData.nature(mon)
+  natureName = Strings(natureName)
   local metLevel = tonumber(mon.metLevel) or 5
   if metLevel == 0 then metLevel = 5 end
 
@@ -263,27 +265,27 @@ function SummaryData.formatTrainerMemo(mon, playerState)
   local isFateful = not not (mon.fatefulEncounter or mon.metLocation == 255)
   local isHatched = (mon.metLevel == 0 or mon.hatched)
 
-  local locName = mon.metLocationName or "PALLET TOWN"
+  local locName = Strings(mon.metLocationName or "PALLET TOWN")
   if isTrade then
-    locName = "a trade"
+    locName = Strings("a trade")
   end
 
   local lines = {}
-  local header = string.format("%s nature.", natureName)
+  local header = Strings("%s nature.", natureName)
   lines[1] = header
 
   if isFateful then
     if isHatched then
-      lines[2] = string.format("Met in a fateful encounter\n(hatched: %s at Lv. %d).", locName, metLevel)
+      lines[2] = Strings("Met in a fateful encounter\n(hatched: %s at Lv. %d).", locName, metLevel)
     else
-      lines[2] = string.format("Met in a fateful encounter when\nat Lv. %d.", metLevel)
+      lines[2] = Strings("Met in a fateful encounter when\nat Lv. %d.", metLevel)
     end
   elseif isTrade then
-    lines[2] = "Met in a trade."
+    lines[2] = Strings("Met in a trade.")
   elseif isHatched then
-    lines[2] = string.format("Hatched: %s\nat Lv. %d.", locName, metLevel)
+    lines[2] = Strings("Hatched: %s\nat Lv. %d.", locName, metLevel)
   else
-    lines[2] = string.format("Met in %s\nat Lv. %d.", locName, metLevel)
+    lines[2] = Strings("Met in %s\nat Lv. %d.", locName, metLevel)
   end
 
   return lines
@@ -305,23 +307,35 @@ local function get_descriptions()
   return _descs
 end
 
+-- Descriptions are keyed by the English name.  A translation mod renames
+-- moves and abilities, so the name the caller shows is looked past: the ROM's
+-- own name for that number is what the key was built from.
+local function rom_name(field, id, shown)
+  local Pokemon = package.loaded["src.core.game3.pokemon"]
+  local english = type(Pokemon) == "table" and Pokemon._cache and Pokemon[field]
+    and Pokemon[field](id)
+  return english or shown
+end
+
 function SummaryData.abilityDescription(abilityId, abilityName)
   local d = get_descriptions()
+  abilityName = rom_name("romAbilityName", abilityId, abilityName)
   if d and d.ABILITIES and abilityName then
     local const = "ABILITY_" .. abilityName:upper():gsub("%s+", "_"):gsub("[^%w_]", "")
     if d.ABILITIES[const] then
-      return d.ABILITIES[const]
+      return Strings(d.ABILITIES[const])
     end
   end
-  return "No special ability."
+  return Strings("No special ability.")
 end
 
 function SummaryData.moveDescription(moveId, moveName)
   local d = get_descriptions()
+  moveName = rom_name("romMoveName", moveId, moveName)
   if d and d.MOVES and moveName then
     local const = "MOVE_" .. moveName:upper():gsub("%s+", "_"):gsub("[^%w_]", "")
     if d.MOVES[const] then
-      return d.MOVES[const]
+      return Strings(d.MOVES[const])
     end
   end
   return "---"

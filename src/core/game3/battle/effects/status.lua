@@ -2,6 +2,7 @@
 local H = require("src.core.game3.battle.effects._helpers")
 local Secondary = require("src.core.game3.battle.effects.secondary")
 local Types = require("src.core.game3.battle.types")
+local Strings = require("src.core.Strings")
 
 local Status = {}
 
@@ -12,7 +13,7 @@ local function sub(ctx) return (ctx.target.substituteHP or 0) > 0 end
 local function safeguarded(ctx)
   local side = ctx.adapter:ownSide(ctx.target)
   if side and (side.expSafeguardTurns or 0) > 0 then
-    ctx.adapter:say(name(ctx, ctx.target) .. "'s party is protected\nby SAFEGUARD!")
+    ctx.adapter:say(Strings("%s's party is protected\nby SAFEGUARD!", name(ctx, ctx.target)))
     return true
   end
   return false
@@ -22,7 +23,7 @@ Status.safeguarded = safeguarded
 local function not_affected(ctx)
   local M = H.move(ctx)
   if M then M.noEffect = true end
-  ctx.adapter:say("It doesn't affect\n" .. name(ctx, ctx.target) .. "…")
+  ctx.adapter:say(Strings("It doesn't affect\n%s…", name(ctx, ctx.target)))
 end
 
 local function primary(ctx, eff)
@@ -38,11 +39,11 @@ function Status.cantMakeAsleep(ctx, target)
   local ab = ad:abilityOf(target)
   local up = ad:uproarActive()
   if up and ab ~= "SOUNDPROOF" then
-    ad:say("But " .. name(ctx, target) .. " can't\nsleep in an UPROAR!")
+    ad:say(Strings("But %s can't\nsleep in an UPROAR!", name(ctx, target)))
     return true
   end
   if ab == "INSOMNIA" or ab == "VITAL_SPIRIT" then
-    ad:say(name(ctx, target) .. " stayed awake\nusing its " .. ab:gsub("_", " ") .. "!")
+    ad:say(Strings("%s stayed awake\nusing its %s!", name(ctx, target), require("src.core.game3.battle.abilities").name(ab)))
     return true
   end
   return false
@@ -53,11 +54,11 @@ function Status.burn(ctx)
   local ad, t = ctx.adapter, ctx.target
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "BRN" then
-    return ad:say(name(ctx, t) .. " already\nhas a burn.")
+    return ad:say(Strings("%s already\nhas a burn.", name(ctx, t)))
   end
   if H.hasType(ctx, t, Types.ID.FIRE) then return not_affected(ctx) end
   if ad:abilityOf(t) == "WATER_VEIL" then
-    return ad:say(name(ctx, t) .. "'s WATER VEIL\nprevents burns!")
+    return ad:say(Strings("%s's WATER VEIL\nprevents burns!", name(ctx, t)))
   end
   if ad:status(t) then return H.sayFail(ctx) end
   if not H.accuracy(ctx, "normal") then return end
@@ -70,11 +71,11 @@ end
 function Status.poison(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "IMMUNITY" then
-    return ad:say(name(ctx, t) .. "'s IMMUNITY\nprevents poisoning!")
+    return ad:say(Strings("%s's IMMUNITY\nprevents poisoning!", name(ctx, t)))
   end
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "PSN" or ad:status(t) == "TOX" then
-    return ad:say(name(ctx, t) .. " is already\npoisoned.")
+    return ad:say(Strings("%s is already\npoisoned.", name(ctx, t)))
   end
   if H.hasType(ctx, t, Types.ID.POISON) or H.hasType(ctx, t, Types.ID.STEEL) then
     return not_affected(ctx)
@@ -90,11 +91,11 @@ end
 function Status.toxic(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "IMMUNITY" then
-    return ad:say(name(ctx, t) .. "'s IMMUNITY\nprevents poisoning!")
+    return ad:say(Strings("%s's IMMUNITY\nprevents poisoning!", name(ctx, t)))
   end
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "PSN" or ad:status(t) == "TOX" then
-    return ad:say(name(ctx, t) .. " is already\npoisoned.")
+    return ad:say(Strings("%s is already\npoisoned.", name(ctx, t)))
   end
   if ad:status(t) then return H.sayFail(ctx) end
   if H.hasType(ctx, t, Types.ID.POISON) or H.hasType(ctx, t, Types.ID.STEEL) then
@@ -111,7 +112,7 @@ function Status.sleep(ctx)
   local ad, t = ctx.adapter, ctx.target
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "SLP" then
-    return ad:say(name(ctx, t) .. " is\nalready asleep!")
+    return ad:say(Strings("%s is\nalready asleep!", name(ctx, t)))
   end
   if Status.cantMakeAsleep(ctx, t) then return end
   if ad:status(t) then return H.sayFail(ctx) end
@@ -125,7 +126,7 @@ end
 function Status.paralyze(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "LIMBER" then
-    return ad:say(name(ctx, t) .. "'s LIMBER\nprevents paralysis!")
+    return ad:say(Strings("%s's LIMBER\nprevents paralysis!", name(ctx, t)))
   end
   if sub(ctx) then return H.sayFail(ctx) end
   local mt = ctx.move and ctx.move.type or 0
@@ -134,7 +135,7 @@ function Status.paralyze(ctx)
     return not_affected(ctx)
   end
   if ad:status(t) == "PAR" then
-    return ad:say(name(ctx, t) .. " is\nalready paralyzed!")
+    return ad:say(Strings("%s is\nalready paralyzed!", name(ctx, t)))
   end
   if ad:status(t) then return H.sayFail(ctx) end
   if not H.accuracy(ctx, "normal") then return end
@@ -150,7 +151,7 @@ function Status.taunt(ctx)
   -- pokefirered/src/battle_script_commands.c:8765
   ctx.target.expTauntedTurns = 2
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.target) .. " fell for\nthe TAUNT!")
+  ctx.adapter:say(Strings("%s fell for\nthe TAUNT!", name(ctx, ctx.target)))
 end
 
 -- pokefirered/data/battle_scripts_1.s:2446
@@ -158,7 +159,7 @@ function Status.yawn(ctx)
   local ad, t = ctx.adapter, ctx.target
   local ab = ad:abilityOf(t)
   if ab == "VITAL_SPIRIT" or ab == "INSOMNIA" then
-    return ad:say(name(ctx, t) .. "'s " .. ab:gsub("_", " ") .. "\nmade it ineffective!")
+    return ad:say(Strings("%s's %s\nmade it ineffective!", name(ctx, t), require("src.core.game3.battle.abilities").name(ab)))
   end
   if sub(ctx) then return H.sayFail(ctx) end
   if safeguarded(ctx) then return end
@@ -168,7 +169,7 @@ function Status.yawn(ctx)
   t.expYawnTurns = 2
   t.yawnTurns = 2
   H.attackAnim(ctx)
-  ad:say(name(ctx, ctx.user) .. " made\n" .. name(ctx, t) .. " drowsy!")
+  ad:say(Strings("%s made\n%s drowsy!", name(ctx, ctx.user), name(ctx, t)))
 end
 
 return Status

@@ -446,26 +446,26 @@ local function drawMainMenu(state, W, H)
     Window.userFrame(Window.template(3, 1, 24, 10), frameType) -- pokefirered/src/main_menu.c:84
     Window.userFrame(Window.template(3, 13, 24, 2), frameType) -- pokefirered/src/main_menu.c:93
     Window.userFrame(Window.template(3, 17, 24, 2), frameType) -- pokefirered/src/main_menu.c:102
-    Window.printPx("CONTINUE", x + 2, y + 2, { colors = head })
-    Window.printPx("PLAYER", x + 2, y + 18, { colors = stat }) -- pokefirered/src/main_menu.c:623
+    Window.printPx(Strings("CONTINUE"), x + 2, y + 2, { colors = head })
+    Window.printPx(Strings("PLAYER"), x + 2, y + 18, { colors = stat }) -- pokefirered/src/main_menu.c:623
     Window.printPx(info.name or "", x + 62, y + 18, { colors = stat })
-    Window.printPx("TIME", x + 2, y + 34, { colors = stat }) -- pokefirered/src/main_menu.c:636
+    Window.printPx(Strings("TIME"), x + 2, y + 34, { colors = stat }) -- pokefirered/src/main_menu.c:636
     Window.printPx(string.format("%d:%02d", info.hours or 0, info.minutes or 0), x + 62, y + 34, { colors = stat })
     if info.hasDex then -- pokefirered/src/main_menu.c:648
-      Window.printPx("POKéDEX", x + 2, y + 50, { colors = stat })
+      Window.printPx(Strings("POKéDEX"), x + 2, y + 50, { colors = stat })
       Window.printPx(tostring(info.dexCount or 0), x + 62, y + 50, { colors = stat })
     end
-    Window.printPx("BADGES", x + 2, y + 66, { colors = stat }) -- pokefirered/src/main_menu.c:672
+    Window.printPx(Strings("BADGES"), x + 2, y + 66, { colors = stat }) -- pokefirered/src/main_menu.c:672
     Window.printPx(tostring(info.badges or 0), x + 62, y + 66, { colors = stat })
-    Window.printPx("NEW GAME", 24 + 2, 104 + 2, { colors = head })
-    Window.printPx("EXIT", 24 + 2, 136 + 2, { colors = head })
+    Window.printPx(Strings("NEW GAME"), 24 + 2, 104 + 2, { colors = head })
+    Window.printPx(Strings("EXIT"), 24 + 2, 136 + 2, { colors = head })
     local rows = WIN0V_CONTINUE[state.menuIndex] or WIN0V_CONTINUE[1] -- pokefirered/src/main_menu.c:565
     darkenOutside(W, H, 18, rows[1], 222, rows[2])
   else
     Window.userFrame(Window.template(3, 1, 24, 2), frameType)
     Window.userFrame(Window.template(3, 5, 24, 2), frameType)
-    Window.printPx("NEW GAME", 24 + 2, 8 + 2, { colors = head })
-    Window.printPx("EXIT", 24 + 2, 40 + 2, { colors = head })
+    Window.printPx(Strings("NEW GAME"), 24 + 2, 8 + 2, { colors = head })
+    Window.printPx(Strings("EXIT"), 24 + 2, 40 + 2, { colors = head })
     local rows = WIN0V_NOCONTINUE[state.menuIndex] or WIN0V_NOCONTINUE[1]
     darkenOutside(W, H, 18, rows[1], 222, rows[2])
   end

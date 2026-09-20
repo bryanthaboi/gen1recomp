@@ -4,6 +4,7 @@ local Extract = require("src.import.gba.extract_island1")
 local PokemonExtract = require("src.import.gba.pokemon_extract")
 local Versions = require("src.import.gba.versions")
 local ModRuntime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local Pokemon = {}
 
@@ -21,6 +22,11 @@ Pokemon._abilities = nil
 Pokemon._abilityNames = nil
 Pokemon._speciesMeta = nil
 Pokemon._moveNames = nil
+-- The ROM's English move and ability names, copied at install before a mod
+-- renames entries of _moveNames/_abilityNames in place.  Anything keyed by
+-- the English name (the summary's descriptions) reads these.
+Pokemon._romMoveNames = nil
+Pokemon._romAbilityNames = nil
 Pokemon._learnsets = nil
 Pokemon._eggMoves = nil
 Pokemon._evolutions = nil
@@ -60,6 +66,13 @@ local function resolve_cache(cache)
       return nil
     end,
   }
+end
+
+local function copy_names(names)
+  if type(names) ~= "table" then return nil end
+  local out = {}
+  for k, v in pairs(names) do out[k] = v end
+  return out
 end
 
 local function load_lua(cache, rel)
@@ -124,6 +137,8 @@ function Pokemon.install(cache)
   Pokemon._abilityNames = nil
   Pokemon._speciesMeta = nil
   Pokemon._moveNames = nil
+  Pokemon._romMoveNames = nil
+  Pokemon._romAbilityNames = nil
   Pokemon._learnsets = nil
   Pokemon._eggMoves = nil
   Pokemon._evolutions = nil
@@ -145,6 +160,8 @@ function Pokemon.install(cache)
   Pokemon._abilityNames = load_lua(c, root .. "/ability_names.lua")
   Pokemon._speciesMeta = load_lua(c, root .. "/meta.lua")
   Pokemon._moveNames = load_lua(c, root .. "/move_names.lua")
+  Pokemon._romMoveNames = copy_names(Pokemon._moveNames)
+  Pokemon._romAbilityNames = copy_names(Pokemon._abilityNames)
   Pokemon._learnsets = load_lua(c, root .. "/learnsets.lua")
   Pokemon._eggMoves = load_lua(c, root .. "/egg_moves.lua")
   Pokemon._evolutions = load_lua(c, root .. "/evolutions.lua")
@@ -205,6 +222,8 @@ function Pokemon.invalidate()
   Pokemon._abilityNames = nil
   Pokemon._speciesMeta = nil
   Pokemon._moveNames = nil
+  Pokemon._romMoveNames = nil
+  Pokemon._romAbilityNames = nil
   Pokemon._learnsets = nil
   Pokemon._eggMoves = nil
   Pokemon._evolutions = nil
@@ -228,7 +247,7 @@ function Pokemon.name(species)
   if not Pokemon._names then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._names and Pokemon._names[species]
   if n and n ~= "" and n ~= "??????????" then return n end
-  return string.format("POKéMON %03d", species)
+  return Strings("POKéMON %03d", species)
 end
 
 function Pokemon.keyName(species)
@@ -308,7 +327,7 @@ function Pokemon.abilityName(abilityId)
   if not Pokemon._abilityNames then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._abilityNames and Pokemon._abilityNames[abilityId]
   if n and n ~= "" then return n end
-  return string.format("ABILITY %d", abilityId)
+  return Strings("ABILITY %d", abilityId)
 end
 
 function Pokemon.speciesMeta(species)
@@ -470,6 +489,22 @@ function Pokemon.applyStats(mon)
   return mon
 end
 
+-- The ROM's English name for a move or ability number, whatever a mod renamed
+-- it to; nil when the pack has none.
+function Pokemon.romMoveName(num)
+  num = tonumber(num)
+  if not num then return nil end
+  if not Pokemon._moveNames then Pokemon.install(Pokemon._cache) end
+  return Pokemon._romMoveNames and Pokemon._romMoveNames[num]
+end
+
+function Pokemon.romAbilityName(abilityId)
+  abilityId = tonumber(abilityId)
+  if not abilityId then return nil end
+  if not Pokemon._abilityNames then Pokemon.install(Pokemon._cache) end
+  return Pokemon._romAbilityNames and Pokemon._romAbilityNames[abilityId]
+end
+
 function Pokemon.moveName(moveId)
   if type(moveId) == "table" then
     moveId = moveId.id or moveId.move or moveId.moveId or moveId.num or moveId.name or moveId[1]
@@ -490,7 +525,7 @@ function Pokemon.moveName(moveId)
   if not Pokemon._moveNames then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._moveNames and Pokemon._moveNames[num]
   if n and n ~= "" then return n end
-  return string.format("MOVE %d", num)
+  return Strings("MOVE %d", num)
 end
 
 function Pokemon.learnset(species)

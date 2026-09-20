@@ -9,6 +9,7 @@
 
 local Pokemon = require("src.core.game3.pokemon")
 local ModRuntime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local StepEvents = {}
 
@@ -83,7 +84,7 @@ local function trigger_white_out(session, game)
   -- 1. Faint message
   local Hud = require("src.ui.game3.hud")
   local playerName = (session and (session.name or session.playerName)) or "PLAYER"
-  local msg = playerName .. " is out of usable\nPOKéMON!\n\n" .. playerName .. " whited out!"
+  local msg = Strings("%s is out of usable\nPOKéMON!\n\n%s whited out!", playerName, playerName)
 
   Hud.openMessage(game, msg, {
     done = function()
@@ -206,7 +207,7 @@ function StepEvents.onStepTaken(session, game)
             end)
 
             local Hud = require("src.ui.game3.hud")
-            Hud.openMessage(game, fainted.name .. " fainted...", {
+            Hud.openMessage(game, Strings("%s fainted...", fainted.name), {
               done = function()
                 if party_is_wiped(party) then
                   trigger_white_out(session, game)
@@ -277,7 +278,7 @@ function StepEvents.onRepelStep(session, game)
         run = function(onDone)
           se(67) -- SE_REPEL
           local Hud = require("src.ui.game3.hud")
-          Hud.openMessage(game, "Repel's effect wore off...", {
+          Hud.openMessage(game, Strings("Repel's effect wore off..."), {
             done = onDone,
           })
         end,

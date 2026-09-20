@@ -5,6 +5,7 @@ local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Pokemon = require("src.core.game3.pokemon")
 local Storage = require("src.core.game3.storage")
+local Strings = require("src.core.Strings")
 
 local ReleaseSeq = {}
 
@@ -106,12 +107,12 @@ function ReleaseSeq.draw()
   if ReleaseSeq.state == "confirm" then
     -- Bottom dialogue box
     Window.dialogueFrame()
-    Window.printPx(string.format("Release %s?", monName), 16, 120)
+    Window.printPx(Strings("Release %s?", monName), 16, 120)
 
     -- YES/NO Confirmation Box
     Window.stdFrame(Window.template(21, 8, 6, 4))
-    Window.printPx("YES", 184, 68)
-    Window.printPx("NO", 184, 84)
+    Window.printPx(Strings("YES"), 184, 68)
+    Window.printPx(Strings("NO"), 184, 84)
     Window.cursorPx(174, ReleaseSeq.yesNoCursor == 1 and 68 or 84)
     return
   end
@@ -137,13 +138,13 @@ function ReleaseSeq.draw()
     end
 
     Window.dialogueFrame()
-    Window.printPx(string.format("Releasing %s…", monName), 16, 120)
+    Window.printPx(Strings("Releasing %s…", monName), 16, 120)
     return
   end
 
   if ReleaseSeq.state == "bye" then
     Window.dialogueFrame()
-    Window.printPx(string.format("Bye-bye, %s!", monName), 16, 120)
+    Window.printPx(Strings("Bye-bye, %s!", monName), 16, 120)
     return
   end
 end

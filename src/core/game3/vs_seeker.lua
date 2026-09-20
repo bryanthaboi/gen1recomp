@@ -1,6 +1,7 @@
 local Data = require("src.core.game3.vs_seeker_data")
 local Flags = require("src.core.game3.scripting.flags")
 local Rng = require("src.core.game3.rng")
+local Strings = require("src.core.Strings")
 
 local VsSeeker = {}
 
@@ -38,11 +39,12 @@ VsSeeker.MOVEMENT_UNFOUGHT = { 0x62, 0xFE }
 VsSeeker.MOVEMENT_NO_REMATCH = { 0x64, 0xFE }
 VsSeeker.MOVEMENT_REMATCH = { 0x2D, 0x65, 0xFE }
 
+-- English sources, translated where they are shown.
 -- data/text/trainers.inc:1
 VsSeeker.TEXT = {
-  notCharged = "The battery isn't charged enough.\fNo. of steps required to fully\ncharge the battery: %d",
-  noTrainers = "There are no TRAINERS within range\nwho can battle…\fThe VS SEEKER was turned off.",
-  notReady = "The other TRAINERS don't appear\nto be ready for battle.\fLet's wait till later.",
+  notCharged = Strings.source("The battery isn't charged enough.\fNo. of steps required to fully\ncharge the battery: %d"),
+  noTrainers = Strings.source("There are no TRAINERS within range\nwho can battle…\fThe VS SEEKER was turned off."),
+  notReady = Strings.source("The other TRAINERS don't appear\nto be ready for battle.\fLet's wait till later."),
 }
 
 -- src/item_use.c:712
@@ -480,7 +482,7 @@ end
 -- src/strings.c:188
 function VsSeeker.notTimeText(session)
   local name = tostring((session and (session.name or session.playerName)) or "RED")
-  return "OAK: " .. name .. "!\nThis isn't the time to use that!"
+  return Strings("OAK: %s!\nThis isn't the time to use that!", name)
 end
 
 local function fieldLock(on)
@@ -536,10 +538,10 @@ function VsSeeker.use(session, game, onDone)
   local px, py = playerCoords()
   local code, need = VsSeeker.canUse(infos, px, py, s, st)
   if code == VsSeeker.NOT_CHARGED then
-    showMessage(game, string.format(VsSeeker.TEXT.notCharged, need), onDone)
+    showMessage(game, Strings(VsSeeker.TEXT.notCharged, need), onDone)
     return false, code
   elseif code == VsSeeker.NO_ONE_IN_RANGE then
-    showMessage(game, VsSeeker.TEXT.noTrainers, onDone)
+    showMessage(game, Strings(VsSeeker.TEXT.noTrainers), onDone)
     return false, code
   end
 
@@ -590,7 +592,7 @@ function VsSeeker.use(session, game, onDone)
         if seq.response == VsSeeker.RESPONSE_NO_RESPONSE then
           seq.waitingText = true
           local Hud = package.loaded["src.ui.game3.hud"] or require("src.ui.game3.hud")
-          Hud.openMessage(game, VsSeeker.TEXT.notReady, { done = finish })
+          Hud.openMessage(game, Strings(VsSeeker.TEXT.notReady), { done = finish })
         else
           if seq.response == VsSeeker.RESPONSE_FOUND_REMATCHES then
             VsSeeker.startAllRespondantIdleMovements(infos, seq.responders, s, st, Objects)

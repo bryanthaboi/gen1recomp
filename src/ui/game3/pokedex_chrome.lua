@@ -5,6 +5,7 @@
 local Display = require("src.core.game3.display")
 local Extract = require("src.import.gba.extract_island1")
 local PokedexData = require("src.core.game3.pokedex_data")
+local Strings = require("src.core.Strings")
 
 local PokedexChrome = {}
 
@@ -851,7 +852,7 @@ function PokedexChrome.drawMiniCard(speciesId, x, y, isCaught, isSeen, isSelecte
 
   local sp = tonumber(speciesId) or 1
   local natId = Pokemon.nationalPokedexNumber and Pokemon.nationalPokedexNumber(sp) or sp
-  local name = isSeen and (Pokemon.name and Pokemon.name(sp) or string.format("POKéMON %d", sp)) or "----------"
+  local name = isSeen and (Pokemon.name and Pokemon.name(sp) or Strings("POKéMON %d", sp)) or "----------"
 
   -- Draw authentic 64x40 mini page background (white top, brown dividing line, beige bottom with simulated text)
   local bg = PokedexChrome.getImage("mini_page")

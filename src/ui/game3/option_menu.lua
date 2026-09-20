@@ -2,6 +2,7 @@ local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local Options = require("src.core.game3.options")
 local Rows = require("src.ui.game3.option_rows")
+local Strings = require("src.core.Strings")
 
 local OptionMenu = {}
 
@@ -60,7 +61,7 @@ function OptionMenu.show(opts)
     options = engine,
   }
   OptionMenu._pages = {}
-  pushPage("OPTION", buildTop())
+  pushPage(Strings("OPTION"), buildTop())
   OptionMenu.cursor = 1
   Stack.push("option", OptionMenu, { hideBelow = true })
 end
@@ -190,7 +191,7 @@ local function drawHelpBar()
   love.graphics.rectangle("fill", 0, 0, 240, 16)
   love.graphics.setColor(1, 1, 1, 1)
   local PokedexChrome = require("src.ui.game3.pokedex_chrome")
-  PokedexChrome.drawControlInfo(HELP_TEXT, 0xE4, 0)
+  PokedexChrome.drawControlInfo(Strings(HELP_TEXT), 0xE4, 0)
 end
 
 function OptionMenu.draw()
@@ -220,7 +221,7 @@ function OptionMenu.draw()
     if idx <= total then
       local y = ROW_Y0 + (slot - 1) * ROW_STEP -- src/option_menu.c:563
       if idx > #p.rows then
-        Window.printPx("CANCEL", LABEL_X, y, { colors = FrlgFont.COLOR.NORMAL })
+        Window.printPx(Strings("CANCEL"), LABEL_X, y, { colors = FrlgFont.COLOR.NORMAL })
       else
         local row = p.rows[idx]
         Window.printPx(row.label or "?", LABEL_X, y, { colors = FrlgFont.COLOR.NORMAL })

@@ -1,4 +1,5 @@
 local Secondary = require("src.core.game3.battle.effects.secondary")
+local Strings = require("src.core.Strings")
 
 local HeldItems = {}
 
@@ -59,7 +60,11 @@ local FLAVOR_TABLE = {
 }
 
 -- pokefirered/src/battle_message.c:448
-local FLAVOR_TEXT = { "was too spicy!", "was too dry!", "was too sweet!", "was too bitter!", "was too sour!" }
+local FLAVOR_TEXT = {
+  Strings.source("For %s,\n%s was too spicy!"), Strings.source("For %s,\n%s was too dry!"),
+  Strings.source("For %s,\n%s was too sweet!"), Strings.source("For %s,\n%s was too bitter!"),
+  Strings.source("For %s,\n%s was too sour!"),
+}
 
 local STAT_ORDER = { "attack", "defense", "speed", "spAtk", "spDef" }
 
@@ -156,8 +161,11 @@ local function stat_up(ad, b, item, stat, delta)
   item_anim(ad, b)
   b.stages[stat] = math.min(6, (b.stages[stat] or 0) + delta)
   ad:playAnim("general", "STATS_CHANGE", b, b, Secondary.statAnimArg(stat, delta))
-  ad:say("Using " .. HeldItems.name(item) .. ", the " .. (Secondary.STAT_NAME[stat] or stat)
-    .. "\nof " .. name(ad, b) .. " " .. (delta >= 2 and "sharply rose!" or "rose!"))
+  if delta >= 2 then
+    ad:say(Strings("Using %s, the %s\nof %s sharply rose!", HeldItems.name(item), Secondary.statName(stat), name(ad, b)))
+  else
+    ad:say(Strings("Using %s, the %s\nof %s rose!", HeldItems.name(item), Secondary.statName(stat), name(ad, b)))
+  end
   HeldItems.consume(ad, b)
 end
 
@@ -165,21 +173,21 @@ local function cure_status_item(ad, b, item, he)
   local s = ad:status(b)
   local line
   if he == H.CURE_PAR and s == "PAR" then
-    line = "\ncured paralysis!"
+    line = Strings.source("%s's %s\ncured paralysis!")
   elseif he == H.CURE_PSN and (s == "PSN" or s == "TOX") then
-    line = "\ncured poison!"
+    line = Strings.source("%s's %s\ncured poison!")
   elseif he == H.CURE_BRN and s == "BRN" then
-    line = "\nhealed its burn!"
+    line = Strings.source("%s's %s\nhealed its burn!")
   elseif he == H.CURE_FRZ and s == "FRZ" then
-    line = "\ndefrosted it!"
+    line = Strings.source("%s's %s\ndefrosted it!")
   elseif he == H.CURE_SLP and s == "SLP" then
     b.expNightmare = nil
-    line = "\nwoke it from its sleep!"
+    line = Strings.source("%s's %s\nwoke it from its sleep!")
   end
   if not line then return false end
   ad:clearStatus(b)
   item_anim(ad, b)
-  ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. line)
+  ad:say(Strings(line, name(ad, b), HeldItems.name(item)))
   HeldItems.consume(ad, b)
   return true
 end
@@ -189,19 +197,19 @@ local function lum(ad, b, item, allowNormalized)
   local confused = (b.confusionTurns or 0) > 0
   if not s and not confused then return false end
   local count, word = 0, nil
-  if s == "PSN" or s == "TOX" then word = "poison"; count = count + 1 end
-  if s == "SLP" then b.expNightmare = nil; word = "sleep"; count = count + 1 end
-  if s == "PAR" then word = "paralysis"; count = count + 1 end
-  if s == "BRN" then word = "burn"; count = count + 1 end
-  if s == "FRZ" then word = "ice"; count = count + 1 end
-  if confused then word = "confusion"; count = count + 1 end
+  if s == "PSN" or s == "TOX" then word = Strings.source("poison"); count = count + 1 end
+  if s == "SLP" then b.expNightmare = nil; word = Strings.source("sleep"); count = count + 1 end
+  if s == "PAR" then word = Strings.source("paralysis"); count = count + 1 end
+  if s == "BRN" then word = Strings.source("burn"); count = count + 1 end
+  if s == "FRZ" then word = Strings.source("ice"); count = count + 1 end
+  if confused then word = Strings.source("confusion"); count = count + 1 end
   ad:clearStatus(b)
   b.confusionTurns = nil
   item_anim(ad, b)
   if allowNormalized and count > 1 then
-    ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\nnormalized its status!")
+    ad:say(Strings("%s's %s\nnormalized its status!", name(ad, b), HeldItems.name(item)))
   else
-    ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\ncured its " .. tostring(word) .. " problem!")
+    ad:say(Strings("%s's %s\ncured its %s problem!", name(ad, b), HeldItems.name(item), Strings(tostring(word))))
   end
   HeldItems.consume(ad, b)
   return true
@@ -214,7 +222,7 @@ local function white_herb(ad, b, item)
   end
   if not any then return false end
   item_anim(ad, b)
-  ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\nrestored its status!")
+  ad:say(Strings("%s's %s\nrestored its status!", name(ad, b), HeldItems.name(item)))
   HeldItems.consume(ad, b)
   return true
 end
@@ -223,7 +231,7 @@ local function mental_herb(ad, b, item)
   if not b.expInfatuated then return false end
   b.expInfatuated, b.expInfatuatedWith, b.expInfatuatedBy = nil, nil, nil
   item_anim(ad, b)
-  ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\ncured its love problem!")
+  ad:say(Strings("%s's %s\ncured its love problem!", name(ad, b), HeldItems.name(item)))
   HeldItems.consume(ad, b)
   return true
 end
@@ -232,7 +240,7 @@ local function persim(ad, b, item)
   if (b.confusionTurns or 0) <= 0 then return false end
   b.confusionTurns = nil
   item_anim(ad, b)
-  ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\nsnapped it out of confusion!")
+  ad:say(Strings("%s's %s\nsnapped it out of confusion!", name(ad, b), HeldItems.name(item)))
   HeldItems.consume(ad, b)
   return true
 end
@@ -251,7 +259,7 @@ local function leppa(ad, b, item, param)
   if not base then base = tonumber(Moves.get(mon.moves[slot]).pp) or param end
   local pp = math.min(base, param)
   item_anim(ad, b)
-  ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\nrestored " .. Moves.displayName(mon.moves[slot]) .. "'s PP!")
+  ad:say(Strings("%s's %s\nrestored %s's PP!", name(ad, b), HeldItems.name(item), Moves.displayName(mon.moves[slot])))
   HeldItems.consume(ad, b)
   local State = require("src.core.game3.battle.state")
   local perm = b.permanentSlots
@@ -265,7 +273,7 @@ end
 
 local function heal_berry(ad, b, item, amount)
   item_anim(ad, b)
-  ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\nrestored health!")
+  ad:say(Strings("%s's %s\nrestored health!", name(ad, b), HeldItems.name(item)))
   ad:heal(b, amount)
 end
 
@@ -292,7 +300,7 @@ function HeldItems.normal(ad, b, moveTurn)
       local amt = math.floor(maxHp / 16)
       if amt == 0 then amt = 1 end
       item_anim(ad, b)
-      ad:say(name(ad, b) .. "'s " .. HeldItems.name(item) .. "\nrestored its HP a little!")
+      ad:say(Strings("%s's %s\nrestored its HP a little!", name(ad, b), HeldItems.name(item)))
       ad:heal(b, amt)
       return true
     end
@@ -305,11 +313,11 @@ function HeldItems.normal(ad, b, moveTurn)
       heal_berry(ad, b, item, amt)
       local mon = b.mon or {}
       if HeldItems.flavorRelation(mon.personality, flavor) < 0 then
-        ad:say("For " .. name(ad, b) .. ",\n" .. HeldItems.name(item) .. " " .. FLAVOR_TEXT[flavor + 1])
+        ad:say(Strings(FLAVOR_TEXT[flavor + 1], name(ad, b), HeldItems.name(item)))
         if ad:abilityOf(b) ~= "OWN_TEMPO" and (b.confusionTurns or 0) <= 0 then
           b.confusionTurns = ad:roll(0, 3) % 4 + 2
           ad:playAnim("status", "CONFUSION", b, b)
-          ad:say(name(ad, b) .. " became\nconfused!")
+          ad:say(Strings("%s became\nconfused!", name(ad, b)))
         end
       end
       HeldItems.consume(ad, b)
@@ -326,7 +334,7 @@ function HeldItems.normal(ad, b, moveTurn)
       b.focusEnergy = true
       b.expFocusEnergy = true
       item_anim(ad, b)
-      ad:say(name(ad, b) .. " used\n" .. HeldItems.name(item) .. " to hustle!")
+      ad:say(Strings("%s used\n%s to hustle!", name(ad, b), HeldItems.name(item)))
       HeldItems.consume(ad, b)
       return true
     end
@@ -402,7 +410,7 @@ function HeldItems.kingsRockShellBell(M)
       if amt == 0 then amt = 1 end
       M.firstDmg = 0
       item_anim(ad, user)
-      ad:say(name(ad, user) .. "'s " .. HeldItems.name(item) .. "\nrestored its HP a little!")
+      ad:say(Strings("%s's %s\nrestored its HP a little!", name(ad, user), HeldItems.name(item)))
       ad:heal(user, amt)
       return true
     end
@@ -435,7 +443,7 @@ end
 -- pokefirered/data/battle_scripts_1.s:4340
 function HeldItems.focusBandMessage(ad, target)
   ad:playAnim("general", "FOCUS_BAND", target, target)
-  ad:say(name(ad, target) .. " hung on\nusing its " .. HeldItems.name(HeldItems.itemOf(target)) .. "!")
+  ad:say(Strings("%s hung on\nusing its %s!", name(ad, target), HeldItems.name(HeldItems.itemOf(target))))
 end
 
 HeldItems.statusWord = status_word

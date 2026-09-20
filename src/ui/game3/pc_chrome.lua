@@ -5,6 +5,7 @@
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Pokemon = require("src.core.game3.pokemon")
 local ItemsData = require("src.core.game3.items_data")
+local Strings = require("src.core.Strings")
 
 local PcChrome = {}
 
@@ -244,12 +245,12 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
   -- Line 3: Gender & Level (FONT_NORMAL, Y: 116)
   if gender == "M" or gender == "male" then
     FrlgFont.draw("♂", 6, 116, { small = false, colors = FrlgFont.COLOR.MALE })
-    FrlgFont.draw("Lv" .. tostring(lvl), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
+    FrlgFont.draw(Strings("Lv%s", tostring(lvl)), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
   elseif gender == "F" or gender == "female" then
     FrlgFont.draw("♀", 6, 116, { small = false, colors = FrlgFont.COLOR.FEMALE })
-    FrlgFont.draw("Lv" .. tostring(lvl), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
+    FrlgFont.draw(Strings("Lv%s", tostring(lvl)), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
   else
-    FrlgFont.draw("Lv" .. tostring(lvl), 6, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
+    FrlgFont.draw(Strings("Lv%s", tostring(lvl)), 6, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
   end
 
   -- Line 4: Held Item Name (if holding an item) (FONT_SMALL, Y: 132)
@@ -314,7 +315,12 @@ function PcChrome.drawBoxHeader(boxName, boxNum, isHovered)
   end
 
   -- Box Name Text (drawn centered on the ROM wallpaper's capsule)
-  local nameStr = tostring(boxName or ("BOX " .. tostring(boxNum or 1)))
+  -- Default names are stored in English ("BOX 3", see Storage.new); show those
+  -- translated and leave the names the player typed alone.
+  local num = tonumber(boxNum) or 1
+  local nameStr = (boxName == nil or boxName == string.format("BOX %d", num))
+    and Strings("BOX %d", num)
+    or tostring(boxName)
   local nw = FrlgFont.measure(nameStr)
   local tx = math.floor(160 - nw / 2)
   FrlgFont.draw(nameStr, tx, 20, {

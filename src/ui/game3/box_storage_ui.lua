@@ -17,6 +17,7 @@ local PcChrome = require("src.ui.game3.pc_chrome")
 local ReleaseSeq = require("src.ui.game3.release_seq")
 local SummaryMenu = require("src.ui.game3.summary_menu")
 local ItemsData = require("src.core.game3.items_data")
+local Strings = require("src.core.Strings")
 
 local BoxStorageUI = {}
 
@@ -363,7 +364,7 @@ function BoxStorageUI.handleInput(input)
             BoxStorageUI.mode = returnMode
             se(246)
           else
-            BoxStorageUI._status = "Your party is full!"
+            BoxStorageUI._status = Strings("Your party is full!")
             BoxStorageUI.mode = "message"
             se(9)
           end
@@ -373,7 +374,7 @@ function BoxStorageUI.handleInput(input)
         if loc == "party" and mon then
           local party = (BoxStorageUI._session and BoxStorageUI._session.party) or {}
           if #party <= 1 then
-            BoxStorageUI._status = "Can't deposit the last POKéMON!"
+            BoxStorageUI._status = Strings("Can't deposit the last POKéMON!")
             BoxStorageUI.mode = "message"
             se(9)
           else
@@ -390,7 +391,7 @@ function BoxStorageUI.handleInput(input)
               end
               se(246)
             else
-              BoxStorageUI._status = "The Box is full!"
+              BoxStorageUI._status = Strings("The Box is full!")
               BoxStorageUI.mode = "message"
               se(9)
             end
@@ -412,15 +413,15 @@ function BoxStorageUI.handleInput(input)
         if mon then
           local ok, err = Storage.detachHeldItem(BoxStorageUI._session, mon)
           if ok then
-            BoxStorageUI._status = string.format("Took the %s and put it in the BAG.", ItemsData.displayName(err))
+            BoxStorageUI._status = Strings("Took the %s and put it in the BAG.", ItemsData.displayName(err))
             BoxStorageUI.mode = "message"
             se(246)
           elseif err == "bag_full" then
-            BoxStorageUI._status = "The BAG is full."
+            BoxStorageUI._status = Strings("The BAG is full.")
             BoxStorageUI.mode = "message"
             se(9)
           else
-            BoxStorageUI._status = "This POKéMON isn't holding anything."
+            BoxStorageUI._status = Strings("This POKéMON isn't holding anything.")
             BoxStorageUI.mode = "message"
             se(9)
           end
@@ -808,7 +809,7 @@ function BoxStorageUI.draw()
     for i, act in ipairs(actions) do
       local yPx = (menuTop * 8 + 2) + (i - 1) * 16
       if i == BoxStorageUI.actionCursor then Window.cursorPx(textLeft - 8, yPx) end
-      Window.printPx(act, textLeft, yPx)
+      Window.printPx(Strings(act), textLeft, yPx)
     end
   end
 
@@ -819,17 +820,17 @@ function BoxStorageUI.draw()
     for i, act in ipairs(boxActions) do
       local yPx = 26 + (i - 1) * 16
       if i == BoxStorageUI.boxMenuCursor then Window.cursorPx(42, yPx) end
-      Window.printPx(act, 50, yPx)
+      Window.printPx(Strings(act), 50, yPx)
     end
   end
 
   -- 11. Wallpaper Picker Popup
   if BoxStorageUI.mode == "pick_wallpaper" then
     Window.stdFrame(Window.template(5, 2, 14, 10))
-    Window.printPx("SELECT WALLPAPER", 44, 18, { small = true })
+    Window.printPx(Strings("SELECT WALLPAPER"), 44, 18, { small = true })
     for i = 1, 4 do
       local wpId = ((BoxStorageUI.wallpaperCursor - 1 + i - 1) % 16) + 1
-      local wpName = Storage.WALLPAPERS[wpId] or string.format("THEME %d", wpId)
+      local wpName = Storage.WALLPAPERS[wpId] and Strings(Storage.WALLPAPERS[wpId]) or Strings("THEME %d", wpId)
       local yPx = 34 + (i - 1) * 14
       if i == 1 then Window.cursorPx(44, yPx) end
       Window.printPx(wpName, 52, yPx)

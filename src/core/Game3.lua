@@ -223,6 +223,11 @@ function Game3:_loadMods(opts)
     require("src.core.Logger").error(
       "mods failed to load, continuing without them: %s", tostring(loader))
   end
+  -- After the merge, so a translation mod's catalog is what Strings() reads,
+  -- as Game (src/core/Game.lua) and Game2 do.  Without it the catalog the
+  -- launcher preloaded (every enabled mod's lang/strings.lua, whatever game
+  -- it targets) stayed in place for the whole FireRed session.
+  require("src.core.Strings").load(self.data)
   local okC, Gen3Compat = pcall(require, "src.mods.Gen3Compat")
   if okC and type(Gen3Compat) == "table" and Gen3Compat.applyMerged then
     local okA, err = pcall(Gen3Compat.applyMerged, self)

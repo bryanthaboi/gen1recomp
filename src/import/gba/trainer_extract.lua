@@ -370,12 +370,20 @@ function TrainerExtract.extractDialogs(scripts, text)
   local dialogsByTrainer = {}
   if not scripts or not text then return dialogsByTrainer end
 
-  for scriptKey, rows in pairs(scripts) do
+  local scriptKeys = {}
+  for scriptKey in pairs(scripts) do scriptKeys[#scriptKeys + 1] = scriptKey end
+  table.sort(scriptKeys, function(x, y) return tostring(x) < tostring(y) end)
+
+  for _, scriptKey in ipairs(scriptKeys) do
+    local rows = scripts[scriptKey]
     if type(rows) == "table" then
       for idx, row in ipairs(rows) do
         if row.op == "trainerbattle" or row.op == "dotrainerbattle" then
           local tid = tonumber(row.trainer or row[1])
-          if tid and not dialogsByTrainer[tid] then
+          -- include/constants/battle_setup.h:9
+          local rematch = (row.type == 5 or row.type == 7)
+          local prior = tid and dialogsByTrainer[tid]
+          if tid and (not prior or (prior.rematch and not rematch)) then
             local introKey = row.introText
             -- The Boss Text Disconnect fallback:
             if not introKey then
@@ -400,6 +408,7 @@ function TrainerExtract.extractDialogs(scripts, text)
 
             dialogsByTrainer[tid] = {
               scriptKey = scriptKey,
+              rematch = rematch,
               battleType = row.type,
               introKey = introKey,
               intro = resolveText(introKey),

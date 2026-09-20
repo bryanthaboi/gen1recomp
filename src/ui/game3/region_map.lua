@@ -5,6 +5,7 @@ local FrlgFont = require("src.ui.game3.frlg_font")
 local PokedexChrome = require("src.ui.game3.pokedex_chrome")
 local RegionExtract = require("src.import.gba.region_map_extract")
 local MapSectionsExtract = require("src.import.gba.map_sections_extract")
+local Strings = require("src.core.Strings")
 
 local RegionMap = {}
 
@@ -236,7 +237,7 @@ function RegionMap.currentLocationName()
   local row = RegionExtract.KANTO_GRID[RegionMap.cursorY]
   local sec = row and row[RegionMap.cursorX]
   if sec and RegionExtract.SECTION_NAMES[sec] then
-    return RegionExtract.SECTION_NAMES[sec]
+    return Strings(RegionExtract.SECTION_NAMES[sec])
   end
   return nil
 end
@@ -250,7 +251,7 @@ function RegionMap.currentDungeonName()
   RegionExtract.ensureGenerated()
   local dSec = RegionMap.currentDungeonSec()
   if dSec and RegionExtract.SECTION_NAMES[dSec] then
-    return RegionExtract.SECTION_NAMES[dSec]
+    return Strings(RegionExtract.SECTION_NAMES[dSec])
   end
   return nil
 end
@@ -479,25 +480,25 @@ function RegionMap.draw()
   end
 
   -- 7. Top Bar Button Prompts with authentic keypad icons (WIN_TOPBAR_LEFT at x=144, WIN_TOPBAR_RIGHT at x=192, y=2)
-  PokedexChrome.drawControlInfoLeft("{DPAD_ANY}MOVE", 144, 2)
+  PokedexChrome.drawControlInfoLeft(Strings("{DPAD_ANY}MOVE"), 144, 2)
   if RegionMap.previewDungeon then
-    PokedexChrome.drawControlInfoLeft("{A_BUTTON}CANCEL", 192, 2)
+    PokedexChrome.drawControlInfoLeft(Strings("{A_BUTTON}CANCEL"), 192, 2)
   elseif RegionMap.cursorX == CANCEL_BUTTON_X and RegionMap.cursorY == CANCEL_BUTTON_Y then
-    PokedexChrome.drawControlInfoLeft("{A_BUTTON}CANCEL", 192, 2)
+    PokedexChrome.drawControlInfoLeft(Strings("{A_BUTTON}CANCEL"), 192, 2)
   elseif RegionMap.cursorX == SWITCH_BUTTON_X and RegionMap.cursorY == SWITCH_BUTTON_Y then
-    PokedexChrome.drawControlInfoLeft("{A_BUTTON}SWITCH", 192, 2)
+    PokedexChrome.drawControlInfoLeft(Strings("{A_BUTTON}SWITCH"), 192, 2)
   elseif RegionMap.currentDungeonName() then
-    PokedexChrome.drawControlInfoLeft("{A_BUTTON}GUIDE", 192, 2)
+    PokedexChrome.drawControlInfoLeft(Strings("{A_BUTTON}GUIDE"), 192, 2)
   end
 
   -- 8. Dungeon Map Preview / Guide Modal (WIN_MAP_PREVIEW, pret region_map.c:486-494)
   if RegionMap.previewDungeon then
     RegionExtract.ensureGenerated()
     local dSec = RegionMap.previewDungeon
-    local dTitle = RegionExtract.SECTION_NAMES[dSec] or "DUNGEON"
+    local dTitle = Strings(RegionExtract.SECTION_NAMES[dSec] or "DUNGEON")
     -- GetDungeonName/GetDungeonFlavorText fall back to gText_RegionMap_NoData
     -- ("No data") for both fields when the mapsec is absent from sDungeonInfo.
-    local dDesc = RegionExtract.DUNGEON_DESCRIPTIONS[dSec] or "No data"
+    local dDesc = Strings(RegionExtract.DUNGEON_DESCRIPTIONS[dSec] or "No data")
     local tf = previewTextFrame()
 
     -- drawState 2: FillWindowPixelBuffer(WIN_MAP_PREVIEW, PIXEL_FILL(0)) turns the

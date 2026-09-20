@@ -44,6 +44,7 @@ function MoneyBox.isVisible()
 end
 
 local FrlgFont = require("src.ui.game3.frlg_font")
+local Strings = require("src.core.Strings")
 
 function MoneyBox.draw()
   if not MoneyBox.visible then return end
@@ -52,7 +53,7 @@ function MoneyBox.draw()
   local left = x + 1
   local top = y + 1
   Window.stdFrame(Window.template(left, top, 8, 3))
-  Window.printPx("MONEY", left * 8, top * 8)
+  Window.printPx(Strings("MONEY"), left * 8, top * 8)
   local moneyStr = string.format("¥%d", MoneyBox._amount)
   local mw = (FrlgFont.measure and FrlgFont.measure(moneyStr, { small = true })) or (6 * #moneyStr)
   Window.printPx(moneyStr, math.max(left * 8, (left + 8) * 8 - mw), top * 8 + 12, { small = true })

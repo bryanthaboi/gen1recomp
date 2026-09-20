@@ -1753,13 +1753,18 @@ end
 
 COVERAGE["src.ui.StartMenu"] = {
   kind = "facade", target = "src.ui.game3.start_menu",
-  backed = "new show close isOpen draw",
+  backed = "new show close isOpen draw ENTRIES",
   warned = "",
   absent = "items ITEMS lastIndex",
   notes = {
     new = "Hud.openStartMenu, which closes any other field menu first; "
       .. "returns the FireRed start menu module",
-    ["hook ui.start_menu.items"] = "not raised on FireRed yet",
+    ENTRIES = "the assembled list, rebuilt on every show(); the hook below "
+      .. "hands it back and a table return replaces it",
+    ["hook ui.start_menu.items"] = "raised from src/ui/game3/start_menu.lua, "
+      .. "same name and arity as Gen 1 and Gold, but a FireRed row is "
+      .. "{ id, label } and carries no onSelect to rewire, and a non-table "
+      .. "return is dropped without the Logger.error the other two emit",
   },
 }
 

@@ -23,6 +23,7 @@ local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
 local ItemUse = require("src.core.game3.item_use")
 local PartyView = require("src.core.game3.battle.party_view")
+local Strings = require("src.core.Strings")
 
 local BerryPouch = {}
 
@@ -120,7 +121,7 @@ local function party_opts(row, mode, party)
     local canUse, err = BattleItems.canUseOn(st, row.id, slot, mon)
     if not canUse then
       se(9)
-      PartyMenu.showMessage(err or "It won't have any effect.", function()
+      PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
         PartyMenu.mode = "use"
       end)
       return
@@ -212,7 +213,7 @@ function BerryPouch.handleInput(input)
           local bName = row.name or ItemsData.displayName(row.id)
           Bag.remove(BerryPouch._bag, row.id, BerryPouch.tossQty)
           BerryPouch.mode = "message"
-          BerryPouch.messageText = string.format("Threw away %d\n%s.", BerryPouch.tossQty, bName)
+          BerryPouch.messageText = Strings("Threw away %d\n%s.", BerryPouch.tossQty, bName)
           clamp_cursor()
         else
           BerryPouch.mode = "list"
@@ -255,7 +256,7 @@ function BerryPouch.handleInput(input)
         if ItemUse.needsPartyTarget(row.id) then
           if #party == 0 then
             BerryPouch.mode = "message"
-            BerryPouch.messageText = "There is no POKéMON."
+            BerryPouch.messageText = Strings("There is no POKéMON.")
           else
             local PartyMenu = require("src.ui.game3.party_menu")
             PartyMenu.show(party, BerryPouch._session and BerryPouch._session.moveOverlay,
@@ -263,12 +264,12 @@ function BerryPouch.handleInput(input)
           end
         else
           BerryPouch.mode = "message"
-          BerryPouch.messageText = "OAK: This isn't the\ntime to use that!"
+          BerryPouch.messageText = Strings("OAK: This isn't the\ntime to use that!")
         end
       elseif act == "GIVE" then
         if #party == 0 then
           BerryPouch.mode = "message"
-          BerryPouch.messageText = "There is no POKéMON."
+          BerryPouch.messageText = Strings("There is no POKéMON.")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
           PartyMenu.show(party, BerryPouch._session and BerryPouch._session.moveOverlay, {
@@ -376,7 +377,7 @@ function BerryPouch.draw()
   end
 
   -- 2. Header (WIN 2: tilemapLeft=1, tilemapTop=1, width=9, height=2 -> 72px center at y=9)
-  local headerTitle = "BERRY POUCH"
+  local headerTitle = Strings("BERRY POUCH")
   local tw = FrlgFont.measure(headerTitle)
   local tx = math.floor((72 - tw) / 2) + 8
   FrlgFont.draw(headerTitle, tx, 9, { colors = FrlgFont.COLOR.LIGHT })
@@ -401,7 +402,7 @@ function BerryPouch.draw()
 
   -- 5. Description Box (WIN 1: tilemapLeft=5, tilemapTop=16, width=25, height=4 -> screen (40, 128, 200, 32))
   if BerryPouch.cursor == total then
-    local closeDesc = "The BERRY POUCH will be\nput away."
+    local closeDesc = Strings("The BERRY POUCH will be\nput away.")
     FrlgFont.draw(closeDesc, 40, 130, { colors = FrlgFont.COLOR.LIGHT, linePitch = 14 })
   elseif sel then
     local desc = sel.description or ItemsData.description(sel.id) or ""
@@ -442,7 +443,7 @@ function BerryPouch.draw()
       FrlgFont.draw(qStr, 198, y, { small = true, colors = FrlgFont.COLOR.NORMAL })
     else
       -- CLOSE option in FONT_NORMAL at x = 97
-      FrlgFont.draw("CLOSE", 97, y, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("CLOSE"), 97, y, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -452,7 +453,7 @@ function BerryPouch.draw()
 
     -- WIN 6: Selected message
     Window.stdFrame(Window.template(6, 15, 14, 4))
-    local selMsg = string.format("%s is\nselected.", bName)
+    local selMsg = Strings("%s is\nselected.", bName)
     FrlgFont.draw(selMsg, 52, 124, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
 
     -- WIN 13: Action menu
@@ -462,7 +463,7 @@ function BerryPouch.draw()
       if i == BerryPouch.actionCursor then
         Window.cursorPx(177, rowY)
       end
-      FrlgFont.draw(act, 185, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings(act), 185, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -472,7 +473,7 @@ function BerryPouch.draw()
 
     -- WIN 8: Prompt
     Window.stdFrame(Window.template(6, 15, 16, 4))
-    local tossMsg = string.format("Toss out how many\n%s?", bName)
+    local tossMsg = Strings("Toss out how many\n%s?", bName)
     FrlgFont.draw(tossMsg, 52, 122, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
 
     -- WIN 0: Quantity with arrows
@@ -487,7 +488,7 @@ function BerryPouch.draw()
   if BerryPouch.mode == "toss_confirm" and sel then
     -- WIN 7: Confirmation prompt
     Window.stdFrame(Window.template(6, 15, 15, 4))
-    local confMsg = string.format("Throw away %d of\nthis item?", BerryPouch.tossQty)
+    local confMsg = Strings("Throw away %d of\nthis item?", BerryPouch.tossQty)
     FrlgFont.draw(confMsg, 52, 124, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
 
     -- WIN 3: YES / NO
@@ -499,8 +500,8 @@ function BerryPouch.draw()
     else
       Window.cursorPx(185, noY)
     end
-    FrlgFont.draw("YES", 193, yesY, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw("NO", 193, noY, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("YES"), 193, yesY, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("NO"), 193, noY, { colors = FrlgFont.COLOR.NORMAL })
   end
 
   -- 10. Dialogue Message Modal (WIN 5: 2, 15, 26, 4)

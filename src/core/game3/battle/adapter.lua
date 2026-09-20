@@ -3,6 +3,7 @@
 local State = require("src.core.game3.battle.state")
 local Rules = require("src.core.game3.battle.rules")
 local ModRuntime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local Adapter = {}
 
@@ -284,7 +285,7 @@ function Adapter.new(battleState, sayFn)
     self:pushEvent({ kind = "msg", text = text })
     self._say(text)
   end
-  function a:sayFail() self:say("But it failed!") end
+  function a:sayFail() self:say(Strings("But it failed!")) end
   function a:rng() return self._st.rng or math.random end
   function a:roll(lo, hi)
     local ok, v = pcall(self:rng(), lo, hi)

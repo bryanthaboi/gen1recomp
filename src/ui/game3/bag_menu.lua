@@ -10,6 +10,7 @@ local ItemUse = require("src.core.game3.item_use")
 local Options = require("src.core.game3.options")
 local Trig = require("src.core.game3.trig")
 local PartyView = require("src.core.game3.battle.party_view")
+local Strings = require("src.core.Strings")
 
 local BagMenu = {}
 
@@ -481,7 +482,7 @@ local function handle_menu_input(input)
                 local canUse, err = BattleItems.canUseOn(st, row.id, realSlot, mon)
                 if not canUse then
                   se(9)
-                  PartyMenu.showMessage(err or "It won't have any effect.", function()
+                  PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
                     PartyMenu.mode = "use"
                   end)
                   return
@@ -541,7 +542,7 @@ local function handle_menu_input(input)
           elseif ItemUse.needsPartyTarget(row.id) then
             if #party == 0 then
               BagMenu.mode = "message"
-              BagMenu.messageText = "There is no POKéMON."
+              BagMenu.messageText = Strings("There is no POKéMON.")
             else
               local PartyMenu = require("src.ui.game3.party_menu")
               open_submenu(function()
@@ -603,10 +604,10 @@ local function handle_menu_input(input)
         local pocket = BagMenu.currentPocket()
         if pocket == "KEY_ITEMS" or pocket == "TM_CASE" then
           BagMenu.mode = "message"
-          BagMenu.messageText = "This item can't be held."
+          BagMenu.messageText = Strings("This item can't be held.")
         elseif #party == 0 then
           BagMenu.mode = "message"
-          BagMenu.messageText = "There is no POKéMON."
+          BagMenu.messageText = Strings("There is no POKéMON.")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
           -- src/item_menu.c:1620
@@ -837,7 +838,7 @@ function BagMenu.draw()
 
   if not switching then
     -- src/bag.c:226
-    local pLabel = ItemsData.POCKET_LABEL[pocket] or pocket
+    local pLabel = Strings(ItemsData.POCKET_LABEL[pocket] or pocket)
     local tw = FrlgFont.measure(pLabel)
     FrlgFont.draw(pLabel, 8 + math.floor((72 - tw) / 2), 9, { colors = WIN_WHITE })
   end
@@ -860,7 +861,7 @@ function BagMenu.draw()
       end
       local r = rows[idx]
       if not r then
-        FrlgFont.draw("CANCEL", 97, y, { colors = FrlgFont.COLOR.NORMAL })
+        FrlgFont.draw(Strings("CANCEL"), 97, y, { colors = FrlgFont.COLOR.NORMAL })
       else
         local label = r.name
         if session and session.registeredItem
@@ -915,7 +916,7 @@ function BagMenu.draw()
       Window.stdFrame(Window.template(5, 14, 25, 6))
     end
     local desc = sel and sel.description
-    if not sel then desc = "CLOSE BAG" end
+    if not sel then desc = Strings("CLOSE BAG") end
     if desc then
       -- src/item_menu.c:756 (window 1 at (5, 14), x=0, y=3, maxWidth=200, linePitch=14)
       FrlgFont.draw(desc, 40, 115, { colors = WIN_WHITE, maxWidth = 200, linePitch = 14 })
@@ -927,7 +928,7 @@ function BagMenu.draw()
     -- Bottom left prompt window (pret bag.c: sWindowTemplates[6] = (6, 15, 14, 4))
     if sel then
       Window.stdFrame(Window.template(6, 15, 14, 4))
-      FrlgFont.draw((sel.name or "ITEM") .. " is\nselected.", 6 * 8 + 4, 15 * 8 + 2, { maxWidth = 14 * 8, linePitch = 15, colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("%s is\nselected.", (sel.name or "ITEM")), 6 * 8 + 4, 15 * 8 + 2, { maxWidth = 14 * 8, linePitch = 15, colors = FrlgFont.COLOR.NORMAL })
     end
 
     refresh_actions()
@@ -942,7 +943,7 @@ function BagMenu.draw()
       if i == BagMenu.actionCursor then
         Window.cursorPx(popX * 8 + 1, rowY)
       end
-      FrlgFont.draw(act, popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings(act), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -953,7 +954,7 @@ function BagMenu.draw()
     local popW = 12
     local popH = 4
     Window.stdFrame(Window.template(popX, popY, popW, popH))
-    FrlgFont.draw("TOSS HOW MANY?", popX * 8 + 4, popY * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("TOSS HOW MANY?"), popX * 8 + 4, popY * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
     FrlgFont.draw(string.format("× %02d", BagMenu.tossQty), popX * 8 + 24, (popY + 2) * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
   end
 

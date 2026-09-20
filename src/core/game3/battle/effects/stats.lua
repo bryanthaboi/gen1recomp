@@ -3,6 +3,7 @@
 local H = require("src.core.game3.battle.effects._helpers")
 local EffectIds = require("src.core.game3.battle.effect_ids")
 local Secondary = require("src.core.game3.battle.effects.secondary")
+local Strings = require("src.core.Strings")
 
 local Stats = {}
 
@@ -24,7 +25,7 @@ end
 local function stat_up(ctx, stat, delta)
   local ad, user = ctx.adapter, ctx.user
   if (user.stages[stat] or 0) >= 6 then
-    ad:say(name(ctx, user) .. "'s " .. Secondary.STAT_NAME[stat] .. "\nwon't go higher!")
+    ad:say(Strings("%s's %s\nwon't go higher!", name(ctx, user), Secondary.statName(stat)))
     local M = H.move(ctx)
     if M then M.failed = true end
     return
@@ -81,7 +82,7 @@ local function multi_up(ctx, stats)
   if not any then
     local M = H.move(ctx)
     if M then M.failed = true end
-    return ad:say(name(ctx, user) .. "'s stats won't\ngo any higher!")
+    return ad:say(Strings("%s's stats won't\ngo any higher!", name(ctx, user)))
   end
   H.attackAnim(ctx)
   Secondary.multiStatAnim(ad, user, stats, 1)
@@ -116,7 +117,7 @@ function Stats.tickle(ctx)
   if (t.stages.attack or 0) <= -6 and (t.stages.defense or 0) <= -6 then
     local M = H.move(ctx)
     if M then M.failed = true end
-    return ad:say(name(ctx, t) .. "'s stats won't\ngo any lower!")
+    return ad:say(Strings("%s's stats won't\ngo any lower!", name(ctx, t)))
   end
   if not H.accuracy(ctx, "normal") then return end
   H.attackAnim(ctx)
@@ -130,7 +131,7 @@ local function swagger_like(ctx, stat, delta)
   local M = H.move(ctx)
   if (t.substituteHP or 0) > 0 then
     if M then M.anim.missed = true end
-    return ad:say(name(ctx, ctx.user) .. "'s\nattack missed!")
+    return ad:say(Strings("%s's\nattack missed!", name(ctx, ctx.user)))
   end
   if not H.accuracy(ctx, "normal") then return end
   if (t.confusionTurns or 0) > 0 and (t.stages[stat] or 0) >= 6 then return H.sayFail(ctx) end
@@ -139,11 +140,11 @@ local function swagger_like(ctx, stat, delta)
     Secondary.changeStat(ad, t, stat, delta, { allowPtr = true })
   end
   if ad:abilityOf(t) == "OWN_TEMPO" then
-    return ad:say(name(ctx, t) .. "'s OWN TEMPO\nprevents confusion!")
+    return ad:say(Strings("%s's OWN TEMPO\nprevents confusion!", name(ctx, t)))
   end
   local side = ad:ownSide(t)
   if side and (side.expSafeguardTurns or 0) > 0 then
-    return ad:say(name(ctx, t) .. "'s party is protected\nby SAFEGUARD!")
+    return ad:say(Strings("%s's party is protected\nby SAFEGUARD!", name(ctx, t)))
   end
   local ctxM = M or { adapter = ad, user = ctx.user, target = t, st = ad._st }
   Secondary.set(ctxM, "CONFUSION", true, false, false)
@@ -162,7 +163,7 @@ function Stats.psychUp(ctx)
     ctx.user.stages[s] = target.stages[s] or 0
   end
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.user) .. " copied\n" .. name(ctx, target) .. "'s stat changes!")
+  ctx.adapter:say(Strings("%s copied\n%s's stat changes!", name(ctx, ctx.user), name(ctx, target)))
 end
 
 -- pokefirered/src/battle_script_commands.c:6568
@@ -171,12 +172,12 @@ function Stats.stockpile(ctx)
   if n >= 3 then
     local M = H.move(ctx)
     if M then M.failed = true end
-    return ctx.adapter:say(name(ctx, ctx.user) .. " can't\nSTOCKPILE any more!")
+    return ctx.adapter:say(Strings("%s can't\nSTOCKPILE any more!", name(ctx, ctx.user)))
   end
   ctx.user.expStockpile = n + 1
   ctx.user.stockpile = n + 1
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.user) .. " STOCKPILED\n" .. tostring(n + 1) .. "!")
+  ctx.adapter:say(Strings("%s STOCKPILED\n%s!", name(ctx, ctx.user), tostring(n + 1)))
 end
 
 function Stats.clearStockpileBoost(user)
@@ -188,7 +189,7 @@ function Stats.charge(ctx)
   ctx.user.expCharged = 2
   ctx.user.chargedUp = true
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.user) .. " began\ncharging power!")
+  ctx.adapter:say(Strings("%s began\ncharging power!", name(ctx, ctx.user)))
 end
 
 -- pokefirered/data/battle_scripts_1.s:2199
@@ -201,11 +202,11 @@ function Stats.memento(ctx)
   end
   ad:setHp(user, 0)
   if protected then
-    ad:say(name(ctx, t) .. "\nprotected itself!")
+    ad:say(Strings("%s\nprotected itself!", name(ctx, t)))
   else
     H.attackAnim(ctx)
     if (t.substituteHP or 0) > 0 then
-      ad:say("But it had no effect!")
+      ad:say(Strings("But it had no effect!"))
     else
       Secondary.multiStatAnim(ad, t, { "attack", "spAtk" }, -2)
       Secondary.changeStat(ad, t, "attack", -2, { allowPtr = true, noAnim = true, noMsg = (t.stages.attack or 0) <= -6 })

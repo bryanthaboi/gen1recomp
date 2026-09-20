@@ -69,7 +69,7 @@ for _, entry in ipairs(leaders) do
   T.eq(got, want, entry[3] .. " arms its badge line for the battle screen")
   -- the dialogue's sound command rides the armed line onto the battle
   -- screen too (sound_get_item_1 / sound_get_key_item) (#1606)
-  T.eq(armedSound, victories[entry[3]].badgeSound,
+  T.eq(armedSound, victories.badgeSoundFor(entry[3]),
     entry[3] .. " arms its badge jingle beside the line")
 end
 

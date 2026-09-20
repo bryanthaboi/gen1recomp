@@ -10,6 +10,7 @@ Subcommands:
               [--refresh] [--dest DIR] [--pixel-font]
     validate  <id|path> [--strict] [--base auto|fixture|imported]
     gen2check <id|path> [<id|path>...] [--strict] [--notes]
+    gen3check <id|path> [<id|path>...] [--strict] [--notes]
     lint      <id|path>
     pack      <mod-dir> [-o out.modpkg]
     bounce    <song-id|--all> [--seconds N] [--out DIR]
@@ -31,14 +32,17 @@ fixture that rule is reported as skipped rather than guessed at.
 lint is the no-ROM-content distribution gate (MK3xx); pack runs both at
 --strict, so any finding -- warning included -- refuses the package.
 
-gen2check (MK4xx) answers whether a mod runs on a Gen 2 game and how far it
-gets: the manifest gate, then a static read of the mod's Lua against what
-src/mods/Gen2Compat.lua actually backs, member by member.  It is a scan, not
+gen2check and gen3check (MK4xx) answer whether a mod runs on a Gen 2 or a
+Gen 3 (FireRed) game and how far it gets: the manifest gate, then a static
+read of the mod's Lua against what src/mods/Gen2Compat.lua or
+src/mods/Gen3Compat.lua actually backs, member by member.  It is a scan, not
 an interpreter -- what it could not follow is listed as unresolved rather
 than guessed at -- and it exits non-zero on a finding it calls fatal.  Mods
 named together are read as one install set, so a mod and its dependencies
 answer each other; --notes adds the adapter's own line for every backed
-member the mod touches.
+member the mod touches.  The rule ids are shared by both commands: MK400
+means the same thing either way, and the verdict line names the game that
+answered.
 """
 
 import argparse
@@ -860,7 +864,7 @@ def run_loader(repo, mod_dir, findings, base="fixture", notes=None,
             if base != "imported":
                 skipped.add("MK103")
                 continue
-            if gen2_routed and declares_gen2(repo, manifest):
+            if gen2_routed and declares_generation(repo, manifest, GEN2):
                 # tools/build_data.py never writes a Gen 2 cache, so the
                 # imported dataset has no Gold/Crystal ground truth either.
                 skipped.add("MK103")
@@ -2275,8 +2279,8 @@ def lua_api(path):
 
 
 def gen1_only_modules(repo):
-    """The Gen 1 modules a Gold boot never instantiates, read from the loader
-    so this tool and the require shim cannot disagree (Loader.lua)."""
+    """The Gen 1 modules a Gen 2 or Gen 3 boot never instantiates, read from
+    the loader so this tool and the require shim cannot disagree (Loader.lua)."""
     try:
         src = open(os.path.join(repo, "src", "mods", "Loader.lua"),
                    encoding="utf-8").read()
@@ -2286,12 +2290,64 @@ def gen1_only_modules(repo):
     return set(re.findall(r'\["([^"]+)"\]', block.group(1))) if block else set()
 
 
-def _adapters_from_source(repo):
+class Generation:
+    """One target generation, as the MK4xx checks need to see it.  gen2check
+    and gen3check are the same checks run against two of these, so a rule that
+    only makes sense on one of them is switched off on the descriptor rather
+    than duplicated inside the check."""
+
+    def __init__(self, number, compat, doc, own_dir, legacy_flag=None,
+                 screen_prefix=None, snake_files=False):
+        self.number = number
+        self.label = "Gen %d" % number
+        self.compat = compat        # the layer a boot of it resolves through
+        self.compat_file = compat.replace(".", "/") + ".lua"
+        self.doc = doc              # the doc the findings cite
+        self.own_dir = own_dir      # where this generation's modules live
+        self.legacy_flag = legacy_flag      # the pre-`games` manifest flag
+        self.screen_prefix = screen_prefix  # this generation's screen twins
+        self.snake_files = snake_files      # whether its files are snake_case
+
+    def siblings(self, module):
+        """Where this generation runs the module a mod named the Gen 1 way:
+        src.ui.StartMenu is src.ui.gen2.StartMenu on Gold and
+        src.ui.game3.start_menu on FireRed.  Both spellings are offered for a
+        snake_case generation, because src/world/game3 keeps the CamelCase
+        basename that src/ui/game3 does not."""
+        parts = module.split(".")
+        if len(parts) < 3:
+            return []
+        names = [parts[-1]]
+        if self.snake_files:
+            alt = _snake(parts[-1])
+            if alt != parts[-1]:
+                names.append(alt)
+        return [".".join(parts[:-1] + [self.own_dir, name])
+                for name in names]
+
+
+def _snake(name):
+    """StartMenu -> start_menu, the spelling src/ui/game3 writes its files in."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def _probe(script, gen):
+    """One of the luajit probes below with this generation's compat module in
+    it.  A plain replace, because the Lua carries %s of its own."""
+    return script.replace("src.mods.Gen2Compat", gen.compat)
+
+
+GEN2 = Generation(2, "src.mods.Gen2Compat", "docs/mod-api-gen2-compat.md",
+                  "gen2", legacy_flag="gen2compat", screen_prefix="Gen2")
+GEN3 = Generation(3, "src.mods.Gen3Compat", "docs/mod-api-gen3-compat.md",
+                  "game3", snake_files=True)
+
+
+def _adapters_from_source(repo, gen):
     """ADAPTERS as name -> alias target ("" for a built facade), for the
     checkout where the coverage accessor cannot be run."""
     try:
-        src = strip_lua(open(os.path.join(repo, "src", "mods",
-                                          "Gen2Compat.lua"),
+        src = strip_lua(open(os.path.join(repo, *gen.compat_file.split("/")),
                              encoding="utf-8").read())
     except OSError:
         return {}
@@ -2302,14 +2358,15 @@ def _adapters_from_source(repo):
         r'\["([^"]+)"\]\s*=\s*(?:"([^"]+)"|\w+)', block.group(1))}
 
 
-def gen2_coverage(repo, notes):
+def compat_coverage(repo, notes, gen):
     """name -> {kind, target, members, notes, declared}, straight off
-    Gen2Compat.coverage.  `members` is None where nothing could answer, which
-    every check below treats as "unknown", never as "backed"."""
+    Gen2Compat.coverage or Gen3Compat.coverage.  `members` is None where
+    nothing could answer, which every check below treats as "unknown", never
+    as "backed"."""
     rows = []
     with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False,
                                      encoding="utf-8") as handle:
-        handle.write(COVERAGE_DUMP)
+        handle.write(_probe(COVERAGE_DUMP, gen))
         dump_path = handle.name
     try:
         proc = subprocess.run([LUAJIT, dump_path], cwd=repo,
@@ -2342,7 +2399,7 @@ def gen2_coverage(repo, notes):
         elif parts[0] == "NOTE" and len(parts) >= 4:
             coverage[parts[1]]["notes"][parts[2]] = "\t".join(parts[3:])
     if not coverage:
-        for name, alias in _adapters_from_source(repo).items():
+        for name, alias in _adapters_from_source(repo, gen).items():
             coverage[name] = {"kind": "alias" if alias else "facade",
                               "target": alias, "members": None, "notes": {},
                               "declared": False}
@@ -2950,62 +3007,67 @@ def module_at(sites, offset):
 
 # ------------------------------------------------------------- the checks
 
-GEN2_IDS_DUMP = '''\
+VERSION_IDS_DUMP = '''\
 package.path = "./?.lua;./?/init.lua;" .. package.path
-print(table.concat(require("src.mods.ModTargets").generationVersions(2), " "))
+print(table.concat(require("src.mods.ModTargets").generationVersions(%d), " "))
 '''
 
-_GEN2_IDS = None
+_VERSION_IDS = {}
 
 
-def gen2_version_ids(repo):
-    """The Gen 2 version ids, read out of the engine (src/mods/ModTargets.lua)
-    rather than restated here.  Empty when luajit cannot answer, which leaves
-    the "gen2"/"all" tokens to decide alone."""
-    global _GEN2_IDS
-    if _GEN2_IDS is None:
-        _GEN2_IDS = []
+def version_ids(repo, gen):
+    """This generation's version ids, read out of the engine
+    (src/mods/ModTargets.lua) rather than restated here.  Empty when luajit
+    cannot answer, which leaves the "genN"/"all" tokens to decide alone."""
+    if gen.number not in _VERSION_IDS:
+        _VERSION_IDS[gen.number] = []
         try:
-            proc = subprocess.run([LUAJIT, "-e", GEN2_IDS_DUMP], cwd=repo,
-                                  capture_output=True, text=True, timeout=30)
+            proc = subprocess.run(
+                [LUAJIT, "-e", VERSION_IDS_DUMP % gen.number], cwd=repo,
+                capture_output=True, text=True, timeout=30)
             if proc.returncode == 0:
-                _GEN2_IDS = proc.stdout.split()
+                _VERSION_IDS[gen.number] = proc.stdout.split()
         except (OSError, subprocess.SubprocessError):
             pass
-    return _GEN2_IDS
+    return _VERSION_IDS[gen.number]
 
 
-def declares_gen2(repo, manifest):
-    """Does this manifest claim a Gen 2 game: the `games` list, or the legacy
-    gen2compat flag it is derived from (src/mods/Manifest.lua)."""
+def declares_generation(repo, manifest, gen):
+    """Does this manifest claim a game of this generation: the `games` list,
+    or the legacy gen2compat flag it is derived from (src/mods/Manifest.lua).
+    Only Gen 2 has a legacy flag -- `games` is the only way to claim a Gen 3
+    game, and a Gold mod that never named one still answers yes through the
+    flag."""
     if not manifest:
         return False
-    if manifest.get("gen2compat"):
+    if gen.legacy_flag and manifest.get(gen.legacy_flag):
         return True
     games = manifest.get("games")
     if not isinstance(games, list):
         return False
-    ids = set(gen2_version_ids(repo))
+    ids = set(version_ids(repo, gen))
     for token in games:
         if isinstance(token, str) and (
-                token.strip().lower() in ("gen2", "all")
+                token.strip().lower() in ("gen%d" % gen.number, "all")
                 or token.strip().lower() in ids):
             return True
     return False
 
 
-def check_gen2_manifest(repo, mod_dir, manifest, named):
+def check_compat_manifest(repo, mod_dir, manifest, named, gen):
     """MK400/MK401: what the loader decides before a line of the mod runs
     (src/mods/Loader.lua's generation gate).  `named` is every mod on this
     command line, so checking a mod together with its dependencies reads them
     as one install set."""
     findings, notes = [], []
-    if not declares_gen2(repo, manifest):
+    if not declares_generation(repo, manifest, gen):
         findings.append(Finding(
             "MK400", "error",
-            "no Gen 2 game in \"games\" (and no gen2compat), so a Gen 2 boot "
-            "skips this mod; the rest of this report is what it would hit "
-            "once it claims one",
+            "no %s game in \"games\"%s, so a %s boot skips this mod; the rest "
+            "of this report is what it would hit once it claims one"
+            % (gen.label,
+               " (and no %s)" % gen.legacy_flag if gen.legacy_flag else "",
+               gen.label),
             "manifest.json"))
     deps = manifest.get("dependencies") or []
     for dep in deps if isinstance(deps, list) else []:
@@ -3016,17 +3078,20 @@ def check_gen2_manifest(repo, mod_dir, manifest, named):
             g_list = dep.get("games")
             if isinstance(g_list, str):
                 g_list = [g_list]
-            if isinstance(g_list, list) and not any(g in ["gen2", "gold", "silver", "crystal", "all"] for g in g_list):
+            if isinstance(g_list, list) and not any(
+                    g in ["gen%d" % gen.number, "all"] + version_ids(repo, gen)
+                    for g in g_list):
                 continue
         found = named.get(dep_id) or find_mod_by_id(repo, mod_dir, dep_id)
         if found is None:
             notes.append("unresolved: dependency %s is not installed beside "
                          "this mod, so its games list could not be read" % dep_id)
-        elif not declares_gen2(repo, found):
+        elif not declares_generation(repo, found, gen):
             findings.append(Finding(
                 "MK401", "error",
-                f"depends on {dep_id}, which claims no Gen 2 game; the "
-                f"loader disables a mod whose dependency a Gen 2 boot skipped",
+                f"depends on {dep_id}, which claims no {gen.label} game; the "
+                f"loader disables a mod whose dependency a {gen.label} boot "
+                f"skipped",
                 "manifest.json"))
     return findings, notes
 
@@ -3056,12 +3121,12 @@ def find_mod_by_id(repo, mod_dir, mod_id):
     return None
 
 
-def check_gen2_requires(repo, coverage, requires):
-    """MK402: a Gen 1 module a Gen 2 boot never instantiates and no adapter
-    backs -- the require succeeds, the patch lands on dead code, and the
-    loader says so in the manager's error feed.  MK403: the same silence
-    without the loader's warning, spotted from the gen2/ sibling that runs
-    instead."""
+def check_compat_requires(repo, coverage, requires, gen):
+    """MK402: a Gen 1 module this generation's boot never instantiates and no
+    adapter backs -- the require succeeds, the patch lands on dead code, and
+    the loader says so in the manager's error feed.  MK403: the same silence
+    without the loader's warning, spotted from the gen2/ or game3/ sibling
+    that runs instead."""
     findings, notes = [], []
     gen1_only = gen1_only_modules(repo)
     seen = set()
@@ -3077,30 +3142,28 @@ def check_gen2_requires(repo, coverage, requires):
         if module in gen1_only:
             findings.append(Finding(
                 "MK402", "error",
-                f"requires {module}, which a Gen 2 boot never runs and "
-                f"src/mods/Gen2Compat.lua has no adapter for; take the game "
+                f"requires {module}, which a {gen.label} boot never runs and "
+                f"{gen.compat_file} has no adapter for; take the game "
                 f"from the game.ready payload and mod.world instead",
                 f"{rel}:{line}"))
             continue
-        parts = module.split(".")
-        if len(parts) < 3:
-            continue
-        sibling = ".".join(parts[:-1] + ["gen2", parts[-1]])
-        if os.path.isfile(module_path(repo, sibling)):
-            findings.append(Finding(
-                "MK403", "warn",
-                f"requires {module}, but a Gen 2 game runs {sibling}; the "
-                f"require succeeds and hands back a module nothing "
-                f"instantiates",
-                f"{rel}:{line}"))
+        for sibling in gen.siblings(module):
+            if os.path.isfile(module_path(repo, sibling)):
+                findings.append(Finding(
+                    "MK403", "warn",
+                    f"requires {module}, but a {gen.label} game runs "
+                    f"{sibling}; the require succeeds and hands back a module "
+                    f"nothing instantiates",
+                    f"{rel}:{line}"))
+                break
     return findings, notes
 
 
-def check_gen2_members(repo, coverage, uses, advise=False):
-    """MK404: a member the adapter says has no Gen 2 backing, so the read is
-    nil and the call raises.  MK405: one that is there and degrades, in the
-    adapter's own words.  MK406: one whose parameters moved under it -- the
-    trap an alias sets, because it runs and means something else."""
+def check_compat_members(repo, coverage, uses, gen, advise=False):
+    """MK404: a member the adapter says has no backing, so the read is nil and
+    the call raises.  MK405: one that is there and degrades, in the adapter's
+    own words.  MK406: one whose parameters moved under it -- the trap an
+    alias sets, because it runs and means something else."""
     findings, notes = [], []
     owned = {(use.module, use.member) for use in uses if use.kind == "write"}
     for use in uses:
@@ -3122,7 +3185,7 @@ def check_gen2_members(repo, coverage, uses, advise=False):
             api = lua_api(module_path(repo, record["target"])) or {} \
                 if record["target"] else {}
             if use.chain[0] in api or (use.module, use.chain[0]) in owned:
-                continue    # the Gen 2 module carries it, or the mod put it there
+                continue    # this generation's module carries it, or the mod put it there
             if use.chain[0] not in gen1:
                 continue    # the mod's own field on a table it did not declare
             notes.append("unresolved: %s.%s is a Gen 1 member the coverage "
@@ -3131,11 +3194,11 @@ def check_gen2_members(repo, coverage, uses, advise=False):
         if status == ABSENT:
             findings.append(Finding(
                 "MK404", "warn" if use.guarded else "error",
-                "%s.%s has no Gen 2 backing: %s"
-                % (use.ident, use.member, note or "%s has no %s"
-                   % (target, member))
+                "%s.%s has no %s backing: %s"
+                % (use.ident, use.member, gen.label,
+                   note or "%s has no %s" % (target, member))
                 + ("; the guarded branch never runs" if use.guarded
-                   else "; nothing on a Gen 2 boot reads this write"
+                   else "; nothing on a %s boot reads this write" % gen.label
                    if use.kind == "write" else "; this reads nil"
                    + (" and the call raises" if use.kind == "call" else "")),
                 use.where()))
@@ -3143,19 +3206,19 @@ def check_gen2_members(repo, coverage, uses, advise=False):
         if status != "backed":
             findings.append(Finding(
                 "MK405", "warn",
-                "%s.%s is %s on a Gen 2 boot: %s"
-                % (use.ident, use.member, status,
+                "%s.%s is %s on a %s boot: %s"
+                % (use.ident, use.member, status, gen.label,
                    note or "it answers nil and names itself once in the log"),
                 use.where()))
             continue
-        held = _held_at_file_scope(repo, record, use)
+        held = _held_at_file_scope(repo, record, use, gen)
         if held:
             findings.append(held)
             continue
-        shapes = _signature_diff(repo, record, use)
+        shapes = _signature_diff(repo, record, use, gen)
         if shapes:
-            # an alias hands the mod the Gen 2 module itself: no shim stands
-            # between this call and the parameters that moved under it
+            # an alias hands the mod the generation's module itself: no shim
+            # stands between this call and the parameters that moved under it
             findings.append(Finding(
                 "MK406", "warn",
                 shapes + ("; " + note if note else ""), use.where()))
@@ -3164,13 +3227,13 @@ def check_gen2_members(repo, coverage, uses, advise=False):
     return findings, notes
 
 
-def _held_at_file_scope(repo, record, use):
+def _held_at_file_scope(repo, record, use, gen):
     """MK410: the entry chunk reading a member the Gen 1 module only ever
     writes onto the running game.  A facade resolves against the live instance
     at read time and there is none yet while the mod is loading, so the value
     captured is nil for the life of the process; the same read from inside a
-    hook or an event is correct (docs/mod-api-gen2-compat.md, "live, never a
-    snapshot")."""
+    hook or an event is correct (docs/mod-api-gen2-compat.md and
+    docs/mod-api-gen3-compat.md, "live, never a snapshot")."""
     if not use.top or use.kind == "write" or record["kind"] != "facade":
         return None
     entry = (lua_api(module_path(repo, use.module)) or {}).get(use.chain[0])
@@ -3178,9 +3241,9 @@ def _held_at_file_scope(repo, record, use):
         return None
     return Finding(
         "MK410", "warn",
-        f"reads {use.ident}.{use.member} at file scope, where a Gen 2 boot "
-        f"has no game yet: the facade answers nil until one exists, so take "
-        f"this from the game.ready payload instead of the entry chunk",
+        f"reads {use.ident}.{use.member} at file scope, where a {gen.label} "
+        f"boot has no game yet: the facade answers nil until one exists, so "
+        f"take this from the game.ready payload instead of the entry chunk",
         use.where())
 
 
@@ -3202,15 +3265,15 @@ def _resolve_member(members, chain):
     return None, None
 
 
-def _signature_diff(repo, record, use):
-    """The sentence for a call whose parameters moved: the Gen 2 module spells
-    them in an order the Gen 1 call site cannot survive, or takes a different
-    number of them.  Equal shape with different names is a rename as often as
-    a change, and this tool does not guess between the two.
+def _signature_diff(repo, record, use, gen):
+    """The sentence for a call whose parameters moved: the generation's module
+    spells them in an order the Gen 1 call site cannot survive, or takes a
+    different number of them.  Equal shape with different names is a rename as
+    often as a change, and this tool does not guess between the two.
 
     An alias only: a facade is free to override the member with the Gen 1
     shape (src/mods/Gen2Compat.lua's Boxes.deposit does exactly that), so the
-    Gen 2 module's parameters are not what the mod would be calling."""
+    generation's own parameters are not what the mod would be calling."""
     if (use.kind != "call" or record["kind"] != "alias"
             or not record["target"] or len(use.chain) != 1):
         return None
@@ -3220,8 +3283,9 @@ def _signature_diff(repo, record, use):
         use.member, {}).get("params")
     if want is None or have is None or want == have:
         return None
-    shapes = ("%s.%s is (%s) on a Gen 2 boot and (%s) on Gen 1"
-              % (use.ident, use.member, ", ".join(want), ", ".join(have)))
+    shapes = ("%s.%s is (%s) on a %s boot and (%s) on Gen 1"
+              % (use.ident, use.member, ", ".join(want), gen.label,
+                 ", ".join(have)))
     if _reordered(want, have):
         return shapes + "; the shared parameters sit in different places"
     if (use.argc is not None and not use.varargs
@@ -3271,18 +3335,21 @@ end
 _UPVALUE_CACHE = {}
 
 
-def gen2_upvalues(repo, queries):
+def compat_upvalues(repo, queries, gen):
     """(status, upvalue names) for each (module, member) a mod reaches, taken
     by resolving the adapter the way src/mods/Loader.lua does and enumerating
     the function's real upvalues.  A pair luajit could not answer for stays out
-    of the table, which the caller reports as unknown and never as landing."""
+    of the table, which the caller reports as unknown and never as landing.
+    One table per generation: the same name answers differently on either
+    side."""
+    cache = _UPVALUE_CACHE.setdefault(gen.number, {})
     wanted = sorted({pair for pair in queries
-                     if pair[0] and pair not in _UPVALUE_CACHE})
+                     if pair[0] and pair not in cache})
     if not wanted:
-        return _UPVALUE_CACHE
+        return cache
     with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False,
                                      encoding="utf-8") as handle:
-        handle.write(UPVALUE_DUMP)
+        handle.write(_probe(UPVALUE_DUMP, gen))
         dump_path = handle.name
     try:
         proc = subprocess.run(
@@ -3293,24 +3360,23 @@ def gen2_upvalues(repo, queries):
             for row in proc.stdout.splitlines():
                 parts = row.split("\t")
                 if len(parts) >= 4:
-                    _UPVALUE_CACHE[(parts[0], parts[1])] = (
-                        parts[2], parts[3].split())
+                    cache[(parts[0], parts[1])] = (parts[2], parts[3].split())
     except (OSError, subprocess.SubprocessError):
         pass
     finally:
         os.unlink(dump_path)
-    return _UPVALUE_CACHE
+    return cache
 
 
-def check_gen2_upvalues(repo, coverage, upvalues):
+def check_compat_upvalues(repo, coverage, upvalues, gen):
     """MK407/MK408: reaching an engine function's file-local with
     debug.setupvalue.  The function is resolved through the adapter and its
-    upvalues enumerated, so a member the Gen 2 arm does not carry is the error
-    it is at runtime and a local that is not an upvalue of it never reads as
-    landing."""
+    upvalues enumerated, so a member the generation's arm does not carry is
+    the error it is at runtime and a local that is not an upvalue of it never
+    reads as landing."""
     findings, notes = [], []
-    table = gen2_upvalues(repo, [(module, member) for _, _, module, member, _
-                                 in upvalues if module in coverage])
+    table = compat_upvalues(repo, [(module, member) for _, _, module, member, _
+                                   in upvalues if module in coverage], gen)
     lands = {}
     for rel, line, module, member, upvalue in upvalues:
         record = coverage.get(module)
@@ -3323,15 +3389,15 @@ def check_gen2_upvalues(repo, coverage, upvalues):
             findings.append(Finding(
                 "MK408", "warn",
                 f"reaches the upvalue {upvalue!r} on {member}; this scan could "
-                f"not resolve {module}.{member} on a Gen 2 boot, so whether "
-                f"the surgery lands is unknown",
+                f"not resolve {module}.{member} on a {gen.label} boot, so "
+                f"whether the surgery lands is unknown",
                 f"{rel}:{line}"))
             continue
         if status != "ok":
             findings.append(Finding(
                 "MK407", "error",
-                f"reaches the upvalue {upvalue!r} on {member}, but a Gen 2 "
-                f"boot resolves {module}.{member} to "
+                f"reaches the upvalue {upvalue!r} on {member}, but a "
+                f"{gen.label} boot resolves {module}.{member} to "
                 + ("nil" if status == "nomember" else "a value that is not a "
                    "function")
                 + f" ({target} carries no such function), so the "
@@ -3347,26 +3413,28 @@ def check_gen2_upvalues(repo, coverage, upvalues):
             if record["target"] else {}
         findings.append(Finding(
             "MK407", "error",
-            f"reaches the upvalue {upvalue!r} on {member}, but on a Gen 2 boot "
-            f"{module}.{member} closes over "
+            f"reaches the upvalue {upvalue!r} on {member}, but on a "
+            f"{gen.label} boot {module}.{member} closes over "
             + (", ".join(sorted(names)[:6]) if names else "nothing")
             + ", so the surgery lands on nothing"
             + (f"; {target.split('.')[-1]}.{setter} is the supported route"
                if setter in api else ""),
             f"{rel}:{line}"))
     for (upvalue, module, member), places in sorted(lands.items()):
-        notes.append("%s.%s closes over %r on a Gen 2 boot, so the upvalue "
+        notes.append("%s.%s closes over %r on a %s boot, so the upvalue "
                      "surgery at %s lands as it does on Gen 1"
-                     % (module, member, upvalue, _places(places)))
+                     % (module, member, upvalue, gen.label, _places(places)))
     return findings, notes
 
 
-def check_gen2_patterns(repo, mod_dir):
+def check_compat_patterns(repo, mod_dir, gen):
     """MK409: the two shapes no adapter is allowed to fix, because the mod
-    decided something about the game and a Gen 2 boot answers differently
-    (docs/mod-api-gen2-compat.md, "what the facades cannot fix")."""
+    decided something about the game and this generation's boot answers
+    differently (the compat doc, "what the facades cannot fix").  The screen
+    twin half is Gen 2 only: it is a fact about Screens.GEN2_IDS, and Gen 3
+    has no such table."""
     findings = []
-    twins = gen2_screen_twins(repo)
+    twins = gen2_screen_twins(repo) if gen.screen_prefix else set()
     for rel in mod_files(mod_dir):
         if os.path.splitext(rel)[1].lower() != ".lua":
             continue
@@ -3375,9 +3443,9 @@ def check_gen2_patterns(repo, mod_dir):
         for match in VERSION_MATCH.finditer(body):
             findings.append(Finding(
                 "MK409", "warn",
-                "allow-lists a Gen 1 version string, which excludes this mod "
-                "from a Gen 2 game by construction; test for the capability "
-                "the code needs instead of the version",
+                f"allow-lists a Gen 1 version string, which excludes this mod "
+                f"from a {gen.label} game by construction; test for the "
+                f"capability the code needs instead of the version",
                 "%s:%d" % (rel, _line_of(body, match.start()))))
         # the id itself, not a word in the line around it: `if id == "BoxMenu"`
         # carries no screen-shaped word and is the shape the docs warn about
@@ -3388,10 +3456,10 @@ def check_gen2_patterns(repo, mod_dir):
             line = _line_of(body, match.start())
             findings.append(Finding(
                 "MK409", "warn",
-                f"{name!r} is a Gen 1 screen id; a Gen 2 boot builds "
-                f"'Gen2{name}' (Screens.GEN2_IDS in src/ui/Screens.lua), so a "
-                f"screen compared or opened by this literal matches nothing "
-                f"there",
+                f"{name!r} is a Gen 1 screen id; a {gen.label} boot builds "
+                f"'{gen.screen_prefix}{name}' (Screens.GEN2_IDS in "
+                f"src/ui/Screens.lua), so a screen compared or opened by this "
+                f"literal matches nothing there",
                 "%s:%d" % (rel, line)))
     return findings
 
@@ -3418,13 +3486,13 @@ def _count(total, word):
                                              "" if total == 1 else "s")
 
 
-def gen2_verdict(findings):
+def compat_verdict(findings):
     if any(f.severity == "error" for f in findings):
         return "will not work"
     return "will load but degrade" if findings else "will load"
 
 
-def report_gen2(results, args):
+def report_compat(results, args, gen):
     """report()'s shape plus the per-mod verdict this command exists to give.
     One JSON document covers every mod named, so a CI step reads one object
     however many it gated on."""
@@ -3434,7 +3502,7 @@ def report_gen2(results, args):
             [f for f in findings if f.severity == "error"]
         if errors:
             ok = False
-        payload.append({"id": mod_id, "verdict": gen2_verdict(findings),
+        payload.append({"id": mod_id, "verdict": compat_verdict(findings),
                         "errors": len(errors), "manifest": facts,
                         "findings": [f.as_dict() for f in findings],
                         "notes": notes})
@@ -3454,15 +3522,16 @@ def report_gen2(results, args):
         counts = ", ".join(part for part in (
             _count(len(findings) - warns, "error"), _count(warns, "warning"))
             if part)
-        print("%s %s on gen 2: %s%s"
+        print("%s %s on gen %d: %s%s"
               % ("FAIL" if payload[index]["errors"] else "ok", mod_id,
-                 payload[index]["verdict"], " (%s)" % counts if counts else ""))
+                 gen.number, payload[index]["verdict"],
+                 " (%s)" % counts if counts else ""))
     return 0 if ok else 1
 
 
-def cmd_gen2check(args, repo):
+def cmd_compat_check(args, repo, gen):
     shared = []
-    coverage = gen2_coverage(repo, shared)
+    coverage = compat_coverage(repo, shared, gen)
     results = []
     dirs, named = [], {}
     for target in args.mod:
@@ -3479,27 +3548,35 @@ def cmd_gen2check(args, repo):
         if problem:
             findings.append(problem)
         else:
-            manifest_findings, manifest_notes = check_gen2_manifest(
-                repo, mod_dir, manifest, named)
+            manifest_findings, manifest_notes = check_compat_manifest(
+                repo, mod_dir, manifest, named, gen)
             findings.extend(manifest_findings)
             notes.extend(manifest_notes)
             requires, uses, upvalues, scan_notes = scan_module_uses(mod_dir)
-            require_findings, require_notes = check_gen2_requires(
-                repo, coverage, requires)
+            require_findings, require_notes = check_compat_requires(
+                repo, coverage, requires, gen)
             findings.extend(require_findings)
-            member_findings, member_notes = check_gen2_members(
-                repo, coverage, uses, args.notes)
+            member_findings, member_notes = check_compat_members(
+                repo, coverage, uses, gen, args.notes)
             findings.extend(member_findings)
-            upvalue_findings, upvalue_notes = check_gen2_upvalues(
-                repo, coverage, upvalues)
+            upvalue_findings, upvalue_notes = check_compat_upvalues(
+                repo, coverage, upvalues, gen)
             findings.extend(upvalue_findings)
-            findings.extend(check_gen2_patterns(repo, mod_dir))
+            findings.extend(check_compat_patterns(repo, mod_dir, gen))
             notes.extend(scan_notes + require_notes + member_notes
                          + upvalue_notes)
         mod_id = manifest.get("id") if manifest else os.path.basename(mod_dir)
         results.append((mod_id, _order(_dedupe(findings)),
                         _dedupe_notes(notes), _facts(manifest)))
-    return report_gen2(results, args)
+    return report_compat(results, args, gen)
+
+
+def cmd_gen2check(args, repo):
+    return cmd_compat_check(args, repo, GEN2)
+
+
+def cmd_gen3check(args, repo):
+    return cmd_compat_check(args, repo, GEN3)
 
 
 def _dedupe(findings):
@@ -3580,8 +3657,9 @@ def main(argv):
     p.add_argument("--experimental", action="store_true",
                    help="mark the mod experimental (off until confirmed)")
     p.add_argument("--games", default="gen1",
-                   help="games this mod is for: gen1, gen2, all, or a "
-                        "comma-separated list of version ids (red,gold,...)")
+                   help="games this mod is for: gen1, gen2, gen3, all, or a "
+                        "comma-separated list of version ids "
+                        "(red,gold,firered,...)")
     p.add_argument("--dest")
     p.add_argument("--force", action="store_true")
 
@@ -3593,6 +3671,15 @@ def main(argv):
 
     p = sub.add_parser("gen2check", parents=[shared],
                        help="will this mod run on a Gen 2 game, and how far")
+    p.add_argument("mod", nargs="+")
+    p.add_argument("--strict", action="store_true")
+    p.add_argument("--notes", action="store_true",
+                   help="also print the adapter's note for every backed "
+                        "member the mod touches")
+
+    p = sub.add_parser("gen3check", parents=[shared],
+                       help="will this mod run on a Gen 3 (FireRed) game, "
+                            "and how far")
     p.add_argument("mod", nargs="+")
     p.add_argument("--strict", action="store_true")
     p.add_argument("--notes", action="store_true",
@@ -3675,6 +3762,7 @@ def main(argv):
         "scaffold": cmd_scaffold,
         "validate": cmd_validate,
         "gen2check": cmd_gen2check,
+        "gen3check": cmd_gen3check,
         "lint": cmd_lint,
         "pack": cmd_pack,
         "bounce": cmd_bounce,

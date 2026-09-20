@@ -17,6 +17,32 @@ Canonical US cart SHA-1 values:
 - Red: `ea9bcae617fdf159b045185467ae58b2e4a48b9a`
 - Blue: `d7037c83e1ae5b39bde3c30787637ba1d4c48ce2`
 
+## Updating
+
+The port updates itself from the launcher. When a newer release exists the
+footer chip reads **Update vX.Y.Z**: press it to download the new version, then
+press **Restart to update** to relaunch and start using it. Nothing inside the
+port folder is rewritten, so an update that fails or is interrupted still boots
+the version you already had.
+
+An update replaces the game's code and data. It cannot replace the LÖVE runtime
+the port ships, so a release that needs a newer runtime is applied differently:
+the chip then reads **Download port update** and saves
+`gen1recomp-<version>-sbc-portmaster.zip` into
+
+```
+gen1recomp-sbc/conf/love/pokemon-love2d/updates/
+```
+
+That case is finished on a computer — unzip the file and copy the
+`gen1recomp-sbc.sh` and `gen1recomp-sbc/` it contains over the copies on the SD
+card, exactly as in [Install](#install) above. Your saves sit beside the game
+(`portable.txt`) and are untouched by either kind of update.
+
+The launcher exports `POKEPORT_PORTMASTER=1`, which is how the updater knows
+this is the PortMaster port and offers the port package rather than a desktop
+AppImage.
+
 ## Controls
 
 | Input | Action |

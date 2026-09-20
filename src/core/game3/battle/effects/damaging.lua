@@ -2,6 +2,7 @@
 
 local EffectIds = require("src.core.game3.battle.effect_ids")
 local Secondary = require("src.core.game3.battle.effects.secondary")
+local Strings = require("src.core.Strings")
 
 local Damaging = {}
 
@@ -25,7 +26,7 @@ function Damaging.brickBreak(adapter, target)
   local cleared = (side.expReflectTurns or 0) > 0 or (side.expLightScreenTurns or 0) > 0
   side.expReflectTurns = nil
   side.expLightScreenTurns = nil
-  if cleared then adapter:say("The wall shattered!") end
+  if cleared then adapter:say(Strings("The wall shattered!")) end
   return cleared
 end
 

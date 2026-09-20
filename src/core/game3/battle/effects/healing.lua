@@ -2,13 +2,14 @@
 
 local H = require("src.core.game3.battle.effects._helpers")
 local Rules = require("src.core.game3.battle.rules")
+local Strings = require("src.core.Strings")
 
 local Healing = {}
 
 local function name(ctx, b) return ctx.adapter:displayName(b) end
 
 local function hp_full(ctx, b)
-  ctx.adapter:say(name(ctx, b) .. "'s\nHP is full!")
+  ctx.adapter:say(Strings("%s's\nHP is full!", name(ctx, b)))
 end
 
 -- pokefirered/data/battle_scripts_1.s:2515
@@ -18,7 +19,7 @@ function Healing.refresh(ctx)
   if not ok then return H.sayFail(ctx) end
   ctx.adapter:clearStatus(ctx.user)
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.user) .. "'s status\nreturned to normal!")
+  ctx.adapter:say(Strings("%s's status\nreturned to normal!", name(ctx, ctx.user)))
 end
 
 -- pokefirered/data/battle_scripts_1.s:2372
@@ -28,7 +29,7 @@ function Healing.ingrain(ctx)
   ctx.user.rooted = true
   ctx.user.expTrapped = true
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.user) .. " planted its roots!")
+  ctx.adapter:say(Strings("%s planted its roots!", name(ctx, ctx.user)))
 end
 
 -- pokefirered/src/battle_script_commands.c:6332
@@ -40,7 +41,7 @@ function Healing.recover(ctx)
   if heal == 0 then heal = 1 end
   H.attackAnim(ctx)
   ctx.adapter:heal(ctx.user, heal)
-  ctx.adapter:say(name(ctx, ctx.user) .. " regained\nhealth!")
+  ctx.adapter:say(Strings("%s regained\nhealth!", name(ctx, ctx.user)))
 end
 
 function Healing.softboiled(ctx)
@@ -64,14 +65,14 @@ function Healing.morningSun(ctx)
   if heal == 0 then heal = 1 end
   H.attackAnim(ctx)
   ad:heal(user, heal)
-  ad:say(name(ctx, user) .. " regained\nhealth!")
+  ad:say(Strings("%s regained\nhealth!", name(ctx, user)))
 end
 
 -- pokefirered/data/battle_scripts_1.s:735
 function Healing.rest(ctx)
   local ad, user = ctx.adapter, ctx.user
   if ad:status(user) == "SLP" then
-    return ad:say(name(ctx, user) .. " is\nalready asleep!")
+    return ad:say(Strings("%s is\nalready asleep!", name(ctx, user)))
   end
   local Status = require("src.core.game3.battle.effects.status")
   if Status.cantMakeAsleep(ctx, user) then return end
@@ -85,13 +86,13 @@ function Healing.rest(ctx)
   -- pokefirered/src/battle_script_commands.c:6480
   user.sleepTurns = 3
   if hadStatus then
-    ad:say(name(ctx, user) .. " slept and\nbecame healthy!")
+    ad:say(Strings("%s slept and\nbecame healthy!", name(ctx, user)))
   else
-    ad:say(name(ctx, user) .. " went\nto sleep!")
+    ad:say(Strings("%s went\nto sleep!", name(ctx, user)))
   end
   H.attackAnim(ctx)
   ad:heal(user, maxHp - hp)
-  ad:say(name(ctx, user) .. " regained\nhealth!")
+  ad:say(Strings("%s regained\nhealth!", name(ctx, user)))
 end
 
 -- pokefirered/src/battle_script_commands.c:8399
@@ -105,7 +106,7 @@ function Healing.bellyDrum(ctx)
   stages.attack = 6
   H.attackAnim(ctx)
   ad:applyHpLoss(user, half)
-  ad:say(name(ctx, user) .. " cut its own HP\nand maximized ATTACK!")
+  ad:say(Strings("%s cut its own HP\nand maximized ATTACK!", name(ctx, user)))
 end
 
 -- pokefirered/src/battle_script_commands.c:8899
@@ -151,12 +152,12 @@ function Healing.healBell(ctx)
   end
   H.attackAnim(ctx)
   if isBell then
-    ad:say("A bell chimed!")
+    ad:say(Strings("A bell chimed!"))
     if blocked then
-      ad:say(name(ctx, user) .. "'s SOUNDPROOF\nblocks " .. tostring(ctx.opts and ctx.opts.moveName or "HEAL BELL") .. "!")
+      ad:say(Strings("%s's SOUNDPROOF\nblocks %s!", name(ctx, user), tostring(ctx.opts and ctx.opts.moveName or "HEAL BELL")))
     end
   else
-    ad:say("A soothing aroma wafted\nthrough the area!")
+    ad:say(Strings("A soothing aroma wafted\nthrough the area!"))
   end
 end
 
@@ -171,7 +172,7 @@ function Healing.painSplit(ctx)
   H.attackAnim(ctx)
   ad:setHp(ctx.user, math.min(ad:maxHp(ctx.user), avg))
   ad:setHp(ctx.target, math.min(ad:maxHp(ctx.target), avg))
-  ad:say("The battlers shared\ntheir pain!")
+  ad:say(Strings("The battlers shared\ntheir pain!"))
 end
 
 -- pokefirered/src/battle_script_commands.c:6612
@@ -179,7 +180,7 @@ function Healing.swallow(ctx)
   local ad, user = ctx.adapter, ctx.user
   local n = user.expStockpile or 0
   if n <= 0 then
-    return ad:say("But it failed to SWALLOW\na thing!")
+    return ad:say(Strings("But it failed to SWALLOW\na thing!"))
   end
   local maxHp = ad:maxHp(user)
   user.expStockpile = 0
@@ -189,7 +190,7 @@ function Healing.swallow(ctx)
   if heal == 0 then heal = 1 end
   H.attackAnim(ctx)
   ad:heal(user, heal)
-  ad:say(name(ctx, user) .. " regained\nhealth!")
+  ad:say(Strings("%s regained\nhealth!", name(ctx, user)))
 end
 
 return Healing

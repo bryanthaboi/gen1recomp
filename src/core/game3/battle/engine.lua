@@ -14,6 +14,7 @@ local Secondary = require("src.core.game3.battle.effects.secondary")
 local HeldItems = require("src.core.game3.battle.held_items")
 local Abilities = require("src.core.game3.battle.abilities")
 local ModRuntime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local Engine = {}
 
@@ -235,12 +236,12 @@ Engine.clearTurnFlags = clear_turn_flags
 
 local function effectiveness_line(flags, eff)
   if flags then
-    if flags.super then return "It's super effective!" end
-    if flags.notVery then return "It's not very effective…" end
+    if flags.super then return Strings("It's super effective!") end
+    if flags.notVery then return Strings("It's not very effective…") end
     return nil
   end
-  if eff >= 2 then return "It's super effective!" end
-  if eff > 0 and eff < 1 then return "It's not very effective…" end
+  if eff >= 2 then return Strings("It's super effective!") end
+  if eff > 0 and eff < 1 then return Strings("It's not very effective…") end
   return nil
 end
 Engine.effectivenessLine = effectiveness_line
@@ -254,7 +255,7 @@ function Ctx:say(text) self.adapter:say(text) end
 function Ctx:attackString()
   if self.printedUsed then return end
   self.printedUsed = true
-  self:say(self.uname .. " used\n" .. self.moveName .. "!")
+  self:say(Strings("%s used\n%s!", self.uname, self.moveName))
   if ModRuntime.wants("battle.move_used") then
     local G3 = require("src.mods.Gen3Compat")
     local view = G3.moveView(self.move)
@@ -355,12 +356,12 @@ function Ctx:accuracyCheck(mode, printFail)
     self.missReason = reason
     if not printFail then return end
     if reason == "protected" then
-      self:say(ad:displayName(target) .. "\nprotected itself!")
+      self:say(Strings("%s\nprotected itself!", ad:displayName(target)))
     elseif reason == "fail" then
       self.failed = true
       ad:sayFail()
     else
-      self:say(ad:displayName(user) .. "'s\nattack missed!")
+      self:say(Strings("%s's\nattack missed!", ad:displayName(user)))
     end
   end
   if mode == "noacc" or mode == "lockon" then
@@ -442,7 +443,7 @@ function Ctx:faintMessage(battler)
   if not ad:isFainted(battler) then return false end
   battler._faintAnnounced = true
   ad:pushEvent({ kind = "faint", side = battler.side, battler = State.idOf(battler) })
-  self:say(ad:displayName(battler) .. " fainted!")
+  self:say(Strings("%s fainted!", ad:displayName(battler)))
   self.anim.fainted = true
   self.anim.faints[#self.anim.faints + 1] = { side = battler.side or "enemy", battler = State.idOf(battler) }
   ad:emitFaint(battler)
@@ -456,13 +457,13 @@ function Ctx:tryFaintTarget()
   if not ad:isFainted(target) or target._faintAnnounced then return end
   self:faintMessage(target)
   if target.expDestinyBond and user.side ~= target.side and not ad:isFainted(user) then
-    self:say(ad:displayName(target) .. " took\n" .. ad:displayName(user) .. " with it!")
+    self:say(Strings("%s took\n%s with it!", ad:displayName(target), ad:displayName(user)))
     ad:applyHpLoss(user, ad:hp(user))
     self:faintMessage(user)
   end
   if target.expGrudge and self.slot and user.mon and user.mon.pp and not ad:isFainted(user) then
     user.mon.pp[self.slot] = 0
-    self:say(ad:displayName(user) .. "'s " .. self.moveName .. " lost\nall its PP due to the GRUDGE!")
+    self:say(Strings("%s's %s lost\nall its PP due to the GRUDGE!", ad:displayName(user), self.moveName))
   end
 end
 
@@ -508,10 +509,10 @@ function Engine.selfHit(M, dmg)
     hung = user.expEnduring and "endured" or "band"
   end
   user.expFocusBanded = nil
-  M:say("It hurt itself in its\nconfusion!")
+  M:say(Strings("It hurt itself in its\nconfusion!"))
   ad:applyHpLoss(user, dmg)
   if hung == "endured" then
-    M:say(M.uname .. " ENDURED\nthe hit!")
+    M:say(Strings("%s ENDURED\nthe hit!", M.uname))
   elseif hung == "band" then
     HeldItems.focusBandMessage(ad, user)
   end
@@ -532,7 +533,7 @@ local function canceller(M)
     if up and ad:abilityOf(user) ~= "SOUNDPROOF" then
       ad:clearStatus(user)
       user.expNightmare = nil
-      M:say(uname .. " woke up\nin the UPROAR!")
+      M:say(Strings("%s woke up\nin the UPROAR!", uname))
     else
       local toSub = (ad:abilityOf(user) == "EARLY_BIRD") and 2 or 1
       local turns = tonumber(user.sleepTurns) or tonumber(user.mon and (user.mon.sleepTurns or user.mon.sleep))
@@ -541,14 +542,14 @@ local function canceller(M)
       user.sleepTurns = turns
       if turns > 0 then
         if M.mnum ~= MOVE_SNORE and M.mnum ~= MOVE_SLEEP_TALK then
-          M:say(uname .. " is fast\nasleep.")
+          M:say(Strings("%s is fast\nasleep.", uname))
           ad:statusAnim(user, "SLP")
           return false
         end
       else
         ad:clearStatus(user)
         user.expNightmare = nil
-        M:say(uname .. " woke up!")
+        M:say(Strings("%s woke up!", uname))
       end
     end
   end
@@ -556,20 +557,20 @@ local function canceller(M)
   if ad:status(user) == "FRZ" then
     if roll(ad, 0, 4) ~= 0 then
       if M.effect ~= E.THAW_HIT then
-        M:say(uname .. " is\nfrozen solid!")
+        M:say(Strings("%s is\nfrozen solid!", uname))
         ad:statusAnim(user, "FRZ")
         return false
       end
     else
       ad:clearStatus(user)
-      M:say(uname .. " was\ndefrosted!")
+      M:say(Strings("%s was\ndefrosted!", uname))
     end
   end
 
   if Abilities.truantLoafs(ad, user) then
     -- pokefirered/src/battle_util.c:1337
     Engine.cancelMultiTurnMoves(user)
-    M:say(uname .. " is\nloafing around!")
+    M:say(Strings("%s is\nloafing around!", uname))
     user.expUnableToMove = true
     return false
   end
@@ -579,35 +580,35 @@ local function canceller(M)
     user.expRechargeTurns = nil
     user.recharge = nil
     Engine.cancelMultiTurnMoves(user)
-    M:say(uname .. " must\nrecharge!")
+    M:say(Strings("%s must\nrecharge!", uname))
     return false
   end
 
   if user.flinched then
     user.flinched = nil
     Engine.cancelMultiTurnMoves(user)
-    M:say(uname .. " flinched!")
+    M:say(Strings("%s flinched!", uname))
     user.expUnableToMove = true
     return false
   end
 
   if user.expDisabledMove and M.mnum == user.expDisabledMove then
     Engine.cancelMultiTurnMoves(user)
-    M:say(uname .. "'s " .. M.moveName .. "\nis disabled!")
+    M:say(Strings("%s's %s\nis disabled!", uname, M.moveName))
     user.expUnableToMove = true
     return false
   end
 
   if (user.expTauntedTurns or 0) > 0 and (tonumber(M.move.power) or 0) == 0 then
     Engine.cancelMultiTurnMoves(user)
-    M:say(uname .. " can't use\n" .. M.moveName .. " after the TAUNT!")
+    M:say(Strings("%s can't use\n%s after the TAUNT!", uname, M.moveName))
     user.expUnableToMove = true
     return false
   end
 
   if M.mnum and Engine.isImprisoned(ad, user, M.mnum) then
     Engine.cancelMultiTurnMoves(user)
-    M:say(uname .. " can't use the\nsealed " .. M.moveName .. "!")
+    M:say(Strings("%s can't use the\nsealed %s!", uname, M.moveName))
     user.expUnableToMove = true
     return false
   end
@@ -615,7 +616,7 @@ local function canceller(M)
   if (user.confusionTurns or 0) > 0 then
     user.confusionTurns = user.confusionTurns - 1
     if user.confusionTurns > 0 then
-      M:say(uname .. " is\nconfused!")
+      M:say(Strings("%s is\nconfused!", uname))
       ad:playAnim("status", "CONFUSION", user, user)
       if roll(ad, 0, 1) == 0 then
         Engine.cancelMultiTurnMoves(user)
@@ -629,12 +630,12 @@ local function canceller(M)
       end
     else
       user.confusionTurns = nil
-      M:say(uname .. " snapped\nout of confusion!")
+      M:say(Strings("%s snapped\nout of confusion!", uname))
     end
   end
 
   if ad:status(user) == "PAR" and roll(ad, 0, 3) == 0 then
-    M:say(uname .. " is paralyzed!\nIt can't move!")
+    M:say(Strings("%s is paralyzed!\nIt can't move!", uname))
     ad:statusAnim(user, "PAR")
     user.expUnableToMove = true
     return false
@@ -644,12 +645,12 @@ local function canceller(M)
   if M.st and M.st.ghostBattle and not M.st.ghostUnveiled then
     if user.side == "player" then
       -- pokefirered/data/battle_scripts_1.s:3809
-      M:say(uname .. " is too scared to move!")
+      M:say(Strings("%s is too scared to move!", uname))
       ad:playAnim("general", "MON_SCARED", user, ad:foeOf(user))
     else
       -- pokefirered/data/battle_scripts_1.s:3815
-      ad:pushEvent({ kind = "msg", text = "GHOST: Get out…… Get out……", wait = 0 })
-      ad._say("GHOST: Get out…… Get out……")
+      ad:pushEvent({ kind = "msg", text = Strings("GHOST: Get out…… Get out……"), wait = 0 })
+      ad._say(Strings("GHOST: Get out…… Get out……"))
       ad:playAnim("general", "GHOST_GET_OUT", user, ad:foeOf(user))
     end
     return "ghost"
@@ -657,11 +658,11 @@ local function canceller(M)
 
   if user.expInfatuated then
     local lover = (M.st and M.st.double and user.expInfatuatedWith) or ad:foeOf(user)
-    M:say(uname .. " is in love\nwith " .. ad:displayName(lover) .. "!")
+    M:say(Strings("%s is in love\nwith %s!", uname, ad:displayName(lover)))
     ad:playAnim("status", "INFATUATION", user, user)
     if roll(ad, 0, 1) == 0 then
       Engine.cancelMultiTurnMoves(user)
-      M:say(uname .. " is\nimmobilized by love!")
+      M:say(Strings("%s is\nimmobilized by love!", uname))
       user.expUnableToMove = true
       return false
     end
@@ -670,7 +671,7 @@ local function canceller(M)
   if (user.bideTurns or 0) > 0 then
     user.bideTurns = user.bideTurns - 1
     if user.bideTurns > 0 then
-      M:say(uname .. " is storing\nenergy!")
+      M:say(Strings("%s is storing\nenergy!", uname))
       return false
     end
     return "bide"
@@ -678,7 +679,7 @@ local function canceller(M)
 
   if ad:status(user) == "FRZ" and M.effect == E.THAW_HIT then
     ad:clearStatus(user)
-    M:say(uname .. " was\ndefrosted by " .. M.moveName .. "!")
+    M:say(Strings("%s was\ndefrosted by %s!", uname, M.moveName))
   end
   return true
 end
@@ -694,7 +695,7 @@ local function bide_attack(M)
   user.bideTurns = nil
   user.expLockedMove = nil
   user.expLockedSlot = nil
-  M:say(M.uname .. " unleashed\nenergy!")
+  M:say(Strings("%s unleashed\nenergy!", M.uname))
   if dmgStored <= 0 then
     M.failed = true
     ad:sayFail()
@@ -715,7 +716,7 @@ local function bide_attack(M)
   if not M:accuracyCheck("normal", true) then return end
   local _, flags = Types.typeCalc(M.move.type, target.type1, target.type2, nil, target.expIdentified)
   if flags.immune then
-    M:say("It doesn't affect\n" .. ad:displayName(target) .. "…")
+    M:say(Strings("It doesn't affect\n%s…", ad:displayName(target)))
     return
   end
   local Hit = require("src.core.game3.battle.effects.hit")
@@ -780,7 +781,7 @@ local function call_moves(M)
       ad:sayFail()
       return
     end
-    M:say(M.uname .. " is fast\nasleep.")
+    M:say(Strings("%s is fast\nasleep.", M.uname))
     ad:statusAnim(user, "SLP")
     M:attackString()
     M:ppReduce()
@@ -813,7 +814,7 @@ local function call_moves(M)
     end
     M:ppReduce()
     M.failed = true
-    M:say("The MIRROR MOVE failed!")
+    M:say(Strings("The MIRROR MOVE failed!"))
     return
   elseif eff == E.ASSIST then
     -- pokefirered/src/battle_script_commands.c:9091
@@ -841,23 +842,25 @@ local function call_moves(M)
     -- pokefirered/src/battle_script_commands.c:8718
     M:attackString()
     local called = Engine.NATURE_POWER_MOVES[terrain_of(M.st)] or 129
-    M:say("NATURE POWER turned into\n" .. Moves.displayName(called) .. "!")
+    M:say(Strings("NATURE POWER turned into\n%s!", Moves.displayName(called)))
     return run_called(M, called, { slot = M.slot })
   end
 end
 
+-- Templates, translated at the time they are said (Strings.source only marks
+-- the key: this table is built before a translation catalog exists).
 local CHARGE_TEXT = {
-  [E.RAZOR_WIND] = " whipped\nup a whirlwind!",
-  [E.SOLAR_BEAM] = " took\nin sunlight!",
-  [E.SKULL_BASH] = " lowered\nits head!",
-  [E.SKY_ATTACK] = " is glowing!",
+  [E.RAZOR_WIND] = Strings.source("%s whipped\nup a whirlwind!"),
+  [E.SOLAR_BEAM] = Strings.source("%s took\nin sunlight!"),
+  [E.SKULL_BASH] = Strings.source("%s lowered\nits head!"),
+  [E.SKY_ATTACK] = Strings.source("%s is glowing!"),
 }
 
 local SEMI_TEXT = {
-  [MOVE_FLY] = { " flew\nup high!", "ON_AIR" },
-  [MOVE_BOUNCE] = { " sprang up!", "ON_AIR" },
-  [MOVE_DIG] = { " dug a hole!", "UNDERGROUND" },
-  [MOVE_DIVE] = { " hid\nunderwater!", "UNDERWATER" },
+  [MOVE_FLY] = { Strings.source("%s flew\nup high!"), "ON_AIR" },
+  [MOVE_BOUNCE] = { Strings.source("%s sprang up!"), "ON_AIR" },
+  [MOVE_DIG] = { Strings.source("%s dug a hole!"), "UNDERGROUND" },
+  [MOVE_DIVE] = { Strings.source("%s hid\nunderwater!"), "UNDERWATER" },
 }
 
 local function set_semi(b, kind)
@@ -917,10 +920,10 @@ local function charge_turn(M)
       elseif n:find("BOUNCE") then row = SEMI_TEXT[MOVE_BOUNCE]
       else row = SEMI_TEXT[MOVE_DIG] end
     end
-    M:say(M.uname .. row[1])
+    M:say(Strings(row[1], M.uname))
     set_semi(user, row[2])
   else
-    M:say(M.uname .. CHARGE_TEXT[eff])
+    M:say(Strings(CHARGE_TEXT[eff], M.uname))
     if eff == E.SKULL_BASH then
       Secondary.changeStat(ad, user, "defense", 1, { user = true, allowPtr = true, noMsg = (user.stages.defense or 0) >= 6 })
     end
@@ -942,14 +945,14 @@ local function ohko(M)
   local _, flags = Types.typeCalc(M.move.type, target.type1, target.type2, nil, target.expIdentified)
   if flags.immune or (ad:abilityOf(target) == "LEVITATE" and tonumber(M.move.type) == Types.ID.GROUND) then
     M.anim.missed = true
-    M:say("It doesn't affect\n" .. M.tname .. "…")
+    M:say(Strings("It doesn't affect\n%s…", M.tname))
     return
   end
   local banded = HeldItems.rollFocusBand(ad, target)
   target.expFocusBanded = nil
   if ad:abilityOf(target) == "STURDY" then
     M.anim.missed = true
-    M:say(M.tname .. " was protected\nby STURDY!")
+    M:say(Strings("%s was protected\nby STURDY!", M.tname))
     return
   end
   local uLvl = tonumber(user.mon and user.mon.level) or 1
@@ -965,9 +968,9 @@ local function ohko(M)
   if not hit then
     M.anim.missed = true
     if uLvl >= tLvl then
-      M:say(M.uname .. "'s\nattack missed!")
+      M:say(Strings("%s's\nattack missed!", M.uname))
     else
-      M:say(M.tname .. " is\nunaffected!")
+      M:say(Strings("%s is\nunaffected!", M.tname))
     end
     return
   end
@@ -979,11 +982,11 @@ local function ohko(M)
   if endured or hung then dmg = math.max(0, hpBefore - 1) end
   Hit.dealDamage(M, dmg, { physical = Types.isPhysical(M.move.type) })
   if endured then
-    M:say(M.tname .. " ENDURED\nthe hit!")
+    M:say(Strings("%s ENDURED\nthe hit!", M.tname))
   elseif hung then
     HeldItems.focusBandMessage(ad, target)
   else
-    M:say("It's a one-hit KO!")
+    M:say(Strings("It's a one-hit KO!"))
   end
   M:tryFaintTarget()
 end
@@ -996,7 +999,7 @@ local function try_bounce(M)
     target.expMagicCoat = nil
     M:attackString()
     M:ppReduce()
-    M:say(M.uname .. "'s " .. M.moveName .. "\nwas bounced back by MAGIC COAT!")
+    M:say(Strings("%s's %s\nwas bounced back by MAGIC COAT!", M.uname, M.moveName))
     M.user, M.target = target, user
     M.uname, M.tname = M.tname, M.uname
     M.slot = nil
@@ -1017,7 +1020,7 @@ local function try_bounce(M)
     M:attackString()
     M:ppReduce()
     ad:playAnim("general", "SNATCH_MOVE", user, foe)
-    M:say(ad:displayName(foe) .. " SNATCHED\n" .. M.uname .. "'s move!")
+    M:say(Strings("%s SNATCHED\n%s's move!", ad:displayName(foe), M.uname))
     M.user, M.target = foe, user
     M.uname, M.tname = ad:displayName(foe), M.uname
     M.slot = nil
@@ -1238,7 +1241,10 @@ function Engine.isTradedMon(st, mon)
     or (mon.otName ~= nil and pname ~= nil and tostring(mon.otName) ~= tostring(pname))
 end
 
-local LOAF_TEXT = { " is\nloafing around!", " won't\nobey!", " turned away!", " pretended\nnot to notice!" }
+local LOAF_TEXT = {
+  Strings.source("%s is\nloafing around!"), Strings.source("%s won't\nobey!"),
+  Strings.source("%s turned away!"), Strings.source("%s pretended\nnot to notice!"),
+}
 
 -- pokefirered/src/battle_util.c:3143
 local function disobedient(M)
@@ -1259,34 +1265,34 @@ local function disobedient(M)
   if math.floor((lvl + ob) * roll(ad, 0, 255) / 256) < ob then return nil end
   if M.mnum == 99 then user.rage = nil end
   if ad:status(user) == "SLP" and (M.mnum == MOVE_SNORE or M.mnum == MOVE_SLEEP_TALK) then
-    M:say(M.uname .. " ignored\norders while asleep!")
+    M:say(Strings("%s ignored\norders while asleep!", M.uname))
     return "stop"
   end
   if math.floor((lvl + ob) * roll(ad, 0, 255) / 256) < ob and M.mnum ~= 264 then
     local bad = Engine.moveLimitations(user, ad)
     if M.slot then bad[M.slot] = true end
     if bad[1] and bad[2] and bad[3] and bad[4] then
-      M:say(M.uname .. LOAF_TEXT[roll(ad, 0, 3) % 4 + 1])
+      M:say(Strings(LOAF_TEXT[roll(ad, 0, 3) % 4 + 1], M.uname))
       return "stop"
     end
     local slot
     repeat slot = roll(ad, 0, 3) % 4 + 1 until not bad[slot]
-    M:say(M.uname .. " ignored\norders!")
+    M:say(Strings("%s ignored\norders!", M.uname))
     return "called", slot
   end
   local diff = lvl - ob
   local r = roll(ad, 0, 255)
   local ab = ad:abilityOf(user)
   if r < diff and not ad:status(user) and ab ~= "VITAL_SPIRIT" and ab ~= "INSOMNIA" and not ad:uproarActive() then
-    M:say(M.uname .. " began to nap!")
+    M:say(Strings("%s began to nap!", M.uname))
     ad:applyStatus(user, "SLP", user, { force = true, ignoreSafeguard = true })
     ad:statusAnim(user, "SLP")
-    M:say(M.uname .. "\nfell asleep!")
+    M:say(Strings("%s\nfell asleep!", M.uname))
     return "stop"
   end
   r = r - diff
   if r < diff then
-    M:say(M.uname .. " won't\nobey!")
+    M:say(Strings("%s won't\nobey!", M.uname))
     Engine.cancelMultiTurnMoves(user)
     local dmg = Damage.base(user, user, { power = 40, type = 0, effect = 0 }, {
       power = 40, moveType = 0, adapter = ad,
@@ -1294,7 +1300,7 @@ local function disobedient(M)
     Engine.selfHit(M, dmg)
     return "stop"
   end
-  M:say(M.uname .. LOAF_TEXT[roll(ad, 0, 3) % 4 + 1])
+  M:say(Strings(LOAF_TEXT[roll(ad, 0, 3) % 4 + 1], M.uname))
   return "stop"
 end
 Engine.disobedient = disobedient
@@ -1344,12 +1350,12 @@ local function move_end(M)
       and user.side ~= target.side and not M.noEffect and (M.hitsLanded or 0) > 0
       and (tonumber(M.move.power) or 0) > 0 and (target.stages.attack or 0) < 6 then
     target.stages.attack = target.stages.attack + 1
-    M:say(ad:displayName(target) .. "'s RAGE\nis building!")
+    M:say(Strings("%s's RAGE\nis building!", ad:displayName(target)))
   end
   if target and target ~= user and ad:status(target) == "FRZ" and not ad:isFainted(target)
       and (M.specialHit or false) and not M.noEffect and tonumber(M.moveType or M.move.type) == Types.ID.FIRE then
     ad:clearStatus(target)
-    M:say(ad:displayName(target) .. " was\ndefrosted!")
+    M:say(Strings("%s was\ndefrosted!", ad:displayName(target)))
   end
   Engine.moveEndEffects(M)
   local chosen = M.opts.calledBy or M.moveId
@@ -1408,7 +1414,7 @@ local function run(M)
     if M.slot and user.mon and user.mon.pp and tonumber(user.mon.pp[M.slot]) == 0
         and not user.expLockedMove and M.mnum ~= MOVE_STRUGGLE then
       M:attackString()
-      M:say("But there was no PP left\nfor the move!")
+      M:say(Strings("But there was no PP left\nfor the move!"))
       M.anim.statusOnly = true
       return
     end
@@ -1446,7 +1452,7 @@ local function run(M)
   if eff == E.FOCUS_PUNCH and ((user.lastPhysicalDamageTaken or 0) > 0 or (user.lastSpecialDamageTaken or 0) > 0) then
     -- pokefirered/data/battle_scripts_1.s:2255
     M:ppReduce()
-    M:say(M.uname .. " lost its\nfocus and couldn't move!")
+    M:say(Strings("%s lost its\nfocus and couldn't move!", M.uname))
     M.anim.statusOnly = true
     return
   end
@@ -1490,7 +1496,7 @@ local function run(M)
     local handled = Effects.runForMove(ad, M.user, M.target, M.moveId, M)
     if not handled then
       M:attackAnimation()
-      M:say("But nothing happened!")
+      M:say(Strings("But nothing happened!"))
     end
     M:tryFaintTarget()
     M:tryFaintUser()
@@ -1506,7 +1512,7 @@ function Engine.lightningRodTook(M)
   if not (t and t.expLightningRodRedirected) then return false end
   t.expLightningRodRedirected = nil
   M:attackString()
-  M:say(M.adapter:displayName(t) .. "'s " .. Abilities.name("LIGHTNING_ROD") .. "\ntook the attack!")
+  M:say(Strings("%s's %s\ntook the attack!", M.adapter:displayName(t), Abilities.name("LIGHTNING_ROD")))
   return true
 end
 
@@ -1666,7 +1672,7 @@ function Engine.resolveMove(user, target, moveId, slot, adapter, st, out, opts)
     for _, b in ipairs(list) do
       if not adapter:isFainted(b) then
         adapter:playAnim("general", "FOCUS_PUNCH_SETUP", b, b)
-        adapter:say(adapter:displayName(b) .. " is tightening\nits focus!")
+        adapter:say(Strings("%s is tightening\nits focus!", adapter:displayName(b)))
       end
     end
   end
@@ -1966,7 +1972,7 @@ function Engine.switchInEffects(st, adapter, battler, opts)
       local denom = ({ 8, 6, 4 })[math.min(layers, 3)]
       local dmg = math.max(1, math.floor(adapter:maxHp(battler) / denom))
       adapter:applyHpLoss(battler, dmg)
-      adapter:say(adapter:displayName(battler) .. " is hurt\nby SPIKES!")
+      adapter:say(Strings("%s is hurt\nby SPIKES!", adapter:displayName(battler)))
       if adapter:isFainted(battler) then return true end
     end
   end
@@ -1992,8 +1998,8 @@ function Engine.battleStartEffects(st, adapter)
     st._overworldWeatherDone = true
     if Rules.weather.kind(st.weather) ~= w then
       st.weather, st.weatherTurns = w, 0
-      local line = (w == "SAND" and "A sandstorm is raging.") or (w == "SUN" and "The sunlight is strong.")
-        or "It is raining."
+      local line = (w == "SAND" and Strings("A sandstorm is raging."))
+        or (w == "SUN" and Strings("The sunlight is strong.")) or Strings("It is raining.")
       adapter:say(line)
       adapter:playAnim("general", w == "SAND" and "SANDSTORM_CONTINUES" or (w == "SUN" and "SUN_CONTINUES")
         or "RAIN_CONTINUES", st.player, st.player)
@@ -2018,16 +2024,16 @@ end
 function Engine.canRun(st, adapter, battler)
   battler = battler or (st and st.player)
   if not st or not battler then return false, nil end
-  if not st.wild then return false, "No! There's no running\nfrom a TRAINER battle!" end
+  if not st.wild then return false, Strings("No! There's no running\nfrom a TRAINER battle!") end
   if HeldItems.has(battler, HeldItems.HOLD.CAN_ALWAYS_RUN) or st.link or adapter:abilityOf(battler) == "RUN_AWAY" then
     return true
   end
   local holder, ab = Abilities.escapeBlocker(adapter, battler)
   if holder then
-    return false, adapter:displayName(holder) .. " prevents\nescape with " .. Abilities.name(ab) .. "!"
+    return false, Strings("%s prevents\nescape with %s!", adapter:displayName(holder), Abilities.name(ab))
   end
   if battler.expTrapped or battler.escapePrevention or (battler.expTrapTurns or 0) > 0 or battler.expIngrain then
-    return false, "Can't escape!"
+    return false, Strings("Can't escape!")
   end
   return true
 end
@@ -2037,11 +2043,11 @@ function Engine.canSwitch(st, adapter, battler)
   battler = battler or (st and st.player)
   if not battler then return true end
   if battler.expTrapped or battler.escapePrevention or (battler.expTrapTurns or 0) > 0 or battler.expIngrain then
-    return false, adapter:displayName(battler) .. " can't be switched\nout!"
+    return false, Strings("%s can't be switched\nout!", adapter:displayName(battler))
   end
   local holder, ab = Abilities.escapeBlocker(adapter, battler)
   if holder then
-    return false, adapter:displayName(holder) .. "'s " .. Abilities.name(ab) .. "\nprevents switching!"
+    return false, Strings("%s's %s\nprevents switching!", adapter:displayName(holder), Abilities.name(ab))
   end
   return true
 end
@@ -2050,21 +2056,21 @@ end
 function Engine.tryFlee(st, adapter, battler)
   battler = battler or (st and st.player)
   if not st.wild then
-    adapter:say("No! There's no running\nfrom a TRAINER battle!")
+    adapter:say(Strings("No! There's no running\nfrom a TRAINER battle!"))
     return false
   end
   local foe = adapter:foeOf(battler)
   if HeldItems.has(battler, HeldItems.HOLD.CAN_ALWAYS_RUN) then
     adapter:playAnim("general", "SMOKEBALL_ESCAPE", battler, battler)
-    adapter:say(adapter:displayName(battler) .. " fled\nusing its " .. HeldItems.name(HeldItems.itemOf(battler)) .. "!")
+    adapter:say(Strings("%s fled\nusing its %s!", adapter:displayName(battler), HeldItems.name(HeldItems.itemOf(battler))))
     return true, "item"
   end
   if adapter:abilityOf(battler) == "RUN_AWAY" then
-    adapter:say(adapter:displayName(battler) .. " fled\nusing " .. Abilities.name("RUN_AWAY") .. "!")
+    adapter:say(Strings("%s fled\nusing %s!", adapter:displayName(battler), Abilities.name("RUN_AWAY")))
     return true, "ability"
   end
   if st.ghostBattle and battler.side == "player" then
-    adapter:say("Got away safely!")
+    adapter:say(Strings("Got away safely!"))
     return true
   end
   local ok = false
@@ -2090,11 +2096,11 @@ function Engine.tryFlee(st, adapter, battler)
   end
   st.fleeAttempts = (st.fleeAttempts or 0) + 1
   if ok then
-    adapter:say("Got away safely!")
+    adapter:say(Strings("Got away safely!"))
     return true
   end
   battler.expDestinyBond, battler.destinyBond, battler.expGrudge, battler.expFuryCutter = nil, nil, nil, 0
-  adapter:say("Can't escape!")
+  adapter:say(Strings("Can't escape!"))
   return false
 end
 

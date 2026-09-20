@@ -11,6 +11,7 @@ local SummaryMenu = require("src.ui.game3.summary_menu")
 local ItemUse = require("src.core.game3.item_use")
 local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
+local Strings = require("src.core.Strings")
 
 local PartyMenu = {}
 
@@ -989,7 +990,7 @@ function PartyMenu.handleInput(input)
           local curHp = mon and (mon.hp or 0) or 0
           if curHp <= cost or cost <= 0 then
             se(9)
-            PartyMenu.showMessage("Not enough HP!", function()
+            PartyMenu.showMessage(Strings("Not enough HP!"), function()
               PartyMenu.mode = "list"
             end)
             return
@@ -1025,7 +1026,7 @@ function PartyMenu.handleInput(input)
           local res = FieldMoves.fromMenu(act, ctx)
           if not res or not res.ok then
             se(9)
-            PartyMenu.showMessage((res and res.text) or "Can't use that here.", function()
+            PartyMenu.showMessage((res and res.text) or Strings("Can't use that here."), function()
               PartyMenu.mode = "list"
             end)
           else
@@ -1074,7 +1075,7 @@ function PartyMenu.handleInput(input)
         local ok, userHp, targetHp = FieldMoves.softboiledTransfer(userMon, targetMon)
         if not ok then
           se(9)
-          PartyMenu.showMessage("It won't have any effect.", function()
+          PartyMenu.showMessage(Strings("It won't have any effect."), function()
             PartyMenu.mode = "softboiled"
           end)
         else
@@ -1158,7 +1159,7 @@ function PartyMenu.handleInput(input)
 
       if mon.isEgg then
         se(9)
-        PartyMenu.showMessage("An EGG can't be used on.", function()
+        PartyMenu.showMessage(Strings("An EGG can't be used on."), function()
           PartyMenu.mode = "use"
         end)
         return
@@ -1191,7 +1192,7 @@ function PartyMenu.handleInput(input)
                   Bag.remove(PartyMenu._bag, PartyMenu._item, 1)
                 end
                 pcall(function() require("src.core.game3.audio").playFanfare(257) end)
-                PartyMenu.showMessage(string.format("%s learned\n%s!", monName, moveName), function()
+                PartyMenu.showMessage(Strings("%s learned\n%s!", monName, moveName), function()
                   PartyMenu.close()
                 end)
               else
@@ -1237,7 +1238,7 @@ function PartyMenu.handleInput(input)
                     pcall(function() require("src.core.game3.audio").playFanfare(257) end)
                     PartyMenu.close()
                   else
-                    PartyMenu.showMessage(string.format("%s did not learn\n%s.", monName, moveName), function()
+                    PartyMenu.showMessage(Strings("%s did not learn\n%s.", monName, moveName), function()
                       PartyMenu.mode = "use"
                     end)
                   end
@@ -1255,7 +1256,7 @@ function PartyMenu.handleInput(input)
         local hp = tonumber(mon.hp) or 0
         if lvl >= 100 or hp <= 0 then
           se(9)
-          PartyMenu.showMessage("It won't have any effect.", function()
+          PartyMenu.showMessage(Strings("It won't have any effect."), function()
             PartyMenu.mode = "use"
           end)
           return
@@ -1280,7 +1281,7 @@ function PartyMenu.handleInput(input)
         pcall(function() require("src.core.game3.audio").playFanfare(257) end) -- MUS_LEVEL_UP (257)
 
         local monName = Pokemon.displayMonName(mon)
-        local lvlMsg = string.format("%s was elevated to\nLv. %d.", monName, mon.level)
+        local lvlMsg = Strings("%s was elevated to\nLv. %d.", monName, mon.level)
         local slot = PartyMenu.cursor
 
         local function check_evolution()
@@ -1369,7 +1370,7 @@ function PartyMenu.handleInput(input)
         local toSpecies = Evolution.itemTarget(mon, PartyMenu._item, PartyMenu._session)
         if not toSpecies then
           se(9)
-          PartyMenu.showMessage("It won't have any effect.", function()
+          PartyMenu.showMessage(Strings("It won't have any effect."), function()
             PartyMenu.mode = "use"
           end)
         else
@@ -1421,7 +1422,7 @@ function PartyMenu.handleInput(input)
         end
       else
         se(9)
-        PartyMenu.showMessage(msgText or "It won't have any effect.", function()
+        PartyMenu.showMessage(msgText or Strings("It won't have any effect."), function()
           PartyMenu.mode = "use"
         end)
       end
@@ -1455,7 +1456,7 @@ function PartyMenu.handleInput(input)
         local mon = PartyMenu._party and PartyMenu._party[PartyMenu.cursor]
         if mon and mon.isEgg then
           se(9)
-          PartyMenu.showMessage("An EGG can't hold an item.", function()
+          PartyMenu.showMessage(Strings("An EGG can't hold an item."), function()
             PartyMenu.close()
           end)
         else
@@ -1673,7 +1674,7 @@ function PartyMenu.draw()
 
     for idx = 1, 6 do
       local rowY = winY * 8 + 2 + (idx - 1) * 14
-      FrlgFont.draw(statNames[idx], winX * 8 + 2, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings(statNames[idx]), winX * 8 + 2, rowY, { colors = FrlgFont.COLOR.NORMAL })
       if isPage1 then
         local diff = newList[idx] - oldList[idx]
         local sign = (diff >= 0) and "+" or "-"
@@ -1700,11 +1701,11 @@ function PartyMenu.draw()
       if i == PartyMenu._yesNoCursor then
         Window.cursorPx(ynX * 8 + 1, rowY)
       end
-      FrlgFont.draw(opt, ynX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings(opt), ynX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   elseif PartyMenu.mode == "forget" then
     Window.stdFrame(Window.template(1, 17, 15, 2))
-    FrlgFont.draw("Which move?", 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("Which move?"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
 
     local moves = PartyMenu._forgetMoves or {}
     local popW = 11
@@ -1721,7 +1722,7 @@ function PartyMenu.draw()
     end
   elseif PartyMenu.mode == "item_action" then
     Window.stdFrame(Window.template(1, 17, 18, 2))
-    FrlgFont.draw("Do what with an item?", 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("Do what with an item?"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
 
     local actCount = #PartyMenu.ITEM_ACTIONS
     local popW = 7
@@ -1734,11 +1735,11 @@ function PartyMenu.draw()
       if i == PartyMenu.itemActionCursor then
         Window.cursorPx(popX * 8 + 1, rowY)
       end
-      FrlgFont.draw(act, popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings(act), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   elseif PartyMenu.mode == "action" then
     Window.stdFrame(Window.template(1, 17, 17, 2))
-    FrlgFont.draw("Do what with this PKMN?", 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("Do what with this PKMN?"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
 
     local actCount = #PartyMenu.ACTIONS
     local popW = 10
@@ -1753,21 +1754,21 @@ function PartyMenu.draw()
       end
       local isFm = PartyMenu._fieldMoveNames and PartyMenu._fieldMoveNames[act]
       local col = isFm and (FrlgFont.COLOR.BLUE or FrlgFont.COLOR.MALE_NPC) or FrlgFont.COLOR.NORMAL
-      FrlgFont.draw(act, popX * 8 + 9, rowY, { colors = col })
+      FrlgFont.draw(Strings(act), popX * 8 + 9, rowY, { colors = col })
     end
   else
     Window.stdFrame(Window.template(1, 17, 21, 2))
-    local promptText = "Choose a POKéMON."
+    local promptText = Strings("Choose a POKéMON.")
     if PartyMenu.mode == "switch" then
-      promptText = "Move to where?"
+      promptText = Strings("Move to where?")
     elseif PartyMenu.mode == "use" then
       if PartyMenu._item and ItemsData.isTm(PartyMenu._item) then
-        promptText = "Teach which POKéMON?"
+        promptText = Strings("Teach which POKéMON?")
       else
-        promptText = "Use on which POKéMON?"
+        promptText = Strings("Use on which POKéMON?")
       end
     elseif PartyMenu.mode == "give" then
-      promptText = "Give to which POKéMON?"
+      promptText = Strings("Give to which POKéMON?")
     end
     FrlgFont.draw(promptText, 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
     PartyChrome.drawCancelButton(184, 136, PartyMenu.cursor == 7)

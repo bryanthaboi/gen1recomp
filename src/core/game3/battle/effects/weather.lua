@@ -1,6 +1,7 @@
 local Capabilities = require("src.core.game3.battle.capabilities")
 local H = require("src.core.game3.battle.effects._helpers")
 local Rules = require("src.core.game3.battle.rules")
+local Strings = require("src.core.Strings")
 
 local Weather = {}
 
@@ -13,9 +14,9 @@ local function set(ctx, kind, text)
   ctx.adapter:say(text)
 end
 
-function Weather.sunny(ctx) set(ctx, "SUNNY", "The sunlight got bright!") end
-function Weather.rainy(ctx) set(ctx, "RAINY", "It started to rain!") end
-function Weather.sandstorm(ctx) set(ctx, "SANDSTORM", "A sandstorm brewed!") end
-function Weather.hail(ctx) set(ctx, "HAIL", "It started to hail!") end
+function Weather.sunny(ctx) set(ctx, "SUNNY", Strings("The sunlight got bright!")) end
+function Weather.rainy(ctx) set(ctx, "RAINY", Strings("It started to rain!")) end
+function Weather.sandstorm(ctx) set(ctx, "SANDSTORM", Strings("A sandstorm brewed!")) end
+function Weather.hail(ctx) set(ctx, "HAIL", Strings("It started to hail!")) end
 
 return Weather

@@ -118,6 +118,10 @@ GameVersion.VERSIONS = {
     launcherName = "Fire Red",
     beta = true,
     sha1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc",
+    revisions = {
+      { sha1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc", label = "1.0" },
+      { sha1 = "dd5945db9b930750cb39d00c84da8571feebf417", label = "1.1" },
+    },
     manifest = "tools/rom_manifest_firered.json",
     cachePrefix = "firered/",
     saveSuffix = "_firered",

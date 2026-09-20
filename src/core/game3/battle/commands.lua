@@ -1,6 +1,7 @@
 -- Battle commands: FIGHT / BAG / POKéMON / RUN (+ move slots).
 
 local ModRuntime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local Commands = {}
 
@@ -132,31 +133,31 @@ function Commands.selectionError(st, slot, battlerId)
   local name = battler_name(b)
   local err
   if b.expDisabledMove and move_num(b.expDisabledMove) == num and num ~= 0 then
-    err = string.format("%s's %s\nis disabled!", name, move_name(mv))
+    err = Strings("%s's %s\nis disabled!", name, move_name(mv))
   end
   if (b.expTormented or b.torment) and num ~= MOVE_STRUGGLE and num ~= 0
       and move_num(b.lastMoveId or b.lastMove) == num then
-    err = string.format("%s can't use the same\nmove in a row due to the TORMENT!", name)
+    err = Strings("%s can't use the same\nmove in a row due to the TORMENT!", name)
   end
   if (tonumber(b.expTauntedTurns) or 0) > 0 then
     local Moves = require("src.core.game3.battle.moves")
     local def = Moves.get(mv)
     if def and (tonumber(def.power) or 0) == 0 then
-      err = string.format("%s can't use\n%s after the TAUNT!", name, move_name(mv))
+      err = Strings("%s can't use\n%s after the TAUNT!", name, move_name(mv))
     end
   end
   if imprisoned(st, b, num) then
-    err = string.format("%s can't use the\nsealed %s!", name, move_name(mv))
+    err = Strings("%s can't use the\nsealed %s!", name, move_name(mv))
   end
   local cm = choiced(b)
   if cm and cm ~= num then
     local okI, Items = pcall(require, "src.core.game3.items")
     local iname = okI and Items.displayName and Items.displayName(b.item) or "CHOICE BAND"
-    err = string.format("%s's effect allows only\n%s to be used!", iname, move_name(cm))
+    err = Strings("%s's effect allows only\n%s to be used!", iname, move_name(cm))
   end
   local pp = mon.pp and tonumber(mon.pp[slot])
   if pp ~= nil and pp <= 0 then
-    err = "There's no PP left for\nthis move!"
+    err = Strings("There's no PP left for\nthis move!")
   end
   return err
 end
@@ -181,7 +182,7 @@ function Commands.fightShortcut(st, battlerId)
   if not any then
     local act = { kind = "move", move = "STRUGGLE", slot = nil, user = "player" }
     if battlerId ~= nil then tag(act, battlerId) end
-    return act, string.format("%s has no\nmoves left!", battler_name(b))
+    return act, Strings("%s has no\nmoves left!", battler_name(b))
   end
   if b.expEncoreMove and (tonumber(b.expEncoreTurns) or 0) > 0 then
     local slot = b.expEncoreSlot
@@ -206,21 +207,21 @@ function Commands.switchError(st, slot, forced, battlerId)
   if not mon then return nil end
   local Pokemon = require("src.core.game3.pokemon")
   local name = Pokemon.displayMonName and Pokemon.displayMonName(mon) or "POKéMON"
-  if (tonumber(mon.hp) or 0) <= 0 then return name .. " has no energy\nleft to battle!" end
-  if st.player and st.player.partyIndex == slot then return name .. " is already\nin battle!" end
+  if (tonumber(mon.hp) or 0) <= 0 then return Strings("%s has no energy\nleft to battle!", name) end
+  if st.player and st.player.partyIndex == slot then return Strings("%s is already\nin battle!", name) end
   if st.double then
     -- pokefirered/src/party_menu.c:5934
     local b2 = battler_of(st, 2)
     if b2 and b2.partyIndex == slot and not (st.absent and st.absent[2]) then
-      return name .. " is already\nin battle!"
+      return Strings("%s is already\nin battle!", name)
     end
     local pend = st.monToSwitchInto or {}
     local partner = (battlerId == 2) and 0 or 2
     if battlerId ~= nil and pend[partner] == slot then
-      return name .. " has already been\nselected."
+      return Strings("%s has already been\nselected.", name)
     end
   end
-  if mon.isEgg then return "An EGG can't battle!" end
+  if mon.isEgg then return Strings("An EGG can't battle!") end
   if forced then return nil end
   local Engine = package.loaded["src.core.game3.battle.engine"]
   local Battle = package.loaded["src.core.game3.battle"]
@@ -343,7 +344,7 @@ function Commands.tryFlee(st, adapter)
     return ok and true or false
   end
   if not st.wild then
-    adapter:say("No! There's no\nrunning from a\nTRAINER battle!")
+    adapter:say(Strings("No! There's no\nrunning from a\nTRAINER battle!"))
     return false
   end
   local pSpe = tonumber(st.player.mon.speed or st.player.mon.spe) or 50
@@ -364,10 +365,10 @@ function Commands.tryFlee(st, adapter)
     end
   end
   if r < odds then
-    adapter:say("Got away safely!")
+    adapter:say(Strings("Got away safely!"))
     return true
   end
-  adapter:say("Can't escape!")
+  adapter:say(Strings("Can't escape!"))
   return false
 end
 

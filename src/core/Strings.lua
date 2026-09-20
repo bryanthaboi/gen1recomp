@@ -27,6 +27,18 @@
 --
 --   S("OFF", "options.musicFilter")   -- key: "options.musicFilter|OFF"
 --
+-- string.format fills directives in argument order, so a translation whose
+-- language puts the values the other way round cannot say so with `%s`
+-- alone.  It numbers them instead, the way POSIX printf does:
+--
+--   S("%s's %s\nrose!", name, stat)  -- English: "PIKACHU's ATTACK\nrose!"
+--   -> "%2$s de\n%1$s monte!"         -- French:  "ATTACK de\nPIKACHU monte!"
+--
+-- A translation numbers all of its directives or none, and numbers only
+-- arguments the source has (it may leave one out, as the official
+-- translations sometimes drop a name); anything else falls back to the
+-- English.
+--
 -- A mod supplies the catalog through the `strings` registry:
 --
 --   mod.content.strings:override("But, it failed!", "Echec !")
@@ -80,6 +92,47 @@ local function specifiers(s)
   return n
 end
 
+-- A translation that numbers its directives ("%2$s ... %1$s"): the plain
+-- format string and the argument order it asks for.  nil when nothing is
+-- numbered; false when numbered and plain directives are mixed.
+local function positional(text)
+  if not text:find("%%%d+%$") then return nil end
+  local out, order = {}, {}
+  local i, n = 1, #text
+  while i <= n do
+    local c = text:sub(i, i)
+    if c ~= "%" then
+      out[#out + 1] = c
+      i = i + 1
+    elseif text:sub(i + 1, i + 1) == "%" then
+      out[#out + 1] = "%%"
+      i = i + 2
+    else
+      local index, spec, stop = text:match("^%%(%d+)%$([-+ #0]*%d*%.?%d*%a)()", i)
+      if not index then return false end
+      order[#order + 1] = tonumber(index)
+      out[#out + 1] = "%" .. spec
+      i = stop
+    end
+  end
+  if #order == 0 then return nil end
+  return table.concat(out), order
+end
+
+-- Every numbered directive names one of the source's arguments.
+local function withinArguments(order, wants)
+  for _, index in ipairs(order) do
+    if index < 1 or index > wants then return false end
+  end
+  return true
+end
+
+local function complain(source, fmt, ...)
+  if missing[source] then return end
+  missing[source] = true
+  require("src.core.Logger").warn(fmt, ...)
+end
+
 -- S(source)                -> translated source
 -- S(source, ...)           -> translated source, string.format'ed
 -- S(source, context)       -> context-disambiguated lookup, no formatting
@@ -100,18 +153,30 @@ function Strings.get(source, ...)
   -- A translation with the wrong arity would raise inside string.format,
   -- which in a battle means a crash the player cannot escape.  Fall back to
   -- the English source, which is known to match, and say so once.
-  if specifiers(text) ~= wants then
-    if not missing[source] then
-      missing[source] = true
-      require("src.core.Logger").warn(
-        "strings: translation of %q has %d format directives, source has %d"
-        .. " -- using the source", source, specifiers(text), wants)
-    end
+  local plain, order = positional(text)
+  if plain == false or (plain and not withinArguments(order, wants)) then
+    complain(source, "strings: translation of %q numbers its format directives"
+      .. " wrongly for %d argument(s) -- using the source", source, wants)
+    plain, text = nil, source
+  elseif not plain and specifiers(text) ~= wants then
+    complain(source, "strings: translation of %q has %d format directives, source has %d"
+      .. " -- using the source", source, specifiers(text), wants)
     text = source
   end
-  local ok, out = pcall(string.format, text, ...)
-  if not ok then return source end
-  return out
+  local ok, out
+  if plain then
+    local args, picked = { ... }, {}
+    for k, index in ipairs(order) do picked[k] = args[index] end
+    ok, out = pcall(string.format, plain, (table.unpack or unpack)(picked, 1, #order))
+  else
+    ok, out = pcall(string.format, text, ...)
+  end
+  if ok then return out end
+  -- A translation the checks above let through can still fail to format (a
+  -- %d handed a string); the English source is known to match its arguments.
+  ok, out = pcall(string.format, source, ...)
+  if ok then return out end
+  return source
 end
 
 -- A marker, not a lookup: returns its argument untouched.

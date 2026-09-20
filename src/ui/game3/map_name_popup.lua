@@ -4,6 +4,7 @@
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Chrome = require("src.ui.game3.chrome")
 local MapSectionsExtract = require("src.import.gba.map_sections_extract")
+local Strings = require("src.core.Strings")
 
 local MapNamePopup = {}
 
@@ -62,6 +63,21 @@ local function cleanMapName(mapId)
 end
 
 --- Trigger map name popup display
+-- The section names are the cart's English, with the floor label
+-- map_name_popup.c appends.  Both go through Strings(): the floor as a whole
+-- label ("3F", "B1F", "ROOFTOP", the cart's gText_3F... rows), since the
+-- European carts count floors differently (3F is "2E" in French).
+local function translated_name(info)
+  local base = Strings(info.rawName or info.name)
+  local floor = tonumber(info.floorNum) or 0
+  local label
+  if floor == 127 then label = "ROOFTOP"
+  elseif floor < 0 then label = string.format("B%dF", -floor)
+  elseif floor > 0 then label = string.format("%dF", floor) end
+  if not label then return base end
+  return base .. " " .. Strings(label)
+end
+
 function MapNamePopup.show(mapDef, opts)
   opts = opts or {}
   if isFlagSuppressed() then return false end
@@ -83,6 +99,8 @@ function MapNamePopup.show(mapDef, opts)
   local name = info and info.name
   if not name or name == "???" or name == "" then
     name = cleanMapName(mapId)
+  else
+    name = translated_name(info)
   end
 
   -- Calculate width matching pokefirered MapNamePopupCreateWindow:

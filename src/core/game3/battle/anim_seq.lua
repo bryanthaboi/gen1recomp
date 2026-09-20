@@ -1,6 +1,7 @@
 local bit = require("bit")
 local Anim = require("src.core.game3.battle.anim")
 local AnimCtx = require("src.core.game3.battle.anim_ctx")
+local Strings = require("src.core.Strings")
 local AnimCoords = require("src.core.game3.battle.anim_coords")
 
 local AnimSeq = {}
@@ -187,8 +188,48 @@ local function advance()
   AnimSeq._i = AnimSeq._i + 1
 end
 
+-- The messages a move that did not land prints.  By the time a step is
+-- built they are translated, so each is matched through the pattern of its
+-- catalog wording, with the English fragments kept for other callers.
+local MISS_TEXT = {
+  Strings.source("%s's\nattack missed!"),
+  Strings.source("%s\nprotected itself!"),
+  Strings.source("It doesn't affect\n%s…"),
+}
+local CONFUSION_HIT = Strings.source("It hurt itself in its\nconfusion!")
+local SUBSTITUTE_HIT = Strings.source("The SUBSTITUTE took damage\nfor %s!")
+local MOVE_USED = Strings.source("%s used\n%s!")
+local FAINTED = Strings.source("%s fainted!")
+
+-- A Strings() template as a Lua pattern: each directive matches any text.
+local function template_pattern(template)
+  local parts, pos = {}, 1
+  while true do
+    local s, e = template:find("%%%d*%$?[-+ #0]*%d*%.?%d*[sdi]", pos)
+    parts[#parts + 1] = template:sub(pos, (s or 0) - 1):gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+    if not s then break end
+    parts[#parts + 1] = ".-"
+    pos = e + 1
+  end
+  return table.concat(parts)
+end
+
+local function says(text, template)
+  local pattern = template_pattern(Strings(template))
+  return text:find("^" .. pattern .. "$") ~= nil
+end
+
+-- Whether a battle message is the "<POKéMON> used <move>!" line, in the
+-- catalog's wording (the battle UI paces it differently).
+function AnimSeq.isMoveUsedText(text)
+  return says(tostring(text or ""), MOVE_USED)
+end
+
 local function is_miss_text(text)
   text = tostring(text or "")
+  for _, template in ipairs(MISS_TEXT) do
+    if says(text, template) then return true end
+  end
   return text:find("attack missed") or text:find("avoided the attack")
     or text:find("protected itself") or text:find("doesn't affect")
     or text:find("is unaffected") or text:find("was protected by")
@@ -213,7 +254,8 @@ function AnimSeq.buildSteps(events, meta)
         -- pokefirered/data/battle_scripts_1.s:279
         add("pause", { frames = PAUSE_SHORT })
       end
-      if lastMove and tostring(ev.text or ""):find("SUBSTITUTE took damage") then
+      if lastMove and (says(tostring(ev.text or ""), SUBSTITUTE_HIT)
+          or tostring(ev.text or ""):find("SUBSTITUTE took damage")) then
         -- pokefirered/src/battle_script_commands.c:5300
         local a = ev_id(lastMove, "attackerId", "attacker") or 0
         local t = ev_id(lastMove, "targetId", "target") or opposite(a)
@@ -257,7 +299,8 @@ function AnimSeq.buildSteps(events, meta)
       add("hp", { side = ev.side, battler = b, from = ev.from, to = ev.to, maxHp = ev.maxHp })
     elseif k == "hp" then
       local b = ev_id(ev, "battler", "side")
-      if prevKind == "msg" and tostring(lastMsg or ""):find("hurt itself in its") then
+      if prevKind == "msg" and (says(tostring(lastMsg or ""), CONFUSION_HIT)
+          or tostring(lastMsg or ""):find("hurt itself in its")) then
         -- pokefirered/data/battle_scripts_1.s:3741
         add("hitfx", { side = ev.side, battler = b, effectiveness = 1 })
       end
@@ -304,7 +347,7 @@ local function legacy_steps(result)
   local msgs = result.msgs or {}
   local usedLine = msgs[1]
   local restStart = 1
-  if usedLine and tostring(usedLine):find("used") then
+  if usedLine and (says(tostring(usedLine), MOVE_USED) or tostring(usedLine):find("used")) then
     add("msg", { text = usedLine })
     restStart = 2
   end
@@ -324,7 +367,7 @@ local function legacy_steps(result)
   local faints = result.faints or {}
   for i = restStart, #msgs do
     local text = msgs[i]
-    if type(text) == "string" and text:find("fainted") then
+    if type(text) == "string" and (says(text, FAINTED) or text:find("fainted")) then
       local side = faints[faintI] and faints[faintI].side
       if not side then side = (faintI == 1) and ts or us end
       faintI = faintI + 1

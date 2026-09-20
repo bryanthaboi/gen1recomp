@@ -4,6 +4,7 @@
 local Extract = require("src.import.gba.extract_island1")
 local Dex = require("src.core.game3.dex")
 local Pokemon = require("src.core.game3.pokemon")
+local Strings = require("src.core.Strings")
 
 local PokedexData = {}
 
@@ -190,13 +191,13 @@ function PokedexData.getEntry(speciesId)
     local name = (Pokemon.name and Pokemon.name(sp)) or "POKéMON"
     return {
       category = "UNKNOWN",
-      categoryName = "UNKNOWN POKéMON",
+      categoryName = Strings("UNKNOWN POKéMON"),
       heightDm = 0,
       weightHg = 0,
       heightFormatted = "--'--\"",
-      weightFormatted = "---.- lbs.",
-      description = "This is a newly discovered POKéMON. It is\ncurrently under investigation.",
-      description2 = "This is a newly discovered POKéMON. It is\ncurrently under investigation.",
+      weightFormatted = Strings("---.- lbs."),
+      description = Strings("This is a newly discovered POKéMON. It is\ncurrently under investigation."),
+      description2 = Strings("This is a newly discovered POKéMON. It is\ncurrently under investigation."),
       pokemonScale = 256,
       pokemonOffset = 0,
       trainerScale = 256,
@@ -220,10 +221,10 @@ function PokedexData.getEntry(speciesId)
   end
   local wholeLbs = math.floor(lbsHund / 100)
   local fracLbs = math.floor((lbsHund % 100) / 10)
-  local weightFormatted = string.format("%4d.%d lbs.", wholeLbs, fracLbs)
+  local weightFormatted = Strings("%4d.%d lbs.", wholeLbs, fracLbs)
 
   local cat = raw.category or "POKéMON"
-  local categoryName = cat:find("POKéMON") and cat or (cat .. " POKéMON")
+  local categoryName = cat:find("POKéMON") and cat or Strings("%s POKéMON", cat)
 
   return {
     category = cat,

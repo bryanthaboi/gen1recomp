@@ -494,7 +494,7 @@ mod.content.held_items:override("LEFTOVERS", { heldEffect = "HELD_LEFTOVERS", he
 
 - semantics: `record`
 - target: `Data.icons.bySpecies`
-- value: string | {frames?, image}
+- value: string | {frames?, image, trueColor?}
 
 <!-- snippet: illustrative -->
 ```lua
@@ -508,7 +508,7 @@ mod.content.icons:register("MODMON", "QUADRUPED")  -- a built-in name, or { imag
 
 The record differs; the registry name, the verbs and the id space
 do not.
-- value: string | {frames, height, id?, image, index?, width}
+- value: string | {frames, height, id?, image, index?, trueColor?, width}
 
 <!-- snippet: illustrative -->
 ```lua
@@ -713,12 +713,15 @@ mod.content.migrations:register("my_mod", { since = "1.0.0", run = fn })
 |---|---|---|
 | `accuracyChecked` | boolean | no |
 | `kind` | one of "primary" \| "secondary" \| "full" | yes |
+| `missText` | one of "didntAffect" \| "butItFailed" \| "evadedAttack" | no |
 | `run` | function | no |
 
 <!-- snippet: illustrative -->
 ```lua
 mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = fn })
 ```
+
+A "primary" handler returns its messages as an array. Set `failed = true` on that table when the effect did not land ("But, it failed!", "Nothing happened!", a target already asleep): the battle suppresses the move's success animation on that flag, the way the cart prints those refusals with no animation.
 
 ### On Gold (Gen 2)
 
@@ -1075,7 +1078,13 @@ mod.content.sfx:register("SFX_MOD_CHIME", { file = "chime.ogg" })
 |---|---|---|
 | `anchorX` | number | no |
 | `anchorY` | number | no |
+| `cellColumns` | integer >= 1 | no |
+| `cellHeight` | integer >= 1 | no |
+| `cellWidth` | integer >= 1 | no |
+| `cells` | list of list of {dx?, dy?, flipX?, flipY?, tile} | no |
+| `frameColumns` | integer >= 1 | no |
 | `frameHeight` | integer >= 1 | no |
+| `frameOffset` | integer >= 0 | no |
 | `frameWidth` | integer >= 1 | no |
 | `frames` | integer >= 1 | yes |
 | `id` | string | no |

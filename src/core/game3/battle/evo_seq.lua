@@ -4,6 +4,7 @@
 local Evolution = require("src.core.game3.evolution")
 local LearnMove = require("src.core.game3.battle.learn_move")
 local Pokemon = require("src.core.game3.pokemon")
+local Strings = require("src.core.Strings")
 
 local EvoSeq = {}
 
@@ -85,11 +86,11 @@ local function run_step(entry)
 
   if EvoSeq._headless then
     if EvoSeq._pushMsg then
-      EvoSeq._pushMsg("What?\n" .. fromName .. " is evolving!")
+      EvoSeq._pushMsg(Strings("What?\n%s is evolving!", fromName))
     end
     Evolution.apply(mon, toSpecies, EvoSeq._session)
     if EvoSeq._pushMsg then
-      EvoSeq._pushMsg("Congratulations! Your " .. fromName .. "\nevolved into " .. intoName .. "!")
+      EvoSeq._pushMsg(Strings("Congratulations! Your %s\nevolved into %s!", fromName, intoName))
     end
     local lv = tonumber(mon and mon.level) or 1
     EvoSeq._waiting = true

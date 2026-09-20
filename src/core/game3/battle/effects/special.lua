@@ -1,6 +1,7 @@
 local H = require("src.core.game3.battle.effects._helpers")
 local Types = require("src.core.game3.battle.types")
 local Secondary = require("src.core.game3.battle.effects.secondary")
+local Strings = require("src.core.Strings")
 
 local Special = {}
 
@@ -21,10 +22,13 @@ end
 local function sent_out_text(ctx, battler)
   local st = ctx.adapter._st
   if battler.side == "player" then
-    return "Go! " .. name(ctx, battler) .. "!"
+    return Strings("Go! %s!", name(ctx, battler))
   end
-  local cls = st.trainerClassName and st.trainerClassName ~= "" and (st.trainerClassName .. " ") or ""
-  return cls .. tostring(st.trainerName or "TRAINER") .. " sent\nout " .. name(ctx, battler) .. "!"
+  local trainer = tostring(st.trainerName or "TRAINER")
+  if st.trainerClassName and st.trainerClassName ~= "" then
+    return Strings("%s %s sent\nout %s!", st.trainerClassName, trainer, name(ctx, battler))
+  end
+  return Strings("%s sent\nout %s!", trainer, name(ctx, battler))
 end
 
 -- pokefirered/src/battle_script_commands.c:6905
@@ -32,10 +36,10 @@ function Special.roar(ctx)
   local ad, user, target = ctx.adapter, ctx.user, ctx.target
   local st = ad._st
   if ad:abilityOf(target) == "SUCTION_CUPS" then
-    return ad:say(name(ctx, target) .. " anchors\nitself with SUCTION CUPS!")
+    return ad:say(Strings("%s anchors\nitself with SUCTION CUPS!", name(ctx, target)))
   end
   if target.expIngrain then
-    return ad:say(name(ctx, target) .. " anchored\nitself with its roots!")
+    return ad:say(Strings("%s anchored\nitself with its roots!", name(ctx, target)))
   end
   if not H.accuracy(ctx, "lockon") then return end
   if not H.accuracy(ctx, "normal") then return end
@@ -61,7 +65,7 @@ function Special.roar(ctx)
   if nb then
     local M = H.move(ctx)
     if M then M.target = nb end
-    ad:say(name(ctx, nb) .. " was\ndragged out!")
+    ad:say(Strings("%s was\ndragged out!", name(ctx, nb)))
     engine().switchInEffects(st, ad, nb, { spikes = true, deferIntimidate = true })
   end
 end
@@ -84,7 +88,7 @@ function Special.conversion(ctx)
   local t = list[ad:roll(1, #list)]
   user.type1, user.type2 = t, t
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " transformed\ninto the " .. Types.name(t) .. " type!")
+  ad:say(Strings("%s transformed\ninto the %s type!", name(ctx, user), Types.name(t)))
 end
 
 -- pokefirered/src/battle_script_commands.c:7699
@@ -111,7 +115,7 @@ function Special.conversion2(ctx)
   local pick = valid[ad:roll(1, #valid)]
   user.type1, user.type2 = pick, pick
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " transformed\ninto the " .. Types.name(pick) .. " type!")
+  ad:say(Strings("%s transformed\ninto the %s type!", name(ctx, user), Types.name(pick)))
 end
 
 -- pokefirered/src/battle_script_commands.c:7398
@@ -154,7 +158,7 @@ function Special.transform(ctx)
   user.permanentSlots = { false, false, false, false }
   H.attackAnim(ctx)
   local Pokemon = require("src.core.game3.pokemon")
-  ad:say(name(ctx, user) .. " transformed\ninto " .. tostring(Pokemon.name(target.species)) .. "!")
+  ad:say(Strings("%s transformed\ninto %s!", name(ctx, user), tostring(Pokemon.name(target.species))))
 end
 
 -- pokefirered/src/battle_script_commands.c:7478
@@ -175,7 +179,7 @@ function Special.mimic(ctx)
   proxy.pp[slot] = math.min(5, tonumber(moves().get(last).pp) or 5)
   user.permanentSlots[slot] = false
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " learned\n" .. moves().displayName(last) .. "!")
+  ad:say(Strings("%s learned\n%s!", name(ctx, user), moves().displayName(last)))
 end
 
 -- pokefirered/src/battle_script_commands.c:7617
@@ -192,7 +196,7 @@ function Special.disable(ctx)
   target.expDisableTurns = ad:roll(0, 3) % 4 + 2
   target.disabled = true
   H.attackAnim(ctx)
-  ad:say(name(ctx, target) .. "'s " .. moves().displayName(mon.moves[slot]) .. "\nwas disabled!")
+  ad:say(Strings("%s's %s\nwas disabled!", name(ctx, target), moves().displayName(mon.moves[slot])))
 end
 
 -- pokefirered/src/battle_script_commands.c:7768
@@ -224,7 +228,7 @@ function Special.sketch(ctx)
     user.sketched[slot] = true
   end
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " SKETCHED\n" .. moves().displayName(last) .. "!")
+  ad:say(Strings("%s SKETCHED\n%s!", name(ctx, user), moves().displayName(last)))
 end
 
 -- pokefirered/data/battle_scripts_1.s:1690
@@ -277,14 +281,14 @@ function Special.teleport(ctx)
   if not (ab == "RUN_AWAY" or item == 194) then
     if fab == "SHADOW_TAG" or (fab == "ARENA_TRAP" and not H.hasType(ctx, user, Types.ID.FLYING) and ab ~= "LEVITATE")
         or (fab == "MAGNET_PULL" and H.hasType(ctx, user, Types.ID.STEEL)) then
-      return ad:say(name(ctx, foe) .. "'s " .. fab:gsub("_", " ") .. "\nmade it ineffective!")
+      return ad:say(Strings("%s's %s\nmade it ineffective!", name(ctx, foe), require("src.core.game3.battle.abilities").name(fab)))
     end
     if user.expTrapped or user.escapePrevention or (user.expTrapTurns or 0) > 0 or user.expIngrain then
       return H.sayFail(ctx)
     end
   end
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " fled from\nbattle!")
+  ad:say(Strings("%s fled from\nbattle!", name(ctx, user)))
   end_battle(ctx, "teleport")
 end
 
@@ -296,7 +300,7 @@ function Special.followMe(ctx)
     side.expFollowMeId = ctx.user.id
   end
   H.attackAnim(ctx)
-  ctx.adapter:say(name(ctx, ctx.user) .. " became the\ncenter of attention!")
+  ctx.adapter:say(Strings("%s became the\ncenter of attention!", name(ctx, ctx.user)))
 end
 
 -- pokefirered/src/battle_script_commands.c:8798
@@ -311,20 +315,20 @@ function Special.trick(ctx)
     return H.sayFail(ctx)
   end
   if ad:abilityOf(target) == "STICKY_HOLD" then
-    return ad:say(name(ctx, target) .. "'s STICKY HOLD\nmade TRICK ineffective!")
+    return ad:say(Strings("%s's STICKY HOLD\nmade TRICK ineffective!", name(ctx, target)))
   end
   user.item, target.item = ti, ui
   Secondary.persistItem(user, ti)
   if target.side == "player" then Secondary.persistItem(target, ui) end
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " switched\nitems with its opponent!")
+  ad:say(Strings("%s switched\nitems with its opponent!", name(ctx, user)))
   if ui ~= 0 and ti ~= 0 then
-    ad:say(name(ctx, user) .. " obtained\n" .. Secondary.itemName(ti) .. ".")
-    ad:say(name(ctx, target) .. " obtained\n" .. Secondary.itemName(ui) .. ".")
+    ad:say(Strings("%s obtained\n%s.", name(ctx, user), Secondary.itemName(ti)))
+    ad:say(Strings("%s obtained\n%s.", name(ctx, target), Secondary.itemName(ui)))
   elseif ti ~= 0 then
-    ad:say(name(ctx, user) .. " obtained\n" .. Secondary.itemName(ti) .. ".")
+    ad:say(Strings("%s obtained\n%s.", name(ctx, user), Secondary.itemName(ti)))
   else
-    ad:say(name(ctx, target) .. " obtained\n" .. Secondary.itemName(ui) .. ".")
+    ad:say(Strings("%s obtained\n%s.", name(ctx, target), Secondary.itemName(ui)))
   end
 end
 
@@ -339,7 +343,7 @@ function Special.recycle(ctx)
   user.item = used
   Secondary.persistItem(user, used)
   H.attackAnim(ctx)
-  ad:say(name(ctx, user) .. " found\none " .. Secondary.itemName(used) .. "!")
+  ad:say(Strings("%s found\none %s!", name(ctx, user), Secondary.itemName(used)))
 end
 
 return Special

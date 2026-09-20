@@ -284,7 +284,7 @@ function RomExtractorGen3:runIntroAudio(sha1)
     end
   end
 
-  local romShim = { data = self.romData }
+  local romShim = { data = require("src.import.gba.revision_view").apply(self.romData, sha1) }
   local Intro = require("src.import.gba.extract_intro")
   local Naming = require("src.import.gba.extract_naming")
   local AudioExt = require("src.import.gba.extract_audio")

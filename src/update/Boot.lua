@@ -1,11 +1,21 @@
--- The boot shell: the heart of the self-updater.  A fused build, before it
--- runs the game bundled inside it, looks in its save directory for a newer
--- payload (a downloaded gen1recomp-X.Y.Z.love), and if one is present and
--- runnable, mounts it over the bundled source and chainloads it -- so the
--- binary shipped once can keep updating the Lua it runs without a reinstall.
+-- The boot shell: the heart of the self-updater.  A build that carries a fixed
+-- engine, before it runs the game source it ships, looks in its save directory
+-- for a newer payload (a downloaded gen1recomp-X.Y.Z.love), and if one is
+-- present and runnable, mounts it over the bundled source and chainloads it --
+-- so the binary shipped once can keep updating the Lua it runs without a
+-- reinstall.
 --
--- Only a fused build self-updates.  A dev / source checkout IS the game, so
--- Boot.run is a no-op there.
+-- Two shapes of packaged build carry a fixed engine, and both self-update:
+--   * fused -- the game is an archive inside the executable, so LÖVE reports
+--     isFused() true (an AppImage, or the Flatpak's game.love file).
+--   * unpacked -- the executable is handed a *directory* of game source
+--     (`love <dir>`, which every PortMaster-style port does).  LÖVE reports
+--     isFused() false there, but the handoff below is still sound: the payload
+--     is prepend-mounted over the running source and the source on disk is
+--     never rewritten.
+-- What must not self-update is a dev / source checkout: it IS the game, its
+-- Version.engine is the "0.0.0-dev" placeholder, and its next launch already
+-- runs whatever is on disk.  Boot.run is a no-op there.  See docs/updater.md.
 --
 -- Three pieces, deliberately layered so the risky part is small and the
 -- decision part is testable:
@@ -275,6 +285,24 @@ local function runInner(args)
   return chainload(chosen, args)
 end
 
+-- Boot.canUpdateInPlace() -> boolean
+--
+-- May this build hand off to a downloaded payload?  True for a packaged build
+-- (fused or unpacked -- see the header), false for a dev / source checkout, and
+-- false whenever that cannot be established: the gate must never open by
+-- accident.  Boot.run and Prelaunch.updateAllowed both ask this one function,
+-- so the boot gate and the --update gate cannot disagree.
+function Boot.canUpdateInPlace()
+  local fs = love and love.filesystem
+  if not fs then return false end
+  if fs.isFused and fs.isFused() then return true end
+  local ok, Version = pcall(require, "src.core.Version")
+  if not ok or type(Version) ~= "table" or type(Version.isDev) ~= "function" then
+    return false
+  end
+  return not Version.isDev()
+end
+
 -- Boot.run(args) -> boolean
 --
 -- The first line of love.load.  True means a payload was mounted and
@@ -282,7 +310,7 @@ end
 -- bundled game as normal.
 function Boot.run(args)
   -- Dev / source checkouts never self-update.
-  if not (love.filesystem.isFused and love.filesystem.isFused()) then
+  if not Boot.canUpdateInPlace() then
     return false
   end
   -- Switch (and any host without validated network): never probe payloads.

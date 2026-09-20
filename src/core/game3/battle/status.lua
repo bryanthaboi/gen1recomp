@@ -1,5 +1,6 @@
 -- Status inflict + EOT chip (owned; KR left this to host engines).
 
+local Strings = require("src.core.Strings")
 local Status = {}
 
 local function status_of(battler)
@@ -32,7 +33,7 @@ function Status.tickChip(battler, adapter)
   local text, anim
   if st == "PSN" or st == "POISON" then
     loss = math.floor(maxHp / 8)
-    text, anim = name .. " is hurt\nby poison!", "POISON"
+    text, anim = Strings("%s is hurt\nby poison!", name), "POISON"
   elseif st == "TOX" or st == "TOXIC" then
     -- pokefirered/src/battle_util.c:823
     loss = math.floor(maxHp / 16)
@@ -41,10 +42,10 @@ function Status.tickChip(battler, adapter)
     if c < 15 then c = c + 1 end
     battler.toxicCounter = c
     loss = loss * c
-    text, anim = name .. " is hurt\nby poison!", "POISON"
+    text, anim = Strings("%s is hurt\nby poison!", name), "POISON"
   elseif st == "BRN" or st == "BURN" then
     loss = math.floor(maxHp / 8)
-    text, anim = name .. " is hurt\nby its burn!", "BURN"
+    text, anim = Strings("%s is hurt\nby its burn!", name), "BURN"
   else
     return msgs
   end
@@ -62,13 +63,13 @@ function Status.applySetupMove(user, target, moveId, adapter)
   local id = Moves.normalizeId(moveId)
   if id == "GROWL" then
     adapter:changeStages(target, { attack = -1 })
-    return adapter:displayName(target) .. "'s ATTACK\nfell!"
+    return Strings("%s's ATTACK\nfell!", adapter:displayName(target))
   elseif id == "TAIL_WHIP" or id == "LEER" then
     adapter:changeStages(target, { defense = -1 })
-    return adapter:displayName(target) .. "'s DEFENSE\nfell!"
+    return Strings("%s's DEFENSE\nfell!", adapter:displayName(target))
   elseif id == "HARDEN" then
     adapter:changeStages(user, { defense = 1 })
-    return adapter:displayName(user) .. "'s DEFENSE\nrose!"
+    return Strings("%s's DEFENSE\nrose!", adapter:displayName(user))
   end
   return nil
 end

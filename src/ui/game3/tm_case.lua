@@ -16,6 +16,7 @@ local Bag = require("src.core.game3.bag")
 local Pokemon = require("src.core.game3.pokemon")
 local SummaryData = require("src.core.game3.summary_data")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
+local Strings = require("src.core.Strings")
 
 local TmCase = {}
 
@@ -143,12 +144,12 @@ function TmCase.handleInput(input)
         TmCase.mode = "list"
       elseif act == "GIVE" then
         TmCase.mode = "message"
-        TmCase.messageText = "This item can't be held."
+        TmCase.messageText = Strings("This item can't be held.")
       elseif act == "USE" then
         local party = (TmCase._session and TmCase._session.party) or {}
         if #party == 0 then
           TmCase.mode = "message"
-          TmCase.messageText = "There is no POKéMON."
+          TmCase.messageText = Strings("There is no POKéMON.")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
           PartyMenu.show(party, TmCase._session and TmCase._session.moveOverlay, {
@@ -289,7 +290,7 @@ function TmCase.draw()
   end
 
   -- 4. Header Title: "TM CASE" (WIN_TITLE: 0, 1, 10, 2 -> 72px center at y=9)
-  local title = "TM CASE"
+  local title = Strings("TM CASE")
   local tw = FrlgFont.measure(title)
   local tx = math.floor((72 - tw) / 2) + 4
   FrlgFont.draw(title, tx, 9, { colors = FrlgFont.COLOR.LIGHT })
@@ -297,13 +298,13 @@ function TmCase.draw()
 
   -- 4. Left Pane: Move Details (WIN_MOVE_INFO_LABELS & WIN_MOVE_INFO: y=104..152)
   -- Row 0: TYPE (y = 104)
-  FrlgFont.draw("TYPE", 8, 104, { colors = FrlgFont.COLOR.DARK_GRAY })
+  FrlgFont.draw(Strings("TYPE"), 8, 104, { colors = FrlgFont.COLOR.DARK_GRAY })
   -- Row 1: POWER (y = 116)
-  FrlgFont.draw("POWER", 8, 116, { colors = FrlgFont.COLOR.DARK_GRAY })
+  FrlgFont.draw(Strings("POWER"), 8, 116, { colors = FrlgFont.COLOR.DARK_GRAY })
   -- Row 2: ACCURACY (y = 128)
-  FrlgFont.draw("ACCURACY", 8, 128, { colors = FrlgFont.COLOR.DARK_GRAY })
+  FrlgFont.draw(Strings("ACCURACY"), 8, 128, { colors = FrlgFont.COLOR.DARK_GRAY })
   -- Row 3: PP (y = 140)
-  FrlgFont.draw("PP", 8, 140, { colors = FrlgFont.COLOR.DARK_GRAY })
+  FrlgFont.draw(Strings("PP"), 8, 140, { colors = FrlgFont.COLOR.DARK_GRAY })
 
   if sel then
     local moveId = Pokemon.moveFromTmItem(sel.id)
@@ -361,7 +362,7 @@ function TmCase.draw()
         -- HM icon + HM number
         local okHm = hasChrome and TmCaseChrome.drawHmIcon(92, y + 1)
         if not okHm then
-          FrlgFont.draw("HM", 92, y, { colors = FrlgFont.COLOR.DARK_GRAY })
+          FrlgFont.draw(Strings("HM"), 92, y, { colors = FrlgFont.COLOR.DARK_GRAY })
         end
         FrlgFont.draw(string.format("%02d", tmNum or 0), 108, y, { colors = FrlgFont.COLOR.DARK_GRAY })
       else
@@ -378,7 +379,7 @@ function TmCase.draw()
       end
     else
       -- CANCEL Row
-      FrlgFont.draw("CANCEL", 92, y, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("CANCEL"), 92, y, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -386,7 +387,7 @@ function TmCase.draw()
   if TmCase.mode ~= "action" then
     local descText
     if isCancel then
-      descText = "The TM CASE will be\nput away."
+      descText = Strings("The TM CASE will be\nput away.")
     elseif sel then
       local moveId = Pokemon.moveFromTmItem(sel.id)
       local moveName = Pokemon.moveName(moveId) or "---"
@@ -406,7 +407,7 @@ function TmCase.draw()
     -- Bottom left prompt window (WIN_SELECTED_MSG: 5, 15, 15, 4 -> 40, 120, 120, 32)
     Window.stdFrame(Window.template(5, 15, 15, 4))
     local tmLabel = sel.name or ItemsData.displayName(sel.id) or "TM"
-    FrlgFont.draw(tmLabel .. " is\nselected.", 44, 122, { maxWidth = 112, linePitch = 14, colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("%s is\nselected.", tmLabel), 44, 122, { maxWidth = 112, linePitch = 14, colors = FrlgFont.COLOR.NORMAL })
 
     local popX = 22
     local popY = 13
@@ -418,7 +419,7 @@ function TmCase.draw()
       if i == TmCase.actionCursor then
         Window.cursorPx(popX * 8 + 1, rowY)
       end
-      FrlgFont.draw(act, popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings(act), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 

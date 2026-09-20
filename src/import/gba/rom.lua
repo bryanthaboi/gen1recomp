@@ -1,5 +1,7 @@
 -- Bound ROM reads via mod.imports (8 MiB max per call) into numeric byte tables.
 
+local RevisionView = require("src.import.gba.revision_view")
+
 local Rom = {}
 Rom.__index = Rom
 
@@ -15,6 +17,7 @@ function Rom.open(imports, importId)
     md5 = info.md5,
     _cache = {}, -- optional page cache: pageIndex → 1-based bytes
   }, Rom)
+  self._view = RevisionView.forImports(imports, importId, info)
   return self
 end
 
@@ -27,7 +30,12 @@ function Rom:ensurePage(page)
   local offset = page * CHUNK
   local length = math.min(CHUNK, self.size - offset)
   if length <= 0 then return nil end
-  local data, err = self.imports:read(self.id, offset, length)
+  local data, err
+  if self._view then
+    data = self._view:sub(offset + 1, offset + length)
+  else
+    data, err = self.imports:read(self.id, offset, length)
+  end
   if not data then error(err or "rom read failed") end
   local bytes = {}
   for i = 1, #data do

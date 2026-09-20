@@ -6,6 +6,7 @@ local State = require("src.core.game3.battle.state")
 local Audio = require("src.core.game3.audio")
 local SE = require("src.core.game3.se_ids")
 local SummaryData = require("src.core.game3.summary_data")
+local Strings = require("src.core.Strings")
 
 local SwitchSeq = {}
 
@@ -102,11 +103,11 @@ local function withdraw_text(battler)
   if maxHp < 1 then maxHp = 1 end
   local ratio = hp / maxHp
   if ratio > 0.5 then
-    return string.format("%s, that's enough!\nCome back!", name)
+    return Strings("%s, that's enough!\nCome back!", name)
   elseif ratio > 0.2 then
-    return string.format("%s, good job!\nCome back!", name)
+    return Strings("%s, good job!\nCome back!", name)
   else
-    return string.format("%s, you did it!\nCome back!", name)
+    return Strings("%s, you did it!\nCome back!", name)
   end
 end
 
@@ -127,7 +128,7 @@ local function apply_entry_triggers(st, side, pushMsg)
       local fraction = (spikesLayers == 1) and 8 or (spikesLayers == 2 and 6 or 4)
       local dmg = math.max(1, math.floor(maxHp / fraction))
       State.applyHpLoss(b, dmg)
-      local msg = State.displayName(b) .. " is hurt\nby the SPIKES!"
+      local msg = Strings("%s is hurt\nby the SPIKES!", State.displayName(b))
       if pushMsg then pushMsg(msg) end
       local p = Anim.present(side)
       if p then
@@ -149,7 +150,7 @@ local function apply_entry_triggers(st, side, pushMsg)
         local cur = opp.stages and opp.stages.attack or 0
         if cur > -6 then
           opp.stages.attack = math.max(-6, cur - 1)
-          local msg = myName .. "'s INTIMIDATE\ncuts " .. oppName .. "'s ATTACK!"
+          local msg = Strings("%s's INTIMIDATE\ncuts %s's ATTACK!", myName, oppName)
           if pushMsg then pushMsg(msg) end
         end
       end
@@ -228,7 +229,7 @@ function SwitchSeq.beginPlayerSwitch(st, newSlot, opts)
     State.trackParticipant(st, st.enemy, newSlot)
     Anim.syncDisplayFromState(st)
     local newName = State.displayName(st.player)
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg("Go! " .. newName .. "!") end
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("Go! %s!", newName)) end
     headless_entry(st, { "player" })
     finish()
     return false
@@ -266,7 +267,7 @@ function SwitchSeq.beginSendOut(st, side, newSlot, opts)
       State.trackParticipant(st, st.enemy, newSlot)
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
-        SwitchSeq._pushMsg("Go! " .. State.displayName(st.player) .. "!")
+        SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player)))
       end
     else
       st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot })
@@ -275,7 +276,7 @@ function SwitchSeq.beginSendOut(st, side, newSlot, opts)
         local tname = (st.trainerClassName and st.trainerClassName ~= "")
           and (st.trainerClassName .. " " .. (st.trainerName or ""))
           or (st.trainerName or "TRAINER")
-        SwitchSeq._pushMsg(tname .. " sent\nout " .. State.displayName(st.enemy) .. "!")
+        SwitchSeq._pushMsg(Strings("%s sent\nout %s!", tname, State.displayName(st.enemy)))
       end
     end
     headless_entry(st, { side })
@@ -315,9 +316,9 @@ end
 function SwitchSeq.returnText(st, id)
   local old = State.battler(st, id)
   if State.sideOf(id) == "player" then
-    return State.displayName(old) .. ", come back!"
+    return Strings("%s, come back!", State.displayName(old))
   end
-  return trainer_label(st) .. "\nwithdrew " .. State.displayName(old) .. "!"
+  return Strings("%s\nwithdrew %s!", trainer_label(st), State.displayName(old))
 end
 
 -- pokefirered/data/battle_scripts_1.s:3046
@@ -348,9 +349,9 @@ function SwitchSeq.beginDoubleSwitch(st, id, newSlot, opts)
     local nb = State.battler(st, id)
     if SwitchSeq._pushMsg then
       if side == "player" then
-        SwitchSeq._pushMsg("Go! " .. State.displayName(nb) .. "!")
+        SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(nb)))
       else
-        SwitchSeq._pushMsg(trainer_label(st) .. " sent\nout " .. State.displayName(nb) .. "!")
+        SwitchSeq._pushMsg(Strings("%s sent\nout %s!", trainer_label(st), State.displayName(nb)))
       end
     end
     headless_entry(st, { id })
@@ -425,11 +426,11 @@ function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
     local tname = (st.trainerClassName and st.trainerClassName ~= "")
       and (st.trainerClassName .. " " .. (st.trainerName or ""))
       or (st.trainerName or "TRAINER")
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(tname .. " sent\nout " .. State.displayName(st.enemy) .. "!") end
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("%s sent\nout %s!", tname, State.displayName(st.enemy))) end
     st.player = State.makeBattler(st.playerParty[playerSlot], "player", { partyIndex = playerSlot })
     State.trackParticipant(st, st.enemy, playerSlot)
     Anim.syncDisplayFromState(st)
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg("Go! " .. State.displayName(st.player) .. "!") end
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player))) end
     headless_entry(st, { "enemy", "player" })
     finish()
     return false
@@ -508,9 +509,9 @@ local function run_step(step)
     local side = step_side(d)
     local text = ""
     if side == "player" then
-      text = "Go! " .. State.displayName(step_battler(st, d)) .. "!"
+      text = Strings("Go! %s!", State.displayName(step_battler(st, d)))
     else
-      text = trainer_label(st) .. " sent\nout " .. State.displayName(step_battler(st, d)) .. "!"
+      text = Strings("%s sent\nout %s!", trainer_label(st), State.displayName(step_battler(st, d)))
     end
     if side == "player" and not SwitchSeq._headless then
       -- pokefirered/src/battle_message.c:399

@@ -4142,7 +4142,8 @@ end
 function OverworldState:checkVictoryRewards(trainerClass, partyIndex,
                                             shownOnBattleScreen)
   local victories = require("data.scripts.victories")
-  local reward = victories[trainerClass .. "#" .. tostring(partyIndex or 1)]
+  local rewardKey = trainerClass .. "#" .. tostring(partyIndex or 1)
+  local reward = victories[rewardKey]
   if not reward then return self:runVictoryHook() end
   if reward.flag then
     if Game.save.flags[reward.flag] then return self:runVictoryHook() end
@@ -4174,7 +4175,7 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex,
   local chain = rewardChain()
   if reward.dialogue then
     if not shownOnBattleScreen then
-      chain.add(reward.dialogue, reward.badgeSound)
+      chain.add(reward.dialogue, victories.badgeSoundFor(rewardKey))
     end
     if reward.item then
       chain.add(reward.tmPre)
@@ -4189,7 +4190,7 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex,
       local name = Game.data.items[reward.badge] and Game.data.items[reward.badge].name
                    or reward.badge
       chain.line(Strings("%s received\nthe %s!", Game.save.player.name, name),
-                 reward.badgeSound)
+                 victories.badgeSoundFor(rewardKey))
     end
     if tmGiven then
       local name = Game.stringBuffer or reward.item

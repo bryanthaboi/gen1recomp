@@ -2,6 +2,7 @@
 
 local Rules = require("src.core.game3.battle.rules")
 local EffectCtx = require("src.core.game3.battle.effect_ctx")
+local Strings = require("src.core.Strings")
 
 local Residuals = {}
 
@@ -105,7 +106,7 @@ local function runStepAndRecord(adapter, battler, phase, fn, events)
         if not b._faintAnnounced then
           b._faintAnnounced = true
           if adapter.pushEvent then adapter:pushEvent({ kind = "faint", side = b.side, battler = b.id }) end
-          adapter:say(adapter:displayName(b) .. " fainted!")
+          adapter:say(Strings("%s fainted!", adapter:displayName(b)))
         end
         adapter:emitFaint(b)
       end

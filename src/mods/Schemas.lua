@@ -2396,7 +2396,14 @@ R.statuses = {
 
 -- run is optional because the "full" effects are steered from inside the
 -- damage pipeline and have no standalone handler to register yet; M7 gives
--- them the effect context that makes one possible
+-- them the effect context that makes one possible.
+--
+-- A "primary" handler returns its messages as an array.  Set `failed = true`
+-- on that table when the effect did not land ("But, it failed!", "Nothing
+-- happened!", a target that was already asleep...): the battle suppresses the
+-- move's success animation on that flag alone, the way the cart prints those
+-- refusals with no animation.  It is not a field of the record, so it has no
+-- entry below.
 R.move_effects = {
   semantics = "record", target = "move_effects",
   fields = {
@@ -2406,6 +2413,11 @@ R.move_effects = {
     run = f.opt(f.fn),
   },
   example = 'mod.content.move_effects:register("DRAIN_PP_EFFECT", { kind = "primary", run = fn })',
+  notes = 'A "primary" handler returns its messages as an array. Set '
+    .. '`failed = true` on that table when the effect did not land ("But, it '
+    .. 'failed!", "Nothing happened!", a target already asleep): the battle '
+    .. "suppresses the move's success animation on that flag, the way the cart "
+    .. 'prints those refusals with no animation.',
 }
 
 R.item_effects = {

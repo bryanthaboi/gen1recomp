@@ -5,6 +5,7 @@
 local Stack = require("src.ui.game3.stack")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Pokemon = require("src.core.game3.pokemon")
+local Strings = require("src.core.Strings")
 
 local HallOfFame = {}
 
@@ -169,7 +170,7 @@ function HallOfFame.draw()
     local mon = HallOfFame.getCurrentMon()
     if mon then
       -- Header
-      local hdr = string.format("HALL OF FAME No. %d", HallOfFame._currentIndex)
+      local hdr = Strings("HALL OF FAME No. %d", HallOfFame._currentIndex)
       FrlgFont.draw(hdr, 20, 16, { colors = FrlgFont.COLOR.WHITE or FrlgFont.COLOR.NORMAL })
 
       -- Mon Sprite Frame
@@ -192,11 +193,11 @@ function HallOfFame.draw()
       local otId = tonumber(mon.otId or mon.tid or session.trainerId or 0) % 65536
       local otName = tostring(mon.otName or mon.ot or session.name or session.playerName or "RED")
 
-      FrlgFont.draw(string.format("No. %03d", dexNo), 96, 36, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("No. %03d", dexNo), 96, 36, { colors = FrlgFont.COLOR.NORMAL })
       FrlgFont.draw(monName, 96, 50, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw(string.format("Lv. %d", lvl), 96, 64, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw(string.format("IDNo. %05d", otId), 96, 78, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw(string.format("OT/ %s", otName), 96, 92, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("Lv. %d", lvl), 96, 64, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("IDNo. %05d", otId), 96, 78, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("OT/ %s", otName), 96, 92, { colors = FrlgFont.COLOR.NORMAL })
 
       -- Moves Section (4 moves)
       love.graphics.setColor(0.18, 0.22, 0.32, 1)
@@ -222,22 +223,22 @@ function HallOfFame.draw()
     end
   elseif HallOfFame._phase == "congrats" then
     -- League Champions Congratulations Screen
-    FrlgFont.draw("LEAGUE CHAMPION!", 54, 24, { colors = FrlgFont.COLOR.WHITE or FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw("CONGRATULATIONS!", 48, 44, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("LEAGUE CHAMPION!"), 54, 24, { colors = FrlgFont.COLOR.WHITE or FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("CONGRATULATIONS!"), 48, 44, { colors = FrlgFont.COLOR.NORMAL })
 
     local name = tostring(session.name or session.playerName or "RED")
     local rawId = tonumber(session.trainerId or session.id or session.playerTrainerId) or 0
     local idStr = string.format("%05d", rawId % 65536)
 
-    FrlgFont.draw("NAME: " .. name, 32, 72, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw("IDNo. " .. idStr, 140, 72, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("NAME: %s", name), 32, 72, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("IDNo. %s", idStr), 140, 72, { colors = FrlgFont.COLOR.NORMAL })
 
     local h = session.hofDebutHours or tonumber(session.playTimeHours or session.hours) or 0
     local m = session.hofDebutMinutes or tonumber(session.playTimeMinutes or session.minutes) or 0
     local s = session.hofDebutSeconds or tonumber(session.playTimeSeconds or session.seconds) or 0
-    FrlgFont.draw(string.format("HOF DEBUT: %d:%02d:%02d", h, m, s), 32, 94, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("HOF DEBUT: %d:%02d:%02d", h, m, s), 32, 94, { colors = FrlgFont.COLOR.NORMAL })
 
-    FrlgFont.draw("PRESS A TO CONTINUE", 52, 126, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("PRESS A TO CONTINUE"), 52, 126, { colors = FrlgFont.COLOR.NORMAL })
   end
 end
 

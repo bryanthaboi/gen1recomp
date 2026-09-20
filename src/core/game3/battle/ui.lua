@@ -21,6 +21,7 @@ local Pokemon = require("src.core.game3.pokemon")
 local Window = require("src.ui.game3.window")
 local Types = require("src.core.game3.battle.types")
 local BallOpen = require("src.core.game3.battle.ball_open")
+local Strings = require("src.core.Strings")
 
 local Ui = {}
 
@@ -348,7 +349,7 @@ local function open_battle_bag()
     or (Runtime and Runtime.getSession and Runtime.getSession())
   local bag = session and session.bag
   if not bag then
-    Ui.push("The BAG is empty.")
+    Ui.push(Strings("The BAG is empty."))
     restore_action_menu()
     return
   end
@@ -1656,8 +1657,8 @@ local function draw_action_menu(st)
   -- cursor is a 1×2 BG pip whose ink lines up with printer y=2 text → draw at text Y.
   local ab = st and (is_double(st) and active_battler(st) or st.player)
   local name = ab and State.displayName(ab) or "POKéMON"
-  draw_prompt_text(string.format("What will\n%s do?", name), 10, 122)
-  local labels = { "FIGHT", "BAG", "POKéMON", "RUN" }
+  draw_prompt_text(Strings("What will\n%s do?", name), 10, 122)
+  local labels = { Strings("FIGHT"), Strings("BAG"), Strings("POKéMON"), Strings("RUN") }
   local positions = {
     { 136, 122 }, { 184, 122 },
     { 136, 138 }, { 184, 138 },
@@ -1703,8 +1704,8 @@ local function draw_move_menu(st)
     local def = Moves.get(mv)
     local pp = mon.pp and mon.pp[slot] or 0
     local maxPp = mon.maxPp and mon.maxPp[slot] or (def and def.pp) or pp
-    draw_menu_text(string.format("PP %d/%d", pp, maxPp), 168, 122, { small = true, colors = FrlgFont.COLOR.NORMAL })
-    draw_menu_text(Types.get(def and def.type) or "NORMAL", 168, 138, { small = true, colors = FrlgFont.COLOR.NORMAL })
+    draw_menu_text(Strings("PP %d/%d", pp, maxPp), 168, 122, { small = true, colors = FrlgFont.COLOR.NORMAL })
+    draw_menu_text(Strings(Types.get(def and def.type) or "NORMAL"), 168, 138, { small = true, colors = FrlgFont.COLOR.NORMAL })
   end
 end
 

@@ -151,6 +151,20 @@ function Check.releaseUrl()
   return "https://github.com/" .. Check.REPO .. "/releases/latest"
 end
 
+-- The release target's "port" tag, or nil on a desktop package.  The handheld
+-- launchers export the marker (build-linux-arm-sbc.sh sets
+-- POKEPORT_PORTMASTER, build-rg34xxsp.sh sets POKEPORT_RG34XXSP).
+-- POKEPORT_HANDHELD is honoured as a fallback because the SBC launcher has
+-- always exported it, so packs built before the explicit marker existed still
+-- identify themselves as the PortMaster port instead of a desktop Linux build.
+function Check.hostPort()
+  if type(os.getenv) ~= "function" then return nil end
+  if os.getenv("POKEPORT_PORTMASTER") then return "portmaster" end
+  if os.getenv("POKEPORT_RG34XXSP") then return "rg34xxsp" end
+  if os.getenv("POKEPORT_HANDHELD") == "1" then return "portmaster" end
+  return nil
+end
+
 local worker           -- the love.thread, once started
 local cmdCh, stateCh   -- the two channels
 local workerReady      -- nil = untried, true = running, false = unavailable
@@ -160,7 +174,7 @@ local cache = { status = "idle" } -- newest snapshot from the worker
 local function target()
   local osName = love and love.system and love.system.getOS and love.system.getOS() or nil
   local arch = jit and jit.arch or nil
-  local port = os.getenv("POKEPORT_PORTMASTER")
+  local port = Check.hostPort()
   return { os = osName, arch = arch, port = port }
 end
 
@@ -296,6 +310,19 @@ function Check.fullUpdateAction()
     local name = type(st.full.name) == "string" and st.full.name or ""
     if name:find("%.flatpak$") or os.getenv("FLATPAK_ID") then
       return { label = "Download Flatpak update", url = st.full.url }
+    end
+    if Check.hostPort() then
+      -- A handheld has no browser to open a download in, so fetch the port
+      -- package into the save directory instead of offering an AppImage that
+      -- could not run here.  The player then re-extracts it over the port
+      -- folder (see docs/linux-arm-sbc.md).
+      if st.status == "full_ready" then
+        return { label = "Update package ready", url = Check.releaseUrl() }
+      end
+      if ensureWorker() then
+        return { label = "Download port update", kind = "download" }
+      end
+      return { label = "Open releases", url = Check.releaseUrl() }
     end
     return { label = "Download AppImage update", url = st.full.url }
   elseif type(st.full) == "table" and type(st.full.url) == "string" then

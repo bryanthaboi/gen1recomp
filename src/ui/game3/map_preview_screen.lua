@@ -8,6 +8,7 @@
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Extract = require("src.import.gba.extract_island1")
 local MapPreviewExtract = require("src.import.gba.map_preview_extract")
+local Strings = require("src.core.Strings")
 
 local MapPreviewScreen = {}
 
@@ -354,6 +355,8 @@ local function drawNameWindow(name)
     return
   end
 
+  -- The ROM's English section name, translated like the map popup's.
+  name = Strings(name)
   -- MapPreview_CreateMapNameWindow: xctr = 104 - GetStringWidth(FONT_NORMAL, ...)
   local textW = FrlgFont.measure(name)
   local xctr = NAME_WINDOW_W - textW

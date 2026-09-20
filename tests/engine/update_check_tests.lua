@@ -47,10 +47,39 @@ eq(Check.fullAssetName("1.4.2", "Linux", "x64"),
   "gen1recomp-1.4.2-linux-x86_64.AppImage", "Linux x86_64 AppImage mapping")
 eq(Check.fullAssetName("1.4.2", "Linux", "x64", "flatpak"),
   "gen1recomp-1.4.2-linux.flatpak", "Linux Flatpak package mapping")
+-- Handheld ports run aarch64 Linux, so the port tag must win over the arch
+-- mapping: a desktop AppImage cannot be installed on a PortMaster device.
+eq(Check.fullAssetName("1.4.2", "Linux", "aarch64", "portmaster"),
+  "gen1recomp-1.4.2-sbc-portmaster.zip", "PortMaster SBC package mapping")
+eq(Check.fullAssetName("1.4.2", "Linux", "aarch64", "rg34xxsp"),
+  "gen1recomp-1.4.2-rg34xxsp-stockos64-mod.zip", "RG34XXSP package mapping")
 eq(Check.fullAssetName("1.4.2", "iOS", "arm64"),
   "gen1recomp++-1.4.2-ios.ipa", "iOS package mapping")
 eq(Check.fullAssetName("not-a-version", "Android", "arm64"), nil,
   "invalid full-package version rejected")
+
+-- The port tag comes from the launcher's environment. POKEPORT_HANDHELD is the
+-- marker the SBC launcher has always exported, so a pack built before the
+-- explicit POKEPORT_PORTMASTER existed is still identified as the PortMaster
+-- port rather than a desktop Linux build.
+do
+  local realGetenv = os.getenv
+  local function portWith(vars)
+    os.getenv = function(name) return vars[name] end
+    local port = Check.hostPort()
+    os.getenv = realGetenv
+    return port
+  end
+  eq(portWith({ POKEPORT_PORTMASTER = "1" }), "portmaster",
+    "PortMaster launcher marker identifies the SBC port")
+  eq(portWith({ POKEPORT_RG34XXSP = "1" }), "rg34xxsp",
+    "RG34XXSP launcher marker identifies that port")
+  eq(portWith({ POKEPORT_HANDHELD = "1" }), "portmaster",
+    "legacy handheld marker identifies the SBC port")
+  eq(portWith({ PORTMASTER = "1" }), nil,
+    "PORTMASTER alone is not the release-target marker")
+  eq(portWith({}), nil, "a desktop Linux build has no port tag")
+end
 
 -- A legacy Android shell needs one manual package update even when its
 -- downloaded payload already reports the latest engine version.

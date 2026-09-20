@@ -341,6 +341,9 @@ apply_cpu_governors() {
 export POKEPORT_HANDHELD=1
 export HANDHELD=1
 export PORTMASTER=1
+# Release-target marker for the self-updater: a full-package fallback here must
+# offer gen1recomp-<v>-sbc-portmaster.zip, never a desktop AppImage.
+export POKEPORT_PORTMASTER=1
 export NINTENDO_LAYOUT=1
 export XDG_DATA_HOME="$CONFDIR"
 export XDG_CONFIG_HOME="$CONFDIR"

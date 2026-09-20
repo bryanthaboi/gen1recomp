@@ -27,7 +27,7 @@ Versions.ROM_SIZE = 16777216
 -- v99: gEggMoves → pokemon/egg_moves.lua (hidden-mon egg moves were inert).
 -- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
 --       mapsec names and sDungeonInfo dungeon descriptions.
-Versions.CACHE_VERSION = 100
+Versions.CACHE_VERSION = 101
 Versions.NATIVE_VERSION = 5
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1
@@ -1988,6 +1988,7 @@ local FIRERED_10 = {
 -- SHA-1 (lowercase) → version table. Engine identity is SHA-1 only.
 Versions.BY_SHA1 = {
   ["41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc"] = FIRERED_10,
+  ["dd5945db9b930750cb39d00c84da8571feebf417"] = FIRERED_10,
 }
 -- Legacy MD5 keys retained only for error messages / migration hints.
 Versions.BY_MD5 = {

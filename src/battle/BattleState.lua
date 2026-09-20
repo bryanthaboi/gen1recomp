@@ -4101,16 +4101,15 @@ function BattleState:statusOnomatopoeia(user, kind)
   end
 end
 
--- Queue status text (+ sleep/confusion FX when the line matches).
--- Wake / snap-out / flinch / etc. stay text-only.
-function BattleState:sayStatusMsg(user, msg)
-  local text = prefixEnemy(msg, user)
-  if msg:find("is fast asleep!", 1, true) then
-    self:statusOnomatopoeia(user, "sleep")
-  elseif msg:find("is confused!", 1, true) then
-    self:statusOnomatopoeia(user, "confused")
+-- Queue status text (+ sleep/confusion FX when `kind` says this is the
+-- still-asleep/still-confused line). Wake / snap-out / flinch / etc. stay
+-- text-only (kind omitted) -- see Status.beforeMove's own doc comment for
+-- why `kind` is structured state, never derived from `msg`.
+function BattleState:sayStatusMsg(user, msg, kind)
+  if kind then
+    self:statusOnomatopoeia(user, kind)
   else
-    self:sayNext(text)
+    self:sayNext(prefixEnemy(msg, user))
   end
 end
 
@@ -4158,8 +4157,13 @@ end
 -- Runs Status.beforeMove plus the shared interruption bookkeeping;
 -- returns true when the user's action is interrupted.
 function BattleState:statusInterrupt(user, target, selectedId)
-  local canMove, msgs, selfHit = Status.beforeMove(user, self.rng, self, selectedId)
-  for _, m in ipairs(msgs) do self:sayStatusMsg(user, m) end
+  local canMove, msgs, selfHit, onomatopoeiaKind, onomatopoeiaIndex, statusBlockedId =
+    Status.beforeMove(user, self.rng, self, selectedId)
+  -- onomatopoeiaIndex: see Status.beforeMove's doc comment -- not
+  -- necessarily the last message in `msgs`.
+  for i, m in ipairs(msgs) do
+    self:sayStatusMsg(user, m, i == onomatopoeiaIndex and onomatopoeiaKind or nil)
+  end
   if selfHit then
     -- confusion self-hit (core.asm:3428-3434): clears everything in
     -- status1 except CONFUSED, then HandleSelfConfusionDamage deals a
@@ -4181,9 +4185,10 @@ function BattleState:statusInterrupt(user, target, selectedId)
   if not canMove then
     -- full paralysis (core.asm:3459-3464) clears bide/thrash/charge/
     -- trapping; sleep, freeze, flinch and held-in-place leave every
-    -- volatile in place (a sleeping wrapper keeps its victim held)
-    if user.mon.status == "PAR" and msgs[#msgs]
-       and msgs[#msgs]:find("fully paralyzed", 1, true) then
+    -- volatile in place (a sleeping wrapper keeps its victim held).
+    -- statusBlockedId, not mon.status == "PAR" -- see Status.beforeMove's
+    -- doc comment for why the two differ (#644-class bug).
+    if statusBlockedId == "PAR" then
       self:clearVolatiles(user, false)
     end
     return true
@@ -4212,25 +4217,18 @@ end
 -- damaging pipeline (EffectRegistry.runDamaging).
 
 -- Gen 1 status/stat primary effects call PlayCurrentMoveAnimation only
--- after they land; these failure texts print with no animation.  Failures
--- whose text is an ordinary sentence rather than one of the shared fail
--- lines set msgs.failed instead of relying on this sniffer -- Substitute's
--- two failure lines name the move, not the failure (#644).
+-- after they land; these failure texts print with no animation. Every
+-- MoveEffects.primary handler that can fail sets msgs.failed = true on its
+-- returned table at the point of return (alongside Substitute's own two,
+-- #644) -- replaces an msgs[1] English-substring sniffer that silently
+-- stopped suppressing the animation under any translation catalog, same
+-- bug class as the sleep/confusion SFX above. One of the old substrings,
+-- "is unaffected", never had a live producer reaching this function to
+-- begin with (SWITCH_AND_TELEPORT_EFFECT's copy of that text bypasses
+-- msgs via battle:cancelMoveAnim() directly).
 local function primaryEffectFailed(msgs)
   if not msgs or #msgs == 0 then return true end
-  if msgs.failed then return true end
-  -- the extracted lines keep the ROM's own trailing blank ("But, it
-  -- failed! ") and its terminator, so strip both or a refused status animates
-  local m = require("src.render.TextBox").strip(msgs[1]):gsub("%s+$", "")
-  if m == "But, it failed!" or m == "Nothing happened!" then return true end
-  if m:find("didn't affect", 1, true) then return true end
-  if m:find("is unaffected", 1, true) then return true end
-  if m:find("protected by MIST", 1, true) then return true end
-  -- engine/battle/move_effects/leech_seed.asm:28
-  if m:find("evaded attack", 1, true) then return true end
-  -- engine/battle/effects.asm:46-47
-  if m:lower():find("already asleep", 1, true) then return true end
-  return false
+  return msgs.failed and true or false
 end
 
 -- engine/battle/effects.asm:67, :159, :1158, :712, :1366

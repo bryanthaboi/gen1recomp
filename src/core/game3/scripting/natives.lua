@@ -1,6 +1,7 @@
 -- callnative / special allowlist; unknown → safe-skip + log once.
 -- Handlers mirror pret specials → host adapters (heal / PC), not map coords.
 
+local Strings = require("src.core.Strings")
 local Std = require("src.core.game3.scripting.stdscripts")
 
 local Natives = {}
@@ -334,7 +335,7 @@ Natives.ALLOW = {
   ["special:" .. Std.SPECIAL.OpenNaming] = function(ctx, adapters)
     if not (adapters and adapters.openNaming) then return false end
     return yield_host(ctx, adapters, function(done)
-      adapters.openNaming({ title = "NAME?" }, done)
+      adapters.openNaming({ title = Strings("NAME?") }, done)
     end)
   end,
   -- pokefirered/src/easy_chat_2.c:256 ShowEasyChatScreen (special 0x5F / 95)

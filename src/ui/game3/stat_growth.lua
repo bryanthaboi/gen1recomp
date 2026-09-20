@@ -1,6 +1,7 @@
 -- Stat growth / level-up window (pokefirered Cmd_drawlvlupbox / DrawLevelUpWindowPg1 & Pg2).
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
+local Strings = require("src.core.Strings")
 
 local StatGrowth = {}
 
@@ -87,7 +88,7 @@ function StatGrowth.draw()
 
   for idx = 1, 6 do
     local rowY = winY * 8 + 2 + (idx - 1) * 14
-    FrlgFont.draw(STAT_NAMES[idx], winX * 8 + 2, rowY, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings(STAT_NAMES[idx]), winX * 8 + 2, rowY, { colors = FrlgFont.COLOR.NORMAL })
     if isPage1 then
       local diff = newList[idx] - oldList[idx]
       local sign = (diff >= 0) and "+" or "-"

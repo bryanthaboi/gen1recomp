@@ -2,6 +2,7 @@
 -- never replaces a menu or advances the field, scripts, battle, or their tasks.
 local Options = require('src.core.game3.options')
 local Stack = require('src.ui.game3.stack')
+local Strings = require('src.core.Strings')
 local Rules = require('src.core.game3.help_rules')
 local Font = require('src.ui.game3.frlg_font')
 local Help = {open=false, seenIntro=false}
@@ -248,9 +249,10 @@ function Help.draw()
   if article then tile(3,8,24,224,136) end
   tile(article and 4 or 0,8,16,224,8)
   tile(article and 5 or 1,8,152,224,8)
-  text('HELP',14,2,true)
+  text(Strings('HELP'),14,2,true)
   local controls=Help.level=='welcome' and 'A: NEXT' or article and 'A B: CANCEL'
     or Help.level=='main' and '↑↓ PICK  A OK  B END' or '↑↓ PICK  A OK  B CANCEL'
+  controls=Strings(controls)
   text(controls,math.max(75,232-Font.measure(controls,{small=true})),2,true)
   g.setScissor(16,24,208,128)
   if Help.level=='welcome' then

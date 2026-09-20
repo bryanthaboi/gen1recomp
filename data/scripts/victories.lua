@@ -33,9 +33,27 @@
 -- text carries right after its FIRST label -- home/text.asm TextCommand_SOUND
 -- plays it once that page has typed out and then blocks on
 -- WaitForSoundToFinish, so the jingle sits between the pages rather than
--- under them.  macros/scripts/text.asm defines sound_level_up as
--- sound_get_item_1, so Pewter's and Viridian's badge lines are Get_Item1
--- too.  Vermilion, Celadon and Fuchsia carry no sound on the badge text.
+-- under them.  The names are the OVERWORLD sound engine's meaning of those
+-- commands (sound_get_item_1 -> Get_Item1, sound_get_key_item ->
+-- Get_Key_Item; macros/scripts/text.asm aliases sound_level_up to
+-- sound_get_item_1).  Vermilion, Celadon and Fuchsia carry no sound on the
+-- badge text in any version.
+--
+-- The badge jingle is the one place where those names are not what the
+-- cartridge plays, because a sound command names an id rather than a sound and
+-- each engine numbers the ids with its own SFX header table.  Every gym's badge
+-- line is saved with SaveEndBattleTextPointers in both Red and Yellow, so it is
+-- printed while the BATTLE sound engine is still loaded, and that engine's
+-- SFX_Headers_2 gives those ids different sounds: the id behind
+-- sound_get_item_1 / sound_level_up is SFX_Level_Up there, and the id behind
+-- sound_get_key_item is SFX_Ball_Poof.  pret's own comments say as much
+-- ("probably supposed to play SFX_GET_ITEM_1 but the wrong music bank is
+-- loaded"), and home/text.asm carries the note on TX_SOUND_GET_ITEM_1.
+-- Cerulean is the only badge whose jingle differs between versions, because
+-- Yellow's CeruleanGym.asm drops the command from that line.  badgeSoundFor()
+-- below answers with the jingle that is actually audible; the raw `badgeSound`
+-- field stays the overworld-engine name, which is what `tmSound` really needs
+-- (the TM texts print in the overworld, where those names are correct).
 
 local function range(prefix, first, last)
   local t = {}
@@ -45,7 +63,7 @@ local function range(prefix, first, last)
   return t
 end
 
-return {
+local M = {
   -- PewterGym.asm .gymVictory also HideObject TOGGLE_GYM_GUY
   -- (PEWTERCITY_YOUNGSTER) and TOGGLE_ROUTE_22_RIVAL_1 so the east-exit
   -- escort NPC and the first Route 22 rival stay gone after the badge.
@@ -58,7 +76,7 @@ return {
                         { "PEWTER_CITY", "PEWTERCITY_YOUNGSTER" },
                         { "ROUTE_22", "ROUTE22_RIVAL1" },
                       },
-                      badgeSound = "Get_Item1", -- sound_level_up
+                      badgeSound = "Get_Item1", -- sound_level_up -> battle engine: Level_Up
                       tmSound = "Get_Item1",
                       dialogue = {
                         "_PewterGymBrockReceivedBoulderBadgeText",
@@ -74,7 +92,7 @@ return {
                       gotFlag = "EVENT_GOT_TM11",
                       noRoom = "_CeruleanGymMistyTM11NoRoomText",
                       deactivate = range("EVENT_BEAT_CERULEAN_GYM_TRAINER_", 0, 1),
-                      badgeSound = "Get_Key_Item",
+                      badgeSound = "Get_Key_Item", -- sound_get_key_item -> battle engine: Ball_Poof (Yellow: none)
                       tmSound = "Get_Item1",
                       dialogue = {
                         "_CeruleanGymMistyReceivedCascadeBadgeText",
@@ -130,7 +148,7 @@ return {
                         gotFlag = "EVENT_GOT_TM46",
                         noRoom = "_SaffronGymSabrinaTM46NoRoomText",
                         deactivate = range("EVENT_BEAT_SAFFRON_GYM_TRAINER_", 0, 6),
-                        badgeSound = "Get_Key_Item",
+                        badgeSound = "Get_Key_Item", -- sound_get_key_item -> battle engine: Ball_Poof
                         tmSound = "Get_Item1",
                         dialogue = {
                           "_SaffronGymSabrinaReceivedMarshBadgeText",
@@ -145,7 +163,7 @@ return {
                        gotFlag = "EVENT_GOT_TM38",
                        noRoom = "_CinnabarGymBlaineTM38NoRoomText",
                        deactivate = range("EVENT_BEAT_CINNABAR_GYM_TRAINER_", 0, 6),
-                       badgeSound = "Get_Key_Item",
+                       badgeSound = "Get_Key_Item", -- sound_get_key_item -> battle engine: Ball_Poof
                        tmSound = "Get_Item1",
                        dialogue = {
                          "_CinnabarGymBlaineReceivedVolcanoBadgeText",
@@ -160,7 +178,7 @@ return {
                          gotFlag = "EVENT_GOT_TM27",
                          noRoom = "_ViridianGymGiovanniTM27NoRoomText",
                          deactivate = range("EVENT_BEAT_VIRIDIAN_GYM_TRAINER_", 0, 7),
-                         badgeSound = "Get_Item1", -- sound_level_up
+                         badgeSound = "Get_Item1", -- sound_level_up -> battle engine: Level_Up
                          tmSound = "Get_Item1",
                          dialogue = {
                            "_ViridianGymGiovanniReceivedEarthBadgeText",
@@ -199,3 +217,46 @@ return {
   ["OPP_AGATHA#1"] = { flag = "EVENT_BEAT_AGATHAS_ROOM_TRAINER_0" },
   ["OPP_LANCE#1"] = { flag = "EVENT_BEAT_LANCE" },
 }
+
+-- The jingle the cartridge actually plays for these badges, which is not the
+-- overworld name above: the badge lines are end-battle texts, so the battle
+-- sound engine resolves their sound id through its own SFX_Headers_2 table
+-- (see the note at the top).  Blue runs Red's scripts, so it shares Red's
+-- entry.  `false` means the badge line carries no sound command at all.
+local BADGE_SOUND = {
+  red = {
+    ["OPP_BROCK#1"] = "Level_Up",    -- sound_level_up -> SFX_Level_Up
+    ["OPP_MISTY#1"] = "Ball_Poof",   -- sound_get_key_item -> SFX_Ball_Poof
+    ["OPP_SABRINA#1"] = "Ball_Poof", -- sound_get_key_item -> SFX_Ball_Poof
+    ["OPP_BLAINE#1"] = "Ball_Poof",
+    ["OPP_GIOVANNI#3"] = "Level_Up", -- sound_level_up -> SFX_Level_Up
+  },
+  yellow = {
+    ["OPP_BROCK#1"] = "Level_Up",    -- sound_get_item_1 -> SFX_Level_Up
+    ["OPP_MISTY#1"] = false,         -- CeruleanGym.asm prints no sound
+    ["OPP_SABRINA#1"] = "Ball_Poof", -- sound_get_key_item -> SFX_Ball_Poof
+    ["OPP_BLAINE#1"] = "Ball_Poof",
+    ["OPP_GIOVANNI#3"] = "Level_Up", -- sound_level_up -> SFX_Level_Up
+  },
+}
+
+-- The jingle to play when this victory hands its badge over, or nil when it
+-- has none -- the jingle the cartridge plays, i.e. the one the battle sound
+-- engine gives the line's sound id, since the badge line rides the battle
+-- screen (checkVictoryRewards' shownOnBattleScreen).  The overworld reward
+-- fallback plays the same jingle rather than the raw `badgeSound` name: the
+-- cartridge never prints a badge line from the overworld, so there is no
+-- overworld reading of it to honour.  Resolved on every call rather than at
+-- load time, because GameVersion can change under an already-required (and
+-- therefore cached) module.
+function M.badgeSoundFor(victoryKey)
+  local reward = M[victoryKey]
+  if not reward then return nil end
+  local overrides = BADGE_SOUND[require("src.core.GameVersion").get()]
+                    or BADGE_SOUND.red
+  local override = overrides[victoryKey]
+  if override ~= nil then return override or nil end
+  return reward.badgeSound
+end
+
+return M

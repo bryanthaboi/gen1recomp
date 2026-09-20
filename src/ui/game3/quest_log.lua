@@ -1,6 +1,7 @@
 -- Read-only Quest Log movie, drawn from recorded tiles and actor tracks.
 local Q=require('src.core.game3.quest_log')
 local Font=require('src.ui.game3.frlg_font')
+local Strings=require('src.core.Strings')
 local UI={}
 function UI.install(cache)
   UI.pack=nil
@@ -86,6 +87,6 @@ function UI.draw(playback,session)
     Font.draw(text,4,y,{colors=Font.COLOR.WHITE})
   end
   local PokedexChrome = require('src.ui.game3.pokedex_chrome')
-  PokedexChrome.drawControlInfoLeft('{A_BUTTON}NEXT   {B_BUTTON}SKIP', 4, 146)
+  PokedexChrome.drawControlInfoLeft(Strings('{A_BUTTON}NEXT   {B_BUTTON}SKIP'), 4, 146)
 end
 return UI

@@ -1,6 +1,7 @@
 -- FRLG trainer prize money (pret Cmd_getmoneyreward / gTrainerMoneyTable).
 
 local Trainers = require("src.core.game3.scripting.trainers")
+local Strings = require("src.core.Strings")
 
 local Prize = {}
 
@@ -163,7 +164,7 @@ end
 function Prize.moneyMessage(playerName, amount)
   playerName = playerName or "PLAYER"
   amount = math.floor(tonumber(amount) or 0)
-  return playerName .. " got ¥" .. tostring(amount) .. "\nfor winning!"
+  return Strings("%s got ¥%s\nfor winning!", playerName, tostring(amount))
 end
 
 -- pokefirered/src/battle_script_commands.c:7064
@@ -182,7 +183,7 @@ end
 function Prize.payDayMessage(playerName, amount)
   playerName = playerName or "PLAYER"
   amount = math.floor(tonumber(amount) or 0) % 65536
-  return playerName .. " picked up\n¥" .. tostring(amount) .. "!"
+  return Strings("%s picked up\n¥%s!", playerName, tostring(amount))
 end
 
 Prize.ABILITY_PICKUP = 53

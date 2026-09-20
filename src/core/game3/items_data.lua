@@ -1,6 +1,7 @@
 -- FRLG item metadata loaded from extracted pack (pret items.json).
 -- Falls back to minimal hardcoded rows when pack is missing.
 
+local Strings = require("src.core.Strings")
 local ItemsData = {}
 
 ItemsData.POCKET = {
@@ -21,12 +22,13 @@ ItemsData.BAG_POCKET_ORDER = {
   "ITEMS", "KEY_ITEMS", "POKE_BALLS",
 }
 
+-- English sources; callers translate with Strings() when they draw them.
 ItemsData.POCKET_LABEL = {
-  ITEMS = "ITEMS",
-  KEY_ITEMS = "KEY ITEMS",
-  POKE_BALLS = "POKé BALLS",
-  TM_CASE = "TM CASE",
-  BERRY_POUCH = "BERRY POUCH",
+  ITEMS = Strings.source("ITEMS"),
+  KEY_ITEMS = Strings.source("KEY ITEMS"),
+  POKE_BALLS = Strings.source("POKé BALLS"),
+  TM_CASE = Strings.source("TM CASE"),
+  BERRY_POUCH = Strings.source("BERRY POUCH"),
 }
 
 -- pret GetPocketByItemId returns 1..5
@@ -325,7 +327,7 @@ function ItemsData.info(id)
     if num >= 133 and num <= 175 then
       return { id = num, name = "BERRY", pocket = "BERRY_POUCH", fieldUse = "heal" }
     end
-    return { id = num, name = "ITEM " .. num, pocket = "ITEMS", fieldUse = "none" }
+    return { id = num, name = Strings("ITEM %s", num), pocket = "ITEMS", fieldUse = "none" }
   end
   local sUpper = s:upper()
   if sUpper:find("BERRY", 1, true) then

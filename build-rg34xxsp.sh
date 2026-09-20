@@ -240,6 +240,9 @@ cd "$GAMEDIR" || exit 1
 
 export XDG_DATA_HOME="$CONFDIR"
 export XDG_CONFIG_HOME="$CONFDIR"
+# Release-target marker for the self-updater: a full-package fallback here must
+# offer gen1recomp-<v>-rg34xxsp-stockos64-mod.zip, never a desktop package.
+export POKEPORT_RG34XXSP=1
 export LD_LIBRARY_PATH="$GAMEDIR/libs.aarch64:${LD_LIBRARY_PATH:-}"
 export SDL_GAMECONTROLLERCONFIG="${sdl_controllerconfig:-}"
 # Mali / H700: prefer GLES where available

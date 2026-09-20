@@ -40,17 +40,58 @@ local leaders = {
   { "CINNABAR_GYM", "TEXT_CINNABARGYM_BLAINE", "OPP_BLAINE#1", 2 },
   { "VIRIDIAN_GYM", "TEXT_VIRIDIANGYM_GIOVANNI", "OPP_GIOVANNI#3", 1 },
 }
-for _, entry in ipairs(leaders) do
-  local _, sound, page = armFor(entry[1], entry[2], entry[3], entry[4])
-  eq(sound, victories[entry[3]].badgeSound,
-     entry[3] .. " still arms its badge jingle")
-  eq(page, entry[4], entry[3] .. " fires the jingle on its badge page")
+-- The jingle the cartridge really plays (#2339).  A badge line is an
+-- end-battle text (SaveEndBattleTextPointers), so it is printed while the
+-- battle sound engine is loaded, and that engine's own SFX_Headers_2 gives the
+-- line's sound id a different sound than the overworld engine's table does:
+-- the id behind sound_get_item_1 / sound_level_up is SFX_Level_Up, and the id
+-- behind sound_get_key_item is SFX_Ball_Poof.  Vermilion, Celadon and Fuchsia
+-- carry no sound command at all, and Yellow's CeruleanGym.asm drops it from
+-- Cerulean's line, which is the only version difference.
+local GameVersion = require("src.core.GameVersion")
+local wasVersion = GameVersion.get()
+local jingle = {
+  red = {
+    ["OPP_BROCK#1"] = "Level_Up",
+    ["OPP_MISTY#1"] = "Ball_Poof",
+    ["OPP_LT_SURGE#1"] = nil,
+    ["OPP_ERIKA#1"] = nil,
+    ["OPP_KOGA#1"] = nil,
+    ["OPP_SABRINA#1"] = "Ball_Poof",
+    ["OPP_BLAINE#1"] = "Ball_Poof",
+    ["OPP_GIOVANNI#3"] = "Level_Up",
+  },
+  yellow = {
+    ["OPP_BROCK#1"] = "Level_Up",
+    ["OPP_MISTY#1"] = nil,
+    ["OPP_LT_SURGE#1"] = nil,
+    ["OPP_ERIKA#1"] = nil,
+    ["OPP_KOGA#1"] = nil,
+    ["OPP_SABRINA#1"] = "Ball_Poof",
+    ["OPP_BLAINE#1"] = "Ball_Poof",
+    ["OPP_GIOVANNI#3"] = "Level_Up",
+  },
+}
+for _, version in ipairs({ "red", "blue", "yellow" }) do
+  local want = jingle[version == "yellow" and "yellow" or "red"]
+  GameVersion.set(version)
+  for key, sound in pairs(want) do
+    eq(victories.badgeSoundFor(key), sound,
+       key .. " badge jingle under " .. version)
+  end
+  for _, entry in ipairs(leaders) do
+    local _, sound, page = armFor(entry[1], entry[2], entry[3], entry[4])
+    eq(sound, want[entry[3]],
+       entry[3] .. " arms " .. version .. "'s jingle beside its badge line")
+    eq(page, want[entry[3]] and entry[4] or nil,
+       entry[3] .. " pages " .. version .. "'s jingle like the cartridge")
+  end
+  local _, surgeSound, surgePage = armFor("VERMILION_GYM",
+    "TEXT_VERMILIONGYM_LT_SURGE", "OPP_LT_SURGE#1", 3)
+  eq(surgeSound, nil, "LT.SURGE arms no badge jingle under " .. version)
+  eq(surgePage, nil, "and no jingle page under " .. version)
 end
-
-local _, surgeSound, surgePage = armFor("VERMILION_GYM",
-  "TEXT_VERMILIONGYM_LT_SURGE", "OPP_LT_SURGE#1", 3)
-eq(surgeSound, nil, "LT.SURGE arms no badge jingle")
-eq(surgePage, nil, "and no jingle page")
+GameVersion.set(wasVersion)
 
 local ok, real = pcall(dofile, "data/generated/text.lua")
 if ok and type(real) == "table"

@@ -4,6 +4,7 @@
 
 local Stack = require("src.ui.game3.stack")
 local FrlgFont = require("src.ui.game3.frlg_font")
+local Strings = require("src.core.Strings")
 
 local TrainerCard = {}
 
@@ -308,12 +309,12 @@ function TrainerCard.draw()
   if TrainerCard.side == "back" then
     -- BACK SIDE RENDERING (pret trainer_card.c PrintAllOnCardBack)
     -- Header: NAME & IDNo.
-    FrlgFont.draw("NAME:", 28, 24, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("NAME:"), 28, 24, { colors = FrlgFont.COLOR.NORMAL })
     FrlgFont.draw(name, 68, 24, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw("IDNo. " .. idStr, 150, 18, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("IDNo. %s", idStr), 150, 18, { colors = FrlgFont.COLOR.NORMAL })
 
     -- 1. HALL OF FAME DEBUT (pret y=35 in window -> screen y=43, label x=18, stat x=172)
-    FrlgFont.draw("HOF DEBUT", 28, 43, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("HOF DEBUT"), 28, 43, { colors = FrlgFont.COLOR.NORMAL })
     local hofStr = "---"
     if session.hofDebutTime then
       if type(session.hofDebutTime) == "table" then
@@ -340,7 +341,7 @@ function TrainerCard.draw()
     -- 2. LINK BATTLES
     local wins = tonumber(session.linkBattleWins) or 0
     local losses = tonumber(session.linkBattleLosses) or 0
-    FrlgFont.draw("LINK BATTLES", 28, 62, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("LINK BATTLES"), 28, 62, { colors = FrlgFont.COLOR.NORMAL })
     FrlgFont.draw("W:", 136, 62, { colors = FrlgFont.COLOR.NORMAL })
     FrlgFont.draw(string.format("%d", wins), 152, 62, { colors = FrlgFont.COLOR.STAT })
     FrlgFont.draw("L:", 184, 62, { colors = FrlgFont.COLOR.NORMAL })
@@ -348,12 +349,12 @@ function TrainerCard.draw()
 
     -- 3. POKéMON TRADES
     local trades = tonumber(session.pokemonTrades or session.trades) or 0
-    FrlgFont.draw("POKéMON TRADES", 28, 80, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("POKéMON TRADES"), 28, 80, { colors = FrlgFont.COLOR.NORMAL })
     FrlgFont.draw(string.format("%d", trades), 186, 80, { colors = FrlgFont.COLOR.STAT })
 
     -- 4. UNION ROOM
     local unionNum = tonumber(session.unionRoomNum or session.unionTrades) or 0
-    FrlgFont.draw("UNION ROOM", 28, 98, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("UNION ROOM"), 28, 98, { colors = FrlgFont.COLOR.NORMAL })
     FrlgFont.draw(string.format("%d", unionNum), 186, 98, { colors = FrlgFont.COLOR.STAT })
 
     -- 5. Party Pokémon Slots / Stickers (Bottom Row)
@@ -379,21 +380,21 @@ function TrainerCard.draw()
   end
 
   -- 3. Card Labels & Values (pret trainer_card.c relative to window (8, 8))
-  FrlgFont.draw("NAME:", 28, 37, { colors = FrlgFont.COLOR.NORMAL })
+  FrlgFont.draw(Strings("NAME:"), 28, 37, { colors = FrlgFont.COLOR.NORMAL })
   FrlgFont.draw(name, 68, 37, { colors = FrlgFont.COLOR.NORMAL })
 
-  FrlgFont.draw("IDNo. " .. idStr, 150, 18, { colors = FrlgFont.COLOR.NORMAL })
+  FrlgFont.draw(Strings("IDNo. %s", idStr), 150, 18, { colors = FrlgFont.COLOR.NORMAL })
 
   -- MONEY (pret x=20, y=56 in window -> screen (28, 64), right aligned at window x=134 -> screen x=142)
   local money = tonumber(session.money) or 0
-  FrlgFont.draw("MONEY", 28, 64, { colors = FrlgFont.COLOR.NORMAL })
+  FrlgFont.draw(Strings("MONEY"), 28, 64, { colors = FrlgFont.COLOR.NORMAL })
   local moneyStr = string.format("¥%d", money)
   local moneyW = FrlgFont.measure(moneyStr)
   FrlgFont.draw(moneyStr, math.max(68, 142 - moneyW), 64, { colors = FrlgFont.COLOR.NORMAL })
 
   -- POKéDEX (pret x=20, y=72 in window -> screen (28, 80), right aligned at window x=136 -> screen x=144)
   local caught = count_caught(session.dex) or tonumber(session.caughtMonsCount) or 0
-  FrlgFont.draw("POKéDEX", 28, 80, { colors = FrlgFont.COLOR.NORMAL })
+  FrlgFont.draw(Strings("POKéDEX"), 28, 80, { colors = FrlgFont.COLOR.NORMAL })
   local dexStr = string.format("%d", caught)
   local dexW = FrlgFont.measure(dexStr)
   FrlgFont.draw(dexStr, math.max(68, 144 - dexW), 80, { colors = FrlgFont.COLOR.NORMAL })
@@ -405,7 +406,7 @@ function TrainerCard.draw()
   hours = math.min(999, math.max(0, math.floor(hours)))
   mins = math.min(59, math.max(0, math.floor(mins)))
 
-  FrlgFont.draw("TIME", 28, 96, { colors = FrlgFont.COLOR.NORMAL })
+  FrlgFont.draw(Strings("TIME"), 28, 96, { colors = FrlgFont.COLOR.NORMAL })
 
   -- Hours right-aligned to colon at window x=119 -> screen x=127
   local hoursStr = string.format("%d", hours)

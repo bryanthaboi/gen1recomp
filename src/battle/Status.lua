@@ -80,7 +80,7 @@ Status.RECORDS = {
           "%s\nwoke up!", name(battler)) }
       end
       return false, { romText(battle and battle.data, "_FastAsleepText",
-        "%s\nis fast asleep!", name(battler)) }
+        "%s\nis fast asleep!", name(battler)) }, false, "sleep"
     end,
     onInflict = function(battle, target, opts, display)
       target.sleepTurns = battle.rng(1, 7)
@@ -277,7 +277,25 @@ local function battleStatuses(battle)
   return battle and battle.data and battle.data.statuses
 end
 
--- Returns canMove, messages, selfHit (true -> hurt itself in confusion).
+-- Returns canMove, messages, selfHit (true -> hurt itself in confusion),
+-- onomatopoeiaKind ("sleep" | "confused" | nil), onomatopoeiaIndex: which
+-- SFX, if any, BattleState:sayStatusMsg should play, and which entry of
+-- `messages` it belongs to -- NOT necessarily the last one. Confusion not
+-- self-hitting can fall through into the disabled-move check or the
+-- paralysis roll below, either of which may append one more, unrelated
+-- message ("<move> is disabled!"/"fully paralyzed!") after the confusion
+-- line; onomatopoeiaIndex keeps that later message reaching the screen as
+-- plain text instead of being silently replaced by the SFX's own
+-- regenerated display.
+--
+-- A record's beforeMove may return the kind as its own 4th value (only
+-- SLP's still-asleep branch does, not its textually-identical wake-up
+-- branch); the confusion block below sets it directly, since it is not a
+-- status record. Never derive this from the message text instead: it is
+-- real (potentially translated) ROM text by the time it reaches
+-- BattleState, and a translation does not carry the English "is fast
+-- asleep!"/"is confused!" substrings a naive search would look for.
+--
 -- The active status record's beforeMove runs at its priority slot: above
 -- VOLATILE_PRIORITY before the held/disable/confusion block (sleep,
 -- freeze), at or below after it (paralysis) -- the original's order.
@@ -299,21 +317,37 @@ function Status.beforeMove(battler, rng, battle, selectedMoveId)
   local handler = record and record.beforeMove
   local priority = handler and (record.beforeMovePriority or 0)
   local msgs = {}
+  local onomatopoeiaKind, onomatopoeiaIndex
+  -- statusBlockedId names the status record whose OWN beforeMove roll
+  -- stopped this move (PAR's 63/256 full-paralysis check today) -- not
+  -- mon.status, which a paralyzed-and-flinched battler also carries even
+  -- though the flinch above is what actually blocked it, not this; and
+  -- not msgs[#msgs] text-matched against "fully paralyzed" either
+  -- (#644-class bug): that substring does not survive translation, while
+  -- this structured id keeps working under any catalog.
+  local statusBlockedId
   local function runStatus()
-    local canMove, statusMsgs, selfHit = handler(battler, rng, battle)
+    local canMove, statusMsgs, selfHit, kind = handler(battler, rng, battle)
     for _, m in ipairs(statusMsgs or {}) do msgs[#msgs + 1] = m end
+    if kind then onomatopoeiaKind, onomatopoeiaIndex = kind, #msgs end
+    -- `record.id` is optional in the statuses registry (src/mods/Schemas.lua),
+    -- and a mod's `override` replaces the record outright rather than merging,
+    -- so fall back on the key the record was looked up under.
+    if not canMove then statusBlockedId = record.id or mon.status end
     return canMove, selfHit
   end
   if handler and priority > VOLATILE_PRIORITY then
     local canMove, selfHit = runStatus()
-    if not canMove or selfHit then return canMove, msgs, selfHit end
+    if not canMove or selfHit then
+      return canMove, msgs, selfHit, onomatopoeiaKind, onomatopoeiaIndex, statusBlockedId
+    end
     handler = nil
   end
   if battler.boundTurns and battler.boundTurns > 0 then
     battler.boundTurns = battler.boundTurns - 1
     msgs[#msgs + 1] = romText(battle and battle.data, "_CantMoveText",
       "%s\ncan't move!", name(battler))
-    return false, msgs
+    return false, msgs, nil, onomatopoeiaKind, onomatopoeiaIndex
   end
   if battler.disabledTurns then
     battler.disabledTurns = battler.disabledTurns - 1
@@ -332,9 +366,10 @@ function Status.beforeMove(battler, rng, battle, selectedMoveId)
     else
       table.insert(msgs, romText(battle and battle.data, "_IsConfusedText",
         "%s\nis confused!", name(battler)))
+      onomatopoeiaKind, onomatopoeiaIndex = "confused", #msgs
       -- cp 50 percent + 1 / jr c: hurt itself on rand >= 128 (128/256)
       if rng(0, 255) < 128 then
-        return false, msgs, true -- hurt itself
+        return false, msgs, true, onomatopoeiaKind, onomatopoeiaIndex -- hurt itself
       end
     end
   end
@@ -359,14 +394,16 @@ function Status.beforeMove(battler, rng, battle, selectedMoveId)
         "%s's\n%s is\ndisabled!", {
           USER = name(battler), ["RAM:wNameBuffer"] = shown,
         }))
-      return false, msgs
+      return false, msgs, nil, onomatopoeiaKind, onomatopoeiaIndex
     end
   end
   if handler then
     local canMove, selfHit = runStatus()
-    if not canMove or selfHit then return canMove, msgs, selfHit end
+    if not canMove or selfHit then
+      return canMove, msgs, selfHit, onomatopoeiaKind, onomatopoeiaIndex, statusBlockedId
+    end
   end
-  return true, msgs
+  return true, msgs, nil, onomatopoeiaKind, onomatopoeiaIndex
 end
 
 -- End-of-turn residual damage; opponent is needed for Leech Seed.

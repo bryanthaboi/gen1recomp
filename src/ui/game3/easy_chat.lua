@@ -7,6 +7,7 @@ local Stack = require("src.ui.game3.stack")
 local Audio = require("src.core.game3.audio")
 local EasyChatData = require("src.core.game3.easy_chat_data")
 local Chrome = require("src.ui.game3.chrome")
+local Strings = require("src.core.Strings")
 
 local EasyChat = {}
 
@@ -21,11 +22,14 @@ local SLOTS_LAYOUT = {
   { x = 126, y = 52, w = 84, h = 16 },
 }
 
+-- Strings.source, not Strings: this table is built at require time, before a
+-- catalog is loaded, so the draw below looks each label up at use time.
 local FOOTER_BTNS = {
-  { id = "DEL_ALL", label = "DEL. ALL", textX = 32, cursorX = 22, y = 88 },
-  { id = "CANCEL", label = "CANCEL", textX = 119, cursorX = 109, y = 88 },
-  { id = "OK", label = "OK", textX = 195, cursorX = 185, y = 88 },
+  { id = "DEL_ALL", label = Strings.source("DEL. ALL"), textX = 32, cursorX = 22, y = 88 },
+  { id = "CANCEL", label = Strings.source("CANCEL"), textX = 119, cursorX = 109, y = 88 },
+  { id = "OK", label = Strings.source("OK"), textX = 195, cursorX = 185, y = 88 },
 }
+EasyChat.FOOTER_BTNS = FOOTER_BTNS
 
 local function play_se(id)
   local ok, Aud = pcall(require, "src.core.game3.audio")
@@ -55,24 +59,24 @@ function EasyChat.open(opts)
     end
   end
 
-  local title = "PROFILE"
-  local instr1 = "Combine four words or phrases"
-  local instr2 = "and make your profile."
-  local confirm1 = "Your profile"
-  local confirm2 = "is as shown. Okay?"
+  local title = Strings("PROFILE")
+  local instr1 = Strings("Combine four words or phrases")
+  local instr2 = Strings("and make your profile.")
+  local confirm1 = Strings("Your profile")
+  local confirm2 = Strings("is as shown. Okay?")
 
   if opts.type == 14 then -- QUESTIONNAIRE
-    title = "QUESTIONNAIRE"
-    instr1 = "Combine four words or phrases"
-    instr2 = "and fill out the questionnaire."
-    confirm1 = "The answer"
-    confirm2 = "is as shown. Okay?"
+    title = Strings("QUESTIONNAIRE")
+    instr1 = Strings("Combine four words or phrases")
+    instr2 = Strings("and fill out the questionnaire.")
+    confirm1 = Strings("The answer")
+    confirm2 = Strings("is as shown. Okay?")
   elseif opts.type == 1 then -- BATTLE START
-    title = "At the battle's start:"
-    instr1 = "Make a message of six phrases."
-    instr2 = "Max two 12-letter phrases/line."
-    confirm1 = "Your feeling at the battle's start"
-    confirm2 = "is as shown. Okay?"
+    title = Strings("At the battle's start:")
+    instr1 = Strings("Make a message of six phrases.")
+    instr2 = Strings("Max two 12-letter phrases/line.")
+    confirm1 = Strings("Your feeling at the battle's start")
+    confirm2 = Strings("is as shown. Okay?")
   end
 
   local st = {
@@ -459,8 +463,11 @@ function EasyChat.draw()
   love.graphics.rectangle("fill", headerX, headerY + 1, headerW, headerH - 2, 2, 2)
 
   -- Title Text centered in header with title_text.pal colors (cyan 57, 205, 255 with purple-white 172, 172, 238)
+  -- Centred like the cart, but never started left of the ribbon: the longest
+  -- English title fills 118 of the header's 128 px, so a longer translation
+  -- would otherwise spill out of the blue fill on both sides.
   local titleW = FrlgFont.measure(st.title)
-  local titleX = headerX + math.floor((headerW - titleW) / 2)
+  local titleX = headerX + math.max(0, math.floor((headerW - titleW) / 2))
   FrlgFont.draw(st.title, titleX, headerY + 2, {
     colors = { fg = { 1, 1, 1, 1 }, shadow = { 24 / 255, 61 / 255, 130 / 255, 1 }, bg = { 0, 0, 0, 0 } },
   })
@@ -510,7 +517,7 @@ function EasyChat.draw()
     if isCur then
       drawTriangleCursor(btn.cursorX, 91, st.animTimer)
     end
-    FrlgFont.draw(btn.label, btn.textX, 88, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings(btn.label), btn.textX, 88, { colors = FrlgFont.COLOR.NORMAL })
   end
 
   -- 5. Bottom Workspace or Instruction Box
@@ -523,11 +530,11 @@ function EasyChat.draw()
       FrlgFont.draw(st.confirm1, dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
       FrlgFont.draw(st.confirm2, dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
     elseif st.mode == "CANCEL_CONFIRM" then
-      FrlgFont.draw("Quit editing?", dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw("The edited words will not be saved.", dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("Quit editing?"), dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("The edited words will not be saved."), dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
     elseif st.mode == "DEL_ALL_CONFIRM" then
-      FrlgFont.draw("All the text being edited will", dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw("be deleted. Is that okay?", dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("All the text being edited will"), dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("be deleted. Is that okay?"), dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
     else
       -- Standard instructions
       FrlgFont.draw(st.instr1, dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
@@ -542,12 +549,12 @@ function EasyChat.draw()
       if st.confirmChoice == 1 then
         drawTriangleCursor(ynX + 4, ynY + 8, st.animTimer)
       end
-      FrlgFont.draw("YES", ynX + 16, ynY + 5, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("YES"), ynX + 16, ynY + 5, { colors = FrlgFont.COLOR.NORMAL })
       -- NO
       if st.confirmChoice == 2 then
         drawTriangleCursor(ynX + 4, ynY + 22, st.animTimer)
       end
-      FrlgFont.draw("NO", ynX + 16, ynY + 19, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(Strings("NO"), ynX + 16, ynY + 19, { colors = FrlgFont.COLOR.NORMAL })
     end
 
   -- Group Selection Sub-window (pret sEasyChatWindowTemplates[2]: x=8, y=76, w=224, h=78)
@@ -556,7 +563,7 @@ function EasyChat.draw()
     drawOrangeFrame(gX, gY, gW, gH)
 
     -- Top instruction in frame
-    FrlgFont.draw("Select a group.", gX + 8, gY + 4, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(Strings("Select a group."), gX + 8, gY + 4, { colors = FrlgFont.COLOR.NORMAL })
 
     local numG = #st.groups
     local curRow = math.floor((st.groupCursor - 1) / 2)

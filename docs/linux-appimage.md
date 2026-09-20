@@ -21,7 +21,7 @@ mismatches on immutable desktops.
 | Won't start / `libfuse.so.2` | No FUSE | `sudo apt install libfuse2` (or `libfuse2t64`) **or** `./app.AppImage --appimage-extract-and-run` |
 | Update check / mods / save sync fail | Host `curl` missing or broken by AppImage `LD_LIBRARY_PATH` | Install curl; current builds scrub `LD_LIBRARY_PATH` for **host** curl and keep it for a bundled AppDir curl |
 | Settings / sync reset after quit | Portable mode next to a read-only AppImage parent (`/opt`, system dir) | Remove `portable.txt` or move the AppImage to a writable folder; the game falls back to the XDG save dir when the probe write fails |
-| "Download AppImage update" | Shell/`minShell` gate needs a full native package | Download the new `.AppImage`, `chmod +x`, replace the old file |
+| "Download AppImage update" | Shell/`minShell` gate needs a full native package | Download the new `.AppImage`, `chmod +x`, replace the old file. Handheld ports show **Download port update** and fetch their own package instead — see [linux-arm-sbc.md](linux-arm-sbc.md) |
 | Steam / Game Mode weirdness after update | Overlay `LD_PRELOAD` / PID change | HostShell unsets `LD_PRELOAD` for children and `execv`s `$APPIMAGE` on restart |
 
 ## Network transport (HostShell)
@@ -44,6 +44,13 @@ Flatpak ignores `portable.txt`.
 In-place updates download `gen1recomp-X.Y.Z.love` into the save directory.
 Full shell bumps open the matching AppImage (or Flatpak) download URL — there
 is no silent in-place AppImage replace yet.
+
+PortMaster-style ports (`linux-arm-sbc`, `rg34xxsp`) are unpacked Linux builds
+too, so they apply the same `.love` payloads in place, but they have no browser
+in which to open a download URL. On a handheld the full-package prompt fetches
+the port's own zip into the save directory for the player to re-extract; the
+port is identified by `POKEPORT_PORTMASTER` / `POKEPORT_RG34XXSP`. See
+[updater.md](updater.md) for the whole contract.
 
 ## Building
 

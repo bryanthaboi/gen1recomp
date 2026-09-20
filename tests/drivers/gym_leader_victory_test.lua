@@ -95,8 +95,9 @@ return function(game)
   assert(battle, "the real gym path reaches Brock's BattleState")
   assert(type(battle.endBattleText) == "string" and #battle.endBattleText > 0,
          "the battle carries the armed badge line (#1606)")
-  assert(battle.endBattleSound == "Get_Item1",
-         "and the badge jingle beside it (sound_level_up, PewterGym.asm)")
+  assert(battle.endBattleSound == "Level_Up",
+         "and the badge jingle beside it (sound_level_up, PewterGym.asm; the " ..
+         "battle sound engine is loaded, so it plays SFX_Level_Up, #2339)")
   assert(battle.endBattleSoundPage == 3,
          "the jingle is armed for the BOULDERBADGE page (PewterGym.asm:156)")
   U.shot(game, DIR .. "/brock_real_battle.png")

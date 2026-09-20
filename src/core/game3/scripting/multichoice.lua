@@ -2,6 +2,7 @@
 -- Filled for Island 1 / common FRLG lists; expand via ROM extract later.
 -- Keyed by listId (script operand). Each entry: { labels = {...}, left?, top? }.
 
+local Strings = require("src.core.Strings")
 local Multichoice = {}
 
 Multichoice.LISTS = {}
@@ -52,7 +53,7 @@ function Multichoice.resolve(listId, countHint)
   local n = tonumber(countHint) or 3
   local labels = {}
   for i = 1, math.max(1, n) do
-    labels[i] = "OPTION " .. (i - 1)
+    labels[i] = Strings("OPTION %s", (i - 1))
   end
   return labels, { left = 20, top = 5 }
 end

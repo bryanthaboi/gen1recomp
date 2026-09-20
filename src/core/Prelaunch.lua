@@ -29,8 +29,16 @@ local function updateAllowed(opts, fs)
       and not Platform.networkValidated() then
     return false
   end
-  if not (fs and fs.isFused and fs.isFused()) then return false end
-  return true
+  -- Fused and unpacked packaged builds both update; a dev checkout does not.
+  -- Boot owns the second half of that decision (the isDev check above is the
+  -- first) so the boot gate and this one cannot disagree.
+  if fs and fs.isFused and fs.isFused() then return true end
+  local okb, Boot = pcall(require, "src.update.Boot")
+  if okb and type(Boot) == "table"
+      and type(Boot.canUpdateInPlace) == "function" then
+    return Boot.canUpdateInPlace() and true or false
+  end
+  return false
 end
 
 local function syncSupported()

@@ -9,6 +9,7 @@
 local BattleChrome = require("src.ui.game3.battle_chrome")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local State = require("src.core.game3.battle.state")
+local Strings = require("src.core.Strings")
 
 local Healthbox = {}
 
@@ -422,7 +423,7 @@ function Healthbox.draw(side, battler, opts)
   -- pokefirered/src/battle_interface.c:1506
   local Battle = package.loaded["src.core.game3.battle"]
   local bst = Battle and Battle._st
-  if not isPlayer and bst and bst.ghostBattle and name == "GHOST" then
+  if not isPlayer and bst and bst.ghostBattle and name == Strings("GHOST") then
     local okA, AnimG = pcall(require, "src.core.game3.battle.anim")
     local pg = okA and AnimG.present and AnimG.present("enemy")
     if pg and pg.ghostUnveiled then
