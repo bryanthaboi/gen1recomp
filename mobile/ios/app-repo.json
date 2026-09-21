@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.70",
+          "date": "2026-09-21",
+          "size": 24632268,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.70/gen1recomp++-0.2.70-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2362 Badge Guide in Cerulean City Locks the Game\n- #2364 hidden items respawn\n- #2366 Celadon Mansion interior can be entered but not left\n- #2380 Ghost in Lavender Tower respawns endlessly\n\n## Contributors\n\n- @bryanthaboi\n- @thibautbus"
+        },
+        {
           "version": "0.2.69",
           "date": "2026-09-21",
           "size": 24625148,
