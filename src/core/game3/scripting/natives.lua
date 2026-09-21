@@ -427,7 +427,8 @@ Natives.ALLOW = {
       adapters.startWildBattle(foe, function(result)
         local code = outcome_to_code(result)
         if ctx then ctx.lastBattleOutcome = code end
-        setResult(ctx, code)
+        -- pokefirered/src/battle_setup.c:458
+        setResult(ctx, code == B_OUTCOME_WON and 0 or 1)
         if done then done() end
       end, { wildScripted = true })
     end)

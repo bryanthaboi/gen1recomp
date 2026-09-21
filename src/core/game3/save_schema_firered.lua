@@ -274,6 +274,7 @@ function Schema.fromSaveTable(save)
     modData = type(save.modData) == "table" and save.modData or {},
     meta = save.meta,
   }
+  require("src.core.game3.save_mon").each(session, require("src.core.game3.save_mon").normalize)
   reset_state_on_continue(session)
   Schema.ensureMonBalls(session)
   Schema.repairOwnMons(session)

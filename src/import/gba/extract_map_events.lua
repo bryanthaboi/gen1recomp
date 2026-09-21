@@ -94,8 +94,8 @@ local function parse_bg_events(rom, ptr, count)
     if kind == BG_EVENT_HIDDEN_ITEM then
       local item = rom:u16(base + 8)
       local info = rom:u16(base + 10)
-      local hiddenItemId = info % 512
-      local quantity = math.floor(info / 512) % 64
+      local hiddenItemId = info % 256
+      local quantity = math.floor(info / 256) % 128
       if quantity == 0 then quantity = 1 end
       local underfoot = info >= 32768
       local flag = FLAG_HIDDEN_ITEMS_START + hiddenItemId

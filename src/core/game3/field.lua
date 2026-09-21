@@ -234,11 +234,21 @@ local function bg_event_at(game, fx, fy, elevation, facingDir)
   return nil
 end
 
+local function hidden_item_store(session)
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if session and Runtime and Runtime.getSession and Runtime.getSession() == session
+      and Space and Space.store then
+    return Space.store, Space
+  end
+  return session and (session.store or session)
+end
+
 local function hidden_item_at(game, x, y, elevation)
   local session = Field._session
   local events = get_map_bg_events(game)
   local Flags = require("src.core.game3.scripting.flags")
-  local store = session and (session.store or session)
+  local store = hidden_item_store(session)
   for _, ev in ipairs(events) do
     if (ev.type == "hidden_item" or ev.kind == 7) and ev.x == x and ev.y == y then
       local flag = ev.flag or (ev.hiddenItemId and (0x3E8 + ev.hiddenItemId))
@@ -263,7 +273,7 @@ function Field.pickUpHiddenItem(game, hidden)
   local ItemsData = require("src.core.game3.items_data")
   local Message = require("src.ui.game3.message")
   local Audio = require("src.core.game3.audio")
-  local store = session and (session.store or session)
+  local store, Space = hidden_item_store(session)
 
   local flag = hidden.flag or (hidden.hiddenItemId and (0x3E8 + hidden.hiddenItemId))
   if flag and Flags.getFlag(store, nil, flag) then
@@ -274,7 +284,7 @@ function Field.pickUpHiddenItem(game, hidden)
   local qty = hidden.quantity or 1
   local bag = session and session.bag
 
-  if bag and not Bag.canAdd(bag, itemId, qty) then
+  if not bag or not Bag.add(bag, itemId, qty) then
     Message.show("Too bad!\nThe BAG is full…", {
       done = function()
         Message.close()
@@ -283,11 +293,9 @@ function Field.pickUpHiddenItem(game, hidden)
     return true
   end
 
-  if bag then
-    Bag.add(bag, itemId, qty)
-  end
   if flag and store then
     Flags.setFlag(store, nil, flag, true)
+    if Space then Space.persistSession(nil, game or Field._game) end
   end
 
   Audio.playFanfare(257)
@@ -323,7 +331,7 @@ function Field.useItemfinder(session, showOWMessage)
   local Flags = require("src.core.game3.scripting.flags")
   local Audio = require("src.core.game3.audio")
   local Message = require("src.ui.game3.message")
-  local store = session and (session.store or session)
+  local store = hidden_item_store(session)
 
   local found = nil
   local underfoot = false

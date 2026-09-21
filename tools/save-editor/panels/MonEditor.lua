@@ -233,11 +233,11 @@ local function drawMoveRows(S, Kit, mon, rightX, rowY, colW, rowH, rowGap)
     local mvId = nil
     local mvPp = 0
     if type(mv) == "table" then
-      mvId = mv.id or mv.name or (mv.moveId and (S.data and S.data.moves and S.data.moves[mv.moveId] and S.data.moves[mv.moveId].name))
+      mvId = (S.data and S.data.moves and S.data.moves[mv.id] and S.data.moves[mv.id].name) or mv.id or mv.name
       mvPp = mv.pp or 0
     elseif type(mv) == "number" then
       mvId = S.data and S.data.moves and S.data.moves[mv] and S.data.moves[mv].name
-      mvPp = S.data and S.data.moves and S.data.moves[mv] and S.data.moves[mv].pp or 10
+      mvPp = mon.pp and mon.pp[slot] or 0
     elseif type(mv) == "string" then
       mvId = mv
     end

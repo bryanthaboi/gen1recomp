@@ -216,6 +216,7 @@ function Gen.bindGame3Data(data)
         local iDef = { id = normName, name = info.name, pocket = info.pocket, itemId = num }
         data.items[normName] = iDef
         data.items[num] = iDef
+        data.items[tostring(num)] = iDef
       end
     end
   end
@@ -267,13 +268,15 @@ function Gen.hydrateMon(data, mon)
   if isG3 then
     local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
     if okP and Pokemon then
-      local spId = tonumber(mon.speciesId or mon.species)
-        or (Pokemon.speciesFromName and Pokemon.speciesFromName(tostring(mon.species)))
+      require("src.core.game3.save_mon").normalize(mon)
+      local spId = Pokemon.speciesOf(mon)
       if spId then
         mon.speciesId = spId
         local name = Pokemon.name(spId)
         if name and name ~= "" and name ~= "??????????" then
-          mon.species = name
+          mon.species = spId
+          mon.name = mon.name or name
+          mon.speciesNumbering = Pokemon.NUMBERING_INTERNAL
         end
         local meta = Pokemon.speciesMeta and Pokemon.speciesMeta(spId)
         if meta and mon.growthRate == nil then
@@ -289,17 +292,7 @@ function Gen.hydrateMon(data, mon)
         special = math.floor(((mon.ivs.spa or 0) + (mon.ivs.spd or 0)) / 4),
         hp = math.floor((mon.ivs.hp or 0) / 2),
       }
-      Pokemon.applyStats(mon)
-      mon.stats = {
-        hp = mon.maxHp or mon.hp or 10,
-        attack = mon.attack or 10,
-        defense = mon.defense or 10,
-        speed = mon.speed or 10,
-        spAtk = mon.spAtk or mon.spa or 10,
-        spDef = mon.spDef or mon.spd or 10,
-        specialAttack = mon.spAtk or mon.spa or 10,
-        specialDefense = mon.spDef or mon.spd or 10,
-      }
+      require("src.core.game3.save_mon").normalize(mon)
     end
     return mon
   end
@@ -319,97 +312,9 @@ function Gen.hydrateSave(data, save)
   if type(save) ~= "table" then return save end
   local g = Gen.of(save)
   if g == 3 then
-    save.inventory = save.inventory or {}
-    save.bagOrder = save.bagOrder or {}
-    save.pcItems = save.pcItems or {}
-    save.bag = save.bag or require("src.core.game3.bag").new()
-
-    if save.inventory then
-      local arraySlots = {}
-      for k, v in pairs(save.inventory) do
-        if type(k) == "number" and type(v) == "table" then
-          arraySlots[#arraySlots + 1] = k
-          local sId = v.id or v.itemId or v.name or v[1]
-          local sQty = tonumber(v.qty or v.quantity or v.count or v[2]) or 1
-          if sId and sQty > 0 then
-            local okD, ItemsData = pcall(require, "src.core.game3.items_data")
-            local okI, Items = pcall(require, "src.core.game3.items")
-            local num = okD and ItemsData and ItemsData.toNumericId(sId)
-            local name = (num and okI and Items and Items.FRLG_TO_HOST[num]) or (okD and ItemsData and ItemsData.bagKey(sId)) or tostring(sId)
-            save.inventory[name] = sQty
-          end
-        end
-      end
-      for _, k in ipairs(arraySlots) do
-        save.inventory[k] = nil
-      end
-    end
-
-    if save.bag and save.bag.pockets then
-      local okD, ItemsData = pcall(require, "src.core.game3.items_data")
-      local okI, Items = pcall(require, "src.core.game3.items")
-      if okD and ItemsData and okI and Items then
-        for _, pocketList in pairs(save.bag.pockets) do
-          for _, slot in ipairs(pocketList or {}) do
-            if slot.id and (tonumber(slot.qty) or 0) > 0 then
-              local num = ItemsData.toNumericId(slot.id)
-              local name = (num and Items.FRLG_TO_HOST[num]) or ItemsData.bagKey(slot.id) or tostring(slot.id)
-              save.inventory[name] = tonumber(slot.qty) or 1
-            end
-          end
-        end
-      end
-    end
-
-    if save.pcItems then
-      local arraySlots = {}
-      for k, v in pairs(save.pcItems) do
-        if type(k) == "number" and type(v) == "table" then
-          arraySlots[#arraySlots + 1] = k
-          local sId = v.id or v.itemId or v.name or v[1]
-          local sQty = tonumber(v.qty or v.quantity or v.count or v[2]) or 1
-          if sId and sQty > 0 then
-            local okD, ItemsData = pcall(require, "src.core.game3.items_data")
-            local okI, Items = pcall(require, "src.core.game3.items")
-            local num = okD and ItemsData and ItemsData.toNumericId(sId)
-            local name = (num and okI and Items and Items.FRLG_TO_HOST[num]) or (okD and ItemsData and ItemsData.bagKey(sId)) or tostring(sId)
-            save.pcItems[name] = sQty
-          end
-        end
-      end
-      for _, k in ipairs(arraySlots) do
-        save.pcItems[k] = nil
-      end
-    end
-
-    local pcLists = {}
-    if type(save.storage) == "table" and type(save.storage.items) == "table" then
-      pcLists[1] = save.storage.items
-    elseif type(save.pc) == "table" and type(save.pc.items) == "table" then
-      pcLists[1] = save.pc.items
-    end
-    for _, pcList in ipairs(pcLists) do
-      local okD, ItemsData = pcall(require, "src.core.game3.items_data")
-      local okI, Items = pcall(require, "src.core.game3.items")
-      if okD and ItemsData and okI and Items then
-        for _, slot in ipairs(pcList) do
-          local id = slot.id or slot.itemId
-          local qty = slot.qty or slot.quantity or 1
-          if id and (tonumber(qty) or 0) > 0 then
-            local num = ItemsData.toNumericId(id)
-            local name = (num and Items.FRLG_TO_HOST[num]) or ItemsData.bagKey(id) or tostring(id)
-            save.pcItems[name] = tonumber(qty) or 1
-          end
-        end
-      end
-    end
-
-    for _, mon in ipairs(save.party or {}) do Gen.hydrateMon(data, mon) end
-    for _, box in ipairs(save.boxes or {}) do
-      if type(box) == "table" then
-        for _, mon in ipairs(box) do Gen.hydrateMon(data, mon) end
-      end
-    end
+    require("Game3Adapter").hydrate(data, save)
+    local Mons = require("src.core.game3.save_mon")
+    Mons.each(save, function(mon) Mons.normalize(mon); Gen.hydrateMon(data, mon) end)
     return save
   elseif g == 2 then
     local Mon = require("src.battle.gen2.Mon")
@@ -431,12 +336,7 @@ end
 function Gen.ensureBoxes(save)
   local g = Gen.of(save)
   if g == 3 then
-    save.boxes = save.boxes or {}
-    for i = 1, 14 do
-      save.boxes[i] = save.boxes[i] or {}
-    end
-    save.currentBox = math.max(1, math.min(14, save.currentBox or 1))
-    return save.boxes
+    return require("Game3Adapter").ensureStorage(save)
   elseif g == 2 then
     local Boxes2 = require("src.core.gen2.Boxes")
     save.boxes = save.boxes or {}

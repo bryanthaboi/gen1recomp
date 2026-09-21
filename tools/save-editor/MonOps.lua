@@ -39,7 +39,7 @@ function MonOps.create(data, species, level, gen)
       if mvId and mvId > 0 then
         local mvName = PokemonG3.moveName(mvId)
         monMoves[slot] = {
-          id = mvName,
+          id = mvId,
           moveId = mvId,
           pp = pp[slot] or 10,
           maxPp = maxPp[slot] or 10,
@@ -48,7 +48,7 @@ function MonOps.create(data, species, level, gen)
     end
 
     local mon = {
-      species = name,
+      species = spId,
       speciesId = spId,
       name = name,
       nickname = "",
@@ -74,7 +74,7 @@ function MonOps.create(data, species, level, gen)
       pokeball = 4, -- pokefirered/src/pokemon.c:1820
     }
 
-    PokemonG3.applyStats(mon)
+    require("src.core.game3.save_mon").normalize(mon)
     mon.stats = {
       hp = mon.maxHp,
       attack = mon.attack,
@@ -102,17 +102,7 @@ function MonOps.recalc(data, mon, gen)
   if isG3 then
     local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
     if okP and PokemonG3 then
-      PokemonG3.applyStats(mon)
-      mon.stats = {
-        hp = mon.maxHp or mon.hp or 10,
-        attack = mon.attack or 10,
-        defense = mon.defense or 10,
-        speed = mon.speed or 10,
-        spAtk = mon.spAtk or mon.spa or 10,
-        spDef = mon.spDef or mon.spd or 10,
-        specialAttack = mon.spAtk or mon.spa or 10,
-        specialDefense = mon.spDef or mon.spd or 10,
-      }
+      require("src.core.game3.save_mon").normalize(mon)
       mon.hp = math.max(0, math.min(mon.hp or mon.maxHp, mon.maxHp))
     end
     return
@@ -135,7 +125,7 @@ function MonOps.setLevel(data, mon, level, gen)
 
   if isG3 then
     local SummaryData = require("src.core.game3.summary_data")
-    local gr = mon.growthRate
+    local gr = require("src.core.game3.pokemon").growthRate(require("src.core.game3.pokemon").speciesOf(mon)) or mon.growthRate or 0
     if not gr then
       local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
       local spId = tonumber(mon.speciesId) or tonumber(mon.species)
@@ -164,6 +154,16 @@ function MonOps.setLevel(data, mon, level, gen)
   MonOps.recalc(data, mon, gen)
 end
 
+function MonOps.clearMove(mon, slot)
+  for _, key in ipairs({ "moves", "pp", "maxPp", "moveIds", "ppBonuses", "ppBonus", "ppUp" }) do
+    if type(mon[key]) == "table" then mon[key][slot] = nil end
+  end
+  if type(mon.ppBonusesPacked) == "number" then
+    local bit = require("bit")
+    mon.ppBonusesPacked = bit.band(mon.ppBonusesPacked, bit.bnot(bit.lshift(3, (slot - 1) * 2)))
+  end
+end
+
 function MonOps.setMove(data, mon, slot, moveId)
   assert(slot >= 1 and slot <= 4)
   local mdef = data and data.moves and data.moves[moveId]
@@ -185,6 +185,14 @@ function MonOps.setMove(data, mon, slot, moveId)
   assert(type(mdef) == "table", "unknown move: " .. tostring(moveId))
   mon.moves = mon.moves or {}
   local basePp = mdef.pp or 10
+  if mon.speciesId ~= nil or mon.personality ~= nil then
+    local nativeId = assert(tonumber(mdef.moveId or numMove), "unknown native move")
+    MonOps.clearMove(mon, slot)
+    mon.moves[slot] = nativeId
+    mon.pp, mon.maxPp = mon.pp or {}, mon.maxPp or {}
+    mon.pp[slot], mon.maxPp[slot] = basePp, basePp
+    return
+  end
   local currentUps = (mon.moves[slot] and mon.moves[slot].ppUps) or 0
   mon.moves[slot] = {
     id = mdef.id or mdef.name or tostring(moveId),
@@ -244,7 +252,8 @@ function MonOps.setSpecies(data, mon, species, gen)
     pcall(PokemonG3.install, nil)
     local spId = tonumber(species) or (PokemonG3.speciesFromName and PokemonG3.speciesFromName(tostring(species))) or 1
     local name = (PokemonG3.name and PokemonG3.name(spId)) or tostring(species)
-    mon.species = name
+    mon.species = spId
+    mon.speciesNumbering = PokemonG3.NUMBERING_INTERNAL
     mon.speciesId = spId
     mon.name = name
     local meta = PokemonG3.speciesMeta and PokemonG3.speciesMeta(spId)

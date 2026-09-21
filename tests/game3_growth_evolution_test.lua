@@ -182,13 +182,30 @@ eq(Pokemon.speciesOf(boxed), ARON, "and it is still ARON")
 local again = Schema.fromSaveTable(Schema.toSaveTable(loaded))
 eq(again.party[1].speciesNumbering, Pokemon.NUMBERING_INTERNAL, "the tag survives a save round trip")
 
+local hostExp = require("src.core.game3.summary_data").expForLevel(Pokemon.growthRate(WURMPLE), 8) - 1
 local hostSave = {
   schemaVersion = 1,
-  party = { { species = "WURMPLE", level = 7, hp = 10, maxHp = 10 } },
+  party = { { species = "WURMPLE", level = 7, hp = 10, maxHp = 10, exp = hostExp, personality = 0 } },
 }
 local hostLoaded = Schema.fromSaveTable(hostSave)
-eq(hostLoaded.party[1].speciesNumbering, nil, "a host mon keyed by name is left untagged")
-eq(Pokemon.speciesOf(hostLoaded.party[1]), WURMPLE, "and still resolves by name")
+eq(hostLoaded.party[1].speciesNumbering, Pokemon.NUMBERING_INTERNAL, "a named host mon is normalized to internal numbering")
+eq(hostLoaded.party[1].species, WURMPLE, "the persisted species is numeric internal WURMPLE")
+eq(hostLoaded.party[1].speciesId, WURMPLE, "the species alias agrees with WURMPLE")
+eq(hostLoaded.party[1].exp, hostExp, "normalization preserves earned EXP")
+eq(hostLoaded.party[1].hp, 10, "normalization preserves damaged HP")
+eq(Evolution.levelTarget(hostLoaded.party[1], national), SILCOON, "normalization preserves the WURMPLE evolution branch")
+local SaveData = require("src.core.SaveData")
+local hostRoundtrip = Schema.fromSaveTable(SaveData.decode(SaveData.encode(Schema.toSaveTable(hostLoaded))))
+eq(Pokemon.speciesOf(hostRoundtrip.party[1]), WURMPLE, "serialized roundtrip preserves WURMPLE rather than national NINCADA")
+eq(hostRoundtrip.party[1].exp, hostExp, "serialized roundtrip preserves earned EXP")
+local rewards = require("src.core.game3.battle.experience").awardFoe({
+  playerParty = hostRoundtrip.party, player = { mon = hostRoundtrip.party[1], partyIndex = 1 },
+  wild = true, session = hostRoundtrip,
+}, { species = 113, level = 10, mon = { species = 113, level = 10 } },
+  { partyIndices = { 1 }, getOpts = function() return {} end })
+eq(#rewards, 1, "normalized named mon remains an actual battle EXP recipient")
+check(hostRoundtrip.party[1].exp > hostExp and hostRoundtrip.party[1].level >= 8,
+  "battle EXP crosses the normalized WURMPLE growth threshold")
 
 print("[test] 7. a mon handed over by a script is stamped when it is built")
 local Party = require("src.core.game3.party")

@@ -20,9 +20,19 @@ local Charmap = require("src.save_convert.data.charmap")
 local Gen = require("Gen")
 
 local Ops = {}
+local G3 = require("Game3Adapter")
+local boxInsert, boxRemove
 
 Ops.MONEY_MAX = 999999
 Ops.STACK_MAX = 99
+function Ops.stackMax(S)
+  return Gen.ofState(S) == 3 and 999 or Ops.STACK_MAX
+end
+
+local function moveId(mon, slot)
+  local move = mon.moves and mon.moves[slot]
+  return type(move) == "table" and (move.moveId or move.id) or move
+end
 Ops.ARM_SECONDS = 2.5
 -- The in-game naming screen caps a nickname at 10 glyphs
 -- (BattleState:askNicknameUI / src/ui/NamingScreen.lua maxLen = 10); the
@@ -427,9 +437,9 @@ end
 -- the target is the box, not a mon.
 function Ops.openBoxAddPicker(S, Kit)
   local box = Ops.boxes(S)[S.selectedBox]
-  if #box >= Ops.boxCapacity(S) then
+  if Ops.boxSize(S, box) >= Ops.boxCapacity(S) then
     return Ops.say(S, ("Box %d is full (%d/%d)")
-      :format(S.selectedBox, #box, Ops.boxCapacity(S)))
+      :format(S.selectedBox, Ops.boxSize(S, box), Ops.boxCapacity(S)))
   end
   S.speciesPicker = { query = "", offset = 0, opened = true, mode = "box-add" }
   if Kit then Kit.focus = "species-picker" end  -- soft keyboard rises (#529)
@@ -441,20 +451,19 @@ end
 -- box mon and a party mon born in the editor are indistinguishable.
 function Ops.boxAddSpecies(S, id)
   local box = Ops.boxes(S)[S.selectedBox]
-  if #box >= Ops.boxCapacity(S) then
+  if Ops.boxSize(S, box) >= Ops.boxCapacity(S) then
     return Ops.say(S, ("Box %d is full (%d/%d)")
-      :format(S.selectedBox, #box, Ops.boxCapacity(S)))
+      :format(S.selectedBox, Ops.boxSize(S, box), Ops.boxCapacity(S)))
   end
   if not Ops.speciesUsable(S, id) then
     return Ops.say(S, ("%s has no usable base stats,  cannot add it")
       :format(tostring(id)))
   end
   local mon = createMon(S, id, 5)
-  table.insert(box, mon)
-  S.selectedBoxSlot = #box
+  S.selectedBoxSlot = boxInsert(S, box, mon)
   S.editingMon = mon
   return Ops.mark(S, ("Added %s Lv5 to box %d slot %d")
-    :format(id, S.selectedBox, #box))
+    :format(id, S.selectedBox, S.selectedBoxSlot))
 end
 
 function Ops.setDv(S, mon, key, value)
@@ -472,7 +481,7 @@ end
 function Ops.cycleMove(S, mon, slot)
   if not mon or not (S.cat and S.cat.moves and #S.cat.moves > 0) then return false end
   local moves = S.cat.moves
-  local current = mon.moves and mon.moves[slot] and mon.moves[slot].id
+  local current = moveId(mon, slot)
   local idx = 0
   if current then
     for i, id in ipairs(moves) do
@@ -554,7 +563,7 @@ function Ops.setMove(S, mon, slot, id)
   if not mon then return false end
   slot = math.floor(tonumber(slot) or 0)
   if slot < 1 or slot > 4 then return false end
-  local current = mon.moves and mon.moves[slot] and mon.moves[slot].id
+  local current = moveId(mon, slot)
   if id == current then
     return Ops.say(S, ("Move %d is already %s"):format(slot, tostring(id)))
   end
@@ -596,8 +605,8 @@ function Ops.clearMove(S, mon, slot)
   if not (mon and mon.moves and mon.moves[slot]) then
     return Ops.say(S, ("Move slot %d is already empty"):format(slot))
   end
-  local id = mon.moves[slot].id
-  mon.moves[slot] = nil
+  local id = moveId(mon, slot)
+  if Gen.ofState(S) == 3 then MonOps.clearMove(mon, slot) else mon.moves[slot] = nil end
   return Ops.mark(S, ("Cleared move slot %d (%s)"):format(slot, id))
 end
 
@@ -606,7 +615,10 @@ function Ops.resetMoves(S, mon)
   local def = S.data.pokemon[mon.species]
   local gen = Gen.ofState(S)
   local learned
-  if gen == 2 then
+  if gen == 3 then
+    learned = require("src.core.game3.pokemon").movesAtLevel(mon, mon.level)
+    for slot = 1, 4 do MonOps.clearMove(mon, slot) end
+  elseif gen == 2 then
     local Mon = require("src.battle.gen2.Mon")
     learned = {}
     for _, mv in ipairs(Mon.movesAtLevel(def, mon.level, S.data.moves)) do
@@ -631,9 +643,16 @@ function Ops.healMon(S, mon)
   mon.hp = mon.stats.hp
   if mon.maxHp then mon.maxHp = mon.stats.hp end
   mon.status = nil
-  for _, mv in ipairs(mon.moves or {}) do
-    local def = S.data.moves[mv.id]
-    if def then mv.pp = def.pp + ((mv.ppUps or 0) * math.floor(def.pp / 5)) end
+  for slot, mv in pairs(mon.moves or {}) do
+    if Gen.ofState(S) == 3 then
+      local pp = mon.maxPp and mon.maxPp[slot] or require("src.core.game3.pokemon").movePp(moveId(mon, slot))
+      mon.pp = mon.pp or {}
+      mon.pp[slot] = pp
+      if type(mv) == "table" then mv.pp = pp end
+    else
+      local def = S.data.moves[mv.id]
+      if def then mv.pp = def.pp + ((mv.ppUps or 0) * math.floor(def.pp / 5)) end
+    end
   end
   return Ops.mark(S, ("Healed %s to %d/%d HP"):format(mon.species, mon.hp, mon.stats.hp))
 end
@@ -787,6 +806,24 @@ function Ops.clearNickname(S, mon)
 end
 
 -- ------------------------------------------------------------------ boxes
+function Ops.boxSize(S, box)
+  if Gen.ofState(S) ~= 3 then return #box end
+  local count = 0
+  for slot = 1, 30 do if box[slot] then count = count + 1 end end
+  return count
+end
+
+boxInsert = function(S, box, mon)
+  if Gen.ofState(S) ~= 3 then table.insert(box, mon); return #box end
+  local wanted = S.selectedBoxSlot
+  if wanted and wanted >= 1 and wanted <= 30 and not box[wanted] then box[wanted] = mon; return wanted end
+  for slot = 1, 30 do if not box[slot] then box[slot] = mon; return slot end end
+end
+
+boxRemove = function(S, box, slot)
+  if Gen.ofState(S) == 3 then box[slot] = nil else table.remove(box, slot) end
+end
+
 function Ops.boxCount(S)
   return Gen.boxCount(S.save)
 end
@@ -803,8 +840,9 @@ function Ops.selectBox(S, index)
   S.selectedBox = clamp(index, 1, Ops.boxCount(S))
   S.selectedBoxSlot = 1
   S.save.currentBox = S.selectedBox
+  if Gen.ofState(S) == 3 then S.save.storage.currentBox = S.selectedBox end
   local box = Ops.boxes(S)[S.selectedBox]
-  S.status = ("Box %d  (%d/%d)"):format(S.selectedBox, #box, Ops.boxCapacity(S))
+  S.status = ("Box %d  (%d/%d)"):format(S.selectedBox, Ops.boxSize(S, box), Ops.boxCapacity(S))
   return true
 end
 
@@ -830,17 +868,16 @@ end
 -- chooses what lands in the box instead of always getting catalog entry #1.
 function Ops.boxAdd(S)
   local box = Ops.boxes(S)[S.selectedBox]
-  if #box >= Ops.boxCapacity(S) then
+  if Ops.boxSize(S, box) >= Ops.boxCapacity(S) then
     return Ops.say(S, ("Box %d is full (%d/%d)")
-      :format(S.selectedBox, #box, Ops.boxCapacity(S)))
+      :format(S.selectedBox, Ops.boxSize(S, box), Ops.boxCapacity(S)))
   end
   local species = S.cat.species[1]
   local mon = createMon(S, species, 5)
-  table.insert(box, mon)
-  S.selectedBoxSlot = #box
+  S.selectedBoxSlot = boxInsert(S, box, mon)
   S.editingMon = mon
   return Ops.mark(S, ("Added %s Lv5 to box %d slot %d")
-    :format(species, S.selectedBox, #box))
+    :format(species, S.selectedBox, S.selectedBoxSlot))
 end
 
 function Ops.withdraw(S)
@@ -857,7 +894,7 @@ function Ops.withdraw(S)
     if not ok then return Ops.say(S, reason) end
     Boxes2.withdraw(S.save, S.selectedBox, S.selectedBoxSlot)
   else
-    table.remove(box, S.selectedBoxSlot)
+    boxRemove(S, box, S.selectedBoxSlot)
     table.insert(S.save.party, mon)
   end
   S.selectedBoxSlot = clamp(S.selectedBoxSlot, 1, math.max(#Ops.boxes(S)[S.selectedBox], 1))
@@ -873,7 +910,7 @@ function Ops.release(S)
       ("Release %s permanently? Click again to confirm"):format(mon.species)) then
     return false
   end
-  table.remove(box, S.selectedBoxSlot)
+  boxRemove(S, box, S.selectedBoxSlot)
   if S.editingMon == mon then S.editingMon = nil end
   S.selectedBoxSlot = clamp(S.selectedBoxSlot, 1, math.max(#box, 1))
   return Ops.mark(S, ("Released %s"):format(mon.species))
@@ -895,6 +932,22 @@ function Ops.deposit(S)
     S.selectedBox = boxIndex
     if S.editingMon == mon then S.editingMon = nil end
     return Ops.mark(S, ("Deposited %s into box %d"):format(mon.species, boxIndex))
+  end
+  if Gen.ofState(S) == 3 then
+    local boxes = Ops.boxes(S)
+    local first = S.selectedBox or S.save.currentBox or 1
+    for offset = 0, 13 do
+      local b = ((first - 1 + offset) % 14) + 1
+      if Ops.boxSize(S, boxes[b]) < 30 then
+        local slot = boxInsert(S, boxes[b], mon)
+        table.remove(S.save.party, i)
+        S.selectedParty = clamp(i, 1, math.max(#S.save.party, 1))
+        S.selectedBox, S.selectedBoxSlot = b, slot
+        if S.editingMon == mon then S.editingMon = nil end
+        return Ops.mark(S, ("Deposited %s into box %d"):format(mon.species, b))
+      end
+    end
+    return Ops.say(S, "Every box is full")
   end
   local boxNum = BoxesMod.deposit(S.save, mon)
   if not boxNum then
@@ -942,19 +995,6 @@ function Ops.maxCoins(S)
   return Ops.addCoins(S, Ops.COIN_MAX)
 end
 
-local function syncG3Bag(S)
-  if Gen.ofState(S) ~= 3 or not S.save then return end
-  local okB, BagG3 = pcall(require, "src.core.game3.bag")
-  if okB and BagG3 then
-    S.save.bag = BagG3.new()
-    for id, qty in pairs(S.save.inventory or {}) do
-      if qty and qty > 0 then
-        BagG3.add(S.save.bag, id, qty)
-      end
-    end
-  end
-end
-
 local function itemQty(inv, id)
   if not inv or id == nil then return 0 end
   local val = inv[id]
@@ -967,42 +1007,30 @@ local function itemQty(inv, id)
 end
 Ops.itemQty = itemQty
 
-local function syncG3Pc(S)
-  if Gen.ofState(S) ~= 3 or not S.save then return end
-  if type(S.save.storage) ~= "table" then
-    S.save.storage = { currentBox = 1, boxes = {}, items = {} }
+local function changeG3(S, pc, id, quantity)
+  if not id then return Ops.say(S, "Pick an item first") end
+  if not G3.change(S.data, S.save, pc, { { id = id, qty = quantity } }) then
+    return Ops.say(S, "Item change refused: quantity or storage capacity")
   end
-  if type(S.save.pc) == "table" then
-    S.save.pc.items = nil
-    if next(S.save.pc) == nil then S.save.pc = nil end
-  end
-  local okD, ItemsData = pcall(require, "src.core.game3.items_data")
-  local items = {}
-  for id, val in pairs(S.save.pcItems or {}) do
-    local qty = itemQty(S.save.pcItems, id)
-    if qty and qty > 0 then
-      local num = okD and ItemsData and ItemsData.toNumericId(id) or id
-      items[#items + 1] = { id = num, qty = qty }
+  return Ops.mark(S, ("%s x%d%s"):format(tostring(id), quantity, pc and " in PC storage" or ""))
+end
+
+local function maxG3(S, pc)
+  local changes = {}
+  for id, qty in pairs(pc and S.save.pcItems or S.save.inventory) do
+    if type(qty) == "number" and qty > 0 and qty < 999 and Ops.itemStacks(S, id) then
+      changes[#changes + 1] = { id = id, qty = 999 }
     end
   end
-  S.save.storage.items = items
+  if #changes == 0 then return Ops.say(S, "Every stack is already maxed") end
+  if not G3.change(S.data, S.save, pc, changes) then return Ops.say(S, "Item changes refused") end
+  return Ops.mark(S, ("Maxed %d stacks to x999"):format(#changes))
 end
 
 function Ops.addToBag(S, id)
   if not id then return Ops.say(S, "Pick an item first") end
   S.save.inventory = S.save.inventory or {}
-  if Gen.ofState(S) == 3 then
-    local BagG3 = require("src.core.game3.bag")
-    S.save.bag = S.save.bag or BagG3.new()
-    local ok = BagG3.add(S.save.bag, id, 1)
-    if ok then
-      S.save.inventory[id] = itemQty(S.save.inventory, id) + 1
-      Bag.order(S.save, S.data)
-      return Ops.mark(S, ("Added %s to the bag"):format(tostring(id)))
-    else
-      return Ops.say(S, ("Could not add %s to bag (pocket full)"):format(tostring(id)))
-    end
-  end
+  if Gen.ofState(S) == 3 then return changeG3(S, false, id, G3.quantity(S.data, S.save, false, id) + 1) end
   local pocket = Bag.pocketOf(id, S.data)
   local capacity = Bag.capacity(S.data, pocket)
   if Bag.add(S.save, id, 1, S.data) then
@@ -1017,31 +1045,10 @@ function Ops.bagAdjust(S, id, delta)
   if not id then return Ops.say(S, "No bag row selected") end
   S.save.inventory = S.save.inventory or {}
   local have = itemQty(S.save.inventory, id)
-  if Gen.ofState(S) == 3 then
-    if delta > 0 then
-      if have >= Ops.STACK_MAX then
-        return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.STACK_MAX))
-      end
-      local nextQty = have + delta
-      S.save.inventory[id] = nextQty
-      syncG3Bag(S)
-    else
-      local nextQty = have + delta
-      if nextQty <= 0 then
-        S.save.inventory[id] = nil
-        Bag.order(S.save, S.data)
-        syncG3Bag(S)
-        return Ops.mark(S, ("Removed the last %s from the bag"):format(tostring(id)))
-      else
-        S.save.inventory[id] = nextQty
-        syncG3Bag(S)
-      end
-    end
-    return Ops.mark(S, ("%s x%d"):format(tostring(id), itemQty(S.save.inventory, id)))
-  end
+  if Gen.ofState(S) == 3 then return changeG3(S, false, id, math.max(0, G3.quantity(S.data, S.save, false, id) + delta)) end
   if delta > 0 then
-    if have >= Ops.STACK_MAX then
-      return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.STACK_MAX))
+    if have >= Ops.stackMax(S) then
+      return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.stackMax(S)))
     end
     Bag.add(S.save, id, delta, S.data)
   else
@@ -1057,12 +1064,7 @@ function Ops.bagDrop(S, id)
   if not id then return Ops.say(S, "No bag row selected") end
   S.save.inventory = S.save.inventory or {}
   local qty = itemQty(S.save.inventory, id)
-  if Gen.ofState(S) == 3 then
-    S.save.inventory[id] = nil
-    Bag.order(S.save, S.data)
-    syncG3Bag(S)
-    return Ops.mark(S, ("Dropped all %d %s"):format(qty, tostring(id)))
-  end
+  if Gen.ofState(S) == 3 then return changeG3(S, false, id, 0) end
   Bag.remove(S.save, id, qty)
   return Ops.mark(S, ("Dropped all %d %s"):format(qty, tostring(id)))
 end
@@ -1073,8 +1075,9 @@ end
 function Ops.itemStacks(S, id)
   if not id then return false end
   if Gen.ofState(S) == 3 then
-    local def = S.data and S.data.items and S.data.items[id]
-    return (def and def.pocket) ~= "KEY_ITEMS" and not tostring(id):find("^HM_")
+    local id3 = G3.itemId(S.data, id)
+    local info = require("src.core.game3.items_data")
+    return info.pocketOf(id3) ~= "KEY_ITEMS" and not info.isHm(id3)
   end
   if Gen.ofState(S) == 2 then
     return Bag.pocketOf(id, S.data) ~= "KEY_ITEM"
@@ -1086,6 +1089,10 @@ end
 
 -- engine/items/inventory.asm:74 caps a slot at 99
 function Ops.bagMax(S, id)
+  if Gen.ofState(S) == 3 then
+    if not id or not Ops.itemStacks(S, id) or G3.quantity(S.data, S.save, false, id) <= 0 then return Ops.say(S, "No stack to max") end
+    return changeG3(S, false, id, 999)
+  end
   if not id then return Ops.say(S, "No bag row selected") end
   S.save.inventory = S.save.inventory or {}
   local have = itemQty(S.save.inventory, id)
@@ -1093,22 +1100,17 @@ function Ops.bagMax(S, id)
   if not Ops.itemStacks(S, id) then
     return Ops.say(S, ("%s has no quantity to max"):format(tostring(id)))
   end
-  if have >= Ops.STACK_MAX then
-    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.STACK_MAX))
+  if have >= Ops.stackMax(S) then
+    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.stackMax(S)))
   end
-  if Gen.ofState(S) == 3 then
-    S.save.inventory[id] = Ops.STACK_MAX
-    syncG3Bag(S)
-  else
-    Bag.add(S.save, id, Ops.STACK_MAX - have, S.data)
-  end
-  return Ops.mark(S, ("%s x%d"):format(tostring(id), Ops.STACK_MAX))
+  Bag.add(S.save, id, Ops.stackMax(S) - have, S.data)
+  return Ops.mark(S, ("%s x%d"):format(tostring(id), Ops.stackMax(S)))
 end
 
 function Ops.bagCanMax(S, id)
   if id ~= nil then
-    local have = itemQty(S.save.inventory, id)
-    return have > 0 and have < Ops.STACK_MAX and Ops.itemStacks(S, id)
+    local have = Gen.ofState(S) == 3 and G3.quantity(S.data, S.save, false, id) or itemQty(S.save.inventory, id)
+    return have > 0 and have < Ops.stackMax(S) and Ops.itemStacks(S, id)
   end
   for _, rowId in ipairs(Bag.order(S.save, S.data)) do
     if Ops.bagCanMax(S, rowId) then return true end
@@ -1117,27 +1119,23 @@ function Ops.bagCanMax(S, id)
 end
 
 function Ops.bagMaxAll(S)
+  if Gen.ofState(S) == 3 then return maxG3(S, false) end
   local order = Bag.order(S.save, S.data)
   local ids = {}
   for i = 1, #order do ids[i] = order[i] end
   local n = 0
   for _, id in ipairs(ids) do
     local have = itemQty(S.save.inventory, id)
-    if have > 0 and have < Ops.STACK_MAX and Ops.itemStacks(S, id) then
-      if Gen.ofState(S) == 3 then
-        S.save.inventory[id] = Ops.STACK_MAX
-      else
-        Bag.add(S.save, id, Ops.STACK_MAX - have, S.data)
-      end
+    if have > 0 and have < Ops.stackMax(S) and Ops.itemStacks(S, id) then
+      Bag.add(S.save, id, Ops.stackMax(S) - have, S.data)
       n = n + 1
     end
   end
   if n == 0 then
-    return Ops.say(S, ("Every bag stack is already at x%d"):format(Ops.STACK_MAX))
+    return Ops.say(S, ("Every bag stack is already at x%d"):format(Ops.stackMax(S)))
   end
-  if Gen.ofState(S) == 3 then syncG3Bag(S) end
   return Ops.mark(S, ("Maxed %d bag stack%s to x%d")
-    :format(n, n == 1 and "" or "s", Ops.STACK_MAX))
+    :format(n, n == 1 and "" or "s", Ops.stackMax(S)))
 end
 
 -- constants/item_data_constants.asm:41
@@ -1220,6 +1218,7 @@ function Ops.pcSort(S, mode)
 end
 
 function Ops.addToPc(S, id)
+  if Gen.ofState(S) == 3 then return changeG3(S, true, id, G3.quantity(S.data, S.save, true, id) + 1) end
   if not id then return Ops.say(S, "Pick an item first") end
   local pc = Ops.pcItems(S)
   local n = 0
@@ -1228,40 +1227,42 @@ function Ops.addToPc(S, id)
     return Ops.say(S, "PC item storage is full (50 stacks)")
   end
   local cur = itemQty(pc, id)
-  pc[id] = math.min(Ops.STACK_MAX, cur + 1)
-  syncG3Pc(S)
+  pc[id] = math.min(Ops.stackMax(S), cur + 1)
   return Ops.mark(S, ("%s x%d in PC storage"):format(tostring(id), pc[id]))
 end
 
 function Ops.pcAdjust(S, id, delta)
+  if Gen.ofState(S) == 3 then return changeG3(S, true, id, math.max(0, G3.quantity(S.data, S.save, true, id) + delta)) end
   if not id then return Ops.say(S, "No PC row selected") end
   local pc = Ops.pcItems(S)
   local cur = itemQty(pc, id)
   if not pc[id] and cur <= 0 then return Ops.say(S, ("%s is not in PC storage"):format(tostring(id))) end
-  if delta > 0 and cur >= Ops.STACK_MAX then
-    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.STACK_MAX))
+  if delta > 0 and cur >= Ops.stackMax(S) then
+    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.stackMax(S)))
   end
-  local nextQty = clamp(cur + delta, 0, Ops.STACK_MAX)
+  local nextQty = clamp(cur + delta, 0, Ops.stackMax(S))
   if nextQty <= 0 then
     pc[id] = nil
-    syncG3Pc(S)
     return Ops.mark(S, ("Removed %s from PC storage"):format(tostring(id)))
   end
   pc[id] = nextQty
-  syncG3Pc(S)
   return Ops.mark(S, ("%s x%d in PC storage"):format(tostring(id), pc[id]))
 end
 
 function Ops.pcDrop(S, id)
+  if Gen.ofState(S) == 3 then return changeG3(S, true, id, 0) end
   if not id then return Ops.say(S, "No PC row selected") end
   local pc = Ops.pcItems(S)
   local qty = itemQty(pc, id)
   pc[id] = nil
-  syncG3Pc(S)
   return Ops.mark(S, ("Dropped all %d %s from PC storage"):format(qty, tostring(id)))
 end
 
 function Ops.pcMax(S, id)
+  if Gen.ofState(S) == 3 then
+    if not id or not Ops.itemStacks(S, id) or G3.quantity(S.data, S.save, true, id) <= 0 then return Ops.say(S, "No stack to max") end
+    return changeG3(S, true, id, 999)
+  end
   if not id then return Ops.say(S, "No PC row selected") end
   local pc = Ops.pcItems(S)
   local cur = itemQty(pc, id)
@@ -1269,23 +1270,22 @@ function Ops.pcMax(S, id)
   if not Ops.itemStacks(S, id) then
     return Ops.say(S, ("%s has no quantity to max"):format(tostring(id)))
   end
-  if cur >= Ops.STACK_MAX then
-    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.STACK_MAX))
+  if cur >= Ops.stackMax(S) then
+    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.stackMax(S)))
   end
-  pc[id] = Ops.STACK_MAX
-  syncG3Pc(S)
-  return Ops.mark(S, ("%s x%d in PC storage"):format(tostring(id), Ops.STACK_MAX))
+  pc[id] = Ops.stackMax(S)
+  return Ops.mark(S, ("%s x%d in PC storage"):format(tostring(id), Ops.stackMax(S)))
 end
 
 function Ops.pcCanMax(S, id)
   local pc = Ops.pcItems(S)
   if id ~= nil then
-    local have = itemQty(pc, id)
-    return have > 0 and have < Ops.STACK_MAX and Ops.itemStacks(S, id)
+    local have = Gen.ofState(S) == 3 and G3.quantity(S.data, S.save, true, id) or itemQty(pc, id)
+    return have > 0 and have < Ops.stackMax(S) and Ops.itemStacks(S, id)
   end
   for rowId, val in pairs(pc) do
     local qty = itemQty(pc, rowId)
-    if qty > 0 and qty < Ops.STACK_MAX and Ops.itemStacks(S, rowId) then
+    if qty > 0 and qty < Ops.stackMax(S) and Ops.itemStacks(S, rowId) then
       return true
     end
   end
@@ -1293,21 +1293,21 @@ function Ops.pcCanMax(S, id)
 end
 
 function Ops.pcMaxAll(S)
+  if Gen.ofState(S) == 3 then return maxG3(S, true) end
   local pc = Ops.pcItems(S)
   local n = 0
   for id, val in pairs(pc) do
     local qty = itemQty(pc, id)
-    if qty > 0 and qty < Ops.STACK_MAX and Ops.itemStacks(S, id) then
-      pc[id] = Ops.STACK_MAX
+    if qty > 0 and qty < Ops.stackMax(S) and Ops.itemStacks(S, id) then
+      pc[id] = Ops.stackMax(S)
       n = n + 1
     end
   end
   if n == 0 then
-    return Ops.say(S, ("Every PC stack is already at x%d"):format(Ops.STACK_MAX))
+    return Ops.say(S, ("Every PC stack is already at x%d"):format(Ops.stackMax(S)))
   end
-  syncG3Pc(S)
   return Ops.mark(S, ("Maxed %d PC stack%s to x%d")
-    :format(n, n == 1 and "" or "s", Ops.STACK_MAX))
+    :format(n, n == 1 and "" or "s", Ops.stackMax(S)))
 end
 
 -- Badges are truthy inventory flags, not stackable items, which is why the
