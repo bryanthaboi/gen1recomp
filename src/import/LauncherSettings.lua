@@ -6,7 +6,7 @@
 -- options.lua table (src/core/SaveData.loadOptions/saveOptions) and lets the
 -- next boot's applyOptions pick the values up.  Every ladder mirrors
 -- OptionsMenu's semantics and stored values; when editing one, keep the two
--- in sync.  ZOOM uses the live window's integer fit (same 160×144 rule as
+-- in sync.  ZOOM uses the live window's integer fit (same 160Ãƒâ€”144 rule as
 -- Renderer:fitScale) so the row can offer OUT/FIT/IN without a running game.
 --
 -- Rows are the same descriptor idiom OptionRows draws in game:
@@ -152,6 +152,17 @@ local function coreRows(opts, hooks)
     rows[#rows + 1] = { label = label, value = value, step = step }
   end
 
+  add(Strings("AUTOFIRE TOGGLE"), ladder(opts, "autofireEnabled", { { true, "ON" }, { false, "OFF" } }, true))
+  add(Strings("AUTOFIRE SPEED"),
+    function() return string.format("%.2fs", opts.autofireRate or 0.05) end,
+    function(dir)
+      local r = opts.autofireRate or 0.05
+      r = r + (dir * 0.01)
+      if r < 0.01 then r = 0.01 end
+      if r > 0.51 then r = 0.5 end
+      opts.autofireRate = r
+      return true
+    end)
   add(Strings("TEXT SPEED"), ladder(opts, "textSpeed", SPEEDS, 3))
   add(Strings("BATTLE ANIMATION"),
     ladder(opts, "animations",
@@ -564,6 +575,17 @@ local function gen2Rows(opts, hooks, shared)
   end
 
   -- The cart's own seven (engine/menus/options_menu.asm _Option).
+  add(Strings("AUTOFIRE TOGGLE"), ladder(shared, "autofireEnabled", { { true, "ON" }, { false, "OFF" } }, true))
+  add(Strings("AUTOFIRE SPEED"),
+    function() return string.format("%.2fs", shared.autofireRate or 0.05) end,
+    function(dir)
+      local r = shared.autofireRate or 0.05
+      r = r + (dir * 0.01)
+      if r < 0.01 then r = 0.01 end
+      if r > 0.51 then r = 0.5 end
+      shared.autofireRate = r
+      return true
+    end)
   add(Strings("TEXT SPEED"), ladder(opts, "textSpeed",
     { { "FAST", "FAST" }, { "MID", "MID" }, { "SLOW", "SLOW" } }, "MID"))
   add(Strings("BATTLE SCENE"), ladder(opts, "battleScene",
