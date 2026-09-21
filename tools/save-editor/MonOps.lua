@@ -103,6 +103,11 @@ function MonOps.recalc(data, mon, gen)
     local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
     if okP and PokemonG3 then
       require("src.core.game3.save_mon").normalize(mon)
+      if mon.personality then
+        mon.nature = PokemonG3.natureId and PokemonG3.natureId(mon.personality) or mon.nature
+        mon.gender = PokemonG3.gender and PokemonG3.gender(mon.speciesId or mon.species, mon.personality) or mon.gender
+        mon.ability = PokemonG3.abilityId and PokemonG3.abilityId(mon.speciesId or mon.species, mon.personality) or mon.ability
+      end
       mon.hp = math.max(0, math.min(mon.hp or mon.maxHp, mon.maxHp))
     end
     return
@@ -115,6 +120,168 @@ function MonOps.recalc(data, mon, gen)
   assert(def, "unknown species")
   mon.stats = Stats.calc(def, mon.level, mon.dvs, mon.statExp)
   mon.hp = math.max(0, math.min(mon.hp or mon.stats.hp, mon.stats.hp))
+end
+
+function MonOps.generatePid(species, otId, otSecretId, reqs)
+  reqs = reqs or {}
+  local PokemonG3 = require("src.core.game3.pokemon")
+  local bit = require("bit")
+
+  local spId = tonumber(species) or (PokemonG3.speciesFromName and PokemonG3.speciesFromName(tostring(species))) or 1
+  otId = bit.band(tonumber(otId) or 0, 0xFFFF)
+  otSecretId = bit.band(tonumber(otSecretId) or 0, 0xFFFF)
+  local trainerXor = bit.bxor(otId, otSecretId)
+
+  local meta = PokemonG3.speciesMeta and PokemonG3.speciesMeta(spId)
+  local ratio = (meta and meta.genderRatio) or 127
+
+  local targetNature = reqs.nature and tonumber(reqs.nature)
+  local targetAbility = reqs.ability and tonumber(reqs.ability)
+  local targetGender = reqs.gender
+  local targetShiny = reqs.shiny
+
+  -- 1. Determine valid low-byte (b0) for gender & ability slot
+  local validB0 = {}
+  for b = 0, 255 do
+    local ok = true
+    if targetAbility ~= nil and (b % 2) ~= targetAbility then ok = false end
+    if ok and targetGender ~= nil and targetGender ~= "" and targetGender ~= "U" then
+      local g
+      if ratio == PokemonG3.GENDER_MALE then g = "M"
+      elseif ratio == PokemonG3.GENDER_FEMALE then g = "F"
+      elseif ratio == PokemonG3.GENDER_GENDERLESS then g = "U"
+      elseif ratio > b then g = "F"
+      else g = "M" end
+      if g ~= targetGender then ok = false end
+    end
+    if ok then validB0[#validB0 + 1] = b end
+  end
+  if #validB0 == 0 then
+    for b = 0, 255 do
+      if targetAbility == nil or (b % 2) == targetAbility then validB0[#validB0 + 1] = b end
+    end
+  end
+
+  local sOffset = (targetShiny == true) and math.random(0, 7) or (targetShiny == false and math.random(8, 255) or math.random(0, 255))
+  local targetXor = bit.bxor(trainerXor, sOffset)
+
+  -- 2. Search across b0 and b1 for matching nature modulo 25
+  for _, b0 in ipairs(validB0) do
+    for b1 = 0, 255 do
+      local pLow = b1 * 256 + b0
+      local pHigh = bit.bxor(pLow, targetXor)
+      local p = pHigh * 65536 + pLow
+      if targetNature == nil or (p % 25) == targetNature then
+        return p
+      end
+    end
+  end
+
+  -- Fallback satisfying nature and ability parity
+  local base = (targetNature or 0)
+  if targetAbility == 1 and (base % 2 == 0) then
+    base = base + 25
+  elseif targetAbility == 0 and (base % 2 == 1) then
+    base = base + 25
+  end
+  return base
+end
+
+function MonOps.setHeldItem(data, mon, itemId, gen)
+  if type(mon) ~= "table" then return end
+  local isG3 = (gen == 3) or (mon.speciesId ~= nil) or (mon.personality ~= nil)
+  if isG3 then
+    local ItemsData = require("src.core.game3.items_data")
+    local numId = tonumber(itemId) or (itemId and ItemsData.toNumericId and ItemsData.toNumericId(itemId))
+    mon.heldItem = numId or itemId
+    mon.item = mon.heldItem
+    return
+  end
+  mon.item = itemId
+end
+
+function MonOps.setHappiness(data, mon, val, gen)
+  if type(mon) ~= "table" then return end
+  local v = math.max(0, math.min(255, math.floor(tonumber(val) or 0)))
+  mon.happiness = v
+  mon.friendship = v
+end
+
+function MonOps.setNature(data, mon, natureId, gen)
+  if type(mon) ~= "table" then return end
+  natureId = math.max(0, math.min(24, math.floor(tonumber(natureId) or 0)))
+  mon.nature = natureId
+  local isG3 = (gen == 3) or (mon.speciesId ~= nil) or (mon.personality ~= nil)
+  if isG3 then
+    local currentAbility = (mon.personality and (mon.personality % 2)) or 0
+    local isShiny = require("src.core.game3.summary_data").isShiny(mon)
+    mon.personality = MonOps.generatePid(mon.speciesId or mon.species, mon.otId or 0, mon.otSecretId or 0, {
+      nature = natureId,
+      ability = currentAbility,
+      gender = mon.gender,
+      shiny = isShiny,
+    })
+    MonOps.recalc(data, mon, gen)
+  end
+end
+
+function MonOps.setAbility(data, mon, abilitySlot, gen)
+  if type(mon) ~= "table" then return end
+  abilitySlot = (tonumber(abilitySlot) or 0) % 2
+  local isG3 = (gen == 3) or (mon.speciesId ~= nil) or (mon.personality ~= nil)
+  if isG3 then
+    local currentNature = (mon.personality and (mon.personality % 25)) or mon.nature or 0
+    local isShiny = require("src.core.game3.summary_data").isShiny(mon)
+    mon.personality = MonOps.generatePid(mon.speciesId or mon.species, mon.otId or 0, mon.otSecretId or 0, {
+      nature = currentNature,
+      ability = abilitySlot,
+      gender = mon.gender,
+      shiny = isShiny,
+    })
+    local PokemonG3 = require("src.core.game3.pokemon")
+    mon.ability = PokemonG3.abilityId(mon.speciesId or mon.species, mon.personality)
+    MonOps.recalc(data, mon, gen)
+  end
+end
+
+function MonOps.setGender(data, mon, gender, gen)
+  if type(mon) ~= "table" then return end
+  local isG3 = (gen == 3) or (mon.speciesId ~= nil) or (mon.personality ~= nil)
+  if isG3 then
+    local currentNature = (mon.personality and (mon.personality % 25)) or mon.nature or 0
+    local currentAbility = (mon.personality and (mon.personality % 2)) or 0
+    local isShiny = require("src.core.game3.summary_data").isShiny(mon)
+    mon.personality = MonOps.generatePid(mon.speciesId or mon.species, mon.otId or 0, mon.otSecretId or 0, {
+      nature = currentNature,
+      ability = currentAbility,
+      gender = gender,
+      shiny = isShiny,
+    })
+    local PokemonG3 = require("src.core.game3.pokemon")
+    mon.gender = PokemonG3.gender(mon.speciesId or mon.species, mon.personality)
+    MonOps.recalc(data, mon, gen)
+  else
+    mon.gender = gender
+  end
+end
+
+function MonOps.setShiny(data, mon, shiny, gen)
+  if type(mon) ~= "table" then return end
+  local isG3 = (gen == 3) or (mon.speciesId ~= nil) or (mon.personality ~= nil)
+  if isG3 then
+    local currentNature = (mon.personality and (mon.personality % 25)) or mon.nature or 0
+    local currentAbility = (mon.personality and (mon.personality % 2)) or 0
+    mon.personality = MonOps.generatePid(mon.speciesId or mon.species, mon.otId or 0, mon.otSecretId or 0, {
+      nature = currentNature,
+      ability = currentAbility,
+      gender = mon.gender,
+      shiny = shiny,
+    })
+    mon.isShiny = shiny
+    MonOps.recalc(data, mon, gen)
+  else
+    mon.shiny = shiny
+  end
 end
 
 function MonOps.setLevel(data, mon, level, gen)

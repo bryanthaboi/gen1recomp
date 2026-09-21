@@ -589,15 +589,8 @@ function Battle.start(opts)
     if not song then
       if st.wild then
         local foeSpecies = foeMon and (foeMon.species or foeMon.speciesId or foeMon.id)
-        if foeSpecies == 150 then
-          song = Audio.role("battleMewtwo") or 340
-        elseif foeSpecies == 386 then
-          song = Audio.role("battleDeoxys") or 339
-        elseif foeSpecies == 144 or foeSpecies == 145 or foeSpecies == 146 or foeSpecies == 249 or foeSpecies == 250 then
-          song = Audio.role("battleLegend") or 341
-        else
-          song = Audio.role("battleWild") or 298
-        end
+        -- pokefirered/src/battle_setup.c:349 StartLegendaryBattle
+        song = Audio.legendaryBattleSong(foeSpecies) or Audio.role("battleWild") or 298
       else
         local role, fallback = Trainers.getBattleMusicRole(trainerId)
         song = Audio.role(role) or fallback

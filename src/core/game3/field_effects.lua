@@ -14,6 +14,26 @@ FieldEffects._anims = {}  -- transient active field animations
 FieldEffects._ground = nil -- pokefirered/src/event_object_movement.c:8721
 FieldEffects._surfClock = 0
 FieldEffects._logged = false
+-- pokefirered/src/scrcmd.c:2051 — gFieldEffectArguments, written by
+-- setfieldeffectargument and read by the effect that dofieldeffect starts.
+FieldEffects._fieldEffectArguments = {}
+-- waitfieldeffect callers parked until isFieldEffectActive(id) goes false.
+FieldEffects._waiters = {}
+
+-- pokefirered/include/constants/field_effects.h:71-72
+FieldEffects.FLDEFF_MOVE_DEOXYS_ROCK = 67
+FieldEffects.FLDEFF_DESTROY_DEOXYS_ROCK = 68
+
+-- pokefirered/include/constants/songs.h:81,80
+local SE_THUNDER2 = 81
+local SE_THUNDER = 80
+
+-- How far a Deoxys rock shard travels before it counts as off-screen and is
+-- dropped.  pret destroys each fragment once it leaves the 240x160 viewport
+-- (field_effect.c:4015); the engine draws in world space, so this is a
+-- viewport-sized bound around the shard's spawn point instead.
+local FRAG_TRAVEL_X = 260
+local FRAG_TRAVEL_Y = 200
 
 local CELL = 16
 local FEET_H = 8
@@ -21,6 +41,9 @@ local RUSTLE = { 1, 2, 3, 4, 0 }
 local FRAME_DUR = 10
 -- pokefirered/src/data/field_effects/field_effect_objects.h:1099
 local FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES = 64, 64, 5
+
+-- Forward-declared so field-effect starters defined above the body can call it.
+local play_se
 
 local function log(msg)
   if FieldEffects._logged then return end
@@ -371,6 +394,130 @@ function FieldEffects.startSweetScent(onDone)
   table.insert(FieldEffects._anims, anim)
 end
 
+-- pokefirered/src/field_effect.c:3946 — the Deoxys shatter whites the MAP out:
+--   BlendPalettes(PALETTES_BG, 0x10, RGB_WHITE);
+--   BeginNormalPaletteFade(PALETTES_BG, 0, 0x10, 0, RGB_WHITE);
+-- PALETTES_BG only, so the four rock fragments — OBJ sprites sharing the
+-- meteorite's palette tag 4371 — keep their colours and stay visible against
+-- the white map while they fly.  That is why this is a background veil painted
+-- between the map layers and the actors, and not a whole-screen "flash" like
+-- the one FldEff_PhotoFlash uses (that one really is PALETTES_ALL).
+-- gPaletteFade.y steps by 2, so 0x10 -> 0 is 8 frames.
+local BG_FLASH_FRAMES = 8
+
+function FieldEffects.startBgFlash(duration)
+  local anim = {
+    kind = "bg_flash",
+    timer = 0,
+    maxDur = math.max(1, math.floor(tonumber(duration) or BG_FLASH_FRAMES)),
+  }
+  table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+--- How white the map layers should be veiled this frame, 0..1.  Read by
+--- FieldView.draw between the tiles and the actors.
+function FieldEffects.bgFlashAlpha()
+  for _, anim in ipairs(FieldEffects._anims) do
+    if anim.kind == "bg_flash" then
+      return math.max(0, 1.0 - (anim.timer / anim.maxDur))
+    end
+  end
+  return 0
+end
+
+-- ------------------------------------------------- Birth Island Deoxys effects
+
+--- pokefirered/src/field_effect.c:3722 — slide the meteorite object to (x, y).
+--- pret works in object-event coords offset by +7 so the sprite visibly travels
+--- a long way; here the sprite simply lerps from its current pixel position to
+--- the target cell, which reads the same on screen.
+function FieldEffects.startMoveDeoxysRock(localId, x, y, frames)
+  local Objects = package.loaded["src.core.game3.objects"]
+  if not (Objects and Objects.find) then return nil end
+  local eo = Objects.find(localId)
+  if not eo then return nil end
+  local fromX, fromY = eo.px or 0, eo.py or 0
+  local toX, toY = (tonumber(x) or 0) * CELL, (tonumber(y) or 0) * CELL
+  -- Snap the home/template coords immediately, exactly like
+  -- SetObjEventTemplateCoords: the script-visible position must already be final
+  -- when the next interaction runs.
+  Objects.setObjectXY(localId, x, y)
+  -- setObjectXY snaps px/py to the destination; keep the sprite drawn where it
+  -- was so the lerp below actually slides it instead of teleporting.
+  eo.px, eo.py = fromX, fromY
+  frames = math.max(1, math.floor(tonumber(frames) or 5))
+  local anim = {
+    kind = "deoxys_rock_move",
+    localId = localId,
+    fromX = fromX,
+    fromY = fromY,
+    toX = toX,
+    toY = toY,
+    timer = 0,
+    maxDur = frames,
+    effectId = FieldEffects.FLDEFF_MOVE_DEOXYS_ROCK,
+  }
+  table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+--- pokefirered/src/field_effect.c:3840 — camera shake, thunder, then the rock
+--- shatters into four fragments and is removed from the map.
+function FieldEffects.startDestroyDeoxysRock(localId, graphicsId)
+  local Objects = package.loaded["src.core.game3.objects"]
+  local eo = Objects and Objects.find and Objects.find(localId)
+  if not eo then return nil end
+  local x, y = eo.px or 0, eo.py or 0
+  graphicsId = graphicsId or eo.graphicsId
+
+  -- pokefirered/src/field_effect.c:3975 CreateDeoxysRockFragments: all four
+  -- shards start at the rock's own top-left corner (4px higher) and fly apart.
+  -- eo.px/py is the cell's foot point, so undo the offset OwSprites.draw adds.
+  local originX, originY = x - 8, y - 20
+  local okO, OwSprites = pcall(require, "src.core.game3.ow_sprites")
+  if okO and OwSprites and OwSprites.getDraw then
+    local spr = OwSprites.getDraw(graphicsId)
+    if spr and spr.width and spr.height then
+      originX = x + (16 - spr.width) / 2
+      originY = y + 16 - spr.height - 4
+    end
+  end
+
+  -- pokefirered/src/field_effect.c:3993 SpriteCB_DeoxysRockFragment: fixed
+  -- ±16 x / ±12 y per frame, no gravity, one shard per diagonal.
+  local frags = {}
+  local dirs = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } }
+  for i = 1, 4 do
+    frags[i] = {
+      frame = i - 1,
+      x = originX,
+      y = originY,
+      ox = originX,
+      oy = originY,
+      dx = dirs[i][1] * 16,
+      dy = dirs[i][2] * 12,
+      off = false,
+    }
+  end
+  local anim = {
+    kind = "deoxys_rock_destroy",
+    localId = localId,
+    graphicsId = graphicsId,
+    x = x,
+    y = y,
+    px = x,
+    py = y,
+    timer = 0,
+    state = "shake",
+    frags = frags,
+    effectId = FieldEffects.FLDEFF_DESTROY_DEOXYS_ROCK,
+  }
+  table.insert(FieldEffects._anims, anim)
+  play_se(SE_THUNDER2)
+  return anim
+end
+
 local EMOTE_BASES = {
   [0] = 0,
   [1] = 6,
@@ -460,9 +607,44 @@ local function anim_frame(seq, t, loop)
   return seq[#seq][1]
 end
 
-local function play_se(id)
+function play_se(id)
   local okA, Audio = pcall(require, "src.core.game3.audio")
   if okA and Audio and Audio.playSe then Audio.playSe(id) end
+end
+
+-- ------------------------------------------------- setfieldeffectargument plumbing
+-- pokefirered/src/scrcmd.c:2051 writes gFieldEffectArguments[argNum]; the value
+-- operand is VarGet'd, which passes raw constants (< 0x4000) straight through.
+function FieldEffects.setFieldEffectArgument(argNum, value)
+  argNum = math.floor(tonumber(argNum) or -1)
+  if argNum < 0 or argNum > 15 then return false end
+  FieldEffects._fieldEffectArguments[argNum] = math.floor(tonumber(value) or 0)
+  return true
+end
+
+function FieldEffects.fieldEffectArgument(argNum, default)
+  local v = FieldEffects._fieldEffectArguments[argNum]
+  if v == nil then return default end
+  return v
+end
+
+function FieldEffects.clearFieldEffectArguments()
+  FieldEffects._fieldEffectArguments = {}
+end
+
+local function resolve_waiters()
+  local pending = FieldEffects._waiters
+  if #pending == 0 then return end
+  local keep = {}
+  for i = 1, #pending do
+    local w = pending[i]
+    if FieldEffects.isFieldEffectActive(w.id) then
+      keep[#keep + 1] = w
+    elseif w.done then
+      w.done()
+    end
+  end
+  FieldEffects._waiters = keep
 end
 
 local function ground_state()
@@ -722,7 +904,7 @@ function FieldEffects.step()
       if anim.timer >= anim.maxDur then
         finished = true
       end
-    elseif anim.kind == "flash" then
+    elseif anim.kind == "flash" or anim.kind == "bg_flash" then
       anim.alpha = math.max(0, 1.0 - (anim.timer / anim.maxDur))
       if anim.timer >= anim.maxDur then
         finished = true
@@ -843,6 +1025,77 @@ function FieldEffects.step()
       -- pokefirered/src/field_effect_helpers.c:777 UpdateHotSpringsWaterFieldEffect
       local g = FieldEffects._ground
       if not (g and g.inHotSprings) then finished = true end
+    elseif anim.kind == "deoxys_rock_move" then
+      -- pokefirered/src/field_effect.c:3745 — linear sprite lerp over maxDur frames.
+      local t = math.min(1, anim.timer / anim.maxDur)
+      local Objects = package.loaded["src.core.game3.objects"]
+      local eo = Objects and Objects.find and Objects.find(anim.localId)
+      if eo then
+        eo.px = anim.fromX + (anim.toX - anim.fromX) * t
+        eo.py = anim.fromY + (anim.toY - anim.fromY) * t
+      end
+      if anim.timer >= anim.maxDur then
+        if eo then
+          eo.px, eo.py = anim.toX, anim.toY
+          -- pret ShiftStillObjectEventCoords + triggerGroundEffectsOnStop.
+          if Objects.copyObjectXYToPerm then Objects.copyObjectXYToPerm(anim.localId) end
+        end
+        finished = true
+      end
+    elseif anim.kind == "deoxys_rock_destroy" then
+      -- pokefirered/src/field_effect.c:3860 DestroyDeoxysRockEffect_*
+      local FieldView = fieldView()
+      if anim.state == "shake" then
+        -- Task_DeoxysRockCameraShake (data[7]==0): full amplitude, sign flips
+        -- when data[0] passes 1, i.e. every other frame.
+        if FieldView and FieldView.setCameraPanning then
+          FieldView.setCameraPanning(0, (math.floor(anim.timer / 2) % 2 == 0) and 4 or -4)
+        end
+        -- DestroyDeoxysRockEffect_RockFragments: `if (++tTimer > 120)`.
+        if anim.timer > 120 then
+          local Objects = package.loaded["src.core.game3.objects"]
+          local eo = Objects and Objects.find and Objects.find(anim.localId)
+          if eo then
+            eo.px, eo.py = anim.x, anim.y
+            eo.invisible = true
+            eo.hidden = true
+            eo.visible = false
+          end
+          FieldEffects.startBgFlash()
+          play_se(SE_THUNDER)
+          anim.state = "shatter"
+          anim.timer = 0
+          anim.amp = 4
+        end
+      elseif anim.state == "shatter" then
+        -- The shards fly out while the shake decays (StartEndingDeoxysRock
+        -- CameraShake + the data[7]!=0 half of Task_DeoxysRockCameraShake).
+        for _, f in ipairs(anim.frags) do
+          if not f.off then
+            f.x = f.x + f.dx
+            f.y = f.y + f.dy
+            if math.abs(f.x - f.ox) > FRAG_TRAVEL_X
+              or math.abs(f.y - f.oy) > FRAG_TRAVEL_Y then
+              f.off = true
+            end
+          end
+        end
+        if anim.timer > 0 and anim.timer % 21 == 0 and anim.amp > 0 then
+          anim.amp = anim.amp - 1
+        end
+        if FieldView and FieldView.setCameraPanning then
+          FieldView.setCameraPanning(0,
+            (anim.timer % 2 == 0) and anim.amp or -anim.amp)
+        end
+        if anim.amp <= 0 then
+          if FieldView and FieldView.setCameraPanning then
+            FieldView.setCameraPanning(0, 0)
+          end
+          local Objects = package.loaded["src.core.game3.objects"]
+          if Objects and Objects.removeObject then Objects.removeObject(anim.localId) end
+          finished = true
+        end
+      end
     elseif anim.kind == "ripple" then
       -- pokefirered/src/field_effect_helpers.c:737 FldEff_Ripple
       local frame = anim_frame(ANIM_RIPPLE, anim.timer - 1, false)
@@ -856,6 +1109,8 @@ function FieldEffects.step()
     end
   end
   FieldEffects._anims = active
+
+  resolve_waiters()
 
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.step then Heal.step() end
@@ -1005,6 +1260,20 @@ function FieldEffects.drawFront(camX, camY, playerPy)
           end
         end
       end
+    elseif anim.kind == "deoxys_rock_destroy" and anim.state == "shatter" then
+      -- pokefirered/src/field_effect.c:3975 CreateDeoxysRockFragments (4x 8x8 sprites)
+      local sheet = load_sheet("deoxys_rock_fragments", 8, 8, 4)
+      if sheet then
+        for _, f in ipairs(anim.frags or {}) do
+          if not f.off then
+            local q = sheet.quads[f.frame]
+            if q then
+              love.graphics.setColor(1, 1, 1, 1)
+              love.graphics.draw(sheet.image, q, f.x - camX, f.y - camY)
+            end
+          end
+        end
+      end
     elseif anim.kind == "fly_takeoff" or anim.kind == "fly_landing" then
       local sheet = load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
       if sheet and sheet.quads[anim.frame] then
@@ -1087,6 +1356,20 @@ end
 --- pret dofieldeffect / waitfieldeffect for FLDEFF_POKECENTER_HEAL (25).
 function FieldEffects.doFieldEffect(id)
   id = tonumber(id) or 0
+  if id == FieldEffects.FLDEFF_MOVE_DEOXYS_ROCK then
+    -- pokefirered/src/field_effect.c:3722 FldEff_MoveDeoxysRock reads
+    -- gFieldEffectArguments[0..5] written by setfieldeffectargument.
+    local localId = FieldEffects.fieldEffectArgument(0, 1)
+    local x = FieldEffects.fieldEffectArgument(3, 15)
+    local y = FieldEffects.fieldEffectArgument(4, 12)
+    local frames = FieldEffects.fieldEffectArgument(5, 5)
+    return FieldEffects.startMoveDeoxysRock(localId, x, y, frames) ~= nil
+  end
+  if id == FieldEffects.FLDEFF_DESTROY_DEOXYS_ROCK then
+    -- pokefirered/src/field_effect.c:3860 FldEff_DestroyDeoxysRock
+    local localId = FieldEffects.fieldEffectArgument(0, 1)
+    return FieldEffects.startDestroyDeoxysRock(localId) ~= nil
+  end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and id == Heal.FLDEFF then
     return Heal.start()
@@ -1096,6 +1379,15 @@ end
 
 function FieldEffects.waitFieldEffect(id, done)
   id = tonumber(id) or 0
+  if id == FieldEffects.FLDEFF_MOVE_DEOXYS_ROCK
+    or id == FieldEffects.FLDEFF_DESTROY_DEOXYS_ROCK then
+    if not FieldEffects.isFieldEffectActive(id) then
+      if done then done() end
+      return
+    end
+    FieldEffects._waiters[#FieldEffects._waiters + 1] = { id = id, done = done }
+    return
+  end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and id == Heal.FLDEFF then
     Heal.wait(done)
@@ -1106,6 +1398,13 @@ end
 
 function FieldEffects.isFieldEffectActive(id)
   id = tonumber(id) or 0
+  if id == FieldEffects.FLDEFF_MOVE_DEOXYS_ROCK
+    or id == FieldEffects.FLDEFF_DESTROY_DEOXYS_ROCK then
+    for _, anim in ipairs(FieldEffects._anims) do
+      if anim.effectId == id then return true end
+    end
+    return false
+  end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and id == Heal.FLDEFF then
     return Heal.isActive()

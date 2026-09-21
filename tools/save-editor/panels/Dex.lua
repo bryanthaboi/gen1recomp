@@ -60,6 +60,14 @@ function M.draw(S, Kit, x, y, w, h)
     { label = "A-Z", kind = (S.dexSort == "name") and "accent" or "ghost",
       fn = function(s) Ops.dexSort(s, "name") end },
   }
+  if require("Gen").of(S.save) == 3 then
+    local natOn = (S.save.dex and S.save.dex.national == true) or (dex and dex.national == true)
+    table.insert(buttons, 1, {
+      label = "National Dex: " .. (natOn and "ON" or "OFF"),
+      kind = natOn and "accent" or "ghost",
+      fn = Ops.toggleNationalDex,
+    })
+  end
   local clusterW = -10 * s
   for _, b in ipairs(buttons) do
     clusterW = clusterW + 10 * s + Kit.textWidth("small", b.label) + 32 * s
@@ -144,9 +152,12 @@ function M.draw(S, Kit, x, y, w, h)
     local ri = math.floor((i - 1) / cols)
     local rx = cx + ci * (colW + colGap)
     local ry = gridTop + ri * (rowH + rowGap)
-    local isSeen = dex.seen[id] == true
+    local def = S.data.pokemon[id]
+    local spId = def and (def.speciesId or def.dex)
+    local isSeen = dex.seen[id] == true or (spId and dex.seen[spId] == true)
     local ownedKey = require("Gen").dexOwnedKey(S.save)
-    local isOwned = dex[ownedKey] and dex[ownedKey][id] == true
+    local isOwned = (dex[ownedKey] and (dex[ownedKey][id] == true or (spId and dex[ownedKey][spId] == true)))
+      or (dex.caught and (dex.caught[id] == true or (spId and dex.caught[spId] == true)))
 
     Theme.row(rx, ry, colW, rowH, 9 * s, 0.6)
     local def = S.data.pokemon[id]

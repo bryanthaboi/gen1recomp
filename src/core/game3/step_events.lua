@@ -152,6 +152,9 @@ function StepEvents.onStepTaken(session, game)
   local massage = tonumber(session.vars[0x4025]) or 0
   if massage < 500 then session.vars[0x4025] = massage + 1 end
 
+  -- pokefirered/src/field_specials.c:2433 IncrementBirthIslandRockStepCount
+  require("src.core.game3.deoxys").incrementStepCount(session)
+
   -- pokefirered/src/field_control_avatar.c:658
   local forced = forced_step()
   local poisonFainted = false

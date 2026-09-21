@@ -420,14 +420,8 @@ function BattleBridge.start(mod, game, foe, opts)
     if (o and o.wild) or (so and so.wild) then
       local f = (o and o.foe) or (so and so.foe)
       local sp = f and (f.species or f.id or f.speciesId)
-      if sp == 150 then
-        return Audio.role("battleMewtwo") or 340
-      elseif sp == 386 then
-        return Audio.role("battleDeoxys") or 339
-      elseif sp == 144 or sp == 145 or sp == 146 or sp == 249 or sp == 250 then
-        return Audio.role("battleLegend") or 341
-      end
-      return Audio.role("battleWild") or 298
+      -- pokefirered/src/battle_setup.c:349 StartLegendaryBattle
+      return Audio.legendaryBattleSong(sp) or Audio.role("battleWild") or 298
     else
       local tid = (so and so.trainerId) or (o and o.trainerId) or (o and o.foe and o.foe.trainerId)
       local okTr, Trainers = pcall(require, "src.core.game3.scripting.trainers")

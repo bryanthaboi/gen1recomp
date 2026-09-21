@@ -77,24 +77,23 @@ local function makeCache()
   }
 end
 
-local SUBTASK_RANGES = {
-  ["pokemon"]           = { min = 0.42, max = 0.52, label = "Pokémon Species & Icons" },
-  ["learnsets"]         = { min = 0.52, max = 0.57, label = "Move Learnsets" },
-  ["battle_moves"]      = { min = 0.57, max = 0.60, label = "Battle Moves Data" },
-  ["party_chrome"]      = { min = 0.60, max = 0.63, label = "Party UI Graphics" },
-  ["battle_chrome"]     = { min = 0.63, max = 0.66, label = "Battle UI Graphics" },
-  ["pokedex_entries"]   = { min = 0.66, max = 0.68, label = "Pokédex Database" },
-  ["pokedex_categories"]= { min = 0.68, max = 0.69, label = "Pokédex Categories" },
-  ["pokedex_orders"]    = { min = 0.69, max = 0.70, label = "Pokédex Sorting" },
-  ["pokedex_done"]      = { min = 0.70, max = 0.71, label = "Pokédex Complete" },
-  ["storage_chrome"]    = { min = 0.71, max = 0.74, label = "PC Storage Chrome" },
-  ["battle_transition"] = { min = 0.74, max = 0.77, label = "Battle Transitions" },
-  ["summary_chrome"]    = { min = 0.77, max = 0.80, label = "Summary Screen Graphics" },
-  ["bag_chrome"]        = { min = 0.80, max = 0.83, label = "Bag & Items Graphics" },
-  ["shop_chrome"]       = { min = 0.83, max = 0.85, label = "Mart & Shop Graphics" },
-  ["trainers"]          = { min = 0.85, max = 0.86, label = "Trainer Data & Parties" },
-  ["battle_ai"]         = { min = 0.86, max = 0.875, label = "Battle AI Scripts" },
-  ["map_preview"]       = { min = 0.875, max = 0.88, label = "Location Previews" },
+local POKEMON_SUBTASKS = {
+  ["pokemon"]           = { min = 0.00, max = 0.40, label = "Pokémon Species & Sprites" },
+  ["learnsets"]         = { min = 0.40, max = 0.55, label = "Move Learnsets" },
+  ["battle_moves"]      = { min = 0.55, max = 0.60, label = "Battle Moves Data" },
+  ["party_chrome"]      = { min = 0.60, max = 0.65, label = "Party UI Graphics" },
+  ["battle_chrome"]     = { min = 0.65, max = 0.70, label = "Battle UI Graphics" },
+  ["pokedex_entries"]   = { min = 0.70, max = 0.73, label = "Pokédex Database" },
+  ["pokedex_categories"]= { min = 0.73, max = 0.75, label = "Pokédex Categories" },
+  ["pokedex_orders"]    = { min = 0.75, max = 0.77, label = "Pokédex Sorting" },
+  ["pokedex_done"]      = { min = 0.77, max = 0.78, label = "Pokédex Complete" },
+  ["storage_chrome"]    = { min = 0.78, max = 0.82, label = "PC Storage Chrome" },
+  ["battle_transition"] = { min = 0.82, max = 0.86, label = "Battle Transitions" },
+  ["summary_chrome"]    = { min = 0.86, max = 0.90, label = "Summary Screen Graphics" },
+  ["bag_chrome"]        = { min = 0.90, max = 0.94, label = "Bag & Items Graphics" },
+  ["shop_chrome"]       = { min = 0.94, max = 0.97, label = "Mart & Shop Graphics" },
+  ["trainers"]          = { min = 0.97, max = 0.99, label = "Trainer Data & Parties" },
+  ["map_preview"]       = { min = 0.99, max = 1.00, label = "Location Previews" },
 }
 
 function RomExtractorGen3.new(romData, manifest, progressCb, romSha1)
@@ -136,15 +135,19 @@ function RomExtractorGen3:beginStage(name)
   self:report((self.stage - 1) / STAGE_COUNT, name, 0, 1)
 end
 
-function RomExtractorGen3:tick(name, current, total)
-  local st = SUBTASK_RANGES[name]
+function RomExtractorGen3:tickPokemon(name, current, total)
+  local st = POKEMON_SUBTASKS[name]
   if st then
-    local frac = (current or 0) / math.max(total or 1, 1)
-    local pct = st.min + frac * (st.max - st.min)
-    self:report(pct, st.label, current, total)
+    local curFrac = (current or 0) / math.max(total or 1, 1)
+    local frac = st.min + curFrac * (st.max - st.min)
+    local label = st.label
+    if total and total > 1 then
+      label = label .. string.format(" (%d/%d)", current or 0, total)
+    end
+    self:report(frac, label, current, total)
   else
     local frac = (current or 0) / math.max(total or 1, 1)
-    self:report((self.stage - 1 + frac) / STAGE_COUNT, name, current, total)
+    self:report(frac, name or "Pokémon Data", current, total)
   end
 end
 
@@ -208,8 +211,11 @@ function RomExtractorGen3:runGbaExtract(sha1)
     runOk, runDetail = Extract.run(imports, cache, function(stage, n, name, cur, total)
       local curFrac = (cur or 0) / math.max(total or 1, 1)
       local frac = ((stage or 0) + curFrac) / math.max(n or Extract.STAGE_COUNT or 7, 1)
-      local pct = 0.03 + math.min(frac, 1.0) * 0.39
-      self:report(pct, name or "World & Maps", cur or 0, total or 1)
+      local label = "World Maps: " .. tostring(name or "Processing")
+      if total and total > 1 then
+        label = label .. string.format(" (%d/%d)", cur or 0, total)
+      end
+      self:report(math.min(frac, 1.0), label, cur or 0, total or 1)
     end)
   end)
 
@@ -247,7 +253,7 @@ function RomExtractorGen3:runPokemonExtract(sha1)
     local pRes = PokemonExtract.run(rom, cache, {
       cacheRoot = GBA_ROOT,
       progress = function(name, cur, total)
-        self:tick(name or "pokemon", cur or 0, total or 1)
+        self:tickPokemon(name or "pokemon", cur or 0, total or 1)
       end,
     })
     local ItemsExtract = require("src.import.gba.items_extract")
@@ -266,7 +272,7 @@ function RomExtractorGen3:runPokemonExtract(sha1)
     local mpOk, mpErr = pcall(MapPreviewExtract.run, rom, cache, {
       cacheRoot = GBA_ROOT,
       progress = function(name, cur, total)
-        self:tick(name or "map_preview", cur or 0, total or 1)
+        self:tickPokemon(name or "map_preview", cur or 0, total or 1)
       end,
     })
     if not mpOk then
@@ -300,6 +306,8 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local MuseumExtract = require("src.import.gba.museum_extract")
   local MoveRelearnerExtract = require("src.import.gba.move_relearner_extract")
   local EggExtract = require("src.import.gba.egg_extract")
+  local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
+  local BattleAiExtract = require("src.import.gba.battle_ai_extract")
   local Extract = require("src.import.gba.extract_island1")
   local prevRoot = Extract.CACHE_ROOT
   Extract.CACHE_ROOT = GBA_ROOT
@@ -321,10 +329,13 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local needMuseum = not MuseumExtract.ready(cache, GBA_ROOT)
   local needRelearner = not MoveRelearnerExtract.ready(cache, GBA_ROOT)
   local needEgg = not EggExtract.ready(cache, GBA_ROOT)
+  local needAnims = not BattleAnimExtract.ready(cache, GBA_ROOT)
+  local needAi = not BattleAiExtract.ready(cache, GBA_ROOT)
+
   if not (needRegion or needSections or needChoices or needHeal or needDoors
     or needSlots or needTrade or needLinkArt or needFame or needTeachy
     or needGift or needTower or needTutor or needMuseum or needRelearner
-    or needEgg) then
+    or needEgg or needAnims or needAi) then
     Extract.CACHE_ROOT = prevRoot
     return true, { skipped = true }
   end
@@ -337,9 +348,18 @@ function RomExtractorGen3:runAuxExtracts(sha1)
 
   local ok, detail = pcall(function()
     local out = {}
+    local step = 0
+    local totalSteps = 17
+    local function auxTick(name)
+      step = step + 1
+      self:report(step / totalSteps, "Game Data: " .. name, step, totalSteps)
+    end
+
     if needRegion then
       out.regionMap = RegionMapExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     end
+    auxTick("Town Map")
+
     if needSections then
       MapSectionsExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
       local rel = GBA_ROOT .. "/region_map/map_sections.lua"
@@ -350,74 +370,122 @@ function RomExtractorGen3:runAuxExtracts(sha1)
       end
       out.mapSections = #body
     end
+    auxTick("Map Sections")
+
     if needChoices then
       out.multichoice = MultichoiceExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     end
+    auxTick("Dialog Menus")
+
     if needHeal then
       local okHl, detailHl = HealLocationsExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
       if not okHl then print("[heal_locations] warn: " .. tostring(detailHl)) end
       out.healLocations = detailHl
     end
+    auxTick("Heal Locations")
+
     if needDoors then
       local okDr, detailDr = pcall(DoorAnimExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okDr then print("[door_extract] warn: " .. tostring(detailDr)) end
       out.doors = okDr and detailDr or false
     end
+    auxTick("Door Animations")
+
     if needSlots then
       local okSl, detailSl = pcall(SlotMachineExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okSl then print("[slot_machine_extract] warn: " .. tostring(detailSl)) end
       out.slotMachine = okSl and detailSl or false
     end
+    auxTick("Slot Machines")
+
     if needTrade then
       local okTr, detailTr = pcall(TradeExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okTr then print("[trade_extract] warn: " .. tostring(detailTr)) end
       out.trade = okTr and detailTr or false
     end
+    auxTick("Link Trade")
+
     if needLinkArt then
       local okLk, detailLk = pcall(LinkArtExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okLk then print("[link_art_extract] warn: " .. tostring(detailLk)) end
       out.linkArt = okLk and detailLk or false
     end
+    auxTick("Wireless Union")
+
     if needFame then
       local okFc, detailFc = pcall(FameCheckerExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okFc then print("[fame_checker_extract] warn: " .. tostring(detailFc)) end
       out.fameChecker = okFc and detailFc or false
     end
+    auxTick("Fame Checker")
+
     if needTeachy then
       local okTv, detailTv = pcall(TeachyTvExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okTv then print("[teachy_tv_extract] warn: " .. tostring(detailTv)) end
       out.teachyTv = okTv and detailTv or false
     end
+    auxTick("Teachy TV")
+
     if needGift then
       local okMg, detailMg = pcall(MysteryGiftExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okMg then print("[mystery_gift_extract] warn: " .. tostring(detailMg)) end
       out.mysteryGift = okMg and detailMg or false
     end
+    auxTick("Mystery Gift")
+
     if needTower then
       local okTt, detailTt = pcall(TrainerTowerExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okTt then print("[trainer_tower_extract] warn: " .. tostring(detailTt)) end
       out.trainerTower = okTt and detailTt or false
     end
+    auxTick("Trainer Tower")
+
     if needTutor then
       local okTu, detailTu = pcall(TutorExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okTu then print("[tutor_extract] warn: " .. tostring(detailTu)) end
       out.tutor = okTu and detailTu or false
     end
+    auxTick("Move Tutors")
+
     if needMuseum then
       local okMu, detailMu = pcall(MuseumExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okMu then print("[museum_extract] warn: " .. tostring(detailMu)) end
       out.museum = okMu and detailMu or false
     end
+    auxTick("Museum Exhibits")
+
     if needRelearner then
       local okMr, detailMr = pcall(MoveRelearnerExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okMr then print("[move_relearner_extract] warn: " .. tostring(detailMr)) end
       out.moveRelearner = okMr and detailMr or false
     end
+    auxTick("Move Relearner")
+
     if needEgg then
       local okEg, detailEg = pcall(EggExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
       if not okEg then print("[egg_extract] warn: " .. tostring(detailEg)) end
       out.egg = okEg and detailEg or false
     end
+    auxTick("Egg & Hatching")
+
+    if needAnims then
+      local okAn, detailAn = pcall(BattleAnimExtract.run, rom, cache, { cacheRoot = GBA_ROOT, force = false })
+      if not okAn then print("[battle_anim_extract] warn: " .. tostring(detailAn)) end
+      out.battleAnims = okAn and detailAn or false
+    end
+    auxTick("Battle Animations")
+
+    if needAi then
+      local okAi, detailAi = pcall(BattleAiExtract.run, {
+        cache = cache,
+        cacheRoot = GBA_ROOT,
+        pretRoot = os.getenv("POKEFIRERED"),
+      })
+      if not okAi then print("[battle_ai_extract] warn: " .. tostring(detailAi)) end
+      out.battleAi = okAi and detailAi or false
+    end
+    auxTick("Battle AI Scripts")
+
     return out
   end)
 
@@ -428,12 +496,12 @@ function RomExtractorGen3:runAuxExtracts(sha1)
 end
 
 function RomExtractorGen3:runIntroAudio(sha1)
-  self:report(0.88, "Intro Cutscene & Audio", 0, 1)
+  self:report(0.05, "Audio & Intro: Initializing", 0, 3)
   local cache = makeCache()
   if cache:exists(GBA_ROOT .. "/intro/meta.json") and cache:exists(GBA_ROOT .. "/audio/meta.json") then
     local im = cache:read(GBA_ROOT .. "/intro/meta.json")
     if im and not im:find('"stub"%s*:%s*true') then
-      self:report(0.98, "Audio Streams Ready", 1, 1)
+      self:report(1.00, "Audio Streams Ready", 3, 3)
       return true, true
     end
   end
@@ -445,17 +513,88 @@ function RomExtractorGen3:runIntroAudio(sha1)
   local Intro = require("src.import.gba.extract_intro")
   local Naming = require("src.import.gba.extract_naming")
   local AudioExt = require("src.import.gba.extract_audio")
-  self:report(0.90, "Intro Cutscene", 0, 1)
+
+  self:report(0.20, "Intro: Cutscene Sequence", 1, 3)
   local okI, metaI = Intro.run(romShim, cache, { sha1 = sha1, root = GBA_ROOT .. "/intro" })
-  self:report(0.93, "Naming Screen", 0, 1)
+
+  self:report(0.50, "Intro: Naming Screen Graphics", 2, 3)
   local okN = Naming.run(romShim, cache, { sha1 = sha1, root = GBA_ROOT .. "/naming" })
-  self:report(0.95, "Audio Sequences & Streams", 0, 1)
+
+  self:report(0.75, "Audio: Music & Sound Streams", 3, 3)
   local okA, metaA = AudioExt.run(romShim, cache, { sha1 = sha1, root = GBA_ROOT .. "/audio" })
+
   writeJson(GBA_ROOT .. "/intro/extract_status.json", { ok = okI == true })
   writeJson(GBA_ROOT .. "/naming/extract_status.json", { ok = okN == true })
   writeJson(GBA_ROOT .. "/audio/extract_status.json", { ok = okA == true })
-  self:report(0.98, "Audio Streams Ready", 1, 1)
+  self:report(1.00, "Audio & Intro Ready", 3, 3)
   return okI, okA, metaI, metaA
+end
+
+function RomExtractorGen3:runParallel(sha1)
+  if os.getenv("POKEPORT_NO_THREAD") == "1" then
+    return false, "POKEPORT_NO_THREAD set"
+  end
+  if not (love and love.thread and love.thread.newThread and love.timer) then
+    return false, "love.thread unavailable"
+  end
+
+  local ch_name = "gba_extract_" .. tostring(love.timer.getTime()):gsub("%.", "") .. "_" .. tostring(math.random(10000, 99999))
+  local ch = love.thread.getChannel(ch_name)
+
+  local tasks = { "gba", "pokemon", "aux", "intro_audio" }
+  local threads = {}
+  local prefix = CacheFs.prefix or ""
+
+  for _, t in ipairs(tasks) do
+    local okTh, th = pcall(love.thread.newThread, "src/import/gba/extract_worker.lua")
+    if not okTh or not th then
+      return false, "failed to spawn thread for " .. t .. ": " .. tostring(th)
+    end
+    threads[t] = th
+    th:start(t, prefix, self.romData, sha1, ch_name)
+  end
+
+  local done_count = 0
+  local errors = {}
+  local task_progress = { gba = 0, pokemon = 0, aux = 0, intro_audio = 0 }
+  local weights = { gba = 0.40, pokemon = 0.35, aux = 0.15, intro_audio = 0.10 }
+
+  while done_count < #tasks do
+    local msg = ch:pop()
+    if msg then
+      if msg.type == "progress" then
+        task_progress[msg.task] = math.max(task_progress[msg.task] or 0, math.min(1.0, msg.fraction or 0))
+        local total_pct = 0.03
+        for k, w in pairs(weights) do
+          total_pct = total_pct + (task_progress[k] or 0) * w * 0.95
+        end
+        self:report(total_pct, msg.stage or "Extracting", msg.current or 0, msg.stageTotal or 1)
+      elseif msg.type == "done" then
+        done_count = done_count + 1
+        task_progress[msg.task] = 1.0
+        local total_pct = 0.03
+        for k, w in pairs(weights) do
+          total_pct = total_pct + (task_progress[k] or 0) * w * 0.95
+        end
+        self:report(total_pct, "Finalizing " .. tostring(msg.task), done_count, #tasks)
+        if not msg.ok then
+          errors[#errors + 1] = msg.task .. ": " .. tostring(msg.error)
+        end
+      end
+    else
+      love.timer.sleep(0.005)
+    end
+  end
+
+  if #errors > 0 then
+    error("Parallel extraction error:\n" .. table.concat(errors, "\n"))
+  end
+
+  if not CacheFs.exists(GBA_ROOT .. "/maps.json") then
+    writeJson(GBA_ROOT .. "/maps.json", { maps = {}, from_extract = true })
+  end
+
+  return true
 end
 
 function RomExtractorGen3:run()
@@ -465,6 +604,19 @@ function RomExtractorGen3:run()
   self:writeRequiredMarkers(sha1)
   self:report(0.03, "Markers Ready", 1, 1)
 
+  local okPar, parErr = self:runParallel(sha1)
+  if okPar then
+    self:report(1.00, "Ready", 1, 1)
+    collectgarbage("collect")
+    return {
+      romSha1 = sha1,
+      extractOk = true,
+      pokemonOk = true,
+      auxOk = true,
+    }
+  end
+
+  -- Fallback sequential execution path
   local ok, detail = self:runGbaExtract(sha1)
   if ok then
     if not CacheFs.exists(GBA_ROOT .. "/maps.json") then

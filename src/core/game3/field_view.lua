@@ -19,6 +19,9 @@ FieldView._loggedPal = false
 FieldView._nativeBatch = nil
 FieldView._nativeBatches = nil
 FieldView._nativeOverBatches = nil
+FieldView._nativeOverByRow = nil
+FieldView._nativeRows = nil
+FieldView._nativeCy0 = nil
 FieldView._nativeBx = nil
 FieldView._nativeBy = nil
 FieldView._nativePair = nil
@@ -431,6 +434,10 @@ local function isPlayerAboveBg2(playerXOff, playerYOff)
   if (playerXOff and playerXOff ~= 0) or (playerYOff and playerYOff ~= 0) then
     return true
   end
+  local PlayerMod = package.loaded["src.core.game3.player"]
+  if PlayerMod and (PlayerMod.jumping or PlayerMod.surfHopping) then
+    return true
+  end
   local WarpMod = package.loaded["src.core.game3.warp"]
   if WarpMod and WarpMod.isEscalatorActive and WarpMod.isEscalatorActive() then
     return true
@@ -442,39 +449,72 @@ local function isPlayerAboveBg2(playerXOff, playerYOff)
   return false
 end
 
---- Draw game3 EventObjects + player (owned sprites; no World:step anim).
--- playerYOff: pret sprite->y2 during Jump2 / escalator.
--- playerXOff: pret sprite->x2 during escalator.
-local function drawGame3Actors(game, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
-  local okO, Objects = pcall(require, "src.core.game3.objects")
-  if not (okO and Objects and Objects.hasMap and Objects.hasMap()) then
-    return false
-  end
+local function drawSingleActor(game, mapDef, a, camX, camY)
+  local daytime = daytimeFor(game, mapDef)
   local okOw, OwSprites = pcall(require, "src.core.game3.ow_sprites")
   local useOw = okOw and OwSprites and OwSprites.ready and OwSprites.ready()
-  local daytime = daytimeFor(game, resolveMapDef(game, currentMapId(game)))
-  local actors = {}
-  for _, eo in ipairs(Objects.forDraw()) do
-    actors[#actors + 1] = {
-      kind = "npc",
-      i = eo.localId,
-      obj = eo.def,
-      x = (eo.px or (eo.cellX * CELL)) + (eo.raiseX or 0),
-      y = (eo.py or (eo.cellY * CELL)) + (eo.raiseY or 0),
-      sortY = eo.py or (eo.cellY * CELL),
-      facing = eo.facing or "down",
-      walkPhase = Objects.walkPhase(eo),
-      stepFlip = eo.stepFlip and true or false,
-      bow = (eo.bowFrames and eo.bowFrames > 0) or eo.raiseHand == true,
-      frame = eo.customFrame,
-      sprite = eo.sprite or spriteNameForObj(eo.def or {}),
-      graphicsId = eo.graphicsId or (eo.def and (eo.def.graphicsId or eo.def.graphics)),
+  love.graphics.setColor(1, 1, 1, 1)
+  local billboarded = pushBillboard(a.x, a.y, camX, camY)
+  local drew = false
+  if useOw and a.graphicsId ~= nil then
+    local opts = {
+      bow = a.bow,
+      fieldMove = a.fieldMove,
+      frame = a.frame,
     }
+    drew = OwSprites.draw(
+      a.graphicsId, a.x, a.y, camX, camY, a.facing, a.walkPhase, a.stepFlip, opts)
   end
-  collectNeighborActors(actors, 10000, currentMapId(game),
-    resolveMapDef(game, currentMapId(game)))
-  -- Resolve graphicsVar (Bill etc.) via Space when available.
-  do
+  if not drew then
+    local sr = getSpriteRenderer(
+      game, a.sprite, a.kind .. ":" .. tostring(a.i or "p"), a.obj, daytime)
+    if sr then
+      sr:draw(a.x, a.y, camX, camY, a.facing, a.walkPhase or 0, a.stepFlip)
+    else
+      local sx, sy = a.x - camX, a.y - camY
+      if a.kind == "player" then
+        love.graphics.setColor(0.95, 0.25, 0.25, 1)
+      else
+        love.graphics.setColor(0.3, 0.55, 0.95, 1)
+      end
+      love.graphics.rectangle("fill", sx + 4, sy + 2, 8, 12)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+  end
+  if billboarded then love.graphics.pop() end
+end
+
+local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
+  local okO, Objects = pcall(require, "src.core.game3.objects")
+  local okOw, OwSprites = pcall(require, "src.core.game3.ow_sprites")
+  local useOw = okOw and OwSprites and OwSprites.ready and OwSprites.ready()
+  local actors = {}
+  local hasObjects = okO and Objects and Objects.hasMap and Objects.hasMap()
+
+  if hasObjects then
+    for _, eo in ipairs(Objects.forDraw()) do
+      local sortY = eo.py or (eo.cellY * CELL)
+      if eo.moving and eo.targetY and eo.targetY > (eo.cellY or 0) then
+        sortY = math.max(sortY, eo.targetY * CELL)
+      end
+      actors[#actors + 1] = {
+        kind = "npc",
+        i = eo.localId,
+        obj = eo.def,
+        x = (eo.px or (eo.cellX * CELL)) + (eo.raiseX or 0),
+        y = (eo.py or (eo.cellY * CELL)) + (eo.raiseY or 0),
+        sortY = sortY,
+        facing = eo.facing or "down",
+        walkPhase = Objects.walkPhase(eo),
+        stepFlip = eo.stepFlip and true or false,
+        bow = (eo.bowFrames and eo.bowFrames > 0) or eo.raiseHand == true,
+        frame = eo.customFrame,
+        sprite = eo.sprite or spriteNameForObj(eo.def or {}),
+        graphicsId = eo.graphicsId or (eo.def and (eo.def.graphicsId or eo.def.graphics)),
+      }
+    end
+    collectNeighborActors(actors, 10000, currentMapId(game),
+      resolveMapDef(game, currentMapId(game)))
     local Space = package.loaded["src.core.game3.scripting.space"]
     if Space and Space.resolveObjectGraphicsId then
       for _, a in ipairs(actors) do
@@ -484,15 +524,53 @@ local function drawGame3Actors(game, camX, camY, px, py, facing, walkPhase, step
         end
       end
     end
+  else
+    local world = game and (game.overworld or game.world)
+    if world and world.npcs then
+      for i, npc in ipairs(world.npcs) do
+        actors[#actors + 1] = {
+          kind = "npc",
+          i = i,
+          obj = npc.def,
+          x = npc.px or ((npc.cellX or 0) * CELL),
+          y = npc.py or ((npc.cellY or 0) * CELL),
+          sortY = npc.py or ((npc.cellY or 0) * CELL),
+          facing = npc.facing or "down",
+          sprite = spriteNameForObj(npc.def or {}),
+          graphicsId = useOw and OwSprites.playerGraphicsId and npc.graphicsId or nil,
+        }
+      end
+    elseif type(mapDef.objects) == "table" then
+      for i, obj in ipairs(mapDef.objects) do
+        if objectVisible(obj) then
+          actors[#actors + 1] = {
+            kind = "npc",
+            i = i,
+            obj = obj,
+            x = (tonumber(obj.x) or 0) * CELL,
+            y = (tonumber(obj.y) or 0) * CELL,
+            sortY = (tonumber(obj.y) or 0) * CELL,
+            facing = facingFromObj(obj),
+            sprite = spriteNameForObj(obj),
+            graphicsId = obj.graphicsId or obj.graphics,
+          }
+        end
+      end
+    end
   end
+
   local aboveBg2 = isPlayerAboveBg2(playerXOff, playerYOff)
   local PlayerMod = package.loaded["src.core.game3.player"]
   if not aboveBg2 and (not PlayerMod or (PlayerMod.isVisible and PlayerMod.isVisible())) then
+    local playerSortY = py
+    if PlayerMod and PlayerMod.moving and PlayerMod.targetY and PlayerMod.targetY > (PlayerMod.cellY or 0) then
+      playerSortY = math.max(playerSortY, PlayerMod.targetY * CELL)
+    end
     actors[#actors + 1] = {
       kind = "player",
       x = px + (playerXOff or 0),
       y = py + (playerYOff or 0),
-      sortY = py,
+      sortY = playerSortY,
       facing = facing or "down",
       walkPhase = (walkPhase == 1 or walkPhase == true) and 1 or 0,
       stepFlip = stepFlip and true or false,
@@ -509,38 +587,53 @@ local function drawGame3Actors(game, camX, camY, px, py, facing, walkPhase, step
     return ay < by
   end)
 
-  love.graphics.setColor(1, 1, 1, 1)
-  for _, a in ipairs(actors) do
-    local billboarded = pushBillboard(a.x, a.y, camX, camY)
-    local drew = false
-    if useOw and a.graphicsId ~= nil then
-      local opts = {
-        bow = a.bow,
-        fieldMove = a.fieldMove,
-        frame = a.frame,
-      }
-      drew = OwSprites.draw(
-        a.graphicsId, a.x, a.y, camX, camY, a.facing, a.walkPhase, a.stepFlip, opts)
+  return actors
+end
+
+local function drawInterleaved(game, mapDef, camX, camY, actors, rows, cy0)
+  local actorIdx = 1
+  local nActors = #actors
+  local ox = FieldView._nativeOverOx or 0
+  local oy = FieldView._nativeOverOy or 0
+  local overByRow = FieldView._nativeOverByRow
+
+  if not overByRow or not rows or rows <= 0 then
+    for _, a in ipairs(actors) do
+      drawSingleActor(game, mapDef, a, camX, camY)
     end
-    if not drew then
-      local sr = getSpriteRenderer(
-        game, a.sprite, a.kind .. ":" .. tostring(a.i or "p"), a.obj, daytime)
-      if sr then
-        sr:draw(a.x, a.y, camX, camY, a.facing, a.walkPhase or 0, a.stepFlip)
-      else
-        local sx, sy = a.x - camX, a.y - camY
-        if a.kind == "player" then
-          love.graphics.setColor(0.95, 0.25, 0.25, 1)
-        else
-          love.graphics.setColor(0.3, 0.55, 0.95, 1)
+    return
+  end
+
+  local topWy = (cy0 or 0) * CELL
+  while actorIdx <= nActors and (actors[actorIdx].sortY or actors[actorIdx].y) < topWy do
+    drawSingleActor(game, mapDef, actors[actorIdx], camX, camY)
+    actorIdx = actorIdx + 1
+  end
+
+  for r = 0, rows - 1 do
+    local rowWy = ((cy0 or 0) + r) * CELL
+
+    local rowOver = overByRow[r]
+    if rowOver and #rowOver > 0 then
+      love.graphics.setColor(1, 1, 1, 1)
+      for _, item in ipairs(rowOver) do
+        if item.image and item.quad then
+          love.graphics.draw(item.image, item.quad, ox + item.x, oy + item.y)
         end
-        love.graphics.rectangle("fill", sx + 4, sy + 2, 8, 12)
-        love.graphics.setColor(1, 1, 1, 1)
       end
     end
-    if billboarded then love.graphics.pop() end
+
+    local nextRowWy = rowWy + CELL
+    while actorIdx <= nActors and (actors[actorIdx].sortY or actors[actorIdx].y) < nextRowWy do
+      drawSingleActor(game, mapDef, actors[actorIdx], camX, camY)
+      actorIdx = actorIdx + 1
+    end
   end
-  return true
+
+  while actorIdx <= nActors do
+    drawSingleActor(game, mapDef, actors[actorIdx], camX, camY)
+    actorIdx = actorIdx + 1
+  end
 end
 
 --- Collect visible tile draws grouped by palette slot for batched GbcPalette.with.
@@ -689,6 +782,10 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
     for _, batch in pairs(FieldView._nativeOverBatches) do
       batch:clear()
     end
+    FieldView._nativeOverByRow = {}
+    for r = 0, rows - 1 do
+      FieldView._nativeOverByRow[r] = {}
+    end
     local cellsByPair = {}
     local voidHas, voidPrimary = nil, nil
     if voidMode ~= "map" and voidMode ~= "black" then
@@ -720,7 +817,7 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
             list = {}
             cellsByPair[srcPair] = list
           end
-          list[#list + 1] = { mid = mid, x = col * CELL, y = row * CELL }
+          list[#list + 1] = { mid = mid, x = col * CELL, y = row * CELL, row = row }
         end
       end
     end
@@ -741,7 +838,18 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
           if q then batch:add(q, cell.x, cell.y) end
           if overBatch then
             local oq = NativeTileset.overQuad(ts, slot)
-            if oq then overBatch:add(oq, cell.x, cell.y) end
+            if oq then
+              overBatch:add(oq, cell.x, cell.y)
+              local rList = FieldView._nativeOverByRow[cell.row]
+              if rList then
+                rList[#rList + 1] = {
+                  image = ts.overImage,
+                  quad = oq,
+                  x = cell.x,
+                  y = cell.y,
+                }
+              end
+            end
           end
         end
       end
@@ -759,6 +867,8 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
   FieldView._nativeOverOx = ox
   FieldView._nativeOverOy = oy
   FieldView._nativeOverPair = pair
+  FieldView._nativeRows = rows
+  FieldView._nativeCy0 = cy0
   if FieldView._nativeBatches[pair] then
     love.graphics.draw(FieldView._nativeBatches[pair], ox, oy)
   end
@@ -1088,78 +1198,29 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     end
   end
 
-  -- Game3 EventObjects when spawned; else live World entities; else static defs.
-  if not opts.skipActors and not drawGame3Actors(game, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
-      and not drawWorldEntities(world, camX, camY) then
-    local daytime = daytimeFor(game, mapDef)
-    local okOw, OwSprites = pcall(require, "src.core.game3.ow_sprites")
-    local useOw = okOw and OwSprites and OwSprites.ready and OwSprites.ready()
-    local actors = {}
-    if type(mapDef.objects) == "table" then
-      for i, obj in ipairs(mapDef.objects) do
-        if objectVisible(obj) then
-          actors[#actors + 1] = {
-            kind = "npc",
-            i = i,
-            obj = obj,
-            x = (tonumber(obj.x) or 0) * CELL,
-            y = (tonumber(obj.y) or 0) * CELL,
-            facing = facingFromObj(obj),
-            sprite = spriteNameForObj(obj),
-            graphicsId = obj.graphicsId or obj.graphics,
-          }
-        end
+  -- pokefirered/src/field_effect.c:3946: the Deoxys shatter blends only the BG
+  -- palettes to white, so the map washes out while the rock fragments (OBJ
+  -- sprites) keep their colours.  Painted here, between the last map layer and
+  -- the actors, for exactly that reason -- a Renderer.screenVeil would cover
+  -- the fragments too and the shatter would be invisible.
+  if not opts.actorsOnly then
+    local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")
+    if okFx and FieldEffects and FieldEffects.bgFlashAlpha then
+      local a = FieldEffects.bgFlashAlpha()
+      if a and a > 0 then
+        love.graphics.setColor(1, 1, 1, a)
+        love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
+        love.graphics.setColor(1, 1, 1, 1)
       end
     end
-    local aboveBg2 = isPlayerAboveBg2(playerXOff, playerYOff)
-    local PlayerMod = package.loaded["src.core.game3.player"]
-    if not aboveBg2 and (not PlayerMod or (PlayerMod.isVisible and PlayerMod.isVisible())) then
-      actors[#actors + 1] = {
-        kind = "player",
-        x = px + playerXOff,
-        y = py + playerYOff,
-        sortY = py,
-        facing = facing or "down",
-        walkPhase = (walkPhase == 1 or walkPhase == true) and 1 or 0,
-        stepFlip = stepFlip and true or false,
-        sprite = playerSpriteName(game),
-        graphicsId = useOw and OwSprites.playerGraphicsId(game) or nil,
-      }
-    end
+  end
 
-    table.sort(actors, function(a, b)
-      local ay = a.sortY or a.y
-      local by = b.sortY or b.y
-      if ay == by then return (a.i or 0) < (b.i or 0) end
-      return ay < by
-    end)
-
-    love.graphics.setColor(1, 1, 1, 1)
-    for _, a in ipairs(actors) do
-      local billboarded = pushBillboard(a.x, a.y, camX, camY)
-      local drew = false
-      if useOw and a.graphicsId ~= nil then
-        drew = OwSprites.draw(
-          a.graphicsId, a.x, a.y, camX, camY, a.facing, a.walkPhase, a.stepFlip)
-      end
-      if not drew then
-        local sr = getSpriteRenderer(
-          game, a.sprite, a.kind .. ":" .. tostring(a.i or "p"), a.obj, daytime)
-        if sr then
-          sr:draw(a.x, a.y, camX, camY, a.facing, a.walkPhase or 0, a.stepFlip)
-        else
-          local sx, sy = a.x - camX, a.y - camY
-          if a.kind == "player" then
-            love.graphics.setColor(0.95, 0.25, 0.25, 1)
-          else
-            love.graphics.setColor(0.3, 0.55, 0.95, 1)
-          end
-          love.graphics.rectangle("fill", sx + 4, sy + 2, 8, 12)
-          love.graphics.setColor(1, 1, 1, 1)
-        end
-      end
-      if billboarded then love.graphics.pop() end
-    end
+  -- Draw Game3 actors and native overhead tiles interleaved by Y-row.
+  if not opts.skipActors then
+    local actors = collectGame3Actors(
+      game, mapDef, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
+    drawInterleaved(
+      game, mapDef, camX, camY, actors, FieldView._nativeRows, FieldView._nativeCy0)
   end
 
   -- Tall grass over feet (pret subpriority above avatar).
@@ -1182,8 +1243,8 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     end
   end
 
-  -- pret BG2: metatile top layer covers OW sprites (roofs, desk counters).
-  if usedNative and not opts.actorsOnly then
+  -- pret BG2: metatile top layer covers OW sprites if actors were skipped or non-interleaved.
+  if usedNative and not opts.actorsOnly and (opts.skipActors or not FieldView._nativeOverByRow) then
     drawNativeOverTiles()
   end
 
@@ -1240,6 +1301,9 @@ function FieldView.invalidate()
   FieldView._nativeBatch = nil
   FieldView._nativeBatches = nil
   FieldView._nativeOverBatches = nil
+  FieldView._nativeOverByRow = nil
+  FieldView._nativeRows = nil
+  FieldView._nativeCy0 = nil
   FieldView._nativeBx = nil
   FieldView._nativeBy = nil
   FieldView._nativePair = nil

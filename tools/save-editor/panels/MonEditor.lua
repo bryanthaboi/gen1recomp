@@ -317,7 +317,11 @@ function MonEditor.draw(S, Kit, x, y, w, h)
   -- the nickname section: a caption line (with the Clear button on it) plus
   -- the field + Set row
   local extraH = 0
-  if Gen.ofState(S) == 2 then extraH = 88 * s end
+  if Gen.ofState(S) == 3 then
+    extraH = 154 * s
+  elseif Gen.ofState(S) == 2 then
+    extraH = 88 * s
+  end
   if Gen.hasCaughtData(S.save, S.version) then extraH = extraH + 102 * s end
   local nickFieldH = 30 * s
   local contentH = pad + headerH + 18 * s
@@ -428,7 +432,71 @@ function MonEditor.draw(S, Kit, x, y, w, h)
 
   -- --------------------------------------------------- DVs | moves split
   local colY = statsY + cellH + 18 * s
-  if Gen.ofState(S) == 2 then
+  if Gen.ofState(S) == 3 then
+    local extraY = colY
+    Kit.caption(cx, extraY, "FIRE RED CHARACTERISTICS . PID " .. string.format("0x%08X", mon.personality or 0))
+    extraY = extraY + capH + 8 * s
+    local row = 28 * s
+
+    -- Held item row
+    local heldId = mon.heldItem or mon.item
+    local heldName = heldId and (S.data and S.data.items and S.data.items[heldId] and (S.data.items[heldId].name or S.data.items[heldId].id)) or tostring(heldId or "none")
+    Kit.text("tiny", "HELD " .. tostring(heldName), cx, extraY, PAL.text)
+    if heldId then
+      if Kit.button(cx + inner - 70 * s, extraY, 70 * s, row, "Clear item",
+          { kind = "danger", font = "tiny", radius = 6 * s }) then
+        Ops.setHeldItem(S, mon, nil)
+      end
+    end
+    extraY = extraY + row + 6 * s
+
+    -- Nature and Friendship
+    local SummaryData = require("src.core.game3.summary_data")
+    local natureIdx = mon.nature or ((mon.personality or 0) % 25)
+    local natureName = SummaryData.NATURES[natureIdx] or "HARDY"
+    Kit.text("tiny", "NATURE " .. natureName, cx, extraY, PAL.text)
+    if Kit.stepper(cx + 140 * s, extraY, 28 * s, row, "<", { font = "small" }) then
+      Ops.setNature(S, mon, (natureIdx - 1 + 25) % 25)
+    end
+    if Kit.stepper(cx + 174 * s, extraY, 28 * s, row, ">", { font = "small" }) then
+      Ops.setNature(S, mon, (natureIdx + 1) % 25)
+    end
+
+    local friendVal = mon.friendship or mon.happiness or 70
+    Kit.text("tiny", ("FRIENDSHIP %d"):format(friendVal), cx + 220 * s, extraY, PAL.text)
+    if Kit.stepper(cx + 340 * s, extraY, 28 * s, row, "-", { font = "small" }) then
+      Ops.setHappiness(S, mon, friendVal - 10)
+    end
+    if Kit.stepper(cx + 374 * s, extraY, 28 * s, row, "+", { font = "small" }) then
+      Ops.setHappiness(S, mon, friendVal + 10)
+    end
+    extraY = extraY + row + 6 * s
+
+    -- Ability, Gender, Shiny
+    local PokemonG3 = require("src.core.game3.pokemon")
+    local abilitySlot = ((mon.personality or 0) % 2)
+    local abilityId = mon.ability or PokemonG3.abilityId(mon.speciesId or mon.species, mon.personality or 0)
+    local abName = PokemonG3.abilityName and PokemonG3.abilityName(abilityId) or ("Ability " .. (abilitySlot + 1))
+    if Kit.button(cx, extraY, 150 * s, row, abName .. " (Slot " .. (abilitySlot + 1) .. ")",
+        { kind = "accent", font = "micro", radius = 6 * s }) then
+      Ops.setAbility(S, mon, (abilitySlot + 1) % 2)
+    end
+
+    local curGender = mon.gender or PokemonG3.gender(mon.speciesId or mon.species, mon.personality or 0)
+    local genderLabel = curGender == "M" and "♂ MALE" or (curGender == "F" and "♀ FEMALE" or "— GENDERLESS")
+    if Kit.button(cx + 160 * s, extraY, 110 * s, row, genderLabel,
+        { kind = "ghost", font = "micro", radius = 6 * s }) then
+      local nextG = curGender == "M" and "F" or (curGender == "F" and "M" or "U")
+      Ops.setMonGender(S, mon, nextG)
+    end
+
+    local isShiny = SummaryData.isShiny(mon)
+    if Kit.chip(cx + 280 * s, extraY, 80 * s, row, "★ SHINY", isShiny, PAL.yellow, PAL.steel) then
+      Ops.setShiny(S, mon, not isShiny)
+    end
+    extraY = extraY + row + 12 * s
+    colY = extraY
+  elseif Gen.ofState(S) == 2 then
     local extraY = colY
     Kit.caption(cx, extraY, Gen.editionLabel(S.save, S.version))
     extraY = extraY + capH + 8 * s

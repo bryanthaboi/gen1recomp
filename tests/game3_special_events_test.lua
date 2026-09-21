@@ -114,6 +114,7 @@ local EXPECTED = {
   ForcePlayerToStartSurfing = 0x161,
   DisableMsgBoxWalkaway = 0x171,
   SetPostgameFlags = 0x19A,
+  DoDeoxysTriangleInteraction = 0x1AB,
   SetDeoxysTrianglePalette = 0x1AC,
   UpdateLoreleiDollCollection = 0x1B9,
   CreateEnemyEventMon = 0x1BB,
@@ -297,7 +298,7 @@ print("[test] 13. cited no-ops return without yielding")
 local NOOPS = {
   "ShowFieldMessageStringVar4", "ShakeScreen", "InitRoamer",
   "SampleResortGorgeousMonAndReward", "DisableMsgBoxWalkaway",
-  "SetDeoxysTrianglePalette", "UpdateLoreleiDollCollection",
+  "UpdateLoreleiDollCollection",
 }
 for _, name in ipairs(NOOPS) do
   local ctx = newCtx()

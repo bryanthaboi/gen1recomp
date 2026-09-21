@@ -632,6 +632,39 @@ function Gen.setFlag(save, name, on)
   save.flags[name] = on and true or nil
 end
 
+function Gen.getVar(save, nameOrId)
+  if type(save) ~= "table" then return 0 end
+  local g = Gen.of(save)
+  if g == 3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags then
+      return Flags.getVar(save, nil, nameOrId)
+    end
+    if save.vars then
+      return save.vars[nameOrId] or save.vars[tonumber(nameOrId)] or save.vars[tostring(nameOrId)] or 0
+    end
+  end
+  return 0
+end
+
+function Gen.setVar(save, nameOrId, val)
+  if type(save) ~= "table" then return end
+  val = math.max(0, math.min(65535, math.floor(tonumber(val) or 0)))
+  local g = Gen.of(save)
+  if g == 3 then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags then
+      Flags.setVar(save, nil, nameOrId, val)
+      return
+    end
+    save.vars = save.vars or {}
+    save.vars[nameOrId] = val
+    if tonumber(nameOrId) then
+      save.vars[tonumber(nameOrId)] = val
+    end
+  end
+end
+
 function Gen.flagCount(save)
   if type(save) ~= "table" then return 0 end
   local g = Gen.of(save)

@@ -503,49 +503,94 @@ local function make_chunk(type_str, data)
   return u32be(#data) .. type_str .. data .. u32be(crc)
 end
 
---- Encode RGBA pixel array to PNG bytes (uses love.image if available, else pure Lua PNG writer).
+local ffi
+do
+  local ok, mod = pcall(require, "ffi")
+  if ok and mod and mod.new and mod.string then
+    ffi = mod
+  end
+end
+
+local static_raw_buf = nil
+local static_raw_cap = 0
+local function get_raw_buffer(size)
+  if not ffi then return nil end
+  if static_raw_cap < size then
+    static_raw_cap = math.max(size + 1024, 65536)
+    static_raw_buf = ffi.new("uint8_t[?]", static_raw_cap)
+  end
+  return static_raw_buf
+end
+
+--- Encode RGBA pixel array/string to PNG bytes.
 local function encode_png(pixels, w, h)
-  if love and love.image and love.graphics then
-    local ok, id = pcall(love.image.newImageData, w, h)
-    if ok and id then
-      id:mapPixel(function(x, y)
-        local base = (y * w + x) * 4 + 1
-        return pixels[base] / 255, pixels[base + 1] / 255,
-               pixels[base + 2] / 255, pixels[base + 3] / 255
-      end)
-      local ok2, fd = pcall(id.encode, id, "png")
-      if ok2 and fd then return fd:getString() end
+  local raw_size = h * (1 + w * 4)
+  local buf = get_raw_buffer(raw_size)
+  local is_str = type(pixels) == "string"
+  local raw_data
+
+  if buf then
+    local dest = 0
+    for y = 0, h - 1 do
+      buf[dest] = 0 -- Filter: None
+      dest = dest + 1
+      local src_base = y * w * 4
+      if is_str then
+        for x = 0, w * 4 - 1 do
+          buf[dest] = pixels:byte(src_base + x + 1) or 0
+          dest = dest + 1
+        end
+      else
+        for x = 0, w * 4 - 1 do
+          buf[dest] = pixels[src_base + x + 1] or 0
+          dest = dest + 1
+        end
+      end
+    end
+    raw_data = ffi.string(buf, raw_size)
+  else
+    local raw_lines = {}
+    for y = 0, h - 1 do
+      local row = { string.char(0) } -- Filter type 0: None
+      local start_idx = y * w * 4 + 1
+      for x = 0, w - 1 do
+        local idx = start_idx + x * 4
+        if is_str then
+          row[#row + 1] = pixels:sub(idx, idx + 3)
+        else
+          row[#row + 1] = string.char(pixels[idx] or 0, pixels[idx+1] or 0, pixels[idx+2] or 0, pixels[idx+3] or 0)
+        end
+      end
+      raw_lines[#raw_lines + 1] = table.concat(row)
+    end
+    raw_data = table.concat(raw_lines)
+  end
+
+  local idat_data
+  if love and love.data and love.data.compress then
+    local ok, comp = pcall(love.data.compress, "string", "zlib", raw_data)
+    if ok and comp then
+      idat_data = comp
     end
   end
 
-  -- Pure Lua PNG writer
-  local raw_lines = {}
-  for y = 0, h - 1 do
-    local row = { string.char(0) } -- Filter type 0: None
-    local start_idx = y * w * 4 + 1
-    for x = 0, w - 1 do
-      local idx = start_idx + x * 4
-      row[#row + 1] = string.char(pixels[idx] or 0, pixels[idx+1] or 0, pixels[idx+2] or 0, pixels[idx+3] or 0)
+  if not idat_data then
+    -- Deflate uncompressed blocks (max 65535 per block)
+    local zlib_blocks = { string.char(0x78, 0x01) } -- ZLIB header
+    local pos = 1
+    local total_len = #raw_data
+    while pos <= total_len do
+      local chunk_len = math.min(total_len - pos + 1, 65535)
+      local is_final = (pos + chunk_len > total_len) and 1 or 0
+      zlib_blocks[#zlib_blocks + 1] = string.char(is_final)
+      zlib_blocks[#zlib_blocks + 1] = u16le(chunk_len)
+      zlib_blocks[#zlib_blocks + 1] = u16le(bxor(chunk_len, 0xFFFF))
+      zlib_blocks[#zlib_blocks + 1] = raw_data:sub(pos, pos + chunk_len - 1)
+      pos = pos + chunk_len
     end
-    raw_lines[#raw_lines + 1] = table.concat(row)
+    zlib_blocks[#zlib_blocks + 1] = u32be(adler32(raw_data))
+    idat_data = table.concat(zlib_blocks)
   end
-  local raw_data = table.concat(raw_lines)
-
-  -- Deflate uncompressed blocks (max 65535 per block)
-  local zlib_blocks = { string.char(0x78, 0x01) } -- ZLIB header
-  local pos = 1
-  local total_len = #raw_data
-  while pos <= total_len do
-    local chunk_len = math.min(total_len - pos + 1, 65535)
-    local is_final = (pos + chunk_len > total_len) and 1 or 0
-    zlib_blocks[#zlib_blocks + 1] = string.char(is_final)
-    zlib_blocks[#zlib_blocks + 1] = u16le(chunk_len)
-    zlib_blocks[#zlib_blocks + 1] = u16le(bxor(chunk_len, 0xFFFF))
-    zlib_blocks[#zlib_blocks + 1] = raw_data:sub(pos, pos + chunk_len - 1)
-    pos = pos + chunk_len
-  end
-  zlib_blocks[#zlib_blocks + 1] = u32be(adler32(raw_data))
-  local idat_data = table.concat(zlib_blocks)
 
   -- PNG Signature + IHDR + IDAT + IEND
   local sig = "\137PNG\r\n\026\n"

@@ -158,6 +158,12 @@ function Schema.newGame(opts)
   local Storage = require("src.core.game3.storage")
   session.storage = Storage.new()
   session.storage.items[1] = { id = 13, qty = 1 } -- pokefirered/src/player_pc.c:100
+  -- pokefirered/src/new_game.c:143 ResetTrainerFanClub
+  require("src.core.game3.trainer_fan_club").reset(session)
+  -- pokefirered/src/new_game.c:132 InitMagikarpSizeRecord
+  local SizeRecord = require("src.core.game3.pokemon_size_record")
+  SizeRecord.initMagikarpSizeRecord(session)
+  SizeRecord.initHeracrossSizeRecord(session)
   Options.ensure(session)
   -- Plan naming: text_speed / l_equals_a aliases mirror Options fields.
   session.options.text_speed = session.options.textSpeed
@@ -278,6 +284,8 @@ function Schema.fromSaveTable(save)
   reset_state_on_continue(session)
   Schema.ensureMonBalls(session)
   Schema.repairOwnMons(session)
+  local Flags = require("src.core.game3.scripting.flags")
+  Flags.repairSaveState(session)
   if type(save.options) == "table" then
     Options.bind(session, save.options)
   else

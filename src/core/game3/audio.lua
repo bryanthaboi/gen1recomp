@@ -187,6 +187,26 @@ function Audio.role(name)
   return nil
 end
 
+-- pokefirered/src/battle_setup.c:349 StartLegendaryBattle switches on the FRLG
+-- internal species id, not the National Dex number. SPECIES_DEOXYS is 410
+-- (include/constants/species.h:419); 386 is SPECIES_VOLBEAT and must not match.
+Audio.LEGENDARY_BATTLE_SONGS = {
+  [150] = { "battleMewtwo", 340 }, -- SPECIES_MEWTWO
+  [410] = { "battleDeoxys", 339 }, -- SPECIES_DEOXYS
+  [144] = { "battleLegend", 341 }, -- SPECIES_ARTICUNO
+  [145] = { "battleLegend", 341 }, -- SPECIES_ZAPDOS
+  [146] = { "battleLegend", 341 }, -- SPECIES_MOLTRES
+  [249] = { "battleLegend", 341 }, -- SPECIES_LUGIA
+  [250] = { "battleLegend", 341 }, -- SPECIES_HO_OH
+}
+
+-- Returns the legendary battle theme for a species, or nil for any other mon.
+function Audio.legendaryBattleSong(species)
+  local entry = Audio.LEGENDARY_BATTLE_SONGS[tonumber(species) or -1]
+  if not entry then return nil end
+  return Audio.role(entry[1]) or entry[2]
+end
+
 function Audio.applyOptions(session)
   local Options = require("src.core.game3.options")
   local o = Options.ensure(session)

@@ -111,6 +111,7 @@ local function applyLoaded(path, statusVerb)
   end
   if Gen.of(S.save, S.version) == 3 then
     S.events = Catalog.game3EventList(S.modRoots)
+    S.game3Events = Catalog.game3Categories(S.modRoots)
   elseif Gen.of(S.save, S.version) == 2 then
     S.events = Catalog.gen2EventList(Gen.engineOf(S.save, S.version), S.modRoots)
   end

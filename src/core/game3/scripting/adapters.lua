@@ -703,6 +703,12 @@ function Adapters.host(mod, game, world)
       end
       finish()
     end,
+    setFieldEffectArgument = function(argNum, value)
+      local FieldEffects = require("src.core.game3.field_effects")
+      if FieldEffects.setFieldEffectArgument then
+        FieldEffects.setFieldEffectArgument(argNum, value)
+      end
+    end,
     openPc = function(done, pcOpts)
       local function finish()
         local okMsg, Message = pcall(require, "src.ui.game3.message")

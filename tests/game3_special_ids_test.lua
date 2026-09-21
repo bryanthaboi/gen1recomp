@@ -92,6 +92,19 @@ local WANT = {
   EnableNationalPokedex = 0x16F,
   IsNationalPokedexEnabled = 0x193,
   StartOldManTutorialBattle = 0x9D,
+  Script_IsFanClubMemberFanOfPlayer = 0xA3,
+  Script_GetNumFansOfPlayerInTrainerFanClub = 0xA4,
+  Script_BufferFanClubTrainerName = 0xA5,
+  Script_TryLoseFansFromPlayTimeAfterLinkBattle = 0xA6,
+  Script_TryLoseFansFromPlayTime = 0xA7,
+  Script_SetPlayerGotFirstFans = 0xA8,
+  Script_UpdateTrainerFanClubGameClear = 0xA9,
+  Script_TryGainNewFanFromCounter = 0xAA,
+  GetHeracrossSizeRecordInfo = 0x77,
+  CompareHeracrossSize = 0x78,
+  GetMagikarpSizeRecordInfo = 0x79,
+  CompareMagikarpSize = 0x7A,
+  GetProfOaksRatingMessage = 0xD5,
 }
 for name, id in pairs(WANT) do
   check(Std.SPECIAL[name] == id, string.format("Std.SPECIAL.%s == 0x%X (got %s)",
@@ -108,7 +121,6 @@ for id = 0, pretCount - 1 do
 end
 check(Natives.ALLOW["special:" .. 0x18B] == nil, "0x18B OpenMuseumFossilPic no longer sets dex flags")
 check(Natives.ALLOW["special:" .. 0x19D] == nil, "0x19D RemoveBerryPowderVendorMenu unbound")
-check(Natives.ALLOW["special:" .. 0xA8] == nil, "0xA8 Script_SetPlayerGotFirstFans unbound")
 
 if failed > 0 then
   print("[test] FAILED " .. failed)

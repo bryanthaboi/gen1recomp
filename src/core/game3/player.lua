@@ -115,8 +115,13 @@ function Player.reset(x, y, facing)
   Player.cellY = tonumber(y) or 0
   Player.px = Player.cellX * CELL
   Player.py = Player.cellY * CELL
-  Player.facing = facing or "down"
-  Player.elevation = 3
+  local Collision = package.loaded["src.core.game3.collision"]
+  local curElev = Collision and Collision.elevationAt and Collision.elevationAt(Player.cellX, Player.cellY)
+  if curElev and curElev ~= 0 and curElev ~= 15 then
+    Player.elevation = curElev
+  else
+    Player.elevation = 3
+  end
   Player.moving = false
   Player.progress = 0
   Player.stepFrames = WALK_FRAMES
@@ -608,6 +613,10 @@ local function finishStep(game)
   Player.running = false
   Player.jumping = false
   Player.spriteYOffset = 0
+  local curElev = Collision.elevationAt and Collision.elevationAt(Player.cellX, Player.cellY)
+  if curElev and curElev ~= 0 and curElev ~= 15 then
+    Player.elevation = curElev
+  end
   Player.syncSavePosition(game)
 
   -- Surf landing / dismount state transitions

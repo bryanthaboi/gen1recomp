@@ -168,4 +168,19 @@ function Catalog.game3EventList(extraDirs)
   return names
 end
 
+function Catalog.game3Categories(extraDirs)
+  local ok, Gen3Flags = pcall(require, "Gen3Flags")
+  if ok and Gen3Flags and Gen3Flags.categories then
+    return Gen3Flags.categories(extraDirs)
+  end
+  return {
+    story = Catalog.game3EventList(extraDirs),
+    trainers = {},
+    items = {},
+    toggles = {},
+    system = {},
+    vars = {},
+  }
+end
+
 return Catalog

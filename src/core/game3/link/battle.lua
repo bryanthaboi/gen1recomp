@@ -558,6 +558,11 @@ function LB.finish(result)
   if LB.mode ~= L.USING.MULTI_BATTLE and not LB.unionRoom then
     bumpTrainerCard(s, outcome)
     LB.addOpponentRecord(s, LB.peer and LB.peer.name, LB.peer and LB.peer.trainerId, outcome)
+    -- pokefirered/src/cable_club.c:782 CB2_ReturnFromDirectLinkBattle -> Special_UpdateTrainerFansAfterLinkBattle
+    local okF, TFC = pcall(require, "src.core.game3.trainer_fan_club")
+    if okF and TFC and TFC.updateTrainerFansAfterLinkBattle then
+      TFC.updateTrainerFansAfterLinkBattle(s, ctx, outcome)
+    end
   end
   local lk = L.link
   if lk and lk:isOpen() then

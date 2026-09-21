@@ -585,4 +585,7 @@ function Link.reset()
   Link.peerCard = nil
 end
 
+package.loaded["src.core.game3.link"] = Link
+package.loaded["src.core.game3.link.init"] = Link
+
 return Link

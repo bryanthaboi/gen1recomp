@@ -559,8 +559,301 @@ do
   check(okT, "App.draw renders with table-typed items: " .. tostring(errT))
 
   App.unload()
-  _G.love = prevLove
+end
+
+-- --------------------------------------------------------------------------
+-- 15. MovePicker & Move Assignment Normalization
+-- --------------------------------------------------------------------------
+do
+  local State = require("State")
+  local MovePicker = require("MovePicker")
+  local Kit = require("Kit")
+
+  local S = State.new()
+  S.data = mockData
+  S.cat = Catalog.build(mockData)
+  S.save = Schema.newGame({ version = "firered" })
+  S.version = "firered"
+
+  -- Create mon with numeric array moves (e.g. 57=SURF, 10=SCRATCH)
+  local mon = MonOps.create(mockData, 6, 50, 3)
+  mon.moves = { 57, 10, 0, 0 }
+  S.save.party[1] = mon
+  S.editingMon = mon
+
+  -- Open MovePicker for slot 1 (which holds numeric 57)
+  local okOpen = Ops.openMovePicker(S, Kit, 1)
+  check(okOpen, "Ops.openMovePicker opens successfully with numeric moves")
+
+  -- Draw MovePicker (must NOT crash with attempt to index a number value)
+  local okDraw, errDraw = pcall(function()
+    MovePicker.draw(S, Kit, 800, 600)
+  end)
+  check(okDraw, "MovePicker.draw renders with numeric moves without crashing: " .. tostring(errDraw))
+
+  -- Move deduplication: attempting to assign SURF when move 1 is already 57
+  local surfAssigned = Ops.setMove(S, mon, 1, "SURF")
+  checkEq(surfAssigned, false, "Ops.setMove refuses assigning SURF when slot is already numeric 57 (Surf)")
+
+  -- Assign a new move (e.g. FLAMETHROWER = 53 or FIRE BLAST = 126)
+  local fbAssigned = Ops.setMove(S, mon, 1, "FIRE BLAST")
+  check(fbAssigned, "Ops.setMove assigns FIRE BLAST")
+  checkEq(mon.moves[1], 126, "mon.moves[1] updated to canonical numeric ID 126")
+
+  Ops.closeMovePicker(S, Kit)
+end
+
+-- --------------------------------------------------------------------------
+-- 16. SpeciesPicker Highlighting Normalization
+-- --------------------------------------------------------------------------
+do
+  local State = require("State")
+  local SpeciesPicker = require("SpeciesPicker")
+  local Kit = require("Kit")
+
+  local S = State.new()
+  S.data = mockData
+  S.cat = Catalog.build(mockData)
+  S.save = Schema.newGame({ version = "firered" })
+  S.version = "firered"
+
+  local mon = MonOps.create(mockData, 6, 50, 3) -- Charizard (species = 6)
+  S.editingMon = mon
+
+  local okOpen = Ops.openSpeciesPicker(S, Kit)
+  check(okOpen, "Ops.openSpeciesPicker opens")
+
+  local okDraw, errDraw = pcall(function()
+    SpeciesPicker.draw(S, Kit, 800, 600)
+  end)
+  check(okDraw, "SpeciesPicker.draw renders without crashing: " .. tostring(errDraw))
+
+  Ops.closeSpeciesPicker(S, Kit)
+end
+
+-- --------------------------------------------------------------------------
+-- 17. PID Generation and Mathematical Parity (Nature, Ability, Gender, Shiny)
+-- --------------------------------------------------------------------------
+do
+  local SummaryData = require("src.core.game3.summary_data")
+  local PokemonG3 = require("src.core.game3.pokemon")
+
+  local species = 6 -- Charizard (87.5% male ratio)
+  local otId = 12345
+  local otSecretId = 54321
+
+  -- 1. Test Adamant (3), Ability 1 (slot 0), Male, Non-Shiny
+  local pid1 = MonOps.generatePid(species, otId, otSecretId, {
+    nature = 3,
+    ability = 0,
+    gender = "M",
+    shiny = false,
+  })
+  checkEq(pid1 % 25, 3, "generatePid produces requested Nature (Adamant = 3)")
+  checkEq(pid1 % 2, 0, "generatePid produces requested Ability slot 0")
+  checkEq(PokemonG3.gender(species, pid1), "M", "generatePid produces Male gender")
+  checkEq(SummaryData.isShiny({ personality = pid1, otId = otId, otSecretId = otSecretId }), false, "generatePid produces non-shiny")
+
+  -- 2. Test Modest (15), Ability 2 (slot 1), Female, Shiny
+  local pid2 = MonOps.generatePid(species, otId, otSecretId, {
+    nature = 15,
+    ability = 1,
+    gender = "F",
+    shiny = true,
+  })
+  checkEq(pid2 % 25, 15, "generatePid produces requested Nature (Modest = 15)")
+  checkEq(pid2 % 2, 1, "generatePid produces requested Ability slot 1")
+  checkEq(PokemonG3.gender(species, pid2), "F", "generatePid produces Female gender")
+  checkEq(SummaryData.isShiny({ personality = pid2, otId = otId, otSecretId = otSecretId }), true, "generatePid produces shiny")
+end
+
+-- --------------------------------------------------------------------------
+-- 18. Pokédex Dual-Indexing and National Dex Toggle
+-- --------------------------------------------------------------------------
+do
+  local State = require("State")
+  local S = State.new()
+  S.data = mockData
+  S.cat = Catalog.build(mockData)
+  S.save = Schema.newGame({ version = "firered" })
+  S.version = "firered"
+
+  -- Check initial state
+  local seen, owned, total = Ops.dexCounts(S)
+  check(seen == 0, "initial dex seen is 0")
+  check(owned == 0, "initial dex owned is 0")
+
+  -- Mark Bulbasaur seen
+  Ops.dexSeen(S, "BULBASAUR", true)
+  check(S.save.dex.seen["BULBASAUR"] == true, "dex.seen contains BULBASAUR string key")
+  check(S.save.dex.seen[1] == true, "dex.seen contains species ID 1 numeric key")
+
+  -- Mark Bulbasaur owned
+  Ops.dexOwned(S, "BULBASAUR", true)
+  check(S.save.dex.owned["BULBASAUR"] == true, "dex.owned contains BULBASAUR string key")
+  check(S.save.dex.owned[1] == true, "dex.owned contains species ID 1 numeric key")
+
+  seen, owned = Ops.dexCounts(S)
+  checkEq(seen, 1, "dexCounts counts 1 seen (deduplicated)")
+  checkEq(owned, 1, "dexCounts counts 1 owned (deduplicated)")
+
+  -- National Dex toggle
+  checkEq(S.save.dex.national, false, "National Dex initially false")
+  Ops.toggleNationalDex(S)
+  checkEq(S.save.dex.national, true, "National Dex toggled to true")
+  checkEq(Flags.getFlag(S.save, nil, "FLAG_SYS_NATIONAL_DEX"), true, "FLAG_SYS_NATIONAL_DEX is true")
+
+  Ops.toggleNationalDex(S)
+  checkEq(S.save.dex.national, false, "National Dex toggled back to false")
+  checkEq(Flags.getFlag(S.save, nil, "FLAG_SYS_NATIONAL_DEX"), false, "FLAG_SYS_NATIONAL_DEX is false")
+end
+
+-- --------------------------------------------------------------------------
+-- 19. Gen 3 Pokémon Characteristics Operations (MonEditor / Ops)
+-- --------------------------------------------------------------------------
+do
+  local State = require("State")
+  local MonEditor = require("MonEditor")
+  local Kit = require("Kit")
+
+  local S = State.new()
+  S.data = mockData
+  S.cat = Catalog.build(mockData)
+  S.save = Schema.newGame({ version = "firered" })
+  S.version = "firered"
+
+  local mon = MonOps.create(mockData, 6, 50, 3)
+  S.save.party[1] = mon
+  S.editingMon = mon
+
+  -- Set Held Item
+  Ops.setHeldItem(S, mon, "LEFTOVERS")
+  check(mon.heldItem ~= nil, "mon heldItem set")
+  Ops.setHeldItem(S, mon, nil)
+  check(mon.heldItem == nil, "mon heldItem cleared")
+
+  -- Set Happiness / Friendship
+  Ops.setHappiness(S, mon, 200)
+  checkEq(mon.friendship, 200, "mon friendship set to 200")
+
+  -- Set Nature
+  Ops.setNature(S, mon, 3) -- Adamant
+  checkEq(mon.nature, 3, "mon nature set to Adamant (3)")
+  checkEq(mon.personality % 25, 3, "mon personality matches Adamant modulo 25")
+
+  -- Set Ability
+  Ops.setAbility(S, mon, 1) -- Slot 2
+  checkEq(mon.personality % 2, 1, "mon personality has ability bit 1")
+
+  -- Set Shiny
+  Ops.setShiny(S, mon, true)
+  check(require("src.core.game3.summary_data").isShiny(mon), "mon is shiny via PID math")
+
+  -- Draw MonEditor
+  local okDraw, errDraw = pcall(function()
+    MonEditor.draw(S, Kit, 20, 20, 600, 700)
+  end)
+  check(okDraw, "MonEditor.draw renders Gen 3 characteristics without error: " .. tostring(errDraw))
+end
+
+-- --------------------------------------------------------------------------
+-- 20. Gen 3 Event Categories & Variable Operations (Events panel / Ops / Gen3Flags)
+-- --------------------------------------------------------------------------
+do
+  local State = require("State")
+  local Events = require("panels.Events")
+  local Gen3Flags = require("Gen3Flags")
+  local Kit = require("Kit")
+
+  local cats = Gen3Flags.categories()
+  check(type(cats.story) == "table" and #cats.story > 0, "cats.story has flags")
+  check(type(cats.trainers) == "table" and #cats.trainers > 0, "cats.trainers has trainers")
+  check(type(cats.items) == "table" and #cats.items > 0, "cats.items has items")
+  check(type(cats.toggles) == "table" and #cats.toggles > 0, "cats.toggles has toggles")
+  check(type(cats.system) == "table" and #cats.system > 0, "cats.system has system flags")
+  check(type(cats.vars) == "table" and #cats.vars > 0, "cats.vars has variables")
+
+  local S = State.new()
+  S.data = mockData
+  S.cat = Catalog.build(mockData)
+  S.save = Schema.newGame({ version = "firered" })
+  S.version = "firered"
+  S.events = Catalog.game3EventList()
+  S.game3Events = cats
+
+  -- 1. Story flags toggle
+  Ops.setFlag(S, "FLAG_GOT_BICYCLE", true)
+  checkEq(Gen.getFlag(S.save, "FLAG_GOT_BICYCLE"), true, "FLAG_GOT_BICYCLE set to true")
+  Ops.setFlag(S, "FLAG_GOT_BICYCLE", false)
+  checkEq(Gen.getFlag(S.save, "FLAG_GOT_BICYCLE"), false, "FLAG_GOT_BICYCLE set to false")
+
+  -- 2. Trainer flags toggle (0x500 + trainerId)
+  local tFlag = 0x500 + 89 -- TRAINER_YOUNGSTER_BEN (0x559 = 1369)
+  Ops.setFlag(S, tFlag, true)
+  checkEq(Gen.getFlag(S.save, tFlag), true, "TRAINER_YOUNGSTER_BEN flag set to true")
+
+  -- Set up some VS Seeker / Rematch data
+  S.save.vsSeeker = S.save.vsSeeker or {}
+  S.save.vsSeeker.rematches = { [89] = true }
+  S.save.trainerRematches = { [89] = 1 }
+  S.save.vars = S.save.vars or {}
+  S.save.vars[0x40AA] = 5
+
+  -- Clear all trainers (two-click confirmation)
+  Ops.clearTrainers(S) -- first click arms
+  checkEq(S.armed, "clear-trainers", "Ops.clearTrainers armed on first click")
+  Ops.clearTrainers(S) -- second click confirms
+  checkEq(Gen.getFlag(S.save, tFlag), false, "TRAINER_YOUNGSTER_BEN flag cleared by Ops.clearTrainers")
+  checkEq(next(S.save.vsSeeker.rematches), nil, "vsSeeker.rematches scrubbed by Ops.clearTrainers")
+  checkEq(next(S.save.trainerRematches), nil, "trainerRematches scrubbed by Ops.clearTrainers")
+  checkEq(S.save.vars[0x40AA], 0, "VAR_QLBAK_TRAINER_REMATCHES cleared by Ops.clearTrainers")
+
+  -- 3. Item ball & hidden item flags toggle and bulk clear
+  local itemFlag = 0x154 -- FLAG_HIDE_ROUTE2_ETHER
+  local hiddenFlag = 0x3E8 -- FLAG_HIDDEN_ITEM_VIRIDIAN_FOREST_POTION
+  Ops.setFlag(S, itemFlag, true)
+  Ops.setFlag(S, hiddenFlag, true)
+  checkEq(Gen.getFlag(S.save, itemFlag), true, "itemFlag set to true")
+  checkEq(Gen.getFlag(S.save, hiddenFlag), true, "hiddenFlag set to true")
+
+  Ops.clearItems(S) -- arms
+  checkEq(S.armed, "clear-items", "Ops.clearItems armed on first click")
+  Ops.clearItems(S) -- confirms
+  checkEq(Gen.getFlag(S.save, itemFlag), false, "itemFlag cleared by Ops.clearItems")
+  checkEq(Gen.getFlag(S.save, hiddenFlag), false, "hiddenFlag cleared by Ops.clearItems")
+
+  -- 4. Object toggle flags
+  local hideOak = 0x02C -- FLAG_HIDE_OAK_IN_PALLET_TOWN
+  Ops.setFlag(S, hideOak, true)
+  checkEq(Gen.getFlag(S.save, hideOak), true, "FLAG_HIDE_OAK_IN_PALLET_TOWN set to true")
+
+  Ops.clearToggles(S) -- arms
+  Ops.clearToggles(S) -- confirms
+  checkEq(Gen.getFlag(S.save, hideOak), false, "FLAG_HIDE_OAK_IN_PALLET_TOWN cleared by Ops.clearToggles")
+
+  -- 5. Variables get/set and bounds clamping
+  local sceneVar = 0x4050 -- VAR_MAP_SCENE_PALLET_TOWN_OAK
+  checkEq(Gen.getVar(S.save, sceneVar), 0, "initial sceneVar value is 0")
+  Ops.setVar(S, sceneVar, 2)
+  checkEq(Gen.getVar(S.save, sceneVar), 2, "sceneVar set to 2")
+
+  -- 16-bit boundary safety tests
+  Ops.setVar(S, sceneVar, -10)
+  checkEq(Gen.getVar(S.save, sceneVar), 0, "negative value clamped to 0")
+  Ops.setVar(S, sceneVar, 70000)
+  checkEq(Gen.getVar(S.save, sceneVar), 65535, "large value clamped to 65535 (0xFFFF)")
+
+  -- 6. Render all 6 sub-tabs in Events panel without error
+  local subTabs = { "story", "trainers", "items", "toggles", "system", "vars" }
+  for _, tab in ipairs(subTabs) do
+    S.eventsTab = tab
+    local okDraw, errDraw = pcall(function()
+      Events.draw(S, Kit, 20, 20, 600, 700)
+    end)
+    check(okDraw, string.format("Events.draw renders sub-tab '%s' without error: %s", tab, tostring(errDraw)))
+  end
 end
 
 print(string.format("save editor gen3 tests: %d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end
+

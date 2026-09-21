@@ -557,6 +557,19 @@ function Ops.moveSearch(S, query)
   return out
 end
 
+local function canonicalMoveId(data, id)
+  if not id then return nil end
+  local num = tonumber(id)
+  if num then return num end
+  local mdef = data and data.moves and data.moves[id]
+  if mdef and mdef.moveId then return tonumber(mdef.moveId) end
+  local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
+  if okP and PokemonG3 and PokemonG3.moveFromName then
+    return PokemonG3.moveFromName(tostring(id))
+  end
+  return nil
+end
+
 -- One funnel for assigning a move (picker commit and cycleMove).  Refuses
 -- unknown / scalar ids before MonOps asserts, and speaks in the status bar.
 function Ops.setMove(S, mon, slot, id)
@@ -564,7 +577,10 @@ function Ops.setMove(S, mon, slot, id)
   slot = math.floor(tonumber(slot) or 0)
   if slot < 1 or slot > 4 then return false end
   local current = moveId(mon, slot)
-  if id == current then
+  local curCanon = canonicalMoveId(S.data, current)
+  local candCanon = canonicalMoveId(S.data, id)
+  if (curCanon and candCanon and curCanon == candCanon)
+      or (current and tostring(current):upper() == tostring(id):upper()) then
     return Ops.say(S, ("Move %d is already %s"):format(slot, tostring(id)))
   end
   if not Ops.moveUsable(S, id) then
@@ -1346,6 +1362,94 @@ function Ops.setToggle(S, mapId, name, on)
   return Ops.mark(S, ("%s / %s = %s"):format(mapId, name, tostring(on and true or false)))
 end
 
+function Ops.setVar(S, nameOrId, val)
+  Gen.setVar(S.save, nameOrId, val)
+  local displayVal = Gen.getVar(S.save, nameOrId)
+  return Ops.mark(S, ("%s = %d"):format(tostring(nameOrId), displayVal))
+end
+
+function Ops.clearTrainers(S)
+  local g = Gen.ofState(S)
+  if g == 3 then
+    local Gen3Flags = require("Gen3Flags")
+    local ids = Gen3Flags.allTrainerFlagIds()
+    local count = 0
+    for _, id in ipairs(ids) do
+      if Gen.getFlag(S.save, id) then count = count + 1 end
+    end
+    if count == 0 then return Ops.say(S, "Trainers are already empty") end
+    if not Ops.arm(S, "clear-trainers",
+        ("Clear all %d defeated trainers? Click again to confirm"):format(count)) then
+      return false
+    end
+    for _, id in ipairs(ids) do
+      Gen.setFlag(S.save, id, false)
+    end
+    if type(S.save.vsSeeker) == "table" then
+      S.save.vsSeeker.rematches = {}
+    end
+    if S.save.trainerRematches then S.save.trainerRematches = {} end
+    if S.save.vars then S.save.vars[0x40AA] = 0 end
+    S.save.defeatedTrainers = {}
+    return Ops.mark(S, ("Cleared %d defeated trainers"):format(count))
+  end
+  return Ops.clearTable(S, "defeatedTrainers", "trainers")
+end
+
+function Ops.clearItems(S)
+  local g = Gen.ofState(S)
+  if g == 3 then
+    local Gen3Flags = require("Gen3Flags")
+    local ids = Gen3Flags.allItemFlagIds()
+    local count = 0
+    for _, id in ipairs(ids) do
+      if Gen.getFlag(S.save, id) then count = count + 1 end
+    end
+    if count == 0 then return Ops.say(S, "Items taken are already empty") end
+    if not Ops.arm(S, "clear-items",
+        ("Clear all %d items taken? Click again to confirm"):format(count)) then
+      return false
+    end
+    for _, id in ipairs(ids) do
+      Gen.setFlag(S.save, id, false)
+    end
+    S.save.itemsTaken = {}
+    return Ops.mark(S, ("Cleared %d items taken"):format(count))
+  end
+  return Ops.clearTable(S, "itemsTaken", "items taken")
+end
+
+function Ops.clearToggles(S)
+  local g = Gen.ofState(S)
+  if g == 3 then
+    local Gen3Flags = require("Gen3Flags")
+    local ids = Gen3Flags.allToggleFlagIds()
+    local count = 0
+    for _, id in ipairs(ids) do
+      if Gen.getFlag(S.save, id) then count = count + 1 end
+    end
+    if count == 0 then return Ops.say(S, "Object toggles are already empty") end
+    if not Ops.arm(S, "clear-toggles",
+        ("Clear all %d object toggles? Click again to confirm"):format(count)) then
+      return false
+    end
+    for _, id in ipairs(ids) do
+      Gen.setFlag(S.save, id, false)
+    end
+    S.save.objectToggles = {}
+    return Ops.mark(S, ("Cleared %d object toggles"):format(count))
+  end
+  local count = 0
+  for _ in pairs(S.save.objectToggles or {}) do count = count + 1 end
+  if count == 0 then return Ops.say(S, "Object toggles are already empty") end
+  if not Ops.arm(S, "clear-toggles",
+      ("Clear all %d map object toggles? Click again to confirm"):format(count)) then
+    return false
+  end
+  S.save.objectToggles = {}
+  return Ops.mark(S, ("Cleared %d map object toggles"):format(count))
+end
+
 function Ops.clearTable(S, tableKey, label)
   local count = 0
   for _ in pairs(S.save[tableKey] or {}) do count = count + 1 end
@@ -1361,19 +1465,55 @@ end
 -- -------------------------------------------------------------------- dex
 function Ops.dex(S)
   local key = Gen.dexOwnedKey(S.save)
-  S.save.pokedex = S.save.pokedex or { seen = {}, [key] = {} }
-  S.save.pokedex.seen = S.save.pokedex.seen or {}
-  S.save.pokedex[key] = S.save.pokedex[key] or {}
-  return S.save.pokedex
+  local dex = S.save.dex or S.save.pokedex
+  if not dex then
+    dex = { seen = {}, [key] = {} }
+    if Gen.ofState(S) == 3 then
+      S.save.dex = dex
+    else
+      S.save.pokedex = dex
+    end
+  end
+  dex.seen = dex.seen or {}
+  dex[key] = dex[key] or (Gen.ofState(S) == 3 and ((key == "owned" and dex.caught) or (key == "caught" and dex.owned))) or {}
+  if Gen.ofState(S) == 3 then
+    if key == "owned" and dex.caught == nil then dex.caught = dex[key] end
+    if key == "caught" and dex.owned == nil then dex.owned = dex[key] end
+  end
+  return dex
 end
 
 function Ops.dexCounts(S)
   local dex = Ops.dex(S)
   local key = Gen.dexOwnedKey(S.save)
+  local seenSet, ownedSet = {}, {}
+  for k, v in pairs(dex.seen or {}) do
+    if v then
+      local sp = tonumber(k) or (S.data and S.data.pokemon and S.data.pokemon[k] and S.data.pokemon[k].speciesId) or k
+      seenSet[sp] = true
+    end
+  end
+  local ownedTable = dex[key] or {}
+  for k, v in pairs(ownedTable) do
+    if v then
+      local sp = tonumber(k) or (S.data and S.data.pokemon and S.data.pokemon[k] and S.data.pokemon[k].speciesId) or k
+      ownedSet[sp] = true
+    end
+  end
   local seen, owned = 0, 0
-  for _ in pairs(dex.seen) do seen = seen + 1 end
-  for _ in pairs(dex[key] or {}) do owned = owned + 1 end
+  for _ in pairs(seenSet) do seen = seen + 1 end
+  for _ in pairs(ownedSet) do owned = owned + 1 end
   return seen, owned, #S.cat.species
+end
+
+local function dexSpeciesKeys(S, species)
+  local keys = { species }
+  if Gen.ofState(S) == 3 then
+    local def = S.data and S.data.pokemon and S.data.pokemon[species]
+    local spId = (def and (def.speciesId or def.dex)) or tonumber(species)
+    if spId and spId ~= species then keys[#keys + 1] = spId end
+  end
+  return keys
 end
 
 -- Owning implies having seen; un-seeing clears owned.  Both directions are
@@ -1381,16 +1521,30 @@ end
 function Ops.dexSeen(S, species, on)
   local dex = Ops.dex(S)
   local key = Gen.dexOwnedKey(S.save)
-  dex.seen[species] = on and true or nil
-  if not on then dex[key][species] = nil end
+  for _, k in ipairs(dexSpeciesKeys(S, species)) do
+    dex.seen[k] = on and true or nil
+    if not on then
+      dex[key][k] = nil
+      if Gen.ofState(S) == 3 then
+        if dex.caught then dex.caught[k] = nil end
+        if dex.owned then dex.owned[k] = nil end
+      end
+    end
+  end
   return Ops.mark(S, ("%s %s"):format(species, on and "marked seen" or "cleared"))
 end
 
 function Ops.dexOwned(S, species, on)
   local dex = Ops.dex(S)
   local key = Gen.dexOwnedKey(S.save)
-  dex[key][species] = on and true or nil
-  if on then dex.seen[species] = true end
+  for _, k in ipairs(dexSpeciesKeys(S, species)) do
+    dex[key][k] = on and true or nil
+    if Gen.ofState(S) == 3 then
+      if dex.caught then dex.caught[k] = on and true or nil end
+      if dex.owned then dex.owned[k] = on and true or nil end
+    end
+    if on then dex.seen[k] = true end
+  end
   return Ops.mark(S, ("%s %s"):format(species, on and "marked owned" or "un-owned"))
 end
 
@@ -1399,13 +1553,25 @@ function Ops.dexStamp(S)
   local key = Gen.dexOwnedKey(S.save)
   local n = 0
   local function stamp(mon)
-    if not dex[key][mon.species] then n = n + 1 end
-    dex.seen[mon.species] = true
-    dex[key][mon.species] = true
+    if not mon then return end
+    local sp = mon.species or mon.speciesId
+    local keys = dexSpeciesKeys(S, sp)
+    local isNew = not dex[key][sp] and not (keys[2] and dex[key][keys[2]])
+    if isNew then n = n + 1 end
+    for _, k in ipairs(keys) do
+      dex.seen[k] = true
+      dex[key][k] = true
+      if Gen.ofState(S) == 3 then
+        if dex.caught then dex.caught[k] = true end
+        if dex.owned then dex.owned[k] = true end
+      end
+    end
   end
-  for _, m in ipairs(S.save.party) do stamp(m) end
+  for _, m in ipairs(S.save.party or {}) do stamp(m) end
   for _, box in ipairs(S.save.boxes or {}) do
-    for _, m in ipairs(box) do stamp(m) end
+    for _, m in pairs(type(box) == "table" and box or {}) do
+      if type(m) == "table" then stamp(m) end
+    end
   end
   if n == 0 then return Ops.say(S, "Party and boxes are already all in the dex") end
   return Ops.mark(S, ("Owned %d more species from party + boxes"):format(n))
@@ -1413,7 +1579,11 @@ end
 
 function Ops.dexSeeAll(S)
   local dex = Ops.dex(S)
-  for _, species in ipairs(S.cat.species) do dex.seen[species] = true end
+  for _, species in ipairs(S.cat.species) do
+    for _, k in ipairs(dexSpeciesKeys(S, species)) do
+      dex.seen[k] = true
+    end
+  end
   return Ops.mark(S, ("Marked all %d species seen"):format(#S.cat.species))
 end
 
@@ -1421,8 +1591,14 @@ function Ops.dexOwnAll(S)
   local dex = Ops.dex(S)
   local key = Gen.dexOwnedKey(S.save)
   for _, species in ipairs(S.cat.species) do
-    dex.seen[species] = true
-    dex[key][species] = true
+    for _, k in ipairs(dexSpeciesKeys(S, species)) do
+      dex.seen[k] = true
+      dex[key][k] = true
+      if Gen.ofState(S) == 3 then
+        if dex.caught then dex.caught[k] = true end
+        if dex.owned then dex.owned[k] = true end
+      end
+    end
   end
   return Ops.mark(S, ("Marked all %d species owned"):format(#S.cat.species))
 end
@@ -1432,8 +1608,32 @@ function Ops.dexClear(S)
     return false
   end
   local key = Gen.dexOwnedKey(S.save)
-  S.save.pokedex = { seen = {}, [key] = {} }
+  local dex = { seen = {}, [key] = {} }
+  if Gen.ofState(S) == 3 then
+    dex.caught = dex[key]
+    dex.owned = dex[key]
+    dex.national = S.save.dex and S.save.dex.national or false
+    S.save.dex = dex
+  else
+    S.save.pokedex = dex
+  end
   return Ops.mark(S, "Pokedex wiped")
+end
+
+function Ops.toggleNationalDex(S)
+  local dex = Ops.dex(S)
+  local on = not (dex.national == true or (S.save.dex and S.save.dex.national == true))
+  dex.national = on
+  if S.save.dex then S.save.dex.national = on end
+  local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+  if okF and Flags then
+    Flags.setFlag(S.save, nil, "FLAG_SYS_NATIONAL_DEX", on)
+  else
+    S.save.flags = S.save.flags or {}
+    S.save.flags[0x829] = on and true or nil
+    S.save.flags["FLAG_SYS_NATIONAL_DEX"] = on and true or nil
+  end
+  return Ops.mark(S, ("National Dex %s"):format(on and "enabled" or "disabled"))
 end
 
 -- ------------------------------------------------------------------ dex sort
@@ -1556,17 +1756,19 @@ end
 function Ops.setHeldItem(S, mon, id)
   if not mon then return false end
   if id == "" or id == nil then
-    if not mon.item then return Ops.say(S, "No held item to clear") end
-    local was = mon.item
+    if not (mon.item or mon.heldItem) then return Ops.say(S, "No held item to clear") end
+    local was = mon.item or mon.heldItem
     mon.item = nil
+    mon.heldItem = nil
     syncPartyMailHeldItem(S, mon, was, nil)
-    return Ops.mark(S, ("Cleared held item (%s)"):format(was))
+    return Ops.mark(S, ("Cleared held item (%s)"):format(tostring(was)))
   end
-  if not S.data.items[id] then
+  local def = S.data.items[id]
+  if not def then
     return Ops.say(S, ("%s is not an item"):format(tostring(id)))
   end
-  local was = mon.item
-  mon.item = id
+  local was = mon.item or mon.heldItem
+  MonOps.setHeldItem(S.data, mon, def.itemId or def.id or id, Gen.ofState(S))
   syncPartyMailHeldItem(S, mon, was, id)
   return Ops.mark(S, ("%s now holds %s"):format(mon.species, id))
 end
@@ -1574,11 +1776,39 @@ end
 function Ops.setHappiness(S, mon, value)
   if not mon then return false end
   local want = clamp(math.floor(value), 0, 255)
-  if want == (mon.happiness or 0) then
+  if want == (mon.happiness or mon.friendship or 0) then
     return Ops.say(S, ("Happiness is already %d"):format(want))
   end
-  mon.happiness = want
+  MonOps.setHappiness(S.data, mon, want, Gen.ofState(S))
   return Ops.mark(S, ("%s happiness %d"):format(mon.species, want))
+end
+
+function Ops.setNature(S, mon, natureId)
+  if not mon then return false end
+  natureId = clamp(math.floor(tonumber(natureId) or 0), 0, 24)
+  MonOps.setNature(S.data, mon, natureId, Gen.ofState(S))
+  local SummaryData = require("src.core.game3.summary_data")
+  local name = SummaryData.NATURES[natureId] or tostring(natureId)
+  return Ops.mark(S, ("%s nature set to %s"):format(mon.species, name))
+end
+
+function Ops.setAbility(S, mon, abilitySlot)
+  if not mon then return false end
+  abilitySlot = (tonumber(abilitySlot) or 0) % 2
+  MonOps.setAbility(S.data, mon, abilitySlot, Gen.ofState(S))
+  return Ops.mark(S, ("%s ability set to slot %d"):format(mon.species, abilitySlot + 1))
+end
+
+function Ops.setMonGender(S, mon, gender)
+  if not mon then return false end
+  MonOps.setGender(S.data, mon, gender, Gen.ofState(S))
+  return Ops.mark(S, ("%s gender set to %s"):format(mon.species, tostring(gender)))
+end
+
+function Ops.setShiny(S, mon, shiny)
+  if not mon then return false end
+  MonOps.setShiny(S.data, mon, shiny, Gen.ofState(S))
+  return Ops.mark(S, ("%s %s"):format(mon.species, shiny and "is now shiny!" or "is no longer shiny"))
 end
 
 function Ops.setPokerus(S, mon, value)

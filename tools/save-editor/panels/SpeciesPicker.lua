@@ -116,7 +116,8 @@ function Picker.draw(S, Kit, width, height)
       local usable = Ops.speciesUsable(S, id)
       -- box-add has no "current" species: nothing is being replaced
       local current = p.mode ~= "box-add"
-        and (S.editingMon and S.editingMon.species == id) or false
+        and (S.editingMon and (S.editingMon.species == id
+          or (def and (S.editingMon.species == def.speciesId or S.editingMon.speciesId == def.speciesId or S.editingMon.species == def.id)))) or false
       if Kit.row(cx, ry, inner, rowH, current, PAL.green, 9 * s) then
         if commit(S, id) then
           Ops.closeSpeciesPicker(S, Kit)

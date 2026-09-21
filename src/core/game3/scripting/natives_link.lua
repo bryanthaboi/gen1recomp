@@ -1,4 +1,4 @@
-local Link = require("src.core.game3.link")
+local Link = require("src.core.game3.link.init")
 local Union = require("src.core.game3.link.union_room")
 local LinkBattle = require("src.core.game3.link.battle")
 local LinkTrade = require("src.core.game3.link.trade")

@@ -158,7 +158,8 @@ local function newEventObject(def)
     facing = facingFromDef(def),
     sprite = sprite or "SPRITE_YOUNGSTER",
     graphicsId = resolvedGfx,
-    elevation = def.elevation or 0,
+    elevation = (def.elevation and def.elevation ~= 0 and def.elevation)
+      or (Collision.elevationAt and Collision.elevationAt(x, y)) or 0,
     movementType = mt,
     movement = movement,
     range = range,
@@ -554,6 +555,10 @@ local function finishStep(eo)
   eo.stepFlip = not eo.stepFlip
   if eo.def then
     eo.def.x, eo.def.y = eo.cellX, eo.cellY
+  end
+  local curElev = Collision.elevationAt and Collision.elevationAt(eo.cellX, eo.cellY)
+  if curElev and curElev ~= 0 and curElev ~= 15 then
+    eo.elevation = curElev
   end
 end
 

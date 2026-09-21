@@ -94,8 +94,8 @@ function Picker.draw(S, Kit, width, height)
   p.offset = Kit.scroll(cx, cy, inner, listH, p.offset, #hits, perPage)
 
   local mon = S.editingMon
-  local currentId = mon and mon.moves and mon.moves[p.slot]
-    and mon.moves[p.slot].id
+  local mv = mon and mon.moves and mon.moves[p.slot]
+  local currentId = type(mv) == "table" and (mv.id or mv.moveId) or mv
 
   if #hits == 0 then
     Kit.emptyBox(cx, cy, inner, listH, "Nothing matches that.")
@@ -107,7 +107,9 @@ function Picker.draw(S, Kit, width, height)
       local ry = cy + (i - 1) * (rowH + rowGap)
       local def = S.data.moves[id]
       local usable = Ops.moveUsable(S, id)
-      local current = currentId == id
+      local current = (currentId ~= nil) and (currentId == id
+        or (def and (def.moveId == currentId or def.id == currentId))
+        or (S.data and S.data.moves and S.data.moves[currentId] and S.data.moves[currentId].id == id))
       if Kit.row(cx, ry, inner, rowH, current, PAL.green, 9 * s) then
         if commit(S, id) then
           Ops.closeMovePicker(S, Kit)

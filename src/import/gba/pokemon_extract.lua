@@ -89,13 +89,39 @@ local function decode_text(rom, off, max)
   return table.concat(chars)
 end
 
+local ffi
+do
+  local ok, mod = pcall(require, "ffi")
+  if ok and mod and mod.new and mod.string then
+    ffi = mod
+  end
+end
+
+local bit = rawget(_G, "bit") or rawget(_G, "bit32")
+if not bit then
+  local ok, mod = pcall(require, "bit")
+  if ok and mod then bit = mod end
+end
+
+local static_rgba_buf = nil
+local static_rgba_cap = 0
+local function get_rgba_buffer(size_bytes)
+  if not ffi then return nil end
+  if static_rgba_cap < size_bytes then
+    static_rgba_cap = math.max(size_bytes + 1024, 65536)
+    static_rgba_buf = ffi.new("uint8_t[?]", static_rgba_cap)
+  end
+  return static_rgba_buf
+end
+
 --- Decode GBA 4bpp tiles → flat 1-based index buffer (w*h).
 local function decode_4bpp(bytes, w, h)
-  local tilesW = math.floor(w / 8)
-  local tilesH = math.floor(h / 8)
+  local tilesW = bit and bit.rshift(w, 3) or math.floor(w / 8)
+  local tilesH = bit and bit.rshift(h, 3) or math.floor(h / 8)
   local pixels = {}
-  for i = 1, w * h do pixels[i] = 0 end
   local ti = 0
+  local band = bit and bit.band
+  local rshift = bit and bit.rshift
   for ty = 0, tilesH - 1 do
     for tx = 0, tilesW - 1 do
       local tileOff = ti * 32 -- 32 bytes / 4bpp tile
@@ -103,8 +129,14 @@ local function decode_4bpp(bytes, w, h)
         for bx = 0, 3 do
           local bi = tileOff + row * 4 + bx + 1
           local byte = bytes[bi] or 0
-          local p0 = byte % 16
-          local p1 = math.floor(byte / 16) % 16
+          local p0, p1
+          if band and rshift then
+            p0 = band(byte, 0x0F)
+            p1 = rshift(byte, 4)
+          else
+            p0 = byte % 16
+            p1 = math.floor(byte / 16) % 16
+          end
           local x0 = tx * 8 + bx * 2
           local y0 = ty * 8 + row
           pixels[y0 * w + x0 + 1] = p0
@@ -137,8 +169,32 @@ local function bake_icon_rgba(pixels, pal, w, h)
     local r, g, b = bgr555_to_rgb8(pal[c] or 0)
     rgb[c] = { r, g, b }
   end
+  local total_pixels = w * h
+  local total_bytes = total_pixels * 4
+  local buf = get_rgba_buffer(total_bytes)
+  if buf then
+    local ptr = 0
+    for i = 1, total_pixels do
+      local idx = pixels[i] or 0
+      if idx == 0 then
+        buf[ptr] = 0
+        buf[ptr + 1] = 0
+        buf[ptr + 2] = 0
+        buf[ptr + 3] = 0
+      else
+        local c = rgb[idx] or rgb[0]
+        buf[ptr] = c[1]
+        buf[ptr + 1] = c[2]
+        buf[ptr + 2] = c[3]
+        buf[ptr + 3] = 255
+      end
+      ptr = ptr + 4
+    end
+    return ffi.string(buf, total_bytes)
+  end
+
   local chunks = {}
-  for i = 1, w * h do
+  for i = 1, total_pixels do
     local idx = pixels[i] or 0
     if idx == 0 then
       chunks[i] = string.char(0, 0, 0, 0)
@@ -167,6 +223,60 @@ local function decode_pic_sheet(tiles, palBytes, frame, bank)
     rgb[c] = { r, g, b }
   end
   local tilesW, tilesH = 8, 8
+  local total_bytes = w * h * 4
+  local buf = get_rgba_buffer(total_bytes)
+  local band = bit and bit.band
+  local rshift = bit and bit.rshift
+
+  if buf and band and rshift then
+    local ti = 0
+    for ty = 0, tilesH - 1 do
+      for tx = 0, tilesW - 1 do
+        local tileOff = ti * 32
+        for row = 0, 7 do
+          for bx = 0, 3 do
+            local bi = tileBase + tileOff + row * 4 + bx + 1
+            local byte = tiles[bi] or 0
+            local p0 = band(byte, 0x0F)
+            local p1 = rshift(byte, 4)
+            local x0 = tx * 8 + bx * 2
+            local y0 = ty * 8 + row
+
+            local offset0 = (y0 * w + x0) * 4
+            if p0 == 0 then
+              buf[offset0] = 0
+              buf[offset0 + 1] = 0
+              buf[offset0 + 2] = 0
+              buf[offset0 + 3] = 0
+            else
+              local c = rgb[p0] or rgb[0]
+              buf[offset0] = c[1]
+              buf[offset0 + 1] = c[2]
+              buf[offset0 + 2] = c[3]
+              buf[offset0 + 3] = 255
+            end
+
+            local offset1 = (y0 * w + x0 + 1) * 4
+            if p1 == 0 then
+              buf[offset1] = 0
+              buf[offset1 + 1] = 0
+              buf[offset1 + 2] = 0
+              buf[offset1 + 3] = 0
+            else
+              local c = rgb[p1] or rgb[0]
+              buf[offset1] = c[1]
+              buf[offset1 + 1] = c[2]
+              buf[offset1 + 2] = c[3]
+              buf[offset1 + 3] = 255
+            end
+          end
+        end
+        ti = ti + 1
+      end
+    end
+    return ffi.string(buf, total_bytes)
+  end
+
   local chunks = {}
   local ti = 0
   for ty = 0, tilesH - 1 do
@@ -180,17 +290,20 @@ local function decode_pic_sheet(tiles, palBytes, frame, bank)
           local p1 = math.floor(byte / 16) % 16
           local x0 = tx * 8 + bx * 2
           local y0 = ty * 8 + row
-          local function put(x, y, idx)
-            local i = y * w + x + 1
-            if idx == 0 then
-              chunks[i] = string.char(0, 0, 0, 0)
-            else
-              local c = rgb[idx] or rgb[0]
-              chunks[i] = string.char(c[1], c[2], c[3], 255)
-            end
+          local i0 = y0 * w + x0 + 1
+          if p0 == 0 then
+            chunks[i0] = string.char(0, 0, 0, 0)
+          else
+            local c = rgb[p0] or rgb[0]
+            chunks[i0] = string.char(c[1], c[2], c[3], 255)
           end
-          put(x0, y0, p0)
-          put(x0 + 1, y0, p1)
+          local i1 = y0 * w + x0 + 2
+          if p1 == 0 then
+            chunks[i1] = string.char(0, 0, 0, 0)
+          else
+            local c = rgb[p1] or rgb[0]
+            chunks[i1] = string.char(c[1], c[2], c[3], 255)
+          end
         end
       end
       ti = ti + 1
