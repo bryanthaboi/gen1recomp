@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.68",
+          "date": "2026-09-21",
+          "size": 24370430,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.68/gen1recomp++-0.2.68-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2303 Pokemon Fire Red - Gym Leader battles\n- #2306 (Fire Red) Multiple Incorrect or Premature Sound Effects\n- #2307 FireRed: NPCs can walk through the player in the overworld\n- #2309 FireRed: \"Void Fill: Trees\" option renders broken visuals\n- #2310 FireRed: Professor Oak's advice during the first rival battle is missing\n- #2312 FireRed: Pokédex new-catch registration screen has no bubble around the info text\n- #2317 FireRed: object placements survive an in-app reset — only a full app restart clears them (e.g. Blue stuck at the entrance to Oak's Lab)\n- #2356 FireRed: Veridian City gym is open by default\n- #2357 FireRed: Pokémon PC UI broken\n- #2358 Fainted Pokemon in first slot is sent out in battle\n- #2361 Policeman in Cerulean City does not move after speaking with Bill\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @thibautbus"
+        },
+        {
           "version": "0.2.67",
           "date": "2026-09-20",
           "size": 24250287,
