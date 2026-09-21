@@ -28,6 +28,13 @@ FieldEffects.FLDEFF_DESTROY_DEOXYS_ROCK = 68
 local SE_THUNDER2 = 81
 local SE_THUNDER = 80
 
+-- How far a Deoxys rock shard travels before it counts as off-screen and is
+-- dropped.  pret destroys each fragment once it leaves the 240x160 viewport
+-- (field_effect.c:4015); the engine draws in world space, so this is a
+-- viewport-sized bound around the shard's spawn point instead.
+local FRAG_TRAVEL_X = 260
+local FRAG_TRAVEL_Y = 200
+
 local CELL = 16
 local FEET_H = 8
 local RUSTLE = { 1, 2, 3, 4, 0 }
@@ -435,31 +442,48 @@ function FieldEffects.startMoveDeoxysRock(localId, x, y, frames)
   return anim
 end
 
---- pokefirered/src/field_effect.c:3860 — camera shake, thunder, then the rock
+--- pokefirered/src/field_effect.c:3840 — camera shake, thunder, then the rock
 --- shatters into four fragments and is removed from the map.
 function FieldEffects.startDestroyDeoxysRock(localId, graphicsId)
   local Objects = package.loaded["src.core.game3.objects"]
   local eo = Objects and Objects.find and Objects.find(localId)
   if not eo then return nil end
   local x, y = eo.px or 0, eo.py or 0
-  load_sheet("deoxys_rock_fragments", 8, 8, 4)
+  graphicsId = graphicsId or eo.graphicsId
+
+  -- pokefirered/src/field_effect.c:3975 CreateDeoxysRockFragments: all four
+  -- shards start at the rock's own top-left corner (4px higher) and fly apart.
+  -- eo.px/py is the cell's foot point, so undo the offset OwSprites.draw adds.
+  local originX, originY = x - 8, y - 20
+  local okO, OwSprites = pcall(require, "src.core.game3.ow_sprites")
+  if okO and OwSprites and OwSprites.getDraw then
+    local spr = OwSprites.getDraw(graphicsId)
+    if spr and spr.width and spr.height then
+      originX = x + (16 - spr.width) / 2
+      originY = y + 16 - spr.height - 4
+    end
+  end
+
+  -- pokefirered/src/field_effect.c:3993 SpriteCB_DeoxysRockFragment: fixed
+  -- ±16 x / ±12 y per frame, no gravity, one shard per diagonal.
   local frags = {}
-  -- pokefirered/src/field_effect.c:3884 sRockFragment_TopLeft/TopRight/BottomLeft/BottomRight
-  local offsets = { { 0, 0 }, { 8, 0 }, { 0, 8 }, { 8, 8 } }
   local dirs = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } }
   for i = 1, 4 do
     frags[i] = {
       frame = i - 1,
-      x = x + offsets[i][1],
-      y = y + offsets[i][2],
-      dx = dirs[i][1] * 2,
-      dy = dirs[i][2] * 2,
+      x = originX,
+      y = originY,
+      ox = originX,
+      oy = originY,
+      dx = dirs[i][1] * 16,
+      dy = dirs[i][2] * 12,
+      off = false,
     }
   end
   local anim = {
     kind = "deoxys_rock_destroy",
     localId = localId,
-    graphicsId = graphicsId or eo.graphicsId,
+    graphicsId = graphicsId,
     x = x,
     y = y,
     px = x,
@@ -1000,10 +1024,12 @@ function FieldEffects.step()
       end
     elseif anim.kind == "deoxys_rock_destroy" then
       -- pokefirered/src/field_effect.c:3860 DestroyDeoxysRockEffect_*
+      local FieldView = fieldView()
       if anim.state == "shake" then
-        local FieldView = fieldView()
+        -- Task_DeoxysRockCameraShake (data[7]==0): full amplitude, sign flips
+        -- every other frame.
         if FieldView and FieldView.setCameraPanning then
-          FieldView.setCameraPanning(0, (anim.timer % 2 == 0) and 2 or -2)
+          FieldView.setCameraPanning(0, (anim.timer % 2 == 0) and 4 or -4)
         end
         if anim.timer >= 120 then
           local Objects = package.loaded["src.core.game3.objects"]
@@ -1014,19 +1040,36 @@ function FieldEffects.step()
             eo.hidden = true
             eo.visible = false
           end
-          if FieldView and FieldView.setCameraPanning then FieldView.setCameraPanning(0, 0) end
           FieldEffects.startWhiteFlash()
           play_se(SE_THUNDER)
-          anim.state = "fragments"
+          anim.state = "shatter"
           anim.timer = 0
+          anim.amp = 4
         end
-      elseif anim.state == "fragments" then
+      elseif anim.state == "shatter" then
+        -- The shards fly out while the shake decays (StartEndingDeoxysRock
+        -- CameraShake + the data[7]!=0 half of Task_DeoxysRockCameraShake).
         for _, f in ipairs(anim.frags) do
-          f.x = f.x + f.dx
-          f.y = f.y + f.dy
-          f.dy = f.dy + 0.5 -- gravity
+          if not f.off then
+            f.x = f.x + f.dx
+            f.y = f.y + f.dy
+            if math.abs(f.x - f.ox) > FRAG_TRAVEL_X
+              or math.abs(f.y - f.oy) > FRAG_TRAVEL_Y then
+              f.off = true
+            end
+          end
         end
-        if anim.timer >= 60 then
+        if anim.timer > 0 and anim.timer % 21 == 0 and anim.amp > 0 then
+          anim.amp = anim.amp - 1
+        end
+        if FieldView and FieldView.setCameraPanning then
+          FieldView.setCameraPanning(0,
+            (anim.timer % 2 == 0) and anim.amp or -anim.amp)
+        end
+        if anim.amp <= 0 then
+          if FieldView and FieldView.setCameraPanning then
+            FieldView.setCameraPanning(0, 0)
+          end
           local Objects = package.loaded["src.core.game3.objects"]
           if Objects and Objects.removeObject then Objects.removeObject(anim.localId) end
           finished = true
@@ -1196,15 +1239,17 @@ function FieldEffects.drawFront(camX, camY, playerPy)
           end
         end
       end
-    elseif anim.kind == "deoxys_rock_destroy" and anim.state == "fragments" then
-      -- pokefirered/src/field_effect.c:3893 CreateDeoxysRockFragments (4x 8x8 sprites)
+    elseif anim.kind == "deoxys_rock_destroy" and anim.state == "shatter" then
+      -- pokefirered/src/field_effect.c:3975 CreateDeoxysRockFragments (4x 8x8 sprites)
       local sheet = load_sheet("deoxys_rock_fragments", 8, 8, 4)
       if sheet then
         for _, f in ipairs(anim.frags or {}) do
-          local q = sheet.quads[f.frame]
-          if q then
-            love.graphics.setColor(1, 1, 1, 1)
-            love.graphics.draw(sheet.image, q, f.x - camX, f.y - camY)
+          if not f.off then
+            local q = sheet.quads[f.frame]
+            if q then
+              love.graphics.setColor(1, 1, 1, 1)
+              love.graphics.draw(sheet.image, q, f.x - camX, f.y - camY)
+            end
           end
         end
       end

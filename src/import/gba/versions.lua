@@ -27,7 +27,9 @@ Versions.ROM_SIZE = 16777216
 -- v99: gEggMoves → pokemon/egg_moves.lua (hidden-mon egg moves were inert).
 -- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
 --       mapsec names and sDungeonInfo dungeon descriptions.
-Versions.CACHE_VERSION = 110
+-- v111: deoxys_rock_fragments field effect — the Birth Island meteorite shatter
+--       had no artwork, so the rock simply vanished instead of breaking apart.
+Versions.CACHE_VERSION = 111
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1
@@ -1383,6 +1385,14 @@ Versions.FIELD_EFFECTS = {
   -- pokefirered/src/field_effect.c:336
   pokemoncenter_monitor = {
     pic = 0x3CAFD0, pal = 0x3CAFB0, w = 32, h = 16, frames = 4,
+  },
+  -- pokefirered/src/field_effect.c:3963 sImages_DeoxysRockFragment
+  -- (graphics/field_effects/pics/deoxys_rock_fragment_*.png, 4x 8x8 4bpp).
+  -- The palette is sDeoxysObjectPals[10] (0x3F6206 + 10*32), the fully
+  -- awakened red ramp step — the puzzle is always solved by the time the rock
+  -- shatters, so the shards are always red.
+  deoxys_rock_fragments = {
+    pic = 0x3CBDB0, pal = 0x3F6346, w = 8, h = 8, frames = 4,
   },
 }
 

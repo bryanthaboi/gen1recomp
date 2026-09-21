@@ -132,8 +132,14 @@ local function to8(v)
   return v
 end
 
+-- How far (per channel) a baked sprite colour may sit from the palette entry it
+-- is meant to match before the swap gives up.  The rock ramp's entries are
+-- always tens of units apart, so this can never select the wrong colour.
+local NEAREST_TOL = 4
+
 --- Build a copy of `spr` with the colours in `from` replaced by `to`.
---- Returns nil when image data is unavailable (e.g. headless tests).
+--- Returns nil when image data is unavailable (e.g. headless tests) or when not
+--- a single pixel matched (a silent no-op swap is always a bug).
 local function recolour_sprite(spr, from, to)
   if not (love and love.image and love.image.newImageData
     and love.graphics and love.graphics.newImage) then
@@ -144,25 +150,48 @@ local function recolour_sprite(spr, from, to)
   if not (okData and data) then return nil end
 
   -- Colour-keyed LUT so the per-pixel work stays a single table lookup.
-  local lut = {}
+  local lut, sources = {}, {}
   for i = 1, #from do
     local a, b = from[i], to[i]
     if a and b then
       lut[(a[1] * 65536) + (a[2] * 256) + a[3]] = b
+      sources[#sources + 1] = { a[1], a[2], a[3], b }
     end
   end
   if not next(lut) then return nil end
 
+  -- Sprites are baked from 5-bit GBA channels, so a stored colour can sit a
+  -- unit or two away from the palette it was authored with.  Fall back to the
+  -- nearest source within NEAREST_TOL: the palette entries we swap between are
+  -- tens of units apart, so this cannot pick the wrong one.
+  local replaced = 0
   local okMap = pcall(function()
     data:mapPixel(function(_, _, r, g, b, a)
       if a <= 0 then return r, g, b, a end
-      local key = (to8(r) * 65536) + (to8(g) * 256) + to8(b)
-      local c = lut[key]
+      local r8, g8, b8 = to8(r), to8(g), to8(b)
+      local c = lut[(r8 * 65536) + (g8 * 256) + b8]
+      if not c then
+        local best, bestD
+        for _, e in ipairs(sources) do
+          local d = (e[1] - r8) ^ 2 + (e[2] - g8) ^ 2 + (e[3] - b8) ^ 2
+          if d <= NEAREST_TOL * NEAREST_TOL * 3 and (bestD == nil or d < bestD) then
+            best, bestD = e[4], d
+          end
+        end
+        c = best
+      end
       if not c then return r, g, b, a end
+      replaced = replaced + 1
       return c[1] / 255, c[2] / 255, c[3] / 255, a
     end)
   end)
   if not okMap then return nil end
+  if replaced == 0 then
+    print(string.format(
+      "[game3/ow] palette swap matched no pixels against %d source colour(s)",
+      #sources))
+    return nil
+  end
 
   local okImg, img = pcall(love.graphics.newImage, data)
   if not (okImg and img) then return nil end

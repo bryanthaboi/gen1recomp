@@ -113,9 +113,27 @@ for i = 1, 11 do
   end
 end
 check(mono, "each palette ascends in luminance 1 < 2 < 3")
-eq(Deoxys.ROCK_PALS[1][1][1], 32, "palette 0 index 1 is the meteorite's own 32,32,32")
-eq(Deoxys.ROCK_PALS[11][1][1], 205, "palette 10 index 1 is the awakened 205,32,32")
-eq(Deoxys.ROCK_PALS[11][3][1], 255, "palette 10 index 3 is the brightest 255,205,156")
+-- ROM 0x3F6206 sDeoxysObjectPals, 8-bit values as the GBA expands them.
+-- These are what the extracted meteorite sprite is baked with, so an exact
+-- recolour match depends on them; the old JASC .pal ASCII values (32/82/139)
+-- silently missed and the rock never reddened.
+local ROM_PAL_0 = { { 33, 33, 33 }, { 82, 82, 82 }, { 140, 140, 140 } }
+local ROM_PAL_10 = { { 206, 33, 33 }, { 255, 82, 82 }, { 255, 206, 156 } }
+eq(Deoxys.ROCK_PALS[1][1][1], 33, "palette 0 index 1 is the meteorite's own 33,33,33")
+eq(Deoxys.ROCK_PALS[11][1][1], 206, "palette 10 index 1 is the awakened 206,33,33")
+eq(Deoxys.ROCK_PALS[11][3][1], 255, "palette 10 index 3 is the brightest 255,206,156")
+local rampsMatch = true
+for i = 1, 3 do
+  for c = 1, 3 do
+    if Deoxys.ROCK_PALS[1][i][c] ~= ROM_PAL_0[i][c]
+      or Deoxys.ROCK_PALS[11][i][c] ~= ROM_PAL_10[i][c] then
+      rampsMatch = false
+    end
+  end
+end
+check(rampsMatch, "the first and last ramps are byte-exact against the ROM")
+eq(Deoxys.sourcePalette(), Deoxys.ROCK_PALS[1],
+  "sourcePalette() is the pristine meteorite palette the swap matches against")
 eq(Deoxys.palette(0), Deoxys.ROCK_PALS[1], "palette(0)")
 eq(Deoxys.palette(10), Deoxys.ROCK_PALS[11], "palette(10)")
 eq(Deoxys.paletteKey(3), "deoxys_rock_3", "paletteKey is stable for the sprite cache")
@@ -360,7 +378,8 @@ do
   local destroyed = false
   FieldEffects.waitFieldEffect(Deoxys.FLDEFF_DESTROY_ROCK, function() destroyed = true end)
   check(not destroyed, "waitfieldeffect parks until the shatter finishes")
-  for _ = 1, 200 do FieldEffects.step() end
+  -- 120 frames of camera shake + ~85 frames of decaying shake with the shards.
+  for _ = 1, 260 do FieldEffects.step() end
   check(destroyed, "the waiter is released when the rock is gone")
   check(rock.hidden, "the rock object is removed from the map")
   check(not FieldEffects.isFieldEffectActive(Deoxys.FLDEFF_DESTROY_ROCK),
@@ -480,6 +499,96 @@ do
 
   package.loaded["src.core.game3.runtime"] = savedRuntime
   package.loaded["src.core.game3.scripting.space"] = savedSpace
+end
+
+print("[test] 25. the shatter artwork is registered against the ROM")
+do
+  local Versions = require("src.import.gba.versions")
+  local spec = Versions.FIELD_EFFECTS and Versions.FIELD_EFFECTS.deoxys_rock_fragments
+  check(spec ~= nil, "deoxys_rock_fragments is registered")
+  if spec then
+    eq(spec.pic, 0x3CBDB0, "the four 8x8 shard tiles come from ROM 0x3CBDB0")
+    eq(spec.w, 8, "each shard is 8px wide")
+    eq(spec.h, 8, "each shard is 8px tall")
+    eq(spec.frames, 4, "one frame per shard")
+    -- sDeoxysObjectPals[10] = the fully awakened red step; pret's shards
+    -- inherit the rock's paletteNum, and the puzzle is always solved by then.
+    eq(spec.pal, 0x3F6206 + 10 * 32, "the shards use ramp step 10 (red)")
+    check(spec.swapNibbles ~= true, "the ROM tiles are standard 4bpp, no nibble swap")
+  end
+  local CacheContract = require("src.import.CacheContract")
+  local required = CacheContract.VERSION_REQUIRED_FILES_OVERRIDE
+    and CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.firered
+  local listed = false
+  if type(required) == "table" then
+    for _, rel in ipairs(required) do
+      if rel == "data/generated/gba/field_effects/deoxys_rock_fragments.rgba" then
+        listed = true
+      end
+    end
+  end
+  check(listed, "the sheet is a required firered cache file, so a stale cache re-imports")
+end
+
+print("[test] 26. the shatter spawns four shards that fly apart")
+do
+  local Objects = require("src.core.game3.objects")
+  local savedById, savedOrder = Objects._byId, Objects._order
+  local savedMapId, savedPerm = Objects._mapId, Objects._perm
+  local rock = {
+    graphicsId = Deoxys.OBJ_EVENT_GFX_METEORITE,
+    px = 15 * 16, py = 12 * 16, cellX = 15, cellY = 12,
+    homeX = 15, homeY = 12, targetX = 15, targetY = 12,
+    def = { x = 15, y = 12, localId = 1 },
+  }
+  Objects._byId = { [1] = rock }
+  Objects._order = { 1 }
+  Objects._mapId = Deoxys.MAP_ID
+  Objects._perm = {}
+
+  check(Deoxys.destroyRock(1), "destroyRock starts the shatter")
+  local anim
+  for _, a in ipairs(FieldEffects._anims or {}) do
+    if a.kind == "deoxys_rock_destroy" then anim = a end
+  end
+  check(anim ~= nil, "the destroy animation is queued")
+  if anim then
+    eq(anim.state, "shake", "it starts with the camera shake")
+    eq(#(anim.frags or {}), 4, "four shards are spawned")
+    -- pret CreateDeoxysRockFragments: all four at the SAME point.
+    local sameOrigin = true
+    for _, f in ipairs(anim.frags) do
+      if f.ox ~= anim.frags[1].ox or f.oy ~= anim.frags[1].oy then sameOrigin = false end
+    end
+    check(sameOrigin, "all four shards start at the rock's own corner")
+    local dirs = { { -16, -12 }, { 16, -12 }, { -16, 12 }, { 16, 12 } }
+    local dirsOk = true
+    for i, f in ipairs(anim.frags) do
+      if f.dx ~= dirs[i][1] or f.dy ~= dirs[i][2] then dirsOk = false end
+    end
+    check(dirsOk, "the shards fly out at +/-16 x and +/-12 y per frame")
+
+    for _ = 1, 130 do FieldEffects.step() end
+    eq(anim.state, "shatter", "after 120 frames the rock shatters")
+    check(rock.hidden or rock.invisible, "the rock is hidden before Deoxys appears")
+    local moved = true
+    for i, f in ipairs(anim.frags) do
+      if f.off then
+        moved = false
+      else
+        local travelled = (f.x - f.ox) * dirs[i][1] + (f.y - f.oy) * dirs[i][2]
+        if travelled <= 0 then moved = false end
+      end
+    end
+    check(moved, "each shard has travelled along its own diagonal")
+
+    for _ = 1, 200 do FieldEffects.step() end
+    check(not FieldEffects.isFieldEffectActive(Deoxys.FLDEFF_DESTROY_ROCK),
+      "the shatter effect finishes once the shake dies down")
+  end
+
+  Objects._byId, Objects._order = savedById, savedOrder
+  Objects._mapId, Objects._perm = savedMapId, savedPerm
 end
 
 if failed > 0 then

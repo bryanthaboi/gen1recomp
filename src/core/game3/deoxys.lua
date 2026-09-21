@@ -51,22 +51,37 @@ Deoxys.COORDS = {
 -- pokefirered/src/field_specials.c:2346 — indexed by num-1, num in 1..10.
 Deoxys.STEP_CAPS = { 4, 8, 8, 8, 4, 4, 4, 6, 3, 3 }
 
--- pokefirered/graphics/field_specials/deoxys_rock_N.pal, entries 1..3. Entry 0 is
--- the transparent OBJ index and is never drawn, so only these three matter.
+-- pret sDeoxysObjectPals (pokefirered/src/field_specials.c:2321, INCBIN of
+-- graphics/field_specials/deoxys_rock_N.gbapal), ROM 0x3F6206: eleven 16-colour
+-- BGR555 palettes. Entry 0 is the transparent OBJ index and is never drawn, so
+-- only entries 1..3 are listed.
+--
+-- These are the 8-bit values the GBA 5-bit channels expand to (floor(x*255/31
+-- + 0.5)), which is exactly what the extracted overworld sprites are baked
+-- with.  They are NOT the raw ASCII numbers in the .pal files: those differ by
+-- a unit or two and an exact-match recolour LUT would silently miss them.
 Deoxys.ROCK_PALS = {
-  { { 32, 32, 32 }, { 82, 82, 82 }, { 139, 139, 139 } },
-  { { 41, 32, 32 }, { 82, 82, 82 }, { 139, 139, 139 } },
-  { { 49, 32, 32 }, { 90, 82, 82 }, { 148, 148, 139 } },
-  { { 65, 32, 32 }, { 115, 82, 82 }, { 156, 148, 139 } },
-  { { 74, 32, 32 }, { 123, 82, 82 }, { 164, 156, 139 } },
-  { { 98, 32, 32 }, { 139, 82, 82 }, { 172, 156, 139 } },
-  { { 98, 32, 32 }, { 148, 82, 82 }, { 180, 164, 139 } },
-  { { 106, 32, 32 }, { 156, 82, 82 }, { 189, 164, 139 } },
-  { { 123, 32, 32 }, { 172, 82, 82 }, { 197, 172, 148 } },
-  { { 131, 32, 32 }, { 180, 82, 82 }, { 205, 172, 148 } },
-  { { 205, 32, 32 }, { 255, 82, 82 }, { 255, 205, 156 } },
+  { { 33, 33, 33 }, { 82, 82, 82 }, { 140, 140, 140 } },
+  { { 41, 33, 33 }, { 82, 82, 82 }, { 140, 140, 140 } },
+  { { 49, 33, 33 }, { 90, 82, 82 }, { 148, 148, 140 } },
+  { { 66, 33, 33 }, { 115, 82, 82 }, { 156, 148, 140 } },
+  { { 74, 33, 33 }, { 123, 82, 82 }, { 165, 156, 140 } },
+  { { 99, 33, 33 }, { 140, 82, 82 }, { 173, 156, 140 } },
+  { { 99, 33, 33 }, { 148, 82, 82 }, { 181, 165, 140 } },
+  { { 107, 33, 33 }, { 156, 82, 82 }, { 189, 165, 140 } },
+  { { 123, 33, 33 }, { 173, 82, 82 }, { 197, 173, 148 } },
+  { { 132, 33, 33 }, { 181, 82, 82 }, { 206, 173, 148 } },
+  { { 206, 33, 33 }, { 255, 82, 82 }, { 255, 206, 156 } },
 }
 Deoxys.PALETTE_COUNT = #Deoxys.ROCK_PALS
+
+--- The colours the pristine meteorite sprite is drawn with (palette 0), i.e. the
+--- source side of every recolour.  pret gets this for free because it loads the
+--- whole 4-colour palette; the engine bakes the sprite once, so it has to be
+--- told which colours to swap out.
+function Deoxys.sourcePalette()
+  return Deoxys.ROCK_PALS[1]
+end
 
 --- Clamp an interaction num to the 0..10 range the coordinate/palette tables use.
 function Deoxys.clamp(num)
@@ -197,7 +212,7 @@ function Deoxys.applyRockPalette(num, graphicsId)
   graphicsId = tonumber(graphicsId)
   if graphicsId == nil then return false end
   return OwSprites.setObjectPalette(graphicsId, Deoxys.paletteKey(num),
-    Deoxys.palette(num))
+    Deoxys.palette(num), Deoxys.sourcePalette())
 end
 
 --- pret MoveDeoxysObject (field_specials.c:2362).

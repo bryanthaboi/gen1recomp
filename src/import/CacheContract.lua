@@ -290,6 +290,8 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/field_effects/surf_blob.rgba",
     "data/generated/gba/field_effects/fly_bird.rgba",
     "data/generated/gba/field_effects/ripple.rgba",
+    -- src/field_effect.c:3963 (Birth Island meteorite shatter shards)
+    "data/generated/gba/field_effects/deoxys_rock_fragments.rgba",
     -- src/data/field_effects/field_effect_objects.h:565,1203
     "data/generated/gba/field_effects/splash.rgba",
     "data/generated/gba/field_effects/hot_springs_water.rgba",
