@@ -1,4 +1,4 @@
--- Native LÖVE2D port of Pokemon Red. A packaged build creates its private
+-- Native LÃ–VE2D port of Pokemon Red. A packaged build creates its private
 -- game-data cache from a user-provided ROM on first boot.
 --
 -- The save editor (tools/save-editor/) ships inside every build and is
@@ -783,6 +783,8 @@ function love.load(args)
   Importer = makeLauncher()
 end
 
+local autofire = { rate = 0.05, timer_A = 0, timer_B = 0, active_A = false, active_B = false }
+
 function love.update(dt)
   checkEmergencyQuit(dt)
   HostDisplay.update(dt)
@@ -838,6 +840,40 @@ function love.update(dt)
     end
     return
   end
+  local Input = package.loaded["src.core.Input"]
+  if Input then
+    for _, btn in ipairs({"a", "b"}) do
+      local timer_k = (btn == "a") and "timer_A" or "timer_B"
+      local active_k = (btn == "a") and "active_A" or "active_B"
+      
+      local is_held = false
+      if Input.sources and Input.sources[btn] then
+        for source, _ in pairs(Input.sources[btn]) do
+          if source ~= "autofire" then
+            is_held = true
+            break
+          end
+        end
+      end
+      
+      if is_held then
+        autofire[timer_k] = autofire[timer_k] + dt
+        if autofire[timer_k] >= autofire.rate then
+          autofire[timer_k] = 0
+          autofire[active_k] = not autofire[active_k]
+          
+          Input.state[btn] = autofire[active_k]
+          if autofire[active_k] then
+            table.insert(Input.pressQueue, btn)
+          end
+        end
+      else
+        autofire[timer_k] = 0
+        autofire[active_k] = false
+      end
+    end
+  end
+
   -- Mods may wrap or veto the per-frame simulation step (pause it, react
   -- to external platform state, etc.) -- see docs/modding.md's core.update
   -- entry. Vanilla behavior (used when no mod claims the hook) is just
@@ -1157,7 +1193,7 @@ end
 function love.touchpressed(id, x, y, dx, dy, pressure)
   if editorMode then
     -- iOS synthesizes mousepressed for the primary touch; forwarding here
-    -- would double-fire.  Android / NX need the explicit touch → click path
+    -- would double-fire.  Android / NX need the explicit touch â†’ click path
     -- (love-nx does not synthesize mouse for the editor the way desktop does).
     if love.system.getOS() == "iOS" then return end
     if EditorApp and EditorApp.mousepressed then
@@ -1257,7 +1293,7 @@ function love.mousepressed(x, y, button, istouch)
     return TouchEditor.mousepressed(x, y, button)
   end
   if Studio then
-    -- Mobile LÖVE sends both a touch event and an `istouch` mouse twin.
+    -- Mobile LÃ–VE sends both a touch event and an `istouch` mouse twin.
     -- Studio consumes the real finger stream above, so discard the twin.
     if istouch and (love.system.getOS() == "Android" or love.system.getOS() == "iOS") then return end
     return Studio.mousepressed(x, y, button)
@@ -1268,7 +1304,7 @@ function love.mousepressed(x, y, button, istouch)
   end
   if Importer then
     -- love.touchpressed already forwards the primary touch into FlexLove for
-    -- scroll. LÖVE ALSO synthesizes a mouse press for that same touch; if both
+    -- scroll. LÃ–VE ALSO synthesizes a mouse press for that same touch; if both
     -- reached a press handler, one tap ran every launcher button twice and
     -- stacked two SAF pickers (#553). Clicks are polled inside FlexLove from
     -- love.touch / mouse.isDown, so dropping the synthesized istouch press is
@@ -1541,7 +1577,7 @@ function love.run()
       cap = FrameCap.DEFAULT
     elseif cap == FrameCap.DISPLAY and PresentSync.needsSoftwareCap() then
       -- Fallback cascade: probe failed / wait abandoned / sync non-
-      -- deterministic → FrameCap is the live pacing path on every OS.
+      -- deterministic â†’ FrameCap is the live pacing path on every OS.
       -- (During an active probe we intentionally leave DISPLAY uncapped so
       -- calibration is not grading our own limiter.)
       cap = FrameCap.DEFAULT
