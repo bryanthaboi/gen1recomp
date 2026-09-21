@@ -1903,7 +1903,12 @@ def cmd_translation(args, repo):
          "The easyChat.* keys are the Easy Chat vocabulary: a group's name, or\n"
          "one of its words. They carry the group as a context because the same\n"
          "word means different things in different groups; an entry keyed by\n"
-         "the bare word still applies where no context-specific one exists."),
+         "the bare word still applies where no context-specific one exists.\n"
+         "The POKéMON and MOVE groups show the game's own species and move\n"
+         "names: leave their entries empty and a name your mod already renames\n"
+         "follows it there. Fill one to reach a name nothing else renames, or\n"
+         "to word it differently in the picker; a bare-word entry does not\n"
+         "apply in those groups."),
         ("species_names", "Species names", grouped.get("species", []), False, ""),
         ("move_names", "Move names", grouped.get("move", []), False, ""),
         ("item_names", "Item names", grouped.get("item", []), False, ""),
