@@ -1052,6 +1052,14 @@ local function dispatch(vm, row)
       a.setMetatile(row[1], row[2], row[3], (tonumber(row[4]) or 0) ~= 0)
     elseif op == "dofieldeffect" and a.doFieldEffect then
       a.doFieldEffect(row[1])
+    elseif op == "setfieldeffectargument" then
+      -- pokefirered/src/scrcmd.c:2051 — the value operand is VarGet'd, which
+      -- passes raw constants (< 0x4000) straight through.
+      local argNum = tonumber(row[1]) or 0
+      local value = var_get(store, ctx, row[2])
+      if a.setFieldEffectArgument then
+        a.setFieldEffectArgument(argNum, value)
+      end
     end
     return false
   elseif op == "setstepcallback" then

@@ -117,6 +117,101 @@ end
 
 local FIELD_MOVE_POSE = { down = 3, up = 7, left = 4, right = 4 }
 
+-- ------------------------------------------------ runtime palette substitution
+-- pret recolours field objects by loading a new palette into their OBJ palette
+-- slot (LoadPalette + ApplyGlobalFieldPaletteTint). The engine bakes palettes to
+-- RGBA at extract time, so an alternate palette is reproduced by substituting the
+-- sprite's opaque colours. Used by the Birth Island Deoxys rock.
+
+OwSprites._overrides = {} -- [graphicsId] = { key = string, spr = sprite }
+
+local function to8(v)
+  v = math.floor((tonumber(v) or 0) * 255 + 0.5)
+  if v < 0 then return 0 end
+  if v > 255 then return 255 end
+  return v
+end
+
+--- Build a copy of `spr` with the colours in `from` replaced by `to`.
+--- Returns nil when image data is unavailable (e.g. headless tests).
+local function recolour_sprite(spr, from, to)
+  if not (love and love.image and love.image.newImageData
+    and love.graphics and love.graphics.newImage) then
+    return nil
+  end
+  if not (spr and spr.image) then return nil end
+  local okData, data = pcall(function() return spr.image:newImageData() end)
+  if not (okData and data) then return nil end
+
+  -- Colour-keyed LUT so the per-pixel work stays a single table lookup.
+  local lut = {}
+  for i = 1, #from do
+    local a, b = from[i], to[i]
+    if a and b then
+      lut[(a[1] * 65536) + (a[2] * 256) + a[3]] = b
+    end
+  end
+  if not next(lut) then return nil end
+
+  local okMap = pcall(function()
+    data:mapPixel(function(_, _, r, g, b, a)
+      if a <= 0 then return r, g, b, a end
+      local key = (to8(r) * 65536) + (to8(g) * 256) + to8(b)
+      local c = lut[key]
+      if not c then return r, g, b, a end
+      return c[1] / 255, c[2] / 255, c[3] / 255, a
+    end)
+  end)
+  if not okMap then return nil end
+
+  local okImg, img = pcall(love.graphics.newImage, data)
+  if not (okImg and img) then return nil end
+  if img.setFilter then img:setFilter("nearest", "nearest") end
+
+  local copy = {}
+  for k, v in pairs(spr) do copy[k] = v end
+  copy.image = img
+  return copy
+end
+
+--- Apply an alternate palette to every draw of `graphicsId`.
+--- `colours` are the new {r,g,b} values; `sourceColours` the ones they replace
+--- (defaults to the first rock palette, which is byte-identical to the
+--- meteorite's own palette).
+function OwSprites.setObjectPalette(graphicsId, key, colours, sourceColours)
+  graphicsId = tonumber(graphicsId)
+  if graphicsId == nil or type(key) ~= "string" then return false end
+  local current = OwSprites._overrides[graphicsId]
+  if current and current.key == key then return true end
+  if type(colours) ~= "table" or #colours == 0 then return false end
+
+  local base = OwSprites.get(graphicsId)
+  if not base then return false end
+  local from = sourceColours
+  if type(from) ~= "table" or #from ~= #colours then
+    local okD, Deoxys = pcall(require, "src.core.game3.deoxys")
+    from = (okD and Deoxys and Deoxys.ROCK_PALS and Deoxys.ROCK_PALS[1]) or nil
+  end
+  local spr = recolour_sprite(base, from, colours)
+  if not spr then return false end
+  OwSprites._overrides[graphicsId] = { key = key, spr = spr }
+  return true
+end
+
+function OwSprites.clearObjectPalette(graphicsId)
+  graphicsId = tonumber(graphicsId)
+  if graphicsId == nil then return false end
+  if OwSprites._overrides[graphicsId] == nil then return false end
+  OwSprites._overrides[graphicsId] = nil
+  return true
+end
+
+function OwSprites.objectPaletteKey(graphicsId)
+  local o = OwSprites._overrides[tonumber(graphicsId) or -1]
+  return o and o.key or nil
+end
+
+
 --- Resolve frame index + hflip for facing / walk.
 -- opts: { bow = bool, fieldMove = bool, frame = number }
 function OwSprites.pose(spr, facing, walkPhase, stepFlip, opts)
@@ -163,12 +258,22 @@ function OwSprites.pose(spr, facing, walkPhase, stepFlip, opts)
   return frame, flip
 end
 
+--- The sprite actually drawn for `graphicsId`: the palette override when one is
+--- active, otherwise the base sprite.
+function OwSprites.getDraw(graphicsId)
+  graphicsId = tonumber(graphicsId)
+  if graphicsId == nil then return nil end
+  local ov = OwSprites._overrides and OwSprites._overrides[graphicsId]
+  if ov and ov.spr then return ov.spr end
+  return OwSprites.get(graphicsId)
+end
+
 --- Draw at world pixel position (cell top-left). Feet at bottom of sprite.
 -- opts.bow: use nurse bow frame (ANIM_NURSE_BOW).
 -- opts.fieldMove: use directional arm-raise field move frame.
 -- opts.frame: explicit frame index override.
 function OwSprites.draw(graphicsId, px, py, camX, camY, facing, walkPhase, stepFlip, opts)
-  local spr = OwSprites.get(graphicsId)
+  local spr = OwSprites.getDraw(graphicsId)
   if not spr then return false end
   local frame, flip = OwSprites.pose(spr, facing, walkPhase, stepFlip, opts)
   local q = spr.quads[frame]

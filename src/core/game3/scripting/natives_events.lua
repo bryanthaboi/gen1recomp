@@ -181,8 +181,25 @@ Events.HANDLERS = {
   [Std.SPECIAL.SampleResortGorgeousMonAndReward] = noop,
   -- pokefirered/src/script.c:245
   [Std.SPECIAL.DisableMsgBoxWalkaway] = noop,
+  -- pokefirered/src/field_specials.c:2319
+  [Std.SPECIAL.DoDeoxysTriangleInteraction] = function(ctx)
+    local session = sessionOf()
+    if not session then return false end
+    local Deoxys = require("src.core.game3.deoxys")
+    -- The script does `waitstate` then `switch VAR_RESULT`; the rock animation
+    -- runs on in the background exactly as pret's Task_WaitDeoxysFieldEffect does.
+    setResult(ctx, Deoxys.interact(session))
+    return false
+  end,
   -- pokefirered/src/field_specials.c:2451
-  [Std.SPECIAL.SetDeoxysTrianglePalette] = noop,
+  [Std.SPECIAL.SetDeoxysTrianglePalette] = function(ctx)
+    local session = sessionOf()
+    local Deoxys = require("src.core.game3.deoxys")
+    local num = session and Deoxys.getVar(session, Deoxys.VAR_DEOXYS_INTERACTION_NUM)
+    if num == nil then num = varGet(ctx, Deoxys.VAR_DEOXYS_INTERACTION_NUM) end
+    Deoxys.applyRockPalette(num or 0)
+    return false
+  end,
   -- pokefirered/src/field_specials.c:2512
   [Std.SPECIAL.UpdateLoreleiDollCollection] = noop,
 }

@@ -91,6 +91,7 @@ Std.SPECIAL = {
   GetPCBoxToSendMon = 0x18A, -- pokefirered/data/specials.inc:405
   HasAtLeastOneBerry = 0x19B, -- pokefirered/data/specials.inc:422
   GetPlayerFacingDirection = 0x1AA, -- pokefirered/data/specials.inc:437
+  DoDeoxysTriangleInteraction = 0x1AB, -- pokefirered/data/specials.inc:438
   ValidateSavedWonderCard = 0x180, -- pokefirered/data/specials.inc:395
   GetMysteryGiftCardStat = 0x186, -- pokefirered/data/specials.inc:401
   WonderNews_GetRewardInfo = 0x189, -- pokefirered/data/specials.inc:404
