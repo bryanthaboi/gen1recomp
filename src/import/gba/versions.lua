@@ -27,7 +27,7 @@ Versions.ROM_SIZE = 16777216
 -- v99: gEggMoves → pokemon/egg_moves.lua (hidden-mon egg moves were inert).
 -- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
 --       mapsec names and sDungeonInfo dungeon descriptions.
-Versions.CACHE_VERSION = 109
+Versions.CACHE_VERSION = 110
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1
@@ -1542,7 +1542,20 @@ Versions.TRAINER_CARD_BG_MAP = 0x3CCEC8         -- sKantoTrainerCardBg_Tilemap (
 Versions.TRAINER_CARD_PAL = 0xE99198            -- gKantoTrainerCardBlue_Pal (3 banks, 96 bytes)
 Versions.TRAINER_CARD_FEMALE_PAL = 0x3CD2A0     -- sKantoTrainerCardFemaleBg_Pal (1 bank, 32 bytes)
 Versions.TRAINER_CARD_BADGES_TILES = 0x3CD5E8   -- sKantoTrainerCardBadges_Gfx (LZ 4bpp, 1024 bytes)
-Versions.TRAINER_CARD_BADGES_PAL = 0x3CD2C0     -- sKantoTrainerCardBadges_Pal (1 bank, 32 bytes)
+Versions.TRAINER_CARD_BADGES_PAL = 0x3CD2E0
+Versions.TRAINER_CARD_BACK_MAP = 0x3CC984
+Versions.TRAINER_CARD_FRONT_LINK_MAP = 0x3CCCA4
+Versions.TRAINER_CARD_GREEN_PAL = 0x3CCFE0
+Versions.TRAINER_CARD_BRONZE_PAL = 0x3CD0A0
+Versions.TRAINER_CARD_SILVER_PAL = 0x3CD160
+Versions.TRAINER_CARD_GOLD_PAL = 0x3CD220
+Versions.TRAINER_CARD_STAR_PAL = 0x3CD300
+Versions.TRAINER_CARD_STICKERS_TILES = 0x3CC368
+Versions.TRAINER_CARD_STICKER_PAL1 = 0x3CD320
+Versions.TRAINER_CARD_STICKER_PAL2 = 0x3CD340
+Versions.TRAINER_CARD_STICKER_PAL3 = 0x3CD360
+Versions.TRAINER_CARD_STICKER_PAL4 = 0x3CD380
+Versions.TRAINER_CARD_STAR_TILE = 143           -- src/trainer_card.c:1553
 Versions.TRAINER_PIC_RED = 135
 Versions.TRAINER_PIC_LEAF = 136
 Versions.SHOP_BG_GFX = 0xE85DC8                 -- gBuyMenuFrame_Gfx
@@ -1557,6 +1570,152 @@ Versions.ITEMS_COUNT = 375                      -- pret ITEMS_COUNT (table rows 
 -- Verified by matching known metatile-ID sequence from DOOR_ENTRIES (0x03D/0x062/0x15B...).
 Versions.DOOR_GRAPHICS_TABLE = 0x35B5D8         -- sDoorGraphics[32]
 Versions.DOOR_GRAPHICS_COUNT = 32               -- entries in the table
+
+-- src/slot_machine.c:399, :739
+Versions.SLOT_REEL_ICONS_PAL = 0x464974
+Versions.SLOT_REEL_ICONS_GFX = 0x464A14
+Versions.SLOT_CLEFAIRY_PAL = 0x46504C
+Versions.SLOT_CLEFAIRY_GFX = 0x46506C
+Versions.SLOT_DIGITS_PAL = 0x465524
+Versions.SLOT_DIGITS_GFX = 0x465544
+Versions.SLOT_BG_PAL = 0x465930
+Versions.SLOT_BG_GFX = 0x4659D0
+Versions.SLOT_BG_TILEMAP = 0x4661D4
+Versions.SLOT_MATCH_LINES_PAL = 0x4664BC
+Versions.SLOT_PAYOUT_LIGHTS_PAL = 0x4664DC
+Versions.SLOT_BUTTON_PRESSED_GFX = 0x46653C
+Versions.SLOT_COMBOS_WINDOW_PAL = 0x4665C0
+Versions.SLOT_COMBOS_WINDOW_GFX = 0x466620
+Versions.SLOT_COMBOS_WINDOW_TILEMAP = 0x466998
+-- src/slot_machine.c:429, :857
+Versions.SLOT_REEL_ICON_PAL_TAGS = 0x465608
+Versions.SLOT_REEL_BUTTON_MAP_IDXS = 0x466C40
+Versions.SLOT_REELS = 3
+Versions.SLOT_BUTTON_TILES = 4
+
+-- src/trade_scene.c:151
+Versions.TRADE_POKEBALL_PAL = 0x26205C
+Versions.TRADE_POKEBALL_GFX = 0x26207C
+Versions.TRADE_CABLE_CLOSEUP_MAP = 0x26407C
+Versions.TRADE_GBA_PAL = 0x26499C
+Versions.TRADE_LINK_MON_PAL = 0x2649FC
+Versions.TRADE_LINK_MON_GLOW_GFX = 0x264A1C
+Versions.TRADE_LINK_MON_SHADOW_GFX = 0x264C1C
+Versions.TRADE_CABLE_END_GFX = 0x264E1C
+Versions.TRADE_GBA_SCREEN_GFX = 0x26501C
+Versions.TRADE_GBA_MAP_WIRELESS = 0x269A5C
+Versions.TRADE_GBA_MAP_CABLE = 0x26AA5C
+Versions.TRADE_GBA_GFX = 0xEAEA80
+Versions.TRADE_GBA_PAL2 = 0xEAEA20
+-- src/trade_scene.c:398
+Versions.TRADE_GBA_SCREEN_ANIM = 0x26CED8
+
+-- src/link_rfu_3.c:34
+Versions.WIRELESS_ICON_PAL = 0x43EEC0
+Versions.WIRELESS_ICON_GFX = 0x43EEE0
+-- src/wireless_communication_status_screen.c:50
+Versions.WIRELESS_STATUS_PALS = 0x46F4D0
+Versions.WIRELESS_STATUS_GFX = 0x46F6D0
+Versions.WIRELESS_STATUS_TILEMAP = 0x46F8E0
+-- src/union_room_chat_display.c:1262, src/union_room_chat_objects.c:30
+Versions.UR_CHAT_BG_PAL = 0xEA1700
+Versions.UR_CHAT_BG_GFX = 0xEA1720
+Versions.UR_CHAT_BG_TILEMAP = 0xEA1958
+Versions.UR_CHAT_ICONS_GFX = 0xEA1A50
+Versions.UR_CHAT_PANEL_PAL = 0xEAA9F0
+Versions.UR_CHAT_PANEL_GFX = 0xEAAA10
+Versions.UR_CHAT_PANEL_TILEMAP = 0xEAAA6C
+Versions.UR_CHAT_OBJECTS_PAL = 0x45AC14
+Versions.UR_CHAT_SELECTOR_GFX = 0x45AC34
+Versions.UR_CHAT_TEXT_CURSOR_GFX = 0x45AEB8
+Versions.UR_CHAT_CHAR_CURSOR_GFX = 0x45AED8
+Versions.UR_CHAT_R_BUTTON_GFX = 0x45AF04
+
+-- src/graphics.c:1230, src/fame_checker.c:119
+Versions.FAME_BG_PAL = 0xE9F220
+Versions.FAME_BG_GFX = 0xE9F260
+Versions.FAME_BG3_TILEMAP = 0xEA0700
+Versions.FAME_BG2_TILEMAP = 0xEA0F00
+Versions.FAME_QUESTION_GFX = 0x45CE00
+Versions.FAME_CURSOR_GFX = 0x45D100
+Versions.FAME_CURSOR_PAL = 0x45D500
+Versions.FAME_FUJI_GFX = 0x45D520
+Versions.FAME_FUJI_PAL = 0x45DD20
+Versions.FAME_BILL_GFX = 0x45DD40
+Versions.FAME_BILL_PAL = 0x45E540
+Versions.FAME_DAISY_GFX = 0x45E560
+Versions.FAME_DAISY_PAL = 0x45ED60
+Versions.FAME_OAK_GFX = 0x45ED80
+Versions.FAME_OAK_PAL = 0x45F580
+Versions.FAME_SILHOUETTE_PAL = 0x45F5C0
+Versions.FAME_TRAINER_PIC_IDXS = 0x45F61C
+-- src/fame_checker.c:209, :246, :380, :399
+Versions.FAME_NAME_QUOTE_PTRS = 0x45F63C
+Versions.FAME_FLAVOR_TEXT_PTRS = 0x45F6BC
+Versions.FAME_ORIGIN_LOCATION_PTRS = 0x45F89C
+Versions.FAME_ORIGIN_OBJECT_PTRS = 0x45FA1C
+Versions.FAME_NONTRAINER_NAME_PTRS = { 0x41E5E9, 0x41E5ED, 0x41E5F3, 0x41E5F8 }
+Versions.FAME_PERSON_COUNT = 16
+Versions.FAME_FLAVOR_TEXT_COUNT = 6
+
+-- src/graphics.c:1117
+Versions.TEACHY_TV_GFX = 0xE86240
+Versions.TEACHY_TV_SCREEN_TILEMAP = 0xE86BE8
+Versions.TEACHY_TV_TITLE_TILEMAP = 0xE86D6C
+Versions.TEACHY_TV_PAL = 0xE86F98
+-- src/teachy_tv.c:869
+Versions.TEACHY_TV_END_TILES = 0x479590
+
+-- src/mystery_gift_show_card.c:150, src/mystery_gift_show_news.c:99
+Versions.WONDER_CARD_GRAPHICS = 0x467FB8
+Versions.WONDER_NEWS_GRAPHICS = 0x468720
+Versions.WONDER_BG_COUNT = 8
+Versions.WONDER_BG_TILE_OFFSET = 8
+
+-- src/trainer_tower.c:105, :191, :204, :382; src/trainer_tower_sets.c:8951
+Versions.TRAINER_TOWER_HEADER = 0x4827AC
+Versions.TRAINER_TOWER_FLOORS = 0x4827B4
+Versions.TRAINER_TOWER_CHALLENGE_TYPES = 4
+Versions.TRAINER_TOWER_MAX_FLOORS = 8
+Versions.TRAINER_TOWER_TRAINERS_PER_FLOOR = 3
+Versions.TT_SINGLES_INFO = 0x479ED8
+Versions.TT_SINGLES_INFO_COUNT = 83
+Versions.TT_DOUBLES_INFO = 0x47A024
+Versions.TT_DOUBLES_INFO_COUNT = 10
+Versions.TT_ENCOUNTER_MUSIC_LUT = 0x47A074
+Versions.TT_ENCOUNTER_MUSIC_LUT_COUNT = 105
+Versions.TT_ENCOUNTER_MUSIC = 0x47A2D2
+Versions.TT_ENCOUNTER_MUSIC_COUNT = 14
+Versions.FACILITY_CLASS_TO_PIC = 0x2538A8
+Versions.FACILITY_CLASS_TO_TRAINER_CLASS = 0x25393E
+Versions.FACILITY_CLASS_COUNT = 150
+
+-- src/data/pokemon/tutor_learnsets.h:1, :22
+Versions.TUTOR_MOVES = 0x459B60
+Versions.TUTOR_LEARNSETS = 0x459B7E
+Versions.TUTOR_MOVE_COUNT = 15
+
+-- src/script_menu.c:647, :1161
+Versions.MUSEUM_AERODACTYL_GFX = 0x3E0780
+Versions.MUSEUM_AERODACTYL_PAL = 0x3E0F80
+Versions.MUSEUM_KABUTOPS_GFX = 0x3E0FA0
+Versions.MUSEUM_KABUTOPS_PAL = 0x3E17A0
+Versions.MUSEUM_FOSSIL_SIZE = 64                 -- SPRITE_SIZE(64x64), src/script_menu.c:634
+
+-- src/daycare.c:137, :138, :139
+Versions.EGG_PALETTE = 0x25F842
+Versions.EGG_HATCH_GFX = 0x25F862
+Versions.EGG_SHARD_GFX = 0x260062
+
+-- src/learn_move.c:384 MoveRelearnerLoadBgGfx
+Versions.MOVE_RELEARNER_PAL = 0xE97DDC
+Versions.MOVE_RELEARNER_GFX = 0xE97DFC
+Versions.MOVE_RELEARNER_TILEMAP = 0xE97EC4
+
+-- src/battle_records.c:37, :563 LoadFrameGfxOnBg
+Versions.BATTLE_RECORDS_GFX = 0x3F6388
+Versions.BATTLE_RECORDS_PAL = 0x3F6448
+Versions.BATTLE_RECORDS_TILEMAP = 0x3F6468
 
 -- Title screen + Oak speech graphics (FireRed USA 1.0 file offsets).
 -- Verified by matching pret .gbapal bytes + LZ sizes in local dump.

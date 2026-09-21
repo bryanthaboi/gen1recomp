@@ -1089,10 +1089,11 @@ function Adapters.host(mod, game, world)
       Naming.open(opts)
     end,
     -- pokefirered/src/party_menu_specials.c:14
-    chooseParty = function(_opts, done)
+    chooseParty = function(chooseOpts, done)
       local PartyMenu = require("src.ui.game3.party_menu")
       local Message = require("src.ui.game3.message")
       local Runtime = require("src.core.game3.runtime")
+      chooseOpts = chooseOpts or {}
       local g = resolveGame()
       local session = (Runtime.getSession and Runtime.getSession())
         or (g and g.session)
@@ -1110,13 +1111,26 @@ function Adapters.host(mod, game, world)
         tick_vm()
       end
       PartyMenu.show(party, nil, {
-        mode = "choose",
+        -- pokefirered/src/party_menu.c:5651 InitChooseMonsForBattle
+        mode = chooseOpts.mode or "choose",
+        count = chooseOpts.count,
+        menuType = chooseOpts.menuType,
+        chooseMonsBattleType = chooseOpts.chooseMonsBattleType,
         session = session,
         onSelect = function(slot)
+          if type(slot) == "table" then
+            picked = slot
+            return
+          end
           local s = tonumber(slot)
           if s and s >= 1 then picked = s - 1 end
         end,
         onClose = function()
+          -- pokefirered/src/party_menu.c:5746 Task_ValidateChosenMonsForBattle
+          if picked == nil and PartyMenu.chosenOrder then
+            local order = PartyMenu.chosenOrder()
+            if order and order[1] then picked = order end
+          end
           if not Runtime.defer(resume) then resume() end
         end,
       })
@@ -1421,6 +1435,13 @@ function Adapters.host(mod, game, world)
         firstBattle = battleOpts.firstBattle or (foe and foe.firstBattle),
         noWhiteout = battleOpts.noWhiteout,
         double = battleOpts.double,
+        -- pokefirered/src/trainer_tower.c:735 BATTLE_TYPE_TRAINER_TOWER
+        trainerTower = battleOpts.trainerTower,
+        -- pokefirered/src/battle_tower.c:933 BATTLE_TYPE_EREADER_TRAINER
+        eReader = battleOpts.eReader,
+        -- pokefirered/src/battle_message.c:2066 GetTrainerTowerOpponentName
+        trainerName = battleOpts.trainerName or (foe and foe.trainerName),
+        trainerPicId = battleOpts.trainerPicId or (foe and foe.trainerPicId),
         done = function(result)
           if done then done(result or "win") end
           tick_vm()

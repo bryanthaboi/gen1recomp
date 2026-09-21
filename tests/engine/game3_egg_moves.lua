@@ -142,6 +142,71 @@ do
   eq(Pokemon._eggMoves, nil, "invalidate() drops the loaded list")
 end
 
+-- pokefirered/src/daycare.c:888 BuildEggMoveset
+do
+  local Breeding = require("src.core.game3.breeding")
+
+  local EGG_MOVE, TM_MOVE, SHARED_LVL, PLAIN = 57, 92, 22, 150
+  local files = {
+    ["data/generated/gba/pokemon/names.lua"] = 'return {\n  [4] = "CHARMANDER",\n}\n',
+    ["data/generated/gba/pokemon/egg_moves.lua"] =
+      PokemonExtract.writeEggMovesLua({ [4] = { EGG_MOVE } }),
+    -- pokefirered/src/pokemon.c:5780 GetLevelUpMovesBySpecies
+    ["data/generated/gba/pokemon/learnsets.lua"] =
+      ("return {\n  [4] = { {1,%d}, {12,%d}, {19,%d} },\n}\n"):format(33, SHARED_LVL, 98),
+    -- pokefirered/src/daycare.c:941 ItemIdToBattleMoveId / CanMonLearnTMHM
+    ["data/generated/gba/pokemon/tmhm.lua"] =
+      ("local M = { machines = {}, learnsets = {} }\nM.machines[5] = %d\n"):format(TM_MOVE)
+      .. "M.learnsets[4] = { lo = 32, hi = 0 }\nreturn M\n",
+  }
+  Pokemon.install({ read = function(_, rel) return files[rel] end })
+
+  eq(Pokemon.moveFromTmItem(289 + 5), TM_MOVE, "TM06 is the move the fixture put there")
+  check(Pokemon.canLearnTmIndex(4, 5), "and species 4 may learn it")
+
+  local function child()
+    return { species = 4, moves = {}, pp = {}, maxPp = {} }
+  end
+  local function parent(moves)
+    return { species = 4, moves = moves, pp = { 10, 10, 10, 10 }, maxPp = { 10, 10, 10, 10 } }
+  end
+
+  local egg = child()
+  Breeding.buildEggMoveset(egg, parent({ EGG_MOVE }), parent({ PLAIN }))
+  check(Pokemon.knowsMove(egg, EGG_MOVE), "the father's egg move is inherited")
+
+  egg = child()
+  Breeding.buildEggMoveset(egg, parent({ TM_MOVE }), parent({ PLAIN }))
+  check(Pokemon.knowsMove(egg, TM_MOVE), "so is a TM move the egg can learn")
+
+  egg = child()
+  Breeding.buildEggMoveset(egg, parent({ SHARED_LVL }), parent({ SHARED_LVL }))
+  check(Pokemon.knowsMove(egg, SHARED_LVL), "so is a level-up move both parents know")
+
+  egg = child()
+  Breeding.buildEggMoveset(egg, parent({ SHARED_LVL }), parent({ PLAIN }))
+  check(not Pokemon.knowsMove(egg, SHARED_LVL),
+    "but not one only the father knows")
+
+  egg = child()
+  Breeding.buildEggMoveset(egg, parent({ PLAIN }), parent({ PLAIN }))
+  check(not Pokemon.knowsMove(egg, PLAIN),
+    "and not a shared move that is not in the egg's level-up set")
+
+  egg = child()
+  Breeding.buildEggMoveset(egg, parent({ EGG_MOVE }), parent({ EGG_MOVE }))
+  eq(Pokemon.moveSlotCount(egg), 1, "an inherited move is never given twice")
+
+  -- pokefirered/src/daycare.c:925 DeleteFirstMoveAndGiveMoveToMon
+  egg = { species = 4, moves = { 1, 2, 3, 4 }, pp = { 5, 5, 5, 5 }, maxPp = { 5, 5, 5, 5 } }
+  Breeding.buildEggMoveset(egg, parent({ EGG_MOVE }), parent({ PLAIN }))
+  eq(Pokemon.moveSlotCount(egg), 4, "a full moveset stays at four moves")
+  eq(egg.moves[1], 2, "the first move is deleted")
+  eq(egg.moves[4], EGG_MOVE, "and the egg move takes the last slot")
+
+  Pokemon.invalidate()
+end
+
 -- ----------------------------------------------------------------- real ROM
 -- Pinned against the supported FireRed USA 1.0 dump; skipped otherwise.
 local path = arg and arg[1]

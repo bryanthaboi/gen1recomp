@@ -132,16 +132,25 @@ print("[ok] NPC scriptJump passed")
 -- 6. Viridian City Gym Sliding Door (SE_SLIDING_DOOR, SlidingDouble)
 -- -----------------------------------------------------------------------------
 print("[test] 6. Viridian City Gym door uses SE_SLIDING_DOOR and SlidingDouble animation")
+local Cache = require("tests.game3_cache")
+local doorRoot = Cache.mount("doors/manifest.lua", { native = true })
+if not doorRoot then
+  print("[skip] Viridian Gym door: " .. tostring(Cache.reason))
+  print("=== VIRIDIAN GYM JUMP TESTS PASSED, DOOR TEST SKIPPED ===")
+  os.exit(0)
+end
+print("[info] FireRed cache at " .. doorRoot)
 local Doors = require("src.core.game3.doors")
 
 local snd, kind = Doors.getSoundForWarp("VIRIDIAN_CITY", 36, 10, "MAP_VIRIDIAN_CITY_GYM", true)
 assert(snd == Doors.SOUND_SLIDING, "Sound is SE_SLIDING_DOOR (18)")
-assert(kind == "SlidingDouble" or kind == "sliding_double", "Kind is SlidingDouble")
+assert(kind == "SlidingDouble", "Kind is SlidingDouble")
 
 local openAnim = Doors.open("VIRIDIAN_CITY", 36, 10, { destMap = "MAP_VIRIDIAN_CITY_GYM" })
 assert(openAnim ~= nil, "openAnim created")
 assert(openAnim.tile == "SlidingDouble", "Door tile is SlidingDouble")
-assert(openAnim.kind == "SlidingDouble" or openAnim.kind == "sliding", "Door kind is sliding")
+assert(openAnim.kind == "SlidingDouble", "Door kind is SlidingDouble")
+assert(openAnim.soundKind == "sliding", "Door sound kind is sliding")
 assert(openAnim.size == "1x1", "Door size is 1x1")
 
 print("[ok] Viridian City Gym door verified as sliding door")

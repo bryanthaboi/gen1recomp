@@ -727,6 +727,14 @@ local function dispatch(vm, row)
     end
     local name = tostring(src)
     if a.bufferName then name = a.bufferName(op, src) or name end
+    if op == "buffermovename" and name == tostring(src) then
+      -- pokefirered/src/scrcmd.c:1669
+      local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
+      if okP and Pokemon and Pokemon.moveName then
+        local okN, moveName = pcall(Pokemon.moveName, tonumber(src) or src)
+        if okN and type(moveName) == "string" and #moveName > 0 then name = moveName end
+      end
+    end
     ctx.stringVars[dest] = name
     return false
   elseif op == "bufferleadmonspeciesname" then
@@ -1490,6 +1498,41 @@ local function dispatch(vm, row)
     -- Decor shops are a separate item namespace; skip until decor pack exists.
     if a.log then a.log("[game3] skip " .. tostring(op)) end
     return false
+  elseif op == "playslotmachine" then
+    -- pokefirered/src/scrcmd.c:1980
+    local machineIdx = var_get(store, ctx, row[1] or row.id)
+    local okUi, SlotUi = pcall(require, "src.ui.game3.slot_machine")
+    if not (okUi and type(SlotUi) == "table" and type(SlotUi.show) == "function") then
+      if a.log then a.log("[game3] playslotmachine skipped (no screen)") end
+      return false
+    end
+    if a.closeMessage then a.closeMessage() end
+    local okMsg, Message = pcall(require, "src.ui.game3.message")
+    if okMsg and Message and Message.close then Message.close() end
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local done = false
+    local function poll()
+      if done and ctx.stateWait == poll then ctx.stateWait = nil end
+      return done
+    end
+    ctx.mode = "native"
+    ctx.status = "waiting"
+    ctx.nativePoll = poll
+    Natives.awaitState(ctx, poll)
+    SlotUi.show({
+      machineIdx = machineIdx,
+      session = session,
+      onClose = function() done = true end,
+    })
+    if done then
+      ctx.mode = "bytecode"
+      ctx.status = "running"
+      ctx.nativePoll = nil
+      ctx.stateWait = nil
+      return false
+    end
+    return true
   elseif op == "setobjectxyperm" or op == "setobjectxy" or op == "setobjectmovementtype"
       or op == "copyobjectxytoperm" then
     if a.setObjectState then a.setObjectState(op, row) end
@@ -1497,6 +1540,46 @@ local function dispatch(vm, row)
   elseif op == "multichoice" or op == "multichoicedefault" or op == "multichoicegrid" then
     -- Economy/UI pack: pick option 0 into VAR_RESULT unless host implements.
     Flags.setVar(store, ctx, 0x800D, 0)
+    if op == "multichoice" then
+      local listId = tonumber(row.listId or row[3]) or -1
+      local okP, Prize = pcall(require, "src.ui.game3.prize_corner")
+      if okP and type(Prize) == "table" and Prize.isPrizeList(listId) then
+        local Multi = require("src.core.game3.scripting.multichoice")
+        local labels = Multi.resolve(listId)
+        local done = false
+        local function poll()
+          if done and ctx.stateWait == poll then ctx.stateWait = nil end
+          return done
+        end
+        ctx.mode = "native"
+        ctx.status = "waiting"
+        ctx.nativePoll = poll
+        Natives.awaitState(ctx, poll)
+        -- pokefirered/src/script_menu.c:713
+        local shown = Prize.show({
+          listId = listId,
+          labels = labels,
+          left = tonumber(row.x or row.left or row[1]) or 0,
+          top = tonumber(row.y or row.top or row[2]) or 0,
+          ignoreBPress = (tonumber(row[4] or row.ignoreBPress) or 0) ~= 0,
+          onChoose = function(sel)
+            Flags.setVar(store, ctx, 0x800D, tonumber(sel) or 0)
+            done = true
+          end,
+        })
+        if not shown then
+          done = true
+        end
+        if done then
+          ctx.mode = "bytecode"
+          ctx.status = "running"
+          ctx.nativePoll = nil
+          ctx.stateWait = nil
+        else
+          return true
+        end
+      end
+    end
     if a.multichoice then
       ctx.mode = "native"
       ctx.status = "waiting"
@@ -1560,8 +1643,14 @@ local function dispatch(vm, row)
       Field.setRespawn(id)
     end
     return false
+  elseif op == "trywondercardscript" then
+    -- pokefirered/src/scrcmd.c:275 ScrCmd_trywondercardscript
+    local Gift = require("src.core.game3.scripting.natives_gift")
+    local yield, jumped = Gift.runWonderCardScript(ctx, a)
+    if jumped then ctx.pc = nil end
+    return yield
   elseif op == "incrementgamestat" or op == "checkpartymove"
-      or op == "trywondercardscript" or op == "erasebox" then
+      or op == "erasebox" then
     return false
   else
     local Runtime = package.loaded["src.core.game3.runtime"]

@@ -797,13 +797,19 @@ local MODULE_DIR = "src/core/game3/scripting"
 local MODULE_PACKAGE = "src.core.game3.scripting."
 
 local KNOWN_MODULES = {
+  "natives_corner",
   "natives_cutscene",
   "natives_daycare",
   "natives_elevator",
   "natives_events",
+  "natives_fame",
+  "natives_gift",
+  "natives_link",
   "natives_listmenu",
+  "natives_moveteach",
   "natives_queries",
   "natives_seagallop",
+  "natives_tower",
   "natives_trade",
 }
 Natives.KNOWN_MODULES = KNOWN_MODULES

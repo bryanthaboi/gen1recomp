@@ -22,12 +22,47 @@ local ENTRY_NAMES = {
   "SilphCoElevator","Teleporter",     "TrainerTowerLobbyElevator","TrainerTowerRoofElevator",
 }
 
--- Sound IDs from se_ids.lua constants (used in manifest for game code).
-local SOUND_FOR_MID = {
-  [0x062] = "sliding", [0x15B] = "sliding", [0x2BC] = "sliding", [0x294] = "sliding",
-  [0x2D2] = "sliding", [0x29B] = "sliding", [0x28D] = "sliding", [0x2DE] = "sliding",
-  [0x2AB] = "sliding", [0x2E2] = "sliding", [0x296] = "sliding", [0x2C3] = "sliding",
-  [0x356] = "sliding",
+-- src/field_door.c:10
+local SOUND_NAMES = { [0] = "normal", [1] = "sliding" }
+-- src/field_door.c:15
+local SIZE_NAMES = { [0] = "1x1", [1] = "1x2" }
+
+DoorAnimExtract.MANIFEST_VERSION = 2
+
+-- src/field_door.c:250
+local DOOR_TILESETS = {
+  [0]  = "primary",
+  [1]  = "primary",
+  [2]  = "primary",
+  [3]  = "pallet",
+  [4]  = "pallet",
+  [5]  = "viridian",
+  [6]  = "pewter",
+  [7]  = "saffron",
+  [8]  = "saffron",
+  [9]  = "cerulean",
+  [10] = "lavender",
+  [11] = "vermilion",
+  [12] = "vermilion",
+  [13] = "celadon",
+  [14] = "fuchsia",
+  [15] = "fuchsia",
+  [16] = "cinnabar",
+  [17] = "sevii_123",
+  [18] = "sevii_123",
+  [19] = "sevii_123",
+  [20] = "sevii_45",
+  [21] = "sevii_45",
+  [22] = "sevii_45",
+  [23] = "sevii_67",
+  [24] = "dept_store",
+  [25] = "cable_club",
+  [26] = "silph_co",
+  [27] = "ss_anne",
+  [28] = "silph_co",
+  [29] = "sea_cottage",
+  [30] = "trainer_tower",
+  [31] = "trainer_tower",
 }
 
 -- Primary tileset (gTileset_General) palette offset in FireRed USA 1.0 ROM.
@@ -171,16 +206,21 @@ function DoorAnimExtract.run(rom, cache, opts)
     return DoorAnimExtract._writeStub(cache, root)
   end
 
-  local manifest_doors  = {}
-  local manifest_by_mid = {}
+  local manifest_doors   = {}
+  local manifest_by_mid  = {}
+  local manifest_entries = {}
 
-  for i = 0, ENTRY_COUNT - 1 do
+  -- src/field_door.c:396
+  local limit = math.max(ENTRY_COUNT, 0)
+  for i = 0, limit - 1 do
     local base      = SDOOR_GRAPHICS_OFFSET + i * ENTRY_STRIDE
     local mid_flags = rom:u32(base)
     local ptr_tiles = rom:u32(base + 4)
     local ptr_pal   = rom:u32(base + 8)
+    if ptr_tiles == 0 then break end
 
     local mid       = band(mid_flags, 0xFFFF)
+    local sound_id  = band(rshift(mid_flags, 16), 0xFF)
     local size_id   = band(rshift(mid_flags, 24), 0xFF)
     local is_large  = (size_id == 1)
     local name      = ENTRY_NAMES[i + 1] or ("door_" .. i)
@@ -211,114 +251,97 @@ function DoorAnimExtract.run(rom, cache, opts)
       frames      = 3,
     }
 
-local DOOR_TILESETS = {
-  [0]  = "primary",           -- General
-  [1]  = "primary",           -- SlidingSingle
-  [2]  = "primary",           -- SlidingDouble
-  [3]  = "pallet",            -- Pallet
-  [4]  = "pallet",            -- OaksLab
-  [5]  = "viridian",          -- Viridian
-  [6]  = "pewter",            -- Pewter
-  [7]  = "saffron",           -- Saffron
-  [8]  = "saffron",           -- SilphCo
-  [9]  = "cerulean",          -- Cerulean
-  [10] = "lavender",          -- Lavender
-  [11] = "vermilion",         -- Vermilion
-  [12] = "vermilion",         -- PokemonFanClub
-  [13] = "celadon",           -- DeptStore
-  [14] = "fuchsia",           -- Fuchsia
-  [15] = "fuchsia",           -- SafariZone
-  [16] = "cinnabar",          -- CinnabarLab
-  [17] = "sevii_123",         -- Sevii123
-  [18] = "sevii_123",         -- JoyfulGameCorner
-  [19] = "sevii_123",         -- OneIslandPokeCenter
-  [20] = "sevii_45",          -- Sevii45
-  [21] = "sevii_45",          -- FourIslandDayCare
-  [22] = "sevii_45",          -- RocketWarehouse
-  [23] = "sevii_67",          -- Sevii67
-  [24] = "dept_store",        -- DeptStoreElevator
-  [25] = "cable_club",        -- CableClub
-  [26] = "silph_co",          -- HideoutElevator
-  [27] = "ss_anne",           -- SSAnne
-  [28] = "silph_co",          -- SilphCoElevator
-  [29] = "sea_cottage",       -- Teleporter
-  [30] = "trainer_tower",     -- TrainerTowerLobbyElevator
-  [31] = "trainer_tower",     -- TrainerTowerRoofElevator
-}
-
-    local sound = SOUND_FOR_MID[mid] or "normal"
-    local size  = is_large and "1x2" or "1x1"
-    local tset  = DOOR_TILESETS[i] or "primary"
-    manifest_by_mid[mid] = {
-      mid     = mid,
-      tile    = name,
-      sound   = sound,
-      size    = size,
-      tileset = tset,
+    local entry = {
+      index      = i,
+      mid        = mid,
+      tile       = name,
+      sound      = SOUND_NAMES[sound_id] or "normal",
+      sound_type = sound_id,
+      size       = SIZE_NAMES[size_id] or "1x1",
+      size_type  = size_id,
+      tileset    = DOOR_TILESETS[i] or "primary",
     }
+    manifest_by_mid[mid] = entry
+    manifest_entries[#manifest_entries + 1] = entry
 
     ::continue::
   end
 
   rom:clearCache()
 
+  local names = {}
+  for k in pairs(manifest_doors) do names[#names + 1] = k end
+  table.sort(names)
+
   -- Build and write manifest.lua through the cache.
-  local mlines = { "return {", "  doors = {" }
-  for k, v in pairs(manifest_doors) do
+  local mlines = {
+    "return {",
+    string.format("  version = %d,", DoorAnimExtract.MANIFEST_VERSION),
+    string.format("  count = %d,", #manifest_entries),
+    "  doors = {",
+  }
+  for _, k in ipairs(names) do
+    local v = manifest_doors[k]
     mlines[#mlines + 1] = string.format(
       "    [%q] = { file = %q, width = %d, height = %d, frame_width = %d, frame_height = %d, frames = %d },",
       k, v.file, v.width, v.height, v.frame_width, v.frame_height, v.frames)
   end
   mlines[#mlines + 1] = "  },"
-  mlines[#mlines + 1] = "  by_mid = {"
-  for mid, v in pairs(manifest_by_mid) do
+  mlines[#mlines + 1] = "  entries = {"
+  for _, v in ipairs(manifest_entries) do
     mlines[#mlines + 1] = string.format(
-      "    [%d] = { mid = %d, tile = %q, sound = %q, size = %q, tileset = %q },",
-      mid, mid, v.tile, v.sound, v.size, v.tileset or "primary")
+      "    { index = %d, mid = %d, tile = %q, sound = %q, sound_type = %d, size = %q, size_type = %d, tileset = %q },",
+      v.index, v.mid, v.tile, v.sound, v.sound_type, v.size, v.size_type, v.tileset)
   end
-  mlines[#mlines + 1] = "  }"
+  mlines[#mlines + 1] = "  },"
+  mlines[#mlines + 1] = "  by_mid = {"
+  for _, v in ipairs(manifest_entries) do
+    mlines[#mlines + 1] = string.format(
+      "    [%d] = { index = %d, mid = %d, tile = %q, sound = %q, sound_type = %d, size = %q, size_type = %d, tileset = %q },",
+      v.mid, v.index, v.mid, v.tile, v.sound, v.sound_type, v.size, v.size_type, v.tileset)
+  end
+  mlines[#mlines + 1] = "  },"
   mlines[#mlines + 1] = "}"
   mlines[#mlines + 1] = ""
   cache:write(root .. "/manifest.lua", table.concat(mlines, "\n"))
 
-  local n_doors = 0
-  for _ in pairs(manifest_doors) do n_doors = n_doors + 1 end
   print(string.format("[door_extract] wrote %d door sheets, %d metatile entries",
-    n_doors, ENTRY_COUNT))
+    #names, #manifest_entries))
   return true
+end
+
+-- src/field_door.c:250
+function DoorAnimExtract.ready(cache, cacheRoot)
+  local root = (cacheRoot or "data/generated/gba") .. "/" .. DoorAnimExtract.CACHE_SUB
+  local body = cache and cache.read and cache:read(root .. "/manifest.lua")
+  if type(body) ~= "string" or #body == 0 then return false end
+  local chunk = load(body, "@" .. root .. "/manifest.lua", "t", {})
+  if not chunk then return false end
+  local ok, manifest = pcall(chunk)
+  if not ok or type(manifest) ~= "table" then return false end
+  if manifest.version ~= DoorAnimExtract.MANIFEST_VERSION then return false end
+  if type(manifest.by_mid) ~= "table" then return false end
+  local n = 0
+  for _, entry in pairs(manifest.by_mid) do
+    if type(entry) ~= "table" or type(entry.sound_type) ~= "number" then return false end
+    n = n + 1
+  end
+  return n >= ENTRY_COUNT
 end
 
 -- Write a stub manifest + pallet.rgba so CacheContract is satisfied even when
 -- no ROM handle is available.
 function DoorAnimExtract._writeStub(cache, root)
-  local STUB_ENTRIES = {
-    {0x03D,"General","normal","1x1","primary"},{0x062,"SlidingSingle","sliding","1x1","primary"},
-    {0x15B,"SlidingDouble","sliding","1x1","primary"},{0x2A3,"Pallet","normal","1x1","pallet"},
-    {0x2AC,"OaksLab","normal","1x1","pallet"},{0x299,"Viridian","normal","1x1","viridian"},
-    {0x2CE,"Pewter","normal","1x1","pewter"},{0x284,"Saffron","normal","1x1","saffron"},
-    {0x2BC,"SilphCo","sliding","1x1","saffron"},{0x298,"Cerulean","normal","1x1","cerulean"},
-    {0x2A2,"Lavender","normal","1x1","lavender"},{0x29E,"Vermilion","normal","1x1","vermilion"},
-    {0x2E1,"PokemonFanClub","normal","1x1","vermilion"},{0x294,"DeptStore","sliding","1x1","celadon"},
-    {0x2BF,"Fuchsia","normal","1x1","fuchsia"},{0x2D2,"SafariZone","sliding","1x1","fuchsia"},
-    {0x2AD,"CinnabarLab","normal","1x1","cinnabar"},{0x297,"Sevii123","normal","1x1","sevii_123"},
-    {0x29B,"JoyfulGameCorner","sliding","1x1","sevii_123"},{0x2EB,"OneIslandPokeCenter","normal","1x1","sevii_123"},
-    {0x29A,"Sevii45","normal","1x1","sevii_45"},{0x2B9,"FourIslandDayCare","normal","1x1","sevii_45"},
-    {0x2AF,"RocketWarehouse","normal","1x1","sevii_45"},{0x30C,"Sevii67","normal","1x1","sevii_67"},
-    {0x28D,"DeptStoreElevator","sliding","1x2","dept_store"},{0x2DE,"CableClub","sliding","1x2","cable_club"},
-    {0x2AB,"HideoutElevator","sliding","1x2","silph_co"},{0x281,"SSAnne","normal","1x2","ss_anne"},
-    {0x2E2,"SilphCoElevator","sliding","1x2","silph_co"},{0x296,"Teleporter","sliding","1x2","sea_cottage"},
-    {0x2C3,"TrainerTowerLobbyElevator","sliding","1x2","trainer_tower"},
-    {0x356,"TrainerTowerRoofElevator","sliding","1x2","trainer_tower"},
+  local lines = {
+    "return {",
+    string.format("  version = %d,", DoorAnimExtract.MANIFEST_VERSION),
+    "  count = 0,",
+    "  doors = {},",
+    "  entries = {},",
+    "  by_mid = {},",
+    "}",
+    "",
   }
-  local lines = {"return {", "  doors = {},", "  by_mid = {"}
-  for _, e in ipairs(STUB_ENTRIES) do
-    lines[#lines + 1] = string.format(
-      "    [%d] = { mid = %d, tile = %q, sound = %q, size = %q, tileset = %q },",
-      e[1], e[1], e[2], e[3], e[4], e[5])
-  end
-  lines[#lines + 1] = "  }"
-  lines[#lines + 1] = "}"
-  lines[#lines + 1] = ""
   cache:write(root .. "/manifest.lua", table.concat(lines, "\n"))
   cache:write(root .. "/pallet.rgba", string.rep("\0", 16 * 16 * 4))
   return false

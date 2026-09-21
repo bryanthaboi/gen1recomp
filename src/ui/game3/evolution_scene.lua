@@ -91,6 +91,8 @@ function EvolutionScene.start(mon, postSpecies, opts)
   if nick == "" then nick = clean_string(Pokemon.name(EvolutionScene._preSpecies)) end
   EvolutionScene._nick = nick ~= "" and nick or "POKéMON"
   EvolutionScene._canStop = opts.canStop ~= false
+  -- pokefirered/src/evolution_scene.c:641
+  EvolutionScene._autoCancel = opts.autoCancel and true or false
   EvolutionScene._session = opts.session
   EvolutionScene._bag = opts.bag
   EvolutionScene._via = opts.via
@@ -408,6 +410,16 @@ function EvolutionScene.update(dt)
     if p.t >= p.maxT or (p.kind == "spiral" and p.dist <= 2) then
       table.remove(EvolutionScene._particles, i)
     end
+  end
+
+  -- pokefirered/src/evolution_scene.c:641
+  if EvolutionScene._autoCancel and EvolutionScene._state == "cycle" then
+    EvolutionScene._state = "cancel"
+    EvolutionScene._timer = 0
+    Audio.playSong(0)
+    -- pokefirered/src/battle_message.c:1277 gText_EllipsisQuestionMark
+    Message.show(Strings("……?"), { frame = "battle" })
+    return
   end
 
   local st = EvolutionScene._state

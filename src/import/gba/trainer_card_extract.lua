@@ -7,7 +7,14 @@ local Lz77 = require("src.import.gba.lz77")
 local TrainerCardExtract = {}
 
 TrainerCardExtract.CACHE_SUB = "trainer_card"
-TrainerCardExtract.FORMAT_VERSION = 1
+TrainerCardExtract.FORMAT_VERSION = 2
+
+-- src/trainer_card.c:265 sKantoTrainerCardPals
+TrainerCardExtract.STAR_COUNT = 5
+-- src/trainer_card.c:1454, :1456 LoadStickerGfx
+TrainerCardExtract.STICKER_SLOTS = 4
+TrainerCardExtract.STICKER_PALETTES = 4
+TrainerCardExtract.STICKER_SIZE = 16
 
 local function default_cache_root()
   local ok, Extract = pcall(require, "src.import.gba.extract_island1")
@@ -164,6 +171,78 @@ local function bake_badges_rgba(badgeTiles, palBytes)
   return table.concat(chunks), W, H
 end
 
+local function bake_tile_rgba(gfx, palBytes, tileNum)
+  local pal = {}
+  for c = 0, 15 do
+    local i = c * 2 + 1
+    pal[c] = (palBytes[i] or 0) + (palBytes[i + 1] or 0) * 256
+  end
+  local pixels = {}
+  for i = 1, 64 do pixels[i] = 0 end
+  local tile = {}
+  local base = tileNum * 32
+  for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+  decode_tile_4bpp(tile, pixels, 0, 0, 8, false, false)
+  local chunks = {}
+  for i = 1, 64 do
+    local idx = pixels[i] or 0
+    if idx == 0 then
+      chunks[i] = string.char(0, 0, 0, 0)
+    else
+      local r, g, b = bgr555_to_rgb8(pal[idx] or 0)
+      chunks[i] = string.char(r, g, b, 255)
+    end
+  end
+  return table.concat(chunks)
+end
+
+-- src/trainer_card.c:1450 WriteSequenceToBgTilemapBuffer(3, i * 4 + 320, ..., 2, 2, ..., 1)
+local function bake_stickers_rgba(stickerTiles, palBytesList)
+  local cell = TrainerCardExtract.STICKER_SIZE
+  local slots = TrainerCardExtract.STICKER_SLOTS
+  local palCount = TrainerCardExtract.STICKER_PALETTES
+  local W, H = cell * slots, cell * palCount
+  local pixels = {}
+  for i = 1, W * H do pixels[i] = 0 end
+  for slot = 0, slots - 1 do
+    for row = 0, 1 do
+      for col = 0, 1 do
+        local tileNum = slot * 4 + row * 2 + col
+        local tile = {}
+        local base = tileNum * 32
+        for i = 1, 32 do tile[i] = stickerTiles[base + i] or 0 end
+        for p = 0, palCount - 1 do
+          decode_tile_4bpp(tile, pixels, slot * cell + col * 8, p * cell + row * 8, W, false, false)
+        end
+      end
+    end
+  end
+  local pals = {}
+  for p = 0, palCount - 1 do
+    local bytes = palBytesList[p + 1] or {}
+    local colors = {}
+    for c = 0, 15 do
+      local i = c * 2 + 1
+      colors[c] = (bytes[i] or 0) + (bytes[i + 1] or 0) * 256
+    end
+    pals[p] = colors
+  end
+  local chunks = {}
+  for y = 0, H - 1 do
+    for x = 0, W - 1 do
+      local idx = pixels[y * W + x + 1] or 0
+      if idx == 0 then
+        chunks[#chunks + 1] = string.char(0, 0, 0, 0)
+      else
+        local bank = pals[math.floor(y / cell)] or pals[0]
+        local r, g, b = bgr555_to_rgb8(bank[idx] or 0)
+        chunks[#chunks + 1] = string.char(r, g, b, 255)
+      end
+    end
+  end
+  return table.concat(chunks), W, H
+end
+
 function TrainerCardExtract.run(rom, cache, opts)
   opts = opts or {}
   local root = (opts.cacheRoot or default_cache_root()) .. "/" .. TrainerCardExtract.CACHE_SUB
@@ -179,19 +258,37 @@ function TrainerCardExtract.run(rom, cache, opts)
 
   local bgTiles = Lz77.decompress(get, Versions.TRAINER_CARD_BG_TILES or 0xE991F8)
   local mapFront = Lz77.decompress(get, Versions.TRAINER_CARD_FRONT_MAP or 0x3CC6F0)
+  local mapBack = Lz77.decompress(get, Versions.TRAINER_CARD_BACK_MAP or 0x3CC984)
   local mapBg = Lz77.decompress(get, Versions.TRAINER_CARD_BG_MAP or 0x3CCEC8)
   local palBytes = read_bytes(Versions.TRAINER_CARD_PAL or 0xE99198, 96)
   local femalePalBytes = read_bytes(Versions.TRAINER_CARD_FEMALE_PAL or 0x3CD2A0, 32)
-  local badgePalBytes = read_bytes(Versions.TRAINER_CARD_BADGES_PAL or 0x3CD2C0, 32)
+  local badgePalBytes = read_bytes(Versions.TRAINER_CARD_BADGES_PAL or 0x3CD2E0, 32)
   local badgeTiles = Lz77.decompress(get, Versions.TRAINER_CARD_BADGES_TILES or 0x3CD5E8)
 
-  local maleBanks = load_pal_banks(palBytes, 3)
-  local femaleBanks = load_pal_banks(palBytes, 3)
-  femaleBanks[1] = {}
-  for c = 0, 15 do
-    local i = c * 2 + 1
-    femaleBanks[1][c] = (femalePalBytes[i] or 0) + (femalePalBytes[i + 1] or 0) * 256
+  -- src/trainer_card.c:265 sKantoTrainerCardPals, index 0..4 by star count
+  local starPalOffsets = {
+    [0] = Versions.TRAINER_CARD_PAL or 0xE99198,
+    [1] = Versions.TRAINER_CARD_GREEN_PAL or 0x3CCFE0,
+    [2] = Versions.TRAINER_CARD_BRONZE_PAL or 0x3CD0A0,
+    [3] = Versions.TRAINER_CARD_SILVER_PAL or 0x3CD160,
+    [4] = Versions.TRAINER_CARD_GOLD_PAL or 0x3CD220,
+  }
+
+  local function banks_for(starPalBytes, female)
+    local banks = load_pal_banks(starPalBytes, 3)
+    -- src/trainer_card.c:1494 sKantoTrainerCardFemaleBg_Pal overrides BG_PLTT_ID(1)
+    if female then
+      banks[1] = {}
+      for c = 0, 15 do
+        local i = c * 2 + 1
+        banks[1][c] = (femalePalBytes[i] or 0) + (femalePalBytes[i + 1] or 0) * 256
+      end
+    end
+    return banks
   end
+
+  local maleBanks = banks_for(palBytes, false)
+  local femaleBanks = banks_for(palBytes, true)
 
   if bgTiles and mapFront and mapBg then
     local maleRgba = bake_card_composite_rgba(bgTiles, maleBanks, mapFront, mapBg, W, H)
@@ -199,11 +296,45 @@ function TrainerCardExtract.run(rom, cache, opts)
 
     local femaleRgba = bake_card_composite_rgba(bgTiles, femaleBanks, mapFront, mapBg, W, H)
     cache:write(root .. "/bg_female.rgba", femaleRgba)
+
+    for stars = 0, TrainerCardExtract.STAR_COUNT - 1 do
+      local starBytes = read_bytes(starPalOffsets[stars], 96)
+      for _, female in ipairs({ false, true }) do
+        local banks = banks_for(starBytes, female)
+        local suffix = female and "_female" or ""
+        cache:write(string.format("%s/front_%d%s.rgba", root, stars, suffix),
+          bake_card_composite_rgba(bgTiles, banks, mapFront, mapBg, W, H))
+        if mapBack then
+          cache:write(string.format("%s/back_%d%s.rgba", root, stars, suffix),
+            bake_card_composite_rgba(bgTiles, banks, mapBack, mapBg, W, H))
+        end
+        cache:write(string.format("%s/screen_%d%s.rgba", root, stars, suffix),
+          bake_card_composite_rgba(bgTiles, banks, nil, mapBg, W, H))
+      end
+    end
   end
 
   if badgeTiles and badgePalBytes then
-    local badgesRgba, bw, bh = bake_badges_rgba(badgeTiles, badgePalBytes)
+    local badgesRgba = bake_badges_rgba(badgeTiles, badgePalBytes)
     cache:write(root .. "/badges.rgba", badgesRgba)
+  end
+
+  -- src/trainer_card.c:1560 FillBgTilemapBufferRect(3, 143, ..., 4)
+  if bgTiles then
+    local starPalBytes = read_bytes(Versions.TRAINER_CARD_STAR_PAL or 0x3CD300, 32)
+    cache:write(root .. "/star.rgba",
+      bake_tile_rgba(bgTiles, starPalBytes, Versions.TRAINER_CARD_STAR_TILE or 143))
+  end
+
+  local stickerTiles = Lz77.decompress(get, Versions.TRAINER_CARD_STICKERS_TILES or 0x3CC368)
+  if stickerTiles then
+    local stickerPals = {
+      read_bytes(Versions.TRAINER_CARD_STICKER_PAL1 or 0x3CD320, 32),
+      read_bytes(Versions.TRAINER_CARD_STICKER_PAL2 or 0x3CD340, 32),
+      read_bytes(Versions.TRAINER_CARD_STICKER_PAL3 or 0x3CD360, 32),
+      read_bytes(Versions.TRAINER_CARD_STICKER_PAL4 or 0x3CD380, 32),
+    }
+    cache:write(root .. "/stickers.rgba", (bake_stickers_rgba(stickerTiles, stickerPals)))
   end
 
   local manifest = string.format([[
@@ -214,8 +345,17 @@ return {
   badgeWidth = 16,
   badgeHeight = 16,
   badgeCount = 8,
+  starCount = %d,
+  starWidth = 8,
+  starHeight = 8,
+  stickerWidth = %d,
+  stickerHeight = %d,
+  stickerSlots = %d,
+  stickerPalettes = %d,
 }
-]], TrainerCardExtract.FORMAT_VERSION, W, H)
+]], TrainerCardExtract.FORMAT_VERSION, W, H, TrainerCardExtract.STAR_COUNT,
+    TrainerCardExtract.STICKER_SIZE, TrainerCardExtract.STICKER_SIZE,
+    TrainerCardExtract.STICKER_SLOTS, TrainerCardExtract.STICKER_PALETTES)
   cache:write(root .. "/manifest.lua", manifest)
 
   return {
@@ -229,12 +369,26 @@ end
 function TrainerCardExtract.ready(cache, cacheRoot)
   local root = (cacheRoot or default_cache_root()) .. "/" .. TrainerCardExtract.CACHE_SUB
   local need = root .. "/bg.rgba"
+  local extra = {
+    { root .. "/back_0.rgba", 240 * 160 * 4 },
+    { root .. "/star.rgba", 8 * 8 * 4 },
+    { root .. "/stickers.rgba", 64 * 64 * 4 },
+  }
   if cache then
     if cache.read then
       local d = cache:read(need)
-      return (d and #d >= 240 * 160 * 4) or false
+      if not (d and #d >= 240 * 160 * 4) then return false end
+      for _, row in ipairs(extra) do
+        local e = cache:read(row[1])
+        if not (e and #e >= row[2]) then return false end
+      end
+      return true
     elseif cache.exists then
-      return cache:exists(need) or false
+      if not cache:exists(need) then return false end
+      for _, row in ipairs(extra) do
+        if not cache:exists(row[1]) then return false end
+      end
+      return true
     end
     return false
   end

@@ -4,7 +4,7 @@
 -- 2. Happiness Step Counter (128 steps): +1 friendship to all party Pokémon.
 -- 3. VS Seeker Battery (100 steps): Increments while the VS SEEKER is in the bag.
 -- 4. Overworld Poison (4 steps): 4-frame reddish screen flash, SE_FIELD_POISON, lethal faint at 0 HP.
--- 5. Egg Cycles & Daycare (256 steps): Decrements egg cycles -> EggHatchScene; +1 EXP per step in Daycare.
+-- 5. Egg Cycles & Daycare (daycare stepCounter == 255): Decrements egg cycles -> EggHatch; +1 EXP per step in Daycare.
 -- 6. Repel Counter: Decrements steps -> "Repel's effect wore off..." on expiration.
 
 local Pokemon = require("src.core.game3.pokemon")
@@ -144,13 +144,19 @@ function StepEvents.onStepTaken(session, game)
   session.vars[0x403F] = hapSteps
   session.happinessSteps = hapSteps
 
+  -- pokefirered/src/field_control_avatar.c:217
+  local MysteryGift = require("src.core.game3.mystery_gift")
+  MysteryGift.incrementNewsStepCounter(session)
+
   -- pokefirered/src/field_specials.c:2068
   local massage = tonumber(session.vars[0x4025]) or 0
   if massage < 500 then session.vars[0x4025] = massage + 1 end
 
   -- pokefirered/src/field_control_avatar.c:658
+  local forced = forced_step()
+  local poisonFainted = false
   local vsChargeDone = false
-  if not forced_step() then
+  if not forced then
     local VsSeeker = require("src.core.game3.vs_seeker")
     if VsSeeker.onStep(session) then
       vsChargeDone = true
@@ -198,6 +204,8 @@ function StepEvents.onStepTaken(session, game)
       StepEvents._poisonFlashTimer = 4 / 60
       se(35) -- SE_FIELD_POISON
 
+      -- pokefirered/src/field_control_avatar.c:727 FLDPSN_FNT
+      poisonFainted = #faintedMons > 0
       for _, fainted in ipairs(faintedMons) do
         push_event({
           type = "poison_faint",
@@ -229,42 +237,46 @@ function StepEvents.onStepTaken(session, game)
   session.vars[0x4040] = psnSteps
   session.poisonSteps = psnSteps
 
-  -- 4. Daycare EXP & Egg Hatching Cycles (every 256 steps)
-  local eggSteps = (tonumber(session.eggSteps) or 0) + 1
-  if eggSteps >= 256 then
-    eggSteps = 0
-    for slotIdx, mon in ipairs(party) do
-      local isEgg = mon.isEgg or (type(mon.egg) == "boolean" and mon.egg)
-      if isEgg then
-        local cycles = tonumber(mon.friendship or mon.eggCycles or mon.cycles) or 20
-        cycles = math.max(0, cycles - 1)
-        mon.friendship = cycles
-        mon.eggCycles = cycles
-        if cycles == 0 then
-          push_event({
-            type = "egg_hatch",
-            mon = mon,
-            slot = slotIdx,
-            run = function(onDone)
-              local EvolutionScene = require("src.ui.game3.evolution_scene")
-              local Audio = require("src.core.game3.audio")
-              mon.isEgg = false
-              mon.egg = false
-              mon.level = 5
-              Pokemon.applyStats(mon)
-              EvolutionScene.start(mon, mon.species or mon.speciesId, {
+  -- pokefirered/src/field_control_avatar.c:670 ShouldEggHatch
+  if not forced and not poisonFainted then
+    local Daycare = package.loaded["src.core.game3.daycare"]
+      or require("src.core.game3.daycare")
+    local _, hatchSlot = Daycare.step(session)
+    local hatching = hatchSlot and party[hatchSlot]
+    if hatching then
+      -- pokefirered/src/field_control_avatar.c:673 EventScript_EggHatch
+      push_event({
+        type = "egg_hatch",
+        mon = hatching,
+        slot = hatchSlot,
+        run = function(onDone)
+          local EggHatch = require("src.ui.game3.egg_hatch")
+          local Audio = require("src.core.game3.audio")
+          local Hud = require("src.ui.game3.hud")
+          -- pokefirered/data/scripts/day_care.inc:112 DayCare_Text_Huh
+          Hud.openMessage(game, Strings("Huh?"), {
+            done = function()
+              -- pokefirered/data/scripts/day_care.inc:113 special EggHatch
+              EggHatch.start(hatching, {
                 session = session,
-                isEggHatch = true,
+                slot = hatchSlot,
                 savedSong = Audio._mapSong,
                 onDone = onDone,
               })
             end,
           })
-        end
-      end
+        end,
+      })
+      -- pokefirered/src/field_control_avatar.c:672 IncrementGameStat(GAME_STAT_HATCHED_EGGS)
+      if type(session.gameStats) ~= "table" then session.gameStats = {} end
+      -- pokefirered/include/constants/game_stat.h:17
+      local hatched = math.floor(tonumber(session.gameStats[13]) or 0)
+      session.gameStats[13] = math.min(0xFFFFFF, hatched + 1)
+      -- pokefirered/src/field_control_avatar.c:674 return TRUE
+      StepEvents.onRepelStep(session, game)
+      return
     end
   end
-  session.eggSteps = eggSteps
 
   -- pokefirered/src/safari_zone.c:60 CB2_EndSafariBattle
   local Field = package.loaded["src.core.game3.field"]

@@ -12,6 +12,16 @@ AltLayouts.ROWS = {
   { id = 319, map = "ThreeIsland_DunsparceTunnel", width = 30, height = 7 },
 }
 
+-- pokefirered/src/trainer_tower.c:554, include/constants/layouts.h:355, :363
+AltLayouts.TOWER_ROWS = {}
+for floor = 1, 8 do
+  local map = "TrainerTower_" .. floor .. "F"
+  AltLayouts.TOWER_ROWS[#AltLayouts.TOWER_ROWS + 1] =
+    { id = 365 + floor, map = map, width = 18, height = 17 }
+  AltLayouts.TOWER_ROWS[#AltLayouts.TOWER_ROWS + 1] =
+    { id = 373 + floor, map = map, width = 18, height = 17 }
+end
+
 AltLayouts.KEY_PREFIX = "alt_"
 
 function AltLayouts.key(id)
@@ -44,7 +54,10 @@ function AltLayouts.build(rom, version, grids, borders, padEven)
   local MapCatalog = require("src.import.gba.map_catalog")
   local Maps = require("src.import.gba.maps")
   local added = {}
-  for _, row in ipairs(AltLayouts.ROWS) do
+  local rows = {}
+  for _, row in ipairs(AltLayouts.ROWS) do rows[#rows + 1] = row end
+  for _, row in ipairs(AltLayouts.TOWER_ROWS) do rows[#rows + 1] = row end
+  for _, row in ipairs(rows) do
     local ownerId = MapCatalog.resolve(row.map)
     local owner = ownerId and grids and grids[ownerId]
     local layoutOff = AltLayouts.layoutOffset(rom, version, row.id)

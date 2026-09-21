@@ -135,8 +135,9 @@ check(Flags.getFlag(dexStore, nil, 0x840) ~= true, "0x179 leaves FLAG_SYS_NATION
 Natives.special(ctx8, Std.SPECIAL.EnableNationalPokedex, { log = function() end })
 check(Flags.getFlag(dexStore, nil, 0x840) == true, "0x16F EnableNationalPokedex sets it")
 
-print("[test] 9. ChooseMonForMoveTutor clears VAR_RESULT so the tutor flag is not burned")
--- pokefirered/data/scripts/move_tutors.inc:10
+print("[test] 9. ChooseMonForMoveTutor opens the MOVE TUTOR party menu and answers FALSE on a cancel")
+-- pokefirered/src/party_menu.c:5793 ChooseMonForMoveTutor
+local PartyMenu9 = require("src.ui.game3.party_menu")
 local ctx9 = newCtx()
 local tutorPicker = false
 Flags.setVar(nil, ctx9, 0x800D, 1)
@@ -145,10 +146,15 @@ local yield9 = Natives.special(ctx9, Std.SPECIAL.ChooseMonForMoveTutor, {
   log = function() end,
   chooseParty = function(_, done) tutorPicker = true; done(0) end,
 })
-check(Flags.getVar(nil, ctx9, 0x800D) == 0, "VAR_RESULT = FALSE after the tutor special (got "
+check(yield9 == true, "the tutor special holds the script while the picker is up")
+check(PartyMenu9.isOpen() and PartyMenu9.mode == "move_tutor",
+  "the party menu is in the MOVE TUTOR action (got " .. tostring(PartyMenu9.mode) .. ")")
+check(not tutorPicker, "the tutor drives the party menu itself, not the chooseParty seam")
+PartyMenu9.close()
+-- pokefirered/src/party_menu.c:4841
+check(Flags.getVar(nil, ctx9, 0x800D) == 0, "VAR_RESULT = FALSE after a cancel (got "
   .. tostring(Flags.getVar(nil, ctx9, 0x800D)) .. ")")
-check(yield9 == false, "the tutor special does not hold the script")
-check(not tutorPicker, "no party picker while no tutor move can be taught")
+check(ctx9.nativePoll and ctx9.nativePoll() == true, "the script resumes once the menu closes")
 
 print("[test] 10. the nickname keyboard buffers the old nickname in STR_VAR_3")
 local ctx10 = newCtx()

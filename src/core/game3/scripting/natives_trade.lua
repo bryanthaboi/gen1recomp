@@ -12,10 +12,8 @@ local SPECIES_EGG = 412 -- pokefirered/include/constants/species.h:421
 local METLOC_IN_GAME_TRADE = 0xFE -- pokefirered/include/constants/region_map_sections.h:218
 local TRADED_FRIENDSHIP = 70 -- pokefirered/src/trade_scene.c:1075
 
--- pokefirered/src/trade_scene.c:2774
+-- pokefirered/src/trade_scene.c:2778
 local FADE_FRAMES = 16
--- pokefirered/src/trade_scene.c:2262
-local HOLD_FRAMES = 60
 
 -- pokefirered/src/data/ingame_trades.h:1 sInGameTrades, FIRERED branch
 local TRADES = {
@@ -77,6 +75,18 @@ Trade.MAIL_MESSAGES = TRADE_MAIL_MESSAGES
 -- pokefirered/src/trade.c:144 gLinkPartnerMail
 Trade.PARTNER_MAIL = {}
 
+-- pokefirered/src/trade_scene.c:2488 gLinkPartnerMail[0] = mail
+function Trade.setPartnerMail(mailNum, record)
+  local id = tonumber(mailNum)
+  if not id then return false end
+  Trade.PARTNER_MAIL[id] = record
+  return true
+end
+
+function Trade.clearPartnerMail()
+  Trade.PARTNER_MAIL = {}
+end
+
 local function flagsMod()
   return require("src.core.game3.scripting.flags")
 end
@@ -131,6 +141,130 @@ local function nicknameOf(mon)
   if not mon then return "" end
   if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   return speciesName(speciesOf(mon))
+end
+
+-- pokefirered/include/constants/trade.h:24
+Trade.CAN_TRADE_MON = 0
+Trade.CANT_TRADE_LAST_MON = 1
+Trade.CANT_TRADE_NATIONAL = 2
+Trade.CANT_TRADE_EGG_YET = 3
+Trade.CANT_TRADE_INVALID_MON = 4
+Trade.CANT_TRADE_PARTNER_EGG_YET = 5
+
+-- pokefirered/include/constants/species.h:157 KANTO_SPECIES_END
+local KANTO_SPECIES_END = 151
+local SPECIES_MEW = 151 -- pokefirered/include/constants/species.h:155
+local SPECIES_DEOXYS = 410 -- pokefirered/include/constants/species.h:419
+local VERSION_RUBY = 2 -- pokefirered/include/constants/global.h:9
+local VERSION_SAPPHIRE = 3 -- pokefirered/include/constants/global.h:10
+
+-- pokefirered/src/pokemon.c:3049 MON_DATA_SPECIES_OR_EGG
+local function speciesOrEgg(mon)
+  if not mon then return SPECIES_NONE end
+  if isEgg(mon) then return SPECIES_EGG end
+  return speciesOf(mon)
+end
+
+local function nationalUnlocked(session)
+  local ok, PokedexData = pcall(require, "src.core.game3.pokedex_data")
+  if not (ok and PokedexData and PokedexData.isNationalUnlocked) then return false end
+  session = session or sessionOf()
+  local okC, unlocked = pcall(PokedexData.isNationalUnlocked, session, session and session.dex)
+  return okC and unlocked == true
+end
+
+-- pokefirered/src/field_specials.c:2458 IsBadEggInParty
+function Trade.hasBadEgg(party)
+  party = party or partyOf()
+  for i = 1, 6 do
+    if party[i] and party[i].isBadEgg == true then return true end
+  end
+  return false
+end
+
+-- pokefirered/src/trade.c:2745 CanTradeSelectedMon
+function Trade.canTradeSelectedMon(party, monIdx, opts)
+  party = party or partyOf()
+  opts = opts or {}
+  local idx = (tonumber(monIdx) or 0) + 1
+  local count = tonumber(opts.partyCount) or #party
+  local species2, species = {}, {}
+  for i = 1, count do
+    species2[i] = speciesOrEgg(party[i])
+    species[i] = speciesOf(party[i])
+  end
+
+  local national = opts.nationalDex
+  if national == nil then national = nationalUnlocked(opts.session) end
+  if not national then
+    -- pokefirered/src/trade.c:2767
+    if species2[idx] and species2[idx] > KANTO_SPECIES_END then
+      return Trade.CANT_TRADE_NATIONAL
+    end
+    -- pokefirered/src/trade.c:2775
+    if species2[idx] == SPECIES_NONE then return Trade.CANT_TRADE_EGG_YET end
+  end
+
+  -- pokefirered/src/trade.c:2780
+  local partner = opts.partner
+  if partner then
+    local version = tonumber(partner.version) or 0
+    version = version % 0x100
+    if version ~= VERSION_RUBY and version ~= VERSION_SAPPHIRE then
+      local flags = tonumber(partner.progressFlags) or 0
+      if flags % 16 == 0 then
+        if species2[idx] == SPECIES_EGG then return Trade.CANT_TRADE_PARTNER_EGG_YET end
+        if species2[idx] and species2[idx] > KANTO_SPECIES_END then
+          return Trade.CANT_TRADE_INVALID_MON
+        end
+      end
+    end
+  end
+
+  -- pokefirered/src/trade.c:2795
+  if species[idx] == SPECIES_DEOXYS or species[idx] == SPECIES_MEW then
+    if party[idx] and party[idx].fatefulEncounter == false then
+      return Trade.CANT_TRADE_INVALID_MON
+    end
+  end
+
+  -- pokefirered/src/trade.c:2803
+  for i = 1, count do
+    if species2[i] == SPECIES_EGG then species2[i] = SPECIES_NONE end
+  end
+  local left = 0
+  for i = 1, count do
+    if i ~= idx then left = left + (species2[i] or 0) end
+  end
+  if left ~= 0 then return Trade.CAN_TRADE_MON end
+  return Trade.CANT_TRADE_LAST_MON
+end
+
+-- pokefirered/src/trade.c:546 sMessages
+function Trade.refusalText(code)
+  if code == Trade.CANT_TRADE_LAST_MON then
+    -- pokefirered/src/strings.c:301 gText_OnlyPkmnForBattle
+    return Strings("That's your only\nPOKéMON for battle.")
+  end
+  if code == Trade.CANT_TRADE_EGG_YET or code == Trade.CANT_TRADE_PARTNER_EGG_YET then
+    -- pokefirered/src/strings.c:303 gText_EggCantBeTradedNow
+    return Strings("An EGG can't be traded now.")
+  end
+  if code == Trade.CANT_TRADE_NATIONAL or code == Trade.CANT_TRADE_INVALID_MON then
+    -- pokefirered/src/strings.c:302 gText_PkmnCantBeTradedNow
+    return Strings("That POKéMON can't be traded\nnow.")
+  end
+  return nil
+end
+
+-- pokefirered/data/scripts/cable_club.inc:1440 CableClub_Text_YouHaveAMonThatCantBeTaken
+function Trade.badEggText()
+  return Strings("You have at least one POKéMON\nthat can't be taken.")
+end
+
+-- pokefirered/src/strings.c:304 gText_OtherTrainersPkmnCantBeTraded
+function Trade.peerMonRefusalText()
+  return Strings("The other TRAINER's POKéMON\ncan't be traded now.")
 end
 
 -- pokefirered/src/trade_scene.c:2500 GetInGameTradeMail
@@ -260,6 +394,8 @@ end
 
 -- pokefirered/src/trade_scene.c:2774 DoInGameTradeScene
 function Trade.sceneTask(ctx, adapters, tradeIdx, playerSlot)
+  local TradeScene = require("src.core.game3.trade_scene")
+  local entry = TRADES[tonumber(tradeIdx) or -1]
   local frames = 0
   local phase = "fadeout"
   return function()
@@ -269,48 +405,53 @@ function Trade.sceneTask(ctx, adapters, tradeIdx, playerSlot)
         if okF and Fade and Fade.MODE then fade(Fade.MODE.TO_BLACK) end
       end
       frames = frames + 1
+      -- pokefirered/src/trade_scene.c:2784 Task_InGameTrade
       if frames < FADE_FRAMES then return false end
-      frames = 0
-      phase = "hold"
-      return false
-    end
-    if phase == "hold" then
-      frames = frames + 1
-      if frames < HOLD_FRAMES then return false end
-      phase = "swap"
-      return false
-    end
-    if phase == "swap" then
+      phase = "scene"
       local session = sessionOf()
-      -- pokefirered/src/trade_scene.c:2276 TradeMons(gSpecialVar_0x8005, 0)
       local offered = Trade._offered
         or Trade.createTradeMon(tradeIdx, Trade.levelOfSlot(playerSlot))
       Trade._offered = nil
-      local received = nil
-      if offered and Trade.tradeMons(session, playerSlot, offered) then
-        received = offered
-      elseif adapters and adapters.log then
-        adapters.log("[game3] in-game trade " .. tostring(tradeIdx) .. " had no mon to swap")
+      local sent = partyOf()[(tonumber(playerSlot) or 0) + 1]
+      if not (offered and sent) then
+        if adapters and adapters.log then
+          adapters.log("[game3] in-game trade " .. tostring(tradeIdx) .. " had no mon to swap")
+        end
+        phase = "abort"
+        frames = 0
+        local okF, Fade = pcall(require, "src.ui.game3.fade")
+        if okF and Fade and Fade.MODE then fade(Fade.MODE.FROM_BLACK) end
+        return false
       end
-      phase = "evolving"
-      if received then
-        -- pokefirered/src/trade_scene.c:2277
-        Trade.tryTradeEvolution(received, session)
-        -- pokefirered/src/trade_scene.c:2445 BufferInGameTradeMonName
-        setStringVar(ctx, adapters, 1, nicknameOf(received))
-        setStringVar(ctx, adapters, 2, speciesName(speciesOf(received)))
-      end
+      local swapped = false
+      TradeScene.play(sent, offered, nil, {
+        otName = entry and Strings(entry.otName) or nil,
+        -- pokefirered/src/trade_scene.c:1776 TradeMons(gSpecialVar_0x8005, 0)
+        onSwap = function()
+          if not Trade.tradeMons(session, playerSlot, offered) then return end
+          swapped = true
+          -- pokefirered/src/trade_scene.c:2445 BufferInGameTradeMonName
+          setStringVar(ctx, adapters, 1, nicknameOf(offered))
+          setStringVar(ctx, adapters, 2, speciesName(speciesOf(offered)))
+        end,
+        -- pokefirered/src/trade_scene.c:1778
+        onEvolve = function()
+          if not swapped then return end
+          Trade.tryTradeEvolution(offered, session)
+        end,
+      })
       return false
     end
-    if phase == "evolving" then
-      if evolutionOpen() then return false end
-      phase = "fadein"
+    if phase == "abort" then
+      frames = frames + 1
+      return frames >= FADE_FRAMES
+    end
+    if phase == "scene" then
+      if TradeScene.step() then phase = "evolving" end
       return false
     end
-    -- pokefirered/src/trade_scene.c:2284 STATE_FADE_OUT_END
-    local okF, Fade = pcall(require, "src.ui.game3.fade")
-    if okF and Fade and Fade.MODE then fade(Fade.MODE.FROM_BLACK) end
-    return true
+    -- pokefirered/src/trade_scene.c:1777 gCB2_AfterEvolution
+    return not evolutionOpen()
   end
 end
 

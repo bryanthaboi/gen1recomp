@@ -524,6 +524,10 @@ local ITEM_WHITE_FLUTE = 43
 local ITEM_POKE_FLUTE = 350
 -- pokefirered/include/constants/items.h:432 ITEM_BICYCLE
 local ITEM_BICYCLE = 360
+-- pokefirered/include/constants/items.h:438 ITEM_TEACHY_TV
+local ITEM_TEACHY_TV = 366
+-- pokefirered/include/constants/items.h:435 ITEM_FAME_CHECKER
+local ITEM_FAME_CHECKER = 363
 local ITEM_AWAKENING = 17
 -- pokefirered/include/constants/flags.h:1330
 local FLAG_SYS_WHITE_FLUTE_ACTIVE = 0x803
@@ -768,6 +772,25 @@ local function useField(session, bag, id, partySlot)
     local BerryPouch = require("src.ui.game3.berry_pouch")
     BerryPouch.show(session, bag)
     return true, "berry_pouch", Strings("Opened BERRY POUCH.")
+  end
+
+  -- pokefirered/src/item_use.c:518 FieldUseFunc_TeachyTv
+  if id == ITEM_TEACHY_TV or id == "TEACHY_TV"
+      or ItemsData.toNumericId(id) == ITEM_TEACHY_TV then
+    local TeachyTv = require("src.core.game3.teachy_tv")
+    TeachyTv.show(session, bag)
+    return true, "teachy_tv", nil
+  end
+
+  -- pokefirered/src/item_use.c:680 FieldUseFunc_FameChecker
+  if id == ITEM_FAME_CHECKER or id == "FAME_CHECKER"
+      or ItemsData.toNumericId(id) == ITEM_FAME_CHECKER then
+    local FameCheckerUi = require("src.ui.game3.fame_checker")
+    -- pokefirered/src/item_use.c:696 UseFameCheckerFromBag
+    local okBag, BagMenu = pcall(require, "src.ui.game3.bag_menu")
+    local fromBag = okBag and BagMenu and BagMenu.open and true or false
+    FameCheckerUi.show(session, { fromBag = fromBag })
+    return true, "fame_checker", nil
   end
 
   do

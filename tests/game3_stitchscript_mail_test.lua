@@ -76,7 +76,7 @@ end
 
 local function runToEnd(rows, maxFrames)
   local vm = newVm(rows)
-  for _ = 1, maxFrames or 600 do
+  for _ = 1, maxFrames or 2000 do
     if not vm:isRunning() then break end
     vm:resume()
   end

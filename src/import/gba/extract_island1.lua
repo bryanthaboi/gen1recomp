@@ -391,12 +391,61 @@ function Extract.run(imports, cache, progressCb)
     maps = mapOrder,
   })
 
+  local warps = Versions.WARPS
+  local connections = {}
+  do
+    local ExtractMapEvents = require("src.import.gba.extract_map_events")
+    local romW = assert(Rom.open(imports, importId))
+    local romWarps, romConns = ExtractMapEvents.extractWarpsAndConnections(romW, version)
+    romW:clearCache()
+    warps = {}
+    for _, mapId in ipairs(mapOrder) do
+      local list = romWarps[mapId]
+      if list and #list > 0 then
+        for _, w in ipairs(list) do
+          if not w.destMap and w.mapGroup ~= nil then
+            w.destMap = MapCatalog.mapIdFor(w.mapGroup, w.mapNum)
+          end
+        end
+        warps[mapId] = list
+      else
+        warps[mapId] = Versions.WARPS[mapId] or {}
+      end
+    end
+    connections = {}
+    for _, mapId in ipairs(mapOrder) do
+      local conns = romConns[mapId] or {}
+      local fixed = {}
+      for dir, c in pairs(conns) do
+        local dest = c.map
+        if (not dest or dest:match("^g%d+_m%d+$")) and c.mapGroup ~= nil then
+          dest = MapCatalog.mapIdFor(c.mapGroup, c.mapNum) or dest
+        elseif dest then
+          dest = MapCatalog.resolve(dest) or dest
+        end
+        if dest then
+          fixed[dir] = { map = dest, offset = tonumber(c.offset) or 0 }
+        end
+      end
+      connections[mapId] = fixed
+    end
+  end
+
   -- Native FRLG mid atlas + pret palettes (game3 live path).
   progress(progressCb, 6, "native_pack", 0, 1)
   local NativePack = require("src.import.gba.native_pack")
+  local warpCells = {}
+  for mapId, list in pairs(warps or {}) do
+    local set = {}
+    for _, w in ipairs(list) do
+      local x, y = tonumber(w.x), tonumber(w.y)
+      if x and y then set[NativePack.warpKey(x, y)] = true end
+    end
+    warpCells[mapId] = set
+  end
   NativePack.writeExtract(
     cache, Extract.CACHE_ROOT, bundles, grids, borders, pairNames, midIndex,
-    Tileset.behaviorOf, Collision.fromCell, scriptMids)
+    Tileset.behaviorOf, Collision.fromCell, scriptMids, warpCells)
 
   -- OW sprites + tileset anims + encounters + audio + chrome from ROM
   do
@@ -522,46 +571,6 @@ function Extract.run(imports, cache, progressCb)
       if not okHl then print("[heal_locations] warn: " .. tostring(errHl)) end
     end
     rom2:clearCache()
-  end
-
-  local warps = Versions.WARPS
-  local connections = {}
-  do
-    local ExtractMapEvents = require("src.import.gba.extract_map_events")
-    local romW = assert(Rom.open(imports, importId))
-    local romWarps, romConns = ExtractMapEvents.extractWarpsAndConnections(romW, version)
-    romW:clearCache()
-    warps = {}
-    for _, mapId in ipairs(mapOrder) do
-      local list = romWarps[mapId]
-      if list and #list > 0 then
-        for _, w in ipairs(list) do
-          if not w.destMap and w.mapGroup ~= nil then
-            w.destMap = MapCatalog.mapIdFor(w.mapGroup, w.mapNum)
-          end
-        end
-        warps[mapId] = list
-      else
-        warps[mapId] = Versions.WARPS[mapId] or {}
-      end
-    end
-    connections = {}
-    for _, mapId in ipairs(mapOrder) do
-      local conns = romConns[mapId] or {}
-      local fixed = {}
-      for dir, c in pairs(conns) do
-        local dest = c.map
-        if (not dest or dest:match("^g%d+_m%d+$")) and c.mapGroup ~= nil then
-          dest = MapCatalog.mapIdFor(c.mapGroup, c.mapNum) or dest
-        elseif dest then
-          dest = MapCatalog.resolve(dest) or dest
-        end
-        if dest then
-          fixed[dir] = { map = dest, offset = tonumber(c.offset) or 0 }
-        end
-      end
-      connections[mapId] = fixed
-    end
   end
 
   local wl = { "return {\n" }

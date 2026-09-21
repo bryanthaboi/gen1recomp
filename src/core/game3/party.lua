@@ -155,6 +155,27 @@ Party.MON_GIVEN_TO_PARTY = 0
 Party.MON_GIVEN_TO_PC = 1
 Party.MON_CANT_GIVE = 2
 
+-- pokefirered/include/constants/global.h:11
+Party.VERSION_FIRE_RED = 4
+-- pokefirered/include/constants/global.h:12
+Party.VERSION_LEAF_GREEN = 5
+
+-- pokefirered/include/config.h:45 GAME_VERSION
+function Party.metGame()
+  local ok, GameVersion = pcall(require, "src.core.GameVersion")
+  if ok and GameVersion and GameVersion.current == "leafgreen" then
+    return Party.VERSION_LEAF_GREEN
+  end
+  return Party.VERSION_FIRE_RED
+end
+
+-- pokefirered/src/pokemon.c:1822 gSaveBlock2Ptr->playerGender
+function Party.otGender(session)
+  local g = session and session.gender
+  if g == 1 or g == "female" or g == "F" or g == "girl" then return 1 end
+  return 0
+end
+
 --- Append a Gen3-shaped opaque mon for script givemon (starter / gifts).
 -- pokefirered/src/pokemon.c:3686
 function Party.giveMon(session, species, level, nickname, opts)
@@ -221,12 +242,16 @@ function Party.giveMon(session, species, level, nickname, opts)
     friendship = friendship,
     -- pokefirered/src/pokemon.c:1815 CreateBoxMon
     metLocation = Pokemon.currentMapSec and Pokemon.currentMapSec(session) or nil,
+    -- pokefirered/src/pokemon.c:1819
+    metGame = Party.metGame(),
     pokerus = 0,
     ot = session.name or session.playerName or "RED",
     otName = session.name or session.playerName or "RED",
     otId = session.trainerId or session.id or session.playerId or 12345,
     -- pokefirered/src/pokemon.c:1796 CreateBoxMon OT_ID_PLAYER_ID
     otSecretId = tonumber(session.secretId or session.otSecretId) or nil,
+    -- pokefirered/src/pokemon.c:1822
+    otGender = Party.otGender(session),
     pokeball = 4, -- Poké Ball
   }
   Pokemon.applyStats(mon)

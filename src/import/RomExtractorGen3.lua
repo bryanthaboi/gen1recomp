@@ -288,6 +288,18 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local MapSectionsExtract = require("src.import.gba.map_sections_extract")
   local MultichoiceExtract = require("src.import.gba.multichoice_extract")
   local HealLocationsExtract = require("src.import.gba.heal_locations_extract")
+  local DoorAnimExtract = require("src.import.gba.door_anim_extract")
+  local SlotMachineExtract = require("src.import.gba.slot_machine_extract")
+  local TradeExtract = require("src.import.gba.trade_extract")
+  local LinkArtExtract = require("src.import.gba.link_art_extract")
+  local FameCheckerExtract = require("src.import.gba.fame_checker_extract")
+  local TeachyTvExtract = require("src.import.gba.teachy_tv_extract")
+  local MysteryGiftExtract = require("src.import.gba.mystery_gift_extract")
+  local TrainerTowerExtract = require("src.import.gba.trainer_tower_extract")
+  local TutorExtract = require("src.import.gba.tutor_extract")
+  local MuseumExtract = require("src.import.gba.museum_extract")
+  local MoveRelearnerExtract = require("src.import.gba.move_relearner_extract")
+  local EggExtract = require("src.import.gba.egg_extract")
   local Extract = require("src.import.gba.extract_island1")
   local prevRoot = Extract.CACHE_ROOT
   Extract.CACHE_ROOT = GBA_ROOT
@@ -297,7 +309,22 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local needSections = not CacheFs.exists(GBA_ROOT .. "/region_map/map_sections.lua")
   local needChoices = not MultichoiceExtract.ready(cache, GBA_ROOT)
   local needHeal = not HealLocationsExtract.ready(cache, GBA_ROOT)
-  if not (needRegion or needSections or needChoices or needHeal) then
+  local needDoors = not DoorAnimExtract.ready(cache, GBA_ROOT)
+  local needSlots = not SlotMachineExtract.ready(cache, GBA_ROOT)
+  local needTrade = not TradeExtract.ready(cache, GBA_ROOT)
+  local needLinkArt = not LinkArtExtract.ready(cache, GBA_ROOT)
+  local needFame = not FameCheckerExtract.ready(cache, GBA_ROOT)
+  local needTeachy = not TeachyTvExtract.ready(cache, GBA_ROOT)
+  local needGift = not MysteryGiftExtract.ready(cache, GBA_ROOT)
+  local needTower = not TrainerTowerExtract.ready(cache, GBA_ROOT)
+  local needTutor = not TutorExtract.ready(cache, GBA_ROOT)
+  local needMuseum = not MuseumExtract.ready(cache, GBA_ROOT)
+  local needRelearner = not MoveRelearnerExtract.ready(cache, GBA_ROOT)
+  local needEgg = not EggExtract.ready(cache, GBA_ROOT)
+  if not (needRegion or needSections or needChoices or needHeal or needDoors
+    or needSlots or needTrade or needLinkArt or needFame or needTeachy
+    or needGift or needTower or needTutor or needMuseum or needRelearner
+    or needEgg) then
     Extract.CACHE_ROOT = prevRoot
     return true, { skipped = true }
   end
@@ -330,6 +357,66 @@ function RomExtractorGen3:runAuxExtracts(sha1)
       local okHl, detailHl = HealLocationsExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
       if not okHl then print("[heal_locations] warn: " .. tostring(detailHl)) end
       out.healLocations = detailHl
+    end
+    if needDoors then
+      local okDr, detailDr = pcall(DoorAnimExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okDr then print("[door_extract] warn: " .. tostring(detailDr)) end
+      out.doors = okDr and detailDr or false
+    end
+    if needSlots then
+      local okSl, detailSl = pcall(SlotMachineExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okSl then print("[slot_machine_extract] warn: " .. tostring(detailSl)) end
+      out.slotMachine = okSl and detailSl or false
+    end
+    if needTrade then
+      local okTr, detailTr = pcall(TradeExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okTr then print("[trade_extract] warn: " .. tostring(detailTr)) end
+      out.trade = okTr and detailTr or false
+    end
+    if needLinkArt then
+      local okLk, detailLk = pcall(LinkArtExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okLk then print("[link_art_extract] warn: " .. tostring(detailLk)) end
+      out.linkArt = okLk and detailLk or false
+    end
+    if needFame then
+      local okFc, detailFc = pcall(FameCheckerExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okFc then print("[fame_checker_extract] warn: " .. tostring(detailFc)) end
+      out.fameChecker = okFc and detailFc or false
+    end
+    if needTeachy then
+      local okTv, detailTv = pcall(TeachyTvExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okTv then print("[teachy_tv_extract] warn: " .. tostring(detailTv)) end
+      out.teachyTv = okTv and detailTv or false
+    end
+    if needGift then
+      local okMg, detailMg = pcall(MysteryGiftExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okMg then print("[mystery_gift_extract] warn: " .. tostring(detailMg)) end
+      out.mysteryGift = okMg and detailMg or false
+    end
+    if needTower then
+      local okTt, detailTt = pcall(TrainerTowerExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okTt then print("[trainer_tower_extract] warn: " .. tostring(detailTt)) end
+      out.trainerTower = okTt and detailTt or false
+    end
+    if needTutor then
+      local okTu, detailTu = pcall(TutorExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okTu then print("[tutor_extract] warn: " .. tostring(detailTu)) end
+      out.tutor = okTu and detailTu or false
+    end
+    if needMuseum then
+      local okMu, detailMu = pcall(MuseumExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okMu then print("[museum_extract] warn: " .. tostring(detailMu)) end
+      out.museum = okMu and detailMu or false
+    end
+    if needRelearner then
+      local okMr, detailMr = pcall(MoveRelearnerExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okMr then print("[move_relearner_extract] warn: " .. tostring(detailMr)) end
+      out.moveRelearner = okMr and detailMr or false
+    end
+    if needEgg then
+      local okEg, detailEg = pcall(EggExtract.run, rom, cache, { cacheRoot = GBA_ROOT })
+      if not okEg then print("[egg_extract] warn: " .. tostring(detailEg)) end
+      out.egg = okEg and detailEg or false
     end
     return out
   end)

@@ -5,6 +5,7 @@ local DIR = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/game3_move_tutor"
 local TUNNEL = "FR_ROCK_TUNNEL_B1F"
 local TUTOR_X, TUTOR_Y = 2, 29
 local FLAG_TUTOR_ROCK_SLIDE = 0x2C2 -- pokefirered/include/constants/flags.h:733
+local ROCK_SLIDE = 157 -- pokefirered/include/constants/moves.h:161
 
 local failures = 0
 
@@ -62,6 +63,13 @@ local function run(game)
 
   local function ctx() return Space.vm and Space.vm.ctx end
   local function getVar(id) return Flags.getVar(Space.store, ctx(), id) end
+
+  local lastResult = nil
+  local function sampleResult()
+    if not (Space.vm and Space.vm:isRunning()) then return end
+    local v = getVar(0x800D)
+    if v then lastResult = v end
+  end
   local function tutorFlag()
     return Flags.getFlag(Space.store, ctx(), FLAG_TUTOR_ROCK_SLIDE) == true
   end
@@ -84,7 +92,10 @@ local function run(game)
     U.tap(game, "a")
     U.wait(30)
     for _ = 1, 400 do
-      if PartyMenu.isOpen and PartyMenu.isOpen() then pickerSeen = true end
+      if PartyMenu.isOpen and PartyMenu.isOpen() then
+        pickerSeen = true
+        break
+      end
       if not (Space.vm and Space.vm:isRunning()) and not Message.isOpen() then break end
       local page = Message.isOpen() and Message.currentPage() or nil
       if page and pages[#pages] ~= page then
@@ -116,29 +127,68 @@ local function run(game)
   result(not tutorFlag(), "FLAG_TUTOR_ROCK_SLIDE starts clear")
 
   local text, pickerSeen = talk("tutor", {
-    ["Which POKéMON"] = "move_tutor_01_which_mon.png",
-    ["scared after all"] = "move_tutor_02_declined.png",
+    ["Want to try using"] = "move_tutor_01_offer.png",
   })
   result(text:find("ROCK SLIDE", 1, true) ~= nil,
     "the tutor offered ROCK SLIDE")
   result(text:find("learned only", 1, true) ~= nil,
     "the once-only question ran")
-  -- pokefirered/data/scripts/move_tutors.inc:64
-  result(text:find("scared after all", 1, true) ~= nil,
-    "the tutor took the declined branch with nothing taught")
-  result(getVar(0x800D) == 0,
-    "VAR_RESULT = FALSE after ChooseMonForMoveTutor, got " .. tostring(getVar(0x800D)))
-  result(not pickerSeen, "no party picker with no tutor move to teach")
-  result(not tutorFlag(), "FLAG_TUTOR_ROCK_SLIDE is not burned")
+  -- pokefirered/src/party_menu.c:5793
+  result(pickerSeen, "ChooseMonForMoveTutor opened the party menu")
+  if not pickerSeen then return end
+  U.wait(30)
+  result(PartyMenu.mode == "move_tutor",
+    "the menu is in the MOVE TUTOR action, mode=" .. tostring(PartyMenu.mode))
+  U.shot(game, DIR .. "/move_tutor_02_party_menu.png")
 
-  U.wait(60)
-  local text2 = talk("second visit", {
-    ["Want to try using"] = "move_tutor_03_still_offered.png",
-  })
-  result(text2:find("ROCK SLIDE", 1, true) ~= nil,
-    "the tutor still offers the move on a second visit")
-  result(text2:find("might be scary", 1, true) == nil,
-    "the tutor does not claim it already taught the move")
+  local MoveLearn = require("src.core.game3.move_learn")
+  local Pokemon = require("src.core.game3.pokemon")
+  local mon = session.party[1]
+  local desc = PartyMenu.slotDescription(1)
+  say("[driver] the GEODUDE slot reads " .. tostring(desc))
+
+  -- pokefirered/src/data/pokemon/tutor_learnsets.h:22
+  if MoveLearn.tutorLearnsets() then
+    result(desc == "ABLE!", "the GEODUDE slot reads ABLE!, got " .. tostring(desc))
+    for _ = 1, 40 do
+      sampleResult()
+      if not PartyMenu.isOpen() then break end
+      U.tap(game, "a")
+      U.wait(18)
+    end
+    result(Pokemon.knowsMove(mon, ROCK_SLIDE), "the GEODUDE learned ROCK SLIDE")
+    for _ = 1, 200 do
+      sampleResult()
+      if not (Space.vm and Space.vm:isRunning()) and not Message.isOpen() then break end
+      if Choice.active or (Message.isWaiting and Message.isWaiting()) then
+        U.tap(game, "a")
+      end
+      U.wait(6)
+    end
+    result(lastResult == 1,
+      "VAR_RESULT = TRUE after the teach, got " .. tostring(lastResult))
+    result(tutorFlag(), "FLAG_TUTOR_ROCK_SLIDE is burned")
+    U.shot(game, DIR .. "/move_tutor_03_taught.png")
+  else
+    say("[driver] no pokemon/tutor.lua in this cache: sTutorLearnsets is not imported,"
+      .. " so every regular tutor reads NOT ABLE!")
+    result(desc == "NOT ABLE!",
+      "the GEODUDE slot reads NOT ABLE! without the imported table, got " .. tostring(desc))
+    U.tap(game, "b")
+    U.wait(30)
+    for _ = 1, 200 do
+      sampleResult()
+      if not (Space.vm and Space.vm:isRunning()) and not Message.isOpen() then break end
+      if Choice.active or (Message.isWaiting and Message.isWaiting()) then
+        U.tap(game, "a")
+      end
+      U.wait(6)
+    end
+    result(lastResult == 0,
+      "VAR_RESULT = FALSE after cancelling, got " .. tostring(lastResult))
+    result(not Pokemon.knowsMove(mon, ROCK_SLIDE), "nothing was taught")
+    result(not tutorFlag(), "FLAG_TUTOR_ROCK_SLIDE is not burned")
+  end
 end
 
 return function(game)

@@ -13,6 +13,9 @@ Doors.SOUND_NORMAL = SE.SE_DOOR or 241
 Doors.SOUND_SLIDING = SE.SE_SLIDING_DOOR or 18
 Doors.SOUND_EXIT = SE.SE_EXIT or 238
 
+-- include/constants/metatile_behaviors.h:81
+local MB_WARP_DOOR = 0x69
+
 Doors.FRAME_TICKS = 4 -- 4 engine frames per door animation step (FRLG standard)
 Doors.NUM_FRAMES = 3  -- 3 animation frames (0: closed, 1: half, 2: fully open)
 
@@ -22,11 +25,24 @@ Doors._manifest = nil
 Doors._sheets = {} -- [tileName] = { image, quads, width, height, frame_width, frame_height, frames }
 Doors._manifestLoaded = false
 
+local function cacheRoot()
+  local okD, Dataset = pcall(require, "src.core.game3.dataset")
+  if okD and Dataset and Dataset.mountExtractRoots then
+    Dataset.mountExtractRoots()
+  end
+  local okE, Extract = pcall(require, "src.import.gba.extract_island1")
+  return (okE and Extract and Extract.CACHE_ROOT) or "data/generated/gba"
+end
+
+local function doorsRoot()
+  return cacheRoot() .. "/doors"
+end
+
 local function loadManifest()
   if Doors._manifestLoaded then return Doors._manifest end
   Doors._manifestLoaded = true
 
-  local rel = "data/generated/gba/doors/manifest.lua"
+  local rel = doorsRoot() .. "/manifest.lua"
   local content = nil
 
   local okD, Dataset = pcall(require, "src.core.game3.dataset")
@@ -67,45 +83,10 @@ local function loadManifest()
     end
   end
 
-  -- Builtin fallback table matching FRLG field_door.c sDoorGraphics table
-  local DEFAULT_BY_MID = {
-    [0x03D] = { mid = 0x03D, tile = "General", sound = "normal", size = "1x1", tileset = "primary" },
-    [0x062] = { mid = 0x062, tile = "SlidingSingle", sound = "sliding", size = "1x1", tileset = "primary" },
-    [0x15B] = { mid = 0x15B, tile = "SlidingDouble", sound = "sliding", size = "1x1", tileset = "primary" },
-    [0x2A3] = { mid = 0x2A3, tile = "Pallet", sound = "normal", size = "1x1", tileset = "pallet" },
-    [0x2AC] = { mid = 0x2AC, tile = "OaksLab", sound = "normal", size = "1x1", tileset = "pallet" },
-    [0x299] = { mid = 0x299, tile = "Viridian", sound = "normal", size = "1x1", tileset = "viridian" },
-    [0x2CE] = { mid = 0x2CE, tile = "Pewter", sound = "normal", size = "1x1", tileset = "pewter" },
-    [0x284] = { mid = 0x284, tile = "Saffron", sound = "normal", size = "1x1", tileset = "saffron" },
-    [0x2BC] = { mid = 0x2BC, tile = "SilphCo", sound = "sliding", size = "1x1", tileset = "saffron" },
-    [0x298] = { mid = 0x298, tile = "Cerulean", sound = "normal", size = "1x1", tileset = "cerulean" },
-    [0x2A2] = { mid = 0x2A2, tile = "Lavender", sound = "normal", size = "1x1", tileset = "lavender" },
-    [0x29E] = { mid = 0x29E, tile = "Vermilion", sound = "normal", size = "1x1", tileset = "vermilion" },
-    [0x2E1] = { mid = 0x2E1, tile = "PokemonFanClub", sound = "normal", size = "1x1", tileset = "vermilion" },
-    [0x294] = { mid = 0x294, tile = "DeptStore", sound = "sliding", size = "1x1", tileset = "celadon" },
-    [0x2BF] = { mid = 0x2BF, tile = "Fuchsia", sound = "normal", size = "1x1", tileset = "fuchsia" },
-    [0x2D2] = { mid = 0x2D2, tile = "SafariZone", sound = "sliding", size = "1x1", tileset = "fuchsia" },
-    [0x2AD] = { mid = 0x2AD, tile = "CinnabarLab", sound = "normal", size = "1x1", tileset = "cinnabar" },
-    [0x297] = { mid = 0x297, tile = "Sevii123", sound = "normal", size = "1x1", tileset = "sevii_123" },
-    [0x29B] = { mid = 0x29B, tile = "JoyfulGameCorner", sound = "sliding", size = "1x1", tileset = "sevii_123" },
-    [0x2EB] = { mid = 0x2EB, tile = "OneIslandPokeCenter", sound = "normal", size = "1x1", tileset = "sevii_123" },
-    [0x29A] = { mid = 0x29A, tile = "Sevii45", sound = "normal", size = "1x1", tileset = "sevii_45" },
-    [0x2B9] = { mid = 0x2B9, tile = "FourIslandDayCare", sound = "normal", size = "1x1", tileset = "sevii_45" },
-    [0x2AF] = { mid = 0x2AF, tile = "RocketWarehouse", sound = "normal", size = "1x1", tileset = "sevii_45" },
-    [0x30C] = { mid = 0x30C, tile = "Sevii67", sound = "normal", size = "1x1", tileset = "sevii_67" },
-    [0x28D] = { mid = 0x28D, tile = "DeptStoreElevator", sound = "sliding", size = "1x2", tileset = "dept_store" },
-    [0x2DE] = { mid = 0x2DE, tile = "CableClub", sound = "sliding", size = "1x2", tileset = "cable_club" },
-    [0x2AB] = { mid = 0x2AB, tile = "HideoutElevator", sound = "sliding", size = "1x2", tileset = "silph_co" },
-    [0x281] = { mid = 0x281, tile = "SSAnne", sound = "normal", size = "1x2", tileset = "ss_anne" },
-    [0x2E2] = { mid = 0x2E2, tile = "SilphCoElevator", sound = "sliding", size = "1x2", tileset = "silph_co" },
-    [0x296] = { mid = 0x296, tile = "Teleporter", sound = "sliding", size = "1x2", tileset = "sea_cottage" },
-    [0x2C3] = { mid = 0x2C3, tile = "TrainerTowerLobbyElevator", sound = "sliding", size = "1x2", tileset = "trainer_tower" },
-    [0x356] = { mid = 0x356, tile = "TrainerTowerRoofElevator", sound = "sliding", size = "1x2", tileset = "trainer_tower" },
-  }
-
+  print("[game3/doors] no door manifest in the cache; door animations are off")
   Doors._manifest = {
     doors = {},
-    by_mid = DEFAULT_BY_MID,
+    by_mid = {},
   }
   return Doors._manifest
 end
@@ -181,14 +162,23 @@ local function resolveLayout(mapId)
   if okD and Dataset then
     local cache = Dataset.cache and Dataset.cache()
     if cache then
-      local rel1 = "data/generated/gba/native/layouts/" .. mapId .. ".mid"
-      local rel2 = "data/generated/gba/native/layouts/FR_" .. key .. ".mid"
-      local rel3 = "data/generated/gba/native/layouts/" .. key .. ".mid"
+      local nativeRoot = cacheRoot() .. "/native"
+      local rel1 = nativeRoot .. "/layouts/" .. mapId .. ".mid"
+      local rel2 = nativeRoot .. "/layouts/FR_" .. key .. ".mid"
+      local rel3 = nativeRoot .. "/layouts/" .. key .. ".mid"
       local blob = cache:read(rel1) or cache:read(rel2) or cache:read(rel3)
       if blob then
         local pair = nil
-        local okM, natManifest = pcall(require, "data.generated.gba.native.manifest")
-        if okM and natManifest and natManifest.layouts then
+        local natManifest = nil
+        local natSrc = cache:read(nativeRoot .. "/manifest.lua")
+        if natSrc then
+          local chunk = load(natSrc, "@native/manifest.lua", "t", {})
+          if chunk then
+            local okM, res = pcall(chunk)
+            if okM and type(res) == "table" then natManifest = res end
+          end
+        end
+        if natManifest and natManifest.layouts then
           local info = natManifest.layouts[mapId] or natManifest.layouts["FR_" .. key] or natManifest.layouts[key]
           pair = info and info.pair
         end
@@ -215,8 +205,7 @@ local function resolveLayout(mapId)
   return nil, nil
 end
 
---- Get door metadata entry for a map tile at (x, y) if available
-function Doors.getDoorEntryAt(mapId, x, y)
+local function lookupDoorAt(mapId, x, y)
   local manifest = loadManifest()
   if not manifest or not manifest.by_mid then return nil end
 
@@ -229,13 +218,46 @@ function Doors.getDoorEntryAt(mapId, x, y)
   if mid and manifest.by_mid[mid] then
     local entry = manifest.by_mid[mid]
     local p = pair or (layout and layout.pair)
-    if isPairMatch(entry.tileset, p) then
+    local beh = nil
+    local okC, Collision = pcall(require, "src.core.game3.collision")
+    if okC and Collision and Collision.behaviorOn then
+      beh = Collision.behaviorOn({ midLayout = layout, pair = p }, x, y)
+    end
+    -- src/field_door.c:498
+    local isDoorTile
+    if beh ~= nil then
+      isDoorTile = (beh == MB_WARP_DOOR)
+    else
+      isDoorTile = isPairMatch(entry.tileset, p)
+    end
+    if isDoorTile then
       local doorInfo = manifest.doors and manifest.doors[entry.tile]
       return entry, doorInfo
     end
   end
 
   return nil
+end
+
+-- src/fieldmap.c:367
+local function liveMapId()
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local session = Runtime and Runtime.getSession and Runtime.getSession()
+  if session and session.map then return session.map end
+  local Map = package.loaded["src.core.game3.map"]
+  return Map and Map.current or nil
+end
+
+--- Get door metadata entry for a map tile at (x, y) if available
+function Doors.getDoorEntryAt(mapId, x, y)
+  -- src/field_door.c:396
+  local live = liveMapId()
+  if live then
+    local entry, info = lookupDoorAt(live, x, y)
+    if entry then return entry, info end
+    if live == mapId then return nil end
+  end
+  return lookupDoorAt(mapId, x, y)
 end
 
 --- Determine the exact sound effect and door animation kind for a warp / doorway
@@ -253,67 +275,19 @@ function Doors.getSoundForWarp(mapId, x, y, destMap, isDoor)
     end
   end
 
-  local mapUpper = string.upper(tostring(mapId or ""))
-  local destUpper = string.upper(tostring(destMap or ""))
-
-  -- Double sliding doors: Celadon Dept Store, Silph Co, Gyms, Fighting Dojo
-  local isDouble = destUpper:find("DEPT_STORE")
-    or destUpper:find("SILPH_CO")
-    or destUpper:find("GYM")
-    or destUpper:find("DOJO")
-    or mapUpper:find("DEPT_STORE")
-    or mapUpper:find("SILPH_CO")
-    or mapUpper:find("GYM")
-    or mapUpper:find("DOJO")
-
-  if isDouble then
-    return Doors.SOUND_SLIDING, "sliding_double"
-  end
-
-  -- Sliding doors: Poké Center, Mart, Dept Store, Silph Co, Safari Zone, Game Corner, Elevators, Gyms
-  local isSliding = destUpper:find("POKECENTER")
-    or destUpper:find("POKEMON_CENTER")
-    or destUpper:find("CENTER")
-    or destUpper:find("MART")
-    or destUpper:find("SAFARI_ZONE")
-    or destUpper:find("GAME_CORNER")
-    or destUpper:find("CABLE_CLUB")
-    or destUpper:find("ELEVATOR")
-    or destUpper:find("TELEPORTER")
-    or destUpper:find("GYM")
-    or destUpper:find("DOJO")
-    or mapUpper:find("POKECENTER")
-    or mapUpper:find("POKEMON_CENTER")
-    or mapUpper:find("CENTER")
-    or mapUpper:find("MART")
-    or mapUpper:find("SAFARI_ZONE")
-    or mapUpper:find("GAME_CORNER")
-    or mapUpper:find("GYM")
-    or mapUpper:find("DOJO")
-
-  if isSliding then
-    return Doors.SOUND_SLIDING, "sliding"
-  end
-
-  return Doors.SOUND_NORMAL, "normal"
+  -- src/field_door.c:510
+  return Doors.SOUND_SLIDING, nil
 end
 
-local function resolveDoorKind(mapId, x, y, destMap, sound)
+-- src/field_door.c:396
+local function resolveDoorKind(mapId, x, y)
   if x and y then
     local entry, _ = Doors.getDoorEntryAt(mapId, x, y)
     if entry then
-      return entry.tile, entry.size
+      return entry.tile, entry.size, entry.sound
     end
   end
-  local destUpper = string.upper(tostring(destMap or ""))
-  local mapUpper = string.upper(tostring(mapId or ""))
-  if destUpper:find("GYM") or destUpper:find("DOJO") or mapUpper:find("GYM") or mapUpper:find("DOJO") then
-    return "SlidingDouble", "1x1"
-  end
-  if sound == Doors.SOUND_SLIDING then
-    return "SlidingSingle", "1x1"
-  end
-  return "General", "1x1"
+  return nil, nil, nil
 end
 
 --- Start door opening animation + sound
@@ -322,7 +296,7 @@ function Doors.open(mapId, x, y, opts, onDone)
   local sound, defaultKind = Doors.getSoundForWarp(mapId, x, y, opts.destMap, true)
   if opts.sound then sound = opts.sound end
 
-  local tile, size = resolveDoorKind(mapId, x, y, opts.destMap, sound)
+  local tile, size, soundKind = resolveDoorKind(mapId, x, y)
 
   if opts.playSound ~= false then
     local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
@@ -336,6 +310,7 @@ function Doors.open(mapId, x, y, opts, onDone)
     x = x,
     y = y,
     kind = defaultKind or ((sound == Doors.SOUND_SLIDING) and "sliding" or "normal"),
+    soundKind = soundKind,
     tile = tile,
     size = size or "1x1",
     mode = "open",
@@ -353,13 +328,14 @@ function Doors.holdOpen(mapId, x, y, opts)
   local sound, defaultKind = Doors.getSoundForWarp(mapId, x, y, opts.destMap, true)
   if opts.sound then sound = opts.sound end
 
-  local tile, size = resolveDoorKind(mapId, x, y, opts.destMap, sound)
+  local tile, size, soundKind = resolveDoorKind(mapId, x, y)
 
   Doors._activeAnim = {
     mapId = mapId,
     x = x,
     y = y,
     kind = defaultKind or ((sound == Doors.SOUND_SLIDING) and "sliding" or "normal"),
+    soundKind = soundKind,
     tile = tile,
     size = size or "1x1",
     mode = "hold",
@@ -376,13 +352,14 @@ function Doors.close(mapId, x, y, opts, onDone)
   local sound, defaultKind = Doors.getSoundForWarp(mapId, x, y, opts.destMap, true)
   if opts.sound then sound = opts.sound end
 
-  local tile, size = resolveDoorKind(mapId, x, y, opts.destMap, sound)
+  local tile, size, soundKind = resolveDoorKind(mapId, x, y)
 
   Doors._activeAnim = {
     mapId = mapId,
     x = x,
     y = y,
     kind = defaultKind or ((sound == Doors.SOUND_SLIDING) and "sliding" or "normal"),
+    soundKind = soundKind,
     tile = tile,
     size = size or "1x1",
     mode = "close",
@@ -408,13 +385,14 @@ function Doors.closeAfterDelay(mapId, x, y, delayTicks, opts, onDone)
   local sound, defaultKind = Doors.getSoundForWarp(mapId, x, y, opts.destMap, true)
   if opts.sound then sound = opts.sound end
 
-  local tile, size = resolveDoorKind(mapId, x, y, opts.destMap, sound)
+  local tile, size, soundKind = resolveDoorKind(mapId, x, y)
 
   Doors._activeAnim = {
     mapId = mapId,
     x = x,
     y = y,
     kind = defaultKind or ((sound == Doors.SOUND_SLIDING) and "sliding" or "normal"),
+    soundKind = soundKind,
     tile = tile,
     size = size or "1x1",
     mode = "delay_close",
@@ -439,6 +417,20 @@ end
 function Doors.update(dt)
   local anim = Doors._activeAnim
   if not anim then return end
+
+  -- src/field_fadetransition.c:757
+  if not anim.tile and anim.mode ~= "hold" then
+    local cb = anim.onDone
+    anim.onDone = nil
+    anim.frame = anim.targetFrame
+    if anim.mode == "open" then
+      anim.mode = "hold"
+    else
+      Doors._activeAnim = nil
+    end
+    if cb then cb() end
+    return
+  end
 
   if anim.mode == "delay_close" then
     anim.delayTimer = (anim.delayTimer or 1) - 1
@@ -512,7 +504,7 @@ local function loadSheet(tileName)
     return nil
   end
 
-  local relPath = "data/generated/gba/doors/" .. info.file
+  local relPath = doorsRoot() .. "/" .. info.file
   local bytes = nil
 
   local okD, Dataset = pcall(require, "src.core.game3.dataset")
@@ -601,13 +593,11 @@ function Doors.draw(camX, camY)
     return
   end
 
+  -- src/field_door.c:457
   local tileName = anim.tile
-  if not tileName then
-    local entry, _ = Doors.getDoorEntryAt(anim.mapId, anim.x, anim.y)
-    if entry then tileName = entry.tile end
-  end
+  if not tileName then return end
 
-  local sheet = tileName and loadSheet(tileName)
+  local sheet = loadSheet(tileName)
 
   if sheet and sheet.image and sheet.quads then
     local frame = math.min(anim.frame, sheet.frames - 1)
@@ -629,7 +619,7 @@ function Doors.draw(camX, camY)
   love.graphics.setColor(0.05, 0.07, 0.1, 1)
   love.graphics.rectangle("fill", sx + 1, sy + 1, 14, 15)
 
-  if anim.kind == "sliding_double" then
+  if tileName == "SlidingDouble" then
     if anim.frame == 1 then
       love.graphics.setColor(0.65, 0.8, 0.88, 0.95)
       love.graphics.rectangle("fill", sx + 1, sy + 1, 4, 14)
@@ -640,7 +630,7 @@ function Doors.draw(camX, camY)
       love.graphics.setColor(0.35, 0.5, 0.6, 1)
       love.graphics.rectangle("line", sx + 11, sy + 1, 4, 14)
     end
-  elseif anim.kind == "sliding" or anim.kind == "SlidingSingle" then
+  elseif anim.soundKind == "sliding" then
     if anim.frame == 1 then
       love.graphics.setColor(0.65, 0.8, 0.88, 0.95)
       love.graphics.rectangle("fill", sx + 8, sy + 1, 7, 14)

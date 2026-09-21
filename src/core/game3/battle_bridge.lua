@@ -217,6 +217,8 @@ local function writeback(session, battleParty, remap, result, save, opts)
   end
   local lost = (result == "lose" or result == "whiteout" or result == "blackout")
   if not lost then return end
+  -- pokefirered/src/cable_club.c:780 LoadPlayerParty
+  if opts.link then return end
 
   -- pret CB2_EndTrainerBattle EARLY_RIVAL + RIVAL_BATTLE_HEAL_AFTER:
   -- heal and continue script — no white-out warp.
@@ -359,6 +361,13 @@ function BattleBridge.start(mod, game, foe, opts)
     and not wildScripted and not legendary and not roamer
     and not opts.firstBattle and not opts.oldManTutorial
   local startOpts = {
+    -- pokefirered/src/cable_club.c:664 BATTLE_TYPE_LINK
+    link = opts.link or (foe and foe.link) or nil,
+    linkFlags = opts.linkFlags,
+    -- pokefirered/src/battle_controllers.c:148 InitLinkBtlControllers
+    linkMaster = opts.linkMaster,
+    unionRoom = opts.unionRoom,
+    peerName = opts.peerName or (foe and foe.name) or nil,
     wild = opts.wild,
     wildScripted = wildScripted,
     legendary = legendary,
@@ -380,6 +389,13 @@ function BattleBridge.start(mod, game, foe, opts)
     mapBattleScene = mapBattleScene,
     terrain = opts.terrain,
     trainerId = opts.trainerId or (foe and foe.trainerId),
+    -- pokefirered/src/trainer_tower.c:735 BATTLE_TYPE_TRAINER_TOWER
+    trainerTower = opts.trainerTower or (foe and foe.trainerTower),
+    -- pokefirered/src/battle_tower.c:933 BATTLE_TYPE_EREADER_TRAINER
+    eReader = opts.eReader or (foe and foe.eReader),
+    -- pokefirered/src/battle_message.c:2066 GetTrainerTowerOpponentName
+    trainerName = opts.trainerName or (foe and foe.trainerName),
+    trainerPicId = opts.trainerPicId or (foe and foe.trainerPicId),
     defeatText = opts.defeatText or (foe and foe.defeatText),
     victoryText = opts.victoryText or (foe and foe.victoryText),
     earlyRival = opts.earlyRival,

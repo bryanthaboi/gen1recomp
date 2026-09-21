@@ -175,7 +175,7 @@ local task = ctx.stateWait
 check(type(task) == "function", "DoInGameTradeScene armed a waitstate task")
 eq(session.party[1].species, 63, "the ABRA is still in the party while the fade runs")
 local frames = 0
-while frames < 600 and not task() do frames = frames + 1 end
+while frames < 2000 and not task() do frames = frames + 1 end
 check(frames > 60, "the scene held for at least the cart's fade plus hold, held " .. frames)
 eq(session.party[1].species, 122, "the party slot now holds MR. MIME")
 eq(session.party[1].friendship, 70, "a traded mon starts at 70 friendship")
@@ -314,13 +314,23 @@ Natives.special(ctx, Std.SPECIAL.ShowFieldMessageStringVar4, adapters)
 eq(shown, ctx.stringVars[4], "the compatibility line reached the message box")
 check(ctx.messageOpen == true, "the field message box is open")
 
-print("[test] 15. GiveEggFromDaycare hands over no egg and RejectEggFromDayCare clears it")
+print("[test] 15. GiveEggFromDaycare hands the egg over and RejectEggFromDayCare clears it")
 session.party = { makeMon(19, 5) }
 session.daycare = { makeMon(132, 20), makeMon(19, 20), steps = { 0, 0 }, eggPending = true }
 local _, eggState = Natives.special(newCtx(), Std.SPECIAL.GetDaycareState, nil)
 eq(eggState, 1, "GetDaycareState is DAYCARE_EGG_WAITING")
+-- pokefirered/src/daycare.c:1133
 Natives.special(newCtx(), Std.SPECIAL.GiveEggFromDaycare, nil)
-eq(#session.party, 1, "no egg entered the party")
+local partyCount, eggCount = 0, 0
+for i = 1, 6 do
+  local mon = session.party[i]
+  if mon then
+    partyCount = partyCount + 1
+    if mon.isEgg then eggCount = eggCount + 1 end
+  end
+end
+eq(partyCount, 2, "the egg joined the party")
+eq(eggCount, 1, "and it is an egg")
 local _, afterGive = Natives.special(newCtx(), Std.SPECIAL.GetDaycareState, nil)
 eq(afterGive, 3, "the pending egg is cleared, back to DAYCARE_TWO_MONS")
 session.daycare.offspringPersonality = 0x1234

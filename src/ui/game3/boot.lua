@@ -12,6 +12,8 @@ local TitleScreen = require("src.ui.game3.title_screen")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Chrome = require("src.ui.game3.chrome")
 local Strings = require("src.core.Strings")
+local MysteryGift = require("src.core.game3.mystery_gift")
+local MysteryGiftUi = require("src.ui.game3.mystery_gift")
 
 local Boot = {}
 
@@ -22,6 +24,7 @@ Boot.PHASE = {
   TITLE_RESTART = "title_restart",
   TITLE_CRY = "title_cry",
   MENU = "menu",
+  MYSTERY_GIFT = "mystery_gift",
   CONTROLS = "controls",
   PIKACHU = "pikachu",
   OAK = "oak",
@@ -171,6 +174,9 @@ function Boot.continueInfoFromSave(save)
     hours = tonumber(pt.hours) or 0,
     minutes = tonumber(pt.minutes) or 0,
     hasDex = Flags.getFlag(store, nil, Flags.IDS.SYS_POKEDEX_GET) == true,
+    -- pokefirered/src/main_menu.c:236 IsMysteryGiftEnabled
+    mysteryGift = Flags.getFlag(store, nil,
+      Flags.IDS.SYS_MYSTERY_GIFT_ENABLED or 0x839) == true,
     dexCount = n,
     badges = Flags.countBadges(store),
     frameType = tonumber(type(save.options) == "table"
@@ -178,8 +184,22 @@ function Boot.continueInfoFromSave(save)
   }
 end
 
+-- pokefirered/src/main_menu.c:370 MAIN_MENU_MYSTERYGIFT
+local function hasMysteryGift(state)
+  if not state.hasContinue then return false end
+  local info = state.continueInfo
+  return type(info) == "table" and info.mysteryGift == true
+end
+
+Boot.hasMysteryGift = hasMysteryGift
+
+local MENU_SCROLL_TILES = 4
+
 local function menuItems(state)
   if state.hasContinue then
+    if hasMysteryGift(state) then
+      return { "CONTINUE", "NEW GAME", "MYSTERY GIFT", "EXIT" }
+    end
     return { "CONTINUE", "NEW GAME", "EXIT" }
   end
   return { "NEW GAME", "EXIT" }
@@ -206,6 +226,42 @@ local function beginMenuFade(state, color, from, to, after)
   state.menuFade = Pal.new()
   state.menuFade:beginFade(Pal.ALL, 0, from, to, color == "white" and Pal.WHITE or Pal.BLACK) -- pokefirered/src/main_menu.c:574
   state.fadeT = state.menuFade.slots[0].y
+end
+
+-- pokefirered/src/mystery_gift_menu.c:1095 CreateMysteryGiftTask
+local function openMysteryGift(state)
+  local SaveData = require("src.core.SaveData")
+  local okLoad, raw = false, nil
+  if SaveData.load then okLoad, raw = pcall(SaveData.load) end
+  local loaded = okLoad and type(raw) == "table"
+  local save = loaded and raw or {}
+  state.giftSave = save
+  state.gift = MysteryGiftUi.new({
+    session = MysteryGift.sessionFromSave(save),
+    onSave = function(sess)
+      if not loaded then return false end
+      MysteryGift.applyToSave(sess, save)
+      if not SaveData.save then return false end
+      local okSave, written = pcall(SaveData.save, save)
+      return okSave and written ~= false
+    end,
+  })
+  state.phase = Boot.PHASE.MYSTERY_GIFT
+  state.timer = 0
+end
+
+Boot.openMysteryGift = openMysteryGift
+
+-- pokefirered/src/mystery_gift_menu.c:455 MainCB_FreeAllBuffersAndReturnToInitTitleScreen
+local function closeMysteryGift(state)
+  if state.giftSave then
+    Boot.setContinueInfo(state, Boot.continueInfoFromSave(state.giftSave))
+  end
+  state.gift = nil
+  state.giftSave = nil
+  state.phase = Boot.PHASE.MENU
+  state.menuIndex = 1
+  beginMenuFade(state, "white", 16, 0, nil) -- pokefirered/src/main_menu.c:398
 end
 
 local function enterTitle(state)
@@ -366,6 +422,9 @@ function Boot.update(state, input, dt)
       elseif pending == "exit" then
         state.fadeT, state.fadeTarget = 0, 0
         return { action = "exit" }
+      elseif pending == "mystery_gift" then
+        state.fadeT, state.fadeTarget = 0, 0
+        openMysteryGift(state)
       elseif pending == "title" then
         state.fadeT, state.fadeTarget = 0, 0
         state.phase = Boot.PHASE.TITLE
@@ -383,15 +442,28 @@ function Boot.update(state, input, dt)
       Audio.playSe(5)
       local choice = items[state.menuIndex]
       local fadeAction = (choice == "CONTINUE") and "continue"
-        or ((choice == "NEW GAME") and "new_game" or "exit")
+        or (choice == "NEW GAME") and "new_game"
+        -- pokefirered/src/main_menu.c:483 MAIN_MENU_MYSTERYGIFT
+        or (choice == "MYSTERY GIFT") and "mystery_gift"
+        or "exit"
       beginMenuFade(state, "black", 0, 16, fadeAction)
     elseif pressed("b") then -- pokefirered/src/main_menu.c:577
       Audio.playSe(5)
       beginMenuFade(state, "black", 0, 16, "title")
     elseif up() and state.menuIndex > 1 then
       state.menuIndex = state.menuIndex - 1
+      if state.menuIndex == 1 then state.menuScroll = 0 end
     elseif down() and state.menuIndex < #items then
       state.menuIndex = state.menuIndex + 1
+      if state.menuIndex == 4 then state.menuScroll = MENU_SCROLL_TILES end
+    end
+    return nil
+  end
+
+  if state.phase == Boot.PHASE.MYSTERY_GIFT then
+    local pressed = function(k) return input and input.wasPressed and input:wasPressed(k) end
+    if MysteryGiftUi.update(state.gift, pressed, dt) == "exit" then
+      closeMysteryGift(state)
     end
     return nil
   end
@@ -419,7 +491,7 @@ local MENU_SHADOW = { 213 / 255, 213 / 255, 205 / 255, 1 } -- pokefirered/graphi
 local MENU_FILL = { 1, 1, 1, 1 } -- pokefirered/graphics/main_menu/textbox.pal:14
 local ACCENT_MALE = { 4 / 31, 16 / 31, 31 / 31, 1 }
 local ACCENT_FEMALE = { 31 / 31, 3 / 31, 21 / 31, 1 }
-local WIN0V_CONTINUE = { { 0x02, 0x5E }, { 0x62, 0x7E }, { 0x82, 0x9E } }
+local WIN0V_CONTINUE = { { 0x02, 0x5E }, { 0x62, 0x7E }, { 0x82, 0x9E }, { 0xA2, 0xBE } }
 local WIN0V_NOCONTINUE = { { 0x02, 0x1E }, { 0x22, 0x3E } }
 
 local function darkenOutside(W, H, x0, y0, x1, y1)
@@ -443,9 +515,16 @@ local function drawMainMenu(state, W, H)
   local x, y = 24, 8
 
   if state.hasContinue then
-    Window.userFrame(Window.template(3, 1, 24, 10), frameType) -- pokefirered/src/main_menu.c:84
-    Window.userFrame(Window.template(3, 13, 24, 2), frameType) -- pokefirered/src/main_menu.c:93
-    Window.userFrame(Window.template(3, 17, 24, 2), frameType) -- pokefirered/src/main_menu.c:102
+    local gift = hasMysteryGift(state)
+    local scroll = (gift and state.menuIndex ~= 1) and (state.menuScroll or 0) or 0
+    local dy = scroll * 8
+    y = y - dy
+    Window.userFrame(Window.template(3, 1 - scroll, 24, 10), frameType) -- pokefirered/src/main_menu.c:84
+    Window.userFrame(Window.template(3, 13 - scroll, 24, 2), frameType) -- pokefirered/src/main_menu.c:93
+    Window.userFrame(Window.template(3, 17 - scroll, 24, 2), frameType) -- pokefirered/src/main_menu.c:102
+    if gift then
+      Window.userFrame(Window.template(3, 21 - scroll, 24, 2), frameType)
+    end
     Window.printPx(Strings("CONTINUE"), x + 2, y + 2, { colors = head })
     Window.printPx(Strings("PLAYER"), x + 2, y + 18, { colors = stat }) -- pokefirered/src/main_menu.c:623
     Window.printPx(info.name or "", x + 62, y + 18, { colors = stat })
@@ -457,10 +536,15 @@ local function drawMainMenu(state, W, H)
     end
     Window.printPx(Strings("BADGES"), x + 2, y + 66, { colors = stat }) -- pokefirered/src/main_menu.c:672
     Window.printPx(tostring(info.badges or 0), x + 62, y + 66, { colors = stat })
-    Window.printPx(Strings("NEW GAME"), 24 + 2, 104 + 2, { colors = head })
-    Window.printPx(Strings("EXIT"), 24 + 2, 136 + 2, { colors = head })
+    Window.printPx(Strings("NEW GAME"), 24 + 2, 104 + 2 - dy, { colors = head })
+    -- pokefirered/src/main_menu.c:377 gText_MysteryGift
+    Window.printPx(gift and Strings("MYSTERY GIFT") or Strings("EXIT"),
+      24 + 2, 136 + 2 - dy, { colors = head })
+    if gift then
+      Window.printPx(Strings("EXIT"), 24 + 2, 168 + 2 - dy, { colors = head })
+    end
     local rows = WIN0V_CONTINUE[state.menuIndex] or WIN0V_CONTINUE[1] -- pokefirered/src/main_menu.c:565
-    darkenOutside(W, H, 18, rows[1], 222, rows[2])
+    darkenOutside(W, H, 18, math.max(0, rows[1] - dy), 222, rows[2] - dy)
   else
     Window.userFrame(Window.template(3, 1, 24, 2), frameType)
     Window.userFrame(Window.template(3, 5, 24, 2), frameType)
@@ -526,6 +610,11 @@ function Boot.draw(state)
     else
       drawMainMenu(state, W, H)
     end
+    return
+  end
+
+  if state.phase == Boot.PHASE.MYSTERY_GIFT then
+    if state.gift then MysteryGiftUi.draw(state.gift) end
     return
   end
 

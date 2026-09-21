@@ -48,19 +48,36 @@ test("TrainerCard front and back flip", function()
   assert(TrainerCard.isOpen() == true, "Should be open")
   assert(TrainerCard.side == "front", "Initial side should be front")
 
-  -- Press A to flip to back
   local inpA = { wasPressed = function(_, k) return k == "a" end }
+  local inpB = { wasPressed = function(_, k) return k == "b" end }
+  local function settle()
+    for _ = 1, 64 do TrainerCard.update(1 / 60) end
+  end
+
+  -- src/trainer_card.c:558 A on the front starts the flip to the back
   TrainerCard.handleInput(inpA)
+  settle()
   assert(TrainerCard.side == "back", "Side should flip to back")
 
-  -- Press A again to flip to front
-  TrainerCard.handleInput(inpA)
+  -- src/trainer_card.c:588 B on the back flips to the front
+  TrainerCard.handleInput(inpB)
+  settle()
   assert(TrainerCard.side == "front", "Side should flip back to front")
 
-  -- Press B to close
-  local inpB = { wasPressed = function(_, k) return k == "b" end }
+  -- src/trainer_card.c:566 B on the front closes the card
   TrainerCard.handleInput(inpB)
   assert(TrainerCard.isOpen() == false, "Should be closed after B")
+end)
+
+test("A on the back closes the card", function()
+  -- src/trainer_card.c:604 A on the back exits instead of flipping
+  TrainerCard.show({ session = session })
+  local inpA = { wasPressed = function(_, k) return k == "a" end }
+  TrainerCard.handleInput(inpA)
+  for _ = 1, 64 do TrainerCard.update(1 / 60) end
+  assert(TrainerCard.side == "back", "Should be on the back")
+  TrainerCard.handleInput(inpA)
+  assert(TrainerCard.isOpen() == false, "A on the back should close the card")
 end)
 
 print("[test] 2. SaveMenu lifecycle and state machine")

@@ -172,6 +172,14 @@ function Engine.hasBadge(st, n)
   return false
 end
 
+-- pokefirered/src/battle_controllers.c:163 InitLinkBtlControllers
+local function link_seat_swap(st)
+  if not (st and st.link) then return false end
+  return st.linkMaster == false
+end
+
+Engine.linkSeatSwap = link_seat_swap
+
 -- pokefirered/src/battle_main.c:3399
 local function speed_of(battler, st, adapter)
   local mon = battler and battler.mon
@@ -2035,8 +2043,10 @@ end
 function Engine.canRun(st, adapter, battler)
   battler = battler or (st and st.player)
   if not st or not battler then return false, nil end
+  -- pokefirered/src/battle_main.c:3240
+  if st.link then return true end
   if not st.wild then return false, Strings("No! There's no running\nfrom a TRAINER battle!") end
-  if HeldItems.has(battler, HeldItems.HOLD.CAN_ALWAYS_RUN) or st.link or adapter:abilityOf(battler) == "RUN_AWAY" then
+  if HeldItems.has(battler, HeldItems.HOLD.CAN_ALWAYS_RUN) or adapter:abilityOf(battler) == "RUN_AWAY" then
     return true
   end
   local holder, ab = Abilities.escapeBlocker(adapter, battler)
@@ -2281,14 +2291,16 @@ function Engine.planTurnActions(st, adapter, chosen)
   end
   local order = {}
   local sortable = 0
+  -- pokefirered/src/battle_controllers.c:163 the non-master owns the odd battler ids
+  local ids = link_seat_swap(st) and { 1, 0, 3, 2 } or { 0, 1, 2, 3 }
   if rows[0] and rows[0].kind == "run" then
     order[1] = 0
     for id = 1, 3 do if rows[id] then order[#order + 1] = id end end
   else
-    for id = 0, 3 do
+    for _, id in ipairs(ids) do
       if rows[id] and is_meta_first(rows[id].kind) then order[#order + 1] = id end
     end
-    for id = 0, 3 do
+    for _, id in ipairs(ids) do
       if rows[id] and not is_meta_first(rows[id].kind) then
         order[#order + 1] = id
         sortable = sortable + 1
@@ -2467,7 +2479,8 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
     elseif pSpe ~= eSpe then
       return pSpe > eSpe
     end
-    return roll(adapter, 0, 1) == 0
+    -- pokefirered/src/battle_controllers.c:163 the non-master reads battler1/battler2 swapped
+    return (roll(adapter, 0, 1) == 1) == link_seat_swap(st)
   end
   local playerFirst
   if ModRuntime.wantsHook("battle.turn_order") then

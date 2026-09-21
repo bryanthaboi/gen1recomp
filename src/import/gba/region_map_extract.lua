@@ -14,6 +14,7 @@ RegionMapExtract.FILES = {
   "kanto_map.png",
   "cursor.png",
   "dungeon_icon.png",
+  "dungeon_icon_visited.png",
   "player_red.png",
   "player_leaf.png",
 }
@@ -590,9 +591,15 @@ function RegionMapExtract.run(rom, cache, opts)
   local dungGfx = Lz77.decompress(get, Versions.REGION_MAP_DUNGEON_ICON_GFX or 0x3F18D8)
   local miscPalBytes = read_bytes(Versions.REGION_MAP_MISC_ICON_PAL or 0x3EF2BC, 32)
   if dungGfx and miscPalBytes then
+    -- src/region_map.c:795 sAnim_DungeonIconNotVisited, frame 0
     local rgba, png = bake_sprite_8x8(dungGfx, miscPalBytes, 0)
     write_file(cache, root .. "/dungeon_icon.rgba", rgba)
     if png then write_file(cache, root .. "/dungeon_icon.png", png) end
+    count = count + 1
+    -- src/region_map.c:790 sAnim_DungeonIconVisited, frame 1
+    local vRgba, vPng = bake_sprite_8x8(dungGfx, miscPalBytes, 1)
+    write_file(cache, root .. "/dungeon_icon_visited.rgba", vRgba)
+    if vPng then write_file(cache, root .. "/dungeon_icon_visited.png", vPng) end
     count = count + 1
   end
 

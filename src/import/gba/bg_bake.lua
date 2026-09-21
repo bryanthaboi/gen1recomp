@@ -105,4 +105,97 @@ function BgBake.bakeBgRgba(gfx, palBanks, map, W, H)
   return table.concat(chunks)
 end
 
+function BgBake.bakeRegionRgba(gfx, palBanks, map, W, H, opts)
+  opts = opts or {}
+  local mapW = opts.mapW or 32
+  local x0 = opts.x0 or 0
+  local y0 = opts.y0 or 0
+  local bankOffset = opts.bankOffset or 0
+  local alpha0 = opts.alpha0 and true or false
+  local tileCount = math.floor(BgBake.byteLen(gfx) / 32)
+  local mapLen = BgBake.byteLen(map)
+
+  local indices, pals = {}, {}
+  for i = 1, W * H do indices[i] = 0; pals[i] = -1 end
+
+  local tileX = math.floor(x0 / 8)
+  local tileY = math.floor(y0 / 8)
+  local subX = x0 - tileX * 8
+  local subY = y0 - tileY * 8
+  local tilesW = math.ceil((W + subX) / 8)
+  local tilesH = math.ceil((H + subY) / 8)
+  for ty = 0, tilesH - 1 do
+    for tx = 0, tilesW - 1 do
+      local mi = ((tileY + ty) * mapW + (tileX + tx)) * 2 + 1
+      if tileY + ty >= 0 and mi + 1 <= mapLen then
+        local entry = (map[mi] or 0) + (map[mi + 1] or 0) * 256
+        local tileId = entry % 1024
+        local hflip = math.floor(entry / 1024) % 2 == 1
+        local vflip = math.floor(entry / 2048) % 2 == 1
+        local palNum = math.floor(entry / 4096) % 16 - bankOffset
+        if tileId < tileCount then
+          local tile = {}
+          local base = tileId * 32
+          for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+          local tmp = {}
+          for i = 1, 64 do tmp[i] = 0 end
+          BgBake.decodeTile4bpp(tile, tmp, 0, 0, 8, hflip, vflip)
+          for row = 0, 7 do
+            for col = 0, 7 do
+              local px, py = tx * 8 + col - subX, ty * 8 + row - subY
+              if px >= 0 and py >= 0 and px < W and py < H then
+                local di = py * W + px + 1
+                indices[di] = tmp[row * 8 + col + 1] or 0
+                pals[di] = palNum
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  local chunks = {}
+  for i = 1, W * H do
+    local idx = indices[i]
+    if pals[i] < 0 or (alpha0 and idx == 0) then
+      chunks[i] = string.char(0, 0, 0, 0)
+    else
+      local bank = palBanks[pals[i]] or palBanks[0] or {}
+      local r, g, b = BgBake.bgr555ToRgb8(bank[idx] or 0)
+      chunks[i] = string.char(r, g, b, 255)
+    end
+  end
+  return table.concat(chunks)
+end
+
+function BgBake.bakeSpriteRgba(gfx, bank, tileIndex, fw, fh, hflip, vflip)
+  local tw, th = math.floor(fw / 8), math.floor(fh / 8)
+  local pixels = {}
+  for i = 1, fw * fh do pixels[i] = 0 end
+  for ty = 0, th - 1 do
+    for tx = 0, tw - 1 do
+      local tile = {}
+      local base = (tileIndex + ty * tw + tx) * 32
+      for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+      BgBake.decodeTile4bpp(tile, pixels, tx * 8, ty * 8, fw, false, false)
+    end
+  end
+  local chunks = {}
+  for y = 0, fh - 1 do
+    for x = 0, fw - 1 do
+      local sx = hflip and (fw - 1 - x) or x
+      local sy = vflip and (fh - 1 - y) or y
+      local idx = pixels[sy * fw + sx + 1] or 0
+      if idx == 0 then
+        chunks[#chunks + 1] = string.char(0, 0, 0, 0)
+      else
+        local r, g, b = BgBake.bgr555ToRgb8((bank or {})[idx] or 0)
+        chunks[#chunks + 1] = string.char(r, g, b, 255)
+      end
+    end
+  end
+  return table.concat(chunks)
+end
+
 return BgBake

@@ -71,15 +71,24 @@ local CASES = {
   -- data/scripts/questionnaire.inc:1,:35
   { "EventScript_Questionnaire", 1, "questionnaire" },
   -- data/scripts/cable_club.inc:566
-  { "CableClub_EventScript_ShowBattleRecords", 0 },
+  { "CableClub_EventScript_ShowBattleRecords", 0, nil, true },
 }
 for _, case in ipairs(CASES) do
-  local name, want, needle = case[1], case[2], case[3]
+  local name, want, needle, holds = case[1], case[2], case[3], case[4]
   check(bundle.scripts[name] ~= nil, name .. " seeded into the objects pack")
   local messages, running = run(name, false)
   if messages then
     check(#messages == want, string.format("%s shows %d message(s), got %d", name, want, #messages))
-    check(running == false, name .. " releases control")
+    if holds then
+      -- pokefirered/src/battle_records.c:83
+      local Records = require("src.ui.game3.trainer_tower_records")
+      local Fade = require("src.ui.game3.fade")
+      check(running and Records.isOpen(), name .. " parks on waitstate with the records screen up")
+      Records.close()
+      for _ = 1, 60 do Fade.tick(1 / 60) end
+    else
+      check(running == false, name .. " releases control")
+    end
     if needle then
       check((table.concat(messages, " "):lower()):find(needle, 1, true) ~= nil,
         name .. " text contains " .. needle)

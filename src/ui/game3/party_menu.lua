@@ -86,6 +86,40 @@ local function nav_right(cur, n, lastSlot)
   return cur, lastSlot
 end
 
+-- pokefirered/src/party_menu.c:86
+local SLOT_CONFIRM = 7
+local SLOT_CANCEL_MULTI = 8
+
+-- pokefirered/src/party_menu.c:1359 UpdatePartySelectionSingleLayout
+local function multi_nav_up(cur, n)
+  if cur == 1 then
+    return SLOT_CANCEL_MULTI
+  elseif cur == SLOT_CONFIRM then
+    return n
+  elseif cur == SLOT_CANCEL_MULTI then
+    return SLOT_CONFIRM
+  else
+    return cur - 1
+  end
+end
+
+local function multi_nav_down(cur, n)
+  if cur == SLOT_CANCEL_MULTI then
+    return 1
+  elseif cur == n then
+    return SLOT_CONFIRM
+  else
+    return cur + 1
+  end
+end
+
+local function multi_nav_left(cur, lastSlot)
+  if cur ~= 1 and cur ~= SLOT_CONFIRM and cur ~= SLOT_CANCEL_MULTI then
+    return 1, cur
+  end
+  return cur, lastSlot
+end
+
 local function get_mon_stats(mon)
   return {
     maxHp = tonumber(mon and (mon.maxHp or mon.maxhp)) or 1,
@@ -694,6 +728,30 @@ function PartyMenu.show(sessionParty, moveOverlay, opts)
   PartyMenu._battle = opts.battle or (opts.mode == "battle_switch" or opts.mode == "battle_faint")
   PartyMenu.cursor = 1
   PartyMenu.mode = opts.mode or "list"
+  -- pokefirered/src/party_menu.c:5651 InitChooseMonsForBattle
+  PartyMenu._chooseMax = nil
+  PartyMenu._chooseOrder = nil
+  PartyMenu._chooseEligible = nil
+  local wantCount = tonumber(opts.count) or 0
+  if opts.mode == "choose_multi" or (opts.mode == "choose" and wantCount > 1) then
+    PartyMenu.mode = "choose_multi"
+    PartyMenu._chooseMax = (wantCount > 0) and wantCount or 3
+    PartyMenu._chooseOrder = {}
+    PartyMenu._chooseEligible = opts.eligible
+  end
+  -- pokefirered/src/party_menu.c:5793 ChooseMonForMoveTutor
+  PartyMenu._tutor = nil
+  PartyMenu._tutorResult = nil
+  PartyMenu._tutorAutoSlot = nil
+  if PartyMenu.mode == "move_tutor" then
+    PartyMenu._tutor = tonumber(opts.tutor)
+    PartyMenu._tutorResult = false
+    local auto = tonumber(opts.autoSlot)
+    if auto and auto >= 1 then
+      PartyMenu.cursor = auto
+      PartyMenu._tutorAutoSlot = auto
+    end
+  end
   PartyMenu._previousMode = PartyMenu.mode
   PartyMenu.summaryPage = 1
   PartyMenu.switchFrom = nil
@@ -763,6 +821,49 @@ local function party_count()
   return #(PartyMenu._party or {})
 end
 
+-- pokefirered/src/evolution_scene.c:640 EVOSTATE_CANCEL
+local function level_evolution_target(mon, session)
+  local Evolution = require("src.core.game3.evolution")
+  local target = Evolution.levelTarget(mon, session)
+  if target then return target, false end
+  local raw = Evolution.targetSpecies(mon, Evolution.EVO_MODE_NORMAL)
+  if raw and raw ~= 0 and not Evolution.nationalAllows(raw, session) then
+    return raw, true
+  end
+  return nil, false
+end
+
+-- pokefirered/src/party_menu.c:5674 GetBattleEntryEligibility
+local function entry_eligible(slot)
+  local mon = PartyMenu._party and PartyMenu._party[slot]
+  if not mon or mon.isEgg then return false end
+  local rule = PartyMenu._chooseEligible
+  if type(rule) == "function" then
+    return rule(slot, mon) and true or false
+  elseif type(rule) == "table" then
+    for _, s in ipairs(rule) do
+      if (tonumber(s) or -1) + 1 == slot then return true end
+    end
+    return false
+  end
+  return (tonumber(mon.hp) or 0) > 0
+end
+
+-- pokefirered/src/party_menu.c:5736 HasPartySlotAlreadyBeenSelected
+local function order_index(slot)
+  for i, s in ipairs(PartyMenu._chooseOrder or {}) do
+    if s == slot then return i end
+  end
+  return nil
+end
+
+-- pokefirered/src/party_menu.c:413 gSelectedOrderFromParty
+function PartyMenu.chosenOrder()
+  local out = {}
+  for i, s in ipairs(PartyMenu._chooseOrder or {}) do out[i] = s end
+  return out
+end
+
 local function swap_slots(a, b)
   if not PartyMenu._party or a == b then return end
   if not PartyMenu._battle then
@@ -818,6 +919,162 @@ function PartyMenu.showForgetPrompt(promptText, moveNames, cb)
   PartyMenu._forgetCursor = 1
 end
 
+-- pokefirered/src/party_menu.c:4841 Task_LearnNextMoveOrClosePartyMenu
+local function tutor_learned(moveLearned)
+  if moveLearned then PartyMenu._tutorResult = true end
+end
+
+-- pokefirered/src/party_menu.c:5391 TryTutorSelectedMon
+local function try_tutor_selected_mon(slot)
+  local mon = PartyMenu._party and PartyMenu._party[slot]
+  local tutor = PartyMenu._tutor
+  local MoveLearn = require("src.core.game3.move_learn")
+  local moveId = tutor and MoveLearn.tutorMove(tutor)
+  if not mon or not moveId then
+    PartyMenu.close()
+    return
+  end
+  local monName = Pokemon.displayMonName(mon)
+  local moveName = Pokemon.moveName(moveId) or ""
+  local status = MoveLearn.canMonLearnTutorMove(mon, tutor)
+  if status == MoveLearn.CANNOT_LEARN_MOVE or status == MoveLearn.CANNOT_LEARN_MOVE_IS_EGG then
+    -- pokefirered/src/strings.c:280
+    PartyMenu.showMessage(Strings("%s and %s\nare not compatible.", monName, moveName), function()
+      PartyMenu.showMessage(Strings("%s can't be\nlearned.", moveName), function()
+        PartyMenu.close()
+      end)
+    end)
+    return
+  end
+  if status == MoveLearn.ALREADY_KNOWS_MOVE then
+    -- pokefirered/src/strings.c:286
+    PartyMenu.showMessage(Strings("%s already knows\n%s.", monName, moveName), function()
+      PartyMenu.close()
+    end)
+    return
+  end
+  if Pokemon.moveSlotCount(mon) < 4 then
+    if Pokemon.teachMove(mon, moveId) then
+      pcall(function() require("src.core.game3.audio").playFanfare(257) end)
+      -- pokefirered/src/strings.c:279
+      PartyMenu.showMessage(Strings("%s learned\n%s!", monName, moveName), function()
+        tutor_learned(true)
+        PartyMenu.close()
+      end)
+    else
+      PartyMenu.close()
+    end
+    return
+  end
+  local LearnMove = require("src.core.game3.battle.learn_move")
+  LearnMove.begin({
+    mon = mon,
+    moveId = moveId,
+    displayName = monName,
+    pushMsg = function(t, cb) PartyMenu.showMessage(t, cb) end,
+    askYesNo = function(a, b)
+      local cb = (type(a) == "function") and a or b
+      local prompt = (type(a) == "string") and a or PartyMenu._messageText or ""
+      PartyMenu.showYesNo(prompt, function(yes)
+        if cb then cb(yes == true) end
+      end)
+    end,
+    askForget = function(a, b, c)
+      local cb = (type(b) == "function") and b or c
+      local SummaryMenu = require("src.ui.game3.summary_menu")
+      destroy_party_oam()
+      SummaryMenu.openMenu(PartyMenu._party, slot, {
+        mode = "select_move",
+        moveToLearn = moveId,
+        onSelectMove = function(slotIdx)
+          sync_all_oam()
+          if cb then cb(slotIdx) end
+        end,
+      })
+    end,
+    onDone = function(learned)
+      tutor_learned(learned)
+      PartyMenu.close()
+    end,
+  })
+end
+
+-- pokefirered/src/party_menu.c:2990 GetPartyMenuActionsType
+function PartyMenu.multiActions(slot)
+  if not entry_eligible(slot) then
+    return { "SUMMARY", "CANCEL" }
+  elseif order_index(slot) then
+    return { "NO ENTRY", "SUMMARY", "CANCEL" }
+  end
+  return { "ENTER", "SUMMARY", "CANCEL" }
+end
+
+-- pokefirered/src/party_menu.c:3760 CursorCB_Enter
+function PartyMenu.enterChosenMon(slot)
+  local order = PartyMenu._chooseOrder or {}
+  local max = PartyMenu._chooseMax or 3
+  if #order >= max then
+    se(26)
+    -- pokefirered/src/strings.c:263
+    local text = (max == 2) and Strings("No more than two POKéMON\nmay enter.")
+      or Strings("No more than three POKéMON\nmay enter.")
+    PartyMenu.showMessage(text, function() PartyMenu.mode = "choose_multi" end)
+    return false
+  end
+  se(5)
+  order[#order + 1] = slot
+  PartyMenu.mode = "choose_multi"
+  if #order == max then
+    -- pokefirered/src/party_menu.c:3797 MoveCursorToConfirm
+    PartyMenu.cursor = SLOT_CONFIRM
+  end
+  return true
+end
+
+-- pokefirered/src/party_menu.c:3804 CursorCB_NoEntry
+function PartyMenu.removeChosenMon(slot)
+  se(5)
+  local idx = order_index(slot)
+  if idx then table.remove(PartyMenu._chooseOrder, idx) end
+  PartyMenu.mode = "choose_multi"
+end
+
+-- pokefirered/src/party_menu.c:5746 Task_ValidateChosenMonsForBattle
+function PartyMenu.confirmChosenMons()
+  local order = PartyMenu._chooseOrder or {}
+  if #order == 0 then
+    se(26)
+    -- pokefirered/src/strings.c:322
+    PartyMenu.showMessage(Strings("No battling this way!"), function()
+      PartyMenu.mode = "choose_multi"
+    end)
+    return false
+  end
+  se(5)
+  local picked = PartyMenu.chosenOrder()
+  local cb = PartyMenu._onSelect
+  PartyMenu.close()
+  if cb then cb(picked) end
+  return true
+end
+
+-- pokefirered/src/party_menu.c:1261 DisplayCancelChooseMonYesNo
+function PartyMenu.askCancelChooseMons()
+  se(5)
+  -- pokefirered/src/strings.c:370
+  PartyMenu.showYesNo(Strings("Cancel the battle?"), function(yes)
+    if not yes then
+      PartyMenu.mode = "choose_multi"
+      return
+    end
+    -- pokefirered/src/party_menu.c:1285 ClearSelectedPartyOrder
+    PartyMenu._chooseOrder = {}
+    local cb = PartyMenu._onSelect
+    PartyMenu.close()
+    if cb then cb(nil) end
+  end)
+end
+
 function PartyMenu.reloadSprites()
   destroy_party_oam()
   sync_all_oam()
@@ -838,6 +1095,12 @@ end
 
 function PartyMenu.update(dt)
   if PartyMenu.mode == "oak" then tick_oak_advice() end
+  -- pokefirered/src/party_menu.c:5805
+  if PartyMenu._tutorAutoSlot and PartyMenu.mode == "move_tutor" then
+    local slot = PartyMenu._tutorAutoSlot
+    PartyMenu._tutorAutoSlot = nil
+    try_tutor_selected_mon(slot)
+  end
   local anim = PartyMenu._hpAnim
   if anim then
     dt = dt or (1 / 60)
@@ -1068,7 +1331,13 @@ function PartyMenu.handleInput(input)
       se(5)
     elseif input:wasPressed("a") then
       local act = actions[PartyMenu.actionCursor]
-      if act == "SHIFT" or act == "SEND OUT" or (PartyMenu._previousMode == "battle_switch" and act == "SWITCH") then
+      if act == "ENTER" then
+        -- pokefirered/src/party_menu.c:3760
+        PartyMenu.enterChosenMon(PartyMenu.cursor)
+      elseif act == "NO ENTRY" then
+        -- pokefirered/src/party_menu.c:3804
+        PartyMenu.removeChosenMon(PartyMenu.cursor)
+      elseif act == "SHIFT" or act == "SEND OUT" or (PartyMenu._previousMode == "battle_switch" and act == "SWITCH") then
         se(5)
         local cb = PartyMenu._onSelect
         local chosen = PartyMenu.cursor
@@ -1426,8 +1695,7 @@ function PartyMenu.handleInput(input)
         local slot = PartyMenu.cursor
 
         local function check_evolution()
-          local Evolution = require("src.core.game3.evolution")
-          local toSpecies = Evolution.levelTarget(mon, PartyMenu._session)
+          local toSpecies, blocked = level_evolution_target(mon, PartyMenu._session)
           if toSpecies then
             destroy_party_oam()
             local EvolutionScene = require("src.ui.game3.evolution_scene")
@@ -1436,6 +1704,7 @@ function PartyMenu.handleInput(input)
               session = PartyMenu._session,
               bag = PartyMenu._bag,
               canStop = true,
+              autoCancel = blocked,
               savedSong = Audio._mapSong,
               onDone = function(result)
                 PartyMenu.reloadSprites()
@@ -1574,6 +1843,42 @@ function PartyMenu.handleInput(input)
     return
   end
 
+  -- pokefirered/src/party_menu.c:1172
+  if PartyMenu.mode == "move_tutor" then
+    local oldCur = PartyMenu.cursor
+    if input:wasPressed("up") then
+      PartyMenu.cursor = nav_up(PartyMenu.cursor, n)
+    elseif input:wasPressed("down") then
+      PartyMenu.cursor = nav_down(PartyMenu.cursor, n)
+    elseif input:wasPressed("left") then
+      PartyMenu.cursor, PartyMenu._lastSelectedSlot = nav_left(PartyMenu.cursor, n, PartyMenu._lastSelectedSlot)
+    elseif input:wasPressed("right") then
+      PartyMenu.cursor = nav_right(PartyMenu.cursor, n, PartyMenu._lastSelectedSlot)
+    end
+    if PartyMenu.cursor ~= oldCur then
+      se(5)
+    end
+    if input:wasPressed("a") then
+      if PartyMenu.cursor == 7 then
+        se(5) -- pokefirered/src/party_menu.c:1246
+        PartyMenu.close()
+        return
+      end
+      local mon = PartyMenu._party and PartyMenu._party[PartyMenu.cursor]
+      if not mon then return end
+      if mon.isEgg then
+        se(26) -- pokefirered/src/party_menu.c:1223
+        return
+      end
+      se(5) -- pokefirered/src/party_menu.c:1175
+      try_tutor_selected_mon(PartyMenu.cursor)
+    elseif input:wasPressed("b") or input:wasPressed("start") then
+      se(5) -- pokefirered/src/party_menu.c:1246
+      PartyMenu.close()
+    end
+    return
+  end
+
   -- Selection mode for item GIVE
   if PartyMenu.mode == "give" then
     local oldCur = PartyMenu.cursor
@@ -1611,6 +1916,43 @@ function PartyMenu.handleInput(input)
     elseif input:wasPressed("b") or input:wasPressed("start") then
       se(5) -- pokefirered/src/party_menu.c:1246
       PartyMenu.close()
+    end
+    return
+  end
+
+  -- pokefirered/src/party_menu.c:1119 Task_HandleChooseMonInput
+  if PartyMenu.mode == "choose_multi" then
+    local oldCur = PartyMenu.cursor
+    if input:wasPressed("up") then
+      PartyMenu.cursor = multi_nav_up(PartyMenu.cursor, n)
+    elseif input:wasPressed("down") then
+      PartyMenu.cursor = multi_nav_down(PartyMenu.cursor, n)
+    elseif input:wasPressed("left") then
+      PartyMenu.cursor, PartyMenu._lastSelectedSlot = multi_nav_left(PartyMenu.cursor, PartyMenu._lastSelectedSlot)
+    elseif input:wasPressed("right") then
+      PartyMenu.cursor = nav_right(PartyMenu.cursor, n, PartyMenu._lastSelectedSlot)
+    elseif input:wasPressed("start") then
+      -- pokefirered/src/party_menu.c:1133
+      PartyMenu.cursor = SLOT_CONFIRM
+    end
+    if PartyMenu.cursor ~= oldCur then
+      se(5)
+    end
+    if input:wasPressed("a") then
+      if PartyMenu.cursor == SLOT_CONFIRM then
+        PartyMenu.confirmChosenMons()
+      elseif PartyMenu.cursor == SLOT_CANCEL_MULTI then
+        PartyMenu.askCancelChooseMons()
+      else
+        se(5)
+        PartyMenu.ACTIONS = PartyMenu.multiActions(PartyMenu.cursor)
+        PartyMenu._fieldMoveNames = nil
+        PartyMenu.mode = "action"
+        PartyMenu.actionCursor = 1
+      end
+    elseif input:wasPressed("b") then
+      -- pokefirered/src/party_menu.c:1261 DisplayCancelChooseMonYesNo
+      PartyMenu.askCancelChooseMons()
     end
     return
   end
@@ -1728,7 +2070,24 @@ end
 
 -- BG + text only; OAM sprites flushed by Display.present.
 -- pokefirered/src/party_menu.c:848 DisplayPartyPokemonDataForMoveTutorOrEvolutionItem
-local function slot_description(mon)
+local MULTI_ORDER_TEXT = { "FIRST", "SECOND", "THIRD" }
+
+local function slot_description(slot, mon)
+  -- pokefirered/src/party_menu.c:812 DisplayPartyPokemonDataForChooseMultiple
+  if PartyMenu._chooseOrder then
+    if not entry_eligible(slot) then return Strings("NOT ABLE") end
+    local idx = order_index(slot)
+    if idx and MULTI_ORDER_TEXT[idx] then return Strings(MULTI_ORDER_TEXT[idx]) end
+    return Strings("ABLE")
+  end
+  -- pokefirered/src/party_menu.c:881 DisplayPartyPokemonDataToTeachMove
+  if PartyMenu._tutor then
+    local MoveLearn = require("src.core.game3.move_learn")
+    local status = MoveLearn.canMonLearnTutorMove(mon, PartyMenu._tutor)
+    if status == MoveLearn.ALREADY_KNOWS_MOVE then return Strings("LEARNED") end
+    if status == MoveLearn.CAN_LEARN_MOVE then return Strings("ABLE!") end
+    return Strings("NOT ABLE!")
+  end
   local item = PartyMenu._item
   if not item or PartyMenu._battle then return nil end
   if PartyMenu.mode ~= "use" and PartyMenu.mode ~= "message" then return nil end
@@ -1738,13 +2097,19 @@ local function slot_description(mon)
   return Strings("No use.")
 end
 
+function PartyMenu.slotDescription(slot)
+  local mon = PartyMenu._party and PartyMenu._party[slot]
+  if not mon then return nil end
+  return slot_description(slot, mon)
+end
+
 local function draw_filled_slot(i, mon, selected)
   local win = slot_win(i)
   if not win then return end
   local T = Display.TILE or 8
   local baseX, baseY = win.left * T, win.top * T
   local info = slot_info(i)
-  local desc = slot_description(mon)
+  local desc = slot_description(i, mon)
 
   PartyChrome.drawSlot(win.kind, win.left, win.top, selected, desc ~= nil)
 
@@ -1955,9 +2320,18 @@ function PartyMenu.draw()
       end
     elseif PartyMenu.mode == "give" then
       promptText = Strings("Give to which POKéMON?")
+    elseif PartyMenu.mode == "move_tutor" then
+      -- pokefirered/src/data/party_menu.h:609
+      promptText = Strings("Teach which POKéMON?")
     end
     FrlgFont.draw(promptText, 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
-    PartyChrome.drawCancelButton(184, 136, PartyMenu.cursor == 7)
+    if PartyMenu.mode == "choose_multi" then
+      -- pokefirered/src/party_menu.c:1063 DrawCancelConfirmButtons
+      PartyChrome.drawConfirmButton(184, 128, PartyMenu.cursor == SLOT_CONFIRM)
+      PartyChrome.drawCancelButton(184, 144, PartyMenu.cursor == SLOT_CANCEL_MULTI)
+    else
+      PartyChrome.drawCancelButton(184, 136, PartyMenu.cursor == 7)
+    end
   end
 end
 

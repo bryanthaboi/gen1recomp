@@ -18,7 +18,7 @@ local MultichoiceExtract = require("src.import.gba.multichoice_extract")
 print("[test] 1. extractor readiness contract")
 check(type(RegionMapExtract.run) == "function", "region_map_extract has a run()")
 check(type(RegionMapExtract.ready) == "function", "region_map_extract has a ready()")
-check(#RegionMapExtract.FILES == 5, "region_map_extract names 5 baked files")
+check(#RegionMapExtract.FILES == 6, "region_map_extract names 6 baked files")
 
 local function stubCache(present)
   return {
@@ -85,6 +85,7 @@ local EXPECT = {
   ["kanto_map.png"] = { 240, 160 },
   ["cursor.png"] = { 16, 16 },
   ["dungeon_icon.png"] = { 8, 8 },
+  ["dungeon_icon_visited.png"] = { 8, 8 },
   ["player_red.png"] = { 16, 16 },
   ["player_leaf.png"] = { 16, 16 },
 }
@@ -94,6 +95,25 @@ for _, name in ipairs(RegionMapExtract.FILES) do
   local want = EXPECT[name]
   check(w == want[1] and h == want[2], string.format(
     "region_map/%s is %sx%s (want %dx%d)", name, tostring(w), tostring(h), want[1], want[2]))
+end
+
+-- pokefirered/src/region_map.c:790 sAnim_DungeonIconVisited is frame 1, :795 frame 0
+local frame0 = readFile("region_map/dungeon_icon.rgba")
+local frame1 = readFile("region_map/dungeon_icon_visited.rgba")
+check(frame0 and #frame0 == 8 * 8 * 4, "dungeon_icon.rgba is one 8x8 frame")
+check(frame1 and #frame1 == 8 * 8 * 4, "dungeon_icon_visited.rgba is one 8x8 frame")
+check(frame0 ~= frame1, "the visited marker is the second frame of the icon sheet")
+if frame0 and frame1 then
+  local function opaque(blob)
+    local n = 0
+    for i = 4, #blob, 4 do
+      if blob:byte(i) == 255 then n = n + 1 end
+    end
+    return n
+  end
+  check(opaque(frame1) > opaque(frame0), string.format(
+    "the visited ring paints more of the cell than the unvisited blob (%d > %d)",
+    opaque(frame1), opaque(frame0)))
 end
 
 local mapSections = readFile("region_map/map_sections.lua")

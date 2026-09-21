@@ -692,6 +692,42 @@ function Pokemon.currentMapSec(session)
   return def and tonumber(def.regionMapSectionId) or nil
 end
 
+local function player_identity(player)
+  player = player or {}
+  local id = player.trainerId or player.id or player.playerId
+  local name = player.name or player.playerName or player.otName
+  if id == nil or name == nil then
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local ok, sess = pcall(function()
+      return Runtime and Runtime.getSession and Runtime.getSession()
+    end)
+    if ok and sess then
+      id = id or sess.trainerId or sess.id or sess.playerId
+      name = name or sess.name or sess.playerName
+    end
+  end
+  return tonumber(id), name
+end
+
+-- pokefirered/src/pokemon.c:5974 IsOtherTrainer
+function Pokemon.isOtherTrainer(otId, otName, player)
+  local playerId, playerName = player_identity(player)
+  if playerId == nil then return false end
+  if tonumber(otId) ~= playerId then return true end
+  local mine = tostring(playerName or "")
+  local theirs = tostring(otName or "")
+  for i = 1, #theirs do
+    if theirs:sub(i, i) ~= mine:sub(i, i) then return true end
+  end
+  return false
+end
+
+-- pokefirered/src/pokemon.c:5965 IsTradedMon
+function Pokemon.isTradedMon(mon, player)
+  if type(mon) ~= "table" or mon.otId == nil then return false end
+  return Pokemon.isOtherTrainer(mon.otId, mon.otName or mon.ot, player)
+end
+
 local function friendship_bonuses(mon, friendship, ctx)
   if (tonumber(mon.pokeball or mon.ball) or 0) == ITEM_LUXURY_BALL then
     friendship = friendship + 1

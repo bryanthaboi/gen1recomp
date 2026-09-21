@@ -1,6 +1,4 @@
--- FRLG Trainer Card front (pret trainer_card.c).
--- Displays player name, 5-digit IDNo, money, Pokédex count, playtime,
--- 64×64 trainer front pic (Red/Leaf), and 8 Kanto gym badges.
+-- src/trainer_card.c
 
 local Stack = require("src.ui.game3.stack")
 local FrlgFont = require("src.ui.game3.frlg_font")
@@ -11,14 +9,24 @@ local TrainerCard = {}
 TrainerCard.open = false
 TrainerCard._session = nil
 TrainerCard._onClose = nil
+TrainerCard._card = nil
 
--- Cached images
-local _bgMale = nil
-local _bgFemale = nil
+-- src/trainer_card.c:224 sTrainerCardWindowTemplates[1] tilemapLeft 1, tilemapTop 1
+local WIN_X, WIN_Y = 8, 8
+
+-- src/trainer_card.c:1145 x = -122 - 6 * StringLength(buffer)
+local CHAR_ADVANCE = 6
+
 local _badgesImg = nil
 local _badgeQuads = nil
+local _starImg = nil
+local _stickersImg = nil
+local _stickerQuads = nil
 local _picRed = nil
 local _picLeaf = nil
+local _cards = nil
+local _cardEdge = {}
+local _screens = nil
 local _assetsTried = false
 
 local function read_cache_file(path)
@@ -59,7 +67,7 @@ local function load_rgba_image(candidates, w, h)
         if ok and imgData then
           local img = love.graphics.newImage(imgData)
           if img.setFilter then img:setFilter("nearest", "nearest") end
-          return img
+          return img, raw
         end
       end
     else
@@ -87,20 +95,8 @@ end
 local function ensureAssets()
   if _assetsTried then return end
   _assetsTried = true
-
-  _bgMale = load_rgba_image({
-    "trainer_card/bg.rgba",
-    "data/generated/gba/trainer_card/bg.rgba",
-    "trainer_card/bg.png",
-    "data/generated/gba/trainer_card/bg.png",
-  }, 240, 160)
-
-  _bgFemale = load_rgba_image({
-    "trainer_card/bg_female.rgba",
-    "data/generated/gba/trainer_card/bg_female.rgba",
-    "trainer_card/bg_female.png",
-    "data/generated/gba/trainer_card/bg_female.png",
-  }, 240, 160)
+  _cards = {}
+  _screens = {}
 
   _badgesImg = load_rgba_image({
     "trainer_card/badges.rgba",
@@ -114,6 +110,29 @@ local function ensureAssets()
     local iw, ih = _badgesImg:getDimensions()
     for i = 0, 7 do
       _badgeQuads[i + 1] = love.graphics.newQuad(i * 16, 0, 16, 16, iw, ih)
+    end
+  end
+
+  -- src/trainer_card.c:1553 FillBgTilemapBufferRect(3, 143, ...) tile 143 + sTrainerCardStar_Pal
+  _starImg = load_rgba_image({
+    "trainer_card/star.rgba",
+    "data/generated/gba/trainer_card/star.rgba",
+  }, 8, 8)
+
+  -- src/trainer_card.c:1454 PrintStickersOnCard, 4 sticker tiles x 4 palette slots
+  _stickersImg = load_rgba_image({
+    "trainer_card/stickers.rgba",
+    "data/generated/gba/trainer_card/stickers.rgba",
+  }, 64, 64)
+
+  if _stickersImg and love and love.graphics and love.graphics.newQuad then
+    _stickerQuads = {}
+    local iw, ih = _stickersImg:getDimensions()
+    for pal = 1, 4 do
+      _stickerQuads[pal] = {}
+      for i = 1, 3 do
+        _stickerQuads[pal][i] = love.graphics.newQuad((i - 1) * 16, (pal - 1) * 16, 16, 16, iw, ih)
+      end
     end
   end
 
@@ -134,17 +153,71 @@ local function ensureAssets()
   }, 64, 64)
 end
 
-local function count_caught(dex)
-  if not dex then return 0 end
-  local n = 0
-  for sp, on in pairs(dex.caught or {}) do
-    if on then n = n + 1 end
+-- src/trainer_card.c:1482 sKantoTrainerCardPals[stars] picks the card colour
+local function card_image(side, stars, female)
+  ensureAssets()
+  if not _cards then return nil end
+  stars = math.max(0, math.min(4, tonumber(stars) or 0))
+  local key = string.format("%s%d%s", side, stars, female and "f" or "m")
+  if _cards[key] ~= nil then return _cards[key] or nil end
+
+  local suffix = female and "_female" or ""
+  local names = {
+    string.format("trainer_card/%s_%d%s.rgba", side, stars, suffix),
+    string.format("data/generated/gba/trainer_card/%s_%d%s.rgba", side, stars, suffix),
+  }
+  if female then
+    names[#names + 1] = string.format("trainer_card/%s_%d.rgba", side, stars)
+    names[#names + 1] = string.format("data/generated/gba/trainer_card/%s_%d.rgba", side, stars)
   end
-  return n
+  names[#names + 1] = "trainer_card/bg" .. suffix .. ".rgba"
+  names[#names + 1] = "data/generated/gba/trainer_card/bg" .. suffix .. ".rgba"
+  names[#names + 1] = "trainer_card/bg.rgba"
+  names[#names + 1] = "data/generated/gba/trainer_card/bg.rgba"
+
+  local img, raw = load_rgba_image(names, 240, 160)
+  _cards[key] = img or false
+  if raw and #raw >= 4 then
+    _cardEdge[key] = {
+      raw:byte(1) / 255,
+      raw:byte(2) / 255,
+      raw:byte(3) / 255,
+    }
+  end
+  return img
+end
+
+-- src/trainer_card.c:1516 DrawCardScreenBackground keeps BG2 full size while BG0 flips
+local function screen_image(stars, female)
+  ensureAssets()
+  if not _screens then return nil end
+  stars = math.max(0, math.min(4, tonumber(stars) or 0))
+  local key = string.format("%d%s", stars, female and "f" or "m")
+  if _screens[key] ~= nil then return _screens[key] or nil end
+
+  local suffix = female and "_female" or ""
+  local names = {
+    string.format("trainer_card/screen_%d%s.rgba", stars, suffix),
+    string.format("data/generated/gba/trainer_card/screen_%d%s.rgba", stars, suffix),
+  }
+  if female then
+    names[#names + 1] = string.format("trainer_card/screen_%d.rgba", stars)
+    names[#names + 1] = string.format("data/generated/gba/trainer_card/screen_%d.rgba", stars)
+  end
+  local img = load_rgba_image(names, 240, 160)
+  _screens[key] = img or false
+  return img
 end
 
 local BADGE_FLAGS = { 0x820, 0x821, 0x822, 0x823, 0x824, 0x825, 0x826, 0x827 }
 local BADGE_NAMES = { "BOULDER", "CASCADE", "THUNDER", "RAINBOW", "SOUL", "MARSH", "VOLCANO", "EARTH" }
+
+local FLAG_SYS_POKEDEX_GET = 0x829
+local FLAG_SYS_NATIONAL_DEX = 0x840
+local VAR_TRAINER_CARD_MON_ICON_1 = 0x4043
+local VAR_HOF_BRAG_STATE = 0x4049
+local VAR_EGG_BRAG_STATE = 0x404A
+local VAR_LINK_WIN_BRAG_STATE = 0x404B
 
 local function check_flags_table(flags, flagId, flagName)
   if not flags or type(flags) ~= "table" then return false end
@@ -162,7 +235,6 @@ local function is_badge_unlocked(session, badgeIndex)
   local bName = BADGE_NAMES[badgeIndex]
   local flagName = string.format("FLAG_BADGE0%d_GET", badgeIndex)
 
-  -- 1. Direct session badges table / number / boolean fields
   if session then
     if session.badges then
       if type(session.badges) == "table" then
@@ -191,13 +263,10 @@ local function is_badge_unlocked(session, badgeIndex)
       return true
     end
 
-    -- Direct session flags
     if check_flags_table(session.flags, flagId, flagName) then return true end
 
-    -- Session store flags
     if session.store and check_flags_table(session.store.flags, flagId, flagName) then return true end
 
-    -- Save / player badges
     local save = session.save or (session.game and session.game.save) or session
     if save and save.player and save.player.badges then
       local pb = save.player.badges
@@ -208,12 +277,10 @@ local function is_badge_unlocked(session, badgeIndex)
     if save and save.flags and check_flags_table(save.flags, flagId, flagName) then return true end
   end
 
-  -- 2. Scripting Space store fallback
   local Space = package.loaded["src.core.game3.scripting.space"]
   local store = (Space and Space.getStore and Space.getStore()) or (Space and Space.store)
   if store and check_flags_table(store.flags, flagId, flagName) then return true end
 
-  -- 3. Runtime active session fallback
   local okRt, Runtime = pcall(require, "src.core.game3.runtime")
   if okRt and Runtime and Runtime.getSession then
     local rtSess = Runtime.getSession()
@@ -224,6 +291,148 @@ local function is_badge_unlocked(session, badgeIndex)
   end
 
   return false
+end
+
+local function script_store()
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  return (Space and Space.getStore and Space.getStore()) or (Space and Space.store)
+end
+
+local function get_flag(session, flagId, flagName)
+  if session and check_flags_table(session.flags, flagId, flagName) then return true end
+  if session and session.store and check_flags_table(session.store.flags, flagId, flagName) then return true end
+  local store = script_store()
+  if store then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags and Flags.getFlag then
+      local ok, v = pcall(Flags.getFlag, store, nil, flagId)
+      if ok and v == true then return true end
+    end
+    if check_flags_table(store.flags, flagId, flagName) then return true end
+  end
+  return false
+end
+
+local function get_var(session, varId)
+  local store = script_store()
+  if store then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags and Flags.getVar then
+      local ok, v = pcall(Flags.getVar, store, nil, varId)
+      if ok then return tonumber(v) or 0 end
+    end
+    if type(store.vars) == "table" then return tonumber(store.vars[varId]) or 0 end
+  end
+  if session and type(session.vars) == "table" then return tonumber(session.vars[varId]) or 0 end
+  return 0
+end
+
+local function dex_caught(dex, sp)
+  if not dex then return false end
+  local okD, Dex = pcall(require, "src.core.game3.dex")
+  if okD and Dex and Dex.isCaught then
+    local ok, v = pcall(Dex.isCaught, dex, sp)
+    if ok then return v == true end
+  end
+  return (dex.caught and dex.caught[sp]) == true
+end
+
+local function has_all_kanto(dex)
+  if not dex then return false end
+  for sp = 1, 150 do
+    if not dex_caught(dex, sp) then return false end
+  end
+  return true
+end
+
+local function has_all_mons(dex)
+  if not has_all_kanto(dex) then return false end
+  for sp = 152, 248 do
+    if not dex_caught(dex, sp) then return false end
+  end
+  for sp = 252, 384 do
+    if not dex_caught(dex, sp) then return false end
+  end
+  return true
+end
+
+local function caught_mons_count(session, national)
+  local dex = session and session.dex
+  if not dex then return tonumber(session and session.caughtMonsCount) or 0 end
+  local okD, Dex = pcall(require, "src.core.game3.dex")
+  if okD and Dex and Dex.countCaught then
+    local ok, n = pcall(Dex.countCaught, dex, national and "national" or "kanto")
+    if ok and n then return n end
+  end
+  local n = 0
+  for _, on in pairs(dex.caught or {}) do
+    if on then n = n + 1 end
+  end
+  return n
+end
+
+-- src/trainer_card.c:858 TrainerCard_GenerateCardForLinkPlayer
+local function gather(session)
+  session = session or {}
+  local c = {}
+  c.female = (session.gender == "female" or session.gender == "F" or session.gender == 1
+    or session.playerGender == "female" or session.playerGender == 1) and true or false
+  c.playerName = tostring(session.name or session.playerName or "RED")
+  c.trainerId = (tonumber(session.trainerId or session.id or session.playerTrainerId) or 0) % 65536
+
+  local pt = session.playtime or session.playTime
+  c.playTimeHours = math.min(999, math.max(0, math.floor(
+    tonumber(session.playTimeHours or session.hours or (pt and pt.hours)) or 0)))
+  c.playTimeMinutes = math.min(59, math.max(0, math.floor(
+    tonumber(session.playTimeMinutes or session.minutes or (pt and pt.minutes)) or 0)))
+
+  c.hofDebutHours = tonumber(session.hofDebutHours) or 0
+  c.hofDebutMinutes = tonumber(session.hofDebutMinutes) or 0
+  c.hofDebutSeconds = tonumber(session.hofDebutSeconds) or 0
+  if c.hofDebutHours > 999 then
+    c.hofDebutHours, c.hofDebutMinutes, c.hofDebutSeconds = 999, 59, 59
+  end
+
+  c.hasPokedex = get_flag(session, FLAG_SYS_POKEDEX_GET, "FLAG_SYS_POKEDEX_GET")
+  local national = get_flag(session, FLAG_SYS_NATIONAL_DEX, "FLAG_SYS_NATIONAL_DEX")
+  c.caughtMonsCount = caught_mons_count(session, national)
+
+  c.money = math.max(0, math.floor(tonumber(session.money) or 0))
+  c.linkBattleWins = math.min(9999, math.max(0, math.floor(tonumber(session.linkBattleWins) or 0)))
+  c.linkBattleLosses = math.min(9999, math.max(0, math.floor(tonumber(session.linkBattleLosses) or 0)))
+  c.pokemonTrades = math.min(65535, math.max(0, math.floor(
+    tonumber(session.pokemonTrades or session.trades) or 0)))
+  c.berryCrushPoints = math.min(65535, math.max(0, math.floor(
+    tonumber(session.berryCrushPoints) or 0)))
+  c.unionRoomNum = math.min(65535, math.max(0, math.floor(
+    tonumber(session.unionRoomNum or session.unionTrades) or 0)))
+
+  c.hasHofResult = (c.hofDebutHours ~= 0 or c.hofDebutMinutes ~= 0 or c.hofDebutSeconds ~= 0)
+  c.hasLinkResults = (c.linkBattleWins ~= 0 or c.linkBattleLosses ~= 0)
+  c.hasTrades = (c.pokemonTrades ~= 0)
+
+  local stars = 0
+  if c.hasHofResult then stars = 1 end
+  if has_all_kanto(session.dex) then stars = stars + 1 end
+  if has_all_mons(session.dex) then stars = stars + 1 end
+  local berries = tonumber(session.berriesPicked) or 0
+  local jumps = tonumber(session.jumpsInRow) or 0
+  if berries >= 200 and jumps >= 200 then stars = stars + 1 end
+  c.stars = math.min(4, stars)
+
+  c.monSpecies = {}
+  for i = 1, 6 do
+    c.monSpecies[i] = get_var(session, VAR_TRAINER_CARD_MON_ICON_1 + i - 1)
+  end
+  c.stickers = {
+    get_var(session, VAR_HOF_BRAG_STATE),
+    get_var(session, VAR_EGG_BRAG_STATE),
+    get_var(session, VAR_LINK_WIN_BRAG_STATE),
+  }
+
+  c.badges = {}
+  for i = 1, 8 do c.badges[i] = is_badge_unlocked(session, i) end
+  return c
 end
 
 function TrainerCard.isBadgeUnlocked(badgeIndex)
@@ -241,24 +450,66 @@ end
 
 TrainerCard.side = "front"
 
+local function play_se(name)
+  local ok, Audio = pcall(require, "src.core.game3.audio")
+  if not ok or not Audio then return end
+  local fn = Audio.playSe or Audio.playSE
+  if fn then pcall(fn, name) end
+end
+
+-- src/trainer_card.c:1700 Task_AnimateCardFlipDown +7 to 77, Task_AnimateCardFlipUp -5 to 0
+local FLIP_TOP_MAX = 77
+local FLIP_DOWN_STEP = 7
+local FLIP_UP_STEP = 5
+
 function TrainerCard.flip()
   TrainerCard.side = (TrainerCard.side == "back") and "front" or "back"
+end
+
+local function beginFlip()
+  TrainerCard._flip = { phase = "down", top = 0 }
+  play_se("SE_CARD_FLIP")
+end
+
+function TrainerCard.update(dt)
+  local f = TrainerCard._flip
+  if not f then return end
+  if f.phase == "down" then
+    f.top = f.top + FLIP_DOWN_STEP
+    if f.top >= FLIP_TOP_MAX then
+      f.top = FLIP_TOP_MAX
+      f.phase = "up"
+      TrainerCard.flip()
+      play_se("SE_CARD_FLIPPING")
+    end
+  else
+    f.top = f.top - FLIP_UP_STEP
+    if f.top <= 0 then
+      TrainerCard._flip = nil
+      play_se("SE_CARD_OPEN")
+    end
+  end
 end
 
 function TrainerCard.show(opts)
   opts = opts or {}
   TrainerCard.open = true
   TrainerCard.side = "front"
+  TrainerCard._flip = nil
   TrainerCard._session = opts.session
+  TrainerCard._card = gather(opts.session)
   TrainerCard._onClose = opts.onClose
   ensureAssets()
   Stack.push("trainer", TrainerCard, { hideBelow = true })
+  play_se("SE_CARD_OPEN")
 end
 
 function TrainerCard.close()
   TrainerCard.open = false
   TrainerCard.side = "front"
+  TrainerCard._flip = nil
   TrainerCard._session = nil
+  TrainerCard._card = nil
   Stack.pop("trainer")
   local cb = TrainerCard._onClose
   TrainerCard._onClose = nil
@@ -269,17 +520,174 @@ function TrainerCard.isOpen()
   return TrainerCard.open
 end
 
+-- src/trainer_card.c:550 STATE_HANDLE_INPUT_FRONT / :587 STATE_HANDLE_INPUT_BACK
 function TrainerCard.handleInput(inp)
   if not TrainerCard.open or not inp then return end
-  if inp:wasPressed("b") then
-    TrainerCard.close()
-    return
+  if TrainerCard._flip then return end
+  if TrainerCard.side == "front" then
+    if inp:wasPressed("a") then
+      beginFlip()
+    elseif inp:wasPressed("b") then
+      TrainerCard.close()
+    end
+  else
+    if inp:wasPressed("b") then
+      beginFlip()
+    elseif inp:wasPressed("a") then
+      TrainerCard.close()
+    end
   end
-  if inp:wasPressed("a") then
-    TrainerCard.flip()
-    local ok, Audio = pcall(require, "src.core.game3.audio")
-    if ok and Audio and Audio.playSE then
-      Audio.playSE(93)
+end
+
+local function right_align(n, width)
+  local s = tostring(math.floor(n))
+  while #s < width do s = " " .. s end
+  return s
+end
+
+local function leading_zeros(n, width)
+  return string.format("%0" .. width .. "d", math.floor(n))
+end
+
+local function str_length(s)
+  local n = 0
+  for _ in tostring(s):gmatch("[%z\1-\127\194-\244][\128-\191]*") do n = n + 1 end
+  return n
+end
+
+-- src/trainer_card.c:1046 PrintAllOnCardFront
+function TrainerCard.frontTexts(c, colonInvisible)
+  c = c or TrainerCard._card or gather(TrainerCard._session)
+  local t = {}
+  local function add(id, text, x, y, stat)
+    t[#t + 1] = { id = id, text = text, x = WIN_X + x, y = WIN_Y + y, stat = stat or false }
+  end
+
+  add("name", Strings("NAME: ") .. c.playerName, 20, 29)
+  add("id", Strings("IDNo.") .. leading_zeros(c.trainerId, 5), 142, 10)
+
+  add("money_label", Strings("MONEY"), 20, 56)
+  local moneyStr = Strings("¥") .. tostring(c.money)
+  add("money", moneyStr, 134 - CHAR_ADVANCE * str_length(moneyStr), 56)
+
+  if c.hasPokedex then
+    add("dex_label", Strings("POKéDEX"), 20, 72)
+    local dexStr = tostring(c.caughtMonsCount)
+    add("dex", dexStr, 136 - CHAR_ADVANCE * str_length(dexStr), 72)
+  end
+
+  add("time_label", Strings("TIME"), 20, 88)
+  add("hours", right_align(c.playTimeHours, 3), 101, 88)
+  if not colonInvisible then
+    add("colon", ":", 119, 88)
+  end
+  add("minutes", leading_zeros(c.playTimeMinutes, 2), 124, 88)
+  return t
+end
+
+-- src/trainer_card.c:1076 PrintAllOnCardBack
+function TrainerCard.backTexts(c)
+  c = c or TrainerCard._card or gather(TrainerCard._session)
+  local t = {}
+  local function add(id, text, x, y, stat)
+    t[#t + 1] = { id = id, text = text, x = WIN_X + x, y = WIN_Y + y, stat = stat or false }
+  end
+
+  add("name", c.playerName, 138, 11)
+
+  if c.hasHofResult then
+    add("hof_label", Strings("HALL OF FAME DEBUT"), 10, 35)
+    add("hof", right_align(c.hofDebutHours, 3)
+      .. ":" .. leading_zeros(c.hofDebutMinutes, 2)
+      .. ":" .. leading_zeros(c.hofDebutSeconds, 2), 164, 35, true)
+  end
+
+  if c.hasLinkResults then
+    add("link_label", Strings("LINK BATTLES"), 10, 51)
+    add("link_w", "W:", 130, 51)
+    add("link_wins", right_align(c.linkBattleWins, 4), 144, 51, true)
+    add("link_l", "L:", 178, 51)
+    add("link_losses", right_align(c.linkBattleLosses, 4), 192, 51, true)
+  end
+
+  if c.hasTrades then
+    add("trades_label", Strings("POKéMON TRADES"), 10, 67)
+    add("trades", right_align(c.pokemonTrades, 5), 186, 67, true)
+  end
+
+  if c.unionRoomNum ~= 0 then
+    add("union_label", Strings("UNION TRADES & BATTLES"), 10, 83)
+    add("union", right_align(c.unionRoomNum, 5), 186, 83, true)
+  end
+
+  if c.berryCrushPoints ~= 0 then
+    add("berry_label", Strings("BERRY CRUSH"), 10, 99)
+    add("berry", right_align(c.berryCrushPoints, 5), 186, 99, true)
+  end
+  return t
+end
+
+TrainerCard.cardData = gather
+
+local function draw_texts(list)
+  for _, e in ipairs(list) do
+    FrlgFont.draw(e.text, e.x, e.y, { colors = e.stat and FrlgFont.COLOR.STAT or FrlgFont.COLOR.NORMAL })
+  end
+end
+
+local function draw_front(c)
+  local pic = c.female and (_picLeaf or _picRed) or (_picRed or _picLeaf)
+  if pic then
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(pic, WIN_X + 144 + 13, WIN_Y + 32 + 4)
+  end
+
+  draw_texts(TrainerCard.frontTexts(c, TrainerCard._colonInvisible))
+
+  -- src/trainer_card.c:1553 stars at tile (15, 7), badges at tile (4 + 3i, 16)
+  if _starImg then
+    love.graphics.setColor(1, 1, 1, 1)
+    for i = 0, c.stars - 1 do
+      love.graphics.draw(_starImg, 120 + i * 8, 56)
+    end
+  end
+
+  for i = 1, 8 do
+    if c.badges[i] and _badgesImg and _badgeQuads and _badgeQuads[i] then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(_badgesImg, _badgeQuads[i], 32 + (i - 1) * 24, 128)
+    end
+  end
+end
+
+local function draw_back(c)
+  draw_texts(TrainerCard.backTexts(c))
+
+  -- src/trainer_card.c:1414 WriteSequenceToBgTilemapBuffer(3, .., 4i + 3, 15, 4, 4, ..)
+  local okPk, Pokemon = pcall(require, "src.core.game3.pokemon")
+  if okPk and Pokemon and Pokemon.icon then
+    for i = 1, 6 do
+      local sp = c.monSpecies[i]
+      if sp and sp > 0 then
+        local icon = Pokemon.icon(sp)
+        local q = icon and icon.quads and icon.quads[0]
+        if icon and icon.image and q then
+          love.graphics.setColor(1, 1, 1, 1)
+          love.graphics.draw(icon.image, q, 24 + (i - 1) * 32, 120)
+        end
+      end
+    end
+  end
+
+  -- src/trainer_card.c:1454 WriteSequenceToBgTilemapBuffer(3, .., 3i + 2, 2, 2, 2, ..)
+  if _stickersImg and _stickerQuads then
+    for i = 1, 3 do
+      local sticker = c.stickers[i] or 0
+      local quads = _stickerQuads[sticker]
+      if sticker >= 1 and sticker <= 4 and quads and quads[i] then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(_stickersImg, quads[i], 16 + (i - 1) * 24, 16)
+      end
     end
   end
 end
@@ -287,14 +695,37 @@ end
 function TrainerCard.draw()
   if not TrainerCard.open then return end
   ensureAssets()
-  local session = TrainerCard._session or {}
-  local isFemale = (session.gender == "female" or session.gender == 1 or session.playerGender == "female")
-  local name = tostring(session.name or session.playerName or "RED")
-  local rawId = tonumber(session.trainerId or session.id or session.playerTrainerId) or 0
-  local idStr = string.format("%05d", rawId % 65536)
+  local c = TrainerCard._card or gather(TrainerCard._session)
 
-  -- 1. Card Background
-  local bg = isFemale and (_bgFemale or _bgMale) or (_bgMale or _bgFemale)
+  -- src/trainer_card.c:1613 BlinkTimeColon toggles every 61 vblanks
+  local colonOn = true
+  if love and love.timer and love.timer.getTime then
+    colonOn = (math.floor(love.timer.getTime() * 60 / 61) % 2 == 0)
+  end
+  TrainerCard._colonInvisible = not colonOn
+
+  local side = TrainerCard.side
+  local bg = card_image(side, c.stars, c.female)
+
+  local f = TrainerCard._flip
+  if f then
+    local screen = screen_image(c.stars, c.female)
+    love.graphics.setColor(1, 1, 1, 1)
+    if screen then
+      love.graphics.draw(screen, 0, 0)
+    else
+      local e = _cardEdge[string.format("%s%d%s", side, c.stars, c.female and "f" or "m")]
+      love.graphics.setColor(e and e[1] or 0, e and e[2] or 0, e and e[3] or 0, 1)
+      love.graphics.rectangle("fill", 0, 0, 240, 160)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    local scale = math.max(0, (160 - 2 * f.top) / 160)
+    love.graphics.push()
+    love.graphics.translate(0, 80)
+    love.graphics.scale(1, scale)
+    love.graphics.translate(0, -80)
+  end
+
   love.graphics.setColor(1, 1, 1, 1)
   if bg then
     love.graphics.draw(bg, 0, 0)
@@ -306,152 +737,20 @@ function TrainerCard.draw()
     love.graphics.setColor(1, 1, 1, 1)
   end
 
-  if TrainerCard.side == "back" then
-    -- BACK SIDE RENDERING (pret trainer_card.c PrintAllOnCardBack)
-    -- Header: NAME & IDNo.
-    FrlgFont.draw(Strings("NAME:"), 28, 24, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(name, 68, 24, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(Strings("IDNo. %s", idStr), 150, 18, { colors = FrlgFont.COLOR.NORMAL })
-
-    -- 1. HALL OF FAME DEBUT (pret y=35 in window -> screen y=43, label x=18, stat x=172)
-    FrlgFont.draw(Strings("HOF DEBUT"), 28, 43, { colors = FrlgFont.COLOR.NORMAL })
-    local hofStr = "---"
-    if session.hofDebutTime then
-      if type(session.hofDebutTime) == "table" then
-        local h = session.hofDebutTime.hours or 0
-        local m = session.hofDebutTime.minutes or 0
-        local s = session.hofDebutTime.seconds or 0
-        hofStr = string.format("%d:%02d:%02d", h, m, s)
-      else
-        hofStr = tostring(session.hofDebutTime)
-      end
-    elseif session.hofDebutHours or session.hofDebutMinutes then
-      local h = tonumber(session.hofDebutHours) or 0
-      local m = tonumber(session.hofDebutMinutes) or 0
-      local s = tonumber(session.hofDebutSeconds) or 0
-      hofStr = string.format("%d:%02d:%02d", h, m, s)
-    elseif session.flags and session.flags[0x82C] then
-      local pt = session.playtime or session.playTime
-      local h = tonumber(session.playTimeHours or session.hours or (pt and pt.hours)) or 0
-      local m = tonumber(session.playTimeMinutes or session.minutes or (pt and pt.minutes)) or 0
-      hofStr = string.format("%d:%02d", h, m)
-    end
-    FrlgFont.draw(hofStr, 152, 43, { colors = (hofStr == "---") and FrlgFont.COLOR.NORMAL or FrlgFont.COLOR.STAT })
-
-    -- 2. LINK BATTLES
-    local wins = tonumber(session.linkBattleWins) or 0
-    local losses = tonumber(session.linkBattleLosses) or 0
-    FrlgFont.draw(Strings("LINK BATTLES"), 28, 62, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw("W:", 136, 62, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(string.format("%d", wins), 152, 62, { colors = FrlgFont.COLOR.STAT })
-    FrlgFont.draw("L:", 184, 62, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(string.format("%d", losses), 200, 62, { colors = FrlgFont.COLOR.STAT })
-
-    -- 3. POKéMON TRADES
-    local trades = tonumber(session.pokemonTrades or session.trades) or 0
-    FrlgFont.draw(Strings("POKéMON TRADES"), 28, 80, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(string.format("%d", trades), 186, 80, { colors = FrlgFont.COLOR.STAT })
-
-    -- 4. UNION ROOM
-    local unionNum = tonumber(session.unionRoomNum or session.unionTrades) or 0
-    FrlgFont.draw(Strings("UNION ROOM"), 28, 98, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(string.format("%d", unionNum), 186, 98, { colors = FrlgFont.COLOR.STAT })
-
-    -- 5. Party Pokémon Slots / Stickers (Bottom Row)
-    if session.party and #session.party > 0 then
-      for i = 1, math.min(6, #session.party) do
-        local mon = session.party[i]
-        local mx = 28 + (i - 1) * 30
-        local my = 120
-        if mon and not (mon.isEgg or (type(mon.egg) == "boolean" and mon.egg)) then
-          local lvl = tonumber(mon.level) or 1
-          FrlgFont.draw(string.format("L%d", lvl), mx, my, { colors = FrlgFont.COLOR.NORMAL })
-        end
-      end
-    end
-    return
+  if side == "back" then
+    draw_back(c)
+  else
+    draw_front(c)
   end
 
-  -- FRONT SIDE RENDERING
-  -- 2. Trainer Portrait (pret sTrainerPicOffsets: window (152, 40) + offset (13, 4) -> screen (165, 44))
-  local pic = isFemale and (_picLeaf or _picRed) or (_picRed or _picLeaf)
-  if pic then
-    love.graphics.draw(pic, 165, 44)
-  end
-
-  -- 3. Card Labels & Values (pret trainer_card.c relative to window (8, 8))
-  FrlgFont.draw(Strings("NAME:"), 28, 37, { colors = FrlgFont.COLOR.NORMAL })
-  FrlgFont.draw(name, 68, 37, { colors = FrlgFont.COLOR.NORMAL })
-
-  FrlgFont.draw(Strings("IDNo. %s", idStr), 150, 18, { colors = FrlgFont.COLOR.NORMAL })
-
-  -- MONEY (pret x=20, y=56 in window -> screen (28, 64), right aligned at window x=134 -> screen x=142)
-  local money = tonumber(session.money) or 0
-  FrlgFont.draw(Strings("MONEY"), 28, 64, { colors = FrlgFont.COLOR.NORMAL })
-  local moneyStr = string.format("¥%d", money)
-  local moneyW = FrlgFont.measure(moneyStr)
-  FrlgFont.draw(moneyStr, math.max(68, 142 - moneyW), 64, { colors = FrlgFont.COLOR.NORMAL })
-
-  -- POKéDEX (pret x=20, y=72 in window -> screen (28, 80), right aligned at window x=136 -> screen x=144)
-  local caught = count_caught(session.dex) or tonumber(session.caughtMonsCount) or 0
-  FrlgFont.draw(Strings("POKéDEX"), 28, 80, { colors = FrlgFont.COLOR.NORMAL })
-  local dexStr = string.format("%d", caught)
-  local dexW = FrlgFont.measure(dexStr)
-  FrlgFont.draw(dexStr, math.max(68, 144 - dexW), 80, { colors = FrlgFont.COLOR.NORMAL })
-
-  -- TIME (pret x=20, y=88 in window -> screen (28, 96))
-  local pt = session.playtime or session.playTime
-  local hours = tonumber(session.playTimeHours or session.hours or (pt and pt.hours)) or 0
-  local mins = tonumber(session.playTimeMinutes or session.minutes or (pt and pt.minutes)) or 0
-  hours = math.min(999, math.max(0, math.floor(hours)))
-  mins = math.min(59, math.max(0, math.floor(mins)))
-
-  FrlgFont.draw(Strings("TIME"), 28, 96, { colors = FrlgFont.COLOR.NORMAL })
-
-  -- Hours right-aligned to colon at window x=119 -> screen x=127
-  local hoursStr = string.format("%d", hours)
-  local hoursW = FrlgFont.measure(hoursStr)
-  FrlgFont.draw(hoursStr, 127 - hoursW, 96, { colors = FrlgFont.COLOR.NORMAL })
-
-  -- Blinking colon at screen x=127, y=96 (toggles every 30 frames / 0.5s)
-  local colonOn = true
-  if love and love.timer and love.timer.getTime then
-    colonOn = (math.floor(love.timer.getTime() * 2) % 2 == 0)
-  end
-  if colonOn then
-    FrlgFont.draw(":", 127, 96, { colors = FrlgFont.COLOR.NORMAL })
-  end
-
-  -- Minutes (2 digits with leading zero) at window x=124 -> screen x=132
-  local minsStr = string.format("%02d", mins)
-  FrlgFont.draw(minsStr, 132, 96, { colors = FrlgFont.COLOR.NORMAL })
-
-  -- 4. Badges (pret tile 16 -> y = 128, x = 32, 56, 80, 104, 128, 152, 176, 200)
-  for i = 1, 8 do
-    local bx = 32 + (i - 1) * 24
-    local by = 128
-    if is_badge_unlocked(session, i) then
-      if _badgesImg and _badgeQuads and _badgeQuads[i] then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(_badgesImg, _badgeQuads[i], bx, by)
-      else
-        -- Fallback badge representation in authentic Kanto colors
-        local colors = {
-          { 0.65, 0.65, 0.65 }, -- 1. Boulder (Gray)
-          { 0.20, 0.60, 0.95 }, -- 2. Cascade (Blue teardrop)
-          { 0.95, 0.85, 0.20 }, -- 3. Thunder (Yellow star)
-          { 0.30, 0.85, 0.40 }, -- 4. Rainbow (Green flower)
-          { 0.90, 0.30, 0.70 }, -- 5. Soul (Pink heart)
-          { 0.80, 0.70, 0.30 }, -- 6. Marsh (Gold disc)
-          { 0.95, 0.35, 0.20 }, -- 7. Volcano (Red flame)
-          { 0.30, 0.75, 0.35 }, -- 8. Earth (Green feather)
-        }
-        local c = colors[i] or { 0.8, 0.8, 0.8 }
-        love.graphics.setColor(c[1], c[2], c[3], 1)
-        love.graphics.rectangle("fill", bx + 2, by + 2, 12, 12)
-        love.graphics.setColor(1, 1, 1, 0.9)
-        love.graphics.rectangle("line", bx + 2, by + 2, 12, 12)
-      end
+  if f then
+    love.graphics.pop()
+    -- src/trainer_card.c:1000 UpdateCardFlipRegs blendY = (cardTop + 40) / 10
+    local blendY = math.floor((f.top + 40) / 10)
+    if blendY > 4 then
+      love.graphics.setColor(0, 0, 0, math.min(1, blendY / 16))
+      love.graphics.rectangle("fill", 0, 0, 240, 160)
+      love.graphics.setColor(1, 1, 1, 1)
     end
   end
 end
