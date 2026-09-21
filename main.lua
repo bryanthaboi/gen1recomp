@@ -1,4 +1,4 @@
--- Native LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œVE2D port of Pokemon Red. A packaged build creates its private
+-- Native LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“VE2D port of Pokemon Red. A packaged build creates its private
 -- game-data cache from a user-provided ROM on first boot.
 --
 -- The save editor (tools/save-editor/) ships inside every build and is
@@ -1021,7 +1021,10 @@ function love.draw()
   HostDisplay.endFrame("game", Game)
 
   love.graphics.push("all")
-  local status_str = string.format("Autofire: %s | Speed: %.2fs", autofire.enabled and "ON" or "OFF", allOpts.autofireRate)
+  local allOpts = package.loaded["src.core.SaveData"].loadOptions()
+  local e = allOpts.autofireEnabled; if e == nil then e = true end
+  local r = allOpts.autofireRate; if r == nil then r = 0.05 end
+  local status_str = string.format("Autofire: %s | Speed: %.2fs", e and "ON" or "OFF", r)
   
   local font = love.graphics.getFont()
   local tw = font:getWidth(status_str)
@@ -1293,7 +1296,7 @@ end
 function love.touchpressed(id, x, y, dx, dy, pressure)
   if editorMode then
     -- iOS synthesizes mousepressed for the primary touch; forwarding here
-    -- would double-fire.  Android / NX need the explicit touch ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ click path
+    -- would double-fire.  Android / NX need the explicit touch ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ click path
     -- (love-nx does not synthesize mouse for the editor the way desktop does).
     if love.system.getOS() == "iOS" then return end
     if EditorApp and EditorApp.mousepressed then
@@ -1393,7 +1396,7 @@ function love.mousepressed(x, y, button, istouch)
     return TouchEditor.mousepressed(x, y, button)
   end
   if Studio then
-    -- Mobile LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œVE sends both a touch event and an `istouch` mouse twin.
+    -- Mobile LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“VE sends both a touch event and an `istouch` mouse twin.
     -- Studio consumes the real finger stream above, so discard the twin.
     if istouch and (love.system.getOS() == "Android" or love.system.getOS() == "iOS") then return end
     return Studio.mousepressed(x, y, button)
@@ -1404,7 +1407,7 @@ function love.mousepressed(x, y, button, istouch)
   end
   if Importer then
     -- love.touchpressed already forwards the primary touch into FlexLove for
-    -- scroll. LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œVE ALSO synthesizes a mouse press for that same touch; if both
+    -- scroll. LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“VE ALSO synthesizes a mouse press for that same touch; if both
     -- reached a press handler, one tap ran every launcher button twice and
     -- stacked two SAF pickers (#553). Clicks are polled inside FlexLove from
     -- love.touch / mouse.isDown, so dropping the synthesized istouch press is
@@ -1677,7 +1680,7 @@ function love.run()
       cap = FrameCap.DEFAULT
     elseif cap == FrameCap.DISPLAY and PresentSync.needsSoftwareCap() then
       -- Fallback cascade: probe failed / wait abandoned / sync non-
-      -- deterministic ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ FrameCap is the live pacing path on every OS.
+      -- deterministic ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ FrameCap is the live pacing path on every OS.
       -- (During an active probe we intentionally leave DISPLAY uncapped so
       -- calibration is not grading our own limiter.)
       cap = FrameCap.DEFAULT
