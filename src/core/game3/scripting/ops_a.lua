@@ -53,6 +53,51 @@ local function var_get(store, ctx, id)
   return id
 end
 
+local function coins_api()
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local session = Runtime and Runtime.getSession and Runtime.getSession()
+  local okBag, Bag = pcall(require, "src.core.game3.bag")
+  local api = (okBag and type(Bag) == "table") and Bag.Coins or nil
+  if type(api) ~= "table" then api = nil end
+  return api, session
+end
+
+-- pokefirered/src/coins.c:11
+local function coins_get()
+  local api, session = coins_api()
+  if api and type(api.get) == "function" then
+    local ok, n = pcall(api.get, session)
+    if ok and tonumber(n) then return tonumber(n) end
+  end
+  local raw = math.floor(tonumber(session and session.coins) or 0)
+  return raw < 0 and 0 or raw
+end
+
+-- pokefirered/src/coins.c:21
+local function coins_move(add, amount)
+  amount = math.floor(tonumber(amount) or 0)
+  if amount < 0 then amount = 0 end
+  local api, session = coins_api()
+  local fn = api and (add and api.add or api.remove)
+  if type(fn) ~= "function" then return false end
+  local ok, res = pcall(fn, session, amount)
+  return (ok and res) and true or false
+end
+
+-- pokefirered/src/quest_log.c:860
+local function ql_avoid_display()
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = Runtime and Runtime._game
+  return (game and game.phase == "quest_log") and true or false
+end
+
+-- pokefirered/src/coins.c:79
+local function coins_box(fn, ...)
+  local okReq, Box = pcall(require, "src.ui.game3.coins_box")
+  if not (okReq and type(Box) == "table" and type(Box[fn]) == "function") then return false end
+  return (pcall(Box[fn], ...))
+end
+
 local function message_print_done()
   local Message = package.loaded["src.ui.game3.message"]
   if not Message or not Message.isOpen or not Message.isOpen() then
@@ -100,6 +145,97 @@ local function show_message(vm, ptr, stay)
     a.openMessage(body)
   end
   return false
+end
+
+local function text_ctx_view(vm)
+  local ctx = vm.ctx
+  local a = vm.adapters
+  return {
+    stringVars = ctx.stringVars,
+    playerName = a.playerName
+      and (type(a.playerName) == "function" and a.playerName() or a.playerName)
+      or ctx.playerName,
+    rivalName = a.rivalName
+      and (type(a.rivalName) == "function" and a.rivalName() or a.rivalName)
+      or ctx.rivalName,
+  }
+end
+
+-- pokefirered/src/braille_text.c:209
+local BRAILLE_GLYPH_WIDTH = 16
+
+-- pokefirered/src/text.c:1020
+local function braille_width(ir)
+  if type(ir) ~= "table" then return 0 end
+  local best, line = 0, 0
+  for _, seg in ipairs(ir) do
+    if seg.t == "text" then
+      local glyphs = select(2, tostring(seg.s or ""):gsub("[^\128-\191]", ""))
+      line = line + glyphs * BRAILLE_GLYPH_WIDTH
+    elseif seg.t == "nl" then
+      if line > best then best = line end
+      line = 0
+    end
+  end
+  if line > best then best = line end
+  return best
+end
+
+-- pokefirered/src/overworld.c:978
+local function set_map_layout(layoutId, log)
+  layoutId = tonumber(layoutId)
+  if not layoutId then return false end
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = Runtime and Runtime._game
+  local session = Runtime and Runtime.getSession and Runtime.getSession()
+  local mapId = session and session.map
+  local def = mapId and game and game.data and game.data.maps and game.data.maps[mapId]
+  local layout = def and def.midLayout
+  if not layout then return false end
+  local Extract = require("src.import.gba.extract_island1")
+  local Dataset = require("src.core.game3.dataset")
+  local root = Extract.NATIVE_ROOT
+    or ((Extract.CACHE_ROOT or "data/generated/gba") .. "/native")
+  local blob = Dataset.cache():read(root .. "/layouts/alt_" .. layoutId .. ".mid")
+  if not blob then
+    if log then log("[game3] setmaplayoutindex " .. layoutId .. ": no baked layout") end
+    return false
+  end
+  local NativePack = require("src.import.gba.native_pack")
+  local decoded = NativePack.decodeMidLayout(blob)
+  if not decoded or decoded.width ~= layout.width or decoded.height ~= layout.height then
+    if log then log("[game3] setmaplayoutindex " .. layoutId .. ": size mismatch") end
+    return false
+  end
+  local swapped = 0
+  for i = 1, decoded.width * decoded.height do
+    local cell = decoded.cells[i]
+    if cell then
+      local x = (i - 1) % decoded.width
+      local y = math.floor((i - 1) / decoded.width)
+      local cur = layout:cellAt(x, y)
+      if cur.mid ~= cell.mid or cur.coll ~= cell.coll or cur.elev ~= cell.elev then
+        layout:applyOverride(x, y, cell.mid, cell.coll, cell.elev)
+        swapped = swapped + 1
+      end
+    end
+  end
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field._overrideLayouts then Field._overrideLayouts[mapId] = layout end
+  local Collision = package.loaded["src.core.game3.collision"]
+  if Collision and Collision.bindMap then Collision.bindMap(game, mapId, def) end
+  local FieldView = package.loaded["src.core.game3.field_view"]
+  if FieldView then FieldView._nativeDirty = true end
+  return true, swapped
+end
+
+-- pokefirered/include/constants/maps.h:11
+local function warp_hole_dest(group, num)
+  group, num = tonumber(group) or 0, tonumber(num) or 0
+  if group == 0xFF and num == 0xFF then return nil end
+  local Versions = require("src.import.gba.versions")
+  return (Versions.frMapFor and Versions.frMapFor(group, num))
+    or (Versions.seviiMapFor and Versions.seviiMapFor(group, num))
 end
 
 local function dispatch(vm, row)
@@ -189,6 +325,16 @@ local function dispatch(vm, row)
     return false
   elseif op == "setvar" then
     Flags.setVar(store, ctx, row.var or row[1], row.value or row[2])
+    return false
+  elseif op == "addvar" then
+    -- pokefirered/src/scrcmd.c:441
+    local id = row.var or row[1]
+    Flags.setVar(store, ctx, id, Flags.getVar(store, ctx, id) + (tonumber(row.value or row[2]) or 0))
+    return false
+  elseif op == "subvar" then
+    -- pokefirered/src/scrcmd.c:448
+    local id = row.var or row[1]
+    Flags.setVar(store, ctx, id, Flags.getVar(store, ctx, id) - var_get(store, ctx, row.value or row[2]))
     return false
   elseif op == "copyvar" then
     local v = Flags.getVar(store, ctx, row[2])
@@ -351,9 +497,18 @@ local function dispatch(vm, row)
     ctx.status = "waiting"
     ctx.nativePoll = function() return pressed end
     if a.armWaitButton then
-      a.armWaitButton(function()
-        pressed = true
-      end)
+      -- pokefirered/src/scrcmd.c:1401, pokefirered/src/script.c:95
+      local armed = false
+      ctx.nativePoll = function()
+        if not armed then
+          armed = true
+          a.armWaitButton(function()
+            pressed = true
+          end)
+        end
+        return pressed
+      end
+      return true
     elseif a.waitButton then
       a.waitButton(function()
         pressed = true
@@ -419,33 +574,41 @@ local function dispatch(vm, row)
         nickname = gift.nickname
       end
     end
-    local ok = false
-    if a.giveMon then
-      ok = a.giveMon(species, level, row[3], row[4], row[5], nickname)
+    -- pokefirered/src/script_pokemon_util.c:48
+    local code
+    if a.giveMonToPlayer then
+      code = tonumber((a.giveMonToPlayer(species, level, row[3], nickname)))
+    elseif a.giveMon then
+      local ok, c = a.giveMon(species, level, row[3], row[4], row[5], nickname)
+      code = tonumber(c) or (ok and 0 or 2)
     else
       local Party = require("src.core.game3.party")
       local Runtime = package.loaded["src.core.game3.runtime"]
       local session = Runtime and Runtime.getSession and Runtime.getSession()
       if session then
-        ok = Party.giveMon(session, species, level, nickname)
+        code = tonumber((Party.giveMonToPlayer(session, species, level, nickname)))
       end
     end
-    Flags.setVar(store, ctx, Ctx.VAR_RESULT, ok and 0 or 2) -- 0=party, 2=fail
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, code or 2)
     return false
   elseif op == "giveegg" then
     local species = var_get(store, ctx, row[1] or row.species)
-    local ok = false
-    if a.giveEgg then
-      ok = a.giveEgg(species)
+    -- pokefirered/src/script_pokemon_util.c:75
+    local code
+    if a.giveEggToPlayer then
+      code = tonumber((a.giveEggToPlayer(species)))
+    elseif a.giveEgg then
+      local ok, c = a.giveEgg(species)
+      code = tonumber(c) or (ok and 0 or 2)
     else
       local Party = require("src.core.game3.party")
       local Runtime = package.loaded["src.core.game3.runtime"]
       local session = Runtime and Runtime.getSession and Runtime.getSession()
       if session then
-        ok = Party.giveEgg(session, species)
+        code = tonumber((Party.giveEggToPlayer(session, species)))
       end
     end
-    Flags.setVar(store, ctx, Ctx.VAR_RESULT, ok and 0 or 1) -- 0=success, 1=fail
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, code or 2)
     return false
   elseif op == "textcolor" then
     Flags.setVar(store, ctx, Ctx.VAR_PREV_TEXT_COLOR, Flags.getVar(store, ctx, Ctx.VAR_TEXT_COLOR)) -- src/scrcmd.c:1257
@@ -493,29 +656,33 @@ local function dispatch(vm, row)
     end
     return false
   elseif op == "specialvar" then
-    if Natives.special(ctx, row[2], a) then
+    -- pokefirered/src/scrcmd.c:109
+    local yield, value, known = Natives.special(ctx, row[2], a)
+    if value == nil and not known then value = 0 end
+    if value ~= nil then
+      Flags.setVar(store, ctx, row[1], value)
+    end
+    if yield then
       return true
     end
     return false
   elseif op == "waitstate" then
-    -- Host specials / warps that set nativePoll or warpPending: wait out; else no-op.
-    if ctx.warpPending then
+    -- pokefirered/src/scrcmd.c:127
+    local task = ctx.stateWait
+    ctx.stateWait = nil
+    local inner = (ctx.mode == "native") and ctx.nativePoll or nil
+    if task or ctx.warpPending or inner then
       ctx.mode = "native"
       ctx.status = "waiting"
       ctx.nativePoll = function()
-        -- Drain Gen2 MAPSETUP fade (adapters.warp defers done until mapSetup clears).
-        if a.pollWarp then a.pollWarp() end
-        return not ctx.warpPending
+        if ctx.warpPending then
+          if a.pollWarp then a.pollWarp() end
+          if ctx.warpPending then return false end
+        end
+        if task and not task() then return false end
+        if inner and not inner() then return false end
+        return true
       end
-      if ctx.nativePoll() then
-        ctx.mode = "bytecode"
-        ctx.status = "running"
-        ctx.nativePoll = nil
-        return false
-      end
-      return true
-    end
-    if ctx.mode == "native" and ctx.nativePoll then
       if ctx.nativePoll() then
         ctx.mode = "bytecode"
         ctx.status = "running"
@@ -658,6 +825,32 @@ local function dispatch(vm, row)
       return true
     end
     return false
+  elseif op == "setflashlevel" then
+    -- pokefirered/src/scrcmd.c:612
+    local okV, FieldView = pcall(require, "src.core.game3.field_view")
+    if okV and type(FieldView) == "table" and type(FieldView.setFlashLevel) == "function" then
+      pcall(FieldView.setFlashLevel, var_get(store, ctx, row[1]))
+    end
+    return false
+  elseif op == "animateflash" then
+    -- pokefirered/src/scrcmd.c:605
+    local okV, FieldView = pcall(require, "src.core.game3.field_view")
+    local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")
+    if not (okV and type(FieldView) == "table" and type(FieldView.getFlashLevel) == "function"
+        and okFx and type(FieldEffects) == "table"
+        and type(FieldEffects.animateFlashLevel) == "function") then
+      return false
+    end
+    -- pokefirered/src/field_screen_effect.c:194
+    local okAnim, anim = pcall(FieldEffects.animateFlashLevel,
+      FieldView.getFlashLevel(), tonumber(row[1]) or 0)
+    if not (okAnim and type(anim) == "table") then return false end
+    local flashDone = false
+    anim.onDone = function() flashDone = true end
+    ctx.mode = "native"
+    ctx.status = "waiting"
+    ctx.nativePoll = function() return flashDone end
+    return true
   elseif op == "warp" or op == "warpsilent" or op == "warpdoor"
       or op == "warpteleport" or op == "warpspinenter" then
     local group, num = row[1], row[2]
@@ -670,10 +863,36 @@ local function dispatch(vm, row)
       end)
     end
     return false
+  elseif op == "warphole" then
+    -- pokefirered/src/scrcmd.c:761
+    local Player = package.loaded["src.core.game3.player"]
+      or require("src.core.game3.player")
+    local destX, destY = tonumber(Player.cellX) or 0, tonumber(Player.cellY) or 0
+    local destMap = warp_hole_dest(row[1], row[2])
+    if not destMap then
+      a.log(string.format("[game3] warphole unknown FRLG map %s.%s",
+        tostring(row[1]), tostring(row[2])))
+      return false
+    end
+    local Warp = require("src.core.game3.warp")
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local started = Warp.startFall(Runtime and Runtime._mod, Runtime and Runtime._game,
+      destMap, destX, destY)
+    if not started then return false end
+    ctx.warpPending = true
+    local Task = require("src.core.game3.task")
+    Task.spawn(function()
+      if Warp.isBusy and Warp.isBusy() then return false end
+      ctx.warpPending = false
+      return true
+    end)
+    return false
   elseif op == "setwarp" or op == "setdynamicwarp" or op == "setescapewarp"
       or op == "setdivewarp" or op == "setholewarp" then
+    -- pokefirered/src/scrcmd.c:819
     if a.setWarp then
-      a.setWarp(op, row[1], row[2], row[3], row[4], row[5])
+      a.setWarp(op, row[1], row[2], row[3],
+        var_get(store, ctx, row[4]), var_get(store, ctx, row[5]))
     end
     return false
   elseif op == "playse" or op == "playfanfare" or op == "waitfanfare" then
@@ -752,6 +971,56 @@ local function dispatch(vm, row)
       return false
     end
     return true
+  elseif op == "playmoncry" then
+    -- pokefirered/src/scrcmd.c:2088
+    local Audio = require("src.core.game3.audio")
+    Audio.playCry(var_get(store, ctx, row[1]), var_get(store, ctx, row[2]))
+    return false
+  elseif op == "waitmoncry" then
+    -- pokefirered/src/scrcmd.c:2097
+    local Audio = require("src.core.game3.audio")
+    local isFinished = function()
+      if Audio.isCryFinished then return Audio.isCryFinished() == true end
+      return true
+    end
+    if isFinished() then return false end
+    ctx.mode = "native"
+    ctx.status = "waiting"
+    local lastClock = Audio._cryClock
+    ctx.nativePoll = function()
+      if isFinished() then return true end
+      -- pokefirered/src/sound.c:502
+      if Audio._cryClock == lastClock and Audio.tickCry then Audio.tickCry(1 / 60) end
+      lastClock = Audio._cryClock
+      return isFinished()
+    end
+    return true
+  elseif op == "braillemessage" then
+    -- pokefirered/src/scrcmd.c:1558
+    local ptr = row.ptr or row[1]
+    local ir = resolve_text(vm, ptr)
+    if not ir then return show_message(vm, ptr, true) end
+    local body = TextIR.toPlain(ir, text_ctx_view(vm)) or ""
+    local okB, Braille = pcall(require, "src.ui.game3.braille")
+    if okB and type(Braille) == "table" and type(Braille.show) == "function" then
+      local okShow = pcall(Braille.show, body, { width = braille_width(ir) })
+      if okShow then
+        ctx.messageOpen = true
+        return false
+      end
+    end
+    return show_message(vm, ptr, true)
+  elseif op == "getbraillestringwidth" then
+    -- pokefirered/src/scrcmd.c:1570
+    local ir = resolve_text(vm, row.ptr or row[1])
+    local width
+    local okB, Braille = pcall(require, "src.ui.game3.braille")
+    if okB and type(Braille) == "table" and type(Braille.width) == "function" then
+      local okW, v = pcall(Braille.width, TextIR.toPlain(ir or {}, text_ctx_view(vm)) or "")
+      if okW then width = tonumber(v) end
+    end
+    Flags.setVar(store, ctx, 0x8004, width or braille_width(ir))
+    return false
   elseif op == "messageautoscroll" then
     return show_message(vm, row.ptr or row[1], false)
   elseif op == "setmetatile" or op == "dofieldeffect" or op == "waitfieldeffect"
@@ -772,10 +1041,20 @@ local function dispatch(vm, row)
       return true
     end
     if op == "setmetatile" and a.setMetatile then
-      a.setMetatile(row[1], row[2], row[3], row[4])
+      a.setMetatile(row[1], row[2], row[3], (tonumber(row[4]) or 0) ~= 0)
     elseif op == "dofieldeffect" and a.doFieldEffect then
       a.doFieldEffect(row[1])
     end
+    return false
+  elseif op == "setstepcallback" then
+    -- pokefirered/src/scrcmd.c:705
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    Ctx.setStepCallback(row[1] or 0, session and session.map)
+    return false
+  elseif op == "setmaplayoutindex" then
+    -- pokefirered/src/scrcmd.c:711
+    set_map_layout(var_get(store, ctx, row[1]), a.log)
     return false
   elseif op == "setweather" then
     if a.setWeather then a.setWeather(row[1] or row.weather or 0) end
@@ -852,6 +1131,8 @@ local function dispatch(vm, row)
     local battleType = tonumber(row.type) or 0
     local rivalFlags = tonumber(row.flags or row.localId) or 0
     local earlyRival = (battleType == 9) -- TRAINER_BATTLE_EARLY_RIVAL
+    -- pokefirered/src/battle_setup.c:899
+    local tutorialBattle = earlyRival and (rivalFlags % 4) ~= 0
     local eventScript = row.eventScript
     local trainerFlag = Flags.trainerFlagId(trainerId)
     local VsSeeker = require("src.core.game3.vs_seeker")
@@ -996,6 +1277,7 @@ local function dispatch(vm, row)
           trainerId = opponentA,
           earlyRival = earlyRival,
           rivalFlags = rivalFlags,
+          firstBattle = tutorialBattle,
           noWhiteout = earlyRival and (rivalFlags % 2 == 1),
           defeatText = defeatText,
           victoryText = victoryText,
@@ -1146,7 +1428,8 @@ local function dispatch(vm, row)
     local x = tonumber(row[1] or row.x) or 19
     local y = tonumber(row[2] or row.y) or 1
     local ignore = tonumber(row[3] or row.ignore) or 0
-    if ignore == 0 then
+    -- pokefirered/src/scrcmd.c:1834
+    if ignore == 0 and not ql_avoid_display() then
       local MoneyBox = require("src.ui.game3.money_box")
       MoneyBox.show(x, y)
     end
@@ -1158,6 +1441,30 @@ local function dispatch(vm, row)
   elseif op == "updatemoneybox" then
     local MoneyBox = require("src.ui.game3.money_box")
     MoneyBox.update()
+    return false
+  elseif op == "checkcoins" then
+    -- pokefirered/src/scrcmd.c:2197
+    Flags.setVar(store, ctx, row[1] or row.dest, coins_get())
+    return false
+  elseif op == "addcoins" or op == "removecoins" then
+    -- pokefirered/src/scrcmd.c:2204
+    local amount = var_get(store, ctx, row[1] or row.amount)
+    local moved = coins_move(op == "addcoins", amount)
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, moved and 0 or 1)
+    return false
+  elseif op == "showcoinsbox" then
+    -- pokefirered/src/scrcmd.c:1864
+    if not ql_avoid_display() then
+      coins_box("show", tonumber(row[1] or row.x) or 0, tonumber(row[2] or row.y) or 0, coins_get())
+    end
+    return false
+  elseif op == "hidecoinsbox" then
+    -- pokefirered/src/scrcmd.c:1869
+    coins_box("hide")
+    return false
+  elseif op == "updatecoinsbox" then
+    -- pokefirered/src/scrcmd.c:1878
+    coins_box("update", coins_get())
     return false
   elseif op == "pokemart" then
     local ptr = row[1] or row.ptr or row.items
@@ -1212,6 +1519,37 @@ local function dispatch(vm, row)
     local maxv = tonumber(row[1]) or 1
     if maxv < 1 then maxv = 1 end
     Flags.setVar(store, ctx, 0x800D, math.random(0, maxv - 1))
+    return false
+  elseif op == "getplayerxy" then
+    -- pokefirered/src/scrcmd.c:867
+    local Player = package.loaded["src.core.game3.player"]
+      or require("src.core.game3.player")
+    Flags.setVar(store, ctx, row[1], tonumber(Player.cellX) or 0)
+    Flags.setVar(store, ctx, row[2], tonumber(Player.cellY) or 0)
+    return false
+  elseif op == "getpartysize" then
+    -- pokefirered/src/scrcmd.c:877
+    local Party = require("src.core.game3.party")
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, Party.size(session and session.party))
+    return false
+  elseif op == "checkplayergender" then
+    -- pokefirered/src/scrcmd.c:2082
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, tonumber(session and session.gender) or 0)
+    return false
+  elseif op == "bufferboxname" then
+    -- pokefirered/src/pokemon_storage_system.c:118
+    local dest = (tonumber(row.dest or row[1]) or 0) + 1
+    local boxId = var_get(store, ctx, row.src or row[2])
+    local Storage = require("src.core.game3.storage")
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local storage = session and Storage.ensure(session)
+    local box = storage and Storage.getBox(storage, boxId + 1)
+    ctx.stringVars[dest] = (box and box.name) or ""
     return false
   elseif op == "setrespawn" then
     -- pret ScrCmd_setrespawn → SetLastHealLocationWarp(healLocationId)
@@ -1270,5 +1608,9 @@ function Ops.dispatch(vm, row)
   end
   return ModRuntime.call("script.command", commandVanilla(vm), Ctx.modCtx(vm), row.op, row)
 end
+
+Ops.warpHoleDest = warp_hole_dest
+Ops.setMapLayout = set_map_layout
+Ops.brailleWidth = braille_width
 
 return Ops

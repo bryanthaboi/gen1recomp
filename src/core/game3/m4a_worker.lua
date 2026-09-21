@@ -10,19 +10,34 @@ require("love.filesystem")
 local cmdCh = love.thread.getChannel("game3_m4a_cmd")
 local outCh = love.thread.getChannel("game3_m4a_out")
 
--- Prefer filesystem load (package.path is unreliable inside love.thread).
-local function load_mod(rel)
-  local chunk = assert(love.filesystem.load(rel))
-  return chunk()
+-- Resilient module loader for threads
+local function load_mod(rel, modName)
+  if modName and package and package.loaded and package.loaded[modName] then
+    return package.loaded[modName]
+  end
+  if love and love.filesystem and love.filesystem.load then
+    local ok, chunk = pcall(love.filesystem.load, rel)
+    if ok and chunk then
+      local okCall, res = pcall(chunk)
+      if okCall and res then return res end
+    end
+  end
+  if modName then
+    local ok, mod = pcall(require, modName)
+    if ok and mod then return mod end
+  end
+  local chunk = loadfile(rel) or loadfile("./" .. rel)
+  if chunk then return chunk() end
+  error("Failed to load module: " .. tostring(rel))
 end
 
-local Mix = load_mod("src/core/game3/m4a_mix.lua")
+local Mix = load_mod("src/core/game3/m4a_mix.lua", "src.core.game3.m4a_mix")
 package.loaded["src.core.game3.m4a_mix"] = Mix
-local Sample = load_mod("src/core/game3/m4a_sample.lua")
+local Sample = load_mod("src/core/game3/m4a_sample.lua", "src.core.game3.m4a_sample")
 package.loaded["src.core.game3.m4a_sample"] = Sample
-local Seq = load_mod("src/core/game3/m4a_seq.lua")
+local Seq = load_mod("src/core/game3/m4a_seq.lua", "src.core.game3.m4a_seq")
 package.loaded["src.core.game3.m4a_seq"] = Seq
-local Player = load_mod("src/core/game3/m4a_player.lua")
+local Player = load_mod("src/core/game3/m4a_player.lua", "src.core.game3.m4a_player")
 package.loaded["src.core.game3.m4a_player"] = Player
 
 local pack = nil

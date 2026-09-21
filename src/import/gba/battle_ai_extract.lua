@@ -715,9 +715,24 @@ function BattleAiExtract.run(opts)
 
   local lua = "return " .. serialize_value(pack) .. "\n"
   local cache = opts.cache
+  local wrote = false
   if cache and cache.write then
     cache:write(outRel, lua)
-  elseif opts.outPath then
+    wrote = true
+  end
+  if not wrote then
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.write then
+      local ok = pcall(CacheFs.write, outRel, lua)
+      if ok then wrote = true end
+    end
+  end
+  if not wrote and love and love.filesystem and love.filesystem.write then
+    local ok = pcall(love.filesystem.write, outRel, lua)
+    if ok then wrote = true end
+  end
+
+  if not wrote and opts.outPath then
     local dir = opts.outPath:match("^(.*)/[^/]+$")
     if dir then
       pcall(function()
@@ -731,22 +746,6 @@ function BattleAiExtract.run(opts)
       f:close()
     end
     outRel = opts.outPath
-  else
-    local home = os.getenv("HOME")
-    local fallback = (home or ".") .. "/.local/share/love/pokemon-love2d/firered/" .. outRel
-    local dir = fallback:match("^(.*)/[^/]+$")
-    if dir then
-      pcall(function()
-        local lfs = require("lfs")
-        lfs.mkdir(dir)
-      end)
-    end
-    local f = io.open(fallback, "wb")
-    if f then
-      f:write(lua)
-      f:close()
-    end
-    outRel = fallback
   end
 
   local count = 0

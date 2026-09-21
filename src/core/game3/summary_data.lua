@@ -212,8 +212,71 @@ function SummaryData.statusAilment(mon)
     if bit.band(st, 0x20) ~= 0 then return 4 end -- FRZ
     if bit.band(st, 0x10) ~= 0 then return 5 end -- BRN
   end
-  if mon.pokerus and mon.pokerus > 0 then return 6 end -- PKRS
+  -- pokefirered/src/pokemon.c:5618 CheckPartyPokerus
+  if (tonumber(mon.pokerus) or 0) % 16 ~= 0 then return 6 end
   return 0
+end
+
+local _sections = nil
+local function map_sections()
+  if _sections == nil then
+    local ok, mod = pcall(require, "src.import.gba.map_sections_extract")
+    _sections = (ok and type(mod) == "table" and mod) or false
+  end
+  return _sections or nil
+end
+
+local _sec_cache = {}
+local _celadon_by_map = {}
+
+-- pokefirered/src/region_map.c:3801 GetMapName
+local function section_of(sec)
+  local cached = _sec_cache[sec]
+  if cached ~= nil then return cached or nil end
+  local entry = false
+  local Sections = map_sections()
+  if Sections and Sections.getInfo then
+    local ok, info = pcall(Sections.getInfo, sec, nil, 0)
+    if ok and type(info) == "table" and info.resolved then
+      local name = info.rawName or info.name
+      if type(name) == "string" and name ~= "" then entry = { id = info.id, name = name } end
+    end
+  end
+  _sec_cache[sec] = entry
+  return entry or nil
+end
+
+-- pokefirered/src/region_map.c:3782 IsCeladonDeptStoreMapsec
+local function celadon_name(sec, here)
+  local cached = _celadon_by_map[here]
+  if cached == nil then
+    cached = false
+    local Sections = map_sections()
+    if Sections and Sections.getInfo then
+      local ok, info = pcall(Sections.getInfo, sec, here, 0)
+      if ok and type(info) == "table" and info.resolved then
+        local name = info.rawName or info.name
+        if type(name) == "string" and name ~= "" then cached = name end
+      end
+    end
+    _celadon_by_map[here] = cached
+  end
+  return cached or nil
+end
+
+-- pokefirered/src/pokemon_summary_screen.c:2632 MapSecIsInKantoOrSevii / GetMapNameGeneric_
+local function met_location_name(mon, playerState)
+  local stamped = mon.metLocationName
+  if type(stamped) == "string" and stamped ~= "" then return stamped end
+  local sec = tonumber(mon.metLocation)
+  if not sec then return nil end
+  local entry = section_of(sec)
+  if not entry then return nil end
+  local here = playerState and playerState.map
+  if entry.id == "MAPSEC_CELADON_CITY" and type(here) == "string" then
+    return celadon_name(sec, here) or entry.name
+  end
+  return entry.name
 end
 
 --- Trainer Memo formatting (pokefirered/src/pokemon_summary_screen.c PokeSum_PrintTrainerMemo)
@@ -265,7 +328,8 @@ function SummaryData.formatTrainerMemo(mon, playerState)
   local isFateful = not not (mon.fatefulEncounter or mon.metLocation == 255)
   local isHatched = (mon.metLevel == 0 or mon.hatched)
 
-  local locName = Strings(mon.metLocationName or "PALLET TOWN")
+  -- pokefirered/src/pokemon_summary_screen.c:2639 gText_PokeSum_ATrade
+  local locName = Strings(met_location_name(mon, playerState) or "a trade")
   if isTrade then
     locName = Strings("a trade")
   end

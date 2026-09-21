@@ -553,6 +553,8 @@ local function encode_png(pixels, w, h)
   return sig .. make_chunk("IHDR", ihdr) .. make_chunk("IDAT", idat_data) .. make_chunk("IEND", "")
 end
 
+BattleAnimExtract.encodePng = encode_png
+
 --- Extract all sprite sheets referenced in `usedTags` from gBattleAnimPicTable.
 -- @param rom        Rom instance
 -- @param cache      cachefs with :write(rel, bytes)

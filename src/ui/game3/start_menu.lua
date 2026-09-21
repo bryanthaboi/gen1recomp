@@ -71,20 +71,20 @@ function StartMenu.show(opts)
   se(6) -- SE_WIN_OPEN
 end
 
-function StartMenu.close()
+function StartMenu.close(silent)
   StartMenu.open = false
   StartMenu._confirmExit = false
   Stack.pop("start")
   local cb = StartMenu._onClose
   StartMenu._onClose = nil
-  se(9) -- SE_EXIT
+  if not silent then se(5) end -- pokefirered/src/start_menu.c:1005
   if cb then cb() end
 end
 
 function StartMenu.cancel()
   if StartMenu._confirmExit then
     StartMenu._confirmExit = false
-    se(9) -- SE_EXIT
+    -- pokefirered/src/menu.c:381
     return
   end
   StartMenu.close()

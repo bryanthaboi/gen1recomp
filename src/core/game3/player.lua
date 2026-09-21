@@ -10,8 +10,15 @@ local Player = {}
 local CELL = 16
 local WALK_FRAMES = 16
 local RUN_FRAMES = 8
+-- pokefirered/src/event_object_movement.c:9029 UpdateRunSlowAnim
+local RUN_SLOW_FRAMES = 11
 local BIKE_FRAMES = 4
 local TURN_FRAMES = 4
+-- pokefirered/include/constants/metatile_behaviors.h:128
+local MB_CYCLING_ROAD_PULL_DOWN = 0xD0
+local MB_CYCLING_ROAD_PULL_DOWN_GRASS = 0xD1
+-- pokefirered/src/event_object_movement.c:8905 sSpeedFasterStepFuncs
+local FASTER_FRAMES = 4
 -- pret Jump2 / DoJumpSpriteMovement: JUMP_DISTANCE_FAR = 32 frames.
 local JUMP_FRAMES = 32
 -- pret sJumpY_High (event_object_movement.c). Jump2 indexes with sTimer >> 1.
@@ -26,6 +33,10 @@ local DELTA = {
   left = { -1, 0 },
   right = { 1, 0 },
 }
+
+-- pokefirered/src/data/object_events/object_event_anims.h:556
+local SPIN_CYCLE = { "down", "right", "up", "left" }
+local SPIN_PHASE = { down = 1, right = 4, up = 3, left = 2 }
 
 Player.cellX = 0
 Player.cellY = 0
@@ -50,6 +61,15 @@ Player.spriteXOffset = 0
 Player.spriteYOffset = 0
 Player.biking = false
 Player.surfing = false
+-- pokefirered/src/field_player_avatar.c:1679
+Player.fishing = false
+Player.prevCellX = 0
+Player.prevCellY = 0
+-- pokefirered/src/field_player_avatar.c:325
+Player.animDisabled = false
+-- pokefirered/src/event_object_movement.c:7741
+Player.spinning = false
+Player.spinStart = "down"
 -- pokefirered/src/field_fadetransition.c:860
 Player.walkInPlace = false
 Player.walkInPlaceFast = false
@@ -111,6 +131,10 @@ function Player.reset(x, y, facing)
   Player.spriteXOffset = 0
   Player.spriteYOffset = 0
   Player.biking = false
+  Player.prevCellX = Player.cellX
+  Player.prevCellY = Player.cellY
+  Player.animDisabled = false
+  Player.spinning = false
   Player.walkInPlace = false
   Player.walkInPlaceFast = false
   if not Player._logged then
@@ -180,7 +204,15 @@ local function walkInPlaceFrames()
   return Player.walkInPlaceFast and RUN_FRAMES or WALK_FRAMES
 end
 
+-- pokefirered/src/field_effect.c:1215 FallWarpEffect_4
+local function warp_owns_sprite()
+  local Warp = package.loaded["src.core.game3.warp"]
+  return (Warp and Warp.isBusy and Warp.isBusy()) == true
+end
+
 function Player.walkPhase()
+  -- pokefirered/src/field_player_avatar.c:325
+  if Player.animDisabled then return 0 end
   if Player.turnTimer > 0 then return 1 end
   if not Player.moving then
     if not Player.walkInPlace then return 0 end
@@ -220,6 +252,8 @@ function Player.jumpSpriteY()
 end
 
 local function beginStep(tx, ty, run, ledge)
+  Player.prevCellX = Player.cellX
+  Player.prevCellY = Player.cellY
   Player.moving = true
   Player.progress = 0
   Player.targetX = tx
@@ -338,6 +372,16 @@ function Player.tryMove(dir, game, run)
     return "escalator_busy"
   end
 
+  -- pokefirered/src/field_control_avatar.c:825 TryArrowWarp
+  if Collision.isArrowWarp
+      and Collision.isArrowWarp(game, Player.cellX, Player.cellY, dir) then
+    local Warp = require("src.core.game3.warp")
+    if Warp.isBusy() then return "arrow_busy" end
+    if Collision.tryWarpAt(game, Player.cellX, Player.cellY, dir, { arrow = true }) then
+      return "arrow_warp"
+    end
+  end
+
   local ok, why = Collision.canEnter(game, tx, ty, {
     fromX = Player.cellX,
     fromY = Player.cellY,
@@ -359,8 +403,14 @@ function Player.tryMove(dir, game, run)
             return Collision.canEnter(game, bx, by, { fromX = tx, fromY = ty, dir = dir })
           end)
           if canPush then
-            obj.x = destBx
-            obj.y = destBy
+            obj.cellX = destBx
+            obj.cellY = destBy
+            obj.px = destBx * CELL
+            obj.py = destBy * CELL
+            obj.targetX = destBx
+            obj.targetY = destBy
+            obj.moving = false
+            obj.facing = dir
             if obj.def then obj.def.x = destBx; obj.def.y = destBy end
             if ModRuntime.wants("world.boulder_moved") then
               local Map = package.loaded["src.core.game3.map"]
@@ -369,6 +419,9 @@ function Player.tryMove(dir, game, run)
               })
             end
             beginStep(tx, ty, false, false)
+            -- pokefirered/src/field_player_avatar.c:1452
+            local Field = require("src.core.game3.field")
+            if Field.onBoulderMoved then Field.onBoulderMoved(game, obj, destBx, destBy) end
             return "step"
           end
         end
@@ -396,6 +449,67 @@ function Player.tryMove(dir, game, run)
   return "step"
 end
 
+-- pokefirered/src/metatile_behavior.c:668 MetatileBehavior_IsCyclingRoadPullDownTile
+local function isCyclingRoadPullDown(beh)
+  if Collision.isCyclingRoadPullDown then
+    return Collision.isCyclingRoadPullDown(beh) == true
+  end
+  return beh ~= nil and beh >= MB_CYCLING_ROAD_PULL_DOWN
+    and beh <= MB_CYCLING_ROAD_PULL_DOWN_GRASS
+end
+
+-- pokefirered/src/bike.c:215 GetBikeCollision
+local function bikeCanMove(game, dir)
+  local d = DELTA[dir]
+  if not d then return false end
+  return Collision.canEnter(game, Player.cellX + d[1], Player.cellY + d[2], {
+    fromX = Player.cellX, fromY = Player.cellY, dir = dir, surfing = Player.surfing,
+  }) == true
+end
+
+-- pokefirered/src/bike.c:199 BikeTransition_Downhill
+local function bikeDownhill(game)
+  local lx, ly = Collision.ledgeLanding(game, Player.cellX, Player.cellY, "down")
+  if lx then
+    Player.facing = "down"
+    beginStep(lx, ly, false, true)
+    return true
+  end
+  if not bikeCanMove(game, "down") then return false end
+  Player.facing = "down"
+  beginStep(Player.cellX, Player.cellY + 1, false, false)
+  Player.stepFrames = FASTER_FRAMES
+  return true
+end
+
+-- pokefirered/src/bike.c:209 BikeTransition_Uphill
+local function bikeUphill(game, dir)
+  local d = DELTA[dir]
+  if not d then return false end
+  if not bikeCanMove(game, dir) then return false end
+  Player.facing = dir
+  beginStep(Player.cellX + d[1], Player.cellY + d[2], false, false)
+  Player.stepFrames = WALK_FRAMES
+  return true
+end
+
+-- pokefirered/src/bike.c:53 BikeInputHandler_Normal
+function Player.cyclingRoadPull(game, input, dir)
+  if not Player.biking then return false end
+  if Player.moving then return false end
+  local beh = Collision.behavior and Collision.behavior(Player.cellX, Player.cellY)
+  if not isCyclingRoadPullDown(beh) then return false end
+  local braking = (input and input.isDown and input:isDown("b")) and true or false
+  if not braking then
+    -- pokefirered/src/bike.c:65
+    if dir == nil or dir == "down" then return bikeDownhill(game) end
+    return bikeUphill(game, dir)
+  end
+  -- pokefirered/src/bike.c:72
+  if dir ~= nil then return bikeUphill(game, dir) end
+  return false
+end
+
 --- Forced step along dir with onDone callback (e.g. exiting door).
 function Player.forceStep(dir, onDone)
   if Player.moving then return false end
@@ -407,13 +521,54 @@ function Player.forceStep(dir, onDone)
   return true
 end
 
+-- pokefirered/src/field_player_avatar.c:292
+function Player.forcedStep(dir, frames, opts)
+  if Player.moving then return false end
+  local d = DELTA[dir]
+  if not d then return false end
+  opts = opts or {}
+  if not opts.keepFacing then Player.facing = dir end
+  Player._onStepDone = nil
+  if opts.ledgeX then
+    beginStep(opts.ledgeX, opts.ledgeY, false, true)
+  else
+    local tx, ty = Player.cellX + d[1], Player.cellY + d[2]
+    Player.dismounting = Player.surfing
+      and (not (Collision.isWater and Collision.isWater(tx, ty))) or false
+    beginStep(tx, ty, false, false)
+  end
+  if frames and not opts.ledgeX and not Player.dismounting then
+    Player.stepFrames = frames
+  end
+  if Player.spinning then Player.spinStart = dir end
+  return true
+end
+
 --- Forced script step (applymovement localId 0xFF) — skips collision.
-function Player.scriptStep(dir)
+function Player.scriptStep(dir, run, slow)
   if Player.moving then return false end
   local d = DELTA[dir or Player.facing]
   if not d then return false end
   Player.facing = dir or Player.facing
-  beginStep(Player.cellX + d[1], Player.cellY + d[2], false, false)
+  beginStep(Player.cellX + d[1], Player.cellY + d[2], run and true or false, false)
+  -- pokefirered/src/event_object_movement.c:9029 UpdateRunSlowAnim
+  if run and slow then Player.stepFrames = RUN_SLOW_FRAMES end
+  return true
+end
+
+--- Forced script jump (applymovement localId 0xFF) — hops over ledges / gaps.
+function Player.scriptJump(dir, distance)
+  if Player.moving then return false end
+  distance = distance or 1
+  local d = DELTA[dir or Player.facing]
+  if not d then return false end
+  Player.facing = dir or Player.facing
+  pcall(function()
+    local Audio = require("src.core.game3.audio")
+    local SE = require("src.core.game3.se_ids")
+    if Audio.playSe and SE.SE_LEDGE then Audio.playSe(SE.SE_LEDGE) end
+  end)
+  beginStep(Player.cellX + d[1] * distance, Player.cellY + d[2] * distance, false, true)
   return true
 end
 
@@ -441,6 +596,8 @@ function Player.startFieldMove(duration)
 end
 
 local function finishStep(game)
+  -- pokefirered/src/event_object_movement.c:7741
+  if Player.spinning then Player.facing = Player.spinStart or Player.facing end
   Player.cellX = Player.targetX
   Player.cellY = Player.targetY
   Player.px = Player.cellX * CELL
@@ -490,29 +647,53 @@ local function finishStep(game)
     return
   end
 
-  -- Evaluate Overworld Step Events (Happiness, VS Seeker, Poison, Egg/Daycare, Repel)
-  local StepEvents = package.loaded["src.core.game3.step_events"]
-    or require("src.core.game3.step_events")
-  if StepEvents and StepEvents.onStepTaken then
-    StepEvents.onStepTaken(session, game)
-  end
+  local ForcedMovement = package.loaded["src.core.game3.forced_movement"]
+    or require("src.core.game3.forced_movement")
+  -- pokefirered/src/field_control_avatar.c:136
+  local onForcedTile =
+    ForcedMovement.isForcedMovementTile(Collision.behavior(Player.cellX, Player.cellY))
 
-  -- Land-on-warp via owned warp table (mapDef.warps).
-  Collision.tryWarpAt(game, Player.cellX, Player.cellY, Player.facing)
-
-  -- Coord events (Oak leave-block, triggers) after landing on the cell.
   local Field = package.loaded["src.core.game3.field"]
     or require("src.core.game3.field")
-  if Field.tryCoordEvents then
-    Field.tryCoordEvents(game, Player.cellX, Player.cellY)
+
+  if not onForcedTile then
+    -- Evaluate Overworld Step Events (Happiness, VS Seeker, Poison, Egg/Daycare, Repel)
+    local StepEvents = package.loaded["src.core.game3.step_events"]
+      or require("src.core.game3.step_events")
+    if StepEvents and StepEvents.onStepTaken then
+      StepEvents.onStepTaken(session, game)
+    end
+
+    -- Land-on-warp via owned warp table (mapDef.warps).
+    Collision.tryWarpAt(game, Player.cellX, Player.cellY, Player.facing)
+
+    -- Coord events (Oak leave-block, triggers) after landing on the cell.
+    if Field.tryCoordEvents then
+      Field.tryCoordEvents(game, Player.cellX, Player.cellY)
+    end
   end
 
-  -- Wild encounters on grass/water when step completes (pret StandardWildEncounter).
+  -- pokefirered/src/field_control_avatar.c:209
+  if not Field.locked then
+    local okTs, TrainerSight = pcall(require, "src.core.game3.trainer_sight")
+    if okTs and TrainerSight and TrainerSight.check then
+      TrainerSight.check(game)
+    end
+  end
+
+  -- pokefirered/src/field_tasks.c:66
+  ForcedMovement.runStepCallback(game, Player.prevCellX, Player.prevCellY)
+
+  -- pokefirered/src/field_player_avatar.c:136
+  local Warp = package.loaded["src.core.game3.warp"]
+  local warping = (Warp and Warp.isBusy and Warp.isBusy()) and true or false
+  if not warping and ForcedMovement.onStepFinished(game) then return end
+
+  -- pokefirered/src/wild_encounter.c:757
   local onGrass = Collision.isGrass and Collision.isGrass(Player.cellX, Player.cellY)
   local onWater = Player.surfing and (Collision.isWater and Collision.isWater(Player.cellX, Player.cellY))
   local okE, Encounters = pcall(require, "src.core.game3.encounters")
-  local triggeredBattle = false
-  if (onGrass or onWater) and okE and Encounters and Encounters.onStep then
+  if okE and Encounters and Encounters.onStep and not onForcedTile then
     local Battle = package.loaded["src.core.game3.battle"]
     local busy = (Battle and Battle.isActive and Battle.isActive()) or Field.locked
     local Space = package.loaded["src.core.game3.scripting.space"]
@@ -525,28 +706,15 @@ local function finishStep(game)
         local Map = package.loaded["src.core.game3.map"]
         mapId = Map and Map.current
       end
-      local enterFromOther = not (Encounters._prevGrass)
-      local terrain = onWater and "water" or "land"
-      local enc = Encounters.onStep(mapId, terrain, { enterFromOther = enterFromOther })
+      local enc = Encounters.onStep(mapId, nil, { x = Player.cellX, y = Player.cellY })
       if enc then
-        -- Repel gating: pokefirered/src/wild_encounter.c:215
-        local repelSteps = tonumber(session and (session.repelSteps or (session.vars and session.vars[0x4020]))) or 0
-        local leadLevel = 1
-        if session and session.party and session.party[1] then
-          leadLevel = tonumber(session.party[1].level) or 1
-        end
-        local repelled = (repelSteps > 0) and (tonumber(enc.level) or 1) <= leadLevel
-        if not repelled then
-          local Runtime = package.loaded["src.core.game3.runtime"]
-          local BattleBridge = require("src.core.game3.battle_bridge")
-          local mod = Runtime and Runtime._mod
-          local g = game or (Runtime and Runtime._game)
-          local okB, errB = BattleBridge.startWild(mod, g, enc, {})
-          if not okB then
-            print("[game3/encounters] startWild failed: " .. tostring(errB))
-          else
-            triggeredBattle = true
-          end
+        local Runtime = package.loaded["src.core.game3.runtime"]
+        local BattleBridge = require("src.core.game3.battle_bridge")
+        local mod = Runtime and Runtime._mod
+        local g = game or (Runtime and Runtime._game)
+        local okB, errB = BattleBridge.startWild(mod, g, enc, {})
+        if not okB then
+          print("[game3/encounters] startWild failed: " .. tostring(errB))
         end
       end
     end
@@ -558,14 +726,6 @@ local function finishStep(game)
     local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")
     if okFx and FieldEffects and FieldEffects.tallGrassAt then
       FieldEffects.tallGrassAt(Player.cellX, Player.cellY, true)
-    end
-  end
-
-  -- Trainer line of sight check on step completion (if not entering wild battle)
-  if not triggeredBattle and not Field.locked then
-    local okTs, TrainerSight = pcall(require, "src.core.game3.trainer_sight")
-    if okTs and TrainerSight and TrainerSight.check then
-      TrainerSight.check(game)
     end
   end
 end
@@ -589,7 +749,7 @@ function Player.tick(game)
       local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")
       local clock = (okFx and FieldEffects and FieldEffects._surfClock) or 0
       Player.spriteYOffset = (math.floor(clock / 48) % 2 == 1) and -1 or 0
-    elseif not Player.walkInPlace then
+    elseif not Player.walkInPlace and not warp_owns_sprite() then
       Player.spriteYOffset = 0
     end
     return false
@@ -608,6 +768,12 @@ function Player.tick(game)
     Player.spriteYOffset = Player.jumpSpriteY()
   else
     Player.spriteYOffset = 0
+  end
+  -- pokefirered/src/data/object_events/object_event_anims.h:556
+  if Player.spinning then
+    local base = SPIN_PHASE[Player.spinStart] or 1
+    local idx = (base - 1 + math.floor((Player.progress - 1) / 2)) % #SPIN_CYCLE
+    Player.facing = SPIN_CYCLE[idx + 1]
   end
   if Player.progress >= frames then
     finishStep(game)
@@ -658,6 +824,8 @@ function Player.update(game, input)
   end
 
   local dir = dirs_from_input(input)
+  -- pokefirered/src/bike.c:43 MovePlayerOnBike
+  if Player.cyclingRoadPull(game, input, dir) then return end
   if not dir then
     Player.turnArmed = true
     return

@@ -432,6 +432,62 @@ function Bag.splitForHost(bag, hostInventory)
   return hostWrites, quarantine, overflow
 end
 
+Bag.MAX_COINS = 9999 -- pokefirered/include/constants/coins.h:4
+
+local Coins = {}
+Bag.Coins = Coins
+
+Coins.MAX_COINS = Bag.MAX_COINS
+
+-- pokefirered/src/coins.c:11
+function Coins.get(session)
+  if type(session) ~= "table" then return 0 end
+  local n = math.floor(tonumber(session.coins) or 0)
+  if n < 0 then return 0 end
+  if n > Bag.MAX_COINS then return Bag.MAX_COINS end
+  return n
+end
+
+-- pokefirered/src/coins.c:16
+function Coins.set(session, amount)
+  if type(session) ~= "table" then return 0 end
+  local n = math.floor(tonumber(amount) or 0)
+  if n < 0 then n = 0 end
+  if n > Bag.MAX_COINS then n = Bag.MAX_COINS end
+  session.coins = n
+  return n
+end
+
+-- pokefirered/src/coins.c:21
+function Coins.add(session, toAdd)
+  if type(session) ~= "table" then return false end
+  local coins = Coins.get(session)
+  if coins >= Bag.MAX_COINS then return false end
+  toAdd = math.floor(tonumber(toAdd) or 0)
+  if toAdd < 0 then toAdd = 0 end
+  local sum = (coins + toAdd) % 65536
+  if sum >= coins then
+    coins = (sum > Bag.MAX_COINS) and Bag.MAX_COINS or sum
+  else
+    coins = Bag.MAX_COINS
+  end
+  Coins.set(session, coins)
+  return true
+end
+
+-- pokefirered/src/coins.c:41
+function Coins.remove(session, toSub)
+  if type(session) ~= "table" then return false end
+  local coins = Coins.get(session)
+  toSub = math.floor(tonumber(toSub) or 0)
+  if toSub < 0 then toSub = 0 end
+  if coins >= toSub then
+    Coins.set(session, coins - toSub)
+    return true
+  end
+  return false
+end
+
 function Bag.applyHostWrites(save, hostWrites)
   if not save then return end
   save.inventory = save.inventory or {}

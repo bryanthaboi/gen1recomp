@@ -91,6 +91,12 @@ function Window.stdFrame(tpl)
   Chrome.stdFrame(L, Top, W, H)
 end
 
+-- pokefirered/src/text_window.c:80
+function Window.fixedStdFrame(tpl)
+  Chrome.fixedStdFrame(tpl.left or tpl.tilemapLeft, tpl.top or tpl.tilemapTop,
+    tpl.w or tpl.width, tpl.h or tpl.height)
+end
+
 function Window.userFrame(tpl, frameType)
   Chrome.userFrame(frameType, tpl.left or tpl.tilemapLeft, tpl.top or tpl.tilemapTop,
     tpl.w or tpl.width, tpl.h or tpl.height)
@@ -120,12 +126,14 @@ function Window.print(text, tx, ty, opts)
   })
 end
 
+-- pokefirered/src/new_menu_helpers.c:61
 function Window.printPx(text, px, py, opts)
   opts = opts or {}
   FrlgFont.draw(tostring(text or ""), px, py, {
     maxWidth = opts.maxWidth or (Display.COLS * T),
     colors = opts.colors or FrlgFont.COLOR.NORMAL,
     limitChars = opts.limitChars,
+    small = opts.small,
   })
 end
 

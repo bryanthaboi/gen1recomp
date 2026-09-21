@@ -101,7 +101,8 @@ function CatchSeq.begin(st, itemId, caught, shakes, opts)
 
   local playerName = (session and (session.name or session.playerName)) or "RED"
   local ballName = ItemsData.displayName(itemId) or "POKé BALL"
-  local ename = (st and st.enemy and st.enemy.mon and (st.enemy.mon.nickname or st.enemy.mon.name))
+  local emon = st and st.enemy and st.enemy.mon
+  local ename = (emon and ((emon.nickname ~= "" and emon.nickname) or emon.name))
     or Pokemon.name(st and st.enemy and st.enemy.species) or "POKéMON"
 
   -- pokefirered/data/battle_scripts_2.s:124
@@ -115,13 +116,16 @@ function CatchSeq.begin(st, itemId, caught, shakes, opts)
       if CatchSeq._pushMsg then CatchSeq._pushMsg(DODGE) end
     elseif caught then
       local res = Catching.storeCaught(session, st and st.enemy, itemId)
+      CatchSeq._catchResult = res
       if CatchSeq._pushMsg then
         CatchSeq._pushMsg(Strings("Gotcha!\n%s was caught!", ename))
         if res and res.firstTimeCaught then
           CatchSeq._pushMsg(Strings("%s's data was\nadded to the POKéDEX.", ename))
         end
         if res and res.location == "pc" then
-          CatchSeq._pushMsg(Strings("%s was transferred\nto the PC.", ename))
+          -- pokefirered/src/battle_script_commands.c:9617
+          local Storage = require("src.core.game3.storage")
+          CatchSeq._pushMsg(Storage.pcTransferMessage(session, ename))
         end
       end
     else

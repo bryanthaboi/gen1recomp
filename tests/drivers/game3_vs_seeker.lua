@@ -1,7 +1,8 @@
 local U = require("tests.drivers.util")
 local DIR = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/game3_vs_seeker"
 
-local ITEM_VS_SEEKER = 374
+-- pokefirered/include/constants/items.h:434
+local ITEM_VS_SEEKER = 362
 local LASS_MEGAN, LASS_MEGAN_2 = 130, 648
 local TWINS_ELI_ANNE, TWINS_ELI_ANNE_2 = 484, 533
 local IVYSAUR, WARTORTLE = 2, 8

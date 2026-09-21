@@ -7,11 +7,35 @@
 
 local Versions = require("src.import.gba.versions")
 local TextIR = require("src.core.game3.scripting.text_ir")
+local Lz77 = require("src.import.gba.lz77")
 
 local PokedexChromeExtract = {}
 
 PokedexChromeExtract.CACHE_SUB = "pokemon/pokedex"
-PokedexChromeExtract.FORMAT_VERSION = 2
+PokedexChromeExtract.FORMAT_VERSION = 5
+PokedexChromeExtract.TILE_SHEET_COLS = 8
+PokedexChromeExtract.TILE_SHEETS = {
+  kanto = "dex_tiles_kanto.rgba",
+  national = "dex_tiles_national.rgba",
+}
+PokedexChromeExtract.CHROME_FILE = "chrome.lua"
+PokedexChromeExtract.PAPER_BG_FILE = "paper_bg.rgba"
+PokedexChromeExtract.PAPER_BG_W = 240
+PokedexChromeExtract.PAPER_BG_H = 160
+-- src/pokedex_screen.c:930
+PokedexChromeExtract.PAPER_TILE = 0x001
+-- src/pokedex_screen.c:933
+PokedexChromeExtract.PAPER_BAR_TILE = 0x003
+PokedexChromeExtract.PAPER_BAR_PAL = 15
+PokedexChromeExtract.PAPER_BAR_ROWS = 2
+PokedexChromeExtract.FOOTPRINT_TABLE = 0x43FAB0
+PokedexChromeExtract.FOOTPRINT_SUB = "footprints"
+PokedexChromeExtract.FOOTPRINT_BYTES = 32
+PokedexChromeExtract.FOOTPRINT_W = 16
+PokedexChromeExtract.FOOTPRINT_H = 16
+-- src/data/pokemon_graphics/footprint_table.h:255
+PokedexChromeExtract.FOOTPRINT_QUESTION_MARK_SPECIES = 252
+PokedexChromeExtract.FOOTPRINT_QUESTION_MARK_FILE = "question_mark.rgba"
 
 local function default_cache_root()
   local ok, Extract = pcall(require, "src.import.gba.extract_island1")
@@ -89,8 +113,20 @@ local function escape_lua(s)
 end
 
 local function write_file(cache, relPath, content)
+  local wrote = false
   if cache and cache.write then
     cache:write(relPath, content)
+    wrote = true
+  end
+  if not wrote then
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.write then
+      local ok = pcall(CacheFs.write, relPath, content)
+      if ok then wrote = true end
+    end
+  end
+  if not wrote and love and love.filesystem and love.filesystem.write then
+    pcall(love.filesystem.write, relPath, content)
   end
   local f = io.open(relPath, "wb") or io.open("data/generated/gba/" .. relPath:gsub("^data/generated/gba/", ""), "wb")
   if f then
@@ -285,6 +321,439 @@ function PokedexChromeExtract.extractOrders(rom, cache, root)
   return true
 end
 
+-- include/pokedex.h:19
+PokedexChromeExtract.DEX_AREA_NAMES = {
+  [0] = "DEX_AREA_NONE",
+  "DEX_AREA_PALLET_TOWN", "DEX_AREA_VIRIDIAN_CITY", "DEX_AREA_PEWTER_CITY",
+  "DEX_AREA_CERULEAN_CITY", "DEX_AREA_LAVENDER_TOWN", "DEX_AREA_VERMILION_CITY",
+  "DEX_AREA_CELADON_CITY", "DEX_AREA_FUCHSIA_CITY", "DEX_AREA_CINNABAR_ISLAND",
+  "DEX_AREA_INDIGO_PLATEAU", "DEX_AREA_SAFFRON_CITY",
+  "DEX_AREA_ROUTE_1", "DEX_AREA_ROUTE_2", "DEX_AREA_ROUTE_3", "DEX_AREA_ROUTE_4",
+  "DEX_AREA_ROUTE_5", "DEX_AREA_ROUTE_6", "DEX_AREA_ROUTE_7", "DEX_AREA_ROUTE_8",
+  "DEX_AREA_ROUTE_9", "DEX_AREA_ROUTE_10", "DEX_AREA_ROUTE_11", "DEX_AREA_ROUTE_12",
+  "DEX_AREA_ROUTE_13", "DEX_AREA_ROUTE_14", "DEX_AREA_ROUTE_15", "DEX_AREA_ROUTE_16",
+  "DEX_AREA_ROUTE_17", "DEX_AREA_ROUTE_18", "DEX_AREA_ROUTE_19", "DEX_AREA_ROUTE_20",
+  "DEX_AREA_ROUTE_21", "DEX_AREA_ROUTE_22", "DEX_AREA_ROUTE_23", "DEX_AREA_ROUTE_24",
+  "DEX_AREA_ROUTE_25",
+  "DEX_AREA_VIRIDIAN_FOREST", "DEX_AREA_DIGLETTS_CAVE", "DEX_AREA_MT_MOON",
+  "DEX_AREA_CERULEAN_CAVE", "DEX_AREA_ROCK_TUNNEL", "DEX_AREA_POWER_PLANT",
+  "DEX_AREA_POKEMON_TOWER", "DEX_AREA_SAFARI_ZONE", "DEX_AREA_SEAFOAM_ISLANDS",
+  "DEX_AREA_POKEMON_MANSION", "DEX_AREA_VICTORY_ROAD",
+  "DEX_AREA_ONE_ISLAND", "DEX_AREA_TWO_ISLAND", "DEX_AREA_THREE_ISLAND",
+  "DEX_AREA_FOUR_ISLAND", "DEX_AREA_FIVE_ISLAND", "DEX_AREA_SIX_ISLAND",
+  "DEX_AREA_SEVEN_ISLAND",
+  "DEX_AREA_KINDLE_ROAD", "DEX_AREA_TREASURE_BEACH", "DEX_AREA_CAPE_BRINK",
+  "DEX_AREA_BOND_BRIDGE", "DEX_AREA_THREE_ISLE_PATH", "DEX_AREA_RESORT_GORGEOUS",
+  "DEX_AREA_WATER_LABYRINTH", "DEX_AREA_FIVE_ISLE_MEADOW", "DEX_AREA_MEMORIAL_PILLAR",
+  "DEX_AREA_OUTCAST_ISLAND", "DEX_AREA_GREEN_PATH", "DEX_AREA_WATER_PATH",
+  "DEX_AREA_RUIN_VALLEY", "DEX_AREA_TRAINER_TOWER", "DEX_AREA_CANYON_ENTRANCE",
+  "DEX_AREA_SEVAULT_CANYON", "DEX_AREA_TANOBY_RUINS", "DEX_AREA_MT_EMBER",
+  "DEX_AREA_BERRY_FOREST", "DEX_AREA_ICEFALL_CAVE", "DEX_AREA_LOST_CAVE",
+  "DEX_AREA_ALTERING_CAVE", "DEX_AREA_PATTERN_BUSH", "DEX_AREA_DOTTED_HOLE",
+  "DEX_AREA_TANOBY_CHAMBER",
+}
+
+-- src/pokedex_area_markers.c:28
+PokedexChromeExtract.MARKER_SHAPES = {
+  [0] = "MARKER_CIRCULAR",
+  [1] = "MARKER_SMALL_H",
+  [2] = "MARKER_SMALL_V",
+  [3] = "MARKER_MED_H",
+  [4] = "MARKER_MED_V",
+  [5] = "MARKER_LARGE_H",
+  [6] = "MARKER_LARGE_V",
+}
+
+-- src/pokedex_area_markers.c:101, src/wild_pokemon_area.c:25
+function PokedexChromeExtract.extractAreaMarkers(rom, cache, root)
+  local MapSections = require("src.import.gba.map_sections_extract")
+  local base = Versions.DEX_AREA_MARKERS
+  local stride = Versions.DEX_AREA_MARKER_ENTRY_SIZE or 4
+  local count = Versions.DEX_AREA_COUNT or 80
+  if not base then return false end
+
+  local names = PokedexChromeExtract.DEX_AREA_NAMES
+  local shapes = PokedexChromeExtract.MARKER_SHAPES
+
+  local markers, order = {}, {}
+  for id = 1, count - 1 do
+    local key = names[id]
+    if key then
+      local off = base + id * stride
+      local shapeId = get_byte(rom, off)
+      local x = get_byte(rom, off + 1)
+      local y = get_byte(rom, off + 2)
+      if x >= 128 then x = x - 256 end
+      if y >= 128 then y = y - 256 end
+      local shape = shapes[shapeId]
+      if shape and not (x == 0 and y == 0 and shapeId == 0) then
+        markers[key] = { x = x, y = y, shape = shape }
+        order[#order + 1] = key
+      end
+    end
+  end
+
+  local mapsecToArea, secOrder = {}, {}
+  for _, tbl in ipairs(Versions.DEX_AREA_MAPSEC_TABLES or {}) do
+    for i = 0, (tbl.count or 0) - 1 do
+      local secId = get_u16(rom, tbl.off + i * 4)
+      local areaId = get_u16(rom, tbl.off + i * 4 + 2)
+      local section = MapSections.SECTIONS and MapSections.SECTIONS[secId]
+      local areaKey = names[areaId]
+      if section and section.id and areaKey and markers[areaKey] and not mapsecToArea[section.id] then
+        mapsecToArea[section.id] = areaKey
+        secOrder[#secOrder + 1] = section.id
+      end
+    end
+  end
+
+  table.sort(order)
+  table.sort(secOrder)
+  local lines = {
+    "-- Auto-generated FRLG Pokédex area markers from ROM. DO NOT EDIT DIRECTLY.",
+    "return {",
+    "  markers = {",
+  }
+  for _, key in ipairs(order) do
+    local m = markers[key]
+    lines[#lines + 1] = string.format("    [\"%s\"] = { x = %d, y = %d, shape = \"%s\" },",
+      key, m.x, m.y, m.shape)
+  end
+  lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "  mapsecToArea = {"
+  for _, secId in ipairs(secOrder) do
+    lines[#lines + 1] = string.format("    [\"%s\"] = \"%s\",", secId, mapsecToArea[secId])
+  end
+  lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "}"
+  lines[#lines + 1] = ""
+
+  write_file(cache, root .. "/area_markers.lua", table.concat(lines, "\n"))
+  return true
+end
+
+function PokedexChromeExtract.bakeTileSheet(gfx, palette)
+  local cols = PokedexChromeExtract.TILE_SHEET_COLS
+  local tileCount = math.floor(Lz77.len(gfx) / 32)
+  local rows = math.ceil(tileCount / cols)
+  local w, h = cols * 8, rows * 8
+  local rgb = {}
+  for i = 0, 15 do
+    local c = (palette[i] or 0) % 32768
+    rgb[i] = string.char(
+      math.floor((c % 32) * 255 / 31 + 0.5),
+      math.floor((math.floor(c / 32) % 32) * 255 / 31 + 0.5),
+      math.floor((math.floor(c / 1024) % 32) * 255 / 31 + 0.5),
+      255)
+  end
+  local chunks = {}
+  for i = 1, w * h do chunks[i] = rgb[0] end
+  for t = 0, tileCount - 1 do
+    local baseX = (t % cols) * 8
+    local baseY = math.floor(t / cols) * 8
+    for row = 0, 7 do
+      for bx = 0, 3 do
+        local byte = gfx[t * 32 + row * 4 + bx + 1] or 0
+        local o = (baseY + row) * w + baseX + bx * 2 + 1
+        chunks[o] = rgb[byte % 16]
+        chunks[o + 1] = rgb[math.floor(byte / 16) % 16]
+      end
+    end
+  end
+  return table.concat(chunks), w, h
+end
+
+-- src/pokedex_screen.c:897
+function PokedexChromeExtract.extractTileSheets(rom, cache, root)
+  local function get(i) return get_byte(rom, i) end
+  for variant, file in pairs(PokedexChromeExtract.TILE_SHEETS) do
+    local src = Versions.POKEDEX_BG_TILES and Versions.POKEDEX_BG_TILES[variant]
+    if src then
+      local gfx = Lz77.decompress(get, src.gfx)
+      local palette = {}
+      for i = 0, 15 do
+        palette[i] = get_u16(rom, src.pal + i * 2)
+      end
+      write_file(cache, root .. "/" .. file, (PokedexChromeExtract.bakeTileSheet(gfx, palette)))
+    end
+  end
+  return true
+end
+
+local function gba_rgb(c)
+  c = (c or 0) % 32768
+  return math.floor((c % 32) * 255 / 31 + 0.5),
+    math.floor((math.floor(c / 32) % 32) * 255 / 31 + 0.5),
+    math.floor((math.floor(c / 1024) % 32) * 255 / 31 + 0.5)
+end
+
+local function read_palette(rom, off)
+  local pal = {}
+  for i = 0, 15 do pal[i] = get_u16(rom, off + i * 2) end
+  return pal
+end
+
+local function raw_tiles(rom, off, byteCount)
+  local out = {}
+  for i = 1, byteCount do out[i] = get_byte(rom, off + i - 1) end
+  return out
+end
+
+local function tile_source(rom, src)
+  if src.lz then
+    return Lz77.decompress(function(i) return get_byte(rom, i) end, src.gfx)
+  end
+  return raw_tiles(rom, src.gfx, math.floor(src.w * src.h / 2))
+end
+
+function PokedexChromeExtract.bakeImage(gfx, palette, w, h, opts)
+  opts = opts or {}
+  local cols = math.floor(w / 8)
+  local rows = math.floor(h / 8)
+  local tile0 = opts.tile0 or 0
+  local rgb = {}
+  for i = 0, 15 do
+    local r, g, b = gba_rgb(palette and palette[i])
+    local a = 255
+    if i == 0 and not opts.opaqueZero then a = 0; r, g, b = 0, 0, 0 end
+    if opts.mask then
+      if i == 0 then r, g, b, a = 0, 0, 0, 0 else r, g, b, a = 255, 255, 255, 255 end
+    end
+    rgb[i] = string.char(r, g, b, a)
+  end
+  local chunks = {}
+  for i = 1, w * h do chunks[i] = rgb[0] end
+  for t = 0, cols * rows - 1 do
+    local baseX = (t % cols) * 8
+    local baseY = math.floor(t / cols) * 8
+    for row = 0, 7 do
+      for bx = 0, 3 do
+        local byte = gfx[(tile0 + t) * 32 + row * 4 + bx + 1] or 0
+        local o = (baseY + row) * w + baseX + bx * 2 + 1
+        chunks[o] = rgb[byte % 16]
+        chunks[o + 1] = rgb[math.floor(byte / 16) % 16]
+      end
+    end
+  end
+  return table.concat(chunks)
+end
+
+-- src/pokedex_screen.c:143
+function PokedexChromeExtract.extractChromeGfx(rom, cache, root)
+  local src = Versions.POKEDEX_BG_TILES and Versions.POKEDEX_BG_TILES.kanto
+  if not src then return false end
+  local palette = read_palette(rom, src.pal)
+  for _, g in ipairs(Versions.POKEDEX_CHROME_GFX or {}) do
+    local gfx = tile_source(rom, g)
+    write_file(cache, root .. "/" .. g.file,
+      PokedexChromeExtract.bakeImage(gfx, palette, g.w, g.h))
+  end
+  return true
+end
+
+-- src/pokedex_screen.c:158
+function PokedexChromeExtract.extractCategoryIcons(rom, cache, root)
+  local w = Versions.POKEDEX_CATEGORY_ICON_W or 64
+  local h = Versions.POKEDEX_CATEGORY_ICON_H or 48
+  for _, icon in ipairs(Versions.POKEDEX_CATEGORY_ICONS or {}) do
+    local gfx = Lz77.decompress(function(i) return get_byte(rom, i) end, icon.gfx)
+    local palette = read_palette(rom, icon.pal)
+    write_file(cache, root .. "/" .. icon.file,
+      PokedexChromeExtract.bakeImage(gfx, palette, w, h))
+  end
+  return true
+end
+
+-- src/pokedex_area_markers.c:203
+function PokedexChromeExtract.extractAreaMarkerGfx(rom, cache, root)
+  local base = Versions.POKEDEX_AREA_MARKER_GFX
+  if not base then return false end
+  local gfx = Lz77.decompress(function(i) return get_byte(rom, i) end, base)
+  for _, shape in ipairs(Versions.POKEDEX_AREA_MARKER_SHAPES or {}) do
+    write_file(cache, root .. "/" .. shape.file,
+      PokedexChromeExtract.bakeImage(gfx, nil, shape.w, shape.h, { tile0 = shape.tile, mask = true }))
+  end
+  return true
+end
+
+-- src/pokedex_area_markers.c:237, src/pokedex_screen.c:3103
+function PokedexChromeExtract.extractChromeColors(rom, cache, root)
+  local src = Versions.POKEDEX_BG_TILES and Versions.POKEDEX_BG_TILES.kanto
+  if not src then return false end
+  local palette = read_palette(rom, src.pal)
+  local gfx = Lz77.decompress(function(i) return get_byte(rom, i) end, src.gfx)
+  local blendTile = Versions.POKEDEX_MARKER_BLEND_TILE or 15
+  local eva = Versions.POKEDEX_MARKER_BLEND_EVA or 12
+  local evb = Versions.POKEDEX_MARKER_BLEND_EVB or 8
+  local mr, mg, mb = gba_rgb(palette[(gfx[blendTile * 32 + 1] or 0) % 16])
+  local sr, sg, sb = gba_rgb(get_u16(rom, (Versions.POKEDEX_SILHOUETTE_PAL or 0) + 2))
+  local text = string.format(
+    "-- Auto-generated FRLG Pokédex chrome colors from ROM. DO NOT EDIT DIRECTLY.\nreturn {\n"
+      .. "  marker = { %d, %d, %d, %d },\n  marker_blend = { %d, %d },\n"
+      .. "  silhouette = { %d, %d, %d },\n}\n",
+    mr, mg, mb, math.floor(eva * 255 / 16 + 0.5), eva, evb, sr, sg, sb)
+  write_file(cache, root .. "/" .. PokedexChromeExtract.CHROME_FILE, text)
+  return true
+end
+
+local function read_palette_block(rom, off, count)
+  local pal = {}
+  for i = 0, count - 1 do pal[i] = get_u16(rom, off + i * 2) end
+  return pal
+end
+
+local function palette_colors(pal, base)
+  local out = {}
+  for i = 0, 15 do
+    local r, g, b = gba_rgb(pal and pal[base + i])
+    out[i] = string.char(r, g, b, 255)
+  end
+  return out
+end
+
+-- src/pokedex_screen.c:930
+function PokedexChromeExtract.bakePaperBg(gfx, pal)
+  local w, h = PokedexChromeExtract.PAPER_BG_W, PokedexChromeExtract.PAPER_BG_H
+  local cols, rows = math.floor(w / 8), math.floor(h / 8)
+  local bars = PokedexChromeExtract.PAPER_BAR_ROWS
+  local pagePal = palette_colors(pal, 0)
+  local barPal = palette_colors(pal, PokedexChromeExtract.PAPER_BAR_PAL * 16)
+  local px = {}
+  for i = 1, w * h do px[i] = pagePal[0] end
+  local function blit(tile, colors, tx, ty, keepZero)
+    for row = 0, 7 do
+      for bx = 0, 3 do
+        local byte = gfx[tile * 32 + row * 4 + bx + 1] or 0
+        local o = (ty * 8 + row) * w + tx * 8 + bx * 2 + 1
+        local lo, hi = byte % 16, math.floor(byte / 16) % 16
+        if keepZero or lo ~= 0 then px[o] = colors[lo] end
+        if keepZero or hi ~= 0 then px[o + 1] = colors[hi] end
+      end
+    end
+  end
+  for ty = 0, rows - 1 do
+    for tx = 0, cols - 1 do
+      blit(PokedexChromeExtract.PAPER_TILE, pagePal, tx, ty, true)
+    end
+  end
+  for ty = 0, rows - 1 do
+    if ty < bars or ty >= rows - bars then
+      for tx = 0, cols - 1 do
+        blit(PokedexChromeExtract.PAPER_BAR_TILE, barPal, tx, ty, false)
+      end
+    end
+  end
+  return table.concat(px)
+end
+
+-- src/pokedex_screen.c:896, src/pokedex_screen.c:930
+function PokedexChromeExtract.extractPaperBg(rom, cache, root)
+  local src = Versions.POKEDEX_BG_TILES and Versions.POKEDEX_BG_TILES.kanto
+  if not src then return false end
+  local gfx = Lz77.decompress(function(i) return get_byte(rom, i) end, src.gfx)
+  local pal = read_palette_block(rom, src.pal, 256)
+  write_file(cache, root .. "/" .. PokedexChromeExtract.PAPER_BG_FILE,
+    PokedexChromeExtract.bakePaperBg(gfx, pal))
+  return true
+end
+
+-- src/pokedex_screen.c:2901
+function PokedexChromeExtract.bakeFootprint(bytes, r, g, b)
+  local w, h = PokedexChromeExtract.FOOTPRINT_W, PokedexChromeExtract.FOOTPRINT_H
+  local on = string.char(r or 0, g or 0, b or 0, 255)
+  local off = string.char(0, 0, 0, 0)
+  local px = {}
+  for y = 0, h - 1 do
+    for x = 0, w - 1 do
+      local tile = math.floor(x / 8) + 2 * math.floor(y / 8)
+      local byte = bytes:byte(tile * 8 + (y % 8) + 1) or 0
+      px[#px + 1] = (math.floor(byte / 2 ^ (x % 8)) % 2 == 1) and on or off
+    end
+  end
+  return table.concat(px)
+end
+
+-- src/data/pokemon_graphics/footprint_table.h:3
+function PokedexChromeExtract.footprintTable(rom, cfg)
+  local base = (cfg and cfg.footprint_table)
+    or Versions.MON_FOOTPRINT_TABLE
+    or PokedexChromeExtract.FOOTPRINT_TABLE
+  local count = Versions.NUM_SPECIES or 412
+  local function entry(sp)
+    local ptr = get_u32(rom, base + sp * 4)
+    if ptr < 0x08000000 or ptr >= 0x0A000000 then return nil end
+    return ptr - 0x08000000
+  end
+  local none, bulbasaur = entry(0), entry(1)
+  if not none or none ~= bulbasaur then return nil, base end
+  local out = {}
+  for sp = 0, count - 1 do out[sp] = entry(sp) end
+  return out, base
+end
+
+local function footprint_name_keys(rom)
+  local base = Versions.SPECIES_NAMES
+  local stride = Versions.SPECIES_NAME_LENGTH or 11
+  local count = Versions.NUM_SPECIES or 412
+  if not base then return {} end
+  local lowered, seen = {}, {}
+  for sp = 0, count - 1 do
+    local name = decode_category(rom, base + sp * stride, stride - 1)
+    if name ~= "" and not name:match("^%?+$") and not name:find("[/\\]") then
+      local lower = name:lower()
+      lowered[sp] = lower
+      local stripped = lower:gsub("[^%w_]", "")
+      seen[stripped] = (seen[stripped] or 0) + 1
+    end
+  end
+  local keys = {}
+  for sp, lower in pairs(lowered) do
+    local stripped = lower:gsub("[^%w_]", "")
+    if stripped ~= "" and seen[stripped] == 1 then
+      keys[sp] = stripped
+    else
+      keys[sp] = lower
+    end
+  end
+  return keys
+end
+
+local function footprint_bytes(rom, off)
+  local out = {}
+  for i = 1, PokedexChromeExtract.FOOTPRINT_BYTES do
+    out[i] = string.char(get_byte(rom, off + i - 1))
+  end
+  return table.concat(out)
+end
+
+-- src/pokedex_screen.c:2901, src/pokedex_screen.c:608
+function PokedexChromeExtract.extractFootprints(rom, cache, root, cfg)
+  local offsets = PokedexChromeExtract.footprintTable(rom, cfg)
+  if not offsets then return false end
+  local src = Versions.POKEDEX_BG_TILES and Versions.POKEDEX_BG_TILES.kanto
+  local palette = src and read_palette(rom, src.pal)
+  local r, g, b = gba_rgb(palette and palette[1])
+  local dir = root .. "/" .. PokedexChromeExtract.FOOTPRINT_SUB
+  local keys = footprint_name_keys(rom)
+  local count = Versions.NUM_SPECIES or 412
+  local written = 0
+  for sp = 0, count - 1 do
+    local off = offsets[sp]
+    if off then
+      local rgba = PokedexChromeExtract.bakeFootprint(footprint_bytes(rom, off), r, g, b)
+      write_file(cache, dir .. "/" .. sp .. ".rgba", rgba)
+      if keys[sp] then write_file(cache, dir .. "/" .. keys[sp] .. ".rgba", rgba) end
+      written = written + 1
+    end
+  end
+  local qm = offsets[PokedexChromeExtract.FOOTPRINT_QUESTION_MARK_SPECIES]
+  if qm then
+    write_file(cache, dir .. "/" .. PokedexChromeExtract.FOOTPRINT_QUESTION_MARK_FILE,
+      PokedexChromeExtract.bakeFootprint(footprint_bytes(rom, qm), r, g, b))
+  end
+  return written > 0
+end
+
 function PokedexChromeExtract.run(rom, cache, opts)
   opts = opts or {}
   local cacheRoot = opts.cacheRoot or default_cache_root()
@@ -302,6 +771,14 @@ function PokedexChromeExtract.run(rom, cache, opts)
 
   if opts.progress then opts.progress("pokedex_orders", 2, 3) end
   PokedexChromeExtract.extractOrders(rom, cache, root)
+  PokedexChromeExtract.extractAreaMarkers(rom, cache, root)
+  PokedexChromeExtract.extractTileSheets(rom, cache, root)
+  PokedexChromeExtract.extractChromeGfx(rom, cache, root)
+  PokedexChromeExtract.extractCategoryIcons(rom, cache, root)
+  PokedexChromeExtract.extractAreaMarkerGfx(rom, cache, root)
+  PokedexChromeExtract.extractChromeColors(rom, cache, root)
+  PokedexChromeExtract.extractPaperBg(rom, cache, root)
+  PokedexChromeExtract.extractFootprints(rom, cache, root, opts)
 
   local manifest = string.format(
     "return { format = %d, count = %d, version = 2 }\n",
@@ -351,6 +828,22 @@ function PokedexChromeExtract.ready(cache, cacheRoot)
     and valid_file(root .. "/entries.lua", 20)
     and valid_file(root .. "/categories.lua", 20)
     and valid_file(root .. "/orders.lua", 20)
+    and valid_file(root .. "/area_markers.lua", 20)
+    and valid_file(root .. "/" .. PokedexChromeExtract.TILE_SHEETS.kanto, 64)
+    and valid_file(root .. "/" .. PokedexChromeExtract.TILE_SHEETS.national, 64)
+    and valid_file(root .. "/" .. PokedexChromeExtract.CHROME_FILE, 20)
+    and valid_file(root .. "/map_kanto.rgba", 64)
+    and valid_file(root .. "/mini_page.rgba", 64)
+    and valid_file(root .. "/blit_wide_ellipse.rgba", 64)
+    and valid_file(root .. "/marker_0.rgba", 64)
+    and valid_file(root .. "/cat_icon_grassland.rgba", 64)
+    and valid_file(root .. "/" .. PokedexChromeExtract.PAPER_BG_FILE,
+      PokedexChromeExtract.PAPER_BG_W * PokedexChromeExtract.PAPER_BG_H * 4)
+    and valid_file(root .. "/" .. PokedexChromeExtract.FOOTPRINT_SUB .. "/1.rgba",
+      PokedexChromeExtract.FOOTPRINT_W * PokedexChromeExtract.FOOTPRINT_H * 4)
+    and valid_file(root .. "/" .. PokedexChromeExtract.FOOTPRINT_SUB .. "/bulbasaur.rgba", 64)
+    and valid_file(root .. "/" .. PokedexChromeExtract.FOOTPRINT_SUB .. "/"
+      .. PokedexChromeExtract.FOOTPRINT_QUESTION_MARK_FILE, 64)
 end
 
 return PokedexChromeExtract

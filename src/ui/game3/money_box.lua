@@ -56,7 +56,9 @@ function MoneyBox.draw()
   Window.printPx(Strings("MONEY"), left * 8, top * 8)
   local moneyStr = string.format("¥%d", MoneyBox._amount)
   local mw = (FrlgFont.measure and FrlgFont.measure(moneyStr, { small = true })) or (6 * #moneyStr)
-  Window.printPx(moneyStr, math.max(left * 8, (left + 8) * 8 - mw), top * 8 + 12, { small = true })
+  -- pokefirered/src/money.c:87
+  FrlgFont.draw(moneyStr, math.max(left * 8, (left + 8) * 8 - mw), top * 8 + 12,
+    { small = true, colors = FrlgFont.COLOR.NORMAL })
 end
 
 return MoneyBox

@@ -23,8 +23,14 @@ local function diskFallback(rel)
     prefixes[#prefixes + 1] = "firered/"
   end
   local roots = {}
+  local identity = os.getenv("POKEPORT_IDENTITY") or ""
+  local sandboxed = identity ~= ""
   local home = os.getenv("HOME")
-  if home then
+  if home and sandboxed then
+    roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity
+    roots[#roots + 1] = home .. "/.local/share/love/" .. identity
+  end
+  if home and not sandboxed then
     roots[#roots + 1] = home .. "/.local/share/love/pokemon-love2d"
   end
   if love and love.filesystem and love.filesystem.getSaveDirectory then
@@ -32,7 +38,7 @@ local function diskFallback(rel)
     if type(sd) == "string" and sd ~= "" then
       roots[#roots + 1] = sd
       local parent = sd:match("^(.*)/[^/]+$")
-      if parent then roots[#roots + 1] = parent .. "/pokemon-love2d" end
+      if parent and not sandboxed then roots[#roots + 1] = parent .. "/pokemon-love2d" end
     end
   end
   for _, root in ipairs(roots) do
@@ -120,8 +126,20 @@ function Dataset.buildMaps(warps)
     local floorNum = spec.floorNum
     local weather = spec.weather
     local mapType = spec.mapType
+    -- pokefirered/include/global.fieldmap.h:191
+    local cave = spec.cave
+    local allowEscaping = spec.allowEscaping
+    local allowRunning = spec.allowRunning
+    local bikingAllowed = spec.bikingAllowed
+    local battleType = spec.battleType
+    local music = spec.music
+    local borderWidth = spec.borderWidth
+    local borderHeight = spec.borderHeight
 
-    if regionMapSectionId == nil or showMapName == nil then
+    if regionMapSectionId == nil or showMapName == nil or cave == nil
+        or allowEscaping == nil or allowRunning == nil or bikingAllowed == nil
+        or battleType == nil or music == nil
+        or borderWidth == nil or borderHeight == nil then
       -- Try loading from data/generated/gba/map_tree/maps/{slot}/header.json
       local cache = loveCache()
       local candidates = {}
@@ -153,6 +171,14 @@ function Dataset.buildMaps(warps)
             floorNum = floorNum or h.floorNum
             weather = weather or h.weather
             mapType = mapType or h.mapType
+            cave = cave or h.cave
+            allowEscaping = allowEscaping or h.allowEscaping
+            allowRunning = allowRunning or h.allowRunning
+            bikingAllowed = bikingAllowed or h.bikingAllowed
+            battleType = battleType or h.battleType
+            music = music or h.music
+            borderWidth = borderWidth or h.borderWidth
+            borderHeight = borderHeight or h.borderHeight
             break
           end
         end
@@ -184,6 +210,14 @@ function Dataset.buildMaps(warps)
       floorNum = tonumber(floorNum) or 0,
       weather = weather or 0,
       mapType = mapType or 0,
+      cave = tonumber(cave),
+      allowEscaping = tonumber(allowEscaping),
+      allowRunning = tonumber(allowRunning),
+      bikingAllowed = tonumber(bikingAllowed),
+      battleType = tonumber(battleType),
+      music = tonumber(music),
+      borderWidth = tonumber(borderWidth),
+      borderHeight = tonumber(borderHeight),
       native = true,
     }
   end
@@ -234,8 +268,13 @@ end
 
 --- Point extract roots at the engine firered cache and install native tilesets.
 function Dataset.mountExtractRoots()
-  Extract.CACHE_ROOT = "data/generated/gba"
-  Extract.NATIVE_ROOT = "data/generated/gba/native"
+  local root = Dataset.cacheRootOverride
+    or os.getenv("POKEPORT_GBA_CACHE")
+    or "data/generated/gba"
+  Extract.CACHE_ROOT = root
+  Extract.NATIVE_ROOT = root .. "/native"
+  local HealLocations = package.loaded["src.core.game3.heal_locations"]
+  if HealLocations and HealLocations.invalidate then HealLocations.invalidate() end
 end
 
 --- Bind LayoutNative handles onto map defs (FieldView needs midLayout).

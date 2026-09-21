@@ -187,6 +187,32 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/ow/7.rgba",
     "data/generated/gba/pokemon/manifest.lua",
     "data/generated/gba/pokemon/names.lua",
+    "data/generated/gba/pokemon/front/1.rgba",
+    "data/generated/gba/pokemon/front/200.rgba",
+    "data/generated/gba/pokemon/front/411.rgba",
+    "data/generated/gba/pokemon/back/1.rgba",
+    "data/generated/gba/pokemon/back/200.rgba",
+    "data/generated/gba/pokemon/back/411.rgba",
+    "data/generated/gba/pokemon/icons/1.rgba",
+    "data/generated/gba/pokemon/icons/200.rgba",
+    "data/generated/gba/pokemon/icons/411.rgba",
+    -- src/pokedex_screen.c:930
+    "data/generated/gba/pokemon/pokedex/paper_bg.rgba",
+    -- src/pokedex_screen.c:2901
+    "data/generated/gba/pokemon/pokedex/footprints/1.rgba",
+    "data/generated/gba/pokemon/pokedex/footprints/bulbasaur.rgba",
+    "data/generated/gba/pokemon/pokedex/footprints/question_mark.rgba",
+    "data/generated/gba/region_map/kanto_map.png",
+    "data/generated/gba/region_map/cursor.png",
+    "data/generated/gba/region_map/player_red.png",
+    -- src/region_map.c:425
+    "data/generated/gba/region_map/fly_icon.rgba",
+    "data/generated/gba/region_map/fly_icon.png",
+    "data/generated/gba/region_map/map_sections.lua",
+    -- src/heal_location.c:62, src/region_map.c:4023
+    "data/generated/gba/region_map/heal_locations.lua",
+    "data/generated/gba/region_map/fly_destinations.lua",
+    "data/generated/gba/scripts/multichoice.lua",
     "data/generated/gba/pokemon/stats.lua",
     "data/generated/gba/pokemon/learnsets.lua",
     "data/generated/gba/pokemon/move_names.lua",
@@ -197,6 +223,12 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/pokemon/battle/healthbox_doubles_opponent.rgba",
     "data/generated/gba/pokemon/battle/hp_bold_digits.rgba",
     "data/generated/gba/pokemon/battle/terrain_building.rgba",
+    -- src/battle_bg.c:439
+    "data/generated/gba/pokemon/battle/terrain_grass.rgba",
+    "data/generated/gba/pokemon/battle/terrain_cave.rgba",
+    "data/generated/gba/pokemon/battle/terrain_water.rgba",
+    "data/generated/gba/pokemon/battle/terrain_champion.rgba",
+    "data/generated/gba/pokemon/battle/terrain_bg_cave.rgba",
     "data/generated/gba/pokemon/battle/ball_open/manifest.lua",
     "data/generated/gba/pokemon/battle/ball_open/particles.rgba",
     "data/generated/gba/pokemon/battle_transition/manifest.lua",
@@ -217,6 +249,11 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/doors/manifest.lua",
     "data/generated/gba/doors/pallet.rgba",
     "data/generated/gba/native/manifest.lua",
+    -- src/scrcmd.c:711, include/constants/layouts.h:253,267,268,308
+    "data/generated/gba/native/layouts/alt_264.mid",
+    "data/generated/gba/native/layouts/alt_278.mid",
+    "data/generated/gba/native/layouts/alt_279.mid",
+    "data/generated/gba/native/layouts/alt_319.mid",
     "data/generated/gba/pokemon/summary/manifest.lua",
     "data/generated/gba/pokemon/summary/menu_info.rgba",
     "data/generated/gba/pokemon/storage/manifest.lua",
@@ -229,6 +266,19 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/chrome/user_frame_9.rgba",
     "data/generated/gba/chrome/fonts/latin_normal_fg.rgba",
     "data/generated/gba/chrome/fonts/latin_widths.lua",
+    -- src/braille_text.c:15
+    "data/generated/gba/chrome/fonts/braille_fg.rgba",
+    "data/generated/gba/chrome/fonts/braille_shadow.rgba",
+    "data/generated/gba/chrome/fonts/braille.lua",
+    -- src/seagallop.c:41
+    "data/generated/gba/seagallop/manifest.lua",
+    "data/generated/gba/seagallop/water.4bpp",
+    "data/generated/gba/seagallop/ferry.4bpp",
+    "data/generated/gba/seagallop/wake.4bpp",
+    "data/generated/gba/seagallop/wb_tilemap.bin",
+    "data/generated/gba/seagallop/eb_tilemap.bin",
+    "data/generated/gba/seagallop/wb.rgba",
+    "data/generated/gba/seagallop/eb.rgba",
     "data/generated/gba/trainers.lua",
     "data/generated/gba/trainers/back_0.rgba",
     "data/generated/gba/trainers/back_1.rgba",
@@ -240,6 +290,9 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/field_effects/surf_blob.rgba",
     "data/generated/gba/field_effects/fly_bird.rgba",
     "data/generated/gba/field_effects/ripple.rgba",
+    -- src/data/field_effects/field_effect_objects.h:565,1203
+    "data/generated/gba/field_effects/splash.rgba",
+    "data/generated/gba/field_effects/hot_springs_water.rgba",
     "data/generated/gba/field_effects/emoticons.rgba",
   },
 }
@@ -373,11 +426,24 @@ function CacheContract.readMarker(version, fs)
   return marker
 end
 
+function CacheContract.cacheVersionCurrent(version, fs)
+  if GameVersion.generation(version) ~= 3 then return true end
+  fs = fs or require("src.import.CacheFs")
+  local okV, Versions = pcall(require, "src.import.gba.versions")
+  if not okV or not Versions or not Versions.CACHE_VERSION then return true end
+  local ok, raw = withVersionPrefix(version, fs, function()
+    return fs.read("data/generated/gba/meta.json")
+  end)
+  if not ok or type(raw) ~= "string" then return false end
+  return raw:find('"cache_version"%s*:%s*' .. tostring(Versions.CACHE_VERSION)) ~= nil
+end
+
 function CacheContract.isReady(version, fs)
   fs = fs or require("src.import.CacheFs")
   if CacheContract.sourceTreeHasData(version) then return true end
   local marker, readError = CacheContract.readMarker(version, fs)
   if readError or not CacheContract.markerMatches(version, marker) then return false end
+  if not CacheContract.cacheVersionCurrent(version, fs) then return false end
   return CacheContract.allRequiredFilesExist(version, fs)
 end
 

@@ -95,31 +95,55 @@ function MultichoiceExtract.formatLua(lists)
   return table.concat(lines, "\n")
 end
 
+MultichoiceExtract.CACHE_REL = "scripts/multichoice.lua"
+
+local function multichoice_path(cacheRoot)
+  return (cacheRoot or "data/generated/gba") .. "/" .. MultichoiceExtract.CACHE_REL
+end
+
+function MultichoiceExtract.ready(cache, cacheRoot)
+  local rel = multichoice_path(cacheRoot)
+  if cache and cache.read then
+    local data = cache:read(rel)
+    return (data ~= nil and #data > 40 and data:find("labels", 1, true) ~= nil)
+  end
+  if cache and cache.exists then
+    return cache:exists(rel) and true or false
+  end
+  return false
+end
+
 function MultichoiceExtract.run(rom, cache, opts)
   opts = opts or {}
   local lists = MultichoiceExtract.extract(rom)
   local content = MultichoiceExtract.formatLua(lists)
+  local rel = multichoice_path(opts.cacheRoot)
 
-  local cacheRoot = opts.cacheRoot or "data/generated/gba"
-  local rel = cacheRoot .. "/scripts/multichoice.lua"
-
+  local wrote, err = false, nil
   if cache and cache.write then
-    cache:write(rel, content)
+    local ok, werr = cache:write(rel, content)
+    if ok == false then err = werr else wrote = true end
+  end
+  if not wrote then
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.write then
+      local ok, werr = pcall(CacheFs.write, rel, content)
+      if ok then wrote = true else err = err or werr end
+    end
+  end
+  if not wrote and love and love.filesystem and love.filesystem.write then
+    local ok, werr = pcall(love.filesystem.write, rel, content)
+    if ok then wrote = true else err = err or werr end
+  end
+  if not wrote then
+    error("multichoice: could not write " .. rel .. ": " .. tostring(err))
   end
 
-  local f = io.open(rel, "wb") or io.open("data/generated/gba/scripts/multichoice.lua", "wb")
-  if f then
-    f:write(content)
-    f:close()
+  local n = 0
+  for _, entry in pairs(lists) do
+    if entry and entry.count and entry.count > 0 then n = n + 1 end
   end
-
-  local fStub = io.open("src/import/gba/multichoice_data_stub.lua", "wb")
-  if fStub then
-    fStub:write(content)
-    fStub:close()
-  end
-
-  return true
+  return { path = rel, listCount = n }
 end
 
 return MultichoiceExtract

@@ -48,10 +48,12 @@ ItemsData.CAPACITY = {
   BERRY_POUCH = 43,
 }
 
-ItemsData.ITEM_ITEMFINDER = 356
+-- pokefirered/include/constants/items.h:272
+ItemsData.ITEM_ITEMFINDER = 261
 ItemsData.ITEM_TM_CASE = 364
 ItemsData.ITEM_BERRY_POUCH = 365
-ItemsData.ITEM_VS_SEEKER = 374
+-- pokefirered/include/constants/items.h:434
+ItemsData.ITEM_VS_SEEKER = 362
 ItemsData.FIRST_TM = 289
 ItemsData.LAST_TM = 338
 ItemsData.FIRST_HM = 339
@@ -106,22 +108,22 @@ ItemsData.BY_HOST = {
   LEPPA_BERRY = { name = "LEPPA BERRY", pocket = "BERRY_POUCH", fieldUse = "pp", frlg = 138 },
   NUGGET = { name = "NUGGET", pocket = "ITEMS", fieldUse = "none", frlg = 110 },
   METEORITE = { name = "METEORITE", pocket = "KEY_ITEMS", fieldUse = "key", frlg = 280 },
-  ITEMFINDER = { name = "ITEMFINDER", pocket = "KEY_ITEMS", fieldUse = "itemfinder", frlg = 356 },
+  ITEMFINDER = { name = "ITEMFINDER", pocket = "KEY_ITEMS", fieldUse = "itemfinder", frlg = 261 },
   TOWN_MAP = { name = "TOWN MAP", pocket = "KEY_ITEMS", fieldUse = "map", frlg = 361 },
   BICYCLE = { name = "BICYCLE", pocket = "KEY_ITEMS", fieldUse = "bike", frlg = 360 },
   TRI_PASS = { name = "TRI-PASS", pocket = "KEY_ITEMS", fieldUse = "key", frlg = 367 },
   RAINBOW_PASS = { name = "RAINBOW PASS", pocket = "KEY_ITEMS", fieldUse = "key", frlg = 368 },
-  VS_SEEKER = { name = "VS SEEKER", pocket = "KEY_ITEMS", fieldUse = "vs_seeker", frlg = 374 },
+  VS_SEEKER = { name = "VS SEEKER", pocket = "KEY_ITEMS", fieldUse = "vs_seeker", frlg = 362 },
 }
 
 local FALLBACK = {
   [1] = { name = "MASTER BALL", pocket = "POKE_BALLS", fieldUse = "battle" },
   [4] = { name = "POKé BALL", pocket = "POKE_BALLS", fieldUse = "battle" },
   [13] = { name = "POTION", pocket = "ITEMS", fieldUse = "heal" },
-  [356] = { name = "ITEMFINDER", pocket = "KEY_ITEMS", fieldUse = "itemfinder" },
+  [261] = { name = "ITEMFINDER", pocket = "KEY_ITEMS", fieldUse = "itemfinder" },
+  [362] = { name = "VS SEEKER", pocket = "KEY_ITEMS", fieldUse = "vs_seeker" },
   [364] = { name = "TM CASE", pocket = "KEY_ITEMS", fieldUse = "key" },
   [365] = { name = "BERRY POUCH", pocket = "KEY_ITEMS", fieldUse = "key" },
-  [374] = { name = "VS SEEKER", pocket = "KEY_ITEMS", fieldUse = "vs_seeker" },
 }
 
 ItemsData.HEAL_AMOUNT = {
@@ -499,8 +501,18 @@ local VITAMIN_IDS = { [63] = true, [64] = true, [65] = true, [66] = true, [67] =
 local PP_IDS = { [34] = true, [35] = true, [36] = true, [37] = true, [69] = true, [71] = true }
 local ESCAPE_IDS = { [85] = true }
 local REPEL_IDS = { [83] = true, [84] = true, [86] = true }
-local BIKE_IDS = { [259] = true, [260] = true }
-local MAP_IDS = { [261] = true, [361] = true, [365] = true }
+-- pokefirered/src/data/items.h:3962 FieldUseFunc_Bike
+local BIKE_IDS = { [259] = true, [272] = true, [360] = true }
+-- pokefirered/src/data/items.h:5492 FieldUseFunc_TownMap
+local MAP_IDS = { [361] = true }
+-- pokefirered/src/data/items.h:3977 FieldUseFunc_CoinCase
+local COIN_CASE_IDS = { [260] = true }
+-- pokefirered/src/data/items.h:5657 FieldUseFunc_PowderJar
+local POWDER_JAR_IDS = { [372] = true }
+-- pokefirered/src/data/items.h:3992 ItemUseOutOfBattle_Itemfinder
+local ITEMFINDER_IDS = { [261] = true }
+-- pokefirered/src/data/items.h:5507 FieldUseFunc_VsSeeker
+local VS_SEEKER_IDS = { [362] = true }
 
 --- Effective field-use kind (medicine refined).
 function ItemsData.fieldUseKind(id)
@@ -522,8 +534,12 @@ function ItemsData.fieldUseKind(id)
   end
   if ESCAPE_IDS[num] or host == "ESCAPE_ROPE" then return "escape" end
   if REPEL_IDS[num] or host:find("REPEL", 1, true) then return "repel" end
+  if COIN_CASE_IDS[num] or host == "COIN_CASE" then return "coin_case" end
+  if POWDER_JAR_IDS[num] or host == "POWDER_JAR" then return "powder_jar" end
   if BIKE_IDS[num] or host:find("BIKE", 1, true) or host:find("BICYCLE", 1, true) then return "bike" end
   if MAP_IDS[num] or host == "TOWN_MAP" then return "map" end
+  if ITEMFINDER_IDS[num] or host == "ITEMFINDER" then return "itemfinder" end
+  if VS_SEEKER_IDS[num] or host == "VS_SEEKER" then return "vs_seeker" end
 
   local info = ItemsData.info(id)
   if not info then return "none" end

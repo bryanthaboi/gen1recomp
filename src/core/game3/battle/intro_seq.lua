@@ -216,6 +216,12 @@ local function build_wild(st, opts)
   else
     add("msg", { text = Strings("Wild %s appeared!", ename) })
   end
+  if st.safari then
+    -- pokefirered/src/battle_controller_safari.c:608
+    add("healthbox", { side = "player", frames = 23, from = 115 })
+    add("wait", { frames = 3 })
+    return steps
+  end
   -- pokefirered/src/battle_message.c:399
   add("msg", { text = Strings("Go! %s!", pname), linger = true })
   add("player_throw", {})

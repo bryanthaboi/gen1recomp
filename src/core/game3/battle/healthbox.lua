@@ -201,6 +201,37 @@ local function erase_hp_window(boxX, boxY)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- pokefirered/src/battle_interface.c:615
+local SAFARI_CAP_X, SAFARI_CAP_Y, SAFARI_CAP_W, SAFARI_CAP_H = 96, 17, 2, 7
+local SAFARI_STRIP_X, SAFARI_STRIP_Y, SAFARI_STRIP_W, SAFARI_STRIP_H = 18, 34, 78, 4
+local BOX_SHADOW_SRC_X, BOX_SHADOW_SRC_Y = 10, 35
+local _shadowImg, _shadowQuad
+local _ballsText, _ballsCount, _ballsW
+
+local function draw_safari_box(boxX, boxY)
+  love.graphics.setColor(CREAM)
+  love.graphics.rectangle("fill", boxX + SAFARI_CAP_X, boxY + SAFARI_CAP_Y, SAFARI_CAP_W, SAFARI_CAP_H)
+  love.graphics.setColor(1, 1, 1, 1)
+  local img = BattleChrome._playerBox
+  if not (img and love.graphics.newQuad) then return end
+  if _shadowImg ~= img then
+    _shadowImg = img
+    _shadowQuad = love.graphics.newQuad(BOX_SHADOW_SRC_X, BOX_SHADOW_SRC_Y, 1, 1, img:getDimensions())
+  end
+  love.graphics.draw(img, _shadowQuad, boxX + SAFARI_STRIP_X, boxY + SAFARI_STRIP_Y, 0,
+    SAFARI_STRIP_W, SAFARI_STRIP_H)
+end
+
+-- pokefirered/src/battle_interface.c:1743
+local function safari_balls_text(balls)
+  if _ballsCount ~= balls or not _ballsText then
+    _ballsCount = balls
+    _ballsText = Strings("Left: %d", balls)
+    _ballsW = FrlgFont.measure(_ballsText, { small = true })
+  end
+  return _ballsText, _ballsW
+end
+
 -- pokefirered/src/battle_interface.c:795
 local function draw_hp_nums(cur, maxHp, boxX, boxY)
   FrlgFont.draw(string.format("%3d/", cur or 0), boxX + HP_CUR_X, boxY + HP_TEXT_Y, small_opts(HB_TEXT))
@@ -392,6 +423,21 @@ function Healthbox.draw(side, battler, opts)
     tlX, tlY = enemy_top_left(c.x + ox, c.y)
     BattleChrome.drawEnemyBox(tlX, tlY)
     erase_placeholder_ink(tlX, tlY, ENEMY_PLACEHOLDER_INK)
+  end
+
+  local bstSafari = live_st()
+  if isPlayer and bstSafari and bstSafari.safari then
+    -- pokefirered/src/battle_interface.c:1743
+    local balls = (bstSafari.safariState and tonumber(bstSafari.safariState.balls)) or 0
+    local sbx, sby = hp_bar_top_left(hp_bar_center(side, c.x + ox, c.y))
+    love.graphics.setColor(CREAM)
+    love.graphics.rectangle("fill", sbx, sby - 2, 64, 10)
+    love.graphics.setColor(1, 1, 1, 1)
+    draw_safari_box(tlX, tlY)
+    FrlgFont.draw(Strings("SAFARI BALLS"), tlX + 16, tlY + TEXT_Y, small_opts(HB_TEXT))
+    local left, w = safari_balls_text(math.max(0, math.floor(balls)))
+    FrlgFont.draw(left, tlX + HP_WIN_X + HP_WIN_W - w, tlY + HP_TEXT_Y, small_opts(HB_TEXT))
+    return
   end
 
   local barCx, barCy = hp_bar_center(side, c.x + ox, c.y)

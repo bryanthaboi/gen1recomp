@@ -187,7 +187,8 @@ function HallOfFame.draw()
       end
 
       -- Mon Stats
-      local dexNo = Pokemon.nationalDex and Pokemon.nationalDex(sp) or tonumber(sp) or 1
+      -- pokefirered/src/hall_of_fame.c:1011
+      local dexNo = (Pokemon.national and Pokemon.national(sp)) or tonumber(sp) or 1
       local monName = mon.nickname or mon.name or Pokemon.name(sp) or "POKéMON"
       local lvl = tonumber(mon.level) or 1
       local otId = tonumber(mon.otId or mon.tid or session.trainerId or 0) % 65536

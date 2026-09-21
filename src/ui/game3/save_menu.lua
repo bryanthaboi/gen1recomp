@@ -68,7 +68,7 @@ function SaveMenu.show(opts)
   SaveMenu._game = opts.game
   SaveMenu._onClose = opts.onClose
   Stack.push("save", SaveMenu, { hideBelow = true })
-  se(6) -- SE_WIN_OPEN
+  -- pokefirered/src/start_menu.c:605
 end
 
 function SaveMenu.close()
@@ -76,7 +76,6 @@ function SaveMenu.close()
   Stack.pop("save")
   local cb = SaveMenu._onClose
   SaveMenu._onClose = nil
-  se(9) -- SE_EXIT
   if cb then cb() end
 end
 
@@ -110,7 +109,7 @@ function SaveMenu.confirm()
   if SaveMenu._phase == "saved" then
     SaveMenu.close()
     local StartMenu = require("src.ui.game3.start_menu")
-    if StartMenu.isOpen() then StartMenu.close() end
+    if StartMenu.isOpen() then StartMenu.close(true) end -- pokefirered/src/start_menu.c:583
     return
   end
   if SaveMenu._phase == "saving" then
@@ -127,6 +126,7 @@ function SaveMenu.confirm()
       do_save()
     end
   else -- NO
+    se(5) -- pokefirered/src/menu.c:376
     SaveMenu.close()
   end
 end
@@ -197,7 +197,8 @@ function SaveMenu.draw()
   local mins = tonumber(session.playTimeMinutes or session.minutes) or 0
 
   -- 1. Top-Left Save Stats Box (pret sSaveStatsWindowTemplate at (1, 1, 14, 9))
-  Window.stdFrame(Window.template(1, 1, 14, 9))
+  -- pokefirered/src/start_menu.c:971
+  Window.fixedStdFrame(Window.template(1, 1, 14, 9))
   -- Location Header.  pret start_menu.c PrintSaveStats centres it in the
   -- 14-tile window: x = (112 - GetStringWidth(FONT_NORMAL, text)) / 2.
   local headerW = 14 * 8

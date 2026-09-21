@@ -7,6 +7,14 @@ local Commands = {}
 
 Commands.MENU = { "FIGHT", "BAG", "POKEMON", "RUN" }
 
+-- pokefirered/src/battle_controller_safari.c:162
+Commands.SAFARI_MENU = { "BALL", "BAIT", "ROCK", "RUN" }
+
+function Commands.menuFor(st)
+  if st and st.safari then return Commands.SAFARI_MENU end
+  return Commands.MENU
+end
+
 function Commands.defaultMenuIndex()
   return 1 -- FIGHT
 end
@@ -38,10 +46,16 @@ end
 function Commands.playerAction(st, menuIndex, moveSlot, battlerId, targetId)
   if battlerId ~= nil or targetId ~= nil then
     local b = battler_of(st, battlerId)
-    local act = Commands.playerAction({ player = b }, menuIndex, moveSlot, nil, nil)
+    local act = Commands.playerAction({ player = b, safari = st and st.safari }, menuIndex, moveSlot, nil, nil)
     return tag(act, battlerId or 0, targetId)
   end
   menuIndex = menuIndex or 1
+  if st and st.safari then
+    -- pokefirered/src/battle_controller_safari.c:162
+    local act = ({ "ball", "bait", "rock", "run" })[menuIndex] or "ball"
+    if act == "run" then return { kind = "run", user = "player", safariRun = true } end
+    return { kind = "safari", action = act, user = "player" }
+  end
   local kind = Commands.MENU[menuIndex] or "FIGHT"
   if kind == "FIGHT" then
     local mon = st.player and st.player.mon

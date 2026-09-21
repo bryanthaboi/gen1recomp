@@ -341,4 +341,26 @@ function Trainers.getEncounterMusic(trainerId)
   end
 end
 
+-- pokefirered/src/pokemon.c:5850
+function Trainers.getBattleMusicRole(trainerId)
+  local t = Trainers.get(trainerId)
+  local class = t and tonumber(t.class)
+  if class == 90 then
+    return "battleChampion", 299
+  elseif class == 84 or class == 87 then
+    return "battleGymLeader", 296
+  end
+  return "battleTrainer", 297
+end
+
+-- pokefirered/src/battle_main.c:3746
+function Trainers.getVictoryMusicRole(trainerId)
+  local t = Trainers.get(trainerId)
+  local class = t and tonumber(t.class)
+  if class == 84 or class == 90 then
+    return "victoryGymLeader", 312
+  end
+  return "victoryTrainer", 310
+end
+
 return Trainers

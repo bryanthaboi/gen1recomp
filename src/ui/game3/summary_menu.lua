@@ -8,6 +8,8 @@ local Display = require("src.core.game3.display")
 local Stack = require("src.ui.game3.stack")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Pokemon = require("src.core.game3.pokemon")
+local Dex = require("src.core.game3.dex")
+local PokedexData = require("src.core.game3.pokedex_data")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
 local SummaryData = require("src.core.game3.summary_data")
 local Strings = require("src.core.Strings")
@@ -259,8 +261,8 @@ function SummaryMenu.handleInput(input)
         local chosenMove = moves[SummaryMenu._moveCursor]
         local moveId = chosenMove and chosenMove.id
         if moveId and Pokemon.isHmMove(moveId) then
-          pcall(function() require("src.core.game3.audio").playSe(9) end)
-          -- pokefirered/src/pokemon_summary_screen.c:3897
+          pcall(function() require("src.core.game3.audio").playSe(26) end)
+          -- pokefirered/src/pokemon_summary_screen.c:3864
           SummaryMenu._hmNotice = true
         else
           pcall(function() require("src.core.game3.audio").playSe(5) end)
@@ -279,7 +281,7 @@ function SummaryMenu.handleInput(input)
         if cb then cb(nil) end
       end
     elseif input:wasPressed("b") then
-      pcall(function() require("src.core.game3.audio").playSe(9) end)
+      -- pokefirered/src/pokemon_summary_screen.c:3868
       local cb = SummaryMenu._onSelectMove
       SummaryMenu._onSelectMove = nil
       SummaryMenu.close()
@@ -403,6 +405,29 @@ local function species_name(mon)
   return Pokemon.displayName(mon)
 end
 
+-- pokefirered/src/pokemon.c:5834, :5210-5216
+function SummaryMenu.dexNumber(species, session)
+  local sp = tonumber(species) or 0
+  local nat = (sp ~= 0 and Pokemon.national and Pokemon.national(sp)) or 0
+  if nat > (Dex.KANTO_MAX or 151) and not PokedexData.isNationalUnlocked(session) then
+    return nil
+  end
+  return nat
+end
+
+-- pokefirered/src/pokemon_summary_screen.c:2088
+function SummaryMenu.dexNoText(mon, session)
+  local nat = SummaryMenu.dexNumber(Pokemon.speciesOf(mon), session)
+  if not nat then return Strings("???", "game3.summary.dexNo") end
+  return string.format("%03d", nat)
+end
+
+-- pokefirered/src/pokemon_summary_screen.c:4736
+function SummaryMenu.showsPokerusIcon(mon)
+  if not mon then return false end
+  return not Pokemon.hasPokerus(mon) and Pokemon.hasHadPokerus(mon)
+end
+
 local function draw_header(mon)
   local c = coords()
   local species = Pokemon.speciesOf(mon)
@@ -437,6 +462,11 @@ local function draw_header(mon)
   if ailment > 0 then
     local ax, ay = isMovesPage and 16 or 16, isMovesPage and 44 or 38
     SummaryChrome.drawStatusIcon(ax, ay, ailment)
+  end
+
+  -- pokefirered/src/pokemon_summary_screen.c:4716
+  if SummaryMenu.showsPokerusIcon(mon) then
+    SummaryChrome.drawPokerus(110, 88)
   end
 
   -- In pret pokefirered (pokemon_summary_screen.c:1635, 1681, 1979-1984, 4139-4175):
@@ -487,9 +517,8 @@ local function draw_page_info(mon)
   local t1 = mon.type1 or (Pokemon.types and Pokemon.types(species) and Pokemon.types(species)[1]) or "NORMAL"
   local t2 = mon.type2 or (Pokemon.types and Pokemon.types(species) and Pokemon.types(species)[2])
 
-  local dexNo = tonumber(mon.dexNo or mon.species or species) or 0
   local dx, dy = cxy("dexNo", 167, 21)
-  draw_text(string.format("%03d", dexNo), dx, dy, 40, "NORMAL")
+  draw_text(SummaryMenu.dexNoText(mon, SummaryMenu._playerState), dx, dy, 40, "NORMAL")
 
   local sx, sy = cxy("species", 167, 35)
   draw_text(species_name(mon), sx, sy, 64, "NORMAL")

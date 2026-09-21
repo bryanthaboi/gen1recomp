@@ -63,6 +63,9 @@ Pokedex._regSpecies = nil
 
 local LIST_VISIBLE = 9
 
+-- pokefirered/src/pokedex_screen.c:347
+local MODE_MAX_SHOWED = 9
+
 --- Authentic pret sCategoryPageIconCoords layout mapping:
 --- 1..4 mons on page: pic coords (top-left of 64x64 front sprite), circle coords (center of 32px radius spotlight), card coords (top-left of 64x38 mini card)
 local CATEGORY_PAGE_COORDS = {
@@ -149,13 +152,12 @@ local function build_modes(session, dex)
     })
   end
 
-  if isNat then
-    table.insert(modes, { isHeader = true, label = Strings("SEARCH") })
-    table.insert(modes, { id = "atoz", type = "order", label = Strings("A TO Z MODE"), icon = "atoz", unlocked = true })
-    table.insert(modes, { id = "type", type = "order", label = Strings("TYPE MODE"), icon = "type", unlocked = true })
-    table.insert(modes, { id = "lightest", type = "order", label = Strings("LIGHTEST MODE"), icon = "lightest", unlocked = true })
-    table.insert(modes, { id = "smallest", type = "order", label = Strings("SMALLEST MODE"), icon = "smallest", unlocked = true })
-  end
+  -- pokefirered/src/pokedex_screen.c:333-337, :377-381
+  table.insert(modes, { isHeader = true, label = Strings("SEARCH") })
+  table.insert(modes, { id = "atoz", type = "order", label = Strings("A TO Z MODE"), icon = "atoz", unlocked = true })
+  table.insert(modes, { id = "type", type = "order", label = Strings("TYPE MODE"), icon = "type", unlocked = true })
+  table.insert(modes, { id = "lightest", type = "order", label = Strings("LIGHTEST MODE"), icon = "lightest", unlocked = true })
+  table.insert(modes, { id = "smallest", type = "order", label = Strings("SMALLEST MODE"), icon = "smallest", unlocked = true })
 
   table.insert(modes, { isHeader = true, label = Strings("OTHER") })
   table.insert(modes, { id = "cancel", type = "cancel", label = Strings("CANCEL"), icon = "cancel", unlocked = true })
@@ -168,6 +170,21 @@ function Pokedex.maxSpecies()
     return Dex.NATIONAL_MAX or 386
   end
   return Dex.KANTO_MAX or 151
+end
+
+-- pokefirered/src/pokedex_screen.c:3113
+function Pokedex.silhouetteScale(romScale)
+  local s = tonumber(romScale) or 256
+  if s <= 0 then s = 256 end
+  return 256 / s
+end
+
+-- pokefirered/src/trainer_pokemon_sprites.c:276
+function Pokedex.playerGender()
+  local s = Pokedex._session
+  local g = s and (s.gender or s.playerGender)
+  if g == "female" or g == 1 then return "female" end
+  return "male"
 end
 
 function Pokedex.show(dex, opts)
@@ -216,6 +233,26 @@ function Pokedex.show(dex, opts)
   se("SE_PIN")
 end
 
+-- pokefirered/src/pokedex_screen.c:3260
+local HABITAT_CATEGORIES = {
+  "grassland", "forest", "waters_edge", "sea", "cave",
+  "mountain", "rough_terrain", "urban", "rare",
+}
+
+function Pokedex.categoryForSpecies(speciesId)
+  local sp = tonumber(speciesId)
+  if not sp then return nil end
+  PokedexData.init()
+  for _, catKey in ipairs(HABITAT_CATEGORIES) do
+    for pageIdx, page in ipairs(PokedexData.getCategoryPages(catKey)) do
+      for _, member in ipairs(page) do
+        if member == sp then return catKey, pageIdx end
+      end
+    end
+  end
+  return nil
+end
+
 function Pokedex.showRegistration(speciesId, opts)
   opts = opts or {}
   Pokedex.open = true
@@ -234,6 +271,16 @@ function Pokedex.showRegistration(speciesId, opts)
   Pokedex.screen = "registration"
   Pokedex.dataPage = 1
 
+  -- pokefirered/src/pokedex_screen.c:3316
+  local catKey, pageIdx = Pokedex.categoryForSpecies(Pokedex._regSpecies)
+  if catKey then
+    Pokedex.currentCategory = catKey
+    Pokedex.categoryPage = pageIdx or 1
+    Pokedex.subScreenPrev = "category_grid"
+  else
+    Pokedex.subScreenPrev = "mode_select"
+  end
+
   Stack.push("pokedex", Pokedex, { hideBelow = true })
   play_cry(Pokedex._regSpecies)
 end
@@ -244,7 +291,6 @@ function Pokedex.close()
   local cb = Pokedex._onClose
   Pokedex._onClose = nil
   Pokedex._regSpecies = nil
-  se("SE_FLEE")
   if cb then cb() end
 end
 
@@ -256,38 +302,77 @@ end
 -- Input Handling
 -- =========================================================================
 
-local function handle_mode_select_input(input)
+-- pokefirered/src/list_menu.c:438
+local function mode_row_step(movingDown)
   local total = #Pokedex.MODES
+  local maxScroll = math.max(0, total - MODE_MAX_SHOWED)
+  local scroll = Pokedex.modeScroll
+  local itemsAbove = Pokedex.modeCursor - 1 - scroll
+  local newRow
+
+  local function landOn(row)
+    local item = Pokedex.MODES[scroll + row + 1]
+    if item and not item.isHeader then
+      Pokedex.modeCursor = scroll + row + 1
+      return true
+    end
+    return false
+  end
+
+  if not movingDown then
+    newRow = MODE_MAX_SHOWED - (math.floor(MODE_MAX_SHOWED / 2) + MODE_MAX_SHOWED % 2) - 1
+    if scroll == 0 then
+      while itemsAbove ~= 0 do
+        itemsAbove = itemsAbove - 1
+        if landOn(itemsAbove) then return 1 end
+      end
+      return 0
+    end
+    while itemsAbove > newRow do
+      itemsAbove = itemsAbove - 1
+      if landOn(itemsAbove) then return 1 end
+    end
+    scroll = scroll - 1
+  else
+    newRow = math.floor(MODE_MAX_SHOWED / 2) + MODE_MAX_SHOWED % 2
+    if scroll >= maxScroll then
+      while itemsAbove < MODE_MAX_SHOWED - 1 do
+        itemsAbove = itemsAbove + 1
+        if landOn(itemsAbove) then return 1 end
+      end
+      return 0
+    end
+    while itemsAbove < newRow do
+      itemsAbove = itemsAbove + 1
+      if landOn(itemsAbove) then return 1 end
+    end
+    scroll = scroll + 1
+  end
+
+  Pokedex.modeScroll = scroll
+  Pokedex.modeCursor = scroll + newRow + 1
+  return 2
+end
+
+-- pokefirered/src/list_menu.c:558
+local function mode_change_selection(movingDown)
+  local changed = false
+  while true do
+    local ret = mode_row_step(movingDown)
+    if ret ~= 0 then changed = true end
+    if ret ~= 2 then break end
+    local item = Pokedex.MODES[Pokedex.modeCursor]
+    if not (item and item.isHeader) then break end
+  end
+  return changed
+end
+
+local function handle_mode_select_input(input)
   if input:wasPressed("up") then
-    local cur = Pokedex.modeCursor
-    local prev = cur - 1
-    while prev >= 1 and Pokedex.MODES[prev].isHeader do
-      prev = prev - 1
-    end
-    if prev >= 1 then
-      Pokedex.modeCursor = prev
-      if Pokedex.modeCursor < Pokedex.modeScroll + 1 then
-        Pokedex.modeScroll = Pokedex.modeCursor - 1
-      elseif Pokedex.modeCursor > Pokedex.modeScroll + 9 then
-        Pokedex.modeScroll = Pokedex.modeCursor - 9
-      end
-      se("SE_SELECT")
-    end
+    -- pokefirered/src/pokedex_screen.c:1175-1176
+    if mode_change_selection(false) then se("SE_SELECT") end
   elseif input:wasPressed("down") then
-    local cur = Pokedex.modeCursor
-    local nextIdx = cur + 1
-    while nextIdx <= total and Pokedex.MODES[nextIdx].isHeader do
-      nextIdx = nextIdx + 1
-    end
-    if nextIdx <= total then
-      Pokedex.modeCursor = nextIdx
-      if Pokedex.modeCursor > Pokedex.modeScroll + 9 then
-        Pokedex.modeScroll = Pokedex.modeCursor - 9
-      elseif Pokedex.modeCursor < Pokedex.modeScroll + 1 then
-        Pokedex.modeScroll = Pokedex.modeCursor - 1
-      end
-      se("SE_SELECT")
-    end
+    if mode_change_selection(true) then se("SE_SELECT") end
   elseif input:wasPressed("a") then
     local m = Pokedex.MODES[Pokedex.modeCursor]
     if not m or m.isHeader then return end
@@ -525,10 +610,7 @@ end
 
 local function handle_data_input(input)
   if input:wasPressed("a") then
-    if Pokedex.screen == "registration" then
-      Pokedex.isOpen_ = false
-      if Pokedex._onDone then Pokedex._onDone() end
-    elseif Pokedex.dataPage == 1 then
+    if Pokedex.dataPage == 1 then
       Pokedex.dataPage = 2
       se("SE_SELECT")
     else
@@ -604,8 +686,9 @@ local function handle_size_input(input)
   end
 end
 
+-- pokefirered/src/pokedex_screen.c:3427
 local function handle_registration_input(input)
-  if input:wasPressed("a") or input:wasPressed("b") or input:wasPressed("start") then
+  if input:wasPressed("a") or input:wasPressed("b") then
     Pokedex.close()
   end
 end
@@ -645,7 +728,7 @@ local function draw_mode_select()
   PokedexChrome.drawHeader(Strings("POKéDEX   TABLE OF CONTENTS"), nil, 2)
 
   -- Left Column: 9 visible rows inside window (x=8, y=16..144, 14px pitch)
-  local maxVisible = 9
+  local maxVisible = MODE_MAX_SHOWED
   local startIdx = Pokedex.modeScroll + 1
   local endIdx = math.min(#Pokedex.MODES, Pokedex.modeScroll + maxVisible)
 
@@ -752,8 +835,13 @@ local function draw_mode_select()
     PokedexChrome.drawCategoryIcon(selMode.icon, 168, 88)
   end
 
-  -- Bouncing Down Arrow beneath the oval
-  PokedexChrome.drawDownArrow(195, 134)
+  -- pokefirered/src/pokedex_screen.c:407-435, :1031-1035
+  if Pokedex.modeScroll > 0 then
+    PokedexChrome.drawUpArrow(200, 19)
+  end
+  if Pokedex.modeScroll < #Pokedex.MODES - maxVisible then
+    PokedexChrome.drawDownArrow(200, 141)
+  end
 
   -- Bottom Bar Controls: {DPAD_UPDOWN}PICK   {A_BUTTON}OK
   PokedexChrome.drawControlInfo(Strings("{DPAD_UPDOWN}PICK {A_BUTTON}OK"), 236, 146)
@@ -835,6 +923,14 @@ local function draw_ordered_list()
 
   -- Bottom Bar Controls: {DPAD_UPDOWN}PICK   {A_BUTTON}OK   {B_BUTTON}CANCEL
   PokedexChrome.drawControlInfo(Strings("{DPAD_UPDOWN}PICK {A_BUTTON}OK {B_BUTTON}CANCEL"), 236, 146)
+end
+
+-- pokefirered/src/pokedex_screen.c:2960
+function Pokedex.controlInfoForDataPage(screen)
+  if screen == "registration" then
+    return nil, Strings("{A_BUTTON}NEXT")
+  end
+  return Strings("{START_BUTTON}CRY"), Strings("{A_BUTTON}NEXT DATA {B_BUTTON}CANCEL")
 end
 
 --- 3. Detailed Data Entry Screen (Page 1: Specs & Flavor Text, Page 2: Size Chart & Area Map)
@@ -930,12 +1026,11 @@ local function draw_data_screen()
     end
 
     -- 5. Bottom Bar Controls
-    PokedexChrome.drawControlInfoLeft(Strings("{START_BUTTON}CRY"), 8, 146)
-    if Pokedex.screen == "registration" then
-      PokedexChrome.drawControlInfo(Strings("{A_BUTTON}OK"), 236, 146)
-    else
-      PokedexChrome.drawControlInfo(Strings("{A_BUTTON}NEXT DATA {B_BUTTON}CANCEL"), 236, 146)
+    local cryHint, controlInfo = Pokedex.controlInfoForDataPage(Pokedex.screen)
+    if cryHint then
+      PokedexChrome.drawControlInfoLeft(cryHint, 8, 146)
     end
+    PokedexChrome.drawControlInfo(controlInfo, 236, 146)
 
   else
     -- ================= PAGE 2: SIZE CHART & AREA MAP =================
@@ -993,50 +1088,49 @@ local function draw_data_screen()
     end
 
     -- 4. Left Bottom: SIZE Title & Size Comparison Silhouettes
+    -- pokefirered/src/pokedex_screen.c:648
     local sizeW = FrlgFont.measure(Strings("SIZE"), { small = true })
-    FrlgFont.draw(Strings("SIZE"), 16 + math.floor((80 - sizeW) / 2), 54, { small = true, colors = upperColors })
+    FrlgFont.draw(Strings("SIZE"), 16 + math.floor((80 - sizeW) / 2), 60, { small = true, colors = upperColors })
 
     if isCaught then
-      -- Trainer Silhouette (64x64) at x=48, y=72
-      local trainerImg = PokedexChrome.getTrainerPic("male")
-      if trainerImg then
-        PokedexChrome.drawSilhouette(trainerImg, 48, 72 + (entry.trainerOffset or 0))
-      end
-
-      -- Pokémon Silhouette (64x64 scaled by 256 / pokemonScale)
+      -- pokefirered/src/pokedex_screen.c:3107
       local pic = Pokemon.frontPic and Pokemon.frontPic(sp)
       if pic and pic.image then
-        local rawScale = entry.pokemonScale or 256
-        if rawScale <= 0 then rawScale = 256 end
-        local pScale = 256 / rawScale
-        local originX = 32
-        local originY = 32
-        local drawX = 40
-        local drawY = 104 + (entry.pokemonOffset or 0)
-        PokedexChrome.drawSilhouette(pic.image, drawX, drawY, pScale, pScale, originX, originY)
+        PokedexChrome.drawSilhouette(pic.image, 40, 104 + (entry.pokemonOffset or 0),
+          Pokedex.silhouetteScale(entry.pokemonScale), Pokedex.silhouetteScale(entry.pokemonScale), 32, 32)
+      end
+
+      -- pokefirered/src/pokedex_screen.c:3114
+      local trainerImg = PokedexChrome.getTrainerPic(Pokedex.playerGender())
+      if trainerImg then
+        PokedexChrome.drawSilhouette(trainerImg, 80, 104 + (entry.trainerOffset or 0),
+          Pokedex.silhouetteScale(entry.trainerScale), Pokedex.silhouetteScale(entry.trainerScale), 32, 32)
       end
     end
 
     -- 5. Right: AREA Title & Region Map
+    -- pokefirered/src/pokedex_screen.c:658
     local areaW = FrlgFont.measure(Strings("AREA"), { small = true })
-    FrlgFont.draw(Strings("AREA"), 136 + math.floor((96 - areaW) / 2), 54, { small = true, colors = upperColors })
+    FrlgFont.draw(Strings("AREA"), 136 + math.floor((96 - areaW) / 2), 52, { small = true, colors = upperColors })
 
+    -- pokefirered/src/pokedex_screen.c:678
     local mapX, mapY = 136, 64
     PokedexChrome.drawMap("kanto", mapX, mapY)
 
-    -- Route Area Markers
-    local areas = PokedexData.getWildAreasForSpecies(sp)
-
-    if #areas > 0 then
-      for _, aKey in ipairs(areas) do
-        if PokedexData.getAreaMapKey(aKey) == "kanto" then
-          local m = PokedexData.getAreaMarker(aKey)
-          if m then
-            PokedexChrome.drawAreaMarker(m.shape, mapX + (m.x - 32), mapY + m.y)
-          end
+    -- pokefirered/src/pokedex_screen.c:3129
+    local drawn = 0
+    for _, aKey in ipairs(PokedexData.getWildAreasForSpecies(sp)) do
+      if PokedexData.getAreaMapKey(aKey) == "kanto" then
+        local m = PokedexData.getAreaMarker(aKey)
+        if m then
+          PokedexChrome.drawAreaMarker(m.shape, mapX + (m.x - 32), mapY + m.y)
+          drawn = drawn + 1
         end
       end
-    else
+    end
+
+    -- pokefirered/src/pokedex_screen.c:3130
+    if drawn == 0 then
       -- Area Unknown Wide Ellipse
       local ellipseImg = PokedexChrome.getImage("blit_wide_ellipse")
       if ellipseImg then
@@ -1044,7 +1138,7 @@ local function draw_data_screen()
         love.graphics.draw(ellipseImg, mapX + 4, mapY + 28)
       end
       local unkW = FrlgFont.measure(Strings("AREA UNKNOWN"), { small = true })
-      FrlgFont.draw(Strings("AREA UNKNOWN"), mapX + math.floor((96 - unkW) / 2), mapY + 30, {
+      FrlgFont.draw(Strings("AREA UNKNOWN"), mapX + math.floor((96 - unkW) / 2), mapY + 29, {
         small = true,
         colors = upperColors,
       })

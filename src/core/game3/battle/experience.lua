@@ -299,6 +299,8 @@ function Experience.awardFoe(st, foeBattler, opts)
     shareExp = 0
   end
 
+  local friendshipCtx = { mapSec = Pokemon.currentMapSec(st.session) }
+
   local out = {}
   for pi = 1, 6 do
     local mon = party[pi]
@@ -327,7 +329,13 @@ function Experience.awardFoe(st, foeBattler, opts)
       else
         amount = vanilla_amount()
       end
+      -- pokefirered/src/battle_script_commands.c:3271
+      Pokemon.gainEVs(mon, foeSpecies)
       local result = Experience.apply(mon, amount)
+      -- pokefirered/src/battle_script_commands.c:3314
+      for _ = 1, #result.levels do
+        Pokemon.adjustFriendship(mon, Pokemon.FRIENDSHIP_EVENT_GROW_LEVEL, friendshipCtx)
+      end
       local fieldB
       if st.double then
         fieldB = on_field(pi)

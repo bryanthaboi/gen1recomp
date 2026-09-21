@@ -2,16 +2,24 @@
 
 local Collision = {}
 
+-- pokefirered/src/metatile_behavior.c:5 sBehaviorSurfable
 local WATER_BEH = {
   [0x10] = true, [0x11] = true, [0x12] = true, [0x13] = true,
-  [0x15] = true, [0x16] = true, [0x17] = true, [0x1A] = true, [0x1B] = true,
+  [0x15] = true, [0x1A] = true, [0x1B] = true,
+  [0x50] = true, [0x51] = true, [0x52] = true, [0x53] = true,
 }
+-- pokefirered/src/event_object_movement.c:8143
+local WALK_ON_WATER_BEH = { [0x16] = true, [0x17] = true }
 local JUMP_DIR = {
   [0x38] = "E", [0x39] = "W", [0x3A] = "N", [0x3B] = "S",
 }
 local DOOR_BEH = {
   [0x60] = true, [0x62] = true, [0x63] = true, [0x64] = true,
   [0x65] = true, [0x67] = true, [0x69] = true,
+}
+-- pokefirered/src/metatile_behavior.c:624,640,658
+local KEEP_FACING_WARP_BEH = {
+  [0x66] = true, [0x68] = true, [0x71] = true,
 }
 -- MB_ROCK_STAIRS: walkable tier bands (not warps).
 local STAIR_BEH = { [0x2A] = true }
@@ -83,12 +91,19 @@ function Collision.classify(mid, mapColl, behavior, kind)
   kind = kind or "route"
   local beh = behavior or 0
   if WATER_BEH[beh] then return "WATER", nil end
-  if beh == 0x02 then return "TALL_GRASS", nil end
-  if beh == 0x21 then return "SAND", nil end
+  if WALK_ON_WATER_BEH[beh] then
+    if (mapColl or 0) ~= 0 then return "BLOCKED", nil end
+    return "PATH", nil
+  end
+  -- pokefirered/src/metatile_behavior.c:432
+  if beh == 0x02 or beh == 0xD1 then return "TALL_GRASS", nil end
+  -- pokefirered/src/metatile_behavior.c:72
+  if beh == 0x21 or beh == 0x2B then return "SAND", nil end
   if JUMP_DIR[beh] then return "LEDGE", JUMP_DIR[beh] end
   if WARP_STAIR_BEH[beh] then return "STAIR", "WARP" end
   if STAIR_BEH[beh] then return "STAIR", nil end
   if DOOR_BEH[beh] then return "DOOR", nil end
+  if KEEP_FACING_WARP_BEH[beh] then return "WARP_KEEP_FACING", nil end
   if SIGN_BEH[beh] then return "SIGN", nil end
   if PC_BEH[beh] then return "PC", nil end
   if COUNTER_BEH[beh] then return "COUNTER", nil end
@@ -111,7 +126,6 @@ function Collision.classify(mid, mapColl, behavior, kind)
     return (kind == "town") and "TOWN_PATH" or "SHORT_GRASS", nil
   end
   if PIER_MIDS[mid] and mapColl == 0 then return "PIER", nil end
-  if beh >= 0x30 and beh <= 0x37 then return "CLIFF", nil end
   -- Secondary solids: houses in town; interior walls/furniture indoors.
   -- On routes the same secondary sheet is cliff / rock — not building-front.
   if mid >= NUM_PRIMARY and kind == "town" then
@@ -144,6 +158,9 @@ function Collision.seed(category, ledgeDir, kind)
     return COLL_DOOR
   end
   if category == "STAIR" and ledgeDir == "WARP" then
+    return COLL_WARP_KEEP_FACING
+  end
+  if category == "WARP_KEEP_FACING" then
     return COLL_WARP_KEEP_FACING
   end
   return CAT_COLL[category] or 0x00

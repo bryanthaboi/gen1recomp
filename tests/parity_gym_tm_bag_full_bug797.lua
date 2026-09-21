@@ -33,7 +33,7 @@ local victories = require("data.scripts.victories")
 do
   local n = 0
   for key, entry in pairs(victories) do
-    if entry.badge then
+    if type(entry) == "table" and entry.badge then
       n = n + 1
       check(type(entry.tmDialogue) == "table" and #entry.tmDialogue > 0,
         key .. " has a tmDialogue tail (the GiveItem-succeeded text)")

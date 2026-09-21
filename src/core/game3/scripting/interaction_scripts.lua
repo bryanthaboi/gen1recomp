@@ -13,14 +13,22 @@ I.FLAVOR={
   {0x88,'PokemartSign',true}, {0x87,'PokecenterSign',true},
   {0x91,'Indigo_UltimateGoal'}, {0x92,'Indigo_HighestAuthority'},
 }
+-- src/field_control_avatar.c:538,:572-577
+I.CODE={
+  {0xA3,'TrainerTower_EventScript_ShowTime'},
+  {0x8D,'CableClub_EventScript_ShowWirelessCommunicationScreen',true},
+  {0x8F,'EventScript_Questionnaire'},
+  {0x8E,'CableClub_EventScript_ShowBattleRecords',true},
+}
 local byBehavior={}
-for _,row in ipairs(I.FLAVOR) do byBehavior[row[1]]=row end
+for _,row in ipairs(I.FLAVOR) do byBehavior[row[1]]={'EventScript_'..row[2],row[3]} end
+for _,row in ipairs(I.CODE) do byBehavior[row[1]]={row[2],row[3]} end
 function I.scriptFor(behavior,facing)
   if behavior==0x83 then return 'EventScript_PC' end
   if behavior==0x85 then return 'EventScript_WallTownMap' end
   local row=byBehavior[behavior]
-  if not row or (row[3] and facing~='up' and facing~=2) then return nil end
-  return 'EventScript_'..row[2]
+  if not row or (row[2] and facing~='up' and facing~=2) then return nil end
+  return row[1]
 end
 -- BG_EVENT_PLAYER_FACING_* uses a different order from DIR_*.
 local directions={[1]=2,[2]=1,[3]=4,[4]=3}

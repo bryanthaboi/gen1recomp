@@ -29,6 +29,24 @@ FieldView._nativeOverPair = nil
 FieldView._loggedNative = false
 FieldView._loggedNativeFallback = false
 
+-- pokefirered/src/field_screen_effect.c:18
+local FLASH_LEVEL_RADIUS = { [0] = 200, 72, 56, 40, 24 }
+-- pokefirered/include/constants/flags.h:1333
+local FLAG_SYS_FLASH_ACTIVE = 0x806
+
+FieldView.MAX_FLASH_LEVEL = 4
+FieldView.flashLevel = 0
+FieldView.cameraPanX = 0
+FieldView.cameraPanY = 0
+FieldView._flashRadius = nil
+FieldView._flashMapId = nil
+FieldView._flashSpans = nil
+FieldView._flashSpanR = nil
+FieldView._flashSpanCX = nil
+FieldView._flashSpanCY = nil
+FieldView._flashSpanW = nil
+FieldView._flashSpanH = nil
+
 local CELL = 16
 local BLOCK = 32
 
@@ -672,6 +690,11 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
       batch:clear()
     end
     local cellsByPair = {}
+    local voidHas, voidPrimary = nil, nil
+    if voidMode ~= "map" and voidMode ~= "black" then
+      voidHas = function(m) return NativeTileset.hasMid(pair, m) end
+      voidPrimary = VoidFill.primaryFor(pair)
+    end
     for row = 0, rows - 1 do
       for col = 0, cols - 1 do
         local mid, srcPair, isVoid = layout:midAt(cx0 + col, cy0 + row), pair, false
@@ -681,7 +704,7 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
         end
         local skip = false
         if isVoid and voidMode ~= "map" then
-          local fill = VoidFill.midFor(mapDef, voidMode)
+          local fill = VoidFill.fillAt(voidMode, cx0 + col, cy0 + row, voidHas, voidPrimary)
           if fill == false then
             skip = true
           elseif fill then
@@ -770,6 +793,179 @@ local function drawNativeOverTiles()
   end
 end
 
+function FieldView.radiusForLevel(level)
+  level = tonumber(level) or 0
+  return FLASH_LEVEL_RADIUS[level] or FLASH_LEVEL_RADIUS[0]
+end
+
+-- pokefirered/src/overworld.c:966
+function FieldView.setFlashLevel(level)
+  level = tonumber(level) or 0
+  if level < 0 or level > FieldView.MAX_FLASH_LEVEL then level = 0 end
+  FieldView.flashLevel = level
+  FieldView._flashRadius = nil
+  -- pokefirered/include/global.h:770 gSaveBlock1Ptr->flashLevel
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local session = Runtime and Runtime.getSession and Runtime.getSession()
+  if session then session.flashLevel = level end
+end
+
+-- pokefirered/src/overworld.c:973
+function FieldView.getFlashLevel()
+  return FieldView.flashLevel
+end
+
+function FieldView.setFlashRadius(radius)
+  FieldView._flashRadius = tonumber(radius)
+end
+
+-- pokefirered/src/field_screen_effect.c:194
+function FieldView.animateFlashLevel(fromLevel, toLevel)
+  local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")
+  if okFx and FieldEffects and FieldEffects.animateFlashLevel then
+    return FieldEffects.animateFlashLevel(fromLevel, toLevel)
+  end
+  FieldView.setFlashLevel(toLevel)
+  return nil
+end
+
+-- pokefirered/src/overworld.c:1756
+function FieldView.flashRadius()
+  if FieldView._flashRadius then return FieldView._flashRadius end
+  if FieldView.flashLevel == 0 then return nil end
+  return FieldView.radiusForLevel(FieldView.flashLevel)
+end
+
+-- pokefirered/src/field_camera.c:507
+function FieldView.setCameraPanning(x, y)
+  FieldView.cameraPanX = tonumber(x) or 0
+  FieldView.cameraPanY = tonumber(y) or 0
+end
+
+local function flashActive()
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if Space and Space.store then
+    local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+    if okF and Flags and Flags.getFlag
+        and Flags.getFlag(Space.store, nil, FLAG_SYS_FLASH_ACTIVE) then
+      return true
+    end
+  end
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local session = Runtime and Runtime.getSession and Runtime.getSession()
+  local flags = session and session.flags
+  return (flags and flags[FLAG_SYS_FLASH_ACTIVE]) and true or false
+end
+
+-- pokefirered/src/overworld.c:958
+local function mapIsCave(def)
+  if def and def.cave ~= nil then return (tonumber(def.cave) or 0) ~= 0 end
+  return false
+end
+
+-- pokefirered/src/overworld.c:956
+function FieldView.defaultFlashLevel(game, mapId)
+  if not mapIsCave(resolveMapDef(game, mapId)) then return 0 end
+  if flashActive() then return 0 end
+  return FieldView.MAX_FLASH_LEVEL
+end
+
+function FieldView.setDefaultFlashLevel(game, mapId)
+  FieldView._flashMapId = mapId
+  FieldView.setFlashLevel(FieldView.defaultFlashLevel(game, mapId))
+  return FieldView.flashLevel
+end
+
+-- pokefirered/src/field_screen_effect.c:90
+local function flashWindowRows(centerX, centerY, radius, w, h)
+  local rows = {}
+  local maxX = 255
+  if w > maxX then maxX = w end
+  local function put(y, left, right)
+    if y >= 0 and y <= h then
+      if left < 0 then left = 0 elseif left > maxX then left = maxX end
+      if right < 0 then right = 0 elseif right > maxX then right = maxX end
+      rows[y] = { left, right }
+    end
+  end
+  local xy, err, yx = radius, radius, 0
+  while xy >= yx do
+    put(centerY - yx, centerX - xy, centerX + xy)
+    put(centerY + yx, centerX - xy, centerX + xy)
+    put(centerY - xy, centerX - yx, centerX + yx)
+    put(centerY + xy, centerX - yx, centerX + yx)
+    err = err - ((yx * 2) - 1)
+    yx = yx + 1
+    if err < 0 then
+      err = err + 2 * (xy - 1)
+      xy = xy - 1
+    end
+  end
+  return rows
+end
+
+-- pokefirered/src/field_screen_effect.c:37
+function FieldView.flashSpans(radius, w, h, centerX, centerY)
+  w = math.floor(tonumber(w) or Display.W)
+  h = math.floor(tonumber(h) or Display.H)
+  centerX = math.floor(centerX or (w / 2))
+  centerY = math.floor(centerY or (h / 2))
+  local rows = flashWindowRows(centerX, centerY, math.floor(radius), w, h)
+  local spans = {}
+  local y = 0
+  while y < h do
+    local r = rows[y]
+    local left = r and r[1] or 0
+    local right = r and r[2] or 0
+    local y2 = y + 1
+    while y2 < h do
+      local n = rows[y2]
+      if (n and n[1] or 0) ~= left or (n and n[2] or 0) ~= right then break end
+      y2 = y2 + 1
+    end
+    spans[#spans + 1] = { y = y, height = y2 - y, left = left, right = right }
+    y = y2
+  end
+  return spans
+end
+
+function FieldView.flashSpansFor(radius, w, h, cx, cy)
+  local spans = FieldView._flashSpans
+  if spans
+      and FieldView._flashSpanR == radius
+      and FieldView._flashSpanCX == cx and FieldView._flashSpanCY == cy
+      and FieldView._flashSpanW == w and FieldView._flashSpanH == h then
+    return spans
+  end
+  spans = FieldView.flashSpans(radius, w, h, cx, cy)
+  FieldView._flashSpans = spans
+  FieldView._flashSpanR = radius
+  FieldView._flashSpanCX = cx
+  FieldView._flashSpanCY = cy
+  FieldView._flashSpanW = w
+  FieldView._flashSpanH = h
+  return spans
+end
+
+-- pokefirered/src/overworld.c:2077
+local function drawFlashMask(w, h)
+  local radius = FieldView.flashRadius()
+  if not radius then return end
+  local cx, cy = math.floor(w / 2), math.floor(h / 2)
+  local spans = FieldView.flashSpansFor(radius, w, h, cx, cy)
+  love.graphics.setColor(0, 0, 0, 1)
+  for i = 1, #spans do
+    local s = spans[i]
+    if s.left > 0 then
+      love.graphics.rectangle("fill", 0, s.y, s.left, s.height)
+    end
+    if s.right < w then
+      love.graphics.rectangle("fill", s.right, s.y, w - s.right, s.height)
+    end
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
 function FieldView.draw(game, canvasW, canvasH, opts)
   canvasW = canvasW or Display.W
   canvasH = canvasH or Display.H
@@ -777,6 +973,9 @@ function FieldView.draw(game, canvasW, canvasH, opts)
 
   local mapId = currentMapId(game)
   local mapDef = resolveMapDef(game, mapId)
+  if FieldView._flashMapId ~= mapId then
+    FieldView.setDefaultFlashLevel(game, mapId)
+  end
   if not mapDef or (not mapDef.blocks and not mapDef.midLayout) or not mapDef.width then
     love.graphics.setColor(0.2, 0.35, 0.55, 1)
     love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
@@ -802,6 +1001,9 @@ function FieldView.draw(game, canvasW, canvasH, opts)
   -- show connected neighbors (or border), same as walking mid-town.
   local camX = math.floor(px + CELL / 2 - canvasW / 2)
   local camY = math.floor(py + CELL / 2 - canvasH / 2)
+  -- pokefirered/src/field_camera.c:89
+  camX = camX + (FieldView.cameraPanX or 0)
+  camY = camY + (FieldView.cameraPanY or 0)
 
   local screenOx = math.floor((canvasW - Display.W) / 2)
   local screenOy = math.floor((canvasH - Display.H) / 2)
@@ -1020,6 +1222,8 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     end
   end
 
+  drawFlashMask(canvasW, canvasH)
+
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1043,6 +1247,8 @@ function FieldView.invalidate()
   FieldView._nativeDirty = true
   FieldView._loggedNative = false
   FieldView._loggedNativeFallback = false
+  FieldView._flashSpans = nil
+  FieldView._flashSpanR = nil
   local okN, NativeTileset = pcall(require, "src.core.game3.tileset_native")
   if okN and NativeTileset and NativeTileset.invalidate then
     NativeTileset.invalidate()

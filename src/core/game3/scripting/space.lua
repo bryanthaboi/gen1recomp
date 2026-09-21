@@ -244,26 +244,158 @@ function Space.deactivate(mod)
   if Space.store then
     -- specialVars live on ctx; already wiped by halt
   end
+  if Space._immediateVm then
+    if Space._immediateVm:isRunning() then Space._immediateVm:halt(true) end
+    Space._immediateVm = nil
+  end
   Space.vm = nil
   Space.active = false
   Space.mapId = nil
 end
 
-function Space.onMapEnter(mod, mapId, game, world)
+function Space.onMapEnter(mod, mapId, game, world, opts)
   if not MapIds.isGame3Map(mapId) then
     if Space.active then Space.deactivate(mod) end
     return
   end
   local vm = Space.activate(mod, mapId, game, world)
-  Space.runEnterScripts(mod, mapId, game, world)
+  Space.runEnterScripts(mod, mapId, game, world, opts)
   return vm
+end
+
+local function map_scripts(mapId)
+  mapId = mapId or Space.mapId
+  local ev = Space.bundle and Space.bundle.events and Space.bundle.events[mapId]
+  return ev and ev.mapScripts or nil
+end
+
+-- pokefirered/src/event_data.c:235
+local function varget(id)
+  id = tonumber(id) or 0
+  if id < Ctx.TEMP_LO then return id end
+  return Flags.getVar(Space.store, Space.vm and Space.vm.ctx, id)
+end
+
+-- pokefirered/src/script.c:409
+local function check_script_table(rows)
+  if type(rows) ~= "table" then return nil end
+  for _, row in ipairs(rows) do
+    if row.script and varget(row.var) == varget(row.value or 0) then
+      return row.script
+    end
+  end
+  return nil
+end
+
+-- pokefirered/src/script.c:33
+local function immediate_vm()
+  local main = Space.vm
+  if not main then return nil end
+  local iv = Space._immediateVm
+  if not iv or iv._host ~= main then
+    iv = Vm.new({
+      store = Space.store,
+      scripts = main.scripts,
+      text = main.text,
+      movements = main.movements,
+      adapters = main.adapters,
+    })
+    iv._mod = main._mod
+    iv._host = main
+    Space._immediateVm = iv
+  end
+  iv.store = Space.store
+  return iv
+end
+
+-- pokefirered/src/script.c:375
+local function run_immediately(key)
+  if type(key) ~= "string" then return false end
+  local iv = immediate_vm()
+  if not iv then return false end
+  if iv:isRunning() then iv:halt(true) end
+  -- pokefirered/src/field_control_avatar.c:427
+  iv.ctx.specialVars[Ctx.VAR_LAST_TALKED] =
+    Space.vm.ctx.specialVars[Ctx.VAR_LAST_TALKED]
+  -- pokefirered/src/field_specials.c:153
+  local rt = package.loaded["src.core.game3.runtime"]
+  local session = rt and rt.getSession and rt.getSession()
+  iv.ctx.lastBattleOutcome = (session and session.battleOutcome)
+    or Space.vm.ctx.lastBattleOutcome
+  if not iv:start(key) then return false end
+  for _ = 1, 1024 do
+    if not iv:isRunning() then break end
+    iv:tick()
+  end
+  return true
+end
+
+-- pokefirered/src/script.c:448
+function Space.runOnResume(mapId)
+  if not Space.vm then return false end
+  local ms = map_scripts(mapId)
+  return run_immediately(ms and ms.onResume)
+end
+
+-- pokefirered/src/script.c:479
+function Space.runOnWarpIntoMap(mapId)
+  if not Space.vm then return false end
+  local ms = map_scripts(mapId)
+  local key = check_script_table(ms and ms.onWarpIntoMap)
+  if not key then return false end
+  local ran = run_immediately(key)
+  if ran then Space.refreshObjectGraphics() end
+  return ran
+end
+
+-- pokefirered/src/script.c:453
+function Space.runOnReturnToField(mapId)
+  if not Space.vm then return false end
+  local ms = map_scripts(mapId)
+  return run_immediately(ms and ms.onReturnToField)
+end
+
+-- pokefirered/src/fieldmap.c:93
+function Space.runOnLoad(mapId)
+  if not Space.vm then return false end
+  mapId = mapId or Space.mapId
+  local ev = Space.bundle and Space.bundle.events and Space.bundle.events[mapId]
+  local ms = ev and ev.mapScripts
+  local key = ms and ms.onLoad
+  if type(key) ~= "string" then return false end
+  local vm = Space.vm
+  if vm:isRunning() then return false end
+  vm:start(key)
+  for _ = 1, 256 do
+    if not vm:isRunning() then break end
+    vm:tick()
+  end
+  return true
+end
+
+-- pokefirered/src/event_data.c:56
+Space.TEMP_FIELD_EVENT_FLAGS = { 0x807, 0x842 }
+
+-- pokefirered/src/overworld.c:762
+-- pokefirered/src/overworld.c:797
+function Space.clearTempFieldEventFlags(mod, game)
+  local session = resolve_session(mod or Space._mod, game)
+  for i = 1, #Space.TEMP_FIELD_EVENT_FLAGS do
+    local id = Space.TEMP_FIELD_EVENT_FLAGS[i]
+    if Space.store then Flags.setFlag(Space.store, nil, id, false) end
+    if session and session.flags then session.flags[id] = nil end
+  end
 end
 
 --- ON_TRANSITION + schedule ON_FRAME. Call only after Objects.loadMap for mapId
 -- so setobjectxyperm / removeobject hit the destination map's localIds (pret order).
-function Space.runEnterScripts(mod, mapId, game, world)
+function Space.runEnterScripts(mod, mapId, game, world, opts)
   if not Space.vm then return end
+  opts = opts or {}
   mapId = mapId or Space.mapId
+  if opts.enterVia ~= "continue" then
+    Space.clearTempFieldEventFlags(mod, game)
+  end
   local ev = Space.bundle and Space.bundle.events and Space.bundle.events[mapId]
   if not ev then return Space.vm end
   local vm = Space.vm
@@ -277,6 +409,14 @@ function Space.runEnterScripts(mod, mapId, game, world)
     end
     -- VAR_OBJ_GFX_ID_* / setobjectxyperm applied — refresh NPC sprites.
     Space.refreshObjectGraphics()
+  end
+  -- pokefirered/src/overworld.c:807
+  Space.runOnLoad(mapId)
+  -- pokefirered/src/overworld.c:783
+  Space.runOnResume(mapId)
+  -- pokefirered/src/overworld.c:2148
+  if not (opts.seamless or opts.enterVia == "continue") then
+    Space.runOnWarpIntoMap(mapId)
   end
   -- ON_FRAME (Bill intro etc.) — defer while Gen2 MAPSETUP is still white.
   if not vm:isRunning() then
@@ -298,31 +438,20 @@ function Space.scheduleOnFrame(world)
   Space._deferOnFrameForFade = (world and world.mapSetup) and true or false
 end
 
-function Space.onResume(mod)
-  if not Space.active or not Space.vm then return end
-  local ev = Space.bundle and Space.bundle.events and Space.bundle.events[Space.mapId]
-  local ms = ev and ev.mapScripts
-  if ms and type(ms.onResume) == "string" then
-    Space.vm:start(ms.onResume)
-  end
-  -- ON_FRAME after resume (stub wiring)
-  Space.runOnFrame()
+-- pokefirered/src/overworld.c:1943
+function Space.returnToField(mapId)
+  if not Space.active or not Space.vm then return false end
+  mapId = mapId or Space.mapId
+  local a = Space.runOnResume(mapId)
+  local b = Space.runOnReturnToField(mapId)
+  return a or b
 end
 
 function Space.runOnFrame()
   if not Space.active or not Space.vm then return end
   local ev = Space.bundle and Space.bundle.events and Space.bundle.events[Space.mapId]
-  local frames = ev and ev.mapScripts and ev.mapScripts.onFrame
-  if type(frames) ~= "table" then return end
-  for _, row in ipairs(frames) do
-    if row.script then
-      local v = Flags.getVar(Space.store, Space.vm.ctx, row.var)
-      if v == (row.value or 0) then
-        Space.vm:start(row.script)
-        break
-      end
-    end
-  end
+  local key = check_script_table(ev and ev.mapScripts and ev.mapScripts.onFrame)
+  if key then Space.vm:start(key) end
 end
 
 --- Resolve graphics / graphicsVar → sprite for object defs at spawn.
@@ -525,16 +654,20 @@ function Space.install(mod)
             ad.pollMovement(0)
           end
           Space.vm:tick()
-          if Space._pendingOnFrame and not Space.vm:isRunning() then
+          -- pokefirered/src/field_control_avatar.c:212
+          if not Space.vm:isRunning() then
             if Space._deferOnFrameForFade and self.mapSetup then
               -- Still fading in from MAPSETUP.WARP; keep holding onFrame.
             else
+              local claiming = Space._pendingOnFrame
               Space._pendingOnFrame = false
               Space._deferOnFrameForFade = false
-              Space.runOnFrame()
-              if not Space.vm:isRunning() then
-                local okF, Field = pcall(require, "src.core.game3.field")
-                if okF and Field and Field.unlock then Field.unlock() end
+              local Field = package.loaded["src.core.game3.field"]
+              if claiming or not (Field and Field.locked) then
+                Space.runOnFrame()
+                if claiming and not Space.vm:isRunning() then
+                  if Field and Field.unlock then Field.unlock() end
+                end
               end
             end
           end

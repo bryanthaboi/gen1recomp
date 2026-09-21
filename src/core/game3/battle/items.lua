@@ -178,14 +178,17 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     local caught, shakes = BattleItems.tryCatch(itemId, foe, st, rng, session)
     if caught then
       local res = Catching.storeCaught(session, foe, itemId)
-      local ename = (foe and foe.mon and (foe.mon.nickname or foe.mon.name))
+      local fmon = foe and foe.mon
+      local ename = (fmon and ((fmon.nickname ~= "" and fmon.nickname) or fmon.name))
         or Pokemon.name(foe and foe.species) or "POKéMON"
       say(Strings("Gotcha!\n%s was caught!", ename))
       if res and res.firstTimeCaught then
         say(Strings("%s's data was\nadded to the POKéDEX.", ename))
       end
       if res and res.location == "pc" then
-        say(Strings("%s was transferred\nto the PC.", ename))
+        -- pokefirered/src/battle_script_commands.c:9617
+        local Storage = require("src.core.game3.storage")
+        say(Storage.pcTransferMessage(session, ename))
       end
       return "catch", msgs, true, true
     end
@@ -226,6 +229,12 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     })[stat] or stat)
     local pname = battler.mon and (battler.mon.nickname or battler.mon.name) or "POKéMON"
     say(Strings("%s's %s\nrose!", pname, label))
+    -- pokefirered/src/data/pokemon/item_effects.h:225
+    if battler.mon then
+      local Pokemon = require("src.core.game3.pokemon")
+      Pokemon.itemFriendship(battler.mon, Pokemon.STAT_BOOST_FRIENDSHIP_CHANGE,
+        { mapSec = Pokemon.currentMapSec(session) })
+    end
     return "xitem", msgs, true, false
   end
 
@@ -247,8 +256,9 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     end
     local ok = false
     local mk = ItemsData.medicineKind(itemId)
-    if mk == "revive" or use == "revive" then
-      local max = num == 25
+    -- pokefirered/src/pokemon.c:4258
+    if mk == "revive" or use == "revive" or num == ItemUse.ITEM_REVIVAL_HERB then
+      local max = num == 25 or num == ItemUse.ITEM_REVIVAL_HERB
       if num == 45 then
         ok = ItemUse.reviveAll(party)
       else
@@ -263,6 +273,12 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       say(Strings("It won't have any effect."))
       return "error", msgs, false, false
     end
+    -- pokefirered/src/pokemon.c:4481
+    if num and ItemUse.BITTER_MEDICINE_FRIENDSHIP[num] then
+      local Pokemon = require("src.core.game3.pokemon")
+      Pokemon.itemFriendship(mon, ItemUse.BITTER_MEDICINE_FRIENDSHIP[num],
+        { mapSec = Pokemon.currentMapSec(session) })
+    end
     Bag.remove(bag, itemId, 1)
     say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
     if st.player and st.player.partyIndex == partySlot then
@@ -270,6 +286,11 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     end
     local b2 = st.double and st.battlers and st.battlers[2]
     if b2 and b2.partyIndex == partySlot then sync_player_battler(st, 2) end
+    -- pokefirered/src/battle_controller_oak_old_man.c:394
+    if num == 13 then
+      local Oak = require("src.core.game3.battle.oak_advice")
+      Oak.sayOnce(st, Oak.FLAG_HP_RESTORE, "keepAnEyeOnHp", say)
+    end
     return "heal", msgs, true, false
   end
 

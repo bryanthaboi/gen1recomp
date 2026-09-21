@@ -26,23 +26,87 @@ local function loadManifest()
   if Doors._manifestLoaded then return Doors._manifest end
   Doors._manifestLoaded = true
 
-  local ok, manifest = pcall(require, "data.generated.gba.doors.manifest")
-  if ok and type(manifest) == "table" then
-    Doors._manifest = manifest
-    return manifest
-  end
+  local rel = "data/generated/gba/doors/manifest.lua"
+  local content = nil
 
-  -- Fallback attempt reading directly
-  local manifestPath = "data/generated/gba/doors/manifest.lua"
-  local f = io.open(manifestPath, "r")
-  if f then
-    local content = f:read("*a")
-    f:close()
-    local chunk = load(content, "@" .. manifestPath, "t", {})
-    if chunk then
-      Doors._manifest = chunk()
+  local okD, Dataset = pcall(require, "src.core.game3.dataset")
+  if okD and Dataset and Dataset.cache then
+    local cache = Dataset.cache()
+    if cache and cache.read then
+      content = cache:read(rel) or cache:read("doors/manifest.lua")
     end
   end
+
+  if not content then
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.readActive then
+      content = CacheFs.readActive(rel) or CacheFs.readActive("doors/manifest.lua")
+    end
+  end
+
+  if not content and love and love.filesystem and love.filesystem.read then
+    content = love.filesystem.read(rel) or love.filesystem.read("doors/manifest.lua")
+  end
+
+  if not content then
+    local f = io.open(rel, "r")
+    if f then
+      content = f:read("*a")
+      f:close()
+    end
+  end
+
+  if content then
+    local chunk = load(content, "@" .. rel, "t", {})
+    if chunk then
+      local ok, res = pcall(chunk)
+      if ok and type(res) == "table" then
+        Doors._manifest = res
+        return res
+      end
+    end
+  end
+
+  -- Builtin fallback table matching FRLG field_door.c sDoorGraphics table
+  local DEFAULT_BY_MID = {
+    [0x03D] = { mid = 0x03D, tile = "General", sound = "normal", size = "1x1", tileset = "primary" },
+    [0x062] = { mid = 0x062, tile = "SlidingSingle", sound = "sliding", size = "1x1", tileset = "primary" },
+    [0x15B] = { mid = 0x15B, tile = "SlidingDouble", sound = "sliding", size = "1x1", tileset = "primary" },
+    [0x2A3] = { mid = 0x2A3, tile = "Pallet", sound = "normal", size = "1x1", tileset = "pallet" },
+    [0x2AC] = { mid = 0x2AC, tile = "OaksLab", sound = "normal", size = "1x1", tileset = "pallet" },
+    [0x299] = { mid = 0x299, tile = "Viridian", sound = "normal", size = "1x1", tileset = "viridian" },
+    [0x2CE] = { mid = 0x2CE, tile = "Pewter", sound = "normal", size = "1x1", tileset = "pewter" },
+    [0x284] = { mid = 0x284, tile = "Saffron", sound = "normal", size = "1x1", tileset = "saffron" },
+    [0x2BC] = { mid = 0x2BC, tile = "SilphCo", sound = "sliding", size = "1x1", tileset = "saffron" },
+    [0x298] = { mid = 0x298, tile = "Cerulean", sound = "normal", size = "1x1", tileset = "cerulean" },
+    [0x2A2] = { mid = 0x2A2, tile = "Lavender", sound = "normal", size = "1x1", tileset = "lavender" },
+    [0x29E] = { mid = 0x29E, tile = "Vermilion", sound = "normal", size = "1x1", tileset = "vermilion" },
+    [0x2E1] = { mid = 0x2E1, tile = "PokemonFanClub", sound = "normal", size = "1x1", tileset = "vermilion" },
+    [0x294] = { mid = 0x294, tile = "DeptStore", sound = "sliding", size = "1x1", tileset = "celadon" },
+    [0x2BF] = { mid = 0x2BF, tile = "Fuchsia", sound = "normal", size = "1x1", tileset = "fuchsia" },
+    [0x2D2] = { mid = 0x2D2, tile = "SafariZone", sound = "sliding", size = "1x1", tileset = "fuchsia" },
+    [0x2AD] = { mid = 0x2AD, tile = "CinnabarLab", sound = "normal", size = "1x1", tileset = "cinnabar" },
+    [0x297] = { mid = 0x297, tile = "Sevii123", sound = "normal", size = "1x1", tileset = "sevii_123" },
+    [0x29B] = { mid = 0x29B, tile = "JoyfulGameCorner", sound = "sliding", size = "1x1", tileset = "sevii_123" },
+    [0x2EB] = { mid = 0x2EB, tile = "OneIslandPokeCenter", sound = "normal", size = "1x1", tileset = "sevii_123" },
+    [0x29A] = { mid = 0x29A, tile = "Sevii45", sound = "normal", size = "1x1", tileset = "sevii_45" },
+    [0x2B9] = { mid = 0x2B9, tile = "FourIslandDayCare", sound = "normal", size = "1x1", tileset = "sevii_45" },
+    [0x2AF] = { mid = 0x2AF, tile = "RocketWarehouse", sound = "normal", size = "1x1", tileset = "sevii_45" },
+    [0x30C] = { mid = 0x30C, tile = "Sevii67", sound = "normal", size = "1x1", tileset = "sevii_67" },
+    [0x28D] = { mid = 0x28D, tile = "DeptStoreElevator", sound = "sliding", size = "1x2", tileset = "dept_store" },
+    [0x2DE] = { mid = 0x2DE, tile = "CableClub", sound = "sliding", size = "1x2", tileset = "cable_club" },
+    [0x2AB] = { mid = 0x2AB, tile = "HideoutElevator", sound = "sliding", size = "1x2", tileset = "silph_co" },
+    [0x281] = { mid = 0x281, tile = "SSAnne", sound = "normal", size = "1x2", tileset = "ss_anne" },
+    [0x2E2] = { mid = 0x2E2, tile = "SilphCoElevator", sound = "sliding", size = "1x2", tileset = "silph_co" },
+    [0x296] = { mid = 0x296, tile = "Teleporter", sound = "sliding", size = "1x2", tileset = "sea_cottage" },
+    [0x2C3] = { mid = 0x2C3, tile = "TrainerTowerLobbyElevator", sound = "sliding", size = "1x2", tileset = "trainer_tower" },
+    [0x356] = { mid = 0x356, tile = "TrainerTowerRoofElevator", sound = "sliding", size = "1x2", tileset = "trainer_tower" },
+  }
+
+  Doors._manifest = {
+    doors = {},
+    by_mid = DEFAULT_BY_MID,
+  }
   return Doors._manifest
 end
 
@@ -192,17 +256,21 @@ function Doors.getSoundForWarp(mapId, x, y, destMap, isDoor)
   local mapUpper = string.upper(tostring(mapId or ""))
   local destUpper = string.upper(tostring(destMap or ""))
 
-  -- Double sliding doors: Celadon Dept Store, Silph Co
+  -- Double sliding doors: Celadon Dept Store, Silph Co, Gyms, Fighting Dojo
   local isDouble = destUpper:find("DEPT_STORE")
     or destUpper:find("SILPH_CO")
+    or destUpper:find("GYM")
+    or destUpper:find("DOJO")
     or mapUpper:find("DEPT_STORE")
     or mapUpper:find("SILPH_CO")
+    or mapUpper:find("GYM")
+    or mapUpper:find("DOJO")
 
   if isDouble then
     return Doors.SOUND_SLIDING, "sliding_double"
   end
 
-  -- Sliding doors: Poké Center, Mart, Dept Store, Silph Co, Safari Zone, Game Corner, Elevators
+  -- Sliding doors: Poké Center, Mart, Dept Store, Silph Co, Safari Zone, Game Corner, Elevators, Gyms
   local isSliding = destUpper:find("POKECENTER")
     or destUpper:find("POKEMON_CENTER")
     or destUpper:find("CENTER")
@@ -212,12 +280,16 @@ function Doors.getSoundForWarp(mapId, x, y, destMap, isDoor)
     or destUpper:find("CABLE_CLUB")
     or destUpper:find("ELEVATOR")
     or destUpper:find("TELEPORTER")
+    or destUpper:find("GYM")
+    or destUpper:find("DOJO")
     or mapUpper:find("POKECENTER")
     or mapUpper:find("POKEMON_CENTER")
     or mapUpper:find("CENTER")
     or mapUpper:find("MART")
     or mapUpper:find("SAFARI_ZONE")
     or mapUpper:find("GAME_CORNER")
+    or mapUpper:find("GYM")
+    or mapUpper:find("DOJO")
 
   if isSliding then
     return Doors.SOUND_SLIDING, "sliding"
@@ -232,6 +304,11 @@ local function resolveDoorKind(mapId, x, y, destMap, sound)
     if entry then
       return entry.tile, entry.size
     end
+  end
+  local destUpper = string.upper(tostring(destMap or ""))
+  local mapUpper = string.upper(tostring(mapId or ""))
+  if destUpper:find("GYM") or destUpper:find("DOJO") or mapUpper:find("GYM") or mapUpper:find("DOJO") then
+    return "SlidingDouble", "1x1"
   end
   if sound == Doors.SOUND_SLIDING then
     return "SlidingSingle", "1x1"
@@ -438,9 +515,23 @@ local function loadSheet(tileName)
   local relPath = "data/generated/gba/doors/" .. info.file
   local bytes = nil
 
-  if love.filesystem and love.filesystem.read then
-    local readBytes = love.filesystem.read(relPath)
-    if readBytes then bytes = readBytes end
+  local okD, Dataset = pcall(require, "src.core.game3.dataset")
+  if okD and Dataset and Dataset.cache then
+    local cache = Dataset.cache()
+    if cache and cache.read then
+      bytes = cache:read(relPath) or cache:read("doors/" .. info.file)
+    end
+  end
+
+  if not bytes then
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.readActive then
+      bytes = CacheFs.readActive(relPath) or CacheFs.readActive("doors/" .. info.file)
+    end
+  end
+
+  if not bytes and love and love.filesystem and love.filesystem.read then
+    bytes = love.filesystem.read(relPath) or love.filesystem.read("doors/" .. info.file)
   end
 
   if not bytes then

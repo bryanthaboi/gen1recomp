@@ -108,6 +108,13 @@ function RomExtractorGen3.new(romData, manifest, progressCb, romSha1)
   }, RomExtractorGen3)
 end
 
+function RomExtractorGen3:sharedImports(sha1)
+  if not self._imports then
+    self._imports = makeImports(self.romData, sha1)
+  end
+  return self._imports
+end
+
 function RomExtractorGen3:ensureSha1()
   if type(self.romSha1) == "string" and self.romSha1 ~= "" then
     return self.romSha1
@@ -194,7 +201,7 @@ function RomExtractorGen3:runGbaExtract(sha1)
   Extract.CACHE_ROOT = GBA_ROOT
   Extract.NATIVE_ROOT = GBA_ROOT .. "/native"
 
-  local imports = makeImports(self.romData, sha1)
+  local imports = self:sharedImports(sha1)
   local cache = makeCache()
   local runOk, runDetail = false, "extract did not run"
   local callOk, err = pcall(function()
@@ -229,7 +236,7 @@ function RomExtractorGen3:runPokemonExtract(sha1)
     return true, { skipped = true }
   end
 
-  local imports = makeImports(self.romData, sha1)
+  local imports = self:sharedImports(sha1)
   local rom, openErr = Rom.open(imports, "firered")
   if not rom then
     Extract.CACHE_ROOT = prevRoot
@@ -253,6 +260,8 @@ function RomExtractorGen3:runPokemonExtract(sha1)
     TextChromeExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     local TrainerCardExtract = require("src.import.gba.trainer_card_extract")
     TrainerCardExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    local SeagallopExtract = require("src.import.gba.seagallop_extract")
+    SeagallopExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     local MapPreviewExtract = require("src.import.gba.map_preview_extract")
     local mpOk, mpErr = pcall(MapPreviewExtract.run, rom, cache, {
       cacheRoot = GBA_ROOT,
@@ -273,6 +282,64 @@ function RomExtractorGen3:runPokemonExtract(sha1)
   return true, detail
 end
 
+function RomExtractorGen3:runAuxExtracts(sha1)
+  local Rom = require("src.import.gba.rom")
+  local RegionMapExtract = require("src.import.gba.region_map_extract")
+  local MapSectionsExtract = require("src.import.gba.map_sections_extract")
+  local MultichoiceExtract = require("src.import.gba.multichoice_extract")
+  local HealLocationsExtract = require("src.import.gba.heal_locations_extract")
+  local Extract = require("src.import.gba.extract_island1")
+  local prevRoot = Extract.CACHE_ROOT
+  Extract.CACHE_ROOT = GBA_ROOT
+
+  local cache = makeCache()
+  local needRegion = not RegionMapExtract.ready(cache, GBA_ROOT)
+  local needSections = not CacheFs.exists(GBA_ROOT .. "/region_map/map_sections.lua")
+  local needChoices = not MultichoiceExtract.ready(cache, GBA_ROOT)
+  local needHeal = not HealLocationsExtract.ready(cache, GBA_ROOT)
+  if not (needRegion or needSections or needChoices or needHeal) then
+    Extract.CACHE_ROOT = prevRoot
+    return true, { skipped = true }
+  end
+
+  local rom, openErr = Rom.open(self:sharedImports(sha1), "firered")
+  if not rom then
+    Extract.CACHE_ROOT = prevRoot
+    return false, openErr or "rom open failed"
+  end
+
+  local ok, detail = pcall(function()
+    local out = {}
+    if needRegion then
+      out.regionMap = RegionMapExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    end
+    if needSections then
+      MapSectionsExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+      local rel = GBA_ROOT .. "/region_map/map_sections.lua"
+      local body = cache:read(rel)
+      if type(body) ~= "string" or #body < 1024 then
+        error("map_sections extract wrote " .. tostring(body and #body or 0)
+          .. " bytes to " .. rel)
+      end
+      out.mapSections = #body
+    end
+    if needChoices then
+      out.multichoice = MultichoiceExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    end
+    if needHeal then
+      local okHl, detailHl = HealLocationsExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+      if not okHl then print("[heal_locations] warn: " .. tostring(detailHl)) end
+      out.healLocations = detailHl
+    end
+    return out
+  end)
+
+  rom:clearCache()
+  Extract.CACHE_ROOT = prevRoot
+  if not ok then return false, detail end
+  return true, detail
+end
+
 function RomExtractorGen3:runIntroAudio(sha1)
   self:report(0.88, "Intro Cutscene & Audio", 0, 1)
   local cache = makeCache()
@@ -284,7 +351,10 @@ function RomExtractorGen3:runIntroAudio(sha1)
     end
   end
 
-  local romShim = { data = require("src.import.gba.revision_view").apply(self.romData, sha1) }
+  local RevisionView = require("src.import.gba.revision_view")
+  local imports = self:sharedImports(sha1)
+  local info = imports:info("firered")
+  local romShim = { data = RevisionView.forImports(imports, "firered", info) or self.romData }
   local Intro = require("src.import.gba.extract_intro")
   local Naming = require("src.import.gba.extract_naming")
   local AudioExt = require("src.import.gba.extract_audio")
@@ -322,25 +392,39 @@ function RomExtractorGen3:run()
     error("GBA extract failed: " .. tostring(detail))
   end
   self:report(0.42, "World Maps Ready", 1, 1)
+  collectgarbage("collect")
 
   local okPoke, pokeDetail = self:runPokemonExtract(sha1)
   writeJson(GBA_ROOT .. "/pokemon/extract_status.json", {
     ok = okPoke == true,
-    error = okPoke and nil or tostring(pokeDetail),
+    error = (not okPoke) and tostring(pokeDetail) or nil,
   })
   if not okPoke then
     error("Pokemon extract failed: " .. tostring(pokeDetail))
   end
   self:report(0.88, "Game Data & Chrome Ready", 1, 1)
+  collectgarbage("collect")
+
+  local okAux, auxDetail = self:runAuxExtracts(sha1)
+  writeJson(GBA_ROOT .. "/region_map/extract_status.json", {
+    ok = okAux == true,
+    error = (not okAux) and tostring(auxDetail) or nil,
+  })
+  if not okAux then
+    error("Region map / script table extract failed: " .. tostring(auxDetail))
+  end
+  collectgarbage("collect")
 
   self:runIntroAudio(sha1)
   self:report(0.98, "Finalizing Cache", 1, 1)
+  collectgarbage("collect")
 
   self:report(1.00, "Ready", 1, 1)
   return {
     romSha1 = sha1,
     extractOk = ok == true,
     pokemonOk = okPoke == true,
+    auxOk = okAux == true,
     detail = detail,
   }
 end

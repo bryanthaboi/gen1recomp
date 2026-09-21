@@ -9,7 +9,7 @@ local Lz77 = require("src.import.gba.lz77")
 local PokemonExtract = {}
 
 PokemonExtract.MAGIC = "SVPK"
-PokemonExtract.FORMAT_VERSION = 4
+PokemonExtract.FORMAT_VERSION = 6
 PokemonExtract.CACHE_SUB = "pokemon"
 
 local function default_cache_root()
@@ -18,6 +18,14 @@ local function default_cache_root()
     return Extract.CACHE_ROOT
   end
   return "data/generated/gba"
+end
+
+local function put(cache, rel, bytes)
+  local ok, err = cache:write(rel, bytes)
+  if ok == false then
+    error("pokemon_extract: could not write " .. rel .. ": " .. tostring(err))
+  end
+  return true
 end
 
 local function bgr555_to_rgb8(c)
@@ -323,12 +331,15 @@ local function write_species_meta_lua(meta)
   for _, id in ipairs(ids) do
     local m = meta[id]
     lines[#lines + 1] = string.format(
-      "  [%d] = { catchRate = %d, expYield = %d, genderRatio = %d, eggCycles = %d, friendship = %d, growthRate = %d, eggGroup1 = %d, eggGroup2 = %d, itemCommon = %d, itemRare = %d },",
+      "  [%d] = { catchRate = %d, expYield = %d, genderRatio = %d, eggCycles = %d, friendship = %d, growthRate = %d, eggGroup1 = %d, eggGroup2 = %d, itemCommon = %d, itemRare = %d, evHp = %d, evAtk = %d, evDef = %d, evSpe = %d, evSpa = %d, evSpd = %d, safariZoneFleeRate = %d },",
       id,
       m.catchRate or 0, m.expYield or 0, m.genderRatio or 0,
       m.eggCycles or 0, m.friendship or 0, m.growthRate or 0,
       m.eggGroup1 or 0, m.eggGroup2 or 0,
-      m.itemCommon or 0, m.itemRare or 0)
+      m.itemCommon or 0, m.itemRare or 0,
+      m.evHp or 0, m.evAtk or 0, m.evDef or 0,
+      m.evSpe or 0, m.evSpa or 0, m.evSpd or 0,
+      m.safariZoneFleeRate or 0)
   end
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
@@ -556,6 +567,12 @@ function PokemonExtract.run(rom, cache, opts)
   local backPicTable = Versions.MON_BACK_PIC_TABLE or 0x23654C
   local palTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_palette_table) or 0x23730C
 
+  local picsWritten = { icons = 0, front = 0, back = 0 }
+  local picsMissing = {}
+  local function noteMissing(kind, sp)
+    picsMissing[#picsMissing + 1] = kind .. "/" .. sp
+  end
+
   for sp = 0, num - 1 do
     if progress and sp % 40 == 0 then
       progress("pokemon", sp, num)
@@ -572,9 +589,17 @@ function PokemonExtract.run(rom, cache, opts)
     }
     types[sp] = { rom:get(ioff + 6), rom:get(ioff + 7) }
     abilities[sp] = { rom:get(ioff + 0x16), rom:get(ioff + 0x17) }
+    -- pokefirered/include/pokemon.h:219
+    local evLo, evHi = rom:get(ioff + 0x0A), rom:get(ioff + 0x0B)
     meta[sp] = {
       catchRate = rom:get(ioff + 0x08),
       expYield = rom:get(ioff + 0x09),
+      evHp = evLo % 4,
+      evAtk = math.floor(evLo / 4) % 4,
+      evDef = math.floor(evLo / 16) % 4,
+      evSpe = math.floor(evLo / 64) % 4,
+      evSpa = evHi % 4,
+      evSpd = math.floor(evHi / 4) % 4,
       itemCommon = rom:u16(ioff + 0x0C),
       itemRare = rom:u16(ioff + 0x0E),
       genderRatio = rom:get(ioff + 0x10),
@@ -583,6 +608,8 @@ function PokemonExtract.run(rom, cache, opts)
       growthRate = rom:get(ioff + 0x13),
       eggGroup1 = rom:get(ioff + 0x14),
       eggGroup2 = rom:get(ioff + 0x15),
+      -- pokefirered/include/pokemon.h:233
+      safariZoneFleeRate = rom:get(ioff + 0x18),
     }
     -- Table omits SPECIES_NONE; SpeciesToNationalPokedexNum uses [species - 1].
     toNat[sp] = (sp >= 1) and rom:u16(natBase + (sp - 1) * 2) or 0
@@ -600,7 +627,8 @@ function PokemonExtract.run(rom, cache, opts)
     else
       rgba = string.rep(string.char(0, 0, 0, 0), w * iconH * 4)
     end
-    cache:write(root .. "/icons/" .. sp .. ".rgba", rgba)
+    put(cache, root .. "/icons/" .. sp .. ".rgba", rgba)
+    picsWritten.icons = picsWritten.icons + 1
 
     -- Front Pic (64x64 RGBA)
     local frontPtr = rom:u32(frontPicTable + sp * 8)
@@ -608,42 +636,61 @@ function PokemonExtract.run(rom, cache, opts)
     local frontOff = gba_off(frontPtr)
     local palOff = gba_off(palPtr)
     if frontOff and palOff then
+      local made = false
       local okT, tiles = pcall(Lz77.decompress, function(i) return rom:get(i) end, frontOff)
       local okP, palBytes = pcall(Lz77.decompress, function(i) return rom:get(i) end, palOff)
       if okT and okP and tiles and palBytes then
         local frontRgba = decode_pic_sheet(tiles, palBytes)
         if frontRgba then
-          cache:write(root .. "/front/" .. sp .. ".rgba", frontRgba)
+          put(cache, root .. "/front/" .. sp .. ".rgba", frontRgba)
+          picsWritten.front = picsWritten.front + 1
+          made = true
         end
         -- pokefirered/graphics_file_rules.mk:29
         if sp == SPECIES_CASTFORM then
           for form = 1, 3 do
             local rgba = decode_pic_sheet(tiles, palBytes, form, form)
-            if rgba then cache:write(root .. "/front/" .. sp .. "_" .. form .. ".rgba", rgba) end
+            if rgba then put(cache, root .. "/front/" .. sp .. "_" .. form .. ".rgba", rgba) end
           end
         end
       end
+      if not made then noteMissing("front", sp) end
     end
 
     -- Back Pic (64x64 RGBA)
     local backPtr = rom:u32(backPicTable + sp * 8)
     local backOff = gba_off(backPtr)
     if backOff and palOff then
+      local made = false
       local okT, tiles = pcall(Lz77.decompress, function(i) return rom:get(i) end, backOff)
       local okP, palBytes = pcall(Lz77.decompress, function(i) return rom:get(i) end, palOff)
       if okT and okP and tiles and palBytes then
         local backRgba = decode_pic_sheet(tiles, palBytes)
         if backRgba then
-          cache:write(root .. "/back/" .. sp .. ".rgba", backRgba)
+          put(cache, root .. "/back/" .. sp .. ".rgba", backRgba)
+          picsWritten.back = picsWritten.back + 1
+          made = true
         end
         if sp == SPECIES_CASTFORM then
           for form = 1, 3 do
             local rgba = decode_pic_sheet(tiles, palBytes, form, form)
-            if rgba then cache:write(root .. "/back/" .. sp .. "_" .. form .. ".rgba", rgba) end
+            if rgba then put(cache, root .. "/back/" .. sp .. "_" .. form .. ".rgba", rgba) end
           end
         end
       end
+      if not made then noteMissing("back", sp) end
     end
+  end
+
+  if #picsMissing > 0 then
+    local shown = {}
+    for i = 1, math.min(8, #picsMissing) do shown[i] = picsMissing[i] end
+    error(("pokemon_extract: %d species sprites with valid ROM pointers produced no file (%s%s)")
+      :format(#picsMissing, table.concat(shown, ", "), #picsMissing > #shown and ", ..." or ""))
+  end
+  if picsWritten.icons < num or picsWritten.front < 1 or picsWritten.back < 1 then
+    error(("pokemon_extract: sprite pass wrote %d icons, %d front, %d back for %d species")
+      :format(picsWritten.icons, picsWritten.front, picsWritten.back, num))
   end
 
   -- pokefirered/src/battle_gfx_sfx_util.c:422
@@ -807,21 +854,21 @@ function PokemonExtract.run(rom, cache, opts)
     return table.concat(lines, "\n")
   end
 
-  cache:write(root .. "/names.lua", write_names_lua(names))
-  cache:write(root .. "/types.lua", write_types_lua(types))
-  cache:write(root .. "/stats.lua", write_stats_lua(stats))
-  cache:write(root .. "/abilities.lua", write_abilities_lua(abilities))
-  cache:write(root .. "/ability_names.lua", write_ability_names_lua(abilityNames))
-  cache:write(root .. "/descriptions.lua", write_descriptions_lua(abilityDescs, moveDescs))
-  cache:write(root .. "/meta.lua", write_species_meta_lua(meta))
-  cache:write(root .. "/national.lua", write_national_lua(toNat))
-  cache:write(root .. "/move_names.lua", write_move_names_lua(moveNames))
-  cache:write(root .. "/learnsets.lua", write_learnsets_lua(learnsets))
-  cache:write(root .. "/evolutions.lua", write_evolutions_lua(evolutions))
-  cache:write(root .. "/tmhm.lua", write_tmhm_lua(tmhm, tmMoves))
-  cache:write(root .. "/egg_moves.lua", write_egg_moves_lua(eggMoves))
-  cache:write(root .. "/dex.lua", write_dex_lua(dex))
-  cache:write(root .. "/manifest.lua", write_manifest(num, Versions.POKEMON_VERSION))
+  put(cache, root .. "/names.lua", write_names_lua(names))
+  put(cache, root .. "/types.lua", write_types_lua(types))
+  put(cache, root .. "/stats.lua", write_stats_lua(stats))
+  put(cache, root .. "/abilities.lua", write_abilities_lua(abilities))
+  put(cache, root .. "/ability_names.lua", write_ability_names_lua(abilityNames))
+  put(cache, root .. "/descriptions.lua", write_descriptions_lua(abilityDescs, moveDescs))
+  put(cache, root .. "/meta.lua", write_species_meta_lua(meta))
+  put(cache, root .. "/national.lua", write_national_lua(toNat))
+  put(cache, root .. "/move_names.lua", write_move_names_lua(moveNames))
+  put(cache, root .. "/learnsets.lua", write_learnsets_lua(learnsets))
+  put(cache, root .. "/evolutions.lua", write_evolutions_lua(evolutions))
+  put(cache, root .. "/tmhm.lua", write_tmhm_lua(tmhm, tmMoves))
+  put(cache, root .. "/egg_moves.lua", write_egg_moves_lua(eggMoves))
+  put(cache, root .. "/dex.lua", write_dex_lua(dex))
+  put(cache, root .. "/manifest.lua", write_manifest(num, Versions.POKEMON_VERSION))
 
   if progress then progress("battle_moves", 0, 1) end
   local BattleMovesExtract = require("src.import.gba.battle_moves_extract")
@@ -926,6 +973,7 @@ function PokemonExtract.run(rom, cache, opts)
   return {
     root = root,
     numSpecies = num,
+    picsWritten = picsWritten,
     names = names,
     types = types,
     stats = stats,
@@ -948,6 +996,8 @@ end
 function PokemonExtract.ready(cache, cacheRoot)
   local baseRoot = cacheRoot or default_cache_root()
   local root = baseRoot .. "/" .. PokemonExtract.CACHE_SUB
+  local last = (Versions.NUM_SPECIES or 412) - 1
+  local iconBytes = (Versions.MON_ICON_W or 32) * (Versions.MON_ICON_H or 32) * 2 * 4
   local function valid_file(rel, minSize)
     minSize = minSize or 1
     if cache then
@@ -977,6 +1027,37 @@ function PokemonExtract.ready(cache, cacheRoot)
     return false
   end
 
+  local function manifest_text()
+    if cache then
+      if cache.read then return cache:read(root .. "/manifest.lua") end
+      return nil
+    end
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.readActive then
+      local data = CacheFs.readActive(root .. "/manifest.lua")
+      if data then return data end
+    end
+    if love and love.filesystem and love.filesystem.read then
+      local okL, data = pcall(love.filesystem.read, root .. "/manifest.lua")
+      if okL and data then return data end
+    end
+    local f = io.open(root .. "/manifest.lua", "rb")
+    if f then
+      local data = f:read("*a")
+      f:close()
+      return data
+    end
+    return nil
+  end
+
+  local manifest = manifest_text()
+  if type(manifest) == "string" then
+    local format = tonumber(manifest:match("format%s*=%s*(%d+)"))
+    if format ~= PokemonExtract.FORMAT_VERSION then return false end
+    local count = tonumber(manifest:match("numSpecies%s*=%s*(%d+)"))
+    if count and count < (Versions.NUM_SPECIES or 412) then return false end
+  end
+
   if valid_file(root .. "/manifest.lua", 20)
       and valid_file(root .. "/names.lua", 20)
       and valid_file(root .. "/stats.lua", 20)
@@ -989,8 +1070,21 @@ function PokemonExtract.ready(cache, cacheRoot)
       and valid_file(baseRoot .. "/chrome/menu_message_rgba.rgba", 20)
       and valid_file(baseRoot .. "/trainer_card/bg.rgba", 240 * 160 * 4)
       and valid_file(baseRoot .. "/items/pack.lua", 20)
+      and valid_file(baseRoot .. "/chrome/fonts/braille.lua", 20)
+      and valid_file(baseRoot .. "/seagallop/manifest.lua", 20)
+      and valid_file(baseRoot .. "/seagallop/wb.rgba", 32 * 8 * 32 * 8 * 4)
+      and valid_file(root .. "/pokedex/paper_bg.rgba", 240 * 160 * 4)
+      and valid_file(root .. "/pokedex/footprints/1.rgba", 16 * 16 * 4)
+      and valid_file(root .. "/pokedex/footprints/question_mark.rgba", 16 * 16 * 4)
+      and valid_file(root .. "/battle/terrain_cave.rgba", 256 * 256 * 4)
+      and valid_file(root .. "/battle/terrain_water.rgba", 256 * 256 * 4)
+      and valid_file(root .. "/battle/terrain_champion.rgba", 256 * 256 * 4)
       and valid_file(root .. "/front/1.rgba", 64 * 64 * 4)
-      and valid_file(root .. "/back/1.rgba", 64 * 64 * 4) then
+      and valid_file(root .. "/back/1.rgba", 64 * 64 * 4)
+      and valid_file(root .. "/icons/1.rgba", iconBytes)
+      and valid_file(root .. "/front/" .. last .. ".rgba", 64 * 64 * 4)
+      and valid_file(root .. "/back/" .. last .. ".rgba", 64 * 64 * 4)
+      and valid_file(root .. "/icons/" .. last .. ".rgba", iconBytes) then
     return true
   end
   return false

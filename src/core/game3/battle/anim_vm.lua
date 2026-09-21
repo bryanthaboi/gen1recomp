@@ -343,6 +343,12 @@ function AnimVm:visualCount()
     local t = AnimTasks._pool[i]
     if t.active and t._g4kind ~= "sound" and t._g4kind ~= "aux" and not t._uncounted then n = n + 1 end
   end
+  -- pokefirered/src/battle_anim.c:400
+  AnimSprites.init()
+  for i = 1, AnimSprites.MAX do
+    local s = AnimSprites._pool[i]
+    if s.active and s._g4counted then n = n + 1 end
+  end
   return n
 end
 
@@ -631,6 +637,16 @@ local function draw_anim_bg(vm)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+local _lastBlendCoeff = nil
+local _lastBlendR = nil
+local _lastBlendG = nil
+local _lastBlendB = nil
+
+local function particle_sort_cmp(a, b)
+  if a._drawZ ~= b._drawZ then return a._drawZ < b._drawZ end
+  return (a._poolIndex or 0) > (b._poolIndex or 0)
+end
+
 local function draw_sprite(self, s, a)
   if s.customDraw then
     s:customDraw(self)
@@ -652,10 +668,12 @@ local function draw_sprite(self, s, a)
     local sh = (not pimg) and tint and blend_shader()
     if sh then
       local r, g, b = band(tint.color, 31), band(rshift(tint.color, 5), 31), band(rshift(tint.color, 10), 31)
-      pcall(function()
-        sh:send("coeff", tint.coeff)
-        sh:send("target", { r, g, b })
-      end)
+      local coeff = tint.coeff
+      if coeff ~= _lastBlendCoeff or r ~= _lastBlendR or g ~= _lastBlendG or b ~= _lastBlendB then
+        _lastBlendCoeff, _lastBlendR, _lastBlendG, _lastBlendB = coeff, r, g, b
+        pcall(sh.send, sh, "coeff", coeff)
+        pcall(sh.send, sh, "target", { r, g, b })
+      end
       love.graphics.setShader(sh)
     end
     local q = sprite_source_quad(s, bw, bh)
@@ -691,10 +709,7 @@ function AnimVm:draw(minZ, maxZ)
       end
     end
   end
-  table.sort(list, function(a, b)
-    if a._drawZ ~= b._drawZ then return a._drawZ < b._drawZ end
-    return (a._poolIndex or 0) > (b._poolIndex or 0)
-  end)
+  table.sort(list, particle_sort_cmp)
 
   local activeBlend = "alpha"
   local bld = self.bldAlpha

@@ -27,8 +27,8 @@ Versions.ROM_SIZE = 16777216
 -- v99: gEggMoves → pokemon/egg_moves.lua (hidden-mon egg moves were inert).
 -- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
 --       mapsec names and sDungeonInfo dungeon descriptions.
-Versions.CACHE_VERSION = 101
-Versions.NATIVE_VERSION = 5
+Versions.CACHE_VERSION = 109
+Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1
 -- Audio pack (M4A banks / DirectSound samples / cries).
@@ -128,6 +128,122 @@ Versions.POKEDEX_ORDERS = {
   height = 0x4445FA,
   type = 0x4448FE,
 }
+-- src/pokedex_screen.c:144
+Versions.POKEDEX_BG_TILES = {
+  kanto = { gfx = 0x440274, pal = 0x4404C8 },
+  national = { gfx = 0x4403AC, pal = 0x4406E0 },
+}
+
+-- src/pokedex_screen.c:143
+Versions.POKEDEX_CHROME_GFX = {
+  { file = "mini_page.rgba", gfx = 0x440124, lz = true, w = 64, h = 40 },
+  { file = "map_kanto.rgba", gfx = 0x443620, lz = true, w = 96, h = 72 },
+  { file = "map_one_island.rgba", gfx = 0x443910, lz = true, w = 32, h = 24 },
+  { file = "map_two_island.rgba", gfx = 0x443988, lz = true, w = 32, h = 24 },
+  { file = "map_three_island.rgba", gfx = 0x4439FC, lz = true, w = 32, h = 24 },
+  { file = "map_four_island.rgba", gfx = 0x443A78, lz = true, w = 32, h = 32 },
+  { file = "map_five_island.rgba", gfx = 0x443AF8, lz = true, w = 32, h = 32 },
+  { file = "map_six_island.rgba", gfx = 0x443BB0, lz = true, w = 32, h = 32 },
+  { file = "map_seven_island.rgba", gfx = 0x443C54, lz = true, w = 32, h = 32 },
+  { file = "caught_marker.rgba", gfx = 0x443600, w = 8, h = 8 },
+  { file = "blit_wide_ellipse.rgba", gfx = 0x443D00, w = 88, h = 16 },
+}
+
+-- src/pokedex_screen.c:158
+Versions.POKEDEX_CATEGORY_ICONS = {
+  { file = "cat_icon_cave.rgba", gfx = 0x4408E0, pal = 0x443420 },
+  { file = "cat_icon_urban.rgba", gfx = 0x440BD8, pal = 0x443440 },
+  { file = "cat_icon_cancel.rgba", gfx = 0x440EF0, pal = 0x443460 },
+  { file = "cat_icon_forest.rgba", gfx = 0x44112C, pal = 0x443480 },
+  { file = "cat_icon_grassland.rgba", gfx = 0x4414BC, pal = 0x4434A0 },
+  { file = "cat_icon_qmark.rgba", gfx = 0x441808, pal = 0x4434C0 },
+  { file = "cat_icon_mountain.rgba", gfx = 0x441A40, pal = 0x4434E0 },
+  { file = "cat_icon_rare.rgba", gfx = 0x441D54, pal = 0x443500 },
+  { file = "cat_icon_sea.rgba", gfx = 0x442004, pal = 0x443520 },
+  { file = "cat_icon_numerical.rgba", gfx = 0x44223C, pal = 0x443540 },
+  { file = "cat_icon_rough_terrain.rgba", gfx = 0x4424E4, pal = 0x443560 },
+  { file = "cat_icon_waters_edge.rgba", gfx = 0x442838, pal = 0x443580 },
+  { file = "cat_icon_type.rgba", gfx = 0x442BC0, pal = 0x4435A0 },
+  { file = "cat_icon_lightest.rgba", gfx = 0x442EF8, pal = 0x4435C0 },
+  { file = "cat_icon_smallest.rgba", gfx = 0x44318C, pal = 0x4435E0 },
+  -- src/graphics.c:1211
+  { file = "cat_icon_abc.rgba", gfx = 0xE9C16C, pal = 0xE9C14C },
+}
+Versions.POKEDEX_CATEGORY_ICON_W = 64
+Versions.POKEDEX_CATEGORY_ICON_H = 48
+
+-- src/pokedex_area_markers.c:39
+Versions.POKEDEX_AREA_MARKER_GFX = 0x46343C
+-- src/pokedex_area_markers.c:41
+Versions.POKEDEX_AREA_MARKER_SHAPES = {
+  { file = "marker_0.rgba", tile = 0, w = 8, h = 8 },
+  { file = "marker_1.rgba", tile = 1, w = 16, h = 8 },
+  { file = "marker_2.rgba", tile = 3, w = 8, h = 16 },
+  { file = "marker_3.rgba", tile = 5, w = 32, h = 16 },
+  { file = "marker_4.rgba", tile = 13, w = 16, h = 32 },
+  { file = "marker_5.rgba", tile = 21, w = 32, h = 16 },
+  { file = "marker_6.rgba", tile = 29, w = 16, h = 32 },
+}
+-- src/pokedex_screen.c:815
+Versions.POKEDEX_SILHOUETTE_PAL = 0x452368
+-- src/pokedex_area_markers.c:237
+Versions.POKEDEX_MARKER_BLEND_TILE = 15
+-- src/pokedex_area_markers.c:219
+Versions.POKEDEX_MARKER_BLEND_EVA = 12
+Versions.POKEDEX_MARKER_BLEND_EVB = 8
+
+-- src/pokedex_area_markers.c:101
+Versions.DEX_AREA_MARKERS = 0x463580
+Versions.DEX_AREA_MARKER_ENTRY_SIZE = 4
+Versions.DEX_AREA_COUNT = 80
+-- src/pokemon_storage_system_data.c:51
+-- src/pokemon_storage_system_tasks.c:169
+-- src/pokemon_storage_system_graphics.c:79
+-- src/graphics.c:1214
+Versions.STORAGE_PALETTES = {
+  misc1 = 0x3D2BCC,
+  misc2 = 0x3CE7F0,
+  menu = 0x3CE5DC,
+  scrollingBg = 0x3CE738,
+  interface = 0xE9C3F8,
+  partyMenu = 0xE9C3D8,
+  interfaceNoMon = 0xE9C418,
+}
+-- src/pokemon_storage_system_tasks.c:219
+Versions.STORAGE_BG1_BASE_TILE = 0x100
+Versions.STORAGE_SHEETS = {
+  handCursor = { off = 0x3D2BEC, size = 2048 },
+  handCursorShadow = { off = 0x3D33EC, size = 128 },
+  boxScrollArrow = { off = 0x3D2AD0, size = 128 },
+  waveform = { off = 0x3CE810, size = 448 },
+  scrollingBg = { off = 0x3CE438, lz = true },
+  menu = { off = 0xE9C438, lz = true },
+}
+Versions.STORAGE_TILEMAPS = {
+  menu = { off = 0x3CE5FC, lz = true, w = 32, h = 20 },
+  pkmnData = { off = 0x3CE6F8, w = 8, h = 4 },
+  closeBoxButton = { off = 0x3CE778, w = 9, h = 4 },
+  partySlotFilled = { off = 0x3CE7C0, w = 4, h = 3 },
+  partySlotEmpty = { off = 0x3CE7D8, w = 4, h = 3 },
+  partyMenu = { off = 0xE9CAEC, lz = true, w = 12, h = 22 },
+}
+-- src/pokemon_storage_system_graphics.c:168
+Versions.STORAGE_WALLPAPERS = 0x3D2A10
+Versions.STORAGE_WALLPAPER_COUNT = 16
+Versions.STORAGE_WALLPAPER_W = 20
+Versions.STORAGE_WALLPAPER_H = 18
+
+-- src/wild_pokemon_area.c:25
+Versions.DEX_AREA_MAPSEC_TABLES = {
+  { off = 0x464148, count = 55 },
+  { off = 0x464224, count = 4 },
+  { off = 0x464234, count = 2 },
+  { off = 0x46423C, count = 5 },
+  { off = 0x464250, count = 2 },
+  { off = 0x464258, count = 7 },
+  { off = 0x464274, count = 7 },
+  { off = 0x464290, count = 11 },
+}
 
 -- Region map & location preview screens (pokefirered src/region_map.c,
 -- src/map_preview_screen.c, include/map_preview_screen.h).
@@ -165,6 +281,42 @@ Versions.MAPSEC_COUNT = 109
 Versions.DUNGEON_INFO = 0x3F1B3C
 Versions.DUNGEON_INFO_COUNT = 19
 Versions.DUNGEON_INFO_ENTRY_SIZE = 12
+
+-- Region map graphics & palettes (pokefirered src/region_map.c)
+Versions.REGION_MAP_TOP_BAR_PAL = 0x3EF23C
+Versions.REGION_MAP_CURSOR_PAL = 0x3EF25C
+Versions.REGION_MAP_PLAYER_RED_PAL = 0x3EF27C
+Versions.REGION_MAP_PLAYER_LEAF_PAL = 0x3EF29C
+Versions.REGION_MAP_MISC_ICON_PAL = 0x3EF2BC
+Versions.REGION_MAP_BG_PAL = 0x3EF2DC
+Versions.REGION_MAP_SWITCH_CURSOR_PAL = 0x3EF384
+Versions.REGION_MAP_EDGE_PAL = 0x3EF3A4
+Versions.REGION_MAP_SWITCH_CURSOR_LEFT_GFX = 0x3EF3C4
+Versions.REGION_MAP_SWITCH_CURSOR_RIGHT_GFX = 0x3EF450
+Versions.REGION_MAP_CURSOR_GFX = 0x3EF4E0
+Versions.REGION_MAP_PLAYER_RED_GFX = 0x3EF524
+Versions.REGION_MAP_PLAYER_LEAF_GFX = 0x3EF59C
+Versions.REGION_MAP_BG_GFX = 0x3EF61C
+Versions.REGION_MAP_EDGE_GFX = 0x3F0330
+Versions.REGION_MAP_SWITCH_MENU_GFX = 0x3F0580
+Versions.REGION_MAP_KANTO_TILEMAP = 0x3F089C
+Versions.REGION_MAP_SEVII123_TILEMAP = 0x3F0AFC
+Versions.REGION_MAP_SEVII45_TILEMAP = 0x3F0C0C
+Versions.REGION_MAP_SEVII67_TILEMAP = 0x3F0CF0
+Versions.REGION_MAP_EDGE_TILEMAP = 0x3F0E0C
+Versions.REGION_MAP_DUNGEON_ICON_GFX = 0x3F18D8
+Versions.REGION_MAP_FLY_ICON_GFX = 0x3F1908
+Versions.REGION_MAP_BG_SECONDARY_GFX = 0x3F1978
+Versions.REGION_MAP_BG_SECONDARY_TILEMAP = 0x3F19A0
+
+-- pokefirered/src/heal_location.c:28
+Versions.S_HEAL_LOCATIONS = 0x3EEBF8
+Versions.S_WHITEOUT_RESPAWN_MAP_IDXS = 0x3EEC98
+Versions.S_WHITEOUT_RESPAWN_HEALER_NPC_IDS = 0x3EECE8
+Versions.NUM_HEAL_LOCATIONS = 20
+-- pokefirered/src/region_map.c:828
+Versions.S_MAP_FLY_DESTINATIONS = 0x3F2EE0
+Versions.NUM_MAP_FLY_DESTINATIONS = 108
 
 -- Multichoice list table (FireRed USA 1.0). gMultichoiceLists (65 lists).
 Versions.MULTICHOICE_LISTS = 0x3E04B0
@@ -1212,10 +1364,17 @@ Versions.FIELD_EFFECT_PAL_PLAYER = 0x35B968    -- gObjectEventPal_Player (surf b
 Versions.FIELD_EFFECTS = {
   tall_grass   = { pic = 0x39A008, pal = 0x398FC8, w = 16, h = 16, frames = 5 },
   cut_grass    = { pic = 0x398648, pal = 0x398FC8, w = 8,  h = 8,  frames = 1 },
-  rock_smash   = { pic = 0x398928, pal = 0x398FA8, w = 16, h = 16, frames = 4 },
+  -- pokefirered/src/fldeff_rocksmash.c:108 (gObjectEventPic_RockSmashRock)
+  rock_smash   = { pic = 0x3947A8, pal = 0x36D888, w = 16, h = 16, frames = 4 },
   surf_blob    = { pic = 0x396B08, pal = 0x35B968, w = 32, h = 32, frames = 6 },
-  fly_bird     = { pic = 0x398048, pal = 0x398FA8, w = 32, h = 32, frames = 4 },
-  ripple       = { pic = 0x398BA8, pal = 0x398FA8, w = 16, h = 16, frames = 8 },
+  -- pokefirered/src/data/field_effects/field_effect_objects.h:1099
+  fly_bird     = { pic = 0x39D3C8, pal = 0x35B968, w = 64, h = 64, frames = 5 },
+  -- pokefirered/src/data/field_effects/field_effect_objects.h:99
+  ripple       = { pic = 0x3986A8, pal = 0x398FC8, w = 16, h = 16, frames = 5 },
+  -- pokefirered/src/data/field_effects/field_effect_objects.h:565
+  splash       = { pic = 0x39AC48, pal = 0x398FA8, w = 16, h = 8,  frames = 2 },
+  -- pokefirered/src/data/field_effects/field_effect_objects.h:1203
+  hot_springs_water = { pic = 0x39C508, pal = 0x398FC8, w = 16, h = 16, frames = 1 },
   emoticons    = { pic = 0x3C6AC8, pal = 0x35B968, w = 16, h = 16, frames = 15 },
   -- pokefirered/src/field_effect.c:326
   pokeball_glow = {
@@ -1237,6 +1396,7 @@ Versions.BATTLE_UI = {
   healthbox_elements = 0xD11BC4,    -- uncompressed 320×24 4bpp
   healthbox_player = 0xD1F340,      -- gHealthboxSinglesPlayerGfx LZ → 4096
   healthbox_enemy = 0xD1F604,       -- gHealthboxSinglesOpponentGfx LZ → 2048
+  healthbox_safari = 0xD1FABC,      -- src/graphics.c:620
   healthbox_doubles_player = 0xD1F794,   -- gHealthboxDoublesPlayerGfx LZ → 2048
   healthbox_doubles_opponent = 0xD1F928, -- gHealthboxDoublesOpponentGfx LZ → 2048
   healthbox_pal = 0xD11B84,         -- uncompressed 32 (gBattleInterface_Healthbox_Pal)
@@ -1858,6 +2018,9 @@ Versions.MAPS = {
 Versions.G_MAP_GROUPS = 0x3526A8
 Versions.NUM_MAP_GROUPS = 43 -- pret map_groups.json group_order length
 
+-- pokefirered/src/overworld.c:494
+Versions.G_MAP_LAYOUTS = 0x34EB8C
+
 -- FireRed USA 1.0 MapHeader file offsets (verified against local dump).
 -- Legacy hand list — prefer MapTree.walk(gMapGroups) for new extract.
 -- Shared layouts (House3 / Harbor / PC 2F) disambiguated by header proximity
@@ -1979,6 +2142,7 @@ local FIRERED_10 = {
   layouts = FIRERED_10_LAYOUTS,
   map_headers = Versions.MAP_HEADERS,
   g_map_groups = Versions.G_MAP_GROUPS,
+  g_map_layouts = Versions.G_MAP_LAYOUTS,
   num_map_groups = Versions.NUM_MAP_GROUPS,
   ow_gfx_pointers = Versions.OW_GFX_POINTERS,
   ow_sprite_palettes = Versions.OW_SPRITE_PALETTES,

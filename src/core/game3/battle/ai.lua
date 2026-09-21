@@ -344,8 +344,6 @@ function choose_move_core(st, id, opts)
     aiFlags = AI_SCRIPT_SAFARI
   elseif st.roamer then
     aiFlags = AI_SCRIPT_ROAMING
-  elseif st.firstBattle then
-    aiFlags = AI_SCRIPT_FIRST_BATTLE
   elseif st.legendary then
     aiFlags = bit_or_flags(AI_SCRIPT_CHECK_BAD_MOVE, bit_or_flags(AI_SCRIPT_TRY_TO_FAINT, AI_SCRIPT_CHECK_VIABILITY))
   elseif st.wildScripted then

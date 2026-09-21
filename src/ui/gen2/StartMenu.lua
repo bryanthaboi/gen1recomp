@@ -21,6 +21,7 @@
 
 local BugContest = require("src.core.gen2.BugContest")
 local Chrome = require("src.ui.gen2.Chrome")
+local Font = require("src.render.Font")
 local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
 local Sound = require("src.core.Sound")
@@ -318,18 +319,57 @@ function StartMenu:update(_dt)
 end
 
 -- pokecrystal engine/menus/menu_2.asm:145
+-- The box is two rows tall (y 14/16, step 2), which the cart's own line
+-- break fills exactly. A translation can need a third line, and printWrapped
+-- would drop it without a word, so say so once instead of shipping a prompt
+-- that reads as a sentence cut in half.
+-- The confirmation box at (0, 12, 18, 4) holds exactly two rows, which the
+-- cart's own line break fills.  A translation can need a third, which would be
+-- dropped without a word, so this says so once per prompt.  printWrapped
+-- returns the line count it wrapped to, so the box's own draw is what reports
+-- the overflow: no second wrap, and no way for the two to disagree on the
+-- width later.  It also wraps on pixel width, unlike a `\n`-only splitter,
+-- which would hand Font.draw an embedded break -- rendered as a space -- and
+-- run a long translated row past the box edge.
+local promptWarned = {}
+local function twoRowPrompt(text, what)
+  local lines = Chrome.printWrapped(text, 1, 14, 18, 2, 2)
+  if lines > 2 and not promptWarned[what] then
+    promptWarned[what] = true
+    Logger.warn("%s prompt needs %d lines, the box holds 2: %s",
+      what, lines, tostring(text))
+  end
+end
+
+-- pokecrystal data/text/common_2.asm ContestStatus: the labels and the
+-- "None" placeholder are text, so they go through the catalog like the
+-- prompt below.  The caught mon's own name does not: it is a nickname or a
+-- species the `pokemon` registry already renames.
+-- The cart pins each value to its own column (x=8, 7, 8) because it knows how
+-- wide its own labels are.  A translated label can be wider -- "ATTRAPÉ" fills
+-- the 7 tiles CAUGHT leaves, "GEFANGEN" and "ATRAPADO" one more -- so the value
+-- starts after the label instead of drawing on top of it, keeping the cart's
+-- column whenever the label fits.
+local function valueColumn(label, cartColumn)
+  local labelTiles = math.ceil(Font.width(label) / 8)
+  return math.max(cartColumn, 1 + labelTiles + 1)
+end
+
 function StartMenu:drawContestStatus()
   Chrome.textbox(0, 0, 17, 5)
-  Chrome.print("CAUGHT", 1, 1)
+  local caught = Strings("CAUGHT")
+  local balls = Strings("BALLS:")
+  Chrome.print(caught, 1, 1)
   local mon = BugContest.caughtMon(self.save)
-  Chrome.print(mon and (mon.nickname or mon.name or mon.species) or "None",
-    8, 1)
+  Chrome.print(mon and (mon.nickname or mon.name or mon.species)
+    or Strings("None", "contest.caught"), valueColumn(caught, 8), 1)
   if mon then
-    Chrome.print("LEVEL", 1, 3)
-    Chrome.print(tostring(mon.level or 1), 7, 3)
+    local level = Strings("LEVEL")
+    Chrome.print(level, 1, 3)
+    Chrome.print(tostring(mon.level or 1), valueColumn(level, 7), 3)
   end
-  Chrome.print("BALLS:", 1, 5)
-  Chrome.print(tostring(BugContest.ballsLeft(self.save)), 8, 5)
+  Chrome.print(balls, 1, 5)
+  Chrome.print(tostring(BugContest.ballsLeft(self.save)), valueColumn(balls, 8), 5)
 end
 
 function StartMenu:draw()
@@ -346,22 +386,26 @@ function StartMenu:draw()
   if self.phase == "confirmContest" then
     -- pokecrystal data/text/common_2.asm:1381
     Chrome.textbox(0, 12, 18, 4)
-    Chrome.print("Would you like to", 1, 14)
-    Chrome.print("end the Contest?", 1, 16)
+    -- One catalog key ("Would you like to" alone has no stable translation
+    -- out of context), matching every other confirmation prompt in this
+    -- port (src/ui/StartMenu.lua, src/ui/gen2/SaveMenu.lua). Printed via
+    -- Chrome.printWrapped, same as InitClock.lua's own call: this box only
+    -- has room for two rows (y 14/16, step 2), and printWrapped wraps by
+    -- both the translated \n and pixel width, unlike a hand-rolled
+    -- \n-only splitter.
+    twoRowPrompt(Strings("Would you like to\nend the Contest?"), "contest end")
     -- pokecrystal home/menu.asm:418
     Chrome.box(14, 7, 6, 5)
-    Chrome.print("YES", 16, 8)
-    Chrome.print("NO", 16, 10)
+    Chrome.print(Strings("YES"), 16, 8)
+    Chrome.print(Strings("NO"), 16, 10)
     Chrome.cursor(15, self.confirmChoice == 1 and 8 or 10)
     return
   end
 
   if self.phase == "confirm" then
     Chrome.textbox(0, 12, 18, 4)
-    local prompt = Strings(Strings.source("Return to the\ntitle screen?"))
-    local first, second = prompt:match("^([^\n]*)\n?(.*)$")
-    Chrome.print(first or "", 1, 14)
-    Chrome.print(second or "", 1, 16)
+    twoRowPrompt(Strings(Strings.source("Return to the\ntitle screen?")),
+      "title screen")
     Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
     Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
     Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)

@@ -191,6 +191,11 @@ function NativeTileset.slotFor(pairOrTs, mid)
   return ts.midToSlot[mid] or ts.midToSlot[0] or 0
 end
 
+function NativeTileset.hasMid(pairOrTs, mid)
+  local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset.get(pairOrTs)
+  return not not (ts and ts.midToSlot and ts.midToSlot[mid] ~= nil)
+end
+
 function NativeTileset.quad(pairOrTs, slot)
   local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset.get(pairOrTs)
   if not ts or not ts.image then return nil end

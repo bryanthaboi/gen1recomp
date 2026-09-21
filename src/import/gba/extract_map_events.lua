@@ -158,16 +158,23 @@ end
 
 --- Parse mapScripts table → seeds + mapScripts summary for game3.
 local function parse_map_scripts(rom, scriptsPtr)
+  local function empty()
+    return {
+      onLoad = nil,
+      onTransition = nil,
+      onResume = nil,
+      onReturnToField = nil,
+      onFrame = {},
+      onWarpIntoMap = {},
+      onDiveWarp = {},
+    }
+  end
   local off = gba_off(rom, scriptsPtr)
   if not off then
-    return { onTransition = nil, onResume = {}, onFrame = {} }, {}
+    return empty(), {}
   end
   local seeds = {}
-  local mapScripts = {
-    onTransition = nil,
-    onResume = {},
-    onFrame = {},
-  }
+  local mapScripts = empty()
   local i = off
   local guard = 0
   while guard < 32 do
@@ -184,8 +191,13 @@ local function parse_map_scripts(rom, scriptsPtr)
       seeds[#seeds + 1] = ptr
       if typ == MAP_SCRIPT_ON_TRANSITION then
         mapScripts.onTransition = key
+      elseif typ == MAP_SCRIPT_ON_LOAD then
+        -- pokefirered/src/fieldmap.c:93
+        mapScripts.onLoad = key
       elseif typ == MAP_SCRIPT_ON_RESUME then
-        mapScripts.onResume[#mapScripts.onResume + 1] = key
+        mapScripts.onResume = key
+      elseif typ == MAP_SCRIPT_ON_RETURN_TO_FIELD then
+        mapScripts.onReturnToField = key
       end
     elseif typ == MAP_SCRIPT_ON_FRAME_TABLE
         or typ == MAP_SCRIPT_ON_WARP_INTO_MAP_TABLE
@@ -201,10 +213,13 @@ local function parse_map_scripts(rom, scriptsPtr)
         if gba_off(rom, sp) then
           local key = Opcodes.key(sp)
           seeds[#seeds + 1] = sp
+          local row = { var = var, value = value, script = key }
           if typ == MAP_SCRIPT_ON_FRAME_TABLE then
-            mapScripts.onFrame[#mapScripts.onFrame + 1] = {
-              var = var, value = value, script = key,
-            }
+            mapScripts.onFrame[#mapScripts.onFrame + 1] = row
+          elseif typ == MAP_SCRIPT_ON_WARP_INTO_MAP_TABLE then
+            mapScripts.onWarpIntoMap[#mapScripts.onWarpIntoMap + 1] = row
+          else
+            mapScripts.onDiveWarp[#mapScripts.onDiveWarp + 1] = row
           end
         end
       end
@@ -357,7 +372,7 @@ function ExtractMapEvents.extractIsland1(rom, version)
     if not ev then
       events[mapId] = {
         objects = {}, bgEvents = {}, coordEvents = {},
-        mapScripts = { onTransition = nil, onResume = {}, onFrame = {} },
+        mapScripts = { onFrame = {}, onWarpIntoMap = {}, onDiveWarp = {} },
         music = hdr.music,
       }
     else

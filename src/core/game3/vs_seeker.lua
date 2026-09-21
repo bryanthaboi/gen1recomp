@@ -5,7 +5,8 @@ local Strings = require("src.core.Strings")
 
 local VsSeeker = {}
 
-VsSeeker.ITEM_VS_SEEKER = 374
+-- pokefirered/include/constants/items.h:434
+VsSeeker.ITEM_VS_SEEKER = 362
 VsSeeker.MAX_CHARGE = 100
 VsSeeker.FLAG_SYS_VS_SEEKER_CHARGING = 0x801
 -- src/vs_seeker.c:973

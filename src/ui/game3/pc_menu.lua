@@ -240,7 +240,7 @@ function PcMenu.handleInput(input)
           PcMenu._status = Strings("Can't take any more POKéMON.")
           PcMenu._prevMode = "storage_menu"
           PcMenu.mode = "msg"
-          se(9)
+          se(5) -- pokefirered/src/pokemon_storage_system_tasks.c:992
         else
           se(5)
           local BoxStorageUI = require("src.ui.game3.box_storage_ui")
@@ -261,7 +261,7 @@ function PcMenu.handleInput(input)
           PcMenu._status = Strings("Can't deposit the last POKéMON!")
           PcMenu._prevMode = "storage_menu"
           PcMenu.mode = "msg"
-          se(9)
+          se(26) -- pokefirered/src/pokemon_storage_system_tasks.c:1052
         else
           se(5)
           local BoxStorageUI = require("src.ui.game3.box_storage_ui")
@@ -408,7 +408,7 @@ function PcMenu.handleInput(input)
             PcMenu._status = Strings("The BAG is full.")
             PcMenu._prevMode = "withdraw_item"
             PcMenu.mode = "msg"
-            se(9)
+            se(5) -- pokefirered/src/item_pc.c:863
           end
         end
       end
@@ -446,7 +446,7 @@ function PcMenu.handleInput(input)
         PcMenu._status = Strings("The BAG is full.")
         PcMenu._prevMode = "withdraw_item"
         PcMenu.mode = "msg"
-        se(9)
+        se(5) -- pokefirered/src/item_pc.c:984
       end
     elseif input:wasPressed("b") then
       PcMenu.mode = "withdraw_item"
@@ -494,7 +494,7 @@ function PcMenu.handleInput(input)
           PcMenu._status = Strings("That's much too important to deposit!")
           PcMenu._prevMode = "deposit_item"
           PcMenu.mode = "msg"
-          se(9)
+          se(5) -- pokefirered/src/item_menu.c:1983
         elseif (entry.qty or 1) > 1 then
           PcMenu.mode = "deposit_qty"
           PcMenu.itemQty = 1
@@ -510,7 +510,7 @@ function PcMenu.handleInput(input)
             PcMenu._status = Strings("The PC is full.")
             PcMenu._prevMode = "deposit_item"
             PcMenu.mode = "msg"
-            se(9)
+            se(5) -- pokefirered/src/item_menu.c:1983
           end
         end
       end
@@ -548,7 +548,7 @@ function PcMenu.handleInput(input)
         PcMenu._status = Strings("The PC is full.")
         PcMenu._prevMode = "deposit_item"
         PcMenu.mode = "msg"
-        se(9)
+        se(5) -- pokefirered/src/item_menu.c:1983
       end
     elseif input:wasPressed("b") then
       PcMenu.mode = "deposit_item"

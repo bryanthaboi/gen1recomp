@@ -13,7 +13,11 @@ local Versions = require("src.import.gba.versions")
 local TextChromeExtract = {}
 
 TextChromeExtract.CACHE_SUB = "chrome"
-TextChromeExtract.FORMAT_VERSION = 1
+TextChromeExtract.FORMAT_VERSION = 2
+
+-- src/braille_text.c:15
+TextChromeExtract.BRAILLE_GFX = 0x46FB0C
+TextChromeExtract.BRAILLE_GLYPHS = 64
 
 local function bgr555_to_rgb8(c)
   c = (tonumber(c) or 0) % 32768
@@ -189,6 +193,72 @@ function TextChromeExtract.extractLatinSmall(rom)
     width = sheetW,
     height = sheetH,
     widths = widths,
+  }
+end
+
+-- src/braille_text.c:15
+function TextChromeExtract.extractBraille(rom)
+  local baseGfx = TextChromeExtract.BRAILLE_GFX
+  local glyphCount = TextChromeExtract.BRAILLE_GLYPHS
+  local cols = 16
+  local rows = math.floor((glyphCount + cols - 1) / cols)
+  local sheetW, sheetH = cols * 16, rows * 16
+
+  local fgPixels = {}
+  local shPixels = {}
+  for i = 1, sheetW * sheetH * 4 do
+    fgPixels[i] = 0
+    shPixels[i] = 0
+  end
+
+  for gid = 0, glyphCount - 1 do
+    -- src/braille_text.c:333
+    local gOff = baseGfx + 512 * math.floor(gid / 8) + 32 * (gid % 8)
+    local subTiles = {
+      { tx = 0, ty = 0, t = unpack_tile16(rom, gOff) },
+      { tx = 8, ty = 0, t = unpack_tile16(rom, gOff + 16) },
+      { tx = 0, ty = 8, t = unpack_tile16(rom, gOff + 256) },
+      { tx = 8, ty = 8, t = unpack_tile16(rom, gOff + 272) },
+    }
+    local ox = (gid % cols) * 16
+    local oy = math.floor(gid / cols) * 16
+    for _, sub in ipairs(subTiles) do
+      for y = 0, 7 do
+        for x = 0, 7 do
+          local v = sub.t[y][x]
+          local pi = ((oy + sub.ty + y) * sheetW + ox + sub.tx + x) * 4 + 1
+          if v == 1 then
+            fgPixels[pi] = 255
+            fgPixels[pi + 1] = 255
+            fgPixels[pi + 2] = 255
+            fgPixels[pi + 3] = 255
+          elseif v == 2 then
+            shPixels[pi] = 255
+            shPixels[pi + 1] = 255
+            shPixels[pi + 2] = 255
+            shPixels[pi + 3] = 255
+          end
+        end
+      end
+    end
+  end
+
+  local fgChars, shChars = {}, {}
+  for i = 1, sheetW * sheetH * 4 do
+    fgChars[i] = string.char(fgPixels[i] or 0)
+    shChars[i] = string.char(shPixels[i] or 0)
+  end
+
+  return {
+    fgRgba = table.concat(fgChars),
+    shRgba = table.concat(shChars),
+    width = sheetW,
+    height = sheetH,
+    cols = cols,
+    rows = rows,
+    glyphCount = glyphCount,
+    glyphW = 16,
+    glyphH = 16,
   }
 end
 
@@ -476,6 +546,14 @@ function TextChromeExtract.run(rom, cache, opts)
   write_cache(cache, fDir .. "/latin_small_fg.rgba", small.fgRgba)
   write_cache(cache, fDir .. "/latin_small_shadow.rgba", small.shRgba)
   write_cache(cache, fDir .. "/latin_small_widths.lua", format_widths_lua(small.widths, "sFontSmallLatinGlyphWidths (FireRed @ 0x1EEF00)"))
+
+  local braille = TextChromeExtract.extractBraille(rom)
+  write_cache(cache, fDir .. "/braille_fg.rgba", braille.fgRgba)
+  write_cache(cache, fDir .. "/braille_shadow.rgba", braille.shRgba)
+  write_cache(cache, fDir .. "/braille.lua", string.format(
+    "return { glyphCount = %d, cols = %d, rows = %d, glyphW = %d, glyphH = %d, width = %d, height = %d }\n",
+    braille.glyphCount, braille.cols, braille.rows,
+    braille.glyphW, braille.glyphH, braille.width, braille.height))
 
   local arrows = TextChromeExtract.extractDownArrows(rom)
   write_cache(cache, fDir .. "/down_arrows_fg.rgba", arrows.rgba)

@@ -17,20 +17,30 @@ local function assert_eq(actual, expected, msg)
 end
 
 -- 1. Test Multichoice.resolve for list 15 (Trainer School Whiteboard)
-local labels15, layout15 = Multi.resolve(15, 6)
-assert_eq(#labels15, 6, "List 15 has 6 labels")
-assert_eq(labels15[1], "SLP", "List 15 item 1 is SLP")
-assert_eq(labels15[2], "PSN", "List 15 item 2 is PSN")
-assert_eq(labels15[3], "PAR", "List 15 item 3 is PAR")
-assert_eq(labels15[4], "BRN", "List 15 item 4 is BRN")
-assert_eq(labels15[5], "FRZ", "List 15 item 5 is FRZ")
-assert_eq(labels15[6], "EXIT", "List 15 item 6 is EXIT")
+local Cache = require("tests.game3_cache")
+local labels15 = { "SLP", "PSN", "PAR", "BRN", "FRZ", "EXIT" }
+local root = Cache.root("scripts/multichoice.lua")
+if root then
+  require("src.import.gba.extract_island1").CACHE_ROOT = root
+  Multi.LISTS = {}
+  Multi.tryLoadCache()
+  labels15 = Multi.resolve(15, 6)
+  assert_eq(#labels15, 6, "List 15 has 6 labels")
+  assert_eq(labels15[1], "SLP", "List 15 item 1 is SLP")
+  assert_eq(labels15[2], "PSN", "List 15 item 2 is PSN")
+  assert_eq(labels15[3], "PAR", "List 15 item 3 is PAR")
+  assert_eq(labels15[4], "BRN", "List 15 item 4 is BRN")
+  assert_eq(labels15[5], "FRZ", "List 15 item 5 is FRZ")
+  assert_eq(labels15[6], "EXIT", "List 15 item 6 is EXIT")
 
--- 2. Test Multichoice.resolve for list 0 (YES/NO)
-local labels0 = Multi.resolve(0, 2)
-assert_eq(#labels0, 2, "List 0 has 2 labels")
-assert_eq(labels0[1], "YES", "List 0 item 1 is YES")
-assert_eq(labels0[2], "NO", "List 0 item 2 is NO")
+  -- 2. Test Multichoice.resolve for list 0 (YES/NO)
+  local labels0 = Multi.resolve(0, 2)
+  assert_eq(#labels0, 2, "List 0 has 2 labels")
+  assert_eq(labels0[1], "YES", "List 0 item 1 is YES")
+  assert_eq(labels0[2], "NO", "List 0 item 2 is NO")
+else
+  print("[skip] imported list labels: " .. tostring(Cache.reason))
+end
 
 -- 3. Test Choice module 2D Grid navigation (3 columns, 2 rows)
 local result = nil

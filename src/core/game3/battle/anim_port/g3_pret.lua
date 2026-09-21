@@ -86,11 +86,26 @@ P.ANIM_ATTACKER, P.ANIM_TARGET, P.ANIM_ATK_PARTNER, P.ANIM_DEF_PARTNER = 0, 1, 2
 P.COORD_X, P.COORD_Y, P.COORD_X_2, P.COORD_Y_PIC, P.COORD_Y_PIC_DEF = 0, 1, 2, 3, 4
 P.ARG_RET_ID = 7
 
-local function Anim() return require("src.core.game3.battle.anim") end
+local AnimMod = nil
+local AnimSpritesMod = nil
+local AnimTasksMod = nil
+
+local function Anim()
+  if not AnimMod then AnimMod = require("src.core.game3.battle.anim") end
+  return AnimMod
+end
 P.Anim = Anim
 function P.vm() return Anim()._vm end
-function P.AnimSprites() return require("src.core.game3.battle.anim_sprites") end
-function P.AnimTasks() return package.loaded["src.core.game3.battle.anim_tasks"] or require("src.core.game3.battle.anim_tasks") end
+function P.AnimSprites()
+  if not AnimSpritesMod then AnimSpritesMod = require("src.core.game3.battle.anim_sprites") end
+  return AnimSpritesMod
+end
+function P.AnimTasks()
+  if not AnimTasksMod then
+    AnimTasksMod = package.loaded["src.core.game3.battle.anim_tasks"] or require("src.core.game3.battle.anim_tasks")
+  end
+  return AnimTasksMod
+end
 
 function P.atk(vm)
   if vm.allyPair and vm:allyPair() then return vm:attackerId() end

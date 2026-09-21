@@ -41,24 +41,33 @@ print('PASS actual A-button dispatch: school notebook, captain book, rival books
 local native='data/generated/gba/native/'
 local manifest=assert(loadstring(assert(cache:read(native..'manifest.lua'))))()
 local I=require('src.core.game3.scripting.interaction_scripts')
+-- data/scripts/cable_club.inc:566
+local SCREEN_ONLY={CableClub_EventScript_ShowBattleRecords=true}
 local covered,maps,cells={},0,0
-for map,info in pairs(manifest.layouts) do
+local order={};for map in pairs(manifest.layouts)do order[#order+1]=map end;table.sort(order)
+for _,map in ipairs(order) do
+ local info=manifest.layouts[map]
  local decoded=assert(require('src.import.gba.native_pack').decodeMidLayout(assert(cache:read(native..info.file))))
  local layout=require('src.core.game3.layout_native').fromDecoded(decoded,map,info.pair)
  local attrs=assert(I.behaviors[info.pair], 'missing pair '..info.pair)
  local def={pair=info.pair,midLayout=layout,warps={}}
  C.bindMap(nil,map,def)
  maps=maps+1
+ local bg=(bundle.events[map] or {}).bgEvents or {}
  for y=0,layout.height-1 do for x=0,layout.width-1 do
   local behavior=assert(attrs[layout:midAt(x,y)],'missing metatile behavior')
   assert(C.behavior(x,y)==behavior)
   local key=I.scriptFor(behavior,'up')
   if key and behavior~=0x83 and behavior~=0x85 then
    cells=cells+1
-   if not covered[behavior] and y+1<layout.height then
+   -- src/field_control_avatar.c:392-398
+   local shadowed=false
+   for _,e in ipairs(bg) do if e.x==x and e.y==y then shadowed=true end end
+   if not covered[behavior] and y+1<layout.height and not shadowed then
     local messages={}
     Space.vm=require('src.core.game3.scripting.vm').new({scripts=bundle.scripts,text=bundle.text,
-     onMessage=function(t)messages[#messages+1]=t end})
+     movements=bundle.movements,onMessage=function(t)messages[#messages+1]=t end,
+     askYesNo=function(cb)cb(false)end})
     Space.store=Space.vm.store
     Field._session={map=map};Field.running=true;Field.locked=false
     P.cellX=x;P.cellY=y+1;P.facing='up';P.moving=false
@@ -66,7 +75,8 @@ for map,info in pairs(manifest.layouts) do
     Field.locked=true;assert(not Field.interact(game));Field.locked=false
     assert(Field.interact(game),'furniture A-button not handled '..key)
     for _=1,100 do Space.vm:tick()end
-    assert(#messages==1 and #messages[1]>0,'furniture text missing '..key)
+    if SCREEN_ONLY[key] then assert(#messages==0,'unexpected text from '..key)
+    else assert(#messages==1 and #messages[1]>0,'furniture text missing '..key) end
     assert(not Space.vm:isRunning(),'furniture did not release control '..key)
     covered[behavior]=true
    end
@@ -75,4 +85,5 @@ for map,info in pairs(manifest.layouts) do
 end
 local count=0;for _ in pairs(covered)do count=count+1 end
 assert(count>=20,'unexpectedly few furniture behaviors exercised')
+for _,row in ipairs(I.CODE) do assert(covered[row[1]],'code-root behavior never dispatched '..row[2]) end
 print(('PASS %d maps audited, %d furniture cells, %d furniture types dispatched'):format(maps,cells,count))

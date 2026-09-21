@@ -266,6 +266,18 @@ function Adapter.new(battleState, sayFn)
     if battler then
       battler.fainted = true
       if battler.mon then battler.mon.hp = 0 end
+      -- pokefirered/src/battle_script_commands.c:2878
+      if battler.side == "player" and battler.mon and not battler._faintFriendship then
+        battler._faintFriendship = true
+        local Pokemon = require("src.core.game3.pokemon")
+        local foeLevel = 0
+        for _, foe in ipairs(State.foes(self._st, battler)) do
+          local lv = tonumber(foe.mon and foe.mon.level) or 0
+          if lv > foeLevel then foeLevel = lv end
+        end
+        Pokemon.adjustFriendshipOnBattleFaint(battler.mon, tonumber(battler.mon.level),
+          foeLevel, { mapSec = Pokemon.currentMapSec(self._st.session) })
+      end
       -- pokefirered/src/battle_script_commands.c:2831
       if ModRuntime.wants("battle.fainted") and battler._modFainted ~= (battler.mon or true) then
         battler._modFainted = battler.mon or true

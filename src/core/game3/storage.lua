@@ -6,6 +6,7 @@
 
 local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
+local Strings = require("src.core.Strings")
 
 local Storage = {}
 
@@ -14,6 +15,15 @@ Storage.IN_BOX_COUNT = 30
 Storage.TOTAL_BOX_MONS = 420
 Storage.PC_ITEMS_COUNT = 50
 Storage.MAX_ITEM_QTY = 999
+
+local VAR_PC_BOX_TO_SEND_MON = 0x4037 -- pokefirered/include/constants/vars.h:105
+local FLAG_SHOWN_BOX_WAS_FULL_MESSAGE = 0x843 -- pokefirered/include/constants/flags.h:1401
+local FLAG_SYS_NOT_SOMEONES_PC = 0x834 -- pokefirered/include/constants/flags.h:1386
+
+local function script_store(session)
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  return (Space and Space.store) or (session and session.store) or nil
+end
 
 Storage.WALLPAPERS = {
   [1] = "Forest",
@@ -309,17 +319,98 @@ function Storage.releaseMon(session, boxId, slotIdx)
   return mon
 end
 
---- Automatic Spillover Capture Storage: Stores a caught Pokémon across 14 boxes.
-function Storage.depositCaught(session, mon)
-  if not session or not mon then return false, "invalid_mon" end
+-- pokefirered/src/pokemon.c:3708
+function Storage.sendMonToPC(session, mon)
+  if not session or not mon then return false, nil, nil, nil end
   local storage = Storage.ensure(session)
+  local Flags = require("src.core.game3.scripting.flags")
+  local Queries = require("src.core.game3.scripting.natives_queries")
+  local store = script_store(session)
+  Queries.setPCBoxToSendMon(Flags.getVar(store, nil, VAR_PC_BOX_TO_SEND_MON))
+  local intended = tonumber(Queries.pcBoxToSendMon) or 0
+
   Storage.fullHealMon(mon)
   local bId, slot = Storage.findOpenSlot(storage)
   if not bId or not slot then
-    return false, "storage_full"
+    return false, nil, nil, intended
   end
   storage.boxes[bId].mons[slot] = mon
-  return true, bId, slot
+  if (bId - 1) ~= intended then
+    Flags.setFlag(store, nil, FLAG_SHOWN_BOX_WAS_FULL_MESSAGE, false)
+  end
+  Flags.setVar(store, nil, VAR_PC_BOX_TO_SEND_MON, bId - 1)
+  session.monBoxId = bId - 1
+  session.monBoxPos = slot - 1
+  return true, bId, slot, intended
+end
+
+local function box_name(storage, zeroBased)
+  local box = Storage.getBox(storage, (tonumber(zeroBased) or 0) + 1)
+  return (box and box.name) or ""
+end
+
+-- pokefirered/src/field_specials.c:1985
+local function should_show_box_was_full()
+  local Queries = require("src.core.game3.scripting.natives_queries")
+  local Std = require("src.core.game3.scripting.stdscripts")
+  local handler = Queries.HANDLERS and Queries.HANDLERS[Std.SPECIAL.ShouldShowBoxWasFullMessage]
+  if not handler then return false end
+  local _, v = handler(nil)
+  return (tonumber(v) or 0) ~= 0
+end
+
+-- pokefirered/src/field_specials.c:1995
+function Storage.isDestinationBoxFull(session)
+  local storage = Storage.ensure(session)
+  local Flags = require("src.core.game3.scripting.flags")
+  local Queries = require("src.core.game3.scripting.natives_queries")
+  local store = script_store(session)
+  Queries.setPCBoxToSendMon(Flags.getVar(store, nil, VAR_PC_BOX_TO_SEND_MON))
+  local bId = Storage.findOpenSlot(storage)
+  if not bId then return false end
+  if (bId - 1) ~= (tonumber(Queries.pcBoxToSendMon) or 0) then
+    Flags.setFlag(store, nil, FLAG_SHOWN_BOX_WAS_FULL_MESSAGE, false)
+  end
+  Flags.setVar(store, nil, VAR_PC_BOX_TO_SEND_MON, bId - 1)
+  return should_show_box_was_full()
+end
+
+-- pokefirered/src/battle_script_commands.c:9617
+function Storage.pcTransferMessage(session, name, boxWasFull)
+  local storage = Storage.ensure(session)
+  local Flags = require("src.core.game3.scripting.flags")
+  local Queries = require("src.core.game3.scripting.natives_queries")
+  local store = script_store(session)
+  name = tostring(name or "")
+  local sent = box_name(storage, Flags.getVar(store, nil, VAR_PC_BOX_TO_SEND_MON))
+  local shown = boxWasFull
+  if shown == nil then shown = should_show_box_was_full() end
+  local bills = Flags.getFlag(store, nil, FLAG_SYS_NOT_SOMEONES_PC) and true or false
+  if not shown then
+    -- pokefirered/data/text/pc_transfer.inc:1
+    if bills then
+      return Strings("%s was transferred to\nBILL'S PC.\fIt was placed in \nBOX “%s.”", name, sent)
+    end
+    return Strings("%s was transferred to\nSomeone's PC.\fIt was placed in \nBOX “%s.”", name, sent)
+  end
+  -- pokefirered/data/text/pc_transfer.inc:13
+  local full = box_name(storage, Queries.pcBoxToSendMon)
+  if bills then
+    return Strings("BOX “%s” on\nBILL'S PC was full.\f%s was transferred to\nBOX “%s.”",
+      full, name, sent)
+  end
+  return Strings("BOX “%s” on\nSomeone's PC was full.\f%s was transferred to\nBOX “%s.”",
+    full, name, sent)
+end
+
+--- Automatic Spillover Capture Storage: Stores a caught Pokémon across 14 boxes.
+function Storage.depositCaught(session, mon)
+  if not session or not mon then return false, "invalid_mon" end
+  local ok, bId, slot, intended = Storage.sendMonToPC(session, mon)
+  if not ok then
+    return false, "storage_full"
+  end
+  return true, bId, slot, intended
 end
 
 --- Player PC Item Storage (50 unique items capacity).

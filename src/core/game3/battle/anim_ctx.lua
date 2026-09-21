@@ -12,11 +12,12 @@ local function battler_id(key)
   return AnimCoords.fixedId(key) or ((key == "enemy") and 1 or 0)
 end
 
+-- pokefirered/src/battle_anim_utility_funcs.c:840
 local function terrain_id(st)
+  local v = st and tonumber(st.terrain)
+  if v ~= nil then return v end
   local ok, BattleBg = pcall(require, "src.core.game3.battle.bg")
-  local v = ok and BattleBg.terrainId and BattleBg.terrainId() or nil
-  if v == nil and st then v = tonumber(st.terrain) end
-  return v
+  return ok and BattleBg.terrainId and BattleBg.terrainId() or nil
 end
 
 function AnimCtx.behindSubstitute(lowered)
@@ -59,6 +60,8 @@ function AnimCtx.build(attacker, target, opts)
     playerGender = st and st.playerGender or 0,
     lastUsedItem = st and st.lastUsedItem or nil,
     ballThrowCaseId = st and st.ballThrowCaseId or 0,
+    -- pokefirered/src/battle_anim_special.c:2273
+    safariReaction = (st and tonumber(st.safariReaction)) or 0,
     oldManTutorial = st and st.oldManTutorial or false,
     pokeball = mon.pokeball,
     ballItem = {

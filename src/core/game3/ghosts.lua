@@ -28,10 +28,18 @@ local function contextFor(entry, pool)
   local layout = entry.def and entry.def.midLayout
   local P = permissions()
   return {
-    canEnter = function(tx, ty)
+    canEnter = function(tx, ty, fromX, fromY, dir)
       if not layout then return false end
       if tx < 0 or ty < 0 or tx >= (layout.width or 0) or ty >= (layout.height or 0) then
         return false
+      end
+      -- pokefirered/src/event_object_movement.c:4889
+      if dir and entry.def then
+        local C = require("src.core.game3.collision")
+        if C.directionallyImpassableOn
+            and C.directionallyImpassableOn(entry.def, fromX, fromY, tx, ty, dir) then
+          return false
+        end
       end
       local coll = layout:collAt(tx, ty)
       if P and P.isWalkable then return P.isWalkable(coll) end
@@ -40,15 +48,17 @@ local function contextFor(entry, pool)
     blocks = function(tx, ty, exceptId)
       for _, lid in ipairs(pool.order or {}) do
         local eo = pool.byId[lid]
-        if eo and lid ~= exceptId and eo.visible and not eo.hidden then
+        if eo and lid ~= exceptId and eo.visible and not eo.hidden and not eo.passable then
           if eo.cellX == tx and eo.cellY == ty then return true end
           if eo.moving and eo.targetX == tx and eo.targetY == ty then return true end
         end
       end
-      return false
+      return Objects().playerBlocks(tx + (entry.ox or 0), ty + (entry.oy or 0))
     end,
   }
 end
+
+Ghosts._contextFor = contextFor
 
 function Ghosts.sync()
   local M = Map()

@@ -165,7 +165,7 @@ function TmCase.handleInput(input)
         end
       end
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/tm_case.c:1006
       TmCase.mode = "list"
     end
     return
@@ -202,7 +202,7 @@ function TmCase.handleInput(input)
   elseif input:wasPressed("a") then
     if TmCase.cursor == total then
       -- Clicked CANCEL
-      se(9)
+      se(5) -- pokefirered/src/tm_case.c:915
       TmCase.close()
     else
       local row = rows[TmCase.cursor]
@@ -213,7 +213,7 @@ function TmCase.handleInput(input)
       end
     end
   elseif input:wasPressed("b") or input:wasPressed("start") then
-    se(9)
+    se(5) -- pokefirered/src/tm_case.c:915
     TmCase.close()
   end
 end

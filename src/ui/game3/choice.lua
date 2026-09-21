@@ -16,6 +16,25 @@ Choice.top = nil
 Choice.cols = 1
 Choice.ignoreBPress = false
 
+function Choice.isOpen()
+  return Choice.active and true or false
+end
+
+-- pokefirered/src/main.c:480
+function Choice.reset()
+  Choice.active = false
+  Choice.kind = nil
+  Choice.options = nil
+  Choice.cursor = 1
+  Choice.done = nil
+  Choice.left = nil
+  Choice.top = nil
+  Choice.cols = 1
+  Choice.ignoreBPress = false
+  Choice.style = nil
+  return true
+end
+
 function Choice.yesNo(cb, layout)
   Choice.active = true
   Choice.kind = "yesno"
@@ -117,7 +136,7 @@ function Choice.cancel()
   if Choice.ignoreBPress then
     return
   end
-  pcall(function() require("src.core.game3.audio").playSe(9) end)
+  pcall(function() require("src.core.game3.audio").playSe(5) end) -- pokefirered/src/menu_helpers.c:57
   local cb = Choice.done
   local kind = Choice.kind
   Choice.active = false

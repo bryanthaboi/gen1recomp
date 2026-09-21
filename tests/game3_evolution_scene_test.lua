@@ -13,6 +13,12 @@ local function check(cond, msg)
   end
 end
 
+local Cache = require("tests.game3_cache")
+if not Cache.mount("pokemon/evolutions.lua") then
+  print("[skip] game3_evolution_scene_test: " .. tostring(Cache.reason))
+  os.exit(0)
+end
+
 local Pokemon = require("src.core.game3.pokemon")
 local Evolution = require("src.core.game3.evolution")
 local EvolutionScene = require("src.ui.game3.evolution_scene")
@@ -47,12 +53,16 @@ do
   local target, _ = Evolution.levelTarget(monNormal)
   check(target == 2, "normal Lv 16 Bulbasaur evolves into Ivysaur (species 2)")
 
-  local monEverstone = { species = 1, speciesId = 1, level = 16, heldItem = 197 } -- ITEM_EVERSTONE
+  -- pokefirered/include/constants/items.h:206
+  local monEverstone = { species = 1, speciesId = 1, level = 16, heldItem = 195 }
   local blockedTarget = Evolution.levelTarget(monEverstone)
   check(blockedTarget == nil, "Everstone blocks level-up evolution")
 
-  -- Evolutionary stone bypasses Everstone
-  local clefairy = { species = 35, speciesId = 35, level = 16, heldItem = 197 }
+  -- pokefirered/src/pokemon.c:5044
+  local clefairy = { species = 35, speciesId = 35, level = 16, heldItem = 195 }
+  check(Evolution.itemTarget(clefairy, 94) == nil, "Everstone blocks a Moon Stone use")
+  check(Evolution.itemCheck(clefairy, 94) == 36, "EVO_MODE_ITEM_CHECK still reports Clefable")
+  clefairy.heldItem = 0
   local clefableTarget = Evolution.itemTarget(clefairy, 94) -- ITEM_MOON_STONE (94)
   check(clefableTarget == 36, "Moon Stone bypasses Everstone on Clefairy (evolves to Clefable 36)")
 end
@@ -80,9 +90,9 @@ do
 
   local party = {
     {
-      species = 290, speciesId = 290, level = 20,
+      species = "NINCADA", speciesId = "NINCADA", level = 20,
       hp = 45, maxHp = 45,
-      heldItem = 197, -- Leftovers / Everstone
+      heldItem = 195,
       status = "PSN",
       pokeball = 2, -- Ultra Ball
       ability = 1,
@@ -94,20 +104,21 @@ do
   local session = { party = party, dex = { seen = {}, caught = {} }, bag = bag }
 
   local nincada = party[1]
-  Evolution.apply(nincada, 291, session, bag)
+  Evolution.apply(nincada, 302, session, bag)
 
   check(#party == 2, "Shedinja spawned into party (party size = 2)")
-  check(party[1].species == 291, "primary mon evolved into Ninjask (species 291)")
+  check(party[1].species == 302, "primary mon evolved into Ninjask (species 302)")
 
   local shedinja = party[2]
-  check(shedinja.species == 292, "shedinja species is 292")
+  check(shedinja.species == 303, "shedinja species is 303")
   check(shedinja.maxHp == 1 and shedinja.hp == 1, "shedinja maxHp and hp are exactly 1")
   check(shedinja.heldItem == 0, "shedinja heldItem is sanitized to 0 (no duplicate items)")
   check(shedinja.status == 0, "shedinja status condition is sanitized to 0")
-  check(shedinja.pokeball == 4, "shedinja pokeball is standardized to ITEM_POKE_BALL (4)")
+  -- pokefirered/src/evolution_scene.c:550
+  check(shedinja.pokeball == 2, "shedinja keeps the Nincada's ball")
   check(shedinja.ability == 25, "shedinja ability is Wonder Guard (25)")
-  check(Bag.get(bag, 4) == 4, "exactly 1 Poké Ball was deducted from bag (5 -> 4)")
-  check(session.dex.caught[292] == true, "Shedinja registered as Caught in Pokédex")
+  check(Bag.get(bag, 4) == 5, "no Poké Ball was deducted from the bag")
+  check(session.dex.caught[303] == true, "Shedinja registered as Caught in Pokédex")
 end
 
 print("=== [TEST 5] EvolutionScene State Machine & B-Button Cancellation ===")

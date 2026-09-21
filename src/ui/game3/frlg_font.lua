@@ -504,26 +504,34 @@ local function resolveColorId(val)
   return nil
 end
 
-local function copyColors(c)
+local colorScratchPool = {
+  { fg = nil, shadow = nil, bg = nil },
+  { fg = nil, shadow = nil, bg = nil },
+  { fg = nil, shadow = nil, bg = nil },
+  { fg = nil, shadow = nil, bg = nil },
+}
+local colorScratchIdx = 0
+
+local function acquireColorScratch(c)
+  colorScratchIdx = (colorScratchIdx % 4) + 1
+  local cur = colorScratchPool[colorScratchIdx]
   if not c then
-    return {
-      fg = FrlgFont.STDPAL[2],
-      shadow = FrlgFont.STDPAL[3],
-      bg = FrlgFont.STDPAL[0],
-    }
+    cur.fg = FrlgFont.STDPAL[2]
+    cur.shadow = FrlgFont.STDPAL[3]
+    cur.bg = FrlgFont.STDPAL[0]
+  else
+    cur.fg = c.fg or FrlgFont.STDPAL[2]
+    cur.shadow = c.shadow or FrlgFont.STDPAL[3]
+    cur.bg = c.bg or FrlgFont.STDPAL[0]
   end
-  return {
-    fg = c.fg or FrlgFont.STDPAL[2],
-    shadow = c.shadow or FrlgFont.STDPAL[3],
-    bg = c.bg or FrlgFont.STDPAL[0],
-  }
+  return cur
 end
 
 --- Byte-by-byte token scanner for GBA FRLG text strings.
 -- Handles \xFC bytecode sequences, {TAG} macros, and UTF-8 characters without choking on null bytes.
 function FrlgFont.scanTokens(text, initialColors)
   local s = tostring(text or "")
-  local curColors = copyColors(initialColors)
+  local curColors = acquireColorScratch(initialColors)
   local i, n = 1, #s
 
   return function()

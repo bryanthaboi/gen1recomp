@@ -53,11 +53,11 @@ function ReleaseSeq.handleInput(input)
       ReleaseSeq.yesNoCursor = (ReleaseSeq.yesNoCursor == 1) and 2 or 1
       se(5)
     elseif input:wasPressed("a") then
+      se(5) -- pokefirered/src/menu.c:376
       if ReleaseSeq.yesNoCursor == 1 then
         -- Confirmed YES
         ReleaseSeq.state = "anim"
         ReleaseSeq.animT = 0
-        se(9) -- Sound of release
       else
         -- Chose NO
         ReleaseSeq.close(false)

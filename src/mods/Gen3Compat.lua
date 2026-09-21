@@ -1082,8 +1082,10 @@ local function buildCollision()
     if not C then
       allowed, why = false, "bounds"
     else
+      -- pokefirered/src/event_object_movement.c:4830 GetCollisionAtCoords
       local ok, reason = C.canEnter(live(), tx, ty,
-        { surfing = mover.surfing and true or false })
+        { fromX = mover.cellX, fromY = mover.cellY, dir = dir,
+          surfing = mover.surfing and true or false })
       if not ok then
         allowed = false
         why = (reason == "bounds" or reason == "entity") and reason or "tile"

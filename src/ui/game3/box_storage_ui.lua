@@ -53,6 +53,29 @@ local function se(id)
   pcall(function() require("src.core.game3.audio").playSe(id) end)
 end
 
+-- pokefirered/include/constants/vars.h:105
+local VAR_PC_BOX_TO_SEND_MON = 0x4037
+-- pokefirered/include/constants/flags.h:1401
+local FLAG_SHOWN_BOX_WAS_FULL_MESSAGE = 0x843
+
+local function script_store(session)
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  return (Space and Space.store) or (session and session.store) or nil
+end
+
+-- pokefirered/src/pokemon_storage_system_tasks.c:2763
+local function update_box_to_send_mons()
+  local storage = Storage.ensure(BoxStorageUI._session)
+  if not storage then return end
+  local cur = (tonumber(storage.currentBox) or 1) - 1
+  if BoxStorageUI._lastUsedBox == cur then return end
+  local Flags = require("src.core.game3.scripting.flags")
+  local store = script_store(BoxStorageUI._session)
+  Flags.setFlag(store, nil, FLAG_SHOWN_BOX_WAS_FULL_MESSAGE, false)
+  Flags.setVar(store, nil, VAR_PC_BOX_TO_SEND_MON, cur)
+  BoxStorageUI._lastUsedBox = cur
+end
+
 local function current_box_data()
   local storage = Storage.ensure(BoxStorageUI._session)
   local bId = storage.currentBox or 1
@@ -100,7 +123,9 @@ function BoxStorageUI.show(opts)
   BoxStorageUI.drawerOpen = false
   BoxStorageUI._actionSource = nil
   BoxStorageUI._actionTarget = nil
-  Storage.ensure(BoxStorageUI._session)
+  local storage = Storage.ensure(BoxStorageUI._session)
+  -- pokefirered/src/pokemon_storage_system_tasks.c:426
+  BoxStorageUI._lastUsedBox = storage and ((tonumber(storage.currentBox) or 1) - 1) or nil
 
   if BoxStorageUI.subMode == "deposit" then
     -- In deposit submode, start directly in party drawer mode
@@ -114,6 +139,8 @@ function BoxStorageUI.show(opts)
 end
 
 function BoxStorageUI.close()
+  -- pokefirered/src/pokemon_storage_system_tasks.c:1979
+  update_box_to_send_mons()
   BoxStorageUI.open = false
   BoxStorageUI.holdingMon = nil
   BoxStorageUI.holdingSource = nil
@@ -366,7 +393,7 @@ function BoxStorageUI.handleInput(input)
           else
             BoxStorageUI._status = Strings("Your party is full!")
             BoxStorageUI.mode = "message"
-            se(9)
+            se(5) -- pokefirered/src/pokemon_storage_system_tasks.c:992
           end
         end
       elseif choice == "STORE" or choice == "DEPOSIT" then
@@ -376,7 +403,7 @@ function BoxStorageUI.handleInput(input)
           if #party <= 1 then
             BoxStorageUI._status = Strings("Can't deposit the last POKéMON!")
             BoxStorageUI.mode = "message"
-            se(9)
+            se(26) -- pokefirered/src/pokemon_storage_system_tasks.c:1052
           else
             local ok, b, s = Storage.deposit(BoxStorageUI._session, sId)
             if ok then
@@ -393,7 +420,7 @@ function BoxStorageUI.handleInput(input)
             else
               BoxStorageUI._status = Strings("The Box is full!")
               BoxStorageUI.mode = "message"
-              se(9)
+              se(5) -- pokefirered/src/pokemon_storage_system_tasks.c:1225
             end
           end
         end
@@ -419,11 +446,11 @@ function BoxStorageUI.handleInput(input)
           elseif err == "bag_full" then
             BoxStorageUI._status = Strings("The BAG is full.")
             BoxStorageUI.mode = "message"
-            se(9)
+            se(26) -- pokefirered/src/pokemon_storage_system_tasks.c:1487
           else
             BoxStorageUI._status = Strings("This POKéMON isn't holding anything.")
             BoxStorageUI.mode = "message"
-            se(9)
+            se(5) -- pokefirered/src/pokemon_storage_system_tasks.c:1493
           end
         end
       elseif choice == "RELEASE" then

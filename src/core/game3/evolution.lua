@@ -1,12 +1,11 @@
 -- Post-battle evolution (pret TryEvolvePokemon / EVO_MODE_NORMAL).
--- MVP: ROM EVO_LEVEL (method 4) only. Stones/trade/friendship later.
 
 local Pokemon = require("src.core.game3.pokemon")
 local ModRuntime = require("src.mods.Runtime")
 
 local Evolution = {}
 
--- pret constants/pokemon.h
+-- pokefirered/include/constants/pokemon.h:266
 Evolution.EVO_FRIENDSHIP = 1
 Evolution.EVO_FRIENDSHIP_DAY = 2
 Evolution.EVO_FRIENDSHIP_NIGHT = 3
@@ -14,17 +13,56 @@ Evolution.EVO_LEVEL = 4
 Evolution.EVO_TRADE = 5
 Evolution.EVO_TRADE_ITEM = 6
 Evolution.EVO_ITEM = 7
+Evolution.EVO_LEVEL_ATK_GT_DEF = 8
+Evolution.EVO_LEVEL_ATK_EQ_DEF = 9
+Evolution.EVO_LEVEL_ATK_LT_DEF = 10
+Evolution.EVO_LEVEL_SILCOON = 11
+Evolution.EVO_LEVEL_CASCOON = 12
+Evolution.EVO_LEVEL_NINJASK = 13
+Evolution.EVO_LEVEL_SHEDINJA = 14
+Evolution.EVO_BEAUTY = 15
 
-local EVERSTONE = 197 -- FRLG ITEM_EVERSTONE
+-- pokefirered/include/constants/pokemon.h:284
+Evolution.EVO_MODE_NORMAL = 0
+Evolution.EVO_MODE_TRADE = 1
+Evolution.EVO_MODE_ITEM_USE = 2
+Evolution.EVO_MODE_ITEM_CHECK = 3
 
-local function held_is_everstone(mon)
-  local item = mon and (mon.item or mon.heldItem)
-  if item == nil then return false end
-  if tonumber(item) == EVERSTONE then return true end
-  if type(item) == "string" and item:upper():find("EVERSTONE", 1, true) then
-    return true
+Evolution.KANTO_SPECIES_END = 151 -- pokefirered/include/constants/species.h:157
+
+local HOLD_EFFECT_PREVENT_EVOLVE = 38 -- pokefirered/include/constants/hold_effects.h:42
+local ITEM_EVERSTONE = 195 -- pokefirered/include/constants/items.h:206
+
+local function row_method(evo) return tonumber(evo.method or evo[1]) or 0 end
+local function row_param(evo) return tonumber(evo.param or evo[2]) or 0 end
+local function row_target(evo) return tonumber(evo.target or evo[3]) or 0 end
+
+local function numeric_item(raw)
+  if raw == nil then return 0 end
+  local num = tonumber(raw)
+  if num then return num end
+  local ok, ItemsData = pcall(require, "src.core.game3.items_data")
+  if ok and ItemsData and ItemsData.toNumericId then
+    local ok2, n = pcall(ItemsData.toNumericId, raw)
+    if ok2 and tonumber(n) then return tonumber(n) end
   end
-  return false
+  return 0
+end
+
+local function held_item_id(mon)
+  return numeric_item(mon and (mon.item or mon.heldItem))
+end
+
+-- pokefirered/src/pokemon.c:5038
+local function hold_effect_of(item)
+  if item == 0 then return 0 end
+  local ok, ItemsData = pcall(require, "src.core.game3.items_data")
+  if ok and ItemsData and ItemsData.info then
+    local ok2, info = pcall(ItemsData.info, item)
+    if ok2 and info and tonumber(info.holdEffect) then return tonumber(info.holdEffect) end
+  end
+  if item == ITEM_EVERSTONE then return HOLD_EFFECT_PREVENT_EVOLVE end
+  return 0
 end
 
 local function is_national_unlocked(session)
@@ -32,27 +70,48 @@ local function is_national_unlocked(session)
   return PokedexData.isNationalUnlocked(session)
 end
 
-local function level_row(mon, evo, session)
-  local level = tonumber(mon.level) or 1
-  local method = tonumber(evo.method or evo[1]) or 0
-  local param = tonumber(evo.param or evo[2]) or 0
-  local target = tonumber(evo.target or evo[3]) or 0
-  if method == Evolution.EVO_LEVEL and target > 0 and level >= param then
-    -- National Dex gating: prevent evolving into non-Kanto species (target > 151) if locked
-    if target > 151 and not is_national_unlocked(session) then
-      return "stop"
-    end
-    return "match", target, param
-  elseif (method == Evolution.EVO_FRIENDSHIP or method == Evolution.EVO_FRIENDSHIP_DAY or method == Evolution.EVO_FRIENDSHIP_NIGHT) and target > 0 then
-    local friendship = tonumber(mon.friendship) or 220
-    if friendship >= 220 then
-      if target > 151 and not is_national_unlocked(session) then
-        return "stop"
-      end
-      return "match", target, 0
-    end
+--- pokefirered/src/party_menu.c:5320
+function Evolution.nationalAllows(target, session)
+  target = tonumber(target) or 0
+  if target <= Evolution.KANTO_SPECIES_END then return true end
+  return is_national_unlocked(session) and true or false
+end
+
+local function normal_context(mon)
+  return {
+    level = tonumber(mon.level) or 1,
+    friendship = Pokemon.friendshipOf(mon),
+    beauty = tonumber(mon.beauty) or 0,
+    upper = math.floor((tonumber(mon.personality) or 0) / 65536) % 65536,
+    atk = tonumber(mon.attack or mon.atk) or 0,
+    def = tonumber(mon.defense or mon.def) or 0,
+  }
+end
+
+-- pokefirered/src/pokemon.c:5053
+local function row_matches_normal(evo, c)
+  local m, param = row_method(evo), row_param(evo)
+  if m == Evolution.EVO_FRIENDSHIP then
+    return c.friendship >= 220
+  elseif m == Evolution.EVO_LEVEL then
+    return param <= c.level
+  elseif m == Evolution.EVO_LEVEL_ATK_GT_DEF then
+    return param <= c.level and c.atk > c.def
+  elseif m == Evolution.EVO_LEVEL_ATK_EQ_DEF then
+    return param <= c.level and c.atk == c.def
+  elseif m == Evolution.EVO_LEVEL_ATK_LT_DEF then
+    return param <= c.level and c.atk < c.def
+  elseif m == Evolution.EVO_LEVEL_SILCOON then
+    return param <= c.level and (c.upper % 10) <= 4
+  elseif m == Evolution.EVO_LEVEL_CASCOON then
+    return param <= c.level and (c.upper % 10) > 4
+  elseif m == Evolution.EVO_LEVEL_NINJASK then
+    return param <= c.level
+  elseif m == Evolution.EVO_BEAUTY then
+    return param <= c.beauty
   end
-  return nil
+  -- pokefirered/src/pokemon.c:5061, :5107
+  return false
 end
 
 local function evo_view(evo)
@@ -68,53 +127,122 @@ local function evo_view(evo)
   }
 end
 
---- Target species for level-up evolution, or nil.
--- pokefirered/src/pokemon.c:5025
-function Evolution.levelTarget(mon, session)
-  if not mon then return nil end
-  if held_is_everstone(mon) then return nil end
-  local species = Pokemon.speciesOf(mon) or tonumber(mon.species or mon.speciesId)
-  if not species then return nil end
-  local hooked = ModRuntime.wantsHook("evolution.check")
-  local R = hooked and package.loaded["src.core.game3.runtime"] or nil
+local function scan_normal(mon, species, hook)
+  local c = normal_context(mon)
+  local target, param = 0, 0
   for _, evo in ipairs(Pokemon.evolutions(species)) do
-    local kind, target, param = level_row(mon, evo, session)
-    if hooked then
+    local matched = row_matches_normal(evo, c)
+    if hook then
       local view = evo_view(evo)
       local ok = ModRuntime.call("evolution.check", function()
-        return kind == "match"
-      end, R and R._game or nil, mon, view, { kind = "levelup", session = session })
+        return matched
+      end, hook.game, mon, view, { kind = "levelup", session = hook.session })
       if ok then
-        if kind == "match" then return target, param end
-        if view.speciesId > 0 then return view.speciesId, view.param end
+        if matched then
+          target, param = row_target(evo), row_param(evo)
+        elseif view.speciesId > 0 then
+          target, param = view.speciesId, view.param
+        end
       end
-      if kind == "stop" then return nil end
-    else
-      if kind == "stop" then return nil end
-      if kind == "match" then return target, param end
+    elseif matched then
+      target, param = row_target(evo), row_param(evo)
     end
   end
-  return nil
+  return target, param
 end
 
---- Target species for item/stone evolution, or nil (stones bypass Everstone).
+-- pokefirered/src/pokemon.c:5114
+local function scan_trade(mon, species)
+  local heldItem = held_item_id(mon)
+  local target, param = 0, 0
+  for _, evo in ipairs(Pokemon.evolutions(species)) do
+    local m = row_method(evo)
+    if m == Evolution.EVO_TRADE then
+      target, param = row_target(evo), row_param(evo)
+    elseif m == Evolution.EVO_TRADE_ITEM and row_param(evo) == heldItem then
+      target, param = row_target(evo), row_param(evo)
+    end
+  end
+  return target, param
+end
+
+-- pokefirered/src/pokemon.c:5139
+local function scan_item(mon, species, evolutionItem)
+  local num = numeric_item(evolutionItem)
+  if num == 0 then return 0, 0 end
+  for _, evo in ipairs(Pokemon.evolutions(species)) do
+    if row_method(evo) == Evolution.EVO_ITEM and row_param(evo) == num then
+      return row_target(evo), row_param(evo)
+    end
+  end
+  return 0, 0
+end
+
+-- pokefirered/src/pokemon.c:5025 GetEvolutionTargetSpecies
+function Evolution.targetSpecies(mon, mode, evolutionItem, hook)
+  if not mon then return 0, 0 end
+  local species = Pokemon.speciesOf(mon) or tonumber(mon.species or mon.speciesId)
+  if not species then return 0, 0 end
+  mode = tonumber(mode) or Evolution.EVO_MODE_NORMAL
+  if hold_effect_of(held_item_id(mon)) == HOLD_EFFECT_PREVENT_EVOLVE
+    and mode ~= Evolution.EVO_MODE_ITEM_CHECK then
+    return 0, 0
+  end
+  if mode == Evolution.EVO_MODE_NORMAL then
+    return scan_normal(mon, species, hook)
+  elseif mode == Evolution.EVO_MODE_TRADE then
+    return scan_trade(mon, species)
+  end
+  return scan_item(mon, species, evolutionItem)
+end
+
+-- pokefirered/src/pokemon.c:5049, src/evolution_scene.c:641
+function Evolution.levelTarget(mon, session)
+  if not mon then return nil end
+  local hook = nil
+  if ModRuntime.wantsHook("evolution.check") then
+    local R = package.loaded["src.core.game3.runtime"]
+    hook = { game = R and R._game or nil, session = session }
+  end
+  local target, param = Evolution.targetSpecies(mon, Evolution.EVO_MODE_NORMAL, nil, hook)
+  if target == 0 then return nil end
+  if not Evolution.nationalAllows(target, session) then return nil end
+  return target, param
+end
+
+-- pokefirered/src/pokemon.c:5139, src/party_menu.c:5318 MonCanEvolve
 function Evolution.itemTarget(mon, itemId, session)
   if not mon then return nil end
-  local species = Pokemon.speciesOf(mon) or tonumber(mon.species or mon.speciesId)
-  local ItemsData = require("src.core.game3.items_data")
-  local num = ItemsData.toNumericId(itemId) or tonumber(itemId)
-  if not species or not num then return nil end
-  for _, evo in ipairs(Pokemon.evolutions(species)) do
-    local method = tonumber(evo.method or evo[1]) or 0
-    local param = tonumber(evo.param or evo[2]) or 0
-    local target = tonumber(evo.target or evo[3]) or 0
-    if (method == Evolution.EVO_ITEM or method == Evolution.EVO_TRADE_ITEM) and param == num and target > 0 then
-      -- National Dex gating: prevent evolving into non-Kanto species (target > 151) if locked
-      if target > 151 and not is_national_unlocked(session) then
-        return nil
+  local target = Evolution.targetSpecies(mon, Evolution.EVO_MODE_ITEM_USE, itemId)
+  if target == 0 then return nil end
+  if not Evolution.nationalAllows(target, session) then return nil end
+  return target
+end
+
+-- pokefirered/src/party_menu.c:872
+function Evolution.itemCheck(mon, itemId)
+  if not mon then return nil end
+  local target = Evolution.targetSpecies(mon, Evolution.EVO_MODE_ITEM_CHECK, itemId)
+  if target == 0 then return nil end
+  return target
+end
+
+-- pokefirered/src/pokemon.c:5114
+function Evolution.tradeTarget(mon, session)
+  if not mon then return nil end
+  local target = Evolution.targetSpecies(mon, Evolution.EVO_MODE_TRADE)
+  if target == 0 then return nil end
+  if Evolution.nationalAllows(target, session) then
+    local species = Pokemon.speciesOf(mon) or tonumber(mon.species or mon.speciesId)
+    local heldItem = held_item_id(mon)
+    for _, evo in ipairs(Pokemon.evolutions(species or 0)) do
+      if row_method(evo) == Evolution.EVO_TRADE_ITEM and row_param(evo) == heldItem
+        and row_target(evo) == target then
+        mon.item = 0
+        mon.heldItem = 0
       end
-      return target
     end
+    return target
   end
   return nil
 end
@@ -149,6 +277,7 @@ function Evolution.apply(mon, newSpecies, session, bag, via)
   -- 1. Mutate species
   mon.species = newSpecies
   mon.speciesId = newSpecies
+  Pokemon.tagNumbering(mon, Pokemon.NUMBERING_INTERNAL)
 
   -- 2. Nickname update
   Evolution.renameMon(mon, preSpecies, newSpecies)
@@ -169,54 +298,45 @@ function Evolution.apply(mon, newSpecies, session, bag, via)
     Dex.setCaught(session.dex, newSpecies)
   end
 
-  -- 5. Shedinja Creation (Nincada -> Ninjask)
-  local isNincada = (preSpecies == 290 or preSpecies == 301)
-  local isNinjask = (newSpecies == 291 or newSpecies == 302)
-  local shedId = (newSpecies == 302) and 303 or 292
-  if isNincada and isNinjask and session then
+  -- 5. pokefirered/src/evolution_scene.c:550 CreateShedinja
+  local preRows = Pokemon.evolutions(preSpecies)
+  local shedId = (preRows[1] and row_method(preRows[1]) == Evolution.EVO_LEVEL_NINJASK
+    and preRows[2] and row_target(preRows[2])) or 0
+  if shedId > 0 and session then
     local party = session.party or (session.save and session.save.party)
     if party and #party < 6 then
-      local hasPokeBall = false
-      local BagMod = package.loaded["src.core.game3.bag"] or require("src.core.game3.bag")
-      local b = bag or session.bag
-      if b then
-        if BagMod.has and BagMod.has(b, 4, 1) then
-          hasPokeBall = true
-          BagMod.remove(b, 4, 1)
-        elseif type(b.has) == "function" and b:has(4, 1) then
-          hasPokeBall = true
-          if type(b.remove) == "function" then b:remove(4, 1) end
+      local shedinja = {}
+      for k, v in pairs(mon) do
+        if type(v) == "table" then
+          local t = {}
+          for k2, v2 in pairs(v) do t[k2] = v2 end
+          shedinja[k] = t
+        else
+          shedinja[k] = v
         end
       end
-      if hasPokeBall then
-        -- Deep clone Nincada before Ninjask learns new moves
-        local shedinja = {}
-        for k, v in pairs(mon) do
-          if type(v) == "table" then
-            local t = {}
-            for k2, v2 in pairs(v) do t[k2] = v2 end
-            shedinja[k] = t
-          else
-            shedinja[k] = v
-          end
-        end
-        shedinja.species = shedId
-        shedinja.speciesId = shedId
-        shedinja.name = Pokemon.name(shedId) or "SHEDINJA"
-        shedinja.nickname = Pokemon.name(shedId) or "SHEDINJA"
-        shedinja.heldItem = 0
-        shedinja.item = 0
-        shedinja.status = 0
-        shedinja.pokeball = 4
-        shedinja.ability = 25 -- ABILITY_WONDER_GUARD
-        shedinja.maxHp = 1
-        shedinja.hp = 1
-        party[#party + 1] = shedinja
-        if session.dex then
-          local Dex = require("src.core.game3.dex")
-          Dex.setSeen(session.dex, shedId)
-          Dex.setCaught(session.dex, shedId)
-        end
+      shedinja.species = shedId
+      shedinja.speciesId = shedId
+      Pokemon.tagNumbering(shedinja, Pokemon.NUMBERING_INTERNAL)
+      shedinja.name = Pokemon.name(shedId) or "SHEDINJA"
+      shedinja.nickname = Pokemon.name(shedId) or "SHEDINJA"
+      shedinja.heldItem = 0
+      shedinja.item = 0
+      shedinja.status = 0
+      shedinja.markings = nil
+      shedinja.mail = nil
+      if Pokemon.abilityId then
+        shedinja.ability = Pokemon.abilityId(shedId, shedinja.personality)
+        shedinja.abilityId = shedinja.ability
+      end
+      shedinja.hp = nil
+      Pokemon.applyStats(shedinja)
+      shedinja.hp = 1
+      party[#party + 1] = shedinja
+      if session.dex then
+        local Dex = require("src.core.game3.dex")
+        Dex.setSeen(session.dex, shedId)
+        Dex.setCaught(session.dex, shedId)
       end
     end
   end

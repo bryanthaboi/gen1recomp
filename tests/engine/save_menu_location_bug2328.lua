@@ -27,6 +27,7 @@ package.loaded["src.ui.game3.window"] = {
     return { left = l, top = t, width = w, height = h }
   end,
   stdFrame = function() end,
+  fixedStdFrame = function() end,
   cursorPx = function() end,
 }
 package.loaded["src.ui.game3.chrome"] = { dialogueFrame = function() end }

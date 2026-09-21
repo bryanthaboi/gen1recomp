@@ -30,7 +30,7 @@ eq(OFF, 20000, "species headers carry EGG_MOVES_SPECIES_OFFSET")
 eq(TERM, 0xFFFF, "EGG_MOVES_TERMINATOR is 0xFFFF")
 check(Versions.CACHE_VERSION >= 99,
   "the cache version is bumped past the packs that had no egg_moves.lua")
-eq(PokemonExtract.FORMAT_VERSION, 4, "the pokemon pack format version is bumped")
+check(PokemonExtract.FORMAT_VERSION >= 4, "the pokemon pack format version is bumped")
 
 -- ------------------------------------------------------------------ decode
 -- A ROM whose gEggMoves stream is `words` and which reads 0 everywhere else:

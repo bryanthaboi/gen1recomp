@@ -4,6 +4,9 @@ local floor = math.floor
 
 local AnimPal = {}
 
+local _lastSentPal = {}
+local _lastOpaque0 = nil
+
 AnimPal.unfaded = {}
 AnimPal.faded = {}
 AnimPal.loaded = {}
@@ -21,6 +24,8 @@ function AnimPal.reset(pack)
   AnimPal.unfaded = {}
   AnimPal.faded = {}
   AnimPal.loaded = {}
+  _lastSentPal = {}
+  _lastOpaque0 = nil
 end
 
 function AnimPal.setPack(pack)
@@ -254,15 +259,28 @@ function AnimPal.send(colors, opts)
   if AnimPal.blackPass then
     for i = 0, 15 do fin[i] = 0 end
   end
-  local opaque0 = opts and opts.opaque0
-  for i = 0, 15 do
-    local r, g, b = AnimPal.rgb(fin[i])
-    local v = vecs[i + 1]
-    v[1], v[2], v[3] = r / 31, g / 31, b / 31
-    v[4] = (i == 0 and not opaque0) and 0 or 1
+  local opaque0 = (opts and opts.opaque0) and true or false
+  local changed = opaque0 ~= _lastOpaque0
+  if not changed then
+    for i = 0, 15 do
+      if fin[i] ~= _lastSentPal[i] then
+        changed = true
+        break
+      end
+    end
   end
-  local ok = pcall(sh.send, sh, "pal", unpack(vecs))
-  if not ok then return nil end
+  if changed then
+    _lastOpaque0 = opaque0
+    for i = 0, 15 do
+      _lastSentPal[i] = fin[i]
+      local r, g, b = AnimPal.rgb(fin[i])
+      local v = vecs[i + 1]
+      v[1], v[2], v[3] = r / 31, g / 31, b / 31
+      v[4] = (i == 0 and not opaque0) and 0 or 1
+    end
+    local ok = pcall(sh.send, sh, "pal", unpack(vecs))
+    if not ok then return nil end
+  end
   return sh
 end
 

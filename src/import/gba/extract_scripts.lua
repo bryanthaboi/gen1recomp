@@ -102,6 +102,61 @@ local function read_text_ir(rom, gbaPtr)
   return TextIR.decode(bytes)
 end
 
+-- pokefirered/include/characters.h:285
+local BRAILLE_CHARMAP = {
+  [0x00] = " ",
+  [0x01] = "A", [0x03] = "C", [0x04] = ",", [0x05] = "B", [0x06] = "I",
+  [0x07] = "F", [0x09] = "E", [0x0B] = "D", [0x0C] = ":", [0x0D] = "H",
+  [0x0E] = "J", [0x0F] = "G", [0x10] = "'", [0x11] = "K", [0x12] = "/",
+  [0x13] = "M", [0x14] = ";", [0x15] = "L", [0x16] = "S", [0x17] = "P",
+  [0x19] = "O", [0x1B] = "N", [0x1C] = "!", [0x1D] = "R", [0x1E] = "T",
+  [0x1F] = "Q", [0x2C] = ".", [0x2E] = "W", [0x30] = "-", [0x31] = "U",
+  [0x33] = "X", [0x34] = "?", [0x35] = "V", [0x38] = '"', [0x39] = "Z",
+  [0x3A] = "#", [0x3B] = "Y", [0x3C] = "(",
+}
+
+local function decode_braille(bytes)
+  local out, buf = {}, {}
+  local function flush()
+    if #buf > 0 then
+      out[#out + 1] = { t = "text", s = table.concat(buf) }
+      buf = {}
+    end
+  end
+  local n = #bytes
+  for i = 1, n do
+    local c = bytes[i]
+    if c == 0xFF then
+      flush()
+      out[#out + 1] = { t = "eos" }
+      break
+    elseif c == 0xFE then
+      flush()
+      out[#out + 1] = { t = "nl" }
+    else
+      buf[#buf + 1] = BRAILLE_CHARMAP[c] or "?"
+    end
+  end
+  flush()
+  return out
+end
+
+local function read_braille_ir(rom, gbaPtr)
+  local off = rom:ptrOffset(gbaPtr)
+  if not off then return nil end
+  local bytes = {}
+  for i = 0, TEXT_MAX - 1 do
+    local b = rom:get(off + i)
+    if not b then break end
+    bytes[#bytes + 1] = b
+    if b == 0xFF then break end
+  end
+  return decode_braille(bytes)
+end
+
+ExtractScripts.BRAILLE_CHARMAP = BRAILLE_CHARMAP
+ExtractScripts.decodeBraille = decode_braille
+
 local function read_movement(rom, gbaPtr)
   local off = rom:ptrOffset(gbaPtr)
   if not off then return nil end
@@ -175,7 +230,17 @@ function ExtractScripts.bfsFromSeeds(rom, seedPtrs)
           or row.op == "call_if" or row.op == "vgoto" or row.op == "vcall"
           or row.op == "vgoto_if" or row.op == "vcall_if" then
         -- target already remapped
-      elseif row.op == "message" or row.op == "vmessage" or row.op == "braillemessage"
+      elseif row.op == "braillemessage" or row.op == "getbraillestringwidth" then
+        -- pokefirered/asm/macros/event.inc:1845
+        local tp = row.ptr or row[1]
+        if is_rom_ptr(tp) then
+          local tk = Opcodes.key(tp)
+          local ir = read_braille_ir(rom, tp)
+          if ir then text[tk] = ir end
+          row.ptr = tk
+          row[1] = tk
+        end
+      elseif row.op == "message" or row.op == "vmessage"
           or row.op == "messageautoscroll" then
         local tp = row.ptr or row[1]
         if is_rom_ptr(tp) then
@@ -309,8 +374,8 @@ local function write_tables(cache, root, scripts, text, movements, events, metaE
 end
 
 --- Primary write path: ROM MapEvents + BFS.
-function ExtractScripts.writeBundleFromRom(rom, cache, root, version)
-  local bundle = ExtractScripts.extractFromRom(rom, version)
+function ExtractScripts.writeBundleFromRom(rom, cache, root, version, extracted)
+  local bundle = extracted or ExtractScripts.extractFromRom(rom, version)
   write_tables(cache, root, bundle.scripts, bundle.text, bundle.movements, bundle.events, {
     source = "rom",
     opInventory = bundle.opInventory,
@@ -386,6 +451,7 @@ function ExtractScripts.loadBundle(cache, root, opts)
   if scripts and events then
     local objects=load_lua(root .. "/objects/pack.lua")
     require("src.core.game3.scripting.interaction_scripts").install(objects)
+    require("src.core.game3.encounters").installEncounterTypes(objects and objects.encounterTypes)
     if objects then
       text=text or {};movements=movements or {}
       for k,v in pairs(objects.scripts or {}) do scripts[k]=v end

@@ -1,5 +1,8 @@
 -- Test suite for Game3 Pokédex Area & Where-to-Find extraction and rendering logic.
 
+local Cache = require("tests.game3_cache")
+Cache.mountOrSkip("game3_pokedex_area_test", "pokemon/pokedex/area_markers.lua")
+
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")
 

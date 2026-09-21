@@ -36,74 +36,78 @@ function VoidFill.label(mode)
   return VoidFill.LABELS[VoidFill.normalize(mode)]
 end
 
-VoidFill._cache = {}
-
 function VoidFill.invalidate()
-  VoidFill._cache = {}
+  VoidFill._borders = {}
   local FieldView = package.loaded["src.core.game3.field_view"]
   if FieldView then FieldView._nativeDirty = true end
 end
 
-local function permissions()
-  local ok, P = pcall(require, "src.world.gen2.Permissions")
-  return ok and P or nil
+VoidFill.PRIMARY = "general"
+-- pokefirered/include/fieldmap.h:8
+VoidFill.PRIMARY_MIDS = 640
+VoidFill.SOURCES = { trees = "FR_PALLET_TOWN", water = "FR_CINNABAR_ISLAND" }
+VoidFill._borders = {}
+
+function VoidFill.primaryFor(pair)
+  if type(pair) ~= "string" then return nil end
+  local okV, Versions = pcall(require, "src.import.gba.versions")
+  local spec = okV and Versions and Versions.TILESET_PAIRS and Versions.TILESET_PAIRS[pair]
+  if spec and spec.primary then return spec.primary end
+  return pair:match("^(.-)__")
 end
 
-local function tally(layout, want, ring)
-  local P = permissions()
-  local w, h = layout.width or 0, layout.height or 0
+function VoidFill.layoutFor(mapId)
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = Runtime and Runtime._game
+  if not game then return nil, true end
+  local Map = package.loaded["src.core.game3.map"]
+  if not (Map and Map.ensureMidLayout) then return nil, true end
+  return Map.ensureMidLayout(game, mapId)
+end
+
+function VoidFill.borderFromLayout(layout)
+  if type(layout) ~= "table" or type(layout.borderMids) ~= "table" then return nil end
+  if VoidFill.primaryFor(layout.pair) ~= VoidFill.PRIMARY then return nil end
+  local w, h = layout.borderWidth or 0, layout.borderHeight or 0
   if w < 1 or h < 1 then return nil end
-  local counts, best, bestN = {}, nil, 0
-  for y = 0, h - 1 do
-    local edgeRow = ring and (y < ring or y >= h - ring)
-    for x = 0, w - 1 do
-      local onEdge = edgeRow or (ring and (x < ring or x >= w - ring))
-      if not ring or onEdge then
-        local c = layout.cells[y * w + x + 1]
-        local coll = c and c.coll
-        if coll then
-          local hit
-          if want == "water" then
-            hit = P and P.isWater and P.isWater(coll) or (not P and coll == 0x29)
-          else
-            hit = P and P.isWall and P.isWall(coll) or (not P and coll == 0x01)
-          end
-          if hit then
-            local mid = c.mid or 0
-            local k = (counts[mid] or 0) + 1
-            counts[mid] = k
-            if k > bestN then best, bestN = mid, k end
-          end
-        end
-      end
-    end
+  local mids = {}
+  for i = 1, w * h do
+    local mid = layout.borderMids[i]
+    if type(mid) ~= "number" or mid < 0 or mid >= VoidFill.PRIMARY_MIDS then return nil end
+    mids[i] = mid
   end
-  if bestN < 4 then return nil end
-  return best
+  return { w = w, h = h, mids = mids }
 end
 
-local function scan(layout, want)
-  if not (layout and layout.cells) then return nil end
-  local w, h = layout.width or 0, layout.height or 0
-  if w * h > 65536 then return nil end
-  return tally(layout, want, 3) or tally(layout, want, nil)
+function VoidFill.borderFor(mode)
+  mode = VoidFill.normalize(mode)
+  local mapId = VoidFill.SOURCES[mode]
+  if not mapId then return nil end
+  local b = VoidFill._borders[mode]
+  if b ~= nil then return b or nil end
+  local layout, pending = VoidFill.layoutFor(mapId)
+  if pending then return nil end
+  b = VoidFill.borderFromLayout(layout)
+  VoidFill._borders[mode] = b or false
+  return b
 end
 
-function VoidFill.midFor(mapDef, mode)
+-- pokefirered/src/fieldmap.c:39
+function VoidFill.fillAt(mode, cx, cy, hasMid, primary)
   mode = VoidFill.normalize(mode or VoidFill.mode)
   if mode == "map" then return nil end
   if mode == "black" then return false end
-  local layout = mapDef and mapDef.midLayout
-  if not layout then return nil end
-  local key = tostring(layout.mapId or mapDef.id or mapDef.name or layout) .. ":" .. mode
-  local hit = VoidFill._cache[key]
-  if hit ~= nil then
-    if hit == false then return nil end
-    return hit
+  if primary ~= VoidFill.PRIMARY then return nil end
+  local b = VoidFill.borderFor(mode)
+  if not b then return nil end
+  if hasMid then
+    for _, mid in ipairs(b.mids) do
+      if not hasMid(mid) then return nil end
+    end
   end
-  local mid = scan(layout, mode)
-  VoidFill._cache[key] = mid or false
-  return mid
+  local bx = (cx or 0) % b.w
+  local by = (cy or 0) % b.h
+  return b.mids[by * b.w + bx + 1]
 end
 
 return VoidFill

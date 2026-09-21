@@ -114,7 +114,7 @@ function PokedexChrome.install(cache)
 
   local textures = {
     { key = "paper_bg", file = "paper_bg.rgba", w = 240, h = 160 },
-    { key = "caught_marker", file = "caught_marker.rgba", w = 8, h = 8, trans = function(r, g, b) return (r == 156 and g == 156 and b == 189) or (r == 156 and g == 156) end },
+    { key = "caught_marker", file = "caught_marker.rgba", w = 8, h = 8 },
     { key = "mini_page", file = "mini_page.rgba", w = 64, h = 40 },
     { key = "blit_wide_ellipse", file = "blit_wide_ellipse.rgba", w = 88, h = 16 },
     { key = "map_kanto", file = "map_kanto.rgba", w = 96, h = 72 },
@@ -157,6 +157,29 @@ function PokedexChrome.install(cache)
     end
   end
 
+  local sheets = {
+    { key = "kanto", file = "dex_tiles_kanto.rgba" },
+    { key = "national", file = "dex_tiles_national.rgba" },
+  }
+  PokedexChrome._sheets = {}
+  for _, s in ipairs(sheets) do
+    PokedexChrome._sheets[s.key] = read_bytes(root .. "/" .. s.file)
+    PokedexChrome._images["dex_data_bg_" .. s.key] = nil
+    PokedexChrome._images["dex_area_bg_" .. s.key] = nil
+  end
+
+  PokedexChrome._images.trainer_red = nil
+  PokedexChrome._images.trainer_leaf = nil
+  PokedexChrome._colors = nil
+  local colorBytes = read_bytes(root .. "/chrome.lua")
+  if colorBytes then
+    local chunk = loadstring and loadstring(colorBytes) or load(colorBytes)
+    if chunk then
+      local ok, tbl = pcall(chunk)
+      if ok and type(tbl) == "table" then PokedexChrome._colors = tbl end
+    end
+  end
+
   local kpBytes = read_bytes("data/generated/gba/keypad_icons.rgba")
   if kpBytes then
     PokedexChrome._images["keypad_icons"] = rgba_to_image(kpBytes, 128, 32)
@@ -169,6 +192,21 @@ end
 function PokedexChrome.getImage(key)
   if not PokedexChrome._installed then PokedexChrome.install() end
   return PokedexChrome._images[key]
+end
+
+function PokedexChrome.getColor(key)
+  if not PokedexChrome._installed then PokedexChrome.install() end
+  local c = PokedexChrome._colors and PokedexChrome._colors[key]
+  if type(c) ~= "table" or not c[3] then return nil end
+  return c[1] / 255, c[2] / 255, c[3] / 255, (c[4] or 255) / 255
+end
+
+-- src/pokedex_area_markers.c:219
+function PokedexChrome.getMarkerBlend()
+  if not PokedexChrome._installed then PokedexChrome.install() end
+  local c = PokedexChrome._colors and PokedexChrome._colors.marker_blend
+  if type(c) ~= "table" or not c[2] then return nil end
+  return c[1] / 16, c[2] / 16
 end
 
 local KEYPAD_ICON_QUADS = nil
@@ -382,78 +420,173 @@ function PokedexChrome.drawPaperBg(w, h)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
---- Draw authentic FRLG Pokédex Detailed Data Screen card background (240x160)
+local CARD_SHEET_COLS = 8
+
+local function card_layout(left, top, width, height, divTile)
+  local L = {
+    left = left, top = top, width = width, height = height,
+    divTile = divTile,
+    x = left * 8,
+    y = top * 8,
+    w = (width + 2) * 8,
+    h = (height + 2) * 8,
+    borderLeft = left * 8 + 1,
+    borderRight = (left + 1 + width) * 8 + 5,
+    borderTop = top * 8 + 1,
+    borderBottom = (top + 1 + height) * 8 + 5,
+    borderThickness = 2,
+  }
+  if divTile then
+    L.dividerY = divTile * 8
+    L.upperY = L.borderTop + 2
+    L.upperH = L.dividerY - L.upperY
+    L.lowerY = L.dividerY + 8
+    L.lowerH = L.borderBottom - L.lowerY
+  else
+    L.upperY = L.borderTop + 2
+    L.upperH = L.borderBottom - L.upperY
+  end
+  return L
+end
+
+-- pokefirered/src/pokedex_screen.c:2926
+function PokedexChrome.dataCardLayout()
+  local left, top, width, height = 0, 2, 28, 14
+  return card_layout(left, top, width, height, (top + 1) + (math.floor(height / 2) + 1))
+end
+
+-- pokefirered/src/pokedex_screen.c:2999
+function PokedexChrome.areaCardLayout()
+  return card_layout(0, 2, 28, 14, nil)
+end
+
+-- pokefirered/src/pokedex_screen.c:2641
+function PokedexChrome.cardTilemap(L)
+  local grid = {}
+  local function put(tile, col, row, w, h, flipH, flipV)
+    if w <= 0 or h <= 0 then return end
+    for r = row, row + h - 1 do
+      grid[r] = grid[r] or {}
+      for c = col, col + w - 1 do
+        grid[r][c] = { tile = tile, flipH = flipH or false, flipV = flipV or false }
+      end
+    end
+  end
+
+  local left, top, width, height = L.left, L.top, L.width, L.height
+  local right = left + 1 + width
+  local bottom = top + 1 + height
+
+  if L.divTile then
+    local divY = L.divTile
+    put(4, left, top, 1, 1)
+    put(5, left + 1, top, width, 1)
+    put(4, right, top, 1, 1, true, false)
+    put(10, left, bottom, 1, 1)
+    put(11, left + 1, bottom, width, 1)
+    put(10, right, bottom, 1, 1, true, false)
+    put(6, left, top + 1, 1, divY - top - 1)
+    put(7, left, divY, 1, 1)
+    put(9, left, divY + 1, 1, top + height - divY)
+    put(6, right, top + 1, 1, divY - top - 1, true, false)
+    put(7, right, divY, 1, 1, true, false)
+    put(9, right, divY + 1, 1, top + height - divY, true, false)
+    put(1, left + 1, top + 1, width, divY - top - 1)
+    put(8, left + 1, divY, width, 1)
+    put(2, left + 1, divY + 1, width, top + height - divY)
+  else
+    put(4, left, top, 1, 1)
+    put(4, right, top, 1, 1, true, false)
+    put(4, left, bottom, 1, 1, false, true)
+    put(4, right, bottom, 1, 1, true, true)
+    put(5, left + 1, top, width, 1)
+    put(5, left + 1, bottom, width, 1, false, true)
+    put(6, left, top + 1, 1, height)
+    put(6, right, top + 1, 1, height, true, false)
+    put(1, left + 1, top + 1, width, height)
+  end
+
+  return grid
+end
+
+function PokedexChrome.composeCard(L, sheet, w, h)
+  w = w or 240
+  h = h or 160
+  local sheetW = CARD_SHEET_COLS * 8
+  if type(sheet) ~= "string" or #sheet < sheetW * 8 * 4 then return nil end
+  local sheetTiles = math.floor(#sheet / (sheetW * 8 * 4)) * CARD_SHEET_COLS
+  local grid = PokedexChrome.cardTilemap(L)
+  local blank = { tile = 0, flipH = false, flipV = false }
+  local out = {}
+  for py = 0, h - 1 do
+    local cols = grid[math.floor(py / 8)]
+    local ty = py % 8
+    for px = 0, w - 1 do
+      local cell = (cols and cols[math.floor(px / 8)]) or blank
+      local tile = cell.tile
+      if tile >= sheetTiles then tile = 0 end
+      local tx = px % 8
+      local sx = (tile % CARD_SHEET_COLS) * 8 + (cell.flipH and (7 - tx) or tx)
+      local sy = math.floor(tile / CARD_SHEET_COLS) * 8 + (cell.flipV and (7 - ty) or ty)
+      local o = (sy * sheetW + sx) * 4
+      out[py * w + px + 1] = sheet:sub(o + 1, o + 4)
+    end
+  end
+  return table.concat(out)
+end
+
+-- pokefirered/src/pokedex_screen.c:896
+function PokedexChrome.cardSheet()
+  if not PokedexChrome._installed then PokedexChrome.install() end
+  local sheets = PokedexChrome._sheets or {}
+  if PokedexData.isNationalUnlocked() and sheets.national then
+    return sheets.national, "national"
+  end
+  if sheets.kanto then return sheets.kanto, "kanto" end
+  return nil
+end
+
+local function draw_card(key, layoutFn)
+  if not (love and love.graphics) then return end
+  local sheet, variant = PokedexChrome.cardSheet()
+  local img
+  if sheet then
+    key = key .. "_" .. variant
+    img = PokedexChrome._images[key]
+    if not img then
+      img = rgba_to_image(PokedexChrome.composeCard(layoutFn(), sheet), 240, 160)
+      PokedexChrome._images[key] = img
+    end
+  end
+  if img then
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, 0, 0)
+    return
+  end
+  PokedexChrome.drawPaperBg()
+end
+
 function PokedexChrome.drawDataCardBg()
-  if not (love and love.graphics) then return end
-  local img = PokedexChrome.getImage("dex_data_bg")
-  if not img then
-    local candidates = {
-      "pokemon/pokedex/dex_data_bg.png",
-      "data/generated/gba/pokemon/pokedex/dex_data_bg.png",
-    }
-    for _, p in ipairs(candidates) do
-      local ok, newImg = pcall(love.graphics.newImage, p)
-      if ok and newImg then
-        if newImg.setFilter then newImg:setFilter("nearest", "nearest") end
-        img = newImg
-        PokedexChrome._images["dex_data_bg"] = img
-        break
-      end
-    end
-  end
-
-  if img then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 0, 0)
-    return
-  end
-
-  -- Fallback if image not found
-  PokedexChrome.drawPaperBg()
+  draw_card("dex_data_bg", PokedexChrome.dataCardLayout)
 end
 
---- Draw authentic FRLG Pokédex Page 2 Area & Size Screen card background (240x160)
 function PokedexChrome.drawAreaCardBg()
-  if not (love and love.graphics) then return end
-  local img = PokedexChrome.getImage("dex_area_bg")
-  if not img then
-    local candidates = {
-      "pokemon/pokedex/dex_area_bg.png",
-      "data/generated/gba/pokemon/pokedex/dex_area_bg.png",
-    }
-    for _, p in ipairs(candidates) do
-      local ok, newImg = pcall(love.graphics.newImage, p)
-      if ok and newImg then
-        if newImg.setFilter then newImg:setFilter("nearest", "nearest") end
-        img = newImg
-        PokedexChrome._images["dex_area_bg"] = img
-        break
-      end
-    end
-  end
-
-  if img then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 0, 0)
-    return
-  end
-
-  -- Fallback if image not found
-  PokedexChrome.drawPaperBg()
+  draw_card("dex_area_bg", PokedexChrome.areaCardLayout)
 end
+
+-- src/trainer_pokemon_sprites.c:276, include/constants/trainers.h:156
+PokedexChrome.TRAINER_PIC_IDS = { male = 135, female = 136 }
 
 --- Load trainer front sprite (Red/Leaf) for Size Comparison
 function PokedexChrome.getTrainerPic(gender)
   local key = (gender == "female") and "trainer_leaf" or "trainer_red"
-  if not PokedexChrome._images[key] then
-    local file = (gender == "female") and "data/generated/gba/trainers/leaf_front_pic.png" or "data/generated/gba/trainers/red_front_pic.png"
-    local ok, img = pcall(love.graphics.newImage, file)
-    if ok and img then
-      if img.setFilter then img:setFilter("nearest", "nearest") end
-      PokedexChrome._images[key] = img
-    end
+  if PokedexChrome._images[key] == nil then
+    local picId = (gender == "female") and PokedexChrome.TRAINER_PIC_IDS.female or PokedexChrome.TRAINER_PIC_IDS.male
+    local bytes = read_bytes(cache_root() .. "/trainers/front/" .. picId .. ".rgba")
+      or read_bytes("data/generated/gba/trainers/front/" .. picId .. ".rgba")
+    PokedexChrome._images[key] = bytes and rgba_to_image(bytes, 64, 64) or false
   end
-  return PokedexChrome._images[key]
+  return PokedexChrome._images[key] or nil
 end
 
 --- Draw sprite as solid silhouette with authentic charcoal palette (#4A4A4A)
@@ -482,7 +615,8 @@ function PokedexChrome.drawSilhouette(img, x, y, scaleX, scaleY, originX, origin
   if PokedexChrome._silhouetteShader then
     love.graphics.setShader(PokedexChrome._silhouetteShader)
   end
-  love.graphics.setColor(74 / 255, 74 / 255, 74 / 255, 1)
+  local sr, sg, sb = PokedexChrome.getColor("silhouette")
+  love.graphics.setColor(sr or 74 / 255, sg or 74 / 255, sb or 74 / 255, 1)
   love.graphics.draw(img, x, y, 0, scaleX, scaleY, originX, originY)
   if PokedexChrome._silhouetteShader then
     love.graphics.setShader()
@@ -755,29 +889,66 @@ function PokedexChrome.drawMap(mapKey, x, y, scale)
   end
 end
 
---- Draw Area Route Marker (Steady slightly transparent red overlay)
-function PokedexChrome.drawAreaMarker(shape, x, y)
-  if not (love and love.graphics) then return end
+local AREA_MARKER_KEYS = {
+  MARKER_CIRCULAR = "marker_0",
+  MARKER_SMALL_H = "marker_1",
+  MARKER_SMALL_V = "marker_2",
+  MARKER_MED_H = "marker_3",
+  MARKER_MED_V = "marker_4",
+  MARKER_LARGE_H = "marker_5",
+  MARKER_LARGE_V = "marker_6",
+}
 
-  local shapeMap = {
-    MARKER_CIRCULAR = "marker_0",
-    MARKER_SMALL_H = "marker_1",
-    MARKER_SMALL_V = "marker_2",
-    MARKER_MED_H = "marker_3",
-    MARKER_MED_V = "marker_4",
-    MARKER_LARGE_H = "marker_5",
-    MARKER_LARGE_V = "marker_6",
-  }
-  local imgKey = shapeMap[shape] or "marker_0"
-  local img = PokedexChrome.getImage(imgKey)
-
-  love.graphics.setColor(1, 0.3, 0.3, 0.75)
+local function paint_area_marker(img, x, y)
   if img then
     love.graphics.draw(img, x, y)
   else
     love.graphics.ellipse("fill", x + 4, y + 4, 4, 4)
   end
+end
+
+--- Draw Area Route Marker (Steady slightly transparent red overlay)
+function PokedexChrome.drawAreaMarker(shape, x, y)
+  if not (love and love.graphics) then return end
+
+  local img = PokedexChrome.getImage(AREA_MARKER_KEYS[shape] or "marker_0")
+  local mr, mg, mb, ma = PokedexChrome.getColor("marker")
+  local eva, evb = PokedexChrome.getMarkerBlend()
+  if mr and eva then
+    -- src/pokedex_area_markers.c:219
+    local mode, alphaMode = love.graphics.getBlendMode()
+    love.graphics.setColor(0, 0, 0, 1 - evb)
+    paint_area_marker(img, x, y)
+    love.graphics.setBlendMode("add", "alphamultiply")
+    love.graphics.setColor(mr * eva, mg * eva, mb * eva, 1)
+    paint_area_marker(img, x, y)
+    love.graphics.setBlendMode(mode, alphaMode)
+  else
+    love.graphics.setColor(mr or 1, mg or 0.3, mb or 0.3, ma or 0.75)
+    paint_area_marker(img, x, y)
+  end
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- pokefirered/src/pokedex_screen.c:2901
+function PokedexChrome.footprintSource(speciesId)
+  local sp = tonumber(speciesId) or 1
+  local root = pokedex_root() .. "/footprints"
+  local Pokemon = require("src.core.game3.pokemon")
+  local rawName = Pokemon.name and Pokemon.name(sp) and Pokemon.name(sp):lower()
+  local name = rawName and rawName:gsub("[^%w_]", ""):gsub("♀", "_f"):gsub("♂", "_m")
+
+  local rels = { root .. "/" .. sp .. ".rgba" }
+  if name and name ~= "" then rels[#rels + 1] = root .. "/" .. name .. ".rgba" end
+  if rawName and rawName ~= "" then rels[#rels + 1] = root .. "/" .. rawName .. ".rgba" end
+  rels[#rels + 1] = root .. "/question_mark.rgba"
+  rels[#rels + 1] = root .. "/bulbasaur.rgba"
+
+  for _, rel in ipairs(rels) do
+    local bytes = read_bytes(rel)
+    if bytes then return bytes, rel end
+  end
+  return nil, nil
 end
 
 --- Draw Footprint (16x16, black footprint on transparent background)
@@ -785,16 +956,9 @@ function PokedexChrome.drawFootprint(speciesId, x, y, scale)
   if not (love and love.graphics) then return end
   scale = scale or 1
   local sp = tonumber(speciesId) or 1
-  local Pokemon = require("src.core.game3.pokemon")
-  local rawName = Pokemon.name and Pokemon.name(sp) and Pokemon.name(sp):lower()
-  local name = rawName and rawName:gsub("[^%w_]", ""):gsub("♀", "_f"):gsub("♂", "_m")
 
   if not PokedexChrome._footprints[sp] then
-    local root = pokedex_root() .. "/footprints"
-    local bytes = (name and read_bytes(root .. "/" .. name .. ".rgba"))
-      or (rawName and read_bytes(root .. "/" .. rawName .. ".rgba"))
-      or read_bytes(root .. "/question_mark.rgba")
-      or read_bytes(root .. "/bulbasaur.rgba")
+    local bytes = PokedexChrome.footprintSource(sp)
     if bytes then
       local img = rgba_to_image(bytes, 16, 16)
       if img then

@@ -161,7 +161,8 @@ check(VsSeeker.canUse(twins, 20, 0, s, store) == VsSeeker.NO_ONE_IN_RANGE, "no o
 print("=== step counter ===")
 local Bag = require("src.core.game3.bag")
 session.bag = Bag.new()
-Bag.add(session.bag, 374, 1)
+-- pokefirered/include/constants/items.h:434 ITEM_VS_SEEKER
+Bag.add(session.bag, 362, 1)
 s.steps = 99
 s.charging = 98
 s.rematches = { [10] = 3 }

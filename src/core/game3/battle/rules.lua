@@ -1,7 +1,7 @@
 -- Game3 battle rules (owned). Crit / weather mods / residual phase labels.
 
 local Capabilities = require("src.core.game3.battle.capabilities")
-local Strings = require("src.core.Strings")
+local Oak = require("src.core.game3.battle.oak_advice")
 
 local Rules = {}
 
@@ -79,18 +79,27 @@ function Rules.shouldHaltBattlerOnFaint(phase)
   return Rules.FAINT_HALT_PHASES[phase] == true
 end
 
+local function fallback_rng(lo, hi)
+  local okR, Rng = pcall(require, "src.core.game3.rng")
+  if okR and Rng and Rng.compat then
+    return Rng.compat(lo, hi)
+  end
+  return math.random(lo, hi)
+end
+
 -- Partial trap (Gen3)
 Rules.partialTrap = {}
 
+-- pokefirered/src/battle_util.c:886
 function Rules.partialTrap.chipAmount(maxHp)
   return math.max(1, math.floor((maxHp or 16) / Capabilities.partialTrapChipDenom))
 end
 
 -- pokefirered/src/battle_script_commands.c:2490
 function Rules.partialTrap.rollTurns(rng)
-  rng = rng or math.random
+  rng = rng or fallback_rng
   local ok, n = pcall(rng, 0, 3)
-  if not (ok and type(n) == "number") then n = math.random(0, 3) end
+  if not (ok and type(n) == "number") then n = fallback_rng(0, 3) end
   return (math.floor(n) % 4) + 3
 end
 
@@ -100,6 +109,98 @@ end
 
 -- pokefirered/src/battle_message.c:1263
 Rules.partialTrap.MOVES = { 20, 35, 83, 128, 250, 328 }
+
+Rules.safari = {}
+
+-- pokefirered/src/safari_zone.c:31
+Rules.safari.BALLS = 30
+Rules.safari.STEPS = 600
+
+-- pokefirered/src/battle_main.c:2284
+function Rules.safari.catchFactor(catchRate)
+  return math.floor((tonumber(catchRate) or 0) * 100 / 1275)
+end
+
+-- pokefirered/src/battle_main.c:2285
+function Rules.safari.escapeFactor(fleeRate)
+  local f = math.floor((tonumber(fleeRate) or 0) * 100 / 1275)
+  if f <= 1 then f = 2 end
+  return f
+end
+
+-- pokefirered/src/battle_main.c:2282
+function Rules.safari.newState(catchRate, fleeRate)
+  return {
+    balls = Rules.safari.BALLS,
+    catchFactor = Rules.safari.catchFactor(catchRate),
+    escapeFactor = Rules.safari.escapeFactor(fleeRate),
+    baseCatchRate = tonumber(catchRate) or 0,
+    rockCounter = 0,
+    baitCounter = 0,
+  }
+end
+
+local function throw_counter(rng)
+  local ok, n = pcall(rng or fallback_rng, 0, 4)
+  if not (ok and type(n) == "number") then n = fallback_rng(0, 4) end
+  return (math.floor(n) % 5) + 2
+end
+
+-- pokefirered/src/battle_main.c:4382
+function Rules.safari.throwBait(sf, rng)
+  if not sf then return end
+  sf.baitCounter = math.min(6, (sf.baitCounter or 0) + throw_counter(rng))
+  sf.rockCounter = 0
+  sf.catchFactor = math.floor((sf.catchFactor or 0) / 2)
+  if sf.catchFactor <= 2 then sf.catchFactor = 3 end
+end
+
+-- pokefirered/src/battle_main.c:4398
+function Rules.safari.throwRock(sf, rng)
+  if not sf then return end
+  sf.rockCounter = math.min(6, (sf.rockCounter or 0) + throw_counter(rng))
+  sf.baitCounter = 0
+  sf.catchFactor = (sf.catchFactor or 0) * 2
+  if sf.catchFactor > 20 then sf.catchFactor = 20 end
+end
+
+-- pokefirered/src/battle_main.c:4334
+function Rules.safari.watchStep(sf)
+  if not sf then return "watching" end
+  if (sf.rockCounter or 0) ~= 0 then
+    sf.rockCounter = sf.rockCounter - 1
+    if sf.rockCounter == 0 then
+      sf.catchFactor = Rules.safari.catchFactor(sf.baseCatchRate)
+      return "watching"
+    end
+    return "angry"
+  end
+  if (sf.baitCounter or 0) ~= 0 then
+    sf.baitCounter = sf.baitCounter - 1
+    if sf.baitCounter == 0 then return "watching" end
+    return "eating"
+  end
+  return "watching"
+end
+
+-- pokefirered/src/battle_ai_script_commands.c:1713
+function Rules.safari.fleeRate(sf)
+  if not sf then return 0 end
+  local rate
+  if (sf.rockCounter or 0) ~= 0 then
+    rate = math.min(20, (sf.escapeFactor or 0) * 2)
+  elseif (sf.baitCounter or 0) ~= 0 then
+    rate = math.max(1, math.floor((sf.escapeFactor or 0) / 4))
+  else
+    rate = sf.escapeFactor or 0
+  end
+  return rate * 5
+end
+
+-- pokefirered/src/battle_script_commands.c:9497
+function Rules.safari.ballCatchRate(sf)
+  return math.floor(((sf and sf.catchFactor) or 0) * 1275 / 100)
+end
 
 Rules.weather = {}
 
@@ -124,55 +225,6 @@ function Rules.weather.effective(st, adapter)
     end
   end
   return kind
-end
-
-local function fallback_rng(lo, hi)
-  local okR, Rng = pcall(require, "src.core.game3.rng")
-  if okR and Rng and Rng.compat then
-    return Rng.compat(lo, hi)
-  end
-  return math.random(lo, hi)
-end
-
--- Partial trap (Gen3)
-Rules.partialTrap = {}
-
-function Rules.partialTrap.chipAmount(maxHp)
-  return math.max(1, math.floor((maxHp or 16) / Capabilities.partialTrapChipDenom))
-end
-
--- pokefirered/src/battle_script_commands.c:2490
-function Rules.partialTrap.rollTurns(rng)
-  rng = rng or fallback_rng
-  local ok, n = pcall(rng, 0, 3)
-  if not (ok and type(n) == "number") then n = fallback_rng(0, 3) end
-  return (math.floor(n) % 4) + 3
-end
-
-local function partial_trap_name(moveId)
-  local ok, Moves = pcall(require, "src.core.game3.battle.moves")
-  if ok and Moves and Moves.displayName then
-    return Moves.displayName(moveId)
-  end
-  return tostring(moveId or Strings("the attack"))
-end
-
--- pokefirered/src/battle_message.c:1263
-function Rules.partialTrap.message(moveId)
-  local name = partial_trap_name(moveId)
-  return Strings("{DEFENDER} was trapped by %s!", name)
-end
-
--- pokefirered/src/battle_message.c:1268
-function Rules.partialTrap.squeezeMessage(moveId)
-  local name = partial_trap_name(moveId)
-  return Strings("{DEFENDER} is hurt by %s!", name)
-end
-
--- pokefirered/src/battle_message.c:1274
-function Rules.partialTrap.freedMessage(moveId)
-  local name = partial_trap_name(moveId)
-  return Strings("{DEFENDER} was freed from %s!", name)
 end
 
 function Rules.weather.typeModifier(weather, moveTypeName)
@@ -238,7 +290,9 @@ local function rollZeroTo(rng, den)
 end
 
 -- pokefirered/src/battle_script_commands.c:1199
-function Rules.crit.roll(attacker, moveOrId, highCrit, rng)
+function Rules.crit.roll(attacker, moveOrId, highCrit, rng, st)
+  -- pokefirered/src/battle_script_commands.c:1200
+  if Oak.active(st) and not Oak.testFlag(st, Oak.FLAG_INFLICT_DMG) then return false end
   local stage = Rules.crit.stage(attacker, moveOrId, highCrit)
   local den = Rules.crit.CHANCE[stage] or 2
   return rollZeroTo(rng, den) == 0

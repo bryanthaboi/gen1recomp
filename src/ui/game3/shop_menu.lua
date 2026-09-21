@@ -36,7 +36,23 @@ end
 local function set_money(session, amount)
   if not session then return end
   session.money = math.max(0, math.floor(tonumber(amount) or 0))
-  MoneyBox.update(session.money)
+end
+
+local function queue_shop_se(text, money)
+  local n = 0
+  for _ in tostring(text or ""):gmatch("[^\r\n]") do n = n + 1 end
+  ShopMenu._shopSe = { frames = n, money = money } -- pokefirered/src/menu_helpers.c:29
+end
+
+local function tick_shop_se(force)
+  local p = ShopMenu._shopSe
+  if not p then return false end
+  p.frames = p.frames - 1
+  if not force and p.frames > 0 then return false end
+  ShopMenu._shopSe = nil
+  MoneyBox.update(p.money)
+  se(248)
+  return true
 end
 
 local function buy_price(itemId)
@@ -98,6 +114,7 @@ function ShopMenu.show(opts)
   ShopMenu.qty = 1
   ShopMenu.yesNoCursor = 1
   ShopMenu._pending = nil
+  ShopMenu._shopSe = nil
   ShopMenu._items = opts.items or {}
   ShopMenu._session = opts.session
   ShopMenu._onClose = opts.onClose
@@ -107,7 +124,7 @@ function ShopMenu.show(opts)
   local okC, Chrome = pcall(require, "src.ui.game3.chrome")
   if okC and Chrome and Chrome.invalidate then Chrome.invalidate() end
   Stack.push("shop", ShopMenu, { hideBelow = false })
-  se(6)
+  -- pokefirered/src/shop.c:205
 end
 
 function ShopMenu.close()
@@ -183,7 +200,7 @@ local function begin_buy_qty(item)
     ShopMenu._status = Strings("You don't have enough money.")
     ShopMenu.mode = "buy_msg"
     ShopMenu._pending = nil
-    se(9)
+    se(5) -- pokefirered/src/shop.c:888
     return
   end
   ShopMenu._pending = item
@@ -212,7 +229,6 @@ local function commit_buy()
     ShopMenu._status = Strings("You don't have enough money.")
     ShopMenu.mode = "buy_msg"
     ShopMenu._pending = nil
-    se(9)
     return
   end
   local bag = session.bag
@@ -224,7 +240,6 @@ local function commit_buy()
     ShopMenu._status = Strings("There is no room in your BAG.")
     ShopMenu.mode = "buy_msg"
     ShopMenu._pending = nil
-    se(9)
     return
   end
   local ok = Bag.add(bag, p.id, ShopMenu.qty)
@@ -232,7 +247,6 @@ local function commit_buy()
     ShopMenu._status = Strings("There is no room in your BAG.")
     ShopMenu.mode = "buy_msg"
     ShopMenu._pending = nil
-    se(9)
     return
   end
   set_money(session, curMoney - cost)
@@ -254,7 +268,7 @@ local function commit_buy()
     ShopMenu._status = Strings("Here you are!\nThank you!")
   end
 
-  se(246)
+  queue_shop_se(ShopMenu._status, session.money) -- pokefirered/src/shop.c:999
   ShopMenu.mode = "buy_msg"
   ShopMenu._pending = nil
 end
@@ -273,7 +287,7 @@ local function commit_sell()
   ShopMenu._status = Strings("Turned over the %s and\nreceived ¥%d.", p.name, earn)
   ShopMenu.mode = "sell_msg"
   ShopMenu._pending = nil
-  se(246)
+  queue_shop_se(ShopMenu._status, session.money) -- pokefirered/src/item_menu.c:1931
 end
 
 function ShopMenu.handleInput(input)
@@ -284,7 +298,9 @@ function ShopMenu.handleInput(input)
       ShopMenu.mode = "buy"
       ShopMenu._status = nil
       clamp_buy_cursor()
-      se(5)
+      if not tick_shop_se(true) then se(5) end -- pokefirered/src/shop.c:1008
+    else
+      tick_shop_se(false)
     end
     return
   end
@@ -296,7 +312,9 @@ function ShopMenu.handleInput(input)
       ShopMenu.cursor = 1
       ShopMenu.scroll = 0
       clamp_sell_cursor()
-      se(5)
+      if not tick_shop_se(true) then se(5) end -- pokefirered/src/item_menu.c:1951
+    else
+      tick_shop_se(false)
     end
     return
   end
@@ -306,19 +324,19 @@ function ShopMenu.handleInput(input)
       ShopMenu.yesNoCursor = (ShopMenu.yesNoCursor == 1) and 2 or 1
       se(5)
     elseif input:wasPressed("a") then
+      se(5) -- pokefirered/src/menu_helpers.c:52
       if ShopMenu.yesNoCursor == 1 then
         commit_buy()
       else
         ShopMenu.mode = "buy"
         ShopMenu._pending = nil
         ShopMenu._status = nil
-        se(9)
       end
     elseif input:wasPressed("b") then
       ShopMenu.mode = "buy"
       ShopMenu._pending = nil
       ShopMenu._status = nil
-      se(9)
+      se(5) -- pokefirered/src/menu_helpers.c:57
     end
     return
   end
@@ -328,19 +346,19 @@ function ShopMenu.handleInput(input)
       ShopMenu.yesNoCursor = (ShopMenu.yesNoCursor == 1) and 2 or 1
       se(5)
     elseif input:wasPressed("a") then
+      se(5) -- pokefirered/src/menu_helpers.c:52
       if ShopMenu.yesNoCursor == 1 then
         commit_sell()
       else
         ShopMenu.mode = "sell"
         ShopMenu._pending = nil
         ShopMenu._status = nil
-        se(9)
       end
     elseif input:wasPressed("b") then
       ShopMenu.mode = "sell"
       ShopMenu._pending = nil
       ShopMenu._status = nil
-      se(9)
+      se(5) -- pokefirered/src/menu_helpers.c:57
     end
     return
   end
@@ -374,7 +392,7 @@ function ShopMenu.handleInput(input)
       ShopMenu.mode = "buy"
       ShopMenu._pending = nil
       ShopMenu._status = nil
-      se(9)
+      se(5) -- pokefirered/src/shop.c:962
     end
     return
   end
@@ -405,7 +423,7 @@ function ShopMenu.handleInput(input)
       ShopMenu.mode = "sell"
       ShopMenu._pending = nil
       ShopMenu._status = nil
-      se(9)
+      se(5) -- pokefirered/src/item_menu.c:1459
     end
     return
   end
@@ -424,7 +442,7 @@ function ShopMenu.handleInput(input)
       se(5)
     elseif input:wasPressed("a") then
       if ShopMenu.cursor > #rows then
-        se(9)
+        se(5) -- pokefirered/src/shop.c:884
         do_fade_transition(function()
           ShopMenu.mode = "root"
           ShopMenu.cursor = 1
@@ -434,7 +452,7 @@ function ShopMenu.handleInput(input)
         begin_buy_qty(rows[ShopMenu.cursor])
       end
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/shop.c:884
       do_fade_transition(function()
         ShopMenu.mode = "root"
         ShopMenu.cursor = 1
@@ -458,7 +476,7 @@ function ShopMenu.handleInput(input)
       se(5)
     elseif input:wasPressed("a") then
       if ShopMenu.cursor > #rows then
-        se(9)
+        se(5) -- pokefirered/src/item_menu.c:1084
         do_fade_transition(function()
           ShopMenu.mode = "root"
           ShopMenu.cursor = 2
@@ -468,7 +486,7 @@ function ShopMenu.handleInput(input)
         begin_sell_qty(rows[ShopMenu.cursor])
       end
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/item_menu.c:1078
       do_fade_transition(function()
         ShopMenu.mode = "root"
         ShopMenu.cursor = 2
@@ -489,7 +507,7 @@ function ShopMenu.handleInput(input)
     elseif input:wasPressed("a") then
       local e = ShopMenu.ROOT[ShopMenu.cursor]
       if not e or e.id == "quit" then
-        se(9)
+        se(5) -- pokefirered/src/menu.c:376
         ShopMenu.close()
         return
       elseif e.id == "buy" then
@@ -505,7 +523,7 @@ function ShopMenu.handleInput(input)
         local sellRows = bag_sell_rows(ShopMenu._session and ShopMenu._session.bag)
         if #sellRows < 1 then
           ShopMenu._status = Strings("You don't have anything to sell.")
-          se(9)
+          se(5) -- pokefirered/src/menu.c:376
         else
           se(5)
           do_fade_transition(function()
@@ -518,7 +536,7 @@ function ShopMenu.handleInput(input)
         end
       end
     elseif input:wasPressed("b") or input:wasPressed("start") then
-      se(9)
+      se(5) -- pokefirered/src/shop.c:265
       ShopMenu.close()
     end
   end
@@ -651,7 +669,8 @@ function ShopMenu.draw()
       inBagCount = Bag.get(session.bag, activeId)
     end
     Window.stdFrame(Window.template(1, 11, 13, 2))
-    Window.printPx(Strings("IN BAG:"), 12, 89, { small = true })
+    -- pokefirered/src/strings.c:218
+    Window.printPx(Strings("IN BAG:"), 12, 89)
     local countStr = tostring(inBagCount)
     local cw = (FrlgFont.measure and FrlgFont.measure(countStr, { small = true })) or (6 * #countStr)
     Window.printPx(countStr, math.max(64, 106 - cw), 89, { small = true })

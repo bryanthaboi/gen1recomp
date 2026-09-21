@@ -541,8 +541,10 @@ return {
     abilityDesc = { x = 10, y = 143, w = 232, h = 16 },
     status = { x = 16, y = 38 },
     statusMovesInfo = { x = 16, y = 45 },
-    shinyStar = { x = 8, y = 40 },
-    pokerus = { x = 8, y = 44 },
+    -- src/pokemon_summary_screen.c:4800, :4830, :4716
+    shinyStar = { x = 102, y = 36 },
+    shinyStarMovesInfo = { x = 4, y = 20 },
+    pokerus = { x = 110, y = 88 },
   },
   -- WIN_MOVES_5 types at (120,16); WIN_MOVES_3 names/PP at (160,16)
   -- GetMoveNamePrinterYpos(i)=i*28+5, GetMovePpPrinterYpos(i)=i*28+16

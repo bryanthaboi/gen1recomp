@@ -45,16 +45,18 @@ end
 
 local push_event = StepEvents.queueEvent
 
--- pokefirered/src/metatile_behavior.c:266
+-- pokefirered/src/field_control_avatar.c:658
 local function forced_step()
+  local ForcedMovement = package.loaded["src.core.game3.forced_movement"]
+    or require("src.core.game3.forced_movement")
+  if ForcedMovement.isForced() then return true end
   local Player = package.loaded["src.core.game3.player"]
   local Collision = package.loaded["src.core.game3.collision"]
   if not (Player and Collision and Collision.behavior) then return false end
   local ok, mb = pcall(Collision.behavior, Player.cellX, Player.cellY)
   mb = ok and tonumber(mb) or nil
   if not mb then return false end
-  return (mb >= 0x40 and mb <= 0x48) or (mb >= 0x50 and mb <= 0x53)
-    or mb == 0x13 or mb == 0x23 or (mb >= 0x54 and mb <= 0x57)
+  return ForcedMovement.isForcedMovementTile(mb)
 end
 
 local function party_is_wiped(party)
@@ -133,18 +135,18 @@ function StepEvents.onStepTaken(session, game)
   local hapSteps = (tonumber(session.vars[0x403F] or session.happinessSteps) or 0) + 1
   if hapSteps >= 128 then
     hapSteps = 0
+    -- pokefirered/src/field_control_avatar.c:699
+    local ctx = { mapSec = Pokemon.currentMapSec(session) }
     for _, mon in ipairs(party) do
-      if not (mon.isEgg or (type(mon.egg) == "boolean" and mon.egg)) then
-        local curHap = tonumber(mon.friendship or mon.happiness) or 70
-        if curHap < 255 then
-          mon.friendship = math.min(255, curHap + 1)
-          mon.happiness = mon.friendship
-        end
-      end
+      Pokemon.adjustFriendship(mon, Pokemon.FRIENDSHIP_EVENT_WALKING, ctx)
     end
   end
   session.vars[0x403F] = hapSteps
   session.happinessSteps = hapSteps
+
+  -- pokefirered/src/field_specials.c:2068
+  local massage = tonumber(session.vars[0x4025]) or 0
+  if massage < 500 then session.vars[0x4025] = massage + 1 end
 
   -- pokefirered/src/field_control_avatar.c:658
   local vsChargeDone = false
@@ -177,6 +179,9 @@ function StepEvents.onStepTaken(session, game)
         anyPoisonDamage = true
         mon.hp = math.max(0, hp - 1)
         if mon.hp == 0 then
+          -- pokefirered/src/field_poison.c:36
+          Pokemon.adjustFriendship(mon, Pokemon.FRIENDSHIP_EVENT_FAINT_OUTSIDE_BATTLE,
+            { mapSec = Pokemon.currentMapSec(session) })
           mon.status = nil
           mon.statusNum = 0
           faintedMons[#faintedMons + 1] = {
@@ -260,6 +265,18 @@ function StepEvents.onStepTaken(session, game)
     end
   end
   session.eggSteps = eggSteps
+
+  -- pokefirered/src/safari_zone.c:60 CB2_EndSafariBattle
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field.pollSafariBalls and Field.pollSafariBalls(game) then
+    return
+  end
+
+  -- pokefirered/src/field_control_avatar.c:677
+  local okSafari, Safari = pcall(require, "src.core.game3.safari")
+  if okSafari and Safari and Safari.takeStep and Safari.takeStep(session, game) then
+    return
+  end
 
   StepEvents.onRepelStep(session, game)
 end

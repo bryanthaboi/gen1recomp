@@ -295,13 +295,20 @@ function Map.load(mod, game, mapId, opts)
   Map.ensureMidLayout(game, mapId, def)
   Map._def = def
   Map._currentDef = def
-  -- Dismount bicycle when entering non-outdoor maps.
+  -- pokefirered/src/overworld.c:878 GetAdjustedInitialTransitionFlags
+  local keepBike = false
   do
     local Player = require("src.core.game3.player")
     if Player.biking then
-      local pair = def and (def.pair or (def.midLayout and def.midLayout.pair))
-      local outdoor = type(pair) == "string" and pair:find("outdoor", 1, true)
-      if not outdoor then Player.biking = false end
+      local allowed = def and def.bikingAllowed
+      if allowed ~= nil then
+        -- pokefirered/src/overworld.c:948 Overworld_IsBikingAllowed
+        keepBike = (tonumber(allowed) or 0) ~= 0
+      else
+        local pair = def and (def.pair or (def.midLayout and def.midLayout.pair))
+        keepBike = type(pair) == "string" and pair:find("outdoor", 1, true) ~= nil
+      end
+      Player.biking = keepBike
     end
   end
   if opts.depth1Connections ~= false then
@@ -352,6 +359,8 @@ function Map.load(mod, game, mapId, opts)
   else
     Player.reset(x, y, facing)
   end
+  -- pokefirered/src/overworld.c:2145 SetPlayerAvatarTransitionFlags
+  Player.biking = keepBike
   Player.syncSavePosition(game)
 
   local okFv, FieldView = pcall(require, "src.core.game3.field_view")
@@ -365,6 +374,8 @@ function Map.load(mod, game, mapId, opts)
     Space.attachEventsToMaps({ [mapId] = def }, Space.bundle)
   end
 
+  -- pokefirered/src/fieldmap.c:93
+  require("src.core.game3.field").clearMetatiles(def and def.midLayout)
   local Collision = require("src.core.game3.collision")
   if def then Collision.bindMap(game, mapId, def) end
 
@@ -402,13 +413,14 @@ function Map.load(mod, game, mapId, opts)
     Space.activate(mod or Runtime._mod, mapId, game, world)
   end
 
-  -- Strength flag is map-instance local in FRLG (clears on map change / warp).
-  if Space and Space.store then
-    local Flags = require("src.core.game3.scripting.flags")
-    Flags.setFlag(Space.store, nil, 0x804, false)
-  end
-  if session and session.flags then
-    session.flags[0x804] = nil
+  -- pokefirered/src/overworld.c:805
+  local savedFlash = session and tonumber(session.flashLevel)
+  if okFv and FieldView and FieldView.setDefaultFlashLevel then
+    FieldView.setDefaultFlashLevel(game, mapId)
+    -- pokefirered/src/overworld.c:1691 CB2_ContinueSavedGame
+    if savedFlash and (opts.enterVia or Map._nextEnterVia) == "continue" then
+      FieldView.setFlashLevel(savedFlash)
+    end
   end
 
   if def then
@@ -430,8 +442,12 @@ function Map.load(mod, game, mapId, opts)
         or (opts.heal and "respawn") or (fromMapId and "warp" or "boot"),
     })
   end
+  -- pokefirered/src/overworld.c:1717
+  local enterVia = opts.enterVia or Map._nextEnterVia
+  Map._nextEnterVia = nil
   if Space and Space.runEnterScripts then
-    Space.runEnterScripts(mod or Runtime._mod, mapId, game, world)
+    Space.runEnterScripts(mod or Runtime._mod, mapId, game, world,
+      { seamless = opts.seamless, enterVia = enterVia })
   elseif Space and Space.onMapEnter then
     Space.onMapEnter(mod or Runtime._mod, mapId, game, world)
   end

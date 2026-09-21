@@ -11,6 +11,8 @@ Runtime._mod = nil
 Runtime._game = nil
 Runtime._fieldLocked = false
 Runtime._playTimeAcc = 0
+Runtime._deferred = nil
+Runtime._menuFocus = false
 
 local function log(msg)
   print("[game3] " .. tostring(msg))
@@ -27,6 +29,62 @@ end
 
 function Runtime.getSession()
   return Runtime.session
+end
+
+function Runtime.defer(fn)
+  if type(fn) ~= "function" or not Runtime.active then return false end
+  local q = Runtime._deferred
+  if not q then
+    q = {}
+    Runtime._deferred = q
+  end
+  q[#q + 1] = fn
+  return true
+end
+
+function Runtime.drainDeferred()
+  local q = Runtime._deferred
+  if not q then return 0 end
+  Runtime._deferred = nil
+  for i = 1, #q do
+    local ok, err = pcall(q[i])
+    if not ok then log("deferred call failed: " .. tostring(err)) end
+  end
+  return #q
+end
+
+-- pokefirered/src/start_menu.c:1003
+function Runtime.fieldScreenOpen(menuOpen)
+  if menuOpen == nil then
+    local Hud = require("src.ui.game3.hud")
+    menuOpen = Hud.isMenuOpen and Hud.isMenuOpen() or false
+  end
+  if not menuOpen then return false end
+  local Stack = package.loaded["src.ui.game3.stack"]
+  if Stack and Stack.depth and Stack.has and Stack.has("start") then
+    local depth = Stack.depth()
+    -- pokefirered/src/start_menu.c:577
+    if depth == 1 or (depth == 2 and Stack.has("save")) then
+      return false
+    end
+  end
+  return true
+end
+
+-- pokefirered/src/overworld.c:1936
+function Runtime.noteFieldFocus(screenOpen)
+  local was = Runtime._menuFocus == true
+  Runtime._menuFocus = screenOpen and true or false
+  if screenOpen or not was then return false end
+  local Battle = package.loaded["src.core.game3.battle"]
+  if Battle and Battle.isActive and Battle.isActive() then return false end
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if not (Space and Space.active and Space.vm) then return false end
+  if Space.vm.isRunning and Space.vm:isRunning() then return false end
+  local iv = Space._immediateVm
+  if iv and iv.isRunning and iv:isRunning() then return false end
+  local ok, ran = pcall(Space.returnToField)
+  return ok and ran == true
 end
 
 function Runtime.pumpRtc(game, dt)
@@ -96,6 +154,10 @@ function Runtime.start(mod, game, session, opts)
   Runtime._game = game
   Runtime.session = session
   Runtime.active = true
+  Runtime._deferred = nil
+  Runtime._menuFocus = false
+  local CameraObject = require("src.core.game3.camera_object")
+  CameraObject.reset()
   mark_host_game3(game, true)
 
   log(string.format(
@@ -150,6 +212,10 @@ function Runtime.stop(mod, game)
   mark_host_game3(game or Runtime._game, false)
   Runtime.active = false
   Runtime.session = nil
+  Runtime._deferred = nil
+  Runtime._menuFocus = false
+  local okCam, CameraObject = pcall(require, "src.core.game3.camera_object")
+  if okCam and CameraObject then CameraObject.reset() end
   local Space = package.loaded["src.core.game3.scripting.space"]
   if Space and Space.deactivate then
     Space.deactivate(mod or Runtime._mod)
@@ -163,6 +229,15 @@ function Runtime.update(dt)
   local game = Runtime._game
   local Hud = require("src.ui.game3.hud")
   local inMenu = Hud.isMenuOpen and Hud.isMenuOpen() or false
+  Runtime.drainDeferred()
+  Runtime.noteFieldFocus(Runtime.fieldScreenOpen(inMenu))
+
+  -- pokefirered/src/field_control_avatar.c:94 FieldGetPlayerInput
+  if inMenu then
+    Hud.clearFieldInput()
+  else
+    Hud.sampleFieldInput(game)
+  end
 
   if not inMenu then
     Runtime.pumpRtc(game, dt)

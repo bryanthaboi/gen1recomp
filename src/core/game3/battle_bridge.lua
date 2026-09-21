@@ -4,6 +4,7 @@
 local Party = require("src.core.game3.party")
 local PartyView = require("src.core.game3.battle.party_view")
 local Downgrade = require("src.core.game3.battle_downgrade")
+local Pokemon = require("src.core.game3.pokemon")
 local ModRuntime = require("src.mods.Runtime")
 
 local BattleBridge = {}
@@ -18,6 +19,33 @@ local function runtimeActive()
   local Runtime = package.loaded["src.core.game3.runtime"]
   return Runtime and Runtime.isActive and Runtime.isActive()
 end
+
+-- pokefirered/include/constants/flags.h:1327
+local FLAG_SYS_SAFARI_MODE = 0x800
+
+-- pokefirered/src/battle_setup.c:239
+local function safari_mode_active(session)
+  if session and session.safari and session.safari.active then return true end
+  local okS, Space = pcall(require, "src.core.game3.scripting.space")
+  if not okS or not Space or not Space.store then return false end
+  local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+  if not okF or not Flags or not Flags.getFlag then return false end
+  return Flags.getFlag(Space.store, nil, FLAG_SYS_SAFARI_MODE) and true or false
+end
+
+-- pokefirered/src/overworld.c:1270
+local function map_battle_scene(mapId, game)
+  if type(mapId) ~= "string" then return nil end
+  local g = game
+  if not g then
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    g = Runtime and Runtime._game
+  end
+  local def = g and g.data and g.data.maps and g.data.maps[mapId]
+  if not def then return nil end
+  return tonumber(def.battleType)
+end
+BattleBridge.mapBattleScene = map_battle_scene
 
 local BADGE_LOSS_MULT = { 2, 4, 6, 9, 12, 16, 20, 25, 30 } -- index 0..8 badges
 local BADGE_FLAGS = {
@@ -175,6 +203,9 @@ local function writeback(session, battleParty, remap, result, save, opts)
         speciesId = src.speciesId or src.species,
         name = src.name,
         growthRate = src.growthRate,
+        evs = src.evs,
+        friendship = src.friendship,
+        pokerus = src.pokerus,
         attack = src.attack or src.atk,
         defense = src.defense or src.def,
         speed = src.speed or src.spe,
@@ -202,6 +233,35 @@ local function writeback(session, battleParty, remap, result, save, opts)
   Field.respawnAtHeal()
 end
 
+-- pokefirered/src/pokemon.c:5483
+local function league_trainer_class(foe, opts)
+  local tid = tonumber((opts and opts.trainerId) or (foe and foe.trainerId))
+  if tid then
+    local okT, Trainers = pcall(require, "src.core.game3.scripting.trainers")
+    local info = okT and Trainers and Trainers.info and Trainers.info(tid)
+    if info and info.class ~= nil then return info.class end
+  end
+  return foe and foe.trainerClass
+end
+
+-- pokefirered/src/battle_main.c:713
+function BattleBridge.applyLeagueFriendship(session, battleParty, foe, opts)
+  opts = opts or {}
+  if opts.wild or type(session) ~= "table" then return false end
+  if not Pokemon.isLeagueTrainerClass(league_trainer_class(foe, opts)) then return false end
+  local ctx = { leagueBattle = true, mapSec = Pokemon.currentMapSec(session) }
+  local changed = false
+  for i, mon in ipairs(session.party or {}) do
+    if Pokemon.adjustFriendship(mon, Pokemon.FRIENDSHIP_EVENT_LEAGUE_BATTLE, ctx) then
+      changed = true
+      if battleParty and battleParty[i] then
+        battleParty[i].friendship = Pokemon.friendshipOf(mon)
+      end
+    end
+  end
+  return changed
+end
+
 --- Start owned game3 battle (async). opts.done(result) when finished.
 -- opts.earlyRival / opts.rivalFlags / opts.noWhiteout: Oaks Lab tutorial loss.
 function BattleBridge.start(mod, game, foe, opts)
@@ -222,6 +282,8 @@ function BattleBridge.start(mod, game, foe, opts)
   BattleBridge._remap = remap
   BattleBridge._battleParty = battleParty
 
+  BattleBridge.applyLeagueFriendship(session, battleParty, foe, opts)
+
   local save = game and game.save
   local done = opts.done
 
@@ -230,6 +292,11 @@ function BattleBridge.start(mod, game, foe, opts)
   end
 
   local function finish(result)
+    -- pokefirered/src/battle_main.c:196
+    local okN, Natives = pcall(require, "src.core.game3.scripting.natives")
+    if okN and Natives and Natives.outcome_to_code then
+      session.battleOutcome = Natives.outcome_to_code(result or "win")
+    end
     writeback(session, battleParty, remap, result, save, opts)
     -- pokefirered/src/battle_main.c:3861
     if ModRuntime.wants("battle.ended") then
@@ -248,6 +315,11 @@ function BattleBridge.start(mod, game, foe, opts)
     if okF and Fade and Fade.begin and not opts.headless and opts.fade ~= false then
       Fade.begin(Fade.MODE.FROM_BLACK, 1)
     end
+    -- pokefirered/src/battle_setup.c:432
+    local okS, Space = pcall(require, "src.core.game3.scripting.space")
+    if okS and Space and Space.returnToField then
+      pcall(Space.returnToField)
+    end
     if done then done(result or "win") end
   end
   BattleBridge._finish = finish
@@ -257,6 +329,20 @@ function BattleBridge.start(mod, game, foe, opts)
   local mapId = Map.current
   local mapDef = game and game.data and game.data.maps and mapId and game.data.maps[mapId]
   local mapKind = (mapDef and mapDef.kind) or opts.mapKind
+  local mapType = (mapDef and mapDef.mapType) or opts.mapType
+  local mapBattleScene = (mapDef and mapDef.battleType) or opts.mapBattleScene
+    or map_battle_scene(mapId, game)
+  -- pokefirered/src/battle_setup.c:471 PlayerGetDestCoords
+  local mapBehavior = opts.mapBehavior
+  if mapBehavior == nil then
+    local okC, Collision = pcall(require, "src.core.game3.collision")
+    local okP, Player = pcall(require, "src.core.game3.player")
+    if okC and okP and Collision.behavior then
+      local bx, by = Player.cellX, Player.cellY
+      if Player.moving then bx, by = Player.targetX, Player.targetY end
+      mapBehavior = Collision.behavior(bx, by)
+    end
+  end
 
   local gender = 0
   if session.gender == "female" or session.gender == "F" or session.gender == 1 then
@@ -265,12 +351,20 @@ function BattleBridge.start(mod, game, foe, opts)
     gender = 1
   end
 
+  local wildScripted = opts.wildScripted or (foe and foe.wildScripted)
+  local legendary = opts.legendary or (foe and foe.legendary)
+  local roamer = opts.roamer or (foe and foe.roamer)
+  -- pokefirered/src/battle_setup.c:237
+  local standardWild = opts.wild and not opts.trainerId
+    and not wildScripted and not legendary and not roamer
+    and not opts.firstBattle and not opts.oldManTutorial
   local startOpts = {
     wild = opts.wild,
-    wildScripted = opts.wildScripted or (foe and foe.wildScripted),
-    legendary = opts.legendary or (foe and foe.legendary),
-    safari = opts.safari or (foe and foe.safari),
-    roamer = opts.roamer or (foe and foe.roamer),
+    wildScripted = wildScripted,
+    legendary = legendary,
+    safari = opts.safari or (foe and foe.safari)
+      or (standardWild and safari_mode_active(session)) or nil,
+    roamer = roamer,
     firstBattle = opts.firstBattle or (foe and foe.firstBattle),
     oldManTutorial = opts.oldManTutorial or (foe and foe.oldManTutorial),
     aiFlags = opts.aiFlags or (foe and foe.aiFlags),
@@ -281,10 +375,15 @@ function BattleBridge.start(mod, game, foe, opts)
     fade = opts.fade,
     rng = opts.rng,
     mapKind = mapKind,
+    mapType = mapType,
+    mapBehavior = mapBehavior,
+    mapBattleScene = mapBattleScene,
     terrain = opts.terrain,
     trainerId = opts.trainerId or (foe and foe.trainerId),
     defeatText = opts.defeatText or (foe and foe.defeatText),
     victoryText = opts.victoryText or (foe and foe.victoryText),
+    earlyRival = opts.earlyRival,
+    rivalFlags = opts.rivalFlags,
     rivalName = opts.rivalName or session.rivalName or (save and save.rivalName),
     playerGender = opts.playerGender or gender,
     onDone = function(result)
@@ -316,14 +415,11 @@ function BattleBridge.start(mod, game, foe, opts)
     else
       local tid = (so and so.trainerId) or (o and o.trainerId) or (o and o.foe and o.foe.trainerId)
       local okTr, Trainers = pcall(require, "src.core.game3.scripting.trainers")
-      local info = okTr and Trainers and tid and Trainers.info(tid)
-      local classId = info and info.classId
-      if classId == 90 then
-        return Audio.role("battleChampion") or 299
-      elseif classId == 84 or classId == 87 then
-        return Audio.role("battleGymLeader") or 296
+      if not (okTr and Trainers and Trainers.getBattleMusicRole) then
+        return Audio.role("battleTrainer") or 297
       end
-      return Audio.role("battleTrainer") or 297
+      local role, fallback = Trainers.getBattleMusicRole(tid)
+      return Audio.role(role) or fallback
     end
   end
 

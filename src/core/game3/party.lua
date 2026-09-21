@@ -39,13 +39,14 @@ function Party.writeBack(hostParty, sessionParty)
   end
 end
 
---- Field-wise battle writeback onto an opaque mon (HP/status/exp/level/PP/moves).
---- Never touches dvs / ivs / evs / statexp.
 function Party.applyBattleFields(opaqueMon, fields)
   if type(opaqueMon) ~= "table" or type(fields) ~= "table" then return end
+  if fields.friendship ~= nil then
+    fields.happiness = fields.friendship
+  end
   for _, key in ipairs({
     "hp", "maxHp", "status", "sleep", "level", "exp",
-    "happiness", "item", "heldItem",
+    "happiness", "friendship", "evs", "pokerus", "item", "heldItem",
     "species", "speciesId", "name", "growthRate",
     "attack", "defense", "speed", "spAtk", "spDef",
     "atk", "def", "spe", "spa", "spd",
@@ -149,12 +150,16 @@ function Party.monsStateToDoubles(sessionParty)
   return (usable > 1) and Party.PLAYER_HAS_TWO_USABLE_MONS or Party.PLAYER_HAS_ONE_USABLE_MON
 end
 
+-- pokefirered/include/constants/pokemon.h:193
+Party.MON_GIVEN_TO_PARTY = 0
+Party.MON_GIVEN_TO_PC = 1
+Party.MON_CANT_GIVE = 2
+
 --- Append a Gen3-shaped opaque mon for script givemon (starter / gifts).
--- Returns true if added to party (slot available).
-function Party.giveMon(session, species, level, nickname)
-  if type(session) ~= "table" then return false end
+-- pokefirered/src/pokemon.c:3686
+function Party.giveMon(session, species, level, nickname, opts)
+  if type(session) ~= "table" then return false, Party.MON_CANT_GIVE end
   session.party = session.party or {}
-  if #session.party >= 6 then return false end
   species = tonumber(species) or 1
   level = tonumber(level) or 5
   if level < 1 then level = 1 end
@@ -194,6 +199,7 @@ function Party.giveMon(session, species, level, nickname)
   local mon = {
     species = species,
     speciesId = species,
+    speciesNumbering = Pokemon.NUMBERING_INTERNAL,
     name = name,
     nickname = type(nickname) == "string" and nickname or "",
     level = level,
@@ -213,38 +219,67 @@ function Party.giveMon(session, species, level, nickname)
     gender = gender,
     happiness = friendship,
     friendship = friendship,
+    -- pokefirered/src/pokemon.c:1815 CreateBoxMon
+    metLocation = Pokemon.currentMapSec and Pokemon.currentMapSec(session) or nil,
+    pokerus = 0,
     ot = session.name or session.playerName or "RED",
     otName = session.name or session.playerName or "RED",
     otId = session.trainerId or session.id or session.playerId or 12345,
+    -- pokefirered/src/pokemon.c:1796 CreateBoxMon OT_ID_PLAYER_ID
+    otSecretId = tonumber(session.secretId or session.otSecretId) or nil,
     pokeball = 4, -- Poké Ball
   }
   Pokemon.applyStats(mon)
 
-  session.party[#session.party + 1] = mon
+  local code, boxId, slotIdx
+  if #session.party < 6 then
+    session.party[#session.party + 1] = mon
+    code = Party.MON_GIVEN_TO_PARTY
+  elseif opts and opts.toPC then
+    local Storage = require("src.core.game3.storage")
+    local sent, b, s = Storage.sendMonToPC(session, mon)
+    code = sent and Party.MON_GIVEN_TO_PC or Party.MON_CANT_GIVE
+    boxId, slotIdx = b, s
+  else
+    code = Party.MON_CANT_GIVE
+  end
+  if code == Party.MON_CANT_GIVE then
+    return false, code, nil
+  end
+  -- pokefirered/src/script_pokemon_util.c:66
   session.dex = session.dex or { seen = {}, owned = {} }
   session.dex.seen = session.dex.seen or {}
   session.dex.owned = session.dex.owned or {}
   session.dex.seen[species] = true
   session.dex.owned[species] = true
-  return true
+  return true, code, mon, boxId, slotIdx
 end
 
 --- Give an egg for script giveegg.
-function Party.giveEgg(session, species)
-  if not session or not session.party then return false end
-  if #session.party >= 6 then return false end
+-- pokefirered/src/script_pokemon_util.c:75
+function Party.giveEgg(session, species, opts)
+  if not session or not session.party then return false, Party.MON_CANT_GIVE end
   species = tonumber(species) or 1
-  local Pokemon = require("src.core.game3.pokemon")
-  local ok = Party.giveMon(session, species, 5, "EGG")
-  if ok then
-    local egg = session.party[#session.party]
-    if egg then
-      egg.isEgg = true
-      egg.name = "EGG"
-      egg.nickname = "EGG"
-    end
+  local ok, code, egg = Party.giveMon(session, species, 5, "EGG", opts)
+  if ok and egg then
+    egg.isEgg = true
+    egg.name = "EGG"
+    egg.nickname = "EGG"
   end
-  return ok
+  return ok, code, egg
+end
+
+-- pokefirered/src/script_pokemon_util.c:48
+function Party.giveMonToPlayer(session, species, level, nickname)
+  local _, code, mon, boxId, slotIdx =
+    Party.giveMon(session, species, level, nickname, { toPC = true })
+  return code or Party.MON_CANT_GIVE, mon, boxId, slotIdx
+end
+
+-- pokefirered/src/script_pokemon_util.c:75
+function Party.giveEggToPlayer(session, species)
+  local _, code, egg = Party.giveEgg(session, species, { toPC = true })
+  return code or Party.MON_CANT_GIVE, egg
 end
 
 --- Prove DVs/Stat Exp bit-identical between two opaque snapshots.

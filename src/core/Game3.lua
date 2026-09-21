@@ -24,6 +24,9 @@ local function noop() end
 
 Game3.SKIN_FAST_FORWARD = 4
 
+-- pokefirered/src/item_use.c:159 SetUpItemUseOnFieldCallback
+local FIELD_CB_SILENT = { bike = true, rod = true, map = true, escape = true }
+
 function Game3.new()
   return setmetatable({
     input = Input,
@@ -78,17 +81,19 @@ function Game3:_enterField(session, reason)
   end
   session._questNewScene=true
   if reason == "continue" then session._questMap=session.map end
-  require("src.core.game3.map")._announced = nil
-  Runtime.start(nil, self, session, { reason = reason or "new_game" })
-  -- Runtime.start already Map.loads unless alreadyOnMap; keep explicit reload for
-  -- session x/y/facing in case start opts change.
   local Map = require("src.core.game3.map")
-  Map.load(nil, self, session.map, {
-    x = session.x,
-    y = session.y,
-    facing = session.facing,
-  })
-  -- Map.load plays header / index mapSongs BGM.
+  Map._announced = nil
+  Map._nextEnterVia = (reason == "continue") and "continue" or "new_game"
+  -- pokefirered/src/fieldmap.c:100
+  Runtime.start(nil, self, session, { reason = reason or "new_game" })
+  Map._nextEnterVia = nil
+  if reason == "continue" then
+    -- pokefirered/src/overworld.c:1717
+    local okS, Space = pcall(require, "src.core.game3.scripting.space")
+    if okS and Space and Space.runOnReturnToField then
+      Space.runOnReturnToField()
+    end
+  end
 end
 
 function Game3:load(opts)
@@ -352,6 +357,11 @@ function Game3:_handleRegisteredItem()
     elseif text then
       require("src.ui.game3.hud").openMessage(self, text)
     end
+    return
+  end
+  -- pokefirered/src/item_use.c:159 SetUpItemUseOnFieldCallback
+  if text and not (ok and FIELD_CB_SILENT[kind]) then
+    require("src.ui.game3.hud").openMessage(self, text)
   end
 end
 
@@ -908,15 +918,39 @@ function Game3:onResume()
   Audio.onFocusGained()
 end
 
+-- pokefirered/src/main.c:480
+local FIELD_SCREENS = {
+  "src.ui.game3.choice",
+  "src.ui.game3.message",
+  "src.ui.game3.money_box",
+  "src.ui.game3.coins_box",
+  "src.ui.game3.elevator_window",
+}
+
+local function clearFieldScreens()
+  for _, name in ipairs(FIELD_SCREENS) do
+    local ok, mod = pcall(require, name)
+    if ok and type(mod) == "table" then
+      local fn = mod.reset or mod.hide
+      if fn then pcall(fn) end
+    end
+  end
+end
+
 function Game3:returnToTitle()
   self.questPlayback=nil
   Help.reset()
   Audio.stopAll()
   local Stack = require("src.ui.game3.stack")
   Stack.clear()
+  clearFieldScreens()
   if Runtime.isActive() then
     Runtime.stop(nil, self)
   end
+  local Objects = package.loaded["src.core.game3.objects"]
+  if Objects and Objects.reset then pcall(Objects.reset) end
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field.clearMetatiles then pcall(Field.clearMetatiles) end
   self.phase = "boot"
   self.session = nil
 
@@ -953,15 +987,18 @@ function Game3:reset()
   Help.reset()
   Audio.endSession()
   require("src.ui.game3.stack").clear()
+  clearFieldScreens()
   if Runtime.isActive() then
     pcall(function() Runtime.stop(nil, self) end)
   end
   local Ghosts = package.loaded["src.core.game3.ghosts"]
   if Ghosts and Ghosts.clear then pcall(Ghosts.clear) end
-  for _, name in ipairs({ "src.core.game3.oam", "src.core.game3.bg" }) do
+  for _, name in ipairs({ "src.core.game3.oam", "src.core.game3.bg", "src.core.game3.objects" }) do
     local mod = package.loaded[name]
     if mod and mod.reset then pcall(mod.reset) end
   end
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field.clearMetatiles then pcall(Field.clearMetatiles) end
   Display.release()
   if self.touchControls then
     pcall(function() self.touchControls:setHotkeyHandler(nil) end)

@@ -495,17 +495,18 @@ function Damage.calc(attacker, defender, moveId, opts)
     crit = opts.forceCrit and true or false
   elseif defAb ~= "BATTLE_ARMOR" and defAb ~= "SHELL_ARMOR" and not opts.noCrit then
     -- pokefirered/src/battle_script_commands.c:1170
+    local critSt = opts.st or (opts.adapter and opts.adapter._st)
     if opts.adapter and ModRuntime.wantsHook("battle.crit") then
       local G3 = require("src.mods.Gen3Compat")
       local num = tonumber(move.numId) or G3.moveId(move.id)
       crit = ModRuntime.call("battle.crit", function(c)
-        return Rules.crit.roll(c.attacker, move, c.highCrit, c.rng)
+        return Rules.crit.roll(c.attacker, move, c.highCrit, c.rng, critSt)
       end, { battle = opts.adapter._st, attacker = attacker, target = defender,
              moveId = G3.moveName(num) or move.id, moveNum = num, rng = rng,
              highCrit = opts.highCrit,
              stage = Rules.crit.stage(attacker, move, opts.highCrit) }) and true or false
     else
-      crit = Rules.crit.roll(attacker, move, opts.highCrit, rng)
+      crit = Rules.crit.roll(attacker, move, opts.highCrit, rng, critSt)
     end
   end
   local critMul = crit and Rules.crit.multiplier() or 1

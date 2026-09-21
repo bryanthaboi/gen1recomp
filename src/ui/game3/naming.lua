@@ -5,6 +5,7 @@
 
 local Display = require("src.core.game3.display")
 local FrlgFont = require("src.ui.game3.frlg_font")
+local Chrome = require("src.ui.game3.chrome")
 local Stack = require("src.ui.game3.stack")
 local Audio = require("src.core.game3.audio")
 local NamingChrome = require("src.ui.game3.naming_chrome")
@@ -251,6 +252,39 @@ local function confirm(st)
   return utf8Trim(name, st.maxLen)
 end
 
+local function namingSession(st)
+  if st and st.session then return st.session end
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  return (Runtime and Runtime.getSession and Runtime.getSession()) or nil
+end
+
+-- pokefirered/src/naming_screen.c:696
+local function caughtMonSentToPc(st)
+  if st.sentToPc ~= nil then return st.sentToPc and true or false end
+  local CatchSeq = package.loaded["src.core.game3.battle.catch_seq"]
+  local res = CatchSeq and CatchSeq.catchResult and CatchSeq.catchResult()
+  return (res and res.location == "pc") and true or false
+end
+
+-- pokefirered/src/naming_screen.c:732
+local function sentToPcPages(st, nick)
+  if st.template ~= "CAUGHT_MON" then return nil end
+  if not caughtMonSentToPc(st) then return nil end
+  local session = namingSession(st)
+  if not session then return nil end
+  local okS, Storage = pcall(require, "src.core.game3.storage")
+  if not (okS and Storage and Storage.pcTransferMessage) then return nil end
+  local full = Storage.isDestinationBoxFull(session)
+  local text = Storage.pcTransferMessage(session, nick, full)
+  if type(text) ~= "string" or text == "" then return nil end
+  local pages = {}
+  for page in (text .. "\f"):gmatch("(.-)\f") do
+    if page ~= "" then pages[#pages + 1] = page end
+  end
+  if #pages == 0 then return nil end
+  return pages
+end
+
 --- Draw keyboard letters at fixed colX cells (matches cursor grid; ignores glyph-width drift).
 local function drawKeyboardKeys(page, colors)
   local rows = page.rows
@@ -418,6 +452,8 @@ function Naming.open(opts)
     personality = opts.personality,
     onDone = opts.onDone,
     hold = opts.hold,
+    session = opts.session,
+    sentToPc = opts.sentToPc,
   }
   Naming._state = st
   Naming.openFlag = true
@@ -454,6 +490,17 @@ function Naming.update(input, dt)
   if not Naming.openFlag or not Naming._state then return end
   local st = Naming._state
   if st.finished then return end
+  -- pokefirered/src/naming_screen.c:759
+  if st.pcPages then
+    if input and input.wasPressed and input:wasPressed("a") then
+      if st.pcPage < #st.pcPages then
+        st.pcPage = st.pcPage + 1
+      else
+        Naming.close(st.pcResult)
+      end
+    end
+    return
+  end
   st.blink = (st.blink or 0) + (dt or 1 / 60)
   if st.swapT ~= nil then
     st.swapT = st.swapT + 4
@@ -538,7 +585,15 @@ function Naming.update(input, dt)
         backspace(st)
       elseif role == "OK" then
         playSe(5) -- pokefirered/src/naming_screen.c:1535
-        Naming.close(confirm(st))
+        local nick = confirm(st)
+        local pages = sentToPcPages(st, nick)
+        if pages then
+          st.pcPages = pages
+          st.pcPage = 1
+          st.pcResult = nick
+        else
+          Naming.close(nick)
+        end
       end
     else
       playSe(5) -- pokefirered/src/naming_screen.c:1837
@@ -796,6 +851,14 @@ function Naming.draw()
     colors = FrlgFont.COLOR.WHITE,
     small = true,
   })
+
+  -- pokefirered/src/naming_screen.c:753
+  if st.pcPages then
+    Chrome.dialogueFrame()
+    FrlgFont.draw(st.pcPages[st.pcPage] or "",
+      Chrome.DLG_LEFT * Display.TILE, Chrome.DLG_TOP * Display.TILE + 1,
+      { maxWidth = Chrome.DLG_W * Display.TILE, colors = FrlgFont.COLOR.NORMAL })
+  end
 end
 
 function Naming.begin(opts)

@@ -264,7 +264,7 @@ Content.EVENTS = {
     },
     mapScripts = {
       onTransition = "OneIsland_OnTransition",
-      onResume = {}, -- stub slot; always present
+      onResume = nil,
       onFrame = {
         -- Bill intro deferred (Tier B): harbor scene var == 2
         -- { var = 0x4075, value = 2, script = "OneIsland_EventScript_EnterOneIslandFirstTime" },
@@ -358,7 +358,7 @@ Content.EVENTS = {
     },
     mapScripts = {
       onTransition = nil,
-      onResume = {},
+      onResume = nil,
       onFrame = {},
     },
   },

@@ -242,6 +242,16 @@ local function normalize_map_name(mapId)
   return s
 end
 
+local function map_tree_root()
+  local okD, Dataset = pcall(require, "src.core.game3.dataset")
+  if okD and Dataset and Dataset.mountExtractRoots then
+    Dataset.mountExtractRoots()
+  end
+  local okE, Extract = pcall(require, "src.import.gba.extract_island1")
+  local root = (okE and Extract and Extract.CACHE_ROOT) or "data/generated/gba"
+  return root .. "/map_tree"
+end
+
 local function load_map_tree_cache()
   if _mapToSecCache then return _mapToSecCache end
   _mapToSecCache = {}
@@ -250,6 +260,7 @@ local function load_map_tree_cache()
   pcall(function() Json = require("src.link.Json") end)
   if not Json then return _mapToSecCache end
 
+  local treeRoot = map_tree_root()
   local okFs, CacheFs = pcall(require, "src.import.CacheFs")
   local rawCensus = nil
   if okFs and CacheFs and CacheFs.read then
@@ -260,7 +271,8 @@ local function load_map_tree_cache()
     rawCensus = love.filesystem.read("data/generated/gba/map_tree/census.json")
   end
   if not rawCensus then
-    local f = io.open("data/generated/gba/map_tree/census.json", "r")
+    local f = io.open(treeRoot .. "/census.json", "r")
+      or io.open("data/generated/gba/map_tree/census.json", "r")
     if f then rawCensus = f:read("*a"); f:close() end
   end
 
@@ -279,7 +291,8 @@ local function load_map_tree_cache()
             rawH = love.filesystem.read("data/generated/gba/map_tree/maps/" .. slot .. "/header.json")
           end
           if not rawH then
-            local fH = io.open("data/generated/gba/map_tree/maps/" .. slot .. "/header.json", "r")
+            local fH = io.open(treeRoot .. "/maps/" .. slot .. "/header.json", "r")
+              or io.open("data/generated/gba/map_tree/maps/" .. slot .. "/header.json", "r")
             if fH then rawH = fH:read("*a"); fH:close() end
           end
           if rawH then

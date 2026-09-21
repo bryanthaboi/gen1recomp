@@ -132,7 +132,21 @@ do
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 6, "cursor at Viridian Forest (4, 6)")
   check(RegionMap.currentDungeonName() == "VIRIDIAN FOREST", "current dungeon is VIRIDIAN FOREST")
 
-  -- Press A on dungeon: Opens Dungeon Preview Modal
+  -- pokefirered/src/region_map.c:1266
+  press("a")
+  check(RegionMap.previewDungeon == nil, "A on an unvisited dungeon opens no preview")
+  check(RegionMap.isOpen() == true, "RegionMap stays open after the refused GUIDE")
+  check(RegionMap.selectedDungeonMapsecType() == RegionMap.MAPSECTYPE.NOT_VISITED,
+        "Viridian Forest is NOT_VISITED on a fresh save")
+  check(RegionMap.canGuideCursor() == false, "GUIDE is refused on a dungeon that has not been visited")
+
+  -- pokefirered/data/maps/ViridianForest/scripts.inc:6
+  session.flags = session.flags or {}
+  session.flags["FLAG_WORLD_MAP_VIRIDIAN_FOREST"] = true
+  check(RegionMap.selectedDungeonMapsecType() == RegionMap.MAPSECTYPE.VISITED,
+        "Viridian Forest is VISITED once the world map flag is set")
+  check(RegionMap.canGuideCursor() == true, "GUIDE is offered on a visited dungeon")
+
   press("a")
   check(RegionMap.previewDungeon == "MAPSEC_VIRIDIAN_FOREST", "Dungeon Preview Modal opened for Viridian Forest")
 
@@ -174,6 +188,68 @@ do
   RegionMap.close()
   check(RegionMap.isOpen() == false, "RegionMap closed cleanly")
   check(mapOpened == true, "showTownMap callback was executed")
+end
+
+print("=== [TEST 6] RegionMapExtract ROM Extraction & CacheFS Assets Validation ===")
+do
+  local Rom = require("src.import.gba.rom")
+  local FileIO = require("src.import.gba.file_io")
+
+  local romPath = "1636 - Pokemon Fire Red (U)(Squirrels).gba"
+  local f = io.open(romPath, "rb")
+  if f then
+    f:close()
+    local imports = FileIO.makeImports(romPath, "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc", "firered")
+    local rom = Rom.open(imports, "firered")
+    check(rom ~= nil, "FireRed ROM opened")
+
+    local mockCache = {
+      files = {},
+      write = function(self, path, data)
+        self.files[path] = data
+        return true
+      end,
+      read = function(self, path)
+        return self.files[path]
+      end,
+      exists = function(self, path)
+        return self.files[path] ~= nil
+      end,
+    }
+
+    local detail = RegionExtract.run(rom, mockCache, { cacheRoot = "data/generated/gba" })
+    check(detail.ok == true, "RegionMapExtract.run returned ok")
+    check(detail.count == 9, "Extracted 9 region map chrome assets")
+
+    local kantoRgba = mockCache:read("data/generated/gba/region_map/kanto_map.rgba")
+    check(kantoRgba ~= nil and #kantoRgba == 240 * 160 * 4, "kanto_map.rgba has exact 240x160x4 dimensions (153600 bytes)")
+
+    local kantoPng = mockCache:read("data/generated/gba/region_map/kanto_map.png")
+    check(kantoPng ~= nil and #kantoPng > 0, "kanto_map.png emitted")
+
+    local curRgba = mockCache:read("data/generated/gba/region_map/cursor.rgba")
+    check(curRgba ~= nil and #curRgba == 16 * 16 * 4, "cursor.rgba has exact 16x16x4 dimensions")
+
+    local dungRgba = mockCache:read("data/generated/gba/region_map/dungeon_icon.rgba")
+    check(dungRgba ~= nil and #dungRgba == 8 * 8 * 4, "dungeon_icon.rgba has exact 8x8x4 dimensions")
+
+    local redRgba = mockCache:read("data/generated/gba/region_map/player_red.rgba")
+    check(redRgba ~= nil and #redRgba == 16 * 16 * 4, "player_red.rgba has exact 16x16x4 dimensions")
+
+    local leafRgba = mockCache:read("data/generated/gba/region_map/player_leaf.rgba")
+    check(leafRgba ~= nil and #leafRgba == 16 * 16 * 4, "player_leaf.rgba has exact 16x16x4 dimensions")
+
+    local sevii123Rgba = mockCache:read("data/generated/gba/region_map/sevii123_map.rgba")
+    check(sevii123Rgba ~= nil and #sevii123Rgba == 240 * 160 * 4, "sevii123_map.rgba has exact 240x160x4 dimensions")
+
+    local ready = RegionExtract.ready(mockCache, "data/generated/gba")
+    check(ready == true, "RegionMapExtract.ready reports true on extracted cache")
+
+    rom:clearCache()
+    imports:_close()
+  else
+    print("[skip] FireRed ROM not found for extraction test")
+  end
 end
 
 if failed > 0 then

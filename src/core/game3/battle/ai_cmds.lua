@@ -843,8 +843,11 @@ function CMD.if_curr_move_disabled_or_encored(vm, op)
   next_ip(vm)
 end
 
+-- pokefirered/src/battle_ai_script_commands.c:1713
 function CMD.if_random_safari_flee(vm, op)
-  if (random_u16(vm) % 100) < 50 then
+  local Rules = require("src.core.game3.battle.rules")
+  local rate = Rules.safari.fleeRate(vm.st and vm.st.safariState)
+  if (random_u16(vm) % 100) < rate then
     branch(vm, op.target)
   else
     next_ip(vm)

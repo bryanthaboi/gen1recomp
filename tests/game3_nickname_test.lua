@@ -15,15 +15,13 @@ end
 
 print("[test] 1. Special id matches pret specials.inc")
 local Std = require("src.core.game3.scripting.stdscripts")
-check(Std.SPECIAL.ChangePokemonNickname == 158 or Std.SPECIAL.ChangePokemonNickname_Alt == 159, "ChangePokemonNickname = 158/159")
-check(Std.SPECIAL.BufferMonNickname == 125 or Std.SPECIAL.BufferMonNickname_FR == 124, "BufferMonNickname = 124/125")
+check(Std.SPECIAL.ChangePokemonNickname == 158, "ChangePokemonNickname = 158")
+check(Std.SPECIAL.BufferMonNickname == 124, "BufferMonNickname = 124")
 
 print("[test] 2. Handler registered")
 local Natives = require("src.core.game3.scripting.natives")
 check(Natives.ALLOW["special:158"] ~= nil, "special:158 handler")
-check(Natives.ALLOW["special:159"] ~= nil, "special:159 handler")
 check(Natives.ALLOW["special:124"] ~= nil, "special:124 handler")
-check(Natives.ALLOW["special:125"] ~= nil, "special:125 handler")
 
 print("[test] 3. ChangePokemonNickname opens naming + fades in + sets nick")
 local Fade = require("src.ui.game3.fade")
@@ -93,12 +91,12 @@ end
 check(mon.nickname == "SPROUT", "party mon nickname SPROUT (got " .. tostring(mon.nickname) .. ")")
 check(finished or mon.nickname == "SPROUT", "native wait completed")
 
--- Also verify special 159 alias
 opened = false
 mon.nickname = ""
-Natives.special(ctx, 159, adapters)
-check(opened, "openNaming invoked for special 159 alias")
-check(mon.nickname == "SPROUT", "party mon nickname SPROUT via 159")
+Natives.special(ctx, 159, { log = function() end, chooseParty = function(_, done) done(0) end })
+check(not opened, "special 159 does not open the naming keyboard")
+check(mon.nickname == "", "special 159 leaves the nickname alone")
+mon.nickname = "SPROUT"
 
 print("[test] 4. Fade-from-black after TO_BLACK cover")
 Fade.t = 16
@@ -265,7 +263,7 @@ check(not Naming.isOpen(), "Naming screen NOT opened when NO selected")
 check(caughtPidgey.nickname == "", "caughtPidgey nickname remains default/empty")
 check(Battle._phase == "ending", "Battle transitioned to ending phase immediately")
 
--- Scenario C: Caught Pokémon sent to PC -> Yes to Nickname -> Shows PC Transfer message
+-- Scenario C: Caught Pokémon sent to PC -> Yes to Nickname -> no PC transfer message
 local caughtCaterpie = { species = 10, name = "CATERPIE", level = 3, hp = 6, maxHp = 6, nickname = "" }
 local catchResPc = {
   success = true,
@@ -291,26 +289,16 @@ Battle.update(1 / 60, { input = mockInput })
 check(Naming.isOpen(), "Naming screen opened for PC-bound Caterpie")
 Naming.close("SLUGGY")
 check(caughtCaterpie.nickname == "SLUGGY", "Caterpie nicknamed SLUGGY")
-check(Battle._phase == "catch_pc_msg", "Battle phase is catch_pc_msg")
+-- pokefirered/src/battle_script_commands.c:9853
+check(Battle._phase == "ending", "a nicknamed catch skips the PC transfer message")
 
--- Check transfer message contains "SLUGGY was transferred"
 local foundTransfer = false
 for _, line in ipairs(BattleUi._log or {}) do
-  if line:find("SLUGGY was transferred") then
+  if line:find("transferred") then
     foundTransfer = true
   end
 end
-check(foundTransfer, "Transfer message uses the newly given nickname 'SLUGGY'")
-
--- Drain transfer message
-while not BattleUi.pump() do
-  Message.tick()
-  if Message.isWaiting and Message.isWaiting() then
-    Message.close()
-  end
-end
-Battle.update(1 / 60, { input = mockInput })
-check(Battle._phase == "ending", "Battle ends after PC transfer message is dismissed")
+check(not foundTransfer, "trygivecaughtmonnick jumps past printfromtable gCaughtMonStringIds")
 
 if failed == 0 then
   print("\nAll game3 nickname tests passed.")

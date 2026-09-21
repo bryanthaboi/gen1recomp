@@ -1,6 +1,9 @@
 -- tests/game3_oaks_lab_save_reload_test.lua
 -- Tests contextual placement of Oak and Rival in FR_OAKS_LAB across scene states and save/reload.
 
+local Cache = require("tests.game3_cache")
+Cache.mountOrSkip("game3_oaks_lab_save_reload_test", "scripts/events.lua")
+
 local Objects = require("src.core.game3.objects")
 local Space = require("src.core.game3.scripting.space")
 local Flags = require("src.core.game3.scripting.flags")

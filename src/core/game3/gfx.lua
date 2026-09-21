@@ -79,6 +79,8 @@ function Gfx.drawUi()
   local TrainerCard = require("src.ui.game3.trainer_card")
   local PcMenu = require("src.ui.game3.pc_menu")
   local MoneyBox = require("src.ui.game3.money_box")
+  local CoinsBox = require("src.ui.game3.coins_box")
+  local ElevatorWindow = require("src.ui.game3.elevator_window")
 
   -- Stack-driven full-screen menus (bottom → top).
   local order = Stack.drawOrder()
@@ -105,6 +107,16 @@ function Gfx.drawUi()
     if not (ShopMenu and ShopMenu.isOpen and ShopMenu.isOpen()) then
       tryDraw(MoneyBox)
     end
+  end
+
+  -- pokefirered/src/coins.c:79
+  if CoinsBox.isVisible and CoinsBox.isVisible() then
+    tryDraw(CoinsBox)
+  end
+
+  -- pokefirered/src/field_specials.c:1094
+  if ElevatorWindow.isVisible and ElevatorWindow.isVisible() then
+    tryDraw(ElevatorWindow)
   end
 
   -- Location change overlay / signpost popup banner (pokefirered/src/map_name_popup.c)

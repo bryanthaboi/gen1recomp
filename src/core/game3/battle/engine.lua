@@ -13,6 +13,7 @@ local Rules = require("src.core.game3.battle.rules")
 local Secondary = require("src.core.game3.battle.effects.secondary")
 local HeldItems = require("src.core.game3.battle.held_items")
 local Abilities = require("src.core.game3.battle.abilities")
+local Oak = require("src.core.game3.battle.oak_advice")
 local ModRuntime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
 
@@ -376,9 +377,16 @@ function Ctx:accuracyCheck(mode, printFail)
     end
     return true
   end
+  -- pokefirered/src/battle_script_commands.c:896
   if self:isProtected() then
     failMsg("protected")
     return false
+  end
+  -- pokefirered/src/battle_script_commands.c:1007
+  if Oak.active(self.st) and user and user.side == "player" then
+    local power = tonumber(self.move and self.move.power) or 0
+    local mask = (power > 0) and Oak.FLAG_INFLICT_DMG or Oak.FLAG_STAT_CHG
+    if not Oak.testFlag(self.st, mask) then return not self:absorbed() end
   end
   if self:lockOnActive() then return not self:absorbed() end
   local semi = target and target ~= user and target.semiInvulnerable
@@ -2007,12 +2015,15 @@ function Engine.battleStartEffects(st, adapter)
     end
   end
   local order = Residuals.sortedBattlers(adapter)
-  for _, b in ipairs(order) do
-    if Abilities.switchIn(adapter, b) then did = true end
-  end
-  for _ = 1, 4 do
-    if not (Abilities.runIntimidate(adapter) or Abilities.runTrace(adapter)) then break end
-    did = true
+  -- pokefirered/src/battle_util.c:1678
+  if not st.safari then
+    for _, b in ipairs(order) do
+      if Abilities.switchIn(adapter, b) then did = true end
+    end
+    for _ = 1, 4 do
+      if not (Abilities.runIntimidate(adapter) or Abilities.runTrace(adapter)) then break end
+      did = true
+    end
   end
   for _, b in ipairs(order) do
     if HeldItems.onSwitchIn(adapter, b) then did = true end
@@ -2377,6 +2388,19 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
     for k, v in pairs(enemyAct) do row[k] = v end
     row.user, row.battler = st.enemy, 1
     return row
+  end
+  -- pokefirered/src/battle_main.c:3537
+  if st.safari then
+    if st.player then st.player.expTurnOrder = 1 end
+    if st.enemy then st.enemy.expTurnOrder = 2 end
+    -- pokefirered/src/battle_controller_opponent.c:1364
+    actions[#actions + 1] = {
+      user = st.enemy, battler = 1,
+      kind = (enemyAct.kind == "run") and "run" or "watch",
+    }
+    st.turnOrder = { 0, 1 }
+    st.turnActions = actions
+    return actions, playerAct
   end
   if playerAct.kind == "run" or playerAct.kind == "bag" or playerAct.kind == "switch" then
     if st.player then st.player.expTurnOrder = 1 end

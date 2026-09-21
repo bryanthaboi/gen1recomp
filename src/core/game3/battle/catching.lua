@@ -115,6 +115,11 @@ function Catching.catchOdds(itemId, foeBattler, st, session)
   local species = foeBattler and (foeBattler.species or (foeBattler.mon and foeBattler.mon.species))
   local meta = species and Pokemon.speciesMeta(species)
   local catchRate = (meta and tonumber(meta.catchRate)) or 45
+  -- pokefirered/src/battle_script_commands.c:9496
+  if num == 5 and st and st.safariState then
+    local Rules = require("src.core.game3.battle.rules")
+    catchRate = Rules.safari.ballCatchRate(st.safariState)
+  end
 
   local mon = foeBattler and foeBattler.mon
   local hp = math.max(1, tonumber(mon and mon.hp) or 1)
@@ -226,6 +231,34 @@ local function clone_mon(mon)
   return copy
 end
 
+-- pokefirered/src/new_game.c:56
+function Catching.playerSecretId(session)
+  if type(session) ~= "table" then return 0 end
+  local sec = tonumber(session.secretId or session.otSecretId)
+  local tid = tonumber(session.trainerId or session.id or session.playerId)
+  if not sec and tid then
+    local function scan(list)
+      for _, m in pairs(list or {}) do
+        local ms = (type(m) == "table") and tonumber(m.otSecretId) or nil
+        if ms and tonumber(m.otId) == tid then return ms end
+      end
+      return nil
+    end
+    sec = scan(session.party)
+    local storage = session.storage
+    for _, box in pairs((not sec) and storage and storage.boxes or {}) do
+      sec = sec or scan(type(box) == "table" and box.mons or nil)
+    end
+  end
+  if not sec then
+    local okR, Rng = pcall(require, "src.core.game3.rng")
+    sec = (okR and Rng and Rng.Random and Rng.Random()) or math.random(0, 0xFFFF)
+  end
+  sec = math.floor(sec) % 0x10000
+  session.secretId = sec
+  return sec
+end
+
 --- Store a caught Pokémon into session party or PC.
 -- Marks Pokédex as caught, tracks firstTimeCaught, and returns result info.
 function Catching.storeCaught(session, foeBattler, ballId)
@@ -241,9 +274,23 @@ function Catching.storeCaught(session, foeBattler, ballId)
   local trainerId = session.trainerId or session.id or session.playerId or 12345
   mon.ot = otName
   mon.otName = otName
+  -- pokefirered/src/pokemon.c:3692
   mon.otId = trainerId
+  mon.otSecretId = Catching.playerSecretId(session)
   mon.pokeball = ItemsData.toNumericId(ballId) or 4
   mon.nickname = mon.nickname or ""
+  -- pokefirered/src/pokemon.c:1817
+  mon.metLocation = Pokemon.currentMapSec(session) or mon.metLocation
+  mon.metLevel = tonumber(mon.level) or tonumber(mon.metLevel)
+  -- pokefirered/src/pokemon_summary_screen.c:2633 GetMapNameGeneric_
+  local okSec, secName = pcall(function()
+    local Sections = require("src.import.gba.map_sections_extract")
+    local info = Sections.getInfo(mon.metLocation, session.map, 0)
+    return info and info.name
+  end)
+  if okSec and type(secName) == "string" and secName ~= "" and secName ~= "???" then
+    mon.metLocationName = secName
+  end
   local species = foeBattler.species or mon.species or mon.speciesId
   mon.species = species
   mon.speciesId = species

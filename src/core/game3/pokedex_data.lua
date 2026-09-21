@@ -118,7 +118,9 @@ end
 --- Map wild encounter tables to species DEX_AREA locations
 function PokedexData._buildSpeciesWildAreas()
   PokedexData._speciesWildAreas = {}
-  local encounters = load_lua("data/generated/gba/encounters.lua") or load_lua("data/generated/encounters.lua")
+  local encounters = load_lua(cache_root() .. "/encounters.lua")
+    or load_lua("data/generated/gba/encounters.lua")
+    or load_lua("data/generated/encounters.lua")
   local mapGroups = load_lua("src/import/gba/map_groups_firered.lua")
   local mapsecToArea = PokedexData._areaData and PokedexData._areaData.mapsecToArea or {}
   local markers = PokedexData._areaData and PokedexData._areaData.markers or {}

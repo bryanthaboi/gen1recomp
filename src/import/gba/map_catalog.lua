@@ -97,7 +97,8 @@ function MapCatalog.isKnown(mapId)
   return _aliases[mapId] ~= nil
 end
 
---- Match a tileset struct's tiles pointer to Versions.TILESETS name.
+--- Match a tileset struct's tiles + metatiles + attributes to a Versions.TILESETS name.
+-- pokefirered/include/global.fieldmap.h:80
 function MapCatalog.tilesetNameForPtr(rom, tilesetPtr)
   if not tilesetPtr or tilesetPtr == 0 then return nil end
   local MapTree = require("src.import.gba.map_tree")
@@ -105,8 +106,10 @@ function MapCatalog.tilesetNameForPtr(rom, tilesetPtr)
   if not ts then return nil end
   local tilesOff = rom:ptrOffset(ts.tilesPtr)
   if not tilesOff then return nil end
+  local mtOff = rom:ptrOffset(ts.metatilesPtr)
+  local attrOff = rom:ptrOffset(ts.attributesPtr)
   for name, spec in pairs(Versions.TILESETS or {}) do
-    if spec.tiles == tilesOff then
+    if spec.tiles == tilesOff and spec.metatiles == mtOff and spec.attributes == attrOff then
       return name, ts
     end
   end
@@ -123,8 +126,8 @@ function MapCatalog.tilesetNameForPtr(rom, tilesetPtr)
       secondary = ts.secondary,
       tiles = tilesOff,
       palettes = palsOff,
-      metatiles = rom:ptrOffset(ts.metatilesPtr),
-      attributes = rom:ptrOffset(ts.attributesPtr),
+      metatiles = mtOff,
+      attributes = attrOff,
       metatile_bytes = ts.metatile_bytes,
       attr_bytes = ts.attr_bytes,
       palette_count = ts.palette_count or 16,

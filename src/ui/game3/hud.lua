@@ -143,6 +143,37 @@ local function update_top_menu(input)
   return false
 end
 
+-- pokefirered/src/field_control_avatar.c:108
+local function start_button_allowed()
+  local Field = package.loaded["src.core.game3.field"]
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  local Forced = package.loaded["src.core.game3.forced_movement"]
+  local Warp = package.loaded["src.core.game3.warp"]
+  local scriptBusy = Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning()
+  -- pokefirered/src/field_effect.c:1155 FieldCB_FallWarpExit
+  local locked = (Field and Field.locked)
+    or (Forced and Forced.isForced and Forced.isForced())
+    or (Warp and Warp.isBusy and Warp.isBusy())
+  return not locked and not scriptBusy
+end
+
+-- pokefirered/src/field_control_avatar.c:76 FieldClearPlayerInput
+function Hud.clearFieldInput()
+  Hud._fieldInput = nil
+end
+
+-- pokefirered/src/field_control_avatar.c:94 FieldGetPlayerInput
+function Hud.sampleFieldInput(game)
+  local input = game and game.input
+  if not (input and input.wasPressed) then
+    Hud._fieldInput = nil
+    return
+  end
+  Hud._fieldInput = {
+    start = input:wasPressed("start") and start_button_allowed() or false,
+  }
+end
+
 function Hud.update(game, _dt)
   local dt = tonumber(_dt) or (1 / 60)
 
@@ -244,12 +275,13 @@ function Hud.update(game, _dt)
     -- Owned here (not Field) so the open press cannot also close same frame.
     if input:wasPressed("start") then
       local Field = package.loaded["src.core.game3.field"]
-      local Space = package.loaded["src.core.game3.scripting.space"]
       local Runtime = package.loaded["src.core.game3.runtime"]
         or require("src.core.game3.runtime")
-      local scriptBusy = Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning()
-      local locked = Field and Field.locked
-      if not locked and not scriptBusy then
+      local sample = Hud._fieldInput
+      -- pokefirered/src/field_control_avatar.c:108
+      local allowed = sample and sample.start or false
+      if sample == nil then allowed = start_button_allowed() end
+      if allowed then
         Hud.openStartMenu(game, (Field and Field._session)
           or (Runtime.getSession and Runtime.getSession()))
       end

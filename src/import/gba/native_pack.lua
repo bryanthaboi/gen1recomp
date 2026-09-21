@@ -332,9 +332,73 @@ function NativePack.addPcOnMids(seen)
   return seen
 end
 
+-- pokefirered/include/fieldmap.h:9
+NativePack.NUM_METATILES_TOTAL = 1024
+
+local function scriptTargets(v, out)
+  if type(v) == "string" then
+    if v:sub(1, 3) == "g3:" then out[#out + 1] = v end
+  elseif type(v) == "table" then
+    for _, x in pairs(v) do scriptTargets(x, out) end
+  end
+end
+
+-- pokefirered/src/scrcmd.c:2103
+function NativePack.scriptMidsByPair(scripts, events, pairOf)
+  local out = {}
+  if type(scripts) ~= "table" or type(events) ~= "table" then return out end
+  scripts = scripts.scripts or scripts
+  events = events.events or events
+  for mapId, ev in pairs(events) do
+    local pairName = type(ev) == "table" and pairOf(mapId) or nil
+    if pairName then
+      local stack, visited = {}, {}
+      scriptTargets(ev, stack)
+      while #stack > 0 do
+        local key = table.remove(stack)
+        if not visited[key] then
+          visited[key] = true
+          local rows = scripts[key]
+          if type(rows) == "table" then
+            for _, row in ipairs(rows) do
+              if type(row) == "table" then
+                if row.op == "setmetatile" then
+                  local mid = tonumber(row[3])
+                  if mid and mid >= 0 and mid < NativePack.NUM_METATILES_TOTAL then
+                    out[pairName] = out[pairName] or {}
+                    out[pairName][mid] = true
+                  end
+                end
+                scriptTargets(row, stack)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return out
+end
+
+local function addVoidFillMids(seen, borders, pairName)
+  local VoidFill = require("src.core.game3.void_fill")
+  local spec = Versions.TILESET_PAIRS and Versions.TILESET_PAIRS[pairName]
+  if not (spec and spec.primary == VoidFill.PRIMARY) then return end
+  for _, mapId in pairs(VoidFill.SOURCES) do
+    local border = borders and borders[mapId]
+    for _, mid in ipairs(border and border.mids or {}) do
+      if mid < VoidFill.PRIMARY_MIDS then seen[mid] = true end
+    end
+  end
+end
+
 --- Collect unique mids used by grids + borders for a pair.
-function NativePack.collectMidsForPair(grids, borders, pairName)
+function NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
   local seen = {}
+  for mid in pairs(scriptMids and scriptMids[pairName] or {}) do
+    seen[mid] = true
+  end
+  addVoidFillMids(seen, borders, pairName)
   for _, grid in pairs(grids or {}) do
     if (grid.pair or "sevii_outdoor") == pairName then
       for _, cell in ipairs(grid.cells or {}) do
@@ -343,8 +407,9 @@ function NativePack.collectMidsForPair(grids, borders, pairName)
     end
   end
   for mapId, border in pairs(borders or {}) do
+    local grid = grids and grids[mapId]
     local spec = Versions.MAPS[mapId]
-    if (spec and spec.pair or "sevii_outdoor") == pairName then
+    if ((grid and grid.pair) or (spec and spec.pair) or "sevii_outdoor") == pairName then
       for _, mid in ipairs(border.mids or {}) do
         seen[mid] = true
       end
@@ -367,7 +432,7 @@ end
 -- grids: padded map grids; borders: mapId → { width, height, mids }
 -- midIndex: optional [pair][mid] = { coll, ... } for resolved COLL_* lookup
 -- CollisionFn: function(mid, rawColl, behavior, kind) → collByte
-function NativePack.writeExtract(cache, root, bundles, grids, borders, pairNames, midIndex, behaviorOf, fromCell)
+function NativePack.writeExtract(cache, root, bundles, grids, borders, pairNames, midIndex, behaviorOf, fromCell, scriptMids)
   root = root or "data/generated/gba"
   local NativeRoot = root .. "/native"
   local manifest = {
@@ -379,7 +444,7 @@ function NativePack.writeExtract(cache, root, bundles, grids, borders, pairNames
   for _, pairName in ipairs(pairNames or {}) do
     local bundle = bundles[pairName]
     if bundle then
-      local midList = NativePack.collectMidsForPair(grids, borders, pairName)
+      local midList = NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
       local underTbl, overTbl = NativePack.buildLayeredIdx(bundle, midList)
       local palBlob = NativePack.encodePalettes(bundle.mapPals)
       local pairDir = NativeRoot .. "/" .. pairName
@@ -435,12 +500,15 @@ function NativePack.writeExtract(cache, root, bundles, grids, borders, pairNames
     }
     local blob = NativePack.encodeMidLayout(layout)
     cache:write(NativeRoot .. "/layouts/" .. mapId .. ".mid", blob)
-    manifest.layouts[mapId] = {
-      pair = pairName,
-      width = layout.width,
-      height = layout.height,
-      file = "layouts/" .. mapId .. ".mid",
-    }
+    -- pokefirered/src/scrcmd.c:711
+    if not grid.altLayoutId then
+      manifest.layouts[mapId] = {
+        pair = pairName,
+        width = layout.width,
+        height = layout.height,
+        file = "layouts/" .. mapId .. ".mid",
+      }
+    end
   end
 
   local lines = {

@@ -217,8 +217,20 @@ function EasyChatExtract.run(rom, cache, opts)
 
   local text = table.concat(lines, "\n")
   local outRel = cacheRoot .. "/easy_chat/easy_chat_data.lua"
+  local wrote = false
   if cache and cache.write then
     cache:write(outRel, text)
+    wrote = true
+  end
+  if not wrote then
+    local okC, CacheFs = pcall(require, "src.import.CacheFs")
+    if okC and CacheFs and CacheFs.write then
+      local ok = pcall(CacheFs.write, outRel, text)
+      if ok then wrote = true end
+    end
+  end
+  if not wrote and love and love.filesystem and love.filesystem.write then
+    pcall(love.filesystem.write, outRel, text)
   end
 
   local f = io.open(outRel, "wb")

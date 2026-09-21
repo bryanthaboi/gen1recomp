@@ -150,7 +150,15 @@ function Collision.installWarps(mapDef)
         cur = Collision._grid[i]
         local beh = Collision.behavior(x, y)
         local repair = beh == nil or Collision.isWarpMetatileBehavior(beh)
-        if repair and (cur == nil or cur == 0x07 or cur == 0xff) then
+        -- pokefirered/src/field_control_avatar.c:860
+        if beh ~= nil and repair and cur == 0x00 then
+          local ScriptColl = require("src.core.game3.scripting.collision")
+          local seeded = ScriptColl.fromCell(layout and layout:midAt(x, y) or 0, 0, beh, mapDef.kind)
+          if isWarpBehavior(seeded) then
+            Collision._grid[i] = seeded
+            cur = seeded
+          end
+        elseif repair and (cur == nil or cur == 0x07 or cur == 0xff) then
           Collision._grid[i] = COLL_DOOR
           cur = COLL_DOOR
           if layout and layout.applyOverride then
@@ -183,14 +191,232 @@ function Collision.inBounds(cx, cy)
 end
 
 -- Preserve original MB semantics independently of the walkability COLL grid.
-function Collision.behavior(cx,cy)
-  local layout=Collision._mapDef and Collision._mapDef.midLayout
+function Collision.behaviorOn(mapDef, cx, cy)
+  local layout = mapDef and mapDef.midLayout
   if not layout or cx<0 or cy<0 or cx>=layout.width or cy>=layout.height then return nil end
-  local pair=Collision._mapDef.pair or layout.pair
-  local behaviors=require("src.core.game3.scripting.interaction_scripts").behaviors[pair]
+  local pair = mapDef.pair or layout.pair
+  local behaviors = require("src.core.game3.scripting.interaction_scripts").behaviors[pair]
   return behaviors and behaviors[layout:midAt(cx,cy)]
 end
 
+function Collision.behavior(cx,cy)
+  return Collision.behaviorOn(Collision._mapDef, cx, cy)
+end
+
+-- pokefirered/include/constants/metatile_behaviors.h:39
+local MB_IMPASSABLE_EAST = 0x30
+local MB_IMPASSABLE_WEST = 0x31
+local MB_IMPASSABLE_NORTH = 0x32
+local MB_IMPASSABLE_SOUTH = 0x33
+local MB_IMPASSABLE_NORTHEAST = 0x34
+local MB_IMPASSABLE_NORTHWEST = 0x35
+local MB_IMPASSABLE_SOUTHEAST = 0x36
+local MB_IMPASSABLE_SOUTHWEST = 0x37
+
+-- pokefirered/src/metatile_behavior.c:546
+function Collision.isEastBlocked(beh)
+  return beh == MB_IMPASSABLE_EAST or beh == MB_IMPASSABLE_NORTHEAST
+    or beh == MB_IMPASSABLE_SOUTHEAST
+end
+
+-- pokefirered/src/metatile_behavior.c:556
+function Collision.isWestBlocked(beh)
+  return beh == MB_IMPASSABLE_WEST or beh == MB_IMPASSABLE_NORTHWEST
+    or beh == MB_IMPASSABLE_SOUTHWEST
+end
+
+-- pokefirered/src/metatile_behavior.c:566
+function Collision.isNorthBlocked(beh)
+  return beh == MB_IMPASSABLE_NORTH or beh == MB_IMPASSABLE_NORTHEAST
+    or beh == MB_IMPASSABLE_NORTHWEST
+end
+
+-- pokefirered/src/metatile_behavior.c:576
+function Collision.isSouthBlocked(beh)
+  return beh == MB_IMPASSABLE_SOUTH or beh == MB_IMPASSABLE_SOUTHEAST
+    or beh == MB_IMPASSABLE_SOUTHWEST
+end
+
+-- pokefirered/src/event_object_movement.c:888 gOppositeDirectionBlockedMetatileFuncs
+local LEAVE_BLOCKED = {
+  down = Collision.isSouthBlocked,
+  up = Collision.isNorthBlocked,
+  left = Collision.isWestBlocked,
+  right = Collision.isEastBlocked,
+}
+-- pokefirered/src/event_object_movement.c:895 gDirectionBlockedMetatileFuncs
+local ENTER_BLOCKED = {
+  down = Collision.isNorthBlocked,
+  up = Collision.isSouthBlocked,
+  left = Collision.isEastBlocked,
+  right = Collision.isWestBlocked,
+}
+
+-- pokefirered/src/event_object_movement.c:4889 IsMetatileDirectionallyImpassable
+function Collision.directionallyImpassableOn(mapDef, fromX, fromY, tx, ty, dir)
+  local leave = LEAVE_BLOCKED[dir]
+  if not leave then return false end
+  if fromX and fromY and leave(Collision.behaviorOn(mapDef, fromX, fromY)) then
+    return true
+  end
+  return ENTER_BLOCKED[dir](Collision.behaviorOn(mapDef, tx, ty)) == true
+end
+
+function Collision.directionallyImpassable(fromX, fromY, tx, ty, dir)
+  local leave = LEAVE_BLOCKED[dir]
+  if not leave then return false end
+  if fromX and fromY and leave(Collision.behavior(fromX, fromY)) then return true end
+  return ENTER_BLOCKED[dir](Collision.behavior(tx, ty)) == true
+end
+
+-- pokefirered/src/metatile_behavior.c:5 sBehaviorSurfable
+local SURFABLE_BEH = {
+  [0x10] = true, [0x11] = true, [0x12] = true, [0x13] = true, [0x15] = true,
+  [0x1A] = true, [0x1B] = true,
+  [0x50] = true, [0x51] = true, [0x52] = true, [0x53] = true,
+}
+
+-- pokefirered/src/metatile_behavior.c:204
+function Collision.isSurfable(beh)
+  return SURFABLE_BEH[beh] == true
+end
+
+-- pokefirered/include/constants/metatile_behaviors.h:17
+local MB_WATERFALL = 0x13
+-- pokefirered/include/constants/metatile_behaviors.h:20
+local MB_PUDDLE = 0x16
+local MB_SHALLOW_WATER = 0x17
+-- pokefirered/include/constants/metatile_behaviors.h:27
+local MB_STRENGTH_BUTTON = 0x20
+local MB_ICE = 0x23
+local MB_THIN_ICE = 0x26
+local MB_CRACKED_ICE = 0x27
+local MB_HOT_SPRINGS = 0x28
+-- pokefirered/include/constants/metatile_behaviors.h:62
+local MB_EASTWARD_CURRENT = 0x50
+local MB_WESTWARD_CURRENT = 0x51
+local MB_NORTHWARD_CURRENT = 0x52
+local MB_SOUTHWARD_CURRENT = 0x53
+local MB_SPIN_RIGHT = 0x54
+local MB_SPIN_LEFT = 0x55
+local MB_SPIN_UP = 0x56
+local MB_SPIN_DOWN = 0x57
+local MB_STOP_SPINNING = 0x58
+-- pokefirered/include/constants/metatile_behaviors.h:52
+local MB_WALK_EAST = 0x40
+local MB_WALK_WEST = 0x41
+local MB_WALK_NORTH = 0x42
+local MB_WALK_SOUTH = 0x43
+local MB_SLIDE_EAST = 0x44
+local MB_SLIDE_WEST = 0x45
+local MB_SLIDE_NORTH = 0x46
+local MB_SLIDE_SOUTH = 0x47
+local MB_TRICK_HOUSE_PUZZLE_8_FLOOR = 0x48
+-- pokefirered/include/constants/metatile_behaviors.h:128
+local MB_CYCLING_ROAD_PULL_DOWN = 0xD0
+local MB_CYCLING_ROAD_PULL_DOWN_GRASS = 0xD1
+
+-- pokefirered/src/metatile_behavior.c:846
+function Collision.isStrengthButton(beh) return beh == MB_STRENGTH_BUTTON end
+
+-- pokefirered/src/metatile_behavior.c:102
+function Collision.isIce(beh) return beh == MB_ICE end
+
+-- pokefirered/src/metatile_behavior.c:502
+function Collision.isThinIce(beh) return beh == MB_THIN_ICE end
+
+-- pokefirered/src/metatile_behavior.c:510
+function Collision.isCrackedIce(beh) return beh == MB_CRACKED_ICE end
+
+-- pokefirered/src/metatile_behavior.c:586
+function Collision.isHotSprings(beh) return beh == MB_HOT_SPRINGS end
+
+-- pokefirered/src/metatile_behavior.c:350
+function Collision.isEastwardCurrent(beh) return beh == MB_EASTWARD_CURRENT end
+
+-- pokefirered/src/metatile_behavior.c:342
+function Collision.isWestwardCurrent(beh) return beh == MB_WESTWARD_CURRENT end
+
+-- pokefirered/src/metatile_behavior.c:326
+function Collision.isNorthwardCurrent(beh) return beh == MB_NORTHWARD_CURRENT end
+
+-- pokefirered/src/metatile_behavior.c:334
+function Collision.isSouthwardCurrent(beh) return beh == MB_SOUTHWARD_CURRENT end
+
+-- pokefirered/src/metatile_behavior.c:754
+function Collision.isSpinRight(beh) return beh == MB_SPIN_RIGHT end
+
+-- pokefirered/src/metatile_behavior.c:762
+function Collision.isSpinLeft(beh) return beh == MB_SPIN_LEFT end
+
+-- pokefirered/src/metatile_behavior.c:770
+function Collision.isSpinUp(beh) return beh == MB_SPIN_UP end
+
+-- pokefirered/src/metatile_behavior.c:778
+function Collision.isSpinDown(beh) return beh == MB_SPIN_DOWN end
+
+-- pokefirered/src/metatile_behavior.c:786
+function Collision.isStopSpinning(beh) return beh == MB_STOP_SPINNING end
+
+-- pokefirered/src/metatile_behavior.c:794
+function Collision.isSpinTile(beh)
+  return beh ~= nil and beh >= MB_SPIN_RIGHT and beh <= MB_SPIN_DOWN
+end
+
+-- pokefirered/src/metatile_behavior.c:668
+function Collision.isCyclingRoadPullDown(beh)
+  return beh ~= nil and beh >= MB_CYCLING_ROAD_PULL_DOWN
+    and beh <= MB_CYCLING_ROAD_PULL_DOWN_GRASS
+end
+
+-- pokefirered/src/metatile_behavior.c:676
+function Collision.isCyclingRoadPullDownGrass(beh)
+  return beh == MB_CYCLING_ROAD_PULL_DOWN_GRASS
+end
+
+-- pokefirered/src/metatile_behavior.c:318
+function Collision.isWalkEast(beh) return beh == MB_WALK_EAST end
+
+-- pokefirered/src/metatile_behavior.c:310
+function Collision.isWalkWest(beh) return beh == MB_WALK_WEST end
+
+-- pokefirered/src/metatile_behavior.c:294
+function Collision.isWalkNorth(beh) return beh == MB_WALK_NORTH end
+
+-- pokefirered/src/metatile_behavior.c:302
+function Collision.isWalkSouth(beh) return beh == MB_WALK_SOUTH end
+
+-- pokefirered/src/metatile_behavior.c:382
+function Collision.isSlideEast(beh) return beh == MB_SLIDE_EAST end
+
+-- pokefirered/src/metatile_behavior.c:374
+function Collision.isSlideWest(beh) return beh == MB_SLIDE_WEST end
+
+-- pokefirered/src/metatile_behavior.c:358
+function Collision.isSlideNorth(beh) return beh == MB_SLIDE_NORTH end
+
+-- pokefirered/src/metatile_behavior.c:366
+function Collision.isSlideSouth(beh) return beh == MB_SLIDE_SOUTH end
+
+-- pokefirered/src/metatile_behavior.c:286
+function Collision.isTrickHouseSlipperyFloor(beh)
+  return beh == MB_TRICK_HOUSE_PUZZLE_8_FLOOR
+end
+
+-- pokefirered/src/metatile_behavior.c:594
+function Collision.isWaterfall(beh) return beh == MB_WATERFALL end
+
+-- pokefirered/include/constants/metatile_behaviors.h:72
+local MB_CAVE_DOOR = 0x60
+local MB_LADDER = 0x61
+local MB_EAST_ARROW_WARP = 0x62
+local MB_WEST_ARROW_WARP = 0x63
+local MB_NORTH_ARROW_WARP = 0x64
+local MB_SOUTH_ARROW_WARP = 0x65
+local MB_FALL_WARP = 0x66
+local MB_REGULAR_WARP = 0x67
+local MB_LAVARIDGE_1F_WARP = 0x68
+local MB_WARP_DOOR = 0x69
 -- pokefirered/include/constants/metatile_behaviors.h:82
 local MB_UP_ESCALATOR = 0x6A
 local MB_DOWN_ESCALATOR = 0x6B
@@ -198,6 +424,62 @@ local MB_UP_RIGHT_STAIR_WARP = 0x6C
 local MB_UP_LEFT_STAIR_WARP = 0x6D
 local MB_DOWN_RIGHT_STAIR_WARP = 0x6E
 local MB_DOWN_LEFT_STAIR_WARP = 0x6F
+-- pokefirered/include/constants/metatile_behaviors.h:89
+local MB_UNION_ROOM_WARP = 0x71
+
+-- pokefirered/src/metatile_behavior.c:110
+function Collision.isWarpDoor(beh) return beh == MB_WARP_DOOR end
+
+-- pokefirered/src/metatile_behavior.c:186
+function Collision.isLadder(beh) return beh == MB_LADDER end
+
+-- pokefirered/src/metatile_behavior.c:194
+function Collision.isNonAnimDoor(beh) return beh == MB_CAVE_DOOR end
+
+-- pokefirered/src/metatile_behavior.c:202
+function Collision.isDeepSouthWarp() return false end
+
+-- pokefirered/src/metatile_behavior.c:624
+function Collision.isLavaridge1FWarp(beh) return beh == MB_LAVARIDGE_1F_WARP end
+
+-- pokefirered/src/metatile_behavior.c:632
+function Collision.isWarpPad(beh) return beh == MB_REGULAR_WARP end
+
+-- pokefirered/src/metatile_behavior.c:640
+function Collision.isUnionRoomWarp(beh) return beh == MB_UNION_ROOM_WARP end
+
+-- pokefirered/src/metatile_behavior.c:658
+function Collision.isFallWarp(beh) return beh == MB_FALL_WARP end
+
+-- pokefirered/src/metatile_behavior.c:126
+function Collision.isEscalator(beh)
+  return beh == MB_UP_ESCALATOR or beh == MB_DOWN_ESCALATOR
+end
+
+-- pokefirered/src/field_control_avatar.c:944
+local ARROW_WARP_DIR = {
+  [MB_EAST_ARROW_WARP] = "right",
+  [MB_WEST_ARROW_WARP] = "left",
+  [MB_NORTH_ARROW_WARP] = "up",
+  [MB_SOUTH_ARROW_WARP] = "down",
+}
+
+-- pokefirered/src/metatile_behavior.c:253
+function Collision.isArrowWarpBehavior(beh)
+  return ARROW_WARP_DIR[beh] ~= nil
+end
+
+-- pokefirered/src/field_control_avatar.c:944
+function Collision.arrowWarpDir(beh) return ARROW_WARP_DIR[beh] end
+
+-- pokefirered/src/field_control_avatar.c:901
+function Collision.isStepWarpBehavior(beh)
+  if beh == nil then return false end
+  return Collision.isWarpDoor(beh) or Collision.isLadder(beh)
+    or Collision.isEscalator(beh) or Collision.isNonAnimDoor(beh)
+    or Collision.isLavaridge1FWarp(beh) or Collision.isWarpPad(beh)
+    or Collision.isFallWarp(beh) or Collision.isUnionRoomWarp(beh)
+end
 
 -- pokefirered/src/metatile_behavior.c:174
 function Collision.isStairWarpBehavior(beh)
@@ -225,6 +507,27 @@ function Collision.stairArrivalFacing(beh)
     return "right"
   end
   return nil
+end
+
+-- pokefirered/src/overworld.c:910
+local ARRIVAL_FACING = {
+  [MB_CAVE_DOOR] = "down",
+  [MB_WARP_DOOR] = "down",
+  [MB_SOUTH_ARROW_WARP] = "up",
+  [MB_NORTH_ARROW_WARP] = "down",
+  [MB_WEST_ARROW_WARP] = "right",
+  [MB_EAST_ARROW_WARP] = "left",
+  [MB_UP_RIGHT_STAIR_WARP] = "left",
+  [MB_DOWN_RIGHT_STAIR_WARP] = "left",
+  [MB_UP_LEFT_STAIR_WARP] = "right",
+  [MB_DOWN_LEFT_STAIR_WARP] = "right",
+}
+
+function Collision.arrivalFacing(destBeh, storedDir)
+  local f = ARRIVAL_FACING[destBeh]
+  if f then return f end
+  if destBeh == MB_LADDER then return storedDir or "down" end
+  return "down"
 end
 
 -- pokefirered/src/field_fadetransition.c:866
@@ -392,11 +695,31 @@ function Collision.isGrass(cx, cy)
   return coll == 0x18 or coll == 0x14
 end
 
+-- pokefirered/src/event_object_movement.c:8346 IsElevationMismatchAt
+function Collision.elevationAt(cx, cy)
+  local layout = Collision._mapDef and Collision._mapDef.midLayout
+  if not (layout and layout.elevAt) then return nil end
+  if cx < 0 or cy < 0 or cx >= layout.width or cy >= layout.height then return nil end
+  return layout:elevAt(cx, cy)
+end
+
+-- pokefirered/src/field_player_avatar.c:597 CanStopSurfing
+local SURF_ELEVATION = 1
+local function atSurfElevation(cx, cy)
+  if Collision.elevationAt(cx, cy) ~= SURF_ELEVATION then return false end
+  local beh = Collision.behavior(cx, cy)
+  return beh == MB_PUDDLE or beh == MB_SHALLOW_WATER
+end
+
 function Collision.isWater(cx, cy)
   local P = permissions()
   local coll = Collision.cell(cx, cy)
-  if P and P.isWater then return P.isWater(coll) end
-  return coll == 0x29
+  if P and P.isWater then
+    if P.isWater(coll) then return true end
+  elseif coll == 0x29 then
+    return true
+  end
+  return atSurfElevation(cx, cy)
 end
 
 local function entityBlocks(game, tx, ty)
@@ -422,11 +745,14 @@ end
 
 local function overrideBlocks(tx, ty)
   local Field = package.loaded["src.core.game3.field"]
-  if not (Field and Field.metatileOverrides) then return false end
-  for _, o in ipairs(Field.metatileOverrides) do
-    if o.impassable and o.x == tx and o.y == ty then return true end
+  if not (Field and Field.metatileOverrideAt) then return false end
+  local mapId = Collision._mapId
+  if not mapId then
+    local session = Field._session
+    mapId = session and session.map
   end
-  return false
+  local o = Field.metatileOverrideAt(mapId, tx, ty)
+  return o ~= nil and o.impassable == true
 end
 
 --- Can the avatar enter cell (tx, ty) on foot?
@@ -443,6 +769,10 @@ function Collision.canEnter(game, tx, ty, opts)
   if Collision._grid then
     if not Collision.inBounds(tx, ty) then return false, "bounds" end
     if overrideBlocks(tx, ty) then return false, "tile" end
+    -- pokefirered/src/event_object_movement.c:4835 GetCollisionAtCoords
+    if Collision.directionallyImpassable(opts.fromX, opts.fromY, tx, ty, opts.dir) then
+      return false, "tile"
+    end
     if entityBlocks(game, tx, ty) then return false, "entity" end
     local isW = Collision.isWater(tx, ty)
     if surfing then
@@ -500,7 +830,57 @@ function Collision.ledgeLanding(game, fromX, fromY, dir)
   return tx, ty
 end
 
+-- pokefirered/include/constants/maps.h:9
+local MAP_DYNAMIC_NUM = 0x7F
+-- pokefirered/include/constants/maps.h:26
+local WARP_ID_NONE = 0xFF
+
+local function sessionOf()
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  return Runtime and Runtime.getSession and Runtime.getSession() or nil
+end
+
+local function catalogMapId(mapId, group, num)
+  local okC, MapCatalog = pcall(require, "src.import.gba.map_catalog")
+  if type(mapId) == "string" and mapId ~= "" then
+    if okC and MapCatalog and MapCatalog.resolve then
+      return MapCatalog.resolve(mapId) or mapId
+    end
+    return mapId
+  end
+  if okC and MapCatalog and group ~= nil then
+    return MapCatalog.mapIdFor(group, num)
+  end
+  return nil
+end
+
+-- pokefirered/src/overworld.c:610 SetWarpDestinationToDynamicWarp
+local function resolveDynamicDest(game)
+  local session = sessionOf()
+  local dw = session and session.dynamicWarp
+  if type(dw) == "string" then dw = { map = dw } end
+  if type(dw) ~= "table" then return nil end
+  local destMap = catalogMapId(dw.map or dw.mapId or dw.destMap, dw.mapGroup, dw.mapNum)
+  if type(destMap) ~= "string" then return nil end
+  local destDef = game and game.data and game.data.maps and game.data.maps[destMap]
+  -- pokefirered/src/overworld.c:564 SetPlayerCoordsFromWarp
+  local warps = destDef and destDef.warps
+  local id = tonumber(dw.warpId)
+  local landing = id and id >= 0 and id < WARP_ID_NONE and warps and warps[id + 1]
+  if landing then
+    return destMap, tonumber(landing.x) or 0, tonumber(landing.y) or 0
+  end
+  local x, y = tonumber(dw.x), tonumber(dw.y)
+  if x and y and x >= 0 and y >= 0 then return destMap, x, y end
+  local w, h = mapCellSize(destDef)
+  return destMap, math.floor(w / 2), math.floor(h / 2)
+end
+
 local function resolveDest(game, warp)
+  -- pokefirered/src/field_control_avatar.c:971 SetupWarp
+  if tonumber(warp.mapNum) == MAP_DYNAMIC_NUM then
+    return resolveDynamicDest(game)
+  end
   local destMap = warp.destMap or warp.map
   if type(destMap) ~= "string" or destMap == "" then
     local okC, MapCatalog = pcall(require, "src.import.gba.map_catalog")
@@ -535,6 +915,46 @@ end
 
 function Collision.warpAt(cx, cy)
   return Collision._warps[cy * 1024 + cx]
+end
+
+-- pokefirered/src/field_control_avatar.c:960 GetWarpEventAtMapPosition
+local function triggeringWarp()
+  local P = package.loaded["src.core.game3.player"]
+  if not P then return nil end
+  local cx, cy = tonumber(P.cellX), tonumber(P.cellY)
+  if not (cx and cy) then return nil end
+  local w = Collision.warpAt(cx, cy)
+  if w then return w end
+  local d = DELTA[P.facing]
+  if not d then return nil end
+  return Collision.warpAt(cx + d[1], cy + d[2])
+end
+
+-- pokefirered/src/field_control_avatar.c:982 SetupWarp
+function Collision.noteDynamicWarpEntry(game, destMap, destX, destY, srcX, srcY)
+  local destDef = game and game.data and game.data.maps and game.data.maps[destMap]
+  local hit = false
+  for _, w in ipairs((destDef and destDef.warps) or {}) do
+    if tonumber(w.mapNum) == MAP_DYNAMIC_NUM
+        and tonumber(w.x) == tonumber(destX) and tonumber(w.y) == tonumber(destY) then
+      hit = true
+      break
+    end
+  end
+  if not hit then return false end
+  local session = sessionOf()
+  if not session then return false end
+  local from = (srcX and srcY and Collision.warpAt(tonumber(srcX), tonumber(srcY)))
+    or triggeringWarp()
+  local P = package.loaded["src.core.game3.player"]
+  -- pokefirered/src/overworld.c:600 SetDynamicWarp
+  session.dynamicWarp = {
+    map = (game and game.currentMap) or Collision._mapId or session.map,
+    warpId = WARP_ID_NONE,
+    x = (from and tonumber(from.x)) or (P and tonumber(P.cellX)) or session.x,
+    y = (from and tonumber(from.y)) or (P and tonumber(P.cellY)) or session.y,
+  }
+  return true
 end
 
 local function isBuilding(name)
@@ -685,6 +1105,36 @@ function Collision.isEscalatorWarp(game, cx, cy, dir)
   return nil
 end
 
+-- pokefirered/src/field_control_avatar.c:832
+function Collision.isArrowWarp(game, cx, cy, dir)
+  local beh = Collision.behavior(cx, cy)
+  if not Collision.isArrowWarpBehavior(beh) then return nil end
+  if Collision.arrowWarpDir(beh) ~= dir then return nil end
+
+  local w = Collision.warpAt(cx, cy)
+  if not w then
+    local map = hostWorld(game) and hostWorld(game).map
+    if map and map.warpAt then
+      local hit = map:warpAt(cx, cy)
+      w = hit and hit.def
+    end
+  end
+  if not w then return nil end
+
+  local destMap, destX, destY = resolveDest(game, w)
+  if not destMap then return nil end
+
+  return {
+    warp = w,
+    destMap = destMap,
+    destX = destX,
+    destY = destY,
+    behavior = beh,
+    x = cx,
+    y = cy,
+  }
+end
+
 -- pokefirered/src/field_control_avatar.c:839
 function Collision.isStairWarp(game, cx, cy, dir)
   local beh = Collision.behavior(cx, cy)
@@ -715,11 +1165,25 @@ function Collision.isStairWarp(game, cx, cy, dir)
   }
 end
 
+-- pokefirered/src/overworld.c:910
+function Collision.destArrivalFacing(game, destMap, destX, destY, storedDir)
+  local data = game and game.data and game.data.maps
+  local destDef = data and data[destMap]
+  if destDef then
+    local Map = package.loaded["src.core.game3.map"] or require("src.core.game3.map")
+    if Map.ensureMidLayout then pcall(Map.ensureMidLayout, game, destMap, destDef) end
+  end
+  local destBeh = Collision.behaviorOn(destDef, destX, destY)
+  if destBeh == nil then return storedDir or "down" end
+  return Collision.arrivalFacing(destBeh, storedDir)
+end
+
 --- If standing on a warp cell, trigger game3 map load / host warp.
 -- Door entrances (pressing UP in front of door), exit mats (pressing DOWN on mat),
 -- and escalators (moving into escalator from adjacent cell) are triggered explicitly
 -- via Player.tryMove, not on initial step landing.
-function Collision.tryWarpAt(game, cx, cy, facing)
+function Collision.tryWarpAt(game, cx, cy, facing, opts)
+  local arrowPress = opts ~= nil and opts.arrow == true
   local Space = package.loaded["src.core.game3.scripting.space"]
   if Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning() then
     return false
@@ -743,19 +1207,27 @@ function Collision.tryWarpAt(game, cx, cy, facing)
   local destUpper = string.upper(tostring(destMap or ""))
   local coll = Collision.cell(cx, cy)
 
-  -- Suppress auto-warp on landing for animated entrance doors, animated exit mats & escalators
-  if Collision.isDoorWarp and Collision.isDoorWarp(game, cx, cy) then
-    return false
-  end
-  if Collision.isExitWarp and Collision.isExitWarp(game, cx, cy) then
-    return false
-  end
-  if Collision.isEscalatorWarp and Collision.isEscalatorWarp(game, cx, cy, facing) then
-    return false
-  end
-  -- pokefirered/src/field_control_avatar.c:901
-  if Collision.isStairWarpBehavior(Collision.behavior(cx, cy)) then
-    return false
+  local beh = Collision.behavior(cx, cy)
+
+  -- pokefirered/src/field_control_avatar.c:825
+  if not arrowPress then
+    if Collision.isDoorWarp and Collision.isDoorWarp(game, cx, cy) then
+      return false
+    end
+    if Collision.isExitWarp and Collision.isExitWarp(game, cx, cy) then
+      return false
+    end
+    if Collision.isEscalatorWarp and Collision.isEscalatorWarp(game, cx, cy, facing) then
+      return false
+    end
+    -- pokefirered/src/field_control_avatar.c:944
+    if Collision.isStairWarpBehavior(beh) or Collision.isArrowWarpBehavior(beh) then
+      return false
+    end
+    -- pokefirered/src/field_control_avatar.c:856
+    if beh ~= nil and not Collision.isStepWarpBehavior(beh) then
+      return false
+    end
   end
 
   local Runtime = package.loaded["src.core.game3.runtime"]
@@ -766,21 +1238,29 @@ function Collision.tryWarpAt(game, cx, cy, facing)
   if MapIds.isGame3Map(destMap) then
     local Warp = require("src.core.game3.warp")
 
-    local isTeleport = (curUpper:find("SILPH_CO") or curUpper:find("SAFFRON_GYM") or curUpper:find("ROCKET_HIDEOUT") or curUpper:find("POKEMON_MANSION"))
+    -- pokefirered/src/field_control_avatar.c:879
+    local isTeleport
+    if beh ~= nil then
+      isTeleport = Collision.isWarpPad(beh)
+    else
+      isTeleport = (curUpper:find("SILPH_CO") or curUpper:find("SAFFRON_GYM") or curUpper:find("ROCKET_HIDEOUT") or curUpper:find("POKEMON_MANSION"))
         and not (destUpper:find("ELEVATOR") or destUpper:find("1F") or destUpper:find("PLAYERS_HOUSE"))
         and (coll == 0x75 or coll == 0x72)
+    end
 
-    local isFallHole = (coll == 0x76) or ((curUpper:find("SEAFOAM") or curUpper:find("MT_MOON") or curUpper:find("VICTORY_ROAD")) and coll == 0x76)
+    -- pokefirered/src/field_control_avatar.c:889
+    local isFallHole = (beh ~= nil) and Collision.isFallWarp(beh) or (beh == nil and coll == 0x76)
 
     if isTeleport then
-      return Warp.startTeleport(mod, g, destMap, destX, destY)
+      return Warp.startTeleport(mod, g, destMap, destX, destY, cx, cy)
     end
 
     if isFallHole then
-      return Warp.startFall(mod, g, destMap, destX, destY)
+      return Warp.startFall(mod, g, destMap, destX, destY, cx, cy)
     end
 
-    Warp.request(mod, g, destMap, destX, destY, facing or "down", {
+    Warp.request(mod, g, destMap, destX, destY,
+      Collision.destArrivalFacing(g, destMap, destX, destY, facing), {
       fade = true,
       door = false,
       doorX = cx,

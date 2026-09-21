@@ -120,7 +120,7 @@ local function party_opts(row, mode, party)
     local mon = party[slot]
     local canUse, err = BattleItems.canUseOn(st, row.id, slot, mon)
     if not canUse then
-      se(9)
+      se(5) -- pokefirered/src/party_menu.c:4490
       PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
         PartyMenu.mode = "use"
       end)
@@ -191,7 +191,7 @@ function BerryPouch.handleInput(input)
       BerryPouch.mode = "toss_confirm"
       BerryPouch.yesNoCursor = 1
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/berry_pouch.c:1142
       BerryPouch.mode = "list"
     end
     return
@@ -203,7 +203,7 @@ function BerryPouch.handleInput(input)
       BerryPouch.yesNoCursor = (BerryPouch.yesNoCursor == 1) and 2 or 1
       se(5)
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/menu_helpers.c:57
       BerryPouch.mode = "list"
     elseif input:wasPressed("a") then
       if BerryPouch.yesNoCursor == 1 then
@@ -220,7 +220,7 @@ function BerryPouch.handleInput(input)
         end
       else
         -- NO: Cancel toss
-        se(9)
+        se(5) -- pokefirered/src/menu_helpers.c:57
         BerryPouch.mode = "list"
       end
     end
@@ -295,7 +295,7 @@ function BerryPouch.handleInput(input)
         end
       end
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/berry_pouch.c:1052
       BerryPouch.mode = "list"
     end
     return
@@ -333,7 +333,7 @@ function BerryPouch.handleInput(input)
   elseif input:wasPressed("a") then
     if BerryPouch.cursor == total then
       -- CLOSE option selected
-      se(9)
+      se(5) -- pokefirered/src/berry_pouch.c:963
       BerryPouch.close()
     elseif row then
       -- Berry selected
@@ -342,7 +342,7 @@ function BerryPouch.handleInput(input)
       se(5)
     end
   elseif input:wasPressed("b") or input:wasPressed("start") then
-    se(9)
+    se(5) -- pokefirered/src/berry_pouch.c:957
     BerryPouch.close()
   end
 end

@@ -511,8 +511,16 @@ function Handle:canStep(dir)
   local d = DELTA[dir]
   local C = loaded("collision")
   if not (d and C) then return false end
-  local tx, ty = self.npc.cellX + d[1], self.npc.cellY + d[2]
-  return C.canEnter(nil, tx, ty, {}) and true or false
+  local npc = self.npc
+  local tx, ty = npc.cellX + d[1], npc.cellY + d[2]
+  -- pokefirered/src/event_object_movement.c:4830 GetCollisionAtCoords
+  local onWater = C.isWater(npc.cellX, npc.cellY)
+  if not C.canEnter(nil, tx, ty, { fromX = npc.cellX, fromY = npc.cellY,
+      dir = dir, surfing = onWater }) then
+    return false
+  end
+  -- pokefirered/src/event_object_movement.c:8346 IsElevationMismatchAt
+  return C.isWater(tx, ty) == onWater
 end
 
 function Handle:placeAt(x, y, facing)

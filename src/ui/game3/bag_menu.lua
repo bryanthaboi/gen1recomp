@@ -39,6 +39,9 @@ local SE_SELECT = 5
 -- src/item_menu_icons.c:81
 local SHAKE_ROT = { -2, -4, -2, 0, 2, 4, 2, 0, -2, -4, -2, 0 }
 
+-- src/item_use.c:159
+local FIELD_EXIT_FADE = { bike = true, rod = true }
+
 -- src/bag.c:13
 local WIN_WHITE = { fg = FrlgFont.STDPAL[1], shadow = FrlgFont.STDPAL[2], bg = FrlgFont.STDPAL[0] }
 local CURSOR_SELECTED = { fg = FrlgFont.STDPAL[3], shadow = FrlgFont.STDPAL[2], bg = FrlgFont.STDPAL[0] }
@@ -242,6 +245,10 @@ function BagMenu.show(sessionBag, opts)
   local st = bag_state()
   BagMenu.pocketIdx = opts.pocketIdx or st.pocket or 1
   BagMenu.mode = "list"
+  BagMenu.messageText = nil
+  BagMenu._msgPages = nil
+  BagMenu._msgPage = 1
+  BagMenu._msgDone = nil
   BagMenu.partyPurpose = "use"
   BagMenu.tossQty = 1
   BagMenu._onClose = opts.onClose
@@ -268,6 +275,7 @@ function BagMenu.close()
   BagMenu._open = nil
   BagMenu._exit = nil
   BagMenu._switch = nil
+  BagMenu._msgDone = nil
   BagMenu.open = false
   local battleCb = BagMenu._onBattleUse
   local wasBattle = BagMenu._battle
@@ -397,6 +405,27 @@ local function open_submenu(fn)
   begin_exit(false, fn)
 end
 
+-- src/text.c:796
+local function show_bag_message(text, onDone)
+  local pages = {}
+  for page in (tostring(text or "") .. "\f"):gsub("\\p", "\f"):gmatch("(.-)\f") do
+    if page ~= "" then pages[#pages + 1] = page end
+  end
+  BagMenu.mode = "message"
+  BagMenu._msgPages = #pages > 1 and pages or nil
+  BagMenu._msgPage = 1
+  BagMenu.messageText = pages[1] or text
+  BagMenu._msgDone = onDone
+end
+
+-- src/item_menu.c:1018 DisplayItemMessageInBag
+BagMenu.showMessage = show_bag_message
+
+-- src/item_use.c:182
+local function use_field_from_bag(session, bag, id)
+  return ItemUse.useField(session, bag, id, nil)
+end
+
 local function handle_menu_input(input)
   if BagMenu.mode == "toss" then
     local rows = BagMenu.list()
@@ -416,7 +445,7 @@ local function handle_menu_input(input)
       BagMenu.mode = "list"
       clamp_cursor()
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/item_menu.c:1540
       BagMenu.mode = "action"
     end
     return
@@ -425,9 +454,22 @@ local function handle_menu_input(input)
   if BagMenu.mode == "message" then
     if input:wasPressed("a") or input:wasPressed("b") or input:wasPressed("start") then
       se(5)
+      local pages = BagMenu._msgPages
+      -- pokefirered/src/text.c:796
+      if pages and BagMenu._msgPage < #pages then
+        BagMenu._msgPage = BagMenu._msgPage + 1
+        BagMenu.messageText = pages[BagMenu._msgPage]
+        return
+      end
       BagMenu.mode = "list"
       BagMenu.messageText = nil
+      BagMenu._msgPages = nil
+      BagMenu._msgPage = 1
       clamp_cursor()
+      -- pokefirered/src/item_menu.c:1018 DisplayItemMessageInBag followUpFunc
+      local onDone = BagMenu._msgDone
+      BagMenu._msgDone = nil
+      if onDone then onDone() end
     end
     return
   end
@@ -481,7 +523,7 @@ local function handle_menu_input(input)
                 local mon = liveParty and liveParty[realSlot]
                 local canUse, err = BattleItems.canUseOn(st, row.id, realSlot, mon)
                 if not canUse then
-                  se(9)
+                  se(5) -- pokefirered/src/party_menu.c:4490
                   PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
                     PartyMenu.mode = "use"
                   end)
@@ -560,7 +602,7 @@ local function handle_menu_input(input)
               end)
             end
           else
-            local ok, kind, text = ItemUse.useField(BagMenu._session, BagMenu._bag, row.id, nil)
+            local ok, kind, text = use_field_from_bag(BagMenu._session, BagMenu._bag, row.id)
             if kind == "vs_seeker" and not ok then
               BagMenu.mode = "message"
               BagMenu.messageText = text
@@ -594,6 +636,41 @@ local function handle_menu_input(input)
                 Field.useItemfinder(session, true)
               end)
               return
+            elseif ok and kind == "escape" then
+              -- pokefirered/src/item_use.c:159 SetUpItemUseOnFieldCallback
+              begin_exit(true, function()
+                BagMenu.close()
+                local StartMenu = package.loaded["src.ui.game3.start_menu"]
+                if StartMenu and StartMenu.isOpen and StartMenu.isOpen() then
+                  StartMenu.open = false
+                  StartMenu._onClose = nil
+                  Stack.pop("start")
+                end
+                field_fade_in()
+                ItemUse.runOnFieldCallback()
+              end)
+              return
+            elseif ok and FIELD_EXIT_FADE[kind] ~= nil then
+              -- pokefirered/src/item_use.c:159
+              local fade = FIELD_EXIT_FADE[kind]
+              begin_exit(true, function()
+                BagMenu.close()
+                local StartMenu = package.loaded["src.ui.game3.start_menu"]
+                if StartMenu and StartMenu.isOpen and StartMenu.isOpen() then
+                  StartMenu.open = false
+                  StartMenu._onClose = nil
+                  Stack.pop("start")
+                end
+                if fade then field_fade_in() end
+              end)
+              return
+            elseif ok and kind == "map" then
+              -- pokefirered/src/item_use.c:649
+              BagMenu.mode = "list"
+              clamp_cursor()
+            elseif text then
+              -- pokefirered/src/item_use.c:186
+              show_bag_message(text)
             else
               BagMenu.mode = "list"
               clamp_cursor()
@@ -653,7 +730,7 @@ local function handle_menu_input(input)
         BagMenu.mode = "list"
       end
     elseif input:wasPressed("b") then
-      se(9)
+      se(5) -- pokefirered/src/item_menu.c:1453
       BagMenu.mode = "list"
     end
     return

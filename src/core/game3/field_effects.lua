@@ -11,6 +11,7 @@ FieldEffects._cache = nil
 FieldEffects._sheets = {} -- [name] = { image = ..., quads = ..., fw = ..., fh = ..., frames = ... }
 FieldEffects._fx = nil    -- tall grass
 FieldEffects._anims = {}  -- transient active field animations
+FieldEffects._ground = nil -- pokefirered/src/event_object_movement.c:8721
 FieldEffects._surfClock = 0
 FieldEffects._logged = false
 
@@ -18,6 +19,8 @@ local CELL = 16
 local FEET_H = 8
 local RUSTLE = { 1, 2, 3, 4, 0 }
 local FRAME_DUR = 10
+-- pokefirered/src/data/field_effects/field_effect_objects.h:1099
+local FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES = 64, 64, 5
 
 local function log(msg)
   if FieldEffects._logged then return end
@@ -32,7 +35,7 @@ end
 local function try_load_rgba(cache, rel, w, h)
   if not cache or not cache.read then return nil end
   local rgba = cache:read(rel)
-  if not rgba or #rgba < w * h * 4 then return nil end
+  if not rgba or #rgba ~= w * h * 4 then return nil end
   if not (love and love.image and love.graphics) then return nil end
   local ok, id = pcall(love.image.newImageData, w, h, "rgba8", rgba)
   if not ok or not id then return nil end
@@ -52,13 +55,17 @@ local function try_load_png(path)
 end
 
 local function load_sheet(name, fw, fh, frames)
-  if FieldEffects._sheets[name] then return FieldEffects._sheets[name] end
+  local memo = FieldEffects._sheets[name]
+  if memo ~= nil then return memo or nil end
   local totalH = fh * frames
   local root = cache_root() .. "/field_effects/"
   local img = try_load_rgba(FieldEffects._cache, root .. name .. ".rgba", fw, totalH)
     or try_load_rgba(FieldEffects._cache, "field_effects/" .. name .. ".rgba", fw, totalH)
     or try_load_png(root .. name .. ".png")
-  if not img then return nil end
+  if not img then
+    FieldEffects._sheets[name] = false
+    return nil
+  end
 
   local quads = {}
   local quadsFront = {}
@@ -90,8 +97,14 @@ function FieldEffects.install(cache)
   FieldEffects._sheets = {}
   FieldEffects._fx = nil
   FieldEffects._anims = {}
+  FieldEffects._ground = nil
   FieldEffects._surfClock = 0
   FieldEffects._logged = false
+  local okV, FieldView = pcall(require, "src.core.game3.field_view")
+  if okV and FieldView and FieldView.setCameraPanning then
+    FieldView.setCameraPanning(0, 0)
+    FieldView.setFlashRadius(nil)
+  end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.install then Heal.install(cache) end
 end
@@ -100,6 +113,12 @@ function FieldEffects.invalidate()
   FieldEffects._sheets = {}
   FieldEffects._fx = nil
   FieldEffects._anims = {}
+  FieldEffects._ground = nil
+  local okV, FieldView = pcall(require, "src.core.game3.field_view")
+  if okV and FieldView and FieldView.setCameraPanning then
+    FieldView.setCameraPanning(0, 0)
+    FieldView.setFlashRadius(nil)
+  end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.invalidate then Heal.invalidate() end
 end
@@ -213,6 +232,37 @@ function FieldEffects.startRockSmash(targetObj, cx, cy, onDone)
   table.insert(FieldEffects._anims, anim)
 end
 
+local function fieldView()
+  local ok, FieldView = pcall(require, "src.core.game3.field_view")
+  if ok and type(FieldView) == "table" then return FieldView end
+  return nil
+end
+
+--- pokefirered/src/field_screen_effect.c:194
+function FieldEffects.animateFlashLevel(fromLevel, toLevel)
+  local FieldView = fieldView()
+  if not FieldView then return nil end
+  local from = FieldView.radiusForLevel(fromLevel)
+  local to = FieldView.radiusForLevel(toLevel)
+  if from == to then
+    FieldView.setFlashLevel(toLevel)
+    return nil
+  end
+  FieldView.setFlashRadius(from)
+  local anim = {
+    kind = "flash_level",
+    radius = from,
+    dest = to,
+    delta = (from < to) and 2 or -2,
+    level = tonumber(toLevel) or 0,
+    clear = (tonumber(toLevel) or 0) == 0,
+    state = 0,
+    timer = 0,
+  }
+  table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
 --- Screen flash animation (Flash HM)
 function FieldEffects.startFlash(onDone)
   local anim = {
@@ -220,25 +270,58 @@ function FieldEffects.startFlash(onDone)
     alpha = 1.0,
     timer = 0,
     maxDur = 30,
+  }
+  table.insert(FieldEffects._anims, anim)
+  -- pokefirered/data/scripts/flash.inc:2
+  local FieldView = fieldView()
+  local levelAnim
+  if FieldView and FieldView.getFlashLevel and FieldView.getFlashLevel() ~= 0 then
+    levelAnim = FieldEffects.animateFlashLevel(FieldView.getFlashLevel(), 0)
+  end
+  -- pokefirered/src/field_screen_effect.c:202
+  if levelAnim then
+    levelAnim.onDone = onDone
+  else
+    anim.onDone = onDone
+  end
+  return levelAnim or anim
+end
+
+--- pokefirered/src/field_effect.c:1258
+function FieldEffects.startLandingShake(onDone)
+  local anim = {
+    kind = "camera_shake",
+    amp = 4,
+    ticks = 0,
+    timer = 0,
     onDone = onDone,
   }
   table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+local function player_gender()
+  local R = package.loaded["src.core.game3.runtime"]
+  local s = R and R.getSession and R.getSession()
+  return (s and tonumber(s.gender)) or 0
 end
 
 --- Fly Bird takeoff and landing animations
 function FieldEffects.startFlyTakeoff(onMidWarp, onDone)
-  load_sheet("fly_bird", 32, 32, 4)
+  load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
   local P = package.loaded["src.core.game3.player"]
   local px = P and P.px or 0
   local py = P and P.py or 0
   local anim = {
     kind = "fly_takeoff",
-    px = px - 8,
-    py = py - 40,
-    targetPy = py - 8,
+    px = px - 24,
+    py = py - 72,
+    targetPy = py - 40,
     state = "descend",
     timer = 0,
     frame = 0,
+    -- pokefirered/src/field_effect.c:3312
+    ridingFrame = player_gender() * 2 + 1,
     onMidWarp = onMidWarp,
     onDone = onDone,
   }
@@ -246,18 +329,19 @@ function FieldEffects.startFlyTakeoff(onMidWarp, onDone)
 end
 
 function FieldEffects.startFlyLanding(onDone)
-  load_sheet("fly_bird", 32, 32, 4)
+  load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
   local P = package.loaded["src.core.game3.player"]
   local px = P and P.px or 0
   local py = P and P.py or 0
   local anim = {
     kind = "fly_landing",
-    px = px - 8,
-    py = py - 60,
-    targetPy = py - 8,
+    px = px - 24,
+    py = py - 92,
+    targetPy = py - 40,
     state = "descend",
     timer = 0,
-    frame = 0,
+    -- pokefirered/src/field_effect.c:3550
+    frame = player_gender() * 2 + 2,
     onDone = onDone,
   }
   table.insert(FieldEffects._anims, anim)
@@ -340,8 +424,237 @@ function FieldEffects.spawnEmoticon(targetObj, emoteType, onDone)
   return FieldEffects.startEmote(targetObj, emoteType, onDone)
 end
 
+-- pokefirered/include/constants/metatile_behaviors.h:14
+local MB_POND_WATER = 0x10
+-- pokefirered/include/constants/metatile_behaviors.h:20
+local MB_PUDDLE = 0x16
+local MB_SHALLOW_WATER = 0x17
+
+-- pokefirered/src/data/field_effects/field_effect_objects.h:571 sAnim_Splash_0
+local ANIM_SPLASH = { { 0, 4 }, { 1, 4 } }
+-- pokefirered/src/data/field_effects/field_effect_objects.h:578 sAnim_Splash_1
+local ANIM_FEET_IN_FLOWING_WATER = {
+  { 0, 4 }, { 1, 4 }, { 0, 6 }, { 1, 6 }, { 0, 8 }, { 1, 8 }, { 0, 6 }, { 1, 6 },
+}
+-- pokefirered/src/data/field_effects/field_effect_objects.h:108 sAnim_Ripple
+local ANIM_RIPPLE = {
+  { 0, 12 }, { 1, 9 }, { 2, 9 }, { 3, 9 }, { 0, 9 }, { 1, 9 }, { 2, 11 }, { 4, 11 },
+}
+
+local SE_PUDDLE = 63
+
+local function anim_frame(seq, t, loop)
+  local total = 0
+  for i = 1, #seq do total = total + seq[i][2] end
+  if total <= 0 then return nil end
+  if loop then
+    t = t % total
+  elseif t >= total then
+    return nil
+  end
+  local acc = 0
+  for i = 1, #seq do
+    acc = acc + seq[i][2]
+    if t < acc then return seq[i][1] end
+  end
+  return seq[#seq][1]
+end
+
+local function play_se(id)
+  local okA, Audio = pcall(require, "src.core.game3.audio")
+  if okA and Audio and Audio.playSe then Audio.playSe(id) end
+end
+
+local function ground_state()
+  local g = FieldEffects._ground
+  if not g then
+    g = { inShallowFlowingWater = false, inHotSprings = false, moving = false }
+    FieldEffects._ground = g
+  end
+  return g
+end
+
+local function behavior_at(cx, cy)
+  local Collision = package.loaded["src.core.game3.collision"]
+  if not (Collision and Collision.behavior) then return nil end
+  return Collision.behavior(cx, cy)
+end
+
+local function is_hot_springs(beh)
+  local Collision = package.loaded["src.core.game3.collision"]
+  if Collision and Collision.isHotSprings then return Collision.isHotSprings(beh) end
+  return false
+end
+
+-- pokefirered/src/event_object_movement.c:8143
+local function flag_shallow_flowing_water(g, cur, prev)
+  if cur == MB_SHALLOW_WATER and prev == MB_SHALLOW_WATER then
+    if not g.inShallowFlowingWater then
+      g.inShallowFlowingWater = true
+      return true
+    end
+  else
+    g.inShallowFlowingWater = false
+  end
+  return false
+end
+
+-- pokefirered/src/event_object_movement.c:8163
+local function flag_puddle(cur, prev)
+  return cur == MB_PUDDLE and prev == MB_PUDDLE
+end
+
+-- pokefirered/src/event_object_movement.c:8172
+local function flag_ripple(cur)
+  return cur == MB_POND_WATER or cur == MB_PUDDLE
+end
+
+-- pokefirered/src/event_object_movement.c:8196
+local function flag_hot_springs(g, cur, prev)
+  if is_hot_springs(cur) and is_hot_springs(prev) then
+    if not g.inHotSprings then
+      g.inHotSprings = true
+      return true
+    end
+  else
+    g.inHotSprings = false
+  end
+  return false
+end
+
+local function has_anim(kind)
+  for _, anim in ipairs(FieldEffects._anims) do
+    if anim.kind == kind then return true end
+  end
+  return false
+end
+
+local GROUND_KINDS = { splash = true, feet_water = true, hot_springs = true, ripple = true }
+
+local function clear_ground_anims()
+  local keep = {}
+  for _, anim in ipairs(FieldEffects._anims) do
+    if not GROUND_KINDS[anim.kind] then keep[#keep + 1] = anim end
+  end
+  FieldEffects._anims = keep
+end
+
+-- pokefirered/src/event_object_movement.c:8580 GroundEffect_StepOnPuddle
+local function start_splash()
+  load_sheet("splash", 16, 8, 2)
+  table.insert(FieldEffects._anims, { kind = "splash", timer = 0, frame = 0 })
+  play_se(SE_PUDDLE)
+end
+
+-- pokefirered/src/event_object_movement.c:8505 GroundEffect_FlowingWater
+local function start_feet_in_flowing_water()
+  if has_anim("feet_water") then return end
+  load_sheet("splash", 16, 8, 2)
+  table.insert(FieldEffects._anims, { kind = "feet_water", timer = 0, frame = 0 })
+end
+
+-- pokefirered/src/event_object_movement.c:8575 GroundEffect_Ripple
+local function start_ripple(cx, cy)
+  load_sheet("ripple", 16, 16, 5)
+  table.insert(FieldEffects._anims,
+    { kind = "ripple", timer = 0, frame = 0, cx = cx, cy = cy })
+end
+
+-- pokefirered/src/event_object_movement.c:8652 GroundEffect_HotSprings
+local function start_hot_springs()
+  if has_anim("hot_springs") then return end
+  load_sheet("hot_springs_water", 16, 16, 1)
+  table.insert(FieldEffects._anims, { kind = "hot_springs", timer = 0, frame = 0 })
+end
+
+-- pokefirered/src/event_object_movement.c:8023 GetAllGroundEffectFlags_OnSpawn
+local function ground_effects_on_spawn(g, cur, prev)
+  if flag_shallow_flowing_water(g, cur, prev) then start_feet_in_flowing_water() end
+  if flag_hot_springs(g, cur, prev) then start_hot_springs() end
+end
+
+-- pokefirered/src/event_object_movement.c:8035 GetAllGroundEffectFlags_OnBeginStep
+local function ground_effects_on_begin_step(g, cur, prev)
+  if flag_shallow_flowing_water(g, cur, prev) then start_feet_in_flowing_water() end
+  if flag_puddle(cur, prev) then start_splash() end
+  if flag_hot_springs(g, cur, prev) then start_hot_springs() end
+end
+
+-- pokefirered/src/event_object_movement.c:8049 GetAllGroundEffectFlags_OnFinishStep
+local function ground_effects_on_finish_step(g, cur, jumped)
+  -- pokefirered/src/event_object_movement.c:5343 ShiftStillObjectEventCoords (previous := current)
+  local prev = cur
+  if flag_shallow_flowing_water(g, cur, prev) then start_feet_in_flowing_water() end
+  -- pokefirered/src/event_object_movement.c:8715 FilterOutStepOnPuddleGroundEffectIfJumping
+  if flag_puddle(cur, prev) and not jumped then start_splash() end
+  if flag_ripple(cur) then start_ripple(g.cx, g.cy) end
+  if flag_hot_springs(g, cur, prev) then start_hot_springs() end
+end
+
+--- pokefirered/src/event_object_movement.c:8721 DoGroundEffects_OnSpawn / OnBeginStep / OnFinishStep
+function FieldEffects.groundEffects()
+  local P = package.loaded["src.core.game3.player"]
+  if not P then return end
+  local moving = P.moving and true or false
+  local cx, cy
+  if moving then
+    cx, cy = P.targetX or P.cellX, P.targetY or P.cellY
+  else
+    cx, cy = P.cellX, P.cellY
+  end
+  if cx == nil or cy == nil then return end
+  local g = ground_state()
+  local Map = package.loaded["src.core.game3.map"]
+  local mapId = Map and Map.current
+  if mapId ~= g.mapId then
+    -- pokefirered/src/event_object_movement.c:1934 ResetObjectEventFldEffData
+    g.mapId = mapId
+    g.inShallowFlowingWater = false
+    g.inHotSprings = false
+    g.cx, g.cy, g.px, g.py = nil, nil, nil, nil
+    g.moving = false
+    clear_ground_anims()
+  end
+  if moving == g.moving and cx == g.cx and cy == g.cy then return end
+
+  local px, py = cx, cy
+  if moving or g.moving then px, py = P.prevCellX or cx, P.prevCellY or cy end
+  local wasMoving = g.moving
+  local wasPx = g.px
+  local wasJump = g.jumped
+  g.moving = moving
+  g.cx, g.cy = cx, cy
+  g.px, g.py = px, py
+  g.jumped = moving and (P.jumping and true or false) or false
+
+  if wasMoving and moving and wasPx ~= nil then
+    g.cx, g.cy = px, py
+    ground_effects_on_finish_step(g, behavior_at(px, py), wasJump)
+    g.cx, g.cy = cx, cy
+  end
+
+  -- pokefirered/src/event_object_movement.c:8062 ObjectEventUpdateMetatileBehaviors
+  local cur = behavior_at(cx, cy)
+  local prev = behavior_at(px, py)
+
+  if moving and not wasMoving then
+    ground_effects_on_begin_step(g, cur, prev)
+  elseif wasMoving and not moving then
+    ground_effects_on_finish_step(g, cur, wasJump)
+  elseif wasMoving and moving then
+    ground_effects_on_begin_step(g, cur, prev)
+  else
+    -- pokefirered/src/event_object_movement.c:1934 ResetObjectEventFldEffData
+    g.inShallowFlowingWater = false
+    g.inHotSprings = false
+    clear_ground_anims()
+    ground_effects_on_spawn(g, cur, prev)
+  end
+end
+
 -- ---------------------------------------------------------------- Step & Update
 function FieldEffects.step()
+  FieldEffects.groundEffects()
   -- Tall grass update
   local fx = FieldEffects._fx
   if fx and not fx.done then
@@ -414,8 +727,50 @@ function FieldEffects.step()
       if anim.timer >= anim.maxDur then
         finished = true
       end
+    elseif anim.kind == "flash_level" then
+      -- pokefirered/src/field_screen_effect.c:119
+      local FieldView = fieldView()
+      if not FieldView then
+        finished = true
+      elseif anim.state == 2 then
+        FieldView.setFlashLevel(anim.level)
+        finished = true
+      else
+        FieldView.setFlashRadius(anim.radius)
+        if anim.state == 0 then
+          anim.state = 1
+        else
+          anim.state = 0
+          anim.radius = anim.radius + anim.delta
+          if anim.radius > anim.dest then
+            if anim.clear then
+              anim.state = 2
+            else
+              FieldView.setFlashLevel(anim.level)
+              finished = true
+            end
+          end
+        end
+      end
+    elseif anim.kind == "camera_shake" then
+      local FieldView = fieldView()
+      if not FieldView then
+        finished = true
+      elseif anim.amp == 0 then
+        -- pokefirered/src/field_camera.c:513
+        FieldView.setCameraPanning(0, 0)
+        finished = true
+      else
+        FieldView.setCameraPanning(0, anim.amp)
+        anim.amp = -anim.amp
+        anim.ticks = anim.ticks + 1
+        if anim.ticks % 4 == 0 then
+          anim.amp = math.floor(anim.amp / 2)
+        end
+      end
     elseif anim.kind == "fly_takeoff" then
-      anim.frame = math.floor(anim.timer / 4) % 4
+      -- pokefirered/src/field_effect.c:3342
+      anim.frame = (anim.state == "descend") and 0 or (anim.ridingFrame or 1)
       if anim.state == "descend" then
         anim.py = anim.py + 2
         if anim.py >= anim.targetPy then
@@ -424,13 +779,12 @@ function FieldEffects.step()
         end
       elseif anim.state == "ascend" then
         anim.py = anim.py - 3
-        if anim.py <= -50 then
+        if anim.py <= -82 then
           finished = true
           if anim.onMidWarp then anim.onMidWarp() end
         end
       end
     elseif anim.kind == "fly_landing" then
-      anim.frame = math.floor(anim.timer / 4) % 4
       if anim.state == "descend" then
         anim.py = anim.py + 2
         if anim.py >= anim.targetPy then
@@ -439,7 +793,7 @@ function FieldEffects.step()
         end
       elseif anim.state == "leave" then
         anim.py = anim.py - 3
-        if anim.py <= -50 then
+        if anim.py <= -82 then
           finished = true
         end
       end
@@ -469,6 +823,30 @@ function FieldEffects.step()
       if anim.timer >= anim.maxDur then
         finished = true
       end
+    elseif anim.kind == "splash" then
+      -- pokefirered/src/field_effect_helpers.c:626 UpdateSplashFieldEffect
+      local frame = anim_frame(ANIM_SPLASH, anim.timer - 1, false)
+      if frame then anim.frame = frame else finished = true end
+    elseif anim.kind == "feet_water" then
+      -- pokefirered/src/field_effect_helpers.c:707 UpdateFeetInFlowingWaterFieldEffect
+      local g = FieldEffects._ground
+      if not (g and g.inShallowFlowingWater) then
+        finished = true
+      else
+        anim.frame = anim_frame(ANIM_FEET_IN_FLOWING_WATER, anim.timer - 1, true) or 0
+        if g.cx and (g.cx ~= anim.cx or g.cy ~= anim.cy) then
+          anim.cx, anim.cy = g.cx, g.cy
+          play_se(SE_PUDDLE)
+        end
+      end
+    elseif anim.kind == "hot_springs" then
+      -- pokefirered/src/field_effect_helpers.c:777 UpdateHotSpringsWaterFieldEffect
+      local g = FieldEffects._ground
+      if not (g and g.inHotSprings) then finished = true end
+    elseif anim.kind == "ripple" then
+      -- pokefirered/src/field_effect_helpers.c:737 FldEff_Ripple
+      local frame = anim_frame(ANIM_RIPPLE, anim.timer - 1, false)
+      if frame then anim.frame = frame else finished = true end
     end
 
     if finished then
@@ -552,6 +930,20 @@ function FieldEffects.drawBehind(camX, camY)
       end
     end
   end
+
+  -- pokefirered/src/event_object_movement.c:9404 DoRippleFieldEffect
+  for _, anim in ipairs(FieldEffects._anims) do
+    if anim.kind == "ripple" then
+      local sheet = load_sheet("ripple", 16, 16, 5)
+      local q = sheet and sheet.quads[anim.frame or 0]
+      if q then
+        local sx = anim.cx * CELL - camX
+        local sy = anim.cy * CELL + 6 - camY
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(sheet.image, q, sx, sy)
+      end
+    end
+  end
 end
 
 --- Draw in front of player (feet cover, cut grass particles, rock smash rubble, bird, ripples)
@@ -614,7 +1006,7 @@ function FieldEffects.drawFront(camX, camY, playerPy)
         end
       end
     elseif anim.kind == "fly_takeoff" or anim.kind == "fly_landing" then
-      local sheet = load_sheet("fly_bird", 32, 32, 4)
+      local sheet = load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
       if sheet and sheet.quads[anim.frame] then
         local sx = anim.px - camX
         local sy = anim.py - camY
@@ -631,6 +1023,24 @@ function FieldEffects.drawFront(camX, camY, playerPy)
         local sy = oy - 16 - camY
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(sheet.image, sheet.quads[anim.frame], sx, sy)
+      end
+    elseif anim.kind == "splash" or anim.kind == "feet_water" then
+      -- pokefirered/src/field_effect_helpers.c:598 FldEff_Splash
+      local sheet = load_sheet("splash", 16, 8, 2)
+      local P = package.loaded["src.core.game3.player"]
+      local q = sheet and P and sheet.quads[anim.frame or 0]
+      if q then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(sheet.image, q, P.px - camX, P.py + FEET_H - camY)
+      end
+    elseif anim.kind == "hot_springs" then
+      -- pokefirered/src/field_effect_helpers.c:777 UpdateHotSpringsWaterFieldEffect
+      local sheet = load_sheet("hot_springs_water", 16, 16, 1)
+      local P = package.loaded["src.core.game3.player"]
+      local q = sheet and P and sheet.quads[0]
+      if q then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(sheet.image, q, P.px - camX, P.py - camY)
       end
     end
   end

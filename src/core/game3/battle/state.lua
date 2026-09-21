@@ -60,6 +60,27 @@ function State.makeBattler(mon, side, opts)
   }
 end
 
+-- pokefirered/src/battle_main.c:2565
+function State.zeroBattler(b)
+  if type(b) ~= "table" then return b end
+  b.mon = { species = 0, level = 0, hp = 0, maxHp = 0, moves = {}, pp = {} }
+  b.species = 0
+  b.type1, b.type2 = 0, nil
+  b.ability = nil
+  b.item = 0
+  b.status = nil
+  b.partyIndex = nil
+  b._partyMon = nil
+  b.participants = nil
+  b.stages = {
+    attack = 0, defense = 0, spAtk = 0, spDef = 0, speed = 0,
+    accuracy = 0, evasion = 0,
+  }
+  b.isFirstTurn = 0
+  b.zeroed = true
+  return b
+end
+
 function State.PARTNER(id) return (id + 2) % 4 end
 function State.OPPOSITE(id) return (id % 2 == 0) and (id + 1) or (id - 1) end
 function State.sideOf(id) return (id % 2 == 0) and "player" or "enemy" end
@@ -231,13 +252,16 @@ State.firstUsable = first_usable
 function State.new(opts)
   opts = opts or {}
   local playerParty = opts.playerParty or {}
-  local pi = opts.playerIndex or 1
+  local pi = opts.playerIndex or first_usable(playerParty) or 1
   local foeMon = opts.foeMon
+  local foeParty = opts.foeParty or { foeMon }
+  local ei = opts.foeIndex or first_usable(foeParty) or 1
+  local eMon = foeMon or (foeParty and foeParty[ei]) or (foeParty and foeParty[1])
   local st = {
     kind = opts.wild and "wild" or "trainer",
     wild = opts.wild and true or false,
     playerParty = playerParty,
-    foeParty = opts.foeParty or { foeMon },
+    foeParty = foeParty,
     player = nil,
     enemy = nil,
     playerSide = { hazards = {}, id = "player" },
@@ -262,8 +286,7 @@ function State.new(opts)
   st.moveTarget = {}
   local pMon = playerParty[pi]
   st.player = State.makeBattler(pMon, "player", { partyIndex = pi, id = 0 })
-  local eMon = foeMon or st.foeParty[1]
-  st.enemy = State.makeBattler(eMon, "enemy", { partyIndex = 1, id = 1 })
+  st.enemy = State.makeBattler(eMon, "enemy", { partyIndex = ei, id = 1 })
   if not st.double then
     State.trackParticipant(st, st.enemy, pi)
     return st
@@ -422,6 +445,8 @@ end
 
 function State.syncBattlerToParty(battler, party)
   if not battler or not party then return end
+  -- pokefirered/src/battle_main.c:2565
+  if battler.zeroed then return end
   local idx = battler.partyIndex or 1
   local mon = party[idx]
   if not mon then return end

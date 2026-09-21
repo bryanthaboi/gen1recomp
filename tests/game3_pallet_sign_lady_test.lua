@@ -1,3 +1,6 @@
+local Cache = require("tests.game3_cache")
+local cacheRoot = Cache.mountOrSkip("game3_pallet_sign_lady_test", "scripts/events.lua")
+
 local Flags = require("src.core.game3.scripting.flags")
 local Ctx = require("src.core.game3.scripting.ctx")
 local Vm = require("src.core.game3.scripting.vm")
@@ -24,7 +27,7 @@ local love_cache = function()
   }
 end
 
-Space.bundle = ExtractScripts.loadBundle(love_cache(), "data/generated/gba", { allowIncomplete = true })
+Space.bundle = ExtractScripts.loadBundle(love_cache(), cacheRoot, { allowIncomplete = true })
 assert(Space.bundle, "Bundle must be loaded")
 
 local passed = 0

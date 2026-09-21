@@ -21,8 +21,14 @@ local LearnMove = require("src.core.game3.battle.learn_move")
 local Task = require("src.core.game3.task")
 local Trainers = require("src.core.game3.scripting.trainers")
 local SwitchSeq = require("src.core.game3.battle.switch_seq")
+local Oak = require("src.core.game3.battle.oak_advice")
+local Rules = require("src.core.game3.battle.rules")
 local ModRuntime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
+local Audio = require("src.core.game3.audio")
+local SE = require("src.core.game3.se_ids")
+local BattleChrome = require("src.ui.game3.battle_chrome")
+local Fade = require("src.ui.game3.fade")
 
 local Battle = {}
 
@@ -62,19 +68,16 @@ end
 
 -- pokefirered/src/battle_interface.c:2168
 local function hp_bar_red(hp, maxHp)
-  local ok, BattleChrome = pcall(require, "src.ui.game3.battle_chrome")
-  if not ok or not BattleChrome or not BattleChrome.hpBarLevel then return false end
+  if not BattleChrome or not BattleChrome.hpBarLevel then return false end
   return BattleChrome.hpBarLevel(hp, maxHp) == "red"
 end
 
 local function stop_low_hp_song()
   if not Battle._lowHpSong then return end
   Battle._lowHpSong = false
-  pcall(function()
-    local Audio = require("src.core.game3.audio")
-    local SE = require("src.core.game3.se_ids")
+  if Audio and Audio.stopSe and SE then
     Audio.stopSe(SE.SE_LOW_HEALTH)
-  end)
+  end
 end
 
 --- pret HandleLowHpMusicChange / HandleBattleLowHpMusicChange
@@ -92,11 +95,9 @@ local function update_low_hp_music()
   local red = hp_bar_red(hp, maxHp)
   if red and not Battle._lowHpSong then
     Battle._lowHpSong = true
-    pcall(function()
-      local Audio = require("src.core.game3.audio")
-      local SE = require("src.core.game3.se_ids")
+    if Audio and Audio.playSe and SE then
       Audio.playSe(SE.SE_LOW_HEALTH, { loop = true })
-    end)
+    end
   elseif not red then
     stop_low_hp_song()
   end
@@ -358,6 +359,14 @@ local function finish(result)
   local cb = Battle._onDone
   Battle._onDone = nil
   if cb then cb(st and st.result or result or "win", st) end
+  -- pokefirered/src/safari_zone.c:66
+  if st and st.safari and st.endReason == "no_safari_balls" then
+    local okS, Safari = pcall(require, "src.core.game3.safari")
+    -- pokefirered/src/safari_zone.c:12 GetSafariZoneFlag
+    if okS and Safari and Safari.isActive and Safari.isActive(st.session) then
+      Safari.outOfBallsMidBattle(st.session)
+    end
+  end
 end
 
 function Battle.start(opts)
@@ -385,7 +394,7 @@ function Battle.start(opts)
   local st = State.new({
     wild = opts.wild,
     double = double or nil,
-    playerIndex = double and State.firstUsable(playerParty) or nil,
+    playerIndex = opts.playerIndex or State.firstUsable(playerParty) or 1,
     playerParty = playerParty,
     foeMon = foeMon,
     foeParty = foeParty,
@@ -419,6 +428,14 @@ function Battle.start(opts)
       local b3 = st.double and not st.absent[3] and st.battlers[3]
       if b3 and b3.mon then Dex.setSeen(session.dex, b3.mon.species or b3.mon.speciesId) end
     end
+    -- pokefirered/src/pokemon.c:1796
+    local wildMon = st.wild and st.enemy and st.enemy.mon
+    local otId = session and tonumber(session.trainerId or session.id or session.playerId)
+    if wildMon and otId then
+      local Catching = require("src.core.game3.battle.catching")
+      wildMon.otId = otId
+      wildMon.otSecretId = Catching.playerSecretId(session)
+    end
   end
   Anim.reset({ headless = opts.headless, double = st.double })
   AnimSeq.reset()
@@ -449,17 +466,6 @@ function Battle.start(opts)
   Battle._metaAct = nil
   Battle._pendingChoice = nil
 
-  local BattleBg = require("src.core.game3.battle.bg")
-  local terrain = opts.terrain
-  if terrain == nil and opts.mapKind then
-    terrain = BattleBg.resolveFromMapKind(opts.mapKind)
-  end
-  if terrain == nil then
-    terrain = BattleBg.TERRAIN.BUILDING
-  end
-  BattleBg.setTerrain(terrain)
-  st.terrain = terrain
-
   -- Trainer presentation identity
   local trainerId = opts.trainerId
     or (opts.foe and opts.foe.trainerId)
@@ -470,6 +476,30 @@ function Battle.start(opts)
   if trainerId and not st.wild then
     trainerInfo = Trainers.info(trainerId, { rivalName = rivalName })
   end
+
+  local BattleBg = require("src.core.game3.battle.bg")
+  local terrain = opts.terrain
+  -- pokefirered/src/battle_main.c:689
+  if terrain == nil and (opts.mapBehavior ~= nil or opts.mapType ~= nil) then
+    terrain = BattleBg.resolveFromBehavior(opts.mapBehavior, opts.mapKind, opts.mapType)
+  end
+  if terrain == nil and opts.mapKind then
+    terrain = BattleBg.resolveFromMapKind(opts.mapKind)
+  end
+  if terrain == nil then
+    terrain = BattleBg.TERRAIN.BUILDING
+  end
+  st.terrain = terrain
+  -- pokefirered/src/battle_bg.c:714
+  BattleBg.setTerrain(BattleBg.resolveOverride(terrain, {
+    link = st.link or opts.link,
+    trainerTower = st.trainerTower or opts.trainerTower,
+    pokedude = st.pokedude or opts.pokedude,
+    trainer = (not st.wild) and trainerInfo ~= nil,
+    trainerClass = trainerInfo and trainerInfo.class,
+    mapBattleScene = opts.mapBattleScene,
+  }))
+
   st.trainerId = trainerId
   st.trainerClassName = trainerInfo and trainerInfo.className
   st.trainerName = trainerInfo and trainerInfo.name
@@ -478,9 +508,25 @@ function Battle.start(opts)
   st.trainerPartySize = trainerInfo and trainerInfo.partySize
   st.defeatText = opts.defeatText
   st.victoryText = opts.victoryText
+  st.earlyRival = opts.earlyRival or false
+  st.rivalFlags = tonumber(opts.rivalFlags) or 0
+  -- pokefirered/src/battle_main.c:3783
+  st.rivalHealAfter = st.earlyRival and (st.rivalFlags % 2 == 1)
   st.wildScripted = opts.wildScripted or (opts.foe and opts.foe.wildScripted) or false
   st.legendary = opts.legendary or (opts.foe and opts.foe.legendary) or false
   st.safari = opts.safari or (opts.foe and opts.foe.safari) or false
+  if st.safari then
+    -- pokefirered/src/battle_main.c:2565
+    State.zeroBattler(st.player)
+    -- pokefirered/src/battle_main.c:2284
+    local fspecies = foeMon and (foeMon.species or foeMon.speciesId)
+    local fmeta = fspecies and Pokemon.speciesMeta and Pokemon.speciesMeta(fspecies)
+    st.safariState = Rules.safari.newState(fmeta and fmeta.catchRate,
+      fmeta and fmeta.safariZoneFleeRate)
+    -- pokefirered/src/safari_zone.c:9
+    local carried = st.session and st.session.safari and tonumber(st.session.safari.balls)
+    if carried then st.safariState.balls = math.max(0, math.floor(carried)) end
+  end
   st.roamer = opts.roamer or (opts.foe and opts.foe.roamer) or false
   st.firstBattle = opts.firstBattle or (opts.foe and opts.foe.firstBattle) or false
   st.oldManTutorial = opts.oldManTutorial or (opts.foe and opts.foe.oldManTutorial) or false
@@ -488,7 +534,6 @@ function Battle.start(opts)
   st.aiFlags = opts.aiFlags
     or (st.safari and 0x40000000)
     or (st.roamer and 0x20000000)
-    or (st.firstBattle and 0x80000000)
     or (st.legendary and 7) -- CHECK_BAD_MOVE | TRY_TO_FAINT | CHECK_VIABILITY
     or (st.wildScripted and 1) -- CHECK_BAD_MOVE
     or (trainerInfo and trainerInfo.aiFlags)
@@ -521,14 +566,8 @@ function Battle.start(opts)
           song = Audio.role("battleWild") or 298
         end
       else
-        local classId = trainerInfo and trainerInfo.classId
-        if classId == 90 then
-          song = Audio.role("battleChampion") or 299
-        elseif classId == 84 or classId == 87 then
-          song = Audio.role("battleGymLeader") or 296
-        else
-          song = Audio.role("battleTrainer") or 297
-        end
+        local role, fallback = Trainers.getBattleMusicRole(trainerId)
+        song = Audio.role(role) or fallback
       end
     end
     if song then
@@ -561,8 +600,14 @@ function Battle.start(opts)
       Ui.push(strings.wants)
       Ui.push(strings.sentOut)
     end
-    if not st.double then
+    -- pokefirered/src/battle_main.c:2801
+    if not st.double and not st.safari then
       Ui.push(Strings("Go! %s!", State.displayName(st.player)))
+    end
+    -- pokefirered/src/battle_controller_oak_old_man.c:626
+    if Oak.active(st) and not st.oakIntroDone then
+      st.oakIntroDone = true
+      Oak.say(st, "forPetesSake")
     end
   end
 
@@ -739,6 +784,19 @@ local function send_out_enemy_next(nextEnemyIdx)
   end
 end
 
+-- pokefirered/src/battle_main.c:3781
+function D.pushBattleLost(st)
+  if st and st.earlyRival then
+    -- pokefirered/data/battle_scripts_1.s:2953
+    if st.victoryText and st.victoryText ~= "" then Ui.push(st.victoryText) end
+    -- pokefirered/src/battle_controller_oak_old_man.c:1780
+    Oak.say(st, "howDisappointing")
+    if st.rivalHealAfter then return end
+  end
+  Ui.push(Strings("You have no more\nPOKéMON left!"))
+  Ui.push(Strings("%s blacked out!", ((st and st.playerName) or "PLAYER")))
+end
+
 local function handle_player_faint(opts)
   opts = opts or {}
   local st = Battle._st
@@ -750,8 +808,7 @@ local function handle_player_faint(opts)
   if not hasLiving then
     Battle._pendingEnd = "lose"
     Battle._phase = "ending"
-    Ui.push(Strings("You have no more\nPOKéMON left!"))
-    Ui.push(Strings("%s blacked out!", (st.playerName or "PLAYER")))
+    D.pushBattleLost(st)
     return
   end
 
@@ -801,9 +858,13 @@ end
 local function begin_trainer_win(st)
   Battle._pendingEnd = "win"
   local Audio = require("src.core.game3.audio")
-  local role = (st and st.wild) and "victoryWild" or "victoryTrainer"
-  local song = Audio.role(role) or ((st and st.wild) and 311 or 310)
-  Audio.playSong(song)
+  local role, fallback
+  if st and st.wild then
+    role, fallback = "victoryWild", 311
+  else
+    role, fallback = Trainers.getVictoryMusicRole(st and st.trainerId)
+  end
+  Audio.playSong(Audio.role(role) or fallback)
 
   local pname = st.playerName or "PLAYER"
   local function push_defeated()
@@ -837,6 +898,8 @@ local function begin_trainer_win(st)
       })
       if gained > 0 then
         Ui.push(Prize.moneyMessage(session.name or pname, gained))
+        -- pokefirered/src/battle_controller_oak_old_man.c:1776
+        Oak.say(st, "winEarnsPrize")
       end
     end
   end
@@ -987,6 +1050,8 @@ local function check_faints_and_end()
   local st = Battle._st
   local ad = Battle._adapter
   if not st then return false end
+  -- pokefirered/src/battle_util.c:1146
+  if st.safari then return false end
 
   local pFainted = State.isFainted(st.player)
   local eFainted = State.isFainted(st.enemy)
@@ -1064,6 +1129,156 @@ local function after_actions()
   Battle._phase = "residuals"
 end
 
+local function battle_session(st)
+  if st and st.session then return st.session end
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  return (Runtime and Runtime.getSession and Runtime.getSession()) or nil
+end
+
+-- pokefirered/src/safari_zone.c:9
+local function safari_sync_balls(st)
+  local session = battle_session(st)
+  if not (session and st and st.safariState) then return end
+  session.safari = session.safari or {}
+  session.safari.balls = st.safariState.balls
+end
+Battle.safariSyncBalls = safari_sync_balls
+
+local function resume_actions()
+  Battle._phase = "actions"
+  if not Battle._actions or not Battle._actions[Battle._actionI] then
+    after_actions()
+  end
+end
+
+-- pokefirered/data/battle_scripts_2.s:105
+local function safari_out_of_balls(st)
+  if not (st and st.safari and st.safariState) then return false end
+  if (tonumber(st.safariState.balls) or 0) > 0 then return false end
+  Ui.push(Strings("ANNOUNCER: You're out of\nSAFARI BALLS! Game over!"))
+  Battle._actions = {}
+  st.over = true
+  -- pokefirered/data/battle_scripts_2.s:112
+  st.result = "no_safari_balls"
+  st.endReason = "no_safari_balls"
+  Battle._pendingEnd = "no_safari_balls"
+  Battle._phase = "ending"
+  return true
+end
+
+local SAFARI_BALL_ITEM = 5
+
+-- pokefirered/src/battle_main.c:4371
+local function step_safari_ball()
+  local st, ad = Battle._st, Battle._adapter
+  local sf = st.safariState
+  local session = battle_session(st)
+  if sf then sf.balls = math.max(0, (tonumber(sf.balls) or 0) - 1) end
+  safari_sync_balls(st)
+  st.lastUsedItem = SAFARI_BALL_ITEM
+  local Catching = require("src.core.game3.battle.catching")
+  local rng = (ad and ad.rng and ad:rng()) or st.rng
+  local caught, shakes = Catching.tryCatch(SAFARI_BALL_ITEM, st.enemy, st, session, rng)
+  local headless = Battle._headless or (Ui and Ui._headless) or false
+  CatchSeq.begin(st, SAFARI_BALL_ITEM, caught, shakes, {
+    pushMsg = function(text) Ui.push(text) end,
+    headless = headless,
+    session = session,
+  })
+  if caught then
+    Battle._actions = {}
+    st.over = true
+    st.result = "catch"
+    Battle._pendingEnd = "catch"
+    if headless then
+      Battle._phase = "ending"
+    else
+      Battle._phase = "catching"
+    end
+    return
+  end
+  if not headless then
+    Battle._phase = "catching"
+    return
+  end
+  if safari_out_of_balls(st) then return end
+  return resume_actions()
+end
+
+-- pokefirered/src/battle_main.c:4382
+local function step_safari(meta)
+  local st, ad = Battle._st, Battle._adapter
+  if meta.action == "ball" then return step_safari_ball() end
+  local sf = st.safariState
+  local session = battle_session(st)
+  local playerName = (session and (session.name or session.playerName)) or st.playerName or "RED"
+  local ename = State.displayName(st.enemy)
+  local rng = (ad and ad.rng and ad:rng()) or st.rng
+  local mark = ad:eventMark()
+  local prev = ad._say
+  ad._say = function() end
+  if meta.action == "rock" then
+    -- pokefirered/src/battle_main.c:4398
+    Rules.safari.throwRock(sf, rng)
+    ad:say(Strings("%s threw a ROCK\nat the %s!", playerName, ename))
+    ad:playAnim("general", "ROCK_THROW", st.player, st.enemy)
+  else
+    Rules.safari.throwBait(sf, rng)
+    ad:say(Strings("%s threw some BAIT\nat the %s!", playerName, ename))
+    ad:playAnim("general", "BAIT_THROW", st.player, st.enemy)
+  end
+  ad._say = prev
+  local evs = ad:eventsSince(mark)
+  if Battle._headless then
+    for _, e in ipairs(evs) do
+      if e.kind == "msg" then Ui.push(e.text) end
+    end
+    return resume_actions()
+  end
+  AnimSeq.beginEvents(evs, seq_push)
+  Battle._phase = "animating"
+end
+
+-- pokefirered/src/battle_main.c:4334
+local function step_safari_enemy(act)
+  local st, ad = Battle._st, Battle._adapter
+  local ename = State.displayName(st.enemy)
+  local mark = ad:eventMark()
+  local prev = ad._say
+  ad._say = function() end
+  if act.kind == "run" then
+    -- pokefirered/src/battle_message.c:323
+    ad:say(Strings("Wild %s fled!", ename))
+    st.over = true
+    st.result = "run"
+    st.endReason = "enemy_fled"
+  else
+    local reaction = Rules.safari.watchStep(st.safariState)
+    if reaction == "angry" then
+      st.safariReaction = 1
+      ad:say(Strings("%s is angry!", ename))
+    elseif reaction == "eating" then
+      st.safariReaction = 2
+      ad:say(Strings("%s is eating!", ename))
+    else
+      st.safariReaction = 0
+      ad:say(Strings("%s is watching\ncarefully!", ename))
+    end
+    ad:playAnim("general", "SAFARI_REACTION", st.enemy, st.enemy)
+  end
+  ad._say = prev
+  local evs = ad:eventsSince(mark)
+  if Battle._headless then
+    for _, e in ipairs(evs) do
+      if e.kind == "msg" then Ui.push(e.text) end
+    end
+    if end_if_over() then return end
+    return resume_actions()
+  end
+  AnimSeq.beginEvents(evs, seq_push)
+  Battle._phase = "animating"
+end
+
 local function step_action()
   local st = Battle._st
   local ad = Battle._adapter
@@ -1073,7 +1288,21 @@ local function step_action()
   if Battle._metaAct then
     local meta = Battle._metaAct
     Battle._metaAct = nil
-    if meta.kind == "run" then
+    if meta.kind == "safari" then
+      return step_safari(meta)
+    elseif meta.kind == "run" and st.safari then
+      -- pokefirered/src/battle_main.c:4414
+      pcall(function()
+        require("src.core.game3.audio").playSe(require("src.core.game3.se_ids").SE_FLEE)
+      end)
+      Battle._actions = {}
+      st.over = true
+      st.result = "run"
+      st.endReason = "safari_run"
+      Battle._pendingEnd = "run"
+      Battle._phase = "ending"
+      return
+    elseif meta.kind == "run" then
       local mark = ad:eventMark()
       local prev = ad._say
       ad._say = function() end
@@ -1268,6 +1497,9 @@ local function step_action()
   end
   Battle._actionI = Battle._actionI + 1
 
+  if st.safari and (act.kind == "watch" or act.kind == "run") then
+    return step_safari_enemy(act)
+  end
   if act.meta then
     if not Battle._actions[Battle._actionI] then after_actions() end
     return
@@ -1855,8 +2087,7 @@ end
 function D.lose()
   Battle._pendingEnd = "lose"
   Battle._phase = "ending"
-  Ui.push(Strings("You have no more\nPOKéMON left!"))
-  Ui.push(Strings("%s blacked out!", (Battle._st and Battle._st.playerName or "PLAYER")))
+  D.pushBattleLost(Battle._st)
 end
 
 -- pokefirered/src/battle_script_commands.c:4855
@@ -2109,13 +2340,19 @@ function D.run(act)
   return D.afterEach()
 end
 
-local function finish_catch_flow(catchRes, ename)
+-- pokefirered/data/battle_scripts_2.s:87
+local function finish_catch_flow(catchRes, ename, nicknamed)
   if catchRes and catchRes.location == "pc" then
-    Battle._phase = "catch_pc_msg"
-    local name = (catchRes.mon and (catchRes.mon.nickname ~= "" and catchRes.mon.nickname or catchRes.mon.name))
-      or ename or "POKéMON"
-    Ui.push(Strings("%s was transferred\nto the PC.", name))
-    return
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local Storage = require("src.core.game3.storage")
+    -- pokefirered/src/battle_script_commands.c:9617
+    local page = Storage.pcTransferMessage(session, ename or "POKéMON")
+    if not nicknamed then
+      Battle._phase = "catch_pc_msg"
+      Ui.push(page)
+      return
+    end
   end
   Battle._actions = {}
   Battle._pendingEnd = "catch"
@@ -2155,6 +2392,8 @@ local function start_post_catch_flow(catchRes)
             gender = gender,
             personality = personality,
             seed = ename,
+            -- pokefirered/src/naming_screen.c:696
+            sentToPc = (catchRes and catchRes.location == "pc") or false,
             -- pret naming_screen.c:1712 DrawMonTextEntryBox: gSpeciesNames[mon]
             -- + gText_PkmnsNickname. The hand-written "YOUR POKEMON'S NICKNAME?"
             -- was 141px wide and spilled over the frame's right edge.
@@ -2163,7 +2402,8 @@ local function start_post_catch_flow(catchRes)
               if nick and nick ~= "" and nick ~= ename then
                 if mon then mon.nickname = nick end
               end
-              finish_catch_flow(catchRes, ename)
+              -- pokefirered/src/battle_script_commands.c:9853
+              finish_catch_flow(catchRes, ename, true)
             end,
           })
           return
@@ -2303,6 +2543,12 @@ function Battle.update(dt, game)
   if Battle._phase == "intro" then
     if not Ui.pump() then return end
     if IntroSeq.update() then
+      -- pokefirered/src/battle_controller_oak_old_man.c:626
+      local stIntro = Battle._st
+      if stIntro and Oak.active(stIntro) and not stIntro.oakIntroDone then
+        stIntro.oakIntroDone = true
+        if Oak.say(stIntro, "forPetesSake") then return end
+      end
       if begin_start_effects() then return end
       Battle._phase = "command"
       if Battle._auto then
@@ -2442,6 +2688,8 @@ function Battle.update(dt, game)
       if res == "catch" then
         local catchRes = CatchSeq.catchResult and CatchSeq.catchResult()
         start_post_catch_flow(catchRes)
+      elseif safari_out_of_balls(Battle._st) then
+        return
       else
         Battle._phase = "actions"
         if not Battle._actions or not Battle._actions[Battle._actionI] then

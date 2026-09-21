@@ -10,6 +10,14 @@ local RegionMapExtract = {}
 RegionMapExtract.CACHE_SUB = "region_map"
 RegionMapExtract.FORMAT_VERSION = 1
 
+RegionMapExtract.FILES = {
+  "kanto_map.png",
+  "cursor.png",
+  "dungeon_icon.png",
+  "player_red.png",
+  "player_leaf.png",
+}
+
 local function default_cache_root()
   local ok, Extract = pcall(require, "src.import.gba.extract_island1")
   if ok and Extract and Extract.CACHE_ROOT then
@@ -315,6 +323,346 @@ function RegionMapExtract.resolveLocation(mapId, mapSec)
   end
 
   return { x = 4, y = 11, name = "PALLET TOWN", mapsec = "MAPSEC_PALLET_TOWN" }
+end
+
+local function decode_tile_4bpp(tileBytes, out, baseX, baseY, stride, hflip, vflip)
+  for row = 0, 7 do
+    local srcRow = vflip and (7 - row) or row
+    for bx = 0, 3 do
+      local byte = tileBytes[srcRow * 4 + bx + 1] or 0
+      local p0 = byte % 16
+      local p1 = math.floor(byte / 16) % 16
+      local x0 = bx * 2
+      local x1 = x0 + 1
+      if hflip then x0, x1 = 7 - x0, 7 - x1 end
+      out[(baseY + row) * stride + (baseX + x0) + 1] = p0
+      out[(baseY + row) * stride + (baseX + x1) + 1] = p1
+    end
+  end
+end
+
+local function load_pal_banks(bytes, count)
+  local banks = {}
+  local n = count or math.floor(#bytes / 32)
+  for b = 0, n - 1 do
+    local colors = {}
+    local off = b * 32
+    for c = 0, 15 do
+      local i = off + c * 2 + 1
+      colors[c] = (bytes[i] or 0) + (bytes[i + 1] or 0) * 256
+    end
+    banks[b] = colors
+  end
+  return banks
+end
+
+local function bake_tilemap(gfx, banks, map, mapW, mapH)
+  local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
+  local W, H = mapW * 8, mapH * 8
+  local tileCount = math.floor(#gfx / 32)
+  local px = {}
+  for i = 1, W * H * 4 do px[i] = 0 end
+  local tmp = {}
+  for ty = 0, mapH - 1 do
+    for tx = 0, mapW - 1 do
+      local mi = (ty * mapW + tx) * 2 + 1
+      local entry = (map[mi] or 0) + (map[mi + 1] or 0) * 256
+      local tileId = entry % 1024
+      local hflip = math.floor(entry / 1024) % 2 == 1
+      local vflip = math.floor(entry / 2048) % 2 == 1
+      local palBank = math.floor(entry / 4096) % 16
+      local bank = banks[palBank] or banks[0]
+      if tileId < tileCount then
+        local tile = {}
+        local base = tileId * 32
+        for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+        for i = 1, 64 do tmp[i] = 0 end
+        decode_tile_4bpp(tile, tmp, 0, 0, 8, hflip, vflip)
+        for row = 0, 7 do
+          for col = 0, 7 do
+            local idx = tmp[row * 8 + col + 1] or 0
+            local c = bank[idx] or 0
+            local r, g, b = bgr555_to_rgb8(c)
+            local o = ((ty * 8 + row) * W + (tx * 8 + col)) * 4 + 1
+            px[o], px[o + 1], px[o + 2], px[o + 3] = r, g, b, 255
+          end
+        end
+      end
+    end
+  end
+  local rgba = {}
+  for i = 1, W * H * 4 do rgba[i] = string.char(px[i]) end
+  local rgbaStr = table.concat(rgba)
+  local pngStr = BattleAnimExtract.encodePng and BattleAnimExtract.encodePng(px, W, H)
+  return rgbaStr, pngStr, W, H
+end
+
+local function bake_sprite_16x16(gfx, palBytes, tileOffset)
+  local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
+  tileOffset = tileOffset or 0
+  local W, H = 16, 16
+  local pal = {}
+  for c = 0, 15 do
+    local i = c * 2 + 1
+    pal[c] = (palBytes[i] or 0) + (palBytes[i + 1] or 0) * 256
+  end
+  local pixels = {}
+  for i = 1, W * H do pixels[i] = 0 end
+  local tiles = {
+    { tileOffset + 0, 0, 0 },
+    { tileOffset + 1, 8, 0 },
+    { tileOffset + 2, 0, 8 },
+    { tileOffset + 3, 8, 8 },
+  }
+  for _, t in ipairs(tiles) do
+    local tileNum, ox, oy = t[1], t[2], t[3]
+    local base = tileNum * 32
+    local tile = {}
+    for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+    decode_tile_4bpp(tile, pixels, ox, oy, W, false, false)
+  end
+  local px = {}
+  local chunks = {}
+  for i = 1, W * H do
+    local idx = pixels[i] or 0
+    local o = (i - 1) * 4 + 1
+    if idx == 0 then
+      px[o], px[o + 1], px[o + 2], px[o + 3] = 0, 0, 0, 0
+      chunks[i] = string.char(0, 0, 0, 0)
+    else
+      local r, g, b = bgr555_to_rgb8(pal[idx] or 0)
+      px[o], px[o + 1], px[o + 2], px[o + 3] = r, g, b, 255
+      chunks[i] = string.char(r, g, b, 255)
+    end
+  end
+  local rgbaStr = table.concat(chunks)
+  local pngStr = BattleAnimExtract.encodePng and BattleAnimExtract.encodePng(px, W, H)
+  return rgbaStr, pngStr, W, H
+end
+
+local function bake_sprite_8x8(gfx, palBytes, tileOffset)
+  local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
+  tileOffset = tileOffset or 0
+  local W, H = 8, 8
+  local pal = {}
+  for c = 0, 15 do
+    local i = c * 2 + 1
+    pal[c] = (palBytes[i] or 0) + (palBytes[i + 1] or 0) * 256
+  end
+  local pixels = {}
+  for i = 1, W * H do pixels[i] = 0 end
+  local base = tileOffset * 32
+  local tile = {}
+  for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+  decode_tile_4bpp(tile, pixels, 0, 0, W, false, false)
+  local px = {}
+  local chunks = {}
+  for i = 1, W * H do
+    local idx = pixels[i] or 0
+    local o = (i - 1) * 4 + 1
+    if idx == 0 then
+      px[o], px[o + 1], px[o + 2], px[o + 3] = 0, 0, 0, 0
+      chunks[i] = string.char(0, 0, 0, 0)
+    else
+      local r, g, b = bgr555_to_rgb8(pal[idx] or 0)
+      px[o], px[o + 1], px[o + 2], px[o + 3] = r, g, b, 255
+      chunks[i] = string.char(r, g, b, 255)
+    end
+  end
+  local rgbaStr = table.concat(chunks)
+  local pngStr = BattleAnimExtract.encodePng and BattleAnimExtract.encodePng(px, W, H)
+  return rgbaStr, pngStr, W, H
+end
+
+local function write_file(cache, path, bytes)
+  if not (bytes and #bytes > 0) then return false end
+  if cache and cache.write then
+    return cache:write(path, bytes)
+  end
+  local okC, CacheFs = pcall(require, "src.import.CacheFs")
+  if okC and CacheFs and CacheFs.write then
+    local ok = pcall(CacheFs.write, path, bytes)
+    if ok then return true end
+  end
+  if love and love.filesystem and love.filesystem.write then
+    local ok = pcall(love.filesystem.write, path, bytes)
+    if ok then return true end
+  end
+  local f = io.open(path, "wb")
+  if f then
+    f:write(bytes)
+    f:close()
+    return true
+  end
+  return false
+end
+
+function RegionMapExtract.run(rom, cache, opts)
+  opts = opts or {}
+  local Versions = require("src.import.gba.versions")
+  local Lz77 = require("src.import.gba.lz77")
+  local root = (opts.cacheRoot or default_cache_root()) .. "/" .. RegionMapExtract.CACHE_SUB
+
+  if not rom then
+    return { ok = false, root = root, err = "missing ROM handle" }
+  end
+
+  local function get(i) return rom:get(i) end
+  local function read_bytes(off, len)
+    local t = {}
+    for i = 1, len do t[i] = get(off + i - 1) end
+    return t
+  end
+
+  local mapGfx = Lz77.decompress(get, Versions.REGION_MAP_BG_GFX or 0x3EF61C)
+  local mapPalBytes = read_bytes(Versions.REGION_MAP_BG_PAL or 0x3EF2DC, 160)
+  local mapBanks = load_pal_banks(mapPalBytes, 5)
+
+  local count = 0
+
+  -- 1. Kanto Tilemap
+  local kantoTilemap = Lz77.decompress(get, Versions.REGION_MAP_KANTO_TILEMAP or 0x3F089C)
+  if mapGfx and kantoTilemap then
+    local rgba, png = bake_tilemap(mapGfx, mapBanks, kantoTilemap, 30, 20)
+    write_file(cache, root .. "/kanto_map.rgba", rgba)
+    if png then write_file(cache, root .. "/kanto_map.png", png) end
+    count = count + 1
+  end
+
+  -- 2. Sevii 1-3 Tilemap
+  local sevii123Tilemap = Lz77.decompress(get, Versions.REGION_MAP_SEVII123_TILEMAP or 0x3F0AFC)
+  if mapGfx and sevii123Tilemap then
+    local rgba, png = bake_tilemap(mapGfx, mapBanks, sevii123Tilemap, 30, 20)
+    write_file(cache, root .. "/sevii123_map.rgba", rgba)
+    if png then write_file(cache, root .. "/sevii123_map.png", png) end
+    count = count + 1
+  end
+
+  -- 3. Sevii 4-5 Tilemap
+  local sevii45Tilemap = Lz77.decompress(get, Versions.REGION_MAP_SEVII45_TILEMAP or 0x3F0C0C)
+  if mapGfx and sevii45Tilemap then
+    local rgba, png = bake_tilemap(mapGfx, mapBanks, sevii45Tilemap, 30, 20)
+    write_file(cache, root .. "/sevii45_map.rgba", rgba)
+    if png then write_file(cache, root .. "/sevii45_map.png", png) end
+    count = count + 1
+  end
+
+  -- 4. Sevii 6-7 Tilemap
+  local sevii67Tilemap = Lz77.decompress(get, Versions.REGION_MAP_SEVII67_TILEMAP or 0x3F0CF0)
+  if mapGfx and sevii67Tilemap then
+    local rgba, png = bake_tilemap(mapGfx, mapBanks, sevii67Tilemap, 30, 20)
+    write_file(cache, root .. "/sevii67_map.rgba", rgba)
+    if png then write_file(cache, root .. "/sevii67_map.png", png) end
+    count = count + 1
+  end
+
+  -- 5. Cursor
+  local cursorGfx = Lz77.decompress(get, Versions.REGION_MAP_CURSOR_GFX or 0x3EF4E0)
+  local cursorPalBytes = read_bytes(Versions.REGION_MAP_CURSOR_PAL or 0x3EF25C, 32)
+  if cursorGfx and cursorPalBytes then
+    local rgba, png = bake_sprite_16x16(cursorGfx, cursorPalBytes, 0)
+    write_file(cache, root .. "/cursor.rgba", rgba)
+    if png then write_file(cache, root .. "/cursor.png", png) end
+    count = count + 1
+  end
+
+  -- 6. Player Red Icon
+  local redGfx = Lz77.decompress(get, Versions.REGION_MAP_PLAYER_RED_GFX or 0x3EF524)
+  local redPalBytes = read_bytes(Versions.REGION_MAP_PLAYER_RED_PAL or 0x3EF27C, 32)
+  if redGfx and redPalBytes then
+    local rgba, png = bake_sprite_16x16(redGfx, redPalBytes, 0)
+    write_file(cache, root .. "/player_red.rgba", rgba)
+    if png then write_file(cache, root .. "/player_red.png", png) end
+    count = count + 1
+  end
+
+  -- 7. Player Leaf Icon
+  local leafGfx = Lz77.decompress(get, Versions.REGION_MAP_PLAYER_LEAF_GFX or 0x3EF59C)
+  local leafPalBytes = read_bytes(Versions.REGION_MAP_PLAYER_LEAF_PAL or 0x3EF29C, 32)
+  if leafGfx and leafPalBytes then
+    local rgba, png = bake_sprite_16x16(leafGfx, leafPalBytes, 0)
+    write_file(cache, root .. "/player_leaf.rgba", rgba)
+    if png then write_file(cache, root .. "/player_leaf.png", png) end
+    count = count + 1
+  end
+
+  -- 8. Dungeon Icon (8x8)
+  local dungGfx = Lz77.decompress(get, Versions.REGION_MAP_DUNGEON_ICON_GFX or 0x3F18D8)
+  local miscPalBytes = read_bytes(Versions.REGION_MAP_MISC_ICON_PAL or 0x3EF2BC, 32)
+  if dungGfx and miscPalBytes then
+    local rgba, png = bake_sprite_8x8(dungGfx, miscPalBytes, 0)
+    write_file(cache, root .. "/dungeon_icon.rgba", rgba)
+    if png then write_file(cache, root .. "/dungeon_icon.png", png) end
+    count = count + 1
+  end
+
+  -- 9. Fly Icon (16x16)
+  local flyGfx = Lz77.decompress(get, Versions.REGION_MAP_FLY_ICON_GFX or 0x3F1908)
+  if flyGfx and miscPalBytes then
+    local rgba, png = bake_sprite_16x16(flyGfx, miscPalBytes, 0)
+    write_file(cache, root .. "/fly_icon.rgba", rgba)
+    if png then write_file(cache, root .. "/fly_icon.png", png) end
+    count = count + 1
+  end
+
+  local manifest = string.format([[
+return {
+  version = %d,
+  width = 240,
+  height = 160,
+  cursorSize = 16,
+  playerIconSize = 16,
+  dungeonIconSize = 8,
+  flyIconSize = 16,
+}
+]], RegionMapExtract.FORMAT_VERSION)
+  write_file(cache, root .. "/manifest.lua", manifest)
+
+  return {
+    ok = true,
+    root = root,
+    count = count,
+  }
+end
+
+local function baked(cache, rel)
+  if cache then
+    if cache.read then
+      local d = cache:read(rel)
+      return (d ~= nil and #d > 8)
+    elseif cache.exists then
+      return cache:exists(rel) and true or false
+    end
+    return false
+  end
+  local okC, CacheFs = pcall(require, "src.import.CacheFs")
+  if okC and CacheFs and CacheFs.readActive then
+    local d = CacheFs.readActive(rel)
+    if d and #d > 8 then return true end
+  end
+  if love and love.filesystem and love.filesystem.read then
+    local d = love.filesystem.read(rel)
+    if d and #d > 8 then return true end
+  end
+  local f = io.open(rel, "rb")
+  if f then
+    local d = f:read("*a")
+    f:close()
+    if d and #d > 8 then return true end
+  end
+  return false
+end
+
+function RegionMapExtract.ready(cache, cacheRoot)
+  local root = (cacheRoot or default_cache_root()) .. "/" .. RegionMapExtract.CACHE_SUB
+  for _, name in ipairs(RegionMapExtract.FILES) do
+    if not baked(cache, root .. "/" .. name) then return false end
+  end
+  return true
+end
+
+function RegionMapExtract.extract(rom, opts)
+  return RegionMapExtract.run(rom, opts and opts.cache, opts)
 end
 
 return RegionMapExtract

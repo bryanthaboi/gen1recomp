@@ -5,6 +5,7 @@ local Types = require("src.core.game3.battle.types")
 local Rules = require("src.core.game3.battle.rules")
 local Secondary = require("src.core.game3.battle.effects.secondary")
 local HeldItems = require("src.core.game3.battle.held_items")
+local Oak = require("src.core.game3.battle.oak_advice")
 local ModRuntime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
 
@@ -95,6 +96,10 @@ function Hit.dealDamage(M, dmg, info)
   M.hpDealt = dealt
   M.hitsLanded = (M.hitsLanded or 0) + 1
   dealt_event(M, target, dealt, info, false)
+  -- pokefirered/src/battle_controller_opponent.c:304
+  if Oak.active(M.st) and dealt > 0 and (target.side == "enemy") and user.side == "player" then
+    Oak.sayOnce(M.st, Oak.FLAG_INFLICT_DMG, "inflictingDamage", function(t) M:say(t) end)
+  end
   return dealt
 end
 
@@ -744,7 +749,7 @@ function Hit.beatUp(M)
       if user.expHelpingHand then dmg = math.floor(dmg * 15 / 10) end
       local name = (mon.nickname and mon.nickname ~= "") and mon.nickname or Pokemon.name(sp)
       M:say(Strings("%s's attack!", tostring(name)))
-      local crit = Rules.crit.roll(user, M.move, nil, ad:rng())
+      local crit = Rules.crit.roll(user, M.move, nil, ad:rng(), M.st)
       if crit then dmg = dmg * 2 end
       local r = roll(ad, 85, 100)
       dmg = math.floor(dmg * r / 100)

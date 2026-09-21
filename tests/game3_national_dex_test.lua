@@ -9,10 +9,10 @@ local Natives = require("src.core.game3.scripting.natives")
 local Flags = require("src.core.game3.scripting.flags")
 
 print("=== [TEST 1] National Dex specials constants ===")
-assert(Std.SPECIAL.EnableNationalPokedex == 0x179, "EnableNationalPokedex special constant must be 0x179")
-assert(Std.SPECIAL.SetUnlockedPokedexFlags == 0x18B, "SetUnlockedPokedexFlags special constant must be 0x18B")
-assert(Std.SPECIAL.IsNationalPokedexEnabled == 0x19D, "IsNationalPokedexEnabled special constant must be 0x19D")
-print("[PASS] Special constants match pret specials.inc (0x179, 0x18B, 0x19D)")
+assert(Std.SPECIAL.EnableNationalPokedex == 0x16F, "EnableNationalPokedex special constant must be 0x16F")
+assert(Std.SPECIAL.SetUnlockedPokedexFlags == 0x181, "SetUnlockedPokedexFlags special constant must be 0x181")
+assert(Std.SPECIAL.IsNationalPokedexEnabled == 0x193, "IsNationalPokedexEnabled special constant must be 0x193")
+print("[PASS] Special constants match pret specials.inc (0x16F, 0x181, 0x193)")
 
 print("=== [TEST 2] Script Special Execution & State Machine ===")
 local store = Flags.newStore()
@@ -30,13 +30,11 @@ local Runtime = {
 package.loaded["src.core.game3.runtime"] = Runtime
 
 -- 1. Check IsNationalPokedexEnabled before unlock (should be 0)
-local ctx = {
-  vars = {},
-  setVar = function(self, varId, val) self.vars[varId] = val end,
-  getVar = function(self, varId) return self.vars[varId] end,
-}
-Natives.special(ctx, Std.SPECIAL.IsNationalPokedexEnabled)
-assert(ctx.vars[0x800D] == 0, "IsNationalPokedexEnabled should set VAR_RESULT to 0 before unlock")
+local ctx = require("src.core.game3.scripting.ctx").new({})
+Flags.setVar(store, ctx, 0x800D, 9)
+local _, natVal = Natives.special(ctx, Std.SPECIAL.IsNationalPokedexEnabled)
+assert(natVal == 0, "IsNationalPokedexEnabled should hand specialvar 0 before unlock")
+assert(Flags.getVar(store, ctx, 0x800D) == 0, "IsNationalPokedexEnabled should set VAR_RESULT to 0 before unlock")
 assert(not PokedexData.isNationalUnlocked(session, session.dex), "isNationalUnlocked must return false before unlock")
 
 -- 2. Execute EnableNationalPokedex
@@ -47,8 +45,9 @@ assert(session.national_dex_unlocked == true, "session.national_dex_unlocked mus
 assert(session.dex.nationalUnlocked == true, "dex.nationalUnlocked must be true")
 
 -- 3. Check IsNationalPokedexEnabled after unlock (should be 1)
-Natives.special(ctx, Std.SPECIAL.IsNationalPokedexEnabled)
-assert(ctx.vars[0x800D] == 1, "IsNationalPokedexEnabled should set VAR_RESULT to 1 after unlock")
+local _, natOn = Natives.special(ctx, Std.SPECIAL.IsNationalPokedexEnabled)
+assert(natOn == 1, "IsNationalPokedexEnabled should hand specialvar 1 after unlock")
+assert(Flags.getVar(store, ctx, 0x800D) == 1, "IsNationalPokedexEnabled should set VAR_RESULT to 1 after unlock")
 assert(PokedexData.isNationalUnlocked(session, session.dex) == true, "isNationalUnlocked must return true after unlock")
 print("[PASS] Script specials EnableNationalPokedex and IsNationalPokedexEnabled verified")
 
@@ -123,7 +122,8 @@ for _, m in ipairs(lockedModes) do
   if m.id == "atoz" or m.id == "type" then hasSearch = true end
 end
 assert(not hasNationalMode, "Locked Pokédex must NOT have NUMERICAL MODE: NATIONAL")
-assert(not hasSearch, "Locked Pokédex must NOT have SEARCH section")
+-- pokefirered/src/pokedex_screen.c:333-337
+assert(hasSearch, "Locked Pokédex keeps the SEARCH section of sListMenuItems_KantoDexModeSelect")
 assert(Pokedex.maxSpecies() == 151, "Locked Pokédex maxSpecies must be 151")
 
 -- Open with unlocked National Dex

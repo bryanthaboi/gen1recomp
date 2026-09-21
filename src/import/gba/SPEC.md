@@ -88,7 +88,10 @@ script that `call`s shared `EventScript_PkmnCenterNurse`.
 
 ## Map scripts
 
-`onTransition`, `onResume` (stub OK), `onFrame[]`. Resume before frame.
+Single script keys (string or nil): `onLoad`, `onTransition`, `onResume`,
+`onReturnToField`. Var-gated tables of `{ var, value, script }` rows:
+`onFrame[]`, `onWarpIntoMap[]`, `onDiveWarp[]`. Transition runs before load;
+resume before frame.
 
 ## Graphics
 

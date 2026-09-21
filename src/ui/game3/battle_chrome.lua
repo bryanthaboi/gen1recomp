@@ -15,6 +15,8 @@ BattleChrome._doublesOpponentBox = nil
 BattleChrome._elements = nil
 BattleChrome._partyBar = nil
 BattleChrome._terrains = {}
+BattleChrome._terrainInfo = {}
+BattleChrome._terrainMissing = {}
 BattleChrome._logged = false
 BattleChrome._quads = {}
 
@@ -107,6 +109,38 @@ local function rgba_to_image(rgba, w, h)
   return image
 end
 
+-- pokefirered/src/battle_bg.c:644
+function BattleChrome.terrain(key)
+  key = tostring(key or "")
+  local cache = BattleChrome._terrains
+  local hit = rawget(cache, key)
+  if hit ~= nil then return hit end
+  if BattleChrome._terrainMissing[key] then return nil end
+  local info = BattleChrome._terrainInfo and BattleChrome._terrainInfo[key]
+  if not info then return nil end
+  local root = battle_root()
+  local w, h = info.w or 256, info.h or 256
+  local img = rgba_to_image(read_bytes(root .. "/" .. (info.file or ("terrain_" .. key .. ".rgba"))), w, h)
+  if not img then
+    BattleChrome._terrainMissing[key] = true
+    return nil
+  end
+  local entry = {
+    image = img,
+    bgImage = rgba_to_image(read_bytes(root .. "/terrain_bg_" .. key .. ".rgba"), 256, 160),
+    enemyPlat = rgba_to_image(read_bytes(root .. "/terrain_enemy_" .. key .. ".rgba"), 256, 160),
+    playerPlat = rgba_to_image(read_bytes(root .. "/terrain_player_" .. key .. ".rgba"), 256, 160),
+    w = w,
+    h = h,
+  }
+  rawset(cache, key, entry)
+  return entry
+end
+
+local TERRAIN_MT = {
+  __index = function(_, key) return BattleChrome.terrain(key) end,
+}
+
 function BattleChrome.install(cache)
   BattleChrome._cache = resolve_cache(cache)
   BattleChrome._manifest = nil
@@ -122,7 +156,9 @@ function BattleChrome.install(cache)
   BattleChrome._elements = nil
   BattleChrome._elementsExp = nil
   BattleChrome._partyBar = nil
-  BattleChrome._terrains = {}
+  BattleChrome._terrains = setmetatable({}, TERRAIN_MT)
+  BattleChrome._terrainInfo = {}
+  BattleChrome._terrainMissing = {}
   BattleChrome._quads = {}
   BattleChrome._logged = false
   local root = battle_root()
@@ -143,31 +179,11 @@ function BattleChrome.install(cache)
   BattleChrome._elementsExp = rgba_to_image(elExp, 320, 24) or BattleChrome._elements
   local pinfo = m.partySummaryBar or { w = 128, h = 8 }
   BattleChrome._partyBar = rgba_to_image(pbar, pinfo.w or 128, pinfo.h or 8)
-  local terrains = m.terrains or {
+  BattleChrome._terrainInfo = m.terrains or {
     grass = { file = "terrain_grass.rgba", w = m.terrainW or 256, h = m.terrainH or 256 },
   }
-  for key, info in pairs(terrains) do
-    local rgba = read_bytes(root .. "/" .. (info.file or ("terrain_" .. key .. ".rgba")))
-    local img = rgba_to_image(rgba, info.w or 256, info.h or 256)
-    local bgRgba = read_bytes(root .. "/terrain_bg_" .. key .. ".rgba")
-    local enemyPlatRgba = read_bytes(root .. "/terrain_enemy_" .. key .. ".rgba")
-    local playerPlatRgba = read_bytes(root .. "/terrain_player_" .. key .. ".rgba")
-    local bgImg = rgba_to_image(bgRgba, 256, 160)
-    local enemyPlatImg = rgba_to_image(enemyPlatRgba, 256, 160)
-    local playerPlatImg = rgba_to_image(playerPlatRgba, 256, 160)
-    if img then
-      BattleChrome._terrains[key] = {
-        image = img,
-        bgImage = bgImg,
-        enemyPlat = enemyPlatImg,
-        playerPlat = playerPlatImg,
-        w = info.w or 256,
-        h = info.h or 256,
-      }
-    end
-  end
 
-  if pb and eb and tb and next(BattleChrome._terrains) then
+  if pb and eb and tb and next(BattleChrome._terrainInfo) then
     log("battle chrome ready (v" .. tostring(m.format or "?") .. ")")
   else
     log("battle chrome missing — re-run --pokemon extract")
@@ -293,8 +309,8 @@ function BattleChrome.drawTerrain(key, enemyOx, playerOx, bgOx)
   enemyOx = tonumber(enemyOx) or 0
   playerOx = tonumber(playerOx) or 0
   bgOx = tonumber(bgOx) or 0
-  local entry = BattleChrome._terrains[key] or BattleChrome._terrains.building
-    or BattleChrome._terrains.grass
+  local entry = BattleChrome.terrain(key) or BattleChrome.terrain("building")
+    or BattleChrome.terrain("grass")
   if not entry or not entry.image then return false end
 
   local qFullKey = "terrain_full_" .. key
@@ -354,8 +370,8 @@ end
 --- Draw clean background wallpaper without battle platforms (e.g. for evolution scene).
 function BattleChrome.drawCleanBg(key)
   key = key or "building"
-  local entry = BattleChrome._terrains[key] or BattleChrome._terrains.building
-    or BattleChrome._terrains.grass
+  local entry = BattleChrome.terrain(key) or BattleChrome.terrain("building")
+    or BattleChrome.terrain("grass")
   if not entry then return false end
 
   if entry.bgImage and love and love.graphics then

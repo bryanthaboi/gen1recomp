@@ -7,8 +7,34 @@ local Lz77 = require("src.import.gba.lz77")
 
 local BattleChromeExtract = {}
 
-BattleChromeExtract.FORMAT_VERSION = 5
+BattleChromeExtract.FORMAT_VERSION = 7
 BattleChromeExtract.CACHE_SUB = "pokemon/battle"
+
+-- src/battle_bg.c:439
+BattleChromeExtract.TERRAIN_TABLE = 0x24EE34
+BattleChromeExtract.TERRAIN_ENTRY_SIZE = 20
+BattleChromeExtract.TERRAIN_KEYS = {
+  [0] = "grass",
+  [1] = "long_grass",
+  [2] = "sand",
+  [3] = "underwater",
+  [4] = "water",
+  [5] = "pond",
+  [6] = "mountain",
+  [7] = "cave",
+  [8] = "building",
+  [9] = "plain",
+  [10] = "link",
+  [11] = "gym",
+  [12] = "leader",
+  [13] = "indoor_2",
+  [14] = "indoor_1",
+  [15] = "lorelei",
+  [16] = "bruno",
+  [17] = "agatha",
+  [18] = "lance",
+  [19] = "champion",
+}
 
 local function default_cache_root()
   local ok, Extract = pcall(require, "src.import.gba.extract_island1")
@@ -376,6 +402,48 @@ local function split_terrain_layers(fullRgba, mapBytes)
   return table.concat(bgBytes), table.concat(enemyBytes), table.concat(playerBytes)
 end
 
+local function ptr_offset(v)
+  if type(v) ~= "number" or v < 0x08000000 or v >= 0x09000000 then return nil end
+  return v - 0x08000000
+end
+
+-- src/battle_bg.c:439
+function BattleChromeExtract.terrainTable(get, cfg)
+  cfg = cfg or Versions.BATTLE_UI
+  local base = cfg.terrain_table or BattleChromeExtract.TERRAIN_TABLE
+  local function u32(off)
+    return (get(off) or 0) + (get(off + 1) or 0) * 256
+      + (get(off + 2) or 0) * 65536 + (get(off + 3) or 0) * 16777216
+  end
+  local out = {}
+  for id = 0, 19 do
+    local key = BattleChromeExtract.TERRAIN_KEYS[id]
+    local off = base + id * BattleChromeExtract.TERRAIN_ENTRY_SIZE
+    local tiles = ptr_offset(u32(off))
+    local tilemap = ptr_offset(u32(off + 4))
+    local pal = ptr_offset(u32(off + 16))
+    if not (key and tiles and tilemap and pal) then return nil end
+    out[id + 1] = { key = key, id = id, cfg = { tiles = tiles, tilemap = tilemap, pal = pal } }
+  end
+  local grass = cfg.terrain_grass
+  local first = out[1].cfg
+  if grass and (first.tiles ~= grass.tiles or first.tilemap ~= grass.tilemap
+    or first.pal ~= grass.pal) then
+    return nil
+  end
+  return out
+end
+
+function BattleChromeExtract.requireTerrainTable(get, cfg)
+  cfg = cfg or Versions.BATTLE_UI
+  local terrains = BattleChromeExtract.terrainTable(get, cfg)
+  if not terrains then
+    error(string.format("battle_chrome_extract: sBattleTerrainTable at 0x%X did not decode",
+      cfg.terrain_table or BattleChromeExtract.TERRAIN_TABLE))
+  end
+  return terrains
+end
+
 function BattleChromeExtract.run(rom, cache, opts)
   opts = opts or {}
   local cacheRoot = opts.cacheRoot or default_cache_root()
@@ -398,6 +466,11 @@ function BattleChromeExtract.run(rom, cache, opts)
   local enemyRgba = bake_enemy_healthbox(enemyGfx, hbPal)
   cache:write(root .. "/healthbox_player.rgba", playerRgba)
   cache:write(root .. "/healthbox_enemy.rgba", enemyRgba)
+  if cfg.healthbox_safari then
+    -- src/battle_interface.c:615 CreateSafariPlayerHealthboxSprites
+    local safariGfx = Lz77.decompress(get, cfg.healthbox_safari)
+    cache:write(root .. "/healthbox_safari.rgba", bake_player_healthbox(safariGfx, hbPal))
+  end
   BattleChromeExtract.runDoubles(rom, cache, { cacheRoot = cacheRoot })
 
   local elGfx = read_raw(rom, cfg.healthbox_elements, 320 * 24 / 2)
@@ -407,11 +480,9 @@ function BattleChromeExtract.run(rom, cache, opts)
   cache:write(root .. "/elements_exp.rgba", bake_sheet_rgba(elGfx, hbPal, 320, 24))
 
   -- Terrains (BG2). Palettes load at BG_PLTT_ID(2) → tilemap palNum 2/3/4.
-  local terrains = {
-    { key = "grass", cfg = cfg.terrain_grass },
-    { key = "building", cfg = cfg.terrain_building },
-  }
+  local terrains = BattleChromeExtract.requireTerrainTable(get, cfg)
   local terrainMeta = {}
+  local terrainOrder = {}
   for _, t in ipairs(terrains) do
     local tr = t.cfg
     if tr then
@@ -428,11 +499,17 @@ function BattleChromeExtract.run(rom, cache, opts)
       cache:write(root .. "/terrain_enemy_" .. t.key .. ".rgba", enemyRgba)
       cache:write(root .. "/terrain_player_" .. t.key .. ".rgba", playerRgba)
       terrainMeta[t.key] = { w = trW, h = trH }
+      terrainOrder[#terrainOrder + 1] = t.key
     end
   end
 
   local grass = terrainMeta.grass or { w = 256, h = 256 }
-  local building = terrainMeta.building or grass
+  local terrainLines = {}
+  for _, key in ipairs(terrainOrder) do
+    local m = terrainMeta[key]
+    terrainLines[#terrainLines + 1] = string.format(
+      '    %s = { file = "terrain_%s.rgba", w = %d, h = %d },', key, key, m.w, m.h)
+  end
 
   -- Party summary bar (128×8); balls use elements tiles 66..69.
   if cfg.party_summary_bar then
@@ -445,8 +522,7 @@ function BattleChromeExtract.run(rom, cache, opts)
   textboxW = %d, textboxH = %d,
   terrainW = %d, terrainH = %d,
   terrains = {
-    grass = { file = "terrain_grass.rgba", w = %d, h = %d },
-    building = { file = "terrain_building.rgba", w = %d, h = %d },
+%s
   },
   partySummaryBar = { file = "party_summary_bar.rgba", w = 128, h = 8 },
   partyBarPlayer = { x = 136, y = 96 },
@@ -457,6 +533,8 @@ function BattleChromeExtract.run(rom, cache, opts)
   enemyBox = { w = 128, h = 32, x = 44, y = 30 },
   doublesPlayerBox = { w = 128, h = 32, file = "healthbox_doubles_player.rgba" },
   doublesOpponentBox = { w = 128, h = 32, file = "healthbox_doubles_opponent.rgba" },
+  -- src/battle_interface.c:615, :735
+  safariBox = { w = 128, h = 64, x = 158, y = 88, file = "healthbox_safari.rgba" },
   -- Sprite centers before pic y_offset; final Y = base + y_offset [+8 player]
   playerSprite = { x = 72, y = 80 },
   enemySprite = { x = 176, y = 40 },
@@ -471,11 +549,10 @@ function BattleChromeExtract.run(rom, cache, opts)
 }
 ]], BattleChromeExtract.FORMAT_VERSION, tw, th,
     grass.w, grass.h,
-    grass.w, grass.h,
-    building.w, building.h)
+    table.concat(terrainLines, "\n"))
   cache:write(root .. "/manifest.lua", manifest)
 
-  return { root = root, textboxW = tw, textboxH = th }
+  return { root = root, textboxW = tw, textboxH = th, terrains = terrainOrder }
 end
 
 function BattleChromeExtract.ready(cache, cacheRoot)

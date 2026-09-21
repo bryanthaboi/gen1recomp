@@ -1022,7 +1022,7 @@ end
 local COIN_CASE = 0x36 -- constants/item_constants.asm:62
 
 -- _NoCoinsText / _NoCoinCaseText, data/text/common_1.asm.
-local NO_COINS_TEXT = "You have no coins."
+local NO_COINS_TEXT = Strings.source("You have no coins.")
 local NO_COIN_CASE_TEXT = Strings.source("You don't have a\nCOIN CASE.")
 
 local function gameCornerGame(vm, kind)

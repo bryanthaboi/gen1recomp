@@ -337,14 +337,45 @@ function PartyChrome.drawBg()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
+local NO_HP_MAIN = {
+  { 8, 40, 64, 8, 8, 32 },
+  { 72, 40, 8, 8, 72, 32 },
+  { 8, 8, 64, 1, 8, 33 },
+  { 8, 8, 3, 1, 72, 33 },
+}
+
+local NO_HP_WIDE = {
+  { 8, 8, 64, 8, 72, 8 },
+  { 8, 8, 2, 8, 136, 8 },
+}
+
+-- pokefirered/src/party_menu.c:2187
+local function blit_no_hp(slot, kind, px, py)
+  local plan = (kind == "main") and NO_HP_MAIN or NO_HP_WIDE
+  if kind == "main" and (slot.w ~= 80 or slot.h ~= 56) then return end
+  if kind ~= "main" and (slot.w ~= 144 or slot.h ~= 24) then return end
+  slot.noHpQuads = slot.noHpQuads or {}
+  for i, r in ipairs(plan) do
+    local q = slot.noHpQuads[i]
+    if not q then
+      q = love.graphics.newQuad(r[1], r[2], r[3], r[4], slot.w, slot.h)
+      slot.noHpQuads[i] = q
+    end
+    love.graphics.draw(slot.image, q, px + r[5], py + r[6])
+  end
+end
+
 --- Draw pret slot panel at window tile coords. kind: main|wide|empty
-function PartyChrome.drawSlot(kind, tileLeft, tileTop, selected)
+function PartyChrome.drawSlot(kind, tileLeft, tileTop, selected, hideHp)
   local slot = ensureSlot(kind == "main" and "main" or (kind == "empty" and "empty" or "wide"), selected)
   local T = Display.TILE or 8
   local px, py = tileLeft * T, tileTop * T
   love.graphics.setColor(1, 1, 1, 1)
   if slot and slot.image then
     love.graphics.draw(slot.image, px, py)
+    if hideHp and kind ~= "empty" then
+      blit_no_hp(slot, kind, px, py)
+    end
     return
   end
   local pw = (kind == "main") and 80 or 144

@@ -32,6 +32,49 @@ function Ctx.isGfxVar(id)
   return id >= Ctx.GFX_VAR_LO and id <= Ctx.GFX_VAR_HI
 end
 
+-- pokefirered/include/constants/field_tasks.h:4
+Ctx.STEP_CB = {
+  DUMMY = 0,
+  ASH = 1,
+  FORTREE_BRIDGE = 2,
+  PACIFIDLOG_BRIDGE = 3,
+  ICE = 4,
+  TRUCK = 5,
+  SECRET_BASE = 6,
+  CRACKED_FLOOR = 7,
+}
+
+-- pokefirered/src/field_tasks.c:38
+Ctx.STEP_CALLBACKS = {
+  [Ctx.STEP_CB.ICE] = "ice",
+}
+
+Ctx._stepCallback = nil
+
+-- pokefirered/src/field_tasks.c:96
+function Ctx.setStepCallback(id, mapId)
+  id = tonumber(id) or Ctx.STEP_CB.DUMMY
+  if not Ctx.STEP_CALLBACKS[id] then id = Ctx.STEP_CB.DUMMY end
+  if id == Ctx.STEP_CB.DUMMY then
+    Ctx._stepCallback = nil
+    return nil
+  end
+  Ctx._stepCallback = { id = id, name = Ctx.STEP_CALLBACKS[id], mapId = mapId }
+  return Ctx._stepCallback.name
+end
+
+-- pokefirered/src/overworld.c:2105
+function Ctx.stepCallback(mapId)
+  local cb = Ctx._stepCallback
+  if not cb then return nil end
+  if mapId ~= nil and cb.mapId ~= nil and cb.mapId ~= mapId then return nil end
+  return cb.name, cb.id
+end
+
+function Ctx.resetStepCallback()
+  Ctx._stepCallback = nil
+end
+
 function Ctx.new(opts)
   opts = opts or {}
   return {
