@@ -2152,20 +2152,43 @@ function Gen3Compat.spriteOverrides()
   return out
 end
 
-local function reapplyMoves(M)
+local function reapply(name, target, what)
   local g = live()
   local content = g and g.mods and g.mods.content
-  local reg = content and content.moves
-  if not (reg and reg.ops and next(reg.ops) ~= nil) then return end
+  local reg = content and content[name]
+  if not (target and reg and reg.ops and next(reg.ops) ~= nil) then return end
   local spec = reg.spec
   if spec and type(spec.write) == "function" then
-    local ok, err = pcall(spec.write, M, reg)
+    local ok, err = pcall(spec.write, target, reg)
     if not ok then
-      warnOnce("moves.reapply", "[gen3] mod move data not re-applied after reload: %s",
-        tostring(err))
+      warnOnce(name .. ".reapply", "[gen3] mod %s data not re-applied after reload: %s",
+        what, tostring(err))
     end
   end
   for key in pairs(recordCache) do recordCache[key] = nil end
+end
+
+local function reapplyMoves(M)
+  reapply("moves", M, "move")
+end
+
+-- Pokemon.install() replaces every species table with a fresh copy of the
+-- ROM pack, and Runtime runs it on entering FireRed -- after the loader has
+-- merged the mods onto the old tables.  Write the moves and pokemon
+-- registries again onto the new ones: move names live in that same pack
+-- (Pokemon._moveNames), and so does the battle-move copy the moves writer
+-- mirrors its rows into.  Moves first, as Loader:_mergeOrder does: the moves
+-- writer is what puts a mod's own moves in the move index, and the species
+-- writer reads that index to resolve learnsets, egg moves and TM/HM lists.
+local function reapplyPokemon(P)
+  local g = live()
+  local M = g and g.data and g.data.gen3Moves
+  if not M then
+    local okM, Moves = pcall(rawRequire, "src.core.game3.battle.moves")
+    M = okM and type(Moves) == "table" and Moves or nil
+  end
+  reapplyMoves(M)
+  reapply("pokemon", P, "species")
 end
 
 function Gen3Compat.applyMerged(game)
@@ -2187,6 +2210,7 @@ function Gen3Compat.applyMerged(game)
     reloadRegistered[P] = true
     P.onReload(function()
       for key in pairs(recordCache) do recordCache[key] = nil end
+      reapplyPokemon(P)
       wrapPics(P)
       seed(P)
     end, "gen3compat")

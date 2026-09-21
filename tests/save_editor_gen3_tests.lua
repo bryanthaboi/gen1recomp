@@ -149,8 +149,8 @@ do
 
   -- Set Move
   MonOps.setMove(mockData, mon, 1, 57) -- Surf
-  checkEq(mon.moves[1].moveId, 57, "move 1 set to Surf (57)")
-  check(mon.moves[1].pp > 0, "move 1 PP initialized")
+  checkEq(require("src.core.game3.pokemon").moveIdAt(mon, 1), 57, "move 1 set to Surf (57)")
+  check(mon.pp[1] > 0, "move 1 PP initialized")
 
   -- Set DVs / IVs
   MonOps.setDv(mockData, mon, "attack", 15, 3)
@@ -339,7 +339,7 @@ do
     ivs = { hp = 15, atk = 14, def = 13, spe = 12, spa = 11, spd = 10 },
   }
   Gen.hydrateMon(mockData, rawMon)
-  checkEq(rawMon.species, "BULBASAUR", "hydrateMon normalizes numeric species to BULBASAUR")
+  checkEq(rawMon.species, 1, "hydrateMon preserves native numeric species")
   checkEq(rawMon.speciesId, 1, "hydrateMon preserves speciesId = 1")
   check(type(rawMon.dvs) == "table", "hydrateMon creates dvs table")
   checkEq(rawMon.dvs.attack, 7, "hydrateMon computes attack DV from IV")
@@ -368,7 +368,7 @@ do
 
   -- Test MonOps.setSpecies
   Ops.setSpecies(S, mon, "CHARMANDER")
-  checkEq(mon.species, "CHARMANDER", "Ops.setSpecies updates to CHARMANDER")
+  checkEq(mon.species, 4, "Ops.setSpecies updates to numeric CHARMANDER")
   checkEq(mon.speciesId, 4, "Ops.setSpecies updates speciesId to 4")
 end
 
@@ -440,31 +440,31 @@ do
 
   -- Add to bag
   Ops.addToBag(S, "POTION")
-  checkEq(save.inventory["POTION"], 1, "POTION added to bag x1")
+  checkEq(save.inventory["13"], 1, "POTION added to bag x1")
   check(save.bag ~= nil and save.bag.stacks ~= nil, "save.bag updated")
 
   -- Adjust bag quantity
   Ops.bagAdjust(S, "POTION", 4)
-  checkEq(save.inventory["POTION"], 5, "POTION adjusted to x5")
+  checkEq(save.inventory["13"], 5, "POTION adjusted to x5")
 
   -- Max bag stack
   Ops.bagMax(S, "POTION")
-  checkEq(save.inventory["POTION"], Ops.STACK_MAX, "POTION maxed to 99")
+  checkEq(save.inventory["13"], 999, "POTION maxed to 999")
 
   -- Drop bag item
   Ops.bagDrop(S, "POTION")
-  checkEq(save.inventory["POTION"], nil, "POTION dropped from bag")
+  checkEq(save.inventory["13"], nil, "POTION dropped from bag")
 
   -- PC operations
   Ops.addToPc(S, "POKE_BALL")
-  checkEq(save.pcItems["POKE_BALL"], 1, "POKE_BALL added to PC x1")
+  checkEq(save.pcItems["4"], 1, "POKE_BALL added to PC x1")
   check(save.storage ~= nil and #save.storage.items > 0, "save.storage.items synced")
 
   Ops.pcAdjust(S, "POKE_BALL", 9)
-  checkEq(save.pcItems["POKE_BALL"], 10, "POKE_BALL adjusted to x10 in PC")
+  checkEq(save.pcItems["4"], 10, "POKE_BALL adjusted to x10 in PC")
 
   Ops.pcMax(S, "POKE_BALL")
-  checkEq(save.pcItems["POKE_BALL"], Ops.STACK_MAX, "POKE_BALL maxed in PC")
+  checkEq(save.pcItems["4"], 999, "POKE_BALL maxed in PC")
 
   -- Test numeric item IDs in Bag.order, Bag.slots, and isBadge
   save.inventory[13] = 5 -- Potion numeric ID
@@ -551,7 +551,7 @@ do
 
   -- Test table-typed entries in save.inventory and save.pcItems
   S.save.inventory[1] = { id = 13, qty = 5 }
-  S.save.inventory["POTION"] = { qty = 10 }
+  S.save.inventory["13"] = { qty = 10 }
   S.save.pcItems[1] = { id = 4, qty = 20 }
   check(pcall(Ops.bagCanMax, S), "Ops.bagCanMax handles table entries in inventory without error")
   check(pcall(Ops.pcCanMax, S), "Ops.pcCanMax handles table entries in pcItems without error")

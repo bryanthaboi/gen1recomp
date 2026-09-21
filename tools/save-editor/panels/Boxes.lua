@@ -22,6 +22,7 @@
 local PartyMod = require("src.pokemon.Party")
 local Theme = require("Theme")
 local Ops = require("Ops")
+local Gen = require("Gen")
 local PAL = Theme.PAL
 
 local M = {}
@@ -43,7 +44,7 @@ local function drawStrip(S, Kit, boxes, x, y, stripW, h)
     if Kit.row(x + pad, ry, stripInner, bRowH, i == S.selectedBox, PAL.blue, 9 * s) then
       Ops.selectBox(S, i)
     end
-    local fill = #boxes[i]
+    local fill = Ops.boxSize(S, boxes[i])
     Kit.text("mono", ("Box %d"):format(i), x + pad + 10 * s,
       ry + (bRowH - Kit.textHeight("mono")) / 2, PAL.text)
     local countW = Kit.textWidth("tiny", tostring(fill))
@@ -65,7 +66,7 @@ local function drawGrid(S, Kit, box, gridX, y, gridW, h)
   Kit.text("tab", ("Box %d"):format(S.selectedBox), gx,
     y + gpad + (headH - Kit.textHeight("tab")) / 2, PAL.heading)
   local titleW = Kit.textWidth("tab", ("Box %d"):format(S.selectedBox))
-  Kit.text("mono", ("%d/%d"):format(#box, Ops.boxCapacity(S)),
+  Kit.text("mono", ("%d/%d"):format(Ops.boxSize(S, box), Ops.boxCapacity(S)),
     gx + titleW + 14 * s, y + gpad + (headH - Kit.textHeight("mono")) / 2, PAL.caption)
   local navW = 34 * s
   if Kit.stepper(gx + ginner - 2 * navW - 8 * s, y + gpad, navW, headH, "<",
@@ -101,7 +102,7 @@ local function drawGrid(S, Kit, box, gridX, y, gridW, h)
   end
   if Kit.button(gx + wdW + 10 * s, actY, addW, actH, addLabel,
       { font = "small", radius = 9 * s,
-        enabled = #box < Ops.boxCapacity(S) }) then
+        enabled = Ops.boxSize(S, box) < Ops.boxCapacity(S) }) then
     Ops.openBoxAddPicker(S, Kit)
   end
   if Kit.button(gx + ginner - relW, actY, relW, actH, relLabel,
@@ -158,7 +159,7 @@ local function drawGrid(S, Kit, box, gridX, y, gridW, h)
       Kit.textCenter("micro", "+", bx, by + cellH / 2 - Kit.textHeight("micro") / 2,
         cellW, PAL.faint)
       if Kit.press(bx, by, cellW, cellH) then
-        S.selectedBoxSlot = math.min(i, #box + 1)
+        S.selectedBoxSlot = Gen.ofState(S) == 3 and i or math.min(i, Ops.boxSize(S, box) + 1)
         Ops.openBoxAddPicker(S, Kit)
       end
     end

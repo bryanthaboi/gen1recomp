@@ -60,8 +60,7 @@ mock_bytes[15] = 20; mock_bytes[16] = 0 -- y = 20
 mock_bytes[17] = 0 -- elevation = 0
 mock_bytes[18] = 7 -- kind = 7 (BG_EVENT_HIDDEN_ITEM)
 mock_bytes[21] = 14; mock_bytes[22] = 0 -- item = 14 (ANTIDOTE)
--- info: hiddenItemId = 1, quantity = 1 (1 << 9 = 0x0200) -> 0x0201
-mock_bytes[23] = 0x01; mock_bytes[24] = 0x02
+mock_bytes[23] = 0x01; mock_bytes[24] = 0x01
 
 -- Event 2: Hidden Potion at offset 24 (underfoot bit 15 set)
 mock_bytes[25] = 3; mock_bytes[26] = 0 -- x = 3
@@ -69,8 +68,7 @@ mock_bytes[27] = 4; mock_bytes[28] = 0 -- y = 4
 mock_bytes[29] = 0 -- elevation = 0
 mock_bytes[30] = 7 -- kind = 7 (BG_EVENT_HIDDEN_ITEM)
 mock_bytes[33] = 13; mock_bytes[34] = 0 -- item = 13 (POTION)
--- info: hiddenItemId = 0, quantity = 1 (1 << 9 = 0x0200), underfoot = 1 (1 << 15 = 0x8000) -> 0x8200
-mock_bytes[35] = 0x00; mock_bytes[36] = 0x82
+mock_bytes[35] = 0x00; mock_bytes[36] = 0x81
 
 local rom = create_mock_rom(mock_bytes)
 local mapEventsOff = 0x08000000
@@ -129,6 +127,22 @@ assert(potion.underfoot == true, "underfoot is true")
 assert(potion.flag == 0x3E8 + 0, "flag is 0x3E8 (1000)")
 
 print("[OK] BgEvent parsing correctly extracted hidden items and unpacked union fields.")
+
+for _, hiddenId in ipairs({ 0, 1, 190, 255 }) do
+  for _, quantity in ipairs({ 1, 2, 3, 63, 64, 127 }) do
+    for _, underfoot in ipairs({ false, true }) do
+      full_bytes[32 + 23] = hiddenId
+      full_bytes[32 + 24] = quantity + (underfoot and 128 or 0)
+      local event = ExtractMapEvents.parseMapEvents(romFull, 0x08000000).bgEvents[2]
+      assert(event.hiddenItemId == hiddenId, "quantity must not leak into hidden item flag")
+      assert(event.flag == 1000 + hiddenId and event.flag < 1256, "hidden flags stay in their eight-bit range")
+      assert(event.quantity == quantity, "all seven quantity bits must survive extraction")
+      assert(event.underfoot == underfoot, "underfoot must not change quantity or flag")
+    end
+  end
+end
+full_bytes[32 + 23], full_bytes[32 + 24] = 1, 1
+print("PASS hidden_item_flag_quantity_bit_boundaries")
 
 print("=== [Test 2: Hidden Item Field Pickup & Bag Integration] ===")
 

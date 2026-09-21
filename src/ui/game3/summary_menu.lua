@@ -620,6 +620,13 @@ local function draw_page_skills(mon)
 end
 
 
+-- pret prints each move name at x 3 of POKESUM_WIN_MOVES_3, a 10-tile window
+-- starting at tile 20 (pokemon_summary_screen.c:857, :2543), so a name has up
+-- to that window's right edge -- the edge of the screen -- which is 77 px from
+-- the usual pen at 163.  The cart's own names reach 72 px (SKY UPPERCUT,
+-- FRENZY PLANT), and a translated one can use the rest.
+local MOVE_NAME_RIGHT = (20 + 10) * 8
+
 local function draw_page_moves(mon, isDetail)
   local moves = moves_for_mon(mon)
   local slots = move_slots()
@@ -634,7 +641,7 @@ local function draw_page_moves(mon, isDetail)
     local m = moves[i]
     if m then
       SummaryChrome.drawTypeBadge(m.type, slot.typeX, slot.typeY)
-      draw_text(m.name, slot.nameX, slot.nameY, 64, "NORMAL")
+      draw_text(m.name, slot.nameX, slot.nameY, MOVE_NAME_RIGHT - slot.nameX, "NORMAL")
       draw_text(string.format("%d/%d", m.pp, m.maxPp), slot.ppX, slot.ppY, 40, "NORMAL")
     else
       draw_text("-", slot.typeX + 8, slot.typeY + 2, 16, "NORMAL")

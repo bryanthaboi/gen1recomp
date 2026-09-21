@@ -1071,7 +1071,7 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     do
       local okDoors, Doors = pcall(require, "src.core.game3.doors")
       if okDoors and Doors and Doors.draw then
-        Doors.draw(camX, camY)
+        Doors.draw(camX, camY, canvasW, canvasH)
       end
     end
   end

@@ -41,7 +41,7 @@ local function quantityRow(S, Kit, x, y, w, h, id, qty, selected, onMinus, onPlu
     onPlus()
   end
   if Kit.stepper(bx + 2 * (btn + 6 * s), y + (h - btn) / 2, btn, btn,
-      tostring(Ops.STACK_MAX), { font = "tiny", enabled = canMax }) then
+      tostring(Ops.stackMax(S)), { font = "tiny", enabled = canMax }) then
     onMax()
   end
   if Kit.button(bx + 3 * (btn + 6 * s), y + (h - btn) / 2, btn, btn, "x",
@@ -298,7 +298,7 @@ end
 local function drawBag(S, Kit, x, y, w, h)
   S.save.inventory = S.save.inventory or {}
   local order = Bag.order(S.save, S.data) or {}
-  local capacity = Bag.capacity(S.data) or 20
+  local capacity = Gen.ofState(S) == 3 and 186 or Bag.capacity(S.data) or 20
   local slots = Bag.slots(S.save, S.data) or 0
   S.bagOffset = drawQuantityCard(S, Kit, x, y, w, h, {
     title = "BAG",
@@ -330,7 +330,7 @@ local function drawPc(S, Kit, x, y, w, h)
     counter = ("%d kinds"):format(#pcOrder),
     order = pcOrder,
     offset = S.pcOffset or 0,
-    empty = "PC storage is empty. Items sent here have no slot cap.",
+    empty = "PC storage is empty. ",
     qty = function(id) return (S.save.pcItems and S.save.pcItems[id]) or 0 end,
     selected = function() return S.selectedPcId end,
     select = function(id)

@@ -121,8 +121,15 @@ local function applyLoaded(path, statusVerb)
   S._openArmed = false
   S.editingMon = nil
   Ops.disarm(S)
-  Gen.ensureBoxes(S.save)
-  Gen.hydrateSave(Data, S.save)
+  local prepared, prepareError = pcall(function()
+    Gen.ensureBoxes(S.save)
+    Gen.hydrateSave(Data, S.save)
+  end)
+  if not prepared then
+    S.loadError, S.allowSave = true, false
+    S.status = "Save disabled: " .. tostring(prepareError)
+    return
+  end
   local probe = require("src.mods.Merge").deepCopy(S.save)
   S.validation = Gen.validate(probe, Data)
   if not Gen.emptyReport(S.save, S.validation) then
@@ -290,7 +297,13 @@ function App.save()
   if not S.allowSave then
     return Ops.say(S, "Save disabled,  corrupt save loaded; fix the file and Reload first")
   end
-  local ok, err = SaveIO.save(S.path, S.save)
+  local output = S.save
+  if Gen.ofState(S) == 3 then
+    local prepared, result = pcall(require("Game3Adapter").export, S.save)
+    if not prepared then S.status = "Save failed: " .. tostring(result); return false end
+    output = result
+  end
+  local ok, err = SaveIO.save(S.path, output)
   if ok then
     S.dirty = false
     S._quitArmed = false
@@ -305,6 +318,10 @@ end
 function App.reload()
   local save, err = SaveIO.load(S.path)
   if save then
+    if Gen.of(save, S.version) == 3 then
+      applyLoaded(S.path, "Reloaded")
+      return not S.loadError
+    end
     S.save = save
     S.dirty = false
     S.loadError = false
@@ -594,7 +611,7 @@ local function tabCount(id)
     return ("%d/%d"):format(#S.save.party, require("src.pokemon.Party").MAX)
   elseif id == "boxes" then
     local n = 0
-    for _, box in ipairs(Ops.boxes(S)) do n = n + #box end
+    for _, box in ipairs(Ops.boxes(S)) do n = n + Ops.boxSize(S, box) end
     return tostring(n)
   elseif id == "items" then
     local Bag = require("src.inventory.Bag")

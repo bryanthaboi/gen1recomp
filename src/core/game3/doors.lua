@@ -579,7 +579,7 @@ local function loadSheet(tileName)
 end
 
 --- Draw active door animation overlay
-function Doors.draw(camX, camY)
+function Doors.draw(camX, camY, canvasW, canvasH)
   local anim = Doors._activeAnim
   if not anim then return end
   if not (love and love.graphics and love.graphics.rectangle) then return end
@@ -588,20 +588,23 @@ function Doors.draw(camX, camY)
   local sx = anim.x * CELL - (camX or 0)
   local sy = anim.y * CELL - (camY or 0)
 
-  -- Viewport bounds check
-  if sx < -CELL or sy < -32 or sx > 256 or sy > 176 then
-    return
-  end
-
   -- src/field_door.c:457
   local tileName = anim.tile
   if not tileName then return end
 
   local sheet = loadSheet(tileName)
+  local hasSheet = sheet and sheet.image and sheet.quads
+  local width = hasSheet and sheet.frame_width or CELL
+  local height = hasSheet and sheet.frame_height or CELL
+  local yOffset = (height > CELL) and CELL or 0
+  local top = sy - yOffset
+  if sx + width <= 0 or top + height <= 0
+      or sx >= (canvasW or 240) or top >= (canvasH or 160) then
+    return
+  end
 
-  if sheet and sheet.image and sheet.quads then
+  if hasSheet then
     local frame = math.min(anim.frame, sheet.frames - 1)
-    local yOffset = (sheet.frame_height > 16) and 16 or 0
 
     -- Authentic black interior background behind the door graphic
     love.graphics.setColor(0.05, 0.07, 0.1, 1)
@@ -663,6 +666,5 @@ function Doors.reset()
 end
 
 return Doors
-
 
 

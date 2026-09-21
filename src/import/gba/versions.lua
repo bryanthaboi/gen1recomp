@@ -27,7 +27,7 @@ Versions.ROM_SIZE = 16777216
 -- v99: gEggMoves → pokemon/egg_moves.lua (hidden-mon egg moves were inert).
 -- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
 --       mapsec names and sDungeonInfo dungeon descriptions.
-Versions.CACHE_VERSION = 110
+Versions.CACHE_VERSION = 111
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1
