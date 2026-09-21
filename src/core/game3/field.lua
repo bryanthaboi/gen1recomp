@@ -226,11 +226,35 @@ local function bg_event_at(game, fx, fy, elevation, facingDir)
   return nil
 end
 
+-- Hidden-item flags belong in the active Space store: that is the table
+-- Space.persistSession() serializes back into session.flags when the start
+-- menu or save menu opens. Reading or writing session.flags directly loses
+-- the flag on the next persist, and the item respawns (#2364).
+local function flag_store(session)
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if Space and Space.store then return Space.store end
+  return session and (session.store or session)
+end
+
+-- Authoritative write plus the session.flags copy that field_moves.lua and
+-- objects.lua still read -- same shape as item_use.lua's sys_flag.
+local function set_hidden_flag(session, flag, value)
+  local Flags = require("src.core.game3.scripting.flags")
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if Space and Space.store then
+    Flags.setFlag(Space.store, Space.vm and Space.vm.ctx or nil, flag, value)
+  end
+  if session then
+    session.flags = session.flags or {}
+    session.flags[flag] = value or nil
+  end
+end
+
 local function hidden_item_at(game, x, y, elevation)
   local session = Field._session
   local events = get_map_bg_events(game)
   local Flags = require("src.core.game3.scripting.flags")
-  local store = session and (session.store or session)
+  local store = flag_store(session)
   for _, ev in ipairs(events) do
     if (ev.type == "hidden_item" or ev.kind == 7) and ev.x == x and ev.y == y then
       local flag = ev.flag or (ev.hiddenItemId and (0x3E8 + ev.hiddenItemId))
@@ -255,7 +279,7 @@ function Field.pickUpHiddenItem(game, hidden)
   local ItemsData = require("src.core.game3.items_data")
   local Message = require("src.ui.game3.message")
   local Audio = require("src.core.game3.audio")
-  local store = session and (session.store or session)
+  local store = flag_store(session)
 
   local flag = hidden.flag or (hidden.hiddenItemId and (0x3E8 + hidden.hiddenItemId))
   if flag and Flags.getFlag(store, nil, flag) then
@@ -278,8 +302,8 @@ function Field.pickUpHiddenItem(game, hidden)
   if bag then
     Bag.add(bag, itemId, qty)
   end
-  if flag and store then
-    Flags.setFlag(store, nil, flag, true)
+  if flag then
+    set_hidden_flag(session, flag, true)
   end
 
   Audio.playFanfare(257)
@@ -315,7 +339,7 @@ function Field.useItemfinder(session, showOWMessage)
   local Flags = require("src.core.game3.scripting.flags")
   local Audio = require("src.core.game3.audio")
   local Message = require("src.ui.game3.message")
-  local store = session and (session.store or session)
+  local store = flag_store(session)
 
   local found = nil
   local underfoot = false
