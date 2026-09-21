@@ -1088,6 +1088,23 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     end
   end
 
+  -- pokefirered/src/field_effect.c:3946: the Deoxys shatter blends only the BG
+  -- palettes to white, so the map washes out while the rock fragments (OBJ
+  -- sprites) keep their colours.  Painted here, between the last map layer and
+  -- the actors, for exactly that reason -- a Renderer.screenVeil would cover
+  -- the fragments too and the shatter would be invisible.
+  if not opts.actorsOnly then
+    local okFx, FieldEffects = pcall(require, "src.core.game3.field_effects")
+    if okFx and FieldEffects and FieldEffects.bgFlashAlpha then
+      local a = FieldEffects.bgFlashAlpha()
+      if a and a > 0 then
+        love.graphics.setColor(1, 1, 1, a)
+        love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
+  end
+
   -- Game3 EventObjects when spawned; else live World entities; else static defs.
   if not opts.skipActors and not drawGame3Actors(game, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
       and not drawWorldEntities(world, camX, camY) then

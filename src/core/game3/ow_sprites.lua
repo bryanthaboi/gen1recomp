@@ -86,6 +86,9 @@ local function load_one(gid)
   end
   return {
     image = image,
+    -- Kept so setObjectPalette can recolour the sheet: LOVE 11 has no
+    -- Image:newImageData, so the decoded pixels are the only CPU-side source.
+    imageData = imageData,
     quads = quads,
     width = w,
     height = h,
@@ -146,8 +149,19 @@ local function recolour_sprite(spr, from, to)
     return nil
   end
   if not (spr and spr.image) then return nil end
-  local okData, data = pcall(function() return spr.image:newImageData() end)
-  if not (okData and data) then return nil end
+  -- LOVE 11 exposes no Image:newImageData, so recolour from the ImageData the
+  -- sheet was decoded from.  Clone it: mapPixel mutates in place and the cached
+  -- sprite has to keep its own colours for the next swap.
+  local data
+  if spr.imageData then
+    local okClone, copy = pcall(function() return spr.imageData:clone() end)
+    if okClone then data = copy end
+  end
+  if not data then
+    local okData, d = pcall(function() return spr.image:newImageData() end)
+    if okData then data = d end
+  end
+  if not data then return nil end
 
   -- Colour-keyed LUT so the per-pixel work stays a single table lookup.
   local lut, sources = {}, {}
@@ -200,6 +214,7 @@ local function recolour_sprite(spr, from, to)
   local copy = {}
   for k, v in pairs(spr) do copy[k] = v end
   copy.image = img
+  copy.imageData = data
   return copy
 end
 

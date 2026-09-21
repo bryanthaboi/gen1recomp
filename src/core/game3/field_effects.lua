@@ -394,16 +394,36 @@ function FieldEffects.startSweetScent(onDone)
   table.insert(FieldEffects._anims, anim)
 end
 
---- pokefirered/src/field_effect.c:3878 — BlendPalettes(PALETTES_BG, 0x10, RGB_WHITE).
-function FieldEffects.startWhiteFlash(duration)
+-- pokefirered/src/field_effect.c:3946 — the Deoxys shatter whites the MAP out:
+--   BlendPalettes(PALETTES_BG, 0x10, RGB_WHITE);
+--   BeginNormalPaletteFade(PALETTES_BG, 0, 0x10, 0, RGB_WHITE);
+-- PALETTES_BG only, so the four rock fragments — OBJ sprites sharing the
+-- meteorite's palette tag 4371 — keep their colours and stay visible against
+-- the white map while they fly.  That is why this is a background veil painted
+-- between the map layers and the actors, and not a whole-screen "flash" like
+-- the one FldEff_PhotoFlash uses (that one really is PALETTES_ALL).
+-- gPaletteFade.y steps by 2, so 0x10 -> 0 is 8 frames.
+local BG_FLASH_FRAMES = 8
+
+function FieldEffects.startBgFlash(duration)
   local anim = {
-    kind = "flash",
-    alpha = 1.0,
+    kind = "bg_flash",
     timer = 0,
-    maxDur = math.max(1, math.floor(tonumber(duration) or 16)),
+    maxDur = math.max(1, math.floor(tonumber(duration) or BG_FLASH_FRAMES)),
   }
   table.insert(FieldEffects._anims, anim)
   return anim
+end
+
+--- How white the map layers should be veiled this frame, 0..1.  Read by
+--- FieldView.draw between the tiles and the actors.
+function FieldEffects.bgFlashAlpha()
+  for _, anim in ipairs(FieldEffects._anims) do
+    if anim.kind == "bg_flash" then
+      return math.max(0, 1.0 - (anim.timer / anim.maxDur))
+    end
+  end
+  return 0
 end
 
 -- ------------------------------------------------- Birth Island Deoxys effects
@@ -884,7 +904,7 @@ function FieldEffects.step()
       if anim.timer >= anim.maxDur then
         finished = true
       end
-    elseif anim.kind == "flash" then
+    elseif anim.kind == "flash" or anim.kind == "bg_flash" then
       anim.alpha = math.max(0, 1.0 - (anim.timer / anim.maxDur))
       if anim.timer >= anim.maxDur then
         finished = true
@@ -1027,11 +1047,12 @@ function FieldEffects.step()
       local FieldView = fieldView()
       if anim.state == "shake" then
         -- Task_DeoxysRockCameraShake (data[7]==0): full amplitude, sign flips
-        -- every other frame.
+        -- when data[0] passes 1, i.e. every other frame.
         if FieldView and FieldView.setCameraPanning then
-          FieldView.setCameraPanning(0, (anim.timer % 2 == 0) and 4 or -4)
+          FieldView.setCameraPanning(0, (math.floor(anim.timer / 2) % 2 == 0) and 4 or -4)
         end
-        if anim.timer >= 120 then
+        -- DestroyDeoxysRockEffect_RockFragments: `if (++tTimer > 120)`.
+        if anim.timer > 120 then
           local Objects = package.loaded["src.core.game3.objects"]
           local eo = Objects and Objects.find and Objects.find(anim.localId)
           if eo then
@@ -1040,7 +1061,7 @@ function FieldEffects.step()
             eo.hidden = true
             eo.visible = false
           end
-          FieldEffects.startWhiteFlash()
+          FieldEffects.startBgFlash()
           play_se(SE_THUNDER)
           anim.state = "shatter"
           anim.timer = 0
