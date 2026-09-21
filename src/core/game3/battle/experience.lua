@@ -11,8 +11,11 @@ local Experience = {}
 Experience.MAX_LEVEL = 100
 
 function Experience.expYield(species)
-  species = tonumber(species) or (species and species.species) or 0
-  local meta = Pokemon.speciesMeta(species)
+  local sp = (type(species) == "table" and (Pokemon.speciesOf(species) or tonumber(species.speciesId) or tonumber(species.species)))
+    or tonumber(species)
+    or (Pokemon.speciesFromName and Pokemon.speciesFromName(tostring(species)))
+    or 0
+  local meta = Pokemon.speciesMeta(sp)
   return (meta and tonumber(meta.expYield)) or 0
 end
 
@@ -21,11 +24,13 @@ function Experience.growthRate(monOrSpecies)
   if type(monOrSpecies) == "table" then
     local gr = tonumber(monOrSpecies.growthRate)
     if gr then return gr % 6 end
-    local sp = tonumber(monOrSpecies.species or monOrSpecies.speciesId)
+    local sp = Pokemon.speciesOf(monOrSpecies) or tonumber(monOrSpecies.speciesId) or tonumber(monOrSpecies.species)
     local meta = sp and Pokemon.speciesMeta(sp)
     return (meta and tonumber(meta.growthRate) or 0) % 6
   end
-  local meta = Pokemon.speciesMeta(tonumber(monOrSpecies))
+  local sp = tonumber(monOrSpecies)
+    or (Pokemon.speciesFromName and Pokemon.speciesFromName(tostring(monOrSpecies)))
+  local meta = sp and Pokemon.speciesMeta(sp)
   return (meta and tonumber(meta.growthRate) or 0) % 6
 end
 
@@ -169,7 +174,8 @@ function Experience.apply(mon, amount)
     if ModRuntime.wants("pokemon.level_up") then
       local G3 = require("src.mods.Gen3Compat")
       local learnable, learnableIds = {}, {}
-      for _, mv in ipairs(Pokemon.movesLearnedAt(tonumber(mon.species or mon.speciesId), curLevel)) do
+      local sp = Pokemon.speciesOf(mon) or tonumber(mon and mon.speciesId) or tonumber(mon and mon.species) or 1
+      for _, mv in ipairs(Pokemon.movesLearnedAt(sp, curLevel)) do
         learnable[#learnable + 1] = G3.moveName(mv)
         learnableIds[#learnableIds + 1] = mv
       end
@@ -273,7 +279,8 @@ function Experience.awardFoe(st, foeBattler, opts)
   end
   local party = st.playerParty or {}
   local function alive(mon)
-    return mon and (tonumber(mon.species or mon.speciesId) or 0) ~= 0 and (tonumber(mon.hp) or 0) > 0
+    local sp = Pokemon.speciesOf(mon) or tonumber(mon and mon.speciesId) or tonumber(mon and mon.species) or 0
+    return sp ~= 0 and (tonumber(mon and mon.hp) or 0) > 0
   end
   local function has_share(mon)
     return HeldItems.effectOf(mon and (mon.item or mon.heldItem)) == HeldItems.HOLD.EXP_SHARE

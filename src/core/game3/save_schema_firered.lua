@@ -294,6 +294,11 @@ end
 function Schema.ensureMonNumbering(mon)
   if type(mon) ~= "table" then return end
   local Pokemon = require("src.core.game3.pokemon")
+  local sp = Pokemon.speciesOf(mon) or tonumber(mon.speciesId) or tonumber(mon.species)
+  local meta = sp and Pokemon.speciesMeta(sp)
+  if meta and mon.growthRate == nil then
+    mon.growthRate = tonumber(meta.growthRate) or 0
+  end
   if Pokemon.numberingOf(mon) then return end
   local raw = mon.species or mon.speciesId or mon.id
   if type(raw) == "string" or tonumber(raw) == nil then return end

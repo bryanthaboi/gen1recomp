@@ -275,6 +275,10 @@ function Gen.hydrateMon(data, mon)
         if name and name ~= "" and name ~= "??????????" then
           mon.species = name
         end
+        local meta = Pokemon.speciesMeta and Pokemon.speciesMeta(spId)
+        if meta and mon.growthRate == nil then
+          mon.growthRate = tonumber(meta.growthRate) or 0
+        end
       end
       mon.ivs = mon.ivs or { hp = 0, atk = 0, def = 0, spe = 0, spa = 0, spd = 0 }
       mon.evs = mon.evs or { hp = 0, atk = 0, def = 0, spe = 0, spa = 0, spd = 0 }

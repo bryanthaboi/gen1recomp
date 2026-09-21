@@ -562,5 +562,56 @@ do
   _G.love = prevLove
 end
 
+-- --------------------------------------------------------------------------
+-- 18. FireRed Save Editing EXP Gain Fix
+-- --------------------------------------------------------------------------
+do
+  local Experience = require("src.core.game3.battle.experience")
+
+  -- Test A: Raw hydrated save with string species name in party
+  local rawSave = Schema.newGame({ name = "RED" })
+  rawSave.party = {
+    { species = 4, speciesId = 4, level = 5, exp = 135, hp = 20, maxHp = 20 }
+  }
+  Gen.hydrateSave(mockData, rawSave)
+  checkEq(rawSave.party[1].species, "CHARMANDER", "mon species hydrated to CHARMANDER string")
+  checkEq(rawSave.party[1].speciesId, 4, "mon speciesId preserved as 4")
+
+  local battleSt = {
+    wild = true,
+    player = { partyIndex = 1, mon = rawSave.party[1] },
+    playerParty = rawSave.party,
+    enemy = { species = 16, level = 3, mon = { species = 16, level = 3, hp = 0 } },
+  }
+  local awards = Experience.awardFoe(battleSt, battleSt.enemy, {})
+  checkEq(#awards, 1, "awardFoe produces 1 award even when mon.species is a string")
+  check(awards[1] and awards[1].amount > 0, "awarded exp amount is greater than 0")
+  check(awards[1] and awards[1].result and awards[1].result.gained > 0, "awarded exp result.gained is greater than 0")
+
+  -- Test B: Schema.fromSaveTable normalizes species and populates growthRate
+  local session = Schema.fromSaveTable(rawSave)
+  checkEq(session.party[1].species, "CHARMANDER", "Schema.fromSaveTable preserves string species")
+  checkEq(session.party[1].speciesId, 4, "Schema.fromSaveTable sets speciesId to numeric 4")
+  checkEq(session.party[1].growthRate, 3, "Schema.fromSaveTable populates Charmander growthRate to 3 (Medium Slow)")
+
+  local battleSt2 = {
+    wild = true,
+    player = { partyIndex = 1, mon = session.party[1] },
+    playerParty = session.party,
+    enemy = { species = 16, level = 3, mon = { species = 16, level = 3, hp = 0 } },
+  }
+  local awards2 = Experience.awardFoe(battleSt2, battleSt2.enemy, {})
+  checkEq(#awards2, 1, "awardFoe produces 1 award for session mon")
+  check(awards2[1] and awards2[1].amount > 0, "session mon receives positive exp amount")
+
+  -- Test C: MonOps.setLevel with missing growthRate derives correct exp curve
+  local monWithoutGrowth = { species = "BULBASAUR", speciesId = 1, level = 5 }
+  MonOps.setLevel(mockData, monWithoutGrowth, 10, 3)
+  checkEq(monWithoutGrowth.level, 10, "level updated to 10")
+  checkEq(monWithoutGrowth.growthRate, 3, "Bulbasaur growthRate correctly derived as 3")
+  check(monWithoutGrowth.exp > 0, "exp calculated correctly for derived growth curve")
+end
+
 print(string.format("save editor gen3 tests: %d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end
+

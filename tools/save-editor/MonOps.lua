@@ -135,7 +135,17 @@ function MonOps.setLevel(data, mon, level, gen)
 
   if isG3 then
     local SummaryData = require("src.core.game3.summary_data")
-    local gr = mon.growthRate or (data and data.pokemon and data.pokemon[mon.species] and data.pokemon[mon.species].growthRate) or 0
+    local gr = mon.growthRate
+    if not gr then
+      local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
+      local spId = tonumber(mon.speciesId) or tonumber(mon.species)
+        or (okP and PokemonG3 and PokemonG3.speciesOf and PokemonG3.speciesOf(mon))
+      local meta = okP and PokemonG3 and spId and PokemonG3.speciesMeta and PokemonG3.speciesMeta(spId)
+      gr = (meta and tonumber(meta.growthRate))
+        or (data and data.pokemon and (data.pokemon[mon.species] or (spId and data.pokemon[spId])) and (data.pokemon[mon.species] or data.pokemon[spId]).growthRate)
+        or 0
+    end
+    mon.growthRate = gr
     mon.exp = SummaryData.expForLevel(gr, level)
     mon.experience = mon.exp
     MonOps.recalc(data, mon, gen)
