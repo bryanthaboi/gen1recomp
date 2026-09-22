@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.75",
+          "date": "2026-09-22",
+          "size": 24672540,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.75/gen1recomp++-0.2.75-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2394 Surfing: Collision errors (?) on route 20&21 + missing water animation on Route 20; reaching Seafoam Islands impossible\n\n## Contributors\n\n- @bryanthaboi\n- @thibautbus"
+        },
+        {
           "version": "0.2.74",
           "date": "2026-09-22",
           "size": 24670882,
