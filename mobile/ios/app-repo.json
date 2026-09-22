@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.0",
+          "date": "2026-09-22",
+          "size": 37504222,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.0/gen1recomp++-0.3.0-ios.ipa",
+          "localizedDescription": "bazinga [release 0.3.0]\n\n## Issues closed\n\n- #2299 Pokemon crystal: Thunder should not miss while raining\n- #2369 API Bug: mod.content.encounters:patch fails silently on Pokémon Crystal\n\n## Contributors\n\n- @bryanthaboi\n- @Nexhas28\n- @sergiomele97"
+        },
+        {
           "version": "0.2.75",
           "date": "2026-09-22",
           "size": 24672540,
