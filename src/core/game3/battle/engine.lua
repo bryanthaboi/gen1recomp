@@ -1887,7 +1887,7 @@ function Engine.performSwitch(st, adapter, side, slot, opts)
   end
   Engine.switchOutEffects(st, adapter, old)
   State.syncBattlerToParty(old, party)
-  local nb = State.makeBattler(party[slot], side, { partyIndex = slot, id = id })
+  local nb = State.makeBattler(party[slot], side, { state = st, partyIndex = slot, id = id })
   if opts.batonPass then
     -- pokefirered/src/battle_main.c:2350
     for k, v in pairs(old.stages or {}) do nb.stages[k] = v end

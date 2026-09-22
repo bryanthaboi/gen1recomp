@@ -97,7 +97,10 @@ function MapNamePopup.show(mapDef, opts)
 
   local info = MapSectionsExtract.getInfo(secId, mapId, floorNum)
   local name = info and info.name
-  if not name or name == "???" or name == "" then
+  -- getInfo answers with the Pallet Town placeholder for a map it could not
+  -- identify (resolved == false).  Treat that as "no name" so the popup shows
+  -- the cleaned map id instead of a place the map is not.
+  if not name or name == "???" or name == "" or (info and info.resolved == false) then
     name = cleanMapName(mapId)
   else
     name = translated_name(info)

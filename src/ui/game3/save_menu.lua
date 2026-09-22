@@ -15,7 +15,8 @@ local SaveMenu = {}
 
 SaveMenu.open = false
 SaveMenu.cursor = 1 -- 1=YES 2=NO
-SaveMenu._phase = "confirm" -- confirm | overwrite | saving | saved
+SaveMenu._phase = "confirm" -- confirm | overwrite | saving | saved | save_failed
+SaveMenu._error = nil -- reason the last write failed, for the log
 SaveMenu._session = nil
 SaveMenu._game = nil
 SaveMenu._onClose = nil
@@ -64,6 +65,7 @@ function SaveMenu.show(opts)
   SaveMenu.open = true
   SaveMenu.cursor = 1
   SaveMenu._phase = "confirm"
+  SaveMenu._error = nil
   SaveMenu._session = opts.session
   SaveMenu._game = opts.game
   SaveMenu._onClose = opts.onClose
@@ -95,17 +97,48 @@ local function do_save()
   local Bridge = require("src.core.game3.bridge")
   local game = Runtime._game
   local mod = Runtime._mod
-  if game and mod then
-    pcall(function() Bridge.persistSessionOnly(mod, game) end)
+
+  -- A write that did not happen must not be reported as one.  Neither call
+  -- signals success by itself: persistSessionOnly returns nothing useful, and
+  -- saveGame returns false for a refused write and nil for a deliberate no-op
+  -- (no session / quest-log phase).  Treat a raise, an explicit false, or an
+  -- absent saveGame as failure.
+  local failure = nil
+  if game and mod and Bridge and type(Bridge.persistSessionOnly) == "function" then
+    local ok, err = pcall(Bridge.persistSessionOnly, mod, game)
+    if not ok then failure = "sidecar persist failed: " .. tostring(err) end
   end
-  if game and game.saveGame then
-    pcall(function() game:saveGame() end)
+  if not failure then
+    if game and type(game.saveGame) == "function" then
+      local ok, written = pcall(game.saveGame, game)
+      if not ok then
+        failure = "saveGame raised: " .. tostring(written)
+      elseif not written then
+        failure = "saveGame did not confirm a write (" .. tostring(written) .. ")"
+      end
+    else
+      failure = "no saveGame available"
+    end
   end
+
+  if failure then
+    SaveMenu._phase = "save_failed"
+    SaveMenu._error = failure
+    pcall(function() require("src.core.Logger").warn("[save] %s", failure) end)
+    return
+  end
+
   se(48) -- SE_SAVE
   SaveMenu._phase = "saved"
 end
 
 function SaveMenu.confirm()
+  if SaveMenu._phase == "save_failed" then
+    -- The dialog stays up so the failure is readable; dismissing it returns
+    -- to the start menu so the player can retry.
+    SaveMenu.close()
+    return
+  end
   if SaveMenu._phase == "saved" then
     SaveMenu.close()
     local StartMenu = require("src.ui.game3.start_menu")
@@ -227,6 +260,9 @@ function SaveMenu.draw()
     msg = Strings("SAVING…\nDON'T TURN OFF THE POWER.")
   elseif SaveMenu._phase == "saved" then
     msg = Strings("%s saved\nthe game.", name)
+  elseif SaveMenu._phase == "save_failed" then
+    -- do_save refused to report success; say so instead of claiming a save.
+    msg = Strings("The game could not be saved.")
   end
   FrlgFont.draw(msg, 2 * 8 + 4, 15 * 8 + 2, { linePitch = 15, colors = FrlgFont.COLOR.NORMAL })
 

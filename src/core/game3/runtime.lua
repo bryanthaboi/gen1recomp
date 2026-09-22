@@ -228,6 +228,7 @@ function Runtime.update(dt)
   if not Runtime.active then return end
   local game = Runtime._game
   local Hud = require("src.ui.game3.hud")
+  local inputTop = require("src.ui.game3.stack").top() or false
   local inMenu = Hud.isMenuOpen and Hud.isMenuOpen() or false
   Runtime.drainDeferred()
   Runtime.noteFieldFocus(Runtime.fieldScreenOpen(inMenu))
@@ -270,20 +271,15 @@ function Runtime.update(dt)
     end
     local Message = package.loaded["src.ui.game3.message"]
     if Message and Message.tick then Message.tick() end
-    Hud.update(game, dt)
+    Hud.update(game, dt, inputTop)
     return
-  end
-
-  local okN, Naming = pcall(require, "src.ui.game3.naming")
-  if okN and Naming.isOpen and Naming.isOpen() then
-    Naming.update(game and game.input, dt)
   end
 
   if not inMenu then
     local Field = require("src.core.game3.field")
     Field.update(dt)
   end
-  Hud.update(game, dt)
+  Hud.update(game, dt, inputTop)
 end
 
 function Runtime.uiBusy()

@@ -174,11 +174,17 @@ function Hud.sampleFieldInput(game)
   }
 end
 
-function Hud.update(game, _dt)
+function Hud.update(game, _dt, inputTop)
   local dt = tonumber(_dt) or (1 / 60)
 
   -- Active stack modal menu tick
   local top = Stack.top()
+  local namingTick = top and top.id == "naming"
+  if namingTick and top.mod and top.mod.handleInput then
+    -- Naming consumes input before its page-swap timer can unlock the keyboard.
+    -- A prompt that opened it during this frame keeps its opening button press.
+    if inputTop == nil or top == inputTop then top.mod.handleInput(game and game.input) end
+  end
   if top and top.mod and top.mod.update then
     pcall(top.mod.update, dt)
   end
@@ -212,6 +218,9 @@ function Hud.update(game, _dt)
       MapPreviewScreen.dismiss()
     end
   end
+
+  -- Do not replay naming input or leak its closing press to the menu underneath.
+  if namingTick then return end
 
   -- Active stack modal menu input takes top precedence.
   -- When battle is active, overlays like EvolutionScene or modal stack menus still receive input.

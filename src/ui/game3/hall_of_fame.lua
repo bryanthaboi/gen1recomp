@@ -66,12 +66,24 @@ local function commit_clear_and_save(session, eligibleMons)
   end
   table.insert(session.hallOfFameTeams, teamRecord)
 
-  -- 4. Commit atomic save to disk
-  local okSave, SaveData = pcall(require, "src.core.game3.save")
-  if okSave and SaveData and SaveData.save then
-    pcall(SaveData.save, session)
+  -- 4. Commit to disk through the engine's save path.  This used to pcall
+  -- "src.core.game3.save", which does not exist -- so the clear flag, the debut
+  -- timestamp and the team above were set in memory and never written.
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = Runtime and Runtime._game
+  if game and type(game.saveGame) == "function" then
+    local ok, err = pcall(game.saveGame, game)
+    if not ok then
+      pcall(function()
+        require("src.core.Logger").warn("[hall_of_fame] save failed: %s", tostring(err))
+      end)
+    end
   end
 end
+
+-- Test seam: the induction commit (pret hall_of_fame.c) sets the clear flag, the
+-- debut timestamp and the HOF team, then commits the save.
+HallOfFame._commitClearAndSave = commit_clear_and_save
 
 function HallOfFame.start(opts)
   opts = opts or {}

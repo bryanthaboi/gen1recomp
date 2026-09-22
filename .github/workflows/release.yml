@@ -825,15 +825,34 @@ jobs:
           # Everyone whose commits are in the range: GitHub login when the
           # commit is linked to an account, the raw git author name when not;
           # CI bots filtered out.
-          base="${prev_tag:-$(git rev-list --max-parents=0 "$GITHUB_SHA" | tail -1)}"
+          if [ -n "$prev_tag" ]; then
+            commits_endpoint="repos/$GITHUB_REPOSITORY/compare/${prev_tag}...${GITHUB_SHA}?per_page=100"
+          else
+            # No previous release: include all reachable commits, even the root.
+            commits_endpoint="repos/$GITHUB_REPOSITORY/commits?sha=${GITHUB_SHA}&per_page=100"
+          fi
           contributors="$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/compare/${base}...${GITHUB_SHA}" \
-            --jq '.commits[] | if .author and .author.login
+            "$commits_endpoint" \
+            --jq '(if type == "array" then . else .commits end)[]
+                   | if .author and .author.login
                               then "@" + .author.login
                               else .commit.author.name end' 2>/dev/null \
             | grep -viE '\[bot\]$' | sort -uf | sed 's/^/- /' || true)"
 
+          # Use the dev -> main promotion PR for this release commit, not an
+          # individual feature PR whose commits also happen to be in the range.
+          promotion_body="$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls?per_page=100" 2>/dev/null \
+            | jq -r --arg repo "$GITHUB_REPOSITORY" --arg sha "$GITHUB_SHA" '
+                [.[][] | select(.merged_at != null
+                  and .base.repo.full_name == $repo and .base.ref == "main"
+                  and .head.repo.full_name == $repo and .head.ref == "dev"
+                  and .merge_commit_sha == $sha)]
+                | sort_by(.merged_at) | last | .body // ""' || true)"
           notes="Download the right version for your device below."
+          if [ -n "$(printf '%s' "$promotion_body" | tr -d '[:space:]')" ]; then
+            notes="$promotion_body"
+          fi
           if [ -n "$closed" ]; then
             notes+=$'\n\n## Issues closed\n\n'"$closed"
           fi

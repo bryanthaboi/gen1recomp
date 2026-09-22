@@ -223,6 +223,22 @@ function Schema.toSaveTable(session)
     secretId = session.secretId,
     rng = session.rng,
     vsSeeker = session.vsSeeker,
+    -- GAME_STAT_* counters: slot-machine jackpots, hatched eggs, link W/L/D,
+    -- link trades, and the sticker-man brags that read them.
+    gameStats = session.gameStats or {},
+    -- Link battle records (Record Corner / fan club) and the trainer card's
+    -- link win/loss counters -- both read back by link and UI modules.
+    linkBattleRecords = type(session.linkBattleRecords) == "table" and session.linkBattleRecords or {},
+    trainerCard = type(session.trainerCard) == "table" and session.trainerCard or {},
+    -- Hall of Fame induction (pret hall_of_fame.c): written by
+    -- commit_clear_and_save, read by the trainer card and HOF viewers.
+    game_cleared = session.game_cleared == true,
+    hasHallOfFameRecords = session.hasHallOfFameRecords == true,
+    hofDebutHours = tonumber(session.hofDebutHours),
+    hofDebutMinutes = tonumber(session.hofDebutMinutes),
+    hofDebutSeconds = tonumber(session.hofDebutSeconds),
+    hofDebutTime = session.hofDebutTime,
+    hallOfFameTeams = type(session.hallOfFameTeams) == "table" and session.hallOfFameTeams or {},
     mail = mail_export(session),
     questLog = require("src.core.game3.quest_log").export(session),
     modData = session.modData,
@@ -275,6 +291,19 @@ function Schema.fromSaveTable(save)
     secretId = save.secretId,
     rng = save.rng,
     vsSeeker = type(save.vsSeeker) == "table" and save.vsSeeker or { steps = 0, charging = 0, rematches = {} },
+    -- Additive: a save written before this key exists loads as an empty table.
+    gameStats = type(save.gameStats) == "table" and save.gameStats or {},
+    -- Additive: older saves load these as empty tables.
+    linkBattleRecords = type(save.linkBattleRecords) == "table" and save.linkBattleRecords or {},
+    trainerCard = type(save.trainerCard) == "table" and save.trainerCard or {},
+    -- Additive: older saves load these as defaults.
+    game_cleared = save.game_cleared == true,
+    hasHallOfFameRecords = save.hasHallOfFameRecords == true,
+    hofDebutHours = tonumber(save.hofDebutHours),
+    hofDebutMinutes = tonumber(save.hofDebutMinutes),
+    hofDebutSeconds = tonumber(save.hofDebutSeconds),
+    hofDebutTime = save.hofDebutTime,
+    hallOfFameTeams = type(save.hallOfFameTeams) == "table" and save.hallOfFameTeams or {},
     mail = mail_restore(save),
     questLog = require("src.core.game3.quest_log").restore(save.questLog),
     modData = type(save.modData) == "table" and save.modData or {},

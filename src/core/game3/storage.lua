@@ -437,7 +437,13 @@ function Storage.depositItem(session, bagPocket, bagIdx, qty)
 
   if foundIdx then
     local curQty = storage.items[foundIdx].qty or 0
-    storage.items[foundIdx].qty = math.min(Storage.MAX_ITEM_QTY, curQty + qty)
+    -- Refuse when the stack cannot take the whole deposit.  Capping with
+    -- math.min while the bag below is debited the full qty destroyed the
+    -- overflow: a stack already at MAX_ITEM_QTY lost every deposited item.
+    if curQty + qty > Storage.MAX_ITEM_QTY then
+      return false, "pc_item_stack_full"
+    end
+    storage.items[foundIdx].qty = curQty + qty
   else
     if #storage.items >= Storage.PC_ITEMS_COUNT then
       return false, "pc_items_full"

@@ -486,10 +486,35 @@ function Naming.dismiss()
   Stack.pop("naming")
 end
 
-function Naming.update(input, dt)
+-- Timer half of the naming tick.  Input arrives through handleInput -- the stack
+-- convention Hud.update_top_menu uses.  Passing the delta here was the bug:
+-- Naming.update(input, dt) was being called as update(dt), so the delta arrived
+-- as `input` and indexing it raised every frame the screen was on top.
+function Naming.update(dt)
   if not Naming.openFlag or not Naming._state then return end
   local st = Naming._state
   if st.finished then return end
+  -- The pcPages result screen owns this state: the original returned before
+  -- touching the blink timer, so keep that here.
+  if st.pcPages then return end
+  st.blink = (st.blink or 0) + (dt or 1 / 60)
+  if st.swapT ~= nil then
+    st.swapT = st.swapT + 4
+    if st.swapT >= 128 then
+      commitPage(st)
+      st.swapT = nil
+    end
+  end
+end
+
+-- Input half.  Call it before update() so the ordering matches the original
+-- single function (pcPages and the swap guard are consumed before the timers).
+function Naming.handleInput(input)
+  if not Naming.openFlag or not Naming._state then return end
+  local st = Naming._state
+  if st.finished then return end
+  -- Input is ignored while the page swap runs (the original returned here).
+  if st.swapT ~= nil then return end
   -- pokefirered/src/naming_screen.c:759
   if st.pcPages then
     if input and input.wasPressed and input:wasPressed("a") then
@@ -498,15 +523,6 @@ function Naming.update(input, dt)
       else
         Naming.close(st.pcResult)
       end
-    end
-    return
-  end
-  st.blink = (st.blink or 0) + (dt or 1 / 60)
-  if st.swapT ~= nil then
-    st.swapT = st.swapT + 4
-    if st.swapT >= 128 then
-      commitPage(st)
-      st.swapT = nil
     end
     return
   end

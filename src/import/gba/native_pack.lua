@@ -111,6 +111,21 @@ function NativePack.decodeIdx(blob)
   local midCount = read_u16(blob, 7)
   local atlasCols = read_u16(blob, 9)
   local atlasRows = read_u16(blob, 11)
+  -- The header comes from a file in the user-writable cache and was trusted:
+  -- an absurd midCount walks the pixel loop past the blob (read_u16 does not
+  -- bounds-check), and an absurd atlas sizes a ~4 TB buffer downstream in
+  -- bake_or_load.  Require the declared tables to fit the blob, and the
+  -- dimensions to be sane, before reading anything.
+  local MAX_MIDS, MAX_ATLAS_TILES = 4096, 16384
+  if midCount < 1 or atlasCols < 1 or atlasRows < 1 then
+    return nil, "bad mids.idx dimensions"
+  end
+  if midCount > MAX_MIDS or atlasCols * atlasRows > MAX_ATLAS_TILES then
+    return nil, "mids.idx dimensions out of range"
+  end
+  if #blob < 12 + midCount * 2 + midCount * 256 then
+    return nil, "mids.idx truncated"
+  end
   local midIds = {}
   local off = 13
   for i = 1, midCount do

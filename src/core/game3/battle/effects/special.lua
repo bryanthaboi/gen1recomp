@@ -309,7 +309,11 @@ function Special.trick(ctx)
   if (target.substituteHP or 0) > 0 then return H.sayFail(ctx) end
   if not H.accuracy(ctx, "normal") then return end
   if user.side ~= "player" then return H.sayFail(ctx) end
-  if user.expKnockedOff or target.expKnockedOff then return H.sayFail(ctx) end
+  local St = state()
+  if user.expKnockedOff or target.expKnockedOff
+      or (St and (St.isKnockedOff(ad._st, user) or St.isKnockedOff(ad._st, target))) then
+    return H.sayFail(ctx)
+  end
   local ui, ti = tonumber(user.item) or 0, tonumber(target.item) or 0
   if (ui == 0 and ti == 0) or ui == 175 or ti == 175 or Secondary.isMail(ui) or Secondary.isMail(ti) then
     return H.sayFail(ctx)
@@ -319,7 +323,9 @@ function Special.trick(ctx)
   end
   user.item, target.item = ti, ui
   Secondary.persistItem(user, ti)
-  if target.side == "player" then Secondary.persistItem(target, ui) end
+  -- Both sides: the target's party mon must take the item its battler now
+  -- holds, or it keeps the old one and duplicates it on switch-out.
+  Secondary.persistItem(target, ui)
   H.attackAnim(ctx)
   ad:say(Strings("%s switched\nitems with its opponent!", name(ctx, user)))
   if ui ~= 0 and ti ~= 0 then

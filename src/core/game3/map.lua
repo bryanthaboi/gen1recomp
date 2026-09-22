@@ -377,7 +377,14 @@ function Map.load(mod, game, mapId, opts)
   -- pokefirered/src/fieldmap.c:93
   require("src.core.game3.field").clearMetatiles(def and def.midLayout)
   local Collision = require("src.core.game3.collision")
-  if def then Collision.bindMap(game, mapId, def) end
+  if def then
+    Collision.bindMap(game, mapId, def)
+  else
+    -- No def for this id.  Keeping the previous map's grid bound would validate
+    -- movement against the map we just left; unbind so canEnter falls back to
+    -- the host map (collision.lua: "Prefer owned grid; fall back to host map").
+    Collision.clear()
+  end
 
   -- pret GroundEffect_SpawnOnTallGrass when warping onto grass.
   if not opts.seamless then

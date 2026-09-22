@@ -225,7 +225,7 @@ function SwitchSeq.beginPlayerSwitch(st, newSlot, opts)
     State.trackParticipant(st, st.enemy, oldBattler and oldBattler.partyIndex or 1)
     State.syncBattlerToParty(st.player, st.playerParty)
     State.wipeVolatilesAndStages(st.player, { batonPass = opts.batonPass })
-    st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot })
+    st.player = State.makeBattler(st.playerParty[newSlot], "player", { state = st, partyIndex = newSlot })
     State.trackParticipant(st, st.enemy, newSlot)
     Anim.syncDisplayFromState(st)
     local newName = State.displayName(st.player)
@@ -263,14 +263,14 @@ function SwitchSeq.beginSendOut(st, side, newSlot, opts)
 
   if SwitchSeq._headless then
     if side == "player" then
-      st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot })
+      st.player = State.makeBattler(st.playerParty[newSlot], "player", { state = st, partyIndex = newSlot })
       State.trackParticipant(st, st.enemy, newSlot)
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
         SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player)))
       end
     else
-      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot })
+      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { state = st, partyIndex = newSlot })
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
         local tname = (st.trainerClassName and st.trainerClassName ~= "")
@@ -422,12 +422,12 @@ function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
     State.trackParticipant(st, st.enemy, oldBattler and oldBattler.partyIndex or 1)
     State.syncBattlerToParty(st.player, st.playerParty)
     State.wipeVolatilesAndStages(st.player)
-    st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { partyIndex = enemySlot })
+    st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { state = st, partyIndex = enemySlot })
     local tname = (st.trainerClassName and st.trainerClassName ~= "")
       and (st.trainerClassName .. " " .. (st.trainerName or ""))
       or (st.trainerName or "TRAINER")
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("%s sent\nout %s!", tname, State.displayName(st.enemy))) end
-    st.player = State.makeBattler(st.playerParty[playerSlot], "player", { partyIndex = playerSlot })
+    st.player = State.makeBattler(st.playerParty[playerSlot], "player", { state = st, partyIndex = playerSlot })
     State.trackParticipant(st, st.enemy, playerSlot)
     Anim.syncDisplayFromState(st)
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player))) end
@@ -568,14 +568,14 @@ local function run_step(step)
         State.syncBattlerToParty(st.player, st.playerParty)
         State.wipeVolatilesAndStages(st.player, { batonPass = d.batonPass })
       end
-      st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot })
+      st.player = State.makeBattler(st.playerParty[newSlot], "player", { state = st, partyIndex = newSlot })
       State.trackParticipant(st, st.enemy, newSlot)
     else
       if st and st.enemy then
         State.syncBattlerToParty(st.enemy, st.foeParty)
         State.wipeVolatilesAndStages(st.enemy)
       end
-      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot })
+      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { state = st, partyIndex = newSlot })
     end
     Anim.syncDisplayFromState(st)
     advance()

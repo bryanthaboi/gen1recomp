@@ -1253,7 +1253,8 @@ function Scene:namingFrame()
     n.pal:updateFade()
     if not n.pal:fadeActive() then n.stage = "input" end
   elseif n.stage == "input" then
-    Naming.update(self.inputProxy, 1 / Scene.GBA_HZ)
+    Naming.handleInput(self.inputProxy)
+    Naming.update(1 / Scene.GBA_HZ)
   elseif n.stage == "fade_out" then
     n.pal:updateFade()
     if not n.pal:fadeActive() then

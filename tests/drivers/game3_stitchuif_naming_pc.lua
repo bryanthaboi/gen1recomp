@@ -121,6 +121,7 @@ return function(game)
         end
         U.shot(game, DIR .. "/stitchuif_naming_pc_01_keyboard.png")
         typedName = (Naming._state and Naming._state.name) or ""
+        result(typedName == "AAA", "three A taps type exactly AAA, got " .. typedName)
         U.tap(game, "start")
         U.wait(20)
         U.tap(game, "a")

@@ -32,7 +32,12 @@ Versions.ROM_SIZE = 16777216
 --       had no artwork, so the rock simply vanished instead of breaking apart.
 --       Both branches had taken 111 for unrelated cache layouts, so this merge
 --       moves the Deoxys artwork onto its own number instead of sharing one.
-Versions.CACHE_VERSION = 112
+-- v113: script opcode layouts corrected against pret asm/macros/event.inc —
+--       comparestat is {byte,word} (was {byte,half}), setptr / loadbytefromptr /
+--       setptrbyte each carry a leading byte plus a word (were shorter).  The
+--       old sizes mis-decoded every instruction after one, so every cached
+--       script is stale.
+Versions.CACHE_VERSION = 113
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1

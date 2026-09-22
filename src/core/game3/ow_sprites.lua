@@ -57,6 +57,15 @@ local function load_one(gid)
   local meta = OwExtract.decodeMeta(metaBlob)
   if not meta then return nil end
   local w, h, n = meta.width, meta.height, meta.frameCount
+  -- decodeMeta reads these as u16 without validating, so a corrupt .meta can
+  -- carry 65535 for any of them and `aw * ah` then reaches ~4.3e9 pixels on a
+  -- cache file in the user-writable save directory.  Bound them before sizing.
+  local MAX_FRAME_DIM, MAX_FRAMES = 256, 512
+  if type(w) ~= "number" or type(h) ~= "number" or type(n) ~= "number"
+      or w < 1 or h < 1 or n < 1
+      or w > MAX_FRAME_DIM or h > MAX_FRAME_DIM or n > MAX_FRAMES then
+    return nil
+  end
   local aw, ah = w, h * n
   if #rgba ~= aw * ah * 4 then
     if #rgba < aw * h * 4 then return nil end

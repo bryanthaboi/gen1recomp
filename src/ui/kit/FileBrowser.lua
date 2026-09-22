@@ -3,6 +3,17 @@
 -- and select mod/skin archives (.zip) without requiring host desktop GUI pickers (zenity/kdialog).
 
 local Theme = require("src.ui.kit.Theme")
+local HostShell = require("src.core.HostShell")
+
+-- POSIX shell quoting for the ls/test commands below.  HostShell.quote is the
+-- shared helper, but the launcher may run where HostShell is a minimal shim
+-- (the NX gate), so fall back to the same escaping locally.
+local function shQuote(path)
+  if HostShell and type(HostShell.quote) == "function" then
+    return HostShell.quote(path)
+  end
+  return "'" .. tostring(path):gsub("'", "'\\''") .. "'"
+end
 local PAL = Theme.PAL
 local Kit = nil
 local function getKit()
@@ -48,7 +59,7 @@ local function findSdCardRoot()
     "/userdata",
   }
   for _, path in ipairs(candidates) do
-    local ok, h = pcall(io.popen, string.format('test -d "%s" && echo "yes"', path))
+    local ok, h = pcall(io.popen, string.format("test -d %s && echo \"yes\"", shQuote(path)))
     if ok and h then
       local res = h:read("*a")
       h:close()
@@ -97,7 +108,7 @@ local function scanDirectory(dir, mode)
   dir = normalizePath(dir)
   local entries = {}
 
-  local ok, handle = pcall(io.popen, string.format('ls -1ap "%s" 2>/dev/null', dir:gsub('"', '\\"')))
+  local ok, handle = pcall(io.popen, string.format("ls -1ap %s 2>/dev/null", shQuote(dir)))
   if ok and handle then
     local output = handle:read("*a")
     handle:close()

@@ -111,6 +111,11 @@ local function dirs_from_input(input)
 end
 
 function Player.reset(x, y, facing)
+  -- Callers pass the destination facing (Map.load, warp, fly, syncFromSession).
+  -- An absent or invalid direction keeps the current facing.
+  if facing ~= nil and DELTA[facing] then
+    Player.facing = facing
+  end
   Player.cellX = tonumber(x) or 0
   Player.cellY = tonumber(y) or 0
   Player.px = Player.cellX * CELL
@@ -136,6 +141,12 @@ function Player.reset(x, y, facing)
   Player.spriteXOffset = 0
   Player.spriteYOffset = 0
   Player.biking = false
+  -- Transient surf state: a reset lands the avatar on its feet, so a warp or
+  -- whiteout out of the water must not leave surfing set -- Collision.canEnter
+  -- reads Player.surfing and would treat water as walkable on land.
+  Player.surfing = false
+  Player.surfHopping = false
+  Player.dismounting = false
   Player.prevCellX = Player.cellX
   Player.prevCellY = Player.cellY
   Player.animDisabled = false

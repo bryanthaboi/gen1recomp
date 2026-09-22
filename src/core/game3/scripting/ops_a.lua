@@ -53,6 +53,37 @@ local function var_get(store, ctx, id)
   return id
 end
 
+-- Script local scratch space: pret's ScriptContext.data[4] (include/script.h:21).
+local function local_get(ctx, i)
+  return ctx.data[tonumber(i) or 0] or 0
+end
+
+local function local_set(ctx, i, v)
+  ctx.data[tonumber(i) or 0] = v or 0
+end
+
+-- The port has no flat address space, so the *ptr family shares a synthetic
+-- byte store keyed by the pointer value.  Pointers a script writes then reads
+-- round-trip; pointers into engine structures read as 0 (they did before too).
+local function mem_get(ctx, ptr)
+  ctx.scriptMem = ctx.scriptMem or {}
+  return tonumber(ctx.scriptMem[tonumber(ptr) or 0]) or 0
+end
+
+local function mem_set(ctx, ptr, v)
+  ctx.scriptMem = ctx.scriptMem or {}
+  ctx.scriptMem[tonumber(ptr) or 0] = (tonumber(v) or 0) % 256
+end
+
+-- pret src/scrcmd.c:358 Compare()
+local function cmp(a, b)
+  -- pokefirered/src/scrcmd.c:368: local comparisons read the low byte.
+  a, b = (tonumber(a) or 0) % 256, (tonumber(b) or 0) % 256
+  if a < b then return 0 end
+  if a == b then return 1 end
+  return 2
+end
+
 local function coins_api()
   local Runtime = package.loaded["src.core.game3.runtime"]
   local session = Runtime and Runtime.getSession and Runtime.getSession()
@@ -238,6 +269,27 @@ local function warp_hole_dest(group, num)
     or (Versions.seviiMapFor and Versions.seviiMapFor(group, num))
 end
 
+-- pret's *at script commands carry an explicit (mapGroup, mapNum) so a script
+-- can address another map's objects (asm/macros/event.inc:597-652).  The host
+-- object/movement seams only address the current map, so resolve the target
+-- map first and skip (with a note) when it is somewhere else.
+local function objectat_same_map(store, ctx, row, groupIdx)
+  local group = var_get(store, ctx, row[groupIdx])
+  local num = tonumber(var_get(store, ctx, row[groupIdx + 1]))
+  local Map = package.loaded["src.core.game3.map"]
+  local current = Map and Map.current
+  if group == nil or num == nil or not current then return true end
+  local okC, MapCatalog = pcall(require, "src.import.gba.map_catalog")
+  local dest = okC and MapCatalog and MapCatalog.mapIdFor(group, num) or nil
+  if type(dest) ~= "string" then
+    local okV, Versions = pcall(require, "src.import.gba.versions")
+    dest = okV and Versions and Versions.mapIdFor
+      and Versions.mapIdFor(group, num) or nil
+  end
+  if type(dest) ~= "string" then return true end
+  return dest == current
+end
+
 local function dispatch(vm, row)
   local op = row.op
   local ctx = vm.ctx
@@ -312,6 +364,25 @@ local function dispatch(vm, row)
     if not vm.scripts[key] then
       a.log("[game3] missing " .. key .. " — skipping")
       return false
+    end
+    vm:setPc(key, 1)
+    return false
+  elseif op == "callstd_if" or op == "gotostd_if" then
+    -- pret asm/macros/event.inc: .byte op / .byte condition / .byte std.
+    -- callstd_if returns to the caller; gotostd_if does not.
+    if not cond_ok(ctx, row.cond or row[1]) then return false end
+    local key = "std:" .. tostring(row.std or row[2])
+    if not vm.scripts[key] then
+      a.log("[game3] missing " .. key .. " — skipping")
+      return false
+    end
+    if op == "callstd_if" then
+      if #ctx.stack >= 20 then return false end
+      local cur = ctx.pc
+      ctx.stack[#ctx.stack + 1] = {
+        listKey = cur.listKey,
+        index = cur.index,
+      }
     end
     vm:setPc(key, 1)
     return false
@@ -717,6 +788,194 @@ local function dispatch(vm, row)
     local lid = var_get(store, ctx, row.localId or row[1])
     if a.removeObject then a.removeObject(lid) end
     return false
+  elseif op == "comparestat" then
+    -- pret ScrCmd_comparestat: .byte statIdx / .4byte value; sets
+    -- ctx.comparisonResult to 0 (lt) / 1 (eq) / 2 (gt) from the game stat.
+    local statIdx = tonumber(row[1]) or 0
+    local value = tonumber(row[2]) or 0
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local stats = session and session.gameStats or {}
+    local statValue = tonumber(stats[statIdx]) or 0
+    ctx.comparisonResult = statValue < value and 0
+      or (statValue == value and 1 or 2)
+    return false
+  elseif op == "bufferitemnameplural" then
+    -- pret ScrCmd_bufferitemnameplural: the item's name pluralised the way the
+    -- ROM does -- "S" for a Poké Ball stack, "IES" replacing the final letter
+    -- for berries, and the plain name otherwise.
+    local dest = (row.dest or row[1] or 0) + 1
+    local item = var_get(store, ctx, row[2])
+    local qty = tonumber(var_get(store, ctx, row[3])) or 1
+    local ItemsData = require("src.core.game3.items_data")
+    local name = (ItemsData.displayName and ItemsData.displayName(item))
+      or tostring(item)
+    if qty >= 2 then
+      if tonumber(item) == 4 then -- ITEM_POKE_BALL (include/constants/items.h:8)
+        name = name .. "S"
+      elseif ItemsData.isBerry and ItemsData.isBerry(item) then
+        name = name:sub(1, -2) .. "IES"
+      end
+    end
+    ctx.stringVars[dest] = name
+    return false
+  elseif op == "setmonmove" or op == "setmonmetlocation"
+      or op == "setmonmodernfatefulencounter"
+      or op == "checkmonmodernfatefulencounter" then
+    -- pret ScrCmd_* (src/scrcmd.c:1767, :2239, :2248, :2256).  Party indices,
+    -- move slots and map-section ids are 0-based in the ROM.
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local idx = (tonumber(var_get(store, ctx, row[1])) or 0) + 1
+    local mon = session and session.party and session.party[idx]
+    if op == "setmonmove" then
+      local slot = (tonumber(var_get(store, ctx, row[2])) or 0) + 1
+      local move = tonumber(var_get(store, ctx, row[3])) or 0
+      local Pokemon = require("src.core.game3.pokemon")
+      if mon and Pokemon.replaceMove then Pokemon.replaceMove(mon, slot, move) end
+    elseif op == "setmonmetlocation" then
+      if mon then mon.metLocation = tonumber(row[2]) or 0 end
+    elseif op == "setmonmodernfatefulencounter" then
+      if mon then mon.modernFatefulEncounter = true end
+    else
+      Flags.setVar(store, ctx, Ctx.VAR_RESULT,
+        (mon and mon.modernFatefulEncounter) and 1 or 0)
+    end
+    return false
+  elseif op == "copylocal" then
+    -- pret ScrCmd_copylocal (src/scrcmd.c:321)
+    local_set(ctx, row[1], local_get(ctx, row[2]))
+    return false
+  elseif op == "setptr" then
+    -- pret ScrCmd_setptr (src/scrcmd.c:300): value byte, then pointer word.
+    mem_set(ctx, row[2], row[1])
+    return false
+  elseif op == "loadbytefromptr" then
+    -- pret ScrCmd_loadbytefromptr (src/scrcmd.c:293)
+    local_set(ctx, row[1], mem_get(ctx, row[2]))
+    return false
+  elseif op == "setptrbyte" then
+    -- pret ScrCmd_setptrbyte (src/scrcmd.c:314)
+    mem_set(ctx, row[2], local_get(ctx, row[1]))
+    return false
+  elseif op == "copybyte" then
+    -- pret ScrCmd_copybyte (src/scrcmd.c:329)
+    mem_set(ctx, row[1], mem_get(ctx, row[2]))
+    return false
+  elseif op == "compare_local_to_local" then
+    -- pret ScrCmd_compare_local_to_local (src/scrcmd.c:368)
+    ctx.comparisonResult = cmp(local_get(ctx, row[1]), local_get(ctx, row[2]))
+    return false
+  elseif op == "compare_local_to_value" then
+    ctx.comparisonResult = cmp(local_get(ctx, row[1]), row[2])
+    return false
+  elseif op == "compare_local_to_ptr" then
+    ctx.comparisonResult = cmp(local_get(ctx, row[1]), mem_get(ctx, row[2]))
+    return false
+  elseif op == "compare_ptr_to_local" then
+    ctx.comparisonResult = cmp(mem_get(ctx, row[1]), local_get(ctx, row[2]))
+    return false
+  elseif op == "compare_ptr_to_value" then
+    ctx.comparisonResult = cmp(mem_get(ctx, row[1]), row[2])
+    return false
+  elseif op == "compare_ptr_to_ptr" then
+    ctx.comparisonResult = cmp(mem_get(ctx, row[1]), mem_get(ctx, row[2]))
+    return false
+  elseif op == "vgoto" or op == "vcall" or op == "vgoto_if" or op == "vcall_if" then
+    -- pret ScrCmd_vgoto/vcall/vgoto_if/vcall_if (src/scrcmd.c:180-209).  The
+    -- ROM's sAddressOffset relocation is unnecessary here: script pointers are
+    -- engine keys, which Opcodes.key()/jump() already resolve.
+    local cond = true
+    local dest = row.target or row[1]
+    if op == "vgoto_if" or op == "vcall_if" then
+      cond = cond_ok(ctx, row.cond or row[1])
+      dest = row.target or row[2]
+    end
+    if cond then
+      if op == "vcall" or op == "vcall_if" then
+        if #ctx.stack >= 20 then
+          a.log("[game3] vcall stack overflow")
+          return false
+        end
+        local cur = ctx.pc
+        ctx.stack[#ctx.stack + 1] = { listKey = cur.listKey, index = cur.index }
+      end
+      jump(vm, dest)
+    end
+    return false
+  elseif op == "setvaddress" then
+    -- pret ScrCmd_setvaddress (src/scrcmd.c:171) records a ROM-address
+    -- relocation for the v* family; the port resolves pointers by key, so
+    -- there is nothing to relocate.  Kept for bookkeeping only.
+    ctx.vaddress = row[1]
+    return false
+  elseif op == "vmessage" then
+    -- pret ScrCmd_vmessage (src/scrcmd.c:1580) shows a field message.
+    return show_message(vm, row[1], false)
+  elseif op == "vbuffermessage" then
+    -- pret ScrCmd_vbuffermessage (src/scrcmd.c:1706) expands placeholders into
+    -- the field message buffer (gStringVar4 → ctx.stringVars[4]).
+    local ir = resolve_text(vm, row[1])
+    ctx.stringVars[4] = ir and TextIR.toPlain(ir, {
+      stringVars = ctx.stringVars,
+      playerName = a.playerName,
+      rivalName = a.rivalName,
+    }) or ""
+    return false
+  elseif op == "vbufferstring" then
+    -- pret ScrCmd_vbufferstring (src/scrcmd.c:1714)
+    local dest = (row.dest or row[1] or 0) + 1
+    local ir = resolve_text(vm, row.ptr or row[2])
+    ctx.stringVars[dest] = ir and TextIR.toPlain(ir, { stringVars = ctx.stringVars }) or ""
+    return false
+  elseif op == "endram" then
+    -- pret ScrCmd_endram (src/scrcmd.c:262) clears the RAM script and stops.
+    vm:halt()
+    return true
+  elseif op == "returnram" then
+    -- pret ScrCmd_returnram (src/scrcmd.c:256) resumes the RAM script's caller.
+    local frame = table.remove(ctx.stack)
+    if not frame then
+      vm:halt()
+      return true
+    end
+    vm:setPc(frame.listKey, frame.index)
+    return false
+  elseif op == "checkpcitem" or op == "addpcitem" then
+    -- pret ScrCmd_checkpcitem / ScrCmd_addpcitem: the Player PC item bag.
+    -- VAR_RESULT is 1 for success (check: enough stored; add: stored), else 0.
+    local item = tostring(var_get(store, ctx, row[1]))
+    local qty = math.max(1, tonumber(var_get(store, ctx, row[2])) or 1)
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local Storage = require("src.core.game3.storage")
+    local storage = session and Storage.ensure(session) or nil
+    local ok = false
+    if storage then
+      storage.items = storage.items or {}
+      local slot
+      for _, entry in ipairs(storage.items) do
+        if tostring(entry.id) == item then slot = entry break end
+      end
+      if op == "checkpcitem" then
+        local have = slot and (tonumber(slot.qty) or 0) or 0
+        ok = have >= qty
+      elseif slot then
+        local room = Storage.MAX_ITEM_QTY - (tonumber(slot.qty) or 0)
+        if room >= qty then
+          slot.qty = (tonumber(slot.qty) or 0) + qty
+          ok = true
+        end
+      elseif #storage.items < Storage.PC_ITEMS_COUNT then
+        storage.items[#storage.items + 1] = { id = item, qty = math.min(qty, Storage.MAX_ITEM_QTY) }
+        ok = true
+      end
+    end
+    if op == "addpcitem" and not ok then
+      a.log("[game3] addpcitem had no PC room for " .. item)
+    end
+    Flags.setVar(store, ctx, Ctx.VAR_RESULT, ok and 1 or 0)
+    return false
   elseif op == "bufferspeciesname" or op == "bufferitemname"
       or op == "buffermovename" or op == "bufferdecorationname"
       or op == "bufferstdstring" or op == "bufferpartymonnick" then
@@ -783,7 +1042,11 @@ local function dispatch(vm, row)
     return false
   elseif op == "hideobjectat" or op == "showobjectat" then
     local lid = var_get(store, ctx, row.localId or row[1])
-    if op == "hideobjectat" and a.hideObject then
+    if not objectat_same_map(store, ctx, row, 2) then
+      if a.log then
+        a.log("[game3] " .. op .. " targets another map — skipped")
+      end
+    elseif op == "hideobjectat" and a.hideObject then
       a.hideObject(lid)
     elseif op == "showobjectat" and a.showObject then
       a.showObject(lid)
@@ -791,6 +1054,25 @@ local function dispatch(vm, row)
       a.removeObject(lid)
     end
     return false
+  elseif op == "applymovementat" or op == "waitmovementat"
+      or op == "removeobjectat" or op == "addobjectat" then
+    -- pret ScrCmd_applymovementat / waitmovementat / removeobjectat /
+    -- addobjectat (src/scrcmd.c:993, :1022, :1046, :1064).  On the current map
+    -- they behave exactly like the plain command, so re-dispatch to it.
+    local groupIdx = (op == "applymovementat") and 3 or 2
+    if not objectat_same_map(store, ctx, row, groupIdx) then
+      if a.log then
+        a.log("[game3] " .. op .. " targets another map — skipped")
+      end
+      return false
+    end
+    local plain = ({
+      applymovementat = "applymovement",
+      waitmovementat = "waitmovement",
+      removeobjectat = "removeobject",
+      addobjectat = "addobject",
+    })[op]
+    return dispatch(vm, { op = plain, row[1], row[2] })
   elseif op == "addobject" then
     local lid = var_get(store, ctx, row.localId or row[1])
     if a.addObject then a.addObject(lid) end
@@ -798,6 +1080,17 @@ local function dispatch(vm, row)
   elseif op == "opendoor" or op == "closedoor" then
     -- Cosmetic on host; waitdooranim yields briefly.
     if a.doorAnim then a.doorAnim(op, row[1], row[2]) end
+    return false
+  elseif op == "setdooropen" or op == "setdoorclosed" then
+    -- pret ScrCmd_setdooropen/setdoorclosed record a door's state (used to
+    -- restore doors on re-entry).  The host exposes only the door animation
+    -- seam, so map the stored state onto the matching action.
+    if a.doorAnim then
+      -- pret ScrCmd_setdooropen/setdoorclosed read their x/y through VarGet
+      -- (src/scrcmd.c:2156).
+      a.doorAnim(op == "setdooropen" and "opendoor" or "closedoor",
+        var_get(store, ctx, row[1]), var_get(store, ctx, row[2]))
+    end
     return false
   elseif op == "waitdooranim" then
     -- Short soft wait (no re-entrant tick_vm). Instant adapter done() was
