@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.1",
+          "date": "2026-09-22",
+          "size": 37528942,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.1/gen1recomp++-0.3.1-ios.ipa",
+          "localizedDescription": "we combined our powers and DOMINATED bugs plz wish list boya coya on steam\n\n## Issues closed\n\n- #1951 [Save editor] Move itens btw bag and PC directly by Save Editor\n- #2037 (Feature Request) Command Argument to update mods\n- #2177 Mod load order configuring in app\n- #2186 Add an option to implement vanilla overworld map palette swapping\n- #2290 Boulder message\n- #2291 Bugs when buying items\n- #2305 Full Poke Flute tune played when waking up Pokemon\n- #2320 Small bugs when using ability enhancers or teaching moves\n- #2332 Wrong sound effect timing & missing line break when using ability enhancer\n- #2335 Pikachu/Jigglypuff interaction in Pewter City missing\n- #2338 Bide has a \"storing energy\" message\n- #2340 Issues with Team Rocket cutscene in Mt. Moon\n- #2344 Pikachu's happiness isn't displayed correctly\n- #2352 Fishing at the goldenrod city south entrance\n- #2367 Unable to delete downloaded custom cart Wild Green\n- #2368 Intro video being rendered larger than the ingame world render in RED/BLUE/YELLOW\n- #2378 Gold Item Duplication\n- #2382 Cannot battle Gold/Silver with Crystal\n- #2385 Wrong colors in the opening\n- #2403 Mother on S.S. Anne battle\n- #2404 Bill's PC listed as Someone's\n- #2405 Save screen not showing badges\n\n## Contributors\n\n- @bryanthaboi\n- @Nexhas28"
+        },
+        {
           "version": "0.3.0",
           "date": "2026-09-22",
           "size": 37504222,
