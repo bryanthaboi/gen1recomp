@@ -493,7 +493,7 @@ jobs:
             test -s "dist/native/$PLAT/$LIB"
           fi
           if [ "$PLAT" = mac ]; then
-            lipo -verify_arch x86_64 arm64 "dist/native/$PLAT/$LIB"
+            lipo "dist/native/$PLAT/$LIB" -verify_arch x86_64 arm64
           fi
       - name: Cache finished bridge
         if: steps.bridge-cache.outputs.cache-hit != 'true'
