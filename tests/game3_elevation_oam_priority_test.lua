@@ -93,111 +93,110 @@ do
   assert_eq("EventObject elevation at (5,6) is updated to 4", eo.elevation, 4)
 end
 
-print("[test] 3. Interleaved row-by-row overhead and actor draw order")
+print("[test] 3. GBA OAM Priority vs Overhead Layer partitioning")
 do
-  local drawLog = {}
-  _G.love = _G.love or {}
-  _G.love.graphics = _G.love.graphics or {}
-  love.graphics.draw = function(drawable, ...)
-    local args = { ... }
-    if type(drawable) == "string" then
-      drawLog[#drawLog + 1] = drawable
-    elseif type(drawable) == "table" and drawable.tag then
-      drawLog[#drawLog + 1] = drawable.tag
+  local ELEVATION_TO_PRIORITY = {
+    [0] = 2, [1] = 2, [2] = 2, [3] = 2,
+    [4] = 1, [5] = 2, [6] = 1, [7] = 2,
+    [8] = 1, [9] = 2, [10] = 1, [11] = 2,
+    [12] = 1, [13] = 0, [14] = 0, [15] = 2,
+  }
+
+  local actorPriority = function(a)
+    if a.kind == "player" then
+      if a.jumping or a.surfHopping or a.escalatorActive or a.specialAnimActive then
+        return 1
+      end
+      local elev = a.elevation or 3
+      return ELEVATION_TO_PRIORITY[elev] or 2
     else
-      drawLog[#drawLog + 1] = "quad"
+      local elev = a.elevation or (a.obj and a.obj.elevation) or 3
+      return ELEVATION_TO_PRIORITY[elev] or 2
     end
   end
-  love.graphics.setColor = function() end
-  love.graphics.push = function() end
-  love.graphics.pop = function() end
-  love.graphics.translate = function() end
 
-  -- Setup overhead rows:
-  -- Row 5: Counter overhead tile (wy = 5 * 16 = 80)
-  -- Row 17: Cliff upper edge overhead tile (wy = 17 * 16 = 272)
-  FieldView._nativeOverByRow = {
-    [0] = {},
-    [1] = {},
-    [2] = {},
-    [3] = {},
-    [4] = {},
-    [5] = { { image = { tag = "OVERHEAD_ROW_5_COUNTER" }, quad = {} } },
-    [6] = {},
-    [16] = {},
-    [17] = { { image = { tag = "OVERHEAD_ROW_17_CLIFF" }, quad = {} } },
-    [18] = {},
-  }
-  FieldView._nativeOverOx = 0
-  FieldView._nativeOverOy = 0
-
-  -- Setup actors:
-  -- Actor A: NPC behind counter at row 4 (sortY = 4 * 16 = 64)
-  -- Actor B: Player in front of counter at row 6 (sortY = 6 * 16 = 96)
-  -- Actor C: NPC standing behind cliff in water at row 16 (sortY = 16 * 16 = 256)
-  -- Actor D: Player standing ON cliff upper edge at row 17 (sortY = 17 * 16 = 272)
-  local actors = {
-    { tag = "ACTOR_NPC_BEHIND_COUNTER", sortY = 64, x = 0, y = 64 },
-    { tag = "ACTOR_PLAYER_IN_FRONT_OF_COUNTER", sortY = 96, x = 0, y = 96 },
-    { tag = "ACTOR_NPC_IN_WATER", sortY = 256, x = 0, y = 256 },
-    { tag = "ACTOR_PLAYER_ON_CLIFF_EDGE", sortY = 272, x = 0, y = 272 },
-  }
-
-  table.sort(actors, function(a, b) return a.sortY < b.sortY end)
-
-  drawLog = {}
-  
-  local actorIdx = 1
-  local nActors = #actors
-  local cy0 = 0
-  local rows = 20
-  local overByRow = FieldView._nativeOverByRow
-
-  for r = 0, rows - 1 do
-    local rowWy = (cy0 + r) * CELL
-
-    local rowOver = overByRow[r]
-    if rowOver and #rowOver > 0 then
-      for _, item in ipairs(rowOver) do
-        love.graphics.draw(item.image, item.quad, item.x or 0, item.y or 0)
+  local drawLog = {}
+  local function simulateDraw(actors)
+    local underActors = {}
+    local overActors = {}
+    for _, a in ipairs(actors) do
+      a.priority = actorPriority(a)
+      if a.priority < 2 then
+        overActors[#overActors + 1] = a
+      else
+        underActors[#underActors + 1] = a
       end
     end
 
-    local nextRowWy = rowWy + CELL
-    while actorIdx <= nActors and actors[actorIdx].sortY < nextRowWy do
-      love.graphics.draw(actors[actorIdx].tag)
-      actorIdx = actorIdx + 1
+    local function sortActors(a, b)
+      local ay = a.sortY or a.y
+      local by = b.sortY or b.y
+      if ay == by then return (a.i or 0) < (b.i or 0) end
+      return ay < by
+    end
+    table.sort(underActors, sortActors)
+    table.sort(overActors, sortActors)
+
+    drawLog = {}
+    -- 1. Draw underActors (OAM Priority >= 2)
+    for _, a in ipairs(underActors) do
+      drawLog[#drawLog + 1] = a.tag
+    end
+    -- 2. Draw Overhead layer (BG1, Priority 1)
+    drawLog[#drawLog + 1] = "OVERHEAD_BG1_LAYER"
+    -- 3. Draw overActors (OAM Priority < 2, e.g. elevation 4 cliff/bridge, jumping, escalator)
+    for _, a in ipairs(overActors) do
+      drawLog[#drawLog + 1] = a.tag
     end
   end
+
+  -- Scenario A: Nurse Joy behind desk (row 5) and Player on ground (row 6)
+  -- Both have ground elevation 3 -> Priority 2. Both drawn BEFORE overhead BG1 layer.
+  -- The overhead desk covers Nurse Joy; the overhead roof covers player legs.
+  local testActors = {
+    { tag = "NURSE_JOY_ROW_5", elevation = 3, y = 80, sortY = 80, kind = "npc" },
+    { tag = "PLAYER_ON_GROUND_ROW_6", elevation = 3, y = 96, sortY = 96, kind = "player" },
+    { tag = "PLAYER_ON_CLIFF_ELEV_4", elevation = 4, y = 272, sortY = 272, kind = "player" },
+    { tag = "NPC_IN_WATER_ELEV_1", elevation = 1, y = 256, sortY = 256, kind = "npc" },
+  }
+
+  simulateDraw(testActors)
 
   print("Draw order result:")
   for idx, entry in ipairs(drawLog) do
     print(string.format("  [%d] %s", idx, entry))
   end
 
-  assert_eq("Draw step 1 is NPC behind counter", drawLog[1], "ACTOR_NPC_BEHIND_COUNTER")
-  assert_eq("Draw step 2 is Counter overhead (drawn after NPC behind counter)", drawLog[2], "OVERHEAD_ROW_5_COUNTER")
-  assert_eq("Draw step 3 is Player in front of counter (drawn after counter)", drawLog[3], "ACTOR_PLAYER_IN_FRONT_OF_COUNTER")
-  assert_eq("Draw step 4 is NPC in water", drawLog[4], "ACTOR_NPC_IN_WATER")
-  assert_eq("Draw step 5 is Cliff overhead (drawn after NPC in water, covering them)", drawLog[5], "OVERHEAD_ROW_17_CLIFF")
-  assert_eq("Draw step 6 is Player on cliff edge (drawn AFTER cliff overhead, on top of edge!)", drawLog[6], "ACTOR_PLAYER_ON_CLIFF_EDGE")
+  assert_eq("Under-actor 1 is Nurse Joy (behind desk)", drawLog[1], "NURSE_JOY_ROW_5")
+  assert_eq("Under-actor 2 is Player on ground (behind roof)", drawLog[2], "PLAYER_ON_GROUND_ROW_6")
+  assert_eq("Under-actor 3 is NPC in water", drawLog[3], "NPC_IN_WATER_ELEV_1")
+  assert_eq("Step 4 is Overhead BG1 layer (covers Nurse Joy and player on ground)", drawLog[4], "OVERHEAD_BG1_LAYER")
+  assert_eq("Step 5 is Player on cliff (elevation 4, drawn ON TOP of overhead layer)", drawLog[5], "PLAYER_ON_CLIFF_ELEV_4")
 end
 
-print("[test] 4. isPlayerAboveBg2 special states")
+print("[test] 4. Player priority override states (jumping, escalator, surf hopping)")
 do
-  local isPlayerAboveBg2_test = function(playerXOff, playerYOff, isJumping, isEscalator)
-    if (playerXOff and playerXOff ~= 0) or (playerYOff and playerYOff ~= 0) then
-      return true
+  local ELEVATION_TO_PRIORITY = {
+    [0] = 2, [1] = 2, [2] = 2, [3] = 2,
+    [4] = 1, [5] = 2, [6] = 1, [7] = 2,
+    [8] = 1, [9] = 2, [10] = 1, [11] = 2,
+    [12] = 1, [13] = 0, [14] = 0, [15] = 2,
+  }
+
+  local computePlayerPriority = function(opts)
+    if opts.jumping or opts.surfHopping or opts.escalatorActive or opts.specialAnimActive then
+      return 1
     end
-    if isJumping then return true end
-    if isEscalator then return true end
-    return false
+    local elev = opts.elevation or 3
+    return ELEVATION_TO_PRIORITY[elev] or 2
   end
 
-  assert_true("Jumping player is flagged above BG2", isPlayerAboveBg2_test(0, 0, true, false))
-  assert_true("Escalator player is flagged above BG2", isPlayerAboveBg2_test(0, 0, false, true))
-  assert_true("Subpixel Y offset player is flagged above BG2", isPlayerAboveBg2_test(0, -8, false, false))
-  assert_eq("Normal walking player is not forced above BG2", isPlayerAboveBg2_test(0, 0, false, false), false)
+  assert_eq("Jumping player has Priority 1 (above BG1)", computePlayerPriority({ jumping = true, elevation = 3 }), 1)
+  assert_eq("Escalator player has Priority 1 (above BG1)", computePlayerPriority({ escalatorActive = true, elevation = 3 }), 1)
+  assert_eq("Surf hopping player has Priority 1 (above BG1)", computePlayerPriority({ surfHopping = true, elevation = 1 }), 1)
+  assert_eq("Bridge player has Priority 1 (above BG1)", computePlayerPriority({ elevation = 4 }), 1)
+  assert_eq("Normal walking player with animation offsets has Priority 2 (under BG1)", computePlayerPriority({ elevation = 3, spriteYOffset = -8 }), 2)
+  assert_eq("Water surfing player has Priority 2 (under BG1)", computePlayerPriority({ elevation = 1 }), 2)
 end
 
 print("[test] ALL ELEVATION AND OAM CONDITIONAL PRIORITY TESTS PASSED!")
