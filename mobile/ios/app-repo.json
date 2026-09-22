@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.2.74",
+          "date": "2026-09-22",
+          "size": 24670882,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.2.74/gen1recomp++-0.2.74-ios.ipa",
+          "localizedDescription": "Just some tweaks and what not for an all around smoother experience and uh... yeah. Wish list boya coya on steam thanks.\n\n## Contributors\n\n- @bryanthaboi\n- @Nexhas28"
+        },
+        {
           "version": "0.2.73",
           "date": "2026-09-22",
           "size": 24663523,
