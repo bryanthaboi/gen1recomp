@@ -648,9 +648,26 @@ local function extract_egg_moves(rom, num)
   return eggMoves
 end
 
+-- gMonIconTable / gMonIconPaletteIndices entry for one species, both frames
+-- (32x64 RGBA); they run past NUM_SPECIES, so SPECIES_EGG has its own icon.
+local function icon_rgba(rom, sp, pals)
+  pals = pals or load_icon_pals(rom)
+  local w = Versions.MON_ICON_W or 32
+  local iconH = (Versions.MON_ICON_H or 32) * 2 -- 64 (2 frames)
+  local iconBytes = Versions.MON_ICON_BYTES or math.floor(w * iconH / 2) -- 1024 for 32x64
+  local off = gba_off(rom:u32(Versions.MON_ICON_TABLE + sp * 4))
+  if not off then return string.rep(string.char(0, 0, 0, 0), w * iconH * 4) end
+  local palIdx = rom:get(Versions.MON_ICON_PAL_INDICES + sp) or 0
+  if palIdx >= Versions.MON_ICON_PAL_COUNT then palIdx = 0 end
+  local pixels = decode_4bpp(rom:readBytes(off, iconBytes), w, iconH)
+  return bake_icon_rgba(pixels, pals[palIdx] or pals[0], w, iconH)
+end
+
 -- Exposed for tests (tests/engine/game3_egg_moves.lua).
 PokemonExtract.eggMovesFromRom = extract_egg_moves
 PokemonExtract.writeEggMovesLua = write_egg_moves_lua
+-- src/import/gba/egg_extract.lua bakes the SPECIES_EGG icon with it.
+PokemonExtract.iconRgba = icon_rgba
 
 --- Extract full pack into cache under {cacheRoot}/pokemon/.
 function PokemonExtract.run(rom, cache, opts)
@@ -669,13 +686,7 @@ function PokemonExtract.run(rom, cache, opts)
   local nameBase = Versions.SPECIES_NAMES
   local infoBase = Versions.SPECIES_INFO
   local natBase = Versions.SPECIES_TO_NATIONAL
-  local w = Versions.MON_ICON_W or 32
-  local h = Versions.MON_ICON_H or 32
-  local iconH = h * 2 -- 64 (2 frames)
-  local iconBytes = Versions.MON_ICON_BYTES or math.floor(w * iconH / 2) -- 1024 for 32x64
-  local palIdxBase = Versions.MON_ICON_PAL_INDICES
   local pals = load_icon_pals(rom)
-  local iconTable = Versions.MON_ICON_TABLE
   local frontPicTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_front_pic_table) or 0x2350AC
   local backPicTable = Versions.MON_BACK_PIC_TABLE or 0x23654C
   local palTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_palette_table) or 0x23730C
@@ -727,20 +738,7 @@ function PokemonExtract.run(rom, cache, opts)
     -- Table omits SPECIES_NONE; SpeciesToNationalPokedexNum uses [species - 1].
     toNat[sp] = (sp >= 1) and rom:u16(natBase + (sp - 1) * 2) or 0
 
-    local ptr = rom:u32(iconTable + sp * 4)
-    local off = gba_off(ptr)
-    local palIdx = rom:get(palIdxBase + sp) or 0
-    if palIdx >= Versions.MON_ICON_PAL_COUNT then palIdx = 0 end
-    local pal = pals[palIdx] or pals[0]
-    local rgba
-    if off then
-      local bytes = rom:readBytes(off, iconBytes)
-      local pixels = decode_4bpp(bytes, w, iconH)
-      rgba = bake_icon_rgba(pixels, pal, w, iconH)
-    else
-      rgba = string.rep(string.char(0, 0, 0, 0), w * iconH * 4)
-    end
-    put(cache, root .. "/icons/" .. sp .. ".rgba", rgba)
+    put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
     picsWritten.icons = picsWritten.icons + 1
 
     -- Front Pic (64x64 RGBA)

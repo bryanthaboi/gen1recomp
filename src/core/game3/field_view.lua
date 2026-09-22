@@ -823,6 +823,7 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
         end
       end
     end
+    require("src.core.game3.tileset_anim").setVisiblePairs(cellsByPair)
     FieldView._nativeBx = cx0
     FieldView._nativeBy = cy0
     FieldView._nativePair = pair

@@ -3,6 +3,7 @@
 local Versions = require("src.import.gba.versions")
 local Lz77 = require("src.import.gba.lz77")
 local BgBake = require("src.import.gba.bg_bake")
+local PokemonExtract = require("src.import.gba.pokemon_extract")
 
 local EggExtract = {}
 
@@ -77,6 +78,10 @@ function EggExtract.run(rom, cache, opts)
   cache:write(cacheRoot .. "/pokemon/front/" .. EggExtract.SPECIES_EGG .. ".rgba",
     BgBake.bakeSpriteRgba(tiles, picBank, 0, PIC_W, PIC_H, false, false))
 
+  -- src/party_menu.c:2655 draws an egg's icon from MON_DATA_SPECIES_OR_EGG
+  cache:write(cacheRoot .. "/pokemon/icons/" .. EggExtract.SPECIES_EGG .. ".rgba",
+    PokemonExtract.iconRgba(rom, EggExtract.SPECIES_EGG))
+
   cache:write(root .. "/manifest.lua", string.format([[
 return {
   format_version = %d,
@@ -102,7 +107,12 @@ function EggExtract.ready(cache, cacheRoot)
   for _, rel in ipairs({ "hatch.rgba", "shard.rgba", "manifest.lua" }) do
     if not cache:exists(root .. "/" .. rel) then return false end
   end
-  return cache:exists(cacheRoot .. "/pokemon/front/" .. EggExtract.SPECIES_EGG .. ".rgba")
+  for _, sub in ipairs({ "front", "icons" }) do
+    if not cache:exists(cacheRoot .. "/pokemon/" .. sub .. "/" .. EggExtract.SPECIES_EGG .. ".rgba") then
+      return false
+    end
+  end
+  return true
 end
 
 return EggExtract

@@ -164,6 +164,7 @@ local ROUND2_KEYS = {
   "data/generated/gba/pokemon/egg/hatch.rgba",
   "data/generated/gba/pokemon/egg/shard.rgba",
   "data/generated/gba/pokemon/front/412.rgba",
+  "data/generated/gba/pokemon/icons/412.rgba",
   -- src/trainer_card.c:265, :1454, :1560
   "data/generated/gba/trainer_card/front_0.rgba",
   "data/generated/gba/trainer_card/front_4_female.rgba",

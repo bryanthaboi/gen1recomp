@@ -37,7 +37,9 @@ Versions.ROM_SIZE = 16777216
 --       setptrbyte each carry a leading byte plus a word (were shorter).  The
 --       old sizes mis-decoded every instruction after one, so every cached
 --       script is stale.
-Versions.CACHE_VERSION = 113
+-- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon — eggs were drawn
+--       with the icon of the species they hatch into.
+Versions.CACHE_VERSION = 114
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 1
 Versions.ANIM_VERSION = 1

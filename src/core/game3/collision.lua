@@ -600,6 +600,8 @@ end
 -- pret CameraMove → LoadMapFromCameraTransition / Gen2 World:tryConnection.
 -- Returns true if the crossing was accepted.
 function Collision.tryConnection(game, fromX, fromY, dir, run)
+  local d = DELTA[dir]
+  if not d then return false end
   local Space = package.loaded["src.core.game3.scripting.space"]
   if Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning() then
     return false
@@ -626,18 +628,39 @@ function Collision.tryConnection(game, fromX, fromY, dir, run)
   local lx, ly = Collision.connectionLanding(destDef, conn, dir, fromX, fromY)
   if not lx then return false end
 
+  local Player = require("src.core.game3.player")
   local L = destDef.midLayout
+  local landingWater = Collision.isWaterOn(destDef, lx, ly)
   if L and L.collAt then
-    if not collWalkable(L:collAt(lx, ly)) then return false end
+    local coll = L:collAt(lx, ly)
+    local P = permissions()
+    if not collWalkable(coll) and not (P and P.isWater and P.isWater(coll)) then
+      return false
+    end
+    if landingWater and not Player.surfing then return false end
   end
-
-  local d = DELTA[dir]
-  if not d then return false end
+  -- pokefirered/src/event_object_movement.c:4889
+  if LEAVE_BLOCKED[dir](Collision.behaviorOn(mapDef, fromX, fromY))
+      or ENTER_BLOCKED[dir](Collision.behaviorOn(destDef, lx, ly)) then
+    return false
+  end
+  if Player.surfing and L and L.elevAt then
+    local elevation = L:elevAt(lx, ly)
+    -- pokefirered/src/field_player_avatar.c:597
+    if not landingWater then
+      if elevation ~= 3 then return false end
+    -- pokefirered/src/event_object_movement.c:8346
+    elseif elevation ~= 0 and elevation ~= 15 and Player.elevation ~= 0
+        and elevation ~= Player.elevation then
+      return false
+    end
+  end
+  local Ghosts = require("src.core.game3.ghosts")
+  if Ghosts.blocksOn(destMap, destDef, lx, ly) then return false end
 
   local Runtime = package.loaded["src.core.game3.runtime"]
   local mod = Runtime and Runtime._mod
   local g = game or (Runtime and Runtime._game)
-  local Player = require("src.core.game3.player")
 
   Map.load(mod, g, destMap, {
     x = lx,
@@ -661,6 +684,7 @@ function Collision.tryConnection(game, fromX, fromY, dir, run)
   Player.animClock = 0
   Player.running = run and true or false
   Player.jumping = false
+  Player.dismounting = Player.surfing and not landingWater or false
   Player.spriteYOffset = 0
   Player.stepFrames = run and RUN_FRAMES or WALK_FRAMES
   Player.syncSavePosition(g)
@@ -704,22 +728,28 @@ function Collision.elevationAt(cx, cy)
 end
 
 -- pokefirered/src/field_player_avatar.c:597 CanStopSurfing
-local SURF_ELEVATION = 1
-local function atSurfElevation(cx, cy)
-  if Collision.elevationAt(cx, cy) ~= SURF_ELEVATION then return false end
-  local beh = Collision.behavior(cx, cy)
-  return beh == MB_PUDDLE or beh == MB_SHALLOW_WATER
-end
-
-function Collision.isWater(cx, cy)
+function Collision.isWaterOn(mapDef, cx, cy, coll)
+  local layout = mapDef and mapDef.midLayout
+  if layout and (cx < 0 or cy < 0 or cx >= layout.width or cy >= layout.height) then
+    return false
+  end
+  if coll == nil then
+    if not layout then return false end
+    coll = layout:collAt(cx, cy)
+  end
   local P = permissions()
-  local coll = Collision.cell(cx, cy)
   if P and P.isWater then
     if P.isWater(coll) then return true end
   elseif coll == 0x29 then
     return true
   end
-  return atSurfElevation(cx, cy)
+  if not (layout and layout.elevAt) or layout:elevAt(cx, cy) ~= 1 then return false end
+  local beh = Collision.behaviorOn(mapDef, cx, cy)
+  return beh == MB_PUDDLE or beh == MB_SHALLOW_WATER
+end
+
+function Collision.isWater(cx, cy)
+  return Collision.isWaterOn(Collision._mapDef, cx, cy, Collision.cell(cx, cy))
 end
 
 local function entityBlocks(game, tx, ty)

@@ -118,11 +118,13 @@ local function speciesFromNational(nat)
   return (ok and tonumber(sp)) or nat
 end
 
--- pokefirered/src/field_specials.c:1671
+-- pokefirered/src/field_specials.c:1671; GetMonData(MON_DATA_NICKNAME) is
+-- gText_EggNickname for an egg (pokemon.c:3020)
 local function nicknameOf(mon)
   if not mon then return "" end
-  if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   local Pokemon = require("src.core.game3.pokemon")
+  if Pokemon.isEgg(mon) then return Strings("EGG") end
+  if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   pcall(function()
     if not Pokemon._names then Pokemon.install(nil) end
   end)

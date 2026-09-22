@@ -377,6 +377,8 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/pokemon/egg/hatch.rgba",
     "data/generated/gba/pokemon/egg/shard.rgba",
     "data/generated/gba/pokemon/front/412.rgba",
+    -- src/party_menu.c:2655
+    "data/generated/gba/pokemon/icons/412.rgba",
     -- src/battle_records.c:563
     "data/generated/gba/trainer_tower/manifest.lua",
     "data/generated/gba/trainer_tower/records_bg.rgba",

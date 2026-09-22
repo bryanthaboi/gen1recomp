@@ -106,6 +106,25 @@ function Ghosts.forDraw(mapId)
   return Objects().poolForDraw(pool)
 end
 
+-- pokefirered/src/event_object_movement.c:4899
+function Ghosts.blocksOn(mapId, def, tx, ty)
+  local pool = Ghosts._pools[mapId]
+  if not pool then
+    local defs = defsFor(mapId, def)
+    if not defs then return false end
+    pool = Objects().spawnFromDefs(defs, def)
+    Ghosts._pools[mapId] = pool
+  end
+  for _, lid in ipairs(pool.order or {}) do
+    local eo = pool.byId[lid]
+    if eo and eo.visible and not eo.hidden and not eo.passable then
+      if eo.cellX == tx and eo.cellY == ty then return true end
+      if eo.moving and eo.targetX == tx and eo.targetY == ty then return true end
+    end
+  end
+  return false
+end
+
 function Ghosts.capture(mapId)
   if not mapId then return end
   local snap = Objects().snapshotPool()

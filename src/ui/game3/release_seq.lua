@@ -125,7 +125,7 @@ function ReleaseSeq.draw()
     local curX = ReleaseSeq.startX
     local curY = ReleaseSeq.startY - (progress * 40) -- float upward 40px
 
-    local icon = ReleaseSeq.mon and Pokemon.icon(Pokemon.speciesOf(ReleaseSeq.mon))
+    local icon = ReleaseSeq.mon and Pokemon.icon(Pokemon.speciesOrEgg(ReleaseSeq.mon))
     if icon and icon.image then
       local q = icon.quads and icon.quads[0]
       love.graphics.setColor(1, 1, 1, alpha)

@@ -151,10 +151,10 @@ function NativeTileset.ready(pair)
     and cache:exists(NATIVE .. "/" .. pair .. "/palettes.bin")
 end
 
-local function bind_anim(pair)
+local function bind_anim(pair, atlas)
   local okA, TilesetAnim = pcall(require, "src.core.game3.tileset_anim")
   if okA and TilesetAnim and TilesetAnim.bindPair then
-    TilesetAnim.bindPair(pair)
+    TilesetAnim.bindPair(pair, atlas)
   end
 end
 
@@ -162,7 +162,7 @@ function NativeTileset.get(pair)
   if not pair then return nil end
   local cached = NativeTileset._pairs[pair]
   if cached then
-    bind_anim(pair)
+    bind_anim(pair, cached)
     return cached
   end
   local cache = NativeTileset._cache
@@ -181,7 +181,7 @@ function NativeTileset.get(pair)
       pair, ts.midCount, ts.cols * 16, ts.rows * 16, tostring(ts.layered)))
     NativeTileset._logged[pair] = true
   end
-  bind_anim(pair)
+  bind_anim(pair, ts)
   return ts
 end
 

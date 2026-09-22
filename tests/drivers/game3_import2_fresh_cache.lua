@@ -42,6 +42,7 @@ local ROUND2_SAMPLE = {
   "data/generated/gba/move_relearner/bg.rgba",
   "data/generated/gba/pokemon/egg/hatch.rgba",
   "data/generated/gba/pokemon/front/412.rgba",
+  "data/generated/gba/pokemon/icons/412.rgba",
   "data/generated/gba/native/layouts/alt_366.mid",
 }
 

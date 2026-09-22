@@ -212,8 +212,11 @@ local function cryFinished(s)
   return done and true or false
 end
 
+-- pokefirered/src/trade_scene.c:1239 GetMonData(MON_DATA_NICKNAME), which is
+-- gText_EggNickname for an egg (pokemon.c:3020)
 local function nameOf(mon)
   if not mon then return "" end
+  if isEgg(mon) then return Strings("EGG") end
   local nick = mon.nickname or mon.name
   if type(nick) == "string" and nick ~= "" then return nick end
   local ok, Pokemon = pcall(require, "src.core.game3.pokemon")

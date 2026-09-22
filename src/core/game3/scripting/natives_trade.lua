@@ -137,8 +137,11 @@ local function speciesName(species)
   return (Pokemon.name and Pokemon.name(species)) or ""
 end
 
+-- GetMonData(MON_DATA_NICKNAME) is gText_EggNickname for an egg
+-- (pokefirered/src/pokemon.c:3020)
 local function nicknameOf(mon)
   if not mon then return "" end
+  if require("src.core.game3.pokemon").isEgg(mon) then return Strings("EGG") end
   if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   return speciesName(speciesOf(mon))
 end

@@ -56,7 +56,7 @@ end
 -- pokefirered/src/pokemon_summary_screen.c:5180
 local function play_mon_cry()
   local mon = current_mon()
-  if not mon or mon.isEgg then return end
+  if not mon or Pokemon.isEgg(mon) then return end
   local species = Pokemon.speciesOf(mon)
   if not species then return end
   local okA, Audio = pcall(require, "src.core.game3.audio")
@@ -153,7 +153,7 @@ function SummaryMenu.openMenu(party, startIndex, opts)
   SummaryMenu._slide.active = false
 
   local mon = current_mon()
-  if mon and mon.isEgg then
+  if mon and Pokemon.isEgg(mon) then
     SummaryMenu._page = PAGE_EGG
   elseif SummaryMenu._mode == "select_move" then
     SummaryMenu._page = PAGE_MOVES_INFO
@@ -194,7 +194,7 @@ local function change_mon(delta)
   SummaryMenu._moveCursor = 1
   SummaryMenu._swapSlot = nil
   local mon = current_mon()
-  if mon and mon.isEgg then
+  if mon and Pokemon.isEgg(mon) then
     SummaryMenu._page = PAGE_EGG
   elseif SummaryMenu._page == PAGE_EGG then
     SummaryMenu._page = PAGE_INFO
@@ -676,7 +676,8 @@ local function draw_page_moves(mon, isDetail)
 end
 
 local function draw_page_egg(mon)
-  local species = Pokemon.speciesOf(mon)
+  -- pokefirered/src/pokemon_summary_screen.c:4016 MON_DATA_SPECIES_OR_EGG
+  local species = Pokemon.speciesOrEgg(mon)
   local nx, ny = cxy("name", 40, 18)
   draw_text(Strings("EGG"), nx, ny, 64, "NORMAL")
 
@@ -759,7 +760,7 @@ function SummaryMenu.draw()
   end
 
   -- 2. OVERLAY LAYER (Foreground elements anchored to screen coordinates)
-  draw_top_bar_text(SummaryMenu._page, mon.isEgg)
+  draw_top_bar_text(SummaryMenu._page, Pokemon.isEgg(mon))
   if SummaryMenu._page == PAGE_EGG then
     draw_page_egg(mon)
   else

@@ -95,6 +95,7 @@ local WANT = {
   "data/generated/gba/pokemon/egg/hatch.rgba",
   "data/generated/gba/pokemon/egg/shard.rgba",
   "data/generated/gba/pokemon/front/412.rgba",
+  "data/generated/gba/pokemon/icons/412.rgba",
   "data/generated/gba/trainer_tower/manifest.lua",
   "data/generated/gba/trainer_tower/records_bg.rgba",
   "data/generated/gba/trainer_card/front_0.rgba",
@@ -165,6 +166,8 @@ written["x/pokemon/egg/shard.rgba"] = "stub"
 written["x/pokemon/egg/manifest.lua"] = "stub"
 check(EggExtract.ready(stub, "x") == false, "egg ready() also wants the SPECIES_EGG front pic")
 written["x/pokemon/front/412.rgba"] = "stub"
+check(EggExtract.ready(stub, "x") == false, "egg ready() also wants the SPECIES_EGG icon")
+written["x/pokemon/icons/412.rgba"] = "stub"
 check(EggExtract.ready(stub, "x") == true, "egg ready() accepts the whole group")
 
 local regionFiles = {}
@@ -234,6 +237,7 @@ local SHEETS = {
   { "pokemon/egg/hatch.rgba", 32, 128 },
   { "pokemon/egg/shard.rgba", 32, 8 },
   { "pokemon/front/412.rgba", 64, 64 },
+  { "pokemon/icons/412.rgba", 32, 64 },
   { "trainer_tower/records_bg.rgba", 240, 160 },
   { "trainer_card/front_0.rgba", 240, 160 },
   { "trainer_card/front_4_female.rgba", 240, 160 },
@@ -389,6 +393,8 @@ local eggPic = blobs["pokemon/front/412.rgba"]
 check(distinctColors(eggPic) > 4, "the EGG front pic is painted art")
 local _, _, _, eggCorner = pixel(eggPic, 64, 0, 0)
 eq(eggCorner, 0, "the EGG pic corner is transparent, as pic index 0 is")
+local eggIcon = blobs["pokemon/icons/412.rgba"]
+check(distinctColors(eggIcon) > 2, "the EGG menu icon is painted art")
 local eggMan = loadTable("pokemon/egg/manifest.lua")
 check(eggMan ~= nil and eggMan.hatch ~= nil and eggMan.hatch.frames == 4
   and eggMan.hatch.sheetHeight == 128 and eggMan.shard.sheetWidth == 32,

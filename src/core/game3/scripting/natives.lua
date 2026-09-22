@@ -79,10 +79,13 @@ local function boxedMon()
     (tonumber(session.monBoxId) or 0) + 1, (tonumber(session.monBoxPos) or 0) + 1)
 end
 
+-- GetMonData(MON_DATA_NICKNAME) is gText_EggNickname for an egg
+-- (pokefirered/src/pokemon.c:3020)
 local function nicknameOf(mon)
   if not mon then return "" end
-  if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   local Pokemon = require("src.core.game3.pokemon")
+  if Pokemon.isEgg(mon) then return Strings("EGG") end
+  if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   pcall(function()
     if not Pokemon._names then Pokemon.install(nil) end
   end)

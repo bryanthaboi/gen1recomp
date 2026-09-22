@@ -738,7 +738,7 @@ function BoxStorageUI.draw()
       local isHovered = (BoxStorageUI.cursorSlot == s and BoxStorageUI.mode ~= "party_drawer" and not BoxStorageUI.holdingMon)
       local bounceY = (isHovered and BoxStorageUI.hoverFrame == 1) and -2 or 0
       local f = (isHovered and BoxStorageUI.hoverFrame == 1) and 1 or 0
-      local sp = Pokemon.speciesOf(mon)
+      local sp = Pokemon.speciesOrEgg(mon)
       local icon = Pokemon.icon(sp)
 
       if icon and icon.image then
@@ -804,7 +804,7 @@ function BoxStorageUI.draw()
 
   -- If holding a mon, draw floating mini-icon under hand cursor
   if BoxStorageUI.holdingMon then
-    local hSp = Pokemon.speciesOf(BoxStorageUI.holdingMon)
+    local hSp = Pokemon.speciesOrEgg(BoxStorageUI.holdingMon)
     local hIcon = Pokemon.icon(hSp)
     if hIcon and hIcon.image then
       local q = hIcon.quads and hIcon.quads[0]

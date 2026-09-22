@@ -446,7 +446,7 @@ local function ensure_slot_sprites(i, mon, selected)
   local maxHp = tonumber(mon.maxHp) or tonumber(mon.maxhp) or 1
   local hpLevel = get_hp_bar_level(hp, maxHp, mon.isEgg)
 
-  local icon = Pokemon.icon(Pokemon.speciesOf(mon))
+  local icon = Pokemon.icon(Pokemon.speciesOrEgg(mon))
   local q0 = icon and icon.quads and icon.quads[0]
   if not slot.mon then
     local id = select(1, Oam.createSprite({
@@ -2111,10 +2111,17 @@ local function draw_filled_slot(i, mon, selected)
   local info = slot_info(i)
   local desc = slot_description(i, mon)
 
-  PartyChrome.drawSlot(win.kind, win.left, win.top, selected, desc ~= nil)
+  -- pokefirered/src/party_menu.c:781 DisplayPartyPokemonData: an egg's slot
+  -- has no HP frame and shows only its nickname (gText_EggNickname).
+  local isEgg = Pokemon.isEgg(mon)
+  PartyChrome.drawSlot(win.kind, win.left, win.top, selected, desc ~= nil or isEgg)
 
   local name = Pokemon.displayName(mon)
   party_print(name, baseX + info.nick[1], baseY + info.nick[2], 56)
+  if isEgg then
+    if desc then party_print(desc, baseX + info.desc[1], baseY + info.desc[2], 64) end
+    return
+  end
   party_print("Lv" .. tostring(mon.level or 0), baseX + info.level[1], baseY + info.level[2], 32)
 
   local gender = mon.gender or (Pokemon.gender and Pokemon.gender(mon.species, mon.personality))
