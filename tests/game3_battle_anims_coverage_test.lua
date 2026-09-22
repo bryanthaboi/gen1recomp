@@ -2,6 +2,7 @@
 -- Verifies all 354 moves in pack.lua, testing GLSL shader integration,
 -- Z-index depth, nearest-neighbor scaling tasks, and spatial audio panning.
 
+require("tests.game3_cache").requireData("game3_battle_anims_coverage_test", "pokemon/battle_anims/pack.lua")
 local Anim = require("src.core.game3.battle.anim")
 local AnimVm = require("src.core.game3.battle.anim_vm")
 local AnimTasks = require("src.core.game3.battle.anim_tasks")

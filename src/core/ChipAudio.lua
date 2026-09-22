@@ -622,8 +622,6 @@ end
 -- program (20 §2 cache contract, chip music row)
 Assets.register(ChipAudio.invalidate)
 
-require("src.core.SessionLifecycle").registerProcessShutdown(ChipAudio.shutdown)
-
 -- ---------------------------------------------------------------------------
 -- one-shot effects (SFX, cries, low-health alarm): synchronous static Sources
 -- ---------------------------------------------------------------------------

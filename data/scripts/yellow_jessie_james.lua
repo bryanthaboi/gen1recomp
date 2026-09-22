@@ -22,6 +22,52 @@ local M = {}
 local baseMtMoonStep = require("data.scripts.story2").MT_MOON_B2F.onStep
 local baseSilph11Step = require("data.scripts.story").SILPH_CO_11F.onStep
 
+-- engine/overworld/movement.asm:932
+local FAST = { stepFrames = 16 }
+-- engine/overworld/movement.asm:349
+local HOLD = { hold = 510 }
+
+local function flat(list)
+  local out = {}
+  for _, r in ipairs(list) do
+    if type(r[1]) == "table" then
+      for _, sub in ipairs(r) do out[#out + 1] = sub end
+    else
+      out[#out + 1] = r
+    end
+  end
+  return out
+end
+
+-- scripts/MtMoonB2F.asm:446
+local function mottoRows(ow, textId, faceDir)
+  local t = 0
+  return {
+    { "text_opts", { auto = { delay = 91, tick = function()
+      t = t + 1
+      local p = ow.player
+      if t == 11 then
+        -- engine/overworld/emotion_bubbles.asm:60
+        if p then ow.emote = { npc = p, frames = 60, bubble = 1 } end
+      elseif t == 71 then
+        ow.emote = nil
+        if p then p.facing = faceDir end
+      end
+    end } } },
+    { "show_text", textId },
+  }
+end
+
+-- scripts/MtMoonB2F.asm:356
+local function partingRows(textId, a, b)
+  return {
+    { "face_object", a, "down", HOLD },
+    { "face_object", b, "down", HOLD },
+    { "text_opts", { auto = { delay = 64 } } },
+    { "show_text", textId },
+  }
+end
+
 M.MT_MOON_B2F = {
   talk = {
     TEXT_MTMOONB2F_JESSIE = {
@@ -42,14 +88,12 @@ M.MT_MOON_B2F = {
     if not (f.EVENT_GOT_DOME_FOSSIL or f.EVENT_GOT_HELIX_FOSSIL) then
       return false
     end
-    ow.runner:run({
+    ow.runner:run(flat({
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
       { "show_object", "MT_MOON_B2F", "MTMOONB2F_JESSIE" },
       { "show_object", "MT_MOON_B2F", "MTMOONB2F_JAMES" },
-      { "show_text", "_MtMoonJessieJamesText1" },
-      { "face_player_dir", "up" },
-      { "emote", "player", "shock", 30 },
+      mottoRows(ow, "_MtMoonJessieJamesText1", "up"),
       -- MtMoonB2FScript_49e15 simulates PAD_UP for one player step, then
       -- Script6/Script9 walk Jessie (object 2, MovementData_f9e65: six
       -- $06) and James (object 6, f9e66: five $06); both objects' movement
@@ -57,10 +101,10 @@ M.MT_MOON_B2F = {
       -- Jessie (9,3)->(3,3) above the player at (3,4), James (9,4)->(4,4)
       -- beside him. #423
       { "walk_npc", "player", { "up" } },
-      { "walk_npc", 2, { "left", "left", "left", "left", "left", "left" } },
-      { "face_object", 2, "down" },
-      { "walk_npc", 6, { "left", "left", "left", "left", "left" } },
-      { "face_object", 6, "left" },
+      { "walk_npc", 2, { "left", "left", "left", "left", "left", "left" }, FAST },
+      { "face_object", 2, "down", HOLD },
+      { "walk_npc", 6, { "left", "left", "left", "left", "left" }, FAST },
+      { "face_object", 6, "left", HOLD },
       { "show_text", "_MtMoonJessieJamesText2" },
       -- MtMoonB2FScript12 arms _MtMoonJessieJamesText3 with
       -- SaveEndBattleTextPointers before it sets wCurOpponent, so
@@ -71,7 +115,7 @@ M.MT_MOON_B2F = {
       { "start_battle", "trainer", "OPP_ROCKET", 42 },
       { "check_battle_result", "win" },
       { "jump_if_false", "end" },
-      { "show_text", "_MtMoonJessieJamesText4" },
+      partingRows("_MtMoonJessieJamesText4", 2, 6),
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
       { "fade", "out" },
@@ -80,7 +124,7 @@ M.MT_MOON_B2F = {
       { "fade", "in" },
       { "play_default_music" },
       { "set_flag", "EVENT_BEAT_MT_MOON_3_JESSIE_JAMES" },
-    }, {})
+    }), {})
     return true
   end,
 }
@@ -114,12 +158,10 @@ M.ROCKET_HIDEOUT_B4F = {
     -- RocketHideoutB4FJessieJamesMovementData_45605/45606 swap so the
     -- column-mate walks 3, the other 4.
     local onLeft = (x == 25)
-    ow.runner:run({
+    ow.runner:run(flat({
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
-      { "show_text", "_RocketHideoutJessieJamesText1" },
-      { "face_player_dir", "up" },
-      { "emote", "player", "shock", 30 },
+      mottoRows(ow, "_RocketHideoutJessieJamesText1", "up"),
       { "show_object", "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_JAMES" },
       { "show_object", "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_JESSIE" },
       -- James (object 2) then Jessie (object 3), Script4..Script9 order.
@@ -133,11 +175,11 @@ M.ROCKET_HIDEOUT_B4F = {
       -- Reading _45605 as a single step stranded whoever was off-column three
       -- tiles away, so James never reached the player (#865).
       { "walk_npc", 2, onLeft and { "down", "down", "down" }
-                              or { "down", "down", "down", "down" } },
-      { "face_object", 2, onLeft and "down" or "left" },
+                              or { "down", "down", "down", "down" }, FAST },
+      { "face_object", 2, onLeft and "down" or "left", HOLD },
       { "walk_npc", 3, onLeft and { "down", "down", "down", "down" }
-                              or { "down", "down", "down" } },
-      { "face_object", 3, onLeft and "right" or "down" },
+                              or { "down", "down", "down" }, FAST },
+      { "face_object", 3, onLeft and "right" or "down", HOLD },
       { "show_text", "_RocketHideoutJessieJamesText2" },
       -- RocketHideoutB4FScript10 saves _RocketHideoutJessieJamesText3 as the
       -- end-battle text, so it prints as "ROCKET: Such a dreadful twerp!" on
@@ -146,7 +188,7 @@ M.ROCKET_HIDEOUT_B4F = {
       { "start_battle", "trainer", "OPP_ROCKET", 43 },
       { "check_battle_result", "win" },
       { "jump_if_false", "lost" },
-      { "show_text", "_RocketHideoutJessieJamesText4" },
+      partingRows("_RocketHideoutJessieJamesText4", 2, 3),
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
       { "fade", "out" },
@@ -159,7 +201,7 @@ M.ROCKET_HIDEOUT_B4F = {
       { "label", "lost" },
       { "hide_object", "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_JAMES" },
       { "hide_object", "ROCKET_HIDEOUT_B4F", "ROCKETHIDEOUTB4F_JESSIE" },
-    }, {})
+    }), {})
     return true
   end,
 }
@@ -187,14 +229,12 @@ M.POKEMON_TOWER_7F = {
     if y ~= 12 or (x ~= 10 and x ~= 11) then return false end
     if f.EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES then return false end
     local onLeft = (x == 11)   -- EVENT_POKEMONTOWER_7_JESSIE_JAMES_ON_LEFT
-    ow.runner:run({
+    ow.runner:run(flat({
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
       { "show_object", "POKEMON_TOWER_7F", "POKEMONTOWER7F_JESSIE" },
       { "show_object", "POKEMON_TOWER_7F", "POKEMONTOWER7F_JAMES" },
-      { "show_text", "_PokemonTowerJessieJamesText1" },
-      { "face_player_dir", "up" },
-      { "emote", "player", "shock", 30 },
+      mottoRows(ow, "_PokemonTowerJessieJamesText1", "up"),
       -- Jessie (object 1) then James (object 2), Script1..Script6 order.
       -- Same fall-through blob as the hideout: PokemonTower7FMovementData_60d7a
       -- is a lone $4 running into _60d7b ($4 $4 $4 $FF), so _60d7a is FOUR
@@ -203,11 +243,11 @@ M.POKEMON_TOWER_7F = {
       -- full four to his side; the single-step reading is why James only
       -- "moved a bit" here (#865).
       { "walk_npc", 1, onLeft and { "down", "down", "down", "down" }
-                              or { "down", "down", "down" } },
-      { "face_object", 1, onLeft and "right" or "down" },
+                              or { "down", "down", "down" }, FAST },
+      { "face_object", 1, onLeft and "right" or "down", HOLD },
       { "walk_npc", 2, onLeft and { "down", "down", "down" }
-                              or { "down", "down", "down", "down" } },
-      { "face_object", 2, onLeft and "down" or "left" },
+                              or { "down", "down", "down", "down" }, FAST },
+      { "face_object", 2, onLeft and "down" or "left", HOLD },
       { "show_text", "_PokemonTowerJessieJamesText2" },
       -- PokemonTower7FScript7 saves _PokemonTowerJessieJamesText3 as the
       -- end-battle text: "ROCKET: You will regret this!" on the battle screen,
@@ -216,7 +256,7 @@ M.POKEMON_TOWER_7F = {
       { "start_battle", "trainer", "OPP_ROCKET", 44 },
       { "check_battle_result", "win" },
       { "jump_if_false", "end" },
-      { "show_text", "_PokemonTowerJessieJamesText4" },
+      partingRows("_PokemonTowerJessieJamesText4", 1, 2),
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
       { "fade", "out" },
@@ -225,7 +265,7 @@ M.POKEMON_TOWER_7F = {
       { "fade", "in" },
       { "play_default_music" },
       { "set_flag", "EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES" },
-    }, {})
+    }), {})
     return true
   end,
 }
@@ -273,17 +313,15 @@ M.SILPH_CO_11F = {
       jessieDirs = { "up", "up", "up", "left", "up", "up" }
       jessieFace = "left"
     end
-    ow.runner:run({
+    ow.runner:run(flat({
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
-      { "show_text", "_SilphCoJessieJamesText1" },
-      { "face_player_dir", "down" },
-      { "emote", "player", "shock", 30 },
+      mottoRows(ow, "_SilphCoJessieJamesText1", "down"),
       -- James (object 4) then Jessie (object 6), Script5..Script10 order
-      { "walk_npc", 4, jamesDirs },
-      { "face_object", 4, jamesFace },
-      { "walk_npc", 6, jessieDirs },
-      { "face_object", 6, jessieFace },
+      { "walk_npc", 4, jamesDirs, FAST },
+      { "face_object", 4, jamesFace, HOLD },
+      { "walk_npc", 6, jessieDirs, FAST },
+      { "face_object", 6, jessieFace, HOLD },
       { "show_text", "_SilphCoJessieJamesText2" },
       -- SilphCo11FScript11 saves _SilphCoJessieJamesText3 (SilphCo11FText_624c2)
       -- as the end-battle text: "ROCKET: Like always..." before the money (#866).
@@ -291,7 +329,7 @@ M.SILPH_CO_11F = {
       { "start_battle", "trainer", "OPP_ROCKET", 45 },
       { "check_battle_result", "win" },
       { "jump_if_false", "end" },
-      { "show_text", "_SilphCoJessieJamesText4" },
+      partingRows("_SilphCoJessieJamesText4", 4, 6),
       { "stop_music" },
       { "play_music", "Music_MeetJessieJames" },
       { "fade", "out" },
@@ -300,7 +338,7 @@ M.SILPH_CO_11F = {
       { "fade", "in" },
       { "play_default_music" },
       { "set_flag", "EVENT_BEAT_SILPH_CO_11F_JESSIE_JAMES" },
-    }, {})
+    }), {})
     return true
   end,
 }

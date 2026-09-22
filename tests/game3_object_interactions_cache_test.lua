@@ -75,8 +75,19 @@ for _,map in ipairs(order) do
     Field.locked=true;assert(not Field.interact(game));Field.locked=false
     assert(Field.interact(game),'furniture A-button not handled '..key)
     for _=1,100 do Space.vm:tick()end
-    if SCREEN_ONLY[key] then assert(#messages==0,'unexpected text from '..key)
-    else assert(#messages==1 and #messages[1]>0,'furniture text missing '..key) end
+    if SCREEN_ONLY[key] then
+     assert(#messages==0,'unexpected text from '..key)
+     -- pokefirered/data/scripts/cable_club.inc:566-575, pokefirered/src/battle_records.c:83
+     assert(Space.vm:isRunning(),'parks on the waitstate with the records screen up')
+     local Records=require('src.ui.game3.trainer_tower_records')
+     local Fade=require('src.ui.game3.fade')
+     assert(Records.isOpen(),'the records screen is up')
+     Records.close()
+     for _=1,60 do Fade.tick(1/60)end
+     for _=1,100 do Space.vm:tick()end
+    else
+     assert(#messages==1 and #messages[1]>0,'furniture text missing '..key)
+    end
     assert(not Space.vm:isRunning(),'furniture did not release control '..key)
     covered[behavior]=true
    end

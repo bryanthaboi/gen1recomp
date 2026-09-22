@@ -4,6 +4,7 @@ local Rules = require("src.core.game3.battle.rules")
 local Types = require("src.core.game3.battle.types")
 local Moves = require("src.core.game3.battle.moves")
 local EffectIds = require("src.core.game3.battle.effect_ids")
+local rngWarned = false
 local ModRuntime = require("src.mods.Runtime")
 
 local Damage = {}
@@ -104,6 +105,10 @@ local function roll_from(rng, lo, hi)
   if type(rng) == "function" then
     local ok, v = pcall(rng, lo, hi)
     if ok and type(v) == "number" then return v end
+    if not rngWarned then
+      rngWarned = true
+      print("[game3/damage] rng call failed: " .. tostring(v))
+    end
   end
   local okR, Rng = pcall(require, "src.core.game3.rng")
   if okR and Rng and Rng.compat then

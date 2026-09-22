@@ -606,6 +606,21 @@ assert_eq(assetCount, 30, "14 UI textures + 16 box wallpapers (total 30 assets)"
 print("[ok] All 14 UI textures and 16 wallpapers validated in manifest and file system")
 end
 
+print("=== [TEST 16] Party-to-Box Move Compacts a Holed Party ===")
+do
+  local function mk(n) return { species = 1, nickname = n, level = 5, hp = 10, maxHp = 10, moves = {} } end
+  local A, B, C = mk("A"), mk("B"), mk("C")
+  local holed = { party = { [1] = A, [2] = B, [4] = C }, storage = Storage.new(), bag = Bag.new() }
+  local okMove = Storage.moveMon(holed, "party", 2, "box", 1)
+  assert_true(okMove, "Party slot 2 moved into the box")
+  assert_eq(holed.party[1], A, "Slot 1 keeps A")
+  assert_eq(holed.party[2], C, "C compacts into slot 2")
+  assert_eq(holed.party[3], nil, "No third party mon")
+  assert_eq(holed.party[4], nil, "Old slot 4 cleared")
+  assert_eq(Storage.getBoxMon(holed.storage, holed.storage.currentBox, 1), B, "B landed in the box")
+  print("[ok] Holed party compacted without dropping mons")
+end
+
 print("\n========================================================")
-print("ALL 15 POKÉMON STORAGE & PC SYSTEM TESTS PASSED CLEANLY!")
+print("ALL 16 POKÉMON STORAGE & PC SYSTEM TESTS PASSED CLEANLY!")
 print("========================================================")

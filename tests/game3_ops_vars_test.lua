@@ -71,6 +71,54 @@ vm, store = run({
 }, "t")
 eq(Flags.getVar(store, vm.ctx, VAR_TEMP_1), 7, "subvar VAR_TEMP_1, VAR_TEMP_2 subtracts VAR_TEMP_2's value")
 
+print("[test] E9: incrementgamestat / checkpartymove implement pret")
+local prevSess = Runtime.session
+Runtime.session = { gameStats = {}, party = {} }
+-- pokefirered/src/scrcmd.c:576-579, overworld.c:366-375
+vm, store = run({
+  t = {
+    { op = "incrementgamestat", [1] = 13 },
+    { op = "incrementgamestat", [1] = 99 },
+    { op = "end" },
+  },
+}, "t")
+eq(Runtime.session.gameStats[13], 1, "incrementgamestat bumps the stat (scrcmd.c:576)")
+eq(Runtime.session.gameStats[99], nil, "an out-of-range statId is ignored (overworld.c:369)")
+Runtime.session.gameStats[13] = 0xFFFFFF
+vm, store = run({
+  t = {
+    { op = "incrementgamestat", [1] = 13 },
+    { op = "end" },
+  },
+}, "t")
+eq(Runtime.session.gameStats[13], 0xFFFFFF, "the stat saturates at 0xFFFFFF (overworld.c:371-374)")
+
+-- pokefirered/src/scrcmd.c:1777-1795
+Runtime.session.party = {
+  { species = 1, moves = { 0, 0, 0, 0 } },
+  { species = 4, moves = { { id = 15 } }, isEgg = true },
+  { species = 7, moves = { { id = 15 } } },
+}
+vm, store = run({
+  t = {
+    { op = "checkpartymove", [1] = 15 },
+    { op = "copyvar", [1] = VAR_TEMP_1, [2] = VAR_RESULT },
+    { op = "copyvar", [1] = VAR_TEMP_2, [2] = VAR_0x8004 },
+    { op = "end" },
+  },
+}, "t")
+eq(Flags.getVar(store, vm.ctx, VAR_TEMP_1), 2, "checkpartymove skips the egg, Result is the 0-based slot")
+eq(Flags.getVar(store, vm.ctx, VAR_TEMP_2), 7, "VAR_0x8004 carries that mon's species")
+vm, store = run({
+  t = {
+    { op = "checkpartymove", [1] = 99 },
+    { op = "copyvar", [1] = VAR_TEMP_1, [2] = VAR_RESULT },
+    { op = "end" },
+  },
+}, "t")
+eq(Flags.getVar(store, vm.ctx, VAR_TEMP_1), 6, "no match leaves Result = PARTY_SIZE (scrcmd.c:1781)")
+Runtime.session = prevSess
+
 vm, store = run({
   t = {
     { op = "setvar", [1] = VAR_TEMP_2, [2] = 5 },
@@ -274,6 +322,32 @@ eq(vm.ctx.stringVars[2], "GHOSTS", "box id 2 buffers the renamed third box into 
 eq(vm.ctx.stringVars[3], "BOX 14", "box id 13 buffers BOX 14 into STR_VAR_3")
 
 Runtime.session = prevSession
+
+print("[test] 10. warp x/y VarGet returns non-var ids literally")
+local function warpArgs(x, y, seed)
+  local st = Flags.newStore()
+  for id, v in pairs(seed or {}) do Flags.setVar(st, nil, id, v) end
+  local got
+  local adapters = Adapters.host(nil, nil, nil)
+  adapters.warp = function(g, n, w, wx, wy, cb) got = { g, n, w, wx, wy }; if cb then cb() end end
+  local v = Vm.new({ store = st, scripts = {
+    t = { { op = "warp", [1] = 3, [2] = 5, [3] = 1, [4] = x, [5] = y }, { op = "end" } },
+  }, adapters = adapters })
+  v:start("t")
+  return got or {}
+end
+local w = warpArgs(0xFFFF, 0xFFFF)
+eq(w[4], 0xFFFF, "id-only warp keeps x = 0xFFFF")
+eq(w[5], 0xFFFF, "id-only warp keeps y = 0xFFFF")
+w = warpArgs(7, 9)
+eq(w[4], 7, "a literal x below VARS_START passes through")
+eq(w[5], 9, "a literal y below VARS_START passes through")
+w = warpArgs(VAR_TEMP_1, 0x40FF, { [VAR_TEMP_1] = 12, [0x40FF] = 4 })
+eq(w[4], 12, "x in the save var range is read")
+eq(w[5], 4, "VARS_END is still a var")
+w = warpArgs(0x4100, 0x8015)
+eq(w[4], 0x4100, "an id past VARS_END is a literal")
+eq(w[5], 0x8015, "an id past SPECIAL_VARS_END is a literal")
 
 if failed > 0 then
   print("[test] FAILED " .. failed)

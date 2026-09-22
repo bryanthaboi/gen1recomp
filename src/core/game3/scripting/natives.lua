@@ -3,6 +3,8 @@
 
 local Strings = require("src.core.Strings")
 local Std = require("src.core.game3.scripting.stdscripts")
+local Capabilities = require("src.core.game3.capabilities")
+local Profile = require("src.core.game3.profile")
 
 local Natives = {}
 
@@ -52,7 +54,9 @@ local function getSpecialVar(ctx, id)
 end
 
 local function setSpecialVar(ctx, id, value)
-  flagsMod().setVar(nil, ctx, id, value)
+  -- src/field_specials.c:2075-2078, include/constants/vars.h:75
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  flagsMod().setVar(Space and Space.store or nil, ctx, id, value)
   if ctx and type(ctx.setVar) == "function" then ctx:setVar(id, value) end
 end
 
@@ -81,14 +85,21 @@ end
 
 -- GetMonData(MON_DATA_NICKNAME) is gText_EggNickname for an egg
 -- (pokefirered/src/pokemon.c:3020)
+local function ensurePokemonNames(Pokemon)
+  if Pokemon._names then return end
+  local okI, errI = pcall(Pokemon.install, nil)
+  if not okI and not Pokemon._installWarned then
+    Pokemon._installWarned = true
+    print("[game3/pokemon] install failed: " .. tostring(errI))
+  end
+end
+
 local function nicknameOf(mon)
   if not mon then return "" end
   local Pokemon = require("src.core.game3.pokemon")
   if Pokemon.isEgg(mon) then return Strings("EGG") end
   if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
-  pcall(function()
-    if not Pokemon._names then Pokemon.install(nil) end
-  end)
+  ensurePokemonNames(Pokemon)
   return (Pokemon.name and Pokemon.name(mon.species or mon.speciesId)) or ""
 end
 
@@ -624,9 +635,7 @@ Natives.ALLOW = {
       local mon = chosenMon(ctx)
       local species = mon and tonumber(mon.species or mon.speciesId) or 1
       local Pokemon = require("src.core.game3.pokemon")
-      pcall(function()
-        if not Pokemon._names then Pokemon.install(nil) end
-      end)
+      ensurePokemonNames(Pokemon)
       -- pokefirered/src/field_specials.c:1656
       local before = nicknameOf(mon)
       setStringVar(ctx, adapters, 3, before)
@@ -654,9 +663,7 @@ Natives.ALLOW = {
     return yield_host(ctx, adapters, function(done)
       local species = tonumber(mon.species or mon.speciesId) or 1
       local Pokemon = require("src.core.game3.pokemon")
-      pcall(function()
-        if not Pokemon._names then Pokemon.install(nil) end
-      end)
+      ensurePokemonNames(Pokemon)
       local before = nicknameOf(mon)
       setStringVar(ctx, adapters, 3, before)
       setStringVar(ctx, adapters, 2, before)
@@ -716,10 +723,9 @@ Natives.ALLOW = {
   end,
   ["special:" .. Std.SPECIAL.PlayCry] = function(ctx, adapters)
     local Audio = require("src.core.game3.audio")
-    local species = 0
-    if ctx and ctx.getVar then
-      species = tonumber(ctx:getVar(0x8000)) or 0
-    end
+    local Flags = require("src.core.game3.scripting.flags")
+    local Space = package.loaded["src.core.game3.scripting.space"]
+    local species = tonumber(Flags.getVar(Space and Space.store, ctx, 0x8000)) or 0
     Audio.playCry(species)
     return false
   end,
@@ -820,9 +826,16 @@ local KNOWN_MODULES = {
   "natives_size_record",
   "natives_tower",
   "natives_trade",
+  "natives_wireless",
 }
 Natives.KNOWN_MODULES = KNOWN_MODULES
 Natives.MODULE_DIR = MODULE_DIR
+
+local function moduleNames()
+  local names = Profile.active().nativeModules
+  return type(names) == "table" and names or KNOWN_MODULES
+end
+Natives.moduleNames = moduleNames
 
 local function collectModule(names, seen, entry)
   local base = type(entry) == "string" and entry:match("^(natives_[%w_]+)%.lua$")
@@ -849,7 +862,7 @@ local function discoverModules()
       pipe:close()
     end)
   end
-  for _, base in ipairs(KNOWN_MODULES) do collectModule(names, seen, base .. ".lua") end
+  for _, base in ipairs(moduleNames()) do collectModule(names, seen, base .. ".lua") end
   table.sort(names)
   return names
 end
@@ -858,11 +871,13 @@ Natives.MODULE_NAMES = discoverModules()
 Natives.MODULES = {}
 
 for _, base in ipairs(Natives.MODULE_NAMES) do
-  local ok, mod = pcall(require, MODULE_PACKAGE .. base)
-  if ok and type(mod) == "table" then
-    Natives.MODULES[base] = mod
-    for id, handler in pairs(mod.HANDLERS or {}) do
-      Natives.ALLOW["special:" .. id] = handler
+  if Capabilities.nativeAllowed(nil, base) then
+    local ok, mod = pcall(require, MODULE_PACKAGE .. base)
+    if ok and type(mod) == "table" then
+      Natives.MODULES[base] = mod
+      for id, handler in pairs(mod.HANDLERS or {}) do
+        Natives.ALLOW["special:" .. id] = handler
+      end
     end
   end
 end
@@ -883,6 +898,8 @@ local function log_once(kind, id, logger)
 end
 
 --- Returns whether the VM should yield (native wait).
+Natives.log_once = log_once
+
 function Natives.callnative(ctx, fnAddr, adapters)
   local id = tonumber(fnAddr) or 0
   local handler = Natives.ALLOW["native:" .. id]
@@ -891,6 +908,18 @@ function Natives.callnative(ctx, fnAddr, adapters)
   end
   log_once("callnative", id, adapters and adapters.log)
   return false
+end
+
+-- src/scrcmd.c:92-97
+Natives.NATIVE_SYMBOLS = {}
+function Natives.resolveNative(addr)
+  local id = tonumber(addr) or 0
+  local sym = Natives.NATIVE_SYMBOLS[id]
+  if sym then
+    local fn = Natives.ALLOW["native:" .. sym]
+    if fn then return fn end
+  end
+  return Natives.ALLOW["native:" .. id]
 end
 
 function Natives.special(ctx, specialId, adapters)

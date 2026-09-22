@@ -156,6 +156,18 @@ NativesLink.HANDLERS = {
   [S.Script_ShowLinkTrainerCard] = function(ctx, adapters)
     return Link.showLinkTrainerCard(ctx, adapters)
   end,
+  -- pokefirered/src/event_object_lock.c:106, data/scripts/cable_club.inc:699
+  [Std.SPECIAL.Script_FacePlayer] = function(ctx, adapters)
+    if adapters and adapters.facePlayer then
+      local okF, Flags = pcall(require, "src.core.game3.scripting.flags")
+      if okF then adapters.facePlayer(Flags.getVar(nil, ctx, 0x800F)) end
+    end
+    return false
+  end,
+  -- pokefirered/src/event_object_lock.c:111, data/scripts/cable_club.inc:701
+  [Std.SPECIAL.Script_ClearHeldMovement] = function()
+    return false
+  end,
 }
 
 -- pokefirered/src/union_room.c:3606 natives_queries sorts after this module, so its

@@ -30,6 +30,10 @@ local FontStub = {
   drawCode = function(code, x, y) draws[#draws + 1] = { "code", code, x, y } end,
 }
 package.loaded["src.render.Font"] = FontStub
+local TextBox = require("src.render.TextBox")
+TextBox.new = function(_, text, onDone, opts)
+  return { fake = true, text = text, onDone = onDone, opts = opts }
+end
 local MoveSelectMenu = require("src.ui.MoveSelectMenu")
 
 local pressed = {}
@@ -49,41 +53,53 @@ local chosen, cancelled
 local menu = MoveSelectMenu.new(game, mon, "Restore PP of\nwhich technique?",
   function(i) chosen = i end, function() cancelled = true end)
 stack[1] = menu
+local function showPrompt(m)
+  m:enter()
+  local box = stack[#stack]
+  check(box and box.fake and box.opts and box.opts.stay, "the prompt types in a stay box")
+  box.opts.stay.onShown()
+  eq(stack[#stack], m, "then hands the screen to the move window")
+end
+showPrompt(menu)
 
 draws = {}
 menu:draw()
--- engine/battle/core.asm:2526
-eq(draws[1][1], "box", "the move window is a bordered box")
-eq(draws[1][2], 4, "at tile column 4")
-eq(draws[1][3], 7, "tile row 7")
-eq(draws[1][4], 16, "16 tiles wide")
-eq(draws[1][5], 6, "6 tiles tall")
--- engine/battle/core.asm:2530
-eq(draws[2][2], "SCRATCH", "slot 1 name")
-eq(draws[2][3], 48, "names start at x 48")
-eq(draws[2][4], 64, "slot 1 on row 8")
-eq(draws[3][4], 72, "slot 2 on row 9, single spaced")
--- engine/battle/misc.asm:37
-eq(draws[4][2], "-", "empty slot 3 is a dash")
-eq(draws[5][2], "-", "empty slot 4 is a dash")
-check(not tostring(draws[2][2]):find("5"), "no PP column on the move rows")
--- engine/battle/core.asm:2535
-eq(draws[6][1], "code", "cursor glyph")
-eq(draws[6][3], 40, "cursor at tile column 5")
-eq(draws[6][4], 64, "cursor starts on the first move")
 -- engine/items/item_effects.asm:1979
-eq(draws[7][2], 0, "prompt box at column 0")
-eq(draws[7][3], 12, "row 12")
-eq(draws[8][2], "Restore PP of", "prompt line 1")
-eq(draws[8][4], 112, "on row 14")
-eq(draws[9][2], "which technique?", "prompt line 2")
-eq(draws[9][4], 128, "on row 16")
+eq(draws[1][1], "box", "the prompt box is drawn first")
+eq(draws[1][2], 0, "prompt box at column 0")
+eq(draws[1][3], 12, "row 12")
+eq(draws[2][2], "Restore PP of", "prompt line 1")
+eq(draws[2][4], 112, "on row 14")
+eq(draws[3][2], "which technique?", "prompt line 2")
+eq(draws[3][4], 128, "on row 16")
+-- engine/battle/core.asm:2526
+eq(draws[4][1], "box", "the move window is a bordered box")
+eq(draws[4][2], 4, "at tile column 4")
+eq(draws[4][3], 7, "tile row 7")
+eq(draws[4][4], 16, "16 tiles wide")
+eq(draws[4][5], 6, "6 tiles tall")
+-- engine/battle/core.asm:2530
+eq(draws[5][2], "SCRATCH", "slot 1 name")
+eq(draws[5][3], 48, "names start at x 48")
+eq(draws[5][4], 64, "slot 1 on row 8")
+eq(draws[6][4], 72, "slot 2 on row 9, single spaced")
+-- engine/battle/misc.asm:37
+eq(draws[7][2], "-", "empty slot 3 is a dash")
+eq(draws[8][2], "-", "empty slot 4 is a dash")
+check(not tostring(draws[5][2]):find("5"), "no PP column on the move rows")
+-- engine/battle/core.asm:2535
+eq(draws[9][1], "code", "cursor glyph")
+eq(draws[9][3], 40, "cursor at tile column 5")
+eq(draws[9][4], 64, "cursor starts on the first move")
 
 local terminated = MoveSelectMenu.new(game, mon,
   "Restore PP of\nwhich technique?{DONE}", function() end)
+stack[#stack + 1] = terminated
+showPrompt(terminated)
+table.remove(stack)
 draws = {}
 terminated:draw()
-eq(draws[9][2], "which technique?", "the {DONE} terminator is not drawn")
+eq(draws[3][2], "which technique?", "the {DONE} terminator is not drawn")
 
 -- engine/battle/core.asm:2692
 pressed = { down = true }
@@ -102,16 +118,18 @@ eq(#stack, 0, "B pops the move window")
 eq(cancelled, true, "back to the party menu")
 
 stack[1] = menu
+showPrompt(menu)
 menu.index = 2
 pressed = { a = true }
 menu:update()
 eq(chosen, 2, "A hands back the picked slot")
-eq(#stack, 0, "and pops itself first")
+eq(#stack, 0, "and lets go once nothing prints over it")
 
 local empty, escaped = { moves = {} }, 0
 local emptyMenu = MoveSelectMenu.new(game, empty, "Restore PP of\nwhich technique?",
   function() escaped = -1 end, function() escaped = escaped + 1 end)
 stack[1] = emptyMenu
+showPrompt(emptyMenu)
 pressed = { down = true }
 emptyMenu:update()
 eq(#stack, 1, "an empty list ignores DOWN")
@@ -122,6 +140,7 @@ eq(#stack, 0, "B pops the empty move window")
 eq(escaped, 1, "and runs onCancel")
 
 stack[1] = emptyMenu
+showPrompt(emptyMenu)
 escaped = 0
 pressed = { a = true }
 emptyMenu:update()

@@ -6,6 +6,8 @@ local State = require("src.core.game3.battle.state")
 local Effects = require("src.core.game3.battle.effects")
 local EffectIds = require("src.core.game3.battle.effect_ids")
 local Residuals = require("src.core.game3.battle.residuals")
+local rollWarned = false
+local badgeWarned = false
 local ResidualHandlers = require("src.core.game3.battle.residual_handlers")
 local Commands = require("src.core.game3.battle.commands")
 local Types = require("src.core.game3.battle.types")
@@ -94,6 +96,10 @@ local function roll(adapter, lo, hi)
   if adapter and adapter.rng then
     local ok, v = pcall(adapter:rng(), lo, hi)
     if ok and type(v) == "number" then return v end
+    if not rollWarned then
+      rollWarned = true
+      print("[game3/engine] adapter rng failed: " .. tostring(v))
+    end
   end
   local okR, Rng = pcall(require, "src.core.game3.rng")
   if okR and Rng and Rng.compat then
@@ -167,7 +173,14 @@ function Engine.hasBadge(st, n)
   local Flags = package.loaded["src.core.game3.scripting.flags"]
   if Space and Space.store and Flags and Flags.hasBadge then
     local ok, v = pcall(Flags.hasBadge, Space.store, n)
-    return ok and v == true
+    if not ok then
+      if not badgeWarned then
+        badgeWarned = true
+        print("[game3/battle] hasBadge failed: " .. tostring(v))
+      end
+      return false
+    end
+    return v == true
   end
   return false
 end
@@ -1861,7 +1874,6 @@ function Engine.performEnemyItem(st, adapter, act)
 end
 
 -- pokefirered/src/battle_script_commands.c:4467
--- pokefirered/src/battle_script_commands.c:4467
 local function switched_event(st, adapter, id, nb, old, opts)
   if not ModRuntime.wants("battle.battler_switched") then return end
   local mon = nb and nb.mon
@@ -1887,7 +1899,7 @@ function Engine.performSwitch(st, adapter, side, slot, opts)
   end
   Engine.switchOutEffects(st, adapter, old)
   State.syncBattlerToParty(old, party)
-  local nb = State.makeBattler(party[slot], side, { state = st, partyIndex = slot, id = id })
+  local nb = State.makeBattler(party[slot], side, { partyIndex = slot, id = id, st = st })
   if opts.batonPass then
     -- pokefirered/src/battle_main.c:2350
     for k, v in pairs(old.stages or {}) do nb.stages[k] = v end
@@ -2143,12 +2155,6 @@ function Engine.switchCandidates(st, side)
     if not excl[i] and mon and (tonumber(mon.hp) or 0) > 0 and not mon.isEgg then out[#out + 1] = i end
   end
   return out
-end
-
--- pokefirered/src/battle_util.c:1542
-function Engine.hasNoMonsToSwitch(st, id)
-  if not (st and st.double) then return false end
-  return #Engine.replacementCandidates(st, id) == 0
 end
 
 -- pokefirered/src/party_menu.c:5916
@@ -2519,17 +2525,6 @@ end
 
 function Engine.collectResidualEvents(_st, adapter)
   return Residuals.collectEvents(adapter)
-end
-
-function Engine.runResiduals(adapter)
-  local events = Residuals.collectEvents(adapter)
-  local captured = {}
-  for _, evt in ipairs(events or {}) do
-    for _, m in ipairs(evt.msgs or {}) do
-      captured[#captured + 1] = m
-    end
-  end
-  return captured
 end
 
 function Engine.hasLivingMons(party)

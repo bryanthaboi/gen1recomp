@@ -780,6 +780,7 @@ do
       def = { bgEvents = {} },
       cellCollision = function(_, x, _) return x == 1 and 0x93
         or (x == 3 and 0x94) or 0x00 end,
+      inBounds = function() return true end,
     },
     player = { facing = "up", cellX = 1, cellY = 1, moving = false },
     npcs = {},

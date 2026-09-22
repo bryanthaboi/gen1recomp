@@ -2396,6 +2396,7 @@ local function sellItem(id)
       qtyTo(top().max or 1) -- the whole stack
       press("a")
       U.wait(6)
+      pressUntil(function() return isChoice() or isList() end, "a", 60)
     end
     if isChoice() then
       cursorTo("index", 1) -- YES
@@ -2498,6 +2499,7 @@ local function buyItem(id, qty, where)
   end
   press("a")
   U.wait(6)
+  pressUntil(function() return isChoice() or isList() end, "a", 60)
   if isChoice() then
     if not cursorTo("index", 1) then return false end -- YES
     press("a")

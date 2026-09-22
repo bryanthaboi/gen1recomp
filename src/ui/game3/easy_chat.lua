@@ -50,8 +50,8 @@ EasyChat.FOOTER_BTNS = FOOTER_BTNS
 
 local function play_se(id)
   local ok, Aud = pcall(require, "src.core.game3.audio")
-  if ok and Aud and Aud.playSE then
-    Aud.playSE(id)
+  if ok and Aud and Aud.playSe then
+    Aud.playSe(id)
   end
 end
 

@@ -92,6 +92,13 @@ function TrainerSight.getTrainerId(eo)
   return nil
 end
 
+-- pokefirered/src/trainer_see.c:97
+function TrainerSight.isTrainerType(eo)
+  if not eo then return false end
+  local tt = tonumber(eo.trainerType or (eo.def and eo.def.trainerType)) or 0
+  return tt == 1 or tt == 3
+end
+
 --- Check if trainer has already been defeated.
 function TrainerSight.isDefeated(eo, store, ctx)
   if not eo then return true end
@@ -343,7 +350,8 @@ function TrainerSight.check(game, specificTrainer)
     local eo = specificTrainer
     if eo.visible and not eo.hidden and not eo.moving and not eo.scriptBusy and not eo.frozen then
       local sight = tonumber(eo.sight or (eo.def and (eo.def.sight or eo.def.trainerRange))) or 0
-      if sight > 0 and not TrainerSight.isDefeated(eo, store, ctx) then
+      if sight > 0 and TrainerSight.isTrainerType(eo)
+        and not TrainerSight.isDefeated(eo, store, ctx) then
         local spotted, dist = TrainerSight.checkLineOfSight(eo, P, game)
         if spotted and not TrainerSight.blockedByDoubles(eo) then
           TrainerSight.engage(game, eo, dist)
@@ -360,7 +368,8 @@ function TrainerSight.check(game, specificTrainer)
     local eo = Objs.find(lid)
     if eo and eo ~= P and eo.visible and not eo.hidden and not eo.moving and not eo.scriptBusy and not eo.frozen then
       local sight = tonumber(eo.sight or (eo.def and (eo.def.sight or eo.def.trainerRange))) or 0
-      if sight > 0 and not TrainerSight.isDefeated(eo, store, ctx) then
+      if sight > 0 and TrainerSight.isTrainerType(eo)
+        and not TrainerSight.isDefeated(eo, store, ctx) then
         local spotted, dist = TrainerSight.checkLineOfSight(eo, P, game)
         if spotted and not TrainerSight.blockedByDoubles(eo) then
           -- Immediately engage and break iterator to suppress any other simultaneous spots

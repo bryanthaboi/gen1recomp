@@ -2,6 +2,7 @@
 -- Rigorous 1:1 pret (pokefirered) parity test suite for battle animation tasks, callbacks and move scripts
 
 package.path = package.path .. ";./?.lua"
+require("tests.game3_cache").requireData("game3_battle_anims_pret_parity_test", "pokemon/battle_anims/pack.lua")
 
 local AnimTasks = require("src.core.game3.battle.anim_tasks")
 local AnimSprites = require("src.core.game3.battle.anim_sprites")

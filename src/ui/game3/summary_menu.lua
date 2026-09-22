@@ -10,6 +10,7 @@ local FrlgFont = require("src.ui.game3.frlg_font")
 local Pokemon = require("src.core.game3.pokemon")
 local Dex = require("src.core.game3.dex")
 local PokedexData = require("src.core.game3.pokedex_data")
+local PokedexChrome = require("src.ui.game3.pokedex_chrome")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
 local SummaryData = require("src.core.game3.summary_data")
 local Strings = require("src.core.Strings")
@@ -454,13 +455,13 @@ local function draw_header(mon)
   end
 
   if SummaryData.isShiny(mon) then
-    local sx, sy = isMovesPage and 8 or 8, isMovesPage and 24 or 40
+    local sx, sy = 8, isMovesPage and 24 or 40
     SummaryChrome.drawShinyStar(sx, sy)
   end
 
   local ailment = SummaryData.statusAilment(mon)
   if ailment > 0 then
-    local ax, ay = isMovesPage and 16 or 16, isMovesPage and 44 or 38
+    local ax, ay = 16, isMovesPage and 44 or 38
     SummaryChrome.drawStatusIcon(ax, ay, ailment)
   end
 
@@ -736,7 +737,6 @@ local function draw_top_bar_text(page, isEgg)
   })
 
   local ctrl = get_controls_str(page, isEgg)
-  local PokedexChrome = require("src.ui.game3.pokedex_chrome")
   PokedexChrome.drawControlInfo(ctrl, 236, 1)
 end
 

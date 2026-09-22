@@ -41,7 +41,9 @@ local input = { wasPressed = function(_, k) return key == k end }
 
 local function press(k)
   key = k
-  Naming.update(input, 1 / 60)
+  -- src/naming_screen.c:559-572
+  Naming.handleInput(input)
+  Naming.update(1 / 60)
   key = nil
 end
 

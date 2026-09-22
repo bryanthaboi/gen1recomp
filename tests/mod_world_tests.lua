@@ -50,6 +50,9 @@ local TOWN_PALS = {
   CINNABAR_ISLAND = "CINNABAR", INDIGO_PLATEAU = "INDIGO",
   SAFFRON_CITY = "SAFFRON",
 }
+local SaveData = require("src.core.SaveData")
+local BOOT_HEAL_MAP = SaveData.defaultHeal((Data.field and Data.field.boot) or {}).map
+
 local function oldPaletteNameFor(def, lastOutdoorId)
   local ts, id = def.tileset, def.id
   if ts == "CEMETERY" then return "GRAYMON"
@@ -59,7 +62,7 @@ local function oldPaletteNameFor(def, lastOutdoorId)
   elseif TOWN_PALS[id] or id:match("^ROUTE_") then
     return TOWN_PALS[id] or "ROUTE"
   end
-  local last = lastOutdoorId or "PALLET_TOWN"
+  local last = lastOutdoorId or BOOT_HEAL_MAP
   return TOWN_PALS[last] or "ROUTE"
 end
 

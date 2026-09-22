@@ -444,14 +444,26 @@ local function saveAfterTrade()
   local Runtime = package.loaded["src.core.game3.runtime"]
   local game = Runtime and Runtime._game
   local mod = Runtime and Runtime._mod
+  local okPersist = true
   if game and mod then
     local okB, Bridge = pcall(require, "src.core.game3.bridge")
     if okB and Bridge and Bridge.persistSessionOnly then
-      pcall(Bridge.persistSessionOnly, mod, game)
+      okPersist = select(1, pcall(Bridge.persistSessionOnly, mod, game))
     end
   end
-  if game and game.saveGame then pcall(function() game:saveGame() end) end
+  local okSave = true
+  if game and game.saveGame then
+    okSave = select(1, pcall(function() game:saveGame() end))
+  end
+  if not (okPersist and okSave) then
+    LT._saveFailed = true
+    print("[link] post-trade save failed (persist=" .. tostring(okPersist)
+      .. ", save=" .. tostring(okSave) .. ")")
+  else
+    LT._saveFailed = false
+  end
   scene().saveDone()
+  return okPersist and okSave
 end
 
 -- pokefirered/src/trade_scene.c:779 CB2_LinkTrade

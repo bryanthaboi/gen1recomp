@@ -149,6 +149,29 @@ function M.mountOrSkip(label, marker, opts)
   return root
 end
 
+local function datasetRoots()
+  local roots = { "." }
+  local home = os.getenv("HOME")
+  local identity = os.getenv("POKEPORT_IDENTITY") or ""
+  if home and identity ~= "" then
+    roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity .. "/firered"
+    roots[#roots + 1] = home .. "/.local/share/love/" .. identity .. "/firered"
+  elseif home then
+    roots[#roots + 1] = home .. "/.local/share/love/" .. OWNER_IDENTITY .. "/firered"
+  end
+  return roots
+end
+
+function M.requireData(label, marker)
+  marker = marker or "meta.json"
+  if M.root(marker) then return end
+  for _, root in ipairs(datasetRoots()) do
+    if readable(root .. "/data/generated/gba/" .. marker) then return end
+  end
+  print("[skip] " .. tostring(label) .. ": " .. tostring(M.reason or "no imported FireRed cache found"))
+  os.exit(0)
+end
+
 function M.bundle(marker, opts)
   local root = M.mount(marker, opts)
   if not root then return nil end

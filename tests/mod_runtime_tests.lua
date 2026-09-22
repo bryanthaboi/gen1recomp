@@ -220,6 +220,7 @@ else
   setVar = function(name, value) ffi.C.setenv(name, value, 1) end
   unsetVar = function(name) ffi.C.unsetenv(name) end
 end
+local originalDataDir = os.getenv("POKEPORT_DATA_DIR")
 setVar("POKEPORT_DATA_DIR", "tests/fixture_data")
 local Data = require("src.core.Data")
 local fixture = setmetatable({}, { __index = Data })
@@ -231,5 +232,11 @@ check(okLoad and fixture.pokemon ~= nil and fixture.pokemon.FIXMON_A ~= nil,
 check(okLoad and fixture.pokemon.PIDGEY == nil, "and not the generated one")
 check(okLoad and fixture.constants.partyMax == 6,
   "fixture constants pass through seedDefaults")
+
+if originalDataDir and originalDataDir ~= "" then
+  setVar("POKEPORT_DATA_DIR", originalDataDir)
+else
+  unsetVar("POKEPORT_DATA_DIR")
+end
 
 S.finish()

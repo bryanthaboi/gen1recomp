@@ -6,6 +6,7 @@ local Mons = require("src.core.game3.save_mon")
 
 local M = {}
 local pockets = { "ITEMS", "KEY_ITEMS", "POKE_BALLS", "TM_CASE", "BERRY_POUCH" }
+M.PC_ITEMS_COUNT = 30 -- include/constants/global.h:35
 
 function M.itemId(data, id)
   local def = data and data.items and data.items[id]
@@ -124,7 +125,7 @@ local function set(data, save, pc, id, qty)
   id = M.itemId(data, id)
   local slots, cap
   if pc then
-    slots, cap = save.storage.items, Storage.PC_ITEMS_COUNT
+    slots, cap = save.storage.items, M.PC_ITEMS_COUNT
   else
     for _, p in ipairs(pockets) do
       local list = save.bag.pockets[p]
@@ -180,6 +181,23 @@ function M.change(data, save, pc, changes)
   for _, change in ipairs(changes) do
     if not set(data, staged, pc, change.id, change.qty) then return false end
   end
+  save.bag, save.storage = staged.bag, staged.storage
+  M.ensureStorage(save)
+  M.project(data, save)
+  return true
+end
+
+-- src/item_menu.c:2004 Task_TryDoItemDeposit / src/item.c:385 AddPCItem
+function M.transfer(data, save, toPc, id, qty)
+  if type(qty) ~= "number" or qty <= 0 or qty ~= math.floor(qty) then return false end
+  local fromQty = M.quantity(data, save, not toPc, id)
+  local toQty = M.quantity(data, save, toPc, id)
+  if qty > fromQty or toQty + qty > 999 then return false end
+  local staged = { bag = Copy(save.bag), storage = {} }
+  for k, value in pairs(save.storage) do staged.storage[k] = value end
+  staged.storage.items = Copy(save.storage.items)
+  if not set(data, staged, toPc, id, toQty + qty) then return false end
+  if not set(data, staged, not toPc, id, fromQty - qty) then return false end
   save.bag, save.storage = staged.bag, staged.storage
   M.ensureStorage(save)
   M.project(data, save)

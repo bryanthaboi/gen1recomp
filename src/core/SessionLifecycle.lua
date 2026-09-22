@@ -130,6 +130,8 @@ end
 
 function SessionLifecycle.endProcess()
   for _, fn in ipairs(processShutdowns) do pcall(fn) end
+  local chip = package.loaded["src.core.ChipAudio"]
+  if chip and chip.shutdown then pcall(chip.shutdown) end
 end
 
 return SessionLifecycle

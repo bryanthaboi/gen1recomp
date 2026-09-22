@@ -112,6 +112,15 @@ return function(game)
     end
   end
 
+  local function waitMoveMenu()
+    for _ = 1, 240 do
+      local t = top()
+      if isMoveMenu(t) and t.ready then return true end
+      U.wait(1)
+    end
+    return false
+  end
+
   local function waitForBag()
     for _ = 1, 60 do
       local t = top()
@@ -176,8 +185,7 @@ return function(game)
     check("keepOpen is set for the ETHERs", ether.keepOpen == true)
     cursorTo(ether, 1)
     U.tap(game, "a")
-    U.wait(8)
-    check("the move window is the top state", isMoveMenu(top()))
+    check("the move window is the top state", waitMoveMenu())
     check("...with the party menu still drawn underneath", inStack(isPicker))
     U.wait(20)
     U.shot(game, DIR .. "/pp2158_ether_move_window.png")
@@ -187,8 +195,7 @@ return function(game)
     U.wait(8)
     check("B goes back to the party menu", isPicker(top()))
     U.tap(game, "a")
-    U.wait(8)
-    check("and the move window opens again", isMoveMenu(top()))
+    check("and the move window opens again", waitMoveMenu())
 
     local before = lead.moves[1].pp
     U.tap(game, "a")
@@ -215,8 +222,7 @@ return function(game)
   if check("party picker opened for MAX ETHER", maxEther ~= nil) then
     cursorTo(maxEther, 2) -- the untouched SNORLAX
     U.tap(game, "a")
-    U.wait(8)
-    check("the move window opened", isMoveMenu(top()))
+    check("the move window opened", waitMoveMenu())
     U.tap(game, "a")
     U.wait(6)
     for _ = 1, 60 do
@@ -247,8 +253,5 @@ return function(game)
   U.log("spaced with '-' for empty slots, no PP column, cursor at column 5,")
   U.log("and 'Restore PP of / which technique?' in the bottom box. B returns")
   U.log("to the party menu; A restores PP with the Heal_Ailment jingle.")
-
-  while true do
-    coroutine.yield()
-  end
+  love.event.quit(fail == 0 and 0 or 1)
 end

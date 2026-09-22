@@ -1,5 +1,6 @@
 -- Tests for 1:1 National Pokédex Gating, Systems, and Story Triggers matching pret pokefirered.
 
+require("tests.game3_cache").requireData("game3_national_dex_test")
 local Dex = require("src.core.game3.dex")
 local PokedexData = require("src.core.game3.pokedex_data")
 local Evolution = require("src.core.game3.evolution")

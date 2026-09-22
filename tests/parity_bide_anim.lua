@@ -100,11 +100,16 @@ do
   eq(rows[spiral] and rows[spiral].hit and rows[spiral].hit.animType, 6,
      "PlayBattleAnimation2 stamps wAnimationType 6 on the player's turn (#1564)")
   local used = indexOfText(rows, "used BIDE!")
-  local storing = indexOfText(rows, "storing energy!")
   check(used and spiral and used < spiral,
         "the spiral comes after the used-BIDE line")
-  check(spiral and storing and spiral < storing,
-        "and before the storing-energy line")
+  check(indexOfText(rows, "storing energy!") == nil,
+        "BideEffect prints no storing-energy line (#2338)")
+  local textAfter = false
+  for i = (spiral or #rows) + 1, #rows do
+    if rows[i].text then textAfter = true end
+  end
+  check(spiral ~= nil and not textAfter,
+        "no text row follows the spiral on the storing turn (#2338)")
   check(tb.moveAnimRow == nil, "the peeled move-anim row is not left dangling")
   check(not anyAnim(rows, "XSTATITEM_DUPLICATE_ANIM"),
         "the player never gets the enemy-side duplicate")
@@ -125,10 +130,17 @@ do
   check(dup and not rows[dup].isPlayer, "attributed to the enemy side")
   eq(rows[dup] and rows[dup].hit and rows[dup].hit.animType, 3,
      "and wAnimationType 3 on the enemy's turn (#1564)")
+  check(indexOfText(rows, "storing energy!") == nil,
+        "the foe's storing turn prints no storing-energy line (#2338)")
+  local textAfter = false
+  for i = (dup or #rows) + 1, #rows do
+    if rows[i].text then textAfter = true end
+  end
+  check(dup ~= nil and not textAfter,
+        "no text row follows the foe's spiral (#2338)")
 end
 
--- locked turns: .BideCheck decrements with no text of its own in pokered and
--- no animation either; the port prints the storing line, and that is all
+-- engine/battle/core.asm:3481-3501
 do
   local tb = freshBattle()
   tb.player.bideTurns = 3
@@ -136,10 +148,22 @@ do
   tb:continueBide(tb.player, tb.enemy)
   local rows = trace(tb)
   eq(tb.player.bideTurns, 2, "a locked turn just counts down")
-  check(indexOfText(rows, "storing energy!") ~= nil, "and reprints the line")
+  eq(#tb.queue, 0, "a locked turn queues nothing at all (#2338)")
+  check(indexOfText(rows, "storing energy!") == nil,
+        "a locked turn prints no storing-energy line (#2338)")
   for _, r in ipairs(rows) do
     check(r.anim == nil, "no animation on a locked turn: " .. tostring(r.anim))
   end
+end
+
+-- engine/battle/core.asm:5856-5876
+do
+  local tb = freshBattle()
+  tb.enemy.bideTurns = 2
+  tb.enemy.bideDamage = 0
+  tb:continueBide(tb.enemy, tb.player)
+  eq(tb.enemy.bideTurns, 1, "the foe's locked turn counts down")
+  eq(#tb.queue, 0, "and queues nothing either (#2338)")
 end
 
 -- release turn: text, then BIDE's animation, then the bar drains

@@ -15,10 +15,21 @@ local Maps = require("src.import.gba.maps")
 
 local Extract = {}
 
--- CacheFS paths (Love save dir / firered prefix). Never mod-tree sevii/.
-Extract.CACHE_ROOT = "data/generated/gba"
+local CachePaths = require("src.core.game3.cache_paths")
+setmetatable(Extract, {
+  __index = function(t, k)
+    if k == "CACHE_ROOT" then return CachePaths.CACHE_ROOT end
+    if k == "NATIVE_ROOT" then return CachePaths.NATIVE_ROOT end
+    return rawget(t, k)
+  end,
+  __newindex = function(t, k, v)
+    if k == "CACHE_ROOT" then CachePaths.CACHE_ROOT = v
+    elseif k == "NATIVE_ROOT" then CachePaths.NATIVE_ROOT = v
+    else rawset(t, k, v)
+    end
+  end,
+})
 Extract.STAGE_COUNT = 7
-Extract.NATIVE_ROOT = "data/generated/gba/native"
 
 local function progress(cb, stage, name, cur, total)
   if cb then cb(stage, Extract.STAGE_COUNT, name, cur or 0, total or 1) end
@@ -42,9 +53,12 @@ local function write_json(cache, rel, obj)
         for i = 1, #v do parts[i] = enc(v[i]) end
         return "[" .. table.concat(parts, ",") .. "]"
       end
+      local keys = {}
+      for k in pairs(v) do keys[#keys + 1] = k end
+      table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
       local parts = {}
-      for k, val in pairs(v) do
-        parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. enc(val)
+      for _, k in ipairs(keys) do
+        parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. enc(v[k])
       end
       return "{" .. table.concat(parts, ",") .. "}"
     end
@@ -192,13 +206,14 @@ function Extract.nativeReady(cache)
   if not man or (tonumber(man.native_version) or 0) < (Versions.NATIVE_VERSION or 5) then
     return false
   end
+  local checked = 0
   for pairName in pairs(man.pairs or {}) do
     if not cache:exists(Extract.NATIVE_ROOT .. "/" .. pairName .. "/mids_over.idx") then
       return false
     end
-    return true -- smoke-check first pair; writeExtract emits over for every pair
+    checked = checked + 1
   end
-  return false
+  return checked > 0
 end
 
 function Extract.metaMd5Matches(cache, md5)
@@ -313,6 +328,7 @@ function Extract.run(imports, cache, progressCb)
   progress(progressCb, 2, "maps", 0, 1)
   local Maps = require("src.import.gba.maps")
   local grids = {}
+  local dropped = {}
   for _, mapId in ipairs(mapOrder) do
     local spec = Versions.MAPS[mapId]
     local layoutName = spec and spec.layout
@@ -324,7 +340,15 @@ function Extract.run(imports, cache, progressCb)
       grid.pair = spec.pair
       grid.environment = spec.environment
       grids[mapId] = pad_even(grid)
+    elseif spec then
+      dropped[#dropped + 1] = mapId
+      print("[extract] drop map " .. tostring(mapId) .. ": "
+        .. (not layoutSpec and "missing layout spec" or "missing tileset pair "
+           .. tostring(spec.pair)))
     end
+  end
+  if #dropped > 0 then
+    return false, "dropped " .. #dropped .. " map(s): " .. table.concat(dropped, ",")
   end
   local borders = {}
   for _, mapId in ipairs(mapOrder) do
@@ -503,7 +527,11 @@ function Extract.run(imports, cache, progressCb)
   for _, mapId in ipairs(mapOrder) do
     local conns = connections[mapId] or {}
     cl[#cl + 1] = ("  %s = {\n"):format(mapId)
-    for dir, c in pairs(conns) do
+    local dirs = {}
+    for dir in pairs(conns) do dirs[#dirs + 1] = dir end
+    table.sort(dirs)
+    for _, dir in ipairs(dirs) do
+      local c = conns[dir]
       cl[#cl + 1] = ("    %s = { map = %q, offset = %d },\n"):format(
         dir, c.map, tonumber(c.offset) or 0)
     end
@@ -1857,7 +1885,11 @@ local function _dormant_quantize_run(imports, cache, progressCb)
   for _, mapId in ipairs(mapOrder) do
     local conns = connections[mapId] or {}
     cl[#cl + 1] = ("  %s = {\n"):format(mapId)
-    for dir, c in pairs(conns) do
+    local dirs = {}
+    for dir in pairs(conns) do dirs[#dirs + 1] = dir end
+    table.sort(dirs)
+    for _, dir in ipairs(dirs) do
+      local c = conns[dir]
       cl[#cl + 1] = ("    %s = { map = %q, offset = %d },\n"):format(
         dir, c.map, tonumber(c.offset) or 0)
     end

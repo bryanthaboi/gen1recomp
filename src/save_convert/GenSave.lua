@@ -127,6 +127,8 @@ O.playTimeFrames = O.mainData + 1870                      -- 1B (0-59, 1/60s tic
 -- offset is identical between pokered and pokeyellow (same sram.asm, same
 -- wMainData field spacing per both symbol files).
 O.pikachuHappiness = O.mainData + 377
+O.pikachuMood = O.mainData + 378                          -- engine/menus/save.asm:260
+O.pikachuEmotionModifier = O.mainData + 421               -- ram/wram.asm:2090
 O.mainDataSize = 1929                                     -- wMainDataEnd - wMainDataStart
 
 O.spriteData = O.mainData + O.mainDataSize
@@ -870,6 +872,9 @@ function GenSave.decode(bytes, data, opts)
   -- O.pikachuHappiness) (#763, #838).
   if data.gameVersion == "yellow" then
     save.pikachuHappiness = u8(bytes, O.pikachuHappiness)
+    save.pikachuMood = u8(bytes, O.pikachuMood)
+    local modifier = u8(bytes, O.pikachuEmotionModifier)
+    save.pikachuEmotionModifier = modifier ~= 0 and modifier or nil
   end
 
   save.warnings = warnings
@@ -1196,6 +1201,11 @@ function GenSave.encode(save, data, template)
   if data.gameVersion == "yellow" then
     local h = tonumber(save.pikachuHappiness) or 90
     setByte(buf, O.pikachuHappiness, math.max(0, math.min(255, math.floor(h))))
+    -- engine/movie/oak_speech/init_player_data.asm:17
+    local mood = tonumber(save.pikachuMood) or 0x80
+    setByte(buf, O.pikachuMood, math.max(0, math.min(255, math.floor(mood))))
+    local modifier = tonumber(save.pikachuEmotionModifier) or 0
+    setByte(buf, O.pikachuEmotionModifier, math.max(0, math.min(255, math.floor(modifier))))
   end
 
   local out = table.concat(buf)

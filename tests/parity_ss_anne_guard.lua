@@ -39,6 +39,7 @@ package.loaded["src.core.Music"] = {
     musicCalls[#musicCalls + 1] = { "playOnce", song }
     return true
   end,
+  playMap = function() end,
 }
 
 local soundCalls = {}

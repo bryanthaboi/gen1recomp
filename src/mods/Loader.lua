@@ -28,6 +28,7 @@ local Runtime = require("src.mods.Runtime")
 local Steps = require("src.mods.Steps")
 local Net = require("src.mods.Net")
 local Job = require("src.mods.Job")
+local LoadOrder = require("src.mods.LoadOrder")
 
 local Loader = {}
 Loader.__index = Loader
@@ -236,6 +237,7 @@ end
 
 function Loader.endSession()
   devShim.generation = nil
+  devShim.version = nil
   devShim.errors = nil
 end
 
@@ -313,8 +315,10 @@ function Loader.new(opts)
     -- builds a loader, and a run never changes generation underneath one.
     -- opts.generation is the test seam.
     generation = (opts and opts.generation) or GameVersion.generation(),
+    version = (opts and opts.version) or nil,
   }, Loader)
   assert(self.fs, "Loader.new requires opts.fs when love is unavailable")
+  if not self.version then self.version = self:_targetVersion() end
   -- Schemas.shapeFor, not the catalog spec: a registry whose Gen 2 records are
   -- shaped differently (a species' specialAttack/specialDefense, an encounter
   -- table keyed by kind, a trainer CLASS hanging off .classes) carries its Gen
@@ -353,11 +357,14 @@ function Loader:_loadState()
     Runtime.safeMode = false
     self.gen2Forced = {}
     self.modOptions = {}
+    self.playerSaved, self.playerRank, self.playerFloor = nil, {}, 1
     return
   end
   local options = SaveData.loadOptions(self.fs)
   self.safeMode = SaveData.isSafeMode(options)
   Runtime.safeMode = self.safeMode
+  self.playerSaved = SaveData.modOrder(options)
+  self.playerRank, self.playerFloor = LoadOrder.rank(self.playerSaved)
   local scope = self:_enableScope()
   local ids = {}
   for id in pairs(options.mods or {}) do ids[id] = true end
@@ -775,6 +782,12 @@ function Loader:_cartRank(id)
   return report.rank[id] or report.floor
 end
 
+function Loader:_playerRank(id)
+  local rank = self.playerRank
+  if not rank then return 1 end
+  return rank[id] or self.playerFloor or 1
+end
+
 -- ------- validate and resolve
 
 -- a failed mod keeps the user's enable flag (the manager still shows it as
@@ -801,7 +814,7 @@ end
 -- the Data path a registry merges into for THIS boot's generation, or nil
 -- when it has no home here (Schemas.GEN2)
 function Loader:_target(name, spec)
-  return Schemas.targetFor(name, spec, self.generation)
+  return Schemas.targetFor(name, spec, self.generation, self.version)
 end
 
 -- Which games a mod runs on is opt-in per manifest (`games`, and the legacy
@@ -1040,6 +1053,14 @@ function Loader:_order()
   local targetVersion = self:_targetVersion()
   local generation = self.generation
   local pending, indegree, dependents = {}, {}, {}
+  if self.playerSaved and #self.playerSaved > 0 then
+    local entries = {}
+    for id, mod in pairs(self.mods) do
+      entries[#entries + 1] = { id = id, priority = mod.manifest and mod.manifest.priority }
+    end
+    self.playerRank, self.playerFloor =
+      LoadOrder.rank(LoadOrder.materialize(self.playerSaved, entries))
+  end
   for _, id in ipairs(orderedIds(self.mods, isActive)) do
     pending[id], indegree[id] = true, 0
   end
@@ -1072,9 +1093,11 @@ function Loader:_order()
           best = id
         else
           local ra, rb = self:_cartRank(id), self:_cartRank(best)
+          local ua, ub = self:_playerRank(id), self:_playerRank(best)
           local pa, pb = self.mods[id].manifest.priority,
             self.mods[best].manifest.priority
-          if ra < rb or (ra == rb and (pa < pb or (pa == pb and id < best))) then
+          if ra < rb or (ra == rb and (ua < ub or (ua == ub
+              and (pa < pb or (pa == pb and id < best))))) then
             best = id
           end
         end
@@ -1169,7 +1192,7 @@ function Loader:_contentApi(mod, registry, deprecation)
   -- 2-only registries (held_items, phone_contacts, decorations, apricorns,
   -- landmarks, radio_channels), so a Red boot rejecting a write to
   -- `decorations` must not claim it has "no Gen 2 target".
-  local gated = Schemas.gatedFor(registry.name, loader.generation)
+  local gated = Schemas.gatedFor(registry.name, loader.generation, loader.version)
   local toldGated = false
   local function dropped()
     if not gated then return false end
@@ -1267,6 +1290,23 @@ function Loader:releaseModInput(modId)
   for _, rec in pairs(bucket.tokens) do
     rec.input:sourceRelease(rec.btn, rec.source)
   end
+end
+
+local GEN3_API = {
+  firered = { battle = "src.battle.game3.BattleAPI", world = "src.world.game3.WorldAPI" },
+  leafgreen = { battle = "src.battle.game3.BattleAPI", world = "src.world.game3.WorldAPI" },
+}
+local GEN3_API_DEFAULT = GEN3_API.firered
+
+function Loader.apiModule(kind, generation, version)
+  if generation == 3 then
+    local row = type(version) == "string" and GEN3_API[version] or nil
+    return (row and row[kind]) or GEN3_API_DEFAULT[kind]
+  end
+  if generation == 2 then
+    return kind == "battle" and "src.battle.gen2.BattleAPI" or "src.world.gen2.WorldAPI"
+  end
+  return kind == "battle" and "src.battle.BattleAPI" or "src.world.WorldAPI"
 end
 
 function Loader:_api(mod)
@@ -1663,9 +1703,8 @@ function Loader:_api(mod)
     local game = loader:_game()
     if key == "battle" then
       if battle then return battle end
-      local module = game and engineRequire(loader.generation == 3
-        and "src.battle.game3.BattleAPI" or loader.generation == 2
-        and "src.battle.gen2.BattleAPI" or "src.battle.BattleAPI")
+      local module = game and engineRequire(Loader.apiModule(
+        "battle", loader.generation, loader.version))
       if not module then return nil end
       battle = module.new(game)
       return battle
@@ -1675,9 +1714,8 @@ function Loader:_api(mod)
     -- one facade name, one arm per generation: Gold's world is not a stack
     -- state and its flags are a bitfield, so the resolution differs even
     -- where the method set does not (src/world/gen2/WorldAPI.lua)
-    local module = game and engineRequire(loader.generation == 3
-      and "src.world.game3.WorldAPI" or loader.generation == 2
-      and "src.world.gen2.WorldAPI" or "src.world.WorldAPI")
+    local module = game and engineRequire(Loader.apiModule(
+      "world", loader.generation, loader.version))
     if not module then return nil end
     world = module.new(game, modId)
     return world
@@ -1875,7 +1913,7 @@ function Loader:load(data, opts)
   self.arenaCartId = mode == "cartOnly" and opts.cartId or nil
   self.arenaSealBroken = opts.sealBroken == true
   self.baseData = data
-  if self.generation == 3 then Schemas.bindGen3(data) end
+  if self.generation == 3 then Schemas.bindGen3(data, self.version) end
   -- every registry folds against the pristine view of its Data target;
   -- resolution is lazy so optional namespaces may appear later
   for name, registry in pairs(self.content) do
@@ -1960,6 +1998,7 @@ function Loader:load(data, opts)
   -- two: a harness that builds a Gen 1 loader after a Gen 2 one must not keep
   -- reporting against the old generation or the old error feed.
   devShim.generation = self.generation
+  devShim.version = self.version
   devShim.errors = self.errors
   -- The Gen 1 Game facade proxies THIS loader's live game, and reads it on
   -- every touch: a mod captures the facade at file scope, before Game2 has a

@@ -43,6 +43,9 @@ function Field.start(mod, game, session)
   Field.locked = false
   Field.weather = 0
   Field._waterfall = nil
+  Field._fishing = nil
+  Field._flyLanding = nil
+  if Player then Player.fishing = false end
   -- pokefirered/src/overworld.c:345
   Field._tempFlagMap = session and session.map
   Field.clearMetatiles()
@@ -72,6 +75,14 @@ function Field.stop()
   Field._session = nil
   Field.locked = false
   Field._waterfall = nil
+  Field._fishing = nil
+  Field._flyLanding = nil
+  local PlayerMod = package.loaded["src.core.game3.player"]
+  if PlayerMod then PlayerMod.fishing = false end
+  local Warp = package.loaded["src.core.game3.warp"]
+  if Warp and Warp.clear then Warp.clear() end
+  local Doors = package.loaded["src.core.game3.doors"]
+  if Doors and Doors.release then Doors.release() end
   Field._tempFlagMap = nil
 end
 
@@ -127,6 +138,11 @@ function Field.update(_dt)
   -- pokefirered/src/field_control_avatar.c:98
   local walkInput = input
   if Field.forcedMovementPending() then walkInput = nil end
+  -- pokefirered/src/overworld.c:1402
+  local NativesEvents = package.loaded["src.core.game3.scripting.natives_events"]
+  if NativesEvents and NativesEvents.pollWalkaway then
+    NativesEvents.pollWalkaway(Space and Space.vm, input)
+  end
   Player.update(game, walkInput)
   Field.updateWaterfall(game)
   -- pokefirered/src/field_player_avatar.c:1691
@@ -985,7 +1001,8 @@ function Field.startFishing(rod)
   if Field._fishing then return false end
   Field.locked = true
   Player.fishing = true
-  Field._fishing = { rod = tonumber(rod) or 0, step = "wait", timer = 0, dots = 0, required = 0 }
+  -- field_player_avatar.c:1667
+  Field._fishing = { rod = tonumber(rod) or 0, step = "wait", timer = 0, dots = 0, required = 0, rounds = 0 }
   return true
 end
 
@@ -1036,8 +1053,11 @@ function Field.updateFishing()
 
   if f.step == "wait" then
     if f.timer >= FISHING_WAIT_FRAMES then
-      -- pokefirered/src/field_player_avatar.c:1741 Fishing4
-      f.required = math.min(FISHING_DOT_MAX, (Rng.Random() % 10) + FISHING_FIRST_ROUND_DOTS)
+      -- pokefirered/src/field_player_avatar.c:1740-1746
+      local rand = Rng.Random() % 10
+      local need = rand + 1
+      if (f.rounds or 0) == 0 then need = rand + FISHING_FIRST_ROUND_DOTS end
+      f.required = math.min(FISHING_DOT_MAX, need)
       f.dots = 0
       f.timer = 0
       f.step = "dots"
@@ -1047,6 +1067,8 @@ function Field.updateFishing()
     if f.timer >= FISHING_DOT_FRAMES then
       f.timer = 0
       if f.dots >= f.required then
+        -- pokefirered/src/field_player_avatar.c:1761-1765
+        f.rounds = (f.rounds or 0) + 1
         f.step = "bite"
       else
         f.dots = f.dots + 1

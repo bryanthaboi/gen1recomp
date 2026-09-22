@@ -93,6 +93,7 @@ local TELEPORT_IN_FRAMES = 43
 -- engine/overworld/player_animations.asm:22-25
 local TELEPORT_IN_PAD_HOLDS = { 3, 3, 3, 3, 3, 3, 0 }
 local TELEPORT_IN_PAD_FRAMES = 18
+local BOLT_WHITE_VEIL = { 1, 0.8 }
 local SPIN_DOWN_STEPS = 6
 -- engine/overworld/player_animations.asm:41-45
 local HOLE_IN_HOLDS = { 3, 3, 3, 3, 3, 0 }
@@ -582,6 +583,7 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   -- crossConnection re-arms this after setMap; clear so a warp/reload
   -- cannot leave a stale deferred PlayMapMusic pending
   self.pendingSeamMusic = nil
+  self.seamPalette = nil
   self.entities = { self.player }
   for _, n in ipairs(self.npcs) do table.insert(self.entities, n) end
   -- Yellow's companion Pikachu trails the player (never in
@@ -869,6 +871,14 @@ function OverworldState:paletteNameFor(map)
   return Runtime.call("map.palette", samePalette, name, map, { tod = tod })
 end
 
+-- home/overworld.asm:675
+function OverworldState:screenPaletteName()
+  if self.seamPalette and not OverworldState.perMapWorldPalettes() then
+    return self.seamPalette
+  end
+  return self:paletteNameFor(self.map)
+end
+
 -- UI-pass palette (text boxes and menus tint with the current map).  OG RED
 -- resolves every name to the one global red BG palette inside PaletteFX.pal,
 -- so this needs no mode-specific branch.
@@ -880,7 +890,7 @@ end
 -- that zone the pic wears the route/town palette and looks washed out.
 function OverworldState:sgbPalettes()
   local PaletteFX = require("src.render.PaletteFX")
-  local mapName = self:paletteNameFor(self.map)
+  local mapName = self:screenPaletteName()
   if self.emote and self.emote.pikaPic then
     local base = PaletteFX.pal(Game.data, mapName)
     if not base then return nil end
@@ -919,7 +929,7 @@ function OverworldState:sgbWorldZones()
   if PaletteFX.usesGbcPack() and self.map.renderer and self.map.renderer.gbcAtlas then
     return {}
   end
-  local base = PaletteFX.pal(Game.data, self:paletteNameFor(self.map))
+  local base = PaletteFX.pal(Game.data, self:screenPaletteName())
   if not base then return nil end
   local vw, vh = Game.renderer:worldViewSize()
   local cam = self.camera
@@ -1468,6 +1478,9 @@ function OverworldState:update(dt)
 
   -- the emotion-bubble pause holds the world for a beat
   if self.emote then
+    if self.emote.boltAt then
+      require("src.world.PikachuFollower").tickBolt(Game, self, self.emote)
+    end
     self.emote.frames = self.emote.frames - 1
     -- PikaPicAnimTimerAndJoypad (engine/pikachu/pikachu_pic_animation.asm)
     -- cuts a pikapic beat short on A or B; the "!" bubble hold has no such
@@ -1547,6 +1560,8 @@ function OverworldState:update(dt)
   if entry and (self.player.cellX ~= entry.x or self.player.cellY ~= entry.y) then
     self.warpEntryCell = nil
   end
+  -- home/overworld.asm:679
+  if stepped then self.seamPalette = nil end
   -- deferred PlayMapMusic from crossConnection (issue #93)
   if stepped and self.pendingSeamMusic then
     local mapId = self.pendingSeamMusic
@@ -2043,9 +2058,11 @@ function OverworldState:crossConnection(dir, conn)
   local PikachuFollower = require("src.world.PikachuFollower")
   local pika = PikachuFollower.current(self)
   local fromX, fromY = p.cellX, p.cellY
+  local seamPal = self:paletteNameFor(self.map)
   self:setMap(conn.map, x, y, p.facing,
               { seamless = true, keepMusic = true, keepPikachu = pika })
   self.pendingSeamMusic = conn.map
+  self.seamPalette = seamPal
   -- place the player one cell before the seam (their old world spot,
   -- which the neighbor strip renders identically) and start the step
   -- into the new map RIGHT NOW so there is no one-frame stall at the
@@ -4975,7 +4992,6 @@ function OverworldState:boulderIntoHole(npc)
   for _, entry in ipairs(self:seafoamHolesFor(self.map.id)) do
     local h = entry.hole
     if npc.cellX == h.x and npc.cellY == h.y then
-      require("src.core.Sound").play(Game.data, "Faint_Thud")
       Flags.set(Game.save, h.boulderEvent)
       local toggles = Game.save.objectToggles or {}
       Game.save.objectToggles = toggles
@@ -4999,7 +5015,6 @@ function OverworldState:boulderIntoHole(npc)
       for i = #self.entities, 1, -1 do
         if self.entities[i] == npc then table.remove(self.entities, i) end
       end
-      Game.stack:push(TextBox.new(Game, Strings("The boulder fell\nthrough the hole!")))
       return true
     end
   end
@@ -5814,6 +5829,9 @@ function OverworldState:drawWorld()
     local fadeObp = fade.obp0 and fade:obp0() or fadeBgp
     PaletteFX.setFadeObp(Transition.shadeMapFor(fadeObp))
     fade.paletteStepped = true
+  elseif self.emote and self.emote.bgp and not battleOverWorld then
+    -- engine/pikachu/pikachu_pic_animation.asm:847
+    PaletteFX.setShadeMap(Transition.shadeMapFor(self.emote.bgp))
   else
     PaletteFX.setShadeMap((self.dark and not battleOverWorld)
                           and PaletteFX.DARK_BGP or self:poisonShadeMap())
@@ -6427,6 +6445,13 @@ function OverworldState:drawUI()
       love.graphics.rectangle("fill", 0, 0, 160, 144)
       love.graphics.setColor(1, 1, 1, 1)
     end
+  end
+
+  -- engine/pikachu/pikachu_pic_animation.asm:847
+  local bolt = self.emote and self.emote.bgp
+  if bolt and bolt ~= 0xE4 and Game and Game.renderer
+     and (self:bakedWorldColors() or not PaletteFX.shader()) then
+    Game.renderer.screenVeil = BOLT_WHITE_VEIL
   end
 end
 

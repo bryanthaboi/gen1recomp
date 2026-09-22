@@ -20,13 +20,14 @@ local check, eq = S.check, S.eq
 local MAP = "ROCKET_HIDEOUT_B4F"
 local TEXT = "TEXT_ROCKETHIDEOUTB4F_ROCKET3"
 
--- the sight range the engine reads
-local headers = dofile("data/generated/trainer_headers.lua")
+local Data = require("src.core.Data")
+if not Data.maps then Data:load() end
+local headers = Data.trainer_headers
 local h = headers.RocketHideoutB4F and headers.RocketHideoutB4F[4]
 check(h ~= nil, "RocketHideoutB4F header 4 is extracted")
 eq(h and h.range, 1, "Rocket3's view range is one tile")
 
-local maps = dofile("data/generated/maps.lua")
+local maps = Data.maps
 local rocket3
 for _, o in ipairs(maps[MAP].objects or {}) do
   if o.text == TEXT then rocket3 = o end

@@ -46,6 +46,10 @@ local function withPrefix(rel)
   return p .. rel
 end
 
+local function unsafe_rel(rel)
+  return type(rel) ~= "string" or rel:find("..", 1, true) ~= nil
+end
+
 -- lazily-resolved windowless mkdir: function(absolutePath) or false when
 -- FFI is unavailable (the cache then stays on the save directory)
 local mkdirFn = nil
@@ -269,6 +273,7 @@ end
 -- returns ok, err like love.filesystem.write
 function CacheFs.write(rel, data)
   rel = withPrefix(rel)
+  if unsafe_rel(rel) then return false, "unsafe cache path" end
   local root = CacheFs.root()
   if root then
     ensureParents(root, rel)
@@ -294,6 +299,7 @@ end
 -- in one Lua string.
 function CacheFs.openWrite(rel)
   rel = withPrefix(rel)
+  if unsafe_rel(rel) then return nil, "unsafe cache path" end
   local root = CacheFs.root()
   if root then
     ensureParents(root, rel)
@@ -328,6 +334,7 @@ end
 -- Read an exact version-qualified path without consulting CacheFs.prefix.
 -- Readiness checks use this to inspect another version without global state.
 function CacheFs.readAt(rel)
+  if unsafe_rel(rel) then return nil end
   local root = CacheFs.root()
   if root then
     local f = io.open(realPath(root, rel), "rb")
@@ -393,6 +400,7 @@ end
 
 -- does cache-relative `rel` exist as a file?
 function CacheFs.existsAt(rel)
+  if unsafe_rel(rel) then return false end
   local root = CacheFs.root()
   if root then
     local f = io.open(realPath(root, rel), "rb")
@@ -411,6 +419,7 @@ end
 -- remove a single cache-relative file
 function CacheFs.remove(rel)
   rel = withPrefix(rel)
+  if unsafe_rel(rel) then return false end
   local root = CacheFs.root()
   if root then
     os.remove(realPath(root, rel))
@@ -427,6 +436,7 @@ end
 -- mod installer so an uninstall leaves nothing behind (#330).
 function CacheFs.removeDir(rel)
   rel = withPrefix(rel)
+  if unsafe_rel(rel) then return false end
   local root = CacheFs.root()
   if root then
     local rmdir = resolveRmdir()
@@ -444,6 +454,7 @@ end
 -- with os.remove; empty directories are harmless and left in place.
 function CacheFs.removeTree(rel)
   rel = withPrefix(rel)
+  if unsafe_rel(rel) then return end
   local root = CacheFs.root()
   if not root then return end
   local function walk(r)

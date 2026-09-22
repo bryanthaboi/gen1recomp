@@ -2338,6 +2338,9 @@ local function sortDefs(scope)
   end
   defs[#defs + 1] = { key = "release", label = Strings("Release date") }
   defs[#defs + 1] = { key = "updated", label = Strings("Last updated") }
+  if scope == "mods" then
+    defs[#defs + 1] = { key = "order", label = Strings("Load order") }
+  end
   return defs
 end
 
@@ -2401,6 +2404,7 @@ local function currentSort(imp, scope)
     imp.modSort = sortKey
   end
   if sortKey == "trending" and scope ~= "find" then return "popularity" end
+  if sortKey == "order" and scope ~= "mods" then return "popularity" end
   return sortKey
 end
 
@@ -2579,7 +2583,8 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   -- per frame (with lowercased-string allocations in the comparator) fed the
   -- GC for nothing.  Cache the sorted array, keyed on the list identity, the
   -- sort mode, and the update-info revision the fetch pump bumps.
-  local statsSort = sortKey ~= "name"
+  local orderSort = sortKey == "order"
+  local statsSort = sortKey ~= "name" and not orderSort
   local rev = statsSort and (imp._modUpdateRev or 0) or 0
   local cache = imp._modSortCache
   if cache and cache.n == #mods
@@ -2591,6 +2596,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     local n = decorate(scratch, mods,
       function(mod, tie)
         if sortKey == "name" then return tie end
+        if orderSort then return tonumber(mod.loadRank) or math.huge end
         local info = mod.github and mod.github ~= "" and imp:_modUpdateInfo(mod.id)
         if sortKey == "popularity" then
           return info and info.downloads and info.downloads.total or -1
@@ -2600,13 +2606,14 @@ local function buildModsPanel(imp, x, y, w, availH, m)
         return date and date.latest or "0000-00-00"
       end,
       function(mod) return (mod.name or ""):lower() end)
-    sortAsc = sortKey == "name"
+    sortAsc = sortKey == "name" or orderSort
     table.sort(scratch, decCompare)
     local sorted = undecorate(scratch, n)
     imp._modSortCache = { src = mods, n = #mods, key = sortKey,
-      rev = rev, at = Kit.time, list = sorted }
+      rev = rev, at = Kit.time, list = sorted, names = {} }
     mods = sorted
   end
+  local orderNames = imp._modSortCache and imp._modSortCache.names or {}
 
   -- A mod row is a fixed height: its details first, then a dedicated second
   -- line of per-game checkboxes.  Fixed row heights are what make the
@@ -2678,13 +2685,49 @@ local function buildModsPanel(imp, x, y, w, availH, m)
         else imp._modGames = { id = mod.id, scroll = 0 } end
       end,
     })
-    btn(imp, px, gamesY + togH + math.floor(8 * m.s),
-      inner, m.btnH,
+    local detailsY = gamesY + togH + math.floor(8 * m.s)
+    local detailsW = inner
+    if orderSort then
+      local canMove = not safeMode and cartId == nil
+      local mgap = math.floor(6 * m.s)
+      local upLabel, downLabel = Strings("Up"), Strings("Down")
+      local ob = imp._modOrderBtn
+      if not ob or ob.s ~= m.s or ob.up ~= upLabel or ob.down ~= downLabel then
+        ob = { s = m.s, up = upLabel, down = downLabel, keys = {},
+          w = math.max(Kit.textWidth("small", upLabel),
+            Kit.textWidth("small", downLabel)) + math.floor(24 * m.s) }
+        imp._modOrderBtn = ob
+      end
+      local keys = ob.keys[mod.id]
+      if not keys then
+        keys = { "mod-up-" .. mod.id, "mod-down-" .. mod.id }
+        ob.keys[mod.id] = keys
+      end
+      local mw = math.min(ob.w, math.floor((inner - 2 * mgap) / 4))
+      detailsW = inner - 2 * (mw + mgap)
+      local mx = px + detailsW + mgap
+      btn(imp, mx, detailsY, mw, m.btnH, keys[1], upLabel, {
+        font = "small", enabled = canMove and i > 1,
+        action = function() imp:_moveMod(mod.id, -1) end })
+      btn(imp, mx + mw + mgap, detailsY, mw, m.btnH, keys[2],
+        downLabel, { font = "small", enabled = canMove and i < #mods,
+          action = function() imp:_moveMod(mod.id, 1) end })
+    end
+    btn(imp, px, detailsY,
+      detailsW, m.btnH,
       rowKey, Strings("Details"), { font = "small", icon = "folder",
         action = function() imp._modActions = mod.id end,
       })
     local textW = inner
-    Kit.text("button", Kit.ellipsize("button", mod.name, textW - 16 * m.s), px, ly,
+    local shownName = mod.name
+    if orderSort then
+      shownName = orderNames[i]
+      if not shownName then
+        shownName = "#" .. i .. "  " .. tostring(mod.name)
+        orderNames[i] = shownName
+      end
+    end
+    Kit.text("button", Kit.ellipsize("button", shownName, textW - 16 * m.s), px, ly,
       isFullyDisabled and PAL.muted or PAL.heading)
     ly = ly + Kit.textHeight("button") + math.floor(4 * m.s)
     local tags = (mod.badge or "MOD") .. (mod.targets and ("  /  " .. mod.targets) or "")
@@ -2726,6 +2769,9 @@ local function buildModsPanel(imp, x, y, w, availH, m)
         segs[#segs + 1] = { (dl and "  -  " or "") .. dates, PAL.detail }
       end
       segLine("small", segs, px, ly, textW)
+    elseif orderSort and mod.orderNote then
+      Kit.text("small", Kit.ellipsize("small", Strings(mod.orderNote), textW),
+        px, ly, PAL.yellow)
     elseif (mod.description or "") ~= "" then
       Kit.text("small", Kit.ellipsize("small", mod.description, textW),
         px, ly, PAL.detail)
@@ -4362,8 +4408,10 @@ local function buildSortModal(imp, m)
   local pad = math.floor(18 * m.s)
   local w = math.floor(360 * m.s)
   local gap = math.floor(8 * m.s)
+  local canReset = scope == "mods" and imp._resetModOrder ~= nil
   local h = pad + Kit.textHeight("button") + math.floor(12 * m.s)
     + #defs * (m.btnH + gap) + m.btnH + pad
+    + (canReset and (m.btnH + gap) or 0)
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
   Kit.text("button", Strings("Sort by"), px + pad, cy, PAL.heading)
@@ -4383,6 +4431,17 @@ local function buildSortModal(imp, m)
           SaveData.saveOptions(opts)
         end)
       end })
+    cy = cy + m.btnH + gap
+  end
+  if canReset then
+    local cartOn = imp.modCartPlan and imp:modCartPlan() or nil
+    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "sortpop-reset-order",
+      Strings("Reset load order"), { kind = "warn", font = "small",
+        enabled = not imp.safeMode and cartOn == nil,
+        action = function()
+          imp._sortPopup = nil
+          imp:_resetModOrder()
+        end })
     cy = cy + m.btnH + gap
   end
   btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "sortpop-close",
@@ -4922,8 +4981,10 @@ local function buildModActionsModal(imp, m)
   local pad = math.floor(18 * m.s)
   local w = math.floor(440 * m.s)
   local gap = math.floor(8 * m.s)
+  local cartOn = imp.modCartPlan and imp:modCartPlan() or nil
+  local canOrder = not imp.safeMode and cartOn == nil and #(imp.mods or {}) > 1
   local nBtns = (hasGit and 2 or 0) + (hasDeps and 1 or 0)
-    + (hasImports and 1 or 0) + 2
+    + (hasImports and 1 or 0) + 2 + (canOrder and 2 or 0)
   local h = pad + Kit.textHeight("button") + math.floor(4 * m.s)
     + Kit.textHeight("small") + math.floor(12 * m.s)
     + nBtns * (m.btnH + gap) - gap + pad
@@ -4943,6 +5004,31 @@ local function buildModActionsModal(imp, m)
     px + pad, cy, statusCol)
   cy = cy + Kit.textHeight("small") + math.floor(12 * m.s)
   local id = mod.id
+  if canOrder then
+    local mine = tonumber(mod.loadRank) or math.huge
+    local at, n = 1, #(imp.mods or {})
+    for _, mm in ipairs(imp.mods or {}) do
+      local r = tonumber(mm.loadRank) or math.huge
+      if mm.id ~= id and (r < mine or (r == mine and mm.id < id)) then
+        at = at + 1
+      end
+    end
+    local half = math.floor((pw - 2 * pad - gap) / 2)
+    local moves = {
+      { "modact-up", Strings("Move up"), -1, at and at > 1 },
+      { "modact-down", Strings("Move down"), 1, at and at < n },
+      { "modact-top", Strings("Move to top"), -math.huge, at and at > 1 },
+      { "modact-bottom", Strings("Move to bottom"), math.huge, at and at < n },
+    }
+    for k, mv in ipairs(moves) do
+      local bx = px + pad + ((k % 2 == 0) and (half + gap) or 0)
+      local delta = mv[3]
+      btn(imp, bx, cy, half, m.btnH, mv[1], mv[2], {
+        font = "small", enabled = mv[4] == true,
+        action = function() imp:_moveMod(id, delta) end })
+      if k % 2 == 0 then cy = cy + m.btnH + gap end
+    end
+  end
   if hasGit then
     local updLabel, updKind = Strings("Check for updates"), "ghost"
     if info and info.status == "available" then
@@ -5187,17 +5273,33 @@ local function buildFindEntryModal(imp, m)
     cy = cy + Kit.textHeight("small")
   end
   cy = cy + math.floor(12 * m.s)
+  local cartHave = ModIndex.isCart(entry)
+    and imp:_findInstalledCarts()[entry.id] ~= nil
+  local instW = cartHave and math.floor((pw - 2 * pad - gap) / 2)
+    or (pw - 2 * pad)
   if action then
-    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "findpop-inst", action, {
+    btn(imp, px + pad, cy, instW, m.btnH, "findpop-inst", action, {
       kind = "primary", font = "small",
       action = function()
         imp._findEntry = nil
         imp:_findConfirmInstall(entry)
       end })
   else
-    btn(imp, px + pad, cy, pw - 2 * pad, m.btnH, "findpop-inst",
+    btn(imp, px + pad, cy, instW, m.btnH, "findpop-inst",
       Strings("Not installable from this index"),
       { font = "small", enabled = false })
+  end
+  if cartHave then
+    local cartId, cartBase = entry.id, entry.base
+    btn(imp, px + pad + instW + gap, cy, instW, m.btnH, "findpop-del",
+      DELETE_LABEL(deleteArmed(imp, "cart", cartId, cartBase)), {
+        kind = "danger", font = "small", icon = "trash", keepArm = true,
+        action = function()
+          imp:pressDelete("cart", cartId, cartBase, function()
+            imp._findEntry = nil
+            imp:deleteCart(cartBase, cartId, { from = "find" })
+          end)
+        end })
   end
   cy = cy + m.btnH + gap
   local half = entry.repo and math.floor((pw - 2 * pad - gap) / 2)

@@ -53,7 +53,14 @@ end
 -- loader's status manifests, m.enabled = the desired set including staged
 -- flips); `modOptions` is options.modOptions; `byVersion` is
 -- options.modsByVersion, the per-game answers that differ from it.
-function ModProfile.capture(available, modOptions, byVersion)
+local function copyOrder(list)
+  if type(list) ~= "table" then return nil end
+  local clean = SaveData.modOrder({ modOrder = list })
+  if #clean == 0 then return nil end
+  return clean
+end
+
+function ModProfile.capture(available, modOptions, byVersion, order)
   local enabled, options = {}, {}
   for _, m in ipairs(available or {}) do
     enabled[m.id] = m.enabled and true or false
@@ -75,7 +82,23 @@ function ModProfile.capture(available, modOptions, byVersion)
     if flags then perVersion[id] = flags end
   end
   return { enabled = enabled, options = options, slots = slots,
-           enabledByVersion = perVersion }
+           enabledByVersion = perVersion, order = copyOrder(order) }
+end
+
+function ModProfile.restoreOrder(p, options)
+  if type(options) ~= "table" then return end
+  local wanted = copyOrder(type(p) == "table" and p.order or nil)
+  SaveData.setModOrder(options, wanted or {})
+end
+
+function ModProfile.matchesOrder(p, options)
+  local wanted = copyOrder(type(p) == "table" and p.order or nil) or {}
+  local live = SaveData.modOrder(options)
+  if #live ~= #wanted then return false end
+  for i, id in ipairs(wanted) do
+    if live[i] ~= id then return false end
+  end
+  return true
 end
 
 -- Write a profile's per-game answers back into an options table, replacing
@@ -147,7 +170,8 @@ function ModProfile.encode(p)
     formatVersion = ModProfile.FORMAT_VERSION,
     profile = { name = p.name, enabled = p.enabled,
                 options = p.options, slots = p.slots,
-                enabledByVersion = p.enabledByVersion },
+                enabledByVersion = p.enabledByVersion,
+                order = copyOrder(p.order) },
   })
 end
 
@@ -191,6 +215,7 @@ function ModProfile.decode(body)
       if flags then p.enabledByVersion[version] = flags end
     end
   end
+  p.order = copyOrder(raw.order)
   return p
 end
 

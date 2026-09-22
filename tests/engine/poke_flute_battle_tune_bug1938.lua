@@ -156,4 +156,25 @@ do
   eq(battle.turns, 1, "the turn is spent the same way")
 end
 
+do
+  plays = {}
+  sources["flute.wav"].playing = false
+  Data.audio.sfx.Pokeflute_In_Battle = "battleflute.wav"
+  local game, battle = newGame(false)
+  check(useFlute(game, battle), "the flute is in the bag again")
+  local box = game.stack:top()
+  check(typeOut(game, box), "the played-flute line types out")
+  game.press("a")
+  game.press()
+  eq(tunes(), 0, "the field SFX_Pokeflute never plays in battle")
+  eq(plays[#plays], "battleflute.wav", "Music_PokeFluteInBattle does")
+  eq(game.stack:top(), box, "and the box holds under it")
+  sources["battleflute.wav"].playing = false
+  game.press()
+  local woke = game.stack:top()
+  check(woke ~= box and getmetatable(woke) == TextBox,
+    "FluteWokeUpText follows once it ends")
+  Data.audio.sfx.Pokeflute_In_Battle = nil
+end
+
 T.finish("poke flute battle tune (#1938)")

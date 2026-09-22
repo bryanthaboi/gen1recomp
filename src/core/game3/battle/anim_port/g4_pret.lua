@@ -61,21 +61,20 @@ end
 -- pokefirered/include/trig.h:8
 function P.Sin(angle, amp)
   local v = Trig.SINE[band(floor(angle), 0xFF) + 1]
-  return arshift(v * floor(amp), 8)
+  return P.s16(arshift(v * floor(amp), 8))
 end
 
 function P.Cos(angle, amp)
   local v = Trig.SINE[band(floor(angle), 0xFF) + 65]
-  return arshift(v * floor(amp), 8)
+  return P.s16(arshift(v * floor(amp), 8))
 end
 
 function P.gSine(i)
-  return Trig.SINE[floor(i) + 1] or 0
+  return Trig.SINE[band(floor(i), 0xFF) + 1]
 end
 
 function P.ArcTan2(x, y)
-  local a = math.atan2(y, x)
-  return band(floor(a * 65536 / (2 * math.pi) + 0.5), 0xFFFF)
+  return Trig.arcTan2(x, y)
 end
 
 -- pokefirered/src/battle_anim_mons.c:1281

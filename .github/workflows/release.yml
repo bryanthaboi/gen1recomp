@@ -403,10 +403,19 @@ jobs:
           cargo -V >> "$fingerprint"
           printf '%s\n' "${ImageOS:-}" "${ImageVersion:-}" >> "$fingerprint"
           if [ "$PLAT" = android ]; then
-            ndk="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+            ndk_ver="$(sed -n "s/^[[:space:]]*ndkVersion[[:space:]]*['\"]\([0-9.]*\)['\"].*/\1/p" mobile/android/app/build.gradle)"
+            test -n "$ndk_ver"
+            sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+            test -n "$sdk"
+            ndk="$sdk/ndk/$ndk_ver"
+            if [ ! -f "$ndk/source.properties" ]; then
+              (yes || true) | "$sdk/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk_ver" >/dev/null
+            fi
             test -f "$ndk/source.properties"
+            grep -Eq "^Pkg\.Revision[[:space:]]*=[[:space:]]*$ndk_ver\$" "$ndk/source.properties"
             cat "$ndk/source.properties" >> "$fingerprint"
             echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+            echo "ANDROID_NDK_ROOT=$ndk" >> "$GITHUB_ENV"
           fi
           if command -v sha256sum >/dev/null 2>&1; then
             hash="$(sha256sum "$fingerprint")"
@@ -488,6 +497,12 @@ jobs:
           if [ "$PLAT" = android ]; then
             for abi in arm64-v8a armeabi-v7a; do
               test -s "dist/native/$PLAT/$abi/$LIB"
+              case "$abi" in
+                arm64-v8a) triple=aarch64-linux-android ;;
+                armeabi-v7a) triple=arm-linux-androideabi ;;
+              esac
+              libcxx="$(ls "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/$triple/libc++_shared.so)"
+              bash scripts/android_bridge_link_check.sh "dist/native/$PLAT/$abi/$LIB" "$libcxx"
             done
           else
             test -s "dist/native/$PLAT/$LIB"

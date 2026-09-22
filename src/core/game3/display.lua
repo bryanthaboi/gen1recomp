@@ -252,12 +252,24 @@ local function drawFieldPlane(game, vw, vh, Renderer)
   end
 end
 
+local uiRenderer
+function Display.setUiRenderer(fn)
+  uiRenderer = fn
+end
+local function drawUiPass()
+  if not uiRenderer then
+    local ok, pass = pcall(require, "src.ui.game3.ui_pass")
+    uiRenderer = (ok and type(pass) == "table" and type(pass.drawUi) == "function")
+      and pass.drawUi or function() end
+  end
+  uiRenderer()
+end
+
 local function drawUiPlane()
   local Oam = require("src.core.game3.oam")
-  local Gfx = require("src.core.game3.gfx")
   local Help = require("src.ui.game3.help_system")
   local prev = Oam.setLayer("ui")
-  Gfx.drawUi()
+  drawUiPass()
   if Help.isOpen() then Help.draw() end
   Oam.setLayer(prev)
   Oam.animateSprites("ui")
@@ -270,7 +282,6 @@ local function presentPlanes(game)
   local Battle = require("src.core.game3.battle")
   local Oam = require("src.core.game3.oam")
   local Bg = require("src.core.game3.bg")
-  local Gfx = require("src.core.game3.gfx")
 
   local battleActive = Battle.isActive()
   local Renderer = prepareRenderer(game, battleActive and "battle" or "field")
@@ -282,7 +293,7 @@ local function presentPlanes(game)
     love.graphics.clear(0.06, 0.12, 0.20, 1)
     Oam.resetFrame()
     Battle.draw(game, Display.W, Display.H)
-    Gfx.drawUi()
+    drawUiPass()
     if Help.isOpen() then Help.draw() end
     Oam.animateSprites()
     Oam.buildOamBuffer()
@@ -368,8 +379,7 @@ local function presentFlat(game, winW, winH)
       FieldView.draw(game, Display.W, Display.H)
     end
 
-    local Gfx = require("src.core.game3.gfx")
-    Gfx.drawUi()
+    drawUiPass()
 
     -- Animate after UI so party can attach bounce callbacks this frame.
     Oam.animateSprites()

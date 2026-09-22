@@ -8,7 +8,6 @@
 -- price confirm.  Key items and HMs can't be sold (.unsellableItem).
 
 local Bag = require("src.inventory.Bag")
-local ChoiceBox = require("src.ui.ChoiceBox")
 local Font = require("src.render.Font")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
@@ -30,8 +29,9 @@ local function anythingElse(game)
 end
 
 -- .returnToMainPokemartMenu -- pokered engine/events/pokemart.asm:199-206
-local function refuse(game, menu, list, text)
+local function refuse(game, menu, list, text, under)
   game.stack:push(TextBox.new(game, text, function()
+    if under and game.stack:top() == under then game.stack:pop() end
     if list then list:close() end
     menu.footer = anythingElse(game)
   end))
@@ -70,45 +70,60 @@ local function buy(game, stock, menu)
         menu.footer = anythingElse(game)
         return
       end
+      -- home/list_menu.asm:89-91
+      list.hollowIndex = list.index
       local def = game.data.items[item.value]
+      local qtyBox
+      local function dropQty()
+        if game.stack:top() == qtyBox then game.stack:pop() end
+      end
       -- engine/events/pokemart.asm:152-156
-      game.stack:push(QuantityBox.new(game, {
+      qtyBox = QuantityBox.new(game, {
         max = 99,
         unitPrice = def.price,
+        keepOpen = true,
         onDone = function(qty)
           if not qty then
+            dropQty()
             list.footer = greet
             return
           end
           local cost = qty * def.price
-          -- _PokemartTellBuyPriceText + yes/no confirm
-          list.footer = romText(game.data, "_PokemartTellBuyPriceText",
-            "%s?\nThat will be\n¥%d. OK?", def.name, cost)
-          game.stack:push(ChoiceBox.new(game, function(yes)
-            if not yes then
-              list.footer = greet
-              return
-            end
-            if game.save.money < cost then
-              refuse(game, menu, list, notEnough)
-              return
-            end
-            if not Bag.add(game.save, item.value, qty, game.data) then
-              refuse(game, menu, list, bagFull)
-              return
-            end
-            game.save.money = game.save.money - cost
-            -- SFX_PURCHASE drains before the receipt -- pokemart.asm:193
-            game.stack:push(TextBox.new(game,
-              txt(game, "_PokemartBoughtItemText",
-                  Strings("Here you are!\nThank you!")),
-              function() list.footer = greet end,
-              { preSound = function()
-                  return require("src.core.Sound").play(game.data, "Purchase")
-                end }))
-          end))
+          -- engine/events/pokemart.asm:159-169
+          game.stack:push(TextBox.new(game,
+            romText(game.data, "_PokemartTellBuyPriceText",
+              "%s?\nThat will be\n¥%d. OK?", def.name, cost),
+            nil,
+            { choice = function(yes)
+                if not yes then
+                  dropQty()
+                  list.footer = greet
+                  return
+                end
+                if game.save.money < cost then
+                  refuse(game, menu, list, notEnough, qtyBox)
+                  return
+                end
+                if not Bag.add(game.save, item.value, qty, game.data) then
+                  refuse(game, menu, list, bagFull, qtyBox)
+                  return
+                end
+                game.save.money = game.save.money - cost
+                -- SFX_PURCHASE drains before the receipt -- pokemart.asm:193
+                game.stack:push(TextBox.new(game,
+                  txt(game, "_PokemartBoughtItemText",
+                      Strings("Here you are!\nThank you!")),
+                  function()
+                    dropQty()
+                    list.footer = greet
+                  end,
+                  { preSound = function()
+                      return require("src.core.Sound").play(game.data, "Purchase")
+                    end }))
+              end }))
         end,
-      }))
+      })
+      game.stack:push(qtyBox)
     end,
   })
   game.stack:push(list)
@@ -174,6 +189,8 @@ local function sell(game, menu)
         menu.footer = anythingElse(game)
         return
       end
+      -- home/list_menu.asm:89-91
+      list.hollowIndex = list.index
       local def = game.data.items[item.value]
       -- only key items and HMs are unsellable (pokemart.asm IsKeyItem /
       -- IsItemHM); zero-price items like ETHER sell for ¥0.  An unknown id
@@ -185,37 +202,47 @@ local function sell(game, menu)
         return
       end
       local unit = math.floor(def.price / 2)
-      game.stack:push(QuantityBox.new(game, {
+      local qtyBox
+      local function dropQty()
+        if game.stack:top() == qtyBox then game.stack:pop() end
+      end
+      qtyBox = QuantityBox.new(game, {
         max = game.save.inventory[item.value] or 1,
         unitPrice = unit,
+        keepOpen = true,
         onDone = function(qty)
           if not qty then
+            dropQty()
             list.footer = greet
             return
           end
-          -- _PokemartTellSellPriceText + yes/no confirm
-          list.footer = romText(game.data, "_PokemartTellSellPriceText",
-            "I can pay you\n¥%d for that.", unit * qty)
-          game.stack:push(ChoiceBox.new(game, function(yes)
-            if not yes then
-              list.footer = greet
-              return
-            end
-            game.save.money = game.save.money + unit * qty
-            -- home/inventory.asm:15 AddAmountSoldToMoney sounds SFX_PURCHASE
-            require("src.core.Sound").play(game.data, "Purchase")
-            Bag.remove(game.save, item.value, qty)
-            local left = game.save.inventory[item.value]
-            if left then
-              item.count = left
-            else
-              list:removeCurrent()
-            end
-            -- a sale prints nothing -- engine/events/pokemart.asm:112
-            list.footer = greet
-          end))
+          -- engine/events/pokemart.asm:84-91
+          game.stack:push(TextBox.new(game,
+            romText(game.data, "_PokemartTellSellPriceText",
+              "I can pay you\n¥%d for that.", unit * qty),
+            nil,
+            { choice = function(yes)
+                dropQty()
+                if not yes then
+                  list.footer = greet
+                  return
+                end
+                game.save.money = game.save.money + unit * qty
+                -- home/inventory.asm:15
+                require("src.core.Sound").play(game.data, "Purchase")
+                Bag.remove(game.save, item.value, qty)
+                local left = game.save.inventory[item.value]
+                if left then
+                  item.count = left
+                else
+                  list:removeCurrent()
+                end
+                -- a sale prints nothing -- engine/events/pokemart.asm:112
+                list.footer = greet
+              end }))
         end,
-      }))
+      })
+      game.stack:push(qtyBox)
     end,
   })
   game.stack:push(list)

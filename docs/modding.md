@@ -83,7 +83,7 @@ Every mod contains a root `manifest.json` defining its metadata, supported games
 | `category` | `string` | Categorization chip (e.g. `"GAMEPLAY"`, `"CONTENT"`, `"UI"`, `"AUDIO"`). |
 | `games` | `array` | Supported game versions: `["gen1"]`, `["gen2"]`, `["red"]`, `["blue"]`, `["yellow"]`, `["gold"]`, `["silver"]`, or `["all"]`. |
 | `game_version`| `string` | Semver range of required engine version (e.g. `">=0.0.0-dev <2.0.0"`). |
-| `priority` | `integer` | Load priority order (lower numbers load earlier; dependencies always precede dependents regardless of priority). |
+| `priority` | `integer` | Load priority order (lower numbers load earlier; dependencies always precede dependents regardless of priority). The player can override it from the launcher MODS tab (Sort -> Load order) or the in-game manager; dependencies and a cart's `load_order` still win. |
 | `dependencies` | `array` | Hard required dependencies. A mod will not load if a required dependency is missing or disabled for the active game. |
 | `optional_dependencies` | `array` | Soft dependencies. Guarantees that if the target mod is present and active, it loads *before* this mod without blocking load if absent. |
 | `required_imports` | `array` | User-supplied files required by this mod. The launcher validates and copies each file into this mod's `baseroms/` directory; the mod does not load while one is missing. |

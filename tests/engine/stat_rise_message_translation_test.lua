@@ -57,10 +57,10 @@ withCatalog({ DEFENSE = "DEFENSE_FR" }, function()
 end)
 
 local hpTarget = Pokemon.new(Data, "FIXMON_A", 10)
-withCatalog({ HP = "PV" }, function()
+withCatalog({ HEALTH = "PV" }, function()
   local _, msgs = ItemEffects.use(Data, save, "HP_UP", hpTarget)
   T.check(msgs[1]:find("PV", 1, true) ~= nil,
-    "a catalog translating HP reaches the HP UP rose! message")
+    "a catalog translating HEALTH reaches the HP UP rose message")
 end)
 
 -- ------------------------------------------------------- AI trainer X-item

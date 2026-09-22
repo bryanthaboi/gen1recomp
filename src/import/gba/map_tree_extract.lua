@@ -5,7 +5,7 @@
 
 local MapTree = require("src.import.gba.map_tree")
 local Lz77 = require("src.import.gba.lz77")
-local Json = require("src.link.Json")
+local Canon = require("src.import.canonical_json")
 
 local MapTreeExtract = {}
 
@@ -39,7 +39,7 @@ local function rom_blob(rom, ptr, nbytes)
 end
 
 local function write_json(cache, rel, obj)
-  cache:write(rel, Json.encode(obj) .. "\n")
+  cache:write(rel, Canon.encode(obj) .. "\n")
 end
 
 local function simplify_events(ev)
@@ -97,8 +97,8 @@ local function simplify_events(ev)
       x = c.x,
       y = c.y,
       elevation = c.elevation,
-      trigger = c.trigger,
-      index = c.index,
+      var = c.var,
+      value = c.value,
       scriptKey = c.scriptKey,
     }
   end
@@ -117,8 +117,12 @@ local function pack_tileset(rom, cache, root, ts)
   if ts.compressed and tilesOff then
     local raw = Lz77.decompress(function(i) return rom:get(i) end, tilesOff)
     tilesBlob = bytes_to_string(raw)
+  elseif tilesOff then
+    local palsOff = rom:ptrOffset(ts.palettesPtr)
+    if palsOff and palsOff > tilesOff then
+      tilesBlob = rom_blob(rom, ts.tilesPtr, palsOff - tilesOff)
+    end
   else
-    -- Uncompressed tiles: unknown length; skip raw dump (meta still written).
     tilesBlob = nil
   end
   local pals = rom_blob(rom, ts.palettesPtr, ts.palette_count * 32)

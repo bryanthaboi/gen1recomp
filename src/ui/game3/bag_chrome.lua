@@ -127,13 +127,16 @@ function BagChrome.install(cache)
   BagChrome._images = {}
   BagChrome._icons = {}
   BagChrome._manifest = nil
+  BagChrome._ready = nil
   BagChrome._logged = false
 end
 
 function BagChrome.ready()
+  if BagChrome._ready ~= nil then return BagChrome._ready end
   local man = BagChrome._manifest or load_lua(bag_root() .. "/manifest.lua")
   BagChrome._manifest = man
-  return man ~= nil and read_bytes(bag_root() .. "/bg.rgba") ~= nil
+  BagChrome._ready = man ~= nil and read_bytes(bag_root() .. "/bg.rgba") ~= nil
+  return BagChrome._ready
 end
 
 local function ensure_bg()

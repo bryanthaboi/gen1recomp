@@ -1,5 +1,6 @@
 -- Comprehensive unit & integration tests for Game 3 battle status effect & residual timing.
 
+require("tests.game3_cache").requireData("game3_battle_status_timing_test")
 local Battle = require("src.core.game3.battle.init")
 local State = require("src.core.game3.battle.state")
 local Engine = require("src.core.game3.battle.engine")

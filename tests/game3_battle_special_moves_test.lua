@@ -3,6 +3,7 @@
 -- Run: luajit tests/game3_battle_special_moves_test.lua
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_battle_special_moves_test")
 
 local State = require("src.core.game3.battle.state")
 local Engine = require("src.core.game3.battle.engine")
@@ -712,7 +713,7 @@ do
 end
 
 do
-  -- Rapid Spin clears spikes, leech seed, and trapping
+  -- pokefirered/src/battle_script_commands.c:8435
   local spinId = Moves.numForName("RAPID_SPIN")
   local st = State.new({
     wild = true,
@@ -724,15 +725,26 @@ do
   st.playerSide.spikes = 1
   st.player.leechSeed = true
   st.player.trapped = true
+  st.player.expTrapTurns = 3
+  st.player.expTrapSource = st.enemy
+  st.player.expTrapMoveName = "WRAP"
 
   local ad = setup_test_battle(st)
   local out = {}
   Engine.resolveMove(st.player, st.enemy, spinId, 1, ad, st, out)
-  check(st.playerSide.spikes == 0, "Rapid Spin removed Spikes from side")
+  check(st.player.expTrapTurns == nil, "Rapid Spin freed the wrap")
   check(st.player.leechSeed == nil, "Rapid Spin removed Leech Seed")
   check(st.player.trapped == nil, "Rapid Spin removed trapping effect")
+  check(st.playerSide.spikes == 0, "Rapid Spin removed Spikes in the same use")
   local joined = table.concat(out, " || ")
-  check(joined:find("blew away\nSPIKES!", 1, true) ~= nil, "Spikes blown away message printed")
+  local iWrap = joined:find("got free of", 1, true)
+  local iSeed = joined:find("shed\nLEECH SEED!", 1, true)
+  local iSpikes = joined:find("blew away\nSPIKES!", 1, true)
+  check(iWrap ~= nil, "Wrap freed message printed")
+  check(iSeed ~= nil, "Leech Seed shed message printed")
+  check(iSpikes ~= nil, "Spikes blown away message printed")
+  check(iWrap and iSeed and iSpikes and iWrap < iSeed and iSeed < iSpikes,
+    "Rapid Spin frees wrap, then Leech Seed, then Spikes")
 end
 
 print("\n=== 8. Two-Turn Charging, Semi-Invulnerable, and Recharge (Solar Beam, Skull Bash, Fly, Hyper Beam) ===")

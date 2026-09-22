@@ -2,6 +2,7 @@ local Wire = {}
 
 local MAX_INT = 2147483647
 local MAX_STRING = 64
+local MAX_DETAIL = 160
 local MAX_NAME = 40
 local MAX_LIST = 64
 local MAX_PARTY = 32
@@ -237,7 +238,7 @@ SCHEMAS.peer_gone = function() return {} end
 SCHEMAS.join_error = function(m)
   return { reason = Wire.str(m.reason, "", MAX_STRING),
            field = Wire.str(m.field, nil, MAX_STRING),
-           detail = Wire.str(m.detail, nil, MAX_STRING),
+           detail = Wire.str(m.detail, nil, MAX_DETAIL),
            code = Wire.str(m.code, nil, MAX_NAME) }
 end
 

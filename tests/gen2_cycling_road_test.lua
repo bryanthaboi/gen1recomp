@@ -161,6 +161,7 @@ local function fieldSelf(onBike, badge)
     width = 8, height = 8,
     def = { blocks = {}, environment = "ROUTE", tileset = "TILESET_KANTO" },
     cellCollision = function(_, cx, cy) return coll[cy * 16 + cx] or COLL_LAND end,
+    inBounds = function() return true end,
   }
   for i = 1, 64 do map.def.blocks[i] = 1 end
   -- water in the cell the player faces, land under their feet
@@ -179,6 +180,7 @@ local function fieldSelf(onBike, badge)
     engineFlag = World.engineFlag,
     alwaysOnBike = World.alwaysOnBike,
     blockIndexAt = World.blockIndexAt,
+    cellCollisionAcross = World.cellCollisionAcross,
     escapeRopeTarget = function() return nil end,
     facingObject = function() return nil end,
     hour = function() return 12 end,

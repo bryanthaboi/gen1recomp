@@ -248,6 +248,7 @@ entry: a desktop shortcut per game, a Steam entry, or a handheld frontend.
 | `--launcher` | open the launcher anyway, so you can edit a shortcut you already made |
 | `--no-sync` | skip the save sync a linked device otherwise runs before the game boots (`POKEPORT_LAUNCH_SYNC=0`) |
 | `--update` | check for a release first, and restart once into it if one is ready (`POKEPORT_LAUNCH_UPDATE=1`; `-update` works too) |
+| `--update-mods` | run the MODS tab's Update all (mods and custom carts) without the confirm, then boot; stays on the launcher if an update fails (`POKEPORT_LAUNCH_UPDATE_MODS=1`; `--updatemods` works too) |
 
 If this device is linked for save sync, a shortcut now syncs before it boots
 so CONTINUE never loads a save another device has already moved past. The
@@ -271,6 +272,7 @@ The URL parameters correspond to the desktop options:
 | `gen1recomp++://launch?game=red&launcher=1` | open the launcher on Red instead |
 | `gen1recomp++://launch?game=red&sync=0` | skip save sync |
 | `gen1recomp++://launch?game=red&update=1` | check for an update before booting |
+| `gen1recomp++://launch?game=red&update_mods=1` | update mods and carts before booting |
 
 The `game` value accepts the same full names and aliases as `--game`. Boolean
 parameters accept `1`/`0`, `true`/`false`, `yes`/`no`, and `on`/`off`. Percent-encode

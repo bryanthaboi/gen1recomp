@@ -24,6 +24,7 @@ package.loaded["src.core.Music"] = {
   play = function() end,
   playOnce = function() return true end,
   stop = function() end,
+  playMap = function() end,
 }
 
 local story = dofile("data/scripts/story.lua")

@@ -267,11 +267,6 @@ function BattleChrome.drawHpBoldChar(ch, x, y)
   return true
 end
 
-function BattleChrome.hasDoublesBoxes()
-  load_doubles_boxes()
-  return BattleChrome._doublesPlayerBox ~= nil and BattleChrome._doublesOpponentBox ~= nil
-end
-
 -- pokefirered/src/battle_gfx_sfx_util.c:39
 function BattleChrome.drawDoublesBox(isPlayer, x, y)
   load_doubles_boxes()
@@ -280,17 +275,6 @@ function BattleChrome.drawDoublesBox(isPlayer, x, y)
   if not img then return end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(img, x, y)
-end
-
-function BattleChrome.ready()
-  if BattleChrome._playerBox and next(BattleChrome._terrains) then return true end
-  return BattleChromeExtract.ready(BattleChrome._cache, cache_root())
-end
-
-function BattleChrome.hasAssets()
-  local root = battle_root()
-  return read_bytes(root .. "/healthbox_player.rgba") ~= nil
-    and read_bytes(root .. "/textbox.rgba") ~= nil
 end
 
 function BattleChrome.manifest()
@@ -540,10 +524,6 @@ function BattleChrome.drawElementTile(ti, x, y, healthboxPal)
   love.graphics.draw(sheet, q, x, y)
 end
 
-function BattleChrome.drawHpFill(x, y, hp, maxHp)
-  BattleChrome.drawHpBar(x - 16, y, hp, maxHp)
-end
-
 --- Pret EXP bar: 8 element tiles in healthbox VRAM (TAG_HEALTHBOX_PAL → blue).
 function BattleChrome.drawExpBar(x, y, ratio)
   local sheet = BattleChrome._elementsExp or BattleChrome._elements
@@ -555,10 +535,6 @@ function BattleChrome.drawExpBar(x, y, ratio)
     local q = elements_tile_quad(EXP_BAR_TILE + (pix[i + 1] or 0), sheet)
     if q then love.graphics.draw(sheet, q, x + i * 8, y) end
   end
-end
-
-function BattleChrome.drawExpFill(x, y, ratio, _pixels)
-  BattleChrome.drawExpBar(x, y, ratio)
 end
 
 -- Party summary balls: pret B_INTERFACE_GFX_BALL_PARTY_SUMMARY = tile 66.

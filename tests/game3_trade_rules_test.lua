@@ -309,7 +309,7 @@ eq(Trade.canTradeSelectedMon({
   { species = 252, nickname = "TREECKO", level = 5 }, party[2],
 }, 0, { nationalDex = false }), Trade.CANT_TRADE_NATIONAL,
   "without the National Dex a non-Kanto mon cannot be traded")
--- pokefirered/src/trade.c:2789
+-- pokefirered/src/trade.c:2787-2788
 eq(Trade.canTradeSelectedMon({
   { species = 25, isEgg = true, level = 5 }, party[2],
 }, 0, { nationalDex = true, partner = { version = 4, progressFlags = 0 } }),

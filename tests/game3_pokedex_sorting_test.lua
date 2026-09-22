@@ -1,4 +1,5 @@
 -- Tests for 1:1 Pret Pokédex Ordering, Filtering, and Habitat Presentation.
+require("tests.game3_cache").requireData("game3_pokedex_sorting_test")
 local Dex = require("src.core.game3.dex")
 local PokedexData = require("src.core.game3.pokedex_data")
 

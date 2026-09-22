@@ -5,7 +5,13 @@ if not _G.love then _G.love = require("tests.love_stub") end
 local S = require("tests.harness").suite("parity ss anne rooms")
 local check, eq = S.check, S.eq
 
-local maps = dofile("data/generated/maps.lua")
+local envDir = os.getenv("POKEPORT_DATA_DIR")
+local mapsPath = (envDir and envDir .. "/maps.lua") or "data/generated/maps.lua"
+local okMaps, freshMaps = pcall(dofile, mapsPath)
+if not okMaps then
+  error("fresh maps module load failed: " .. tostring(freshMaps))
+end
+local maps = freshMaps
 local SsAnneLayout = require("src.world.SsAnneLayout")
 local Warp = require("src.world.Warp")
 

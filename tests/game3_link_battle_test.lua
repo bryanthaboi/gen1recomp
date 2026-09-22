@@ -186,7 +186,7 @@ Link.reset()
 freshCtx()
 setVar(Link.VAR_0x8004, Link.USING.SINGLE_BATTLE)
 local waited = Natives.special(ctx, NativesLink.SPECIAL.TryBattleLinkup, adapters)
--- pokefirered/src/cable_club.c:222 CreateLinkupTask waits for the other machine
+-- pokefirered/src/cable_club.c:208-222
 check(waited, "with no cable yet the counter parks the script instead of answering")
 eq(getVar(Link.VAR_RESULT), Link.LINKUP.ONGOING, "and reports LINKUP_ONGOING while it waits")
 local spun = 0

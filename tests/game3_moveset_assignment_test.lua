@@ -2,6 +2,7 @@
 -- Test FireRed Pokémon moveset assignment, learnsets, and battle initialization.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_moveset_assignment_test")
 
 local Pokemon = require("src.core.game3.pokemon")
 local Battle = require("src.core.game3.battle.init")

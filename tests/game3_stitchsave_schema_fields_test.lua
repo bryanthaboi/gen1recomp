@@ -265,6 +265,26 @@ do
   Runtime.session = prev
 end
 
+print("[test] berryPowder round-trips through the schema")
+do
+  -- include/global.h:354, src/berry_powder.c:50
+  local session = Schema.newGame({ rngSeed = 0x99 })
+  eq(session.berryPowder, 0, "a New Game starts with 0 berry powder")
+
+  session.berryPowder = 40
+  local save = Schema.toSaveTable(session)
+  eq(save.berryPowder, 40, "toSaveTable writes berryPowder")
+  local loaded = Schema.fromSaveTable(save)
+  eq(loaded.berryPowder, 40, "fromSaveTable restores berryPowder")
+
+  local old = Schema.fromSaveTable({
+    schemaVersion = 1, engine = "game3", version = "firered",
+    party = {}, dex = { seen = {}, owned = {} },
+    map = "FR_PALLET_TOWN", x = 5, y = 6, facing = "down", flags = {}, vars = {},
+  })
+  eq(old.berryPowder, 0, "a save with no berryPowder key loads 0")
+end
+
 print(string.format("[test] %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("[test] FAILED " .. failed)

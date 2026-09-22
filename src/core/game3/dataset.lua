@@ -90,6 +90,7 @@ function Dataset.cache()
   return loveCache()
 end
 
+local dsLoadWarned = false
 local function load_lua_rel(rel)
   local cache = loveCache()
   local src = cache:read(rel)
@@ -98,6 +99,10 @@ local function load_lua_rel(rel)
   if not chunk then return nil end
   local ok, val = pcall(chunk)
   if ok then return val end
+  if not dsLoadWarned then
+    dsLoadWarned = true
+    print("[game3/dataset] load failed for " .. tostring(rel) .. ": " .. tostring(val))
+  end
   return nil
 end
 

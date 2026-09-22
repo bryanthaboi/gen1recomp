@@ -310,6 +310,21 @@ for _, name in ipairs({ "AnimateTeleporterHousing", "AnimateTeleporterCable" }) 
   eq(result(ctx), 0, name .. " leaves VAR_RESULT at 0")
 end
 
+local Task = require("src.core.game3.task")
+local realSpawn, realSet = Task.spawn, Field.setMetatile
+for _, name in ipairs({ "AnimateTeleporterHousing", "AnimateTeleporterCable" }) do
+  local fn
+  Task.spawn = function(f) fn = f end
+  local tw = {}
+  Field.setMetatile = function(x, y, mid, impassable) tw[#tw + 1] = impassable end
+  Cutscene.HANDLERS[Std.SPECIAL[name]](newCtx(), {})
+  for _ = 1, 1000 do if not fn or fn() then break end end
+  local allSolid = #tw > 0
+  for _, v in ipairs(tw) do if v ~= true then allSolid = false end end
+  check(allSolid, name .. " writes every metatile with MAPGRID_COLLISION_MASK")
+end
+Task.spawn, Field.setMetatile = realSpawn, realSet
+
 if failed > 0 then
   print("[test] FAILED " .. failed)
   os.exit(1)

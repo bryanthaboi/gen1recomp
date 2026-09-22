@@ -6,6 +6,7 @@ local VAR_RESULT = 0x800D -- pokefirered/include/constants/vars.h:328
 local VAR_0x8004 = 0x8004 -- pokefirered/include/constants/vars.h:319
 local VAR_0x8005 = 0x8005 -- pokefirered/include/constants/vars.h:320
 local VAR_0x8006 = 0x8006 -- pokefirered/include/constants/vars.h:321
+local VAR_FACING = 0x800C
 
 -- pokefirered/src/field_tasks.c:51
 local ICEFALL_CAVE_ICE_COORDS = {
@@ -109,49 +110,27 @@ Events.HANDLERS = {
     for i = 1, #ICEFALL_CAVE_ICE_COORDS do
       if Flags.getFlag(store, ctx, i) then
         local c = ICEFALL_CAVE_ICE_COORDS[i]
-        Field.setMetatile(c[1], c[2], METATILE_SEAFOAM_CRACKED_ICE, true)
+        Field.setMetatile(c[1], c[2], METATILE_SEAFOAM_CRACKED_ICE, false)
       end
     end
     return false
   end,
-  -- pokefirered/src/field_tasks.c:166
-  [Std.SPECIAL.ShowIcefallCaveCrackedIceAttempt] = function(ctx, adapters)
-    local Flags = flagsMod()
-    local store = scriptStore(ctx)
-    local total = 0
-    for i = 1, #ICEFALL_CAVE_ICE_COORDS do
-      if Flags.getFlag(store, ctx, i) then
-        total = total + 1
-      end
-    end
-    setResult(ctx, total)
-    return false
-  end,
-  -- pokefirered/src/bicycle.c:120
-  [Std.SPECIAL.ForcePlayerOntoBike] = function(ctx)
-    local session = sessionOf(ctx)
-    if session and session.player then
-      session.player.ridingBike = true
-      session.player.state = "bike"
-    end
-    local rt = package.loaded["src.core.game3.runtime"]
-    if rt and rt.player then
-      rt.player.ridingBike = true
-      rt.player.state = "bike"
+  -- pokefirered/src/field_specials.c:97
+  [Std.SPECIAL.ForcePlayerOntoBike] = function()
+    local okP, Player = pcall(require, "src.core.game3.player")
+    if okP and Player and not Player.surfing then
+      Player.biking = true
+      Player.surfHopping = false
     end
     return false
   end,
-  -- pokefirered/src/field_player_avatar.c:1570
-  [Std.SPECIAL.ForcePlayerToStartSurfing] = function(ctx)
-    local session = sessionOf(ctx)
-    if session and session.player then
-      session.player.surfing = true
-      session.player.state = "surf"
-    end
-    local rt = package.loaded["src.core.game3.runtime"]
-    if rt and rt.player then
-      rt.player.surfing = true
-      rt.player.state = "surf"
+  -- pokefirered/src/field_specials.c:1513
+  [Std.SPECIAL.ForcePlayerToStartSurfing] = function()
+    local okP, Player = pcall(require, "src.core.game3.player")
+    if okP and Player then
+      Player.surfing = true
+      Player.biking = false
+      Player.surfHopping = false
     end
     return false
   end,
@@ -190,8 +169,12 @@ Events.HANDLERS = {
   -- pokefirered/src/field_specials.c:120 ShowFieldMessageStringVar4
   [Std.SPECIAL.ShowFieldMessageStringVar4] = function(ctx, adapters)
     local text = (ctx and ctx.stringVars and ctx.stringVars[4]) or ""
-    if adapters and adapters.showMessage then
-      adapters.showMessage(text)
+    if ctx then ctx.messageOpen = true end
+    local openStay = adapters and (adapters.openMessageStay or adapters.openMessageAsync)
+    if openStay then
+      openStay(text, nil)
+    elseif adapters and adapters.openMessage then
+      adapters.openMessage(text)
     end
     return false
   end,
@@ -216,19 +199,21 @@ Events.HANDLERS = {
     local store = scriptStore(ctx)
     local stats = session and (session.gameStats or session.stats) or {}
 
-    -- HOF enters: GAME_STAT_ENTERED_HOF = 13 (or hofClears / FLAG_SYS_GAME_CLEAR)
-    local hof = (session and (session.hofClears or session.hallOfFameCount))
-      or stats[13] or stats.enteredHof or (Flags.getFlag(store, ctx, "FLAG_SYS_GAME_CLEAR") and 1 or 0)
+    -- field_specials.c:1737, include/constants/game_stat.h:14
+    local hof = stats[10] or stats.enteredHof
+      or (session and (session.hofClears or session.hallOfFameCount))
+      or (Flags.getFlag(store, ctx, "FLAG_SYS_GAME_CLEAR") and 1 or 0)
     hof = tonumber(hof) or 0
 
-    -- Hatched eggs: GAME_STAT_HATCHED_EGGS = 18
-    local eggs = (session and session.eggsHatched) or stats[18] or stats.hatchedEggs or 0
+    -- game_stat.h:17
+    local eggs = stats[13] or stats.hatchedEggs
+      or (session and session.eggsHatched) or 0
     eggs = tonumber(eggs) or 0
     local eggsClamped = math.min(0xFFFF, eggs)
 
-    -- Link battle wins: GAME_STAT_LINK_BATTLE_WINS = 24
-    local linkWins = (session and (session.linkWins or session.linkBattleWins))
-      or stats[24] or stats.linkBattleWins or 0
+    -- game_stat.h:27
+    local linkWins = stats[23] or stats.linkBattleWins
+      or (session and (session.linkWins or session.linkBattleWins)) or 0
     linkWins = tonumber(linkWins) or 0
 
     Flags.setVar(store, ctx, VAR_0x8004, hof)
@@ -340,13 +325,97 @@ Events.HANDLERS = {
     return false
   end,
   -- pokefirered/src/field_specials.c:461
-  [Std.SPECIAL.ShakeScreen] = noop,
-  -- pokefirered/src/roamer.c:120
+  -- src/field_specials.c:461-493, include/constants/songs.h:212
+  [Std.SPECIAL.ShakeScreen] = function(ctx)
+    local x = varGet(ctx, VAR_0x8005)
+    local y = varGet(ctx, VAR_0x8004)
+    local iters = varGet(ctx, VAR_0x8006)
+    local dur = varGet(ctx, 0x8007)
+    if (x == 0 and y == 0) or iters < 1 or dur < 1 then return false end
+    local FieldView = package.loaded["src.core.game3.field_view"]
+    local okT, Task = pcall(require, "src.core.game3.task")
+    if not (okT and Task and Task.spawn) then return false end
+    pcall(function() require("src.core.game3.audio").playSe(207) end)
+    local frame, left, cx, cy = 0, iters, x, y
+    Task.spawn(function()
+      frame = frame + 1
+      if frame % dur == 0 then
+        left = left - 1
+        cx, cy = -cx, -cy
+        if FieldView then
+          FieldView.cameraPanX = cx
+          FieldView.cameraPanY = cy
+        end
+        if left == 0 then
+          if FieldView then
+            FieldView.cameraPanX = 0
+            FieldView.cameraPanY = 0
+          end
+          return true
+        end
+      end
+      return false
+    end)
+    return false
+  end,
+  -- src/roamer.c:120
   [Std.SPECIAL.InitRoamer] = noop,
-  -- pokefirered/src/field_specials.c:679
-  [Std.SPECIAL.SampleResortGorgeousMonAndReward] = noop,
+  -- src/field_specials.c:679-690
+  [Std.SPECIAL.SampleResortGorgeousMonAndReward] = function(ctx, adapters)
+    local session = sessionOf(ctx)
+    if not session then return false end
+    local VAR_REQ = 0x4036 -- include/constants/vars.h:104
+    local VAR_REWARD = 0x403B -- vars.h:109
+    local VAR_STEP = 0x4035 -- vars.h:103
+    local requested = varGet(ctx, VAR_REQ)
+    local store = scriptStore(ctx)
+    local F = flagsMod()
+    if requested == 0 or requested == 0xFFFF then
+      local Rng = require("src.core.game3.rng")
+      local ownedT = (session.dex and (session.dex.owned or session.dex.caught)) or {}
+      local NUM = 411 -- species.h:423
+      local sp, found = 1, false
+      for _ = 1, 100 do
+        sp = (Rng.Random() % NUM) + 1
+        if ownedT[sp] then found = true break end
+      end
+      if not found then
+        for _ = 1, 500 do
+          if ownedT[sp] then found = true break end
+          if sp == 1 then sp = NUM else sp = sp - 1 end
+        end
+      end
+      F.setVar(store, ctx, VAR_REQ, sp)
+      -- items.h:72,110-114
+      local rewards = { 107, 106, 108, 109, 110, 68 }
+      local reward = 11
+      if (Rng.Random() % 100) < 30 then
+        reward = rewards[(Rng.Random() % #rewards) + 1]
+      end
+      F.setVar(store, ctx, VAR_REWARD, reward)
+      F.setVar(store, ctx, VAR_STEP, 0)
+    end
+    -- pokefirered/src/field_specials.c:688
+    local nameOf = package.loaded["src.core.game3.pokemon"]
+      or require("src.core.game3.pokemon")
+    local name = (nameOf.name and nameOf.name(varGet(ctx, VAR_REQ))) or ""
+    if adapters and adapters.setStringVar then adapters.setStringVar(1, name) end
+    if ctx and ctx.stringVars then ctx.stringVars[1] = name end
+    return false
+  end,
   -- pokefirered/src/script.c:245
-  [Std.SPECIAL.DisableMsgBoxWalkaway] = noop,
+  [Std.SPECIAL.DisableMsgBoxWalkaway] = function(ctx)
+    if ctx then
+      ctx.msgBoxIsCancelable = false
+      ctx.canWalkAway = false
+    end
+    local session = sessionOf(ctx)
+    if session then
+      session.msgBoxIsCancelable = false
+      session.canWalkAway = false
+    end
+    return false
+  end,
   -- pokefirered/src/field_specials.c:2319
   [Std.SPECIAL.DoDeoxysTriangleInteraction] = function(ctx)
     local session = sessionOf()
@@ -367,10 +436,119 @@ Events.HANDLERS = {
     return false
   end,
   -- pokefirered/src/field_specials.c:2512
-  [Std.SPECIAL.UpdateLoreleiDollCollection] = noop,
+  -- src/field_specials.c:2512-2531, game_stat.h:14
+  [Std.SPECIAL.UpdateLoreleiDollCollection] = function(ctx)
+    local session = sessionOf(ctx)
+    local stats = session and (session.gameStats or session.stats) or {}
+    local n = tonumber(stats[10]) or 0
+    local F = flagsMod()
+    local store = scriptStore(ctx)
+    local dolls = {
+      { 25, "FLAG_HIDE_LORELEI_HOUSE_MEOWTH_DOLL" },
+      { 50, "FLAG_HIDE_LORELEI_HOUSE_CHANSEY_DOLL" },
+      { 75, "FLAG_HIDE_LORELEIS_HOUSE_NIDORAN_F_DOLL" },
+      { 100, "FLAG_HIDE_LORELEI_HOUSE_JIGGLYPUFF_DOLL" },
+      { 125, "FLAG_HIDE_LORELEIS_HOUSE_NIDORAN_M_DOLL" },
+      { 150, "FLAG_HIDE_LORELEIS_HOUSE_FEAROW_DOLL" },
+      { 175, "FLAG_HIDE_LORELEIS_HOUSE_PIDGEOT_DOLL" },
+      { 200, "FLAG_HIDE_LORELEIS_HOUSE_LAPRAS_DOLL" },
+    }
+    for _, d in ipairs(dolls) do
+      if n >= d[1] then F.setFlag(store, ctx, d[2], false) end
+    end
+    return false
+  end,
 }
 
 Events.HANDLERS[Std.SPECIAL.SetPostgameFlagsUnusedSlot] =
   Events.HANDLERS[Std.SPECIAL.SetPostgameFlags]
+
+-- pokefirered/include/constants/global.h
+local DIR_BY_NAME = { down = 1, up = 2, left = 3, right = 4 }
+local WALKAWAY_ORDER = { "down", "up", "left", "right" }
+
+-- pokefirered/src/field_control_avatar.c:301, overworld.c:1402, data/event_scripts.s:1166
+function Events.pollWalkaway(vm, input)
+  if not vm or not vm.ctx then return end
+  local ctx = vm.ctx
+  local session = sessionOf(ctx)
+
+  local function clearWalkaway()
+    ctx.walkAwayFromSignInhibitTimer = nil
+    ctx.msgBoxIsCancelable = nil
+    ctx.canWalkAway = nil
+    if session then
+      session.walkAwayFromSignInhibitTimer = nil
+      session.msgBoxIsCancelable = nil
+      session.canWalkAway = nil
+    end
+  end
+
+  -- script.c:349
+  if not (vm.isRunning and vm:isRunning()) then
+    if ctx.walkAwayFromSignInhibitTimer ~= nil
+      or ctx.msgBoxIsCancelable ~= nil
+      or ctx.canWalkAway ~= nil then
+      clearWalkaway()
+    end
+    return
+  end
+
+  local timer = tonumber(ctx.walkAwayFromSignInhibitTimer)
+  if not timer then return end
+  if timer > 0 then
+    ctx.walkAwayFromSignInhibitTimer = timer - 1
+    if session then
+      session.walkAwayFromSignInhibitTimer = math.max(0, timer - 1)
+    end
+    return
+  end
+
+  local cancelable = ctx.msgBoxIsCancelable
+  local canWalk = ctx.canWalkAway
+  if session then
+    if cancelable == nil then cancelable = session.msgBoxIsCancelable end
+    if canWalk == nil then canWalk = session.canWalkAway end
+  end
+  if cancelable ~= true or canWalk ~= true then return end
+  if ctx.messageOpen ~= true then return end
+
+  local dir
+  if input then
+    for _, d in ipairs(WALKAWAY_ORDER) do
+      if input.wasPressed and input:wasPressed(d) then
+        dir = d
+        break
+      end
+    end
+    if not dir then
+      for _, d in ipairs(WALKAWAY_ORDER) do
+        if input.isDown and input:isDown(d) then
+          dir = d
+          break
+        end
+      end
+    end
+  end
+  if not dir then return end
+  local facing = ctx.specialVars and tonumber(ctx.specialVars[VAR_FACING])
+  if not facing then
+    local P = package.loaded["src.core.game3.player"]
+    facing = P and DIR_BY_NAME[P.facing] or nil
+  end
+  if not facing or facing == DIR_BY_NAME[dir] then return end
+
+  -- data/event_scripts.s:1166
+  if vm.adapters and vm.adapters.closeMessage then
+    vm.adapters.closeMessage()
+  end
+  ctx.messageOpen = false
+  if ctx.frozen then
+    local okF, Field = pcall(require, "src.core.game3.field")
+    if okF and Field and Field.unlock then Field.unlock() end
+  end
+  clearWalkaway()
+  vm:halt(true)
+end
 
 return Events

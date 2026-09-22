@@ -749,7 +749,6 @@ function PokedexChrome.drawDownArrow(x, y)
   if not (love and love.graphics) then return end
   x = x or 200
   y = y or 141
-  PokedexChrome._animTimer = (PokedexChrome._animTimer or 0) + 0.05
   local bob = math.floor(math.sin(PokedexChrome._animTimer * 4) * 1.5 + 0.5)
 
   -- Dark coral/red outline
@@ -774,7 +773,6 @@ function PokedexChrome.drawUpArrow(x, y)
   if not (love and love.graphics) then return end
   x = x or 200
   y = y or 19
-  PokedexChrome._animTimer = (PokedexChrome._animTimer or 0) + 0.05
   local bob = math.floor(math.sin(PokedexChrome._animTimer * 4) * 1.5 + 0.5)
 
   -- Dark coral/red outline
@@ -797,7 +795,6 @@ end
 --- Draw bouncing horizontal side arrow (left or right)
 function PokedexChrome.drawSideArrow(dir, x, y)
   if not (love and love.graphics) then return end
-  PokedexChrome._animTimer = (PokedexChrome._animTimer or 0) + 0.05
   local bob = math.floor(math.sin(PokedexChrome._animTimer * 4) * 1.5 + 0.5)
 
   love.graphics.setColor(232/255, 72/255, 32/255, 1)

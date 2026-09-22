@@ -414,8 +414,10 @@ local function ensureLib()
       local ok, loaded = pcall(ffi.load, path)
       disarmProbe()
       if ok then lib = loaded; return lib end
+      tried[#tried + 1] = path .. " (" .. tostring(loaded) .. ")"
+    else
+      tried[#tried + 1] = path
     end
-    tried[#tried + 1] = path
   end
   local okSym, sym = pcall(function()
     return ffi.C and ffi.C.librashader_translate_preset

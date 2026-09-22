@@ -34,7 +34,14 @@ local function build_entries(session)
   if hasDex then
     entries[#entries + 1] = { id = "pokedex", label = "POKéDEX" }
   end
-  entries[#entries + 1] = { id = "pokemon", label = "POKéMON" }
+  -- start_menu.c:217-218
+  local hasMon = true
+  if store and Flags and Flags.getFlag then
+    hasMon = Flags.getFlag(store, nil, Flags.IDS and Flags.IDS.SYS_POKEMON_GET or 0x828) == true
+  end
+  if hasMon then
+    entries[#entries + 1] = { id = "pokemon", label = "POKéMON" }
+  end
   entries[#entries + 1] = { id = "bag", label = "BAG" }
   local name = (session and (session.name or session.playerName)) or "PLAYER"
   name = tostring(name)

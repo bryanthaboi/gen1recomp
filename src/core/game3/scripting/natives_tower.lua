@@ -570,9 +570,10 @@ TowerNatives.HANDLERS = {
     -- pokefirered/src/battle_records.c:136
     local kind = (varGet(ctx, VAR_0x8004) ~= 0) and "tower" or "link"
     local Screen = recordsScreen()
+    -- src/battle_records.c:83, cable_club.inc:566-575
     if not Screen then
       takeScreenForPartyMenu()()
-      return false
+      return natives().yieldHost(ctx, adapters, function(done) done() end)
     end
     return natives().yieldHost(ctx, adapters, function(done)
       Screen.show({ session = session, kind = kind, onDone = done })
@@ -605,6 +606,9 @@ TowerNatives.HANDLERS = {
     return runBattle(ctx, adapters, foe, {
       trainerId = 0,
       eReader = which == SPECIAL_BATTLE.EREADER,
+      -- src/battle_tower.c:895-933
+      battleTower = which == SPECIAL_BATTLE.BATTLE_TOWER,
+      secretBase = which == SPECIAL_BATTLE.SECRET_BASE,
       -- pokefirered/src/battle_message.c:2072 CopyEReaderTrainerName5
       trainerName = foe.trainerName,
       trainerPicId = foe.trainerPicId,

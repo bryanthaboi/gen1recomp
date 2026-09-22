@@ -81,4 +81,59 @@ for _, pair in ipairs({ { rg34, "build-rg34xxsp.sh" }, { sbc, "build-linux-arm-s
   mustContain(pair[1], "SHADERFX_BRIDGE_REQUIRED", pair[2])
 end
 
+check(release:find("ANDROID_NDK_LATEST_HOME", 1, true) == nil,
+  "release.yml must not build the Android bridge with the runner's newest NDK")
+mustContain(release, "mobile/android/app/build.gradle", "release.yml reads gradle's NDK pin")
+mustContain(release, '"ndk;$ndk_ver"', "release.yml installs gradle's NDK")
+mustContain(release, "bash scripts/android_bridge_link_check.sh", "release.yml link-checks the CI bridge")
+mustContain(android, 'android_bridge_link_check.sh" "$bridge" "$libcxx"', "build_android.sh link check")
+mustContain(android, '"lib/$abi/libc++_shared.so"', "build_android.sh checks against the APK's own libc++")
+mustContain(android, 'shader_bridge_gradle_libcxx "$abi"', "build_android.sh checks prebuilt bridges before gradle")
+
+local gradle = read("mobile/android/app/build.gradle")
+local gradleNdk = gradle:match("ndkVersion%s+['\"]([%d%.]+)['\"]")
+check(gradleNdk ~= nil, "mobile/android/app/build.gradle pins ndkVersion")
+mustContain(android, 'NDK_VERSION="' .. tostring(gradleNdk) .. '"', "build_android.sh NDK_VERSION matches gradle")
+
+local function sh(cmd)
+  local a, b, c = os.execute(cmd)
+  if type(a) == "number" then return a >= 256 and math.floor(a / 256) or a end
+  if b == "exit" then return c end
+  return a and 0 or 1
+end
+
+local tmp = os.tmpname()
+os.remove(tmp)
+check(sh("mkdir -p '" .. tmp .. "'") == 0, "temp dir for the link-check fixture")
+local function put(name, body)
+  local f = assert(io.open(tmp .. "/" .. name, "w"))
+  f:write(body)
+  f:close()
+  return tmp .. "/" .. name
+end
+local fakeNm = put("llvm-nm", '#!/bin/sh\nfor a do last="$a"; done\ncat "$last"\n')
+sh("chmod +x '" .. fakeNm .. "'")
+local libcxx = put("libc++_shared.so",
+  "0000000000001000 T _ZNSt6__ndk16chrono12system_clock3nowEv\n"
+  .. "0000000000002000 T _Znwm@@LIBCXX_NDK\n")
+local good = put("good.so",
+  "                 U _Znwm\n"
+  .. "                 U memcpy@LIBC\n"
+  .. "                 w _ZWeakOnly\n"
+  .. "                 U _ZNSt6__ndk16chrono12system_clock3nowEv\n")
+local bad = put("bad.so", "                 U _Znwm\n                 U _ZTVNSt6__ndk117bad_function_callE\n")
+local checker = "LLVM_NM='" .. fakeNm .. "' bash scripts/android_bridge_link_check.sh "
+local out = tmp .. "/out.txt"
+T.eq(sh(checker .. "'" .. good .. "' '" .. libcxx .. "' >'" .. out .. "' 2>&1"), 0,
+  "link check passes a bridge whose C++ symbols libc++_shared.so defines")
+T.eq(sh(checker .. "'" .. bad .. "' '" .. libcxx .. "' >'" .. out .. "' 2>&1"), 1,
+  "link check fails a bridge that needs a symbol libc++_shared.so lacks")
+local f = io.open(out, "r")
+local body = f and f:read("*a") or ""
+if f then f:close() end
+mustContain(body, "_ZTVNSt6__ndk117bad_function_callE", "link check output names the missing symbol")
+T.eq(sh(checker .. "'" .. bad .. "' '" .. tmp .. "/absent.so' >/dev/null 2>&1"), 1,
+  "link check fails a bridge whose APK carries no libc++_shared.so")
+sh("rm -rf '" .. tmp .. "'")
+
 T.finish("shaderfx_bridge_packaging_test")

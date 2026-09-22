@@ -9,6 +9,8 @@ local GameVersion = require("src.core.GameVersion")
 local Strings = require("src.core.Strings")
 local Runtime = require("src.mods.Runtime")
 local Logger = require("src.core.Logger")
+local FaithfulRes = require("src.core.FaithfulRes")
+local TouchSkin = require("src.core.TouchSkin")
 
 local TitleState = {}
 TitleState.__index = TitleState
@@ -18,7 +20,11 @@ TitleState.isOpaque = true
 -- at the fixed integer scale.  The title screen is a full-bleed picture with no
 -- world behind it, so a small centred box in a large window is just wasted
 -- glass -- and unlike the overworld it has no zoom the player chose to respect.
-function TitleState:wantsFillScale() return true end
+function TitleState:wantsFillScale()
+  if FaithfulRes.locked then return false end
+  if TouchSkin.drawable() then return false end
+  return true
+end
 
 -- SGB title zones (PalPacket_Titlescreen): the logo rows get LOGO2,
 -- the version-ribbon band LOGO1, the rest MEWMON.

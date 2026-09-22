@@ -8,6 +8,12 @@ local Font = require('src.ui.game3.frlg_font')
 local Help = {open=false, seenIntro=false}
 local MENU_CONTEXT = {pokedex=4, party=5, bag=9, berry_pouch=9, tm_case=9,
   trainer=10, save=12, option=13, shop=17, pc_menu=27, box_storage=28}
+local HELD_KEYS = {'up','down','left','right'}
+local repeatInput, repeatKey, repeatOn
+local REPEAT_SHIM = {wasPressed=function(_,key)
+  if not repeatInput then return false end
+  return repeatInput:wasPressed(key) or (repeatOn and key==repeatKey)
+end}
 local function loaded(name) return package.loaded['src.'..name] end
 function Help.installPack(pack)
   Help.pack=pack
@@ -188,16 +194,15 @@ function Help.update(game)
   if not input then return false end
   if Help.open then
     -- GBA joypad repeat: delay before held directions repeat every five frames.
-    local repeatKey
-    for _,key in ipairs({'up','down','left','right'}) do
-      if input.isDown and input:isDown(key) then repeatKey=key;break end
+    local heldKey
+    for _,key in ipairs(HELD_KEYS) do
+      if input.isDown and input:isDown(key) then heldKey=key;break end
     end
-    if repeatKey~=Help._held then Help._held=repeatKey;Help._heldFrames=0 end
+    if heldKey~=Help._held then Help._held=heldKey;Help._heldFrames=0 end
     Help._heldFrames=(Help._heldFrames or 0)+1
-    local repeated=repeatKey and Help._heldFrames>=20 and (Help._heldFrames-20)%5==0
-    Help.handleInput({wasPressed=function(_,key)
-      return input:wasPressed(key) or (repeated and key==repeatKey)
-    end})
+    repeatInput, repeatKey = input, heldKey
+    repeatOn = heldKey ~= nil and Help._heldFrames>=20 and (Help._heldFrames-20)%5==0
+    Help.handleInput(REPEAT_SHIM)
     return true
   end
   if not Help.pack or Help.enabled==false then return false end

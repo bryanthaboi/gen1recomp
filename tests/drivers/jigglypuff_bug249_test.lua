@@ -19,8 +19,10 @@ return function(game)
   local RING = { "down", "left", "up", "right" }
   local SILENCE, STEP, TAIL = 32, 24, 48 -- the three DelayFrames counts
 
+  local failures = 0
   local function check(label, ok)
     U.log(ok and "PASS" or "FAIL", label)
+    if not ok then failures = failures + 1 end
     return ok
   end
 
@@ -190,7 +192,7 @@ return function(game)
           gap >= SILENCE - 4 and gap <= SILENCE + 8)
   end
 
-  check("the JIGGLYPUFF turned at least four times", #turns >= 4)
+  check("the JIGGLYPUFF turned at least 14 quarter turns (about four spins)", #turns >= 14)
   local ringOk, spacingOk = true, true
   for n, t in ipairs(turns) do
     if t.to ~= nextInRing(t.from) then
@@ -209,14 +211,14 @@ return function(game)
     end
   end
   check("every turn is one clockwise quarter turn (DOWN->LEFT->UP->RIGHT)",
-        ringOk and #turns >= 4)
+        ringOk and #turns >= 14)
   check(("the turns are %d frames apart"):format(STEP),
         spacingOk and #turns >= 2)
 
   -- not just "it eventually closed": an A-dismissable box closes too, only far
   -- too early, and that is the bug
   check("mashing A never closed the box early",
-        (closedAt or #log) >= SILENCE + 4 * STEP)
+        (closedAt or #log) >= SILENCE + 14 * STEP)
   if check("the box closed itself with no button press", closedAt ~= nil) then
     check("it stayed up for the whole song, A mashing and all",
           songEnd ~= nil and closedAt > songEnd)
@@ -229,8 +231,7 @@ return function(game)
     end
   end
 
-  -- ---- 2. do it again, screenshot each quarter turn, hand off mid-song ---
-  U.log("--- run 2: screenshots, then the pad is yours -------------------")
+  U.log("--- run 2: screenshots ----------------------------------------")
   U.wait(30)
   puff = game.overworld and puffIn(game.overworld)
   check("still standing against the JIGGLYPUFF", facingThePuff())
@@ -253,11 +254,8 @@ return function(game)
   end
   check("captured four quarter turns", shots >= 4)
 
-  U.log("The JIGGLYPUFF has been talked to and is mid-song. Mash A: the box has no")
-  U.log("arrow and must not close. The fairy should turn a quarter turn clockwise")
-  U.log("(down, left, up, right) every 24 frames until the song ends, then close")
-  U.log("itself (#249). The Center theme returns just before it does; expected.")
-
+  U.log(failures == 0 and "ALL PASS" or ("DONE " .. failures .. " check(s) failed"))
+  love.event.quit(failures == 0 and 0 or 1)
   while true do
     coroutine.yield()
   end

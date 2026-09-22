@@ -4449,10 +4449,8 @@ end
 
 function BattleState:continueBide(user, target)
   user.bideTurns = user.bideTurns - 1
-  if user.bideTurns > 0 then
-    self:sayNext(Strings("%s\nis storing energy!", displayName(user)))
-    return
-  end
+  -- engine/battle/core.asm:3499
+  if user.bideTurns > 0 then return end
   self:sayNext(self:romText("_UnleashedEnergyText", "%s\nunleashed energy!", displayName(user)))
   local dmg = (user.bideDamage or 0) * 2
   user.bideTurns, user.bideDamage = nil, nil
@@ -4955,6 +4953,8 @@ function BattleState:learnMove(mon, moveId)
   end
   if #mon.moves < 4 then
     table.insert(mon.moves, { id = moveId, pp = mdef.pp })
+    require("src.world.PikachuFollower")
+      .onMoveLearned(self.game.save, mon, moveId)
     Runtime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
     self:sayNextWaitSfx(self:romText("_MimicLearnedMoveText", "%s learned\n%s!", mon.nickname or self.data.pokemon[mon.species].name,
                                             mdef.name), function()
@@ -5050,6 +5050,7 @@ function BattleState:playerMonFainted()
         require("src.core.Sound").play(self.data, "Run")
         self:say(self:romText("_GotAwayText", "Got away safely!"))
         self.result = "run"
+        self.playerRan = true
         self.afterQueue = "finish"
       else
         self:say(self:romText("_CantEscapeText", "Can't escape!"))
@@ -5122,6 +5123,7 @@ function BattleState:safariAction(choice)
     require("src.core.Sound").play(self.data, "Run")
     self:say(self:romText("_GotAwayText", "Got away safely!"))
     self.result = "run"
+    self.playerRan = true
     self.afterQueue = "finish"
     return
   end
@@ -5268,6 +5270,7 @@ function BattleState:tryRun()
     require("src.core.Sound").play(self.data, "Run")
     self:say(self:romText("_GotAwayText", "Got away safely!"))
     self.result = "run"
+    self.playerRan = true
     self.afterQueue = "finish"
   else
     self:say(self:romText("_CantEscapeText", "Can't escape!"))
@@ -5469,6 +5472,11 @@ function BattleState:storeCaughtMon()
     end)
     -- engine/menus/pokedex.asm:581-582
     self:actNext(function() self.fieldCleared = true end)
+  end
+  -- engine/items/item_effects.asm:564
+  if require("src.core.GameVersion").isYellow() then
+    game.save.pikachuEmotionModifier = 1
+    game.save.pikachuMood = 0x85
   end
   local function askCaughtNickname()
     self:offerNickname(self.enemy.mon, self.enemy.name)
@@ -5707,6 +5715,14 @@ function BattleState:finish()
     require("src.pokemon.Evolution").checkParty(self.game,
       function() self:finish() end, self.leveledUp)
     return
+  end
+  -- engine/battle/end_of_battle.asm:49
+  if not self.pikachuMoodChecked then
+    self.pikachuMoodChecked = true
+    if self.kind == "link" or (not self.demo and (self.result == "win"
+       or (self.result == "run" and not self.playerRan))) then
+      require("src.world.PikachuFollower").moodAfterBattle(self.game.save)
+    end
   end
   -- Invariant: a battle can never hand the overworld a party with nothing
   -- healthy in it -- except the Oak's Lab starter rival, where pret skips

@@ -215,7 +215,7 @@ do
   check(Ui.titleArt() == nil, "no title art without the importer key")
   check(Ui.chrome() == nil, "no border art means the plain chrome draws")
   check(Ui.bg3Art() == nil, "no BG3 map art either")
-  -- pokefirered/src/teachy_tv.c:118 sBgTemplates[1] priority 0
+  -- pokefirered/src/teachy_tv.c:122
   check(Ui.chromeCutOut() == false, "an absent border is never treated as a cut out")
   local f = io.open(path, "rb")
   if f then
@@ -298,8 +298,8 @@ do
   Bag.add(s.bag, TeachyTv.ITEM_TEACHY_TV, 1)
   -- pokefirered/include/constants/items.h:300 ITEM_TM01
   Bag.add(s.bag, 289, 1)
-  -- pokefirered/include/constants/items.h:135 ITEM_ORAN_BERRY
-  Bag.add(s.bag, 133, 2)
+  -- pokefirered/include/constants/items.h:143
+  Bag.add(s.bag, 139, 2)
   Bag.add(s.bag, 13, 3)
   eq(Bag.get(s.bag, TeachyTv.ITEM_TM_CASE), 1, "the TM CASE rides the TM pocket")
   local pouch = require("src.core.game3.items_data").ITEM_BERRY_POUCH
@@ -431,7 +431,7 @@ do
   end
   check(BagMenu.isOpen(), "the pokedude bag opened for the TMs lesson")
   for _ = 1, 500 do Ui.bagDemo.update(1 / 60) end
-  -- pokefirered/src/item_menu.c:2385 exitCB = Pokedude_InitTMCase
+  -- pokefirered/src/item_menu.c:2391
   check(TmCase.isOpen(), "the bag handed off to the pokedude TM CASE")
   check(not BagMenu.isOpen(), "and the bag closed")
   eq(Stack.top() and Stack.top().id, "teachy_pokedude_tm_case", "the TM demo drives it")
@@ -442,7 +442,7 @@ do
 
   local demo = Ui.tmDemo
   for _ = 1, 720 do demo.update(1 / 60) end
-  -- pokefirered/src/tm_case.c:1419 gPokedudeText_TMTypes
+  -- pokefirered/src/tm_case.c:1422
   eq(TmCase.mode, "message", "the POKé DUDE starts talking")
   eq(TmCase.messageText, TeachyTv.pagesOf(TeachyTv.TM_TYPES)[1], "gPokedudeText_TMTypes page 1")
   local pages = #TeachyTv.pagesOf(TeachyTv.TM_TYPES)

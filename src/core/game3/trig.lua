@@ -28,4 +28,11 @@ function Trig.sin(i)
   return Trig.SINE[(math.floor(i) % 320) + 1]
 end
 
+-- pokefirered/src/trig.c:514
+function Trig.arcTan2(x, y)
+  local a = math.atan2(y, x)
+  if a < 0 then a = a + 2 * math.pi end
+  return math.floor(a * 65536 / (2 * math.pi) + 0.5) % 65536
+end
+
 return Trig

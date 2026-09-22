@@ -404,11 +404,11 @@ end
 -- pokefirered/src/event_object_movement.c:4835
 function NativePack.resolveLayoutColl(coll, mapColl, hasWarp)
   if (mapColl or 0) == 0 then return coll end
-  local Permissions = require("src.world.gen2.Permissions")
-  if Permissions.isLedge(coll) then return coll end
+  local Coll = require("src.core.CollPermissions")
+  if Coll.isLedge(coll) then return coll end
   -- pokefirered/src/field_control_avatar.c:987
   if hasWarp and coll >= 0x60 and coll <= 0x7F then return coll end
-  if not Permissions.isWalkable(coll) then return coll end
+  if not Coll.isWalkable(coll) then return coll end
   return require("src.core.game3.scripting.collision").seed("BLOCKED")
 end
 
@@ -465,7 +465,7 @@ end
 -- midIndex: optional [pair][mid] = { coll, ... } for resolved COLL_* lookup
 -- CollisionFn: function(mid, rawColl, behavior, kind) → collByte
 function NativePack.writeExtract(cache, root, bundles, grids, borders, pairNames, midIndex, behaviorOf, fromCell, scriptMids, warpCells)
-  root = root or "data/generated/gba"
+  root = root or require("src.core.game3.cache_paths").CACHE_ROOT
   local NativeRoot = root .. "/native"
   local manifest = {
     native_version = Versions.NATIVE_VERSION or 1,

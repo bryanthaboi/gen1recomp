@@ -78,6 +78,7 @@ end
 
 local function current_box_data()
   local storage = Storage.ensure(BoxStorageUI._session)
+  if not storage then return nil, nil end
   local bId = storage.currentBox or 1
   return storage.boxes[bId], bId
 end
@@ -96,13 +97,14 @@ local function mon_at_cursor()
     if isPickedUp then
       return nil, "party", nil, pIdx
     end
-    return session.party and session.party[pIdx], "party", nil, pIdx
+    return session and session.party and session.party[pIdx], "party", nil, pIdx
   elseif BoxStorageUI.cursorSlot >= 1 and BoxStorageUI.cursorSlot <= 30 then
+    if not storage then return nil, "box", nil, BoxStorageUI.cursorSlot end
     local box = storage.boxes[storage.currentBox or 1]
     return box and box.mons[BoxStorageUI.cursorSlot], "box", storage.currentBox, BoxStorageUI.cursorSlot
   elseif BoxStorageUI.cursorSlot <= -1 and BoxStorageUI.cursorSlot >= -6 then
     local pIdx = -BoxStorageUI.cursorSlot
-    return session.party and session.party[pIdx], "party", nil, pIdx
+    return session and session.party and session.party[pIdx], "party", nil, pIdx
   end
   return nil, nil, nil, nil
 end
@@ -115,6 +117,7 @@ function BoxStorageUI.show(opts)
   BoxStorageUI.mode = "browse"
   BoxStorageUI.subMode = opts.subMode or "move"
   BoxStorageUI.cursorSlot = 1
+  BoxStorageUI._prevPartySlot = nil
   BoxStorageUI.holdingMon = nil
   BoxStorageUI.holdingSource = nil
   BoxStorageUI.hoverTimer = 0
@@ -697,6 +700,7 @@ function BoxStorageUI.draw()
   if not BoxStorageUI.open then return end
   local session = BoxStorageUI._session
   local storage = Storage.ensure(session)
+  if not storage then return end
   local box, bId = current_box_data()
 
   -- 1. Full Salmon / Scrolling Background (BG3)

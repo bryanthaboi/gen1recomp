@@ -1,28 +1,12 @@
 local P = {}
 
 local bit = require("bit")
+local Trig = require("src.core.game3.trig")
 local AnimPal = require("src.core.game3.battle.anim_pal")
 local AnimCoords = require("src.core.game3.battle.anim_coords")
 P.band, P.bor, P.bxor, P.lshift, P.rshift = bit.band, bit.bor, bit.bxor, bit.lshift, bit.rshift
 
-local SINE = {
-  0, 6, 12, 18, 25, 31, 37, 43, 49, 56, 62, 68, 74, 80, 86, 92,
-  97, 103, 109, 115, 120, 126, 131, 136, 142, 147, 152, 157, 162, 167, 171, 176,
-  181, 185, 189, 193, 197, 201, 205, 209, 212, 216, 219, 222, 225, 228, 231, 234,
-  236, 238, 241, 243, 244, 246, 248, 249, 251, 252, 253, 254, 255, 255, 256, 256,
-  256, 256, 256, 255, 255, 254, 253, 252, 251, 249, 248, 246, 244, 243, 241, 238,
-  236, 234, 231, 228, 225, 222, 219, 216, 212, 209, 205, 201, 197, 193, 189, 185,
-  181, 176, 171, 167, 162, 157, 152, 147, 142, 136, 131, 126, 120, 115, 109, 103,
-  97, 92, 86, 80, 74, 68, 62, 56, 49, 43, 37, 31, 25, 18, 12, 6,
-  0, -6, -12, -18, -25, -31, -37, -43, -49, -56, -62, -68, -74, -80, -86, -92,
-  -97, -103, -109, -115, -120, -126, -131, -136, -142, -147, -152, -157, -162, -167, -171, -176,
-  -181, -185, -189, -193, -197, -201, -205, -209, -212, -216, -219, -222, -225, -228, -231, -234,
-  -236, -238, -241, -243, -244, -246, -248, -249, -251, -252, -253, -254, -255, -255, -256, -256,
-  -256, -256, -256, -255, -255, -254, -253, -252, -251, -249, -248, -246, -244, -243, -241, -238,
-  -236, -234, -231, -228, -225, -222, -219, -216, -212, -209, -205, -201, -197, -193, -189, -185,
-  -181, -176, -171, -167, -162, -157, -152, -147, -142, -136, -131, -126, -120, -115, -109, -103,
-  -97, -92, -86, -80, -74, -68, -62, -56, -49, -43, -37, -31, -25, -18, -12, -6,
-}
+local SINE = Trig.SINE
 P.SINE = SINE
 
 local floor = math.floor
@@ -68,12 +52,10 @@ function P.Sin2(angle)
   if floor(angle / 180) % 2 == 1 then return -v end
   return v
 end
-function P.Cos2(deg) return P.Sin2(floor(deg) + 90) end
+-- pokefirered/src/trig.c:539-541
 
 function P.ArcTan2(x, y)
-  local a = math.atan2(y, x)
-  if a < 0 then a = a + 2 * math.pi end
-  return floor(a / (2 * math.pi) * 65536 + 0.5) % 65536
+  return Trig.arcTan2(x, y)
 end
 -- pokefirered/src/battle_anim_mons.c:1281
 function P.ArcTan2Neg(x, y)
@@ -1341,7 +1323,7 @@ local PicSize
 -- pokefirered/src/battle_anim_mons.c:1999
 function P.coordAttr(vm, side, attr)
   if PicSize == nil then
-    local ok, m = pcall(require, "src.core.game3.battle.anim_port.g3_pic_size")
+    local ok, m = pcall(require, "src.core.game3.battle.anim_port.g1_pic_sizes")
     PicSize = ok and m or false
   end
   local sp = P.species(vm, side) or 0

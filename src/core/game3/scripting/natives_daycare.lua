@@ -69,6 +69,16 @@ local nicknameOf = Model.nickname
 local slotMon = Model.mon
 local eggPending = Model.isEggPending
 
+-- data/maps/FourIsland_PokemonDayCare/scripts.inc:86-88, data/maps/FourIsland/scripts.inc:95-104, data/scripts/day_care.inc:79-81, daycare.c, src/daycare.c:525, :1081
+local function partyIsFull(session)
+  local party = session and session.party or {}
+  local count = 0
+  for i = 1, PARTY_SIZE do
+    if speciesOf(party[i]) ~= SPECIES_NONE then count = count + 1 end
+  end
+  return count >= PARTY_SIZE
+end
+
 Daycare.SAVE_KEY = Model.SAVE_KEY
 Daycare.stateOf = Model.stateOf
 Daycare.route5Of = Model.route5Of
@@ -178,6 +188,11 @@ Daycare.HANDLERS = {
   -- pokefirered/src/daycare.c:546 TakePokemonFromDaycare
   [Std.SPECIAL.TakePokemonFromDaycare] = function(ctx, adapters)
     local session = sessionOf()
+    -- data/maps/FourIsland_PokemonDayCare/scripts.inc:86-88
+    if partyIsFull(session) then
+      setResult(ctx, SPECIES_NONE)
+      return false, SPECIES_NONE
+    end
     local dc = Daycare.stateOf(session)
     local index = varGet(ctx, VAR_0x8004) + 1
     local mon = slotMon(dc, index)
@@ -191,6 +206,11 @@ Daycare.HANDLERS = {
   -- pokefirered/src/daycare.c:1588 TakePokemonFromRoute5Daycare
   [Std.SPECIAL.TakePokemonFromRoute5Daycare] = function(ctx, adapters)
     local session = sessionOf()
+    -- data/scripts/day_care.inc:79-81
+    if partyIsFull(session) then
+      setResult(ctx, SPECIES_NONE)
+      return false, SPECIES_NONE
+    end
     local r5 = Daycare.route5Of(session)
     local mon = r5 and r5.mon
     if not mon then
@@ -292,12 +312,7 @@ Daycare.HANDLERS = {
     if not eggPending(dc) then return false end
     local session = sessionOf()
     -- pokefirered/data/maps/FourIsland/scripts.inc:96
-    local party = session and session.party or {}
-    local count = 0
-    for i = 1, PARTY_SIZE do
-      if speciesOf(party[i]) ~= SPECIES_NONE then count = count + 1 end
-    end
-    if count >= PARTY_SIZE then return false end
+    if partyIsFull(session) then return false end
     Breeding.giveEggFromDaycare(session)
     return false
   end,

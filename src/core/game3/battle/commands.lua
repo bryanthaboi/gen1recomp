@@ -15,16 +15,11 @@ function Commands.menuFor(st)
   return Commands.MENU
 end
 
-function Commands.defaultMenuIndex()
-  return 1 -- FIGHT
-end
-
 local function battler_of(st, id)
   if id == nil or id == 0 then return st and st.player end
   if id == 1 then return st and st.enemy end
   return st and st.battlers and st.battlers[id]
 end
-Commands.battlerOf = battler_of
 
 local function move_target_type(mv)
   local ok, Moves = pcall(require, "src.core.game3.battle.moves")
@@ -247,9 +242,7 @@ function Commands.switchError(st, slot, forced, battlerId)
   return nil
 end
 
-Commands.aiHook = nil
-
-function Commands.setAiHook(fn) Commands.aiHook = fn end
+-- battle_controller_opponent.c:1339
 
 local function first_usable_action(b, id)
   local mon = b and b.mon
@@ -268,9 +261,7 @@ local function vanilla_enemy_action(st, battlerId)
   if st and st.double then
     local b = battler_of(st, id)
     local act
-    local hook = Commands.aiHook
     local ok, res = pcall(function()
-      if hook then return hook(st, id) end
       local Ai = require("src.core.game3.battle.ai")
       if Ai.chooseAction then return Ai.chooseAction(st, id) end
       return Ai.chooseMove(st, { battler = id })
@@ -337,17 +328,6 @@ function Commands.enemyAction(st, battlerId)
   end, st, battlerId)
   if res ~= nil and res == vanilla then return vanilla end
   return normalize_enemy_action(st, res, battlerId) or vanilla or vanilla_enemy_action(st, battlerId)
-end
-
-function Commands.enemyActions(st)
-  local out = {}
-  for _, id in ipairs({ 1, 3 }) do
-    local b = battler_of(st, id)
-    if b and not (st.absent and st.absent[id]) and (id == 1 or st.double) then
-      out[id] = Commands.enemyAction(st, id)
-    end
-  end
-  return out
 end
 
 --- Wild flee: pret-ish odds from speed (simplified).

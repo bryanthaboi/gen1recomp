@@ -169,9 +169,12 @@ local function capture_events(fn)
   local mark = ad:eventMark()
   local prev = ad._say
   ad._say = function() end
-  local ok = pcall(fn, ad)
+  local ok, fnErr = pcall(fn, ad)
   ad._say = prev
-  if not ok then return {} end
+  if not ok then
+    print("[game3/battle] switch effect failed: " .. tostring(fnErr))
+    return {}
+  end
   return ad:eventsSince(mark)
 end
 
@@ -225,7 +228,7 @@ function SwitchSeq.beginPlayerSwitch(st, newSlot, opts)
     State.trackParticipant(st, st.enemy, oldBattler and oldBattler.partyIndex or 1)
     State.syncBattlerToParty(st.player, st.playerParty)
     State.wipeVolatilesAndStages(st.player, { batonPass = opts.batonPass })
-    st.player = State.makeBattler(st.playerParty[newSlot], "player", { state = st, partyIndex = newSlot })
+    st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot, st = st })
     State.trackParticipant(st, st.enemy, newSlot)
     Anim.syncDisplayFromState(st)
     local newName = State.displayName(st.player)
@@ -263,14 +266,14 @@ function SwitchSeq.beginSendOut(st, side, newSlot, opts)
 
   if SwitchSeq._headless then
     if side == "player" then
-      st.player = State.makeBattler(st.playerParty[newSlot], "player", { state = st, partyIndex = newSlot })
+      st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot, st = st })
       State.trackParticipant(st, st.enemy, newSlot)
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
         SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player)))
       end
     else
-      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { state = st, partyIndex = newSlot })
+      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot, st = st })
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
         local tname = (st.trainerClassName and st.trainerClassName ~= "")
@@ -422,12 +425,12 @@ function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
     State.trackParticipant(st, st.enemy, oldBattler and oldBattler.partyIndex or 1)
     State.syncBattlerToParty(st.player, st.playerParty)
     State.wipeVolatilesAndStages(st.player)
-    st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { state = st, partyIndex = enemySlot })
+    st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { partyIndex = enemySlot, st = st })
     local tname = (st.trainerClassName and st.trainerClassName ~= "")
       and (st.trainerClassName .. " " .. (st.trainerName or ""))
       or (st.trainerName or "TRAINER")
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("%s sent\nout %s!", tname, State.displayName(st.enemy))) end
-    st.player = State.makeBattler(st.playerParty[playerSlot], "player", { state = st, partyIndex = playerSlot })
+    st.player = State.makeBattler(st.playerParty[playerSlot], "player", { partyIndex = playerSlot, st = st })
     State.trackParticipant(st, st.enemy, playerSlot)
     Anim.syncDisplayFromState(st)
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player))) end
@@ -568,14 +571,14 @@ local function run_step(step)
         State.syncBattlerToParty(st.player, st.playerParty)
         State.wipeVolatilesAndStages(st.player, { batonPass = d.batonPass })
       end
-      st.player = State.makeBattler(st.playerParty[newSlot], "player", { state = st, partyIndex = newSlot })
+      st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot, st = st })
       State.trackParticipant(st, st.enemy, newSlot)
     else
       if st and st.enemy then
         State.syncBattlerToParty(st.enemy, st.foeParty)
         State.wipeVolatilesAndStages(st.enemy)
       end
-      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { state = st, partyIndex = newSlot })
+      st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot, st = st })
     end
     Anim.syncDisplayFromState(st)
     advance()
@@ -707,11 +710,14 @@ local function run_step(step)
     local sides = d.sides or { d.side or "player" }
     if d.id ~= nil then sides = { d.id } end
     if #sides > 1 then
-      table.sort(sides, function(a, bSide)
+      local sorted = {}
+      for i = 1, #sides do sorted[i] = sides[i] end
+      table.sort(sorted, function(a, bSide)
         local spA = st and st[a] and (st[a].speed or (st[a].mon and st[a].mon.speed)) or 0
         local spB = st and st[bSide] and (st[bSide].speed or (st[bSide].mon and st[bSide].mon.speed)) or 0
         return spA > spB
       end)
+      sides = sorted
     end
     local evs = engine_entry_events(st, sides)
     if evs == nil then

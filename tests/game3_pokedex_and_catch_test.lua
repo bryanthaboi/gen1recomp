@@ -1,5 +1,6 @@
 -- Comprehensive test suite for Game 3 Pokédex tracking, catch mechanics, and UI.
 
+require("tests.game3_cache").requireData("game3_pokedex_and_catch_test")
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")
 

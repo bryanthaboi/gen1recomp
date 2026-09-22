@@ -88,26 +88,50 @@ local function read_graphics_info(rom, infoOff)
   }
 end
 
---- Max imageValue referenced by anim table (capped).
-local function max_anim_frame(rom, animsPtr, animCount)
-  local aoff = gba_off(animsPtr)
-  if not aoff then return 0 end
-  animCount = animCount or 20
-  local mx = 0
-  for i = 0, animCount - 1 do
-    local p = rom:u32(aoff + i * 4)
-    local po = gba_off(p)
-    if not po then break end
-    for j = 0, 31 do
-      local lo = rom:u16(po + j * 4)
-      -- ANIMCMD_END = -2 as s16
-      if lo == 0xFFFE then break end
-      local w = rom:u32(po + j * 4)
-      local img = w % 65536
-      if img > mx then mx = img end
-    end
+local MAX_PIC_FRAMES = 32
+local picStartsCache = setmetatable({}, { __mode = "k" })
+
+local function pic_table_starts(rom, pointers, num)
+  local byRom = picStartsCache[rom]
+  if not byRom then byRom = {}; picStartsCache[rom] = byRom end
+  local key = pointers .. ":" .. num
+  if byRom[key] then return byRom[key] end
+  local starts, infos = {}, {}
+  local function add(infoOff)
+    if infos[infoOff] then return false end
+    if infoOff + 0x24 > rom.size or rom:u16(infoOff) ~= 0xFFFF then return false end
+    local animsOff = gba_off(rom:u32(infoOff + 0x18))
+    local imagesOff = gba_off(rom:u32(infoOff + 0x1C))
+    if not animsOff or not imagesOff then return false end
+    infos[infoOff] = true
+    starts[imagesOff] = true
+    return true
   end
-  return mx
+  for g = 0, num - 1 do
+    local infoOff = gba_off(rom:u32(pointers + g * 4))
+    if infoOff then add(infoOff) end
+  end
+  local known = {}
+  for off in pairs(infos) do known[#known + 1] = off end
+  for _, off in ipairs(known) do
+    local nextOff = off + 0x24
+    while add(nextOff) do nextOff = nextOff + 0x24 end
+  end
+  byRom[key] = starts
+  return starts
+end
+
+-- pokefirered/src/data/object_events/object_event_pic_tables.h
+local function pic_table_len(rom, imagesOff, frameBytes, starts)
+  local n = 0
+  while n < MAX_PIC_FRAMES do
+    local off = imagesOff + n * 8
+    if n > 0 and starts[off] then break end
+    if off + 8 > rom.size then break end
+    if not gba_off(rom:u32(off)) or rom:u16(off + 4) ~= frameBytes then break end
+    n = n + 1
+  end
+  return n
 end
 
 --- Decode one 4bpp sprite frame (tile order: L→R, T→B 8×8) → indexed [w*h].
@@ -193,16 +217,10 @@ function OwExtract.extractOne(rom, graphicsId, palsByTag, version)
   if w < 8 or h < 8 or w > 128 or h > 128 then
     return nil, "bad dimensions"
   end
-  local frameCount
-  if info.inanimate then
-    frameCount = 1
-  else
-    -- Only ANIM_STD_* (0..19). Run/spin anims can reference higher indices
-    -- that aren't in the base pic table for ordinary NPCs.
-    local maxFrame = max_anim_frame(rom, info.animsPtr, 20)
-    frameCount = math.max(1, maxFrame + 1)
-    if frameCount > 18 then frameCount = 18 end
-  end
+  local imagesOff0 = gba_off(info.imagesPtr)
+  local starts = pic_table_starts(rom, pointers, num)
+  local frameCount = imagesOff0 and pic_table_len(rom, imagesOff0, math.floor(w * h / 2), starts) or 0
+  if frameCount < 1 then frameCount = 1 end
 
   -- For Town Map (OBJ_EVENT_GFX_TOWN_MAP = 93) or 16x16 inanimate objects with 32x16 OAM allocation:
   -- The sprite is a 16x16 tile image on the left; adjust width to 16 for proper 1:1 tile grid alignment.

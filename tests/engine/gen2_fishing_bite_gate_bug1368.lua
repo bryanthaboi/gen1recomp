@@ -33,6 +33,7 @@ local function fakeMap(waterCell)
       return (x == waterCell[1] and y == waterCell[2])
         and COLL_WATER or COLL_FLOOR
     end,
+    inBounds = function() return true end,
   }
 end
 

@@ -2,6 +2,7 @@
 -- Shop & Bag chrome extraction, contract, state machine, and interaction unit tests.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_shop_bag_chrome_test")
 
 local failed = 0
 local function check(cond, msg)

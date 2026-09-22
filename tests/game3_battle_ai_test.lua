@@ -2,6 +2,7 @@
 -- FireRed battle AI pack + scoring VM smoke tests.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_battle_ai_test")
 
 local failed = 0
 local function check(cond, msg)

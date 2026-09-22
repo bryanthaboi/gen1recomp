@@ -117,7 +117,7 @@ local function stand_in(id, slot)
   local mon = party and slot and party[slot]
   if not mon then return nil end
   local State = require("src.core.game3.battle.state")
-  local ok, b = pcall(State.makeBattler, mon, side, { state = st, partyIndex = slot, id = id })
+  local ok, b = pcall(State.makeBattler, mon, side, { partyIndex = slot, id = id, st = st })
   return ok and b or nil
 end
 

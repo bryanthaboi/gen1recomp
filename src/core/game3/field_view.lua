@@ -241,11 +241,23 @@ local function playerSpriteName(game)
   return "SPRITE_CHRIS"
 end
 
+local PalettesMod, PalettesMissing
+local function palettes()
+  if PalettesMod then return PalettesMod end
+  local loaded = package.loaded["src.world.gen2.Palettes"]
+  if loaded then PalettesMod = loaded; return loaded end
+  if PalettesMissing then return nil end
+  local ok, m = pcall(require, "src.world.gen2.Palettes")
+  if ok and m then PalettesMod = m; return m end
+  PalettesMissing = true
+  return nil
+end
+
 local function daytimeFor(game, mapDef)
   local world = game and (game.overworld or game.world)
   if world and world.daytime then return world.daytime end
-  local ok, Palettes = pcall(require, "src.world.gen2.Palettes")
-  if ok and Palettes and Palettes.daytimeFor and world and world.hour then
+  local Palettes = palettes()
+  if Palettes and Palettes.daytimeFor and world and world.hour then
     local hour = type(world.hour) == "function" and world:hour() or 12
     return Palettes.daytimeFor(mapDef, hour, world.flashUsed)
   end
@@ -294,61 +306,6 @@ local function objectVisible(obj)
   return true
 end
 
---- Prefer live host entities (animated + already palette-baked). Returns true if drawn.
-local function drawWorldEntities(world, camX, camY)
-  local entities = world and world.entities
-  if type(entities) ~= "table" or #entities == 0 then return false end
-
-  local PlayerMod = package.loaded["src.core.game3.player"]
-  local list = {}
-  for _, e in ipairs(entities) do
-    local isPlayer = (world and world.player and e == world.player) or (e.isPlayer == true) or (e.id == "player")
-    if isPlayer then
-      if (PlayerMod and PlayerMod.isVisible and not PlayerMod.isVisible()) or (e.visible == false) or (e.hidden == true) then
-        -- Skip hidden player entity
-      elseif e and e.sprite then
-        list[#list + 1] = e
-      end
-    elseif e and e.sprite and (e.visible ~= false) and (e.hidden ~= true) then
-      list[#list + 1] = e
-    end
-  end
-  if #list == 0 then return false end
-
-  table.sort(list, function(a, b)
-    local ay = a.py or ((a.cellY or 0) * CELL)
-    local by = b.py or ((b.cellY or 0) * CELL)
-    if ay == by then
-      return tostring(a.id or "") < tostring(b.id or "")
-    end
-    return ay < by
-  end)
-
-  -- Ensure OBJ palettes are current (World normally does this; re-apply cheaply).
-  if world.applySpritePalette then
-    for _, e in ipairs(list) do
-      world:applySpritePalette(e)
-    end
-  end
-
-  love.graphics.setColor(1, 1, 1, 1)
-  for _, e in ipairs(list) do
-    local px = e.px or ((e.cellX or 0) * CELL)
-    local py = e.py or ((e.cellY or 0) * CELL)
-    local facing = e.facing or "down"
-    local phase = 0
-    if type(e.walkPhase) == "function" then
-      phase = e:walkPhase() or 0
-    end
-    local flip = e.stepFlip
-    if type(e.drawFlip) == "function" then
-      flip = e:drawFlip()
-    end
-    e.sprite:draw(px, py, camX, camY, facing, phase, flip)
-  end
-  return true
-end
-
 local function neighborActorDefs(mapId, def)
   local Space = package.loaded["src.core.game3.scripting.space"]
   local ev = Space and Space.bundle and Space.bundle.events
@@ -373,6 +330,7 @@ local function collectNeighborActors(actors, baseIndex, hostMapId, hostDef)
             kind = "npc",
             i = baseIndex,
             obj = eo.def,
+            eventObject = eo,
             ghost = entry.id,
             x = (eo.px or (eo.cellX or 0) * CELL) + entry.ox * CELL,
             y = (eo.py or (eo.cellY or 0) * CELL) + entry.oy * CELL,
@@ -457,6 +415,39 @@ local function actorPriority(a)
   end
 end
 
+-- event_object_movement.c:8379-8387, scrcmd.c:1130
+local function applyDrawOrder(actors)
+  local underActors = {}
+  local overActors = {}
+  for _, a in ipairs(actors) do
+    local obj = a.eventObject
+    if obj and obj.fixedPriority then
+      if obj.fixedClass == nil then obj.fixedClass = a.priority or actorPriority(a) end
+      a.priority = obj.fixedClass
+      a.subpriority = obj.subpriority
+    else
+      if obj then obj.fixedClass = nil end
+      a.priority = actorPriority(a)
+      a.subpriority = nil
+    end
+    if (a.priority or 2) < 2 then
+      overActors[#overActors + 1] = a
+    else
+      underActors[#underActors + 1] = a
+    end
+  end
+  local function sortActors(a, b)
+    local ay = a.subpriority or a.sortY or a.y
+    local by = b.subpriority or b.sortY or b.y
+    if ay == by then return (a.i or 0) < (b.i or 0) end
+    return ay < by
+  end
+  table.sort(underActors, sortActors)
+  table.sort(overActors, sortActors)
+  return underActors, overActors
+end
+FieldView.applyDrawOrder = applyDrawOrder
+
 local function drawSingleActor(game, mapDef, a, camX, camY)
   local daytime = daytimeFor(game, mapDef)
   local okOw, OwSprites = pcall(require, "src.core.game3.ow_sprites")
@@ -509,6 +500,7 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
         kind = "npc",
         i = eo.localId,
         obj = eo.def,
+        eventObject = eo,
         elevation = eo.elevation or (eo.def and eo.def.elevation) or 0,
         x = (eo.px or (eo.cellX * CELL)) + (eo.raiseX or 0),
         y = (eo.py or (eo.cellY * CELL)) + (eo.raiseY or 0),
@@ -591,32 +583,19 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
     }
   end
 
-  local underActors = {}
-  local overActors = {}
-  for _, a in ipairs(actors) do
-    a.priority = actorPriority(a)
-    if (a.priority or 2) < 2 then
-      overActors[#overActors + 1] = a
-    else
-      underActors[#underActors + 1] = a
-    end
-  end
-
-  local function sortActors(a, b)
-    local ay = a.sortY or a.y
-    local by = b.sortY or b.y
-    if ay == by then return (a.i or 0) < (b.i or 0) end
-    return ay < by
-  end
-  table.sort(underActors, sortActors)
-  table.sort(overActors, sortActors)
-
-  return underActors, overActors
+  return applyDrawOrder(actors)
 end
 
 --- Collect visible tile draws grouped by palette slot for batched GbcPalette.with.
+local tile_draw_pool, tile_draw_count, tile_draw_slots = {}, 0, {}
+
 local function collectTileDraws(mapDef, camX, camY, canvasW, canvasH)
-  local bySlot = {} -- slot → { {quad, x, y}, ... }
+  local bySlot = tile_draw_slots
+  for slot, list in pairs(bySlot) do
+    for i = #list, 1, -1 do list[i] = nil end
+    bySlot[slot] = nil
+  end
+  tile_draw_count = 0
   local blocksTbl = FieldView._blockTiles
   local tilePals = FieldView._tilePalettes
   local bx0 = math.floor(camX / BLOCK) - 1
@@ -642,17 +621,29 @@ local function collectTileDraws(mapDef, camX, camY, canvasW, canvasH)
               list = {}
               bySlot[slot] = list
             end
-            list[#list + 1] = {
-              q = q,
-              x = originX + (i % 4) * 8,
-              y = originY + math.floor(i / 4) * 8,
-            }
+            local d = tile_draw_pool[tile_draw_count + 1]
+            if not d then
+              d = { q = false, x = 0, y = 0 }
+              tile_draw_pool[tile_draw_count + 1] = d
+            end
+            tile_draw_count = tile_draw_count + 1
+            d.q = q
+            d.x = originX + (i % 4) * 8
+            d.y = originY + math.floor(i / 4) * 8
+            list[#list + 1] = d
           end
         end
       end
     end
   end
   return bySlot
+end
+
+local palAtlas, palList
+local function draw_pal_list()
+  for _, d in ipairs(palList) do
+    love.graphics.draw(palAtlas, d.q, d.x, d.y)
+  end
 end
 
 local function drawTilesColored(atlas, bySlot, bgSet)
@@ -669,11 +660,8 @@ local function drawTilesColored(atlas, bySlot, bgSet)
     for slot, list in pairs(bySlot) do
       local colors = bgSet[slot] or bgSet[1]
       if colors then
-        GbcPalette.with(colors, function()
-          for _, d in ipairs(list) do
-            love.graphics.draw(atlas, d.q, d.x, d.y)
-          end
-        end)
+        palAtlas, palList = atlas, list
+        GbcPalette.with(colors, draw_pal_list)
       else
         for _, d in ipairs(list) do
           love.graphics.draw(atlas, d.q, d.x, d.y)

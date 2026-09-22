@@ -7,6 +7,7 @@
 -- pokefirered/include/constants/items.h:446 ITEM_SAPPHIRE
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_stitchmap_item_ids_test")
 
 local failed = 0
 local function check(cond, msg)

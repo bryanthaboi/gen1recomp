@@ -35,17 +35,35 @@ local function parse_objects(rom, ptr, count)
     local base = off + i * OBJ_SIZE
     local localId = rom:get(base)
     local graphics = rom:get(base + 1)
+    -- include/constants/event_objects.h:194-195, fieldmap.h:110-130
+    local kind = rom:get(base + 2)
+    local isClone = kind == 255
     local x = rom:u16(base + 4)
     if x >= 0x8000 then x = x - 0x10000 end
     local y = rom:u16(base + 6)
     if y >= 0x8000 then y = y - 0x10000 end
-    local elev = rom:get(base + 8)
-    local movementType = rom:get(base + 9)
-    local rangeWord = rom:u16(base + 10)
-    local rangeX = rangeWord % 16
-    local rangeY = math.floor(rangeWord / 16) % 16
-    local trainerType = rom:u16(base + 12)
-    local sight = rom:u16(base + 14)
+    local elev, movementType, rangeX, rangeY, trainerType, sight
+    local cloneTarget
+    if isClone then
+      elev = 0
+      movementType = 0
+      rangeX, rangeY = 0, 0
+      trainerType = 0
+      sight = 0
+      cloneTarget = {
+        localId = rom:get(base + 8),
+        mapNum = rom:u16(base + 12),
+        mapGroup = rom:u16(base + 14),
+      }
+    else
+      elev = rom:get(base + 8)
+      movementType = rom:get(base + 9)
+      local rangeWord = rom:u16(base + 10)
+      rangeX = rangeWord % 16
+      rangeY = math.floor(rangeWord / 16) % 16
+      trainerType = rom:u16(base + 12)
+      sight = rom:u16(base + 14)
+    end
     local scriptPtr = rom:u32(base + 16)
     local flag = rom:u16(base + 20)
     local host = GfxIds.hostMovement(movementType, rangeX, rangeY)
@@ -59,6 +77,7 @@ local function parse_objects(rom, ptr, count)
       graphicsId = graphics,
       graphics = graphics,
       sprite = GfxIds.spriteFor(graphics),
+      kind = kind,
       x = x,
       y = y,
       elevation = elev,
@@ -72,6 +91,7 @@ local function parse_objects(rom, ptr, count)
       scriptPtr = scriptPtr,
       scriptKey = scriptKey,
       flag = flag,
+      cloneTarget = cloneTarget,
     }
   end
   return objects

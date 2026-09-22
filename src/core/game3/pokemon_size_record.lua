@@ -70,7 +70,7 @@ end
 
 local function scriptStore(session, ctx)
   local Space = package.loaded["src.core.game3.scripting.space"]
-  return (Space and Space.store) or (ctx and ctx.session) or (session and session.store) or session or nil
+  return (Space and Space.store) or (ctx and ctx.session) or session or nil
 end
 
 function SizeRecord.getVar(session, ctx, varId)

@@ -55,12 +55,32 @@ function MoveLearnMenu:enter()
     nil, {
       choice = function(yes)
         if yes then
-          self.selecting = true
+          self:askForget()
         else
           self:confirmAbandon()
         end
       end,
     }))
+end
+
+-- engine/pokemon/learn_move.asm:119-123
+function MoveLearnMenu:askForget()
+  local TextBox = require("src.render.TextBox")
+  local game = self.game
+  self.selecting = false
+  local text = romText(game.data, "_WhichMoveToForgetText",
+    "Which move should\nbe forgotten?")
+  self.forgetPrompt = TextBox.strip(text)
+  local box
+  box = TextBox.new(game, text, nil, { stay = {
+    onShown = function()
+      if game.stack:top() == box then game.stack:pop() end
+      -- engine/pokemon/learn_move.asm:142
+      self.index = 1
+      self.selecting = true
+    end,
+  } })
+  game.stack:push(box)
 end
 
 function MoveLearnMenu:update(dt)
@@ -79,10 +99,13 @@ function MoveLearnMenu:update(dt)
     local old = self.mon.moves[self.index]
     if HM_MOVES[old.id] then
       -- HMCantDeleteText, then back to the forget list
+      -- engine/pokemon/learn_move.asm:177-181
       local TextBox = require("src.render.TextBox")
+      self.selecting = false
       self.game.stack:push(TextBox.new(self.game,
         romText(self.game.data, "_HMCantDeleteText",
-          "HM techniques\ncan't be deleted!")))
+          "HM techniques\ncan't be deleted!"),
+        function() self:askForget() end))
       return
     end
     local mdef = self.game.data.moves[self.newMoveId]
@@ -119,6 +142,8 @@ function MoveLearnMenu:finish(learned)
   local msg
   local opts
   if learned then
+    require("src.world.PikachuFollower")
+      .onMoveLearned(game.save, self.mon, self.newMoveId)
     -- pokered pages this as four texts in a row; _ForgotAndText carries
     -- the "And..." tail.  Each text_pause holds the box, and the first one
     -- is followed by SFX_SWAP (engine/pokemon/learn_move.asm:208-222).
@@ -146,16 +171,20 @@ function MoveLearnMenu:draw()
   if not self.selecting then return end
   -- TextBoxBorder 4,7 b=4 c=14; PlaceString 6,8; cursor 5,8
   -- engine/pokemon/learn_move.asm:123-140 (#1686)
+  -- engine/pokemon/learn_move.asm:121
+  Font.drawBox(0, 12, 20, 6)
+  love.graphics.setColor(0, 0, 0, 1)
+  local prompt = self.forgetPrompt or Strings("Which move should\nbe forgotten?")
+  local first, rest = prompt:match("^(.-)\n(.*)$")
+  Font.draw(first or prompt, 8, 14 * 8)
+  if rest then Font.draw(rest, 8, 16 * 8) end
+  love.graphics.setColor(1, 1, 1, 1)
   Font.drawBox(4, 7, 16, 6)
   love.graphics.setColor(0, 0, 0, 1)
   for i, mv in ipairs(self.mon.moves) do
     Font.draw(self.game.data.moves[mv.id].name, 48, (7 + i) * 8)
   end
   Font.drawCode(CURSOR, 40, (7 + self.index) * 8)
-  -- WhichMoveToForgetText in the bottom dialogue box
-  Font.drawBox(0, 12, 20, 6)
-  Font.draw(Strings("Which move should"), 8, 14 * 8)
-  Font.draw(Strings("be forgotten?"), 8, 16 * 8)
   love.graphics.setColor(1, 1, 1, 1)
 end
 

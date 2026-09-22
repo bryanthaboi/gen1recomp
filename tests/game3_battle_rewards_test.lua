@@ -2,6 +2,7 @@
 -- Trainer prize money, badge white-out loss, checkitemspace for gym TMs.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_battle_rewards_test")
 
 local failed = 0
 local function check(cond, msg)

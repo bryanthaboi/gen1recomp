@@ -1233,17 +1233,37 @@ function Ops.pcSort(S, mode)
   return not repeated
 end
 
+-- ram/wram.asm:1895 wBoxItems / pokecrystal ram/wram.asm:3120 wPCItems
+local function pcCapacity(S)
+  return (S.data and S.data.field and S.data.field.pcItemCap) or 50
+end
+
+local function pcStacksFree(S, id, addQty)
+  local pc = Ops.pcItems(S)
+  local used = 0
+  for rowId in pairs(pc) do used = used + math.ceil(math.max(0, itemQty(pc, rowId)) / 99) end
+  local held = math.max(0, itemQty(pc, id))
+  return used - math.ceil(held / 99) + math.ceil((held + addQty) / 99) <= pcCapacity(S)
+end
+
+-- engine/events/pokecenter_pc.asm:505 _CheckTossableItem
+local function slotMax(S, id)
+  if Gen.ofState(S) == 2 and not Ops.itemStacks(S, id) then return 1 end
+  return Ops.stackMax(S)
+end
+
 function Ops.addToPc(S, id)
   if Gen.ofState(S) == 3 then return changeG3(S, true, id, G3.quantity(S.data, S.save, true, id) + 1) end
   if not id then return Ops.say(S, "Pick an item first") end
   local pc = Ops.pcItems(S)
-  local n = 0
-  for _ in pairs(pc) do n = n + 1 end
-  if not pc[id] and Gen.ofState(S) == 2 and n >= 50 then
-    return Ops.say(S, "PC item storage is full (50 stacks)")
+  if not pc[id] and not pcStacksFree(S, id, 1) then
+    return Ops.say(S, ("PC item storage is full (%d stacks)"):format(pcCapacity(S)))
   end
   local cur = itemQty(pc, id)
-  pc[id] = math.min(Ops.stackMax(S), cur + 1)
+  if cur >= slotMax(S, id) then
+    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), slotMax(S, id)))
+  end
+  pc[id] = math.min(slotMax(S, id), cur + 1)
   return Ops.mark(S, ("%s x%d in PC storage"):format(tostring(id), pc[id]))
 end
 
@@ -1253,10 +1273,10 @@ function Ops.pcAdjust(S, id, delta)
   local pc = Ops.pcItems(S)
   local cur = itemQty(pc, id)
   if not pc[id] and cur <= 0 then return Ops.say(S, ("%s is not in PC storage"):format(tostring(id))) end
-  if delta > 0 and cur >= Ops.stackMax(S) then
-    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), Ops.stackMax(S)))
+  if delta > 0 and cur >= slotMax(S, id) then
+    return Ops.say(S, ("%s is already at x%d"):format(tostring(id), slotMax(S, id)))
   end
-  local nextQty = clamp(cur + delta, 0, Ops.stackMax(S))
+  local nextQty = clamp(cur + delta, 0, math.max(cur, slotMax(S, id)))
   if nextQty <= 0 then
     pc[id] = nil
     return Ops.mark(S, ("Removed %s from PC storage"):format(tostring(id)))
@@ -1324,6 +1344,92 @@ function Ops.pcMaxAll(S)
   end
   return Ops.mark(S, ("Maxed %d PC stack%s to x%d")
     :format(n, n == 1 and "" or "s", Ops.stackMax(S)))
+end
+
+local function itemContainer(S, id)
+  local Items3 = require("src.core.game3.items_data")
+  local id3 = G3.itemId(S.data, id)
+  return id3 == Items3.ITEM_TM_CASE or id3 == Items3.ITEM_BERRY_POUCH
+end
+
+function Ops.moveCount(S, toPc, id)
+  if id == nil or Ops.isBadgeId(id) then return 0 end
+  local fromHave, toHave
+  if Gen.ofState(S) == 3 then
+    if toPc and itemContainer(S, id) then return 0 end
+    fromHave = G3.quantity(S.data, S.save, not toPc, id)
+    toHave = G3.quantity(S.data, S.save, toPc, id)
+  else
+    local inv = S.save.inventory or {}
+    fromHave = itemQty(toPc and inv or Ops.pcItems(S), id)
+    toHave = itemQty(toPc and Ops.pcItems(S) or inv, id)
+  end
+  return math.max(0, math.min(fromHave, slotMax(S, id) - toHave))
+end
+
+local function itemName(S, id)
+  local def = S.data and S.data.items and S.data.items[id]
+  return tostring((def and def.name) or id)
+end
+
+local function moveG3(S, toPc, id, n)
+  local left = G3.quantity(S.data, S.save, not toPc, id) - n
+  if not G3.transfer(S.data, S.save, toPc, id, n) then
+    return Ops.say(S, toPc and "No room to store items in PC storage"
+      or "That bag pocket is full")
+  end
+  return left
+end
+
+-- engine/menus/players_pc.asm:86 PlayerPCDeposit
+function Ops.bagToPc(S, id)
+  if id == nil then return Ops.say(S, "No bag row selected") end
+  local n = Ops.moveCount(S, true, id)
+  if n <= 0 then
+    return Ops.say(S, ("%s cannot go to PC storage"):format(itemName(S, id)))
+  end
+  local left
+  if Gen.ofState(S) == 3 then
+    left = moveG3(S, true, id, n)
+    if not left then return false end
+  else
+    if not pcStacksFree(S, id, n) then
+      return Ops.say(S, ("PC item storage is full (%d stacks)"):format(pcCapacity(S)))
+    end
+    local pc = Ops.pcItems(S)
+    left = itemQty(S.save.inventory, id) - n
+    pc[id] = itemQty(pc, id) + n
+    Bag.remove(S.save, id, n)
+  end
+  if left <= 0 and S.selectedBagId == id then S.selectedBagId = nil end
+  return Ops.mark(S, ("Moved %d %s to PC storage%s"):format(n, itemName(S, id),
+    left > 0 and (" (%d left in the bag)"):format(left) or ""))
+end
+
+-- engine/menus/players_pc.asm:140 PlayerPCWithdraw
+function Ops.pcToBag(S, id)
+  if id == nil then return Ops.say(S, "No PC row selected") end
+  local n = Ops.moveCount(S, false, id)
+  if n <= 0 then
+    return Ops.say(S, ("%s cannot go to the bag"):format(itemName(S, id)))
+  end
+  local left
+  if Gen.ofState(S) == 3 then
+    left = moveG3(S, false, id, n)
+    if not left then return false end
+  else
+    if not Bag.add(S.save, id, n, S.data) then
+      local pocket = Bag.pocketOf(id, S.data)
+      return Ops.say(S, ("Bag is full (%d/%d %s slots)"):format(
+        Bag.slots(S.save, S.data, pocket), Bag.capacity(S.data, pocket), pocket))
+    end
+    local pc = Ops.pcItems(S)
+    left = itemQty(pc, id) - n
+    pc[id] = left > 0 and left or nil
+  end
+  if left <= 0 and S.selectedPcId == id then S.selectedPcId = nil end
+  return Ops.mark(S, ("Moved %d %s to the bag%s"):format(n, itemName(S, id),
+    left > 0 and (" (%d left in PC storage)"):format(left) or ""))
 end
 
 -- Badges are truthy inventory flags, not stackable items, which is why the

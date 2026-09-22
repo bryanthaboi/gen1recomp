@@ -7,6 +7,8 @@ local Music = require("src.core.Music")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
 local Timing = require("src.core.Timing")
+local FaithfulRes = require("src.core.FaithfulRes")
+local TouchSkin = require("src.core.TouchSkin")
 
 local IntroMovie = {}
 IntroMovie.__index = IntroMovie
@@ -14,14 +16,22 @@ IntroMovie.isOpaque = true
 
 -- Same as the title screen: full-bleed art, no world behind it, no player zoom
 -- to respect, so fill the window rather than sit at the fixed integer scale.
-function IntroMovie:wantsFillScale() return true end
+function IntroMovie:wantsFillScale()
+  if FaithfulRes.locked then return false end
+  if TouchSkin.drawable() then return false end
+  return true
+end
 
 -- SGB intro palettes: the splash uses PalPacket_GameFreakIntro (logo
 -- GAMEFREAK, falling star columns RED/VIRIDIAN/BLUEMON), the attract
 -- fight PalPacket_NidorinoIntro (PURPLEMON letterbox, BLACK bars)
 function IntroMovie:sgbPalettes(game)
   local P = require("src.render.PaletteFX")
-  if self.phase == 2 then
+  if self.phase == 1 and (self.studio.card or self.studio.credit) then
+    return nil
+  end
+  -- engine/movie/intro.asm:306
+  if self.phase == 1 or self.phase == 2 then
     local logo = P.pal(game.data, "GAMEFREAK")
     if not logo then return nil end
     return {
@@ -39,7 +49,7 @@ function IntroMovie:sgbPalettes(game)
       P.zone(P.pal(game.data, "BLACK"), 0, 14, 19, 17),
     }
   end
-  return nil -- the copyright card stays plain
+  return nil
 end
 
 local COPYRIGHT_FRAMES = 180  -- ld c, 180 (intro.asm:311-312)
@@ -64,6 +74,29 @@ local POST_FADE_WHITE = 1 + 3 + 3
 -- ..(engine/movie/splash.asm ln 211)
 local LOGO_X, LOGO_Y = 72, 56
 local TEXT_X, TEXT_Y = 40, 80
+
+-- engine/movie/splash.asm:72
+local LOGO_OBP0 = { [0] = 0xF9, 0x7E, 0x9F, 0xE7 }
+-- engine/movie/splash.asm:4
+local STAR_OBP1 = 0xA4
+
+local rampCache = setmetatable({}, { __mode = "k" })
+
+local function obpRamp(obp, ramp)
+  local byRamp = rampCache[ramp]
+  if not byRamp then byRamp = {}; rampCache[ramp] = byRamp end
+  local c = byRamp[obp]
+  if not c then
+    c = { ramp[1] }
+    for i = 1, 3 do c[i + 1] = ramp[math.floor(obp / 4 ^ i) % 4 + 1] end
+    byRamp[obp] = c
+  end
+  return c
+end
+
+local function romArt(path)
+  return path and not path:find("^mods/") and path or nil
+end
 
 -- CopyrightTextString (engine/movie/title.asm).  Red/Blue years are
 -- (c)'95.'96.'98; Yellow's sheet spells (c)1995-1999 and finishes the
@@ -123,6 +156,15 @@ local FIGHT_SCRIPT = {
   { sfx = "Intro_Lunge" }, { frame = 3 }, { anim = 7 }, -- :135-141
   { fade = 24 },  -- GBFadeOutToWhite: 3 pals x 8 frames (home/fade.asm:26-40)
 }
+local FIGHT_FADE_INDEX = #FIGHT_SCRIPT
+
+-- home/fade.asm:71-73
+local FADE_TO_WHITE = {
+  { bgp = 0x90, obp = 0x80 },
+  { bgp = 0x40, obp = 0x40 },
+  { bgp = 0x00, obp = 0x00 },
+}
+local BGP_NORMAL = 0xE4
 
 local function tryImage(path)
   if not path then return nil end
@@ -173,7 +215,10 @@ function IntroMovie.new(game, onDone)
   end
   self.logo = img(intro.gamefreakLogo)
   self.gfText = img(intro.gamefreakText)
+  self.logoPath = self.logo and romArt(intro.gamefreakLogo.path)
+  self.gfTextPath = self.gfText and romArt(intro.gamefreakText.path)
   self.bigStar = img(intro.bigStar)
+  self.bigStarPath = self.bigStar and romArt(intro.bigStar.path)
   self.smallStar = img(intro.fallingStar)
   self.smallStarBlink = img(intro.fallingStarBlink)
   self.gengarFrames, self.nidoFrames = {}, {}
@@ -194,7 +239,7 @@ function IntroMovie.new(game, onDone)
   self.nidoX, self.nidoY = -8, 72
   self.gengarPose, self.nidoFrame = 1, 1
   self.opIndex, self.opTimer = 1, 0
-  self.fade = 0
+  self.fadeStep = nil
   return self
 end
 
@@ -213,7 +258,6 @@ function IntroMovie:exitToTitle()
   if self.finished or self.phase == 4 then return end
   self.phase = 4
   self.timer = 0
-  self.fade = 1
 end
 
 function IntroMovie:startPhase(phase)
@@ -231,6 +275,26 @@ function IntroMovie:startPhase(phase)
 end
 
 -- one frame of the fight script (see FIGHT_SCRIPT)
+function IntroMovie:endScene()
+  self.opIndex = FIGHT_FADE_INDEX
+  self.opTimer = 0
+end
+
+-- home/overworld.asm:2395
+function IntroMovie:pollInterrupt()
+  local input = self.game.input
+  if not input then return false end
+  local function down(b)
+    return (input.isDown and input:isDown(b)) or input:wasPressed(b)
+  end
+  local last = self.lastPollHeld or {}
+  local held = { a = down("a"), start = down("start") }
+  self.lastPollHeld = held
+  if (held.a and not last.a) or (held.start and not last.start) then return true end
+  return down("up") and down("select") and down("b")
+    and not (held.a or held.start or down("down") or down("left") or down("right"))
+end
+
 function IntroMovie:fightStep()
   while true do
     local op = FIGHT_SCRIPT[self.opIndex]
@@ -259,6 +323,13 @@ function IntroMovie:fightStep()
         end
       end
       self.opTimer = self.opTimer + 1
+      if self:pollInterrupt() then
+        -- engine/movie/intro.asm:264
+        if op.move == "scrollIn" then self:endScene() return end
+        self.opIndex = self.opIndex + 1
+        self.opTimer = 0
+        return
+      end
       if self.opTimer < (op.px or math.abs(op.dx)) then return end
       timed = true
     elseif op.anim then
@@ -273,11 +344,12 @@ function IntroMovie:fightStep()
       timed = true
     elseif op.wait then
       self.opTimer = self.opTimer + 1
+      if self:pollInterrupt() then self:endScene() return end
       if self.opTimer < op.wait then return end
       timed = true
     elseif op.fade then
       self.opTimer = self.opTimer + 1
-      self.fade = self.opTimer / op.fade
+      self.fadeStep = math.floor((self.opTimer - 1) / 8) + 1
       if self.opTimer >= op.fade then self:exitToTitle() end
       return
     end
@@ -297,10 +369,6 @@ function IntroMovie:update(dt)
     if self.timer >= POST_FADE_WHITE then self:finish() end
     return
   end
-  local input = self.game.input
-  -- CheckForUserInterruption (home/overworld.asm:2395) returns carry only
-  -- on a fresh START or A -- B alone never skips the intro.
-  local skip = input:wasPressed("a") or input:wasPressed("start")
   self.timer = self.timer + 1
   if self.phase == 1 then
     -- the copyright card is a bare DelayFrames, deaf to input (intro.asm:311)
@@ -310,18 +378,12 @@ function IntroMovie:update(dt)
       Sound.play(self.game.data, "Shooting_Star")  -- splash.asm:29-30
     end
     -- intro.asm:325 `jr c, .next`
-    if skip and self.timer >= STAR_START and self.timer < WAVES_END then
+    if self.timer >= STAR_START and self.timer < WAVES_END and self:pollInterrupt() then
       self:startPhase(3)
       return
     end
     if self.timer >= SPLASH_FRAMES then self:startPhase(3) end
   else
-    -- PlayIntro still GBFadeOutToWhite's after an interrupted scene; the
-    -- white hold stands in for that beat before the title is built.
-    if skip then
-      self:exitToTitle()
-      return
-    end
     -- PlayShootingStar ends `jp Delay3` once Music_IntroBattle is playing
     -- (intro.asm:337), so PlayIntroScene's first op is not on the music's
     -- own frame
@@ -333,11 +395,35 @@ end
 -- (IntroDrawBlackBars, intro.asm:343-357); drawn AFTER the sprites since
 -- both Nidorino and the small stars carry OAM_PRIO (intro.asm:195,
 -- splash.asm:149) so the bars cover them.
-local function drawBars()
-  love.graphics.setColor(0, 0, 0, 1)
+local function drawBars(bgp)
+  local g = (3 - math.floor((bgp or BGP_NORMAL) / 64) % 4) / 3
+  love.graphics.setColor(g, g, g, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 32)
   love.graphics.rectangle("fill", 0, 112, 160, 32)
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+function IntroMovie:logoObp0()
+  local t = self.timer - FLASH_START
+  if t < 0 then return LOGO_OBP0[0] end
+  return LOGO_OBP0[math.min(3, math.floor(t / 10) + 1)]
+end
+
+function IntroMovie:drawObp0(img, path, x, y, obp)
+  if not img then return end
+  if not path then
+    love.graphics.draw(img, x, y)
+    return
+  end
+  local P = require("src.render.PaletteFX")
+  local SR = require("src.render.SpriteRenderer")
+  love.graphics.draw(SR.obpImage(path, obpRamp(obp, P.GRAYS), "gfobp" .. obp), x, y)
+  if P.usesSpriteObp() then
+    local blue = GameVersion.isBlue()
+    P.markUiSpriteRedraw(SR.obpImage(path,
+      obpRamp(obp, blue and P.GBC_OBJ_BLUE or P.GBC_OBJ),
+      (blue and "gfobj_blue" or "gfobj") .. obp), nil, x, y)
+  end
 end
 
 function IntroMovie:drawSplash()
@@ -346,15 +432,16 @@ function IntroMovie:drawSplash()
     -- logo + GAME FREAK letters appear with the star OAM
     -- (LoadShootingStarGraphics, splash.asm:18-25); the logo palette
     -- rotates during the 3-flash loop (splash.asm:72-82)
-    local flashing = t >= FLASH_START and t < FLASH_START + FLASH_FRAMES
-    local dim = flashing and math.floor((t - FLASH_START) / 5) % 2 == 0
-    love.graphics.setColor(1, 1, 1, dim and 0.35 or 1)
     if self.studioLogo then
+      local flashing = t >= FLASH_START and t < FLASH_START + FLASH_FRAMES
+      local dim = flashing and math.floor((t - FLASH_START) / 5) % 2 == 0
+      love.graphics.setColor(1, 1, 1, dim and 0.35 or 1)
       love.graphics.draw(self.studioLogo, self.studioX, self.studioY,
                          0, self.studioScale, self.studioScale)
     else
-      if self.logo then love.graphics.draw(self.logo, LOGO_X, LOGO_Y) end
-      if self.gfText then love.graphics.draw(self.gfText, TEXT_X, TEXT_Y) end
+      local obp = self:logoObp0()
+      self:drawObp0(self.logo, self.logoPath, LOGO_X, LOGO_Y, obp)
+      self:drawObp0(self.gfText, self.gfTextPath, TEXT_X, TEXT_Y, obp)
     end
     love.graphics.setColor(1, 1, 1, 1)
   end
@@ -362,15 +449,16 @@ function IntroMovie:drawSplash()
     -- small stars: wave w spawns at y=88 every 24 frames, everything falls
     -- +1px per 3-frame substep until the wave loop ends; the lower star in
     -- the tile blinks every substep (splash.asm:97-146, 186-209)
-    local substep = math.floor((math.min(t, WAVES_END) - WAVES_START) / 3)
-    local blink = substep % 2 == 0
+    -- engine/movie/splash.asm:186
+    local moves = math.min(math.floor((t - WAVES_START) / 3) + 1, 6 * 8)
+    local lit = moves % 2 == 1
     for w, xs in ipairs(STAR_WAVES) do
       local spawn = (w - 1) * 8  -- in substeps
-      if substep >= spawn then
-        local y = 88 + (substep - spawn)
+      if moves > spawn then
+        local y = 88 + (moves - spawn)
         if y < 144 then
-          local img = blink and self.smallStar
-                      or (self.smallStarBlink or self.smallStar)
+          local img = lit and (self.smallStarBlink or self.smallStar)
+                      or self.smallStar
           for _, x in ipairs(xs) do
             if img then
               love.graphics.draw(img, x, y)
@@ -389,7 +477,19 @@ function IntroMovie:drawSplash()
     -- ..(engine/movie/splash.asm ln 32)
     local n = t - STAR_START + 1
     local sx, sy = 152 - 4 * n, -16 + 4 * n
-    if self.bigStar then
+    if self.bigStar and self.bigStarPath then
+      local P = require("src.render.PaletteFX")
+      local SR = require("src.render.SpriteRenderer")
+      love.graphics.draw(SR.obpImage(self.bigStarPath,
+        obpRamp(STAR_OBP1, P.GRAYS), "gfobp" .. STAR_OBP1), sx, sy)
+      if P.usesSpriteObp() then
+        -- engine/movie/splash.asm:22
+        local blue = GameVersion.isBlue()
+        P.markUiSpriteRedraw(SR.obpImage(self.bigStarPath,
+          obpRamp(STAR_OBP1, P.ogBg()),
+          (blue and "gfobj1_blue" or "gfobj1") .. STAR_OBP1), nil, sx, sy)
+      end
+    elseif self.bigStar then
       love.graphics.draw(self.bigStar, sx, sy)
     else
       love.graphics.setColor(0, 0, 0, 1)
@@ -403,13 +503,30 @@ function IntroMovie:drawFight()
   -- Gengar: a 56x56 BG-tile pose recomposed from gengar_N.tilemap, moved
   -- by scrolling SCX (intro.asm:32-33, 235-269)
     -- Nidorino: 6x6 OAM sprite, one of the three red_nidorino poses
+  local fade = self.fadeStep and FADE_TO_WHITE[self.fadeStep]
+  local bgp = fade and fade.bgp or BGP_NORMAL
+  local obp = fade and fade.obp or BGP_NORMAL
+  local P = require("src.render.PaletteFX")
+  local SR = require("src.render.SpriteRenderer")
   local nido = self.nidoFrames[self.nidoFrame]
+  local nidoPath = self.nidoPaths and self.nidoPaths[self.nidoFrame]
   if nido then
-    love.graphics.draw(nido, self.nidoX, self.nidoY)
+    if fade and nidoPath then
+      love.graphics.draw(SR.obpImage(nidoPath, obpRamp(obp, P.GRAYS),
+        "fadeobp" .. obp), self.nidoX, self.nidoY)
+    else
+      love.graphics.draw(nido, self.nidoX, self.nidoY)
+    end
   end
   local gengar = self.gengarFrames[self.gengarPose]
+  local gengarPath = self.gengarPaths and self.gengarPaths[self.gengarPose]
   if gengar then
-    love.graphics.draw(gengar, self.gengarX, self.gengarY)
+    if fade and gengarPath then
+      love.graphics.draw(SR.obpImage(gengarPath, obpRamp(bgp, P.GRAYS),
+        "fadebgp" .. bgp), self.gengarX, self.gengarY)
+    else
+      love.graphics.draw(gengar, self.gengarX, self.gengarY)
+    end
   end
 
   if not gengar and not nido then
@@ -417,45 +534,34 @@ function IntroMovie:drawFight()
     Font.draw(Strings("GENGAR VS NIDORINO"), (160 - 18 * 8) / 2, 64)
     love.graphics.setColor(1, 1, 1, 1)
   end
-  drawBars()
-  if self.fade > 0 then
-    love.graphics.setColor(1, 1, 1, math.min(1, self.fade))
-    love.graphics.rectangle("fill", 0, 0, 160, 144)
-    love.graphics.setColor(1, 1, 1, 1)
-  end
-  self:replayObjLayer(nido, gengar)
+  drawBars(bgp)
+  self:replayObjLayer(nido, gengar, fade)
 end
-
-local whitePixel
 
 local FIGHT_CLIP = { 0, 32, 160, 80 }
 
-function IntroMovie:replayObjLayer(nido, gengar)
+function IntroMovie:replayObjLayer(nido, gengar, fade)
   local P = require("src.render.PaletteFX")
   local nidoPath = self.nidoPaths and self.nidoPaths[self.nidoFrame]
   if not (nido and nidoPath and P.usesSpriteObp()) then return end
   local SR = require("src.render.SpriteRenderer")
   local blue = GameVersion.isBlue()
   local opts = { clip = FIGHT_CLIP }
+  local objColors = blue and P.GBC_OBJ_BLUE or P.GBC_OBJ
+  local objGroup = blue and "gbcobj_blue" or "gbcobj"
+  local bgColors, bgGroup = P.ogBg(), blue and "ogbg_blue" or "ogbg"
+  if fade then
+    objColors, objGroup = obpRamp(fade.obp, objColors), objGroup .. fade.obp
+    bgColors, bgGroup = obpRamp(fade.bgp, bgColors), bgGroup .. fade.bgp
+  end
   -- engine/movie/intro.asm:28
-  P.markUiSpriteRedraw(SR.obpImage(nidoPath,
-    blue and P.GBC_OBJ_BLUE or P.GBC_OBJ, blue and "gbcobj_blue" or "gbcobj"),
+  P.markUiSpriteRedraw(SR.obpImage(nidoPath, objColors, objGroup),
     nil, self.nidoX, self.nidoY, opts)
   local gengarPath = self.gengarPaths[self.gengarPose]
   if gengar and gengarPath then
     -- engine/movie/intro.asm:195
-    P.markUiSpriteRedraw(SR.obpImage(gengarPath, P.ogBg(),
-      blue and "ogbg_blue" or "ogbg"), nil, self.gengarX, self.gengarY, opts)
-  end
-  if self.fade > 0 then
-    if not whitePixel then
-      local id = love.image.newImageData(1, 1)
-      id:setPixel(0, 0, 1, 1, 1, 1)
-      whitePixel = love.graphics.newImage(id)
-    end
-    P.markUiSpriteRedraw(whitePixel, nil, FIGHT_CLIP[1], FIGHT_CLIP[2],
-      { clip = FIGHT_CLIP, sx = FIGHT_CLIP[3], sy = FIGHT_CLIP[4],
-        color = { 1, 1, 1, math.min(1, self.fade) } })
+    P.markUiSpriteRedraw(SR.obpImage(gengarPath, bgColors, bgGroup),
+      nil, self.gengarX, self.gengarY, opts)
   end
 end
 

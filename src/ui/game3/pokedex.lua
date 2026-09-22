@@ -200,11 +200,7 @@ function Pokedex.show(dex, opts)
   if not Pokemon._names then Pokemon.install(nil) end
 
   Pokedex.MODES = build_modes(opts.session, Pokedex._dex)
-  Pokedex.modeCursor = 2 -- Start at NUMERICAL MODE (index 1 is header)
-  Pokedex.modeScroll = 0
-  Pokedex.listCursor = 1
-  Pokedex.cursor = 1
-  Pokedex.listScroll = 0
+  Pokedex.resetScreenState()
 
   if opts.mode then
     local m = opts.mode:lower()
@@ -285,12 +281,40 @@ function Pokedex.showRegistration(speciesId, opts)
   play_cry(Pokedex._regSpecies)
 end
 
+-- pokedex_screen.c
+function Pokedex.resetScreenState()
+  Pokedex.screen = "mode_select"
+  Pokedex.subScreenPrev = "mode_select"
+  Pokedex.modeCursor = 2
+  Pokedex.modeScroll = 0
+  Pokedex.listCursor = 1
+  Pokedex.listScroll = 0
+  Pokedex.cursor = 1
+  Pokedex.mode = "kanto"
+  Pokedex.page = "list"
+  Pokedex.currentCategory = "grassland"
+  Pokedex.categoryPage = 1
+  Pokedex.categorySlot = 1
+  Pokedex.spotlightTimer = 0
+  Pokedex.currentOrder = "numerical_kanto"
+  Pokedex.actionCursor = 1
+  Pokedex.selectedSpecies = 1
+  Pokedex.dataPage = 1
+  Pokedex.areaMapKey = "kanto"
+  Pokedex.areaPulseTimer = 0
+  Pokedex._regSpecies = nil
+end
+
+function Pokedex.update(_dt)
+  PokedexChrome._animTimer = (PokedexChrome._animTimer or 0) + 0.05
+end
+
 function Pokedex.close()
   Pokedex.open = false
   Stack.pop("pokedex")
+  Pokedex.resetScreenState()
   local cb = Pokedex._onClose
   Pokedex._onClose = nil
-  Pokedex._regSpecies = nil
   if cb then cb() end
 end
 

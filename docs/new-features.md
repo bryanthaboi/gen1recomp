@@ -27,7 +27,10 @@ Features intentionally added beyond the original Pokémon Red, Blue, and Yellow 
 * **Rebindable GAME SPEED shortcuts**, SPEED - / SPEED + rows in CONTROLS that move the shoulder hotkeys to any pad button or switch them off
 * **Key bar on the touch pad**, a corner toggle that slides out SAVE, LOAD, SPEED, COLOR, TILT and ZOOM for phones with no keyboard
 * **Save editor item verbs**, sorting the bag and PC by item number or name, filling one stack or every stack to x99, and a coin editor on every game
+* **Save editor bag / PC move**, a PC / BAG button on every item row that moves the stack across, clamped to the stack and slot caps
 * **Shortcuts sync before they boot**, a `--game` launch syncing saves (and, with `--update`, taking a release) first, skippable with any button
+* **`--update-mods`**, a launch flag that runs Update all before the game boots
+* **Mod load order**, a Load order sort in the launcher MODS tab and LOAD EARLIER / LATER in the in-game manager, no manifest editing
 
 ## Gen 2 Specifics
 

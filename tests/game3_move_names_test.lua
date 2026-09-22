@@ -1,5 +1,6 @@
 -- Unit tests for robust Move Name resolution across numbers, strings, and wrapped tables.
 
+require("tests.game3_cache").requireData("game3_move_names_test")
 local Moves = require("src.core.game3.battle.moves")
 local Pokemon = require("src.core.game3.pokemon")
 local PartyView = require("src.core.game3.battle.party_view")

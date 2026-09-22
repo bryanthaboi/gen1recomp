@@ -6,6 +6,7 @@ local Movement = require("src.core.game3.scripting.movement")
 local Opcodes = require("src.core.game3.scripting.opcodes")
 local GfxIds = require("src.core.game3.scripting.gfx_ids")
 local ModRuntime = require("src.mods.Runtime")
+local VirtualObjects = require("src.core.game3.virtual_objects")
 
 local Objects = {}
 
@@ -193,6 +194,8 @@ function Objects.clear()
   Objects._mapId = nil
   Objects._defs = nil
   Objects._bounds = nil
+  -- src/event_object_movement.c:9225
+  VirtualObjects.clear()
 end
 
 -- pokefirered/src/overworld.c:405
@@ -201,6 +204,7 @@ function Objects.reset()
   Objects._perm = {}
   Objects._templateMt = {}
   Objects._logged = false
+  VirtualObjects.reset()
 end
 
 function Objects.hasMap()
@@ -459,6 +463,38 @@ function Objects.find(localId)
   return Objects._byId[localId]
 end
 
+-- src/event_object_movement.c:2089-2116
+local function on_named_map(mapGroup, mapNum)
+  if mapGroup == nil or mapNum == nil then return true end
+  local ok, MapCatalog = pcall(require, "src.import.gba.map_catalog")
+  if not (ok and type(MapCatalog) == "table" and MapCatalog.mapIdFor) then return true end
+  local engineId = MapCatalog.mapIdFor(tonumber(mapGroup), tonumber(mapNum))
+  if engineId == nil then return false end
+  return engineId == Objects._mapId
+end
+
+-- src/event_object_movement.c:2089-2101, scrcmd.c:1130
+function Objects.setSubpriority(localId, mapGroup, mapNum, subpriority)
+  local eo = Objects._byId[tonumber(localId) or -1]
+  if not eo then return false end
+  if not on_named_map(mapGroup, mapNum) then return false end
+  eo.fixedPriority = true
+  eo.subpriority = tonumber(subpriority) or 0
+  eo.fixedClass = nil
+  return true
+end
+
+-- src/event_object_movement.c:2104-2116
+function Objects.resetSubpriority(localId, mapGroup, mapNum)
+  local eo = Objects._byId[tonumber(localId) or -1]
+  if not eo then return false end
+  if not on_named_map(mapGroup, mapNum) then return false end
+  eo.fixedPriority = nil
+  eo.subpriority = nil
+  eo.fixedClass = nil
+  return true
+end
+
 function Objects.listActive(_mod, _game, _mapId)
   local ids = {}
   for _, lid in ipairs(Objects._order) do
@@ -470,6 +506,8 @@ function Objects.listActive(_mod, _game, _mapId)
   return ids
 end
 
+local VIRT_DIR_FACE = { [1] = "down", [2] = "up", [3] = "left", [4] = "right" }
+
 function Objects.forDraw()
   local list = {}
   for _, lid in ipairs(Objects._order) do
@@ -477,6 +515,24 @@ function Objects.forDraw()
     if eo and eo.visible and not eo.hidden
         and not offMap(Objects._bounds, eo) then
       list[#list + 1] = eo
+    end
+  end
+  -- src/event_object_movement.c:1719
+  if VirtualObjects.count() > 0 then
+    for _, vo in ipairs(VirtualObjects.list()) do
+      local gid = tonumber(vo.graphicsId) or 0
+      local vrec = {
+        virtualId = vo.id,
+        cellX = tonumber(vo.x) or 0,
+        cellY = tonumber(vo.y) or 0,
+        elevation = tonumber(vo.elevation) or 3,
+        facing = VIRT_DIR_FACE[tonumber(vo.direction)] or "down",
+        sprite = GfxIds.spriteFor(gid),
+        graphicsId = gid,
+        visible = true,
+        hidden = false,
+      }
+      if not offMap(Objects._bounds, vrec) then list[#list + 1] = vrec end
     end
   end
   return list

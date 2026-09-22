@@ -2838,6 +2838,150 @@ modRowChecks()
   Sound.play = realPlay
 end)()
 
+-- engine/items/pack.asm:562, engine/pokemon/mon_menu.asm:270
+;(function()
+  local Typer = require("src.ui.gen2.Typer")
+  local HeldItemMenu = require("src.ui.gen2.HeldItemMenu")
+  local ITEMS = {
+    BERRY = { id = "BERRY", name = "BERRY", pocket = "ITEM", index = 1,
+      canToss = true, fieldMenu = "ITEMMENU_NOUSE" },
+    POTION = { id = "POTION", name = "POTION", pocket = "ITEM", index = 2,
+      canToss = true, fieldMenu = "ITEMMENU_PARTY" },
+  }
+
+  local function drain(game, input, state)
+    for _ = 1, 50 do
+      if game.stack:top() ~= state then return end
+      if not (state.message or state.confirm) then return end
+      input.pressed = {}
+      for _ = 1, 400 do
+        state:update(0)
+        if not Typer.typing(state) then break end
+      end
+      input:press("a")
+      state:update(0)
+    end
+  end
+
+  local function setup(inventory, party)
+    local save = Save.newGame({ playerName = "GOLD" })
+    save.inventory = inventory
+    save.bagOrder = nil
+    save.party = party
+    local game, input = newGame(save)
+    game.data.items = ITEMS
+    game.world = { useFieldItem = function() return nil end }
+    local pack = PackMenu.new(game, { pocket = "ITEM" })
+    game.stack:push(pack)
+    return save, game, input, pack
+  end
+
+  local function rowOf(pack, id)
+    for _, row in ipairs(pack.rows) do
+      if row.id == id then return row end
+    end
+  end
+
+  local function mon(nick, item, egg)
+    return { species = "CYNDAQUIL", nickname = nick, hp = 20, maxHp = 20,
+      level = 5, moves = {}, item = item, isEgg = egg }
+  end
+
+  do
+    local save, game, input, pack = setup({ BERRY = 1 },
+      { mon("ONE"), mon("TWO") })
+    pack:giveItem(rowOf(pack, "BERRY"))
+    local party = game.stack:top()
+    check("2378 GIVE opens the party list", party.prompt, "To which <PK><MN>?")
+    input:press("a")
+    party:update(0)
+    drain(game, input, game.stack:top())
+    check("2378 a give to an empty hand ends at the PACK",
+      game.stack:top(), pack)
+    check("2378 with the party list gone", #game.stack._items, 1)
+    check("2378 the mon holds the berry", save.party[1].item, "BERRY")
+    check("2378 and the bag has none", save.inventory.BERRY, nil)
+    check("2378 and the PACK dropped the row", rowOf(pack, "BERRY"), nil)
+  end
+
+  do
+    local save, game, input, pack = setup({ BERRY = 1 },
+      { mon("ONE", "BERRY"), mon("TWO") })
+    pack:giveItem(rowOf(pack, "BERRY"))
+    local party = game.stack:top()
+    input:press("a")
+    party:update(0)
+    drain(game, input, game.stack:top())
+    check("2378 a swap ends at the PACK", game.stack:top(), pack)
+    check("2378 the mon still holds one berry", save.party[1].item, "BERRY")
+    check("2378 and the bag got the old one back", save.inventory.BERRY, 1)
+    check("2378 and the second mon got nothing", save.party[2].item, nil)
+  end
+
+  do
+    local save, game, input, pack = setup({ POTION = 1 },
+      { mon("ONE", "BERRY"), mon("TWO") })
+    pack:giveItem(rowOf(pack, "POTION"))
+    local party = game.stack:top()
+    input:press("a")
+    party:update(0)
+    local held = game.stack:top()
+    input.pressed = {}
+    for _ = 1, 400 do
+      held:update(0)
+      if not Typer.typing(held) then break end
+    end
+    input:press("a")
+    held:update(0)
+    for _ = 1, 400 do
+      held:update(0)
+      if not Typer.typing(held) then break end
+    end
+    input:press("down")
+    held:update(0)
+    input:press("a")
+    held:update(0)
+    check("2378 swap NO ends at the PACK", game.stack:top(), pack)
+    check("2378 and nothing moved", save.party[1].item, "BERRY")
+    check("2378 with the potion still in the bag", save.inventory.POTION, 1)
+  end
+
+  do
+    local save, game, input, pack = setup({ BERRY = 1 },
+      { mon("EGG", nil, true), mon("TWO") })
+    pack:giveItem(rowOf(pack, "BERRY"))
+    local party = game.stack:top()
+    input:press("a")
+    party:update(0)
+    drain(game, input, game.stack:top())
+    check("2378 an EGG refusal keeps the party list up", game.stack:top(),
+      party)
+    check("2378 and the egg holds nothing", save.party[1].item, nil)
+    input:press("b")
+    party:update(0)
+    check("2378 B from the list returns to the PACK", game.stack:top(), pack)
+    check("2378 with the berry still in the bag", save.inventory.BERRY, 1)
+  end
+
+  do
+    local save = Save.newGame({ playerName = "GOLD" })
+    save.inventory = {}
+    save.party = { mon("ONE", "BERRY") }
+    local game, input = newGame(save)
+    game.data.items = ITEMS
+    local closed = 0
+    local held = HeldItemMenu.new(game, { save = save, slot = 1,
+      items = ITEMS, onClose = function() closed = closed + 1 end })
+    game.stack:push(held)
+    held:giveItem("POTION")
+    drain(game, input, held)
+    check("2378 giving an item the bag lacks closes", closed, 1)
+    check("2378 without touching the mon", save.party[1].item, "BERRY")
+    check("2378 or minting its old item", save.inventory.BERRY, nil)
+    check("2378 or a potion", save.inventory.POTION, nil)
+  end
+end)()
+
 print(("gen2 menus: %d checks, %d failures"):format(checks, failures))
 -- Raise rather than os.exit: tests/run_tests.lua dofiles this file, so an
 -- exit here takes the whole tier down with it and silently skips every

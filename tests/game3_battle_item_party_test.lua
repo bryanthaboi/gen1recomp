@@ -9,6 +9,7 @@
 -- while the battle is running.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_battle_item_party_test")
 
 local failed = 0
 local function check(cond, msg)

@@ -123,6 +123,34 @@ function PikachuFollower.onStep(save)
   elseif mood > 128 then
     save.pikachuMood = mood - 1
   end
+  -- engine/events/poison.asm:153
+  if (save.pikachuMood or 128) == 128 then
+    save.pikachuEmotionModifier = nil
+  end
+end
+
+-- engine/pikachu/pikachu_status.asm:117
+function PikachuFollower.moodAfterBattle(save)
+  if not GameVersion.isYellow() then return end
+  local starter
+  for _, mon in ipairs(save.party or {}) do
+    if PikachuFollower.isStarterPikachu(save, mon) then starter = mon break end
+  end
+  -- engine/pikachu/pikachu_status.asm:1
+  if not (starter and (starter.hp or 0) > 0) then return end
+  if (save.pikachuMood or 128) < 0x82 then
+    save.pikachuMood = 0x82
+  end
+end
+
+-- engine/items/item_effects.asm:2509
+-- engine/pokemon/evos_moves.asm:375
+function PikachuFollower.onMoveLearned(save, mon, moveId)
+  if not GameVersion.isYellow() then return end
+  if moveId ~= "THUNDERBOLT" and moveId ~= "THUNDER" then return end
+  if not PikachuFollower.isStarterPikachu(save, mon) then return end
+  save.pikachuEmotionModifier = 5
+  save.pikachuMood = 0x85
 end
 
 -- ShouldPikachuSpawn, approximated: Yellow, the lab gift happened, and a
@@ -775,6 +803,14 @@ local PIKAPIC_LIFT = 4 -- px the stand-in pic rises on an overlay run
 -- pikachu_emotions.asm).
 local PIKAPIC_SCRIPT = { [29] = 10, [30] = 20, [31] = 23, [32] = 23 }
 
+-- data/pikachu/pikachu_pic_animation.asm:1
+local THUNDERBOLT_PALS = {}
+for i = 1, 20 do THUNDERBOLT_PALS[i] = (i % 2 == 1) and 0xC0 or 0xE4 end
+local THUNDERBOLT_ROW = 4
+local THUNDERBOLT_SOUND_CAP = 600
+PikachuFollower.THUNDERBOLT_PALS = THUNDERBOLT_PALS
+PikachuFollower.THUNDERBOLT_ROW = THUNDERBOLT_ROW
+
 -- Per script: pikapic_setduration's tick count, and for the scripts whose
 -- overlay is a whole second pose, that frameset's run lengths in ticks
 -- (data/pikachu/pikachu_pic_objects.asm PikaPicAnimBGFrames_*, which script
@@ -811,7 +847,7 @@ local PIKAPIC = {
   [22] = { dur = 40,  seq = { 8, 100 } },
   [23] = { dur = 70,  seq = { 16, 16, 16, 16 } },
   [24] = { dur = 60,  seq = { 6, 6, 6, 6, 100 } },
-  [25] = { dur = 50,  seq = { 6, 106 } },
+  [25] = { dur = 50,  seq = { 6, 106 }, bolt = 13 },
   [26] = { dur = 100, seq = { 20, 8, 20, 116 } },
   [27] = { dur = 30,  seq = { 4, 100 } },
   [28] = { dur = 64,  seq = { 12, 12, 12, 100 } },
@@ -830,6 +866,7 @@ local function moodEmotion(save)
   end
   return row[column]
 end
+PikachuFollower.moodEmotion = moodEmotion
 
 -- MapSpecificPikachuExpression + TalkToPikachu's selection order
 local function selectEmotion(game, ow, save)
@@ -858,7 +895,6 @@ local function selectEmotion(game, ow, save)
   if mapId:find("POKEMON_TOWER_", 1, true) == 1 then return 22 end
   local modifier = save.pikachuEmotionModifier
   if modifier and MODIFIER_EMOTIONS[modifier] then
-    save.pikachuEmotionModifier = nil
     return MODIFIER_EMOTIONS[modifier]
   end
   return moodEmotion(save)
@@ -924,6 +960,11 @@ function playEmotion(game, ow, npc, emotion, opts)
       pikaSeq = anim.seq, pikaTotal = hold, skippable = opts.skippable,
       onDone = done,
     }
+    if anim.bolt then
+      -- engine/pikachu/pikachu_pic_animation.asm:520
+      ow.emote.boltAt = (anim.bolt + 2) * PIKAPIC_TICK
+      ow.emote.boltT = 0
+    end
     return ow.emote
   end
 
@@ -982,6 +1023,39 @@ function PikachuFollower.picLift(emote)
     tick = tick - run
   end
   return 0
+end
+
+-- engine/pikachu/pikachu_pic_animation.asm:790
+function PikachuFollower.tickBolt(game, ow, emote)
+  if not (emote and emote.boltAt) or emote.boltDone then return end
+  emote.boltT = (emote.boltT or 0) + 1
+  local s = emote.boltT - emote.boltAt
+  if s < 1 then return end
+  emote.frames = emote.frames + 1
+  if s == 1 then
+    emote.skippable = false
+    emote.boltMute = {
+      isPlaying = function() return ow.emote == emote and not emote.boltDone end,
+    }
+    require("src.core.Music").duckForFanfare(emote.boltMute)
+    return
+  end
+  local k = s - 2
+  local Sound = require("src.core.Sound")
+  if k == 0 then
+    local moves = game.data and game.data.moves
+    local def = moves and moves.THUNDERBOLT
+    if def and def.anim then Sound.playMove(game.data, def.anim) end
+  end
+  local strobe = #THUNDERBOLT_PALS * THUNDERBOLT_ROW
+  if k < strobe then
+    emote.bgp = THUNDERBOLT_PALS[math.floor(k / THUNDERBOLT_ROW) + 1]
+    return
+  end
+  -- engine/pikachu/pikachu_pic_animation.asm:802
+  if Sound.moveSfxBusy() and k < strobe + THUNDERBOLT_SOUND_CAP then return end
+  emote.boltDone = true
+  emote.frames = PIKAPIC_TICK + 1
 end
 
 -- Bill's House has three map-scripted Yellow companion beats

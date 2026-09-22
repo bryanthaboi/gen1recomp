@@ -399,6 +399,8 @@ local function makeLauncher(launcherOpts)
     require("src.import.LauncherWindow").observe(0)
     require("src.import.LauncherWindow").flush()
     Importer = nil
+    local onBoot = launcherOpts and launcherOpts.onBoot
+    if onBoot and onBoot(version, cartId, opts) then return end
     bootGame(version, cartId, opts)
   end, {
     launcher = true,
@@ -569,8 +571,35 @@ local function showLauncher(version)
   end
 end
 
+local function wantsModUpdate(request)
+  if type(request) ~= "table" then return false end
+  if type(request.tasks) == "table" and request.tasks.mods ~= nil then
+    return request.tasks.mods == true
+  end
+  return request.updateMods == true
+end
+
+local function autoUpdateMods(request, tab)
+  if not wantsModUpdate(request) then return end
+  if Importer and Importer.autoUpdateAll then
+    Importer:autoUpdateAll(function() end, { tab = tab })
+  end
+end
+
+local deferredLaunchRequest
+
+local function launcherBusy()
+  return Importer ~= nil and (Importer._updateAll ~= nil
+    or Importer._modInstall ~= nil or Importer._cartInstall ~= nil
+    or Importer._autoUpdateAll ~= nil)
+end
+
 local function startLaunchRequest(request)
   if type(request) ~= "table" then return false end
+  if launcherBusy() then
+    deferredLaunchRequest = request
+    return true
+  end
 
   local version = request.game
   if request.launcher or not version then
@@ -579,6 +608,7 @@ local function startLaunchRequest(request)
     else
       showLauncher(version)
     end
+    autoUpdateMods(request, not version and "mods" or nil)
     return true
   end
 
@@ -594,6 +624,7 @@ local function startLaunchRequest(request)
     end)
     if not ok or type(cart) ~= "table" or cart.base ~= version then
       showLauncher(version)
+      autoUpdateMods(request)
       return true
     end
     cartId = request.cart
@@ -601,6 +632,7 @@ local function startLaunchRequest(request)
 
   if not RomImporter.isReady(version) then
     showLauncher(version)
+    autoUpdateMods(request)
     return true
   end
 
@@ -608,6 +640,23 @@ local function startLaunchRequest(request)
     if request.slot then LaunchOptions.selectSlot(version, request.slot) end
     launchedIntoGame = true
     bootGame(version, cartId)
+  end
+
+  local function bootAfterMods()
+    if not wantsModUpdate(request) then return bootShortcut() end
+    Importer = makeLauncher({ initialTab = "mods",
+      onBoot = function(v, c, opts)
+        if v ~= version or c ~= cartId or opts ~= nil then return false end
+        bootShortcut()
+        return true
+      end })
+    Importer:autoUpdateAll(function(result)
+      if not (result.ok or result.cancelled or result.skipped) then return end
+      require("src.import.LauncherWindow").observe(0)
+      require("src.import.LauncherWindow").flush()
+      Importer = nil
+      bootShortcut()
+    end)
   end
 
   Prelaunch = require("src.core.Prelaunch").new({
@@ -620,10 +669,10 @@ local function startLaunchRequest(request)
         showLauncher(version)
         return
       end
-      bootShortcut()
+      bootAfterMods()
     end,
   })
-  if not Prelaunch then bootShortcut() end
+  if not Prelaunch then bootAfterMods() end
   return true
 end
 
@@ -784,6 +833,10 @@ function love.load(args)
   -- goes to its own service owner, src/core/Game2.lua -- docs/gold-phase1.md).
   -- Edit on a save row opens the bundled editor on that slot (openEditor).
   Importer = makeLauncher()
+  if not relaunched then
+    autoUpdateMods(resolvedLaunch,
+      not resolvedLaunch.game and "mods" or nil)
+  end
 end
 
 function love.update(dt)
@@ -797,6 +850,11 @@ function love.update(dt)
   if Studio then return Studio.update(dt) end
   local launchURI = LaunchOptions.pollURI()
   if launchURI then love.handlers.intent_uri(launchURI) end
+  if deferredLaunchRequest and not launcherBusy() then
+    local request = deferredLaunchRequest
+    deferredLaunchRequest = nil
+    startLaunchRequest(request)
+  end
   if Prelaunch then return Prelaunch:update(dt) end
   local client = onlineClientModule()
   if client then pcall(client.update, dt) end

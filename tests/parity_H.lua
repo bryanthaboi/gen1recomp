@@ -155,6 +155,8 @@ local pushes = {
     checkDst = true },
 }
 
+local Sound = require("src.core.Sound")
+local realSoundPlay = Sound.play
 for i, p in ipairs(pushes) do
   if ow.map.id ~= p.curMap then
     ow:setMap(p.curMap, 1, 1, "down")
@@ -162,8 +164,15 @@ for i, p in ipairs(pushes) do
   local npc = { cellX = p.hx, cellY = p.hy, def = { name = p.srcName } }
   table.insert(ow.npcs, npc)
   table.insert(ow.entities, npc)
+  local played = {}
+  Sound.play = function(_, name, ...) played[#played + 1] = name end
   local ok = ow:boulderIntoHole(npc)
+  Sound.play = realSoundPlay
   check(ok, ("push %d: boulderIntoHole(%s) returns true"):format(i, p.srcName))
+  check(Game.stack:top() == ow,
+        ("push %d: no text box after the boulder falls"):format(i))
+  eq(#played, 0, ("push %d: boulder falling plays no sound"):format(i))
+  while Game.stack:top() and Game.stack:top() ~= ow do Game.stack:pop() end
   check(Game.save.flags[p.event] == true,
         ("push %d: %s is set"):format(i, p.event))
   check(not OW.objectVisible(Game.save, p.srcMap, objOf(p.srcMap, p.srcName)),

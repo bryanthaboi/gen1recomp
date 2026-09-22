@@ -2,7 +2,9 @@
 
 local Options = {}
 
-Options.BLOCK = "firered"
+local Profile = require("src.core.game3.profile")
+
+Options.BLOCK = Profile.FALLBACK_ID
 
 -- pret: textSpeed 0=SLOW 1=MID 2=FAST
 Options.DEFAULTS = {
@@ -38,21 +40,29 @@ local function migrate_root(engine, o)
   engine.l_equals_a = nil
 end
 
-function Options.block(engine)
+function Options.block(engine, blockId)
   if type(engine) ~= "table" then return fill_defaults({}) end
-  local o = engine[Options.BLOCK]
+  blockId = blockId or Profile.active().optionsBlock
+  local o = engine[blockId]
   if type(o) ~= "table" then
     o = {}
-    engine[Options.BLOCK] = o
+    engine[blockId] = o
     migrate_root(engine, o)
   end
   return fill_defaults(o)
 end
 
+function Options.blockId(session)
+  if type(session) == "table" and type(session.version) == "string" then
+    return Profile.of(session.version).optionsBlock
+  end
+  return Profile.active().optionsBlock
+end
+
 function Options.bind(session, engine)
   if type(session) ~= "table" then return nil end
   if type(engine) ~= "table" then return Options.ensure(session) end
-  local o = Options.block(engine)
+  local o = Options.block(engine, Options.blockId(session))
   session.options = o
   session.engineOptions = engine
   o.text_speed = o.textSpeed
@@ -73,9 +83,10 @@ function Options.ensure(session)
     o = {}
     session.options = o
   end
-  if type(o[Options.BLOCK]) == "table" then
+  local blockId = Options.blockId(session)
+  if type(o[blockId]) == "table" then
     session.engineOptions = o
-    o = Options.block(o)
+    o = Options.block(o, blockId)
     session.options = o
   end
   return fill_defaults(o)

@@ -99,12 +99,11 @@ local function buyOne(game, stack)
   local list = stack[#stack]
   list.onChoose({ value = "POKE_BALL" })
   local qty = stack[#stack]
-  game.stack:pop()
   qty.onDone(1)
   local confirm = stack[#stack]
   game.stack:pop()
-  confirm.onChoose(true)
-  return menu, list
+  confirm.choice(true)
+  return menu, list, qty
 end
 
 do
@@ -119,13 +118,14 @@ for _, case in ipairs({
   { name = "not enough money", money = 100, count = nil, text = NO_MONEY },
 }) do
   local game, events, stack = newGame(case.money, case.count)
-  local menu, list = buyOne(game, stack)
+  local menu, list, qty = buyOne(game, stack)
   local box = stack[#stack]
   if check(getmetatable(box) == TextBox, case.name .. ": a text box is pushed") then
     check(boxText(box):find(case.text:gsub("\n", " "), 1, true) ~= nil,
           case.name .. ": the clerk's refusal is the text")
   end
-  eq(stack[#stack - 1], list, case.name .. ": the list is still under the box")
+  eq(stack[#stack - 1], qty, case.name .. ": the quantity box is still under the box")
+  eq(stack[#stack - 2], list, case.name .. ": the list is under the quantity box")
   local popsBefore = 0
   for _, ev in ipairs(events) do
     if ev[1] == "push" and ev[2] == box then break end

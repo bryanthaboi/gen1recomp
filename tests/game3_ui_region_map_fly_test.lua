@@ -259,6 +259,36 @@ do
     "the RS link reveals the Cerulean Cave marker")
 end
 
+print("[test] 9. START snap order and dungeon icon origin")
+do
+  local function at() return RegionMap.cursorX .. "," .. RegionMap.cursorY end
+  RegionMap.show({ session = { map = "PALLET_TOWN", gender = 0 } })
+  local home = at()
+  check(RegionMap.hasSwitchButton() == false, "no switch button before the Sevii map")
+  press("start")
+  eq(at(), "21,13", "no switch button: START snaps to CANCEL")
+  press("start")
+  eq(at(), home, "then back to the player")
+  RegionMap.close()
+
+  setWorldMapFlag("FLAG_SYS_SEVII_MAP_123")
+  RegionMap.show({ session = { map = "PALLET_TOWN", gender = 0 } })
+  check(RegionMap.hasSwitchButton() == true, "the Sevii flag adds the switch button")
+  press("start")
+  eq(at(), "21,11", "switch button: START snaps to SWITCH first")
+  press("start")
+  eq(at(), "21,13", "then CANCEL")
+  press("start")
+  eq(at(), home, "then back to the player")
+
+  local found = false
+  for _, icon in ipairs(RegionMap.dungeonIcons()) do
+    if icon.px == 32 + 4 * 8 + 2 and icon.py == 32 + 14 * 8 + 2 then found = true end
+  end
+  check(found, "the Pokemon Mansion marker sits at 8x+32+offset")
+  RegionMap.close()
+end
+
 if failed > 0 then
   print(failed .. " CHECK(S) FAILED")
   os.exit(1)

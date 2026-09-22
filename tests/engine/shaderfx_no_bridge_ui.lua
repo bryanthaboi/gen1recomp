@@ -91,6 +91,22 @@ screen.onChoose(screen.items[2])
 eq(#converts, 0, "activating a converted preset skips the reconvert with no bridge")
 eq(activated[1], "bevel.slangp", "the cached artifact still activates")
 
+do
+  local realBridgeError = fake.bridgeError
+  fake.bridgeError = function()
+    return 'librashader bridge not found; looked in liblibrashader_bridge.so (dlopen failed: '
+      .. 'cannot locate symbol "_ZTVNSt6__ndk117bad_function_callE" referenced by "liblibrashader_bridge.so")'
+  end
+  fake.can, fake.convertOk = false, false
+  local s = open()
+  s.onChoose(s.items[3])
+  eq(#converts, 0, "a bridge that fails to link never calls convert")
+  eq(s.footer, "Update the app", "a bridge that ships but fails to link does not advise a reinstall")
+  check(#s.footer <= 18, "the link-failure footer stays one 18-column line")
+  eq(s.items[3].right, "UPDATE", "the row keeps its UPDATE label")
+  fake.bridgeError = realBridgeError
+end
+
 fake.can, fake.convertOk = true, true
 screen = open()
 eq(screen.items[3].right, "CONVERT", "a build with the bridge still offers CONVERT")

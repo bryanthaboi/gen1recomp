@@ -561,12 +561,14 @@ function CB.beginBreakOut(b)
   b.cb = CB.runBreakOut
   BallOpen.start(b.target or 1, b.x, b.y, b.itemId, true)
   play_se(SE.SE_BALL_OPEN)
-  b.mon.visible = true
-  b.monAff = { paused = false }
-  affine_start(b.monAff, 1)
-  affine_step(b.monAff, MON_AFFINE)
-  b.mon.scale = b.monAff.scale / 256
-  b.monData1 = 0x1000
+  if b.mon then
+    b.mon.visible = true
+    b.monAff = { paused = false }
+    affine_start(b.monAff, 1)
+    affine_step(b.monAff, MON_AFFINE)
+    b.mon.scale = b.monAff.scale / 256
+    b.monData1 = 0x1000
+  end
 end
 
 -- pokefirered/src/battle_anim_special.c:1327

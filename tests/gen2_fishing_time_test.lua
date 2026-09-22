@@ -49,6 +49,7 @@ local function fishWorld(mapId, fishGroup, daytime)
     cellCollision = function(self, cx, cy)
       return (cx == 5 and cy == 4) and COLL_WATER or COLL_FLOOR
     end,
+    inBounds = function() return true end,
   }
   local game = {
     save = {

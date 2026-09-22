@@ -2277,7 +2277,7 @@ end
 -- plays a tink + 40-frame pause per shake, rewinding the same subanim.
 do
   local AnimPlayer = require("src.battle.AnimPlayer")
-  local ap = AnimPlayer.new(require("data.generated.battle_anims"))
+  local ap = AnimPlayer.new(Data.battle_anims)
   ap:start("SHAKE_ANIM", true, { shakes = 3 })
   local tinks = 0
   for _, e in ipairs(ap.events) do
@@ -3587,11 +3587,15 @@ local function restoreLove(snap)
 end
 
 local function runSuites(paths)
+  local LEAKED_KEYS = { "src.render.TextBox", "src.core.Music" }
   for _, path in ipairs(paths) do
     local label = path:match("([^/]+)%.lua$") or path
     local snap = snapshotLove()
+    local msnap = {}
+    for _, k in ipairs(LEAKED_KEYS) do msnap[k] = package.loaded[k] end
     local ok, err = pcall(dofile, path)
     restoreLove(snap)
+    for _, k in ipairs(LEAKED_KEYS) do package.loaded[k] = msnap[k] end
     check(ok, label .. (ok and " suite" or (": " .. tostring(err))))
   end
 end
@@ -3736,6 +3740,7 @@ runSuites(orderedGlob(
   "tests/gen2_repel_test.lua",
   "tests/gen2_swarm_test.lua",
   "tests/gen2_fishing_swarm_test.lua",
+  "tests/gen2_facing_edge_2352_test.lua",
   "tests/gen2_rock_smash_test.lua",
   "tests/gen2_currents_test.lua",
   "tests/gen2_big_object_test.lua",

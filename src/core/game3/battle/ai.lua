@@ -376,6 +376,11 @@ function choose_move_core(st, id, opts)
   local aiAction = 0
   if aiFlags ~= 0 and pack and pack.table and pack.scripts and target then
     aiAction = run_scripts(pack, aiFlags, st, b, target, userSide, targetSide, scores, simulatedRNG, rng)
+  elseif st.safari then
+    -- data/battle_ai_scripts.s:3242
+    local okR, Rules = pcall(require, "src.core.game3.battle.rules")
+    local rate = okR and Rules.safari.fleeRate(st.safariState) or 0
+    aiAction = (random_u16(rng) % 100 < rate) and 0x2 or 0x4
   end
   -- src/battle_ai_script_commands.c:383
   if bit_and_flags(aiAction, 0x2) ~= 0 then

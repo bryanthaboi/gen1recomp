@@ -758,6 +758,9 @@ function FrlgFont.wrap(text, maxWidth, opts)
   return table.concat(outLines, "\n")
 end
 
+local ADVANCE_SMALL = { small = true }
+local ADVANCE_NORMAL = {}
+
 --- Draw full string at pixel (x,y).
 -- opts.maxWidth clips (CopyGlyphToWindow). opts.colors = COLOR.NORMAL etc.
 -- opts.limitChars: only draw first N printable characters (typewriter).
@@ -822,7 +825,7 @@ function FrlgFont.draw(text, x, y, opts)
       drawn = drawn + 1
     elseif ttype == "char" then
       local id = FrlgFont.glyphId(val)
-      local adv = FrlgFont.advance(id, useSmall and { small = true } or {})
+      local adv = FrlgFont.advance(id, useSmall and ADVANCE_SMALL or ADVANCE_NORMAL)
       if penX + adv <= maxW or penX == 0 then
         local dx, dy = x + penX, y + penY
         local q = quads[id]
@@ -874,7 +877,7 @@ function FrlgFont.drawGlyph(glyphId, x, y, opts)
   if not q then return 0 end
   if colors.bg and colors.bg[4] and colors.bg[4] > 0 then
     love.graphics.setColor(colors.bg)
-    love.graphics.rectangle("fill", x, y, FrlgFont.advance(glyphId, useSmall and { small = true } or {}), useSmall and FrlgFont.SMALL_LINE_PITCH or FrlgFont.LINE_PITCH)
+    love.graphics.rectangle("fill", x, y, FrlgFont.advance(glyphId, useSmall and ADVANCE_SMALL or ADVANCE_NORMAL), useSmall and FrlgFont.SMALL_LINE_PITCH or FrlgFont.LINE_PITCH)
   end
   if sh and colors.shadow and (not colors.shadow[4] or colors.shadow[4] > 0) then
     love.graphics.setColor(colors.shadow)
@@ -887,7 +890,7 @@ function FrlgFont.drawGlyph(glyphId, x, y, opts)
   end
   love.graphics.draw(fg, q, x, y)
   love.graphics.setColor(1, 1, 1, 1)
-  return FrlgFont.advance(glyphId, useSmall and { small = true } or {})
+  return FrlgFont.advance(glyphId, useSmall and ADVANCE_SMALL or ADVANCE_NORMAL)
 end
 
 -- pret CHAR_RIGHT_ARROW = 0x7C, but gText_SelectorArrow2 ("▶") is charmap 0xEF.

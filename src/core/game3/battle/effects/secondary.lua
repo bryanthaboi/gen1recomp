@@ -363,7 +363,11 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     user.rage = true
     return true
   elseif eff == "STEAL_ITEM" then
-    if user.side ~= "player" then return false end
+    -- src/battle_script_commands.c:2610-2622
+    local StType = ad._st
+    if StType and StType.trainerTower then return false end
+    if user.side ~= "player" and not (StType and (StType.link or StType.battleTower
+        or StType.eReader or StType.secretBase)) then return false end
     local St = battle_state()
     if user.expKnockedOff or (St and St.isKnockedOff(ad._st, user)) then return false end
     local tItem = tonumber(target.item) or 0
@@ -464,8 +468,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     end
     if tItem == 0 then return false end
     effBattler.item = 0
-    -- pokefirered/src/battle_script_commands.c:2750,4489
-    -- Keep the party item; the battle mask suppresses it on later send-outs.
+    -- pokefirered/src/battle_script_commands.c:2730-2752
     effBattler.expKnockedOff = true
     local St = battle_state()
     if St then St.markKnockedOff(ad._st, effBattler) end

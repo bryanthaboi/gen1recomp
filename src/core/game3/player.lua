@@ -604,7 +604,11 @@ function Player.startSurfing(game, onDone)
     local SE = require("src.core.game3.se_ids")
     if Audio.playSe and SE.SE_LEDGE then Audio.playSe(SE.SE_LEDGE) end
   end)
-  Player.forceStep(Player.facing, onDone)
+  if not Player.forceStep(Player.facing, onDone) then
+    Player.surfHopping = false
+    return false
+  end
+  return true
 end
 
 function Player.startFieldMove(duration)

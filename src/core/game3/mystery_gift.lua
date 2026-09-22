@@ -857,12 +857,17 @@ local function createEventMon(session, gift)
   local Pokemon = require("src.core.game3.pokemon")
   if not Pokemon._names then pcall(Pokemon.install, nil) end
   local species = num(gift.species)
+  local level = num(gift.level, 5)
+  -- src/mystery_gift.c:191-210
+  local known = type(Pokemon._names) == "table" and Pokemon._names[species] ~= nil
+  if not known then return nil, "invalid gift species" end
+  if level < 1 or level > 100 then return nil, "invalid gift level" end
   local isEgg = gift.kind == "egg"
   local ok, code, mon
   if isEgg then
     ok, code, mon = Party.giveEgg(session, species)
   else
-    ok, code, mon = Party.giveMon(session, species, num(gift.level, 5), gift.nickname)
+    ok, code, mon = Party.giveMon(session, species, level, gift.nickname)
   end
   if not (ok and mon) then return nil, code end
   if gift.personality then
@@ -896,6 +901,16 @@ local function createEventMon(session, gift)
   return mon, code
 end
 MysteryGift.createEventMon = createEventMon
+
+-- src/mystery_event_script.c:92-95
+local meScriptStatus = 0
+function MysteryGift.setStatus(v)
+  meScriptStatus = tonumber(v) or 0
+  return meScriptStatus
+end
+function MysteryGift.getStatus()
+  return meScriptStatus
+end
 
 -- pokefirered/data/mystery_event_msg.s:208 MysteryEventScript_AuroraTicket
 function MysteryGift.deliverGift(session, card)

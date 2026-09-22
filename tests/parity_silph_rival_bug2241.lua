@@ -6,7 +6,7 @@ local S = require("tests.harness").suite("parity silph co 7f rival")
 local check, eq = S.check, S.eq
 
 local realMusic = package.loaded["src.core.Music"]
-package.loaded["src.core.Music"] = { play = function() end }
+package.loaded["src.core.Music"] = { play = function() end, playMap = function() end }
 
 local story5 = dofile("data/scripts/story5.lua")
 local silph = story5.SILPH_CO_7F

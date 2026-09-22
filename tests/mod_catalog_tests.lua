@@ -65,7 +65,9 @@ check(not Damage.isSpecial("FAIRY"), "an unknown type is not special")
 
 -- ------- the fixture
 
-local vanillaChart = require("data.generated.type_chart")
+local Data = require("src.core.Data")
+if not Data.type_chart then Data:load() end
+local vanillaChart = Data.type_chart
 
 local function fixtureData()
   return {

@@ -506,17 +506,19 @@ check(removedRefError:find("OPP_TEST", 1, true) ~= nil
 
 -- ------- every vanilla record must satisfy its schema, so the shipped
 -- example's copy-the-base-record override idiom always validates cleanly
+local Data = require("src.core.Data")
+if not Data.maps then Data:load() end
 local vanillaSets = {
-  { "pokemon", require("data.generated.pokemon") },
-  { "moves", require("data.generated.moves") },
-  { "items", require("data.generated.items") },
-  { "maps", require("data.generated.maps") },
-  { "tilesets", require("data.generated.tilesets") },
-  { "encounters", require("data.generated.encounters") },
-  { "trainers", require("data.generated.trainers") },
-  { "sprites", require("data.generated.sprites") },
-  { "text", require("data.generated.text") },
-  { "music", require("data.generated.audio").songs },
+  { "pokemon", Data.pokemon },
+  { "moves", Data.moves },
+  { "items", Data.items },
+  { "maps", Data.maps },
+  { "tilesets", Data.tilesets },
+  { "encounters", Data.encounters },
+  { "trainers", Data.trainers },
+  { "sprites", Data.sprites },
+  { "text", Data.text },
+  { "music", Data.audio.songs },
 }
 for _, pair in ipairs(vanillaSets) do
   local name, records = pair[1], pair[2]

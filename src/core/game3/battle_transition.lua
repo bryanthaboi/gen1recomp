@@ -1548,6 +1548,8 @@ function BattleTransition.finish()
   BattleTransition._active = false
   BattleTransition._phase = "done"
   BattleTransition._fx = nil
+  BattleTransition._mosaicCanvas = nil
+  BattleTransition._mosaicKey = nil
   local cb = BattleTransition._doneCb
   BattleTransition._doneCb = nil
   if cb then cb() end
@@ -1558,6 +1560,8 @@ function BattleTransition.abort()
   BattleTransition._phase = "idle"
   BattleTransition._fx = nil
   BattleTransition._doneCb = nil
+  BattleTransition._mosaicCanvas = nil
+  BattleTransition._mosaicKey = nil
 end
 
 function BattleTransition.tick()

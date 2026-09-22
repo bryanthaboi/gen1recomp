@@ -63,7 +63,13 @@ function PcAnim.update()
   if t.timer >= 6 then
     local var = var8004(t.ctx)
     local flickerOff = (t.state % 2) == 1
-    set_mid((flickerOff and PcAnim.METATILE_OFF[var] or PcAnim.METATILE_ON[var]) or 0)
+    local offTile = PcAnim.METATILE_OFF[var]
+    local onTile = PcAnim.METATILE_ON[var]
+    if not offTile or not onTile then
+      PcAnim.task = nil
+      return
+    end
+    set_mid(flickerOff and offTile or onTile)
     t.timer = 0
     t.state = t.state + 1
     if t.state >= 5 then

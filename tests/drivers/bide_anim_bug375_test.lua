@@ -17,8 +17,10 @@ return function(game)
   local MAP = "ROUTE_1"
   local STAND = { x = 5, y = 5, facing = "down" }
 
+  local fails = 0
   local function check(label, ok)
     U.log(ok and "PASS" or "FAIL", label)
+    if not ok then fails = fails + 1 end
     return ok
   end
 
@@ -229,13 +231,10 @@ return function(game)
   U.log("pick FIGHT then BIDE and watch turn one: the screen palette flashes")
   U.log("white and balls spiral inward, silently. Then, still in silence, the")
   U.log("whole battle screen creeps sideways 1 px at a time out to 3 px and")
-  U.log("back, twice, and only then does it say storing energy. On the foe's")
+  U.log("back, twice, and no text follows before the foe moves. On the foe's")
   U.log("turn the same creep goes out to 6 px and takes twice as long.")
   U.log("No flash on the RATTATA and no BIDE thud until the turn it")
   U.log("unleashes, where the thud and its animation come after the text and")
   U.log("before the enemy HP bar slides down. The foe's spiral looks the same.")
-
-  while true do
-    coroutine.yield()
-  end
+  love.event.quit(fails == 0 and 0 or 1)
 end

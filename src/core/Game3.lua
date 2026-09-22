@@ -5,6 +5,8 @@ local FixedStep = require("src.core.FixedStep")
 local Input = require("src.core.Input")
 local SaveData = require("src.core.SaveData")
 local Schema = require("src.core.game3.save_schema_firered")
+local MapIds = require("src.core.game3.map_ids")
+local Profile = require("src.core.game3.profile")
 local Runtime = require("src.core.game3.runtime")
 local Audio = require("src.core.game3.audio")
 local Options = require("src.core.game3.options")
@@ -16,6 +18,13 @@ local Help = require("src.ui.game3.help_system")
 local QuestLog = require("src.ui.game3.quest_log")
 local QuestRecorder = require("src.core.game3.quest_log_recorder")
 local ModRuntime = require("src.mods.Runtime")
+
+local s9Warned = {}
+local function s9log(key, err)
+  if s9Warned[key] then return end
+  s9Warned[key] = true
+  print("[game3] hot-path pcall failed (" .. key .. "): " .. tostring(err))
+end
 
 local Game3 = {}
 Game3.__index = Game3
@@ -43,7 +52,8 @@ function Game3:_hasContinueSave()
   if not SaveData.load then return false end
   local ok, save = pcall(SaveData.load)
   if not ok or type(save) ~= "table" then return false end
-  return save.engine == "game3" and type(save.map) == "string" and save.map:sub(1, 3) == "FR_"
+  return save.engine == "game3" and type(save.map) == "string"
+    and MapIds.isGame3Map(save.map, save.version)
 end
 
 function Game3:_enterField(session, reason)
@@ -381,8 +391,14 @@ function Game3:_handleBootAction(action)
       local modsDiff = SaveData.modsDiff and SaveData.modsDiff(save, activeMods) or nil
       local session = Schema.fromSaveTable(save)
       Options.bind(session, self.options)
-      -- Refuse Sevii leftovers.
-      if type(session.map) == "string" and session.map:sub(1, 6) == "SEVII_" then
+      local legacy = Profile.of(session.version).map.legacyPrefixes or {}
+      local legacyMap = false
+      if type(session.map) == "string" then
+        for _, prefix in ipairs(legacy) do
+          if session.map:sub(1, #prefix) == prefix then legacyMap = true break end
+        end
+      end
+      if legacyMap then
         print("[game3] ignoring legacy Sevii save map " .. session.map)
         session = Schema.newGame({ gender = 0 })
       end
@@ -554,10 +570,12 @@ function Game3:update(dt)
   while self._audioAccum >= STEP and guard < 8 do
     self._audioAccum = self._audioAccum - STEP
     guard = guard + 1
-    pcall(Audio.update, STEP)
+    local okA, errA = pcall(Audio.update, STEP)
+    if not okA then s9log("audio", errA) end
   end
   if self._audioAccum > 0.25 then self._audioAccum = 0 end
-  pcall(function() require("src.render.Tilt").update(dt) end)
+  local okT, errT = pcall(function() require("src.render.Tilt").update(dt) end)
+  if not okT then s9log("tilt", errT) end
 end
 
 function Game3:_drawHud(w, h)
@@ -570,7 +588,8 @@ function Game3:_drawHud(w, h)
     scale = scale,
   }
   love.graphics.push("all")
-  pcall(function() ModRuntime.call("render.hud", noop, self, viewport) end)
+  local okR, errR = pcall(function() ModRuntime.call("render.hud", noop, self, viewport) end)
+  if not okR then s9log("render.hud", errR) end
   love.graphics.pop()
 end
 
@@ -989,6 +1008,10 @@ function Game3:reset()
   Audio.endSession()
   require("src.ui.game3.stack").clear()
   clearFieldScreens()
+  local WarpMod = package.loaded["src.core.game3.warp"]
+  if WarpMod and WarpMod.clear then pcall(WarpMod.clear) end
+  local DoorsMod = package.loaded["src.core.game3.doors"]
+  if DoorsMod and DoorsMod.release then pcall(DoorsMod.release) end
   if Runtime.isActive() then
     pcall(function() Runtime.stop(nil, self) end)
   end

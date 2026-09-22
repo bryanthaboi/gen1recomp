@@ -58,10 +58,13 @@ function SaveIO.choosePath()
   elseif platform == "Windows" then
     local script = table.concat({
       "Add-Type -AssemblyName System.Windows.Forms;",
+      "$o=New-Object System.Windows.Forms.Form;",
+      "$o.TopMost=$true;",
+      "$o.ShowInTaskbar=$false;",
       "$d=New-Object System.Windows.Forms.OpenFileDialog;",
       "$d.Title='Choose a Pokemon save.lua';",
       "$d.Filter='Save files (*.lua)|*.lua|All files (*.*)|*.*';",
-      "if($d.ShowDialog() -eq 'OK'){[Console]::Write($d.FileName)}",
+      "if($d.ShowDialog($o) -eq 'OK'){[Console]::Write($d.FileName)}",
     })
     return commandOutput(
       'powershell -NoProfile -STA -Command "' .. script .. '"')

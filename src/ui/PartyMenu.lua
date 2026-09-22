@@ -402,6 +402,10 @@ end
 -- that already popped themselves, and stops a double close eating the bag
 -- underneath. #252
 function PartyMenu:close()
+  local top = self.game.stack:top()
+  if top ~= self and top and top.owner == self and top.held then
+    self.game.stack:pop()
+  end
   if self.game.stack:top() == self then self.game.stack:pop() end
 end
 
@@ -465,6 +469,7 @@ function PartyMenu:update(dt)
   end
   -- home/window.asm:119
   self.cursorsErased = nil
+  self.chosenHollow = nil
   local input = self.game.input
   local party = self.party or self.game.save.party
 
@@ -502,6 +507,7 @@ function PartyMenu:update(dt)
       elseif action == "battle_switch" then
         -- engine/battle/core.asm:2396
         if self.keepOpen then
+          self.chosenHollow = true
           self.onSwitch(mon, self)
         else
           self.game.stack:pop()
@@ -752,6 +758,8 @@ function PartyMenu:update(dt)
       -- else keeps the old pop-then-call order.  Popping first is what made
       -- a POTION snap the picker shut before the item had even run (#252).
       if not self.keepOpen then self.game.stack:pop() end
+      -- home/pokemon.asm:246
+      if self.keepOpen then self.chosenHollow = true end
       self.onSwitch(mon, self)
     else
       self.submenu = true
@@ -973,7 +981,9 @@ function PartyMenu:draw()
     -- entryY returns.  Drawing it at y put it a tile too high (#278).
     local cursorY = y + 8
     if i == self.index and not self.cursorsErased then
-      Font.drawCode(Theme.cursor, 0, cursorY)
+      Font.drawCode((self.chosenHollow or self.submenu) and Theme.cursorHollow
+                    or Theme.cursor,
+                    0, cursorY)
     end
     -- the unfilled swap arrow; the filled cursor replaces it in the tilemap
     -- when they share a row (PlaceMenuCursor, home/window.asm:184-185) (#814)

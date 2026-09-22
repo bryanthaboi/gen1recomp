@@ -17,6 +17,7 @@ local Theme = require("src.ui.Theme")
 local OptionRows = require("src.ui.OptionRows")
 local Strings = require("src.core.Strings")
 local ModProfile = require("src.mods.ModProfile")
+local LoadOrder = require("src.mods.LoadOrder")
 
 local ManagerState = {}
 ManagerState.__index = ManagerState
@@ -43,6 +44,7 @@ local TAB_LINE = { "[MODS] PROF ERRS", "MODS [PROF] ERRS", "MODS PROF [ERRS]" }
 
 local LIST_TOP = 3   -- first content row (tile y)
 local LIST_ROWS = 11 -- single-line rows in the scroll region
+local DETAIL_TOP, DETAIL_ROWS = 11, 4
 
 -- what the mod declared it does, shown before the player enables it
 local PERMISSION_ROWS = {
@@ -219,6 +221,7 @@ function ManagerState:refresh()
   -- gen2Pending is not in stagedList: the Gen 2 override is not an enable flag
   -- and there is nothing in `available` to diff it against
   self.restartPending = #self:stagedList() > 0 or self.gen2Pending == true
+    or self.orderPending == true
   -- a live set that drifted off the named profile reverts to ad-hoc
   local opts = self:optionsTable()
   if opts.activeProfile then
@@ -393,9 +396,7 @@ function ManagerState:detailRows(m)
       label = m.gen2Forced and Strings("DON'T TRY HERE") or Strings("TRY HERE ANYWAY"),
       action = function() self:toggleGen2Force(m) end }
   end
-  -- which games the mod says it is for, in the one place the player is
-  -- already looking when they wonder why it did not run
-  rows[#rows + 1] = { inert = true, label = "FOR " .. ModTargets.chip(m) }
+  for _, row in ipairs(self:orderRows(m)) do rows[#rows + 1] = row end
   if m.github then
     rows[#rows + 1] = { inert = true, label = "GH " .. m.github }
   end
@@ -408,6 +409,85 @@ function ManagerState:detailRows(m)
   end
   rows[#rows + 1] = { label = Strings("BACK"), action = function() self:goBack() end }
   return rows
+end
+
+function ManagerState:installedIds()
+  local ids = {}
+  for _, m in ipairs(self.status.available or {}) do ids[#ids + 1] = m.id end
+  return ids
+end
+
+function ManagerState:loadOrderList()
+  local opts = self:optionsTable()
+  local saved, available = opts.modOrder, self.status.available
+  local c = self._orderCache
+  if c and c.saved == saved and c.available == available then
+    return c.shown, c.full
+  end
+  local full = LoadOrder.materialize(SaveData.modOrder(opts), available or {})
+  local installed = {}
+  for _, id in ipairs(self:installedIds()) do installed[id] = true end
+  local shown = {}
+  for _, id in ipairs(full) do
+    if installed[id] then shown[#shown + 1] = id end
+  end
+  self._orderCache = { saved = saved, available = available, shown = shown, full = full }
+  return shown, full
+end
+
+function ManagerState:orderRows(m)
+  local rows = {}
+  if Runtime.safeMode then return rows end
+  local loader = self.game.mods
+  local report = loader and loader.cartReport
+  if report and report.rank and report.rank[m.id] then
+    rows[#rows + 1] = { inert = true, label = Strings("CART SETS ORDER") }
+    return rows
+  end
+  local shown = self:loadOrderList()
+  local at = LoadOrder.position(shown, m.id)
+  if not at then return rows end
+  if #shown < 2 then
+    rows[#rows + 1] = { inert = true, label = "LOAD #" .. at .. " OF " .. #shown }
+    return rows
+  end
+  rows[#rows + 1] = { label = "< LOAD #" .. at .. "/" .. #shown .. " >",
+    adjust = function(dir) self:moveOrder(m, dir) end,
+    action = function() self:notify("LEFT/RIGHT: MOVE") end }
+  return rows
+end
+
+local function sameList(a, b)
+  if #a ~= #b then return false end
+  for i, v in ipairs(a) do
+    if b[i] ~= v then return false end
+  end
+  return true
+end
+
+function ManagerState:moveOrder(m, delta)
+  if Runtime.safeMode then
+    self:notify("SAFE MODE ACTIVE")
+    return false
+  end
+  local opts = self:optionsTable()
+  local shown, full = self:loadOrderList()
+  local list, changed = LoadOrder.moveWithin(full, shown, m.id, delta)
+  if not changed then
+    self:notify(delta < 0 and "ALREADY FIRST" or "ALREADY LAST")
+    return false
+  end
+  if not self.bootOrder then
+    self.bootOrder = SaveData.modOrder(opts)
+    self.bootOrderShown = shown
+  end
+  SaveData.setModOrder(opts, list)
+  self:persistOptions()
+  local now = self:loadOrderList()
+  self.orderPending = not sameList(now, self.bootOrderShown)
+  self:refresh()
+  self:notify("LOAD #" .. (LoadOrder.position(now, m.id) or "?") .. " ON RESTART")
+  return true
 end
 
 function ManagerState:applyRows()
@@ -503,10 +583,11 @@ function ManagerState:moveCursor(dir)
     end
   end
   -- keep the cursor inside the scroll window
+  local window = self.screen == "detail" and DETAIL_ROWS or LIST_ROWS
   if self.cursor < self.scroll then
     self.scroll = self.cursor
-  elseif self.cursor > self.scroll + LIST_ROWS - 1 then
-    self.scroll = self.cursor - LIST_ROWS + 1
+  elseif self.cursor > self.scroll + window - 1 then
+    self.scroll = self.cursor - window + 1
   end
 end
 
@@ -516,6 +597,8 @@ function ManagerState:adjustOrTab(dir)
     self.cursor, self.scroll = 1, 1
     self:snapCursor()
   elseif self.screen == "detail" then
+    local row = self:focusedRow()
+    if row and row.adjust then return row.adjust(dir) end
     self.descScroll = math.max(1, self.descScroll + dir)
   else
     for _ = 1, LIST_ROWS do self:moveCursor(dir) end
@@ -786,6 +869,11 @@ function ManagerState:discardChanges()
     if loader and loader.setEnabled then loader:setEnabled(m.id, en) end
     SaveData.setModEnabled(opts, m.id, en, scope)
   end
+  if self.bootOrder then
+    SaveData.setModOrder(opts, self.bootOrder)
+    self.bootOrder, self.bootOrderShown, self.orderPending = nil, nil, false
+    self:persistOptions()
+  end
   if loader and loader.status then self.game.modStatus = loader:status() end
   self:refresh()
   self:notify("CHANGES DISCARDED")
@@ -816,6 +904,7 @@ function ManagerState:matchesProfile(p)
   -- the per-game answers count too, or a profile that only differs on Gold
   -- would read as still active after the player changed it
   return ModProfile.matchesVersions(p, self:optionsTable())
+    and ModProfile.matchesOrder(p, self:optionsTable())
 end
 
 function ManagerState:persistOptions()
@@ -860,6 +949,16 @@ function ManagerState:applyProfile(p)
   end
   -- the per-game half of the setup, restored beside the shared enable set
   ModProfile.restoreVersions(p, self:optionsTable())
+  do
+    local before = self:loadOrderList()
+    if not self.bootOrder then
+      self.bootOrder = SaveData.modOrder(self:optionsTable())
+      self.bootOrderShown = before
+    end
+    ModProfile.restoreOrder(p, self:optionsTable())
+    self.orderPending = not sameList(self:loadOrderList(), self.bootOrderShown)
+    self.restartPending = self.restartPending or self.orderPending
+  end
   self:optionsTable().activeProfile = p.name
   self:persistOptions()
   local missing = ModProfile.missingIds(p, self.byId)
@@ -879,12 +978,13 @@ function ManagerState:saveCurrentAs()
       local opts = self:optionsTable()
       opts.modProfiles = opts.modProfiles or {}
       local snap = ModProfile.capture(self.status.available,
-        self:modOptionsTable(), opts.modsByVersion)
+        self:modOptionsTable(), opts.modsByVersion, opts.modOrder)
       local existing = self:findProfile(name)
       if existing then
         existing.enabled, existing.options, existing.slots =
           snap.enabled, snap.options, snap.slots
         existing.enabledByVersion = snap.enabledByVersion
+        existing.order = snap.order
       else
         snap.name = name
         opts.modProfiles[#opts.modProfiles + 1] = snap
@@ -1261,6 +1361,7 @@ function ManagerState:drawDetail()
   drawTruncated(statusLine, 16, 3 * 8, 17)
   drawTruncated((m.category or "OTHER") .. " / " .. (m.profile or "content"),
                 16, 4 * 8, 17)
+  drawTruncated("FOR " .. ModTargets.chip(m), 16, 5 * 8, 17)
   local lines = wrap(m.error and ("FAILED: " .. m.error)
     or (m.note and ("SKIPPED: " .. m.note)) or m.description, 16)
   local visible = 5
@@ -1273,11 +1374,17 @@ function ManagerState:drawDetail()
     Font.drawCode(Theme.moreArrow, 17 * 8, 10 * 8)
   end
   local rows = self:rowsForScreen()
-  local y = 11
-  for i, row in ipairs(rows) do
-    drawTruncated(row.label, 32, y * 8, 15)
+  local first = math.max(1, math.min(self.scroll or 1, #rows - DETAIL_ROWS + 1))
+  if self.cursor >= 1 and self.cursor < first then first = self.cursor end
+  local last = math.min(#rows, first + DETAIL_ROWS - 1)
+  local y = DETAIL_TOP
+  for i = first, last do
+    drawTruncated(rows[i].label, 32, y * 8, 15)
     if i == self.cursor then Font.drawCode(Theme.cursor, 24, y * 8) end
     y = y + 1
+  end
+  if #rows > last then
+    Font.drawCode(Theme.moreArrow, 19 * 8, (DETAIL_TOP + DETAIL_ROWS - 1) * 8)
   end
   self:drawFooter("A:CHOOSE B:BACK")
 end

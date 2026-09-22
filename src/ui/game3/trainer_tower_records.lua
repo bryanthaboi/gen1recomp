@@ -376,9 +376,14 @@ end
 -- pokefirered/src/battle_records.c:452 PrintTotalRecord
 function Records.totalText(session)
   session = session or Records._session
-  local wins = record_number(type(session) == "table" and session.linkBattleWins)
-  local losses = record_number(type(session) == "table" and session.linkBattleLosses)
-  local draws = record_number(type(session) == "table" and session.linkBattleDraws)
+  -- battle_records.c:355, include/constants/game_stat.h:27-29
+  local gs = type(session) == "table" and session.gameStats or {}
+  local wins = record_number(gs[23] or gs.linkBattleWins
+    or (type(session) == "table" and session.linkBattleWins))
+  local losses = record_number(gs[24] or gs.linkBattleLosses
+    or (type(session) == "table" and session.linkBattleLosses))
+  local draws = record_number(gs[25] or gs.linkBattleDraws
+    or (type(session) == "table" and session.linkBattleDraws))
   return Strings("TOTAL RECORD W:%-4d L:%-4d D:%-4d", wins, losses, draws)
 end
 

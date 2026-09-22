@@ -422,6 +422,10 @@ function RegionMap.hasSwitchButton()
   return RegionMap.permission("switchButton")
 end
 
+function RegionMap.playerOnSelectedMap()
+  return RegionMap.playerX ~= nil and RegionMap.playerY ~= nil
+end
+
 function RegionMap.hasMapPreview()
   return RegionMap.permission("mapPreview")
 end
@@ -493,6 +497,7 @@ function RegionMap.show(opts)
   RegionMap.previewDungeon = nil
   RegionMap.previewFrame = 0
   RegionMap._snapIndex = 0
+  if RegionMap._images["kanto_map"] == false then RegionMap._images["kanto_map"] = nil end
   RegionMap._session = opts.session
   RegionMap._onClose = opts.onClose
   -- pokefirered/src/item_use.c:666, src/field_specials.c:185
@@ -638,6 +643,7 @@ local function computeDungeonIcons()
       if dSec then
         local offset = RegionMap.dungeonIconOffset(x, y)
         out[#out + 1] = {
+          -- pokefirered/src/region_map.c:3551
           px = 32 + x * CELL_SIZE + offset,
           py = 32 + y * CELL_SIZE + offset,
           frame = RegionMap.dungeonIconFrame(dSec),
@@ -710,15 +716,28 @@ function RegionMap.handleInput(input)
     return
   end
 
-  -- START cycles snapping to Player Icon -> Cancel Button -> Switch Button
+  -- pokefirered/src/region_map.c:2862
   if input:wasPressed("start") then
-    RegionMap._snapIndex = (RegionMap._snapIndex + 1) % 2
-    if RegionMap._snapIndex == 0 then
-      RegionMap.cursorX = RegionMap.playerX
-      RegionMap.cursorY = RegionMap.playerY
+    local snap
+    if RegionMap.hasSwitchButton() then
+      RegionMap._snapIndex = (RegionMap._snapIndex + 1) % 3
+      if RegionMap._snapIndex == 0 and not RegionMap.playerOnSelectedMap() then
+        RegionMap._snapIndex = 1
+      end
+      snap = ({ "player", "switch", "cancel" })[RegionMap._snapIndex + 1]
     else
+      RegionMap._snapIndex = (RegionMap._snapIndex + 1) % 2
+      snap = RegionMap._snapIndex == 1 and "cancel" or "player"
+    end
+    if snap == "switch" then
+      RegionMap.cursorX = SWITCH_BUTTON_X
+      RegionMap.cursorY = SWITCH_BUTTON_Y
+    elseif snap == "cancel" then
       RegionMap.cursorX = CANCEL_BUTTON_X
       RegionMap.cursorY = CANCEL_BUTTON_Y
+    else
+      RegionMap.cursorX = RegionMap.playerX
+      RegionMap.cursorY = RegionMap.playerY
     end
     se(5)
     return

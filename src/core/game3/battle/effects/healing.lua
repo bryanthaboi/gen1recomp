@@ -135,7 +135,11 @@ function Healing.healBell(ctx)
   local State = require("src.core.game3.battle.state")
   local active = State.partyMon(user)
   local blocked = isBell and ad:abilityOf(user) == "SOUNDPROOF"
-  if not blocked then ad:clearStatus(user) end
+  -- battle_script_commands.c:8015-8016
+  if not blocked then
+    ad:clearStatus(user)
+    user.expNightmare = nil
+  end
   local partner = ad._st and ad._st.double and ad:partnerOf(user) or nil
   local partnerBlocked = partner and isBell and ad:abilityOf(partner) == "SOUNDPROOF"
   -- pokefirered/src/battle_script_commands.c:8023
@@ -148,6 +152,8 @@ function Healing.healBell(ctx)
     if mon and mon ~= active and mon ~= partnerMon and mon.status then
       mon.status = nil
       mon.sleep = nil
+      -- battle_script_commands.c:8015
+      mon.expNightmare = nil
     end
   end
   H.attackAnim(ctx)

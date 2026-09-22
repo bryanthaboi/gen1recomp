@@ -62,6 +62,21 @@ T.check(iosErr and iosErr:find("ffi.C has no librashader_translate_preset", 1, t
 T.check(iosErr and iosErr:find("looked in", 1, true) == nil,
   "iOS lists no file candidates (got " .. tostring(iosErr) .. ")")
 
+local LINK_ERR = 'dlopen failed: cannot locate symbol "_ZTVNSt6__ndk117bad_function_callE" '
+  .. 'referenced by "/data/app/lib/arm64/liblibrashader_bridge.so"'
+local linkFfi = baseFfi()
+linkFfi.load = function(name)
+  if name == "liblibrashader_bridge.so" then error(LINK_ERR, 0) end
+  error('dlopen failed: library "' .. tostring(name) .. '" not found', 0)
+end
+linkFfi.C = emptyFfi.C
+local linkCan, linkErr = withFfi(linkFfi, "Android")
+T.eq(linkCan, false, "an Android bridge that fails to link cannot convert")
+T.check(linkErr and linkErr:find("cannot locate symbol", 1, true) ~= nil,
+  "bridgeError keeps the dlopen reason (got " .. tostring(linkErr) .. ")")
+T.check(linkErr and linkErr:find("liblibrashader_bridge.so (" .. LINK_ERR, 1, true) ~= nil,
+  "the reason sits next to the name that produced it")
+
 local iosCan = withFfi(staticFfi, "iOS")
 T.eq(iosCan, true, "iOS resolves the bridge through ffi.C alone")
 

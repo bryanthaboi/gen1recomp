@@ -142,6 +142,8 @@ function Evolution.learnEvolutionMoves(game, mon, onDone)
     local name = mon.nickname or def.name
     if #mon.moves < 4 then
       table.insert(mon.moves, { id = moveId, pp = mdef.pp })
+      require("src.world.PikachuFollower")
+        .onMoveLearned(game.save, mon, moveId)
       Runtime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
       -- LearnedMove1Text: text_far, sound_get_item_1, text_promptbutton
       -- (learn_move.asm), so the jingle rides the box

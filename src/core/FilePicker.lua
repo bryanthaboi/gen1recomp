@@ -1,5 +1,6 @@
 local Platform = require("src.core.Platform")
 local HostShell = require("src.core.HostShell")
+local HostPicker = require("src.core.HostPicker")
 
 local FilePicker = {}
 
@@ -69,12 +70,11 @@ function FilePicker.open(prompt, kind)
         :format(title, appleTypes(kind.exts)))
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. title .. "';",
       "$d.Filter='" .. kind.label .. " (" .. windowsPatterns(kind.exts) .. ")|"
         .. windowsPatterns(kind.exts) .. "|All files (*.*)|*.*';",
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "$n=[IO.Path]::GetFileName($d.FileName) -replace '[^\\x20-\\x7E]','_';",
       "$t=Join-Path $env:TEMP $n;",
       "Copy-Item -LiteralPath $d.FileName -Destination $t -Force;",

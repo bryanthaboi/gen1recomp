@@ -151,10 +151,9 @@ function MapPreviewScreen.install(cache)
 end
 
 function MapPreviewScreen.manifest()
-  if MapPreviewScreen._manifest or MapPreviewScreen._manifestTried then
+  if MapPreviewScreen._manifest then
     return MapPreviewScreen._manifest
   end
-  MapPreviewScreen._manifestTried = true
   local rel = cache_root() .. "/" .. MapPreviewExtract.CACHE_SUB .. "/manifest.lua"
   local t = load_lua(rel)
   if type(t) ~= "table" or type(t.entries) ~= "table" then
@@ -263,13 +262,15 @@ function MapPreviewScreen.show(mapsec, opts)
   if not opts.anyType and entry.type ~= MapPreviewExtract.TYPE_FOREST then return false end
   local duration = MapPreviewScreen.durationFor(mapsec)
   if duration <= 0 then return false end
-  if not MapPreviewScreen.image(mapsec) then return false end
+  local image = MapPreviewScreen.image(mapsec)
+  if not image then return false end
 
   MapPreviewScreen._active = true
   MapPreviewScreen._state = STATE_HOLD
   MapPreviewScreen._mapsec = entry.mapsec
   MapPreviewScreen._entry = entry
   MapPreviewScreen._name = entry.name
+  MapPreviewScreen._image = image
   MapPreviewScreen._timer = 0
   MapPreviewScreen._duration = duration
   MapPreviewScreen._fadeFrames = 0
@@ -280,6 +281,7 @@ function MapPreviewScreen.dismiss()
   MapPreviewScreen._active = false
   MapPreviewScreen._state = STATE_IDLE
   MapPreviewScreen._entry = nil
+  MapPreviewScreen._image = nil
   MapPreviewScreen._timer = 0
   MapPreviewScreen._fadeFrames = 0
 end
@@ -343,8 +345,19 @@ local function nameWindowColors(manifest)
   }
 end
 
+local nwManifestCache, nwColorsCache, nwFontColors = false, nil, nil
+local function nameWindowColorsCached()
+  local m = MapPreviewScreen.manifest()
+  if m ~= nwManifestCache or nwColorsCache == nil then
+    nwManifestCache = m
+    nwColorsCache = nameWindowColors(m)
+    nwFontColors = { fg = nwColorsCache.fg, shadow = nwColorsCache.shadow, bg = nwColorsCache.bg }
+  end
+  return nwColorsCache, nwFontColors
+end
+
 local function drawNameWindow(name)
-  local colors = nameWindowColors(MapPreviewScreen.manifest())
+  local colors, fontColors = nameWindowColorsCached()
   local f = colors.fill
 
   love.graphics.setColor(f[1], f[2], f[3], 1)
@@ -362,7 +375,7 @@ local function drawNameWindow(name)
   local xctr = NAME_WINDOW_W - textW
   if xctr < 0 then xctr = 0 end
   FrlgFont.draw(name, NAME_WINDOW_X + math.floor(xctr / 2), NAME_WINDOW_Y + NAME_WINDOW_TEXT_Y, {
-    colors = { fg = colors.fg, shadow = colors.shadow, bg = colors.bg },
+    colors = fontColors,
   })
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -388,7 +401,7 @@ end
 --- pair as one layer.
 function MapPreviewScreen.draw()
   if not MapPreviewScreen._active then return end
-  local image = MapPreviewScreen.image(MapPreviewScreen._mapsec)
+  local image = MapPreviewScreen._image or MapPreviewScreen.image(MapPreviewScreen._mapsec)
   if not image then return end
   local alpha = MapPreviewScreen.alpha()
   if alpha >= 1 then

@@ -3,6 +3,7 @@
 -- Run: luajit tests/game3_battle_anim_pack_test.lua
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_battle_anim_pack_test", "pokemon/battle_anims/pack.lua")
 
 local failed = 0
 local function check(cond, msg)

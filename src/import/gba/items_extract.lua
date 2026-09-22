@@ -181,7 +181,8 @@ function ItemsExtract.run(rom, cache, opts)
     lines[#lines + 1] = string.format(
       '    [%d] = { name="%s", pocket="%s", fieldUse="%s", price=%d, ' ..
       'holdEffect=%d, holdEffectParam=%d, importance=%d, registrability=%d, ' ..
-      'battleUsage=%d, secondaryId=%d, description="%s" },',
+      'battleUsage=%d, secondaryId=%d, itemId=%d, itemType=%d, ' ..
+      'fieldUseFunc=%d, battleUseFunc=%d, description="%s" },',
       id,
       escape_lua(name ~= "" and name or "????????"),
       pocket,
@@ -193,6 +194,10 @@ function ItemsExtract.run(rom, cache, opts)
       registrability,
       battleUsage,
       secondaryId,
+      itemId,
+      itemType,
+      fieldUseFunc,
+      battleUseFunc,
       escape_lua(desc)
     )
   end

@@ -228,7 +228,10 @@ function AnimSprites.update()
     end
     if s.active and s._g4anim and AnimSprites.animate then
       local ok, err = pcall(AnimSprites.animate, s)
-      if not ok then print("[battle.anim] sprite anim: " .. tostring(err)) end
+      if not ok then
+        print("[battle.anim] sprite anim: " .. tostring(err))
+        pcall(AnimSprites.release, s)
+      end
     end
   end
 end

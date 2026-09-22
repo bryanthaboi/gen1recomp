@@ -423,7 +423,10 @@ function WorldAPI:effectiveEncounters(mapId, terrain, opts)
     return nil, "invalid terrain: " .. tostring(terrain)
   end
   local data = self.game and self.game.data
-  local encDef = data and data.encounters and data.encounters[mapId]
+  if not (data and type(data.encounters) == "table") then
+    return nil, "encounters data not loaded"
+  end
+  local encDef = data.encounters[mapId]
   local key = (terrain == "indoor") and "grass" or terrain
   local slotDef = encDef and encDef[key]
   local chance = (slotDef and tonumber(slotDef.rate) or 0) / 256

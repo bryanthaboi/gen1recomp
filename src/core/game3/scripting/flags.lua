@@ -354,6 +354,8 @@ function Flags.getVar(store, ctx, id)
     if not (ctx and ctx.specialVars) then return 0 end
     return (ctx.specialVars[id]) or 0
   end
+  -- src/event_data.c:235-241
+  if id < 0x4000 then return id end
   if not (store and store.vars) then return 0 end
   return (store.vars[id]) or 0
 end

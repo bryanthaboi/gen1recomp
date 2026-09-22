@@ -119,8 +119,8 @@ for id = 0, pretCount - 1 do
       string.format("0x%X (NullFieldSpecial) is unbound", id))
   end
 end
-check(Natives.ALLOW["special:" .. 0x18B] == nil, "0x18B OpenMuseumFossilPic no longer sets dex flags")
-check(Natives.ALLOW["special:" .. 0x19D] == nil, "0x19D RemoveBerryPowderVendorMenu unbound")
+check(Natives.ALLOW["special:" .. 0x18B] ~= nil, "0x18B OpenMuseumFossilPic is bound (display-only, no dex flags)")
+check(Natives.ALLOW["special:" .. 0x19D] ~= nil, "0x19D RemoveBerryPowderVendorMenu is bound")
 
 if failed > 0 then
   print("[test] FAILED " .. failed)

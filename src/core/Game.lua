@@ -495,8 +495,7 @@ end
 -- Asked of the WHOLE stack, not just the top.  For BATTLE SIZE "fill" that is
 -- because the party menu, bag and text boxes a battle opens must not snap the
 -- surface back to the fixed scale for a frame; the title screen and intro want
--- it unconditionally, since neither has a world behind it and neither has any
--- reason to sit in a small box in the middle of a large window.
+-- it unless a skin or FAITHFUL RATIO frames the picture.
 function Game.fillScaleInStack(stack)
   for i = #(stack and stack.states or {}), 1, -1 do
     local state = stack.states[i]

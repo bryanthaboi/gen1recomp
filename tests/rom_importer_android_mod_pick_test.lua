@@ -59,15 +59,15 @@ ri:chooseMod()
 eq(#pickCalls, 1, "chooseMod opens the picker when no pending zip exists")
 eq(pickCalls[1], "mod", "chooseMod asks pickFile for a mod")
 
--- Pending USB zip installs without opening the picker.
 love.filesystem.write("usb_mod.zip", "PK\0fake")
 pickCalls = {}
 ri = freshImporter({ red = true, blue = true })
 ri:chooseMod()
-eq(#pickCalls, 0, "chooseMod installs a pending zip without opening the picker")
-eq(ri._installed, "usb_mod.zip", "chooseMod consumed the USB zip")
-check(love.filesystem.getInfo("usb_mod.zip") == nil,
-  "successful install removes the pending zip")
+eq(#pickCalls, 1, "a loose save-root zip does not stop the picker opening")
+eq(ri._installed, nil, "chooseMod leaves the loose zip uninstalled")
+check(love.filesystem.getInfo("usb_mod.zip") ~= nil,
+  "the player's loose zip is left in place")
+love.filesystem.remove("usb_mod.zip")
 
 -- Focus consumes picked_mod.zip even when both ROMs are already ready.
 love.filesystem.write("picked_mod.zip", "PK\0saf")

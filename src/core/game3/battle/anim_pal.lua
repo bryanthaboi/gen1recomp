@@ -310,6 +310,8 @@ function AnimPal.begin(s, img, opts)
   return idx
 end
 
+local _spriteBlendOpts = {}
+
 function AnimPal.beginSprite(s, img, vm)
   local b = s and s.palBlend
   local tint = nil
@@ -318,7 +320,12 @@ function AnimPal.beginSprite(s, img, vm)
   elseif vm and vm._tagBlend and s and s.tag then
     tint = vm._tagBlend[s.tag]
   end
-  return AnimPal.begin(s, img, tint and { coeff = tint.coeff, color = tint.color } or nil)
+  local opts
+  if tint then
+    _spriteBlendOpts.coeff, _spriteBlendOpts.color = tint.coeff, tint.color
+    opts = _spriteBlendOpts
+  end
+  return AnimPal.begin(s, img, opts)
 end
 
 function AnimPal.finish()

@@ -1,6 +1,6 @@
 -- Items panel: money, the shared item picker, badges, the configurable bag
 -- (Bag.add/remove, ordered by Bag.order) and PC item storage (a plain
--- S.save.pcItems dict with no slot cap).
+-- S.save.pcItems dict).
 --
 -- The picker is a searchable list rather than the old pair of arrows that
 -- cycled one id at a time through ~250 items, which was the single worst
@@ -10,7 +10,7 @@
 -- inventory flags, not stackable items, and must not look like quantity rows.
 --
 -- #715 reflow: side by side the wallet column plus the two quantity lists
--- need about 900 real px (a quantity row's -/+/x cluster alone is ~110px).
+-- need about 900 real px (a quantity row's -/+/move/x cluster alone is ~150px).
 -- Below that the five cards stack in one full-width column that scrolls in
 -- pixels (Kit.scrollPixels); the inner lists keep their own wheel/drag
 -- regions, which claim the notch first when the pointer is over them.
@@ -28,11 +28,12 @@ local COIN_STEPS = { -100, -10, 10, 100 }
 
 -- One quantity row shape, shared by the bag and the PC list: id, qty, then
 local function quantityRow(S, Kit, x, y, w, h, id, qty, selected, onMinus, onPlus,
-    onMax, canMax, onDrop)
+    onMax, canMax, onDrop, moveLabel, onMove, canMove)
   local s = Kit.scale
   local clicked = Kit.row(x, y, w, h, selected, PAL.blue, 9 * s)
   local btn = 24 * s
-  local bx = x + w - 10 * s - 4 * btn - 3 * (6 * s)
+  local mw = moveLabel and math.max(btn, Kit.textWidth("tiny", moveLabel) + 10 * s) or 0
+  local bx = x + w - 10 * s - 4 * btn - 3 * (6 * s) - (moveLabel and (mw + 6 * s) or 0)
   if Kit.stepper(bx, y + (h - btn) / 2, btn, btn, "-", { font = "small" }) then
     onMinus()
   end
@@ -44,7 +45,16 @@ local function quantityRow(S, Kit, x, y, w, h, id, qty, selected, onMinus, onPlu
       tostring(Ops.stackMax(S)), { font = "tiny", enabled = canMax }) then
     onMax()
   end
-  if Kit.button(bx + 3 * (btn + 6 * s), y + (h - btn) / 2, btn, btn, "x",
+  local dx = bx + 3 * (btn + 6 * s)
+  if moveLabel then
+    if Kit.button(dx, y + (h - btn) / 2, mw, btn, moveLabel,
+        { kind = "ghost", font = "tiny", radius = 6 * s, enabled = canMove }) then
+      onMove()
+      clicked = false
+    end
+    dx = dx + mw + 6 * s
+  end
+  if Kit.button(dx, y + (h - btn) / 2, btn, btn, "x",
       { kind = "danger", font = "tiny", radius = 6 * s }) then
     onDrop()
   end
@@ -283,7 +293,9 @@ local function drawQuantityCard(S, Kit, x, y, w, h, cfg)
           function() if cfg.adjust then cfg.adjust(id, -1) end end,
           function() if cfg.adjust then cfg.adjust(id, 1) end end,
           function() if cfg.max then cfg.max(id) end end, cfg.canMax and cfg.canMax(id),
-          function() if cfg.drop then cfg.drop(id) end end) then
+          function() if cfg.drop then cfg.drop(id) end end,
+          cfg.moveLabel, function() if cfg.move then cfg.move(id) end end,
+          cfg.canMove and cfg.canMove(id)) then
         if cfg.select then cfg.select(id) end
       end
     end
@@ -320,6 +332,9 @@ local function drawBag(S, Kit, x, y, w, h)
     canMaxAll = function() return Ops.bagCanMax(S) end,
     sort = function(mode) Ops.bagSort(S, mode) end,
     drop = function(id) Ops.bagDrop(S, id) end,
+    moveLabel = "PC",
+    move = function(id) Ops.bagToPc(S, id) end,
+    canMove = function(id) return Ops.moveCount(S, true, id) > 0 end,
   })
 end
 
@@ -344,6 +359,9 @@ local function drawPc(S, Kit, x, y, w, h)
     canMaxAll = function() return Ops.pcCanMax(S) end,
     sort = function(mode) Ops.pcSort(S, mode) end,
     drop = function(id) Ops.pcDrop(S, id) end,
+    moveLabel = "BAG",
+    move = function(id) Ops.pcToBag(S, id) end,
+    canMove = function(id) return Ops.moveCount(S, false, id) > 0 end,
   })
 end
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_size_record_test")
 
 local SizeRecord = require("src.core.game3.pokemon_size_record")
 local Std = require("src.core.game3.scripting.stdscripts")

@@ -22,7 +22,9 @@ if not _G.love then _G.love = require("tests.love_stub") end
 local S = require("tests.harness").suite("parity mart stock")
 local check, eq = S.check, S.eq
 
-local T = dofile("data/generated/text_pointers.lua")
+local Data = require("src.core.Data")
+if not Data.text_pointers then Data:load() end
+local T = Data.text_pointers
 
 -- MAP_NAME -> text-pointer group ("CELADON_MART_4F" -> "CeladonMart4F")
 local function groupOf(map)

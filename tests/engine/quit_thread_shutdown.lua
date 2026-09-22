@@ -136,6 +136,20 @@ eq(counted(commands("chipaudio_cmd"), "quit"), 1,
    "shutdown is idempotent and post-shutdown calls stay quiet")
 eq(chipThread.waited, 1, "the joined worker is not waited on twice")
 
+local SessionLifecycle = require("src.core.SessionLifecycle")
+check(ChipAudio.playMusic(data, song, true) ~= nil,
+      "playMusic restarts the chip worker after a shutdown")
+local restarted = threads[#threads]
+check(restarted ~= chipThread, "the restarted worker is a new thread")
+eq(restarted.started, true, "the restarted worker is running")
+eq(counted(commands("chipaudio_cmd"), "quit"), 1,
+   "only the first shutdown has quit a chip worker so far")
+local okEnd = pcall(SessionLifecycle.endProcess)
+check(okEnd, "SessionLifecycle.endProcess runs with audio loaded")
+eq(counted(commands("chipaudio_cmd"), "quit"), 2,
+   "endProcess drives ChipAudio.shutdown and quits the restarted worker")
+eq(restarted.waited, 1, "endProcess joins the restarted worker")
+
 -- ------- update check worker
 
 local Check = require("src.update.Check")
@@ -190,8 +204,10 @@ check(lifecycleSrc:find("registerProcessShutdown", 1, true) ~= nil,
       "SessionLifecycle exposes registerProcessShutdown")
 check(lifecycleSrc:find("function SessionLifecycle.endProcess()", 1, true) ~= nil,
       "SessionLifecycle.endProcess fans out registered hooks")
-check(source("src/core/ChipAudio.lua"):find("registerProcessShutdown(ChipAudio.shutdown)", 1, true) ~= nil,
-      "ChipAudio registers its shutdown hook at load")
+check(source("src/core/ChipAudio.lua"):find("registerProcessShutdown", 1, true) == nil,
+      "ChipAudio does not register at load (I6: that require closed a cycle)")
+check(lifecycleSrc:find('package.loaded["src.core.ChipAudio"]', 1, true) ~= nil,
+      "endProcess reaches ChipAudio through package.loaded")
 check(source("src/update/Check.lua"):find("registerProcessShutdown(Check.shutdown)", 1, true) ~= nil,
       "Check registers its shutdown hook at load")
 check(source("src/net/Fetch.lua"):find("registerProcessShutdown(Fetch.shutdown)", 1, true) ~= nil,

@@ -75,9 +75,6 @@ function Adapter.new(battleState, sayFn)
     for i = (mark or 0) + 1, #self._events do out[#out + 1] = self._events[i] end
     return out
   end
-  function a:truncateEvents(mark)
-    for i = #self._events, (mark or 0) + 1, -1 do self._events[i] = nil end
-  end
 
   function a:playAnim(kind, name, attacker, target, arg)
     return self:pushEvent({
@@ -203,13 +200,6 @@ function Adapter.new(battleState, sayFn)
     battler.sleepTurns = nil
     if battler.mon then battler.mon.status = nil end
   end
-  function a:types(battler)
-    if not battler then return {} end
-    local Types = require("src.core.game3.battle.types")
-    local out = { Types.name(battler.type1) }
-    if battler.type2 and battler.type2 ~= battler.type1 then out[2] = Types.name(battler.type2) end
-    return out
-  end
   function a:stages(battler) return battler and battler.stages end
   function a:changeStages(battler, changes)
     local result = {}
@@ -304,17 +294,7 @@ function Adapter.new(battleState, sayFn)
     if ok and type(v) == "number" then return v end
     return math.random(lo, hi)
   end
-  function a:battlers() return State.present(self._st) end
   function a:activeBattlers() return State.present(self._st) end
-  function a:aliveBattlers()
-    local out = {}
-    for _, b in ipairs(State.present(self._st)) do
-      if not State.isFainted(b) then out[#out + 1] = b end
-    end
-    return out
-  end
-  function a:battler(id) return State.battler(self._st, id) end
-  function a:isDouble() return self._st.double == true end
   function a:foeOf(battler)
     if not battler then return nil end
     local st = self._st
@@ -329,7 +309,6 @@ function Adapter.new(battleState, sayFn)
     return State.battler(st, opp)
   end
   function a:foesOf(battler) return State.foes(self._st, battler) end
-  function a:alliesOf(battler) return State.allies(self._st, battler) end
   function a:partnerOf(battler) return State.partner(self._st, battler) end
   function a:ownSide(battler)
     if not battler then return nil end
@@ -395,28 +374,14 @@ function Adapter.new(battleState, sayFn)
     battler.confusionTurns = t
     return true
   end
-  function a:isConfused(battler)
-    return battler and (battler.confusionTurns or 0) > 0
-  end
-  function a:invokeEffect(id, user, target, opts)
-    local Effects = require("src.core.game3.battle.effects")
-    opts = opts or {}
-    return Effects.run(id, self, user, target, opts.move, opts.moveId)
-  end
   function a:useMove(user, moveId, target, opts)
     local Engine = require("src.core.game3.battle.engine")
     return Engine.resolveMove(user, target, moveId, opts and opts.slot, self, self._st, {})
   end
-  function a:fieldGet(key) return self._st[key] end
-  function a:fieldSet(key, val) self._st[key] = val end
 
   function a:setWeather(kind, turns)
     self._st.weather = kind
     self._st.weatherTurns = turns or 5
-  end
-
-  function a:weather()
-    return Rules.weather.effective(self._st, self)
   end
 
   function a:tickWeather()

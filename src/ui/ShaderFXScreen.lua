@@ -119,7 +119,12 @@ function ShaderFXScreen.new(game, slot)
     -- the screen stays open either way, since a convert is not a selection.
     if item.entry and not item.entry.converted then
       if not canConvert then
-        self.footer = Strings("Reinstall the app")
+        local bridgeErr = ShaderFX.bridgeError and ShaderFX.bridgeError()
+        if type(bridgeErr) == "string" and bridgeErr:find("cannot locate symbol", 1, true) then
+          self.footer = Strings("Update the app")
+        else
+          self.footer = Strings("Reinstall the app")
+        end
         return
       end
       ShaderFX.clearBridgeQuarantine()

@@ -2,6 +2,10 @@
 local Q=require('src.core.game3.quest_log')
 local Font=require('src.ui.game3.frlg_font')
 local Strings=require('src.core.Strings')
+local Ow, PokedexChrome
+local function owSprites() Ow=Ow or require('src.core.game3.ow_sprites');return Ow end
+local function pokedexChrome() PokedexChrome=PokedexChrome or require('src.ui.game3.pokedex_chrome');return PokedexChrome end
+local function actorOrder(a,b) return a.y<b.y or (a.y==b.y and a.id<b.id) end
 local UI={}
 function UI.install(cache)
   UI.pack=nil
@@ -63,8 +67,8 @@ function UI.draw(playback,session)
   love.graphics.setColor(1,1,1,1)
   tiles(scene,frame,false)
   local actors=frame.actors
-  table.sort(actors,function(a,b)return a.y<b.y or (a.y==b.y and a.id<b.id) end)
-  local Ow=require('src.core.game3.ow_sprites')
+  table.sort(actors,actorOrder)
+  local Ow=owSprites()
   local cx=math.floor(frame.x+8-120);local cy=math.floor(frame.y+8-80)
   for _,a in ipairs(actors) do
     if a.graphicsId then Ow.draw(a.graphicsId,a.x,a.y,cx,cy,a.facing,a.walkPhase,a.stepFlip,{frame=a.frame,bow=a.bow,fieldMove=a.fieldMove}) end
@@ -86,7 +90,7 @@ function UI.draw(playback,session)
     love.graphics.rectangle('fill',0,y,240,144-y)
     Font.draw(text,4,y,{colors=Font.COLOR.WHITE})
   end
-  local PokedexChrome = require('src.ui.game3.pokedex_chrome')
+  local PokedexChrome = pokedexChrome()
   PokedexChrome.drawControlInfoLeft(Strings('{A_BUTTON}NEXT   {B_BUTTON}SKIP'), 4, 146)
 end
 return UI

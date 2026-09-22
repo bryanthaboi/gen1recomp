@@ -1161,8 +1161,8 @@ local function buildOverworld()
     local p = world.player
     local d = Map2.DELTA[p.facing]
     if not d then return false end
-    return Permissions.surfable(
-      world.map:cellCollision(p.cellX + d[1], p.cellY + d[2])) ~= nil
+    return Permissions.surfable(world:cellCollisionAcross(world.map,
+      p.cellX + d[1], p.cellY + d[2])) ~= nil
   end
 
   function ow.facingIsLandDismount()
@@ -1172,8 +1172,8 @@ local function buildOverworld()
     if not p.surfing then return false end
     local d = Map2.DELTA[p.facing]
     if not d then return false end
-    return Permissions.isLand(
-      world.map:cellCollision(p.cellX + d[1], p.cellY + d[2]))
+    return Permissions.isLand(world:cellCollisionAcross(world.map,
+      p.cellX + d[1], p.cellY + d[2]))
   end
 
   function ow.trySurf(_fx, _fy, onClose)

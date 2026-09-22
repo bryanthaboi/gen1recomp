@@ -261,7 +261,7 @@ end
 -- skipped here so the species id space -- which Fingerprint.records hands to
 -- Protocol.eligibleParty as "the mons the peer can rebuild" -- never carries an
 -- id no party slot could hold.
-local NON_SPECIES = { growthRates = true }
+local NON_SPECIES = { growthRates = true, tmhmMoves = true, tutorMoves = true }
 
 local function writeRecords(out, map, label, fields, skip)
   if map == nil then return end
@@ -271,6 +271,19 @@ local function writeRecords(out, map, label, fields, skip)
     if type(record) == "table" and not (skip and skip[id]) then
       out[#out + 1] = "@" .. id
       writeFields(out, record, fields)
+    end
+  end
+end
+
+-- data/items/attributes.asm:149
+local function writeHeldRecords(out, map)
+  if map == nil then return end
+  out[#out + 1] = "[held_items]"
+  for _, id in ipairs(sortedIds(map)) do
+    local record = map[id]
+    if type(record) == "table" and record.heldEffect ~= "HELD_NONE" then
+      out[#out + 1] = "@" .. id
+      writeFields(out, record, GEN2_HELD_FIELDS)
     end
   end
 end
@@ -413,7 +426,7 @@ local function surfaceGen2(data, mods)
   writeGen2TypeChart(out, data)
   writeRecords(out, data.gen2Statuses, "statuses", GEN2_STATUS_FIELDS)
   writeRecords(out, data.gen2MoveEffects, "move_effects", GEN2_EFFECT_FIELDS)
-  writeRecords(out, data.gen2HeldItems, "held_items", GEN2_HELD_FIELDS)
+  writeHeldRecords(out, data.gen2HeldItems)
   out[#out + 1] = "[mods]" .. modKey(mods)
   return table.concat(out)
 end

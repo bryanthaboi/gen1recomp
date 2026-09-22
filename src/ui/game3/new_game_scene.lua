@@ -18,6 +18,12 @@ Scene.__index = Scene
 
 Scene.GBA_HZ = 16777216 / 280896
 
+local proxyPressed, proxyInput
+local INPUT_PROXY = {
+  wasPressed = function(_, k) return proxyPressed ~= nil and proxyPressed[k] == true end,
+  isDown = function(_, k) return proxyInput ~= nil and proxyInput.isDown and proxyInput:isDown(k) or false end,
+}
+
 local MUS_ROUTE24 = 292
 local MUS_NEW_GAME_INSTRUCT = 323
 local MUS_NEW_GAME_INTRO = 324
@@ -1565,11 +1571,8 @@ function Scene:update(input, dt)
     self.input = self.pending
     self.pending = {}
     self.held = held
-    local pressed = self.input
-    self.inputProxy = {
-      wasPressed = function(_, k) return pressed[k] == true end,
-      isDown = function(_, k) return input and input.isDown and input:isDown(k) or false end,
-    }
+    proxyPressed, proxyInput = self.input, input
+    self.inputProxy = INPUT_PROXY
     self:frame()
   end
   return self.result

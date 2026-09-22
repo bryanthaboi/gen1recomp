@@ -184,7 +184,7 @@ end
 function PokedexData.getEntry(speciesId)
   PokedexData.init()
   local sp = tonumber(speciesId) or 1
-  local natId = Pokemon.nationalPokedexNumber and Pokemon.nationalPokedexNumber(sp) or sp
+  local natId = Pokemon.national and Pokemon.national(sp) or sp
 
   local raw = (PokedexData._entries and PokedexData._entries[natId])
     or (PokedexData._entries and PokedexData._entries[sp])

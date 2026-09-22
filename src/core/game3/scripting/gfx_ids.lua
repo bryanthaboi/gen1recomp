@@ -26,7 +26,7 @@ GfxIds.TO_SPRITE = {
   [40] = "SPRITE_LASS",            -- PICNICKER
   [41] = "SPRITE_COOLTRAINER_M",
   [42] = "SPRITE_COOLTRAINER_F",
-  [48] = "SPRITE_SCIENTIST",       -- OAK lab aide
+  -- include/constants/event_objects.h:54, event_objects.h:61
   [54] = "SPRITE_BLACK_BELT",
   [55] = "SPRITE_SCIENTIST",
   [56] = "SPRITE_POKEFAN_M",       -- HIKER

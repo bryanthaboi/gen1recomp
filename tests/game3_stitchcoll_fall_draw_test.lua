@@ -82,7 +82,7 @@ check(Warp.startFall(nil, game, CAVE_B1F, HOLE_X, HOLE_Y) == true, "the fall war
 
 local lowest, offsetFrames, landed = 0, 0, false
 for _ = 1, 600 do
-  -- pokefirered/src/field_effect.c:1204 Task_FallWarpFieldEffect
+  -- pokefirered/src/field_effect.c:1166
   Fade.tick(1 / 60)
   Task.update(1 / 60)
   FieldEffects.step()

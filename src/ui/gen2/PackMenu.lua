@@ -726,7 +726,9 @@ function PackMenu:giveToSlot(slot, row)
     save = self.save,
     slot = slot,
     items = self.items,
+    -- engine/items/pack.asm:606
     onClose = function()
+      game.stack:pop()
       game.stack:pop()
       self:rebuild()
     end,

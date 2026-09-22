@@ -768,7 +768,12 @@ local function jigglypuffDance(game, npc, ow)
   return {
     sound = function()
       Music.stop() -- SFX_STOP_ALL_MUSIC
-      return { isPlaying = function() return phase ~= "done" end }
+      local budget = (JIGGLYPUFF_SILENCE + Music.ONE_SHOT_CEILING
+        + JIGGLYPUFF_STEP + JIGGLYPUFF_TAIL) / 60 + 1
+      return {
+        isPlaying = function() return phase ~= "done" end,
+        getDuration = function() return budget end,
+      }
     end,
     tick = function()
       frames = frames + 1
@@ -802,8 +807,17 @@ local function jigglypuffDance(game, npc, ow)
       end
       if frames >= JIGGLYPUFF_TAIL then
         phase = "done"
+        local PikachuFollower = require("src.world.PikachuFollower")
+        local starter
+        for _, mon in ipairs(game.save.party or {}) do
+          if PikachuFollower.isStarterPikachu(game.save, mon) then
+            starter = mon
+            break
+          end
+        end
+        -- scripts/PewterPokecenter_2.asm:65
         if require("src.core.GameVersion").isYellow()
-            and require("src.world.PikachuFollower").starterInParty(game.save) then
+            and starter and not starter.status then
           ow.pikachuPewterSleepScene = true
         end
       end

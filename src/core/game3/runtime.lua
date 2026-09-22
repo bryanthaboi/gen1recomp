@@ -291,10 +291,6 @@ function Runtime.setUi(stackTop)
   Runtime._ui = stackTop
 end
 
-function Runtime.isSeviiMap(mapId)
-  return MapIds.isGame3Map(mapId)
-end
-
 local function current_map_id(game)
   local world = game and (game.overworld or game.world)
   if world and world.map and world.map.id then return world.map.id end

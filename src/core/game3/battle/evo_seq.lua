@@ -116,16 +116,34 @@ local function run_step(entry)
     local Audio = require("src.core.game3.audio")
     local victorySong = (Audio._currentSong and Audio._currentSong.id) or Audio.role("victoryWild") or 311
     EvoSeq._waiting = true
-    EvolutionScene.start(mon, toSpecies, {
+    local advanced = false
+    local function advanceOnce()
+      if advanced then return end
+      advanced = true
+      advance()
+    end
+    local okStart, startErr = pcall(EvolutionScene.start, mon, toSpecies, {
       canStop = true,
       headless = EvoSeq._headless,
       session = EvoSeq._session,
       isBattle = true,
       savedSong = victorySong,
       onDone = function(result)
-        advance()
+        advanceOnce()
       end,
     })
+    if not okStart then
+      EvolutionScene.open = false
+      EvolutionScene._onDone = nil
+    end
+    if not okStart or not (EvolutionScene.isOpen and EvolutionScene.isOpen()) then
+      print("[game3/evo] evolution scene failed to open: "
+        .. tostring(startErr or "no layer pushed"))
+      if mon and mon.species ~= toSpecies then
+        Evolution.apply(mon, toSpecies, EvoSeq._session)
+      end
+      advanceOnce()
+    end
   else
     -- Fallback
     Evolution.apply(mon, toSpecies, EvoSeq._session)

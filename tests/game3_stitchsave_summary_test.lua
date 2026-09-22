@@ -32,7 +32,7 @@ end
 
 print("[test] 1. CheckPartyPokerus reads the low nibble only")
 do
-  -- pokefirered/src/pokemon.c:5618 GetMonData(..., MON_DATA_POKERUS) & 0xF
+  -- pokefirered/src/pokemon.c:5630
   eq(SummaryData.statusAilment({ pokerus = 0 }), AILMENT_NONE, "never infected is no ailment")
   eq(SummaryData.statusAilment({ pokerus = 0x41 }), AILMENT_PKRS, "strain 4 with 1 day left is PKRS")
   eq(SummaryData.statusAilment({ pokerus = 0x04 }), AILMENT_PKRS, "4 days left is PKRS")

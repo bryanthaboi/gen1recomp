@@ -191,16 +191,14 @@ do
   eq(ri.workState, "error", "the next focus reaches the ROM pick under it")
 end
 
--- A USB copy is the player's own file: keep it, but stop retrying it this session.
 do
   clearSaveDir()
   love.filesystem.write("mymod.zip", "not a zip")
   local ri = freshImporter({})
   ri:chooseMod()
-  eq(ri._installed, "mymod.zip", "Import Mod picks up a USB copy")
+  eq(ri._installed, nil, "Import Mod leaves a loose save-root zip alone")
   check(love.filesystem.getInfo("mymod.zip") ~= nil, "the player's own file stays")
-  ri:chooseMod()
-  eq(#pickCalls, 1, "the second tap opens the picker instead of retrying it")
+  eq(#pickCalls, 1, "the tap opens the picker instead")
   eq(pickCalls[1], "mod", "and asks for a mod archive")
 end
 

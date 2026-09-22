@@ -2,6 +2,7 @@
 -- Gen 3 Party Item Use, TM Confirmation & Evolution Chaining Test Suite
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_item_use_party_test")
 
 local failed = 0
 local function check(cond, msg)

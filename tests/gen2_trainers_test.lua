@@ -302,7 +302,8 @@ local fightGame = {
 }
 local fightWorld = World.new(fightGame)
 fightGame.world = fightWorld
-fightWorld.map = { def = { id = "TEST_MAP" } }
+fightWorld.map = { def = { id = "TEST_MAP" },
+  inBounds = function() return true end }
 fightWorld.maps = { TEST_MAP = fightWorld.map.def }
 fightWorld.events = Events.new()
 fightWorld.playBattleMusic = function() end

@@ -1,4 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_surf_connections_test")
 require("src.core.GameVersion").set("firered")
 local Cache = require("tests.game3_cache")
 assert(Cache.mount("scripts/events.lua", { native = true }), Cache.reason)

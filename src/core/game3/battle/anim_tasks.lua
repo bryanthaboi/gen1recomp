@@ -2,33 +2,17 @@
 -- Default stub finishes in 1 frame so unknown createvisualtask still ends scripts.
 
 local AnimSprites = require("src.core.game3.battle.anim_sprites")
+local Trig = require("src.core.game3.trig")
 
 local AnimTasks = {}
 
 AnimTasks.MAX = 48
 
-local SINE_TABLE = {
-  0, 6, 12, 18, 25, 31, 37, 43, 49, 56, 62, 68, 74, 80, 86, 92,
-  97, 103, 109, 115, 120, 126, 131, 136, 142, 147, 152, 157, 162, 167, 171, 176,
-  181, 185, 189, 193, 197, 201, 205, 209, 212, 216, 219, 222, 225, 228, 231, 234,
-  236, 238, 241, 243, 244, 246, 248, 249, 251, 252, 253, 254, 255, 255, 256, 256,
-  256, 256, 256, 255, 255, 254, 253, 252, 251, 249, 248, 246, 244, 243, 241, 238,
-  236, 234, 231, 228, 225, 222, 219, 216, 212, 209, 205, 201, 197, 193, 189, 185,
-  181, 176, 171, 167, 162, 157, 152, 147, 142, 136, 131, 126, 120, 115, 109, 103,
-  97, 92, 86, 80, 74, 68, 62, 56, 49, 43, 37, 31, 25, 18, 12, 6,
-  0, -6, -12, -18, -25, -31, -37, -43, -49, -56, -62, -68, -74, -80, -86, -92,
-  -97, -103, -109, -115, -120, -126, -131, -136, -142, -147, -152, -157, -162, -167, -171, -176,
-  -181, -185, -189, -193, -197, -201, -205, -209, -212, -216, -219, -222, -225, -228, -231, -234,
-  -236, -238, -241, -243, -244, -246, -248, -249, -251, -252, -253, -254, -255, -255, -256, -256,
-  -256, -256, -256, -255, -255, -254, -253, -252, -251, -249, -248, -246, -244, -243, -241, -238,
-  -236, -234, -231, -228, -225, -222, -219, -216, -212, -209, -205, -201, -197, -193, -189, -185,
-  -181, -176, -171, -167, -162, -157, -152, -147, -142, -136, -131, -126, -120, -115, -109, -103,
-  -97, -92, -86, -80, -74, -68, -62, -56, -49, -43, -37, -31, -25, -18, -12, -6,
-}
+
 
 local function Sin(index, amp)
   index = math.floor(tonumber(index) or 0) % 256
-  local val = SINE_TABLE[index + 1] or 0
+  local val = Trig.SINE[index + 1] or 0
   return math.floor((val * (amp or 0)) / 256)
 end
 
@@ -37,21 +21,11 @@ local function Cos(index, amp)
 end
 
 local function clear_task(t)
-  t.active = false
-  t.func = nil
-  t.draw = nil
-  t.z = nil
-  t.name = nil
-  t.priority = 0
-  t._inited = nil
-  t._p = nil
-  t._side = nil
-  t._origZ = nil
-  t._alpha = nil
-  t._particles = nil
   for k in pairs(t) do
-    if type(k) == "string" and k:sub(1, 1) == "_" then t[k] = nil end
+    if k ~= "data" then t[k] = nil end
   end
+  t.active = false
+  t.priority = 0
   for i = 0, 15 do
     t.data[i] = 0
   end
@@ -1358,49 +1332,7 @@ end
 AnimTasks.REGISTRY.ShakeTargetBasedOnMovePowerOrDmg = AnimTasks.ShakeTargetBasedOnMovePowerOrDmg
 AnimTasks.REGISTRY.AnimTask_ShakeTargetBasedOnMovePowerOrDmg = AnimTasks.ShakeTargetBasedOnMovePowerOrDmg
 
---- pret AnimTask_ShakeTargetInPattern (pokefirered/src/battle_anim_fire.c:1254)
--- arg 0: maxShakes; arg 1: shakeOffset; arg 2: isVertical; arg 3: patternId
-local SHAKE_PATTERN_0 = { -1, -1, 0, 1, 1, 0, 0, -1, -1, 1 }
-local SHAKE_PATTERN_1 = { -1, 0, 1, 0, -1, 1, 0, -1, 0, 1 }
-
-function AnimTasks.ShakeTargetInPattern(t, vm)
-  local Anim = require("src.core.game3.battle.anim")
-  if not t._inited then
-    t._inited = true
-    t._maxShakes = math.max(1, tonumber(t.data[0]) or 10)
-    t._shakeOffset = tonumber(t.data[1]) or 4
-    t._isVertical = (tonumber(t.data[2]) or 0) ~= 0
-    t._patternId = tonumber(t.data[3]) or 0
-    t._shakeNum = 0
-    t._side = vm:targetSide()
-    t._p = Anim.present(t._side)
-    if not t._p then
-      destroy_task(t)
-      return
-    end
-  end
-  local p = t._p
-  if not p then
-    destroy_task(t)
-    return
-  end
-  t._shakeNum = t._shakeNum + 1
-  local pat = (t._patternId == 0) and SHAKE_PATTERN_0 or SHAKE_PATTERN_1
-  local dir = pat[(t._shakeNum % #pat) + 1] or 0
-  if t._isVertical then
-    p.oy = math.abs(t._shakeOffset * dir)
-  else
-    p.ox = t._shakeOffset * dir
-  end
-  if t._shakeNum >= t._maxShakes then
-    p.ox = 0
-    p.oy = 0
-    destroy_task(t)
-  end
-end
-
-AnimTasks.REGISTRY.ShakeTargetInPattern = AnimTasks.ShakeTargetInPattern
-AnimTasks.REGISTRY.AnimTask_ShakeTargetInPattern = AnimTasks.ShakeTargetInPattern
+-- pokefirered/src/battle_anim_fire.c:1254
 
 --- RGB555 unpacker helper (pokefirered RGB_*)
 local function unpackRgb555(col)
@@ -4806,36 +4738,44 @@ function AnimTasks.spawn(name, priority, args, vm)
   if not fn then
     fn = stub_task
   end
+  local t
   for i = 1, AnimTasks.MAX do
-    local t = AnimTasks._pool[i]
-    if not t.active then
-      clear_task(t)
-      t.active = true
-      t.name = name
-      t.priority = tonumber(priority) or 2
-      t.func = fn
-      if type(args) == "table" then
-        for ai, av in ipairs(args) do
-          local v = av
-          if type(v) == "string" then
-            -- leave string battler tokens in data via parallel map
-            t.data[ai - 1] = v
-          else
-            t.data[ai - 1] = tonumber(v) or 0
-          end
-        end
-        -- Also store string battler ids in high slots if present
-        for ai, av in ipairs(args) do
-          if type(av) == "string" then
-            t.data[ai - 1] = av
-          end
-        end
-      end
-      return t
+    local cand = AnimTasks._pool[i]
+    if not cand.active then
+      t = cand
+      break
     end
   end
-  print("[battle.anim] task pool exhausted")
-  return nil
+  if not t then
+    AnimTasks.MAX = AnimTasks.MAX + 1
+    t = AnimTasks._pool[AnimTasks.MAX]
+    if not t then
+      t = { data = {} }
+      for j = 0, 15 do t.data[j] = 0 end
+      AnimTasks._pool[AnimTasks.MAX] = t
+    end
+  end
+  clear_task(t)
+  t.active = true
+  t.name = name
+  t.priority = tonumber(priority) or 2
+  t.func = fn
+  if type(args) == "table" then
+    for ai, av in ipairs(args) do
+      local v = av
+      if type(v) == "string" then
+        t.data[ai - 1] = v
+      else
+        t.data[ai - 1] = tonumber(v) or 0
+      end
+    end
+    for ai, av in ipairs(args) do
+      if type(av) == "string" then
+        t.data[ai - 1] = av
+      end
+    end
+  end
+  return t
 end
 
 function AnimTasks.update(vm)
@@ -4863,6 +4803,7 @@ function AnimTasks.draw(minZ, maxZ, vm)
         local ok, err = pcall(t.draw, t, vm)
         if not ok then
           print("[battle.anim] task draw " .. tostring(t.name) .. ": " .. tostring(err))
+          clear_task(t)
         end
       end
     end

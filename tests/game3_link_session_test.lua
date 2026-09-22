@@ -43,7 +43,8 @@ local session = {
   party = {},
   bag = { pockets = { items = { { id = 4, qty = 3 } } } },
 }
-local game = { data = { maps = MAPS }, session = session }
+local game = { data = { maps = MAPS }, session = session,
+  saveGame = function() return true end }
 
 package.loaded["src.core.game3.runtime"] = {
   getSession = function() return session end,

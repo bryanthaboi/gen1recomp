@@ -43,11 +43,6 @@ Rules.POST_PHASES_ORDER = {
   "perish_song",
 }
 
-Rules.PHASE_ORDER = {}
-for _, p in ipairs(Rules.FIELD_PHASES_ORDER) do Rules.PHASE_ORDER[#Rules.PHASE_ORDER + 1] = p end
-for _, p in ipairs(Rules.BATTLER_PHASES_ORDER) do Rules.PHASE_ORDER[#Rules.PHASE_ORDER + 1] = p end
-for _, p in ipairs(Rules.POST_PHASES_ORDER) do Rules.PHASE_ORDER[#Rules.PHASE_ORDER + 1] = p end
-
 Rules.FAINT_HALT_PHASES = {
   ingrain = true,
   leech_seed = true,
@@ -56,24 +51,6 @@ Rules.FAINT_HALT_PHASES = {
   curse = true,
   partial_trap_chip = true,
 }
-
-Rules.FIELD_PHASES = {}
-for _, p in ipairs(Rules.FIELD_PHASES_ORDER) do Rules.FIELD_PHASES[p] = true end
-
-Rules.POST_PHASES = {}
-for _, p in ipairs(Rules.POST_PHASES_ORDER) do Rules.POST_PHASES[p] = true end
-
-function Rules.isFieldPhase(phase)
-  return Rules.FIELD_PHASES[phase] == true
-end
-
-function Rules.isPostPhase(phase)
-  return Rules.POST_PHASES[phase] == true
-end
-
-function Rules.phaseOrder()
-  return Rules.PHASE_ORDER
-end
 
 function Rules.shouldHaltBattlerOnFaint(phase)
   return Rules.FAINT_HALT_PHASES[phase] == true

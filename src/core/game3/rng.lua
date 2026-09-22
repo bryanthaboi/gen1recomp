@@ -130,10 +130,11 @@ function Rng.getState()
 end
 
 function Rng.setState(st)
-  if type(st) ~= "table" then return end
-  if st.value ~= nil then Rng._value = u32(st.value) end
-  if st.value2 ~= nil then Rng._value2 = u32(st.value2) end
-  if st.wild ~= nil then Rng._wild = u32(st.wild) end
+  if type(st) ~= "table" then return false end
+  local v1, v2, wild = tonumber(st.value), tonumber(st.value2), tonumber(st.wild)
+  if v1 == nil or v2 == nil or wild == nil then return false end
+  Rng._value, Rng._value2, Rng._wild = u32(v1), u32(v2), u32(wild)
+  return true
 end
 
 --- pret SeedRngAndSetTrainerId analogue: seed from a 16-bit timer-ish value.
@@ -173,8 +174,7 @@ function Rng.restoreFromSession(session)
   if type(session) ~= "table" or type(session.rng) ~= "table" then
     return false
   end
-  Rng.setState(session.rng)
-  return true
+  return Rng.setState(session.rng) == true
 end
 
 return Rng

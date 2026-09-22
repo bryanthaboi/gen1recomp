@@ -177,6 +177,7 @@ local function moveResult(move)
   if not mon then return nil end
   local ok, res = pcall(FM.fromMenu, move, fieldContext(mon))
   if ok and res and res.ok then return res, mon end
+  if not ok then print("[game3/world] field move query failed: " .. tostring(res)) end
   return nil
 end
 

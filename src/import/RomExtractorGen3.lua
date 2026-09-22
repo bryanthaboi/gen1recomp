@@ -1,17 +1,21 @@
--- FRLG Gen 3 extractor: GBA ROM → edition cache under CacheFs.prefix.
--- Parallel to RomExtractor / RomExtractorGen2.  Full Island-1 demake lives in
--- src/import/gba/extract_island1.lua; this module publishes the CacheContract
--- override files and, when possible, runs that extract under
--- data/generated/gba/.
-
 local CacheFs = require("src.import.CacheFs")
 local LuaWriter = require("src.import.LuaWriter")
+local GameVersion = require("src.core.GameVersion")
+local CachePaths = require("src.core.game3.cache_paths")
 
 local RomExtractorGen3 = {}
 RomExtractorGen3.__index = RomExtractorGen3
 
 local STAGE_COUNT = 5
-local GBA_ROOT = "data/generated/gba"
+local GBA_ROOT = CachePaths.CACHE_ROOT
+
+local function canonicalImportId(id)
+  return id == "leafgreen" and "firered" or id
+end
+
+local function importVersion(sha1)
+  return GameVersion.forSha1(sha1) or "firered"
+end
 
 local function hexSha1(data)
   local digest = love.data.hash("sha1", data)
@@ -29,19 +33,19 @@ local function writeText(rel, body)
 end
 
 local function writeJson(rel, obj)
-  local Json = require("src.link.Json")
-  writeText(rel, Json.encode(obj) .. "\n")
+  local Canon = require("src.import.canonical_json")
+  writeText(rel, Canon.encode(obj) .. "\n")
 end
 
-local function makeImports(romData, sha1)
-  local idForRom = assert(require("src.core.GameVersion").forSha1(sha1), "unknown FRLG ROM")
+local function makeImports(romData, sha1, version)
+  version = version or importVersion(sha1)
   return {
     info = function(_, id)
-      if id ~= idForRom then
+      if canonicalImportId(id) ~= canonicalImportId(version) then
         return nil, "undeclared"
       end
       return {
-        id = idForRom,
+        id = canonicalImportId(version),
         size = #romData,
         -- versions.lua looks up by SHA-1 (legacy field name is md5).
         md5 = sha1,
@@ -49,7 +53,7 @@ local function makeImports(romData, sha1)
       }
     end,
     read = function(_, id, offset, length)
-      if id ~= idForRom then
+      if canonicalImportId(id) ~= canonicalImportId(version) then
         return nil, "undeclared"
       end
       if offset < 0 or length < 0 or offset + length > #romData then
@@ -113,7 +117,7 @@ end
 
 function RomExtractorGen3:sharedImports(sha1)
   if not self._imports then
-    self._imports = makeImports(self.romData, sha1)
+    self._imports = makeImports(self.romData, sha1, importVersion(sha1))
   end
   return self._imports
 end
@@ -155,17 +159,17 @@ function RomExtractorGen3:tickPokemon(name, current, total)
   end
 end
 
--- Minimal trees CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.firered needs,
 -- plus semantic module stubs for SEMANTIC_MODULES[3].
 function RomExtractorGen3:writeRequiredMarkers(sha1)
   local Versions = require("src.import.gba.versions")
+  local version = importVersion(sha1)
   local cache = makeCache()
   local metaRaw = cache:read(GBA_ROOT .. "/meta.json")
   if not metaRaw or not metaRaw:find('"md5"%s*:%s*"' .. sha1 .. '"') or not metaRaw:find('"cache_version"%s*:%s*' .. tostring(Versions.CACHE_VERSION)) then
     writeJson(GBA_ROOT .. "/meta.json", {
       romSha1 = sha1,
       md5 = sha1,
-      version = self.version,
+      version = version,
       cache_version = Versions.CACHE_VERSION,
       native_version = Versions.NATIVE_VERSION or 5,
       stub = false,
@@ -194,7 +198,7 @@ function RomExtractorGen3:writeRequiredMarkers(sha1)
     LuaWriter.write("data/generated/intro.lua", {
       stub = true,
       generation = 3,
-      version = self.version,
+      version = version,
     })
   end
   if not CacheFs.exists("data/generated/audio.lua") then
@@ -247,7 +251,8 @@ function RomExtractorGen3:runPokemonExtract(sha1)
   end
 
   local imports = self:sharedImports(sha1)
-  local rom, openErr = Rom.open(imports, self.version)
+  local version = importVersion(sha1)
+  local rom, openErr = Rom.open(imports, version)
   if not rom then
     Extract.CACHE_ROOT = prevRoot
     return false, openErr or "rom open failed"
@@ -293,6 +298,17 @@ function RomExtractorGen3:runPokemonExtract(sha1)
 end
 
 function RomExtractorGen3:runAuxExtracts(sha1)
+  local GameVersion = require("src.core.GameVersion")
+  local Profile = require("src.core.game3.profile")
+  local wantedList = Profile.of(GameVersion.get()).extractors
+  local wanted = nil
+  if type(wantedList) == "table" and #wantedList > 0 then
+    wanted = {}
+    for _, name in ipairs(wantedList) do wanted[name] = true end
+  end
+  local function wantedExtractor(name)
+    return wanted == nil or wanted[name] == true
+  end
   local Rom = require("src.import.gba.rom")
   local RegionMapExtract = require("src.import.gba.region_map_extract")
   local MapSectionsExtract = require("src.import.gba.map_sections_extract")
@@ -317,24 +333,25 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   Extract.CACHE_ROOT = GBA_ROOT
 
   local cache = makeCache()
-  local needRegion = not RegionMapExtract.ready(cache, GBA_ROOT)
-  local needSections = not CacheFs.exists(GBA_ROOT .. "/region_map/map_sections.lua")
-  local needChoices = not MultichoiceExtract.ready(cache, GBA_ROOT)
-  local needHeal = not HealLocationsExtract.ready(cache, GBA_ROOT)
-  local needDoors = not DoorAnimExtract.ready(cache, GBA_ROOT)
-  local needSlots = not SlotMachineExtract.ready(cache, GBA_ROOT)
-  local needTrade = not TradeExtract.ready(cache, GBA_ROOT)
-  local needLinkArt = not LinkArtExtract.ready(cache, GBA_ROOT)
-  local needFame = not FameCheckerExtract.ready(cache, GBA_ROOT)
-  local needTeachy = not TeachyTvExtract.ready(cache, GBA_ROOT)
-  local needGift = not MysteryGiftExtract.ready(cache, GBA_ROOT)
-  local needTower = not TrainerTowerExtract.ready(cache, GBA_ROOT)
-  local needTutor = not TutorExtract.ready(cache, GBA_ROOT)
-  local needMuseum = not MuseumExtract.ready(cache, GBA_ROOT)
-  local needRelearner = not MoveRelearnerExtract.ready(cache, GBA_ROOT)
-  local needEgg = not EggExtract.ready(cache, GBA_ROOT)
-  local needAnims = not BattleAnimExtract.ready(cache, GBA_ROOT)
-  local needAi = not BattleAiExtract.ready(cache, GBA_ROOT)
+  local needRegion = wantedExtractor("region_map_extract") and not RegionMapExtract.ready(cache, GBA_ROOT)
+  local needSections = wantedExtractor("map_sections_extract")
+    and not CacheFs.exists(GBA_ROOT .. "/region_map/map_sections.lua")
+  local needChoices = wantedExtractor("multichoice_extract") and not MultichoiceExtract.ready(cache, GBA_ROOT)
+  local needHeal = wantedExtractor("heal_locations_extract") and not HealLocationsExtract.ready(cache, GBA_ROOT)
+  local needDoors = wantedExtractor("door_anim_extract") and not DoorAnimExtract.ready(cache, GBA_ROOT)
+  local needSlots = wantedExtractor("slot_machine_extract") and not SlotMachineExtract.ready(cache, GBA_ROOT)
+  local needTrade = wantedExtractor("trade_extract") and not TradeExtract.ready(cache, GBA_ROOT)
+  local needLinkArt = wantedExtractor("link_art_extract") and not LinkArtExtract.ready(cache, GBA_ROOT)
+  local needFame = wantedExtractor("fame_checker_extract") and not FameCheckerExtract.ready(cache, GBA_ROOT)
+  local needTeachy = wantedExtractor("teachy_tv_extract") and not TeachyTvExtract.ready(cache, GBA_ROOT)
+  local needGift = wantedExtractor("mystery_gift_extract") and not MysteryGiftExtract.ready(cache, GBA_ROOT)
+  local needTower = wantedExtractor("trainer_tower_extract") and not TrainerTowerExtract.ready(cache, GBA_ROOT)
+  local needTutor = wantedExtractor("tutor_extract") and not TutorExtract.ready(cache, GBA_ROOT)
+  local needMuseum = wantedExtractor("museum_extract") and not MuseumExtract.ready(cache, GBA_ROOT)
+  local needRelearner = wantedExtractor("move_relearner_extract") and not MoveRelearnerExtract.ready(cache, GBA_ROOT)
+  local needEgg = wantedExtractor("egg_extract") and not EggExtract.ready(cache, GBA_ROOT)
+  local needAnims = wantedExtractor("battle_anim_extract") and not BattleAnimExtract.ready(cache, GBA_ROOT)
+  local needAi = wantedExtractor("battle_ai_extract") and not BattleAiExtract.ready(cache, GBA_ROOT)
 
   if not (needRegion or needSections or needChoices or needHeal or needDoors
     or needSlots or needTrade or needLinkArt or needFame or needTeachy
@@ -344,7 +361,7 @@ function RomExtractorGen3:runAuxExtracts(sha1)
     return true, { skipped = true }
   end
 
-  local rom, openErr = Rom.open(self:sharedImports(sha1), self.version)
+  local rom, openErr = Rom.open(self:sharedImports(sha1), importVersion(sha1))
   if not rom then
     Extract.CACHE_ROOT = prevRoot
     return false, openErr or "rom open failed"
@@ -512,8 +529,9 @@ function RomExtractorGen3:runIntroAudio(sha1)
 
   local RevisionView = require("src.import.gba.revision_view")
   local imports = self:sharedImports(sha1)
-  local info = imports:info(self.version)
-  local romShim = { data = RevisionView.forImports(imports, self.version, info) or self.romData }
+  local version = importVersion(sha1)
+  local info = imports:info(version)
+  local romShim = { data = RevisionView.forImports(imports, version, info) or self.romData }
   local Intro = require("src.import.gba.extract_intro")
   local Naming = require("src.import.gba.extract_naming")
   local AudioExt = require("src.import.gba.extract_audio")
@@ -610,6 +628,8 @@ function RomExtractorGen3:run()
 
   local okPar, parErr = self:runParallel(sha1)
   if okPar then
+    writeJson(GBA_ROOT .. "/pokemon/extract_status.json", { ok = true, error = nil })
+    writeJson(GBA_ROOT .. "/region_map/extract_status.json", { ok = true, error = nil })
     self:report(1.00, "Ready", 1, 1)
     collectgarbage("collect")
     return {

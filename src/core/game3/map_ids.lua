@@ -1,11 +1,13 @@
 -- Shared Game3 map-id helpers (Fire Red FR_* and legacy Sevii SEVII_*).
 
+local Profile = require("src.core.game3.profile")
+
 local MapIds = {}
 
-function MapIds.isGame3Map(mapId)
+function MapIds.isGame3Map(mapId, gameId)
   if type(mapId) ~= "string" then return false end
-  if mapId:sub(1, 3) == "FR_" or mapId:sub(1, 6) == "SEVII_" then
-    return true
+  for _, prefix in ipairs(Profile.of(gameId).map.prefixes) do
+    if mapId:sub(1, #prefix) == prefix then return true end
   end
   local ok, MapCatalog = pcall(require, "src.import.gba.map_catalog")
   if ok and MapCatalog and MapCatalog.isKnown then
@@ -13,9 +15,6 @@ function MapIds.isGame3Map(mapId)
   end
   return false
 end
-
--- Deprecated alias kept for moved Sevii call sites.
-MapIds.isSeviiMap = MapIds.isGame3Map
 
 MapIds.NEW_GAME_START = {
   map = "FR_PLAYERS_HOUSE_2F",

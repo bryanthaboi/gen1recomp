@@ -1,4 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_battle_anim_palette_test", "pokemon/battle_anims/pack.lua")
 
 local passed, failed = 0, 0
 local function check(cond, name)

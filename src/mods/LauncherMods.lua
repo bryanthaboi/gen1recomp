@@ -39,6 +39,7 @@ local SaveData = require("src.core.SaveData")
 local GameVersion = require("src.core.GameVersion")
 local CacheFs = require("src.import.CacheFs")
 local RequiredImports = require("src.mods.RequiredImports")
+local LoadOrder = require("src.mods.LoadOrder")
 
 local LauncherMods = {}
 
@@ -358,7 +359,38 @@ function LauncherMods.deriveList(manifests, options, version)
       safeMode = safeMode,
     }
   end
+  local full = LoadOrder.materialize(SaveData.modOrder(options), ordered)
+  local rank = LoadOrder.rank(full)
+  local generation = version and GameVersion.generation(version) or nil
+  for _, row in ipairs(out) do
+    row.loadRank = rank[row.id] or (#full + 1)
+    local m = byId[row.id]
+    local after
+    local function consider(spec)
+      local dep = spec and spec.id
+      if dep and dep ~= row.id and rank[dep] and rank[dep] > row.loadRank
+          and ModTargets.specApplies(spec, version, generation) then
+        if not after or rank[dep] > rank[after] then after = dep end
+      end
+    end
+    for _, spec in ipairs(m.dependencySpecs or {}) do consider(spec) end
+    for _, spec in ipairs(m.optionalSpecs or {}) do consider(spec) end
+    if after then
+      local dep = byId[after]
+      row.orderAfter = after
+      row.orderNote = "Loads after " .. tostring(dep and dep.name or after)
+        .. " (dependency)"
+    end
+  end
   return out
+end
+
+function LauncherMods.orderedIds(rows, options)
+  return LoadOrder.materialize(SaveData.modOrder(options), rows)
+end
+
+function LauncherMods.moveInOrder(list, id, delta)
+  return (LoadOrder.move(list, id, delta))
 end
 
 -- locateRoot(paths) -> the mod-root prefix inside a mounted archive, pure.
@@ -664,6 +696,44 @@ function LauncherMods.setAllEnabled(ids, enabled, version)
       SaveData.setModEnabled(options, id, enabled)
     end
   end
+  SaveData.saveOptions(options)
+  LauncherMods.syncActiveProfile(options)
+  return true
+end
+
+function LauncherMods.moveMod(id, delta, visible)
+  if type(id) ~= "string" or id == "" then return false end
+  local options = SaveData.loadOptions()
+  if SaveData.isSafeMode(options) then return false end
+  local manifests = discover()
+  local known = false
+  for _, m in ipairs(manifests) do
+    if m.id == id then known = true break end
+  end
+  if not known then return false end
+  local full = LoadOrder.materialize(SaveData.modOrder(options), manifests)
+  local list, changed = LoadOrder.moveWithin(full, visible, id, delta)
+  if not changed then return false end
+  SaveData.setModOrder(options, list)
+  SaveData.saveOptions(options)
+  LauncherMods.syncActiveProfile(options)
+  local shown = {}
+  for _, v in ipairs(visible or list) do shown[v] = true end
+  local n = 0
+  for _, v in ipairs(list) do
+    if shown[v] then
+      n = n + 1
+      if v == id then return true, n end
+    end
+  end
+  return true, n
+end
+
+function LauncherMods.resetOrder()
+  local options = SaveData.loadOptions()
+  if SaveData.isSafeMode(options) then return false end
+  if #SaveData.modOrder(options) == 0 then return false end
+  SaveData.setModOrder(options, {})
   SaveData.saveOptions(options)
   LauncherMods.syncActiveProfile(options)
   return true
@@ -1246,6 +1316,7 @@ function LauncherMods.applyProfile(profileName, options)
   end
   if not targetProfile then return false end
   ModProfile.restoreVersions(targetProfile, options)
+  ModProfile.restoreOrder(targetProfile, options)
   options.activeProfile = profileName
   SaveData.saveOptions(options)
   return true
@@ -1255,7 +1326,8 @@ function LauncherMods.saveProfile(profileName, options)
   options = options or SaveData.loadOptions()
   local manifests = discover()
   options.modProfiles = options.modProfiles or {}
-  local snap = ModProfile.capture(manifests, options.modOptions, options.modsByVersion)
+  local snap = ModProfile.capture(manifests, options.modOptions,
+    options.modsByVersion, options.modOrder)
   snap.name = profileName
   local existingIdx
   for i, p in ipairs(options.modProfiles) do
@@ -1285,7 +1357,8 @@ function LauncherMods.syncActiveProfile(options)
   local activeName = options.activeProfile or "PROFILE 1"
   local profiles = options.modProfiles or {}
   local manifests = discover()
-  local snap = ModProfile.capture(manifests, options.modOptions, options.modsByVersion)
+  local snap = ModProfile.capture(manifests, options.modOptions,
+    options.modsByVersion, options.modOrder)
   snap.name = activeName
 
   local found = false
@@ -1330,6 +1403,7 @@ function LauncherMods.duplicateProfile(sourceName, options)
     options = copyTable(sourceProfile.options),
     slots = copyTable(sourceProfile.slots),
     enabledByVersion = copyTable(sourceProfile.enabledByVersion),
+    order = copyTable(sourceProfile.order),
   }
   profiles[#profiles + 1] = snap
   options.modProfiles = profiles

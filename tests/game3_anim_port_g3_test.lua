@@ -75,7 +75,7 @@ local G3T = require("src.core.game3.battle.anim_port.g3_tasks")
 -- pokefirered/src/trig.c:514
 check(P.Sin(64, 256) == 256 and P.Sin(192, 10) == -10 and P.Cos(0, 15) == 15, "Sin/Cos gSineTable")
 check(P.Sin(5, 10) == 1 and P.Cos(5, 15) == 14, "Sin/Cos truncation")
-check(P.Sin2(30) == 2048 and P.Cos2(180) == -4096, "Sin2/Cos2 degree table")
+check(P.Sin2(30) == 2048 and P.Sin2(270) == -4096, "Sin2 degree table (Cos2(180) path)")
 check(P.s16(40000) == -25536 and P.u16(-1) == 65535 and P.div(-7, 2) == -3, "C integer semantics")
 
 for _, n in ipairs(CALLBACKS) do

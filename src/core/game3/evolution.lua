@@ -303,8 +303,9 @@ function Evolution.apply(mon, newSpecies, session, bag, via)
   local shedId = (preRows[1] and row_method(preRows[1]) == Evolution.EVO_LEVEL_NINJASK
     and preRows[2] and row_target(preRows[2])) or 0
   if shedId > 0 and session then
-    local party = session.party or (session.save and session.save.party)
-    if party and #party < 6 then
+    session.party = session.party or (session.save and session.save.party) or {}
+    local party = session.party
+    if #party < 6 then
       local shedinja = {}
       for k, v in pairs(mon) do
         if type(v) == "table" then

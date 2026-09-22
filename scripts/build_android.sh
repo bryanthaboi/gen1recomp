@@ -566,12 +566,76 @@ shader_bridge_absent() {
   warn "$SHADER_BRIDGE_LIB: $1; this build can run converted presets but not CONVERT new ones"
 }
 
-shader_bridge_verify_apk() {
-  local apk="$1" abi missing="" apk_entries
-  apk_entries="$(unzip -Z1 "$apk")"
-  for abi in $SHADER_BRIDGE_ABIS; do
-    grep -qxF "lib/$abi/$SHADER_BRIDGE_LIB" <<< "$apk_entries" || missing="$missing $abi"
+shader_bridge_ndk_triple() {
+  case "$1" in
+    arm64-v8a)   printf 'aarch64-linux-android' ;;
+    armeabi-v7a) printf 'arm-linux-androideabi' ;;
+    x86_64)      printf 'x86_64-linux-android' ;;
+    x86)         printf 'i686-linux-android' ;;
+    *)           printf '' ;;
+  esac
+}
+
+shader_bridge_gradle_ndk() {
+  printf '%s' "${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}/ndk/$NDK_VERSION"
+}
+
+shader_bridge_gradle_libcxx() {
+  local abi="$1" triple cand
+  triple="$(shader_bridge_ndk_triple "$abi")"
+  for cand in "$(shader_bridge_gradle_ndk)"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/"$triple"/libc++_shared.so; do
+    if [ -f "$cand" ]; then
+      printf '%s' "$cand"
+      return 0
+    fi
   done
+  printf ''
+}
+
+shader_bridge_check_links() {
+  local bridge="$1" libcxx="$2" label="$3" out rc=0
+  if [ -z "$libcxx" ]; then
+    out="no libc++_shared.so under $(shader_bridge_gradle_ndk)"
+    rc=2
+  else
+    out="$(ANDROID_NDK_HOME="$(shader_bridge_gradle_ndk)" \
+      bash "$ROOT/scripts/android_bridge_link_check.sh" "$bridge" "$libcxx" 2>&1)" || rc=$?
+  fi
+  [ "$rc" -eq 0 ] && return 0
+  if [ "$rc" -eq 1 ]; then
+    if [ "${SHADERFX_BRIDGE_REQUIRED:-}" = "1" ]; then
+      fail "$label: $out
+  Build the bridge with NDK $NDK_VERSION (the one gradle packs libc++_shared.so from)."
+    fi
+    warn "$label: $out"
+    return 0
+  fi
+  if [ "${SHADERFX_BRIDGE_REQUIRED:-}" = "1" ]; then
+    fail "$label: cannot check that $SHADER_BRIDGE_LIB links: $out"
+  fi
+  warn "$label: cannot check that $SHADER_BRIDGE_LIB links: $out"
+}
+
+shader_bridge_verify_apk() {
+  local apk="$1" abi missing="" apk_entries tmp
+  apk_entries="$(unzip -Z1 "$apk")"
+  tmp="$(mktemp -d)"
+  trap "rm -rf '$tmp'" EXIT
+  for abi in $SHADER_BRIDGE_ABIS; do
+    if grep -qxF "lib/$abi/$SHADER_BRIDGE_LIB" <<< "$apk_entries"; then
+      mkdir -p "$tmp/$abi"
+      unzip -o -q -j "$apk" "lib/$abi/$SHADER_BRIDGE_LIB" -d "$tmp/$abi"
+      if grep -qxF "lib/$abi/libc++_shared.so" <<< "$apk_entries"; then
+        unzip -o -q -j "$apk" "lib/$abi/libc++_shared.so" -d "$tmp/$abi"
+      fi
+      shader_bridge_check_links "$tmp/$abi/$SHADER_BRIDGE_LIB" "$tmp/$abi/libc++_shared.so" \
+        "$(basename "$apk") lib/$abi"
+    else
+      missing="$missing $abi"
+    fi
+  done
+  rm -rf "$tmp"
+  trap - EXIT
   [ -z "$missing" ] && return 0
   if [ "${SHADERFX_BRIDGE_REQUIRED:-}" = "1" ]; then
     fail "$(basename "$apk") is missing lib/<abi>/$SHADER_BRIDGE_LIB for:$missing"
@@ -594,6 +658,8 @@ bundle_shader_bridge_android() {
       if [ -f "$prebuilt/$abi/$SHADER_BRIDGE_LIB" ]; then
         mkdir -p "$jni/$abi"
         cp "$prebuilt/$abi/$SHADER_BRIDGE_LIB" "$jni/$abi/$SHADER_BRIDGE_LIB"
+        shader_bridge_check_links "$jni/$abi/$SHADER_BRIDGE_LIB" "$(shader_bridge_gradle_libcxx "$abi")" \
+          "SHADERFX_BRIDGE_ANDROID_DIR $abi"
       else
         warn "SHADERFX_BRIDGE_ANDROID_DIR has no $abi/$SHADER_BRIDGE_LIB"
       fi

@@ -7,6 +7,8 @@ local AnimTasks = require("src.core.game3.battle.anim_tasks")
 local AnimPal = require("src.core.game3.battle.anim_pal")
 local AnimCoords = require("src.core.game3.battle.anim_coords")
 
+local _blendOpts = {}
+
 local band, rshift = bit.band, bit.rshift
 
 local AnimVm = {}
@@ -664,7 +666,13 @@ local function draw_sprite(self, s, a)
     local pivX = s.originX or (bw / 2)
     local pivY = s.originY or (bh / 2)
     local tint = sprite_blend(self, s)
-    local pimg = AnimPal.begin(s, s.image, tint and { coeff = tint.coeff, color = tint.color } or nil)
+    local pimg
+    if tint then
+      _blendOpts.coeff, _blendOpts.color = tint.coeff, tint.color
+      pimg = AnimPal.begin(s, s.image, _blendOpts)
+    else
+      pimg = AnimPal.begin(s, s.image, nil)
+    end
     local sh = (not pimg) and tint and blend_shader()
     if sh then
       local r, g, b = band(tint.color, 31), band(rshift(tint.color, 5), 31), band(rshift(tint.color, 10), 31)

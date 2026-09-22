@@ -180,6 +180,7 @@ function LaunchOptions.parseURI(uri)
   request.launcher = booleanValue(values.launcher)
   request.sync = booleanValue(values.sync)
   request.update = booleanValue(values.update)
+  request.updateMods = booleanValue(values.update_mods)
   return request
 end
 
@@ -261,11 +262,16 @@ function LaunchOptions.forceLauncher(argv)
   return LaunchOptions.resolveRequest(argv, nil).launcher
 end
 
-local function taskFlag(argv, rawArgv, name, env, uriValue)
-  if argFlag(argv, "no-" .. name) or argFlag(rawArgv, "no-" .. name) then
-    return false
+local function taskFlag(argv, rawArgv, names, env, uriValue)
+  if type(names) ~= "table" then names = { names } end
+  for _, name in ipairs(names) do
+    if argFlag(argv, "no-" .. name) or argFlag(rawArgv, "no-" .. name) then
+      return false
+    end
   end
-  if argFlag(argv, name) or argFlag(rawArgv, name) then return true end
+  for _, name in ipairs(names) do
+    if argFlag(argv, name) or argFlag(rawArgv, name) then return true end
+  end
   if uriValue ~= nil then return uriValue end
   local v = os.getenv(env)
   if v == "1" then return true end
@@ -280,6 +286,8 @@ function LaunchOptions.tasks(argv, rawArgv, uri)
       uri and uri.sync),
     update = taskFlag(argv, rawArgv, "update", "POKEPORT_LAUNCH_UPDATE",
       uri and uri.update) == true,
+    mods = taskFlag(argv, rawArgv, { "update-mods", "updatemods" },
+      "POKEPORT_LAUNCH_UPDATE_MODS", uri and uri.updateMods) == true,
   }
 end
 
@@ -299,6 +307,7 @@ function LaunchOptions.fromGame(game)
   if not normalized then return nil end
   local tasks = LaunchOptions.tasks({}, {})
   tasks.update = false
+  tasks.mods = false
   return {
     source = "intent",
     game = normalized,
@@ -327,6 +336,9 @@ function LaunchOptions.uriFor(version, options)
   end
   if options.update ~= nil then
     query[#query + 1] = "update=" .. (options.update and "1" or "0")
+  end
+  if options.updateMods ~= nil then
+    query[#query + 1] = "update_mods=" .. (options.updateMods and "1" or "0")
   end
   return "gen1recomp++://launch?" .. table.concat(query, "&")
 end
@@ -363,6 +375,7 @@ function LaunchOptions.commandFor(version, slot, tasks)
   if slot then cmd = cmd .. " --slot " .. tostring(slot) end
   if type(tasks) == "table" then
     if tasks.update then cmd = cmd .. " --update" end
+    if tasks.mods then cmd = cmd .. " --update-mods" end
     if tasks.sync == false then cmd = cmd .. " --no-sync" end
   end
   return cmd

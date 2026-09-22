@@ -300,6 +300,49 @@ for _, line in ipairs(BattleUi._log or {}) do
 end
 check(not foundTransfer, "trygivecaughtmonnick jumps past printfromtable gCaughtMonStringIds")
 
+print("[test] 9. species name install retries until the cache is mounted")
+do
+  local Pokemon = require("src.core.game3.pokemon")
+  local saved = { install = Pokemon.install, name = Pokemon.name, names = Pokemon._names,
+    warned = Pokemon._installWarned }
+  local rt = package.loaded["src.core.game3.runtime"]
+  local bare = { species = 25, nickname = "" }
+  package.loaded["src.core.game3.runtime"] = {
+    getSession = function() return { party = { bare } } end,
+    isActive = function() return true end,
+  }
+  local attempts, mounted = 0, false
+  Pokemon._names, Pokemon._installWarned = nil, nil
+  Pokemon.install = function()
+    attempts = attempts + 1
+    if not mounted then error("cache not mounted") end
+    Pokemon._names = { [25] = "PIKACHU" }
+  end
+  Pokemon.name = function(sp) return Pokemon._names and Pokemon._names[sp] or "" end
+  local realPrint, printed = print, 0
+  print = function(msg)
+    if tostring(msg):find("install failed", 1, true) then printed = printed + 1 else realPrint(msg) end
+  end
+  local out = {}
+  local function buffer()
+    local ctx = { specialVars = { [0x8004] = 0 }, stringVars = {} }
+    Natives.ALLOW["special:124"](ctx, { setStringVar = function(i, t) out[i] = t end })
+    return out[1]
+  end
+  local first = buffer()
+  local second = buffer()
+  mounted = true
+  local third = buffer()
+  print = realPrint
+  check(first == "" and second == "", "no name while the cache is unmounted")
+  check(third == "PIKACHU", "the name loads once the cache mounts")
+  check(attempts == 3, "every lookup retries the install until it succeeds")
+  check(printed == 1, "the install failure is logged once")
+  Pokemon.install, Pokemon.name = saved.install, saved.name
+  Pokemon._names, Pokemon._installWarned = saved.names, saved.warned
+  package.loaded["src.core.game3.runtime"] = rt
+end
+
 if failed == 0 then
   print("\nAll game3 nickname tests passed.")
   os.exit(0)

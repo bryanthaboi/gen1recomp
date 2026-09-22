@@ -94,15 +94,31 @@ do
 end
 
 do
-  local r = drawFight("ogred", "red", function(m) m.fade = 0.5 end)
-  eq(#r, 3, "GBFadeOutToWhite adds a white wash over the replayed layer")
-  local w = r[3] or {}
-  eq(w.color and w.color[4], 0.5, "the wash carries the fade alpha")
-  eq(w.sx, 160, "the wash spans the playfield width")
-  eq(w.sy, 80, "the wash spans the playfield height")
-  eq(w.x, 0, "the wash starts at the playfield left")
-  eq(w.y, 32, "the wash starts under the top bar")
-  check(sameClip(w.clip), "the wash is clipped to the playfield")
+  local W, OBJ, BG = PaletteFX.GBC_OBJ[1], PaletteFX.GBC_OBJ, PaletteFX.GBC_BG
+  local r, b = drawFight("ogred", "red", function(m) m.fadeStep = 1 end)
+  eq(#r, 2, "FadePal6 replays only the two layers, no white wash")
+  local nb, gb
+  for _, x in ipairs(b) do
+    if x.group == "gbcobj128" then nb = x end
+    if x.group == "ogbg144" then gb = x end
+  end
+  check(nb and nb.colors[2] == W and nb.colors[3] == W and nb.colors[4] == OBJ[3],
+    "FadePal6 rOBP0 $80 bakes Nidorino c1/c2 white, c3 OBJ shade 2")
+  check(gb and gb.colors[2] == BG[1] and gb.colors[3] == BG[2] and gb.colors[4] == BG[3],
+    "FadePal6 rBGP $90 bakes Gengar c1 white, c2 shade 1, c3 shade 2")
+  r, b = drawFight("ogred", "red", function(m) m.fadeStep = 2 end)
+  nb = nil
+  for _, x in ipairs(b) do if x.group == "gbcobj64" then nb = x end end
+  check(nb and nb.colors[2] == W and nb.colors[3] == W and nb.colors[4] == OBJ[2],
+    "FadePal7 rOBP0 $40 leaves only c3 at OBJ shade 1")
+  r, b = drawFight("gbc", "red", function(m) m.fadeStep = 1 end)
+  eq(#r, 0, "SGB fade records no replay")
+  local grp = {}
+  for _, x in ipairs(b) do grp[x.group] = x end
+  check(grp.fadeobp128 and grp.fadeobp128.colors[4] == PaletteFX.GRAYS[3],
+    "SGB fade bakes Nidorino through rOBP0 $80 into DMG grays")
+  check(grp.fadebgp144 and grp.fadebgp144.colors[3] == PaletteFX.GRAYS[2],
+    "SGB fade bakes Gengar through rBGP $90 into DMG grays")
 end
 
 do

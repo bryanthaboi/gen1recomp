@@ -307,6 +307,34 @@ for _, name in ipairs(NOOPS) do
   eq(getVar(ctx, 0x800D), 0, name .. " leaves VAR_RESULT at 0")
 end
 
+print("[test] 14. SampleResortGorgeousMonAndReward buffers the sampled species into STR_VAR_1")
+local savedPokemon = package.loaded["src.core.game3.pokemon"]
+package.loaded["src.core.game3.pokemon"] = {
+  name = function(sp) return ({ [25] = "PIKACHU", [150] = "MEWTWO" })[sp] or ("SP" .. tostring(sp)) end,
+}
+local savedDex = session.dex
+session.dex = { owned = { [25] = true } }
+local VAR_REQ = 0x4036
+store.vars = {}
+local ctx14 = newCtx()
+ctx14.stringVars = {}
+local buffered = {}
+Events.HANDLERS[Std.SPECIAL.SampleResortGorgeousMonAndReward](ctx14, {
+  setStringVar = function(i, text) buffered[i] = text end,
+})
+eq(getVar(ctx14, VAR_REQ), 25, "an empty request samples the only owned species")
+eq(ctx14.stringVars[1], "PIKACHU", "STR_VAR_1 names the freshly sampled species")
+eq(buffered[1], "PIKACHU", "the host adapter receives STR_VAR_1")
+local ctx14b = newCtx()
+ctx14b.stringVars = {}
+setVar(ctx14b, VAR_REQ, 150)
+Events.HANDLERS[Std.SPECIAL.SampleResortGorgeousMonAndReward](ctx14b, {})
+eq(getVar(ctx14b, VAR_REQ), 150, "a pending request is kept")
+eq(ctx14b.stringVars[1], "MEWTWO", "STR_VAR_1 names the pending request")
+session.dex = savedDex
+store.vars = {}
+package.loaded["src.core.game3.pokemon"] = savedPokemon
+
 if failed > 0 then
   print("[test] FAILED " .. failed)
   os.exit(1)

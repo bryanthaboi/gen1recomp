@@ -1,56 +1,18 @@
--- Gen 2 COLL_* → permission (pokegold CollisionPermissionTable lo-nybble,
--- home/map_objects.asm GetTilePermission).  LAND=0, WATER=1, WALL=0x0f.
-
 local GameVersion = require("src.core.GameVersion")
+local CollPermissions = require("src.core.CollPermissions")
 
 local Permissions = {}
 
-Permissions.LAND = 0x00
-Permissions.WATER = 0x01
-Permissions.WALL = 0x0f
+Permissions.LAND = CollPermissions.LAND
+Permissions.WATER = CollPermissions.WATER
+Permissions.WALL = CollPermissions.WALL
 
--- CollisionPermissionTable, lo nybble only (256 entries).
-local TABLE = {
-   0,  0,  0,  0,  0,  0,  0, 15,  0,  0,  0,  0,  0,  0,  0, 15,
-   0,  0, 15,  0,  0, 15,  0,  0,  0,  0, 15,  0,  0, 15,  0,  0,
-   1,  1,  1,  0,  1,  1,  1, 15,  1,  1,  1,  0,  1,  1,  1, 15,
-   1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-   0,  0, 15,  0,  0,  0,  0,  0,  0,  0, 15,  0,  0,  0,  0,  0,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-  15, 15, 15, 15, 15,  0,  0,  0, 15, 15, 15, 15, 15,  0,  0,  0,
-  15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-   1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-   0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 15,
-}
-
-function Permissions.of(coll)
-  if coll == nil or coll < 0 then return Permissions.WALL end
-  return TABLE[(coll % 256) + 1] or Permissions.WALL
-end
-
-function Permissions.isLand(coll)
-  return Permissions.of(coll) == Permissions.LAND
-end
-
-function Permissions.isWater(coll)
-  return Permissions.of(coll) == Permissions.WATER
-end
-
-function Permissions.isWall(coll)
-  return Permissions.of(coll) == Permissions.WALL
-end
-
--- Walkable on foot: DoPlayerMovement's .CheckWalkable, which is nothing more
--- than "the permission is LAND_TILE".
-function Permissions.isWalkable(coll)
-  return Permissions.of(coll) == Permissions.LAND
-end
+Permissions.of = CollPermissions.of
+Permissions.isLand = CollPermissions.isLand
+Permissions.isWater = CollPermissions.isWater
+Permissions.isWall = CollPermissions.isWall
+Permissions.isWalkable = CollPermissions.isWalkable
+Permissions.isLedge = CollPermissions.isLedge
 
 -- .CheckSurfable (engine/overworld/player_movement.asm): the same test a
 -- surfing player's step runs, and the reason it is three-valued rather than a
@@ -224,11 +186,6 @@ local LEDGE_FACINGS = {
   [0x6] = { up = true, right = true },    -- COLL_HOP_UP_RIGHT (unused)
   [0x7] = { up = true, left = true },     -- COLL_HOP_UP_LEFT (unused)
 }
-
-function Permissions.isLedge(coll)
-  if coll == nil or coll < 0 then return false end
-  return math.floor((coll % 256) / 16) == 0xa
-end
 
 -- The facings that jump this ledge, or nil for a non-ledge.
 function Permissions.ledgeFacings(coll)

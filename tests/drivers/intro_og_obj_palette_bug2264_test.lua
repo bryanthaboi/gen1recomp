@@ -163,15 +163,41 @@ return function(game)
       botBar.black .. "/" .. botBar.total)
   end
 
-  check(tag .. " reached the fade", waitFor(function()
-    return movie.fade >= 0.5 or movie.phase == 4
-  end, 3000), tostring(movie.fade))
-  local shot2 = SHOT_DIR .. "/" .. tag .. "_02_fade_to_white_mid.png"
-  if movie.phase == 3 and check(tag .. " shot 02", U.shot(game, shot2) and load(shot2)) then
-    local botBar = census(shot2, 0, 112, 160, 144)
-    local topBar = census(shot2, 0, 0, 160, 32)
-    check(tag .. " fade wash never paints OBJ pixels into the bars",
-      botBar.obj == 0 and topBar.obj == 0, botBar.obj .. "/" .. topBar.obj)
+  local function near1(path, c, bx1, by1, bx2, by2)
+    local img = load(path)
+    if not img then return 0, 1 end
+    local ox, oy, scale = letterbox(img)
+    local hit, total = 0, 0
+    for y = oy + math.floor(by1 * scale) + 1, oy + math.floor(by2 * scale) - 2 do
+      for x = ox + math.floor(bx1 * scale) + 1, ox + math.floor(bx2 * scale) - 2 do
+        local r, g, b = img:getPixel(x, y)
+        total = total + 1
+        if near(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
+                math.floor(b * 255 + 0.5), c) then hit = hit + 1 end
+      end
+    end
+    return hit, total
+  end
+
+  for step, want in ipairs({ { name = "fadepal6_bars_bg_shade2", c = bg[3] },
+                             { name = "fadepal7_bars_bg_shade1", c = bg[2] } }) do
+    check(tag .. " reached fade step " .. step, waitFor(function()
+      return movie.fadeStep == step or movie.phase == 4
+    end, 3000), tostring(movie.fadeStep))
+    if movie.phase ~= 3 then break end
+    local upd = movie.update
+    movie.update = function() end
+    waitRenderedFrames(2)
+    local shot = SHOT_DIR .. "/" .. tag .. "_0" .. (step + 1) .. "_" .. want.name .. ".png"
+    if check(tag .. " shot fade step " .. step, U.shot(game, shot) and load(shot)) then
+      local hit, total = near1(shot, want.c, 0, 112, 160, 144)
+      check(tag .. " fade step " .. step .. " bottom bar is BG shade " .. (3 - step),
+        hit == total, hit .. "/" .. total)
+      hit, total = near1(shot, want.c, 0, 0, 160, 32)
+      check(tag .. " fade step " .. step .. " top bar is BG shade " .. (3 - step),
+        hit == total, hit .. "/" .. total)
+    end
+    movie.update = upd
   end
 
   finish()

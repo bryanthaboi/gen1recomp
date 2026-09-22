@@ -44,8 +44,8 @@ local COOLDOWN_SCALE = 256 -- pret keeps minSteps/encRate scaled so the modifier
 
 -- pret AddToWildEncounterRateBuff banks into a u16 field, so it wraps there.
 local RATE_BUFF_MOD = 65536
--- pret VAR_REPEL_STEP_COUNT (this tree stores it at the 0x4021 slot).
-local VAR_REPEL_STEP_COUNT = 0x4021
+-- include/constants/vars.h:47
+local VAR_REPEL_STEP_COUNT = 0x4020
 
 local function log(msg)
   print("[game3/encounters] " .. tostring(msg))

@@ -4773,7 +4773,9 @@ function World:rollFishing(rod)
   -- they stand on.
   local d = Map.DELTA[player.facing or "down"] or Map.DELTA.down
   local cx, cy = player.cellX + d[1], player.cellY + d[2]
-  if not Permissions.isWater(map:cellCollision(cx, cy)) then return "nowhere" end
+  if not Permissions.isWater(self:cellCollisionAcross(map, cx, cy)) then
+    return "nowhere"
+  end
   -- GetFishingGroup (home/map.asm) is MAP_FISHGROUP off the map header, and
   -- .facingwater's `and a / jr nz` sends FISHGROUP_NONE to .FishNoFish.  The
   -- Encounter helper defaults an unknown map to the pond, so the header is
@@ -5465,7 +5467,7 @@ end
 -- Returns true when the event took the A press.
 function World:tryHeadbuttOW(cx, cy)
   if not (self.map and self.player) then return false end
-  if not World.isHeadbuttTree(self.map:cellCollision(cx, cy)) then
+  if not World.isHeadbuttTree(self:cellCollisionAcross(self.map, cx, cy)) then
     return false
   end
   local mon = self:partyMoveUser(MOVE_HEADBUTT)
@@ -5771,12 +5773,12 @@ function World:fieldContext(mon)
     mon = mon,
     facing = facing,
     facingX = fx, facingY = fy,
-    facingColl = map:cellCollision(fx, fy),
+    facingColl = self:cellCollisionAcross(map, fx, fy),
     playerColl = map:cellCollision(p.cellX, p.cellY),
     -- Crystal's SurfFunction.TrySurf is the only field move that asks
     -- (../pokecrystal/engine/events/overworld.asm:364).
     facingObject = self:facingObject(),
-    upColl = map:cellCollision(p.cellX, p.cellY - 1),
+    upColl = self:cellCollisionAcross(map, p.cellX, p.cellY - 1),
     tileset = map.def and map.def.tileset,
     facingBlock = blockId,
     facingBlockIndex = blockIndex,
@@ -8557,7 +8559,8 @@ function World:facingObjectCell()
   if not p then return nil end
   local d = Map.DELTA[p.facing] or Map.DELTA.down
   local fx, fy = p.cellX + d[1], p.cellY + d[2]
-  if self.map and Permissions.isCounter(self.map:cellCollision(fx, fy)) then
+  if self.map
+      and Permissions.isCounter(self:cellCollisionAcross(self.map, fx, fy)) then
     return p.cellX + d[1] * 2, p.cellY + d[2] * 2
   end
   return fx, fy
@@ -8676,7 +8679,7 @@ function World:interactBody()
   -- run through the VM like any map script -- PCScript is `opentext /
   -- special PokemonCenterPC / closetext / end`.
   local std = TILE_COLLISION_STD_SCRIPTS[
-    self.map and self.map:cellCollision(fx, fy)]
+    self.map and self:cellCollisionAcross(self.map, fx, fy)]
   if std then
     local entry = self.stdScripts and self.stdScripts.scripts
       and self.stdScripts.scripts[std]

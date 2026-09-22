@@ -5,6 +5,7 @@ local Bag = require("src.core.game3.bag")
 local Pokemon = require("src.core.game3.pokemon")
 local ModRuntime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
+local Capabilities = require("src.core.game3.capabilities")
 
 local ItemUse = {}
 
@@ -746,6 +747,9 @@ local function useField(session, bag, id, partySlot)
 
   if use == "vs_seeker" or id == ItemsData.ITEM_VS_SEEKER or id == "VS_SEEKER"
       or ItemsData.toNumericId(id) == ItemsData.ITEM_VS_SEEKER then
+    if not Capabilities.gate(session, "vs_seeker") then
+      return false, "vs_seeker", nil
+    end
     local VsSeeker = require("src.core.game3.vs_seeker")
     if not VsSeeker.canUseHere(session) then
       return false, "vs_seeker", VsSeeker.notTimeText(session)
@@ -777,6 +781,9 @@ local function useField(session, bag, id, partySlot)
   -- pokefirered/src/item_use.c:518 FieldUseFunc_TeachyTv
   if id == ITEM_TEACHY_TV or id == "TEACHY_TV"
       or ItemsData.toNumericId(id) == ITEM_TEACHY_TV then
+    if not Capabilities.gate(session, "teachy_tv") then
+      return false, "teachy_tv", nil
+    end
     local TeachyTv = require("src.core.game3.teachy_tv")
     TeachyTv.show(session, bag)
     return true, "teachy_tv", nil
@@ -785,6 +792,9 @@ local function useField(session, bag, id, partySlot)
   -- pokefirered/src/item_use.c:680 FieldUseFunc_FameChecker
   if id == ITEM_FAME_CHECKER or id == "FAME_CHECKER"
       or ItemsData.toNumericId(id) == ITEM_FAME_CHECKER then
+    if not Capabilities.gate(session, "fame_checker") then
+      return false, "fame_checker", nil
+    end
     local FameCheckerUi = require("src.ui.game3.fame_checker")
     -- pokefirered/src/item_use.c:696 UseFameCheckerFromBag
     local okBag, BagMenu = pcall(require, "src.ui.game3.bag_menu")

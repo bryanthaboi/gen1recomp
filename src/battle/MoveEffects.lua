@@ -721,7 +721,6 @@ MoveEffects.full = {
       ctx.battle:animBeforeMove(
         user.isPlayer and "XSTATITEM_ANIM" or "XSTATITEM_DUPLICATE_ANIM",
         user.isPlayer)
-      ctx.say(Strings("%s\nis storing energy!", displayName(user)))
     end,
   },
   SWITCH_AND_TELEPORT_EFFECT = {

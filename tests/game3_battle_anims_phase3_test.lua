@@ -2,6 +2,7 @@
 -- Unit and integration tests for Phase 3: Elemental FX, Particle Generators & Wave Systems
 
 package.path = package.path .. ";./?.lua"
+require("tests.game3_cache").requireData("game3_battle_anims_phase3_test", "pokemon/battle_anims/pack.lua")
 
 local AnimTasks = require("src.core.game3.battle.anim_tasks")
 local AnimSprites = require("src.core.game3.battle.anim_sprites")

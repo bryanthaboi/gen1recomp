@@ -3,6 +3,7 @@ local GamepadMap = require("src.core.GamepadMap")
 local Logger = require("src.core.Logger")
 local Strings = require("src.core.Strings")
 local HostShell = require("src.core.HostShell")
+local HostPicker = require("src.core.HostPicker")
 local Platform = require("src.core.Platform")
 local SafeArea = require("src.core.SafeArea")
 
@@ -1138,8 +1139,7 @@ local function chooseRom(promptName)
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
       "$d.Filter='Game Boy / GBA ROM (*.gb;*.gbc;*.gba)|*.gb;*.gbc;*.gba|All files (*.*)|*.*';",
       -- copy the pick to a plain-ASCII temp name and answer with that:
@@ -1147,7 +1147,7 @@ local function chooseRom(promptName)
       -- (Pokémon -> Pok\x82mon) and io.open on Windows needs ANSI bytes,
       -- so returning the original name both crashed the notice draw and
       -- could never have opened the file (#325, #665)
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "$t=Join-Path $env:TEMP 'pokeport_rom_pick.gb';",
       "Copy-Item -LiteralPath $d.FileName -Destination $t -Force;",
       "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
@@ -1183,12 +1183,11 @@ local function chooseImporterFile(promptName, exts)
         :format(prompt, table.concat(quoted, ", ")))
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
       "$d.Filter='Cartridge dump (" .. table.concat(semis, ";") .. ")|"
         .. table.concat(semis, ";") .. "|All files (*.*)|*.*';",
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
       "[Console]::Write($d.FileName)}",
     })
@@ -1206,20 +1205,16 @@ local function chooseImporterFile(promptName, exts)
   return nil
 end
 
--- Open a native picker for a mod .zip (mirrors chooseRom's per-OS dialogs).
--- Returns the chosen absolute path or nil.  Android uses love.system.pickFile
--- ("mod") instead -- see RomImporter:chooseMod.
-local function chooseZip()
+local function zipPickCommands()
   local prompt = shellSafe(Strings("Choose a mod .zip"))
   local platform = love.system.getOS()
   if platform == "OS X" then
-    return commandOutput(
+    return {
       ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"zip"})' 2>/dev/null]])
-        :format(prompt))
+        :format(prompt) }
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
       "$d.Filter='Mod archive (*.zip)|*.zip|All files (*.*)|*.*';",
       -- copy the pick to a plain-ASCII temp name and answer with that:
@@ -1227,24 +1222,32 @@ local function chooseZip()
       -- (Pokémon -> Pok\x82mon) and io.open on Windows needs ANSI bytes,
       -- so returning the original name both crashed the notice draw and
       -- could never have opened the file (#325)
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "$t=Join-Path $env:TEMP 'pokeport_mod_pick.zip';",
       "Copy-Item -LiteralPath $d.FileName -Destination $t -Force;",
       "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
       "[Console]::Write($t)}",
     })
-    return commandOutput(
-      'powershell -NoProfile -STA -Command "' .. script .. '"')
+    return { 'powershell -NoProfile -STA -Command "' .. script .. '"' }
   elseif platform == "Linux" then
-    local path = commandOutput(
+    return {
       ([[zenity --file-selection --title="%s" --file-filter="Mod archive | *.zip" 2>/dev/null]])
-        :format(prompt))
-    if path then return path end
-    return commandOutput(
-      [[kdialog --getopenfilename "$HOME" "*.zip|Mod archive" 2>/dev/null]])
+        :format(prompt),
+      [[kdialog --getopenfilename "$HOME" "*.zip|Mod archive" 2>/dev/null]],
+    }
   end
   return nil
 end
+
+local function chooseZip()
+  for _, command in ipairs(zipPickCommands() or {}) do
+    local path = commandOutput(command)
+    if path then return path end
+  end
+  return nil
+end
+
+RomImporter._zipPickCommands = zipPickCommands
 
 local function chooseSkinZip()
   local prompt = shellSafe(Strings("Choose a skin .zip or .deltaskin"))
@@ -1255,11 +1258,10 @@ local function chooseSkinZip()
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
       "$d.Filter='Skin archive (*.zip;*.deltaskin)|*.zip;*.deltaskin|All files (*.*)|*.*';",
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "$n=[IO.Path]::GetFileName($d.FileName) -replace '[^\\x20-\\x7E]','_';",
       "$t=Join-Path $env:TEMP $n;",
       "Copy-Item -LiteralPath $d.FileName -Destination $t -Force;",
@@ -1291,14 +1293,13 @@ local function chooseSav()
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
       "$d.Filter='Game Boy save (*.sav)|*.sav|All files (*.*)|*.*';",
       -- copy the pick to a plain-ASCII temp name: io.open on Windows
       -- needs ANSI bytes, so a non-ASCII path (Pokémon -> Pok\x82mon)
       -- could never have been opened (#325, #665)
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "$t=Join-Path $env:TEMP 'pokeport_sav_pick.sav';",
       "Copy-Item -LiteralPath $d.FileName -Destination $t -Force;",
       "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
@@ -1329,15 +1330,14 @@ local function chooseRequiredFile()
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
-      "Add-Type -AssemblyName System.Windows.Forms;",
-      "$d=New-Object System.Windows.Forms.OpenFileDialog;",
+      HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
       "$d.Filter='All files (*.*)|*.*';",
       -- Required imports can be multi-gigabyte optical-disc images. Do NOT
       -- stage them through %TEMP%: that doubles free-space requirements and a
       -- failed Copy-Item can leave a plausible-looking truncated temp file.
       -- Stream the selected source directly into the mod-owned destination.
-      "if($d.ShowDialog() -eq 'OK'){",
+      HostPicker.WIN_SHOW,
       "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
       "[Console]::Write($d.FileName)}",
     })
@@ -1670,6 +1670,7 @@ end
 -- _pollPickedFiles must stay armed so it consumes the file when it lands
 -- moments later (it clears pickPending itself once something is found).
 function RomImporter:focus(f)
+  self._modPickOpenWait = nil
   if not f then
     self._activeTouch = nil
     self._pagePress = nil
@@ -2185,12 +2186,12 @@ function RomImporter:_deleteMod(id)
 end
 
 -- "Import mod .zip" button: open a native picker and install the pick.
--- Android mirrors ROM import: scan for a pending .zip in the save dir (USB
--- or a fresh SAF drop), else love.system.pickFile("mod") -> picked_mod.zip
+-- Android: consume a fresh SAF drop, else love.system.pickFile("mod") -> picked_mod.zip
 -- which focus/Choose consumes on return.
 -- NX: no HostShell/desktop picker -- rescan imports/mods/ inbox instead.
 function RomImporter:chooseMod()
   if self.workState == "working" then return end
+  if self._hostPick or self._modInboxInstall then return end
   if self.isNX then
     self:ensureModsInboxDir()
     self:rescanModsAction()
@@ -2205,19 +2206,30 @@ function RomImporter:chooseMod()
     return
   end
   if self.android then
-    local name = findPendingMod(true, self.pickSkip)
+    local name = findPendingMod(false, self.pickSkip)
     if name then
       self:_installMod(name)
       consumePick(self, name, "picked_mod.zip",
         self.modNotice and self.modNotice.ok)
       return
     end
+    if self._modPickStalled and #self:scanModsInbox() > 0 then
+      self._modPickStalled = nil
+      self._modInboxInstall = "armed"
+      self.tab = "mods"
+      self.modNotice = { ok = true,
+        text = Strings("Installing mods from %s/ ...", MODS_INBOX_DIR) }
+      return
+    end
+    self._modPickOpenWait = nil
     if not pickFile("mod") then
+      self._modPickStalled = true
       self.modNotice = { ok = false,
-        text = "Could not open the file picker. Copy a mod .zip via USB." }
+        text = self:_modInboxHint(Strings("Could not open the file picker.")) }
     else
       self.pickPending = true
       self.pickTimer = 0
+      if love.system.getOS() == "Android" then self._modPickOpenWait = 0 end
     end
     return
   end
@@ -2240,11 +2252,27 @@ function RomImporter:chooseMod()
     end
   end
 
+  if love.system.getOS() == "Windows" and Platform.canSpawnProcess() then
+    local id = HostPicker.start(zipPickCommands())
+    if id then
+      local notice = { ok = true, text = Strings(
+        "Choose a .zip in the file dialog. The launcher waits until it closes.") }
+      self._hostPick = { id = id, kind = "mod", notice = notice }
+      self.tab = "mods"
+      self.modNotice = notice
+      return
+    end
+  end
+
   local path = chooseZip()
   if path then
     self:_installMod(path)
     return
   end
+  self:_openModBrowser()
+end
+
+function RomImporter:_openModBrowser()
   local okKit, Kit = pcall(require, "src.ui.kit.Kit")
   if okKit and Kit.FileBrowser then
     self._padCursorActive = false
@@ -2255,8 +2283,51 @@ function RomImporter:chooseMod()
         self:_installMod(pickedPath)
       end,
     })
+    return true
+  end
+  return false
+end
+
+function RomImporter:_modInboxHint(lead)
+  return Strings("%s Copy the .zip into this folder, then tap %s again:\n%s/%s/",
+    lead, self:_modsImportButtonLabel(), love.filesystem.getSaveDirectory(),
+    MODS_INBOX_DIR)
+end
+
+function RomImporter:_pumpHostPick()
+  local job = self._hostPick
+  if not job then return end
+  local state, output, err = HostPicker.poll(job.id)
+  if state == "pending" then return end
+  self._hostPick = nil
+  if self.modNotice == job.notice then self.modNotice = nil end
+  output = trim(output)
+  if output ~= "" then
+    self:_installMod(output)
+  elseif err then
+    self:_openModBrowser()
+  end
+end
+
+function RomImporter:_pumpModInboxInstall()
+  local step = self._modInboxInstall
+  if not step then return end
+  if step == "armed" then
+    self._modInboxInstall = "shown"
     return
   end
+  self._modInboxInstall = nil
+  self:rescanModsAction()
+end
+
+function RomImporter:_pumpModPickOpen(dt)
+  if not self._modPickOpenWait then return end
+  self._modPickOpenWait = self._modPickOpenWait + math.min(dt or 0, 0.1)
+  if self._modPickOpenWait < 4 then return end
+  self._modPickOpenWait = nil
+  self._modPickStalled = true
+  self.modNotice = { ok = false,
+    text = self:_modInboxHint(Strings("The file picker did not open.")) }
 end
 
 local function requiredManifest(self, modId)
@@ -3027,7 +3098,11 @@ function RomImporter:update(dt)
   self:_pumpCartInstall()
   self:_pumpCartFill()
   self:_pumpUpdateAll()
+  if self:_fireAutoUpdateAll() then return end
   self:_pumpExtract()
+  self:_pumpHostPick()
+  self:_pumpModPickOpen(dt)
+  self:_pumpModInboxInstall()
   -- Dev harness: POKEPORT_LAUNCHER_SHOT=/path.png resizes the window from
   -- POKEPORT_WIN=WxH, lets the view settle, then captures one frame and
   -- quits, so a scripted run can see the real launcher at any window shape
@@ -3497,6 +3572,7 @@ end
 
 function RomImporter:gamepadpressed(_, button)
   if Transition.active() then return end
+  if self._hostPick then return end
   local action =(GamepadMap.mapLauncherButton and GamepadMap.mapLauncherButton(button)) or button
   local okKit, Kit = pcall(require, "src.ui.kit.Kit")
   if okKit then
@@ -3796,6 +3872,7 @@ end
 -- Player pressed Play on a game whose ROM is imported: hand off to boot.
 function RomImporter:play(version, fade)
   if self.workState == "working" then return end
+  if self._hostPick then return end
   if not self.ready[version] then return end
   if fade then
     if not self._launchFade then
@@ -3949,6 +4026,7 @@ end
 -- Delete selected the slot and wiped the arm it had just set, so a secondary
 -- slot became the loaded one and could never be deleted (#780).
 function RomImporter:runActions(queue)
+  if self._hostPick then return end
   for i = 1, #queue do
     local entry = queue[i]
     local key = type(entry.key) == "string" and entry.key or ""
@@ -4894,6 +4972,7 @@ end
 
 function RomImporter:keypressed(key)
   if Transition.active() then return end
+  if self._hostPick then return end
   local okKit, Kit = pcall(require, "src.ui.kit.Kit")
   if okKit then
     if Kit.FileBrowser and Kit.FileBrowser.active then
@@ -5583,15 +5662,46 @@ function RomImporter:_commitCartSave()
   self._cartNotice = Strings("Saved %s. It is in this list now.", title)
 end
 
-function RomImporter:deleteCart(version, id)
-  if self.workState == "working" then return end
-  local ok, err = require("src.carts.CartStore").uninstall(id)
-  if not ok then self._cartNotice = tostring(err); return end
+function RomImporter:deleteCart(version, id, opts)
+  local fromFind = type(opts) == "table" and opts.from == "find"
+  if self.workState == "working" then
+    local busy = Strings("Wait for the current import to finish, then delete the cart.")
+    if fromFind then
+      self.findNotice = { ok = false, text = busy }
+    else
+      self._cartNotice = busy
+    end
+    return false
+  end
+  local CartStore = require("src.carts.CartStore")
+  local installed = fromFind and CartStore.get(id) or nil
+  if installed and installed.base then version = installed.base end
+  local ok, err = CartStore.uninstall(id)
+  if not ok then
+    if fromFind then
+      self.findNotice = { ok = false, text = tostring(err) }
+    else
+      self._cartNotice = tostring(err)
+    end
+    return false
+  end
   if self.activeCart[version] == id then self:_selectCart(version, nil) end
   self:_refreshCarts(version)
+  self._cartPlan = nil
+  local cartKey = "cart:" .. tostring(id)
+  for _, cache in ipairs({ self._cartridgeLabels or {}, self._gbaLabels or {} }) do
+    cache[cartKey] = nil
+    cache["gba:" .. cartKey] = nil
+  end
+  if fromFind then
+    self.findNotice = { ok = true,
+      text = Strings("Cart deleted. Its saves and installed mods were kept.") }
+    return true
+  end
   self._cartPicker = nil
   self._cartPopup = version
   self._cartNotice = Strings("Cart deleted. Its saves and installed mods were kept.")
+  return true
 end
 
 function RomImporter:exportCart(id)
@@ -5797,6 +5907,7 @@ function RomImporter:_commitRename()
 end
 
 function RomImporter:textinput(text)
+  if self._hostPick then return end
   if self._syncModal and self._syncFocus then
     self:_syncTypeInto(self._syncFocus, text)
     return
@@ -6306,6 +6417,51 @@ function RomImporter:_setAllMods(want, confirmed)
   self.modNotice = { ok = true, text = want
     and Strings("Enabled %d mods.", #ids)
     or Strings("Disabled %d mods.", #ids) }
+end
+
+function RomImporter:_moveMod(id, delta)
+  if self.safeMode then
+    self.modNotice = { ok = false, text = "Safe mode is active. Turn it off in the Bug tab to change mods." }
+    return false
+  end
+  local cartId, cartReport = self:modCartPlan()
+  if cartId then
+    self.modNotice = { ok = false, text = self:cartPinsNote(cartId, cartReport) }
+    return false
+  end
+  local LauncherMods = require("src.mods.LauncherMods")
+  local visible, name = {}, id
+  for _, m in ipairs(self.mods or {}) do
+    visible[#visible + 1] = m.id
+    if m.id == id then name = m.name or id end
+  end
+  local ok, at = LauncherMods.moveMod(id, delta, visible)
+  if not ok then
+    self.modNotice = { ok = true, text = (tonumber(delta) or 0) < 0
+      and Strings("%s already loads first.", name)
+      or Strings("%s already loads last.", name) }
+    return false
+  end
+  self._modSortCache = nil
+  self:_refreshMods()
+  self.modNotice = { ok = true,
+    text = Strings("Moved %s to load position %d.", name, at or 0) }
+  return true
+end
+
+function RomImporter:_resetModOrder()
+  if self.safeMode then
+    self.modNotice = { ok = false, text = "Safe mode is active. Turn it off in the Bug tab to change mods." }
+    return false
+  end
+  local LauncherMods = require("src.mods.LauncherMods")
+  local ok = LauncherMods.resetOrder()
+  self._modSortCache = nil
+  self:_refreshMods()
+  self.modNotice = { ok = true, text = ok
+    and Strings("Load order reset to each mod's own priority.")
+    or Strings("Load order already follows each mod's own priority.") }
+  return ok
 end
 
 -- GitHub Update / Check for updates / Versions. Soft-fails into modNotice.
@@ -6965,7 +7121,7 @@ function RomImporter:updateAllAvailable()
   return true
 end
 
-function RomImporter:pressUpdateAllMods()
+function RomImporter:pressUpdateAllMods(opts)
   if not self:updateAllAvailable() then return false end
   if not Platform.canFetchRemote() then
     self.modNotice = { ok = false,
@@ -6973,9 +7129,10 @@ function RomImporter:pressUpdateAllMods()
     return false
   end
   self._updateAll = { stage = "check", index = 0, updated = 0,
-                      updatedIds = {}, updatedCarts = {}, failures = {} }
+                      updatedIds = {}, updatedCarts = {}, failures = {},
+                      auto = (opts and opts.auto) and true or nil }
   self.modNotice = nil
-  self:_syncModUpdateInfo(true)
+  self:_syncModUpdateInfo(not self._updateAll.auto)
   self:_setBusy(Strings("Checking for updates"), nil,
     function() self:_cancelUpdateAll() end)
   self:_pumpUpdateAll()
@@ -7034,20 +7191,24 @@ function RomImporter:_pumpUpdateAll()
     if job.cancelled or job.total == 0 then
       return self:_finishUpdateAll(job.cancelled)
     end
-    job.stage = "confirm"
-    local lines = { Strings("Update %d items?", job.total) }
-    for i = 1, math.min(3, job.total) do
-      local row = job.rows[i]
-      lines[#lines + 1] = tostring(row.name or row.id)
+    if job.auto then
+      job.stage = "next"
+    else
+      job.stage = "confirm"
+      local lines = { Strings("Update %d items?", job.total) }
+      for i = 1, math.min(3, job.total) do
+        local row = job.rows[i]
+        lines[#lines + 1] = tostring(row.name or row.id)
+      end
+      if job.total > 3 then
+        lines[#lines + 1] = Strings("and %d more", job.total - 3)
+      end
+      job.confirm = { kind = "updateAllRun", title = Strings("Update all"),
+        yesLabel = Strings("Update all"), lines = lines }
+      self._modConfirm = job.confirm
+      self:_clearBusy()
+      return
     end
-    if job.total > 3 then
-      lines[#lines + 1] = Strings("and %d more", job.total - 3)
-    end
-    job.confirm = { kind = "updateAllRun", title = Strings("Update all"),
-      yesLabel = Strings("Update all"), lines = lines }
-    self._modConfirm = job.confirm
-    self:_clearBusy()
-    return
   end
 
   if job.stage == "confirm" then
@@ -7146,6 +7307,7 @@ function RomImporter:_finishUpdateAll(cancelled)
           "%s now pins %d mod(s) you do not have. Open it in Custom Carts to install them.",
           tostring(cart.name), missing)
         self.modNotice.failures = lines
+        job.pinsMissing = true
       end
     end
   end
@@ -7157,6 +7319,48 @@ function RomImporter:_finishUpdateAll(cancelled)
       break
     end
   end
+  if job.auto and self._autoUpdateAll then
+    self._autoUpdateAll.result = {
+      ok = not cancelled and #job.failures == 0 and not job.pinsMissing
+        and self._modDepResolver == nil,
+      cancelled = cancelled and true or false,
+      updated = job.updated,
+      total = job.total or 0,
+      failures = job.failures,
+    }
+  end
+end
+
+function RomImporter:autoUpdateAll(onDone, opts)
+  if self._autoUpdateAll then return false end
+  self._autoUpdateAll = { onDone = onDone }
+  local tab = opts and opts.tab
+  if tab and self.tab ~= tab then self:_switchTab(tab) end
+  self:_ensureMods()
+  if self:pressUpdateAllMods({ auto = true }) then return true end
+  if self.safeMode and not self.modNotice then
+    self.modNotice = { ok = false,
+      text = Strings("Safe mode is on, so mods were not updated.") }
+  end
+  if self._autoUpdateAll then
+    self._autoUpdateAll.result = { ok = false, skipped = true, updated = 0,
+                                   total = 0, failures = {} }
+  end
+  return false
+end
+
+function RomImporter:_fireAutoUpdateAll()
+  local auto = self._autoUpdateAll
+  if not (auto and auto.result) then return false end
+  self._autoUpdateAll = nil
+  local notice = self.modNotice
+  print("update-mods: " .. tostring(notice and notice.text
+    or (auto.result.skipped and "skipped" or "done")))
+  for _, line in ipairs(notice and notice.failures or {}) do
+    print("update-mods:   " .. tostring(line))
+  end
+  if type(auto.onDone) == "function" then auto.onDone(auto.result) end
+  return true
 end
 
 

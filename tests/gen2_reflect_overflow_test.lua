@@ -10,9 +10,7 @@
 -- 512+ defence pushes the doubled value to 1024 and the truncated byte wraps
 -- to 0; DamageCalc's minimum-defence check turns that into 1 and the hit caps.
 -- Crystal repeats the pass until both stats fit, which is the fix CT-10 names
--- reflectOverflow.  Crystal kept the old arithmetic under LINK_COLOSSEUM; the
--- Gen 2 battle engine here has no link mode, so only the single-player halves
--- are pinned.
+-- reflectOverflow.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
@@ -148,8 +146,6 @@ end
 -- ------------------------------------------------------------- the override
 
 do
-  -- The gate is readable per call, which is where a LINK_COLOSSEUM carve-out
-  -- would hang if the Gen 2 engine ever grows one.
   GameVersion.set("crystal")
   local bugged = Damage.calc({
     level = 50, power = 100, moveType = "NORMAL",
@@ -164,6 +160,15 @@ do
     screen = true, variation = 100, reflectOverflowFixed = true,
   })
   eq(fixed, 10, "Gold forced onto the fixed arm matches Crystal")
+end
+
+-- ../pokecrystal/engine/battle/effect_commands.asm:2646
+do
+  local Battle = require("src.battle.gen2.Battle")
+  eq(Battle.reflectOverflowFixed({ linkBattle = true }), false,
+    "a link battle takes the single pass on every version")
+  eq(Battle.reflectOverflowFixed({}), nil,
+    "outside a link battle the version decides")
 end
 
 -- ------------------------------------------------------- the 999 stat cap

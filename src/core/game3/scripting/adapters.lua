@@ -1323,7 +1323,7 @@ function Adapters.host(mod, game, world)
         -- multichoicedefault left, top, listId, default, ignoreBPress
         -- multichoicegrid left, top, listId, numColumns, ignoreBPress
         listId = tonumber(row.listId or row[3] or row[1]) or 0
-        n = tonumber(row.count or row[4]) or n
+        n = tonumber(row.count) or n
       end
       local opts, layout = Multi.resolve(listId, n)
       layout = layout or {}

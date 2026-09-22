@@ -1,5 +1,6 @@
 -- Automated test suite for Game 3 Poké Mart system (shop_menu.lua, marts.lua, bag.lua).
 
+require("tests.game3_cache").requireData("game3_shop_menu_test")
 local ShopMenu = require("src.ui.game3.shop_menu")
 local Bag = require("src.core.game3.bag")
 local ItemsData = require("src.core.game3.items_data")

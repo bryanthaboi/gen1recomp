@@ -79,6 +79,7 @@ local eo = {
   py = 160,
   facing = "down",
   sight = 4,
+  trainerType = 1,
   elevation = 0,
   visible = true,
   hidden = false,
@@ -206,12 +207,12 @@ scriptFired = false
 FieldEffects.invalidate()
 Objects.clearMovements()
 local trainer1 = {
-  localId = 1, cellX = 10, cellY = 8, px = 160, py = 128, facing = "down", sight = 4,
+  localId = 1, cellX = 10, cellY = 8, px = 160, py = 128, facing = "down", sight = 4, trainerType = 1,
   elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
   scriptKey = "trainer_battle_01",
 }
 local trainer2 = {
-  localId = 2, cellX = 12, cellY = 11, px = 192, py = 176, facing = "left", sight = 4,
+  localId = 2, cellX = 12, cellY = 11, px = 192, py = 176, facing = "left", sight = 4, trainerType = 1,
   elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
   scriptKey = "trainer_battle_02",
 }
@@ -302,6 +303,7 @@ local sightTrainer = {
   py = 160,
   facing = "down",
   sight = 4,
+  trainerType = 1,
   elevation = 0,
   visible = true,
   hidden = false,
@@ -319,6 +321,101 @@ Player.reset(10, 14, "up") -- 4 tiles down
 TrainerSight.check(dummyGame)
 check(playedSeId == 21, "SE_PIN (21) played immediately on spot")
 check(playedSongId == 284 or playedSongId == 285 or playedSongId == 283, "Encounter theme started immediately on spot (song=" .. tostring(playedSongId) .. ")")
+
+print("[test] 9. TRAINER_TYPE_NONE with leftover sight never engages (SSAnne_1F_Room2 Woman)")
+scripts["ssanne_woman_msgbox"] = {
+  { op = "msgbox", text = "cruising" },
+  { op = "end" },
+}
+local function resetField()
+  Field.locked = false
+  FieldEffects.invalidate()
+  Objects.clearMovements()
+  playedSeId = nil
+  playedSongId = nil
+end
+local startedKey = nil
+Space.startScript = function(key) startedKey = key end
+
+resetField()
+local woman = {
+  localId = 3, cellX = 2, cellY = 6, px = 32, py = 96, facing = "up",
+  sight = 1, trainerType = 0,
+  elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
+  scriptKey = "ssanne_woman_msgbox",
+}
+Objects.clear()
+Objects._byId[3] = woman
+Objects._order = { 3 }
+Player.reset(2, 5, "down")
+check(TrainerSight.checkLineOfSight(woman, Player, dummyGame) == true,
+  "Woman's leftover range-1 cone covers the player")
+check(TrainerSight.isTrainerType ~= nil and TrainerSight.isTrainerType(woman) == false,
+  "trainerType 0 is not a trainer")
+check(TrainerSight.check(dummyGame) == false, "Idle sight check does not engage the Woman")
+check(Field.locked == false, "Field stays unlocked")
+check(woman.scriptBusy == false, "Woman not claimed")
+check(playedSeId == nil and playedSongId == nil, "No SE_PIN / encounter music")
+resetField()
+woman.scriptBusy = false
+woman.frozen = false
+woman.moving = false
+woman.facing = "up"
+startedKey = nil
+Player.reset(2, 5, "down")
+check(TrainerSight.check(dummyGame, woman) == false, "Spinning-hook path does not engage the Woman")
+check(Field.locked == false and woman.scriptBusy == false and playedSeId == nil,
+  "Spinning-hook path leaves the field alone")
+resetField()
+woman.scriptBusy = false
+woman.frozen = false
+woman.moving = false
+woman.facing = "up"
+startedKey = nil
+Player.reset(2, 5, "down")
+for _ = 1, 3 do TrainerSight.check(dummyGame) end
+check(Field.locked == false and startedKey == nil, "Repeated idle checks never loop the msgbox")
+
+resetField()
+local seeAll = {
+  localId = 4, cellX = 2, cellY = 6, px = 32, py = 96, facing = "up",
+  sight = 1, trainerType = 2,
+  elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
+  scriptKey = "trainer_battle_02",
+}
+Objects.clear()
+Objects._byId[4] = seeAll
+Objects._order = { 4 }
+Player.reset(2, 5, "down")
+check(TrainerSight.check(dummyGame) == false, "TRAINER_TYPE_SEE_ALL_DIRECTIONS (2) is not scanned")
+
+resetField()
+local buried = {
+  localId = 6, cellX = 2, cellY = 6, px = 32, py = 96, facing = "up",
+  sight = 1, trainerType = 3,
+  elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
+  scriptKey = "trainer_battle_02",
+}
+Objects.clear()
+Objects._byId[6] = buried
+Objects._order = { 6 }
+Player.reset(2, 5, "down")
+check(TrainerSight.check(dummyGame) == true, "TRAINER_TYPE_BURIED (3) still engages")
+check(Field.locked == true and buried.scriptBusy == true, "Buried trainer claims the field")
+
+resetField()
+local normal = {
+  localId = 7, cellX = 2, cellY = 6, px = 32, py = 96, facing = "up",
+  sight = 1, def = { trainerType = 1 },
+  elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
+  scriptKey = "trainer_battle_01",
+}
+Objects.clear()
+Objects._byId[7] = normal
+Objects._order = { 7 }
+Player.reset(2, 5, "down")
+check(TrainerSight.check(dummyGame) == true, "TRAINER_TYPE_NORMAL (1) from def engages")
+resetField()
 
 if failed > 0 then
   print(string.format("\n%d FAILURE(S)", failed))

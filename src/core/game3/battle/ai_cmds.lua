@@ -907,7 +907,8 @@ end
 
 function CMD.get_protect_count(vm, op)
   local b = AiCmds.battler(vm, op.battler)
-  vm.funcResult = (b and b.protectUses) or 0
+  -- pokefirered/src/battle_ai_script_commands.c:1847-1856
+  vm.funcResult = (b and b.expProtectStreak) or 0
   next_ip(vm)
 end
 

@@ -17,7 +17,6 @@ local Runtime = require("src.mods.Runtime")
 local Semver = require("src.mods.Semver")
 local Boxes = require("src.pokemon.Boxes")
 local Stats = require("src.pokemon.Stats")
-local Bag = require("src.inventory.Bag")
 local Badges = require("src.inventory.Badges")
 
 local GameVersion = require("src.core.GameVersion")
@@ -108,6 +107,9 @@ local function makePortableFs(dir)
       -- portable mode writes real files through io.*, which will not
       -- create missing parent directories; mkdir the tree so a slot path
       -- like "saves/red" exists before a write lands inside it
+      if type(name) ~= "string" or name:find("[^%w%._%-%/]") or name:find("%.%.") then
+        return false
+      end
       local osPath = full(name):gsub("/", SEP)
       if SEP == "\\" then
         os.execute('mkdir "' .. osPath .. '" 2>nul')
@@ -359,6 +361,7 @@ function SaveData.defaultOptions()
     -- migrated into PROFILE 1, so deleting every profile does not re-seed one.
     modProfiles = {},
     modProfilesSeeded = false,
+    modOrder = {},
     -- GitHub release checks for mods with a manifest "github" field
     -- (src/mods/ModUpdate.lua). Keyed by owner/repo; TTL is six hours.
     modUpdateCache = {},
@@ -849,6 +852,25 @@ local function forcedGenerations(entry)
   return entry == true and 2 or nil
 end
 
+function SaveData.modOrder(options)
+  local raw = type(options) == "table" and options.modOrder or nil
+  local out, seen = {}, {}
+  if type(raw) ~= "table" then return out end
+  for _, id in ipairs(raw) do
+    if type(id) == "string" and id ~= "" and not seen[id] then
+      seen[id] = true
+      out[#out + 1] = id
+    end
+  end
+  return out
+end
+
+function SaveData.setModOrder(options, ids)
+  if type(options) ~= "table" then return options end
+  options.modOrder = SaveData.modOrder({ modOrder = ids })
+  return options
+end
+
 function SaveData.modForced(options, id, version, generation)
   local entry = type(options) == "table" and type(options.modsGen2) == "table"
     and options.modsGen2[id]
@@ -926,7 +948,12 @@ end
 
 local function slotDir(key) return "saves/" .. key end
 
+local function valid_slot_id(id)
+  return type(id) == "string" and id:match("^slot%d+$") ~= nil
+end
+
 local function slotNames(key, id)
+  if not valid_slot_id(id) then return nil end
   local main = slotDir(key) .. "/" .. id .. ".lua"
   return main, main .. ".bak", main .. ".tmp"
 end
@@ -994,6 +1021,7 @@ end
 -- summarizes.  nil when nothing readable is present.
 local function decodeSlot(fs, key, id)
   local main, bak, tmp = slotNames(key, id)
+  if not main then return nil end
   local data = fs.getInfo(main) and SaveSerializer.decode(fs.read(main) or "")
   if data then return data end
   data = fs.getInfo(tmp) and SaveSerializer.decode(fs.read(tmp) or "")
@@ -1112,7 +1140,10 @@ function saveNames(version, injectedFs)
   local fs = persistFs(injectedFs)
   ensureSlots(key, fs)
   local slot = activeSlotCache[key]
-  if slot then return slotNames(key, slot) end
+  if slot then
+    local main, bak, tmp = slotNames(key, slot)
+    if main then return main, bak, tmp end
+  end
   return legacyNames(key)
 end
 
@@ -1129,7 +1160,7 @@ function SaveData.slotSummary(save)
   -- counts come off wJohtoBadges/wPokedexCaught (engine/menus/intro_menu.asm:461).
   local vinfo = type(save.version) == "string" and GameVersion.info(save.version)
   local gen2 = save.generation == 2 or (vinfo and vinfo.generation == 2) or false
-  local gen3 = save.generation == 3 or (vinfo and vinfo.generation == 3) or (save.engine == "game3") or (save.version == "firered") or false
+  local gen3 = save.generation == 3 or (vinfo and vinfo.generation == 3) or (save.engine == "game3") or false
   local dexCount = 0
   if gen3 then
     local dex = save.dex or save.pokedex or {}
@@ -1215,6 +1246,7 @@ function SaveData.slotDiskPath(version, slotId)
   if not base then return nil end
   local sep = package.config:sub(1, 1)
   local rel = select(1, slotNames(version, slotId))
+  if not rel then return nil end
   return base .. sep .. rel:gsub("/", sep)
 end
 
@@ -1251,6 +1283,7 @@ local function readSlotSourceIn(key, slotId, injectedFs)
   if type(slotId) ~= "string" then return nil end
   local fs = persistFs(injectedFs)
   local main, bak, tmp = slotNames(key, slotId)
+  if not main then return nil end
   for _, name in ipairs({ main, tmp, bak }) do
     if fs.getInfo(name) then
       local body = fs.read(name)
@@ -1384,6 +1417,9 @@ end
 -- options.  Returns true, or false + an error string on a failed write.
 local function writeSlotIn(key, slotId, saveTable)
   if type(slotId) ~= "string" then return false, "missing slot id" end
+  if not (type(slotId) == "string" and slotId:match("^slot%d+$")) then
+    return false, "invalid slot id"
+  end
   if type(saveTable) ~= "table" then return false, "missing save table" end
   local main, bak, tmp = slotNames(key, slotId)
   local encoded = SaveSerializer.encode(saveTable)
@@ -1428,6 +1464,7 @@ local function deleteSlotIn(key, slotId)
   if not found then return false, "slot not registered" end
 
   local main, bak, tmp = slotNames(key, slotId)
+  if not main then return false, "invalid slot id" end
   remove(fs, main)
   remove(fs, bak)
   remove(fs, tmp)
@@ -2333,7 +2370,7 @@ local function reclaim(save, data, report)
     if type(entry) == "table" and known(data.items, entry.id) then
       table.remove(orphaned.items, i)
       if entry.from == "pcItems" or type(save.inventory) ~= "table"
-          or not Bag.add(save, entry.id, entry.count or 1, data) then
+          or not require("src.inventory.Bag").add(save, entry.id, entry.count or 1, data) then
         save.pcItems = save.pcItems or {}
         save.pcItems[entry.id] = (save.pcItems[entry.id] or 0) + (entry.count or 1)
       end

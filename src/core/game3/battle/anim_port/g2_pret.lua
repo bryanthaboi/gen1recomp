@@ -1,6 +1,9 @@
 local AnimSprites = require("src.core.game3.battle.anim_sprites")
 local AnimPal = require("src.core.game3.battle.anim_pal")
 local AnimCoords = require("src.core.game3.battle.anim_coords")
+local Trig = require("src.core.game3.trig")
+
+local _pfxBlendOpts = { coeff = 0, color = 0 }
 
 local P = {}
 
@@ -52,24 +55,7 @@ function P.Q88inv(y)
 end
 
 -- pokefirered/src/trig.c:4
-local SINE = {
-  0, 6, 12, 18, 25, 31, 37, 43, 49, 56, 62, 68, 74, 80, 86, 92,
-  97, 103, 109, 115, 120, 126, 131, 136, 142, 147, 152, 157, 162, 167, 171, 176,
-  181, 185, 189, 193, 197, 201, 205, 209, 212, 216, 219, 222, 225, 228, 231, 234,
-  236, 238, 241, 243, 244, 246, 248, 249, 251, 252, 253, 254, 255, 255, 256, 256,
-  256, 256, 256, 255, 255, 254, 253, 252, 251, 249, 248, 246, 244, 243, 241, 238,
-  236, 234, 231, 228, 225, 222, 219, 216, 212, 209, 205, 201, 197, 193, 189, 185,
-  181, 176, 171, 167, 162, 157, 152, 147, 142, 136, 131, 126, 120, 115, 109, 103,
-  97, 92, 86, 80, 74, 68, 62, 56, 49, 43, 37, 31, 25, 18, 12, 6,
-  0, -6, -12, -18, -25, -31, -37, -43, -49, -56, -62, -68, -74, -80, -86, -92,
-  -97, -103, -109, -115, -120, -126, -131, -136, -142, -147, -152, -157, -162, -167, -171, -176,
-  -181, -185, -189, -193, -197, -201, -205, -209, -212, -216, -219, -222, -225, -228, -231, -234,
-  -236, -238, -241, -243, -244, -246, -248, -249, -251, -252, -253, -254, -255, -255, -256, -256,
-  -256, -256, -256, -255, -255, -254, -253, -252, -251, -249, -248, -246, -244, -243, -241, -238,
-  -236, -234, -231, -228, -225, -222, -219, -216, -212, -209, -205, -201, -197, -193, -189, -185,
-  -181, -176, -171, -167, -162, -157, -152, -147, -142, -136, -131, -126, -120, -115, -109, -103,
-  -97, -92, -86, -80, -74, -68, -62, -56, -49, -43, -37, -31, -25, -18, -12, -6,
-}
+local SINE = Trig.SINE
 
 function P.sine(i)
   return SINE[floor(i) % 256 + 1]
@@ -84,8 +70,7 @@ function P.Cos(i, amp)
 end
 
 function P.ArcTan2(x, y)
-  local a = math.atan2(y, x)
-  return floor(a / (2 * math.pi) * 65536) % 65536
+  return Trig.arcTan2(x, y)
 end
 
 function P.ArcTan2Neg(x, y)
@@ -957,10 +942,10 @@ local function draw_pret(s, vm)
   local pr = s.palRotate or P.palRotateFor(s.tag)
   local tfx = P.tagFxFor(s.tag)
   local pmap = s.palMap
-  local pimg = AnimPal.begin(s, img, {
-    coeff = coeff, color = AnimPal.pack(br or 0, bg or 0, bb or 0),
-    gray = ((tfx and tfx.gray) or s.gray) and true or nil,
-  })
+  _pfxBlendOpts.coeff = coeff
+  _pfxBlendOpts.color = AnimPal.pack(br or 0, bg or 0, bb or 0)
+  _pfxBlendOpts.gray = ((tfx and tfx.gray) or s.gray) and true or nil
+  local pimg = AnimPal.begin(s, img, _pfxBlendOpts)
   if pimg then
     img = pimg
   elseif pmap then

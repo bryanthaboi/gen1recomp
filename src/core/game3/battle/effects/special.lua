@@ -308,7 +308,13 @@ function Special.trick(ctx)
   local ad, user, target = ctx.adapter, ctx.user, ctx.target
   if (target.substituteHP or 0) > 0 then return H.sayFail(ctx) end
   if not H.accuracy(ctx, "normal") then return end
-  if user.side ~= "player" then return H.sayFail(ctx) end
+  -- src/battle_script_commands.c:8799-8810
+  local StType = ad._st
+  if StType and StType.trainerTower then return H.sayFail(ctx) end
+  if user.side ~= "player" and not (StType and (StType.link or StType.battleTower
+      or StType.eReader or StType.secretBase)) then
+    return H.sayFail(ctx)
+  end
   local St = state()
   if user.expKnockedOff or target.expKnockedOff
       or (St and (St.isKnockedOff(ad._st, user) or St.isKnockedOff(ad._st, target))) then

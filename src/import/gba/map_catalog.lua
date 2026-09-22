@@ -2,6 +2,7 @@
 -- Engine ids are FR_* (existing aliases) or FR_<PRET_NAME> derived from pret.
 
 local Versions = require("src.import.gba.versions")
+local Profile = require("src.core.game3.profile")
 
 local MapCatalog = {}
 
@@ -22,7 +23,7 @@ local function pret_to_engine(pret)
   s = s:gsub("(%l)(%u)", "%1_%2")
   s = s:gsub("-", "_"):upper()
   s = s:gsub("_+", "_")
-  return "FR_" .. s
+  return Profile.active().map.enginePrefix .. s
 end
 
 function MapCatalog.pretToEngine(pret)

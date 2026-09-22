@@ -105,8 +105,6 @@ end
 function HealLocations.load(cache, root)
   cache = cache or love_cache()
   root = root or default_root()
-  HealLocations._baked = {}
-  HealLocations._bakedRoot = root
   if not (cache and cache.read) then return 0 end
   local rel = root .. "/" .. HealLocations.BAKED_REL
   local src = cache:read(rel)
@@ -115,6 +113,7 @@ function HealLocations.load(cache, root)
   if not chunk then return 0 end
   local ok, pack = pcall(chunk)
   if not ok then return 0 end
+  HealLocations._bakedRoot = root
   return HealLocations.install(pack)
 end
 

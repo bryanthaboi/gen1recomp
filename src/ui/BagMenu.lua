@@ -245,8 +245,9 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     local function teach()
       -- PIKAHAPPY_USEDTMHM on a successful teach (item_effects.asm:2500)
       local function taught()
-        require("src.world.PikachuFollower")
-          .modifyHappiness(game.save, "USEDTMHM", target)
+        local PikachuFollower = require("src.world.PikachuFollower")
+        PikachuFollower.modifyHappiness(game.save, "USEDTMHM", target)
+        PikachuFollower.onMoveLearned(game.save, target, moveId)
       end
       if #target.moves < 4 then
         table.insert(target.moves, { id = moveId, pp = mdef.pp })
@@ -311,8 +312,9 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     local alarm = battle.lowHealthAlarmActive and battle:lowHealthAlarmActive()
     local opts = nil
     if not alarm then
-      opts = TextBox.soundOpts(game, "Pokeflute",
-        { auto = { wait = false, delay = 0, promptFirst = true } })
+      opts = TextBox.soundOpts(game, function()
+        return require("src.core.Sound").playPokefluteInBattle(game.data)
+      end, { auto = { wait = false, delay = 0, promptFirst = true } })
     end
     showMessages(game, head, function()
       showMessages(game, tail, function() spent({}) end)
@@ -436,6 +438,8 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
             local mdef = game.data.moves[moveId]
             if #target.moves < 4 then
               table.insert(target.moves, { id = moveId, pp = mdef.pp })
+              require("src.world.PikachuFollower")
+                .onMoveLearned(game.save, target, moveId)
               local name = target.nickname or def.name
               showMessages(game, { Strings("%s learned\n%s!", name, mdef.name) },
                            nextStep, TextBox.soundOpts(game, "Get_Item1"))
@@ -472,6 +476,19 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     else
       showUseMessages(game, payload, closePicker, extra)
     end
+    return
+  end
+
+  -- engine/items/item_effects.asm:2004-2006
+  if result == "ppmaxed" then
+    local menu = game.stack:top()
+    if not (menu and picker and menu.owner == picker and menu.held
+            and menu.ask) then
+      menu = nil
+    end
+    showMessages(game, payload, function()
+      if menu then menu:ask() else closePicker() end
+    end)
     return
   end
 
@@ -526,7 +543,7 @@ local function pickTargetAndUse(game, battle, id, list)
       require("src.ui.Screens").push(game, "MoveSelectMenu", mon, prompt,
         function(moveIndex)
           useOn(game, battle, id, mon, list, moveIndex, picker)
-        end)
+        end, nil, picker)
     end,
   }
   -- TM/HM: open the party menu in Gen 1's TM/HM display mode so each mon

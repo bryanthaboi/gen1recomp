@@ -91,9 +91,10 @@ local function rgba_to_image(rgba, w, h)
 end
 
 function TmCaseChrome.ready()
-  if TmCaseChrome._bgMale then return true end
+  if TmCaseChrome._ready ~= nil then return TmCaseChrome._ready end
   local d = read_bytes(tm_root() .. "/bg_male.rgba")
-  return d ~= nil and #d > 0
+  TmCaseChrome._ready = d ~= nil and #d > 0
+  return TmCaseChrome._ready
 end
 
 function TmCaseChrome.loadBg(female)

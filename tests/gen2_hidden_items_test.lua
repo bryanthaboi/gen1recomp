@@ -296,6 +296,7 @@ local function fakeWorld(bgEvents, px, py, facing)
     id = "TEST_MAP",
     def = { bgEvents = bgEvents, objects = {}, width = 10, height = 10 },
     cellCollision = function() return COLL_FLOOR end,
+    inBounds = function() return true end,
     warpAt = function() return nil end,
   }
   world.maps = { TEST_MAP = world.map.def }

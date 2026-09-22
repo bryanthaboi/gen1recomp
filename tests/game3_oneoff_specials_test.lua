@@ -110,9 +110,11 @@ end
 print("=== 4. StickerManGetBragFlags (0x168) ===")
 do
   local session = Schema.newGame({ name = "RED" })
-  session.hofClears = 12
-  session.eggsHatched = 70000 -- Exceeds 0xFFFF to test clamping
-  session.linkBattleWins = 5
+  -- game_stat.h
+  session.gameStats = { [10] = 12, [13] = 70000, [23] = 5 }
+  session.hofClears = 99
+  session.eggsHatched = 1
+  session.linkBattleWins = 1
 
   local rt = { getSession = function() return session end }
   package.loaded["src.core.game3.runtime"] = rt
@@ -137,6 +139,7 @@ do
   session.hofClears = 0
   session.eggsHatched = 0
   session.linkBattleWins = 0
+  session.gameStats = { [10] = 0, [13] = 0, [23] = 0 }
   Natives.special(ctx, Std.SPECIAL.StickerManGetBragFlags)
   checkEq(Flags.getVar(session, ctx, 0x8008), 0, "VAR_0x8008 is 0 when all stats are 0")
 end
@@ -208,6 +211,78 @@ do
   checkEq(rt.player.surfing, false, "rt.player.surfing is false")
   checkEq(rt.player.state, "walk", "rt.player.state is 'walk'")
   checkEq(rt.player.facing, "up", "rt.player.facing is 'up' (North)")
+end
+
+print("=== 7. Sign walk-away: DisableMsgBoxWalkaway (0x171) + pollWalkaway ===")
+do
+  local session = Schema.newGame({ name = "RED" })
+  package.loaded["src.core.game3.runtime"] = { getSession = function() return session end }
+  local ctx = {
+    session = session,
+    flags = session.flags,
+    vars = session.vars,
+    stringVars = session.stringVars,
+    specialVars = session.specialVars,
+  }
+  local Events = require("src.core.game3.scripting.natives_events")
+
+  local closed, halted = 0, false
+  local vm = {
+    ctx = ctx,
+    adapters = { closeMessage = function() closed = closed + 1 end },
+    isRunning = function() return true end,
+    halt = function(_, aborted) halted = aborted == true end,
+  }
+  local inputDown = {
+    wasPressed = function(_, k) return k == "down" end,
+    isDown = function(_, k) return k == "down" end,
+  }
+  local inputUp = {
+    wasPressed = function(_, k) return k == "up" end,
+    isDown = function(_, k) return k == "up" end,
+  }
+
+  Natives.special(ctx, Std.SPECIAL.SetWalkingIntoSignVars)
+  ctx.messageOpen = true
+  ctx.specialVars[0x800C] = 2
+
+  for _ = 1, 6 do Events.pollWalkaway(vm, inputDown) end
+  checkEq(ctx.walkAwayFromSignInhibitTimer, 0, "inhibit timer counts down to 0")
+  checkEq(halted, false, "no cancel while the inhibit window runs")
+  checkEq(closed, 0, "message stays open during the inhibit window")
+
+  Events.pollWalkaway(vm, inputDown)
+  checkEq(closed, 1, "walkaway closes the sign message")
+  check(halted == true, "walkaway aborts the script (release + end)")
+  checkEq(ctx.walkAwayFromSignInhibitTimer, nil, "walkaway state cleared on cancel")
+
+  vm.isRunning = function() return false end
+  Natives.special(ctx, Std.SPECIAL.SetWalkingIntoSignVars)
+  Events.pollWalkaway(vm, inputUp)
+  checkEq(ctx.walkAwayFromSignInhibitTimer, nil, "state cleared once the script stops")
+  checkEq(session.msgBoxIsCancelable, nil, "...on ctx and session both")
+
+  -- script.c:245
+  vm.isRunning = function() return true end
+  halted, closed = false, 0
+  Natives.special(ctx, Std.SPECIAL.SetWalkingIntoSignVars)
+  Natives.special(ctx, Std.SPECIAL.DisableMsgBoxWalkaway)
+  ctx.messageOpen = true
+  for _ = 1, 6 do Events.pollWalkaway(vm, inputDown) end
+  Events.pollWalkaway(vm, inputDown)
+  checkEq(ctx.msgBoxIsCancelable, false, "disable sets ctx.msgBoxIsCancelable=false")
+  checkEq(ctx.canWalkAway, false, "disable sets ctx.canWalkAway=false")
+  checkEq(session.msgBoxIsCancelable, false, "disable sets session.msgBoxIsCancelable=false")
+  checkEq(session.canWalkAway, false, "disable sets session.canWalkAway=false")
+  checkEq(halted, false, "disabled walkaway never cancels")
+  checkEq(closed, 0, "message stays open when walkaway is disabled")
+
+  halted, closed = false, 0
+  Natives.special(ctx, Std.SPECIAL.SetWalkingIntoSignVars)
+  ctx.messageOpen = true
+  for _ = 1, 6 do Events.pollWalkaway(vm, inputUp) end
+  Events.pollWalkaway(vm, inputUp)
+  checkEq(halted, false, "pushing the way the player faces does not cancel")
 end
 
 print(string.format("\nTotal: %d passed, %d failed", passed, failed))

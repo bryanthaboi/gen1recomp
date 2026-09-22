@@ -1,4 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_marowak_progression_test")
 require("src.core.GameVersion").set("firered")
 local Ctx = require("src.core.game3.scripting.ctx")
 local Flags = require("src.core.game3.scripting.flags")

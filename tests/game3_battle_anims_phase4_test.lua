@@ -2,6 +2,7 @@
 -- Unit and integration tests for Phase 4: Dynamic Backgrounds, Clones, Distortions, Spotlights, Substitute & Evaluators
 
 package.path = package.path .. ";./?.lua"
+require("tests.game3_cache").requireData("game3_battle_anims_phase4_test", "pokemon/battle_anims/pack.lua")
 
 local AnimTasks = require("src.core.game3.battle.anim_tasks")
 local AnimSprites = require("src.core.game3.battle.anim_sprites")

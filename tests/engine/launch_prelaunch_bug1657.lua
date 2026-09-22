@@ -290,9 +290,12 @@ do
   optionsFile:close()
   check(optionsSrc:find("tasks.update = false", 1, true) ~= nil,
     "legacy Android intents never run the update check")
-  local bootAt = src:find("if not Prelaunch then bootShortcut()", 1, true)
+  local bootAt = src:find("if not Prelaunch then bootAfterMods()", 1, true)
   check(bootAt ~= nil,
     "and boots on the same frame when there is no stage to run")
+  check(src:find("if not wantsModUpdate(request) then return bootShortcut() end",
+    1, true) ~= nil,
+    "straight into the game unless the mods pass was asked for")
 end
 
 T.finish("shortcut pre-boot stage (#1657)")

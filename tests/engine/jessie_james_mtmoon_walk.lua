@@ -129,11 +129,169 @@ check(faceJessie ~= nil and rows[faceJessie][3] == "down",
 check(faceJames ~= nil and rows[faceJames][3] == "left",
       "Script11 leaves James facing LEFT at the player")
 
-local facePlayer = indexOf(rows, isRow("face_player_dir"))
-check(facePlayer ~= nil and rows[facePlayer][2] == "up",
-      "the player turns up to the duo, not right")
-local emote = indexOf(rows, isRow("emote", "player"))
-check(emote ~= nil, "the player gets the exclamation bubble TEXT12 shows")
+-- scripts/MtMoonB2F.asm:446
+local function rowsWithPlayer(site, x, y, flags, player)
+  local captured = nil
+  local ow = { player = player,
+               runner = { run = function(_, r) captured = r end } }
+  sites[site].onStep({ save = { flags = flags or {} } }, ow, x, y)
+  return captured, ow
+end
+
+local SITES = {
+  { site = "MT_MOON_B2F", x = 3, y = 5, flags = armed,
+    motto = "_MtMoonJessieJamesText1", parting = "_MtMoonJessieJamesText4",
+    challenge = "_MtMoonJessieJamesText2", face = "up", duo = { 2, 6 } },
+  { site = "ROCKET_HIDEOUT_B4F", x = 24, y = 14, flags = {},
+    motto = "_RocketHideoutJessieJamesText1",
+    parting = "_RocketHideoutJessieJamesText4",
+    challenge = "_RocketHideoutJessieJamesText2", face = "up", duo = { 2, 3 } },
+  { site = "POKEMON_TOWER_7F", x = 10, y = 12, flags = {},
+    motto = "_PokemonTowerJessieJamesText1",
+    parting = "_PokemonTowerJessieJamesText4",
+    challenge = "_PokemonTowerJessieJamesText2", face = "up", duo = { 1, 2 } },
+  { site = "SILPH_CO_11F", x = 3, y = 3,
+    flags = { EVENT_BEAT_SILPH_CO_GIOVANNI = true },
+    motto = "_SilphCoJessieJamesText1", parting = "_SilphCoJessieJamesText4",
+    challenge = "_SilphCoJessieJamesText2", face = "down", duo = { 4, 6 } },
+}
+
+for _, s in ipairs(SITES) do
+  local player = { facing = "right" }
+  local sr, sow = rowsWithPlayer(s.site, s.x, s.y, s.flags, player)
+  sr = sr or {}
+  local m = indexOf(sr, isRow("show_text", s.motto))
+  check(m ~= nil, s.site .. " plays the motto")
+  m = m or 1
+  local armedRow = sr[m - 1]
+  local auto = armedRow and armedRow[1] == "text_opts"
+               and type(armedRow[2]) == "table" and armedRow[2].auto
+  check(type(auto) == "table", s.site .. " motto box is armed no-wait")
+  auto = type(auto) == "table" and auto or {}
+  eq(auto.delay, 91, s.site .. " motto box closes 10+60+1+20 frames after typing")
+  check(not auto.wait, s.site .. " motto box never waits for A/B")
+  check(type(auto.tick) == "function", s.site .. " motto box drives the bubble")
+
+  local firstWalk = indexOf(sr, isRow("walk_npc")) or #sr
+  check(indexOf(sr, isRow("face_player_dir")) == nil
+        or indexOf(sr, isRow("face_player_dir")) > firstWalk,
+        s.site .. " has no separate turn row after the box closes")
+  check(indexOf(sr, isRow("emote")) == nil,
+        s.site .. " has no separate bubble row after the box closes")
+
+  if type(auto.tick) == "function" then
+    local early, during, late = true, true, true
+    for t = 1, 91 do
+      auto.tick()
+      if t <= 10 and sow.emote ~= nil then early = false end
+      if t >= 11 and t <= 70 then
+        if not (sow.emote and sow.emote.npc == player)
+           or player.facing ~= "right" then during = false end
+      end
+      if t >= 71 and (sow.emote ~= nil or player.facing ~= s.face) then
+        late = false
+      end
+    end
+    check(early, s.site .. " DelayFrames 10 before the bubble")
+    check(during, s.site .. " bubble over the player for 60 frames, old facing kept")
+    check(late, s.site .. " bubble gone, player turned " .. s.face .. " with the box still up")
+  end
+
+  local ch = indexOf(sr, isRow("show_text", s.challenge)) or #sr
+  local fastOk, faceOk, walks, faces = true, true, 0, 0
+  for i = 1, ch do
+    local r = sr[i]
+    if r[1] == "walk_npc" and r[2] ~= "player" then
+      walks = walks + 1
+      if not (type(r[4]) == "table" and r[4].stepFrames == 16) then
+        fastOk = false
+      end
+    elseif r[1] == "walk_npc" and r[2] == "player" then
+      if type(r[4]) == "table" and r[4].stepFrames then fastOk = false end
+    elseif r[1] == "face_object" and i > firstWalk then
+      faces = faces + 1
+      if not (type(r[4]) == "table" and (r[4].hold or 0) >= 256) then
+        faceOk = false
+      end
+    end
+  end
+  eq(walks, 2, s.site .. " walks both of the duo")
+  check(fastOk, s.site .. " duo walks at the player's 16-frame step")
+  eq(faces, 2, s.site .. " faces both of the duo after their walks")
+  check(faceOk, s.site .. " post-walk facings hold past the STAY turn timer")
+
+  local p = indexOf(sr, isRow("show_text", s.parting))
+  check(p ~= nil, s.site .. " plays the parting line")
+  p = p or 1
+  local pArm = sr[p - 1]
+  local pAuto = pArm and pArm[1] == "text_opts" and type(pArm[2]) == "table"
+                and pArm[2].auto
+  check(type(pAuto) == "table" and pAuto.delay == 64 and not pAuto.wait,
+        s.site .. " parting box closes itself after DelayFrames 64")
+  local downs = 0
+  for i = math.max(1, p - 4), p - 1 do
+    local r = sr[i]
+    if r and r[1] == "face_object" and r[3] == "down"
+       and (r[2] == s.duo[1] or r[2] == s.duo[2]) then
+      downs = downs + 1
+    end
+  end
+  eq(downs, 2, s.site .. " both of the duo face down before the parting line")
+end
+
+do
+  local Commands = require("src.script.Commands")
+  local NPC = require("src.world.NPC")
+  local npc = setmetatable({ facing = "left", pinnedFacing = "left",
+                             wanders = true, timer = 5, moving = false,
+                             cellX = 9, cellY = 3, px = 144, py = 48 }, NPC)
+  local player = { stepFrames = 16, cellX = 3, cellY = 5 }
+  local frames, stepDuring, playerDuring = 0, {}, {}
+  local ow = { player = player }
+  function ow.npcByIndex(_, i) if i == 2 then return npc end end
+  function ow.scriptMove(_, e, dir, _, onDone)
+    if e == player then
+      playerDuring[#playerDuring + 1] = e.stepFrames
+      onDone()
+      return
+    end
+    stepDuring[#stepDuring + 1] = e.stepFrames
+    e.facing = dir
+    e.targetX, e.targetY = e.cellX - 1, e.cellY
+    e.moving, e.progress = true, 0
+    while e.moving do
+      e:update(nil, {})
+      frames = frames + 1
+    end
+    onDone()
+  end
+  local ctx = { overworld = ow, runner = {} }
+  Commands.walk_npc(ctx, 2, { "left", "left", "left", "left", "left", "left" },
+                    { stepFrames = 16 })
+  eq(frames, 96, "six fast steps take 96 frames, not 192")
+  eq(stepDuring[1], 16, "walk_npc stepFrames applies during the walk")
+  eq(npc.stepFrames, nil, "walk_npc restores the NPC step length after")
+  Commands.walk_npc(ctx, "player", { "up" }, { stepFrames = 8 })
+  eq(playerDuring[1], 16, "walk_npc stepFrames never touches the player")
+
+  frames = 0
+  Commands.walk_npc(ctx, 2, { "left" })
+  eq(frames, 32, "walk_npc with no opts keeps the 32-frame NPC step")
+
+  npc.timer = 5
+  Commands.face_object(ctx, 2, "down", { hold = 510 })
+  eq(npc.timer, 510, "face_object hold arms the turn timer")
+  local held = true
+  for _ = 1, 200 do
+    npc:update(nil, {})
+    if npc.facing ~= "down" then held = false end
+  end
+  check(held, "a held facing survives 200 frames of the STAY pinned-facing timer")
+
+  npc.timer = 5
+  Commands.face_object(ctx, 2, "down")
+  eq(npc.timer, 5, "face_object without hold leaves the timer alone")
+end
 
 if challenge and jamesWalk and faceJames then
   check(faceJames < challenge and challenge < (battle or math.huge),

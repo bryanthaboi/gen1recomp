@@ -492,10 +492,12 @@ function Commands.face(ctx, dir)
 end
 
 -- face an arbitrary map object (by object_event index)
-function Commands.face_object(ctx, objIndex, dir)
+function Commands.face_object(ctx, objIndex, dir, opts)
   local npc = stampSpriteIndex(ctx,
     ctx.overworld and ctx.overworld:npcByIndex(objIndex))
   if npc then npc.facing = dir end
+  -- pokeyellow engine/overworld/movement.asm:349
+  if npc and opts and opts.hold then npc.timer = opts.hold end
 end
 
 -- Instantly relocate an NPC (OaksLabCalcRivalMovementScript / SetSpritePosition1).
@@ -1201,12 +1203,17 @@ function Commands.walk_npc(ctx, objIndex, dirs, opts)
   claimMove(ctx, entity)
   local runner = ctx.runner
   local wait = not (opts and opts.wait == false)
+  -- pokeyellow engine/overworld/movement.asm:932
+  local fast = opts and opts.stepFrames and entity ~= ow.player
+  local prevStep = entity.stepFrames
+  if fast then entity.stepFrames = opts.stepFrames end
   local yielded, finished = false, false
   local i = 0
   local function step()
     i = i + 1
     if not dirs[i] then
       finished = true
+      if fast then entity.stepFrames = prevStep end
       if wait and yielded then runner:resume() end
       return
     end

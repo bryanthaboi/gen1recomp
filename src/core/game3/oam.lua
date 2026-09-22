@@ -479,9 +479,7 @@ local function sort_sprites(a, b)
   -- pret SortSprites: lower priority key first (drawn behind), then lower y.
   local pa, pb = sprite_priority_key(a), sprite_priority_key(b)
   if pa ~= pb then return pa < pb end
-  local _, ya = Oam.oamTopLeft(a)
-  local _, yb = Oam.oamTopLeft(b)
-  return ya < yb
+  return (a._oamSortY or 0) < (b._oamSortY or 0)
 end
 
 --- Collect visible sprites into draw buffer (BuildOamBuffer).
@@ -489,14 +487,33 @@ local function sort_sprites_pret(a, b)
   -- pokefirered/src/sprite.c:368
   local pa, pb = sprite_priority_key(a), sprite_priority_key(b)
   if pa ~= pb then return pa > pb end
-  local _, ya = Oam.oamTopLeft(a)
-  local _, yb = Oam.oamTopLeft(b)
+  local ya, yb = a._oamSortY or 0, b._oamSortY or 0
   if ya ~= yb then return ya < yb end
   return (a._id or 0) > (b._id or 0)
 end
 
 function Oam.buildOamBuffer(pretOrder)
   ensure_pool()
+  local n = 0
+  for i = 0, Oam.MAX_SPRITES - 1 do
+    local s = Oam._sprites[i]
+    if s.inUse and not s.invisible and s.image then
+      local _, y = Oam.oamTopLeft(s)
+      s._oamSortY = y
+      n = n + 1
+    end
+  end
+  local cmp = pretOrder and sort_sprites_pret or sort_sprites
+  local cached = Oam._buffer
+  if cached and #cached == n then
+    local ok = true
+    for i = 1, n do
+      local s = cached[i]
+      if not (s.inUse and not s.invisible and s.image) then ok = false break end
+      if i < n and cmp(cached[i + 1], s) then ok = false break end
+    end
+    if ok then return cached end
+  end
   local buf = {}
   for i = 0, Oam.MAX_SPRITES - 1 do
     local s = Oam._sprites[i]
@@ -504,7 +521,7 @@ function Oam.buildOamBuffer(pretOrder)
       buf[#buf + 1] = s
     end
   end
-  table.sort(buf, pretOrder and sort_sprites_pret or sort_sprites)
+  table.sort(buf, cmp)
   Oam._buffer = buf
   return buf
 end

@@ -221,7 +221,7 @@ for _, row in ipairs(body or {}) do
   if row.op == "compare_var_to_value" and row.value == B_OUTCOME.CAUGHT then
     sawCompare = true
   end
-  -- pokefirered/src/script.c:246 goto_if cond 5 = NE
+  -- pokefirered/src/scrcmd.c:153, scrcmd.c:65
   if row.op == "goto_if" and row.cond == 5 then sawGotoIfNe = true end
   if row.op == "removeobject" and row.localId == VAR_LAST_TALKED then sawRemove = true end
 end

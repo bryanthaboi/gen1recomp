@@ -1235,6 +1235,7 @@ function Battle:hitOnce(attacker, defender, def, opts)
       Damage.isPhysical(def.type, types)),
     -- BattleCommand_DamageCalc's `srl c` (effect_commands.asm:2905-2913).
     defenseHalved = def.effect == "EFFECT_SELFDESTRUCT",
+    reflectOverflowFixed = self:reflectOverflowFixed(),
     random = self.random,
   }
   -- battle.damage, the same hook BattleState:computeDamage calls on Gen 1 and
@@ -1445,6 +1446,12 @@ end
 -- BattleCommand_MoveAnimNoSub, engine/battle/effect_commands.asm:1958.
 function Battle:markMissed()
   if self.moveEvent then self.moveEvent.missed = true end
+end
+
+-- engine/battle/effect_commands.asm:2646
+function Battle:reflectOverflowFixed()
+  if self.linkBattle then return false end
+  return nil
 end
 
 -- engine/battle/effect_commands.asm:3615
@@ -2510,6 +2517,7 @@ Battle.MOVE_EFFECTS.EFFECT_FUTURE_SIGHT = function(self, attacker, defender, def
     },
     types = self.data.type_chart and self.data.type_chart.types,
     matchups = self:matchupsAgainst(defender),
+    reflectOverflowFixed = self:reflectOverflowFixed(),
     random = self.random,
   })
   state.futureSight = Effects.FUTURE_SIGHT_TURNS
@@ -2580,6 +2588,7 @@ Battle.MOVE_EFFECTS.EFFECT_BEAT_UP = function(self, attacker, defender, def)
       },
       types = self.data.type_chart and self.data.type_chart.types,
       matchups = self.data.type_chart and self.data.type_chart.matchups,
+      reflectOverflowFixed = self:reflectOverflowFixed(),
       random = self.random,
     })
     self:emit({ kind = "message",

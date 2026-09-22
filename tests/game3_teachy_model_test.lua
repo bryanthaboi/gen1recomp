@@ -2,6 +2,7 @@
 -- pokefirered/src/teachy_tv.c:420 InitTeachyTvController
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").requireData("game3_teachy_model_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -109,7 +110,7 @@ do
   check(#tmDesc >= 5, "gPokedudeText_ReadTMDescription pages=" .. #tmDesc)
 end
 
-print("[test] 5. pokefirered/src/teachy_tv.c:553 the TM CASE gate")
+print("[test] 5. pokefirered/src/teachy_tv.c:554 the TM CASE gate")
 do
   local s = newSession()
   check(not TeachyTv.hasTmCase(s), "no TM CASE on a fresh bag")

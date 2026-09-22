@@ -136,7 +136,7 @@ do
     eq(#bytes, 64 * 64 * 4, "it is a 64x64 RGBA sprite")
   end
 
-  -- pokefirered/src/fame_checker.c:1344 sDaisySpriteTemplate
+  -- pokefirered/src/fame_checker.c:1347
   for _, p in ipairs({ PERSON.OAK, PERSON.DAISY, PERSON.BILL, PERSON.MRFUJI }) do
     local src2, path2 = Ui.portraitSource(p)
     eq(src2, "art", "person " .. p .. " uses the Fame Checker's own art")

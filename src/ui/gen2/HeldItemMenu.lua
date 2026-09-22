@@ -218,6 +218,8 @@ end
 function HeldItemMenu:giveItem(itemId)
   local mon = self:mon()
   if not (mon and itemId) then return self:close() end
+  local inv = self.save and self.save.inventory
+  if not (inv and (inv[itemId] or 0) > 0) then return self:close() end
   if not self:canHold(itemId) then
     return self:say(self.TEXT.cantHold, function() self:openPack() end)
   end

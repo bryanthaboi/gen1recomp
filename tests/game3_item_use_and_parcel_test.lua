@@ -1,5 +1,6 @@
 -- Test suite for ItemUse and Oak's Lab parcel delivery scene.
 
+require("tests.game3_cache").requireData("game3_item_use_and_parcel_test")
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")
 local ItemUse = require("src.core.game3.item_use")

@@ -284,6 +284,8 @@ function Map.load(mod, game, mapId, opts)
   Map._announced = mapId
   Map.current = mapId
   Map._loadedLayouts = { [mapId] = true }
+  -- overworld.c:792, overworld.c:759
+  Map._worldRoot = nil
 
   local def = host_map_def(game, mapId)
   if not def then

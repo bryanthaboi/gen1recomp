@@ -58,6 +58,7 @@ end
 --- Flat 1-based COLL_* array for Collision.bindMap.
 function LayoutNative:collArray()
   local n = self.width * self.height
+  if n <= 0 then return nil end
   local out = {}
   for i = 1, n do
     local cx = (i - 1) % self.width

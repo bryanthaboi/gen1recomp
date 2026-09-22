@@ -48,6 +48,10 @@ Rng.Random()
 Rng.Random()
 Rng.setState(st)
 eq(Rng.getState().value, st.value, "setState restores value")
+eq(Rng.setState({ value = 123 }), false, "setState rejects a partial state")
+eq(Rng.getState().value, st.value, "and leaves the value untouched")
+eq(Rng.restoreFromSession({ rng = { value = 1 } }), false,
+  "restoreFromSession rejects a partial rng (Game3 reseeds instead)")
 
 print("[test] 4. seedNewGame wires wild from Random()")
 Rng.SeedRng(0x55AA)
