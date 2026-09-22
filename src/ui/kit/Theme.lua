@@ -1,63 +1,35 @@
--- High-contrast theme for the launcher (src/import/LauncherView.lua).  The
--- save editor keeps its own tools/save-editor/Theme.lua, whose primitives
--- take a radius where these take a colour -- do not cross-wire them.  This
--- replaces the old navy gradient look wholesale: a near-black field with the
--- faintest red cast, cards a few values above it, white hairline outlines,
--- flat fills, no gradients and no glows anywhere.
---
--- That is not only a visual choice.  Every effect this theme drops was a GPU
--- pipeline flush in the old renderer:
---   * gradients needed a stencil pass + a dynamic mesh per card
---     (G.stencil / setStencilTest / draw(mesh) = 3 state changes per card),
---   * glows set blend mode "add", drew 7 stacked rects, then set it back.
--- Flat fills with a 1px outline all share one pipeline state, so LOVE batches
--- an entire panel into a couple of draw calls.  What this theme DOES pay for
--- is extra vertices at the same pipeline state: rounded corners, the
--- two-rect emboss on a control, and the three stacked rounded rects that make
--- a card's drop shadow (Theme.shadow).  Vertices are the tier of expense this
--- theme is willing to pay; the tier above it -- stencils, meshes, blend-mode
--- changes, canvases, shaders -- is the one it will not, and a shadow drawn as
--- a blurred canvas would land squarely in it.
---
--- Emphasis is carried by INVERSION, not by colour weight: a selected or
--- focused control fills white and prints black.  That keeps contrast at
--- maximum for accessibility and costs exactly one extra rect.
---
--- Every colour below is 0-255 RGB; alpha is passed per draw call to col().
--- Everything degrades under the headless love_stub used by tests/ (no fonts,
--- no line, no mesh): each primitive probes for what it needs.
+-- Cartridge Studio: flat graphite surfaces, quiet borders and bright actions.
+-- The version rail is the only animated color treatment. Other depth comes
+-- from solid value steps; no canvases, blur passes or per-card meshes.
+-- Colors are 0-255 RGB. These primitives also work with the headless stub.
 
 local Theme = {}
 
 local PAL = {
-  -- field + surfaces.  The field carries a FAINT red cast (a few points of
-  -- red over an otherwise neutral near-black) and cards sit a few steps above
-  -- it in the same hue, so a card reads as a raised object rather than as an
-  -- outline drawn on the page.  These are still flat fills -- the depth comes
-  -- from the value step plus Theme.shadow, not from a gradient.
-  field       = { 20, 20, 20 },     -- the page BEHIND the cards
-  bg          = { 20, 20, 20 },       -- light black
-  surface     = { 28, 21, 24 },    -- card interiors
-  rowBg       = { 20, 14, 17 },    -- rows inside a card, one step below it
-  raised      = { 44, 34, 38 },    -- hover feedback
-  ink         = { 255, 255, 255 }, -- the selected/focused fill
+  -- Solid graphite surfaces; raised controls use a lighter value.
+  field       = { 20, 24, 29 },     -- the page BEHIND the cards
+  bg          = { 20, 24, 29 },       -- light black
+  surface     = { 29, 34, 41 },    -- card interiors
+  rowBg       = { 24, 29, 35 },    -- rows inside a card, one step below it
+  raised      = { 42, 49, 59 },    -- hover feedback
+  ink         = { 240, 244, 249 }, -- the selected/focused fill
   -- outlines.  Two weights only: a hairline for structure, solid for focus.
-  line        = { 255, 255, 255 }, -- hairline, drawn at alpha 0.35
+  line        = { 139, 157, 180 }, -- hairline, drawn at alpha 0.35
   lineStrong  = { 255, 255, 255 }, -- focus / selection, drawn at alpha 1
   -- text
-  heading     = { 255, 255, 255 },
-  text        = { 255, 255, 255 },
+  heading     = { 245, 247, 250 },
+  text        = { 234, 239, 245 },
   detail      = { 200, 200, 200 },
-  muted       = { 150, 150, 150 },
+  muted       = { 161, 172, 187 },
   caption     = { 170, 170, 170 }, -- letterspaced section captions
   faint       = { 110, 110, 110 }, -- slot indices, hints
   inverse     = { 0, 0, 0 },       -- ink on a white (selected/focused) fill
-  -- semantics.  Used for TEXT and OUTLINES only, never as a large fill, so
-  -- the black/white contrast story is never diluted.
-  green       = { 0, 255, 140 },   -- safe / confirmed / installed
+  -- Action colors and status accents.
+  green       = { 85, 232, 135 },   -- safe / confirmed / installed
   yellow      = { 255, 214, 0 },   -- attention / update available
   red         = { 255, 80, 90 },   -- destructive
-  blue        = { 90, 190, 255 },  -- links, in-panel navigation
+  blue        = { 76, 163, 240 },  -- links, in-panel navigation
+  buttonBlue  = { 36, 106, 181 }, -- darker fill for white action labels
   steel       = { 120, 120, 120 }, -- disabled
   -- the version rail is the one piece of brand colour that stays
   railRed     = { 255, 60, 72 },
@@ -66,6 +38,7 @@ local PAL = {
   railAmber   = { 218, 145, 32 },  -- Gold cartridge (deeper metal)
   railSilver  = { 190, 198, 210 }, -- Silver cartridge (cool light metal)
   railCrystal = { 132, 196, 228 }, -- Crystal cartridge (translucent ice blue)
+  railLeafGreen = { 128, 188, 40 },
   railFireRed = { 220, 48, 48 },   -- FireRed cartridge (deeper red than Red)
 }
 -- Semantic aliases kept so ported call sites read the same as before.
@@ -94,8 +67,8 @@ Theme.BUTTON = {
   iconPad = 0.24,
   letterGap = 4,
   disabledA = 0.45,
-  embossHot = 1.3,
-  embossRest = 1,
+  embossHot = 0.35,
+  embossRest = 0.25,
   embossDisabled = 0.4,
   glowHz = 3,
   glowBase = 0.25,
@@ -104,8 +77,8 @@ Theme.BUTTON = {
 }
 
 Theme.CARD = {
-  radius = 14,
-  shadow = true,
+  radius = 9,
+  shadow = false,
   fill = PAL.surface,
   fillA = 1,
   stroke = PAL.line,
@@ -323,18 +296,29 @@ function Theme.meter(x, y, w, h, pct, c)
   end
 end
 
--- The 4px version rail across the top of both windows: the only brand
--- colour on screen (Red / Blue / Yellow / Gold / Silver / Crystal / FireRed
--- cartridge colours).
+local railColors = {
+  PAL.railRed, PAL.railBlue, PAL.railGold, PAL.railAmber, PAL.railSilver,
+  PAL.railCrystal, PAL.railFireRed, PAL.railLeafGreen,
+}
+
+-- One seamless sweep every 24 seconds. Pixel strips keep this in the same
+-- batched rectangle pipeline as the rest of the theme, without a shader.
 function Theme.versionRail(x, y, w, h)
   if not G then return end
-  local bars = {
-    PAL.railRed, PAL.railBlue, PAL.railGold, PAL.railAmber, PAL.railSilver,
-    PAL.railCrystal, PAL.railFireRed,
-  }
-  local seg = w / #bars
-  for i, c in ipairs(bars) do
-    Theme.fill(x + (i - 1) * seg, y, seg, h, c, 1)
+  x, y, w, h = snap(x), snap(y), snap(w), snap(h)
+  if w <= 0 or h <= 0 then return end
+  local now = love.timer and love.timer.getTime and love.timer.getTime() or 0
+  local phase = (now % 24) / 24
+  for px = 0, w - 1 do
+    local pos = ((px / w - phase) % 1) * #railColors
+    local index = math.floor(pos)
+    local a = railColors[index + 1]
+    local b = railColors[(index + 1) % #railColors + 1]
+    local t = pos - index
+    G.setColor((a[1] + (b[1] - a[1]) * t) / 255,
+      (a[2] + (b[2] - a[2]) * t) / 255,
+      (a[3] + (b[3] - a[3]) * t) / 255, 1)
+    G.rectangle("fill", x + px, y, 1, h)
   end
 end
 

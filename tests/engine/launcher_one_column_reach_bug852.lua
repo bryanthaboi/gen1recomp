@@ -113,10 +113,9 @@ imp = freshLauncher()
 LauncherView.draw(imp)
 eq(imp._pageScroll, 0, "a fresh page starts at the top")
 
--- The reporter's portrait phone (360x780 units) is shorter and narrower, so
--- it is the one that still engages the scroll; before the fix its slot list
--- was unreachable at any offset.
-window(360, 780)
+-- A short portrait phone still engages page scroll after removing the gaps
+-- beside the header/footer dividers; 360x780 now fits without page overflow.
+window(360, 740)
 local pm = Layout.metrics(1200)
 local phone = freshLauncher()
 LauncherView.draw(phone)
@@ -136,7 +135,7 @@ phone._pageScroll = 1e6
 LauncherView.draw(phone)
 eq(phone._pageScroll, phone._pageScrollMax,
   "an offset past the end clamps to the extent, so the bottom is reachable")
-check(reachable(phone, 780),
+check(reachable(phone, 740),
   "the scrolled portrait phone reaches the bottom of the slot card")
 
 -- A one-column window tall enough for the whole stack stays inert: the

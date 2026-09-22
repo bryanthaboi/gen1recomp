@@ -82,7 +82,7 @@ contains(tostring(picsErr), "front/0", "the error lists the missing front sprite
 
 print("[test] 2. RomExtractorGen3 stage gating")
 local Json = require("src.link.Json")
-local SHA1 = "0000000000000000000000000000000000000000"
+local SHA1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc"
 
 local function loadExtractorWithStubs(pokeRun, sectionsRun)
   for name in pairs(package.loaded) do

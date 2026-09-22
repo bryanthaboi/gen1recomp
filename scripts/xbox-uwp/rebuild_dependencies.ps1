@@ -257,7 +257,28 @@ Ensure-GitSource `
     -Name "LÖVE" `
     -Repository $metadata.sources.love.repository `
     -Revision $metadata.sources.love.commit `
-    -Path $loveSource
+    -Path $loveSource `
+    -AllowTrackedChanges
+
+$lovePatch = Join-Path $thirdPartyRoot $metadata.sources.love.patch
+Push-Location $loveSource
+try {
+    & git apply --unidiff-zero --reverse --check $lovePatch 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Invoke-Tool git apply --unidiff-zero --reverse $lovePatch
+        try {
+            Assert-GitSourceClean -Name "LÖVE" -Path $loveSource
+        } finally {
+            Invoke-Tool git apply --unidiff-zero $lovePatch
+        }
+    } else {
+        Assert-GitSourceClean -Name "LÖVE" -Path $loveSource
+        Invoke-Tool git apply --unidiff-zero --check $lovePatch
+        Invoke-Tool git apply --unidiff-zero $lovePatch
+    }
+} finally {
+    Pop-Location
+}
 
 Ensure-GitSource `
     -Name "LuaJIT" `

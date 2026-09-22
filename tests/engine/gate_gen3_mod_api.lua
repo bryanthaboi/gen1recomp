@@ -7,7 +7,8 @@ local ModTargets = require("src.mods.ModTargets")
 local Schemas = require("src.mods.Schemas")
 
 T.eq(GameVersion.generation("firered"), 3, "FireRed is Gen 3")
-T.eq(table.concat(ModTargets.expand("gen3"), ","), "firered",
+T.eq(GameVersion.generation("leafgreen"), 3, "LeafGreen is Gen 3")
+T.eq(table.concat(ModTargets.expand("gen3"), ","), "firered,leafgreen",
   "gen3 is every Gen 3 game")
 
 local function manifest(extra)
@@ -19,8 +20,16 @@ end
 
 T.check(ModTargets.supports(manifest({ games = { "gen3" } }), "firered"),
   "games = [gen3] claims FireRed")
+T.check(ModTargets.supports(manifest({ games = { "gen3" } }), "leafgreen"),
+  "games = [gen3] claims LeafGreen")
 T.check(ModTargets.supports(manifest({ games = { "firered" } }), "firered"),
   "games = [firered] claims FireRed")
+T.check(not ModTargets.supports(manifest({ games = { "firered" } }), "leafgreen"),
+  "games = [firered] does not claim LeafGreen")
+T.check(ModTargets.supports(manifest({ games = { "leafgreen" } }), "leafgreen"),
+  "games = [leafgreen] claims LeafGreen")
+T.check(not ModTargets.supports(manifest({ games = { "leafgreen" } }), "firered"),
+  "games = [leafgreen] does not claim FireRed")
 T.check(not ModTargets.supports(manifest(), "firered"),
   "a manifest that says nothing is not a FireRed mod")
 T.check(not ModTargets.supports(manifest({ gen2compat = true }), "firered"),

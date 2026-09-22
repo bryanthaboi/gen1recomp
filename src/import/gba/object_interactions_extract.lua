@@ -1,3 +1,4 @@
+local Versions = require("src.import.gba.versions")
 -- Global interactions are code-referenced roots, absent from MapEvents BFS.
 -- Read the original script bytecode/text and metatile attributes from the ROM.
 local E={PATH='data/generated/gba/objects/pack.lua'}
@@ -11,7 +12,7 @@ E.CODE_SLOTS={
   {27,'CableClub_EventScript_ShowBattleRecords'},
 }
 local function flavorBase(rom)
-  for off=0x1A7000,0x1A8000 do
+  for off=Versions.address(0x1A7000),Versions.address(0x1A8000) do
     local match=true
     for n=0,27 do
       local p=off+n*9

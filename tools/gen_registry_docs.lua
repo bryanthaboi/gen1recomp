@@ -92,8 +92,15 @@ end
 local function renderSchema(spec)
   if spec.keys then
     line("")
-    line("Id = a top-level key of the target table. Keys not listed here are")
-    line("accepted and merged as-is.")
+    if spec.keysClosed then
+      line("Id = a top-level key of the target table. The set below is **closed**:")
+      line("an id that is not one of these is rejected rather than merged, because")
+      line("the engine reads this table by name and a key it does not name is a")
+      line("write nothing reads.")
+    else
+      line("Id = a top-level key of the target table. Keys not listed here are")
+      line("accepted and merged as-is.")
+    end
     line("")
     line("| key | type |")
     line("|---|---|")

@@ -125,6 +125,19 @@ local OAK_TEXT = {
 local MALE_NAMES = { "RED", "FIRE", "ASH", "KENE", "GEKI", "JAK", "JANNE", "JONN", "KAMON", "KARL", "TAYLOR", "OSCAR", "HIRO", "MAX", "JON", "RALPH", "KAY", "TOSH", "ROAK" }
 local FEMALE_NAMES = { "RED", "FIRE", "OMI", "JODI", "AMANDA", "HILLARY", "MAKEY", "MICHI", "PAULA", "JUNE", "CASSIE", "REY", "SEDA", "KIKO", "MINA", "NORIE", "SAI", "MOMO", "SUZI" }
 local RIVAL_NAMES = { "GREEN", "GARY", "KAZ", "TORU" }
+local LEAFGREEN_MALE_NAMES, LEAFGREEN_FEMALE_NAMES = {}, {}
+for i, name in ipairs(MALE_NAMES) do LEAFGREEN_MALE_NAMES[i] = name end
+for i, name in ipairs(FEMALE_NAMES) do LEAFGREEN_FEMALE_NAMES[i] = name end
+for i, name in ipairs({ "GREEN", "LEAF", "GARY", "KAZ", "TORU" }) do LEAFGREEN_MALE_NAMES[i] = name end
+LEAFGREEN_FEMALE_NAMES[1], LEAFGREEN_FEMALE_NAMES[2] = "GREEN", "LEAF"
+local LEAFGREEN_RIVAL_NAMES = { "RED", "ASH", "KENE", "GEKI" }
+local function nameChoices(gender, rival)
+  local leafgreen = require("src.core.GameVersion").get() == "leafgreen"
+  if rival then return leafgreen and LEAFGREEN_RIVAL_NAMES or RIVAL_NAMES end
+  if gender == MALE then return leafgreen and LEAFGREEN_MALE_NAMES or MALE_NAMES end
+  return leafgreen and LEAFGREEN_FEMALE_NAMES or FEMALE_NAMES
+end
+Scene.nameChoices = nameChoices
 -- The name lists are the cart's English choices; translations localise them
 -- (gNameChoice_*: GREEN is GRÜN in German), so they go through Strings()
 -- where they are listed and picked, under a context of their own: FIRE the
@@ -283,8 +296,8 @@ function Scene.new(assets, opts)
     section = "controls",
     textSpeedOption = tonumber(opts.textSpeed) or 1,
     gender = MALE,
-    playerName = "RED",
-    rivalName = "GREEN",
+    playerName = nameChoices(MALE, false)[1],
+    rivalName = nameChoices(MALE, true)[1],
     hasPlayerBeenNamed = false,
     coordOffsetX = 0,
     bg2X = 0,
@@ -1148,9 +1161,9 @@ function Scene:printNameChoices()
   -- pokefirered/src/oak_speech.c:2117
   local names
   if not self.hasPlayerBeenNamed then
-    names = self.gender == MALE and MALE_NAMES or FEMALE_NAMES
+    names = nameChoices(self.gender, false)
   else
-    names = RIVAL_NAMES
+    names = nameChoices(self.gender, true)
   end
   local items = { { Strings("NEW NAME"), 8, 1 } }
   for i = 1, 4 do items[#items + 1] = { Strings(names[i], NAME_CONTEXT), 8, 16 * i + 1 } end
@@ -1174,12 +1187,12 @@ end
 function Scene:getDefaultName(choice)
   -- pokefirered/src/oak_speech.c:2138
   if not self.hasPlayerBeenNamed then
-    local list = self.gender == MALE and MALE_NAMES or FEMALE_NAMES
+    local list = nameChoices(self.gender, false)
     local r = require("src.core.game3.rng").Random()
     self.playerName = Strings(list[(r % #list) + 1], NAME_CONTEXT)
     self:_answered("name", self.playerName, "name")
   else
-    self.rivalName = Strings(RIVAL_NAMES[choice + 1], NAME_CONTEXT)
+    self.rivalName = Strings(nameChoices(self.gender, true)[choice + 1], NAME_CONTEXT)
     self:_answered("rivalName", self.rivalName, "rivalName")
   end
 end

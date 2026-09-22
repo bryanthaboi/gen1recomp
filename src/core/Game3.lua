@@ -97,6 +97,7 @@ function Game3:_enterField(session, reason)
 end
 
 function Game3:load(opts)
+  require("src.import.gba.versions").select(require("src.core.GameVersion").get())
   opts = opts or {}
   self.onExit = opts.onExit or self.onExit
   Input:init()

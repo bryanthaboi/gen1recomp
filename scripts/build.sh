@@ -80,7 +80,7 @@ else
     tools/rom_manifest.json tools/rom_manifest_blue.json \
     tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
     tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
-    tools/rom_manifest_firered.json \
+    tools/rom_manifest_firered.json tools/rom_manifest_leafgreen.json \
     -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
 fi
 # Materialize the listing once and grep the file: piping unzip straight into
@@ -104,7 +104,7 @@ for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
                 tools/rom_manifest_silver.json \
                 tools/rom_manifest_crystal.json \
-                tools/rom_manifest_firered.json; do
+                tools/rom_manifest_firered.json tools/rom_manifest_leafgreen.json; do
   grep -qxF "$required" "$LOVE_LISTING" \
     || fail "game.love is missing $required"
 done
@@ -144,9 +144,9 @@ else
 fi
 
 # --------------------------------------------------------------- app icon
-# One source of truth for every platform's launcher icon; iOS resizes the
-# same file in scripts/build_ios.sh (apply_ios_icon) and the Android res/
-# drawables are generated from it too.
+# Desktop and Linux resize this file in place. iOS does the same in
+# scripts/build_ios.sh. Android, Switch, and Xbox tiles are generated from
+# it by tools/generate_android_icons.py and tools/brand_platform_icons.py.
 ICON_SRC="$ROOT/assets/logo/gen1recomp_cover.png"
 
 # pipx installs peresed (Windows exe icon patcher) here, off the default PATH.

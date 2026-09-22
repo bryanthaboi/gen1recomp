@@ -1,3 +1,4 @@
+local Versions = require("src.import.gba.versions")
 -- Quest Log text offsets relative to the header; BPRE revisions 0 and 1.
 -- Only offsets are shipped. All strings are read from the imported ROM.
 local TextIR=require('src.core.game3.scripting.text_ir')
@@ -131,7 +132,7 @@ local ENTRIES={
 }
 local function locate(rom)
   local sig={0xCA,0xE6,0xD9,0xEA,0xDD,0xE3,0xE9,0xE7,0xE0,0xED,0,0xE3,0xE2}
-  for off=0x41A000,0x41A500 do
+  for off=Versions.address(0x41A000),Versions.address(0x41A500) do
     local match=true
     for i,b in ipairs(sig) do if rom:get(off+i-1)~=b then match=false;break end end
     if match then return off end

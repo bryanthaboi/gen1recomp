@@ -6,7 +6,7 @@ local DoorAnimExtract = {}
 DoorAnimExtract.CACHE_SUB = "doors"
 
 -- sDoorGraphics table (see versions.lua for offset documentation).
-local SDOOR_GRAPHICS_OFFSET = Versions.DOOR_GRAPHICS_TABLE or 0x035B5D8
+local SDOOR_GRAPHICS_OFFSET = 0x035B5D8
 local ENTRY_COUNT           = Versions.DOOR_GRAPHICS_COUNT  or 32
 local ENTRY_STRIDE          = 12  -- bytes per entry: u16 mid, u8 sound, u8 size | u32 ptr_tiles | u32 ptr_pal
 
@@ -110,9 +110,9 @@ local DOOR_SECONDARY_PALS = {
 local function decode_palette(rom, pal_slot, door_idx)
   local pal_base
   if pal_slot < 7 then
-    pal_base = PRIMARY_PALETTES_OFFSET + pal_slot * 32
+    pal_base = Versions.address(PRIMARY_PALETTES_OFFSET) + pal_slot * 32
   else
-    local sec_base = DOOR_SECONDARY_PALS[door_idx] or PRIMARY_PALETTES_OFFSET
+    local sec_base = Versions.address(DOOR_SECONDARY_PALS[door_idx] or PRIMARY_PALETTES_OFFSET)
     pal_base = sec_base + pal_slot * 32
   end
 
@@ -213,7 +213,7 @@ function DoorAnimExtract.run(rom, cache, opts)
   -- src/field_door.c:396
   local limit = math.max(ENTRY_COUNT, 0)
   for i = 0, limit - 1 do
-    local base      = SDOOR_GRAPHICS_OFFSET + i * ENTRY_STRIDE
+    local base      = Versions.address(SDOOR_GRAPHICS_OFFSET) + i * ENTRY_STRIDE
     local mid_flags = rom:u32(base)
     local ptr_tiles = rom:u32(base + 4)
     local ptr_pal   = rom:u32(base + 8)

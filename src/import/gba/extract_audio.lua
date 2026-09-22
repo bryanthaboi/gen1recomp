@@ -529,7 +529,7 @@ function ExtractAudio.run(rom, cache, opts)
   local vgMap = {}       -- vgOff → id
   local voicegroups = {} -- id → tones[0..127]
 
-  local songTable = ExtractAudio.SONG_TABLE
+  local songTable = Versions.AUDIO.song_table
   local songCount = ExtractAudio.SONG_COUNT
   if data then
     local found = ExtractAudio.findSongTable(data, songCount)
@@ -584,7 +584,7 @@ function ExtractAudio.run(rom, cache, opts)
   end
 
   -- Cry table → samples
-  local cryTable = ExtractAudio.CRY_TABLE
+  local cryTable = Versions.AUDIO.cry_table
   local cryCount = ExtractAudio.CRY_COUNT
   if data and cryTable + cryCount * 12 <= #data then
     write(cache, root .. "/crytable.bin", data:sub(cryTable + 1, cryTable + cryCount * 12))

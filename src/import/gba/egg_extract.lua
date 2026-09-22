@@ -66,8 +66,8 @@ function EggExtract.run(rom, cache, opts)
   cache:write(root .. "/shard.rgba",
     stack_frames(shard, bank, SHARD_FRAMES, 1, SHARD_W, SHARD_H, true))
 
-  local picTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_front_pic_table) or 0x2350AC
-  local palTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_palette_table) or 0x23730C
+  local picTable = (Versions.INTRO and Versions.INTRO.mon_front_pic_table) or 0x2350AC
+  local palTable = (Versions.INTRO and Versions.INTRO.mon_palette_table) or 0x23730C
   local picOff = rom:ptrOffset(rom:u32(picTable + EggExtract.SPECIES_EGG * 8))
   local picPalOff = rom:ptrOffset(rom:u32(palTable + EggExtract.SPECIES_EGG * 8))
   if not (picOff and picPalOff) then error("egg_extract: no SPECIES_EGG pic entry") end

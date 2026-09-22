@@ -468,6 +468,28 @@ function Kit._resolveNav()
   local curLayer = getNavLayer(cur)
   local cx, cy = cur.x + cur.w / 2, cur.y + cur.h / 2
 
+  if tostring(cur.id):match("^gamepop%-") then
+    local best, bestScore
+    for i = 1, n do
+      local c = Kit._nav[i]
+      if c.id ~= cur.id and tostring(c.id):match("^gamepop%-") then
+        local dx, dy = c.x + c.w / 2 - cx, c.y + c.h / 2 - cy
+        local horizontal = dir == "left" or dir == "right"
+        local forward = (dir == "left" and -dx) or (dir == "right" and dx)
+          or (dir == "up" and -dy) or dy
+        local cross = math.abs(horizontal and dy or dx)
+        if forward > 1 and (not horizontal or cross < 1) then
+          local score = forward + cross * 2
+          if not bestScore or score < bestScore then
+            best, bestScore = c, score
+          end
+        end
+      end
+    end
+    if best then Kit.focusId = best.id end
+    return
+  end
+
   if dir == "left" or dir == "right" then
     -- STRICT SAME-LAYER HORIZONTAL NAVIGATION (Left/Right NEVER jumps between layers)
     local best, bestDx
@@ -643,15 +665,7 @@ function Kit.row(x, y, w, h, selected, id)
   -- The focus ring is a second inset outline, so it reads on both a black
   -- row and a white selected one.
   if focused then
-    local glowPulse = 0.5 + 0.5 * math.sin(Kit.time * 5)
-    -- Outer white soft aura
-    Theme.strokeRounded(x - 3, y - 3, w + 6, h + 6,
-      PAL.ink, 0.35 + 0.25 * glowPulse, 2.5, Theme.radius() + 3)
-    -- Bright white inner stroke
-    Theme.strokeRounded(x, y, w, h,
-      PAL.ink, 0.95 + 0.05 * glowPulse, 2, Theme.radius())
-    -- Luminous white fill overlay
-    Theme.fillRounded(x, y, w, h, PAL.ink, 0.12 + 0.06 * glowPulse, Theme.radius())
+    Theme.strokeRounded(x, y, w, h, PAL.ink, 1, 2, Theme.radius())
   end
   local clicked = Kit.press(x, y, w, h)
     or (id ~= nil and Kit._activateId == id)
@@ -669,38 +683,20 @@ function Kit.emptyBox(x, y, w, h, message)
 end
 
 -- ----------------------------------------------------------------- buttons
--- Button kinds.  In a black/white theme the semantics live in the OUTLINE
--- and INK colour; the fill is black until the control is hot or focused, at
--- which point it inverts to a solid fill with dark ink.  That inversion is
--- the single strongest contrast signal available and costs one rect.
--- `solid` means the control is filled even at rest: reserved for the single
--- most important action on a screen (Play), which should not have to be
--- hovered before it looks like the answer.
--- Buttons are COLOUR-CODED by what they do, so a control's job is readable
--- before its label is.  The button IS the colour: a solid fill with black
--- ink, not an outline with coloured text.  Against a black field a filled
--- chip is the strongest, fastest-to-scan signal available, and every accent
--- in this palette is high-luminance, so black ink on it clears contrast
--- requirements comfortably.
---   primary   green    -- the commit action (Play, Save, Install)
---   good      green    -- safe helpers
---   accent    blue     -- navigation / information (Details, Edit, Import)
---   warn      yellow   -- attention (an update is waiting)
---   danger    red      -- destructive, always two-press
---   ghost     white    -- neutral verbs with no better colour
---   disabled  grey     -- never hidden, always still readable
--- Hover/focus is a white ring around the fill (plus a slight lift), which
--- reads on every colour without needing a second shade of each.
+-- Primary actions carry color; secondary and destructive actions use a quiet
+-- surface and an outline. All faces share an inset hover/press highlight and
+-- a solid keyboard focus border, so controls never grow into their neighbors.
 local KINDS = {
   primary  = { fill = PAL.green,  ink = PAL.inverse },
   good     = { fill = PAL.green,  ink = PAL.inverse },
-  accent   = { fill = PAL.blue,   ink = PAL.inverse },
+  accent   = { fill = PAL.buttonBlue, ink = PAL.heading },
   warn     = { fill = PAL.yellow, ink = PAL.inverse },
-  danger   = { fill = PAL.red,    ink = PAL.inverse },
-  ghost    = { fill = PAL.ink,    ink = PAL.inverse },
-  disabled = { fill = PAL.steel,  ink = PAL.inverse, flat = true },
+  danger   = { fill = PAL.surface, ink = PAL.red, stroke = PAL.red },
+  ghost    = { fill = PAL.surface, ink = PAL.text, stroke = PAL.line },
+  disabled = { fill = PAL.surface, ink = PAL.muted, stroke = PAL.line },
 }
 Kit.KINDS = KINDS
+local Icons = require("src.ui.kit.Icons")
 local NO_OPTS = {}
 
 function Kit.button(x, y, w, h, label, opts)
@@ -717,12 +713,12 @@ function Kit.button(x, y, w, h, label, opts)
   local invert = false
   local fill, ink, stroke, strokeA, doEmboss, doRing, glowA
   if face == "invert" then
-    invert = hot
-    fill = invert and (opts.hotFill or PAL.ink) or (opts.fill or PAL.surface)
-    ink = invert and (opts.hotInk or PAL.inverse) or (opts.ink or PAL.heading)
+    invert = false
+    fill = (hot or focused) and PAL.raised or (opts.fill or PAL.surface)
+    ink = opts.ink or PAL.heading
     stroke = opts.stroke or PAL.line
-    strokeA = invert and Theme.A.focus or Theme.A.hairline
-    doRing = focused and not hot
+    strokeA = (hot or focused) and Theme.A.focus or Theme.A.hairline
+    doRing = focused or hot
   elseif face == "tab" then
     invert = active and true or false
     local tint = opts.color or opts.fill or PAL.ink
@@ -752,7 +748,9 @@ function Kit.button(x, y, w, h, label, opts)
     local kind = KINDS[enabled and (opts.kind or "ghost") or "disabled"]
     fill = (enabled and opts.fill) or kind.fill
     ink = (enabled and opts.ink) or kind.ink
-    doEmboss = true
+    doEmboss = (opts.kind == "primary" or opts.kind == "good" or opts.kind == "accent")
+    stroke = kind.stroke
+    strokeA = stroke and Theme.A.hover or nil
     doRing = hot or focused
     if opts.glow and enabled and not doRing then
       glowA = B.glowBase + B.glowAmp * (0.5 + 0.5 * math.sin(Kit.time * B.glowHz))
@@ -771,17 +769,10 @@ function Kit.button(x, y, w, h, label, opts)
       Theme.strokeRounded(x, y, w, h, stroke, strokeA, 1, radius)
     end
     if doRing then
-      local glowPulse = 0.5 + 0.5 * math.sin(Kit.time * 5)
-      -- 1. Outer bright white soft glow aura
-      Theme.strokeRounded(x - B.ringPad - 3, y - B.ringPad - 3,
-        w + 2 * (B.ringPad + 3), h + 2 * (B.ringPad + 3), PAL.ink,
-        0.35 + 0.25 * glowPulse, 2.5, radius + B.ringPad + 3)
-      -- 2. Inner solid white focus border
-      Theme.strokeRounded(x - B.ringPad, y - B.ringPad,
-        w + 2 * B.ringPad, h + 2 * B.ringPad, PAL.ink,
-        0.95 + 0.05 * glowPulse, 2.5, radius + B.ringPad)
-      -- 3. Subtle luminous white fill overlay so the entire button body shines
-      Theme.fillRounded(x, y, w, h, PAL.ink, 0.12 + 0.06 * glowPulse, radius)
+      Theme.fillRounded(x, y, w, h, PAL.ink,
+        Kit.mouseDown and hot and 0.04 or 0.09, radius)
+      Theme.strokeRounded(x, y, w, h, PAL.ink,
+        focused and 1 or 0.7, focused and 2 or 1, radius)
     elseif glowA then
       Theme.strokeRounded(x - B.ringPad, y - B.ringPad,
         w + 2 * B.ringPad, h + 2 * B.ringPad, PAL.lineStrong,
@@ -795,7 +786,21 @@ function Kit.button(x, y, w, h, label, opts)
     local hasLabel = label and label ~= ""
     local bold = opts.bold
     if bold == nil then bold = face ~= "tab" end
-    if image then
+    if opts.icon then
+      local box = math.min(w, h)
+      local size = math.floor(box * (hasLabel and 0.42 or 0.5))
+      local gap = math.floor(7 * Kit.scale)
+      local shown = hasLabel and Kit.ellipsize(fname, label,
+        w - size - gap - 2 * B.labelPad * Kit.scale) or ""
+      local groupW = size + (hasLabel and gap + Kit.textWidth(fname, shown) or 0)
+      local ix = opts.align == "left" and x + B.labelPad * Kit.scale or x + (w - groupW) / 2
+      Icons.draw(opts.icon, ix, y + (h - size) / 2, size, ink,
+        enabled and 1 or B.disabledA)
+      if hasLabel then
+        if bold then Kit.textBold(fname, shown, ix + size + gap, ty, ink)
+        else Kit.text(fname, shown, ix + size + gap, ty, ink) end
+      end
+    elseif image then
       local box = h
       local boxX, boxY = x, y
       if not hasLabel then
@@ -806,8 +811,7 @@ function Kit.button(x, y, w, h, label, opts)
       local iw, ih = image:getDimensions()
       local pad = math.floor(box * (opts.iconPad or B.iconPad))
       local s = math.min((box - 2 * pad) / iw, (box - 2 * pad) / ih)
-      if invert then Theme.col(PAL.inverse, 1)
-      else Theme.col(PAL.ink, B.iconRestA) end
+      Theme.col(ink, enabled and 1 or B.disabledA)
       G.draw(image, Theme.snap(boxX + (box - iw * s) / 2),
         Theme.snap(boxY + (box - ih * s) / 2), 0, s, s)
       if hasLabel then
@@ -816,16 +820,18 @@ function Kit.button(x, y, w, h, label, opts)
         else Kit.text(fname, label, lx, ty, ink) end
       end
     elseif drawFn then
-      drawFn(x, y, w, h, invert or hot or focused)
+      drawFn(x, y, w, h, invert)
     elseif letter then
-      Kit.textCenter(fname, letter, x, ty, h, ink)
+      if opts.letterBold then Kit.textCenterBold(fname, letter, x, ty, h, ink)
+      else Kit.textCenter(fname, letter, x, ty, h, ink) end
       if hasLabel then
         local lx = x + h + B.letterGap * Kit.scale
         if bold then Kit.textBold(fname, label, lx, ty, ink)
         else Kit.text(fname, label, lx, ty, ink) end
       end
     elseif hasLabel then
-      local shown = Kit.ellipsize(fname, label, w - B.labelInset * Kit.scale)
+      local shown = Kit.ellipsize(fname, label, w - B.labelInset * Kit.scale
+        - (opts.trailingIcon and h * 0.65 or 0))
       if opts.align == "left" then
         local lx = x + B.labelPad * Kit.scale
         if bold then Kit.textBold(fname, shown, lx, ty, ink)
@@ -836,6 +842,11 @@ function Kit.button(x, y, w, h, label, opts)
         Kit.textCenter(fname, shown, x, ty, w, ink)
       end
     end
+  end
+  if opts.trailingIcon and G then
+    local size = math.floor(h * 0.4)
+    Icons.draw(opts.trailingIcon, x + w - size - B.labelPad * Kit.scale,
+      y + (h - size) / 2, size, ink, enabled and 1 or B.disabledA)
   end
   if not enabled then return false end
   return Kit.press(x, y, w, h)
@@ -1007,7 +1018,7 @@ end
 -- Returns the new page (1-based) and the row height consumed.
 local pagerLabels = {}
 
-function Kit.pager(x, y, w, page, total, perPage, idPrefix)
+function Kit.pager(x, y, w, page, total, perPage, idPrefix, compact)
   local h = math.max(Kit.tapMin(), 30 * Kit.scale)
   local bw = 74 * Kit.scale
   local pages = math.max(1, math.ceil(total / math.max(1, perPage)))
@@ -1038,7 +1049,7 @@ function Kit.pager(x, y, w, page, total, perPage, idPrefix)
     memo.label = ("%d-%d of %d   (page %d/%d)")
       :format(first, last, total, page, pages)
   end
-  local label = memo.label
+  local label = compact and (tostring(page) .. " / " .. tostring(pages)) or memo.label
   local labelX = x + 2 * bw + 2 * gap + gap
   Kit.text("mono", Kit.ellipsize("mono", label, math.max(0, x + w - labelX)),
     labelX, y + (h - Kit.textHeight("mono")) / 2, PAL.caption)
@@ -1158,12 +1169,30 @@ function Kit.scrollWheel(offset, maxScroll, x, y, w, h, step)
   return moved, true
 end
 
+function Kit.scrollInput(offset, maxScroll, x, y, w, h)
+  local at = Kit.scrollWheel(offset, maxScroll, x, y, w, h)
+  if not Kit.blockClicks and (Kit.dragAccum or 0) ~= 0
+      and dragOriginIn(x, y, w, h) then
+    at = Kit.scrollClamp(at + Kit.dragAccum, maxScroll)
+    Kit.dragAccum = 0
+  end
+  return at
+end
+
 function Kit.scrollBegin(x, y, w, h, offset, maxScroll)
   Kit.pushClip(x, y, math.max(0, w or 0), math.max(0, h or 0))
   return y - Kit.scrollClamp(offset, maxScroll)
 end
 
-function Kit.scrollEnd(x, y, w, h, offset, maxScroll)
+function Kit.scrollEnd(x, y, w, h, offset, maxScroll, background)
+  if (maxScroll or 0) > (offset or 0) + 1 and h > 0 then
+    local fadeH = math.min(math.floor(24 * Kit.scale), math.floor(h / 4))
+    local strength = math.min(1, (maxScroll - (offset or 0)) / math.max(1, fadeH))
+    for i = 0, fadeH - 1 do
+      Theme.fill(x, y + h - fadeH + i, w - Kit.scrollGutter(), 1,
+        background or PAL.field, strength * ((i + 1) / fadeH) ^ 2)
+    end
+  end
   Kit.popClip()
   if (maxScroll or 0) <= 0 or (h or 0) <= 0 or (w or 0) <= 0 then return end
   local barW = Kit.scrollBarW()

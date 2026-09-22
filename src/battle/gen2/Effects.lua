@@ -512,6 +512,19 @@ function Effects.weatherModifier(weather, moveType, effect)
   return 1
 end
 
+-- BattleCommand_CheckHit (engine/battle/effect_commands.asm): Thunder's base
+-- accuracy is overridden by weather before stage modifiers are applied.
+Effects.WEATHER_ACCURACY_OVERRIDES = {
+  rain = { EFFECT_THUNDER = 100 },
+  sun  = { EFFECT_THUNDER = 50  },
+}
+
+function Effects.weatherAccuracyOverride(weather, effect)
+  if not weather or not effect then return nil end
+  local row = Effects.WEATHER_ACCURACY_OVERRIDES[weather]
+  return row and row[effect]
+end
+
 -- HandleWeather's .SandstormDamage: an eighth of max HP, and Rock, Ground and
 -- Steel are immune.  A mon underground (Dig) is skipped too.
 Effects.SANDSTORM_IMMUNE = { ROCK = true, GROUND = true, STEEL = true }

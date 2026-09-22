@@ -1,0 +1,14 @@
+diff --git a/src/modules/system/uwp/FilePicker.cpp b/src/modules/system/uwp/FilePicker.cpp
+--- a/src/modules/system/uwp/FilePicker.cpp
++++ b/src/modules/system/uwp/FilePicker.cpp
+@@ -63,6 +63,9 @@
+ 		else
+ 		{
+ 			filters.Append(L".gb");
+ 			filters.Append(L".gbc");
++			// FireRed and LeafGreen dumps are .gba. The staged copy keeps
++			// the picked_rom.gb name; Lua routes the cart by size and SHA-1.
++			filters.Append(L".gba");
+ 			destination = "picked_rom.gb";
+ 		}
+ 

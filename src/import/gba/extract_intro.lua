@@ -351,6 +351,8 @@ end
 function ExtractIntro.run(rom, cache, opts)
   opts = opts or {}
   local root = opts.root or "data/generated/gba/intro"
+  local game = require("src.core.GameVersion").forSha1(opts.sha1) or "firered"
+  local leafgreen = game == "leafgreen"
   local data = romBytes(rom)
   local meta = {
     version = 3,
@@ -382,7 +384,7 @@ return {
 ]]
   write(cache, root .. "/oak_speech.lua", oakSpeech)
   write(cache, root .. "/title_text.lua",
-    'return { title = "POKeMON FireRed", press_start = "Press Start" }\n')
+    string.format('return { title = %q, press_start = "Press Start" }\n', leafgreen and "POKeMON LeafGreen" or "POKeMON FireRed"))
   write(cache, root .. "/menu.lua",
     'return { "CONTINUE", "NEW GAME", "OPTION" }\n')
 
@@ -792,7 +794,12 @@ return {
         local pal = readPal(get, T.flames_pal, 16)
         local tiles = decompress(get, T.flames_tiles)
         -- 0x500 = 40 tiles → 10 frames of 16×16 (2×20)
-        saveAsset("title_flames.png", bake4bppSheetPng(tiles, pal, 2, 20, true))
+        saveAsset("title_flames.png", bake4bppSheetPng(tiles, pal, 2, leafgreen and 22 or 20, true))
+      end
+      if leafgreen then
+        local pal = readPal(get, T.flames_pal, 16)
+        local tiles = decompress(get, T.blank_flames_tiles)
+        saveAsset("title_streak.png", bake4bppSheetPng(tiles, pal, 4, 2, true))
       end
       if T.flames_pal and T.slash_tiles then
         local pal = readPal(get, T.flames_pal, 16)
@@ -848,6 +855,7 @@ return {
     { "copyrightPressStart", "copyright_press_start.png" },
     { "titleBorder", "title_border_bg.png" },
     { "titleFlames", "title_flames.png" },
+    { "titleStreak", "title_streak.png" },
     { "titleSlash", "title_slash.png" },
     -- Intro Cutscene Assets
     { "introCopyright", "intro_copyright.png" },
@@ -877,7 +885,7 @@ return {
   local lines = {
     "return {\n",
     "  generation = 3,\n",
-    '  version = "firered",\n',
+    string.format('  version = %q,\n', game),
     '  source = "ROM:title_screen + oak_speech",\n',
   }
   if opts.sha1 then

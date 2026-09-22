@@ -1,5 +1,6 @@
--- Known clean US FireRed dumps → extract pointers (ROM file offsets).
--- Pointers are for FireRed USA 1.0 (SHA-1 41cb23d8…). Identity is SHA-1 only.
+-- Known clean US FRLG dumps → extract pointers (ROM file offsets).
+-- Baseline pointers are FireRed USA 1.0; select() applies the LeafGreen profile.
+-- Both 1.1 revisions normalize to their own edition 1.0 before extraction.
 
 local Versions = {}
 
@@ -39,9 +40,10 @@ Versions.ROM_SIZE = 16777216
 --       script is stale.
 -- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon — eggs were drawn
 --       with the icon of the species they hatch into.
-Versions.CACHE_VERSION = 114
+-- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
+Versions.CACHE_VERSION = 116
 Versions.NATIVE_VERSION = 6
-Versions.OW_VERSION = 1
+Versions.OW_VERSION = 2
 Versions.ANIM_VERSION = 1
 -- Audio pack (M4A banks / DirectSound samples / cries).
 Versions.AUDIO_VERSION = 6
@@ -92,6 +94,7 @@ Versions.SPECIES_NAMES = 0x245EE0         -- gSpeciesNames
 Versions.SPECIES_NAME_LENGTH = 11         -- 10 chars + 0xFF
 Versions.SPECIES_INFO = 0x254784          -- gSpeciesInfo / BaseStats (28 bytes)
 Versions.SPECIES_INFO_SIZE = 28
+Versions.DEOXYS_BASE_STATS = 0x25E026 -- sDeoxysBaseStats, u16[6]
 Versions.MON_ICON_TABLE = 0x3D37A0       -- gMonIconTable
 Versions.MON_ICON_PAL_INDICES = 0x3D3E80  -- gMonIconPaletteIndices
 Versions.MON_ICON_PALETTES = 0x3D3740     -- gMonIconPalettes (16 colors × N)
@@ -2328,8 +2331,14 @@ local FIRERED_10 = {
   num_obj_event_gfx = Versions.NUM_OBJ_EVENT_GFX,
 }
 
+local LEAFGREEN_10 = {}
+for key, value in pairs(FIRERED_10) do LEAFGREEN_10[key] = value end
+LEAFGREEN_10.id, LEAFGREEN_10.game = "leafgreen_1_0", "leafgreen"
+
 -- SHA-1 (lowercase) → version table. Engine identity is SHA-1 only.
 Versions.BY_SHA1 = {
+  ["574fa542ffebb14be69902d1d36f1ec0a4afd71e"] = LEAFGREEN_10,
+  ["7862c67bdecbe21d1d69ce082ce34327e1c6ed5e"] = LEAFGREEN_10,
   ["41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc"] = FIRERED_10,
   ["dd5945db9b930750cb39d00c84da8571feebf417"] = FIRERED_10,
 }
@@ -2424,13 +2433,56 @@ function Versions.lookup(sha1)
   if not key or key == "" then return nil, "missing sha1" end
   local ver = Versions.BY_SHA1[key]
   if not ver then
-    return nil, "unsupported or unknown FireRed dump SHA-1"
+    return nil, "unsupported or unknown FRLG dump SHA-1"
   end
   return ver
 end
 
 function Versions.lookupSha1(sha1)
   return Versions.lookup(sha1)
+end
+
+-- Retain table identities: extractors and runtime modules hold references to
+-- nested tables. Rebuild from immutable baseline entries when editions change,
+-- never remap an already remapped value or mutate data read from the ROM.
+local baseline, seen = {}, {}
+local function capture(t)
+  if seen[t] then return end
+  seen[t] = true
+  local entries = {}
+  baseline[#baseline + 1] = { target = t, entries = entries }
+  for k, v in pairs(t) do
+    entries[#entries + 1] = { k, v }
+    if type(v) == "table" then capture(v) end
+  end
+end
+capture(Versions)
+local edition, addresses = "firered", nil
+
+function Versions.address(base)
+  if not addresses then return base end
+  return assert(addresses[base], string.format("Missing LeafGreen address 0x%X", base))
+end
+
+function Versions.select(identity)
+  local game = identity
+  if Versions.BY_SHA1[identity] then game = Versions.BY_SHA1[identity].game end
+  game = game == "leafgreen" and "leafgreen" or "firered"
+  if game == edition then return end
+  addresses = game == "leafgreen" and require("src.import.gba.editions.leafgreen_1_0") or nil
+  for _, record in ipairs(baseline) do
+    local t = record.target
+    -- Root functions added below capture() are retained.
+    for _, entry in ipairs(record.entries) do
+      t[entry[1]] = nil
+    end
+    if t ~= Versions then for k in pairs(t) do t[k] = nil end end
+    for _, entry in ipairs(record.entries) do
+      local k, v = entry[1], entry[2]
+      t[addresses and addresses[k] or k] = addresses and addresses[v] or v
+    end
+  end
+  edition = game
 end
 
 return Versions

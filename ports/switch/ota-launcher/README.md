@@ -11,7 +11,7 @@ with `envSetNextLoad`.
 
 The LÖVE self-updater (`src/update/Check.lua`) stays **disabled** on NX.
 Wire format (also in Lua): `src/update/SwitchOta.lua`.
-NACP icon: `ports/switch/assets/icon.jpg`.
+NACP icon: `ports/switch/assets/icon.jpg`, generated from `assets/logo/gen1recomp_cover.png` by `tools/brand_platform_icons.py`.
 
 ## Layout on microSD
 

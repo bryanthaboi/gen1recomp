@@ -315,7 +315,22 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "8.0.x"
+      - name: Identify TLS build environment
+        id: tls-env
+        shell: pwsh
+        run: |
+          "sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+      # Exact keys only: a partial match could ship an outdated native library.
+      # Hash the workflow too so changes to build flags invalidate the binary.
+      - name: Restore finished TLS library
+        id: tls-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/native/win-x64/gen1tls.dll
+          key: native-tls-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.tls-env.outputs.image }}-${{ steps.tls-env.outputs.sdk }}-${{ hashFiles('native/tls_dial/**', '.github/workflows/release.yml', '**/Directory.Build.*', '**/Directory.Packages.props', '**/NuGet.Config', '**/nuget.config', '**/global.json') }}
       - name: Publish gen1tls (win-x64 Native AOT)
+        if: steps.tls-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $out = "dist/native/win-x64"
@@ -326,6 +341,17 @@ jobs:
             throw "gen1tls.dll missing after publish"
           }
           Get-Item "$out/gen1tls.dll" | Format-List Name, Length, LastWriteTime
+      - name: Verify TLS library
+        shell: pwsh
+        run: |
+          $dll = Get-Item 'dist/native/win-x64/gen1tls.dll' -ErrorAction Stop
+          if ($dll.Length -eq 0) { throw 'gen1tls.dll is empty' }
+      - name: Cache finished TLS library
+        if: steps.tls-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/native/win-x64/gen1tls.dll
+          key: ${{ steps.tls-cache.outputs.cache-primary-key }}
       - name: Upload gen1tls.dll
         uses: actions/upload-artifact@v7
         with:
@@ -365,12 +391,45 @@ jobs:
       - uses: actions/checkout@v7
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Identify bridge build environment
+        id: bridge-env
+        shell: bash
+        env:
+          PLAT: ${{ matrix.plat }}
+        run: |
+          set -euo pipefail
+          fingerprint="$RUNNER_TEMP/bridge-environment.txt"
+          rustc -vV > "$fingerprint"
+          cargo -V >> "$fingerprint"
+          printf '%s\n' "${ImageOS:-}" "${ImageVersion:-}" >> "$fingerprint"
+          if [ "$PLAT" = android ]; then
+            ndk="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+            test -f "$ndk/source.properties"
+            cat "$ndk/source.properties" >> "$fingerprint"
+            echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            hash="$(sha256sum "$fingerprint")"
+          else
+            hash="$(shasum -a 256 "$fingerprint")"
+          fi
+          echo "hash=${hash%% *}" >> "$GITHUB_OUTPUT"
+      # Keep release versions and game sources out of this key. Only bridge
+      # inputs, build instructions, and the native environment affect reuse.
+      - name: Restore finished bridge
+        id: bridge-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/native/${{ matrix.plat }}
+          key: shaderfx-binary-v1-${{ matrix.plat }}-${{ runner.arch }}-${{ matrix.glibc_triple }}-${{ steps.bridge-env.outputs.hash }}-${{ hashFiles('tools/shaderfx-bridge/**', '.cargo/**', 'rust-toolchain*', '.github/workflows/release.yml') }}
       - name: Cache cargo registry and build dir
+        if: steps.bridge-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: tools/shaderfx-bridge
           key: ${{ matrix.plat }}-${{ matrix.glibc_triple }}
       - name: Build the bridge
+        if: steps.bridge-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
           PLAT: ${{ matrix.plat }}
@@ -384,44 +443,64 @@ jobs:
           case "$PLAT" in
             win-x64)
               rustup target add x86_64-pc-windows-msvc
-              cargo build --release --target x86_64-pc-windows-msvc
+              cargo build --locked --release --target x86_64-pc-windows-msvc
               cp "target/x86_64-pc-windows-msvc/release/$LIB" "$GITHUB_WORKSPACE/$out/$LIB"
               ;;
             mac)
               rustup target add x86_64-apple-darwin aarch64-apple-darwin
-              cargo build --release --target x86_64-apple-darwin
-              cargo build --release --target aarch64-apple-darwin
+              cargo build --locked --release --target x86_64-apple-darwin
+              cargo build --locked --release --target aarch64-apple-darwin
               lipo -create -output "$GITHUB_WORKSPACE/$out/$LIB" \
                 "target/x86_64-apple-darwin/release/$LIB" \
                 "target/aarch64-apple-darwin/release/$LIB"
               lipo -info "$GITHUB_WORKSPACE/$out/$LIB"
               ;;
             linux-x64|linux-arm64)
-              pipx install cargo-zigbuild
-              pipx inject cargo-zigbuild ziglang
+              pipx install 'cargo-zigbuild==0.23.4'
+              pipx inject cargo-zigbuild 'ziglang==0.16.0'
               zigpy="$(pipx environment --value PIPX_LOCAL_VENVS)/cargo-zigbuild/bin/python"
               "$zigpy" -m ziglang version
               export CARGO_ZIGBUILD_PYTHON_PATH="$zigpy"
               triple="$GLIBC_TRIPLE"
               rustup target add "${triple%%.*}"
-              cargo zigbuild --release --target "$triple"
+              cargo zigbuild --locked --release --target "$triple"
               cp "target/${triple%%.*}/release/$LIB" "$GITHUB_WORKSPACE/$out/$LIB"
               ;;
             android)
               rustup target add aarch64-linux-android armv7-linux-androideabi
-              cargo install cargo-ndk --locked
-              ndk="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
-              [ -d "$ndk" ] || { echo "::error::no Android NDK on this runner"; exit 1; }
-              export ANDROID_NDK_HOME="$ndk"
+              cargo install cargo-ndk --version 4.1.2 --locked
               export CARGO_PROFILE_RELEASE_STRIP=symbols
               cargo ndk -t arm64-v8a -t armeabi-v7a \
-                -o "$GITHUB_WORKSPACE/$out" build --release
+                -o "$GITHUB_WORKSPACE/$out" build --locked --release
               for abi in arm64-v8a armeabi-v7a; do
                 test -f "$GITHUB_WORKSPACE/$out/$abi/$LIB" \
                   || { echo "::error::no Android bridge for $abi"; exit 1; }
               done
               ;;
           esac
+      - name: Verify bridge libraries
+        shell: bash
+        env:
+          PLAT: ${{ matrix.plat }}
+          LIB: ${{ matrix.lib }}
+        run: |
+          set -euo pipefail
+          if [ "$PLAT" = android ]; then
+            for abi in arm64-v8a armeabi-v7a; do
+              test -s "dist/native/$PLAT/$abi/$LIB"
+            done
+          else
+            test -s "dist/native/$PLAT/$LIB"
+          fi
+          if [ "$PLAT" = mac ]; then
+            lipo -verify_arch x86_64 arm64 "dist/native/$PLAT/$LIB"
+          fi
+      - name: Cache finished bridge
+        if: steps.bridge-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/native/${{ matrix.plat }}
+          key: ${{ steps.bridge-cache.outputs.cache-primary-key }}
       - name: Upload the bridge
         uses: actions/upload-artifact@v7
         with:

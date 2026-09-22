@@ -158,6 +158,51 @@ local function createFlameSprite(T, x, y, xspeed, yspeed, visible)
   return true
 end
 
+-- pokefirered/src/title_screen.c:1074-1202 (LEAFGREEN).
+local LEAF_ANIM = { [0] = {} }
+for frame = 0, 10 do
+  LEAF_ANIM[0][#LEAF_ANIM[0] + 1] = { img = frame * 4, dur = 8 }
+end
+LEAF_ANIM[0][12] = { jump = 0 }
+local STREAK_Y = {40, 80, 110, 60, 90, 70, 100, 50}
+local function Task_LeafSpawner(T, t)
+  local d = t.data
+  if not d.started then
+    d.started, d.seed, d.timer, d.delay = true, 30840, 0, 0
+    for i = 0, 3 do
+      local _, spr = Oam.createSprite({
+        dims = { shape = 1, size = 2, w = 32, h = 16 }, priority = 3,
+        image = T.assets.titleStreak,
+        callback = function(sprite)
+          sprite.x = sprite.x - 7
+          if sprite.x < -16 then
+            sprite.x = 256
+            sprite.data[7] = (sprite.data[7] + 1) % #STREAK_Y
+            sprite.y = STREAK_Y[sprite.data[7] + 1]
+          end
+        end,
+      }, 256 + 40 * i, STREAK_Y[i + 1], 255)
+      if spr then spr.data[7] = i; spr.palSlot = Pal.objSlot(OBJ_FLAME) end
+    end
+    return
+  end
+  d.timer = d.timer + 1
+  if d.timer < d.delay then return end
+  d.timer, d.delay = 0, titleRand(d) % 6 + 6
+  local r = titleRand(d) % 30
+  local xspeed = r < 6 and 16 or (r < 12 and 24 or 48)
+  local yspeed, y = titleRand(d) % 4 - 2, titleRand(d) % 88 + 32
+  local _, spr = Oam.createSprite({
+    dims = Oam.SQUARE_16, priority = 3, image = T.assets.titleFlames,
+    anims = LEAF_ANIM, animQuads = T.flameQuads,
+    callback = SpriteCallback_TitleScreenFlame,
+  }, 240, y, 0)
+  if spr then
+    spr.palSlot = Pal.objSlot(OBJ_FLAME)
+    spr.data[1], spr.data[2], spr.data[3], spr.data[4] = 240 * 16, xspeed, y * 16, yspeed
+  end
+end
+
 local function Task_FlameSpawner(T, t)
   -- pokefirered/src/title_screen.c:1019
   local d = t.data
@@ -432,7 +477,7 @@ local function sceneRun(T, pressed)
   if T.sceneState == 0 then
     createTask(T, Task_TitleScreen_BlinkPressStart, 0)
     T.pressStartHidden = false
-    createTask(T, Task_FlameSpawner, 5)
+    createTask(T, T.leafgreen and Task_LeafSpawner or Task_FlameSpawner, 5)
     T.slashWin = true
     T.slash = createSlashSprite(T)
     T.sceneState = 1
@@ -484,7 +529,7 @@ local function sceneCry(T)
   local st = T.sceneState
   if st == 0 then
     if not T.pal:fadeActive() then
-      Audio.playCry(SPECIES_CHARIZARD, 0)
+      Audio.playCry(T.leafgreen and 3 or SPECIES_CHARIZARD, 0)
       deactivateSlash(T.slash)
       T.d2 = 0
       T.sceneState = 1
@@ -556,6 +601,7 @@ function Title.enter(state)
   Bg.reset()
   Title.buildQuads(state)
   local T = {
+    leafgreen = require("src.core.GameVersion").get() == "leafgreen",
     assets = state.assets or {},
     flameQuads = state.flameQuads,
     pal = Pal.new(),

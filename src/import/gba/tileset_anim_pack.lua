@@ -116,7 +116,7 @@ function AnimPack.loadFramesFromRom(rom, version)
   for name, cfg in pairs(spec) do
     local list = {}
     for i = 0, cfg.count - 1 do
-      local off = cfg.base + i * cfg.stride
+      local off = (cfg == DEFAULT_FRAMES[name] and Versions.address(cfg.base) or cfg.base) + i * cfg.stride
       list[i + 1] = read_frame(rom, off, cfg.bytes)
     end
     frames[name] = list

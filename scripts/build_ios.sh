@@ -237,22 +237,20 @@ verify_documents_overlay() {
 }
 
 apply_ios_icon() {
-  local source="$ROOT/assets/logo/logo.png"
+  local source="$ROOT/assets/logo/gen1recomp_cover.png"
   local target="$XCODE_DIR/Images.xcassets/iOS AppIcon.appiconset"
   [ -f "$source" ] || fail "missing iOS icon source: $source"
   [ -d "$target" ] || fail "missing iOS app icon set: $target"
   local icon="$BUILD_DIR/gen1recomp-ios-icon.png"
   mkdir -p "$BUILD_DIR"
+  # The cover is already a square launcher image. Apple rejects alpha on the
+  # 1024 marketing icon, so flatten it before the per-size copies.
   if command -v magick >/dev/null 2>&1; then
-    magick -size 1024x1024 xc:black \
-      \( "$source" -resize 900x900 \) -gravity center -composite \
-      -alpha off "$icon" || fail "could not create iOS app icon: $source"
+    magick "$source" -resize 1024x1024! -alpha off "$icon" \
+      || fail "could not create iOS app icon: $source"
   else
-    local scaled="$BUILD_DIR/gen1recomp-logo.png"
-    sips -Z 900 "$source" --out "$scaled" >/dev/null \
+    sips -z 1024 1024 "$source" --out "$icon" >/dev/null \
       || fail "could not resize iOS app icon source: $source"
-    sips -p 1024 1024 --padColor 000000 "$scaled" --out "$icon" >/dev/null \
-      || fail "could not center iOS app icon source: $source"
   fi
   local entry name size
   while IFS=: read -r name size; do

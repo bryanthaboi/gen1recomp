@@ -433,8 +433,13 @@ differences an author meets:
 - **`encounters`.** The id is the encounter *kind*, not the map:
   `mod.content.encounters:patch("grass", { ROUTE_29 = { rates = { NITE = 40 } } })`.
   A map's row carries a `rates` set per time of day and one slot list.
-  `fishGroups`, `trees` / `treeSets`, `rocks`, `bugContest` and `roamMaps` are
-  ids of their own.
+  `fishGroups`, `trees` / `treeSets`, `rocks`, `bugContest`, `roamMaps` and
+  `roamMons` are ids of their own. This is the one registry whose ids are a
+  **closed set** -- the kinds above are exactly the lookups the engine makes
+  into `Data.gen2Encounters`, so an id outside the set would be a write
+  nothing reads. Patching an unknown id (a Gen 1 encounters mod ported
+  unchanged passes the *map* here) fails the mod and names the ids that do
+  exist, rather than accepting the call and leaving the game vanilla.
 - **`trainers`.** The id is the trainer *class*, and the record is
   `{ name, index, attributes, baseMoney, encounterMusic, trainers, items }`,
   with one entry per named trainer of the class. The registry writes one level

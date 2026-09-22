@@ -34,6 +34,20 @@ function SessionLifecycle.endMountedSession(version)
   if Loader and Loader.endSession then Loader.endSession() end
   local okCompat, LegacyCompat = pcall(require, "src.mods.LegacyCompat")
   if okCompat and LegacyCompat.reset then LegacyCompat.reset() end
+  if version and require("src.core.GameVersion").generation(version) == 3 then
+    -- FRLG modules memoize ROM script bundles, menus and presentation data.
+    -- Release the session first, then rebuild these holders against the next
+    -- mounted cartridge instead of retaining FireRed data in a LeafGreen boot.
+    local compat = package.loaded["src.mods.Gen3Compat"]
+    if compat and compat.endSession then compat.endSession() end
+    for name in pairs(package.loaded) do
+      if type(name) == "string" and (name == "src.core.Game3"
+          or name == "src.core.game3" or name == "src.link.Game3Link"
+          or name:match("^src%.[%w_]+%.game3%.")) then
+        package.loaded[name] = nil
+      end
+    end
+  end
 end
 
 -- Evict every save-editor module from package.loaded without a hardcoded

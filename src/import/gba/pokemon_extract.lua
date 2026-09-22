@@ -687,9 +687,9 @@ function PokemonExtract.run(rom, cache, opts)
   local infoBase = Versions.SPECIES_INFO
   local natBase = Versions.SPECIES_TO_NATIONAL
   local pals = load_icon_pals(rom)
-  local frontPicTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_front_pic_table) or 0x2350AC
+  local frontPicTable = (Versions.INTRO and Versions.INTRO.mon_front_pic_table) or 0x2350AC
   local backPicTable = Versions.MON_BACK_PIC_TABLE or 0x23654C
-  local palTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_palette_table) or 0x23730C
+  local palTable = (Versions.INTRO and Versions.INTRO.mon_palette_table) or 0x23730C
 
   local picsWritten = { icons = 0, front = 0, back = 0 }
   local picsMissing = {}
@@ -711,6 +711,12 @@ function PokemonExtract.run(rom, cache, opts)
       spa = rom:get(ioff + 4),
       spd = rom:get(ioff + 5),
     }
+    if sp == 410 then
+      local base = Versions.DEOXYS_BASE_STATS
+      for i, key in ipairs({ "hp", "atk", "def", "spe", "spa", "spd" }) do
+        stats[sp][key] = rom:u16(base + (i - 1) * 2)
+      end
+    end
     types[sp] = { rom:get(ioff + 6), rom:get(ioff + 7) }
     abilities[sp] = { rom:get(ioff + 0x16), rom:get(ioff + 0x17) }
     -- pokefirered/include/pokemon.h:219

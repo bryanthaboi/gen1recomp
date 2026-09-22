@@ -255,9 +255,16 @@ function LauncherView.touchpressed(imp, id, x, y)
     return
   end
   imp._touchAt = imp._touchAt or {}
+  local picker = imp._modalKey == "_savePicker" and imp._savePicker
+    or imp._modalKey == "_modGames" and imp._modGames
+    or imp._modalKey == "_cartPopup" and imp._cartPicker
+    or imp._modalKey == "_settings" and imp._settings
+  local shielded = imp._modalUpNow
   imp._touchAt[tostring(id)] = {
     x = x, y = y, started = love.timer.getTime(),
-    region = tabScrollMax(imp) > 0 and inRect(imp._tabRegionRect, x, y),
+    region = not shielded and tabScrollMax(imp) > 0 and inRect(imp._tabRegionRect, x, y),
+    page = not shielded,
+    picker = picker and inRect(picker.rect, x, y) and picker or nil,
   }
 end
 
@@ -272,13 +279,17 @@ function LauncherView.touchmoved(imp, id, x, y)
     if start.dragged then
       local last = start.lastY or start.y
       local move = -(y - last)
+      if move ~= 0 and start.picker then
+        start.picker.scroll = Kit.scrollClamp((start.picker.scroll or 0) + move, start.picker.maxScroll)
+        move = 0
+      end
       if move ~= 0 and start.region then
         local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
           tabScrollMax(imp), move)
         setTabScroll(imp, at)
         move = leftover
       end
-      if move ~= 0 and (imp._pageScrollMax or 0) > 0 then
+      if move ~= 0 and start.page and (imp._pageScrollMax or 0) > 0 then
         imp._pageScroll = (imp._pageScroll or 0) + move
       end
     end
@@ -491,7 +502,7 @@ end
 local CART_COLOR = {
   red = PAL.railRed, blue = PAL.railBlue, yellow = PAL.railGold,
   gold = PAL.railAmber, silver = PAL.railSilver,
-  crystal = PAL.railCrystal, firered = PAL.railFireRed,
+  crystal = PAL.railCrystal, firered = PAL.railFireRed, leafgreen = PAL.railLeafGreen,
 }
 local function cartColor(version)
   return CART_COLOR[version] or PAL.green
@@ -1286,9 +1297,8 @@ local function buildModScopeRow(imp, x, y, w, m)
     end,
   })
 
-  imp._gearIcon = imp._gearIcon or (love and love.graphics and love.graphics.newImage and love.graphics.newImage("assets/launcher/gear.png"))
   btn(imp, gearX, y, gearW, gearW, "mod-profile-gear", "", {
-    face = "invert", image = imp._gearIcon,
+    face = "invert", icon = "pencil",
     action = function() imp._profilesPopup = true end,
   })
 
@@ -1412,92 +1422,6 @@ local function setPage(imp, key, v)
   imp._pages[key] = v
 end
 
--- A hand-drawn X / check: the UI font has no guaranteed glyph for either,
--- and the launcher ships no icon asset for them.
--- Skins tab glyph: a bezel with a screen cutout and two face buttons, drawn
--- rather than shipped as art so the tab needs no new asset.
-local function drawSkinGlyph(x, y, w, h, hot)
-  local box = math.min(w, h)
-  local bx = x + (w - box) / 2
-  local by = y + (h - box) / 2
-  local pad = math.floor(box * 0.22)
-  local ow, oh = box - 2 * pad, box - 2 * pad
-  local ink = hot and PAL.inverse or PAL.ink
-  local a = 1
-  Theme.strokeRounded(bx + pad, by + pad, ow, oh, ink, a,
-    math.max(1, math.floor(Kit.scale)), math.floor(oh * 0.22))
-  local sw, sh = ow * 0.58, oh * 0.40
-  Theme.fillRounded(bx + pad + ow * 0.10, by + pad + oh * 0.14, sw, sh, ink, a,
-    math.max(1, math.floor(sh * 0.2)))
-  local r = math.max(1, oh * 0.09)
-  Theme.fillRounded(bx + pad + ow * 0.60, by + pad + oh * 0.64, r * 2, r * 2, ink, a, r)
-  Theme.fillRounded(bx + pad + ow * 0.80, by + pad + oh * 0.50, r * 2, r * 2, ink, a, r)
-end
-
-local function drawSyncGlyph(x, y, w, h, hot)
-  local box = math.min(w, h)
-  local bx = x + (w - box) / 2
-  local by = y + (h - box) / 2
-  local pad = box * 0.24
-  local ink = hot and PAL.inverse or PAL.ink
-  local left, right = bx + pad, bx + box - pad
-  local head = box * 0.15
-  local bar = math.max(1, box * 0.09)
-  local topY, botY = by + box * 0.34, by + box * 0.58
-  Theme.fill(left, topY, math.max(0, right - left - head * 0.5), bar, ink, 1)
-  Theme.fill(left + head * 0.5, botY, math.max(0, right - left - head * 0.5),
-    bar, ink, 1)
-  if love.graphics.line then
-    love.graphics.push("all")
-    Theme.col(ink, 1)
-    if love.graphics.setLineWidth then
-      love.graphics.setLineWidth(math.max(1.5, bar))
-    end
-    local ty, byy = topY + bar / 2, botY + bar / 2
-    love.graphics.line(right - head, ty - head, right, ty, right - head,
-      ty + head)
-    love.graphics.line(left + head, byy - head, left, byy, left + head,
-      byy + head)
-    love.graphics.pop()
-  end
-end
-
-local function drawImporterGlyph(x, y, w, h, hot)
-  local box = math.min(w, h)
-  local bx = x + (w - box) / 2
-  local by = y + (h - box) / 2
-  local pad = box * 0.24
-  local ink = hot and PAL.inverse or PAL.ink
-  local lw = math.max(1, math.floor(Kit.scale + 0.5))
-  local d = box - 2 * pad
-  local cx = bx + box / 2
-
-  local trayTop = by + pad + d * 0.48
-  Theme.strokeRounded(bx + pad, trayTop, d, by + pad + d - trayTop,
-    ink, 1, lw, d * 0.18)
-
-  local head = d * 0.30
-  local tipY = trayTop - d * 0.06
-  Theme.fill(cx - lw / 2, by + pad, lw, tipY - head * 0.7 - (by + pad), ink, 1)
-  if love.graphics.polygon then
-    Theme.col(ink, 1)
-    love.graphics.polygon("fill",
-      cx - head * 0.5, tipY - head * 0.7, cx + head * 0.5, tipY - head * 0.7,
-      cx, tipY)
-    love.graphics.setColor(1, 1, 1, 1)
-  end
-end
-
-local function drawCross(x, y, size, color)
-  love.graphics.push("all")
-  love.graphics.setColor(color)
-  love.graphics.setLineWidth(math.max(2, size * 0.16))
-  love.graphics.setLineJoin("bevel")
-  love.graphics.line(x, y, x + size, y + size)
-  love.graphics.line(x + size, y, x, y + size)
-  love.graphics.pop()
-end
-
 local function drawCheck(x, y, size, color)
   love.graphics.push("all")
   love.graphics.setColor(color)
@@ -1537,21 +1461,9 @@ local GAME_TABS = {
     color = PAL.railCrystal, label = "Crystal" },
   { id = "firered", key = "tab-firered", letter = "F",
     color = PAL.railFireRed, label = "Fire Red" },
+  { id = "leafgreen", key = "tab-leafgreen", letter = "L",
+    color = PAL.railLeafGreen, label = "Leaf Green" },
 }
-
-local function drawOnlineGlyph(x, y, w, h, hot)
-  local box = math.min(w, h)
-  local bx = x + (w - box) / 2
-  local by = y + (h - box) / 2
-  local pad = box * 0.24
-  local d = box - 2 * pad
-  local ink = hot and PAL.inverse or PAL.ink
-  local lw = math.max(1, math.floor(Kit.scale + 0.5))
-  Theme.strokeRounded(bx + pad, by + pad, d, d, ink, 1, lw, d / 2)
-  Theme.fill(bx + pad, by + pad + d / 2 - lw / 2, d, lw, ink, 1)
-  Theme.strokeRounded(bx + pad + d * 0.30, by + pad, d * 0.40, d, ink, 0.8, lw,
-    d * 0.20)
-end
 
 local HEADER_TABS = {
   { id = "mods",   key = "tab-mods" },
@@ -1575,12 +1487,28 @@ local function overlayBeta(tx, ty, w, tabH, m)
   drawBetaTag(tx + (w - bw) / 2, ty + tabH - bh - math.floor(2 * m.s), bw, bh)
 end
 
+local TAB_ICONS = { mods = "puzzle", find = "search", online = "globe",
+  skins = "paintbrush", importers = "download" }
+local TAB_LABELS = { mods = "MODS", find = "FIND", online = "ONLINE",
+  skins = "SKINS", importers = "IMPORT" }
 for _, t in ipairs(HEADER_TABS) do
-  t.opts = { face = "tab", font = "tab", color = t.color, letter = t.letter }
-  if t.glyph then
-    t.opts.drawFn = (t.id == "online" and drawOnlineGlyph)
-      or (t.id == "importers" and drawImporterGlyph) or drawSkinGlyph
+  t.opts = { face = "tab", font = "tab", icon = TAB_ICONS[t.id] }
+end
+
+local function headerTabMetrics(m)
+  local gap = math.floor(6 * m.s)
+  local width = m.chip
+  for _, label in pairs(TAB_LABELS) do
+    width = math.max(width, Kit.textWidth("micro", Strings(label)) + 4)
   end
+  local dropW = width + math.floor(24 * m.s)
+  local used, rows = dropW, 1
+  for _ = 1, #HEADER_TABS do
+    if used + gap + width > m.contentW then rows, used = rows + 1, width
+    else used = used + gap + width end
+  end
+  local labelH = Kit.textHeight("micro") + math.floor(5 * m.s)
+  return width, dropW, labelH, rows
 end
 
 -- Which cartridge the dropdown is showing: the open game tab, else the last
@@ -1599,25 +1527,17 @@ end
 LauncherView.GAME_TABS = GAME_TABS
 LauncherView.currentGame = currentGame
 
-local QUIT_INK_HOT = { 0, 0, 0, 1 }
-local QUIT_INK_REST = { 1, 1, 1, 0.85 }
-
 -- Keyed off the launcher instance so the closures die with it.
 local function headerChrome(imp)
   local c = imp._headerChrome
   if c then return c end
   c = {
-    gear = { face = "invert",
+    gear = { face = "invert", icon = "settings",
       action = function() imp:_openSettings() end },
-    quit = { face = "invert",
-      action = function() imp:_quitApp() end,
-      drawFn = function(x, y, w, h, hot)
-        local pad = math.floor(w * 0.32)
-        drawCross(x + pad, y + pad, w - 2 * pad,
-          hot and QUIT_INK_HOT or QUIT_INK_REST)
-      end },
+    quit = { face = "invert", icon = "x",
+      action = function() imp:_quitApp() end },
     tab = {},
-    sync = { face = "invert", drawFn = drawSyncGlyph,
+    sync = { face = "invert", icon = "arrow-left-right",
       action = function() imp:_openSync() end },
     game = { face = "tab", font = "tab",
       action = function()
@@ -1664,7 +1584,7 @@ local function buildHeader(imp, m)
   -- gear alone and the wordmark gets that width back
   local clusterN = imp.ios and 2 or 3
   local clusterW = clusterN * gear + (clusterN - 1) * math.floor(6 * m.s) + m.pad
-  local mobile = not m.twoCol
+  local mobile = not imp.isNX or not m.twoCol
   local boxX = mobile and (m.x + m.pad) or (m.x + clusterW)
   local boxW = mobile and math.max(0, m.w - clusterW - m.pad)
     or math.max(0, m.w - 2 * clusterW)
@@ -1706,11 +1626,8 @@ local function buildHeader(imp, m)
   -- Settings gear.  It now also owns the CONTROL settings (touch overlay
   -- editor, reset rebinds), which used to be buttons stacked in the game
   -- panel -- see LauncherSettings.coreRows.
-  imp._gearIcon = imp._gearIcon
-    or love.graphics.newImage("assets/launcher/gear.png")
   rx = rx - gear
   local chrome = headerChrome(imp)
-  chrome.gear.image = imp._gearIcon
   btn(imp, rx, by, gear, gear, "gear", "", chrome.gear)
 
   rx = rx - math.floor(6 * m.s) - gear
@@ -1730,24 +1647,8 @@ local function buildHeader(imp, m)
   -- still GLOWS through Kit.button when there is something to act on.
   y = y + rowH
 
-  -- tab bar
-  imp._modsIcon = imp._modsIcon
-    or love.graphics.newImage("assets/launcher/mods.png")
-  imp._findIcon = imp._findIcon
-    or love.graphics.newImage("assets/launcher/find.png")
-  imp._bugIcon = imp._bugIcon
-    or love.graphics.newImage("assets/launcher/bug.png")
-  -- Game tabs keep their cartridge colours -- that is the one piece of brand
-  -- identity in the launcher, and "the red one" is how people actually refer
-  -- to these.  The colour rides the outline and the glyph at rest and becomes
-  -- the fill when active, the same rule the buttons follow.  Yellow stays the
-  -- bright cart gold; Gold (Gen 2) uses the deeper amber so the two do not
-  -- collide.
   local tabs = HEADER_TABS
-  for _, t in ipairs(tabs) do
-    if t.id == "mods" then t.icon = imp._modsIcon end
-    if t.id == "find" then t.icon = imp._findIcon end
-  end
+  local tabW, dropW, labelH = headerTabMetrics(m)
   local tabH = m.chip
   local tx = m.x + m.pad
   local ty = y + math.floor(6 * m.s)
@@ -1760,9 +1661,10 @@ local function buildHeader(imp, m)
   -- popup list carries the full names
   local chrome0 = headerChrome(imp)
   local game = currentGame(imp)
-  local dropW = math.min(tabRight - tabLeft, tabH + math.floor(24 * m.s))
+  dropW = math.min(tabRight - tabLeft, dropW)
   chrome0.game.color = game.color
   chrome0.game.letter = game.letter
+  chrome0.game.letterBold = true
   chrome0.game.active = imp.tab == game.id
   local gameHot = Kit.hover(tx, ty, dropW, tabH)
   local gameDown = gameHot and Kit.mouseDown
@@ -1780,13 +1682,14 @@ local function buildHeader(imp, m)
       love.graphics.setColor(1, 1, 1, 1)
     end
   end
+  Kit.textCenter("micro", Strings("GAMES"), tx, ty + tabH + 3 * m.s, dropW, PAL.muted)
   tx = tx + dropW + tabGap
 
   local function headerTab(t)
-    local w = tabH
+    local w = tabW
     if tx > tabLeft and tx + w > tabRight then
       tx = tabLeft
-      ty = ty + tabH + tabRowGap
+      ty = ty + tabH + labelH + tabRowGap
     end
     local o = t.opts
     o.active = imp.tab == t.id
@@ -1794,14 +1697,16 @@ local function buildHeader(imp, m)
     o.action = chrome.tab[t.id]
     btn(imp, tx, ty, w, tabH, t.key, "", o)
     if t.beta then overlayBeta(tx, ty, w, tabH, m) end
+    Kit.textCenter("micro", Strings(TAB_LABELS[t.id]), tx, ty + tabH + 3 * m.s, w,
+      o.active and PAL.text or PAL.muted)
     tx = tx + w + tabGap
   end
   for _, t in ipairs(tabs) do headerTab(t) end
 
   -- `ty` has walked down with the wraps, so this stays correct at one row too.
-  y = ty + tabH + math.floor(8 * m.s)
+  y = ty + tabH + labelH + math.floor(8 * m.s)
   Theme.fill(m.x, y, m.w, 1, PAL.line, Theme.A.hairline)
-  return y + math.floor(10 * m.s)
+  return y + 1
 end
 
 LauncherView.textField = textField
@@ -1966,287 +1871,169 @@ local function buildRomCard(imp, x, y, w, m, version, mdl, maxH)
   return h
 end
 
--- Save slots, PAGINATED.  This was a fixed-height scroller with momentum; it
--- is now a page of rows sized to whatever height the column has left, which
--- is why 40 slots cost exactly what 4 do.
--- Lay a row's action chips out right-aligned, wrapping onto further lines
--- when they cannot all fit across the row.  A narrow window (the 150%-scaled
--- desktop and the portrait phone in the reports) could not fit four chips on
--- one line, and a fixed right-to-left cluster simply walked them off the left
--- edge and under the row's own text.  Returns an array of lines, each an
--- array of chips, so the caller can size the row BEFORE drawing it.
-local function chipLines(chips, inner, gap)
-  local lines, line, used = {}, {}, 0
-  for _, c in ipairs(chips) do
-    if #line > 0 and used + gap + c.w > inner then
-      lines[#lines + 1] = line
-      line, used = {}, 0
-    end
-    used = used + ((#line > 0) and gap or 0) + c.w
-    line[#line + 1] = c
-  end
-  if #line > 0 then lines[#lines + 1] = line end
-  return lines
+-- Width of a small text action, including horizontal padding.
+local function chipWidth(label, m)
+  return Kit.textWidth("small", label) + math.ceil(2 * Theme.BUTTON.labelPad * Kit.scale) + 2
 end
 
--- The width a chip needs for its caption, at the row-chip font.
-local function chipWidth(label, m)
-  return Kit.textWidth("small", label) + math.floor(20 * m.s)
+local function slotMeta(slot)
+  local text = Strings("empty slot")
+  if slot.exists and slot.meta then
+    text = Strings("%d badges - %s - %d caught", slot.meta.badges or 0,
+      slot.meta.timeText or "0:00", slot.meta.dexCount or 0)
+  end
+  if slot.sealBroken then text = Strings("%s - seal broken", text) end
+  return text
+end
+
+local function saveActions(imp, scope, version, slot)
+  local key = "slot-" .. scope .. "-" .. slot.id
+  local actions = {}
+  if slot.exists then
+    actions[#actions + 1] = { label = Strings("Export"), icon = "upload", key = key .. "-export",
+      action = function()
+        imp._saveExport = { scope = scope, version = version, slotId = slot.id,
+          label = slot.label or slot.name or Strings("NEW GAME") }
+      end }
+  end
+  if not imp.android then
+    actions[#actions + 1] = { label = Strings("Rename"), icon = "pencil", key = key .. "-rename",
+      action = function() imp:_beginRename(scope, slot.id) end }
+  end
+  if imp.onEditSave and slot.exists and scope == version then
+    actions[#actions + 1] = { label = Strings("Edit save"), icon = "file-pen-line", key = key .. "-edit",
+      action = function() imp.onEditSave(version, slot.id) end }
+  end
+  actions[#actions + 1] = {
+    label = DELETE_LABEL(deleteArmed(imp, "slot", slot.id, scope)),
+    key = key .. "-del", kind = "danger", icon = "trash", keepArm = true,
+    action = function()
+      imp:pressDelete("slot", slot.id, scope, function() imp:_deleteSlot(scope, slot.id) end)
+    end,
+  }
+  return actions
 end
 
 local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   local scope = imp.slotScope and imp:slotScope(version) or version
-  local onCart = scope ~= version
   imp:_ensureSlots(scope)
   local slots = imp.slots[scope] or {}
   local active = imp.activeSlot[scope]
-  local n = #slots
-  local pad = math.floor(14 * m.s)
-  local iw = w - 2 * pad
-  local gap = math.floor(8 * m.s)
-
-  -- A slot row: name + LOADED tag, meta line, then the action chips.  The
-  -- chip set is measured against the WIDEST possible row (every chip present)
-  -- so every row on the page is the same height even though an empty slot
-  -- offers fewer -- pagination derives its row count from a uniform height.
-  local chipH = math.max(Kit.tapMin(), math.floor(30 * m.s))
-  local rowInner = iw - math.floor(20 * m.s)
-  local maxChips = {
-    { w = chipWidth(Strings("Export"), m) },
-    { w = chipWidth(Strings("Rename"), m) },
-    { w = chipWidth(Strings("Edit"), m) },
-    -- Delete's width is pinned to the WIDER of its two captions so arming to
-    -- "Sure?" never reflows the row under the pointer (#433).
-    { w = math.max(chipWidth(DELETE_LABEL(false), m),
-        chipWidth(DELETE_LABEL(true), m)) },
-  }
-  local chipGap = math.floor(6 * m.s)
-  local maxChipsW = 0
-  for i, c in ipairs(maxChips) do
-    maxChipsW = maxChipsW + c.w + ((i > 1) and chipGap or 0)
+  local slot
+  for _, entry in ipairs(slots) do if entry.id == active then slot = entry break end end
+  local pad, gap = math.floor(14 * m.s), math.floor(8 * m.s)
+  local iw, bh = w - 2 * pad, m.btnH
+  local importLabel = imp.isNX and Strings("Scan again") or Strings("Import")
+  local browseLabel = Strings("Other saves (%d)", #slots)
+  local iconExtra = math.floor(bh * 0.42) + math.floor(7 * Kit.scale)
+  local importW = chipWidth(importLabel, m) + iconExtra
+  local browseW = chipWidth(browseLabel, m) + iconExtra
+  if importW + browseW + gap > iw then
+    browseLabel = Strings("Other saves")
+    browseW = chipWidth(browseLabel, m) + iconExtra
   end
-  -- BESIDE the text when the row is wide enough to hold both and still leave
-  -- the name and meta lines a readable share, UNDER it when it is not.  A
-  -- desktop row costs one text block instead of a text block plus a button
-  -- strip, which is what lets a two-column window show several slots per page
-  -- instead of one; a phone row keeps the taller shape rather than squeezing
-  -- four chips and a name into one line.
-  local textH = Kit.textHeight("button") + math.floor(4 * m.s)
-    + Kit.textHeight("small")
-  -- The threshold is what the TEXT needs, not a fraction of the row: a slot
-  -- name plus its badges/time/dex line wants about this much before it starts
-  -- ellipsizing anything a player came to read.
-  local textMinW = math.floor(150 * m.s)
-  local sideBySide =
-    (rowInner - maxChipsW - math.floor(12 * m.s)) >= textMinW
-  local chipRowCount = #chipLines(maxChips, rowInner, chipGap)
-  local chipBlockH = chipRowCount * chipH
-    + math.max(0, chipRowCount - 1) * chipGap
-  local rowH
-  if sideBySide then
-    rowH = math.floor(8 * m.s) + math.max(textH, chipH) + math.floor(8 * m.s)
-  else
-    rowH = math.floor(8 * m.s) + textH + math.floor(8 * m.s) + chipBlockH
-      + math.floor(8 * m.s)
+  local capH = Kit.textHeight("button")
+  local headerInline = Kit.textWidth("button", Strings("SAVE")) + gap * 2 + importW + browseW <= iw
+  local headerCols = importW + gap + browseW <= iw and 2 or 1
+  local headH = headerInline and bh or capH + gap + bh * (headerCols == 2 and 1 or 2)
+    + (headerCols == 1 and gap or 0)
+  local inner = iw - 2 * gap
+  local actions = slot and saveActions(imp, scope, version, slot) or {}
+  local actionMin = 0
+  for _, action in ipairs(actions) do
+    actionMin = math.max(actionMin, chipWidth(action.label, m) + iconExtra)
   end
-
-  -- The header carries "Import save": a .sav import CREATES a slot, so it
-  -- belongs to the slot list rather than to the ROM card it used to sit in.
-  local headH = math.max(Kit.textHeight("caption"), m.btnH) + math.floor(8 * m.s)
-  local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
-  local newBtnH = m.btnH
-  local sfNotice = imp.saveNotice[scope]
-  local hintText, hintCol
-  if sfNotice then
-    hintText, hintCol = sfNotice.text, (sfNotice.ok and PAL.green or PAL.red)
-  else
-    hintText, hintCol = nil, PAL.muted
-  end
-  local hintH = hintText
-    and (Kit.wrapHeight("small", hintText, iw, 2) + math.floor(8 * m.s)) or 0
-  local folderRow = sfNotice and sfNotice.dir
-  if folderRow then hintH = hintH + Kit.textHeight("small") + math.floor(4 * m.s) end
-
-  -- Rows get whatever is left after the card's fixed furniture.
-  local listH = availH
-    - (pad * 2 + headH + hintH + pagerH + gap + newBtnH + gap)
-  local perPage = Kit.rowsThatFit(listH, rowH, gap, 1, 12)
-  local pageKey = "slots-" .. scope
-  local first, last, cur, pages = Kit.pageBounds(page(imp, pageKey), n, perPage)
-  setPage(imp, pageKey, cur)
-
-  local shown = math.max(0, last - first + 1)
-  local usedListH = (n == 0) and math.floor(70 * m.s)
-    or (shown * rowH + math.max(0, shown - 1) * gap)
-  local h = pad + headH + usedListH + gap + hintH
-    + (pages > 1 and (pagerH + gap) or 0) + newBtnH + pad
-
+  actionMin = math.max(actionMin, chipWidth(DELETE_LABEL(true), m) + iconExtra)
+  local cols = inner >= 2 * actionMin + gap and 2 or 1
+  local actionRows = math.ceil(#actions / cols)
+  local actionH = actionRows * bh + math.max(0, actionRows - 1) * gap
+  local side = slot and inner >= math.floor(400 * m.s)
+  local actionW = side and math.max(2 * actionMin + gap, math.floor(inner * 0.46)) or inner
+  local textW = side and inner - actionW - gap or inner
+  local hasStats = slot and slot.exists and slot.meta
+  local metaH = hasStats and Kit.textHeight("button") + math.floor(3 * m.s) + Kit.textHeight("small")
+    or slot and Kit.wrapHeight("small", slotMeta(slot), textW) or 0
+  if hasStats and slot.sealBroken then metaH = metaH + gap + Kit.textHeight("small") end
+  local textH = Kit.textHeight("button") + gap + metaH
+  local rowH = slot and (2 * gap + (side and math.max(textH, actionH) or textH + gap + actionH))
+    or math.max(math.floor(70 * m.s), Kit.wrapHeight("small",
+      Strings("No saves yet - start a new game or import one."), inner) + 2 * gap)
+  local notice = imp.saveNotice[scope]
+  local noticeH = notice and (Kit.wrapHeight("small", notice.text, iw, 2) + gap) or 0
+  if notice and notice.dir then noticeH = noticeH + bh + gap end
+  local h = 2 * pad + headH + gap + rowH + gap + noticeH + bh
   Kit.card(x, y, w, h)
-  local cy = y + pad
-  local capY = cy + math.floor((m.btnH - Kit.textHeight("caption")) / 2)
-  Kit.caption(x + pad, capY, Strings("SAVE SLOT"))
-  local savImportLabel = imp.isNX and Strings("Scan again")
-    or Strings("Import save")
-  local impW = chipWidth(savImportLabel, m) + math.floor(8 * m.s)
-  btn(imp, x + w - pad - impW, cy, impW, m.btnH, "sav-import-" .. scope,
-    savImportLabel, {
-      kind = "accent", font = "small",
-      enabled = (ready and not onCart) and true or false,
-      action = (ready and not onCart)
-        and function() imp:chooseSaveImport(version) end or nil,
-    })
-  local countW = (x + w - pad - impW - math.floor(8 * m.s))
-    - (x + pad + Kit.captionWidth(Strings("SAVE SLOT")) + math.floor(8 * m.s))
-  if countW > 0 then
-    Kit.textRight("small",
-      n == 1 and Strings("1 slot") or Strings("%d slots", n),
-      x + w - pad - impW - math.floor(8 * m.s), capY, PAL.muted)
-  end
-  cy = cy + headH
-
-  if n == 0 then
-    Kit.emptyBox(x + pad, cy, iw, usedListH,
-      Strings("No saves yet - start a new game or import one."))
-    cy = cy + usedListH + gap
-  else
-    -- Wheel over the list turns pages; the page index is bounded, so there is
-    -- no scroll offset to interpolate and nothing to clamp against content.
-    setPage(imp, pageKey,
-      Kit.wheelPage(x + pad, cy, iw, usedListH, cur, n, perPage))
-    for i = first, last do
-      local slot = slots[i]
-      local selected = slot.id == active
-      local rowKey = "slot-" .. scope .. "-" .. slot.id
-      local ry = cy + (i - first) * (rowH + gap)
-      local ink = rowHit(imp, x + pad, ry, iw, rowH, selected, rowKey,
-        function() imp:_selectSlot(scope, slot.id) end)
-
-      local px = x + pad + math.floor(10 * m.s)
-      local inner = iw - math.floor(20 * m.s)
-      -- Beside the chips, the text block only owns what they leave; under
-      -- them it owns the row.  Either way the width is fixed before anything
-      -- prints, so the name ellipsizes into its own space rather than into
-      -- a button.
-      local textW = sideBySide
-        and (inner - maxChipsW - math.floor(12 * m.s)) or inner
-      local ly = ry + math.floor(8 * m.s)
-        + (sideBySide and math.floor((math.max(textH, chipH) - textH) / 2) or 0)
-      local name = slot.label or slot.name or Strings("NEW GAME")
-      local tagW = 0
-      if selected then
-        tagW = Kit.textWidth("micro", Strings("LOADED")) + math.floor(16 * m.s)
-        Kit.tag(px + textW - tagW, ly, tagW, Kit.textHeight("button"),
-          Strings("LOADED"), PAL.inverse)
-        tagW = tagW + math.floor(8 * m.s)
-      end
-      Kit.text("button", Kit.ellipsize("button", name, textW - tagW), px, ly, ink)
-      ly = ly + Kit.textHeight("button") + math.floor(4 * m.s)
-      local metaTxt
-      if slot.exists and slot.meta then
-        metaTxt = Strings("%d badges - %s - %d caught", slot.meta.badges or 0,
-          slot.meta.timeText or "0:00", slot.meta.dexCount or 0)
-      else
-        metaTxt = Strings("empty slot")
+  local px, cy = x + pad, y + pad
+  Kit.textBold("button", Strings("SAVE"), px, cy + (headerInline and (bh - capH) / 2 or 0), PAL.heading)
+  local hy = headerInline and cy or cy + capH + gap
+  local hx = headerInline and x + w - pad - importW - gap - browseW or px
+  local firstW = headerInline and importW or (headerCols == 2 and importW or iw)
+  btn(imp, hx, hy, firstW, bh, "sav-import-" .. scope, importLabel, {
+    font = "small", icon = "download", enabled = ready and scope == version,
+    action = function() imp:chooseSaveImport(version) end,
+  })
+  local bx = headerCols == 2 and hx + firstW + gap or px
+  local by = headerCols == 2 and hy or hy + bh + gap
+  local bw = headerInline and browseW or (headerCols == 2 and iw - firstW - gap or iw)
+  btn(imp, bx, by, bw, bh, "sav-browse-" .. scope, browseLabel, {
+    font = "small", icon = "folder", enabled = #slots > 0,
+    action = function() imp._savePicker = { scope = scope, version = version, scroll = 0 } end,
+  })
+  cy = cy + headH + gap
+  Kit.card(px, cy, iw, rowH, "row")
+  if slot then
+    Theme.strokeRounded(px, cy, iw, rowH, PAL.green, 0.65, 1, Theme.cardRadius())
+    local tx, ty = px + gap, cy + gap
+    local tagW = chipWidth(Strings("LOADED"), m)
+    local titleW = math.max(0, textW - tagW - gap)
+    Kit.textBold("button", Kit.ellipsize("button", slot.label or slot.name or Strings("NEW GAME"), titleW),
+      tx, ty, PAL.heading)
+    Kit.tag(tx + textW - tagW, ty, tagW, Kit.textHeight("button"), Strings("LOADED"), PAL.green,
+      { fill = true, ink = PAL.inverse })
+    local my = ty + Kit.textHeight("button") + gap
+    if hasStats then
+      local values = { tostring(slot.meta.badges or 0), slot.meta.timeText or "0:00", tostring(slot.meta.dexCount or 0) }
+      local labels = { Strings("badges"), Strings("played"), Strings("caught") }
+      local statW = textW / 3
+      for i = 1, 3 do
+        local sx = tx + (i - 1) * statW
+        Kit.textCenter("button", Kit.ellipsize("button", values[i], statW - gap), sx, my, statW, PAL.heading)
+        Kit.textCenter("small", Kit.ellipsize("small", labels[i], statW - gap), sx,
+          my + Kit.textHeight("button") + math.floor(3 * m.s), statW, PAL.muted)
+        if i > 1 then Theme.fill(sx, my + 3 * m.s, 1, metaH - 6 * m.s, PAL.line, 0.35) end
       end
       if slot.sealBroken then
-        metaTxt = Strings("%s - seal broken", metaTxt)
+        Kit.text("small", Strings("seal broken"), tx, my + metaH - Kit.textHeight("small"), PAL.yellow)
       end
-      Kit.text("small", Kit.ellipsize("small", metaTxt, textW), px, ly,
-        selected and PAL.inverse or PAL.muted)
-      -- Where the chip block starts: centred on the row beside the text, or
-      -- on its own line under it.
-      ly = sideBySide and (ry + (rowH - chipBlockH) / 2)
-        or (ly + Kit.textHeight("small") + math.floor(8 * m.s))
-
-      -- Action chips, right-aligned and wrapped onto as many lines as the row
-      -- width needs.  Export lives HERE rather than beside the ROM buttons:
-      -- an export is a property of a slot, so the control belongs on the slot
-      -- it exports (it selects the row first, since the exporter writes
-      -- whichever slot is active).
-      local armed = deleteArmed(imp, "slot", slot.id, scope)
-      local chips = {}
-      if slot.exists and not onCart then
-        chips[#chips + 1] = { label = Strings("Export"), kind = "accent",
-          key = rowKey .. "-export",
-          action = function()
-            imp:_selectSlot(scope, slot.id)
-            imp:exportSave(version)
-          end }
-      end
-      if not imp.android then
-        chips[#chips + 1] = { label = Strings("Rename"), kind = "accent",
-          key = rowKey .. "-rename",
-          action = function() imp:_beginRename(scope, slot.id) end }
-      end
-      if imp.onEditSave and slot.exists and not onCart then
-        chips[#chips + 1] = { label = Strings("Edit"), kind = "accent",
-          key = rowKey .. "-edit",
-          action = function() imp.onEditSave(version, slot.id) end }
-      end
-      chips[#chips + 1] = { label = DELETE_LABEL(armed), kind = "danger",
-        keepArm = true, key = rowKey .. "-del",
-        -- Pinned width, so arming to "Sure?" cannot reflow the cluster.
-        w = math.max(chipWidth(DELETE_LABEL(false), m),
-          chipWidth(DELETE_LABEL(true), m)),
-        action = function()
-          imp:pressDelete("slot", slot.id, scope, function()
-            imp:_deleteSlot(scope, slot.id)
-          end)
-        end }
-      for _, c in ipairs(chips) do c.w = c.w or chipWidth(c.label, m) end
-      for li, line in ipairs(chipLines(chips, inner, chipGap)) do
-        local total = 0
-        for i, c in ipairs(line) do
-          total = total + c.w + ((i > 1) and chipGap or 0)
-        end
-        local cx = px + inner - total
-        local cly = ly + (li - 1) * (chipH + chipGap)
-        for _, c in ipairs(line) do
-          btn(imp, cx, cly, c.w, chipH, c.key, c.label, {
-            kind = c.kind, font = "small", keepArm = c.keepArm,
-            action = c.action,
-          })
-          cx = cx + c.w + chipGap
-        end
-      end
+    else
+      Kit.textWrapped("small", slotMeta(slot), tx, my, textW, PAL.detail)
     end
-    cy = cy + usedListH + gap
-  end
-
-  -- The save-file notice (import/export result) lands in this card now that
-  -- the buttons that produce it do.
-  if hintText then
-    cy = cy + Kit.textWrapped("small", hintText, x + pad, cy, iw, hintCol, 2)
-    if folderRow then
-      cy = cy + math.floor(4 * m.s)
-      local key = "sav-folder-" .. scope
-      local label = Strings("Open folder")
-      local lw = Kit.textWidth("small", label)
-      local lh = Kit.textHeight("small")
-      Kit.focusable(key, x + pad, cy, lw, lh)
-      Kit.text("small", label, x + pad, cy, PAL.blue)
-      Theme.fill(x + pad, cy + lh - 1, lw, 1, PAL.blue, 0.6)
-      if Kit.press(x + pad, cy, lw, lh) or Kit._activateId == key then
-        local dir = sfNotice.dir
-        queueAction(imp, key, function()
-          love.system.openURL(imp:fileUrl(dir))
-        end)
-      end
-      cy = cy + lh
+    local ax = side and px + iw - gap - actionW or tx
+    local ay = side and cy + gap or ty + textH + gap
+    local cw = (actionW - (cols - 1) * gap) / cols
+    for i, action in ipairs(actions) do
+      btn(imp, ax + ((i - 1) % cols) * (cw + gap), ay + math.floor((i - 1) / cols) * (bh + gap),
+        cw, bh, action.key, action.label, {
+          kind = action.kind, icon = action.icon, font = "small", keepArm = action.keepArm, action = action.action,
+        })
     end
-    cy = cy + math.floor(8 * m.s)
+  else
+    Kit.textWrapped("small", #slots > 0 and Strings("Choose a save from Other saves.")
+      or Strings("No saves yet - start a new game or import one."), px + gap, cy + gap, inner, PAL.muted)
   end
-
-  if pages > 1 then
-    local newPage = Kit.pager(x + pad, cy, iw, cur, n, perPage, pageKey)
-    setPage(imp, pageKey, newPage)
-    cy = cy + pagerH + gap
+  cy = cy + rowH + gap
+  if notice then
+    cy = cy + Kit.textWrapped("small", notice.text, px, cy, iw, notice.ok and PAL.green or PAL.red, 2) + gap
+    if notice.dir then
+      btn(imp, px, cy, iw, bh, "sav-folder-" .. scope, Strings("Open folder"), {
+        font = "small", action = function() love.system.openURL(imp:fileUrl(notice.dir)) end,
+      })
+      cy = cy + bh + gap
+    end
   end
-  btn(imp, x + pad, cy, iw, newBtnH, "slot-new-" .. scope,
-    Strings("+ New save slot"), {
-      kind = "good",
-      action = function() imp:_newSlot(scope) end,
-    })
+  btn(imp, px, cy, iw, bh, "slot-new-" .. scope, Strings("+ New save slot"), {
+    kind = "good", action = function() imp:_newSlot(scope) end,
+  })
   return h
 end
 
@@ -2387,42 +2174,36 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
   local skin = cartSkin(imp, version)
   local gameName = skin.name or (info and (info.launcherName or info.displayName))
     or tostring(version)
-  if info and info.beta then gameName = gameName .. " (Beta)" end
   local ready = (not locked) and imp.ready[version] or false
-
-  -- title + status tag.  Ready is a check chip (the font has no tick glyph);
-  -- missing ROM stays a yellow "ROM REQUIRED" tag so it still reads as an action.
+  local gap = math.floor(8 * m.s)
   local titleH = Kit.textHeight("title")
-  Kit.text("title", Kit.ellipsize("title", gameName, w * 0.6), x, y, PAL.heading)
   local tagH = Kit.textHeight("micro") + math.floor(10 * m.s)
-  local tagX = x + Kit.textWidth("title", Kit.ellipsize("title", gameName, w * 0.6))
-    + math.floor(12 * m.s)
-  local tagY = y + (titleH - tagH) / 2
-  local tagW, tagCol
-  if ready then
-    tagCol = PAL.green
-    tagW = tagH
-    if love.graphics then
-      Theme.strokeRounded(tagX, tagY, tagW, tagH, tagCol, 0.7, 1)
-      local ck = math.floor(tagH * 0.55)
-      drawCheck(tagX + (tagW - ck) / 2, tagY + (tagH - ck) / 2, ck, tagCol)
-    end
-  else
-    local tagText
-    if imp.baseRoms and imp.baseRoms[version] then
-      tagText, tagCol = Strings("ROM FOUND"), PAL.green
-    elseif locked then tagText, tagCol = Strings("COMING SOON"), PAL.steel
-    else tagText, tagCol = Strings("ROM REQUIRED"), PAL.yellow end
-    tagW = Kit.textWidth("micro", tagText) + math.floor(18 * m.s)
-    Kit.tag(tagX, tagY, tagW, tagH, tagText, tagCol)
+  local betaW = info and info.beta and (Kit.textWidth("micro", "BETA") + 12 * m.s) or 0
+  local status = ready and Strings("Ready")
+    or imp.baseRoms and imp.baseRoms[version] and Strings("ROM FOUND")
+    or locked and Strings("COMING SOON") or Strings("ROM REQUIRED")
+  local statusColor = ready and PAL.green or locked and PAL.steel or PAL.yellow
+  local statusW = Kit.textWidth("micro", status) + 18 * m.s
+  local nameW = Kit.textWidth("title", gameName)
+  local inline = nameW + betaW + statusW + 4 * gap + 150 * m.s <= w
+  local titleW = inline and w - betaW - statusW - 4 * gap - 150 * m.s
+    or w - (betaW > 0 and betaW + gap or 0)
+  local title = Kit.ellipsize("title", gameName, titleW)
+  Kit.textBold("title", title, x, y, PAL.heading)
+  local tx = x + Kit.textWidth("title", title) + gap
+  if betaW > 0 then
+    drawBetaTag(tx, y + (titleH - tagH) / 2, betaW, tagH)
+    tx = tx + betaW + gap
   end
+  local sy = y + (titleH - tagH) / 2
+  if not inline then tx, sy = x, y + titleH + math.floor(4 * m.s) end
+  Kit.tag(tx, sy, statusW, tagH, status, statusColor)
   if ready then
-    local hint = Strings("(PRESS THE CART TO PLAY)")
-    local hintX = tagX + tagW + math.floor(10 * m.s)
-    local hintW = math.max(0, x + w - hintX)
-    Kit.text("micro", Kit.ellipsize("micro", hint, hintW), hintX,
-      y + (titleH - Kit.textHeight("micro")) / 2, PAL.heading)
+    local hx = tx + statusW + gap
+    Kit.text("micro", Kit.ellipsize("micro", Strings("(PRESS THE CART TO PLAY)"), math.max(0, x + w - hx)),
+      hx, sy + (tagH - Kit.textHeight("micro")) / 2, PAL.muted)
   end
+  if not inline then titleH = titleH + math.floor(4 * m.s) + tagH end
   -- Extra gap under the title when the cart is showing: 12px left the 3D
   -- shell sitting on the hairline.  Scaled, and still small on a phone.
   local afterTitle = math.floor((ready and 22 or 12) * m.s)
@@ -2474,10 +2255,8 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
     local cartX = lx + math.floor((cartAreaW - cartW) / 2)
     cartridgeButton(imp, cartX, ly, cartW, cartH, "play-" .. version,
       skin, function() imp:play(version, true) end, version)
-    imp._gearIcon = imp._gearIcon
-      or love.graphics.newImage("assets/launcher/gear.png")
     btn(imp, lx + lw - mgW, ly, mgW, mgW, "manage-" .. version, "", {
-      face = "invert", image = imp._gearIcon,
+      face = "invert", icon = "pencil",
       action = function() imp._gameManage = version end,
     })
     ly = ly + cartH + gap
@@ -2507,13 +2286,8 @@ local function buildGamePanel(imp, x, y, w, availH, m, version, budgetH)
   if not locked then
     local slotY = m.twoCol and cy or ly
     local slotAvail = m.twoCol and budgetLeft or (cy + budgetLeft - ly)
-    if slotAvail > 80 * m.s then
-      Kit.pushClip(rx2, slotY, rw, math.max(0, slotAvail))
-      local slotH = buildSlotCard(imp, rx2, slotY, rw, slotAvail, m, version,
-        ready)
-      Kit.popClip()
-      bottom = math.max(bottom, slotY + math.min(slotH or 0, slotAvail))
-    end
+    local slotH = buildSlotCard(imp, rx2, slotY, rw, slotAvail, m, version, ready)
+    bottom = math.max(bottom, slotY + (slotH or 0))
   end
   return bottom - y
 end
@@ -2632,25 +2406,6 @@ end
 
 -- One compact coloured checkbox for each game.  The cartridge colour carries
 -- the game identity even when the row is narrow.
-local function modGameCheckbox(x, y, size, checked, game, id, enabled)
-  enabled = enabled ~= false
-  local color = enabled and cartColor(game) or PAL.steel
-  local focused = enabled and Kit.focusable(id, x, y, size, size)
-  local hot = enabled and (focused or Kit.hover(x, y, size, size))
-  if love.graphics then
-    Theme.fillRounded(x, y, size, size, PAL.bg, 1)
-    if checked then
-      Theme.strokeRounded(x, y, size, size, color,
-        hot and Theme.A.focus or 0.9, 1.5)
-      drawCheck(x, y, size, color)
-    else
-      Theme.strokeRounded(x, y, size, size, color,
-        hot and Theme.A.focus or Theme.A.hairline, 1)
-    end
-  end
-  return enabled and (Kit.press(x, y, size, size) or Kit._activateId == id)
-end
-
 local function cartsWithUpdates(imp)
   if not imp._updateAllCartRows then return {} end
   local ok, rows = pcall(imp._updateAllCartRows, imp)
@@ -2856,12 +2611,11 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   -- A mod row is a fixed height: its details first, then a dedicated second
   -- line of per-game checkboxes.  Fixed row heights are what make the
   -- cull below plain arithmetic.
-  local togH = math.floor(26 * m.s)
-  local gamesLabel = Strings("Enable for:")
+  local togH = m.btnH
   local textH = Kit.textHeight("button") + math.floor(4 * m.s)
-    + Kit.textHeight("small") + math.floor(2 * m.s) + Kit.textHeight("small")
-  local rowH = math.floor(8 * m.s) + textH + math.floor(8 * m.s) + togH
-    + math.floor(8 * m.s)
+    + 2 * Kit.textHeight("small") + Kit.textHeight("micro") + math.floor(8 * m.s)
+  local rowH = math.floor(10 * m.s) + textH + math.floor(8 * m.s) + togH
+    + m.btnH + math.floor(18 * m.s)
   local listTop = cy
 
   -- One continuous list: derive the rows that can touch the viewport before
@@ -2888,8 +2642,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
       isFullyDisabled = not mod.enabled
     end
 
-    local focused = Kit.focusable(rowKey, x, ry, w, rowH)
-    local hot = focused or Kit.hover(x, ry, w, rowH)
+    local hot = Kit.hover(x, ry, w, rowH)
     if isFullyDisabled then
       Kit.card(x, ry, w, rowH, hot and "mutedHot" or "muted")
     else
@@ -2899,88 +2652,51 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     local px, inner = x + pad, w - 2 * pad
     local ly = ry + math.floor(10 * m.s)
 
-    local togGap = math.floor(5 * m.s) + 1
     local info = mod.github and mod.github ~= "" and imp:_modUpdateInfo(mod.id)
-
-    -- These answer separate games, not a single shared install flag.  The
-    -- importer receives the game id so an experimental confirmation also
-    -- applies only to the checkbox the player pressed.  A cart's pin answers
-    -- one game -- the cart's -- so it gets one switch instead of the row.
-    local flipped = false
-    local gamesY = ry + math.floor(8 * m.s) + textH + math.floor(8 * m.s)
-    local rowLabel = gamesLabel
+    local gamesY = ry + math.floor(10 * m.s) + textH + math.floor(8 * m.s)
+    local summary
     if mod.cartPin then
-      rowLabel = mod.cartTogglable and Strings("In this cart:")
-        or Strings("Pinned, sealed:")
-    end
-    Kit.text("micro", rowLabel, px,
-      gamesY + (togH - Kit.textHeight("micro")) / 2,
-      mod.cartPin and not mod.cartTogglable and PAL.yellow or PAL.muted)
-    local tx = px + Kit.textWidth("micro", rowLabel) + math.floor(10 * m.s)
-    if mod.cartPin then
-      local togKey = "mod-toggle-" .. mod.id .. "-cart"
-      -- pressable even when the seal refuses it, so the panel can say why
-      if modGameCheckbox(tx, gamesY, togH, mod.enabled == true,
-          mod.cartBase or "red", togKey, not safeMode) then
-        queueAction(imp, togKey, function() imp:_toggleMod(mod.id, nil, nil) end)
-        flipped = true
-      end
-      tx = tx + togH + togGap
+      summary = mod.cartTogglable and (mod.enabled and Strings("In this cart: Enabled")
+        or Strings("In this cart: Disabled")) or Strings("Pinned, sealed:")
     else
-      for _, game in ipairs(GameVersion.ORDER) do
-        local togKey = "mod-toggle-" .. mod.id .. "-" .. game
-        if modGameCheckbox(tx, gamesY, togH,
-            mod.enabledByVersion and mod.enabledByVersion[game] == true,
-            game, togKey, not safeMode) then
-          local version = game
-          queueAction(imp, togKey, function() imp:_toggleMod(mod.id, nil, version) end)
-          flipped = true
+      local count, names = 0, {}
+      for _, game in ipairs(GAME_TABS) do
+        if mod.enabledByVersion and mod.enabledByVersion[game.id] then
+          count = count + 1
+          names[#names + 1] = Strings(game.label)
         end
-        tx = tx + togH + togGap
       end
+      summary = count == 0 and Strings("Enable for games")
+        or count <= 2 and Strings("Enabled for: %s", table.concat(names, ", "))
+        or Strings("Enabled for: %d games", count)
     end
-    -- The checkboxes sit inside the row's rect, so their press also passes the
-    -- row hit test; `flipped` gates the row action to everywhere else.
-    if not flipped
-        and (Kit.press(x, ry, w, rowH) or Kit._activateId == rowKey) then
-      local id = mod.id
-      queueAction(imp, rowKey, function() imp._modActions = id end)
-    end
+    local selectorKey = "mod-games-" .. mod.id
+    btn(imp, px, gamesY, inner, togH, selectorKey, summary, {
+      font = "small", align = "left", trailingIcon = "chevron-right", enabled = not safeMode,
+      action = function()
+        if mod.cartPin then imp:_toggleMod(mod.id, nil, nil)
+        else imp._modGames = { id = mod.id, scroll = 0 } end
+      end,
+    })
+    btn(imp, px, gamesY + togH + math.floor(8 * m.s),
+      inner, m.btnH,
+      rowKey, Strings("Details"), { font = "small", icon = "folder",
+        action = function() imp._modActions = mod.id end,
+      })
     local textW = inner
-
-    local badgeW = Kit.textWidth("micro", mod.badge) + math.floor(12 * m.s)
-    -- the games the mod is for, beside its category: the same chip the
-    -- in-game manager shows (src/mods/ModTargets.lua)
-    local gamesW = mod.targets
-      and Kit.textWidth("micro", mod.targets) + math.floor(12 * m.s) or 0
-    -- the cart's own list, not the player's: every row says so
-    local pinLabel = mod.cartPin and Strings("PINNED") or nil
-    local pinW = pinLabel
-      and Kit.textWidth("micro", pinLabel) + math.floor(12 * m.s) or 0
-    local nameShown = Kit.ellipsize("button", mod.name,
-      textW - badgeW - gamesW - pinW - math.floor(12 * m.s))
-    local headingCol = isFullyDisabled and PAL.muted or PAL.heading
-    Kit.text("button", nameShown, px, ly, headingCol)
-    local tagX = px + Kit.textWidth("button", nameShown) + math.floor(8 * m.s)
-    Kit.tag(tagX, ly, badgeW, Kit.textHeight("button"), mod.badge,
-      mod.experimental and PAL.yellow or PAL.muted)
-    tagX = tagX + badgeW + math.floor(4 * m.s)
-    if mod.targets then
-      Kit.tag(tagX, ly, gamesW,
-        Kit.textHeight("button"), mod.targets,
-        mod.targetsHere == false and PAL.steel or PAL.blue)
-      tagX = tagX + gamesW + math.floor(4 * m.s)
-    end
-    if pinLabel then
-      Kit.tag(tagX, ly, pinW, Kit.textHeight("button"), pinLabel,
-        mod.cartTogglable and PAL.blue or PAL.yellow)
-    end
+    Kit.text("button", Kit.ellipsize("button", mod.name, textW - 16 * m.s), px, ly,
+      isFullyDisabled and PAL.muted or PAL.heading)
     ly = ly + Kit.textHeight("button") + math.floor(4 * m.s)
+    local tags = (mod.badge or "MOD") .. (mod.targets and ("  /  " .. mod.targets) or "")
+    if mod.cartPin then tags = tags .. "  /  " .. Strings("PINNED") end
+    Kit.text("micro", Kit.ellipsize("micro", tags, textW), px, ly,
+      mod.experimental and PAL.yellow or PAL.muted)
+    ly = ly + Kit.textHeight("micro") + math.floor(4 * m.s)
 
     -- version + status + update state
     local statusText, statusCol = modStatusColor(mod.status)
     local line = "v" .. tostring(mod.version or "?") .. "   " .. statusText
-    Kit.text("small", line, px, ly, statusCol)
+    Kit.text("small", Kit.ellipsize("small", line, textW), px, ly, statusCol)
     local lx = px + Kit.textWidth("small", line) + math.floor(12 * m.s)
     if imp:_modInfoPending(mod.id) then
       -- An inline spinner, because this row's release check is genuinely in
@@ -2989,12 +2705,12 @@ local function buildModsPanel(imp, x, y, w, availH, m)
       Kit.text("small", Strings("Checking..."),
         lx + Kit.textHeight("small") + math.floor(6 * m.s), ly, PAL.muted)
     elseif info and info.status == "available" then
-      Kit.text("small", Strings("v%s available", tostring(info.latest)),
+      Kit.text("small", Kit.ellipsize("small", Strings("v%s available", tostring(info.latest)), math.max(0, px + inner - lx)),
         lx, ly, PAL.yellow)
     elseif info and info.status == "current" then
-      Kit.text("small", Strings("up to date"), lx, ly, PAL.muted)
+      Kit.text("small", Kit.ellipsize("small", Strings("up to date"), math.max(0, px + inner - lx)), lx, ly, PAL.muted)
     elseif info and info.status == "error" then
-      Kit.text("small", Strings("check failed"), lx, ly, PAL.red)
+      Kit.text("small", Kit.ellipsize("small", Strings("check failed"), math.max(0, px + inner - lx)), lx, ly, PAL.red)
     end
     ly = ly + Kit.textHeight("small") + math.floor(2 * m.s)
 
@@ -3067,7 +2783,7 @@ local function buildImportersPanel(imp, x, y, w, availH, m)
   local gap = m.gap
   local cy = y
 
-  Kit.text("title", Strings("IMPORTERS"), x, cy, PAL.heading)
+  Kit.text("title", Strings("Extra Importers"), x, cy, PAL.heading)
   cy = cy + Kit.textHeight("title") + math.floor(10 * m.s)
 
   local listTop = cy
@@ -3407,7 +3123,7 @@ local function buildSkinsPanel(imp, x, y, w, availH, m)
   local cy, gap, bh = y, m.gap, m.btnH
   local active = imp:_activeSkin()
 
-  Kit.text("button", Strings("Skins"), x, cy, PAL.heading)
+  Kit.text("title", Strings("Skins"), x, cy, PAL.heading)
   local importW = math.min(w * 0.46,
     Kit.textWidth("small", imp:_skinsImportButtonLabel()) + math.floor(24 * m.s))
   btn(imp, x + w - importW, cy, importW, bh, "skins-import",
@@ -3703,8 +3419,7 @@ local function buildFindPanel(imp, x, y, w, availH, m)
     -- The whole row is the control: it opens the per-mod popup where
     -- Install / Details / Source moved.  The only inline signal left is a
     -- green check when the mod is already installed.
-    local focused = Kit.focusable(rowKey, x, ry, w, rowH)
-    local hot = focused or Kit.hover(x, ry, w, rowH)
+    local hot = Kit.hover(x, ry, w, rowH)
     Kit.card(x, ry, w, rowH, hot)
     local pad = math.floor(12 * m.s)
     local px, inner = x + pad, w - 2 * pad
@@ -4034,6 +3749,166 @@ end
 LauncherView.modalPanel = modalPanel
 
 -- Shared prompt: title, read-only field over the importer's text, buttons.
+-- Pickers keep their controls outside the scroll clip; only the rows move.
+local function pickerFrame(imp, m, state, key, title, count, rowH)
+  local pad, gap = math.floor(16 * m.s), math.floor(8 * m.s)
+  local headH = m.btnH + gap
+  local wantH = 2 * pad + headH + math.min(count, 6) * (rowH + gap) + m.btnH + gap
+  local px, py, pw, ph = modalPanel(m, math.floor(460 * m.s), wantH)
+  local closeW = m.btnH
+  Kit.text("button", Kit.ellipsize("button", title, pw - 2 * pad - closeW - gap),
+    px + pad, py + pad + (closeW - Kit.textHeight("button")) / 2, PAL.heading)
+  btn(imp, px + pw - pad - closeW, py + pad, closeW, closeW, key .. "-close", "", {
+    face = "invert", icon = "x", action = function() imp[key] = nil end,
+  })
+  local x, y, w = px + pad, py + pad + headH, pw - 2 * pad
+  local footerY = py + ph - pad - m.btnH
+  local h = math.max(0, footerY - gap - y)
+  local maxAt = Kit.scrollExtent(count * (rowH + gap) - gap, h)
+  state.rect = state.rect or {}
+  state.rect.x, state.rect.y, state.rect.w, state.rect.h = x, y, w, h
+  state.maxScroll = maxAt
+  state.scroll = Kit.scrollInput(state.scroll, maxAt, x, y, w, h)
+  local at = state.scroll
+  -- A focus move can land below the visible rows; scroll it into view next frame.
+  local focus = Kit.focusId
+  local index = focus and tonumber(focus:match("^" .. key .. "%-row%-(%d+)$"))
+  if index and Kit._ringShown and state.lastFocus ~= focus then
+    local top = (index - 1) * (rowH + gap)
+    at = Kit.scrollClamp(math.max(top + rowH - h, math.min(at, top)), maxAt)
+    state.scroll = at
+  end
+  state.lastFocus = focus
+  return x, y, w, h, at, maxAt, footerY, gap
+end
+
+local function buildSaveExport(imp, m)
+  local state = imp._saveExport
+  local supported = state.scope == state.version
+    and require("src.save_convert.SaveConvert").exportSupported(state.version)
+  local pad, gap = math.floor(18 * m.s), math.floor(10 * m.s)
+  local w = math.min(math.floor(440 * m.s), m.W - 2 * m.pad)
+  local inner = w - 2 * pad
+  local hint = Strings("Choose a format for %s.", state.label)
+  local original = Strings("The original launcher save, with all of its data preserved.")
+  local converted = supported and Strings("Converted for the original game or an emulator.")
+    or Strings("Cartridge export is not available for this game or custom cart yet.")
+  local h = 2 * pad + m.btnH + gap + Kit.wrapHeight("small", hint, inner) + gap
+    + m.btnH + gap + Kit.wrapHeight("small", original, inner) + gap
+    + (supported and m.btnH + gap or 0) + Kit.wrapHeight("small", converted, inner) + gap
+  local px, py, pw = modalPanel(m, w, h)
+  local x, cy = px + pad, py + pad
+  Kit.textBold("button", Strings("Export save"), x, cy + (m.btnH - Kit.textHeight("button")) / 2, PAL.heading)
+  btn(imp, px + pw - pad - m.btnH, cy, m.btnH, m.btnH, "export-save-close", "", {
+    face = "invert", icon = "x", action = function() imp._saveExport = nil end,
+  })
+  cy = cy + m.btnH + gap
+  cy = cy + Kit.textWrapped("small", hint, x, cy, inner, PAL.detail) + gap
+  btn(imp, x, cy, inner, m.btnH, "export-save-lua", Strings("Original save (.lua)"), {
+    icon = "upload", font = "small", kind = "accent",
+    action = function()
+      imp._saveExport = nil
+      imp:exportSave(state.version, "lua", state.scope, state.slotId)
+    end,
+  })
+  cy = cy + m.btnH + gap
+  cy = cy + Kit.textWrapped("small", original, x, cy, inner, PAL.muted) + gap
+  if supported then
+    btn(imp, x, cy, inner, m.btnH, "export-save-sav", Strings("Cartridge save (.sav)"), {
+      icon = "download", font = "small",
+      action = function()
+        imp._saveExport = nil
+        imp:_selectSlot(state.scope, state.slotId)
+        imp:exportSave(state.version)
+      end,
+    })
+    cy = cy + m.btnH + gap
+  end
+  Kit.textWrapped("small", converted, x, cy, inner, PAL.muted)
+end
+
+local function buildSavePicker(imp, m)
+  local state = imp._savePicker
+  imp:_ensureSlots(state.scope)
+  local slots = imp.slots[state.scope] or {}
+  local rowH = math.max(m.btnH, Kit.textHeight("button") + 2 * Kit.textHeight("small") + 20 * m.s)
+  local x, y, w, h, at, maxAt, fy, gap = pickerFrame(imp, m, state, "_savePicker",
+    Strings("%s saves", gameLabel(state.version)), #slots, rowH)
+  local py = Kit.scrollBegin(x, y, w, h, at, maxAt)
+  local rw = w - Kit.scrollGutter(m.s)
+  for i, slot in ipairs(slots) do
+    local ry = py + (i - 1) * (rowH + gap)
+    local key = "_savePicker-row-" .. i
+    local loaded = imp.activeSlot[state.scope] == slot.id
+    -- Register clipped rows too so keyboard navigation can reveal them.
+    local selected = Kit.focusable(key, x, ry, rw, rowH)
+    if ry + rowH >= y and ry <= y + h then
+      local hot = Kit.hover(x, ry, rw, rowH)
+      Kit.card(x, ry, rw, rowH, (selected or hot) and "rowHover" or "row")
+      if loaded then
+        Theme.strokeRounded(x, ry, rw, rowH, PAL.green, 0.65, 1, Theme.cardRadius())
+      end
+      local label = loaded and Strings("LOADED") or Strings("Load")
+      local labelW = Kit.textWidth("micro", label) + gap
+      Kit.text("button", Kit.ellipsize("button", slot.label or slot.name or Strings("NEW GAME"), rw - 3 * gap - labelW),
+        x + gap, ry + gap, PAL.heading)
+      Kit.textRight("micro", label, x + rw - gap, ry + gap, loaded and PAL.green or PAL.blue)
+      Kit.textWrapped("small", slotMeta(slot), x + gap, ry + gap + Kit.textHeight("button") + 4 * m.s,
+        rw - 2 * gap, PAL.detail, 2)
+    end
+    if Kit.press(x, ry, rw, rowH) or Kit._activateId == key then
+      queueAction(imp, key, function()
+        imp:_selectSlot(state.scope, slot.id)
+        imp._savePicker = nil
+      end)
+    end
+  end
+  Kit.scrollEnd(x, y, w, h, at, maxAt, PAL.surface)
+  btn(imp, x, fy, (w - gap) / 2, m.btnH, "picker-new-save", Strings("+ New save slot"), {
+    kind = "good", font = "small", action = function()
+      imp:_newSlot(state.scope)
+      imp._savePicker = nil
+    end,
+  })
+  btn(imp, x + (w + gap) / 2, fy, (w - gap) / 2, m.btnH, "picker-save-done", Strings("Done"), {
+    font = "small", action = function() imp._savePicker = nil end,
+  })
+end
+
+local function buildModGamesPicker(imp, m)
+  local state, mod = imp._modGames, nil
+  for _, entry in ipairs(imp.mods or {}) do if entry.id == state.id then mod = entry break end end
+  if not mod then imp._modGames = nil return end
+  local rowH = m.btnH + math.floor(12 * m.s)
+  local x, y, w, h, at, maxAt, fy, gap = pickerFrame(imp, m, state, "_modGames",
+    Strings("Enable for games"), #GAME_TABS, rowH)
+  local py = Kit.scrollBegin(x, y, w, h, at, maxAt)
+  local rw = w - Kit.scrollGutter(m.s)
+  for i, game in ipairs(GAME_TABS) do
+    local ry = py + (i - 1) * (rowH + gap)
+    local on = mod.enabledByVersion and mod.enabledByVersion[game.id] == true
+    local key = "_modGames-row-" .. i
+    btn(imp, x, ry, rw, rowH, key, "", {
+      face = "tab", enabled = not imp.safeMode,
+      action = function() imp:_toggleMod(mod.id, nil, game.id) end,
+    })
+    local sw = math.floor(10 * m.s)
+    Theme.fillRounded(x + gap, ry + (rowH - sw) / 2, sw, sw, game.color, 1, 2)
+    Kit.text("button", Kit.ellipsize("button", Strings(game.label), rw - rowH - sw - 3 * gap),
+      x + 2 * gap + sw, ry + (rowH - Kit.textHeight("button")) / 2, PAL.text)
+    local box = math.floor(22 * m.s)
+    local bx, by = x + rw - gap - box, ry + (rowH - box) / 2
+    Theme.strokeRounded(bx, by, box, box, on and PAL.green or PAL.line, 0.8, 1, 4)
+    if on then
+      require("src.ui.kit.Icons").draw("check", bx + 2, by + 2, box - 4, PAL.green)
+    end
+  end
+  Kit.scrollEnd(x, y, w, h, at, maxAt, PAL.surface)
+  btn(imp, x, fy, w, m.btnH, "picker-games-done", Strings("Done"), {
+    action = function() imp._modGames = nil end,
+  })
+end
+
 local function buildPrompt(imp, m, spec)
   local pad = math.floor(18 * m.s)
   local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
@@ -4543,24 +4418,22 @@ local function buildModScopeModal(imp, m)
       action = function() imp._modScopePopup = nil end })
 end
 
--- The cartridge dropdown's list.  Replaces the four R/B/Y/G tabs, so it is
--- also what a controller reaches after the tab row.
+-- The cartridge picker uses two columns and spatial controller navigation.
 local function buildGameModal(imp, m)
   local pad = math.floor(18 * m.s)
   local headH = Kit.textHeight("button") + math.floor(12 * m.s)
   local avail = m.H - 2 * m.pad
-  local cols, gap, btnH = 1, math.floor(8 * m.s), m.btnH
+  local cols, gap, btnH = 2, math.floor(8 * m.s), m.btnH
   local function rows() return math.ceil(#GAME_TABS / cols) + 1 end
   local function total() return 2 * pad + headH + rows() * btnH
     + (rows() - 1) * gap end
-  if total() > avail then cols = 2 end
   if total() > avail then gap = math.max(2, math.floor(3 * m.s)) end
   if total() > avail then
     btnH = math.max(Kit.tapMin(),
       btnH - math.ceil((total() - avail) / rows()))
   end
   local nrows = rows() - 1
-  local w = math.floor((cols > 1 and 440 or 360) * m.s)
+  local w = math.floor(440 * m.s)
   local px, py, pw = modalPanel(m, w, total())
   local cy = py + pad
   Kit.text("button", Strings("Choose game"), px + pad, cy, PAL.heading)
@@ -4598,113 +4471,128 @@ local function requestWebClip(imp, version, cartId)
   return ok
 end
 
-local function cartRowLabel(row)
-  local seal = Strings(SEAL_WORD[row.seal] or "sealed")
-  return Strings("%s - v%s - %s", tostring(row.title or row.id),
-    tostring(row.version or "?"), seal)
-end
-
 local function buildCartModal(imp, m)
   local version = imp._cartPopup
   local rows = imp:_ensureCarts(version)
-  local info = GameVersion.info(version)
-  local baseName = info and (info.displayName or info.launcherName)
-    or tostring(version)
   local active = imp.activeCart[version]
-  local pad = math.floor(18 * m.s)
-  local gap = math.floor(8 * m.s)
-  local w = math.floor(420 * m.s)
-  local rowH = m.btnH
-  local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
-  local notice = imp._cartNotice
+  local state = imp._cartPicker
+  if not state or state.version ~= version then
+    state = { version = version, scroll = 0 }
+    imp._cartPicker = state
+  end
+  local pad, gap = math.floor(16 * m.s), math.floor(8 * m.s)
+  local w = math.min(math.floor(480 * m.s), m.W - 2 * m.pad)
+  local inner = w - 2 * pad
   local canWebClip = webClipAvailable(imp)
-  local webClipNotice = imp._webClipNotice
-  local webClipPrefix = tostring(version) .. ":"
-  if not webClipNotice or tostring(webClipNotice.key):sub(1, #webClipPrefix)
-      ~= webClipPrefix then
-    webClipNotice = nil
+  local iconExtra = math.floor(m.btnH * 0.42) + math.floor(7 * Kit.scale)
+  local actionMin = 0
+  for _, label in ipairs({Strings("Use cart"), Strings("Selected"), Strings("Export"),
+    DELETE_LABEL(false), DELETE_LABEL(true), canWebClip and Strings("Home Screen") or ""}) do
+    actionMin = math.max(actionMin, chipWidth(label, m) + iconExtra)
   end
-  local noticeH = notice
-    and (Kit.wrapHeight("small", notice, w - 2 * pad, 2) + gap) or 0
-  local webClipNoticeH = webClipNotice
-    and (Kit.wrapHeight("small", webClipNotice.text, w - 2 * pad, 2) + gap) or 0
-  local emptyH = (#rows == 0) and (Kit.textHeight("small") + gap) or 0
-  local fixed = pad + Kit.textHeight("button") + math.floor(12 * m.s)
-    + noticeH + webClipNoticeH + emptyH + 2 * (rowH + gap) + rowH + pad
-  local perPage = Kit.rowsThatFit(m.H - 2 * m.pad - fixed, rowH, gap, 1, 8)
-  local pageKey = "cartpop-" .. tostring(version)
-  local first, last, cur, pages = Kit.pageBounds(page(imp, pageKey), #rows, perPage)
-  setPage(imp, pageKey, cur)
-  local shown = math.max(0, last - first + 1)
-  local h = fixed + shown * (rowH + gap) + (pages > 1 and (pagerH + gap) or 0)
-
-  local px, py, pw = modalPanel(m, w, h)
-  local cy = py + pad
-  Kit.text("button", Strings("Custom Carts"), px + pad, cy, PAL.heading)
-  cy = cy + Kit.textHeight("button") + math.floor(12 * m.s)
-  if notice then
-    cy = cy + Kit.textWrapped("small", notice, px + pad, cy,
-      pw - 2 * pad, PAL.detail, 2) + gap
-  end
-  if webClipNotice then
-    cy = cy + Kit.textWrapped("small", webClipNotice.text, px + pad, cy,
-      pw - 2 * pad, webClipNotice.ok and PAL.green or PAL.red, 2) + gap
-  end
-  btn(imp, px + pad, cy, pw - 2 * pad, rowH, "cartpop-vanilla", baseName, {
-    kind = (active == nil) and "primary" or "ghost", font = "small",
-    action = function() imp:_selectCart(version, nil) end })
-  cy = cy + rowH + gap
-  if #rows == 0 then
-    Kit.text("small", Strings("No carts installed for this game yet."),
-      px + pad, cy, PAL.muted)
-    cy = cy + Kit.textHeight("small") + gap
-  end
-  local expGap = math.floor(6 * m.s)
-  local expW = math.min(chipWidth(Strings("Export"), m),
-    math.floor((pw - 2 * pad) * 0.35))
-  local webClipW = canWebClip
-    and math.min(chipWidth(Strings("Home Screen"), m),
-      math.floor((pw - 2 * pad) * 0.32)) or 0
-  for i = first, last do
-    local row = rows[i]
-    local rowKey = "cartpop-id-" .. tostring(row.id)
-    local pickW = pw - 2 * pad - expW - expGap
-    if canWebClip then pickW = pickW - webClipW - expGap end
-    btn(imp, px + pad, cy, pickW, rowH, rowKey, cartRowLabel(row), {
-        kind = (active == row.id) and "primary" or "ghost", font = "small",
-        action = function() imp:_selectCart(version, row.id) end })
-    if canWebClip then
-      btn(imp, px + pad + pickW + expGap, cy, webClipW, rowH,
-        rowKey .. "-webclip", Strings("Home Screen"), { kind = "accent", font = "small",
-          action = function()
-            if requestWebClip(imp, version, row.id) then imp._cartPopup = nil end
-          end })
-    end
-    local exportX = px + pad + pickW + expGap
-    if canWebClip then exportX = exportX + webClipW + expGap end
-    btn(imp, exportX, cy, expW, rowH, rowKey .. "-export",
-      Strings("Export"), { kind = "accent", font = "small",
-        action = function() imp:exportCart(row.id) end })
-    cy = cy + rowH + gap
-  end
-  if pages > 1 then
-    setPage(imp, pageKey,
-      Kit.pager(px + pad, cy, pw - 2 * pad, cur, #rows, perPage, pageKey))
-    cy = cy + pagerH + gap
-  end
+  local available = inner - Kit.scrollGutter(m.s) - 2 * gap
+  local cols = math.max(1, math.min(3, math.floor((available + gap) / (actionMin + gap))))
   local FilePicker = require("src.core.FilePicker")
-  btn(imp, px + pad, cy, pw - 2 * pad, rowH, "cartpop-more",
-    FilePicker.available() and Strings("Import a cart")
-      or Strings("Get more carts"),
-    { kind = "accent", font = "small",
-      action = function() imp:importCartFile(version) end })
-  cy = cy + rowH + gap
-  btn(imp, px + pad, cy, pw - 2 * pad, rowH, "cartpop-close",
-    Strings("Close"), { font = "small",
-      action = function()
-        imp._cartPopup = nil
-        imp._cartNotice = nil
-      end })
+  local importLabel = FilePicker.available() and Strings("Import a cart") or Strings("Get more carts")
+  local importW = chipWidth(importLabel, m) + iconExtra
+  local closeW = chipWidth(Strings("Close"), m)
+  local footerStacked = importW + gap + closeW > inner
+  local footerH = footerStacked and 2 * m.btnH + gap or m.btnH
+  local actionRows = math.ceil((canWebClip and 4 or 3) / cols)
+  local rowH = 2 * gap + Kit.textHeight("button") + 4 * m.s + Kit.textHeight("small")
+    + gap + actionRows * m.btnH + (actionRows - 1) * gap
+  local notice = imp._cartNotice
+  local webNotice = imp._webClipNotice
+  if webNotice and tostring(webNotice.key):sub(1, #version + 1) == version .. ":" then
+    notice = webNotice.text
+  end
+  local hint = notice or Strings("Choose a cart to play. Deleting a cart keeps its saves and installed mods.")
+  local hintH = Kit.wrapHeight("small", hint, inner, 3)
+  local fixed = 2 * pad + 2 * m.btnH + 3 * gap + hintH + footerH + gap
+  local wanted = fixed + (#rows > 0 and math.min(#rows, 3) * (rowH + gap) - gap or m.btnH)
+  local px, py, pw, ph = modalPanel(m, w, wanted)
+  local x, cy = px + pad, py + pad
+  Kit.textBold("button", Strings("Custom Carts"), x,
+    cy + (m.btnH - Kit.textHeight("button")) / 2, PAL.heading)
+  btn(imp, px + pw - pad - m.btnH, cy, m.btnH, m.btnH, "cartpop-x", "", {
+    face = "invert", icon = "x", action = function() imp._cartPopup = nil end,
+  })
+  cy = cy + m.btnH + gap
+  cy = cy + Kit.textWrapped("small", hint, x, cy, inner, PAL.muted, 3) + gap
+  btn(imp, x, cy, inner, m.btnH, "cartpop-vanilla", (GameVersion.info(version) or {}).displayName or gameLabel(version), {
+    face = "tab", active = active == nil, color = PAL.green, font = "small",
+    action = function() imp:_selectCart(version, nil) end,
+  })
+  cy = cy + m.btnH + gap
+  local fy = py + ph - pad - footerH
+  local viewH = math.max(0, fy - gap - cy)
+  local maxAt = Kit.scrollExtent(#rows * (rowH + gap) - gap, viewH)
+  state.rect = state.rect or {}
+  state.rect.x, state.rect.y, state.rect.w, state.rect.h = x, cy, inner, viewH
+  state.maxScroll = maxAt
+  state.scroll = Kit.scrollInput(state.scroll, maxAt, x, cy, inner, viewH)
+  if Kit._ringShown and Kit.focusId ~= state.lastFocus then
+    for i, row in ipairs(rows) do
+      local key = "cartpop-id-" .. row.id
+      if Kit.focusId and (Kit.focusId == key or Kit.focusId:sub(1, #key + 1) == key .. "-") then
+        local top = (i - 1) * (rowH + gap)
+        state.scroll = Kit.scrollClamp(math.max(top + rowH - viewH, math.min(state.scroll, top)), maxAt)
+        break
+      end
+    end
+  end
+  state.lastFocus = Kit.focusId
+  local listY = Kit.scrollBegin(x, cy, inner, viewH, state.scroll, maxAt)
+  local rw = inner - Kit.scrollGutter(m.s)
+  if #rows == 0 then
+    Kit.textWrapped("small", Strings("No carts installed for this game yet."), x, listY, rw, PAL.muted)
+  end
+  for i, row in ipairs(rows) do
+    local ry = listY + (i - 1) * (rowH + gap)
+    local key = "cartpop-id-" .. row.id
+    Kit.card(x, ry, rw, rowH, "row")
+    if active == row.id then Theme.strokeRounded(x, ry, rw, rowH, PAL.green, 0.65, 1, Theme.cardRadius()) end
+    local tx, ty = x + gap, ry + gap
+    Kit.textBold("button", Kit.ellipsize("button", row.title or row.id, rw - 2 * gap), tx, ty, PAL.heading)
+    ty = ty + Kit.textHeight("button") + 4 * m.s
+    local meta = "v" .. tostring(row.version or "?") .. "  /  " .. Strings(SEAL_WORD[row.seal] or "sealed")
+    if active == row.id then meta = meta .. "  /  " .. Strings("Selected") end
+    Kit.text("small", Kit.ellipsize("small", meta, rw - 2 * gap), tx, ty, PAL.muted)
+    ty = ty + Kit.textHeight("small") + gap
+    local actions = {
+      { key = key, label = active == row.id and Strings("Selected") or Strings("Use cart"),
+        icon = "check", enabled = active ~= row.id,
+        action = function() imp:_selectCart(version, row.id) end },
+      { key = key .. "-export", label = Strings("Export"), icon = "upload",
+        action = function() imp:exportCart(row.id) end },
+      { key = key .. "-delete", label = DELETE_LABEL(deleteArmed(imp, "cart", row.id, version)),
+        icon = "trash", kind = "danger", keepArm = true,
+        action = function()
+          imp:pressDelete("cart", row.id, version, function() imp:deleteCart(version, row.id) end)
+        end },
+    }
+    if canWebClip then
+      actions[#actions + 1] = { key = key .. "-webclip", label = Strings("Home Screen"),
+        action = function() if requestWebClip(imp, version, row.id) then imp._cartPopup = nil end end }
+    end
+    local cw = (rw - 2 * gap - (cols - 1) * gap) / cols
+    for j, action in ipairs(actions) do
+      btn(imp, tx + ((j - 1) % cols) * (cw + gap), ty + math.floor((j - 1) / cols) * (m.btnH + gap),
+        cw, m.btnH, action.key, action.label, {
+          font = "small", icon = action.icon, kind = action.kind, enabled = action.enabled,
+          keepArm = action.keepArm, action = action.action,
+        })
+    end
+  end
+  Kit.scrollEnd(x, cy, inner, viewH, state.scroll, maxAt, PAL.surface)
+  local firstW = footerStacked and inner or math.max(importW, (inner - gap) / 2)
+  btn(imp, x, fy, firstW, m.btnH, "cartpop-more", importLabel, {
+      kind = "accent", font = "small", icon = "download", action = function() imp:importCartFile(version) end,
+    })
+  btn(imp, footerStacked and x or x + firstW + gap, footerStacked and fy + m.btnH + gap or fy,
+    footerStacked and inner or inner - firstW - gap, m.btnH, "cartpop-close", Strings("Close"), {
+    font = "small", action = function() imp._cartPopup = nil; imp._cartNotice = nil end,
+  })
 end
 
 local CART_PIN_LINES = 4
@@ -5249,8 +5137,19 @@ local function buildFindEntryModal(imp, m)
   local h = pad + Kit.textHeight("button") + math.floor(4 * m.s)
     + Kit.textHeight("small") + trendH + pinsH + noteH + math.floor(12 * m.s)
     + nBtns * (m.btnH + gap) - gap + pad
-  local px, py, pw = modalPanel(m, w, h)
+  local image = imp._findThumb and imp:_findThumb(entry)
+  local imageH = image and math.max(0, math.min(math.floor(200 * m.s),
+    m.H - 2 * m.pad - h - gap)) or 0
+  local px, py, pw = modalPanel(m, w, h + (imageH > 0 and imageH + gap or 0))
   local cy = py + pad
+  if imageH > 0 then
+    local iw, ih = image:getDimensions()
+    local scale = math.min((pw - 2 * pad) / iw, imageH / ih)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(image, Theme.snap(px + (pw - iw * scale) / 2),
+      Theme.snap(cy + (imageH - ih * scale) / 2), 0, scale, scale)
+    cy = cy + imageH + gap
+  end
   Kit.text("button", Kit.ellipsize("button", entry.title or entry.id,
     pw - 2 * pad), px + pad, cy, PAL.heading)
   cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
@@ -5422,178 +5321,146 @@ end
 local function buildSettingsModal(imp, m)
   local model = imp._settings
   local SaveData = require("src.core.SaveData")
-  local pad = math.floor(18 * m.s)
-  local w = math.floor(640 * m.s)
-  local h = math.floor(math.min(m.H - 2 * m.pad, m.H * 0.9))
-  local px, py, pw, ph = modalPanel(m, w, h)
-  local cy = py + pad
-
-  Kit.text("stat", Strings("Settings"), px + pad, cy, PAL.heading)
-  local cw = Kit.textWidth("small", Strings("Close")) + math.floor(24 * m.s)
-  btn(imp, px + pw - pad - cw, cy, cw, m.btnH, "settings-close",
-    Strings("Close"), { font = "small",
-      action = function() imp:_closeSettings() end })
-  local bugLabel = Strings("Troubleshooting")
-  local bw = Kit.textWidth("small", bugLabel) + math.floor(24 * m.s)
-  btn(imp, px + pw - pad - cw - m.gap - bw, cy, bw, m.btnH, "settings-bug",
-    bugLabel, { kind = "ghost", font = "small",
-      action = function() imp:_openBugPanel() end })
-  cy = cy + math.max(Kit.textHeight("stat"), m.btnH) + math.floor(6 * m.s)
-  -- WRAPPED, not printed flat: on a portrait panel this line ran straight off
-  -- the right edge and the sentence ended mid-word at the card border.
-  cy = cy + Kit.textWrapped("micro", Strings(
-    "Saved to your options file; the game applies these on its next start."),
-    px + pad, cy, pw - 2 * pad, PAL.muted, 2)
-    + math.floor(10 * m.s)
-
-  -- Settings rows are PAGINATED, flattened across sections so a page is a
-  -- uniform run of rows.  Section titles ride along as their own entry.
+  local pad, gap = math.floor(18 * m.s), math.floor(8 * m.s)
+  local px, py, pw, ph = modalPanel(m, math.floor(600 * m.s),
+    math.floor(math.min(m.H - 2 * m.pad, m.H * 0.92)))
+  local x, cy, width = px + pad, py + pad, pw - 2 * pad
+  Kit.textBold("title", Strings("Settings"), x, cy, PAL.heading)
+  Kit.text("small", Strings("Saved automatically"), x,
+    cy + Kit.textHeight("title") + math.floor(3 * m.s), PAL.muted)
+  btn(imp, x + width - m.btnH, cy, m.btnH, m.btnH, "settings-close", "", {
+    face = "invert", icon = "x", action = function() imp:_closeSettings() end })
+  cy = cy + Kit.textHeight("title") + Kit.textHeight("small") + math.floor(20 * m.s)
+  local footerY = py + ph - pad - m.btnH
+  local viewH = math.max(0, footerY - gap * 2 - cy)
+  local rowW = width - Kit.scrollGutter(m.s)
+  local inset = math.floor(12 * m.s)
+  local inner = rowW - inset * 2
+  local stepW = m.btnH
   local flat = imp._settingsFlat
   if not flat or flat.model ~= model then
     flat = { model = model }
-    for _, section in ipairs(model.sections) do
-      flat[#flat + 1] = { header = section.title }
+    local acronyms = {UI=true, FPS=true, HUD=true, CPU=true, GB=true, GBA=true, ROM=true, NX=true}
+    local function label(text)
+      if text ~= text:upper() then return text end
+      return (text:gsub("[%a]+", function(word)
+        return acronyms[word] and word or word:sub(1, 1) .. word:sub(2):lower()
+      end))
+    end
+    flat.pretty = label
+    for sectionIndex, section in ipairs(model.sections) do
+      flat[#flat + 1] = { header = section.title,
+        hint = sectionIndex == 1 and Strings("Applies immediately")
+          or sectionIndex == 2 and Strings("Applies on the next game start") or nil }
       for _, row in ipairs(section.rows) do
-        flat[#flat + 1] = { row = row }
+        flat[#flat + 1] = { row = row, label = label(row.label) }
       end
     end
     imp._settingsFlat = flat
   end
-  -- The widest label in the whole model decides the row shape (below), so it
-  -- is measured once per model rather than per row per frame.  Measuring the
-  -- WIDEST rather than each row keeps every row the same height, which is
-  -- what lets the list paginate off a uniform row.
-  if not flat.labelW or flat.labelFont ~= Kit.fonts.scale then
-    local widest = 0
-    for _, item in ipairs(flat) do
-      if item.row then
-        widest = math.max(widest, Kit.textWidth("small", item.row.label))
-      end
-    end
-    flat.labelW, flat.labelFont = widest, Kit.fonts.scale
-  end
-
-  local stepW = math.floor(34 * m.s)
-  local valW = math.floor(140 * m.s)
-  local inner = pw - 2 * pad - math.floor(24 * m.s)
-  -- STACKED ROWS.  Side by side, a row spends most of its width on the value
-  -- ladder and leaves the label whatever remains -- on a portrait phone that
-  -- was three characters and an ellipsis ("TEX...", "BAT...", "BAT..."), so
-  -- the panel listed a dozen settings none of which could be identified.
-  -- When the widest label does not fit beside its control, every row puts the
-  -- label on its own line ABOVE the control instead.  All-or-nothing, because
-  -- a list that switches shape row by row is harder to scan than either form.
-  local stacked = flat.labelW
-    > (inner - 2 * stepW - valW - math.floor(24 * m.s))
-  local rowH
-  if stacked then
-    rowH = Kit.textHeight("small") + math.floor(4 * m.s) + m.btnH
-      + math.floor(10 * m.s)
-  else
-    rowH = math.max(Kit.tapMin(), math.floor(36 * m.s))
-  end
-  local gap = math.floor(4 * m.s)
-  local pagerH = math.max(Kit.tapMin(), math.floor(30 * m.s))
-  local listH = (py + ph - pad) - cy - pagerH - math.floor(8 * m.s)
-  local perPage = Kit.rowsThatFit(listH, rowH, gap, 1, 24)
-  local n = #flat
-  -- POKEPORT_LAUNCHER_SETTINGS_PAGE jumps straight to a page, so a shot can
-  -- capture a row that is not on page one.
-  local wanted = tonumber(os.getenv("POKEPORT_LAUNCHER_SETTINGS_PAGE") or "")
-  if wanted and not imp._settingsPaged then
-    imp._settingsPaged = true
-    setPage(imp, "settings", wanted)
-  end
-  local first, last, cur = Kit.pageBounds(page(imp, "settings"), n, perPage)
-  setPage(imp, "settings", cur)
-  setPage(imp, "settings", Kit.wheelPage(px, cy, pw, listH, cur, n, perPage))
-
-  for i = first, last do
-    local item = flat[i]
-    local ry = cy + (i - first) * (rowH + gap)
+  local total = 0
+  for _, item in ipairs(flat) do
+    item.top = total
     if item.header then
-      Kit.caption(px + pad, ry + (rowH - Kit.textHeight("caption")) / 2,
-        item.header)
+      item.h = Kit.textHeight("button") + (item.hint and Kit.textHeight("micro") + 4 * m.s or 0) + gap * 2
     else
-      local row = item.row
-      local rowEnabled = not row.safeModeBlocked
-        or not SaveData.isSafeMode(model.opts)
-      local key = "set-" .. i
-      Kit.card(px + pad, ry, pw - 2 * pad, rowH, "hairline")
-      local ix = px + pad + math.floor(12 * m.s)
-      -- Where the label prints, and where the control band starts.  Stacked:
-      -- label on its own full-width line, controls on the line below it.
-      -- Inline: both centred on one line, label left, controls right.
-      local labelY, ctlY, labelW
-      if stacked then
-        labelY = ry + math.floor(6 * m.s)
-        ctlY = labelY + Kit.textHeight("small") + math.floor(4 * m.s)
-        labelW = inner
-      else
-        labelY = ry + (rowH - Kit.textHeight("small")) / 2
-        ctlY = ry + (rowH - m.btnH) / 2
-        labelW = nil   -- per-shape below: what the controls leave over
+      item.stacked = item.row.choices ~= nil or Kit.textWidth("small", item.label)
+        + math.floor(210 * m.s) > inner
+      item.labelH = item.stacked and Kit.wrapHeight("small", item.label, inner) or Kit.textHeight("small")
+      item.h = 2 * inset + m.btnH + (item.stacked and item.labelH + gap or 0)
+    end
+    total = total + item.h + gap
+  end
+  local maxAt = Kit.scrollExtent(total - gap, viewH)
+  model.rect = {x=x, y=cy, w=width, h=viewH}
+  model.maxScroll = maxAt
+  model.scroll = Kit.scrollInput(model.scroll, maxAt, x, cy, width, viewH)
+  local focused = Kit.focusId and tonumber(Kit.focusId:match("^set%-(%d+)%-"))
+  if focused and flat[focused] and Kit._ringShown and model.lastFocus ~= Kit.focusId then
+    local item = flat[focused]
+    model.scroll = Kit.scrollClamp(math.max(item.top + item.h - viewH,
+      math.min(model.scroll, item.top)), maxAt)
+  end
+  model.lastFocus = Kit.focusId
+  local listY = Kit.scrollBegin(x, cy, width, viewH, model.scroll, maxAt)
+  for i, item in ipairs(flat) do
+    local ry = listY + item.top
+    local visible = ry + item.h >= cy and ry <= cy + viewH
+    if item.header then
+      if visible then
+        Kit.textBold("button", item.header, x, ry + gap, PAL.heading)
+        if item.hint then
+          Kit.text("micro", item.hint, x, ry + gap + Kit.textHeight("button") + 4 * m.s, PAL.muted)
+        end
       end
-      local rx = ix + inner
-
-      if row.editText then
-        local ew = Kit.textWidth("small", Strings("Edit")) + math.floor(20 * m.s)
-        local vw = math.floor(160 * m.s)
-        Kit.text("small", Kit.ellipsize("small", row.label,
-          labelW or (inner - ew - vw - math.floor(20 * m.s))),
-          ix, labelY, PAL.text)
-        Kit.textRight("small", Kit.ellipsize("small", tostring(row.value()), vw),
-          rx - ew - math.floor(10 * m.s),
-          ctlY + (m.btnH - Kit.textHeight("small")) / 2, PAL.detail)
-        btn(imp, rx - ew, ctlY, ew, m.btnH,
-          key .. "-edit", Strings("Edit"), { kind = "accent", font = "small",
-            enabled = rowEnabled,
-            action = function()
-              imp._settingsText = { row = row, text = tostring(row.value() or ""),
-                maxLen = row.editText.maxLen }
-              imp:_armTextInput()
-            end })
+    else
+      local row, key = item.row, "set-" .. i
+      local rowEnabled = not row.safeModeBlocked or not SaveData.isSafeMode(model.opts)
+      local ix, rx = x + inset, x + rowW - inset
+      local ctlY = ry + inset + (item.stacked and item.labelH + gap or 0)
+      local labelY = item.stacked and ry + inset or ctlY + (m.btnH - Kit.textHeight("small")) / 2
+      -- Register offscreen controls for keyboard navigation without painting
+      -- their cards, text, or icons. Focus scrolls them into view next frame.
+      local function control(bx, bw, id, text, opts)
+        opts = opts or {}
+        opts.font = "small"
+        if opts.enabled == nil then opts.enabled = rowEnabled end
+        if visible then btn(imp, bx, ctlY, bw, m.btnH, id, text, opts)
+        elseif opts.enabled then Kit.focusable(id, bx, ctlY, bw, m.btnH) end
+      end
+      if visible then
+        Kit.card(x, ry, rowW, item.h, "row")
+        Kit.textWrapped("small", item.label, ix, labelY, inner, PAL.text)
+      end
+      if row.choices then
+        local cw = (inner - gap) / 2
+        for j, choice in ipairs(row.choices) do
+          control(ix + (j - 1) * (cw + gap), cw, key .. "-" .. choice.value, choice.label, {
+            kind = row.selected() == choice.value and "accent" or "ghost",
+            action = function() row.select(choice.value) end })
+        end
+      elseif row.editText then
+        local ew = chipWidth(Strings("Edit"), m)
+        local vw = item.stacked and inner - ew - gap or math.floor(140 * m.s)
+        if visible then
+          Kit.textRight("small", Kit.ellipsize("small", tostring(row.value()), vw),
+            rx - ew - gap, ctlY + (m.btnH - Kit.textHeight("small")) / 2, PAL.detail)
+        end
+        control(rx - ew, ew, key .. "-edit", Strings("Edit"), {kind="accent",
+          action=function()
+            imp._settingsText = {row=row, text=tostring(row.value() or ""), maxLen=row.editText.maxLen}
+            imp:_armTextInput()
+          end})
       elseif row.action then
-        -- A plain action row (Reset rebinds, Touch controls): the whole right
-        -- side is one button rather than a value ladder.
-        local actionLabel = type(row.actionLabel) == "function"
-          and row.actionLabel() or row.actionLabel or Strings("Run")
-        local aw = Kit.textWidth("small", actionLabel)
-          + math.floor(24 * m.s)
-        Kit.text("small", Kit.ellipsize("small", row.label,
-          labelW or (inner - aw - math.floor(12 * m.s))), ix, labelY, PAL.text)
-        btn(imp, rx - aw, ctlY, aw, m.btnH,
-          key .. "-act", actionLabel, {
-            kind = row.danger and "danger" or "ghost", font = "small",
-            action = function()
-              if row.action() ~= false then model.save() end
-            end })
+        local label = type(row.actionLabel) == "function" and row.actionLabel()
+          or row.actionLabel or Strings("Run")
+        local aw = math.min(inner, chipWidth(label, m))
+        control(rx - aw, aw, key .. "-act", label, {
+          kind=row.danger and "danger" or "ghost",
+          action=function() if row.action() ~= false then model.save() end end})
       else
-        Kit.text("small", Kit.ellipsize("small", row.label,
-          labelW or (inner - 2 * stepW - valW - math.floor(24 * m.s))),
-          ix, labelY, PAL.text)
-        -- Stacked rows give the value the whole span between the steppers,
-        -- which is where the extra width goes now that the label is not
-        -- competing for it.
-        local vw = stacked and (inner - 2 * stepW - math.floor(16 * m.s))
-          or valW
-        btn(imp, rx - stepW, ctlY, stepW, m.btnH,
-          key .. "-next", ">", { font = "small",
-            enabled = rowEnabled,
-            action = function() if row.step and row.step(1) then model.save() end end })
-        Kit.textCenter("small", Kit.ellipsize("small", tostring(row.value()), vw),
-          rx - stepW - vw, ctlY + (m.btnH - Kit.textHeight("small")) / 2, vw,
-          PAL.heading)
-        btn(imp, rx - stepW - vw - stepW, ctlY, stepW,
-          m.btnH, key .. "-prev", "<", { font = "small",
-            enabled = rowEnabled,
-            action = function() if row.step and row.step(-1) then model.save() end end })
+        local bandW = item.stacked and inner or math.floor(200 * m.s)
+        local vw = bandW - 2 * stepW - gap
+        if visible then
+          Theme.fillRounded(rx - bandW, ctlY, bandW, m.btnH, PAL.field, 1, Theme.radius())
+          Kit.textCenter("small", Kit.ellipsize("small", flat.pretty(tostring(row.value())), vw),
+            rx - bandW + stepW + gap / 2, ctlY + (m.btnH - Kit.textHeight("small")) / 2,
+            vw, rowEnabled and PAL.heading or PAL.muted)
+        end
+        control(rx - bandW, stepW, key .. "-prev", "‹", {
+          action=function() if row.step and row.step(-1) then model.save() end end})
+        control(rx - stepW, stepW, key .. "-next", "›", {
+          action=function() if row.step and row.step(1) then model.save() end end})
       end
     end
   end
-  cy = cy + listH + math.floor(8 * m.s)
-  setPage(imp, "settings",
-    Kit.pager(px + pad, cy, pw - 2 * pad, cur, n, perPage, "settings"))
+  Kit.scrollEnd(x, cy, width, viewH, model.scroll, maxAt, PAL.surface)
+  Theme.stroke(x, footerY - gap, width, 1, PAL.line, 0.25, 1)
+  local doneW = math.max(chipWidth(Strings("Done"), m), math.floor(80 * m.s))
+  btn(imp, x, footerY, width - doneW - gap, m.btnH, "settings-bug", Strings("Troubleshooting"), {
+    font="small", action=function() imp:_openBugPanel() end })
+  btn(imp, x + width - doneW, footerY, doneW, m.btnH, "settings-done", Strings("Done"), {
+    font="small", kind="accent", action=function() imp:_closeSettings() end })
 end
 
 local function buildDepResolverModal(imp, m)
@@ -6282,7 +6149,7 @@ local MODAL_KEYS = {
   "_profilesPopup", "_modHeaderActionsPopup", "_sortPopup", "_gamePopup",
   "_cartPopup", "_modScopePopup", "_filterPopup", "_indexManage",
   "_syncModal", "_pcPicker", "_tradeModal", "_skinActions", "_modActions",
-  "_findEntry", "_gameManage",
+  "_findEntry", "_gameManage", "_saveExport", "_savePicker", "_modGames",
 }
 
 LauncherView.MODAL_KEYS = MODAL_KEYS
@@ -6299,6 +6166,7 @@ local function modalUp(imp)
     or imp._modActions or imp._modImports or imp._skinActions or imp._syncModal
     or imp._modHeaderActionsPopup or imp._profilesPopup or imp._singleProfileActions or imp._profileSavePrompt
     or imp._profileRenamePrompt or imp._findEntry or imp._gameManage
+    or imp._saveExport or imp._savePicker or imp._modGames
     or imp._tradeModal or imp._bugModal or imp._pcPicker) ~= nil
 end
 
@@ -6482,6 +6350,9 @@ local function buildModals(imp, m)
   if imp._modActions then buildModActionsModal(imp, m) return true end
   if imp._findEntry then buildFindEntryModal(imp, m) return true end
   if imp._gameManage then buildGameManageModal(imp, m) return true end
+  if imp._saveExport then buildSaveExport(imp, m) return true end
+  if imp._savePicker then buildSavePicker(imp, m) return true end
+  if imp._modGames then buildModGamesPicker(imp, m) return true end
   return false
 end
 
@@ -6537,10 +6408,12 @@ end
 
 -- Mirror of buildHeader's vertical arithmetic, so the frame can decide
 -- whether the window is tall enough BEFORE anything draws.  Keep in sync
--- with buildHeader (rail, logo row, tab row, hairline pad).
+-- with buildHeader (rail, logo row, tab row, hairline).
 local function headerHeight(m)
+  local _, _, labelH, rows = headerTabMetrics(m)
   return m.railH + m.logoH + math.floor(12 * m.s) + math.floor(6 * m.s)
-    + m.chip + math.floor(8 * m.s) + math.floor(10 * m.s)
+    + rows * (m.chip + labelH) + (rows - 1) * math.floor(4 * m.s)
+    + math.floor(8 * m.s) + 1
 end
 
 -- The panel space a tab needs to lay out without crushing itself.  Below
@@ -6588,13 +6461,13 @@ local function drawTabLayer(imp, tabId, x, contentY, w, viewH, availH, m, dx)
   local py = Kit.scrollBegin(x, contentY, w, viewH, at, maxAt)
   local budgetH = math.floor(viewH * (1 + PANEL_OVERSCAN))
   local panelW = math.max(0, w - Kit.scrollGutter(m.s))
-  local contentH = buildTabPanel(imp, x, py, panelW, availH, budgetH, m)
-  contentH = contentH or availH
+  local contentH = buildTabPanel(imp, x, py + 5, panelW, availH - 5, budgetH - 5, m)
+  contentH = (contentH or (availH - 5)) + 5
   imp._tabContentH[tabId] = contentH
   imp._tabScrollMax[tabId] = Kit.scrollExtent(contentH, viewH)
   at = clamp(at, 0, tabScrollMax(imp))
   imp._tabScroll[tabId] = at
-  Kit.scrollEnd(x, contentY, w, viewH, at, maxAt)
+  Kit.scrollEnd(x, contentY, w, viewH, at, tabScrollMax(imp))
   if dx ~= 0 then love.graphics.pop() end
   imp.tab = prevTab
 end
@@ -6621,7 +6494,7 @@ function LauncherView.draw(imp)
   -- involved.  Modals and the loader keep the REAL metrics and stay
   -- centred in the window.
   local footH = footerHeight(imp, m)
-  local naturalAvail = m.h - headerHeight(m) - footH - m.gap
+  local naturalAvail = m.h - headerHeight(m) - footH
   local scrollMax = math.max(0, minPanelHeight(m) - naturalAvail)
 
   Kit.beginFrame(mx, my, click ~= nil, imp._wheelY or 0)
@@ -6695,10 +6568,10 @@ function LauncherView.draw(imp)
   local footY, availH
   if scrollMax > 0 then
     availH = minPanelHeight(m)
-    footY = contentY + availH + m.gap
+    footY = contentY + availH
   else
     footY = m.top + m.h - footH
-    availH = footY - contentY - m.gap
+    availH = footY - contentY
   end
 
   local x, w = m.contentX, m.contentW

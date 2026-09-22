@@ -247,11 +247,17 @@ function CartStore.uninstall(id, fs)
   if not present and not known then
     return nil, ("cart %q is not installed"):format(id)
   end
-  if present and fs.remove then fs.remove(path) end
-  if known then
-    reg[id] = nil
-    writeOptions(opts, fs)
+  if present then
+    if not fs.remove then return nil, "this filesystem cannot delete carts" end
+    local removed, err = fs.remove(path)
+    if not removed then return nil, "could not delete the cart: " .. tostring(err) end
   end
+  local changed = known
+  if known then reg[id] = nil end
+  for version, selected in pairs(type(opts.activeCart) == "table" and opts.activeCart or {}) do
+    if selected == id then opts.activeCart[version] = nil; changed = true end
+  end
+  if changed and not writeOptions(opts, fs) then return nil, "could not update the cart registry" end
   return true
 end
 

@@ -1,3 +1,4 @@
+local Versions = require("src.import.gba.versions")
 -- src/seagallop.c:41
 
 local SeagallopExtract = {}
@@ -127,7 +128,7 @@ function SeagallopExtract.readBlobs(rom, cfg)
   cfg = cfg or {}
   local out = {}
   for _, blob in ipairs(SeagallopExtract.BLOBS) do
-    local off = cfg[blob.key] or blob.offset
+    local off = cfg[blob.key] or Versions.address(blob.offset)
     local bytes = rom:readBytes(off, blob.size)
     local chars = {}
     for i = 1, blob.size do chars[i] = string.char(bytes[i] or 0) end

@@ -677,7 +677,7 @@ end
 function PokedexChromeExtract.footprintTable(rom, cfg)
   local base = (cfg and cfg.footprint_table)
     or Versions.MON_FOOTPRINT_TABLE
-    or PokedexChromeExtract.FOOTPRINT_TABLE
+    or Versions.address(PokedexChromeExtract.FOOTPRINT_TABLE)
   local count = Versions.NUM_SPECIES or 412
   local function entry(sp)
     local ptr = get_u32(rom, base + sp * 4)

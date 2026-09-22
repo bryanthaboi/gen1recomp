@@ -380,6 +380,8 @@ grep -qxF "tools/rom_manifest_crystal.json" "$WORK/love-listing.txt" \
   || fail "game.love is missing tools/rom_manifest_crystal.json"
 grep -qxF "tools/rom_manifest_firered.json" "$WORK/love-listing.txt" \
   || fail "game.love is missing tools/rom_manifest_firered.json"
+grep -qxF "tools/rom_manifest_leafgreen.json" "$WORK/love-listing.txt" \
+  || fail "game.love is missing tools/rom_manifest_leafgreen.json"
 # The .desktop's Icon= resolves against the AppDir root by basename, and
 # .DirIcon is what appimaged and file-manager thumbnailers read.
 cp "$IN/icon.png" "$APPDIR/$APP_NAME.png"

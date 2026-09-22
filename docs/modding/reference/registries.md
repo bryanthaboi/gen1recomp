@@ -366,8 +366,10 @@ mod.content.encounters:patch("ROUTE_1", { grass = { rate = 30 } })
 The record differs; the registry name, the verbs and the id space
 do not.
 
-Id = a top-level key of the target table. Keys not listed here are
-accepted and merged as-is.
+Id = a top-level key of the target table. The set below is **closed**:
+an id that is not one of these is rejected rather than merged, because
+the engine reads this table by name and a key it does not name is a
+write nothing reads.
 
 | key | type |
 |---|---|
@@ -376,6 +378,7 @@ accepted and merged as-is.
 | `generation` | integer >= 1 |
 | `grass` | map of string -> {map?, rates, slots} |
 | `roamMaps` | list of {map, to} |
+| `roamMons` | list of {level?, map?, mapGroup?, mapNumber?, species?} |
 | `rocks` | map of string -> string |
 | `source` | string |
 | `swarmGrass` | map of string -> {map?, rates, slots} |
@@ -390,6 +393,12 @@ accepted and merged as-is.
 ```lua
 mod.content.encounters:patch("grass", { ROUTE_29 = { rates = { NITE = 40 } } })
 ```
+
+Gold's encounter ids are a **closed set**: the kinds above are
+the complete set of lookups the engine makes into `Data.gen2Encounters`, so an
+id that is not one of them is a write nothing reads. An id outside the set is
+rejected -- a Gen 1 mod ported unchanged passes the map where Gold wants the
+kind, and that call is refused rather than silently dropped.
 
 ## evolution_methods
 

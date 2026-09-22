@@ -21,6 +21,7 @@ CacheContract.VERSION_FORMAT = {
   yellow = "rom-cache-v11-yellow1:",
   -- v8: M4A tracks retain reachable patterns and explicit entry offsets.
   firered = "rom-cache-v15-firered:",
+  leafgreen = "rom-cache-v1-leafgreen:",
 }
 CacheContract.MARKER_PATH = "rom-cache.complete"
 
@@ -393,6 +394,12 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/trainer_card/stickers.rgba",
   },
 }
+CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.leafgreen = {}
+for i, path in ipairs(CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.firered) do
+  CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.leafgreen[i] = path
+end
+table.insert(CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.leafgreen,
+  "data/generated/gba/intro/title_streak.png")
 CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.silver =
   CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.gold
 

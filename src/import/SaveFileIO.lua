@@ -210,4 +210,33 @@ function SaveFileIO.exportActiveSlot(version)
   return true, rel
 end
 
+-- Copy the original serialized source rather than decoding and re-encoding it.
+-- readSlotSource also recovers a valid backup when the primary file is damaged.
+function SaveFileIO.exportLuaSlot(version, slotId, cartId)
+  if not GameVersion.info(version) then return false, "unknown game" end
+  slotId = slotId or SaveData.activeSlot(version)
+  local bytes
+  if cartId then bytes = SaveData.readCartSlotSource(cartId, slotId)
+  else bytes = SaveData.readSlotSource(version, slotId) end
+  if not bytes then return false, "this slot has no save to export yet" end
+  local fs = SaveData.portableFs() or (love and love.filesystem)
+  if not (fs and fs.write) then return false, "no filesystem available to export to" end
+  if fs.createDirectory then
+    fs.createDirectory("exports")
+    fs.createDirectory("exports/" .. version)
+  end
+  local name = (cartId and (cartId .. "-") or "") .. tostring(slotId)
+  name = name:gsub("[^%w_-]", "_")
+  local rel = ("exports/%s/gen1recomp-%s-%s.lua"):format(version, version, name)
+  local ok, err = fs.write(rel, bytes)
+  if not ok then return false, "could not write the export: " .. tostring(err) end
+  local base = SaveData.portableBaseDir()
+  if base then
+    local sep = package.config:sub(1, 1)
+    return true, base .. sep .. rel:gsub("/", sep)
+  end
+  base = fs.getSaveDirectory and fs.getSaveDirectory() or ""
+  return true, base ~= "" and base .. "/" .. rel or rel
+end
+
 return SaveFileIO

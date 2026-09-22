@@ -1,6 +1,6 @@
 # Gen1Recomp
 
-A native LÖVE2D recreation of Poke Red, Blue, Gold, Silver, Crystal, and Fire Red. 
+A native LÖVE2D recreation of Poke Red, Blue, Yellow, Gold, Silver, Crystal, FireRed, and LeafGreen.
 The engine and map behavior are hand-written Lua; game data and graphics are 
 decoded from a ROM supplied by the player.
 
@@ -57,32 +57,39 @@ And before you say, "that's not a recomp", you're wrong. Recomp is an acronym. *
 
 This project does not include a ROM, emulate the Game Boy, transpile assembly,
 or download a disassembly. A canonical US Poke Red, Blue, Yellow, Gold,
-Silver, or Crystal ROM is the only game content input.
+Silver, Crystal, FireRed, or LeafGreen ROM is the only game content input.
 
 The ROM is verified, used during import, and then released from memory. It is
 not copied into the cache. Later launches load the private generated cache and
-do not ask for the ROM again. Red, Blue, Yellow, Gold, Silver, and Crystal can
-all be imported side by side. Gold, Silver, and Crystal are Gen 2 Phase 1
+do not ask for the ROM again. All eight supported games can be imported side
+by side. Gold, Silver, and Crystal are Gen 2 Phase 1
 (import + launcher; see `docs/gold-phase1.md`): the Gen 2 engine is still under
 construction.
 
 ## Quick Start
 
 Open the desktop app. On first boot, choose your legally obtained `.gb` /
-`.gbc` file or drop it onto the window. Import takes a few seconds and the
+`.gbc` / `.gba` file or drop it onto the window. Import takes a few seconds and the
 game starts automatically.
 
-Only the canonical US Red, Blue, Yellow (1 MiB), Gold, Silver, and Crystal
-(2 MiB) ROMs are accepted. The importer verifies SHA-1 before creating any
-game data:
+### Supported games and ROM hashes
 
-- Red: `ea9bcae617fdf159b045185467ae58b2e4a48b9a`
-- Blue: `d7037c83e1ae5b39bde3c30787637ba1d4c48ce2`
-- Yellow: `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1`
-- Gold: `d8b8a3600a465308c9953dfa04f0081c05bdcb94`
-- Silver: `49b163f7e57702bc939d642a18f591de55d92dae`
-- Crystal (1.0): `f4cd194bdee0d04ca4eac29e09b8e4e9d818c133`
-- Crystal (1.1): `f2f52230b536214ef7c9924f483392993e226cfb`
+Only the canonical US English ROMs below are accepted. The importer verifies
+SHA-1 before creating any game data. FireRed and LeafGreen support is in beta.
+
+| Game | Revision | ROM size | SHA-1 |
+| --- | --- | --- | --- |
+| Red | — | 1 MiB | `ea9bcae617fdf159b045185467ae58b2e4a48b9a` |
+| Blue | — | 1 MiB | `d7037c83e1ae5b39bde3c30787637ba1d4c48ce2` |
+| Yellow | — | 1 MiB | `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1` |
+| Gold | — | 2 MiB | `d8b8a3600a465308c9953dfa04f0081c05bdcb94` |
+| Silver | — | 2 MiB | `49b163f7e57702bc939d642a18f591de55d92dae` |
+| Crystal | 1.0 | 2 MiB | `f4cd194bdee0d04ca4eac29e09b8e4e9d818c133` |
+| Crystal | 1.1 | 2 MiB | `f2f52230b536214ef7c9924f483392993e226cfb` |
+| FireRed | 1.0 | 16 MiB | `41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc` |
+| FireRed | 1.1 | 16 MiB | `dd5945db9b930750cb39d00c84da8571feebf417` |
+| LeafGreen | 1.0 | 16 MiB | `574fa542ffebb14be69902d1d36f1ec0a4afd71e` |
+| LeafGreen | 1.1 | 16 MiB | `7862c67bdecbe21d1d69ce082ce34327e1c6ed5e` |
 
 The packaged app contains neither a ROM nor pre-extracted game data. Music,
 sound effects, and cries are synthesized while the game runs from compact

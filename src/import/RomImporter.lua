@@ -2723,12 +2723,19 @@ end
 -- create-document picker (love.system.createFile) so the player can save to
 -- Downloads / Drive / etc. -- the app-private exports/ path is not useful there.
 -- NX: surface exports path + MTP hint; do not rely on openURL / open-folder.
-function RomImporter:exportSave(version)
+function RomImporter:exportSave(version, format, scope, slotId)
   if self.workState == "working" then return end
   version = self:_resolveSaveVersion(version)
-  local ok, res = require("src.import.SaveFileIO").exportActiveSlot(version)
+  local noticeScope = scope or version
+  local IO = require("src.import.SaveFileIO")
+  local ok, res
+  if format == "lua" then
+    ok, res = IO.exportLuaSlot(version, slotId, cartOfScope(scope))
+  else
+    ok, res = IO.exportActiveSlot(version)
+  end
   if not ok then
-    self.saveNotice[version] = { ok = false, text = tostring(res) }
+    self.saveNotice[noticeScope] = { ok = false, text = tostring(res) }
     return
   end
   if self.isNX then
@@ -2736,7 +2743,7 @@ function RomImporter:exportSave(version)
     local rel = RomImporter.mtpHintPath(saveDir)
     if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
     local outDir = exportsDir(version)
-    self.saveNotice[version] = {
+    self.saveNotice[noticeScope] = {
       ok = true,
       text = Strings("Exported to %s\nDBI MTP → 1: SD Card/%s%s/", res, rel, outDir),
     }
@@ -2747,32 +2754,32 @@ function RomImporter:exportSave(version)
       or res:match("(exports[/\\].+)$")
     local data = rel and love.filesystem.read(rel)
     if not data then
-      self.saveNotice[version] = { ok = false,
+      self.saveNotice[noticeScope] = { ok = false,
         text = "Exported, but could not stage the file for the picker." }
       return
     end
     local suggested = rel:match("[^/\\]+$") or "export.sav"
     local wrote, writeErr = love.filesystem.write("pending_export.sav", data)
     if not wrote then
-      self.saveNotice[version] = { ok = false,
+      self.saveNotice[noticeScope] = { ok = false,
         text = "Could not stage the export: " .. tostring(writeErr) }
       return
     end
-    self.androidPendingExportVersion = version
+    self.androidPendingExportVersion = noticeScope
     if love.system.createFile and love.system.createFile(suggested, love.filesystem.getSaveDirectory()) then
       self.pickPending = true
       self.pickTimer = 0
-      self.saveNotice[version] = { ok = true,
+      self.saveNotice[noticeScope] = { ok = true,
         text = "Pick where to save " .. suggested .. "..." }
     else
       self.androidPendingExportVersion = nil
-      self.saveNotice[version] = { ok = true,
+      self.saveNotice[noticeScope] = { ok = true,
         text = "Exported inside the app folder (picker unavailable)." }
     end
     return
   end
   local dir = res:match("^(.*)[/\\][^/\\]+$")
-  self.saveNotice[version] = { ok = true, text = "Exported to " .. res, dir = dir }
+  self.saveNotice[noticeScope] = { ok = true, text = "Exported to " .. res, dir = dir }
 end
 
 -- Delete a save slot from the registry and disk, then refresh the panel.  If the
@@ -3589,6 +3596,14 @@ function RomImporter:gamepadpressed(_, button)
         return
       end
     end
+  end
+
+  if self._saveExport or self._savePicker or self._modGames or self._cartPopup then
+    if action == "b" then
+      self._saveExport, self._savePicker, self._modGames, self._cartPopup = nil, nil, nil, nil
+      return
+    end
+    if button == "start" or button == "leftshoulder" or button == "rightshoulder" then return end
   end
 
   -- Shoulder buttons: cycle tabs
@@ -5022,6 +5037,14 @@ function RomImporter:keypressed(key)
     end
     return
   end
+  if self._saveExport or self._savePicker or self._modGames then
+    if key == "escape" then
+      self._saveExport, self._savePicker, self._modGames = nil, nil, nil
+    elseif self._flex then
+      require("src.import.LauncherView").keypressed(self, key)
+    end
+    return
+  end
   if self._cartPopup then
     if self._flex and require("src.import.LauncherView").keypressed(self, key) then
       return
@@ -5558,6 +5581,17 @@ function RomImporter:_commitCartSave()
   self:_refreshCarts(version)
   self._cartPopup = version
   self._cartNotice = Strings("Saved %s. It is in this list now.", title)
+end
+
+function RomImporter:deleteCart(version, id)
+  if self.workState == "working" then return end
+  local ok, err = require("src.carts.CartStore").uninstall(id)
+  if not ok then self._cartNotice = tostring(err); return end
+  if self.activeCart[version] == id then self:_selectCart(version, nil) end
+  self:_refreshCarts(version)
+  self._cartPicker = nil
+  self._cartPopup = version
+  self._cartNotice = Strings("Cart deleted. Its saves and installed mods were kept.")
 end
 
 function RomImporter:exportCart(id)

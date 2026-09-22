@@ -2253,6 +2253,11 @@ local ADAPTERS = {
 
 Gen3Compat.ADAPTERS = ADAPTERS
 
+function Gen3Compat.endSession()
+  resolveGame, lastGame = nil, nil
+  built, claimants, warned = {}, {}, {}
+end
+
 function Gen3Compat.bind(fn)
   resolveGame = fn
 end

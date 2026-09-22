@@ -392,9 +392,12 @@ function closeSkinStudio()
 end
 
 local function makeLauncher(launcherOpts)
+  require("src.import.LauncherWindow").activate()
   local RomImporter = require("src.import.RomImporter")
   local forceImport = os.getenv("POKEPORT_FORCE_IMPORT") == "1"
   return RomImporter.new(function(version, cartId, opts)
+    require("src.import.LauncherWindow").observe(0)
+    require("src.import.LauncherWindow").flush()
     Importer = nil
     bootGame(version, cartId, opts)
   end, {
@@ -803,7 +806,10 @@ function love.update(dt)
     returnToLauncher(opts)
     return
   end
-  if Importer then return Importer:update(dt) end
+  if Importer then
+    require("src.import.LauncherWindow").observe(dt)
+    return Importer:update(dt)
+  end
   if not Game then return end
 
   -- Scripted runs (autopilot / POKEPORT_DRIVER) observe and act exactly
@@ -1349,6 +1355,10 @@ end
 local quitToLauncher = false
 
 function love.quit()
+  if Importer then
+    require("src.import.LauncherWindow").observe(0)
+    require("src.import.LauncherWindow").flush()
+  end
   if editorMode and EditorApp.quit then
     -- true blocks the quit (unsaved-changes prompt).  A quit that proceeds
     -- must fall through to the worker shutdowns below instead of returning:

@@ -1,18 +1,22 @@
-"""Usage: tools/gen_firered_revision.py ../pokefirered (after make compare_firered compare_firered_rev1)."""
+"""Generate FRLG 1.1 relocation metadata from matching pret builds.
+
+Usage: python3 tools/gen_firered_revision.py ../pokefirered [--game leafgreen]
+Build compare_<game> and compare_<game>_rev1 first.
+"""
 
 from __future__ import annotations
 
+import argparse
 import base64
 import bisect
 import hashlib
 import struct
 import subprocess
-import sys
 from pathlib import Path
 
 ROM_BASE = 0x08000000
 ROM_END = 0x09000000
-OUT = Path(__file__).resolve().parent.parent / "src/import/gba/revisions/firered_1_1.lua"
+OUT_DIR = Path(__file__).resolve().parent.parent / "src/import/gba/revisions"
 REV1_ONLY = {"GFScene_CreatePresentsSprite"}
 
 
@@ -53,10 +57,15 @@ def varint(n: int) -> bytes:
 
 
 def main() -> None:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else "../pokefirered")
-    a = (root / "pokefirered.gba").read_bytes()
-    b = (root / "pokefirered_rev1.gba").read_bytes()
-    segs = segments(root / "pokefirered.elf", root / "pokefirered_rev1.elf")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", nargs="?", default="../pokefirered", type=Path)
+    parser.add_argument("--game", choices=("firered", "leafgreen"), default="firered")
+    args = parser.parse_args()
+    root, stem = args.root, "poke" + args.game
+    out = OUT_DIR / (args.game + "_1_1.lua")
+    a = (root / (stem + ".gba")).read_bytes()
+    b = (root / (stem + "_rev1.gba")).read_bytes()
+    segs = segments(root / (stem + ".elf"), root / (stem + "_rev1.elf"))
     starts = [s for s, _ in segs]
 
     def fwd(off: int) -> int:
@@ -104,9 +113,9 @@ def main() -> None:
     lines += ["  },", "  siteCount = %d," % len(sites), "  sites = table.concat({"]
     lines += ['    "%s",' % text[i:i + 100] for i in range(0, len(text), 100)]
     lines += ["  }),", "}", ""]
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("\n".join(lines))
-    print("segments %d, sites %d, residual bytes %d, wrote %s" % (len(segs), len(sites), residual, OUT))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines))
+    print("segments %d, sites %d, residual bytes %d, wrote %s" % (len(segs), len(sites), residual, out))
 
 
 if __name__ == "__main__":

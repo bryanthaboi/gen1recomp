@@ -98,17 +98,22 @@ local function settingsText(w, h)
   local imp = freshLauncher()
   imp:_openSettings()
   check(imp._settings ~= nil, "the gear opens the settings model")
-  drawAndCapture(imp)             -- first frame paginates
-  return drawAndCapture(imp)
+  drawAndCapture(imp)
+  local output = {drawAndCapture(imp)}
+  for scroll = 200, imp._settings.maxScroll or 0, 200 do
+    imp._settings.scroll = scroll
+    output[#output + 1] = drawAndCapture(imp)
+  end
+  return table.concat(output, "\n")
 end
 
-local LONG_LABELS = { "TEXT SPEED", "BATTLE ANIMATION", "BATTLE STYLE" }
+local LONG_LABELS = { "Text Speed", "Battle Animation", "Battle Style" }
 local portrait = settingsText(360, 780)
 for _, label in ipairs(LONG_LABELS) do
   check(portrait:find(label, 1, true) ~= nil,
     ("portrait settings print %q in full"):format(label))
 end
-check(portrait:find("BAT...", 1, true) == nil,
+check(portrait:find("Bat...", 1, true) == nil,
   "no settings label is clipped to an ellipsis on a portrait phone")
 
 -- A desktop window has room for the side-by-side shape and must not regress.

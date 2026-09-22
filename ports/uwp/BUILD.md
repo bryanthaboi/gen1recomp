@@ -38,10 +38,14 @@ Run the dependency rebuild from the repository root:
 ```
 
 The script clones the pinned SDL2, LÖVE, LuaJIT, vcpkg, depot_tools, and ANGLE
-sources when they are missing. It applies the Xbox SDL2 patch, builds the x64
-UWP Release libraries, stages the required DLLs, import libraries, headers, and
-licences under `third_party`, updates every SHA-256 entry in the manifest, then
-builds the Release MSIX.
+sources when they are missing. It applies the Xbox SDL2 patch and the LÖVE
+picker patch (`third_party/love/patches/gba-file-picker.patch`, which adds
+`.gba` to the ROM file picker), builds the x64 UWP Release libraries, stages
+the required DLLs, import libraries, headers, and licences under `third_party`,
+updates every SHA-256 entry in the manifest, then builds the Release MSIX.
+The `love.dll` already in `third_party` includes that `.gba` filter as an
+in-place patch, so a package built from the committed binaries offers it
+without this rebuild. A from-source rebuild compiles the same filter in.
 
 The generated source checkouts are ignored by Git. A fresh ANGLE sync is about
 10 GB, so allow at least 20 GB of free disk space for all sources and build

@@ -1,3 +1,4 @@
+local Versions = require("src.import.gba.versions")
 -- FireRed Help ROM tables. Offsets relative to sHelpSystemTopicPtrs, verified
 -- against pret/pokefirered and BPRE Rev 1. No game text is distributed here.
 local TextIR = require('src.core.game3.scripting.text_ir')
@@ -52,7 +53,7 @@ local function locate(rom)
   -- Rev 0 and Rev 1 keep this rodata block's layout. Validate the signature
   -- instead of applying the Rev 1 displacement to unrelated ROM tables.
   local signature={0xD1,0xDC,0xD5,0xE8,0,0xE7,0xDC,0xE3,0xE9,0xE0,0xD8}
-  for base=BASE_REV1-0x200,BASE_REV1+0x200,4 do
+  for base=Versions.address(BASE_REV1)-0x200,Versions.address(BASE_REV1)+0x200,4 do
     local p=rom:u32(base)-0x08000000
     if p>=0 and p+#signature<rom.size then
       local match=true

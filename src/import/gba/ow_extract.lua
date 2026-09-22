@@ -130,6 +130,10 @@ local function decode_frame_4bpp(raw, width, height)
   for ty = 0, tilesY - 1 do
     for tx = 0, tilesX - 1 do
       local tileIndex = ty * tilesX + tx
+      if width == 128 and height == 64 then
+        tileIndex = math.floor(ty / 4) * 64 + math.floor(tx / 8) * 32
+          + (ty % 4) * 8 + tx % 8
+      end
       local tileOff = tileIndex * 32
       for y = 0, 7 do
         for x = 0, 7 do
@@ -403,7 +407,9 @@ end
 
 function OwExtract.ready(cache, root)
   root = root or "data/generated/gba"
-  return cache and cache:exists(root .. "/ow/manifest.lua")
+  local manifest = cache and cache:read(root .. "/ow/manifest.lua")
+  return type(manifest) == "string"
+    and tonumber(manifest:match("ow_version%s*=%s*(%d+)")) == Versions.OW_VERSION
 end
 
 return OwExtract

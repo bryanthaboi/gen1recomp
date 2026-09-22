@@ -448,6 +448,7 @@ pack_game_love() {
   ensure_silver_manifest
   ensure_crystal_manifest
   ensure_firered_manifest
+  [ -f "$ROOT/tools/rom_manifest_leafgreen.json" ] || fail "LeafGreen import manifest is missing"
   mkdir -p "$EMBED_ASSETS"
   rm -f "$LOVE_FILE"
   # tools/save-editor ships with the app: the launcher's Edit button on a save
@@ -463,7 +464,7 @@ pack_game_love() {
     tools/rom_manifest.json tools/rom_manifest_blue.json \
     tools/rom_manifest_yellow.json tools/rom_manifest_gold.json \
     tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
-    tools/rom_manifest_firered.json \
+    tools/rom_manifest_firered.json tools/rom_manifest_leafgreen.json \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' \
     -x 'data/generated/*' -x 'assets/generated/*')
   # List once and match against the captured text: piping unzip straight into

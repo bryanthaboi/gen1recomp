@@ -410,7 +410,7 @@ end
 -- src/battle_bg.c:439
 function BattleChromeExtract.terrainTable(get, cfg)
   cfg = cfg or Versions.BATTLE_UI
-  local base = cfg.terrain_table or BattleChromeExtract.TERRAIN_TABLE
+  local base = cfg.terrain_table or Versions.address(BattleChromeExtract.TERRAIN_TABLE)
   local function u32(off)
     return (get(off) or 0) + (get(off + 1) or 0) * 256
       + (get(off + 2) or 0) * 65536 + (get(off + 3) or 0) * 16777216
@@ -439,7 +439,7 @@ function BattleChromeExtract.requireTerrainTable(get, cfg)
   local terrains = BattleChromeExtract.terrainTable(get, cfg)
   if not terrains then
     error(string.format("battle_chrome_extract: sBattleTerrainTable at 0x%X did not decode",
-      cfg.terrain_table or BattleChromeExtract.TERRAIN_TABLE))
+      cfg.terrain_table or Versions.address(BattleChromeExtract.TERRAIN_TABLE)))
   end
   return terrains
 end

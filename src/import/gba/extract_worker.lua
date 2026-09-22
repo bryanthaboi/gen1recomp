@@ -44,19 +44,20 @@ local ok, err = pcall(function()
     end
   end, sha1)
 
-  local res
+  local res, detail
   if task_name == "gba" then
-    res = ext:runGbaExtract(sha1)
+    res, detail = ext:runGbaExtract(sha1)
   elseif task_name == "pokemon" then
-    res = ext:runPokemonExtract(sha1)
+    res, detail = ext:runPokemonExtract(sha1)
   elseif task_name == "aux" then
-    res = ext:runAuxExtracts(sha1)
+    res, detail = ext:runAuxExtracts(sha1)
   elseif task_name == "intro_audio" then
-    res = ext:runIntroAudio(sha1)
+    res, detail = ext:runIntroAudio(sha1)
   else
     error("unknown extract task: " .. tostring(task_name))
   end
 
+  assert(res ~= false, detail or (task_name .. " extraction failed"))
   collectgarbage("collect")
   return res
 end)

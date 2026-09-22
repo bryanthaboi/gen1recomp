@@ -273,8 +273,24 @@ function Schemas.check(spec, registryName, id, value, mode, generation)
     -- deep registries are open namespaces: a key the catalog does not
     -- describe is a mod's own data, not a mistake.  keyValue types every
     -- key alike, for namespaces whose keys are content (one per map).
+    --
+    -- `keysClosed` is the opt-out, for the registries where an unknown id
+    -- cannot be a mod's own data because NOTHING reads it: Gold's encounters
+    -- table is consumed by a fixed set of lookups (encounters.grass,
+    -- encounters.water, ...), so a key the catalog does not describe is a
+    -- write that lands nowhere and does nothing.  That silence is the whole
+    -- bug in #2369 -- a Gen 1 author patching "ROUTE_29" where Gold wants
+    -- the encounter KIND, "grass" -- so the ids are named back instead.
     local keyType = (spec.keys and spec.keys[id]) or spec.keyValue
-    if keyType then checkValue(keyType, value, path, patchMode, errors, true) end
+    if keyType then
+      checkValue(keyType, value, path, patchMode, errors, true)
+    elseif spec.keysClosed then
+      local names = {}
+      for keyName in pairs(spec.keys) do names[#names + 1] = keyName end
+      table.sort(names)
+      errors[#errors + 1] = ("%s: unknown id; this registry's ids are %s")
+        :format(path, table.concat(names, ", "))
+    end
   elseif spec.value then
     checkValue(spec.value, value, path, patchMode, errors, true)
     if #errors == 0 and not patchMode and spec.extra then
@@ -700,10 +716,10 @@ end
 --
 -- So beside `value` / `fields` / `keys` / `keyValue` a spec may carry
 -- `gen2Value` / `gen2Fields` / `gen2Keys` / `gen2KeyValue`, and beside
--- `semantics` / `extra` / `write` / `baseAt` / `baseIds` / `reservedIds` /
--- `example` / `notes` the matching `gen2*`.  Absent means "the Gen 1 shape is
--- right here too", which is the common case and why most registries carry
--- none of this.
+-- `semantics` / `extra` / `keysClosed` / `write` / `baseAt` / `baseIds` /
+-- `reservedIds` / `example` / `notes` the matching `gen2*`.  Absent means
+-- "the Gen 1 shape is right here too", which is the common case and why most
+-- registries carry none of this.
 -- The registry NAME, the verbs and (wherever the id space allows it) the ids
 -- stay shared, exactly as the routing table keeps them shared.
 --
@@ -723,6 +739,7 @@ end
 local SHAPE_SLOTS = {
   Value = "value", Fields = "fields", Keys = "keys",
   KeyValue = "keyValue", Extra = "extra",
+  KeysClosed = "keysClosed",
   Semantics = "semantics", Write = "write",
   BaseAt = "baseAt", BaseIds = "baseIds",
   ReservedIds = "reservedIds",
@@ -2015,6 +2032,17 @@ R.encounters = {
   -- a namespace: a slot table is an ORDERED list whose position is the
   -- encounter roll, and Merge.deepMerge appends lists under "deep" semantics,
   -- so a mod rewriting a seven-slot table would get a fourteen-slot one.
+  --
+  -- This is the one registry whose ids are CLOSED (`gen2KeysClosed`): the
+  -- kind list below is not an open namespace a mod may add to, it is the
+  -- complete set of lookups Gold makes into the table (encounters.grass,
+  -- encounters.water, encounters.trees, ...).  A Gen 1 author porting an
+  -- encounters mod writes the MAP where Gold wants the KIND -- patch
+  -- ("ROUTE_29", { grass = ... }) -- and under an open id space that call was
+  -- accepted, written to gen2Encounters.ROUTE_29 and read by nothing: the
+  -- game stayed vanilla with no error anywhere (#2369).  Closing the set
+  -- turns that silence into the one thing the author needs, the list of ids
+  -- that do exist.
   gen2Keys = {
     grass = f.map(f.str, gen2GrassRow),
     -- the swarm variants shadow their base table while a swarm is running
@@ -2046,8 +2074,22 @@ R.encounters = {
                                chance = f.int(0, 255) }),
     -- where a roaming beast may walk next, keyed by the map it is on
     roamMaps = f.list(f.rec{ map = f.str, to = f.list(f.str) }),
+    -- the three beasts' starting slots, straight out of InitRoamMons
+    -- (src/import/RomExtractorGen2.lua readRoamMons).  Absent from an older
+    -- cache, which is why src/core/gen2/Roamers.lua keeps a fallback table.
+    roamMons = f.opt(f.list(f.rec{ species = f.opt(f.id("pokemon")),
+                                   level = f.opt(f.int(1)),
+                                   mapGroup = f.opt(f.int(0, 255)),
+                                   mapNumber = f.opt(f.int(0, 255)),
+                                   map = f.opt(f.str) })),
     source = f.str, generation = f.int(1),
   },
+  gen2KeysClosed = true,
+  gen2Notes = [[Gold's encounter ids are a **closed set**: the kinds above are
+the complete set of lookups the engine makes into `Data.gen2Encounters`, so an
+id that is not one of them is a write nothing reads. An id outside the set is
+rejected -- a Gen 1 mod ported unchanged passes the map where Gold wants the
+kind, and that call is refused rather than silently dropped.]],
   example = 'mod.content.encounters:patch("ROUTE_1", { grass = { rate = 30 } })',
   gen2Example = 'mod.content.encounters:patch("grass", '
     .. '{ ROUTE_29 = { rates = { NITE = 40 } } })',

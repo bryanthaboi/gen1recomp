@@ -1,5 +1,5 @@
 -- Which game this process is running: Red (the historical default), Blue,
--- Yellow, Gold, Silver, Crystal, or FireRed.  One source of truth for
+-- Yellow, Gold, Silver, Crystal, FireRed, or LeafGreen.  One source of truth for
 -- everything that differs by version -- the accepted ROM hash, the import
 -- manifest, where the extracted cache lives, and the save-file suffix -- so
 -- the importer, cache mount, SaveData, title screen and palette all agree.
@@ -131,12 +131,25 @@ GameVersion.VERSIONS = {
     cartShell = "#e64110",
     cartLabel = "assets/labels/firered.png",
   },
+  leafgreen = {
+    id = "leafgreen", label = "LeafGreen", displayName = "Pokemon LeafGreen",
+    launcherName = "Leaf Green", beta = true,
+    sha1 = "574fa542ffebb14be69902d1d36f1ec0a4afd71e",
+    revisions = {
+      { sha1 = "574fa542ffebb14be69902d1d36f1ec0a4afd71e", label = "1.0" },
+      { sha1 = "7862c67bdecbe21d1d69ce082ce34327e1c6ed5e", label = "1.1" },
+    },
+    manifest = "tools/rom_manifest_leafgreen.json",
+    cachePrefix = "leafgreen/", saveSuffix = "_leafgreen",
+    generation = 3, engine = "game3", cartShape = "gba", cartShell = "#80bc28",
+    cartLabel = "assets/labels/leafgreen.png",
+  },
 }
 
 local NO_FIXES = {}
 
 -- Launcher column order.  Append only (src/mods/ModProfile.lua encodes by index).
-GameVersion.ORDER = { "red", "blue", "yellow", "gold", "silver", "crystal", "firered" }
+GameVersion.ORDER = { "red", "blue", "yellow", "gold", "silver", "crystal", "firered", "leafgreen" }
 
 GameVersion.current = "red"
 

@@ -981,6 +981,36 @@ check("switch spent no PP", switchParty[2].moves[1].pp, 35)
 
 local Effects = require("src.battle.gen2.Effects")
 
+-- Thunder's weather override replaces its base accuracy, but accuracy and
+-- evasion stages still apply to that overridden value.  Wrap the block in a
+-- local closure to keep the main chunk under Lua 5.1's 200-local ceiling.
+;(function()
+  local thunder = { id = "THUNDER", accuracy = 70, effect = "EFFECT_THUNDER" }
+  local accuracyAttacker = {}
+  local accuracyDefender = {}
+  local accuracyBattle = setmetatable({
+    data = { items = {} },
+    player = accuracyAttacker,
+    enemy = accuracyDefender,
+    stages = { player = Battle.newStages(), enemy = Battle.newStages() },
+    weather = nil,
+    random = maxRandom,
+  }, { __index = Battle })
+
+  check("Thunder can miss without weather",
+    accuracyBattle:accuracyRoll(thunder, accuracyAttacker, accuracyDefender), false)
+  accuracyBattle.weather = "rain"
+  check("Thunder cannot miss in rain with neutral stages",
+    accuracyBattle:accuracyRoll(thunder, accuracyAttacker, accuracyDefender), true)
+  accuracyBattle.stages.player.accuracy = -1
+  check("Thunder can miss in rain after accuracy drop",
+    accuracyBattle:accuracyRoll(thunder, accuracyAttacker, accuracyDefender), false)
+  accuracyBattle.stages.player.accuracy = 0
+  accuracyBattle.stages.enemy.evasion = 1
+  check("Thunder can miss in rain after evasion rise",
+    accuracyBattle:accuracyRoll(thunder, accuracyAttacker, accuracyDefender), false)
+end)()
+
 -- Stat stages clamp at +/-6 and report how far they actually moved, which is
 -- what decides between "rose" and "sharply rose".
 local stages = Battle.newStages()

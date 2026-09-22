@@ -1,4 +1,4 @@
--- FireRed Gen 3 extractor: GBA ROM → firered/ cache under CacheFs.prefix.
+-- FRLG Gen 3 extractor: GBA ROM → edition cache under CacheFs.prefix.
 -- Parallel to RomExtractor / RomExtractorGen2.  Full Island-1 demake lives in
 -- src/import/gba/extract_island1.lua; this module publishes the CacheContract
 -- override files and, when possible, runs that extract under
@@ -34,13 +34,14 @@ local function writeJson(rel, obj)
 end
 
 local function makeImports(romData, sha1)
+  local idForRom = assert(require("src.core.GameVersion").forSha1(sha1), "unknown FRLG ROM")
   return {
     info = function(_, id)
-      if id ~= "firered" and id ~= "leafgreen" then
+      if id ~= idForRom then
         return nil, "undeclared"
       end
       return {
-        id = "firered",
+        id = idForRom,
         size = #romData,
         -- versions.lua looks up by SHA-1 (legacy field name is md5).
         md5 = sha1,
@@ -48,7 +49,7 @@ local function makeImports(romData, sha1)
       }
     end,
     read = function(_, id, offset, length)
-      if id ~= "firered" and id ~= "leafgreen" then
+      if id ~= idForRom then
         return nil, "undeclared"
       end
       if offset < 0 or length < 0 or offset + length > #romData then
@@ -97,7 +98,10 @@ local POKEMON_SUBTASKS = {
 }
 
 function RomExtractorGen3.new(romData, manifest, progressCb, romSha1)
+  local sha1 = romSha1 or (manifest and manifest.romSha1) or hexSha1(romData)
+  require("src.import.gba.versions").select(sha1)
   return setmetatable({
+    version = assert(require("src.core.GameVersion").forSha1(sha1), "unknown FRLG ROM"),
     romData = romData,
     manifest = manifest,
     progress = progressCb,
@@ -161,7 +165,7 @@ function RomExtractorGen3:writeRequiredMarkers(sha1)
     writeJson(GBA_ROOT .. "/meta.json", {
       romSha1 = sha1,
       md5 = sha1,
-      version = "firered",
+      version = self.version,
       cache_version = Versions.CACHE_VERSION,
       native_version = Versions.NATIVE_VERSION or 5,
       stub = false,
@@ -190,7 +194,7 @@ function RomExtractorGen3:writeRequiredMarkers(sha1)
     LuaWriter.write("data/generated/intro.lua", {
       stub = true,
       generation = 3,
-      version = "firered",
+      version = self.version,
     })
   end
   if not CacheFs.exists("data/generated/audio.lua") then
@@ -243,7 +247,7 @@ function RomExtractorGen3:runPokemonExtract(sha1)
   end
 
   local imports = self:sharedImports(sha1)
-  local rom, openErr = Rom.open(imports, "firered")
+  local rom, openErr = Rom.open(imports, self.version)
   if not rom then
     Extract.CACHE_ROOT = prevRoot
     return false, openErr or "rom open failed"
@@ -340,7 +344,7 @@ function RomExtractorGen3:runAuxExtracts(sha1)
     return true, { skipped = true }
   end
 
-  local rom, openErr = Rom.open(self:sharedImports(sha1), "firered")
+  local rom, openErr = Rom.open(self:sharedImports(sha1), self.version)
   if not rom then
     Extract.CACHE_ROOT = prevRoot
     return false, openErr or "rom open failed"
@@ -508,8 +512,8 @@ function RomExtractorGen3:runIntroAudio(sha1)
 
   local RevisionView = require("src.import.gba.revision_view")
   local imports = self:sharedImports(sha1)
-  local info = imports:info("firered")
-  local romShim = { data = RevisionView.forImports(imports, "firered", info) or self.romData }
+  local info = imports:info(self.version)
+  local romShim = { data = RevisionView.forImports(imports, self.version, info) or self.romData }
   local Intro = require("src.import.gba.extract_intro")
   local Naming = require("src.import.gba.extract_naming")
   local AudioExt = require("src.import.gba.extract_audio")

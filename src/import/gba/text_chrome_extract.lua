@@ -58,8 +58,8 @@ end
 
 --- Decode latin_normal font: 512 glyphs (each is four 8x8 2bpp tiles in 16x16 layout)
 function TextChromeExtract.extractLatinNormal(rom)
-  local baseGfx = 0x1FF300
-  local baseWidths = 0x207300
+  local baseGfx = Versions.address(0x1FF300)
+  local baseWidths = Versions.address(0x207300)
   local glyphCount = 512
   local cols = 16
   local rows = math.floor((glyphCount + cols - 1) / cols)
@@ -130,8 +130,8 @@ end
 
 --- Decode latin_small font: 288 glyphs (each is two 8x8 2bpp tiles in 8x16 layout)
 function TextChromeExtract.extractLatinSmall(rom)
-  local baseGfx = 0x1EAF00
-  local baseWidths = 0x1EEF00
+  local baseGfx = Versions.address(0x1EAF00)
+  local baseWidths = Versions.address(0x1EEF00)
   local glyphCount = 288 -- 0x120
   local cols = 16
   local rows = math.floor((glyphCount + cols - 1) / cols) -- 18
@@ -198,7 +198,7 @@ end
 
 -- src/braille_text.c:15
 function TextChromeExtract.extractBraille(rom)
-  local baseGfx = TextChromeExtract.BRAILLE_GFX
+  local baseGfx = Versions.address(TextChromeExtract.BRAILLE_GFX)
   local glyphCount = TextChromeExtract.BRAILLE_GLYPHS
   local cols = 16
   local rows = math.floor((glyphCount + cols - 1) / cols)
@@ -264,7 +264,7 @@ end
 
 --- Decode down_arrows: 8 frames of 16x16 (sDownArrowTiles @ 0x1EA14C in FireRed)
 function TextChromeExtract.extractDownArrows(rom)
-  local baseGfx = 0x1EA14C
+  local baseGfx = Versions.address(0x1EA14C)
   local sheetW, sheetH = 128, 16
   local pal = {
     [0] = { 0, 0, 0, 0 },
@@ -326,7 +326,7 @@ end
 
 -- pokefirered/src/text.c:32
 function TextChromeExtract.extractTextCursor(rom)
-  local baseGfx, basePal = 0x1EA54C, 0x3CC2E4
+  local baseGfx, basePal = Versions.address(0x1EA54C), Versions.address(0x3CC2E4)
   local pal = { [0] = { 0, 0, 0, 0 } }
   for i = 1, 15 do
     local lo = (rom and rom:get(basePal + i * 2)) or 0
@@ -407,13 +407,13 @@ local function decode_4bpp_frame(rom, offset, tilesW, tilesH, pal, maxTiles)
 end
 
 function TextChromeExtract.extractMenuMessage(rom)
-  local pal0 = read_pal(rom, 0x471DEC)
-  return decode_4bpp_frame(rom, 0x41F1C8, 6, 3, pal0, 18)
+  local pal0 = read_pal(rom, Versions.address(0x471DEC))
+  return decode_4bpp_frame(rom, Versions.address(0x41F1C8), 6, 3, pal0, 18)
 end
 
 function TextChromeExtract.extractStdFrame(rom)
-  local pal3 = read_pal(rom, 0x471E4C)
-  return decode_4bpp_frame(rom, 0x471A4C, 3, 3, pal3, 9)
+  local pal3 = read_pal(rom, Versions.address(0x471E4C))
+  return decode_4bpp_frame(rom, Versions.address(0x471A4C), 3, 3, pal3, 9)
 end
 
 local KEYPAD_PALETTE = {
@@ -483,8 +483,8 @@ function TextChromeExtract.extractKeypadIcons(rom)
 end
 
 function TextChromeExtract.extractSignpostFrame(rom)
-  local pal1 = read_pal(rom, 0x471E0C)
-  return decode_4bpp_frame(rom, 0x470B0C, 5, 4, pal1, 19)
+  local pal1 = read_pal(rom, Versions.address(0x471E0C))
+  return decode_4bpp_frame(rom, Versions.address(0x470B0C), 5, 4, pal1, 19)
 end
 
 local function format_widths_lua(widths, comment)
@@ -516,7 +516,7 @@ local function read_ptr(rom, offset)
 end
 
 function TextChromeExtract.extractUserFrame(rom, frameType)
-  local entry = TextChromeExtract.USER_FRAMES_TABLE + frameType * 8
+  local entry = Versions.address(TextChromeExtract.USER_FRAMES_TABLE) + frameType * 8
   local tiles = read_ptr(rom, entry)
   local pal = read_pal(rom, read_ptr(rom, entry + 4))
   return decode_4bpp_frame(rom, tiles, 3, 3, pal, 9)

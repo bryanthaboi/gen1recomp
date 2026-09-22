@@ -113,7 +113,7 @@ function Schema.newGame(opts)
   local session = {
     schemaVersion = Schema.VERSION,
     engine = "game3",
-    version = opts.version or "firered",
+    version = opts.version or (require("src.core.GameVersion").get() == "leafgreen" and "leafgreen" or "firered"),
     generation = 3,
     party = {},
     bag = Bag.new(),
@@ -187,7 +187,7 @@ function Schema.toSaveTable(session)
   return {
     schemaVersion = session.schemaVersion or Schema.VERSION,
     engine = "game3",
-    version = "firered",
+    version = session.version or "firered",
     name = session.name,
     rivalName = session.rivalName,
     gender = session.gender,
@@ -257,6 +257,8 @@ function Schema.fromSaveTable(save)
   end
   local session = {
     schemaVersion = save.schemaVersion or Schema.VERSION,
+    version = save.version or "firered",
+    engine = "game3", generation = 3,
     party = save.party or {},
     bag = bag,
     dex = save.dex or {},

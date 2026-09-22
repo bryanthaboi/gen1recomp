@@ -64,6 +64,23 @@ local TRADES = {
   },
 }
 Trade.TRADES = TRADES
+local LEAFGREEN_TRADES = {}
+for id, entry in pairs(TRADES) do
+  local copy = {}
+  for k, v in pairs(entry) do copy[k] = v end
+  LEAFGREEN_TRADES[id] = copy
+end
+local nidoran = LEAFGREEN_TRADES[2]
+nidoran.nickname, nidoran.species, nidoran.requestedSpecies = "MR. NIDO", 32, 29
+nidoran.ivs, nidoran.personality = {19, 25, 18, 22, 22, 15}, 0x4c970b9e
+local nidorino = LEAFGREEN_TRADES[4]
+nidorino.nickname, nidorino.species, nidorino.requestedSpecies = "NINO", 33, 30
+nidorino.ivs, nidorino.personality = {19, 18, 25, 22, 15, 22}, 0x00eeca19
+LEAFGREEN_TRADES[5].requestedSpecies = 80
+function Trade.entry(id)
+  local entries = require("src.core.GameVersion").get() == "leafgreen" and LEAFGREEN_TRADES or TRADES
+  return entries[id]
+end
 Trade.COUNT = 9
 
 -- pokefirered/src/data/ingame_trades.h:184 sInGameTradeMailMessages
@@ -288,7 +305,7 @@ end
 
 -- pokefirered/src/trade_scene.c:2456 CreateInGameTradePokemonInternal
 function Trade.createTradeMon(tradeIdx, level)
-  local entry = TRADES[tonumber(tradeIdx) or -1]
+  local entry = Trade.entry(tonumber(tradeIdx) or -1)
   if not entry then return nil end
   level = math.max(1, math.min(100, tonumber(level) or 5))
 
@@ -398,7 +415,7 @@ end
 -- pokefirered/src/trade_scene.c:2774 DoInGameTradeScene
 function Trade.sceneTask(ctx, adapters, tradeIdx, playerSlot)
   local TradeScene = require("src.core.game3.trade_scene")
-  local entry = TRADES[tonumber(tradeIdx) or -1]
+  local entry = Trade.entry(tonumber(tradeIdx) or -1)
   local frames = 0
   local phase = "fadeout"
   return function()
@@ -466,7 +483,7 @@ end
 Trade.HANDLERS = {
   -- pokefirered/src/trade_scene.c:2434
   [Std.SPECIAL.GetInGameTradeSpeciesInfo] = function(ctx, adapters)
-    local entry = TRADES[varGet(ctx, VAR_0x8004)]
+    local entry = Trade.entry(varGet(ctx, VAR_0x8004))
     if not entry then return false, SPECIES_NONE end
     setStringVar(ctx, adapters, 1, speciesName(entry.requestedSpecies))
     setStringVar(ctx, adapters, 2, speciesName(entry.species))

@@ -757,18 +757,18 @@ function LauncherSettings.open(hooks, version)
       opts[GEN2_KEY] = block
     end
     sections = {
-      { title = Strings("OPTIONS"), rows = gen2Rows(block, hooks, opts) },
+      { title = Strings("Game Options"), rows = gen2Rows(block, hooks, opts) },
     }
   else
     sections = {
-      { title = Strings("OPTIONS"), rows = coreRows(opts, hooks) },
+      { title = Strings("Game Options"), rows = coreRows(opts, hooks) },
     }
   end
-  sections[#sections + 1] = {
-    title = Strings("LAUNCHER"),
+  local launcher = {
+    title = Strings("Launcher Options"),
     rows = {
       {
-        label = Strings("REDUCE MOTION"),
+        label = Strings("Reduce Motion"),
         value = function()
           return opts.reduceMotion == true and Strings("ON") or Strings("OFF")
         end,
@@ -781,6 +781,19 @@ function LauncherSettings.open(hooks, version)
       },
     },
   }
+  local Window = require("src.import.LauncherWindow")
+  if Window.supported() then
+    table.insert(launcher.rows, 1, {
+      label = Strings("Video Mode"),
+      value = function() return Window.mode() == "fullscreen" and Strings("Fullscreen") or Strings("Windowed") end,
+      step = function() return Window.toggle() end,
+      choices = {{value="windowed", label=Strings("Windowed")},
+        {value="fullscreen", label=Strings("Fullscreen")}},
+      selected = Window.mode,
+      select = function(value) Window.observe(0); return Window.apply(value) end,
+    })
+  end
+  table.insert(sections, 1, launcher)
   -- Mod options are generation-agnostic (the manager's options_schema
   -- contract), so they ride along either way.
   for _, mod in ipairs(discoverModSchemas(opts)) do

@@ -10,6 +10,7 @@ local CHUNK = 4 * 1024 * 1024 -- under ImportAccess.MAX_READ_BYTES (8 MiB)
 function Rom.open(imports, importId)
   local info, err = imports:info(importId)
   if not info then return nil, err end
+  require("src.import.gba.versions").select(info.md5)
   local self = setmetatable({
     imports = imports,
     id = importId,

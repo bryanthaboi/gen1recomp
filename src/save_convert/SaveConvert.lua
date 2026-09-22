@@ -283,10 +283,14 @@ function SaveConvert.importSupported(gameVersion)
   return true
 end
 
--- Gen 2 exports through Gen2Save now, but only for a save with a cartridge
--- image behind it; encode says so itself.
+-- Only the implemented SRAM codecs may be offered as cartridge exports.
+-- A Gen 3 save must never fall through to the Gen 1 encoder.
 function SaveConvert.exportSupported(gameVersion)
-  return true
+  if gameVersion == nil or gameVersion == "red" or gameVersion == "blue"
+      or gameVersion == "yellow" or Gen2Save.layoutFor(gameVersion) then
+    return true
+  end
+  return false, "Cartridge save export is not implemented for this game yet."
 end
 
 -- importSav(bytes, version, gameVersion) -> saveTable, err

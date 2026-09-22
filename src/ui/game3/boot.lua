@@ -114,6 +114,7 @@ function Boot.new()
     introScene3Swipe = loadImage(path("introScene3Swipe", "intro_scene3_swipe.png")),
     introScene3RecoilDust = loadImage(path("introScene3RecoilDust", "intro_scene3_recoil_dust.png")),
     titleFlames = titleFlamesImg,
+    titleStreak = loadImage(path("titleStreak", "title_streak.png")),
     titleSlash = loadImage(path("titleSlash", "title_slash.png")),
     titleBorder = loadImage(path("titleBorder", "title_border_bg.png")),
   }

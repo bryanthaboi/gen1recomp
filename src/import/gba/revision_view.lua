@@ -6,6 +6,7 @@ local ROM_BASE = 0x08000000
 local ROM_END = 0x09000000
 
 local MODULES = {
+  ["7862c67bdecbe21d1d69ce082ce34327e1c6ed5e"] = "src.import.gba.revisions.leafgreen_1_1",
   ["dd5945db9b930750cb39d00c84da8571feebf417"] = "src.import.gba.revisions.firered_1_1",
 }
 

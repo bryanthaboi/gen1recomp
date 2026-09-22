@@ -1026,6 +1026,130 @@ do
   run.release()
 end
 
+-- ------- 5c. Gold's encounters ids are a closed set (#2369)
+--
+-- Gold keys wild encounters by KIND first and map second, so the id a mod
+-- patches is "grass", not "ROUTE_29".  The id space was open, and a Gen 1
+-- encounters mod ported unchanged writes the MAP there: the call was accepted,
+-- merged into data.gen2Encounters.ROUTE_29 and read by nothing -- vanilla
+-- game, no error, nothing in the Mod Manager.  That key cannot be a mod's own
+-- data the way an extra palette id can, because the engine reads this table by
+-- name and the set of names is fixed, so the id space is closed and an unknown
+-- id fails the mod instead.
+do
+  local function encountersData()
+    return {
+      gen2Encounters = {
+        grass = {
+          ROUTE_29 = {
+            rates = { MORN = 51, DAY = 51, NITE = 51 },
+            slots = {
+              MORN = { { level = 3, species = "HOOTHOOT" } },
+              DAY = { { level = 3, species = "PIDGEY" } },
+              NITE = { { level = 3, species = "HOOTHOOT" } },
+            },
+          },
+        },
+      },
+    }
+  end
+
+  local function encountersMod(body)
+    return {
+      ["mods/fix_encounters/manifest.json"] = [[{
+        "id": "fix_encounters",
+        "name": "Fixture Encounters",
+        "version": "1.0.0",
+        "entry": "main.lua",
+        "api": 2,
+        "gen2compat": true
+      }]],
+      ["mods/fix_encounters/main.lua"] = body,
+    }
+  end
+
+  -- the shape itself, before any load: closed on Gold, unchanged on Red
+  do
+    local spec = Schemas.REGISTRIES.encounters
+    local ok, err = Schemas.check(spec, "encounters", "ROUTE_29",
+      { grass = { rate = 30 } }, "patch", 2)
+    T.check(not ok and err and err:match("unknown id"),
+      "Gen 2: an unknown encounters id is refused")
+    T.check(err and err:match("grass") and err:match("bugContest"),
+      "Gen 2: the refusal lists the ids that do exist: " .. tostring(err))
+    T.check(Schemas.check(spec, "encounters", "ROUTE_29",
+        { grass = { rate = 30 } }, "patch", 1) == true,
+      "Gen 1: the same call is the right form there and still passes")
+    T.check(Schemas.check(spec, "encounters", "roamMons",
+        { { species = "RAIKOU" } }, "patch", 2) == true,
+      "Gen 2: roamMons is a known id, not an unknown one")
+    T.check(Schemas.check(Schemas.REGISTRIES.palettes, "palettes",
+        "MOD_PALETTE", { colors = { 1, 2, 3, 4 } }, "patch", 2) == true,
+      "Gen 2: other id namespaces stay open -- an unknown id is a mod's own")
+  end
+
+  -- the documented Crystal form: the id is the kind, the map is a field
+  do
+    local run = T.sdk.loadMods({ "mods/fix_encounters" }, {
+      fs = T.sdk.memfs(encountersMod([[
+        local mod = ...
+        mod.content.encounters:patch("grass",
+          { ROUTE_29 = { rates = { NITE = 40 } } })
+      ]])),
+      data = encountersData(), generation = 2,
+    })
+    T.eq(statusOf(run, "fix_encounters").state, "loaded",
+      "Gen 2: the documented encounters form loads")
+    local row = run.data.gen2Encounters.grass.ROUTE_29
+    T.eq(row.rates.NITE, 40, "Gen 2: the patched rate lands")
+    T.eq(row.rates.DAY, 51, "Gen 2: the rates not named are untouched")
+    T.eq(row.slots.NITE[1].species, "HOOTHOOT",
+      "Gen 2: and the slot list survives the merge")
+    run.release()
+  end
+
+  -- a Gen 1 encounters mod ported unchanged: the map where Gold wants the kind
+  do
+    local run = T.sdk.loadMods({ "mods/fix_encounters" }, {
+      fs = T.sdk.memfs(encountersMod([[
+        local mod = ...
+        mod.content.encounters:patch("ROUTE_29", { grass = { rate = 30 } })
+      ]])),
+      data = encountersData(), generation = 2,
+    })
+    T.eq(statusOf(run, "fix_encounters").state, "failed",
+      "Gen 2: an unknown encounters id fails the mod rather than no-opping")
+    local told
+    for _, message in ipairs(run.errors) do
+      if message:match("encounters%.ROUTE_29") then told = message end
+    end
+    T.check(told ~= nil, "Gen 2: the failure names the id that was refused")
+    T.check(told and told:match("grass"),
+      "Gen 2: and lists the ids that do exist: " .. tostring(told))
+    T.eq(run.data.gen2Encounters.ROUTE_29, nil,
+      "Gen 2: nothing lands at the unknown id")
+    T.eq(run.data.gen2Encounters.grass.ROUTE_29.rates.NITE, 51,
+      "Gen 2: and the vanilla table is untouched")
+    run.release()
+  end
+
+  -- a malformed payload at a KNOWN id: the id resolves, so the type check runs
+  do
+    local run = T.sdk.loadMods({ "mods/fix_encounters" }, {
+      fs = T.sdk.memfs(encountersMod([[
+        local mod = ...
+        mod.content.encounters:patch("grass", "FORCE_ERROR_STRING")
+      ]])),
+      data = encountersData(), generation = 2,
+    })
+    T.eq(statusOf(run, "fix_encounters").state, "failed",
+      "Gen 2: a malformed encounters payload fails the mod")
+    T.eq(run.data.gen2Encounters.grass.ROUTE_29.rates.NITE, 51,
+      "Gen 2: and the vanilla table is untouched")
+    run.release()
+  end
+end
+
 -- ------- 6. StateStack:clear, which is what Gold's boot cinema hands off
 -- through now that it runs the engine stack
 

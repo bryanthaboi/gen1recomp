@@ -1112,7 +1112,7 @@ for _, size in ipairs(SIZES) do
     Kit.audit = ok and Kit.audit or nil
     check(ok, ("%dx%d picker draws: %s"):format(W, H, tostring(err)))
     if ok then
-      auditFrame(("%dx%d picker"):format(W, H), "Kanto Plus")
+      auditFrame(("%dx%d picker"):format(W, H), "Export")
       for _, r in ipairs(Kit.audit or {}) do
         local label = tostring(r.label)
         if label == "Get more carts" or label == "Close" then
