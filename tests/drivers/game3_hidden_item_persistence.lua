@@ -34,7 +34,12 @@ return function(game)
     Player.cellX, Player.cellY, Player.targetX, Player.targetY = 28, 58, 28, 58
     Player.px, Player.py, Player.facing = 448, 928, "up"
     session.x, session.y, session.facing = 28, 58, "up"
-    U.wait(150)
+    local MapPreview = require("src.ui.game3.map_preview_screen")
+    for _ = 1, 600 do
+      if not MapPreview.isActive() and not Field.locked then break end
+      U.wait(1)
+    end
+    U.wait(10)
   end
   forest()
   if not check(Field.hiddenItemAt(game, 28, 57, 0) ~= nil, "hidden_forest_antidote_present") then return finish() end

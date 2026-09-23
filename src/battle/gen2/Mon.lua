@@ -255,8 +255,77 @@ function Mon.eachSaveMon(save, fn)
   if save.daycare and save.daycare.mon then fn(save.daycare.mon) end
 end
 
+local function basePpOf(move, data)
+  local def = type(move) == "table" and data and data.moves
+    and data.moves[move.id]
+  return def and tonumber(def.pp)
+end
+
+-- engine/items/item_effects.asm:2752
+local function ppUpBonus(base)
+  return math.min(math.floor(base / 5), 7)
+end
+
+-- constants/pokemon_data_constants.asm:238
+function Mon.ppUpsOf(move, data)
+  if type(move) ~= "table" then return 0 end
+  local ups = tonumber(move.ppUps)
+  if ups == nil then
+    local base, stored = basePpOf(move, data), tonumber(move.maxPp)
+    ups = 0
+    if base and stored and stored > base then
+      local bonus = ppUpBonus(base)
+      if bonus > 0 and (stored - base) % bonus == 0 then
+        ups = (stored - base) / bonus
+      end
+    end
+  end
+  return math.max(0, math.min(3, math.floor(ups)))
+end
+
+-- engine/items/item_effects.asm:2836
+function Mon.maxPpOf(move, data)
+  if type(move) ~= "table" then return 0 end
+  local base = basePpOf(move, data)
+  if not base then return tonumber(move.maxPp) or tonumber(move.pp) or 0 end
+  return base + Mon.ppUpsOf(move, data) * ppUpBonus(base)
+end
+
+-- engine/items/item_effects.asm:2381
+function Mon.partyMoves(mon)
+  if type(mon) ~= "table" then return {} end
+  local state = type(mon.volatile) == "table" and mon.volatile.preTransform
+  return (state and state.moves) or mon.moves or {}
+end
+
+-- engine/items/item_effects.asm:2801
+function Mon.restoreAllPp(mon, data)
+  for _, move in ipairs((type(mon) == "table" and mon.moves) or {}) do
+    if type(move) == "table" and move.id then
+      local maxPp = Mon.maxPpOf(move, data)
+      if basePpOf(move, data) then move.maxPp = maxPp end
+      move.pp = maxPp
+    end
+  end
+end
+
+function Mon.repairMoves(mon, data)
+  for _, move in ipairs((type(mon) == "table" and mon.moves) or {}) do
+    if type(move) == "table" and move.id and basePpOf(move, data) then
+      local ups = Mon.ppUpsOf(move, data)
+      if ups > 0 or move.ppUps ~= nil then move.ppUps = ups end
+      move.maxPp = Mon.maxPpOf(move, data)
+      local pp = math.floor(tonumber(move.pp) or move.maxPp)
+      move.pp = math.max(0, math.min(pp, move.maxPp))
+    end
+  end
+end
+
 function Mon.syncSaveIdentity(save, data)
-  Mon.eachSaveMon(save, function(mon) Mon.syncIdentity(mon, data) end)
+  Mon.eachSaveMon(save, function(mon)
+    Mon.syncIdentity(mon, data)
+    Mon.repairMoves(mon, data)
+  end)
 end
 
 function Mon.refreshStats(mon, data)

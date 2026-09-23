@@ -15,8 +15,17 @@ local SummaryChrome = require("src.ui.game3.summary_chrome")
 local SummaryData = require("src.core.game3.summary_data")
 local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
+local ItemsData = require("src.core.game3.items_data")
 
 local SummaryMenu = {}
+
+-- pokefirered/src/pokemon_summary_screen.c:2139
+function SummaryMenu.heldItemText(mon)
+  local raw = mon and (mon.item or mon.heldItem)
+  local held = ItemsData.toNumericId(raw) or tonumber(raw) or 0
+  if held == 0 then return RomText.plain("gText_PokeSum_Item_None") end
+  return ItemsData.displayName(held)
+end
 
 SummaryMenu.open = false
 SummaryMenu._party = nil
@@ -147,7 +156,10 @@ function SummaryMenu.openMenu(party, startIndex, opts)
   SummaryMenu._context = opts.context or "party"
   SummaryMenu._onClose = opts.onClose
   SummaryMenu._mode = opts.mode -- "select_move" | "party" | nil
+  SummaryMenu._enemyParty = opts.enemyParty and true or false
+  SummaryMenu._owner = opts.owner
   SummaryMenu._moveToLearn = opts.moveToLearn or opts.moveId
+  SummaryMenu._forgetMove = opts.forgetMove == true
   SummaryMenu._onSelectMove = opts.onSelectMove
   SummaryMenu._hmNotice = false
   SummaryMenu._moveCursor = 1
@@ -175,6 +187,7 @@ function SummaryMenu.close()
   SummaryMenu._swapSlot = nil
   SummaryMenu._mode = nil
   SummaryMenu._moveToLearn = nil
+  SummaryMenu._forgetMove = false
   local selectCb = SummaryMenu._onSelectMove
   SummaryMenu._onSelectMove = nil
   Stack.pop("summary")
@@ -226,6 +239,22 @@ function SummaryMenu.update(dt)
   end
 end
 
+-- pokefirered/src/pokemon_summary_screen.c:3796
+local function select_move_step(moves, cur, dir)
+  if dir < 0 then
+    if cur <= 1 then return 5 end
+    for i = cur - 1, 1, -1 do
+      if moves[i] then return i end
+    end
+    return cur
+  end
+  if cur >= 5 then return 1 end
+  for i = cur + 1, 4 do
+    if moves[i] then return i end
+  end
+  return 5
+end
+
 function SummaryMenu.handleInput(input)
   if not input then return end
   if SummaryMenu._slide.active then
@@ -247,22 +276,21 @@ function SummaryMenu.handleInput(input)
   -- Select move mode for move replacement (1:1 pret ShowSelectMovePokemonSummaryScreen)
   if SummaryMenu._mode == "select_move" then
     local moves = moves_for_mon(mon)
-    local nMoves = #moves
-    if nMoves < 5 then nMoves = 5 end
 
     if input:wasPressed("up") then
-      SummaryMenu._moveCursor = ((SummaryMenu._moveCursor - 2) % nMoves) + 1
+      SummaryMenu._moveCursor = select_move_step(moves, SummaryMenu._moveCursor, -1)
       SummaryMenu._hmNotice = false
       pcall(function() require("src.core.game3.audio").playSe(5) end)
     elseif input:wasPressed("down") then
-      SummaryMenu._moveCursor = (SummaryMenu._moveCursor % nMoves) + 1
+      SummaryMenu._moveCursor = select_move_step(moves, SummaryMenu._moveCursor, 1)
       SummaryMenu._hmNotice = false
       pcall(function() require("src.core.game3.audio").playSe(5) end)
     elseif input:wasPressed("a") then
       if SummaryMenu._moveCursor <= 4 then
         local chosenMove = moves[SummaryMenu._moveCursor]
         local moveId = chosenMove and chosenMove.id
-        if moveId and Pokemon.isHmMove(moveId) then
+        -- pokefirered/src/pokemon_summary_screen.c:3772
+        if moveId and Pokemon.isHmMove(moveId) and not SummaryMenu._forgetMove then
           pcall(function() require("src.core.game3.audio").playSe(26) end)
           -- pokefirered/src/pokemon_summary_screen.c:3864
           SummaryMenu._hmNotice = true
@@ -316,8 +344,13 @@ function SummaryMenu.handleInput(input)
       SummaryMenu._moveCursor = (SummaryMenu._moveCursor % nMoves) + 1
     elseif input:wasPressed("a") then
       if SummaryMenu._swapSlot == nil then
-        -- Begin move swap
-        SummaryMenu._swapSlot = SummaryMenu._moveCursor
+        -- pokefirered/src/pokemon_summary_screen.c:3604
+        local Battle = package.loaded["src.core.game3.battle"]
+        local inBattle = Battle and Battle.isActive and Battle.isActive()
+        if not (SummaryMenu._enemyParty or inBattle or SummaryMenu._mode == "trade") then
+          -- Begin move swap
+          SummaryMenu._swapSlot = SummaryMenu._moveCursor
+        end
       else
         -- Complete atomic move swap
         local slotA = SummaryMenu._swapSlot
@@ -543,13 +576,12 @@ local function draw_page_info(mon)
   local ix, iy = cxy("otId", 167, 80)
   draw_text(string.format("%05d", bit.band(otId, 0xFFFF)), ix, iy, 48, "NORMAL")
 
-  -- src/pokemon_summary_screen.c:2143
-  local item = mon.item or mon.heldItem or RomText.plain("gText_PokeSum_Item_None")
   local itx, ity = cxy("item", 167, 95)
-  draw_text(tostring(item), itx, ity, 64, "NORMAL")
+  draw_text(SummaryMenu.heldItemText(mon), itx, ity, 64, "NORMAL")
 
   local memo = coords().memo or { x = 8, y = 115, w = 224 }
-  local memoLines = SummaryData.formatTrainerMemo(mon, SummaryMenu._playerState)
+  local memoLines = SummaryData.formatTrainerMemo(mon, SummaryMenu._playerState,
+    { enemyParty = SummaryMenu._enemyParty, owner = SummaryMenu._owner })
   local memoY = memo.y or 115
   for _, line in ipairs(memoLines) do
     draw_text(line, memo.x or 8, memoY, memo.w or 224, "NORMAL")
@@ -647,6 +679,9 @@ local function draw_page_moves(mon, isDetail)
       SummaryChrome.drawTypeBadge(m.type, slot.typeX, slot.typeY)
       draw_text(m.name, slot.nameX, slot.nameY, MOVE_NAME_RIGHT - slot.nameX, "NORMAL")
       draw_text(string.format("%d/%d", m.pp, m.maxPp), slot.ppX, slot.ppY, 40, "NORMAL")
+    elseif i == 5 and SummaryMenu._forgetMove then
+      -- pokefirered/src/pokemon_summary_screen.c:2526
+      draw_text(RomText.plain("gFameCheckerText_Cancel"), slot.nameX, slot.nameY, MOVE_NAME_RIGHT - slot.nameX, "NORMAL")
     else
       draw_text("-", slot.typeX + 8, slot.typeY + 2, 16, "NORMAL")
       draw_text("----------", slot.nameX, slot.nameY, 64, "NORMAL")
@@ -697,7 +732,8 @@ local function draw_page_egg(mon)
 
 
   local memo = coords().memo or { x = 8, y = 115, w = 224 }
-  local memoLines = SummaryData.formatTrainerMemo(mon, SummaryMenu._playerState)
+  local memoLines = SummaryData.formatTrainerMemo(mon, SummaryMenu._playerState,
+    { enemyParty = SummaryMenu._enemyParty, owner = SummaryMenu._owner })
   local memoY = memo.y or 80
   for _, line in ipairs(memoLines) do
     draw_text(line, memo.x or 8, memoY, memo.w or 224, "NORMAL")
@@ -714,9 +750,18 @@ local PAGE_TITLES = RomText.lazy({
   [PAGE_EGG] = "gText_PokeSum_PageName_PokemonInfo",
 })
 
+local function summary_in_battle()
+  local Battle = package.loaded["src.core.game3.battle"]
+  return (Battle and Battle.isActive and Battle.isActive()) and true or false
+end
+
 local function get_controls_str(page, isEgg)
   if SummaryMenu._mode == "select_move" then
-    return RomText.plain("gText_PokeSum_Controls_Pick")
+    -- src/pokemon_summary_screen.c:2954
+    if summary_in_battle() then
+      return RomText.plain("gText_PokeSum_Controls_Pick")
+    end
+    return RomText.plain("gText_PokeSum_Controls_PickSwitch")
   end
   if isEgg then
     return RomText.plain("gText_PokeSum_Controls_Cancel")
@@ -728,10 +773,16 @@ local function get_controls_str(page, isEgg)
   elseif page == PAGE_MOVES then
     return RomText.plain("gText_PokeSum_Controls_PageDetail")
   elseif page == PAGE_MOVES_INFO then
+    -- src/pokemon_summary_screen.c:1365
+    if summary_in_battle() or SummaryMenu._mode == "trade" then
+      return RomText.plain("gText_PokeSum_Controls_Pick")
+    end
     return RomText.plain("gText_PokeSum_Controls_PickSwitch")
   end
   return RomText.plain("gText_PokeSum_Controls_Page")
 end
+
+SummaryMenu.controlsString = get_controls_str
 
 local function draw_top_bar_text(page, isEgg)
   local title = PAGE_TITLES[page]

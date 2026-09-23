@@ -389,13 +389,13 @@ function State.text(st, id, fill)
   return require("src.core.game3.battle.battle_text").get(id, fill)
 end
 
--- src/battle_message.c:2248
 function State.prefixedName(st, battler, name)
   name = name or State.displayName(battler)
   if battler and battler.side == "player" then return name end
   local RomText = require("src.core.game3.rom_text")
   local prefix = (st ~= nil and not st.wild) and "sText_FoePkmnPrefix" or "sText_WildPkmnPrefix"
-  return RomText.plain(prefix) .. name
+  local ok, pre = pcall(RomText.plain, prefix)
+  return (ok and pre or (st ~= nil and not st.wild and "Foe " or "Wild ")) .. name
 end
 
 function State.isFainted(battler)

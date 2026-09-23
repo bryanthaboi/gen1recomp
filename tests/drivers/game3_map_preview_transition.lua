@@ -52,6 +52,31 @@ return function(game)
   local r4 = MapCatalog.pretToEngine("Route4")
   local moon = MapCatalog.pretToEngine("MtMoon_1F")
 
+  local function probeNameWindow()
+    local canvas = love.graphics.newCanvas(240, 160)
+    love.graphics.push("all")
+    love.graphics.setCanvas(canvas)
+    love.graphics.origin()
+    love.graphics.clear(0, 0, 0, 1)
+    MPS.draw()
+    love.graphics.setCanvas()
+    love.graphics.pop()
+    local data = canvas:newImageData()
+    local black, grey, white = 0, 0, 0
+    for y = 0, 15 do
+      for x = 0, 103 do
+        local r, g, b = data:getPixel(x, y)
+        r, g, b = math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)
+        if r == 0 and g == 0 and b == 0 then black = black + 1
+        elseif r == 214 and g == 214 and b == 214 then grey = grey + 1
+        elseif r == 247 and g == 247 and b == 255 then white = white + 1 end
+      end
+    end
+    data:release()
+    canvas:release()
+    return black, grey, white
+  end
+
   local function forestRun(label, opts)
     opts = opts or {}
     placeAt(gate, 7, 2, "up")
@@ -67,6 +92,12 @@ return function(game)
           if opts.shots and not shotHold and hold == 30 then
             shotHold = true
             U.still(game, DIR .. "/pv_forest_hold_black_surround.png")
+            local black, grey, white = probeNameWindow()
+            print(string.format("[pv] name window black=%d grey=%d white=%d", black, grey, white))
+            -- src/menu2.c:469
+            check(black > 0 and grey > 0 and grey < 2 * black and white > black + grey,
+              "forest_name_black_text_grey_shadow",
+              ("black=%d grey=%d white=%d"):format(black, grey, white))
           end
         elseif MPS._state == MPS.STATE.FADE_OUT then
           dissolve = dissolve + 1

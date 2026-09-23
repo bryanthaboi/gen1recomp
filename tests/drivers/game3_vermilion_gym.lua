@@ -104,7 +104,7 @@ return function(game)
     return missing
   end
 
-  local function talkTo(x, y, facing)
+  local function talkTo(x, y, facing, maxSteps)
     Player.cellX, Player.cellY = x, y
     Player.px, Player.py = x * 16, y * 16
     Player.targetX, Player.targetY = x, y
@@ -114,7 +114,10 @@ return function(game)
     U.wait(30)
     local Message = package.loaded["src.ui.game3.message"]
     local saw = false
-    for _ = 1, 60 do
+    local deadline = love.timer.getTime() + 8
+    local steps = 0
+    while love.timer.getTime() < deadline and steps < (maxSteps or math.huge) do
+      steps = steps + 1
       local open = Message and Message.isOpen and Message.isOpen()
       local running = Space.vm and Space.vm:isRunning()
       if open or running then saw = true end
@@ -219,7 +222,7 @@ return function(game)
   U.shot(game, DIR .. "/vermilion_05_past_beams.png")
 
   result(Player.cellY <= 3 and Player.cellX == 5, "standing in front of Lt. Surge at (5,3)")
-  local spoke = talkTo(5, 3, "up")
+  local spoke = talkTo(5, 3, "up", 60)
   local top = game.stack and game.stack:top()
   print("[driver] stack top after talking to Lt. Surge: " .. tostring(top and top.name or top))
   U.shot(game, DIR .. "/vermilion_06_lt_surge.png")

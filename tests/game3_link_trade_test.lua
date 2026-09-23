@@ -81,6 +81,10 @@ package.loaded["src.core.game3.runtime"] = {
   _mod = nil,
 }
 package.loaded["src.core.game3.player"] = { cellX = 5, cellY = 8, facing = "up" }
+local questEvents = {}
+package.loaded["src.core.game3.quest_log_recorder"] = {
+  event = function(s, key, args) questEvents[#questEvents + 1] = { s = s, key = key, args = args } end,
+}
 package.loaded["src.core.game3.map"] = { load = function() end, current = TRADE_CENTER }
 package.loaded["src.core.game3.objects"] = {
   addObject = function() return true end,
@@ -168,6 +172,10 @@ check(sentParty ~= nil, "this machine sent its party to the other one")
 eq(sentParty and sentParty.name, "RED", "with the player's name on it")
 eq(sentParty and #sentParty.party, 2, "two mons")
 eq(sentParty and sentParty.party[1].species, 1, "the lead is BULBASAUR")
+-- pokefirered/src/trade.c:1435 Trade_Memcpy
+eq(sentParty and sentParty.party[1].maxHp, 30, "with max HP for the other screen's HP bar")
+eq(sentParty and sentParty.party[1].moves and sentParty.party[1].moves[1], 33,
+  "and its moves for the selected-mon screen and summary")
 peerSend({
   type = LT.MSG.PARTY,
   name = "BLUE",
@@ -274,6 +282,13 @@ eq(#session.party, 2, "and the party is still two mons")
 eq(session.party[1].friendship, 70, "friendship reset to 70 by TradeMons")
 check(session.dex and session.dex.owned and session.dex.owned[7] == true,
   "and the received mon is entered in the POKeDEX")
+-- pokefirered/src/trade_scene.c:2606
+eq(session.gameStats and session.gameStats[21], 1, "GAME_STAT_POKEMON_TRADES counts the trade")
+-- pokefirered/src/trade_scene.c:2605
+local ql = questEvents[#questEvents]
+eq(ql and ql.key, "TradedMon1ForPersonsMon2", "the quest log records QL_EVENT_LINK_TRADED")
+eq(ql and ql.args.S1, "BLUE", "naming the partner")
+eq(ql and ql.s, session, "on this player's session")
 
 print("[test] 7. a cancel from the other machine leaves the party alone")
 openLink()
@@ -390,6 +405,10 @@ while guard < 4000 and LT.state ~= "done" do
   guard = guard + 1
 end
 eq(session.party[2].species, 25, "PIKACHU came back for MACHOKE")
+-- pokefirered/src/trade_scene.c:2601
+eq(session.gameStats[21], nil, "a union room trade leaves GAME_STAT_POKEMON_TRADES alone")
+eq(questEvents[#questEvents] and questEvents[#questEvents].key, "TradedMon1ForTrainersMon2",
+  "and logs QL_EVENT_LINK_TRADED_UNION")
 -- pokefirered/src/union_room.c:1746 ResetUnionRoomTrade
 eq(Union.trade().playerSpecies, 0, "and the trading board registration was cleared")
 
@@ -580,31 +599,269 @@ session.party = { mon(1, 10), mon(4, 12) }
 Natives.special(ctx, NativesLink.SPECIAL.StartWiredCableClubTrade, adapters)
 eq(LT.state, "menu", "the wired seat lands in the trade menu")
 check(Menu.show(), "and the select screen is up for the player")
+local function tick(n)
+  for _ = 1, n or 1 do
+    LT.update(0)
+    Menu.update(0)
+  end
+end
+tick(1)
+-- pokefirered/src/trade.c:853
+eq(Menu.cb, "loading", "the screen holds on standby until the other party arrives")
+eq(Menu.message, "gText_Trade_CommunicationStandby", "with the standby message up")
 peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11), mon(25, 14) }, name = "BLUE",
   trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
-LT.update(0)
+tick(12)
 eq(#LT.peerParty, 2, "the other machine's party arrived over the wire")
+eq(Menu.cb, "main", "then the grid takes input once the fade is done")
+eq(Menu.message, nil, "and the standby message is gone")
+eq(Menu.pos, 0, "the cursor starts on this machine's lead")
 local press = function(key)
   return { wasPressed = function(_, k) return k == key end }
 end
+-- pokefirered/src/trade.c:349 sCursorMoveDestinations
 Menu.handleInput(press("down"))
-eq(Menu.cursor, 2, "DOWN walks this machine's party")
+eq(Menu.pos, 12, "DOWN from slot 0 skips the empty rows and lands on CANCEL")
 Menu.handleInput(press("up"))
-eq(Menu.cursor, 1, "UP walks back")
+eq(Menu.pos, 7, "UP from CANCEL lands on the other machine's second mon")
+Menu.handleInput(press("left"))
+eq(Menu.pos, 6, "LEFT walks the other machine's row")
+Menu.handleInput(press("left"))
+eq(Menu.pos, 1, "LEFT again crosses to this machine's second mon")
+eq(Menu.cursor, 2, "which is own slot 2")
+Menu.handleInput(press("left"))
+eq(Menu.pos, 0, "and LEFT reaches the lead")
+eq(Menu.cursor, 1, "own slot 1")
+-- pokefirered/src/trade.c:1847
+Menu.handleInput(press("a"))
+eq(Menu.cb, "selected", "A on an own mon opens SUMMARY / TRADE instead of offering it")
+check(Menu.submenuVisible, "the SUMMARY / TRADE window is drawn")
+eq(LT.state, "menu", "nothing was offered yet")
+Menu.handleInput(press("b"))
+eq(Menu.cb, "main", "B closes the submenu")
+check(not Menu.submenuVisible, "and erases it")
+Menu.handleInput(press("a"))
+Menu.handleInput(press("down"))
+eq(Menu.subCursor, 2, "DOWN moves to TRADE")
 -- pokefirered/src/trade.c:1811 SetReadyToTrade
 Menu.handleInput(press("a"))
-eq(LT.state, "ready_wait", "A on a mon offers it, with no hand-fed LT.offer call")
+eq(LT.state, "ready_wait", "TRADE offers the mon, with no hand-fed LT.offer call")
 eq(LT.cursor, 0, "and the offered slot is the one the cursor was on")
+eq(Menu.message, "gText_Trade_CommunicationStandby", "the standby message comes up")
+check(not Menu.cursorVisible, "and the cursor is hidden")
 peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 1 })
-LT.update(0)
+tick(1)
 eq(LT.state, "confirm", "both machines have picked, so the confirmation comes up")
-Menu.update(0)
-check(Menu.confirming, "the screen shows IS THIS TRADE OKAY?")
+eq(Menu.cb, "selected_mons", "the chosen mons slide to the middle first")
+eq(Menu.message, nil, "the standby message is cleared")
+eq(Menu.selected[0].idx, 0, "this machine's pick is its lead")
+eq(Menu.selected[1].idx, 1, "the other machine's pick is its second mon")
+tick(30)
+eq(Menu.cb, "okay_wait", "both selected-mon screens finished drawing")
+eq(Menu.bottom, "okay", "and the bottom row asks IS THIS TRADE OKAY?")
+check(not Menu.confirming, "the YES / NO is not up yet")
+-- pokefirered/src/trade.c:2086
+tick(121)
+check(Menu.confirming, "the YES / NO comes up 120 frames later")
 Menu.handleInput(press("a"))
 eq(LT.state, "confirm_wait", "A on YES answers the prompt through LT.confirm")
 eq(LT.playerConfirmStatus, LT.STATUS.READY, "with LINKCMD_INIT_BLOCK for the leader itself")
+tick(5)
+eq(Menu.message, "gText_Trade_CommunicationStandby", "and standby is queued behind the answer")
 Menu.reset()
 LT.reset()
+
+print("[test] 16. CANCEL asks first, and a crossed cancel comes back to the grid")
+Link.reset()
+LT.reset()
+Menu.reset()
+openLink()
+session.party = { mon(1, 10), mon(4, 12) }
+LT.startMenu()
+Menu.show()
+peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11) }, name = "BLUE",
+  trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+tick(12)
+Menu.handleInput(press("b"))
+eq(Menu.cb, "main", "B on the grid does nothing")
+eq(LT.state, "menu", "and cancels nothing")
+Menu.handleInput(press("down"))
+eq(Menu.pos, 12, "the cursor is on CANCEL")
+-- pokefirered/src/trade.c:1867
+Menu.handleInput(press("a"))
+eq(Menu.cb, "cancel_prompt", "A on CANCEL asks YES / NO")
+eq(Menu.bottom, "cancel", "with the bottom row reading CANCEL TRADE?")
+Menu.handleInput(press("b"))
+eq(Menu.cb, "main", "B answers NO")
+eq(Menu.bottom, "choose", "and the bottom row is back to CHOOSE A POKeMON")
+Menu.handleInput(press("a"))
+Menu.handleInput(press("a"))
+eq(LT.state, "ready_wait", "YES cancels through LT.cancelSelect")
+eq(LT.playerSelectStatus, LT.STATUS.CANCEL, "as STATUS_CANCEL for the leader")
+eq(Menu.message, "gText_WaitingForFriendToFinish", "while waiting for the other player")
+peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 0 })
+tick(1)
+eq(LT.state, "canceled", "the other machine had picked a mon")
+eq(Menu.cb, "trade_canceled", "so the screen reports it")
+eq(Menu.message, "gText_FriendWantsToTrade", "as YOUR FRIEND WANTS TO TRADE")
+check(Menu.isOpen(), "and stays open")
+Menu.handleInput(press("a"))
+eq(LT.state, "menu", "A returns both the link and the screen to the grid")
+eq(Menu.cb, "main", "the grid takes input again")
+check(Menu.cursorVisible, "with the cursor back")
+Menu.reset()
+LT.reset()
+
+print("[test] 17. a mon that cannot go is refused after the queued delay")
+Link.reset()
+LT.reset()
+Menu.reset()
+openLink()
+session.party = { mon(1, 10) }
+LT.startMenu()
+Menu.show()
+peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11) }, name = "BLUE",
+  trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+tick(12)
+Menu.handleInput(press("a"))
+Menu.handleInput(press("down"))
+Menu.handleInput(press("a"))
+eq(LT.state, "menu", "the last mon is not offered")
+eq(Menu.cb, "trade_canceled", "the screen waits for A")
+eq(Menu.message, nil, "the refusal is queued, not printed yet")
+-- pokefirered/src/trade.c:86 QUEUE_DELAY_MSG
+tick(4)
+eq(Menu.message, "gText_OnlyPkmnForBattle", "then it says it is the only POKeMON for battle")
+Menu.handleInput(press("a"))
+eq(Menu.cb, "main", "A goes back to the grid")
+eq(Menu.message, nil, "and clears the message")
+Menu.reset()
+LT.reset()
+
+print("[test] 18. grid, HP-bar and level tile tables")
+local full = {}
+for i = 0, 12 do full[i] = true end
+-- pokefirered/src/trade.c:349 sCursorMoveDestinations
+eq(Menu.newCursorPosition(0, 4, full), 1, "0 RIGHT -> 1")
+eq(Menu.newCursorPosition(1, 4, full), 6, "1 RIGHT -> 6")
+eq(Menu.newCursorPosition(4, 2, full), 0, "4 DOWN wraps to 0")
+eq(Menu.newCursorPosition(11, 2, full), 12, "11 DOWN -> CANCEL")
+local twoEach = { [0] = true, [1] = true, [6] = true, [7] = true, [12] = true }
+eq(Menu.newCursorPosition(12, 1, twoEach), 7, "CANCEL UP with two partner mons -> 7")
+eq(Menu.newCursorPosition(5, 4, twoEach), 6, "an absent source still reads its row")
+-- pokefirered/src/battle_interface.c:2165 GetHPBarLevel
+eq(Menu.hpBarLevel(30, 30), 4, "full HP")
+eq(Menu.hpBarLevel(20, 30), 3, "over half")
+eq(Menu.hpBarLevel(10, 30), 2, "over a fifth")
+eq(Menu.hpBarLevel(1, 100), 1, "one HP is still red")
+eq(Menu.hpBarLevel(0, 30), 0, "fainted")
+-- pokefirered/src/trade.c:2397 PrintLevelAndGender
+local lv5 = Menu.levelGenderTiles(mon(1, 5))
+eq(lv5.tens, nil, "a one-digit level has no tens tile")
+eq(lv5.ones, 0x75, "Lv5 ones tile")
+local lv100 = Menu.levelGenderTiles(mon(1, 100))
+eq(lv100.tens, 0x6A, "Lv100 uses the 10 tile")
+eq(lv100.ones, 0x70, "and a 0")
+check(lv100.symbol == 0x83 or lv100.symbol == 0x84 or lv100.symbol == 0x85, "gender tile is one of 0x83-0x85")
+local egg = Menu.levelGenderTiles(mon(1, 5, nil, { isEgg = true }))
+check(egg.egg and egg.ones == nil, "an egg prints no level")
+eq(egg.symbol, 0x80, "and the egg symbol tile")
+check(egg.symbolFlip, "drawn flipped")
+-- pokefirered/src/trade.c:2339 BufferMovesString
+eq(#Menu.movesLines(mon(1, 5)), 4, "four move rows")
+eq(Menu.movesLines(mon(1, 5, nil, { isEgg = true }))[1], "gText_4Qmark", "an egg shows ????")
+eq(LT.resumeMenu(), false, "resumeMenu only answers a canceled trade")
+
+print("[test] 19. held D-pad repeats, held items, the partner summary and the exit fades")
+Link.reset()
+LT.reset()
+Menu.reset()
+openLink()
+session.party = { mon(1, 10, nil, { item = 13 }), mon(4, 12, nil, { heldItem = 121 }) }
+LT.startMenu()
+Menu.show()
+peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11, nil, { otName = "BLUE", otId = 0x2222 }) },
+  name = "BLUE", trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+tick(12)
+local held = function(key, fresh)
+  return {
+    wasPressed = function(_, k) return fresh and k == key end,
+    isDown = function(_, k) return k == key end,
+  }
+end
+-- pokefirered/src/main.c:309
+Menu.handleInput(held("right", true))
+eq(Menu.pos, 1, "a fresh RIGHT moves once")
+for _ = 1, 39 do Menu.handleInput(held("right")) end
+eq(Menu.pos, 1, "holding it does nothing for 40 frames")
+Menu.handleInput(held("right"))
+eq(Menu.pos, 6, "then JOY_REPT fires and the cursor crosses to the other party")
+for _ = 1, 4 do Menu.handleInput(held("right")) end
+eq(Menu.pos, 6, "the next repeat waits 5 frames")
+Menu.handleInput(held("right"))
+eq(Menu.pos, 0, "and the next one wraps RIGHT from 6 back to this machine's lead")
+Menu.handleInput({ wasPressed = function() return false end, isDown = function() return false end })
+-- pokefirered/src/party_menu.c:2785 DrawHeldItemIconsForTrade
+eq(Menu.heldItemFrame(session.party[1]), 0, "a held POTION draws the item icon")
+eq(Menu.heldItemFrame(session.party[2]), 1, "held MAIL draws the mail icon")
+eq(Menu.heldItemFrame(LT.peerParty[1]), nil, "an empty hand draws nothing")
+-- pokefirered/src/trade.c:1946
+local SummaryMenu = require("src.ui.game3.summary_menu")
+local realOpen = SummaryMenu.openMenu
+local seen
+SummaryMenu.openMenu = function(party, idx, opts) seen = { party = party, idx = idx, opts = opts } end
+Menu.handleInput(press("up"))
+Menu.handleInput(press("up"))
+eq(Menu.pos, 6, "the cursor is on the partner's lead")
+Menu.handleInput(press("a"))
+tick(10)
+SummaryMenu.openMenu = realOpen
+check(seen ~= nil, "A on a partner mon opens its summary")
+check(seen and seen.opts.enemyParty == true, "as the enemy party (gText_Somewhere, no move swap)")
+eq(seen and seen.opts.owner and seen.opts.owner.playerName, "BLUE", "with the partner as the owner")
+eq(seen and seen.opts.owner and seen.opts.owner.trainerId, 0x2222, "and the partner's trainer id")
+if seen and seen.opts.onClose then seen.opts.onClose() end
+tick(10)
+eq(Menu.cb, "main", "the grid is back after the summary")
+local savedLove = rawget(_G, "love")
+love = { graphics = {} }
+LT.state = "exit"
+LT.lastResult = "both_canceled"
+tick(1)
+eq(Menu.cb, "exiting", "a double cancel leaves through CB_InitExitCanceledTrade")
+check(Menu.isOpen(), "the screen stays up while it fades")
+-- pokefirered/src/trade.c:1721
+tick(7)
+check(Menu.isOpen() and Menu.fade > 0, "fading to black")
+tick(2)
+check(not Menu.isOpen(), "and closes once the screen is black")
+Menu.reset()
+Menu.show()
+Menu.cb = "idle"
+Menu.fade = 0
+LT.state = "exchange"
+-- pokefirered/src/trade.c:1293 CB_FadeToStartTrade
+tick(15)
+eq(Menu.fade, 0, "the leader holds the screen 16 frames before the trade")
+check(Menu.isOpen(), "still up")
+tick(1)
+tick(8)
+check(not Menu.isOpen(), "then fades to black and hands off to the trade scene")
+love = savedLove
+Menu.reset()
+LT.reset()
+
+print("[test] 20. a received EGG is not entered in the POKeDEX")
+do
+  local s = { party = { mon(1, 10), mon(4, 12) }, dex = { seen = {}, owned = {}, caught = {} } }
+  -- pokefirered/src/trade_scene.c:1036 UpdatePokedexForReceivedMon
+  Trade.tradeMons(s, 0, mon(152, 5, nil, { isEgg = true }))
+  eq(s.party[1].species, 152, "the egg is in the party")
+  check(not s.dex.seen[152], "its species is not seen")
+  check(not s.dex.owned[152] and not s.dex.caught[152], "and not caught")
+  Trade.tradeMons(s, 1, mon(155, 5))
+  check(s.dex.seen[155] == true, "a received mon still is")
+end
 
 Link.reset()
 LT.reset()

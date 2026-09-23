@@ -540,6 +540,7 @@ DIRECT_SYMBOLS = {
     "DoorTileIDPointers",
     "ED_Tile",
     "EvosMovesPointerTable",
+    "FallingObjects_DeltaXs",
     "FlowerTile1",
     "FlowerTile2",
     "FlowerTile3",

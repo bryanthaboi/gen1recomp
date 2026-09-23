@@ -135,6 +135,11 @@ end
 local function select_party_row(row)
   PartyMenu.cursor = row
   PartyMenu.handleInput(fakeInputA)
+  -- pokefirered/src/party_menu.c:4538 Task_ClosePartyMenuAfterText
+  for _ = 1, 8 do
+    if not (PartyMenu.open and (PartyMenu._hpAnim or PartyMenu.mode == "message")) then break end
+    PartyMenu.handleInput(fakeInputA)
+  end
   -- BagMenu.battleUse reports back to the battle only after its exit
   -- transition finishes.
   BagMenu.settle()
@@ -166,7 +171,10 @@ check(Ui._pendingCommand and Ui._pendingCommand.itemId == POTION,
 check(Ui._pendingCommand and Ui._pendingCommand.partySlot == 1,
   "pending command targets party slot 1 (got "
     .. tostring(Ui._pendingCommand and Ui._pendingCommand.partySlot) .. ")")
-check(Bag.get(s.bag, POTION) == 2, "Potion not consumed by the bag itself")
+check(Bag.get(s.bag, POTION) == 1, "Potion spent in the party menu (party_menu.c:4502)")
+check(s.liveParty[1].hp > 5, "the live battle copy was healed in the party menu")
+check(Ui._pendingCommand and Ui._pendingCommand.usedInMenu == true,
+  "pending command says the item was already used")
 
 ------------------------------------------------------------------------
 print("[test] 3. Refusal still works when the battle party really is full")
@@ -245,7 +253,7 @@ check(Ui._pendingCommand ~= nil, "berry handed to the battle system")
 check(Ui._pendingCommand and Ui._pendingCommand.itemId == ORAN_BERRY,
   "pending command carries the Oran Berry (got "
     .. tostring(Ui._pendingCommand and Ui._pendingCommand.itemId) .. ")")
-check(Bag.get(s.bag, ORAN_BERRY) == 2, "berry not consumed by the pouch itself")
+check(Bag.get(s.bag, ORAN_BERRY) == 1, "berry spent in the party menu (party_menu.c:4502)")
 check(BerryPouch.isOpen() == false, "Berry Pouch closed after the hand-off")
 
 ------------------------------------------------------------------------

@@ -15,6 +15,7 @@
 --     a boxed mon has none of them (src/core/gen2/Mail.lua)
 
 local Mail = require("src.core.gen2.Mail")
+local Mon = require("src.battle.gen2.Mon")
 local Save = require("src.core.gen2.Save")
 
 local Boxes = {}
@@ -103,24 +104,22 @@ end
 
 -- RestorePPOfDepositedPokemon (engine/pokemon/move_mon.asm:711-773): every
 -- slot back to GetMaxPPOfMove, which already carries its own PP Up count.
-function Boxes.restorePP(mon)
-  for _, move in ipairs((mon and mon.moves) or {}) do
-    if type(move) == "table" then move.pp = move.maxPp or move.pp end
-  end
+function Boxes.restorePP(mon, data)
+  Mon.restoreAllPp(mon, data)
 end
 
 -- box_struct has no MON_STATUS and no MON_HP (macros/ram.asm:7-26), so
 -- CalcTempmonStats refills a BOXMON from MAXHP (engine/pokemon/tempmon.asm:56-83).
-function Boxes.enterBox(mon)
+function Boxes.enterBox(mon, data)
   if not mon then return mon end
-  Boxes.restorePP(mon)
+  Boxes.restorePP(mon, data)
   mon.status = nil
   mon.statusTurns = nil
   mon.hp = mon.isEgg and 0 or (mon.maxHp or mon.hp)
   return mon
 end
 
-function Boxes.deposit(save, partyIndex, boxIndex)
+function Boxes.deposit(save, partyIndex, boxIndex, data)
   local ok, reason = Boxes.canDeposit(save, partyIndex, boxIndex)
   if not ok then return false, reason end
   local mon = table.remove(save.party, partyIndex)
@@ -133,7 +132,7 @@ function Boxes.deposit(save, partyIndex, boxIndex)
   box[#box + 1] = mon
   -- SendGetMonIntoFromBox's PC_DEPOSIT arm ends in RestorePPOfDepositedPokemon
   -- (engine/pokemon/move_mon.asm:633-635, :696-700).
-  Boxes.enterBox(mon)
+  Boxes.enterBox(mon, data)
   return true, mon
 end
 

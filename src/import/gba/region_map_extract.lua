@@ -3,7 +3,7 @@
 local RegionMapExtract = {}
 
 RegionMapExtract.CACHE_SUB = "region_map"
-RegionMapExtract.FORMAT_VERSION = 2
+RegionMapExtract.FORMAT_VERSION = 3
 
 RegionMapExtract.FILES = {
   "kanto_map.png",
@@ -14,6 +14,7 @@ RegionMapExtract.FILES = {
   "navel_rock_patch.png",
   "birth_island_patch.png",
   "frame_normal.png",
+  "frame_normal_untinted.png",
   "frame_fly.png",
   "switch_menu_123.png",
   "switch_menu_all.png",
@@ -277,12 +278,16 @@ end
 -- src/region_map.c:959, :1108
 local function build_banks(mapPalBytes, topBarBytes)
   local banks = load_pal_banks(mapPalBytes, 5)
+  local topBar = load_pal_banks(topBarBytes, 1)[0]
+  banks[12] = topBar
+  -- src/region_map.c:2572
+  local raw = load_pal_banks(mapPalBytes, 5)
+  raw[12] = topBar
   local edge, tinted = banks[2], {}
   for c = 0, 15 do tinted[c] = darken(edge[c], 95) end
   tinted[15] = edge[15]
   banks[2] = tinted
-  banks[12] = load_pal_banks(topBarBytes, 1)[0]
-  return banks
+  return banks, raw
 end
 
 local function encode(px, W, H)
@@ -403,7 +408,7 @@ function RegionMapExtract.run(rom, cache, opts)
   end
 
   local topBarBytes = read_bytes(Versions.REGION_MAP_TOP_BAR_PAL, 32)
-  local banks = build_banks(read_bytes(Versions.REGION_MAP_BG_PAL, 160), topBarBytes)
+  local banks, rawBanks = build_banks(read_bytes(Versions.REGION_MAP_BG_PAL, 160), topBarBytes)
   local mapGfx = lz(Versions.REGION_MAP_BG_GFX, "sRegionMap_Gfx")
 
   -- src/region_map.c:1127-1147, :1505-1524
@@ -445,6 +450,7 @@ function RegionMapExtract.run(rom, cache, opts)
       map[mi], map[mi + 1] = entry % 256, math.floor(entry / 256)
     end
     put_image("frame_normal", bake_bg(gfx, banks, map, w, 30, 20))
+    put_image("frame_normal_untinted", bake_bg(gfx, rawBanks, map, w, 30, 20))
   end
   do
     local gfx = lz(Versions.REGION_MAP_BG_SECONDARY_GFX, "sBackground_Gfx")

@@ -308,8 +308,10 @@ function Dataset.attachMidLayouts(maps, cache)
         if decoded then
           local pair = (info and info.pair) or def.pair
           def.midLayout = LayoutNative.fromDecoded(decoded, mapId, pair)
-          if decoded.width and decoded.width > 0 then def.width = decoded.width end
-          if decoded.height and decoded.height > 0 then def.height = decoded.height end
+          local tw = decoded.trueWidth or decoded.width
+          local th = decoded.trueHeight or decoded.height
+          if tw and tw > 0 then def.width = tw end
+          if th and th > 0 then def.height = th end
           if pair then def.pair = pair end
           attached = attached + 1
         end

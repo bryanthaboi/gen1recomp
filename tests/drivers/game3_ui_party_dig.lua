@@ -323,6 +323,9 @@ local function run(game)
   waitFor(function() return tpIn.y2 >= -40 end, 60)
   result(Player.isVisible() and Player.spriteYOffset == tpIn.y2 and tpIn.y2 < 0,
     "the player spins down from above the screen (y=" .. tostring(tpIn.y2) .. ")")
+  -- pokefirered/src/field_effect.c:2451
+  result(require("src.core.game3.field").locked == true,
+    "the field stays locked while the teleport-in spin runs")
   U.still(game, DIR .. "/party_dig_07c_teleport_arrive.png")
   waitFor(function() return fxAnim("teleport_in") == nil end, 200)
   -- pokefirered/src/field_effect.c:2530

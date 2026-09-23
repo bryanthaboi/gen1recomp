@@ -362,7 +362,16 @@ Events.HANDLERS = {
     return false
   end,
   -- src/roamer.c:120
-  [Std.SPECIAL.InitRoamer] = noop,
+  [Std.SPECIAL.InitRoamer] = function(ctx)
+    local session = sessionOf(ctx)
+    local VAR_STARTER_MON = 0x4031 -- pokefirered/include/constants/vars.h:98
+    local starter = varGet(ctx, VAR_STARTER_MON)
+    local okR, Roamer = pcall(require, "src.core.game3.roamer")
+    if okR and Roamer and Roamer.init then
+      Roamer.init(session, starter)
+    end
+    return false
+  end,
   -- src/field_specials.c:679-690
   [Std.SPECIAL.SampleResortGorgeousMonAndReward] = function(ctx, adapters)
     local session = sessionOf(ctx)

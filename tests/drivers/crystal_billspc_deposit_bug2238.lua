@@ -149,7 +149,7 @@ return function(game)
     local pm = menu:panelMon()
     ok(pm and pm.species == "TYRANITAR", "03 cry: panelMon is the deposited TYRANITAR")
     local p3 = out .. "_03_cry_pic_held.png"
-    U.shot(game, p3)
+    U.still(game, p3)
     local s3 = loadShot(p3)
     ok(menu.cryWait ~= nil, "03 cry: still waiting after the shot")
     ok(not uniform(s3, 8, 63, 32, 87), "03 cry: the pic block is still painted")
@@ -166,13 +166,13 @@ return function(game)
     ok(menu.cryWait == nil, "03 gold: no cry wait")
     ok(menu.message ~= nil and menu.panelCleared == true, "03 gold: Stored printed at once, panel cleared")
     local p3 = out .. "_03_gold_no_cry_wait.png"
-    U.shot(game, p3)
+    U.still(game, p3)
   end
 
   ok(menu.message ~= nil and tostring(menu.message):find("Stored") ~= nil,
     "04 stored: message is " .. tostring(menu.message))
   local p4 = out .. "_04_stored_box.png"
-  U.shot(game, p4)
+  U.still(game, p4)
   local s4 = loadShot(p4)
   ok(uniform(s4, 8, 63, 32, 87), "04 stored: pic block blank")
   ok(not anyDark(s4, 0, 63, 96, 103), "04 stored: no box border at tile row 12")

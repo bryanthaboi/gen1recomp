@@ -25,13 +25,22 @@ local BALL_MULT = {
   [12] = 10, -- PREMIER
 }
 
-local X_STAT = {
-  [75] = "attack",   -- X ATTACK
-  [76] = "defense",  -- X DEFEND
-  [77] = "speed",    -- X SPEED
-  [78] = "accuracy", -- X ACCURACY
-  [79] = "spAtk",    -- X SPECIAL
-}
+local function band(a, m) return bit.band(tonumber(a) or 0, m) end
+
+local function effect_of(itemId)
+  local info = ItemsData.info(itemId)
+  local e = info and info.effect
+  return type(e) == "table" and e or nil
+end
+
+BattleItems.isFlute = ItemUse.isFlute
+
+-- pokefirered/src/party_menu.c:5339
+function BattleItems.isStatBooster(id)
+  local e = effect_of(id)
+  if not e then return false end
+  return band(e[1], 0x3F) ~= 0 or band(e[2], 0xFF) ~= 0 or band(e[3], 0xFF) ~= 0 or band(e[4], 0x80) ~= 0
+end
 
 
 local Catching = require("src.core.game3.battle.catching")
@@ -72,7 +81,7 @@ function BattleItems.needsPartySelect(id)
   if Catching.isBall(id) then return false end
   local num = ItemsData.toNumericId(id) or tonumber(id)
   if num == 80 then return false end -- POKE_DOLL
-  if num and X_STAT[num] then return false end -- X items
+  if BattleItems.isStatBooster(id) then return false end
   local use = ItemsData.fieldUseKind(id)
   local info = ItemsData.info(id)
   local bu = info and tonumber(info.battleUsage) or 0
@@ -81,6 +90,89 @@ function BattleItems.needsPartySelect(id)
     return true
   end
   return false
+end
+
+local function active_for_slot(st, partySlot)
+  if not st or not partySlot then return nil end
+  if st.player and st.player.partyIndex == partySlot then return st.player end
+  local b2 = st.double and st.battlers and st.battlers[2]
+  if b2 and b2.partyIndex == partySlot then return b2 end
+  return nil
+end
+
+-- pokefirered/src/pokemon.c:4081
+local function status2_cure(b, e, apply)
+  if not b or not e then return false end
+  local changed = false
+  if band(e[1], 0x80) ~= 0 and b.expInfatuated then
+    changed = true
+    if apply then b.expInfatuated, b.expInfatuatedWith, b.expInfatuatedBy = nil, nil, nil end
+  end
+  -- pokefirered/src/pokemon.c:4189
+  if band(e[4], 0x01) ~= 0 and (tonumber(b.confusionTurns) or 0) > 0 then
+    changed = true
+    if apply then b.confusionTurns = nil end
+  end
+  return changed
+end
+
+-- pokefirered/src/pokemon.c:4089
+local function stat_booster(st, b, e, apply)
+  if not b or not e then return false end
+  b.stages = b.stages or {}
+  local changed = false
+  local function raise(key, n)
+    local cur = b.stages[key] or 0
+    if n > 0 and cur < 6 then
+      changed = true
+      if apply then b.stages[key] = math.min(6, cur + n) end
+    end
+  end
+  raise("attack", band(e[1], 0x0F))
+  if band(e[1], 0x30) ~= 0 and not (b.focusEnergy or b.expFocusEnergy) then
+    changed = true
+    if apply then b.focusEnergy = true end
+  end
+  raise("defense", math.floor(band(e[2], 0xF0) / 16))
+  raise("speed", band(e[2], 0x0F))
+  raise("accuracy", math.floor(band(e[3], 0xF0) / 16))
+  raise("spAtk", band(e[3], 0x0F))
+  -- pokefirered/src/pokemon.c:4156
+  local side = b.side == "enemy" and st.enemySide or st.playerSide
+  if band(e[4], 0x80) ~= 0 and side and (tonumber(side.expMistTurns) or 0) == 0 then
+    changed = true
+    if apply then side.expMistTurns = 5 end
+  end
+  return changed
+end
+
+-- pokefirered/src/pokemon.c:1611
+local STATS_TO_RAISE = { [0] = "attack", "attack", "speed", "defense", "spAtk", "accuracy" }
+
+-- pokefirered/src/pokemon.c:4965 Battle_PrintStatBoosterEffectMessage
+local function stat_booster_text(st, b, e)
+  local text
+  local function rose(idx)
+    local stat = STATS_TO_RAISE[idx]
+    text = BattleText.get("STRINGID_DEFENDERSSTATROSE", Adapter.fill(st, { def = b,
+      buff1 = RomText.at("gStatNamesTable", STAT_INDEX[stat]), buff2 = BattleText.get("STRINGID_STATROSE") }))
+  end
+  local masks = { { 0x0F, 0x30 }, { 0x0F, 0xF0 }, { 0x0F, 0xF0 } }
+  for i = 0, 2 do
+    local byte = e[i + 1]
+    if band(byte, masks[i + 1][1]) ~= 0 then rose(i * 2) end
+    if band(byte, masks[i + 1][2]) ~= 0 then
+      if i ~= 0 then
+        rose(i * 2 + 1)
+      else
+        text = BattleText.get("STRINGID_PKMNGETTINGPUMPED", Adapter.fill(st, { atk = b }))
+      end
+    end
+  end
+  if band(e[4], 0x80) ~= 0 then
+    text = BattleText.get("STRINGID_PKMNSHROUDEDINMIST", Adapter.fill(st, { atk = b }))
+  end
+  return text
 end
 
 function BattleItems.canUseOn(st, itemId, partySlot, mon, moveSlot)
@@ -95,17 +187,24 @@ function BattleItems.canUseOn(st, itemId, partySlot, mon, moveSlot)
     if ItemUse.ppItemHasEffect(mon, itemId, moveSlot or 1) then return true end
     return false, wont_have_effect()
   end
+  local e = effect_of(itemId)
   if mk == "revive" or use == "revive" then
     if hp > 0 then return false, wont_have_effect() end
     return true
   elseif hp <= 0 then
     return false, wont_have_effect()
+  elseif status2_cure(active_for_slot(st, partySlot), e, false) then
+    return true
   elseif mk == "status" or use == "status" then
     local s = mon.status
     if not s or s == 0 or s == "" then return false, wont_have_effect() end
     return true
+  elseif e and band(e[5], 0x04) == 0 then
+    return false, wont_have_effect()
   else
-    if hp >= maxHp then return false, wont_have_effect() end
+    local s = mon.status
+    local cures = e and band(e[4], 0x3E) ~= 0 and s and s ~= 0 and s ~= ""
+    if hp >= maxHp and not cures then return false, wont_have_effect() end
     return true
   end
 end
@@ -130,6 +229,11 @@ end
 local function user_battler(st, battlerId)
   if battlerId == nil or battlerId == 0 then return st.player end
   return st.battlers and st.battlers[battlerId] or st.player
+end
+
+-- pokefirered/src/item_use.c:757
+function BattleItems.statBoosterHasEffect(st, itemId, battlerId)
+  return stat_booster(st, user_battler(st, battlerId), effect_of(itemId), false)
 end
 
 local function sync_player_battler(st, battlerId)
@@ -212,35 +316,25 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     return "fail_catch", msgs, true, false
   end
 
-  -- X items
-  if num and X_STAT[num] then
-    local stat = X_STAT[num]
+  -- pokefirered/src/item_use.c:755 BattleUseFunc_StatBooster
+  if BattleItems.isStatBooster(itemId) then
+    local e = effect_of(itemId)
     local battler = user_battler(st, battlerId)
-    if not battler or not battler.stages then
-      return "error", msgs, false, false
-    end
-    local cur = battler.stages[stat] or 0
-    if cur >= 6 then
+    if not stat_booster(st, battler, e, true) then
       -- pokefirered/src/item_use.c:758
       say(wont_have_effect())
       return "error", msgs, false, false
     end
+    -- pokefirered/src/item_use.c:774
     Bag.remove(bag, itemId, 1)
-    if adapter and adapter.changeStages then
-      adapter:changeStages(battler, { [stat] = 1 })
-    else
-      battler.stages[stat] = math.min(6, cur + 1)
-    end
-    -- pokefirered/src/pokemon.c:4962
-    say_id("STRINGID_DEFENDERSSTATROSE", Adapter.fill(st, { def = battler,
-      buff1 = RomText.at("gStatNamesTable", STAT_INDEX[stat]), buff2 = BattleText.get("STRINGID_STATROSE") }))
     -- pokefirered/src/data/pokemon/item_effects.h:225
     if battler.mon then
       local Pokemon = require("src.core.game3.pokemon")
       Pokemon.itemFriendship(battler.mon, Pokemon.STAT_BOOST_FRIENDSHIP_CHANGE,
         { mapSec = Pokemon.currentMapSec(session) })
     end
-    return "xitem", msgs, true, false
+    -- pokefirered/data/battle_scripts_2.s:130
+    return "xitem", msgs, true, false, stat_booster_text(st, battler, e)
   end
 
   -- Medicine / berries on party mon
@@ -268,8 +362,8 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       return "error", msgs, false, false
     end
     Bag.remove(bag, itemId, 1)
-    say(player_used(session, itemId))
-    return "heal", msgs, true, false
+    -- pokefirered/src/party_menu.c:4700
+    return "heal", msgs, true, false, ItemUse.ppItemText(mon, itemId, moveSlot or 1)
   end
   local bu = info and tonumber(info.battleUsage) or 0
   if bu == 1 or use == "heal" or use == "status" or use == "revive"
@@ -284,8 +378,12 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       say(wont_have_effect())
       return "error", msgs, false, false
     end
-    local ok = false
+    local ok, cured = false, nil
+    local hpBefore = tonumber(mon.hp) or 0
     local mk = ItemsData.medicineKind(itemId)
+    local e = effect_of(itemId)
+    local active = active_for_slot(st, partySlot)
+    local asleep = mon.status == "SLP" or mon.status == 5 or (tonumber(mon.sleep) or 0) > 0
     -- pokefirered/src/pokemon.c:4258
     if mk == "revive" or use == "revive" or num == ItemUse.ITEM_REVIVAL_HERB then
       local max = num == 25 or num == ItemUse.ITEM_REVIVAL_HERB
@@ -295,37 +393,48 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
         ok = ItemUse.revive(mon, max)
       end
     elseif mk == "status" or use == "status" then
-      ok = ItemUse.clearStatus(mon, itemId)
+      ok, cured = ItemUse.clearStatus(mon, itemId)
     else
       ok = ItemUse.healMon(session, mon, itemId)
     end
+    if status2_cure(active, e, true) then ok = true end
     if not ok then
       say(wont_have_effect())
       return "error", msgs, false, false
     end
+    -- pokefirered/src/pokemon.c:4178
+    if active and asleep and e and band(e[4], 0x20) ~= 0 and not (mon.status or (tonumber(mon.sleep) or 0) > 0) then
+      active.expNightmare = nil
+    end
+    -- pokefirered/src/party_menu.c:5345
+    if e then cured = ItemUse.cureKind(itemId) end
     -- pokefirered/src/pokemon.c:4481
     if num and ItemUse.BITTER_MEDICINE_FRIENDSHIP[num] then
       local Pokemon = require("src.core.game3.pokemon")
       Pokemon.itemFriendship(mon, ItemUse.BITTER_MEDICINE_FRIENDSHIP[num],
         { mapSec = Pokemon.currentMapSec(session) })
     end
-    Bag.remove(bag, itemId, 1)
-    say(player_used(session, itemId))
+    -- pokefirered/src/party_menu.c:4498
+    if not BattleItems.isFlute(itemId) then Bag.remove(bag, itemId, 1) end
     if st.player and st.player.partyIndex == partySlot then
       sync_player_battler(st)
     end
     local b2 = st.double and st.battlers and st.battlers[2]
     if b2 and b2.partyIndex == partySlot then sync_player_battler(st, 2) end
-    -- pokefirered/src/battle_controller_oak_old_man.c:394
-    if num == 13 then
-      local Oak = require("src.core.game3.battle.oak_advice")
-      Oak.sayOnce(st, Oak.FLAG_HP_RESTORE, "keepAnEyeOnHp", say)
-    end
-    return "heal", msgs, true, false
+    return "heal", msgs, true, false, ItemUse.medicineText(mon, hpBefore, cured)
   end
 
   say(Strings("This can't be used right now."))
   return "error", msgs, false, false
+end
+
+-- pokefirered/src/battle_controller_oak_old_man.c:388
+function BattleItems.afterPlayerItem(st, adapter, itemId)
+  if (ItemsData.toNumericId(itemId) or tonumber(itemId)) ~= 13 then return false end
+  local Oak = require("src.core.game3.battle.oak_advice")
+  return Oak.sayOnce(st, Oak.FLAG_HP_RESTORE, "keepAnEyeOnHp", function(t, id)
+    if adapter and adapter.say then adapter:say(t, id) end
+  end)
 end
 
 -- pokefirered/src/battle_message.c:1195

@@ -415,6 +415,8 @@ function Ctx:accuracyCheck(mode, printFail)
     local mask = (power > 0) and Oak.FLAG_INFLICT_DMG or Oak.FLAG_STAT_CHG
     if not Oak.testFlag(self.st, mask) then return not self:absorbed() end
   end
+  -- pokefirered/src/battle_script_commands.c:1015
+  if self.st and self.st.pokedude then return not self:absorbed() end
   if self:lockOnActive() then return not self:absorbed() end
   local semi = target and target ~= user and target.semiInvulnerable
   if semi == "ON_AIR" and not self.ignoreOnAir then failMsg("miss"); return false end
@@ -2079,14 +2081,19 @@ function Engine.canSwitch(st, adapter, battler)
   if not battler then return true end
   if battler.expTrapped or battler.escapePrevention or (battler.expTrapTurns or 0) > 0 or battler.expIngrain then
     -- src/party_menu.c:5964
-    return false, RomText.ascii("gText_PkmnCantSwitchOut", { stringVars = { adapter:displayName(battler) } })
+    local name = (adapter and adapter.displayName and adapter:displayName(battler)) or "POKéMON"
+    local ok, txt = pcall(RomText.ascii, "gText_PkmnCantSwitchOut", { stringVars = { name } })
+    if ok and txt then return false, txt end
+    return false, name .. " can't be switched out!"
   end
   local holder, ab = Abilities.escapeBlocker(adapter, battler)
   if holder then
     -- src/pokemon.c:6029
-    return false, State.text(st, "gText_PkmnsXPreventsSwitching", {
+    local ok, txt = pcall(State.text, st, "gText_PkmnsXPreventsSwitching", {
       buff1 = State.prefixedName(st, holder), lastAbility = Abilities.id(ab),
     })
+    if ok and txt then return false, txt end
+    return false, "Can't escape!"
   end
   return true
 end
@@ -2439,31 +2446,15 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
         move = enemyAct.move, slot = enemyAct.slot,
         battler = 1, kind = "move",
       }
+    else
+      if st.enemy then st.enemy.expTurnOrder = 2 end
+      actions[#actions + 1] = enemy_meta_row()
     end
     st.turnOrder = { 0, 1 }
     st.turnActions = actions
     return actions, playerAct
   end
 
-  local pMove, pSlot = playerAct.move, playerAct.slot
-  if enemyMeta then
-    -- pokefirered/src/battle_main.c:3586
-    pMove, pSlot = forced_move(st.player, pMove, pSlot)
-    if st.enemy then st.enemy.expTurnOrder = 1 end
-    if st.player then st.player.expTurnOrder = 2 end
-    actions[1] = enemy_meta_row()
-    actions[2] = { user = st.player, target = st.enemy, move = pMove, slot = pSlot, battler = 0, kind = "move" }
-    local mv = Moves.get(pMove)
-    st._focusPunchSetup = nil
-    if tonumber(mv and mv.effect) == E.FOCUS_PUNCH and not st.player.expLockedMove
-        and not adapter:hasStatus(st.player, "SLP") then
-      st._focusPunchSetup = { st.player }
-    end
-    st.turnOrder = { 1, 0 }
-    st.turnActions = actions
-    return actions, nil
-  end
-  local eMove, eSlot = enemyAct.move, enemyAct.slot
   local function forced(b, mv, slot)
     if not b then return mv, slot end
     if b.expLockedMove then return b.expLockedMove, slot end
@@ -2476,8 +2467,31 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
     end
     return mv, slot
   end
+
+  local pMove, pSlot = playerAct.move, playerAct.slot
+  if enemyMeta then
+    -- pokefirered/src/battle_main.c:3586
+    pMove, pSlot = forced(st.player, pMove, pSlot)
+    if st.enemy then st.enemy.expTurnOrder = 1 end
+    if st.player then st.player.expTurnOrder = 2 end
+    actions[1] = enemy_meta_row()
+    if pMove then
+      actions[2] = { user = st.player, target = st.enemy, move = pMove, slot = pSlot, battler = 0, kind = "move" }
+      local mv = Moves.get(pMove)
+      st._focusPunchSetup = nil
+      if tonumber(mv and mv.effect) == E.FOCUS_PUNCH and not st.player.expLockedMove
+          and not adapter:hasStatus(st.player, "SLP") then
+        st._focusPunchSetup = { st.player }
+      end
+    end
+    st.turnOrder = { 1, 0 }
+    st.turnActions = actions
+    return actions, nil
+  end
+
+  local eMove, eSlot = enemyAct.move, enemyAct.slot
   pMove, pSlot = forced(st.player, pMove, pSlot)
-  eMove, eSlot = forced(st.enemy, eMove, eSlot)
+  if eMove then eMove, eSlot = forced(st.enemy, eMove, eSlot) end
   -- pokefirered/src/battle_main.c:2926
   st.randomTurnNumber = roll(adapter, 0, 0xFFFF)
   local pPri = Moves.priority(pMove)
@@ -2503,22 +2517,37 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
   -- pokefirered/src/battle_main.c:3682
   local focus = {}
   for _, row in ipairs({ { st.player, pMove }, { st.enemy, eMove } }) do
-    local mv = Moves.get(row[2])
-    if tonumber(mv and mv.effect) == E.FOCUS_PUNCH and not row[1].expLockedMove
-        and not adapter:hasStatus(row[1], "SLP") then
-      focus[#focus + 1] = row[1]
+    if row[2] then
+      local okM, mv = pcall(Moves.get, row[2])
+      if okM and mv and tonumber(mv.effect) == E.FOCUS_PUNCH and not row[1].expLockedMove
+          and not adapter:hasStatus(row[1], "SLP") then
+        focus[#focus + 1] = row[1]
+      end
     end
   end
   st._focusPunchSetup = (#focus > 0) and focus or nil
+
+  local function enemy_turn_action()
+    if enemyAct.kind == "move" then
+      return { user = st.enemy, target = st.player, move = eMove, slot = eSlot, battler = 1, kind = "move" }
+    else
+      return enemy_meta_row()
+    end
+  end
+
+  local function player_turn_action()
+    return { user = st.player, target = st.enemy, move = pMove, slot = pSlot, battler = 0, kind = "move" }
+  end
+
   if playerFirst then
     st.player.expTurnOrder, st.enemy.expTurnOrder = 1, 2
-    actions[#actions + 1] = { user = st.player, target = st.enemy, move = pMove, slot = pSlot, battler = 0, kind = "move" }
-    actions[#actions + 1] = { user = st.enemy, target = st.player, move = eMove, slot = eSlot, battler = 1, kind = "move" }
+    actions[#actions + 1] = player_turn_action()
+    actions[#actions + 1] = enemy_turn_action()
     st.turnOrder = { 0, 1 }
   else
     st.player.expTurnOrder, st.enemy.expTurnOrder = 2, 1
-    actions[#actions + 1] = { user = st.enemy, target = st.player, move = eMove, slot = eSlot, battler = 1, kind = "move" }
-    actions[#actions + 1] = { user = st.player, target = st.enemy, move = pMove, slot = pSlot, battler = 0, kind = "move" }
+    actions[#actions + 1] = enemy_turn_action()
+    actions[#actions + 1] = player_turn_action()
     st.turnOrder = { 1, 0 }
   end
   st.turnActions = actions

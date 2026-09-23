@@ -14,6 +14,7 @@ local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
 local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
+local TextIR = require("src.core.game3.scripting.text_ir")
 
 local PartyMenu = {}
 
@@ -347,6 +348,7 @@ local function destroy_party_oam()
         destroy_id(s.mon)
         destroy_id(s.ball)
         destroy_id(s.status)
+        destroy_id(s.item)
       end
     end
   end
@@ -356,8 +358,56 @@ local function destroy_party_oam()
 end
 
 local SUB_STATUS = 0
+local SUB_ITEM = 0
 local SUB_BALL = 4
 local SUB_MON = 8
+
+local HOLD_ICONS_SUB = "/pokemon/party/"
+
+local function read_cache(rel)
+  local Dataset = require("src.core.game3.dataset")
+  local okR, d = pcall(function() return Dataset.cache():read(rel) end)
+  if okR and type(d) == "string" and #d > 0 then return d end
+  return nil
+end
+
+PartyMenu._holdIcons = nil
+
+-- pokefirered/src/party_menu.c:2779
+function PartyMenu.heldItemSheet()
+  if PartyMenu._holdIcons then return PartyMenu._holdIcons end
+  if not (love and love.graphics and love.graphics.newImage) then return nil end
+  local Extract = require("src.import.gba.extract_island1")
+  local root = (Extract.CACHE_ROOT or "data/generated/gba") .. HOLD_ICONS_SUB
+  local src = read_cache(root .. "manifest.lua")
+  local chunk = src and load(src, "@party/manifest.lua", "t", {})
+  local okM, man = false, nil
+  if chunk then okM, man = pcall(chunk) end
+  local w = okM and type(man) == "table" and tonumber(man.holdIconW)
+  local h = w and tonumber(man.holdIconSheetH)
+  local frames = h and tonumber(man.holdIconFrames)
+  local rgba = frames and read_cache(root .. "hold_icons.rgba")
+  if not (rgba and #rgba >= w * h * 4) then
+    error("party_menu: pokemon/party/hold_icons.rgba is not in the cache", 0)
+  end
+  local image = love.graphics.newImage(love.image.newImageData(w, h, "rgba8", rgba))
+  image:setFilter("nearest", "nearest")
+  local fh = math.floor(h / frames)
+  local quads = {}
+  for f = 0, frames - 1 do
+    quads[f] = love.graphics.newQuad(0, f * fh, w, fh, w, h)
+  end
+  PartyMenu._holdIcons = { image = image, quads = quads, w = w, h = fh }
+  return PartyMenu._holdIcons
+end
+
+-- pokefirered/src/party_menu.c:2763
+function PartyMenu.heldItemFrame(mon)
+  local raw = mon and (mon.item or mon.heldItem)
+  local item = tonumber(raw) or (raw ~= nil and tonumber(ItemsData.toNumericId(raw))) or 0
+  if item == 0 then return nil end
+  return require("src.core.game3.mail").isMailItem(item) and 1 or 0
+end
 
 local MON_ICON_ANIM_DELAYS = {
   [0] = 6,  -- HP_BAR_FULL (100% HP)
@@ -464,6 +514,7 @@ local function ensure_slot_sprites(i, mon, selected)
     destroy_id(slot.mon); slot.mon = nil
     destroy_id(slot.ball); slot.ball = nil
     destroy_id(slot.status); slot.status = nil
+    destroy_id(slot.item); slot.item = nil
     return
   end
 
@@ -522,6 +573,30 @@ local function ensure_slot_sprites(i, mon, selected)
       slot._wasSelected = false
     end
     Oam.setInvisible(slot.mon, PartyMenu.mode == "summary")
+  end
+
+  -- pokefirered/src/party_menu.c:2743
+  local holdFrame = PartyMenu.heldItemFrame(mon)
+  local hold = holdFrame and PartyMenu.heldItemSheet()
+  if hold then
+    local hq = hold.quads[holdFrame]
+    if not slot.item then
+      slot.item = select(1, Oam.createSprite({
+        dims = Oam.SQUARE_8,
+        priority = 1,
+        image = hold.image,
+        quad = hq,
+      }, spr[3], spr[4], SUB_ITEM))
+    else
+      Oam.setPos(slot.item, spr[3], spr[4])
+      Oam.setImage(slot.item, hold.image, hq)
+    end
+    if slot.item then
+      Oam.setInvisible(slot.item, PartyMenu.mode == "summary")
+    end
+  else
+    destroy_id(slot.item)
+    slot.item = nil
   end
 
   local balls = PartyChrome.ballEntry()
@@ -586,7 +661,7 @@ local FLUSHED_CLIP = { x = 0, y = 0, w = 0, h = 0 }
 
 local function each_party_sprite(fn)
   for _, slot in pairs(PartyMenu._oam or {}) do
-    for _, key in ipairs({ "mon", "ball", "status" }) do
+    for _, key in ipairs({ "mon", "ball", "status", "item" }) do
       local s = slot[key] and Oam.get(slot[key])
       if s then fn(s) end
     end
@@ -782,6 +857,7 @@ function PartyMenu.show(sessionParty, moveOverlay, opts)
   PartyMenu._session = opts.session
   PartyMenu._bag = opts.bag or (opts.session and (opts.session.bag or opts.session.inventory))
   PartyMenu._item = opts.item
+  PartyMenu._giveSource = opts.giveSource
   PartyMenu._activeSlot = opts.activeSlot or 1
   PartyMenu._layout = (opts.layout == "double") and "double" or "single"
   PartyMenu._battle = opts.battle or (opts.mode == "battle_switch" or opts.mode == "battle_faint")
@@ -842,6 +918,7 @@ end
 function PartyMenu.close()
   PartyMenu.open = false
   PartyMenu.mode = "list"
+  PartyMenu._pokedude = nil
   destroy_party_oam()
   Stack.pop("party")
   local cb = PartyMenu._onClose
@@ -950,10 +1027,7 @@ function PartyMenu.dismissMessage()
 end
 
 function PartyMenu.showMessage(text, onDismiss)
-  local pages = {}
-  for page in (tostring(text) .. "\f"):gmatch("(.-)\f") do
-    pages[#pages + 1] = page
-  end
+  local pages = TextIR.splitPages(tostring(text), true)
   local function show(i)
     PartyMenu.mode = "message"
     PartyMenu._messageText = pages[i]
@@ -1216,7 +1290,95 @@ function PartyMenu.update(dt)
   end
 end
 
+local function pokedude_press(key)
+  return { wasPressed = function(_, k) return k == key end, isDown = function() return false end }
+end
+
+PartyMenu.POKEDUDE_PLANS = {
+  -- pokefirered/src/party_menu.c:2028 Task_PartyMenu_PokedudeStep
+  switch = { { at = 80, key = "right" }, { at = 160, key = "a" }, { at = 240, key = "a" } },
+  -- pokefirered/src/party_menu.c:2080 Task_PartyMenuFromBag_PokedudeStep
+  item = { { at = 80, use = true } },
+}
+
+local function pokedude_tick(input)
+  local pd = PartyMenu._pokedude
+  -- pokefirered/src/party_menu.c:2052 PartyMenuPokedudeIsCancelled
+  if input and input.wasPressed and input:wasPressed("b") then
+    local onCancel = pd.onCancel
+    PartyMenu.close()
+    if onCancel then onCancel() end
+    return
+  end
+  local entry = pd.plan[pd.index]
+  if entry and pd.frames == entry.at then
+    pd.index = pd.index + 1
+    if entry.use then
+      pd.used = true
+      local slot = PartyMenu._order and PartyMenu._order[PartyMenu.cursor] or PartyMenu.cursor
+      -- pokefirered/src/party_menu.c:4464 ItemUseCB_MedicineStep
+      local text = pd.onUse and pd.onUse(slot)
+      se(1)
+      PartyMenu.reloadSprites()
+      local onSelect = pd.onSelect
+      PartyMenu.showMessage(text or "", function()
+        -- pokefirered/src/party_menu.c:4538 Task_ClosePartyMenuAfterText
+        PartyMenu.close()
+        if onSelect then onSelect(slot) end
+      end)
+      return
+    end
+    pd.feeding = true
+    PartyMenu.handleInput(pokedude_press(entry.key))
+    if PartyMenu._pokedude == pd then pd.feeding = false end
+  end
+  pd.frames = pd.frames + 1
+end
+
+function PartyMenu.isPokedude()
+  return PartyMenu._pokedude ~= nil
+end
+
+-- pokefirered/src/party_menu.c:5859 Pokedude_OpenPartyMenuInBattle
+-- pokefirered/src/party_menu.c:5866 Pokedude_ChooseMonForInBattleItem
+function PartyMenu.showPokedude(party, opts)
+  opts = opts or {}
+  local plan = PartyMenu.POKEDUDE_PLANS[opts.plan]
+  if not plan then error("no pokedude party plan " .. tostring(opts.plan)) end
+  local session = opts.session
+  if opts.plan == "switch" then
+    PartyMenu.show(party, nil, {
+      mode = "battle_switch",
+      session = session,
+      activeSlot = opts.activeSlot or 1,
+      battle = true,
+      validate = opts.validate,
+      onSelect = function(slot)
+        if opts.onSelect then opts.onSelect(slot) end
+      end,
+    })
+  else
+    PartyMenu.show(party, session and session.move_overlay, {
+      mode = "use",
+      session = session,
+      bag = opts.bag,
+      item = opts.item,
+      battle = true,
+      battleOrder = opts.battleOrder,
+      activeSlot = opts.activeSlot or 1,
+    })
+  end
+  PartyMenu._pokedude = {
+    plan = plan, index = 1, frames = 0,
+    onUse = opts.onUse, onSelect = opts.onSelect, onCancel = opts.onCancel,
+  }
+end
+
 function PartyMenu.handleInput(input)
+  local pdm = PartyMenu._pokedude
+  if pdm and not pdm.used and not pdm.feeding then
+    return pokedude_tick(input)
+  end
   local n = party_count()
   if n < 1 then
     if input:wasPressed("b") or input:wasPressed("start") or input:wasPressed("a") then
@@ -1382,8 +1544,10 @@ function PartyMenu.handleInput(input)
         end)
       elseif act == "GIVE" then
         local BagMenu = require("src.ui.game3.bag_menu")
+        -- pokefirered/src/party_menu.c:3424
         BagMenu.show(PartyMenu._session, {
           bag = PartyMenu._bag,
+          location = "party",
           onClose = function()
             PartyMenu.mode = "list"
           end,
@@ -1936,7 +2100,8 @@ function PartyMenu.handleInput(input)
         local ok, reason, msgText = ItemUse.useField(PartyMenu._session, PartyMenu._bag, PartyMenu._item, realSlot, moveSlot)
         local endHp = tonumber(mon and mon.hp) or startHp
         if ok then
-          se(1) -- pokefirered/src/party_menu.c:4500
+          -- pokefirered/src/party_menu.c:4498
+          se(ItemUse.isFlute(PartyMenu._item) and 110 or 1)
           local hasRemaining = Bag.has(PartyMenu._bag, PartyMenu._item, 1)
           if endHp > startHp then
             PartyMenu.startHpAnim(PartyMenu.cursor, startHp, endHp, maxHp, function()
@@ -2037,15 +2202,37 @@ function PartyMenu.handleInput(input)
         local mon = PartyMenu._party and PartyMenu._party[PartyMenu.cursor]
         if mon and mon.isEgg then
           se(26) -- pokefirered/src/party_menu.c:1223
-          PartyMenu.showMessage(Strings("An EGG can't hold an item."), function()
-            PartyMenu.close()
-          end)
         else
-          local ok, reason, msgText = ItemUse.giveToMon(PartyMenu._session, PartyMenu._bag, PartyMenu._item, PartyMenu.cursor)
           se(5) -- pokefirered/src/party_menu.c:1190
-          PartyMenu.showMessage(msgText, function()
-            PartyMenu.close()
-          end)
+          local session, bag, item, slot = PartyMenu._session, PartyMenu._bag, PartyMenu._item, PartyMenu.cursor
+          local source = PartyMenu._giveSource
+          local kind, _, msgText = ItemUse.checkGive(session, item, slot)
+          if kind == "give" then
+            msgText = ItemUse.giveHeld(session, bag, item, slot, source)
+          end
+          if kind == "switch" then
+            -- src/party_menu.c:5554 Task_SwitchItemsFromBagYesNo
+            local pages = TextIR.splitPages(tostring(msgText), true)
+            local last = pages[#pages]
+            local head = #pages > 1 and table.concat(pages, "\f", 1, #pages - 1) or nil
+            local function ask()
+              PartyMenu.showYesNo(last or msgText, function(yes)
+                if not yes then
+                  PartyMenu.close()
+                  return
+                end
+                local _, switched = ItemUse.switchHeld(session, bag, item, slot, source)
+                PartyMenu.showMessage(switched, function()
+                  PartyMenu.close()
+                end)
+              end)
+            end
+            if head then PartyMenu.showMessage(head, ask) else ask() end
+          else
+            PartyMenu.showMessage(msgText, function()
+              PartyMenu.close()
+            end)
+          end
         end
       end
     elseif input:wasPressed("b") or input:wasPressed("start") then

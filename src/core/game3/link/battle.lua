@@ -597,6 +597,14 @@ function LB.finish(result)
   local lk = L.link
   if lk and lk:isOpen() then
     lk:send({ type = LB.MSG.OUTCOME, outcome = outcome })
+    -- pokefirered/src/cable_club.c:806 CB2_SetUpSaveAfterLinkBattle
+    local game = L.game()
+    if game and type(game.saveGame) == "function" then
+      local okSave, written = pcall(game.saveGame, game)
+      if not okSave or written == false then
+        print("[link] post-battle save failed: " .. tostring(written))
+      end
+    end
   end
   LB.state = "done"
   if LB.unionRoom then

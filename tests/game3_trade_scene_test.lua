@@ -151,6 +151,26 @@ for _, want in ipairs(EXPECTED) do sum = sum + want[2] end
 eq(total, sum, "the whole cinema is " .. sum .. " frames")
 check(not TradeScene.isOpen(), "the scene closed itself when the last phase ended")
 
+print("[test] 1b. pokefirered/src/trade_scene.c:1121 BG2 mon shadow under the sent and received mons")
+do
+  local shadow = {}
+  TradeScene.play(OFFER, RECEIVED, nil, { art = { gba = true } })
+  for _ = 1, 20000 do
+    local ph = TradeScene.phase()
+    local st = TradeScene.state()
+    if ph and st and shadow[ph] == nil then
+      shadow[ph] = { on = st.monShadowBg == true, hofs = st.bg2hofs }
+    end
+    if TradeScene.phase() == "end_link_trade" then TradeScene.pressA() end
+    if TradeScene.step() then break end
+  end
+  check(shadow.bye_bye and shadow.bye_bye.on, "the shadow platform is up while Bye-bye shows")
+  eq(shadow.bye_bye and shadow.bye_bye.hofs, 0, "and it has slid in with the mon")
+  check(shadow.gba_flash_send and not shadow.gba_flash_send.on, "BG2 is the GBA screen during the send")
+  check(shadow.take_care_of_mon and shadow.take_care_of_mon.on, "the shadow is back under the received mon")
+  eq(shadow.take_care_of_mon and shadow.take_care_of_mon.hofs, 0, "at hofs 0 (trade_scene.c:1210)")
+end
+
 print("[test] 2. a nil art sheet degrades to the timed hold")
 local holdOrder, holdCounts, holdTotal = run(OFFER, RECEIVED, nil)
 local held = {}

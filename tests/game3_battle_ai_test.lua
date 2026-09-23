@@ -37,9 +37,9 @@ check(ret and #ret == 1 and ret[1].op == "end" and pack.table[11] == pack.table[
 check(SCORE_MINUS10 ~= nil, "Score_Minus10 (score -10, end) present")
 
 print("[test] 2. Brock aiFlags == 7")
-local trainersPath = (os.getenv("HOME") or "")
-  .. "/.local/share/love/pokemon-love2d/firered/data/generated/gba/trainers.lua"
-local tf = io.open(trainersPath, "rb")
+local trainersRoot = require("tests.game3_cache").root("trainers.lua")
+local trainersPath = trainersRoot and (trainersRoot .. "/trainers.lua")
+local tf = trainersPath and io.open(trainersPath, "rb")
 if tf then
   tf:close()
   local t = assert(loadfile(trainersPath))()

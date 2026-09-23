@@ -163,11 +163,12 @@ end
 local function status2_bits(battler)
   if not battler then return 0 end
   local b = 0
+  if battler.status2 then b = bit_or_local(b, tonumber(battler.status2) or 0) end
   if battler.confusionTurns and battler.confusionTurns > 0 then b = bit_or_local(b, STATUS2.CONFUSION) end
   if battler.focusEnergy or battler.expFocusEnergy then b = bit_or_local(b, STATUS2.FOCUS_ENERGY) end
   if (battler.substituteHP or 0) > 0 then b = bit_or_local(b, STATUS2.SUBSTITUTE) end
-  if battler.wrapped or battler.trapped then b = bit_or_local(b, STATUS2.WRAPPED) end
-  if battler.meanLook or battler.escapePrevention then b = bit_or_local(b, STATUS2.ESCAPE_PREVENTION) end
+  if battler.wrapped or battler.trapped or battler.expWrapped then b = bit_or_local(b, STATUS2.WRAPPED) end
+  if battler.meanLook or battler.escapePrevention or battler.expTrapped or battler.expTrappedBy then b = bit_or_local(b, STATUS2.ESCAPE_PREVENTION) end
   if battler.bideTurns then b = bit_or_local(b, STATUS2.BIDE) end
   if battler.recharge then b = bit_or_local(b, STATUS2.RECHARGE) end
   if battler.rage then b = bit_or_local(b, STATUS2.RAGE) end
@@ -253,7 +254,15 @@ local function ability_of(battler)
   if battler.mon then
     a = a or battler.mon.ability or battler.mon.abilityId
   end
-  return tonumber(a) or 0
+  if type(a) == "number" then return a end
+  if type(a) == "string" then
+    local ok, Abilities = pcall(require, "src.core.game3.battle.abilities")
+    if ok and Abilities and Abilities.id then
+      local okId, id = pcall(Abilities.id, a)
+      if okId and id then return id end
+    end
+  end
+  return 0
 end
 
 local function hp_percent(battler)
@@ -930,6 +939,48 @@ end
 
 function CMD.if_target_not_taunted(vm, op)
   branch(vm, op.target) -- always true (taunt unsupported)
+end
+
+local function can_escape_check(user, target)
+  if not user then return true end
+  if user.meanLook or user.escapePrevention or user.expTrapped or user.expTrappedBy or (user.expTrapTurns or 0) > 0 or user.wrapped or user.expIngrain then
+    return false
+  end
+  if target and not (target.fainted or (target.mon and (tonumber(target.mon.hp) or 0) <= 0)) then
+    local tab = ability_of(target)
+    local uab = ability_of(user)
+    -- SHADOW_TAG: 23
+    if tab == 23 and uab ~= 23 then
+      return false
+    end
+    -- ARENA_TRAP: 71, LEVITATE: 26, FLYING: 2
+    if tab == 71 and uab ~= 26 then
+      local t1, t2 = mon_types(user)
+      if t1 ~= Types.ID.FLYING and t2 ~= Types.ID.FLYING then
+        return false
+      end
+    end
+    -- MAGNET_PULL: 42, STEEL: 8
+    if tab == 42 then
+      local t1, t2 = mon_types(user)
+      if t1 == Types.ID.STEEL or t2 == Types.ID.STEEL then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+function CMD.if_can_escape(vm, op)
+  if can_escape_check(vm.user, vm.target) then branch(vm, op.target) else next_ip(vm) end
+end
+
+function CMD.if_cant_escape(vm, op)
+  if not can_escape_check(vm.user, vm.target) then branch(vm, op.target) else next_ip(vm) end
+end
+
+function AiCmds.canEscape(user, target)
+  return can_escape_check(user, target)
 end
 
 function AiCmds.dispatch(vm, op)

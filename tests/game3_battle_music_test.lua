@@ -82,9 +82,8 @@ check(info ~= nil, "info(414) resolves")
 eq(info and info.class, 84, "info.class preserved for prize.lua and friends")
 
 print("[test] 4. Live cache trainer classes (skipped when no cache)")
-local home = os.getenv("HOME") or ""
-local cachePath = home .. "/Library/Application Support/LOVE/firered-sep20/firered/data/generated/gba/trainers.lua"
-local fh = io.open(cachePath, "r")
+local cacheRoot = require("tests.game3_cache").root("trainers.lua")
+local fh = cacheRoot and io.open(cacheRoot .. "/trainers.lua", "r")
 if fh then
   local src = fh:read("*a")
   fh:close()
@@ -102,7 +101,7 @@ if fh then
     print("[skip] cache trainers.lua did not load")
   end
 else
-  print("[skip] no firered-sep20 cache")
+  print("[skip] no current FireRed cache")
 end
 
 if failed > 0 then

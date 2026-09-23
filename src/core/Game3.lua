@@ -400,17 +400,6 @@ function Game3:_handleBootAction(action)
       local modsDiff = SaveData.modsDiff and SaveData.modsDiff(save, activeMods) or nil
       local session = Schema.fromSaveTable(save)
       Options.bind(session, self.options)
-      local legacy = Profile.of(session.version).map.legacyPrefixes or {}
-      local legacyMap = false
-      if type(session.map) == "string" then
-        for _, prefix in ipairs(legacy) do
-          if session.map:sub(1, #prefix) == prefix then legacyMap = true break end
-        end
-      end
-      if legacyMap then
-        print("[game3] ignoring legacy Sevii save map " .. session.map)
-        session = Schema.newGame({ gender = 0 })
-      end
       self:adoptSave(session, not self._modSaveAdopted)
       self._modSaveAdopted = true
       self.sessionStartedAt = os.time()
@@ -773,7 +762,7 @@ end
 -- pokefirered/src/start_menu.c:198
 function Game3:saveOffered()
   local session = (Runtime.getSession and Runtime.getSession()) or self.session
-  return require("src.ui.game3.start_menu").saveOffered(session)
+  return require("src.ui.game3.start_menu").saveOffered(session, self)
 end
 
 function Game3:saveGame()

@@ -74,6 +74,7 @@ check(pics[1] == 172 and has(texts, "/PICHU") and has(texts, "{LV_2}5"),
 -- pokefirered/src/party_menu.c:781 DisplayPartyPokemonData, :2197 sSlotTilemap_MainNoHP
 local PartyMenu = require("src.ui.game3.party_menu")
 local PartyChrome = require("src.ui.game3.party_chrome")
+PartyMenu.heldItemSheet = function() return nil end
 local slotsHidingHp = {}
 PartyChrome.drawSlot = function(kind, _, _, _, hideHp)
   if kind ~= "empty" then slotsHidingHp[#slotsHidingHp + 1] = hideHp and true or false end

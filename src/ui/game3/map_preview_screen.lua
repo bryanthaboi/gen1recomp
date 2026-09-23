@@ -491,20 +491,16 @@ function MapPreviewScreen.update(dt)
 end
 
 local function nameWindowColors(manifest)
-  local nw = manifest and manifest.name_window
-  local function rgb(t, fallback)
-    if type(t) == "table" and t[1] and t[2] and t[3] then
-      return { t[1] / 255, t[2] / 255, t[3] / 255, 1 }
-    end
-    return fallback
+  local nw = assert(manifest and manifest.name_window, "map preview manifest has no name_window")
+  local function rgb(key)
+    local t = nw[key]
+    assert(type(t) == "table" and tonumber(t[1]) and tonumber(t[2]) and tonumber(t[3]),
+      "map preview name_window." .. key .. " is malformed")
+    return { t[1] / 255, t[2] / 255, t[3] / 255, 1 }
   end
-  return {
-    fill = rgb(nw and nw.fill, { 247 / 255, 247 / 255, 255 / 255, 1 }),
-    fg = rgb(nw and nw.fg, FrlgFont.STDPAL[1]),
-    shadow = rgb(nw and nw.shadow, { 0, 0, 0, 1 }),
-    bg = rgb(nw and nw.bg, FrlgFont.STDPAL[0]),
-  }
+  return { fill = rgb("fill"), fg = rgb("fg"), shadow = rgb("shadow"), bg = rgb("bg") }
 end
+MapPreviewScreen._nameWindowColors = nameWindowColors
 
 local nwManifestCache, nwColorsCache, nwFontColors = false, nil, nil
 local function nameWindowColorsCached()

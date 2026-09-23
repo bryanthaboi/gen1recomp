@@ -391,6 +391,17 @@ local function caught_mons_count(session, national)
   return n
 end
 
+local function capped_stat(session, id, key, cap)
+  local stats = session.gameStats
+  local v
+  if type(stats) == "table" then
+    v = stats[id] or stats[key]
+  else
+    v = session[key]
+  end
+  return math.min(cap, math.max(0, math.floor(tonumber(v) or 0)))
+end
+
 -- src/trainer_card.c:858 TrainerCard_GenerateCardForLinkPlayer
 local function gather(session)
   session = session or {}
@@ -418,14 +429,13 @@ local function gather(session)
   c.caughtMonsCount = caught_mons_count(session, national)
 
   c.money = math.max(0, math.floor(tonumber(session.money) or 0))
-  c.linkBattleWins = math.min(9999, math.max(0, math.floor(tonumber(session.linkBattleWins) or 0)))
-  c.linkBattleLosses = math.min(9999, math.max(0, math.floor(tonumber(session.linkBattleLosses) or 0)))
-  c.pokemonTrades = math.min(65535, math.max(0, math.floor(
-    tonumber(session.pokemonTrades or session.trades) or 0)))
-  c.berryCrushPoints = math.min(65535, math.max(0, math.floor(
-    tonumber(session.berryCrushPoints) or 0)))
-  c.unionRoomNum = math.min(65535, math.max(0, math.floor(
-    tonumber(session.unionRoomNum or session.unionTrades) or 0)))
+  -- src/trainer_card.c:822
+  c.linkBattleWins = capped_stat(session, 23, "linkBattleWins", 9999)
+  c.linkBattleLosses = capped_stat(session, 24, "linkBattleLosses", 9999)
+  c.pokemonTrades = capped_stat(session, 21, "pokemonTrades", 0xFFFF)
+  -- src/trainer_card.c:876
+  c.berryCrushPoints = capped_stat(session, 51, "berryCrushPoints", 0xFFFF)
+  c.unionRoomNum = capped_stat(session, 50, "unionRoomNum", 0xFFFF)
 
   c.hasHofResult = (c.hofDebutHours ~= 0 or c.hofDebutMinutes ~= 0 or c.hofDebutSeconds ~= 0)
   c.hasLinkResults = (c.linkBattleWins ~= 0 or c.linkBattleLosses ~= 0)

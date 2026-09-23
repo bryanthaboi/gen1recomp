@@ -401,6 +401,19 @@ function Storage.depositItem(session, bagPocket, bagIdx, qty)
   end
 
   local itemId = slot.id
+  local ok, err = Storage.addPcItem(session, itemId, qty)
+  if not ok then return false, err end
+
+  Bag.remove(session.bag, itemId, qty)
+  require("src.core.game3.quest_log_recorder").event(session,"StoredItemInPC",
+    {require("src.core.game3.items").displayName(itemId)})
+  return true
+end
+
+-- src/item.c:385 AddPCItem
+function Storage.addPcItem(session, itemId, qty)
+  local storage = Storage.ensure(session)
+  qty = math.max(1, math.floor(tonumber(qty) or 1))
   -- Check if item already exists in PC items
   local foundIdx = nil
   for i, entry in ipairs(storage.items) do
@@ -425,10 +438,6 @@ function Storage.depositItem(session, bagPocket, bagIdx, qty)
     end
     storage.items[#storage.items + 1] = { id = itemId, qty = qty }
   end
-
-  Bag.remove(session.bag, itemId, qty)
-  require("src.core.game3.quest_log_recorder").event(session,"StoredItemInPC",
-    {require("src.core.game3.items").displayName(itemId)})
   return true
 end
 

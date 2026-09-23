@@ -7730,9 +7730,7 @@ function World:healParty()
     mon.hp = mon.maxHp or mon.hp
     mon.status = nil
     mon.statusTurns = nil
-    for _, move in ipairs(mon.moves or {}) do
-      if type(move) == "table" then move.pp = move.maxPp or move.pp end
-    end
+    Mon.restoreAllPp(mon, self.game.data)
   end
 end
 

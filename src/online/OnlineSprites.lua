@@ -145,16 +145,55 @@ local function iconPath(cat, mon)
   return path, name
 end
 
+local function gen3Pokemon()
+  return require("src.core.game3.pokemon")
+end
+
+local function gen3PicSpecies(mon)
+  local Pokemon = gen3Pokemon()
+  if Pokemon.isEgg(mon) then return Pokemon.SPECIES_EGG end
+  return Pokemon.picSpecies(mon.species, mon.personality)
+end
+
+local function monKey(version, mon)
+  if GameVersion.generation(version) ~= 3 then
+    return OnlineSprites.key(version, mon.species, mon.shiny == true)
+  end
+  return OnlineSprites.key(version, gen3PicSpecies(mon),
+    gen3Pokemon().isShiny(mon)) .. "|" .. tostring(mon.personality or 0)
+end
+
+local function gen3Front(version, mon)
+  local Pokemon = gen3Pokemon()
+  local was = { Pokemon._cache, Pokemon._front, Pokemon._spinda,
+                Pokemon._spindaPics }
+  Pokemon._cache = { read = function(_, rel)
+    return OnlineSprites.readBytes(version, rel)
+  end }
+  Pokemon._front, Pokemon._spinda, Pokemon._spindaPics = {}, nil, {}
+  local ok, entry = pcall(Pokemon.frontPic, gen3PicSpecies(mon), nil,
+    Pokemon.isShiny(mon), mon.personality)
+  Pokemon._cache, Pokemon._front, Pokemon._spinda, Pokemon._spindaPics =
+    was[1], was[2], was[3], was[4]
+  return ok and type(entry) == "table" and entry.image or false
+end
+
 function OnlineSprites.get(version, mon)
   if type(mon) ~= "table" then return nil end
-  return cache[OnlineSprites.key(version, mon.species, mon.shiny == true)]
+  return cache[monKey(version, mon)]
 end
 
 function OnlineSprites.ensure(version, mon)
   if type(mon) ~= "table" or not version then return nil end
-  local key = OnlineSprites.key(version, mon.species, mon.shiny == true)
+  local key = monKey(version, mon)
   local hit = cache[key]
   if hit then return hit end
+  if GameVersion.generation(version) == 3 then
+    hit = { key = key, mirror = false, icon = false,
+            front = gen3Front(version, mon) }
+    cache[key] = hit
+    return hit
+  end
   local cat = catalog(version)
   local def = cat.pokemon and cat.pokemon[mon.species]
   local palette = paletteFor(cat, mon.species, mon.shiny == true)

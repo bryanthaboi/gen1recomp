@@ -1,9 +1,8 @@
 #!/usr/bin/env luajit
--- Offline FRLG extract → CacheFS (Love firered save dir), never mod-tree.
+-- Offline FRLG extract → CacheFS, never mod-tree.
 -- Usage (from repo root):
---   luajit src/import/gba/cli_extract.lua [path/to/firered.gba]
---   luajit src/import/gba/cli_extract.lua --native-only [rom]
--- Override output with GBA_CACHE_ROOT=/path/to/firered (contains data/generated/gba).
+--   luajit src/import/gba/cli_extract.lua --cache DIR [mode] [path/to/firered.gba]
+--   POKEPORT_IDENTITY=NAME luajit src/import/gba/cli_extract.lua [mode] [rom]
 
 package.path = package.path
   .. ";./?.lua;./?/init.lua"
@@ -61,9 +60,17 @@ local storageChromeOnly = false
 local regionMapOnly = false
 local dumpMid = nil -- { pair, mid, outPath }
 local romPath = nil
+local cacheArg = nil
+local wantHelp = false
 local ai = 1
 while ai <= #arg do
-  if arg[ai] == "--native-only" then
+  if arg[ai] == "-h" or arg[ai] == "--help" then
+    wantHelp = true
+    ai = ai + 1
+  elseif arg[ai] == "--cache" and arg[ai + 1] then
+    cacheArg = arg[ai + 1]
+    ai = ai + 2
+  elseif arg[ai] == "--native-only" then
     nativeOnly = true
     ai = ai + 1
   elseif arg[ai] == "--pokemon" then
@@ -128,6 +135,55 @@ while ai <= #arg do
   end
 end
 
+local USAGE = [[
+usage: luajit src/import/gba/cli_extract.lua [--cache DIR] [mode] [rom.gba]
+
+Extracts FireRed data into DIR/data/generated/gba.
+
+  GBA_CACHE_ROOT     same as
+  POKEPORT_IDENTITY  use <LOVE save dir>/<identity>/firered
+
+One of these is required. Modes:
+]]
+
+if wantHelp then
+  io.stdout:write(USAGE)
+  os.exit(0)
+end
+
+local function loveSaveDir(identity)
+  local home = os.getenv("HOME") or ""
+  local osName = jit and jit.os or "Linux"
+  if osName == "OSX" then
+    return home .. "/Library/Application Support/LOVE/" .. identity
+  elseif osName == "Windows" then
+    return (os.getenv("APPDATA") or (home .. "/AppData/Roaming")) .. "/LOVE/" .. identity
+  end
+  local xdg = os.getenv("XDG_DATA_HOME")
+  if not xdg or xdg == "" then xdg = home .. "/.local/share" end
+  return xdg .. "/love/" .. identity
+end
+
+local function nonEmpty(s)
+  if s and s ~= "" then return s end
+  return nil
+end
+
+local outDir = nonEmpty(cacheArg) or nonEmpty(os.getenv("GBA_CACHE_ROOT"))
+if not outDir then
+  local identity = nonEmpty(os.getenv("POKEPORT_IDENTITY"))
+  if identity then
+    outDir = loveSaveDir(identity) .. "/firered"
+  end
+end
+if not outDir then
+  io.stderr:write(USAGE)
+  os.exit(2)
+end
+Extract.CACHE_ROOT = "data/generated/gba"
+Extract.NATIVE_ROOT = "data/generated/gba/native"
+print("CacheFS:", outDir .. "/" .. Extract.CACHE_ROOT)
+
 if not romPath then
   -- Default: FireRed dump in mod root (gitignored).
   local here = debug.getinfo(1, "S").source:match("@(.*)/") or "."
@@ -158,13 +214,7 @@ print("ROM:", romPath)
 print("SHA1:", md5)
 
 local imports = FileIO.makeImports(romPath, md5, "firered")
--- CacheFS root: Love firered save dir (data/generated/gba lives underneath).
-local outDir = os.getenv("GBA_CACHE_ROOT")
-  or ((os.getenv("HOME") or ".") .. "/.local/share/love/pokemon-love2d/firered")
-Extract.CACHE_ROOT = "data/generated/gba"
-Extract.NATIVE_ROOT = "data/generated/gba/native"
 local cache = FileIO.makeCache(outDir)
-print("CacheFS:", outDir .. "/" .. Extract.CACHE_ROOT)
 
 if dumpMid then
   local Rom = require("src.import.gba.rom")
@@ -202,10 +252,8 @@ end
 if battleMovesOnly then
   local Rom = require("src.import.gba.rom")
   local BattleMovesExtract = require("src.import.gba.battle_moves_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting gBattleMoves →", outRoot .. "/data/generated/gba/pokemon")
   local detail = BattleMovesExtract.run(rom, packCache, { cacheRoot = "data/generated/gba" })
@@ -219,10 +267,8 @@ if encountersOnly then
   local Rom = require("src.import.gba.rom")
   local Versions = require("src.import.gba.versions")
   local EncExtract = require("src.import.gba.encounters_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local version = assert(Versions.lookup(md5))
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting gWildMonHeaders →", outRoot .. "/data/generated/gba/encounters.lua")
@@ -261,10 +307,8 @@ end
 if battleAiOnly then
   local Rom = require("src.import.gba.rom")
   local AiExtract = require("src.import.gba.battle_ai_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting battle AI scripts →", outRoot .. "/data/generated/gba/battle_ai")
   local detail = AiExtract.run(rom, packCache, { cacheRoot = "data/generated/gba" })
@@ -277,10 +321,8 @@ end
 if battleTransitionsOnly then
   local Rom = require("src.import.gba.rom")
   local BattleTransitionExtract = require("src.import.gba.battle_transition_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting battle transitions →", outRoot .. "/data/generated/gba/pokemon/battle_transition")
   local detail = assert(BattleTransitionExtract.run(rom, packCache, {
@@ -296,10 +338,8 @@ end
 if trainersOnly then
   local Rom = require("src.import.gba.rom")
   local TrainerExtract = require("src.import.gba.trainer_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting trainers →", outRoot .. "/data/generated/gba/trainers.lua")
   local detail = TrainerExtract.run(rom, packCache, { cacheRoot = "data/generated/gba" })
@@ -312,11 +352,8 @@ end
 if pokemonOnly then
   local Rom = require("src.import.gba.rom")
   local PokemonExtract = require("src.import.gba.pokemon_extract")
-  -- Standalone FireRed cache (never sevii). Prefer LOVE save dir when present.
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting Pokémon pack →", outRoot .. "/data/generated/gba/pokemon")
   local detail = PokemonExtract.run(rom, packCache, {
@@ -363,10 +400,8 @@ end
 if itemsOnly then
   local Rom = require("src.import.gba.rom")
   local ItemsExtract = require("src.import.gba.items_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local rom = assert(Rom.open(imports, "firered"))
   print("Extracting items pack →", outRoot .. "/data/generated/gba/items")
   local detail = ItemsExtract.run(rom, packCache, { cacheRoot = "data/generated/gba" })
@@ -482,10 +517,8 @@ if mapTreeOnly then
   local Rom = require("src.import.gba.rom")
   local Versions = require("src.import.gba.versions")
   local MapTreeExtract = require("src.import.gba.map_tree_extract")
-  local outRoot = os.getenv("HOME")
-    and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
-    or "."
-  local packCache = FileIO.makeCache(outRoot)
+  local outRoot = outDir
+  local packCache = cache
   local version = assert(Versions.lookup(md5))
   local rom = assert(Rom.open(imports, "firered"))
   print("Walking gMapGroups →", outRoot .. "/data/generated/gba/map_tree")

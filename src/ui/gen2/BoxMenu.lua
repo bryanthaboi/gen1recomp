@@ -411,7 +411,8 @@ end
 function BoxMenu:doDeposit()
   local mon = self:selected()
   local name = mon and (mon.nickname or mon.name or mon.species) or "?"
-  local ok, result = Boxes.deposit(self.save, self.index, self.boxIndex)
+  local ok, result = Boxes.deposit(self.save, self.index, self.boxIndex,
+    self.game and self.game.data)
   if not ok then
     -- engine/pokemon/bills_pc.asm:1790
     self:playRefusalSfx("Sfx_Wrong")
@@ -508,7 +509,9 @@ function BoxMenu:insertMon()
   table.insert(dest, math.max(1, math.min(target, #dest + 1)), mon)
   -- .CopyToBox is InsertPokemonIntoBox, which tails into
   -- RestorePPOfDepositedPokemon (engine/pokemon/move_mon_wo_mail.asm:35-37).
-  if not self:isParty(destIndex) then Boxes.enterBox(mon) end
+  if not self:isParty(destIndex) then
+    Boxes.enterBox(mon, self.game and self.game.data)
+  end
   self.phase = nil
   self.moveFrom, self.backup = nil, nil
   self.index, self.scroll = 1, 0

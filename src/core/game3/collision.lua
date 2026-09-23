@@ -513,6 +513,7 @@ end
 local ARRIVAL_FACING = {
   [MB_CAVE_DOOR] = "down",
   [MB_WARP_DOOR] = "down",
+  [MB_LADDER] = "down",
   [MB_SOUTH_ARROW_WARP] = "up",
   [MB_NORTH_ARROW_WARP] = "down",
   [MB_WEST_ARROW_WARP] = "right",
@@ -526,7 +527,6 @@ local ARRIVAL_FACING = {
 function Collision.arrivalFacing(destBeh, storedDir)
   local f = ARRIVAL_FACING[destBeh]
   if f then return f end
-  if destBeh == MB_LADDER then return storedDir or "down" end
   return "down"
 end
 

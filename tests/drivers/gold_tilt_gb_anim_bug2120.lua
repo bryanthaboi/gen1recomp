@@ -43,7 +43,26 @@ return function(game)
   game.options.tilt = 0
   Tilt.setLevel(0)
   U.wait(30)
-  U.shot(game, SHOT_DIR .. "/2120_00_skin_flat.png")
+  local settled = false
+  for _ = 1, 900 do
+    if not world.mapSetup and not world.fade then settled = true break end
+    U.wait(1)
+  end
+  ok(settled, "the warp fade finished before the flat shot")
+  local draws = 0
+  local draw = rawget(game, "draw")
+  local baseDraw = game.draw
+  game.draw = function(...)
+    draws = draws + 1
+    return baseDraw(...)
+  end
+  for _ = 1, 20000 do
+    if draws >= 3 then break end
+    U.wait(1)
+  end
+  game.draw = draw
+  ok(draws >= 3, "a few world frames were drawn before the flat shot, draws=" .. draws)
+  U.still(game, SHOT_DIR .. "/2120_00_skin_flat.png")
 
   game.options.tilt = 3
   game.options.performance = "balanced"

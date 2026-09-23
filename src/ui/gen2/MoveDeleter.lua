@@ -15,6 +15,7 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local ForgetMoveList = require("src.ui.gen2.ForgetMoveList")
+local Mon = require("src.battle.gen2.Mon")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
 
@@ -36,7 +37,7 @@ function MoveDeleter.new(game, opts)
   self.moves = opts.moves or data.moves
   self.onChoose = opts.onChoose
   self.onCancel = opts.onCancel
-  self.list = (self.mon and self.mon.moves) or {}
+  self.list = Mon.partyMoves(self.mon)
   self.row = 1
   return self
 end
@@ -115,7 +116,8 @@ function MoveDeleter:draw()
       Chrome.print(Strings("PP"), 10, ppY)
       Chrome.print(Chrome.number(entry.pp, 2, true), 13, ppY)
       Chrome.print("/", 15, ppY)
-      Chrome.print(Chrome.number(entry.maxPp or entry.pp, 2, true), 16, ppY)
+      Chrome.print(Chrome.number(Mon.maxPpOf(entry, self.game and self.game.data),
+        2, true), 16, ppY)
     else
       Chrome.print("-", 2, nameY)
       Chrome.print("--", 10, ppY)

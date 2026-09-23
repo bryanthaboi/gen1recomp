@@ -1184,7 +1184,7 @@ local function dispatch(vm, row)
       ctx.warpPending = true
       a.warp(group, num, warpId, x, y, function()
         ctx.warpPending = false
-      end)
+      end, op)
     end
     return false
   elseif op == "warphole" then

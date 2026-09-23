@@ -423,9 +423,9 @@ end
 
 -- RestorePP over one move entry: a slot already at max refuses (`cp b /
 -- jr nc, .dont_restore`), "all" fills it, a number adds capped at max.
-local function restoreMove(move, amount)
+local function restoreMove(move, amount, data)
   if type(move) ~= "table" or not move.id then return false end
-  local maxPp = move.maxPp or move.pp or 0
+  local maxPp = Mon.maxPpOf(move, data)
   if (move.pp or 0) >= maxPp then return false end
   if amount == "all" then
     move.pp = maxPp
@@ -484,14 +484,15 @@ for itemId, row in pairs(ItemEffects.RESTORE_PP) do
     -- RestorePPEffect's two shapes: the ETHER family lands on the chosen slot,
     -- the ELIXER family (Elixer_RestorePPofAllMoves) walks every slot and
     -- counts -- one restored move is enough for the item to be spent.
-    local moves = ctx.mon.moves or {}
+    -- engine/items/item_effects.asm:2381
+    local moves = Mon.partyMoves(ctx.mon)
     local any = false
     if row.each then
       for _, move in ipairs(moves) do
-        if restoreMove(move, row.amount) then any = true end
+        if restoreMove(move, row.amount, ctx.data) then any = true end
       end
     else
-      any = restoreMove(moves[ctx.slot], row.amount)
+      any = restoreMove(moves[ctx.slot], row.amount, ctx.data)
     end
     if not any then
       return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
@@ -502,14 +503,15 @@ end
 
 -- engine/items/item_effects.asm:2320 RestorePPEffect's PP_UP arm.
 record("PP_UP", "pp", function(ctx)
-  local move = (ctx.mon.moves or {})[ctx.slot]
+  local move = Mon.partyMoves(ctx.mon)[ctx.slot]
   if type(move) ~= "table" or not move.id then
     return { used = false, text = Strings(ItemEffects.TEXT_NO_EFFECT) }
   end
   local row = ((ctx.data and ctx.data.moves) or {})[move.id]
   local name = (row and row.name) or move.id
   -- constants/pokemon_data_constants.asm:216 PP_UP_MASK.
-  if move.id == "SKETCH" or (move.ppUps or 0) >= 3 then
+  local ups = Mon.ppUpsOf(move, ctx.data)
+  if move.id == "SKETCH" or ups >= 3 then
     return { used = false, text = Strings(ItemEffects.TEXT_PP_MAXED, name) }
   end
   local base = (row and row.pp) or move.maxPp
@@ -518,7 +520,7 @@ record("PP_UP", "pp", function(ctx)
   end
   -- engine/items/item_effects.asm:2736 ComputeMaxPP.
   local bonus = math.min(math.floor(base / 5), 7)
-  move.ppUps = (move.ppUps or 0) + 1
+  move.ppUps = ups + 1
   move.maxPp = base + move.ppUps * bonus
   move.pp = (move.pp or 0) + bonus
   return { used = true, text = Strings(ItemEffects.TEXT_PP_INCREASED, name) }

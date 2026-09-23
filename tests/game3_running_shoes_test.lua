@@ -132,11 +132,9 @@ check(battled == 0, "no second battle")
 check(Flags.getVar(store, nil, 0x406C) == 99, "falls through to post-battle script")
 
 print("[test] 5. Extracted cache has Pewter aide + B_DASH ops")
-local cacheRoot = (os.getenv("HOME") or "") .. "/.local/share/love/pokemon-love2d/firered"
-local evPath = cacheRoot .. "/data/generated/gba/scripts/events.lua"
-local scPath = cacheRoot .. "/data/generated/gba/scripts/scripts.lua"
-local evF = io.open(evPath, "r")
-local scF = io.open(scPath, "r")
+local cacheRoot = require("tests.game3_cache").root("scripts/scripts.lua")
+local evF = cacheRoot and io.open(cacheRoot .. "/scripts/events.lua", "r")
+local scF = cacheRoot and io.open(cacheRoot .. "/scripts/scripts.lua", "r")
 if evF and scF then
   local events = load(evF:read("*a"), "@events", "t", {})()
   evF:close()

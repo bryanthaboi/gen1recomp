@@ -49,7 +49,7 @@ return function(game)
 
   world:warpToMapId(MAP, hx, hy, dir)
   U.wait(60)
-  U.shot(game, "/tmp/pokeport-shots/hole2176_before.png")
+  U.shot(game, SHOTS .. "/hole2176_before.png")
 
   U.tap(game, dir)
   local sawLoad, maskedThroughFadeIn, shotFadeIn = false, true, false
@@ -59,8 +59,7 @@ return function(game)
       sawLoad = true
       if not world.playerMasked then maskedThroughFadeIn = false end
       if not shotFadeIn and not world.fadeHold and (world.fadeLevel or 1) <= 0.5 then
-        shotFadeIn = true
-        U.shot(game, SHOTS .. "/2193_01_fade_in_no_player.png")
+        shotFadeIn = U.still(game, SHOTS .. "/2193_01_fade_in_no_player.png")
       end
     elseif sawLoad and not ms then
       break
@@ -78,8 +77,7 @@ return function(game)
   ok(world.skyfall ~= nil, "the fall animation armed after the load")
   ok(world.map and world.map.id == BELOW, "landed on " .. BELOW)
   ok(world:busy(), "and the applymovement holds the overworld")
-  U.shot(game, "/tmp/pokeport-shots/hole2176_hidden.png")
-  os.execute('mkdir -p "' .. SHOTS .. '" 2>/dev/null')
+  U.still(game, SHOTS .. "/hole2176_hidden.png")
   local FIRST = SHOTS .. "/2240_01_first_unmasked_frame.png"
   local FALLING = SHOTS .. "/2193_02_falling.png"
   local onTile, sawFall, shotFirst, shotFalling = 0, false, false, false
@@ -89,11 +87,9 @@ return function(game)
       if world.skyfall.phase == "fall" then sawFall = true end
       if (world.player.spriteYOffset or 0) >= 0 then onTile = onTile + 1 end
       if not shotFirst then
-        shotFirst = true
-        game.capturePath = FIRST
+        shotFirst = U.still(game, FIRST)
       elseif not shotFalling and (world.player.spriteYOffset or 0) > -40 then
-        shotFalling = true
-        game.capturePath = FALLING
+        shotFalling = U.still(game, FALLING)
       end
     end
     U.wait(1)
@@ -111,7 +107,7 @@ return function(game)
     "captured the first unmasked and a falling frame")
   ok(world.shake ~= nil, "earthquake 16 fires on the landing")
   ok(world.shake and world.shake.amplitude == 1, "one pixel of it")
-  U.shot(game, "/tmp/pokeport-shots/hole2176_landed.png")
+  U.still(game, SHOTS .. "/hole2176_landed.png")
   U.wait(30)
   ok((world.player.spriteYOffset or 0) == 0, "the sprite is back on its tile")
 

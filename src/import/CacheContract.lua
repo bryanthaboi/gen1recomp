@@ -8,7 +8,8 @@ local GameVersion = require("src.core.GameVersion")
 
 local CacheContract = {}
 
-CacheContract.FORMAT = "rom-cache-v11:"
+-- engine/battle/animations.asm:2418
+CacheContract.FORMAT = "rom-cache-v12-gen1:"
 CacheContract.VERSION_FORMAT = {
   -- v11: Gen 2 maps carry their object list's ROM address, which a .sav
   -- export re-anchoring a save onto another map writes back into
@@ -17,8 +18,8 @@ CacheContract.VERSION_FORMAT = {
   gold = "rom-cache-v12:",
   silver = "rom-cache-v12:",
   crystal = "rom-cache-v12-crystal4:",
-  -- engine/overworld/map_sprites.asm:181
-  yellow = "rom-cache-v11-yellow1:",
+  -- engine/overworld/map_sprites.asm:181, engine/battle/animations.asm:2600
+  yellow = "rom-cache-v12-yellow1:",
   -- v8: M4A tracks retain reachable patterns and explicit entry offsets.
   firered = "rom-cache-v15-firered:",
   leafgreen = "rom-cache-v1-leafgreen:",
@@ -236,6 +237,8 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/pokemon/battle_transition/big_pokeball.rgba",
     "data/generated/gba/pokemon/battle_transition/sliding_pokeball.rgba",
     "data/generated/gba/pokemon/party/slot_main.rgba",
+    -- src/data/party_menu.h:664
+    "data/generated/gba/pokemon/party/hold_icons.rgba",
     "data/generated/gba/items/bag/manifest.lua",
     "data/generated/gba/items/bag/bg.rgba",
     "data/generated/gba/items/bag/bg_female.rgba",
@@ -276,6 +279,12 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/chrome/user_frame_9.rgba",
     "data/generated/gba/chrome/fonts/latin_normal_fg.rgba",
     "data/generated/gba/chrome/fonts/latin_widths.lua",
+    -- src/text.c:141, :227, :228 (the Japanese fonts)
+    "data/generated/gba/chrome/fonts/japanese_normal_fg.rgba",
+    "data/generated/gba/chrome/fonts/japanese_normal_shadow.rgba",
+    "data/generated/gba/chrome/fonts/japanese_widths.lua",
+    "data/generated/gba/chrome/fonts/japanese_small_fg.rgba",
+    "data/generated/gba/chrome/fonts/japanese_small_shadow.rgba",
     -- src/braille_text.c:15
     "data/generated/gba/chrome/fonts/braille_fg.rgba",
     "data/generated/gba/chrome/fonts/braille_shadow.rgba",
@@ -325,8 +334,19 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/trade/cable_end.rgba",
     "data/generated/gba/trade/link_mon_glow.rgba",
     "data/generated/gba/trade/link_mon_shadow.rgba",
+    -- src/trade_scene.c:1121
+    "data/generated/gba/trade/mon_shadow_bg.rgba",
     "data/generated/gba/trade/ball.rgba",
     "data/generated/gba/trade/ball_spin.rgba",
+    -- src/trade.c:1368
+    "data/generated/gba/trade/menu_bg1.rgba",
+    "data/generated/gba/trade/stripes_bg2.rgba",
+    "data/generated/gba/trade/stripes_bg3.rgba",
+    "data/generated/gba/trade/party_box.rgba",
+    "data/generated/gba/trade/moves_box.rgba",
+    "data/generated/gba/trade/mon_box.rgba",
+    "data/generated/gba/trade/menu_tiles.rgba",
+    "data/generated/gba/trade/cursor.rgba",
     -- src/link_rfu_3.c:34, src/union_room_chat_objects.c:30
     "data/generated/gba/union_room/manifest.lua",
     "data/generated/gba/union_room/wireless_icon.rgba",

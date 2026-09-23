@@ -808,19 +808,25 @@ Natives.ALLOW = {
     local flagGameClear = (Flags.IDS and Flags.IDS.SYS_GAME_CLEAR) or 0x82C
     local Space = package.loaded["src.core.game3.scripting.space"]
     local store = Space and Space.store
-    if store and Flags and Flags.setFlag then
-      Flags.setFlag(store, nil, flagGameClear, true) -- FLAG_SYS_GAME_CLEAR
-    end
-    if adapters and adapters.setFlag then
-      adapters.setFlag(flagGameClear, true)
-    end
     local Runtime = package.loaded["src.core.game3.runtime"]
     local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local function set_flag(id)
+      if store and Flags and Flags.setFlag then
+        Flags.setFlag(store, nil, id, true)
+      end
+      if adapters and adapters.setFlag then
+        adapters.setFlag(id, true)
+      end
+      if session and session.store and Flags and Flags.setFlag then
+        Flags.setFlag(session.store, nil, id, true)
+      end
+    end
+    if session then
+      Natives.enterHallOfFameState(session, set_flag)
+    end
+    set_flag(flagGameClear)
     if session then
       session.game_cleared = true
-      if session.store and Flags and Flags.setFlag then
-        Flags.setFlag(session.store, nil, flagGameClear, true)
-      end
     end
     if adapters and adapters.hallOfFame then
       return yield_host(ctx, adapters, adapters.hallOfFame)
@@ -828,6 +834,44 @@ Natives.ALLOW = {
     return false
   end,
 }
+
+-- pokefirered/src/post_battle_event_funcs.c:12 EnterHallOfFame
+function Natives.enterHallOfFameState(session, setFlag)
+  local Bit = require("bit")
+  local Pokemon = require("src.core.game3.pokemon")
+  -- pokefirered/src/post_battle_event_funcs.c:18
+  require("src.core.game3.party").healAll(session.party)
+  session.gameStats = type(session.gameStats) == "table" and session.gameStats or {}
+  -- pokefirered/src/post_battle_event_funcs.c:28
+  if (tonumber(session.gameStats[1]) or 0) == 0 then
+    local pt = session.playtime or session.playTime or {}
+    local h = tonumber(pt.hours or session.playTimeHours) or 0
+    local m = tonumber(pt.minutes or session.playTimeMinutes) or 0
+    local s = tonumber(pt.seconds or session.playTimeSeconds) or 0
+    session.gameStats[1] = Bit.bor(Bit.lshift(h, 16), Bit.lshift(m, 8), s)
+  end
+  -- pokefirered/src/load_save.c:144
+  session.specialSaveWarpFlags = Bit.bor(tonumber(session.specialSaveWarpFlags) or 0, 0x01)
+  -- pokefirered/src/overworld.c:694
+  local dest = assert(require("src.core.game3.field").flyDestination("MAPSEC_PALLET_TOWN"),
+    "no heal location for MAPSEC_PALLET_TOWN")
+  session.continueGameWarp = { map = dest.map, x = dest.x, y = dest.y }
+  -- pokefirered/src/post_battle_event_funcs.c:35
+  local gave = false
+  for i = 1, 6 do
+    local mon = type(session.party) == "table" and session.party[i] or nil
+    if type(mon) == "table" and not Pokemon.isEgg(mon) and not mon.championRibbon then
+      mon.championRibbon = true
+      gave = true
+    end
+  end
+  if gave then
+    -- pokefirered/src/post_battle_event_funcs.c:47
+    local n = tonumber(session.gameStats[42]) or 0
+    session.gameStats[42] = math.min(0xFFFFFF, n + 1)
+    if setFlag then setFlag(0x83B) end -- pokefirered/include/constants/flags.h:1393
+  end
+end
 
 local MODULE_DIR = "src/core/game3/scripting"
 local MODULE_PACKAGE = "src.core.game3.scripting."

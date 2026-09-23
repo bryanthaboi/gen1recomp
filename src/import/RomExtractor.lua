@@ -824,12 +824,21 @@ function RomExtractor:extractBattleAnimations()
     end
   end
 
+  -- engine/battle/animations.asm:2418
+  local deltaSymbol = self:symbol("FallingObjects_DeltaXs")
+  local fallingDeltaXs = {}
+  for index = 0, 63 do
+    fallingDeltaXs[index] =
+      self.rom:byte(deltaSymbol.bank, deltaSymbol.address + index)
+  end
+
   local out = {
     tilesheets = tilesheets,
     baseCoords = baseCoords,
     frameBlocks = frameBlocks,
     subanims = subanims,
     moveAnims = moveAnims,
+    fallingDeltaXs = fallingDeltaXs,
   }
   self:write("battle_anims", out)
   return out

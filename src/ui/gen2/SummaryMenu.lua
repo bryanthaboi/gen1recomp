@@ -385,7 +385,7 @@ end
 -- The mon's four move slots, empty ones left as holes so the '-' rows land on
 -- the right lines.
 function SummaryMenu:moveList()
-  return (self.mon and self.mon.moves) or {}
+  return Mon.partyMoves(self.mon)
 end
 
 function SummaryMenu:moveName(entry)
@@ -563,7 +563,7 @@ function SummaryMenu:greenPlacements()
       -- the '/' PrintNum's caller writes, then two more.
       put(out, num(entry.pp, 2), 15, ppY)
       put(out, "/", 17, ppY)
-      put(out, num(entry.maxPp or entry.pp, 2), 18, ppY)
+      put(out, num(Mon.maxPpOf(entry, self.game and self.game.data), 2), 18, ppY)
     else
       put(out, "-", 8, nameY)
       put(out, "--", 12, ppY)
@@ -623,7 +623,7 @@ function SummaryMenu:moveDetailPlacements()
       put(out, Strings(PP_LABEL), 10, ppY)
       put(out, num(entry.pp, 2), 13, ppY)
       put(out, "/", 15, ppY)
-      put(out, num(entry.maxPp or entry.pp, 2), 16, ppY)
+      put(out, num(Mon.maxPpOf(entry, self.game and self.game.data), 2), 16, ppY)
     else
       put(out, "-", 2, nameY)
       put(out, "--", 10, ppY)

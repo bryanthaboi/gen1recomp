@@ -252,7 +252,11 @@ function BerryPouch.handleInput(input)
       if act == "EXIT" or not row then
         BerryPouch.mode = "list"
       elseif act == "USE" then
-        if ItemUse.needsPartyTarget(row.id) then
+        local BagMenu = package.loaded["src.ui.game3.bag_menu"]
+        -- pokefirered/src/berry_pouch.c:1071
+        local battleUse = BagMenu and BagMenu._battle
+          and require("src.core.game3.battle.items").needsPartySelect(row.id)
+        if ItemUse.needsPartyTarget(row.id) or battleUse then
           if #party == 0 then
             BerryPouch.mode = "message"
             BerryPouch.messageText = RomText.plain("gText_ThereIsNoPokemon")

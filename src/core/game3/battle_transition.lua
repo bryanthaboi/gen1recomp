@@ -2014,6 +2014,7 @@ end
 
 function BattleTransition.drawWorld(canvas, vw, vh)
   if not BattleTransition._active then return false end
+  if BattleTransition._opts and BattleTransition._opts.overUi then return false end
   if not (love and love.graphics and canvas) then return false end
   local G = love.graphics
   local gx, gy = floor((vw - DW) / 2), floor((vh - DH) / 2)
@@ -2057,7 +2058,31 @@ function BattleTransition.draw()
   end
   local G = love.graphics
   G.push("all")
-  local ok, err = pcall(render, viewFor(0, 0, DW, DH), G)
+  local R = viewFor(0, 0, DW, DH)
+  local fx = BattleTransition._fx
+  local target = G.getCanvas()
+  if BattleTransition._opts and BattleTransition._opts.overUi and fx and fx.def.redraw and target then
+    local w, h = target:getWidth(), target:getHeight()
+    local scratch = BattleTransition._uiScratch
+    if not scratch or scratch:getWidth() ~= w or scratch:getHeight() ~= h then
+      if scratch and scratch.release then pcall(scratch.release, scratch) end
+      scratch = G.newCanvas(w, h, { dpiscale = 1 })
+      scratch:setFilter("nearest", "nearest")
+      pcall(scratch.setWrap, scratch, "repeat", "repeat")
+      BattleTransition._uiScratch = scratch
+      BattleTransition._uiQuad = G.newQuad(0, 0, 1, 1, w, h)
+    end
+    G.origin()
+    G.setCanvas(scratch)
+    G.clear(0, 0, 0, 1)
+    G.setColor(1, 1, 1, 1)
+    G.draw(target, 0, 0)
+    G.setCanvas(target)
+    G.clear(0, 0, 0, 1)
+    R.field = scratch
+    R.fieldQuad = BattleTransition._uiQuad
+  end
+  local ok, err = pcall(render, R, G)
   G.pop()
   if not ok then print("[game3/battle_transition] " .. tostring(err)) end
 end

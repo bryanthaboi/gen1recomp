@@ -85,7 +85,9 @@ return function(game)
   end
 
   local pending = nil
+  local drawn = 0
   love.draw = function()
+    drawn = drawn + 1
     buttons = {}
     imp:draw()
     if pending then
@@ -100,7 +102,8 @@ return function(game)
   local function step(n)
     for _ = 1, n do
       imp:update(1 / 60)
-      coroutine.yield()
+      local seen = drawn
+      repeat coroutine.yield() until drawn > seen
     end
   end
   local function shot(name)

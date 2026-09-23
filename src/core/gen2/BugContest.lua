@@ -787,7 +787,7 @@ end
 -- there is not, and the answer is the three-way wScriptVar the gate branches
 -- on.  Boxing needs src/core/gen2/Boxes.lua, which is required lazily so this
 -- module stays loadable on its own.
-function BugContest.collectCaughtMon(save, partySize, boxes)
+function BugContest.collectCaughtMon(save, partySize, boxes, data)
   local state = BugContest.state(save)
   local mon = state and state.caught
   if not mon then return BugContest.NO_CATCH end
@@ -805,7 +805,7 @@ function BugContest.collectCaughtMon(save, partySize, boxes)
   local box = boxes.box(save, save.currentBox or 1)
   -- .TryAddToBox copies BOXMON_STRUCT_LENGTH and tails into
   -- RestorePPOfDepositedPokemon (engine/pokemon/caught_nickname.asm:72-90).
-  if box then box[#box + 1] = boxes.enterBox(mon) end
+  if box then box[#box + 1] = boxes.enterBox(mon, data) end
   return BugContest.BOXED_MON, mon
 end
 

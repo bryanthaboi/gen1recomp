@@ -1,5 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
-require("tests.game3_cache").requireData("game3_battle_anim_palette_test", "pokemon/battle_anims/pack.lua")
+local CACHE_ROOT = require("tests.game3_cache").rootOrSkip("game3_battle_anim_palette_test", "pokemon/battle_anims/pack.lua")
 
 local passed, failed = 0, 0
 local function check(cond, name)
@@ -14,7 +14,7 @@ end
 local HOME = os.getenv("HOME") or ""
 local PRET = os.getenv("POKEFIRERED") or (HOME .. "/Documents/development/pokefirered")
 local ROM = os.getenv("FIRERED_ROM") or (HOME .. "/Documents/development/decprep/Pokemon - Fire Red Version.gba")
-local PACK = HOME .. "/.local/share/love/pokemon-love2d/firered/data/generated/gba/pokemon/battle_anims/pack.lua"
+local PACK = CACHE_ROOT .. "/pokemon/battle_anims/pack.lua"
 
 local function read_file(p)
   local f = io.open(p, "rb")

@@ -1665,6 +1665,38 @@ while not ap:isDone() and frames < 600 do
   ap:update()
 end
 check(ap:isDone(), "THUNDERBOLT plays mirrored for the enemy")
+do
+local animFailures = {}
+for id in pairs(Data.battle_anims.moveAnims) do
+  for _, side in ipairs({ true, false }) do
+    local ok, err = pcall(ap.start, ap, id, side)
+    if not ok or (#ap.steps == 0 and #ap.events == 0) then
+      animFailures[#animFailures + 1] = id .. "(" .. tostring(side) .. "): "
+        .. tostring(err or "no steps")
+    end
+  end
+end
+table.sort(animFailures)
+eq(table.concat(animFailures, "; "), "", "every battle anim compiles from both sides")
+-- engine/battle/animations.asm:2418
+local fallingDX = Data.battle_anims.fallingDeltaXs
+check(fallingDX ~= nil and fallingDX[63] ~= nil, "falling-object delta-X bytes extracted")
+if fallingDX then
+  local head = {}
+  for i = 0, 8 do head[#head + 1] = fallingDX[i] end
+  eq(table.concat(head, ","), "0,1,3,5,7,9,11,13,15", "delta-X table head")
+  ap:start("PETAL_DANCE", true)
+  local petals
+  for _, st in ipairs(ap.steps) do
+    if #st.sprites == 20 then petals = st; break end
+  end
+  check(petals ~= nil, "PETAL_DANCE drops twenty petals")
+  if petals then
+    eq(petals.sprites[10].x, (0x4A - fallingDX[10]) % 256,
+       "petal 10 reads past the delta-X table on its first tick")
+  end
+end
+end
 
 -- ---------------------------------------------------------------- tile-pair collisions
 check(Data.field.tilePairs and #Data.field.tilePairs.land > 0,

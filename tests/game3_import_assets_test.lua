@@ -205,6 +205,9 @@ for _, path in ipairs(CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.firered) do
   required[path] = true
 end
 local NEW_KEYS = {
+  "data/generated/gba/chrome/fonts/japanese_normal_fg.rgba",
+  "data/generated/gba/chrome/fonts/japanese_small_fg.rgba",
+  "data/generated/gba/chrome/fonts/japanese_widths.lua",
   "data/generated/gba/chrome/fonts/braille_fg.rgba",
   "data/generated/gba/chrome/fonts/braille_shadow.rgba",
   "data/generated/gba/chrome/fonts/braille.lua",

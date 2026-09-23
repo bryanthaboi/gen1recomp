@@ -12,6 +12,7 @@ local NamingChrome = require("src.ui.game3.naming_chrome")
 local OwSprites = require("src.core.game3.ow_sprites")
 local Versions = require("src.import.gba.versions")
 local RomText = require("src.core.game3.rom_text")
+local TextIR = require("src.core.game3.scripting.text_ir")
 
 local Naming = {}
 
@@ -251,10 +252,7 @@ local function sentToPcPages(st, nick)
   local full = Storage.isDestinationBoxFull(session)
   local text = Storage.pcTransferMessage(session, nick, full)
   if type(text) ~= "string" or text == "" then return nil end
-  local pages = {}
-  for page in (text .. "\f"):gmatch("(.-)\f") do
-    if page ~= "" then pages[#pages + 1] = page end
-  end
+  local pages = TextIR.splitPages(text)
   if #pages == 0 then return nil end
   return pages
 end

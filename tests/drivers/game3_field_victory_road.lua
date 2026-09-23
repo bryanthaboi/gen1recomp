@@ -121,12 +121,11 @@ return function(game)
     return Player.cellX ~= sx or Player.cellY ~= sy
   end
 
-  local function runScript(limit)
-    local n = 0
-    while n < (limit or 600) do
+  local function runScript(secs)
+    local deadline = love.timer.getTime() + (secs or 8)
+    while love.timer.getTime() < deadline do
       if not (Space.vm and Space.vm:isRunning()) then break end
-      U.wait(6)
-      n = n + 6
+      U.wait(1)
     end
   end
 
@@ -154,7 +153,7 @@ return function(game)
       U.log(string.format("step %d (%s) went nowhere at (%s,%s)", i, dir,
         tostring(Player.cellX), tostring(Player.cellY)))
     end
-    if Space.vm and Space.vm:isRunning() then runScript(600) end
+    if Space.vm and Space.vm:isRunning() then runScript() end
   end
   U.log("walked " .. walked .. "/" .. #PATH .. " steps, player at (" ..
     tostring(Player.cellX) .. "," .. tostring(Player.cellY) .. ")")
@@ -163,7 +162,7 @@ return function(game)
   result(boulder ~= nil and boulder.cellX == SWITCH_X and boulder.cellY == SWITCH_Y,
     "the boulder was pushed onto the floor switch, at (" ..
     tostring(boulder and boulder.cellX) .. "," .. tostring(boulder and boulder.cellY) .. ")")
-  runScript(900)
+  runScript()
   U.wait(60)
   result(getVar(VAR_MAP_SCENE_VICTORY_ROAD_1F) == 100,
     "the floor-switch script ran, var=" .. tostring(getVar(VAR_MAP_SCENE_VICTORY_ROAD_1F)))

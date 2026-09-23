@@ -28,10 +28,7 @@ Message._speedUp = false
 local SPEED_DELAYS = { 8, 4, 1 }
 
 local function split_pages(box)
-  local pages = {}
-  for page in (box .. "\f"):gmatch("(.-)\f") do
-    if page ~= "" then pages[#pages + 1] = page end
-  end
+  local pages = TextIR.splitPages(box)
   if #pages == 0 then pages[1] = box or "" end
   return pages
 end

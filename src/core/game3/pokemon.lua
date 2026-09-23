@@ -1599,4 +1599,16 @@ function Pokemon.displayName(mon)
   return "?????"
 end
 
+-- pokefirered/src/trade.c:2391
+-- pokefirered/src/pokemon.c:1809
+function Pokemon.savedName(mon)
+  if type(mon) ~= "table" then return nil end
+  local nick = mon.nickname
+  if type(nick) == "string" and nick ~= "" then return nick end
+  if Pokemon.isEgg(mon) then return nil end
+  local name = mon.name
+  if type(name) == "string" and name ~= "" then return name end
+  return nil
+end
+
 return Pokemon

@@ -682,14 +682,16 @@ function Space.install(mod)
           end
           Space.vm:tick()
           -- pokefirered/src/field_control_avatar.c:212
+          local Field = package.loaded["src.core.game3.field"]
           if not Space.vm:isRunning() then
             if Space._deferOnFrameForFade and self.mapSetup then
               -- Still fading in from MAPSETUP.WARP; keep holding onFrame.
+            elseif Field and Field.callbackPending and Field.callbackPending() then
+              -- pokefirered/src/overworld.c:1403
             else
               local claiming = Space._pendingOnFrame
               Space._pendingOnFrame = false
               Space._deferOnFrameForFade = false
-              local Field = package.loaded["src.core.game3.field"]
               if claiming or not (Field and Field.locked) then
                 Space.runOnFrame()
                 if claiming and not Space.vm:isRunning() then

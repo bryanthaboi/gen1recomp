@@ -592,6 +592,7 @@ function OnlinePanel.convertParty(party, fromVersion, toVersion)
   local fromGen = GameVersion.generation(fromVersion)
   local toGen = GameVersion.generation(toVersion)
   if fromGen == toGen then return nil, "same generation" end
+  if fromGen == 3 or toGen == 3 then return nil, TeamPick.GEN3_OFFLINE end
   local gen1Version = (fromGen == 1) and fromVersion or toVersion
   local gen2Version = (fromGen == 2) and fromVersion or toVersion
   local gen2Data, err = Trade.withDataset(gen2Version, function(d) return d end)
@@ -808,16 +809,77 @@ function OnlinePanel.primeSprites(imp)
   return true
 end
 
-local function pretty(id)
-  local text = tostring(id or "?"):gsub("_", " ")
-  return text
+local nameTables = {}
+
+local function nameTable(version, kind)
+  if version == nil then return nil end
+  local key = tostring(version) .. "|" .. kind
+  local hit = nameTables[key]
+  if hit == nil then
+    hit = false
+    local path = ("data/generated/%s.lua"):format(kind)
+    local bytes = Sprites().readBytes(version, path)
+    local chunk = bytes and (loadstring or load)(bytes, "@" .. path)
+    local ok, rows = false, nil
+    if chunk then ok, rows = pcall(chunk) end
+    if ok and type(rows) == "table" then
+      hit = {}
+      for id, row in pairs(rows) do
+        if type(row) == "table" and type(row.name) == "string" then
+          hit[id] = row.name
+        end
+      end
+    end
+    nameTables[key] = hit
+  end
+  return hit or nil
 end
 
-local function monLabel(mon)
+function OnlinePanel.resetNames()
+  nameTables = {}
+end
+
+local function speciesText(version, species)
+  if species == nil then return "?" end
+  local names = type(species) == "string" and nameTable(version, "pokemon")
+  return (names and names[species]) or tostring(species)
+end
+
+OnlinePanel.speciesText = speciesText
+
+local function itemText(version, item)
+  if item == nil then return "?" end
+  local names = type(item) == "string" and nameTable(version, "items")
+  return (names and names[item]) or tostring(item)
+end
+
+local function gen3Name(mon)
+  if type(mon) ~= "table" or type(mon.species) ~= "number" then return nil end
+  return require("src.core.game3.pokemon").savedName(mon) or "?"
+end
+
+OnlinePanel.gen3Name = gen3Name
+
+local function monSpecies(mon, version)
+  local g3 = gen3Name(mon)
+  if g3 then return g3 end
+  if mon.species == nil then return tostring(mon.name or "?") end
+  return speciesText(version, mon.species)
+end
+
+local function monName(mon, version)
+  local g3 = gen3Name(mon)
+  if g3 then return g3 end
+  local nick = mon.nickname
+  if type(nick) == "string" and nick ~= "" then return nick end
+  return monSpecies(mon, version)
+end
+
+OnlinePanel.monName = monName
+
+local function monLabel(mon, version)
   if type(mon) ~= "table" then return "?" end
-  local name = mon.nickname
-  if type(name) ~= "string" or name == "" then name = mon.species or mon.name end
-  return ("%s Lv%d"):format(pretty(name), tonumber(mon.level) or 0)
+  return ("%s Lv%d"):format(monName(mon, version), tonumber(mon.level) or 0)
 end
 
 OnlinePanel.monLabel = monLabel
@@ -975,9 +1037,9 @@ local function boxRow(handle, entry, order)
     mon = mon, version = handle.version, where = "box",
     source = entry.source or OnlinePanel.tradeBoxName(handle, entry.box),
     order = order,
-    name = tostring(mon.nickname or mon.species or mon.name or "?"),
+    name = monName(mon, handle.version),
     label = ("%s  Lv%d  %d/%d HP"):format(
-      tostring(mon.species or mon.name or "?"), tonumber(mon.level) or 0,
+      monSpecies(mon, handle.version), tonumber(mon.level) or 0,
       tonumber(mon.hp) or 0, maxHp),
   }
 end
@@ -988,7 +1050,8 @@ function OnlinePanel.tradeBoxRow(handle, ref)
   if type(mon) ~= "table" then return nil end
   local row = boxRow(handle, { box = ref.box, index = ref.index, mon = mon,
     where = "box" }, 1)
-  row.label = ("%s  %s"):format(OnlinePanel.monLabel(mon), row.source)
+  row.label = ("%s  %s"):format(OnlinePanel.monLabel(mon, handle.version),
+    row.source)
   row.picked, row.pickable = true, not mon.isEgg
   return row
 end
@@ -1013,7 +1076,9 @@ function OnlinePanel.tradePcAllowed(imp, side)
   local tr = OnlinePanel.tradeState(imp)
   if tr.mode ~= "local" or tr.remote then return false end
   local view = OnlinePanel.tradeSideView(imp, side)
-  return (view and view.handle) ~= nil
+  local handle = view and view.handle
+  -- pokefirered/src/trade.c:945
+  return handle ~= nil and handle.generation ~= 3
 end
 
 function OnlinePanel.tradeMode(imp, mode)
@@ -1076,23 +1141,46 @@ function OnlinePanel.tradeRun(imp, fn)
   return out, why
 end
 
+local function sideVersion(side)
+  return type(side) == "table" and type(side.handle) == "table"
+    and side.handle.version or nil
+end
+
+local function evolveLine(side)
+  local version = sideVersion(side)
+  return Strings("%s evolves into %s",
+    side.fromName or speciesText(version, (side.received or {}).species),
+    side.evolveName or speciesText(version, side.evolveTo))
+end
+
+local function usedUpLine(plan, row)
+  local name = row.itemName
+  if not name then
+    for _, side in ipairs(plan.sides or {}) do
+      local handle = type(side) == "table" and side.handle
+      if type(handle) == "table" and handle.slotId == row.slot then
+        name = itemText(handle.version, row.item)
+        if name ~= tostring(row.item) then break end
+      end
+    end
+  end
+  return Strings("%s is used up.", name or itemText(nil, row.item))
+end
+
 function OnlinePanel.tradeLines(plan, labels, convertLines)
   local out = {}
   if type(plan) ~= "table" then return out end
   labels = type(labels) == "table" and labels or {}
   for _, side in ipairs(plan.sides or {}) do
     local who = labels[side.role or "a"] or Strings("You")
+    local version = sideVersion(side)
     out[#out + 1] = Strings("%s gives %s and gets %s", who,
-      monLabel(side.sent), monLabel(side.received or side.record))
-    if side.evolveTo then
-      out[#out + 1] = Strings("%s evolves into %s",
-        pretty((side.received or {}).species), pretty(side.evolveTo))
-    end
+      monLabel(side.sent, version),
+      monLabel(side.received or side.record, version))
+    if side.evolveTo then out[#out + 1] = evolveLine(side) end
   end
   for _, row in ipairs(plan.warnings or {}) do
-    if row.code == "item_used" then
-      out[#out + 1] = Strings("%s is used up.", pretty(row.item))
-    end
+    if row.code == "item_used" then out[#out + 1] = usedUpLine(plan, row) end
   end
   for _, row in ipairs(convertLines or {}) do
     for _, line in ipairs(row.lines or {}) do out[#out + 1] = line end
@@ -1184,15 +1272,10 @@ function OnlinePanel.tradeChangeLines(plan, convertLines)
   local out = {}
   if type(plan) ~= "table" then return out end
   for _, side in ipairs(plan.sides or {}) do
-    if side.evolveTo then
-      out[#out + 1] = Strings("%s evolves into %s",
-        pretty((side.received or {}).species), pretty(side.evolveTo))
-    end
+    if side.evolveTo then out[#out + 1] = evolveLine(side) end
   end
   for _, row in ipairs(plan.warnings or {}) do
-    if row.code == "item_used" then
-      out[#out + 1] = Strings("%s is used up.", pretty(row.item))
-    end
+    if row.code == "item_used" then out[#out + 1] = usedUpLine(plan, row) end
   end
   for _, row in ipairs(convertLines or {}) do
     for _, line in ipairs(row.lines or {}) do out[#out + 1] = line end
@@ -1207,7 +1290,7 @@ function OnlinePanel.tradeResultLines(plan, labels)
   for _, side in ipairs(plan.sides or {}) do
     local who = labels[side.role or "a"] or Strings("You")
     out[#out + 1] = Strings("%s now holds %s", who,
-      monLabel(side.record or side.received))
+      monLabel(side.record or side.received, sideVersion(side)))
   end
   return out
 end
@@ -1240,8 +1323,8 @@ function OnlinePanel.tradeModalOpen(imp)
   end
   imp._tradeModal = {
     view = "preview",
-    give = { mon = give, version = version, label = monLabel(give) },
-    get = { mon = get, version = version, label = monLabel(get) },
+    give = { mon = give, version = version, label = monLabel(give, version) },
+    get = { mon = get, version = version, label = monLabel(get, version) },
     lines = OnlinePanel.tradeChangeLines(tr.plan, tr.convertLines),
     labels = { a = (tr.sides.a or {}).label, b = (tr.sides.b or {}).label },
     ok = false, message = nil, resultLines = nil,
@@ -1289,6 +1372,9 @@ end
 -- ------- remote trade
 
 function OnlinePanel.remoteTradeRefusal(imp)
+  if OnlinePanel.saveGeneration(imp) == 3 then
+    return Strings(require("src.online.Trade").GEN3_LOCAL_ONLY)
+  end
   if OnlinePanel.crossGen(imp) then
     return Strings("Both players need the same game generation for now.")
   end
@@ -1389,6 +1475,7 @@ function OnlinePanel.remoteRows(remote)
   local session = remote.session
   if type(session) ~= "table" then return mine, theirs end
   local party = (type(remote.handle) == "table" and remote.handle.party) or {}
+  local version = type(remote.handle) == "table" and remote.handle.version or nil
   for index, mon in ipairs(party) do
     local pickable = true
     if type(session.canPick) == "function" then
@@ -1396,14 +1483,14 @@ function OnlinePanel.remoteRows(remote)
       pickable = ok and allowed == true
     end
     mine[#mine + 1] = { index = index, ref = index,
-      key = "party|" .. index, label = monLabel(mon), mon = mon,
-      version = remote.handle and remote.handle.version,
+      key = "party|" .. index, label = monLabel(mon, version), mon = mon,
+      version = version,
       pickable = pickable, picked = session.myPick == index }
   end
   for index, mon in ipairs(session.theirParty or {}) do
     theirs[#theirs + 1] = { index = index, ref = index,
-      key = "party|" .. index, label = monLabel(mon), mon = mon,
-      version = remote.handle and remote.handle.version,
+      key = "party|" .. index, label = monLabel(mon, version), mon = mon,
+      version = version,
       picked = session.theirPick == index }
   end
   return mine, theirs
@@ -1853,7 +1940,7 @@ function OnlinePanel.sendReady(imp)
   if room and room.intent == "trade" then
     local all = {}
     for index = 1, #pick.party do all[index] = index end
-    packed = TeamPick.pack(pick, all, pick.generation)
+    packed, why = TeamPick.pack(pick, all, pick.generation)
   else
     local ok
     local room2 = Client().room()
@@ -2657,9 +2744,9 @@ local function monRow(imp, entry, version)
     where = entry.where,
     source = entry.source,
     order = OnlinePanel.teamOrder(st.team, entry),
-    name = tostring(mon.nickname or mon.species or mon.name or "?"),
+    name = monName(mon, version),
     label = ("%s  Lv%d  %d/%d HP"):format(
-      tostring(mon.species or mon.name or "?"), tonumber(mon.level) or 0,
+      monSpecies(mon, version), tonumber(mon.level) or 0,
       tonumber(mon.hp) or 0, maxHp),
     note = preview and preview[1] or nil,
     refused = refused,
@@ -2839,7 +2926,7 @@ local function refreshTrade(imp, c)
       for index, mon in ipairs(handle.party or {}) do
         local key = OnlinePanel.refKey({ where = "party", index = index })
         rows[#rows + 1] = { ref = index, key = key,
-          label = OnlinePanel.monLabel(mon),
+          label = OnlinePanel.monLabel(mon, handle.version),
           mon = mon, version = handle.version, source = Strings("Party"),
           picked = picked == key, pickable = not mon.isEgg }
       end

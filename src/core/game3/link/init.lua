@@ -172,14 +172,14 @@ end
 
 Link.resolveDest = resolveDest
 
-function Link.warpToDest(ctx, adapters, dest)
+function Link.warpToDest(ctx, adapters, dest, kind)
   if type(dest) ~= "table" then return false end
   local group, num = tonumber(dest.mapGroup), tonumber(dest.mapNum)
   if adapters and adapters.warp and group and num and num ~= MAP_DYNAMIC_NUM then
     if ctx then ctx.warpPending = true end
     adapters.warp(group, num, dest.warpId, dest.x, dest.y, function()
       if ctx then ctx.warpPending = false end
-    end)
+    end, kind)
     return true
   end
   local mapId, x, y = resolveDest(dest)
@@ -205,13 +205,18 @@ end
 
 -- pokefirered/src/field_fadetransition.c:646 DoCableClubWarp
 function Link.doCableClubWarp(ctx, adapters)
+  local Warp = package.loaded["src.core.game3.warp"]
+  if ctx and ctx.warpPending and Warp and Warp.isBusy() then
+    Link._warpMap = nil
+    return false
+  end
   if adapters and adapters.playSe then adapters.playSe(SE_EXIT) end
   local armedOn = Link._warpMap
   Link._warpMap = nil
   local mapId = Link.currentMap()
   local s = Link.session()
   local warped = not (armedOn and mapId ~= armedOn)
-    and Link.warpToDest(ctx, adapters, s and s.warpDestination)
+    and Link.warpToDest(ctx, adapters, s and s.warpDestination, "warpsilent")
   if not warped then
     local Player = package.loaded["src.core.game3.player"]
     if Player and Player.setVisible then Player.setVisible(true) end
@@ -283,7 +288,7 @@ function Link.returnFromLinkRoom(ctx, adapters)
   if adapters and adapters.playSe then adapters.playSe(SE_EXIT) end
   local s = Link.session()
   local dest = s and (s.warpDestination or s.dynamicWarp)
-  return Link.warpToDest(ctx, adapters, dest)
+  return Link.warpToDest(ctx, adapters, dest, "warpsilent")
 end
 
 function Link.vmCtx()
@@ -504,9 +509,11 @@ function Link.localTrainerCard()
     hofDebutSeconds = s.hofDebutSeconds,
     linkBattleWins = card.linkBattleWins or stats.linkBattleWins,
     linkBattleLosses = card.linkBattleLosses or stats.linkBattleLosses,
-    pokemonTrades = card.pokemonTrades or stats.pokemonTrades,
-    berryCrushPoints = card.berryCrushPoints,
-    unionRoomNum = card.unionRoomNum,
+    -- pokefirered/src/trainer_card.c:824
+    pokemonTrades = math.min(0xFFFF, tonumber(stats[21]) or 0),
+    -- pokefirered/src/trainer_card.c:876
+    berryCrushPoints = math.min(0xFFFF, tonumber(stats[51]) or 0),
+    unionRoomNum = math.min(0xFFFF, tonumber(stats[50]) or 0),
     badges = card.badges,
     dex = s.dex,
     store = s.store,

@@ -767,9 +767,10 @@ local function run_step(step)
           ball.frame = 0
           ball.rot = 0
           ball.side = "player"
-          ball.x = 48
-          ball.y = 70
-          ball._sx, ball._sy = 48, 70
+          local ox, oy = require("src.core.game3.battle.pokedude").sendOutOrigin(st)
+          ball.x = ox
+          ball.y = oy
+          ball._sx, ball._sy = ox, oy
           ball._tx, ball._ty = m.tx, m.ty
           if not threwSe then
             threwSe = true

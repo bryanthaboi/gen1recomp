@@ -403,7 +403,7 @@ end
 H.CheckPartyFullAfterContest = function(vm)
   local Breeding = require("src.core.gen2.Breeding")
   local result, mon =
-    BugContest.collectCaughtMon(contestSave(vm), Breeding.PARTY_SIZE)
+    BugContest.collectCaughtMon(contestSave(vm), Breeding.PARTY_SIZE, nil, data(vm))
   -- GiveANickname_YesNo runs on both contest arms, party and box
   if mon and result ~= BugContest.NO_CATCH then
     Specials.askNickname(vm, mon)

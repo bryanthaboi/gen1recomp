@@ -346,6 +346,26 @@ check(not Screen.isOpen(),
   "CloseResultsBoard read VAR_TEMP_1 back and closed it (pokefirered/src/trainer_tower.c:926)")
 Task.clear()
 
+print("[test] 13. pokefirered/src/trainer_tower.c:960 the encounter song leaves the floor song alone")
+do
+  local realAudio = package.loaded["src.core.game3.audio"]
+  local calls = {}
+  local stubAudio = {
+    _mapSong = 300,
+    playSong = function(id) calls[#calls + 1] = { "playSong", id } end,
+  }
+  stubAudio.playMapSong = function(id)
+    calls[#calls + 1] = { "playMapSong", id }
+    stubAudio._mapSong = id
+  end
+  package.loaded["src.core.game3.audio"] = stubAudio
+  towerFunc(ctx, Tower.FUNC.ENCOUNTER_MUSIC)
+  package.loaded["src.core.game3.audio"] = realAudio
+  eq(calls[1] and calls[1][1], "playSong", "PlayNewMapMusic goes through Audio.playSong")
+  eq(calls[1] and calls[1][2], Tower.MUS_ENCOUNTER_BOY, "with no floor trainers it plays MUS_ENCOUNTER_BOY")
+  eq(stubAudio._mapSong, 300, "the location song BattleBridge restores after the battle is untouched")
+end
+
 if failed > 0 then
   print(string.format("[FAIL] %d check(s) failed", failed))
   os.exit(1)

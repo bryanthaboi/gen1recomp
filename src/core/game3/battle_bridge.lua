@@ -216,6 +216,10 @@ local function writeback(session, battleParty, remap, result, save, opts)
         spDef = src.spDef or src.spd,
         _allowMoveRewrite = true,
       })
+      -- pokefirered/src/battle_controller_player.c:1909
+      local held = src.item or src.heldItem
+      if held == 0 or held == "" then held = nil end
+      mon.item, mon.heldItem = held, held
     end
   end
   local lost = (result == "lose" or result == "whiteout" or result == "blackout")
@@ -303,6 +307,14 @@ function BattleBridge.start(mod, game, foe, opts)
       session.battleOutcome = Natives.outcome_to_code(result or "win")
     end
     writeback(session, battleParty, remap, result, save, opts)
+    if opts.roamer or (foe and foe.roamer) then
+      local okR, Roamer = pcall(require, "src.core.game3.roamer")
+      if okR and Roamer and Roamer.onBattleEnd then
+        local st = package.loaded["src.core.game3.battle"] and package.loaded["src.core.game3.battle"].getState and package.loaded["src.core.game3.battle"].getState()
+        local enemyMon = (st and st.enemy and st.enemy.mon) or foe
+        Roamer.onBattleEnd(session, enemyMon, result, st and st.endReason)
+      end
+    end
     -- pokefirered/src/battle_main.c:3861
     if ModRuntime.wants("battle.ended") then
       local B = package.loaded["src.core.game3.battle"]

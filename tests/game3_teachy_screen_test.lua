@@ -45,9 +45,20 @@ local function newSession()
   return { modData = {}, bag = Bag.new(), party = {}, name = "RED" }
 end
 
+local Fade = require("src.ui.game3.fade")
+local Audio = require("src.core.game3.audio")
+
+local function settleFade()
+  for _ = 1, 40 do
+    Fade.tick(1 / 60)
+    Ui.update(1 / 60)
+  end
+end
+
 local function openWith(session)
   Stack.clear()
   Ui.show(session, session.bag)
+  settleFade()
 end
 
 local function ticks(n)
@@ -84,10 +95,14 @@ do
   eq(Ui.cursor, 5, "the cursor stops on CANCEL")
   -- pokefirered/src/teachy_tv.c:734 case -2
   Ui.handleInput(press("a"))
-  check(not Ui.isOpen(), "A on CANCEL closes the TV")
+  -- pokefirered/src/teachy_tv.c:689 TeachyTvQuitBeginFade
+  check(Ui.isOpen() and Ui.closing, "A on CANCEL starts the quit fade")
+  settleFade()
+  check(not Ui.isOpen(), "A on CANCEL closes the TV once the fade ends")
 
   openWith(s)
   Ui.handleInput(press("b"))
+  settleFade()
   check(not Ui.isOpen(), "B closes the TV")
 
   Bag.add(s.bag, TeachyTv.ITEM_TM_CASE, 1)
@@ -111,8 +126,11 @@ do
   -- pokefirered/src/teachy_tv.c:759 data[2] > 63
   ticks(T.TITLE - 1)
   check(not Ui.title, "the title card is not up on frame 63")
+  check(Ui.static ~= nil, "the static runs under the transition")
   ticks(1)
   check(Ui.title, "the title card is up on frame 64")
+  -- pokefirered/src/teachy_tv.c:761 CopyToBgTilemapBufferRect_ChangePalette
+  check(Ui.static == nil, "the title map replaces the static on BG2")
   eq(Ui.stepName(), "clear_bg2", "the cluster moved to the clear step")
   check(Ui.hostVisible, "the POKé DUDE is on screen")
   eq(Ui.hostX, T.DUDE_X_START, "he starts at x=8")
@@ -164,9 +182,27 @@ do
   eq(Ui.stepName(), "battle_or_fade", "then the demonstration")
   check(TeachyTv.endsInBattle(S.CATCHING), "the catching lesson ends in a battle")
 
+  local handed
+  TeachyTv.onDemonstration = function(_, script, opts)
+    handed = { script = script, transition = opts.transition }
+    -- pokefirered/include/constants/songs.h:306 MUS_VS_WILD
+    Audio.playSong(298)
+    opts.onDone(1)
+    return true
+  end
   ticks(1)
+  TeachyTv.onDemonstration = nil
+  eq(handed and handed.script, S.CATCHING, "the catching battle was handed off")
+  eq(handed and handed.transition, TeachyTv.TRANSITION.SLICE, "behind B_TRANSITION_SLICE")
   -- pokefirered/src/teachy_tv.c:1100 sWhereToReturnToFromBattle
-  eq(Ui.stepName(), "text_printer_outro", "with no pokedude battle it resumes at step 12")
+  eq(Ui.stepName(), "text_printer_outro", "the battle resumes the cluster at step 12")
+  -- pokefirered/src/teachy_tv.c:1214 PlayNewMapMusic(MUS_FOLLOW_ME)
+  eq(Audio.currentSong() and Audio.currentSong().id, 272, "MUS_FOLLOW_ME plays again after the battle")
+  -- pokefirered/src/teachy_tv.c:660 ChangeBgX(3, 0x3000, 1)
+  eq(Ui.bg3X, 32, "BG3 X is reset then moved 48 px right")
+  eq(Ui.bg3Y, -8, "BG3 Y is reset then moved 48 px up")
+  eq(Ui.grassLo, 3, "grassAnimCounterLo is 0 + 3")
+  eq(Ui.grassHi, 0, "grassAnimCounterHi is 3 - 3")
   ticks(2)
   eq(Ui.phase, "outro", "CatchingScript2 is printing")
   for _ = 1, #Ui.pages() - 1 do Ui.handleInput(press("a")) end
@@ -183,8 +219,11 @@ do
   ticks(T.END_GRAPHIC - 1)
   check(not Ui.endCard, "the end card is gone after 127 frames")
   eq(Ui.stepName(), "end", "the cluster is on TTVcmd_End")
+  check(Ui.static == nil, "no static while the lesson plays")
   ticks(T.END)
   eq(Ui.state, "list", "the lesson returns to the list")
+  -- pokefirered/src/teachy_tv.c:1048 TeachyTvBg2AnimController
+  check(Ui.static ~= nil, "TTVcmd_End brings the static back")
   check(Ui.isOpen(), "the TV is still open")
   check(TeachyTv.hasWatched(s, S.CATCHING), "the lesson is marked watched")
   Ui.handleInput(press("b"))
@@ -365,14 +404,19 @@ do
   Stack.clear()
   BagMenu.show(s.bag, { session = s })
   Ui.show(s, s.bag)
+  settleFade()
   Ui.handleInput(press("select"))
+  settleFade()
   check(Ui.isOpen(), "SELECT is ignored when CB2_BagMenuFromStartMenu is the callback")
   Ui.handleInput(press("b"))
+  settleFade()
   BagMenu.close()
 
   Stack.clear()
   Ui.show(s, s.bag)
+  settleFade()
   Ui.handleInput(press("select"))
+  settleFade()
   check(not Ui.isOpen(), "SELECT quits when the TV came from the field")
   Stack.clear()
 end
@@ -401,7 +445,10 @@ do
   -- pokefirered/src/teachy_tv.c:981 ChangeBgX(3, 0x100, 1)
   eq(Ui.bg3X, x0 + 16, "BG3 scrolled right one pixel a frame")
   eq(Ui.grassLo, lo0 + 1, "the low grass counter stepped once")
+  check(#Ui.grass > 0, "tufts are out while he walks")
   Ui.handleInput(press("b"))
+  -- pokefirered/src/teachy_tv.c:813 grassAnimDisabled = 1
+  eq(#Ui.grass, 0, "B destroys the tufts at once")
   ticks(T.END + 2)
   -- pokefirered/src/teachy_tv.c:1059 ChangeBgX(3, 0x0, 0)
   eq(Ui.bg3X, -16, "TTVcmd_End puts BG3 back at its start offset")
@@ -421,6 +468,7 @@ do
   Bag.add(s.bag, 290, 1)
   Stack.clear()
   Ui.show(s, s.bag)
+  settleFade()
   for _ = 1, 4 do Ui.handleInput(press("down")) end
   eq(Ui.rows()[Ui.cursor].index, S.TMS, "the TM lesson is selected")
   Ui.handleInput(press("a"))
@@ -477,6 +525,7 @@ do
   Bag.add(s.bag, 290, 1)
   Stack.clear()
   Ui.show(s, s.bag)
+  settleFade()
   for _ = 1, 4 do Ui.handleInput(press("down")) end
   Ui.handleInput(press("a"))
   for _ = 1, 3000 do
@@ -491,6 +540,53 @@ do
   eq(Bag.get(s.bag, 290), 1, "the player's TM came back on the abort path")
   -- pokefirered/src/tm_case.c:1361 SetTeachyTvControllerModeToResume
   eq(Ui.state, "list", "and the TV is back on its lesson list")
+  Stack.clear()
+  Ui.open = false
+end
+
+print("[test] 12. pokefirered/src/sound.c:129 PlayNewMapMusic leaves the location song alone")
+do
+  local s = newSession()
+  -- pokefirered/include/constants/songs.h:308 MUS_PALLET
+  Audio._mapSong = 300
+  Audio.playSong(300)
+  openWith(s)
+  eq(Audio.currentSong() and Audio.currentSong().id, 346, "MUS_TEACHY_TV_MENU plays on the list")
+  eq(Audio._mapSong, 300, "the location song is still MUS_PALLET")
+  Ui.handleInput(press("a"))
+  ticks(T.TITLE)
+  eq(Audio.currentSong() and Audio.currentSong().id, 272, "MUS_FOLLOW_ME plays under the title")
+  eq(Audio._mapSong, 300, "and the location song is untouched")
+  Ui.handleInput(press("b"))
+  ticks(T.END + 2)
+  eq(Ui.state, "list", "back on the list")
+  Ui.handleInput(press("b"))
+  settleFade()
+  check(not Ui.isOpen(), "B closed the TV")
+  -- pokefirered/src/teachy_tv.c:705 Overworld_PlaySpecialMapMusic
+  eq(Audio.currentSong() and Audio.currentSong().id, 300, "the field song comes back on close")
+  eq(Audio._mapSong, 300, "the location song never changed")
+  Audio._mapSong = nil
+  Stack.clear()
+end
+
+print("[test] 13. pokefirered/src/data/field_effects/field_effect_objects.h:73 sAnim_TallGrass")
+do
+  local want = { 1, 2, 3, 4, 0 }
+  for cmd = 0, 4 do
+    eq(Ui.grassFrame({ frames = cmd * 10 }), want[cmd + 1], "anim command " .. cmd .. " shows sheet frame")
+    eq(Ui.grassFrame({ frames = cmd * 10 + 9 }), want[cmd + 1], "for all ten frames of command " .. cmd)
+  end
+  eq(Ui.grassFrame({ frames = 400 }), 0, "an ended tuft holds the full frame 0")
+  -- pokefirered/src/teachy_tv.c:1120 SeekSpriteAnim(obj, 4)
+  local s = newSession()
+  openWith(s)
+  Ui.handleInput(press("a"))
+  Ui.resumeFromDemonstration(1)
+  local g = Ui.grass[1]
+  check(g ~= nil, "the post-battle tuft spawned under the dude")
+  eq(g and Ui.grassFrame(g), 0, "and it starts on the full tuft")
+  eq(g and g.split, false, "drawn whole in front of him")
   Stack.clear()
   Ui.open = false
 end

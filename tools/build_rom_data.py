@@ -1022,12 +1022,20 @@ def extract_battle_anims(
                             f"{name}: tile {tile['tile']} is out of range "
                             f"for tileset {row['tileset']}")
 
+    # engine/battle/animations.asm:2418
+    delta_symbol = _symbol(symbols, "FallingObjects_DeltaXs")
+    falling_delta_xs = {
+        index: value for index, value in enumerate(rom.bytes(
+            delta_symbol.bank, delta_symbol.address, 64))
+    }
+
     out = {
         "tilesheets": tilesheets,
         "baseCoords": base_coords,
         "frameBlocks": frame_blocks,
         "subanims": subanims,
         "moveAnims": move_anims,
+        "fallingDeltaXs": falling_delta_xs,
     }
     util.write_lua(
         os.path.join(out_dir, "battle_anims.lua"), out,

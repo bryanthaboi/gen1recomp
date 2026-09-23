@@ -119,6 +119,59 @@ TextIR.EXT_ARGS = {
   [0x13] = 1, [0x14] = 1,
 }
 
+local function ext_len(s, i)
+  return 2 + (TextIR.EXT_ARGS[s:byte(i + 1)] or 0)
+end
+
+-- src/text.c:670
+function TextIR.protectExt(s)
+  s = tostring(s or "")
+  if not s:find("\252", 1, true) then return s end
+  local out, i, n = {}, 1, #s
+  while i <= n do
+    local b = s:byte(i)
+    if b == 0xFC and i < n then
+      local last = math.min(n, i + ext_len(s, i) - 1)
+      local hex = {}
+      for k = i + 1, last do hex[#hex + 1] = string.format("%02X", s:byte(k)) end
+      out[#out + 1] = "\255" .. table.concat(hex) .. "\254"
+      i = last + 1
+    else
+      out[#out + 1] = string.char(b)
+      i = i + 1
+    end
+  end
+  return table.concat(out)
+end
+
+function TextIR.restoreExt(s)
+  return (tostring(s or ""):gsub("\255(%x+)\254", function(h)
+    return "\252" .. h:gsub("%x%x", function(x) return string.char(tonumber(x, 16)) end)
+  end))
+end
+
+-- src/text.c:670
+function TextIR.splitPages(box, keepEmpty)
+  local s = tostring(box or "")
+  local pages, start, i, n = {}, 1, 1, #s
+  while i <= n do
+    local b = s:byte(i)
+    if b == 0xFC and i < n then
+      i = i + ext_len(s, i)
+    elseif b == 0x0C then
+      local page = s:sub(start, i - 1)
+      if keepEmpty or page ~= "" then pages[#pages + 1] = page end
+      i = i + 1
+      start = i
+    else
+      i = i + 1
+    end
+  end
+  local page = s:sub(start)
+  if keepEmpty or page ~= "" then pages[#pages + 1] = page end
+  return pages
+end
+
 TextIR.TAG_NAMES = { PK = true, MN = true, PKMN = true }
 for _, name in pairs(TextIR.KEYGFX) do TextIR.TAG_NAMES[name] = true end
 for _, sym in pairs(TextIR.EXTRA_SYMBOL) do
@@ -283,7 +336,11 @@ function TextIR.fromAscii(s)
   local i = 1
   while i <= #s do
     local ch = s:sub(i, i)
-    if ch == "\\" and i < #s then
+    if ch == "\252" and i < #s then
+      local len = ext_len(s, i)
+      buf[#buf + 1] = s:sub(i, i + len - 1)
+      i = i + len
+    elseif ch == "\\" and i < #s then
       local n = s:sub(i + 1, i + 1)
       flush_text(out, buf); buf = {}
       if n == "n" then out[#out + 1] = { t = "nl" }
@@ -304,7 +361,7 @@ function TextIR.fromAscii(s)
       i = i + 1
     elseif ch == "{" then
       local j = s:find("}", i)
-      if not j then
+      if not j or s:find("\252", i, true) and s:find("\252", i, true) < j then
         buf[#buf + 1] = ch; i = i + 1
       else
         flush_text(out, buf); buf = {}
@@ -437,7 +494,8 @@ local function wrap_subline(lineStr, maxW)
   maxW = maxW or 208
   local okF, FrlgFont = pcall(require, "src.ui.game3.frlg_font")
   if okF and FrlgFont and FrlgFont.measure then
-    local curW = FrlgFont.measure(lineStr)
+    local function measure(str) return FrlgFont.measure(TextIR.restoreExt(str)) end
+    local curW = measure(lineStr)
     if curW <= maxW then
       return { lineStr }
     end
@@ -449,10 +507,10 @@ local function wrap_subline(lineStr, maxW)
     if #words == 0 then return { "" } end
     local out = {}
     local cur = words[1]
-    local curLineWidth = FrlgFont.measure(cur)
+    local curLineWidth = measure(cur)
     for i = 2, #words do
       local w = words[i]
-      local wW = FrlgFont.measure(w)
+      local wW = measure(w)
       if curLineWidth + spaceW + wW <= maxW then
         cur = cur .. " " .. w
         curLineWidth = curLineWidth + spaceW + wW
@@ -466,7 +524,8 @@ local function wrap_subline(lineStr, maxW)
     return out
   else
     local maxChars = math.floor(maxW / 6)
-    if #lineStr <= maxChars then return { lineStr } end
+    local function len(str) return #TextIR.restoreExt(str) end
+    if len(lineStr) <= maxChars then return { lineStr } end
     local words = {}
     for word in lineStr:gmatch("%S+") do words[#words + 1] = word end
     if #words == 0 then return { "" } end
@@ -474,7 +533,7 @@ local function wrap_subline(lineStr, maxW)
     local cur = words[1]
     for i = 2, #words do
       local w = words[i]
-      if #cur + 1 + #w <= maxChars then
+      if len(cur) + 1 + len(w) <= maxChars then
         cur = cur .. " " .. w
       else
         out[#out + 1] = cur
@@ -514,7 +573,7 @@ function TextIR.toTextBox(ir, ctx)
 
   local splitLines = {}
   for _, row in ipairs(lines) do
-    local text = row.s or ""
+    local text = TextIR.protectExt(row.s)
     local hard = row.hard
     local sub = {}
     for line in (text .. "\n"):gmatch("(.-)\r?\n") do
@@ -553,8 +612,8 @@ function TextIR.toTextBox(ir, ctx)
       end
     end
   end
-  local s = table.concat(parts)
-  return s:gsub("^\f+", ""):gsub("\f+$", "")
+  local s = table.concat(parts):gsub("^\f+", ""):gsub("\f+$", "")
+  return TextIR.restoreExt(s)
 end
 
 return TextIR

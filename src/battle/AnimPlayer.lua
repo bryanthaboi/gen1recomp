@@ -297,15 +297,13 @@ local function waterDropletSteps()
   return steps
 end
 
--- AnimationFallingObjects (:2335): n objects fall 2px per 3-frame tick,
--- swaying via the delta-X table (index advances each tick, direction
--- flips past index 8), until object 1 reaches y=104.
+-- engine/battle/animations.asm:2335
 local FALLING_X = { 0x38,0x40,0x50,0x60,0x70,0x88,0x90,0x56,0x67,0x4A,
                     0x77,0x84,0x98,0x32,0x22,0x5C,0x6C,0x7D,0x8E,0x99 }
 local FALLING_M = { 0x00,0x84,0x06,0x81,0x02,0x88,0x01,0x83,0x05,0x89,
                     0x09,0x80,0x07,0x87,0x03,0x82,0x04,0x85,0x08,0x86 }
-local FALLING_DX = { [0]=0, 1, 3, 5, 7, 9, 11, 13, 15 }
-local function fallingObjectSteps(n, tile, obp)
+local function fallingObjectSteps(n, tile, obp, deltas)
+  assert(deltas, "battle_anims.fallingDeltaXs missing from the ROM cache")
   local objs = {}
   for i = 1, n do
     objs[i] = { y = (i == 1) and 0 or 8 * i, x = FALLING_X[i],
@@ -317,23 +315,21 @@ local function fallingObjectSteps(n, tile, obp)
     for i = 1, n do
       local o = objs[i]
       -- FallingObjects_UpdateMovementByte runs before the OAM update
-      local left = o.m >= 0x80
-      local idx = (o.m % 0x80) + 1
-      if idx == 9 then
-        left = not left
-        idx = 0
-      end
-      o.m = (left and 0x80 or 0) + idx
+      -- engine/battle/animations.asm:2421
+      local m = (o.m + 1) % 0x100
+      if m % 0x80 == 9 then m = (m >= 0x80) and 0 or 0x80 end
+      o.m = m
+      local left, idx = m >= 0x80, m % 0x80
       o.y = o.y + 2
       if o.y >= 112 then o.y = 160 end -- parked off-screen
-      local dx = FALLING_DX[idx]
+      -- engine/battle/animations.asm:2389
+      local dx = deltas[idx]
       o.x = left and wrap(o.x - dx) or wrap(o.x + dx)
       o.xf = left
       sprites[#sprites + 1] = { x = o.x, y = o.y, tile = tile, ts = 1,
                                 xf = o.xf, obp = obp }
     end
     steps[#steps + 1] = { dur = 3, sprites = sprites }
-    if #steps > 120 then break end -- safety; the asm exits at 52 ticks
   end
   return steps
 end
@@ -346,8 +342,12 @@ local EMITTERS = {
   SE_WATER_DROPLETS_EVERYWHERE = function() return waterDropletSteps() end,
   -- AnimationLeavesFalling runs under wAnimPalette ($f0 on SGB);
   -- petals keep the ambient $e4
-  SE_LEAVES_FALLING = function() return fallingObjectSteps(3, LEAF_TILE, "f0") end,
-  SE_PETALS_FALLING = function() return fallingObjectSteps(20, PETAL_TILE, "e4") end,
+  SE_LEAVES_FALLING = function(_, data)
+    return fallingObjectSteps(3, LEAF_TILE, "f0", data.fallingDeltaXs)
+  end,
+  SE_PETALS_FALLING = function(_, data)
+    return fallingObjectSteps(20, PETAL_TILE, "e4", data.fallingDeltaXs)
+  end,
 }
 
 -- home/copy2.asm:62 CopyVideoData -- 8 tiles a frame plus the tail frame
@@ -486,7 +486,7 @@ function AnimPlayer:start(moveId, attackerIsPlayer, opts)
       if emitter then
         -- the emitter routines write OAM from slot 0 and clean up after
         oam, oamMax = {}, 0
-        local emSteps, tailFx = emitter(attackerIsPlayer)
+        local emSteps, tailFx = emitter(attackerIsPlayer, self.data)
         events[#events + 1] = { effect = row.effect, frame = frame }
         for _, st in ipairs(emSteps) do
           emit(st.dur, st.sprites)

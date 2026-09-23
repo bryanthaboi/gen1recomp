@@ -121,6 +121,41 @@ return function(game)
     "3 REPEL moved from the PC to the bag")
   result(ItemPc.mode == "list", "back on the item list")
 
+  local PartyMenu = require("src.ui.game3.party_menu")
+  session.party = {}
+  require("src.core.game3.party").giveMon(session, 6, 36)
+  session.party[1].item = ITEM_REPEL
+  session.party[1].heldItem = ITEM_REPEL
+  U.tap(game, "a")
+  U.wait(6)
+  U.tap(game, "down")
+  U.wait(4)
+  U.tap(game, "a")
+  local partyOpen = waitFor(function() return PartyMenu.isOpen() and PartyMenu.mode == "give" end, 120)
+  result(partyOpen and st.items[3].qty == 2 and Bag.get(session.bag, ITEM_REPEL) == 4,
+    "GIVE opens the party menu without touching the PC or bag")
+  U.wait(20)
+  U.tap(game, "a")
+  U.wait(10)
+  if PartyMenu.mode == "message" then
+    U.shot(game, DIR .. "/item_pc_give_already_holding.png")
+    U.tap(game, "a")
+    U.wait(10)
+  end
+  -- pokefirered/src/party_menu.c:5468
+  result(PartyMenu.mode == "yesno", "mon already holding REPEL asks to switch")
+  U.shot(game, DIR .. "/item_pc_give_switch_yesno.png")
+  U.tap(game, "a")
+  U.wait(10)
+  result(PartyMenu.mode == "message", "Yes shows gText_SwitchedPkmnItem: " .. tostring(PartyMenu._messageText))
+  U.shot(game, DIR .. "/item_pc_give_switched.png")
+  U.tap(game, "a")
+  local back = waitFor(function() return not PartyMenu.isOpen() and ItemPc.mode == "list" end, 120)
+  -- pokefirered/src/party_menu.c:5563
+  result(back and st.items[3].id == ITEM_REPEL and st.items[3].qty == 1 and Bag.get(session.bag, ITEM_REPEL) == 5
+    and session.party[1].item == ITEM_REPEL, "switch from the PC: PC REPEL -1, bag REPEL +1")
+  U.wait(10)
+
   U.tap(game, "b")
   local closed = waitFor(function() return not ItemPc.isOpen() end, 120)
   U.wait(10)
@@ -158,6 +193,9 @@ return function(game)
   U.wait(6)
   result(BagMenu.mode == "deposit_done" and tostring(BagMenu._depositText):find("Deposited", 1, true) ~= nil,
     "gText_DepositedStrVar2StrVar1s: " .. tostring(BagMenu._depositText))
+  -- pokefirered/src/item_menu.c:1569
+  result(Bag.get(session.bag, ITEM_POTION) == 3 and st.items[1].qty == 3 and BagMenu.list()[BagMenu.cursor].id == ITEM_POTION,
+    "bag keeps POTION x3 under the Deposited box")
   U.shot(game, DIR .. "/item_pc_deposited.png")
   U.tap(game, "a")
   U.wait(6)

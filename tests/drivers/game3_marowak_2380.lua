@@ -72,7 +72,8 @@ return function(game)
   if not check(farewell and session.battleOutcome == 1, "marowak_win_reaches_farewell") then return finish() end
   U.wait(150)
   check(U.shot(game, DIR .. "/2380_marowak_mothers_spirit_farewell.png"), "marowak_farewell_screenshot_written")
-  for _ = 1, 300 do
+  local deadline = love.timer.getTime() + 8
+  while love.timer.getTime() < deadline do
     if not Message.isOpen() and not Space.vm:isRunning() then break end
     U.tap(game, "a")
     U.wait(8)

@@ -276,6 +276,20 @@ function Map.load(mod, game, mapId, opts)
     if okE and Encounters and Encounters.resetRateModifiers then
       Encounters.resetRateModifiers()
     end
+    local okR, Roamer = pcall(require, "src.core.game3.roamer")
+    if okR and Roamer and Roamer.move then
+      local okRt, Runtime = pcall(require, "src.core.game3.runtime")
+      local session = okRt and Runtime and Runtime.getSession and Runtime.getSession()
+      if session and session.roamer and session.roamer.active then
+        local fromMapId = Map._announced
+        if fromMapId ~= nil and fromMapId ~= mapId then
+          local moveReason = (opts.teleport or opts.fly or opts.whiteout) and "warp_random" or "map_transition"
+          Roamer.move(session, moveReason)
+        elseif opts.teleport or opts.fly or opts.whiteout then
+          Roamer.move(session, "warp_random")
+        end
+      end
+    end
   end
   local Ghosts = require("src.core.game3.ghosts")
   local fromMapId = Map._announced
@@ -439,6 +453,16 @@ function Map.load(mod, game, mapId, opts)
   if def then
     Objects.loadMap(game, mapId, def)
     Ghosts.adopt(mapId)
+  end
+  -- pokefirered/src/overworld.c:771 / :808 TryRegenerateRenewableHiddenItems
+  local okRen, Renewable = pcall(require, "src.core.game3.renewable_hidden_items")
+  if okRen and Renewable and Renewable.tryRegenerate then
+    Renewable.tryRegenerate(session, def and (def.group or (def.pair and def.pair[1])), def and (def.num or (def.pair and def.pair[2])), mapId)
+  end
+  -- pokefirered/src/overworld.c:809 SetCurrentAndNextWeather
+  if def and def.weather ~= nil then
+    local Weather = require("src.core.game3.weather")
+    Weather.apply(def.weather)
   end
   -- pokefirered/src/overworld.c:769
   -- pokefirered/src/overworld.c:806

@@ -11,6 +11,7 @@ local Options = require("src.core.game3.options")
 local Trig = require("src.core.game3.trig")
 local PartyView = require("src.core.game3.battle.party_view")
 local RomText = require("src.core.game3.rom_text")
+local TextIR = require("src.core.game3.scripting.text_ir")
 
 local BagMenu = {}
 
@@ -35,6 +36,8 @@ local LIST_H = 13
 local SE_BAG_CURSOR = 245
 local SE_BAG_POCKET = 246
 local SE_SELECT = 5
+local SE_USE_ITEM = 1
+local SE_GLASS_FLUTE = 110
 
 -- src/item_menu_icons.c:81
 local SHAKE_ROT = { -2, -4, -2, 0, 2, 4, 2, 0, -2, -4, -2, 0 }
@@ -232,7 +235,7 @@ end
 -- Close the bag and report the chosen item to the battle system.  partySlot is
 -- the real party index for party-targeted items, or nil otherwise.  Shared with
 -- the Berry Pouch so a berry picked there takes the same route as a potion.
-function BagMenu.battleUse(itemId, partySlot, moveSlot)
+function BagMenu.battleUse(itemId, partySlot, moveSlot, usedInMenu)
   begin_exit(true, function()
     save_pos()
     local cb = BagMenu._onBattleUse
@@ -241,36 +244,47 @@ function BagMenu.battleUse(itemId, partySlot, moveSlot)
     BagMenu._battle = false
     BagMenu._onBattleUse = nil
     Stack.pop("bag")
-    if cb then cb(itemId, partySlot, moveSlot) end
+    if cb then cb(itemId, partySlot, moveSlot, usedInMenu) end
   end)
 end
 
--- pokefirered/src/party_menu.c:4591 ItemUseCB_TryRestorePP
+local QUIET_ADAPTER = { say = function() end }
+
+-- pokefirered/src/party_menu.c:4464 ItemUseCB_MedicineStep
 function BagMenu.commitBattlePartyUse(st, itemId, realSlot, mon, beforeUse)
   local PartyMenu = require("src.ui.game3.party_menu")
   local BattleItems = require("src.core.game3.battle.items")
   local isPp = ItemsData.fieldUseKind(itemId) == "pp"
+  local function wont_have_effect(err)
+    se(5) -- pokefirered/src/party_menu.c:4490
+    PartyMenu.showMessage(err or RomText.box("gText_WontHaveEffect"), function()
+      PartyMenu.mode = "use"
+    end)
+  end
   local function commit(moveSlot)
     local canUse, err = BattleItems.canUseOn(st, itemId, realSlot, mon, moveSlot)
-    if not canUse then
-      se(5) -- pokefirered/src/party_menu.c:4490
-      PartyMenu.showMessage(err or RomText.box("gText_WontHaveEffect"), function()
-        PartyMenu.mode = "use"
-      end)
-      return
-    end
+    if not canUse then return wont_have_effect(err) end
+    local displaySlot = PartyMenu.cursor
+    local startHp = tonumber(mon and mon.hp) or 0
+    local result, _, _, _, text = BattleItems.use(st, QUIET_ADAPTER, BagMenu._bag, BagMenu._session,
+      itemId, realSlot, nil, moveSlot)
+    if result ~= "heal" then return wont_have_effect() end
     local function go()
       PartyMenu.close()
       if beforeUse then beforeUse() end
-      BagMenu.battleUse(itemId, realSlot, moveSlot)
+      BagMenu.battleUse(itemId, realSlot, moveSlot, true)
     end
-    if isPp then
-      -- pokefirered/src/party_menu.c:4696 TryUsePPItemInBattle
-      se(1)
-      PartyMenu.showMessage(ItemUse.ppItemText(mon, itemId, moveSlot or 1), go)
+    -- pokefirered/src/party_menu.c:4498
+    se(BattleItems.isFlute(itemId) and SE_GLASS_FLUTE or SE_USE_ITEM)
+    local endHp = tonumber(mon and mon.hp) or startHp
+    if endHp > startHp then
+      -- pokefirered/src/party_menu.c:4514 PartyMenuModifyHP
+      PartyMenu.startHpAnim(displaySlot, startHp, endHp, tonumber(mon.maxHp or mon.maxhp) or endHp, function()
+        PartyMenu.showMessage(text, go)
+      end)
       return
     end
-    go()
+    PartyMenu.showMessage(text, go)
   end
   if isPp and mon and not mon.isEgg and ItemUse.ppItemNeedsMove(itemId) then
     se(5)
@@ -317,6 +331,7 @@ function BagMenu.show(sessionBag, opts)
   load_pos(BagMenu.pocketIdx)
   clamp_cursor()
   BagMenu._switch = nil
+  BagMenu._statBoost = nil
   BagMenu._shake = nil
   BagMenu._arrowK = 0
   BagMenu._heldKey = nil
@@ -486,10 +501,7 @@ end
 
 -- src/text.c:796
 local function show_bag_message(text, onDone)
-  local pages = {}
-  for page in (tostring(text or "") .. "\f"):gsub("\\p", "\f"):gmatch("(.-)\f") do
-    if page ~= "" then pages[#pages + 1] = page end
-  end
+  local pages = TextIR.splitPages(TextIR.restoreExt((TextIR.protectExt(text):gsub("\\p", "\f"))))
   BagMenu.mode = "message"
   BagMenu._msgPages = #pages > 1 and pages or nil
   BagMenu._msgPage = 1
@@ -552,7 +564,10 @@ end
 local function try_deposit()
   local Storage = require("src.core.game3.storage")
   local row = BagMenu.list()[BagMenu.cursor]
-  if Storage.depositItem(BagMenu._session, BagMenu.currentPocket(), BagMenu.cursor, BagMenu.tossQty) then
+  if Storage.addPcItem(BagMenu._session, row.id, BagMenu.tossQty) then
+    require("src.core.game3.quest_log_recorder").event(BagMenu._session, "StoredItemInPC",
+      { ItemsData.displayName(row.id) })
+    BagMenu._depositPending = { id = row.id, qty = BagMenu.tossQty }
     BagMenu.mode = "deposit_done"
     BagMenu._depositText = RomText.box("gText_DepositedStrVar2StrVar1s",
       { stringVars = { row.name, tostring(BagMenu.tossQty) } })
@@ -620,6 +635,9 @@ local function handle_menu_input(input)
   if BagMenu.mode == "deposit_done" then
     if input:wasPressed("a") or input:wasPressed("b") then
       se(5)
+      local p = BagMenu._depositPending
+      BagMenu._depositPending = nil
+      if p then Bag.remove(BagMenu._bag, p.id, p.qty) end
       BagMenu.mode = "list"
       clamp_cursor()
     end
@@ -750,6 +768,18 @@ local function handle_menu_input(input)
                 clamp_cursor()
               end,
             })
+            return
+          elseif BattleItems.isStatBooster(row.id) then
+            local Battle = package.loaded["src.core.game3.battle"]
+            local Ui = package.loaded["src.core.game3.battle.ui"]
+            local st = Battle and Battle._st
+            local battlerId = (st and st.double and Ui and Ui._active) or 0
+            -- pokefirered/src/item_use.c:755 BattleUseFunc_StatBooster
+            if not (st and BattleItems.statBoosterHasEffect(st, row.id, battlerId)) then
+              show_bag_message(RomText.box("gText_WontHaveEffect"))
+              return
+            end
+            BagMenu._statBoost = { frames = 0, st = st, itemId = row.id, battlerId = battlerId }
             return
           else
             -- src/item_use.c:742
@@ -906,6 +936,7 @@ local function handle_menu_input(input)
           BagMenu.messageText = RomText.plain("gText_ThereIsNoPokemon")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
+          local giveSource = BagMenu._location == "party" and ItemUse.partyGiveSource(BagMenu._bag) or nil
           -- src/item_menu.c:1620
           open_submenu(function()
             PartyMenu.show(party, BagMenu._session and BagMenu._session.moveOverlay, {
@@ -913,6 +944,7 @@ local function handle_menu_input(input)
               bag = BagMenu._bag,
               item = row.id,
               mode = "give",
+              giveSource = giveSource,
               onClose = function()
                 BagMenu.mode = "list"
                 clamp_cursor()
@@ -1070,6 +1102,123 @@ local function animate_sprites()
   end
 end
 
+local NO_INPUT = { wasPressed = function() return false end }
+
+local function press_input(key)
+  return { wasPressed = function(_, k) return k == key end, isDown = function() return false end }
+end
+
+-- pokefirered/include/constants/items.h:7
+local ITEM_POKE_BALL = 4
+local ITEM_ANTIDOTE = 14
+
+BagMenu.POKEDUDE_PLANS = {
+  -- pokefirered/src/item_menu.c:2262 Task_Bag_TeachyTvCatching
+  catching = {
+    { at = 102, key = "right" }, { at = 204, key = "right" },
+    { at = 306, key = "down" }, { at = 408, key = "down" },
+    { at = 510, key = "up" }, { at = 612, key = "up" },
+    { at = 714, key = "a", item = ITEM_POKE_BALL },
+    { at = 816, exit = true },
+  },
+  -- pokefirered/src/item_menu.c:2316 Task_Bag_TeachyTvStatus
+  status = {
+    { at = 102, key = "down" },
+    { at = 204, key = "a", item = ITEM_ANTIDOTE },
+    { at = 306, exit = true },
+  },
+}
+
+local function finish_pokedude(itemId)
+  local pd = BagMenu._pokedude
+  if not pd then return end
+  BagMenu._pokedude = nil
+  BagMenu.close()
+  -- pokefirered/src/item_menu.c:2089 RestorePlayerBag
+  sessionState[pd.key] = pd.savedState
+  for k, v in pairs(pd.view or {}) do BagMenu[k] = v end
+  if itemId then
+    if pd.onItem then pd.onItem(itemId) end
+  elseif pd.onCancel then
+    pd.onCancel()
+  end
+end
+
+local function pokedude_tick(input)
+  local pd = BagMenu._pokedude
+  local inp = NO_INPUT
+  if not (pd.done or BagMenu._open or BagMenu._exit) then
+    if input and input.wasPressed and input:wasPressed("b") then
+      -- pokefirered/src/item_menu.c:2192 Task_BButtonInterruptTeachyTv
+      pd.done = true
+      begin_exit(true, function() finish_pokedude(nil) end)
+    else
+      local entry = pd.plan[pd.index]
+      if entry and pd.frames == entry.at then
+        pd.index = pd.index + 1
+        if entry.item then pd.item = entry.item end
+        if entry.exit then
+          se(SE_SELECT)
+          BagMenu.mode = "list"
+          pd.done = true
+          -- pokefirered/src/item_menu.c:2309 Task_Pokedude_FadeFromBag
+          begin_exit(true, function() finish_pokedude(pd.item) end)
+        else
+          inp = press_input(entry.key)
+        end
+      end
+      pd.frames = pd.frames + 1
+    end
+  end
+  track_held(inp)
+  if not run_transitions(inp) then
+    handle_menu_input(inp)
+  end
+  animate_sprites()
+end
+
+function BagMenu.isPokedude()
+  return BagMenu._pokedude ~= nil
+end
+
+-- pokefirered/src/item_menu.c:2162 InitPokedudeBag
+function BagMenu.showPokedude(sessionBag, opts)
+  opts = opts or {}
+  local plan = BagMenu.POKEDUDE_PLANS[opts.plan]
+  if not plan then error("no pokedude bag plan " .. tostring(opts.plan)) end
+  local key = opts.session or sessionBag
+  local saved = sessionState[key]
+  -- pokefirered/src/item_menu.c:2069 sBackupPlayerBag->pocket = gBagMenuState.pocket
+  local view = {}
+  for _, k in ipairs({ "pocketIdx", "cursor", "scroll", "mode", "actionCursor", "ACTIONS",
+    "_bag", "_session", "_battle", "_location", "_onClose", "_onBattleUse" }) do
+    view[k] = BagMenu[k]
+  end
+  -- pokefirered/src/item_menu.c:2079 ResetBagCursorPositions
+  sessionState[key] = { pocket = 1, pos = {} }
+  BagMenu.show(sessionBag, { session = opts.session, battle = true, pocket = "ITEMS" })
+  BagMenu._pokedude = {
+    plan = plan, index = 1, frames = 0, key = key, savedState = saved, view = view,
+    onItem = opts.onItem, onCancel = opts.onCancel,
+  }
+end
+
+-- pokefirered/src/item_use.c:766 Task_BattleUse_StatBooster_DelayAndPrint
+local function stat_boost_tick()
+  local sb = BagMenu._statBoost
+  sb.frames = sb.frames + 1
+  if sb.frames <= 7 then return end
+  BagMenu._statBoost = nil
+  local BattleItems = require("src.core.game3.battle.items")
+  se(SE_USE_ITEM)
+  local _, _, _, _, text = BattleItems.use(sb.st, QUIET_ADAPTER, BagMenu._bag, BagMenu._session,
+    sb.itemId, nil, sb.battlerId)
+  -- pokefirered/src/item_use.c:779 Task_BattleUse_StatBooster_WaitButton_ReturnToBattle
+  show_bag_message(text or "", function()
+    BagMenu.battleUse(sb.itemId, nil, nil, true)
+  end)
+end
+
 function BagMenu.handleInput(input)
   if BagMenu._battle then
     local top = Stack.top()
@@ -1077,14 +1226,14 @@ function BagMenu.handleInput(input)
       return top.mod.handleInput(input)
     end
   end
+  if BagMenu._pokedude then return pokedude_tick(input) end
+  if BagMenu._statBoost then return stat_boost_tick() end
   track_held(input)
   if not run_transitions(input) then
     handle_menu_input(input)
   end
   animate_sprites()
 end
-
-local NO_INPUT = { wasPressed = function() return false end }
 
 function BagMenu.settle()
   for _ = 1, 64 do

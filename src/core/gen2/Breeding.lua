@@ -881,7 +881,7 @@ function Breeding.withdraw(data, save, which)
   -- HealPartyMon: full HP, full PP, no status.
   rebuilt.hp = rebuilt.maxHp
   rebuilt.status = nil
-  for _, move in ipairs(rebuilt.moves) do move.pp = move.maxPp end
+  Mon.restoreAllPp(rebuilt, data)
   rebuilt.caughtLevel = mon.caughtLevel or rebuilt.caughtLevel
   -- RetrieveBreedmon copies the stored struct back whole, MON_CAUGHTDATA
   -- included -- engine/pokemon/move_mon.asm:805.

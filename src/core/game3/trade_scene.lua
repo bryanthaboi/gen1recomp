@@ -380,6 +380,8 @@ phase("wait_fade_out_to_gba_send", function(s)
   if s.frames < FADE_FRAMES then return false end
   s.veil = 1
   setText(s, "")
+  -- pokefirered/src/trade_scene.c:1404
+  s.monShadowBg = false
   -- pokefirered/src/trade_scene.c:1166
   s.bg2Zoom = ZOOM_MAX
   return true
@@ -654,6 +656,9 @@ phase("wait_fade_out_to_new_mon", function(s)
   if s.frames < FADE_FRAMES then return false end
   s.veil = 1
   s.gbaVisible = false
+  -- pokefirered/src/trade_scene.c:1670
+  s.monShadowBg = true
+  s.bg2hofs = 0
   return true
 end)
 
@@ -985,6 +990,8 @@ function TradeScene.play(offer, received, onDone, opts)
     phaseIndex = 1,
     -- pokefirered/src/trade_scene.c:1119
     bg2hofs = MON_SLIDE_HOFS,
+    -- pokefirered/src/trade_scene.c:1120
+    monShadowBg = true,
     bg1vofs = BG1_GBA_TOP,
     -- pokefirered/src/trade_scene.c:1172
     bg2Zoom = ZOOM_MAX,

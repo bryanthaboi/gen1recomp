@@ -114,7 +114,7 @@ def main():
             args.pokered, temp_dir, source_constants["moveOrder"])
         source_battle_anims = battle_anims.extract(
             args.pokered, temp_dir, source_assets,
-            source_constants["moveOrder"])
+            source_constants["moveOrder"], source_symbols)
         source_items = items.extract(args.pokered, temp_dir)
         source_types = source_type_chart(args.pokered, temp_dir)
         source_palettes, source_mon_palettes = palettes.extract(

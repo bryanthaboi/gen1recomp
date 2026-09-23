@@ -80,16 +80,6 @@ local function ppBonus(base, ups)
   return (base or 0) + (ups or 0) * math.floor((base or 0) / 5)
 end
 
--- engine/items/item_effects.asm:2736 ComputeMaxPP
-local function ppUpsFrom(base, maxPp)
-  base = base or 0
-  maxPp = tonumber(maxPp)
-  if not maxPp or base < 5 then return 0 end
-  local step = math.floor(base / 5)
-  if step <= 0 then return 0 end
-  local ups = math.floor((maxPp - base) / step + 0.5)
-  return math.max(0, math.min(3, ups))
-end
 
 local function entry(list, kind, text, extra)
   local row = extra or {}
@@ -275,9 +265,7 @@ function Convert.toGen1(mon, gen2Data, gen1Data)
 
   local moves = {}
   for _, mv in ipairs(mon.moves or {}) do
-    local base2 = gen2Data and gen2Data.moves and gen2Data.moves[mv.id]
-      and gen2Data.moves[mv.id].pp
-    local ups = ppUpsFrom(base2, mv.maxPp)
+    local ups = Mon.ppUpsOf(mv, gen2Data)
     local base1 = (gen1Data.moves[mv.id] and gen1Data.moves[mv.id].pp) or 0
     local maxPp = ppBonus(base1, ups)
     moves[#moves + 1] = {

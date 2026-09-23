@@ -36,9 +36,7 @@ print("[test] 2. the reader and the writer agree on one cache path")
 check(Multichoice.CACHE_REL == "data/generated/gba/" .. MultichoiceExtract.CACHE_REL,
   "Multichoice.CACHE_REL is the extractor's path (" .. tostring(Multichoice.CACHE_REL) .. ")")
 
-if os.getenv("POKEPORT_IDENTITY") then
-  print("[skip] fixture sections need a run without POKEPORT_IDENTITY: the identity cache is read first")
-else
+do
   print("[test] 3. a missing cache degrades to synthetic labels")
   Multichoice.LISTS = {}
   check(Multichoice.tryLoadCache() == false, "no cache means no lists")

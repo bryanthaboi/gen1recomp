@@ -1200,7 +1200,7 @@ function Adapters.host(mod, game, world)
       Fade.clear()
       EasyChat.open(opts)
     end,
-    warp = function(group, num, warpId, x, y, done)
+    warp = function(group, num, warpId, x, y, done, kind)
       local Versions = require("src.import.gba.versions")
       -- Prefer FR standalone ids; fall back to Sevii ferry maps.
       local mapId = (Versions.frMapFor and Versions.frMapFor(group, num))
@@ -1283,18 +1283,8 @@ function Adapters.host(mod, game, world)
         local Runtime = package.loaded["src.core.game3.runtime"]
         local mod = Runtime and Runtime._mod
         local game = resolveGame()
-        -- src/fldeff_flash.c:237 TryDoMapTransition
-        require("src.core.game3.warp").mapTransition(game, mapId, function()
-          -- src/overworld.c:2144
-          require("src.core.game3.player").setVisible(true)
-          Map.load(mod, game, mapId, {
-            x = cx,
-            y = cy,
-            facing = facing,
-            depth1Connections = true,
-          })
-          settle()
-        end)
+        -- src/scrcmd.c:719
+        require("src.core.game3.warp").scripted(mod, game, kind, mapId, cx, cy, facing, settle)
         return
       elseif w and w.warpToMapId then
         w:warpToMapId(mapId, cx, cy, facing)

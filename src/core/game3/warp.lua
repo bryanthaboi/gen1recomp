@@ -203,6 +203,8 @@ function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
   return true
 end
 
+local warpExitArrival
+
 --- Complete door exit sequence (walking DOWN off exit mat out to town)
 function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
   if Warp._busy then return false end
@@ -216,8 +218,6 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
   local Player = package.loaded["src.core.game3.player"] or require("src.core.game3.player")
   local Fade = require("src.ui.game3.fade")
   local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
-  local curMap = (game and game.currentMap) or destMap
-  local sound = Doors.getSoundForWarp(destMap, destX, destY, curMap, true)
   local toMode, fromMode = warpFadeModes(Fade, game, destMap)
 
   -- Step 1: Play exit sound (SE_EXIT)
@@ -227,7 +227,6 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
 
   -- Step 2: Screen fades to black
   Fade.begin(toMode, 1, function() Warp.mapTransition(game, destMap, function()
-    -- Step 3: Inside black, load the destination outdoor map at (destX, destY) facing down
     local Map = require("src.core.game3.map")
     Map.load(mod, game, destMap, {
       x = destX,
@@ -236,19 +235,11 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
       depth1Connections = true,
     })
     Player.setVisible(true)
-    -- Outdoor door is held fully open (Frame 2)
-    Doors.holdOpen(destMap, destX, destY, { destMap = curMap })
-
-    -- Step 4: Fade screen in from black showing player in the open doorway
-    Fade.begin(fromMode, 1, function()
-      -- Step 5: Force player to take 1 step DOWN out of the doorway onto (destX, destY + 1)
-      Player.forceStep("down", function()
-        -- Step 6: Player landed on (destX, destY + 1). Short beat, then door closes behind them!
-        Doors.closeAfterDelay(destMap, destX, destY, 8, { sound = sound, playSound = false }, function()
-          Warp._busy = false
-          releaseField(Field)
-        end)
-      end)
+    Doors.reset()
+    -- pokefirered/src/field_fadetransition.c:242
+    warpExitArrival(game, destMap, destX, destY, fromMode, function()
+      Warp._busy = false
+      releaseField(Field)
     end)
   end) end)
   return true
@@ -404,6 +395,47 @@ function Warp.startEscalator(mod, game, destMap, destX, destY, dir, approachDir,
   return true
 end
 
+-- pokefirered/src/field_fadetransition.c:922
+local function exitStairsArrival(game, destX, destY, fromMode, finish)
+  local Collision = require("src.core.game3.collision")
+  local Player = package.loaded["src.core.game3.player"] or require("src.core.game3.player")
+  local Fade = require("src.ui.game3.fade")
+  local Task = require("src.core.game3.task")
+  local destBeh = Collision.behavior(destX, destY)
+  local facing = Collision.stairArrivalFacing(destBeh)
+  if facing then
+    Player.facing = facing
+    Player.syncSavePosition(game)
+  end
+  local speedX, speedY = Collision.stairSpeeds(destBeh)
+  local offX, offY = speedX * 16, speedY * 16
+  local timer = 16
+  speedX, speedY = -speedX, -speedY
+  Player.walkInPlace = true
+  Player.walkInPlaceFast = true
+  Player.spriteXOffset = math.floor(offX / 32)
+  Player.spriteYOffset = math.floor(offY / 32)
+
+  Fade.begin(fromMode, 1, function() end)
+
+  Task.spawn(function()
+    if timer > 0 then
+      offX = offX + speedX
+      offY = offY + speedY
+      Player.spriteXOffset = math.floor(offX / 32)
+      Player.spriteYOffset = math.floor(offY / 32)
+      timer = timer - 1
+      return false
+    end
+    Player.spriteXOffset = 0
+    Player.spriteYOffset = 0
+    Player.walkInPlace = false
+    Player.walkInPlaceFast = false
+    finish()
+    return true
+  end)
+end
+
 -- pokefirered/src/field_fadetransition.c:794
 function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
   if Warp._busy then return false end
@@ -427,41 +459,8 @@ function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
     releaseField(Field)
   end
 
-  -- pokefirered/src/field_fadetransition.c:922
   local function exitStairs()
-    local destBeh = Collision.behavior(destX, destY)
-    local facing = Collision.stairArrivalFacing(destBeh)
-    if facing then
-      Player.facing = facing
-      Player.syncSavePosition(game)
-    end
-    local speedX, speedY = Collision.stairSpeeds(destBeh)
-    local offX, offY = speedX * 16, speedY * 16
-    local timer = 16
-    speedX, speedY = -speedX, -speedY
-    Player.walkInPlace = true
-    Player.walkInPlaceFast = true
-    Player.spriteXOffset = math.floor(offX / 32)
-    Player.spriteYOffset = math.floor(offY / 32)
-
-    Fade.begin(fromMode, 1, function() end)
-
-    Task.spawn(function()
-      if timer > 0 then
-        offX = offX + speedX
-        offY = offY + speedY
-        Player.spriteXOffset = math.floor(offX / 32)
-        Player.spriteYOffset = math.floor(offY / 32)
-        timer = timer - 1
-        return false
-      end
-      Player.spriteXOffset = 0
-      Player.spriteYOffset = 0
-      Player.walkInPlace = false
-      Player.walkInPlaceFast = false
-      finish()
-      return true
-    end)
+    exitStairsArrival(game, destX, destY, fromMode, finish)
   end
 
   local speedX, speedY = Collision.stairSpeeds(behavior)
@@ -760,6 +759,274 @@ function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY, opts)
     end) end)
     return true
   end)
+  return true
+end
+
+local PLAYER_SCREEN_Y = 72
+
+-- pokefirered/src/field_player_avatar.c:2143
+local function teleportRotate(Player, s)
+  if s.rot < 8 then
+    s.rot = s.rot + 1
+    if s.rot < 8 then return Player.facing end
+  end
+  Player.facing = SPIN_NEXT[Player.facing] or "down"
+  s.rot = 0
+  return Player.facing
+end
+
+-- pokefirered/src/field_player_avatar.c:2030
+local function teleportWarpOutAnim(Player, onDone)
+  local Task = require("src.core.game3.task")
+  local s = { rot = 0 }
+  local deltaY, ydef = 1, PLAYER_SCREEN_Y * 16
+  Task.spawn(function()
+    teleportRotate(Player, s)
+    ydef = ydef - deltaY
+    deltaY = deltaY + 3
+    local y = math.floor(ydef / 16)
+    Player.spriteYOffset = y - PLAYER_SCREEN_Y
+    if y < -32 then
+      onDone()
+      return true
+    end
+    return false
+  end)
+end
+
+-- pokefirered/src/field_player_avatar.c:2082
+local function teleportWarpInAnim(Player, finalFacing, onDone)
+  local Task = require("src.core.game3.task")
+  local s = { rot = 0 }
+  local state, landing = 1, 0
+  local deltaY, ydef = 116, -32 * 16
+  Player.facing = SPIN_NEXT[finalFacing] or "left"
+  Player.spriteYOffset = math.floor(ydef / 16) - PLAYER_SCREEN_Y
+  Player.setVisible(true)
+  Task.spawn(function()
+    if state == 1 then
+      teleportRotate(Player, s)
+      ydef = ydef + deltaY
+      deltaY = math.max(4, deltaY - 3)
+      local y = math.floor(ydef / 16)
+      if y >= PLAYER_SCREEN_Y then
+        Player.spriteYOffset = 0
+        state = 2
+      else
+        Player.spriteYOffset = y - PLAYER_SCREEN_Y
+      end
+    elseif state == 2 then
+      teleportRotate(Player, s)
+      landing = landing + 1
+      if landing > 8 then state = 3 end
+    elseif teleportRotate(Player, s) == finalFacing then
+      onDone()
+      return true
+    end
+    return false
+  end)
+end
+
+local function mapMusicOf(game, mapId)
+  local def = game and game.data and game.data.maps and game.data.maps[mapId]
+  local music = def and def.music
+  if not music then
+    local Audio = package.loaded["src.core.game3.audio"]
+    local idx = Audio and Audio._pack and Audio._pack.index and Audio._pack.index.mapSongs
+    music = idx and idx[mapId]
+  end
+  return tonumber(music)
+end
+
+-- pokefirered/src/overworld.c:1112
+local function tryFadeOutOldMapMusic(game, destMap)
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  local Flags = require("src.core.game3.scripting.flags")
+  if Space and Flags.getFlag(Space.store, nil, "FLAG_DONT_TRANSITION_MUSIC") then return 0 end
+  local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
+  -- pokefirered/src/sound.c:124
+  local cur = not Audio._fadeOut and Audio._currentSong and tonumber(Audio._currentSong.id) or 0
+  if mapMusicOf(game, destMap) == cur then return 0 end
+  -- pokefirered/src/overworld.c:1103
+  local mt = tonumber(mapTypeOf(game, destMap)) or 0
+  local speed = (mt == 8 or mt == 9) and 2 or 4
+  if not (Audio and Audio.fadeOutBgm) then return 0 end
+  Audio.fadeOutBgm(speed)
+  return 16 * speed
+end
+
+-- pokefirered/src/field_fadetransition.c:242
+function warpExitArrival(game, destMap, x, y, fromMode, finish)
+  local Collision = require("src.core.game3.collision")
+  local Player = package.loaded["src.core.game3.player"] or require("src.core.game3.player")
+  local Fade = require("src.ui.game3.fade")
+  local Task = require("src.core.game3.task")
+  local beh = Collision.behavior(x, y)
+  if Collision.isWarpDoor(beh) then
+    -- pokefirered/src/field_fadetransition.c:335
+    local Doors = require("src.core.game3.doors")
+    Player.facing = "down"
+    Player.setVisible(false)
+    Fade.begin(fromMode, 4, function() end)
+    local t, stepT, stepDone, closed = 0, nil, false, false
+    Task.spawn(function()
+      t = t + 1
+      if t == 25 then
+        Doors.open(destMap, x, y, {}, function()
+          Player.setVisible(true)
+          stepT = 0
+          if not Player.forceStep("down", function() stepDone = true end) then stepDone = true end
+        end)
+      end
+      if stepT then
+        stepT = stepT + 1
+        -- pokefirered/src/field_fadetransition.c:363
+        if stepT == 14 then
+          Doors.close(destMap, x, y, { playSound = false }, function() closed = true end)
+        end
+      end
+      if closed and stepDone and not Fade.isActive() then
+        finish()
+        return true
+      end
+      return false
+    end)
+    return
+  end
+  if Collision.isNonAnimDoor(beh) then
+    -- pokefirered/src/field_fadetransition.c:405
+    Player.setVisible(false)
+    Fade.begin(fromMode, 1, function()
+      Player.setVisible(true)
+      if not Player.forceStep(Player.facing, finish) then finish() end
+    end)
+    return
+  end
+  if Collision.stairArrivalFacing(beh) then
+    exitStairsArrival(game, x, y, fromMode, finish)
+    return
+  end
+  -- pokefirered/src/field_fadetransition.c:441
+  Fade.begin(fromMode, 1, finish)
+end
+
+-- pokefirered/src/scrcmd.c:719
+local SCRIPTED_KINDS = {
+  -- pokefirered/src/field_fadetransition.c:535
+  warp = { se = "SE_EXIT", music = true, fadeOut = true },
+  -- pokefirered/src/field_fadetransition.c:546
+  warpsilent = { music = true, fadeOut = true },
+  -- pokefirered/src/field_fadetransition.c:564
+  warpdoor = { door = true, music = true, fadeOut = true },
+  -- pokefirered/src/field_fadetransition.c:609
+  warpteleport = { spinOut = true, music = true, fadeOut = true, spinIn = true },
+  -- pokefirered/src/field_fadetransition.c:571
+  warpspinenter = { spinIn = true },
+  -- pokefirered/src/seagallop.c:316
+  seagallop = { fadeOut = true },
+}
+Warp.SCRIPTED_KINDS = SCRIPTED_KINDS
+
+function Warp.scripted(mod, game, kind, destMap, destX, destY, facing, onDone)
+  local spec = SCRIPTED_KINDS[kind or "warp"] or SCRIPTED_KINDS.warp
+  local Player = package.loaded["src.core.game3.player"] or require("src.core.game3.player")
+  local Fade = require("src.ui.game3.fade")
+  local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
+  local SE = require("src.core.game3.se_ids")
+  local Doors = require("src.core.game3.doors")
+  local Task = require("src.core.game3.task")
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
+  -- pokefirered/src/field_player_avatar.c:2017
+  local savedFacing = Player.facing or "down"
+  Warp._busy = true
+
+  local function playSe(id)
+    if id and Audio and Audio.playSe then pcall(function() Audio.playSe(id) end) end
+  end
+
+  local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
+
+  local function finish()
+    Warp._busy = false
+    Field._fieldCallback = false
+    if onDone then onDone() end
+  end
+
+  local function arrive()
+    -- pokefirered/src/field_fadetransition.c:542
+    Field._fieldCallback = true
+    Warp.mapTransition(game, destMap, function()
+      -- pokefirered/src/overworld.c:2144
+      Player.setVisible(true)
+      Player.spriteYOffset = 0
+      local Map = require("src.core.game3.map")
+      local arrivalFacing = facing or savedFacing
+      if not spec.spinIn then
+        -- pokefirered/src/scrcmd.c:729
+        arrivalFacing = require("src.core.game3.collision").destArrivalFacing(game, destMap, destX, destY, "down")
+      end
+      Map.load(mod, game, destMap, {
+        x = destX,
+        y = destY,
+        facing = arrivalFacing,
+        depth1Connections = true,
+      })
+      Doors.reset()
+      if spec.spinIn then
+        -- pokefirered/src/field_fadetransition.c:307
+        local faded, landed = false, false
+        Fade.begin(fromMode, 1, function() faded = true end)
+        playSe(SE.SE_WARP_OUT)
+        teleportWarpInAnim(Player, savedFacing, function() landed = true end)
+        Task.spawn(function()
+          if not (faded and landed) then return false end
+          finish()
+          return true
+        end)
+        return
+      end
+      warpExitArrival(game, destMap, destX, destY, fromMode, finish)
+    end)
+  end
+
+  -- pokefirered/src/field_fadetransition.c:690
+  local function fadeOut()
+    local musicFrames = spec.music and tryFadeOutOldMapMusic(game, destMap) or 0
+    local covered = not Fade.isActive() and (tonumber(Fade.t) or 0) >= 16
+    local faded = covered or not spec.fadeOut
+    if not faded then
+      Fade.begin(toMode, 1, function() faded = true end)
+    end
+    if spec.se then playSe(SE[spec.se]) end
+    Task.spawn(function(t)
+      if not faded then return false end
+      if t.frames < musicFrames and Audio._fadeOut then return false end
+      arrive()
+      return true
+    end)
+  end
+
+  if spec.door then
+    -- pokefirered/src/field_fadetransition.c:743
+    local Map = package.loaded["src.core.game3.map"]
+    local curMap = Map and Map.current
+    local px, py = tonumber(Player.cellX) or 0, tonumber(Player.cellY) or 0
+    Doors.open(curMap, px, py - 1, { destMap = destMap }, function()
+      local function closeDoor()
+        Player.setVisible(false)
+        Doors.close(curMap, px, py - 1, { playSound = false }, fadeOut)
+      end
+      if not Player.forceStep("up", closeDoor) then closeDoor() end
+    end)
+  elseif spec.spinOut then
+    -- pokefirered/src/field_fadetransition.c:712
+    playSe(SE.SE_WARP_IN)
+    teleportWarpOutAnim(Player, fadeOut)
+  elseif spec.fadeOut then
+    fadeOut()
+  else
+    arrive()
+  end
   return true
 end
 

@@ -111,7 +111,40 @@ return function(game)
     return s and s.anim and s.anim.openState >= 12
   end, 200)
   result(whiteFade, "the map fades in from white after the slide")
-  U.still(game, DIR .. "/rm_open_white_fade.png")
+  -- src/region_map.c:2440 SetMapEdgeInvisibility
+  local edgesFreed = waitFor(function()
+    local s = state()
+    if not (s and s.anim and s.anim.openState >= 13) then return false end
+    for _, e in ipairs(s.edges or {}) do
+      if e.visible then return false end
+    end
+    return true
+  end, 200)
+  result(edgesFreed, "the edge sprites are gone once the white fade ends")
+  local fadePath = DIR .. "/rm_open_white_fade.png"
+  U.still(game, fadePath)
+  do
+    local f = io.open(fadePath, "rb")
+    local bytes = f and f:read("*a")
+    if f then f:close() end
+    local ok, img = pcall(function()
+      return love.image.newImageData(love.filesystem.newFileData(bytes, "rm_open_white_fade.png"))
+    end)
+    if ok and img then
+      local w, h = img:getDimensions()
+      local scale = math.floor(math.min(w / 240, h / 160))
+      local ox, oy = math.floor((w - 240 * scale) / 2), math.floor((h - 160 * scale) / 2)
+      local gx, gy = 7, 134
+      local r, g, b = img:getPixel(ox + gx * scale + 1, oy + gy * scale + 1)
+      r, g, b = math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)
+      print(string.format("[driver] frame edge pixel at %d,%d = %d,%d,%d", gx, gy, r, g, b))
+      -- src/region_map.c:963 RegionMap_DarkenPalette 95
+      result(math.abs(r - 230) <= 6 and math.abs(g - 189) <= 6 and math.abs(b - 41) <= 6,
+        string.format("the frame edge is the 95%% tinted yellow (%d,%d,%d ~ 230,189,41)", r, g, b))
+    else
+      result(false, "read back rm_open_white_fade.png")
+    end
+  end
 
   if not result(settle(), "the Town Map reached its input state") then return finish() end
   result(RegionMap.state().fromField == false, "opened from the BAG, so SELECT will not close it")
@@ -185,7 +218,15 @@ return function(game)
   result(state().selectedRegion == 1, "the map switched to SEVII 1-2-3")
   U.still(game, DIR .. "/rm_sevii123_switched.png")
 
+  result(state().palTinted == true, "the open Town Map draws bank 2 at 95%")
   U.tap(game, "b")
+  -- src/region_map.c:2572
+  local untinted = waitFor(function()
+    local s = state()
+    return s and s.anim and s.anim.closeState == 5 and s.anim.blendY == 1
+  end, 120)
+  result(untinted and state().palTinted == false, "close state 2 reloads sRegionMap_Pal untinted")
+  U.still(game, DIR .. "/rm_close_untinted.png")
   local closing = waitFor(function()
     local s = state()
     return s and s.anim and s.anim.closeState == 7 and s.anim.moveState == 6

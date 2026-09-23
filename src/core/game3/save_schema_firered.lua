@@ -71,6 +71,61 @@ local function reset_state_on_continue(session)
   end
 end
 
+-- pokefirered/include/save_location.h:5
+local CONTINUE_GAME_WARP = 0x01
+-- pokefirered/data/maps/PokemonLeague_HallOfFame/scripts.inc:40
+local HALL_OF_FAME_MAP = "FR_POKEMON_LEAGUE_HALL_OF_FAME"
+
+-- pokefirered/src/overworld.c:1706 CB2_ContinueSavedGame
+local function use_continue_game_warp(session, mounted)
+  local Bit = require("bit")
+  local f = tonumber(session.specialSaveWarpFlags) or 0
+  local w = session.continueGameWarp
+  if Bit.band(f, CONTINUE_GAME_WARP) ~= 0 and type(w) == "table" and type(w.map) == "string" then
+    session.specialSaveWarpFlags = Bit.band(f, Bit.bnot(CONTINUE_GAME_WARP))
+    session.map, session.x, session.y, session.facing = w.map, tonumber(w.x), tonumber(w.y), "down"
+    return
+  end
+  session._continueWarpDeferred = nil
+  if session.map == HALL_OF_FAME_MAP then
+    local Field = require("src.core.game3.field")
+    if not mounted and not Field.flyDestinationsMounted() then
+      session._continueWarpDeferred = true
+      return
+    end
+    -- pokefirered/src/post_battle_event_funcs.c:33
+    local dest = assert(Field.flyDestination("MAPSEC_PALLET_TOWN"),
+      "no heal location for MAPSEC_PALLET_TOWN")
+    session.map, session.x, session.y, session.facing = dest.map, dest.x, dest.y, "down"
+  end
+end
+
+function Schema.useContinueGameWarp(session)
+  return use_continue_game_warp(session, true)
+end
+
+-- pokefirered/include/constants/map_groups.h:9
+local LINK_ROOMS = {
+  FR_BATTLE_COLOSSEUM_2P = true,
+  FR_TRADE_CENTER = true,
+  FR_RECORD_CORNER = true,
+  FR_BATTLE_COLOSSEUM_4P = true,
+  FR_UNION_ROOM = true,
+}
+
+-- pokefirered/src/load_save.c:149 SetContinueGameWarpStatusToDynamicWarp
+local function save_warp_fields(session)
+  local f = tonumber(session.specialSaveWarpFlags) or 0
+  local w = session.continueGameWarp
+  local dw = session.dynamicWarp
+  if LINK_ROOMS[session.map] and type(dw) == "table" and type(dw.map) == "string"
+      and tonumber(dw.x) and tonumber(dw.y) then
+    -- pokefirered/src/overworld.c:701 SetContinueGameWarpToDynamicWarp
+    return require("bit").bor(f, CONTINUE_GAME_WARP), { map = dw.map, x = tonumber(dw.x), y = tonumber(dw.y) }
+  end
+  return f, w
+end
+
 -- pokefirered/include/constants/region_map_sections.h:211 KANTO_MAPSEC_START
 local MAPSEC_PALLET_TOWN = 88
 
@@ -162,6 +217,7 @@ function Schema.newGame(opts)
     secretId = nil,
     rng = nil,
     vsSeeker = { steps = 0, charging = 0, rematches = {} },
+    roamer = nil,
   }
   -- pret new_game.c: SeedWildEncounterRng(Random()) after title SeedRngAndSetTrainerId.
   local Rng = require("src.core.game3.rng")
@@ -200,6 +256,7 @@ function Schema.toSaveTable(session)
   Options.ensure(session)
   local Rng = require("src.core.game3.rng")
   Rng.captureToSession(session)
+  local warpFlags, continueWarp = save_warp_fields(session)
   return {
     schemaVersion = session.schemaVersion or Schema.VERSION,
     engine = "game3",
@@ -237,6 +294,10 @@ function Schema.toSaveTable(session)
     -- pokefirered/include/global.h:764
     dynamicWarp = session.dynamicWarp,
     escapeWarp = session.escapeWarp,
+    continueGameWarp = continueWarp,
+    specialSaveWarpFlags = warpFlags,
+    -- pokefirered/include/global.h:348
+    gcnLinkFlags = tonumber(session.gcnLinkFlags) or 0,
     -- pokefirered/include/global.h:770
     flashLevel = tonumber(session.flashLevel),
     move_overlay = session.move_overlay or {},
@@ -245,6 +306,7 @@ function Schema.toSaveTable(session)
     secretId = session.secretId,
     rng = session.rng,
     vsSeeker = session.vsSeeker,
+    roamer = session.roamer,
     -- GAME_STAT_* counters: slot-machine jackpots, hatched eggs, link W/L/D,
     -- link trades, and the sticker-man brags that read them.
     gameStats = session.gameStats or {},
@@ -341,6 +403,10 @@ function Schema.fromSaveTable(save)
     -- pokefirered/include/global.h:764
     dynamicWarp = type(save.dynamicWarp) == "table" and save.dynamicWarp or nil,
     escapeWarp = type(save.escapeWarp) == "table" and save.escapeWarp or nil,
+    continueGameWarp = type(save.continueGameWarp) == "table" and save.continueGameWarp or nil,
+    specialSaveWarpFlags = tonumber(save.specialSaveWarpFlags) or 0,
+    -- pokefirered/include/global.h:348
+    gcnLinkFlags = tonumber(save.gcnLinkFlags) or 0,
     -- pokefirered/include/global.h:770
     flashLevel = tonumber(save.flashLevel),
     move_overlay = save.move_overlay or {},
@@ -350,6 +416,7 @@ function Schema.fromSaveTable(save)
     playerId = save.trainerId,
     rng = save.rng,
     vsSeeker = type(save.vsSeeker) == "table" and save.vsSeeker or { steps = 0, charging = 0, rematches = {} },
+    roamer = type(save.roamer) == "table" and save.roamer or nil,
     -- Additive: a save written before this key exists loads as an empty table.
     gameStats = type(save.gameStats) == "table" and save.gameStats or {},
     -- Additive: older saves load these as empty tables.
@@ -370,16 +437,34 @@ function Schema.fromSaveTable(save)
   }
   require("src.core.game3.save_mon").each(session, require("src.core.game3.save_mon").normalize)
   reset_state_on_continue(session)
+  use_continue_game_warp(session)
   Schema.ensureMonBalls(session)
   Schema.repairOwnMons(session)
   local Flags = require("src.core.game3.scripting.flags")
   Flags.repairSaveState(session)
+  Schema.repairRoamer(session)
   if type(save.options) == "table" then
     Options.bind(session, save.options)
   else
     Options.ensure(session)
   end
   return session
+end
+
+function Schema.repairRoamer(session)
+  if not session or session.roamer then return end
+  local FLAG_SYS_CAN_LINK_WITH_RS = 0x844
+  local VAR_MAP_SCENE_ONE_ISLAND_POKEMON_CENTER_1F = 0x4076
+  local VAR_STARTER_MON = 0x4031
+  local flags = session.flags or {}
+  local hasLink = (flags[FLAG_SYS_CAN_LINK_WITH_RS] == true) or (flags["FLAG_SYS_CAN_LINK_WITH_RS"] == true)
+  local vars = session.vars or {}
+  local sceneVal = tonumber(vars[VAR_MAP_SCENE_ONE_ISLAND_POKEMON_CENTER_1F] or vars["VAR_MAP_SCENE_ONE_ISLAND_POKEMON_CENTER_1F"]) or 0
+  if hasLink or sceneVal >= 6 then
+    local Roamer = require("src.core.game3.roamer")
+    local starter = tonumber(vars[VAR_STARTER_MON] or vars["VAR_STARTER_MON"]) or 0
+    Roamer.init(session, starter)
+  end
 end
 
 function Schema.ensureMonBall(mon)

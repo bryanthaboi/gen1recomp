@@ -205,11 +205,7 @@ end
 -- ---- Real Gold cache integration tests (if present) ------------------------
 do
   local cache = os.getenv("GOLD_CACHE")
-  if not cache then
-    local home = os.getenv("HOME") or ""
-    cache = home .. "/.local/share/love/pokemon-love2d/gold"
-  end
-  local encChunk = loadfile(cache .. "/data/generated/encounters.lua")
+  local encChunk = cache and cache ~= "" and loadfile(cache .. "/data/generated/encounters.lua")
   if not encChunk then
     check(true, "no gold cache: time fish groups (SKIP)")
   else

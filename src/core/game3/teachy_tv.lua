@@ -1,6 +1,7 @@
 -- pokefirered/src/teachy_tv.c:420 InitTeachyTvController
 
 local RomText = require("src.core.game3.rom_text")
+local TextIR = require("src.core.game3.scripting.text_ir")
 
 local TeachyTv = {}
 
@@ -223,10 +224,7 @@ end
 
 local function pages_of(key)
   local box = RomText.box(key, { maxWidth = PAGE_WIDTH })
-  local out = {}
-  for page in (box .. "\f"):gmatch("(.-)\f") do
-    if page ~= "" then out[#out + 1] = page end
-  end
+  local out = TextIR.splitPages(box)
   if #out == 0 then out[1] = "" end
   return out
 end
@@ -569,15 +567,10 @@ end
 function TeachyTv.startDemonstration(session, scriptId, opts)
   local hook = TeachyTv.onDemonstration
   if type(hook) == "function" then
-    local ok, started = pcall(hook, session, scriptId, opts)
-    if ok and started ~= false then return true end
+    return hook(session, scriptId, opts) ~= false
   end
-  local okP, Pokedude = pcall(require, "src.core.game3.battle.pokedude")
-  if okP and type(Pokedude) == "table" and type(Pokedude.startTeachyTvBattle) == "function" then
-    local ok, started = pcall(Pokedude.startTeachyTvBattle, session, scriptId, opts)
-    if ok and started ~= false then return true end
-  end
-  return false
+  local Pokedude = require("src.core.game3.battle.pokedude")
+  return Pokedude.startTeachyTvBattle(sessionOf(session), scriptId, opts) ~= false
 end
 
 -- pokefirered/src/item_use.c:534 InitTeachyTvFromBag

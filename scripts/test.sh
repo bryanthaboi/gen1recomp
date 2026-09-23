@@ -51,9 +51,7 @@ fi
 
 # The save-directory sandbox (conf.lua reads POKEPORT_IDENTITY) is scoped
 # to the shot tier, which is the only one that starts a real LOVE process
-# and could write into a developer's save folder.  Exporting it for the
-# whole run instead would change what SaveIO.defaultPath() returns, and the
-# save-editor suite pins that to the default identity.
+# and could write into a developer's save folder.
 SANDBOX_IDENTITY="ci-$$"
 
 # Per-version caches.  POKEPORT_TEST_CACHES names one LOVE identity holding an
@@ -85,6 +83,52 @@ adopt_cache YELLOW_CACHE yellow
 adopt_cache GOLD_CACHE gold
 adopt_cache SILVER_CACHE silver
 adopt_cache CRYSTAL_CACHE crystal
+
+GAME3_IDENTITY=""
+GAME3_GBA_CACHE=""
+GAME3_WANT=$("$LUA" -e 'package.path = "./?.lua;" .. package.path
+  local V = require("src.import.gba.versions")
+  io.write(V.CACHE_VERSION, " ", V.NATIVE_VERSION)' 2>/dev/null)
+
+game3_current() {
+  local meta="$1/data/generated/gba/meta.json" cv nv
+  [ -f "$1/rom-cache.complete" ] && [ -f "$meta" ] || return 1
+  cv=$(sed -n 's/.*"cache_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$meta" | head -1)
+  nv=$(sed -n 's/.*"native_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$meta" | head -1)
+  [ -n "$GAME3_WANT" ] && [ "$cv $nv" = "$GAME3_WANT" ]
+}
+
+game3_adopt() {
+  local dir="$1" owner saveRoot
+  game3_current "$dir" || return 1
+  owner=$(dirname "$dir")
+  [ "$(basename "$owner")" = "pokemon-love2d" ] && return 1
+  for saveRoot in "$HOME/Library/Application Support/LOVE" "$HOME/.local/share/love"; do
+    if [ "$(dirname "$owner")" = "$saveRoot" ]; then
+      GAME3_IDENTITY=$(basename "$owner")
+      return 0
+    fi
+  done
+  GAME3_GBA_CACHE="$dir/data/generated/gba"
+}
+
+if [ -n "${POKEPORT_IDENTITY:-}" ]; then
+  echo "   game3 identity: POKEPORT_IDENTITY=$POKEPORT_IDENTITY (from the environment)"
+elif [ -n "${POKEPORT_GBA_CACHE:-}" ]; then
+  echo "   game3 cache: POKEPORT_GBA_CACHE=$POKEPORT_GBA_CACHE (from the environment)"
+else
+  if ! game3_adopt "$CACHE_ROOT/firered"; then
+    while IFS= read -r meta; do
+      game3_adopt "${meta%/data/generated/gba/meta.json}" && break
+    done < <(ls -1t "$HOME/Library/Application Support/LOVE"/*/firered/data/generated/gba/meta.json \
+      "$HOME/.local/share/love"/*/firered/data/generated/gba/meta.json 2>/dev/null)
+  fi
+  if [ -n "$GAME3_IDENTITY" ]; then
+    echo "   game3 identity: POKEPORT_IDENTITY=$GAME3_IDENTITY (FireRed cache v${GAME3_WANT% *})"
+  elif [ -n "$GAME3_GBA_CACHE" ]; then
+    echo "   game3 cache: POKEPORT_GBA_CACHE=$GAME3_GBA_CACHE"
+  fi
+fi
 
 FAILED=()
 run_tier() {
@@ -132,6 +176,7 @@ run_tier "T1/T2 engine invariants + parity gates" "$LUA" tests/run_engine.lua
 # so it runs here rather than behind the Red content gate below.
 run_tier "T2 Gen 2 / Crystal suites" "$LUA" tests/run_gen2.lua
 run_tier "T4 mod-SDK" "$LUA" tests/run_modkit.lua
+run_tier "T4 modkit dev tooling (fixture)" "$LUA" tests/modkit_tests.lua
 
 game3_kill_jobs() {
   local p
@@ -159,6 +204,9 @@ run_game3_tier() {
     return 1
   fi
   local total=${#suites[@]}
+  if [ -z "${POKEPORT_IDENTITY:-}${POKEPORT_GBA_CACHE:-}$GAME3_IDENTITY$GAME3_GBA_CACHE" ]; then
+    echo "-- T6 game3: no current FireRed cache adopted; ROM-dependent suites self-skip"
+  fi
   echo "-- T6 game3: running $total top-level suites, $jobs at a time, ${limit}s limit each"
 
   GAME3_TMP=$(mktemp -d "${TMPDIR:-/tmp}/game3gate.XXXXXX") || return 1
@@ -173,6 +221,8 @@ run_game3_tier() {
     base=${suite##*/}
     base=${base%.lua}
     (
+      [ -n "$GAME3_IDENTITY" ] && export POKEPORT_IDENTITY="$GAME3_IDENTITY"
+      [ -n "$GAME3_GBA_CACHE" ] && export POKEPORT_GBA_CACHE="$GAME3_GBA_CACHE"
       perl -e 'alarm shift; exec @ARGV or exit 127' "$limit" "$LUA" "$suite" \
         >"$tmp/$base.log" 2>&1
       echo $? >"$tmp/$base.rc"

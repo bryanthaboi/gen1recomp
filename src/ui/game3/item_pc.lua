@@ -281,31 +281,47 @@ local function give()
     ItemPc.msgText = RomText.plain("gText_ThereIsNoPokemon")
     return
   end
-  local pos = cursor_pos() + 1
-  local entry = items()[pos]
-  local bag = session.bag
-  local before = Bag.get(bag, entry.id)
-  Bag.add(bag, entry.id, 1)
-  local store = items()
-  store[pos].qty = store[pos].qty - 1
-  local emptied = store[pos].qty <= 0
-  if emptied then table.remove(store, pos) end
+  local id = selected_entry().id
+  local hole
   ItemPc.mode = "party"
   local PartyMenu = require("src.ui.game3.party_menu")
   PartyMenu.show(party, session.moveOverlay, {
     session = session,
-    bag = bag,
-    item = entry.id,
+    bag = session.bag,
+    item = id,
     mode = "give",
-    onClose = function()
-      if Bag.get(bag, entry.id) > before then
-        Bag.remove(bag, entry.id, 1)
-        if emptied then
-          table.insert(items(), pos, { id = entry.id, qty = 1 })
-        else
-          items()[pos].qty = items()[pos].qty + 1
+    giveSource = {
+      -- src/item.c:416 RemovePCItem
+      remove = function(itemId)
+        local list = items()
+        for i, e in ipairs(list) do
+          if e.id == itemId then
+            e.qty = e.qty - 1
+            if e.qty <= 0 then
+              table.remove(list, i)
+              hole = i
+            end
+            return true
+          end
         end
-      end
+        return false
+      end,
+      -- src/item.c:385 AddPCItem
+      restore = function(itemId)
+        local list = items()
+        for _, e in ipairs(list) do
+          if e.id == itemId then
+            e.qty = e.qty + 1
+            return true
+          end
+        end
+        table.insert(list, math.min(hole or (#list + 1), #list + 1), { id = itemId, qty = 1 })
+        return true
+      end,
+      -- src/quest_log_events.c:1168 LoadEvent_GaveHeldItemFromPC
+      quest = function(monName, itemName) return "GaveMonHeldItemFromPC", { itemName, monName } end,
+    },
+    onClose = function()
       set_cursor_position()
       return_from_submenu()
     end,

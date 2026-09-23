@@ -157,7 +157,13 @@ function SummaryData.gender(mon)
   if mon.gender then return mon.gender end
   if mon.isEgg then return "" end
   local ratio = tonumber(mon.genderRatio)
-  if not ratio or ratio == 255 then return "" end -- genderless
+  if not ratio then
+    -- src/pokemon_summary_screen.c:2114
+    local Pokemon = require("src.core.game3.pokemon")
+    local g = Pokemon.gender(Pokemon.speciesOf(mon), mon.personality)
+    return (g == "M" or g == "F") and g or ""
+  end
+  if ratio == 255 then return "" end
   if ratio == 254 then return "F" end             -- 100% female
   if ratio == 0 then return "M" end               -- 100% male
   local p = tonumber(mon.personality) or 0
@@ -307,10 +313,11 @@ local function egg_hatch_index(mon)
 end
 
 --- Trainer Memo formatting (pokefirered/src/pokemon_summary_screen.c PokeSum_PrintTrainerMemo)
-function SummaryData.formatTrainerMemo(mon, playerState)
+function SummaryData.formatTrainerMemo(mon, playerState, opts)
   if not mon then return { RomText.plain("gText_PokeSum_NoData") } end
 
-  local heldByOt = held_by_ot(mon, playerState)
+  -- src/pokemon_summary_screen.c:3243
+  local heldByOt = held_by_ot(mon, (opts and opts.owner) or playerState)
 
   if mon.isEgg then
     return {
@@ -334,6 +341,9 @@ function SummaryData.formatTrainerMemo(mon, playerState)
     -- src/pokemon_summary_screen.c:2632
     if in_kanto_or_sevii(metLocation) or mon.metLocationName then
       mapName = met_location_name(mon, playerState)
+    elseif opts and opts.enemyParty then
+      -- src/pokemon_summary_screen.c:2636
+      mapName = RomText.plain("gText_Somewhere")
     else
       mapName = RomText.plain("gText_PokeSum_ATrade")
     end

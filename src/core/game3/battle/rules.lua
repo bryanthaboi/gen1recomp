@@ -272,7 +272,10 @@ function Rules.crit.roll(attacker, moveOrId, highCrit, rng, st)
   if Oak.active(st) and not Oak.testFlag(st, Oak.FLAG_INFLICT_DMG) then return false end
   local stage = Rules.crit.stage(attacker, moveOrId, highCrit)
   local den = Rules.crit.CHANCE[stage] or 2
-  return rollZeroTo(rng, den) == 0
+  local hit = rollZeroTo(rng, den) == 0
+  -- pokefirered/src/battle_script_commands.c:1201
+  if st and st.pokedude then return false end
+  return hit
 end
 
 function Rules.crit.multiplier()

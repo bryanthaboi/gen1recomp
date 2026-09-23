@@ -339,7 +339,8 @@ function Anim.sendOutMon(key, opts)
   end
   if side == "player" then
     -- pokefirered/src/pokeball.c:912
-    local sx, sy = 48, 70
+    local Battle = package.loaded["src.core.game3.battle"]
+    local sx, sy = require("src.core.game3.battle.pokedude").sendOutOrigin(Battle and Battle._st)
     local tx, ty = base.x, base.y + 24
     ball.x, ball.y = sx, sy
     play_se("SE_BALL_THROW", pan)

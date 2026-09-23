@@ -139,9 +139,32 @@ do
   for _ = 1, 4 do frame() end
   check(RegionMap.cursorX == 5 and RegionMap.cursorY == 7, "a diagonal hold moves both axes at once")
 
-  press("b")
-  check(runUntil(function() return not RegionMap.isOpen() end), "B runs the close animation and fade")
+  check(RegionMap.state().palTinted == true, "the open map draws the 95% tinted bank 2")
+  frame({ wasPressed = function(_, k) return k == "b" end, isDown = function(_, k) return k == "b" end })
+  local tintOk, sawClose, sawUntinted = true, false, false
+  for _ = 1, 400 do
+    local s = RegionMap.state()
+    if not s then break end
+    if s.task == "mapCloseAnim" then
+      sawClose = true
+      local cs = s.anim.closeState
+      if cs <= 2 and s.palTinted ~= true then tintOk = false end
+      if cs >= 3 then
+        if s.palTinted ~= false then tintOk = false end
+        sawUntinted = true
+      end
+    elseif sawClose and s.palTinted ~= false then
+      tintOk = false
+    end
+    frame()
+  end
+  -- src/region_map.c:2572
+  check(sawClose and sawUntinted and tintOk, "close state 2 reloads sRegionMap_Pal untinted and it stays untinted")
+  check(not RegionMap.isOpen(), "B runs the close animation and fade")
   check(closed == true, "onClose callback executed")
+  RegionMap.show({ session = session })
+  check(RegionMap.state().palTinted == true, "the next show draws tinted again")
+  RegionMap.close()
 end
 
 print("=== [TEST 3] Inventory TOWN_MAP Item Use Integration ===")

@@ -220,7 +220,9 @@ local function stepTeam(imp, x, y, w, m)
       if sprite then
         Sprites().drawFront(sprite, x + listW + gap, listY, box)
         Kit.text("micro", Kit.ellipsize("micro",
-          tostring(focus.mon.species or "?"), box), x + listW + gap,
+          OP().gen3Name(focus.mon)
+            or OP().speciesText(focus.version, focus.mon.species), box),
+          x + listW + gap,
           listY + box, PAL.faint)
       end
     end

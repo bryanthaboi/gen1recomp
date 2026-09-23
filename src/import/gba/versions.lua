@@ -41,7 +41,9 @@ Versions.ROM_SIZE = 16777216
 -- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon — eggs were drawn
 --       with the icon of the species they hatch into.
 -- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
-Versions.CACHE_VERSION = 119
+-- v121: chrome/fonts/japanese_{normal,small}_* and japanese_widths.lua, the
+--       cart's Japanese fonts, for text a Japanese translation mod prints.
+Versions.CACHE_VERSION = 121
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 3
 Versions.ANIM_VERSION = 1
@@ -1533,6 +1535,8 @@ Versions.PARTY_MENU_BG_PAL = 0xE829C8       -- gPartyMenuBg_Pal
 Versions.PARTY_MENU_BG_TILEMAP = 0xE82AB0   -- gPartyMenuBg_Tilemap
 Versions.PARTY_MENU_BALL_GFX = 0xE82BE8     -- gPartyMenuPokeball_Gfx
 Versions.PARTY_MENU_BALL_PAL = 0xE82E7C     -- gPartyMenuPokeball_Pal
+Versions.PARTY_MENU_HOLD_ICONS_GFX = 0x45A3AC
+Versions.PARTY_MENU_HOLD_ICONS_PAL = 0x45A3EC
 
 -- Pokémon Summary Screen (LZ-compressed & raw; FireRed USA 1.0).
 Versions.SUMMARY_BG_GFX = 0xE9A460               -- gSummaryScreen_Gfx (LZ 4bpp, 16384 bytes)
@@ -1674,8 +1678,22 @@ Versions.TRADE_GBA_MAP_WIRELESS = 0x269A5C
 Versions.TRADE_GBA_MAP_CABLE = 0x26AA5C
 Versions.TRADE_GBA_GFX = 0xEAEA80
 Versions.TRADE_GBA_PAL2 = 0xEAEA20
+-- src/trade_scene.c:165
+Versions.TRADE_MON_SHADOW_MAP = 0x26601C
 -- src/trade_scene.c:398
 Versions.TRADE_GBA_SCREEN_ANIM = 0x26CED8
+-- src/trade.c:224
+Versions.TRADE_MOVES_BOX_MAP = 0x260834
+Versions.TRADE_PARTY_BOX_MAP = 0x260A32
+Versions.TRADE_STRIPES_BG2_MAP = 0x260C30
+Versions.TRADE_STRIPES_BG3_MAP = 0x261430
+-- src/graphics.c:1222
+Versions.TRADE_MENU_PAL = 0xE9CEDC
+Versions.TRADE_CURSOR_PAL = 0xE9CF3C
+Versions.TRADE_MENU_GFX = 0xE9CF5C
+Versions.TRADE_CURSOR_GFX = 0xE9E1DC
+Versions.TRADE_MENU_MAP = 0xE9E9FC
+Versions.TRADE_MENU_MON_BOX_MAP = 0xE9F1FC
 
 -- src/link_rfu_3.c:34
 Versions.WIRELESS_ICON_PAL = 0x43EEC0

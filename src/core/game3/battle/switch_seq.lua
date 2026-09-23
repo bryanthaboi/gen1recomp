@@ -622,13 +622,13 @@ local function run_step(step)
     s.ball.frame = 0
     s.ball.rot = 0
     s.ball.side = "player"
-    s.ball.x = 48
-    s.ball.y = 70
+    local sx, sy = require("src.core.game3.battle.pokedude").sendOutOrigin(st)
+    s.ball.x = sx
+    s.ball.y = sy
     pcall(function() Audio.playSe(SE.SE_BALL_THROW, { pan = -64 }) end)
     wait_busy()
     Anim.tweenStage(25, function(u, t)
       local f = t.frames or (u * 25)
-      local sx, sy = 48, 70
       local tx, ty = pcx, pcy + 24
       s.ball.x = sx + (tx - sx) * u
       s.ball.y = sy + (ty - sy) * u + (-30 * 4 * u * (1 - u))

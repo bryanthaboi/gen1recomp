@@ -117,6 +117,10 @@ local function run(game)
   Party.giveMon(session, MEWTWO, 50)
   local lead = session.party[1]
   lead.moves, lead.pp, lead.maxPp = { PSYCHIC }, { 10 }, { 10 }
+  lead.maxHp, lead.hp = 999, 999
+  for _, k in ipairs({ "attack", "defense", "speed", "spAtk", "spDef", "atk", "def", "spe", "spa", "spd" }) do
+    lead[k] = 999
+  end
   for _, species in ipairs({ 1, 4, 7, 25, 133 }) do
     Party.giveMon(session, species, 20)
   end

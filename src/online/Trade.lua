@@ -5,6 +5,9 @@ local TeamPick = require("src.online.TeamPick")
 
 local Trade = {}
 
+Trade.GEN3_LOCAL_ONLY =
+  "FireRed and LeafGreen can only trade on this device for now."
+
 local function disk()
   return SaveData.persistenceFs()
 end
@@ -63,17 +66,43 @@ local function gen2Dataset()
   return data
 end
 
+local function gen3Dataset(version)
+  local Pokemon = require("src.core.game3.pokemon")
+  local ItemsData = require("src.core.game3.items_data")
+  Pokemon.install(nil)
+  if not Pokemon._names then
+    error(("%s is not imported"):format(tostring(version)), 0)
+  end
+  ItemsData.install(nil)
+  return { generation = 3, version = version, Pokemon = Pokemon,
+           ItemsData = ItemsData }
+end
+
+local function gen3Snapshot()
+  local ItemsData = require("src.core.game3.items_data")
+  local was = { pack = ItemsData._pack, byId = ItemsData._byId,
+                byName = ItemsData._byName }
+  return function()
+    require("src.core.game3.pokemon").invalidate()
+    ItemsData._pack, ItemsData._byId, ItemsData._byName =
+      was.pack, was.byId, was.byName
+  end
+end
+
 local function mountDataset(version)
   local CacheFs = require("src.import.CacheFs")
   local generation = GameVersion.generation(version)
   local prevVersion, prevPrefix = GameVersion.get(), CacheFs.prefix
   local released = false
+  local restore3 = generation == 3 and gen3Snapshot() or nil
   Trade.mountDepth = (Trade.mountDepth or 0) + 1
   local function release()
     if released then return end
     released = true
     Trade.mountDepth = math.max(0, (Trade.mountDepth or 1) - 1)
-    if generation ~= 2 then
+    if restore3 then
+      pcall(restore3)
+    elseif generation ~= 2 then
       pcall(function() require("src.core.Data"):unloadGenerated() end)
     end
     pcall(CacheFs.unmountVersion, version)
@@ -84,9 +113,12 @@ local function mountDataset(version)
     GameVersion.set(version)
     CacheFs.prefix = GameVersion.cachePrefix(version)
     CacheFs.mountVersion(version)
-    if not CacheFs.readActive("data/generated/pokemon.lua") then
+    local probe = generation == 3 and "data/generated/gba/pokemon/names.lua"
+      or "data/generated/pokemon.lua"
+    if not CacheFs.readActive(probe) then
       error(("%s is not imported"):format(tostring(version)), 0)
     end
+    if generation == 3 then return gen3Dataset(version) end
     if generation == 2 then return gen2Dataset() end
     local Data = require("src.core.Data")
     Data:load()
@@ -187,12 +219,18 @@ local function pickable(handle, index)
     return nil, (type(index) == "table" and index.where == "box")
       and "that's not in the PC" or "that's not in the party"
   end
+  -- pokefirered/src/trade.c:945
+  if handle.generation == 3 and ref.where == "box" then
+    return nil, "that's not in the party"
+  end
   local mon = TeamPick.monAt(handle, ref)
   if type(mon) ~= "table" then
     return nil, (ref.where == "box") and "that's not in the PC"
       or "that's not in the party"
   end
-  if mon.isEgg then return nil, "an EGG can't be traded" end
+  if mon.isEgg and handle.generation ~= 3 then
+    return nil, "an EGG can't be traded"
+  end
   if Trade.holdsMail(handle, ref) then return nil, "take the MAIL first" end
   return mon, nil, ref
 end
@@ -308,6 +346,171 @@ local function sideFor(handle, ref, packed, record, warnings)
   end)
 end
 
+-- pokefirered/include/constants/global.h:11
+local VERSION_FIRE_RED, VERSION_LEAF_GREEN = 4, 5
+
+local ONLY_MON3 = "that's your only POKéMON for battle"
+
+-- pokefirered/src/trade.c:546
+local function refusalText3(NTrade, code)
+  if code == NTrade.CANT_TRADE_LAST_MON then return ONLY_MON3 end
+  if code == NTrade.CANT_TRADE_EGG_YET
+      or code == NTrade.CANT_TRADE_PARTNER_EGG_YET then
+    return "an EGG can't be traded now"
+  end
+  return "that POKéMON can't be traded now"
+end
+
+local function nationalProxy(save)
+  return {
+    dex = save.dex,
+    national_dex_unlocked = save.national_dex_unlocked,
+    store = { flags = type(save.flags) == "table" and save.flags or {},
+              vars = type(save.vars) == "table" and save.vars or {} },
+  }
+end
+
+local function national3(save)
+  local PokedexData = require("src.core.game3.pokedex_data")
+  local proxy = nationalProxy(save)
+  return PokedexData.isNationalUnlocked(proxy, proxy.dex) == true
+end
+
+local function isEgg3(mon)
+  return require("src.core.game3.pokemon").isEgg(mon) == true
+end
+
+-- pokefirered/src/trade.c:2745
+local function refusal3(handle, ref, partner)
+  local NTrade = require("src.core.game3.scripting.natives_trade")
+  local party = handle.party or {}
+  local code = NTrade.canTradeSelectedMon(party, ref.index - 1, {
+    partyCount = #party,
+    nationalDex = national3(handle.save),
+    partner = {
+      version = partner.version == "leafgreen" and VERSION_LEAF_GREEN
+        or VERSION_FIRE_RED,
+      progressFlags = national3(partner.save) and 1 or 0,
+    },
+  })
+  if code ~= NTrade.CAN_TRADE_MON then return refusalText3(NTrade, code) end
+  -- pokefirered/src/trade.c:1951
+  for i, mon in ipairs(party) do
+    if i ~= ref.index and not isEgg3(mon) and (tonumber(mon.hp) or 0) > 0 then
+      return nil
+    end
+  end
+  return ONLY_MON3
+end
+
+local function mailOf3(save, mon)
+  local Mail = require("src.core.game3.mail")
+  local id = tonumber(mon and mon.mail)
+  if not id or id == Mail.MAIL_NONE then return nil end
+  local record = Mail.get({ mail = deepCopy(save.mail) }, id)
+  return record and Mail.copy(record) or nil
+end
+
+local function itemName3(item)
+  local ok, info = pcall(require("src.core.game3.items_data").info, item)
+  return ok and type(info) == "table" and info.name or tostring(item)
+end
+
+local function questLogEvent3(save, key, args)
+  local Q = require("src.core.game3.quest_log")
+  save.questLog = Q.restore(save.questLog)
+  local final = save.questLog.final
+  local frame = type(final) == "table" and type(final.frames) == "table" and final.frames[1]
+    or { x = (tonumber(save.x) or 0) * 16, y = (tonumber(save.y) or 0) * 16, actors = {} }
+  save._questNewScene = true
+  Q.record(save, key, args, frame)
+  save._questNewScene = nil
+  if type(final) == "table" and final.map == save.map then Q.addTiles(save, final.tiles) end
+end
+
+-- pokefirered/src/trade_scene.c:1054
+local function sideFor3(handle, ref, incoming, partnerMail, warnings, partnerName)
+  return withData(handle, function(data)
+    local NTrade = require("src.core.game3.scripting.natives_trade")
+    local Evolution = require("src.core.game3.evolution")
+    local Pokemon = data.Pokemon or require("src.core.game3.pokemon")
+    local save = deepCopy(handle.save)
+    save.party = type(save.party) == "table" and save.party or {}
+    local sent = TeamPick.monAt(handle, ref)
+    local received = deepCopy(incoming)
+    NTrade.clearPartnerMail()
+    if partnerMail then
+      local Mail = require("src.core.game3.mail")
+      local id = tonumber(received.mail)
+      if not id or id == Mail.MAIL_NONE then id = 0 end
+      received.mail = id
+      NTrade.setPartnerMail(id, partnerMail)
+    else
+      received.mail = nil
+    end
+    local dexBefore = deepCopy(save.dex)
+    local swapped = NTrade.tradeMons(save, ref.index - 1, received)
+    NTrade.clearPartnerMail()
+    if not swapped then return { error = "that's not in the party" } end
+    -- pokefirered/src/trade_scene.c:2599
+    local qlKey, qlArgs = NTrade.noteLinkTrade(save, sent, incoming, partnerName, false)
+    if qlKey then questLogEvent3(save, qlKey, qlArgs) end
+    local egg = isEgg3(received)
+    -- pokefirered/src/trade_scene.c:1036
+    if egg then save.dex = dexBefore end
+    local shown = deepCopy(received)
+    local record = save.party[ref.index]
+    local species = { tonumber(record.species) }
+    local into, consumed = nil, nil
+    if not egg then
+      -- pokefirered/src/trade_scene.c:2311
+      local held = tonumber(record.item or record.heldItem) or 0
+      into = Evolution.tradeTarget(record, nationalProxy(save))
+      if into then
+        consumed = held ~= 0 and (tonumber(record.item) or 0) == 0 and held or nil
+        Evolution.apply(record, into, save, save.bag, "trade")
+        species[#species + 1] = into
+        warnings[#warnings + 1] = { code = "evolve", slot = handle.slotId,
+          species = into, name = Pokemon.name(into) }
+      end
+      if consumed then
+        warnings[#warnings + 1] = { code = "item_used", slot = handle.slotId,
+          item = consumed, itemName = itemName3(consumed) }
+      end
+    end
+    return {
+      handle = handle,
+      ref = ref,
+      index = ref.index,
+      received = shown,
+      record = record,
+      evolveTo = into,
+      fromName = Pokemon.name(tonumber(shown.species)),
+      evolveName = into and Pokemon.name(into) or nil,
+      dex = species,
+      sent = sent,
+      save3 = save,
+    }
+  end)
+end
+
+local function plan3(from, to, refA, refB, monA, monB)
+  local why = refusal3(from, refA, to) or refusal3(to, refB, from)
+  if why then return nil, why end
+  local mailA, mailB = mailOf3(from.save, monA), mailOf3(to.save, monB)
+  local warnings = {}
+  local sideB, whyB = sideFor3(to, refB, monA, mailA, warnings, from.save and from.save.name)
+  if not sideB then return nil, tostring(whyB) end
+  if sideB.error then return nil, sideB.error end
+  local sideA, whyA = sideFor3(from, refA, monB, mailB, warnings, to.save and to.save.name)
+  if not sideA then return nil, tostring(whyA) end
+  if sideA.error then return nil, sideA.error end
+  sideA.role, sideB.role = "a", "b"
+  return { sides = { sideA, sideB }, warnings = warnings,
+           get = sideA.record, give = sideB.record,
+           evolveA = sideA.evolveTo, evolveB = sideB.evolveTo }
+end
+
 -- ------- plan
 
 local function planFrom(sides, warnings)
@@ -336,6 +539,12 @@ function Trade.plan(req)
   if not monA then return nil, reasonA end
   local monB, reasonB, refB = pickable(to, req.toIndex)
   if not monB then return nil, reasonB end
+  if from.generation == 3 or to.generation == 3 then
+    if from.generation ~= to.generation then
+      return nil, "Those two games can't trade."
+    end
+    return plan3(from, to, refA, refB, monA, monB)
+  end
 
   local packA = packFor(from.generation, monA)
   local packB = packFor(to.generation, monB)
@@ -363,6 +572,7 @@ function Trade.planIncoming(req)
   req = type(req) == "table" and req or {}
   local to = req.to
   if type(to) ~= "table" then return nil, "no save" end
+  if to.generation == 3 then return nil, Trade.GEN3_LOCAL_ONLY end
   local mon, reason, ref = pickable(to, req.toIndex)
   if not mon then return nil, reason end
   local warnings = {}
@@ -376,6 +586,12 @@ end
 -- ------- commit
 
 local function validateSave(save, generation, data)
+  if generation == 3 then
+    local Schema = require("src.core.game3.save_schema_firered")
+    local ok = pcall(Schema.fromSaveTable, deepCopy(save))
+    if not ok then return false, "that save didn't validate" end
+    return true
+  end
   if generation == 2 then
     local Save2 = require("src.core.gen2.Save")
     local report = Save2.validate(save)
@@ -389,6 +605,7 @@ end
 
 local function buildSave(side)
   local handle = side.handle
+  if handle.generation == 3 then return deepCopy(side.save3) end
   local save = deepCopy(handle.save)
   local ref = side.ref or { where = "party", index = side.index }
   if ref.where == "box" then
@@ -553,6 +770,7 @@ Remote.__index = Remote
 
 function Trade.remote(handle, link, opts)
   if type(handle) ~= "table" then return nil, "no save" end
+  if handle.generation == 3 then return nil, Trade.GEN3_LOCAL_ONLY end
   if type(link) ~= "table" or type(link.send) ~= "function" then
     return nil, "no room"
   end

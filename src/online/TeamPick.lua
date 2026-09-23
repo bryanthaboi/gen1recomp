@@ -173,9 +173,14 @@ function TeamPick.validate(source, team, rule)
   return true
 end
 
+TeamPick.GEN3_OFFLINE = "FireRed and LeafGreen can't join online rooms yet."
+
 function TeamPick.pack(source, team, generation)
   local slot = slotOf(source)
   team = type(team) == "table" and team or {}
+  if tonumber(generation) == 3 or tonumber(slot.generation) == 3 then
+    return nil, TeamPick.GEN3_OFFLINE
+  end
   local gen2 = tonumber(generation) == 2
   local mons = {}
   for _, ref in ipairs(team) do
@@ -218,6 +223,7 @@ end
 function TeamPick.packConverted(converted, team, generation)
   converted = type(converted) == "table" and converted or {}
   team = type(team) == "table" and team or {}
+  if tonumber(generation) == 3 then return nil, TeamPick.GEN3_OFFLINE end
   local mons = {}
   for _, ref in ipairs(team) do
     local mon = converted[TeamPick.refKey(ref)]

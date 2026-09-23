@@ -246,6 +246,9 @@ end
 function ArenaData.profile(version, kind, cartId, rule)
   kind = kind or "vanilla"
   if not GameVersion.VERSIONS[version] then return nil, "unknown game" end
+  if GameVersion.generation(version) == 3 then
+    return nil, require("src.online.TeamPick").GEN3_OFFLINE
+  end
   if kind ~= "vanilla" and kind ~= "cart" then return nil, "unknown arena kind" end
 
   local cart, cartHash

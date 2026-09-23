@@ -144,16 +144,16 @@ local function partyDigest(s)
   for i = 1, LT.PARTY_SIZE do
     local mon = partyOf(s)[i]
     if mon then
-      out[i] = {
-        species = tonumber(mon.species) or 0,
-        level = tonumber(mon.level) or 0,
-        hp = tonumber(mon.hp) or 0,
-        isEgg = mon.isEgg and true or false,
-        isBadEgg = mon.isBadEgg and true or false,
-        fatefulEncounter = mon.fatefulEncounter,
-        personality = tonumber(mon.personality) or 0,
-        nickname = mon.nickname or mon.name,
-      }
+      local d = copyTable(mon)
+      d.species = tonumber(mon.species) or 0
+      d.level = tonumber(mon.level) or 0
+      d.hp = tonumber(mon.hp) or 0
+      d.isEgg = mon.isEgg and true or false
+      d.isBadEgg = mon.isBadEgg and true or false
+      d.fatefulEncounter = mon.fatefulEncounter
+      d.personality = tonumber(mon.personality) or 0
+      d.nickname = mon.nickname or mon.name
+      out[i] = d
     end
   end
   return out
@@ -237,6 +237,7 @@ function LT.startMenu(opts)
   LT.unionRoom = false
   LT.cursor = nil
   LT.partnerCursor = nil
+  LT.peer = nil
   LT.peerParty = {}
   LT.lastRefusal = nil
   LT.lastResult = nil
@@ -293,6 +294,17 @@ function LT.cancelSelect()
   else
     sendCmd(LT.LINKCMD.REQUEST_CANCEL, 0)
   end
+  return true
+end
+
+-- pokefirered/src/trade.c:2094 CB_HandleTradeCanceled
+function LT.resumeMenu()
+  if LT.state ~= "canceled" then return false end
+  LT.state = "menu"
+  LT.cursor = nil
+  LT.partnerCursor = nil
+  LT.lastRefusal = nil
+  clearStatuses()
   return true
 end
 
@@ -469,6 +481,9 @@ end
 -- pokefirered/src/trade_scene.c:779 CB2_LinkTrade
 function LT.tryPlayScene()
   if LT.state ~= "exchange" then return false end
+  -- pokefirered/src/trade.c:1302
+  local Menu = package.loaded["src.ui.game3.link_trade_menu"]
+  if Menu and Menu.isOpen and Menu.isOpen() then return false end
   local block = LT._peerBlock
   if not (block and LT._monSent and LT._sent) then return false end
   local s = session()
@@ -502,7 +517,13 @@ function LT.tryPlayScene()
     uiDriven = (type(love) == "table" and love.graphics) and true or false,
     -- pokefirered/src/trade_scene.c:2533 TradeMons
     onSwap = function()
-      if Trade.tradeMons(s, slot, received) then LT._swapped = true end
+      local sent = LT._sent
+      if Trade.tradeMons(s, slot, received) then
+        LT._swapped = true
+        local key, args = Trade.noteLinkTrade(s, sent, received, peerName, LT.unionRoom)
+        -- pokefirered/src/trade_scene.c:2599
+        if key then require("src.core.game3.quest_log_recorder").event(s, key, args) end
+      end
       -- pokefirered/src/trade_scene.c:2344 LINKCMD_CONFIRM_FINISH_TRADE
       sendCmd(LT.LINKCMD.CONFIRM_FINISH_TRADE, 0)
       Scene.linkTaskDone()
@@ -565,7 +586,7 @@ function LT.pump()
   if not live then return false end
   live:update(0)
   if not live.isOpen or not live:isOpen() then return false end
-  local party = live:take(LT.MSG.PARTY)
+  local party = LT.state ~= "seat" and live:take(LT.MSG.PARTY) or nil
   while party do
     LT.peer = {
       name = party.name,
@@ -719,7 +740,7 @@ function LT.startUnionRoomTrade(onDone)
   local slot = LT.partyPositionOfRegisteredMon(record, LT.isLeader())
   local s = session()
   if not partyOf(s)[slot + 1] then return false, "no_mon" end
-  LT.startMenu({ onDone = onDone })
+  LT.startMenu({ onDone = onDone, screen = false })
   LT.unionRoom = true
   LT.cursor = slot
   LT.partnerCursor = LT.PARTY_SIZE

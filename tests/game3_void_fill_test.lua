@@ -160,8 +160,7 @@ LAYOUTS.FR_PALLET_TOWN = {
 eq(fill("trees", 0, 0, all), T[1], "a pending lookup is not cached as a miss")
 
 print("[test] 10. cached Pallet / Cinnabar borders are usable (skipped without cache)")
-local root = os.getenv("HOME")
-  .. "/Library/Application Support/LOVE/firered-sep20/firered/data/generated/gba"
+local root = require("tests.game3_cache").root("native/layouts/FR_PALLET_TOWN.mid", { native = true })
 local function readAll(path)
   local f = io.open(path, "rb")
   if not f then return nil end
@@ -169,9 +168,9 @@ local function readAll(path)
   f:close()
   return s
 end
-local blob = readAll(root .. "/native/layouts/FR_PALLET_TOWN.mid")
+local blob = root and readAll(root .. "/native/layouts/FR_PALLET_TOWN.mid")
 if not blob then
-  print("[skip] no firered-sep20 cache; canonical mids unverified against ROM")
+  print("[skip] no current FireRed cache; canonical mids unverified against ROM")
 else
   local NativePack = require("src.import.gba.native_pack")
   local decoded = NativePack.decodeMidLayout(blob)

@@ -125,8 +125,8 @@ else
     check(Collision.arrivalFacing(beh, "left") == want,
       string.format("landing on 0x%02X faces %s", beh, want))
   end
-  check(Collision.arrivalFacing(MB.LADDER, "left") == "left",
-    "a ladder keeps the direction the player left with")
+  check(Collision.arrivalFacing(MB.LADDER, "left") == "down",
+    "a ladder lands facing south")
   check(Collision.arrivalFacing(0x00, "left") == "down",
     "hasDirectionSet is cleared, so a plain cell faces south")
   check(Collision.arrivalFacing(MB.FALL, "up") == "down",

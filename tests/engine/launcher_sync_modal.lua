@@ -392,7 +392,7 @@ check(view:find('btn(imp, rx, by, gear, gear, "tab-sync", "", chrome.sync)',
       "it rides the top-level cluster beside the settings gear")
 check(view:find("overlayBeta(rx", 1, true) == nil,
       "the Save Sync button carries no BETA badge")
-local title = view:match("local function syncTitle%(.-\nend")
+local title = view:match("function Sync%.title%(.-\nend")
 check(title and not title:find("Beta", 1, true),
       "nor does the Save Sync popup title")
 check(view:find("buildSyncModal", 1, true) ~= nil,

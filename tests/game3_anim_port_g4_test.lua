@@ -12,10 +12,10 @@ local function check(cond, name)
 end
 
 local function find_pack()
+  local root = require("tests.game3_cache").root("pokemon/battle_anims/pack.lua")
   local cands = {
     os.getenv("G4_ANIM_PACK") or "",
-    (os.getenv("HOME") or "") .. "/Library/Application Support/LOVE/firered-sep18fx/firered/data/generated/gba/pokemon/battle_anims/pack.lua",
-    "data/generated/gba/pokemon/battle_anims/pack.lua",
+    root and (root .. "/pokemon/battle_anims/pack.lua") or "",
   }
   for _, p in ipairs(cands) do
     if p and p ~= "" then

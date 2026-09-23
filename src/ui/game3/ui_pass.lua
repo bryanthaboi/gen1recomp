@@ -123,6 +123,11 @@ function UiPass.drawUi()
     BattleTransition.draw()
   end
 
+  local okSea, SeagallopUi = pcall(require, "src.ui.game3.seagallop")
+  if okSea and SeagallopUi and SeagallopUi.isActive and SeagallopUi.isActive() then
+    tryDraw(SeagallopUi)
+  end
+
   local okF, Fade = pcall(require, "src.ui.game3.fade")
   local isNamingOpen = okN and Naming.isOpen and Naming.isOpen()
   local okR, RegionMap = pcall(require, "src.ui.game3.region_map")

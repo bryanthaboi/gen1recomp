@@ -71,8 +71,13 @@ end
 
 -- ------- carried handoff: the data-driven move repair floor
 
-check(require("src.core.Data").constants.fallbackMove == "TACKLE",
-  "CONSTANT_DEFAULTS seeds fallbackMove = TACKLE")
+do
+  local seeded = setmetatable({ constants = {}, field = {}, maps = {}, pokemon = {} },
+    { __index = require("src.core.Data") })
+  seeded:seedDefaults("red")
+  check(seeded.constants.fallbackMove == "TACKLE",
+    "CONSTANT_DEFAULTS seeds fallbackMove = TACKLE")
+end
 
 -- ------- fixture dataset: complete, ROM-free, loader-ready
 

@@ -141,7 +141,8 @@ function CatchSeq.begin(st, itemId, caught, shakes, opts)
       if CatchSeq._pushMsg then CatchSeq._pushMsg(DODGE) end
     elseif caught then
       local res = nil
-      if not (st and st.oldManTutorial) then
+      -- pokefirered/data/battle_scripts_2.s:99 BattleScript_OldMan_Pokedude_CaughtMessage
+      if not (st and (st.oldManTutorial or st.pokedude)) then
         res = Catching.storeCaught(session, st and st.enemy, itemId)
       end
       CatchSeq._catchResult = res
@@ -780,7 +781,8 @@ local function run_step(step)
 
   if kind == "capture_success" then
     local res = nil
-    if not (CatchSeq._st and CatchSeq._st.oldManTutorial) then
+    -- pokefirered/data/battle_scripts_2.s:99 BattleScript_OldMan_Pokedude_CaughtMessage
+    if not (CatchSeq._st and (CatchSeq._st.oldManTutorial or CatchSeq._st.pokedude)) then
       res = Catching.storeCaught(CatchSeq._session, CatchSeq._st and CatchSeq._st.enemy, d.ballId,
         { deferPc = true })
     end

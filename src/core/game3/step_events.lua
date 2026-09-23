@@ -157,6 +157,12 @@ function StepEvents.onStepTaken(session, game)
   -- pokefirered/src/field_specials.c:2433 IncrementBirthIslandRockStepCount
   require("src.core.game3.deoxys").incrementStepCount(session)
 
+  -- pokefirered/src/field_control_avatar.c:219 IncrementRenewableHiddenItemStepCounter
+  local okRen, Renewable = pcall(require, "src.core.game3.renewable_hidden_items")
+  if okRen and Renewable and Renewable.onStep then
+    Renewable.onStep(session, session.mapGroup, session.mapNum, session.map)
+  end
+
   -- pokefirered/src/field_control_avatar.c:658
   local forced = forced_step()
   local poisonFainted = false
@@ -207,7 +213,7 @@ function StepEvents.onStepTaken(session, game)
     if anyPoisonDamage then
       -- Trigger 4-frame reddish screen flash and poison SE
       StepEvents._poisonFlashTimer = 4 / 60
-      se(35) -- SE_FIELD_POISON
+      se(72) -- SE_FIELD_POISON (72)
 
       -- pokefirered/src/field_control_avatar.c:727 FLDPSN_FNT
       poisonFainted = #faintedMons > 0

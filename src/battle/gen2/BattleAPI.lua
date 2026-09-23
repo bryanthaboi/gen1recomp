@@ -1,5 +1,7 @@
 -- Read-only Gen 2 battle state with the same shape as mod.battle on Gen 1.
 
+local Mon = require("src.battle.gen2.Mon")
+
 local BattleAPI = {}
 BattleAPI.__index = BattleAPI
 
@@ -91,7 +93,7 @@ local function moveCopies(game, battle)
   for slot, move in ipairs((battle.player and battle.player.moves) or {}) do
     local def = (game.data.moves or {})[move.id] or {}
     out[slot] = { slot = slot, id = move.id, name = def.name or move.id,
-      pp = move.pp, maxPp = move.maxPp or def.pp or move.pp,
+      pp = move.pp, maxPp = move.maxPp or Mon.maxPpOf(move, game.data),
       type = def.type, power = def.power, accuracy = def.accuracy,
       disabled = battle:moveDisabled(battle.player, move.id) }
   end

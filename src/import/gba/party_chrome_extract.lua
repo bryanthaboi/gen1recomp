@@ -383,6 +383,32 @@ local function bake_ball_sheet(gfx, palBytes)
   return table.concat(chunks), fw, sheetH, 2
 end
 
+local function bake_hold_icons(gfx, palBytes)
+  local W, frames = 8, math.floor(byte_len(gfx) / 32)
+  local H = 8 * frames
+  local pal = load_pal_banks(palBytes, 1)[0] or {}
+  local pixels = {}
+  for i = 1, W * H do pixels[i] = 0 end
+  for f = 0, frames - 1 do
+    local tile = {}
+    for i = 1, 32 do tile[i] = gfx[f * 32 + i] or 0 end
+    decode_tile_4bpp(tile, pixels, 0, f * 8, W, false, false)
+  end
+  local chunks = {}
+  for i = 1, W * H do
+    local idx = pixels[i] or 0
+    if idx == 0 then
+      chunks[i] = string.char(0, 0, 0, 0)
+    else
+      local r, g, b = bgr555_to_rgb8(pal[idx] or 0)
+      chunks[i] = string.char(r, g, b, 255)
+    end
+  end
+  return table.concat(chunks), W, H, frames
+end
+
+PartyChromeExtract.bakeHoldIcons = bake_hold_icons
+
 function PartyChromeExtract.run(rom, cache, opts)
   opts = opts or {}
   local root = (opts.cacheRoot or default_cache_root()) .. "/" .. PartyChromeExtract.CACHE_SUB
@@ -442,6 +468,13 @@ function PartyChromeExtract.run(rom, cache, opts)
   local ballRgba, bw, bh, frames = bake_ball_sheet(ballGfx, ballPal)
   cache:write(root .. "/status_balls.rgba", ballRgba)
 
+  -- src/data/party_menu.h:664
+  local holdGfx, holdPal = {}, {}
+  for i = 1, 64 do holdGfx[i] = get(Versions.PARTY_MENU_HOLD_ICONS_GFX + i - 1) end
+  for i = 1, 32 do holdPal[i] = get(Versions.PARTY_MENU_HOLD_ICONS_PAL + i - 1) end
+  local holdRgba, holdW, holdH, holdFrames = bake_hold_icons(holdGfx, holdPal)
+  cache:write(root .. "/hold_icons.rgba", holdRgba)
+
   if Versions.SUMMARY_STATUS_ICONS_GFX and Versions.SUMMARY_STATUS_ICONS_PAL then
     local statusGfx = Lz77.decompress(get, Versions.SUMMARY_STATUS_ICONS_GFX)
     local function read_pal_bytes(off, len)
@@ -464,13 +497,14 @@ function PartyChromeExtract.run(rom, cache, opts)
   end
 
   local manifest = string.format(
-    "return {\n  width = %d, height = %d,\n  ballW = %d, ballSheetH = %d, ballFrames = %d,\n  slotMainW = 80, slotMainH = 56,\n  slotWideW = 144, slotWideH = 24,\n  cancelButtonW = 56, cancelButtonH = 16,\n  pokemonVersion = %d,\n}\n",
-    W, H, bw, bh, frames or 2, Versions.POKEMON_VERSION or 1)
+    "return {\n  width = %d, height = %d,\n  ballW = %d, ballSheetH = %d, ballFrames = %d,\n  slotMainW = 80, slotMainH = 56,\n  slotWideW = 144, slotWideH = 24,\n  cancelButtonW = 56, cancelButtonH = 16,\n  holdIconW = %d, holdIconSheetH = %d, holdIconFrames = %d,\n  pokemonVersion = %d,\n}\n",
+    W, H, bw, bh, frames or 2, holdW, holdH, holdFrames, Versions.POKEMON_VERSION or 1)
   cache:write(root .. "/manifest.lua", manifest)
 
   return {
     root = root, width = W, height = H,
     ballW = bw, ballSheetH = bh, ballFrames = frames,
+    holdIconW = holdW, holdIconSheetH = holdH, holdIconFrames = holdFrames,
   }
 end
 

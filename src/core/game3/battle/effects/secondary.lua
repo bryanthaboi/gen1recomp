@@ -271,6 +271,8 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
   local effBattler = affectsUser and user or target
   local rank = STATUS_EFFECT_RANK[eff]
   if not effBattler then return false end
+  -- pokefirered/src/battle_script_commands.c:2128
+  if M.st and M.st.pokedude and eff ~= "SLEEP" and effBattler.side == "enemy" then return false end
   if rank and rank <= 9 and not primary and ad:abilityOf(effBattler) == "SHIELD_DUST" and not affectsUser then
     return false
   end

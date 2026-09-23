@@ -33,12 +33,14 @@ function LayoutNative:cellAt(cx, cy)
   local key = cy * 1024 + cx
   local ov = self.overrides[key]
   if ov then return ov end
-  if cx >= 0 and cy >= 0 and cx < self.width and cy < self.height then
+  local tw = self.trueWidth or self.width
+  local th = self.trueHeight or self.height
+  if cx >= 0 and cy >= 0 and cx < tw and cy < th then
     return self.cells[cy * self.width + cx + 1]
       or { mid = 0, coll = 0xff, elev = 0 }
   end
   local bx, by = wrap_border(
-    cx, cy, self.width, self.height, self.borderWidth, self.borderHeight)
+    cx, cy, tw, th, self.borderWidth, self.borderHeight)
   local mid = self.borderMids[by * self.borderWidth + bx + 1] or 0
   return { mid = mid, coll = 0xff, elev = 0 }
 end
@@ -57,15 +59,24 @@ end
 
 --- Flat 1-based COLL_* array for Collision.bindMap.
 function LayoutNative:collArray()
-  local n = self.width * self.height
+  local w = self.width
+  local h = self.height
+  local tw = self.trueWidth or w
+  local th = self.trueHeight or h
+  local n = w * h
   if n <= 0 then return nil end
   local out = {}
-  for i = 1, n do
-    local cx = (i - 1) % self.width
-    local cy = math.floor((i - 1) / self.width)
-    local ov = self.overrides[cy * 1024 + cx]
-    local c = self.cells[i]
-    out[i] = (ov and ov.coll) or (c and c.coll) or 0xff
+  for cy = 0, h - 1 do
+    for cx = 0, w - 1 do
+      local i = cy * w + cx + 1
+      if cx < tw and cy < th then
+        local ov = self.overrides[cy * 1024 + cx]
+        local c = self.cells[i]
+        out[i] = (ov and ov.coll) or (c and c.coll) or 0xff
+      else
+        out[i] = 0xff
+      end
+    end
   end
   return out
 end

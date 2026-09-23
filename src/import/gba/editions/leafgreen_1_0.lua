@@ -1390,8 +1390,11 @@ return {
   [0x1EA700] = 0x1EA6DC, -- :gKeypadIconTiles + 0
   [0x1EAF00] = 0x1EAEDC, -- text.o:sFontSmallLatinGlyphs + 0
   [0x1EEF00] = 0x1EEEDC, -- text.o:sFontSmallLatinGlyphWidths + 0
+  [0x1EF100] = 0x1EF0DC, -- text.o:sFontSmallJapaneseGlyphs + 0
   [0x1FF300] = 0x1FF2DC, -- text.o:sFontNormalLatinGlyphs + 0
   [0x207300] = 0x2072DC, -- text.o:sFontNormalLatinGlyphWidths + 0
+  [0x207500] = 0x2074DC, -- text.o:sFontNormalJapaneseGlyphs + 0
+  [0x20F500] = 0x20F4DC, -- text.o:sFontNormalJapaneseGlyphWidths + 0
   [0x22FC48] = 0x22FC24, -- text.o:sFontBoldJapaneseGlyphs + 0
   [0x231C48] = 0x231C24, -- sprite.o:sDmaOverErrorMsg + 0
   [0x234615] = 0x2345F1, -- main_menu.o:sString_Newline + 0
@@ -1450,6 +1453,10 @@ return {
   [0x25F862] = 0x25F842, -- daycare.o:sEggHatchTiles + 0
   [0x260062] = 0x260042, -- daycare.o:sEggShardTiles + 0
   [0x260556] = 0x260536, -- battle_interface.o:sText_HealthboxNickname + 0
+  [0x260834] = 0x260814, -- trade.o:sTradeMovesBoxTilemap + 0
+  [0x260A32] = 0x260A12, -- trade.o:sTradePartyBoxTilemap + 0
+  [0x260C30] = 0x260C10, -- trade.o:sTradeStripesBG2Tilemap + 0
+  [0x261430] = 0x261410, -- trade.o:sTradeStripesBG3Tilemap + 0
   [0x261EB6] = 0x261E96, -- trade.o:sText_Dummy + 0
   [0x261EB7] = 0x261E97, -- trade.o:sText_ClrWhtHltTranspShdwDrkGry + 0
   [0x261EC1] = 0x261EA1, -- :gText_MaleSymbol4 + 0
@@ -1469,6 +1476,7 @@ return {
   [0x264C1C] = 0x264BFC, -- trade_scene.o:sLinkMonShadow_Gfx + 0
   [0x264E1C] = 0x264DFC, -- trade_scene.o:sCableEnd_Gfx + 0
   [0x26501C] = 0x264FFC, -- trade_scene.o:sGbaScreen_Gfx + 0
+  [0x26601C] = 0x265FFC, -- :gTradeOrHatchMonShadowTilemap + 0
   [0x269A5C] = 0x269A3C, -- trade_scene.o:sGbaMapWireless + 0
   [0x26AA5C] = 0x26AA3C, -- trade_scene.o:sGbaMapCable + 0
   [0x26CED8] = 0x26CEB8, -- trade_scene.o:sAnim_GbaScreen_Long + 0
@@ -4207,6 +4215,8 @@ return {
   [0x45A2E8] = 0x459D08, -- party_menu.o:sActionStringTable + 0
   [0x45A354] = 0x459D74, -- party_menu.o:sDescriptionStringTable + 0
   [0x45A37C] = 0x459D9C, -- party_menu.o:sFieldMoveDescriptionTable + 0
+  [0x45A3AC] = 0x459DCC, -- party_menu.o:sHeldItemGfx + 0
+  [0x45A3EC] = 0x459E0C, -- party_menu.o:sHeldItemPalette + 0
   [0x45A5A4] = 0x459FC4, -- party_menu.o:sTMHMMoves_Duplicate + 0
   [0x45A618] = 0x45A038, -- party_menu.o:sCursorOptions + 0
   [0x45A7E8] = 0x45A208, -- party_menu.o:sUnionRoomTradeMessages + 0
@@ -4591,6 +4601,12 @@ return {
   [0xE9C418] = 0xE9C498, -- :gPokeStorageInterface_NoDisplayMon_Pal + 0
   [0xE9C438] = 0xE9C4B8, -- :gPokeStorageMenu_Gfx + 0
   [0xE9CAEC] = 0xE9CB6C, -- :gPokeStoragePartyMenu_Tilemap + 0
+  [0xE9CEDC] = 0xE9CF5C, -- :gTradeMenu_Pal + 0
+  [0xE9CF3C] = 0xE9CFBC, -- :gTradeCursor_Pal + 0
+  [0xE9CF5C] = 0xE9CFDC, -- :gTradeMenu_Gfx + 0
+  [0xE9E1DC] = 0xE9E25C, -- :gTradeCursor_Gfx + 0
+  [0xE9E9FC] = 0xE9EA7C, -- :gTradeMenu_Tilemap + 0
+  [0xE9F1FC] = 0xE9F27C, -- :gTradeMenuMonBox_Tilemap + 0
   [0xE9F220] = 0xE9F2A0, -- :gFameCheckerBgPals + 0
   [0xE9F260] = 0xE9F2E0, -- :gFameCheckerBgTiles + 0
   [0xEA0700] = 0xEA0780, -- :gFameCheckerBg3Tilemap + 0

@@ -99,7 +99,7 @@ return function(game)
   result(Flags.getFlag(Space.store, ctx(), 9) == true, "FLAG_TEMP_9 marks (8,14) visited")
   result((tonumber(Flags.getVar(Space.store, ctx(), VAR_TEMP_1)) or 0) == 0,
     "VAR_TEMP_1 is still 0 after the crack")
-  U.shot(game, DIR .. "/2418_ice_cracked.png")
+  U.still(game, DIR .. "/2418_ice_cracked.png")
 
   local Audio = require("src.core.game3.audio")
   local SE = require("src.core.game3.se_ids")
@@ -126,7 +126,7 @@ return function(game)
     if iceAt(8, 14) == HOLE then broke = true break end
   end
   result(broke, "the second step broke the ice into a hole")
-  U.shot(game, DIR .. "/2418_ice_broken.png")
+  U.still(game, DIR .. "/2418_ice_broken.png")
 
   local started = false
   for _ = 1, 120 do
@@ -145,7 +145,7 @@ return function(game)
   end
   result(not Player.isVisible(), "set_invisible hid the player over the hole")
   U.wait(2)
-  U.shot(game, DIR .. "/2418_fall_vanished.png")
+  U.still(game, DIR .. "/2418_fall_vanished.png")
 
   local pendingSeen = false
   local landed = false
@@ -165,7 +165,7 @@ return function(game)
     U.wait(1)
   end
   result(dropping, "the player drops in from above on B1F")
-  U.shot(game, DIR .. "/2418_fall_dropping.png")
+  U.still(game, DIR .. "/2418_fall_dropping.png")
   result(pendingSeen, "warphole marked the warp pending while the fall ran")
   result(landed, "warphole landed the player on Icefall Cave B1F, map="
     .. tostring(Runtime.getSession().map))

@@ -251,6 +251,10 @@ function Runtime.update(dt)
 
   local okF, Fade = pcall(require, "src.ui.game3.fade")
   if okF and Fade.tick then Fade.tick(dt) end
+  local okSea, SeagallopUi = pcall(require, "src.ui.game3.seagallop")
+  if okSea and SeagallopUi and SeagallopUi.isActive and SeagallopUi.isActive() then
+    SeagallopUi.update(dt)
+  end
   local okTr, BattleTransition = pcall(require, "src.core.game3.battle_transition")
   if okTr and BattleTransition.isActive and BattleTransition.isActive() then
     BattleTransition.tick(dt)
@@ -264,8 +268,15 @@ function Runtime.update(dt)
     Audio.tickCry(dt)
   end
 
+  local okW, FieldWeather = pcall(require, "src.core.game3.field_weather")
+  if okW and FieldWeather and FieldWeather.update then
+    FieldWeather.update(dt)
+  end
+
   local Battle = require("src.core.game3.battle")
   if Battle.isActive() then
+    local Weather = require("src.core.game3.weather")
+    Weather.suspend()
     Battle.update(dt, game)
     -- Keep script VM + message typewriter alive while battle runs.
     local Space = package.loaded["src.core.game3.scripting.space"]
@@ -278,6 +289,9 @@ function Runtime.update(dt)
     if Message and Message.tick then Message.tick() end
     Hud.update(game, dt, inputTop)
     return
+  else
+    local Weather = require("src.core.game3.weather")
+    Weather.resume()
   end
 
   if not inMenu then

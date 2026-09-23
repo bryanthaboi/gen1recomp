@@ -36,6 +36,9 @@ function Field.metatileOverrideAt(mapId, x, y)
 end
 
 function Field.start(mod, game, session)
+  if session and session._continueWarpDeferred then
+    require("src.core.game3.save_schema_firered").useContinueGameWarp(session)
+  end
   Field._mod = mod
   Field._game = game
   Field._session = session
@@ -45,6 +48,7 @@ function Field.start(mod, game, session)
   Field._waterfall = nil
   Field._fishing = nil
   Field._flyLanding = nil
+  Field._fieldCallback = false
   if Player then Player.fishing = false end
   -- pokefirered/src/overworld.c:345
   Field._tempFlagMap = session and session.map
@@ -78,6 +82,7 @@ function Field.stop()
   Field._waterfall = nil
   Field._fishing = nil
   Field._flyLanding = nil
+  Field._fieldCallback = false
   local PlayerMod = package.loaded["src.core.game3.player"]
   if PlayerMod then PlayerMod.fishing = false end
   local Warp = package.loaded["src.core.game3.warp"]
@@ -109,7 +114,9 @@ function Field.update(_dt)
     -- pokefirered/src/field_control_avatar.c:212
     if not Space.vm:isRunning() then
       local world = game and (game.overworld or game.world)
-      if not (Space._deferOnFrameForFade and world and world.mapSetup) then
+      if not (Space._deferOnFrameForFade and world and world.mapSetup)
+          -- pokefirered/src/overworld.c:1403
+          and not Field.callbackPending() then
         local claiming = Space._pendingOnFrame
         Space._pendingOnFrame = false
         Space._deferOnFrameForFade = false
@@ -207,10 +214,19 @@ Field._flyLanding = false
 -- pokefirered/src/field_effect.c:1155 FieldCB_FallWarpExit
 Field._fallWarp = false
 
+-- pokefirered/src/overworld.c:117 gFieldCallback
+Field._fieldCallback = false
+
+function Field.callbackPending()
+  return (Field._fieldCallback or Field._flyLanding or Field._fallWarp) and true or false
+end
+
 function Field.unlock()
   if Field._flyLanding then return end
   -- pokefirered/src/field_effect.c:1274 FallWarpEffect_7
   if Field._fallWarp then return end
+  -- pokefirered/src/field_effect.c:2532 TeleportInFieldEffectTask3
+  if Field._fieldCallback then return end
   -- pokefirered/src/map_preview_screen.c:439
   local MapPreviewScreen = package.loaded["src.ui.game3.map_preview_screen"]
   if MapPreviewScreen and MapPreviewScreen.isForestActive() then return end
@@ -1117,6 +1133,8 @@ function Field.executeFieldMove(payload)
         -- pokefirered/src/field_effect.c:2421
         Fade.begin(toMode, 1, function()
           Warp.mapTransition(Field._game, dest, function()
+            -- pokefirered/src/field_effect.c:2434
+            Field._fieldCallback = true
             -- pokefirered/src/field_effect.c:2431
             Field.respawnAtHeal({ fieldMove = true, warp = payload.warp })
             -- pokefirered/src/field_effect.c:2454
@@ -1124,7 +1142,11 @@ function Field.executeFieldMove(payload)
             Field.locked = true
             -- pokefirered/src/field_effect.c:2449
             Fade.begin(fromMode, 1, function()
-              FieldEffects.startTeleportIn(function() Warp.releaseField(Field) end)
+              FieldEffects.startTeleportIn(function()
+                -- pokefirered/src/field_effect.c:2532
+                Field._fieldCallback = false
+                Warp.releaseField(Field)
+              end)
             end)
           end)
         end)
@@ -1278,8 +1300,11 @@ function Field.updateFishing()
       else
         f.dots = f.dots + 1
         -- pokefirered/src/field_player_avatar.c:1769
-        local gap = "\252\17" .. string.char(12 - require("src.ui.game3.frlg_font").measure("·"))
-        Message.showStay("·" .. string.rep(gap .. "·", f.dots - 1), { speed = 0 })
+        local parts = {}
+        for k = 0, f.dots - 1 do
+          parts[#parts + 1] = "\252\18" .. string.char(k * 12) .. "·"
+        end
+        Message.showStay(table.concat(parts), { speed = 0 })
       end
     end
   elseif f.step == "bite" then
@@ -1367,6 +1392,15 @@ function Field.loadFlyDestinations(cache, root)
   local src = assert(cache and cache:read(rel), "missing cache file " .. rel)
   local pack = assert(load(src, "@" .. rel, "t", {}))()
   return Field.installFlyDestinations(pack, root)
+end
+
+function Field.flyDestinationsMounted()
+  local root = fly_default_root()
+  if Field._flyBaked ~= nil and Field._flyBakedRoot == root then return true end
+  local cache = require("src.core.game3.dataset").cache()
+  if not (cache and cache:read(root .. "/" .. Field.FLY_BAKED_REL)) then return false end
+  Field.loadFlyDestinations(cache, root)
+  return true
 end
 
 function Field.invalidateFlyDestinations()

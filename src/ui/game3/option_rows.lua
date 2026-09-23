@@ -349,6 +349,20 @@ function Rows.build(ctx)
       return true
     end,
   })
+  -- Manager discoverable home (18-mod-manager-ux), same contract as Gen 1
+  -- OptionsMenu: always listed with an installed count, activate opens the
+  -- manager. Inert until A; costs a vanilla install a single row.
+  add({
+    id = "mods", label = Strings("MODS"),
+    value = function(c)
+      local status = (c.game and c.game.modStatus) or {}
+      return Strings("%d INSTALLED", #(status.available or {}))
+    end,
+    activate = function(c)
+      local ModManager = require("src.ui.game3.mod_manager")
+      ModManager.show({ game = c.game, session = c.session })
+    end,
+  })
   add({
     id = "hotbar", label = Strings("KEY BAR"),
     value = function(c) return Strings(c.options.hotbar == false and "OFF" or "ON") end,
@@ -399,7 +413,7 @@ Rows.GROUPS = {
 
 Rows.ORDER = {
   "group.speed", "group.video", "group.graphics", "group.audio",
-  "performance", "group.battle", "group.extras", "buttonMode",
+  "performance", "group.battle", "group.extras", "buttonMode", "mods",
 }
 
 function Rows.group(rows, openPage)

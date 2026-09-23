@@ -43,13 +43,10 @@ local function check(cond, msg)
 end
 
 local function find_pack()
-  local home = os.getenv("HOME") or "."
+  local root = require("tests.game3_cache").root("pokemon/battle_anims/pack.lua")
   local cands = {
     os.getenv("G3_ANIM_PACK") or "",
-    home .. "/Library/Application Support/LOVE/firered-sep18fx/firered/data/generated/gba/pokemon/battle_anims/pack.lua",
-    home .. "/.local/share/love/firered-sep18fx/firered/data/generated/gba/pokemon/battle_anims/pack.lua",
-    home .. "/.local/share/love/pokemon-love2d/firered/data/generated/gba/pokemon/battle_anims/pack.lua",
-    "data/generated/gba/pokemon/battle_anims/pack.lua",
+    root and (root .. "/pokemon/battle_anims/pack.lua") or "",
   }
   for _, p in ipairs(cands) do
     if p then

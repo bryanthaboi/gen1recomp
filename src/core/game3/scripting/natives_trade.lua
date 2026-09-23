@@ -322,16 +322,44 @@ function Trade.tradeMons(session, playerSlot, offered)
     if record then Mail.giveMailToMon2(session, offered, record) end
   end
   -- pokefirered/src/trade_scene.c:1081 UpdatePokedexForReceivedMon
-  session.dex = session.dex or { seen = {}, owned = {}, caught = {} }
-  session.dex.seen = session.dex.seen or {}
-  session.dex.owned = session.dex.owned or {}
-  session.dex.caught = session.dex.caught or {}
-  local species = speciesOf(offered)
-  if species ~= SPECIES_NONE then
-    session.dex.seen[species] = true
-    require("src.core.game3.dex").handleSetPokedexFlag(session.dex, species, true, offered.personality)
+  -- pokefirered/src/trade_scene.c:1036
+  if not isEgg(offered) then
+    session.dex = session.dex or { seen = {}, owned = {}, caught = {} }
+    session.dex.seen = session.dex.seen or {}
+    session.dex.owned = session.dex.owned or {}
+    session.dex.caught = session.dex.caught or {}
+    local species = speciesOf(offered)
+    if species ~= SPECIES_NONE then
+      session.dex.seen[species] = true
+      require("src.core.game3.dex").handleSetPokedexFlag(session.dex, species, true, offered.personality)
+    end
   end
   return sent
+end
+
+-- pokefirered/include/constants/game_stat.h:25
+Trade.GAME_STAT_POKEMON_TRADES = 21
+
+-- pokefirered/src/quest_log_events.c:1014
+local function questSpeciesName(mon)
+  if isEgg(mon) then return require("src.core.game3.rom_text").plain("gText_EggNickname") end
+  return speciesName(speciesOf(mon))
+end
+
+-- pokefirered/src/trade_scene.c:2599
+function Trade.noteLinkTrade(session, sent, received, partnerName, unionRoom)
+  if type(session) ~= "table" then return nil end
+  local key = "TradedMon1ForTrainersMon2"
+  if not unionRoom then
+    key = "TradedMon1ForPersonsMon2"
+    -- pokefirered/src/trade_scene.c:2606
+    if type(session.gameStats) ~= "table" then session.gameStats = {} end
+    local id = Trade.GAME_STAT_POKEMON_TRADES
+    session.gameStats[id] = math.min(0xFFFFFF, math.floor(tonumber(session.gameStats[id]) or 0) + 1)
+  end
+  -- pokefirered/src/quest_log_events.c:1280
+  return key, { S1 = tostring(partnerName or ""), S2 = questSpeciesName(received),
+    S3 = questSpeciesName(sent) }
 end
 
 local function evolutionOpen()

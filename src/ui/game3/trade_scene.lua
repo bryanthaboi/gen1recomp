@@ -89,6 +89,7 @@ local SHEETS = {
   cableEnd = "cable_end",
   linkMonGlow = "link_mon_glow",
   linkMonShadow = "link_mon_shadow",
+  monShadowBg = "mon_shadow_bg",
   gbaFlash = "gba_screen_flash",
   ball = "ball",
 }
@@ -215,6 +216,12 @@ function TradeSceneUi.draw()
 
   love.graphics.setColor(0, 0, 0, 1)
   love.graphics.rectangle("fill", 0, 0, Display.W, Display.H)
+
+  -- pokefirered/src/trade_scene.c:1121
+  if art and s.monShadowBg and art.monShadowBg then
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(art.monShadowBg, -(tonumber(s.bg2hofs) or 0), 0)
+  end
 
   if art and s.gbaVisible then
     love.graphics.setColor(1, 1, 1, 1)

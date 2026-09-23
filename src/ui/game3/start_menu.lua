@@ -23,8 +23,8 @@ StartMenu._confirmCursor = 2 -- 1=YES, 2=NO (default NO)
 
 local function player_label(session)
   local name = (session and (session.name or session.playerName)) or "PLAYER"
-  name = tostring(name)
-  if #name > 7 then name = name:sub(1, 7) end
+  -- PLAYER_NAME_LENGTH counts characters, and a kana is three bytes
+  name = FrlgFont.truncate(name, 7)
   return string.upper(name)
 end
 
@@ -55,7 +55,9 @@ local function entry(id, session)
 end
 
 -- pret MENU_POKEDEX..MENU_EXIT order for normal field.
-local function build_entries(session)
+-- `game` is only read for modStatus (the gated MODS row); session alone is
+-- enough for the retail entry lists.
+local function build_entries(session, game)
   if link_state_active() then
     -- pokefirered/src/start_menu.c:236 SetUpStartMenu_Link
     return {
@@ -112,6 +114,12 @@ local function build_entries(session)
   entries[#entries + 1] = entry("trainer", session)
   entries[#entries + 1] = entry("save", session)
   entries[#entries + 1] = entry("option", session)
+  -- Same discoverable home as Gen 1/2 start menus (18-mod-manager-ux):
+  -- only once at least one mod is discovered, so vanilla is unchanged.
+  local status = game and game.modStatus
+  if status and #(status.available or {}) > 0 then
+    entries[#entries + 1] = { id = "mods", label = "MODS" }
+  end
   entries[#entries + 1] = entry("exit", session)
   return entries
 end
@@ -120,8 +128,8 @@ function StartMenu.resetCursor()
   StartMenu.cursor = 1
 end
 
-function StartMenu.saveOffered(session)
-  for _, entry in ipairs(build_entries(session)) do
+function StartMenu.saveOffered(session, game)
+  for _, entry in ipairs(build_entries(session, game)) do
     if entry.id == "save" then return true end
   end
   return false
@@ -135,7 +143,7 @@ function StartMenu.show(opts)
   StartMenu._session = opts.session
   StartMenu._game = opts.game
   StartMenu._onClose = opts.onClose
-  StartMenu.ENTRIES = build_entries(opts.session)
+  StartMenu.ENTRIES = build_entries(opts.session, opts.game)
   StartMenu._safariStats = not link_state_active() and not in_union_room(opts.session)
     and safari_active(opts.session)
   if ModRuntime.wantsHook("ui.start_menu.items") then
@@ -242,6 +250,12 @@ function StartMenu.confirm()
   elseif e.id == "option" then
     local OptionMenu = require("src.ui.game3.option_menu")
     OptionMenu.show({ session = session })
+  elseif e.id == "mods" then
+    local ModManager = require("src.ui.game3.mod_manager")
+    ModManager.show({
+      game = StartMenu._game or (session and session.game),
+      session = session,
+    })
   end
 end
 

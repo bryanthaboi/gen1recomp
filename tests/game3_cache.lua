@@ -17,10 +17,9 @@ local function push(list, seen, path)
 end
 
 local SUFFIX = "/firered/data/generated/gba"
-local OWNER_IDENTITY = "pokemon-love2d"
 
 local function candidates()
-  local list, seen, last = {}, {}, {}
+  local list, seen = {}, {}
   local home = os.getenv("HOME")
   local saveRoots = home and {
     home .. "/Library/Application Support/LOVE",
@@ -28,20 +27,14 @@ local function candidates()
   } or {}
 
   local identity = os.getenv("POKEPORT_IDENTITY")
-  if identity and identity ~= "" and identity ~= OWNER_IDENTITY then
+  if identity and identity ~= "" then
     for _, saveRoot in ipairs(saveRoots) do
       push(list, seen, saveRoot .. "/" .. identity .. SUFFIX)
     end
   end
   push(list, seen, os.getenv("POKEPORT_GBA_CACHE"))
   push(list, seen, "data/generated/gba")
-
-  if not identity or identity == "" or identity == OWNER_IDENTITY then
-    for _, saveRoot in ipairs(saveRoots) do
-      last[#last + 1] = saveRoot .. "/" .. OWNER_IDENTITY .. SUFFIX
-    end
-  end
-  return list, last
+  return list
 end
 
 local function metaVersions(root)
@@ -78,7 +71,6 @@ function M.root(marker, opts)
     if memo == false then return nil end
     return memo
   end
-  local list, last = candidates()
   local stale = 0
   local function pick(roots)
     for _, root in ipairs(roots) do
@@ -89,7 +81,7 @@ function M.root(marker, opts)
     end
     return nil
   end
-  local root = pick(list) or pick(last)
+  local root = pick(candidates())
   if root then
     M._roots[memoKey] = root
     M.reason = nil
@@ -121,6 +113,15 @@ function M.cache()
       return readable(rel)
     end,
   }
+end
+
+function M.rootOrSkip(label, marker, opts)
+  local root = M.root(marker, opts)
+  if not root then
+    print("[skip] " .. tostring(label) .. ": " .. tostring(M.reason))
+    os.exit(0)
+  end
+  return root
 end
 
 function M.mount(marker, opts)

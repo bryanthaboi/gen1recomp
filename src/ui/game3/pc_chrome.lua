@@ -246,14 +246,14 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
   if isEgg then nick = require("src.core.game3.rom_text").plain("gText_EggNickname") end
 
   -- Line 1: Nickname or Species Name (FONT_NORMAL, Y: 88)
-  FrlgFont.draw(nick:sub(1, 10), 6, 88, {
+  FrlgFont.draw(FrlgFont.truncate(nick, 10), 6, 88, {
     small = false,
     colors = FrlgFont.COLOR.WHITE
   })
 
   if not isEgg then
     -- Line 2: /Species Name (FONT_NORMAL, Y: 102)
-    FrlgFont.draw("/" .. spName:sub(1, 10), 6, 102, {
+    FrlgFont.draw("/" .. FrlgFont.truncate(spName, 10), 6, 102, {
       small = false,
       colors = FrlgFont.COLOR.WHITE
     })
@@ -275,7 +275,7 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
     if held and held > 0 then
       local heldName = ItemsData.displayName(held)
       if heldName and heldName ~= "" and heldName ~= "NONE" then
-        FrlgFont.draw(heldName:sub(1, 10), 6, 132, {
+        FrlgFont.draw(FrlgFont.truncate(heldName, 10), 6, 132, {
           small = true,
           colors = FrlgFont.COLOR.WHITE
         })

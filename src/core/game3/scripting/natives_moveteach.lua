@@ -178,6 +178,8 @@ MoveTeach.HANDLERS = {
       SummaryMenu.openMenu(session and session.party, slot, {
         session = session,
         mode = "select_move",
+        -- pokefirered/src/party_menu_specials.c:47
+        forgetMove = true,
         onSelectMove = function(slotIdx)
           -- pokefirered/src/pokemon_summary_screen.c:3859
           varSet(ctx, VAR_0x8005, tonumber(slotIdx) or MAX_MON_MOVES)

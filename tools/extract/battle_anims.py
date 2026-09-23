@@ -85,6 +85,86 @@ def parse_anim_constants(pokered):
     return values
 
 
+FALLING_DELTA_COUNT = 64
+
+_FALLING_OPS = {
+    "inc a": [0x3C], "ld b, a": [0x47], "ld a, b": [0x78],
+    "ld c, a": [0x4F], "ld a, [de]": [0x1A], "ld [hli], a": [0x22],
+    "inc hl": [0x23], "inc de": [0x13], "dec c": [0x0D], "ret": [0xC9],
+}
+_FALLING_IMM8 = {"and": 0xE6, "cp": 0xFE, "xor": 0xEE}
+_FALLING_ADDR = [
+    (r"ld a, \[(\w+)\]$", 0xFA), (r"ld \[(\w+)\], a$", 0xEA),
+    (r"ld hl, (\w+)$", 0x21), (r"ld de, (\w+)$", 0x11),
+]
+
+
+def _falling_insn(text, symbols, labels, scope, pc):
+    if text in _FALLING_OPS:
+        return list(_FALLING_OPS[text])
+    m = re.match(r"db\s+(.*)$", text)
+    if m:
+        return [parse_number(a) & 0xFF for a in split_args(m.group(1))]
+    m = re.match(r"(and|cp|xor)\s+(\S+)$", text)
+    if m:
+        return [_FALLING_IMM8[m.group(1)], parse_number(m.group(2)) & 0xFF]
+    m = re.match(r"jr nz, (\.\w+)$", text)
+    if m:
+        if labels is None:
+            return [0x20, 0]
+        return [0x20, (labels[(scope, m.group(1))] - (pc + 2)) & 0xFF]
+    for pattern, opcode in _FALLING_ADDR:
+        m = re.match(pattern, text)
+        if m:
+            if symbols is None:
+                return [opcode, 0, 0]
+            address = symbols[m.group(1)].address
+            return [opcode, address & 0xFF, address >> 8]
+    return None
+
+
+def parse_falling_delta_xs(pokered, symbols):
+    # engine/battle/animations.asm:2418
+    path = os.path.join(pokered, "engine/battle/animations.asm")
+    body = []
+    started = False
+    for lineno, line in read_asm(path):
+        s = " ".join(line.split())
+        if not s:
+            continue
+        if s == "FallingObjects_DeltaXs:":
+            started = True
+        if started:
+            body.append((lineno, s))
+    if not body:
+        util.die(f"{path}: FallingObjects_DeltaXs not found")
+
+    def assemble(labels):
+        out, scope, found = [], None, {}
+        for lineno, s in body:
+            if s.endswith(":") and not s.startswith("."):
+                scope = s[:-1]
+                continue
+            if re.match(r"\.\w+$", s):
+                found[(scope, s)] = len(out)
+                continue
+            if len(out) >= FALLING_DELTA_COUNT:
+                break
+            code = _falling_insn(
+                s, symbols if labels is not None else None, labels, scope,
+                len(out))
+            if code is None:
+                util.die(f"{path}:{lineno}: {scope}: cannot assemble {s!r}")
+            out.extend(code)
+        return out, found
+
+    _, labels = assemble(None)
+    out, _ = assemble(labels)
+    if len(out) < FALLING_DELTA_COUNT:
+        util.die(f"{path}: FallingObjects_DeltaXs overrun is short")
+    return {i: b for i, b in enumerate(out[:FALLING_DELTA_COUNT])}
+
+
 def parse_pointer_table(lines, table_label, path, whole_table=False):
     """Labels of a `dw` pointer table, up to the first assert_table_length
     (or, with whole_table, through interior asserts to the table's end --
@@ -425,7 +505,7 @@ MISC_ANIMS = [
 ]
 
 
-def extract(pokered, out_dir, assets_dir, move_order):
+def extract(pokered, out_dir, assets_dir, move_order, symbols):
     if len(move_order) != NUM_ATTACKS:
         util.die(f"battle_anims: expected {NUM_ATTACKS} moves, "
                  f"got {len(move_order)}")
@@ -437,6 +517,7 @@ def extract(pokered, out_dir, assets_dir, move_order):
                                    len(base_coords), consts)
     move_anims = parse_move_anims(pokered, move_order, consts, len(subanims))
     tilesheets = parse_tilesheets(pokered, assets_dir)
+    falling_delta_xs = parse_falling_delta_xs(pokered, symbols)
 
     # sanity: every referenced tile must fit its sheet
     for move, anim in move_anims.items():
@@ -457,6 +538,7 @@ def extract(pokered, out_dir, assets_dir, move_order):
         "frameBlocks": {i: b for i, b in enumerate(frame_blocks)},
         "subanims": {i: s for i, s in enumerate(subanims)},
         "moveAnims": move_anims,
+        "fallingDeltaXs": falling_delta_xs,
     }
     util.write_lua(
         os.path.join(out_dir, "battle_anims.lua"), out,

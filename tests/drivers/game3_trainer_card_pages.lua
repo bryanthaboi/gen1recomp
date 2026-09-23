@@ -169,11 +169,12 @@ return function(game)
   end
   closeCard()
 
-  session.linkBattleWins = 1234
-  session.linkBattleLosses = 7
-  session.pokemonTrades = 42
-  session.unionRoomNum = 19
-  session.berryCrushPoints = 8801
+  if type(session.gameStats) ~= "table" then session.gameStats = {} end
+  session.gameStats.linkBattleWins = 1234
+  session.gameStats.linkBattleLosses = 7
+  session.gameStats[21] = 42
+  session.gameStats[50] = 19
+  session.gameStats[51] = 8801
   -- src/field_specials.c:1710 UpdateTrainerCardPhotoIcons
   local roster = { 3, 6, 9, 25, 143, 149 }
   for i = 1, 6 do setVar(VAR_TRAINER_CARD_MON_ICON_1 + i - 1, roster[i]) end

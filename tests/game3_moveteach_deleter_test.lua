@@ -228,7 +228,7 @@ do
   package.loaded["src.core.game3.runtime"] = prevRuntime
 end
 
-print("[test] 8. an HM move refuses to be forgotten")
+print("[test] 8. the Move Deleter forgets an HM move")
 do
   local prevRuntime = package.loaded["src.core.game3.runtime"]
   local mon = fourMoveMon()
@@ -247,11 +247,89 @@ do
   pressed = "a"
   SummaryMenu.handleInput(input)
   pressed = nil
-  check(SummaryMenu.isOpen(), "the screen stays up on an HM move")
+  check(not SummaryMenu.isOpen(),
+    "PSS_MODE_FORGET_MOVE accepts an HM (pokefirered/src/pokemon_summary_screen.c:3772)")
+  check(SummaryMenu._hmNotice ~= true, "no HM refusal is printed")
+  check(Flags.getVar(nil, ctx, 0x8005) == 0,
+    "VAR_0x8005 is CUT's slot, got " .. tostring(Flags.getVar(nil, ctx, 0x8005)))
+  Natives.special(ctx, 0xDD, { log = function() end })
+  check(Pokemon.moveIdAt(mon, 1) == GROWL,
+    "special 0xDD deleted CUT and shifted GROWL up, got "
+      .. tostring(Pokemon.moveName(Pokemon.moveIdAt(mon, 1))))
+  check(Pokemon.moveSlotCount(mon) == 3, "three moves are left, got "
+    .. tostring(Pokemon.moveSlotCount(mon)))
+
+  package.loaded["src.core.game3.runtime"] = prevRuntime
+end
+
+print("[test] 9. a move-learn summary screen still refuses an HM")
+do
+  local mon = fourMoveMon()
+  mon.moves[1] = CUT
+  local picked = "unset"
+  SummaryMenu.openMenu({ mon }, 1, {
+    mode = "select_move",
+    moveToLearn = TACKLE,
+    onSelectMove = function(slot) picked = slot end,
+  })
+  local pressed = nil
+  local input = { wasPressed = function(_, key) return key == pressed end }
+  pressed = "a"
+  SummaryMenu.handleInput(input)
+  pressed = nil
+  check(SummaryMenu.isOpen(), "PSS_MODE_SELECT_MOVE keeps the screen up on an HM")
   check(SummaryMenu._hmNotice == true,
-    "pret's HM refusal is printed (pokefirered/src/pokemon_summary_screen.c:3899)")
-  check(Pokemon.moveIdAt(mon, 1) == CUT, "CUT is still in slot 1")
+    "the HM refusal is printed (pokefirered/src/pokemon_summary_screen.c:3772)")
+  check(picked == "unset", "no slot was reported")
   SummaryMenu.close()
+end
+
+print("[test] 10. the deleter cursor skips empty move slots onto CANCEL")
+do
+  local prevRuntime = package.loaded["src.core.game3.runtime"]
+  local mon = monAt(BULBASAUR, 5)
+  mon.moves = { TACKLE, GROWL }
+  mon.pp = { 35, 40 }
+  mon.maxPp = { 35, 40 }
+  package.loaded["src.core.game3.runtime"] = {
+    getSession = function() return { party = { mon } } end,
+    isActive = function() return true end,
+  }
+
+  local ctx = Ctx.new({})
+  ctx.mode = "bytecode"
+  ctx.status = "running"
+  Natives.special(ctx, 0xDC, { log = function() end })
+  local pressed = nil
+  local input = { wasPressed = function(_, key) return key == pressed end }
+  local function press(key)
+    pressed = key
+    SummaryMenu.handleInput(input)
+    pressed = nil
+  end
+
+  press("down")
+  check(SummaryMenu._moveCursor == 2, "down lands on GROWL, got " .. tostring(SummaryMenu._moveCursor))
+  press("down")
+  check(SummaryMenu._moveCursor == 5,
+    "down skips the two empty slots onto CANCEL (pokefirered/src/pokemon_summary_screen.c:3829), got "
+      .. tostring(SummaryMenu._moveCursor))
+  press("up")
+  check(SummaryMenu._moveCursor == 2,
+    "up from CANCEL skips back to GROWL (pokefirered/src/pokemon_summary_screen.c:3802), got "
+      .. tostring(SummaryMenu._moveCursor))
+  press("down")
+  press("down")
+  check(SummaryMenu._moveCursor == 1, "down from CANCEL wraps to slot 1, got "
+    .. tostring(SummaryMenu._moveCursor))
+  press("up")
+  check(SummaryMenu._moveCursor == 5, "up from slot 1 wraps to CANCEL, got "
+    .. tostring(SummaryMenu._moveCursor))
+  press("a")
+  check(not SummaryMenu.isOpen(), "A on CANCEL closes the screen")
+  check(Flags.getVar(nil, ctx, 0x8005) == 4,
+    "VAR_0x8005 is 4 on CANCEL, got " .. tostring(Flags.getVar(nil, ctx, 0x8005)))
+  check(Pokemon.moveSlotCount(mon) == 2, "nothing was deleted")
 
   package.loaded["src.core.game3.runtime"] = prevRuntime
 end

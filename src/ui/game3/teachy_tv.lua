@@ -39,10 +39,17 @@ local BODY_TPL = { left = 2, top = 15, width = 26, height = 4 }
 local LIST_WIN = Window.template(LIST_TPL.left, LIST_TPL.top, LIST_TPL.width, LIST_TPL.height)
 local BODY_WIN = Window.template(BODY_TPL.left, BODY_TPL.top, BODY_TPL.width, BODY_TPL.height)
 
--- pokefirered/src/teachy_tv.c:676 TeachyTvInitTextPrinter
-local BODY_COLOR = FrlgFont.COLOR.NORMAL
+-- pokefirered/src/teachy_tv.c:679 AddTextPrinterParameterized2(0, FONT_MALE, text, speed, 0, 1, 0xC, 3)
+local BODY_COLOR = { fg = FrlgFont.STDPAL[1], shadow = FrlgFont.STDPAL[3], bg = FrlgFont.STDPAL[0] }
 -- pokefirered/src/teachy_tv.c:237 cursorPal
-local LIST_COLOR = FrlgFont.COLOR.NORMAL
+local LIST_COLOR = FrlgFont.COLOR.WHITE
+
+-- pokefirered/src/teachy_tv.c:620 TeachyTvSetWindowRegs
+local WIN0_X0, WIN0_X1, WIN0_Y0, WIN0_Y1 = 0x1C, 0xD4, 0x0C, 0x64
+-- pokefirered/src/teachy_tv.c:601 SetGpuReg(REG_OFFSET_BLDY, 0x5)
+local LIST_DARKEN = 5 / 16
+-- pokefirered/src/teachy_tv.c:247 sScrollIndicatorArrowPair
+local ARROW_X, ARROW_UP_Y, ARROW_DOWN_Y = 0x78, 0x0C, 0x64
 
 local LIST_CURSOR_OPTS = { colors = LIST_COLOR }
 local LIST_TEXT_OPTS = { maxWidth = LIST_TPL.width * 8 - 8, colors = LIST_COLOR }
@@ -102,12 +109,14 @@ local function se(id)
   end)
 end
 
--- pokefirered/src/teachy_tv.c:490 PlayNewMapMusic
+-- pokefirered/src/sound.c:129 PlayNewMapMusic
 local function song(id)
-  pcall(function()
-    local Audio = require("src.core.game3.audio")
-    if Audio and Audio.playMapSong then Audio.playMapSong(id) end
-  end)
+  local Audio = require("src.core.game3.audio")
+  Audio.playSong(id)
+end
+
+local function fade()
+  return require("src.ui.game3.fade")
 end
 
 local function read_bytes(rel)
@@ -250,8 +259,23 @@ local function grass_spawn(x, y, seekEnd)
   Ui.grass[#Ui.grass + 1] = {
     x = x,
     y = y + 8,
+    -- pokefirered/src/teachy_tv.c:1120 SeekSpriteAnim(obj, 4)
     frames = seekEnd and (GRASS_FRAME_TICKS * 4) or 0,
+    split = not seekEnd,
   }
+end
+
+-- pokefirered/src/data/field_effects/field_effect_objects.h:73 sAnim_TallGrass
+local GRASS_ANIM = { 1, 2, 3, 4, 0 }
+
+function Ui.grassAnimCmd(g)
+  local cmd = math.floor((g.frames or 0) / GRASS_FRAME_TICKS)
+  if cmd >= GRASS_FRAMES then cmd = GRASS_FRAMES - 1 end
+  return cmd
+end
+
+function Ui.grassFrame(g)
+  return GRASS_ANIM[Ui.grassAnimCmd(g) + 1]
 end
 
 -- pokefirered/src/teachy_tv.c:1122 TeachyTvGrassAnimationObjCallback
@@ -326,28 +350,43 @@ function Ui.show(session, bag, opts)
   Ui.scroll = res and res.scrollOffset or 0
   Ui.cursor = (res and (res.scrollOffset + res.selectedRow) or 0) + 1
   to_list()
+  Ui.closing = false
   Stack.push("teachy_tv", Ui, { hideBelow = true })
   -- pokefirered/src/teachy_tv.c:490 PlayNewMapMusic
   song(MUS_TEACHY_TV_MENU)
+  -- pokefirered/src/teachy_tv.c:499 BeginNormalPaletteFade(PALETTES_ALL, 0, 0x10, 0, 0)
+  local Fade = fade()
+  Fade.begin(Fade.MODE.FROM_BLACK, 1)
 end
 
 -- pokefirered/src/teachy_tv.c:695 TeachyTvQuitFadeControlAndTaskDel
-function Ui.close()
+function Ui.finishClose()
   if not Ui.open then return end
   Ui.open = false
+  Ui.closing = false
   Ui.state = "list"
   Ui._pages = nil
   Ui.suspended = false
   Ui.hostVisible = false
+  Ui.static = nil
   Stack.pop("teachy_tv")
   -- pokefirered/src/teachy_tv.c:705 Overworld_PlaySpecialMapMusic
-  pcall(function()
-    local Audio = require("src.core.game3.audio")
-    if Audio and Audio.restoreMapSong then Audio.restoreMapSong() end
-  end)
+  require("src.core.game3.audio").restoreMapSong()
+  local Fade = fade()
+  Fade.begin(Fade.MODE.FROM_BLACK, 1)
   local cb = Ui._onClose
   Ui._onClose = nil
   if cb then cb() end
+end
+
+-- pokefirered/src/teachy_tv.c:689 TeachyTvQuitBeginFade
+function Ui.close()
+  if not Ui.open or Ui.closing then return end
+  Ui.closing = true
+  local Fade = fade()
+  Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+    if Ui.closing then Ui.finishClose() end
+  end)
 end
 
 local function set_printer(phase, pages)
@@ -383,6 +422,8 @@ STEP.transition_render_bg2 = function()
   -- pokefirered/src/teachy_tv.c:758 TeachyTvBg2AnimController
   bg2_anim()
   if Ui.frames > T.TITLE - 1 then
+    -- pokefirered/src/teachy_tv.c:761 CopyToBgTilemapBufferRect_ChangePalette
+    Ui.static = nil
     Ui.title = true
     host(T.DUDE_X_START, T.DUDE_Y, "right", true)
     song(MUS_FOLLOW_ME)
@@ -548,6 +589,8 @@ local function abort_to_end()
   local cluster = TeachyTv.STEPS[TeachyTv.whichScript(Ui._session)] or {}
   Ui.aborted = true
   Ui.hostVisible = false
+  -- pokefirered/src/teachy_tv.c:813 grassAnimDisabled = 1
+  Ui.grass = {}
   Ui._pages = nil
   Ui.title = false
   Ui.endCard = false
@@ -571,10 +614,11 @@ local function begin_lesson(scriptId)
 end
 
 function Ui.tick()
-  if not Ui.open or Ui.suspended then return end
+  if not Ui.open or Ui.suspended or Ui.closing then return end
   if Ui.state ~= "lesson" then
     -- pokefirered/src/teachy_tv.c:718 TeachyTvBg2AnimController
     bg2_anim()
+    Ui._arrowK = ((Ui._arrowK or 0) + 1) % 256
     return
   end
   local name = Ui.stepName()
@@ -590,6 +634,11 @@ end
 
 function Ui.update(dt)
   if not Ui.open then return end
+  if Ui.closing then
+    -- pokefirered/src/teachy_tv.c:697 !gPaletteFade.active
+    if not fade().isActive() then Ui.finishClose() end
+    return
+  end
   Ui._acc = (Ui._acc or 0) + (tonumber(dt) or 0)
   local n = 0
   while Ui._acc >= FRAME and n < 8 do
@@ -610,18 +659,29 @@ function Ui.resumeFromDemonstration(outcome)
   end
   TeachyTv.returnToTv(session)
   Ui.suspended = false
+  Ui.closing = false
   Ui.open = true
+  Ui.static = nil
   if not Stack.has("teachy_tv") then
     Stack.push("teachy_tv", Ui, { hideBelow = true })
   end
+  -- pokefirered/src/teachy_tv.c:499 BeginNormalPaletteFade(PALETTES_ALL, 0, 0x10, 0, 0)
+  local Fade = fade()
+  Fade.begin(Fade.MODE.FROM_BLACK, 1)
   if mode == TeachyTv.MODE.RESUME_LIST then
+    -- pokefirered/src/teachy_tv.c:490 PlayNewMapMusic
+    song(MUS_TEACHY_TV_MENU)
     to_list()
     return
   end
+  -- pokefirered/src/teachy_tv.c:1214 PlayNewMapMusic(MUS_FOLLOW_ME)
+  song(MUS_FOLLOW_ME)
   Ui.state = "lesson"
   Ui._pages = nil
   Ui.step = (TeachyTv.RESUME_STEP[script] or 0) + 1
   Ui.frames = 0
+  -- pokefirered/src/teachy_tv.c:505 TeachyTvSetupBg
+  reset_bg3()
   -- pokefirered/src/teachy_tv.c:646 TeachyTvSetupPostBattleWindowAndObj
   host(T.DUDE_X_END, T.DUDE_Y, "down", false)
   if TeachyTv.endsInBattle(script) then
@@ -932,7 +992,7 @@ function Ui.returnFromDemo()
 end
 
 function Ui.handleInput(input)
-  if not Ui.open or Ui.suspended then return end
+  if not Ui.open or Ui.suspended or Ui.closing then return end
 
   -- pokefirered/src/teachy_tv.c:808 TeachyTvRenderMsgAndSwitchClusterFuncs
   if Ui.state == "lesson" then
@@ -952,6 +1012,8 @@ function Ui.handleInput(input)
     return
   end
 
+  -- pokefirered/src/teachy_tv.c:719 !gPaletteFade.active
+  if fade().isActive() then return end
   local rows = Ui.rows()
   if input:wasPressed("up") then
     if Ui.cursor > 1 then
@@ -1045,7 +1107,7 @@ local function draw_host()
   local sprites = ow_sprites()
   if not sprites then return end
   pcall(sprites.draw, TeachyTv.HOST_GFX,
-    (Ui.hostX or T.DUDE_X_END) - 8, (Ui.hostY or T.DUDE_Y) - 8, 0, 0,
+    (Ui.hostX or T.DUDE_X_END) - 8, Ui.hostY or T.DUDE_Y, 0, 0,
     Ui.hostFacing or "down", Ui.hostWalk and 1 or 0, Ui.hostStep and true or false)
 end
 
@@ -1088,16 +1150,52 @@ local function draw_static()
   end
 end
 
--- pokefirered/src/teachy_tv.c:1140 TeachyTvGrassAnimationMain
-local function draw_grass()
+-- pokefirered/src/teachy_tv.c:875 sSubspriteArray
+local function grass_half_quad(sheet, frame, bottom)
+  sheet.halves = sheet.halves or {}
+  local key = frame * 2 + (bottom and 1 or 0)
+  local q = sheet.halves[key]
+  if not q then
+    q = love.graphics.newQuad(0, frame * GRASS_H + (bottom and 8 or 0), GRASS_W, 8,
+      GRASS_W, GRASS_H * GRASS_FRAMES)
+    sheet.halves[key] = q
+  end
+  return q
+end
+
+-- pokefirered/src/teachy_tv.c:1132 TeachyTvGrassAnimationObjCallback
+local function draw_grass(behindHost)
   if #Ui.grass == 0 then return end
   local sheet = grass_sheet()
   if not sheet then return end
   love.graphics.setColor(1, 1, 1, 1)
   for _, g in ipairs(Ui.grass) do
-    local idx = math.floor(g.frames / GRASS_FRAME_TICKS)
-    if idx >= GRASS_FRAMES then idx = GRASS_FRAMES - 1 end
-    love.graphics.draw(sheet.image, sheet.quads[idx + 1], g.x - 8, g.y - 8)
+    local frame = Ui.grassFrame(g)
+    if g.split and Ui.grassAnimCmd(g) == 0 then
+      love.graphics.draw(sheet.image, grass_half_quad(sheet, frame, not behindHost),
+        g.x - 8, g.y - 8 + (behindHost and 0 or 8))
+    elseif not behindHost then
+      love.graphics.draw(sheet.image, sheet.quads[frame + 1], g.x - 8, g.y - 8)
+    end
+  end
+end
+
+-- pokefirered/src/menu_indicators.c:289 gSineTable[tSinePos] * multiplier / 256
+local function arrow_bob(freq)
+  local Trig = require("src.core.game3.trig")
+  local v = Trig.sin(((Ui._arrowK or 0) * freq) % 256) * 2 / 256
+  return v < 0 and math.ceil(v) or math.floor(v)
+end
+
+-- pokefirered/src/teachy_tv.c:568 TeachyTvSetupScrollIndicatorArrowPair
+local function draw_scroll_arrows(total, shown)
+  if not TeachyTv.hasTmCase(Ui._session, Ui._bag) or total <= shown then return end
+  local BagChrome = require("src.ui.game3.bag_chrome")
+  if Ui.scroll > 0 then
+    BagChrome.drawArrow("up", ARROW_X - 8, ARROW_UP_Y - 8 + arrow_bob(8))
+  end
+  if Ui.scroll < total - shown then
+    BagChrome.drawArrow("down", ARROW_X - 8, ARROW_DOWN_Y - 8 + arrow_bob(-8))
   end
 end
 
@@ -1122,8 +1220,11 @@ function Ui.draw()
   if not cutOut then draw_chrome() end
 
   if Ui.state == "list" then
+    -- pokefirered/src/teachy_tv.c:600 SetGpuReg(REG_OFFSET_BLDCNT, 0xCC)
+    love.graphics.setColor(0, 0, 0, LIST_DARKEN)
+    love.graphics.rectangle("fill", WIN0_X0, WIN0_Y0, WIN0_X1 - WIN0_X0, WIN0_Y1 - WIN0_Y0)
+    love.graphics.setColor(1, 1, 1, 1)
     if cutOut then draw_chrome() end
-    Window.stdFrame(LIST_WIN)
     local rows = Ui.rows()
     local shown = maxShowed()
     -- pokefirered/src/teachy_tv.c:559 upText_Y
@@ -1140,6 +1241,7 @@ function Ui.draw()
       -- pokefirered/src/teachy_tv.c:234 item_X
       FrlgFont.draw(tostring(row.label), LIST_TPL.left * 8 + 8, y, LIST_TEXT_OPTS)
     end
+    draw_scroll_arrows(#rows, shown)
     return
   end
 
@@ -1151,8 +1253,9 @@ function Ui.draw()
     end
   end
 
-  draw_grass()
+  draw_grass(true)
   draw_host()
+  draw_grass(false)
   if cutOut then draw_chrome() end
 
   if Ui.endCard then
@@ -1165,7 +1268,6 @@ function Ui.draw()
 
   local page = Ui.pages()[Ui.page]
   if not page then return end
-  Window.stdFrame(BODY_WIN)
   -- pokefirered/src/teachy_tv.c:676 TeachyTvInitTextPrinter
   local _, endX, endY = FrlgFont.draw(page, BODY_TPL.left * 8, BODY_TPL.top * 8 + 1, BODY_TEXT_OPTS)
   if Ui.waitingForKey() then

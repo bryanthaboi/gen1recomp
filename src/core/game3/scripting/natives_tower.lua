@@ -461,8 +461,9 @@ FUNCS[Tower.FUNC.ENCOUNTER_MUSIC] = function(ctx)
   local lut = pack and pack.encounterMusic
   local song = row and row.facilityClass and type(lut) == "table" and lut[row.facilityClass]
   local okA, Audio = pcall(require, "src.core.game3.audio")
-  if okA and Audio and Audio.playMapSong then
-    pcall(Audio.playMapSong, tonumber(song) or Tower.MUS_ENCOUNTER_BOY)
+  if okA and Audio and Audio.playSong then
+    -- pokefirered/src/sound.c:129 PlayNewMapMusic
+    pcall(Audio.playSong, tonumber(song) or Tower.MUS_ENCOUNTER_BOY)
   end
   return false
 end

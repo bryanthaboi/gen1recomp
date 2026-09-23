@@ -170,7 +170,7 @@ function Boot.continueInfoFromSave(save)
   end
   local name = tostring(save.name or save.playerName or "")
   return {
-    name = name:sub(1, 7),
+    name = FrlgFont.truncate(name, 7),
     gender = tonumber(save.gender) or 0,
     hours = tonumber(pt.hours) or 0,
     minutes = tonumber(pt.minutes) or 0,

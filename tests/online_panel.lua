@@ -7,6 +7,37 @@ local OnlinePanel = require("src.import.OnlinePanel")
 local SyncState = require("src.sync.SyncState")
 local Client = require("src.online.Client")
 
+local NAME_TABLES = {
+  ["red/data/generated/pokemon.lua"] = [[return {
+    MR_MIME = { name = "MR.MIME" }, NIDORAN_M = { name = "NIDORAN♂" },
+    NIDORAN_F = { name = "NIDORAN♀" }, FARFETCHD = { name = "FARFETCH'D" },
+    KADABRA = { name = "KADABRA" }, PIKACHU = { name = "PIKACHU" },
+    ALAKAZAM = { name = "ALAKAZAM" } }]],
+  ["gold/data/generated/pokemon.lua"] = [[return {
+    MR__MIME = { name = "MR.MIME" }, HO_OH = { name = "HO-OH" },
+    FARFETCH_D = { name = "FARFETCH'D" }, SLOWPOKE = { name = "SLOWPOKE" },
+    SLOWKING = { name = "SLOWKING" } }]],
+  ["gold/data/generated/items.lua"] = [[return {
+    KINGS_ROCK = { name = "KING'S ROCK" }, METAL_COAT = { name = "METAL COAT" },
+    UP_GRADE = { name = "UP-GRADE" } }]],
+}
+
+local function withNameTables(fn)
+  local OnlineSprites = require("src.online.OnlineSprites")
+  local savedRead = OnlineSprites.readBytes
+  local reads = {}
+  OnlineSprites.readBytes = function(version, path)
+    local full = tostring(version) .. "/" .. path
+    reads[full] = (reads[full] or 0) + 1
+    return NAME_TABLES[full]
+  end
+  OnlinePanel.resetNames()
+  local ok, err = pcall(fn, reads)
+  OnlineSprites.readBytes = savedRead
+  OnlinePanel.resetNames()
+  if not ok then error(err, 0) end
+end
+
 -- ------------------------------------------------------------- names
 
 T.eq(OnlinePanel.sanitizeName("RED"), "RED", "a plain name survives")
@@ -999,16 +1030,20 @@ do
       { role = "a", sent = { species = "KADABRA", level = 30 },
         received = { species = "PIKACHU", level = 25 },
         record = { species = "PIKACHU", level = 25 } },
-      { role = "b", sent = { species = "PIKACHU", level = 25 },
+      { role = "b", handle = { version = "gold", slotId = "slot2" },
+        sent = { species = "PIKACHU", level = 25 },
         received = { species = "KADABRA", level = 30 },
         record = { species = "ALAKAZAM", level = 30 },
         evolveTo = "ALAKAZAM" },
     },
     warnings = { { code = "evolve", species = "ALAKAZAM" },
-                 { code = "item_used", item = "METAL_COAT" } },
+                 { code = "item_used", slot = "slot2", item = "METAL_COAT" } },
   }
-  local lines = OnlinePanel.tradeLines(plan, { a = "RED", b = "BLUE" },
-    { { toGen = 2, lines = { "SPECIAL SPLIT 100 -> 90/80" } } })
+  local lines
+  withNameTables(function()
+    lines = OnlinePanel.tradeLines(plan, { a = "RED", b = "BLUE" },
+      { { toGen = 2, lines = { "SPECIAL SPLIT 100 -> 90/80" } } })
+  end)
   T.eq(lines[1], "RED gives KADABRA Lv30 and gets PIKACHU Lv25",
     "each side reads as give and get")
   T.eq(lines[2], "BLUE gives PIKACHU Lv25 and gets KADABRA Lv30",
@@ -1024,6 +1059,75 @@ do
     "KADABRA Lv30", "a mon reads as species and level")
   T.eq(OnlinePanel.monLabel({ species = "KADABRA", nickname = "ABRA CAD",
     level = 30 }), "ABRA CAD Lv30", "a nickname wins")
+  T.eq(OnlinePanel.monLabel({ species = 1, speciesId = 1, name = "BULBASAUR",
+    nickname = "", level = 6 }), "BULBASAUR Lv6",
+    "a gen3 mon with no nickname reads as its species name")
+  T.eq(OnlinePanel.monLabel({ species = 1, name = "BULBASAUR",
+    nickname = "BULBY", level = 6 }), "BULBY Lv6", "a gen3 nickname still wins")
+  T.eq(OnlinePanel.monLabel({ species = 1, name = "BULBASAUR", nickname = "EGG",
+    isEgg = true, level = 5 }), "EGG Lv5", "a gen3 egg reads as EGG")
+  T.eq(OnlinePanel.monLabel({ species = 1, name = "BULBASAUR", nickname = "",
+    isEgg = true, level = 5 }), "? Lv5", "a gen3 egg never shows its species")
+  do
+    local bulba = { species = 1, name = "BULBASAUR", nickname = "", level = 6,
+      hp = 20, maxHp = 20 }
+    local handle = { version = "leafgreen", generation = 3, party = {},
+      save = { boxes = { { bulba } } } }
+    local row = OnlinePanel.tradeBoxRow(handle, { where = "box", box = 1, index = 1 })
+    T.eq(row and row.name, "BULBASAUR", "a gen3 PC row names the species")
+    T.eq(row and row.label, "BULBASAUR Lv6  BOX 1",
+      "and its label does not lead with the species number")
+  end
+  withNameTables(function(reads)
+    T.eq(OnlinePanel.monLabel({ species = "MR_MIME", level = 20 }, "red"),
+      "MR.MIME Lv20", "a Gen 1 MR_MIME reads as the cart's MR.MIME")
+    T.eq(OnlinePanel.monLabel({ species = "NIDORAN_M", level = 5 }, "red"),
+      "NIDORAN♂ Lv5", "NIDORAN_M reads with the male sign")
+    T.eq(OnlinePanel.monLabel({ species = "NIDORAN_F", level = 5 }, "red"),
+      "NIDORAN♀ Lv5", "NIDORAN_F reads with the female sign")
+    T.eq(OnlinePanel.monLabel({ species = "FARFETCHD", level = 9 }, "red"),
+      "FARFETCH'D Lv9", "FARFETCHD keeps its apostrophe")
+    T.eq(OnlinePanel.monLabel({ species = "MR__MIME", level = 20 }, "gold"),
+      "MR.MIME Lv20", "a Gen 2 MR__MIME reads from the Gen 2 cache")
+    T.eq(OnlinePanel.monLabel({ species = "HO_OH", level = 40 }, "gold"),
+      "HO-OH Lv40", "HO_OH reads as HO-OH")
+    T.eq(OnlinePanel.monLabel({ species = "MR_MIME", nickname = "MIMEY",
+      level = 20 }, "red"), "MIMEY Lv20", "a Gen 1 nickname still wins")
+    T.eq(reads["red/data/generated/pokemon.lua"], 1,
+      "the species table is read once per game")
+
+    local mime = { species = "MR_MIME", level = 20, hp = 50, maxHp = 50 }
+    local handle = { version = "red", generation = 1, party = {},
+      save = { boxes = { { mime } } } }
+    local row = OnlinePanel.tradeBoxRow(handle,
+      { where = "box", box = 1, index = 1 })
+    T.eq(row and row.name, "MR.MIME", "a Gen 1 PC row names MR.MIME")
+    T.eq(row and row.label and row.label:sub(1, 12), "MR.MIME Lv20",
+      "and its label leads with MR.MIME")
+
+    local mine = OnlinePanel.remoteRows({
+      handle = { version = "red", party = { { species = "NIDORAN_F", level = 5 } } },
+      session = { theirParty = { { species = "NIDORAN_M", level = 7 } } } })
+    T.eq(mine[1] and mine[1].label, "NIDORAN♀ Lv5",
+      "a remote trade row reads NIDORAN♀")
+    local _, theirs = OnlinePanel.remoteRows({
+      handle = { version = "red", party = {} },
+      session = { theirParty = { { species = "NIDORAN_M", level = 7 } } } })
+    T.eq(theirs[1] and theirs[1].label, "NIDORAN♂ Lv7",
+      "and so does the partner's")
+
+    local gplan = { sides = { { role = "a",
+      handle = { version = "gold", slotId = "slot1" },
+      sent = { species = "HO_OH", level = 40 },
+      received = { species = "SLOWPOKE", level = 30 },
+      record = { species = "SLOWKING", level = 30 }, evolveTo = "SLOWKING" } },
+      warnings = { { code = "item_used", slot = "slot1", item = "KINGS_ROCK" } } }
+    local glines = OnlinePanel.tradeLines(gplan, { a = "GOLD" })
+    T.eq(glines[1], "GOLD gives HO-OH Lv40 and gets SLOWPOKE Lv30",
+      "a Gen 2 trade line reads species from the cache")
+    T.eq(glines[3], "KING'S ROCK is used up.",
+      "and the used item reads as the cart's KING'S ROCK")
+  end)
 
   -- remote stages, rendered off a fake session
   T.eq(OnlinePanel.remoteStageText("picking"),
@@ -1122,6 +1226,51 @@ do
   T.check(OnlinePanel.remoteTradeRefusal(timp) ~= nil,
     "and so is a trade with no save chosen")
   tst.slotId = "slot1"
+end
+
+
+do
+  local Trade = require("src.online.Trade")
+  local TeamPick = require("src.online.TeamPick")
+  local gimp = { ready = { firered = true, leafgreen = true, red = true },
+    activeSlot = {}, slots = {}, pulse = 0 }
+  local gst = OnlinePanel.state(gimp)
+  gst.version, gst.slotId = "firered", "slot1"
+  T.eq(OnlinePanel.remoteTradeRefusal(gimp), Trade.GEN3_LOCAL_ONLY,
+    "a FireRed save is refused for an internet trade")
+
+  local gtr = OnlinePanel.tradeState(gimp)
+  local entry = { version = "firered", slotId = "slot1", generation = 3 }
+  gtr.sides.a = entry
+  gtr.handles.a = { entry = entry, handle = { version = "firered",
+    generation = 3, party = {}, save = { party = {} } } }
+  T.check(not OnlinePanel.tradePcAllowed(gimp, "a"),
+    "a FireRed column trades from the party only")
+
+  local conv, why = OnlinePanel.convertParty({ party = {} }, "firered", "red")
+  T.eq(conv, nil, "a FireRed team can't be converted for a room")
+  T.eq(why, TeamPick.GEN3_OFFLINE, "and it says why")
+  local packed, pwhy = TeamPick.pack({ party = { { species = 25, moves = { 84 } } } },
+    { 1 }, 3)
+  T.eq(packed, nil, "a FireRed team can't be packed for a room")
+  T.eq(pwhy, TeamPick.GEN3_OFFLINE, "with the same message")
+  local cpacked = TeamPick.packConverted({}, { 1 }, 3)
+  T.eq(cpacked, nil, "nor packed as converted")
+  local profile, prwhy = require("src.online.ArenaData").profile("firered",
+    "vanilla", nil, nil)
+  T.eq(profile, nil, "FireRed has no arena profile")
+  T.eq(prwhy, TeamPick.GEN3_OFFLINE, "and says why instead of crashing")
+
+  local lines = OnlinePanel.tradeLines({
+    sides = { { role = "a",
+      sent = { species = 64, name = "KADABRA", nickname = "", level = 30 },
+      received = { species = 95, name = "ONIX", nickname = "", level = 25 },
+      evolveTo = 208, fromName = "ONIX", evolveName = "STEELIX" } },
+    warnings = { { code = "item_used", item = 199, itemName = "METAL COAT" } },
+  }, { a = "FireRed" })
+  T.eq(lines[2], "ONIX evolves into STEELIX",
+    "a gen3 evolution line names both species")
+  T.eq(lines[3], "METAL COAT is used up.", "and the used item by name")
 end
 
 -- --------------------------------------------------------- install the cart
@@ -1273,6 +1422,47 @@ do
   OnlineSprites.readBytes, OnlineSprites.makeImage = savedRead, savedMake
 end
 
+do
+  local OnlineSprites = require("src.online.OnlineSprites")
+  local Pokemon = require("src.core.game3.pokemon")
+  local savedRead = OnlineSprites.readBytes
+  local savedCache, savedFront = Pokemon._cache, Pokemon._front
+  local pic = string.rep("\255", 64 * 64 * 4)
+  local reads = {}
+  OnlineSprites.readBytes = function(version, path)
+    local full = tostring(version) .. "/" .. path
+    reads[full] = true
+    if full == "firered/data/generated/gba/pokemon/front/95.rgba"
+       or full == "leafgreen/data/generated/gba/pokemon/front/64.rgba" then
+      return pic
+    end
+    return nil
+  end
+  OnlineSprites.reset()
+  local onix = { species = 95, personality = 0x12345678, otId = 1 }
+  local kadabra = { species = 64, personality = 0x0badf00d, otId = 2 }
+  T.eq(OnlineSprites.prime("firered", { onix }), 1,
+    "a FireRed mon primes")
+  T.eq(OnlineSprites.prime("leafgreen", { kadabra }), 1,
+    "and so does a LeafGreen one")
+  local fr = OnlineSprites.get("firered", onix)
+  local lg = OnlineSprites.get("leafgreen", kadabra)
+  T.check(fr and fr.front, "the FireRed mon gets its front pic")
+  T.check(lg and lg.front, "the LeafGreen mon gets its front pic")
+  T.check(reads["firered/data/generated/gba/pokemon/front/95.rgba"],
+    "read from the FireRed cache")
+  T.check(reads["leafgreen/data/generated/gba/pokemon/front/64.rgba"],
+    "and the LeafGreen one from its own cache")
+  T.check(not reads["firered/data/generated/pokemon.lua"],
+    "without reading the Gen 1 species table")
+  T.eq(OnlineSprites.get("firered", kadabra), nil,
+    "a FireRed pic is not shared with the other side's version")
+  T.check(Pokemon._cache == savedCache and Pokemon._front == savedFront,
+    "the game's own pic cache is left as it was")
+  OnlineSprites.reset()
+  OnlineSprites.readBytes = savedRead
+end
+
 -- ------------------------------------------------------ trade sub-view draw
 
 do
@@ -1326,7 +1516,7 @@ do
   tr.sides.a, tr.sides.b = rows[1], rows[2]
   local handleA = { version = "red", generation = 1, slotId = "slot1",
     party = { { species = "KADABRA", level = 30 } } }
-  local handleB = { version = "red", generation = 1, slotId = "slot2",
+  local handleB = { version = "gold", generation = 2, slotId = "slot2",
     party = { { species = "PIKACHU", level = 25 } } }
   tr.handles.a = { entry = rows[1], handle = handleA }
   tr.handles.b = { entry = rows[2], handle = handleB }
@@ -1341,12 +1531,14 @@ do
         record = { species = "ALAKAZAM", level = 30 },
         evolveTo = "ALAKAZAM" },
     },
-    warnings = { { code = "item_used", item = "METAL_COAT" } },
+    warnings = { { code = "item_used", slot = "slot2", item = "METAL_COAT" } },
   }
   tr.convertLines = { { toGen = 2, lines = { "FRIENDSHIP SET TO 70" } } }
 
   T.eq(OnlinePanel.tradeModal(mimp), nil, "no modal is up to begin with")
-  T.check(OnlinePanel.tradeModalOpen(mimp), "a planned trade opens the modal")
+  local opened
+  withNameTables(function() opened = OnlinePanel.tradeModalOpen(mimp) end)
+  T.check(opened, "a planned trade opens the modal")
   local mo = OnlinePanel.tradeModal(mimp)
   T.eq(mo.view, "preview", "which opens on the preview")
   T.eq(mo.give.label, "KADABRA Lv30", "the give side is the mon leaving")

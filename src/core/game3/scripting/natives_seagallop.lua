@@ -31,6 +31,8 @@ local SE_EXIT = 9 -- pokefirered/include/constants/songs.h:13
 
 -- pokefirered/src/seagallop.c:286
 local CROSSING_FRAMES = 140
+-- pokefirered/src/overworld.c:1128
+local MUSIC_FADE_FRAMES = 64
 
 -- pokefirered/src/seagallop.c:62
 local WARPS = {
@@ -144,37 +146,64 @@ Seagallop.MENU_LIST_ID = 0xF001
 
 -- pokefirered/src/seagallop.c:174
 function Seagallop.ferryTask(ctx, adapters, destId)
-  local frames = 0
-  local phase = "cross"
+  local originId = varGet(ctx, VAR_ORIGIN)
   local warp = WARPS[destId]
-  return function()
-    if phase == "cross" then
-      frames = frames + 1
-      if frames == 1 then
-        local okA, Audio = pcall(require, "src.core.game3.audio")
-        if okA and Audio and Audio.playSe then pcall(Audio.playSe, SE_SHIP) end
-      end
-      if frames < CROSSING_FRAMES then return false end
-      phase = "warp"
-      return false
-    end
-    if phase == "warp" then
-      phase = "arrived"
-      local okA, Audio = pcall(require, "src.core.game3.audio")
-      if okA and Audio and Audio.playSe then pcall(Audio.playSe, SE_EXIT) end
+  local done = false
+  local okS, SeagallopUi = pcall(require, "src.ui.game3.seagallop")
+  local hasGraphics = _G.love and type(_G.love.graphics) == "table" and _G.love.window ~= nil
+  if okS and SeagallopUi and SeagallopUi.start and hasGraphics then
+    SeagallopUi.start(originId, destId, function()
       if warp and adapters and adapters.warp then
-        adapters.warp(warp[1], warp[2], -1, warp[3], warp[4], function() end)
+        adapters.warp(warp[1], warp[2], -1, warp[3], warp[4], function() end, "seagallop")
       elseif adapters and adapters.log then
         adapters.log(string.format("[game3] seagallop has no warp for dest %s", tostring(destId)))
       end
-      -- pokefirered/src/seagallop.c:316
-      local okF, Fade = pcall(require, "src.ui.game3.fade")
-      if okF and Fade and Fade.begin then
-        Fade.begin(Fade.MODE.FROM_BLACK, 1, function() end)
+    end, function()
+      done = true
+    end)
+    return function() return done end
+  end
+
+  local frames = 0
+  local phase = "cross"
+  local waited, arrived = 0, false
+  local okA, Audio = pcall(require, "src.core.game3.audio")
+  if not okA then Audio = nil end
+  local okF, Fade = pcall(require, "src.ui.game3.fade")
+  if not okF then Fade = nil end
+  return function()
+    if phase == "cross" then
+      frames = frames + 1
+      if frames == 1 and Audio and Audio.playSe then pcall(Audio.playSe, SE_SHIP) end
+      if frames < CROSSING_FRAMES then return false end
+      -- pokefirered/src/seagallop.c:286
+      if Audio and Audio.fadeOutBgm then pcall(Audio.fadeOutBgm, 4) end
+      if Fade and Fade.begin then
+        local covered = not Fade.isActive() and (tonumber(Fade.t) or 0) >= 16
+        if not covered then Fade.begin(Fade.MODE.TO_BLACK, 1, function() end) end
       end
-      return true
+      phase = "fade"
+      return false
     end
-    return true
+    if phase == "fade" then
+      -- pokefirered/src/seagallop.c:294
+      waited = waited + 1
+      if Fade and Fade.isActive() then return false end
+      if Audio and Audio._fadeOut and waited < MUSIC_FADE_FRAMES then return false end
+      phase = "warp"
+      if Audio and Audio.playSe then pcall(Audio.playSe, SE_EXIT) end
+      if warp and adapters and adapters.warp then
+        adapters.warp(warp[1], warp[2], -1, warp[3], warp[4], function() arrived = true end,
+          "seagallop")
+      else
+        if adapters and adapters.log then
+          adapters.log(string.format("[game3] seagallop has no warp for dest %s", tostring(destId)))
+        end
+        arrived = true
+      end
+      return arrived
+    end
+    return arrived
   end
 end
 

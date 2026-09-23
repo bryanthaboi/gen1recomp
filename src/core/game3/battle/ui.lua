@@ -35,6 +35,9 @@ local bit = require("bit")
 local Ui = {}
 local chromeInstallWarned = false
 
+-- pokefirered/src/text.c:537 TextPrinterWaitAutoMode
+local POKEDUDE_AUTO_SCROLL = 120
+
 -- The stat window may only be on screen while the battle is in a phase that can
 -- still dismiss it; init.lua owns the list (#2324).  Resolved lazily because
 -- init.lua requires this module.
@@ -226,6 +229,8 @@ function Ui.reset(opts)
   Ui._partnerAction = nil
   Ui._oak = nil
   Ui._oakTexts = nil
+  Ui._oakLit = nil
+  Ui._oakShown = nil
   Ui._oldManTimer = nil
   Ui._oldManSubstate = nil
   if Message and Message.isHeld and Message.isHeld() then Message.close() end
@@ -248,10 +253,19 @@ function Ui.bindSession(session)
 end
 
 -- pokefirered/src/battle_controller_oak_old_man.c:647
-function Ui.markVoiceover(text)
+function Ui.markVoiceover(text, opts)
   if type(text) ~= "string" or text == "" then return end
   Ui._oakTexts = Ui._oakTexts or {}
   Ui._oakTexts[text] = true
+  if opts and opts.litHealthbox then
+    -- pokefirered/src/battle_controller_pokedude.c:2586 PokedudeAction_PrintMessageWithHealthboxPals
+    Ui._oakLit = Ui._oakLit or {}
+    Ui._oakLit[text] = true
+  end
+end
+
+function Ui.litHealthboxShown()
+  return Ui._oakShown ~= nil and Ui._oakLit ~= nil and Ui._oakLit[Ui._oakShown] == true
 end
 
 function Ui.isVoiceoverText(text)
@@ -262,6 +276,10 @@ function Ui.push(text, cb)
   if not text or text == "" then
     if cb then cb() end
     return
+  end
+  -- pokefirered/src/battle_message.c:2773 BATTLE_TYPE_POKEDUDE autoScroll
+  if Ui._st and Ui._st.pokedude and type(text) == "string" and not Ui.isVoiceoverText(text) then
+    return Ui.pushTimed(text, POKEDUDE_AUTO_SCROLL, cb)
   end
   Ui._log[#Ui._log + 1] = text
   if Ui.isVoiceoverText(text) then
@@ -432,10 +450,14 @@ local function open_battle_bag()
   BagMenu.show(bag, {
     session = session,
     battle = true,
-    onBattleUse = function(itemId, partySlot, moveSlot)
+    onBattleUse = function(itemId, partySlot, moveSlot, usedInMenu)
       if itemId == nil then
         restore_action_menu()
         return
+      end
+      if usedInMenu and Ui._st then
+        -- pokefirered/src/reshow_battle_screen.c:299
+        require("src.core.game3.battle.anim").syncDisplayFromState(Ui._st)
       end
       Ui._pendingCommand = {
         kind = "bag",
@@ -443,6 +465,7 @@ local function open_battle_bag()
         itemId = itemId,
         partySlot = partySlot,
         moveSlot = moveSlot,
+        usedInMenu = usedInMenu or nil,
       }
       if is_double() then Ui._pendingCommand.battler = Ui._active or 0 end
       Ui._mode = "none"
@@ -725,11 +748,13 @@ local function tick_oak()
     local p = f.pending
     f.pending = nil
     Ui._showing = true
+    Ui._oakShown = p.text
     Message.show(p.text, {
       frame = "voiceover",
       hold = true,
       done = function()
         Ui._showing = false
+        Ui._oakShown = nil
         if p.cb then p.cb() end
       end,
     })
@@ -741,9 +766,19 @@ end
 local function tick_timed()
   local t = Ui._timed
   if not t then return false end
-  local onLast = Message and Message.isWaiting and Message.isWaiting()
-    and (Message._page or 1) >= #(Message._pages or {})
-  if not onLast then return true end
+  local waiting = Message and Message.isWaiting and Message.isWaiting()
+  local onLast = waiting and (Message._page or 1) >= #(Message._pages or {})
+  if not onLast then
+    -- pokefirered/src/text.c:537 TextPrinterWaitAutoMode
+    if waiting and Ui._st and Ui._st.pokedude then
+      t.pageFrames = (t.pageFrames or 0) + 1
+      if t.pageFrames >= POKEDUDE_AUTO_SCROLL then
+        t.pageFrames = 0
+        Message.advance()
+      end
+    end
+    return true
+  end
   t.frames = t.frames + 1
   if t.frames < t.wait then return true end
   Ui._timed = nil
@@ -2247,6 +2282,10 @@ function Ui.draw(w, h)
     love.graphics.setColor(0, 0, 0, oakDim)
     love.graphics.rectangle("fill", 0, 0, w, h)
     love.graphics.setColor(1, 1, 1, 1)
+    -- pokefirered/src/battle_controller_pokedude.c:2607
+    if st and not dbl and Ui.litHealthboxShown() then
+      Healthbox.draw("player", Anim.shownBattler("player", st.player), { oy = Ui.bounceOffset("hb", 0) })
+    end
   end
 
   local BagMenu = package.loaded["src.ui.game3.bag_menu"]

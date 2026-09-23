@@ -468,10 +468,6 @@ function Player.tryMove(dir, game, run)
         end
       end
     end
-    if (why == "bounds" or why == "solid" or why == "tile") and Collision.tryWarpAt
-        and Collision.tryWarpAt(game, Player.cellX, Player.cellY, dir) then
-      return "warp"
-    end
     -- Outdoor map connection (Pallet north → Route 1, etc.).
     if why == "bounds" and Collision.tryConnection
         and Collision.tryConnection(game, Player.cellX, Player.cellY, dir, run) then

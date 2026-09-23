@@ -116,6 +116,7 @@ end
 
 local function from_rom(numId)
   Moves.romReady()
+  if not Moves._rom then return nil end
   local row = Moves._rom[numId]
   if not row then return nil end
   local cat = Types.isPhysical(row.type) and "physical" or "special"
@@ -162,9 +163,34 @@ function Moves.displayName(moveId)
   return require("src.core.game3.pokemon").moveName(num or moveId)
 end
 
+local PRIORITY_FALLBACK = {
+  [98] = 1,   -- QUICK_ATTACK
+  [182] = 2,  -- PROTECT
+  [197] = 2,  -- DETECT
+  [183] = 1,  -- MACH_PUNCH
+  [245] = 2,  -- EXTREMESPEED
+  [252] = 1,  -- FAKE_OUT
+  [283] = 3,  -- HELPING_HAND
+  [264] = 4,  -- MAGIC_COAT
+  [268] = 4,  -- SNATCH
+  [279] = -3, -- REVENGE
+  [263] = -3, -- FOCUS_PUNCH
+  [233] = -5, -- VITAL_THROW
+  [46] = -6,  -- ROAR
+  [18] = -6,  -- WHIRLWIND
+  [309] = -6, -- COUNTER
+  [310] = -6, -- MIRROR_COAT
+}
+
 function Moves.priority(moveId)
-  local m = Moves.get(moveId)
-  return tonumber(m and m.priority) or 0
+  if not moveId or moveId == 0 or moveId == "" then return 0 end
+  local ok, m = pcall(Moves.get, moveId)
+  if ok and m and m.priority ~= nil then return tonumber(m.priority) or 0 end
+  local num = tonumber(moveId)
+  if not num and type(moveId) == "string" then
+    num = Moves.numForName(Moves.normalizeId(moveId))
+  end
+  return (num and PRIORITY_FALLBACK[num]) or 0
 end
 
 return Moves

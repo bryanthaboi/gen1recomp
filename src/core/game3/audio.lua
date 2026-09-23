@@ -196,6 +196,9 @@ Audio.LEGENDARY_BATTLE_SONGS = {
   [144] = { "battleLegend", 341 }, -- SPECIES_ARTICUNO
   [145] = { "battleLegend", 341 }, -- SPECIES_ZAPDOS
   [146] = { "battleLegend", 341 }, -- SPECIES_MOLTRES
+  [243] = { "battleDeoxys", 339 }, -- SPECIES_RAIKOU
+  [244] = { "battleDeoxys", 339 }, -- SPECIES_ENTEI
+  [245] = { "battleDeoxys", 339 }, -- SPECIES_SUICUNE
   [249] = { "battleLegend", 341 }, -- SPECIES_LUGIA
   [250] = { "battleLegend", 341 }, -- SPECIES_HO_OH
 }

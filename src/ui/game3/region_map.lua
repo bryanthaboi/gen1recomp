@@ -946,6 +946,8 @@ function Tasks.mapCloseAnim()
     a.closeState = 2
   elseif st == 2 then
     S.backdropBlue = false
+    -- src/region_map.c:2572
+    S.palTinted = false
     a.closeState = 3
   elseif st == 3 then
     setEdgesVisible(true)
@@ -1527,6 +1529,8 @@ local function newState(mode, session)
     bgShown = { [0] = false, [1] = false, [2] = false, [3] = false },
     objOn = false,
     backdropBlue = mode ~= "normal",
+    -- src/region_map.c:1112
+    palTinted = true,
     cursor = { exists = false, visible = false, spriteX = 0, spriteY = 0, horizontalMove = 0, verticalMove = 0,
       moveCounter = 0, snapId = 0, handler = "input", animStart = 0 },
     player = { exists = false, visible = false },
@@ -1676,6 +1680,11 @@ local function drawObjPrio0()
   end
 end
 
+local function bg1Image()
+  if not S.palTinted and S.bg1 == "frame_normal" then return Gpu.image("frame_normal_untinted") end
+  return Gpu.image(S.bg1)
+end
+
 local function drawBg0()
   local b = S.bg0
   if not b then return end
@@ -1734,9 +1743,10 @@ function RegionMap.draw()
   end
   local manifest = Gpu.manifest()
   local backdrop = S.backdropBlue and Gpu.rgb(manifest.backdrop) or { 0, 0, 0, 1 }
+  if S.palTinted and S.anim and S.anim.closeState > 0 then Gpu.image("frame_normal_untinted") end
   local layers = {}
   if S.bgShown[1] and S.bg1 then
-    layers[#layers + 1] = { bit = Gpu.BG1, draw = function() love.graphics.draw(Gpu.image(S.bg1), 0, 0) end }
+    layers[#layers + 1] = { bit = Gpu.BG1, draw = function() love.graphics.draw(bg1Image(), 0, 0) end }
   end
   if S.bgShown[0] then layers[#layers + 1] = { bit = Gpu.BG0, draw = drawBg0 } end
   if S.objOn then layers[#layers + 1] = { bit = Gpu.OBJ, obj = true, draw = drawObjPrio2 } end

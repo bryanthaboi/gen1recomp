@@ -330,6 +330,7 @@ end
 --- derived from the area's own encounter rate. Rates at 80+ get no grace period
 --- at all; below that the wait grows as the rate drops.
 function Encounters.mapBaseCooldown(terrain, rate)
+  if terrain == "grass" or terrain == "cave" or terrain == "tall_grass" then terrain = "land" end
   if terrain ~= "land" and terrain ~= "water" then return COOLDOWN_NONE end
   if rate == nil then return COOLDOWN_NONE end
   rate = tonumber(rate) or 0
@@ -523,6 +524,17 @@ local function roll_area(mapId, areaKey, weights, enterFromOther, fallbackRate)
     return nil
   end
 
+  -- pokefirered/src/wild_encounter.c:645 TryStartRoamerEncounter
+  local okR, Roamer = pcall(require, "src.core.game3.roamer")
+  if okR and Roamer and Roamer.tryEncounter then
+    local okRt, Runtime = pcall(require, "src.core.game3.runtime")
+    local session = okRt and Runtime and Runtime.getSession and Runtime.getSession()
+    local roamerEnc = Roamer.tryEncounter(session, mapId, areaKey)
+    if roamerEnc then
+      return roamerEnc
+    end
+  end
+
   local entry = pick_slot(area.slots, weights)
   if type(entry) ~= "table" then
     -- pret banks here too: the rate test passed but TryGenerateWildMon found
@@ -663,6 +675,8 @@ local function mod_encounter(enc)
     speciesId = id or Pokemon.speciesFromName(enc.species),
     level = enc.level,
     item = enc.item,
+    roamer = enc.roamer,
+    foe = enc.foe,
   }
 end
 
@@ -675,7 +689,13 @@ local function engine_encounter(enc)
   end
   id = id or tonumber(enc.speciesId)
   if not id then return nil end
-  return { species = id, level = tonumber(enc.level) or 5, item = enc.item }
+  return {
+    species = id,
+    level = tonumber(enc.level) or 5,
+    item = enc.item,
+    roamer = enc.roamer,
+    foe = enc.foe,
+  }
 end
 
 local function same_encounter(enc) return enc end

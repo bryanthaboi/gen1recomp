@@ -131,8 +131,34 @@ local CURED_TEXT = {
   burn = "gText_PkmnBurnHealed",
   freeze = "gText_PkmnThawedOut",
   paralysis = "gText_PkmnCuredOfParalysis",
+  confusion = "gText_PkmnSnappedOutOfConfusion",
+  infatuation = "gText_PkmnGotOverInfatuation",
   status = "gText_PkmnBecameHealthy",
 }
+
+-- pokefirered/src/party_menu.c:4412
+local FLUTES = { [39] = true, [40] = true, [41] = true }
+function ItemUse.isFlute(id)
+  return FLUTES[ItemsData.toNumericId(id) or tonumber(id)] == true
+end
+
+-- pokefirered/src/party_menu.c:5345 GetItemEffectType
+function ItemUse.cureKind(id)
+  local info = ItemsData.info(id)
+  local e = info and info.effect
+  if type(e) ~= "table" then return nil end
+  local statusCure = bit.band(tonumber(e[4]) or 0, 0x3F)
+  if statusCure == 0x01 then return "confusion" end
+  if statusCure == 0 and bit.band(tonumber(e[1]) or 0, 0x80) ~= 0 then return "infatuation" end
+  return CURED_TEXT_KIND[statusCure] or "status"
+end
+
+-- pokefirered/src/party_menu.c:4510
+function ItemUse.medicineText(mon, hpBefore, cured)
+  local gained = (tonumber(mon and mon.hp) or 0) - (tonumber(hpBefore) or 0)
+  if gained > 0 then return hp_restored_text(mon, gained) end
+  return mon_text(CURED_TEXT[cured] or CURED_TEXT.status, mon)
+end
 
 -- pokefirered/src/pokemon.c:4511
 function ItemUse.clearStatus(mon, id)
@@ -188,47 +214,94 @@ local function bag_full_text(itemId)
   return RomText.box("gText_BagFullCouldNotRemoveItem", { stringVars = { name } })
 end
 
---- Give item to party mon as held item. Returns ok, reason, messageText.
-function ItemUse.giveToMon(session, bag, id, partySlot)
+local function held_item(mon)
+  local prev = mon and (mon.item or mon.heldItem)
+  if prev and prev ~= 0 and prev ~= "" and prev ~= "NONE" then return prev end
+  return nil
+end
+
+-- src/party_menu.c:5607 RemoveItemToGiveFromBag, :5617 ReturnGiveItemToBagOrPC
+function ItemUse.bagGiveSource(bag)
+  return {
+    remove = function(id) return Bag.remove(bag, id, 1) end,
+    restore = function(id) return Bag.add(bag, id, 1) end,
+    -- src/party_menu.c:1580
+    quest = function(monName, itemName) return "GaveMonHeldItem2", { monName, itemName } end,
+  }
+end
+
+-- src/party_menu.c:3422 CB2_SelectBagItemToGive
+function ItemUse.partyGiveSource(bag)
+  local source = ItemUse.bagGiveSource(bag)
+  -- src/party_menu.c:1579
+  source.quest = function(monName, itemName) return "GaveMonHeldItem", { monName, itemName } end
+  return source
+end
+
+-- src/party_menu.c:5455 TryGiveItemOrMailToSelectedMon
+function ItemUse.checkGive(session, id, partySlot)
   local party = session and session.party
   local mon = party and party[partySlot]
-  if not mon then return false, "noparty", no_pokemon_text() end
+  if not mon then return "noparty", nil, no_pokemon_text() end
   local pocket = ItemsData.pocketOf(id)
   if pocket == "KEY_ITEMS" or pocket == "TM_CASE" then
     -- src/item_menu.c:1635
-    return false, "cant_hold", (RomText.box("gText_ItemCantBeHeld", { stringVars = { ItemsData.displayName(id) } }))
+    return "cant_hold", nil, (RomText.box("gText_ItemCantBeHeld", { stringVars = { ItemsData.displayName(id) } }))
   end
-  if not Bag.has(bag, id, 1) then
-    return false, "none", Strings("You don't have that item.")
+  local prev = held_item(mon)
+  if not prev then return "give", nil, nil end
+  if require("src.core.game3.mail").isMailItem(ItemsData.toNumericId(prev) or prev) then
+    -- src/party_menu.c:5600 DisplayItemMustBeRemovedFirstMessage
+    return "mail", prev, (RomText.box("gText_RemoveMailBeforeItem"))
   end
-  local prev = mon.item or mon.heldItem
-  if prev and prev ~= 0 and prev ~= "" and prev ~= "NONE" then
-    -- Swap: return previous to bag if possible
-    if not Bag.canAdd(bag, prev, 1) then
-      return false, "bag_full", bag_full_text(prev)
-    end
-  end
-  Bag.remove(bag, id, 1)
-  if prev and prev ~= 0 and prev ~= "" and prev ~= "NONE" then
-    Bag.add(bag, prev, 1)
+  -- src/party_menu.c:1601 DisplayAlreadyHoldingItemSwitchMessage
+  return "switch", prev, mon_text("gText_PkmnAlreadyHoldingItemSwitch", mon, ItemsData.displayName(prev))
+end
+
+-- src/party_menu.c:5487 GiveItemToSelectedMon
+function ItemUse.giveHeld(session, bag, id, partySlot, source)
+  source = source or ItemUse.bagGiveSource(bag)
+  local mon = session.party[partySlot]
+  local itemName = ItemsData.displayName(id)
+  local key, args = source.quest(Pokemon.displayMonName(mon), itemName)
+  require("src.core.game3.quest_log_recorder").event(session, key, args)
+  mon.item = ItemsData.toNumericId(id) or id
+  mon.heldItem = mon.item
+  source.remove(id)
+  -- src/party_menu.c:1586
+  return mon_text("gText_PkmnWasGivenItem", mon, itemName)
+end
+
+-- src/party_menu.c:5563 Task_HandleSwitchItemsFromBagYesNoInput
+function ItemUse.switchHeld(session, bag, id, partySlot, source)
+  source = source or ItemUse.bagGiveSource(bag)
+  local mon = session.party[partySlot]
+  local prev = held_item(mon)
+  source.remove(id)
+  if not Bag.add(bag, prev, 1) then
+    source.restore(id)
+    return false, bag_full_text(prev)
   end
   mon.item = ItemsData.toNumericId(id) or id
   mon.heldItem = mon.item
-  local monName = Pokemon.displayMonName(mon)
-  local text
-  if prev and prev ~= 0 and prev ~= "" and prev ~= "NONE" then
-    -- src/party_menu.c:1615
-    text = RomText.box("gText_SwitchedPkmnItem",
-      { stringVars = { ItemsData.displayName(id), ItemsData.displayName(prev) } })
-  else
-    -- src/party_menu.c:1586
-    text = mon_text("gText_PkmnWasGivenItem", mon, ItemsData.displayName(id))
+  -- src/party_menu.c:1612 SetSwappedHeldItemQuestLogEvent
+  require("src.core.game3.quest_log_recorder").event(session, "SwappedHeldItemsOnMon",
+    { Pokemon.displayMonName(mon), ItemsData.displayName(prev), ItemsData.displayName(id) })
+  -- src/party_menu.c:1615
+  return true, (RomText.box("gText_SwitchedPkmnItem",
+    { stringVars = { ItemsData.displayName(id), ItemsData.displayName(prev) } }))
+end
+
+--- Give item to party mon as held item. Returns ok, reason, messageText.
+function ItemUse.giveToMon(session, bag, id, partySlot, source)
+  local kind, _, text = ItemUse.checkGive(session, id, partySlot)
+  if kind == "give" then
+    return true, "give", ItemUse.giveHeld(session, bag, id, partySlot, source)
+  elseif kind == "switch" then
+    local ok, msg = ItemUse.switchHeld(session, bag, id, partySlot, source)
+    return ok, ok and "give" or "bag_full", msg
   end
-  local Q=require("src.core.game3.quest_log_recorder")
-  if prev and prev~=0 and prev~="" and prev~="NONE" then
-    Q.event(session,"SwappedHeldItemsOnMon",{monName,ItemsData.displayName(prev),ItemsData.displayName(id)})
-  else Q.event(session,"GaveMonHeldItem",{monName,ItemsData.displayName(id)}) end
-  return true, "give", text
+  return false, kind, text
 end
 
 --- Take held item from party mon. Returns ok, reason, messageText.
@@ -1118,7 +1191,8 @@ local function useField(session, bag, id, partySlot, moveSlot)
         Pokemon.itemFriendship(mon, BITTER_MEDICINE_FRIENDSHIP[num],
           { mapSec = Pokemon.currentMapSec(session) })
       end
-      Bag.remove(bag, id, 1)
+      -- pokefirered/src/party_menu.c:4498
+      if not ItemUse.isFlute(id) then Bag.remove(bag, id, 1) end
       return true, use, text
     end
     return false, "noeffect", text or wont_have_effect()

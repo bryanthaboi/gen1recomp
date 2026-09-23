@@ -16,7 +16,7 @@ local MapPreviewExtract = {}
 
 MapPreviewExtract.CACHE_SUB = "map_preview"
 MapPreviewExtract.REGION_MAP_SUB = "region_map"
-MapPreviewExtract.FORMAT_VERSION = 2
+MapPreviewExtract.FORMAT_VERSION = 3
 MapPreviewExtract.WIDTH = 240
 MapPreviewExtract.HEIGHT = 160
 
@@ -112,16 +112,14 @@ function MapPreviewExtract.build(rom)
       files[artworkSec .. ".rgba"] =
         BgBake.bakeBgRgba(gfx, palBanks, map, MapPreviewExtract.WIDTH, MapPreviewExtract.HEIGHT)
 
-      -- MapPreview_CreateMapNameWindow fills the window with PIXEL_FILL(1) and
-      -- prints with sTextColor_White[] = {TEXT_COLOR_WHITE(1), TEXT_COLOR_RED(4),
-      -- TEXT_COLOR_LIGHT_GRAY(3)} = {fg, shadow, bg}. Bank 14 entries 1/3/4 are a
-      -- reserved UI ramp shared by every artwork, so record it once.
+      -- src/map_preview_screen.c:456
+      -- src/menu2.c:469
       if not nameWindow then
         nameWindow = {
           fill = { BgBake.bgr555ToRgb8(ramp[1][1]) },
-          fg = { BgBake.bgr555ToRgb8(ramp[1][1]) },
-          shadow = { BgBake.bgr555ToRgb8(ramp[1][4]) },
-          bg = { BgBake.bgr555ToRgb8(ramp[1][3]) },
+          bg = { BgBake.bgr555ToRgb8(ramp[1][1]) },
+          fg = { BgBake.bgr555ToRgb8(ramp[1][4]) },
+          shadow = { BgBake.bgr555ToRgb8(ramp[1][3]) },
         }
       end
     end
@@ -166,8 +164,7 @@ local function formatManifest(plan)
     "  type_forest = " .. MapPreviewExtract.TYPE_FOREST .. ",",
     "  artwork_count = " .. plan.artworkCount .. ",",
     "  entry_count = " .. #plan.entries .. ",",
-    "  -- Palette bank 14 indices used by MapPreview_CreateMapNameWindow: the",
-    "  -- window fill (PIXEL_FILL(1)) and the sTextColor_White fg/shadow/bg roles.",
+    "  -- src/map_preview_screen.c:456",
     "  name_window = {",
     "    fill = " .. formatRgb(nw.fill or {}) .. ",",
     "    fg = " .. formatRgb(nw.fg or {}) .. ",",

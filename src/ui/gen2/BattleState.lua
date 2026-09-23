@@ -3467,7 +3467,7 @@ function BattleState:pushCaught(enemy, itemId)
     -- SendMonIntoBox refills the boxed slot's PP before it closes SRAM
     -- (move_mon.asm:1062-1063); the box_struct it writes carries no HP and no
     -- status at all (macros/ram.asm:7-26).  #1696
-    Boxes.enterBox(enemy)
+    Boxes.enterBox(enemy, self.game and self.game.data)
     -- `.SendToPC` re-reads sBoxCount AFTER the insert and sets
     -- BATTLERESULT_BOX_FULL when the box has just filled
     -- (item_effects.asm:612-619); Script_reloadmapafterbattle tests that bit
@@ -4458,7 +4458,8 @@ function BattleState:drawMoveInfoBox(move)
   Chrome.printThrough(moveType and TypeChart.displayName(moveType,
       self.game and self.game.data) or "",
     2, 10, Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.printThrough(("%2d/%2d"):format(move.pp or 0, move.maxPp or 0),
+  Chrome.printThrough(("%2d/%2d"):format(move.pp or 0,
+      move.maxPp or Mon.maxPpOf(move, self.game and self.game.data)),
     5, 11, Chrome.DEFAULT_BOX_PALETTE)
 end
 

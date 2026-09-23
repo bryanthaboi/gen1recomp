@@ -79,7 +79,7 @@ return function(game)
   end
   result(Player.cellX == 8 and Player.cellY == 14,
     "standing on the cracking ice at (" .. Player.cellX .. "," .. Player.cellY .. ")")
-  U.shot(game, DIR .. "/stitchcoll_fall_shake_01_on_the_ice.png")
+  U.still(game, DIR .. "/stitchcoll_fall_shake_01_on_the_ice.png")
 
   -- pokefirered/src/field_tasks.c:173 IcefallCaveIcePerStepCallback
   U.wait(12)
@@ -129,7 +129,7 @@ return function(game)
     "the fall sequence still owns the player while the screen shakes")
   print("[driver] Field.locked during the shake: " .. tostring(Field.locked))
 
-  U.shot(game, DIR .. "/stitchcoll_fall_shake_02_landing_shake.png")
+  U.still(game, DIR .. "/stitchcoll_fall_shake_02_landing_shake.png")
   print("[driver] pan right after the shake shot: " .. tostring(FieldView.cameraPanY))
   result((FieldView.cameraPanY or 0) ~= 0 and Warp.isBusy() == true,
     "the shake is still running and the player is still held after the shot")

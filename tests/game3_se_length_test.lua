@@ -14,25 +14,8 @@ local function check(cond, msg)
 end
 
 local function find_pack_root()
-  local candidates = { "data/generated/gba/audio" }
-  local home = os.getenv("HOME")
-  local identity = os.getenv("POKEPORT_IDENTITY")
-  if home then
-    local bases = {}
-    if identity then bases[#bases + 1] = identity end
-    bases[#bases + 1] = "firered-sep20"
-    for _, base in ipairs(bases) do
-      candidates[#candidates + 1] =
-        home .. "/Library/Application Support/LOVE/" .. base .. "/firered/data/generated/gba/audio"
-      candidates[#candidates + 1] =
-        home .. "/.local/share/love/" .. base .. "/firered/data/generated/gba/audio"
-    end
-  end
-  for _, root in ipairs(candidates) do
-    local f = io.open(root .. "/index.lua", "rb")
-    if f then f:close(); return root end
-  end
-  return nil
+  local root = require("tests.game3_cache").root("audio/index.lua")
+  return root and (root .. "/audio")
 end
 
 local root = find_pack_root()

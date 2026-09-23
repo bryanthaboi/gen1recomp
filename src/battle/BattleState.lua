@@ -1497,13 +1497,21 @@ function BattleState:updateQueue()
       -- (engine/battle/animations.asm:415)
       if item.anim and (self:animationsOn() or BALL_ANIMS[item.anim]) then
         if self.animPlayer then
-          local ok = pcall(self.animPlayer.start, self.animPlayer,
+          local ok, err = pcall(self.animPlayer.start, self.animPlayer,
                            item.anim, item.attackerIsPlayer,
                            (item.shakes or item.ball)
                              and { shakes = item.shakes, ball = item.ball,
                                    ballFlicker = item.ball
                                      and self:ballFlicker(item.ball) or nil }
                              or nil)
+          if not ok then
+            self.animStartWarned = self.animStartWarned or {}
+            if not self.animStartWarned[item.anim] then
+              self.animStartWarned[item.anim] = true
+              Logger.warn("battle animation %s failed to start: %s",
+                tostring(item.anim), tostring(err))
+            end
+          end
           self.animPlaying = ok
         end
         self.fx = self.fx or {}

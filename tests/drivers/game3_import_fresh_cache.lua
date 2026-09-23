@@ -124,6 +124,9 @@ return function(game)
     if ok and type(data) == "string" then return #data end
     return 0
   end
+  -- src/text.c:227 the Japanese normal font
+  result(sized("chrome/fonts/japanese_normal_fg.rgba") == 256 * 512 * 4,
+    "the engine reads the Japanese font out of the fresh cache")
   -- src/braille_text.c:15
   result(sized("chrome/fonts/braille_fg.rgba") == 256 * 64 * 4,
     "the engine reads the braille sheet out of the fresh cache")

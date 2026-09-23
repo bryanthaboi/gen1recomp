@@ -1081,6 +1081,14 @@ function FieldView.draw(game, canvasW, canvasH, opts)
   canvasH = canvasH or Display.H
   opts = opts or {}
 
+  local okSea, SeagallopUi = pcall(require, "src.ui.game3.seagallop")
+  if okSea and SeagallopUi and SeagallopUi.isActive and SeagallopUi.isActive() then
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
+    love.graphics.setColor(1, 1, 1, 1)
+    return
+  end
+
   local mapId = currentMapId(game)
   local mapDef = resolveMapDef(game, mapId)
   if FieldView._flashMapId ~= mapId then
@@ -1282,6 +1290,10 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     local okSS, SSAnne = pcall(require, "src.core.game3.ss_anne_cutscene")
     if okSS and SSAnne and SSAnne.drawSmoke then
       SSAnne.drawSmoke(camX, camY)
+    end
+    local okW, FieldWeather = pcall(require, "src.core.game3.field_weather")
+    if okW and FieldWeather and FieldWeather.draw then
+      FieldWeather.draw(camX, camY, canvasW, canvasH)
     end
   end
 

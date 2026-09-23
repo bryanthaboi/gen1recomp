@@ -3,7 +3,7 @@
 -- Run: luajit tests/game3_battle_anim_pack_test.lua
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
-require("tests.game3_cache").requireData("game3_battle_anim_pack_test", "pokemon/battle_anims/pack.lua")
+local CACHE_ROOT = require("tests.game3_cache").rootOrSkip("game3_battle_anim_pack_test", "pokemon/battle_anims/pack.lua")
 
 local failed = 0
 local function check(cond, msg)
@@ -16,7 +16,7 @@ local function check(cond, msg)
 end
 
 print("=== 1. Load Extracted Battle Anim Pack ===")
-local packPath = (os.getenv("HOME") or ".") .. "/.local/share/love/pokemon-love2d/firered/data/generated/gba/pokemon/battle_anims/pack.lua"
+local packPath = CACHE_ROOT .. "/pokemon/battle_anims/pack.lua"
 local chunk, err = loadfile(packPath)
 check(chunk ~= nil, "pack.lua loads without syntax errors: " .. tostring(err))
 
