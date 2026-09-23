@@ -51,6 +51,8 @@ return function(game)
   local PartyMenu = require("src.ui.game3.party_menu")
   local Message = require("src.ui.game3.message")
   local Choice = require("src.ui.game3.choice")
+  local Audio = require("src.core.game3.audio")
+  local TradeSceneUi = require("src.ui.game3.trade_scene")
 
   local session = Runtime.getSession()
   if not result(session ~= nil, "new game reached the game3 field") then return finish() end
@@ -94,18 +96,22 @@ return function(game)
   end
 
   local function pumpUntil(pred, frames)
-    for _ = 1, frames or 900 do
+    local budget = frames or 900
+    while budget > 0 do
       if pred() then return true end
-      if PartyMenu.isOpen and PartyMenu.isOpen() then
+      if Audio.isSePlaying() then
+        U.wait(4)
+      elseif PartyMenu.isOpen and PartyMenu.isOpen() then
         U.tap(game, "a")
         U.wait(24)
       elseif Choice.active or (Message.isWaiting and Message.isWaiting())
-        or (Message.isOpen and Message.isOpen()) then
+        or (Message.isOpen and Message.isOpen()) or TradeSceneUi.isOpen() then
         U.tap(game, "a")
         U.wait(10)
       else
         U.wait(4)
       end
+      if not Audio.isSePlaying() then budget = budget - 1 end
     end
     return pred()
   end

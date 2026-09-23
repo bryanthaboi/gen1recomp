@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_learn_move_test", "scripts/text.lua")
 
 local failed = 0
 local function check(cond, msg)
@@ -170,7 +171,7 @@ end
 local function count_exact(shown, text)
   local n = 0
   for _, t in ipairs(shown) do
-    if t == text then n = n + 1 end
+    if (t:gsub("\\p$", "")) == text then n = n + 1 end
   end
   return n
 end

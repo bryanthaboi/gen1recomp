@@ -2,6 +2,7 @@
 -- ChangePokemonNickname special: open naming after TO_BLACK, apply nick, clear fade.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_nickname_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -36,7 +37,18 @@ package.loaded["src.ui.game3.stack"] = {
 
 -- Force re-require naming with stubs
 package.loaded["src.ui.game3.naming"] = nil
+local romTextReal = package.loaded["src.core.game3.rom_text"]
+local ROM_TEXT = { gText_PkmnsNickname = "'s nickname?" }
+local function romTextKey(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end
+local function romTextPlain(key, ctx) return ((ROM_TEXT[key] or key):gsub("{PLAYER}", ctx and ctx.playerName or "")) end
+package.loaded["src.core.game3.rom_text"] = {
+  plain = romTextPlain, box = romTextPlain, ascii = romTextPlain, has = function() return true end,
+  key = romTextKey, at = function(n, i, j, ctx) return romTextPlain(romTextKey(n, i, j), ctx) end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 Naming = require("src.ui.game3.naming")
+package.loaded["src.core.game3.rom_text"] = romTextReal
 
 local mon = { species = 1, nickname = "", name = "BULBASAUR" }
 package.loaded["src.core.game3.runtime"] = {

@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)
@@ -21,7 +22,13 @@ local Dex = require("src.core.game3.dex")
 local Storage = require("src.core.game3.storage")
 
 local store = Flags.newStore()
-package.loaded["src.core.game3.scripting.space"] = { store = store }
+local keyText = setmetatable({}, {
+  __index = function(_, key) return require("src.core.game3.scripting.text_ir").fromAscii(key) end,
+})
+package.loaded["src.core.game3.scripting.space"] = {
+  store = store,
+  ensureBundle = function() return { text = keyText } end,
+}
 
 local function newCtx()
   local ctx = Ctx.new({})
@@ -240,11 +247,11 @@ print("[test] 14. BufferBigGuyOrBigGirlString follows the player's gender")
 local ctx14 = newCtx()
 s.gender = 0
 Natives.special(ctx14, Std.SPECIAL.BufferBigGuyOrBigGirlString, a)
-check(ctx14.stringVars[1] == "Big guy", "boy: STR_VAR_1 = Big guy (got "
+check(ctx14.stringVars[1] == "gText_BigGuy", "boy: STR_VAR_1 = gText_BigGuy (got "
   .. tostring(ctx14.stringVars[1]) .. ")")
 s.gender = 1
 Natives.special(ctx14, Std.SPECIAL.BufferBigGuyOrBigGirlString, a)
-check(ctx14.stringVars[1] == "Big girl", "girl: STR_VAR_1 = Big girl (got "
+check(ctx14.stringVars[1] == "gText_BigGirl", "girl: STR_VAR_1 = gText_BigGirl (got "
   .. tostring(ctx14.stringVars[1]) .. ")")
 s.gender = 0
 

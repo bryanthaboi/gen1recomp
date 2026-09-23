@@ -16,6 +16,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
 love = love or require("tests.love_stub")
+require("tests.game3_cache").mountOrSkip("game3_pc_item_capacity_test")
 
 local Storage = require("src.core.game3.storage")
 local Bag = require("src.core.game3.bag")

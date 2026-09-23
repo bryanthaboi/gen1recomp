@@ -262,9 +262,24 @@ function Catching.playerSecretId(session)
   return sec
 end
 
+-- pokefirered/src/battle_script_commands.c:9617
+local function emit_caught(res)
+  if not ModRuntime.wants("pokemon.caught") then return end
+  local G3 = require("src.mods.Gen3Compat")
+  local R = package.loaded["src.core.game3.runtime"]
+  local mon = res.mon
+  ModRuntime.emit("pokemon.caught", {
+    battle = battle_state(nil), mon = mon, species = G3.speciesName(res.species),
+    speciesId = tonumber(res.species), isNew = res.firstTimeCaught,
+    ball = G3.itemName(mon.pokeball), ballId = mon.pokeball,
+    destination = res.location == "pc" and "box" or "party",
+    box = res.box, slot = res.slot, game = R and R._game or nil,
+  })
+end
+
 --- Store a caught Pokémon into session party or PC.
 -- Marks Pokédex as caught, tracks firstTimeCaught, and returns result info.
-function Catching.storeCaught(session, foeBattler, ballId)
+function Catching.storeCaught(session, foeBattler, ballId, opts)
   if not session or not foeBattler or not foeBattler.mon then
     return { success = false, location = nil, firstTimeCaught = false, mon = nil }
   end
@@ -298,20 +313,26 @@ function Catching.storeCaught(session, foeBattler, ballId)
   mon.species = species
   mon.speciesId = species
   if not mon.name or mon.name == "" then
-    mon.name = Pokemon.name(species) or "POKéMON"
+    mon.name = Pokemon.name(species)
   end
 
   local wasCaught = Dex.registerCapture(session.dex, species, nil, mon.personality)
   local firstTimeCaught = not wasCaught
 
   local location = "party"
-  local boxId, boxSlot
+  local boxId, boxSlot, pending
   if #session.party < 6 then
     session.party[#session.party + 1] = mon
     location = "party"
   else
     local Storage = require("src.core.game3.storage")
-    local ok, bId, sId = Storage.depositCaught(session, mon)
+    local ok, bId, sId
+    if opts and opts.deferPc then
+      ok = Storage.findOpenSlot(Storage.ensure(session)) ~= nil
+      pending = ok or nil
+    else
+      ok, bId, sId = Storage.depositCaught(session, mon)
+    end
     if ok then
       location = "pc"
       boxId = bId
@@ -327,27 +348,29 @@ function Catching.storeCaught(session, foeBattler, ballId)
     end
   end
 
-  -- pokefirered/src/battle_script_commands.c:9617
-  if ModRuntime.wants("pokemon.caught") then
-    local G3 = require("src.mods.Gen3Compat")
-    local R = package.loaded["src.core.game3.runtime"]
-    ModRuntime.emit("pokemon.caught", {
-      battle = battle_state(nil), mon = mon, species = G3.speciesName(species),
-      speciesId = tonumber(species), isNew = firstTimeCaught,
-      ball = G3.itemName(mon.pokeball), ballId = mon.pokeball,
-      destination = location == "pc" and "box" or "party",
-      box = boxId, slot = boxSlot, game = R and R._game or nil,
-    })
-  end
-
-  return {
+  local res = {
     success = true,
     location = location,
     firstTimeCaught = firstTimeCaught,
     mon = mon,
+    species = species,
     box = boxId,
     slot = boxSlot,
+    pending = pending,
   }
+  if not pending then emit_caught(res) end
+  return res
+end
+
+-- pokefirered/src/battle_script_commands.c:9617 Cmd_givecaughtmon
+function Catching.givePending(session, res)
+  if not (res and res.pending) then return true end
+  res.pending = nil
+  local Storage = require("src.core.game3.storage")
+  local ok, bId, sId = Storage.depositCaught(session, res.mon)
+  res.box, res.slot = bId, sId
+  if ok then emit_caught(res) end
+  return ok
 end
 
 return Catching

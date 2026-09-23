@@ -56,7 +56,10 @@ return function(game)
 
   local function openMap()
     local used = ItemUse.useField(session, session.bag, ITEM_TOWN_MAP)
-    U.wait(45)
+    for _ = 1, 300 do
+      if RegionMap.inputReady() then break end
+      U.wait(1)
+    end
     return used == true and RegionMap.isOpen and RegionMap.isOpen()
   end
 
@@ -84,7 +87,10 @@ return function(game)
   U.shot(game, DIR .. "/import2_town_map_01_none_visited.png")
 
   U.tap(game, "b")
-  U.wait(60)
+  for _ = 1, 200 do
+    if not RegionMap.isOpen() then break end
+    U.wait(1)
+  end
   result(not (RegionMap.isOpen and RegionMap.isOpen()), "B closed the region map")
 
   -- pokefirered/data/maps/ViridianForest/scripts.inc:6 ON_TRANSITION setworldmapflag
@@ -117,7 +123,10 @@ return function(game)
   U.shot(game, DIR .. "/import2_town_map_02_forest_visited.png")
 
   U.tap(game, "b")
-  U.wait(45)
+  for _ = 1, 200 do
+    if not RegionMap.isOpen() then break end
+    U.wait(1)
+  end
 
   Map.load(nil, game, PALLET, { x = PALLET_X, y = PALLET_Y, facing = "down" })
   if game.session then
@@ -138,6 +147,9 @@ return function(game)
   U.shot(game, DIR .. "/import2_town_map_03_both_frames.png")
 
   U.tap(game, "b")
-  U.wait(45)
+  for _ = 1, 200 do
+    if not RegionMap.isOpen() then break end
+    U.wait(1)
+  end
   finish()
 end

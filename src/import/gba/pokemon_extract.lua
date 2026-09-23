@@ -1078,10 +1078,7 @@ function PokemonExtract.run(rom, cache, opts)
     BerryPouchExtract.run(rom, cache, { cacheRoot = cacheRoot })
   end)
 
-  local EasyChatExtract = require("src.import.gba.easy_chat_extract")
-  pcall(function()
-    EasyChatExtract.run(rom, cache, { cacheRoot = cacheRoot })
-  end)
+  require("src.import.gba.easy_chat_extract").run(rom, cache, { cacheRoot = cacheRoot })
 
   if progress then progress("trainers", 0, 1) end
   local TrainerExtract = require("src.import.gba.trainer_extract")
@@ -1090,11 +1087,7 @@ function PokemonExtract.run(rom, cache, opts)
 
   if progress then progress("battle_ai", 0, 1) end
   local BattleAiExtract = require("src.import.gba.battle_ai_extract")
-  local battleAi = BattleAiExtract.run({
-    cache = cache,
-    cacheRoot = cacheRoot or default_cache_root(),
-    pretRoot = os.getenv("POKEFIRERED"),
-  })
+  local battleAi = BattleAiExtract.run(rom, cache, { cacheRoot = cacheRoot or default_cache_root() })
   if progress then progress("battle_ai", 1, 1) end
 
   return {

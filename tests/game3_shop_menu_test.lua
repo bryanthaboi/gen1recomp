@@ -85,7 +85,7 @@ ShopMenu.handleInput(make_input({ right = true }))
 ShopMenu.handleInput(make_input({ down = true }))
 assert_eq(ShopMenu.qty, 10, "Qty set to 10")
 
-print("=== [TEST 4] Buy Confirmation & The Premier Ball Cap ===")
+print("=== [TEST 4] Buy Confirmation ===")
 -- Press A to confirm quantity -> mode is buy_confirm
 ShopMenu.handleInput(make_input({ a = true }))
 assert_eq(ShopMenu.mode, "buy_confirm", "Entered buy_confirm mode")
@@ -96,14 +96,14 @@ ShopMenu.handleInput(make_input({ a = true }))
 assert_eq(ShopMenu.mode, "buy_msg", "Entered buy_msg mode with success message")
 assert_eq(session.money, 3000, "Money deducted correctly (5000 - 2000 = 3000)")
 assert_eq(Bag.get(session.bag, 4), 10, "Bag received 10 Poké Balls")
-assert_eq(Bag.get(session.bag, 12), 1, "The Premier Ball Cap: Bag received strictly 1 Premier Ball")
-assert_true(string.find(ShopMenu._status, "PREMIER BALL") ~= nil, "Status message includes Premier Ball mention")
+assert_eq(Bag.get(session.bag, 12), 0, "FRLG gives no Premier Ball bonus (shop.c:978 BuyMenuTryMakePurchase)")
+assert_eq(ShopMenu._status, "Here you are!\nThank you!", "Status is gText_HereYouGoThankYou")
 
 -- Dismiss message with A
 ShopMenu.handleInput(make_input({ a = true }))
 assert_eq(ShopMenu.mode, "buy", "Returned to buy mode")
 
-print("=== [TEST 5] Premier Ball Cap with 99 Poké Balls ===")
+print("=== [TEST 5] 99 Poké Balls ===")
 session.money = 50000
 ShopMenu.cursor = 1 -- Poké Ball
 ShopMenu.handleInput(make_input({ a = true }))
@@ -123,13 +123,13 @@ assert_eq(ShopMenu.mode, "buy_confirm", "Entered buy_confirm")
 ShopMenu.handleInput(make_input({ a = true }))
 assert_eq(session.money, 50000 - (99 * 200), "Money deducted for 99 balls")
 assert_eq(Bag.get(session.bag, 4), 109, "Bag has 109 Poké Balls")
-assert_eq(Bag.get(session.bag, 12), 2, "The Premier Ball Cap: strictly 1 additional Premier Ball added for 99 balls (total 2)")
+assert_eq(Bag.get(session.bag, 12), 0, "no Premier Ball for 99 balls either")
 
 -- Dismiss message
 ShopMenu.handleInput(make_input({ a = true }))
 assert_eq(ShopMenu.mode, "buy", "Returned to buy mode")
 
-print("=== [TEST 6] 10 Great Balls yields 0 Premier Balls ===")
+print("=== [TEST 6] 10 Great Balls ===")
 -- Add Great Ball (ID 3, price 600) to shop items
 ShopMenu._items = { 3, 4 }
 ShopMenu.cursor = 1 -- Great Ball
@@ -141,7 +141,7 @@ assert_eq(ShopMenu.qty, 10, "10 Great Balls selected")
 ShopMenu.handleInput(make_input({ a = true })) -- Confirm qty
 ShopMenu.handleInput(make_input({ a = true })) -- Confirm buy
 assert_eq(Bag.get(session.bag, 3), 10, "Bag received 10 Great Balls")
-assert_eq(Bag.get(session.bag, 12), 2, "Non-standard Poké Ball yielded 0 Premier Balls (count remains 2)")
+assert_eq(Bag.get(session.bag, 12), 0, "Great Balls yield no Premier Ball")
 ShopMenu.handleInput(make_input({ a = true })) -- Dismiss msg
 
 print("=== [TEST 7] Insufficient Funds & Full Bag Handlers ===")
@@ -169,24 +169,20 @@ assert_eq(ShopMenu._status, "Is there anything else I can do?", "Clerk greeting 
 ShopMenu.handleInput(make_input({ down = true }))
 assert_eq(ShopMenu.cursor, 2, "Cursor on SELL")
 ShopMenu.handleInput(make_input({ a = true }))
-assert_eq(ShopMenu.mode, "sell", "Entered sell mode")
-
--- Verify sell rows do NOT include Master Ball or Oak's Parcel (0 price filter)
-local sellRows = require("src.ui.game3.shop_menu")._session and {}
--- Let's check bag_sell_rows directly or via ShopMenu cursor
--- Let's verify by checking the rows displayed
--- Cursor 1 is Poké Ball, Cursor 2 is Great Ball, etc.
--- Let's sell 3 Potions
--- Find index of Potion in sell list
-ShopMenu.cursor = 1
-for vis = 1, 10 do
-  -- navigate to Potion
-  local r = ShopMenu._pending
+local Fade = require("src.ui.game3.fade")
+for _ = 1, 240 do
+  if not Fade.isActive() then break end
+  Fade.tick(1 / 60)
 end
+local BagMenu = require("src.ui.game3.bag_menu")
+-- pokefirered/src/shop.c:288 CB2_GoToSellMenu
+assert_eq(ShopMenu.mode, "sell", "Entered sell mode")
+assert_true(BagMenu.isOpen() and BagMenu._location == "shop", "SELL opened the bag in shop mode")
 
--- Cancel back to root
-ShopMenu.handleInput(make_input({ b = true }))
+-- pokefirered/src/shop.c:330
+BagMenu.close()
 assert_eq(ShopMenu.mode, "root", "Returned to root from sell")
+assert_eq(ShopMenu._status, "Is there anything else I can do?", "Clerk asks again after selling")
 
 print("=== [TEST 9] Close Poké Mart and Resume VM ===")
 -- Exit via SEE YA! (cursor 3)

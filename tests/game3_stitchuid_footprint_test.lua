@@ -140,13 +140,6 @@ do
   check(fBytes ~= mBytes, "the two NIDORAN footprints differ")
 end
 
-print("[test] 4. The name and question-mark fallbacks survive")
-do
-  local bytes, rel = PokedexChrome.footprintSource(NUM_SPECIES + 5000)
-  eq(rel, DIR .. "/question_mark.rgba", "an id with no species file falls back to the question mark")
-  eq(bytes, file_bytes("question_mark.rgba"), "the fallback returns the question mark bytes")
-end
-
 if failed > 0 then
   print(string.format("\n[FAILED] %d check(s) failed", failed))
   os.exit(1)

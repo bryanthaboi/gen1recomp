@@ -5,6 +5,7 @@ local FrlgFont = require("src.ui.game3.frlg_font")
 local Chrome = require("src.ui.game3.chrome")
 local MapSectionsExtract = require("src.import.gba.map_sections_extract")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local MapNamePopup = {}
 
@@ -73,9 +74,10 @@ end
 local function translated_name(info)
   local base = Strings(info.rawName or info.name)
   local floor = tonumber(info.floorNum) or 0
+  -- pokefirered/src/map_name_popup.c:211
+  if floor == 127 then return base .. " " .. RomText.plain("gText_Rooftop2") end
   local label
-  if floor == 127 then label = "ROOFTOP"
-  elseif floor < 0 then label = string.format("B%dF", -floor)
+  if floor < 0 then label = string.format("B%dF", -floor)
   elseif floor > 0 then label = string.format("%dF", floor) end
   if not label then return base end
   return base .. " " .. Strings(label)

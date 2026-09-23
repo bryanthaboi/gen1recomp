@@ -485,6 +485,58 @@ local function utf8Chars(s)
   end
 end
 
+-- charmap.txt:42-66
+FrlgFont.GLYPH_TAGS = {
+  PK = { 0x53 },
+  MN = { 0x54 },
+  PKMN = { 0x53, 0x54 },
+  POKEBLOCK = { 0x55, 0x56, 0x57, 0x58, 0x59 },
+  LV = { 0x34 },
+  SUPER_ER = { 0x2C },
+  SUPER_E = { 0x84 },
+  SUPER_RE = { 0xA0 },
+}
+for id, sym in pairs(TextIR.EXTRA_SYMBOL) do
+  local name = sym:match("^{(.+)}$")
+  if name then FrlgFont.GLYPH_TAGS[name] = { 0x100 + id } end
+end
+
+FrlgFont.KEYPAD_TAGS = {}
+for id, name in pairs(TextIR.KEYGFX) do FrlgFont.KEYPAD_TAGS[name] = id end
+
+-- src/text.c:81
+FrlgFont.KEYPAD_ICONS = {
+  [0x00] = { tile = 0x00, w = 8, h = 12 },
+  [0x01] = { tile = 0x01, w = 8, h = 12 },
+  [0x02] = { tile = 0x02, w = 16, h = 12 },
+  [0x03] = { tile = 0x04, w = 16, h = 12 },
+  [0x04] = { tile = 0x06, w = 24, h = 12 },
+  [0x05] = { tile = 0x09, w = 24, h = 12 },
+  [0x06] = { tile = 0x0C, w = 8, h = 12 },
+  [0x07] = { tile = 0x0D, w = 8, h = 12 },
+  [0x08] = { tile = 0x0E, w = 8, h = 12 },
+  [0x09] = { tile = 0x0F, w = 8, h = 12 },
+  [0x0A] = { tile = 0x20, w = 8, h = 12 },
+  [0x0B] = { tile = 0x21, w = 8, h = 12 },
+  [0x0C] = { tile = 0x22, w = 8, h = 12 },
+}
+
+local KEYPAD_PATHS = {
+  { path = "chrome/fonts/keypad_icons.rgba", w = 128, h = 32 },
+  { path = "data/generated/gba/chrome/fonts/keypad_icons.rgba", w = 128, h = 32 },
+}
+
+local reportedTags = {}
+local function unknownTag(tag)
+  if os.getenv("POKEPORT_DEV") == "1" or _G.POKEPORT_DEV_MODE == true then
+    error("FrlgFont: no glyph for text tag {" .. tostring(tag) .. "}", 0)
+  end
+  if not reportedTags[tag] then
+    reportedTags[tag] = true
+    log("no glyph for text tag {" .. tostring(tag) .. "}")
+  end
+end
+
 local function resolveColorId(val)
   if not val then return nil end
   if type(val) == "number" then return FrlgFont.STDPAL[val] end
@@ -519,14 +571,31 @@ local function acquireColorScratch(c)
   return cur
 end
 
+-- src/text.c:740-787
+local PEN_CODES = {
+  [0x0D] = "shiftx",
+  [0x0E] = "shifty",
+  [0x11] = "clear",
+  [0x12] = "skip",
+  [0x13] = "clearto",
+  [0x14] = "minspacing",
+}
+
 --- Byte-by-byte token scanner for GBA FRLG text strings.
 -- Handles \xFC bytecode sequences, {TAG} macros, and UTF-8 characters without choking on null bytes.
 function FrlgFont.scanTokens(text, initialColors)
   local s = tostring(text or "")
   local curColors = acquireColorScratch(initialColors)
   local i, n = 1, #s
+  local pending, pendingIdx = nil, 0
 
   return function()
+    if pending then
+      pendingIdx = pendingIdx + 1
+      local id = pending[pendingIdx]
+      if pendingIdx >= #pending then pending = nil end
+      return "glyph", id, curColors
+    end
     while i <= n do
       local b = s:byte(i)
 
@@ -574,12 +643,17 @@ function FrlgFont.scanTokens(text, initialColors)
           end
           i = i + 3
           return "ctrl", "FONT", curColors
+        elseif PEN_CODES[cmd] and i + 2 <= n then
+          local arg = s:byte(i + 2)
+          i = i + 3
+          return PEN_CODES[cmd], arg, curColors
+        elseif cmd == 0x15 or cmd == 0x16 then
+          i = i + 2
+          return "jpn", cmd == 0x15, curColors
         else
           -- Skip variable length commands according to pret text.c
           local skip = 2
-          if cmd == 0x05 or cmd == 0x08 or cmd == 0x0C or cmd == 0x0D
-              or cmd == 0x0E or cmd == 0x0F or cmd == 0x11 or cmd == 0x12
-              or cmd == 0x13 or cmd == 0x14 then
+          if cmd == 0x05 or cmd == 0x08 or cmd == 0x0C then
             skip = 3
           elseif cmd == 0x0B or cmd == 0x10 then
             skip = 4
@@ -625,8 +699,16 @@ function FrlgFont.scanTokens(text, initialColors)
             local col = resolveColorId(val)
             if col then curColors.bg = col end
             return "ctrl", tag, curColors
+          elseif FrlgFont.GLYPH_TAGS[upperTag] then
+            local ids = FrlgFont.GLYPH_TAGS[upperTag]
+            if #ids > 1 then
+              pending, pendingIdx = ids, 1
+            end
+            return "glyph", ids[1], curColors
+          elseif FrlgFont.KEYPAD_TAGS[upperTag] then
+            return "icon", FrlgFont.KEYPAD_TAGS[upperTag], curColors
           else
-            -- Non-color placeholder or tag
+            unknownTag(tag)
             return "ctrl", tag, curColors
           end
         else
@@ -696,19 +778,98 @@ function FrlgFont.advance(glyphId, opts)
   return w
 end
 
+-- src/text.c:841 / :1020 GetStringWidth
+local function glyph_step(w, minW, jpn, ls)
+  if minW > 0 then return minW > w and minW or w end
+  if jpn then return w + ls end
+  return w
+end
+
 function FrlgFont.measure(text, opts)
   opts = opts or {}
+  local ls = opts.letterSpacing or 0
+  local minW, jpn = 0, false
   local line, maxLine = 0, 0
   for ttype, val in FrlgFont.scanTokens(text) do
     if ttype == "nl" or ttype == "page" then
       if line > maxLine then maxLine = line end
       line = 0
     elseif ttype == "char" then
-      line = line + FrlgFont.advance(FrlgFont.glyphId(val), opts)
+      line = line + glyph_step(FrlgFont.advance(FrlgFont.glyphId(val), opts), minW, jpn, ls)
+    elseif ttype == "glyph" then
+      line = line + glyph_step(FrlgFont.advance(val, opts), minW, jpn, ls)
+    elseif ttype == "icon" then
+      line = line + FrlgFont.KEYPAD_ICONS[val].w + ls
+    elseif ttype == "clear" then
+      line = line + val
+    elseif ttype == "skip" then
+      line = val
+    elseif ttype == "clearto" then
+      if val > line then line = val end
+    elseif ttype == "minspacing" then
+      minW = val
+    elseif ttype == "jpn" then
+      jpn = val
     end
   end
   if line > maxLine then maxLine = line end
   return maxLine
+end
+
+local keypadQuads = nil
+
+-- src/text.c:1335
+function FrlgFont.drawKeypadIcon(iconId, x, y)
+  local icon = FrlgFont.KEYPAD_ICONS[iconId]
+  if not FrlgFont._keypad then
+    FrlgFont._keypad = loadImage(KEYPAD_PATHS)
+    if not FrlgFont._keypad then
+      error("FrlgFont: keypad_icons.rgba is not in the cache", 0)
+    end
+    keypadQuads = nil
+  end
+  if not keypadQuads then
+    local iw, ih = FrlgFont._keypad:getDimensions()
+    keypadQuads = {}
+    for id, k in pairs(FrlgFont.KEYPAD_ICONS) do
+      keypadQuads[id] = love.graphics.newQuad((k.tile % 16) * 8, math.floor(k.tile / 16) * 8, k.w, k.h, iw, ih)
+    end
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(FrlgFont._keypad, keypadQuads[iconId], x, y)
+  return icon.w
+end
+
+-- src/text.c:1087
+local EXT_ARGC = {
+  [0x01] = 1, [0x02] = 1, [0x03] = 1, [0x04] = 3, [0x05] = 1, [0x06] = 1, [0x08] = 1,
+  [0x0B] = 2, [0x0C] = 1, [0x0D] = 1, [0x0E] = 1, [0x10] = 2, [0x11] = 1, [0x12] = 1,
+  [0x13] = 1, [0x14] = 1,
+}
+
+local function protect_ext(s)
+  if not s:find("\252", 1, true) then return s end
+  local out, i, n = {}, 1, #s
+  while i <= n do
+    local b = s:byte(i)
+    local argc = b == 0xFC and EXT_ARGC[s:byte(i + 1) or -1]
+    if argc and i + 1 + argc <= n then
+      local hex = {}
+      for k = i + 1, i + 1 + argc do hex[#hex + 1] = string.format("%02X", s:byte(k)) end
+      out[#out + 1] = "\255" .. table.concat(hex) .. "\254"
+      i = i + 2 + argc
+    else
+      out[#out + 1] = string.char(b)
+      i = i + 1
+    end
+  end
+  return table.concat(out)
+end
+
+local function restore_ext(s)
+  return (s:gsub("\255(%x+)\254", function(h)
+    return "\252" .. h:gsub("%x%x", function(x) return string.char(tonumber(x, 16)) end)
+  end))
 end
 
 --- Word-wrap text to fit within maxWidth pixels.
@@ -718,7 +879,7 @@ function FrlgFont.wrap(text, maxWidth, opts)
   local spaceW = FrlgFont.measure(" ", opts)
   local outLines = {}
   local rawLines = {}
-  local clean = tostring(text or ""):gsub("\\n", "\n"):gsub("\\p", "\n"):gsub("\\l", "\n")
+  local clean = protect_ext(tostring(text or ""):gsub("\\n", "\n"):gsub("\\p", "\n"):gsub("\\l", "\n"))
   for line in (clean .. "\n"):gmatch("(.-)\r?\n") do
     rawLines[#rawLines + 1] = line
   end
@@ -731,10 +892,10 @@ function FrlgFont.wrap(text, maxWidth, opts)
       outLines[#outLines + 1] = ""
     else
       local curLine = words[1]
-      local curW = FrlgFont.measure(curLine, opts)
+      local curW = FrlgFont.measure(restore_ext(curLine), opts)
       for i = 2, #words do
         local w = words[i]
-        local wW = FrlgFont.measure(w, opts)
+        local wW = FrlgFont.measure(restore_ext(w), opts)
         if curW + spaceW + wW <= maxWidth then
           curLine = curLine .. " " .. w
           curW = curW + spaceW + wW
@@ -747,7 +908,7 @@ function FrlgFont.wrap(text, maxWidth, opts)
       outLines[#outLines + 1] = curLine
     end
   end
-  return table.concat(outLines, "\n")
+  return restore_ext(table.concat(outLines, "\n"))
 end
 
 local ADVANCE_SMALL = { small = true }
@@ -790,6 +951,8 @@ function FrlgFont.draw(text, x, y, opts)
 
   local maxW = opts.maxWidth or 240
   local limit = opts.limitChars
+  local ls = opts.letterSpacing or 0
+  local minW, jpn = 0, false
   local penX, penY = 0, 0
   local drawn = 0
   local pitch = opts.linePitch
@@ -815,8 +978,27 @@ function FrlgFont.draw(text, x, y, opts)
       penX = 0
       penY = penY + pitch
       drawn = drawn + 1
-    elseif ttype == "char" then
-      local id = FrlgFont.glyphId(val)
+    elseif ttype == "icon" then
+      local w = FrlgFont.KEYPAD_ICONS[val].w
+      if penX + w <= maxW or penX == 0 then
+        FrlgFont.drawKeypadIcon(val, x + penX, y + penY)
+        penX = penX + w + ls
+      end
+      drawn = drawn + 1
+    elseif ttype == "shiftx" or ttype == "skip" then
+      penX = val
+    elseif ttype == "shifty" then
+      penY = val
+    elseif ttype == "clear" then
+      penX = penX + val
+    elseif ttype == "clearto" then
+      if val > penX then penX = val end
+    elseif ttype == "minspacing" then
+      minW = val
+    elseif ttype == "jpn" then
+      jpn = val
+    elseif ttype == "char" or ttype == "glyph" then
+      local id = ttype == "glyph" and val or FrlgFont.glyphId(val)
       local adv = FrlgFont.advance(id, useSmall and ADVANCE_SMALL or ADVANCE_NORMAL)
       if penX + adv <= maxW or penX == 0 then
         local dx, dy = x + penX, y + penY
@@ -838,7 +1020,7 @@ function FrlgFont.draw(text, x, y, opts)
             love.graphics.draw(fg, q, dx, dy)
           end
         end
-        penX = penX + adv
+        penX = penX + glyph_step(adv, minW, jpn, ls)
       end
       drawn = drawn + 1
     end
@@ -902,7 +1084,7 @@ FrlgFont.CHAR_SLASH = 0xBA
 function FrlgFont.countChars(text)
   local n = 0
   for ttype in FrlgFont.scanTokens(text) do
-    if ttype == "char" or ttype == "nl" then
+    if ttype == "char" or ttype == "nl" or ttype == "glyph" or ttype == "icon" then
       n = n + 1
     end
   end
@@ -914,6 +1096,7 @@ function FrlgFont.invalidate()
   FrlgFont._sh = nil
   FrlgFont._quads = nil
   FrlgFont._small = nil
+  FrlgFont._keypad = nil
   FrlgFont._logged = false
 end
 

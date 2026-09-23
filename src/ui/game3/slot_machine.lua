@@ -914,8 +914,8 @@ function SlotMachineUi.draw()
   if SlotMachineUi._yesNo then
     local tpl = SlotMachineUi._yesNoTpl
     Window.stdFrame(tpl)
-    Window.printPx(Strings("YES"), (SlotMachineUi.YESNO_LEFT + 1) * 8, SlotMachineUi.YESNO_TOP * 8 + 2)
-    Window.printPx(Strings("NO"), (SlotMachineUi.YESNO_LEFT + 1) * 8, SlotMachineUi.YESNO_TOP * 8 + 16)
+    Window.printPx(RomText.plain("gText_Yes"), (SlotMachineUi.YESNO_LEFT + 1) * 8, SlotMachineUi.YESNO_TOP * 8 + 2)
+    Window.printPx(RomText.plain("gText_No"), (SlotMachineUi.YESNO_LEFT + 1) * 8, SlotMachineUi.YESNO_TOP * 8 + 16)
     Window.cursorPx(SlotMachineUi.YESNO_LEFT * 8 + 2,
       SlotMachineUi.YESNO_TOP * 8 + 2 + (SlotMachineUi._yesNo - 1) * 14)
   end

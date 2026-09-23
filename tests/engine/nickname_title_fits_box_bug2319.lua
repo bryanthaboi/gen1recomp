@@ -11,6 +11,16 @@ local T = require("tests.harness")
 local check, eq = T.check, T.eq
 love = love or require("tests.love_stub")
 
+local ROM = { gText_PkmnsNickname = "'s nickname?", gText_YourName = "YOUR NAME?" }
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return ROM[key] or key end, box = function(key) return ROM[key] or key end,
+  ascii = function(key) return ROM[key] or key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
+
 -- --- exact GBA advance widths, from the extracted FRLG latin font ------------
 local function loadTable(path, pattern)
   local f = io.open(path, "r")
@@ -62,7 +72,7 @@ eq(Naming.monTitle("CHARMANDER"), "CHARMANDER's nickname?",
 eq(Naming.monTitle("BULBASAUR"), "BULBASAUR's nickname?", "title tracks the species")
 check(Naming.monTitle("CHARMANDER") ~= Naming.monTitle("SQUIRTLE"),
   "title is species-derived, not a fixed caption")
-eq(Naming.monTitle(nil), "POKéMON's nickname?", "a missing name falls back safely")
+eq(Naming.monTitle(nil), "'s nickname?", "a missing name prints gText_PkmnsNickname alone")
 
 -- --- every real species title fits the window -------------------------------
 -- Longest real species names (both 10 characters) plus the widest 10-character

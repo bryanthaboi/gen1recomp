@@ -16,6 +16,8 @@ local function eq(a, b, msg)
   check(a == b, string.format("%s (%s == %s)", msg, tostring(a), tostring(b)))
 end
 
+require("tests.game3_cache").mountOrSkip("game3_trainer_card_layout_test", "scripts/text.lua")
+
 local TrainerCard = require("src.ui.game3.trainer_card")
 
 local function index(list)

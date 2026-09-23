@@ -132,5 +132,15 @@ function love.conf(t)
     t.accelerometerjoystick = false
   else
     t.window.resizable = true
+    if os.getenv("POKEPORT_BACKGROUND") == "1" and osName == "OS X" then
+      pcall(function()
+        local ffi = require("ffi")
+        ffi.cdef("int SDL_SetHint(const char *name, const char *value);")
+        ffi.C.SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1")
+      end)
+      t.window.borderless = true
+      t.window.x = -30000
+      t.window.y = -30000
+    end
   end
 end

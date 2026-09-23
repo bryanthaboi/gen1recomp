@@ -69,6 +69,12 @@ do
     "and a cured mon shows only the poison")
 end
 
+if not require("tests.game3_cache").mount() then
+  print("[skip] tests 4-9 read ROM map section names: " .. tostring(require("tests.game3_cache").reason))
+  print(string.format("[test] %d passed, %d failed", passed, failed))
+  os.exit(failed > 0 and 1 or 0)
+end
+
 print("[test] 4. The met location comes from the map section, not a PALLET TOWN default")
 do
   -- pokefirered/src/pokemon_summary_screen.c:2632 GetMapNameGeneric_(mapNameStr, metLocation)

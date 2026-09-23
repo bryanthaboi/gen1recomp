@@ -320,57 +320,454 @@ local function player_gender()
   return (s and tonumber(s.gender)) or 0
 end
 
---- Fly Bird takeoff and landing animations
-function FieldEffects.startFlyTakeoff(onMidWarp, onDone)
-  load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
-  local P = package.loaded["src.core.game3.player"]
-  local px = P and P.px or 0
-  local py = P and P.py or 0
-  local anim = {
-    kind = "fly_takeoff",
-    px = px - 24,
-    py = py - 72,
-    targetPy = py - 40,
-    state = "descend",
-    timer = 0,
-    frame = 0,
-    -- pokefirered/src/field_effect.c:3312
-    ridingFrame = player_gender() * 2 + 1,
-    onMidWarp = onMidWarp,
-    onDone = onDone,
-  }
-  table.insert(FieldEffects._anims, anim)
+local SINE = require("src.core.game3.trig").SINE
+local function gba_sin(i, a) return math.floor(a * SINE[i + 1] / 256) end
+local function gba_cos(i, a) return math.floor(a * SINE[i + 64 + 1] / 256) end
+
+local PLAYER_SPRITE_X, PLAYER_SPRITE_Y = 120, 72
+-- pokefirered/src/event_object_movement.c:9051
+local JUMP_Y_HIGH = { -4, -6, -8, -10, -11, -12, -12, -12, -11, -10, -9, -8, -6, -4, 0, 0 }
+-- pokefirered/src/field_effect.c:3577
+local JUMP_OFF_Y = { -2, -4, -5, -6, -7, -8, -8, -8, -7, -7, -6, -5, -3, -2, 0, 2, 4, 8 }
+-- pokefirered/src/field_effect.c:2373
+local SPIN_NEXT = { down = "left", left = "up", up = "right", right = "down" }
+
+local function fly_player()
+  return package.loaded["src.core.game3.player"]
 end
 
-function FieldEffects.startFlyLanding(onDone)
-  load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
-  local P = package.loaded["src.core.game3.player"]
-  local px = P and P.px or 0
-  local py = P and P.py or 0
-  local anim = {
-    kind = "fly_landing",
-    px = px - 24,
-    py = py - 92,
-    targetPy = py - 40,
-    state = "descend",
-    timer = 0,
-    -- pokefirered/src/field_effect.c:3550
-    frame = player_gender() * 2 + 2,
-    onDone = onDone,
-  }
-  table.insert(FieldEffects._anims, anim)
+-- pokefirered/src/field_effect.c:3338 CreateFlyBirdSprite
+local function new_bird()
+  return { x = 255, y = 180, x2 = 0, y2 = 0, anim = 0, cb = nil, attached = false,
+    init = false, d1 = 0, d2 = 0, d3 = 0, d4 = 0, done = false }
 end
 
---- Dig / Teleport warp spin
-function FieldEffects.startWarpSpin(kind, onDone)
+-- pokefirered/src/field_effect.c:3360 StartFlyBirdSwoopDown
+local function bird_start_swoop(b)
+  b.cb = "swoop"
+  b.x, b.y, b.x2, b.y2 = 120, 0, 0, 0
+  b.init, b.d1, b.d2, b.d3, b.d4, b.done = false, 0, 0, 0, 0, false
+  b.attached = false
+end
+
+local function bird_attach_player(b)
+  if not b.attached then return end
+  local P = fly_player()
+  if not P then return end
+  P.spriteXOffset = b.x + b.x2 - PLAYER_SPRITE_X
+  P.spriteYOffset = b.y + b.y2 - 8 - PLAYER_SPRITE_Y
+end
+
+local function bird_affine_step(b)
+  local a = b.aff
+  if not a then return end
+  if a.kind == "leave" then
+    -- pokefirered/src/field_effect.c:3378 sAffineAnim_FlyBirdLeaveBall
+    if a.k == 0 then a.scale, a.rot = 8, -30 * 256
+    elseif a.k <= 30 then a.scale = a.scale + 28 end
+  elseif a.kind == "return" then
+    -- pokefirered/src/field_effect.c:3385 sAffineAnim_FlyBirdReturnToBall
+    if a.k == 0 then a.scale, a.rot = 256, 64 * 256
+    elseif a.k <= 22 then a.scale = a.scale - 10 end
+  elseif a.kind == "out" then
+    -- pokefirered/src/field_effect.c:3650 sAffineAnim_FlyBirdOutOfMap
+    a.scale = a.scale + 24
+  elseif a.kind == "in" then
+    -- pokefirered/src/field_effect.c:3656 sAffineAnim_FlyBirdIntoMap
+    if a.k == 0 then a.scale = a.scale + 512 else a.scale = a.scale - 16 end
+  end
+  a.k = a.k + 1
+end
+
+local function bird_step(b, gender)
+  if b.cb == "leave" then
+    -- pokefirered/src/field_effect.c:3398 SpriteCB_FlyBirdLeaveBall
+    if not b.done then
+      if not b.init then
+        b.aff = { kind = "leave", k = 0, scale = 256, rot = 0 }
+        b.x = (gender == 0) and 128 or 118
+        b.y = -48
+        b.init = true
+        b.d1, b.d2 = 64, 256
+      end
+      b.d1 = b.d1 + math.floor(b.d2 / 256)
+      b.x2 = gba_cos(b.d1, 120)
+      b.y2 = gba_sin(b.d1, 120)
+      if b.d2 < 2048 then b.d2 = b.d2 + 96 end
+      if b.d1 > 129 then
+        b.done = true
+        b.aff = nil
+      end
+    end
+  elseif b.cb == "swoop" then
+    -- pokefirered/src/field_effect.c:3432 SpriteCB_FlyBirdSwoopDown
+    b.x2 = gba_cos(b.d2, 140)
+    b.y2 = gba_sin(b.d2, 72)
+    b.d2 = (b.d2 + 4) % 256
+    bird_attach_player(b)
+    if b.d2 >= 128 then b.done = true end
+  elseif b.cb == "with_player" then
+    -- pokefirered/src/field_effect.c:3677 SpriteCB_FlyBirdWithPlayer
+    b.x2 = gba_cos(b.d2, 180)
+    b.y2 = gba_sin(b.d2, 72)
+    b.d2 = (b.d2 + 2) % 256
+    bird_attach_player(b)
+    if b.d2 >= 128 then
+      b.done = true
+      b.aff = nil
+    end
+  elseif b.cb == "return" then
+    -- pokefirered/src/field_effect.c:3450 SpriteCB_FlyBirdReturnToBall
+    if not b.done then
+      if not b.init then
+        b.aff = { kind = "return", k = 0, scale = 256, rot = 0 }
+        b.x = (gender == 0) and 112 or 100
+        b.y = -32
+        b.init = true
+        b.d1, b.d2, b.d4 = 240, 2048, 128
+      end
+      local step = math.floor(b.d2 / 256)
+      b.d1 = (b.d1 + step) % 256
+      b.d3 = b.d3 + step
+      b.x2 = gba_cos(b.d1, 32)
+      b.y2 = gba_sin(b.d1, 120)
+      if b.d2 > 256 then b.d2 = b.d2 - b.d4 end
+      if b.d4 < 256 then b.d4 = b.d4 + 24 end
+      if b.d2 < 256 then b.d2 = 256 end
+      if b.d3 >= 60 then
+        b.done = true
+        b.aff = nil
+        b.invisible = true
+      end
+    end
+  end
+  bird_affine_step(b)
+end
+
+local function fly_clear_player(P)
+  P.spriteXOffset = 0
+  P.spriteYOffset = 0
+  P.flyRide = false
+end
+
+-- pokefirered/src/field_effect.c:3252 FlyOutFieldEffect_BirdLeaveBall
+function FieldEffects.startFlyOut(onFlownOff)
+  load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
   local anim = {
-    kind = "warp_spin",
-    warpKind = kind or "teleport",
+    kind = "fly_out",
+    state = "leave_ball",
     timer = 0,
-    maxDur = 40,
+    tTimer = 0,
+    gender = player_gender(),
+    onDone = onFlownOff,
+  }
+  table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+local function step_fly_out(a)
+  local P = fly_player()
+  if not P then return true end
+  local st = a.state
+  if st == "leave_ball" then
+    -- pokefirered/src/field_effect.c:3252 FlyOutFieldEffect_BirdLeaveBall
+    P.fieldMoveAnim = 1
+    a.bird = new_bird()
+    a.bird.cb = "leave"
+    a.state = "wait_leave"
+  elseif st == "wait_leave" then
+    -- pokefirered/src/field_effect.c:3267 FlyOutFieldEffect_WaitBirdLeave
+    if a.bird.done then
+      a.state = "swoop"
+      a.tTimer = 16
+      P.fieldMoveAnim = 0
+      P.facing = "left"
+    else
+      P.fieldMoveAnim = 1
+    end
+  elseif st == "swoop" then
+    -- pokefirered/src/field_effect.c:3278 FlyOutFieldEffect_BirdSwoopDown
+    if a.tTimer ~= 0 then a.tTimer = a.tTimer - 1 end
+    if a.tTimer == 0 then
+      a.state = "jump_on"
+      play_se(151)
+      bird_start_swoop(a.bird)
+    end
+  elseif st == "jump_on" then
+    -- pokefirered/src/field_effect.c:3289 FlyOutFieldEffect_JumpOnBird
+    a.tTimer = a.tTimer + 1
+    if a.tTimer >= 8 then
+      P.flyRide = true
+      P.facing = "left"
+      a.jump = 0
+      a.state = "fly_off"
+      a.tTimer = 0
+    end
+  elseif st == "fly_off" then
+    -- pokefirered/src/field_effect.c:3303 FlyOutFieldEffect_FlyOffWithBird
+    a.tTimer = a.tTimer + 1
+    if a.tTimer >= 10 then
+      a.jump = nil
+      local b = a.bird
+      b.attached = true
+      b.anim = a.gender * 2 + 1
+      b.aff = { kind = "out", k = 0, scale = 256, rot = 0 }
+      b.cb = "with_player"
+      a.state = "wait_off"
+    end
+  elseif st == "wait_off" then
+    -- pokefirered/src/field_effect.c:3320 FlyOutFieldEffect_WaitFlyOff
+    if a.bird.done then
+      fly_clear_player(P)
+      P.setVisible(false)
+      return true
+    end
+  end
+  if a.bird then bird_step(a.bird, a.gender) end
+  if a.jump then
+    P.spriteYOffset = JUMP_Y_HIGH[a.jump + 1] or 0
+    a.jump = a.jump + 1
+    if a.jump >= #JUMP_Y_HIGH then a.jump = nil end
+  end
+  return false
+end
+
+-- pokefirered/src/field_effect.c:3518 FldEff_FlyIn
+function FieldEffects.startFlyIn(onDone)
+  load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
+  local anim = {
+    kind = "fly_in",
+    state = "swoop",
+    timer = 0,
+    tTimer = 0,
+    gender = player_gender(),
     onDone = onDone,
   }
   table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+local function step_fly_in(a)
+  local P = fly_player()
+  if not P then return true end
+  local st = a.state
+  if st == "swoop" then
+    -- pokefirered/src/field_effect.c:3529 FlyInFieldEffect_BirdSwoopDown
+    a.state = "with_bird"
+    a.tTimer = 33
+    P.flyRide = true
+    P.facing = "left"
+    P.setVisible(true)
+    local b = new_bird()
+    bird_start_swoop(b)
+    b.attached = true
+    b.anim = a.gender * 2 + 2
+    b.aff = { kind = "in", k = 0, scale = 256, rot = 0 }
+    b.cb = "with_player"
+    a.bird = b
+  elseif st == "with_bird" then
+    -- pokefirered/src/field_effect.c:3556 FlyInFieldEffect_FlyInWithBird
+    local b = a.bird
+    -- pokefirered/src/field_effect.c:3705 TryChangeBirdSprite
+    if b.aff and b.aff.scale == 256 then
+      b.aff = nil
+      b.anim = 0
+      b.cb = "swoop"
+    end
+    if a.tTimer ~= 0 then a.tTimer = a.tTimer - 1 end
+    if a.tTimer == 0 then
+      b.attached = false
+      a.baseY = P.spriteYOffset
+      a.state = "jump_off"
+      a.tTimer = 0
+    end
+  elseif st == "jump_off" then
+    -- pokefirered/src/field_effect.c:3575 FlyInFieldEffect_JumpOffBird
+    P.spriteYOffset = a.baseY + JUMP_OFF_Y[a.tTimer + 1]
+    a.tTimer = a.tTimer + 1
+    if a.tTimer >= #JUMP_OFF_Y then a.state = "pose" end
+  elseif st == "pose" then
+    -- pokefirered/src/field_effect.c:3584 FlyInFieldEffect_FieldMovePose
+    if a.bird.done then
+      fly_clear_player(P)
+      P.startFieldMove(24)
+      a.poseWait = 24
+      a.state = "return"
+    end
+  elseif st == "return" then
+    -- pokefirered/src/field_effect.c:3603 FlyInFieldEffect_BirdReturnToBall
+    a.poseWait = a.poseWait - 1
+    if a.poseWait <= 0 then
+      P.fieldMoveAnim = 1
+      bird_start_swoop(a.bird)
+      a.bird.cb = "return"
+      a.state = "wait_return"
+    end
+  elseif st == "wait_return" then
+    -- pokefirered/src/field_effect.c:3612 FlyInFieldEffect_WaitBirdReturn
+    P.fieldMoveAnim = 1
+    if a.bird.done then
+      a.bird = nil
+      a.state = "end"
+      a.d1 = 16
+    end
+  elseif st == "end" then
+    -- pokefirered/src/field_effect.c:3622 FlyInFieldEffect_End
+    a.d1 = a.d1 - 1
+    if a.d1 == 0 then
+      P.fieldMoveAnim = 0
+      P.facing = "down"
+      return true
+    end
+    P.fieldMoveAnim = 1
+  end
+  if a.bird then bird_step(a.bird, a.gender) end
+  return false
+end
+
+-- pokefirered/src/field_effect.c:2352 CreateTeleportFieldEffectTask
+function FieldEffects.startTeleportOut(onRisen)
+  local P = fly_player()
+  local anim = {
+    kind = "teleport_out",
+    state = 2,
+    timer = 0,
+    orig = P and P.facing or "down",
+    d1 = 0, d2 = 0, d3 = 0, d4 = 0,
+    onDone = onRisen,
+  }
+  table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+local function step_teleport_out(a)
+  local P = fly_player()
+  if not P then return true end
+  if a.state == 2 then
+    -- pokefirered/src/field_effect.c:2371 TeleportFieldEffectTask2
+    local turn = a.d1 == 0
+    if not turn then
+      a.d1 = a.d1 - 1
+      turn = a.d1 == 0
+    end
+    if turn then
+      P.facing = SPIN_NEXT[P.facing] or "down"
+      a.d1 = 8
+      a.d2 = a.d2 + 1
+    end
+    if a.d2 > 7 and a.orig == P.facing then
+      a.state = 3
+      a.d1, a.d2, a.d3 = 4, 8, 1
+      play_se(39)
+    end
+  else
+    -- pokefirered/src/field_effect.c:2397 TeleportFieldEffectTask3
+    a.d1 = a.d1 - 1
+    if a.d1 <= 0 then
+      a.d1 = 4
+      P.facing = SPIN_NEXT[P.facing] or "down"
+    end
+    a.d4 = a.d4 + a.d3
+    P.spriteYOffset = -a.d4
+    a.d2 = a.d2 - 1
+    if a.d2 <= 0 then
+      a.d2 = 4
+      if a.d3 < 8 then a.d3 = a.d3 * 2 end
+    end
+    if a.d4 > 8 then P.oamPriority = 1 end
+    if a.d4 >= 0xa8 then
+      P.spriteYOffset = 0
+      P.oamPriority = nil
+      P.setVisible(false)
+      return true
+    end
+  end
+  return false
+end
+
+-- pokefirered/src/field_effect.c:2446 FieldCallback_TeleportIn
+function FieldEffects.startTeleportIn(onDone)
+  local P = fly_player()
+  -- pokefirered/src/field_effect.c:2464 TeleportInFieldEffectTask1
+  local anim = {
+    kind = "teleport_in",
+    state = 2,
+    timer = 0,
+    y2 = -(PLAYER_SPRITE_Y + 16),
+    d1 = 8, d2 = 1,
+    onDone = onDone,
+  }
+  if P then
+    P.spriteYOffset = anim.y2
+    P.oamPriority = 1
+    P.setVisible(true)
+  end
+  play_se(39)
+  table.insert(FieldEffects._anims, anim)
+  return anim
+end
+
+local function step_teleport_in(a)
+  local P = fly_player()
+  if not P then return true end
+  if a.state == 2 then
+    -- pokefirered/src/field_effect.c:2483 TeleportInFieldEffectTask2
+    a.y2 = a.y2 + a.d1
+    if a.y2 >= -8 then P.oamPriority = nil else P.oamPriority = 1 end
+    if a.y2 >= -0x30 and a.d1 > 1 and a.y2 % 2 == 0 then a.d1 = a.d1 - 1 end
+    a.d2 = a.d2 - 1
+    if a.d2 == 0 then
+      a.d2 = 4
+      P.facing = SPIN_NEXT[P.facing] or "down"
+    end
+    if a.y2 >= 0 then
+      a.y2 = 0
+      a.state = 3
+      a.d1, a.d2 = 1, 0
+    end
+    P.spriteYOffset = a.y2
+  else
+    -- pokefirered/src/field_effect.c:2522 TeleportInFieldEffectTask3
+    P.spriteYOffset = 0
+    a.d1 = a.d1 - 1
+    if a.d1 == 0 then
+      P.facing = SPIN_NEXT[P.facing] or "down"
+      a.d1 = 8
+      a.d2 = a.d2 + 1
+      -- pokefirered/src/field_effect.c:2530
+      if a.d2 > 4 and P.facing == "down" then return true end
+    end
+  end
+  return false
+end
+
+local function draw_bird(b, camX, camY)
+  if b.invisible then return end
+  local sheet = load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
+  local q = sheet and sheet.quads[b.anim]
+  local P = fly_player()
+  if not (q and P) then return end
+  local cx = P.px - camX - PLAYER_SPRITE_X + 8 + b.x + b.x2
+  local cy = P.py - camY - PLAYER_SPRITE_Y + b.y + b.y2
+  love.graphics.setColor(1, 1, 1, 1)
+  local a = b.aff
+  if not a then
+    love.graphics.draw(sheet.image, q, cx - FLY_BIRD_W / 2, cy - FLY_BIRD_H / 2)
+    return
+  end
+  local s = a.scale / 256
+  local rot = a.rot % 65536
+  if rot == 0 and s > 2 then
+    local half = FLY_BIRD_W / s
+    local u0 = FLY_BIRD_W / 2 - half
+    local iw, ih = sheet.image:getDimensions()
+    FieldEffects._birdQuad = FieldEffects._birdQuad or love.graphics.newQuad(0, 0, 1, 1, iw, ih)
+    FieldEffects._birdQuad:setViewport(u0, b.anim * FLY_BIRD_H + u0, half * 2, half * 2, iw, ih)
+    love.graphics.draw(sheet.image, FieldEffects._birdQuad, cx, cy, 0, s, s, half, half)
+  else
+    love.graphics.draw(sheet.image, q, cx, cy, -rot * 2 * math.pi / 65536, s, s,
+      FLY_BIRD_W / 2, FLY_BIRD_H / 2)
+  end
 end
 
 --- Sweet scent aroma waves
@@ -963,44 +1360,14 @@ function FieldEffects.step()
           anim.amp = math.floor(anim.amp / 2)
         end
       end
-    elseif anim.kind == "fly_takeoff" then
-      -- pokefirered/src/field_effect.c:3342
-      anim.frame = (anim.state == "descend") and 0 or (anim.ridingFrame or 1)
-      if anim.state == "descend" then
-        anim.py = anim.py + 2
-        if anim.py >= anim.targetPy then
-          anim.py = anim.targetPy
-          anim.state = "ascend"
-        end
-      elseif anim.state == "ascend" then
-        anim.py = anim.py - 3
-        if anim.py <= -82 then
-          finished = true
-          if anim.onMidWarp then anim.onMidWarp() end
-        end
-      end
-    elseif anim.kind == "fly_landing" then
-      if anim.state == "descend" then
-        anim.py = anim.py + 2
-        if anim.py >= anim.targetPy then
-          anim.py = anim.targetPy
-          anim.state = "leave"
-        end
-      elseif anim.state == "leave" then
-        anim.py = anim.py - 3
-        if anim.py <= -82 then
-          finished = true
-        end
-      end
-    elseif anim.kind == "warp_spin" then
-      local P = package.loaded["src.core.game3.player"]
-      local facings = { "down", "left", "up", "right" }
-      if P then
-        P.facing = facings[(math.floor(anim.timer / 3) % 4) + 1]
-      end
-      if anim.timer >= anim.maxDur then
-        finished = true
-      end
+    elseif anim.kind == "fly_out" then
+      finished = step_fly_out(anim)
+    elseif anim.kind == "fly_in" then
+      finished = step_fly_in(anim)
+    elseif anim.kind == "teleport_out" then
+      finished = step_teleport_out(anim)
+    elseif anim.kind == "teleport_in" then
+      finished = step_teleport_in(anim)
     elseif anim.kind == "sweet_scent" then
       anim.radius = (anim.timer / anim.maxDur) * 120
       if anim.timer >= anim.maxDur then
@@ -1292,14 +1659,8 @@ function FieldEffects.drawFront(camX, camY, playerPy)
           end
         end
       end
-    elseif anim.kind == "fly_takeoff" or anim.kind == "fly_landing" then
-      local sheet = load_sheet("fly_bird", FLY_BIRD_W, FLY_BIRD_H, FLY_BIRD_FRAMES)
-      if sheet and sheet.quads[anim.frame] then
-        local sx = anim.px - camX
-        local sy = anim.py - camY
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(sheet.image, sheet.quads[anim.frame], sx, sy)
-      end
+    elseif (anim.kind == "fly_out" or anim.kind == "fly_in") and anim.bird then
+      draw_bird(anim.bird, camX, camY)
     elseif anim.kind == "emote" or anim.kind == "exclamation" then
       local sheet = load_sheet("emoticons", 16, 16, 15)
       if sheet and sheet.quads[anim.frame] then

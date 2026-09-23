@@ -448,13 +448,13 @@ function LinkMenu.draw()
     Window.stdFrame(LinkMenu.COUNT_TEMPLATE)
   end
 
-  local title = Strings(Status.TITLE)
+  local title = Status.HEADER[0]
   local titleW = FrlgFont.measure and FrlgFont.measure(title) or (#title * 5)
   Window.printPx(title, 24 + math.floor((192 - titleW) / 2), 6, LinkMenu.OPT.TITLE)
   for i, row in ipairs(LinkMenu.rows) do
     local y = 32 + 30 * (i - 1) + 10
     local opt = row.total and LinkMenu.OPT.TOTAL or LinkMenu.OPT.NORMAL
-    Window.printPx(Strings(row.label), 24, y, opt)
+    Window.printPx(row.label, 24, y, opt)
     Window.printPx(count_text(row.count), 204, y, opt)
   end
 end

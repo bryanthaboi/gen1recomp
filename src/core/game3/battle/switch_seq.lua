@@ -6,7 +6,8 @@ local State = require("src.core.game3.battle.state")
 local Audio = require("src.core.game3.audio")
 local SE = require("src.core.game3.se_ids")
 local SummaryData = require("src.core.game3.summary_data")
-local Strings = require("src.core.Strings")
+local BattleText = require("src.core.game3.battle.battle_text")
+local Adapter = require("src.core.game3.battle.adapter")
 
 local SwitchSeq = {}
 
@@ -44,6 +45,7 @@ local function finish()
   SwitchSeq._waitingMsg = false
   SwitchSeq._waitingCry = false
   SwitchSeq._onDone = nil
+  SwitchSeq.stampSwitchIn(SwitchSeq._st)
   if cb then cb() end
 end
 
@@ -90,25 +92,69 @@ local function step_center(st, d)
   return base.x, base.y
 end
 
-local function trainer_label(st)
-  return (st and st.trainerClassName and st.trainerClassName ~= "")
-    and (st.trainerClassName .. " " .. (st.trainerName or ""))
-    or (st and st.trainerName or "TRAINER")
+local function opposing(st, battler)
+  return (battler.side == "player") and st.enemy or st.player
 end
 
-local function withdraw_text(battler)
-  local name = battler and State.displayName(battler) or "POKéMON"
-  local hp = tonumber(battler and battler.mon and battler.mon.hp) or 0
-  local maxHp = tonumber(battler and battler.mon and (battler.mon.maxHp or battler.mon.maxhp)) or 1
-  if maxHp < 1 then maxHp = 1 end
-  local ratio = hp / maxHp
-  if ratio > 0.5 then
-    return Strings("%s, that's enough!\nCome back!", name)
-  elseif ratio > 0.2 then
-    return Strings("%s, good job!\nCome back!", name)
-  else
-    return Strings("%s, you did it!\nCome back!", name)
+local function hp_of(b)
+  return tonumber(b and b.mon and b.mon.hp) or 0
+end
+
+-- pokefirered/src/battle_script_commands.c:5998
+local function hp_thresholds(st, battler)
+  if st.double then return 0 end
+  local opp = opposing(st, battler)
+  local hp = hp_of(opp)
+  local maxHp = tonumber(opp and opp.mon and opp.mon.maxHp) or 1
+  local result = math.floor(hp * 100 / maxHp)
+  if result == 0 then result = 1 end
+  if result > 69 or hp == 0 then return 0 end
+  if result > 39 then return 1 end
+  if result > 9 then return 2 end
+  return 3
+end
+
+-- pokefirered/src/battle_script_commands.c:6025
+local function hp_thresholds2(st, battler)
+  if st.double then return 0 end
+  local opp = opposing(st, battler)
+  local switchout = st.hpOnSwitchout and st.hpOnSwitchout[opp and opp.side]
+  if not switchout then return 0 end
+  -- pokefirered/src/battle_script_commands.c:6029
+  switchout = switchout % 256
+  local hp = hp_of(opp)
+  if hp >= switchout then return 0 end
+  local result = math.floor((switchout - hp) * 100 / switchout)
+  if result <= 29 then return 1 end
+  if result <= 69 then return 2 end
+  return 3
+end
+
+-- pokefirered/src/battle_script_commands.c:5022
+function SwitchSeq.stampSwitchIn(st)
+  if not st then return end
+  st.hpOnSwitchout = st.hpOnSwitchout or {}
+  for _, b in ipairs(State.present(st)) do
+    st.hpOnSwitchout[b.side] = hp_of(b)
   end
+end
+
+-- pokefirered/src/battle_message.c:1628
+local function withdraw_text(st, battler)
+  return BattleText.get(BattleText.RETURNMON, Adapter.fill(st, {
+    side = battler.side, hpScale = hp_thresholds2(st, battler), buff1 = State.displayName(battler),
+  }))
+end
+
+-- pokefirered/src/battle_message.c:1655
+function SwitchSeq.switchInFill(st, battler)
+  return Adapter.fill(st, {
+    side = battler.side, hpScale = hp_thresholds(st, battler), buff1 = State.displayName(battler),
+  })
+end
+
+local function switch_in_text(st, battler)
+  return BattleText.get(BattleText.SWITCHINMON, SwitchSeq.switchInFill(st, battler))
 end
 
 local function apply_entry_triggers(st, side, pushMsg)
@@ -128,7 +174,7 @@ local function apply_entry_triggers(st, side, pushMsg)
       local fraction = (spikesLayers == 1) and 8 or (spikesLayers == 2 and 6 or 4)
       local dmg = math.max(1, math.floor(maxHp / fraction))
       State.applyHpLoss(b, dmg)
-      local msg = Strings("%s is hurt\nby the SPIKES!", State.displayName(b))
+      local msg = BattleText.get("STRINGID_PKMNHURTBYSPIKES", Adapter.fill(st, { scrActive = b }))
       if pushMsg then pushMsg(msg) end
       local p = Anim.present(side)
       if p then
@@ -142,15 +188,14 @@ local function apply_entry_triggers(st, side, pushMsg)
     local oppSide = (side == "player") and "enemy" or "player"
     local opp = st[oppSide]
     if opp and opp.mon and (tonumber(opp.mon.hp) or 0) > 0 then
-      local oppName = State.displayName(opp)
-      local myName = State.displayName(b)
       if opp.ability == "CLEAR_BODY" or opp.ability == 29 or opp.ability == "WHITE_SMOKE" or opp.ability == 73 or opp.substitute then
         -- Immune to Intimidate
       else
         local cur = opp.stages and opp.stages.attack or 0
         if cur > -6 then
           opp.stages.attack = math.max(-6, cur - 1)
-          local msg = Strings("%s's INTIMIDATE\ncuts %s's ATTACK!", myName, oppName)
+          local msg = BattleText.get("STRINGID_PKMNCUTSATTACKWITH",
+            Adapter.fill(st, { scrActive = b, def = opp, scrActiveAbility = b.ability }))
           if pushMsg then pushMsg(msg) end
         end
       end
@@ -220,7 +265,7 @@ function SwitchSeq.beginPlayerSwitch(st, newSlot, opts)
   SwitchSeq._onDone = opts.onDone
 
   local oldBattler = st.player
-  local withdrawMsg = withdraw_text(oldBattler)
+  local withdrawMsg = withdraw_text(st, oldBattler)
 
   if SwitchSeq._headless then
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(withdrawMsg) end
@@ -231,8 +276,7 @@ function SwitchSeq.beginPlayerSwitch(st, newSlot, opts)
     st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot, st = st })
     State.trackParticipant(st, st.enemy, newSlot)
     Anim.syncDisplayFromState(st)
-    local newName = State.displayName(st.player)
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("Go! %s!", newName)) end
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(switch_in_text(st, st.player)) end
     headless_entry(st, { "player" })
     finish()
     return false
@@ -270,17 +314,14 @@ function SwitchSeq.beginSendOut(st, side, newSlot, opts)
       State.trackParticipant(st, st.enemy, newSlot)
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
-        SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player)))
+        SwitchSeq._pushMsg(switch_in_text(st, st.player))
       end
     else
       st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot, st = st, state = st })
       State.opponentSwitchInResetSentPokes(st, st.enemy)
       Anim.syncDisplayFromState(st)
       if SwitchSeq._pushMsg then
-        local tname = (st.trainerClassName and st.trainerClassName ~= "")
-          and (st.trainerClassName .. " " .. (st.trainerName or ""))
-          or (st.trainerName or "TRAINER")
-        SwitchSeq._pushMsg(Strings("%s sent\nout %s!", tname, State.displayName(st.enemy)))
+        SwitchSeq._pushMsg(switch_in_text(st, st.enemy))
       end
     end
     headless_entry(st, { side })
@@ -316,13 +357,8 @@ function SwitchSeq.beginSendOut(st, side, newSlot, opts)
   return true
 end
 
--- pokefirered/src/battle_message.c:1633
 function SwitchSeq.returnText(st, id)
-  local old = State.battler(st, id)
-  if State.sideOf(id) == "player" then
-    return Strings("%s, come back!", State.displayName(old))
-  end
-  return Strings("%s\nwithdrew %s!", trainer_label(st), State.displayName(old))
+  return withdraw_text(st, State.battler(st, id))
 end
 
 -- pokefirered/data/battle_scripts_1.s:3046
@@ -352,11 +388,7 @@ function SwitchSeq.beginDoubleSwitch(st, id, newSlot, opts)
     Anim.syncDisplayFromState(st)
     local nb = State.battler(st, id)
     if SwitchSeq._pushMsg then
-      if side == "player" then
-        SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(nb)))
-      else
-        SwitchSeq._pushMsg(Strings("%s sent\nout %s!", trainer_label(st), State.displayName(nb)))
-      end
+      SwitchSeq._pushMsg(switch_in_text(st, nb))
     end
     headless_entry(st, { id })
     finish()
@@ -418,7 +450,7 @@ function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
   SwitchSeq._onDone = opts.onDone
 
   local oldBattler = st.player
-  local withdrawMsg = withdraw_text(oldBattler)
+  local withdrawMsg = withdraw_text(st, oldBattler)
 
   if SwitchSeq._headless then
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(withdrawMsg) end
@@ -426,15 +458,12 @@ function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
     State.syncBattlerToParty(st.player, st.playerParty)
     State.wipeVolatilesAndStages(st.player)
     st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { partyIndex = enemySlot, st = st })
-    local tname = (st.trainerClassName and st.trainerClassName ~= "")
-      and (st.trainerClassName .. " " .. (st.trainerName or ""))
-      or (st.trainerName or "TRAINER")
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("%s sent\nout %s!", tname, State.displayName(st.enemy))) end
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(switch_in_text(st, st.enemy)) end
     st.player = State.makeBattler(st.playerParty[playerSlot], "player", { partyIndex = playerSlot, st = st, state = st })
     State.opponentSwitchInResetSentPokes(st, st.enemy)
     State.trackParticipant(st, st.enemy, playerSlot)
     Anim.syncDisplayFromState(st)
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(Strings("Go! %s!", State.displayName(st.player))) end
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(switch_in_text(st, st.player)) end
     headless_entry(st, { "enemy", "player" })
     finish()
     return false
@@ -511,12 +540,7 @@ local function run_step(step)
 
   if kind == "msg_sendout" then
     local side = step_side(d)
-    local text = ""
-    if side == "player" then
-      text = Strings("Go! %s!", State.displayName(step_battler(st, d)))
-    else
-      text = Strings("%s sent\nout %s!", trainer_label(st), State.displayName(step_battler(st, d)))
-    end
+    local text = switch_in_text(st, step_battler(st, d))
     if side == "player" and not SwitchSeq._headless then
       -- pokefirered/src/battle_message.c:399
       require("src.core.game3.battle.ui").pushTimed(text, 0)

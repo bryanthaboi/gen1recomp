@@ -18,6 +18,10 @@ print("[PASS] Special constants match pret specials.inc (0x16F, 0x181, 0x193)")
 print("=== [TEST 2] Script Special Execution & State Machine ===")
 local store = Flags.newStore()
 local Space = { store = store }
+function Space.ensureBundle()
+  if not Space.bundle then require("tests.game3_cache").bundle() end
+  return Space.bundle
+end
 package.loaded["src.core.game3.scripting.space"] = Space
 
 local session = {

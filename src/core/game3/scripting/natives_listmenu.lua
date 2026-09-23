@@ -1,4 +1,3 @@
-local Strings = require("src.core.Strings")
 local Std = require("src.core.game3.scripting.stdscripts")
 
 local ListMenu = {}
@@ -24,62 +23,52 @@ ListMenu.LISTMENU_BERRY_POWDER = LISTMENU_BERRY_POWDER
 
 -- pokefirered/src/field_specials.c:1164
 local LAYOUTS = {
-  [LISTMENU_BADGES] = { maxShowed = 4, count = 9, left = 1, top = 1, keepOpen = true },
-  [LISTMENU_SILPHCO_FLOORS] = { maxShowed = 7, count = 12, left = 1, top = 1, keepOpen = false },
-  [LISTMENU_ROCKET_HIDEOUT_FLOORS] = { maxShowed = 4, count = 4, left = 1, top = 1, keepOpen = false },
-  [LISTMENU_DEPT_STORE_FLOORS] = { maxShowed = 4, count = 6, left = 1, top = 1, keepOpen = false },
-  [LISTMENU_WIRELESS_LECTURE_HEADERS] = { maxShowed = 4, count = 4, left = 1, top = 1, keepOpen = true },
-  [LISTMENU_BERRY_POWDER] = { maxShowed = 7, count = 12, left = 16, top = 1, keepOpen = false },
-  [LISTMENU_TRAINER_TOWER_FLOORS] = { maxShowed = 3, count = 3, left = 1, top = 1, keepOpen = false },
+  [LISTMENU_BADGES] = { maxShowed = 4, count = 9, left = 1, top = 1, height = 7, keepOpen = true },
+  [LISTMENU_SILPHCO_FLOORS] = { maxShowed = 7, count = 12, left = 1, top = 1, height = 12, keepOpen = false },
+  [LISTMENU_ROCKET_HIDEOUT_FLOORS] = { maxShowed = 4, count = 4, left = 1, top = 1, height = 8, keepOpen = false },
+  [LISTMENU_DEPT_STORE_FLOORS] = { maxShowed = 4, count = 6, left = 1, top = 1, height = 8, keepOpen = false },
+  [LISTMENU_WIRELESS_LECTURE_HEADERS] = { maxShowed = 4, count = 4, left = 1, top = 1, height = 8, keepOpen = true },
+  [LISTMENU_BERRY_POWDER] = { maxShowed = 7, count = 12, left = 16, top = 1, height = 12, keepOpen = false },
+  [LISTMENU_TRAINER_TOWER_FLOORS] = { maxShowed = 3, count = 3, left = 1, top = 1, height = 6, keepOpen = false },
 }
 ListMenu.LAYOUTS = LAYOUTS
 
 -- pokefirered/src/field_specials.c:1257 sListMenuLabels
-local function labelsFor(kind)
-  if kind == LISTMENU_BADGES then
-    return {
-      Strings("BOULDERBADGE"), Strings("CASCADEBADGE"), Strings("THUNDERBADGE"),
-      Strings("RAINBOWBADGE"), Strings("SOULBADGE"), Strings("MARSHBADGE"),
-      Strings("VOLCANOBADGE"), Strings("EARTHBADGE"), Strings("EXIT"),
-    }
-  elseif kind == LISTMENU_SILPHCO_FLOORS then
-    return {
-      Strings("11F"), Strings("10F"), Strings("9F"), Strings("8F"),
-      Strings("7F"), Strings("6F"), Strings("5F"), Strings("4F"),
-      Strings("3F"), Strings("2F"), Strings("1F"), Strings("EXIT"),
-    }
-  elseif kind == LISTMENU_ROCKET_HIDEOUT_FLOORS then
-    return { Strings("B1F"), Strings("B2F"), Strings("B4F"), Strings("EXIT") }
-  elseif kind == LISTMENU_DEPT_STORE_FLOORS then
-    return {
-      Strings("5F"), Strings("4F"), Strings("3F"), Strings("2F"),
-      Strings("1F"), Strings("EXIT"),
-    }
-  elseif kind == LISTMENU_WIRELESS_LECTURE_HEADERS then
-    return {
-      Strings("LINKED GAME PLAY"), Strings("DIRECT CORNER"),
-      Strings("UNION ROOM"), Strings("QUIT"),
-    }
-  elseif kind == LISTMENU_BERRY_POWDER then
-    -- pokefirered/src/strings.c:585
-    return {
-      { text = Strings("ENERGYPOWDER"), clearTo = 0x74, tail = Strings("50") },
-      { text = Strings("ENERGY ROOT"), clearTo = 0x74, tail = Strings("80") },
-      { text = Strings("HEAL POWDER"), clearTo = 0x74, tail = Strings("50") },
-      { text = Strings("REVIVAL HERB"), clearTo = 0x6F, tail = Strings("300") },
-      { text = Strings("PROTEIN"), clearTo = 0x65, tail = Strings("1,000") },
-      { text = Strings("IRON"), clearTo = 0x65, tail = Strings("1,000") },
-      { text = Strings("CARBOS"), clearTo = 0x65, tail = Strings("1,000") },
-      { text = Strings("CALCIUM"), clearTo = 0x65, tail = Strings("1,000") },
-      { text = Strings("ZINC"), clearTo = 0x65, tail = Strings("1,000") },
-      { text = Strings("HP UP"), clearTo = 0x65, tail = Strings("1,000") },
-      { text = Strings("PP UP"), clearTo = 0x65, tail = Strings("3,000") },
-      Strings("EXIT"),
-    }
-  elseif kind == LISTMENU_TRAINER_TOWER_FLOORS then
-    return { Strings("ROOFTOP"), Strings("B1F"), Strings("EXIT") }
+local EXT_CLEAR_TO = 0x13
+
+local function clearToLabel(key)
+  local RomText = require("src.core.game3.rom_text")
+  local TextIR = require("src.core.game3.scripting.text_ir")
+  local ir = RomText.translate(RomText.ir(key), {}, key)
+  for i, seg in ipairs(ir) do
+    if seg.t == "ext" and seg.cmd == EXT_CLEAR_TO then
+      local head, tail = {}, {}
+      for j = 1, i - 1 do head[#head + 1] = ir[j] end
+      for j = i + 1, #ir do tail[#tail + 1] = ir[j] end
+      return {
+        text = TextIR.toPlain(head, {}),
+        clearTo = seg.args[1],
+        tail = TextIR.toPlain(tail, {}),
+      }
+    end
   end
-  return nil
+  return RomText.plain(key)
+end
+
+local function labelsFor(kind)
+  local count = LAYOUTS[kind] and LAYOUTS[kind].count
+  if not count then return nil end
+  local RomText = require("src.core.game3.rom_text")
+  local labels = {}
+  for i = 0, count - 1 do
+    local key = RomText.key("sListMenuLabels", kind, i)
+    if kind == LISTMENU_BERRY_POWDER then
+      labels[i + 1] = clearToLabel(key)
+    else
+      labels[i + 1] = RomText.plain(key)
+    end
+  end
+  return labels
 end
 ListMenu.labelsFor = labelsFor
 
@@ -122,6 +111,9 @@ local STACK_ID = "script_list_menu"
 
 -- pokefirered/src/strings.c:585 {FONT_SMALL}
 local SMALL_FONT = { small = true }
+
+-- pokefirered/src/text.c:147
+local LIST_ROW_H = 14
 
 local _font = nil
 local function frlgFont()
@@ -188,6 +180,8 @@ function Menu.showItems(kind, labels, layout, scroll, cursor, onPick)
   -- pokefirered/src/field_specials.c:1356
   if Menu.left + Menu.width > 29 then Menu.left = 29 - Menu.width end
   Menu.top = layout.top
+  Menu.height = layout.height
+  Menu.arrowK = 0
   Menu._onPick = onPick
   Menu.open = true
   local okS, Stack = pcall(require, "src.ui.game3.stack")
@@ -268,19 +262,43 @@ function Menu.handleInput(input)
   end
 end
 
+function Menu.update()
+  if Menu.open then Menu.arrowK = (Menu.arrowK or 0) + 1 end
+end
+
+local function arrowBob(freq)
+  local Trig = require("src.core.game3.trig")
+  local v = Trig.sin(((Menu.arrowK or 0) * freq) % 256) * 2 / 256
+  return v < 0 and math.ceil(v) or math.floor(v)
+end
+
+-- pokefirered/src/field_specials.c:1485 Task_CreateMenuRemoveScrollIndicatorArrowPair
+local function drawScrollArrows()
+  if Menu.maxShowed == Menu.count then return end
+  local okB, BagChrome = pcall(require, "src.ui.game3.bag_chrome")
+  if not (okB and BagChrome and BagChrome.drawArrow) then return end
+  local x = 4 * Menu.width + 8 * Menu.left
+  if Menu.scroll > 0 then
+    BagChrome.drawArrow("up", x - 8, arrowBob(8))
+  end
+  if Menu.scroll < Menu.count - Menu.maxShowed then
+    BagChrome.drawArrow("down", x - 8, 8 * Menu.height + 10 - 8 + arrowBob(-8))
+  end
+end
+
 function Menu.draw()
   if not (Menu.open and Menu.labels) then return end
   local Window = windowMod()
   if not Window then return end
   local rows = Menu.maxShowed
-  local th = math.max(2, math.ceil((rows * Window.OPTION_HEIGHT) / 8))
+  local th = Menu.height or math.max(2, math.ceil((rows * LIST_ROW_H) / 8))
   Window.stdFrame(Window.template(Menu.left, Menu.top, Menu.width, th))
   local leftPx = Menu.left * 8
   local topPx = Menu.top * 8
   for i = 1, rows do
     local label = Menu.labels[Menu.scroll + i]
     if label then
-      local yPx = Window.menuRowPx(topPx, i)
+      local yPx = topPx + (i - 1) * LIST_ROW_H
       local textPx = leftPx + Window.CURSOR_WIDTH
       if i == Menu.row then Window.cursorPx(leftPx, yPx) end
       if type(label) == "table" and label.tailRight then
@@ -302,6 +320,7 @@ function Menu.draw()
       end
     end
   end
+  drawScrollArrows()
 end
 
 ListMenu._suspended = nil

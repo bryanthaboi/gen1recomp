@@ -1,6 +1,15 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").stubSpeciesNames()
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")
@@ -129,60 +138,64 @@ eq(Mail.giveMailToMon(s2, reuse, ITEM_FAB_MAIL), 0, "and the next letter reuses 
 check(not Mail.monHasMail({ species = 1, item = ITEM_FAB_MAIL }),
   "a mon holding mail with no mail id does not have mail")
 
-print("[test] 3. the ZYNX trade carries DONTAE's FAB MAIL, run through the real specials")
-local s3 = newSession()
-check(select(1, Party.giveMon(s3, SPECIES_POLIWHIRL, 20, "POLI")) == true,
-  "the player has the POLIWHIRL DONTAE asks for")
-local vm3 = runToEnd({
-  { op = "setvar", [1] = VAR_0x8004, [2] = 1 },
-  { op = "setvar", [1] = VAR_0x8005, [2] = 0 },
-  { op = "special", [1] = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON,
-    id = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON },
-  { op = "special", [1] = SPECIAL_DO_IN_GAME_TRADE_SCENE,
-    id = SPECIAL_DO_IN_GAME_TRADE_SCENE },
-  { op = "waitstate" },
-  { op = "end" },
-})
-check(not vm3:isRunning(), "the trade scene finished")
-local zynx = s3.party[1]
-eq(zynx and (zynx.species or zynx.speciesId), SPECIES_JYNX, "ZYNX is in the party slot")
-eq(zynx and zynx.item, ITEM_FAB_MAIL, "holding FAB MAIL")
-check(Mail.monHasMail(zynx), "and MonHasMail says the letter came with it")
-local letter = Mail.get(s3, zynx and zynx.mail)
-check(letter ~= nil, "the letter is in the player's mail pool")
-eq(wordsOf(letter), table.concat(ZYNX_WORDS, ","),
-  "with sInGameTradeMailMessages[0], the nine easy chat words")
-eq(letter and letter.playerName, "DONTAE", "signed by DONTAE, not by the player")
-eq(letter and letter.trainerId, 36728, "with DONTAE's trainer id")
-eq(letter and letter.itemId, ITEM_FAB_MAIL, "and the FAB MAIL stationery")
-eq(letter and letter.design, 10, "which resolves to mail design 10")
+if not require("tests.game3_cache").mount() then
+  print("[skip] 3-4. the in-game trades are ROM data: " .. tostring(require("tests.game3_cache").reason))
+else
+  print("[test] 3. the ZYNX trade carries DONTAE's FAB MAIL, run through the real specials")
+  local s3 = newSession()
+  check(select(1, Party.giveMon(s3, SPECIES_POLIWHIRL, 20, "POLI")) == true,
+    "the player has the POLIWHIRL DONTAE asks for")
+  local vm3 = runToEnd({
+    { op = "setvar", [1] = VAR_0x8004, [2] = 1 },
+    { op = "setvar", [1] = VAR_0x8005, [2] = 0 },
+    { op = "special", [1] = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON,
+      id = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON },
+    { op = "special", [1] = SPECIAL_DO_IN_GAME_TRADE_SCENE,
+      id = SPECIAL_DO_IN_GAME_TRADE_SCENE },
+    { op = "waitstate" },
+    { op = "end" },
+  })
+  check(not vm3:isRunning(), "the trade scene finished")
+  local zynx = s3.party[1]
+  eq(zynx and (zynx.species or zynx.speciesId), SPECIES_JYNX, "ZYNX is in the party slot")
+  eq(zynx and zynx.item, ITEM_FAB_MAIL, "holding FAB MAIL")
+  check(Mail.monHasMail(zynx), "and MonHasMail says the letter came with it")
+  local letter = Mail.get(s3, zynx and zynx.mail)
+  check(letter ~= nil, "the letter is in the player's mail pool")
+  eq(wordsOf(letter), table.concat(ZYNX_WORDS, ","),
+    "with sInGameTradeMailMessages[0], the nine easy chat words")
+  eq(letter and letter.playerName, "DONTAE", "signed by DONTAE, not by the player")
+  eq(letter and letter.trainerId, 36728, "with DONTAE's trainer id")
+  eq(letter and letter.itemId, ITEM_FAB_MAIL, "and the FAB MAIL stationery")
+  eq(letter and letter.design, 10, "which resolves to mail design 10")
 
-print("[test] 4. the mail of the mon the player sends away is freed")
-local s4 = newSession()
-Party.giveMon(s4, SPECIES_POLIWHIRL, 20, "POLI")
-eq(Mail.giveMailToMon(s4, s4.party[1], ITEM_ORANGE_MAIL), 0,
-  "the POLIWHIRL leaves carrying its own ORANGE MAIL in slot 0")
-local before = Mail.get(s4, 0)
-eq(before and before.playerName, "RED", "which the player wrote")
-runToEnd({
-  { op = "setvar", [1] = VAR_0x8004, [2] = 1 },
-  { op = "setvar", [1] = VAR_0x8005, [2] = 0 },
-  { op = "special", [1] = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON,
-    id = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON },
-  { op = "special", [1] = SPECIAL_DO_IN_GAME_TRADE_SCENE,
-    id = SPECIAL_DO_IN_GAME_TRADE_SCENE },
-  { op = "waitstate" },
-  { op = "end" },
-})
-local after = Mail.get(s4, 0)
-eq(after and after.playerName, "DONTAE",
-  "ClearMailStruct freed slot 0 and GiveMailToMon2 reused it for the partner letter")
-eq(s4.party[1] and s4.party[1].mail, 0, "the received ZYNX points at that slot")
-local occupied = 0
-for i = 1, Mail.MAIL_COUNT do
-  if not Mail.isEmpty(Mail.pool(s4)[i]) then occupied = occupied + 1 end
+  print("[test] 4. the mail of the mon the player sends away is freed")
+  local s4 = newSession()
+  Party.giveMon(s4, SPECIES_POLIWHIRL, 20, "POLI")
+  eq(Mail.giveMailToMon(s4, s4.party[1], ITEM_ORANGE_MAIL), 0,
+    "the POLIWHIRL leaves carrying its own ORANGE MAIL in slot 0")
+  local before = Mail.get(s4, 0)
+  eq(before and before.playerName, "RED", "which the player wrote")
+  runToEnd({
+    { op = "setvar", [1] = VAR_0x8004, [2] = 1 },
+    { op = "setvar", [1] = VAR_0x8005, [2] = 0 },
+    { op = "special", [1] = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON,
+      id = SPECIAL_CREATE_IN_GAME_TRADE_POKEMON },
+    { op = "special", [1] = SPECIAL_DO_IN_GAME_TRADE_SCENE,
+      id = SPECIAL_DO_IN_GAME_TRADE_SCENE },
+    { op = "waitstate" },
+    { op = "end" },
+  })
+  local after = Mail.get(s4, 0)
+  eq(after and after.playerName, "DONTAE",
+    "ClearMailStruct freed slot 0 and GiveMailToMon2 reused it for the partner letter")
+  eq(s4.party[1] and s4.party[1].mail, 0, "the received ZYNX points at that slot")
+  local occupied = 0
+  for i = 1, Mail.MAIL_COUNT do
+    if not Mail.isEmpty(Mail.pool(s4)[i]) then occupied = occupied + 1 end
+  end
+  eq(occupied, 1, "exactly one letter is in the pool, the sent one did not leak")
 end
-eq(occupied, 1, "exactly one letter is in the pool, the sent one did not leak")
 
 print("[test] 5. the Route 5 day care moves the letter into its slot and hands it back")
 local s5 = newSession()

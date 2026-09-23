@@ -1,4 +1,6 @@
 -- Tests for Game 3 Old Man catching tutorial battle (pokefirered special StartOldManTutorialBattle)
+require("tests.game3_cache").mountOrSkip("game3_old_man_tutorial_battle_test")
+require("tests.fixture_data.game3_items").install()
 local function check(cond, msg)
   if not cond then error(msg or "check failed", 2) end
   print("[ok] " .. tostring(msg or "check passed"))
@@ -125,7 +127,7 @@ CatchSeq.begin(st, 4, true, 4, {
 })
 
 check(#msgs >= 2, "messages were emitted")
-eq(msgs[1], "OLD MAN used\nPOKé BALL!", "throw msg is 'OLD MAN used POKé BALL!'")
+eq(msgs[1], "The old man used\nPOKé BALL!", "throw msg is sText_OldManUsedItem")
 eq(msgs[2], "Gotcha!\nWEEDLE was caught!", "catch msg is 'Gotcha! WEEDLE was caught!'")
 
 -- Weedle not added to player party or dex

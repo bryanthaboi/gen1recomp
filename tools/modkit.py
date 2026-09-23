@@ -1135,6 +1135,41 @@ def lint_dir(repo, mod_dir, manifest):
             finding = check_data_dump(repo, path, base, rel)
             if finding:
                 findings.append(finding)
+    findings.extend(check_rom_english_keys(repo, mod_dir))
+    return findings
+
+
+CATALOG_KEY = re.compile(r'^\s*\[("(?:[^"\\]|\\.)*")\]\s*=')
+FRLG_KEY = re.compile(r'^"(?:gText_|sText_|STRINGID_|easyChat\.)')
+
+
+def check_rom_english_keys(repo, mod_dir):
+    keyed = {}
+    for rel in mod_files(mod_dir):
+        if rel == "lang/strings.lua":
+            with open(os.path.join(mod_dir, rel), encoding="utf-8", errors="replace") as handle:
+                keyed[rel] = [m.group(1) for m in map(CATALOG_KEY.match, handle) if m]
+    if not any(keyed.values()):
+        return []
+    caches = rom_text_caches(repo)
+    if not caches:
+        return [Finding("MK306", "warn",
+                        "ROM English check skipped: no imported FireRed or "
+                        "LeafGreen cache to compare against", rel)
+                for rel, keys in keyed.items() if any(FRLG_KEY.match(k) for k in keys)]
+    try:
+        rom_text = harvest_rom_text(repo, caches)
+    except RuntimeError as err:
+        return [Finding("MK100", "error", f"cannot read the FireRed text cache ({err})", "lang/")]
+    english = rom_english_keys(rom_text) - {lit for lit, _ in harvest_engine_strings(repo)}
+    findings = []
+    for rel, keys in keyed.items():
+        hits = [k for k in keys if k in english]
+        if hits:
+            findings.append(Finding(
+                "MK306", "error",
+                f"{len(hits)} keys are ROM English (e.g. {hits[0]}); key them by "
+                "ROM label (modkit translation --refresh moves them)", rel))
     return findings
 
 
@@ -1457,23 +1492,6 @@ for id, def in pairs(statuses or {}) do
     emit("status_hud", id, def.hudLabel)
   end
 end
--- The Easy Chat vocabulary is engine data, not a Strings() call site, so the
--- literal harvester below cannot see it: the picker looks each word up at
--- draw time under its group's context (src/core/game3/easy_chat_text.lua).
--- Emit those keys here so a catalog carries them like any other engine text.
-local okEasyChat, EasyChatData = pcall(require, "src.core.game3.easy_chat_data")
-if okEasyChat and type(EasyChatData) == "table" and type(EasyChatData.GROUPS) == "table" then
-  for _, group in pairs(EasyChatData.GROUPS) do
-    if type(group) == "table" and type(group.name) == "string" and group.name ~= "" then
-      emit("easy_chat", "easyChat.group|" .. group.name, group.name)
-      for _, word in ipairs(group.words or {}) do
-        if type(word) == "table" and type(word.text) == "string" and word.text ~= "" then
-          emit("easy_chat", "easyChat." .. group.name .. "|" .. word.text, word.text)
-        end
-      end
-    end
-  end
-end
 
 -- dex entries carry their own prose (species flavour text)
 for id, def in pairs(D.pokemon or {}) do
@@ -1544,6 +1562,105 @@ def harvest_engine_strings(repo):
                 seen.add(literal)
                 out.append((literal, f"{rel}:{line}"))
     return out
+
+
+ROM_TEXT_DUMP = r'''
+package.path = "./?.lua;./?/init.lua;" .. package.path
+local TextIR = require("src.core.game3.scripting.text_ir")
+local RomText = require("src.core.game3.rom_text")
+local ctx = { battle = setmetatable({}, { __index = function() return "" end }) }
+local function lit(s)
+  return (string.format("%q", s):gsub("\\\n", "\\n"))
+end
+local function emit(label, english, legacy)
+  if english == "" then return end
+  local row = { lit(label), lit(english) }
+  for _, form in ipairs(legacy) do
+    row[#row + 1] = lit(label .. "|" .. form[1]) .. "\31" .. lit(form[2])
+    row[#row + 1] = lit(form[1]) .. "\31" .. lit(form[2])
+  end
+  io.write(table.concat(row, "\t"), "\n")
+end
+local text = assert(loadfile(arg[1]))()
+for key, ir in pairs(text) do
+  if type(key) == "string" and not key:find("^g3:") and not key:find("^0x")
+      and not key:find("^stdstring:") then
+    local legacy = {}
+    for _, form in ipairs(RomText.sources(ir, ctx)) do
+      legacy[#legacy + 1] = { form.source, form.suffix }
+    end
+    emit(key, (TextIR.toSource(ir, ctx)), legacy)
+  end
+end
+for _, group in pairs(assert(loadfile(arg[2]))().groups) do
+  emit(("easyChat.group[%d]"):format(group.id), group.name,
+    { { "easyChat.group|" .. group.name, "" } })
+  for _, word in ipairs(group.words) do
+    emit(("easyChat.word[%d]"):format(word.id), word.text,
+      { { "easyChat." .. group.name .. "|" .. word.text, "" }, { word.text, "" } })
+  end
+end
+'''
+
+
+def rom_text_caches(repo):
+    """FireRed / LeafGreen scripts/text.lua caches this machine has imported."""
+    roots = [repo]
+    user_root = _love_user_data_root()
+    if user_root:
+        roots.append(user_root)
+    found = []
+    for root in roots:
+        for version in ("firered", "leafgreen"):
+            base = os.path.join(root, version, "data", "generated", "gba")
+            text = os.path.join(base, "scripts", "text.lua")
+            if os.path.isfile(text):
+                found.append((text, os.path.join(base, "easy_chat", "words.lua")))
+    return found
+
+
+def harvest_rom_text(repo, caches=None):
+    """Every ROM text label of the imported FireRed / LeafGreen caches.
+    Returns [(label_literal, english_literal, [(legacy_key_literal, suffix_literal)]), ...]."""
+    rows = {}
+    for text, words in (rom_text_caches(repo) if caches is None else caches):
+        argv = [os.environ.get("LUA", "luajit"), "-", text, words]
+        proc = subprocess.run(argv, cwd=repo, input=ROM_TEXT_DUMP, capture_output=True,
+                              text=True, encoding="utf-8")
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or "ROM text dump failed")
+        for line in proc.stdout.splitlines():
+            label, english, *legacy = line.split("\t")
+            english_, forms = rows.setdefault(label, (english, []))
+            for pair in legacy:
+                form = tuple(pair.split("\x1f", 1))
+                if form not in forms:
+                    forms.append(form)
+    return [(label, english, forms) for label, (english, forms) in sorted(rows.items())]
+
+
+def rom_english_keys(rom_text):
+    keys = set()
+    for _label, english, forms in rom_text:
+        keys.add(english)
+        keys.update(key for key, _suffix in forms)
+    return keys
+
+
+def migrate_rom_text(done, rom_text, engine_keys):
+    moved = set()
+    for label, _english, forms in rom_text:
+        if label in done:
+            continue
+        for key, suffix in forms:
+            if key in done:
+                value = done[key]
+                done[label] = value[:-1] + suffix[1:-1] + value[-1]
+                moved.add(key)
+                break
+    for key in moved - engine_keys:
+        del done[key]
+    return len(moved)
 
 
 def dump_dataset(repo, base):
@@ -1706,7 +1823,7 @@ in different places for a reason.
 | lang/ file | What it is | Key |
 |---|---|---|
 | `dialogue.lua` | Every line of extracted script text | the original label, e.g. `_PalletTownText1` |
-| `strings.lua` | Text the engine itself writes: battle messages, menus, link play | the English source string |
+| `strings.lua` | Text the engine itself writes: battle messages, menus, link play | the English source string, or the ROM label for FireRed / LeafGreen text |
 | `species.lua` `moves.lua` `items.lua` `trainers.lua` | Names | the vanilla id |
 | `statuses.lua` | `PSN`, `BRN`, ... as they appear in the HUD | the status id |
 | `font.lua` `charmap.lua` | Your glyph sheet and what draws what | see below |
@@ -1730,9 +1847,29 @@ the vanilla names are ROM content, and `modkit pack` zips everything under
 the mod directory, so a worksheet kept inside would end up in your release
 whatever a `.gitignore` said. Keep it beside the mod, never in it.
 
-`lang/strings.lua` is the exception: those sources are the engine's own Lua
-rather than anything out of the ROM, so there the key *is* the English and
-you can translate straight from it.
+`lang/strings.lua` holds two kinds of key. Lines the engine writes itself
+are keyed by their English, and you can translate straight from them. On
+FireRed and LeafGreen the battle messages, menus and prompts are the ROM's
+own text, so those are keyed by their ROM label instead, with the English
+in `{{id}}-worksheet/strings.txt`:
+
+```
+["gText_WhatWillPkmnDo"] = "",
+["STRINGID_ATTACKMISSED"] = "",
+["gTrainerClassNames[3]"] = "",
+["easyChat.group[4]"] = "",
+["easyChat.word[1032]"] = "",
+```
+
+Write the translation with the same `%s` / `%d` directives as the worksheet
+English: `%s` stands for a name or number the game fills in, `\\p` for a
+new page. `easyChat.group[N]` is an Easy Chat group name and
+`easyChat.word[N]` one word, by the id the save stores.
+
+A catalog made before labels were used, keyed by the English
+(`["Do what with this {PKMN}?"] = "..."`), still translates. `--refresh`
+moves those entries onto their labels. `modkit pack` refuses a mod whose
+`lang/strings.lua` still carries ROM English as keys (MK306).
 
 ## Start with the font, not the text
 
@@ -1892,23 +2029,46 @@ def cmd_translation(args, repo):
         entries.sort()
 
     engine = harvest_engine_strings(repo)
+    caches = rom_text_caches(repo)
+    if not caches and exists:
+        print("modkit: no imported FireRed or LeafGreen cache found, so a refresh "
+              "would drop every FireRed / LeafGreen entry in lang/strings.lua. "
+              "Import the ROM, or set POKEPORT_IDENTITY to the identity that "
+              "holds it, and rerun.")
+        return 1
+    try:
+        rom_text = harvest_rom_text(repo, caches)
+    except RuntimeError as err:
+        print(f"modkit: could not read the FireRed text cache ({err})")
+        return 1
+    if not args.quiet:
+        if caches:
+            for text, _words in caches:
+                print(f"modkit: FireRed / LeafGreen text from {os.path.dirname(os.path.dirname(text))}")
+        else:
+            print("modkit: warning: no imported FireRed or LeafGreen cache found; "
+                  "lang/strings.lua has no FireRed / LeafGreen text")
+    engine_keys = {lit for lit, _ in engine}
+    rom_english = {label: english for label, english, _forms in rom_text}
 
     catalogs = [
         ("dialogue", "Script text", grouped.get("dialogue", []), False,
          "Keyed by the original text label. The English is in the comment."),
         ("strings", "Engine text",
-         [(lit, where) for lit, where in engine] + sorted(grouped.get("easy_chat", [])), True,
-         "Keyed by the English source, which is also what draws if you leave\n"
-         "an entry empty. Keep any %s / %d directives.\n"
-         "The easyChat.* keys are the Easy Chat vocabulary: a group's name, or\n"
-         "one of its words. They carry the group as a context because the same\n"
-         "word means different things in different groups; an entry keyed by\n"
-         "the bare word still applies where no context-specific one exists.\n"
+         [(lit, where) for lit, where in engine]
+         + [(label, english) for label, english in rom_english.items()],
+         True,
+         "Engine-written lines are keyed by their English source, which is\n"
+         "also what draws if you leave an entry empty. Keep any %s / %d\n"
+         "directives.\n"
+         "FireRed / LeafGreen text is keyed by its ROM label (gText_*,\n"
+         "sText_*, STRINGID_*, table[i]); its English is in the worksheet\n"
+         "beside the mod, with the same %s directives and \\p page breaks.\n"
+         "easyChat.group[N] is an Easy Chat group name and easyChat.word[N]\n"
+         "one of its words, by the word id the save stores.\n"
          "The POKéMON and MOVE groups show the game's own species and move\n"
          "names: leave their entries empty and a name your mod already renames\n"
-         "follows it there. Fill one to reach a name nothing else renames, or\n"
-         "to word it differently in the picker; a bare-word entry does not\n"
-         "apply in those groups."),
+         "follows it there."),
         ("species_names", "Species names", grouped.get("species", []), False, ""),
         ("move_names", "Move names", grouped.get("move", []), False, ""),
         ("item_names", "Item names", grouped.get("item", []), False, ""),
@@ -1923,6 +2083,7 @@ def cmd_translation(args, repo):
         for name, *_ in catalogs:
             path = os.path.join(dest, "lang", f"{name}.lua")
             previous[name] = _read_existing_catalog(path)
+    migrated = migrate_rom_text(previous.get("strings", {}), rom_text, engine_keys)
 
     os.makedirs(os.path.join(dest, "lang"), exist_ok=True)
     os.makedirs(os.path.join(dest, "assets", "font"), exist_ok=True)
@@ -1951,6 +2112,7 @@ def cmd_translation(args, repo):
         "{{game_version}}": engine_version_,
         "{{next_major}}": str(int(engine_version_.split(".")[0]) + 1),
         "{{profile}}": "content",
+        "{{games}}": games_list("gen1,gen3" if rom_text else "gen1"),
         "{{extra}}": "",
         "{{github_line}}": "",
         "{{experimental}}": "false",
@@ -1992,7 +2154,9 @@ def cmd_translation(args, repo):
     os.makedirs(work, exist_ok=True)
     for name, title, entries, by_source, _note in catalogs:
         if by_source:
-            continue  # engine strings are our own source, already readable
+            entries = [(key, rom_english[key]) for key, _ in entries if key in rom_english]
+            if not entries:
+                continue
         lines = [f"# {title}: the English behind each key in lang/{name}.lua.",
                  "# Reference only, and deliberately outside the mod: this",
                  "# text comes out of the ROM, so it must not be shipped.", ""]
@@ -2016,6 +2180,8 @@ def cmd_translation(args, repo):
                     line += f", {changed[name]} orphaned"
                 line += ")"
             print(line)
+        if migrated:
+            print(f"  {migrated} English-keyed FireRed / LeafGreen entries moved to their ROM labels")
         if base == "fixture":
             print("\nnote: no imported dataset found, so the name and dialogue")
             print("catalogs came from the three-species test fixture.")

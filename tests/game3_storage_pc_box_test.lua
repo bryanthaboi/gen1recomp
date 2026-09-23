@@ -1,5 +1,6 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").stubSpeciesNames()
 
 local failed = 0
 local function check(cond, msg)
@@ -208,6 +209,12 @@ local okO, codeO, monO = Party.giveMon(s14, 25, 10, nil, { toPC = true })
 check(okO, "the same call with toPC gives the mon")
 eq(codeO, Party.MON_GIVEN_TO_PC, "and reports MON_GIVEN_TO_PC")
 check(s14.storage.boxes[1].mons[1] == monO, "the mon is in box 1")
+
+if not require("tests.game3_cache").bundle() then
+  print("[skip] 15-17: no FireRed cache for sTransferredToPCMessages")
+  if failed > 0 then os.exit(1) end
+  os.exit(0)
+end
 
 print("[test] 15. the PC transfer message picks pret's four strings")
 local Runtime15 = require("src.core.game3.runtime")

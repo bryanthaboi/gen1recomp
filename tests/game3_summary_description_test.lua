@@ -4,6 +4,7 @@
 -- to go through the ROM's own name for the number, not the name on screen.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("summary_description")
 love = require("tests.love_stub")
 
 local failed = 0

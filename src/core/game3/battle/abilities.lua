@@ -1,19 +1,33 @@
 local Rules = require("src.core.game3.battle.rules")
 local Types = require("src.core.game3.battle.types")
 local Secondary = require("src.core.game3.battle.effects.secondary")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
+local State = require("src.core.game3.battle.state")
 
 local Abilities = {}
 
--- pokefirered/src/data/text/abilities.h:162
-local DISPLAY = { COMPOUND_EYES = "COMPOUNDEYES", LIGHTNING_ROD = "LIGHTNINGROD" }
-
--- The name battle messages print.  No registry renames abilities, so a
--- translation reaches them through Strings(), keyed by the cart's English.
-function Abilities.name(ab)
-  if not ab then return "" end
-  return Strings(DISPLAY[ab] or (ab:gsub("_", " ")))
+local ID_BY_NAME
+function Abilities.id(ab)
+  if not ID_BY_NAME then
+    ID_BY_NAME = {}
+    for id, key in pairs(require("src.core.game3.battle.adapter").ABILITY_BY_ID) do ID_BY_NAME[key] = id end
+  end
+  return assert(ID_BY_NAME[ab], "unknown ability " .. tostring(ab))
 end
+
+function Abilities.name(ab)
+  return require("src.core.game3.pokemon").abilityName(Abilities.id(ab))
+end
+
+local function say_id(ad, id, fill)
+  ad:sayText(id, fill)
+end
+
+-- src/battle_main.c:601
+local STATUS_WORD = {
+  PSN = "gText_Poison", TOX = "gText_Poison", SLP = "gText_Sleep", PAR = "gText_Paralysis",
+  BRN = "gText_Burn", FRZ = "gText_Ice",
+}
 
 -- pokefirered/src/battle_util.c:31
 local SOUND_MOVES = { [45] = true, [46] = true, [47] = true, [48] = true, [103] = true, [173] = true,
@@ -22,8 +36,7 @@ Abilities.SOUND_MOVES = SOUND_MOVES
 
 local SPECIES_CASTFORM = 385
 
-local function name(ad, b) return ad:displayName(b) end
-local function ab_name(ad, b) return Abilities.name(ad:abilityOf(b)) end
+local function ab_id(ad, b) return Abilities.id(ad:abilityOf(b)) end
 
 local function is_type(b, t)
   if not b then return false end
@@ -84,7 +97,7 @@ local function castform_script(ad, b, form)
   -- pokefirered/src/battle_script_commands.c:9293
   local arg = ((b.substituteHP or 0) > 0) and (form - 1 + 128) or (form - 1)
   ad:playAnim("general", "CASTFORM_CHANGE", b, b, arg)
-  ad:say(Strings("%s transformed!", name(ad, b)))
+  say_id(ad, "STRINGID_PKMNTRANSFORMED", { scrActive = b })
 end
 
 -- pokefirered/src/battle_util.c:2169
@@ -121,7 +134,7 @@ function Abilities.switchIn(ad, b)
   if ab == "DRIZZLE" then
     if not weather_permanent(st, "RAIN") then
       st.weather, st.weatherTurns = "RAIN", 0
-      ad:say(Strings("%s's DRIZZLE\nmade it rain!", name(ad, b)))
+      say_id(ad, "STRINGID_PKMNMADEITRAIN", { scrActive = b, scrActiveAbility = Abilities.id(ab) })
       ad:playAnim("general", "RAIN_CONTINUES", nil, nil)
       weather_form_changes(ad)
       return true
@@ -129,7 +142,7 @@ function Abilities.switchIn(ad, b)
   elseif ab == "SAND_STREAM" then
     if not weather_permanent(st, "SAND") then
       st.weather, st.weatherTurns = "SAND", 0
-      ad:say(Strings("%s's SAND STREAM\nwhipped up a sandstorm!", name(ad, b)))
+      say_id(ad, "STRINGID_PKMNSXWHIPPEDUPSANDSTORM", { scrActive = b, scrActiveAbility = Abilities.id(ab) })
       ad:playAnim("general", "SANDSTORM_CONTINUES", nil, nil)
       weather_form_changes(ad)
       return true
@@ -137,7 +150,7 @@ function Abilities.switchIn(ad, b)
   elseif ab == "DROUGHT" then
     if not weather_permanent(st, "SUN") then
       st.weather, st.weatherTurns = "SUN", 0
-      ad:say(Strings("%s's DROUGHT\nintensified the sun's rays!", name(ad, b)))
+      say_id(ad, "STRINGID_PKMNSXINTENSIFIEDSUN", { scrActive = b, scrActiveAbility = Abilities.id(ab) })
       ad:playAnim("general", "SUN_CONTINUES", nil, nil)
       weather_form_changes(ad)
       return true
@@ -175,18 +188,21 @@ local function intimidate_one(ad, b, foe)
   if not (foe and not ad:isFainted(foe) and (foe.substituteHP or 0) <= 0) then return end
   local fab = ad:abilityOf(foe)
   if fab == "CLEAR_BODY" or fab == "HYPER_CUTTER" or fab == "WHITE_SMOKE" then
-    ad:say(Strings("%s's %s\nprevented %s's\nINTIMIDATE from working!", name(ad, foe), Abilities.name(fab), name(ad, b)))
+    -- src/battle_script_commands.c:9181
+    say_id(ad, "STRINGID_PREVENTEDFROMWORKING", {
+      def = foe, defAbility = Abilities.id(fab), scrActive = b, buff1 = Abilities.name(ad:abilityOf(b)),
+    })
   else
     local side = ad:ownSide(foe)
     if side and (side.expMistTurns or 0) > 0 then
       if not foe._statLoweredMsg then
         foe._statLoweredMsg = true
-        ad:say(Strings("%s is protected\nby MIST!", name(ad, foe)))
+        say_id(ad, "STRINGID_PKMNPROTECTEDBYMIST", { scrActive = foe })
       end
     elseif (foe.stages.attack or 0) > -6 then
       foe.stages.attack = foe.stages.attack - 1
       ad:playAnim("general", "STATS_CHANGE", foe, foe, Secondary.statAnimArg("attack", -1))
-      ad:say(Strings("%s's INTIMIDATE\ncuts %s's ATTACK!", name(ad, b), name(ad, foe)))
+      say_id(ad, "STRINGID_PKMNCUTSATTACKWITH", { scrActive = b, scrActiveAbility = ab_id(ad, b), def = foe })
     end
   end
 end
@@ -234,7 +250,10 @@ function Abilities.runTrace(ad)
       if fab and ad:hp(foe) > 0 then
         b.expTracePending = nil
         b.expTracedAbility = fab
-        ad:say(Strings("%s TRACED\n%s's %s!", name(ad, b), name(ad, foe), Abilities.name(fab)))
+        -- src/battle_util.c:2281
+        say_id(ad, "STRINGID_PKMNTRACED", {
+          scrActive = b, buff1 = State.prefixedName(st, foe), buff2 = Abilities.name(fab),
+        })
         return true
       end
     end
@@ -250,29 +269,26 @@ function Abilities.endTurn(ad, b)
     if weather_active(ad) == "RAIN" and ad:maxHp(b) > ad:hp(b) then
       local amt = math.floor(ad:maxHp(b) / 16)
       if amt == 0 then amt = 1 end
-      ad:say(Strings("%s's RAIN DISH\nrestored its HP a little!", name(ad, b)))
+      say_id(ad, "STRINGID_PKMNSXRESTOREDHPALITTLE2", { atk = b, atkAbility = Abilities.id(ab) })
       ad:heal(b, amt)
       return true
     end
   elseif ab == "SHED_SKIN" then
     local s = ad:status(b)
     if s and ad:roll(0, 2) % 3 == 0 then
-      local word
-      if s == "PSN" or s == "TOX" then word = Strings.source("poison") end
-      if s == "SLP" then word = Strings.source("sleep") end
-      if s == "PAR" then word = Strings.source("paralysis") end
-      if s == "BRN" then word = Strings.source("burn") end
-      if s == "FRZ" then word = Strings.source("ice") end
+      local word = STATUS_WORD[s]
       ad:clearStatus(b)
       b.expNightmare = nil
-      ad:say(Strings("%s's SHED SKIN\ncured its %s problem!", name(ad, b), Strings(tostring(word))))
+      say_id(ad, "STRINGID_PKMNSXCUREDYPROBLEM", {
+        scrActive = b, scrActiveAbility = Abilities.id(ab), buff1 = RomText.plain(word),
+      })
       return true
     end
   elseif ab == "SPEED_BOOST" then
     if (b.stages.speed or 0) < 6 and (b.isFirstTurn or 0) ~= 2 then
       b.stages.speed = (b.stages.speed or 0) + 1
       ad:playAnim("general", "STATS_CHANGE", b, b, Secondary.statAnimArg("speed", 1))
-      ad:say(Strings("%s's SPEED BOOST\nraised its SPEED!", name(ad, b)))
+      say_id(ad, "STRINGID_PKMNRAISEDSPEED", { scrActive = b, scrActiveAbility = Abilities.id(ab) })
       return true
     end
   elseif ab == "TRUANT" then
@@ -294,7 +310,7 @@ function Abilities.soundproofBlocks(M)
   if M.user.expLockedMove then M.noPP = true end
   M:attackString()
   M:ppReduce()
-  M:say(Strings("%s's SOUNDPROOF\nblocks %s!", name(ad, target), M.moveName))
+  say_id(ad, "STRINGID_PKMNSXBLOCKSY", { def = target, defAbility = ab_id(ad, target), currentMove = M.moveName })
   M.anim.statusOnly = true
   M.anim.missed = true
   M.noEffect = true
@@ -321,30 +337,31 @@ function Abilities.absorb(M)
   if kind == "fire" then
     if not target.expFlashFire then
       target.expFlashFire = true
-      M:say(Strings("%s's FLASH FIRE\nraised its FIRE power!", name(ad, target)))
+      say_id(ad, "STRINGID_PKMNRAISEDFIREPOWERWITH", { def = target, defAbility = Abilities.id(ab) })
     else
-      M:say(Strings("%s's FLASH FIRE\nmade %s ineffective!", name(ad, target), M.moveName))
+      say_id(ad, "STRINGID_PKMNSXMADEYINEFFECTIVE", {
+        def = target, defAbility = Abilities.id(ab), currentMove = M.moveName,
+      })
     end
     return true
   end
   if ad:hp(target) >= ad:maxHp(target) then
-    M:say(Strings("%s's %s\nmade %s useless!", name(ad, target), Abilities.name(ab), M.moveName))
+    say_id(ad, "STRINGID_PKMNSXMADEYUSELESS", { def = target, defAbility = Abilities.id(ab), currentMove = M.moveName })
   else
     local amt = math.floor(ad:maxHp(target) / 4)
     if amt == 0 then amt = 1 end
     ad:heal(target, amt)
-    M:say(Strings("%s restored HP\nusing its %s!", name(ad, target), Abilities.name(ab)))
+    say_id(ad, "STRINGID_PKMNRESTOREDHPUSING", { def = target, defAbility = Abilities.id(ab) })
   end
   return true
 end
 
--- Holder, ability, victim.  Translated where they are said: this table exists
--- before any translation catalog.
+-- src/battle_message.c:1076
 local STATUS_BY_ABILITY = {
-  PAR = Strings.source("%s's %s\nparalyzed %s!\nIt may be unable to move!"),
-  PSN = Strings.source("%s's %s\npoisoned %s!"),
-  BRN = Strings.source("%s's %s\nburned %s!"),
-  SLP = Strings.source("%s's %s\nmade %s sleep!"),
+  PAR = "STRINGID_PKMNWASPARALYZEDBY",
+  PSN = "STRINGID_PKMNPOISONEDBY",
+  BRN = "STRINGID_PKMNBURNEDBY",
+  SLP = "STRINGID_PKMNMADESLEEP",
 }
 
 -- pokefirered/src/battle_script_commands.c:2110
@@ -354,12 +371,14 @@ function Abilities.applyStatus(ad, holder, victim, status, primary, M)
   local vab = ad:abilityOf(victim)
   local function prevents()
     if M then
-      ad:say(Strings("%s's %s\nprevents %s's\n%s from working!", name(ad, M.user), ab_name(ad, M.user), name(ad, M.target), ab_name(ad, M.target)))
+      say_id(ad, "STRINGID_PKMNSXPREVENTSYSZ", {
+        atk = M.user, atkAbility = ab_id(ad, M.user), def = M.target, defAbility = ab_id(ad, M.target),
+      })
     end
     return false
   end
   local function no_effect()
-    ad:say(Strings("%s's %s\nhad no effect on %s!", name(ad, holder), ab_name(ad, holder), name(ad, victim)))
+    say_id(ad, "STRINGID_PKMNSXHADNOEFFECTONY", { scrActive = holder, scrActiveAbility = ab_id(ad, holder), eff = victim })
     return false
   end
   if status == "SLP" then
@@ -388,9 +407,9 @@ function Abilities.applyStatus(ad, holder, victim, status, primary, M)
   ad:statusAnim(victim, status)
   if status ~= "SLP" then ad._syncEffect = { status = status } end
   if status == "TOX" then
-    ad:say(Strings("%s is badly\npoisoned!", name(ad, victim)))
+    say_id(ad, "STRINGID_PKMNBADLYPOISONED", { eff = victim })
   else
-    ad:say(Strings(STATUS_BY_ABILITY[status], name(ad, holder), ab_name(ad, holder), name(ad, victim)))
+    say_id(ad, STATUS_BY_ABILITY[status], { scrActive = holder, scrActiveAbility = ab_id(ad, holder), eff = victim })
   end
   return true
 end
@@ -409,7 +428,7 @@ function Abilities.onDamage(M)
   if ab == "COLOR_CHANGE" then
     if M.mnum ~= 165 and (tonumber(M.move.power) or 0) ~= 0 and not is_type(target, mt) and ad:hp(target) > 0 then
       set_type(target, mt)
-      ad:say(Strings("%s's COLOR CHANGE\nmade it the %s type!", name(ad, target), Types.name(mt)))
+      say_id(ad, "STRINGID_PKMNCHANGEDTYPEWITH", { def = target, defAbility = Abilities.id(ab), buff1 = Types.name(mt) })
       return true
     end
     return false
@@ -419,7 +438,7 @@ function Abilities.onDamage(M)
     local amt = math.floor(ad:maxHp(user) / 16)
     if amt == 0 then amt = 1 end
     ad:applyHpLoss(user, amt)
-    ad:say(Strings("%s's ROUGH SKIN\nhurt %s!", name(ad, target), name(ad, user)))
+    say_id(ad, "STRINGID_PKMNHURTSWITH", { def = target, defAbility = Abilities.id(ab), atk = user })
     M:tryFaintUser()
     return true
   elseif ab == "EFFECT_SPORE" then
@@ -444,7 +463,7 @@ function Abilities.onDamage(M)
         user.expInfatuatedBy = target.side
         user.expInfatuatedWith = target
         ad:playAnim("status", "INFATUATION", user, user)
-        ad:say(Strings("%s's CUTE CHARM\ninfatuated %s!", name(ad, target), name(ad, user)))
+        say_id(ad, "STRINGID_PKMNSXINFATUATEDY", { def = target, defAbility = Abilities.id(ab), atk = user })
         return true
       end
     end
@@ -459,20 +478,22 @@ function Abilities.immunityCure(ad)
     local ab = ad:abilityOf(b)
     local s = ad:status(b)
     local word, kind
-    if ab == "IMMUNITY" and (s == "PSN" or s == "TOX") then word, kind = Strings.source("poison"), 1
-    elseif ab == "OWN_TEMPO" and (b.confusionTurns or 0) > 0 then word, kind = Strings.source("confusion"), 2
-    elseif ab == "LIMBER" and s == "PAR" then word, kind = Strings.source("paralysis"), 1
+    if ab == "IMMUNITY" and (s == "PSN" or s == "TOX") then word, kind = "gText_Poison", 1
+    elseif ab == "OWN_TEMPO" and (b.confusionTurns or 0) > 0 then word, kind = "gText_Confusion", 2
+    elseif ab == "LIMBER" and s == "PAR" then word, kind = "gText_Paralysis", 1
     elseif (ab == "INSOMNIA" or ab == "VITAL_SPIRIT") and s == "SLP" then
       b.expNightmare = nil
-      word, kind = Strings.source("sleep"), 1
-    elseif ab == "WATER_VEIL" and s == "BRN" then word, kind = Strings.source("burn"), 1
-    elseif ab == "MAGMA_ARMOR" and s == "FRZ" then word, kind = Strings.source("ice"), 1
-    elseif ab == "OBLIVIOUS" and b.expInfatuated then word, kind = Strings.source("love"), 3 end
+      word, kind = "gText_Sleep", 1
+    elseif ab == "WATER_VEIL" and s == "BRN" then word, kind = "gText_Burn", 1
+    elseif ab == "MAGMA_ARMOR" and s == "FRZ" then word, kind = "gText_Ice", 1
+    elseif ab == "OBLIVIOUS" and b.expInfatuated then word, kind = "gText_Love", 3 end
     if kind then
       if kind == 1 then ad:clearStatus(b)
       elseif kind == 2 then b.confusionTurns = nil
       else b.expInfatuated, b.expInfatuatedWith, b.expInfatuatedBy = nil, nil, nil end
-      ad:say(Strings("%s's %s\ncured its %s problem!", name(ad, b), Abilities.name(ab), Strings(word)))
+      say_id(ad, "STRINGID_PKMNSXCUREDYPROBLEM", {
+        scrActive = b, scrActiveAbility = Abilities.id(ab), buff1 = RomText.plain(word),
+      })
       any = true
     end
   end

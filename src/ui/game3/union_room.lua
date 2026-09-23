@@ -1,6 +1,7 @@
 local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local UnionRoomScreen = {}
 
@@ -248,7 +249,7 @@ local function compose_chat_line()
   if not (okN and Naming and Naming.open) then return false end
   if Naming.isOpen and Naming.isOpen() then return true end
   Naming.open({
-    title = Strings("CHAT"),
+    title = RomText.plain("gText_UR_Chat2"),
     maxLen = 20,
     onDone = function(text)
       local cb = UnionRoomScreen._onSay
@@ -277,34 +278,31 @@ function UnionRoomScreen.handleInput(input)
   end
 end
 
--- pokefirered/src/union_room_message.c:511
-UnionRoomScreen.LABELS = {
-  GREETINGS = "GREETINGS",
-  BATTLE = "BATTLE",
-  CHAT = "CHAT",
-  EXIT = "EXIT",
-}
+-- pokefirered/src/data/union_room.h:175 sListMenuItems_InviteToActivity
+UnionRoomScreen.LABELS = RomText.lazy({
+  GREETINGS = "sListMenuItems_InviteToActivity[0]",
+  BATTLE = "sListMenuItems_InviteToActivity[1]",
+  CHAT = "sListMenuItems_InviteToActivity[2]",
+  EXIT = "sListMenuItems_InviteToActivity[3]",
+})
 
 function UnionRoomScreen.labelFor(item)
-  local raw = UnionRoomScreen.LABELS[item and item.key] or (item and item.key) or ""
-  return Strings(raw)
+  return UnionRoomScreen.LABELS[item and item.key] or ""
 end
 
--- pokefirered/src/union_room_message.c:520
-UnionRoomScreen.ACTIVITY_LABELS = {
-  [1] = "SINGLE BATTLE",
-  [2] = "DOUBLE BATTLE",
-  [4] = "POKéMON TRADES",
-  [5] = "CHAT",
-  [8] = "CARDS",
-  [12] = "SEARCH",
-}
+-- pokefirered/src/data/union_room.h:1 sLinkGroupActivityNameTexts
+UnionRoomScreen.ACTIVITY_LABELS = RomText.lazy({
+  [1] = "sLinkGroupActivityNameTexts[1]",
+  [2] = "sLinkGroupActivityNameTexts[2]",
+  [4] = "sLinkGroupActivityNameTexts[4]",
+  [5] = "sLinkGroupActivityNameTexts[5]",
+  [8] = "sLinkGroupActivityNameTexts[8]",
+  [12] = "sLinkGroupActivityNameTexts[12]",
+})
 
 function UnionRoomScreen.activityLabel(activity)
   local id = (tonumber(activity) or 0) % 0x40
-  local raw = UnionRoomScreen.ACTIVITY_LABELS[id]
-  if not raw then return "" end
-  return Strings(raw)
+  return UnionRoomScreen.ACTIVITY_LABELS[id] or ""
 end
 
 local function draw_frame(tpl)
@@ -366,8 +364,9 @@ function UnionRoomScreen.draw()
   draw_indicator()
   local count = UnionRoomScreen.COUNT_TEMPLATE
   draw_frame(count)
-  Window.print(Strings("PLAYERS"), count.left, count.top)
-  Window.print(tostring(#UnionRoomScreen.players + 1), count.left + 6, count.top)
+  -- pokefirered/src/strings.c:1057 gText_Var1Players
+  Window.print(RomText.plain("gText_Var1Players", { stringVars = { tostring(#UnionRoomScreen.players + 1) } }),
+    count.left, count.top)
   -- pokefirered/src/data/union_room.h:1 sLinkGroupActivityNameTexts
   local sel = UnionRoomScreen.players[UnionRoomScreen.cursor]
   local label = sel and UnionRoomScreen.activityLabel(sel.activity) or ""

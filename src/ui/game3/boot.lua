@@ -11,7 +11,7 @@ local IntroMovie = require("src.ui.game3.intro_movie")
 local TitleScreen = require("src.ui.game3.title_screen")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Chrome = require("src.ui.game3.chrome")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local MysteryGift = require("src.core.game3.mystery_gift")
 local MysteryGiftUi = require("src.ui.game3.mystery_gift")
 
@@ -276,13 +276,13 @@ local function leaveTitle(state)
 end
 
 local function saveErrorPages(status)
-  if status == "invalid" then
-    return { Strings("The save file has been\ndeleted...") } -- pokefirered/src/strings.c:31
+  -- pokefirered/src/main_menu.c:249
+  local key = status == "invalid" and "gText_SaveFileHasBeenDeleted" or "gText_SaveFileCorrupted"
+  local pages = {}
+  for page in (RomText.ascii(key) .. "\\p"):gmatch("(.-)\\p") do
+    if page ~= "" then pages[#pages + 1] = page end
   end
-  return { -- pokefirered/src/strings.c:30
-    Strings("The save file is corrupted."),
-    Strings("The previous save file will be\nloaded."),
-  }
+  return pages
 end
 
 local ARROW_FRAMES = { 0, 1, 2, 1 } -- pokefirered/src/text.c:35
@@ -526,31 +526,31 @@ local function drawMainMenu(state, W, H)
     if gift then
       Window.userFrame(Window.template(3, 21 - scroll, 24, 2), frameType)
     end
-    Window.printPx(Strings("CONTINUE"), x + 2, y + 2, { colors = head })
-    Window.printPx(Strings("PLAYER"), x + 2, y + 18, { colors = stat }) -- pokefirered/src/main_menu.c:623
+    Window.printPx(RomText.plain("gText_Continue"), x + 2, y + 2, { colors = head })
+    Window.printPx(RomText.plain("gText_Player"), x + 2, y + 18, { colors = stat }) -- pokefirered/src/main_menu.c:623
     Window.printPx(info.name or "", x + 62, y + 18, { colors = stat })
-    Window.printPx(Strings("TIME"), x + 2, y + 34, { colors = stat }) -- pokefirered/src/main_menu.c:636
+    Window.printPx(RomText.plain("gText_Time"), x + 2, y + 34, { colors = stat }) -- pokefirered/src/main_menu.c:636
     Window.printPx(string.format("%d:%02d", info.hours or 0, info.minutes or 0), x + 62, y + 34, { colors = stat })
     if info.hasDex then -- pokefirered/src/main_menu.c:648
-      Window.printPx(Strings("POKéDEX"), x + 2, y + 50, { colors = stat })
+      Window.printPx(RomText.plain("gText_Pokedex"), x + 2, y + 50, { colors = stat })
       Window.printPx(tostring(info.dexCount or 0), x + 62, y + 50, { colors = stat })
     end
-    Window.printPx(Strings("BADGES"), x + 2, y + 66, { colors = stat }) -- pokefirered/src/main_menu.c:672
+    Window.printPx(RomText.plain("gText_Badges"), x + 2, y + 66, { colors = stat }) -- pokefirered/src/main_menu.c:672
     Window.printPx(tostring(info.badges or 0), x + 62, y + 66, { colors = stat })
-    Window.printPx(Strings("NEW GAME"), 24 + 2, 104 + 2 - dy, { colors = head })
+    Window.printPx(RomText.plain("gText_NewGame"), 24 + 2, 104 + 2 - dy, { colors = head })
     -- pokefirered/src/main_menu.c:377 gText_MysteryGift
-    Window.printPx(gift and Strings("MYSTERY GIFT") or Strings("EXIT"),
+    Window.printPx(RomText.plain(gift and "gText_MysteryGift" or "gText_MenuExit"),
       24 + 2, 136 + 2 - dy, { colors = head })
     if gift then
-      Window.printPx(Strings("EXIT"), 24 + 2, 168 + 2 - dy, { colors = head })
+      Window.printPx(RomText.plain("gText_MenuExit"), 24 + 2, 168 + 2 - dy, { colors = head })
     end
     local rows = WIN0V_CONTINUE[state.menuIndex] or WIN0V_CONTINUE[1] -- pokefirered/src/main_menu.c:565
     darkenOutside(W, H, 18, math.max(0, rows[1] - dy), 222, rows[2] - dy)
   else
     Window.userFrame(Window.template(3, 1, 24, 2), frameType)
     Window.userFrame(Window.template(3, 5, 24, 2), frameType)
-    Window.printPx(Strings("NEW GAME"), 24 + 2, 8 + 2, { colors = head })
-    Window.printPx(Strings("EXIT"), 24 + 2, 40 + 2, { colors = head })
+    Window.printPx(RomText.plain("gText_NewGame"), 24 + 2, 8 + 2, { colors = head })
+    Window.printPx(RomText.plain("gText_MenuExit"), 24 + 2, 40 + 2, { colors = head })
     local rows = WIN0V_NOCONTINUE[state.menuIndex] or WIN0V_NOCONTINUE[1]
     darkenOutside(W, H, 18, rows[1], 222, rows[2])
   end

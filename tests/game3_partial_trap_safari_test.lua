@@ -1,6 +1,11 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local GameCache = require("tests.game3_cache")
+if not GameCache.bundle() then
+  print("[skip] game3 partial trap safari: " .. tostring(GameCache.reason))
+  os.exit(0)
+end
 
 local Moves = require("src.core.game3.battle.moves")
 

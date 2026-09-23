@@ -245,6 +245,15 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/items/bag/list_blank_female.rgba",
     "data/generated/gba/items/bag/desc_sel.rgba",
     "data/generated/gba/items/bag/red_arrow.rgba",
+    -- src/item_menu.c:569, src/item_menu_icons.c:150
+    "data/generated/gba/items/bag/bg_itempc.rgba",
+    "data/generated/gba/items/bag/bg_itempc_female.rgba",
+    "data/generated/gba/items/bag/swap_line.rgba",
+    -- src/item_pc.c:435
+    "data/generated/gba/items/item_pc/bg.rgba",
+    "data/generated/gba/items/item_pc/bg_submenu.rgba",
+    -- src/pokedex_screen.c:1161
+    "data/generated/gba/pokemon/pokedex/chrome.lua",
     "data/generated/gba/items/shop/manifest.lua",
     "data/generated/gba/items/shop/bg.rgba",
     "data/generated/gba/doors/manifest.lua",
@@ -332,6 +341,7 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     -- src/fame_checker.c:119, src/graphics.c:1230
     "data/generated/gba/fame_checker/manifest.lua",
     "data/generated/gba/fame_checker/bg.rgba",
+    "data/generated/gba/fame_checker/pick_panel.rgba",
     "data/generated/gba/fame_checker/0.rgba",
     "data/generated/gba/fame_checker/1.rgba",
     "data/generated/gba/fame_checker/13.rgba",
@@ -442,6 +452,41 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/trainers/front/147.rgba",
     -- src/pokeball.c:61
     "data/generated/gba/intro/ball_poke.png",
+    -- src/battle_message.c:517, src/item_menu.c:183, src/oak_speech.c:588
+    "data/generated/gba/scripts/text_tables.lua",
+    -- src/easy_chat.c:41, src/data/easy_chat/easy_chat_groups.h:26
+    "data/generated/gba/easy_chat/words.lua",
+    -- src/fldeff_flash.c:157-162
+    "data/generated/gba/cave_transition/screen.bin",
+    "data/generated/gba/cave_transition/palettes.lua",
+    -- src/data/ingame_trades.h:1, :184
+    "data/generated/gba/trades/ingame_trades.lua",
+    -- src/pokemon.c:1666, :6206
+    "data/generated/gba/trainers/union_room_classes.lua",
+    -- src/region_map.c:393-427, :527, :3158-3171, :3359
+    "data/generated/gba/region_map/manifest.lua",
+    "data/generated/gba/region_map/layouts.lua",
+    "data/generated/gba/region_map/section_geometry.lua",
+    "data/generated/gba/region_map/sevii123_map.png",
+    "data/generated/gba/region_map/sevii45_map.png",
+    "data/generated/gba/region_map/sevii67_map.png",
+    "data/generated/gba/region_map/switch_button.png",
+    "data/generated/gba/region_map/navel_rock_patch.png",
+    "data/generated/gba/region_map/birth_island_patch.png",
+    "data/generated/gba/region_map/frame_normal.png",
+    "data/generated/gba/region_map/frame_fly.png",
+    "data/generated/gba/region_map/switch_menu_123.png",
+    "data/generated/gba/region_map/switch_menu_all.png",
+    "data/generated/gba/region_map/switch_cursor_left.png",
+    "data/generated/gba/region_map/switch_cursor_right.png",
+    "data/generated/gba/region_map/edge_top_left.png",
+    "data/generated/gba/region_map/edge_top_right.png",
+    "data/generated/gba/region_map/edge_mid_left.png",
+    "data/generated/gba/region_map/edge_mid_right.png",
+    "data/generated/gba/region_map/edge_bottom_left.png",
+    "data/generated/gba/region_map/edge_bottom_right.png",
+    -- data/battle_ai_scripts.s:17
+    "data/generated/gba/battle_ai/pack.lua",
   },
 }
 CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.leafgreen = {}

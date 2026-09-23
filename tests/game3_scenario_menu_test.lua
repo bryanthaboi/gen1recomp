@@ -2,6 +2,15 @@
 -- pokefirered/src/start_menu.c:43-49, pokefirered/src/start_menu.c:113-123, pokefirered/src/start_menu.c:213-223, pokefirered/src/start_menu.c:215, pokefirered/src/start_menu.c:217-218, pokefirered/src/start_menu.c:1003-1005, pokefirered/src/menu.c:276, pokefirered/src/menu.c:376, pokefirered/src/menu.c:381, start_menu.c:217-218
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local ROM_TEXT = { ["sStartMenuActionTable[3]"] = "{PLAYER}" }
+local function romTextKey(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end
+local function romTextPlain(key, ctx) return ((ROM_TEXT[key] or key):gsub("{PLAYER}", ctx and ctx.playerName or "")) end
+package.loaded["src.core.game3.rom_text"] = {
+  plain = romTextPlain, box = romTextPlain, ascii = romTextPlain, has = function() return true end,
+  key = romTextKey, at = function(n, i, j, ctx) return romTextPlain(romTextKey(n, i, j), ctx) end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local failed = 0
 local function check(cond, msg)

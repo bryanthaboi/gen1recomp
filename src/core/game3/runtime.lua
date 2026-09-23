@@ -502,7 +502,13 @@ function Runtime.install(mod)
             log("blocked Screens.push(" .. tostring(id) .. ") — game3 owns UI")
             if id == "StartMenu" or id == "Gen2StartMenu" then
               Hud.openStartMenu(game, Runtime.getSession())
-            elseif id == "Gen2Pokegear" or id == "PackMenu" or id == "Gen2PackMenu" then
+            elseif id == "PackMenu" or id == "Gen2PackMenu" then
+              local session = Runtime.getSession()
+              require("src.ui.game3.bag_menu").show(session and session.bag, {
+                session = session,
+                onClose = function() end,
+              })
+            elseif id == "Gen2Pokegear" then
               local RegionMap = require("src.ui.game3.region_map")
               RegionMap.show({ session = Runtime.getSession() })
             end

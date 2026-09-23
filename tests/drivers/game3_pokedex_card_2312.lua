@@ -59,15 +59,18 @@ return function(game)
     result(differ(border, upper) and differ(border, backdrop), "card border stands out from interior and backdrop")
     result(differ(divider, border) and differ(upper, lower), "divider and the two halves are distinct")
 
+    local br, bg, bb = PokedexChrome.getColor("bar_kanto")
+    local bar = { math.floor(br * 255 + 0.5), math.floor(bg * 255 + 0.5), math.floor(bb * 255 + 0.5) }
     local dataGet = sample(PokedexChrome.drawDataCardBg)
-    px(dataGet, 120, 8, backdrop, "data backdrop above card")
+    -- pokefirered/src/pokedex_screen.c:2959
+    px(dataGet, 120, 8, bar, "data header bar above card")
     px(dataGet, 120, 16, gutter, "data top gutter")
     px(dataGet, 120, 17, border, "data top border")
     px(dataGet, 120, 40, upper, "data upper interior")
     px(dataGet, 120, 89, divider, "data divider")
     px(dataGet, 120, 120, lower, "data lower interior")
     px(dataGet, 120, 141, border, "data bottom border")
-    px(dataGet, 120, 152, backdrop, "data backdrop below card")
+    px(dataGet, 120, 152, bar, "data footer bar below card")
     px(dataGet, 1, 40, border, "data left border")
     px(dataGet, 237, 40, border, "data right border")
 
@@ -107,6 +110,18 @@ return function(game)
   Pokedex.dataPage = 2
   U.wait(20)
   U.shot(game, DIR .. "/2312_03_area_card.png")
+
+  Pokedex.currentCategory = "grassland"
+  Pokedex.categoryPage = 1
+  Pokedex.screen = "category_grid"
+  U.wait(20)
+  local controls = require("src.core.game3.rom_text").plain("gText_PickFlipPageCheckCancel")
+  result(controls:find("{PLUS}", 1, true) ~= nil, "habitat control line is the ROM text with {PLUS}")
+  local FrlgFont = require("src.ui.game3.frlg_font")
+  local plusW = FrlgFont.measure("{PLUS}", { small = true })
+  result(plusW > 0, "{PLUS} measures as a glyph (" .. plusW .. "px)")
+  result(PokedexChrome.measureControlInfo(controls) > 100, "habitat control line measures with icons")
+  U.shot(game, DIR .. "/2312_04_habitat_controls.png")
 
   Pokedex.close()
   U.wait(10)

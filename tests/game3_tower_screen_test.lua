@@ -17,6 +17,22 @@ local function eq(a, b, msg)
   check(a == b, string.format("%s (%s == %s)", msg, tostring(a), tostring(b)))
 end
 
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+local function teq(a, b, msg)
+  if romBundle then eq(a, b, msg) else print("[skip] ROM text: " .. msg) end
+end
+
 local Ctx = require("src.core.game3.scripting.ctx")
 local Flags = require("src.core.game3.scripting.flags")
 local Std = require("src.core.game3.scripting.stdscripts")
@@ -30,7 +46,7 @@ local Tower = require("src.core.game3.trainer_tower")
 local Screen = require("src.ui.game3.trainer_tower_records")
 
 local store = Flags.newStore()
-package.loaded["src.core.game3.scripting.space"] = { store = store }
+package.loaded["src.core.game3.scripting.space"] = { store = store, ensureBundle = function() return romBundle end }
 
 local adapters = { log = function() end }
 
@@ -130,10 +146,10 @@ local rows = Screen.rows()
 eq(#rows, Tower.NUM_CHALLENGE_TYPES, "one row per challenge type")
 local labels = {}
 for i, row in ipairs(rows) do labels[i] = row.label end
-eq(table.concat(labels, "/"), "SINGLE/DOUBLE/KNOCKOUT/MIXED",
+teq(table.concat(labels, "/"), "SINGLE/DOUBLE/KNOCKOUT/MIXED",
   "pokefirered/src/battle_message.c:1364 gTrainerTowerChallengeTypeTexts")
 for i, row in ipairs(rows) do
-  eq(row.time, "59MIN. 59.99SEC.", "row " .. i .. " of an untouched save is the ceiling time")
+  teq(row.time, "59MIN. 59.99SEC.", "row " .. i .. " of an untouched save is the ceiling time")
 end
 
 print("[test] 4. A closes the screen and hands the field back lit")
@@ -173,8 +189,8 @@ setVar(ctx, 0x8004, 1)
 dispatch(ctx, { op = "special", id = Std.SPECIAL.ShowBattleRecords })
 dispatch(ctx, { op = "waitstate" })
 rows = Screen.rows()
-eq(rows[3].time, " 1MIN.  1.01SEC.", "the KNOCKOUT row shows the stored record")
-eq(rows[1].time, "59MIN. 59.99SEC.", "the SINGLE row is still unbeaten")
+teq(rows[3].time, " 1MIN.  1.01SEC.", "the KNOCKOUT row shows the stored record")
+teq(rows[1].time, "59MIN. 59.99SEC.", "the SINGLE row is still unbeaten")
 tick(80, press("a"))
 tick(40)
 check(not Screen.isOpen(), "the screen closed again")
@@ -197,9 +213,9 @@ rows = Screen.rows()
 eq(#rows, Screen.LINK_ROWS, "five opponent rows (pokefirered/include/global.h:238)")
 eq(rows[1].name, "BLUE", "the recorded opponent is listed")
 eq(rows[1].wins, "   7", "with the wins right aligned in four")
-eq(rows[2].name, "-------", "an empty slot is dashes (pokefirered/src/strings.c:599)")
-eq(rows[2].draws, "----", "and so are its columns")
-eq(Screen.totalText(session), "TOTAL RECORD W:12   L:3    D:1   ",
+teq(rows[2].name, "-------", "an empty slot is dashes (pokefirered/src/strings.c:599)")
+teq(rows[2].draws, "----", "and so are its columns")
+teq(Screen.totalText(session), "TOTAL RECORD W:12   L:3    D:1   ",
   "pokefirered/src/strings.c:597 left aligns each count in four")
 tick(80, press("a"))
 tick(40)
@@ -219,12 +235,12 @@ Screen.show({ session = session, kind = "board" })
 rows = Screen.rows()
 -- pokefirered/src/trainer_tower.c:912 GetTrainerTowerRecordTime(&TRAINER_TOWER.bestTime)
 for i, row in ipairs(rows) do
-  eq(row.time, " 0MIN. 10.00SEC.", "board row " .. i .. " shows the current mode's record")
+  teq(row.time, " 0MIN. 10.00SEC.", "board row " .. i .. " shows the current mode's record")
 end
 -- pokefirered/src/trainer_tower.c:915 indexes the label table at i - 1
 eq(rows[1].label, "", "the first board row has no label on the cart")
-eq(rows[2].label, "SINGLE", "and the rest are shifted by one")
-eq(rows[4].label, "KNOCKOUT", "so MIXED is never shown")
+teq(rows[2].label, "SINGLE", "and the rest are shifted by one")
+teq(rows[4].label, "KNOCKOUT", "so MIXED is never shown")
 eq(Fade.t, 0, "the board is a field window, so it never blacks the screen out")
 Screen.close()
 check(not Screen.isOpen(), "the board closed")

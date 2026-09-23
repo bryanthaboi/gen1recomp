@@ -1,3 +1,5 @@
+local RomText = require("src.core.game3.rom_text")
+
 local Union = {}
 
 -- pokefirered/include/constants/union_room.h:21
@@ -68,16 +70,16 @@ Union.INVITE_ITEMS = {
   { key = "EXIT", activity = Union.ACTIVITY.NONE, union = true },
 }
 
--- pokefirered/src/union_room.c:450 sLinkGroupActivityNameTexts
-Union.ACTIVITY_NAMES = {
-  [1] = "SINGLE BATTLE",
-  [2] = "DOUBLE BATTLE",
-  [3] = "MULTI BATTLE",
-  [4] = "POKéMON TRADES",
-  [5] = "CHAT",
-  [8] = "CARDS",
-  [12] = "SEARCH",
-}
+-- pokefirered/src/data/union_room.h:1 sLinkGroupActivityNameTexts
+Union.ACTIVITY_NAMES = RomText.lazy({
+  [1] = "sLinkGroupActivityNameTexts[1]",
+  [2] = "sLinkGroupActivityNameTexts[2]",
+  [3] = "sLinkGroupActivityNameTexts[3]",
+  [4] = "sLinkGroupActivityNameTexts[4]",
+  [5] = "sLinkGroupActivityNameTexts[5]",
+  [8] = "sLinkGroupActivityNameTexts[8]",
+  [12] = "sLinkGroupActivityNameTexts[12]",
+})
 
 -- pokefirered/src/union_room_player_avatar.c:97
 Union.LOCAL_IDS = { 9, 8, 7, 2, 6, 5, 4, 3 }
@@ -466,8 +468,7 @@ function Union.chooseActivity(index)
     Union.lastResult = "need_two_mons"
     local M = message()
     if M and M.show then
-      M.show(require("src.core.Strings")(
-        "If you want to battle, you need\ntwo POKéMON that are below\nLv. 30."))
+      M.show(RomText.ascii("gText_UR_NeedTwoMonsOfLevel30OrLower1"))
     end
     return false
   end
@@ -656,7 +657,7 @@ function Union.update(dt)
       Union.lastResult = "busy"
       local M = message()
       if M and M.show then
-        M.show(require("src.core.Strings")("……\nThe TRAINER appears to be busy…"))
+        M.show(RomText.ascii("gText_UR_TrainerAppearsBusy"))
       end
       Union.state = "print_and_exit"
     end
@@ -817,9 +818,9 @@ function Union.requestPrompt()
   local who = Union._requestName or Strings("The TRAINER")
   if not what then
     -- pokefirered/src/union_room_message.c:88
-    return Strings("%s contacted you.\nAdd to the members?", who)
+    return RomText.ascii("gText_UR_PlayerContactedYouAddToMembers", { stringVars = { "", who } })
   end
-  return Strings("%s contacted you for\n%s. Accept?", who, Strings(what))
+  return RomText.ascii("gText_UR_PlayerContactedYouForXAccept", { stringVars = { what, who } })
 end
 
 -- pokefirered/src/union_room.c:3148 UR_STATE_RECV_ACTIVITY_REQUEST

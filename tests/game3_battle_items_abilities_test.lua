@@ -1,6 +1,12 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local GameCache = require("tests.game3_cache")
+if not GameCache.bundle() then
+  print("[skip] game3 battle items + abilities: " .. tostring(GameCache.reason))
+  os.exit(0)
+end
+require("tests.fixture_data.game3_items").install()
 
 local Moves = require("src.core.game3.battle.moves")
 
@@ -330,14 +336,14 @@ do
   ad._say = function(t) out[#out + 1] = t end
   Engine.battleStartEffects(st, ad)
   local txt = table.concat(out, " || ")
-  check(st.enemy.stages.attack == -1 and has(txt, "ALPHA's INTIMIDATE\ncuts BRAVO's ATTACK!"), "Intimidate lowers foe Attack")
+  check(st.enemy.stages.attack == -1 and has(txt, "ALPHA's INTIMIDATE\ncuts Wild BRAVO's ATTACK!"), "Intimidate lowers foe Attack")
   check(hasAnim(ad:events(), "STATS_CHANGE", "enemy"), "Intimidate plays STATS_CHANGE on the foe")
 
   local st2, ad2 = battle({ ability = "INTIMIDATE" }, { ability = "HYPER_CUTTER" })
   local o2 = {}
   ad2._say = function(t) o2[#o2 + 1] = t end
   Engine.battleStartEffects(st2, ad2)
-  check(st2.enemy.stages.attack == 0 and has(table.concat(o2), "prevented ALPHA's\nINTIMIDATE from working!"),
+  check(st2.enemy.stages.attack == 0 and has(table.concat(o2), "Wild BRAVO's HYPER CUTTER\nprevented ALPHA's\\lINTIMIDATE from working!"),
     "Hyper Cutter blocks Intimidate")
 
   local st3, ad3 = battle({}, { ability = "DRIZZLE" })
@@ -351,7 +357,7 @@ do
   local o4 = {}
   ad4._say = function(t) o4[#o4 + 1] = t end
   Engine.battleStartEffects(st4, ad4)
-  check(ad4:abilityOf(st4.player) == "STATIC" and has(table.concat(o4), "ALPHA TRACED\nBRAVO's STATIC!"), "Trace copies the foe ability")
+  check(ad4:abilityOf(st4.player) == "STATIC" and has(table.concat(o4), "ALPHA TRACED\nWild BRAVO's STATIC!"), "Trace copies the foe ability")
 end
 
 print("=== CONTACT ABILITIES ===")

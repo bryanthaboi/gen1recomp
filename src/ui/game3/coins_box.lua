@@ -1,7 +1,7 @@
 
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local CoinsBox = {}
 
@@ -65,7 +65,7 @@ end
 
 -- pokefirered/src/coins.c:52
 function CoinsBox.countText(amount)
-  return Strings("%s COINS", string.format("%4d", clamp(amount)))
+  return (RomText.plain("gText_Coins", { stringVars = { string.format("%4d", clamp(amount)) } }))
 end
 
 function CoinsBox.draw()
@@ -74,7 +74,7 @@ function CoinsBox.draw()
   local left = CoinsBox.x + 1
   local top = CoinsBox.y + 1
   Window.stdFrame(Window.template(left, top, 8, 3))
-  Window.printPx(Strings("COINS"), left * 8, top * 8)
+  Window.printPx(RomText.plain("gText_Coins_2"), left * 8, top * 8)
   local countStr = CoinsBox.countText(CoinsBox._amount)
   local cw = (FrlgFont.measure and FrlgFont.measure(countStr, { small = true })) or (6 * #countStr)
   -- pokefirered/src/coins.c:76

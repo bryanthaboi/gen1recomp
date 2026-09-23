@@ -2,6 +2,7 @@
 -- Covers pret parity for in-battle switches, shift switches, enemy switches, and double battles.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_exp_participants_test")
 if not _G.love then _G.love = require("tests.love_stub") end
 
 local State = require("src.core.game3.battle.state")

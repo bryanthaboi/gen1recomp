@@ -156,14 +156,21 @@ local function run(game)
   goTo(PALLET, 10, 6, "down")
   if not result(openParty(), "party menu opens in Pallet Town") then return finish() end
   result(chooseAction("FLY"), "FLY is on the action list")
-  U.shot(game, DIR .. "/party_dig_01_pallet_fly_row.png")
+  U.still(game, DIR .. "/party_dig_01_pallet_fly_row.png")
   U.tap(game, "a")
   U.wait(30)
   result(PartyMenu._messageText == nil, "FLY outdoors is accepted (no refusal text)")
   -- pokefirered/src/party_menu.c:3953
   result(RegionMap.isOpen() and RegionMap.isFlyMode(), "FLY opened the fly map")
+  for _ = 1, 300 do
+    if RegionMap.inputReady() then break end
+    U.wait(1)
+  end
   U.tap(game, "b")
-  U.wait(30)
+  for _ = 1, 200 do
+    if not RegionMap.isOpen() then break end
+    U.wait(1)
+  end
   result(not RegionMap.isOpen(), "B closed the fly map")
   -- pokefirered/src/region_map.c:4019
   result(PartyMenu.isOpen and PartyMenu.isOpen(), "a cancelled fly map came back to the party menu")
@@ -176,14 +183,22 @@ local function run(game)
   U.wait(30)
   local palletRefusal = PartyMenu._messageText
   result(palletRefusal ~= nil, "DIG in Pallet Town is refused: " .. tostring(palletRefusal))
-  U.shot(game, DIR .. "/party_dig_02_pallet_dig_refused.png")
+  U.still(game, DIR .. "/party_dig_02_pallet_dig_refused.png")
   closeParty()
 
   -- pokefirered/src/fldeff_dig.c:12
   goTo(MT_MOON, 14, 22, "down")
+  session.escapeWarp = { map = "FR_ROUTE_4", warpId = 255, x = 19, y = 6 }
+  local CaveTransition = require("src.ui.game3.cave_transition")
+  local realCaveStart = CaveTransition.start
+  local caveKinds = {}
+  CaveTransition.start = function(kind, ...)
+    caveKinds[#caveKinds + 1] = kind
+    return realCaveStart(kind, ...)
+  end
   if not result(openParty(), "party menu opens in Mt Moon 1F") then return finish() end
   result(chooseAction("DIG"), "DIG is on the action list in Mt Moon")
-  U.shot(game, DIR .. "/party_dig_03_mtmoon_dig_row.png")
+  U.still(game, DIR .. "/party_dig_03_mtmoon_dig_row.png")
   U.tap(game, "a")
   U.wait(30)
   local digCtx = seenCtx
@@ -193,16 +208,57 @@ local function run(game)
     "the Mt Moon context carries allowEscaping out of header.json")
   result(PartyMenu._messageText == nil,
     "DIG in Mt Moon is accepted (refusal: " .. tostring(PartyMenu._messageText) .. ")")
-  result(not (PartyMenu.isOpen and PartyMenu.isOpen()), "the party menu closes and DIG runs")
-  U.wait(25)
-  U.shot(game, DIR .. "/party_dig_04_mtmoon_dig_used.png")
+  -- pokefirered/src/party_menu.c:3946
+  local digPrompt = tostring(PartyMenu._yesNoPrompt)
+  result(PartyMenu.mode == "yesno" and digPrompt:find("escape from here", 1, true) ~= nil
+    and digPrompt:find("ROUTE 4", 1, true) ~= nil,
+    "DIG asks gText_EscapeFromHereAndReturnTo with the escape warp's place (" .. digPrompt .. ")")
+  U.still(game, DIR .. "/party_dig_04_mtmoon_dig_yesno.png")
+  U.tap(game, "down")
+  U.wait(6)
+  U.tap(game, "a")
+  U.wait(12)
+  -- pokefirered/src/party_menu.c:4014 Task_ReturnToChooseMonAfterText
+  result(PartyMenu.isOpen() and PartyMenu.mode == "list" and session.map == MT_MOON,
+    "NO goes back to choosing a mon and stays in Mt Moon (mode=" .. tostring(PartyMenu.mode) .. ")")
+  result(chooseAction("DIG"), "DIG is still on the action list")
+  U.tap(game, "a")
+  U.wait(30)
+  result(PartyMenu.mode == "yesno", "DIG asks again")
+  U.tap(game, "a")
+  U.wait(6)
+  result(not (PartyMenu.isOpen and PartyMenu.isOpen()), "YES closes the party menu and DIG runs")
+  local ShowMon = require("src.core.game3.field_move_show_mon")
+  local Player = require("src.core.game3.player")
+  for _ = 1, 120 do
+    if ShowMon.isActive() then break end
+    U.wait(1)
+  end
+  for _ = 1, 200 do
+    local fx = ShowMon._fx
+    if fx and fx.sprite and fx.sprite.state == "wait" then break end
+    U.wait(1)
+  end
+  result(ShowMon._fx and ShowMon._fx.sprite and ShowMon._fx.sprite.state == "wait", "DIG shows the mon cut-in")
+  U.still(game, DIR .. "/party_dig_04a_mtmoon_dig_show_mon.png")
+  local rose = false
+  for _ = 1, 400 do
+    if (Player.spriteYOffset or 0) <= -40 then rose = true break end
+    U.wait(1)
+  end
+  result(rose, "DIG spins the player and lifts them off (offY=" .. tostring(Player.spriteYOffset) .. ")")
+  U.still(game, DIR .. "/party_dig_04_mtmoon_dig_used.png")
   U.wait(150)
   dismiss(30)
   U.wait(90)
   local FieldMod = require("src.core.game3.field")
   result(FieldMod.locked ~= true, "the dig warp finishes and unlocks the field")
-  result(session.map ~= MT_MOON, "DIG left Mt Moon (map=" .. tostring(session.map) .. ")")
-  U.shot(game, DIR .. "/party_dig_05_dig_landed.png")
+  result(session.map == "FR_ROUTE_4", "DIG landed on the escape warp (map=" .. tostring(session.map) .. ")")
+  CaveTransition.start = realCaveStart
+  -- pokefirered/src/fldeff_flash.c:236 TryDoMapTransition
+  result(caveKinds[1] == "exit", "DIG out of Mt Moon played FlashTransition_Exit ("
+    .. table.concat(caveKinds, ",") .. ")")
+  U.still(game, DIR .. "/party_dig_05_dig_landed.png")
   closeParty()
 
   -- pokefirered/src/party_menu.c:4099
@@ -212,17 +268,72 @@ local function run(game)
   U.tap(game, "a")
   U.wait(20)
   result(PartyMenu._messageText == nil, "TELEPORT outdoors is accepted")
-  result(not (PartyMenu.isOpen and PartyMenu.isOpen()), "the party menu closes and TELEPORT runs")
+  -- pokefirered/src/party_menu.c:3939
+  local tpPrompt = tostring(PartyMenu._yesNoPrompt)
+  result(PartyMenu.mode == "yesno" and tpPrompt:find("healing spot", 1, true) ~= nil
+    and tpPrompt:find("PALLET TOWN", 1, true) ~= nil,
+    "TELEPORT asks gText_ReturnToHealingSpot with the heal map's place (" .. tpPrompt .. ")")
+  U.still(game, DIR .. "/party_dig_06_teleport_yesno.png")
+  U.tap(game, "a")
+  U.wait(6)
+  result(not (PartyMenu.isOpen and PartyMenu.isOpen()), "YES closes the party menu and TELEPORT runs")
   result(not (StartMenu.isOpen and StartMenu.isOpen()), "the start menu closes with it")
-  U.wait(20)
-  U.shot(game, DIR .. "/party_dig_04_teleport_return.png")
-  U.wait(150)
+  local FieldEffects = require("src.core.game3.field_effects")
+  local function fxAnim(kind)
+    for _, a in ipairs(FieldEffects._anims or {}) do
+      if a.kind == kind then return a end
+    end
+  end
+  local function waitFor(pred, frames)
+    for _ = 1, frames do
+      if pred() then return true end
+      U.wait(1)
+    end
+    return pred() and true or false
+  end
+  waitFor(function() return fxAnim("teleport_out") ~= nil end, 400)
+  local tpOut = fxAnim("teleport_out")
+  if not result(tpOut ~= nil, "TELEPORT starts the teleport field effect task") then return finish() end
+  -- pokefirered/src/field_effect.c:2371 TeleportFieldEffectTask2
+  waitFor(function() return tpOut.d2 >= 2 end, 40)
+  local f0 = Player.facing
+  waitFor(function() return Player.facing ~= f0 end, 20)
+  local f1, gap = Player.facing, 0
+  for _ = 1, 20 do
+    if Player.facing ~= f1 then break end
+    U.wait(1)
+    gap = gap + 1
+  end
+  result(gap == 8 and Player.spriteYOffset == 0,
+    "TELEPORT first turns in place every 8 frames (gap=" .. gap .. ")")
+  U.still(game, DIR .. "/party_dig_07_teleport_spin.png")
+  -- pokefirered/src/field_effect.c:2397 TeleportFieldEffectTask3
+  waitFor(function() return tpOut.state == 3 and tpOut.d4 >= 64 end, 200)
+  result(tpOut.state == 3 and tpOut.d3 == 8 and Player.spriteYOffset == -tpOut.d4
+    and Player.oamPriority == 1,
+    "after 8+ turns back to the start facing it spins faster and rises (y=" .. tostring(Player.spriteYOffset) .. ")")
+  U.still(game, DIR .. "/party_dig_07b_teleport_rise.png")
+  waitFor(function() return fxAnim("teleport_out") == nil end, 120)
+  result(tpOut.d4 >= 0xa8 and not Player.isVisible(),
+    "it rises 0xa8 px before the fade (d4=" .. tostring(tpOut.d4) .. ")")
+  -- pokefirered/src/field_effect.c:2483 TeleportInFieldEffectTask2
+  waitFor(function() return fxAnim("teleport_in") ~= nil end, 600)
+  local tpIn = fxAnim("teleport_in")
+  if not result(tpIn ~= nil, "the heal map runs the teleport-in effect") then return finish() end
+  waitFor(function() return tpIn.y2 >= -40 end, 60)
+  result(Player.isVisible() and Player.spriteYOffset == tpIn.y2 and tpIn.y2 < 0,
+    "the player spins down from above the screen (y=" .. tostring(tpIn.y2) .. ")")
+  U.still(game, DIR .. "/party_dig_07c_teleport_arrive.png")
+  waitFor(function() return fxAnim("teleport_in") == nil end, 200)
+  -- pokefirered/src/field_effect.c:2530
+  result(Player.facing == "down" and Player.spriteYOffset == 0 and Player.oamPriority == nil,
+    "the teleport-in spin stops facing south on the ground")
   dismiss(40)
   U.wait(90)
   local Field = require("src.core.game3.field")
   result(Field.locked ~= true, "the teleport warp finishes and unlocks the field")
   result(session.map ~= PALLET, "TELEPORT landed on the heal map (" .. tostring(session.map) .. ")")
-  U.shot(game, DIR .. "/party_dig_05_teleport_landed.png")
+  U.still(game, DIR .. "/party_dig_08_teleport_landed.png")
 
   finish()
 end

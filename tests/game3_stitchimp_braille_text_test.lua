@@ -26,8 +26,9 @@ local TextIR = require("src.core.game3.scripting.text_ir")
 local Opcodes = require("src.core.game3.scripting.opcodes")
 local Braille = require("src.ui.game3.braille")
 
+local BATTLE = { battle = setmetatable({}, { __index = function() return "" end }) }
 local function plain(ir)
-  return TextIR.toPlain(ir or {}) or ""
+  return TextIR.toPlain(ir or {}, BATTLE) or ""
 end
 
 local BRAILLE_INC = "../pokefirered/data/text/braille.inc"

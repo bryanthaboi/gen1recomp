@@ -3,6 +3,8 @@
 -- pokefirered/data/battle_scripts_2.s:87 trygivecaughtmonnick
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_stitchbattle_pc_transfer_test", "scripts/text.lua")
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)

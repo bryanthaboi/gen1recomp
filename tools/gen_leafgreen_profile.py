@@ -30,7 +30,7 @@ bd = {name: (addr, size) for addr, name, size in b}
 starts = [row[0] for row in a]
 aliases = {"sFlames_Pal": "sLeaves_Pal", "sFlames_Gfx": "sLeaves_Gfx", "sBlankFlames_Gfx": "sStreak_Gfx"}
 # Only literal ROM addresses; comments, strings, masks and sizes are excluded.
-files = [ROOT / "src/import/gba/versions.lua"]
+files = [ROOT / "src/import/gba/versions.lua", ROOT / "src/import/gba/versions_text.lua"]
 files += [ROOT / ("src/import/gba/" + f + ".lua") for f in (
     "tileset_anim_pack", "battle_chrome_extract", "pokedex_chrome_extract",
     "seagallop_extract", "door_anim_extract", "text_chrome_extract",

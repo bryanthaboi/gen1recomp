@@ -9,7 +9,7 @@
 local BattleChrome = require("src.ui.game3.battle_chrome")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local State = require("src.core.game3.battle.state")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Healthbox = {}
 
@@ -226,7 +226,8 @@ end
 local function safari_balls_text(balls)
   if _ballsCount ~= balls or not _ballsText then
     _ballsCount = balls
-    _ballsText = Strings("Left: %d", balls)
+    -- pokefirered/src/battle_interface.c:1762
+    _ballsText = RomText.plain("gText_HighlightRed_Left") .. tostring(balls)
     _ballsW = FrlgFont.measure(_ballsText, { small = true })
   end
   return _ballsText, _ballsW
@@ -434,7 +435,7 @@ function Healthbox.draw(side, battler, opts)
     love.graphics.rectangle("fill", sbx, sby - 2, 64, 10)
     love.graphics.setColor(1, 1, 1, 1)
     draw_safari_box(tlX, tlY)
-    FrlgFont.draw(Strings("SAFARI BALLS"), tlX + 16, tlY + TEXT_Y, small_opts(HB_TEXT))
+    FrlgFont.draw(RomText.plain("gText_SafariBalls"), tlX + 16, tlY + TEXT_Y, small_opts(HB_TEXT))
     local left, w = safari_balls_text(math.max(0, math.floor(balls)))
     FrlgFont.draw(left, tlX + HP_WIN_X + HP_WIN_W - w, tlY + HP_TEXT_Y, small_opts(HB_TEXT))
     return
@@ -469,7 +470,7 @@ function Healthbox.draw(side, battler, opts)
   -- pokefirered/src/battle_interface.c:1506
   local Battle = package.loaded["src.core.game3.battle"]
   local bst = Battle and Battle._st
-  if not isPlayer and bst and bst.ghostBattle and name == Strings("GHOST") then
+  if not isPlayer and bst and bst.ghostBattle and name == RomText.plain("gText_Ghost") then
     local okA, AnimG = pcall(require, "src.core.game3.battle.anim")
     local pg = okA and AnimG.present and AnimG.present("enemy")
     if pg and pg.ghostUnveiled then
@@ -517,8 +518,16 @@ function Healthbox.draw(side, battler, opts)
       -- pokefirered/src/battle_interface.c:1614
       SummaryChrome.drawStatusIcon(tlX + 2, tlY + 16, ailment)
     else
-      -- pokefirered/src/battle_interface.c:1551 TryAddPokeballIconToHealthbox
-      if Healthbox.shouldShowCaughtMarker(bst, battler) then
+      -- pokefirered/src/battle_interface.c:1658
+      local species = battler.species or (battler.mon and (battler.mon.species or battler.mon.speciesId))
+      local latch = battler._caughtIcon
+      if not latch or latch.mon ~= battler.mon or latch.species ~= species or latch.ailment ~= ailment
+          or latch.name ~= name then
+        latch = { mon = battler.mon, species = species, ailment = ailment, name = name,
+          show = Healthbox.shouldShowCaughtMarker(bst, battler) }
+        battler._caughtIcon = latch
+      end
+      if latch.show then
         BattleChrome.drawPartyBall(tlX + 8, tlY + 16, "caught")
       end
     end
@@ -547,7 +556,7 @@ function Healthbox.shouldShowCaughtMarker(st, battler)
     return false
   end
   local name = State.displayName(battler)
-  if name == "GHOST" then
+  if name == RomText.plain("gText_Ghost") then
     return false
   end
 

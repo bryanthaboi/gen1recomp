@@ -18,6 +18,31 @@ end
 
 love = love or require("tests.love_stub")
 
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  local LIST_ROWS = { sListMenuItems_CardsOrNews = 3, sListMenuItems_ReceiveSendToss = 4, sListMenuItems_ReceiveToss = 3 }
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function(n) return LIST_ROWS[n] or 0 end,
+    list = function(n)
+      local out = {}
+      for i = 0, (LIST_ROWS[n] or 0) - 1 do out[i + 1] = n .. "[" .. i .. "]" end
+      return out
+    end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+local function teq(a, b, msg)
+  if romBundle then eq(a, b, msg) else print("[skip] ROM text: " .. msg) end
+end
+local function tcheck(cond, msg)
+  if romBundle then check(cond, msg) else print("[skip] ROM text: " .. msg) end
+end
+
 local Boot = require("src.ui.game3.boot")
 local Ui = require("src.ui.game3.mystery_gift")
 local MysteryGift = require("src.core.game3.mystery_gift")
@@ -134,9 +159,9 @@ do
 
   -- pokefirered/src/mystery_gift_menu.c:197 sListMenuItems_CardsOrNews
   local rows = Ui.mainRows()
-  eq(rows[1], "WONDER CARDS", "the front end opens on WONDER CARDS")
-  eq(rows[2], "WONDER NEWS", "WONDER NEWS is the second row")
-  eq(rows[3], "EXIT", "EXIT is the third row")
+  teq(rows[1], "WONDER CARDS", "the front end opens on WONDER CARDS")
+  teq(rows[2], "WONDER NEWS", "WONDER NEWS is the second row")
+  teq(rows[3], "EXIT", "EXIT is the third row")
 
   step("a")
   eq(st.state, Ui.STATE.DONT_HAVE_ANY, "no card saved takes the input branch")
@@ -145,7 +170,7 @@ do
   eq(st.state, Ui.STATE.SOURCE_PROMPT, "then asks where to read one from")
   step(nil)
   eq(st.state, Ui.STATE.SOURCE_INPUT, "the source picker opens")
-  check(type(st.prompt) == "string" and st.prompt:find("WONDER CARD"),
+  tcheck(type(st.prompt) == "string" and st.prompt:find("WONDER CARD"),
     "the prompt names the WONDER CARD")
 
   local mystic = nil
@@ -153,7 +178,7 @@ do
     if entry.key == "mystic_ticket" then mystic = i end
   end
   check(mystic ~= nil, "the MYSTIC TICKET is one of the sources")
-  eq(st.rows[#st.rows], "CANCEL", "the picker ends in CANCEL")
+  teq(st.rows[#st.rows], "CANCEL", "the picker ends in CANCEL")
   for _ = 2, mystic do step("down") end
   eq(st.cursor, mystic, "the cursor reached the MYSTIC TICKET row")
   step("a")
@@ -203,14 +228,14 @@ do
   eq(st.state, Ui.STATE.GIFT_SELECT, "A opens the card menu")
   -- pokefirered/src/mystery_gift_menu.c:237 sListMenuItems_ReceiveToss
   eq(#st.rows, 3, "a card that may not be sent shows three rows")
-  eq(st.rows[1], "RECEIVE", "row 1 is RECEIVE")
-  eq(st.rows[2], "TOSS", "row 2 is TOSS")
-  eq(st.rows[3], "CANCEL", "row 3 is CANCEL")
+  teq(st.rows[1], "RECEIVE", "row 1 is RECEIVE")
+  teq(st.rows[2], "TOSS", "row 2 is TOSS")
+  teq(st.rows[3], "CANCEL", "row 3 is CANCEL")
 
   step("down")
   step("a")
   eq(st.state, Ui.STATE.ASK_TOSS, "TOSS asks first")
-  check(st.yesno ~= nil and st.yesno.text:find("event won't happen"),
+  tcheck(st.yesno ~= nil and st.yesno.text:find("event won't happen"),
     "and warns that the event will not happen")
   step("a")
   eq(st.state, Ui.STATE.ASK_TOSS_UNRECEIVED, "an uncollected gift asks a second time")
@@ -221,7 +246,7 @@ do
   eq(st.state, Ui.STATE.SAVE_DONE, "the toss is saved too")
   confirmMessage()
   eq(st.state, Ui.STATE.TOSSED, "the thrown-away message follows the save")
-  check(st.msg ~= nil and st.msg.text:find("thrown away"), "and it names the WONDER CARD")
+  tcheck(st.msg ~= nil and st.msg.text:find("thrown away"), "and it names the WONDER CARD")
   confirmMessage()
   eq(st.state, Ui.STATE.MAIN_MENU, "then back to the Mystery Gift menu")
   check(not MysteryGift.validateSavedCard(sess), "the saved card is gone")
@@ -316,7 +341,7 @@ do
   eq(newsSt.sources[1].key, "news_only", "and that source is the news one")
   newsStep("a")
   eq(newsSt.state, Ui.STATE.RESULT_MSG, "picking it delivers rather than looping")
-  check(newsSt.msg ~= nil and tostring(newsSt.msg.text):find("received"),
+  tcheck(newsSt.msg ~= nil and tostring(newsSt.msg.text):find("received"),
     "the news arrives: " .. tostring(newsSt.msg and newsSt.msg.text))
 
   MysteryGift.sources = function()
@@ -325,7 +350,7 @@ do
   local emptySt, emptyStep = openPicker(true)
   eq(emptySt.state, Ui.STATE.RESULT_MSG, "no news source opens no picker")
   -- pokefirered/src/strings.c:1304 gText_NothingSentOver
-  check(emptySt.msg ~= nil and tostring(emptySt.msg.text):find("Nothing was sent over"),
+  tcheck(emptySt.msg ~= nil and tostring(emptySt.msg.text):find("Nothing was sent over"),
     "it says nothing was sent over instead")
   for _ = 1, 600 do
     if not emptySt.msg then break end
@@ -374,7 +399,7 @@ do
   end
   eq(saves, 1, "the save ran with no button press")
   eq(st2.state, Ui.STATE.SAVE_DONE, "and the completed message follows")
-  check(st2.msg ~= nil and tostring(st2.msg.text):find("press the A Button"),
+  tcheck(st2.msg ~= nil and tostring(st2.msg.text):find("press the A Button"),
     "which is the one that waits for A")
   MysteryGift.sources = realSources
 end

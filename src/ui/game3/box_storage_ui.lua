@@ -16,11 +16,21 @@ local Storage = require("src.core.game3.storage")
 local PcChrome = require("src.ui.game3.pc_chrome")
 local ReleaseSeq = require("src.ui.game3.release_seq")
 local SummaryMenu = require("src.ui.game3.summary_menu")
-local ItemsData = require("src.core.game3.items_data")
 local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
 
 local BoxStorageUI = {}
+
+-- pokefirered/src/pokemon_storage_system_data.c:2027
+local MENU_TEXT = {
+  CANCEL = 0, STORE = 1, WITHDRAW = 2, MOVE = 3, SUMMARY = 6, RELEASE = 7,
+  ["SWITCH BOX"] = 9, WALLPAPER = 10, TAKE = 12,
+}
+local MENU_TEXT_FOREST = 22
+
+local function menu_text(act)
+  return RomText.at("sMenuTexts", (assert(MENU_TEXT[act], act)))
+end
 
 BoxStorageUI.open = false
 BoxStorageUI.mode = "browse" -- browse | action_menu | box_menu | pick_box | pick_wallpaper | party_drawer | message
@@ -395,7 +405,7 @@ function BoxStorageUI.handleInput(input)
             BoxStorageUI.mode = returnMode
             se(246)
           else
-            BoxStorageUI._status = Strings("Your party is full!")
+            BoxStorageUI._status = RomText.plain("gText_YourPartysFull")
             BoxStorageUI.mode = "message"
             se(5) -- pokefirered/src/pokemon_storage_system_tasks.c:992
           end
@@ -422,7 +432,7 @@ function BoxStorageUI.handleInput(input)
               end
               se(246)
             else
-              BoxStorageUI._status = Strings("The Box is full!")
+              BoxStorageUI._status = RomText.plain("gText_BoxIsFull2")
               BoxStorageUI.mode = "message"
               se(5) -- pokefirered/src/pokemon_storage_system_tasks.c:1225
             end
@@ -444,7 +454,8 @@ function BoxStorageUI.handleInput(input)
         if mon then
           local ok, err = Storage.detachHeldItem(BoxStorageUI._session, mon)
           if ok then
-            BoxStorageUI._status = Strings("Took the %s and put it in the BAG.", ItemsData.displayName(err))
+            -- pokefirered/src/pokemon_storage_system_tasks.c:1501
+            BoxStorageUI._status = RomText.plain("gText_PlacedItemInBag")
             BoxStorageUI.mode = "message"
             se(246)
           elseif err == "bag_full" then
@@ -839,7 +850,7 @@ function BoxStorageUI.draw()
     for i, act in ipairs(actions) do
       local yPx = (menuTop * 8 + 2) + (i - 1) * 16
       if i == BoxStorageUI.actionCursor then Window.cursorPx(textLeft - 8, yPx) end
-      Window.printPx(Strings(act), textLeft, yPx)
+      Window.printPx(menu_text(act), textLeft, yPx)
     end
   end
 
@@ -850,17 +861,18 @@ function BoxStorageUI.draw()
     for i, act in ipairs(boxActions) do
       local yPx = 26 + (i - 1) * 16
       if i == BoxStorageUI.boxMenuCursor then Window.cursorPx(42, yPx) end
-      Window.printPx(Strings(act), 50, yPx)
+      Window.printPx(menu_text(act), 50, yPx)
     end
   end
 
   -- 11. Wallpaper Picker Popup
   if BoxStorageUI.mode == "pick_wallpaper" then
     Window.stdFrame(Window.template(5, 2, 14, 10))
-    Window.printPx(Strings("SELECT WALLPAPER"), 44, 18, { small = true })
+    -- pokefirered/src/pokemon_storage_system_tasks.c:279
+    Window.printPx(RomText.plain("gText_PickTheWallpaper"), 44, 18, { small = true })
     for i = 1, 4 do
       local wpId = ((BoxStorageUI.wallpaperCursor - 1 + i - 1) % 16) + 1
-      local wpName = Storage.WALLPAPERS[wpId] and Strings(Storage.WALLPAPERS[wpId]) or Strings("THEME %d", wpId)
+      local wpName = RomText.at("sMenuTexts", MENU_TEXT_FOREST + wpId - 1)
       local yPx = 34 + (i - 1) * 14
       if i == 1 then Window.cursorPx(44, yPx) end
       Window.printPx(wpName, 52, yPx)

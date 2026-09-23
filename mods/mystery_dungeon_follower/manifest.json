@@ -1,0 +1,14 @@
+{
+  "id": "mystery_dungeon_follower",
+  "name": "Mystery Dungeon Follower",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "overhaul",
+  "category": "GRAPHICS",
+  "permissions": ["engine_internals"],
+  "affects_link": false,
+  "games": ["red", "blue", "yellow", "gold", "silver", "crystal", "firered", "leafgreen"],
+  "required_assets": [{ "importer": "pmd_red", "pack": "sprites", "version": ">=1.0.0" }],
+  "description": "Your lead Pokémon follows you using sprites imported from your own Mystery Dungeon Red Rescue Team ROM. Includes no Pokémon artwork."
+}

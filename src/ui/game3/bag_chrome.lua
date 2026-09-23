@@ -195,7 +195,13 @@ local function named_image(name, w, h)
 end
 
 function BagChrome.drawBg(x, y, opts)
-  local img = (opts and opts.female) and named_image("bg_female", 240, 160) or nil
+  local img
+  if opts and opts.itemPc then
+    -- src/item_menu.c:569
+    img = named_image(opts.female and "bg_itempc_female" or "bg_itempc", 240, 160)
+    if not img then error("BagChrome: bg_itempc.rgba is not in the cache", 0) end
+  end
+  img = img or ((opts and opts.female) and named_image("bg_female", 240, 160) or nil)
   img = img or ensure_bg()
   if not img then return false end
   love.graphics.setColor(1, 1, 1, 1)
@@ -230,6 +236,31 @@ function BagChrome.drawDescSelected()
   if not img then return false end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(img, 0, 112)
+  return true
+end
+
+-- src/item_menu_icons.c:249 CreateSwapLine, :282 UpdateSwapLinePos
+function BagChrome.drawSwapLine(firstCenterX, centerY)
+  local img = named_image("swap_line", 32, 16)
+  if not img then error("BagChrome: swap_line.rgba is not in the cache", 0) end
+  local start = BagChrome._bagQuads.swap_start
+  if not start then
+    start = love.graphics.newQuad(0, 0, 16, 16, 32, 16)
+    BagChrome._bagQuads.swap_start = start
+    BagChrome._bagQuads.swap_mid = love.graphics.newQuad(16, 0, 16, 16, 32, 16)
+  end
+  local mid = BagChrome._bagQuads.swap_mid
+  love.graphics.setColor(1, 1, 1, 1)
+  for i = 0, 8 do
+    local x, y = firstCenterX + i * 16 - 8, centerY - 8
+    if i == 0 then
+      love.graphics.draw(img, start, x, y)
+    elseif i == 8 then
+      love.graphics.draw(img, start, x + 16, y, 0, -1, 1)
+    else
+      love.graphics.draw(img, mid, x, y)
+    end
+  end
   return true
 end
 

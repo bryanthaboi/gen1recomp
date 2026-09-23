@@ -27,10 +27,18 @@ AssetPacks.specs = function(manifest)
   return out
 end
 
+local function copyMetadata(value)
+  if type(value) ~= "table" then return value end
+  local out = {}
+  for k, v in pairs(value) do out[k] = copyMetadata(v) end
+  return out
+end
+
 local function copyEntry(id, entry)
   return { id = id, file = entry.file, size = entry.size,
     width = entry.width, height = entry.height, frames = entry.frames,
-    seconds = entry.seconds, note = entry.note }
+    seconds = entry.seconds, note = entry.note, sprite = copyMetadata(entry.sprite),
+    metadata = copyMetadata(entry.metadata) }
 end
 
 function AssetPacks.new(manifest, fs)
@@ -118,6 +126,14 @@ function AssetPacks.new(manifest, fs)
     if type(bytes) ~= "string" then return nil, "pack entry is missing" end
     if #bytes ~= entry.size then return nil, "pack entry size does not match" end
     return bytes
+  end
+
+  function api:metadata(importerId, packId, entryId)
+    local pack, err = resolved(importerId, packId)
+    if not pack then return nil, err end
+    local entry = pack.entries[entryId]
+    if not entry then return nil, "no such pack entry: " .. tostring(entryId) end
+    return Importers.readMetadata(importerId, packId, entry, packFs)
   end
 
   return api

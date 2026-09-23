@@ -8,17 +8,6 @@ package.loaded["src.core.game3.audio"] = setmetatable({}, {
 })
 
 local Moves = require("src.core.game3.battle.moves")
-local ROM = {
-  [33] = { effect = 0, power = 35, type = 0, accuracy = 95, pp = 35, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [45] = { effect = 18, power = 0, type = 0, accuracy = 100, pp = 40, secondaryChance = 0, target = 8, priority = 0, flags = 22 },
-}
-Moves._romLoaded = true
-Moves._rom = ROM
-Moves.loadRomPack = function()
-  Moves._romLoaded = true
-  Moves._rom = ROM
-  return true
-end
 
 local State = require("src.core.game3.battle.state")
 local Engine = require("src.core.game3.battle.engine")
@@ -147,11 +136,11 @@ do
   local Damage = require("src.core.game3.battle.damage")
   local pMon = Damage.ensureStats({ species = 1, level = 30, hp = 90, maxHp = 90, moves = { 33 }, pp = { 35 } })
   local foe = { species = 92, level = 20, hp = 50, maxHp = 50, moves = { 33 }, pp = { 35 }, ghost = true }
-  Battle.start({ headless = true, autoFight = false, playerParty = { pMon }, foe = foe, wild = true })
+  Battle.start({ playerName = "RED", headless = true, autoFight = false, playerParty = { pMon }, foe = foe, wild = true })
   local st = Battle.getState()
   check(st.ghostBattle == true and st.enemy.mon.nickname == "GHOST", "foe.ghost starts a GHOST battle")
   local log = Ui.log()
-  check(log[1] == "The GHOST appeared!\\pDarn!\nThe GHOST can't be ID'd!", "can't be ID'd intro")
+  check(log[1] == "The GHOST appeared!\\pDarn!\nThe GHOST can't be ID'd!\\p", "can't be ID'd intro")
   check(log[2] == "Go! BULBASAUR!", "then Go!")
   Battle._phase = "command"
   Ui._pendingCommand = { kind = "bag", itemId = 4, user = "player" }
@@ -167,11 +156,11 @@ do
   Battle.abort()
 
   local foe2 = { species = 105, level = 30, hp = 60, maxHp = 60, moves = { 33 }, pp = { 35 }, ghost = true, ghostUnveiled = true }
-  Battle.start({ headless = true, autoFight = false, playerParty = { pMon }, foe = foe2, wild = true })
+  Battle.start({ playerName = "RED", headless = true, autoFight = false, playerParty = { pMon }, foe = foe2, wild = true })
   st = Battle.getState()
   log = Ui.log()
-  check(log[1] == "The GHOST appeared!" and log[2] == "SILPH SCOPE unveiled the GHOST's\nidentity!"
-    and log[3] == "The GHOST was MAROWAK!", "silph scope reveal text")
+  check(log[1] == "The GHOST appeared!\\p" and log[2] == "SILPH SCOPE unveiled the GHOST's\nidentity!"
+    and log[3] == "The GHOST was MAROWAK!\\p", "silph scope reveal text")
   check(st.enemy.mon.nickname == nil and State.displayName(st.enemy) ~= "GHOST", "unveiled name restored")
   Battle.abort()
 end

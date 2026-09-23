@@ -6,6 +6,15 @@ function H.displayName(ctx, battler)
   return ctx.adapter:displayName(battler)
 end
 
+function H.abilityId(name)
+  if type(name) == "number" then return name end
+  local Adapter = require("src.core.game3.battle.adapter")
+  for id, n in pairs(Adapter.ABILITY_BY_ID) do
+    if n == name then return id end
+  end
+  error("no ability id for " .. tostring(name), 0)
+end
+
 function H.sayFail(ctx)
   local M = H.move(ctx)
   if M then M.failed = true end

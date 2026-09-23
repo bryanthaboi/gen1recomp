@@ -144,8 +144,8 @@ return function(game)
 
   result(BagMenu.isOpen() == true, "the bag stayed open for the REPEL message")
   result(BagMenu.mode == "message", "the bag is in message mode, got " .. tostring(BagMenu.mode))
-  result(tostring(BagMenu.messageText):find("repelling", 1, true) ~= nil,
-    "the repel line is on screen: " .. tostring(BagMenu.messageText))
+  result(tostring(BagMenu.messageText):find("used the\nREPEL.", 1, true) ~= nil,
+    "the repel line is gText_PlayerUsedVar2: " .. tostring(BagMenu.messageText))
   result(session.repelSteps == 100, "repel steps armed, got " .. tostring(session.repelSteps))
   result(Bag.get(session.bag, ITEM_REPEL) == 1, "one REPEL left")
   U.shot(game, DIR .. "/stitchuif_bag_use_01_repel_message.png")

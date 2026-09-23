@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_forms_intro_test")
 
 package.loaded["src.core.game3.audio"] = setmetatable({}, {
   __index = function() return function() end end,

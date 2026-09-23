@@ -4,6 +4,7 @@
 -- pokefirered/src/item_use.c:642 Task_UseDigEscapeRopeOnField
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_stitchmap_escape_rope_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -28,6 +29,10 @@ local warps = {}
 package.loaded["src.core.game3.warp"] = {
   request = function(_mod, _game, mapId, x, y, facing)
     warps[#warps + 1] = { map = mapId, x = x, y = y, facing = facing }
+    return true
+  end,
+  startEscapeRope = function(_game, mapId, x, y)
+    warps[#warps + 1] = { map = mapId, x = x, y = y }
     return true
   end,
   isBusy = function() return false end,
@@ -108,7 +113,7 @@ local function use_from_bag(session, id)
 end
 
 -- pokefirered/src/strings.c:197 gText_PlayerUsedVar2
-local USED = Strings("%s used\nESCAPE ROPE.", "RED")
+local USED = "RED used the\nESCAPE ROPE."
 
 print("[test] 1. the bag fades out before the rope's line prints")
 local s1 = new_session(CAVE)
@@ -128,7 +133,7 @@ check(Bag.get(s1.bag, ITEM_ESCAPE_ROPE) == 0, "the rope was consumed")
 print("[test] 2. dismissing the field box warps exactly once")
 check(type(fieldDone) == "function", "the field box carries the follow-up task")
 if type(fieldDone) == "function" then fieldDone() end
-check(#warps == 1, "Warp.request ran exactly once (got " .. #warps .. ")")
+check(#warps == 1, "Warp.startEscapeRope ran exactly once (got " .. #warps .. ")")
 check(warps[1] and warps[1].map == "FR_PLAYERS_HOUSE_1F"
   and warps[1].x == 8 and warps[1].y == 5,
   "it warps to the last heal spot")
@@ -153,7 +158,7 @@ Bag.add(s4.bag, ITEM_ESCAPE_ROPE, 1)
 warps, fieldMessages = {}, {}
 local okH, kindH, textH = ItemUse.useField(s4, s4.bag, ITEM_ESCAPE_ROPE, nil)
 check(okH == false and kindH == "escape", "the rope is refused indoors")
-check(textH == Strings("OAK: This isn't the\ntime to use that!"), "with OAK's refusal")
+check(textH == "OAK: RED!\nThis isn't the time to use that!", "with OAK's refusal")
 check(#warps == 0, "nothing warped")
 check(Bag.get(s4.bag, ITEM_ESCAPE_ROPE) == 1, "and the rope was not consumed")
 

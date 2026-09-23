@@ -27,10 +27,6 @@ local function diskFallback(rel)
   local okG, GameVersion = pcall(require, "src.core.GameVersion")
   local prefix = (okG and GameVersion.cachePrefix and GameVersion.cachePrefix()) or "firered/"
   local prefixes = { prefix }
-  -- Always also try firered/ for GBA extract paths (standalone Game3).
-  if prefix ~= "firered/" then
-    prefixes[#prefixes + 1] = "firered/"
-  end
   local roots = {}
   local identity = os.getenv("POKEPORT_IDENTITY") or ""
   local sandboxed = identity ~= ""
@@ -39,15 +35,10 @@ local function diskFallback(rel)
     roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity
     roots[#roots + 1] = home .. "/.local/share/love/" .. identity
   end
-  if home and not sandboxed then
-    roots[#roots + 1] = home .. "/.local/share/love/pokemon-love2d"
-  end
   if love and love.filesystem and love.filesystem.getSaveDirectory then
     local sd = love.filesystem.getSaveDirectory()
     if type(sd) == "string" and sd ~= "" then
       roots[#roots + 1] = sd
-      local parent = sd:match("^(.*)/[^/]+$")
-      if parent and not sandboxed then roots[#roots + 1] = parent .. "/pokemon-love2d" end
     end
   end
   for _, root in ipairs(roots) do

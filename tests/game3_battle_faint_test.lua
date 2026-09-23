@@ -2,6 +2,7 @@
 -- Faint presentation: sink + hide mon/healthbox after "fainted!" dialog.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_faint_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -41,12 +42,13 @@ print("[test] 2. AnimSeq builds faint step with side")
 local AnimSeq = require("src.core.game3.battle.anim_seq")
 Anim.reset({ headless = true })
 AnimSeq.begin({
-  msgs = { "PIDGEY used\nTACKLE!", "WILD RATTATA fainted!" },
-  moveId = "TACKLE",
-  user = { side = "player" },
-  target = { side = "enemy" },
-  hits = { { side = "enemy", from = 10, to = 0, maxHp = 10 } },
-  faints = { { side = "enemy" } },
+  events = {
+    { kind = "msg", text = "PIDGEY used\nTACKLE!", id = "sText_AttackerUsedX" },
+    { kind = "move", moveId = 33, attacker = "player", target = "enemy" },
+    { kind = "hit", side = "enemy", from = 10, to = 0, maxHp = 10 },
+    { kind = "msg", text = "Wild RATTATA\nfainted!", id = "STRINGID_TARGETFAINTED" },
+    { kind = "faint", side = "enemy" },
+  },
 }, function() end)
 local kinds = {}
 for _, s in ipairs(AnimSeq._steps or {}) do

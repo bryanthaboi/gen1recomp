@@ -211,7 +211,7 @@ function Party.giveMon(session, species, level, nickname, opts)
   local growthRate = (meta and tonumber(meta.growthRate)) or 0
   local ability = Pokemon.abilityId and Pokemon.abilityId(species, personality) or 0
   local gender = Pokemon.gender and Pokemon.gender(species, personality) or "U"
-  local name = (Pokemon.name and Pokemon.name(species)) or "POKéMON"
+  local name = Pokemon.name(species)
   local moves, pp, maxPp = {}, {}, {}
   if Pokemon.movesAtLevel then
     moves, pp, maxPp = Pokemon.movesAtLevel(species, level)

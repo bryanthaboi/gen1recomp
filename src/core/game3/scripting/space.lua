@@ -47,58 +47,8 @@ local function resolve_session(mod, game)
   return game and game.session
 end
 
-local function disk_fallback(rel)
-  local f0 = io.open(rel, "rb") or io.open("data/generated/gba/" .. rel, "rb")
-  if f0 then
-    local data = f0:read("*a")
-    f0:close()
-    if type(data) == "string" and #data > 0 then return data end
-  end
-
-  local okG, GameVersion = pcall(require, "src.core.GameVersion")
-  local prefix = (okG and GameVersion.cachePrefix and GameVersion.cachePrefix()) or "firered/"
-  local roots = {}
-  local home = os.getenv("HOME")
-  if home then roots[#roots + 1] = home .. "/.local/share/love/pokemon-love2d" end
-  if love and love.filesystem and love.filesystem.getSaveDirectory then
-    local sd = love.filesystem.getSaveDirectory()
-    if type(sd) == "string" and sd ~= "" then
-      roots[#roots + 1] = sd
-      local parent = sd:match("^(.*)/[^/]+$")
-      if parent then roots[#roots + 1] = parent .. "/pokemon-love2d" end
-    end
-  end
-  for _, root in ipairs(roots) do
-    for _, path in ipairs({ root .. "/" .. prefix .. rel, root .. "/" .. rel }) do
-      local f = io.open(path, "rb")
-      if f then
-        local data = f:read("*a")
-        f:close()
-        if type(data) == "string" and #data > 0 then return data end
-      end
-    end
-  end
-  return nil
-end
-
 local function love_cache()
-  return {
-    read = function(_, rel)
-      local ok, CacheFs = pcall(require, "src.import.CacheFs")
-      if ok and CacheFs and CacheFs.readActive then
-        local bytes = CacheFs.readActive(rel)
-        if type(bytes) == "string" then return bytes end
-      end
-      if love and love.filesystem then
-        local bytes = love.filesystem.read(rel)
-        if type(bytes) == "string" then return bytes end
-      end
-      return disk_fallback(rel)
-    end,
-    exists = function(_, rel)
-      return love_cache():read(rel) ~= nil
-    end,
-  }
+  return require("src.core.game3.dataset").cache()
 end
 
 local function load_sidecar(mod, game)

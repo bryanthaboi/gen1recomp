@@ -98,6 +98,15 @@ local function bake_page(rom)
   return table.concat(chunks)
 end
 
+-- src/fame_checker.c:669
+local function bake_pick_panel(rom)
+  local gfx = rom_bytes(rom, Versions.FAME_BG_GFX,
+    Versions.FAME_BG3_TILEMAP - Versions.FAME_BG_GFX)
+  local banks = BgBake.loadPalBanks(rom_bytes(rom, Versions.FAME_BG_PAL, 64), 2)
+  local bg1 = rom_bytes(rom, Versions.FAME_BG1_TILEMAP, 2048)
+  return BgBake.bakeRegionRgba(gfx, banks, bg1, BG_W, BG_H, { alpha0 = true })
+end
+
 local function bake_sprite(rom, gfxOff, palOff, w, h)
   local tiles = (w / 8) * (h / 8)
   local gfx = rom_bytes(rom, gfxOff, tiles * 32)
@@ -160,6 +169,7 @@ function FameCheckerExtract.run(rom, cache, opts)
   local root = cacheRoot .. "/" .. FameCheckerExtract.CACHE_SUB
 
   cache:write(root .. "/bg.rgba", bake_page(rom))
+  cache:write(root .. "/pick_panel.rgba", bake_pick_panel(rom))
 
   for _, row in ipairs(OWN_ART) do
     local rgba = bake_sprite(rom, Versions[row.gfx], Versions[row.pal], PORTRAIT, PORTRAIT)
@@ -208,7 +218,7 @@ end
 function FameCheckerExtract.ready(cache, cacheRoot)
   local root = (cacheRoot or default_cache_root()) .. "/" .. FameCheckerExtract.CACHE_SUB
   if not (cache and cache.exists) then return false end
-  for _, rel in ipairs({ "bg.rgba", "0.rgba", "1.rgba", "13.rgba", "14.rgba",
+  for _, rel in ipairs({ "bg.rgba", "pick_panel.rgba", "0.rgba", "1.rgba", "13.rgba", "14.rgba",
     "cursor.rgba", "question_mark.rgba", "silhouette.pal", "pack.lua", "manifest.lua" }) do
     if not cache:exists(root .. "/" .. rel) then return false end
   end

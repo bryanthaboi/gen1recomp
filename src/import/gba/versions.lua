@@ -41,7 +41,7 @@ Versions.ROM_SIZE = 16777216
 -- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon — eggs were drawn
 --       with the icon of the species they hatch into.
 -- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
-Versions.CACHE_VERSION = 118
+Versions.CACHE_VERSION = 119
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 3
 Versions.ANIM_VERSION = 1
@@ -139,6 +139,8 @@ Versions.SPECIES_TO_KANTO = 0x251EE0      -- sSpeciesToKantoPokedexNum (411 u16s
 Versions.DEX_CATEGORIES = 0x452C4C        -- gDexCategories (9 categories)
 Versions.EASY_CHAT_GROUPS = 0x3ECED4       -- sEasyChatGroups (22 entries × 8 bytes)
 Versions.EASY_CHAT_GROUP_COUNT = 22
+-- src/easy_chat.c:41
+Versions.EASY_CHAT_GROUP_NAMES = 0x3EDF98
 Versions.POKEDEX_ORDERS = {
   alphabetical = 0x443FF2,
   weight = 0x4442F6,
@@ -325,6 +327,21 @@ Versions.REGION_MAP_DUNGEON_ICON_GFX = 0x3F18D8
 Versions.REGION_MAP_FLY_ICON_GFX = 0x3F1908
 Versions.REGION_MAP_BG_SECONDARY_GFX = 0x3F1978
 Versions.REGION_MAP_BG_SECONDARY_TILEMAP = 0x3F19A0
+-- src/region_map.c:415-423, :527, :2257-2277, :3158-3171, :3359
+Versions.REGION_MAP_SWITCH_ALL_TILEMAP = 0x3F0F1C
+Versions.REGION_MAP_SWITCH_123_TILEMAP = 0x3F1084
+Versions.REGION_MAP_EDGE_SPRITES = {
+  top_left = 0x3F12CC,
+  top_right = 0x3F13EC,
+  mid_left = 0x3F1550,
+  mid_right = 0x3F1640,
+  bottom_left = 0x3F1738,
+  bottom_right = 0x3F1804,
+}
+Versions.REGION_MAP_SEVII_MAPSECS = 0x3F1AA4
+Versions.REGION_MAP_SECTION_TOP_LEFT = 0x3F1E60
+Versions.REGION_MAP_SECTION_DIMENSIONS = 0x3F2178
+Versions.REGION_MAP_LAYOUTS = { 0x3F2490, 0x3F2724, 0x3F29B8, 0x3F2C4C }
 
 -- pokefirered/src/heal_location.c:28
 Versions.S_HEAL_LOCATIONS = 0x3EEBF8
@@ -1562,6 +1579,9 @@ Versions.BAG_LIST_TILES_H = 12
 Versions.BAG_LIST_BLANK_TILE = 0x02D             -- src/item_menu.c:1163
 Versions.RED_ARROW_PAL = 0x463308               -- sRedArrowPal (raw 32 bytes)
 Versions.RED_ARROW_OTHER_GFX = 0x463328         -- sRedArrowOtherGfx (LZ 4bpp 16x32)
+Versions.ITEM_PC_TILES = 0xE85090
+Versions.ITEM_PC_BG_PALS = 0xE85408
+Versions.ITEM_PC_TILEMAP = 0xE85458
 
 -- TM Case (LZ-compressed & raw; FireRed USA 1.0).
 Versions.TM_CASE_BG_GFX = 0xE845D8               -- gTMCase_Gfx (LZ 4bpp, 2912 bytes)
@@ -1683,6 +1703,7 @@ Versions.FAME_BG_PAL = 0xE9F220
 Versions.FAME_BG_GFX = 0xE9F260
 Versions.FAME_BG3_TILEMAP = 0xEA0700
 Versions.FAME_BG2_TILEMAP = 0xEA0F00
+Versions.FAME_BG1_TILEMAP = 0x45C600
 Versions.FAME_QUESTION_GFX = 0x45CE00
 Versions.FAME_CURSOR_GFX = 0x45D100
 Versions.FAME_CURSOR_PAL = 0x45D500
@@ -1737,6 +1758,10 @@ Versions.FACILITY_CLASS_TO_PIC = 0x2538A8
 Versions.FACILITY_CLASS_TO_TRAINER_CLASS = 0x25393E
 Versions.FACILITY_CLASS_COUNT = 150
 
+-- data/battle_ai_scripts.s:17
+Versions.BATTLE_AI_SCRIPTS_TABLE = 0x1D9BF4
+Versions.BATTLE_AI_SCRIPT_COUNT = 32
+
 -- src/data/pokemon/tutor_learnsets.h:1, :22
 Versions.TUTOR_MOVES = 0x459B60
 Versions.TUTOR_LEARNSETS = 0x459B7E
@@ -1788,126 +1813,35 @@ Versions.NAMED_SCRIPTS = {
   EventScript_AfterWhiteOutMomHeal = 0x1A8DD8,
 }
 
--- src/strings.c:190-192, :961-962, data/event_scripts.s:884, data/text/white_out.inc:43, :50,
--- data/text/obtain_item.inc:7-30, data/text/itemfinder.inc:8
-Versions.NAMED_TEXTS = {
-  gText_ItemfinderResponding = 0x416476,
-  gText_ItemfinderShakingWildly = 0x4164BE,
-  gText_NopeTheresNoResponse = 0x416513,
-  gText_PlayerScurriedToCenter = 0x41B554,
-  gText_PlayerScurriedBackHome = 0x41B5B6,
-  gText_PkmnFainted3 = 0x1A5476,
-  Text_WhitedOutLostMoney = 0x1A6197,
-  Text_WhitedOut = 0x1A61E5,
-  Text_PutItemAway = 0x1A5218,
-  Text_FoundOneItem = 0x1A5231,
-  Text_TooBadBagFull = 0x1A5242,
-  Text_FoundXCoins = 0x1A525C,
-  Text_PutCoinsAwayInCoinCase = 0x1A526C,
-  Text_CoinCaseIsFull = 0x1A5294,
-  Text_NothingToPutThemIn = 0x1A52B4,
-  Text_DugUpItemFromGround = 0x1A5700,
-  -- src/strings.c:17, :36, :50-52, :103-112, :896
-  gText_WelcomeToHOF = 0x416008,
-  gText_LeagueChamp = 0x4160C8,
-  gText_SavingDontTurnOffThePower2 = 0x419F54,
-  gText_HOFCorrupted = 0x416090,
-  gText_HOFNumber = 0x4160B4,
-  gText_UPDOWNPick_ABUTTONNext_BBUTTONBack = 0x415D60,
-  gText_UPDOWNPick_ABUTTONBBUTTONCancel = 0x415D78,
-  gText_ABUTTONExit = 0x415D8C,
-  gText_Number = 0x4160EC,
-  gText_Level = 0x4160F4,
-  gText_Name = 0x4160FC,
-  gText_IDNumber = 0x416104,
-  gText_MainMenuTime = 0x415CE8,
-  gText_EggNickname = 0x415A62,
-  -- src/strings.c:963-967
-  gText_Diploma_Player = 0x41B60E,
-  gText_Diploma_ThisDocument = 0x41B619,
-  gText_Diploma_GameFreak = 0x41B684,
-  gText_Diploma_National = 0x41B68F,
-  gText_Diploma_Kanto = 0x41B698,
-  -- data/text/pokedex_rating.inc:13-85
-  PokedexRating_Text_LessThan10 = 0x1A6D17,
-  PokedexRating_Text_LessThan20 = 0x1A6D6D,
-  PokedexRating_Text_LessThan30 = 0x1A6DDF,
-  PokedexRating_Text_LessThan40 = 0x1A6E36,
-  PokedexRating_Text_LessThan50 = 0x1A6EA4,
-  PokedexRating_Text_LessThan60 = 0x1A6F0B,
-  PokedexRating_Text_LessThan70 = 0x1A6F71,
-  PokedexRating_Text_LessThan80 = 0x1A6FAB,
-  PokedexRating_Text_LessThan90 = 0x1A6FF1,
-  PokedexRating_Text_LessThan100 = 0x1A7031,
-  PokedexRating_Text_LessThan110 = 0x1A7063,
-  PokedexRating_Text_LessThan120 = 0x1A70A5,
-  PokedexRating_Text_LessThan130 = 0x1A70D8,
-  PokedexRating_Text_LessThan140 = 0x1A7108,
-  PokedexRating_Text_LessThan150 = 0x1A7137,
-  PokedexRating_Text_Complete = 0x1A7175,
-  -- data/scripts/repel.inc:5, data/text/day_care.inc:129
-  Text_RepelWoreOff = 0x1BFB6E,
-  DayCare_Text_Huh = 0x1BFB5A,
-  -- src/strings.c:1059-1061
-  gText_PokemonOnHook = 0x41D14E,
-  gText_NotEvenANibble = 0x41D169,
-  gText_ItGotAway = 0x41D17E,
-  -- src/strings.c:160, :278, :382, :629
-  gText_BagFullCouldNotRemoveItem = 0x416D78,
-  gText_MenuBag = 0x416285,
-  gText_BagIsFull2 = 0x418408,
-  gText_NoMoreRoomInBag = 0x41778A,
-  -- src/strings.c:199-200
-  gText_UsedVar2WildLured = 0x4165D2,
-  gText_UsedVar2WildRepelled = 0x416600,
-  -- src/strings.c:178, :209, :214, :301-304, :317-318, :601, :682-683, :1252-1255
-  gText_CantUseHere = 0x417299,
-  gText_AlreadySurfing = 0x417281,
-  gDaycareText_GetAlongVeryWell = 0x41E33C,
-  gDaycareText_GetAlong = 0x41E361,
-  gDaycareText_DontLikeOther = 0x41E37C,
-  gDaycareText_PlayOther = 0x41E3A8,
-  gText_OnlyPkmnForBattle = 0x417094,
-  gText_EggCantBeTradedNow = 0x4170E0,
-  gText_PkmnCantBeTradedNow = 0x4170BC,
-  gText_OtherTrainersPkmnCantBeTraded = 0x4170FC,
-  gText_ThereIsNoPokemon = 0x41632A,
-  gText_TheBerryPouchWillBePutAway = 0x416716,
-  gText_TMCaseWillBePutAway = 0x4166E1,
-  gText_JustOnePkmn = 0x418690,
-  gText_PartyFull = 0x4186B0,
-  gFameCheckerText_FameCheckerWillBeClosed = 0x4181C3,
-  -- src/strings.c:158, :401, :477-478, :672-681
-  gText_WhatWouldYouLikeToDo = 0x416262,
-  gText_HallOfFame = 0x4178F0,
-  gText_LogOff = 0x417BCB,
-  gText_ProfOakSPc = 0x417BD3,
-  gText_WithdrawPokemon = 0x41856C,
-  gText_DepositPokemon = 0x41857D,
-  gText_MovePokemon = 0x41858D,
-  gText_MoveItems = 0x41859A,
-  gText_SeeYa = 0x4185A5,
-  gText_WithdrawMonDescription = 0x4185AD,
-  gText_DepositMonDescription = 0x4185E2,
-  gText_MoveMonDescription = 0x418611,
-  gText_MoveItemsDescription = 0x418642,
-  gText_SeeYaDescription = 0x418681,
-  -- src/strings.c:224, :230, :309-322, :370, :980-981, :1004
-  gText_ChoosePokemon = 0x4171DF,
-  gText_MoveToWhere = 0x4171F1,
-  gText_TeachWhichPokemon = 0x417200,
-  gText_UseOnWhichPokemon = 0x417215,
-  gText_GiveToWhichPokemon = 0x41722B,
-  gText_RestoreWhichMove = 0x4172AE,
-  gText_BoostPp = 0x4172C2,
-  gText_DoWhatWithItem = 0x4172D5,
-  gText_NoPokemonForBattle = 0x4172EB,
-  gText_CancelBattle = 0x4176CF,
-  gText_HereYouGoThankYou = 0x4167E7,
-  gText_AnythingElseICanHelp = 0x41689E,
-  gString_OutOfCoins = 0x41B747,
-  gString_QuitPlaying = 0x41B76B,
-  gText_CommunicationStandby4 = 0x41CC64,
+do
+  local VersionsText = require("src.import.gba.versions_text")
+  Versions.NAMED_TEXTS = VersionsText.NAMED_TEXTS
+  Versions.NAMED_BATTLE_TEXTS = VersionsText.NAMED_BATTLE_TEXTS
+  Versions.TEXT_TABLES = VersionsText.TEXT_TABLES
+  -- include/constants/battle_string_ids.h:4
+  Versions.BATTLE_STRING_IDS = VersionsText.BATTLE_STRING_IDS
+end
+
+-- src/trade_scene.c:57, src/data/ingame_trades.h:1, :184
+Versions.INGAME_TRADES = 0x26CF8C
+Versions.INGAME_TRADE_COUNT = 9
+Versions.INGAME_TRADE_SIZE = 60
+Versions.INGAME_TRADE_MAIL = 0x26D1A8
+Versions.INGAME_TRADE_MAIL_COUNT = 1
+
+-- src/pokemon.c:1666, :6197, :6206
+Versions.UNION_ROOM_FACILITY_CLASSES = 0x25E032
+Versions.UNION_ROOM_CLASS_COUNT = 16
+Versions.FACILITY_CLASS_TO_TRAINER_CLASS = 0x25393E
+Versions.FACILITY_CLASS_TO_PIC_INDEX = 0x2538A8
+
+-- src/fldeff_flash.c:157-162
+Versions.CAVE_TRANSITION = {
+  white_pal = 0x3F5804,
+  black_pal = 0x3F5824,
+  pal = 0x3F5844,
+  tilemap = 0x3F5864,
+  tiles = 0x3F5A44,
 }
 
 -- src/script_menu.c:574

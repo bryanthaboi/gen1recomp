@@ -3,7 +3,14 @@
 -- pokefirered/src/region_map.c:4022 SetFlyWarpDestination
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local failed = 0
 local function check(cond, msg)
@@ -41,9 +48,26 @@ local FLYABLE = {
   "MAPSEC_SIX_ISLAND", "MAPSEC_SEVEN_ISLAND",
 }
 
+print("[test] 2. the menu arm")
+local outdoors = { mapType = FieldMoves.MAP_TYPES.CITY, party = {}, store = { flags = {} } }
+outdoors.store.flags[FieldMoves.BADGE_FLAGS.FLY] = true
+local res = FieldMoves.fromMenu("FLY", outdoors)
+check(res.ok == true and res.action == "fly", "Fly outdoors returns action fly")
+local indoors = { mapType = FieldMoves.MAP_TYPES.INDOOR, party = {}, store = outdoors.store }
+check(FieldMoves.fromMenu("FLY", indoors).ok == false, "Fly indoors is refused")
+local noBadge = { mapType = FieldMoves.MAP_TYPES.CITY, party = {}, store = { flags = {} } }
+check(FieldMoves.fromMenu("FLY", noBadge).ok == false, "Fly without the THUNDERBADGE is refused")
+
+local Cache = require("tests.game3_cache")
+local cacheRoot = Cache.mount("scripts/events.lua", { native = true })
+if not cacheRoot then
+  print("[skip] game3_field_fly_test (cache-backed sections): " .. tostring(Cache.reason))
+  finish()
+end
+print("[info] FireRed cache at " .. cacheRoot)
+
 print("[test] 1. the fly table is the twenty heal locations")
-local n = 0
-for _ in pairs(Field.FLY_DESTINATIONS) do n = n + 1 end
+local n = Field.loadFlyDestinations()
 check(n == 20, "twenty fly destinations (" .. n .. ")")
 for _, sec in ipairs(FLYABLE) do
   local d = Field.flyDestination(sec)
@@ -66,23 +90,6 @@ local indigo = Field.flyDestination("MAPSEC_INDIGO_PLATEAU")
 check(indigo.map == "FR_INDIGO_PLATEAU_EXTERIOR" and indigo.x == 11 and indigo.y == 7,
   "Indigo Plateau lands on the exterior at (11,7)")
 
-print("[test] 2. the menu arm")
-local outdoors = { mapType = FieldMoves.MAP_TYPES.CITY, party = {}, store = { flags = {} } }
-outdoors.store.flags[FieldMoves.BADGE_FLAGS.FLY] = true
-local res = FieldMoves.fromMenu("FLY", outdoors)
-check(res.ok == true and res.action == "fly", "Fly outdoors returns action fly")
-local indoors = { mapType = FieldMoves.MAP_TYPES.INDOOR, party = {}, store = outdoors.store }
-check(FieldMoves.fromMenu("FLY", indoors).ok == false, "Fly indoors is refused")
-local noBadge = { mapType = FieldMoves.MAP_TYPES.CITY, party = {}, store = { flags = {} } }
-check(FieldMoves.fromMenu("FLY", noBadge).ok == false, "Fly without the THUNDERBADGE is refused")
-
-local Cache = require("tests.game3_cache")
-local cacheRoot = Cache.mount("scripts/events.lua", { native = true })
-if not cacheRoot then
-  print("[skip] game3_field_fly_test (cache-backed sections): " .. tostring(Cache.reason))
-  finish()
-end
-print("[info] FireRed cache at " .. cacheRoot)
 
 local Dataset = require("src.core.game3.dataset")
 local Collision = require("src.core.game3.collision")
@@ -115,7 +122,7 @@ local dest = Field.flyDestination("MAPSEC_PEWTER_CITY")
 session.map = "FR_PALLET_TOWN"
 Collision.bindMap(game, "FR_PALLET_TOWN", game.data.maps["FR_PALLET_TOWN"])
 Player.cellX, Player.cellY = 6, 8
-check(Field.flyTo("MAPSEC_NOWHERE") == false, "an unknown section refuses")
+check(pcall(Field.flyTo, "MAPSEC_NOWHERE") == false, "an unknown section raises")
 check(Player.cellX == 6 and Player.cellY == 8, "and does not move the player")
 check(Field.flyTo("MAPSEC_PEWTER_CITY") == true, "flying to Pewter City is accepted")
 check(Player.cellX == dest.x and Player.cellY == dest.y,

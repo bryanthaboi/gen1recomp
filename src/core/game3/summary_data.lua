@@ -2,36 +2,13 @@
 -- Faithful replication of FRLG experience tables, natures, trainer memo logic, and move/ability descriptions.
 
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local SummaryData = {}
 
--- 25 Natures in FireRed index order (personality % 25).
-SummaryData.NATURES = {
-  [0]  = "HARDY",
-  [1]  = "LONELY",
-  [2]  = "BRAVE",
-  [3]  = "ADAMANT",
-  [4]  = "NAUGHTY",
-  [5]  = "BOLD",
-  [6]  = "DOCILE",
-  [7]  = "RELAXED",
-  [8]  = "IMPISH",
-  [9]  = "LAX",
-  [10] = "TIMID",
-  [11] = "HASTY",
-  [12] = "SERIOUS",
-  [13] = "JOLLY",
-  [14] = "NAIVE",
-  [15] = "MODEST",
-  [16] = "MILD",
-  [17] = "QUIET",
-  [18] = "BASHFUL",
-  [19] = "RASH",
-  [20] = "CALM",
-  [21] = "GENTLE",
-  [22] = "SASSY",
-  [23] = "CAREFUL",
-  [24] = "QUIRKY",
-}
+local NATURE_KEYS = {}
+for i = 0, 24 do NATURE_KEYS[i] = RomText.key("gNatureNamePointers", i) end
+-- src/data/text/nature_names.h:27
+SummaryData.NATURES = RomText.lazy(NATURE_KEYS)
 
 -- Stat multipliers per nature [natureId] = { stat = 1.1 / 0.9 / 1.0 }
 -- Stats: atk, def, spAtk, spDef, spd
@@ -156,7 +133,7 @@ end
 function SummaryData.nature(mon)
   local p = tonumber(mon and mon.personality) or 0
   local natureId = p % 25
-  return natureId, SummaryData.NATURES[natureId] or "HARDY"
+  return natureId, SummaryData.NATURES[natureId]
 end
 
 --- Check if shiny: ((otId ~ otSecretId) ~ (pHigh ~ pLow)) < 8
@@ -217,13 +194,8 @@ function SummaryData.statusAilment(mon)
   return 0
 end
 
-local _sections = nil
 local function map_sections()
-  if _sections == nil then
-    local ok, mod = pcall(require, "src.import.gba.map_sections_extract")
-    _sections = (ok and type(mod) == "table" and mod) or false
-  end
-  return _sections or nil
+  return require("src.import.gba.map_sections_extract")
 end
 
 local _sec_cache = {}
@@ -234,13 +206,10 @@ local function section_of(sec)
   local cached = _sec_cache[sec]
   if cached ~= nil then return cached or nil end
   local entry = false
-  local Sections = map_sections()
-  if Sections and Sections.getInfo then
-    local ok, info = pcall(Sections.getInfo, sec, nil, 0)
-    if ok and type(info) == "table" and info.resolved then
-      local name = info.rawName or info.name
-      if type(name) == "string" and name ~= "" then entry = { id = info.id, name = name } end
-    end
+  local info = map_sections().getInfo(sec, nil, 0)
+  if type(info) == "table" and info.resolved then
+    local name = info.rawName or info.name
+    if type(name) == "string" and name ~= "" then entry = { id = info.id, name = name } end
   end
   _sec_cache[sec] = entry
   return entry or nil
@@ -251,13 +220,10 @@ local function celadon_name(sec, here)
   local cached = _celadon_by_map[here]
   if cached == nil then
     cached = false
-    local Sections = map_sections()
-    if Sections and Sections.getInfo then
-      local ok, info = pcall(Sections.getInfo, sec, here, 0)
-      if ok and type(info) == "table" and info.resolved then
-        local name = info.rawName or info.name
-        if type(name) == "string" and name ~= "" then cached = name end
-      end
+    local info = map_sections().getInfo(sec, here, 0)
+    if type(info) == "table" and info.resolved then
+      local name = info.rawName or info.name
+      if type(name) == "string" and name ~= "" then cached = name end
     end
     _celadon_by_map[here] = cached
   end
@@ -279,88 +245,126 @@ local function met_location_name(mon, playerState)
   return entry.name
 end
 
---- Trainer Memo formatting (pokefirered/src/pokemon_summary_screen.c PokeSum_PrintTrainerMemo)
-function SummaryData.formatTrainerMemo(mon, playerState)
-  if not mon then return { Strings("No data") } end
+local METLOC_SPECIAL_EGG = 0xFD
+local METLOC_FATEFUL_ENCOUNTER = 0xFF
 
-  -- Egg memo
-  if mon.isEgg then
-    local origin = Strings("An odd POKéMON EGG found by the\nDAY-CARE couple.")
-    local hatchMsg
-    local cycles = tonumber(mon.eggCycles or mon.friendship) or 40
-    if cycles > 40 then
-      hatchMsg = Strings("It looks like this\nEGG will take a\nlong time to hatch.")
-    elseif cycles > 10 then
-      hatchMsg = Strings("What will hatch\nfrom this? It will\ntake some time.")
-    elseif cycles > 5 then
-      hatchMsg = Strings("It occasionally\nmoves. It should\nhatch soon.")
-    else
-      hatchMsg = Strings("It's making sounds.\nIt's almost ready\nto hatch!")
-    end
-    return { origin, hatchMsg }
-  end
-
-  local _, natureName = SummaryData.nature(mon)
-  natureName = Strings(natureName)
-  local metLevel = tonumber(mon.metLevel) or 5
-  if metLevel == 0 then metLevel = 5 end
-
-  -- Dynamic Trade Check: compare OT Name, OT ID, and Secret ID against player
-  local isTrade = false
-  if playerState then
-    local pName = playerState.playerName or playerState.name
-    local pId = playerState.trainerId or playerState.otId or playerState.id
-    local pSecret = playerState.secretId or playerState.otSecretId
-
-    local monOtName = mon.otName or mon.originalTrainer
-    local monOtId = tonumber(mon.otId)
-    local monSecret = tonumber(mon.otSecretId)
-
-    if pName and monOtName and pName ~= monOtName then
-      isTrade = true
-    elseif pId and monOtId and (bit.band(pId, 0xFFFF) ~= bit.band(monOtId, 0xFFFF)) then
-      isTrade = true
-    elseif pSecret and monSecret and (bit.band(pSecret, 0xFFFF) ~= bit.band(monSecret, 0xFFFF)) then
-      isTrade = true
-    end
-  end
-
-  local isFateful = not not (mon.fatefulEncounter or mon.metLocation == 255)
-  local isHatched = (mon.metLevel == 0 or mon.hatched)
-
-  -- pokefirered/src/pokemon_summary_screen.c:2639 gText_PokeSum_ATrade
-  local locName = Strings(met_location_name(mon, playerState) or "a trade")
-  if isTrade then
-    locName = Strings("a trade")
-  end
-
+local function split_lines(text)
   local lines = {}
-  local header = Strings("%s nature.", natureName)
-  lines[1] = header
-
-  if isFateful then
-    if isHatched then
-      lines[2] = Strings("Met in a fateful encounter\n(hatched: %s at Lv. %d).", locName, metLevel)
-    else
-      lines[2] = Strings("Met in a fateful encounter when\nat Lv. %d.", metLevel)
-    end
-  elseif isTrade then
-    lines[2] = Strings("Met in a trade.")
-  elseif isHatched then
-    lines[2] = Strings("Hatched: %s\nat Lv. %d.", locName, metLevel)
-  else
-    lines[2] = Strings("Met in %s\nat Lv. %d.", locName, metLevel)
-  end
-
+  for line in (text .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
   return lines
 end
 
+-- src/pokemon_summary_screen.c:3243
+local function held_by_ot(mon, playerState)
+  if not playerState then return true end
+  local pName = playerState.playerName or playerState.name
+  local pId = playerState.trainerId or playerState.otId or playerState.id
+  local pSecret = playerState.secretId or playerState.otSecretId
+  local monOtName = mon.otName or mon.originalTrainer
+  local monOtId = tonumber(mon.otId)
+  local monSecret = tonumber(mon.otSecretId)
+  if pName and monOtName and pName ~= monOtName then return false end
+  if pId and monOtId and (bit.band(pId, 0xFFFF) ~= bit.band(monOtId, 0xFFFF)) then return false end
+  if pSecret and monSecret and (bit.band(pSecret, 0xFFFF) ~= bit.band(monSecret, 0xFFFF)) then return false end
+  return true
+end
+
+-- src/pokemon_summary_screen.c:5213
+local function in_kanto_or_sevii(sec)
+  return sec >= 88 and sec < 197
+end
+
+-- src/pokemon_summary_screen.c:5199
+local function from_gba(mon)
+  local game = tonumber(mon.metGame)
+  return game == nil or (game >= 1 and game <= 5)
+end
+
+-- src/pokemon_summary_screen.c:2789
+local function egg_origin_index(mon, heldByOt)
+  if mon.isBadEgg then return 0 end
+  local metLocation = tonumber(mon.metLocation) or 0
+  if metLocation == METLOC_FATEFUL_ENCOUNTER or mon.fatefulEncounter == true then return 4 end
+  local idx = 0
+  local game = tonumber(mon.metGame)
+  if game ~= nil and game ~= 4 and game ~= 5 then
+    idx = 1
+  elseif metLocation == METLOC_SPECIAL_EGG then
+    idx = 2
+  end
+  if (idx == 0 or idx == 2) and not heldByOt then idx = idx + 1 end
+  return idx
+end
+
+-- src/pokemon_summary_screen.c:2483
+local function egg_hatch_index(mon)
+  if mon.isBadEgg then return 0 end
+  local cycles = tonumber(mon.eggCycles or mon.friendship) or 40
+  if cycles <= 5 then return 3 end
+  if cycles <= 10 then return 2 end
+  if cycles <= 40 then return 1 end
+  return 0
+end
+
+--- Trainer Memo formatting (pokefirered/src/pokemon_summary_screen.c PokeSum_PrintTrainerMemo)
+function SummaryData.formatTrainerMemo(mon, playerState)
+  if not mon then return { RomText.plain("gText_PokeSum_NoData") } end
+
+  local heldByOt = held_by_ot(mon, playerState)
+
+  if mon.isEgg then
+    return {
+      RomText.at("sEggOriginTexts", egg_origin_index(mon, heldByOt)),
+      RomText.at("sEggHatchTimeTexts", egg_hatch_index(mon)),
+    }
+  end
+
+  local _, natureName = SummaryData.nature(mon)
+  local rawMetLevel = tonumber(mon.metLevel)
+  local hatched = rawMetLevel == 0
+  local metLevel = rawMetLevel or 5
+  if metLevel == 0 then metLevel = 5 end
+  local metLocation = tonumber(mon.metLocation) or 0
+  local fatefulMet = metLocation == METLOC_FATEFUL_ENCOUNTER
+  local fatefulFlag = mon.fatefulEncounter == true
+
+  local key
+  local mapName
+  if heldByOt then
+    -- src/pokemon_summary_screen.c:2632
+    if in_kanto_or_sevii(metLocation) or mon.metLocationName then
+      mapName = met_location_name(mon, playerState)
+    else
+      mapName = RomText.plain("gText_PokeSum_ATrade")
+    end
+    if hatched then
+      key = fatefulFlag and "gText_PokeSum_FatefulEncounterHatched" or "gText_PokeSum_Hatched"
+    else
+      key = fatefulMet and "gText_PokeSum_FatefulEncounterMet" or "gText_PokeSum_Met"
+    end
+  elseif not in_kanto_or_sevii(metLocation) or not from_gba(mon) then
+    -- src/pokemon_summary_screen.c:2707
+    key = fatefulMet and "gText_PokeSum_FatefulEncounterMet" or "gText_PokeSum_MetInATrade"
+  else
+    -- src/pokemon_summary_screen.c:2735
+    mapName = met_location_name(mon, playerState)
+    if hatched then
+      key = fatefulFlag and "gText_PokeSum_ApparentlyFatefulEncounterHatched" or "gText_PokeSum_ApparentlyMet"
+    else
+      key = fatefulMet and "gText_PokeSum_FatefulEncounterMet" or "gText_PokeSum_ApparentlyMet"
+    end
+  end
+
+  -- src/pokemon_summary_screen.c:2621
+  return split_lines(RomText.plain(key, {
+    dynamic = { [0] = natureName, [1] = tostring(metLevel), [2] = mapName },
+  }))
+end
+
 local function load_descriptions()
-  local okG, gen = pcall(require, "data.generated.gba.pokemon.descriptions")
-  if okG and gen and gen.ABILITIES then return gen end
-  local okC, core = pcall(require, "src.core.game3.summary_descriptions")
-  if okC and core and core.ABILITIES then return core end
-  return nil
+  local rel = "data/generated/gba/pokemon/descriptions.lua"
+  local src = assert(require("src.core.game3.dataset").cache():read(rel), rel .. " is not in the cache")
+  return assert(load(src, "@" .. rel, "t", {}))()
 end
 
 local _descs = nil
@@ -390,7 +394,8 @@ function SummaryData.abilityDescription(abilityId, abilityName)
       return Strings(d.ABILITIES[const])
     end
   end
-  return Strings("No special ability.")
+  -- src/data/text/abilities.h:1
+  return Strings(d.ABILITIES["ABILITY_"])
 end
 
 function SummaryData.moveDescription(moveId, moveName)

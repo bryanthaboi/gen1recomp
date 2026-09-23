@@ -25,6 +25,20 @@ local ENTRY_PATTERN = "^[%l%d_%-]+[%l%d_%-/]*$"
 
 local LIST = {
   {
+    id = "pmd_red",
+    name = "Pokémon Mystery Dungeon",
+    status = "beta",
+    summary = "All Pokémon sprite sheets and animations from Red Rescue Team.",
+    source = {
+      name = "Mystery Dungeon Red Rescue Team (USA/Australia) GBA cartridge dump",
+      formats = { "gba" }, sizes = { 33554432 },
+    },
+    packs = {
+      { id = "sprites", kind = "sprite", name = "Pokémon sprites",
+        description = "423 Pokémon and form sheets with poses, directions and animation timing." },
+    },
+  },
+  {
     id = "lttp",
     name = "A Link to the Past",
     status = "beta",
@@ -170,6 +184,15 @@ function Importers.validatePack(manifest, importerId, packId)
     if entry.size > Importers.MAX_ENTRY_BYTES then
       return false, "pack entry " .. id .. " exceeds the 8 MiB entry limit"
     end
+    if entry.metadata ~= nil then
+      local meta = entry.metadata
+      if type(meta) ~= "table" or type(meta.file) ~= "string"
+          or not SafePath.safe(meta.file) or extensionOf(meta.file) ~= "lua"
+          or type(meta.size) ~= "number" or meta.size < 0 or meta.size % 1 ~= 0
+          or meta.size > Importers.MAX_ENTRY_BYTES then
+        return false, "pack entry " .. id .. " has invalid metadata"
+      end
+    end
     count = count + 1
   end
   return true, nil, count
@@ -222,6 +245,22 @@ function Importers.installed(importerId, fs)
     end
   end
   return out
+end
+
+function Importers.readMetadata(importerId, packId, entry, fs)
+  local meta = entry and entry.metadata
+  if not meta then return nil, "entry has no metadata" end
+  local path, err = Importers.assetPath(importerId, packId, meta.file)
+  if not path then return nil, err end
+  fs = persistFs(fs)
+  local bytes = fs and fs.read and fs.read(path)
+  if type(bytes) ~= "string" then return nil, "entry metadata is missing" end
+  if #bytes ~= meta.size or #bytes > Importers.MAX_ENTRY_BYTES then
+    return nil, "entry metadata size does not match"
+  end
+  local value, reason = decode(bytes, path)
+  if type(value) ~= "table" then return nil, "invalid entry metadata: " .. tostring(reason) end
+  return value
 end
 
 function Importers.state(importerId, fs)

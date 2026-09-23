@@ -10,7 +10,6 @@ local ItemUse = require("src.core.game3.item_use")
 local Options = require("src.core.game3.options")
 local Trig = require("src.core.game3.trig")
 local PartyView = require("src.core.game3.battle.party_view")
-local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
 
 local BagMenu = {}
@@ -55,6 +54,15 @@ local function se(id)
   pcall(function() require("src.core.game3.audio").playSe(id) end)
 end
 
+-- src/menu_helpers.c:114 MenuHelpers_IsLinkActive
+-- src/union_room.c:4558 InUnionRoom
+local function link_menus_active()
+  local Map = package.loaded["src.core.game3.map"]
+  if Map and Map.current == "FR_UNION_ROOM" then return true end
+  local Link = package.loaded["src.core.game3.link"]
+  return type(Link) == "table" and Link.link ~= nil and Link.inLinkRoom() == true
+end
+
 local function actions_for_pocket(pocket, row)
   if BagMenu._battle then
     -- src/item_menu.c:1344
@@ -69,6 +77,15 @@ local function actions_for_pocket(pocket, row)
     return { "CANCEL" }
   end
   pocket = pocket or "ITEMS"
+  -- src/item_menu.c:1370
+  if link_menus_active() then
+    local num = row and ItemsData.toNumericId(row.id)
+    if num == ItemsData.ITEM_TM_CASE or num == ItemsData.ITEM_BERRY_POUCH then
+      return { "USE", "CANCEL" }
+    end
+    if pocket == "KEY_ITEMS" then return { "CANCEL" } end
+    return { "GIVE", "CANCEL" }
+  end
   local info = row and (row.info or ItemsData.info(row.id))
   local registrable = info and (tonumber(info.registrability) or 0) > 0
   if pocket == "KEY_ITEMS" then
@@ -237,7 +254,7 @@ function BagMenu.commitBattlePartyUse(st, itemId, realSlot, mon, beforeUse)
     local canUse, err = BattleItems.canUseOn(st, itemId, realSlot, mon, moveSlot)
     if not canUse then
       se(5) -- pokefirered/src/party_menu.c:4490
-      PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
+      PartyMenu.showMessage(err or RomText.box("gText_WontHaveEffect"), function()
         PartyMenu.mode = "use"
       end)
       return
@@ -277,6 +294,8 @@ function BagMenu.show(sessionBag, opts)
     BagMenu._session = opts.session or (type(sessionBag) == "table" and sessionBag.party and sessionBag)
   end
   BagMenu._battle = opts.battle and true or false
+  BagMenu._location = opts.location
+  BagMenu._sell = nil
   BagMenu._onBattleUse = opts.onBattleUse
   local st = bag_state()
   BagMenu.pocketIdx = opts.pocketIdx or st.pocket or 1
@@ -333,6 +352,29 @@ local function close_to_field()
   if not battle then field_fade_in() end
 end
 
+-- src/item_menu.c:194 sItemMenuContextActions
+local ACTION_TEXT = { USE = 0, TOSS = 1, SET = 2, GIVE = 3, CANCEL = 4, OPEN = 7 }
+-- include/constants/items.h:432
+local ITEM_BICYCLE = 360
+
+-- src/item_menu.c:1401
+local function action_label(act, row)
+  local i = ACTION_TEXT[act]
+  local num = row and ItemsData.toNumericId(row.id)
+  if act == "SET" and num and BagMenu._session
+      and ItemsData.toNumericId(BagMenu._session.registeredItem) == num then
+    i = 10
+  elseif act == "USE" and not BagMenu._battle and BagMenu.currentPocket() == "KEY_ITEMS" then
+    local Player = package.loaded["src.core.game3.player"]
+    if num == ItemsData.ITEM_TM_CASE or num == ItemsData.ITEM_BERRY_POUCH then
+      i = 7
+    elseif num == ITEM_BICYCLE and Player and Player.biking then
+      i = 9
+    end
+  end
+  return RomText.at("sItemMenuContextActions", i)
+end
+
 local function refresh_actions()
   local rows = BagMenu.list()
   local row = rows[BagMenu.cursor]
@@ -344,6 +386,7 @@ end
 
 local function pocket_switch_dir(input, pocketIdx)
   -- src/item_menu.c:1124
+  if BagMenu._location == "itempc" then return 0 end
   local lr = Options.lrMode(BagMenu._session)
   if input:wasPressed("left") or (lr and input:wasPressed("l")) then
     if pocketIdx <= 1 then return 0 end
@@ -462,7 +505,77 @@ local function use_field_from_bag(session, bag, id)
   return ItemUse.useField(session, bag, id, nil)
 end
 
+-- src/item_menu.c:1787 Task_ItemContext_Sell
+local function begin_sell(row)
+  local num = ItemsData.toNumericId(row.id)
+  local savedState = { pocketIdx = BagMenu.pocketIdx, cursor = BagMenu.cursor, scroll = BagMenu.scroll }
+  local function back()
+    BagMenu.pocketIdx = savedState.pocketIdx
+    BagMenu.cursor = savedState.cursor
+    BagMenu.scroll = savedState.scroll
+    BagMenu.mode = "list"
+    clamp_cursor()
+    reshow()
+  end
+  if num == ItemsData.ITEM_TM_CASE then
+    -- src/item_menu.c:1825 GoToTMCase_Sell
+    open_submenu(function()
+      require("src.ui.game3.tm_case").show(BagMenu._session, BagMenu._bag, {
+        session = BagMenu._session, bag = BagMenu._bag, sell = true, onClose = back,
+      })
+    end)
+    return
+  elseif num == ItemsData.ITEM_BERRY_POUCH then
+    -- src/item_menu.c:1830 GoToBerryPouch_Sell
+    open_submenu(function()
+      require("src.ui.game3.berry_pouch").show(BagMenu._session, BagMenu._bag, {
+        session = BagMenu._session, bag = BagMenu._bag, sell = true, onClose = back,
+      })
+    end)
+    return
+  end
+  BagMenu.mode = "sell"
+  BagMenu._sell = require("src.ui.game3.sell_flow").start({
+    itemId = row.id,
+    owned = row.qty,
+    session = BagMenu._session,
+    bag = BagMenu._bag,
+    onDone = function()
+      BagMenu._sell = nil
+      BagMenu.mode = "list"
+      clamp_cursor()
+    end,
+  })
+end
+
+-- src/item_menu.c:2004 Task_TryDoItemDeposit
+local function try_deposit()
+  local Storage = require("src.core.game3.storage")
+  local row = BagMenu.list()[BagMenu.cursor]
+  if Storage.depositItem(BagMenu._session, BagMenu.currentPocket(), BagMenu.cursor, BagMenu.tossQty) then
+    BagMenu.mode = "deposit_done"
+    BagMenu._depositText = RomText.box("gText_DepositedStrVar2StrVar1s",
+      { stringVars = { row.name, tostring(BagMenu.tossQty) } })
+  else
+    show_bag_message(RomText.plain("gText_NoRoomToStoreItems"))
+  end
+end
+
+-- src/item_menu.c:1959 Task_ItemContext_Deposit
+local function begin_deposit(row)
+  BagMenu.tossQty = 1
+  if (tonumber(row.qty) or 1) == 1 then
+    try_deposit()
+  else
+    BagMenu.mode = "deposit"
+  end
+end
+
 local function handle_menu_input(input)
+  if BagMenu.mode == "sell" and BagMenu._sell then
+    BagMenu._sell:handleInput(input)
+    return
+  end
   if BagMenu.mode == "flute_wait" then
     -- pokefirered/src/item_use.c:607
     local w = BagMenu._fluteWait
@@ -471,6 +584,44 @@ local function handle_menu_input(input)
       BagMenu._fluteWait = nil
       ItemUse.playBlackWhiteFlute()
       show_bag_message(w.text)
+    end
+    return
+  end
+  -- src/item_menu.c:1974 Task_SelectQuantityToDeposit
+  if BagMenu.mode == "deposit" then
+    BagMenu._depositK = (BagMenu._depositK or 0) + 1
+    local row = BagMenu.list()[BagMenu.cursor]
+    local qmax = math.min(999, tonumber(row.qty) or 1)
+    local q = BagMenu.tossQty
+    if input:wasPressed("up") then
+      q = q + 1
+      if q > qmax then q = 1 end
+    elseif input:wasPressed("down") then
+      q = q - 1
+      if q <= 0 then q = qmax end
+    elseif input:wasPressed("right") then
+      q = math.min(qmax, q + 10)
+    elseif input:wasPressed("left") then
+      q = math.max(1, q - 10)
+    end
+    if q ~= BagMenu.tossQty then
+      BagMenu.tossQty = q
+      se(5)
+    elseif input:wasPressed("a") then
+      se(5)
+      try_deposit()
+    elseif input:wasPressed("b") then
+      se(5)
+      BagMenu.mode = "list"
+    end
+    return
+  end
+  -- src/item_menu.c:1563 Task_WaitAB_RedrawAndReturnToBag
+  if BagMenu.mode == "deposit_done" then
+    if input:wasPressed("a") or input:wasPressed("b") then
+      se(5)
+      BagMenu.mode = "list"
+      clamp_cursor()
     end
     return
   end
@@ -485,15 +636,39 @@ local function handle_menu_input(input)
       BagMenu.tossQty = math.max(1, BagMenu.tossQty - 1)
       se(5)
     elseif input:wasPressed("a") then
+      se(5) -- src/item_menu.c:1528
+      BagMenu.mode = "toss_confirm"
+      BagMenu.yesNoCursor = 1
+    elseif input:wasPressed("b") then
+      se(5) -- pokefirered/src/item_menu.c:1540
+      BagMenu.mode = "list"
+    end
+    return
+  end
+  -- src/item_menu.c:1502 Task_ConfirmTossItems
+  if BagMenu.mode == "toss_confirm" then
+    if input:wasPressed("up") or input:wasPressed("down") then
+      BagMenu.yesNoCursor = (BagMenu.yesNoCursor == 1) and 2 or 1
       se(5)
+    elseif input:wasPressed("a") and BagMenu.yesNoCursor == 1 then
+      se(5)
+      BagMenu.mode = "toss_done"
+    elseif input:wasPressed("a") or input:wasPressed("b") then
+      se(5) -- src/item_menu.c:1511
+      BagMenu.mode = "list"
+    end
+    return
+  end
+  -- src/item_menu.c:1563 Task_WaitAB_RedrawAndReturnToBag
+  if BagMenu.mode == "toss_done" then
+    if input:wasPressed("a") or input:wasPressed("b") then
+      se(5)
+      local row = BagMenu.list()[BagMenu.cursor]
       if row then
         Bag.remove(BagMenu._bag, row.id, BagMenu.tossQty)
       end
       BagMenu.mode = "list"
       clamp_cursor()
-    elseif input:wasPressed("b") then
-      se(5) -- pokefirered/src/item_menu.c:1540
-      BagMenu.mode = "action"
     end
     return
   end
@@ -723,7 +898,9 @@ local function handle_menu_input(input)
         local pocket = BagMenu.currentPocket()
         if pocket == "KEY_ITEMS" or pocket == "TM_CASE" then
           BagMenu.mode = "message"
-          BagMenu.messageText = Strings("This item can't be held.")
+          -- src/item_menu.c:1635
+          BagMenu.messageText = RomText.box("gText_ItemCantBeHeld",
+            { stringVars = { ItemsData.displayName(row.id) } })
         elseif #party == 0 then
           BagMenu.mode = "message"
           BagMenu.messageText = RomText.plain("gText_ThereIsNoPokemon")
@@ -759,8 +936,10 @@ local function handle_menu_input(input)
         end)
         return
       elseif act == "TOSS" then
-        BagMenu.mode = "toss"
+        -- src/item_menu.c:1491
         BagMenu.tossQty = 1
+        BagMenu.yesNoCursor = 1
+        BagMenu.mode = ((tonumber(row.qty) or 1) == 1) and "toss_confirm" or "toss"
       elseif act == "SET" or act == "REGISTER" then
         if BagMenu._session and row then
           if BagMenu._session.registeredItem == row.id then
@@ -807,6 +986,10 @@ local function handle_menu_input(input)
     if BagMenu.cursor > #rows then
       -- src/item_menu.c:1085
       begin_exit(true, close_to_field)
+    elseif BagMenu._location == "shop" then
+      begin_sell(rows[BagMenu.cursor])
+    elseif BagMenu._location == "itempc" then
+      begin_deposit(rows[BagMenu.cursor])
     else
       BagMenu.mode = "action"
       BagMenu.actionCursor = 1
@@ -934,7 +1117,7 @@ function BagMenu.draw()
   local okC, BagChrome = pcall(require, "src.ui.game3.bag_chrome")
   local chrome = okC and BagChrome and BagChrome.ready and BagChrome.ready()
   if chrome then
-    BagChrome.drawBg(0, 0, { female = female })
+    BagChrome.drawBg(0, 0, { female = female, itemPc = BagMenu._location == "itempc" })
     if switching then
       BagChrome.drawListFrame(math.min(12, BagMenu._switch.k), female)
     end
@@ -955,9 +1138,15 @@ function BagMenu.draw()
     })
   end
 
-  if not switching then
+  if BagMenu._location == "itempc" then
+    -- src/bag.c:232 BagDrawDepositItemTextBox
+    Window.fixedStdFrame(Window.template(1, 1, 8, 2))
+    local dLabel = RomText.plain("gText_DepositItem")
+    FrlgFont.draw(dLabel, 8 + math.floor((64 - FrlgFont.measure(dLabel, { small = true })) / 2), 8 + 1,
+      { small = true, colors = FrlgFont.COLOR.NORMAL })
+  elseif not switching then
     -- src/bag.c:226
-    local pLabel = Strings(ItemsData.POCKET_LABEL[pocket] or pocket)
+    local pLabel = ItemsData.POCKET_LABEL[pocket]
     local tw = FrlgFont.measure(pLabel)
     FrlgFont.draw(pLabel, 8 + math.floor((72 - tw) / 2), 9, { colors = WIN_WHITE })
   end
@@ -980,7 +1169,8 @@ function BagMenu.draw()
       end
       local r = rows[idx]
       if not r then
-        FrlgFont.draw(Strings("CANCEL"), 97, y, { colors = FrlgFont.COLOR.NORMAL })
+        -- src/item_menu.c:645
+        FrlgFont.draw(RomText.plain("gFameCheckerText_Cancel"), 97, y, { colors = FrlgFont.COLOR.NORMAL })
       else
         local label = r.name
         if session and session.registeredItem
@@ -1005,10 +1195,11 @@ function BagMenu.draw()
   if chrome and BagMenu._arrowK and BagMenu._arrowK >= 1 then
     -- src/item_menu.c:287, 759
     local k = BagMenu._arrowK
-    if BagMenu.pocketIdx > 1 then
+    local switchArrows = BagMenu._location ~= "itempc"
+    if switchArrows and BagMenu.pocketIdx > 1 then
       BagChrome.drawArrow("left", 0 + bob(k, 8), 64)
     end
-    if BagMenu.pocketIdx < #ItemsData.BAG_POCKET_ORDER then
+    if switchArrows and BagMenu.pocketIdx < #ItemsData.BAG_POCKET_ORDER then
       BagChrome.drawArrow("right", 64 + bob(k, -8), 64)
     end
     local shown = max_showed(total)
@@ -1030,12 +1221,13 @@ function BagMenu.draw()
     end
   end
 
-  if BagMenu.mode ~= "action" and not switching then
+  if BagMenu.mode ~= "action" and BagMenu.mode ~= "deposit" and BagMenu.mode ~= "deposit_done" and not switching then
     if not chrome then
       Window.stdFrame(Window.template(5, 14, 25, 6))
     end
     local desc = sel and sel.description
-    if not sel then desc = Strings("CLOSE BAG") end
+    -- src/item_menu.c:754
+    if not sel then desc = RomText.plain("gText_CloseBag") end
     if desc then
       -- src/item_menu.c:756 (window 1 at (5, 14), x=0, y=3, maxWidth=200, linePitch=14)
       FrlgFont.draw(desc, 40, 115, { colors = WIN_WHITE, maxWidth = 200, linePitch = 14 })
@@ -1047,7 +1239,8 @@ function BagMenu.draw()
     -- Bottom left prompt window (pret bag.c: sWindowTemplates[6] = (6, 15, 14, 4))
     if sel then
       Window.stdFrame(Window.template(6, 15, 14, 4))
-      FrlgFont.draw(Strings("%s is\nselected.", (sel.name or "ITEM")), 6 * 8 + 4, 15 * 8 + 2, { maxWidth = 14 * 8, linePitch = 15, colors = FrlgFont.COLOR.NORMAL })
+      -- src/item_menu.c:1434
+      FrlgFont.draw(RomText.box("gText_Var1IsSelected", { stringVars = { sel.name } }), 6 * 8 + 4, 15 * 8 + 2, { maxWidth = 14 * 8, linePitch = 15, colors = FrlgFont.COLOR.NORMAL })
     end
 
     refresh_actions()
@@ -1062,26 +1255,70 @@ function BagMenu.draw()
       if i == BagMenu.actionCursor then
         Window.cursorPx(popX * 8 + 1, rowY)
       end
-      FrlgFont.draw(Strings(act), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(action_label(act, sel), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
-  -- Toss Quantity Pop-up
+  local text_opts = { linePitch = 15, colors = FrlgFont.COLOR.NORMAL }
+  -- src/item_menu.c:1308 InitQuantityToTossOrDeposit
   if BagMenu.mode == "toss" and sel then
-    local popX = 16
-    local popY = 10
-    local popW = 12
-    local popH = 4
-    Window.stdFrame(Window.template(popX, popY, popW, popH))
-    FrlgFont.draw(Strings("TOSS HOW MANY?"), popX * 8 + 4, popY * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(string.format("× %02d", BagMenu.tossQty), popX * 8 + 24, (popY + 2) * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    Window.stdFrame(Window.template(6, 15, 16, 4))
+    FrlgFont.draw(RomText.box("gText_TossOutHowManyStrVar1s", { stringVars = { sel.name } }), 6 * 8, 15 * 8 + 2, text_opts)
+    Window.stdFrame(Window.template(24, 15, 5, 4))
+    -- src/item_menu.c:1326
+    local times = RomText.plain("gText_TimesStrVar1", { stringVars = { string.format("%03d", BagMenu.tossQty) } })
+    FrlgFont.draw(times, 24 * 8 + 4, 15 * 8 + 10, { small = true, colors = FrlgFont.COLOR.NORMAL })
+  end
+  -- src/item_menu.c:1502 Task_ConfirmTossItems
+  if BagMenu.mode == "toss_confirm" and sel then
+    Window.stdFrame(Window.template(6, 15, 15, 4))
+    FrlgFont.draw(RomText.box("gText_ThrowAwayStrVar2OfThisItemQM",
+      { stringVars = { [2] = tostring(BagMenu.tossQty) } }), 6 * 8, 15 * 8 + 2, text_opts)
+    -- src/bag.c:296 BagCreateYesNoMenuBottomRight
+    Window.stdFrame(Window.template(23, 15, 6, 4))
+    FrlgFont.draw(RomText.plain("gText_Yes"), 23 * 8 + 8, 15 * 8 + 2, text_opts)
+    FrlgFont.draw(RomText.plain("gText_No"), 23 * 8 + 8, 15 * 8 + 18, text_opts)
+    Window.cursorPx(23 * 8, 15 * 8 + 2 + (BagMenu.yesNoCursor == 2 and 16 or 0))
+  end
+  -- src/item_menu.c:1308 InitQuantityToTossOrDeposit
+  if BagMenu.mode == "deposit" and sel then
+    Window.fixedStdFrame(Window.template(6, 15, 16, 4))
+    FrlgFont.draw(RomText.box("gText_DepositHowManyStrVars1", { stringVars = { sel.name } }), 6 * 8, 15 * 8 + 2, text_opts)
+    Window.stdFrame(Window.template(24, 15, 5, 4))
+    FrlgFont.draw(RomText.plain("gText_TimesStrVar1", { stringVars = { string.format("%03d", BagMenu.tossQty) } }),
+      24 * 8 + 4, 15 * 8 + 10, { small = true, letterSpacing = 1, colors = FrlgFont.COLOR.NORMAL })
+    -- src/item_menu.c:796 CreateArrowPair_QuantitySelect
+    local okB, BagChromeQ = pcall(require, "src.ui.game3.bag_chrome")
+    if okB and BagChromeQ then
+      local k = BagMenu._depositK or 0
+      BagChromeQ.drawArrow("up", 212 - 8, 120 - 8 + bob(k + 1, 8))
+      BagChromeQ.drawArrow("down", 212 - 8, 152 - 8 + bob(k + 1, -8))
+    end
+  end
+  -- src/item_menu.c:2012
+  if BagMenu.mode == "deposit_done" and BagMenu._depositText then
+    Window.fixedStdFrame(Window.template(6, 15, 23, 4))
+    FrlgFont.draw(BagMenu._depositText, 6 * 8, 15 * 8 + 2, text_opts)
+  end
+  -- src/item_menu.c:1552 Task_TossItem_Yes
+  if BagMenu.mode == "toss_done" and sel then
+    Window.stdFrame(Window.template(6, 15, 23, 4))
+    FrlgFont.draw(RomText.box("gText_ThrewAwayStrVar2StrVar1s",
+      { stringVars = { sel.name, tostring(BagMenu.tossQty) } }), 6 * 8, 15 * 8 + 2, text_opts)
   end
 
   -- In-bag message modal
+  -- src/item_menu.c:1021 OpenBagWindow(5), src/menu_helpers.c:24
   if BagMenu.mode == "message" and BagMenu.messageText then
-    Window.stdFrame(Window.template(5, 14, 25, 6))
-    local wrapped = FrlgFont.wrap(BagMenu.messageText, 192)
-    FrlgFont.draw(wrapped, 40, 115, { maxWidth = 192, linePitch = 15, colors = FrlgFont.COLOR.NORMAL })
+    local Chrome = require("src.ui.game3.chrome")
+    Window.dialogueFrame()
+    local w = Chrome.DLG_W * 8
+    FrlgFont.draw(FrlgFont.wrap(BagMenu.messageText, w), Chrome.DLG_LEFT * 8, Chrome.DLG_TOP * 8 + 1,
+      { maxWidth = w, colors = FrlgFont.COLOR.NORMAL })
+  end
+
+  if BagMenu.mode == "sell" and BagMenu._sell then
+    BagMenu._sell:draw()
   end
 
   local level, curtain = 0, 0

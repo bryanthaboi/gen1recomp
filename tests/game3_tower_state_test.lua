@@ -30,6 +30,18 @@ local Cache = require("tests.game3_cache")
 
 -- pokefirered/src/trainer_tower_sets.c:8956 gTrainerTowerFloors is cache data
 Cache.mount("meta.json")
+local romBundle = Cache.bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
 Tower.resetPack()
 local havePack = Tower.floors(Tower.CHALLENGE_TYPE.SINGLE) ~= nil
 if not havePack then
@@ -37,7 +49,7 @@ if not havePack then
 end
 
 local store = Flags.newStore()
-package.loaded["src.core.game3.scripting.space"] = { store = store }
+package.loaded["src.core.game3.scripting.space"] = { store = store, ensureBundle = function() return romBundle end }
 
 local adapters = { log = function() end }
 

@@ -727,7 +727,7 @@ do
   st.player.trapped = true
   st.player.expTrapTurns = 3
   st.player.expTrapSource = st.enemy
-  st.player.expTrapMoveName = "WRAP"
+  st.player.expTrapMove = 35
 
   local ad = setup_test_battle(st)
   local out = {}
@@ -738,6 +738,7 @@ do
   check(st.playerSide.spikes == 0, "Rapid Spin removed Spikes in the same use")
   local joined = table.concat(out, " || ")
   local iWrap = joined:find("got free of", 1, true)
+  check(joined:find("WRAP!", 1, true) ~= nil, "Wrap freed message names WRAP")
   local iSeed = joined:find("shed\nLEECH SEED!", 1, true)
   local iSpikes = joined:find("blew away\nSPIKES!", 1, true)
   check(iWrap ~= nil, "Wrap freed message printed")

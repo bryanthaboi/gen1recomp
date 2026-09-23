@@ -8,6 +8,10 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
 love = love or require("tests.love_stub")
+require("tests.game3_cache").stubSpeciesNames()
+
+local BattleText = require("src.core.game3.battle.battle_text")
+BattleText.get = function(id) return tostring(id) end
 
 local Secondary = require("src.core.game3.battle.effects.secondary")
 
@@ -25,6 +29,7 @@ local function adapter(st)
     displayName = function(_, b) return b.name or "MON" end,
     playAnim = function() end,
     say = function() end,
+    sayText = function() end,
     roll = function(_, lo) return lo end,
   }
 end

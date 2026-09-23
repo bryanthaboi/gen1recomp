@@ -109,11 +109,22 @@ return function(game)
     if PcMenu.isOpen and PcMenu.isOpen() then opened = true break end
   end
   if not result(opened, "talking to the PC opened the PC menu") then return finish() end
+  local Audio = require("src.core.game3.audio")
+  for _ = 1, 4000 do
+    if not Audio.isSePlaying() and not Message.isOpen() then break end
+    if Message.isOpen() and not Audio.isSePlaying() then U.tap(game, "a") end
+    U.wait(4)
+  end
   U.wait(20)
   U.shot(game, DIR .. "/stitchuif_boxsend_01_pc_menu.png")
 
   -- pokefirered/src/pokemon_storage_system_tasks.c:426
   U.tap(game, "a")
+  for _ = 1, 4000 do
+    if PcMenu.isOpen() and PcMenu.mode == "storage_menu" then break end
+    if Message.isOpen() and not Audio.isSePlaying() then U.tap(game, "a") end
+    U.wait(4)
+  end
   U.wait(30)
   result(PcMenu.mode == "storage_menu", "SOMEONE'S PC opened the storage menu")
   for _ = 1, 2 do
@@ -143,17 +154,25 @@ return function(game)
   result(getFlag(FLAG_SHOWN_BOX_WAS_FULL_MESSAGE) == false,
     "and cleared FLAG_SHOWN_BOX_WAS_FULL_MESSAGE")
 
-  for _ = 1, 10 do
-    if not (PcMenu.isOpen and PcMenu.isOpen()) then break end
-    U.tap(game, "b")
-    U.wait(24)
+  local idle = 0
+  for _ = 1, 120 do
+    local busy = (PcMenu.isOpen and PcMenu.isOpen()) or Message.isOpen()
+      or (Space.vm and Space.vm:isRunning())
+    if not busy then
+      idle = idle + 1
+      if idle >= 30 then break end
+      U.wait(1)
+    else
+      idle = 0
+      if PcMenu.isOpen and PcMenu.isOpen() then
+        U.tap(game, "b")
+      elseif Message.isOpen() then
+        U.tap(game, "a")
+      end
+      U.wait(20)
+    end
   end
-  for _ = 1, 20 do
-    if not Message.isOpen() then break end
-    U.tap(game, "a")
-    U.wait(20)
-  end
-  U.wait(60)
+  if not result(idle >= 30, "the PC logged off and its script ended before the battle") then return finish() end
 
   local ok = BattleBridge.startWild(Runtime._mod, game, { species = MAGIKARP, level = 5 },
     { fade = false })

@@ -70,5 +70,58 @@ return function(game)
   SaveMenu.cancel()
   U.wait(20)
 
+  local RomText = require("src.core.game3.rom_text")
+  local StartMenu = require("src.ui.game3.start_menu")
+  StartMenu.show({ session = Runtime.getSession(), game = game })
+  U.wait(10)
+  U.shot(game, DIR .. "/start_menu_rom_labels.png")
+  local labels = {}
+  for _, e in ipairs(StartMenu.ENTRIES) do labels[e.id] = e.label end
+  result(labels.bag == RomText.at("sStartMenuActionTable", 2) and labels.trainer == Runtime.getSession().name,
+    "start menu labels come from sStartMenuActionTable (" .. tostring(labels.bag) .. ", " .. tostring(labels.trainer) .. ")")
+  StartMenu.close(true)
+  U.wait(10)
+
+  local OptionMenu = require("src.ui.game3.option_menu")
+  OptionMenu.show({ session = Runtime.getSession(), game = game })
+  U.wait(10)
+  local function top() return OptionMenu._pages[#OptionMenu._pages] end
+  local function cursor_to(id)
+    for _ = 1, 20 do
+      local p = top()
+      local row = p.rows[p.index]
+      if row and row.id == id then return true end
+      U.tap(game, "down")
+      U.wait(4)
+    end
+    return false
+  end
+  result(cursor_to("buttonMode"), "the cursor reaches the BUTTON MODE row")
+  local p = top()
+  local buttonRow = p.rows[p.index]
+  local onScreen = p.index > p.scroll and p.index <= p.scroll + 7
+  local buttonValue = buttonRow and buttonRow.value and buttonRow.value(OptionMenu._ctx)
+  result(onScreen and buttonRow.label == RomText.at("sOptionMenuItemsNames", 4)
+    and buttonValue == RomText.at("sButtonTypeOptions", 0),
+    "the BUTTON MODE row on screen reads sOptionMenuItemsNames / sButtonTypeOptions (" .. tostring(buttonRow and buttonRow.label)
+      .. " " .. tostring(buttonValue) .. ")")
+  U.shot(game, DIR .. "/option_menu_button_mode_row.png")
+
+  result(cursor_to("group.battle"), "the cursor reaches BATTLE OPTIONS")
+  U.tap(game, "a")
+  U.wait(10)
+  local battle = top()
+  local r1, r2 = battle.rows[1], battle.rows[2]
+  result(#OptionMenu._pages == 2 and r1 and r1.label == RomText.at("sOptionMenuItemsNames", 1)
+      and r2 and r2.label == RomText.at("sOptionMenuItemsNames", 2)
+      and r1.value(OptionMenu._ctx) == RomText.at("sBattleSceneOptions", 0),
+    "BATTLE OPTIONS lists the ROM BATTLE SCENE / BATTLE STYLE rows (" .. tostring(r1 and r1.label)
+      .. ", " .. tostring(r2 and r2.label) .. ")")
+  U.shot(game, DIR .. "/option_menu_rom_labels.png")
+  U.tap(game, "b")
+  U.wait(6)
+  OptionMenu.close()
+  U.wait(10)
+
   love.event.quit(fails == 0 and 0 or 1)
 end

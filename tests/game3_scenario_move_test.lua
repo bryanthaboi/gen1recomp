@@ -2,6 +2,11 @@
 -- src/data/battle_moves.h:432, src/data/battle_moves.h:679, src/pokemon.c:2374, src/pokemon.c:2385, src/battle_script_commands.c:1122, src/battle_script_commands.c:1134, src/battle_script_commands.c:1199, src/battle_script_commands.c:1209, src/battle_script_commands.c:1557, battle_moves.h:458
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local GameCache = require("tests.game3_cache")
+if not GameCache.bundle() then
+  print("[skip] game3 scenario move: " .. tostring(GameCache.reason))
+  os.exit(0)
+end
 
 local failed = 0
 local function check(cond, msg)

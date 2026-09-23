@@ -3,7 +3,6 @@
 local State = require("src.core.game3.battle.state")
 local Rules = require("src.core.game3.battle.rules")
 local ModRuntime = require("src.mods.Runtime")
-local Strings = require("src.core.Strings")
 
 local Adapter = {}
 
@@ -56,6 +55,36 @@ local function id_of(battler)
   return State.idOf(battler)
 end
 Adapter.idOf = id_of
+
+-- src/battle_message.c:1523
+function Adapter.fill(st, extra)
+  local f = {}
+  if st then
+    f.trainer = not st.wild
+    f.link = st.link or nil
+    f.double = st.double or nil
+    f.unionRoom = st.unionRoom or nil
+    f.linkOpponent = (st.link and not st.unionRoom) or nil
+    f.ghost = st.ghostBattle or nil
+    f.ghostUnveiled = st.ghostUnveiled or nil
+    f.legendary = st.legendary or nil
+    f.oldMan = st.oldManTutorial or nil
+    f.playerName = st.playerName
+    f.linkPlayerName = st.playerName
+    f.linkOpponent1Name = st.peerName
+    f.trainer1Class = (st.trainerClassName ~= nil and st.trainerClassName ~= "") and st.trainerClassName
+      or st.trainerClass
+    f.trainer1Name = st.trainerName
+    if st.unionRoom then
+      -- src/battle_message.c:2039
+      f.trainer1Class = require("src.core.game3.link.battle").unionRoomTrainerClass()
+      -- src/battle_message.c:2058
+      f.trainer1Name = st.peerName
+    end
+  end
+  for k, v in pairs(extra or {}) do f[k] = v end
+  return f
+end
 
 function Adapter.new(battleState, sayFn)
   local a = {
@@ -279,15 +308,21 @@ function Adapter.new(battleState, sayFn)
     end
   end
   function a:displayName(battler) return State.displayName(battler) end
-  function a:say(text, ...)
-    if select("#", ...) > 0 then
-      text = string.format(tostring(text), ...)
-    end
+  function a:say(text, id)
     text = tostring(text or "")
-    self:pushEvent({ kind = "msg", text = text })
+    self:pushEvent({ kind = "msg", text = text, id = id })
     self._say(text)
   end
-  function a:sayFail() self:say(Strings("But it failed!")) end
+  function a:sayText(id, fill)
+    local BattleText = require("src.core.game3.battle.battle_text")
+    fill = Adapter.fill(self._st, fill)
+    local text = BattleText.get(id, fill)
+    self:pushEvent({ kind = "msg", text = text, id = (BattleText.key(id, fill)) })
+    self._say(text)
+    return text
+  end
+  -- src/battle_message.c:336
+  function a:sayFail() self:sayText("STRINGID_BUTITFAILED") end
   function a:rng() return self._st.rng or math.random end
   function a:roll(lo, hi)
     local ok, v = pcall(self:rng(), lo, hi)

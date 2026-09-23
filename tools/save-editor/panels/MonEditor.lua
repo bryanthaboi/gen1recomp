@@ -453,7 +453,7 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     -- Nature and Friendship
     local SummaryData = require("src.core.game3.summary_data")
     local natureIdx = mon.nature or ((mon.personality or 0) % 25)
-    local natureName = SummaryData.NATURES[natureIdx] or "HARDY"
+    local natureName = SummaryData.NATURES[natureIdx]
     Kit.text("tiny", "NATURE " .. natureName, cx, extraY, PAL.text)
     if Kit.stepper(cx + 140 * s, extraY, 28 * s, row, "<", { font = "small" }) then
       Ops.setNature(S, mon, (natureIdx - 1 + 25) % 25)

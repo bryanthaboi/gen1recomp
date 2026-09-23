@@ -133,7 +133,8 @@ function StepEvents.onStepTaken(session, game)
   StepEvents._totalSteps = StepEvents._totalSteps + 1
 
   -- 1. Happiness Counter (VAR_HAPPINESS_STEP_COUNTER % 128)
-  local hapSteps = (tonumber(session.vars[0x403F] or session.happinessSteps) or 0) + 1
+  -- pokefirered/src/field_control_avatar.c:687 UpdateHappinessStepCounter
+  local hapSteps = (tonumber(session.vars[0x4021] or session.happinessSteps) or 0) + 1
   if hapSteps >= 128 then
     hapSteps = 0
     -- pokefirered/src/field_control_avatar.c:699
@@ -142,7 +143,7 @@ function StepEvents.onStepTaken(session, game)
       Pokemon.adjustFriendship(mon, Pokemon.FRIENDSHIP_EVENT_WALKING, ctx)
     end
   end
-  session.vars[0x403F] = hapSteps
+  session.vars[0x4021] = hapSteps
   session.happinessSteps = hapSteps
 
   -- pokefirered/src/field_control_avatar.c:217
@@ -288,11 +289,11 @@ end
 
 function StepEvents.onRepelStep(session, game)
   -- 5. Repel Step Counter (VAR_REPEL_STEP_COUNT)
-  local repelSteps = tonumber(session.repelSteps or session.vars[0x4021]) or 0
+  local repelSteps = tonumber(session.repelSteps or session.vars[0x4020]) or 0
   if repelSteps > 0 then
     repelSteps = repelSteps - 1
     session.repelSteps = repelSteps
-    session.vars[0x4021] = repelSteps
+    session.vars[0x4020] = repelSteps
 
     if repelSteps == 0 then
       push_event({

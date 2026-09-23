@@ -64,13 +64,17 @@ return function(game)
 
   local function sheetDraws()
     local img = BallOpen._image
-    local n = 0
+    local n, any = 0, 0
     local realDraw = love.graphics.draw
     love.graphics.draw = function(i, ...)
+      any = any + 1
       if img and i == img then n = n + 1 end
       return realDraw(i, ...)
     end
-    U.wait(1)
+    for _ = 1, 400 do
+      U.wait(1)
+      if any > 0 then break end
+    end
     love.graphics.draw = realDraw
     return n
   end
@@ -157,7 +161,7 @@ return function(game)
   U.shot(game, DIR .. "/u9c_04_breakout_burst.png")
   local logStart = #Ui._log + 1
   result(waitFor(function() return b.finished end, 60), "u9c breakout anim signalled end")
-  result(waitFor(function() return logHas("Aww! It appeared to be caught!", logStart) end, 30),
+  result(waitFor(function() return logHas("Aww!\nIt appeared to be caught!", logStart) end, 30),
     "u9c breakout text printed after the anim")
   result(waitFor(function()
     return BallOpen.monBlend("enemy") == 0 and Anim.present("enemy").scale == 1

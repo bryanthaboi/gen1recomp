@@ -1894,7 +1894,7 @@ function Ops.setNature(S, mon, natureId)
   natureId = clamp(math.floor(tonumber(natureId) or 0), 0, 24)
   MonOps.setNature(S.data, mon, natureId, Gen.ofState(S))
   local SummaryData = require("src.core.game3.summary_data")
-  local name = SummaryData.NATURES[natureId] or tostring(natureId)
+  local name = SummaryData.NATURES[natureId]
   return Ops.mark(S, ("%s nature set to %s"):format(mon.species, name))
 end
 

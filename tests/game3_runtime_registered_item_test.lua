@@ -4,6 +4,7 @@
 -- pokefirered/src/item_use.c:159 SetUpItemUseOnFieldCallback
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_runtime_registered_item_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -43,7 +44,7 @@ package.loaded["src.core.game3.vs_seeker"] = {
 }
 
 local ItemsData = require("src.core.game3.items_data")
-ItemsData.install(nil)
+require("tests.fixture_data.game3_items").install()
 local Bag = require("src.core.game3.bag")
 local BagMenu = require("src.ui.game3.bag_menu")
 local ItemUse = require("src.core.game3.item_use")
@@ -84,7 +85,7 @@ local s1 = new_session(ITEM_POWDER_JAR)
 s1.berryPowder = 1234
 press_select(s1)
 -- pokefirered/src/strings.c:202 gText_PowderQty
-check(fieldMessages[1] == Strings("POWDER QTY: %d", 1234),
+check(fieldMessages[1] == "POWDER QTY: 1234",
   "the jar's count is on screen (got " .. tostring(fieldMessages[1]) .. ")")
 check(Bag.get(s1.bag, ITEM_POWDER_JAR) == 1, "and the jar is not consumed")
 
@@ -124,7 +125,7 @@ s5.map = "FR_PLAYERS_HOUSE_1F"
 Player.biking = false
 press_select(s5)
 check(Player.biking == false, "indoors the bike is refused")
-check(fieldMessages[1] == Strings("OAK: This isn't the\ntime to use that!"),
+check(fieldMessages[1] == "OAK: RED!\nThis isn't the time to use that!",
   "and the refusal does print (got " .. tostring(fieldMessages[1]) .. ")")
 
 if failed > 0 then

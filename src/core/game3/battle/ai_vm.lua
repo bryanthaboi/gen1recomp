@@ -7,14 +7,7 @@ local AiVm = {}
 local function resolve_move_id(mv)
   if mv == nil or mv == 0 or mv == "" then return 0 end
   if type(mv) == "number" then return mv end
-  local Moves = require("src.core.game3.battle.moves")
-  -- name → numeric id
-  if Moves.BY_NUM then
-    for id, name in pairs(Moves.BY_NUM) do
-      if name == mv then return id end
-    end
-  end
-  return 0
+  return require("src.core.game3.battle.moves").numForName(mv) or 0
 end
 
 function AiVm.new(opts)
@@ -42,10 +35,7 @@ function AiVm.new(opts)
 
   function vm:jump(name, ip)
     local body = self.pack and self.pack.scripts and self.pack.scripts[name]
-    if not body then
-      self.done = true
-      return
-    end
+    if not body then error("battle AI: no script " .. tostring(name) .. " in the pack") end
     self.scriptName = name
     self.ops = body
     self.ip = ip or 1

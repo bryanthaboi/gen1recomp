@@ -259,17 +259,16 @@ if battleAnimsOnly then
 end
 
 if battleAiOnly then
+  local Rom = require("src.import.gba.rom")
   local AiExtract = require("src.import.gba.battle_ai_extract")
   local outRoot = os.getenv("HOME")
     and (os.getenv("HOME") .. "/.local/share/love/pokemon-love2d/firered")
     or "."
   local packCache = FileIO.makeCache(outRoot)
+  local rom = assert(Rom.open(imports, "firered"))
   print("Extracting battle AI scripts →", outRoot .. "/data/generated/gba/battle_ai")
-  local detail = assert(AiExtract.run({
-    cache = packCache,
-    cacheRoot = "data/generated/gba",
-    pretRoot = os.getenv("POKEFIRERED"),
-  }))
+  local detail = AiExtract.run(rom, packCache, { cacheRoot = "data/generated/gba" })
+  rom:clearCache()
   imports:_close()
   print("OK battle AI", detail.scriptCount or "?", "scripts →", detail.path or detail.root)
   os.exit(0)

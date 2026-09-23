@@ -102,7 +102,7 @@ return function(game)
   peer:update(0)
   Link.attach(host)
   result(host:isReady(), "a wireless session is up")
-  LT.startMenu()
+  LT.startMenu({ screen = false })
   peer:update(0)
   peer:take(LT.MSG.PARTY)
   U.wait(30)
@@ -111,17 +111,36 @@ return function(game)
   U.wait(20)
   U.tap(game, "a")
   local guard = 0
-  while guard < 600 and not LinkMenu.isOpen() do
+  while guard < 300 and not (Space.vm and Space.vm:isRunning()) do
     peer:update(0)
-    U.wait(10)
-    guard = guard + 10
-    if guard % 120 == 0 then U.tap(game, "a") end
+    U.wait(1)
+    guard = guard + 1
+  end
+  for _ = 1, 300 do
+    peer:update(0)
+    U.wait(1)
+    if LinkMenu.isOpen() then break end
+    local Message = package.loaded["src.ui.game3.message"]
+    if Message and Message.isOpen and Message.isOpen() then break end
+  end
+  -- pokefirered/src/link.c:243
+  result(LinkMenu.isOpen() == false,
+    "with a cable session the monitor still prints the not-connected message")
+  for _ = 1, 8 do
+    U.tap(game, "a")
+    U.wait(20)
+  end
+
+  -- pokefirered/src/wireless_communication_status_screen.c:195 ShowWirelessCommunicationScreen
+  LinkMenu.show({})
+  for _ = 1, 120 do
+    peer:update(0)
+    U.wait(1)
+    if LinkMenu.isOpen() and #LinkMenu.rows > 0 then break end
   end
   print("[driver] screen open=" .. tostring(LinkMenu.isOpen())
     .. " rows=" .. tostring(#LinkMenu.rows))
-  if not result(LinkMenu.isOpen(),
-      "facing the monitor with a session opens the wireless communication screen") then
-    U.shot(game, DIR .. "/link_wireless_99_no_screen.png")
+  if not result(LinkMenu.isOpen(), "ShowWirelessCommunicationScreen puts the status screen up") then
     Link.reset()
     return finish()
   end
@@ -141,7 +160,9 @@ return function(game)
 
   U.tap(game, "a")
   U.wait(60)
-  result(LinkMenu.isOpen() == false, "A closes the screen and hands the script back")
+  result(LinkMenu.isOpen() == false, "A closes the screen")
+  local Stack = require("src.ui.game3.stack")
+  result(Stack.top() == nil, "nothing is left over the field (top=" .. tostring(Stack.top() and Stack.top().id) .. ")")
   U.shot(game, DIR .. "/link_wireless_05_back_on_the_floor.png")
 
   Link.reset()

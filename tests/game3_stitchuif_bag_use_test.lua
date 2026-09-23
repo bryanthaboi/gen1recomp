@@ -103,7 +103,7 @@ local exiting = use_from_bag(s1, "REPEL", "ITEMS")
 check(exiting == false, "repel does not exit the bag")
 check(BagMenu.isOpen() == true, "bag stays open")
 check(BagMenu.mode == "message", "bag is in message mode (got " .. tostring(BagMenu.mode) .. ")")
-check(BagMenu.messageText == Strings("The repelling effect wore\non for a while."),
+check(BagMenu.messageText == "RED used the\nREPEL.",
   "repel text is on screen (got " .. tostring(BagMenu.messageText) .. ")")
 check(s1.repelSteps == 100, "repel step counter armed")
 check(Bag.get(s1.bag, "REPEL") == 1, "one REPEL consumed")
@@ -118,7 +118,7 @@ local s2 = new_session()
 Bag.add(s2.bag, "SILPH_SCOPE", 1)
 use_from_bag(s2, "SILPH_SCOPE", "KEY_ITEMS")
 check(BagMenu.mode == "message", "refusal shows in the bag")
-check(BagMenu.messageText == Strings("OAK: This isn't the\ntime to use that!"),
+check(BagMenu.messageText == "OAK: RED!\nThis isn't the time to use that!",
   "OAK refusal text (got " .. tostring(BagMenu.messageText) .. ")")
 check(Bag.get(s2.bag, "SILPH_SCOPE") == 1, "key item not consumed")
 BagMenu.close()
@@ -128,7 +128,7 @@ local s3 = new_session()
 Bag.add(s3.bag, "ESCAPE_ROPE", 1)
 use_from_bag(s3, "ESCAPE_ROPE", "ITEMS")
 check(BagMenu.mode == "message", "escape refusal shows in the bag")
-check(BagMenu.messageText == Strings("OAK: This isn't the\ntime to use that!"),
+check(BagMenu.messageText == "OAK: RED!\nThis isn't the time to use that!",
   "escape refusal text")
 check(Bag.get(s3.bag, "ESCAPE_ROPE") == 1, "escape rope not consumed")
 BagMenu.close()
@@ -222,7 +222,7 @@ local bikeExit = use_from_bag(s9, 360, "KEY_ITEMS")
 check(bikeExit == false, "a refused bike does not exit the bag")
 check(BagMenu.isOpen() == true and BagMenu.mode == "message",
   "the bike refusal keeps the bag open")
-check(BagMenu.messageText == Strings("OAK: This isn't the\ntime to use that!"),
+check(BagMenu.messageText == "OAK: RED!\nThis isn't the time to use that!",
   "the refusal text is the bag message (got " .. tostring(BagMenu.messageText) .. ")")
 check(#fieldMessages == 0, "and nothing was printed on the field")
 BagMenu.close()

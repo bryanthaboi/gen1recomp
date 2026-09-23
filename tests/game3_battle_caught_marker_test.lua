@@ -1,4 +1,5 @@
 -- Unit tests for Issue #2313: FireRed "Caught Pokémon" Poké Ball marker on opponent's battle HUD
+require("tests.game3_cache").mountOrSkip("game3_battle_caught_marker_test")
 
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")

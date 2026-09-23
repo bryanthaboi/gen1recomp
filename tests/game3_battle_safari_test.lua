@@ -226,7 +226,7 @@ do
   play(1, st)
   eq(st.safariState.balls, 2, "one ball spent")
   eq(session.safari.balls, 2, "session.safari.balls follows")
-  check(log_has("used\nthe"), "used the SAFARI BALL line")
+  check(log_has(" used\nSAFARI BALL!"), "used the SAFARI BALL line")
   Battle.abort()
 end
 

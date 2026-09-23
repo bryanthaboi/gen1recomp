@@ -102,6 +102,9 @@ end
 check(target ~= nil, "DIG is on the action list")
 while target and PartyMenu.actionCursor ~= target do press("down") end
 press("a")
+-- pokefirered/src/party_menu.c:3999 Task_HandleFieldMoveExitAreaYesNoInput
+check(PartyMenu.mode == "yesno", "DIG asks YES/NO first")
+press("a")
 if PartyMenu.open then PartyMenu.close() end
 Field.executeFieldMove = realExec
 
@@ -119,9 +122,6 @@ eq(Player.cellY, ESCAPE.y, "and its row")
 
 print("[test] 2b. the real executeFieldMove hands payload.warp on")
 enterCave()
-local FieldEffects = require("src.core.game3.field_effects")
-local realSpin = FieldEffects.startWarpSpin
-FieldEffects.startWarpSpin = function(_, cb) cb() end
 session.party = { mon }
 mon.hp, mon.status = 1, "PSN"
 Field.executeFieldMove({ action = "dig", warp = ESCAPE })
@@ -130,7 +130,26 @@ for _ = 1, 300 do
   if not ShowMon.isActive() then break end
   ShowMon.step()
 end
-FieldEffects.startWarpSpin = realSpin
+local Fade = require("src.ui.game3.fade")
+local CaveTransition = require("src.ui.game3.cave_transition")
+local caveKind = nil
+local realCaveStart = CaveTransition.start
+CaveTransition.start = function(kind, ...)
+  caveKind = kind
+  return realCaveStart(kind, ...)
+end
+-- pokefirered/src/fldeff_dig.c:39 StartDigFieldEffect
+local Task = require("src.core.game3.task")
+local Warp = require("src.core.game3.warp")
+for _ = 1, 900 do
+  if not Warp.isBusy() then break end
+  Task.update(1 / 60)
+  Fade.tick(1 / 60)
+  CaveTransition.update(1 / 60)
+end
+CaveTransition.start = realCaveStart
+-- pokefirered/src/fldeff_flash.c:236 TryDoMapTransition
+eq(caveKind, "exit", "DIG out of the cave played FlashTransition_Exit")
 eq(session.map, TOWN, "executeFieldMove reached respawnAtHeal with payload.warp")
 eq(Player.cellX, ESCAPE.x, "and landed on the escape warp's column")
 eq(Player.cellY, ESCAPE.y, "and its row")

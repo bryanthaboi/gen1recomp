@@ -3767,7 +3767,7 @@ local function modalPanel(m, w, h)
   local px = math.floor((m.W - pw) / 2)
   local py = math.floor((m.H - ph) / 2)
   modalRect.x, modalRect.y, modalRect.w, modalRect.h = px, py, pw, ph
-  if amt < 1 and love.graphics and love.graphics.push then
+  if amt < 1 and not modalTransform and love.graphics and love.graphics.push then
     local s = 0.96 + 0.04 * amt
     love.graphics.push()
     love.graphics.translate(m.W / 2, m.H / 2)
@@ -3997,31 +3997,63 @@ local function buildPrompt(imp, m, spec)
   end
 end
 
-local function buildConfirmModal(imp, m)
-  local c = imp._modConfirm
+local function buildConfirmModal(imp, m, spec)
+  local c = spec or imp._modConfirm
+  local function close()
+    if spec then spec.close() else imp._modConfirm = nil end
+  end
   local pad = math.floor(22 * m.s)
   local w = math.floor(520 * m.s)
-  local lineH = Kit.textHeight("small") + math.floor(4 * m.s)
-  local h = pad + Kit.textHeight("stat") + math.floor(12 * m.s)
-    + #(c.lines or {}) * lineH + math.floor(12 * m.s) + m.btnH + pad
+  local textW = math.floor(math.min(w, m.W - 2 * m.pad)) - 2 * pad
+  local paraGap = math.floor(4 * m.s)
+  local titleH = Kit.wrapHeight("stat", c.title or Strings("Confirm"), textW)
+  local bodyH = 0
+  for _, line in ipairs(c.lines or {}) do
+    bodyH = bodyH + Kit.wrapHeight("small", line, textW) + paraGap
+  end
+  local h = pad + titleH + math.floor(12 * m.s)
+    + bodyH + math.floor(12 * m.s) + m.btnH + pad
+  if c.toggle then h = h + m.btnH + math.floor(10 * m.s) end
   local px, py, pw = modalPanel(m, w, h)
   local cy = py + pad
-  Kit.text("stat", c.title or Strings("Confirm"), px + pad, cy, PAL.heading)
-  cy = cy + Kit.textHeight("stat") + math.floor(12 * m.s)
+  cy = cy + Kit.textWrapped("stat", c.title or Strings("Confirm"), px + pad, cy,
+    pw - 2 * pad, PAL.heading)
+  cy = cy + math.floor(12 * m.s)
   for _, line in ipairs(c.lines or {}) do
-    Kit.text("small", Kit.ellipsize("small", line, pw - 2 * pad),
-      px + pad, cy, PAL.detail)
-    cy = cy + lineH
+    cy = cy + Kit.textWrapped("small", line, px + pad, cy, pw - 2 * pad,
+      PAL.detail) + paraGap
   end
   cy = cy + math.floor(12 * m.s)
   local gap = math.floor(10 * m.s)
+  if c.toggle then
+    local t = c.toggle
+    local rw = pw - 2 * pad
+    btn(imp, px + pad, cy, rw, m.btnH, "confirm-toggle", "", {
+      face = "tab",
+      action = function()
+        t.on = not t.on
+        if t.set then t.set(t.on) end
+      end,
+    })
+    local box = math.floor(22 * m.s)
+    local bx, by = px + pad + gap, cy + (m.btnH - box) / 2
+    Theme.strokeRounded(bx, by, box, box, t.on and PAL.green or PAL.line, 0.8, 1, 4)
+    if t.on then
+      require("src.ui.kit.Icons").draw("check", bx + 2, by + 2, box - 4, PAL.green)
+    end
+    Kit.text("small", Kit.ellipsize("small", t.label, rw - box - 3 * gap),
+      bx + box + gap, cy + (m.btnH - Kit.textHeight("small")) / 2, PAL.text)
+    cy = cy + m.btnH + gap
+  end
   local halfW = math.floor((pw - 2 * pad - gap) / 2)
   btn(imp, px + pad, cy, halfW, m.btnH, "confirm-yes",
     c.yesLabel or Strings("OK"), {
       kind = "primary", font = "small",
       action = function()
-        imp._modConfirm = nil
-        if c.indexEntry then
+        close()
+        if c.onYes then
+          c.onYes()
+        elseif c.indexEntry then
           imp:_findInstall(c.indexEntry)
         elseif c.kind == "cartPins" then
           imp:_installCartPins(c.version, c.id)
@@ -4041,8 +4073,11 @@ local function buildConfirmModal(imp, m)
       end,
     })
   btn(imp, px + pad + halfW + gap, cy, halfW, m.btnH, "confirm-no",
-    Strings("Cancel"), { font = "small",
-      action = function() imp._modConfirm = nil end })
+    c.noLabel or Strings("Cancel"), { font = "small",
+      action = function()
+        close()
+        if c.onNo then c.onNo() end
+      end })
 end
 
 -- A body of text, paginated rather than scrolled (release notes, mod
@@ -5426,10 +5461,17 @@ local function buildSettingsModal(imp, m)
   local pad, gap = math.floor(18 * m.s), math.floor(8 * m.s)
   local px, py, pw, ph = modalPanel(m, math.floor(600 * m.s),
     math.floor(math.min(m.H - 2 * m.pad, m.H * 0.92)))
+  if model.confirm then Kit.blockClicks = true end
   local x, cy, width = px + pad, py + pad, pw - 2 * pad
   Kit.textBold("title", Strings("Settings"), x, cy, PAL.heading)
-  Kit.text("small", Strings("Saved automatically"), x,
-    cy + Kit.textHeight("title") + math.floor(3 * m.s), PAL.muted)
+  local subtitleW = width - m.btnH - gap
+  if model.flash then
+    Kit.text("small", Kit.ellipsize("small", model.flash, subtitleW), x,
+      cy + Kit.textHeight("title") + math.floor(3 * m.s), PAL.green)
+  else
+    Kit.text("small", Strings("Saved automatically"), x,
+      cy + Kit.textHeight("title") + math.floor(3 * m.s), PAL.muted)
+  end
   btn(imp, x + width - m.btnH, cy, m.btnH, m.btnH, "settings-close", "", {
     face = "invert", icon = "x", action = function() imp:_closeSettings() end })
   cy = cy + Kit.textHeight("title") + Kit.textHeight("small") + math.floor(20 * m.s)
@@ -5537,9 +5579,26 @@ local function buildSettingsModal(imp, m)
         local label = type(row.actionLabel) == "function" and row.actionLabel()
           or row.actionLabel or Strings("Run")
         local aw = math.min(inner, chipWidth(label, m))
+        local function run()
+          if row.action() ~= false then
+            model.save()
+            if row.doneText then model.flash = row.doneText end
+          end
+        end
         control(rx - aw, aw, key .. "-act", label, {
           kind=row.danger and "danger" or "ghost",
-          action=function() if row.action() ~= false then model.save() end end})
+          action=function()
+            if row.confirm then
+              model.confirm = {
+                title = row.confirm.title, lines = row.confirm.lines,
+                yesLabel = Strings("Yes"), noLabel = Strings("No"),
+                onYes = run,
+                close = function() model.confirm = nil end,
+              }
+            else
+              run()
+            end
+          end})
       else
         local bandW = item.stacked and inner or math.floor(200 * m.s)
         local vw = bandW - 2 * stepW - gap
@@ -5563,6 +5622,7 @@ local function buildSettingsModal(imp, m)
     font="small", action=function() imp:_openBugPanel() end })
   btn(imp, x + width - doneW, footerY, doneW, m.btnH, "settings-done", Strings("Done"), {
     font="small", kind="accent", action=function() imp:_closeSettings() end })
+  if model.confirm then buildConfirmModal(imp, m, model.confirm) end
 end
 
 local function buildDepResolverModal(imp, m)

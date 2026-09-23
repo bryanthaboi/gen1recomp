@@ -23,7 +23,14 @@ package.loaded["src.core.game3.audio"] = {
   playSe = function() end,
   playCry = function() end,
 }
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local drawn = {}
 package.loaded["src.ui.game3.window"] = setmetatable({
@@ -52,25 +59,25 @@ print("[test] 1. fresh store: SOMEONE'S PC")
 local store = Flags.newStore()
 Space.store = store
 local session = { flags = {} }
-check(label(session) == "SOMEONE'S PC", "no flags -> SOMEONE'S PC (got " .. tostring(label(session)) .. ")")
+check(label(session) == "gText_SomeoneSPc", "no flags -> SOMEONE'S PC (got " .. tostring(label(session)) .. ")")
 
 print("[test] 2. FLAG_SYS_POKEMON_GET (0x828) alone stays SOMEONE'S PC")
 Flags.setFlag(store, nil, 0x828, true)
 session.flags = Flags.serialize(store).flags
-check(label(session) == "SOMEONE'S PC", "0x828 -> SOMEONE'S PC (got " .. tostring(label(session)) .. ")")
+check(label(session) == "gText_SomeoneSPc", "0x828 -> SOMEONE'S PC (got " .. tostring(label(session)) .. ")")
 
 print("[test] 3. FLAG_SYS_NOT_SOMEONES_PC in the live store: BILL'S PC")
 Flags.setFlag(store, nil, "FLAG_SYS_NOT_SOMEONES_PC", true)
 check(Flags.getFlag(store, nil, 0x834), "setFlag by name lands on 0x834")
-check(label(session) == "BILL'S PC", "live 0x834 -> BILL'S PC (got " .. tostring(label(session)) .. ")")
+check(label(session) == "gText_BillSPc", "live 0x834 -> BILL'S PC (got " .. tostring(label(session)) .. ")")
 
 print("[test] 4. post-load snapshot (string keys, no live store): BILL'S PC")
 local snap = Flags.serialize(store).flags
 Space.store = nil
-check(label({ flags = snap }) == "BILL'S PC", "serialized 0x834 -> BILL'S PC (got " .. tostring(label({ flags = snap })) .. ")")
+check(label({ flags = snap }) == "gText_BillSPc", "serialized 0x834 -> BILL'S PC (got " .. tostring(label({ flags = snap })) .. ")")
 
 print("[test] 5. snapshot without 0x834: SOMEONE'S PC")
-check(label({ flags = { ["2088"] = true } }) == "SOMEONE'S PC", "serialized 0x828 only -> SOMEONE'S PC")
+check(label({ flags = { ["2088"] = true } }) == "gText_SomeoneSPc", "serialized 0x828 only -> SOMEONE'S PC")
 
 print(("game3_bills_pc_label_bug2404_test: %s (%d failed)"):format(failed == 0 and "PASS" or "FAIL", failed))
 if failed > 0 then os.exit(1) end

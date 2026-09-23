@@ -142,6 +142,19 @@ function Gen.bindGoldData(data)
   return data
 end
 
+function Gen.game3CacheReady()
+  local RomText = require("src.core.game3.rom_text")
+  if RomText.has(RomText.key("gNatureNamePointers", 0)) then return true end
+  require("src.core.game3.scripting.space").bundle = nil
+  return false
+end
+
+function Gen.missingCacheMessage(version)
+  local info = GameVersion.info(versionOf(nil, version))
+  local label = tostring((info and info.label) or "FireRed")
+  return ("No imported %s ROM cache found. Import the %s ROM from the launcher, then open this save again."):format(label, label)
+end
+
 -- Bind Game 3 (FireRed) data into Data table for Save Editor
 function Gen.bindGame3Data(data)
   if type(data) ~= "table" then return data end
@@ -167,7 +180,7 @@ function Gen.bindGame3Data(data)
   if okP and Pokemon then
     pcall(Pokemon.install, nil)
     data.pokemon = data.pokemon or {}
-    for id = 1, 412 do
+    for id = 1, Pokemon.SPECIES_EGG - 1 do
       local name = Pokemon.name(id)
       if name and name ~= "??????????" and name ~= "" then
         local def = {

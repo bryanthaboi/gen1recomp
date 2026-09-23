@@ -415,6 +415,8 @@ local function actorPriority(a)
     if PlayerMod and (PlayerMod.jumping or PlayerMod.surfHopping) then
       return 1
     end
+    -- pokefirered/src/field_effect.c:2413
+    if PlayerMod and PlayerMod.oamPriority then return PlayerMod.oamPriority end
     local WarpMod = package.loaded["src.core.game3.warp"]
     if WarpMod and WarpMod.isEscalatorActive and WarpMod.isEscalatorActive() then
       return 1
@@ -471,7 +473,11 @@ local function drawSingleActor(game, mapDef, a, camX, camY)
   love.graphics.setColor(1, 1, 1, 1)
   local billboarded = pushBillboard(a.x, a.y, camX, camY)
   local drew = false
-  if useOw and a.graphicsId ~= nil then
+  if a.renderer then
+    a.renderer:draw(a.x, a.y, camX, camY, a.facing, a.walkPhase or 0, false)
+    drew = true
+  end
+  if not drew and useOw and a.graphicsId ~= nil then
     local opts = {
       bow = a.bow,
       fieldMove = a.fieldMove,
@@ -619,6 +625,8 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
     }
   end
 
+  local follower = require("src.world.game3.Follower").actor()
+  if follower then actors[#actors + 1] = follower end
   return applyDrawOrder(actors)
 end
 

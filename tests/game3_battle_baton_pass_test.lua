@@ -48,6 +48,7 @@ end
 
 local function battle(party, foeParty)
   local st = State.new({ wild = false, playerParty = party, foeParty = foeParty })
+  st.trainerClassName, st.trainerName = "YOUNGSTER", "BEN"
   st.rng = function(lo, hi) if lo == 1 and hi == 100 then return 1 end return hi end
   return st, Adapter.new(st)
 end

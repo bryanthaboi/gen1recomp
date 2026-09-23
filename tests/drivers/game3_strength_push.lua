@@ -73,6 +73,16 @@ return function(game)
     return false
   end
 
+  local function dustInfo()
+    for _, a in ipairs(FieldEffects._anims or {}) do
+      if a.kind == "dust" then
+        return string.format("dust cell=%s,%s frame=%s timer=%s player=%s,%s", tostring(a.cx), tostring(a.cy),
+          tostring(a.frame), tostring(a.timer), tostring(Player.cellX), tostring(Player.cellY))
+      end
+    end
+    return "no dust"
+  end
+
   local function holdUntilPush(dir)
     for _ = 1, 20 do
       U.hold(game, dir, 1)
@@ -89,14 +99,16 @@ return function(game)
   local startPy = b.py
   result(holdUntilPush("down"), "seafoam_push_started")
   result(seLog[1] == SE_M_STRENGTH, "seafoam_se_strength_on_push", "se=" .. table.concat(seLog, ","))
-  result(hasDust(), "seafoam_dust_started")
+  result(hasDust(), "seafoam_dust_started", dustInfo())
+  U.wait(4)
+  U.still(game, DIR .. "/2424_seafoam_push_dust.png")
   result(Player.cellX == 6 and Player.cellY == 16 and not Player.moving, "seafoam_player_walks_in_place")
-  U.wait(15)
+  U.wait(11)
   local midPy = b.py
   result(b.moving and midPy > startPy and midPy < startPy + 16 and b.visible ~= false,
     "seafoam_boulder_mid_slide", string.format("py %s -> %s", tostring(startPy), tostring(midPy)))
   result(seLog[2] == nil, "seafoam_no_fall_before_slide_ends", "se=" .. table.concat(seLog, ","))
-  U.shot(game, DIR .. "/2424_seafoam_boulder_mid_slide.png")
+  U.still(game, DIR .. "/2424_seafoam_boulder_mid_slide.png")
   for _ = 1, 40 do
     if not Player.boulderPush then break end
     U.wait(1)
@@ -106,7 +118,7 @@ return function(game)
     "seafoam_se_207_then_fall", "se=" .. table.concat(seLog, ","))
   result(b.visible == false or b.hidden == true, "seafoam_boulder_gone_into_hole")
   result(Player.cellX == 6 and Player.cellY == 16, "seafoam_player_never_stepped")
-  U.shot(game, DIR .. "/2424_seafoam_boulder_fell.png")
+  U.still(game, DIR .. "/2424_seafoam_boulder_fell.png")
 
   goTo("FR_VICTORY_ROAD_1F", 20, 14, "down")
   local vb
@@ -127,8 +139,9 @@ return function(game)
     if not Player.boulderPush then break end
     U.wait(1)
   end
-  for _ = 1, 900 do
-    if not (Space.vm and Space.vm:isRunning()) then break end
+  for _ = 1, 20000 do
+    if Flags.getVar(Space.store, ctx(), VAR_MAP_SCENE_VICTORY_ROAD_1F) == 100
+        and not (Space.vm and Space.vm:isRunning()) then break end
     U.wait(1)
   end
   U.wait(30)
@@ -137,7 +150,7 @@ return function(game)
     "vr_switch_fires_after_slide",
     "var=" .. tostring(Flags.getVar(Space.store, ctx(), VAR_MAP_SCENE_VICTORY_ROAD_1F)))
   result(seLog[1] == SE_M_STRENGTH, "vr_se_strength", "se=" .. table.concat(seLog, ","))
-  U.shot(game, DIR .. "/2424_vr_switch_pressed.png")
+  U.still(game, DIR .. "/2424_vr_switch_pressed.png")
 
   goTo("FR_ROUTE_1", 5, 5, "down")
   local lx, ly
@@ -162,8 +175,8 @@ return function(game)
     U.wait(1)
   end
   U.wait(3)
-  result(hasDust(), "ledge_landing_dust")
-  U.shot(game, DIR .. "/2424_ledge_landing_dust.png")
+  result(hasDust(), "ledge_landing_dust", dustInfo())
+  U.still(game, DIR .. "/2424_ledge_landing_dust.png")
 
   finish()
 end

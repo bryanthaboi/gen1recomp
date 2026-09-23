@@ -23,7 +23,6 @@ local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
 local ItemUse = require("src.core.game3.item_use")
 local PartyView = require("src.core.game3.battle.party_view")
-local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
 
 local BerryPouch = {}
@@ -40,6 +39,7 @@ BerryPouch.wobbleTimer = 0
 
 local VISIBLE = 7
 local ACTIONS = { "USE", "GIVE", "TOSS", "EXIT" }
+local ACTION_TEXT = { USE = 0, TOSS = 1, GIVE = 2, EXIT = 3 }
 
 local function se(id)
   pcall(function()
@@ -130,6 +130,8 @@ function BerryPouch.show(session, bag, opts)
   BerryPouch._session = session or opts.session
   BerryPouch._bag = bag or opts.bag or (session and session.bag)
   BerryPouch._onClose = opts.onClose
+  BerryPouch._sellMode = opts.sell and true or false
+  BerryPouch._sell = nil
   BerryPouch.cursor = opts.cursor or 1
   BerryPouch.scroll = opts.scroll or 0
   BerryPouch.mode = "list"
@@ -157,6 +159,10 @@ function BerryPouch.update(dt)
 end
 
 function BerryPouch.handleInput(input)
+  if BerryPouch.mode == "sell" and BerryPouch._sell then
+    BerryPouch._sell:handleInput(input)
+    return
+  end
   local rows, total = clamp_cursor()
   local row = rows[BerryPouch.cursor]
 
@@ -204,7 +210,9 @@ function BerryPouch.handleInput(input)
           local bName = row.name or ItemsData.displayName(row.id)
           Bag.remove(BerryPouch._bag, row.id, BerryPouch.tossQty)
           BerryPouch.mode = "message"
-          BerryPouch.messageText = Strings("Threw away %d\n%s.", BerryPouch.tossQty, bName)
+          -- src/berry_pouch.c:1161
+          BerryPouch.messageText = RomText.box("gText_ThrewAwayStrVar2StrVar1s",
+            { stringVars = { bName, tostring(BerryPouch.tossQty) } })
           clamp_cursor()
         else
           BerryPouch.mode = "list"
@@ -255,7 +263,10 @@ function BerryPouch.handleInput(input)
           end
         else
           BerryPouch.mode = "message"
-          BerryPouch.messageText = Strings("OAK: This isn't the\ntime to use that!")
+          -- src/item_use.c:902 FieldUseFunc_OakStopsYou
+          local session = BerryPouch._session
+          BerryPouch.messageText = RomText.box("gText_OakForbidsUseOfItemHere",
+            { playerName = tostring((session and (session.name or session.playerName)) or "") })
         end
       elseif act == "GIVE" then
         if #party == 0 then
@@ -326,6 +337,21 @@ function BerryPouch.handleInput(input)
       -- CLOSE option selected
       se(5) -- pokefirered/src/berry_pouch.c:963
       BerryPouch.close()
+    elseif row and BerryPouch._sellMode then
+      se(5)
+      -- src/berry_pouch.c:1266 Task_ContextMenu_Sell
+      BerryPouch.mode = "sell"
+      BerryPouch._sell = require("src.ui.game3.sell_flow").start({
+        itemId = row.id,
+        owned = row.qty,
+        session = BerryPouch._session,
+        bag = BerryPouch._bag,
+        onDone = function()
+          BerryPouch._sell = nil
+          BerryPouch.mode = "list"
+          clamp_cursor()
+        end,
+      })
     elseif row then
       -- Berry selected
       BerryPouch.mode = "action"
@@ -368,7 +394,8 @@ function BerryPouch.draw()
   end
 
   -- 2. Header (WIN 2: tilemapLeft=1, tilemapTop=1, width=9, height=2 -> 72px center at y=9)
-  local headerTitle = Strings("BERRY POUCH")
+  -- src/berry_pouch.c:805
+  local headerTitle = RomText.plain("gText_BerryPouch")
   local tw = FrlgFont.measure(headerTitle)
   local tx = math.floor((72 - tw) / 2) + 8
   FrlgFont.draw(headerTitle, tx, 9, { colors = FrlgFont.COLOR.LIGHT })
@@ -434,7 +461,8 @@ function BerryPouch.draw()
       FrlgFont.draw(qStr, 198, y, { small = true, colors = FrlgFont.COLOR.NORMAL })
     else
       -- CLOSE option in FONT_NORMAL at x = 97
-      FrlgFont.draw(Strings("CLOSE"), 97, y, { colors = FrlgFont.COLOR.NORMAL })
+      -- src/berry_pouch.c:661
+      FrlgFont.draw(RomText.plain("gText_Close"), 97, y, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -444,7 +472,8 @@ function BerryPouch.draw()
 
     -- WIN 6: Selected message
     Window.stdFrame(Window.template(6, 15, 14, 4))
-    local selMsg = Strings("%s is\nselected.", bName)
+    -- src/berry_pouch.c:1031
+    local selMsg = RomText.box("gText_Var1IsSelected", { stringVars = { bName } })
     FrlgFont.draw(selMsg, 52, 124, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
 
     -- WIN 13: Action menu
@@ -454,7 +483,8 @@ function BerryPouch.draw()
       if i == BerryPouch.actionCursor then
         Window.cursorPx(177, rowY)
       end
-      FrlgFont.draw(Strings(act), 185, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      -- src/berry_pouch.c:179 sContextMenuActions
+      FrlgFont.draw(RomText.at("sContextMenuActions", ACTION_TEXT[act]), 185, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -464,7 +494,8 @@ function BerryPouch.draw()
 
     -- WIN 8: Prompt
     Window.stdFrame(Window.template(6, 15, 16, 4))
-    local tossMsg = Strings("Toss out how many\n%s?", bName)
+    -- src/berry_pouch.c:1097
+    local tossMsg = RomText.box("gText_TossOutHowManyStrVar1s", { stringVars = { bName } })
     FrlgFont.draw(tossMsg, 52, 122, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
 
     -- WIN 0: Quantity with arrows
@@ -479,7 +510,9 @@ function BerryPouch.draw()
   if BerryPouch.mode == "toss_confirm" and sel then
     -- WIN 7: Confirmation prompt
     Window.stdFrame(Window.template(6, 15, 15, 4))
-    local confMsg = Strings("Throw away %d of\nthis item?", BerryPouch.tossQty)
+    -- src/berry_pouch.c:1107
+    local confMsg = RomText.box("gText_ThrowAwayStrVar2OfThisItemQM",
+      { stringVars = { [2] = tostring(BerryPouch.tossQty) } })
     FrlgFont.draw(confMsg, 52, 124, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
 
     -- WIN 3: YES / NO
@@ -491,14 +524,18 @@ function BerryPouch.draw()
     else
       Window.cursorPx(185, noY)
     end
-    FrlgFont.draw(Strings("YES"), 193, yesY, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(Strings("NO"), 193, noY, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_Yes"), 193, yesY, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_No"), 193, noY, { colors = FrlgFont.COLOR.NORMAL })
   end
 
   -- 10. Dialogue Message Modal (WIN 5: 2, 15, 26, 4)
   if BerryPouch.mode == "message" and BerryPouch.messageText then
     Window.stdFrame(Window.template(2, 15, 26, 4))
     FrlgFont.draw(BerryPouch.messageText, 20, 124, { colors = FrlgFont.COLOR.NORMAL, linePitch = 14 })
+  end
+
+  if BerryPouch.mode == "sell" and BerryPouch._sell then
+    BerryPouch._sell:draw()
   end
 end
 

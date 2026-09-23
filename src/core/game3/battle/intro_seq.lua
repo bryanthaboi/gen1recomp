@@ -5,7 +5,9 @@ local Anim = require("src.core.game3.battle.anim")
 local State = require("src.core.game3.battle.state")
 local Audio = require("src.core.game3.audio")
 local SE = require("src.core.game3.se_ids")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
+local BattleText = require("src.core.game3.battle.battle_text")
+local Adapter = require("src.core.game3.battle.adapter")
 
 local IntroSeq = {}
 
@@ -153,17 +155,18 @@ local function release_cry_mode(mon)
 end
 IntroSeq.releaseCryMode = release_cry_mode
 
--- Translated where they are shown: these locals exist before any catalog.
-local GHOST_CANT_ID = Strings.source("The GHOST appeared!\\pDarn!\nThe GHOST can't be ID'd!")
-local GHOST_APPEARED = Strings.source("The GHOST appeared!")
-local SCOPE_UNVEILED = Strings.source("SILPH SCOPE unveiled the GHOST's\nidentity!")
-local GHOST_WAS = Strings.source("The GHOST was MAROWAK!")
+function IntroSeq.introText(st)
+  return BattleText.get(BattleText.INTROMSG, Adapter.fill(st, { opponentMon1 = st.enemy,
+    opponentMon2 = st.double and State.battler(st, 3) or nil }))
+end
+
+local intro_msg = IntroSeq.introText
 
 -- pokefirered/src/battle_setup.c:320
 local function unveil_ghost(st)
   local p = Anim.present("enemy")
   if p then p.ghostUnveiled = true end
-  if st and st.enemy and st.enemy.mon and st.enemy.mon.nickname == Strings("GHOST") then
+  if st and st.enemy and st.enemy.mon and st.enemy.mon.nickname == RomText.plain("gText_Ghost") then
     st.enemy.mon.nickname = nil
   end
 end
@@ -171,9 +174,9 @@ end
 -- pokefirered/src/battle_message.c:1574
 function IntroSeq.headlessGhostIntro(st)
   if not (st and st.ghostBattle) then return {} end
-  if not st.ghostUnveiled then return { Strings(GHOST_CANT_ID) } end
+  if not st.ghostUnveiled then return { intro_msg(st) } end
   unveil_ghost(st)
-  return { Strings(GHOST_APPEARED), Strings(SCOPE_UNVEILED), Strings(GHOST_WAS) }
+  return { intro_msg(st), BattleText.get("STRINGID_SILPHSCOPEUNVEILED"), BattleText.get("STRINGID_GHOSTWASMAROWAK") }
 end
 
 local function build_wild(st, opts)
@@ -181,8 +184,6 @@ local function build_wild(st, opts)
   local function add(kind, data)
     steps[#steps + 1] = { kind = kind, data = data or {} }
   end
-  local ename = State.displayName(st.enemy)
-  local pname = State.displayName(st.player)
   local playerGender = (st.oldManTutorial and 5) or opts.playerGender or 0
   add("fade", { mode = "FROM_BLACK", instant = true })
   -- pret: player back sprite slides in with the BG intro even in wild battles
@@ -203,19 +204,16 @@ local function build_wild(st, opts)
   })
   add("cry", { side = "enemy" })  add("undarken", { side = "enemy", frames = 10 })
   add("healthbox", { side = "enemy", frames = 23, from = -115 })
+  -- pokefirered/src/battle_message.c:1551
+  add("msg", { text = intro_msg(st) })
   if st.ghostBattle and st.ghostUnveiled then
-    add("msg", { text = Strings(GHOST_APPEARED) })
     -- pokefirered/data/battle_scripts_1.s:3820
     add("wait", { frames = 32 })
-    add("msg", { text = Strings(SCOPE_UNVEILED), linger = true })
+    add("msg", { text = BattleText.get("STRINGID_SILPHSCOPEUNVEILED"), linger = true })
     add("general", { name = "SILPH_SCOPED", side = "enemy" })
     add("unveil", {})
     add("wait", { frames = 32 })
-    add("msg", { text = Strings(GHOST_WAS) })
-  elseif st.ghostBattle then
-    add("msg", { text = Strings(GHOST_CANT_ID) })
-  else
-    add("msg", { text = Strings("Wild %s appeared!", ename) })
+    add("msg", { text = BattleText.get("STRINGID_GHOSTWASMAROWAK") })
   end
   if st.safari then
     -- pokefirered/src/battle_controller_safari.c:608
@@ -230,12 +228,27 @@ local function build_wild(st, opts)
     add("wait", { frames = 3 })
     return steps
   end
-  -- pokefirered/src/battle_message.c:399
-  add("msg", { text = Strings("Go! %s!", pname), linger = true })
+  -- pokefirered/src/battle_message.c:1592
+  add("msg", { text = IntroSeq.sendOutText(st, "player"), linger = true })
   add("player_throw", {})
   add("healthbox", { side = "player", frames = 23, from = 115 })
   add("wait", { frames = 3 })
   return steps
+end
+
+function IntroSeq.sendOutText(st, side)
+  local double = st.double and true or false
+  local fill = { side = side, double = double }
+  if side == "player" then
+    fill.playerMon1 = State.battler(st, 0)
+    fill.playerMon2 = double and State.battler(st, 2) or nil
+    if double and State.isAbsent(st, 2) then fill.double = false end
+  else
+    fill.opponentMon1 = State.battler(st, 1)
+    fill.opponentMon2 = double and State.battler(st, 3) or nil
+    if double and State.isAbsent(st, 3) then fill.double = false end
+  end
+  return BattleText.get(BattleText.INTROSENDOUT, Adapter.fill(st, fill))
 end
 
 local function build_trainer(st, opts)
@@ -249,7 +262,6 @@ local function build_trainer(st, opts)
     State.displayName(st.enemy),
     { rivalName = opts.rivalName })
   local info = strings.info or {}
-  local pname = State.displayName(st.player)
   local enemyBalls = enemy_party_balls(st.foeParty, info.partySize or (st.foeParty and #st.foeParty) or 1)
   local playerBalls = player_party_balls(st.playerParty or (st.player and { st.player.mon }))
 
@@ -280,21 +292,10 @@ local function build_trainer(st, opts)
     local plIds = present_ids(st, { 0, 2 })
     local sentOut = strings.sentOut
     if #foeIds == 2 then
-      -- pokefirered/src/battle_message.c:392
-      local info = strings.info or {}
-      local first, second = State.displayName(State.battler(st, 1)), State.displayName(State.battler(st, 3))
-      if info.name and info.name ~= "" then
-        sentOut = Strings("%s %s sent\nout %s and %s!", info.className or Strings("POKéMON TRAINER"), info.name, first, second)
-      else
-        sentOut = Strings("%s sent\nout %s and %s!", info.className or Strings("POKéMON TRAINER"), first, second)
-      end
+      -- pokefirered/src/battle_message.c:1611
+      sentOut = IntroSeq.sendOutText(st, "enemy")
     end
-    local goText = Strings("Go! %s!", pname)
-    if #plIds == 2 then
-      -- pokefirered/src/battle_message.c:400
-      goText = Strings("Go! %s and\n%s!", State.displayName(State.battler(st, 0)),
-        State.displayName(State.battler(st, 2)))
-    end
+    local goText = IntroSeq.sendOutText(st, "player")
     add("msg", { text = strings.wants })
     add("msg", { text = sentOut })
     add("opponent_sendout", { toX = 280, frames = 35, ids = foeIds })
@@ -311,7 +312,7 @@ local function build_trainer(st, opts)
   add("opponent_sendout", { toX = 280, frames = 35 })
   add("cry", { side = "enemy", release = true })
   add("healthbox", { side = "enemy", frames = 23, from = -115 })
-  add("msg", { text = Strings("Go! %s!", pname), linger = true })
+  add("msg", { text = IntroSeq.sendOutText(st, "player"), linger = true })
   add("player_throw", {})
   add("healthbox", { side = "player", frames = 23, from = 115 })
   add("wait", { frames = 3 })

@@ -29,6 +29,8 @@ local Schema = require("src.core.game3.save_schema_firered")
 local ItemUse = require("src.core.game3.item_use")
 local ItemsData = require("src.core.game3.items_data")
 
+local RomText = require("src.core.game3.rom_text")
+
 local S = TeachyTv.SCRIPT
 
 local function newSession()
@@ -65,11 +67,9 @@ do
   for _, id in ipairs(TeachyTv.ORDER) do
     local lesson = TeachyTv.lesson(id)
     check(lesson ~= nil, "lesson " .. id .. " exists")
-    eq(lesson.label, labels[id], "row label for lesson " .. id)
-    check(type(lesson.intro) == "string" and #lesson.intro > 0,
-      lesson.key .. " has a Script1 string")
-    check(type(lesson.outro) == "string" and #lesson.outro > 0,
-      lesson.key .. " has a Script2 string")
+    eq(RomText.plain(lesson.labelKey), labels[id], "row label for lesson " .. id)
+    check(RomText.has(lesson.introKey), lesson.key .. " has a Script1 string")
+    check(RomText.has(lesson.outroKey), lesson.key .. " has a Script2 string")
   end
 end
 

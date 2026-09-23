@@ -14,6 +14,7 @@ local PokedexChrome = require("src.ui.game3.pokedex_chrome")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
 local SummaryData = require("src.core.game3.summary_data")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local SummaryMenu = {}
 
@@ -419,7 +420,7 @@ end
 -- pokefirered/src/pokemon_summary_screen.c:2088
 function SummaryMenu.dexNoText(mon, session)
   local nat = SummaryMenu.dexNumber(Pokemon.speciesOf(mon), session)
-  if not nat then return Strings("???", "game3.summary.dexNo") end
+  if not nat then return RomText.plain("gText_PokeSum_DexNoUnknown") end
   return string.format("%03d", nat)
 end
 
@@ -443,7 +444,8 @@ local function draw_header(mon)
   if SummaryMenu._page ~= PAGE_MOVES_INFO then
     local lv = tonumber(mon.level) or 1
     local lx, ly = cxy("level", 4, 18)
-    draw_text(Strings("Lv%d", lv), lx, ly, 36, "NORMAL")
+    -- src/pokemon_summary_screen.c:2137
+    draw_text(RomText.plain("gText_Lv") .. lv, lx, ly, 36, "NORMAL")
   end
 
   local gender = SummaryData.gender(mon)
@@ -541,7 +543,8 @@ local function draw_page_info(mon)
   local ix, iy = cxy("otId", 167, 80)
   draw_text(string.format("%05d", bit.band(otId, 0xFFFF)), ix, iy, 48, "NORMAL")
 
-  local item = mon.item or mon.heldItem or Strings("NONE")
+  -- src/pokemon_summary_screen.c:2143
+  local item = mon.item or mon.heldItem or RomText.plain("gText_PokeSum_Item_None")
   local itx, ity = cxy("item", 167, 95)
   draw_text(tostring(item), itx, ity, 64, "NORMAL")
 
@@ -582,9 +585,9 @@ local function draw_page_skills(mon)
   end
 
   local lx, ly = cxy("expPointsLabel", 74, 103)
-  draw_text(Strings("EXP. POINTS"), lx, ly, 96, "NORMAL")
+  draw_text(RomText.plain("gText_PokeSum_ExpPoints"), lx, ly, 96, "NORMAL")
   local nlx, nly = cxy("nextLvLabel", 74, 116)
-  draw_text(Strings("NEXT LV."), nlx, nly, 96, "NORMAL")
+  draw_text(RomText.plain("gText_PokeSum_NextLv"), nlx, nly, 96, "NORMAL")
 
   local prog = SummaryData.expProgress(mon)
   local ex, ey = cxy("expTotal", 175, 103)
@@ -662,7 +665,7 @@ local function draw_page_moves(mon, isDetail)
     if SummaryMenu._hmNotice then
       local descBox = moves_info_coords().desc or { x = 7, y = 98, w = 112 }
       -- pokefirered/src/strings.c:844
-      draw_text(Strings("HM moves can't be\nforgotten now."), descBox.x, descBox.y, descBox.w or 112, "NORMAL")
+      draw_text(RomText.plain("gText_PokeSum_HmMovesCantBeForgotten"), descBox.x, descBox.y, descBox.w or 112, "NORMAL")
     elseif selMove then
       local mi = moves_info_coords()
       local power = mi.power or { x = 57, y = 57 }
@@ -680,7 +683,7 @@ local function draw_page_egg(mon)
   -- pokefirered/src/pokemon_summary_screen.c:4016 MON_DATA_SPECIES_OR_EGG
   local species = Pokemon.speciesOrEgg(mon)
   local nx, ny = cxy("name", 40, 18)
-  draw_text(Strings("EGG"), nx, ny, 64, "NORMAL")
+  draw_text(RomText.plain("gText_EggNickname"), nx, ny, 64, "NORMAL")
 
   local pic = coords().monPic or { x = 60, y = 65 }
   local cx, cy = pic.x or 60, pic.y or 65
@@ -702,35 +705,36 @@ local function draw_page_egg(mon)
   end
 end
 
-local PAGE_TITLES = {
-  [PAGE_INFO] = "POKéMON INFO",
-  [PAGE_SKILLS] = "POKéMON SKILLS",
-  [PAGE_MOVES] = "KNOWN MOVES",
-  [PAGE_MOVES_INFO] = "KNOWN MOVES",
-  [PAGE_EGG] = "POKéMON INFO",
-}
+-- src/pokemon_summary_screen.c:2934
+local PAGE_TITLES = RomText.lazy({
+  [PAGE_INFO] = "gText_PokeSum_PageName_PokemonInfo",
+  [PAGE_SKILLS] = "gText_PokeSum_PageName_PokemonSkills",
+  [PAGE_MOVES] = "gText_PokeSum_PageName_KnownMoves",
+  [PAGE_MOVES_INFO] = "gText_PokeSum_PageName_KnownMoves",
+  [PAGE_EGG] = "gText_PokeSum_PageName_PokemonInfo",
+})
 
 local function get_controls_str(page, isEgg)
   if SummaryMenu._mode == "select_move" then
-    return Strings("{DPAD_UPDOWN}PICK")
+    return RomText.plain("gText_PokeSum_Controls_Pick")
   end
   if isEgg then
-    return Strings("{A_BUTTON}CANCEL")
+    return RomText.plain("gText_PokeSum_Controls_Cancel")
   end
   if page == PAGE_INFO then
-    return Strings("{DPAD_RIGHT}PAGE {A_BUTTON}CANCEL")
+    return RomText.plain("gText_PokeSum_Controls_PageCancel")
   elseif page == PAGE_SKILLS then
-    return Strings("{DPAD_LEFTRIGHT}PAGE")
+    return RomText.plain("gText_PokeSum_Controls_Page")
   elseif page == PAGE_MOVES then
-    return Strings("{DPAD_LEFT}PAGE {A_BUTTON}DETAIL")
+    return RomText.plain("gText_PokeSum_Controls_PageDetail")
   elseif page == PAGE_MOVES_INFO then
-    return Strings("{DPAD_UPDOWN}PICK {A_BUTTON}SWITCH")
+    return RomText.plain("gText_PokeSum_Controls_PickSwitch")
   end
-  return "{DPAD_LEFTRIGHT}PAGE"
+  return RomText.plain("gText_PokeSum_Controls_Page")
 end
 
 local function draw_top_bar_text(page, isEgg)
-  local title = Strings(PAGE_TITLES[page] or "POKéMON INFO")
+  local title = PAGE_TITLES[page]
   FrlgFont.draw(title, 4, 1, {
     colors = FrlgFont.COLOR.WHITE,
     small = false,

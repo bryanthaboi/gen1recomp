@@ -251,7 +251,7 @@ end
 function Evolution.renameMon(mon, preSpecies, postSpecies)
   if not mon then return end
   local preName = Pokemon.name(preSpecies) or ""
-  local newName = Pokemon.name(postSpecies) or "POKéMON"
+  local newName = Pokemon.name(postSpecies)
   local function trim(s)
     if type(s) ~= "string" then return "" end
     return (s:gsub("%z+", ""):match("^%s*(.-)%s*$")) or ""
@@ -319,8 +319,8 @@ function Evolution.apply(mon, newSpecies, session, bag, via)
       shedinja.species = shedId
       shedinja.speciesId = shedId
       Pokemon.tagNumbering(shedinja, Pokemon.NUMBERING_INTERNAL)
-      shedinja.name = Pokemon.name(shedId) or "SHEDINJA"
-      shedinja.nickname = Pokemon.name(shedId) or "SHEDINJA"
+      shedinja.name = Pokemon.name(shedId)
+      shedinja.nickname = Pokemon.name(shedId)
       shedinja.heldItem = 0
       shedinja.item = 0
       shedinja.status = 0

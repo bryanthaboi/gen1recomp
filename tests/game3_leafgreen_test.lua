@@ -32,11 +32,16 @@ local function openRom(file, hash)
   }, GV.forSha1(hash)))
 end
 -- Independent expected symbols and version differences from pret's matching builds.
-for _, case in ipairs({ { "pokefirered.gba", FR, 180, 20 }, { "pokeleafgreen.gba", LG, 70, 160 }, { "pokeleafgreen_rev1.gba", LG11, 70, 160 } }) do
+for _, case in ipairs({ { "pokefirered.gba", FR, 180, 20, { 29, 0x4c970b89, 30, 55 } },
+    { "pokeleafgreen.gba", LG, 70, 160, { 32, 0x4c970b9e, 33, 80 } },
+    { "pokeleafgreen_rev1.gba", LG11, 70, 160, { 32, 0x4c970b9e, 33, 80 } } }) do
   local rom = openRom(case[1], case[2])
   if rom then
     assert(rom:u16(V.DEOXYS_BASE_STATS + 2) == case[3])
     assert(rom:u16(V.DEOXYS_BASE_STATS + 4) == case[4])
+    local trades = require("src.import.gba.ingame_trades_extract").extract(rom).trades
+    assert(trades[2].species == case[5][1] and trades[2].personality == case[5][2])
+    assert(trades[4].species == case[5][3] and trades[5].requestedSpecies == case[5][4])
     local ptr = rom:u32(V.INTRO.mon_front_pic_table + 8)
     local off = assert(rom:ptrOffset(ptr))
     local tiles = require("src.import.gba.lz77").decompress(function(i) return rom:get(i) end, off)
@@ -70,11 +75,7 @@ end
 GV.set("leafgreen")
 local Party = require("src.core.game3.party")
 assert(Party.metGame() == 5)
-local Trade = require("src.core.game3.scripting.natives_trade")
-assert(Trade.entry(2).species == 32 and Trade.entry(2).personality == 0x4c970b9e)
-assert(Trade.entry(4).species == 33 and Trade.entry(5).requestedSpecies == 80)
 GV.set("firered")
 assert(Party.metGame() == 4)
-assert(Trade.entry(2).species == 29 and Trade.entry(5).requestedSpecies == 55)
 V.select(FR)
 print("PASS LeafGreen registration edition switching ROM data and trades")

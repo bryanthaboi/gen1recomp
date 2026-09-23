@@ -3,16 +3,10 @@
 local Residuals = require("src.core.game3.battle.residuals")
 local Rules = require("src.core.game3.battle.rules")
 local StatusChip = require("src.core.game3.battle.status")
-local Strings = require("src.core.Strings")
+local Moves = require("src.core.game3.battle.moves")
 
 local Handlers = {}
 Handlers._installed = false
-
-local function name(ad, b) return ad:displayName(b) end
-
-local function prefix(side)
-  return side == "player" and Strings("Ally") or Strings("Foe")
-end
 
 local function side_battler(ad, sideKey)
   local st = ad._st
@@ -30,8 +24,23 @@ local function token_battler(ad, key, tok, field)
   return side_battler(ad, key)
 end
 
+-- data/battle_scripts_1.s:3533
+local function wish_heal(ad, tok, b)
+  local State = require("src.core.game3.battle.state")
+  -- src/battle_script_commands.c:8916
+  ad:sayText("STRINGID_PKMNWISHCAMETRUE", { buff1 = State.prefixedName(ad._st, b, tok.wisher) })
+  if ad:hp(b) >= ad:maxHp(b) then
+    ad:sayText("STRINGID_PKMNHPFULL", { def = b })
+  else
+    local heal = math.floor(ad:maxHp(b) / 2)
+    if heal == 0 then heal = 1 end
+    ad:heal(b, heal)
+    ad:sayText("STRINGID_PKMNREGAINEDHEALTH", { def = b })
+  end
+end
+
 -- pokefirered/src/battle_util.c:505
-local function side_timer(field, label)
+local function side_timer(field, move)
   return function(ctx)
     local ad = ctx.adapter
     for _, key in ipairs({ "player", "enemy" }) do
@@ -41,9 +50,9 @@ local function side_timer(field, label)
         if side[field] <= 0 then
           side[field] = nil
           if field == "expSafeguardTurns" then
-            ad:say(Strings("%s's party is no longer\nprotected by SAFEGUARD!", prefix(key)))
+            ad:sayText("STRINGID_PKMNSAFEGUARDEXPIRED", { atk = key })
           else
-            ad:say(Strings("%s's %s\nwore off!", prefix(key), Strings(label)))
+            ad:sayText("STRINGID_PKMNSXWOREOFF", { atk = key, buff1 = Moves.displayName(move) })
           end
         end
       end
@@ -64,30 +73,30 @@ function Handlers.tickWeather(ad)
   end
   if kind == "RAIN" then
     if ended then
-      ad:say(Strings("The rain stopped."))
+      ad:sayText("STRINGID_RAINSTOPPED")
       st.weather = nil
     else
-      ad:say(Strings("Rain continues to fall."))
+      ad:sayText("STRINGID_RAINCONTINUES")
       ad:playAnim("general", "RAIN_CONTINUES", nil, nil)
     end
     return
   end
   if kind == "SUN" then
     if ended then
-      ad:say(Strings("The sunlight faded."))
+      ad:sayText("STRINGID_SUNLIGHTFADED")
       st.weather = nil
     else
-      ad:say(Strings("The sunlight is strong."))
+      ad:sayText("STRINGID_SUNLIGHTSTRONG")
       ad:playAnim("general", "SUN_CONTINUES", nil, nil)
     end
     return
   end
   if ended then
-    ad:say(kind == "SAND" and Strings("The sandstorm subsided.") or Strings("The hail stopped."))
+    ad:sayText(kind == "SAND" and "STRINGID_SANDSTORMSUBSIDED" or "STRINGID_HAILSTOPPED")
     st.weather = nil
     return
   end
-  ad:say(kind == "SAND" and Strings("The sandstorm rages.") or Strings("Hail continues to fall."))
+  ad:sayText(kind == "SAND" and "STRINGID_SANDSTORMRAGES" or "STRINGID_HAILCONTINUES")
   ad:playAnim("general", kind == "SAND" and "SANDSTORM_CONTINUES" or "HAIL_CONTINUES", nil, nil)
   if not Rules.weather.effective(st, ad) then return end
   local order = Residuals.sortedBattlers(ad)
@@ -107,15 +116,15 @@ function Handlers.tickWeather(ad)
         -- pokefirered/src/battle_script_commands.c:7216
         local dmg = Rules.weather.chipAmount(ad:maxHp(b))
         if kind == "SAND" then
-          ad:say(Strings("%s is buffeted\nby the sandstorm!", name(ad, b)))
+          ad:sayText("STRINGID_PKMNBUFFETEDBYSANDSTORM", { atk = b })
         else
-          ad:say(Strings("%s is pelted\nby HAIL!", name(ad, b)))
+          ad:sayText("STRINGID_PKMNPELTEDBYHAIL", { atk = b })
         end
         ad:applyHpLoss(b, dmg)
         if ad:isFainted(b) then
           b._faintAnnounced = true
           ad:pushEvent({ kind = "faint", side = b.side, battler = b.id })
-          ad:say(Strings("%s fainted!", name(ad, b)))
+          ad:sayText("STRINGID_ATTACKERFAINTED", { atk = b })
           ad:emitFaint(b)
         end
       end
@@ -127,10 +136,11 @@ function Handlers.registerAll()
   if Handlers._installed then return end
   Handlers._installed = true
 
-  Residuals.register("reflect", side_timer("expReflectTurns", Strings.source("REFLECT")))
-  Residuals.register("light_screen", side_timer("expLightScreenTurns", Strings.source("LIGHT SCREEN")))
-  Residuals.register("mist", side_timer("expMistTurns", Strings.source("MIST")))
-  Residuals.register("safeguard", side_timer("expSafeguardTurns", Strings.source("SAFEGUARD")))
+  -- src/battle_util.c:516
+  Residuals.register("reflect", side_timer("expReflectTurns", 115))
+  Residuals.register("light_screen", side_timer("expLightScreenTurns", 113))
+  Residuals.register("mist", side_timer("expMistTurns", 54))
+  Residuals.register("safeguard", side_timer("expSafeguardTurns", 219))
 
   -- pokefirered/src/battle_util.c:603
   Residuals.register("wish", function(ctx)
@@ -147,15 +157,7 @@ function Handlers.registerAll()
             if tok.turns <= 0 then
               if b and ad:hp(b) > 0 then
                 ad:playAnim("general", "WISH_HEAL", b, b)
-                ad:say(Strings("%s's WISH\ncame true!", tostring(tok.wisher or name(ad, b))))
-                if ad:hp(b) >= ad:maxHp(b) then
-                  ad:say(Strings("%s's\nHP is full!", name(ad, b)))
-                else
-                  local heal = math.floor(ad:maxHp(b) / 2)
-                  if heal == 0 then heal = 1 end
-                  ad:heal(b, heal)
-                  ad:say(Strings("%s regained\nhealth!", name(ad, b)))
-                end
+                wish_heal(ad, tok, b)
               end
             else
               keep[#keep + 1] = tok
@@ -184,15 +186,7 @@ function Handlers.registerAll()
               local b = slot_battler(ad, id)
               if b and ad:hp(b) > 0 then
                 ad:playAnim("general", "WISH_HEAL", b, b)
-                ad:say(Strings("%s's WISH\ncame true!", tostring(tok.wisher or name(ad, b))))
-                if ad:hp(b) >= ad:maxHp(b) then
-                  ad:say(Strings("%s's\nHP is full!", name(ad, b)))
-                else
-                  local heal = math.floor(ad:maxHp(b) / 2)
-                  if heal == 0 then heal = 1 end
-                  ad:heal(b, heal)
-                  ad:say(Strings("%s regained\nhealth!", name(ad, b)))
-                end
+                wish_heal(ad, tok, b)
               end
             else
               keep[#keep + 1] = tok
@@ -219,7 +213,7 @@ function Handlers.registerAll()
     local heal = math.floor(maxHp / 16)
     if heal == 0 then heal = 1 end
     ad:playAnim("general", "INGRAIN_HEAL", b, b)
-    ad:say(Strings("%s absorbed\nnutrients with its roots!", name(ad, b)))
+    ad:sayText("STRINGID_PKMNABSORBEDNUTRIENTS", { atk = b })
     ad:heal(b, heal)
   end)
 
@@ -259,10 +253,10 @@ function Handlers.registerAll()
     local dealt = ad:applyHpLoss(b, dmg)
     if ad:abilityOf(b) == "LIQUID_OOZE" then
       ad:applyHpLoss(src, dealt)
-      ad:say(Strings("It sucked up the\nLIQUID OOZE!"))
+      ad:sayText("STRINGID_ITSUCKEDLIQUIDOOZE")
     else
       ad:heal(src, dealt)
-      ad:say(Strings("%s's health is\nsapped by LEECH SEED!", name(ad, b)))
+      ad:sayText("STRINGID_PKMNSAPPEDBYLEECHSEED", { atk = b })
     end
   end)
 
@@ -282,7 +276,7 @@ function Handlers.registerAll()
     end
     local dmg = math.floor(ad:maxHp(b) / 4)
     if dmg == 0 then dmg = 1 end
-    ad:say(Strings("%s is locked\nin a NIGHTMARE!", name(ad, b)))
+    ad:sayText("STRINGID_PKMNLOCKEDINNIGHTMARE", { atk = b })
     ad:playAnim("status", "NIGHTMARE", b, b)
     ad:applyHpLoss(b, dmg)
   end)
@@ -293,7 +287,7 @@ function Handlers.registerAll()
     if not b or not b.expCursed or ad:hp(b) <= 0 then return end
     local dmg = math.floor(ad:maxHp(b) / 4)
     if dmg == 0 then dmg = 1 end
-    ad:say(Strings("%s is afflicted\nby the CURSE!", name(ad, b)))
+    ad:sayText("STRINGID_PKMNAFFLICTEDBYCURSE", { atk = b })
     ad:playAnim("status", "CURSED", b, b)
     ad:applyHpLoss(b, dmg)
   end)
@@ -305,10 +299,11 @@ function Handlers.registerAll()
     local R = package.loaded["src.core.game3.battle.rules"] or Rules
     if R.partialTrap and R.partialTrap.active and not R.partialTrap.active() then return end
     b.expTrapTurns = b.expTrapTurns - 1
-    local moveName = tostring(b.expTrapMoveName or "BIND")
+    -- src/battle_util.c:882
+    local moveName = Moves.displayName(b.expTrapMove)
     if b.expTrapTurns > 0 then
       ad:playAnim("general", "TURN_TRAP", b, b, b.expTrapMove)
-      ad:say(Strings("%s is hurt\nby %s!", name(ad, b), moveName))
+      ad:sayText("STRINGID_PKMNHURTBY", { atk = b, buff1 = moveName })
       local chip = (R.partialTrap and R.partialTrap.chipAmount and R.partialTrap.chipAmount(ad:maxHp(b))) or math.max(1, math.floor(ad:maxHp(b) / 16))
       ad:applyHpLoss(b, chip)
     else
@@ -316,7 +311,7 @@ function Handlers.registerAll()
       b.expTrapMove = nil
       b.expTrapSource = nil
       b.wrapped = nil
-      ad:say(Strings("%s was freed\nfrom %s!", name(ad, b), moveName))
+      ad:sayText("STRINGID_PKMNFREEDFROM", { atk = b, buff1 = moveName })
     end
   end)
 
@@ -329,18 +324,18 @@ function Handlers.registerAll()
       if ad:hasStatus(other, "SLP") and ad:abilityOf(other) ~= "SOUNDPROOF" then
         ad:clearStatus(other)
         other.expNightmare = nil
-        ad:say(Strings("%s woke up\nin the UPROAR!", name(ad, other)))
+        ad:sayText("STRINGID_PKMNWOKEUPINUPROAR", { atk = other })
       end
     end
     b.expUproarTurns = b.expUproarTurns - 1
     if b.expUnableToMove then
       Engine.cancelMultiTurnMoves(b)
-      ad:say(Strings("%s calmed down.", name(ad, b)))
+      ad:sayText("STRINGID_PKMNCALMEDDOWN", { atk = b })
     elseif b.expUproarTurns > 0 then
-      ad:say(Strings("%s is making\nan UPROAR!", name(ad, b)))
+      ad:sayText("STRINGID_PKMNMAKINGUPROAR", { atk = b })
     else
       Engine.cancelMultiTurnMoves(b)
-      ad:say(Strings("%s calmed down.", name(ad, b)))
+      ad:sayText("STRINGID_PKMNCALMEDDOWN", { atk = b })
     end
   end)
 
@@ -359,7 +354,7 @@ function Handlers.registerAll()
       if (b.confusionTurns or 0) <= 0 and ad:abilityOf(b) ~= "OWN_TEMPO" then
         b.confusionTurns = ad:roll(0, 3) % 4 + 2
         ad:playAnim("status", "CONFUSION", b, b)
-        ad:say(Strings("%s became\nconfused due to fatigue!", name(ad, b)))
+        ad:sayText("STRINGID_PKMNFATIGUECONFUSION", { atk = b })
       end
     end
   end)
@@ -381,7 +376,7 @@ function Handlers.registerAll()
     b.expDisableTurns = (b.expDisableTurns or 1) - 1
     if b.expDisableTurns <= 0 then
       b.expDisabledMove, b.expDisableTurns, b.disabled = nil, nil, nil
-      ad:say(Strings("%s is disabled\nno more!", name(ad, b)))
+      ad:sayText("STRINGID_PKMNMOVEDISABLEDNOMORE", { atk = b })
     end
   end)
 
@@ -399,7 +394,7 @@ function Handlers.registerAll()
     b.expEncoreTurns = b.expEncoreTurns - 1
     if b.expEncoreTurns <= 0 or (tonumber(mon.pp and mon.pp[slot]) or 0) <= 0 then
       b.expEncoreMove, b.expEncoreTurns, b.expEncoreSlot = nil, nil, nil
-      ad:say(Strings("%s's ENCORE\nended!", name(ad, b)))
+      ad:sayText("STRINGID_PKMNENCOREENDED", { atk = b })
     end
   end)
 
@@ -444,7 +439,7 @@ function Handlers.registerAll()
     Engine.cancelMultiTurnMoves(b)
     ad:applyStatus(b, "SLP", b, { force = true, ignoreSafeguard = true })
     ad:statusAnim(b, "SLP")
-    ad:say(Strings("%s\nfell asleep!", name(ad, b)))
+    ad:sayText("STRINGID_PKMNFELLASLEEP", { eff = b })
   end)
 
   Residuals.register("volatiles", function(ctx)
@@ -488,7 +483,8 @@ function Handlers.registerAll()
     for _, b in ipairs(Residuals.sortedBattlers(ad)) do
       if b.expPerishTurns and ad:hp(b) > 0 then
         local n = b.expPerishTurns
-        ad:say(Strings("%s's PERISH count\nfell to %s!", name(ad, b), tostring(n)))
+        -- src/battle_util.c:1118
+        ad:sayText("STRINGID_PKMNPERISHCOUNTFELL", { atk = b, buff1 = tostring(n) })
         if n <= 0 then
           b.expPerishTurns = nil
           b.perishSong = nil
@@ -535,7 +531,7 @@ function Handlers.futureSightHit(ad, tok, target)
     local State = require("src.core.game3.battle.state")
     attacker = State.battler(ad._st, tok.attackerId) or attacker
   end
-  ad:say(Strings("%s took the\n%s attack!", name(ad, target), tostring(tok.moveName or "FUTURE SIGHT")))
+  ad:sayText("STRINGID_PKMNTOOKATTACK", { def = target, buff1 = Moves.displayName(tok.moveId or 248) })
   local anim = { moveId = tok.moveId, user = attacker, target = target, hits = {}, heals = {}, faints = {} }
   local M = Engine.newContext(attacker, target, tok.moveId or 248, nil, ad, ad._st, {}, anim, { futureSight = true })
   local Moves = require("src.core.game3.battle.moves")
@@ -554,7 +550,7 @@ function Handlers.futureSightHit(ad, tok, target)
   ad:playAnim("general", tok.doomDesire and "DOOM_DESIRE_HIT" or "FUTURE_SIGHT_HIT", attacker, target)
   Hit.dealDamage(M, dmg, { physical = false })
   if hung == "endured" then
-    ad:say(Strings("%s ENDURED\nthe hit!", name(ad, target)))
+    ad:sayText("STRINGID_PKMNENDUREDHIT", { def = target })
   elseif hung == "hung" then
     require("src.core.game3.battle.held_items").focusBandMessage(ad, target)
   end

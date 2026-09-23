@@ -222,6 +222,7 @@ function Game3:_exposeModData()
   local bundle = Space.bundle
   data.gen3Text = bundle and bundle.text or nil
   data.gen3Scripts = bundle and bundle.scripts or nil
+  data.gen3RomText = require("src.core.game3.rom_text").overrides
 end
 
 function Game3:_loadMods(opts)
@@ -350,6 +351,12 @@ function Game3:_handleRegisteredItem()
   local session = self.session
   local item = session and session.registeredItem
   if not item then return end
+  -- src/item_menu.c:2025
+  local Map = package.loaded["src.core.game3.map"]
+  if Map and Map.current == "FR_UNION_ROOM" then return end
+  -- src/overworld.c:2813
+  local Link = package.loaded["src.core.game3.link"]
+  if type(Link) == "table" and Link.link ~= nil and Link.inLinkRoom() == true then return end
   local Runtime = package.loaded["src.core.game3.runtime"]
   if Runtime and Runtime.uiBusy and Runtime.uiBusy() then return end
   local Field = package.loaded["src.core.game3.field"]

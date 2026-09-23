@@ -3,11 +3,8 @@
 local H = require("src.core.game3.battle.effects._helpers")
 local Types = require("src.core.game3.battle.types")
 local Secondary = require("src.core.game3.battle.effects.secondary")
-local Strings = require("src.core.Strings")
 
 local Setup = {}
-
-local function name(ctx, b) return ctx.adapter:displayName(b) end
 
 local function moved_last(ctx)
   local st = ctx.adapter and ctx.adapter._st
@@ -27,7 +24,7 @@ function Setup.meanLook(ctx)
   t.expTrapped = true
   t.escapePrevention = true
   t.expTrappedBy = ctx.user
-  ctx.adapter:say(Strings("%s can't\nescape now!", name(ctx, t)))
+  ctx.adapter:sayText("STRINGID_TARGETCANTESCAPENOW", { def = t })
 end
 
 -- pokefirered/src/battle_script_commands.c:6436
@@ -39,17 +36,17 @@ function Setup.leechSeed(ctx)
   if M then hit = M:accuracyCheck("normal", false) end
   H.attackAnim(ctx)
   if not hit or t.expSeeded then
-    ad:say(Strings("%s evaded\nthe attack!", name(ctx, t)))
+    ad:sayText("STRINGID_PKMNEVADEDATTACK", { def = t })
     return
   end
   if H.hasType(ctx, t, Types.ID.GRASS) then
-    ad:say(Strings("It doesn't affect\n%s…", name(ctx, t)))
+    ad:sayText("STRINGID_ITDOESNTAFFECT", { def = t })
     return
   end
   t.expSeeded = true
   t.leechSeed = true
   t.expSeedSource = ctx.user
-  ad:say(Strings("%s was seeded!", name(ctx, t)))
+  ad:sayText("STRINGID_PKMNSEEDED", { def = t })
 end
 
 -- pokefirered/data/battle_scripts_1.s:1330
@@ -57,7 +54,7 @@ function Setup.destinyBond(ctx)
   ctx.user.expDestinyBond = true
   ctx.user.destinyBond = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s is trying\nto take its foe with it!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNTRYINGTOTAKEFOE", { atk = ctx.user })
 end
 
 -- pokefirered/data/battle_scripts_1.s:1455
@@ -68,7 +65,7 @@ function Setup.nightmare(ctx)
   if not ctx.adapter:hasStatus(t, "SLP") then return H.sayFail(ctx) end
   H.attackAnim(ctx)
   t.expNightmare = true
-  ctx.adapter:say(Strings("%s fell into\na NIGHTMARE!", name(ctx, t)))
+  ctx.adapter:sayText("STRINGID_PKMNFELLINTONIGHTMARE", { def = t })
 end
 
 -- pokefirered/data/battle_scripts_1.s:884
@@ -77,7 +74,7 @@ function Setup.focusEnergy(ctx)
   ctx.user.expFocusEnergy = true
   ctx.user.focusEnergy = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s is getting\npumped!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNGETTINGPUMPED", { atk = ctx.user })
 end
 
 -- pokefirered/data/battle_scripts_1.s:1551
@@ -86,7 +83,7 @@ function Setup.foresight(ctx)
   ctx.target.expIdentified = true
   ctx.target.foresight = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s identified\n%s!", name(ctx, ctx.user), name(ctx, ctx.target)))
+  ctx.adapter:sayText("STRINGID_PKMNIDENTIFIED", { atk = ctx.user, def = ctx.target })
 end
 
 -- pokefirered/src/battle_script_commands.c:7759
@@ -97,7 +94,7 @@ function Setup.lockOn(ctx)
   ctx.target.expLockedOnBy = ctx.user.side
   ctx.target.expLockedOnById = ctx.user.id
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s took aim\nat %s!", name(ctx, ctx.user), name(ctx, ctx.target)))
+  ctx.adapter:sayText("STRINGID_PKMNTOOKAIM", { atk = ctx.user, def = ctx.target })
 end
 
 -- pokefirered/src/battle_script_commands.c:9144
@@ -105,7 +102,7 @@ function Setup.magicCoat(ctx)
   if moved_last(ctx) then return H.sayFail(ctx) end
   ctx.user.expMagicCoat = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s shrouded\nitself in MAGIC COAT!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNSHROUDEDITSELF", { atk = ctx.user, currentMove = H.moveNum(ctx.move or ctx.moveId) })
 end
 
 -- pokefirered/data/battle_scripts_1.s:2527
@@ -113,7 +110,7 @@ function Setup.grudge(ctx)
   if ctx.user.expGrudge then return H.sayFail(ctx) end
   ctx.user.expGrudge = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s wants the\nopponent to bear a GRUDGE!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNWANTSGRUDGE", { atk = ctx.user })
 end
 
 -- pokefirered/src/battle_script_commands.c:9019
@@ -138,7 +135,7 @@ function Setup.imprison(ctx)
   if not shared then return H.sayFail(ctx) end
   user.expImprison = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s sealed the\nopponent's move(s)!", name(ctx, user)))
+  ctx.adapter:sayText("STRINGID_PKMNSEALEDOPPONENTMOVE", { atk = user })
 end
 
 -- pokefirered/src/battle_script_commands.c:9160
@@ -146,7 +143,7 @@ function Setup.snatch(ctx)
   if moved_last(ctx) then return H.sayFail(ctx) end
   ctx.user.expSnatch = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s waits for its foe\nto make a move!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNWAITSFORTARGET", { atk = ctx.user })
 end
 
 -- pokefirered/src/battle_script_commands.c:9316
@@ -154,14 +151,14 @@ function Setup.mudSport(ctx)
   if ctx.user.mudSport then return H.sayFail(ctx) end
   ctx.user.mudSport = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("Electricity's power was\nweakened!"))
+  ctx.adapter:sayText("STRINGID_ELECTRICITYWEAKENED")
 end
 
 function Setup.waterSport(ctx)
   if ctx.user.waterSport then return H.sayFail(ctx) end
   ctx.user.waterSport = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("Fire's power was\nweakened!"))
+  ctx.adapter:sayText("STRINGID_FIREWEAKENED")
 end
 
 -- pokefirered/src/battle_script_commands.c:793
@@ -179,7 +176,7 @@ function Setup.camouflage(ctx)
   ctx.user.type1 = t
   ctx.user.type2 = t
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s transformed\ninto the %s type!", name(ctx, ctx.user), Types.name(t)))
+  ctx.adapter:sayText("STRINGID_PKMNCHANGEDTYPE", { atk = ctx.user, buff1 = Types.name(t) })
 end
 
 -- pokefirered/src/battle_script_commands.c:8884
@@ -189,7 +186,7 @@ function Setup.rolePlay(ctx)
   if not foeAb or foeAb == "WONDER_GUARD" then return H.sayFail(ctx) end
   ctx.user.expTracedAbility = foeAb
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s copied\n%s's %s!", name(ctx, ctx.user), name(ctx, ctx.target), require("src.core.game3.battle.abilities").name(foeAb)))
+  ctx.adapter:sayText("STRINGID_PKMNCOPIEDFOE", { atk = ctx.user, def = ctx.target, defAbility = H.abilityId(foeAb) })
 end
 
 -- pokefirered/src/battle_script_commands.c:8999
@@ -201,7 +198,7 @@ function Setup.skillSwap(ctx)
   ctx.user.expTracedAbility = b
   ctx.target.expTracedAbility = a
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s swapped abilities\nwith its opponent!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNSWAPPEDABILITIES", { atk = ctx.user })
 end
 
 -- pokefirered/src/battle_script_commands.c:8544
@@ -233,7 +230,6 @@ function Setup.futureSight(ctx)
     turns = 3,
     damage = dmg,
     moveId = ctx.moveId,
-    moveName = ctx.opts and ctx.opts.moveName or "FUTURE SIGHT",
     attackerSide = ctx.user.side,
     attackerId = ctx.user.id,
     targetId = ctx.target.id,
@@ -242,9 +238,9 @@ function Setup.futureSight(ctx)
   local tok = side.tokens[#side.tokens]
   if H.moveNum(ctx.move or ctx.moveId) == 353 then
     tok.doomDesire = true
-    ad:say(Strings("%s chose\n%s as its destiny!", name(ctx, ctx.user), tostring(tok.moveName)))
+    ad:sayText("STRINGID_PKMNCHOSEXASDESTINY", { atk = ctx.user, currentMove = 353 })
   else
-    ad:say(Strings("%s foresaw\nan attack!", name(ctx, ctx.user)))
+    ad:sayText("STRINGID_PKMNFORESAWATTACK", { atk = ctx.user })
   end
 end
 
@@ -263,7 +259,7 @@ function Setup.curse(ctx)
     if cost == 0 then cost = 1 end
     H.attackAnim(ctx)
     ad:applyHpLoss(user, cost)
-    ad:say(Strings("%s cut its own HP and\nlaid a CURSE on %s!", name(ctx, user), name(ctx, t)))
+    ad:sayText("STRINGID_PKMNLAIDCURSE", { atk = user, def = t })
     local M = H.move(ctx)
     if M then M.checkUserFaint = true end
     return
@@ -303,23 +299,23 @@ function Setup.helpingHand(ctx)
     M.tname = ad:displayName(partner)
   end
   H.attackAnim(ctx)
-  ad:say(Strings("%s is ready to\nhelp %s!", name(ctx, user), name(ctx, partner)))
+  ad:sayText("STRINGID_PKMNREADYTOHELP", { atk = user, def = partner })
 end
 
 function Setup.splash(ctx)
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("But nothing happened!"))
+  ctx.adapter:sayText("STRINGID_BUTNOTHINGHAPPENED")
 end
 
 -- pokefirered/data/battle_scripts_1.s:902
 function Setup.confuse(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "OWN_TEMPO" then
-    return ad:say(Strings("%s's OWN TEMPO\nprevents confusion!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNPREVENTSCONFUSIONWITH", { def = t, defAbility = H.abilityId("OWN_TEMPO") })
   end
   if (t.substituteHP or 0) > 0 then return H.sayFail(ctx) end
   if (t.confusionTurns or 0) > 0 then
-    return ad:say(Strings("%s is\nalready confused!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNALREADYCONFUSED", { def = t })
   end
   if not H.accuracy(ctx, "normal") then return end
   local Status = require("src.core.game3.battle.effects.status")
@@ -337,14 +333,14 @@ function Setup.haze(ctx)
       for k in pairs(b.stages) do b.stages[k] = 0 end
     end
   end
-  ctx.adapter:say(Strings("All stat changes were\neliminated!"))
+  ctx.adapter:sayText("STRINGID_STATCHANGESGONE")
 end
 
 -- pokefirered/src/battle_script_commands.c:7442
 function Setup.substitute(ctx)
   local ad, user = ctx.adapter, ctx.user
   if (user.substituteHP or 0) > 0 then
-    return ad:say(Strings("%s already\nhas a SUBSTITUTE!", name(ctx, user)))
+    return ad:sayText("STRINGID_PKMNHASSUBSTITUTE", { atk = user })
   end
   local maxHp = ad:maxHp(user)
   local cost = math.floor(maxHp / 4)
@@ -352,30 +348,30 @@ function Setup.substitute(ctx)
   if ad:hp(user) <= cost then
     local M = H.move(ctx)
     if M then M.failed = true end
-    return ad:say(Strings("It was too weak to make\na SUBSTITUTE!"))
+    return ad:sayText("STRINGID_TOOWEAKFORSUBSTITUTE")
   end
   user.substituteHP = cost
   user.expTrapTurns = nil
   user.wrapped = nil
   H.attackAnim(ctx)
   ad:applyHpLoss(user, cost)
-  ad:say(Strings("%s made\na SUBSTITUTE!", name(ctx, user)))
+  ad:sayText("STRINGID_PKMNMADESUBSTITUTE", { atk = user })
 end
 
 -- pokefirered/data/battle_scripts_1.s:2566
 function Setup.teeterDance(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "OWN_TEMPO" then
-    return ad:say(Strings("%s's OWN TEMPO\nprevents confusion!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNPREVENTSCONFUSIONWITH", { def = t, defAbility = H.abilityId("OWN_TEMPO") })
   end
   if (t.substituteHP or 0) > 0 then return H.sayFail(ctx) end
   if (t.confusionTurns or 0) > 0 then
-    return ad:say(Strings("%s is\nalready confused!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNALREADYCONFUSED", { def = t })
   end
   if not H.accuracy(ctx, "normal") then return end
   local side = ad:ownSide(t)
   if side and (side.expSafeguardTurns or 0) > 0 then
-    return ad:say(Strings("%s's party is protected\nby SAFEGUARD!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNUSEDSAFEGUARD", { def = t })
   end
   H.attackAnim(ctx)
   local M = H.move(ctx) or { adapter = ad, user = ctx.user, target = t, st = ad._st }

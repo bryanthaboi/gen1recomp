@@ -1,6 +1,6 @@
 -- pokefirered/src/safari_zone.c:9 gNumSafariBalls / gSafariZoneStepCounter
 
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Safari = {}
 
@@ -213,14 +213,14 @@ end
 -- pokefirered/data/scripts/safari_zone.inc:25 SafariZone_EventScript_TimesUp
 function Safari.timesUp(session, game)
   return announce(
-    Strings("PA: Ding-dong!\\pTime's up!\\pPA: Your SAFARI GAME is over!"),
+    RomText.ascii("SafariZone_Text_TimesUp"),
     session, game, function() Safari.exitToEntrance(session, game) end)
 end
 
 -- pokefirered/data/scripts/safari_zone.inc:31 SafariZone_EventScript_OutOfBalls
 function Safari.outOfBalls(session, game)
   return announce(
-    Strings("PA: Ding-dong!\\pYou are out of SAFARI BALLS!\\pPA: Your SAFARI GAME is over!"),
+    RomText.ascii("SafariZone_Text_OutOfBalls"),
     session, game, function() Safari.exitToEntrance(session, game) end)
 end
 
@@ -245,7 +245,7 @@ function Safari.retirePrompt(session, game)
   if not Safari.isActive(session) then return false end
   local Field = package.loaded["src.core.game3.field"]
   -- pokefirered/data/text/safari_zone.inc:3 SafariZone_Text_WouldYouLikeToExit
-  local ask = Strings("Would you like to exit the SAFARI\nZONE right now?")
+  local ask = RomText.ascii("SafariZone_Text_WouldYouLikeToExit")
   local P = presenter()
   if not (P and P.message and P.yesNo) then
     Safari.exitToEntrance(session, game)

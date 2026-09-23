@@ -76,10 +76,24 @@ local adapters = {
   end,
 }
 
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+
 package.loaded["src.core.game3.scripting.space"] = {
   store = store,
   mapId = COUNTER_MAP,
   vm = { ctx = ctx, adapters = adapters },
+  ensureBundle = function() return romBundle end,
 }
 local Space = package.loaded["src.core.game3.scripting.space"]
 

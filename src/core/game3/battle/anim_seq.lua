@@ -1,7 +1,6 @@
 local bit = require("bit")
 local Anim = require("src.core.game3.battle.anim")
 local AnimCtx = require("src.core.game3.battle.anim_ctx")
-local Strings = require("src.core.Strings")
 local AnimCoords = require("src.core.game3.battle.anim_coords")
 
 local AnimSeq = {}
@@ -188,51 +187,39 @@ local function advance()
   AnimSeq._i = AnimSeq._i + 1
 end
 
--- The messages a move that did not land prints.  By the time a step is
--- built they are translated, so each is matched through the pattern of its
--- catalog wording, with the English fragments kept for other callers.
-local MISS_TEXT = {
-  Strings.source("%s's\nattack missed!"),
-  Strings.source("%s\nprotected itself!"),
-  Strings.source("It doesn't affect\n%s…"),
-}
-local CONFUSION_HIT = Strings.source("It hurt itself in its\nconfusion!")
-local SUBSTITUTE_HIT = Strings.source("The SUBSTITUTE took damage\nfor %s!")
-local MOVE_USED = Strings.source("%s used\n%s!")
-local FAINTED = Strings.source("%s fainted!")
-
--- A Strings() template as a Lua pattern: each directive matches any text.
-local function template_pattern(template)
-  local parts, pos = {}, 1
-  while true do
-    local s, e = template:find("%%%d*%$?[-+ #0]*%d*%.?%d*[sdi]", pos)
-    parts[#parts + 1] = template:sub(pos, (s or 0) - 1):gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
-    if not s then break end
-    parts[#parts + 1] = ".-"
-    pos = e + 1
-  end
-  return table.concat(parts)
+local function ids(list)
+  local set = {}
+  for _, k in ipairs(list) do set[k] = true end
+  return set
 end
 
-local function says(text, template)
-  local pattern = template_pattern(Strings(template))
-  return text:find("^" .. pattern .. "$") ~= nil
+-- data/battle_scripts_1.s:279
+local MISS_IDS = ids({
+  "STRINGID_ATTACKMISSED", "sText_AttackMissed",
+  "STRINGID_PKMNPROTECTEDITSELF", "STRINGID_PKMNPROTECTEDITSELF2", "sText_PkmnProtectedItself",
+  "STRINGID_ITDOESNTAFFECT", "sText_ItDoesntAffect",
+  "STRINGID_PKMNAVOIDEDATTACK", "sText_PkmnAvoidedAttack",
+  "STRINGID_PKMNUNAFFECTED", "sText_PkmnUnaffected",
+  "STRINGID_PKMNPROTECTEDBY", "sText_PkmnProtectedBy",
+})
+local CONFUSION_IDS = ids({ "STRINGID_ITHURTCONFUSION", "sText_ItHurtConfusion" })
+local SUBSTITUTE_IDS = ids({ "STRINGID_SUBSTITUTEDAMAGED", "sText_SubstituteDamaged" })
+-- src/battle_message.c:1693
+local USED_IDS = ids({
+  "STRINGID_USEDMOVE", "sText_AttackerUsedX",
+  "STRINGID_PLAYERUSEDITEM", "sText_PlayerUsedItem",
+  "STRINGID_OLDMANUSEDITEM", "sText_OldManUsedItem",
+  "sText_PokedudeUsedItem",
+  "STRINGID_PKMNUSEDXTOGETPUMPED", "sText_PkmnUsedXToGetPumped",
+  "Text_MonUsedMove",
+})
+
+function AnimSeq.isMoveUsedId(id)
+  return id ~= nil and USED_IDS[id] == true
 end
 
--- Whether a battle message is the "<POKéMON> used <move>!" line, in the
--- catalog's wording (the battle UI paces it differently).
-function AnimSeq.isMoveUsedText(text)
-  return says(tostring(text or ""), MOVE_USED)
-end
-
-local function is_miss_text(text)
-  text = tostring(text or "")
-  for _, template in ipairs(MISS_TEXT) do
-    if says(text, template) then return true end
-  end
-  return text:find("attack missed") or text:find("avoided the attack")
-    or text:find("protected itself") or text:find("doesn't affect")
-    or text:find("is unaffected") or text:find("was protected by")
+local function is_miss(ev)
+  return ev.id ~= nil and MISS_IDS[ev.id] == true
 end
 
 function AnimSeq.buildSteps(events, meta)
@@ -242,7 +229,7 @@ function AnimSeq.buildSteps(events, meta)
     steps[#steps + 1] = { kind = kind, data = data or {} }
   end
   local lastMove = nil
-  local lastMsg = nil
+  local lastMsgId = nil
   local deferredIn = nil
   local prevKind = nil
   local n = #events
@@ -250,19 +237,18 @@ function AnimSeq.buildSteps(events, meta)
     local ev = events[i]
     local k = ev.kind
     if k == "msg" then
-      if is_miss_text(ev.text) and not lastMove and prevKind == "msg" then
+      if is_miss(ev) and not lastMove and prevKind == "msg" then
         -- pokefirered/data/battle_scripts_1.s:279
         add("pause", { frames = PAUSE_SHORT })
       end
-      if lastMove and (says(tostring(ev.text or ""), SUBSTITUTE_HIT)
-          or tostring(ev.text or ""):find("SUBSTITUTE took damage")) then
+      if lastMove and SUBSTITUTE_IDS[ev.id or ""] then
         -- pokefirered/src/battle_script_commands.c:5300
         local a = ev_id(lastMove, "attackerId", "attacker") or 0
         local t = ev_id(lastMove, "targetId", "target") or opposite(a)
         add("hitfx", { side = side_of(t), battler = t, effectiveness = meta.effectiveness or 1 })
       end
-      add("msg", { text = ev.text, wait = ev.wait })
-      lastMsg = ev.text
+      add("msg", { text = ev.text, wait = ev.wait, id = ev.id })
+      lastMsgId = ev.id
       if deferredIn then
         add("switch_in", deferredIn)
         deferredIn = nil
@@ -299,8 +285,7 @@ function AnimSeq.buildSteps(events, meta)
       add("hp", { side = ev.side, battler = b, from = ev.from, to = ev.to, maxHp = ev.maxHp })
     elseif k == "hp" then
       local b = ev_id(ev, "battler", "side")
-      if prevKind == "msg" and (says(tostring(lastMsg or ""), CONFUSION_HIT)
-          or tostring(lastMsg or ""):find("hurt itself in its")) then
+      if prevKind == "msg" and CONFUSION_IDS[lastMsgId or ""] then
         -- pokefirered/data/battle_scripts_1.s:3741
         add("hitfx", { side = ev.side, battler = b, effectiveness = 1 })
       end
@@ -339,47 +324,6 @@ function AnimSeq.buildSteps(events, meta)
   return steps
 end
 
-local function legacy_steps(result)
-  local steps = {}
-  local function add(kind, data)
-    steps[#steps + 1] = { kind = kind, data = data }
-  end
-  local msgs = result.msgs or {}
-  local usedLine = msgs[1]
-  local restStart = 1
-  if usedLine and (says(tostring(usedLine), MOVE_USED) or tostring(usedLine):find("used")) then
-    add("msg", { text = usedLine })
-    restStart = 2
-  end
-  local us = result.user and result.user.side or "player"
-  local ts = result.target and result.target.side or ((us == "player") and "enemy" or "player")
-  if result.hits and #result.hits > 0 then
-    for hi, hit in ipairs(result.hits) do
-      add("move", { moveId = result.moveId, attacker = us, target = ts, turn = 0 })
-      add("hitfx", { side = hit.side, effectiveness = (hi == 1) and result.effectiveness or nil })
-      add("hp", hit)
-    end
-  elseif not result.missed then
-    add("move", { moveId = result.moveId, attacker = us, target = ts, turn = 0 })
-  end
-  for _, h in ipairs(result.heals or {}) do add("hp", h) end
-  local faintI = 1
-  local faints = result.faints or {}
-  for i = restStart, #msgs do
-    local text = msgs[i]
-    if type(text) == "string" and (says(text, FAINTED) or text:find("fainted")) then
-      local side = faints[faintI] and faints[faintI].side
-      if not side then side = (faintI == 1) and ts or us end
-      faintI = faintI + 1
-      add("faint", { side = side })
-      add("msg", { text = text })
-    else
-      add("msg", { text = text })
-    end
-  end
-  return steps
-end
-
 local function start(steps, pushMsg)
   if #steps == 0 then
     finish_seq()
@@ -410,13 +354,7 @@ function AnimSeq.begin(result, pushMsg)
   AnimSeq.reset()
   if not result then return end
   AnimSeq._scene = scene_on()
-  local steps
-  if type(result.events) == "table" then
-    steps = AnimSeq.buildSteps(result.events, result)
-  else
-    steps = legacy_steps(result)
-  end
-  start(steps, pushMsg)
+  start(AnimSeq.buildSteps(assert(result.events, "battle result has no event stream"), result), pushMsg)
 end
 
 function AnimSeq.beginEvents(events, pushMsg, meta)
@@ -747,7 +685,7 @@ local function run_step(step)
   local d = step.data or {}
 
   if kind == "msg" then
-    if AnimSeq._pushMsg and d.text then AnimSeq._pushMsg(d.text, d.wait) end
+    if AnimSeq._pushMsg and d.text then AnimSeq._pushMsg(d.text, d.wait, d.id) end
     AnimSeq._waiting = true
     AnimSeq._waitingMsg = true
     return

@@ -1,6 +1,6 @@
 package.path = './?.lua;./?/init.lua;./tools/save-editor/?.lua;./tools/save-editor/panels/?.lua;' .. package.path
 _G.love = require('tests.love_stub')
-assert(require('tests.game3_cache').mount('pokemon/meta.lua'))
+require('tests.game3_cache').mountOrSkip('save_editor_gen3_persistence_tests', 'pokemon/meta.lua')
 local P = require('src.core.game3.pokemon')
 P.install(nil)
 local E = require('src.core.game3.battle.experience')

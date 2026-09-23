@@ -86,7 +86,7 @@ local function decode_text(rom, off)
     if seg.t == "nl" then
       out[#out + 1] = "\n"
     elseif seg.t == "ext" and seg.cmd == 0x13 then
-      out[#out + 1] = string.format("{CLEAR_TO %d}", seg.raw:byte(3))
+      out[#out + 1] = string.format("{CLEAR_TO %d}", seg.args[1])
     elseif seg.t == "text" then
       out[#out + 1] = seg.s
     elseif seg.t ~= "eos" then

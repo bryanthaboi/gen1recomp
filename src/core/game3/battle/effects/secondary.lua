@@ -1,14 +1,9 @@
 local Types = require("src.core.game3.battle.types")
 local Oak = require("src.core.game3.battle.oak_advice")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
+local H = require("src.core.game3.battle.effects._helpers")
 
 local Secondary = {}
-
--- pokefirered/src/battle_message.c:437
-Secondary.STAT_NAME = {
-  attack = "ATTACK", defense = "DEFENSE", speed = "SPEED",
-  spAtk = "SP. ATK", spDef = "SP. DEF", accuracy = "accuracy", evasion = "evasiveness",
-}
 
 -- pokefirered/include/constants/pokemon.h:167
 Secondary.STAT_ID = {
@@ -32,19 +27,25 @@ function Secondary.statAnimArg(stat, delta)
   return id + base - 1
 end
 
-local function name(ad, b) return ad:displayName(b) end
-
--- The stat's display name, translated at the time it is said.
+-- src/battle_message.c:437
 function Secondary.statName(stat)
-  return Strings(Secondary.STAT_NAME[stat] or stat)
+  return RomText.at("gStatNamesTable", Secondary.STAT_ID[stat])
 end
 
-local function stat_text(ad, battler, stat, delta)
-  local who, what = name(ad, battler), Secondary.statName(stat)
-  if delta >= 2 then return Strings("%s's %s\nsharply rose!", who, what) end
-  if delta >= 1 then return Strings("%s's %s\nrose!", who, what) end
-  if delta <= -2 then return Strings("%s's %s\nharshly fell!", who, what) end
-  return Strings("%s's %s\nfell!", who, what)
+-- src/battle_script_commands.c:6758
+local function stat_text(ad, battler, stat, delta, isUser)
+  local change
+  if delta >= 2 then change = RomText.plain("STRINGID_STATSHARPLY") .. RomText.plain("STRINGID_STATROSE")
+  elseif delta >= 1 then change = RomText.plain("STRINGID_STATROSE")
+  elseif delta <= -2 then change = RomText.plain("STRINGID_STATHARSHLY") .. RomText.plain("STRINGID_STATFELL")
+  else change = RomText.plain("STRINGID_STATFELL") end
+  local id
+  if delta > 0 then
+    id = isUser and "STRINGID_ATTACKERSSTATROSE" or "STRINGID_DEFENDERSSTATROSE"
+  else
+    id = isUser and "STRINGID_ATTACKERSSTATFELL" or "STRINGID_DEFENDERSSTATFELL"
+  end
+  ad:sayText(id, { atk = battler, def = battler, buff1 = Secondary.statName(stat), buff2 = change })
 end
 
 -- pokefirered/src/battle_script_commands.c:6655
@@ -58,26 +59,22 @@ function Secondary.changeStat(ad, battler, stat, delta, flags)
     if side and (side.expMistTurns or 0) > 0 and not flags.certain and not flags.curse then
       if flags.allowPtr and not battler._statLoweredMsg then
         battler._statLoweredMsg = true
-        ad:say(Strings("%s is protected\nby MIST!", name(ad, battler)))
+        ad:sayText("STRINGID_PKMNPROTECTEDBYMIST", { scrActive = battler })
       end
       return "blocked"
     end
     if (ab == "CLEAR_BODY" or ab == "WHITE_SMOKE") and not flags.certain and not flags.curse then
       if flags.allowPtr and not battler._statLoweredMsg then
         battler._statLoweredMsg = true
-        ad:say(Strings("%s's %s\nprevents stat loss!", name(ad, battler), require("src.core.game3.battle.abilities").name(ab)))
+        ad:sayText("STRINGID_PKMNPREVENTSSTATLOSSWITH", { scrActive = battler, scrActiveAbility = H.abilityId(ab) })
       end
       return "blocked"
     end
-    if ab == "KEEN_EYE" and stat == "accuracy" and not flags.certain then
+    if (ab == "KEEN_EYE" and stat == "accuracy" or ab == "HYPER_CUTTER" and stat == "attack") and not flags.certain then
       if flags.allowPtr then
-        ad:say(Strings("%s's KEEN EYE\nprevents accuracy loss!", name(ad, battler)))
-      end
-      return "blocked"
-    end
-    if ab == "HYPER_CUTTER" and stat == "attack" and not flags.certain then
-      if flags.allowPtr then
-        ad:say(Strings("%s's HYPER CUTTER\nprevents ATTACK loss!", name(ad, battler)))
+        ad:sayText("STRINGID_PKMNSXPREVENTSYLOSS", {
+          scrActive = battler, scrActiveAbility = H.abilityId(ab), buff1 = Secondary.statName(stat),
+        })
       end
       return "blocked"
     end
@@ -86,14 +83,14 @@ function Secondary.changeStat(ad, battler, stat, delta, flags)
     end
     if cur <= -6 then
       if not flags.noMsg then
-        ad:say(Strings("%s's %s\nwon't go lower!", name(ad, battler), Secondary.statName(stat)))
+        ad:sayText("STRINGID_STATSWONTDECREASE", { def = battler, buff1 = Secondary.statName(stat) })
       end
       return "wont"
     end
   else
     if cur >= 6 then
       if not flags.noMsg then
-        ad:say(Strings("%s's %s\nwon't go higher!", name(ad, battler), Secondary.statName(stat)))
+        ad:sayText("STRINGID_STATSWONTINCREASE", { atk = battler, buff1 = Secondary.statName(stat) })
       end
       return "wont"
     end
@@ -105,10 +102,10 @@ function Secondary.changeStat(ad, battler, stat, delta, flags)
     ad:playAnim("general", "STATS_CHANGE", battler, battler, Secondary.statAnimArg(stat, delta))
   end
   if not flags.noMsg then
-    ad:say(stat_text(ad, battler, stat, delta))
+    stat_text(ad, battler, stat, delta, flags.user)
     -- pokefirered/src/battle_controller_oak_old_man.c:1768
     if Oak.active(ad._st) and delta < 0 and battler.side == "enemy" then
-      Oak.sayOnce(ad._st, Oak.FLAG_STAT_CHG, "loweringStats", function(t) ad:say(t) end)
+      Oak.sayOnce(ad._st, Oak.FLAG_STAT_CHG, "loweringStats", function(t, key) ad:say(t, key) end)
     end
   end
   return "worked"
@@ -161,13 +158,14 @@ Secondary.STAT_EFFECTS = {
   EVS_MINUS_1 = { "evasion", -1 },
 }
 
+-- data/battle_scripts_1.s:3848
 local STATUS_MSG = {
-  SLP = Strings.source("%s\nfell asleep!"),
-  PSN = Strings.source("%s\nwas poisoned!"),
-  BRN = Strings.source("%s was burned!"),
-  FRZ = Strings.source("%s was\nfrozen solid!"),
-  PAR = Strings.source("%s is paralyzed!\nIt may be unable to move!"),
-  TOX = Strings.source("%s is badly\npoisoned!"),
+  SLP = "STRINGID_PKMNFELLASLEEP",
+  PSN = "STRINGID_PKMNWASPOISONED",
+  BRN = "STRINGID_PKMNWASBURNED",
+  FRZ = "STRINGID_PKMNWASFROZEN",
+  PAR = "STRINGID_PKMNWASPARALYZED",
+  TOX = "STRINGID_PKMNBADLYPOISONED",
 }
 Secondary.STATUS_MSG = STATUS_MSG
 
@@ -181,9 +179,9 @@ local STATUS_EFFECT_RANK = {
   FLINCH = 8, TRI_ATTACK = 9,
 }
 
--- template: holder, then ability (battle_message.c sText_PkmnPrevents*With)
-local function ability_prevention_msg(ad, b, ab, template)
-  ad:say(Strings(template, name(ad, b), require("src.core.game3.battle.abilities").name(ab)))
+local function ability_prevention_msg(ad, b, ab, id)
+  local abId = H.abilityId(ab)
+  ad:sayText(id, { eff = b, defAbility = abId, effAbility = abId })
 end
 
 local function apply_status_effect(M, eff, primary, certain, effBattler)
@@ -193,17 +191,17 @@ local function apply_status_effect(M, eff, primary, certain, effBattler)
   local strict = primary or certain
   if status == "PSN" or status == "TOX" then
     if ab == "IMMUNITY" and strict then
-      ability_prevention_msg(ad, effBattler, ab, Strings.source("%s's %s\nprevents poisoning!"))
+      ability_prevention_msg(ad, effBattler, ab, "STRINGID_PKMNPREVENTSPOISONINGWITH")
       return false
     end
   elseif status == "BRN" then
     if ab == "WATER_VEIL" and strict then
-      ad:say(Strings("%s's WATER VEIL\nprevents burns!", name(ad, effBattler)))
+      ability_prevention_msg(ad, effBattler, ab, "STRINGID_PKMNSXPREVENTSBURNS")
       return false
     end
   elseif status == "PAR" then
     if ab == "LIMBER" and strict then
-      ability_prevention_msg(ad, effBattler, ab, Strings.source("%s's %s\nprevents paralysis!"))
+      ability_prevention_msg(ad, effBattler, ab, "STRINGID_PKMNPREVENTSPARALYSISWITH")
       return false
     end
   end
@@ -216,7 +214,7 @@ local function apply_status_effect(M, eff, primary, certain, effBattler)
   end
   ad:applyStatus(effBattler, status, M.user, { ignoreSafeguard = true, force = true })
   ad:statusAnim(effBattler, status)
-  ad:say(Strings(STATUS_MSG[status], name(ad, effBattler)))
+  ad:sayText(STATUS_MSG[status], { eff = effBattler })
   -- pokefirered/src/battle_script_commands.c:2376
   if status == "PSN" or status == "TOX" or status == "PAR" or status == "BRN" then
     ad._syncEffect = { status = status }
@@ -225,12 +223,7 @@ local function apply_status_effect(M, eff, primary, certain, effBattler)
 end
 
 local function item_name(id)
-  local ok, ItemsData = pcall(require, "src.core.game3.items_data")
-  if ok and ItemsData and ItemsData.displayName then
-    local n = ItemsData.displayName(id)
-    if n and n ~= "" then return tostring(n) end
-  end
-  return Strings("ITEM %s", tostring(id))
+  return require("src.core.game3.items_data").displayName(id)
 end
 Secondary.itemName = item_name
 
@@ -240,13 +233,14 @@ local function is_mail(id)
 end
 Secondary.isMail = is_mail
 
+-- src/battle_message.c:1042
 local TRAP_MSG = {
-  [20] = function(t, u) return Strings("%s was squeezed by\n%s's BIND!", t, u) end,
-  [35] = function(t, u) return Strings("%s was WRAPPED by\n%s!", t, u) end,
-  [83] = function(t) return Strings("%s was trapped\nin the vortex!", t) end,
-  [128] = function(t, u) return Strings("%s CLAMPED\n%s!", u, t) end,
-  [250] = function(t) return Strings("%s was trapped\nin the vortex!", t) end,
-  [328] = function(t) return Strings("%s was trapped\nby SAND TOMB!", t) end,
+  [20] = "STRINGID_PKMNSQUEEZEDBYBIND",
+  [35] = "STRINGID_PKMNWRAPPEDBY",
+  [83] = "STRINGID_PKMNTRAPPEDINVORTEX",
+  [128] = "STRINGID_PKMNCLAMPED",
+  [250] = "STRINGID_PKMNTRAPPEDINVORTEX",
+  [328] = "STRINGID_PKMNTRAPPEDBYSANDTOMB",
 }
 
 local function persist_item(b, item)
@@ -295,12 +289,12 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     if ad:abilityOf(effBattler) == "OWN_TEMPO" or (effBattler.confusionTurns or 0) > 0 then return false end
     effBattler.confusionTurns = ad:roll(0, 3) % 4 + 2
     ad:playAnim("status", "CONFUSION", effBattler, effBattler)
-    ad:say(Strings("%s became\nconfused!", name(ad, effBattler)))
+    ad:sayText("STRINGID_PKMNWASCONFUSED", { eff = effBattler })
     return true
   elseif eff == "FLINCH" then
     if ad:abilityOf(effBattler) == "INNER_FOCUS" then
       if primary or certain then
-        ad:say(Strings("%s's INNER FOCUS\nprevents flinching!", name(ad, effBattler)))
+        ad:sayText("STRINGID_PKMNSXPREVENTSFLINCHING", { eff = effBattler, effAbility = H.abilityId("INNER_FOCUS") })
       end
       return false
     end
@@ -312,7 +306,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     effBattler.expLockedSlot = M.slot
     effBattler.expUproarTurns = ad:roll(0, 3) % 4 + 2
     effBattler.uproar = true
-    ad:say(Strings("%s caused\nan UPROAR!", name(ad, effBattler)))
+    ad:sayText("STRINGID_PKMNCAUSEDUPROAR", { atk = effBattler })
     return true
   elseif eff == "PAYDAY" then
     -- pokefirered/src/battle_script_commands.c:2455
@@ -320,7 +314,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
       local lvl = tonumber(user.mon and user.mon.level) or 1
       M.st.payDayCoins = math.min(0xFFFF, (M.st.payDayCoins or 0) + lvl * 5)
     end
-    ad:say(Strings("Coins scattered everywhere!"))
+    ad:sayText("STRINGID_COINSSCATTERED")
     return true
   elseif eff == "TRI_ATTACK" then
     if ad:status(effBattler) then return false end
@@ -333,11 +327,9 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     if Rules.partialTrap.active and not Rules.partialTrap.active() then return false end
     effBattler.expTrapTurns = Rules.partialTrap.rollTurns(ad:rng())
     effBattler.expTrapMove = M.mnum
-    effBattler.expTrapMoveName = M.moveName
     effBattler.expTrapSource = user
     effBattler.wrapped = true
-    local fn = TRAP_MSG[M.mnum] or TRAP_MSG[20]
-    ad:say(fn(name(ad, effBattler), name(ad, user)))
+    ad:sayText(TRAP_MSG[M.mnum], { atk = user, def = effBattler })
     return true
   elseif eff == "RECOIL_25" or eff == "RECOIL_33" then
     local div = (eff == "RECOIL_25") and 4 or 3
@@ -345,7 +337,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     if dmg == 0 then dmg = 1 end
     if M.mnum ~= 165 and ad:abilityOf(user) == "ROCK_HEAD" then return false end
     ad:applyHpLoss(user, dmg)
-    ad:say(Strings("%s is hit\nwith recoil!", name(ad, user)))
+    ad:sayText("STRINGID_PKMNHITWITHRECOIL", { atk = user })
     M.checkUserFaint = true
     return true
   elseif Secondary.STAT_EFFECTS[eff] then
@@ -372,7 +364,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     if user.expKnockedOff or (St and St.isKnockedOff(ad._st, user)) then return false end
     local tItem = tonumber(target.item) or 0
     if tItem ~= 0 and ad:abilityOf(target) == "STICKY_HOLD" then
-      ad:say(Strings("%s's STICKY HOLD\nmade %s ineffective!", name(ad, target), (M.moveName or "THIEF")))
+      ad:sayText("STRINGID_PKMNSXMADEYINEFFECTIVE", { def = target, defAbility = H.abilityId("STICKY_HOLD"), currentMove = M.mnum })
       return false
     end
     if (tonumber(user.item) or 0) ~= 0 or tItem == 0 or tItem == 175 or is_mail(tItem) then
@@ -385,7 +377,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     -- an item its battler no longer has duplicates it on the next send-out.
     persist_item(target, 0)
     ad:playAnim("general", "ITEM_STEAL", user, target)
-    ad:say(Strings("%s stole\n%s's %s!", name(ad, user), name(ad, target), item_name(tItem)))
+    ad:sayText("STRINGID_PKMNSTOLEITEM", { atk = user, def = target, lastItem = tItem })
     return true
   elseif eff == "PREVENT_ESCAPE" then
     target.expTrapped = true
@@ -414,7 +406,9 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     local did = false
     if (user.expTrapTurns or 0) > 0 then
       local src = user.expTrapSource
-      ad:say(Strings("%s got free of\n%s's %s!", name(ad, user), name(ad, src or target), tostring(user.expTrapMoveName or "BIND")))
+      ad:sayText("STRINGID_PKMNGOTFREE", {
+        atk = user, def = src or target, buff1 = require("src.core.game3.pokemon").moveName(user.expTrapMove),
+      })
       user.expTrapTurns = nil
       user.expTrapMove = nil
       user.expTrapSource = nil
@@ -425,14 +419,14 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
       user.expSeeded = nil
       user.expSeedSource = nil
       user.leechSeed = nil
-      ad:say(Strings("%s shed\nLEECH SEED!", name(ad, user)))
+      ad:sayText("STRINGID_PKMNSHEDLEECHSEED", { atk = user })
       did = true
     end
     local side = ad:ownSide(user)
     local Hazards = require("src.core.game3.battle.effects.hazards")
     if side and Hazards.layers(side) > 0 then
       Hazards.clear(side)
-      ad:say(Strings("%s blew away\nSPIKES!", name(ad, user)))
+      ad:sayText("STRINGID_PKMNBLEWAWAYSPIKES", { atk = user })
       did = true
     end
     user.trapped = nil
@@ -440,7 +434,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
   elseif eff == "REMOVE_PARALYSIS" then
     if ad:status(target) ~= "PAR" then return false end
     ad:clearStatus(target)
-    ad:say(Strings("%s was\nhealed of paralysis!", name(ad, target)))
+    ad:sayText("STRINGID_PKMNHEALEDPARALYSIS", { def = target })
     return true
   elseif eff == "ATK_DEF_DOWN" then
     Secondary.multiStatAnim(ad, user, { "attack", "defense" }, -1, { cantPrevent = true })
@@ -463,7 +457,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     local tItem = tonumber(effBattler.item) or 0
     if ad:abilityOf(effBattler) == "STICKY_HOLD" then
       if tItem == 0 then return false end
-      ad:say(Strings("%s's STICKY HOLD\nmade %s ineffective!", name(ad, effBattler), (M.moveName or "KNOCK OFF")))
+      ad:sayText("STRINGID_PKMNSXMADEYINEFFECTIVE", { def = effBattler, defAbility = H.abilityId("STICKY_HOLD"), currentMove = M.mnum })
       return false
     end
     if tItem == 0 then return false end
@@ -473,7 +467,7 @@ function Secondary.set(M, eff, primary, certain, affectsUser)
     local St = battle_state()
     if St then St.markKnockedOff(ad._st, effBattler) end
     ad:playAnim("general", "ITEM_KNOCKOFF", user, effBattler)
-    ad:say(Strings("%s knocked off\n%s's %s!", name(ad, user), name(ad, effBattler), item_name(tItem)))
+    ad:sayText("STRINGID_PKMNKNOCKEDOFF", { atk = user, def = effBattler, lastItem = tItem })
     return true
   end
   return false

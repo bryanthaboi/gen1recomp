@@ -1,6 +1,8 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_event_seq_test")
+require("tests.fixture_data.game3_items").install()
 
 local Moves = require("src.core.game3.battle.moves")
 

@@ -17,6 +17,7 @@
 
 local Collision = require("src.world.Collision")
 local GameVersion = require("src.core.GameVersion")
+local ModRuntime = require("src.mods.Runtime")
 
 local PikachuFollower = {}
 
@@ -178,6 +179,12 @@ local function shouldSpawn(game, ow)
   return false
 end
 
+function PikachuFollower.setShouldSpawn(fn)
+  local previous = shouldSpawn
+  shouldSpawn = fn or previous
+  return previous
+end
+
 local function makeFollower(game, ow, x, y, facing)
   local NPC = require("src.world.NPC")
   local npc = NPC.new(game.data, ow.map.id, {
@@ -333,7 +340,7 @@ function PikachuFollower.onMapEntered(game, ow, opts, viaMapLoad)
   ow.pikachuBillsScene = nil
   ow.pikachuFanClubScene = nil
   remove(ow)
-  if not shouldSpawn(game, ow) then return end
+  if not ModRuntime.call("world.follower.spawn", shouldSpawn, game, ow) then return end
   -- opts.keepPikachu is the follower a connection crossing kept alive:
   -- LoadMapHeader's connection path sets wPikachuSpawnState = 2 and bit 4
   -- of wPikachuOverworldStateFlags, so SchedulePikachuSpawnForAfterText
@@ -608,10 +615,10 @@ function PikachuFollower.update(game, ow)
   if npc then updatePassable(game, ow, npc) end
   if PikachuFollower.isFollowingDisabled(ow) then return end
   if not npc then
-    if shouldSpawn(game, ow) then PikachuFollower.onMapEntered(game, ow) end
+    if ModRuntime.call("world.follower.spawn", shouldSpawn, game, ow) then PikachuFollower.onMapEntered(game, ow) end
     return
   end
-  if not shouldSpawn(game, ow) then
+  if not ModRuntime.call("world.follower.spawn", shouldSpawn, game, ow) then
     remove(ow)
     return
   end

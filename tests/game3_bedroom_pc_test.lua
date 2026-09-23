@@ -2,7 +2,16 @@
 -- pokefirered/src/player_pc.c:151 BedroomPC, pokefirered/src/player_pc.c:100 gNewGamePCItems
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+require("tests.game3_cache").stubSpeciesNames()
+require("tests.fixture_data.game3_items").install()
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local failed = 0
 local function check(cond, msg)
@@ -97,7 +106,7 @@ local closed = 0
 PcMenu.show({ session = {}, onClose = function() closed = closed + 1 end,
   startMode = "player_pc", closeOnExit = true })
 check(PcMenu.mode == "player_pc", "starts in player_pc (got " .. tostring(PcMenu.mode) .. ")")
-check(PcMenu._status == "What would you like to do?", "status What would you like to do?")
+check(PcMenu._status == "gText_WhatWouldYouLikeToDo", "status What would you like to do?")
 PcMenu.handleInput(input("b"))
 check(not PcMenu.isOpen() and closed == 1, "B closes bedroom PC and fires onClose")
 
@@ -149,9 +158,9 @@ local function joined(list)
   for i, a in ipairs(list) do t[i] = a.label end
   return table.concat(t, "/")
 end
-check(joined(PcMenu.TOP_ACTIONS) == "ITEM STORAGE/MAILBOX/TURN OFF",
+check(joined(PcMenu.TOP_ACTIONS) == "sMenuActions_TopMenu[0]/sMenuActions_TopMenu[1]/sMenuActions_TopMenu[2]",
   "top menu labels (got " .. joined(PcMenu.TOP_ACTIONS) .. ")")
-check(joined(PcMenu.ITEM_STORAGE_ACTIONS) == "WITHDRAW ITEM/DEPOSIT ITEM/CANCEL",
+check(joined(PcMenu.ITEM_STORAGE_ACTIONS) == "sMenuActions_ItemPc[0]/sMenuActions_ItemPc[1]/sMenuActions_ItemPc[2]",
   "item storage labels (got " .. joined(PcMenu.ITEM_STORAGE_ACTIONS) .. ")")
 
 local seLog = {}
@@ -164,39 +173,49 @@ PcMenu.show({ session = s6, startMode = "player_pc", closeOnExit = true,
 check(#seLog == 0, "bedroom PC open plays no SE_PC_LOGIN")
 PcMenu.handleInput(input("a"))
 check(PcMenu.mode == "item_storage" and PcMenu.cursor == 1
-  and PcMenu._status == "Take out items from the PC.", "ITEM STORAGE -> submenu, WITHDRAW desc")
+  and PcMenu._status == "sItemStorageActionDescriptionPtrs[0]", "ITEM STORAGE -> submenu, WITHDRAW desc")
 PcMenu.handleInput(input("up"))
 check(PcMenu.cursor == 1, "submenu does not wrap up")
 PcMenu.handleInput(input("down"))
-check(PcMenu._status == "Store items in the PC.", "DEPOSIT desc")
+check(PcMenu._status == "sItemStorageActionDescriptionPtrs[1]", "DEPOSIT desc")
 PcMenu.handleInput(input("down"))
-check(PcMenu._status == "Go back to the\nprevious menu.", "CANCEL desc")
+check(PcMenu._status == "sItemStorageActionDescriptionPtrs[2]", "CANCEL desc")
 PcMenu.handleInput(input("down"))
 check(PcMenu.cursor == 3, "submenu does not wrap down")
 PcMenu.handleInput(input("up"))
 PcMenu.handleInput(input("up"))
 PcMenu.handleInput(input("a"))
-check(PcMenu.mode == "msg" and PcMenu._status == "There are no items.", "empty WITHDRAW -> There are no items.")
+check(PcMenu.mode == "msg" and PcMenu._status == "gText_ThereAreNoItems", "empty WITHDRAW -> There are no items.")
 PcMenu.handleInput(input("a"))
 check(PcMenu.mode == "item_storage" and PcMenu.cursor == 1
-  and PcMenu._status == "Take out items from the PC.", "no-items message returns to submenu")
+  and PcMenu._status == "sItemStorageActionDescriptionPtrs[0]", "no-items message returns to submenu")
 PcMenu.handleInput(input("b"))
 check(PcMenu.mode == "player_pc" and PcMenu.cursor == 1
-  and PcMenu._status == "What would you like to do?", "B in submenu returns to top menu")
+  and PcMenu._status == "gText_WhatWouldYouLikeToDo", "B in submenu returns to top menu")
 PcMenu.handleInput(input("down"))
 PcMenu.handleInput(input("a"))
-check(PcMenu.mode == "msg" and PcMenu._status == "There's no MAIL here.", "MAILBOX -> There's no MAIL here.")
+check(PcMenu.mode == "msg" and PcMenu._status == "gText_TheresNoMailHere", "MAILBOX -> There's no MAIL here.")
 PcMenu.handleInput(input("a"))
 check(PcMenu.mode == "player_pc" and PcMenu.cursor == 1
-  and PcMenu._status == "What would you like to do?", "mail message returns to top menu")
+  and PcMenu._status == "gText_WhatWouldYouLikeToDo", "mail message returns to top menu")
 s6.storage.items[1] = { id = 13, qty = 1 }
 PcMenu.handleInput(input("a"))
 PcMenu.handleInput(input("a"))
-check(PcMenu.mode == "withdraw_item", "WITHDRAW ITEM opens PC item list")
-PcMenu.handleInput(input("a"))
-check(PcMenu.mode == "msg" and Bag.has(s6.bag, 13, 1), "POTION withdrawn")
-PcMenu.handleInput(input("a"))
-check(PcMenu.mode == "item_storage" and PcMenu.cursor == 1, "after withdraw back in ITEM STORAGE")
+local ItemPc = require("src.ui.game3.item_pc")
+-- pokefirered/src/player_pc.c:378
+check(PcMenu.mode == "item_pc" and ItemPc.isOpen(), "WITHDRAW ITEM opens the item PC")
+for _ = 1, 30 do ItemPc.handleInput(input()) end
+check(ItemPc._fx == nil and ItemPc.mode == "list", "the PC screen turn-on effect finishes")
+ItemPc.handleInput(input("a"))
+check(ItemPc.mode == "submenu", "A on POTION opens WITHDRAW / GIVE / CANCEL")
+ItemPc.handleInput(input("a"))
+check(ItemPc.mode == "result" and ItemPc.resultText == "gText_WithdrewQuantItem", "a single POTION skips the quantity")
+ItemPc.handleInput(input("a"))
+check(Bag.has(s6.bag, 13, 1) and #s6.storage.items == 0, "POTION withdrawn")
+ItemPc.handleInput(input("b"))
+for _ = 1, 30 do if ItemPc.isOpen() then ItemPc.handleInput(input()) end end
+check(not ItemPc.isOpen() and PcMenu.mode == "item_storage" and PcMenu.cursor == 1,
+  "B turns the item PC off and returns to ITEM STORAGE")
 PcMenu.handleInput(input("b"))
 PcMenu.handleInput(input("b"))
 check(not PcMenu.isOpen() and closed6 == 1, "B at top menu turns the PC off")

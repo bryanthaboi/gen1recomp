@@ -342,6 +342,7 @@ function Renderer:beginFrame(transparent)
   -- a popped transition cannot leave a sticky black veil
   self.worldFadeAlpha = nil
   self.worldFadeColor = nil
+  self.voidVeil = nil
   -- battle-transition wipe, drawn over the whole surface (BattleTransition)
   self.battleWipe = nil
   -- engine/battle/battle_transitions.asm:28
@@ -1171,6 +1172,14 @@ function Renderer:endFrame(zones, worldZones)
   -- (and its duplicate #772).
   if self.battleDim and self.battleDim > 0 then
     love.graphics.setColor(0, 0, 0, self.battleDim)
+    for _, r in ipairs(subtractRect({ { vux, vuy, vuw, vuh } }, uox, uoy, uvpw, uvph)) do
+      love.graphics.rectangle("fill", r[1], r[2], r[3], r[4])
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  local voidVeil = self.voidVeil
+  if voidVeil and (voidVeil[4] or 0) > 0 then
+    love.graphics.setColor(voidVeil[1], voidVeil[2], voidVeil[3], voidVeil[4])
     for _, r in ipairs(subtractRect({ { vux, vuy, vuw, vuh } }, uox, uoy, uvpw, uvph)) do
       love.graphics.rectangle("fill", r[1], r[2], r[3], r[4])
     end

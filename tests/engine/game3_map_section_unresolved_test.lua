@@ -12,6 +12,7 @@
 --   luajit tests/engine/game3_map_section_unresolved_test.lua
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_map_sections").install()
 
 local T = require("tests.harness")
 local check, eq = T.check, T.eq

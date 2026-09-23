@@ -2,18 +2,15 @@
 local H = require("src.core.game3.battle.effects._helpers")
 local Secondary = require("src.core.game3.battle.effects.secondary")
 local Types = require("src.core.game3.battle.types")
-local Strings = require("src.core.Strings")
 
 local Status = {}
-
-local function name(ctx, b) return ctx.adapter:displayName(b) end
 
 local function sub(ctx) return (ctx.target.substituteHP or 0) > 0 end
 
 local function safeguarded(ctx)
   local side = ctx.adapter:ownSide(ctx.target)
   if side and (side.expSafeguardTurns or 0) > 0 then
-    ctx.adapter:say(Strings("%s's party is protected\nby SAFEGUARD!", name(ctx, ctx.target)))
+    ctx.adapter:sayText("STRINGID_PKMNUSEDSAFEGUARD", { def = ctx.target })
     return true
   end
   return false
@@ -23,7 +20,7 @@ Status.safeguarded = safeguarded
 local function not_affected(ctx)
   local M = H.move(ctx)
   if M then M.noEffect = true end
-  ctx.adapter:say(Strings("It doesn't affect\n%s…", name(ctx, ctx.target)))
+  ctx.adapter:sayText("STRINGID_ITDOESNTAFFECT", { def = ctx.target })
 end
 
 local function primary(ctx, eff)
@@ -39,11 +36,11 @@ function Status.cantMakeAsleep(ctx, target)
   local ab = ad:abilityOf(target)
   local up = ad:uproarActive()
   if up and ab ~= "SOUNDPROOF" then
-    ad:say(Strings("But %s can't\nsleep in an UPROAR!", name(ctx, target)))
+    ad:sayText("STRINGID_PKMNCANTSLEEPINUPROAR", { def = target })
     return true
   end
   if ab == "INSOMNIA" or ab == "VITAL_SPIRIT" then
-    ad:say(Strings("%s stayed awake\nusing its %s!", name(ctx, target), require("src.core.game3.battle.abilities").name(ab)))
+    ad:sayText("STRINGID_PKMNSTAYEDAWAKEUSING", { def = target, defAbility = H.abilityId(ab) })
     return true
   end
   return false
@@ -54,11 +51,11 @@ function Status.burn(ctx)
   local ad, t = ctx.adapter, ctx.target
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "BRN" then
-    return ad:say(Strings("%s already\nhas a burn.", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNALREADYHASBURN", { def = t })
   end
   if H.hasType(ctx, t, Types.ID.FIRE) then return not_affected(ctx) end
   if ad:abilityOf(t) == "WATER_VEIL" then
-    return ad:say(Strings("%s's WATER VEIL\nprevents burns!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNSXPREVENTSBURNS", { eff = t, effAbility = H.abilityId("WATER_VEIL") })
   end
   if ad:status(t) then return H.sayFail(ctx) end
   if not H.accuracy(ctx, "normal") then return end
@@ -71,11 +68,11 @@ end
 function Status.poison(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "IMMUNITY" then
-    return ad:say(Strings("%s's IMMUNITY\nprevents poisoning!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNPREVENTSPOISONINGWITH", { eff = t, defAbility = H.abilityId("IMMUNITY") })
   end
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "PSN" or ad:status(t) == "TOX" then
-    return ad:say(Strings("%s is already\npoisoned.", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNALREADYPOISONED", { def = t })
   end
   if H.hasType(ctx, t, Types.ID.POISON) or H.hasType(ctx, t, Types.ID.STEEL) then
     return not_affected(ctx)
@@ -91,11 +88,11 @@ end
 function Status.toxic(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "IMMUNITY" then
-    return ad:say(Strings("%s's IMMUNITY\nprevents poisoning!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNPREVENTSPOISONINGWITH", { eff = t, defAbility = H.abilityId("IMMUNITY") })
   end
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "PSN" or ad:status(t) == "TOX" then
-    return ad:say(Strings("%s is already\npoisoned.", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNALREADYPOISONED", { def = t })
   end
   if ad:status(t) then return H.sayFail(ctx) end
   if H.hasType(ctx, t, Types.ID.POISON) or H.hasType(ctx, t, Types.ID.STEEL) then
@@ -112,7 +109,7 @@ function Status.sleep(ctx)
   local ad, t = ctx.adapter, ctx.target
   if sub(ctx) then return H.sayFail(ctx) end
   if ad:status(t) == "SLP" then
-    return ad:say(Strings("%s is\nalready asleep!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNALREADYASLEEP", { def = t })
   end
   if Status.cantMakeAsleep(ctx, t) then return end
   if ad:status(t) then return H.sayFail(ctx) end
@@ -126,7 +123,7 @@ end
 function Status.paralyze(ctx)
   local ad, t = ctx.adapter, ctx.target
   if ad:abilityOf(t) == "LIMBER" then
-    return ad:say(Strings("%s's LIMBER\nprevents paralysis!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNPREVENTSPARALYSISWITH", { eff = t, defAbility = H.abilityId("LIMBER") })
   end
   if sub(ctx) then return H.sayFail(ctx) end
   local mt = ctx.move and ctx.move.type or 0
@@ -135,7 +132,7 @@ function Status.paralyze(ctx)
     return not_affected(ctx)
   end
   if ad:status(t) == "PAR" then
-    return ad:say(Strings("%s is\nalready paralyzed!", name(ctx, t)))
+    return ad:sayText("STRINGID_PKMNISALREADYPARALYZED", { def = t })
   end
   if ad:status(t) then return H.sayFail(ctx) end
   if not H.accuracy(ctx, "normal") then return end
@@ -151,7 +148,7 @@ function Status.taunt(ctx)
   -- pokefirered/src/battle_script_commands.c:8765
   ctx.target.expTauntedTurns = 2
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s fell for\nthe TAUNT!", name(ctx, ctx.target)))
+  ctx.adapter:sayText("STRINGID_PKMNFELLFORTAUNT", { def = ctx.target })
 end
 
 -- pokefirered/data/battle_scripts_1.s:2446
@@ -159,7 +156,7 @@ function Status.yawn(ctx)
   local ad, t = ctx.adapter, ctx.target
   local ab = ad:abilityOf(t)
   if ab == "VITAL_SPIRIT" or ab == "INSOMNIA" then
-    return ad:say(Strings("%s's %s\nmade it ineffective!", name(ctx, t), require("src.core.game3.battle.abilities").name(ab)))
+    return ad:sayText("STRINGID_PKMNSXMADEITINEFFECTIVE", { scrActive = t, scrActiveAbility = H.abilityId(ab) })
   end
   if sub(ctx) then return H.sayFail(ctx) end
   if safeguarded(ctx) then return end
@@ -169,7 +166,7 @@ function Status.yawn(ctx)
   t.expYawnTurns = 2
   t.yawnTurns = 2
   H.attackAnim(ctx)
-  ad:say(Strings("%s made\n%s drowsy!", name(ctx, ctx.user), name(ctx, t)))
+  ad:sayText("STRINGID_PKMNWASMADEDROWSY", { atk = ctx.user, def = t })
 end
 
 return Status

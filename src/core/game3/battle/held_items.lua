@@ -1,5 +1,6 @@
 local Secondary = require("src.core.game3.battle.effects.secondary")
-local Strings = require("src.core.Strings")
+local State = require("src.core.game3.battle.state")
+local RomText = require("src.core.game3.rom_text")
 
 local HeldItems = {}
 
@@ -59,13 +60,6 @@ local FLAVOR_TABLE = {
   { 0, 0, 0, 0, 0 },
 }
 
--- pokefirered/src/battle_message.c:448
-local FLAVOR_TEXT = {
-  Strings.source("For %s,\n%s was too spicy!"), Strings.source("For %s,\n%s was too dry!"),
-  Strings.source("For %s,\n%s was too sweet!"), Strings.source("For %s,\n%s was too bitter!"),
-  Strings.source("For %s,\n%s was too sour!"),
-}
-
 local STAT_ORDER = { "attack", "defense", "speed", "spAtk", "spDef" }
 
 function HeldItems.flavorRelation(personality, flavor)
@@ -102,36 +96,13 @@ function HeldItems.has(b, he)
   return (HeldItems.of(b)) == he
 end
 
--- pokefirered/src/data/items.json:1
-local ITEM_NAME = {
-  [44] = "BERRY JUICE", [133] = "CHERI BERRY", [134] = "CHESTO BERRY", [135] = "PECHA BERRY",
-  [136] = "RAWST BERRY", [137] = "ASPEAR BERRY", [138] = "LEPPA BERRY", [139] = "ORAN BERRY",
-  [140] = "PERSIM BERRY", [141] = "LUM BERRY", [142] = "SITRUS BERRY", [143] = "FIGY BERRY",
-  [144] = "WIKI BERRY", [145] = "MAGO BERRY", [146] = "AGUAV BERRY", [147] = "IAPAPA BERRY",
-  [168] = "LIECHI BERRY", [169] = "GANLON BERRY", [170] = "SALAC BERRY", [171] = "PETAYA BERRY",
-  [172] = "APICOT BERRY", [173] = "LANSAT BERRY", [174] = "STARF BERRY", [179] = "BRIGHTPOWDER",
-  [180] = "WHITE HERB", [181] = "MACHO BRACE", [182] = "EXP. SHARE", [183] = "QUICK CLAW",
-  [184] = "SOOTHE BELL", [185] = "MENTAL HERB", [186] = "CHOICE BAND", [187] = "KING\'S ROCK",
-  [188] = "SILVERPOWDER", [189] = "AMULET COIN", [190] = "CLEANSE TAG", [191] = "SOUL DEW",
-  [192] = "DEEPSEATOOTH", [193] = "DEEPSEASCALE", [194] = "SMOKE BALL", [195] = "EVERSTONE",
-  [196] = "FOCUS BAND", [197] = "LUCKY EGG", [198] = "SCOPE LENS", [199] = "METAL COAT", [200] = "LEFTOVERS",
-  [201] = "DRAGON SCALE", [202] = "LIGHT BALL", [203] = "SOFT SAND", [204] = "HARD STONE",
-  [205] = "MIRACLE SEED", [206] = "BLACKGLASSES", [207] = "BLACK BELT", [208] = "MAGNET",
-  [209] = "MYSTIC WATER", [210] = "SHARP BEAK", [211] = "POISON BARB", [212] = "NEVERMELTICE",
-  [213] = "SPELL TAG", [214] = "TWISTEDSPOON", [215] = "CHARCOAL", [216] = "DRAGON FANG",
-  [217] = "SILK SCARF", [218] = "UP-GRADE", [219] = "SHELL BELL", [220] = "SEA INCENSE",
-  [221] = "LAX INCENSE", [222] = "LUCKY PUNCH", [223] = "METAL POWDER", [224] = "THICK CLUB",
-  [225] = "STICK",
-}
-
 function HeldItems.name(item)
-  local n = Secondary.itemName(item)
-  local fb = ITEM_NAME[tonumber(item) or -1]
-  if fb and (n == "BERRY" or n:match("^ITEM ")) then return fb end
-  return n
+  return Secondary.itemName(item)
 end
 
-local function name(ad, b) return ad:displayName(b) end
+local function say_id(ad, id, fill)
+  ad:sayText(id, fill)
+end
 
 local function item_anim(ad, b)
   ad:playAnim("general", "HELD_ITEM_EFFECT", b, b)
@@ -148,68 +119,60 @@ function HeldItems.consume(ad, b)
   Secondary.persistItem(b, 0)
 end
 
-local function status_word(s)
-  if s == "PSN" or s == "TOX" then return "poison" end
-  if s == "SLP" then return "sleep" end
-  if s == "PAR" then return "paralysis" end
-  if s == "BRN" then return "burn" end
-  if s == "FRZ" then return "ice" end
-  return nil
-end
-
+-- src/battle_script_commands.c:6788
 local function stat_up(ad, b, item, stat, delta)
   item_anim(ad, b)
   b.stages[stat] = math.min(6, (b.stages[stat] or 0) + delta)
   ad:playAnim("general", "STATS_CHANGE", b, b, Secondary.statAnimArg(stat, delta))
-  if delta >= 2 then
-    ad:say(Strings("Using %s, the %s\nof %s sharply rose!", HeldItems.name(item), Secondary.statName(stat), name(ad, b)))
-  else
-    ad:say(Strings("Using %s, the %s\nof %s rose!", HeldItems.name(item), Secondary.statName(stat), name(ad, b)))
-  end
+  local change = RomText.plain("STRINGID_STATROSE")
+  if delta >= 2 then change = RomText.plain("STRINGID_STATSHARPLY") .. change end
+  say_id(ad, "STRINGID_USINGITEMSTATOFPKMNROSE", {
+    lastItem = item, buff1 = Secondary.statName(stat), scrActive = b, buff2 = change,
+  })
   HeldItems.consume(ad, b)
 end
 
+-- data/battle_scripts_1.s:4216
+local CURE_TEXT = {
+  [H.CURE_PAR] = "STRINGID_PKMNSITEMCUREDPARALYSIS",
+  [H.CURE_PSN] = "STRINGID_PKMNSITEMCUREDPOISON",
+  [H.CURE_BRN] = "STRINGID_PKMNSITEMHEALEDBURN",
+  [H.CURE_FRZ] = "STRINGID_PKMNSITEMDEFROSTEDIT",
+  [H.CURE_SLP] = "STRINGID_PKMNSITEMWOKEIT",
+}
+
 local function cure_status_item(ad, b, item, he)
   local s = ad:status(b)
-  local line
-  if he == H.CURE_PAR and s == "PAR" then
-    line = Strings.source("%s's %s\ncured paralysis!")
-  elseif he == H.CURE_PSN and (s == "PSN" or s == "TOX") then
-    line = Strings.source("%s's %s\ncured poison!")
-  elseif he == H.CURE_BRN and s == "BRN" then
-    line = Strings.source("%s's %s\nhealed its burn!")
-  elseif he == H.CURE_FRZ and s == "FRZ" then
-    line = Strings.source("%s's %s\ndefrosted it!")
-  elseif he == H.CURE_SLP and s == "SLP" then
-    b.expNightmare = nil
-    line = Strings.source("%s's %s\nwoke it from its sleep!")
-  end
-  if not line then return false end
+  local ok = (he == H.CURE_PAR and s == "PAR") or (he == H.CURE_PSN and (s == "PSN" or s == "TOX"))
+    or (he == H.CURE_BRN and s == "BRN") or (he == H.CURE_FRZ and s == "FRZ") or (he == H.CURE_SLP and s == "SLP")
+  if not ok then return false end
+  if he == H.CURE_SLP then b.expNightmare = nil end
   ad:clearStatus(b)
   item_anim(ad, b)
-  ad:say(Strings(line, name(ad, b), HeldItems.name(item)))
+  say_id(ad, CURE_TEXT[he], { scrActive = b, lastItem = item })
   HeldItems.consume(ad, b)
   return true
 end
 
+-- src/battle_util.c:2778
 local function lum(ad, b, item, allowNormalized)
   local s = ad:status(b)
   local confused = (b.confusionTurns or 0) > 0
   if not s and not confused then return false end
   local count, word = 0, nil
-  if s == "PSN" or s == "TOX" then word = Strings.source("poison"); count = count + 1 end
-  if s == "SLP" then b.expNightmare = nil; word = Strings.source("sleep"); count = count + 1 end
-  if s == "PAR" then word = Strings.source("paralysis"); count = count + 1 end
-  if s == "BRN" then word = Strings.source("burn"); count = count + 1 end
-  if s == "FRZ" then word = Strings.source("ice"); count = count + 1 end
-  if confused then word = Strings.source("confusion"); count = count + 1 end
+  if s == "PSN" or s == "TOX" then word = "gText_Poison"; count = count + 1 end
+  if s == "SLP" then b.expNightmare = nil; word = "gText_Sleep"; count = count + 1 end
+  if s == "PAR" then word = "gText_Paralysis"; count = count + 1 end
+  if s == "BRN" then word = "gText_Burn"; count = count + 1 end
+  if s == "FRZ" then word = "gText_Ice"; count = count + 1 end
+  if confused then word = "gText_Confusion"; count = count + 1 end
   ad:clearStatus(b)
   b.confusionTurns = nil
   item_anim(ad, b)
   if allowNormalized and count > 1 then
-    ad:say(Strings("%s's %s\nnormalized its status!", name(ad, b), HeldItems.name(item)))
+    say_id(ad, "STRINGID_PKMNSITEMNORMALIZEDSTATUS", { scrActive = b, lastItem = item })
   else
-    ad:say(Strings("%s's %s\ncured its %s problem!", name(ad, b), HeldItems.name(item), Strings(tostring(word))))
+    say_id(ad, "STRINGID_PKMNSITEMCUREDPROBLEM", { scrActive = b, lastItem = item, buff1 = RomText.plain(word) })
   end
   HeldItems.consume(ad, b)
   return true
@@ -222,7 +185,7 @@ local function white_herb(ad, b, item)
   end
   if not any then return false end
   item_anim(ad, b)
-  ad:say(Strings("%s's %s\nrestored its status!", name(ad, b), HeldItems.name(item)))
+  say_id(ad, "STRINGID_PKMNSITEMRESTOREDSTATUS", { scrActive = b, lastItem = item })
   HeldItems.consume(ad, b)
   return true
 end
@@ -231,7 +194,7 @@ local function mental_herb(ad, b, item)
   if not b.expInfatuated then return false end
   b.expInfatuated, b.expInfatuatedWith, b.expInfatuatedBy = nil, nil, nil
   item_anim(ad, b)
-  ad:say(Strings("%s's %s\ncured its love problem!", name(ad, b), HeldItems.name(item)))
+  say_id(ad, "STRINGID_PKMNSITEMCUREDPROBLEM", { scrActive = b, lastItem = item, buff1 = RomText.plain("gText_Love") })
   HeldItems.consume(ad, b)
   return true
 end
@@ -240,7 +203,7 @@ local function persim(ad, b, item)
   if (b.confusionTurns or 0) <= 0 then return false end
   b.confusionTurns = nil
   item_anim(ad, b)
-  ad:say(Strings("%s's %s\nsnapped it out of confusion!", name(ad, b), HeldItems.name(item)))
+  say_id(ad, "STRINGID_PKMNSITEMSNAPPEDOUT", { scrActive = b, lastItem = item })
   HeldItems.consume(ad, b)
   return true
 end
@@ -259,7 +222,9 @@ local function leppa(ad, b, item, param)
   if not base then base = tonumber(Moves.get(mon.moves[slot]).pp) or param end
   local pp = math.min(base, param)
   item_anim(ad, b)
-  ad:say(Strings("%s's %s\nrestored %s's PP!", name(ad, b), HeldItems.name(item), Moves.displayName(mon.moves[slot])))
+  say_id(ad, "STRINGID_PKMNSITEMRESTOREDPP", {
+    scrActive = b, lastItem = item, buff1 = Moves.displayName(mon.moves[slot]),
+  })
   HeldItems.consume(ad, b)
   local State = require("src.core.game3.battle.state")
   local perm = b.permanentSlots
@@ -273,7 +238,7 @@ end
 
 local function heal_berry(ad, b, item, amount)
   item_anim(ad, b)
-  ad:say(Strings("%s's %s\nrestored health!", name(ad, b), HeldItems.name(item)))
+  say_id(ad, "STRINGID_PKMNSITEMRESTOREDHEALTH", { scrActive = b, lastItem = item })
   ad:heal(b, amount)
 end
 
@@ -300,7 +265,7 @@ function HeldItems.normal(ad, b, moveTurn)
       local amt = math.floor(maxHp / 16)
       if amt == 0 then amt = 1 end
       item_anim(ad, b)
-      ad:say(Strings("%s's %s\nrestored its HP a little!", name(ad, b), HeldItems.name(item)))
+      say_id(ad, "STRINGID_PKMNSITEMRESTOREDHPALITTLE", { scrActive = b, lastItem = item })
       ad:heal(b, amt)
       return true
     end
@@ -313,11 +278,14 @@ function HeldItems.normal(ad, b, moveTurn)
       heal_berry(ad, b, item, amt)
       local mon = b.mon or {}
       if HeldItems.flavorRelation(mon.personality, flavor) < 0 then
-        ad:say(Strings(FLAVOR_TEXT[flavor + 1], name(ad, b), HeldItems.name(item)))
+        -- src/battle_message.c:2282
+        say_id(ad, "STRINGID_FORXCOMMAYZ", {
+          scrActive = b, lastItem = item, buff1 = RomText.at("gPokeblockWasTooXStringTable", flavor),
+        })
         if ad:abilityOf(b) ~= "OWN_TEMPO" and (b.confusionTurns or 0) <= 0 then
           b.confusionTurns = ad:roll(0, 3) % 4 + 2
           ad:playAnim("status", "CONFUSION", b, b)
-          ad:say(Strings("%s became\nconfused!", name(ad, b)))
+          say_id(ad, "STRINGID_PKMNWASCONFUSED", { eff = b })
         end
       end
       HeldItems.consume(ad, b)
@@ -334,7 +302,7 @@ function HeldItems.normal(ad, b, moveTurn)
       b.focusEnergy = true
       b.expFocusEnergy = true
       item_anim(ad, b)
-      ad:say(Strings("%s used\n%s to hustle!", name(ad, b), HeldItems.name(item)))
+      say_id(ad, "STRINGID_PKMNUSEDXTOGETPUMPED", { scrActive = b, lastItem = item })
       HeldItems.consume(ad, b)
       return true
     end
@@ -410,7 +378,7 @@ function HeldItems.kingsRockShellBell(M)
       if amt == 0 then amt = 1 end
       M.firstDmg = 0
       item_anim(ad, user)
-      ad:say(Strings("%s's %s\nrestored its HP a little!", name(ad, user), HeldItems.name(item)))
+      say_id(ad, "STRINGID_PKMNSITEMRESTOREDHPALITTLE", { scrActive = user, lastItem = item })
       ad:heal(user, amt)
       return true
     end
@@ -443,9 +411,7 @@ end
 -- pokefirered/data/battle_scripts_1.s:4340
 function HeldItems.focusBandMessage(ad, target)
   ad:playAnim("general", "FOCUS_BAND", target, target)
-  ad:say(Strings("%s hung on\nusing its %s!", name(ad, target), HeldItems.name(HeldItems.itemOf(target))))
+  say_id(ad, "STRINGID_PKMNHUNGONWITHX", { def = target, lastItem = HeldItems.itemOf(target) })
 end
-
-HeldItems.statusWord = status_word
 
 return HeldItems

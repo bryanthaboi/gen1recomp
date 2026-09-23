@@ -361,33 +361,6 @@ function ExtractIntro.run(rom, cache, opts)
     has_rom = data ~= nil,
   }
 
-  local oakSpeech = [[
-return {
-  -- ROM-sourced intro strings (FireRed USA 1.0 / pret new_game_intro.inc)
-  welcome = "Hello, there!\nGlad to meet you!\fWelcome to the world of POKéMON!\fMy name is OAK.\fPeople affectionately refer to me\nas the POKéMON PROFESSOR.",
-  this_world = "This world…",
-  inhabited = "…is inhabited far and wide by\ncreatures called POKéMON.",
-  study = "For some people, POKéMON are pets.\nOthers use them for battling.\fAs for myself…\fI study POKéMON as a profession.",
-  tell_me = "But first, tell me a little about\nyourself.",
-  ask_gender = "Now tell me. Are you a boy?\nOr are you a girl?",
-  your_name = "Let's begin with your name.\nWhat is it?",
-  confirm_player = "Right…\nSo your name is {PLAYER}.",
-  rival_intro = "This is my grandson.\fHe's been your rival since you both\nwere babies.\f…Erm, what was his name now?",
-  rival_name_ask = "Your rival's name, what was it now?",
-  confirm_rival = "…Er, was it {RIVAL}?",
-  remember_rival = "That's right! I remember now!\nHis name is {RIVAL}!",
-  lets_go = "{PLAYER}!\fYour very own POKéMON legend is\nabout to unfold!\fA world of dreams and adventures\nwith POKéMON awaits! Let's go!",
-  maleNames = { "RED", "FIRE", "ASH", "KENE", "GEKI", "JAK", "JANNE", "JONN", "KAMON", "KARL", "TAYLOR", "OSCAR", "HIRO", "MAX", "JON", "RALPH", "KAY", "TOSH", "ROAK" },
-  femaleNames = { "RED", "FIRE", "OMI", "JODI", "AMANDA", "HILLARY", "MAKEY", "MICHI", "PAULA", "JUNE", "CASSIE", "REY", "SEDA", "KIKO", "MINA", "NORIE", "SAI", "MOMO", "SUZI" },
-  rivalNames = { "GREEN", "GARY", "KAZ", "TORU" },
-}
-]]
-  write(cache, root .. "/oak_speech.lua", oakSpeech)
-  write(cache, root .. "/title_text.lua",
-    string.format('return { title = %q, press_start = "Press Start" }\n', leafgreen and "POKeMON LeafGreen" or "POKeMON FireRed"))
-  write(cache, root .. "/menu.lua",
-    'return { "CONTINUE", "NEW GAME", "OPTION" }\n')
-
   if not data then
     write(cache, root .. "/meta.json",
       string.format('{"version":3,"sha1":"%s","has_rom":false}\n', tostring(opts.sha1 or "")))
@@ -897,7 +870,6 @@ return {
       lines[#lines + 1] = string.format("  %s = %q,\n", key, root .. "/" .. file)
     end
   end
-  lines[#lines + 1] = string.format('  oakSpeech = %q,\n', root .. "/oak_speech.lua")
   lines[#lines + 1] = "}\n"
   write(cache, indexPath, table.concat(lines))
   meta.introIndex = indexPath

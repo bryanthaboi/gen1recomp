@@ -191,7 +191,7 @@ else
   local flyIcon = slurp(root .. "/" .. FLY_ICON_REL)
   check(flyIcon ~= nil, "the cache carries " .. FLY_ICON_REL)
   if flyIcon then
-    eq(#flyIcon, 16 * 16 * 4, "the cached fly icon is 16x16 RGBA")
+    eq(#flyIcon, 16 * 32 * 4, "the cached fly icon is both 16x16 frames, 16x32 RGBA")
     local opaque = 0
     for i = 4, #flyIcon, 4 do
       if flyIcon:byte(i) > 0 then opaque = opaque + 1 end

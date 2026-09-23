@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_stitchseam_elevator_hud_test", "scripts/text.lua")
 
 local failed = 0
 local function check(cond, msg)

@@ -2,6 +2,7 @@
 -- Tests for Issue #2358: Fainted Pokemon in first slot is sent out in battle.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_fainted_lead_test")
 
 local failed = 0
 local function check(cond, msg)

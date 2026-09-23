@@ -192,7 +192,9 @@ for _, row in ipairs(NUM) do
 end
 
 print("[test] 8. the destination menu drops the port you are standing in")
-do
+if not require("tests.game3_cache").mount() then
+  print("[skip] sSeagallopDestStrings come from the ROM: " .. tostring(require("tests.game3_cache").reason))
+else
   local labels = Seagallop.destinationMenu(SEAGALLOP_ONE_ISLAND, 0)
   check(#labels == 6, "page 0 has six rows (got " .. #labels .. ")")
   check(labels[1] == "VERMILION" and labels[2] == "TWO ISLAND"
@@ -223,7 +225,9 @@ do
 end
 
 print("[test] 10. the menu special drives the shared multichoice and sets VAR_0x8006")
-do
+if not require("tests.game3_cache").mount() then
+  print("[skip] the ferry menu labels come from the ROM: " .. tostring(require("tests.game3_cache").reason))
+else
   local shown
   local a = logAdapters({
     multichoice = function(row, cb)

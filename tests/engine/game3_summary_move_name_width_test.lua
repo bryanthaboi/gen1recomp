@@ -4,15 +4,25 @@
 -- A fixed 64 px cut the cart's own longest names, and most translations.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_map_sections").install()
 
 local T = require("tests.harness")
 local check = T.check
+require("tests.game3_cache").stubSpeciesNames()
 
 require("src.core.GameVersion").set("firered")
 
 package.loaded["src.core.game3.audio"] = {
   playSe = function() end, playCry = function() end,
   playSong = function() end, stopAll = function() end,
+}
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
 }
 
 local gfx = setmetatable({}, { __index = function() return function() end end })

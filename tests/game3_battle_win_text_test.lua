@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_win_text_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -42,6 +43,12 @@ check(find(log, "won the battle") == nil, "no 'You won the battle!' line")
 check(log[#log] ~= nil and log[#log]:find("EXP. Points", 1, true) ~= nil, "last wild line is the EXP line")
 
 print("[test] 2. trainer win: defeated before lose text")
+if not require("tests.game3_cache").mount() then
+  print("[skip] trainer 326 comes from the ROM trainer pack: " .. tostring(require("tests.game3_cache").reason))
+  if failed > 0 then os.exit(1) end
+  print("[PASS] game3 battle win text")
+  os.exit(0)
+end
 ok, res, log = run({ wild = false, headless = true, trainerId = 326, playerParty = party(), foe = { species = 7, level = 5, trainerId = 326 } })
 check(ok and res == "win", "trainer battle won")
 local iDef = find(log, "defeated\n")

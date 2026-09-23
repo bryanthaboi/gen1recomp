@@ -266,8 +266,38 @@ end
 LB.TRAINER_PIC_RED = 135
 LB.TRAINER_PIC_LEAF = 136
 
+-- pokefirered/include/constants/union_room.h:19
+LB.NUM_UNION_ROOM_CLASSES = 8
+
+function LB.unionRoomClasses()
+  if not LB._unionRoomClasses then
+    local rel = "data/generated/gba/trainers/union_room_classes.lua"
+    local src = assert(require("src.core.game3.dataset").cache():read(rel), "no " .. rel .. " in the cache")
+    LB._unionRoomClasses = assert(load(src, "@" .. rel, "t", {}))()
+  end
+  return LB._unionRoomClasses
+end
+
+-- pokefirered/src/pokemon.c:6197
+local function unionRoomIndex(peer)
+  local i = (tonumber(peer and peer.trainerId) or 0) % LB.NUM_UNION_ROOM_CLASSES
+  if tonumber(peer and peer.gender) == 1 then i = i + LB.NUM_UNION_ROOM_CLASSES end
+  return i
+end
+
+-- pokefirered/src/pokemon.c:6206 GetUnionRoomTrainerClass
+function LB.unionRoomTrainerClass(peer)
+  return LB.unionRoomClasses().trainerClass[unionRoomIndex(peer or LB.peer)]
+end
+
+-- pokefirered/src/pokemon.c:6197 GetUnionRoomTrainerPic
+function LB.unionRoomTrainerPic(peer)
+  return LB.unionRoomClasses().trainerPic[unionRoomIndex(peer or LB.peer)]
+end
+
 -- pokefirered/src/battle_controller_link_opponent.c:1172
 function LB.peerPicId(setup)
+  if LB.unionRoom then return LB.unionRoomTrainerPic(setup) end
   if tonumber(setup and setup.gender) == 1 then return LB.TRAINER_PIC_LEAF end
   return LB.TRAINER_PIC_RED
 end

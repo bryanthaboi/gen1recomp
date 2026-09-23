@@ -4,7 +4,7 @@
 local Evolution = require("src.core.game3.evolution")
 local LearnMove = require("src.core.game3.battle.learn_move")
 local Pokemon = require("src.core.game3.pokemon")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local EvoSeq = {}
 
@@ -82,15 +82,17 @@ local function run_step(entry)
   local mon = entry.mon
   local toSpecies = entry.toSpecies or entry.target
   local fromName = Pokemon.displayMonName(mon)
-  local intoName = Pokemon.name(toSpecies) or "POKéMON"
+  local intoName = Pokemon.name(toSpecies)
 
   if EvoSeq._headless then
     if EvoSeq._pushMsg then
-      EvoSeq._pushMsg(Strings("What?\n%s is evolving!", fromName))
+      -- src/evolution_scene.c:678
+      EvoSeq._pushMsg(RomText.ascii("gText_PkmnIsEvolving", { stringVars = { fromName } }))
     end
     Evolution.apply(mon, toSpecies, EvoSeq._session)
     if EvoSeq._pushMsg then
-      EvoSeq._pushMsg(Strings("Congratulations! Your %s\nevolved into %s!", fromName, intoName))
+      -- src/evolution_scene.c:775
+      EvoSeq._pushMsg(RomText.ascii("gText_CongratsPkmnEvolved", { stringVars = { fromName, intoName } }))
     end
     local lv = tonumber(mon and mon.level) or 1
     EvoSeq._waiting = true
@@ -100,6 +102,8 @@ local function run_step(entry)
       askYesNo = EvoSeq._askYesNo,
       askForget = EvoSeq._askForget,
       headless = true,
+      -- src/evolution_scene.c:869
+      battleText = true,
       onDone = function()
         advance()
       end,

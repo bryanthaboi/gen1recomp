@@ -1,5 +1,5 @@
 
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local Std = require("src.core.game3.scripting.stdscripts")
 
 local Seagallop = {}
@@ -51,14 +51,7 @@ Seagallop.WARP_COUNT = 11
 
 -- pokefirered/src/script_menu.c:664
 local function destLabel(id)
-  if id == VERMILION_CITY then return Strings("VERMILION") end
-  if id == ONE_ISLAND then return Strings("ONE ISLAND") end
-  if id == TWO_ISLAND then return Strings("TWO ISLAND") end
-  if id == THREE_ISLAND then return Strings("THREE ISLAND") end
-  if id == FOUR_ISLAND then return Strings("FOUR ISLAND") end
-  if id == FIVE_ISLAND then return Strings("FIVE ISLAND") end
-  if id == SIX_ISLAND then return Strings("SIX ISLAND") end
-  return Strings("SEVEN ISLAND")
+  return RomText.at("sSeagallopDestStrings", id)
 end
 
 local function flagsMod()
@@ -118,8 +111,8 @@ function Seagallop.destinationMenu(originId, page)
     destinationId = destinationId + 1
     if destinationId == SEVEN_ISLAND + 1 then destinationId = VERMILION_CITY end
   end
-  labels[#labels + 1] = Strings("OTHER")
-  labels[#labels + 1] = Strings("EXIT")
+  labels[#labels + 1] = RomText.plain("gText_Other")
+  labels[#labels + 1] = RomText.plain("gOtherText_Exit")
   return labels, top
 end
 

@@ -2,7 +2,7 @@
 
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local ElevatorWindow = {}
 
@@ -69,7 +69,7 @@ function ElevatorWindow.draw()
   local left, top = TEMPLATE.tilemapLeft, TEMPLATE.tilemapTop
   Window.stdFrame(TEMPLATE)
   -- pokefirered/src/field_specials.c:1105
-  Window.printPx(Strings("Now on:"), left * 8, top * 8 + 2)
+  Window.printPx(RomText.plain("gText_NowOn"), left * 8, top * 8 + 2)
   local label = ElevatorWindow._label
   if label then
     -- pokefirered/src/field_specials.c:1108

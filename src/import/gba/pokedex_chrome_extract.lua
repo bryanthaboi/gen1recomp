@@ -25,8 +25,8 @@ PokedexChromeExtract.PAPER_BG_H = 160
 -- src/pokedex_screen.c:930
 PokedexChromeExtract.PAPER_TILE = 0x001
 -- src/pokedex_screen.c:933
-PokedexChromeExtract.PAPER_BAR_TILE = 0x003
 PokedexChromeExtract.PAPER_BAR_PAL = 15
+PokedexChromeExtract.PAPER_BAR_COLOR = 15
 PokedexChromeExtract.PAPER_BAR_ROWS = 2
 PokedexChromeExtract.FOOTPRINT_TABLE = 0x43FAB0
 PokedexChromeExtract.FOOTPRINT_SUB = "footprints"
@@ -151,7 +151,8 @@ function PokedexChromeExtract.extractEntries(rom, cache, root)
   end
 
   local entries = {}
-  for nat = 1, natDexCount do
+  -- src/data/pokemon/pokedex_entries.h:3
+  for nat = 0, natDexCount do
     local sp = natToSpecies[nat] or nat
     local off = entriesBase + nat * (Versions.POKEDEX_ENTRY_SIZE or 36)
     local category = decode_category(rom, off, 12)
@@ -587,11 +588,17 @@ function PokedexChromeExtract.extractChromeColors(rom, cache, root)
   local evb = Versions.POKEDEX_MARKER_BLEND_EVB or 8
   local mr, mg, mb = gba_rgb(palette[(gfx[blendTile * 32 + 1] or 0) % 16])
   local sr, sg, sb = gba_rgb(get_u16(rom, (Versions.POKEDEX_SILHOUETTE_PAL or 0) + 2))
+  -- src/pokedex_screen.c:245 sWindowTemplates[0..1], :1161 FillWindowPixelBuffer(0, PIXEL_FILL(15))
+  local barIndex = PokedexChromeExtract.PAPER_BAR_PAL * 16 + PokedexChromeExtract.PAPER_BAR_COLOR
+  local kr, kg, kb = gba_rgb(get_u16(rom, src.pal + barIndex * 2))
+  local nat = Versions.POKEDEX_BG_TILES.national
+  local nr, ng, nb = gba_rgb(get_u16(rom, nat.pal + barIndex * 2))
   local text = string.format(
     "-- Auto-generated FRLG Pokédex chrome colors from ROM. DO NOT EDIT DIRECTLY.\nreturn {\n"
       .. "  marker = { %d, %d, %d, %d },\n  marker_blend = { %d, %d },\n"
-      .. "  silhouette = { %d, %d, %d },\n}\n",
-    mr, mg, mb, math.floor(eva * 255 / 16 + 0.5), eva, evb, sr, sg, sb)
+      .. "  silhouette = { %d, %d, %d },\n"
+      .. "  bar_kanto = { %d, %d, %d },\n  bar_national = { %d, %d, %d },\n}\n",
+    mr, mg, mb, math.floor(eva * 255 / 16 + 0.5), eva, evb, sr, sg, sb, kr, kg, kb, nr, ng, nb)
   write_file(cache, root .. "/" .. PokedexChromeExtract.CHROME_FILE, text)
   return true
 end
@@ -617,7 +624,7 @@ function PokedexChromeExtract.bakePaperBg(gfx, pal)
   local cols, rows = math.floor(w / 8), math.floor(h / 8)
   local bars = PokedexChromeExtract.PAPER_BAR_ROWS
   local pagePal = palette_colors(pal, 0)
-  local barPal = palette_colors(pal, PokedexChromeExtract.PAPER_BAR_PAL * 16)
+  local barColor = palette_colors(pal, PokedexChromeExtract.PAPER_BAR_PAL * 16)[PokedexChromeExtract.PAPER_BAR_COLOR]
   local px = {}
   for i = 1, w * h do px[i] = pagePal[0] end
   local function blit(tile, colors, tx, ty, keepZero)
@@ -636,11 +643,9 @@ function PokedexChromeExtract.bakePaperBg(gfx, pal)
       blit(PokedexChromeExtract.PAPER_TILE, pagePal, tx, ty, true)
     end
   end
-  for ty = 0, rows - 1 do
-    if ty < bars or ty >= rows - bars then
-      for tx = 0, cols - 1 do
-        blit(PokedexChromeExtract.PAPER_BAR_TILE, barPal, tx, ty, false)
-      end
+  for py = 0, h - 1 do
+    if py < bars * 8 or py >= h - bars * 8 then
+      for x = 0, w - 1 do px[py * w + x + 1] = barColor end
     end
   end
   return table.concat(px)

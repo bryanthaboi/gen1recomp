@@ -1,4 +1,4 @@
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local MysteryGift = require("src.core.game3.mystery_gift")
 
 local Gift = {}
@@ -37,24 +37,27 @@ end
 -- pokefirered/data/mystery_event_msg.s:244
 function Gift.deliveryText(session, code)
   local card = MysteryGift.getSavedCard(session)
+  local mystic = card and card.gift and card.gift.item == MysteryGift.ITEM_MYSTIC_TICKET
+  local ctx = { playerName = type(session) == "table" and (session.name or session.playerName) or nil }
   if code == MysteryGift.DELIVER_NO_ROOM then
-    -- pokefirered/data/mystery_event_msg.s:260 sText_AuroraTicketNoPlace
-    return Strings("Oh, I'm sorry. Your BAG's\npocket is full.\\pPlease store something on your PC,\nthen come back for this.")
+    -- pokefirered/data/mystery_event_msg.s:260 sText_AuroraTicketNoPlace, :319 sText_MysticTicketNoPlace
+    return RomText.ascii(mystic and "sText_MysticTicketNoPlace" or "sText_AuroraTicketNoPlace", ctx)
   end
   if code == MysteryGift.DELIVER_PARTY_FULL then
     -- pokefirered/data/mystery_event_msg.s:108 sText_FullParty
-    return Strings("Oh, your party appears to be full.\\pPlease come see me after storing\na POKéMON on a PC.")
+    return RomText.ascii("sText_FullParty", ctx)
   end
+  local got = mystic and "sText_MysticTicketGot" or "sText_AuroraTicketGot"
   if code == MysteryGift.DELIVER_ALREADY or code == MysteryGift.DELIVER_NOTHING then
-    -- pokefirered/data/mystery_event_msg.s:256 sText_AuroraTicketGot
-    return Strings("Thank you for using the MYSTERY\nGIFT System.")
+    -- pokefirered/data/mystery_event_msg.s:256 sText_AuroraTicketGot, :315 sText_MysticTicketGot
+    return RomText.ascii(got, ctx)
   end
   local lines = {}
   for _, line in ipairs((card and card.bodyText) or {}) do
     if line ~= "" then lines[#lines + 1] = line end
   end
   if #lines == 0 then
-    return Strings("Thank you for using the MYSTERY\nGIFT System.")
+    return RomText.ascii(got, ctx)
   end
   -- pokefirered/data/mystery_event_msg.s:303 sText_MysticTicket2
   local pages = {}

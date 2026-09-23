@@ -66,14 +66,16 @@ for _, name in ipairs({ "tilesets", "sprites", "type_chart", "statuses",
                         "tokens", "music", "sfx", "cries", "map_songs",
                         "audio", "font", "palettes", "icons", "battle_anims",
                         "held_items", "phone_contacts", "decorations",
-                        "apricorns", "landmarks", "radio_channels",
-                        "rom_text" }) do
+                        "apricorns", "landmarks", "radio_channels" }) do
   local spec = Schemas.REGISTRIES[name]
   T.check(spec ~= nil, "catalog still has registry: " .. name)
   T.eq(Schemas.targetFor(name, spec, 3), nil,
     "gated registry has no Gen 3 target: " .. name)
   T.eq(Schemas.gatedFor(name, 3), true, "gated under Gen 3: " .. name)
 end
+
+T.eq(Schemas.targetFor("rom_text", Schemas.REGISTRIES.rom_text, 3), "gen3RomText",
+  "rom_text overrides FireRed text by its pret name")
 
 for name in pairs(Schemas.GEN3) do
   T.check(Schemas.REGISTRIES[name] ~= nil,
@@ -172,6 +174,7 @@ local GEN3_EVENTS = {
 local GEN3_HOOKS = {
   "encounter.roll", "encounter.species", "encounter.table",
   "movement.collision", "warp.destination", "world.talk", "item.use",
+  "world.follower.spawn",
   "script.command", "save.write", "save.new_game",
   "ui.start_menu.items", "pokemon.sprite",
   "input.step", "input.key", "input.gamepad", "input.wheel", "render.hud",

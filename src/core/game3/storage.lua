@@ -6,7 +6,6 @@
 
 local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
-local Strings = require("src.core.Strings")
 
 local Storage = {}
 
@@ -24,25 +23,6 @@ local function script_store(session)
   local Space = package.loaded["src.core.game3.scripting.space"]
   return (Space and Space.store) or (session and session.store) or nil
 end
-
-Storage.WALLPAPERS = {
-  [1] = "Forest",
-  [2] = "City",
-  [3] = "Desert",
-  [4] = "Savanna",
-  [5] = "Crag",
-  [6] = "Volcano",
-  [7] = "Snow",
-  [8] = "Cave",
-  [9] = "Beach",
-  [10] = "Seafloor",
-  [11] = "River",
-  [12] = "Sky",
-  [13] = "Stars",
-  [14] = "Pokecenter",
-  [15] = "Tiles",
-  [16] = "Simple",
-}
 
 --- Create a fresh Storage instance (14 boxes, 30 slots each, 50-item PC).
 function Storage.new()
@@ -391,21 +371,11 @@ function Storage.pcTransferMessage(session, name, boxWasFull)
   local shown = boxWasFull
   if shown == nil then shown = should_show_box_was_full() end
   local bills = Flags.getFlag(store, nil, FLAG_SYS_NOT_SOMEONES_PC) and true or false
-  if not shown then
-    -- pokefirered/data/text/pc_transfer.inc:1
-    if bills then
-      return Strings("%s was transferred to\nBILL'S PC.\fIt was placed in \nBOX “%s.”", name, sent)
-    end
-    return Strings("%s was transferred to\nSomeone's PC.\fIt was placed in \nBOX “%s.”", name, sent)
-  end
-  -- pokefirered/data/text/pc_transfer.inc:13
-  local full = box_name(storage, Queries.pcBoxToSendMon)
-  if bills then
-    return Strings("BOX “%s” on\nBILL'S PC was full.\f%s was transferred to\nBOX “%s.”",
-      full, name, sent)
-  end
-  return Strings("BOX “%s” on\nSomeone's PC was full.\f%s was transferred to\nBOX “%s.”",
-    full, name, sent)
+  local RomText = require("src.core.game3.rom_text")
+  -- pokefirered/src/naming_screen.c:732
+  local full = shown and box_name(storage, Queries.pcBoxToSendMon) or nil
+  local i = (shown and 2 or 0) + (bills and 1 or 0)
+  return RomText.box(RomText.key("sTransferredToPCMessages", i), { stringVars = { sent, name, full } })
 end
 
 --- Automatic Spillover Capture Storage: Stores a caught Pokémon across 14 boxes.

@@ -124,6 +124,11 @@ press("b")
 local ok, bId = Storage.sendMonToPC(s4, { species = 16, speciesId = 16, level = 5, hp = 20, maxHp = 20 })
 check(ok, "a caught mon still reached the PC")
 eq(bId, 5, "it spilled over into BOX 5")
+if not require("tests.game3_cache").bundle() then
+  print("[skip] transfer line: no FireRed cache for sTransferredToPCMessages")
+  if failed > 0 then os.exit(1) end
+  os.exit(0)
+end
 local text = Storage.pcTransferMessage(s4, "MAGIKARP")
 check(type(text) == "string" and text:find("was full", 1, true) ~= nil,
   "the transfer line reports a full box (" .. tostring(text) .. ")")

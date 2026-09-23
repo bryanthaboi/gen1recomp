@@ -5,13 +5,25 @@
 -- panel, the summary's egg page, the trade scene, and the script string buffers.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_map_sections").install()
 
 local T = require("tests.harness")
 local check = T.check
 
 require("src.core.GameVersion").set("firered")
 package.loaded["src.core.game3.audio"] = setmetatable({}, { __index = function() return function() end end })
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key)
+    if key == "gText_EggNickname" then return require("src.core.Strings")("EGG") end
+    return key
+  end,
+  box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local gfx = setmetatable({}, { __index = function() return function() end end })
 gfx.newQuad = function() return {} end
@@ -52,11 +64,11 @@ pics, texts = {}, {}
 PcChrome.drawLeftDataPanel(egg(), 0)
 check(pics[1] == 412, "the PC panel draws an egg's front pic as the EGG's (got " .. tostring(pics[1]) .. ")")
 check(texts[1] == "OEUF", "and names it by the language's EGG (got " .. tostring(texts[1]) .. ")")
-check(not has(texts, "/PICHU") and not has(texts, "Lv5"),
+check(not has(texts, "/PICHU") and not has(texts, "{LV_2}5"),
   "with no species, level or item line: " .. table.concat(texts, " | "))
 pics, texts = {}, {}
 PcChrome.drawLeftDataPanel({ species = 172, nickname = "PICHU", level = 5, gender = "M" }, 0)
-check(pics[1] == 172 and has(texts, "/PICHU") and has(texts, "Lv5"),
+check(pics[1] == 172 and has(texts, "/PICHU") and has(texts, "{LV_2}5"),
   "a hatched mon keeps its pic, species and level lines")
 
 -- pokefirered/src/party_menu.c:781 DisplayPartyPokemonData, :2197 sSlotTilemap_MainNoHP
@@ -71,7 +83,7 @@ PartyMenu.show({ { species = 25, nickname = "SPARKY", level = 12, gender = "M", 
 PartyMenu.draw()
 PartyMenu.close()
 check(has(texts, "OEUF") and has(texts, "SPARKY"), "the party names both mons: " .. table.concat(texts, " | "))
-check(not has(texts, "Lv5") and has(texts, "Lv12"), "an egg's party slot shows no level, the other one does")
+check(not has(texts, "gText_Lv5") and has(texts, "gText_Lv12"),"an egg's party slot shows no level, the other one does")
 check(slotsHidingHp[1] == false and slotsHidingHp[2] == true,
   "and an egg's slot has no HP frame (hideHp = " .. tostring(slotsHidingHp[1]) .. ", " .. tostring(slotsHidingHp[2]) .. ")")
 

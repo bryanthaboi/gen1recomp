@@ -165,7 +165,7 @@ local function run(game)
     "the cursor opens on the player in Pallet Town")
   result(RegionMap.canFlyToCursor() == true, "Pallet Town is selectable")
   U.wait(30)
-  U.shot(game, DIR .. "/fly_map_01_pallet_selectable.png")
+  U.still(game, DIR .. "/fly_map_01_pallet_selectable.png")
 
   for _ = 1, 4 do
     U.tap(game, "up")
@@ -174,7 +174,7 @@ local function run(game)
   result(RegionMap.cursorY == 7, "the cursor reached Route 2 (y=" .. RegionMap.cursorY .. ")")
   result(RegionMap.canFlyToCursor() == false, "a route is not selectable")
   U.wait(20)
-  U.shot(game, DIR .. "/fly_map_02_route_not_selectable.png")
+  U.still(game, DIR .. "/fly_map_02_route_not_selectable.png")
 
   for _ = 1, 3 do
     U.tap(game, "up")
@@ -183,7 +183,7 @@ local function run(game)
   result(RegionMap.cursorY == 4, "the cursor reached Pewter City (y=" .. RegionMap.cursorY .. ")")
   result(RegionMap.canFlyToCursor() == false, "unvisited Pewter City is not selectable")
   U.wait(20)
-  U.shot(game, DIR .. "/fly_map_03_pewter_not_selectable.png")
+  U.still(game, DIR .. "/fly_map_03_pewter_not_selectable.png")
   U.tap(game, "a")
   U.wait(20)
   result(pickCalls == 0, "A on Pewter City picks nothing")
@@ -196,9 +196,12 @@ local function run(game)
   result(RegionMap.cursorY == 8, "the cursor reached Viridian City (y=" .. RegionMap.cursorY .. ")")
   result(RegionMap.canFlyToCursor() == true, "visited Viridian City is selectable")
   U.wait(20)
-  U.shot(game, DIR .. "/fly_map_04_viridian_selectable.png")
+  U.still(game, DIR .. "/fly_map_04_viridian_selectable.png")
   U.tap(game, "a")
-  U.wait(30)
+  for _ = 1, 120 do
+    if not RegionMap.isOpen() then break end
+    U.wait(1)
+  end
   -- pokefirered/src/region_map.c:3991
   result(pickCalls == 1, "A on Viridian City picked once")
   result(picked == "MAPSEC_VIRIDIAN_CITY",
@@ -211,7 +214,7 @@ local function run(game)
   local Field = require("src.core.game3.field")
   result(Field.locked ~= true, "the fly warp finished and unlocked the field")
   result(session.map == VIRIDIAN, "the player landed in Viridian City (map=" .. tostring(session.map) .. ")")
-  U.shot(game, DIR .. "/fly_map_05_landed_viridian.png")
+  U.still(game, DIR .. "/fly_map_05_landed_viridian.png")
 
   -- pokefirered/src/region_map.c:4019
   if not result(openParty(), "party menu opens in Viridian City") then return finish() end
@@ -223,13 +226,49 @@ local function run(game)
     U.wait(40)
     result(RegionMap.isOpen() == false, "B closed the fly map")
     result(PartyMenu.isOpen and PartyMenu.isOpen(), "B came back to the party menu")
-    U.shot(game, DIR .. "/fly_map_06_cancel_party_menu.png")
+    U.still(game, DIR .. "/fly_map_06_cancel_party_menu.png")
     for _ = 1, 30 do
       if not (PartyMenu.isOpen and PartyMenu.isOpen()) then break end
       U.tap(game, "b")
       U.wait(6)
     end
     result(Field.locked ~= true, "and B out of the party menu leaves the field unlocked")
+  end
+
+  -- src/region_map.c:1028-1049, :3903
+  goTo("SEVII_ONE_ISLAND", 12, 12, "down")
+  Flags.setFlag(Space.store, ctx(), "FLAG_WORLD_MAP_ONE_ISLAND", true)
+  if not result(openParty(), "party menu opens on ONE ISLAND") then return finish() end
+  result(chooseAction("FLY"), "FLY is on the action list on ONE ISLAND")
+  U.tap(game, "a")
+  for _ = 1, 200 do
+    if RegionMap.inputReady() then break end
+    U.wait(1)
+  end
+  if result(RegionMap.isOpen() and RegionMap.isFlyMode(), "the fly map opened on ONE ISLAND") then
+    result(RegionMap.state().selectedRegion == 1, "the fly map shows SEVII 1-2-3")
+    result(RegionMap.currentLocationName() == "ONE ISLAND",
+      "the cursor starts on ONE ISLAND, got " .. tostring(RegionMap.currentLocationName()))
+    local seviiTargets = RegionMap.flyTargets()
+    local seen = {}
+    for _, t in ipairs(seviiTargets) do seen[t.sec] = true end
+    result(#seviiTargets == 1 and seen["MAPSEC_ONE_ISLAND"] == true,
+      "only ONE ISLAND carries a fly icon (" .. #seviiTargets .. ")")
+    result(seen["MAPSEC_PALLET_TOWN"] == nil and seen["MAPSEC_VIRIDIAN_CITY"] == nil,
+      "no Kanto town is offered from the Sevii Islands")
+    result(RegionMap.canFlyToCursor() == true, "ONE ISLAND is selectable")
+    U.still(game, DIR .. "/fly_map_07_one_island_sevii123.png")
+    U.tap(game, "b")
+    for _ = 1, 120 do
+      if not RegionMap.isOpen() then break end
+      U.wait(1)
+    end
+    result(RegionMap.isOpen() == false, "B closed the Sevii fly map")
+    for _ = 1, 30 do
+      if not (PartyMenu.isOpen and PartyMenu.isOpen()) then break end
+      U.tap(game, "b")
+      U.wait(6)
+    end
   end
 
   finish()

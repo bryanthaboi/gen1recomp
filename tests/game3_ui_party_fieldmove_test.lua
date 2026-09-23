@@ -1,7 +1,14 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local failed = 0
 local function check(cond, msg)
@@ -125,10 +132,16 @@ local function use_field_move(mapDef, moveName, badges)
   end
   press("a")
   local refusal = PartyMenu._messageText
+  local prompt = nil
+  -- pokefirered/src/party_menu.c:3999 Task_HandleFieldMoveExitAreaYesNoInput
+  if PartyMenu.mode == "yesno" then
+    prompt = PartyMenu._yesNoPrompt
+    press("a")
+  end
   local ctx = seenCtx
   local ran = executed
   if PartyMenu.open then PartyMenu.close() end
-  return ctx, ran, refusal
+  return ctx, ran, refusal, prompt
 end
 
 print("[test] 1. the field-move context carries the map header fields")
@@ -156,16 +169,23 @@ eq(ran, nil, "FLY indoors does not execute")
 check(refusal ~= nil, "FLY indoors prints a refusal (" .. tostring(refusal) .. ")")
 
 print("[test] 3. Teleport is accepted outdoors and refused indoors")
-_, ran, refusal = use_field_move(MAPS.PalletTown, "TELEPORT", {})
+local prompt
+_, ran, refusal, prompt = use_field_move(MAPS.PalletTown, "TELEPORT", {})
 eq(ran and ran.action, "teleport", "TELEPORT outdoors reaches Field.executeFieldMove")
+-- pokefirered/src/party_menu.c:3939
+check(tostring(prompt):find("gText_ReturnToHealingSpot", 1, true) ~= nil,
+  "after YES to gText_ReturnToHealingSpot (" .. tostring(prompt) .. ")")
 
 _, ran, refusal = use_field_move(MAPS.PalletTown_PlayersHouse_1F, "TELEPORT", {})
 eq(ran, nil, "TELEPORT indoors does not execute")
 check(refusal ~= nil, "TELEPORT indoors prints a refusal")
 
 print("[test] 4. Dig follows the map header, not a nil map type")
-_, ran, refusal = use_field_move(MAPS.MtMoon_1F, "DIG", {})
+_, ran, refusal, prompt = use_field_move(MAPS.MtMoon_1F, "DIG", {})
 eq(ran and ran.action, "dig", "DIG in Mt Moon reaches Field.executeFieldMove")
+-- pokefirered/src/party_menu.c:3946
+check(tostring(prompt):find("gText_EscapeFromHereAndReturnTo", 1, true) ~= nil,
+  "after YES to gText_EscapeFromHereAndReturnTo (" .. tostring(prompt) .. ")")
 
 _, ran, refusal = use_field_move(MAPS.PalletTown_PlayersHouse_1F, "DIG", {})
 eq(ran, nil, "DIG indoors (allowEscaping 0) does not execute")
@@ -208,6 +228,7 @@ local function via_start_menu(moveName, badges)
     press("down")
   end
   press("a")
+  if PartyMenu.mode == "yesno" then press("a") end
 end
 
 via_start_menu("TELEPORT", {})
@@ -229,18 +250,28 @@ do
   local _, ran = use_field_move(MAPS.PalletTown, "FLY", { FLY = true })
   eq(ran and ran.action, "fly", "FLY was accepted, so the party menu closed for the fly map")
   eq(PartyMenu.isOpen(), false, "the party menu is closed while the fly map is up")
-  RegionMap.show({ mode = "fly", mapType = 1, session = { map = "PALLET_TOWN" } })
+  require("src.core.game3.runtime")._game = { data = { maps = DEFS } }
+  local idle = { wasPressed = function() return false end, isDown = function() return false end }
+  RegionMap.show({ mode = "fly", session = { map = "FR_PALLET_TOWN", x = 10, y = 8 } })
+  for _ = 1, 200 do
+    if RegionMap.inputReady() then break end
+    RegionMap.handleInput(idle)
+  end
   RegionMap.handleInput({
     wasPressed = function(_, k) return k == "b" end,
     isDown = function() return false end,
   })
+  for _ = 1, 200 do
+    if not RegionMap.isOpen() then break end
+    RegionMap.handleInput(idle)
+  end
   eq(RegionMap.isOpen(), false, "B closed the fly map")
   eq(PartyMenu.isOpen(), true, "B on the fly map lands back in the party menu")
   PartyMenu.close()
 
   local _, ran2 = use_field_move(MAPS.PalletTown, "FLY", { FLY = true })
   eq(ran2 and ran2.action, "fly", "FLY accepted a second time")
-  RegionMap.show({ mode = "fly", mapType = 1, session = { map = "PALLET_TOWN" } })
+  RegionMap.show({ mode = "fly", session = { map = "FR_PALLET_TOWN", x = 10, y = 8 } })
   RegionMap.close(true)
   eq(PartyMenu.isOpen(), false, "a picked destination does not reopen the party menu")
 end

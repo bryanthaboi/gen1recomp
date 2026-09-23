@@ -6,6 +6,7 @@ local Window = require("src.ui.game3.window")
 local Chrome = require("src.ui.game3.chrome")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local ModRuntime = require("src.mods.Runtime")
 
 local StartMenu = {}
@@ -46,38 +47,45 @@ local function safari_active(session)
   return require("src.core.game3.safari").isActive(session) == true
 end
 
+-- pokefirered/src/start_menu.c:116
+local ACTION = { pokedex = 0, pokemon = 1, bag = 2, trainer = 3, save = 4, option = 5, exit = 6, retire = 7, trainer_link = 8 }
+
+local function entry(id, session)
+  return { id = id, label = RomText.at("sStartMenuActionTable", ACTION[id], nil, { playerName = player_label(session) }) }
+end
+
 -- pret MENU_POKEDEX..MENU_EXIT order for normal field.
 local function build_entries(session)
   if link_state_active() then
     -- pokefirered/src/start_menu.c:236 SetUpStartMenu_Link
     return {
-      { id = "pokemon", label = "POKéMON" },
-      { id = "bag", label = "BAG" },
-      { id = "trainer_link", label = player_label(session) },
-      { id = "option", label = "OPTION" },
-      { id = "exit", label = "EXIT" },
+      entry("pokemon", session),
+      entry("bag", session),
+      entry("trainer_link", session),
+      entry("option", session),
+      entry("exit", session),
     }
   end
   if in_union_room(session) then
     -- pokefirered/src/start_menu.c:245 SetUpStartMenu_UnionRoom
     return {
-      { id = "pokemon", label = "POKéMON" },
-      { id = "bag", label = "BAG" },
-      { id = "trainer", label = player_label(session) },
-      { id = "option", label = "OPTION" },
-      { id = "exit", label = "EXIT" },
+      entry("pokemon", session),
+      entry("bag", session),
+      entry("trainer", session),
+      entry("option", session),
+      entry("exit", session),
     }
   end
   if safari_active(session) then
     -- pokefirered/src/start_menu.c:226 SetUpStartMenu_SafariZone
     return {
-      { id = "retire", label = "RETIRE" },
-      { id = "pokedex", label = "POKéDEX" },
-      { id = "pokemon", label = "POKéMON" },
-      { id = "bag", label = "BAG" },
-      { id = "trainer", label = player_label(session) },
-      { id = "option", label = "OPTION" },
-      { id = "exit", label = "EXIT" },
+      entry("retire", session),
+      entry("pokedex", session),
+      entry("pokemon", session),
+      entry("bag", session),
+      entry("trainer", session),
+      entry("option", session),
+      entry("exit", session),
     }
   end
   local entries = {}
@@ -90,7 +98,7 @@ local function build_entries(session)
     hasDex = Flags.getFlag(store, nil, Flags.IDS and Flags.IDS.SYS_POKEDEX_GET or 0x829) == true
   end
   if hasDex then
-    entries[#entries + 1] = { id = "pokedex", label = "POKéDEX" }
+    entries[#entries + 1] = entry("pokedex", session)
   end
   -- start_menu.c:217-218
   local hasMon = true
@@ -98,13 +106,13 @@ local function build_entries(session)
     hasMon = Flags.getFlag(store, nil, Flags.IDS and Flags.IDS.SYS_POKEMON_GET or 0x828) == true
   end
   if hasMon then
-    entries[#entries + 1] = { id = "pokemon", label = "POKéMON" }
+    entries[#entries + 1] = entry("pokemon", session)
   end
-  entries[#entries + 1] = { id = "bag", label = "BAG" }
-  entries[#entries + 1] = { id = "trainer", label = player_label(session) }
-  entries[#entries + 1] = { id = "save", label = "SAVE" }
-  entries[#entries + 1] = { id = "option", label = "OPTION" }
-  entries[#entries + 1] = { id = "exit", label = "EXIT" }
+  entries[#entries + 1] = entry("bag", session)
+  entries[#entries + 1] = entry("trainer", session)
+  entries[#entries + 1] = entry("save", session)
+  entries[#entries + 1] = entry("option", session)
+  entries[#entries + 1] = entry("exit", session)
   return entries
 end
 
@@ -257,9 +265,12 @@ function StartMenu.draw()
     local Safari = require("src.core.game3.safari")
     local stats = Window.template(1, 1, 10, 4)
     Window.stdFrame(stats)
-    -- pokefirered/src/strings.c:167 gText_MenuSafariStats
-    local text = string.format("%3d/%3d\nBALLS  %2d",
-      Safari.steps(StartMenu._session), Safari.STEPS, Safari.balls(StartMenu._session))
+    -- pokefirered/src/start_menu.c:260
+    local text = RomText.plain("gText_MenuSafariStats", { stringVars = {
+      string.format("%3d", Safari.steps(StartMenu._session)),
+      string.format("%3d", Safari.STEPS),
+      string.format("%2d", Safari.balls(StartMenu._session)),
+    } })
     Window.printPx(text, stats.left * 8 + 4, stats.top * 8 + 3)
   end
   local tpl = StartMenu.contentTemplate()
@@ -291,8 +302,8 @@ function StartMenu.draw()
     local rowY2 = popY * 8 + 18
     local curY = (StartMenu._confirmCursor == 1) and rowY1 or rowY2
     Window.cursorPx(popX * 8 + 1, curY)
-    FrlgFont.draw(Strings("YES"), popX * 8 + 9, rowY1, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(Strings("NO"), popX * 8 + 9, rowY2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_Yes"), popX * 8 + 9, rowY1, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_No"), popX * 8 + 9, rowY2, { colors = FrlgFont.COLOR.NORMAL })
   end
 end
 

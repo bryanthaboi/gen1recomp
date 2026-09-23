@@ -26,6 +26,18 @@ local State = require("src.core.game3.battle.state")
 local Ai = require("src.core.game3.battle.ai")
 local AiVm = require("src.core.game3.battle.ai_vm")
 
+if not require("tests.game3_cache").mount() then
+  local Moves = require("src.core.game3.battle.moves")
+  Moves._romLoaded = true
+  -- src/data/battle_moves.h:432, :1160
+  Moves._rom = {
+    [33] = { effect = 0, power = 35, type = 0, accuracy = 95, pp = 35, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
+    [89] = { effect = 147, power = 100, type = 4, accuracy = 100, pp = 10, secondaryChance = 0, target = 32, priority = 0, flags = 50 },
+  }
+  Moves.BY_NUM[33], Moves.BY_NUM[89] = "TACKLE", "EARTHQUAKE"
+  Moves._numByName = { TACKLE = 33, EARTHQUAKE = 89 }
+end
+
 local function loRng(lo, hi)
   if lo and hi then return lo end
   return 0
@@ -132,14 +144,19 @@ local okPack, realPack = pcall(Ai.loadPack, { force = true, extract = true })
 if not okPack or not realPack then
   print("[skip] real AI pack absent")
 else
-  check(type(realPack.scripts) == "table" and realPack.scripts.AI_CheckBadMove ~= nil,
-    "scripts.AI_CheckBadMove present")
-  local minus = realPack.scripts.Score_Minus10
-  check(minus and minus[1] and minus[1].op == "score" and minus[1].delta == -10,
-    "Score_Minus10 starts with score -10")
-  check(realPack.scripts.AI_TryToFaint ~= nil, "scripts.AI_TryToFaint present")
-  check(realPack.table and realPack.table[1] == "AI_CheckBadMove", "table[0] = AI_CheckBadMove")
-  check(realPack.table and realPack.table[3] == "AI_TryToFaint", "table[2] = AI_TryToFaint")
+  -- data/battle_ai_scripts.s:17, :52, :2767
+  check(type(realPack.table) == "table" and #realPack.table == 32, "gBattleAI_ScriptsTable has 32 entries")
+  local badMove = realPack.scripts[realPack.table[1]]
+  check(badMove and badMove[1].op == "get_how_powerful_move_is", "table[0] = AI_CheckBadMove")
+  local faint = realPack.scripts[realPack.table[3]]
+  check(faint and faint[1].op == "if_can_faint", "table[2] = AI_TryToFaint")
+  for name, body in pairs(realPack.scripts) do
+    for _, op in ipairs(body) do
+      if op.target and not realPack.scripts[op.target] then
+        check(false, "branch target " .. op.target .. " from " .. name .. " has a body")
+      end
+    end
+  end
 end
 
 finish()

@@ -48,7 +48,7 @@ check(MapPreviewExtract.PALETTE_COLORS == 32 and MapPreviewExtract.PALETTE_BANKS
   "0x40 palette bytes split into 2 banks")
 check(MapPreviewExtract.TYPE_CAVE == 0 and MapPreviewExtract.TYPE_FOREST == 1,
   "extractor cave/forest types match Versions")
-check(MapPreviewScreen.FADE_OUT_FRAMES == 48, "fade-out lasts 48 frames")
+check(MapPreviewScreen.FADE_OUT_FRAMES == 47, "fade-out lasts 47 frames")
 check(MapPreviewScreen.DURATION_FIRST_VISIT == 120, "first visit holds 120 frames")
 check(MapPreviewScreen.DURATION_REVISIT == 40, "revisit holds 40 frames")
 
@@ -113,6 +113,27 @@ check(MapPreviewScreen.show(CAVE_SEC) == false, "show() refuses a cave preview b
 check(MapPreviewScreen.show(FOREST_SEC) == true, "show() accepts a forest preview")
 check(MapPreviewScreen.isActive(), "screen is active after show()")
 check(MapPreviewScreen.mapsec() == FOREST_SEC, "active mapsec is Berry Forest")
+do
+  local hold, fade, seq = 0, 0, {}
+  for _ = 1, 400 do
+    if not MapPreviewScreen.isActive() then break end
+    local wasFade = MapPreviewScreen._state == MapPreviewScreen.STATE.FADE_OUT
+    MapPreviewScreen.update(1 / 60)
+    if wasFade then
+      fade = fade + 1
+      seq[#seq + 1] = { MapPreviewScreen._eva, MapPreviewScreen._evb }
+    else
+      hold = hold + 1
+    end
+  end
+  check(hold == 41, "forest revisit hold lasts duration + 1 frames")
+  check(fade == 47, "forest dissolve lasts 47 frames")
+  check(seq[1] and seq[1][1] == 16 and seq[1][2] == 1, "dissolve frame 0 is BLEND(16, 1)")
+  check(seq[2] and seq[2][1] == 15 and seq[2][2] == 1, "dissolve frame 1 is BLEND(15, 1)")
+  check(seq[4] and seq[4][1] == 15 and seq[4][2] == 2, "dissolve frame 3 is BLEND(15, 2)")
+  check(seq[46] and seq[46][1] == 1 and seq[46][2] == 16, "dissolve frame 45 is BLEND(1, 16)")
+end
+check(MapPreviewScreen.show(FOREST_SEC) == true, "show() restarts the forest preview")
 MapPreviewScreen.dismiss()
 check(not MapPreviewScreen.isActive(), "dismiss() clears the active screen")
 

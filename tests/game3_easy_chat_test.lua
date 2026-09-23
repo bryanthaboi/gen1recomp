@@ -11,7 +11,8 @@ local function test(name, fn)
   end
 end
 
-local EasyChatData = require("src.core.game3.easy_chat_data")
+local haveWords = require("tests.game3_cache").mount("easy_chat/words.lua") ~= nil
+local EasyChatText = require("src.core.game3.easy_chat_text")
 local Schema = require("src.core.game3.save_schema_firered")
 local Std = require("src.core.game3.scripting.stdscripts")
 local Natives = require("src.core.game3.scripting.natives")
@@ -19,22 +20,26 @@ local Adapters = require("src.core.game3.scripting.adapters")
 local Flags = require("src.core.game3.scripting.flags")
 
 test("decodes authentic word IDs and passphrases", function()
+  if not haveWords then
+    print("[skip] the word checks read easy_chat/words.lua from the ROM cache")
+    return
+  end
   -- Default profile
-  local defText = EasyChatData.formatPhrase(EasyChatData.DEFAULT_PROFILE, 2, 2)
+  local defText = EasyChatText.phrase(EasyChatText.DEFAULT_PROFILE, 2, 2)
   assert(defText:find("I AM A"), "Default profile line 1")
   assert(defText:find("POKéMON FRIEND"), "Default profile line 2")
 
   -- Mystery Event passphrase
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_MYSTERY_EVENT[1]) == "MYSTERY")
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_MYSTERY_EVENT[2]) == "EVENT")
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_MYSTERY_EVENT[3]) == "IS")
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_MYSTERY_EVENT[4]) == "EXCITING")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_MYSTERY_EVENT[1]) == "MYSTERY")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_MYSTERY_EVENT[2]) == "EVENT")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_MYSTERY_EVENT[3]) == "IS")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_MYSTERY_EVENT[4]) == "EXCITING")
 
   -- Questionnaire passphrase
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_QUESTIONNAIRE[1]) == "LINK")
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_QUESTIONNAIRE[2]) == "TOGETHER")
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_QUESTIONNAIRE[3]) == "WITH")
-  assert(EasyChatData.getWord(EasyChatData.PASSPHRASE_QUESTIONNAIRE[4]) == "ALL")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_QUESTIONNAIRE[1]) == "LINK")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_QUESTIONNAIRE[2]) == "TOGETHER")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_QUESTIONNAIRE[3]) == "WITH")
+  assert(EasyChatText.rawWord(EasyChatText.PASSPHRASE_QUESTIONNAIRE[4]) == "ALL")
 end)
 
 test("persists easyChatProfile in save schema", function()
@@ -107,7 +112,7 @@ test("handles ShowEasyChatScreen special with mystery event passphrase (VAR_0x80
     specialVars = { [0x8004] = 0 }, -- EASY_CHAT_TYPE_PROFILE
   }
 
-  local mysteryWords = EasyChatData.PASSPHRASE_MYSTERY_EVENT
+  local mysteryWords = EasyChatText.PASSPHRASE_MYSTERY_EVENT
   local adapters = Adapters.stub({
     openEasyChat = function(opts, done)
       done(true, mysteryWords)
@@ -159,6 +164,10 @@ test("handles ShowEasyChatScreen special when cancelled (VAR_RESULT=0)", functio
 end)
 
 test("formats and displays phrase with ShowEasyChatMessage", function()
+  if not haveWords then
+    print("[skip] the phrase check reads easy_chat/words.lua from the ROM cache")
+    return
+  end
   local session = Schema.newGame()
   session.easyChatProfile = { 5178, 6167, 4107, 8207 }
   package.loaded["src.core.game3.runtime"] = {

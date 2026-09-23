@@ -13,6 +13,10 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
 local check, eq = T.check, T.eq
+require("tests.game3_cache").stubSpeciesNames()
+
+local BattleText = require("src.core.game3.battle.battle_text")
+BattleText.get = function(id) return tostring(id) end
 
 local Experience = require("src.core.game3.battle.experience")
 local ExpSeq = require("src.core.game3.battle.exp_seq")

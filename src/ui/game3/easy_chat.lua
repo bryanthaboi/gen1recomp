@@ -5,10 +5,10 @@ local Display = require("src.core.game3.display")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Stack = require("src.ui.game3.stack")
 local Audio = require("src.core.game3.audio")
-local EasyChatData = require("src.core.game3.easy_chat_data")
 local EasyChatText = require("src.core.game3.easy_chat_text")
 local Chrome = require("src.ui.game3.chrome")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local EasyChat = {}
 
@@ -39,20 +39,98 @@ local function slotWidth(index, penX)
   return frame.x + frame.w - penX
 end
 
--- Strings.source, not Strings: this table is built at require time, before a
--- catalog is loaded, so the draw below looks each label up at use time.
 local FOOTER_BTNS = {
-  { id = "DEL_ALL", label = Strings.source("DEL. ALL"), textX = 32, cursorX = 22, y = 88 },
-  { id = "CANCEL", label = Strings.source("CANCEL"), textX = 119, cursorX = 109, y = 88 },
-  { id = "OK", label = Strings.source("OK"), textX = 195, cursorX = 185, y = 88 },
+  { id = "DEL_ALL", cursorX = 22, y = 88 },
+  { id = "CANCEL", cursorX = 109, y = 88 },
+  { id = "OK", cursorX = 185, y = 88 },
 }
 EasyChat.FOOTER_BTNS = FOOTER_BTNS
+local FOOTER_X = 32
+
+-- src/easy_chat_3.c:2314
+function EasyChat.footerLabels()
+  local out, xs = {}, { 0 }
+  for _, seg in ipairs(RomText.ir("gText_DelAllCancelOk")) do
+    if seg.t == "text" then
+      out[#out + 1] = Strings(seg.s)
+    elseif seg.t == "ext" and seg.cmd == 0x13 then
+      xs[#out + 1] = seg.args[1]
+    end
+  end
+  return out, xs
+end
+
+-- src/easy_chat_2.c:309
+local SCREEN_TEXT = {
+  [0] = { "gText_Profile", "gText_CombineFourWordsOrPhrases", "gText_AndMakeYourProfile",
+    "gText_YourProfile", "gText_IsAsShownOkay" },
+  [1] = { "gText_AtTheBattlesStart", "gText_MakeMessageSixPhrases", "gText_MaxTwoTwelveLetterPhrases",
+    "gText_YourFeelingAtTheBattlesStart", "gText_IsAsShownOkay" },
+  [14] = { "gText_Questionnaire", "gText_CombineFourWordsOrPhrases", "gText_AndFillOutTheQuestionnaire",
+    "gText_TheAnswer", "gText_IsAsShownOkay" },
+}
 
 local function play_se(id)
   local ok, Aud = pcall(require, "src.core.game3.audio")
   if ok and Aud and Aud.playSe then
     Aud.playSe(id)
   end
+end
+
+local EC_GROUP_POKEMON_2, EC_GROUP_TRAINER, EC_GROUP_ADJECTIVES = 0x00, 0x01, 0x10
+local EC_GROUP_EVENTS, EC_GROUP_MOVE_1, EC_GROUP_MOVE_2, EC_GROUP_POKEMON = 0x11, 0x12, 0x13, 0x15
+-- pokefirered/src/easy_chat.c:82
+local SPECIES_DEOXYS = 410
+
+local function session_state(session)
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  session = session or (Runtime and Runtime.getSession and Runtime.getSession()) or {}
+  local Flags = require("src.core.game3.scripting.flags")
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  local store = (Space and Space.store) or session
+  return session, function(name) return Flags.getFlag(store, nil, Flags.IDS[name]) == true end
+end
+
+-- pokefirered/src/easy_chat.c:692 UnlockedECMonOrMove
+local function unlocked_words(gid, dex)
+  local g = EasyChatText.group(gid)
+  if not (g and g.words) then return nil end
+  if gid ~= EC_GROUP_POKEMON and gid ~= EC_GROUP_POKEMON_2 then return g end
+  local Dex = require("src.core.game3.dex")
+  local out = {}
+  for k, v in pairs(g) do out[k] = v end
+  out.words = {}
+  for _, w in ipairs(g.words) do
+    local _, species = EasyChatText.decodeWord(w.id)
+    if (gid == EC_GROUP_POKEMON_2 and species ~= SPECIES_DEOXYS) or Dex.isSeen(dex, species) then
+      out.words[#out.words + 1] = w
+    end
+  end
+  return out
+end
+
+-- pokefirered/src/easy_chat.c:500 PopulateECGroups
+function EasyChat.populateGroups(session)
+  local flag
+  session, flag = session_state(session)
+  local Dex = require("src.core.game3.dex")
+  local PokedexData = require("src.core.game3.pokedex_data")
+  local dex = session.dex
+  local ids = {}
+  if Dex.countSeen(dex, "national") > 0 then ids[#ids + 1] = EC_GROUP_POKEMON end
+  for gid = EC_GROUP_TRAINER, EC_GROUP_ADJECTIVES do ids[#ids + 1] = gid end
+  if flag("SYS_GAME_CLEAR") then
+    ids[#ids + 1] = EC_GROUP_EVENTS
+    ids[#ids + 1] = EC_GROUP_MOVE_1
+    ids[#ids + 1] = EC_GROUP_MOVE_2
+  end
+  if PokedexData.isNationalUnlocked(session, dex) then ids[#ids + 1] = EC_GROUP_POKEMON_2 end
+  local list = {}
+  for _, gid in ipairs(ids) do
+    local g = unlocked_words(gid, dex)
+    if g then list[#list + 1] = g end
+  end
+  return list
 end
 
 function EasyChat.open(opts)
@@ -63,38 +141,19 @@ function EasyChat.open(opts)
   end
 
   local initialWords = {}
-  local srcWords = opts.words or EasyChatData.DEFAULT_PROFILE
+  local srcWords = opts.words or EasyChatText.DEFAULT_PROFILE
   for i = 1, 4 do
-    initialWords[i] = tonumber(srcWords[i]) or EasyChatData.DEFAULT_PROFILE[i] or EasyChatData.EC_WORD_UNDEFINED
+    initialWords[i] = tonumber(srcWords[i]) or EasyChatText.DEFAULT_PROFILE[i] or EasyChatText.EC_WORD_UNDEFINED
   end
 
-  local groupList = {}
-  for gid = 0, 21 do
-    local g = EasyChatData.GROUPS[gid]
-    if g and g.words and #g.words > 0 then
-      table.insert(groupList, g)
-    end
-  end
+  local groupList = EasyChat.populateGroups(opts.session)
 
-  local title = Strings("PROFILE")
-  local instr1 = Strings("Combine four words or phrases")
-  local instr2 = Strings("and make your profile.")
-  local confirm1 = Strings("Your profile")
-  local confirm2 = Strings("is as shown. Okay?")
-
-  if opts.type == 14 then -- QUESTIONNAIRE
-    title = Strings("QUESTIONNAIRE")
-    instr1 = Strings("Combine four words or phrases")
-    instr2 = Strings("and fill out the questionnaire.")
-    confirm1 = Strings("The answer")
-    confirm2 = Strings("is as shown. Okay?")
-  elseif opts.type == 1 then -- BATTLE START
-    title = Strings("At the battle's start:")
-    instr1 = Strings("Make a message of six phrases.")
-    instr2 = Strings("Max two 12-letter phrases/line.")
-    confirm1 = Strings("Your feeling at the battle's start")
-    confirm2 = Strings("is as shown. Okay?")
-  end
+  local keys = SCREEN_TEXT[opts.type] or SCREEN_TEXT[0]
+  local title = RomText.plain(keys[1])
+  local instr1 = RomText.plain(keys[2])
+  local instr2 = RomText.plain(keys[3])
+  local confirm1 = RomText.plain(keys[4])
+  local confirm2 = RomText.plain(keys[5])
 
   local st = {
     type = opts.type or 0,
@@ -171,7 +230,7 @@ function EasyChat.handleInput(inp)
         end
       elseif st.mode == "DEL_ALL_CONFIRM" then
         if st.confirmChoice == 1 then
-          for i = 1, 4 do st.words[i] = EasyChatData.EC_WORD_UNDEFINED end
+          for i = 1, 4 do st.words[i] = EasyChatText.EC_WORD_UNDEFINED end
         end
         st.mode = "SLOT"
       end
@@ -515,7 +574,7 @@ function EasyChat.draw()
       drawTriangleCursor(s.cursorX, s.cursorY, st.animTimer)
     end
 
-    if not wid or wid == EasyChatData.EC_WORD_UNDEFINED or wid == 0xFFFF then
+    if not wid or wid == EasyChatText.EC_WORD_UNDEFINED then
       -- 7 Red underscores matching pret CHAR_EXTRA_SYMBOL + CHAR_UNDERSCORE (7 glyphs in FONT_NORMAL_COPY_1)
       FrlgFont.draw("_______", s.x, s.y, { colors = FrlgFont.COLOR.RED })
     else
@@ -529,12 +588,15 @@ function EasyChat.draw()
   end
 
   -- 4. Middle Action Footer (DEL. ALL at x=32, CANCEL at x=119, OK at x=196 at y=88, cursor at y=91)
+  local footerLabels, footerXs = EasyChat.footerLabels()
+  for i, label in ipairs(footerLabels) do
+    FrlgFont.draw(label, FOOTER_X + footerXs[i], 88, { colors = FrlgFont.COLOR.NORMAL })
+  end
   for i, btn in ipairs(FOOTER_BTNS) do
     local isCur = (st.mode == "FOOTER" and st.footerIdx == i)
     if isCur then
       drawTriangleCursor(btn.cursorX, 91, st.animTimer)
     end
-    FrlgFont.draw(Strings(btn.label), btn.textX, 88, { colors = FrlgFont.COLOR.NORMAL })
   end
 
   -- 5. Bottom Workspace or Instruction Box
@@ -547,11 +609,12 @@ function EasyChat.draw()
       FrlgFont.draw(st.confirm1, dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
       FrlgFont.draw(st.confirm2, dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
     elseif st.mode == "CANCEL_CONFIRM" then
-      FrlgFont.draw(Strings("Quit editing?"), dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw(Strings("The edited words will not be saved."), dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
+      -- src/easy_chat_2.c:1242
+      FrlgFont.draw(RomText.plain("gText_QuitEditing"), dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
     elseif st.mode == "DEL_ALL_CONFIRM" then
-      FrlgFont.draw(Strings("All the text being edited will"), dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
-      FrlgFont.draw(Strings("be deleted. Is that okay?"), dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
+      -- src/easy_chat_2.c:1251
+      FrlgFont.draw(RomText.plain("gText_AllTextBeingEditedWill"), dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(RomText.plain("gText_BeDeletedThatOkay"), dX + 8, dY + 22, { colors = FrlgFont.COLOR.NORMAL })
     else
       -- Standard instructions
       FrlgFont.draw(st.instr1, dX + 8, dY + 6, { colors = FrlgFont.COLOR.NORMAL })
@@ -566,12 +629,12 @@ function EasyChat.draw()
       if st.confirmChoice == 1 then
         drawTriangleCursor(ynX + 4, ynY + 8, st.animTimer)
       end
-      FrlgFont.draw(Strings("YES"), ynX + 16, ynY + 5, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(RomText.plain("gText_Yes"), ynX + 16, ynY + 5, { colors = FrlgFont.COLOR.NORMAL })
       -- NO
       if st.confirmChoice == 2 then
         drawTriangleCursor(ynX + 4, ynY + 22, st.animTimer)
       end
-      FrlgFont.draw(Strings("NO"), ynX + 16, ynY + 19, { colors = FrlgFont.COLOR.NORMAL })
+      FrlgFont.draw(RomText.plain("gText_No"), ynX + 16, ynY + 19, { colors = FrlgFont.COLOR.NORMAL })
     end
 
   -- Group Selection Sub-window (pret sEasyChatWindowTemplates[2]: x=8, y=76, w=224, h=78)
@@ -579,9 +642,7 @@ function EasyChat.draw()
     local gX, gY, gW, gH = 8, 76, 224, 78
     drawOrangeFrame(gX, gY, gW, gH)
 
-    -- Top instruction in frame
-    FrlgFont.draw(Strings("Select a group."), gX + 8, gY + 4, { colors = FrlgFont.COLOR.NORMAL })
-
+    -- pokefirered/src/easy_chat_3.c:1569
     local numG = #st.groups
     local curRow = math.floor((st.groupCursor - 1) / 2)
     local startRow = math.max(0, curRow - 1)
@@ -632,14 +693,7 @@ function EasyChat.draw()
     local maxPages = math.max(1, math.ceil(totalWords / pageSize))
     local pageOffset = st.wordPage * pageSize
 
-    -- Top group title
-    local grpHeader = EasyChatText.groupName(curGroup)
-    FrlgFont.draw(grpHeader, wX + 8, wY + 4, { colors = FrlgFont.COLOR.NORMAL })
-
-    -- Page indicator
-    local pageStr = string.format("%d/%d", st.wordPage + 1, maxPages)
-    FrlgFont.draw(pageStr, wX + wW - 32, wY + 4, { colors = FrlgFont.COLOR.NORMAL })
-
+    -- pokefirered/src/easy_chat_3.c:1649 PrintECRowsWin2
     -- Scroll indicators
     if st.wordPage > 0 then
       drawScrollArrow(wX + 112, wY + 8, true)

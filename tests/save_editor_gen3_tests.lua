@@ -107,6 +107,7 @@ end
 -- --------------------------------------------------------------------------
 -- 3. Data Binding (Gen.bindGame3Data)
 -- --------------------------------------------------------------------------
+require("tests.game3_cache").mountOrSkip("save_editor_gen3_tests")
 local mockData = {}
 Gen.bindGame3Data(mockData)
 
@@ -740,6 +741,8 @@ do
   Ops.setNature(S, mon, 3) -- Adamant
   checkEq(mon.nature, 3, "mon nature set to Adamant (3)")
   checkEq(mon.personality % 25, 3, "mon personality matches Adamant modulo 25")
+  check(tostring(S.status):find("nature set to ADAMANT", 1, true) ~= nil,
+    "setNature status names the ROM nature text: " .. tostring(S.status))
 
   -- Set Ability
   Ops.setAbility(S, mon, 1) -- Slot 2
@@ -852,6 +855,26 @@ do
     end)
     check(okDraw, string.format("Events.draw renders sub-tab '%s' without error: %s", tab, tostring(errDraw)))
   end
+end
+
+do
+  local App = require("tools.save-editor.App")
+  local ready = Gen.game3CacheReady
+  Gen.game3CacheReady = function() return false end
+  local ok, err = pcall(App.load, nil, { version = "firered", slotId = "slot1", embedded = true })
+  Gen.game3CacheReady = ready
+  check(ok, "App.load with no FireRed cache does not raise: " .. tostring(err))
+  local S = App.getState()
+  check(S and S.missingCache and S.missingCache:find("No imported FireRed ROM cache", 1, true) ~= nil,
+    "App.load with no FireRed cache names the missing cache")
+  checkEq(S and S.status, S and S.missingCache, "missing-cache message is the status line")
+  checkEq(S and S.allowSave, false, "missing-cache session cannot save")
+  check(S and S.save == nil, "missing-cache session loads no save")
+  local okD, errD = pcall(App.draw)
+  check(okD, "App.draw renders the missing-cache screen: " .. tostring(errD))
+  checkEq(App.save(), false, "App.save refuses with no FireRed cache")
+  checkEq(App.reload(), false, "App.reload refuses with no FireRed cache")
+  App.unload()
 end
 
 print(string.format("save editor gen3 tests: %d passed, %d failed", passed, failed))

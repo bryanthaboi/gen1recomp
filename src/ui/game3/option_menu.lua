@@ -2,7 +2,7 @@ local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local Options = require("src.core.game3.options")
 local Rows = require("src.ui.game3.option_rows")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local OptionMenu = {}
 
@@ -17,7 +17,6 @@ local ROW_H = 14
 local LABEL_X = WIN_X + 8
 local VALUE_X = WIN_X + 0x82
 local HELP_BG = { 0 / 255, 123 / 255, 197 / 255, 1 }
-local HELP_TEXT = "{DPAD_UPDOWN}PICK {DPAD_LEFTRIGHT}SWITCH {A_BUTTON}{B_BUTTON}CANCEL"
 
 local function ctx()
   return OptionMenu._ctx
@@ -61,7 +60,7 @@ function OptionMenu.show(opts)
     options = engine,
   }
   OptionMenu._pages = {}
-  pushPage(Strings("OPTION"), buildTop())
+  pushPage(RomText.plain("gText_MenuOption"), buildTop()) -- src/option_menu.c:537
   OptionMenu.cursor = 1
   Stack.push("option", OptionMenu, { hideBelow = true })
 end
@@ -191,7 +190,7 @@ local function drawHelpBar()
   love.graphics.rectangle("fill", 0, 0, 240, 16)
   love.graphics.setColor(1, 1, 1, 1)
   local PokedexChrome = require("src.ui.game3.pokedex_chrome")
-  PokedexChrome.drawControlInfo(Strings(HELP_TEXT), 0xE4, 0)
+  PokedexChrome.drawControlInfo(RomText.plain("gText_PickSwitchCancel"), 0xE4, 0)
 end
 
 function OptionMenu.draw()
@@ -208,7 +207,7 @@ function OptionMenu.draw()
   drawHelpBar()
 
   Chrome.fixedStdFrame(2, 3, 26, 2) -- src/option_menu.c:537
-  Window.printPx(p.title or "OPTION", 16 + 8, 24 + 1, { colors = FrlgFont.COLOR.NORMAL })
+  Window.printPx(p.title, 16 + 8, 24 + 1, { colors = FrlgFont.COLOR.NORMAL })
 
   local frameType = tonumber(Options.block(c.options).frameType) or 0
   Window.userFrame(Window.template(2, 7, 26, 12), frameType)
@@ -221,7 +220,7 @@ function OptionMenu.draw()
     if idx <= total then
       local y = ROW_Y0 + (slot - 1) * ROW_STEP -- src/option_menu.c:563
       if idx > #p.rows then
-        Window.printPx(Strings("CANCEL"), LABEL_X, y, { colors = FrlgFont.COLOR.NORMAL })
+        Window.printPx(RomText.at("sOptionMenuItemsNames", 6), LABEL_X, y, { colors = FrlgFont.COLOR.NORMAL })
       else
         local row = p.rows[idx]
         Window.printPx(row.label or "?", LABEL_X, y, { colors = FrlgFont.COLOR.NORMAL })

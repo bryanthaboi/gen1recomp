@@ -5,6 +5,7 @@
 local Logger = require("src.core.Logger")
 local Map = require("src.world.gen2.Map")
 local NPC = require("src.world.gen2.Npc")
+local ModRuntime = require("src.mods.Runtime")
 
 local Follower = {}
 
@@ -100,7 +101,7 @@ end
 function Follower.onMapEntered(game, world, opts, viaMapLoad)
   if not (world and world.map and world.player) then return end
   remove(world)
-  if not shouldSpawn(game, world) then return end
+  if not ModRuntime.call("world.follower.spawn", shouldSpawn, game, world) then return end
   -- keepPikachu is Gen 1's spelling of the same opt (src/world/PikachuFollower
   -- .lua:191); a mod passing it must not get a fresh spawn at every seam.
   local keep = opts and (opts.keepFollower or opts.keepPikachu)
@@ -131,10 +132,10 @@ function Follower.update(game, world)
   if not (world and world.map and world.player) then return end
   local npc = findFollower(world)
   if not npc then
-    if shouldSpawn(game, world) then Follower.onMapEntered(game, world) end
+    if ModRuntime.call("world.follower.spawn", shouldSpawn, game, world) then Follower.onMapEntered(game, world) end
     return
   end
-  if not shouldSpawn(game, world) then
+  if not ModRuntime.call("world.follower.spawn", shouldSpawn, game, world) then
     remove(world)
     return
   end

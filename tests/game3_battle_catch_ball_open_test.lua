@@ -1,5 +1,7 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_catch_ball_open_test")
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)
@@ -54,7 +56,7 @@ local function run(caught, shakes)
   CatchSeq.begin(st, 4, caught, shakes, {
     pushMsg = function(t) msgs[#msgs + 1] = { t = t, f = frame } end,
     headless = false,
-    session = {},
+    session = { name = "RED" },
   })
   CatchSeq.update()
   CatchSeq._waitingMsg = false
@@ -134,7 +136,7 @@ check(log[264].oy == 14 and log[275].oy == 2 and log[276].oy == 0, "mon y2 falls
 check(log[263].particles == 1 and log[264].particles == 2, "breakout burst spawns particles again")
 check(log[273].visible and log[274].visible == false, "ball hides once open anim ends")
 check(log[276].finished ~= true and log[277].finished == true and msgs[2] and msgs[2].f == 277
-  and msgs[2].t == "Aww! It appeared to be caught!", "breakout text after the anim ends")
+  and msgs[2].t == "Aww!\nIt appeared to be caught!", "breakout text after the anim ends")
 for _ = 1, 60 do BallOpen.tick() end
 check((BallOpen.monBlend("enemy")) == 0 and BallOpen._mon.enemy == nil and not BallOpen.active(), "mon unfades after the breakout")
 
@@ -144,7 +146,7 @@ check(se_frames(SE.SE_BALL) == "" and se_frames(SE.SE_BALL_OPEN) == "36,204" and
   "BALL_NO_SHAKES breaks out 31 frames after the last bounce")
 log, msgs = run(false, 3)
 check(se_frames(SE.SE_BALL) == "203,262,321" and se_frames(SE.SE_BALL_OPEN) == "36,381" and msgs[2] and msgs[2].f == 395
-  and msgs[2].t == "Shoot! It was so close too!", "BALL_3_SHAKES_FAIL breaks out after the third shake")
+  and msgs[2].t == "Shoot!\nIt was so close, too!", "BALL_3_SHAKES_FAIL breaks out after the third shake")
 
 print(failed == 0 and "[ok] all" or ("[FAIL] " .. failed .. " failed"))
 os.exit(failed == 0 and 0 or 1)

@@ -383,6 +383,21 @@ function State.displayName(battler)
   return Pokemon.name(battler.species)
 end
 
+-- src/battle_message.c:1807
+function State.text(st, id, fill)
+  fill = require("src.core.game3.battle.adapter").fill(st, fill)
+  return require("src.core.game3.battle.battle_text").get(id, fill)
+end
+
+-- src/battle_message.c:2248
+function State.prefixedName(st, battler, name)
+  name = name or State.displayName(battler)
+  if battler and battler.side == "player" then return name end
+  local RomText = require("src.core.game3.rom_text")
+  local prefix = (st ~= nil and not st.wild) and "sText_FoePkmnPrefix" or "sText_WildPkmnPrefix"
+  return RomText.plain(prefix) .. name
+end
+
 function State.isFainted(battler)
   if not battler then return true end
   if type(battler) == "string" then return false end

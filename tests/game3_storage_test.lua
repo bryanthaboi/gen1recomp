@@ -1,5 +1,14 @@
 -- Automated Test Suite for Game 3 FRLG PC & Pokémon Storage System.
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+require("tests.game3_cache").stubSpeciesNames()
+require("tests.fixture_data.game3_items").install()
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local Storage = require("src.core.game3.storage")
 local Bag = require("src.core.game3.bag")
@@ -258,8 +267,11 @@ assert_eq(ReleaseSeq.state, "anim", "Entered upward float/shrink animation state
 
 -- Tick animation past 0.8s
 ReleaseSeq.update(1.0)
-assert_eq(ReleaseSeq.state, "bye", "Entered 'Bye-bye, SPARKY!' state")
+assert_eq(ReleaseSeq.state, "released", "Entered 'SPARKY was released.' state")
 assert_eq(relSession.storage.boxes[1].mons[1], nil, "Box slot data cleared")
+
+ReleaseSeq.handleInput(make_input({ a = true }))
+assert_eq(ReleaseSeq.state, "bye", "Entered 'Bye-bye, SPARKY!' state")
 
 -- Dismiss dialogue
 ReleaseSeq.handleInput(make_input({ a = true }))

@@ -9,6 +9,7 @@ local LearnMove = require("src.core.game3.battle.learn_move")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
 local SummaryData = require("src.core.game3.summary_data")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local MoveRelearner = {}
 
@@ -127,10 +128,10 @@ local function mon_name()
   return Pokemon.displayMonName(MoveRelearner._mon)
 end
 
--- pokefirered/src/strings.c:1256
+-- pokefirered/src/learn_move.c:690
 local function to_list()
   MoveRelearner.state = "list"
-  MoveRelearner.prompt = Strings("Teach which move to %s?", mon_name())
+  MoveRelearner.prompt = RomText.plain("gText_TeachWhichMoveToMon", { stringVars = { mon_name() } })
 end
 
 local function push_message(text, cb)
@@ -280,8 +281,9 @@ function MoveRelearner.handleInput(input)
     se(5)
     local moveId = MoveRelearner.moves()[MoveRelearner.cursor]
     if moveId then
-      -- pokefirered/src/strings.c:1257
-      ask_yes_no(Strings("Teach %s?", Pokemon.moveName(moveId)), function(yes)
+      -- pokefirered/src/learn_move.c:784
+      ask_yes_no(RomText.plain("gText_TeachMoveQues",
+        { stringVars = { mon_name(), Pokemon.moveName(moveId) } }), function(yes)
         if yes then
           start_learn(moveId)
         else
@@ -297,9 +299,9 @@ function MoveRelearner.handleInput(input)
   end
 end
 
--- pokefirered/src/strings.c:1263
+-- pokefirered/src/learn_move.c:789
 function MoveRelearner.giveUpPrompt()
-  ask_yes_no(Strings("Give up trying to teach a new\nmove to %s?", mon_name()), function(yes)
+  ask_yes_no(RomText.plain("gText_GiveUpTryingToTeachNewMove", { stringVars = { mon_name() } }), function(yes)
     if yes then
       -- pokefirered/src/learn_move.c:541
       MoveRelearner.finish(false)
@@ -382,7 +384,8 @@ function MoveRelearner.draw()
     if idx == MoveRelearner.cursor and MoveRelearner.state == "list" then
       Window.cursorPx(152, y)
     end
-    local row = moves[idx] and Pokemon.moveName(moves[idx]) or Strings("CANCEL")
+    -- pokefirered/src/learn_move.c:761
+    local row = moves[idx] and Pokemon.moveName(moves[idx]) or RomText.plain("gFameCheckerText_Cancel")
     FrlgFont.draw(row, 160, y, ROW_OPTS)
   end
 
@@ -392,8 +395,8 @@ function MoveRelearner.draw()
 
   if MoveRelearner.state == "yesno" then
     Window.stdFrame(WIN_YESNO)
-    FrlgFont.draw(Strings("YES"), 176, 66, VALUE_OPTS)
-    FrlgFont.draw(Strings("NO"), 176, 82, VALUE_OPTS)
+    FrlgFont.draw(RomText.plain("gText_Yes"), 176, 66, VALUE_OPTS)
+    FrlgFont.draw(RomText.plain("gText_No"), 176, 82, VALUE_OPTS)
     Window.cursorPx(169, MoveRelearner.yesNoCursor == 1 and 66 or 82)
   end
 end

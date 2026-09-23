@@ -1,4 +1,17 @@
 package.path='./?.lua;./?/init.lua;'..package.path
+if not require("tests.game3_cache").mount() then
+  package.loaded["src.core.game3.rom_text"] = (function()
+    local function plain(key) return key end
+    return {
+      plain = plain, box = plain, ascii = plain, has = function() return true end,
+      key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+      at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+      count = function() return 0 end, list = function() return {} end,
+      lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+    }
+  end)()
+end
+require("tests.fixture_data.game3_items").install()
 local R=require('src.core.game3.quest_log_recorder')
 local Runtime=require('src.core.game3.runtime')
 local Schema=require('src.core.game3.save_schema_firered')

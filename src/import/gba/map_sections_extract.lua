@@ -5,120 +5,116 @@ local MapSectionsExtract = {}
 
 MapSectionsExtract.KANTO_MAPSEC_START = 88 -- 0x58 = MAPSEC_PALLET_TOWN
 
--- Fallback-only names.  The authoritative section names are read from the ROM
--- by src/import/gba/map_preview_extract.lua and overlaid by ensureGenerated;
--- these keep the module usable when no ROM was imported (ROM-free CI, tests).
--- The symbolic `id` and the popup `theme` are not in the ROM and stay here.
 MapSectionsExtract.SECTIONS = {
-  [88]  = { id = "MAPSEC_PALLET_TOWN", name = "PALLET TOWN", theme = "marble" },
-  [89]  = { id = "MAPSEC_VIRIDIAN_CITY", name = "VIRIDIAN CITY", theme = "marble" },
-  [90]  = { id = "MAPSEC_PEWTER_CITY", name = "PEWTER CITY", theme = "stone" },
-  [91]  = { id = "MAPSEC_CERULEAN_CITY", name = "CERULEAN CITY", theme = "marble" },
-  [92]  = { id = "MAPSEC_LAVENDER_TOWN", name = "LAVENDER TOWN", theme = "marble" },
-  [93]  = { id = "MAPSEC_VERMILION_CITY", name = "VERMILION CITY", theme = "marble" },
-  [94]  = { id = "MAPSEC_CELADON_CITY", name = "CELADON CITY", theme = "brick" },
-  [95]  = { id = "MAPSEC_FUCHSIA_CITY", name = "FUCHSIA CITY", theme = "wood" },
-  [96]  = { id = "MAPSEC_CINNABAR_ISLAND", name = "CINNABAR ISLAND", theme = "stone" },
-  [97]  = { id = "MAPSEC_INDIGO_PLATEAU", name = "INDIGO PLATEAU", theme = "marble" },
-  [98]  = { id = "MAPSEC_SAFFRON_CITY", name = "SAFFRON CITY", theme = "brick" },
-  [99]  = { id = "MAPSEC_ROUTE_4_POKECENTER", name = "ROUTE 4", theme = "stone" },
-  [100] = { id = "MAPSEC_ROUTE_10_POKECENTER", name = "ROUTE 10", theme = "stone" },
-  [101] = { id = "MAPSEC_ROUTE_1", name = "ROUTE 1", theme = "marble" },
-  [102] = { id = "MAPSEC_ROUTE_2", name = "ROUTE 2", theme = "marble" },
-  [103] = { id = "MAPSEC_ROUTE_3", name = "ROUTE 3", theme = "stone" },
-  [104] = { id = "MAPSEC_ROUTE_4", name = "ROUTE 4", theme = "stone" },
-  [105] = { id = "MAPSEC_ROUTE_5", name = "ROUTE 5", theme = "marble" },
-  [106] = { id = "MAPSEC_ROUTE_6", name = "ROUTE 6", theme = "marble" },
-  [107] = { id = "MAPSEC_ROUTE_7", name = "ROUTE 7", theme = "brick" },
-  [108] = { id = "MAPSEC_ROUTE_8", name = "ROUTE 8", theme = "brick" },
-  [109] = { id = "MAPSEC_ROUTE_9", name = "ROUTE 9", theme = "stone" },
-  [110] = { id = "MAPSEC_ROUTE_10", name = "ROUTE 10", theme = "stone" },
-  [111] = { id = "MAPSEC_ROUTE_11", name = "ROUTE 11", theme = "marble" },
-  [112] = { id = "MAPSEC_ROUTE_12", name = "ROUTE 12", theme = "wood" },
-  [113] = { id = "MAPSEC_ROUTE_13", name = "ROUTE 13", theme = "wood" },
-  [114] = { id = "MAPSEC_ROUTE_14", name = "ROUTE 14", theme = "wood" },
-  [115] = { id = "MAPSEC_ROUTE_15", name = "ROUTE 15", theme = "wood" },
-  [116] = { id = "MAPSEC_ROUTE_16", name = "ROUTE 16", theme = "marble" },
-  [117] = { id = "MAPSEC_ROUTE_17", name = "ROUTE 17", theme = "marble" },
-  [118] = { id = "MAPSEC_ROUTE_18", name = "ROUTE 18", theme = "marble" },
-  [119] = { id = "MAPSEC_ROUTE_19", name = "ROUTE 19", theme = "marble" },
-  [120] = { id = "MAPSEC_ROUTE_20", name = "ROUTE 20", theme = "stone" },
-  [121] = { id = "MAPSEC_ROUTE_21", name = "ROUTE 21", theme = "marble" },
-  [122] = { id = "MAPSEC_ROUTE_22", name = "ROUTE 22", theme = "marble" },
-  [123] = { id = "MAPSEC_ROUTE_23", name = "ROUTE 23", theme = "marble" },
-  [124] = { id = "MAPSEC_ROUTE_24", name = "ROUTE 24", theme = "marble" },
-  [125] = { id = "MAPSEC_ROUTE_25", name = "ROUTE 25", theme = "marble" },
-  [126] = { id = "MAPSEC_VIRIDIAN_FOREST", name = "VIRIDIAN FOREST", theme = "wood" },
-  [127] = { id = "MAPSEC_MT_MOON", name = "MT. MOON", theme = "stone" },
-  [128] = { id = "MAPSEC_S_S_ANNE", name = "S.S. ANNE", theme = "wood" },
-  [129] = { id = "MAPSEC_UNDERGROUND_PATH", name = "UNDERGROUND PATH", theme = "stone" },
-  [130] = { id = "MAPSEC_UNDERGROUND_PATH_2", name = "UNDERGROUND PATH", theme = "stone" },
-  [131] = { id = "MAPSEC_DIGLETTS_CAVE", name = "DIGLETT'S CAVE", theme = "stone" },
-  [132] = { id = "MAPSEC_KANTO_VICTORY_ROAD", name = "VICTORY ROAD", theme = "stone" },
-  [133] = { id = "MAPSEC_ROCKET_HIDEOUT", name = "ROCKET HIDEOUT", theme = "brick" },
-  [134] = { id = "MAPSEC_SILPH_CO", name = "SILPH CO.", theme = "brick" },
-  [135] = { id = "MAPSEC_POKEMON_MANSION", name = "POKéMON MANSION", theme = "brick" },
-  [136] = { id = "MAPSEC_KANTO_SAFARI_ZONE", name = "SAFARI ZONE", theme = "wood" },
-  [137] = { id = "MAPSEC_POKEMON_LEAGUE", name = "POKéMON LEAGUE", theme = "marble" },
-  [138] = { id = "MAPSEC_ROCK_TUNNEL", name = "ROCK TUNNEL", theme = "stone" },
-  [139] = { id = "MAPSEC_SEAFOAM_ISLANDS", name = "SEAFOAM ISLANDS", theme = "stone" },
-  [140] = { id = "MAPSEC_POKEMON_TOWER", name = "POKéMON TOWER", theme = "brick" },
-  [141] = { id = "MAPSEC_CERULEAN_CAVE", name = "CERULEAN CAVE", theme = "stone" },
-  [142] = { id = "MAPSEC_POWER_PLANT", name = "POWER PLANT", theme = "brick" },
-  [143] = { id = "MAPSEC_ONE_ISLAND", name = "ONE ISLAND", theme = "marble" },
-  [144] = { id = "MAPSEC_TWO_ISLAND", name = "TWO ISLAND", theme = "marble" },
-  [145] = { id = "MAPSEC_THREE_ISLAND", name = "THREE ISLAND", theme = "marble" },
-  [146] = { id = "MAPSEC_FOUR_ISLAND", name = "FOUR ISLAND", theme = "marble" },
-  [147] = { id = "MAPSEC_FIVE_ISLAND", name = "FIVE ISLAND", theme = "marble" },
-  [148] = { id = "MAPSEC_SEVEN_ISLAND", name = "SEVEN ISLAND", theme = "marble" },
-  [149] = { id = "MAPSEC_SIX_ISLAND", name = "SIX ISLAND", theme = "marble" },
-  [150] = { id = "MAPSEC_KINDLE_ROAD", name = "KINDLE ROAD", theme = "stone" },
-  [151] = { id = "MAPSEC_TREASURE_BEACH", name = "TREASURE BEACH", theme = "marble" },
-  [152] = { id = "MAPSEC_CAPE_BRINK", name = "CAPE BRINK", theme = "wood" },
-  [153] = { id = "MAPSEC_BOND_BRIDGE", name = "BOND BRIDGE", theme = "wood" },
-  [154] = { id = "MAPSEC_THREE_ISLE_PORT", name = "THREE ISLE PORT", theme = "wood" },
-  [155] = { id = "MAPSEC_SEVII_ISLE_6", name = "SEVII ISLE 6", theme = "marble" },
-  [156] = { id = "MAPSEC_SEVII_ISLE_7", name = "SEVII ISLE 7", theme = "marble" },
-  [157] = { id = "MAPSEC_SEVII_ISLE_8", name = "SEVII ISLE 8", theme = "marble" },
-  [158] = { id = "MAPSEC_SEVII_ISLE_9", name = "SEVII ISLE 9", theme = "marble" },
-  [159] = { id = "MAPSEC_RESORT_GORGEOUS", name = "RESORT GORGEOUS", theme = "marble" },
-  [160] = { id = "MAPSEC_WATER_LABYRINTH", name = "WATER LABYRINTH", theme = "marble" },
-  [161] = { id = "MAPSEC_FIVE_ISLE_MEADOW", name = "FIVE ISLE MEADOW", theme = "wood" },
-  [162] = { id = "MAPSEC_MEMORIAL_PILLAR", name = "MEMORIAL PILLAR", theme = "stone" },
-  [163] = { id = "MAPSEC_OUTCAST_ISLAND", name = "OUTCAST ISLAND", theme = "marble" },
-  [164] = { id = "MAPSEC_GREEN_PATH", name = "GREEN PATH", theme = "wood" },
-  [165] = { id = "MAPSEC_WATER_PATH", name = "WATER PATH", theme = "marble" },
-  [166] = { id = "MAPSEC_RUIN_VALLEY", name = "RUIN VALLEY", theme = "stone" },
-  [167] = { id = "MAPSEC_TRAINER_TOWER", name = "TRAINER TOWER", theme = "brick" },
-  [168] = { id = "MAPSEC_CANYON_ENTRANCE", name = "CANYON ENTRANCE", theme = "stone" },
-  [169] = { id = "MAPSEC_SEVAULT_CANYON", name = "SEVAULT CANYON", theme = "stone" },
-  [170] = { id = "MAPSEC_TANOBY_RUINS", name = "TANOBY RUINS", theme = "stone" },
-  [171] = { id = "MAPSEC_SEVII_ISLE_22", name = "SEVII ISLE 22", theme = "marble" },
-  [172] = { id = "MAPSEC_SEVII_ISLE_23", name = "SEVII ISLE 23", theme = "marble" },
-  [173] = { id = "MAPSEC_SEVII_ISLE_24", name = "SEVII ISLE 24", theme = "marble" },
-  [174] = { id = "MAPSEC_NAVEL_ROCK", name = "NAVEL ROCK", theme = "stone" },
-  [175] = { id = "MAPSEC_MT_EMBER", name = "MT. EMBER", theme = "stone" },
-  [176] = { id = "MAPSEC_BERRY_FOREST", name = "BERRY FOREST", theme = "wood" },
-  [177] = { id = "MAPSEC_ICEFALL_CAVE", name = "ICEFALL CAVE", theme = "stone" },
-  [178] = { id = "MAPSEC_ROCKET_WAREHOUSE", name = "ROCKET WAREHOUSE", theme = "brick" },
-  [179] = { id = "MAPSEC_TRAINER_TOWER_2", name = "TRAINER TOWER", theme = "brick" },
-  [180] = { id = "MAPSEC_DOTTED_HOLE", name = "DOTTED HOLE", theme = "stone" },
-  [181] = { id = "MAPSEC_LOST_CAVE", name = "LOST CAVE", theme = "stone" },
-  [182] = { id = "MAPSEC_PATTERN_BUSH", name = "PATTERN BUSH", theme = "wood" },
-  [183] = { id = "MAPSEC_ALTERING_CAVE", name = "ALTERING CAVE", theme = "stone" },
-  [184] = { id = "MAPSEC_TANOBY_CHAMBERS", name = "TANOBY CHAMBERS", theme = "stone" },
-  [185] = { id = "MAPSEC_THREE_ISLE_PATH", name = "THREE ISLE PATH", theme = "wood" },
-  [186] = { id = "MAPSEC_TANOBY_KEY", name = "TANOBY KEY", theme = "stone" },
-  [187] = { id = "MAPSEC_BIRTH_ISLAND", name = "BIRTH ISLAND", theme = "stone" },
-  [188] = { id = "MAPSEC_MONEAN_CHAMBER", name = "MONEAN CHAMBER", theme = "stone" },
-  [189] = { id = "MAPSEC_LIPTOO_CHAMBER", name = "LIPTOO CHAMBER", theme = "stone" },
-  [190] = { id = "MAPSEC_WEEPTH_CHAMBER", name = "WEEPTH CHAMBER", theme = "stone" },
-  [191] = { id = "MAPSEC_DILFORD_CHAMBER", name = "DILFORD CHAMBER", theme = "stone" },
-  [192] = { id = "MAPSEC_SCUFIB_CHAMBER", name = "SCUFIB CHAMBER", theme = "stone" },
-  [193] = { id = "MAPSEC_RIXY_CHAMBER", name = "RIXY CHAMBER", theme = "stone" },
-  [194] = { id = "MAPSEC_VIAPOIS_CHAMBER", name = "VIAPOIS CHAMBER", theme = "stone" },
-  [195] = { id = "MAPSEC_EMBER_SPA", name = "EMBER SPA", theme = "stone" },
-  [196] = { id = "MAPSEC_SPECIAL_AREA", name = "CELADON DEPT.", theme = "brick" },
+  [88]  = { id = "MAPSEC_PALLET_TOWN", theme = "marble" },
+  [89]  = { id = "MAPSEC_VIRIDIAN_CITY", theme = "marble" },
+  [90]  = { id = "MAPSEC_PEWTER_CITY", theme = "stone" },
+  [91]  = { id = "MAPSEC_CERULEAN_CITY", theme = "marble" },
+  [92]  = { id = "MAPSEC_LAVENDER_TOWN", theme = "marble" },
+  [93]  = { id = "MAPSEC_VERMILION_CITY", theme = "marble" },
+  [94]  = { id = "MAPSEC_CELADON_CITY", theme = "brick" },
+  [95]  = { id = "MAPSEC_FUCHSIA_CITY", theme = "wood" },
+  [96]  = { id = "MAPSEC_CINNABAR_ISLAND", theme = "stone" },
+  [97]  = { id = "MAPSEC_INDIGO_PLATEAU", theme = "marble" },
+  [98]  = { id = "MAPSEC_SAFFRON_CITY", theme = "brick" },
+  [99]  = { id = "MAPSEC_ROUTE_4_POKECENTER", theme = "stone" },
+  [100] = { id = "MAPSEC_ROUTE_10_POKECENTER", theme = "stone" },
+  [101] = { id = "MAPSEC_ROUTE_1", theme = "marble" },
+  [102] = { id = "MAPSEC_ROUTE_2", theme = "marble" },
+  [103] = { id = "MAPSEC_ROUTE_3", theme = "stone" },
+  [104] = { id = "MAPSEC_ROUTE_4", theme = "stone" },
+  [105] = { id = "MAPSEC_ROUTE_5", theme = "marble" },
+  [106] = { id = "MAPSEC_ROUTE_6", theme = "marble" },
+  [107] = { id = "MAPSEC_ROUTE_7", theme = "brick" },
+  [108] = { id = "MAPSEC_ROUTE_8", theme = "brick" },
+  [109] = { id = "MAPSEC_ROUTE_9", theme = "stone" },
+  [110] = { id = "MAPSEC_ROUTE_10", theme = "stone" },
+  [111] = { id = "MAPSEC_ROUTE_11", theme = "marble" },
+  [112] = { id = "MAPSEC_ROUTE_12", theme = "wood" },
+  [113] = { id = "MAPSEC_ROUTE_13", theme = "wood" },
+  [114] = { id = "MAPSEC_ROUTE_14", theme = "wood" },
+  [115] = { id = "MAPSEC_ROUTE_15", theme = "wood" },
+  [116] = { id = "MAPSEC_ROUTE_16", theme = "marble" },
+  [117] = { id = "MAPSEC_ROUTE_17", theme = "marble" },
+  [118] = { id = "MAPSEC_ROUTE_18", theme = "marble" },
+  [119] = { id = "MAPSEC_ROUTE_19", theme = "marble" },
+  [120] = { id = "MAPSEC_ROUTE_20", theme = "stone" },
+  [121] = { id = "MAPSEC_ROUTE_21", theme = "marble" },
+  [122] = { id = "MAPSEC_ROUTE_22", theme = "marble" },
+  [123] = { id = "MAPSEC_ROUTE_23", theme = "marble" },
+  [124] = { id = "MAPSEC_ROUTE_24", theme = "marble" },
+  [125] = { id = "MAPSEC_ROUTE_25", theme = "marble" },
+  [126] = { id = "MAPSEC_VIRIDIAN_FOREST", theme = "wood" },
+  [127] = { id = "MAPSEC_MT_MOON", theme = "stone" },
+  [128] = { id = "MAPSEC_S_S_ANNE", theme = "wood" },
+  [129] = { id = "MAPSEC_UNDERGROUND_PATH", theme = "stone" },
+  [130] = { id = "MAPSEC_UNDERGROUND_PATH_2", theme = "stone" },
+  [131] = { id = "MAPSEC_DIGLETTS_CAVE", theme = "stone" },
+  [132] = { id = "MAPSEC_KANTO_VICTORY_ROAD", theme = "stone" },
+  [133] = { id = "MAPSEC_ROCKET_HIDEOUT", theme = "brick" },
+  [134] = { id = "MAPSEC_SILPH_CO", theme = "brick" },
+  [135] = { id = "MAPSEC_POKEMON_MANSION", theme = "brick" },
+  [136] = { id = "MAPSEC_KANTO_SAFARI_ZONE", theme = "wood" },
+  [137] = { id = "MAPSEC_POKEMON_LEAGUE", theme = "marble" },
+  [138] = { id = "MAPSEC_ROCK_TUNNEL", theme = "stone" },
+  [139] = { id = "MAPSEC_SEAFOAM_ISLANDS", theme = "stone" },
+  [140] = { id = "MAPSEC_POKEMON_TOWER", theme = "brick" },
+  [141] = { id = "MAPSEC_CERULEAN_CAVE", theme = "stone" },
+  [142] = { id = "MAPSEC_POWER_PLANT", theme = "brick" },
+  [143] = { id = "MAPSEC_ONE_ISLAND", theme = "marble" },
+  [144] = { id = "MAPSEC_TWO_ISLAND", theme = "marble" },
+  [145] = { id = "MAPSEC_THREE_ISLAND", theme = "marble" },
+  [146] = { id = "MAPSEC_FOUR_ISLAND", theme = "marble" },
+  [147] = { id = "MAPSEC_FIVE_ISLAND", theme = "marble" },
+  [148] = { id = "MAPSEC_SEVEN_ISLAND", theme = "marble" },
+  [149] = { id = "MAPSEC_SIX_ISLAND", theme = "marble" },
+  [150] = { id = "MAPSEC_KINDLE_ROAD", theme = "stone" },
+  [151] = { id = "MAPSEC_TREASURE_BEACH", theme = "marble" },
+  [152] = { id = "MAPSEC_CAPE_BRINK", theme = "wood" },
+  [153] = { id = "MAPSEC_BOND_BRIDGE", theme = "wood" },
+  [154] = { id = "MAPSEC_THREE_ISLE_PORT", theme = "wood" },
+  [155] = { id = "MAPSEC_SEVII_ISLE_6", theme = "marble" },
+  [156] = { id = "MAPSEC_SEVII_ISLE_7", theme = "marble" },
+  [157] = { id = "MAPSEC_SEVII_ISLE_8", theme = "marble" },
+  [158] = { id = "MAPSEC_SEVII_ISLE_9", theme = "marble" },
+  [159] = { id = "MAPSEC_RESORT_GORGEOUS", theme = "marble" },
+  [160] = { id = "MAPSEC_WATER_LABYRINTH", theme = "marble" },
+  [161] = { id = "MAPSEC_FIVE_ISLE_MEADOW", theme = "wood" },
+  [162] = { id = "MAPSEC_MEMORIAL_PILLAR", theme = "stone" },
+  [163] = { id = "MAPSEC_OUTCAST_ISLAND", theme = "marble" },
+  [164] = { id = "MAPSEC_GREEN_PATH", theme = "wood" },
+  [165] = { id = "MAPSEC_WATER_PATH", theme = "marble" },
+  [166] = { id = "MAPSEC_RUIN_VALLEY", theme = "stone" },
+  [167] = { id = "MAPSEC_TRAINER_TOWER", theme = "brick" },
+  [168] = { id = "MAPSEC_CANYON_ENTRANCE", theme = "stone" },
+  [169] = { id = "MAPSEC_SEVAULT_CANYON", theme = "stone" },
+  [170] = { id = "MAPSEC_TANOBY_RUINS", theme = "stone" },
+  [171] = { id = "MAPSEC_SEVII_ISLE_22", theme = "marble" },
+  [172] = { id = "MAPSEC_SEVII_ISLE_23", theme = "marble" },
+  [173] = { id = "MAPSEC_SEVII_ISLE_24", theme = "marble" },
+  [174] = { id = "MAPSEC_NAVEL_ROCK", theme = "stone" },
+  [175] = { id = "MAPSEC_MT_EMBER", theme = "stone" },
+  [176] = { id = "MAPSEC_BERRY_FOREST", theme = "wood" },
+  [177] = { id = "MAPSEC_ICEFALL_CAVE", theme = "stone" },
+  [178] = { id = "MAPSEC_ROCKET_WAREHOUSE", theme = "brick" },
+  [179] = { id = "MAPSEC_TRAINER_TOWER_2", theme = "brick" },
+  [180] = { id = "MAPSEC_DOTTED_HOLE", theme = "stone" },
+  [181] = { id = "MAPSEC_LOST_CAVE", theme = "stone" },
+  [182] = { id = "MAPSEC_PATTERN_BUSH", theme = "wood" },
+  [183] = { id = "MAPSEC_ALTERING_CAVE", theme = "stone" },
+  [184] = { id = "MAPSEC_TANOBY_CHAMBERS", theme = "stone" },
+  [185] = { id = "MAPSEC_THREE_ISLE_PATH", theme = "wood" },
+  [186] = { id = "MAPSEC_TANOBY_KEY", theme = "stone" },
+  [187] = { id = "MAPSEC_BIRTH_ISLAND", theme = "stone" },
+  [188] = { id = "MAPSEC_MONEAN_CHAMBER", theme = "stone" },
+  [189] = { id = "MAPSEC_LIPTOO_CHAMBER", theme = "stone" },
+  [190] = { id = "MAPSEC_WEEPTH_CHAMBER", theme = "stone" },
+  [191] = { id = "MAPSEC_DILFORD_CHAMBER", theme = "stone" },
+  [192] = { id = "MAPSEC_SCUFIB_CHAMBER", theme = "stone" },
+  [193] = { id = "MAPSEC_RIXY_CHAMBER", theme = "stone" },
+  [194] = { id = "MAPSEC_VIAPOIS_CHAMBER", theme = "stone" },
+  [195] = { id = "MAPSEC_EMBER_SPA", theme = "stone" },
+  [196] = { id = "MAPSEC_SPECIAL_AREA", theme = "brick" },
 }
 
 local Versions = require("src.import.gba.versions")
@@ -154,9 +150,9 @@ end
 --- Extract authentic place names directly from ROM's sMapNames pointer table.
 function MapSectionsExtract.extractNamesFromRom(rom)
   if not rom or not rom.u32 then return end
-  local base = Versions.MAPSEC_NAME_POINTERS or 0x3F1CAC
-  local count = Versions.KANTO_MAPSEC_COUNT or 109
-  local start = Versions.KANTO_MAPSEC_START or 88
+  local base = Versions.MAPSEC_NAME_POINTERS
+  local count = Versions.KANTO_MAPSEC_COUNT
+  local start = Versions.KANTO_MAPSEC_START
   for i = 0, count - 1 do
     local secId = start + i
     local ptr = rom:u32(base + i * 4)
@@ -176,60 +172,19 @@ function MapSectionsExtract.extractNamesFromRom(rom)
   end
 end
 
-local function load_generated_sections()
-  local okFs, CacheFs = pcall(require, "src.import.CacheFs")
-  local gen = nil
-  if okFs and CacheFs and CacheFs.read then
-    local chunk = CacheFs.read("data/generated/gba/region_map/map_sections.lua")
-      or CacheFs.read("data/generated/gba/map_sections.lua")
-      or CacheFs.read("region_map/map_sections.lua")
-    if chunk then
-      local fn = loadstring and loadstring(chunk) or load(chunk)
-      if fn then gen = fn() end
-    end
-  end
-  if not gen and love and love.filesystem and love.filesystem.read then
-    local chunk = love.filesystem.read("data/generated/gba/region_map/map_sections.lua")
-      or love.filesystem.read("data/generated/gba/map_sections.lua")
-    if chunk then
-      local fn = loadstring and loadstring(chunk) or load(chunk)
-      if fn then gen = fn() end
-    end
-  end
-  if not gen then
-    local f = io.open("data/generated/gba/region_map/map_sections.lua", "r")
-      or io.open("data/generated/gba/map_sections.lua", "r")
-    if f then
-      local chunk = f:read("*a")
-      f:close()
-      if chunk then
-        local fn = loadstring and loadstring(chunk) or load(chunk)
-        if fn then gen = fn() end
-      end
-    end
-  end
-  if gen and gen.sections then
-    for secId, s in pairs(gen.sections) do
-      MapSectionsExtract.SECTIONS[secId] = s
-    end
-  end
-end
-load_generated_sections()
-
 --- Overlay ROM-derived section names onto SECTIONS, once.
+function MapSectionsExtract.installNames(names)
+  for secId, name in pairs(names) do
+    assert(MapSectionsExtract.SECTIONS[secId], "no map section " .. tostring(secId)).name = name
+  end
+  generatedLoaded = true
+end
+
 function MapSectionsExtract.ensureGenerated()
   if generatedLoaded then return end
-  generatedLoaded = true
-  pcall(function()
-    local CacheFs = require("src.import.CacheFs")
-    local MapPreviewExtract = require("src.import.gba.map_preview_extract")
-    local names = MapPreviewExtract.loadNames(CacheFs)
-    if not names then return end
-    for secId, name in pairs(names) do
-      local info = MapSectionsExtract.SECTIONS[secId]
-      if info and name and name ~= "" then info.name = name end
-    end
-  end)
+  local cache = require("src.core.game3.dataset").cache()
+  MapSectionsExtract.installNames(assert(require("src.import.gba.map_preview_extract").loadNames(cache),
+    "region_map/names.lua is not in the cache"))
 end
 
 local function normalize_map_name(mapId)
@@ -362,8 +317,7 @@ function MapSectionsExtract.getInfo(secId, mapId, floorNum)
   -- `resolved` tells callers whether the map was actually identified; the
   -- Pallet Town table below is the historical default for anything unknown.
   local found = secId and MapSectionsExtract.SECTIONS[secId]
-  local info = found
-    or { id = "MAPSEC_PALLET_TOWN", name = "PALLET TOWN", theme = "marble" }
+  local info = found or MapSectionsExtract.SECTIONS[MapSectionsExtract.KANTO_MAPSEC_START]
 
   local name = info.name
   local theme = info.theme or "marble"
@@ -372,8 +326,8 @@ function MapSectionsExtract.getInfo(secId, mapId, floorNum)
   if mapId and type(mapId) == "string" then
     local upper = mapId:upper()
     if upper:find("CELADON") and (upper:find("DEPARTMENT") or upper:find("DEPT")) then
-      name = "CELADON DEPT."
-      theme = "brick"
+      name = MapSectionsExtract.SECTIONS[196].name
+      theme = MapSectionsExtract.SECTIONS[196].theme
     end
   end
 

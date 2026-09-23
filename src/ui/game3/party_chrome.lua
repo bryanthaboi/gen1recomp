@@ -4,7 +4,7 @@ local Display = require("src.core.game3.display")
 local Extract = require("src.import.gba.extract_island1")
 local PartyChromeExtract = require("src.import.gba.party_chrome_extract")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local PartyChrome = {}
 
@@ -455,7 +455,8 @@ function PartyChrome.drawCancelButton(px, py, selected)
     love.graphics.draw(btn.image, px, py)
   end
   PartyChrome.drawBall(px - 2, py - 4, selected and 1 or 0)
-  FrlgFont.draw(Strings("CANCEL"), px + 20, py + 1, {
+  -- pokefirered/src/party_menu.c:2154
+  FrlgFont.draw(RomText.plain("gFameCheckerText_Cancel"), px + 20, py + 1, {
     colors = FrlgFont.COLOR.PARTY,
     small = true,
   })
@@ -470,7 +471,8 @@ function PartyChrome.drawConfirmButton(px, py, selected)
     love.graphics.draw(btn.image, px, py)
   end
   PartyChrome.drawBall(px - 2, py - 4, selected and 1 or 0)
-  FrlgFont.draw(Strings("OK"), px + 25, py + 2, {
+  -- pokefirered/src/party_menu.c:2138
+  FrlgFont.draw(RomText.plain("gText_PartyMenu_OK"), px + 25, py + 2, {
     colors = FrlgFont.COLOR.PARTY,
     small = true,
   })

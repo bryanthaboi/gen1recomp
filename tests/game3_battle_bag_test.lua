@@ -2,6 +2,8 @@
 -- Game3 battle bag: catch odds, medicine, X items, doll.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_bag_test")
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)
@@ -21,7 +23,7 @@ local Battle = require("src.core.game3.battle")
 local State = require("src.core.game3.battle.state")
 local Adapter = require("src.core.game3.battle.adapter")
 
-ItemsData.install(nil)
+require("tests.fixture_data.game3_items").install()
 Pokemon.install(nil)
 
 print("[test] 1. Catch odds / Master Ball")

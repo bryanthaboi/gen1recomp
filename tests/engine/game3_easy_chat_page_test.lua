@@ -19,15 +19,20 @@ local stub = setmetatable({}, { __index = realFont })
 stub.draw = function(text, x, y) drawn[#drawn + 1] = { text = text, x = x, y = y } end
 package.loaded["src.ui.game3.frlg_font"] = stub
 
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end,
+  ir = function(key) return { { t = "text", s = key } } end,
+}
+
 local EasyChat = require("src.ui.game3.easy_chat")
-local EasyChatData = require("src.core.game3.easy_chat_data")
+local EasyChatText = require("src.core.game3.easy_chat_text")
 
 -- A group with more than eight words, so a full page is drawn.
-local group
-for _, candidate in pairs(EasyChatData.GROUPS) do
-  if candidate.words and #candidate.words > 8 then group = candidate break end
-end
-check(group ~= nil, "the extracted data has a group with more than one page")
+local words = {}
+for i = 0, 9 do words[#words + 1] = { id = 9 * 512 + i, text = "WORD" .. i } end
+EasyChatText.install({ groups = { [9] = { id = 9, name = "FEELINGS", words = words } } })
+local group = EasyChatText.group(9)
+check(group ~= nil, "the words table has a group with more than one page")
 
 EasyChat.open({ type = 0, words = {} })
 local st = EasyChat._state
@@ -65,5 +70,6 @@ check(lowest + realFont.GLYPH_HEIGHT <= frameBottom,
 
 EasyChat.close(false)
 package.loaded["src.ui.game3.frlg_font"] = realFont
+package.loaded["src.core.game3.rom_text"] = nil
 
 T.finish("game3_easy_chat_page_test")

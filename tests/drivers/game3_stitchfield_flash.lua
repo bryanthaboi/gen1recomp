@@ -80,28 +80,24 @@ return function(game)
 
   -- pokefirered/src/fldeff_flash.c:177 FieldCallback_Flash
   Field.executeFieldMove(res)
-  result(Message.isOpen() == true, "the FLASH line is on screen the moment the move starts")
-  result(Field.locked == true, "and the field is locked for the animation")
+  result(res.text == nil, "FLASH carries no field text")
+  result(Field.locked == true, "the field is locked for the show-mon animation")
   U.wait(6)
-  result(Message.isOpen() == true, "still on screen while the animation runs")
-  U.shot(game, DIR .. "/stitchfield_flash_02_message_during_anim.png")
+  result(Message.isOpen() == false, "no message box while the animation runs")
+  U.shot(game, DIR .. "/stitchfield_flash_02_show_mon.png")
 
   for _ = 1, 300 do
     if not Field.locked then break end
     U.wait(1)
   end
   result(Field.locked == false, "the animation finished and released the field")
-  result(Message.isOpen() == true, "the same message is still up, waiting on the player")
+  -- pokefirered/data/scripts/flash.inc:1 EventScript_FldEffFlash
+  result(Message.isOpen() == false, "and no message followed it")
+  result(Flags.getFlag(Space.store, Space.vm and Space.vm.ctx, FieldMoves.SYS_FLAGS.FLASH_ACTIVE) == true,
+    "FLAG_SYS_FLASH_ACTIVE is set")
   print("[driver] after the animation flashLevel="
     .. tostring(FieldView.getFlashLevel and FieldView.getFlashLevel()))
   U.shot(game, DIR .. "/stitchfield_flash_03_lit_cave.png")
-
-  for _ = 1, 6 do
-    if not Message.isOpen() then break end
-    U.tap(game, "a")
-    U.wait(20)
-  end
-  result(Message.isOpen() == false, "A dismisses it")
 
   finish()
 end

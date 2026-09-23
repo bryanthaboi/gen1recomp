@@ -141,10 +141,10 @@ love = { graphics = {
   rectangle = function() drawn.rectangle = drawn.rectangle + 1 end,
   draw = function() drawn.draw = drawn.draw + 1 end,
 } }
-local okFallback = pcall(PokedexChrome.drawDataCardBg)
+local okMissing = pcall(PokedexChrome.drawDataCardBg)
 love = nil
-check(okFallback, "drawDataCardBg survives a cache without the asset")
-check(drawn.rectangle > 0 and drawn.draw == 0, "missing asset falls back to the paper background")
+check(not okMissing, "drawDataCardBg raises when the cache has no dex tile sheet")
+check(drawn.draw == 0, "nothing is drawn without the sheet")
 PokedexChrome._installed = false
 
 print("[test] 4b. Importer bakes a 4bpp sheet the UI can read back")

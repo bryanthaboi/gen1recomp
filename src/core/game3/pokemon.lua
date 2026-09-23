@@ -3,7 +3,6 @@ local CachePaths = require("src.core.game3.cache_paths")
 local PokemonExtract = require("src.import.gba.pokemon_extract")
 local Versions = require("src.import.gba.versions")
 local ModRuntime = require("src.mods.Runtime")
-local Strings = require("src.core.Strings")
 
 local Pokemon = {}
 
@@ -251,8 +250,8 @@ function Pokemon.name(species)
   if not species or species < 1 then return "?????" end
   if not Pokemon._names then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._names and Pokemon._names[species]
-  if n and n ~= "" and n ~= "??????????" then return n end
-  return Strings("POKéMON %03d", species)
+  if n and n ~= "" then return n end
+  error("no ROM species name for species " .. species, 2)
 end
 
 function Pokemon.keyName(species)
@@ -332,7 +331,7 @@ function Pokemon.abilityName(abilityId)
   if not Pokemon._abilityNames then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._abilityNames and Pokemon._abilityNames[abilityId]
   if n and n ~= "" then return n end
-  return Strings("ABILITY %d", abilityId)
+  error("no ROM ability name for ability " .. abilityId, 2)
 end
 
 function Pokemon.speciesMeta(species)
@@ -895,7 +894,7 @@ function Pokemon.moveName(moveId)
   if not Pokemon._moveNames then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._moveNames and Pokemon._moveNames[num]
   if n and n ~= "" then return n end
-  return Strings("MOVE %d", num)
+  error("no ROM move name for move " .. num, 2)
 end
 
 function Pokemon.learnset(species)
@@ -995,10 +994,6 @@ function Pokemon.movesAtLevel(species, level)
       break
     end
     giveMove(mv)
-  end
-
-  if #moves == 0 then
-    giveMove(33) -- fallback to Tackle if learnset empty
   end
 
   return moves, pp, maxPp
@@ -1169,7 +1164,7 @@ end
 -- (pokefirered/src/pokemon.c:3020).  The stored nickname is only a placeholder
 -- -- the cart's daycare writes タマゴ (daycare.c:1100), this engine "EGG".
 local function eggName(mon)
-  if Pokemon.isEgg(mon) then return Strings("EGG") end
+  if Pokemon.isEgg(mon) then return require("src.core.game3.rom_text").plain("gText_EggNickname") end
 end
 
 function Pokemon.displayMonName(mon)

@@ -79,20 +79,25 @@ return function(game)
   U.wait(15)
   result(PcMenu.mode == "item_storage", "ITEM STORAGE opens the item submenu")
   U.tap(game, "a")
-  U.wait(15)
-  if result(PcMenu.mode == "withdraw_item", "WITHDRAW ITEM lists PC items") then
+  local ItemPc = require("src.ui.game3.item_pc")
+  if result(waitFor(function() return ItemPc.isOpen() and not ItemPc._fx end, 120), "WITHDRAW ITEM opens the item PC") then
     U.shot(game, DIR .. "/u1_03_withdraw_list_potion.png")
   end
 
   U.tap(game, "a")
   U.wait(15)
+  U.tap(game, "a")
+  U.wait(15)
   local Bag = require("src.core.game3.bag")
   local got = Bag.has(game.session.bag, 13, 1)
-  if result(PcMenu.mode == "msg" and got, "POTION withdrawn into bag") then
+  if result(ItemPc.mode == "result" and got, "POTION withdrawn into bag") then
     U.shot(game, DIR .. "/u1_04_withdrew_potion.png")
   end
 
   U.tap(game, "a")
+  U.wait(15)
+  U.tap(game, "b")
+  waitFor(function() return not ItemPc.isOpen() end, 120)
   U.wait(15)
   U.tap(game, "b")
   U.wait(15)

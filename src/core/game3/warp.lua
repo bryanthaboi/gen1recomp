@@ -105,6 +105,53 @@ local function warpFadeModes(Fade, game, destMap)
   local exit = fromType ~= toType and fromType == MAP_TYPE_UNDERGROUND
   return (enter and toWhite or toBlack), (exit and fromWhite or fromBlack)
 end
+Warp.fadeModes = warpFadeModes
+
+-- src/fldeff_flash.c:237
+function Warp.mapTransition(game, destMap, load)
+  local function cont()
+    load()
+    -- src/map_preview_screen.c:439
+    local MapPreviewScreen = package.loaded["src.ui.game3.map_preview_screen"]
+    local Field = package.loaded["src.core.game3.field"]
+    if MapPreviewScreen and MapPreviewScreen.isForestActive() and Field and Field.lock then
+      Field.lock()
+    end
+  end
+  local Map = package.loaded["src.core.game3.map"]
+  local fromSec, fromType = sectionAndType(game, Map and Map.current)
+  local toSec, toType = sectionAndType(game, destMap)
+  local MapPreviewScreen = require("src.ui.game3.map_preview_screen")
+  local MapPreviewExtract = require("src.import.gba.map_preview_extract")
+  local Fade = require("src.ui.game3.fade")
+  if fromSec and toSec and fromSec ~= toSec
+      and MapPreviewScreen.has(toSec, MapPreviewExtract.TYPE_CAVE)
+      and MapPreviewScreen.runCave(toSec, cont) then
+    Fade.clear()
+    return
+  end
+  -- src/fldeff_flash.c:41
+  if fromType ~= toType and fromType ~= 0 and toType ~= 0
+      and (toType == MAP_TYPE_UNDERGROUND or fromType == MAP_TYPE_UNDERGROUND) then
+    Fade.clear()
+    require("src.ui.game3.cave_transition").start(
+      toType == MAP_TYPE_UNDERGROUND and "enter" or "exit", cont)
+    return
+  end
+  cont()
+end
+
+-- src/field_fadetransition.c:451
+local function releaseField(Field)
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning() then return end
+  local MapPreviewScreen = package.loaded["src.ui.game3.map_preview_screen"]
+  if MapPreviewScreen and MapPreviewScreen.isForestActive and MapPreviewScreen.isForestActive() then
+    return
+  end
+  if Field and Field.unlock then Field.unlock() end
+end
+Warp.releaseField = releaseField
 
 --- Complete door entrance sequence (walking UP into a building)
 function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
@@ -132,7 +179,7 @@ function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
       -- Step 4: Short beat, then door animates closed (Frame 2 -> 1 -> 0)
       Doors.closeAfterDelay(curMap, doorX, doorY, 8, { sound = sound, playSound = false }, function()
         -- Step 5: Screen fades to black
-        Fade.begin(toMode, 1, function()
+        Fade.begin(toMode, 1, function() Warp.mapTransition(game, destMap, function()
           -- Step 6: Inside black, load the indoor map
           local Map = require("src.core.game3.map")
           Map.load(mod, game, destMap, {
@@ -147,14 +194,9 @@ function Warp.startDoorEntrance(mod, game, destMap, destX, destY, doorX, doorY)
           -- Step 7: Fade screen back in from black inside the building
           Fade.begin(fromMode, 1, function()
             Warp._busy = false
-            if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-                and package.loaded["src.core.game3.scripting.space"].vm
-                and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-                and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-              Field.unlock()
-            end
+            releaseField(Field)
           end)
-        end)
+        end) end)
       end)
     end)
   end)
@@ -184,7 +226,7 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
   end
 
   -- Step 2: Screen fades to black
-  Fade.begin(toMode, 1, function()
+  Fade.begin(toMode, 1, function() Warp.mapTransition(game, destMap, function()
     -- Step 3: Inside black, load the destination outdoor map at (destX, destY) facing down
     local Map = require("src.core.game3.map")
     Map.load(mod, game, destMap, {
@@ -204,16 +246,11 @@ function Warp.startDoorExit(mod, game, destMap, destX, destY, exitX, exitY)
         -- Step 6: Player landed on (destX, destY + 1). Short beat, then door closes behind them!
         Doors.closeAfterDelay(destMap, destX, destY, 8, { sound = sound, playSound = false }, function()
           Warp._busy = false
-          if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-              and package.loaded["src.core.game3.scripting.space"].vm
-              and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-              and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-            Field.unlock()
-          end
+          releaseField(Field)
         end)
       end)
     end)
-  end)
+  end) end)
   return true
 end
 
@@ -297,12 +334,7 @@ function Warp.startEscalator(mod, game, destMap, destX, destY, dir, approachDir,
         Player.forceStep("right", function()
           Warp._busy = false
           Warp._isEscalatorActive = false
-          if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-              and package.loaded["src.core.game3.scripting.space"].vm
-              and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-              and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-            Field.unlock()
-          end
+          releaseField(Field)
         end)
         return true
       end
@@ -344,14 +376,16 @@ function Warp.startEscalator(mod, game, destMap, destX, destY, dir, approachDir,
         Player.spriteXOffset = 0
         Player.spriteYOffset = 0
 
-        Map.load(mod, game, destMap, {
-          x = destX,
-          y = destY,
-          facing = "right",
-          depth1Connections = true,
-        })
+        Warp.mapTransition(game, destMap, function()
+          Map.load(mod, game, destMap, {
+            x = destX,
+            y = destY,
+            facing = "right",
+            depth1Connections = true,
+          })
 
-        doWarpIn()
+          doWarpIn()
+        end)
         return true
       end
       return false
@@ -390,12 +424,7 @@ function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
 
   local function finish()
     Warp._busy = false
-    if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-        and package.loaded["src.core.game3.scripting.space"].vm
-        and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-        and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-      Field.unlock()
-    end
+    releaseField(Field)
   end
 
   -- pokefirered/src/field_fadetransition.c:922
@@ -462,14 +491,16 @@ function Warp.startStairWarp(mod, game, destMap, destX, destY, behavior)
       Player.spriteXOffset = 0
       Player.spriteYOffset = 0
       Player.walkInPlace = false
-      Map.load(mod, game, destMap, {
-        x = destX,
-        y = destY,
-        facing = Player.facing,
-        depth1Connections = true,
-      })
-      Player.setVisible(true)
-      exitStairs()
+      Warp.mapTransition(game, destMap, function()
+        Map.load(mod, game, destMap, {
+          x = destX,
+          y = destY,
+          facing = Player.facing,
+          depth1Connections = true,
+        })
+        Player.setVisible(true)
+        exitStairs()
+      end)
       return true
     end
     return false
@@ -498,7 +529,7 @@ function Warp.startTeleport(mod, game, destMap, destX, destY, srcX, srcY)
 
   local toMode, fromMode = warpFadeModes(Fade, game, destMap)
 
-  Fade.begin(toMode, 1, function()
+  Fade.begin(toMode, 1, function() Warp.mapTransition(game, destMap, function()
     local Map = require("src.core.game3.map")
     Map.load(mod, game, destMap, {
       x = destX,
@@ -514,13 +545,106 @@ function Warp.startTeleport(mod, game, destMap, destX, destY, srcX, srcY)
 
     Fade.begin(fromMode, 1, function()
       Warp._busy = false
-      if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-          and package.loaded["src.core.game3.scripting.space"].vm
-          and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-          and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-        Field.unlock()
-      end
+      releaseField(Field)
     end)
+  end) end)
+  return true
+end
+
+-- pokefirered/src/field_effect.c:2134 sSpinDirections
+local SPIN_NEXT = { down = "left", up = "right", left = "up", right = "down" }
+
+-- pokefirered/src/field_effect.c:2143 SpinObjectEvent
+local function spinStep(Player, s)
+  if s.delay ~= 0 then
+    s.delay = s.delay - 1
+    if s.delay ~= 0 then return Player.facing end
+  end
+  Player.facing = SPIN_NEXT[Player.facing] or "down"
+  if s.turns < 12 then s.turns = s.turns + 1 end
+  s.delay = bit.rshift(12, s.turns)
+  return Player.facing
+end
+
+-- pokefirered/src/field_effect.c:2086 StartEscapeRopeFieldEffect
+function Warp.startEscapeRope(game, destMap, destX, destY, load)
+  if Warp._busy then return false end
+  destMap, destX, destY = announce(game, destMap, destX, destY, "escape_rope")
+  Warp._busy = true
+
+  local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
+  if Field and Field.lock then Field.lock() end
+
+  local Player = package.loaded["src.core.game3.player"] or require("src.core.game3.player")
+  local Fade = require("src.ui.game3.fade")
+  local Audio = package.loaded["src.core.game3.audio"] or require("src.core.game3.audio")
+  local SE = require("src.core.game3.se_ids")
+  local Task = require("src.core.game3.task")
+  local toMode, fromMode = warpFadeModes(Fade, game, destMap)
+
+  local function warpIn()
+    local spin = { delay = 0, turns = 0 }
+    local timer, offY, moving, spinEnded = 0, -88, true, false
+    local originalDir = Player.facing
+    local dir = originalDir
+    Player.spriteYOffset = offY
+    -- pokefirered/src/field_effect.c:2290 EscapeRopeWarpInEffect_Init
+    Audio.playSe(SE.SE_WARP_OUT)
+    Task.spawn(function()
+      -- pokefirered/src/field_effect.c:2223 WarpInObjectEventDownwards
+      if moving then
+        offY = offY + 4
+        if offY >= 0 then
+          offY = 0
+          moving = false
+          Audio.playSe(SE.SE_CLICK)
+        end
+        Player.spriteYOffset = offY
+      end
+      Player.setVisible(true)
+      if timer < 8 then
+        timer = timer + 1
+      elseif not spinEnded then
+        timer = timer + 1
+        dir = spinStep(Player, spin)
+        if timer >= 50 and dir == originalDir then spinEnded = true end
+      end
+      if not moving and dir == originalDir then
+        Player.spriteYOffset = 0
+        Warp._busy = false
+        releaseField(Field)
+        return true
+      end
+      return false
+    end)
+  end
+
+  -- pokefirered/src/field_effect.c:2106 EscapeRopeWarpOutEffect_Spin
+  local spin = { delay = 0, turns = 0 }
+  local timer, offY, offscreen, faded = 0, 0, false, false
+  Task.spawn(function()
+    spinStep(Player, spin)
+    if timer < 60 then
+      timer = timer + 1
+      if timer == 20 then Audio.playSe(SE.SE_WARP_IN) end
+    elseif not offscreen then
+      -- pokefirered/src/field_effect.c:2158 WarpOutObjectEventUpwards
+      offY = offY - 8
+      Player.spriteYOffset = offY
+      if offY <= -88 then
+        offscreen = true
+        Fade.begin(toMode, 1, function() faded = true end)
+      end
+    end
+    if not faded then return false end
+    Player.spriteYOffset = 0
+    Warp.mapTransition(game, destMap, function()
+      load(destMap, destX, destY)
+      -- pokefirered/src/field_effect.c:2269 FieldCallback_EscapeRopeExit
+      Player.setVisible(false)
+      Fade.begin(fromMode, 1, warpIn)
+    end)
+    return true
   end)
   return true
 end
@@ -578,12 +702,7 @@ function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY, opts)
     Warp._busy = false
     -- pokefirered/src/field_effect.c:1274 FallWarpEffect_7
     if Field then Field._fallWarp = false end
-    if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-        and package.loaded["src.core.game3.scripting.space"].vm
-        and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-        and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-      Field.unlock()
-    end
+    releaseField(Field)
   end
 
   -- pokefirered/src/field_effect.c:1215 FallWarpEffect_4
@@ -625,7 +744,7 @@ function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY, opts)
       playSe(SE.SE_FALL or 37)
     end
     if prologue and t.frames < 80 then return false end
-    Fade.begin(toMode, 1, function()
+    Fade.begin(toMode, 1, function() Warp.mapTransition(game, destMap, function()
       local Map = require("src.core.game3.map")
       Map.load(mod, game, destMap, {
         x = destX,
@@ -638,7 +757,7 @@ function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY, opts)
       Fade.begin(fromMode, 1, function()
         dropIn()
       end)
-    end)
+    end) end)
     return true
   end)
   return true
@@ -721,7 +840,7 @@ function Warp.request(mod, game, mapId, x, y, facing, opts)
     if Audio and Audio.playSe then pcall(function() Audio.playSe(sound) end) end
   end
 
-  Fade.begin(toMode, 1, function()
+  Fade.begin(toMode, 1, function() Warp.mapTransition(game, mapId, function()
     doLoad()
     if Player and Player.setVisible then
       Player.setVisible(true)
@@ -729,14 +848,9 @@ function Warp.request(mod, game, mapId, x, y, facing, opts)
     Doors.reset()
     Fade.begin(fromMode, 1, function()
       Warp._busy = false
-      if Field and Field.unlock and not (package.loaded["src.core.game3.scripting.space"]
-          and package.loaded["src.core.game3.scripting.space"].vm
-          and package.loaded["src.core.game3.scripting.space"].vm.isRunning
-          and package.loaded["src.core.game3.scripting.space"].vm:isRunning()) then
-        Field.unlock()
-      end
+      releaseField(Field)
     end)
-  end)
+  end) end)
 
   return true
 end
@@ -745,6 +859,14 @@ function Warp.clear()
   Warp._pending = nil
   Warp._busy = false
   Warp._isEscalatorActive = false
+  local MapPreviewScreen = package.loaded["src.ui.game3.map_preview_screen"]
+  if MapPreviewScreen then
+    MapPreviewScreen._onDone = nil
+    MapPreviewScreen.dismiss()
+    MapPreviewScreen._cave = nil
+  end
+  local CaveTransition = package.loaded["src.ui.game3.cave_transition"]
+  if CaveTransition then CaveTransition.clear() end
   local Player = package.loaded["src.core.game3.player"]
   if Player and Player.setVisible then
     Player.walkInPlace = false

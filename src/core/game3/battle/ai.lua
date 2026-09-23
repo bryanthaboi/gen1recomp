@@ -9,127 +9,19 @@ local Ai = {}
 Ai._pack = nil
 Ai._packTried = false
 
-local function pack_paths()
-  local rel = "data/generated/gba/battle_ai/pack.lua"
-  local paths = {}
-  local home = os.getenv("HOME")
-  if home then
-    paths[#paths + 1] = home .. "/.local/share/love/pokemon-love2d/firered/" .. rel
-  end
-  paths[#paths + 1] = rel
-  paths[#paths + 1] = "firered/" .. rel
-  if love and love.filesystem and love.filesystem.getSaveDirectory then
-    local sd = love.filesystem.getSaveDirectory()
-    if type(sd) == "string" and sd ~= "" then
-      paths[#paths + 1] = sd .. "/" .. rel
-      local parent = sd:match("^(.*)/[^/]+$")
-      if parent then
-        paths[#paths + 1] = parent .. "/pokemon-love2d/firered/" .. rel
-      end
-    end
-  end
-  return paths, rel
-end
-
-local function load_lua_file(path)
-  local f = io.open(path, "rb")
-  if not f then return nil end
-  local src = f:read("*a")
-  f:close()
-  if not src then return nil end
-  local chunk, err = load(src, "@" .. path, "t", {})
-  if not chunk then return nil, err end
-  local ok, t = pcall(chunk)
-  if ok then return t end
-  return nil, t
-end
-
 function Ai.loadPack(opts)
   opts = opts or {}
   if Ai._pack and not opts.force then return Ai._pack end
   Ai._packTried = true
-
-  local paths, rel = pack_paths()
-
-  -- love filesystem
-  if love and love.filesystem and love.filesystem.read then
-    local src = love.filesystem.read(rel)
-    if src then
-      local chunk = load(src, "@" .. rel, "t", {})
-      if chunk then
-        local ok, t = pcall(chunk)
-        if ok and t then
-          Ai._pack = t
-          return t
-        end
-      end
-    end
+  local rel = "data/generated/gba/battle_ai/pack.lua"
+  local src = require("src.core.game3.dataset").cache():read(rel)
+  if not src then error("battle AI: " .. rel .. " is missing from the cache") end
+  local t = assert(load(src, "@" .. rel, "t", {}))()
+  if type(t) ~= "table" or type(t.table) ~= "table" or type(t.scripts) ~= "table" then
+    error("battle AI: " .. rel .. " is not a script pack")
   end
-
-  -- Dataset cache
-  local okD, Dataset = pcall(require, "src.core.game3.dataset")
-  if okD and Dataset and Dataset.cache then
-    local cache = Dataset.cache()
-    if cache and cache.read then
-      local src = cache:read(rel)
-      if src then
-        local chunk = load(src, "@" .. rel, "t", {})
-        if chunk then
-          local ok, t = pcall(chunk)
-          if ok and t then
-            Ai._pack = t
-            return t
-          end
-        end
-      end
-    end
-  end
-
-  for _, p in ipairs(paths) do
-    local t = load_lua_file(p)
-    if t then
-      Ai._pack = t
-      return t
-    end
-  end
-
-  -- Try extract on demand
-  if opts.extract ~= false then
-    local okE, Extract = pcall(require, "src.import.gba.battle_ai_extract")
-    if okE and Extract and Extract.run then
-      local FileIO = require("src.import.gba.file_io")
-      local home = os.getenv("HOME")
-      local outRoot = home and (home .. "/.local/share/love/pokemon-love2d/firered") or "."
-      local cache = FileIO.makeCache(outRoot)
-      local detail = Extract.run({
-        cache = cache,
-        cacheRoot = "data/generated/gba",
-        pretRoot = os.getenv("POKEFIRERED"),
-      })
-      if detail then
-        local t = load_lua_file(outRoot .. "/" .. (detail.path or rel))
-        if not t and detail.path then t = load_lua_file(detail.path) end
-        if t then
-          Ai._pack = t
-          return t
-        end
-        -- re-read via cache
-        local src = cache:read(rel)
-        if src then
-          local chunk = load(src, "@" .. rel, "t", {})
-          if chunk then
-            local ok, pack = pcall(chunk)
-            if ok and pack then
-              Ai._pack = pack
-              return pack
-            end
-          end
-        end
-      end
-    end
-  end
-
-  return nil
+  Ai._pack = t
+  return t
 end
 
 local function rng_fn(st, opts)

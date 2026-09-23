@@ -83,9 +83,15 @@ return function(game)
 
   for _ = 1, 400 do
     U.wait(1)
-    if Message.isOpen() and Message.currentPage():find("·", 1, true) then break end
+    local f = Field._fishing
+    if Message.isOpen() and f and f.step == "dots" and f.dots >= math.min(3, f.required) then break end
   end
   result(Message.isOpen(), "the dot game box is open")
+  local _, dotCount = Message.currentPage():gsub("·", "")
+  local FrlgFont = require("src.ui.game3.frlg_font")
+  -- pokefirered/src/field_player_avatar.c:1769
+  result(dotCount >= 2 and FrlgFont.measure(Message.currentPage()) == (dotCount - 1) * 12 + FrlgFont.measure("·"),
+    "dots sit 12 px apart: " .. dotCount .. " dots, width " .. FrlgFont.measure(Message.currentPage()))
   U.shot(game, DIR .. "/field_fishing_03_dots.png")
 
   local page = ""

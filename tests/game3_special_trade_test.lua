@@ -79,6 +79,14 @@ for _, n in ipairs(Natives.MODULE_NAMES) do moduleNames[n] = true end
 check(moduleNames["natives_trade"], "discovery found natives_trade with no natives.lua edit")
 check(moduleNames["natives_daycare"], "discovery found natives_daycare with no natives.lua edit")
 
+local Cache = require("tests.game3_cache")
+local cacheRoot = Cache.mount("meta.json")
+if not cacheRoot then
+  print("[skip] game3_special_trade_test needs species data: " .. tostring(Cache.reason))
+  finish()
+end
+print("[info] FireRed cache at " .. cacheRoot)
+
 print("[test] 2. the in-game trade table matches pokefirered/src/data/ingame_trades.h")
 eq(Trade.COUNT, 9, "nine in-game trades")
 local mimien = Trade.TRADES[0]
@@ -93,14 +101,6 @@ eq(Trade.TRADES[2].requestedSpecies, 32, "and wants NIDORAN_M")
 eq(Trade.TRADES[5].requestedSpecies, 55, "the FireRed Lickitung trade wants GOLDUCK")
 eq(Trade.TRADES[6].abilityNum, 1, "ESPHERE uses the second ability slot")
 eq(Trade.TRADES[8].nickname, "SEELOR", "INGAME_TRADE_SEEL nickname")
-
-local Cache = require("tests.game3_cache")
-local cacheRoot = Cache.mount("meta.json")
-if not cacheRoot then
-  print("[skip] game3_special_trade_test needs species data: " .. tostring(Cache.reason))
-  finish()
-end
-print("[info] FireRed cache at " .. cacheRoot)
 
 local Pokemon = require("src.core.game3.pokemon")
 Pokemon.install(nil)

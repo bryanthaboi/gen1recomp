@@ -10,8 +10,6 @@
 local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local ItemsData = require("src.core.game3.items_data")
-local Bag = require("src.core.game3.bag")
 local Storage = require("src.core.game3.storage")
 local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
@@ -19,36 +17,36 @@ local RomText = require("src.core.game3.rom_text")
 local PcMenu = {}
 
 PcMenu.open = false
-PcMenu.mode = "root" -- root | player_pc | item_storage | withdraw_item | withdraw_qty | deposit_item | deposit_qty | oak_pc | msg
+PcMenu.mode = "root"
 PcMenu.cursor = 1
-PcMenu.itemCursor = 1
-PcMenu.itemScroll = 0
-PcMenu.itemQty = 1
 PcMenu.yesNoCursor = 2
-PcMenu.selectedPocket = "ITEMS"
-PcMenu.pocketIdx = 1
 
-local VISIBLE_ITEMS = 6
+local function rom_entry(id, labelKey, descKey)
+  local e = RomText.lazy({ label = labelKey, desc = descKey })
+  e.id = id
+  return e
+end
 
 -- pokefirered/src/player_pc.c:85
--- Labels, descriptions and TEXT_* are English sources, translated where they
--- are drawn or put in PcMenu._status.
 PcMenu.TOP_ACTIONS = {
-  { id = "item_storage", label = Strings.source("ITEM STORAGE") },
-  { id = "mailbox", label = Strings.source("MAILBOX") },
-  { id = "turn_off", label = Strings.source("TURN OFF") },
+  rom_entry("item_storage", "sMenuActions_TopMenu[0]"),
+  rom_entry("mailbox", "sMenuActions_TopMenu[1]"),
+  rom_entry("turn_off", "sMenuActions_TopMenu[2]"),
 }
 
 -- pokefirered/src/player_pc.c:94
 PcMenu.ITEM_STORAGE_ACTIONS = {
-  { id = "withdraw", label = Strings.source("WITHDRAW ITEM"), desc = Strings.source("Take out items from the PC.") },
-  { id = "deposit", label = Strings.source("DEPOSIT ITEM"), desc = Strings.source("Store items in the PC.") },
-  { id = "cancel", label = Strings.source("CANCEL"), desc = Strings.source("Go back to the\nprevious menu.") },
+  rom_entry("withdraw", "sMenuActions_ItemPc[0]", "sItemStorageActionDescriptionPtrs[0]"),
+  rom_entry("deposit", "sMenuActions_ItemPc[1]", "sItemStorageActionDescriptionPtrs[1]"),
+  rom_entry("cancel", "sMenuActions_ItemPc[2]", "sItemStorageActionDescriptionPtrs[2]"),
 }
 
-PcMenu.TEXT_WHAT_TO_DO = Strings.source("What would you like to do?") -- pokefirered/src/strings.c:158
-PcMenu.TEXT_NO_ITEMS = Strings.source("There are no items.") -- pokefirered/src/strings.c:381
-PcMenu.TEXT_NO_MAIL = Strings.source("There's no MAIL here.") -- pokefirered/src/strings.c:388
+local TEXT = RomText.lazy({
+  WHAT_TO_DO = "gText_WhatWouldYouLikeToDo", -- pokefirered/src/player_pc.c:160
+  NO_ITEMS = "gText_ThereAreNoItems", -- pokefirered/src/player_pc.c:367
+  NO_MAIL = "gText_TheresNoMailHere", -- pokefirered/src/player_pc.c:232
+  ACCESS_WHICH_PC = "Text_AccessWhichPC", -- data/scripts/pc.inc:21
+})
 
 local function se(id)
   pcall(function() require("src.core.game3.audio").playSe(id) end)
@@ -67,13 +65,13 @@ end
 local function someone_or_bill_name(session)
   local Flags = require("src.core.game3.scripting.flags")
   local isBill = Flags.getFlag(script_store(session), nil, FLAG_SYS_NOT_SOMEONES_PC)
-  return isBill and Strings("BILL'S PC") or Strings("SOMEONE'S PC")
+  return isBill and RomText.plain("gText_BillSPc") or RomText.plain("gText_SomeoneSPc")
 end
 PcMenu.storageLabel = someone_or_bill_name
 
+-- pokefirered/src/script_menu.c:1031
 local function player_pc_name(session)
-  local name = (session and (session.name or session.playerName)) or "RED"
-  return Strings("%s's PC", name)
+  return RomText.plain("gText_SPc", { playerName = session and (session.name or session.playerName) })
 end
 
 -- pokefirered/src/script_menu.c:1006
@@ -93,7 +91,7 @@ function PcMenu._rootEntries()
       { id = "player", label = player },
     }
     if dex then rows[#rows + 1] = { id = "oak", label = RomText.plain("gText_ProfOakSPc") } end
-    if clear then rows[#rows + 1] = { id = "hall", label = RomText.plain("gText_HallOfFame") } end
+    if clear then rows[#rows + 1] = { id = "hall", label = RomText.plain("gText_HallOfFame_2") } end
     rows[#rows + 1] = { id = "quit", label = RomText.plain("gText_LogOff") }
     PcMenu._rootRows = rows
   end
@@ -115,7 +113,7 @@ function PcMenu.show(opts)
   Storage.ensure(PcMenu._session)
   if opts.startMode == "player_pc" then
     PcMenu.mode = "player_pc"
-    PcMenu._status = Strings(PcMenu.TEXT_WHAT_TO_DO) -- pokefirered/src/player_pc.c:160
+    PcMenu._status = TEXT.WHAT_TO_DO -- pokefirered/src/player_pc.c:160
   elseif opts.startMode == "storage" then
     PcMenu.mode = "storage_menu"
     PcMenu.storageCursor = 1
@@ -126,7 +124,7 @@ function PcMenu.show(opts)
     PcMenu._status = PcMenu._lastPrompt
   else
     PcMenu.mode = "root"
-    PcMenu._status = Strings("Which PC would you like to access?")
+    PcMenu._status = TEXT.ACCESS_WHICH_PC
   end
   Stack.push("pc_menu", PcMenu, { hideBelow = false })
 end
@@ -152,20 +150,6 @@ function PcMenu.isOpen()
   return PcMenu.open
 end
 
-local function clamp_item_cursor(items)
-  items = items or {}
-  local total = #items + 1 -- include CANCEL
-  if PcMenu.itemCursor > total then PcMenu.itemCursor = total end
-  if PcMenu.itemCursor < 1 then PcMenu.itemCursor = 1 end
-  if PcMenu.itemCursor <= PcMenu.itemScroll then
-    PcMenu.itemScroll = PcMenu.itemCursor - 1
-  end
-  if PcMenu.itemCursor > PcMenu.itemScroll + VISIBLE_ITEMS then
-    PcMenu.itemScroll = PcMenu.itemCursor - VISIBLE_ITEMS
-  end
-  if PcMenu.itemScroll < 0 then PcMenu.itemScroll = 0 end
-end
-
 local function show_msg(text, prevMode, prevStatus, prevCursor)
   PcMenu._status = text
   PcMenu._prevMode = prevMode
@@ -177,7 +161,7 @@ end
 local function open_item_storage(cursor)
   PcMenu.mode = "item_storage"
   PcMenu.cursor = cursor
-  PcMenu._status = Strings(PcMenu.ITEM_STORAGE_ACTIONS[cursor].desc)
+  PcMenu._status = PcMenu.ITEM_STORAGE_ACTIONS[cursor].desc
 end
 
 local function draw_status_lines()
@@ -283,7 +267,7 @@ function PcMenu.handleInput(input)
       elseif choice.id == "quit" then
         PcMenu.mode = "root"
         PcMenu.cursor = 1
-        PcMenu._status = Strings("Which PC would you like to access?")
+        PcMenu._status = TEXT.ACCESS_WHICH_PC
         se(5)
       elseif choice.id == "withdraw" then
         local party = (PcMenu._session and PcMenu._session.party) or {}
@@ -348,7 +332,7 @@ function PcMenu.handleInput(input)
     elseif input:wasPressed("b") then
       PcMenu.mode = "root"
       PcMenu.cursor = 1
-      PcMenu._status = Strings("Which PC would you like to access?")
+      PcMenu._status = TEXT.ACCESS_WHICH_PC
       se(5)
     end
     return
@@ -373,13 +357,13 @@ function PcMenu.handleInput(input)
       if id == "item_storage" then
         open_item_storage(1)
       elseif id == "mailbox" then
-        show_msg(Strings(PcMenu.TEXT_NO_MAIL), "player_pc", Strings(PcMenu.TEXT_WHAT_TO_DO), 1) -- pokefirered/src/player_pc.c:227
+        show_msg(TEXT.NO_MAIL, "player_pc", TEXT.WHAT_TO_DO, 1) -- pokefirered/src/player_pc.c:227
       elseif PcMenu._closeOnExit then
         PcMenu.close() -- pokefirered/src/player_pc.c:257
       else
         PcMenu.mode = "root"
         PcMenu.cursor = 2
-        PcMenu._status = Strings("Which PC would you like to access?")
+        PcMenu._status = TEXT.ACCESS_WHICH_PC
       end
     end
     return
@@ -391,13 +375,13 @@ function PcMenu.handleInput(input)
     if input:wasPressed("up") then
       if PcMenu.cursor > 1 then
         PcMenu.cursor = PcMenu.cursor - 1
-        PcMenu._status = Strings(actions[PcMenu.cursor].desc)
+        PcMenu._status = actions[PcMenu.cursor].desc
         se(5)
       end
     elseif input:wasPressed("down") then
       if PcMenu.cursor < #actions then
         PcMenu.cursor = PcMenu.cursor + 1
-        PcMenu._status = Strings(actions[PcMenu.cursor].desc)
+        PcMenu._status = actions[PcMenu.cursor].desc
         se(5)
       end
     elseif input:wasPressed("a") or input:wasPressed("b") then
@@ -406,208 +390,30 @@ function PcMenu.handleInput(input)
       if id == "withdraw" then
         local storage = Storage.ensure(PcMenu._session)
         if #storage.items < 1 then
-          show_msg(Strings(PcMenu.TEXT_NO_ITEMS), "item_storage", Strings(actions[1].desc), 1) -- pokefirered/src/player_pc.c:352
+          show_msg(TEXT.NO_ITEMS, "item_storage", actions[1].desc, 1) -- pokefirered/src/player_pc.c:352
         else
-          PcMenu.mode = "withdraw_item"
-          PcMenu.itemCursor = 1
-          PcMenu.itemScroll = 0
-          PcMenu._status = Strings("What do you want to withdraw?")
+          -- pokefirered/src/player_pc.c:378 Task_WithdrawItem_WaitFadeAndGoToItemStorage
+          PcMenu.mode = "item_pc"
+          require("src.ui.game3.item_pc").show({
+            session = PcMenu._session,
+            onClose = function() open_item_storage(1) end,
+          })
         end
       elseif id == "deposit" then
-        PcMenu.mode = "deposit_item"
-        PcMenu.itemCursor = 1
-        PcMenu.itemScroll = 0
-        PcMenu._status = Strings("What do you want to deposit?")
+        -- pokefirered/src/player_pc.c:319 Task_DepositItem_WaitFadeAndGoToBag
+        PcMenu.mode = "item_pc"
+        local session = PcMenu._session
+        require("src.ui.game3.bag_menu").show(session and session.bag, {
+          session = session,
+          location = "itempc",
+          pocket = "ITEMS",
+          onClose = function() open_item_storage(2) end,
+        })
       else
         PcMenu.mode = "player_pc" -- pokefirered/src/player_pc.c:399
         PcMenu.cursor = 1
-        PcMenu._status = Strings(PcMenu.TEXT_WHAT_TO_DO)
+        PcMenu._status = TEXT.WHAT_TO_DO
       end
-    end
-    return
-  end
-
-  -- Withdraw Item selection
-  if PcMenu.mode == "withdraw_item" then
-    local storage = Storage.ensure(PcMenu._session)
-    local items = storage.items or {}
-    clamp_item_cursor(items)
-
-    if input:wasPressed("up") then
-      PcMenu.itemCursor = ((PcMenu.itemCursor - 2) % (#items + 1)) + 1
-      clamp_item_cursor(items)
-      se(5)
-    elseif input:wasPressed("down") then
-      PcMenu.itemCursor = (PcMenu.itemCursor % (#items + 1)) + 1
-      clamp_item_cursor(items)
-      se(5)
-    elseif input:wasPressed("a") then
-      if PcMenu.itemCursor > #items then
-        open_item_storage(1) -- pokefirered/src/player_pc.c:371
-        se(5)
-      else
-        local entry = items[PcMenu.itemCursor]
-        if (entry.qty or 1) > 1 then
-          PcMenu.mode = "withdraw_qty"
-          PcMenu.itemQty = 1
-          PcMenu._pendingItem = entry
-          PcMenu._status = Strings("How many to withdraw?")
-        else
-          local ok, err = Storage.withdrawItem(PcMenu._session, PcMenu.itemCursor, 1)
-          if ok then
-            show_msg(Strings("Withdrew 1 %s.", ItemsData.displayName(entry.id)),
-              "item_storage", Strings(PcMenu.ITEM_STORAGE_ACTIONS[1].desc), 1)
-            se(246)
-          else
-            PcMenu._status = RomText.plain("gText_NoMoreRoomInBag")
-            PcMenu._prevMode = "withdraw_item"
-            PcMenu.mode = "msg"
-            se(5) -- pokefirered/src/item_pc.c:863
-          end
-        end
-      end
-    elseif input:wasPressed("b") then
-      open_item_storage(1)
-      se(5)
-    end
-    return
-  end
-
-  -- Withdraw Quantity selection
-  if PcMenu.mode == "withdraw_qty" then
-    local entry = PcMenu._pendingItem
-    local maxQ = entry and entry.qty or 1
-
-    if input:wasPressed("up") then
-      PcMenu.itemQty = (PcMenu.itemQty % maxQ) + 1
-      se(5)
-    elseif input:wasPressed("down") then
-      PcMenu.itemQty = ((PcMenu.itemQty - 2) % maxQ) + 1
-      se(5)
-    elseif input:wasPressed("right") then
-      PcMenu.itemQty = math.min(maxQ, PcMenu.itemQty + 10)
-      se(5)
-    elseif input:wasPressed("left") then
-      PcMenu.itemQty = math.max(1, PcMenu.itemQty - 10)
-      se(5)
-    elseif input:wasPressed("a") then
-      local ok, err = Storage.withdrawItem(PcMenu._session, PcMenu.itemCursor, PcMenu.itemQty)
-      if ok then
-        show_msg(Strings("Withdrew %d %s.", PcMenu.itemQty, ItemsData.displayName(entry.id)),
-          "item_storage", Strings(PcMenu.ITEM_STORAGE_ACTIONS[1].desc), 1)
-        se(246)
-      else
-        PcMenu._status = RomText.plain("gText_NoMoreRoomInBag")
-        PcMenu._prevMode = "withdraw_item"
-        PcMenu.mode = "msg"
-        se(5) -- pokefirered/src/item_pc.c:984
-      end
-    elseif input:wasPressed("b") then
-      PcMenu.mode = "withdraw_item"
-      PcMenu._status = Strings("What do you want to withdraw?")
-      se(5)
-    end
-    return
-  end
-
-  -- Deposit Item selection (from bag)
-  if PcMenu.mode == "deposit_item" then
-    local bag = PcMenu._session and PcMenu._session.bag
-    local items = bag and Bag.listPocket(bag, PcMenu.selectedPocket) or {}
-    clamp_item_cursor(items)
-
-    if input:wasPressed("up") then
-      PcMenu.itemCursor = ((PcMenu.itemCursor - 2) % (#items + 1)) + 1
-      clamp_item_cursor(items)
-      se(5)
-    elseif input:wasPressed("down") then
-      PcMenu.itemCursor = (PcMenu.itemCursor % (#items + 1)) + 1
-      clamp_item_cursor(items)
-      se(5)
-    elseif input:wasPressed("left") or input:wasPressed("right") then
-      local pockets = ItemsData.POCKET_ORDER or { "ITEMS", "KEY_ITEMS", "POKE_BALLS", "TM_CASE", "BERRY_POUCH" }
-      local pIdx = PcMenu.pocketIdx or 1
-      if input:wasPressed("right") then
-        pIdx = (pIdx % #pockets) + 1
-      else
-        pIdx = ((pIdx - 2) % #pockets) + 1
-      end
-      PcMenu.pocketIdx = pIdx
-      PcMenu.selectedPocket = pockets[pIdx]
-      PcMenu.itemCursor = 1
-      PcMenu.itemScroll = 0
-      se(5)
-    elseif input:wasPressed("a") then
-      if PcMenu.itemCursor > #items then
-        open_item_storage(2) -- pokefirered/src/player_pc.c:342
-        se(5)
-      else
-        local entry = items[PcMenu.itemCursor]
-        local isKey = ItemsData.pocketOf(entry.id) == "KEY_ITEMS"
-        if isKey then
-          PcMenu._status = Strings("That's much too important to deposit!")
-          PcMenu._prevMode = "deposit_item"
-          PcMenu.mode = "msg"
-          se(5) -- pokefirered/src/item_menu.c:1983
-        elseif (entry.qty or 1) > 1 then
-          PcMenu.mode = "deposit_qty"
-          PcMenu.itemQty = 1
-          PcMenu._pendingItem = entry
-          PcMenu._status = Strings("How many to deposit?")
-        else
-          local ok, err = Storage.depositItem(PcMenu._session, PcMenu.selectedPocket, PcMenu.itemCursor, 1)
-          if ok then
-            show_msg(Strings("Stored 1 %s.", ItemsData.displayName(entry.id)),
-              "item_storage", Strings(PcMenu.ITEM_STORAGE_ACTIONS[2].desc), 2)
-            se(246)
-          else
-            PcMenu._status = Strings("The PC is full.")
-            PcMenu._prevMode = "deposit_item"
-            PcMenu.mode = "msg"
-            se(5) -- pokefirered/src/item_menu.c:1983
-          end
-        end
-      end
-    elseif input:wasPressed("b") then
-      open_item_storage(2)
-      se(5)
-    end
-    return
-  end
-
-  -- Deposit Quantity selection
-  if PcMenu.mode == "deposit_qty" then
-    local entry = PcMenu._pendingItem
-    local maxQ = entry and entry.qty or 1
-
-    if input:wasPressed("up") then
-      PcMenu.itemQty = (PcMenu.itemQty % maxQ) + 1
-      se(5)
-    elseif input:wasPressed("down") then
-      PcMenu.itemQty = ((PcMenu.itemQty - 2) % maxQ) + 1
-      se(5)
-    elseif input:wasPressed("right") then
-      PcMenu.itemQty = math.min(maxQ, PcMenu.itemQty + 10)
-      se(5)
-    elseif input:wasPressed("left") then
-      PcMenu.itemQty = math.max(1, PcMenu.itemQty - 10)
-      se(5)
-    elseif input:wasPressed("a") then
-      local ok, err = Storage.depositItem(PcMenu._session, PcMenu.selectedPocket, PcMenu.itemCursor, PcMenu.itemQty)
-      if ok then
-        show_msg(Strings("Stored %d %s.", PcMenu.itemQty, ItemsData.displayName(entry.id)),
-          "item_storage", Strings(PcMenu.ITEM_STORAGE_ACTIONS[2].desc), 2)
-        se(246)
-      else
-        PcMenu._status = Strings("The PC is full.")
-        PcMenu._prevMode = "deposit_item"
-        PcMenu.mode = "msg"
-        se(5) -- pokefirered/src/item_menu.c:1983
-      end
-    elseif input:wasPressed("b") then
-      PcMenu.mode = "deposit_item"
-      PcMenu._status = Strings("What do you want to deposit?")
-      se(5)
     end
     return
   end
@@ -670,66 +476,9 @@ function PcMenu.draw()
     for i, e in ipairs(actions) do
       local yPx = 10 + (i - 1) * 16
       if i == PcMenu.cursor then Window.cursorPx(12, yPx) end
-      Window.printPx(Strings(e.label), 20, yPx)
+      Window.printPx(e.label, 20, yPx)
     end
     draw_status_lines()
-    return
-  end
-
-  -- Item List (Withdraw / Deposit)
-  if PcMenu.mode == "withdraw_item" or PcMenu.mode == "deposit_item" then
-    local items
-    if PcMenu.mode == "deposit_item" then
-      local bag = PcMenu._session and PcMenu._session.bag
-      items = bag and Bag.listPocket(bag, PcMenu.selectedPocket) or {}
-      -- Header showing active pocket
-      Window.stdFrame(Window.template(1, 1, 12, 2))
-      Window.printPx(PcMenu.selectedPocket, 12, 9, { small = true })
-    else
-      local storage = Storage.ensure(PcMenu._session)
-      items = storage.items or {}
-      Window.stdFrame(Window.template(1, 1, 12, 2))
-      Window.printPx(Strings("PC ITEMS"), 12, 9, { small = true })
-    end
-
-    -- Main item list window
-    Window.stdFrame(Window.template(1, 4, 28, 10))
-    for vis = 1, VISIBLE_ITEMS do
-      local idx = PcMenu.itemScroll + vis
-      if idx > #items + 1 then break end
-      local yPx = 34 + (vis - 1) * 12
-      if idx == PcMenu.itemCursor then Window.cursorPx(10, yPx) end
-      if idx > #items then
-        Window.printPx(Strings("CANCEL"), 18, yPx)
-      else
-        local entry = items[idx]
-        local nameStr = ItemsData.displayName(entry.id) or Strings("ITEM %s", tostring(entry.id))
-        Window.printPx(nameStr, 18, yPx)
-        local qStr = string.format("×%02d", entry.qty or 1)
-        Window.printPx(qStr, 190, yPx)
-      end
-    end
-
-    -- Bottom Dialogue
-    Window.dialogueFrame()
-    if PcMenu._status then
-      Window.printPx(PcMenu._status, 16, 120)
-    end
-    return
-  end
-
-  -- Quantity Selection (Withdraw / Deposit)
-  if PcMenu.mode == "withdraw_qty" or PcMenu.mode == "deposit_qty" then
-    Window.stdFrame(Window.template(17, 8, 12, 4))
-    love.graphics.setColor(220 / 255, 60 / 255, 30 / 255, 1)
-    Window.printPx("▲", 152, 60)
-    Window.printPx("▼", 152, 92)
-    love.graphics.setColor(1, 1, 1, 1)
-    local qStr = string.format("×%02d", PcMenu.itemQty)
-    Window.printPx(qStr, 142, 74, { small = true })
-
-    Window.dialogueFrame()
-    if PcMenu._status then Window.printPx(PcMenu._status, 16, 120) end
     return
   end
 

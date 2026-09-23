@@ -2,6 +2,15 @@
 -- Run: luajit tests/game3_pause_and_main_menu_exit_test.lua
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local ROM_TEXT = { ["sStartMenuActionTable[3]"] = "{PLAYER}" }
+local function romTextKey(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end
+local function romTextPlain(key, ctx) return ((ROM_TEXT[key] or key):gsub("{PLAYER}", ctx and ctx.playerName or "")) end
+package.loaded["src.core.game3.rom_text"] = {
+  plain = romTextPlain, box = romTextPlain, ascii = romTextPlain, has = function() return true end,
+  key = romTextKey, at = function(n, i, j, ctx) return romTextPlain(romTextKey(n, i, j), ctx) end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local T = require("tests.harness")
 local check, eq = T.check, T.eq

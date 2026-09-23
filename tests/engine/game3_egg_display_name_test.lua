@@ -5,6 +5,7 @@
 -- placeholder the egg's nickname stores.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_egg_display_name_test")
 love = require("tests.love_stub")
 
 local T = require("tests.harness")

@@ -90,13 +90,13 @@ local function run(game)
   local idxA = Lighting.task and Lighting.task.index
   local pixA = slotPixel()
   result(idxA == 1, "E4 cycle advanced to palette 1 after the 40-frame hold")
-  U.shot(game, DIR .. "/leag_lorelei_lighting_frame1.png")
+  U.still(game, DIR .. "/leag_lorelei_lighting_frame1.png")
   pumpUntil(200, function() return Lighting.task and Lighting.task.index == 4 end)
   local idxB = Lighting.task and Lighting.task.index
   local pixB = slotPixel()
   result(idxB == 4, "E4 cycle reached palette 4 on the 12-frame cadence")
   result(pixA ~= nil and pixA ~= pixB, "floor light pixels changed between frames 1 and 4")
-  U.shot(game, DIR .. "/leag_lorelei_lighting_frame4.png")
+  U.still(game, DIR .. "/leag_lorelei_lighting_frame4.png")
 
   setFlag(0x5, true)
   local frozen = Lighting.task.index
@@ -147,7 +147,7 @@ local function run(game)
   result(pixFinal ~= nil and pixFinal ~= pixB, "final palette differs from the cycle frame")
   U.wait(30)
   result(slotPixel() == pixFinal, "the room holds the final palette")
-  U.shot(game, DIR .. "/leag_lorelei_final_palette.png")
+  U.still(game, DIR .. "/leag_lorelei_final_palette.png")
 
   local _, tsL = slotPixel()
   goTo(PC_1F, 11, 8, "up")
@@ -180,7 +180,7 @@ local function run(game)
     result(Diploma.phase() == "fanfare", label .. ": A ignored until the fanfare ends")
     pumpUntil(600, function() return Diploma.phase() == "wait" end)
     result(Diploma.phase() == "wait" and Audio.isFanfareFinished(), label .. ": fanfare finished")
-    U.shot(game, DIR .. "/leag_diploma_" .. (national and "national" or "kanto") .. ".png")
+    U.still(game, DIR .. "/leag_diploma_" .. (national and "national" or "kanto") .. ".png")
     U.tap(game, "b")
     U.wait(5)
     result(Diploma.isOpen(), label .. ": B does not close the diploma")
@@ -209,7 +209,7 @@ local function run(game)
     if Lighting.task and Lighting.task.index == 2 then t1 = i break end
   end
   result(t0 ~= nil and t1 == 8, "Champion cycle steps every 8 frames (got " .. tostring(t1) .. ")")
-  U.shot(game, DIR .. "/leag_champion_lighting.png")
+  U.still(game, DIR .. "/leag_champion_lighting.png")
 end
 
 return function(game)

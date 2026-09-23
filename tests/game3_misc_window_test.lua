@@ -2,6 +2,7 @@
 -- pokefirered/src/new_menu_helpers.c:61
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)
@@ -73,6 +74,12 @@ local normalW = FrlgFont.measure("123456", {})
 check(smallW > 0 and normalW > 0, string.format("both metrics answer (%d / %d)", smallW, normalW))
 check(smallW < normalW,
   string.format("FONT_SMALL is the narrower of the two (%d < %d)", smallW, normalW))
+
+if not require("tests.game3_cache").mount() then
+  print("[skip] mart windows read ROM text: " .. tostring(require("tests.game3_cache").reason))
+  if failed > 0 then os.exit(1) end
+  os.exit(0)
+end
 
 print("[test] 3. the mart money window right-aligns in FONT_SMALL (money.c:87)")
 local ShopMenu = require("src.ui.game3.shop_menu")

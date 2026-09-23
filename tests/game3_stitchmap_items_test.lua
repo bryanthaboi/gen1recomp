@@ -207,10 +207,12 @@ do
   }
   local res = FieldMoves.rockSmashFromMenu(ctx)
   check(res.ok == true, "ROCK SMASH from the party menu is accepted")
-  check(res.text:find("^ used") == nil,
-    "the line does not start with a blank name: " .. tostring(res.text))
-  check(res.text:find(name, 1, true) == 1,
-    "the line leads with the mon's name: " .. tostring(res.text))
+  -- pokefirered/data/scripts/field_moves.inc:77 EventScript_FldEffRockSmash
+  check(res.text == nil, "the party-menu ROCK SMASH prints no line")
+  -- pokefirered/data/scripts/field_moves.inc:12
+  local line = FieldMoves.monText("USED_MOVE", FieldMoves.getMonName(mon), FieldMoves.MOVES.ROCK_SMASH)
+  check(line:find("^ used") == nil, "the line does not start with a blank name: " .. tostring(line))
+  check(line:find(name, 1, true) == 1, "the line leads with the mon's name: " .. tostring(line))
 
   Party.giveMon(session, 4, 15, "SLUGGY")
   local nicked = session.party[2]
@@ -225,8 +227,8 @@ do
     facingObject = { gfx = FieldMoves.GFX_IDS.CUT_TREE },
   })
   check(cut.ok == true, "CUT from the party menu is accepted")
-  check(cut.text:find(name, 1, true) == 1,
-    "the CUT line leads with the mon's name: " .. tostring(cut.text))
+  -- pokefirered/data/scripts/field_moves.inc:19 EventScript_FldEffCut
+  check(cut.text == nil, "the party-menu CUT prints no line")
 end
 
 finish()

@@ -1,4 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_items").install()
 
 local Bag = require("src.core.game3.bag")
 local Flags = require("src.core.game3.scripting.flags")

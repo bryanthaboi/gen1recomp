@@ -1,4 +1,15 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+package.loaded["src.core.game3.rom_text"] = (function()
+  local en = { gText_Yes = "YES", gText_No = "NO", gText_BattleYesNoChoice = "Yes\nNo" }
+  local function plain(key) return en[key] or key end
+  return {
+    plain = plain, box = plain, ascii = plain, has = function() return true end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end)()
 
 local calls = {}
 package.loaded["src.ui.game3.window"] = {

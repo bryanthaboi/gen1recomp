@@ -277,6 +277,9 @@ function RomExtractorGen3:runPokemonExtract(sha1)
     TrainerCardExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     local SeagallopExtract = require("src.import.gba.seagallop_extract")
     SeagallopExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    require("src.import.gba.cave_transition_extract").run(rom, cache, { cacheRoot = GBA_ROOT })
+    require("src.import.gba.ingame_trades_extract").run(rom, cache, { cacheRoot = GBA_ROOT })
+    require("src.import.gba.union_room_classes_extract").run(rom, cache, { cacheRoot = GBA_ROOT })
     local MapPreviewExtract = require("src.import.gba.map_preview_extract")
     local mpOk, mpErr = pcall(MapPreviewExtract.run, rom, cache, {
       cacheRoot = GBA_ROOT,
@@ -501,13 +504,7 @@ function RomExtractorGen3:runAuxExtracts(sha1)
     auxTick("Battle Animations")
 
     if needAi then
-      local okAi, detailAi = pcall(BattleAiExtract.run, {
-        cache = cache,
-        cacheRoot = GBA_ROOT,
-        pretRoot = os.getenv("POKEFIRERED"),
-      })
-      if not okAi then print("[battle_ai_extract] warn: " .. tostring(detailAi)) end
-      out.battleAi = okAi and detailAi or false
+      out.battleAi = BattleAiExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
     end
     auxTick("Battle AI Scripts")
 

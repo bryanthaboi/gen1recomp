@@ -53,7 +53,7 @@ do
   eq(events[1].hpChanges[1].to, 100 - pLoss, "event 1 hp to 100 - pLoss")
 
   eq(events[2].target.side, "enemy", "event 2 resolved for slower battler (enemy Blastoise)")
-  eq(events[2].msgs[1], "BLASTOISE is hurt\nby its burn!", "event 2 has correct burn text")
+  eq(events[2].msgs[1], "Wild BLASTOISE is hurt\nby its burn!", "event 2 has correct burn text")
   eq(events[2].hpChanges[1].side, "enemy", "event 2 hp change is on enemy")
   eq(events[2].hpChanges[1].from, 80, "event 2 hp from 80")
   eq(events[2].hpChanges[1].to, 80 - eLoss, "event 2 hp to 80 - eLoss")
@@ -120,7 +120,7 @@ do
   local foeMon = Damage.ensureStats({ species = 16, level = 10, hp = 30, maxHp = 30, moves = { 33 }, pp = { 35 } })
   pMon.status = "PSN"
 
-  local ok, err = Battle.start({
+  local ok, err = Battle.start({ playerName = "RED",
     headless = true,
     autoFight = false,
     playerParty = { pMon },
@@ -169,7 +169,7 @@ do
   local pMon2 = Damage.ensureStats({ species = 4, level = 10, hp = 30, maxHp = 30, moves = { 33 }, pp = { 35 } })
   local foeMon = Damage.ensureStats({ species = 16, level = 10, hp = 30, maxHp = 30, moves = { 33 }, pp = { 35 } })
 
-  Battle.start({
+  Battle.start({ playerName = "RED",
     headless = true,
     autoFight = false,
     playerParty = { pMon1, pMon2 },
@@ -213,11 +213,12 @@ do
   local fMon1 = Damage.ensureStats({ species = 16, level = 10, maxHp = 30, moves = { 33 }, pp = { 35 } })
   local fMon2 = Damage.ensureStats({ species = 19, level = 10, hp = 30, maxHp = 30, moves = { 33 }, pp = { 35 } })
 
-  Battle.start({
+  Battle.start({ playerName = "RED",
     headless = true,
     autoFight = false,
     playerParty = { pMon1, pMon2 },
     foeParty = { fMon1, fMon2 },
+    trainerId = 326,
     wild = false,
   })
   Battle.update(0, nil)
@@ -258,7 +259,7 @@ do
   local eParty = {
     { species = 16, level = 5, hp = 15, maxHp = 15, speed = 30, status = "BRN", moves = { 33 }, pp = { 35 } },
   }
-  Battle.start({
+  Battle.start({ playerName = "RED",
     wild = true,
     playerParty = pParty,
     foeParty = eParty,

@@ -11,10 +11,20 @@
 -- and centres it in the 14-tile stats window:
 --   x = (112 - GetStringWidth(FONT_NORMAL, gStringVar4, -1)) / 2
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_map_sections").install({ [135] = "POKéMON MANSION", [196] = "CELADON DEPT." })
 
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
 love = love or require("tests.love_stub")
+
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 -- The header is the only thing under test, so stand the frame/menu plumbing
 -- down: nothing here needs a real window stack or a chrome image.

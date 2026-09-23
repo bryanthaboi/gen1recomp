@@ -5,6 +5,7 @@ local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local Tower = require("src.core.game3.trainer_tower")
 
 local Records = {}
@@ -27,7 +28,12 @@ Records.CACHE_MANIFEST = "data/generated/gba/trainer_tower/manifest.lua"
 Records.BG_W, Records.BG_H = Display.W, Display.H
 
 -- pokefirered/src/battle_message.c:1364
-Records.MODE_TEXT = { "SINGLE", "DOUBLE", "KNOCKOUT", "MIXED" }
+Records.MODE_TEXT = RomText.lazy({
+  "gTrainerTowerChallengeTypeTexts[0]",
+  "gTrainerTowerChallengeTypeTexts[1]",
+  "gTrainerTowerChallengeTypeTexts[2]",
+  "gTrainerTowerChallengeTypeTexts[3]",
+})
 
 Records.open = false
 Records._kind = "tower"
@@ -140,7 +146,7 @@ end
 function Records.timeText(frames)
   local minutes, seconds, centiseconds = Tower.formatTime(frames)
   -- pokefirered/src/battle_message.c:1354 gText_XMinYZSec
-  return Strings("%sMIN. %s.%sSEC.", minutes, seconds, centiseconds)
+  return RomText.plain("gText_XMinYZSec", { stringVars = { minutes, seconds, centiseconds } })
 end
 
 -- pokefirered/src/trainer_tower.c:1054 PrintTrainerTowerRecords
@@ -150,7 +156,7 @@ local function tower_rows(session)
   for i = 0, Tower.NUM_CHALLENGE_TYPES - 1 do
     local best = Tower.bestTime(session, i)
     rows[i + 1] = {
-      label = Strings(Records.MODE_TEXT[i + 1]),
+      label = Records.MODE_TEXT[i + 1],
       time = Records.timeText(best),
       frames = best,
     }
@@ -167,7 +173,7 @@ local function board_rows(session)
     -- pokefirered/src/trainer_tower.c:915 gTrainerTowerChallengeTypeTexts[i - 1]
     local name = Records.MODE_TEXT[i]
     rows[i + 1] = {
-      label = name and Strings(name) or "",
+      label = name or "",
       time = Records.timeText(best),
       frames = best,
     }
@@ -201,8 +207,8 @@ local function link_rows(session)
       }
     else
       -- pokefirered/src/strings.c:599, :600
-      local dashes4 = Strings("----")
-      rows[i] = { name = Strings("-------"), wins = dashes4, losses = dashes4, draws = dashes4 }
+      local dashes4 = RomText.plain("gString_BattleRecords_4Dashes")
+      rows[i] = { name = RomText.plain("gString_BattleRecords_7Dashes"), wins = dashes4, losses = dashes4, draws = dashes4 }
     end
   end
   return rows
@@ -239,7 +245,7 @@ function Records.show(opts)
     Records._rows = link_rows(Records._session)
     -- pokefirered/src/strings.c:596
     local name = (type(Records._session) == "table" and Records._session.name) or ""
-    Records._title = Strings("%s's BATTLE RESULTS", tostring(name))
+    Records._title = RomText.plain("gString_BattleRecords_PlayersBattleResults", { playerName = tostring(name) })
     Records._titleX = math.floor((0xD0 - (FrlgFont.measure(Records._title) or 0)) / 2)
     -- pokefirered/src/strings.c:597
     Records._total = Records.totalText(Records._session)
@@ -344,9 +350,10 @@ function Records.draw()
     -- pokefirered/src/strings.c:597
     print_at(Records._total or "", ox + 12, oy + 24)
     -- pokefirered/src/strings.c:598
-    print_at(Strings("WIN"), ox + 0x54, oy + 0x30)
-    print_at(Strings("LOSE"), ox + 0x54 + 0x30, oy + 0x30)
-    print_at(Strings("DRAW"), ox + 0x54 + 0x60, oy + 0x30)
+    local headers, xs = Records.columnHeaders()
+    for i = 1, #headers do
+      print_at(headers[i], ox + 0x54 + xs[i], oy + 0x30)
+    end
     for i, row in ipairs(Records._rows) do
       local y = oy + 0x3D + 14 * (i - 1)
       print_at(row.name, ox, y)
@@ -358,7 +365,7 @@ function Records.draw()
   end
 
   -- pokefirered/src/battle_message.c:1352 gText_TimeBoard
-  print_at(Strings("TIME BOARD"), ox + 0x4A, oy)
+  print_at(RomText.plain("gText_TimeBoard"), ox + 0x4A, oy)
   for i, row in ipairs(Records._rows) do
     if Records._kind == "board" then
       -- pokefirered/src/trainer_tower.c:915
@@ -373,6 +380,19 @@ function Records.draw()
   end
 end
 
+-- pokefirered/src/strings.c:598 gString_BattleRecords_ColumnHeaders
+function Records.columnHeaders()
+  local out, xs = {}, { 0 }
+  for _, seg in ipairs(RomText.ir("gString_BattleRecords_ColumnHeaders")) do
+    if seg.t == "text" then
+      out[#out + 1] = Strings(seg.s)
+    elseif seg.t == "ext" and seg.cmd == 0x13 then
+      xs[#out + 1] = seg.args[1]
+    end
+  end
+  return out, xs
+end
+
 -- pokefirered/src/battle_records.c:452 PrintTotalRecord
 function Records.totalText(session)
   session = session or Records._session
@@ -384,7 +404,9 @@ function Records.totalText(session)
     or (type(session) == "table" and session.linkBattleLosses))
   local draws = record_number(gs[25] or gs.linkBattleDraws
     or (type(session) == "table" and session.linkBattleDraws))
-  return Strings("TOTAL RECORD W:%-4d L:%-4d D:%-4d", wins, losses, draws)
+  -- pokefirered/src/battle_records.c:473
+  return RomText.plain("gString_BattleRecords_TotalRecord", { stringVars = {
+    string.format("%-4d", wins), string.format("%-4d", losses), string.format("%-4d", draws) } })
 end
 
 return Records

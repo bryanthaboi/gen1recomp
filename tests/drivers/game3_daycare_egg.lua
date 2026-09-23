@@ -111,10 +111,14 @@ return function(game)
     return tostring((Message.currentPage and Message.currentPage()) or "")
   end
 
+  local Audio = require("src.core.game3.audio")
   local function pumpUntil(pred, frames)
-    for _ = 1, frames do
+    local budget = frames
+    while budget > 0 do
       if pred() then return true end
-      if Choice.active then
+      if Audio.isSePlaying() then
+        budget = budget + 1
+      elseif Choice.active then
         return false
       elseif Message.isWaiting and Message.isWaiting() then
         U.tap(game, "a")
@@ -122,6 +126,7 @@ return function(game)
         U.tap(game, "a")
       end
       U.wait(6)
+      budget = budget - 1
     end
     return pred()
   end

@@ -77,11 +77,7 @@ end
 -- pokefirered/src/battle_tower.c:830
 local function convertSpeech(words)
   if type(words) ~= "table" then return "" end
-  local okE, EasyChatData = pcall(require, "src.core.game3.easy_chat_data")
-  if not (okE and EasyChatData and EasyChatData.formatPhrase) then return "" end
-  local ok, text = pcall(EasyChatData.formatPhrase, words, 3, 2)
-  if ok and type(text) == "string" then return text end
-  return ""
+  return require("src.core.game3.easy_chat_text").phrase(words, 3, 2)
 end
 
 Wireless.HANDLERS = {

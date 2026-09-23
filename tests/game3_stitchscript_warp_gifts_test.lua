@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").stubSpeciesNames()
 
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")

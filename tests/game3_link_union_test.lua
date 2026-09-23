@@ -1,5 +1,6 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)
@@ -72,10 +73,27 @@ package.loaded["src.core.game3.objects"] = {
 local ctx = { specialVars = {}, stringVars = {} }
 local adapters = { log = function() end, playSe = function() end }
 
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+local function teq(a, b, msg)
+  if romBundle then eq(a, b, msg) else print("[skip] ROM text: " .. msg) end
+end
+
 package.loaded["src.core.game3.scripting.space"] = {
   store = store,
   mapId = UNION_MAP,
   vm = { ctx = ctx, adapters = adapters },
+  ensureBundle = function() return romBundle end,
 }
 local Space = package.loaded["src.core.game3.scripting.space"]
 
@@ -181,8 +199,8 @@ Union.update(0)
 check(Screen.isOpen(), "the union room screen opened")
 eq(Screen.mode, "activity", "in activity-chooser mode")
 eq(#Screen.items, 4, "with the four pret entries")
-eq(Screen.labelFor(Screen.items[1]), "GREETINGS", "GREETINGS first")
-eq(Screen.labelFor(Screen.items[4]), "EXIT", "EXIT last")
+teq(Screen.labelFor(Screen.items[1]), "GREETINGS", "GREETINGS first")
+teq(Screen.labelFor(Screen.items[4]), "EXIT", "EXIT last")
 
 print("[test] 7. BATTLE needs two mons at or below level 30")
 session.party = { { species = 1, level = 42 } }
@@ -343,8 +361,12 @@ eq(Union.activity, Union.ACTIVITY.CHAT + Union.IN_UNION_ROOM,
 eq(Union._requestName, "BLUE", "and the name of the trainer who asked")
 -- pokefirered/src/union_room_message.c:86 gText_UR_PlayerContactedYouForXAccept
 local prompt = Union.requestPrompt()
-check(prompt:find("BLUE", 1, true) ~= nil, "the prompt names the trainer who contacted you")
-check(prompt:find("CHAT", 1, true) ~= nil, "and the activity they asked for")
+if romBundle then
+  check(prompt:find("BLUE", 1, true) ~= nil, "the prompt names the trainer who contacted you")
+  check(prompt:find("CHAT", 1, true) ~= nil, "and the activity they asked for")
+else
+  print("[skip] ROM text: the contact prompt reads gText_UR_PlayerContactedYouForXAccept")
+end
 Union.update(1 / 60)
 reqHost:update(0)
 reqGuest:update(0)

@@ -73,7 +73,7 @@ do
   -- Test with real TM item: TM06 (Toxic)
   local statusOk, prompt, moveId, moveName = ItemUse.checkTmPreflight(bulbasaur, 294) -- TM06 Toxic
   check(statusOk == "ok", "Bulbasaur compatible with TM06 (Toxic)")
-  check(prompt:find("Booted up a TM", 1, true) ~= nil, "prompt contains 'Booted up a TM'")
+  check(prompt == nil, "a mon with a free move slot learns without a prompt (party_menu.c:4786)")
 
   -- Teach Toxic to Bulbasaur
   bulbasaur.moves[#bulbasaur.moves + 1] = moveId
@@ -84,10 +84,10 @@ do
   -- Test incompatible TM (e.g. TM47 Steel Wing / 335 on Bulbasaur)
   local statusIncompat, msgIncompat = ItemUse.checkTmPreflight(bulbasaur, 335) -- TM47 Steel Wing
   check(statusIncompat == "incompatible", "Bulbasaur incompatible with TM47 (Steel Wing)")
-  check(msgIncompat:find("can't learn", 1, true) ~= nil, "message states mon can't learn move")
+  check(msgIncompat:find("are not compatible", 1, true) ~= nil, "message is gText_PkmnCantLearnMove")
 end
 
-print("=== [TEST 4] PartyMenu TM Yes/No Confirmation & Move Learning Flow ===")
+print("=== [TEST 4] PartyMenu TM Teach With A Free Slot ===")
 do
   local bag = Bag.new()
   Bag.add(bag, 294, 1) -- 1 TM06 (Toxic)
@@ -115,11 +115,7 @@ do
     isDown = function() return false end,
   }
   PartyMenu.handleInput(mockInputA)
-  check(PartyMenu.mode == "yesno", "PartyMenu opened Yes/No confirmation prompt")
-  check(PartyMenu._yesNoPrompt:find("Teach TOXIC to BULBASAUR?", 1, true) ~= nil, "Yes/No prompt contains TM teach confirmation")
-
-  -- Press A on YES
-  PartyMenu.handleInput(mockInputA)
+  check(PartyMenu.mode ~= "yesno", "a free move slot teaches with no Yes/No (party_menu.c:4785)")
   check(Pokemon.knowsMove(party[1], 92), "Bulbasaur learned Toxic (move 92)")
   check(Bag.get(bag, 294) == 0, "TM06 consumed from bag on successful teach")
   check(PartyMenu.mode == "message", "PartyMenu showed learned message")

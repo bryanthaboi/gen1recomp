@@ -13,7 +13,7 @@ local Audio = require("src.core.game3.audio")
 local LearnMove = require("src.core.game3.battle.learn_move")
 local SE = require("src.core.game3.se_ids")
 local Oam = require("src.core.game3.oam")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local EvolutionScene = {}
 
@@ -339,7 +339,8 @@ function EvolutionScene.handleInput(input)
       Audio.playSong(0)
       pcall(function() Audio.playSe(SE.SE_NOT_EFFECTIVE or 2) end)
       local fromName = Pokemon.displayMonName(EvolutionScene._mon)
-      Message.show(Strings("Huh? %s\nstopped evolving!", fromName), { frame = "battle" })
+      -- pokefirered/src/evolution_scene.c:857
+      Message.show(RomText.box("gText_PkmnStoppedEvolving", { stringVars = { fromName } }), { frame = "battle" })
       return
     end
   end
@@ -425,7 +426,7 @@ function EvolutionScene.update(dt)
     EvolutionScene._timer = 0
     Audio.playSong(0)
     -- pokefirered/src/battle_message.c:1277 gText_EllipsisQuestionMark
-    Message.show(Strings("……?"), { frame = "battle" })
+    Message.show(RomText.box("gText_EllipsisQuestionMark"), { frame = "battle" })
     return
   end
 
@@ -437,7 +438,8 @@ function EvolutionScene.update(dt)
       EvolutionScene._state = "intro_msg"
       EvolutionScene._timer = 0
       local fromName = Pokemon.displayMonName(EvolutionScene._mon)
-      Message.show(Strings("What?\n%s is evolving!", fromName), { frame = "battle" })
+      -- pokefirered/src/evolution_scene.c:678
+      Message.show(RomText.box("gText_PkmnIsEvolving", { stringVars = { fromName } }), { frame = "battle" })
     end
 
   elseif st == "intro_msg" then
@@ -538,7 +540,9 @@ function EvolutionScene.update(dt)
 
       local fromName = EvolutionScene._nick or clean_string(Pokemon.name(EvolutionScene._preSpecies))
       local intoName = Pokemon.name(EvolutionScene._postSpecies) or "POKéMON"
-      Message.show(Strings("Congratulations! Your %s\nevolved into %s!", fromName, intoName), { frame = "battle" })
+      -- pokefirered/src/evolution_scene.c:775
+      Message.show(RomText.box("gText_CongratsPkmnEvolved", { stringVars = { fromName, intoName } }),
+        { frame = "battle" })
     end
 
   elseif st == "cancel" then

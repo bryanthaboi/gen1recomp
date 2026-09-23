@@ -133,23 +133,8 @@ local function complain(source, fmt, ...)
   require("src.core.Logger").warn(fmt, ...)
 end
 
--- S(source)                -> translated source
--- S(source, ...)           -> translated source, string.format'ed
--- S(source, context)       -> context-disambiguated lookup, no formatting
---
--- The two-argument forms are told apart by whether the source carries any
--- format directives: a source with no `%s` cannot be formatting, so a lone
--- string second argument is a context.
-function Strings.get(source, ...)
-  local argc = select("#", ...)
-  if argc == 0 then return Strings.lookup(source) end
-
+local function render(source, text, ...)
   local wants = specifiers(source)
-  if wants == 0 and argc == 1 and type((...)) == "string" then
-    return Strings.lookup(source, (...))
-  end
-
-  local text = Strings.lookup(source)
   -- A translation with the wrong arity would raise inside string.format,
   -- which in a battle means a crash the player cannot escape.  Fall back to
   -- the English source, which is known to match, and say so once.
@@ -177,6 +162,39 @@ function Strings.get(source, ...)
   ok, out = pcall(string.format, source, ...)
   if ok then return out end
   return source
+end
+
+-- S(source)                -> translated source
+-- S(source, ...)           -> translated source, string.format'ed
+-- S(source, context)       -> context-disambiguated lookup, no formatting
+--
+-- The two-argument forms are told apart by whether the source carries any
+-- format directives: a source with no `%s` cannot be formatting, so a lone
+-- string second argument is a context.
+function Strings.get(source, ...)
+  local argc = select("#", ...)
+  if argc == 0 then return Strings.lookup(source) end
+
+  local wants = specifiers(source)
+  if wants == 0 and argc == 1 and type((...)) == "string" then
+    return Strings.lookup(source, (...))
+  end
+
+  return render(source, Strings.lookup(source), ...)
+end
+
+function Strings.translate(source, context, ...)
+  if not catalog then return nil end
+  local text = Strings.lookup(source, context)
+  if text == source then return nil end
+  return render(source, text, ...)
+end
+
+function Strings.translateLabel(label, source, ...)
+  if not catalog then return nil end
+  local text = catalog[label]
+  if type(text) ~= "string" or text == "" then return nil end
+  return render(source, text, ...)
 end
 
 -- A marker, not a lookup: returns its argument untouched.

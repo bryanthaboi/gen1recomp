@@ -803,6 +803,36 @@ function LauncherSettings.open(hooks, version)
       select = function(value) Window.observe(0); return Window.apply(value) end,
     })
   end
+  local RomSources = require("src.import.RomSources")
+  local forgotRoms = false
+  launcher.rows[#launcher.rows + 1] = {
+    label = Strings("Auto Re-import"),
+    value = function()
+      return opts.autoReimport == true and Strings("ON") or Strings("OFF")
+    end,
+    step = function()
+      opts.autoReimport = not (opts.autoReimport == true)
+      return true
+    end,
+  }
+  launcher.rows[#launcher.rows + 1] = {
+    label = Strings("Forget Saved ROMs"),
+    actionLabel = Strings("Forget"),
+    danger = true,
+    confirm = {
+      title = Strings("Forget saved ROMs?"),
+      lines = {
+        Strings("Kept ROM copies are deleted and the launcher stops offering to re-import from them."),
+        Strings("Imported games stay playable."),
+      },
+    },
+    doneText = Strings("Saved ROMs forgotten."),
+    action = function()
+      RomSources.forgetAll(opts)
+      forgotRoms = true
+      return true
+    end,
+  }
   table.insert(sections, 1, launcher)
   -- Mod options are generation-agnostic (the manager's options_schema
   -- contract), so they ride along either way.
@@ -816,7 +846,12 @@ function LauncherSettings.open(hooks, version)
     opts = opts,
     version = version,
     sections = sections,
-    save = function() SaveData.saveOptions(opts) end,
+    save = function()
+      if not forgotRoms then
+        opts.romSources = SaveData.loadOptions().romSources
+      end
+      SaveData.saveOptions(opts)
+    end,
   }
 end
 

@@ -10,10 +10,14 @@ Types.ID = {
   ICE = 15, DRAGON = 16, DARK = 17,
 }
 
-Types.NAME = {}
-for name, id in pairs(Types.ID) do
-  Types.NAME[id] = name
+local RomText = require("src.core.game3.rom_text")
+
+-- src/battle_main.c:428
+local TYPE_NAME_KEYS = {}
+for _, id in pairs(Types.ID) do
+  TYPE_NAME_KEYS[id] = RomText.key("gTypeNames", id)
 end
+Types.NAME = RomText.lazy(TYPE_NAME_KEYS)
 
 -- Gen3 physical/special split by type (before move category override).
 Types.PHYSICAL = {
@@ -22,7 +26,7 @@ Types.PHYSICAL = {
 }
 
 function Types.name(id)
-  return Types.NAME[tonumber(id) or -1] or "NORMAL"
+  return RomText.at("gTypeNames", (assert(tonumber(id), "type id")))
 end
 
 -- Alias used by battle menus / effects.

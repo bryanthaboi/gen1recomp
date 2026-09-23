@@ -31,6 +31,15 @@ return function(game)
     return phase() == "title"
   end
   local function err() return game.boot.saveError end
+  local TitleScreen = require("src.ui.game3.title_screen")
+  local function titleRunning()
+    return phase() == "title" and TitleScreen.scene(game.boot) == TitleScreen.SCENE.RUN
+  end
+  local function startFromTitle()
+    waitFor(titleRunning, 4000)
+    U.tap(game, "start")
+    return waitFor(function() return phase() == "menu" end, 4000)
+  end
 
   expect(toTitle(), "reached title")
   if phase() ~= "title" then love.event.quit(1) return end
@@ -39,14 +48,14 @@ return function(game)
   Boot.setContinueInfo(game.boot, {
     name = "RED", gender = 0, hours = 1, minutes = 23, hasDex = true, dexCount = 12, badges = 2, frameType = 0,
   })
-  U.tap(game, "start")
+  startFromTitle()
   waitFor(function() return phase() == "menu" and (game.boot.fadeT or 0) == 0 end, 300)
-  U.wait(4)
+  waitFor(function() return Chrome._user[0] ~= nil end, 4000)
   expect(phase() == "menu" and Chrome._user[0], "menu drawn with user frame type 1 from the cache")
   U.shot(game, DIR .. "/u5b_01_menu_user_frame_type1.png")
 
   game.boot.continueInfo.frameType = 6
-  U.wait(4)
+  waitFor(function() return Chrome._user[6] ~= nil end, 4000)
   expect(Chrome._user[6] ~= nil and Chrome._user[6] ~= false, "user frame type 7 loaded from the cache")
   U.shot(game, DIR .. "/u5b_02_menu_user_frame_type7.png")
 
@@ -54,14 +63,18 @@ return function(game)
   expect(waitFor(function() return phase() == "title" end, 120), "B back to title")
   U.wait(30)
 
-  game.boot.timer = 2700 / 60 - 0.02
-  expect(waitFor(function() return phase() == "title_restart" end, 10), "idle title enters the restart scene")
-  waitFor(function()
-    local f = game.boot.restartFade
-    return f and f.bgY >= 8
-  end, 120)
-  local f = game.boot.restartFade
-  expect(phase() == "title_restart" and f and f.bgY > 0 and f.bgY < 16, "title fading to black, no hard cut")
+  waitFor(titleRunning, 4000)
+  -- pokefirered/src/title_screen.c:431 Task_TitleScreenTimer
+  game.boot.title.vblanks = 2699
+  expect(waitFor(function() return phase() == "title_restart" end, 30), "idle title enters the restart scene")
+  local function restartFadeY()
+    local T = game.boot.title
+    local f = T and T.pal and T.pal.fade
+    return f and f.active and f.y or nil
+  end
+  waitFor(function() local y = restartFadeY() return y and y >= 8 end, 600)
+  local fy = restartFadeY()
+  expect(phase() == "title_restart" and fy and fy > 0 and fy < 16, "title fading to black, no hard cut")
   U.shot(game, DIR .. "/u5b_03_restart_fading_black.png")
   expect(waitFor(function() return phase() == "intro" end, 600), "intro restarts after the black fade and BGM stop")
   U.wait(10)
@@ -70,7 +83,7 @@ return function(game)
   expect(toTitle(), "back to title for the save error")
   Boot.setHasContinue(game.boot, true)
   Boot.setSaveStatus(game.boot, "error")
-  U.tap(game, "start")
+  startFromTitle()
   waitFor(function() return err() and (game.boot.fadeT or 0) == 0 end, 300)
   U.wait(30)
   expect(err() ~= nil and err().page == 1, "corrupted save window before the menu")
@@ -94,13 +107,18 @@ return function(game)
   U.wait(30)
   Boot.setHasContinue(game.boot, false)
   Boot.setSaveStatus(game.boot, "invalid")
-  U.tap(game, "start")
+  startFromTitle()
   waitFor(function() return err() and err().waiting == "done" end, 600)
   U.wait(10)
   expect(err() and #err().pages == 1, "deleted save message")
   U.shot(game, DIR .. "/u5b_09_save_deleted.png")
   U.tap(game, "a")
-  expect(waitFor(function() return phase() == "controls" end, 30), "new game after the deleted message")
+  -- pokefirered/src/main_menu.c:298
+  expect(waitFor(function() return phase() == "menu" and not err() and (game.boot.fadeT or 0) == 0 end, 600),
+    "the NEW GAME menu after the deleted message")
+  waitFor(function() return not (game.boot.menuFade and game.boot.menuFade:fadeActive()) end, 600)
+  U.tap(game, "a")
+  expect(waitFor(function() return phase() == "controls" end, 4000), "new game from that menu")
   U.wait(40)
   U.shot(game, DIR .. "/u5b_10_deleted_new_game.png")
 

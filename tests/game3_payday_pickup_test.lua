@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_payday_pickup_test")
 
 local failed = 0
 local function check(cond, msg)
@@ -38,10 +39,11 @@ do
   local Moves = require("src.core.game3.battle.moves")
   local EffectIds = require("src.core.game3.battle.effect_ids")
   local Types = require("src.core.game3.battle.types")
+  Moves.romReady()
   local savedRom, savedLoaded = Moves._rom, Moves._romLoaded
-  Moves._romLoaded = true
-  Moves._rom = { [6] = { power = 40, type = Types.ID.NORMAL, accuracy = 100, pp = 20,
-    effect = EffectIds.PAY_DAY, secondaryChance = 100, target = 0, priority = 0, flags = 0 } }
+  Moves._rom = setmetatable({ [6] = { power = 40, type = Types.ID.NORMAL, accuracy = 100, pp = 20,
+    effect = EffectIds.PAY_DAY, secondaryChance = 100, target = 0, priority = 0, flags = 0 } },
+    { __index = savedRom })
   local st = State.new({ wild = true, playerParty = { meowth(24) }, foeMon = meowth(30) })
   local ad = setup(st)
   local out = {}
@@ -64,7 +66,7 @@ do
   local bonus = Prize.payDay(session, 120, { moneyMultiplier = 2 })
   check(bonus == 240, "bonus is coins * moneyMultiplier")
   check(session.money == 999999, "money capped at MAX_MONEY")
-  check(Prize.payDayMessage("RED", 240) == "RED picked up\n¥240!", "picked up text")
+  check(Prize.payDayMessage("RED", 240) == "RED picked up\n¥240!\\p", "picked up text")
   local s2 = { money = 100 }
   check(Prize.payDay(s2, 50, { link = true }) == 0 and s2.money == 100, "link battles pay nothing")
 end
@@ -105,16 +107,6 @@ local realRuntime = package.loaded["src.core.game3.runtime"]
 local session = { name = "RED", money = 1000 }
 package.loaded["src.core.game3.runtime"] = { getSession = function() return session end }
 
-local payDayPack = {
-  read = function()
-    local EffectIds = require("src.core.game3.battle.effect_ids")
-    local Types = require("src.core.game3.battle.types")
-    return string.format("return { moves = { [6] = { power = 40, type = %d, accuracy = 100, pp = 20, "
-      .. "effect = %d, secondaryChance = 100, target = 0, priority = 0, flags = 0 } } }",
-      Types.ID.NORMAL, EffectIds.PAY_DAY)
-  end,
-}
-
 local function run(opts)
   if Battle.isActive() then Battle.abort("win") end
   local ok = Battle.start(opts)
@@ -143,7 +135,7 @@ print("[test] 4. wild win pays Pay Day money after EXP")
 do
   session.money = 1000
   session.party = { meowth(50) }
-  local ok, res, log = run({ wild = true, headless = true, cache = payDayPack, playerParty = session.party,
+  local ok, res, log = run({ wild = true, headless = true, playerParty = session.party,
     foe = { species = 16, level = 2 } })
   check(ok and res == "win", "wild battle won")
   local n = count(log, "Coins scattered")
@@ -151,7 +143,7 @@ do
   local iExp = find(log, "EXP. Points")
   local iPick = find(log, "picked up\n")
   check(iPick ~= nil, "picked up line present")
-  check(iPick and log[iPick] == string.format("RED picked up\n¥%d!", 250 * n), "picked up amount is 250 per hit")
+  check(iPick and log[iPick] == string.format("RED picked up\n¥%d!\\p", 250 * n), "picked up amount is 250 per hit")
   check(iExp and iPick and iExp < iPick, "picked up follows EXP")
   check(iPick == #log, "picked up is the last line")
   check(n >= 1 and session.money == 1000 + 250 * n, "money added")
@@ -161,7 +153,7 @@ print("[test] 5. trainer win: prize money before picked up")
 do
   session.money = 1000
   session.party = { meowth(50) }
-  local ok, res, log = run({ wild = false, headless = true, trainerId = 326, cache = payDayPack, playerParty = session.party,
+  local ok, res, log = run({ wild = false, headless = true, trainerId = 326, playerParty = session.party,
     foe = { species = 7, level = 5, trainerId = 326 } })
   check(ok and res == "win", "trainer battle won")
   local iMoney = find(log, "for winning")

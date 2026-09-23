@@ -118,8 +118,15 @@ return function(game)
   walk("up")
   U.wait(60)
 
-  U.tap(game, "start")
-  U.wait(30)
+  for _ = 1, 40 do
+    if StartMenu.isOpen() then break end
+    if (Space.vm and Space.vm:isRunning()) or Message.isOpen() then mashA(4) end
+    U.tap(game, "start")
+    for _ = 1, 30 do
+      if StartMenu.isOpen() then break end
+      U.wait(1)
+    end
+  end
   if not result(StartMenu.isOpen(), "start menu opened in the zone") then return finish() end
   -- pokefirered/src/start_menu.c:226
   result(ids() == "retire,pokedex,pokemon,bag,trainer,option,exit",

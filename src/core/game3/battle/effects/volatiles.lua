@@ -1,11 +1,8 @@
 -- FRLG volatiles (ported from KR battle/core/effects/volatiles.lua; no KR require).
 
 local H = require("src.core.game3.battle.effects._helpers")
-local Strings = require("src.core.Strings")
 
 local Volatiles = {}
-
-local function name(ctx, b) return ctx.adapter:displayName(b) end
 
 -- pokefirered/src/battle_script_commands.c:6220
 local function protect_like(ctx, onSuccess)
@@ -31,14 +28,14 @@ end
 function Volatiles.protect(ctx)
   protect_like(ctx, function(user)
     user.expProtected = true
-    ctx.adapter:say(Strings("%s protected\nitself!", name(ctx, user)))
+    ctx.adapter:sayText("STRINGID_PKMNPROTECTEDITSELF2", { atk = user })
   end)
 end
 
 function Volatiles.endure(ctx)
   protect_like(ctx, function(user)
     user.expEnduring = true
-    ctx.adapter:say(Strings("%s braced\nitself!", name(ctx, user)))
+    ctx.adapter:sayText("STRINGID_PKMNBRACEDITSELF", { atk = user })
   end)
 end
 
@@ -56,7 +53,7 @@ function Volatiles.encore(ctx)
   target.expEncoreSlot = slot
   target.expEncoreTurns = ctx.adapter:roll(0, 3) % 4 + 3
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s got\nan ENCORE!", name(ctx, target)))
+  ctx.adapter:sayText("STRINGID_PKMNGOTENCORE", { def = target })
 end
 
 -- pokefirered/src/battle_script_commands.c:8133
@@ -75,9 +72,12 @@ function Volatiles.perishSong(ctx)
   end
   if affected == 0 then return H.sayFail(ctx) end
   H.attackAnim(ctx)
-  ad:say(Strings("All affected POKéMON will\nfaint in three turns!"))
+  ad:sayText("STRINGID_FAINTINTHREE")
+  -- data/battle_scripts_1.s:1580
   for _, b in ipairs(blocked) do
-    ad:say(Strings("%s's SOUNDPROOF\nblocks PERISH SONG!", name(ctx, b)))
+    ad:sayText("STRINGID_PKMNSXBLOCKSY2", {
+      scrActive = b, scrActiveAbility = H.abilityId("SOUNDPROOF"), currentMove = H.moveNum(ctx.move or ctx.moveId),
+    })
   end
 end
 
@@ -86,7 +86,7 @@ function Volatiles.attract(ctx)
   local ad, target = ctx.adapter, ctx.target
   if not H.accuracy(ctx, "normal") then return end
   if ad:abilityOf(target) == "OBLIVIOUS" then
-    return ad:say(Strings("%s's OBLIVIOUS\nprevents romance!", name(ctx, target)))
+    return ad:sayText("STRINGID_PKMNPREVENTSROMANCEWITH", { def = target, defAbility = H.abilityId("OBLIVIOUS") })
   end
   local userMon = ad:mon(ctx.user)
   local targetMon = ad:mon(target)
@@ -99,7 +99,7 @@ function Volatiles.attract(ctx)
   target.expInfatuatedBy = ctx.user.side
   target.expInfatuatedWith = ctx.user
   H.attackAnim(ctx)
-  ad:say(Strings("%s\nfell in love!", name(ctx, target)))
+  ad:sayText("STRINGID_PKMNFELLINLOVE", { def = target })
 end
 
 -- pokefirered/src/battle_script_commands.c:7943
@@ -118,8 +118,9 @@ function Volatiles.spite(ctx)
     Engine.cancelMultiTurnMoves(target)
   end
   H.attackAnim(ctx)
-  local Moves = require("src.core.game3.battle.moves")
-  ad:say(Strings("Reduced %s's\n%s by %d!", name(ctx, target), Moves.displayName(last), cut))
+  ad:sayText("STRINGID_PKMNREDUCEDPP", {
+    def = target, buff1 = require("src.core.game3.pokemon").moveName(H.moveNum(last)), buff2 = tostring(cut),
+  })
 end
 
 -- pokefirered/src/battle_script_commands.c:8744
@@ -129,7 +130,7 @@ function Volatiles.torment(ctx)
   ctx.target.expTormented = true
   ctx.target.torment = true
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s was subjected\nto TORMENT!", name(ctx, ctx.target)))
+  ctx.adapter:sayText("STRINGID_PKMNSUBJECTEDTOTORMENT", { def = ctx.target })
 end
 
 return Volatiles

@@ -1,15 +1,14 @@
 local H = require("src.core.game3.battle.effects._helpers")
 local Types = require("src.core.game3.battle.types")
 local Secondary = require("src.core.game3.battle.effects.secondary")
-local Strings = require("src.core.Strings")
+local BattleText = require("src.core.game3.battle.battle_text")
 
 local Special = {}
-
-local function name(ctx, b) return ctx.adapter:displayName(b) end
 
 local function engine() return require("src.core.game3.battle.engine") end
 local function state() return require("src.core.game3.battle.state") end
 local function moves() return require("src.core.game3.battle.moves") end
+local function move_name(id) return require("src.core.game3.pokemon").moveName(H.moveNum(id)) end
 
 local function end_battle(ctx, reason)
   local st = ctx.adapter._st
@@ -19,16 +18,8 @@ local function end_battle(ctx, reason)
   ctx.adapter:pushEvent({ kind = "end", result = "run", reason = reason })
 end
 
-local function sent_out_text(ctx, battler)
-  local st = ctx.adapter._st
-  if battler.side == "player" then
-    return Strings("Go! %s!", name(ctx, battler))
-  end
-  local trainer = tostring(st.trainerName or "TRAINER")
-  if st.trainerClassName and st.trainerClassName ~= "" then
-    return Strings("%s %s sent\nout %s!", st.trainerClassName, trainer, name(ctx, battler))
-  end
-  return Strings("%s sent\nout %s!", trainer, name(ctx, battler))
+local function sent_out_fill(ctx, battler)
+  return require("src.core.game3.battle.switch_seq").switchInFill(ctx.adapter._st, battler)
 end
 
 -- pokefirered/src/battle_script_commands.c:6905
@@ -36,10 +27,10 @@ function Special.roar(ctx)
   local ad, user, target = ctx.adapter, ctx.user, ctx.target
   local st = ad._st
   if ad:abilityOf(target) == "SUCTION_CUPS" then
-    return ad:say(Strings("%s anchors\nitself with SUCTION CUPS!", name(ctx, target)))
+    return ad:sayText("STRINGID_PKMNANCHORSITSELFWITH", { def = target, defAbility = H.abilityId("SUCTION_CUPS") })
   end
   if target.expIngrain then
-    return ad:say(Strings("%s anchored\nitself with its roots!", name(ctx, target)))
+    return ad:sayText("STRINGID_PKMNANCHOREDITSELF", { def = target })
   end
   if not H.accuracy(ctx, "lockon") then return end
   if not H.accuracy(ctx, "normal") then return end
@@ -65,7 +56,7 @@ function Special.roar(ctx)
   if nb then
     local M = H.move(ctx)
     if M then M.target = nb end
-    ad:say(Strings("%s was\ndragged out!", name(ctx, nb)))
+    ad:sayText("STRINGID_PKMNWASDRAGGEDOUT", { def = nb })
     engine().switchInEffects(st, ad, nb, { spikes = true, deferIntimidate = true })
   end
 end
@@ -88,7 +79,7 @@ function Special.conversion(ctx)
   local t = list[ad:roll(1, #list)]
   user.type1, user.type2 = t, t
   H.attackAnim(ctx)
-  ad:say(Strings("%s transformed\ninto the %s type!", name(ctx, user), Types.name(t)))
+  ad:sayText("STRINGID_PKMNCHANGEDTYPE", { atk = user, buff1 = Types.name(t) })
 end
 
 -- pokefirered/src/battle_script_commands.c:7699
@@ -115,7 +106,7 @@ function Special.conversion2(ctx)
   local pick = valid[ad:roll(1, #valid)]
   user.type1, user.type2 = pick, pick
   H.attackAnim(ctx)
-  ad:say(Strings("%s transformed\ninto the %s type!", name(ctx, user), Types.name(pick)))
+  ad:sayText("STRINGID_PKMNCHANGEDTYPE", { atk = user, buff1 = Types.name(pick) })
 end
 
 -- pokefirered/src/battle_script_commands.c:7398
@@ -160,7 +151,7 @@ function Special.transform(ctx)
   user.permanentSlots = { false, false, false, false }
   H.attackAnim(ctx)
   local Pokemon = require("src.core.game3.pokemon")
-  ad:say(Strings("%s transformed\ninto %s!", name(ctx, user), tostring(Pokemon.name(target.species))))
+  ad:sayText("STRINGID_PKMNTRANSFORMEDINTO", { atk = user, buff1 = Pokemon.name(target.species) })
 end
 
 -- pokefirered/src/battle_script_commands.c:7478
@@ -181,7 +172,7 @@ function Special.mimic(ctx)
   proxy.pp[slot] = math.min(5, tonumber(moves().get(last).pp) or 5)
   user.permanentSlots[slot] = false
   H.attackAnim(ctx)
-  ad:say(Strings("%s learned\n%s!", name(ctx, user), moves().displayName(last)))
+  ad:sayText("STRINGID_PKMNLEARNEDMOVE2", { atk = user, buff1 = move_name(last) })
 end
 
 -- pokefirered/src/battle_script_commands.c:7617
@@ -198,7 +189,7 @@ function Special.disable(ctx)
   target.expDisableTurns = ad:roll(0, 3) % 4 + 2
   target.disabled = true
   H.attackAnim(ctx)
-  ad:say(Strings("%s's %s\nwas disabled!", name(ctx, target), moves().displayName(mon.moves[slot])))
+  ad:sayText("STRINGID_PKMNMOVEWASDISABLED", { def = target, buff1 = move_name(mon.moves[slot]) })
 end
 
 -- pokefirered/src/battle_script_commands.c:7768
@@ -230,7 +221,7 @@ function Special.sketch(ctx)
     user.sketched[slot] = true
   end
   H.attackAnim(ctx)
-  ad:say(Strings("%s SKETCHED\n%s!", name(ctx, user), moves().displayName(last)))
+  ad:sayText("STRINGID_PKMNSKETCHEDMOVE", { atk = user, buff1 = move_name(last) })
 end
 
 -- pokefirered/data/battle_scripts_1.s:1690
@@ -259,9 +250,10 @@ function Special.batonPass(ctx)
   if nb then
     local M = H.move(ctx)
     if M then M.user = nb end
-    local text = sent_out_text(ctx, nb)
+    local fill = sent_out_fill(ctx, nb)
+    local text = BattleText.get(BattleText.SWITCHINMON, fill)
     -- pokefirered/data/battle_scripts_1.s:1705
-    ad:pushEvent({ kind = "msg", text = text, wait = 0 })
+    ad:pushEvent({ kind = "msg", text = text, wait = 0, id = (BattleText.key(BattleText.SWITCHINMON, fill)) })
     ad._say(text)
     engine().switchInEffects(st, ad, nb, { spikes = true, deferIntimidate = true })
   end
@@ -283,14 +275,14 @@ function Special.teleport(ctx)
   if not (ab == "RUN_AWAY" or item == 194) then
     if fab == "SHADOW_TAG" or (fab == "ARENA_TRAP" and not H.hasType(ctx, user, Types.ID.FLYING) and ab ~= "LEVITATE")
         or (fab == "MAGNET_PULL" and H.hasType(ctx, user, Types.ID.STEEL)) then
-      return ad:say(Strings("%s's %s\nmade it ineffective!", name(ctx, foe), require("src.core.game3.battle.abilities").name(fab)))
+      return ad:sayText("STRINGID_PKMNSXMADEITINEFFECTIVE", { scrActive = foe, scrActiveAbility = H.abilityId(fab) })
     end
     if user.expTrapped or user.escapePrevention or (user.expTrapTurns or 0) > 0 or user.expIngrain then
       return H.sayFail(ctx)
     end
   end
   H.attackAnim(ctx)
-  ad:say(Strings("%s fled from\nbattle!", name(ctx, user)))
+  ad:sayText("STRINGID_PKMNFLEDFROMBATTLE", { atk = user })
   end_battle(ctx, "teleport")
 end
 
@@ -302,7 +294,7 @@ function Special.followMe(ctx)
     side.expFollowMeId = ctx.user.id
   end
   H.attackAnim(ctx)
-  ctx.adapter:say(Strings("%s became the\ncenter of attention!", name(ctx, ctx.user)))
+  ctx.adapter:sayText("STRINGID_PKMNCENTERATTENTION", { atk = ctx.user })
 end
 
 -- pokefirered/src/battle_script_commands.c:8798
@@ -327,7 +319,9 @@ function Special.trick(ctx)
     return H.sayFail(ctx)
   end
   if ad:abilityOf(target) == "STICKY_HOLD" then
-    return ad:say(Strings("%s's STICKY HOLD\nmade TRICK ineffective!", name(ctx, target)))
+    return ad:sayText("STRINGID_PKMNSXMADEYINEFFECTIVE", {
+      def = target, defAbility = H.abilityId("STICKY_HOLD"), currentMove = H.moveNum(ctx.move or ctx.moveId),
+    })
   end
   user.item, target.item = ti, ui
   Secondary.persistItem(user, ti)
@@ -335,14 +329,16 @@ function Special.trick(ctx)
   -- holds, or it keeps the old one and duplicates it on switch-out.
   Secondary.persistItem(target, ui)
   H.attackAnim(ctx)
-  ad:say(Strings("%s switched\nitems with its opponent!", name(ctx, user)))
+  ad:sayText("STRINGID_PKMNSWITCHEDITEMS", { atk = user })
+  -- src/battle_script_commands.c:8870
   if ui ~= 0 and ti ~= 0 then
-    ad:say(Strings("%s obtained\n%s.", name(ctx, user), Secondary.itemName(ti)))
-    ad:say(Strings("%s obtained\n%s.", name(ctx, target), Secondary.itemName(ui)))
+    ad:sayText("STRINGID_PKMNOBTAINEDXYOBTAINEDZ", {
+      atk = user, def = target, buff1 = Secondary.itemName(ti), buff2 = Secondary.itemName(ui),
+    })
   elseif ti ~= 0 then
-    ad:say(Strings("%s obtained\n%s.", name(ctx, user), Secondary.itemName(ti)))
+    ad:sayText("STRINGID_PKMNOBTAINEDX", { atk = user, buff1 = Secondary.itemName(ti) })
   else
-    ad:say(Strings("%s obtained\n%s.", name(ctx, target), Secondary.itemName(ui)))
+    ad:sayText("STRINGID_PKMNOBTAINEDX2", { def = target, buff2 = Secondary.itemName(ui) })
   end
 end
 
@@ -357,7 +353,7 @@ function Special.recycle(ctx)
   user.item = used
   Secondary.persistItem(user, used)
   H.attackAnim(ctx)
-  ad:say(Strings("%s found\none %s!", name(ctx, user), Secondary.itemName(used)))
+  ad:sayText("STRINGID_XFOUNDONEY", { atk = user, lastItem = used })
 end
 
 return Special

@@ -663,7 +663,8 @@ Schemas.GEN3 = {
   pokemon = "gen3Pokemon", moves = "gen3Moves", items = "gen3Items",
   encounters = "gen3Encounters", trainers = "gen3Trainers",
   text = "gen3Text", map_scripts = "gen3Scripts",
-  tilesets = false, sprites = false, rom_text = false,
+  rom_text = "gen3RomText",
+  tilesets = false, sprites = false,
   palettes = false, icons = false, battle_anims = false, constants = false,
   statuses = false, move_effects = false, item_effects = false,
   balls = false, ai_classes = false, evolution_methods = false,
@@ -1653,6 +1654,9 @@ end
 
 function G3.textIr(value)
   if type(value) ~= "string" then return value end
+  if value:find("[{\\]") then
+    return require("src.core.game3.scripting.text_ir").fromAscii((value:gsub("\n\n", "\\p")))
+  end
   local ir = {}
   local rest = value
   while rest ~= "" do
@@ -2330,6 +2334,8 @@ R.rom_text = {
   semantics = "record",
   value = f.str,
   example = 'mod.content.rom_text:override("_WokeUpText", "%s se réveille !")',
+  gen3Value = f.union{ f.str, f.list(f.any) },
+  gen3Write = G3.textWrite,
 }
 
 -- The engine's own authored text, the half of the game `text` does not

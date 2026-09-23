@@ -1641,26 +1641,17 @@ COVERAGE[OW] = {
 -- ------- src.world.PikachuFollower
 
 local function buildFollower()
-  local F = {}
-  local why = "FireRed has no walking follower"
-  F.setShouldSpawn = unbacked("src.world.PikachuFollower", "setShouldSpawn", why)
-  F.onMapEntered = unbacked("src.world.PikachuFollower", "onMapEntered", why)
-  F.update = unbacked("src.world.PikachuFollower", "update", why)
-  F.talk = function() return false end
-  F.current = function() return nil end
-  F.starterInParty = function() return false end
-  F.setVisible = unbacked("src.world.PikachuFollower", "setVisible", why)
-  return F
+  return require("src.world.game3.Follower")
 end
 
 COVERAGE["src.world.PikachuFollower"] = {
   kind = "facade",
-  backed = "current starterInParty talk",
-  warned = "setShouldSpawn onMapEntered update setVisible",
-  absent = "shouldSpawn rebase at SPRITE onStep bumpHappiness modifyHappiness "
+  backed = "current starterInParty talk setShouldSpawn onMapEntered update setVisible at",
+  warned = "",
+  absent = "shouldSpawn rebase SPRITE onStep bumpHappiness modifyHappiness "
     .. "picLift hopToCounter updateHop",
   notes = {
-    current = "always nil: FireRed has no follower",
+    current = "optional mod companion; absent until setShouldSpawn enables it",
     talk = "returns false and never calls done",
   },
 }

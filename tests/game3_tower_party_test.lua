@@ -28,7 +28,13 @@ local Tower = require("src.core.game3.trainer_tower")
 local TowerNatives = require("src.core.game3.scripting.natives_tower")
 
 local store = Flags.newStore()
-package.loaded["src.core.game3.scripting.space"] = { store = store }
+local keyText = setmetatable({}, {
+  __index = function(_, key) return require("src.core.game3.scripting.text_ir").fromAscii(key) end,
+})
+package.loaded["src.core.game3.scripting.space"] = {
+  store = store,
+  ensureBundle = function() return { text = keyText } end,
+}
 
 local function newCtx()
   local ctx = Ctx.new({})
@@ -443,8 +449,17 @@ eq(captured and captured.trainerTower, true, "adapters.startTrainerBattle forwar
 eq(captured and captured.trainerName, "ALBERTO", "and the tower opponent's name")
 eq(captured and captured.trainerPicId, 44, "and its facility-class pic")
 
+if not require("tests.game3_cache").mount() then
+  print("[skip] the battle intro names gTrainers[0] from the ROM trainer pack: "
+    .. tostring(require("tests.game3_cache").reason))
+  Task.clear()
+  Tower.resetPack()
+  os.exit(failed > 0 and 1 or 0)
+end
 local Battle = require("src.core.game3.battle")
-local towerMons = { { species = 129, level = 30, hp = 40, maxHp = 40, moves = { 33 }, pp = { 35 } } }
+Tower.resetPack()
+-- include/constants/trainers.h:382 FACILITY_CLASS_SAILOR
+local towerMons = { { species = 129, level = 30, hp = 40, maxHp = 40, moves = { 33 }, pp = { 35 }, trainerClass = 91 } }
 Battle.start({
   headless = true,
   wild = false,
@@ -460,6 +475,8 @@ local bst = Battle.getState()
 check(bst ~= nil and bst.trainerTower == true, "battle/init.lua kept BATTLE_TYPE_TRAINER_TOWER")
 eq(bst and bst.trainerName, "ALBERTO", "the battle shows the tower trainer, not gTrainers[0]")
 eq(bst and bst.trainerClassName, nil, "and no gTrainers[0] class name")
+-- src/trainer_tower.c:447, include/constants/trainers.h:243 TRAINER_CLASS_SAILOR
+eq(bst and bst.trainerClass, 60, "gFacilityClassToTrainerClass maps the floor trainer's facility class")
 eq(bst and bst.trainerPicId, 44, "and the facility-class front sprite")
 local BattleBg = require("src.core.game3.battle.bg")
 -- pokefirered/src/battle_bg.c:1048 GetBattleTerrainOverride

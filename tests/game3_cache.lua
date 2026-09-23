@@ -36,17 +36,10 @@ local function candidates()
   push(list, seen, os.getenv("POKEPORT_GBA_CACHE"))
   push(list, seen, "data/generated/gba")
 
-  for _, saveRoot in ipairs(saveRoots) do
-    local owner = saveRoot .. "/" .. OWNER_IDENTITY .. SUFFIX
-    local pipe = io.popen('ls -1t "' .. saveRoot .. '"/*' .. SUFFIX .. '/meta.json 2>/dev/null')
-    if pipe then
-      for line in pipe:lines() do
-        local root = line:match("^(.*)/meta%.json$")
-        if root and root ~= owner then push(list, seen, root) end
-      end
-      pipe:close()
+  if not identity or identity == "" or identity == OWNER_IDENTITY then
+    for _, saveRoot in ipairs(saveRoots) do
+      last[#last + 1] = saveRoot .. "/" .. OWNER_IDENTITY .. SUFFIX
     end
-    last[#last + 1] = owner
   end
   return list, last
 end
@@ -156,8 +149,6 @@ local function datasetRoots()
   if home and identity ~= "" then
     roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity .. "/firered"
     roots[#roots + 1] = home .. "/.local/share/love/" .. identity .. "/firered"
-  elseif home then
-    roots[#roots + 1] = home .. "/.local/share/love/" .. OWNER_IDENTITY .. "/firered"
   end
   return roots
 end
@@ -170,6 +161,13 @@ function M.requireData(label, marker)
   end
   print("[skip] " .. tostring(label) .. ": " .. tostring(M.reason or "no imported FireRed cache found"))
   os.exit(0)
+end
+
+function M.stubSpeciesNames()
+  if M.mount() then return false end
+  local Pokemon = require("src.core.game3.pokemon")
+  Pokemon.name = function(species) return "SPECIES " .. tostring(species) end
+  return true
 end
 
 function M.bundle(marker, opts)

@@ -1,7 +1,7 @@
 -- FRLG Save confirm dialog (start_menu save path matching pret start_menu.c).
 -- Features:
 -- 1. Top-left Save Stats Window (1, 1, 14, 9): Location header, Player, Badges, Pokédex, Time.
--- 2. Bottom Dialogue Window (2, 15, 26, 4): "Would you like to SAVE...", "SAVING...", "[Player] saved the game."
+-- 2. Bottom Dialogue Window (2, 15, 26, 4): "Would you like to save...", "SAVING...", "[Player] saved the game."
 -- 3. Right YES/NO Window (21, 9, 6, 4).
 
 local Stack = require("src.ui.game3.stack")
@@ -10,6 +10,7 @@ local Chrome = require("src.ui.game3.chrome")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local MapSectionsExtract = require("src.import.gba.map_sections_extract")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local Flags = require("src.core.game3.scripting.flags")
 local Dex = require("src.core.game3.dex")
 
@@ -221,9 +222,12 @@ end
 function SaveMenu.draw()
   if not SaveMenu.open then return end
   local session = SaveMenu._session or {}
-  local name = tostring(session.name or session.playerName or "RED")
+  local name = tostring(session.name or session.playerName or "")
   local map = Strings(SaveMenu.locationName(session))
-  local labels = { Strings("PLAYER"), Strings("BADGES"), Strings("POKéDEX"), Strings("TIME") }
+  local labels = {
+    RomText.plain("gSaveStatName_Player"), RomText.plain("gSaveStatName_Badges"),
+    RomText.plain("gSaveStatName_Pokedex"), RomText.plain("gSaveStatName_Time"),
+  }
   local valueX = 1 * 8 + SaveMenu.valueX(labels)
   local badges = SaveMenu.countBadges(session)
   local hasDex = SaveMenu.hasDex(session)
@@ -259,13 +263,17 @@ function SaveMenu.draw()
 
   -- 2. Bottom Dialogue Window (pret WindowFunc_DrawDialogueFrame at (2, 15, 26, 4))
   Chrome.dialogueFrame()
-  local msg = Strings("Would you like to SAVE\nthe game?")
+  -- pokefirered/src/start_menu.c:715
+  local msg = RomText.plain("gText_WouldYouLikeToSaveTheGame")
   if SaveMenu._phase == "overwrite" then
-    msg = Strings("There is already a saved file.\nIs it okay to overwrite it?")
+    -- pokefirered/src/start_menu.c:750
+    msg = RomText.plain("gText_AlreadySaveFile_WouldLikeToOverwrite")
   elseif SaveMenu._phase == "saving" then
-    msg = Strings("SAVING…\nDON'T TURN OFF THE POWER.")
+    -- pokefirered/src/start_menu.c:787
+    msg = RomText.plain("gText_SavingDontTurnOffThePower")
   elseif SaveMenu._phase == "saved" then
-    msg = Strings("%s saved\nthe game.", name)
+    -- pokefirered/src/start_menu.c:810
+    msg = RomText.plain("gText_PlayerSavedTheGame", { playerName = name })
   elseif SaveMenu._phase == "save_failed" then
     -- do_save refused to report success; say so instead of claiming a save.
     msg = Strings("The game could not be saved.")
@@ -283,8 +291,8 @@ function SaveMenu.draw()
     local rowY2 = popY * 8 + 18
     local curY = (SaveMenu.cursor == 1) and rowY1 or rowY2
     Window.cursorPx(popX * 8 + 1, curY)
-    FrlgFont.draw(Strings("YES"), popX * 8 + 9, rowY1, { colors = FrlgFont.COLOR.NORMAL })
-    FrlgFont.draw(Strings("NO"), popX * 8 + 9, rowY2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_Yes"), popX * 8 + 9, rowY1, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_No"), popX * 8 + 9, rowY2, { colors = FrlgFont.COLOR.NORMAL })
   end
 end
 

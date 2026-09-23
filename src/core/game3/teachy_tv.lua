@@ -1,7 +1,6 @@
 -- pokefirered/src/teachy_tv.c:420 InitTeachyTvController
 
-local Strings = require("src.core.Strings")
-local TextIR = require("src.core.game3.scripting.text_ir")
+local RomText = require("src.core.game3.rom_text")
 
 local TeachyTv = {}
 
@@ -34,200 +33,66 @@ local B_OUTCOME_DREW = 3
 -- pokefirered/src/teachy_tv.c:145 sWindowTemplates
 local PAGE_WIDTH = 208
 
--- pokefirered/src/data/text/teachy_tv.h:1
 TeachyTv.LESSONS = {
   [TeachyTv.SCRIPT.BATTLE] = {
     index = TeachyTv.SCRIPT.BATTLE,
     key = "BATTLE",
-    label = Strings("Teach me how to battle."),
-    intro = Strings(
-      "Today, the POKé DUDE's here to\\n" ..
-      "tell you about how you can battle\\l" ..
-      "POKéMON!\\p" ..
-      "Say you're out for a stroll when,\\n" ..
-      "suddenly, a wild POKéMON appears!\\p" ..
-      "It's up to you to smartly use your\\n" ..
-      "POKéMON and their moves to reduce\\l" ..
-      "the opponent's HP to nothing, and\\l" ..
-      "claim victory!\\p" ..
-      "I'll show you how to do that in\\n" ..
-      "person and for sure!\\p" ..
-      "All righty, here goes!\\p" ..
-      "Keep your eyes glued to the super\\n" ..
-      "POKé DUDE SHOW!"),
-    outro = Strings(
-      "Well, did you get that?\\p" ..
-      "Even if your own POKéMON's HP\\n" ..
-      "falls to zero, and it becomes\\l" ..
-      "unable to battle, not to worry!\\p" ..
-      "Just take it to any POKéMON\\n" ..
-      "CENTER and heal it!\\p" ..
-      "All righty, be seeing you!\\p" ..
-      "Remember, TRAINERS, a good deed\\n" ..
-      "a day brings happiness to stay!"),
+    -- pokefirered/src/data/text/teachy_tv.h:1
+    labelKey = "gTeachyTvString_TeachBattle",
+    -- pokefirered/src/data/text/teachy_tv.h:15
+    introKey = "gTeachyTvText_BattleScript1",
+    -- pokefirered/src/data/text/teachy_tv.h:30
+    outroKey = "gTeachyTvText_BattleScript2",
   },
   [TeachyTv.SCRIPT.STATUS] = {
     index = TeachyTv.SCRIPT.STATUS,
     key = "STATUS",
-    label = Strings("What are status problems?"),
-    intro = Strings(
-      "Today, the POKé DUDE's here to\\n" ..
-      "tell you about status problems!\\p" ..
-      "Status problems include poisoning,\\n" ..
-      "paralysis, sleep, burn…\\p" ..
-      "There are a couple others, but\\n" ..
-      "they really are trouble.\\p" ..
-      "Get any one, and your POKéMON\\n" ..
-      "may become useless in battle.\\p" ..
-      "You know, it hurts the POKé DUDE\\n" ..
-      "to see a POKéMON suffer…\\p" ..
-      "So, what should you do if your\\n" ..
-      "POKéMON gets a status problem?\\p" ..
-      "Well, you've got me to show you!\\p" ..
-      "All righty, here goes!\\p" ..
-      "Keep your eyes glued to the super\\n" ..
-      "POKé DUDE SHOW!"),
-    outro = Strings(
-      "Poisoning or paralysis don't go\\n" ..
-      "away after a battle.\\p" ..
-      "If a POKéMON is poisoned, it loses\\n" ..
-      "HP even while you're walking.\\p" ..
-      "You should heal POKéMON of these\\n" ..
-      "kinds of problems right away.\\p" ..
-      "Use an item, or try to get to a\\n" ..
-      "POKéMON CENTER for healing.\\p" ..
-      "That wasn't hard, was it?\\n" ..
-      "All righty, be seeing you!\\p" ..
-      "Remember, TRAINERS, a good deed\\n" ..
-      "a day brings happiness to stay!"),
+    -- pokefirered/src/data/text/teachy_tv.h:2
+    labelKey = "gTeachyTvString_StatusProblems",
+    -- pokefirered/src/data/text/teachy_tv.h:40
+    introKey = "gTeachyTvText_StatusScript1",
+    -- pokefirered/src/data/text/teachy_tv.h:57
+    outroKey = "gTeachyTvText_StatusScript2",
   },
   [TeachyTv.SCRIPT.MATCHUPS] = {
     index = TeachyTv.SCRIPT.MATCHUPS,
     key = "MATCHUPS",
-    label = Strings("What are type matchups?"),
-    intro = Strings(
-      "Does everyone know about type\\n" ..
-      "matchups?\\p" ..
-      "POKéMON and their moves all\\n" ..
-      "belong to certain types.\\p" ..
-      "For example, there are such types\\n" ..
-      "as GRASS and WATER.\\p" ..
-      "You need to consider the type of\\n" ..
-      "the move used to attack…\\p" ..
-      "And, the type of the POKéMON that\\n" ..
-      "is hit by that attack.\\p" ..
-      "Depending on how those two types\\n" ..
-      "match up, the damage can change.\\p" ..
-      "You see, it depends on whether\\n" ..
-      "the type matchup is good or bad.\\p" ..
-      "If you don't know how matchups\\n" ..
-      "work, battles will be tough.\\p" ..
-      "So, let me demonstrate exactly\\n" ..
-      "what I mean.\\p" ..
-      "All righty, here goes!\\p" ..
-      "Keep your eyes glued to the super\\n" ..
-      "POKé DUDE SHOW!"),
-    outro = Strings(
-      "Is it possible to launch an attack\\n" ..
-      "that will inflict heavy damage?\\p" ..
-      "Does the opposing POKéMON pose\\n" ..
-      "a threat to your POKéMON?\\p" ..
-      "Is there any chance that it may\\n" ..
-      "have disastrously tough moves?\\p" ..
-      "Watch the type matchups to gain\\n" ..
-      "the upper hand!\\p" ..
-      "All righty, be seeing you!\\p" ..
-      "Oh, for the COOL-type POKé DUDE,\\n" ..
-      "AWESOME-type kids like you match\\l" ..
-      "up perfectly!\\p" ..
-      "Remember, a good deed a day\\n" ..
-      "brings happiness to stay!"),
+    -- pokefirered/src/data/text/teachy_tv.h:3
+    labelKey = "gTeachyTvString_TypeMatchups",
+    -- pokefirered/src/data/text/teachy_tv.h:70
+    introKey = "gTeachyTvText_MatchupsScript1",
+    -- pokefirered/src/data/text/teachy_tv.h:92
+    outroKey = "gTeachyTvText_MatchupsScript2",
   },
   [TeachyTv.SCRIPT.CATCHING] = {
     index = TeachyTv.SCRIPT.CATCHING,
     key = "CATCHING",
-    label = Strings("I want to catch POKéMON."),
-    intro = Strings(
-      "Today, the POKé DUDE's going to\\n" ..
-      "show you how to catch POKéMON!\\p" ..
-      "Just imagine… A groovy POKéMON\\n" ..
-      "suddenly appearing in the wild!\\p" ..
-      "Oh, you want it!\\n" ..
-      "You just can't help it!\\p" ..
-      "Oh, you have to catch it!\\n" ..
-      "You gotta have it!\\p" ..
-      "Let me show you how you can make\\n" ..
-      "it happen!\\p" ..
-      "All righty, here goes!\\p" ..
-      "Keep your eyes glued to the super\\n" ..
-      "POKé DUDE SHOW!"),
-    outro = Strings(
-      "If your first POKé BALL fails to\\n" ..
-      "catch the POKéMON, don't give up!\\p" ..
-      "Keep throwing POKé BALLS…\\n" ..
-      "It's bound to work sometime!\\p" ..
-      "All righty, be seeing you!\\p" ..
-      "Remember, TRAINERS, a good deed\\n" ..
-      "a day brings happiness to stay!"),
+    -- pokefirered/src/data/text/teachy_tv.h:4
+    labelKey = "gTeachyTvString_CatchPkmn",
+    -- pokefirered/src/data/text/teachy_tv.h:107
+    introKey = "gTeachyTvText_CatchingScript1",
+    -- pokefirered/src/data/text/teachy_tv.h:121
+    outroKey = "gTeachyTvText_CatchingScript2",
   },
   [TeachyTv.SCRIPT.TMS] = {
     index = TeachyTv.SCRIPT.TMS,
     key = "TMS",
-    label = Strings("Teach me about TMs."),
-    intro = Strings(
-      "Hey, everyone!\\n" ..
-      "Do you all have TMs?\\p" ..
-      "A TM, Technical Machine, is an\\n" ..
-      "amazingly great item!\\p" ..
-      "It teaches POKéMON a move that\\n" ..
-      "it may not learn when leveling up!\\p" ..
-      "Isn't that just great? What a\\n" ..
-      "convenient world we live in!\\p" ..
-      "Open the TM CASE and check out\\n" ..
-      "the TMs you have.\\p" ..
-      "You can check them out in detail,\\n" ..
-      "too."),
-    outro = Strings(
-      "Wow, I talked a lot today!\\n" ..
-      "All righty, be seeing you!\\p" ..
-      "Remember, TRAINERS, a good deed\\n" ..
-      "a day brings happiness to stay!"),
+    -- pokefirered/src/data/text/teachy_tv.h:5
+    labelKey = "gTeachyTvString_AboutTMs",
+    -- pokefirered/src/data/text/teachy_tv.h:129
+    introKey = "gTeachyTvText_TMsScript1",
+    -- pokefirered/src/data/text/teachy_tv.h:163
+    outroKey = "gTeachyTvText_TMsScript2",
   },
   [TeachyTv.SCRIPT.REGISTER] = {
     index = TeachyTv.SCRIPT.REGISTER,
     key = "REGISTER",
-    label = Strings("How do I register an item?"),
-    intro = Strings(
-      "A TRAINER's BAG has a bunch of\\n" ..
-      "nifty, convenient features!\\p" ..
-      "Take stuff in the KEY ITEMS\\n" ..
-      "POCKET, for instance.\\p" ..
-      "You can use a key item without\\n" ..
-      "opening the BAG every time.\\p" ..
-      "For example, let's pretend I have\\n" ..
-      "a TEACHY TV in my BAG.\\p" ..
-      "I can register it for instant use,\\n" ..
-      "and I'll show you how!\\p" ..
-      "All righty, here goes!\\p" ..
-      "Keep your eyes glued to the sorta\\n" ..
-      "super POKé DUDE SHOW!"),
-    outro = Strings(
-      "And now, your TEACHY TV is\\n" ..
-      "registered.\\p" ..
-      "How do you use it?\\n" ..
-      "Well, here's how it works.\\p" ..
-      "Once an item in the KEY ITEMS\\n" ..
-      "POKCET is registered, you can use\\l" ..
-      "it by pressing SELECT.\\p" ..
-      "So, you've given yourself\\n" ..
-      "one-touch access to TEACHY TV.\\p" ..
-      "All it takes for you to see me is\\n" ..
-      "pressing one button!\\p" ..
-      "That kind of attention is a little\\n" ..
-      "embarrassing!\\p" ..
-      "All righty, be seeing you!\\p" ..
-      "Remember, TRAINERS, a good deed\\n" ..
-      "a day brings happiness to stay!"),
+    -- pokefirered/src/data/text/teachy_tv.h:6
+    labelKey = "gTeachyTvString_RegisterItem",
+    -- pokefirered/src/data/text/teachy_tv.h:168
+    introKey = "gTeachyTvText_RegisterScript1",
+    -- pokefirered/src/data/text/teachy_tv.h:182
+    outroKey = "gTeachyTvText_RegisterScript2",
   },
 }
 
@@ -249,39 +114,14 @@ TeachyTv.ORDER_NO_TM_CASE = {
   TeachyTv.SCRIPT.CATCHING,
 }
 
--- pokefirered/src/data/text/teachy_tv.h:8 gTeachyTvText_PokedudeSaysHello
-TeachyTv.HELLO = Strings(
-  "Hey, all you TRAINERS out there!\\n" ..
-  "HELLO, TRAINERS!\\p" ..
-  "……… ……… ………\\p" ..
-  "Come on, let me hear you!\\n" ..
-  "HELLO, TRAINERS!\\l" ..
-  "It's me, the POKé DUDE!\\p")
+-- pokefirered/src/data/text/teachy_tv.h:8
+TeachyTv.HELLO = "gTeachyTvText_PokedudeSaysHello"
 
--- pokefirered/src/data/text/teachy_tv.h:142 gPokedudeText_TMTypes
-TeachyTv.TM_TYPES = Strings(
-  "POKé DUDE: NORMAL, WATER, GRASS…\\n" ..
-  "TMs also come in types.\\p" ..
-  "Check the type and teach it to\\n" ..
-  "a POKéMON that matches up well.\\p" ..
-  "For example, WATER PULSE is\\n" ..
-  "suitable for WATER-type POKéMON.\\p" ..
-  "BULLET SEED is a move that most\\n" ..
-  "GRASS-type POKéMON can learn.\\p" ..
-  "There's one other thing!")
+-- pokefirered/src/data/text/teachy_tv.h:142
+TeachyTv.TM_TYPES = "gPokedudeText_TMTypes"
 
--- pokefirered/src/data/text/teachy_tv.h:152 gPokedudeText_ReadTMDescription
-TeachyTv.TM_DESCRIPTION = Strings(
-  "Don't just look at the type, read\\n" ..
-  "the description, too.\\p" ..
-  "It will contain hints about what\\n" ..
-  "POKéMON might learn the move.\\p" ..
-  "For example, take a move like\\n" ..
-  "FOCUS PUNCH.\\p" ..
-  "It doesn't sound like anything a\\n" ..
-  "bird or fish POKéMON can learn.\\p" ..
-  "So, try using it on POKéMON with\\n" ..
-  "arms that can throw punches!")
+-- pokefirered/src/data/text/teachy_tv.h:152
+TeachyTv.TM_DESCRIPTION = "gPokedudeText_ReadTMDescription"
 
 -- pokefirered/src/teachy_tv.c:272 sBattleScript
 local GRASS_SCRIPT = {
@@ -369,10 +209,10 @@ function TeachyTv.menuItems(session, bag)
   local rows = {}
   for i = 1, #order do
     local lesson = TeachyTv.LESSONS[order[i]]
-    rows[i] = { index = lesson.index, label = lesson.label, key = lesson.key }
+    rows[i] = { index = lesson.index, label = RomText.plain(lesson.labelKey), key = lesson.key }
   end
   -- pokefirered/src/teachy_tv.c:196
-  rows[#rows + 1] = { index = TeachyTv.CANCEL, label = Strings("CANCEL"), key = "CANCEL" }
+  rows[#rows + 1] = { index = TeachyTv.CANCEL, label = RomText.plain("gTeachyTvString_Cancel"), key = "CANCEL" }
   return rows
 end
 
@@ -381,8 +221,8 @@ function TeachyTv.maxShowed(session, bag)
   return TeachyTv.hasTmCase(session, bag) and 6 or 5
 end
 
-local function pages_of(raw)
-  local box = TextIR.toTextBox(TextIR.fromAscii(raw or ""), { maxWidth = PAGE_WIDTH })
+local function pages_of(key)
+  local box = RomText.box(key, { maxWidth = PAGE_WIDTH })
   local out = {}
   for page in (box .. "\f"):gmatch("(.-)\f") do
     if page ~= "" then out[#out + 1] = page end
@@ -395,16 +235,14 @@ end
 function TeachyTv.introPages(scriptId)
   local lesson = TeachyTv.lesson(scriptId)
   if not lesson then return {} end
-  lesson._introPages = lesson._introPages or pages_of(lesson.intro)
-  return lesson._introPages
+  return pages_of(lesson.introKey)
 end
 
 -- pokefirered/src/teachy_tv.c:853 TTVcmd_TextPrinterSwitchStringByOptionChosen2
 function TeachyTv.outroPages(scriptId)
   local lesson = TeachyTv.lesson(scriptId)
   if not lesson then return {} end
-  lesson._outroPages = lesson._outroPages or pages_of(lesson.outro)
-  return lesson._outroPages
+  return pages_of(lesson.outroKey)
 end
 
 TeachyTv.pagesOf = pages_of

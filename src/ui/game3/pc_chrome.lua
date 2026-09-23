@@ -230,7 +230,8 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
 
   -- 2. Lower Stats Card Text & Info (X: 0..80, Y: 88..160)
   -- Matches pret FRLG PrintDisplayMonInfo (Window 0: left=0, top=11 / Y=88)
-  local spName = (sp and Pokemon.name(sp)) or "----"
+  local isEgg = Pokemon.isEgg(hoveredMon)
+  local spName = (not isEgg and sp and Pokemon.name(sp)) or "----"
   local nick = hoveredMon.nickname
   if not nick or nick == "" then
     nick = (hoveredMon.name and hoveredMon.name ~= "" and hoveredMon.name) or spName
@@ -242,8 +243,7 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
   local gender = hoveredMon.gender or (hoveredMon.personality and ((hoveredMon.personality % 256 < 127) and "F" or "M"))
   -- pokefirered/src/pokemon_storage_system_data.c:1091: an egg shows only
   -- gText_EggNickname; the species, gender/level and item lines stay blank.
-  local isEgg = Pokemon.isEgg(hoveredMon)
-  if isEgg then nick = Strings("EGG") end
+  if isEgg then nick = require("src.core.game3.rom_text").plain("gText_EggNickname") end
 
   -- Line 1: Nickname or Species Name (FONT_NORMAL, Y: 88)
   FrlgFont.draw(nick:sub(1, 10), 6, 88, {
@@ -259,14 +259,15 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
     })
 
     -- Line 3: Gender & Level (FONT_NORMAL, Y: 116)
+    -- src/pokemon_storage_system_data.c:1148
     if gender == "M" or gender == "male" then
       FrlgFont.draw("♂", 6, 116, { small = false, colors = FrlgFont.COLOR.MALE })
-      FrlgFont.draw(Strings("Lv%s", tostring(lvl)), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
+      FrlgFont.draw("{LV_2}" .. tostring(lvl), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
     elseif gender == "F" or gender == "female" then
       FrlgFont.draw("♀", 6, 116, { small = false, colors = FrlgFont.COLOR.FEMALE })
-      FrlgFont.draw(Strings("Lv%s", tostring(lvl)), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
+      FrlgFont.draw("{LV_2}" .. tostring(lvl), 18, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
     else
-      FrlgFont.draw(Strings("Lv%s", tostring(lvl)), 6, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
+      FrlgFont.draw("{LV_2}" .. tostring(lvl), 6, 116, { small = false, colors = FrlgFont.COLOR.WHITE })
     end
 
     -- Line 4: Held Item Name (if holding an item) (FONT_SMALL, Y: 132)

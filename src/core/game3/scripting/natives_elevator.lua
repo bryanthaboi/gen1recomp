@@ -1,4 +1,4 @@
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local Std = require("src.core.game3.scripting.stdscripts")
 
 local Elevator = {}
@@ -9,12 +9,6 @@ local VAR_ELEVATOR_FLOOR = 0x403A -- pokefirered/include/constants/vars.h:108
 
 local SE_ELEVATOR = 82 -- pokefirered/include/constants/songs.h:86
 local SE_DING_DONG = 66 -- pokefirered/include/constants/songs.h:70
-
--- pokefirered/src/field_specials.c:737 sFloorNamePointers
-local FLOOR_NAMES = {
-  [0] = "B4F", "B3F", "B2F", "B1F", "1F", "2F", "3F", "4F", "5F",
-  "6F", "7F", "8F", "9F", "10F", "11F", "ROOFTOP",
-}
 
 -- pokefirered/src/field_specials.c:836 GetElevatorFloor
 local FLOOR_BY_MAP = {
@@ -248,10 +242,11 @@ Elevator.HANDLERS = {
   end,
   -- pokefirered/src/field_specials.c:1094
   [Std.SPECIAL.DrawElevatorCurrentFloorWindow] = function(ctx, adapters)
-    local label = FLOOR_NAMES[varGet(ctx, VAR_0x8005)]
-    if not label then return false end
+    -- pokefirered/src/field_specials.c:737
+    local key = RomText.key("sFloorNamePointers", varGet(ctx, VAR_0x8005))
+    if not RomText.has(key) then return false end
     if adapters and adapters.elevatorWindow then
-      pcall(adapters.elevatorWindow, Strings(label))
+      pcall(adapters.elevatorWindow, RomText.plain(key))
     end
     return false
   end,

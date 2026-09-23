@@ -7,7 +7,8 @@ local Lz77 = require("src.import.gba.lz77")
 local BagChromeExtract = {}
 
 BagChromeExtract.CACHE_SUB = "items/bag"
-BagChromeExtract.FORMAT_VERSION = 2
+BagChromeExtract.FORMAT_VERSION = 3
+BagChromeExtract.ITEM_PC_SUB = "items/item_pc"
 
 local function default_cache_root()
   local ok, Extract = pcall(require, "src.import.gba.extract_island1")
@@ -207,6 +208,33 @@ local function bake_icon_rgba(gfx, palBytes)
   return table.concat(chunks)
 end
 
+-- src/item_menu_icons.c:121 sOamData_SwapLine, :129 sAnims_SwapLine
+local function bake_swap_line(gfx, palBytes)
+  local W, H = 32, 16
+  local pal = load_pal_banks(palBytes, 1)[0] or {}
+  local pixels = {}
+  for i = 1, W * H do pixels[i] = 0 end
+  for frame = 0, 1 do
+    for t = 0, 3 do
+      local tile = {}
+      local base = (frame * 4 + t) * 32
+      for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
+      decode_tile_4bpp(tile, pixels, frame * 16 + (t % 2) * 8, math.floor(t / 2) * 8, W, false, false)
+    end
+  end
+  local chunks = {}
+  for i = 1, W * H do
+    local idx = pixels[i] or 0
+    if idx == 0 then
+      chunks[i] = string.char(0, 0, 0, 0)
+    else
+      local r, g, b = bgr555_to_rgb8(pal[idx] or 0)
+      chunks[i] = string.char(r, g, b, 255)
+    end
+  end
+  return table.concat(chunks)
+end
+
 local function gba_to_file(ptr)
   ptr = tonumber(ptr) or 0
   if ptr < 0x08000000 or ptr >= 0x0A000000 then return nil end
@@ -246,6 +274,27 @@ function BagChromeExtract.run(rom, cache, opts)
   cache:write(root .. "/desc_sel.rgba", bake_tiles_rgba(gfx, maleBanks, W, 48, function(tx, ty)
     return map_entry(map, tx, ty + 14) % 4096 + 2 * 4096
   end))
+
+  -- src/item_menu.c:569
+  local pcMap = Lz77.decompress(get, Versions.BAG_BG_ITEM_PC_TILEMAP)
+  cache:write(root .. "/bg_itempc.rgba", bake_bg_rgba(gfx, maleBanks, pcMap, W, H))
+  cache:write(root .. "/bg_itempc_female.rgba", bake_bg_rgba(gfx, femaleBanks, pcMap, W, H))
+
+  -- src/item_pc.c:435 ItemPc_LoadGraphics, :748 ItemPc_SetMessageWindowPalette
+  local pcRoot = cacheRoot .. "/" .. BagChromeExtract.ITEM_PC_SUB
+  local ipcGfx = Lz77.decompress(get, Versions.ITEM_PC_TILES)
+  local ipcBanks = load_pal_banks(Lz77.decompress(get, Versions.ITEM_PC_BG_PALS), 3)
+  local ipcMap = Lz77.decompress(get, Versions.ITEM_PC_TILEMAP)
+  for name, msgPal in pairs({ bg = 1, bg_submenu = 2 }) do
+    cache:write(pcRoot .. "/" .. name .. ".rgba", bake_tiles_rgba(ipcGfx, ipcBanks, W, H, function(tx, ty)
+      local e = map_entry(ipcMap, tx, ty)
+      if ty >= 14 then e = e % 4096 + msgPal * 4096 end
+      return e
+    end))
+  end
+
+  cache:write(root .. "/swap_line.rgba", bake_swap_line(Lz77.decompress(get, Versions.BAG_SWAP_GFX),
+    Lz77.decompress(get, Versions.BAG_SWAP_PAL)))
 
   local arrowGfx = Lz77.decompress(get, Versions.RED_ARROW_OTHER_GFX)
   local arrowPal = rom:readBytes(Versions.RED_ARROW_PAL, 32)

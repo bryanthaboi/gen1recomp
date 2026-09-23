@@ -7,7 +7,8 @@ local Pokemon = require("src.core.game3.pokemon")
 local Audio = require("src.core.game3.audio")
 local Oam = require("src.core.game3.oam")
 local SE = require("src.core.game3.se_ids")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
+local BattleChrome = require("src.ui.game3.battle_chrome")
 
 local EggHatch = {}
 
@@ -190,7 +191,8 @@ function EggHatch.start(mon, opts)
   EggHatch._shardVelocityId = 0
   EggHatch.open = true
   if Oam and Oam.destroyAll then Oam.destroyAll() end
-  if Message.setFrame then Message.setFrame("dialogue") end
+  if not BattleChrome._installed then BattleChrome.install(nil) end
+  if Message.setFrame then Message.setFrame("battle") end
   pcall(hatched_pic)
   pcall(Pokemon.frontPic, Pokemon.SPECIES_EGG)
   Stack.push(STACK_ID, EggHatch, { hideBelow = true })
@@ -352,7 +354,7 @@ function EggHatch.update(dt)
       EggHatch._state = "hatched_msg"
       EggHatch._timer = 0
       -- pokefirered/src/daycare.c:1927 gText_HatchedFromEgg
-      Message.show(Strings("%s hatched from the EGG!", EggHatch._name), { stay = true })
+      Message.show(RomText.box("gText_HatchedFromEgg", { stringVars = { EggHatch._name } }), { stay = true, frame = "battle" })
       if Message.skipReveal then Message.skipReveal() end
       -- pokefirered/src/daycare.c:1929 PlayFanfare(MUS_EVOLVED)
       pcall(Audio.playFanfare, MUS_EVOLVED)
@@ -366,8 +368,8 @@ function EggHatch.update(dt)
       EggHatch._state = "nickname_msg"
       EggHatch._timer = 0
       -- pokefirered/src/daycare.c:1944 gText_NickHatchPrompt
-      Message.show(Strings("Would you like to nickname the newly\nhatched %s?", EggHatch._name),
-        { stay = true })
+      Message.show(RomText.box("gText_NickHatchPrompt", { stringVars = { EggHatch._name } }),
+        { stay = true, frame = "battle" })
     end
 
   elseif st == "nickname_msg" then
@@ -444,6 +446,8 @@ function EggHatch.draw()
     love.graphics.rectangle("fill", 0, 0, Display.W, Display.H)
   end
 
+  -- pokefirered/src/daycare.c:1811
+  BattleChrome.drawPanel("none")
   if Message.isOpen and Message.isOpen() then Message.draw() end
   local Choice = package.loaded["src.ui.game3.choice"]
   if Choice and Choice.active and Choice.draw then Choice.draw() end

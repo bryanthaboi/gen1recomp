@@ -2,7 +2,7 @@
 
 local Window = require("src.ui.game3.window")
 local Display = require("src.core.game3.display")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Choice = {}
 
@@ -42,9 +42,11 @@ function Choice.yesNo(cb, layout)
   Choice.style = layout.style
   if layout.style == "battle" then
     -- pokefirered/src/battle_message.c:1288
-    Choice.options = { Strings("Yes"), Strings("No") }
+    local yes, no = RomText.plain("gText_BattleYesNoChoice"):match("^(.-)\n(.*)$")
+    Choice.options = { yes, no }
   else
-    Choice.options = { Strings("YES"), Strings("NO") }
+    -- pokefirered/src/strings.c:414
+    Choice.options = { RomText.plain("gText_Yes"), RomText.plain("gText_No") }
   end
   Choice.cursor = 1
   Choice.done = cb

@@ -191,6 +191,14 @@ function TrainerTowerExtract.run(rom, cache, opts)
   end
   lines[#lines + 1] = "  },"
 
+  -- src/trainer_tower.c:447, src/battle_tower.c:1340
+  lines[#lines + 1] = "  facilityClassTrainerClass = {"
+  for klass = 0, Versions.FACILITY_CLASS_COUNT - 1 do
+    lines[#lines + 1] = string.format("  [%d] = %d,",
+      klass, rom:get(Versions.FACILITY_CLASS_TO_TRAINER_CLASS + klass))
+  end
+  lines[#lines + 1] = "  },"
+
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
   cache:write(rel, table.concat(lines, "\n"))

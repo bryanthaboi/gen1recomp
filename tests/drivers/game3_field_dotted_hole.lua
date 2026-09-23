@@ -160,10 +160,12 @@ return function(game)
   result(res ~= nil and res.action == "dotted_hole",
     "Cut here is the dotted-hole arm (" .. tostring(res and res.action) .. ")")
   Field.executeFieldMove(res)
-  for _ = 1, 30 do
-    U.wait(4)
+  for _ = 1, 1200 do
+    U.wait(1)
     if not Field.locked then break end
   end
+  print("[driver] after cut locked=" .. tostring(Field.locked) .. " flag=" ..
+    tostring(Flags.getFlag(Space.store, ctx(), FLAG_USED_CUT_ON_RUIN_VALLEY_BRAILLE)))
   for _ = 1, 30 do
     U.tap(game, "a")
     U.wait(4)

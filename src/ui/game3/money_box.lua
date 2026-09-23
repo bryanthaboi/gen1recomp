@@ -44,7 +44,7 @@ function MoneyBox.isVisible()
 end
 
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 function MoneyBox.draw()
   if not MoneyBox.visible then return end
@@ -53,8 +53,10 @@ function MoneyBox.draw()
   local left = x + 1
   local top = y + 1
   Window.stdFrame(Window.template(left, top, 8, 3))
-  Window.printPx(Strings("MONEY"), left * 8, top * 8)
-  local moneyStr = string.format("¥%d", MoneyBox._amount)
+  -- src/money.c:110
+  Window.printPx(RomText.plain("gText_TrainerCardMoney"), left * 8, top * 8)
+  -- src/money.c:86
+  local moneyStr = RomText.plain("gText_PokedollarVar1", { stringVars = { tostring(MoneyBox._amount) } })
   local mw = (FrlgFont.measure and FrlgFont.measure(moneyStr, { small = true })) or (6 * #moneyStr)
   -- pokefirered/src/money.c:87
   FrlgFont.draw(moneyStr, math.max(left * 8, (left + 8) * 8 - mw), top * 8 + 12,

@@ -2,6 +2,7 @@
 -- Kanto Town Map & Region Map Unit Test Suite
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("town_map")
 
 local failed = 0
 local function check(cond, msg)
@@ -13,77 +14,133 @@ local function check(cond, msg)
   end
 end
 
+local played = {}
+package.loaded["src.core.game3.audio"] = {
+  playSe = function(id) played[#played + 1] = id end,
+  stopSe = function() end,
+  playCry = function() end,
+  playSong = function() end,
+  stopAll = function() end,
+}
+
 local RegionExtract = require("src.import.gba.region_map_extract")
 local RegionMap = require("src.ui.game3.region_map")
+local Position = require("src.ui.game3.region_map_position")
 local ItemUse = require("src.core.game3.item_use")
 local Bag = require("src.core.game3.bag")
+local Dataset = require("src.core.game3.dataset")
+local DEFS = Dataset.buildMaps()
+require("src.core.game3.runtime")._game = { data = { maps = DEFS } }
 
-print("=== [TEST 1] Kanto Map Section Grid Resolution ===")
+local IDLE = { wasPressed = function() return false end, isDown = function() return false end }
+local function frame(input) RegionMap.handleInput(input or IDLE) end
+local function settle()
+  for _ = 1, 400 do
+    if RegionMap.inputReady() then return true end
+    frame()
+  end
+  return false
+end
+local function press(btn, frames)
+  frame({ wasPressed = function(_, k) return k == btn end, isDown = function(_, k) return k == btn end })
+  for _ = 1, frames or 5 do frame() end
+end
+local function runUntil(cond)
+  for _ = 1, 400 do
+    if cond() then return true end
+    frame()
+  end
+  return cond()
+end
+
+local function cell(session)
+  RegionExtract.ensureGenerated()
+  session.def = function(id) return assert(DEFS[id], id) end
+  return Position.playerCell(session, RegionExtract.GEOMETRY)
+end
+
+print("=== [TEST 1] GetPlayerPositionOnRegionMap ===")
 do
-  -- 1. Pallet Town (x=4, y=11)
-  local locPallet = RegionExtract.resolveLocation("PALLET_TOWN", nil)
-  check(locPallet.x == 4 and locPallet.y == 11, "Pallet Town resolved to (4, 11)")
-  check(locPallet.name == "PALLET TOWN", "Pallet Town name verified")
-
-  -- 2. Viridian City (x=4, y=8)
-  local locViridian = RegionExtract.resolveLocation("VIRIDIAN_CITY", nil)
-  check(locViridian.x == 4 and locViridian.y == 8, "Viridian City resolved to (4, 8)")
-  check(locViridian.name == "VIRIDIAN CITY", "Viridian City name verified")
-
-  -- 3. Pewter City (x=4, y=4)
-  local locPewter = RegionExtract.resolveLocation("PEWTER_CITY", nil)
-  check(locPewter.x == 4 and locPewter.y == 4, "Pewter City resolved to (4, 4)")
-
-  -- 4. Cerulean City (x=14, y=3)
-  local locCerulean = RegionExtract.resolveLocation("CERULEAN_CITY", nil)
-  check(locCerulean.x == 14 and locCerulean.y == 3, "Cerulean City resolved to (14, 3)")
-
-  -- 5. Sub-location / Building (Red's House -> Pallet Town coords)
-  local locHouse = RegionExtract.resolveLocation("REDS_HOUSE_1F", nil)
-  check(locHouse.x == 4 and locHouse.y == 11, "Red's House maps to Pallet Town coordinates")
-
-  -- 6. Dungeon (Viridian Forest -> 4, 6)
-  local locForest = RegionExtract.resolveLocation("VIRIDIAN_FOREST", "MAPSEC_VIRIDIAN_FOREST")
-  check(locForest.x == 4 and locForest.y == 6, "Viridian Forest maps to (4, 6)")
-  check(locForest.name == "VIRIDIAN FOREST", "Viridian Forest name verified")
+  -- src/region_map.c:3096
+  local x, y = cell({ map = "FR_PALLET_TOWN", x = 10, y = 8 })
+  check(x == 4 and y == 11, "Pallet Town resolves to (4, 11)")
+  x, y = cell({ map = "FR_VIRIDIAN_CITY", x = 20, y = 20 })
+  check(x == 4 and y == 8, "Viridian City resolves to (4, 8)")
+  x, y = cell({ map = "FR_PEWTER_CITY", x = 20, y = 20 })
+  check(x == 4 and y == 4, "Pewter City resolves to (4, 4)")
+  x, y = cell({ map = "FR_CERULEAN_CITY", x = 20, y = 20 })
+  check(x == 14 and y == 3, "Cerulean City resolves to (14, 3)")
+  -- src/region_map.c:3138
+  x, y = cell({ map = "FR_PLAYERS_HOUSE_1F", x = 3, y = 3, escapeWarp = { map = "FR_PALLET_TOWN", x = 6, y = 8 } })
+  check(x == 4 and y == 11, "the player's house resolves through the escape warp to Pallet Town")
+  -- src/region_map.c:3271
+  x, y = cell({ map = "FR_VIRIDIAN_FOREST", x = 30, y = 30 })
+  check(x == 4 and y == 6, "Viridian Forest uses its override (4, 6)")
+  -- src/region_map.c:3291-3301
+  x, y = cell({ map = "FR_ROUTE_21_NORTH", x = 5, y = 5 })
+  check(x == 4 and y == 12, "Route 21 North uses its override (4, 12)")
+  -- src/region_map.c:3158-3171
+  local tx, ty = cell({ map = "FR_ROUTE_1", x = 10, y = 0 })
+  local bx, by = cell({ map = "FR_ROUTE_1", x = 10, y = 39 })
+  check(tx == bx and ty < by, "Route 1 scales the player's y into its section")
+  local secTop = RegionExtract.LAYOUTS[0].map[ty][tx]
+  local secBottom = RegionExtract.LAYOUTS[0].map[by][bx]
+  check(secTop == secBottom and RegionExtract.KANTO_GRID[ty][tx] == "MAPSEC_ROUTE_1", "both ends stay on ROUTE 1")
+  -- src/region_map.c:3121
+  x, y = cell({ map = "FR_MT_MOON_1F", x = 10, y = 10, escapeWarp = { map = "FR_ROUTE_4", x = 19, y = 5 } })
+  check(RegionExtract.KANTO_GRID[y][x] == "MAPSEC_ROUTE_4", "Mt. Moon places the player on ROUTE 4 through the escape warp")
+  -- src/region_map.c:1030-1049
+  check(Position.regionFor(DEFS.FR_FOUR_ISLAND.regionMapSectionId, RegionExtract.LAYOUTS) == 2,
+    "Four Island belongs to the SEVII 4-5 map")
+  check(Position.regionFor(DEFS.SEVII_ONE_ISLAND.regionMapSectionId, RegionExtract.LAYOUTS) == 1,
+    "One Island belongs to the SEVII 1-2-3 map")
+  check(Position.regionFor(DEFS.FR_SEVEN_ISLAND.regionMapSectionId, RegionExtract.LAYOUTS) == 3,
+    "Seven Island belongs to the SEVII 6-7 map")
+  check(Position.regionFor(DEFS.FR_PALLET_TOWN.regionMapSectionId, RegionExtract.LAYOUTS) == 0,
+    "Pallet Town belongs to Kanto")
 end
 
 print("=== [TEST 2] RegionMap Interactive Cursor Navigation & Landmark Updates ===")
 do
   local closed = false
-  local session = { map = "PALLET_TOWN", gender = 0 }
+  local session = { map = "FR_PALLET_TOWN", x = 10, y = 8, gender = 0 }
   RegionMap.show({
     session = session,
     onClose = function() closed = true end,
   })
 
   check(RegionMap.isOpen() == true, "RegionMap is open")
+  check(settle(), "the open animation reaches the input state")
   check(RegionMap.playerX == 4 and RegionMap.playerY == 11, "player location initialized at Pallet Town (4, 11)")
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 11, "cursor location initialized at (4, 11)")
   check(RegionMap.currentLocationName() == "PALLET TOWN", "initial landmark name is PALLET TOWN")
 
-  local function press(btn)
-    local inp = {
-      wasPressed = function(_, k) return k == btn end,
-      isDown = function() return false end,
-    }
-    RegionMap.handleInput(inp)
-  end
-
-  -- Move UP: (4, 11) -> (4, 10) (Route 1)
-  press("up")
+  -- src/region_map.c:2754 HandleRegionMapInput, :2836 MoveMapCursor
+  frame({ wasPressed = function() return false end, isDown = function(_, k) return k == "up" end })
+  check(RegionMap.cursorY == 11, "a held direction slides the cursor before it moves a cell")
+  for _ = 1, 3 do frame() end
+  check(RegionMap.cursorY == 11, "the slide takes four frames")
+  played = {}
+  frame()
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 10, "cursor moved UP to (4, 10)")
   check(RegionMap.currentLocationName() == "ROUTE 1", "landmark name updated to ROUTE 1")
+  check(#played == 0, "a route plays no scroll sound")
 
-  -- Move UP twice: (4, 10) -> (4, 9) -> (4, 8) (Viridian City)
   press("up")
+  played = {}
   press("up")
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 8, "cursor moved UP to (4, 8)")
   check(RegionMap.currentLocationName() == "VIRIDIAN CITY", "landmark name updated to VIRIDIAN CITY")
+  -- src/region_map.c:1174
+  check(played[1] == 101, "a town plays SE_DEX_SCROLL")
 
-  -- Press B to close
+  frame({ wasPressed = function(_, k) return k == "up" or k == "right" end,
+    isDown = function(_, k) return k == "up" or k == "right" end })
+  for _ = 1, 4 do frame() end
+  check(RegionMap.cursorX == 5 and RegionMap.cursorY == 7, "a diagonal hold moves both axes at once")
+
   press("b")
-  check(RegionMap.isOpen() == false, "RegionMap closed on B button")
+  check(runUntil(function() return not RegionMap.isOpen() end), "B runs the close animation and fade")
   check(closed == true, "onClose callback executed")
 end
 
@@ -91,72 +148,70 @@ print("=== [TEST 3] Inventory TOWN_MAP Item Use Integration ===")
 do
   local bag = Bag.new()
   Bag.add(bag, 361, 1) -- Town Map
-  local session = { map = "CELADON_CITY", bag = bag }
+  local session = { map = "FR_CELADON_CITY", x = 30, y = 20, bag = bag }
 
-  local ok, reason, msg = ItemUse.useField(session, bag, 361, nil)
+  local ok, reason = ItemUse.useField(session, bag, 361, nil)
   check(ok == true, "ItemUse.useField accepts TOWN_MAP (item 361)")
   check(reason == "map", "useField returns 'map' reason")
   check(RegionMap.isOpen() == true, "RegionMap opened via ItemUse")
+  settle()
   check(RegionMap.playerX == 11 and RegionMap.playerY == 6, "player position placed at Celadon City (11, 6)")
   check(RegionMap.currentLocationName() == "CELADON CITY", "Celadon City landmark active")
-  RegionMap.close()
-  check(RegionMap.isOpen() == false, "RegionMap closed cleanly")
+  -- src/region_map.c:2819
+  check(RegionMap.state().fromField == true, "no BAG is open, so this is the field Town Map")
+  press("select")
+  check(runUntil(function() return not RegionMap.isOpen() end), "SELECT closes the field Town Map")
 end
 
 print("=== [TEST 4] Start Snapping & Dungeon Guide Modal ===")
 do
-  local session = { map = "VIRIDIAN_CITY", gender = 0 }
+  local session = { map = "FR_VIRIDIAN_CITY", x = 20, y = 20, gender = 0 }
   RegionMap.show({ session = session })
-
-  local function press(btn)
-    local inp = {
-      wasPressed = function(_, k) return k == btn end,
-      isDown = function() return false end,
-    }
-    RegionMap.handleInput(inp)
-  end
+  settle()
 
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 8, "cursor at Viridian City (4, 8)")
 
-  -- Press START: Snaps to Cancel Button (21, 13)
   press("start")
   check(RegionMap.cursorX == 21 and RegionMap.cursorY == 13, "START snapped to Cancel button (21, 13)")
+  local _, right = RegionMap.topBarText()
+  check(right == "gText_RegionMap_AButtonCancel", "the top bar offers A CANCEL")
 
-  -- Press START again: Snaps back to Player Icon (4, 8)
   press("start")
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 8, "START snapped back to Player Icon (4, 8)")
 
-  -- Move UP to (4, 6) (Viridian Forest dungeon)
   press("up")
   press("up")
   check(RegionMap.cursorX == 4 and RegionMap.cursorY == 6, "cursor at Viridian Forest (4, 6)")
   check(RegionMap.currentDungeonName() == "VIRIDIAN FOREST", "current dungeon is VIRIDIAN FOREST")
+  check(RegionMap.state().text.dungeonType == RegionMap.MAPSECTYPE.NOT_VISITED,
+    "the unvisited dungeon name uses the red text colour")
 
-  -- pokefirered/src/region_map.c:1266
   press("a")
   check(RegionMap.previewDungeon == nil, "A on an unvisited dungeon opens no preview")
   check(RegionMap.isOpen() == true, "RegionMap stays open after the refused GUIDE")
-  check(RegionMap.selectedDungeonMapsecType() == RegionMap.MAPSECTYPE.NOT_VISITED,
-        "Viridian Forest is NOT_VISITED on a fresh save")
   check(RegionMap.canGuideCursor() == false, "GUIDE is refused on a dungeon that has not been visited")
 
   -- pokefirered/data/maps/ViridianForest/scripts.inc:6
   session.flags = session.flags or {}
   session.flags["FLAG_WORLD_MAP_VIRIDIAN_FOREST"] = true
-  check(RegionMap.selectedDungeonMapsecType() == RegionMap.MAPSECTYPE.VISITED,
-        "Viridian Forest is VISITED once the world map flag is set")
   check(RegionMap.canGuideCursor() == true, "GUIDE is offered on a visited dungeon")
 
-  press("a")
+  played = {}
+  press("a", 0)
   check(RegionMap.previewDungeon == "MAPSEC_VIRIDIAN_FOREST", "Dungeon Preview Modal opened for Viridian Forest")
-
-  -- Press B on modal: Closes Dungeon Preview Modal
+  -- src/region_map.c:2021-2030
+  press("b", 20)
+  check(RegionMap.previewDungeon == "MAPSEC_VIRIDIAN_FOREST", "B is ignored until the flavour text is printed")
+  check(runUntil(function() local s = RegionMap.state() return s.preview and s.preview.text ~= nil end),
+    "the GUIDE prints its text")
   press("b")
-  check(RegionMap.previewDungeon == nil, "Dungeon Preview Modal closed on B")
+  check(runUntil(function() return RegionMap.previewDungeon == nil end), "B shrinks and closes the GUIDE")
+  check(#played == 0, "the GUIDE plays no sound effects")
   check(RegionMap.isOpen() == true, "RegionMap still open after closing modal")
+  settle()
 
-  -- Press B on map: Closes RegionMap
   press("b")
+  runUntil(function() return not RegionMap.isOpen() end)
   check(RegionMap.isOpen() == false, "RegionMap closed on B")
 end
 
@@ -172,7 +227,9 @@ do
   check(collScript == "EventScript_WallTownMap", "COLL_TOWN_MAP (0x95) maps to EventScript_WallTownMap")
 
   local Adapters = require("src.core.game3.scripting.adapters")
-  local hostAdapters = Adapters.host(nil, { session = { map = "VIRIDIAN_CITY" } }, nil)
+  local session = { map = "FR_VIRIDIAN_CITY", x = 20, y = 20 }
+  package.loaded["src.core.game3.runtime"].getSession = function() return session end
+  local hostAdapters = Adapters.host(nil, { session = session }, nil)
   local mapOpened = false
   hostAdapters.showTownMap(function()
     mapOpened = true
@@ -183,66 +240,18 @@ do
   check(mapOpened == true, "showTownMap callback was executed")
 end
 
-print("=== [TEST 6] RegionMapExtract ROM Extraction & CacheFS Assets Validation ===")
+print("=== [TEST 6] The Sevii maps (#2430) ===")
 do
-  local Rom = require("src.import.gba.rom")
-  local FileIO = require("src.import.gba.file_io")
-
-  local romPath = "1636 - Pokemon Fire Red (U)(Squirrels).gba"
-  local f = io.open(romPath, "rb")
-  if f then
-    f:close()
-    local imports = FileIO.makeImports(romPath, "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc", "firered")
-    local rom = Rom.open(imports, "firered")
-    check(rom ~= nil, "FireRed ROM opened")
-
-    local mockCache = {
-      files = {},
-      write = function(self, path, data)
-        self.files[path] = data
-        return true
-      end,
-      read = function(self, path)
-        return self.files[path]
-      end,
-      exists = function(self, path)
-        return self.files[path] ~= nil
-      end,
-    }
-
-    local detail = RegionExtract.run(rom, mockCache, { cacheRoot = "data/generated/gba" })
-    check(detail.ok == true, "RegionMapExtract.run returned ok")
-    -- src/region_map.c:424
-    check(detail.count == 10, "Extracted 10 region map chrome assets")
-
-    local kantoRgba = mockCache:read("data/generated/gba/region_map/kanto_map.rgba")
-    check(kantoRgba ~= nil and #kantoRgba == 240 * 160 * 4, "kanto_map.rgba has exact 240x160x4 dimensions (153600 bytes)")
-
-    local kantoPng = mockCache:read("data/generated/gba/region_map/kanto_map.png")
-    check(kantoPng ~= nil and #kantoPng > 0, "kanto_map.png emitted")
-
-    local curRgba = mockCache:read("data/generated/gba/region_map/cursor.rgba")
-    check(curRgba ~= nil and #curRgba == 16 * 16 * 4, "cursor.rgba has exact 16x16x4 dimensions")
-
-    local dungRgba = mockCache:read("data/generated/gba/region_map/dungeon_icon.rgba")
-    check(dungRgba ~= nil and #dungRgba == 8 * 8 * 4, "dungeon_icon.rgba has exact 8x8x4 dimensions")
-
-    local redRgba = mockCache:read("data/generated/gba/region_map/player_red.rgba")
-    check(redRgba ~= nil and #redRgba == 16 * 16 * 4, "player_red.rgba has exact 16x16x4 dimensions")
-
-    local leafRgba = mockCache:read("data/generated/gba/region_map/player_leaf.rgba")
-    check(leafRgba ~= nil and #leafRgba == 16 * 16 * 4, "player_leaf.rgba has exact 16x16x4 dimensions")
-
-    local sevii123Rgba = mockCache:read("data/generated/gba/region_map/sevii123_map.rgba")
-    check(sevii123Rgba ~= nil and #sevii123Rgba == 240 * 160 * 4, "sevii123_map.rgba has exact 240x160x4 dimensions")
-
-    local ready = RegionExtract.ready(mockCache, "data/generated/gba")
-    check(ready == true, "RegionMapExtract.ready reports true on extracted cache")
-
-    rom:clearCache()
-    imports:_close()
-  else
-    print("[skip] FireRed ROM not found for extraction test")
+  RegionMap.show({ session = { map = "FR_FOUR_ISLAND", x = 12, y = 14 } })
+  settle()
+  check(RegionMap.state().selectedRegion == 2, "the Town Map on Four Island shows SEVII 4-5")
+  check(RegionMap.currentLocationName() == "FOUR ISLAND", "and the cursor starts on FOUR ISLAND")
+  RegionMap.close()
+  for _, m in ipairs({ "FR_FOUR_ISLAND_POKEMON_CENTER_1F", "FR_FOUR_ISLAND_ICEFALL_CAVE_ENTRANCE", "FR_FOUR_ISLAND_ICEFALL_CAVE_BACK" }) do
+    RegionMap.show({ session = { map = m, x = 5, y = 5 } })
+    settle()
+    check(RegionMap.state().selectedRegion == 2, m .. " opens SEVII 4-5")
+    RegionMap.close()
   end
 end
 

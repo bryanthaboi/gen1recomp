@@ -1,7 +1,6 @@
 #!/usr/bin/env luajit
 -- FrlgFont maps every Latin letter the FireRed ROM font draws to its
--- charmap glyph, not only the ones US text prints, and leaves the ROM
--- decode table (TextIR.CHARMAP) untouched.
+-- charmap glyph, not only the ones US text prints.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
@@ -45,7 +44,8 @@ check(listed == count, ("LATIN_GLYPHS lists exactly the %d expected glyphs (got 
 
 local unique = {}
 for code, ch in pairs(LATIN) do
-  check(TextIR.CHARMAP[code] == nil, ("0x%02X is not a US decode byte"):format(code))
+  check(TextIR.CHARMAP[code] == nil or TextIR.CHARMAP[code] == ch,
+    ("0x%02X decodes to the glyph it draws"):format(code))
   check(code < 0xF7 and code ~= 0x53 and code ~= 0x54,
     ("0x%02X is not a control or ligature byte"):format(code))
   check(not unique[ch], ch .. " is listed once")

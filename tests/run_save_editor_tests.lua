@@ -1622,5 +1622,13 @@ do
   love.window.getSafeArea = oldSafe
 end
 
+do
+  local interp = arg and arg[-1] or "luajit"
+  for _, suite in ipairs({ "tests/save_editor_gen3_tests.lua", "tests/save_editor_gen3_persistence_tests.lua" }) do
+    local r = os.execute(interp .. " " .. suite)
+    check(r == true or r == 0, suite .. " passes")
+  end
+end
+
 print(string.format("save editor tests: %d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

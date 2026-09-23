@@ -1,22 +1,39 @@
--- Bake Kanto Region Map background, cursor, and map section grid from ROM / pret assets.
--- Outputs to data/generated/gba/region_map/:
---   kanto_map.rgba (240x160)
---   cursor.rgba (16x16)
---   player_red.rgba (16x16), player_leaf.rgba (16x16)
---   map_sections.lua
+-- src/region_map.c:393-427
 
 local RegionMapExtract = {}
 
 RegionMapExtract.CACHE_SUB = "region_map"
-RegionMapExtract.FORMAT_VERSION = 1
+RegionMapExtract.FORMAT_VERSION = 2
 
 RegionMapExtract.FILES = {
   "kanto_map.png",
+  "sevii123_map.png",
+  "sevii45_map.png",
+  "sevii67_map.png",
+  "switch_button.png",
+  "navel_rock_patch.png",
+  "birth_island_patch.png",
+  "frame_normal.png",
+  "frame_fly.png",
+  "switch_menu_123.png",
+  "switch_menu_all.png",
+  "switch_cursor_left.png",
+  "switch_cursor_right.png",
+  "edge_top_left.png",
+  "edge_top_right.png",
+  "edge_mid_left.png",
+  "edge_mid_right.png",
+  "edge_bottom_left.png",
+  "edge_bottom_right.png",
   "cursor.png",
+  "fly_icon.png",
   "dungeon_icon.png",
   "dungeon_icon_visited.png",
   "player_red.png",
   "player_leaf.png",
+  "layouts.lua",
+  "section_geometry.lua",
+  "manifest.lua",
 }
 
 local function default_cache_root()
@@ -37,293 +54,86 @@ local function bgr555_to_rgb8(c)
     math.floor(b5 * 255 / 31 + 0.5)
 end
 
--- Kanto 22x15 layout from pokefirered/src/data/region_map/region_map_layout_kanto.h
+-- src/region_map.c:3354-3369
 RegionMapExtract.MAP_WIDTH = 22
 RegionMapExtract.MAP_HEIGHT = 15
+RegionMapExtract.MAPSEC_NONE = 197
+RegionMapExtract.REGIONS = { "kanto", "sevii123", "sevii45", "sevii67" }
 
--- Fallback-only text.  The authoritative section names and area descriptions
--- are read from the ROM by src/import/gba/map_preview_extract.lua; these tables
--- keep the module usable when no ROM was imported (ROM-free CI, unit tests).
--- See RegionMapExtract.ensureGenerated.
-RegionMapExtract.FALLBACK_SECTION_NAMES = {
-  MAPSEC_PALLET_TOWN = "PALLET TOWN",
-  MAPSEC_VIRIDIAN_CITY = "VIRIDIAN CITY",
-  MAPSEC_PEWTER_CITY = "PEWTER CITY",
-  MAPSEC_CERULEAN_CITY = "CERULEAN CITY",
-  MAPSEC_LAVENDER_TOWN = "LAVENDER TOWN",
-  MAPSEC_VERMILION_CITY = "VERMILION CITY",
-  MAPSEC_CELADON_CITY = "CELADON CITY",
-  MAPSEC_FUCHSIA_CITY = "FUCHSIA CITY",
-  MAPSEC_CINNABAR_ISLAND = "CINNABAR ISLAND",
-  MAPSEC_INDIGO_PLATEAU = "INDIGO PLATEAU",
-  MAPSEC_SAFFRON_CITY = "SAFFRON CITY",
-  MAPSEC_ROUTE_4_POKECENTER = "ROUTE 4",
-  MAPSEC_ROUTE_10_POKECENTER = "ROUTE 10",
-  MAPSEC_ROUTE_1 = "ROUTE 1",
-  MAPSEC_ROUTE_2 = "ROUTE 2",
-  MAPSEC_ROUTE_3 = "ROUTE 3",
-  MAPSEC_ROUTE_4 = "ROUTE 4",
-  MAPSEC_ROUTE_5 = "ROUTE 5",
-  MAPSEC_ROUTE_6 = "ROUTE 6",
-  MAPSEC_ROUTE_7 = "ROUTE 7",
-  MAPSEC_ROUTE_8 = "ROUTE 8",
-  MAPSEC_ROUTE_9 = "ROUTE 9",
-  MAPSEC_ROUTE_10 = "ROUTE 10",
-  MAPSEC_ROUTE_11 = "ROUTE 11",
-  MAPSEC_ROUTE_12 = "ROUTE 12",
-  MAPSEC_ROUTE_13 = "ROUTE 13",
-  MAPSEC_ROUTE_14 = "ROUTE 14",
-  MAPSEC_ROUTE_15 = "ROUTE 15",
-  MAPSEC_ROUTE_16 = "ROUTE 16",
-  MAPSEC_ROUTE_17 = "ROUTE 17",
-  MAPSEC_ROUTE_18 = "ROUTE 18",
-  MAPSEC_ROUTE_19 = "ROUTE 19",
-  MAPSEC_ROUTE_20 = "ROUTE 20",
-  MAPSEC_ROUTE_21 = "ROUTE 21",
-  MAPSEC_ROUTE_22 = "ROUTE 22",
-  MAPSEC_ROUTE_23 = "ROUTE 23",
-  MAPSEC_ROUTE_24 = "ROUTE 24",
-  MAPSEC_ROUTE_25 = "ROUTE 25",
-  MAPSEC_VIRIDIAN_FOREST = "VIRIDIAN FOREST",
-  MAPSEC_MT_MOON = "MT. MOON",
-  MAPSEC_S_S_ANNE = "S.S. ANNE",
-  MAPSEC_UNDERGROUND_PATH = "UNDERGROUND PATH",
-  MAPSEC_UNDERGROUND_PATH_2 = "UNDERGROUND PATH",
-  MAPSEC_DIGLETTS_CAVE = "DIGLETT'S CAVE",
-  MAPSEC_KANTO_VICTORY_ROAD = "VICTORY ROAD",
-  MAPSEC_ROCKET_HIDEOUT = "ROCKET HIDEOUT",
-  MAPSEC_SILPH_CO = "SILPH CO.",
-  MAPSEC_POKEMON_MANSION = "POKéMON MANSION",
-  MAPSEC_KANTO_SAFARI_ZONE = "SAFARI ZONE",
-  MAPSEC_POKEMON_TOWER = "POKéMON TOWER",
-  MAPSEC_CERULEAN_CAVE = "CERULEAN CAVE",
-  MAPSEC_POWER_PLANT = "POWER PLANT",
-  MAPSEC_SEAFOAM_ISLANDS = "SEAFOAM ISLANDS",
-  MAPSEC_ROCK_TUNNEL = "ROCK TUNNEL",
-}
-
--- [y][x] 0-indexed layout (15 rows, 22 cols)
-RegionMapExtract.KANTO_GRID = {
-  [0] = { [0]=nil },
-  [1] = { [14]="MAPSEC_ROUTE_24", [15]="MAPSEC_ROUTE_25", [16]="MAPSEC_ROUTE_25" },
-  [2] = { [14]="MAPSEC_ROUTE_24" },
-  [3] = { [2]="MAPSEC_INDIGO_PLATEAU", [8]="MAPSEC_ROUTE_4_POKECENTER", [9]="MAPSEC_ROUTE_4", [10]="MAPSEC_ROUTE_4", [11]="MAPSEC_ROUTE_4", [12]="MAPSEC_ROUTE_4", [13]="MAPSEC_ROUTE_4", [14]="MAPSEC_CERULEAN_CITY", [15]="MAPSEC_ROUTE_9", [16]="MAPSEC_ROUTE_9", [17]="MAPSEC_ROUTE_9", [18]="MAPSEC_ROUTE_10_POKECENTER" },
-  [4] = { [2]="MAPSEC_ROUTE_23", [4]="MAPSEC_PEWTER_CITY", [5]="MAPSEC_ROUTE_3", [6]="MAPSEC_ROUTE_3", [7]="MAPSEC_ROUTE_3", [8]="MAPSEC_ROUTE_3", [14]="MAPSEC_ROUTE_5", [18]="MAPSEC_ROUTE_10" },
-  [5] = { [2]="MAPSEC_ROUTE_23", [4]="MAPSEC_ROUTE_2", [14]="MAPSEC_ROUTE_5", [18]="MAPSEC_ROUTE_10" },
-  [6] = { [2]="MAPSEC_ROUTE_23", [4]="MAPSEC_ROUTE_2", [7]="MAPSEC_ROUTE_16", [8]="MAPSEC_ROUTE_16", [9]="MAPSEC_ROUTE_16", [10]="MAPSEC_ROUTE_16", [11]="MAPSEC_CELADON_CITY", [12]="MAPSEC_ROUTE_7", [13]="MAPSEC_ROUTE_7", [14]="MAPSEC_SAFFRON_CITY", [15]="MAPSEC_ROUTE_8", [16]="MAPSEC_ROUTE_8", [17]="MAPSEC_ROUTE_8", [18]="MAPSEC_LAVENDER_TOWN" },
-  [7] = { [2]="MAPSEC_ROUTE_23", [4]="MAPSEC_ROUTE_2", [7]="MAPSEC_ROUTE_17", [14]="MAPSEC_ROUTE_6", [18]="MAPSEC_ROUTE_12" },
-  [8] = { [2]="MAPSEC_ROUTE_22", [3]="MAPSEC_ROUTE_22", [4]="MAPSEC_VIRIDIAN_CITY", [7]="MAPSEC_ROUTE_17", [14]="MAPSEC_ROUTE_6", [18]="MAPSEC_ROUTE_12" },
-  [9] = { [4]="MAPSEC_ROUTE_1", [7]="MAPSEC_ROUTE_17", [14]="MAPSEC_VERMILION_CITY", [15]="MAPSEC_ROUTE_11", [16]="MAPSEC_ROUTE_11", [17]="MAPSEC_ROUTE_11", [18]="MAPSEC_ROUTE_12" },
-  [10] = { [4]="MAPSEC_ROUTE_1", [7]="MAPSEC_ROUTE_17", [18]="MAPSEC_ROUTE_12" },
-  [11] = { [4]="MAPSEC_PALLET_TOWN", [7]="MAPSEC_ROUTE_17", [15]="MAPSEC_ROUTE_14", [16]="MAPSEC_ROUTE_13", [17]="MAPSEC_ROUTE_13", [18]="MAPSEC_ROUTE_12" },
-  [12] = { [4]="MAPSEC_ROUTE_21", [7]="MAPSEC_ROUTE_18", [8]="MAPSEC_ROUTE_18", [9]="MAPSEC_ROUTE_18", [10]="MAPSEC_ROUTE_18", [11]="MAPSEC_ROUTE_18", [12]="MAPSEC_FUCHSIA_CITY", [13]="MAPSEC_ROUTE_15", [14]="MAPSEC_ROUTE_15", [15]="MAPSEC_ROUTE_14" },
-  [13] = { [4]="MAPSEC_ROUTE_21", [12]="MAPSEC_ROUTE_19" },
-  [14] = { [4]="MAPSEC_CINNABAR_ISLAND", [5]="MAPSEC_ROUTE_20", [6]="MAPSEC_ROUTE_20", [7]="MAPSEC_ROUTE_20", [8]="MAPSEC_ROUTE_20", [9]="MAPSEC_ROUTE_20", [10]="MAPSEC_ROUTE_20", [11]="MAPSEC_ROUTE_20", [12]="MAPSEC_ROUTE_19" },
-}
-
--- Dungeon layer [y][x] 0-indexed layout from pokefirered LAYER_DUNGEON
-RegionMapExtract.DUNGEON_GRID = {
-  [3] = { [9] = "MAPSEC_MT_MOON", [14] = "MAPSEC_CERULEAN_CAVE", [18] = "MAPSEC_ROCK_TUNNEL" },
-  [4] = { [2] = "MAPSEC_KANTO_VICTORY_ROAD", [18] = "MAPSEC_POWER_PLANT" },
-  [5] = { [4] = "MAPSEC_DIGLETTS_CAVE" },
-  [6] = { [4] = "MAPSEC_VIRIDIAN_FOREST", [18] = "MAPSEC_POKEMON_TOWER" },
-  [9] = { [15] = "MAPSEC_DIGLETTS_CAVE" },
-  [12] = { [12] = "MAPSEC_KANTO_SAFARI_ZONE" },
-  [14] = { [4] = "MAPSEC_POKEMON_MANSION", [8] = "MAPSEC_SEAFOAM_ISLANDS" },
-}
-
--- Authentic FRLG Area Descriptions (pokefirered/src/strings.c gText_RegionMap_AreaDesc_*)
-RegionMapExtract.FALLBACK_DUNGEON_DESCRIPTIONS = {
-  MAPSEC_VIRIDIAN_FOREST = "A deep and sprawling forest that extends around VIRIDIAN CITY. A natural maze, many people become lost inside.",
-  MAPSEC_MT_MOON = "A mystical mountain that is known for its frequent meteor falls. The shards of stars that fall here are known as MOON STONES.",
-  MAPSEC_DIGLETTS_CAVE = "A seemingly plain tunnel that was dug by wild DIGLETT. It is famous for connecting ROUTES 2 and 11.",
-  MAPSEC_KANTO_VICTORY_ROAD = "A tunnel situated on ROUTE 23. It earned its name because it must be traveled by all TRAINERS aiming for the top.",
-  MAPSEC_POKEMON_MANSION = "A decrepit, burned-down mansion on CINNABAR ISLAND. It got its name because a famous POKéMON researcher lived there.",
-  MAPSEC_KANTO_SAFARI_ZONE = "An amusement park outside FUCHSIA CITY where many rare POKéMON can be observed in the wild. Catch them in a popular game!",
-  MAPSEC_ROCK_TUNNEL = "A naturally formed underground tunnel. Because it has not been developed, it is inky dark inside. A light is needed to get through.",
-  MAPSEC_SEAFOAM_ISLANDS = "A pair of islands that is situated on ROUTE 20. The two islands are shaped the same, as if they were twins.",
-  MAPSEC_POKEMON_TOWER = "A tower that houses the graves of countless POKéMON. Many people visit it daily to pay their respects to the fallen.",
-  MAPSEC_CERULEAN_CAVE = "A mysterious cave that is filled with terribly tough POKéMON. It is so dangerous, the POKéMON LEAGUE is in charge of it.",
-  MAPSEC_POWER_PLANT = "A power plant that was abandoned years ago, though some of the machines still work. It is infested with electric POKéMON.",
-}
-
--- Effective tables the UI reads.  Seeded from the fallbacks and overlaid with
--- ROM-derived text by ensureGenerated.
-local function copyTable(src)
-  local out = {}
-  for k, v in pairs(src) do out[k] = v end
-  return out
-end
-
-RegionMapExtract.SECTION_NAMES = copyTable(RegionMapExtract.FALLBACK_SECTION_NAMES)
-RegionMapExtract.DUNGEON_DESCRIPTIONS = copyTable(RegionMapExtract.FALLBACK_DUNGEON_DESCRIPTIONS)
+RegionMapExtract.SECTION_NAMES = {}
+RegionMapExtract.DUNGEON_DESCRIPTIONS = {}
+RegionMapExtract.KANTO_GRID = {}
+RegionMapExtract.DUNGEON_GRID = {}
+RegionMapExtract.LAYOUTS = nil
+RegionMapExtract.GEOMETRY = nil
 
 local generatedLoaded = false
-local generatedOk = false
 
---- Overlay ROM-derived names/descriptions onto the effective tables.
--- `names` is keyed by numeric mapsec (88..196) and `dungeonInfo` by the same,
--- so both are bridged to the symbolic MAPSEC_* keys the UI uses via `sections`
--- (map_sections_extract.SECTIONS).  Returns the number of sections updated.
 function RegionMapExtract.applyGeneratedText(names, dungeonInfo, sections)
-  if not sections then return 0 end
   local updated = 0
-  if names then
-    for secId, name in pairs(names) do
-      local info = sections[secId]
-      if info and info.id and name and name ~= "" then
-        RegionMapExtract.SECTION_NAMES[info.id] = name
-        updated = updated + 1
-      end
-    end
+  for secId, name in pairs(names) do
+    local info = assert(sections[secId], "no map section " .. tostring(secId))
+    RegionMapExtract.SECTION_NAMES[info.id] = name
+    updated = updated + 1
   end
-  if dungeonInfo then
-    for secId, entry in pairs(dungeonInfo) do
-      local info = sections[secId]
-      if info and info.id and entry then
-        if entry.name and entry.name ~= "" then
-          RegionMapExtract.SECTION_NAMES[info.id] = entry.name
-        end
-        if entry.desc and entry.desc ~= "" then
-          RegionMapExtract.DUNGEON_DESCRIPTIONS[info.id] = entry.desc
-        end
-        updated = updated + 1
-      end
+  for secId, entry in pairs(dungeonInfo) do
+    local info = sections[secId]
+    if info then
+      RegionMapExtract.SECTION_NAMES[info.id] = entry.name
+      RegionMapExtract.DUNGEON_DESCRIPTIONS[info.id] = entry.desc
+      updated = updated + 1
     end
   end
   return updated
 end
 
---- Load the generated region-map text from the cache and apply it, once.
--- Falls back silently to the hand-authored tables when the cache has no
--- generated text (ROM-free checkouts).  Returns true when ROM text was applied.
-function RegionMapExtract.ensureGenerated()
-  if generatedLoaded then return generatedOk end
-  generatedLoaded = true
-  generatedOk = pcall(function()
-    local CacheFs = require("src.import.CacheFs")
-    local MapPreviewExtract = require("src.import.gba.map_preview_extract")
-    local MapSectionsExtract = require("src.import.gba.map_sections_extract")
-    local names = MapPreviewExtract.loadNames(CacheFs)
-    local dungeonInfo = MapPreviewExtract.loadDungeonInfo(CacheFs)
-    if not names and not dungeonInfo then return end
-    RegionMapExtract.applyGeneratedText(names, dungeonInfo, MapSectionsExtract.SECTIONS)
-  end) and true or false
-  return generatedOk
+local function read_lua(cache, rel)
+  local src = assert(cache:read(rel), rel .. " is not in the cache")
+  return assert(load(src, "@" .. rel, "t", {}))()
 end
 
+function RegionMapExtract.loadLayouts(cache, cacheRoot)
+  local root = (cacheRoot or default_cache_root()) .. "/" .. RegionMapExtract.CACHE_SUB
+  return read_lua(cache, root .. "/layouts.lua")
+end
 
-RegionMapExtract.HOST_MAP_TO_GRID = {
-  PALLET_TOWN = { 4, 11 },
-  REDS_HOUSE_1F = { 4, 11 },
-  REDS_HOUSE_2F = { 4, 11 },
-  BLUES_HOUSE = { 4, 11 },
-  OAKS_LAB = { 4, 11 },
-  VIRIDIAN_CITY = { 4, 8 },
-  PEWTER_CITY = { 4, 4 },
-  CERULEAN_CITY = { 14, 3 },
-  LAVENDER_TOWN = { 18, 6 },
-  VERMILION_CITY = { 14, 9 },
-  CELADON_CITY = { 11, 6 },
-  FUCHSIA_CITY = { 12, 12 },
-  CINNABAR_ISLAND = { 4, 14 },
-  INDIGO_PLATEAU = { 2, 3 },
-  SAFFRON_CITY = { 14, 6 },
-  ROUTE_1 = { 4, 9 },
-  ROUTE_2 = { 4, 5 },
-  ROUTE_3 = { 6, 4 },
-  ROUTE_4 = { 11, 3 },
-  ROUTE_5 = { 14, 4 },
-  ROUTE_6 = { 14, 7 },
-  ROUTE_7 = { 12, 6 },
-  ROUTE_8 = { 16, 6 },
-  ROUTE_9 = { 16, 3 },
-  ROUTE_10 = { 18, 5 },
-  ROUTE_11 = { 16, 9 },
-  ROUTE_12 = { 18, 8 },
-  ROUTE_13 = { 17, 11 },
-  ROUTE_14 = { 15, 12 },
-  ROUTE_15 = { 13, 12 },
-  ROUTE_16 = { 9, 6 },
-  ROUTE_17 = { 7, 8 },
-  ROUTE_18 = { 9, 12 },
-  ROUTE_19 = { 12, 13 },
-  ROUTE_20 = { 8, 14 },
-  ROUTE_21 = { 4, 13 },
-  ROUTE_22 = { 3, 8 },
-  ROUTE_23 = { 2, 5 },
-  ROUTE_24 = { 14, 2 },
-  ROUTE_25 = { 15, 1 },
-  VIRIDIAN_FOREST = { 4, 6 },
-  MT_MOON = { 9, 3 },
-  ROCK_TUNNEL = { 18, 3 },
-  POWER_PLANT = { 18, 4 },
-  POKEMON_TOWER = { 18, 6 },
-  DIGLETTS_CAVE = { 4, 5 },
-  KANTO_VICTORY_ROAD = { 2, 4 },
-  POKEMON_MANSION = { 4, 14 },
-  KANTO_SAFARI_ZONE = { 12, 12 },
-  SEAFOAM_ISLANDS = { 8, 14 },
-  CERULEAN_CAVE = { 14, 3 },
-}
+function RegionMapExtract.loadGeometry(cache, cacheRoot)
+  local root = (cacheRoot or default_cache_root()) .. "/" .. RegionMapExtract.CACHE_SUB
+  return read_lua(cache, root .. "/section_geometry.lua")
+end
 
-function RegionMapExtract.resolveLocation(mapId, mapSec)
-  RegionMapExtract.ensureGenerated()
-  if mapSec and RegionMapExtract.SECTION_NAMES[mapSec] then
-    local name = RegionMapExtract.SECTION_NAMES[mapSec]
-    -- 1. Check DUNGEON_GRID first for dungeon mapsecs
-    for y = 0, RegionMapExtract.MAP_HEIGHT - 1 do
-      local dRow = RegionMapExtract.DUNGEON_GRID[y]
-      if dRow then
-        for x = 0, RegionMapExtract.MAP_WIDTH - 1 do
-          if dRow[x] == mapSec then
-            return { x = x, y = y, name = name, mapsec = mapSec }
-          end
-        end
+local function symbolic_grid(layer, sections)
+  local grid = {}
+  for y = 0, RegionMapExtract.MAP_HEIGHT - 1 do
+    local row = {}
+    for x = 0, RegionMapExtract.MAP_WIDTH - 1 do
+      local mapsec = layer[y][x]
+      if mapsec ~= RegionMapExtract.MAPSEC_NONE then
+        row[x] = assert(sections[mapsec], "no map section " .. mapsec).id
       end
     end
-    -- 2. Check overworld KANTO_GRID
-    for y = 0, RegionMapExtract.MAP_HEIGHT - 1 do
-      local row = RegionMapExtract.KANTO_GRID[y]
-      if row then
-        for x = 0, RegionMapExtract.MAP_WIDTH - 1 do
-          if row[x] == mapSec then
-            return { x = x, y = y, name = name, mapsec = mapSec }
-          end
-        end
-      end
-    end
+    grid[y] = row
   end
+  return grid
+end
 
-  if mapId then
-    local u = tostring(mapId):upper()
-    local g = RegionMapExtract.HOST_MAP_TO_GRID[u]
-    if g then
-      local dSec = RegionMapExtract.DUNGEON_GRID[g[2]] and RegionMapExtract.DUNGEON_GRID[g[2]][g[1]]
-      local oSec = RegionMapExtract.KANTO_GRID[g[2]] and RegionMapExtract.KANTO_GRID[g[2]][g[1]]
-      local sec = dSec or oSec
-      if RegionMapExtract.SECTION_NAMES["MAPSEC_" .. u] then
-        sec = "MAPSEC_" .. u
-      end
-      local name = sec and RegionMapExtract.SECTION_NAMES[sec] or u:gsub("_", " ")
-      return { x = g[1], y = g[2], name = name, mapsec = sec }
-    end
-    -- Sub-locations / Buildings lookup
-    for hostKey, grid in pairs(RegionMapExtract.HOST_MAP_TO_GRID) do
-      if u:find(hostKey, 1, true) then
-        local dSec = RegionMapExtract.DUNGEON_GRID[grid[2]] and RegionMapExtract.DUNGEON_GRID[grid[2]][grid[1]]
-        local oSec = RegionMapExtract.KANTO_GRID[grid[2]] and RegionMapExtract.KANTO_GRID[grid[2]][grid[1]]
-        local sec = dSec or oSec
-        if RegionMapExtract.SECTION_NAMES["MAPSEC_" .. hostKey] then
-          sec = "MAPSEC_" .. hostKey
-        end
-        local name = sec and RegionMapExtract.SECTION_NAMES[sec] or hostKey:gsub("_", " ")
-        return { x = grid[1], y = grid[2], name = name, mapsec = sec }
-      end
-    end
-  end
-
-  return { x = 4, y = 11, name = "PALLET TOWN", mapsec = "MAPSEC_PALLET_TOWN" }
+function RegionMapExtract.ensureGenerated()
+  if generatedLoaded then return true end
+  local cache = require("src.core.game3.dataset").cache()
+  local MapPreviewExtract = require("src.import.gba.map_preview_extract")
+  local MapSectionsExtract = require("src.import.gba.map_sections_extract")
+  local names = assert(MapPreviewExtract.loadNames(cache), "region_map/names.lua is not in the cache")
+  local dungeonInfo = assert(MapPreviewExtract.loadDungeonInfo(cache),
+    "region_map/dungeon_info.lua is not in the cache")
+  local sections = MapSectionsExtract.SECTIONS
+  RegionMapExtract.applyGeneratedText(names, dungeonInfo, sections)
+  RegionMapExtract.LAYOUTS = RegionMapExtract.loadLayouts(cache)
+  RegionMapExtract.GEOMETRY = RegionMapExtract.loadGeometry(cache)
+  local kanto = RegionMapExtract.LAYOUTS[0]
+  RegionMapExtract.KANTO_GRID = symbolic_grid(kanto.map, sections)
+  RegionMapExtract.DUNGEON_GRID = symbolic_grid(kanto.dungeon, sections)
+  generatedLoaded = true
+  return true
 end
 
 local function decode_tile_4bpp(tileBytes, out, baseX, baseY, stride, hflip, vflip)
@@ -355,47 +165,6 @@ local function load_pal_banks(bytes, count)
     banks[b] = colors
   end
   return banks
-end
-
-local function bake_tilemap(gfx, banks, map, mapW, mapH)
-  local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
-  local W, H = mapW * 8, mapH * 8
-  local tileCount = math.floor(#gfx / 32)
-  local px = {}
-  for i = 1, W * H * 4 do px[i] = 0 end
-  local tmp = {}
-  for ty = 0, mapH - 1 do
-    for tx = 0, mapW - 1 do
-      local mi = (ty * mapW + tx) * 2 + 1
-      local entry = (map[mi] or 0) + (map[mi + 1] or 0) * 256
-      local tileId = entry % 1024
-      local hflip = math.floor(entry / 1024) % 2 == 1
-      local vflip = math.floor(entry / 2048) % 2 == 1
-      local palBank = math.floor(entry / 4096) % 16
-      local bank = banks[palBank] or banks[0]
-      if tileId < tileCount then
-        local tile = {}
-        local base = tileId * 32
-        for i = 1, 32 do tile[i] = gfx[base + i] or 0 end
-        for i = 1, 64 do tmp[i] = 0 end
-        decode_tile_4bpp(tile, tmp, 0, 0, 8, hflip, vflip)
-        for row = 0, 7 do
-          for col = 0, 7 do
-            local idx = tmp[row * 8 + col + 1] or 0
-            local c = bank[idx] or 0
-            local r, g, b = bgr555_to_rgb8(c)
-            local o = ((ty * 8 + row) * W + (tx * 8 + col)) * 4 + 1
-            px[o], px[o + 1], px[o + 2], px[o + 3] = r, g, b, 255
-          end
-        end
-      end
-    end
-  end
-  local rgba = {}
-  for i = 1, W * H * 4 do rgba[i] = string.char(px[i]) end
-  local rgbaStr = table.concat(rgba)
-  local pngStr = BattleAnimExtract.encodePng and BattleAnimExtract.encodePng(px, W, H)
-  return rgbaStr, pngStr, W, H
 end
 
 local function bake_sprite_16x16(gfx, palBytes, tileOffset)
@@ -498,15 +267,118 @@ local function write_file(cache, path, bytes)
   return false
 end
 
+-- src/region_map.c:939
+local function darken(c, tint)
+  local r, g, b = c % 32, math.floor(c / 32) % 32, math.floor(c / 1024) % 32
+  local function ch(v) return math.floor(math.floor(math.floor(v * 256 / 100) * tint) / 256) end
+  return ch(r) + ch(g) * 32 + ch(b) * 1024
+end
+
+-- src/region_map.c:959, :1108
+local function build_banks(mapPalBytes, topBarBytes)
+  local banks = load_pal_banks(mapPalBytes, 5)
+  local edge, tinted = banks[2], {}
+  for c = 0, 15 do tinted[c] = darken(edge[c], 95) end
+  tinted[15] = edge[15]
+  banks[2] = tinted
+  banks[12] = load_pal_banks(topBarBytes, 1)[0]
+  return banks
+end
+
+local function encode(px, W, H)
+  local chunks = {}
+  for i = 1, W * H * 4 do chunks[i] = string.char(px[i]) end
+  local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
+  return table.concat(chunks), assert(BattleAnimExtract.encodePng(px, W, H))
+end
+
+local function bake_bg(gfx, banks, map, mapW, cols, rows)
+  local W, H = cols * 8, rows * 8
+  local tileCount = math.floor(#gfx / 32)
+  local px, tmp = {}, {}
+  for i = 1, W * H * 4 do px[i] = 0 end
+  for ty = 0, rows - 1 do
+    for tx = 0, cols - 1 do
+      local mi = (ty * mapW + tx) * 2 + 1
+      local entry = map[mi] + map[mi + 1] * 256
+      local tileId = entry % 1024
+      local bank = assert(banks[math.floor(entry / 4096) % 16], "tilemap names a palette bank the ROM does not load")
+      if tileId < tileCount then
+        local tile = {}
+        for i = 1, 32 do tile[i] = gfx[tileId * 32 + i] end
+        decode_tile_4bpp(tile, tmp, 0, 0, 8, math.floor(entry / 1024) % 2 == 1, math.floor(entry / 2048) % 2 == 1)
+        for row = 0, 7 do
+          for col = 0, 7 do
+            local idx = tmp[row * 8 + col + 1]
+            if idx ~= 0 then
+              local r, g, b = bgr555_to_rgb8(bank[idx])
+              local o = ((ty * 8 + row) * W + (tx * 8 + col)) * 4 + 1
+              px[o], px[o + 1], px[o + 2], px[o + 3] = r, g, b, 255
+            end
+          end
+        end
+      end
+    end
+  end
+  return encode(px, W, H)
+end
+
+local function entries(list, cols)
+  local map = {}
+  for i, entry in ipairs(list) do
+    map[i * 2 - 1] = entry % 256
+    map[i * 2] = math.floor(entry / 256)
+  end
+  return map, cols
+end
+
+local function bake_strip(gfx, palBytes, widthPx)
+  local pal = load_pal_banks(palBytes, 1)[0]
+  local tilesPerRow = widthPx / 8
+  local tileCount = math.floor(#gfx / 32)
+  local H = math.ceil(tileCount / tilesPerRow) * 8
+  local pixels, px = {}, {}
+  for i = 1, widthPx * H do pixels[i] = 0 end
+  for t = 0, tileCount - 1 do
+    local tile = {}
+    for i = 1, 32 do tile[i] = gfx[t * 32 + i] end
+    decode_tile_4bpp(tile, pixels, (t % tilesPerRow) * 8, math.floor(t / tilesPerRow) * 8, widthPx, false, false)
+  end
+  for i = 1, widthPx * H do
+    local idx = pixels[i]
+    local o = (i - 1) * 4 + 1
+    if idx == 0 then
+      px[o], px[o + 1], px[o + 2], px[o + 3] = 0, 0, 0, 0
+    else
+      local r, g, b = bgr555_to_rgb8(pal[idx])
+      px[o], px[o + 1], px[o + 2], px[o + 3] = r, g, b, 255
+    end
+  end
+  local rgba, png = encode(px, widthPx, H)
+  return rgba, png, H
+end
+
+local function u8_grid(rom, off, layers, rows, cols)
+  local out = {}
+  for l = 0, layers - 1 do
+    local layer = {}
+    for y = 0, rows - 1 do
+      local row = {}
+      for x = 0, cols - 1 do row[x] = rom:get(off + (l * rows + y) * cols + x) end
+      layer[y] = row
+    end
+    out[l] = layer
+  end
+  return out
+end
+
 function RegionMapExtract.run(rom, cache, opts)
   opts = opts or {}
   local Versions = require("src.import.gba.versions")
   local Lz77 = require("src.import.gba.lz77")
+  local serialize = require("src.import.gba.extract_scripts").serialize_lua
   local root = (opts.cacheRoot or default_cache_root()) .. "/" .. RegionMapExtract.CACHE_SUB
-
-  if not rom then
-    return { ok = false, root = root, err = "missing ROM handle" }
-  end
+  assert(rom, "region map extract needs a ROM")
 
   local function get(i) return rom:get(i) end
   local function read_bytes(off, len)
@@ -514,122 +386,149 @@ function RegionMapExtract.run(rom, cache, opts)
     for i = 1, len do t[i] = get(off + i - 1) end
     return t
   end
-
-  local mapGfx = Lz77.decompress(get, Versions.REGION_MAP_BG_GFX or 0x3EF61C)
-  local mapPalBytes = read_bytes(Versions.REGION_MAP_BG_PAL or 0x3EF2DC, 160)
-  local mapBanks = load_pal_banks(mapPalBytes, 5)
-
-  local count = 0
-
-  -- 1. Kanto Tilemap
-  local kantoTilemap = Lz77.decompress(get, Versions.REGION_MAP_KANTO_TILEMAP or 0x3F089C)
-  if mapGfx and kantoTilemap then
-    local rgba, png = bake_tilemap(mapGfx, mapBanks, kantoTilemap, 30, 20)
-    write_file(cache, root .. "/kanto_map.rgba", rgba)
-    if png then write_file(cache, root .. "/kanto_map.png", png) end
-    count = count + 1
+  local function lz(off, what)
+    return assert(Lz77.decompress(get, off), what .. " did not decompress")
+  end
+  local function put(name, bytes)
+    assert(write_file(cache, root .. "/" .. name, bytes), "could not write region_map/" .. name)
+  end
+  local function put_image(base, rgba, png)
+    put(base .. ".rgba", rgba)
+    put(base .. ".png", png)
+  end
+  local function map_width(map)
+    if #map >= 32 * 20 * 2 then return 32 end
+    assert(#map >= 30 * 20 * 2, "region map tilemap is shorter than one screen")
+    return 30
   end
 
-  -- 2. Sevii 1-3 Tilemap
-  local sevii123Tilemap = Lz77.decompress(get, Versions.REGION_MAP_SEVII123_TILEMAP or 0x3F0AFC)
-  if mapGfx and sevii123Tilemap then
-    local rgba, png = bake_tilemap(mapGfx, mapBanks, sevii123Tilemap, 30, 20)
-    write_file(cache, root .. "/sevii123_map.rgba", rgba)
-    if png then write_file(cache, root .. "/sevii123_map.png", png) end
-    count = count + 1
-  end
+  local topBarBytes = read_bytes(Versions.REGION_MAP_TOP_BAR_PAL, 32)
+  local banks = build_banks(read_bytes(Versions.REGION_MAP_BG_PAL, 160), topBarBytes)
+  local mapGfx = lz(Versions.REGION_MAP_BG_GFX, "sRegionMap_Gfx")
 
-  -- 3. Sevii 4-5 Tilemap
-  local sevii45Tilemap = Lz77.decompress(get, Versions.REGION_MAP_SEVII45_TILEMAP or 0x3F0C0C)
-  if mapGfx and sevii45Tilemap then
-    local rgba, png = bake_tilemap(mapGfx, mapBanks, sevii45Tilemap, 30, 20)
-    write_file(cache, root .. "/sevii45_map.rgba", rgba)
-    if png then write_file(cache, root .. "/sevii45_map.png", png) end
-    count = count + 1
-  end
-
-  -- 4. Sevii 6-7 Tilemap
-  local sevii67Tilemap = Lz77.decompress(get, Versions.REGION_MAP_SEVII67_TILEMAP or 0x3F0CF0)
-  if mapGfx and sevii67Tilemap then
-    local rgba, png = bake_tilemap(mapGfx, mapBanks, sevii67Tilemap, 30, 20)
-    write_file(cache, root .. "/sevii67_map.rgba", rgba)
-    if png then write_file(cache, root .. "/sevii67_map.png", png) end
-    count = count + 1
-  end
-
-  -- 5. Cursor
-  local cursorGfx = Lz77.decompress(get, Versions.REGION_MAP_CURSOR_GFX or 0x3EF4E0)
-  local cursorPalBytes = read_bytes(Versions.REGION_MAP_CURSOR_PAL or 0x3EF25C, 32)
-  if cursorGfx and cursorPalBytes then
-    local rgba, png = bake_sprite_16x16(cursorGfx, cursorPalBytes, 0)
-    write_file(cache, root .. "/cursor.rgba", rgba)
-    if png then write_file(cache, root .. "/cursor.png", png) end
-    count = count + 1
-  end
-
-  -- 6. Player Red Icon
-  local redGfx = Lz77.decompress(get, Versions.REGION_MAP_PLAYER_RED_GFX or 0x3EF524)
-  local redPalBytes = read_bytes(Versions.REGION_MAP_PLAYER_RED_PAL or 0x3EF27C, 32)
-  if redGfx and redPalBytes then
-    local rgba, png = bake_sprite_16x16(redGfx, redPalBytes, 0)
-    write_file(cache, root .. "/player_red.rgba", rgba)
-    if png then write_file(cache, root .. "/player_red.png", png) end
-    count = count + 1
-  end
-
-  -- 7. Player Leaf Icon
-  local leafGfx = Lz77.decompress(get, Versions.REGION_MAP_PLAYER_LEAF_GFX or 0x3EF59C)
-  local leafPalBytes = read_bytes(Versions.REGION_MAP_PLAYER_LEAF_PAL or 0x3EF29C, 32)
-  if leafGfx and leafPalBytes then
-    local rgba, png = bake_sprite_16x16(leafGfx, leafPalBytes, 0)
-    write_file(cache, root .. "/player_leaf.rgba", rgba)
-    if png then write_file(cache, root .. "/player_leaf.png", png) end
-    count = count + 1
-  end
-
-  -- 8. Dungeon Icon (8x8)
-  local dungGfx = Lz77.decompress(get, Versions.REGION_MAP_DUNGEON_ICON_GFX or 0x3F18D8)
-  local miscPalBytes = read_bytes(Versions.REGION_MAP_MISC_ICON_PAL or 0x3EF2BC, 32)
-  if dungGfx and miscPalBytes then
-    -- src/region_map.c:795 sAnim_DungeonIconNotVisited, frame 0
-    local rgba, png = bake_sprite_8x8(dungGfx, miscPalBytes, 0)
-    write_file(cache, root .. "/dungeon_icon.rgba", rgba)
-    if png then write_file(cache, root .. "/dungeon_icon.png", png) end
-    count = count + 1
-    -- src/region_map.c:790 sAnim_DungeonIconVisited, frame 1
-    local vRgba, vPng = bake_sprite_8x8(dungGfx, miscPalBytes, 1)
-    write_file(cache, root .. "/dungeon_icon_visited.rgba", vRgba)
-    if vPng then write_file(cache, root .. "/dungeon_icon_visited.png", vPng) end
-    count = count + 1
-  end
-
-  -- 9. Fly Icon (16x16)
-  local flyGfx = Lz77.decompress(get, Versions.REGION_MAP_FLY_ICON_GFX or 0x3F1908)
-  if flyGfx and miscPalBytes then
-    local rgba, png = bake_sprite_16x16(flyGfx, miscPalBytes, 0)
-    write_file(cache, root .. "/fly_icon.rgba", rgba)
-    if png then write_file(cache, root .. "/fly_icon.png", png) end
-    count = count + 1
-  end
-
-  local manifest = string.format([[
-return {
-  version = %d,
-  width = 240,
-  height = 160,
-  cursorSize = 16,
-  playerIconSize = 16,
-  dungeonIconSize = 8,
-  flyIconSize = 16,
-}
-]], RegionMapExtract.FORMAT_VERSION)
-  write_file(cache, root .. "/manifest.lua", manifest)
-
-  return {
-    ok = true,
-    root = root,
-    count = count,
+  -- src/region_map.c:1127-1147, :1505-1524
+  local tilemaps = {
+    kanto = Versions.REGION_MAP_KANTO_TILEMAP,
+    sevii123 = Versions.REGION_MAP_SEVII123_TILEMAP,
+    sevii45 = Versions.REGION_MAP_SEVII45_TILEMAP,
+    sevii67 = Versions.REGION_MAP_SEVII67_TILEMAP,
   }
+  for _, name in ipairs(RegionMapExtract.REGIONS) do
+    local map = lz(tilemaps[name], name .. " tilemap")
+    put_image(name .. "_map", bake_bg(mapGfx, banks, map, map_width(map), 30, 20))
+  end
+  do
+    local list = {}
+    for i = 0, 2 do
+      for j = 0, 2 do list[#list + 1] = (0xF0 + 16 * i + j) + 3 * 4096 end
+    end
+    put_image("switch_button", bake_bg(mapGfx, banks, entries(list, 3), 3, 3, 3))
+    local navel, birth = {}, {}
+    for i = 1, 6 do navel[i] = 0x003 end
+    for i = 1, 9 do birth[i] = 0x003 end
+    put_image("navel_rock_patch", bake_bg(mapGfx, banks, entries(navel, 3), 3, 3, 2))
+    put_image("birth_island_patch", bake_bg(mapGfx, banks, entries(birth, 3), 3, 3, 3))
+  end
+
+  -- src/region_map.c:2281-2284, :2419-2431
+  do
+    local gfx = lz(Versions.REGION_MAP_EDGE_GFX, "sMapEdge_Gfx")
+    local map = lz(Versions.REGION_MAP_EDGE_TILEMAP, "sMapEdge_Tilemap")
+    local w = map_width(map)
+    local bar = { 0x002, 0x003 }
+    for _ = 1, 26 do bar[#bar + 1] = 0x03D end
+    bar[#bar + 1] = 0x03E
+    bar[#bar + 1] = 0x03F
+    for x = 0, 29 do
+      local entry = bar[x + 1] + 2 * 4096
+      local mi = (1 * w + x) * 2 + 1
+      map[mi], map[mi + 1] = entry % 256, math.floor(entry / 256)
+    end
+    put_image("frame_normal", bake_bg(gfx, banks, map, w, 30, 20))
+  end
+  do
+    local gfx = lz(Versions.REGION_MAP_BG_SECONDARY_GFX, "sBackground_Gfx")
+    local map = lz(Versions.REGION_MAP_BG_SECONDARY_TILEMAP, "sBackground_Tilemap")
+    put_image("frame_fly", bake_bg(gfx, banks, map, map_width(map), 30, 20))
+  end
+
+  -- src/region_map.c:1566-1581, :1740
+  do
+    local gfx = lz(Versions.REGION_MAP_SWITCH_MENU_GFX, "sSwitchMapMenu_Gfx")
+    local m123 = lz(Versions.REGION_MAP_SWITCH_123_TILEMAP, "sSwitchMap_KantoSevii123_Tilemap")
+    local mAll = lz(Versions.REGION_MAP_SWITCH_ALL_TILEMAP, "sSwitchMap_KantoSeviiAll_Tilemap")
+    put_image("switch_menu_123", bake_bg(gfx, banks, m123, 30, 30, 20))
+    put_image("switch_menu_all", bake_bg(gfx, banks, mAll, 30, 30, 20))
+  end
+
+  local sizes = {}
+  local function sprite(name, off, palOff, width)
+    local rgba, png, h = bake_strip(lz(off, name), read_bytes(palOff, 32), width)
+    put_image(name, rgba, png)
+    sizes[name] = { width, h }
+  end
+  -- src/region_map.c:747, :784, :1850-1881, :2195, :2257-2277
+  sprite("cursor", Versions.REGION_MAP_CURSOR_GFX, Versions.REGION_MAP_CURSOR_PAL, 16)
+  sprite("fly_icon", Versions.REGION_MAP_FLY_ICON_GFX, Versions.REGION_MAP_MISC_ICON_PAL, 16)
+  sprite("switch_cursor_left", Versions.REGION_MAP_SWITCH_CURSOR_LEFT_GFX, Versions.REGION_MAP_SWITCH_CURSOR_PAL, 32)
+  sprite("switch_cursor_right", Versions.REGION_MAP_SWITCH_CURSOR_RIGHT_GFX, Versions.REGION_MAP_SWITCH_CURSOR_PAL, 32)
+  for key, off in pairs(Versions.REGION_MAP_EDGE_SPRITES) do
+    sprite("edge_" .. key, off, Versions.REGION_MAP_EDGE_PAL, 32)
+  end
+
+  do
+    local redGfx = lz(Versions.REGION_MAP_PLAYER_RED_GFX, "sPlayerIcon_Red")
+    put_image("player_red", bake_sprite_16x16(redGfx, read_bytes(Versions.REGION_MAP_PLAYER_RED_PAL, 32), 0))
+    local leafGfx = lz(Versions.REGION_MAP_PLAYER_LEAF_GFX, "sPlayerIcon_Leaf")
+    put_image("player_leaf", bake_sprite_16x16(leafGfx, read_bytes(Versions.REGION_MAP_PLAYER_LEAF_PAL, 32), 0))
+    local dungGfx = lz(Versions.REGION_MAP_DUNGEON_ICON_GFX, "sDungeonIcon")
+    local miscPal = read_bytes(Versions.REGION_MAP_MISC_ICON_PAL, 32)
+    -- src/region_map.c:795 sAnim_DungeonIconNotVisited, :790 sAnim_DungeonIconVisited
+    put_image("dungeon_icon", bake_sprite_8x8(dungGfx, miscPal, 0))
+    put_image("dungeon_icon_visited", bake_sprite_8x8(dungGfx, miscPal, 1))
+  end
+
+  -- src/region_map.c:527, :3158-3171, :3359
+  local layouts = { seviiMapsecs = {} }
+  for i, off in ipairs(Versions.REGION_MAP_LAYOUTS) do
+    local grid = u8_grid(rom, off, 2, RegionMapExtract.MAP_HEIGHT, RegionMapExtract.MAP_WIDTH)
+    layouts[i - 1] = { name = RegionMapExtract.REGIONS[i], map = grid[0], dungeon = grid[1] }
+  end
+  do
+    local sevii = u8_grid(rom, Versions.REGION_MAP_SEVII_MAPSECS, 1, 3, 30)[0]
+    for r = 0, 2 do
+      local list = {}
+      for i = 0, 29 do
+        if sevii[r][i] == RegionMapExtract.MAPSEC_NONE then break end
+        list[#list + 1] = sevii[r][i]
+      end
+      layouts.seviiMapsecs[r] = list
+    end
+  end
+  put("layouts.lua", "return " .. serialize(layouts) .. "\n")
+  local geometry = { topLeft = {}, dimensions = {} }
+  for i = 0, Versions.MAPSEC_COUNT - 1 do
+    local m = Versions.MAPSEC_FIRST + i
+    geometry.topLeft[m] = { rom:u16(Versions.REGION_MAP_SECTION_TOP_LEFT + i * 4),
+      rom:u16(Versions.REGION_MAP_SECTION_TOP_LEFT + i * 4 + 2) }
+    geometry.dimensions[m] = { rom:u16(Versions.REGION_MAP_SECTION_DIMENSIONS + i * 4),
+      rom:u16(Versions.REGION_MAP_SECTION_DIMENSIONS + i * 4 + 2) }
+  end
+  put("section_geometry.lua", "return " .. serialize(geometry) .. "\n")
+
+  local topBar = load_pal_banks(topBarBytes, 1)[0]
+  put("manifest.lua", "return " .. serialize({
+    version = RegionMapExtract.FORMAT_VERSION,
+    width = 240,
+    height = 160,
+    backdrop = topBar[15],
+    topBarPal = topBar,
+    sprites = sizes,
+    playerIconSize = 16,
+    dungeonIconSize = 8,
+  }) .. "\n")
+
+  return { ok = true, root = root }
 end
 
 local function baked(cache, rel)

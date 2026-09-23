@@ -17,6 +17,22 @@ local function eq(a, b, msg)
   check(a == b, string.format("%s (%s == %s)", msg, tostring(a), tostring(b)))
 end
 
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+local function teq(a, b, msg)
+  if romBundle then eq(a, b, msg) else print("[skip] ROM text: " .. msg) end
+end
+
 local Ctx = require("src.core.game3.scripting.ctx")
 local Flags = require("src.core.game3.scripting.flags")
 local Std = require("src.core.game3.scripting.stdscripts")
@@ -27,7 +43,7 @@ local Stack = require("src.ui.game3.stack")
 local Tower = require("src.core.game3.trainer_tower")
 
 local store = Flags.newStore()
-package.loaded["src.core.game3.scripting.space"] = { store = store }
+package.loaded["src.core.game3.scripting.space"] = { store = store, ensureBundle = function() return romBundle end }
 
 local adapters = { log = function() end }
 
@@ -196,9 +212,9 @@ towerFunc(ctx, Tower.FUNC.GET_TIME)
 eq(ctx.stringVars[1], " 1", "gStringVar1 is the minutes, right aligned in two")
 eq(ctx.stringVars[2], " 1", "gStringVar2 is the seconds, right aligned in two")
 eq(ctx.stringVars[3], "01", "gStringVar3 is frames * 168 / 100 with a leading zero")
-eq(Screen.timeText(3661), " 1MIN.  1.01SEC.",
+teq(Screen.timeText(3661), " 1MIN.  1.01SEC.",
   "the board prints gText_XMinYZSec (pokefirered/src/battle_message.c:1354)")
-eq(Screen.timeText(Tower.MAX_TIME), "59MIN. 59.99SEC.",
+teq(Screen.timeText(Tower.MAX_TIME), "59MIN. 59.99SEC.",
   "an unbeaten mode shows the ceiling time")
 
 print("[test] 9. ResetTrainerTowerResults clears every mode")

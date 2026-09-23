@@ -7,7 +7,6 @@
 --   2. Overworld A-Press Collision / Object Interaction (tryOW / EventScript_*)
 
 local Flags = require("src.core.game3.scripting.flags")
-local Strings = require("src.core.Strings")
 
 local FieldMoves = {}
 
@@ -136,72 +135,51 @@ FieldMoves.MAP_TYPES = {
   SECRET_BASE = 9,
 }
 
--- Standard Text Strings.  Read through FieldMoves.TEXT, which translates each
--- one when it is read: this table exists before any translation catalog.
--- pokefirered/src/strings.c:317-318
 local TEXT_ROM = {
+  -- src/data/party_menu.h:603
   CANT_USE_HERE         = "gText_CantUseHere",
   ALREADY_SURFING       = "gText_AlreadySurfing",
-}
-local TEXT_SOURCE = {
-  BADGE_REQUIRED        = Strings.source("Sorry! A new BADGE is required."),
-  NOT_ENOUGH_HP         = Strings.source("Not enough HP!"),
-  CANT_BE_USED_ON_PKMN  = Strings.source("It won't have any effect."),
+  CUT_NOTHING           = "gText_NothingToCut",
+  CANT_SURF_HERE        = "gText_CantSurfHere",
+  CURRENT_TOO_FAST      = "gText_CurrentIsTooFast",
+  ENJOY_CYCLING         = "gText_EnjoyCycling",
+  FLASH_IN_USE          = "gText_InUseAlready_PM",
+  NOT_ENOUGH_HP         = "gText_NotEnoughHp",
+  -- src/party_menu.c:3928
+  BADGE_REQUIRED        = "gText_CantUseUntilNewBadge",
 
-  -- Cut
-  ASK_CUT_TREE          = Strings.source("This tree looks like it can be CUT\ndown!\nWould you like to CUT it?"),
-  TREE_CAN_BE_CUT       = Strings.source("This tree looks like it can be CUT\ndown!"),
-  USED_CUT              = Strings.source("{STR_VAR_1} used CUT!"),
-  CUT_NOTHING           = Strings.source("There's nothing to CUT here."),
+  -- data/scripts/field_moves.inc:47
+  ASK_CUT_TREE          = "Text_CutTreeDown",
+  TREE_CAN_BE_CUT       = "Text_TreeCanBeCutDown",
+  USED_MOVE             = "Text_MonUsedMove",
+  ASK_ROCK_SMASH        = "Text_UseRockSmash",
+  MON_MAY_SMASH_ROCK    = "Text_MonMaySmashRock",
+  ASK_STRENGTH          = "Text_UseStrength",
+  MON_MAY_PUSH_BOULDER  = "Text_MonMayPushBoulder",
+  USED_STRENGTH         = "Text_MonUsedStrengthCanMoveBoulders",
+  STRENGTH_ACTIVE       = "Text_StrengthMadeMovingBouldersPossible",
+  ASK_WATERFALL         = "Text_UseWaterfall",
+  USED_WATERFALL        = "Text_MonUsedWaterfall",
+  CANT_WATERFALL        = "Text_WallOfWaterCrashingDown",
+  NO_SWEET_SCENT_MONS   = "Text_LooksLikeNothingHere",
 
-  -- Rock Smash
-  ASK_ROCK_SMASH        = Strings.source("This rock appears to be breakable.\nWould you like to use ROCK SMASH?"),
-  MON_MAY_SMASH_ROCK    = Strings.source("It's a rugged rock, but a POKéMON\nmay be able to smash it."),
-  USED_ROCK_SMASH       = Strings.source("{STR_VAR_1} used ROCK SMASH!"),
-
-  -- Strength
-  ASK_STRENGTH          = Strings.source("It's a big boulder, but a POKéMON\nmay be able to push it aside.\nWould you like to use STRENGTH?"),
-  MON_MAY_PUSH_BOULDER  = Strings.source("It's a big boulder, but a POKéMON\nmay be able to push it aside."),
-  USED_STRENGTH         = Strings.source("{STR_VAR_1} used STRENGTH!\n{STR_VAR_1}'s STRENGTH made it\npossible to move boulders around!"),
-  STRENGTH_ACTIVE       = Strings.source("STRENGTH made it possible to move\nboulders around."),
-
-  -- Surf
-  ASK_SURF              = Strings.source("The water is dyed a deep blue…\nWould you like to SURF?"),
-  USED_SURF             = Strings.source("{STR_VAR_1} used SURF!"),
-  CANT_SURF_CURRENT     = Strings.source("The current is much too fast!\nSURF can't be used here…"),
-
-  -- Flash
-  USED_FLASH            = Strings.source("{STR_VAR_1} used FLASH!\nA blinding light illuminates\nthe area!"),
-
-  -- Waterfall
-  ASK_WATERFALL         = Strings.source("It's a large waterfall.\nWould you like to use WATERFALL?"),
-  USED_WATERFALL        = Strings.source("{STR_VAR_1} used WATERFALL."),
-  CANT_WATERFALL        = Strings.source("A wall of water is crashing down\nwith a mighty roar."),
-
-  -- Dive
-  ASK_DIVE              = Strings.source("The sea is deep here.\nWould you like to use DIVE?"),
-  ASK_SURFACE           = Strings.source("Light is filtering down from above.\nWould you like to use DIVE?"),
-  USED_DIVE             = Strings.source("{STR_VAR_1} used DIVE."),
-  CANT_DIVE             = Strings.source("The sea is deep here. A POKéMON\nmay be able to go underwater."),
-  CANT_SURFACE          = Strings.source("Light is filtering down from above.\nA POKéMON may be able to surface."),
-  DIVE_OBSTACLE         = Strings.source("There is an obstacle above.\nDIVE can't be used here."),
-
-  -- Teleport & Dig
-  TELEPORT_RETURN       = Strings.source("Return to the last POKéMON CENTER."),
-  USED_DIG              = Strings.source("{STR_VAR_1} used DIG!"),
-  USED_ESCAPE_ROPE      = Strings.source("{PLAYER} used an ESCAPE ROPE."),
-
-  -- Sweet Scent
-  USED_SWEET_SCENT      = Strings.source("{STR_VAR_1} used SWEET SCENT!"),
-  NO_SWEET_SCENT_MONS   = Strings.source("Looks like there's nothing here…"),
+  -- data/text/surf.inc:1
+  ASK_SURF              = "Text_WantToSurf",
+  USED_SURF             = "Text_UsedSurf",
+  CANT_SURF_CURRENT     = "Text_CurrentTooFast",
 }
 FieldMoves.TEXT = setmetatable({}, {
   __index = function(_, key)
-    if TEXT_ROM[key] then return require("src.core.game3.rom_text").plain(TEXT_ROM[key]) end
-    local source = TEXT_SOURCE[key]
-    return source and Strings(source) or nil
+    if TEXT_ROM[key] then return require("src.core.game3.rom_text").ascii(TEXT_ROM[key]) end
+    return nil
   end,
 })
+
+-- data/scripts/field_moves.inc:8 bufferpartymonnick STR_VAR_1, buffermovename STR_VAR_2
+function FieldMoves.monText(key, monName, moveId)
+  local moveName = moveId and require("src.core.game3.pokemon").moveName(moveId) or nil
+  return require("src.core.game3.rom_text").ascii(TEXT_ROM[key], { stringVars = { monName, moveName } })
+end
 
 -- ---------------------------------------------------------------- helpers
 --- Normalize move identifier to numeric ID
@@ -334,7 +312,6 @@ function FieldMoves.cutFromMenu(ctx)
   end
 
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "CUT")
-  local monName = FieldMoves.getMonName(mon)
 
   -- pokefirered/src/fldeff_cut.c:123 SetUpFieldMove_Cut
   if ctx.isDottedHoleDoor or FieldMoves.ruinValleyCutCheck(ctx) then
@@ -343,7 +320,6 @@ function FieldMoves.cutFromMenu(ctx)
       action = "dotted_hole",
       mon = mon,
       se = FieldMoves.SE.CUT,
-      text = FieldMoves.TEXT.USED_CUT:gsub("{STR_VAR_1}", monName),
     }
   end
 
@@ -356,7 +332,6 @@ function FieldMoves.cutFromMenu(ctx)
       target = ctx.facingObject,
       mon = mon,
       se = FieldMoves.SE.CUT,
-      text = FieldMoves.TEXT.USED_CUT:gsub("{STR_VAR_1}", monName),
     }
   end
 
@@ -367,7 +342,6 @@ function FieldMoves.cutFromMenu(ctx)
       action = "cut_grass",
       mon = mon,
       se = FieldMoves.SE.CUT,
-      text = FieldMoves.TEXT.USED_CUT:gsub("{STR_VAR_1}", monName),
     }
   end
 
@@ -380,24 +354,24 @@ function FieldMoves.flashFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.BADGE_REQUIRED, badge = "FLASH" }
   end
 
+  -- src/party_menu.c:4047 DisplayCantUseFlashMessage
+  if ctx.isFlashActive or (ctx.store and Flags.getFlag(ctx.store, ctx.ctx, FieldMoves.SYS_FLAGS.FLASH_ACTIVE)) then
+    return { ok = false, text = FieldMoves.TEXT.FLASH_IN_USE }
+  end
+
   if not ctx.isDarkCave and not ctx.isCave then
     return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
   end
 
-  if ctx.isFlashActive or (ctx.store and Flags.getFlag(ctx.store, ctx.ctx, FieldMoves.SYS_FLAGS.FLASH_ACTIVE)) then
-    return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
-  end
-
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "FLASH")
-  local monName = FieldMoves.getMonName(mon)
 
+  -- data/scripts/flash.inc:1 EventScript_FldEffFlash
   return {
     ok = true,
     action = "flash",
     mon = mon,
     se = FieldMoves.SE.FLASH,
     flag = FieldMoves.SYS_FLAGS.FLASH_ACTIVE,
-    text = FieldMoves.TEXT.USED_FLASH:gsub("{STR_VAR_1}", monName),
   }
 end
 
@@ -411,22 +385,27 @@ function FieldMoves.surfFromMenu(ctx)
     return { ok = false, text = FieldMoves.TEXT.ALREADY_SURFING }
   end
 
+  -- src/party_menu.c:4077 DisplayCantUseSurfMessage
   if ctx.isFastCurrent then
-    return { ok = false, text = FieldMoves.TEXT.CANT_SURF_CURRENT }
+    return { ok = false, text = FieldMoves.TEXT.CURRENT_TOO_FAST }
   end
 
   if not ctx.isFacingWater then
-    return { ok = false, text = FieldMoves.TEXT.CANT_USE_HERE }
+    local MapCatalog = require("src.import.gba.map_catalog")
+    local map = ctx.mapId or (ctx.session and ctx.session.map)
+    if map == MapCatalog.pretToEngine("Route17") or map == MapCatalog.pretToEngine("Route18") then
+      return { ok = false, text = FieldMoves.TEXT.ENJOY_CYCLING }
+    end
+    return { ok = false, text = FieldMoves.TEXT.CANT_SURF_HERE }
   end
 
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SURF")
-  local monName = FieldMoves.getMonName(mon)
 
+  -- src/party_menu.c:4055 FieldCallback_Surf
   return {
     ok = true,
     action = "surf",
     mon = mon,
-    text = FieldMoves.TEXT.USED_SURF:gsub("{STR_VAR_1}", monName),
   }
 end
 
@@ -444,7 +423,7 @@ function FieldMoves.strengthFromMenu(ctx)
     action = "strength",
     mon = mon,
     flag = FieldMoves.SYS_FLAGS.USE_STRENGTH,
-    text = FieldMoves.TEXT.USED_STRENGTH:gsub("{STR_VAR_1}", monName),
+    text = FieldMoves.monText("USED_STRENGTH", monName),
   }
 end
 
@@ -460,7 +439,6 @@ function FieldMoves.rockSmashFromMenu(ctx)
   end
 
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "ROCK_SMASH")
-  local monName = FieldMoves.getMonName(mon)
 
   return {
     ok = true,
@@ -468,7 +446,6 @@ function FieldMoves.rockSmashFromMenu(ctx)
     target = ctx.facingObject,
     mon = mon,
     se = FieldMoves.SE.ROCK_SMASH,
-    text = FieldMoves.TEXT.USED_ROCK_SMASH:gsub("{STR_VAR_1}", monName),
   }
 end
 
@@ -518,14 +495,11 @@ function FieldMoves.digFromMenu(ctx)
   end
 
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "DIG")
-  local monName = FieldMoves.getMonName(mon)
 
   return {
     ok = true,
     action = "dig",
     mon = mon,
-    se = FieldMoves.SE.WARP_OUT,
-    text = FieldMoves.TEXT.USED_DIG:gsub("{STR_VAR_1}", monName),
     warp = ctx.escapeWarp,
   }
 end
@@ -543,7 +517,6 @@ function FieldMoves.teleportFromMenu(ctx)
     action = "teleport",
     mon = mon,
     se = FieldMoves.SE.WARP_OUT,
-    text = FieldMoves.TEXT.TELEPORT_RETURN,
     warp = ctx.lastHealWarp or ctx.respawnPoint,
   }
 end
@@ -551,14 +524,12 @@ end
 --- Sweet Scent from Party Menu
 function FieldMoves.sweetScentFromMenu(ctx)
   local mon = ctx.mon or FieldMoves.partyMoveUser(ctx.party, "SWEET_SCENT")
-  local monName = FieldMoves.getMonName(mon)
 
   return {
     ok = true,
     action = "sweet_scent",
     mon = mon,
     se = FieldMoves.SE.SWEET_SCENT,
-    text = FieldMoves.TEXT.USED_SWEET_SCENT:gsub("{STR_VAR_1}", monName),
     hasEncounter = ctx.hasWildEncounters == true,
     failText = FieldMoves.TEXT.NO_SWEET_SCENT_MONS,
   }
@@ -662,7 +633,7 @@ function FieldMoves.tryCutOW(ctx)
     slot = slot,
     se = FieldMoves.SE.CUT,
     target = ctx.facingObject,
-    text = FieldMoves.TEXT.USED_CUT:gsub("{STR_VAR_1}", monName),
+    text = FieldMoves.monText("USED_MOVE", monName, FieldMoves.MOVES.CUT),
   }
 end
 
@@ -687,7 +658,7 @@ function FieldMoves.tryRockSmashOW(ctx)
     slot = slot,
     se = FieldMoves.SE.ROCK_SMASH,
     target = ctx.facingObject,
-    text = FieldMoves.TEXT.USED_ROCK_SMASH:gsub("{STR_VAR_1}", monName),
+    text = FieldMoves.monText("USED_MOVE", monName, FieldMoves.MOVES.ROCK_SMASH),
   }
 end
 
@@ -720,7 +691,7 @@ function FieldMoves.tryStrengthOW(ctx)
     mon = mon,
     slot = slot,
     flag = FieldMoves.SYS_FLAGS.USE_STRENGTH,
-    text = FieldMoves.TEXT.USED_STRENGTH:gsub("{STR_VAR_1}", monName),
+    text = FieldMoves.monText("USED_STRENGTH", monName),
   }
 end
 
@@ -747,7 +718,7 @@ function FieldMoves.trySurfOW(ctx)
     action = "surf",
     mon = mon,
     slot = slot,
-    text = FieldMoves.TEXT.USED_SURF:gsub("{STR_VAR_1}", monName),
+    text = FieldMoves.monText("USED_SURF", monName),
   }
 end
 
@@ -776,7 +747,7 @@ function FieldMoves.tryWaterfallOW(ctx)
     action = "waterfall",
     mon = mon,
     slot = slot,
-    text = FieldMoves.TEXT.USED_WATERFALL:gsub("{STR_VAR_1}", monName),
+    text = FieldMoves.monText("USED_WATERFALL", monName),
   }
 end
 

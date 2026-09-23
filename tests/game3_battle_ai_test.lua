@@ -18,12 +18,23 @@ print("[test] 1. Load / extract AI pack")
 local Ai = require("src.core.game3.battle.ai")
 local pack = Ai.loadPack({ force = true, extract = true })
 check(pack ~= nil, "pack loaded")
-check(pack and pack.scripts and pack.scripts.AI_CheckBadMove ~= nil, "AI_CheckBadMove present")
-check(pack and pack.scripts and pack.scripts.Score_Minus10 ~= nil, "Score_Minus10 present")
-local minus = pack and pack.scripts.Score_Minus10
-check(minus and minus[1] and minus[1].op == "score" and minus[1].delta == -10, "Score_Minus10 delta -10")
-check(pack and pack.table and pack.table[1] == "AI_CheckBadMove", "table[0] = CheckBadMove")
-check(pack and pack.table and pack.table[3] == "AI_TryToFaint", "table[2] = TryToFaint")
+-- data/battle_ai_scripts.s:17, :52, :624, :2767, :3258
+local function scoreScript(p, delta)
+  for name, body in pairs(p.scripts) do
+    if #body == 2 and body[1].op == "score" and body[1].delta == delta and body[2].op == "end" then return name end
+  end
+end
+local SCORE_MINUS10 = pack and scoreScript(pack, -10)
+check(pack and #pack.table == 32, "gBattleAI_ScriptsTable has 32 entries")
+local badMove = pack and pack.scripts[pack.table[1]]
+check(badMove and badMove[1].op == "get_how_powerful_move_is" and badMove[2].op == "if_equal"
+  and badMove[2].value == 0, "table[0] = AI_CheckBadMove (get_how_powerful_move_is, if_equal MOVE_POWER_DISCOURAGED)")
+local faint = pack and pack.scripts[pack.table[3]]
+check(faint and faint[1].op == "if_can_faint" and faint[2].op == "get_how_powerful_move_is",
+  "table[2] = AI_TryToFaint (if_can_faint, get_how_powerful_move_is)")
+local ret = pack and pack.scripts[pack.table[11]]
+check(ret and #ret == 1 and ret[1].op == "end" and pack.table[11] == pack.table[29], "table[10..28] = AI_Ret")
+check(SCORE_MINUS10 ~= nil, "Score_Minus10 (score -10, end) present")
 
 print("[test] 2. Brock aiFlags == 7")
 local trainersPath = (os.getenv("HOME") or "")
@@ -63,7 +74,7 @@ local vm = AiVm.new({
   movesetIndex = 1,
   rng = function() return 0 end,
 })
-AiVm.run(vm, "Score_Minus10")
+AiVm.run(vm, SCORE_MINUS10)
 check(scores[1] == 90, "score 100 + (-10) = 90 (got " .. tostring(scores[1]) .. ")")
 
 print("[test] 4. CheckBadMove: Ground vs Flying scored much lower than neutral")

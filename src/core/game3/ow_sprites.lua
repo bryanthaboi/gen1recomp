@@ -446,7 +446,8 @@ function OwSprites.playerGraphicsId(game)
                        or (Versions.OW_PLAYER_MALE_FIELD_MOVE or 3)
     end
     -- If jumping / hop onto/off water, maintain normal or surfing sprite during arc
-    if P.surfing and not P.dismounting then
+    -- pokefirered/src/field_effect.c:3294
+    if (P.surfing and not P.dismounting) or P.flyRide then
       return isFemale and (Versions.OW_PLAYER_FEMALE_SURF or 9)
                        or (Versions.OW_PLAYER_MALE_SURF or 2)
     end

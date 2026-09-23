@@ -36,7 +36,7 @@ local function serialize_lua(val, indent)
   local isArr = n > 0
   if isArr then
     for k in pairs(val) do
-      if type(k) ~= "number" then isArr = false; break end
+      if type(k) ~= "number" or k < 1 or k > n or k % 1 ~= 0 then isArr = false; break end
     end
   end
   local parts = { "{\n" }
@@ -67,7 +67,7 @@ local function is_rom_ptr(ptr)
   return ptr >= 0x08000000 and ptr < 0x0A000000
 end
 
-local function read_text_ir(rom, gbaPtr)
+local function read_text_ir(rom, gbaPtr, opts)
   local off = rom:ptrOffset(gbaPtr)
   if not off then return nil end
   local bytes = {}
@@ -76,7 +76,45 @@ local function read_text_ir(rom, gbaPtr)
     bytes[#bytes + 1] = b
     if b == 0xFF then break end
   end
-  return TextIR.decode(bytes)
+  return TextIR.decode(bytes, opts)
+end
+
+local function table_key(name, i, inner)
+  if inner then
+    return string.format("%s[%d][%d]", name, math.floor(i / inner), i % inner)
+  end
+  return string.format("%s[%d]", name, i)
+end
+
+-- src/battle_message.c:517, include/constants/battle_string_ids.h:393
+local function extract_text_tables(rom, text)
+  local counts = {}
+  local battle = { battle = true }
+  for _, t in ipairs(Versions.TEXT_TABLES) do
+    local slots = t.count * (t.inner or 1)
+    for i = 0, slots - 1 do
+      local key
+      if t.ids then
+        key = assert(Versions.BATTLE_STRING_IDS[i + t.ids], t.name .. " has no string id for " .. i)
+      else
+        key = table_key(t.name, i, t.inner)
+      end
+      local ir
+      if t.inline then
+        ir = assert(read_text_ir(rom, 0x08000000 + t.addr + i * t.stride),
+          "ROM text " .. key .. " is not readable")
+      else
+        local ptr = rom:u32(t.addr + i * t.stride)
+        if ptr ~= 0 then
+          assert(rom:ptrOffset(ptr), string.format("%s entry is not a ROM pointer (0x%08X)", key, ptr))
+          ir = read_text_ir(rom, ptr, t.battle and battle or nil)
+        end
+      end
+      text[key] = ir
+    end
+    counts[t.name] = t.inner and { t.count, t.inner } or t.count
+  end
+  return counts
 end
 
 -- pokefirered/include/characters.h:285
@@ -303,6 +341,11 @@ function ExtractScripts.extractFromRom(rom, version)
   for name, off in pairs(Versions.NAMED_TEXTS) do
     text[name] = assert(read_text_ir(rom, 0x08000000 + off), "ROM text " .. name .. " is not readable")
   end
+  for name, off in pairs(Versions.NAMED_BATTLE_TEXTS) do
+    text[name] = assert(read_text_ir(rom, 0x08000000 + off, { battle = true }),
+      "ROM text " .. name .. " is not readable")
+  end
+  local textTables = extract_text_tables(rom, text)
   -- src/script_menu.c:574
   for i = 0, Versions.STD_STRING_COUNT - 1 do
     local ptr = rom:u32(Versions.STD_STRING_PTRS + i * 4)
@@ -314,6 +357,7 @@ function ExtractScripts.extractFromRom(rom, version)
     events = events,
     scripts = scripts,
     text = text,
+    textTables = textTables,
     movements = movements,
     marts = bfs.marts or {},
     opInventory = bfs.opInventory,
@@ -329,6 +373,9 @@ local function write_tables(cache, root, scripts, text, movements, events, metaE
   local base = root .. "/" .. ExtractScripts.CACHE_SUB
   cache:write(base .. "/scripts.lua", "return " .. serialize_lua(scripts) .. "\n")
   cache:write(base .. "/text.lua", "return " .. serialize_lua(text) .. "\n")
+  if metaExtra and metaExtra.textTables then
+    cache:write(base .. "/text_tables.lua", "return " .. serialize_lua(metaExtra.textTables) .. "\n")
+  end
   cache:write(base .. "/movements.lua", "return " .. serialize_lua(movements) .. "\n")
   cache:write(base .. "/events.lua", "return " .. serialize_lua(events) .. "\n")
   local meta = {
@@ -379,6 +426,7 @@ function ExtractScripts.writeBundleFromRom(rom, cache, root, version, extracted)
   write_tables(cache, root, bundle.scripts, bundle.text, bundle.movements, bundle.events, {
     source = "rom",
     opInventory = bundle.opInventory,
+    textTables = assert(bundle.textTables, "ROM text tables were not extracted"),
   })
   do
     local MartsExtract = require("src.import.gba.marts_extract")
@@ -434,6 +482,7 @@ function ExtractScripts.loadBundle(cache, root, opts)
   local text = load_lua(base .. "/text.lua")
   local movements = load_lua(base .. "/movements.lua")
   local events = load_lua(base .. "/events.lua")
+  local textTables = load_lua(base .. "/text_tables.lua")
   if scripts and events then
     local objects=load_lua(root .. "/objects/pack.lua")
     require("src.core.game3.scripting.interaction_scripts").install(objects)
@@ -447,6 +496,7 @@ function ExtractScripts.loadBundle(cache, root, opts)
     local bundle = {
       scripts = scripts,
       text = text or {},
+      textTables = textTables,
       movements = movements or {},
       events = events,
       fromCache = true,

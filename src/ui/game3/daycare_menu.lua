@@ -1,6 +1,7 @@
 -- pokefirered/src/daycare.c:1531
 
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local DaycareMenu = {}
 
@@ -121,7 +122,7 @@ function DaycareMenu.rows(dc)
   end
   -- pokefirered/src/daycare.c:97 sLevelMenuItems
   rows[DaycareMenu.ROW_COUNT] = {
-    value = DAYCARE_LEVEL_MENU_EXIT, text = Strings("EXIT"), symbol = "", level = "",
+    value = DAYCARE_LEVEL_MENU_EXIT, text = RomText.plain("gOtherText_Exit"), symbol = "", level = "",
   }
   return rows
 end

@@ -1,3 +1,5 @@
+local RomText = require("src.core.game3.rom_text")
+
 local Status = {}
 
 -- pokefirered/src/wireless_communication_status_screen.c:27
@@ -110,19 +112,19 @@ function Status.entries()
 end
 
 -- pokefirered/src/wireless_communication_status_screen.c:127 sHeaderTexts
-Status.LABELS = {
-  "People trading:",
-  "People battling:",
-  "People in the UNION ROOM:",
-  "People communicating:",
-}
-Status.TITLE = "Wireless Communication Status"
+Status.HEADER = RomText.lazy({
+  [0] = "sHeaderTexts[0]",
+  "sHeaderTexts[1]",
+  "sHeaderTexts[2]",
+  "sHeaderTexts[3]",
+  "sHeaderTexts[4]",
+})
 
 function Status.rows()
   local counts = Status.counts(Status.entries())
   local out = {}
   for i = 1, Status.NUM_GROUPTYPES do
-    out[i] = { label = Status.LABELS[i], count = counts[i] or 0, total = i == Status.GROUPTYPE.TOTAL }
+    out[i] = { label = Status.HEADER[i], count = counts[i] or 0, total = i == Status.GROUPTYPE.TOTAL }
   end
   return out
 end

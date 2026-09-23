@@ -33,9 +33,9 @@ check(Extract.PAPER_BG_FILE == "paper_bg.rgba", "paper_bg.rgba is the baked dex 
 check(Extract.PAPER_BG_W == 240 and Extract.PAPER_BG_H == 160, "the dex page background is 240x160")
 -- src/pokedex_screen.c:930
 check(Extract.PAPER_TILE == 0x001, "the page fill is tile 0x001 on palette 0")
--- src/pokedex_screen.c:933
-check(Extract.PAPER_BAR_TILE == 0x003 and Extract.PAPER_BAR_PAL == 15,
-  "the top and bottom bars are tile 0x003 on palette 15")
+-- src/pokedex_screen.c:1161
+check(Extract.PAPER_BAR_PAL == 15 and Extract.PAPER_BAR_COLOR == 15,
+  "the top and bottom bars are PIXEL_FILL(15) on palette 15")
 check(Extract.PAPER_BAR_ROWS == 2, "the bars are two tile rows tall")
 check(Extract.FOOTPRINT_TABLE == 0x43FAB0, "gMonFootprintTable is at 0x43FAB0")
 check(Extract.FOOTPRINT_BYTES == 32 and Extract.FOOTPRINT_W == 16 and Extract.FOOTPRINT_H == 16,
@@ -123,7 +123,7 @@ for i = 1, 32 do gfx[3 * 32 + i] = 0x20 end
 local pal = {}
 for i = 0, 255 do pal[i] = 0 end
 pal[5] = 0x7FFF
-pal[240 + 2] = 0x294A
+pal[240 + 15] = 0x294A
 local paper = Extract.bakePaperBg(gfx, pal)
 check(#paper == PAPER_BYTES, "the page background is " .. PAPER_BYTES .. " bytes (" .. #paper .. ")")
 local function paperPixel(x, y)
@@ -133,12 +133,11 @@ end
 r, g, b, a = paperPixel(120, 80)
 check(r == 255 and g == 255 and b == 255 and a == 255, "the page body is palette 0 colour 5")
 r, g, b, a = paperPixel(1, 3)
-check(r == 82 and g == 82 and b == 82 and a == 255, "the top bar is palette 15 colour 2")
+check(r == 82 and g == 82 and b == 82 and a == 255, "the top bar is palette 15 colour 15")
 r, g, b, a = paperPixel(1, 151)
-check(r == 82 and g == 82 and b == 82 and a == 255, "the bottom bar is palette 15 colour 2")
-r, g, b, a = paperPixel(0, 3)
-check(r == 255 and g == 255 and b == 255 and a == 255,
-  "a transparent bar pixel keeps the page underneath")
+check(r == 82 and g == 82 and b == 82 and a == 255, "the bottom bar is palette 15 colour 15")
+r, g, b, a = paperPixel(0, 15)
+check(r == 82 and g == 82 and b == 82 and a == 255, "the bar fill covers every pixel of the two rows")
 local opaque = true
 for i = 4, #paper, 4 do
   if paper:byte(i) ~= 255 then opaque = false break end
@@ -198,13 +197,17 @@ local cachedPaper = readFile("paper_bg.rgba")
 check(cachedPaper ~= nil and #cachedPaper == PAPER_BYTES,
   "paper_bg.rgba is " .. PAPER_BYTES .. " bytes (" .. tostring(cachedPaper and #cachedPaper) .. ")")
 if cachedPaper then
+  local chrome = loadstring(readFile("chrome.lua") or "return {}")()
+  local want = chrome.bar_kanto or {}
   local white, bar = 0, 0
   for i = 1, #cachedPaper, 4 do
-    local v = cachedPaper:byte(i)
-    if v == 255 then white = white + 1 elseif v == 99 then bar = bar + 1 end
+    local r, g, b = cachedPaper:byte(i, i + 2)
+    if r == 255 then white = white + 1
+    elseif r == want[1] and g == want[2] and b == want[3] then bar = bar + 1 end
   end
   check(white == 240 * 128, "the page body is 128 rows of white (" .. white .. ")")
-  check(bar == 240 * 32, "the bars are 32 rows of grey (" .. bar .. ")")
+  -- src/pokedex_screen.c:1161
+  check(bar == 240 * 32, "the bars are 32 rows of the Kanto bar colour (" .. bar .. ")")
 end
 
 local bulbasaur = readFile("footprints/1.rgba")

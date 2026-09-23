@@ -1,4 +1,5 @@
 package.path = package.path .. ";./?.lua;./?/init.lua;./tools/save-editor/?.lua"
+require("tests.game3_cache").stubSpeciesNames()
 
 require("tests.love_stub")
 

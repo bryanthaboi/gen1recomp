@@ -1,6 +1,7 @@
 local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local LinkTradeMenu = {}
 
@@ -45,6 +46,7 @@ function LinkTradeMenu.show()
   LinkTradeMenu.confirming = false
   LinkTradeMenu.confirmChoice = 1
   LinkTradeMenu.message = nil
+  LinkTradeMenu.waiting = false
   Stack.push("link_trade", LinkTradeMenu, { hideBelow = true })
   return true
 end
@@ -53,6 +55,7 @@ function LinkTradeMenu.close()
   if not LinkTradeMenu.open then return false end
   LinkTradeMenu.open = false
   LinkTradeMenu.message = nil
+  LinkTradeMenu.waiting = false
   Stack.pop("link_trade")
   return true
 end
@@ -66,13 +69,14 @@ function LinkTradeMenu.reset()
   LinkTradeMenu.confirming = false
   LinkTradeMenu.confirmChoice = 1
   LinkTradeMenu.message = nil
+  LinkTradeMenu.waiting = false
   Stack.pop("link_trade")
   return true
 end
 
 function LinkTradeMenu.monLabel(mon)
   if not mon then return "" end
-  if mon.isEgg then return Strings("EGG") end
+  if mon.isEgg then return RomText.plain("gText_EggNickname") end
   local name = mon.nickname
   if type(name) ~= "string" or name == "" then
     local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
@@ -95,17 +99,22 @@ function LinkTradeMenu.confirm()
   if LinkTradeMenu.onCancelRow then
     -- pokefirered/src/trade.c:2043 CB_ProcessCancelTradeInput
     LT.cancelSelect()
-    LinkTradeMenu.message = Strings("Waiting...")
+    -- pokefirered/src/trade.c:2048 MSG_WAITING_FOR_FRIEND
+    LinkTradeMenu.message = RomText.plain("gText_WaitingForFriendToFinish")
+    LinkTradeMenu.waiting = true
     return true
   end
   if LinkTradeMenu.side ~= "mine" then return false end
   -- pokefirered/src/trade.c:1811 SetReadyToTrade
   local ok, code = LT.offer(LinkTradeMenu.cursor)
   if ok then
-    LinkTradeMenu.message = Strings("Waiting...")
+    -- pokefirered/src/trade.c:1813 MSG_STANDBY
+    LinkTradeMenu.message = RomText.plain("gText_Trade_CommunicationStandby")
+    LinkTradeMenu.waiting = true
     return true
   end
   local Trade = require("src.core.game3.scripting.natives_trade")
+  LinkTradeMenu.waiting = false
   LinkTradeMenu.message = Trade.refusalText(code)
     or require("src.core.game3.rom_text").plain("gText_PkmnCantBeTradedNow")
   return false
@@ -117,7 +126,9 @@ function LinkTradeMenu.cancel()
     return LinkTradeMenu.confirm()
   end
   trade().cancelSelect()
-  LinkTradeMenu.message = Strings("Waiting...")
+  -- pokefirered/src/trade.c:2048 MSG_WAITING_FOR_FRIEND
+  LinkTradeMenu.message = RomText.plain("gText_WaitingForFriendToFinish")
+  LinkTradeMenu.waiting = true
   return true
 end
 
@@ -148,6 +159,7 @@ function LinkTradeMenu.handleInput(input)
   if not (input and LinkTradeMenu.open) then return end
   if LinkTradeMenu.message and input:wasPressed("a") then
     LinkTradeMenu.message = nil
+    LinkTradeMenu.waiting = false
     return
   end
   if LinkTradeMenu.message then return end
@@ -180,8 +192,10 @@ function LinkTradeMenu.update(_dt)
     LinkTradeMenu.confirming = true
     LinkTradeMenu.confirmChoice = 1
     LinkTradeMenu.message = nil
-  elseif LT.state == "menu" and LinkTradeMenu.message == Strings("Waiting...") then
+    LinkTradeMenu.waiting = false
+  elseif LT.state == "menu" and LinkTradeMenu.waiting then
     LinkTradeMenu.message = nil
+    LinkTradeMenu.waiting = false
   end
   if LT.state ~= "menu" and LT.state ~= "ready_wait" and LT.state ~= "confirm"
       and LT.state ~= "confirm_wait" then
@@ -206,7 +220,8 @@ function LinkTradeMenu.draw()
   end
   local cancelY = Window.menuRowY(mine.top, #myParty() + 1)
   if LinkTradeMenu.onCancelRow then Window.cursor(mine.left, cancelY) end
-  Window.print(Strings("CANCEL"), Window.labelTx(mine.left), cancelY)
+  -- pokefirered/src/trade.c:533 sActionTexts[TEXT_CANCEL]
+  Window.print(RomText.at("sActionTexts", 0), Window.labelTx(mine.left), cancelY)
   for i, mon in ipairs(LT.peerParty or {}) do
     local ty = Window.menuRowY(theirs.top, i)
     if LinkTradeMenu.side == "theirs" and i == LinkTradeMenu.theirCursor then
@@ -215,12 +230,8 @@ function LinkTradeMenu.draw()
     Window.print(LinkTradeMenu.monLabel(mon), Window.labelTx(theirs.left), ty)
   end
   if LinkTradeMenu.confirming then
-    -- pokefirered/src/trade.c:2008 CB_ProcessConfirmTradeInput
-    local mineMon = myParty()[(LT.cursor or 0) + 1]
-    local theirMon = (LT.peerParty or {})[(LT.partnerCursor or 0) + 1]
-    Window.print(Strings("Trade %s for %s?",
-      LinkTradeMenu.monLabel(mineMon), LinkTradeMenu.monLabel(theirMon)),
-      Window.labelTx(mine.left), theirs.top - 2)
+    -- pokefirered/src/trade.c:1590 PrintIsThisTradeOkay
+    Window.print(RomText.plain("gText_IsThisTradeOkay"), Window.labelTx(mine.left), theirs.top - 2)
     Window.print(LinkTradeMenu.confirmChoice == 1 and Strings("> YES  NO")
       or Strings("  YES > NO"), Window.labelTx(mine.left), theirs.top - 1)
   elseif LinkTradeMenu.message then

@@ -72,10 +72,25 @@ package.loaded["src.core.game3.objects"] = {
 
 local ctx = { specialVars = {}, stringVars = {} }
 local adapters = { log = function() end, playSe = function() end }
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    translate = function(ir) return ir end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+
 package.loaded["src.core.game3.scripting.space"] = {
   store = store,
   mapId = COLOSSEUM_MAP,
   vm = { ctx = ctx, adapters = adapters },
+  ensureBundle = function() return romBundle end,
 }
 local Space = package.loaded["src.core.game3.scripting.space"]
 
@@ -294,6 +309,11 @@ guest:send({
   type = LB.MSG.SETUP, seed = mySetup and mySetup.seed, mode = Link.USING.SINGLE_BATTLE,
   name = "BLUE", trainerId = 0x2222, gender = 0, party = { blastoise() },
 })
+if not romBundle then
+  print("[skip] 5-21. the link battle runs on ROM move, trainer and battle text data: "
+    .. tostring(require("tests.game3_cache").reason))
+  os.exit(failed == 0 and 0 or 1)
+end
 host:update(0)
 check(ctx.nativePoll() == true, "both seats taken starts the battle")
 
@@ -362,7 +382,11 @@ for _, line in ipairs(log) do
   if line:find("BLUE!", 1, true) then sawEnd = line end
 end
 check(not sawExp, "no EXP line: a link battle gives none")
-check(sawEnd ~= nil, "the battle ends on the link battle string, naming the peer")
+if romBundle then
+  check(sawEnd ~= nil, "the battle ends on the link battle string, naming the peer")
+else
+  print("[skip] ROM text: the link battle outcome string")
+end
 
 print("[test] 9. the record the battle records screen reads")
 eq(LB.outcome, LB.outcomeCode(Battle.getResult()), "the outcome was recorded")
@@ -502,6 +526,28 @@ host:update(0)
 Union.update(0)
 check(Battle.isActive(), "the union room battle started")
 eq(Battle.getState().link, true, "with BATTLE_TYPE_LINK")
+local urClasses = LB.unionRoomClasses()
+eq(Battle.getState().trainerPicId, urClasses.trainerPic[0x2222 % 8],
+  "the peer is drawn with GetUnionRoomTrainerPic, not RED/LEAF")
+local urFill = require("src.core.game3.battle.adapter").fill(Battle.getState())
+eq(urFill.trainer1Class, urClasses.trainerClass[0x2222 % 8], "B_TRAINER1_CLASS is GetUnionRoomTrainerClass")
+eq(urFill.trainer1Name, "BLUE", "B_TRAINER1_NAME is the peer's link name")
+local urIntro = require("src.core.game3.battle.intro_seq").introText(Battle.getState())
+local urRomText = require("src.core.game3.rom_text")
+local urClassName = urRomText.plain(urRomText.key("gTrainerClassNames", urClasses.trainerClass[0x2222 % 8]))
+check(urIntro:find(urClassName, 1, true) ~= nil and urIntro:find("BLUE", 1, true) ~= nil,
+  "the intro is sText_Trainer1WantsToBattle with the union room class and the peer's name")
+local urLog = Ui.log() or {}
+local urPushed = false
+for _, line in ipairs(urLog) do
+  if line == urIntro then urPushed = true end
+end
+check(urPushed, "the battle printed that union room intro")
+local urNone = require("src.core.game3.scripting.trainers").info(0)
+local urNoneName = urNone and urNone.name
+if urNoneName and urNoneName ~= "" and urNoneName ~= "BLUE" then
+  check(table.concat(urLog, " | "):find(urNoneName, 1, true) == nil, "trainer 0 never reaches the union room intro")
+end
 Battle.abort("draw")
 session.linkBattleRecords = {}
 LB.finish("draw")

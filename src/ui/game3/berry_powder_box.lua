@@ -2,7 +2,7 @@
 
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local BerryPowderBox = {}
 
@@ -79,7 +79,7 @@ function BerryPowderBox.draw()
   local px, py = TEMPLATE.tilemapLeft * 8, TEMPLATE.tilemapTop * 8
   Window.stdFrame(TEMPLATE)
   -- pokefirered/src/berry_powder.c:104
-  FrlgFont.draw(Strings("POWDER"), px, py, { small = true, colors = FrlgFont.COLOR.NORMAL })
+  FrlgFont.draw(RomText.plain("gOtherText_Powder"), px, py, { small = true, colors = FrlgFont.COLOR.NORMAL })
   -- pokefirered/src/berry_powder.c:105
   FrlgFont.draw(BerryPowderBox.amountText(BerryPowderBox._amount), px + 39, py + 12,
     { small = true, colors = FrlgFont.COLOR.NORMAL })

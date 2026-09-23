@@ -1,55 +1,11 @@
 -- Trainer party lookup + ROM-derived class/name/pic/party/dialog info for battles and overworld.
 
-local Strings = require("src.core.Strings")
 local Trainers = {}
-
--- Fallbacks when trainers.lua cache is missing (Oak's Lab rivals).
-local SPECIES_BULBASAUR = 1
-local SPECIES_CHARMANDER = 4
-local SPECIES_SQUIRTLE = 7
 
 -- pokefirered/include/constants/trainers.h:264, :272, :273
 local TRAINER_CLASS_RIVAL_EARLY = 81
 local TRAINER_CLASS_RIVAL_LATE = 89
 local TRAINER_CLASS_CHAMPION = 90
-
-local TRAINER_RIVAL_OAKS_LAB_SQUIRTLE = 326
-local TRAINER_RIVAL_OAKS_LAB_BULBASAUR = 327
-local TRAINER_RIVAL_OAKS_LAB_CHARMANDER = 328
-
--- Translated when a trainer is built (fallback_dialogs): this table exists
--- before any translation catalog.
-local RIVAL_LAB_DIALOGS = {
-  defeat = Strings.source("WHAT?\nUnbelievable!\n\nI picked the wrong POKéMON!"),
-  victory = Strings.source("RIVAL: Yeah!\nAm I great or what?"),
-}
-
-local FALLBACK_TRAINERS = {
-  [TRAINER_RIVAL_OAKS_LAB_SQUIRTLE] = {
-    class = 81, className = "RIVAL", pic = 106, name = "TERRY", gender = 0, doubleBattle = false,
-    partySize = 1, lastLevel = 5, aiFlags = 7, items = { 0, 0, 0, 0 },
-    party = { { species = SPECIES_SQUIRTLE, level = 5, rawIv = 0, iv = 0, ivs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 }, evs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 } } },
-    dialogs = RIVAL_LAB_DIALOGS,
-  },
-  [TRAINER_RIVAL_OAKS_LAB_BULBASAUR] = {
-    class = 81, className = "RIVAL", pic = 106, name = "TERRY", gender = 0, doubleBattle = false,
-    partySize = 1, lastLevel = 5, aiFlags = 7, items = { 0, 0, 0, 0 },
-    party = { { species = SPECIES_BULBASAUR, level = 5, rawIv = 0, iv = 0, ivs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 }, evs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 } } },
-    dialogs = RIVAL_LAB_DIALOGS,
-  },
-  [TRAINER_RIVAL_OAKS_LAB_CHARMANDER] = {
-    class = 81, className = "RIVAL", pic = 106, name = "TERRY", gender = 0, doubleBattle = false,
-    partySize = 1, lastLevel = 5, aiFlags = 7, items = { 0, 0, 0, 0 },
-    party = { { species = SPECIES_CHARMANDER, level = 5, rawIv = 0, iv = 0, ivs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 }, evs = { hp=0, atk=0, def=0, spa=0, spd=0, spe=0 } } },
-    dialogs = RIVAL_LAB_DIALOGS,
-  },
-}
-
-local function fallback_dialogs(fb)
-  local out = {}
-  for key, text in pairs(fb.dialogs or {}) do out[key] = Strings(text) end
-  return out
-end
 
 Trainers._pack = nil
 
@@ -113,16 +69,7 @@ function Trainers.get(trainerId)
   if row then
     local classNames = pack and pack.classNames
     local class = tonumber(row.class) or 0
-    local fb = FALLBACK_TRAINERS[trainerId]
     local dlgs = row.dialogs or {}
-    if (not dlgs.defeat or dlgs.defeat == "") and fb and fb.dialogs and fb.dialogs.defeat then
-      local fbDialogs = fallback_dialogs(fb)
-      dlgs = {
-        intro = dlgs.intro or fbDialogs.intro,
-        defeat = dlgs.defeat or fbDialogs.defeat,
-        victory = dlgs.victory or fbDialogs.victory,
-      }
-    end
     return {
       id = trainerId,
       class = class,
@@ -143,27 +90,6 @@ function Trainers.get(trainerId)
       scriptKey = row.scriptKey,
       introTextKey = row.introTextKey,
       defeatTextKey = row.defeatTextKey,
-    }
-  end
-
-  local fb = FALLBACK_TRAINERS[trainerId]
-  if fb then
-    return {
-      id = trainerId,
-      class = fb.class,
-      className = fb.className,
-      pic = fb.pic,
-      name = fb.name,
-      gender = fb.gender or 0,
-      encounterMusic = fb.encounterMusic or 0,
-      doubleBattle = fb.doubleBattle,
-      partySize = fb.partySize,
-      lastLevel = fb.lastLevel,
-      aiFlags = fb.aiFlags,
-      ai = decompose_ai_flags(fb.aiFlags),
-      items = fb.items,
-      party = fb.party,
-      dialogs = fallback_dialogs(fb),
     }
   end
 
@@ -312,25 +238,22 @@ function Trainers.dialogs(trainerId)
 end
 
 --- FRLG intro string pieces for a trainer battle.
+-- pokefirered/src/battle_message.c:1569, :1622
 function Trainers.introStrings(trainerId, monName, opts)
-  local info = Trainers.info(trainerId, opts) or {
-    className = Strings("POKéMON TRAINER"),
-    name = "",
+  local BattleText = require("src.core.game3.battle.battle_text")
+  local info = Trainers.info(trainerId, opts)
+  -- include/constants/opponents.h:4
+  local shown = info or assert(Trainers.info(0, opts), "no trainer 0")
+  local fill = {
+    trainer = true,
+    trainer1Class = shown.className or tonumber(shown.class),
+    trainer1Name = shown.name,
+    opponentMon1 = monName,
   }
-  local class = info.className or Strings("POKéMON TRAINER")
-  local name = info.name or ""
-  monName = monName or "POKéMON"
-  if name ~= "" then
-    return {
-      wants = Strings("%s %s\nwould like to battle!", class, name),
-      sentOut = Strings("%s %s sent\nout %s!", class, name, monName),
-      info = info,
-    }
-  end
   return {
-    wants = Strings("%s\nwould like to battle!", class),
-    sentOut = Strings("%s sent\nout %s!", class, monName),
-    info = info,
+    wants = BattleText.get("sText_Trainer1WantsToBattle", fill),
+    sentOut = BattleText.get("sText_Trainer1SentOutPkmn", fill),
+    info = info or {},
   }
 end
 

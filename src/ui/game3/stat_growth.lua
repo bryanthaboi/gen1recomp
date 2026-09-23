@@ -1,7 +1,7 @@
 -- Stat growth / level-up window (pokefirered Cmd_drawlvlupbox / DrawLevelUpWindowPg1 & Pg2).
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local StatGrowth = {}
 
@@ -13,7 +13,6 @@ StatGrowth._page = 1
 StatGrowth._onDone = nil
 StatGrowth._pos = nil
 
-local STAT_NAMES = { "MAX. HP", "ATTACK", "DEFENSE", "SP. ATK", "SP. DEF", "SPEED" }
 
 local function play_select_se()
   pcall(function()
@@ -88,7 +87,8 @@ function StatGrowth.draw()
 
   for idx = 1, 6 do
     local rowY = winY * 8 + 2 + (idx - 1) * 14
-    FrlgFont.draw(Strings(STAT_NAMES[idx]), winX * 8 + 2, rowY, { colors = FrlgFont.COLOR.NORMAL })
+    -- src/pokemon_special_anim_scene.c:1518
+    FrlgFont.draw(RomText.at("sLevelUpWindowStatNames", idx - 1), winX * 8 + 2, rowY, { colors = FrlgFont.COLOR.NORMAL })
     if isPage1 then
       local diff = newList[idx] - oldList[idx]
       local sign = (diff >= 0) and "+" or "-"

@@ -97,7 +97,7 @@ end
 local function nicknameOf(mon)
   if not mon then return "" end
   local Pokemon = require("src.core.game3.pokemon")
-  if Pokemon.isEgg(mon) then return Strings("EGG") end
+  if Pokemon.isEgg(mon) then return require("src.core.game3.rom_text").plain("gText_EggNickname") end
   if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   ensurePokemonNames(Pokemon)
   return (Pokemon.name and Pokemon.name(mon.species or mon.speciesId)) or ""
@@ -585,7 +585,7 @@ Natives.ALLOW = {
       local chatType = flagsMod().getVar(nil, ctx, 0x8004) or 0
       local Runtime = package.loaded["src.core.game3.runtime"]
       local session = Runtime and Runtime.getSession and Runtime.getSession()
-      local EasyChatData = require("src.core.game3.easy_chat_data")
+      local EasyChatData = require("src.core.game3.easy_chat_text")
       local currentWords = (session and session.easyChatProfile) or EasyChatData.DEFAULT_PROFILE
       adapters.openEasyChat({
         type = chatType,
@@ -640,9 +640,8 @@ Natives.ALLOW = {
   ["special:" .. Std.SPECIAL.ShowEasyChatMessage] = function(ctx, adapters)
     local Runtime = package.loaded["src.core.game3.runtime"]
     local session = Runtime and Runtime.getSession and Runtime.getSession()
-    local EasyChatData = require("src.core.game3.easy_chat_data")
     local EasyChatText = require("src.core.game3.easy_chat_text")
-    local words = (session and session.easyChatProfile) or EasyChatData.DEFAULT_PROFILE
+    local words = (session and session.easyChatProfile) or EasyChatText.DEFAULT_PROFILE
     -- The saved profile is a list of word ids; the words themselves are drawn
     -- here, so they go through the catalog like the picker's own list.
     local text = EasyChatText.phrase(words, 2, 2)
@@ -664,7 +663,7 @@ Natives.ALLOW = {
       local before = nicknameOf(mon)
       setStringVar(ctx, adapters, 3, before)
       setStringVar(ctx, adapters, 2, before)
-      local sname = (Pokemon.name and Pokemon.name(species)) or "POKéMON"
+      local sname = Pokemon.name(species)
       adapters.openNaming({
         title = require("src.ui.game3.naming").monTitle(sname),
         template = "NICKNAME",
@@ -691,7 +690,7 @@ Natives.ALLOW = {
       local before = nicknameOf(mon)
       setStringVar(ctx, adapters, 3, before)
       setStringVar(ctx, adapters, 2, before)
-      local sname = (Pokemon.name and Pokemon.name(species)) or Strings("POKéMON")
+      local sname = Pokemon.name(species)
       adapters.openNaming({
         title = require("src.ui.game3.naming").monTitle(sname),
         template = "NICKNAME",

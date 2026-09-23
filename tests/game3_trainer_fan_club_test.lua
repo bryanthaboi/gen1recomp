@@ -6,6 +6,8 @@ local Std = require("src.core.game3.scripting.stdscripts")
 local Natives = require("src.core.game3.scripting.natives")
 local Flags = require("src.core.game3.scripting.flags")
 local Rng = require("src.core.game3.rng")
+local Cache = require("tests.game3_cache")
+local haveRom = Cache.mount() ~= nil
 
 local passed = 0
 local failed = 0
@@ -224,11 +226,15 @@ do
   TrainerFanClub.bufferFanClubTrainerName(s, ctx, adapters, TrainerFanClub.MEMBER.MEMBER1)
   eq(s.stringVars[1], "BLUE", "Member 1 buffers Rival")
 
-  TrainerFanClub.bufferFanClubTrainerName(s, ctx, adapters, TrainerFanClub.MEMBER.MEMBER5)
-  eq(s.stringVars[1], "LT. SURGE", "Member 5 buffers LT. SURGE")
+  if haveRom then
+    TrainerFanClub.bufferFanClubTrainerName(s, ctx, adapters, TrainerFanClub.MEMBER.MEMBER5)
+    eq(s.stringVars[1], "LT. SURGE", "Member 5 buffers LT. SURGE")
 
-  TrainerFanClub.bufferFanClubTrainerName(s, ctx, adapters, TrainerFanClub.MEMBER.MEMBER7)
-  eq(s.stringVars[1], "KOGA", "Member 7 buffers KOGA")
+    TrainerFanClub.bufferFanClubTrainerName(s, ctx, adapters, TrainerFanClub.MEMBER.MEMBER7)
+    eq(s.stringVars[1], "KOGA", "Member 7 buffers KOGA")
+  else
+    print("[skip] gText_LtSurge / gText_Koga come from the ROM: " .. tostring(Cache.reason))
+  end
 
   -- With link records
   s.linkBattleRecords = {
@@ -275,9 +281,11 @@ do
   eq(Flags.getVar(s, ctx, 0x800D), 0, "special 0xA3 member 5 is not fan (VAR_RESULT = 0)")
 
   -- 4. Script_BufferFanClubTrainerName (0xA5)
-  Flags.setVar(s, ctx, 0x8004, 4) -- Member 5 (Rocker)
-  Natives.special(ctx, Std.SPECIAL.Script_BufferFanClubTrainerName, adapters)
-  eq(s.stringVars[1], "LT. SURGE", "special 0xA5 buffered LT. SURGE to stringVars[1]")
+  if haveRom then
+    Flags.setVar(s, ctx, 0x8004, 4)
+    Natives.special(ctx, Std.SPECIAL.Script_BufferFanClubTrainerName, adapters)
+    eq(s.stringVars[1], "LT. SURGE", "special 0xA5 buffered LT. SURGE to stringVars[1]")
+  end
 
   -- 5. Script_TryGainNewFanFromCounter (0xAA)
   Flags.setVar(s, ctx, TrainerFanClub.VAR_MAP_SCENE_SAFFRON_CITY_POKEMON_TRAINER_FAN_CLUB, 2)

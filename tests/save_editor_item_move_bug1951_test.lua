@@ -244,7 +244,10 @@ do
   eq(Ops.moveCount(S, true, "BICYCLE"), 0, "gen2: key item deposit cannot stack past 1")
 end
 
-do
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.mount() then
+  print("[skip] gen3 item move checks: " .. tostring(Game3Cache.reason))
+else
   local Schema = require("src.core.game3.save_schema_firered")
   local Copy = require("src.mods.Merge").deepCopy
   local function deq(a, b)

@@ -11,6 +11,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
 love = love or require("tests.love_stub")
+require("tests.game3_cache").mountOrSkip("game3_script_verbs_subset_test")
 
 local Vm = require("src.core.game3.scripting.vm")
 local Ops = require("src.core.game3.scripting.ops_a")

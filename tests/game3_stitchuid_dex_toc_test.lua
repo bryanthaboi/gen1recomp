@@ -2,6 +2,7 @@
 -- ../pokefirered/src/pokedex_screen.c:407-435, :1031-1035
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("dex table of contents")
 
 local failed = 0
 local function eq(a, b, msg)
@@ -194,7 +195,7 @@ do
   eq(labels[3], "POKéMON HABITATS", "row 3 is the POKéMON HABITATS header")
   eq(labels[13], "SEARCH", "row 13 is the SEARCH header")
   eq(labels[18], "OTHER", "row 18 is the OTHER header")
-  eq(labels[19], "CANCEL", "row 19 closes the pokedex")
+  eq(labels[19], "CLOSE POKéDEX", "row 19 closes the pokedex")
   -- ../pokefirered/src/pokedex_screen.c:1191-1196 greys locked categories only
   for _, id in ipairs({ "atoz", "type", "lightest", "smallest" }) do
     check(ids[id] ~= nil, "the Kanto list keeps the " .. id .. " row")

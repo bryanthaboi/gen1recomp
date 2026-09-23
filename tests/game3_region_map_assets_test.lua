@@ -18,7 +18,7 @@ local MultichoiceExtract = require("src.import.gba.multichoice_extract")
 print("[test] 1. extractor readiness contract")
 check(type(RegionMapExtract.run) == "function", "region_map_extract has a run()")
 check(type(RegionMapExtract.ready) == "function", "region_map_extract has a ready()")
-check(#RegionMapExtract.FILES == 6, "region_map_extract names 6 baked files")
+check(#RegionMapExtract.FILES == 28, "region_map_extract names 28 baked files")
 
 local function stubCache(present)
   return {
@@ -83,18 +83,39 @@ end
 
 local EXPECT = {
   ["kanto_map.png"] = { 240, 160 },
-  ["cursor.png"] = { 16, 16 },
+  ["sevii123_map.png"] = { 240, 160 },
+  ["sevii45_map.png"] = { 240, 160 },
+  ["sevii67_map.png"] = { 240, 160 },
+  ["frame_normal.png"] = { 240, 160 },
+  ["frame_fly.png"] = { 240, 160 },
+  ["switch_menu_123.png"] = { 240, 160 },
+  ["switch_menu_all.png"] = { 240, 160 },
+  ["switch_button.png"] = { 24, 24 },
+  ["navel_rock_patch.png"] = { 24, 16 },
+  ["birth_island_patch.png"] = { 24, 24 },
+  ["switch_cursor_left.png"] = { 32, 64 },
+  ["switch_cursor_right.png"] = { 32, 64 },
+  ["edge_top_left.png"] = { 32, 64 },
+  ["edge_top_right.png"] = { 32, 64 },
+  ["edge_mid_left.png"] = { 32, 64 },
+  ["edge_mid_right.png"] = { 32, 64 },
+  ["edge_bottom_left.png"] = { 32, 64 },
+  ["edge_bottom_right.png"] = { 32, 64 },
+  ["cursor.png"] = { 16, 32 },
+  ["fly_icon.png"] = { 16, 32 },
   ["dungeon_icon.png"] = { 8, 8 },
   ["dungeon_icon_visited.png"] = { 8, 8 },
   ["player_red.png"] = { 16, 16 },
   ["player_leaf.png"] = { 16, 16 },
 }
 for _, name in ipairs(RegionMapExtract.FILES) do
+  if not name:find("%.png$") then goto continue end
   local data = readFile("region_map/" .. name)
   local w, h = pngSize(data)
   local want = EXPECT[name]
   check(w == want[1] and h == want[2], string.format(
     "region_map/%s is %sx%s (want %dx%d)", name, tostring(w), tostring(h), want[1], want[2]))
+  ::continue::
 end
 
 -- pokefirered/src/region_map.c:790 sAnim_DungeonIconVisited is frame 1, :795 frame 0

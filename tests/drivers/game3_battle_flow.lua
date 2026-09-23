@@ -97,7 +97,7 @@ return function(game)
           if counts[si] >= (sh.delay or 12) then
             taken[si] = true
             sh.taken = true
-            U.shot(game, DIR .. "/" .. sh.file)
+            U.still(game, DIR .. "/" .. sh.file)
             print("shot " .. sh.file)
           end
         end
@@ -147,11 +147,10 @@ return function(game)
     { match = vm_active_for("anim", "STATS_CHANGE"), delay = 20, file = "flow_03_swords_dance_stats_up.png" },
   }, "swords dance")
 
-  for _ = 1, 4 do
+  local wrapShot = { match = vm_active_for("anim", "TURN_TRAP"), delay = 14, file = "flow_04_wrap_turn_trap.png" }
+  for attempt = 1, 4 do
     if (st.enemy.expTrapTurns or 0) > 0 or st.enemy.wrapped then break end
-    turn(35, {
-      { match = vm_active_for("anim", "TURN_TRAP"), delay = 14, file = "flow_04_wrap_turn_trap.png" },
-    }, "wrap")
+    turn(35, attempt == 1 and { wrapShot } or {}, "wrap")
   end
   result((st.enemy.expTrapTurns or 0) > 0 or st.enemy.wrapped ~= nil, "wrap applied")
 
@@ -172,11 +171,20 @@ return function(game)
     { match = vm_active_for("anim", "RAIN_CONTINUES"), delay = 20, file = "flow_07_rain_continues.png" },
   }, "rain continues")
 
-  turn(19, {}, "fly turn 1")
   local pp = Anim.present("player")
-  result(st.player.semiInvulnerable ~= nil and pp.visible == false, "player hidden while flying")
-  U.shot(game, DIR .. "/flow_08_fly_hidden.png")
-  turn(19, {}, "fly turn 2")
+  local flyTurn = st.turn
+  local menuWhileFlying, hiddenSeen = false, false
+  turn(19, {
+    { match = function()
+        if st.player.semiInvulnerable ~= nil and Ui._mode == "menu" then menuWhileFlying = true end
+        local hidden = st.turn == flyTurn + 2 and st.player.semiInvulnerable ~= nil and pp.visible == false
+        if hidden then hiddenSeen = true end
+        return hidden
+      end, delay = 1, file = "flow_08_fly_hidden.png" },
+  }, "fly")
+  result(hiddenSeen, "player hidden while flying")
+  result(not menuWhileFlying, "no command menu on the fly charge turn")
+  result(st.turn == flyTurn + 2, "fly strike ran without a menu pick")
   result(pp.visible ~= false, "player visible after fly strike")
 
   st.player.mon.item = 200
@@ -190,7 +198,7 @@ return function(game)
 
   turn(164, {}, "substitute")
   result((st.player.substituteHP or 0) > 0 and pp.substitute == true, "substitute doll shown")
-  U.shot(game, DIR .. "/flow_09_substitute_doll.png")
+  U.still(game, DIR .. "/flow_09_substitute_doll.png")
 
   turn(46, {
     { match = function() local s = cur_step() return s and s.kind == "switch_out" end, delay = 6, file = "flow_10_roar_switch_out.png" },
@@ -200,7 +208,7 @@ return function(game)
   for _, t in ipairs(Ui.log()) do if t:find("Got away safely", 1, true) then sawFlee = true end end
   result(not sawFlee, "no Got away safely after roar")
   U.wait(60)
-  U.shot(game, DIR .. "/flow_11_after_roar.png")
+  U.still(game, DIR .. "/flow_11_after_roar.png")
 
   for _ = 1, 600 do
     if not Battle.isActive() then break end
@@ -220,7 +228,7 @@ return function(game)
       if not introShot and Battle._phase == "startfx" and s0 and s0.kind == "anim" and s0.data.name == "STATS_CHANGE"
           and Anim.vm() and Anim.vm():busy() then
         for _ = 1, 16 do U.wait(1) end
-        U.shot(game, DIR .. "/flow_11b_intimidate.png")
+        U.still(game, DIR .. "/flow_11b_intimidate.png")
         introShot = true
       end
       if k % 300 == 0 then
@@ -251,13 +259,13 @@ return function(game)
       { match = function() local SS = require("src.core.game3.battle.switch_seq") return AnimSeq._waitSwitch and SS.busy() end, delay = 30, file = "flow_15_baton_pass_in.png" },
     }, "baton pass")
     result(st.player.partyIndex ~= pBefore, "baton pass switched the player mon")
-    U.shot(game, DIR .. "/flow_16_after_baton_pass.png")
+    U.still(game, DIR .. "/flow_16_after_baton_pass.png")
     turn(144, {
       { match = function() local p = Anim.present("player") return (p.mosaic or 0) > 6 end, delay = 1, file = "flow_17_transform_mosaic.png" },
     }, "transform")
     local ppl = Anim.present("player")
     result(st.player.expTransform ~= nil and ppl.transformSpecies == st.enemy.species, "transform swapped the player pic")
-    U.shot(game, DIR .. "/flow_18_after_transform.png")
+    U.still(game, DIR .. "/flow_18_after_transform.png")
   end
 
   report_shots()

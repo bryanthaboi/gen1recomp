@@ -112,6 +112,13 @@ return function(game)
   U.shot(game, DIR .. "/escape_rope_01_message.png")
 
   -- pokefirered/src/item_use.c:642 Task_UseDigEscapeRopeOnField
+  local CaveTransition = require("src.ui.game3.cave_transition")
+  local realCaveStart = CaveTransition.start
+  local caveKinds = {}
+  CaveTransition.start = function(kind, ...)
+    caveKinds[#caveKinds + 1] = kind
+    return realCaveStart(kind, ...)
+  end
   U.tap(game, "a")
   for _ = 1, 600 do
     if Space.mapId ~= CAVE and not Message.isOpen() then break end
@@ -124,6 +131,10 @@ return function(game)
   result(Player.cellX == 8 and Player.cellY == 5,
     "at (8,5), got (" .. Player.cellX .. "," .. Player.cellY .. ")")
   result(Bag.get(session.bag, ITEM_ESCAPE_ROPE) == 0, "the rope was consumed")
+  CaveTransition.start = realCaveStart
+  -- pokefirered/src/fldeff_flash.c:236 TryDoMapTransition
+  result(caveKinds[1] == "exit", "the rope out of Mt Moon played FlashTransition_Exit ("
+    .. table.concat(caveKinds, ",") .. ")")
   U.shot(game, DIR .. "/escape_rope_02_landed.png")
 
   U.tap(game, "down")

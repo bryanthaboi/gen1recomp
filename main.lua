@@ -677,6 +677,10 @@ local function startLaunchRequest(request)
 end
 
 function love.load(args)
+  if os.getenv("POKEPORT_BACKGROUND") == "1" and love.audio then
+    love.audio.setVolume(0)
+    love.audio.setVolume = function() end
+  end
   -- Before anything can shell out (update check, mod index, ROM picker),
   -- claim one hidden console on Windows so those children inherit it instead
   -- of each flashing their own cmd.exe window (#606).  No-op elsewhere.

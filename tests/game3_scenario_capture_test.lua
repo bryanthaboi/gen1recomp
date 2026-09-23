@@ -2,6 +2,8 @@
 -- pokefirered/src/battle_main.c:2611, pokefirered/src/battle_script_commands.c:4526, pokefirered/src/battle_script_commands.c:9463, pokefirered/src/battle_script_commands.c:9497, pokefirered/src/battle_script_commands.c:9617, pokefirered/src/pokemon.c:3686, pokefirered/src/pokemon.c:3692, pokefirered/src/new_game.c:56, pokemon.c:3692
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_scenario_capture_test")
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)

@@ -795,7 +795,7 @@ local function mon_has_move(battler, moveId)
   for i = 1, 4 do
     local mv = mon.moves[i]
     if mv == moveId then return true end
-    if type(mv) == "string" and Moves.BY_NUM[moveId] == mv then return true end
+    if type(mv) == "string" and Moves.numForName(mv) == moveId then return true end
   end
   return false
 end

@@ -11,7 +11,7 @@ local Audio = require("src.core.game3.audio")
 local NamingChrome = require("src.ui.game3.naming_chrome")
 local OwSprites = require("src.core.game3.ow_sprites")
 local Versions = require("src.import.gba.versions")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Naming = {}
 
@@ -27,66 +27,40 @@ Naming.TEMPLATE = {
   NICKNAME = "NICKNAME",
 }
 
--- pret gText_PkmnsNickname ("'s nickname?"), prepended with gSpeciesNames[mon]
--- by DrawMonTextEntryBox — pokefirered/src/naming_screen.c:1712. Used by both
--- mon naming templates (CAUGHT_MON and NICKNAME).
+-- src/naming_screen.c:1714
 function Naming.monTitle(speciesName)
-  local s = tostring(speciesName or "")
-  if s == "" then s = "POKéMON" end
-  return Strings("%s's nickname?", s)
+  return tostring(speciesName or "") .. RomText.plain("gText_PkmnsNickname")
 end
 
--- pret sKeyboardChars + sPageColumnXPos (cursor). Letters drawn via ROW_TEXT CLEARs.
+-- pret sKeyboardChars + sPageColumnXPos (cursor).
 local PAGES = {
   {
     id = "UPPER",
-    label = "UPPER",
     rows = {
       { "A", "B", "C", "D", "E", "F", " ", "." },
       { "G", "H", "I", "J", "K", "L", " ", "," },
       { "M", "N", "O", "P", "Q", "R", "S" },
       { "T", "U", "V", "W", "X", "Y", "Z" },
     },
-    -- pret gText_NamingScreenKeyboard_* with {CLEAR N} → drawClearRow
-    rowText = {
-      "{CLEAR 11}A{CLEAR 6}B{CLEAR 6}C{CLEAR 26}D{CLEAR 6}E{CLEAR 6}F{CLEAR 6} {CLEAR 26}.",
-      "{CLEAR 11}G{CLEAR 6}H{CLEAR 6}I{CLEAR 26}J{CLEAR 6}K{CLEAR 6}L{CLEAR 6} {CLEAR 26},",
-      "{CLEAR 11}M{CLEAR 6}N{CLEAR 6}O{CLEAR 26}P{CLEAR 6}Q{CLEAR 6}R{CLEAR 6}S{CLEAR 26} ",
-      "{CLEAR 11}T{CLEAR 6}U{CLEAR 6}V{CLEAR 26}W{CLEAR 6}X{CLEAR 6}Y{CLEAR 6}Z{CLEAR 26} ",
-    },
     colX = { 0, 12, 24, 56, 68, 80, 92, 123 },
   },
   {
     id = "LOWER",
-    label = "lower",
     rows = {
       { "a", "b", "c", "d", "e", "f", " ", "." },
       { "g", "h", "i", "j", "k", "l", " ", "," },
       { "m", "n", "o", "p", "q", "r", "s" },
       { "t", "u", "v", "w", "x", "y", "z" },
     },
-    rowText = {
-      "{CLEAR 11}a{CLEAR 6}b{CLEAR 6}c{CLEAR 26}d{CLEAR 6}e{CLEAR 6}f{CLEAR 6} {CLEAR 26}.",
-      "{CLEAR 11}g{CLEAR 6}h{CLEAR 7}i{CLEAR 27}j{CLEAR 6}k{CLEAR 6}l{CLEAR 7} {CLEAR 26},",
-      "{CLEAR 11}m{CLEAR 6}n{CLEAR 7}o{CLEAR 26}p{CLEAR 6}q{CLEAR 7}r{CLEAR 6}s{CLEAR 27} ",
-      "{CLEAR 12}t{CLEAR 6}u{CLEAR 6}v{CLEAR 26}w{CLEAR 6}x{CLEAR 6}y{CLEAR 6}z{CLEAR 26} ",
-    },
     colX = { 0, 12, 24, 56, 68, 80, 92, 123 },
   },
   {
     id = "OTHERS",
-    label = "OTHERS",
     rows = {
       { "0", "1", "2", "3", "4" },
       { "5", "6", "7", "8", "9" },
       { "!", "?", "♂", "♀", "/", "-" },
       { "…", "“", "”", "‘", "'" },
-    },
-    rowText = {
-      "{CLEAR 11}0{CLEAR 16}1{CLEAR 16}2{CLEAR 16}3{CLEAR 16}4{CLEAR 16} ",
-      "{CLEAR 11}5{CLEAR 16}6{CLEAR 16}7{CLEAR 16}8{CLEAR 16}9{CLEAR 16} ",
-      "{CLEAR 11}!{CLEAR 16}?{CLEAR 16}♂{CLEAR 16}♀{CLEAR 16}/{CLEAR 16}-",
-      "{CLEAR 11}…{CLEAR 16}“{CLEAR 16}”{CLEAR 18}‘{CLEAR 18}'{CLEAR 18} ",
     },
     colX = { 0, 22, 44, 66, 88, 110 },
   },
@@ -431,7 +405,7 @@ function Naming.open(opts)
   end
   NamingChrome.ready()
   local st = {
-    title = opts.title or Strings("YOUR NAME?"),
+    title = opts.title or RomText.plain("gText_YourName"),
     maxLen = opts.maxLen or Naming.MAX_LEN,
     name = "",
     seed = opts.seed,
@@ -856,13 +830,7 @@ function Naming.draw()
   -- gText_MoveOkBack right-aligned in FONT_SMALL (keypad icons ≈ + / A / B).
   love.graphics.setColor(L.bannerR, L.bannerG, L.bannerB, 1)
   love.graphics.rectangle("fill", 0, 0, W, L.bannerH)
-  local banner = Strings("+MOVE  A OK  B BACK")
-  local tw = FrlgFont.measure(banner, { small = true })
-  if tw < 1 then tw = FrlgFont.measure(banner) end
-  drawText(banner, W - 4 - tw, 0, {
-    colors = FrlgFont.COLOR.WHITE,
-    small = true,
-  })
+  require("src.ui.game3.pokedex_chrome").drawControlInfo(RomText.plain("gText_MoveOkBack"), W - 4, 0)
 
   -- pokefirered/src/naming_screen.c:753
   if st.pcPages then
@@ -876,7 +844,7 @@ end
 function Naming.begin(opts)
   opts = opts or {}
   return {
-    title = opts.title or Strings("YOUR NAME?"),
+    title = opts.title or RomText.plain("gText_YourName"),
     maxLen = opts.maxLen or Naming.MAX_LEN,
     name = "",
     seed = opts.default or opts.seed,

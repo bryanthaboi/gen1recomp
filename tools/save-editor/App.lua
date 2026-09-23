@@ -162,6 +162,14 @@ function App.load(pathOverride, opts)
   if opts.version then
     require("src.core.GameVersion").set(opts.version)
   end
+  if (Gen.of(nil, opts.version) == 3 or require("src.core.GameVersion").generation() == 3)
+      and not Gen.game3CacheReady() then
+    S.path = pathOverride or SaveIO.defaultPath()
+    S.missingCache = Gen.missingCacheMessage(opts.version)
+    S.status = S.missingCache
+    S.loadError, S.allowSave = true, false
+    return
+  end
   -- the same mod set the game loads, merged into Data before the catalogs
   -- build, so modded species/items/moves are editable and MonOps stops
   -- asserting on them
@@ -208,7 +216,7 @@ end
 -- (or pass force=true) to discard and open.
 function App.openPath(path, force)
   if not path or path == "" then return false end
-  if not S then return false end
+  if not S or S.missingCache then return false end
   if S.dirty and not force and not S._openArmed then
     S._openArmed = true
     S.status = "Unsaved changes,  open again to discard and load " .. path
@@ -295,6 +303,7 @@ local function handlePadAction(action)
 end
 
 function App.save()
+  if S.missingCache then return Ops.say(S, S.missingCache) end
   if not S.allowSave then
     return Ops.say(S, "Save disabled,  corrupt save loaded; fix the file and Reload first")
   end
@@ -317,6 +326,7 @@ function App.save()
 end
 
 function App.reload()
+  if S.missingCache then return Ops.say(S, S.missingCache) end
   local save, err = SaveIO.load(S.path)
   if save then
     if Gen.of(save, S.version) == 3 then
@@ -392,6 +402,10 @@ function App.update(dt)
       end
       local tab = os.getenv("POKEPORT_EDITOR_TAB")
       if tab and tab ~= "" and S then S.tab = tab end
+      local monSlot = tonumber(os.getenv("POKEPORT_EDITOR_MON") or "")
+      if monSlot and S and S.save and S.save.party then
+        S.editingMon = S.save.party[monSlot]
+      end
       if os.getenv("POKEPORT_EDITOR_ITEMPICK") == "1" and S then
         Ops.openItemPicker(S, Kit, "bag")
       end
@@ -836,6 +850,25 @@ function App.draw()
 
   Theme.field(width, height)
 
+  if S.missingCache then
+    Theme.versionRail(ox, oy, sw, 6 * s)
+    local pad = 22 * s
+    local ty = oy + sh / 2 - 60 * s
+    for line in (S.missingCache .. " "):gmatch("(.-%.)%s+") do
+      Kit.textCenter("button", line, ox + pad, ty, sw - 2 * pad, PAL.heading)
+      ty = ty + Kit.textHeight("button") + 8 * s
+    end
+    local label = "Close"
+    local bw = 22 * s + Kit.textWidth("button", label)
+    if Kit.button(ox + (sw - bw) / 2, ty + 40 * s, bw, 38 * s, label, { kind = "ghost" }) then
+      App.close()
+    end
+    Kit.endFrame()
+    PadInput.draw()
+    if S._closeRequested then finishClose() end
+    return
+  end
+
   local railH = 6 * s
   -- The title bar reflows to two rows (identity above, buttons below) when
   -- the window is too narrow for both on one, instead of the buttons and the
@@ -880,7 +913,7 @@ function App.draw()
 end
 
 function App.keypressed(key)
-  if not S then return end
+  if not S or S.missingCache then return end
   -- The picker takes Enter and Escape before the focused field does: Kit maps
   -- both to the same "\r" edit (a blur), which cannot tell "commit the top
   -- match" apart from "give up" (#541).
@@ -957,7 +990,7 @@ function App.keypressed(key)
 end
 
 function App.wheelmoved(x, y)
-  if not S then return end
+  if not S or S.missingCache then return end
   -- The map tab spends the wheel on zoom; every other tab routes it through
   -- Kit so whichever list the pointer is over takes it next draw (#595).
   if S.tab == "map" and MapBrowser.wheelmoved then

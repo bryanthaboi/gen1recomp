@@ -208,8 +208,11 @@ return function(game)
   local asked = answerYes(90)
   result(asked, "EventScript_Waterfall opened its prompt")
 
-  for _ = 1, 900 do
-    if Field._waterfall == nil and not Player.moving then break end
+  local climbStarted = false
+  for _ = 1, 4000 do
+    if Field._waterfall ~= nil then climbStarted = true end
+    if climbStarted and Field._waterfall == nil and not Player.moving and not Field.locked then break end
+    if Message.isOpen() or Choice.active == true then U.tap(game, "a") end
     U.wait(4)
   end
   U.wait(40)

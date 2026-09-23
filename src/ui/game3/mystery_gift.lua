@@ -4,6 +4,7 @@ local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local MysteryGift = require("src.core.game3.mystery_gift")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Ui = {}
 
@@ -150,7 +151,7 @@ end
 
 -- pokefirered/src/mystery_gift_menu.c:197 sListMenuItems_CardsOrNews
 function Ui.mainRows()
-  return { Strings("WONDER CARDS"), Strings("WONDER NEWS"), Strings("EXIT") }
+  return RomText.list("sListMenuItems_CardsOrNews")
 end
 
 -- pokefirered/src/mystery_gift_menu.c:203 sListMenuItems_WirelessOrFriend
@@ -164,7 +165,7 @@ function Ui.sourceRows(st)
     end
   end
   st.sources = carried
-  rows[#rows + 1] = Strings("CANCEL")
+  rows[#rows + 1] = RomText.at("sListMenuItems_WirelessOrFriend", 2)
   return rows
 end
 
@@ -172,11 +173,9 @@ end
 function Ui.giftRows(st)
   local allowed = st.isNews and MysteryGift.isSendingNewsAllowed(session(st))
     or (not st.isNews and MysteryGift.isSendingCardAllowed(session(st)))
-  local rows = { Strings("RECEIVE") }
-  if allowed then rows[#rows + 1] = Strings("SEND") end
-  rows[#rows + 1] = Strings("TOSS")
-  rows[#rows + 1] = Strings("CANCEL")
-  return rows
+  local name = allowed and "sListMenuItems_ReceiveSendToss" or "sListMenuItems_ReceiveToss"
+  st.giftActions = allowed and { "receive", "send", "toss", "cancel" } or { "receive", "toss", "cancel" }
+  return RomText.list(name)
 end
 
 -- pokefirered/src/list_menu.c:331 maxShowed
@@ -238,16 +237,16 @@ local function beginSave(st, nextState)
   st.saveNext = nextState
   st.state = Ui.STATE.SAVE
   -- pokefirered/src/strings.c:1321 gText_DataWillBeSaved
-  say(st, Strings("Data will be saved.\nPlease wait."), nil, true)
+  say(st, RomText.plain("gText_DataWillBeSaved"), nil, true)
 end
 
 -- pokefirered/src/mystery_gift_menu.c:1153 gText_DontHaveCardNewOneInput
 local function dontHaveAny(st)
   st.state = Ui.STATE.DONT_HAVE_ANY
   if st.isNews then
-    say(st, Strings("You don't have any WONDER NEWS,\nso new NEWS will be input."), toSourcePrompt)
+    say(st, RomText.plain("gText_DontHaveNewsNewOneInput"), toSourcePrompt)
   else
-    say(st, Strings("You don't have a WONDER CARD,\nso a new CARD will be input."), toSourcePrompt)
+    say(st, RomText.plain("gText_DontHaveCardNewOneInput"), toSourcePrompt)
   end
 end
 
@@ -279,17 +278,17 @@ local function receiveFrom(st, entry)
   st.state = Ui.STATE.RESULT_MSG
   if not ok then
     -- pokefirered/src/strings.c:1304 gText_NothingSentOver
-    say(st, Strings("Nothing was sent over…"), function(s) toSourcePrompt(s) end)
+    say(st, RomText.plain("gText_NothingSentOver"), function(s) toSourcePrompt(s) end)
     return false
   end
   if st.isNews then
     -- pokefirered/src/strings.c:1294 gText_WonderNewsReceived
-    say(st, Strings("A new WONDER NEWS item has been\nreceived."), function(s)
+    say(st, RomText.plain("gText_WonderNewsReceived"), function(s)
       beginSave(s, Ui.STATE.MAIN_MENU)
     end)
   else
     -- pokefirered/src/strings.c:1293 gText_WonderCardReceived
-    say(st, Strings("A new WONDER CARD has been\nreceived."), function(s)
+    say(st, RomText.plain("gText_WonderCardReceived"), function(s)
       beginSave(s, Ui.STATE.MAIN_MENU)
     end)
   end
@@ -303,11 +302,12 @@ local function pickSource(st, entry)
     or (not st.isNews and MysteryGift.validateSavedCard(sess))
   if not held then return receiveFrom(st, entry) end
   st.state = Ui.STATE.ASK_REPLACE
-  ask(st, Strings("Throw away the WONDER CARD\nand input a new CARD?"), function(s)
+  -- pokefirered/src/strings.c:1289 gText_ThrowAwayWonderCard
+  ask(st, RomText.plain("gText_ThrowAwayWonderCard"), function(s)
     if not s.isNews and MysteryGift.isGiftNotReceived(session(s)) then
       s.state = Ui.STATE.ASK_REPLACE_UNRECEIVED
       -- pokefirered/src/strings.c:1290 gText_HaventReceivedCardsGift
-      ask(s, Strings("You haven't received the CARD's gift\nyet. Input a new CARD anyway?"), function(s2)
+      ask(s, RomText.plain("gText_HaventReceivedCardsGift"), function(s2)
         receiveFrom(s2, entry)
       end, function(s2)
         s2.state = Ui.STATE.SOURCE_INPUT
@@ -335,13 +335,13 @@ end
 local function askToss(st)
   st.state = Ui.STATE.ASK_TOSS
   local text = st.isNews
-    and Strings("Is it okay to discard this\nNEWS item?")
-    or Strings("If you throw away the CARD,\nits event won't happen. Okay?")
+    and RomText.plain("gText_OkayToDiscardNews")
+    or RomText.plain("gText_IfThrowAwayCardEventWontHappen")
   ask(st, text, function(s)
     if not s.isNews and MysteryGift.isGiftNotReceived(session(s)) then
       s.state = Ui.STATE.ASK_TOSS_UNRECEIVED
       -- pokefirered/src/strings.c:1320 gText_HaventReceivedGiftOkayToDiscard
-      ask(s, Strings("You haven't received the\nGIFT. Is it okay to discard?"), tossGift, function(s2)
+      ask(s, RomText.plain("gText_HaventReceivedGiftOkayToDiscard"), tossGift, function(s2)
         s2.state = Ui.STATE.GIFT_SELECT
       end)
       return
@@ -465,15 +465,15 @@ function Ui.update(st, pressed, dt)
       st.prompt = nil
       st.state = S.RESULT_MSG
       -- pokefirered/src/strings.c:1304 gText_NothingSentOver
-      say(st, Strings("Nothing was sent over…"), toMainMenu)
+      say(st, RomText.plain("gText_NothingSentOver"), toMainMenu)
       return nil
     end
     setRows(st, rows, 1, 5)
     st.state = S.SOURCE_INPUT
     -- pokefirered/src/strings.c:1282 gText_WhereShouldCardBeAccessed
     st.prompt = st.isNews
-      and Strings("Where should the WONDER NEWS\nbe accessed?")
-      or Strings("Where should the WONDER CARD\nbe accessed?")
+      and RomText.plain("gText_WhereShouldNewsBeAccessed")
+      or RomText.plain("gText_WhereShouldCardBeAccessed")
     return nil
   end
 
@@ -497,13 +497,13 @@ function Ui.update(st, pressed, dt)
     st.saveNext = nil
     st.state = S.SAVE_DONE
     -- pokefirered/src/strings.c:1322 gText_SaveCompletedPressA
-    say(st, ok and Strings("Save completed.\nPlease press the A Button.")
+    say(st, ok and RomText.plain("gText_SaveCompletedPressA")
       or Strings("Save failed."), function(s)
       if nextState == S.TOSSED then
         s.state = S.TOSSED
         -- pokefirered/src/strings.c:1323 gText_WonderCardThrownAway
-        say(s, s.isNews and Strings("The WONDER NEWS was thrown away.")
-          or Strings("The WONDER CARD was thrown away."), toMainMenu)
+        say(s, s.isNews and RomText.plain("gText_WonderNewsThrownAway")
+          or RomText.plain("gText_WonderCardThrownAway"), toMainMenu)
       else
         toMainMenu(s)
       end
@@ -527,19 +527,19 @@ function Ui.update(st, pressed, dt)
   if st.state == S.GIFT_SELECT then
     local pick = tickList(st, pressed)
     if not pick then return nil end
-    local label = (pick > 0) and st.rows[pick] or nil
-    if pick == -1 or label == Strings("CANCEL") then
+    local action = (pick > 0) and (st.giftActions or {})[pick] or nil
+    if pick == -1 or action == "cancel" then
       st.state = S.GIFT_INPUT
-    elseif label == Strings("RECEIVE") then
+    elseif action == "receive" then
       toSourcePrompt(st)
-    elseif label == Strings("SEND") then
+    elseif action == "send" then
       st.state = S.NO_LINK
       -- pokefirered/src/strings.c:24 gText_WirelessNotConnected
-      say(st, Strings("The Wireless Adapter is not\nconnected."), function(s)
+      say(st, RomText.plain("gText_WirelessNotConnected"), function(s)
         s.state = S.GIFT_SELECT
         setRows(s, Ui.giftRows(s), 1)
       end)
-    elseif label == Strings("TOSS") then
+    elseif action == "toss" then
       askToss(st)
     end
     return nil
@@ -566,10 +566,10 @@ local function drawTopBar(st)
   love.graphics.setColor(TOP_BAR[1], TOP_BAR[2], TOP_BAR[3], 1)
   love.graphics.rectangle("fill", 0, 0, 240, TOP_WIN.height * T)
   love.graphics.setColor(1, 1, 1, 1)
-  Window.printPx(Strings("MYSTERY GIFT"), 2, 2, { colors = TOP_TEXT })
+  Window.printPx(RomText.plain("gText_MysteryGift2"), 2, 2, { colors = TOP_TEXT })
   local hint = (st.state == Ui.STATE.SOURCE_INPUT)
-    and Strings("{DPAD_UPDOWN}PICK {A_BUTTON}OK {B_BUTTON}CANCEL")
-    or Strings("{DPAD_UPDOWN}PICK {A_BUTTON}OK {B_BUTTON}EXIT")
+    and RomText.plain("gText_PickOKExit")
+    or RomText.plain("gText_PickOKCancel")
   local okC, PokedexChrome = pcall(require, "src.ui.game3.pokedex_chrome")
   if okC and PokedexChrome and PokedexChrome.drawControlInfo then
     PokedexChrome.drawControlInfo(hint, 222, 2)
@@ -610,8 +610,8 @@ local function drawYesNo(st)
   Window.stdFrame(YESNO_WIN)
   local x = YESNO_WIN.left * T
   local y0 = YESNO_WIN.top * T
-  Window.printPx(Strings("YES"), x + 8, y0, { colors = TEXT })
-  Window.printPx(Strings("NO"), x + 8, y0 + ROW_PITCH, { colors = TEXT })
+  Window.printPx(RomText.plain("gText_Yes"), x + 8, y0, { colors = TEXT })
+  Window.printPx(RomText.plain("gText_No"), x + 8, y0 + ROW_PITCH, { colors = TEXT })
   Window.cursorPx(x, y0 + (y.cursor - 1) * ROW_PITCH, { colors = TEXT })
 end
 

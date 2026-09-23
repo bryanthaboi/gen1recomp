@@ -2,6 +2,7 @@
 -- Manages fan states, Saffron fan club house members, playtime decay, and link battle updates.
 
 local band, bor, bxor, lshift, rshift = bit.band, bit.bor, bit.bxor, bit.lshift, bit.rshift
+local RomText = require("src.core.game3.rom_text")
 
 local TrainerFanClub = {}
 
@@ -349,9 +350,9 @@ function TrainerFanClub.bufferFanClubTrainerName(session, ctx, adapters, memberI
   local resultName
   if linkName == "" then
     if whichNPCTrainer == 1 then
-      resultName = "LT. SURGE"
+      resultName = RomText.plain("gText_LtSurge")
     elseif whichNPCTrainer == 2 then
-      resultName = "KOGA"
+      resultName = RomText.plain("gText_Koga")
     else
       resultName = (session and session.rivalName) or "BLUE"
     end

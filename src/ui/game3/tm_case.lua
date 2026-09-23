@@ -16,7 +16,6 @@ local Bag = require("src.core.game3.bag")
 local Pokemon = require("src.core.game3.pokemon")
 local SummaryData = require("src.core.game3.summary_data")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
-local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
 
 local TmCase = {}
@@ -31,26 +30,10 @@ TmCase.messageText = nil
 local VISIBLE = 5 -- 1:1 pret sTMCaseDynamicResources->maxTMsShown = 5
 local ACTIONS = { "USE", "GIVE", "EXIT" }
 
--- Disc Type Palette mapping for disc render fallback
-local TYPE_DISC_COLORS = {
-  NORMAL   = { 0.65, 0.65, 0.55 },
-  FIGHTING = { 0.75, 0.20, 0.15 },
-  FLYING   = { 0.60, 0.70, 0.90 },
-  POISON   = { 0.60, 0.25, 0.60 },
-  GROUND   = { 0.85, 0.75, 0.40 },
-  ROCK     = { 0.70, 0.60, 0.25 },
-  BUG      = { 0.60, 0.70, 0.15 },
-  GHOST    = { 0.45, 0.35, 0.60 },
-  STEEL    = { 0.70, 0.70, 0.80 },
-  FIRE     = { 0.95, 0.50, 0.20 },
-  WATER    = { 0.35, 0.55, 0.90 },
-  GRASS    = { 0.45, 0.80, 0.30 },
-  ELECTRIC = { 0.95, 0.80, 0.20 },
-  PSYCHIC  = { 0.95, 0.35, 0.55 },
-  ICE      = { 0.55, 0.85, 0.85 },
-  DRAGON   = { 0.45, 0.20, 0.95 },
-  DARK     = { 0.40, 0.30, 0.25 },
-}
+-- src/list_menu.c:73 sMenuInfoIcons TYPE, POWER, ACCURACY, PP
+local INFO_LABEL_RECTS = { { 64, 80 }, { 0, 96 }, { 64, 96 }, { 0, 112 } }
+local INFO_LABEL_QUADS = {}
+
 
 local function se(id)
   pcall(function()
@@ -101,6 +84,8 @@ function TmCase.show(session, bag, opts)
   TmCase._session = session or opts.session
   TmCase._bag = bag or opts.bag or (session and session.bag)
   TmCase._onClose = opts.onClose
+  TmCase._sellMode = opts.sell and true or false
+  TmCase._sell = nil
   TmCase.cursor = opts.cursor or 1
   TmCase.scroll = opts.scroll or 0
   TmCase.mode = "list"
@@ -119,6 +104,10 @@ function TmCase.close()
 end
 
 function TmCase.handleInput(input)
+  if TmCase.mode == "sell" and TmCase._sell then
+    TmCase._sell:handleInput(input)
+    return
+  end
   if TmCase.mode == "message" then
     if input:wasPressed("a") or input:wasPressed("b") or input:wasPressed("start") then
       se(5)
@@ -145,7 +134,8 @@ function TmCase.handleInput(input)
         TmCase.mode = "list"
       elseif act == "GIVE" then
         TmCase.mode = "message"
-        TmCase.messageText = Strings("This item can't be held.")
+        -- src/tm_case.c:1078
+        TmCase.messageText = RomText.box("gText_ItemCantBeHeld", { stringVars = { ItemsData.displayName(row.id) } })
       elseif act == "USE" then
         local party = (TmCase._session and TmCase._session.party) or {}
         if #party == 0 then
@@ -207,7 +197,22 @@ function TmCase.handleInput(input)
       TmCase.close()
     else
       local row = rows[TmCase.cursor]
-      if row then
+      if row and TmCase._sellMode then
+        se(5)
+        -- src/tm_case.c:1157 Task_SelectedTMHM_Sell
+        TmCase.mode = "sell"
+        TmCase._sell = require("src.ui.game3.sell_flow").start({
+          itemId = row.id,
+          owned = row.qty,
+          session = TmCase._session,
+          bag = TmCase._bag,
+          onDone = function()
+            TmCase._sell = nil
+            TmCase.mode = "list"
+            clamp_cursor()
+          end,
+        })
+      elseif row then
         TmCase.mode = "action"
         TmCase.actionCursor = 1
         se(5)
@@ -219,26 +224,60 @@ function TmCase.handleInput(input)
   end
 end
 
-local function draw_disc_fallback(cx, cy, moveType)
-  if not (love and love.graphics) then return end
-  local col = TYPE_DISC_COLORS[moveType or "NORMAL"] or TYPE_DISC_COLORS.NORMAL
-  
-  -- Outer disc ring (32x32 centered at cx, cy)
-  love.graphics.setColor(col[1] * 0.7, col[2] * 0.7, col[3] * 0.7, 1)
-  love.graphics.circle("fill", cx, cy, 16)
-  love.graphics.setColor(col[1], col[2], col[3], 1)
-  love.graphics.circle("fill", cx, cy, 14)
-  
-  -- Metallic shine arc
-  love.graphics.setColor(1, 1, 1, 0.4)
-  love.graphics.arc("fill", cx, cy, 14, -math.pi * 0.7, -math.pi * 0.2)
-  
-  -- Center spindle hole
-  love.graphics.setColor(0.15, 0.15, 0.15, 1)
-  love.graphics.circle("fill", cx, cy, 5)
-  love.graphics.setColor(0.3, 0.3, 0.3, 1)
-  love.graphics.circle("line", cx, cy, 5)
+function TmCase.update()
+  if TmCase.open then TmCase._arrowK = (TmCase._arrowK or 0) + 1 end
 end
+
+-- src/menu_indicators.c:270 SpriteCallback_ScrollIndicatorArrow
+local function arrowBob(freq)
+  local Trig = require("src.core.game3.trig")
+  local v = Trig.sin(((TmCase._arrowK or 0) * freq) % 256) * 2 / 256
+  return v < 0 and math.ceil(v) or math.floor(v)
+end
+
+local EXT_FONT, EXT_CLEAR, EXT_CLEAR_TO = 0x06, 0x11, 0x13
+local FONT_SMALL = 0
+
+local function labelIr(itemId)
+  local out = {}
+  local function add(key)
+    for _, seg in ipairs(RomText.ir(key)) do
+      if seg.t ~= "eos" then out[#out + 1] = seg end
+    end
+  end
+  local tmNum = ItemsData.tmNumber(itemId) or 0
+  -- src/tm_case.c:678 GetTMNumberAndMoveString
+  add("gText_FontSmall")
+  if ItemsData.isHm(itemId) then
+    add("sText_ClearTo18")
+    add("gText_NumberClear01")
+    out[#out + 1] = { t = "text", s = string.format("%01d", tmNum) }
+  else
+    add("gText_NumberClear01")
+    out[#out + 1] = { t = "text", s = string.format("%02d", tmNum) }
+  end
+  add("sText_SingleSpace")
+  add("gText_FontNormal")
+  out[#out + 1] = { t = "text", s = Pokemon.moveName(Pokemon.moveFromTmItem(itemId)) or "" }
+  return out
+end
+
+local function drawTmLabel(itemId, x, y)
+  local px, small = x, false
+  for _, seg in ipairs(labelIr(itemId)) do
+    if seg.t == "ext" and seg.cmd == EXT_FONT then
+      small = (seg.args and seg.args[1]) == FONT_SMALL
+    elseif seg.t == "ext" and seg.cmd == EXT_CLEAR then
+      px = px + (seg.args and seg.args[1] or 0)
+    elseif seg.t == "ext" and seg.cmd == EXT_CLEAR_TO then
+      px = math.max(px, x + (seg.args and seg.args[1] or 0))
+    elseif seg.t == "text" then
+      local _, endX = FrlgFont.draw(seg.s, px, y, { small = small, colors = FrlgFont.COLOR.NORMAL })
+      px = endX
+    end
+  end
+end
+TmCase.labelIr = labelIr
 
 function TmCase.draw()
   if not TmCase.open then return end
@@ -269,8 +308,7 @@ function TmCase.draw()
   if sel then
     local moveId = Pokemon.moveFromTmItem(sel.id)
     local moveRow = Pokemon.battleMove(moveId) or {}
-    local moveType = tostring(moveRow.type or "NORMAL"):upper()
-    local typeIdx = SummaryChrome.TYPE_NAMES and SummaryChrome.TYPE_NAMES[moveType] or 0
+    local typeIdx = tonumber(moveRow.type) or 0
     local isHm = ItemsData.isHm(sel.id)
     local tmNum = ItemsData.tmNumber(sel.id) or 1
     local tmIdx = isHm and (tmNum - 1) or (tmNum - 1 + 8)
@@ -279,10 +317,7 @@ function TmCase.draw()
     local cx = 41 - math.floor((14 * tmIdx) / 58)
     local cy = 46 + math.floor((8 * tmIdx) / 58)
 
-    local drawn = hasChrome and TmCaseChrome.drawDisc(typeIdx, cx - 16, cy - 16, isHm)
-    if not drawn then
-      draw_disc_fallback(cx, cy, moveType)
-    end
+    if hasChrome then TmCaseChrome.drawDisc(typeIdx, cx - 16, cy - 16, isHm) end
   end
 
   -- 3. Pocket Cover Overlay (BG1 Priority 0 over Disc Sprite)
@@ -291,26 +326,26 @@ function TmCase.draw()
   end
 
   -- 4. Header Title: "TM CASE" (WIN_TITLE: 0, 1, 10, 2 -> 72px center at y=9)
-  local title = Strings("TM CASE")
+  -- src/tm_case.c:1528
+  local title = RomText.plain("gText_TMCase")
   local tw = FrlgFont.measure(title)
   local tx = math.floor((72 - tw) / 2) + 4
   FrlgFont.draw(title, tx, 9, { colors = FrlgFont.COLOR.LIGHT })
 
 
   -- 4. Left Pane: Move Details (WIN_MOVE_INFO_LABELS & WIN_MOVE_INFO: y=104..152)
-  -- Row 0: TYPE (y = 104)
-  FrlgFont.draw(Strings("TYPE"), 8, 104, { colors = FrlgFont.COLOR.DARK_GRAY })
-  -- Row 1: POWER (y = 116)
-  FrlgFont.draw(Strings("POWER"), 8, 116, { colors = FrlgFont.COLOR.DARK_GRAY })
-  -- Row 2: ACCURACY (y = 128)
-  FrlgFont.draw(Strings("ACCURACY"), 8, 128, { colors = FrlgFont.COLOR.DARK_GRAY })
-  -- Row 3: PP (y = 140)
-  FrlgFont.draw(Strings("PP"), 8, 140, { colors = FrlgFont.COLOR.DARK_GRAY })
+  -- src/tm_case.c:1531 DrawMoveInfoLabels
+  local infoImg = assert(SummaryChrome.menuInfoImage(), "menu_info")
+  love.graphics.setColor(1, 1, 1, 1)
+  for i, r in ipairs(INFO_LABEL_RECTS) do
+    INFO_LABEL_QUADS[i] = INFO_LABEL_QUADS[i] or love.graphics.newQuad(r[1], r[2], 40, 12, 128, 128)
+    love.graphics.draw(infoImg, INFO_LABEL_QUADS[i], 8, 104 + (i - 1) * 12)
+  end
 
   if sel then
     local moveId = Pokemon.moveFromTmItem(sel.id)
     local moveRow = Pokemon.battleMove(moveId) or {}
-    local moveType = tostring(moveRow.type or "NORMAL"):upper()
+    local moveType = tonumber(moveRow.type) or 0
     local power = tonumber(moveRow.power) or 0
     local accuracy = tonumber(moveRow.accuracy) or 0
     local pp = tonumber(moveRow.pp) or 0
@@ -335,11 +370,15 @@ function TmCase.draw()
   end
 
   -- 5. Right Pane: List Menu (WIN_LIST: 10, 1, 19, 10 -> x=80, y=8, 5 visible rows)
-  if TmCase.scroll > 0 then
-    FrlgFont.draw("▲", 160, 4, { colors = FrlgFont.COLOR.DARK_GRAY })
-  end
-  if TmCase.scroll + VISIBLE < total then
-    FrlgFont.draw("▼", 160, 88, { colors = FrlgFont.COLOR.DARK_GRAY })
+  -- src/tm_case.c:773 CreateListScrollArrows
+  local okB, BagChrome = pcall(require, "src.ui.game3.bag_chrome")
+  if okB and BagChrome and BagChrome.drawArrow then
+    if TmCase.scroll > 0 then
+      BagChrome.drawArrow("up", 152, arrowBob(8))
+    end
+    if TmCase.scroll + VISIBLE < total then
+      BagChrome.drawArrow("down", 152, 80 + arrowBob(-8))
+    end
   end
 
   for i = 1, VISIBLE do
@@ -347,40 +386,25 @@ function TmCase.draw()
     if idx > total then break end
     local y = 10 + (i - 1) * 16
 
-    -- Selector Cursor
+    -- src/tm_case.c:769 PrintListCursorAtRow
     if idx == TmCase.cursor and TmCase.mode == "list" then
-      Window.cursorPx(84, y)
+      Window.cursorPx(80, y)
     end
 
     if idx <= #rows then
       local r = rows[idx]
-      local tmNum = ItemsData.tmNumber(r.id)
       local isHm = ItemsData.isHm(r.id)
-      local mId = Pokemon.moveFromTmItem(r.id)
-      local mName = Pokemon.moveName(mId) or r.name or "MOVE"
-
+      drawTmLabel(r.id, 88, y)
+      -- src/tm_case.c:718 List_ItemPrintFunc
       if isHm then
-        -- HM icon + HM number
-        local okHm = hasChrome and TmCaseChrome.drawHmIcon(92, y + 1)
-        if not okHm then
-          FrlgFont.draw(Strings("HM"), 92, y, { colors = FrlgFont.COLOR.DARK_GRAY })
-        end
-        FrlgFont.draw(string.format("%02d", tmNum or 0), 108, y, { colors = FrlgFont.COLOR.DARK_GRAY })
+        if hasChrome then TmCaseChrome.drawHmIcon(88, y) end
       else
-        -- TM number
-        FrlgFont.draw(string.format("%02d", tmNum or 0), 96, y, { colors = FrlgFont.COLOR.DARK_GRAY })
-      end
-
-      -- Move Name
-      FrlgFont.draw(mName, 122, y, { maxWidth = 76, colors = FrlgFont.COLOR.NORMAL })
-
-      -- Quantity (TMs only)
-      if not isHm then
-        FrlgFont.draw(string.format("×%2d", r.qty or 1), 206, y, { colors = FrlgFont.COLOR.NORMAL })
+        FrlgFont.draw(RomText.plain("gText_TimesStrVar1", { stringVars = { string.format("%3d", r.qty or 1) } }),
+          206, y, { small = true, colors = FrlgFont.COLOR.NORMAL })
       end
     else
-      -- CANCEL Row
-      FrlgFont.draw(Strings("CANCEL"), 92, y, { colors = FrlgFont.COLOR.NORMAL })
+      -- src/tm_case.c:655
+      FrlgFont.draw(RomText.plain("gText_Close"), 88, y, { colors = FrlgFont.COLOR.NORMAL })
     end
   end
 
@@ -407,8 +431,12 @@ function TmCase.draw()
   if TmCase.mode == "action" and sel then
     -- Bottom left prompt window (WIN_SELECTED_MSG: 5, 15, 15, 4 -> 40, 120, 120, 32)
     Window.stdFrame(Window.template(5, 15, 15, 4))
-    local tmLabel = sel.name or ItemsData.displayName(sel.id) or "TM"
-    FrlgFont.draw(Strings("%s is\nselected.", tmLabel), 44, 122, { maxWidth = 112, linePitch = 14, colors = FrlgFont.COLOR.NORMAL })
+    -- src/tm_case.c:980, :678 GetTMNumberAndMoveString
+    local tmLabel = string.format(ItemsData.isHm(sel.id) and "%s%d %s" or "%s%02d %s",
+      RomText.plain("gText_NumberClear01"), ItemsData.tmNumber(sel.id),
+      Pokemon.moveName(Pokemon.moveFromTmItem(sel.id)))
+    FrlgFont.draw(RomText.box("gText_Var1IsSelected", { stringVars = { tmLabel } }), 44, 122,
+      { maxWidth = 112, linePitch = 14, colors = FrlgFont.COLOR.NORMAL })
 
     local popX = 22
     local popY = 13
@@ -420,8 +448,13 @@ function TmCase.draw()
       if i == TmCase.actionCursor then
         Window.cursorPx(popX * 8 + 1, rowY)
       end
-      FrlgFont.draw(Strings(act), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
+      -- src/tm_case.c:221 sMenuActions
+      FrlgFont.draw(RomText.at("sMenuActions", i - 1), popX * 8 + 9, rowY, { colors = FrlgFont.COLOR.NORMAL })
     end
+  end
+
+  if TmCase.mode == "sell" and TmCase._sell then
+    TmCase._sell:draw()
   end
 
   -- 8. Message Modal

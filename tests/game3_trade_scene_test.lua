@@ -2,7 +2,14 @@
 -- pokefirered/src/trade_scene.c:1337 DoTradeAnim_Cable
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
-package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
+package.loaded["src.core.game3.rom_text"] = {
+  plain = function(key) return key end, box = function(key) return key end,
+  ascii = function(key) return key end, has = function() return true end,
+  key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+  count = function() return 0 end, list = function() return {} end,
+  lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+}
 
 local failed = 0
 local function check(cond, msg)
@@ -171,45 +178,49 @@ eq(TradeScene.BALL_VELOCITY[95], -1, "velocity[95]")
 eq(TradeScene.BALL_VELOCITY[107], 3, "velocity[107]")
 eq(TradeScene.BALL_VELOCITY[108], nil, "the table stops at 108 entries")
 
-print("[test] 4. the received mon lands in the party exactly once")
-local Trade = require("src.core.game3.scripting.natives_trade")
-local sent = { species = 63, nickname = "ABRA", level = 12, mail = nil }
-local offered = {
-  species = 122, nickname = "MIMIEN", otName = "REYLEY", otId = 1985, level = 12,
-}
-session.party = { sent, { species = 25, nickname = "PIKA", level = 9 } }
-Trade._offered = offered
-local swaps = 0
-local realTradeMons = Trade.tradeMons
-Trade.tradeMons = function(...)
-  swaps = swaps + 1
-  return realTradeMons(...)
-end
-local task = Trade.sceneTask(nil, nil, 0, 0)
-local guard = 0
-while guard < 20000 do
-  guard = guard + 1
-  if task() then break end
-end
-Trade.tradeMons = realTradeMons
-check(guard < 20000, "the scene task finished, frames=" .. guard)
-eq(swaps, 1, "TradeMons ran exactly once")
-eq(session.party[1], offered, "the received mon took the sent mon's slot")
-eq(#session.party, 2, "the party did not grow")
-eq(session.party[2].nickname, "PIKA", "the rest of the party is untouched")
-eq(session.dex.owned[122], true, "the received species is registered as owned")
+if not require("tests.game3_cache").mount() then
+  print("[skip] 4-5: the in-game trades are ROM data: " .. tostring(require("tests.game3_cache").reason))
+else
+  print("[test] 4. the received mon lands in the party exactly once")
+  local Trade = require("src.core.game3.scripting.natives_trade")
+  local sent = { species = 63, nickname = "ABRA", level = 12, mail = nil }
+  local offered = {
+    species = 122, nickname = "MIMIEN", otName = "REYLEY", otId = 1985, level = 12,
+  }
+  session.party = { sent, { species = 25, nickname = "PIKA", level = 9 } }
+  Trade._offered = offered
+  local swaps = 0
+  local realTradeMons = Trade.tradeMons
+  Trade.tradeMons = function(...)
+    swaps = swaps + 1
+    return realTradeMons(...)
+  end
+  local task = Trade.sceneTask(nil, nil, 0, 0)
+  local guard = 0
+  while guard < 20000 do
+    guard = guard + 1
+    if task() then break end
+  end
+  Trade.tradeMons = realTradeMons
+  check(guard < 20000, "the scene task finished, frames=" .. guard)
+  eq(swaps, 1, "TradeMons ran exactly once")
+  eq(session.party[1], offered, "the received mon took the sent mon's slot")
+  eq(#session.party, 2, "the party did not grow")
+  eq(session.party[2].nickname, "PIKA", "the rest of the party is untouched")
+  eq(session.dex.owned[122], true, "the received species is registered as owned")
 
-print("[test] 5. a second run of the same task does not swap again")
-swaps = 0
-Trade.tradeMons = function(...)
-  swaps = swaps + 1
-  return realTradeMons(...)
+  print("[test] 5. a second run of the same task does not swap again")
+  swaps = 0
+  Trade.tradeMons = function(...)
+    swaps = swaps + 1
+    return realTradeMons(...)
+  end
+  local done = task()
+  Trade.tradeMons = realTradeMons
+  check(done, "the finished task stays finished")
+  eq(swaps, 0, "no second swap")
+  eq(session.party[1], offered, "the party still holds the received mon once")
 end
-local done = task()
-Trade.tradeMons = realTradeMons
-check(done, "the finished task stays finished")
-eq(swaps, 0, "no second swap")
-eq(session.party[1], offered, "the party still holds the received mon once")
 
 print("[test] 6. the map music is cached at the start and put back at the end")
 -- pokefirered/src/trade_scene.c:1348
@@ -256,24 +267,29 @@ eq(cachedLink, MAP_SONG, "the link arm caches the map music too")
 eq(linkSongs[#linkSongs], MAP_SONG, "the link arm ends on the cached map music")
 check(not TradeScene.isOpen(), "both runs closed the scene")
 
-print("[test] 7. a trade with no mon to swap still fades the field back in")
-local realFade = package.loaded["src.ui.game3.fade"]
-local fades = {}
-package.loaded["src.ui.game3.fade"] = {
-  MODE = { TO_BLACK = "to_black", FROM_BLACK = "from_black" },
-  begin = function(mode) fades[#fades + 1] = mode end,
-}
-session.party = {}
-Trade._offered = nil
-local bail = Trade.sceneTask(nil, nil, 0, 3)
-local bailFrames = 0
-while bailFrames < 20000 do
-  bailFrames = bailFrames + 1
-  if bail() then break end
+if not require("tests.game3_cache").mount() then
+  print("[skip] 7: the in-game trades are ROM data: " .. tostring(require("tests.game3_cache").reason))
+else
+  print("[test] 7. a trade with no mon to swap still fades the field back in")
+  local Trade = require("src.core.game3.scripting.natives_trade")
+  local realFade = package.loaded["src.ui.game3.fade"]
+  local fades = {}
+  package.loaded["src.ui.game3.fade"] = {
+    MODE = { TO_BLACK = "to_black", FROM_BLACK = "from_black" },
+    begin = function(mode) fades[#fades + 1] = mode end,
+  }
+  session.party = {}
+  Trade._offered = nil
+  local bail = Trade.sceneTask(nil, nil, 0, 3)
+  local bailFrames = 0
+  while bailFrames < 20000 do
+    bailFrames = bailFrames + 1
+    if bail() then break end
+  end
+  package.loaded["src.ui.game3.fade"] = realFade
+  check(bailFrames < 20000, "the bail-out task finished, frames=" .. bailFrames)
+  eq(fades[1], "to_black", "it still fades out first")
+  eq(fades[#fades], "from_black", "and the last fade brings the field back")
 end
-package.loaded["src.ui.game3.fade"] = realFade
-check(bailFrames < 20000, "the bail-out task finished, frames=" .. bailFrames)
-eq(fades[1], "to_black", "it still fades out first")
-eq(fades[#fades], "from_black", "and the last fade brings the field back")
 
 finish()

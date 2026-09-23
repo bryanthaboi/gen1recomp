@@ -33,7 +33,7 @@ local session = { money = 3000, name = "ASH" }
 local gained = Prize.awardTrainerWin(session, 414)
 check(gained == 1400, "award gained 1400")
 check(session.money == 4400, "session money 4400")
-check(Prize.moneyMessage("ASH", 1400) == "ASH got ¥1400\nfor winning!", "money message")
+check(Prize.moneyMessage("ASH", 1400) == "ASH got ¥1400\nfor winning!\\p", "money message")
 session.money = Prize.MAX_MONEY - 10
 local g2 = Prize.apply(session, 100)
 check(g2 == 10 and session.money == Prize.MAX_MONEY, "cap at MAX_MONEY")

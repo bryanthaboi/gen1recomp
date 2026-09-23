@@ -128,8 +128,14 @@ function Pokemon.types() return { 14, 14 } end
 function Pokemon.frontPic(sp) return Pokemon._front[sp] or vanillaFront end
 function Pokemon.backPic(sp) return Pokemon._back[sp] or vanillaFront end
 function Pokemon.knowsMove() return false end
+function Pokemon.moveName(id) return ({ [1] = "POUND" })[id] or "-------" end
+function Pokemon.romMoveName(id) return ({ [1] = "POUND" })[id] end
 function Pokemon.onReload(fn) reloadFns[#reloadFns + 1] = fn end
 package.loaded["src.core.game3.pokemon"] = Pokemon
+local FixtureMoves = require("src.core.game3.battle.moves")
+FixtureMoves._romLoaded = true
+FixtureMoves._rom = { [1] = { effect = 0, power = 40, type = 0, accuracy = 100, pp = 35,
+  secondaryChance = 0, target = 0, priority = 0, flags = 51 } }
 
 local Gen3Compat = require("src.mods.Gen3Compat")
 local Gen2Compat = require("src.mods.Gen2Compat")

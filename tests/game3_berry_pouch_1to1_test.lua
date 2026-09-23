@@ -1,4 +1,5 @@
 -- Test suite for Berry Pouch 1:1 authentic layout and mechanics.
+require("tests.game3_cache").mountOrSkip("game3_berry_pouch_1to1_test")
 
 local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")

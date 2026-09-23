@@ -537,7 +537,7 @@ gains a field instead of the name gaining a prefix.
   `world.live_maps_updated`, `flag.changed`; hooks `warp.destination`,
   `movement.collision`, `movement.speed`, `encounter.roll`,
   `encounter.species`, `encounter.fishing`, `encounter.table`, `world.tod`,
-  `map.palette`, `fieldmove.eligibility`. `flag.changed` carries the numeric
+  `map.palette`, `fieldmove.eligibility`, `world.follower.spawn`. `flag.changed` carries the numeric
   `wEventFlags` id under Gen 1's `name` key, which is the one payload
   difference the numeric flag space forces. `encounter.table` is raised only
   from `mod.world:effectiveEncounters(mapId, terrain, opts)`, a read-only

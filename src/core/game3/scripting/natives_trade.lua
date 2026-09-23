@@ -15,79 +15,28 @@ local TRADED_FRIENDSHIP = 70 -- pokefirered/src/trade_scene.c:1075
 -- pokefirered/src/trade_scene.c:2778
 local FADE_FRAMES = 16
 
--- pokefirered/src/data/ingame_trades.h:1 sInGameTrades, FIRERED branch
-local TRADES = {
-  [0] = {
-    nickname = "MIMIEN", species = 122, ivs = { 20, 15, 17, 24, 23, 22 },
-    abilityNum = 0, otId = 1985, personality = 0x00009cae, heldItem = 0,
-    otName = "REYLEY", otGender = 0, requestedSpecies = 63,
-  },
-  [1] = {
-    nickname = "ZYNX", species = 124, ivs = { 18, 17, 18, 22, 25, 21 },
-    abilityNum = 0, otId = 36728, personality = 0x498a2e1d, heldItem = 131,
-    otName = "DONTAE", otGender = 0, requestedSpecies = 61, mailNum = 0,
-  },
-  [2] = {
-    nickname = "MS. NIDO", species = 29, ivs = { 22, 18, 25, 19, 15, 22 },
-    abilityNum = 0, otId = 63184, personality = 0x4c970b89, heldItem = 103,
-    otName = "SAIGE", otGender = 1, requestedSpecies = 32,
-  },
-  [3] = {
-    nickname = "CH'DING", species = 83, ivs = { 20, 25, 21, 24, 15, 20 },
-    abilityNum = 0, otId = 8810, personality = 0x151943d7, heldItem = 225,
-    otName = "ELYSSA", otGender = 0, requestedSpecies = 21,
-  },
-  [4] = {
-    nickname = "NINA", species = 30, ivs = { 22, 25, 18, 19, 22, 15 },
-    abilityNum = 0, otId = 13637, personality = 0x00eeca15, heldItem = 0,
-    otName = "TURNER", otGender = 0, requestedSpecies = 33,
-  },
-  [5] = {
-    nickname = "MARC", species = 108, ivs = { 24, 19, 21, 15, 23, 21 },
-    abilityNum = 0, otId = 1239, personality = 0x451308ab, heldItem = 0,
-    otName = "HADEN", otGender = 0, requestedSpecies = 55,
-  },
-  [6] = {
-    nickname = "ESPHERE", species = 101, ivs = { 19, 16, 18, 25, 25, 19 },
-    abilityNum = 1, otId = 50298, personality = 0x06341016, heldItem = 0,
-    otName = "CLIFTON", otGender = 0, requestedSpecies = 26,
-  },
-  [7] = {
-    nickname = "TANGENY", species = 114, ivs = { 22, 17, 25, 16, 23, 20 },
-    abilityNum = 0, otId = 60042, personality = 0x5c77ecfa, heldItem = 108,
-    otName = "NORMA", otGender = 1, requestedSpecies = 48,
-  },
-  [8] = {
-    nickname = "SEELOR", species = 86, ivs = { 24, 15, 22, 16, 23, 22 },
-    abilityNum = 0, otId = 9853, personality = 0x482cac89, heldItem = 0,
-    otName = "GARETT", otGender = 0, requestedSpecies = 77,
-  },
-}
-Trade.TRADES = TRADES
-local LEAFGREEN_TRADES = {}
-for id, entry in pairs(TRADES) do
-  local copy = {}
-  for k, v in pairs(entry) do copy[k] = v end
-  LEAFGREEN_TRADES[id] = copy
+Trade.FILE = "data/generated/gba/trades/ingame_trades.lua"
+
+local packs = {}
+local function pack()
+  local version = tostring(require("src.core.GameVersion").get())
+  if not packs[version] then
+    local src = assert(require("src.core.game3.dataset").cache():read(Trade.FILE),
+      Trade.FILE .. " is not in the cache")
+    packs[version] = assert(load(src, "@" .. Trade.FILE, "t", {}))()
+  end
+  return packs[version]
 end
-local nidoran = LEAFGREEN_TRADES[2]
-nidoran.nickname, nidoran.species, nidoran.requestedSpecies = "MR. NIDO", 32, 29
-nidoran.ivs, nidoran.personality = {19, 25, 18, 22, 22, 15}, 0x4c970b9e
-local nidorino = LEAFGREEN_TRADES[4]
-nidorino.nickname, nidorino.species, nidorino.requestedSpecies = "NINO", 33, 30
-nidorino.ivs, nidorino.personality = {19, 18, 25, 22, 15, 22}, 0x00eeca19
-LEAFGREEN_TRADES[5].requestedSpecies = 80
+
+-- pokefirered/src/data/ingame_trades.h:1 sInGameTrades
+Trade.TRADES = setmetatable({}, { __index = function(_, id) return pack().trades[id] end })
 function Trade.entry(id)
-  local entries = require("src.core.GameVersion").get() == "leafgreen" and LEAFGREEN_TRADES or TRADES
-  return entries[id]
+  return pack().trades[id]
 end
 Trade.COUNT = 9
 
 -- pokefirered/src/data/ingame_trades.h:184 sInGameTradeMailMessages
-local TRADE_MAIL_MESSAGES = {
-  [0] = { 3613, 4128, 5147, 10876, 3072, 4102, 5183, 4143, 4137 },
-}
-Trade.MAIL_MESSAGES = TRADE_MAIL_MESSAGES
+Trade.MAIL_MESSAGES = setmetatable({}, { __index = function(_, id) return pack().mail[id] end })
 
 -- pokefirered/src/trade.c:144 gLinkPartnerMail
 Trade.PARTNER_MAIL = {}
@@ -158,7 +107,7 @@ end
 -- (pokefirered/src/pokemon.c:3020)
 local function nicknameOf(mon)
   if not mon then return "" end
-  if require("src.core.game3.pokemon").isEgg(mon) then return Strings("EGG") end
+  if require("src.core.game3.pokemon").isEgg(mon) then return require("src.core.game3.rom_text").plain("gText_EggNickname") end
   if mon.nickname and mon.nickname ~= "" then return tostring(mon.nickname) end
   return speciesName(speciesOf(mon))
 end
@@ -277,7 +226,7 @@ end
 
 -- pokefirered/data/scripts/cable_club.inc:1440 CableClub_Text_YouHaveAMonThatCantBeTaken
 function Trade.badEggText()
-  return Strings("You have at least one POKéMON\nthat can't be taken.")
+  return require("src.core.game3.rom_text").plain("CableClub_Text_YouHaveAMonThatCantBeTaken")
 end
 
 function Trade.peerMonRefusalText()
@@ -286,7 +235,7 @@ end
 
 -- pokefirered/src/trade_scene.c:2500 GetInGameTradeMail
 function Trade.tradeMail(entry)
-  local words = entry and TRADE_MAIL_MESSAGES[tonumber(entry.mailNum) or -1]
+  local words = entry and Trade.MAIL_MESSAGES[tonumber(entry.mailNum) or -1]
   if not words then return nil end
   local record = Mail.clear(nil)
   for i = 1, Mail.MAIL_WORDS_COUNT do

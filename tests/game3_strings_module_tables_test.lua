@@ -16,50 +16,46 @@ end
 
 local Strings = require("src.core.Strings")
 local FieldMoves = require("src.core.game3.field_moves")
-local Trainers = require("src.core.game3.scripting.trainers")
 local ItemsData = require("src.core.game3.items_data")
 
-Trainers._pack = { trainers = {} } -- no ROM pack: use the built-in fallbacks
-
 Strings.load({ strings = {
-  ["Not enough HP!"] = "Pas assez de PV!",
-  ["RIVAL: Yeah!\nAm I great or what?"] = "RIVAL: Ouais!\nJe suis trop fort!",
+  ["Not enough HP…"] = "Pas assez de PV…",
   ["KEY ITEMS"] = "OBJETS RARES",
 } })
 
-check(FieldMoves.TEXT.NOT_ENOUGH_HP == "Pas assez de PV!",
-  "FieldMoves.TEXT translates when read")
 check(FieldMoves.TEXT.NOT_A_KEY == nil, "FieldMoves.TEXT has no entry for an unknown key")
 
-local rival = Trainers.get(326)
-check(rival and rival.dialogs.victory == "RIVAL: Ouais!\nJe suis trop fort!",
-  "fallback rival dialogs are translated when the trainer is built")
-check(rival and rival.dialogs.defeat == "WHAT?\nUnbelievable!\n\nI picked the wrong POKéMON!",
-  "an untranslated fallback dialog stays in English")
-
-check(ItemsData.POCKET_LABEL.KEY_ITEMS == "KEY ITEMS", "POCKET_LABEL keeps the English source")
-check(Strings(ItemsData.POCKET_LABEL.KEY_ITEMS) == "OBJETS RARES", "POCKET_LABEL translates at the caller")
+if require("tests.game3_cache").mount() then
+  check(FieldMoves.TEXT.NOT_ENOUGH_HP == "Pas assez de PV…",
+    "FieldMoves.TEXT reads gText_NotEnoughHp through the catalog when read")
+  check(ItemsData.POCKET_LABEL.KEY_ITEMS == "OBJETS RARES", "POCKET_LABEL reads sPocketNames[1] through the catalog when read")
+else
+  print("[skip] POCKET_LABEL reads ROM pocket names: " .. tostring(require("tests.game3_cache").reason))
+end
 
 -- Map section names live in src/import/gba/map_sections_extract.lua; the
 -- popup translates the name and words the floor through Strings().
-Strings.load({ strings = { ["LAVENDER TOWN"] = "LAVANVILLE", ["3F"] = "2E" } })
-local MapNamePopup = require("src.ui.game3.map_name_popup")
-MapNamePopup.dismiss()
-MapNamePopup.show({ regionMapSectionId = 92, floorNum = 3, showMapName = 1 })
-check(MapNamePopup._name == "LAVANVILLE 2E", "the map name popup translates the place and its floor")
-MapNamePopup.dismiss()
+if require("tests.game3_cache").mount() then
+  Strings.load({ strings = { ["LAVENDER TOWN"] = "LAVANVILLE", ["3F"] = "2E" } })
+  local MapNamePopup = require("src.ui.game3.map_name_popup")
+  MapNamePopup.dismiss()
+  MapNamePopup.show({ regionMapSectionId = 92, floorNum = 3, showMapName = 1 })
+  check(MapNamePopup._name == "LAVANVILLE 2E", "the map name popup translates the place and its floor")
+  MapNamePopup.dismiss()
+else
+  print("[skip] map name popup reads ROM map section names: " .. tostring(require("tests.game3_cache").reason))
+end
 
--- easy_chat's footer buttons are the same shape: a module-level table read
--- once per frame by the draw loop.
-Strings.load({ strings = { ["DEL. ALL"] = "TOUT EFF.", ["CANCEL"] = "RETOUR" } })
-local EasyChat = require("src.ui.game3.easy_chat")
-local footer = EasyChat.FOOTER_BTNS
-check(footer ~= nil and footer[1].label == "DEL. ALL",
-  "the easy chat footer keeps the English source")
-check(footer ~= nil and Strings(footer[1].label) == "TOUT EFF.",
-  "and translates at the caller")
-check(footer ~= nil and Strings(footer[2].label) == "RETOUR",
-  "for every button in the table")
+if require("tests.game3_cache").mount() then
+  Strings.load({ strings = { ["DEL. ALL"] = "TOUT EFF.", ["CANCEL"] = "RETOUR" } })
+  local EasyChat = require("src.ui.game3.easy_chat")
+  local footer, xs = EasyChat.footerLabels()
+  check(footer[1] == "TOUT EFF." and footer[2] == "RETOUR" and footer[3] == "OK",
+    "the easy chat footer translates each gText_DelAllCancelOk piece when read")
+  check(xs[2] == 0x57 and xs[3] == 0xA4, "and keeps the ROM's CLEAR_TO columns")
+else
+  print("[skip] easy chat footer reads gText_DelAllCancelOk: " .. tostring(require("tests.game3_cache").reason))
+end
 
 Strings.load({})
 

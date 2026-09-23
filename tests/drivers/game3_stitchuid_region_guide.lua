@@ -71,7 +71,10 @@ local function run(game)
 
   local function openMap()
     local ok = ItemUse.useField(session, session.bag, TOWN_MAP, nil)
-    U.wait(30)
+    for _ = 1, 300 do
+      if RegionMap.inputReady() then break end
+      U.wait(1)
+    end
     return ok and RegionMap.isOpen()
   end
 
@@ -123,10 +126,27 @@ local function run(game)
   U.wait(20)
   U.shot(game, DIR .. "/stitchuid_region_guide_02_guide_prompt.png")
 
+  local function waitPreview(cond)
+    for _ = 1, 200 do
+      local st = RegionMap.state()
+      if st and st.preview and cond(st.preview) then return true end
+      U.wait(1)
+    end
+    return false
+  end
+
   U.tap(game, "a")
-  U.wait(120)
+  -- ../pokefirered/src/region_map.c:2135 UpdateDungeonMapPreview
+  result(waitPreview(function(p) return p.updateCounter == 4 end), "the GUIDE window grows from the cursor")
+  U.shot(game, DIR .. "/stitchuid_region_guide_03_preview_growing.png")
   result(RegionMap.previewDungeon == "MAPSEC_MT_MOON", "A opens the MT. MOON preview after the visit")
-  U.shot(game, DIR .. "/stitchuid_region_guide_03_preview.png")
+  -- ../pokefirered/src/region_map.c:2059-2067
+  result(waitPreview(function(p) return p.text ~= nil end), "the GUIDE text follows the sepia tint")
+  U.shot(game, DIR .. "/stitchuid_region_guide_04_preview_text.png")
+  U.tap(game, "b")
+  result(waitPreview(function(p) return p.mainState == 8 and p.updateCounter == 4 end),
+    "B shrinks the GUIDE window")
+  U.shot(game, DIR .. "/stitchuid_region_guide_05_preview_shrinking.png")
 
   closeMap()
   finish()

@@ -1,11 +1,11 @@
 -- Gen 3 Pokémon Release Sequence (emotional upward shrink & float animation).
--- "Release this POKéMON?" -> [YES/NO] -> float/shrink animation -> "Bye-bye, <MON>!" -> data release.
+-- "Release this POKéMON?" -> [YES/NO] -> float/shrink animation -> "<MON> was released." -> "Bye-bye, <MON>!".
 
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local Pokemon = require("src.core.game3.pokemon")
 local Storage = require("src.core.game3.storage")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local ReleaseSeq = {}
 
@@ -45,6 +45,11 @@ function ReleaseSeq.isActive()
   return ReleaseSeq.active
 end
 
+local function anyKey(input)
+  return input:wasPressed("a") or input:wasPressed("b") or input:wasPressed("up")
+    or input:wasPressed("down") or input:wasPressed("left") or input:wasPressed("right")
+end
+
 function ReleaseSeq.handleInput(input)
   if not ReleaseSeq.active then return end
 
@@ -68,8 +73,17 @@ function ReleaseSeq.handleInput(input)
     return
   end
 
+  if ReleaseSeq.state == "released" then
+    -- pokefirered/src/pokemon_storage_system_tasks.c:1308
+    if anyKey(input) then
+      ReleaseSeq.state = "bye"
+    end
+    return
+  end
+
   if ReleaseSeq.state == "bye" then
-    if input:wasPressed("a") or input:wasPressed("b") then
+    -- pokefirered/src/pokemon_storage_system_tasks.c:1315
+    if anyKey(input) then
       ReleaseSeq.close(true)
     end
     return
@@ -86,7 +100,8 @@ function ReleaseSeq.update(dt)
       if ReleaseSeq.session and ReleaseSeq.boxId and ReleaseSeq.slotIdx then
         Storage.releaseMon(ReleaseSeq.session, ReleaseSeq.boxId, ReleaseSeq.slotIdx)
       end
-      ReleaseSeq.state = "bye"
+      -- pokefirered/src/pokemon_storage_system_tasks.c:1304
+      ReleaseSeq.state = "released"
       se(5)
     end
   end
@@ -102,17 +117,18 @@ end
 
 function ReleaseSeq.draw()
   if not ReleaseSeq.active then return end
-  local monName = (ReleaseSeq.mon and Pokemon.displayName(ReleaseSeq.mon)) or "POKéMON"
+  -- pokefirered/src/pokemon_storage_system_tasks.c:2570
+  local dynamic = { [0] = Pokemon.displayName(ReleaseSeq.mon) }
 
   if ReleaseSeq.state == "confirm" then
     -- Bottom dialogue box
     Window.dialogueFrame()
-    Window.printPx(Strings("Release %s?", monName), 16, 120)
+    Window.printPx(RomText.plain("gText_ReleaseThisPokemon"), 16, 120)
 
     -- YES/NO Confirmation Box
     Window.stdFrame(Window.template(21, 8, 6, 4))
-    Window.printPx(Strings("YES"), 184, 68)
-    Window.printPx(Strings("NO"), 184, 84)
+    Window.printPx(RomText.plain("gText_Yes"), 184, 68)
+    Window.printPx(RomText.plain("gText_No"), 184, 84)
     Window.cursorPx(174, ReleaseSeq.yesNoCursor == 1 and 68 or 84)
     return
   end
@@ -136,15 +152,18 @@ function ReleaseSeq.draw()
       end
       love.graphics.setColor(1, 1, 1, 1)
     end
+    return
+  end
 
+  if ReleaseSeq.state == "released" then
     Window.dialogueFrame()
-    Window.printPx(Strings("Releasing %s…", monName), 16, 120)
+    Window.printPx(RomText.plain("gText_PkmnWasReleased", { dynamic = dynamic }), 16, 120)
     return
   end
 
   if ReleaseSeq.state == "bye" then
     Window.dialogueFrame()
-    Window.printPx(Strings("Bye-bye, %s!", monName), 16, 120)
+    Window.printPx(RomText.plain("gText_ByeByePkmn", { dynamic = dynamic }), 16, 120)
     return
   end
 end

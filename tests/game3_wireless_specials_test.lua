@@ -20,6 +20,18 @@ local function checkEq(got, expected, msg)
   end
 end
 
+local haveCache = require("tests.game3_cache").bundle() ~= nil
+if not haveCache then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+
 local Std = require("src.core.game3.scripting.stdscripts")
 local Natives = require("src.core.game3.scripting.natives")
 local Flags = require("src.core.game3.scripting.flags")
@@ -115,8 +127,12 @@ for _, row in ipairs({
   fakeInput.pressed = {}
   check(not Records.isOpen() and ctx.stateWait(), row[1] .. " closes on A and releases waitstate")
 end
-checkEq(Records.pressingSpeedText(0):match("^%s*(%d+%.%d+)"), "0.00", "empty rankings read 0.00")
-checkEq(Records.pressingSpeedText(0x0580):match("^%s*(%d+%.%d+)"), "5.50", "0x0580 reads 5.50")
+if haveCache then
+  checkEq(Records.pressingSpeedText(0), "  0.00 Times/sec.", "empty rankings read 0.00")
+  checkEq(Records.pressingSpeedText(0x0580):match("^%s*(%d+%.%d+)"), "5.50", "0x0580 reads 5.50")
+else
+  print("[skip] pressing speed text reads gText_XDotY3 / gText_TimesPerSec from the ROM")
+end
 
 print("=== 4. e-Reader fallbacks ===")
 Natives.special(ctx, Std.SPECIAL.SetEReaderTrainerGfxId, A)

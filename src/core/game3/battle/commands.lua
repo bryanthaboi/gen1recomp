@@ -1,7 +1,8 @@
 -- Battle commands: FIGHT / BAG / POKéMON / RUN (+ move slots).
 
 local ModRuntime = require("src.mods.Runtime")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
+local BattleText = require("src.core.game3.battle.battle_text")
 
 local Commands = {}
 
@@ -76,7 +77,7 @@ function Commands.playerAction(st, menuIndex, moveSlot, battlerId, targetId)
   elseif kind == "POKEMON" then
     return { kind = "switch", user = "player" }
   end
-  return { kind = "move", move = "TACKLE", slot = 1, user = "player" }
+  error("unknown battle menu command " .. tostring(kind))
 end
 
 local MOVE_STRUGGLE = 165
@@ -89,11 +90,6 @@ local function move_num(mv)
   local ok, Moves = pcall(require, "src.core.game3.battle.moves")
   if ok and Moves.numForName then return Moves.numForName(mv) or 0 end
   return 0
-end
-
-local function battler_name(b)
-  local State = require("src.core.game3.battle.state")
-  return State.displayName(b)
 end
 
 local function move_name(mv)
@@ -139,34 +135,33 @@ function Commands.selectionError(st, slot, battlerId)
   if not mon or not slot then return nil end
   local mv = mon.moves and mon.moves[slot]
   local num = move_num(mv)
-  local name = battler_name(b)
+  local fill = { active = b, currentMove = move_name(mv), trainer = st and not st.wild }
   local err
   if b.expDisabledMove and move_num(b.expDisabledMove) == num and num ~= 0 then
-    err = Strings("%s's %s\nis disabled!", name, move_name(mv))
+    err = BattleText.get("STRINGID_PKMNMOVEISDISABLED", fill)
   end
   if (b.expTormented or b.torment) and num ~= MOVE_STRUGGLE and num ~= 0
       and move_num(b.lastMoveId or b.lastMove) == num then
-    err = Strings("%s can't use the same\nmove in a row due to the TORMENT!", name)
+    err = BattleText.get("STRINGID_PKMNCANTUSEMOVETORMENT", fill)
   end
   if (tonumber(b.expTauntedTurns) or 0) > 0 then
     local Moves = require("src.core.game3.battle.moves")
     local def = Moves.get(mv)
     if def and (tonumber(def.power) or 0) == 0 then
-      err = Strings("%s can't use\n%s after the TAUNT!", name, move_name(mv))
+      err = BattleText.get("STRINGID_PKMNCANTUSEMOVETAUNT", fill)
     end
   end
   if imprisoned(st, b, num) then
-    err = Strings("%s can't use the\nsealed %s!", name, move_name(mv))
+    err = BattleText.get("STRINGID_PKMNCANTUSEMOVESEALED", fill)
   end
   local cm = choiced(b)
   if cm and cm ~= num then
-    local okI, Items = pcall(require, "src.core.game3.items")
-    local iname = okI and Items.displayName and Items.displayName(b.item) or "CHOICE BAND"
-    err = Strings("%s's effect allows only\n%s to be used!", iname, move_name(cm))
+    -- pokefirered/src/battle_util.c:348
+    err = BattleText.get("STRINGID_ITEMALLOWSONLYYMOVE", { lastItem = b.item, currentMove = move_name(cm) })
   end
   local pp = mon.pp and tonumber(mon.pp[slot])
   if pp ~= nil and pp <= 0 then
-    err = Strings("There's no PP left for\nthis move!")
+    err = BattleText.get("STRINGID_NOPPLEFT")
   end
   return err
 end
@@ -191,7 +186,7 @@ function Commands.fightShortcut(st, battlerId)
   if not any then
     local act = { kind = "move", move = "STRUGGLE", slot = nil, user = "player" }
     if battlerId ~= nil then tag(act, battlerId) end
-    return act, Strings("%s has no\nmoves left!", battler_name(b))
+    return act, BattleText.get("STRINGID_PKMNHASNOMOVESLEFT", { active = b, trainer = st and not st.wild })
   end
   if b.expEncoreMove and (tonumber(b.expEncoreTurns) or 0) > 0 then
     local slot = b.expEncoreSlot
@@ -215,22 +210,22 @@ function Commands.switchError(st, slot, forced, battlerId)
   local mon = party and party[slot]
   if not mon then return nil end
   local Pokemon = require("src.core.game3.pokemon")
-  local name = Pokemon.displayMonName and Pokemon.displayMonName(mon) or "POKéMON"
-  if (tonumber(mon.hp) or 0) <= 0 then return Strings("%s has no energy\nleft to battle!", name) end
-  if st.player and st.player.partyIndex == slot then return Strings("%s is already\nin battle!", name) end
+  local vars = { stringVars = { Pokemon.displayMonName(mon) } }
+  if (tonumber(mon.hp) or 0) <= 0 then return RomText.ascii("gText_PkmnHasNoEnergy", vars) end
+  if st.player and st.player.partyIndex == slot then return RomText.ascii("gText_PkmnAlreadyInBattle", vars) end
   if st.double then
     -- pokefirered/src/party_menu.c:5934
     local b2 = battler_of(st, 2)
     if b2 and b2.partyIndex == slot and not (st.absent and st.absent[2]) then
-      return Strings("%s is already\nin battle!", name)
+      return RomText.ascii("gText_PkmnAlreadyInBattle", vars)
     end
     local pend = st.monToSwitchInto or {}
     local partner = (battlerId == 2) and 0 or 2
     if battlerId ~= nil and pend[partner] == slot then
-      return Strings("%s has already been\nselected.", name)
+      return RomText.ascii("gText_PkmnAlreadySelected", vars)
     end
   end
-  if mon.isEgg then return Strings("An EGG can't battle!") end
+  if mon.isEgg then return RomText.ascii("gText_EggCantBattle") end
   if forced then return nil end
   local Engine = package.loaded["src.core.game3.battle.engine"]
   local Battle = package.loaded["src.core.game3.battle"]
@@ -338,7 +333,7 @@ function Commands.tryFlee(st, adapter)
     return ok and true or false
   end
   if not st.wild then
-    adapter:say(Strings("No! There's no\nrunning from a\nTRAINER battle!"))
+    adapter:sayText("STRINGID_NORUNNINGFROMTRAINERS")
     return false
   end
   local pSpe = tonumber(st.player.mon.speed or st.player.mon.spe) or 50
@@ -359,10 +354,10 @@ function Commands.tryFlee(st, adapter)
     end
   end
   if r < odds then
-    adapter:say(Strings("Got away safely!"))
+    adapter:sayText("STRINGID_GOTAWAYSAFELY")
     return true
   end
-  adapter:say(Strings("Can't escape!"))
+  adapter:sayText("STRINGID_CANTESCAPE2")
   return false
 end
 

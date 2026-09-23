@@ -1,11 +1,10 @@
 -- Pokédex Chrome loader and authentic rendering engine for FRLG Pokédex.
--- Implements the authentic diamond paper background, khaki header/footer bars,
+-- Implements the authentic diamond paper background, header/footer bars,
 -- orange section headings, type badges, 2-page cards, and pulsing habitat spotlights.
 
 local Display = require("src.core.game3.display")
 local Extract = require("src.import.gba.extract_island1")
 local PokedexData = require("src.core.game3.pokedex_data")
-local Strings = require("src.core.Strings")
 
 local PokedexChrome = {}
 
@@ -14,27 +13,6 @@ PokedexChrome._images = {}
 PokedexChrome._footprints = {}
 PokedexChrome._installed = false
 PokedexChrome._animTimer = 0
-
-local TYPE_COLORS = {
-  NORMAL = { 168/255, 168/255, 120/255, 1 },
-  FIRE = { 240/255, 128/255, 48/255, 1 },
-  WATER = { 104/255, 144/255, 240/255, 1 },
-  GRASS = { 120/255, 200/255, 80/255, 1 },
-  ELECTRIC = { 248/255, 208/255, 48/255, 1 },
-  ICE = { 152/255, 216/255, 216/255, 1 },
-  FIGHTING = { 192/255, 48/255, 40/255, 1 },
-  POISON = { 160/255, 64/255, 160/255, 1 },
-  GROUND = { 224/255, 192/255, 104/255, 1 },
-  FLYING = { 168/255, 144/255, 240/255, 1 },
-  PSYCHIC = { 248/255, 88/255, 136/255, 1 },
-  BUG = { 168/255, 184/255, 32/255, 1 },
-  ROCK = { 184/255, 160/255, 56/255, 1 },
-  GHOST = { 112/255, 88/255, 152/255, 1 },
-  DRAGON = { 112/255, 56/255, 248/255, 1 },
-  STEEL = { 184/255, 184/255, 208/255, 1 },
-  DARK = { 112/255, 88/255, 72/255, 1 },
-  FAIRY = { 238/255, 153/255, 172/255, 1 },
-}
 
 local function cache_root()
   local okD, Dataset = pcall(require, "src.core.game3.dataset")
@@ -180,11 +158,6 @@ function PokedexChrome.install(cache)
     end
   end
 
-  local kpBytes = read_bytes("data/generated/gba/keypad_icons.rgba")
-  if kpBytes then
-    PokedexChrome._images["keypad_icons"] = rgba_to_image(kpBytes, 128, 32)
-  end
-
   PokedexChrome._installed = true
   return true
 end
@@ -209,116 +182,8 @@ function PokedexChrome.getMarkerBlend()
   return c[1] / 16, c[2] / 16
 end
 
-local KEYPAD_ICON_QUADS = nil
-
---- Draw authentic GBA keypad button icon (A, B, L, R, START, SELECT, DPAD_UPDOWN, DPAD_LEFTRIGHT)
-function PokedexChrome.drawKeypadIcon(iconName, x, y)
-  if not (love and love.graphics and iconName) then return end
-  local img = PokedexChrome.getImage("keypad_icons")
-  if not img then
-    -- Try rgba files (written by TextChromeExtract.extractKeypadIcons)
-    local rgba_candidates = {
-      "data/generated/gba/keypad_icons.rgba",
-      "data/generated/gba/chrome/keypad_icons.rgba",
-      "data/generated/gba/chrome/fonts/keypad_icons.rgba",
-    }
-    for _, p in ipairs(rgba_candidates) do
-      local d
-      local okC, CacheFs = pcall(require, "src.import.CacheFs")
-      if okC and CacheFs and CacheFs.readActive then d = CacheFs.readActive(p) end
-      if not d or #d == 0 then
-        if love and love.filesystem then
-          d = love.filesystem.read(p)
-        end
-      end
-      if d and #d > 0 then
-        local kpImg = rgba_to_image(d, 128, 32)
-        if kpImg then
-          img = kpImg
-          PokedexChrome._images["keypad_icons"] = img
-          break
-        end
-      end
-    end
-  end
-
-  if img then
-    if not KEYPAD_ICON_QUADS then
-      local iw, ih = img:getDimensions()
-      KEYPAD_ICON_QUADS = {
-        a = love.graphics.newQuad(0, 0, 8, 12, iw, ih),
-        a_button = love.graphics.newQuad(0, 0, 8, 12, iw, ih),
-        b = love.graphics.newQuad(8, 0, 8, 12, iw, ih),
-        b_button = love.graphics.newQuad(8, 0, 8, 12, iw, ih),
-        l = love.graphics.newQuad(16, 0, 16, 12, iw, ih),
-        r = love.graphics.newQuad(32, 0, 16, 12, iw, ih),
-        start = love.graphics.newQuad(48, 0, 24, 12, iw, ih),
-        select = love.graphics.newQuad(72, 0, 24, 12, iw, ih),
-        dpad_up = love.graphics.newQuad(96, 0, 8, 12, iw, ih),
-        dpad_down = love.graphics.newQuad(104, 0, 8, 12, iw, ih),
-        dpad_left = love.graphics.newQuad(112, 0, 8, 12, iw, ih),
-        dpad_right = love.graphics.newQuad(120, 0, 8, 12, iw, ih),
-        dpad_updown = love.graphics.newQuad(0, 16, 8, 12, iw, ih),
-        dpad_ud = love.graphics.newQuad(0, 16, 8, 12, iw, ih),
-        dpad_leftright = love.graphics.newQuad(8, 16, 8, 12, iw, ih),
-        dpad_lr = love.graphics.newQuad(8, 16, 8, 12, iw, ih),
-      }
-    end
-    local q = KEYPAD_ICON_QUADS[iconName:lower()]
-    if q then
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(img, q, x, y)
-      return
-    end
-  end
-end
-
-local ICON_TAG_MAP = {
-  ["{DPAD_ANY}"] = { icon = "dpad_updown", w = 8 },
-  ["{DPAD_ALL}"] = { icon = "dpad_updown", w = 8 },
-  ["{DPAD_UPDOWN}"] = { icon = "dpad_updown", w = 8 },
-  ["{DPAD_UD}"] = { icon = "dpad_updown", w = 8 },
-  ["{DPAD_LEFTRIGHT}"] = { icon = "dpad_leftright", w = 8 },
-  ["{DPAD_LR}"] = { icon = "dpad_leftright", w = 8 },
-  ["{DPAD_UP}"] = { icon = "dpad_up", w = 8 },
-  ["{DPAD_DOWN}"] = { icon = "dpad_down", w = 8 },
-  ["{DPAD_LEFT}"] = { icon = "dpad_left", w = 8 },
-  ["{DPAD_RIGHT}"] = { icon = "dpad_right", w = 8 },
-  ["{A_BUTTON}"] = { icon = "a", w = 8 },
-  ["{B_BUTTON}"] = { icon = "b", w = 8 },
-  ["{L_BUTTON}"] = { icon = "l", w = 16 },
-  ["{R_BUTTON}"] = { icon = "r", w = 16 },
-  ["{START_BUTTON}"] = { icon = "start", w = 24 },
-  ["{SELECT_BUTTON}"] = { icon = "select", w = 24 },
-}
-
---- Measure total width of control info string containing icon tags and small font text
 function PokedexChrome.measureControlInfo(str)
-  local FrlgFont = require("src.ui.game3.frlg_font")
-  local totalW = 0
-  local pos = 1
-  local len = #str
-  while pos <= len do
-    local tag = str:match("^{[^}]+}", pos)
-    if tag and ICON_TAG_MAP[tag] then
-      totalW = totalW + ICON_TAG_MAP[tag].w
-      pos = pos + #tag
-    else
-      local nextTagStart = str:find("{", pos)
-      local textChunk
-      if nextTagStart then
-        textChunk = str:sub(pos, nextTagStart - 1)
-        pos = nextTagStart
-      else
-        textChunk = str:sub(pos)
-        pos = len + 1
-      end
-      if #textChunk > 0 then
-        totalW = totalW + FrlgFont.measure(textChunk, { small = true })
-      end
-    end
-  end
-  return totalW
+  return require("src.ui.game3.frlg_font").measure(str, { small = true })
 end
 
 --- Draw control info text right-aligned ending at rightX (default 236), at y (default 146)
@@ -330,79 +195,42 @@ function PokedexChrome.drawControlInfo(str, rightX, y)
   PokedexChrome.drawControlInfoLeft(str, startX, y)
 end
 
+local CONTROL_INFO_COLORS = { fg = { 1, 1, 1, 1 }, shadow = { 98/255, 98/255, 98/255, 1 } }
+
 --- Draw control info text left-aligned starting at startX, at y (default 146)
 function PokedexChrome.drawControlInfoLeft(str, startX, y)
-  local FrlgFont = require("src.ui.game3.frlg_font")
-  y = y or 146
-  local curX = startX
-  local pos = 1
-  local len = #str
-  local colors = { fg = { 1, 1, 1, 1 }, shadow = { 98/255, 98/255, 98/255, 1 } }
-
-  while pos <= len do
-    local tag = str:match("^{[^}]+}", pos)
-    if tag and ICON_TAG_MAP[tag] then
-      local info = ICON_TAG_MAP[tag]
-      PokedexChrome.drawKeypadIcon(info.icon, curX, y)
-      curX = curX + info.w
-      pos = pos + #tag
-    else
-      local nextTagStart = str:find("{", pos)
-      local textChunk
-      if nextTagStart then
-        textChunk = str:sub(pos, nextTagStart - 1)
-        pos = nextTagStart
-      else
-        textChunk = str:sub(pos)
-        pos = len + 1
-      end
-      if #textChunk > 0 then
-        FrlgFont.draw(textChunk, curX, y, {
-          small = true,
-          colors = colors,
-        })
-        curX = curX + FrlgFont.measure(textChunk, { small = true })
-      end
-    end
-  end
+  require("src.ui.game3.frlg_font").draw(str, startX, y or 146, {
+    small = true,
+    colors = CONTROL_INFO_COLORS,
+  })
 end
 
 function PokedexChrome.getEntry(speciesId)
   return PokedexData.getEntry(speciesId)
 end
 
---- Draw authentic FRLG cream diamond paper background with khaki top/bottom bars (no dark dividing lines)
-function PokedexChrome.drawPaperBg(w, h)
-  if not (love and love.graphics) then return end
-  w = w or Display.W or 240
-  h = h or Display.H or 160
-
-  local img = PokedexChrome.getImage("paper_bg")
-  if img then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 0, 0)
-    return
+-- src/pokedex_screen.c:924 natDex palette, :1161 FillWindowPixelBuffer(0, PIXEL_FILL(15))
+function PokedexChrome.drawBars()
+  local variant = PokedexData.isNationalUnlocked() and "national" or "kanto"
+  local r, g, b = PokedexChrome.getColor("bar_" .. variant)
+  if not r then
+    error("PokedexChrome: chrome.lua has no bar_" .. variant .. " color", 0)
   end
-
-  -- Procedural Diamond Paper Pattern Fallback
-  love.graphics.setColor(246/255, 246/255, 238/255, 1)
-  love.graphics.rectangle("fill", 0, 0, w, h)
-
-  love.graphics.setColor(255/255, 255/255, 255/255, 0.6)
-  for y = 16, h - 16, 8 do
-    for x = 0, w, 8 do
-      if ((x + y) / 8) % 2 == 0 then
-        love.graphics.rectangle("fill", x, y, 4, 4)
-      end
-    end
-  end
-
-  -- Top bar (y=0..16) and Bottom bar (y=144..160) seamlessly meeting paper bg
-  love.graphics.setColor(213/255, 197/255, 164/255, 1)
-  love.graphics.rectangle("fill", 0, 0, w, 16)
-  love.graphics.rectangle("fill", 0, 144, w, 16)
-
+  love.graphics.setColor(r, g, b, 1)
+  love.graphics.rectangle("fill", 0, 0, 240, 16)
+  love.graphics.rectangle("fill", 0, 144, 240, 16)
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+function PokedexChrome.drawPaperBg()
+  if not (love and love.graphics) then return end
+  local img = PokedexChrome.getImage("paper_bg")
+  if not img then
+    error("PokedexChrome: paper_bg.rgba is not in the cache", 0)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(img, 0, 0)
+  PokedexChrome.drawBars()
 end
 
 local CARD_SHEET_COLS = 8
@@ -543,12 +371,12 @@ local function draw_card(key, layoutFn)
       PokedexChrome._images[key] = img
     end
   end
-  if img then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 0, 0)
-    return
+  if not img then
+    error("PokedexChrome: dex_tiles_" .. tostring(variant or "kanto") .. ".rgba is not in the cache", 0)
   end
-  PokedexChrome.drawPaperBg()
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(img, 0, 0)
+  PokedexChrome.drawBars()
 end
 
 function PokedexChrome.drawDataCardBg()
@@ -675,13 +503,6 @@ local TYPE_RECTS = {
   [17] = { x = 96, y = 64, w = 32, h = 12 },  -- DARK
 }
 
-local TYPE_NAMES = {
-  NORMAL = 0, FIGHTING = 1, FLYING = 2, POISON = 3, GROUND = 4,
-  ROCK = 5, BUG = 6, GHOST = 7, STEEL = 8, MYSTERY = 9,
-  FIRE = 10, WATER = 11, GRASS = 12, ELECTRIC = 13, PSYCHIC = 14,
-  ICE = 15, DRAGON = 16, DARK = 17,
-}
-
 --- Draw authentic flat orange down scroll arrow (secondArrowType in pret)
 function PokedexChrome.drawDownArrow(x, y)
   if not (love and love.graphics) then return end
@@ -771,35 +592,14 @@ function PokedexChrome.drawCaughtMarker(x, y)
 end
 
 --- Draw authentic Type Badge (32x12 from ROM menu_info)
-function PokedexChrome.drawTypeBadge(typeNameOrId, x, y)
-  if not (love and love.graphics and typeNameOrId) then return end
-  local typeId = typeNameOrId
-  if type(typeId) == "string" then
-    typeId = TYPE_NAMES[typeId:upper()] or 0
-  end
-  typeId = tonumber(typeId) or 0
-  local rect = TYPE_RECTS[typeId] or TYPE_RECTS[0]
-  local img = PokedexChrome.menuInfoImage()
-  if img then
-    local q = get_pokedex_quad("type_" .. typeId, rect.x, rect.y, rect.w, rect.h, 128, 128)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, q, x, y)
-    return
-  end
-
-  local FrlgFont = require("src.ui.game3.frlg_font")
-  local tUpper = type(typeNameOrId) == "string" and typeNameOrId:upper() or "NORMAL"
-  local col = TYPE_COLORS[tUpper] or { 168/255, 168/255, 120/255, 1 }
-
-  -- Badge background fallback
-  love.graphics.setColor(col)
-  love.graphics.rectangle("fill", x, y, 32, 11, 2, 2)
-  love.graphics.setColor(col[1] * 0.7, col[2] * 0.7, col[3] * 0.7, 1)
-  love.graphics.rectangle("line", x, y, 32, 11, 2, 2)
-  local txt = tUpper:sub(1, 6)
-  local offX = math.floor((32 - (#txt * 5)) / 2)
-  FrlgFont.draw(txt, x + math.max(2, offX), y - 1, { color = { 1, 1, 1, 1 } })
+function PokedexChrome.drawTypeBadge(typeId, x, y)
+  if not (love and love.graphics and typeId) then return end
+  typeId = tonumber(typeId)
+  local rect = assert(TYPE_RECTS[typeId], "type id")
+  local img = assert(PokedexChrome.menuInfoImage(), "menu_info")
+  local q = get_pokedex_quad("type_" .. typeId, rect.x, rect.y, rect.w, rect.h, 128, 128)
   love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(img, q, x, y)
 end
 
 --- Draw category icon (64x48)
@@ -867,22 +667,9 @@ end
 
 -- pokefirered/src/pokedex_screen.c:2901
 function PokedexChrome.footprintSource(speciesId)
-  local sp = tonumber(speciesId) or 1
-  local root = pokedex_root() .. "/footprints"
-  local Pokemon = require("src.core.game3.pokemon")
-  local rawName = Pokemon.name and Pokemon.name(sp) and Pokemon.name(sp):lower()
-  local name = rawName and rawName:gsub("[^%w_]", ""):gsub("♀", "_f"):gsub("♂", "_m")
-
-  local rels = { root .. "/" .. sp .. ".rgba" }
-  if name and name ~= "" then rels[#rels + 1] = root .. "/" .. name .. ".rgba" end
-  if rawName and rawName ~= "" then rels[#rels + 1] = root .. "/" .. rawName .. ".rgba" end
-  rels[#rels + 1] = root .. "/question_mark.rgba"
-  rels[#rels + 1] = root .. "/bulbasaur.rgba"
-
-  for _, rel in ipairs(rels) do
-    local bytes = read_bytes(rel)
-    if bytes then return bytes, rel end
-  end
+  local rel = pokedex_root() .. "/footprints/" .. tonumber(speciesId) .. ".rgba"
+  local bytes = read_bytes(rel)
+  if bytes then return bytes, rel end
   return nil, nil
 end
 
@@ -951,7 +738,7 @@ function PokedexChrome.drawMiniCard(speciesId, x, y, isCaught, isSeen, isSelecte
 
   local sp = tonumber(speciesId) or 1
   local natId = Pokemon.national(sp) or 0
-  local name = isSeen and (Pokemon.name and Pokemon.name(sp) or Strings("POKéMON %d", sp)) or "----------"
+  local name = isSeen and Pokemon.name(sp) or "----------"
 
   -- Draw authentic 64x40 mini page background (white top, brown dividing line, beige bottom with simulated text)
   local bg = PokedexChrome.getImage("mini_page")
@@ -988,42 +775,6 @@ function PokedexChrome.drawMiniCard(speciesId, x, y, isCaught, isSeen, isSelecte
   FrlgFont.draw(name, x + 2, y + 13, {
     colors = textColors,
   })
-
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
---- Draw Context Action Menu popup modal
-function PokedexChrome.drawActionMenu(items, cursor, x, y)
-  if not (love and love.graphics) then return end
-  local FrlgFont = require("src.ui.game3.frlg_font")
-
-  local itemH = 14
-  local menuW = 68
-  local menuH = #items * itemH + 8
-
-  -- Window drop shadow
-  love.graphics.setColor(0, 0, 0, 0.25)
-  love.graphics.rectangle("fill", x + 2, y + 2, menuW, menuH, 3, 3)
-
-  -- Window body (White card with tan/brown border)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("fill", x, y, menuW, menuH, 3, 3)
-  love.graphics.setColor(184/255, 152/255, 112/255, 1)
-  love.graphics.rectangle("line", x, y, menuW, menuH, 3, 3)
-
-  for i, it in ipairs(items) do
-    local rowY = y + 4 + (i - 1) * itemH
-    if i == cursor then
-      -- Cursor arrow
-      love.graphics.setColor(0, 0, 0, 1)
-      love.graphics.polygon("fill",
-        x + 4, rowY + 3,
-        x + 8, rowY + 7,
-        x + 4, rowY + 11
-      )
-    end
-    FrlgFont.draw(it.label, x + 12, rowY + 1, { color = { 0.15, 0.15, 0.15, 1 } })
-  end
 
   love.graphics.setColor(1, 1, 1, 1)
 end

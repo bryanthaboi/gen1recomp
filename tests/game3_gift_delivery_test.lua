@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_items").install()
 
 local failed = 0
 local function check(cond, msg)
@@ -14,6 +15,19 @@ end
 
 local function eq(a, b, msg)
   check(a == b, string.format("%s (%s == %s)", msg, tostring(a), tostring(b)))
+end
+
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
 end
 
 local Schema = require("src.core.game3.save_schema_firered")
@@ -142,11 +156,19 @@ end
 print("[test] 5. The deliveryman's four outcomes")
 do
   local already = Gift.deliveryText(session, MysteryGift.DELIVER_ALREADY)
-  check(tostring(already):find("MYSTERY"), "the already-collected line thanks the player")
   local noRoom = Gift.deliveryText(session, MysteryGift.DELIVER_NO_ROOM)
-  check(tostring(noRoom):find("BAG"), "the no-room line names the BAG")
   local full = Gift.deliveryText(session, MysteryGift.DELIVER_PARTY_FULL)
-  check(tostring(full):find("party"), "the party-full line names the party")
+  if romBundle then
+    check(tostring(already):find("MYSTERY"), "the already-collected line thanks the player")
+    -- pokefirered/data/mystery_event_msg.s:319 sText_MysticTicketNoPlace
+    check(tostring(noRoom):find("KEY ITEMS POCKET", 1, true), "the no-room line names the KEY ITEMS POCKET")
+    check(tostring(noRoom):find(tostring(session.name), 1, true), "and the player")
+    check(tostring(full):find("party"), "the party-full line names the party")
+  else
+    eq(already, "sText_MysticTicketGot", "the mystic card's already-collected line")
+    eq(noRoom, "sText_MysticTicketNoPlace", "the mystic card's no-room line")
+    eq(full, "sText_FullParty", "the party-full line")
+  end
   local given = Gift.deliveryText(session, MysteryGift.DELIVER_GIVEN)
   check(tostring(given):find("ticket"), "the handover line reads the card's own body text")
   -- pokefirered/data/mystery_event_msg.s:303 sText_MysticTicket2

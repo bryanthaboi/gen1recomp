@@ -1,11 +1,7 @@
 -- FireRed location preview screen (pokefirered/src/map_preview_screen.c).
---
--- Forest-type map sections show a full-screen baked artwork plus a location
--- name window during the overworld warp transition, replacing the map name
--- popup. Cave-type sections have artwork too, but pret only uses that artwork
--- in the Town Map GUIDE panel, so show() refuses them unless opts.anyType.
 
 local FrlgFont = require("src.ui.game3.frlg_font")
+local CaveTransition = require("src.ui.game3.cave_transition")
 local Extract = require("src.import.gba.extract_island1")
 local MapPreviewExtract = require("src.import.gba.map_preview_extract")
 local Strings = require("src.core.Strings")
@@ -30,10 +26,8 @@ local NAME_WINDOW_W = NAME_WINDOW_TILES * 8 -- 104, matches the xctr base
 local NAME_WINDOW_H = 2 * 8
 local NAME_WINDOW_TEXT_Y = 2 -- AddTextPrinterParameterized4(..., xctr / 2, 2, ...)
 
--- Task_RunMapPreviewScreenForest case 4 walks a 3-frame counter, adding 16 to
--- BLDALPHA's backdrop weight and dropping BG0's by 16. Both need 16 steps, so
--- the fade-out takes 32 changes over a 3-frame cycle = 48 frames.
-local FADE_OUT_FRAMES = 48
+-- src/map_preview_screen.c:513
+local FADE_OUT_FRAMES = 47
 local DURATION_FIRST_VISIT = 120
 local DURATION_REVISIT = 40
 
@@ -53,6 +47,11 @@ MapPreviewScreen._name = nil
 MapPreviewScreen._timer = 0
 MapPreviewScreen._duration = 0
 MapPreviewScreen._fadeFrames = 0
+MapPreviewScreen._eva = 16
+MapPreviewScreen._evb = 0
+MapPreviewScreen._phase = 0
+MapPreviewScreen._onDone = nil
+MapPreviewScreen._cave = nil
 
 MapPreviewScreen._cache = nil
 MapPreviewScreen._manifest = nil
@@ -188,21 +187,18 @@ function MapPreviewScreen.artworkFor(mapsec)
   return nil
 end
 
---- Baked artwork Image for a mapsec, or nil. Misses are cached as false.
+--- Baked artwork Image for a mapsec; nil when it has no preview or LOVE has no graphics.
 function MapPreviewScreen.image(mapsec)
   local artwork = MapPreviewScreen.artworkFor(mapsec)
   if not artwork then return nil end
   local cached = MapPreviewScreen._images[artwork]
-  if cached ~= nil then return cached or nil end
+  if cached then return cached end
 
   local rel = string.format("%s/%s/%d.rgba", cache_root(), MapPreviewExtract.CACHE_SUB, artwork)
   local bytes = read_bytes(rel)
-  local image = bytes and rgba_to_image(bytes, MapPreviewExtract.WIDTH, MapPreviewExtract.HEIGHT) or nil
-  if not image then
-    log("missing baked artwork " .. rel)
-    MapPreviewScreen._images[artwork] = false
-    return nil
-  end
+  assert(bytes and #bytes >= MapPreviewExtract.WIDTH * MapPreviewExtract.HEIGHT * 4,
+    "missing baked artwork " .. rel)
+  local image = rgba_to_image(bytes, MapPreviewExtract.WIDTH, MapPreviewExtract.HEIGHT)
   MapPreviewScreen._images[artwork] = image
   return image
 end
@@ -255,11 +251,15 @@ function MapPreviewScreen.setVisitedFlag(flagId, wasSet)
   MapPreviewScreen.hasVisitedBefore = wasSet ~= true
 end
 
-function MapPreviewScreen.show(mapsec, opts)
-  opts = opts or {}
+local function scriptRunning()
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  return Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning()
+end
+
+function MapPreviewScreen.show(mapsec)
   local entry = MapPreviewScreen.entryFor(mapsec)
   if not entry then return false end
-  if not opts.anyType and entry.type ~= MapPreviewExtract.TYPE_FOREST then return false end
+  if entry.type ~= MapPreviewExtract.TYPE_FOREST then return false end
   local duration = MapPreviewScreen.durationFor(mapsec)
   if duration <= 0 then return false end
   local image = MapPreviewScreen.image(mapsec)
@@ -274,56 +274,217 @@ function MapPreviewScreen.show(mapsec, opts)
   MapPreviewScreen._timer = 0
   MapPreviewScreen._duration = duration
   MapPreviewScreen._fadeFrames = 0
+  MapPreviewScreen._eva = 16
+  MapPreviewScreen._evb = 0
+  MapPreviewScreen._phase = 0
+  -- src/map_preview_screen.c:439
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field.lock then
+    Field.lock()
+    MapPreviewScreen._onDone = function()
+      -- src/field_fadetransition.c:454
+      local Warp = package.loaded["src.core.game3.warp"]
+      if Field.unlock and not scriptRunning() and not (Warp and Warp.isBusy and Warp.isBusy()) then
+        Field.unlock()
+      end
+    end
+  end
   return true
 end
 
 function MapPreviewScreen.dismiss()
+  local wasActive = MapPreviewScreen._active
   MapPreviewScreen._active = false
   MapPreviewScreen._state = STATE_IDLE
   MapPreviewScreen._entry = nil
   MapPreviewScreen._image = nil
   MapPreviewScreen._timer = 0
   MapPreviewScreen._fadeFrames = 0
+  MapPreviewScreen._eva = 16
+  MapPreviewScreen._evb = 0
+  MapPreviewScreen._phase = 0
+  local onDone = MapPreviewScreen._onDone
+  MapPreviewScreen._onDone = nil
+  if wasActive and onDone then onDone() end
+end
+
+function MapPreviewScreen.isForestActive()
+  return MapPreviewScreen._active == true
 end
 
 function MapPreviewScreen.isActive()
-  return MapPreviewScreen._active == true
+  return MapPreviewScreen._active == true or MapPreviewScreen._cave ~= nil
+    or CaveTransition.isActive()
 end
 
 function MapPreviewScreen.mapsec()
   return MapPreviewScreen._mapsec
 end
 
---- 0..1 artwork opacity. pret blends BG0 against the field so the artwork
---- dissolves into the freshly loaded map rather than into black.
 function MapPreviewScreen.alpha()
   if MapPreviewScreen._state ~= STATE_FADE_OUT then return 1 end
-  local a = 1 - (MapPreviewScreen._fadeFrames / FADE_OUT_FRAMES)
-  if a < 0 then a = 0 end
-  return a
+  return MapPreviewScreen._eva / 16
 end
 
---- Task_RunMapPreviewScreenForest: hold for `duration` frames once the
---- FadeInFromBlack settles, then dissolve BG0 out over FADE_OUT_FRAMES.
+-- src/fldeff_flash.c:422
+function MapPreviewScreen.runCave(mapsec, done)
+  local entry = MapPreviewScreen.entryFor(mapsec)
+  if not entry or entry.type ~= MapPreviewExtract.TYPE_CAVE then return false end
+  local image = MapPreviewScreen.image(mapsec)
+  if not image then return false end
+  MapPreviewScreen._cave = {
+    step = 0,
+    entry = entry,
+    image = image,
+    name = entry.name,
+    mapsec = entry.mapsec,
+    data1 = 0,
+    duration = 0,
+    fade = nil,
+    level = 16,
+    color = 0,
+    done = done,
+    frame = 0,
+    defer = true,
+  }
+  return true
+end
+
+-- src/palette.c:113
+local function paletteFadeUpdate(f)
+  if not f.active then return false end
+  if f.pending then return true end
+  if f.finishing then
+    -- src/palette.c:757
+    if f.counter == 4 then
+      f.active = false
+      f.finishing = false
+      f.counter = 0
+      return false
+    end
+    f.counter = f.counter + 1
+    return true
+  end
+  if f.toggle == 0 then f.bgY = f.y end
+  f.toggle = 1 - f.toggle
+  if f.toggle == 0 then
+    if f.y == f.targetY then
+      f.finishing = true
+    elseif f.dec then
+      f.y = math.max(f.targetY, f.y - f.deltaY)
+    else
+      f.y = math.min(f.targetY, f.y + f.deltaY)
+    end
+  end
+  -- src/palette.c:126
+  f.pending = not f.finishing
+  return true
+end
+
+-- src/palette.c:151
+local function paletteFadeBegin(delay, startY, targetY)
+  local f = {
+    deltaY = 2, y = startY, targetY = targetY, dec = startY >= targetY,
+    toggle = 0, finishing = false, counter = 0, active = true, bgY = startY,
+    pending = false,
+  }
+  if delay < 0 then f.deltaY = f.deltaY - delay end
+  paletteFadeUpdate(f)
+  -- src/palette.c:184
+  f.pending = false
+  return f
+end
+
+local function holdingB()
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = Runtime and Runtime._game
+  local input = game and game.input
+  return input and input.isDown and input:isDown("b") and true or false
+end
+
+local function caveStep(c)
+  if c.defer then
+    c.defer = false
+    return
+  end
+  c.frame = c.frame + 1
+  if c.step == 0 then
+    c.level, c.color = 16, 0
+    c.step = 1
+  elseif c.step == 1 then
+    c.step = 2
+  elseif c.step == 2 then
+    c.fade = paletteFadeBegin(-1, 16, 0)
+    c.step = 3
+  elseif c.step == 3 then
+    if not paletteFadeUpdate(c.fade) then
+      c.duration = MapPreviewScreen.durationFor(c.mapsec)
+      c.step = 4
+    end
+  elseif c.step == 4 then
+    -- src/fldeff_flash.c:458
+    c.data1 = c.data1 + 1
+    if c.data1 > c.duration or holdingB() then
+      c.fade = paletteFadeBegin(-2, 0, 16)
+      c.color = 1
+      c.step = 5
+    end
+  elseif c.step == 5 then
+    if not paletteFadeUpdate(c.fade) then
+      -- src/fldeff_flash.c:474
+      MapPreviewScreen._cave = nil
+      CaveTransition.start("enter", c.done, true)
+      return
+    end
+  end
+  if c.fade then
+    -- src/fldeff_flash.c:199 CB2_ChangeMapMain
+    paletteFadeUpdate(c.fade)
+    c.fade.pending = false
+    c.level = c.fade.bgY
+  end
+end
+
 function MapPreviewScreen.update(dt)
-  if not MapPreviewScreen._active then return end
   local step = math.floor(((dt or (1 / 60)) * 60) + 0.5)
   if step < 1 then step = 1 end
+  if MapPreviewScreen._cave or CaveTransition.isActive() then
+    for _ = 1, step do
+      if MapPreviewScreen._cave then
+        caveStep(MapPreviewScreen._cave)
+      elseif CaveTransition.isActive() then
+        CaveTransition.update(1 / 60)
+      end
+    end
+    return
+  end
+  if not MapPreviewScreen._active then return end
   for _ = 1, step do
     if MapPreviewScreen._state == STATE_HOLD then
       local Fade = package.loaded["src.ui.game3.fade"]
       local fadingIn = Fade and Fade.isActive and Fade.isActive()
       if not fadingIn then
+        -- src/map_preview_screen.c:505
         MapPreviewScreen._timer = MapPreviewScreen._timer + 1
         if MapPreviewScreen._timer > MapPreviewScreen._duration then
           MapPreviewScreen._state = STATE_FADE_OUT
           MapPreviewScreen._fadeFrames = 0
+          MapPreviewScreen._phase = 0
         end
       end
     elseif MapPreviewScreen._state == STATE_FADE_OUT then
+      -- src/map_preview_screen.c:513
+      local phase = MapPreviewScreen._phase
+      if phase == 0 then
+        MapPreviewScreen._evb = math.min(MapPreviewScreen._evb + 1, 16)
+      elseif phase == 1 then
+        MapPreviewScreen._eva = math.max(MapPreviewScreen._eva - 1, 0)
+      end
+      MapPreviewScreen._phase = (phase + 1) % 3
       MapPreviewScreen._fadeFrames = MapPreviewScreen._fadeFrames + 1
-      if MapPreviewScreen._fadeFrames >= FADE_OUT_FRAMES then
+      if MapPreviewScreen._eva == 0 and MapPreviewScreen._evb == 16 then
         MapPreviewScreen.dismiss()
+        return
       end
     end
   end
@@ -396,13 +557,37 @@ local function ensureCanvas()
   return canvas
 end
 
---- BG0 holds both the artwork and the name window, so pret's BLDALPHA ramp
---- dissolves them together. Compose them into an offscreen buffer to fade the
---- pair as one layer.
+local function setVoidVeil(r, g, b, a)
+  local Renderer = package.loaded["src.render.Renderer"]
+  if Renderer then Renderer.voidVeil = { r, g, b, a } end
+end
+
+local function drawCave(c)
+  drawOpaque(c.image, c.name)
+  local k = (c.level or 0) / 16
+  local v = c.color == 1 and 1 or 0
+  if k > 0 then
+    love.graphics.setColor(v, v, v, k)
+    love.graphics.rectangle("fill", 0, 0, MapPreviewExtract.WIDTH, MapPreviewExtract.HEIGHT)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  setVoidVeil(v * k, v * k, v * k, 1)
+end
+
 function MapPreviewScreen.draw()
+  if MapPreviewScreen._cave then
+    drawCave(MapPreviewScreen._cave)
+    return
+  end
+  if CaveTransition.isActive() then
+    CaveTransition.draw()
+    return
+  end
   if not MapPreviewScreen._active then return end
   local image = MapPreviewScreen._image or MapPreviewScreen.image(MapPreviewScreen._mapsec)
   if not image then return end
+  -- src/map_preview_screen.c:532
+  setVoidVeil(0, 0, 0, 1 - MapPreviewScreen._evb / 16)
   local alpha = MapPreviewScreen.alpha()
   if alpha >= 1 then
     drawOpaque(image, MapPreviewScreen._name)

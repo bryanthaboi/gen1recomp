@@ -36,6 +36,23 @@ local X_STAT = {
 
 local Catching = require("src.core.game3.battle.catching")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
+local BattleText = require("src.core.game3.battle.battle_text")
+local Adapter = require("src.core.game3.battle.adapter")
+
+-- src/strings.c:254
+local function wont_have_effect()
+  return RomText.ascii("gText_WontHaveEffect")
+end
+
+-- pokefirered/src/item_use.c:578
+local function player_used(session, itemId)
+  return RomText.ascii("gText_PlayerUsedVar2", { playerName = session and session.name,
+    stringVars = { nil, ItemsData.displayName(itemId) } })
+end
+
+-- pokefirered/src/pokemon.c:4957
+local STAT_INDEX = { attack = 1, defense = 2, speed = 3, spAtk = 4, spDef = 5, accuracy = 6 }
 
 function BattleItems.isBall(id)
   return Catching.isBall(id)
@@ -67,7 +84,7 @@ function BattleItems.needsPartySelect(id)
 end
 
 function BattleItems.canUseOn(st, itemId, partySlot, mon, moveSlot)
-  if not mon or not itemId then return false, Strings("It won't have any effect.") end
+  if not mon or not itemId then return false, wont_have_effect() end
   if mon.isEgg then return false, Strings("An EGG can't be used on.") end
   local hp = tonumber(mon.hp) or 0
   local maxHp = tonumber(mon.maxHp or mon.maxhp) or 1
@@ -76,19 +93,19 @@ function BattleItems.canUseOn(st, itemId, partySlot, mon, moveSlot)
   -- pokefirered/src/party_menu.c:4675 TryUsePPItemInBattle
   if use == "pp" then
     if ItemUse.ppItemHasEffect(mon, itemId, moveSlot or 1) then return true end
-    return false, Strings("It won't have any effect.")
+    return false, wont_have_effect()
   end
   if mk == "revive" or use == "revive" then
-    if hp > 0 then return false, Strings("It won't have any effect.") end
+    if hp > 0 then return false, wont_have_effect() end
     return true
   elseif hp <= 0 then
-    return false, Strings("It won't have any effect.")
+    return false, wont_have_effect()
   elseif mk == "status" or use == "status" then
     local s = mon.status
-    if not s or s == 0 or s == "" then return false, Strings("It won't have any effect.") end
+    if not s or s == 0 or s == "" then return false, wont_have_effect() end
     return true
   else
-    if hp >= maxHp then return false, Strings("It won't have any effect.") end
+    if hp >= maxHp then return false, wont_have_effect() end
     return true
   end
 end
@@ -129,9 +146,12 @@ end
 --   endsBattle: bool
 function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId, moveSlot)
   local msgs = {}
-  local function say(t)
+  local function say(t, id)
     msgs[#msgs + 1] = t
-    if adapter and adapter.say then adapter:say(t) end
+    if adapter and adapter.say then adapter:say(t, id) end
+  end
+  local function say_id(id, fill)
+    say(BattleText.get(id, fill), (BattleText.key(id, fill)))
   end
 
   if not itemId or not bag then
@@ -143,7 +163,6 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
   end
 
   local num = ItemsData.toNumericId(itemId) or tonumber(itemId)
-  local name = ItemsData.displayName(itemId)
 
   -- Poké Doll → flee wild
   if num == 80 then
@@ -152,30 +171,33 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       return "error", msgs, false, false
     end
     Bag.remove(bag, itemId, 1)
-    say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
-    say(Strings("Got away safely!"))
+    -- pokefirered/src/item_use.c:821
+    say(player_used(session, itemId))
     return "doll", msgs, true, true
   end
 
   -- Balls
   if BattleItems.isBall(itemId) then
+    local fill = Adapter.fill(st, { lastItem = itemId, playerName = (session and session.name) or st.playerName })
     if not st.wild then
-      say(Strings("The TRAINER blocked\nthe BALL!"))
+      -- pokefirered/data/battle_scripts_2.s:118
+      say_id("STRINGID_TRAINERBLOCKEDBALL", fill)
       return "error", msgs, false, false
     end
     Bag.remove(bag, itemId, 1)
-    say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
+    -- pokefirered/data/battle_scripts_2.s:57
+    say_id("STRINGID_PLAYERUSEDITEM", fill)
     local rng = adapter and adapter.rng and adapter:rng() or math.random
     local foe = Catching.targetFor(st, battlerId)
     local caught, shakes = BattleItems.tryCatch(itemId, foe, st, rng, session)
     if caught then
       local res = Catching.storeCaught(session, foe, itemId)
-      local fmon = foe and foe.mon
-      local ename = (fmon and ((fmon.nickname ~= "" and fmon.nickname) or fmon.name))
-        or Pokemon.name(foe and foe.species) or "POKéMON"
-      say(Strings("Gotcha!\n%s was caught!", ename))
+      local ename = require("src.core.game3.battle.state").displayName(foe)
+      fill.opponentMon1 = foe
+      -- pokefirered/data/battle_scripts_2.s:77
+      say_id("STRINGID_GOTCHAPKMNCAUGHT", fill)
       if res and res.firstTimeCaught then
-        say(Strings("%s's data was\nadded to the POKéDEX.", ename))
+        say_id("STRINGID_PKMNDATAADDEDTODEX", fill)
       end
       if res and res.location == "pc" then
         -- pokefirered/src/battle_script_commands.c:9617
@@ -184,15 +206,9 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       end
       return "catch", msgs, true, true
     end
-    if shakes == 0 then
-      say(Strings("Oh no! The POKéMON broke free!"))
-    elseif shakes == 1 then
-      say(Strings("Aww! It appeared to be caught!"))
-    elseif shakes == 2 then
-      say(Strings("Aargh! Almost had it!"))
-    else
-      say(Strings("Shoot! It was so close too!"))
-    end
+    -- pokefirered/src/battle_message.c:1151
+    say_id(({ [0] = "STRINGID_PKMNBROKEFREE", "STRINGID_ITAPPEAREDCAUGHT",
+      "STRINGID_AARGHALMOSTHADIT", "STRINGID_SHOOTSOCLOSE" })[math.min(3, tonumber(shakes) or 0)], fill)
     return "fail_catch", msgs, true, false
   end
 
@@ -205,22 +221,19 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     end
     local cur = battler.stages[stat] or 0
     if cur >= 6 then
-      say(Strings("It won't have any effect."))
+      -- pokefirered/src/item_use.c:758
+      say(wont_have_effect())
       return "error", msgs, false, false
     end
     Bag.remove(bag, itemId, 1)
-    say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
     if adapter and adapter.changeStages then
       adapter:changeStages(battler, { [stat] = 1 })
     else
       battler.stages[stat] = math.min(6, cur + 1)
     end
-    local label = Strings(({
-      attack = "ATTACK", defense = "DEFENSE", speed = "SPEED",
-      accuracy = "ACCURACY", spAtk = "SP. ATK",
-    })[stat] or stat)
-    local pname = battler.mon and (battler.mon.nickname or battler.mon.name) or "POKéMON"
-    say(Strings("%s's %s\nrose!", pname, label))
+    -- pokefirered/src/pokemon.c:4962
+    say_id("STRINGID_DEFENDERSSTATROSE", Adapter.fill(st, { def = battler,
+      buff1 = RomText.at("gStatNamesTable", STAT_INDEX[stat]), buff2 = BattleText.get("STRINGID_STATROSE") }))
     -- pokefirered/src/data/pokemon/item_effects.h:225
     if battler.mon then
       local Pokemon = require("src.core.game3.pokemon")
@@ -251,11 +264,11 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       State.syncBattlerToParty(battler, party)
     end
     if not mon or not ItemUse.applyPpItem(mon, itemId, moveSlot or 1, battler, session) then
-      say(Strings("It won't have any effect."))
+      say(wont_have_effect())
       return "error", msgs, false, false
     end
     Bag.remove(bag, itemId, 1)
-    say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
+    say(player_used(session, itemId))
     return "heal", msgs, true, false
   end
   local bu = info and tonumber(info.battleUsage) or 0
@@ -268,7 +281,7 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     end
     local mon = party and party[partySlot]
     if not mon then
-      say(Strings("It won't have any effect."))
+      say(wont_have_effect())
       return "error", msgs, false, false
     end
     local ok = false
@@ -287,7 +300,7 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
       ok = ItemUse.healMon(session, mon, itemId)
     end
     if not ok then
-      say(Strings("It won't have any effect."))
+      say(wont_have_effect())
       return "error", msgs, false, false
     end
     -- pokefirered/src/pokemon.c:4481
@@ -297,7 +310,7 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
         { mapSec = Pokemon.currentMapSec(session) })
     end
     Bag.remove(bag, itemId, 1)
-    say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
+    say(player_used(session, itemId))
     if st.player and st.player.partyIndex == partySlot then
       sync_player_battler(st)
     end
@@ -315,16 +328,15 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
   return "error", msgs, false, false
 end
 
+-- pokefirered/src/battle_message.c:1195
 local ENEMY_CURE_TEXT = {
-  [0] = Strings.source("%s's %s\nsnapped it out of confusion!"),
-  [1] = Strings.source("%s's %s\ncured paralysis!"),
-  [2] = Strings.source("%s's %s\ndefrosted it!"),
-  [3] = Strings.source("%s's %s\nhealed its burn!"),
-  [4] = Strings.source("%s's %s\ncured poison!"),
-  [5] = Strings.source("%s's %s\nwoke it from its sleep!"),
+  [0] = "STRINGID_PKMNSITEMSNAPPEDOUT",
+  [1] = "STRINGID_PKMNSITEMCUREDPARALYSIS",
+  [2] = "STRINGID_PKMNSITEMDEFROSTEDIT",
+  [3] = "STRINGID_PKMNSITEMHEALEDBURN",
+  [4] = "STRINGID_PKMNSITEMCUREDPOISON",
+  [5] = "STRINGID_PKMNSITEMWOKEIT",
 }
-
-local ENEMY_STAT_NAME = { [1] = "ATTACK", [2] = "DEFENSE", [3] = "SPEED", [4] = "SP. ATK", [5] = "SP. DEF", [6] = "accuracy" }
 
 -- pokefirered/src/pokemon.c:4001
 local function enemy_item_effects(st, ad, b, e)
@@ -387,17 +399,14 @@ function BattleItems.enemyUse(st, adapter, act)
   local kind = act.aiItemType or (e and AiItems.itemType(item, e))
   local flags = tonumber(act.aiItemFlags) or 0
   b.expFuryCutter, b.destinyBond, b.expDestinyBond, b.expGrudge = 0, nil, nil, nil
-  local iname = ItemsData.displayName(item)
-  local bname = adapter:displayName(b)
-  local trainer = (st.trainerClassName and st.trainerClassName ~= "")
-    and (st.trainerClassName .. " " .. (st.trainerName or "")) or (st.trainerName or "TRAINER")
+  local fill = { scrActive = b, atk = b, lastItem = item }
   -- pokefirered/data/battle_scripts_2.s:134
   adapter:pushEvent({ kind = "item_use", battler = id, side = b.side, item = item, se = "SE_USE_ITEM" })
-  adapter:say(Strings("%s\nused %s!", trainer, iname))
+  adapter:sayText("STRINGID_TRAINER1USEDITEM", fill)
   if e then enemy_item_effects(st, adapter, b, e) end
   local T = AiItems.TYPE
   if kind == T.FULL_RESTORE or kind == T.HEAL_HP then
-    adapter:say(Strings("%s's %s\nrestored health!", bname, iname))
+    adapter:sayText("STRINGID_PKMNSITEMRESTOREDHEALTH", fill)
     adapter:pushEvent({ kind = "status", battler = id, side = b.side })
   elseif kind == T.CURE_CONDITION then
     local chooser = 0
@@ -410,25 +419,28 @@ function BattleItems.enemyUse(st, adapter, act)
         chooser = chooser + 1
       end
     end
-    adapter:say(Strings(ENEMY_CURE_TEXT[chooser] or ENEMY_CURE_TEXT[0], bname, iname))
+    adapter:sayText(ENEMY_CURE_TEXT[chooser], fill)
     adapter:pushEvent({ kind = "status", battler = id, side = b.side })
   elseif kind == T.X_STAT then
     if AiItems.band(flags, 0x80) ~= 0 then
-      adapter:say(Strings("%s used\n%s to hustle!", bname, iname))
+      adapter:sayText("STRINGID_PKMNUSEDXTOGETPUMPED", fill)
     else
       local stat, f = 1, flags
       while f > 0 and f % 2 == 0 do
         f = math.floor(f / 2)
         stat = stat + 1
       end
-      adapter:say(Strings("Using %s, the %s\nof %s rose!", iname, Strings(ENEMY_STAT_NAME[stat] or "ATTACK"), bname))
+      -- pokefirered/src/battle_main.c:4205
+      fill.buff1 = RomText.at("gStatNamesTable", stat)
+      fill.buff2 = BattleText.get("STRINGID_STATROSE")
+      adapter:sayText("STRINGID_USINGITEMSTATOFPKMNROSE", fill)
     end
   elseif kind == T.GUARD_SPECS then
     -- pokefirered/src/battle_main.c:4216
     if st.double then
-      adapter:say(Strings("%s is getting\npumped!", bname))
+      adapter:sayText("STRINGID_PKMNGETTINGPUMPED", fill)
     else
-      adapter:say(Strings("%s became\nshrouded in MIST!", ((b.side == "player") and Strings("Ally") or Strings("Foe"))))
+      adapter:sayText("STRINGID_PKMNSHROUDEDINMIST", fill)
     end
   end
   return true

@@ -1,7 +1,4 @@
 #!/usr/bin/env luajit
--- AnimSeq reads a few battle messages to pace the animation (a missed move
--- pauses, a fainted POKéMON drops).  The messages are translated by then, so
--- it has to recognise them through the catalog's wording, not the English.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = require("tests.love_stub")
@@ -14,7 +11,6 @@ local function check(cond, msg)
   end
 end
 
-local Strings = require("src.core.Strings")
 local AnimSeq = require("src.core.game3.battle.anim_seq")
 
 local function kinds(steps)
@@ -23,24 +19,21 @@ local function kinds(steps)
   return table.concat(out, ",")
 end
 
-local function missPauses(text)
+local function missPauses(text, id)
   local steps = AnimSeq.buildSteps({
-    { kind = "msg", text = "PIKACHU utilise\nECLAIR!" },
-    { kind = "msg", text = text },
+    { kind = "msg", text = "PIKACHU utilise\nECLAIR!", id = "sText_AttackerUsedX" },
+    { kind = "msg", text = text, id = id },
   })
   return kinds(steps):find("pause", 1, true) ~= nil
 end
 
-check(missPauses("PIKACHU's\nattack missed!"), "an English miss pauses")
-
-Strings.load({ strings = {
-  ["%s's\nattack missed!"] = "%s\nrate son attaque!",
-  ["It doesn't affect\n%s…"] = "Ça n'affecte pas\n%s…",
-} })
-check(missPauses("PIKACHU\nrate son attaque!"), "a translated miss pauses")
-check(missPauses("Ça n'affecte pas\nRONFLEX…"), "a translated no-effect line pauses")
-check(not missPauses("PIKACHU\nest KO!"), "another line does not pause")
-Strings.load({})
+check(missPauses("PIKACHU's\nattack missed!", "STRINGID_ATTACKMISSED"), "a miss pauses")
+check(missPauses("PIKACHU\nrate son attaque!", "STRINGID_ATTACKMISSED"), "a translated miss pauses")
+check(missPauses("Ça n'affecte pas\nRONFLEX…", "sText_ItDoesntAffect"), "a translated no-effect line pauses")
+check(not missPauses("PIKACHU's\nattack missed!", nil), "an English line without an id does not pause")
+check(not missPauses("PIKACHU\nest KO!", "STRINGID_TARGETFAINTED"), "another line does not pause")
+check(AnimSeq.isMoveUsedId("sText_AttackerUsedX"), "the used-move line is recognised by id")
+check(not AnimSeq.isMoveUsedId(nil), "no id is not the used-move line")
 
 print(("game3_battle_translated_text_test: %s (%d failed)"):format(failed == 0 and "PASS" or "FAIL", failed))
 if failed > 0 then os.exit(1) end

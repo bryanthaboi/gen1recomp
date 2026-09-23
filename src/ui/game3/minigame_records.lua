@@ -3,7 +3,7 @@
 local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Records = {}
 
@@ -61,8 +61,10 @@ function Records.pressingSpeedText(speed)
     end
   end
   local frac = math.floor(score / 1000000) % 100
-  -- pokefirered/src/strings.c:1048
-  return string.format("%3d.%02d ", hi, frac) .. Strings("Times/sec.")
+  -- pokefirered/src/berry_crush.c:3153
+  local speedText = RomText.plain("gText_XDotY3",
+    { stringVars = { string.format("%3d", hi), string.format("%02d", frac) } })
+  return speedText .. " " .. RomText.plain("gText_TimesPerSec")
 end
 
 -- pokefirered/src/berry_crush.c:3189
@@ -105,16 +107,16 @@ end
 local function buildBerryCrush(session)
   local lines = {}
   -- pokefirered/src/berry_crush.c:3112
-  local title = Strings("BERRY CRUSH")
+  local title = RomText.plain("gText_BerryCrush2")
   lines[#lines + 1] = line(title, 96 - math.floor(FrlgFont.measure(title) / 2), 2, COLOR_BLUE)
   -- pokefirered/src/berry_crush.c:3122
-  local sub = Strings("Pressing-Speed Rankings")
+  local sub = RomText.plain("gText_PressingSpeedRankings")
   lines[#lines + 1] = line(sub, 96 - math.floor(FrlgFont.measure(sub) / 2), 18, COLOR_BLUE)
   local speeds = crushSpeeds(session)
   local y = 42
   for i = 1, 4 do
     -- pokefirered/src/berry_crush.c:3135
-    lines[#lines + 1] = line(Strings("%d PLAYERS", i + 1), 4, y)
+    lines[#lines + 1] = line(RomText.plain("gText_Var1Players", { stringVars = { tostring(i + 1) } }), 4, y)
     -- pokefirered/src/berry_crush.c:3156
     local s = Records.pressingSpeedText(speeds[i])
     lines[#lines + 1] = line(s, 192 - FrlgFont.measure(s), y)
@@ -126,9 +128,13 @@ end
 local function buildPokemonJump(session)
   local lines = {}
   -- pokefirered/src/pokemon_jump.c:4560
-  lines[#lines + 1] = line(Strings("POKéMON JUMP RECORDS"), 0, 0, nil, 1)
+  lines[#lines + 1] = line(RomText.plain("gText_PkmnJumpRecords"), 0, 0, nil, 1)
   -- pokefirered/src/pokemon_jump.c:4504
-  local labels = { Strings("Jumps in a row:"), Strings("Best score:"), Strings("EXCELLENTS in a row:") }
+  local labels = {
+    RomText.plain("gText_JumpsInARow"),
+    RomText.plain("gText_BestScore2"),
+    RomText.plain("gText_ExcellentsInARow"),
+  }
   local values = jumpRecords(session)
   for i = 1, 3 do
     local y = 20 + (i - 1) * 14
@@ -143,12 +149,12 @@ end
 local function buildDodrio(session)
   local lines = {}
   -- pokefirered/src/dodrio_berry_picking.c:3008
-  lines[#lines + 1] = line(Strings("DODRIO BERRY-PICKING RECORDS"), 1, 1)
+  lines[#lines + 1] = line(RomText.plain("gText_BerryPickingRecords"), 1, 1)
   -- pokefirered/src/dodrio_berry_picking.c:2946
   local labels = {
-    Strings("BERRIES picked:"),
-    Strings("Best score:"),
-    Strings("BERRIES picked in a row with\nfive players:"),
+    RomText.plain("gText_BerriesPicked"),
+    RomText.plain("gText_BestScore"),
+    RomText.plain("gText_BerriesInRowFivePlayers"),
   }
   -- pokefirered/src/dodrio_berry_picking.c:2950
   local textY, numY = { 24, 40, 56 }, { 24, 40, 70 }

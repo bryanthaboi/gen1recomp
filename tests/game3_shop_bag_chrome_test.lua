@@ -120,7 +120,7 @@ check(closed == true, "onClose called")
 
 Audio.playSe = origPlaySe
 
-print("[test] 4. ShopMenu Purchasing, Selling, and Premier Ball Bonus")
+print("[test] 4. ShopMenu Purchasing and Selling")
 local ShopMenu = require("src.ui.game3.shop_menu")
 local shopClosed = false
 local shopSession = {
@@ -159,36 +159,32 @@ mockInput:set("a")
 ShopMenu.handleInput(mockInput)
 check(shopSession.money == 1000, "money reduced by 2000 to 1000")
 check(Bag.has(shopSession.bag, 4, 10) == true, "bag received 10 Poké Balls")
-check(Bag.has(shopSession.bag, 12, 1) == true, "bag received 1 PREMIER BALL bonus for buying 10 Poké Balls!")
+check(Bag.has(shopSession.bag, 12, 1) == false, "FRLG gives no PREMIER BALL bonus (shop.c:978)")
 
--- Enter SELL mode
-ShopMenu.mode = "sell"
-ShopMenu.cursor = 1
+-- pokefirered/src/item_menu.c:1787 Task_ItemContext_Sell
+ShopMenu.mode = "root"
+local SellFlow = require("src.ui.game3.sell_flow")
+local soldCb = nil
+local flow = SellFlow.start({
+  itemId = 4, owned = Bag.get(shopSession.bag, 4), session = shopSession, bag = shopSession.bag,
+  onDone = function(sold) soldCb = sold end,
+})
+check(flow.state == "qty", "a stack of 10 asks how many to sell")
+for _ = 1, 4 do
+  mockInput:set("up")
+  flow:handleInput(mockInput)
+end
+check(flow.qty == 5, "up raises the quantity to 5")
 mockInput:set("a")
-ShopMenu.handleInput(mockInput)
-check(ShopMenu.mode == "sell_qty", "A on bag item enters sell_qty mode")
-
--- Sell 5 units of the selected item
-ShopMenu.qty = 5
-local itemPrice = (ShopMenu._pending and ShopMenu._pending.price) or 100
-local expectedMoney = 1000 + (itemPrice * 5)
+flow:handleInput(mockInput)
+check(flow.state == "confirm", "A asks gText_ICanPayThisMuch_WouldThatBeOkay")
 mockInput:set("a")
-ShopMenu.handleInput(mockInput)
-check(ShopMenu.mode == "sell_confirm", "A enters sell_confirm mode")
-
--- Confirm sell
+flow:handleInput(mockInput)
+check(shopSession.money == 1500, "selling 5 POKé BALLs added 500 (" .. tostring(shopSession.money) .. ")")
+check(Bag.get(shopSession.bag, 4) == 5, "five POKé BALLs left")
 mockInput:set("a")
-ShopMenu.handleInput(mockInput)
-check(shopSession.money == expectedMoney, string.format("selling 5 added %d to money (%d)", itemPrice * 5, expectedMoney))
-
--- Dismiss sell message
-mockInput:set("a")
-ShopMenu.handleInput(mockInput)
-check(ShopMenu.mode == "sell", "A dismisses sell message back to sell mode")
-
-mockInput:set("b")
-ShopMenu.handleInput(mockInput)
-check(ShopMenu.mode == "root", "B from sell returns to root")
+flow:handleInput(mockInput)
+check(soldCb == true and not flow:active(), "A after the sale returns to the list")
 
 mockInput:set("b")
 ShopMenu.handleInput(mockInput)

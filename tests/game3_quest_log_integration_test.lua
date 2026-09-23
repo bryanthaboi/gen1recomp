@@ -1,5 +1,6 @@
 package.path='./?.lua;./?/init.lua;'..package.path
 require('src.core.GameVersion').set('firered')
+require("tests.fixture_data.game3_map_sections").install()
 local Q=require('src.core.game3.quest_log')
 local UI=require('src.ui.game3.quest_log')
 local Game=require('src.core.Game3')

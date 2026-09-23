@@ -1,82 +1,12 @@
 #!/usr/bin/env luajit
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.game3_cache").mountOrSkip("game3_battle_move_effects_test: move effect messages are ROM battle text")
+require("tests.fixture_data.game3_items").install()
 
 local Moves = require("src.core.game3.battle.moves")
 
--- pokefirered/src/data/battle_moves.h:1
-local ROM = {
-  [1] = { effect = 0, power = 40, type = 0, accuracy = 100, pp = 35, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [10] = { effect = 0, power = 40, type = 0, accuracy = 100, pp = 35, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [14] = { effect = 50, power = 0, type = 0, accuracy = 0, pp = 30, secondaryChance = 0, target = 16, priority = 0, flags = 8 },
-  [16] = { effect = 149, power = 40, type = 2, accuracy = 100, pp = 35, secondaryChance = 0, target = 0, priority = 0, flags = 50 },
-  [18] = { effect = 28, power = 0, type = 0, accuracy = 100, pp = 20, secondaryChance = 0, target = 0, priority = -6, flags = 18 },
-  [19] = { effect = 155, power = 70, type = 2, accuracy = 95, pp = 15, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [20] = { effect = 42, power = 15, type = 0, accuracy = 75, pp = 20, secondaryChance = 100, target = 0, priority = 0, flags = 51 },
-  [23] = { effect = 150, power = 65, type = 0, accuracy = 100, pp = 20, secondaryChance = 30, target = 0, priority = 0, flags = 19 },
-  [31] = { effect = 29, power = 15, type = 0, accuracy = 85, pp = 20, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [33] = { effect = 0, power = 35, type = 0, accuracy = 95, pp = 35, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [35] = { effect = 42, power = 15, type = 0, accuracy = 85, pp = 20, secondaryChance = 100, target = 0, priority = 0, flags = 51 },
-  [37] = { effect = 27, power = 90, type = 0, accuracy = 100, pp = 20, secondaryChance = 100, target = 4, priority = 0, flags = 51 },
-  [41] = { effect = 77, power = 25, type = 6, accuracy = 100, pp = 20, secondaryChance = 20, target = 0, priority = 0, flags = 18 },
-  [45] = { effect = 18, power = 0, type = 0, accuracy = 100, pp = 40, secondaryChance = 0, target = 8, priority = 0, flags = 22 },
-  [46] = { effect = 28, power = 0, type = 0, accuracy = 100, pp = 20, secondaryChance = 0, target = 0, priority = -6, flags = 18 },
-  [47] = { effect = 1, power = 0, type = 0, accuracy = 55, pp = 15, secondaryChance = 0, target = 0, priority = 0, flags = 22 },
-  [50] = { effect = 86, power = 0, type = 0, accuracy = 55, pp = 20, secondaryChance = 0, target = 0, priority = 0, flags = 18 },
-  [52] = { effect = 4, power = 40, type = 10, accuracy = 100, pp = 25, secondaryChance = 10, target = 0, priority = 0, flags = 18 },
-  [56] = { effect = 0, power = 120, type = 11, accuracy = 80, pp = 5, secondaryChance = 0, target = 0, priority = 0, flags = 50 },
-  [57] = { effect = 0, power = 95, type = 11, accuracy = 100, pp = 15, secondaryChance = 0, target = 8, priority = 0, flags = 50 },
-  [68] = { effect = 89, power = 1, type = 1, accuracy = 100, pp = 20, secondaryChance = 0, target = 1, priority = -5, flags = 17 },
-  [87] = { effect = 152, power = 120, type = 13, accuracy = 70, pp = 10, secondaryChance = 30, target = 0, priority = 0, flags = 18 },
-  [89] = { effect = 147, power = 100, type = 4, accuracy = 100, pp = 10, secondaryChance = 0, target = 32, priority = 0, flags = 50 },
-  [91] = { effect = 155, power = 60, type = 4, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [92] = { effect = 33, power = 0, type = 3, accuracy = 85, pp = 10, secondaryChance = 100, target = 0, priority = 0, flags = 22 },
-  [98] = { effect = 103, power = 40, type = 0, accuracy = 100, pp = 30, secondaryChance = 0, target = 0, priority = 1, flags = 51 },
-  [99] = { effect = 81, power = 20, type = 0, accuracy = 100, pp = 20, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [100] = { effect = 153, power = 0, type = 14, accuracy = 0, pp = 20, secondaryChance = 0, target = 16, priority = 0, flags = 0 },
-  [102] = { effect = 82, power = 0, type = 0, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 2 },
-  [107] = { effect = 108, power = 0, type = 0, accuracy = 0, pp = 20, secondaryChance = 0, target = 16, priority = 0, flags = 8 },
-  [117] = { effect = 26, power = 1, type = 0, accuracy = 100, pp = 10, secondaryChance = 0, target = 16, priority = 0, flags = 35 },
-  [129] = { effect = 17, power = 60, type = 0, accuracy = 0, pp = 20, secondaryChance = 0, target = 8, priority = 0, flags = 50 },
-  [144] = { effect = 57, power = 0, type = 0, accuracy = 0, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 0 },
-  [153] = { effect = 7, power = 250, type = 0, accuracy = 100, pp = 5, secondaryChance = 0, target = 32, priority = 0, flags = 50 },
-  [156] = { effect = 37, power = 0, type = 14, accuracy = 0, pp = 10, secondaryChance = 0, target = 16, priority = 0, flags = 8 },
-  [160] = { effect = 30, power = 0, type = 0, accuracy = 0, pp = 30, secondaryChance = 0, target = 16, priority = 0, flags = 0 },
-  [161] = { effect = 36, power = 80, type = 0, accuracy = 100, pp = 10, secondaryChance = 20, target = 0, priority = 0, flags = 18 },
-  [166] = { effect = 95, power = 0, type = 0, accuracy = 0, pp = 1, secondaryChance = 0, target = 0, priority = 0, flags = 0 },
-  [167] = { effect = 104, power = 10, type = 1, accuracy = 90, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [168] = { effect = 105, power = 40, type = 17, accuracy = 100, pp = 10, secondaryChance = 100, target = 0, priority = 0, flags = 19 },
-  [173] = { effect = 92, power = 40, type = 0, accuracy = 100, pp = 15, secondaryChance = 30, target = 0, priority = 0, flags = 50 },
-  [176] = { effect = 93, power = 0, type = 0, accuracy = 100, pp = 30, secondaryChance = 0, target = 16, priority = 0, flags = 0 },
-  [182] = { effect = 111, power = 0, type = 0, accuracy = 0, pp = 10, secondaryChance = 0, target = 16, priority = 3, flags = 0 },
-  [205] = { effect = 117, power = 30, type = 5, accuracy = 90, pp = 20, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [210] = { effect = 119, power = 10, type = 6, accuracy = 95, pp = 20, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [217] = { effect = 122, power = 1, type = 0, accuracy = 90, pp = 15, secondaryChance = 0, target = 0, priority = 0, flags = 18 },
-  [226] = { effect = 127, power = 0, type = 0, accuracy = 0, pp = 40, secondaryChance = 0, target = 16, priority = 0, flags = 0 },
-  [234] = { effect = 132, power = 0, type = 0, accuracy = 0, pp = 5, secondaryChance = 0, target = 16, priority = 0, flags = 8 },
-  [237] = { effect = 135, power = 1, type = 0, accuracy = 100, pp = 15, secondaryChance = 0, target = 0, priority = 0, flags = 50 },
-  [239] = { effect = 146, power = 40, type = 16, accuracy = 100, pp = 20, secondaryChance = 20, target = 8, priority = 0, flags = 50 },
-  [250] = { effect = 42, power = 15, type = 11, accuracy = 70, pp = 15, secondaryChance = 100, target = 0, priority = 0, flags = 50 },
-  [251] = { effect = 154, power = 10, type = 17, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 50 },
-  [252] = { effect = 158, power = 40, type = 0, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 1, flags = 18 },
-  [253] = { effect = 159, power = 50, type = 0, accuracy = 100, pp = 10, secondaryChance = 100, target = 4, priority = 0, flags = 50 },
-  [254] = { effect = 160, power = 0, type = 0, accuracy = 0, pp = 10, secondaryChance = 0, target = 16, priority = 0, flags = 8 },
-  [255] = { effect = 161, power = 100, type = 0, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 34 },
-  [266] = { effect = 172, power = 0, type = 0, accuracy = 100, pp = 20, secondaryChance = 0, target = 16, priority = 3, flags = 0 },
-  [267] = { effect = 173, power = 0, type = 0, accuracy = 0, pp = 20, secondaryChance = 0, target = 1, priority = 0, flags = 0 },
-  [271] = { effect = 177, power = 0, type = 14, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 18 },
-  [274] = { effect = 180, power = 0, type = 0, accuracy = 100, pp = 20, secondaryChance = 0, target = 1, priority = 0, flags = 0 },
-  [278] = { effect = 184, power = 0, type = 0, accuracy = 100, pp = 10, secondaryChance = 0, target = 16, priority = 0, flags = 0 },
-  [282] = { effect = 188, power = 20, type = 17, accuracy = 100, pp = 20, secondaryChance = 100, target = 0, priority = 0, flags = 19 },
-  [290] = { effect = 197, power = 70, type = 0, accuracy = 100, pp = 20, secondaryChance = 30, target = 0, priority = 0, flags = 18 },
-  [291] = { effect = 155, power = 60, type = 11, accuracy = 100, pp = 10, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [299] = { effect = 200, power = 85, type = 10, accuracy = 90, pp = 10, secondaryChance = 10, target = 0, priority = 0, flags = 19 },
-  [305] = { effect = 202, power = 50, type = 3, accuracy = 100, pp = 15, secondaryChance = 30, target = 0, priority = 0, flags = 19 },
-  [327] = { effect = 207, power = 85, type = 1, accuracy = 90, pp = 15, secondaryChance = 0, target = 0, priority = 0, flags = 51 },
-  [342] = { effect = 209, power = 50, type = 3, accuracy = 100, pp = 25, secondaryChance = 10, target = 0, priority = 0, flags = 51 },
-}
-Moves._romLoaded = true
-Moves._rom = ROM
+Moves.loadRomPack()
 
 local State = require("src.core.game3.battle.state")
 local Engine = require("src.core.game3.battle.engine")

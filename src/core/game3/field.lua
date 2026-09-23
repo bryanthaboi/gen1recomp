@@ -71,6 +71,7 @@ function Field.start(mod, game, session)
 end
 
 function Field.stop()
+  require("src.world.game3.Follower").reset()
   Field.running = false
   Field._session = nil
   Field.locked = false
@@ -147,6 +148,7 @@ function Field.update(_dt)
     NativesEvents.pollWalkaway(Space and Space.vm, input)
   end
   Player.update(game, walkInput)
+  require("src.world.game3.Follower").update(game)
   Field.updateWaterfall(game)
   -- pokefirered/src/field_player_avatar.c:1691
   Field.updateFishing()
@@ -209,6 +211,9 @@ function Field.unlock()
   if Field._flyLanding then return end
   -- pokefirered/src/field_effect.c:1274 FallWarpEffect_7
   if Field._fallWarp then return end
+  -- pokefirered/src/map_preview_screen.c:439
+  local MapPreviewScreen = package.loaded["src.ui.game3.map_preview_screen"]
+  if MapPreviewScreen and MapPreviewScreen.isForestActive() then return end
   Field.locked = false
 end
 
@@ -918,14 +923,27 @@ function Field.executeFieldMove(payload)
   local Objects = require("src.core.game3.objects")
 
   local act = payload.action
+  -- pokefirered/data/scripts/field_moves.inc:12
+  if payload.text and (act == "cut_tree" or act == "rock_smash" or act == "surf") then
+    local rest = {}
+    for k, v in pairs(payload) do rest[k] = v end
+    rest.text = nil
+    Message.show(payload.text, function()
+      Message.close()
+      Field.executeFieldMove(rest)
+    end)
+    return
+  end
   local questKeys={cut_tree="UsedCut",cut_grass="UsedCut",surf="UsedSurf",strength="UsedStrength",
     flash="UsedFlash",rock_smash="UsedRockSmash",dig="UsedDigInLocation",
-    teleport="UsedTeleportToLocation",fly="UsedFly",sweet_scent="UsedSweetScent"}
+    teleport="UsedTeleportToLocation",sweet_scent="UsedSweetScent"}
   local key=questKeys[act]
   if key and Field._session then
     local Q=require("src.core.game3.quest_log_recorder")
+    -- pokefirered/src/party_menu.c:4154
+    local where=act=="teleport" and {map=Field._session.healMap} or Field._session
     Q.event(Field._session,key,{require("src.core.game3.pokemon").displayMonName(payload.mon),
-      Q.location(Field._game,Field._session)})
+      Q.location(Field._game,where)})
   end
   -- pokefirered/src/fldeff_rocksmash.c:39
   local function showMon(fn, opts)
@@ -949,9 +967,6 @@ function Field.executeFieldMove(payload)
           if lid then Objects.removeObject(lid) end
         end
         Field.locked = false
-        if payload.text then
-          Message.show(payload.text, function() Message.close() end)
-        end
       end)
     end)
   elseif act == "cut_grass" then
@@ -973,9 +988,6 @@ function Field.executeFieldMove(payload)
       end
       FieldEffects.startCutGrass(P.cellX, P.cellY, function()
         Field.locked = false
-        if payload.text then
-          Message.show(payload.text, function() Message.close() end)
-        end
       end)
     end)
   elseif act == "dotted_hole" then
@@ -985,26 +997,17 @@ function Field.executeFieldMove(payload)
       if payload.se then Audio.playSe(payload.se) end
       FieldEffects.startCutGrass(P.cellX, P.cellY, function()
         Field.openDottedHoleDoor()
-        if payload.text then
-          Message.show(payload.text, function() Message.close() end)
-        end
       end)
     end)
   elseif act == "fly" then
     -- pokefirered/src/region_map.c:3873 CB2_OpenFlyMap
     Field.locked = true
-    local okRm, RegionMap = pcall(require, "src.ui.game3.region_map")
-    local shown = okRm and RegionMap and RegionMap.show and pcall(RegionMap.show, {
+    require("src.ui.game3.region_map").show({
       session = Field._session,
       mode = "fly",
       onPick = function(section) Field.flyTo(section, payload.mon) end,
       onClose = function() Field.locked = false end,
     })
-    if not shown then
-      Field.locked = false
-      local FieldMoves = require("src.core.game3.field_moves")
-      Message.show(FieldMoves.TEXT.CANT_USE_HERE, function() Message.close() end)
-    end
   elseif act == "rock_smash" then
     Field.locked = true
     -- pokefirered/src/fldeff_rocksmash.c:123
@@ -1021,14 +1024,7 @@ function Field.executeFieldMove(payload)
         end
         Field.locked = false
         -- pokefirered/data/scripts/field_moves.inc:88
-        if payload.text then
-          Message.show(payload.text, function()
-            Message.close()
-            Field.tryRockSmashEncounter()
-          end)
-        else
-          Field.tryRockSmashEncounter()
-        end
+        Field.tryRockSmashEncounter()
       end)
     end)
   elseif act == "strength" then
@@ -1061,9 +1057,6 @@ function Field.executeFieldMove(payload)
     showMon(function()
       P.startSurfing(Field._game, function()
         Field.locked = false
-        if payload.text then
-          Message.show(payload.text, function() Message.close() end)
-        end
       end)
     end, { noDuck = true })
   elseif act == "waterfall" then
@@ -1093,27 +1086,49 @@ function Field.executeFieldMove(payload)
           Flags.setFlag(Space.store, nil, payload.flag, true)
         end
       end
-      if payload.text then
-        Message.show(payload.text, function() Message.close() end)
-      end
       FieldEffects.startFlash(function()
         Field.locked = false
       end)
     end)
-  elseif act == "teleport" or act == "dig" then
+  elseif act == "dig" then
     Field.locked = true
     -- pokefirered/src/fldeff_dig.c:32
+    showMon(function()
+      local Session = Field._session
+      local warp = type(payload.warp) == "table" and payload.warp or {}
+      local dest = warp.map or (Session and Session.healMap)
+      -- pokefirered/src/fldeff_dig.c:39 StartDigFieldEffect
+      require("src.core.game3.warp").startEscapeRope(Field._game, dest, warp.x, warp.y, function(m, x, y)
+        Field.respawnAtHeal({ fieldMove = true, warp = { map = m, x = x, y = y } })
+      end)
+    end)
+  elseif act == "teleport" then
+    Field.locked = true
     -- pokefirered/src/fldeff_teleport.c:31
     showMon(function()
       if payload.se then Audio.playSe(payload.se) end
-      FieldEffects.startWarpSpin(act, function()
-        Field.locked = false
-        -- pokefirered/src/field_effect.c:2126
-        Field.respawnAtHeal({ fieldMove = true, warp = payload.warp })
+      FieldEffects.startTeleportOut(function()
+        local Session = Field._session
+        local Warp = require("src.core.game3.warp")
+        local Fade = require("src.ui.game3.fade")
+        local dest = type(payload.warp) == "table" and payload.warp.map
+          or (Session and Session.healMap)
+        local toMode, fromMode = Warp.fadeModes(Fade, Field._game, dest)
+        -- pokefirered/src/field_effect.c:2421
+        Fade.begin(toMode, 1, function()
+          Warp.mapTransition(Field._game, dest, function()
+            -- pokefirered/src/field_effect.c:2431
+            Field.respawnAtHeal({ fieldMove = true, warp = payload.warp })
+            -- pokefirered/src/field_effect.c:2454
+            Player.setVisible(false)
+            Field.locked = true
+            -- pokefirered/src/field_effect.c:2449
+            Fade.begin(fromMode, 1, function()
+              FieldEffects.startTeleportIn(function() Warp.releaseField(Field) end)
+            end)
+          end)
+        end)
       end)
-      if payload.text then
-        Message.show(payload.text, function() Message.close() end)
-      end
     end)
   elseif act == "sweet_scent" then
     Field.locked = true
@@ -1127,9 +1142,6 @@ function Field.executeFieldMove(payload)
           Encounters.tryBattle(Field._game, true)
         end
       end)
-      if payload.text then
-        Message.show(payload.text, function() Message.close() end)
-      end
     end)
   end
 end
@@ -1265,7 +1277,9 @@ function Field.updateFishing()
         f.step = "bite"
       else
         f.dots = f.dots + 1
-        Message.showStay(string.rep("·", f.dots), { speed = 0 })
+        -- pokefirered/src/field_player_avatar.c:1769
+        local gap = "\252\17" .. string.char(12 - require("src.ui.game3.frlg_font").measure("·"))
+        Message.showStay("·" .. string.rep(gap .. "·", f.dots - 1), { speed = 0 })
       end
     end
   elseif f.step == "bite" then
@@ -1314,90 +1328,45 @@ function Field.openDottedHoleDoor()
   return true
 end
 
--- pokefirered/src/region_map.c:828 sMapFlyDestinations
-local FLY_DESTINATIONS = {
-  MAPSEC_PALLET_TOWN = { map = "FR_PALLET_TOWN", x = 6, y = 8 },
-  MAPSEC_VIRIDIAN_CITY = { map = "FR_VIRIDIAN_CITY", x = 26, y = 27 },
-  MAPSEC_PEWTER_CITY = { map = "FR_PEWTER_CITY", x = 17, y = 26 },
-  MAPSEC_CERULEAN_CITY = { map = "FR_CERULEAN_CITY", x = 22, y = 20 },
-  MAPSEC_LAVENDER_TOWN = { map = "FR_LAVENDER_TOWN", x = 6, y = 6 },
-  MAPSEC_VERMILION_CITY = { map = "FR_VERMILION_CITY", x = 15, y = 7 },
-  MAPSEC_CELADON_CITY = { map = "FR_CELADON_CITY", x = 48, y = 12 },
-  MAPSEC_FUCHSIA_CITY = { map = "FR_FUCHSIA_CITY", x = 25, y = 32 },
-  MAPSEC_CINNABAR_ISLAND = { map = "FR_CINNABAR_ISLAND", x = 14, y = 12 },
-  MAPSEC_INDIGO_PLATEAU = { map = "FR_INDIGO_PLATEAU_EXTERIOR", x = 11, y = 7 },
-  MAPSEC_SAFFRON_CITY = { map = "FR_SAFFRON_CITY", x = 24, y = 39 },
-  MAPSEC_ROUTE_4_POKECENTER = { map = "FR_ROUTE_4", x = 12, y = 6 },
-  MAPSEC_ROUTE_10_POKECENTER = { map = "FR_ROUTE_10", x = 13, y = 21 },
-  MAPSEC_ONE_ISLAND = { map = "SEVII_ONE_ISLAND", x = 14, y = 6 },
-  MAPSEC_TWO_ISLAND = { map = "FR_TWO_ISLAND", x = 21, y = 8 },
-  MAPSEC_THREE_ISLAND = { map = "FR_THREE_ISLAND", x = 14, y = 28 },
-  MAPSEC_FOUR_ISLAND = { map = "FR_FOUR_ISLAND", x = 18, y = 21 },
-  MAPSEC_FIVE_ISLAND = { map = "FR_FIVE_ISLAND", x = 18, y = 7 },
-  MAPSEC_SIX_ISLAND = { map = "FR_SIX_ISLAND", x = 11, y = 12 },
-  MAPSEC_SEVEN_ISLAND = { map = "FR_SEVEN_ISLAND", x = 12, y = 4 },
-}
-Field.FLY_DESTINATIONS = FLY_DESTINATIONS
-
 Field.FLY_BAKED_REL = "region_map/fly_destinations.lua"
 Field._flyBaked = nil
 Field._flyBakedRoot = nil
 
 local function fly_default_root()
-  local ok, Extract = pcall(require, "src.import.gba.extract_island1")
-  if ok and Extract and Extract.CACHE_ROOT then return Extract.CACHE_ROOT end
-  return "data/generated/gba"
+  return require("src.import.gba.extract_island1").CACHE_ROOT
 end
 
-local function fly_cache()
-  local ok, Dataset = pcall(require, "src.core.game3.dataset")
-  if ok and Dataset and Dataset.cache then return Dataset.cache() end
-  return nil
+local function fly_row(key, row)
+  assert(type(row) == "table" and type(row.map) == "string"
+    and tonumber(row.x) and tonumber(row.y),
+    "fly_destinations row " .. tostring(key) .. " is malformed")
+  return { map = row.map, x = tonumber(row.x), y = tonumber(row.y),
+    healLocation = tonumber(row.healLocation) }
 end
 
-local function fly_normalize(row)
-  if type(row) ~= "table" then return nil end
-  local map = row.map or row.mapId
-  if type(map) ~= "string" or map == "" then return nil end
-  return { map = map, x = tonumber(row.x) or 0, y = tonumber(row.y) or 0 }
-end
-
-function Field.installFlyDestinations(pack)
+function Field.installFlyDestinations(pack, root)
+  assert(type(pack) == "table" and type(pack.fly_destinations) == "table",
+    "fly_destinations pack has no fly_destinations table")
   Field._flyBaked = {}
-  if type(pack) ~= "table" then return 0 end
-  local rows = pack.fly_destinations or pack.destinations or pack
-  if type(rows) ~= "table" then return 0 end
+  Field._flyBakedRoot = root or fly_default_root()
   local n = 0
-  for key, row in pairs(rows) do
-    local dest = fly_normalize(row)
-    if dest then
-      local name = (type(key) == "string" and key:match("^MAPSEC_") and key)
-        or (type(row.mapsec) == "string" and row.mapsec)
-        or (type(row.id) == "string" and row.id)
-        or nil
-      local num = tonumber(key) or tonumber(row.mapsec) or tonumber(row.section)
-      if name then Field._flyBaked[name] = dest end
-      if num then Field._flyBaked[num] = dest end
-      if name or num then n = n + 1 end
-    end
+  for key, row in pairs(pack.fly_destinations) do
+    local dest = fly_row(key, row)
+    if type(key) == "string" then Field._flyBaked[key] = dest end
+    local num = tonumber(key) or tonumber(row.mapsec)
+    if num then Field._flyBaked[num] = dest end
+    n = n + 1
   end
   return n
 end
 
 function Field.loadFlyDestinations(cache, root)
-  cache = cache or fly_cache()
+  cache = cache or require("src.core.game3.dataset").cache()
   root = root or fly_default_root()
-  Field._flyBaked = {}
-  Field._flyBakedRoot = root
-  if not (cache and cache.read) then return 0 end
   local rel = root .. "/" .. Field.FLY_BAKED_REL
-  local src = cache:read(rel)
-  if type(src) ~= "string" or src == "" then return 0 end
-  local chunk = load(src, "@" .. rel, "t", {})
-  if not chunk then return 0 end
-  local ok, pack = pcall(chunk)
-  if not ok then return 0 end
-  return Field.installFlyDestinations(pack)
+  local src = assert(cache and cache:read(rel), "missing cache file " .. rel)
+  local pack = assert(load(src, "@" .. rel, "t", {}))()
+  return Field.installFlyDestinations(pack, root)
 end
 
 function Field.invalidateFlyDestinations()
@@ -1405,7 +1374,7 @@ function Field.invalidateFlyDestinations()
   Field._flyBakedRoot = nil
 end
 
--- pokefirered/src/region_map.c:4022 SetFlyWarpDestination
+-- pokefirered/src/region_map.c:4023 SetFlyWarpDestination
 function Field.flyDestination(section)
   if section == nil then return nil end
   if Field._flyBaked == nil or Field._flyBakedRoot ~= fly_default_root() then
@@ -1415,25 +1384,22 @@ function Field.flyDestination(section)
   local num = tonumber(section)
   local hit = baked[section] or (num and baked[num])
   if hit then return hit end
-  local byName = FLY_DESTINATIONS[section]
-  if byName then return byName end
   if not num then return nil end
   local okS, MapSections = pcall(require, "src.import.gba.map_sections_extract")
   local info = okS and MapSections and MapSections.SECTIONS and MapSections.SECTIONS[num]
   local id = info and info.id
   if not id then return nil end
-  return baked[id] or FLY_DESTINATIONS[id] or nil
+  return baked[id]
 end
 
 -- pokefirered/src/field_effect.c:1065 ReturnToFieldFromFlyMapSelect
 function Field.flyTo(section, mon)
-  local dest = Field.flyDestination(section)
-  local Message = require("src.ui.game3.message")
-  if not dest then
-    Field.locked = false
-    local FieldMoves = require("src.core.game3.field_moves")
-    Message.show(FieldMoves.TEXT.CANT_USE_HERE, function() Message.close() end)
-    return false
+  local dest = assert(Field.flyDestination(section), "no fly destination for mapsec " .. tostring(section))
+  if dest.healLocation then
+    -- pokefirered/src/region_map.c:4029 SetUsedFlyQuestLogEvent
+    local Q = require("src.core.game3.quest_log_recorder")
+    Q.event(Field._session, "UsedFly", { require("src.core.game3.pokemon").displayMonName(mon),
+      Q.location(Field._game, { map = dest.map }) })
   end
   Field.locked = true
   local FieldEffects = require("src.core.game3.field_effects")
@@ -1445,19 +1411,36 @@ function Field.flyTo(section, mon)
     Player.reset(dest.x, dest.y, "down")
     Player.syncToHost(Field._game)
     Player.setVisible(true)
-    -- pokefirered/src/field_effect.c:1104 FieldCallback_FlyIntoMap
-    Field._flyLanding = true
-    Field.locked = true
-    FieldEffects.startFlyLanding(function()
-      Field._flyLanding = false
-      Field.locked = false
-    end)
   end
-  if love and love.graphics and FieldEffects.startFlyTakeoff then
-    -- pokefirered/src/field_effect.c:3241
-    require("src.core.game3.field_move_show_mon").start(mon, { pose = true }, function()
-      Player.setVisible(false)
-      FieldEffects.startFlyTakeoff(land, nil)
+  if love and love.graphics then
+    local Fade = require("src.ui.game3.fade")
+    local Warp = require("src.core.game3.warp")
+    local function flyOut()
+      local toMode = Warp.fadeModes(Fade, Field._game, dest.map)
+      -- pokefirered/src/field_effect.c:3324 FlyOutFieldEffect_WaitFlyOff
+      Fade.begin(toMode, 1, function()
+        Warp.mapTransition(Field._game, dest.map, function()
+          land()
+          -- pokefirered/src/field_effect.c:1104 FieldCallback_FlyIntoMap
+          Player.setVisible(false)
+          Field._flyLanding = true
+          Field.locked = true
+          Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+            -- pokefirered/src/field_effect.c:1117 Task_FlyIntoMap
+            FieldEffects.startFlyIn(function()
+              Field._flyLanding = false
+              Field.locked = false
+            end)
+          end)
+        end)
+      end)
+    end
+    -- pokefirered/src/field_effect.c:1073 FieldCallback_UseFly
+    Fade.begin(Fade.MODE.FROM_BLACK, 1, function()
+      -- pokefirered/src/field_effect.c:3241
+      require("src.core.game3.field_move_show_mon").start(mon, { pose = true }, function()
+        FieldEffects.startFlyOut(flyOut)
+      end)
     end)
   else
     land()

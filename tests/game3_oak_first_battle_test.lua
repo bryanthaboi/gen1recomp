@@ -125,6 +125,7 @@ end
 
 local function run(opts)
   if Battle.isActive() then Battle.abort("win") end
+  opts.playerName = opts.playerName or "RED"
   local ok = Battle.start(opts)
   local res = Battle.runToEnd()
   local log = {}
@@ -207,8 +208,8 @@ do
   check(iWin ~= nil, "rival victory speech displayed")
   check(iOak ~= nil, "Oak's 'How disappointing' displayed")
   check(iWin and iOak and iWin < iOak, "victory speech precedes Oak")
-  check(find(log, "blacked out") == nil, "no 'blacked out!' on the tutorial loss")
-  check(find(log, "You have no more") == nil, "no 'no more POKéMON left!' on the tutorial loss")
+  check(find(log, "whited out") == nil, "no 'whited out!' on the tutorial loss")
+  check(find(log, "out of\nusable") == nil, "no 'out of usable POKéMON!' on the tutorial loss")
 end
 
 print("[test] 8. ordinary trainer loss still whites out")
@@ -221,8 +222,8 @@ do
     foe = { species = 6, level = 80, trainerId = 326 },
   })
   check(res == "lose", "plain trainer battle lost")
-  check(find(log, "You have no more") ~= nil, "'no more POKéMON left!' still printed")
-  check(find(log, "blacked out") ~= nil, "'blacked out!' still printed")
+  check(find(log, "out of\nusable") ~= nil, "'out of usable POKéMON!' still printed")
+  check(find(log, "whited out") ~= nil, "'whited out!' still printed")
   check(find(log, "Am I great or what?") == nil, "no victory speech outside the early-rival path")
   check(find(log, "How disappointing") == nil, "no Oak text outside the tutorial")
 end

@@ -4,7 +4,7 @@ local Anim = require("src.core.game3.battle.anim")
 local State = require("src.core.game3.battle.state")
 local LearnMove = require("src.core.game3.battle.learn_move")
 local Pokemon = require("src.core.game3.pokemon")
-local Strings = require("src.core.Strings")
+local BattleText = require("src.core.game3.battle.battle_text")
 
 local ExpSeq = {}
 
@@ -114,12 +114,12 @@ function ExpSeq.begin(awards, pushMsg, thenMsgs, opts)
     local key = "player"
     if opts.double and entry.battler and entry.battler.id ~= nil then key = entry.battler.id end
     if gained > 0 then
-      -- pokefirered/src/battle_message.c:53
-      if entry.boosted then
-        add("msg", { text = Strings("%s gained a boosted\n%s EXP. Points!", name, tostring(gained)) })
-      else
-        add("msg", { text = Strings("%s gained\n%s EXP. Points!", name, tostring(gained)) })
-      end
+      -- pokefirered/src/battle_script_commands.c:3265
+      add("msg", { text = BattleText.get("STRINGID_PKMNGAINEDEXP", {
+        buff1 = name,
+        buff2 = BattleText.get(entry.boosted and "STRINGID_ABOOSTED" or "STRINGID_EMPTYSTRING4"),
+        buff3 = tostring(gained),
+      }) })
       for _, step in ipairs(result.steps or {}) do
         -- pokefirered/src/battle_controller_player.c:1034
         if not isBench and not opts.double then
@@ -141,7 +141,8 @@ function ExpSeq.begin(awards, pushMsg, thenMsgs, opts)
             maxHp = step.maxHp or (mon and tonumber(mon.maxHp)),
             oldStats = step.oldStats,
             newStats = step.newStats,
-            text = Strings("%s grew to\nLV. %s!", name, tostring(step.grewTo)),
+            -- pokefirered/src/battle_script_commands.c:3307
+            text = BattleText.get("STRINGID_PKMNGREWTOLV", { buff1 = name, buff2 = tostring(step.grewTo) }),
           })
           -- ROM learnset moves at this exact level
           local moves = Pokemon.movesLearnedAt(

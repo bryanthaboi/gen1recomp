@@ -16,6 +16,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
 love = love or require("tests.love_stub")
+require("tests.game3_cache").mountOrSkip("game3_knocked_off_flag_test")
 
 local Secondary = require("src.core.game3.battle.effects.secondary")
 local Special = require("src.core.game3.battle.effects.special")
@@ -32,6 +33,7 @@ local function adapter(st)
     displayName = function(_, b) return b.name or "MON" end,
     playAnim = function() end,
     say = function() end,
+    sayText = function() end,
     sayFail = function() failures = failures + 1 end,
     roll = function(_, lo) return lo end,
     pushEvent = function() end,

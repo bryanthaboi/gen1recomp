@@ -109,7 +109,7 @@ return function(game)
   result(RegionMap._images and RegionMap._images["fly_icon"] ~= false,
     "the fly icon loaded out of the cache")
 
-  for _ = 1, 40 do
+  for _ = 1, 90 do
     if RegionMap.flyIconFrame() == 0 then break end
     U.wait(1)
   end

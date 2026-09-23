@@ -5,7 +5,7 @@ local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local FameChecker = require("src.core.game3.fame_checker")
 local TextIR = require("src.core.game3.scripting.text_ir")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local FameCheckerUi = {}
 
@@ -195,13 +195,10 @@ function FameCheckerUi.portrait(person)
   return nil, nil
 end
 
--- pokefirered/src/strings.c:1272
-local function nonTrainerName(person)
-  if person == PERSON.OAK then return Strings("OAK") end
-  if person == PERSON.DAISY then return Strings("DAISY") end
-  if person == PERSON.BILL then return Strings("BILL") end
-  if person == PERSON.MRFUJI then return Strings("FUJI") end
-  return nil
+-- pokefirered/src/fame_checker.c:1563
+local function nonTrainerName(trainerId)
+  if not trainerId or trainerId < FameChecker.NON_TRAINER_START then return nil end
+  return RomText.at("sNonTrainerNamePointers", trainerId - FameChecker.NON_TRAINER_START)
 end
 
 FameCheckerUi._names = {}
@@ -231,7 +228,7 @@ function FameCheckerUi._personName(p)
       end
     end
   end
-  return nonTrainerName(p) or ""
+  return nonTrainerName(trainerId) or ""
 end
 
 local function textCtx()
@@ -312,7 +309,7 @@ function FameCheckerUi.rows()
     rows[i] = { person = list[i], label = FameCheckerUi.personName(list[i]) }
   end
   -- pokefirered/src/strings.c:128 gFameCheckerText_Cancel
-  rows[#rows + 1] = { cancel = true, label = Strings("CANCEL") }
+  rows[#rows + 1] = { cancel = true, label = RomText.plain("gFameCheckerText_Cancel") }
   FameCheckerUi._rows = rows
   FameCheckerUi._view = nil
   return rows
@@ -376,15 +373,15 @@ end
 function FameCheckerUi.helpText()
   if FameCheckerUi.mode == "flavor" then
     -- pokefirered/src/strings.c:1271 gFameCheckerText_FlavorTextUI
-    return Strings("{DPAD_ANY}PICK {A_BUTTON}READ {B_BUTTON}CANCEL")
+    return RomText.plain("gFameCheckerText_FlavorTextUI")
   end
   if FameCheckerUi.pickMode
       or not FameCheckerUi.personHasUnlockedPanels(FameCheckerUi.selectedPerson()) then
     -- pokefirered/src/strings.c:1270 gFameCheckerText_PickScreenUI
-    return Strings("{START_BUTTON}PICK {DPAD_UPDOWN}SELECT {B_BUTTON}CANCEL")
+    return RomText.plain("gFameCheckerText_PickScreenUI")
   end
   -- pokefirered/src/strings.c:1269 gFameCheckerText_MainScreenUI
-  return Strings("{START_BUTTON}PICK {DPAD_UPDOWN}SELECT {A_BUTTON}OK")
+  return RomText.plain("gFameCheckerText_MainScreenUI")
 end
 
 local function clamp_cursor()
@@ -632,8 +629,9 @@ function FameCheckerUi.handleInput(input)
   end
 end
 
+-- pokefirered/src/event_object_movement.c:1776 CreateFameCheckerObject
 local function iconCenter(slot)
-  return 47 * (slot % 3) + 0x72, 27 * math.floor(slot / 3) + 0x2F
+  return 47 * (slot % 3) + 0x72, 27 * math.floor(slot / 3) + 0x2F - 16
 end
 
 -- pokefirered/src/fame_checker.c:1281 PlaceQuestionMarkTile
@@ -646,7 +644,10 @@ local function selectorCenter(slot)
   return 114 + 47 * (slot % 3), 34 + 27 * (slot >= 3 and 1 or 0)
 end
 
-local function draw_icons(person)
+-- pokefirered/src/fame_checker.c:703 BLDALPHA 0x07
+local BLEND_EVA = 7 / 16
+
+local function draw_icons(person, selected)
   local OwSprites = owSprites()
   local icons = cachedIcons(person)
   for slot = 0, NSLOT - 1 do
@@ -658,7 +659,9 @@ local function draw_icons(person)
         local spr = OwSprites.get(icon.graphicsId)
         local quad = spr and spr.quads and spr.quads[0]
         if spr and quad then
-          love.graphics.setColor(1, 1, 1, 1)
+          -- pokefirered/src/fame_checker.c:781 SetMessageSelectorIconObjMode
+          local k = (selected ~= nil and slot ~= selected) and BLEND_EVA or 1
+          love.graphics.setColor(k, k, k, 1)
           love.graphics.draw(spr.image, quad, cx - spr.width / 2, cy - spr.height / 2)
           drawn = true
         end
@@ -749,8 +752,6 @@ local function view()
     loc = loc,
     obj = obj,
     listWin = Window.template(LIST_WIN[1], LIST_WIN[2], LIST_WIN[3], LIST_WIN[4]),
-    descWin = Window.template(ICONDESC_WIN[1], ICONDESC_WIN[2],
-      ICONDESC_WIN[3], ICONDESC_WIN[4]),
   }
   FameCheckerUi._view = v
   return v
@@ -804,11 +805,16 @@ function FameCheckerUi.draw()
 
   local person = v.person
   if person ~= nil then
-    -- pokefirered/src/fame_checker.c:454 sUIBgTemplates BG1 priority 0 hides the icons
-    if FameCheckerUi.pickMode then
-      draw_portrait(person)
+    -- pokefirered/src/fame_checker.c:435 sUIBgTemplates
+    if not FameCheckerUi.pickMode then
+      draw_icons(person, FameCheckerUi.mode == "flavor" and FameCheckerUi.iconCursor or nil)
     else
-      draw_icons(person)
+      -- pokefirered/src/fame_checker.c:669 sFameCheckerTilemap
+      local panel = assert(art("pick_panel", "pick_panel.rgba", 240, 160),
+        "fame_checker/pick_panel.rgba is not in the cache")
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(panel, 0, 0)
+      draw_portrait(person)
     end
     if FameCheckerUi.mode == "flavor" then
       local cx, cy = selectorCenter(FameCheckerUi.iconCursor)
@@ -843,7 +849,6 @@ function FameCheckerUi.draw()
 
   -- pokefirered/src/fame_checker.c:1395 UpdateIconDescriptionBox
   if v.loc or v.obj then
-    Window.stdFrame(v.descWin)
     local bx, by = ICONDESC_WIN[1] * 8, ICONDESC_WIN[2] * 8
     if v.loc then
       local w = FrlgFont.measure(v.loc, { small = true }) or 0
