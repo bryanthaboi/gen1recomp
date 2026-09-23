@@ -41,6 +41,20 @@ local WebClip = require("src.core.WebClip")
 local PAL = Theme.PAL
 local LauncherView = {}
 
+-- Platform capabilities as the view needs them.  Fields on LauncherView, not
+-- locals: this chunk sits at Lua's 200-local limit.  They read plain importer
+-- fields, not methods, so hand-built importers in tests keep working.
+-- Save-directory inbox import (Switch, PS4); same rule as
+-- RomImporter:_inboxImport().
+function LauncherView.inboxImport(imp)
+  return (imp.inboxImport or imp.isNX) and true or false
+end
+
+-- iOS and PS4 leave the app through the system (Home, PS button).
+function LauncherView.hasQuitButton(imp)
+  return not imp.ios and not require("src.core.Platform").systemQuit()
+end
+
 local COMMUNITY_URL = "https://bois.icu"
 
 -- One dedup window covers a touch release plus the mouse click SDL
@@ -1588,9 +1602,9 @@ local function buildHeader(imp, m)
   -- under the gear and the quit X -- "the settings is covering the logo".
   -- Reserving the space on both sides costs a little width and cannot
   -- overlap at any window size.
-  -- iOS has no quit button (the OS owns app exit), so the cluster is the
+  -- No quit button on iOS/PS4 (the OS owns app exit), so the cluster is the
   -- gear alone and the wordmark gets that width back
-  local clusterN = imp.ios and 2 or 3
+  local clusterN = LauncherView.hasQuitButton(imp) and 3 or 2
   local clusterW = clusterN * gear + (clusterN - 1) * math.floor(6 * m.s) + m.pad
   local mobile = not imp.isNX or not m.twoCol
   local boxX = mobile and (m.x + m.pad) or (m.x + clusterW)
@@ -1628,7 +1642,7 @@ local function buildHeader(imp, m)
   -- inboard of it -- but the two are REGISTERED gear first, because the first
   -- focusable of the first frame adopts the keyboard ring and that must not be
   -- the button that exits the app.
-  local quitX = not imp.ios and rx - gear or nil
+  local quitX = LauncherView.hasQuitButton(imp) and rx - gear or nil
   if quitX then rx = quitX - math.floor(6 * m.s) end
 
   -- Settings gear.  It now also owns the CONTROL settings (touch overlay
@@ -1769,13 +1783,17 @@ end
 --   enabled  whether that button may be pressed
 --   progress 0-1 while an import for THIS version is running
 local function romModel(imp, version, info, ready, locked)
-  local importLabel = imp.isNX and Strings("Scan again") or Strings("Import ROM")
+  local importLabel = LauncherView.inboxImport(imp) and Strings("Scan again")
+    or Strings("Import ROM")
   if locked then
     return { state = Strings("Not supported yet"),
       detail = Strings("Support for this game is on the way."),
       label = Strings("Import unavailable"), enabled = false }
   end
-  local dropHint = imp.isNX and Strings("Copy the .gb/.gbc via MTP into imports/.")
+  local viaFtp = require("src.core.Platform").inboxTransfer() == "ftp"
+  local dropHint = LauncherView.inboxImport(imp) and (viaFtp
+      and Strings("Copy the .gb/.gbc via FTP into imports/.")
+      or Strings("Copy the .gb/.gbc via MTP into imports/."))
     or (imp.baseRomDiscovery and Strings("Or copy the .gb/.gbc into baseroms/.")
       or (imp.android and Strings("Copy the .gb/.gbc via USB.")
         or Strings("Or drop the .gb/.gbc file here.")))
@@ -1931,7 +1949,7 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   for _, entry in ipairs(slots) do if entry.id == active then slot = entry break end end
   local pad, gap = math.floor(14 * m.s), math.floor(8 * m.s)
   local iw, bh = w - 2 * pad, m.btnH
-  local importLabel = imp.isNX and Strings("Scan again") or Strings("Import")
+  local importLabel = LauncherView.inboxImport(imp) and Strings("Scan again") or Strings("Import")
   local browseLabel = Strings("Other saves (%d)", #slots)
   local iconExtra = math.floor(bh * 0.42) + math.floor(7 * Kit.scale)
   local importW = chipWidth(importLabel, m) + iconExtra
@@ -3655,12 +3673,18 @@ local function buildFooter(imp, m, y)
   Theme.fill(m.x, y, m.w, 1, PAL.line, Theme.A.hairline)
   local cy = y + math.floor(8 * m.s)
   -- The BCG mark is dark ink; invert it for the black field.
-  imp.invertShader = imp.invertShader or love.graphics.newShader([[
-    vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
-      vec4 p = Texel(tex, tc);
-      return vec4((vec3(1.0) - p.rgb) * color.rgb, p.a * color.a);
-    }
-  ]])
+  -- pcall: this was the only unguarded newShader on the Gen 1 path, and a
+  -- driver rejecting this trivial fragment shader took down the whole boot
+  -- instead of just losing the inverted footer mark.
+  if imp.invertShader == nil then
+    local ok, sh = pcall(love.graphics.newShader, [[
+      vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+        vec4 p = Texel(tex, tc);
+        return vec4((vec3(1.0) - p.rgb) * color.rgb, p.a * color.a);
+      }
+    ]])
+    imp.invertShader = ok and sh or false
+  end
   local bw, bh = imp.bcg:getDimensions()
   local scale = math.min((130 * m.s) / bw, (22 * m.s) / bh)
   local dw, dh = bw * scale, bh * scale
@@ -5442,7 +5466,7 @@ local function buildGameManageModal(imp, m)
     and love.filesystem.getSaveDirectory() or nil
   -- The folder link is desktop-only: Android and NX have no browsable path to
   -- open, and both already print their own transfer hint on the slot card.
-  local canOpenFolder = saveDir and not imp.android and not imp.isNX
+  local canOpenFolder = saveDir and not imp.android and not LauncherView.inboxImport(imp)
   local canWebClip = ready and webClipAvailable(imp)
   local webClipKey = tostring(version) .. ":" .. tostring(cartId or "")
   local webClipNotice = imp._webClipNotice

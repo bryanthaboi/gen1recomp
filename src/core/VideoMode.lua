@@ -23,6 +23,7 @@ function VideoMode.fixedDisplay()
   if not love or not love.system or not love.system.getOS then return false end
   local osName = love.system.getOS()
   return osName == "Android" or osName == "iOS" or osName == "NX"
+    or osName == "PS4"
 end
 
 VideoMode.isMobile = VideoMode.fixedDisplay
