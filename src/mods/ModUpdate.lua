@@ -480,6 +480,12 @@ local function staleReleases(repo)
   return nil
 end
 
+local function completeFetchedReleases(h, list, meta)
+  ModUpdate.writeCache(h.repo, list)
+  h.releases, h.meta, h.stage = list, meta, "done"
+  return true, list, nil, meta
+end
+
 -- Returns done, releases, err, meta.
 function ModUpdate.pumpFetchReleases(h)
   if not h then return true, nil, "no handle" end
@@ -503,22 +509,45 @@ function ModUpdate.pumpFetchReleases(h)
     return false
   end
 
+  if h.stage == "latest_fetch" then
+    local latestStatus = Fetch.poll(h.latestJob)
+    if latestStatus.status == "pending" then return false end
+    Fetch.release(h.latestJob)
+    if latestStatus.status == "ok" and latestStatus.body then
+      local latest = ModUpdate.parseReleases(latestStatus.body, h.modId)
+      if latest and latest[1]
+          and (not h.releases[1]
+            or ModUpdate.isNewer(h.releases[1].version, latest[1].version)) then
+        table.insert(h.releases, 1, latest[1])
+      end
+    end
+    return completeFetchedReleases(h, h.releases, { fromCache = false })
+  end
+
   local st = Fetch.poll(h.job)
   if st.status == "pending" then return false end
   Fetch.release(h.job)
-  h.stage = "done"
 
   if st.status == "ok" and st.body then
     local list, parseErr = ModUpdate.parseReleases(st.body, h.modId)
     if list then
-      ModUpdate.writeCache(h.repo, list)
-      h.releases, h.meta = list, { fromCache = false }
-      return true, list, nil, h.meta
+      h.releases = list
+      -- The release-list endpoint can expose a new release with assets: []
+      -- while /releases/latest already exposes the uploaded ZIP. Always
+      -- reconcile the newest release through that endpoint before caching.
+      h.latestJob = Fetch.get(ModUpdate.apiLatestUrl(h.repo), {
+        userAgent = "gen1recomp-mod-updater",
+        accept = "application/vnd.github+json",
+      })
+      h.stage = "latest_fetch"
+      return false
     end
     h.err = parseErr
+    h.stage = "done"
     return true, nil, parseErr
   end
 
+  h.stage = "done"
   -- Offline or a failed call: stale cache beats an empty list.
   local rel, _, meta = staleReleases(h.repo)
   if rel then
