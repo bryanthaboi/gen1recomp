@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.2",
+          "date": "2026-09-23",
+          "size": 37578962,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.2/gen1recomp++-0.3.2-ios.ipa",
+          "localizedDescription": "Anything is possible\n\n## Issues closed\n\n- #2408 aide requirement for everstone listed as 0 pokemon in dialog\n- #2411 Bill's transformation is too fast\n- #2413 Indigo Plateau guards refer to badges as numbers\n- #2414 Whatever this is\n- #2415 PC missing log on sound\n- #2416 Berry powder man is a liar\n- #2417 Mr Fuji disappears when talking to him in pokemon tower\n- #2418 Icefall Cave ice tiles don't break\n- #2419 Fishing tile alignment\n- #2420 Pp max, pp up, ether, max ether \"it wont have an effect\"\n- #2422 safari zone not working\n- #2423 surf issues\n- #2424 boulder pushing sound not playing\n\n## Contributors\n\n- @1Jamie\n- @bryanthaboi\n- @thibautbus"
+        },
+        {
           "version": "0.3.1",
           "date": "2026-09-22",
           "size": 37528942,
