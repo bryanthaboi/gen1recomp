@@ -11,7 +11,7 @@ WeatherExtract.FORMAT_VERSION = 1
 WeatherExtract.BLOBS = {
   { key = "default_pal", rel = "default.gbapal", offset = 0x3C2CE0, size = 32 },
   { key = "fog_h_gfx", rel = "fog_horizontal.4bpp", offset = 0x3C3540, size = 2048 },
-  { key = "rain_gfx", rel = "rain.4bpp", offset = 0x3C55E0, size = 1536 },
+  { key = "rain_gfx", rel = "rain.4bpp", offset = 0x3C55C0, size = 1536 },
 }
 
 local function bgr555_to_rgb8(c)

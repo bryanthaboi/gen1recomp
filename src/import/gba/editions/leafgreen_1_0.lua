@@ -1619,6 +1619,7 @@ return {
   [0x3BFA14] = 0x3BF89C, -- title_screen.o:sStreak_Gfx + 0
   [0x3C2CE0] = 0x3C2B1C, -- :gDefaultWeatherSpritePalette + 0
   [0x3C3540] = 0x3C337C, -- :gWeatherFogHorizontalTiles + 0
+  [0x3C55C0] = 0x3C53FC, -- :gWeatherRainTiles + 0
   [0x3C6AB8] = 0x3C68F4, -- cable_club.o:sTrainerCardColorNames + 0
   [0x3C6AC8] = 0x3C6904, -- trainer_see.o:sGfx_Emoticons + 0
   [0x3C9CB8] = 0x3C9AF4, -- :gWildMonHeaders + 0

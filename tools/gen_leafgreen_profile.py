@@ -34,7 +34,8 @@ files = [ROOT / "src/import/gba/versions.lua", ROOT / "src/import/gba/versions_t
 files += [ROOT / ("src/import/gba/" + f + ".lua") for f in (
     "tileset_anim_pack", "battle_chrome_extract", "pokedex_chrome_extract",
     "seagallop_extract", "door_anim_extract", "text_chrome_extract",
-    "help_extract", "quest_log_extract", "object_interactions_extract")]
+    "help_extract", "quest_log_extract", "object_interactions_extract",
+    "weather_extract")]
 values = set()
 for path in files:
     for line in path.read_text().splitlines():
