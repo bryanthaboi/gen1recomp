@@ -8,6 +8,7 @@ local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
 local MoneyBox = require("src.ui.game3.money_box")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local ShopMenu = {}
 
@@ -280,7 +281,7 @@ local function commit_buy()
   if premierBonus > 0 then
     ShopMenu._status = Strings("Here you are! Thank you!\nI'll also include a PREMIER BALL!")
   else
-    ShopMenu._status = Strings("Here you are!\nThank you!")
+    ShopMenu._status = RomText.plain("gText_HereYouGoThankYou")
   end
 
   queue_shop_se(ShopMenu._status, session.money) -- pokefirered/src/shop.c:999
@@ -467,7 +468,7 @@ function ShopMenu.handleInput(input)
         do_fade_transition(function()
           ShopMenu.mode = "root"
           ShopMenu.cursor = 1
-          ShopMenu._status = Strings("Is there anything else I can do?")
+          ShopMenu._status = RomText.plain("gText_AnythingElseICanHelp")
         end)
       else
         begin_buy_qty(rows[ShopMenu.cursor])
@@ -477,7 +478,7 @@ function ShopMenu.handleInput(input)
       do_fade_transition(function()
         ShopMenu.mode = "root"
         ShopMenu.cursor = 1
-        ShopMenu._status = Strings("Is there anything else I can do?")
+        ShopMenu._status = RomText.plain("gText_AnythingElseICanHelp")
       end)
     end
     return
@@ -501,7 +502,7 @@ function ShopMenu.handleInput(input)
         do_fade_transition(function()
           ShopMenu.mode = "root"
           ShopMenu.cursor = 2
-          ShopMenu._status = Strings("Is there anything else I can do?")
+          ShopMenu._status = RomText.plain("gText_AnythingElseICanHelp")
         end)
       else
         begin_sell_qty(rows[ShopMenu.cursor])
@@ -511,7 +512,7 @@ function ShopMenu.handleInput(input)
       do_fade_transition(function()
         ShopMenu.mode = "root"
         ShopMenu.cursor = 2
-        ShopMenu._status = Strings("Is there anything else I can do?")
+        ShopMenu._status = RomText.plain("gText_AnythingElseICanHelp")
       end)
     end
     return

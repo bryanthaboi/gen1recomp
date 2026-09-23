@@ -5,6 +5,8 @@
 -- 3. TM Case & Berry Pouch Sub-Containers & Bag state persistence
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.bundle() then print("[skip] step_events_queue: " .. tostring(Game3Cache.reason)) return end
 
 local failed = 0
 local function check(cond, msg)
@@ -106,7 +108,7 @@ check(StepEvents.busy(), "Repel wear-off event queued")
 local handledRepel = false
 local mockHud = {
   openMessage = function(_game, msg, opts)
-    if msg:find("Repel's effect wore off") then
+    if msg == require("src.core.game3.rom_text").box("Text_RepelWoreOff") then
       handledRepel = true
     end
     if opts and opts.done then opts.done() end
@@ -114,7 +116,7 @@ local mockHud = {
 }
 package.loaded["src.ui.game3.hud"] = mockHud
 StepEvents.update(0.1)
-check(handledRepel, "Repel displayed retail 'Repel's effect wore off...' message without prompt")
+check(handledRepel, "Repel displayed ROM Text_RepelWoreOff")
 
 print("=== 4. Happiness & Egg Cycles Mechanics ===")
 
@@ -159,6 +161,8 @@ mockHud.openMessage = function(_game, msg, opts)
 end
 StepEvents.update(0.1)
 check(faintedMsg, "Lethal poison faint event processed")
+StepEvents.update(0.1)
+check(not StepEvents.busy(), "Party still standing: the whiteout check releases the queue")
 
 -- Next 4 steps drop last Pokémon to 0 HP -> Whiteout
 for i = 1, 4 do
@@ -166,13 +170,28 @@ for i = 1, 4 do
 end
 check(poisonedMon1.hp == 0, "Poisoned mon 1 dropped to 0 HP (entire party fainted)")
 
-local whiteoutTriggered = false
-session.onWhiteout = function()
-  whiteoutTriggered = true
+session.money = 1000
+local messages = {}
+mockHud.openMessage = function(_game, msg, opts)
+  messages[#messages + 1] = msg
+  if opts and opts.done then opts.done() end
 end
-StepEvents.update(0.1)
-check(whiteoutTriggered, "Whiteout triggered and StepEvents queue cleanly flushed")
+local respawned, locked = false, false
+package.loaded["src.core.game3.audio"] = { fadeOutBgm = function() end, playCry = function() end }
+package.loaded["src.ui.game3.fade"] = { MODE = { TO_BLACK = 1 }, begin = function(_, _, cb) if cb then cb() end end }
+package.loaded["src.core.game3.field"] = {
+  lock = function() locked = true end,
+  respawnAtHeal = function() respawned = true end,
+}
+for _ = 1, 4 do StepEvents.update(0.1) end
+check(messages[1] and messages[1]:find("BULBA fainted…", 1, true) ~= nil, "Last faint message shown before the wipe check")
+check(messages[2] and messages[2]:find("panicked and lost ¥8…", 1, true) ~= nil, "Whiteout text carries the money loss")
+check(session.money == 992, "Money loss applied on field whiteout (" .. tostring(session.money) .. ")")
+check(locked and respawned, "Field whiteout locks the player and respawns at the heal point")
 check(not StepEvents.busy(), "StepEvents queue completely empty after whiteout")
+package.loaded["src.core.game3.audio"] = nil
+package.loaded["src.ui.game3.fade"] = nil
+package.loaded["src.core.game3.field"] = nil
 
 print("=== 6. VS Seeker Map Gate & Uncharged Use ===")
 

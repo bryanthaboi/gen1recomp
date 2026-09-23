@@ -211,11 +211,12 @@ return function(game)
       hosting = hosting + 20
     end
     print("[driver] connect screen: stage=" .. tostring(LinkMenu.stage)
-      .. " link=" .. tostring(Link.link ~= nil))
+      .. " transport=" .. tostring(LinkMenu._transport ~= nil) .. " link=" .. tostring(Link.link ~= nil))
     U.shot(game, DIR .. "/link_counter_07_hosting.png")
     -- pokefirered/src/link.c:386 OpenLink
     result(LinkMenu.stage == "hosting", "HOST A GAME opens the port and waits for the other GBA")
-    result(Link.link ~= nil, "and a real game3 link session is live, not a test loopback")
+    result(LinkMenu._transport ~= nil and Link.link == nil,
+      "and a real host transport is open, waiting for the other GBA to pair")
     local closing = 0
     while closing < 180 and LinkMenu.isOpen() do
       U.tap(game, "b")
@@ -223,6 +224,54 @@ return function(game)
       closing = closing + 20
     end
     result(not LinkMenu.isOpen(), "B backs out of the connect screen")
+  end
+
+  -- data/scripts/cable_club.inc:306
+  local settle = 0
+  while settle < 600 and busy() do
+    if Message.isOpen and Message.isOpen() then U.tap(game, "a") end
+    U.wait(10)
+    settle = settle + 10
+  end
+  goTo(CENTER_2F, 9, 2, "up")
+  local hideKey, hideIdx
+  for key, rows in pairs(Space.vm and Space.vm.scripts or {}) do
+    for i, row in ipairs(rows) do
+      local nxt = rows[i + 1]
+      local warpsAfter = false
+      for j = i + 1, i + 8 do
+        if rows[j] and rows[j].op == "warp" then warpsAfter = true end
+      end
+      if row.op == "hideobjectat" and tonumber(row.localId or row[1]) == 0xFF
+          and nxt and nxt.op == "closedoor" and warpsAfter then
+        hideKey, hideIdx = key, i
+        break
+      end
+    end
+    if hideKey then break end
+  end
+  if result(hideKey ~= nil, "found the cable club hideobjectat LOCALID_PLAYER / closedoor rows") then
+    local vctx = Space.vm.ctx
+    vctx.mode = "bytecode"
+    vctx.status = "running"
+    vctx.stack = {}
+    Space.vm:setPc(hideKey, hideIdx)
+    Space.vm:resume()
+    local hiddenAtDoor = mapId() == CENTER_2F and not Player.isVisible()
+    result(hiddenAtDoor, "hideobjectat LOCALID_PLAYER hid the player before the door closed")
+    U.wait(6)
+    if mapId() == CENTER_2F then
+      U.shot(game, DIR .. "/link_counter_08_player_hidden_door_close.png")
+    end
+    local after = 0
+    while after < 900 and busy() do
+      if Message.isOpen and Message.isOpen() then U.tap(game, "a") end
+      U.wait(10)
+      after = after + 10
+    end
+    U.wait(60)
+    print("[driver] after the hidden door close: map=" .. tostring(mapId()))
+    result(Player.isVisible(), "the player is visible again once the door-close script is done")
   end
 
   finish()

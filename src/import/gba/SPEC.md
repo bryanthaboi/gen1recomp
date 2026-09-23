@@ -73,11 +73,10 @@ FRLG ROM → MapEvents + script/text/movement BFS
          → maps.lua / space.lua load cache only
 ```
 
-- `island1_content.lua` is curated fallback for CI / no-ROM only.
 - Events are annotated with `scriptKey = g3:%08x` at extract time.
-- Stdscripts (nurse/PC/`std:N`) overlay the bundle like Gen2 `gen2StdScripts`.
-- Cache contract: ready bundle has events+scripts+text; incomplete cache does
-  not silently replace a prior ROM extract during normal boots.
+- `std:N`, `Versions.NAMED_SCRIPTS` and `Versions.NAMED_TEXTS` are ROM seeds
+  aliased by name; there is no hand-written script overlay and no no-ROM bundle.
+- Cache contract: ready bundle has events+scripts+text.
 
 ## Collision → shared std scripts
 

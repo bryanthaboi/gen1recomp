@@ -312,6 +312,7 @@ function ItemsData.info(id)
       registrability = e.registrability,
       importance = e.importance,
       secondaryId = e.secondaryId,
+      effect = e.effect,
     }
   end
   local s = tostring(id)
@@ -497,7 +498,7 @@ function ItemsData.medicineKind(id)
   local info = ItemsData.info(id)
   if info and info.fieldUse == "revive" then return "revive" end
   if info and info.fieldUse == "status" then return "status" end
-  if info and (info.fieldUse == "heal" or info.fieldUse == "pp") then return "heal" end
+  if info and info.fieldUse == "heal" then return "heal" end
   return info and info.fieldUse or "none"
 end
 
@@ -505,7 +506,6 @@ end
 local LEVEL_IDS = { [68] = true }
 local EVO_IDS = { [93] = true, [94] = true, [95] = true, [96] = true, [97] = true, [98] = true }
 local VITAMIN_IDS = { [63] = true, [64] = true, [65] = true, [66] = true, [67] = true, [70] = true }
-local PP_IDS = { [34] = true, [35] = true, [36] = true, [37] = true, [69] = true, [71] = true }
 local ESCAPE_IDS = { [85] = true }
 local REPEL_IDS = { [83] = true, [84] = true, [86] = true }
 -- pokefirered/src/data/items.h:3962 FieldUseFunc_Bike
@@ -530,10 +530,6 @@ function ItemsData.fieldUseKind(id)
   if VITAMIN_IDS[num] or host == "HP_UP" or host == "PROTEIN" or host == "IRON"
       or host == "CARBOS" or host == "CALCIUM" or host == "ZINC" then
     return "vitamin"
-  end
-  if PP_IDS[num] or host:find("ETHER", 1, true) or host:find("ELIXIR", 1, true)
-      or host == "PP_UP" or host == "PP_MAX" then
-    return "pp"
   end
   if (num and num >= 289 and num <= 346) or host:find("^TM%d") or host:find("^HM%d")
       or host:find("TM_") or host:find("HM_") then

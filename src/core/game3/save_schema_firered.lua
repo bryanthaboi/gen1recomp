@@ -61,6 +61,14 @@ local function reset_state_on_continue(session)
   Flags.setFlag(session, nil, FLAG_SYS_SAFARI_MODE, false)
   clear_saved_var(session, VAR_MAP_SCENE_FUCHSIA_CITY_SAFARI_ZONE_ENTRANCE)
   session.safari = nil
+  if type(session.map) == "string" and session.map:find("^FR_SAFARI_ZONE_")
+      and not Flags.getFlag(session, nil, FLAG_SYS_SAFARI_MODE) then
+    -- pokefirered/data/scripts/safari_zone.inc:7 SafariZone_EventScript_Exit
+    local Safari = require("src.core.game3.safari")
+    Flags.setVar(session, nil, VAR_MAP_SCENE_FUCHSIA_CITY_SAFARI_ZONE_ENTRANCE, 1)
+    session.map, session.x, session.y = Safari.EXIT_MAP, Safari.EXIT_X, Safari.EXIT_Y
+    session.facing = "down"
+  end
 end
 
 -- pokefirered/include/constants/region_map_sections.h:211 KANTO_MAPSEC_START
@@ -260,10 +268,39 @@ function Schema.toSaveTable(session)
   }
 end
 
+function Schema.hasNoneItemSlot(bag)
+  if type(bag) ~= "table" then return false end
+  local ItemsData = require("src.core.game3.items_data")
+  if type(bag.pockets) == "table" then
+    for _, slots in pairs(bag.pockets) do
+      if type(slots) == "table" then
+        for _, slot in ipairs(slots) do
+          if type(slot) == "table" and slot.id ~= nil and ItemsData.toNumericId(slot.id) == 0 then
+            return true
+          end
+        end
+      end
+    end
+  end
+  if type(bag.stacks) == "table" then
+    for id, qty in pairs(bag.stacks) do
+      if ItemsData.toNumericId(id) == 0 and (tonumber(qty) or 0) > 0 then return true end
+    end
+  end
+  return false
+end
+
 function Schema.fromSaveTable(save)
   if type(save) ~= "table" then return Schema.newGame() end
   local Bag = require("src.core.game3.bag")
   local bag = save.bag or save.inventory or {}
+  if Schema.hasNoneItemSlot(bag) and type(save.flags) == "table" then
+    -- pokefirered/include/constants/flags.h:1083
+    for id = 0x3E8 + 51, 0x3E8 + 62 do
+      save.flags[id] = nil
+      save.flags[tostring(id)] = nil
+    end
+  end
   if type(bag) ~= "table" or not bag.pockets then
     bag = Bag.migrate(type(bag) == "table" and bag or {})
   else

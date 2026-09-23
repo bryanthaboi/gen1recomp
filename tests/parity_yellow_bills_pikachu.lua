@@ -122,6 +122,10 @@ check(npc.goalX == 9 and npc.goalY == 9,
   "Pikachu stays parked in Bill's House during the scene")
 
 PikachuFollower.onBillExitedMachine(yellowGame, ow)
+check(ow.emote and ow.emote.bubble == false and ow.emote.frames == 12
+      and npc.facing ~= "left",
+  "SetSpriteFacingDirectionAndDelay + DELAY/LOOK_LEFT hold before the bubble")
+ow.emote.onDone()
 check(ow.emote and ow.emote.bubble == 2 and ow.emote.frames == 60
       and npc.facing == "left",
   "Pikachu reacts when Bill comes back out")

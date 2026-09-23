@@ -17,6 +17,16 @@ local WARP_SLOT_FIELD = {
   setholewarp = "holeWarp",
 }
 
+-- pokefirered/src/script_menu.c:574
+local STD_STRING_COUNT = 29
+
+local function stdString(id)
+  id = tonumber(id)
+  if not id or id < 0 or id >= STD_STRING_COUNT then return nil end
+  return require("src.core.game3.rom_text").plain("stdstring:" .. id)
+end
+Adapters.stdString = stdString
+
 -- pokefirered/src/event_object_movement.c:5208 GetOppositeDirection
 local OPPOSITE_DIR = { down = "up", up = "down", left = "right", right = "left" }
 
@@ -106,6 +116,7 @@ function Adapters.stub(opts)
   end
   a.nurseHeal = opts.nurseHeal or function(done) if done then done() end end
   a.openPc = opts.openPc or function(done) if done then done() end end
+  a.hallOfFamePc = opts.hallOfFamePc or function(done) if done then done() end end
   a.openShop = opts.openShop or function(_items, done) if done then done() end end
   a.askYesNo = opts.askYesNo or function(cb) if cb then cb(true) end end
   a.fadeScreen = opts.fadeScreen or function(_mode, _speed, done) if done then done() end end
@@ -148,14 +159,7 @@ function Adapters.stub(opts)
       end
     end
     if op == "bufferstdstring" then
-      local STD = {
-        [24] = Strings("ITEMS POCKET"),
-        [25] = Strings("KEY ITEMS POCKET"),
-        [26] = Strings("POKé BALLS POCKET"),
-        [27] = Strings("TM CASE"),
-        [28] = Strings("BERRY POUCH"),
-      }
-      return STD[tonumber(src) or -1]
+      return stdString(src)
     end
     return nil
   end
@@ -710,27 +714,36 @@ function Adapters.host(mod, game, world)
       end
     end,
     openPc = function(done, pcOpts)
-      local function finish()
+      local function finish(result)
         local okMsg, Message = pcall(require, "src.ui.game3.message")
         if okMsg and Message and Message.close then Message.close() end
-        if done then done() end
+        if done then done(result) end
         tick_vm()
       end
       local Runtime = package.loaded["src.core.game3.runtime"]
       if Runtime and Runtime.isActive and Runtime.isActive() then
-        if a.closeMessage then a.closeMessage() end
         local okMsg, Message = pcall(require, "src.ui.game3.message")
+        local prompt = okMsg and Message and Message.isOpen and Message.isOpen()
+          and Message.currentPage() or nil
+        if a.closeMessage then a.closeMessage() end
         if okMsg and Message and Message.close then Message.close() end
         local okHud, Hud = pcall(require, "src.ui.game3.hud")
         if okHud and Hud and Hud.clearWaitButton then Hud.clearWaitButton() end
         a.log("[game3] openPc via game3 PcMenu")
         local PcMenu = require("src.ui.game3.pc_menu")
         local bedroom = type(pcOpts) == "table" and pcOpts.bedroom == true
+        local mode = type(pcOpts) == "table" and pcOpts.mode or nil
+        local startMode = bedroom and "player_pc" or nil
+        if mode == "select" then startMode = "select" end
+        if mode == "storage" then startMode = "storage" end
+        if mode == "player" then startMode = "player_pc" end
         PcMenu.show({
           session = Runtime.getSession(),
           onClose = finish,
-          startMode = bedroom and "player_pc" or nil,
-          closeOnExit = bedroom,
+          startMode = startMode,
+          closeOnExit = bedroom or mode == "storage" or mode == "player",
+          silentClose = mode ~= nil,
+          prompt = prompt,
         })
         return
       end
@@ -817,7 +830,9 @@ function Adapters.host(mod, game, world)
     onFlagChanged = function(flagId, hidden)
       local G3 = useGame3Objects()
       if G3 and G3.syncFlagVisibility then
-        G3.syncFlagVisibility(flagId, hidden and true or false)
+        local Space = package.loaded["src.core.game3.scripting.space"]
+        G3.syncFlagVisibility(flagId, hidden and true or false,
+          Space and Space._inTransition and true or nil)
       end
     end,
     hideObject = function(localId)
@@ -1255,6 +1270,8 @@ function Adapters.host(mod, game, world)
         local Map = require("src.core.game3.map")
         local Runtime = package.loaded["src.core.game3.runtime"]
         local mod = Runtime and Runtime._mod
+        -- src/overworld.c:2144
+        require("src.core.game3.player").setVisible(true)
         Map.load(mod, resolveGame(), mapId, {
           x = cx,
           y = cy,
@@ -1428,6 +1445,20 @@ function Adapters.host(mod, game, world)
         end,
       })
     end,
+    -- pokefirered/src/hof_pc.c:23
+    hallOfFamePc = function(done)
+      local Runtime = package.loaded["src.core.game3.runtime"]
+      local session = (Runtime and Runtime.getSession and Runtime.getSession()) or (resolveGame() and resolveGame().session)
+      local okMsg, Message = pcall(require, "src.ui.game3.message")
+      if okMsg and Message and Message.close then Message.close() end
+      require("src.ui.game3.hall_of_fame_pc").show({
+        session = session,
+        onDone = function()
+          if done then done() end
+          tick_vm()
+        end,
+      })
+    end,
     startTrainerBattle = function(foe, done, battleOpts)
       local BattleBridge = require("src.core.game3.battle_bridge")
       battleOpts = battleOpts or {}
@@ -1483,20 +1514,7 @@ function Adapters.host(mod, game, world)
         return ItemsData.displayName(src)
       end
       if op == "bufferstdstring" then
-        -- pret constants/menu.h STDSTRING_*
-        local STD = {
-          [10] = Strings("ITEMS"),
-          [11] = Strings("KEY ITEMS"),
-          [12] = Strings("POKé BALLS"),
-          [13] = Strings("TMs & HMs"),
-          [14] = Strings("BERRIES"),
-          [24] = Strings("ITEMS POCKET"),
-          [25] = Strings("KEY ITEMS POCKET"),
-          [26] = Strings("POKé BALLS POCKET"),
-          [27] = Strings("TM CASE"),
-          [28] = Strings("BERRY POUCH"),
-        }
-        return STD[tonumber(src) or -1] or tostring(src)
+        return stdString(src) or tostring(src)
       end
       if op == "bufferpartymonnick" then
         local Runtime = package.loaded["src.core.game3.runtime"]

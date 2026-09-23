@@ -340,6 +340,20 @@ NativePack.PC_ON_BY_OFF = {
   [0x28F] = 0x28A, -- pokefirered/include/constants/metatile_labels.h:75
 }
 
+function NativePack.addDynamicMids(seen, pairName)
+  local spec = Versions.TILESET_PAIRS and Versions.TILESET_PAIRS[pairName]
+  if not spec then return seen end
+  for _, rule in ipairs(Versions.DYNAMIC_METATILES) do
+    for _, name in ipairs({ spec.primary, spec.secondary }) do
+      local ts = Versions.TILESETS[name]
+      if ts and ts.metatiles == rule.metatiles then
+        for _, mid in ipairs(rule.mids) do seen[mid] = true end
+      end
+    end
+  end
+  return seen
+end
+
 function NativePack.addPcOnMids(seen)
   for off, on in pairs(NativePack.PC_ON_BY_OFF) do
     if seen[off] then seen[on] = true end
@@ -452,6 +466,7 @@ function NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
       seen[mid] = true
     end
   end
+  NativePack.addDynamicMids(seen, pairName)
   NativePack.addPcOnMids(seen)
   seen[0] = true -- void / default border
   local list = {}

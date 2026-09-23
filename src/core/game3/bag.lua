@@ -85,10 +85,13 @@ local function sanitize_pockets(bag)
     local keep = {}
     for _, slot in ipairs(slots) do
       local correctPocket = ItemsData.pocketOf(slot.id)
-      if correctPocket ~= k then
-        misplaced[#misplaced + 1] = { id = slot.id, qty = tonumber(slot.qty) or 1, target = correctPocket }
-      else
-        keep[#keep + 1] = slot
+      -- pokefirered/src/item.c:92
+      if ItemsData.toNumericId(slot.id) ~= 0 then
+        if correctPocket ~= k then
+          misplaced[#misplaced + 1] = { id = slot.id, qty = tonumber(slot.qty) or 1, target = correctPocket }
+        else
+          keep[#keep + 1] = slot
+        end
       end
     end
     bag.pockets[k] = compact(keep)
@@ -231,7 +234,8 @@ end
 function Bag.canAdd(bag, id, qty)
   bag = ensure(bag)
   qty = math.max(1, math.floor(tonumber(qty) or 1))
-  if not id then return false end
+  -- pokefirered/src/item.c:92
+  if not id or ItemsData.toNumericId(id) == 0 then return false end
   local pocket = ItemsData.pocketOf(id)
   local cap = ItemsData.CAPACITY[pocket] or 42
   local slots = bag.pockets[pocket] or {}
@@ -258,10 +262,22 @@ function Bag.canAdd(bag, id, qty)
 end
 
 
+local FLAG_SYS_GOT_BERRY_POUCH = 0x847 -- include/constants/flags.h:1405
+
+local function mark_berry_pouch()
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  local store = type(Space) == "table" and Space.store
+  if store then
+    require("src.core.game3.scripting.flags").setFlag(store, nil, FLAG_SYS_GOT_BERRY_POUCH, true)
+  end
+end
+
+Bag.FLAG_SYS_GOT_BERRY_POUCH = FLAG_SYS_GOT_BERRY_POUCH
+
 function Bag.add(bag, id, qty)
   bag = ensure(bag)
   qty = math.max(0, math.floor(tonumber(qty) or 1))
-  if qty <= 0 or not id then return false, 0 end
+  if qty <= 0 or not id or ItemsData.toNumericId(id) == 0 then return false, 0 end
 
   -- Prefer numeric FRLG id in slots
   local num = ItemsData.toNumericId(id)
@@ -283,8 +299,9 @@ function Bag.add(bag, id, qty)
       return false, 0
     end
   end
-  if num == ItemsData.ITEM_BERRY_POUCH or storeId == ItemsData.ITEM_BERRY_POUCH then
-    -- Flag handled by scripting later; bag just stores the key item.
+  -- src/item.c:242
+  if pocket == "BERRY_POUCH" or num == ItemsData.ITEM_BERRY_POUCH or storeId == ItemsData.ITEM_BERRY_POUCH then
+    mark_berry_pouch()
   end
 
   local slots = bag.pockets[pocket]

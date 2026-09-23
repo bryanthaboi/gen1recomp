@@ -270,12 +270,24 @@ do
   ctx.messageOpen = true
   for _ = 1, 6 do Events.pollWalkaway(vm, inputDown) end
   Events.pollWalkaway(vm, inputDown)
-  checkEq(ctx.msgBoxIsCancelable, false, "disable sets ctx.msgBoxIsCancelable=false")
+  checkEq(ctx.msgBoxIsCancelable, true, "disable keeps ctx.msgBoxIsCancelable")
   checkEq(ctx.canWalkAway, false, "disable sets ctx.canWalkAway=false")
-  checkEq(session.msgBoxIsCancelable, false, "disable sets session.msgBoxIsCancelable=false")
   checkEq(session.canWalkAway, false, "disable sets session.canWalkAway=false")
   checkEq(halted, false, "disabled walkaway never cancels")
   checkEq(closed, 0, "message stays open when walkaway is disabled")
+
+  -- field_control_avatar.c:323
+  local deferred
+  package.loaded["src.core.game3.runtime"].defer = function(fn) deferred = fn return true end
+  local inputStart = {
+    wasPressed = function(_, k) return k == "start" end,
+    isDown = function(_, k) return k == "start" end,
+  }
+  Events.pollWalkaway(vm, inputStart)
+  checkEq(closed, 1, "START cancels the sign even with walkaway disabled")
+  check(halted == true, "START aborts the sign script")
+  check(type(deferred) == "function", "START queues the start menu open")
+  package.loaded["src.core.game3.runtime"].defer = nil
 
   halted, closed = false, 0
   Natives.special(ctx, Std.SPECIAL.SetWalkingIntoSignVars)

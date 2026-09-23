@@ -1,5 +1,5 @@
 -- Field script mon pic (pret ScriptMenu_ShowPokemonPic / showmonpic).
--- 8×8 tile window + 64×64 front (or scaled icon fallback).
+-- 8×8 tile window + 64×64 front.
 
 local Window = require("src.ui.game3.window")
 local Display = require("src.core.game3.display")
@@ -25,10 +25,8 @@ function MonPic.show(species, x, y)
   MonPic._h = 64
   local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
   if ok and Pokemon then
-    local entry = Pokemon.frontPic and Pokemon.frontPic(species)
-    if not entry then
-      entry = Pokemon.icon and Pokemon.icon(species)
-    end
+    -- pokefirered/src/field_effect.c:610
+    local entry = Pokemon.frontPic(Pokemon.picSpecies(species, 0x8000), nil, false, 0x8000)
     if entry and entry.image then
       MonPic._img = entry.image
       MonPic._w = entry.w or 64

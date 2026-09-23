@@ -339,9 +339,14 @@ print("[test] 12. Complete 743 Trainer aiFlags ROM parity vs pokefirered/src/dat
 do
   local f = io.open("pokefirered/src/data/trainers.h", "r")
   if f then
+    local okT, trainerPack = pcall(require, "data.generated.gba.trainers")
+    if not okT or not trainerPack then
+      f:close()
+      print("[skip] data.generated.gba.trainers not found")
+      return
+    end
     local content = f:read("*a")
     f:close()
-    local trainerPack = require("data.generated.gba.trainers")
     local trainerBlocks = {}
     local currentId = nil
     local currentAiFlags = 0

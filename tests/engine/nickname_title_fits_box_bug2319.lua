@@ -106,6 +106,7 @@ end
 package.loaded["src.core.game3.pokemon"] = {
   icon = function() return nil end,
   frontPic = function() return nil end,
+  picSpecies = function(sp) return sp end,
 }
 package.loaded["src.ui.game3.stack"] = {
   push = function() end, pop = function() end,

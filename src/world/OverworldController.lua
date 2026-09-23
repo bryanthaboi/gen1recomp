@@ -3020,6 +3020,9 @@ function OverworldState:billsHousePC()
       { "wait", 32 },
       { "play_sound", "Get_Item1" }, { "wait_sound" },
     }, { onDone = function()
+      -- bills_house_pc.asm:38
+      require("src.core.Music").playMap(Game.data, self.map.id,
+                                        Game.save.onBike, self.player.surfing)
       -- bills_house_pc.asm:39
       flags.EVENT_USED_CELL_SEPARATOR_ON_BILL = true
       self:billsHouseBillExits()
@@ -3057,23 +3060,24 @@ function OverworldState:billsHousePokemonList()
 end
 
 -- BillsHouseBillExitsMachineScript: human Bill appears inside the machine
--- at (1,2) and walks out to his spot at (4,4); the map music resumes and
--- EVENT_MET_BILL / EVENT_MET_BILL_2 arm the SS-Ticket dialogue.  The Eevee
+-- at (1,2) and walks out to his spot at (4,4); EVENT_MET_BILL /
+-- EVENT_MET_BILL_2 arm the SS-Ticket dialogue.  The Eevee
 -- PC list arms later, on the first Route 25 load after the ticket
 -- (EVENT_LEFT_BILLS_HOUSE_AFTER_HELPING).
 function OverworldState:billsHouseBillExits()
   local Commands = require("src.script.Commands")
   local ctx = { game = Game, save = Game.save, overworld = self }
   Commands.show_object(ctx, "BILLS_HOUSE", "BILLSHOUSE_BILL1")
-  require("src.world.PikachuFollower").onBillExitedMachine(Game, self)
   local bill
   local function done()
     Game.save.flags.EVENT_MET_BILL = true
     Game.save.flags.EVENT_MET_BILL_2 = true
-    require("src.core.Music").playMap(Game.data, self.map.id,
-                                      Game.save.onBike, self.player.surfing)
     self:billsHouseSSTicketScene(bill)
   end
+  -- scripts/BillsHouse.asm:81
+  self.emote = { frames = 8, bubble = false, onDone = function()
+    require("src.world.PikachuFollower").onBillExitedMachine(Game, self)
+  end }
   for _, n in ipairs(self.npcs) do
     if n.def and n.def.name == "BILLSHOUSE_BILL1" then bill = n break end
   end

@@ -9,7 +9,6 @@ local FieldEffects = require("src.core.game3.field_effects")
 local Flags = require("src.core.game3.scripting.flags")
 local Ctx = require("src.core.game3.scripting.ctx")
 local Vm = require("src.core.game3.scripting.vm")
-local Std = require("src.core.game3.scripting.stdscripts")
 local Adapters = require("src.core.game3.scripting.adapters")
 local Audio = require("src.core.game3.audio")
 
@@ -152,9 +151,26 @@ adapters.waitFanfare = function(cb)
 end
 
 local scripts = {}
-for k, v in pairs(Std.SCRIPTS) do
-  scripts[k] = v
-end
+-- data/scripts/std_msgbox.inc:30
+scripts["std:9"] = {
+  { op = "textcolor", color = 3 },
+  { op = "compare_var_to_value", var = 0x8002, value = 257 },
+  { op = "call_if", cond = 1, target = "EventScript_ReceivedItemFanfare1" },
+  { op = "compare_var_to_value", var = 0x8002, value = 318 },
+  { op = "call_if", cond = 1, target = "EventScript_ReceivedItemFanfare2" },
+  { op = "message", ptr = 0 },
+  { op = "waitmessage" },
+  { op = "waitfanfare" },
+  { op = "return" },
+}
+scripts.EventScript_ReceivedItemFanfare1 = {
+  { op = "playfanfare", [1] = 257 },
+  { op = "return" },
+}
+scripts.EventScript_ReceivedItemFanfare2 = {
+  { op = "playfanfare", [1] = 318 },
+  { op = "return" },
+}
 
 -- Test 4A: Oak's Parcel (MUS_OBTAIN_KEY_ITEM = 318)
 scripts.test_parcel = {
@@ -192,8 +208,8 @@ scripts.test_potion = {
 lastFanfarePlayed = nil
 fanfarePlaying = false
 vm:start("test_potion", 1)
-assert(lastFanfarePlayed == 258, "Potion triggered MUS_OBTAIN_ITEM (258) fanfare")
-print("[ok] Standard item played obtain item fanfare (258)")
+assert(lastFanfarePlayed == nil, "std:9 plays no fanfare for MUS_OBTAIN_ITEM (258)")
+print("[ok] std:9 leaves other fanfare ids to the caller")
 
 -- Test 4C: Level Up Fanfare (MUS_LEVEL_UP = 257)
 scripts.test_levelup = {
@@ -224,7 +240,7 @@ scripts.test_var_fanfare = {
 lastFanfarePlayed = nil
 fanfarePlaying = false
 vm:start("test_var_fanfare", 1)
-assert(lastFanfarePlayed == 317, "Dynamic fanfare variable resolved to 317")
-print("[ok] Dynamic fanfare fallback resolved variable")
+assert(lastFanfarePlayed == nil, "std:9 plays no fanfare for MUS_DEX_RATING (317)")
+print("[ok] std:9 has no dynamic fanfare branch")
 
 print("All Game 3 Fanfare & Emote Parity Tests passed successfully!")

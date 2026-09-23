@@ -11,6 +11,7 @@ local check = T.check
 
 require("src.core.GameVersion").set("firered")
 package.loaded["src.core.game3.audio"] = setmetatable({}, { __index = function() return function() end end })
+package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
 
 local gfx = setmetatable({}, { __index = function() return function() end end })
 gfx.newQuad = function() return {} end

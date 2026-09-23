@@ -346,23 +346,39 @@ local function collectNeighborActors(actors, baseIndex, hostMapId, hostDef)
         local defs = neighborActorDefs(entry.id, entry.def)
         local bounds = Objects and Objects.layoutBounds
           and Objects.layoutBounds(entry.def) or nil
+        local Space = package.loaded["src.core.game3.scripting.space"]
+        local nb = Space and Space.neighborObjectState
+          and Space.neighborObjectState(entry.id)
+          or { store = { flags = {}, vars = {} }, perm = {}, movementType = {} }
         if defs then
           for _, obj in ipairs(defs) do
-            local ox, oy = tonumber(obj.x) or 0, tonumber(obj.y) or 0
+            local lid = tonumber(obj.localId or obj.index) or 0
+            local p = nb.perm[lid]
+            local ox = p and p.x or tonumber(obj.x) or 0
+            local oy = p and p.y or tonumber(obj.y) or 0
             local out = bounds and (ox < 0 or oy < 0
               or ox >= bounds.w or oy >= bounds.h)
-            if objectVisible(obj) and not out then
+            -- src/event_object_movement.c:8014
+            if tonumber(obj.movementType) == 0x4C then out = true end
+            local gid = obj.graphicsId or obj.graphics
+            if Space and Space.resolveObjectGraphicsId then
+              gid = Space.resolveObjectGraphicsId(obj, nb)
+            end
+            if objectVisible(obj) and not out and gid then
+              local mt = nb.movementType[lid]
               baseIndex = baseIndex + 1
               actors[#actors + 1] = {
                 kind = "npc",
                 i = baseIndex,
                 obj = obj,
                 ghost = entry.id,
-                x = (entry.ox + (tonumber(obj.x) or 0)) * CELL,
-                y = (entry.oy + (tonumber(obj.y) or 0)) * CELL,
-                facing = facingFromObj(obj),
+                x = (entry.ox + ox) * CELL,
+                y = (entry.oy + oy) * CELL,
+                facing = (mt and GfxIds.initialFacing(mt))
+                  or (obj.movementType ~= nil and GfxIds.initialFacing(obj.movementType))
+                  or facingFromObj(obj),
                 sprite = spriteNameForObj(obj),
-                graphicsId = obj.graphicsId or obj.graphics,
+                graphicsId = gid,
               }
             end
           end
@@ -459,7 +475,11 @@ local function drawSingleActor(game, mapDef, a, camX, camY)
     local opts = {
       bow = a.bow,
       fieldMove = a.fieldMove,
+      fieldMoveFrame = a.fieldMoveFrame,
+      fishing = a.fishing,
+      fishFrame = a.fishFrame,
       frame = a.frame,
+      running = a.running,
     }
     drew = OwSprites.draw(
       a.graphicsId, a.x, a.y, camX, camY, a.facing, a.walkPhase, a.stepFlip, opts)
@@ -568,16 +588,32 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
     if PlayerMod and PlayerMod.moving and PlayerMod.targetY and PlayerMod.targetY > (PlayerMod.cellY or 0) then
       playerSortY = math.max(playerSortY, PlayerMod.targetY * CELL)
     end
+    local fieldMove = (PlayerMod and PlayerMod.fieldMoveAnim and PlayerMod.fieldMoveAnim > 0) or false
+    local fieldMoveFrame
+    if fieldMove and useOw and OwSprites.fieldMoveFrame then
+      fieldMoveFrame = OwSprites.fieldMoveFrame(
+        (PlayerMod.fieldMoveTotal or PlayerMod.fieldMoveAnim) - PlayerMod.fieldMoveAnim,
+        PlayerMod.fieldMoveKind)
+    end
+    local FieldMod = package.loaded["src.core.game3.field"]
+    local fishFrame, fishX2, fishY2
+    if not fieldMove and FieldMod and FieldMod.fishingPose then
+      fishFrame, fishX2, fishY2 = FieldMod.fishingPose()
+    end
     actors[#actors + 1] = {
       kind = "player",
       elevation = PlayerMod and PlayerMod.elevation or 3,
-      x = px + (playerXOff or 0),
-      y = py + (playerYOff or 0),
+      x = px + (playerXOff or 0) + (fishX2 or 0),
+      y = py + (playerYOff or 0) + (fishY2 or 0),
       sortY = playerSortY,
       facing = facing or "down",
       walkPhase = (walkPhase == 1 or walkPhase == true) and 1 or 0,
       stepFlip = stepFlip and true or false,
-      fieldMove = (PlayerMod and PlayerMod.fieldMoveAnim and PlayerMod.fieldMoveAnim > 0),
+      fieldMove = fieldMove,
+      fieldMoveFrame = fieldMoveFrame,
+      fishing = fishFrame ~= nil,
+      fishFrame = fishFrame,
+      running = PlayerMod and PlayerMod.runPose and PlayerMod.runPose() or nil,
       sprite = playerSpriteName(game),
       graphicsId = useOw and OwSprites.playerGraphicsId(game) or nil,
     }
@@ -1171,9 +1207,18 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     end
   end
 
+  -- S.S. Anne wake (pret oam.priority = 2, subpriority = 0xFF: under boat hull).
+  if not opts.actorsOnly then
+    local okSS, SSAnne = pcall(require, "src.core.game3.ss_anne_cutscene")
+    if okSS and SSAnne and SSAnne.drawWake then
+      SSAnne.drawWake(camX, camY)
+    end
+  end
+
   -- Collect Game3 actors partitioned by OAM priority.
   local underActors, overActors = nil, nil
-  if not opts.skipActors then
+  -- pokefirered/src/credits.c:717
+  if not (opts.skipActors or FieldView.hideActors) then
     underActors, overActors = collectGame3Actors(
       game, mapDef, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
   end
@@ -1225,6 +1270,10 @@ function FieldView.draw(game, canvasW, canvasH, opts)
       love.graphics.translate(screenOx, screenOy)
       FieldEffects.drawOverlay(camX, camY)
       love.graphics.pop()
+    end
+    local okSS, SSAnne = pcall(require, "src.core.game3.ss_anne_cutscene")
+    if okSS and SSAnne and SSAnne.drawSmoke then
+      SSAnne.drawSmoke(camX, camY)
     end
   end
 

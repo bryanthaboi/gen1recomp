@@ -64,6 +64,7 @@ return function(game)
   if not result(session ~= nil, "new game reached the game3 field") then return finish() end
 
   session.party = {}
+  require("src.core.game3.scripting.flags").setFlag(require("src.core.game3.scripting.space").store, nil, 0x828, true) -- data/maps/PalletTown_ProfessorOaksLab/scripts.inc:1120
   Party.giveMon(session, SPECIES_ABRA, 18)
   Party.giveMon(session, 4, 14)
   result(#session.party == 2 and session.party[1].species == SPECIES_ABRA,
@@ -146,6 +147,27 @@ return function(game)
   U.wait(30)
   result(getVar(0x8004) == 0, "VAR_0x8004 = 0 for slot 1, got " .. tostring(getVar(0x8004)))
 
+  local TradeScene = require("src.core.game3.trade_scene")
+  local sawScene = false
+  for _ = 1, 600 do
+    if TradeScene.isOpen() then sawScene = true break end
+    U.wait(1)
+  end
+  result(sawScene, "DoInGameTradeScene started the trade animation")
+  U.tap(game, "a")
+  U.wait(4)
+
+  local waited = false
+  for _ = 1, 3000 do
+    if TradeScene.phase() == "end_link_trade" then waited = true break end
+    U.wait(1)
+  end
+  result(waited, "the trade animation reaches the A-button wait")
+  U.wait(60)
+  result(TradeScene.phase() == "end_link_trade",
+    "an A pressed mid-animation does not skip the final A wait (trade_scene.c:1772)")
+  U.shot(game, DIR .. "/special_trade_02b_take_good_care.png")
+
   local swapped = false
   for _ = 1, 400 do
     local lead = session.party and session.party[1]
@@ -153,6 +175,7 @@ return function(game)
       swapped = true
       break
     end
+    if TradeScene.phase() == "end_link_trade" then U.tap(game, "a") end
     U.wait(4)
   end
   result(swapped, "DoInGameTradeScene put MR. MIME in the party")

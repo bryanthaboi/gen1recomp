@@ -139,5 +139,7 @@ return {
     "egg_extract",
     "battle_anim_extract",
     "battle_ai_extract",
+    "credits_extract",
+    "league_extract",
   },
 }

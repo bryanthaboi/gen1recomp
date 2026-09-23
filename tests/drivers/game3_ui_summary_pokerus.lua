@@ -53,6 +53,7 @@ local function run(game)
   if not result(session ~= nil, "new game reached the game3 field") then return finish() end
 
   session.party = {}
+  require("src.core.game3.scripting.flags").setFlag(require("src.core.game3.scripting.space").store, nil, 0x828, true) -- data/maps/PalletTown_ProfessorOaksLab/scripts.inc:1120
   Party.giveMon(session, 25, 20)
   Party.giveMon(session, 1, 20)
   -- pokefirered/src/pokemon.c:5618

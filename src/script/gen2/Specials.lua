@@ -155,7 +155,8 @@ end
 -- WaitSFX (pokegold home/audio.asm); a test stub that calls a handler off
 -- the coroutine has no sfx to drain.
 local function drainSfx()
-  if coroutine.running() then coroutine.yield({ kind = "waitsfx" }) end
+  local co, isMain = coroutine.running()
+  if co and not isMain then coroutine.yield({ kind = "waitsfx" }) end
 end
 
 -- Every routine that ends `call GetPokemonName / jp

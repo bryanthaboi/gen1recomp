@@ -96,6 +96,41 @@ local function bake_pal(rom, palOff)
   return table.concat(bytes)
 end
 
+-- pokefirered/src/field_effect.c:2738
+local function bake_streaks(rom, spec)
+  local cols, rows = 32, 10
+  local w, h = cols * 8, rows * 8
+  local rgb = load_palette(rom, spec.pal)
+  local tiles = {}
+  for t = 0, (spec.tiles or 16) - 1 do
+    tiles[t] = decode_frame(rom, spec.gfx + t * 32, 8, 8)
+  end
+  local out = {}
+  for i = 1, w * h do out[i] = "\0\0\0\0" end
+  for r = 0, rows - 1 do
+    for c = 0, cols - 1 do
+      local e = rom:u16(spec.tilemap + (r * cols + c) * 2)
+      local tile = tiles[e % 1024]
+      local hflip = math.floor(e / 1024) % 2 == 1
+      local vflip = math.floor(e / 2048) % 2 == 1
+      if tile then
+        for y = 0, 7 do
+          for x = 0, 7 do
+            local sx = hflip and (7 - x) or x
+            local sy = vflip and (7 - y) or y
+            local idx = tile[sy * 8 + sx + 1] or 0
+            if idx ~= 0 then
+              local col = rgb[idx]
+              out[(r * 8 + y) * w + c * 8 + x + 1] = string.char(col[1], col[2], col[3], 255)
+            end
+          end
+        end
+      end
+    end
+  end
+  return table.concat(out), w, h
+end
+
 function FieldEffectExtract.writeExtract(rom, cache, root, version)
   root = root or "data/generated/gba"
   version = version or {}
@@ -125,6 +160,17 @@ function FieldEffectExtract.writeExtract(rom, cache, root, version)
       log(string.format("%s %dx%d (%d frames, %dx%d) → %s", name, w, h, frames, fw, fh, rel))
       results[name] = { path = rel .. "/" .. name .. ".rgba", w = w, h = h, frames = frames }
     end
+  end
+
+  for kind, spec in pairs(Versions.FIELD_MOVE_STREAKS or {}) do
+    local name = "field_move_streaks_" .. kind
+    local rgba, w, h = bake_streaks(rom, spec)
+    cache:write(rel .. "/" .. name .. ".rgba", rgba)
+    cache:write(rel .. "/" .. name .. ".meta", string.format(
+      "return { w = %d, h = %d, frames = 1, fw = %d, fh = %d, indexed = false, format = %d }\n",
+      w, h, w, h, FieldEffectExtract.FORMAT_VERSION))
+    log(string.format("%s %dx%d → %s", name, w, h, rel))
+    results[name] = { path = rel .. "/" .. name .. ".rgba", w = w, h = h, frames = 1 }
   end
 
   return results

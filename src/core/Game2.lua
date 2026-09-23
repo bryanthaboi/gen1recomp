@@ -1520,7 +1520,9 @@ end
 function Game2:fxWorldOrigin(w, h, scale)
   local cam = self.world and self.world.camera
   if not cam then return nil end
-  local fx, fy = Playfield.rect(w, h)
+  local fx, fy, fw, fh = Playfield.rect(w, h)
+  local bx, by = Game2.faithfulBox(fw, fh)
+  if bx then fx, fy = fx + bx, fy + by end
   return fx + math.floor(-cam.x * scale), fy + math.floor(-cam.y * scale)
 end
 
@@ -1554,6 +1556,13 @@ end
 -- the grid itself.
 function Game2:drawViewportFrame()
   local G = love.graphics
+  local serial = require("src.core.FaithfulRes").modeSerial
+  if serial ~= (self.modeSerial or 0) then
+    if self.world and self.world.map then
+      self.world:dropBakes()
+    end
+    self.modeSerial = serial
+  end
   local w, h = GameViewport.dimensions()
   local ShaderFX = require("src.render.ShaderFX")
   local GbcPalette = require("src.render.GbcPalette")
@@ -1730,8 +1739,31 @@ function Game2:textboxPaper()
   return nil
 end
 
+function Game2.faithfulBox(w, h)
+  if not require("src.core.FaithfulRes").scaleCap() then return nil end
+  local s = math.max(1, math.floor(math.min(w / 160, h / 144)))
+  local bw, bh = 160 * s, 144 * s
+  local lift = 0
+  local ScreenPosition = require("src.core.ScreenPosition")
+  if not ScreenPosition.skinActive(w, h) then
+    lift = ScreenPosition.lift(h, bh, ScreenPosition.safeTop())
+  end
+  return math.floor((w - bw) / 2), math.floor((h - bh) / 2) - lift, bw, bh
+end
+
 function Game2:drawContained(w, h)
-  local pw, ph = Playfield.push(w, h)
+  local pw, ph, px, py = Playfield.push(w, h)
+  local bx, by, bw, bh = Game2.faithfulBox(pw, ph)
+  if bx then
+    local G = love.graphics
+    G.setColor(0, 0, 0, 1)
+    G.rectangle("fill", 0, 0, pw, ph)
+    G.setColor(1, 1, 1, 1)
+    G.setScissor(px + bx, py + by, bw, bh)
+    G.translate(bx, by)
+    Playfield.enter(px + bx, py + by, bw, bh)
+    pw, ph = bw, bh
+  end
   local ok, err = pcall(self.drawScene, self, pw, ph)
   Playfield.pop()
   if not ok then error(err, 0) end
@@ -2327,6 +2359,7 @@ function Game2:applyOptions()
     hotbar = options.hotbar,
   })
   require("src.core.VideoMode").applyOptions(options)
+  require("src.core.FaithfulRes").applyOptions(options)
   require("src.core.ScreenPosition").applyOptions(options)
   require("src.core.VSync").applyOptions(options)
   require("src.core.FrameCap").applyOptions(options)

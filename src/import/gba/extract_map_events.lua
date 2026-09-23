@@ -82,6 +82,8 @@ local function parse_objects(rom, ptr, count)
       y = y,
       elevation = elev,
       movementType = movementType,
+      rangeX = rangeX,
+      rangeY = rangeY,
       movement = host.movement,
       range = host.range,
       radius = host.radius,

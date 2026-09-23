@@ -873,13 +873,9 @@ local function clone_draw(s, vm)
   if s.visible == false then return end
   local side = s._cloneSide
   local sp = P.species(vm, side)
-  local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
-  if not okP then return end
   local entry
   local okU, Ui = pcall(require, "src.core.game3.battle.ui")
   if okU and Ui.battlerPic then entry = Ui.battlerPic(side, nil, sp) end
-  if not entry and side == "player" and Pokemon.backPic then entry = Pokemon.backPic(sp) end
-  if not entry and Pokemon.frontPic then entry = Pokemon.frontPic(sp) end
   if not (entry and entry.image) then return end
   local cx, cy = s.x, s.y
   if okU and Ui.battlerSpriteCenter then

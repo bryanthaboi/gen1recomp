@@ -530,7 +530,7 @@ function TrainerExtract.run(rom, cache, opts)
     "return { version = %d, trainerCount = %d, classCount = %d }\n",
     pack.version, pack.trainerCount, pack.classCount))
 
-  for gender = 0, 1 do
+  for gender = 0, 5 do
     local rgba = bake_back_pic(rom, gender)
     if rgba then
       cache:write(root .. "/back_" .. gender .. ".rgba", rgba)

@@ -17,6 +17,7 @@ local Pokemon = require("src.core.game3.pokemon")
 local SummaryData = require("src.core.game3.summary_data")
 local SummaryChrome = require("src.ui.game3.summary_chrome")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local TmCase = {}
 
@@ -149,7 +150,7 @@ function TmCase.handleInput(input)
         local party = (TmCase._session and TmCase._session.party) or {}
         if #party == 0 then
           TmCase.mode = "message"
-          TmCase.messageText = Strings("There is no POKéMON.")
+          TmCase.messageText = RomText.plain("gText_ThereIsNoPokemon")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
           PartyMenu.show(party, TmCase._session and TmCase._session.moveOverlay, {
@@ -387,7 +388,7 @@ function TmCase.draw()
   if TmCase.mode ~= "action" then
     local descText
     if isCancel then
-      descText = Strings("The TM CASE will be\nput away.")
+      descText = RomText.plain("gText_TMCaseWillBePutAway")
     elseif sel then
       local moveId = Pokemon.moveFromTmItem(sel.id)
       local moveName = Pokemon.moveName(moveId) or "---"

@@ -497,13 +497,19 @@ Natives.ALLOW = {
     if not (adapters and adapters.nurseHeal) then return false end
     return yield_host(ctx, adapters, adapters.nurseHeal)
   end,
+  -- pokefirered/src/pokemon_storage_system_menu.c:354
   ["special:" .. Std.SPECIAL.ShowPokemonStorageSystemPC] = function(ctx, adapters)
     if not (adapters and adapters.openPc) then return false end
-    return yield_host(ctx, adapters, adapters.openPc)
+    return yield_host(ctx, adapters, function(done)
+      adapters.openPc(function() done() end, { mode = "storage" })
+    end)
   end,
+  -- pokefirered/src/player_pc.c:163
   ["special:" .. Std.SPECIAL.PlayerPC] = function(ctx, adapters)
     if not (adapters and adapters.openPc) then return false end
-    return yield_host(ctx, adapters, adapters.openPc)
+    return yield_host(ctx, adapters, function(done)
+      adapters.openPc(function() done() end, { mode = "player" })
+    end)
   end,
   -- pokefirered/src/player_pc.c:151
   ["special:" .. Std.SPECIAL.BedroomPC] = function(ctx, adapters)
@@ -528,10 +534,28 @@ Natives.ALLOW = {
     require("src.core.game3.pc_anim").turnOff(ctx)
     return false
   end,
+  -- pokefirered/src/script_menu.c:977
   ["special:" .. Std.SPECIAL.CreatePCMenu] = function(ctx, adapters)
-    -- Cart builds a menu; host PC UI is the whole menu — open it directly.
     if not (adapters and adapters.openPc) then return false end
-    return yield_host(ctx, adapters, adapters.openPc)
+    return yield_host(ctx, adapters, function(done)
+      adapters.openPc(function(result)
+        setResult(ctx, tonumber(result) or 127)
+        done()
+      end, { mode = "select" })
+    end)
+  end,
+  -- pokefirered/src/hof_pc.c:23
+  ["special:" .. Std.SPECIAL.HallOfFamePCBeginFade] = function(ctx, adapters)
+    if not (adapters and adapters.hallOfFamePc) then return false end
+    return yield_host(ctx, adapters, function(done)
+      adapters.hallOfFamePc(function()
+        -- pokefirered/src/hof_pc.c:40
+        adapters.openPc(function(result)
+          setResult(ctx, tonumber(result) or 127)
+          done()
+        end, { mode = "select", reshow = true })
+      end)
+    end)
   end,
   ["special:" .. Std.SPECIAL.FieldShowRegionMap] = function(ctx, adapters)
     if not (adapters and adapters.showTownMap) then return false end

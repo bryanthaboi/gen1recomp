@@ -354,6 +354,8 @@ function Game3:_handleRegisteredItem()
   if Runtime and Runtime.uiBusy and Runtime.uiBusy() then return end
   local Field = package.loaded["src.core.game3.field"]
   if Field and Field.locked then return end
+  local P = package.loaded["src.core.game3.player"]
+  if P and P.boulderPush then return end
   local Bag = require("src.core.game3.bag")
   local ItemUse = require("src.core.game3.item_use")
   if not session.bag or not Bag.has(session.bag, item, 1) then
@@ -458,8 +460,9 @@ function Game3:fixedUpdate(dt)
     ModRuntime.call("input.step", noop, self, dt or FixedStep.STEP)
   end
   if self.input and self.input.step then self.input:step() end
-  if self.input and self.input.softResetStep and self.input:softResetStep() then
-    self.input:reset()
+  if (self.input and self.input.softResetStep and self.input:softResetStep()) or self.softResetRequested then
+    self.softResetRequested = nil
+    if self.input then self.input:reset() end
     if self.touchControls then self.touchControls:reset() end
     self:returnToTitle()
     return
@@ -650,7 +653,7 @@ end
 
 function Game3:_hotkey(key)
   if key == "f1" then
-    if self.phase == "field" then self:saveGame() end
+    if self.phase == "field" and self:saveOffered() then self:saveGame() end
     return true
   elseif key == "f2" then
     if self.phase == "field" then
@@ -758,6 +761,12 @@ function Game3:gamepadreleased(joystick, button)
   if not ModRuntime.wantsHook("input.gamepad") then return vanilla() end
   return ModRuntime.call("input.gamepad", vanilla, self,
     { phase = "released", joystick = joystick, button = button })
+end
+
+-- pokefirered/src/start_menu.c:198
+function Game3:saveOffered()
+  local session = (Runtime.getSession and Runtime.getSession()) or self.session
+  return require("src.ui.game3.start_menu").saveOffered(session)
 end
 
 function Game3:saveGame()
@@ -945,6 +954,11 @@ local FIELD_SCREENS = {
   "src.ui.game3.money_box",
   "src.ui.game3.coins_box",
   "src.ui.game3.elevator_window",
+  "src.ui.game3.berry_powder_box",
+  "src.ui.game3.minigame_records",
+  "src.ui.game3.hall_of_fame",
+  "src.ui.game3.hall_of_fame_pc",
+  "src.ui.game3.credits",
 }
 
 local function clearFieldScreens()
@@ -955,6 +969,13 @@ local function clearFieldScreens()
       if fn then pcall(fn) end
     end
   end
+  local LeagueLighting = package.loaded["src.core.game3.league_lighting"]
+  if LeagueLighting and LeagueLighting.reset then pcall(LeagueLighting.reset) end
+  local Map = require("src.core.game3.map")
+  Map.disableMusicChange = Map.MUSIC_DISABLE_OFF
+  local FieldView = require("src.core.game3.field_view")
+  FieldView.hideActors = false
+  FieldView.setCameraPanning(0, 0)
 end
 
 function Game3:returnToTitle()

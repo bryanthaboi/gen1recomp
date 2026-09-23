@@ -19,6 +19,7 @@ package.loaded["src.core.game3.audio"] = {
   playFanfare = function() end,
   stopAll = function() end,
   waitSe = function(_, cb) if cb then cb() end end,
+  bikeMusic = function() end,
 }
 
 local water = {}
@@ -196,6 +197,12 @@ print("[test] 8. the WHITE FLUTE prints in the bag too (item_use.c:610)")
 local s8 = new_session()
 Bag.add(s8.bag, 43, 1)
 use_from_bag(s8, 43, "ITEMS")
+check(BagMenu.isOpen() == true and BagMenu.mode == "flute_wait",
+  "the white flute holds the bag before its message (item_use.c:607)")
+input:press("none")
+for _ = 1, 7 do BagMenu.handleInput(input) end
+check(BagMenu.mode == "flute_wait", "no message for the first 7 frames")
+BagMenu.handleInput(input)
 check(BagMenu.isOpen() == true and BagMenu.mode == "message",
   "the white flute keeps the bag open with its message")
 check(BagMenu.messageText == Strings("%s used the\n%s.", "RED", "WHITE FLUTE"),

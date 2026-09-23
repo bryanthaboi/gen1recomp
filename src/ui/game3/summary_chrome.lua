@@ -110,45 +110,6 @@ local function rgba_to_image(rgba, w, h)
   return image
 end
 
-local function sanitize_menu_info_imagedata(id)
-  if not id or not id.getPixel or not id.setPixel then return id end
-  local ok, w, h = pcall(function() return id:getDimensions() end)
-  if not ok or not w or not h then return id end
-  for y = 0, h - 1 do
-    for x = 0, w - 1 do
-      local r, g, b, a = id:getPixel(x, y)
-      if math.abs(r - 123/255) < 0.02 and math.abs(g - 156/255) < 0.02 and math.abs(b - 131/255) < 0.02 then
-        id:setPixel(x, y, 1, 1, 1, 0)
-      end
-    end
-  end
-  return id
-end
-
-local function load_png(rel)
-  local bytes = read_bytes(rel)
-  if bytes and love and love.image and love.graphics then
-    local ok, img = pcall(function()
-      local fd = love.filesystem.newFileData(bytes, "img.png")
-      local id = sanitize_menu_info_imagedata(love.image.newImageData(fd))
-      local image = love.graphics.newImage(id)
-      if image.setFilter then image:setFilter("nearest", "nearest") end
-      return image
-    end)
-    if ok and img then return img end
-  end
-  if love and love.graphics and love.image and love.image.newImageData then
-    local ok, img = pcall(function()
-      local id = sanitize_menu_info_imagedata(love.image.newImageData(rel))
-      local image = love.graphics.newImage(id)
-      if image.setFilter then image:setFilter("nearest", "nearest") end
-      return image
-    end)
-    if ok and img then return img end
-  end
-  return nil
-end
-
 function SummaryChrome.install(cache)
   if not cache or not cache.read then
     local okD, Dataset = pcall(require, "src.core.game3.dataset")
@@ -233,12 +194,6 @@ function SummaryChrome.menuInfoImage()
   if SummaryChrome._menuInfo then return SummaryChrome._menuInfo end
   local raw = read_bytes(summary_root() .. "/menu_info.rgba")
   local img = raw and rgba_to_image(raw, 128, 128)
-  if not img then
-    img = load_png(summary_root() .. "/menu_info.png")
-  end
-  if not img then
-    img = load_png("src/import/gba/chrome/menus/menu_info.png")
-  end
   SummaryChrome._menuInfo = img
   return img
 end

@@ -28,6 +28,8 @@ local function contextFor(entry, pool)
   local layout = entry.def and entry.def.midLayout
   local P = permissions()
   return {
+    ox = entry.ox or 0,
+    oy = entry.oy or 0,
     canEnter = function(tx, ty, fromX, fromY, dir)
       if not layout then return false end
       if tx < 0 or ty < 0 or tx >= (layout.width or 0) or ty >= (layout.height or 0) then
@@ -68,7 +70,7 @@ function Ghosts.sync()
     if not Ghosts._pools[entry.id] then
       local defs = defsFor(entry.id, entry.def)
       if defs then
-        Ghosts._pools[entry.id] = Objects().spawnFromDefs(defs, entry.def)
+        Ghosts._pools[entry.id] = Objects().spawnFromDefs(defs, entry.def, entry.id)
       end
     end
   end
@@ -112,7 +114,7 @@ function Ghosts.blocksOn(mapId, def, tx, ty)
   if not pool then
     local defs = defsFor(mapId, def)
     if not defs then return false end
-    pool = Objects().spawnFromDefs(defs, def)
+    pool = Objects().spawnFromDefs(defs, def, mapId)
     Ghosts._pools[mapId] = pool
   end
   for _, lid in ipairs(pool.order or {}) do

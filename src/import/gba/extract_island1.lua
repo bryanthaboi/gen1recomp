@@ -166,6 +166,9 @@ local function unique_mids_by_pair(grids, scriptMids)
       end
     end
   end
+  for pair, seen in pairs(byPair) do
+    require("src.import.gba.native_pack").addDynamicMids(seen, pair)
+  end
   local NativePack = require("src.import.gba.native_pack")
   local out = {}
   for pair, seen in pairs(byPair) do

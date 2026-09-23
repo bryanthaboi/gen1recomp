@@ -96,7 +96,7 @@ do
   local save = {
     schemaVersion = 1, engine = "game3", version = "firered",
     party = {}, dex = { seen = {}, owned = {} },
-    map = "FR_SAFARI_ZONE_CENTER", x = 4, y = 4,
+    map = "FR_FUCHSIA_CITY", x = 4, y = 4,
     flags = {
       [FLAG_SYS_SAFARI_MODE] = true,
       [tostring(FLAG_SYS_SAFARI_MODE)] = true,
@@ -132,6 +132,20 @@ do
   session.safari = { balls = 30, steps = 600 }
   eq(Schema.toSaveTable(session).safari, nil,
     "and they are EWRAM, so no save block ever carries them")
+
+  local stranded = Schema.fromSaveTable({
+    schemaVersion = 1, engine = "game3", version = "firered",
+    party = {}, dex = { seen = {}, owned = {} },
+    map = "FR_SAFARI_ZONE_CENTER", x = 26, y = 30, facing = "up",
+    flags = {}, vars = {},
+  })
+  -- pokefirered/data/scripts/safari_zone.inc:7 SafariZone_EventScript_Exit
+  eq(stranded.map, "FR_FUCHSIA_CITY_SAFARI_ZONE_ENTRANCE", "a save left in the zone resumes at the gate")
+  eq(stranded.x, 4, "gate x")
+  eq(stranded.y, 1, "gate y")
+  eq(Flags.getVar(stranded, nil, VAR_SAFARI_ENTRANCE), 1, "entrance ExitWarpIn scene queued")
+  local again = Schema.fromSaveTable(Schema.toSaveTable(stranded))
+  eq(again.map, "FR_FUCHSIA_CITY_SAFARI_ZONE_ENTRANCE", "second Continue stays at the gate")
 end
 
 print("[test] 5. The mail pool rides the save through mail.lua")

@@ -20,8 +20,66 @@ StartMenu.ENTRIES = {}
 StartMenu._confirmExit = false
 StartMenu._confirmCursor = 2 -- 1=YES, 2=NO (default NO)
 
+local function player_label(session)
+  local name = (session and (session.name or session.playerName)) or "PLAYER"
+  name = tostring(name)
+  if #name > 7 then name = name:sub(1, 7) end
+  return string.upper(name)
+end
+
+-- pokefirered/src/overworld.c:1386 IsUpdateLinkStateCBActive
+local function link_state_active()
+  local Link = package.loaded["src.core.game3.link"]
+  if not (type(Link) == "table" and Link.link and Link.inLinkRoom) then return false end
+  local ok, inRoom = pcall(Link.inLinkRoom)
+  return ok and inRoom == true
+end
+
+-- pokefirered/src/union_room.c:4558 InUnionRoom
+local function in_union_room(session)
+  local Map = package.loaded["src.core.game3.map"]
+  local cur = (Map and type(Map.current) == "string" and Map.current) or (session and session.map)
+  return cur == "FR_UNION_ROOM"
+end
+
+local function safari_active(session)
+  return require("src.core.game3.safari").isActive(session) == true
+end
+
 -- pret MENU_POKEDEX..MENU_EXIT order for normal field.
 local function build_entries(session)
+  if link_state_active() then
+    -- pokefirered/src/start_menu.c:236 SetUpStartMenu_Link
+    return {
+      { id = "pokemon", label = "POKéMON" },
+      { id = "bag", label = "BAG" },
+      { id = "trainer_link", label = player_label(session) },
+      { id = "option", label = "OPTION" },
+      { id = "exit", label = "EXIT" },
+    }
+  end
+  if in_union_room(session) then
+    -- pokefirered/src/start_menu.c:245 SetUpStartMenu_UnionRoom
+    return {
+      { id = "pokemon", label = "POKéMON" },
+      { id = "bag", label = "BAG" },
+      { id = "trainer", label = player_label(session) },
+      { id = "option", label = "OPTION" },
+      { id = "exit", label = "EXIT" },
+    }
+  end
+  if safari_active(session) then
+    -- pokefirered/src/start_menu.c:226 SetUpStartMenu_SafariZone
+    return {
+      { id = "retire", label = "RETIRE" },
+      { id = "pokedex", label = "POKéDEX" },
+      { id = "pokemon", label = "POKéMON" },
+      { id = "bag", label = "BAG" },
+      { id = "trainer", label = player_label(session) },
+      { id = "option", label = "OPTION" },
+      { id = "exit", label = "EXIT" },
+    }
+  end
   local entries = {}
   local Flags = package.loaded["src.core.game3.scripting.flags"]
   local Space = package.loaded["src.core.game3.scripting.space"]
@@ -43,10 +101,7 @@ local function build_entries(session)
     entries[#entries + 1] = { id = "pokemon", label = "POKéMON" }
   end
   entries[#entries + 1] = { id = "bag", label = "BAG" }
-  local name = (session and (session.name or session.playerName)) or "PLAYER"
-  name = tostring(name)
-  if #name > 7 then name = name:sub(1, 7) end
-  entries[#entries + 1] = { id = "trainer", label = string.upper(name) }
+  entries[#entries + 1] = { id = "trainer", label = player_label(session) }
   entries[#entries + 1] = { id = "save", label = "SAVE" }
   entries[#entries + 1] = { id = "option", label = "OPTION" }
   entries[#entries + 1] = { id = "exit", label = "EXIT" }
@@ -55,6 +110,13 @@ end
 
 function StartMenu.resetCursor()
   StartMenu.cursor = 1
+end
+
+function StartMenu.saveOffered(session)
+  for _, entry in ipairs(build_entries(session)) do
+    if entry.id == "save" then return true end
+  end
+  return false
 end
 
 function StartMenu.show(opts)
@@ -66,6 +128,8 @@ function StartMenu.show(opts)
   StartMenu._game = opts.game
   StartMenu._onClose = opts.onClose
   StartMenu.ENTRIES = build_entries(opts.session)
+  StartMenu._safariStats = not link_state_active() and not in_union_room(opts.session)
+    and safari_active(opts.session)
   if ModRuntime.wantsHook("ui.start_menu.items") then
     local hooked = ModRuntime.call("ui.start_menu.items", function(_, items) return items end,
       opts.game, StartMenu.ENTRIES)
@@ -152,6 +216,15 @@ function StartMenu.confirm()
     PartyMenu.show(session and session.party, session and session.move_overlay, {
       session = session,
     })
+  elseif e.id == "retire" then
+    -- pokefirered/src/start_menu.c:546 StartMenuSafariZoneRetireCallback
+    local game = StartMenu._game
+    StartMenu.close(true)
+    require("src.core.game3.safari").retirePrompt(session, game)
+  elseif e.id == "trainer_link" then
+    -- pokefirered/src/start_menu.c:556 StartMenuLinkPlayerCallback
+    local TrainerCard = require("src.ui.game3.trainer_card")
+    TrainerCard.show({ session = require("src.core.game3.link").localTrainerCard() })
   elseif e.id == "trainer" then
     local TrainerCard = require("src.ui.game3.trainer_card")
     TrainerCard.show({ session = session })
@@ -179,6 +252,16 @@ end
 
 function StartMenu.draw()
   if not StartMenu.open then return end
+  if StartMenu._safariStats then
+    -- pokefirered/src/start_menu.c:255 DrawSafariZoneStatsWindow
+    local Safari = require("src.core.game3.safari")
+    local stats = Window.template(1, 1, 10, 4)
+    Window.stdFrame(stats)
+    -- pokefirered/src/strings.c:167 gText_MenuSafariStats
+    local text = string.format("%3d/%3d\nBALLS  %2d",
+      Safari.steps(StartMenu._session), Safari.STEPS, Safari.balls(StartMenu._session))
+    Window.printPx(text, stats.left * 8 + 4, stats.top * 8 + 3)
+  end
   local tpl = StartMenu.contentTemplate()
   Window.stdFrame(tpl)
   local leftPx = tpl.left * 8

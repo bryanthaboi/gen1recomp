@@ -262,17 +262,15 @@ end
 
 -- pokefirered/src/trade.c:546 sMessages
 function Trade.refusalText(code)
+  local RomText = require("src.core.game3.rom_text")
   if code == Trade.CANT_TRADE_LAST_MON then
-    -- pokefirered/src/strings.c:301 gText_OnlyPkmnForBattle
-    return Strings("That's your only\nPOKéMON for battle.")
+    return RomText.plain("gText_OnlyPkmnForBattle")
   end
   if code == Trade.CANT_TRADE_EGG_YET or code == Trade.CANT_TRADE_PARTNER_EGG_YET then
-    -- pokefirered/src/strings.c:303 gText_EggCantBeTradedNow
-    return Strings("An EGG can't be traded now.")
+    return RomText.plain("gText_EggCantBeTradedNow")
   end
   if code == Trade.CANT_TRADE_NATIONAL or code == Trade.CANT_TRADE_INVALID_MON then
-    -- pokefirered/src/strings.c:302 gText_PkmnCantBeTradedNow
-    return Strings("That POKéMON can't be traded\nnow.")
+    return RomText.plain("gText_PkmnCantBeTradedNow")
   end
   return nil
 end
@@ -282,9 +280,8 @@ function Trade.badEggText()
   return Strings("You have at least one POKéMON\nthat can't be taken.")
 end
 
--- pokefirered/src/strings.c:304 gText_OtherTrainersPkmnCantBeTraded
 function Trade.peerMonRefusalText()
-  return Strings("The other TRAINER's POKéMON\ncan't be traded now.")
+  return require("src.core.game3.rom_text").plain("gText_OtherTrainersPkmnCantBeTraded")
 end
 
 -- pokefirered/src/trade_scene.c:2500 GetInGameTradeMail
@@ -383,8 +380,7 @@ function Trade.tradeMons(session, playerSlot, offered)
   local species = speciesOf(offered)
   if species ~= SPECIES_NONE then
     session.dex.seen[species] = true
-    session.dex.owned[species] = true
-    session.dex.caught[species] = true
+    require("src.core.game3.dex").handleSetPokedexFlag(session.dex, species, true, offered.personality)
   end
   return sent
 end

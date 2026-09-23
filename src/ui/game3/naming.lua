@@ -357,15 +357,11 @@ local function drawPlayerIcon(st)
     if species > 0 then
       local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
       if ok and Pokemon then
-        local entry = Pokemon.icon and Pokemon.icon(species)
-        if not entry then
-          entry = Pokemon.frontPic and Pokemon.frontPic(species)
-        end
+        -- pokefirered/src/naming_screen.c:1422
+        local entry = Pokemon.icon and Pokemon.icon(Pokemon.picSpecies(species, st.personality))
         if entry and entry.image then
           local iw = entry.w or entry.image:getWidth()
           local ih = entry.h or (entry.quads and entry.h) or entry.image:getHeight()
-          -- A mon icon is 32×32 and fills its frame 1:1; the frontPic fallback
-          -- is 64×64 and shrinks into the same box.
           local sc = math.min(L.monIconW / iw, L.monIconH / ih)
           -- pret passes SpriteCallbackDummy, so the icon shows its frame 0.
           local q = entry.quads and entry.quads[0]

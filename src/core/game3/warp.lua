@@ -549,8 +549,9 @@ local FALL_START_Y = -112
 
 --- Complete fall hole sequence (Mt. Moon, Seafoam drop holes)
 -- pokefirered/data/scripts/hole.inc:23 EventScript_DoFallWarp
-function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY)
+function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY, opts)
   if Warp._busy then return false end
+  opts = opts or {}
   destMap, destX, destY = announce(game, destMap, destX, destY, "fall", srcX, srcY)
   Warp._busy = true
 
@@ -616,12 +617,14 @@ function Warp.startFall(mod, game, destMap, destX, destY, srcX, srcY)
   end
 
   -- pokefirered/data/scripts/hole.inc:24
+  -- pokefirered/src/scrcmd.c:773
+  local prologue = opts.prologue ~= false
   Task.spawn(function(t)
-    if t.frames == 20 then
+    if prologue and t.frames == 20 then
       Player.setVisible(false)
       playSe(SE.SE_FALL or 37)
     end
-    if t.frames < 80 then return false end
+    if prologue and t.frames < 80 then return false end
     Fade.begin(toMode, 1, function()
       local Map = require("src.core.game3.map")
       Map.load(mod, game, destMap, {

@@ -67,24 +67,12 @@ local function try_load_rgba(cache, rel, w, h)
   return img
 end
 
-local function try_load_png(path)
-  if not (love and love.graphics and love.graphics.newImage) then return nil end
-  local ok, img = pcall(love.graphics.newImage, path)
-  if ok and img then
-    if img.setFilter then img:setFilter("nearest", "nearest") end
-    return img
-  end
-  return nil
-end
-
 local function load_sheet(name, fw, fh, frames)
   local memo = FieldEffects._sheets[name]
   if memo ~= nil then return memo or nil end
   local totalH = fh * frames
   local root = cache_root() .. "/field_effects/"
   local img = try_load_rgba(FieldEffects._cache, root .. name .. ".rgba", fw, totalH)
-    or try_load_rgba(FieldEffects._cache, "field_effects/" .. name .. ".rgba", fw, totalH)
-    or try_load_png(root .. name .. ".png")
   if not img then
     FieldEffects._sheets[name] = false
     return nil
@@ -114,6 +102,7 @@ local function load_sheet(name, fw, fh, frames)
   FieldEffects._sheets[name] = sheet
   return sheet
 end
+FieldEffects.loadSheet = load_sheet
 
 function FieldEffects.install(cache)
   FieldEffects._cache = cache
@@ -130,6 +119,7 @@ function FieldEffects.install(cache)
   end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.install then Heal.install(cache) end
+  require("src.core.game3.field_move_show_mon").invalidate()
 end
 
 function FieldEffects.invalidate()
@@ -144,6 +134,7 @@ function FieldEffects.invalidate()
   end
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.invalidate then Heal.invalidate() end
+  require("src.core.game3.field_move_show_mon").invalidate()
 end
 
 -- ---------------------------------------------------------------- Tall Grass
@@ -587,6 +578,8 @@ local ANIM_FEET_IN_FLOWING_WATER = {
 local ANIM_RIPPLE = {
   { 0, 12 }, { 1, 9 }, { 2, 9 }, { 3, 9 }, { 0, 9 }, { 1, 9 }, { 2, 11 }, { 4, 11 },
 }
+-- pokefirered/src/data/field_effects/field_effect_objects.h:295
+local ANIM_GROUND_IMPACT_DUST = { { 0, 8 }, { 1, 8 }, { 2, 8 } }
 
 local SE_PUDDLE = 63
 
@@ -749,6 +742,21 @@ local function start_hot_springs()
   table.insert(FieldEffects._anims, { kind = "hot_springs", timer = 0, frame = 0 })
 end
 
+-- pokefirered/src/field_effect_helpers.c:1112
+function FieldEffects.startDust(cx, cy)
+  load_sheet("ground_impact_dust", 16, 8, 3)
+  table.insert(FieldEffects._anims, { kind = "dust", timer = 0, frame = 0, cx = cx, cy = cy })
+end
+
+-- pokefirered/src/event_object_movement.c:8220
+local function flag_land_on_normal_ground(g, cur)
+  local Collision = package.loaded["src.core.game3.collision"]
+  if Collision and Collision.isGrass and Collision.isGrass(g.cx, g.cy) then return false end
+  if cur == MB_PUDDLE or cur == MB_SHALLOW_WATER then return false end
+  if Collision and Collision.isSurfable and Collision.isSurfable(cur) then return false end
+  return true
+end
+
 -- pokefirered/src/event_object_movement.c:8023 GetAllGroundEffectFlags_OnSpawn
 local function ground_effects_on_spawn(g, cur, prev)
   if flag_shallow_flowing_water(g, cur, prev) then start_feet_in_flowing_water() end
@@ -763,7 +771,7 @@ local function ground_effects_on_begin_step(g, cur, prev)
 end
 
 -- pokefirered/src/event_object_movement.c:8049 GetAllGroundEffectFlags_OnFinishStep
-local function ground_effects_on_finish_step(g, cur, jumped)
+local function ground_effects_on_finish_step(g, cur, jumped, landingJump)
   -- pokefirered/src/event_object_movement.c:5343 ShiftStillObjectEventCoords (previous := current)
   local prev = cur
   if flag_shallow_flowing_water(g, cur, prev) then start_feet_in_flowing_water() end
@@ -771,6 +779,8 @@ local function ground_effects_on_finish_step(g, cur, jumped)
   if flag_puddle(cur, prev) and not jumped then start_splash() end
   if flag_ripple(cur) then start_ripple(g.cx, g.cy) end
   if flag_hot_springs(g, cur, prev) then start_hot_springs() end
+  -- pokefirered/src/event_object_movement.c:8638
+  if landingJump and flag_land_on_normal_ground(g, cur) then FieldEffects.startDust(g.cx, g.cy) end
 end
 
 --- pokefirered/src/event_object_movement.c:8721 DoGroundEffects_OnSpawn / OnBeginStep / OnFinishStep
@@ -804,14 +814,17 @@ function FieldEffects.groundEffects()
   local wasMoving = g.moving
   local wasPx = g.px
   local wasJump = g.jumped
+  local wasLanding = g.landingJump
   g.moving = moving
   g.cx, g.cy = cx, cy
   g.px, g.py = px, py
   g.jumped = moving and (P.jumping and true or false) or false
+  -- pokefirered/src/event_object_movement.c:6646
+  g.landingJump = g.jumped and not (P.surfHopping or P.dismounting) or false
 
   if wasMoving and moving and wasPx ~= nil then
     g.cx, g.cy = px, py
-    ground_effects_on_finish_step(g, behavior_at(px, py), wasJump)
+    ground_effects_on_finish_step(g, behavior_at(px, py), wasJump, wasLanding)
     g.cx, g.cy = cx, cy
   end
 
@@ -822,7 +835,7 @@ function FieldEffects.groundEffects()
   if moving and not wasMoving then
     ground_effects_on_begin_step(g, cur, prev)
   elseif wasMoving and not moving then
-    ground_effects_on_finish_step(g, cur, wasJump)
+    ground_effects_on_finish_step(g, cur, wasJump, wasLanding)
   elseif wasMoving and moving then
     ground_effects_on_begin_step(g, cur, prev)
   else
@@ -1009,6 +1022,10 @@ function FieldEffects.step()
       -- pokefirered/src/field_effect_helpers.c:626 UpdateSplashFieldEffect
       local frame = anim_frame(ANIM_SPLASH, anim.timer - 1, false)
       if frame then anim.frame = frame else finished = true end
+    elseif anim.kind == "dust" then
+      -- pokefirered/src/field_effect_helpers.c:1369
+      local frame = anim_frame(ANIM_GROUND_IMPACT_DUST, anim.timer - 1, false)
+      if frame then anim.frame = frame else finished = true end
     elseif anim.kind == "feet_water" then
       -- pokefirered/src/field_effect_helpers.c:707 UpdateFeetInFlowingWaterFieldEffect
       local g = FieldEffects._ground
@@ -1114,6 +1131,7 @@ function FieldEffects.step()
 
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.step then Heal.step() end
+  require("src.core.game3.field_move_show_mon").step()
 end
 
 -- ---------------------------------------------------------------- Drawing
@@ -1302,6 +1320,14 @@ function FieldEffects.drawFront(camX, camY, playerPy)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(sheet.image, q, P.px - camX, P.py + FEET_H - camY)
       end
+    elseif anim.kind == "dust" then
+      -- pokefirered/src/field_effect_helpers.c:1117
+      local sheet = load_sheet("ground_impact_dust", 16, 8, 3)
+      local q = sheet and sheet.quads[anim.frame or 0]
+      if q then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(sheet.image, q, anim.cx * CELL - camX, anim.cy * CELL + 8 - camY)
+      end
     elseif anim.kind == "hot_springs" then
       -- pokefirered/src/field_effect_helpers.c:777 UpdateHotSpringsWaterFieldEffect
       local sheet = load_sheet("hot_springs_water", 16, 16, 1)
@@ -1351,6 +1377,8 @@ function FieldEffects.drawOverlay(camX, camY)
 
   local ok, Heal = pcall(require, "src.core.game3.pokecenter_heal")
   if ok and Heal and Heal.draw then Heal.draw(camX, camY) end
+  require("src.core.game3.itemfinder").draw()
+  require("src.core.game3.field_move_show_mon").draw()
 end
 
 --- pret dofieldeffect / waitfieldeffect for FLDEFF_POKECENTER_HEAL (25).

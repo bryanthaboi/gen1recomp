@@ -2,6 +2,8 @@
 -- FRLG Hall of Fame Induction Screen & Egg Skipping Unit Test Suite
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.bundle() then print("[skip] hall_of_fame: " .. tostring(Game3Cache.reason)) return end
 
 local failed = 0
 local function check(cond, msg)
@@ -19,7 +21,7 @@ local Adapters = require("src.core.game3.scripting.adapters")
 local Natives = require("src.core.game3.scripting.natives")
 local Std = require("src.core.game3.scripting.stdscripts")
 
-print("=== [TEST 1] Hall of Fame Strict Egg Skipping & Mon Progression ===")
+print("=== [TEST 1] Hall of Fame induction order and timing ===")
 do
   local party = {
     { species = 6, name = "CHARIZARD", level = 55, otId = 12345, moves = { "FLAMETHROWER", "FLY", "SLASH", "FIRE_SPIN" } },
@@ -44,41 +46,40 @@ do
   HallOfFame.start({
     session = session,
     onDone = function() doneCalled = true end,
+    warp = false,
   })
 
   check(HallOfFame.isOpen() == true, "HallOfFame is open")
-  check(#HallOfFame._mons == 4, "Eligible mons count is exactly 4 (skipped 2 eggs)")
-
-  -- Mon 1: Charizard
-  local m1 = HallOfFame.getCurrentMon()
-  check(m1 and m1.name == "CHARIZARD", "Mon 1 is CHARIZARD")
+  -- pokefirered/src/hall_of_fame.c:390
+  check(#HallOfFame._mons == 6, "every occupied party slot is inducted, eggs included")
 
   local inpA = {
     wasPressed = function(_, k) return k == "a" end,
     isDown = function() return false end,
   }
 
-  -- Advance to Mon 2: Pikachu (skipping egg at slot 2)
-  HallOfFame.handleInput(inpA)
-  local m2 = HallOfFame.getCurrentMon()
-  check(m2 and m2.name == "PIKACHU", "Mon 2 is PIKACHU (skipped egg)")
+  local shown = {}
+  local lastInfo = nil
+  local frames = 0
+  while HallOfFame.isOpen() and HallOfFame.phase() ~= "exitwait" and frames < 20000 do
+    HallOfFame.handleInput(inpA)
+    HallOfFame.update(1 / 60)
+    frames = frames + 1
+    if HallOfFame._info and HallOfFame._info ~= lastInfo then
+      lastInfo = HallOfFame._info
+      shown[#shown + 1] = lastInfo.name
+    end
+  end
+  check(HallOfFame.phase() == "exitwait", "the induction ran to the player card on its own timers")
+  check(table.concat(shown, ",") == "CHARIZARD,EGG,PIKACHU,TOGEPI EGG,BLASTOISE,SNORLAX",
+    "mons were shown in party order: " .. table.concat(shown, ","))
+  check(HallOfFame.isOpen() == true, "A presses before the player card did not close the screen")
 
-  -- Advance to Mon 3: Blastoise (skipping egg at slot 4)
   HallOfFame.handleInput(inpA)
-  local m3 = HallOfFame.getCurrentMon()
-  check(m3 and m3.name == "BLASTOISE", "Mon 3 is BLASTOISE (skipped egg)")
-
-  -- Advance to Mon 4: Snorlax
-  HallOfFame.handleInput(inpA)
-  local m4 = HallOfFame.getCurrentMon()
-  check(m4 and m4.name == "SNORLAX", "Mon 4 is SNORLAX")
-
-  -- Advance to Congratulations screen
-  HallOfFame.handleInput(inpA)
-  check(HallOfFame._phase == "congrats", "Advanced to CONGRATULATIONS phase")
-
-  -- Advance from Congratulations to close and yield to credits
-  HallOfFame.handleInput(inpA)
+  for _ = 1, 400 do
+    if not HallOfFame.isOpen() then break end
+    HallOfFame.update(1 / 60)
+  end
   check(HallOfFame.isOpen() == false, "HallOfFame closed cleanly")
   check(doneCalled == true, "onDone credits yield callback executed")
 
@@ -88,7 +89,10 @@ do
   check(session.hofDebutTime == "14:22:35", "session.hofDebutTime stamped correctly")
   check(session.hofDebutHours == 14 and session.hofDebutMinutes == 22, "hofDebutHours and Minutes stamped")
   check(#session.hallOfFameTeams == 1, "Hall of fame team record saved")
-  check(#session.hallOfFameTeams[1] == 4, "Saved team record contains exactly 4 non-egg mons")
+  local rec = session.hallOfFameTeams[1]
+  check(#rec == 6, "Saved team record keeps all 6 party slots (hall_of_fame.c:389)")
+  check(rec[2].species == 412 and rec[4].species == 412, "Eggs are recorded as SPECIES_EGG")
+  check(session.gameStats[10] == 1, "GAME_STAT_ENTERED_HOF incremented (save.c:665)")
 end
 
 print("=== [TEST 2] Scripting Special Native EnterHallOfFame Integration ===")
@@ -108,6 +112,7 @@ do
       HallOfFame.start({
         session = session,
         onDone = done,
+        warp = false,
       })
     end,
   })
@@ -120,7 +125,11 @@ do
   check(yielded == true, "Special EnterHallOfFame yielded execution to HallOfFame")
   check(hofCalled == true, "adapters.hallOfFame was invoked")
   check(HallOfFame.isOpen() == true, "HallOfFame UI is open")
-  check(session.flags[0x82C] == true, "FLAG_SYS_GAME_CLEAR set by native")
+  for _ = 1, 200 do
+    if HallOfFame.phase() == "display" then break end
+    HallOfFame.update(1 / 60)
+  end
+  check(session.flags[0x82C] == true, "FLAG_SYS_GAME_CLEAR saved with the induction")
 
   -- Close
   HallOfFame.close()

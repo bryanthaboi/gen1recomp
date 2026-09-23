@@ -636,7 +636,7 @@ function Commands.hide_object(ctx, mapId, objName)
 end
 
 function Commands.play_sound(ctx, soundId)
-  require("src.core.Sound").play(ctx.game.data, soundId)
+  ctx.lastSfxSrc = require("src.core.Sound").play(ctx.game.data, soundId)
 end
 
 -- wait_sound: WaitForSoundToFinish (home/delay.asm:15), the drain that
@@ -646,12 +646,20 @@ local WAIT_SOUND_CEILING = 600
 
 function Commands.wait_sound(ctx)
   local Sound = require("src.core.Sound")
-  if not Sound.sfxBusy() then return end
+  local src = ctx.lastSfxSrc
+  ctx.lastSfxSrc = nil
+  local function busy()
+    if Sound.sfxBusy() then return true end
+    if not src then return false end
+    local ok, playing = pcall(function() return src:isPlaying() end)
+    return ok and playing and true or false
+  end
+  if not busy() then return end
   local runner = ctx.runner
   local left = WAIT_SOUND_CEILING
   runner.waitingCheck = function()
     left = left - 1
-    return left <= 0 or not Sound.sfxBusy()
+    return left <= 0 or not busy()
   end
   runner:yield()
 end

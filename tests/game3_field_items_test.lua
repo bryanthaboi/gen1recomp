@@ -109,8 +109,8 @@ check(tonumber(ItemsData.info(ITEM_GOOD_ROD).secondaryId) == 1, "GOOD ROD is rod
 check(tonumber(ItemsData.info(ITEM_SUPER_ROD).secondaryId) == 2, "SUPER ROD is rod 2")
 check(ItemsData.fieldUseKind(ITEM_OLD_ROD) == "key",
   "the pack files the rods under fieldUse key, which the old reject swallowed")
-check(ItemsData.fieldUseKind(ITEM_WHITE_FLUTE) == "none",
-  "and the WHITE FLUTE under fieldUse none")
+check(ItemsData.fieldUseKind(ITEM_WHITE_FLUTE) == "black_white_flute",
+  "and the WHITE FLUTE under FieldUseFunc_BlackWhiteFlute")
 
 print("[test] 2. Pallet Town beach: CanFish")
 local def = enterMap("FR_PALLET_TOWN")
@@ -262,7 +262,7 @@ check(ok == true and text:find("catchy tune", 1, true) ~= nil,
 print("[test] 6. the WHITE and BLACK FLUTES move the encounter rate")
 local base = Encounters.encounterRate(20, { ignoreAbility = true })
 ok, kind, text = ItemUse.useField(session, session.bag, ITEM_WHITE_FLUTE, nil)
-check(ok == true and kind == "flute", "the WHITE FLUTE is usable")
+check(ok == true and kind == "black_white_flute", "the WHITE FLUTE is usable")
 check(text:find("lured", 1, true) ~= nil, "it prints gText_UsedVar2WildLured")
 check(Flags.getFlag(Space.store, nil, FLAG_SYS_WHITE_FLUTE_ACTIVE) == true,
   "FLAG_SYS_WHITE_FLUTE_ACTIVE is set")

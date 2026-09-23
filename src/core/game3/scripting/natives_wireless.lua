@@ -49,6 +49,21 @@ local function setStringVar(ctx, adapters, index, text)
   if ctx and ctx.stringVars then ctx.stringVars[index] = text end
 end
 
+-- pokefirered/src/quest_log.c:860
+local function qlAvoidDisplay()
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local game = Runtime and Runtime._game
+  return (game and game.phase == "quest_log") and true or false
+end
+
+local function showRecords(ctx, kind)
+  local Natives = require("src.core.game3.scripting.natives")
+  local done = false
+  Natives.awaitState(ctx, function() return done end)
+  require("src.ui.game3.minigame_records").show(kind, sessionOf(ctx), function() done = true end)
+  return false
+end
+
 -- pokefirered/src/battle_tower.c:1354
 local function visitingEReaderTrainer(session)
   local trainer = session and session.ereaderTrainer
@@ -83,38 +98,36 @@ Wireless.HANDLERS = {
   end,
 
   -- pokefirered/src/pokemon_jump.c:4487, data/scripts/cable_club.inc:1278
-  [Std.SPECIAL.ShowPokemonJumpRecords] = function()
-    return false
+  [Std.SPECIAL.ShowPokemonJumpRecords] = function(ctx)
+    return showRecords(ctx, "pokemon_jump")
   end,
 
   -- pokefirered/src/dodrio_berry_picking.c:2929, data/scripts/cable_club.inc:1286
-  [Std.SPECIAL.ShowDodrioBerryPickingRecords] = function()
-    return false
+  [Std.SPECIAL.ShowDodrioBerryPickingRecords] = function(ctx)
+    return showRecords(ctx, "dodrio")
   end,
 
   -- pokefirered/src/berry_crush.c:3189, data/maps/CeruleanCity_House5/scripts.inc:169
-  [Std.SPECIAL.ShowBerryCrushRankings] = function()
-    return false
+  [Std.SPECIAL.ShowBerryCrushRankings] = function(ctx)
+    return showRecords(ctx, "berry_crush")
   end,
 
   -- pokefirered/src/berry_powder.c:113
-  [Std.SPECIAL.DisplayBerryPowderVendorMenu] = function(ctx)
-    if ctx then ctx.berryPowderVendorOpen = true end
-    local session = sessionOf(ctx)
-    if session then session.berryPowderVendorOpen = true end
+  [Std.SPECIAL.DisplayBerryPowderVendorMenu] = function()
+    if qlAvoidDisplay() then return false end
+    require("src.ui.game3.berry_powder_box").show()
     return false
   end,
 
   -- pokefirered/src/berry_powder.c:128
-  [Std.SPECIAL.RemoveBerryPowderVendorMenu] = function(ctx)
-    if ctx then ctx.berryPowderVendorOpen = false end
-    local session = sessionOf(ctx)
-    if session then session.berryPowderVendorOpen = false end
+  [Std.SPECIAL.RemoveBerryPowderVendorMenu] = function()
+    require("src.ui.game3.berry_powder_box").hide()
     return false
   end,
 
   -- pokefirered/src/berry_powder.c:108
   [Std.SPECIAL.PrintPlayerBerryPowderAmount] = function()
+    require("src.ui.game3.berry_powder_box").update()
     return false
   end,
 

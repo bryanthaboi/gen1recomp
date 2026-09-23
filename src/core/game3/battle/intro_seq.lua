@@ -183,6 +183,7 @@ local function build_wild(st, opts)
   end
   local ename = State.displayName(st.enemy)
   local pname = State.displayName(st.player)
+  local playerGender = (st.oldManTutorial and 5) or opts.playerGender or 0
   add("fade", { mode = "FROM_BLACK", instant = true })
   -- pret: player back sprite slides in with the BG intro even in wild battles
   -- (BattleIntroDrawTrainersOrMonsSprites → EmitDrawTrainerPic for PLAYER_LEFT).
@@ -198,7 +199,7 @@ local function build_wild(st, opts)
     enemyMonTo = 0,
     slideFrames = 120,
     darken = 10 / 16,
-    gender = opts.playerGender or 0,
+    gender = playerGender,
   })
   add("cry", { side = "enemy" })  add("undarken", { side = "enemy", frames = 10 })
   add("healthbox", { side = "enemy", frames = 23, from = -115 })
@@ -219,6 +220,13 @@ local function build_wild(st, opts)
   if st.safari then
     -- pokefirered/src/battle_controller_safari.c:608
     add("healthbox", { side = "player", frames = 23, from = 115 })
+    add("wait", { frames = 3 })
+    return steps
+  end
+  if st.oldManTutorial then
+    -- pokefirered/src/battle_controller_oak_old_man.c
+    -- In Oak/Old Man tutorial, the player's Pokémon is not sent out and there is no player healthbox.
+    -- The Old Man backsprite stays at (0, 0) and the battle transitions straight to action selection.
     add("wait", { frames = 3 })
     return steps
   end
@@ -349,11 +357,10 @@ function IntroSeq.begin(st, opts)
     end
   end
 
-  -- Park terrain and sliding sprites off-screen immediately so the first
-  -- rendered frame (and fade-in) starts with them in initial slide positions.
+  local playerGender = (st.oldManTutorial and 5) or opts.playerGender or 0
   s.bgSlide = { enemyOx = -240, playerOx = 240 }
   s.trainer.player.visible = true
-  s.trainer.player.gender = opts.playerGender or 0
+  s.trainer.player.gender = playerGender
   s.trainer.player.ox = 240
   s.trainer.player.frame = 0
 

@@ -5888,6 +5888,17 @@ function World:release()
   self.connectionMaps = nil
 end
 
+function World:dropBakes()
+  for _, img in pairs(self.mapImages or {}) do safeRelease(img) end
+  for _, strip in pairs(self.scrollStrips or {}) do safeRelease(strip) end
+  self.mapImages = {}
+  self.scrollStrips = {}
+  if self.map and self.map.id then
+    self.mapImage = self:imageFor(self.map.id)
+    self:rebuildNeighbors()
+  end
+end
+
 -- LoadMapAttributes' refill, for every map the session has edited.  Neighbour
 -- strips share the same buffer on the cart, so a connection crossing reloads
 -- them too: this runs on any setMap, seamless or not.

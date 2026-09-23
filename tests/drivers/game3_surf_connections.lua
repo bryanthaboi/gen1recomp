@@ -146,16 +146,16 @@ return function(game)
     end
   end
   for _ = 1, 180 do
-    if Player.cellX == 72 and Player.cellY == 15 then break end
-    local dir = pathTo(72, 15)
+    if Player.cellX == 60 and Player.cellY == 9 then break end
+    local dir = pathTo(60, 9)
     if not dir then result(false, "seafoam_path_available"); return finish() end
     if not step(dir, true) then U.wait(16) end
     if Map.current ~= "FR_ROUTE_20" then result(false, "seafoam_path_stayed_on_route20"); return finish() end
   end
-  if not result(Map.current == "FR_ROUTE_20" and Player.cellX == 72 and Player.cellY == 15
-      and not Player.surfing and Player.elevation == 3, "seafoam_east_landing_reached_by_input") then return finish() end
+  if not result(Map.current == "FR_ROUTE_20" and Player.cellX == 60 and Player.cellY == 9
+      and not Player.surfing and Player.elevation == 3, "seafoam_west_landing_reached_by_input") then return finish() end
   U.wait(45)
-  if not shot("04_seafoam_east_landing") then return finish() end
+  if not shot("04_seafoam_west_landing") then return finish() end
   step("up")
   for _ = 1, 240 do
     if Map.current == "FR_SEAFOAM_ISLANDS_1F" and not require("src.core.game3.warp").isBusy() then break end
@@ -163,6 +163,6 @@ return function(game)
   end
   if not result(Map.current == "FR_SEAFOAM_ISLANDS_1F", "seafoam_entrance_reached_by_input") then return finish() end
   U.wait(90)
-  shot("05_inside_seafoam_east_entrance")
+  shot("05_inside_seafoam_west_entrance")
   finish()
 end

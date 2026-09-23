@@ -15,7 +15,7 @@ assert(FlagsTable.FLAGS.FLAG_SYS_B_DASH == 0x82F, "SYS_B_DASH should be 0x82F")
 assert(FlagsTable.FLAGS.FLAG_SYS_NATIONAL_DEX == 0x840, "SYS_NATIONAL_DEX should be 0x840")
 assert(FlagsTable.FLAGS.FLAG_HIDE_OAK_IN_HIS_LAB == 0x02B, "HIDE_OAK_IN_HIS_LAB should be 0x2B")
 assert(FlagsTable.VARS.VAR_MAP_SCENE_PALLET_TOWN_OAK == 0x4050, "MAP_SCENE_PALLET_TOWN_OAK should be 0x4050")
-assert(#FlagsTable.NEW_GAME_HIDE_FLAGS == 57, "Should contain 57 new game hide flags (49 EventScript_ResetAllMapFlags + 8 Seafoam boulder hide flags)")
+assert(#FlagsTable.NEW_GAME_HIDE_FLAGS == 49, "Should contain the 49 EventScript_ResetAllMapFlags hide flags")
 local f = io.open("pokefirered/include/constants/flags.h", "r")
 if f then
   f:close()

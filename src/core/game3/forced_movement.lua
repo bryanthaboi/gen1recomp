@@ -259,18 +259,79 @@ function M.registerStepCallback(name, fn)
   M.stepCallbacks[name] = fn
 end
 
+M._stepTask = nil
+M._stepData = {}
+
 -- pokefirered/src/field_tasks.c:66 Task_RunPerStepCallback
-function M.runStepCallback(game, prevX, prevY)
+function M.runStepCallback(game)
   local okCtx, Ctx = pcall(require, "src.core.game3.scripting.ctx")
   if not (okCtx and Ctx and Ctx.stepCallback) then return false end
   local Map = package.loaded["src.core.game3.map"]
   local okName, name = pcall(Ctx.stepCallback, Map and Map.current)
   if not (okName and name) then return false end
+  -- pokefirered/src/field_tasks.c:96
+  if Ctx._stepCallback ~= M._stepTask then
+    M._stepTask = Ctx._stepCallback
+    M._stepData = {}
+  end
   local fn = M.stepCallbacks[name]
   if not fn then return false end
-  local ok, res = pcall(fn, game, prevX, prevY)
+  local ok, res = pcall(fn, game, M._stepData)
   return (ok and res) and true or false
 end
+
+local function playerDestCoords()
+  local P = player()
+  if P.moving and P.targetX then return P.targetX, P.targetY end
+  return P.cellX, P.cellY
+end
+
+-- pokefirered/src/field_tasks.c:173 IcefallCaveIcePerStepCallback
+M.registerStepCallback("ice", function(_game, data)
+  local state = data.state or 0
+  if state == 0 then
+    data.prevX, data.prevY = playerDestCoords()
+    data.state = 1
+  elseif state == 1 then
+    local x, y = playerDestCoords()
+    if x == data.prevX and y == data.prevY then return false end
+    data.prevX, data.prevY = x, y
+    local beh = Collision.behavior(x, y)
+    if Collision.isThinIce(beh) then
+      local Events = require("src.core.game3.scripting.natives_events")
+      -- pokefirered/src/field_tasks.c:139 MarkIcePuzzleCoordVisited
+      for i, c in ipairs(Events.ICEFALL_CAVE_ICE_COORDS) do
+        if c[1] == x and c[2] == y then
+          local Flags = require("src.core.game3.scripting.flags")
+          local Space = require("src.core.game3.scripting.space")
+          Flags.setFlag(Space.store, Space.vm and Space.vm.ctx or nil, i, true)
+          break
+        end
+      end
+      data.delay, data.state, data.iceX, data.iceY = 4, 2, x, y
+    elseif Collision.isCrackedIce(beh) then
+      data.delay, data.state, data.iceX, data.iceY = 4, 3, x, y
+    end
+  elseif data.delay ~= 0 then
+    data.delay = data.delay - 1
+  else
+    local Events = require("src.core.game3.scripting.natives_events")
+    local Field = require("src.core.game3.field")
+    local SE = require("src.core.game3.se_ids")
+    if state == 2 then
+      se(SE.SE_ICE_CRACK)
+      Field.setMetatile(data.iceX, data.iceY, Events.METATILE_SEAFOAM_CRACKED_ICE, false)
+    else
+      se(SE.SE_ICE_BREAK)
+      Field.setMetatile(data.iceX, data.iceY, Events.METATILE_SEAFOAM_ICE_HOLE, false)
+      local Flags = require("src.core.game3.scripting.flags")
+      local Space = require("src.core.game3.scripting.space")
+      Flags.setVar(Space.store, Space.vm and Space.vm.ctx or nil, "VAR_TEMP_1", 1)
+    end
+    data.state = 1
+  end
+  return false
+end)
 
 function M.reset()
   M.forced = false

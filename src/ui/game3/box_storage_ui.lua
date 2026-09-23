@@ -18,6 +18,7 @@ local ReleaseSeq = require("src.ui.game3.release_seq")
 local SummaryMenu = require("src.ui.game3.summary_menu")
 local ItemsData = require("src.core.game3.items_data")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local BoxStorageUI = {}
 
@@ -404,7 +405,7 @@ function BoxStorageUI.handleInput(input)
         if loc == "party" and mon then
           local party = (BoxStorageUI._session and BoxStorageUI._session.party) or {}
           if #party <= 1 then
-            BoxStorageUI._status = Strings("Can't deposit the last POKéMON!")
+            BoxStorageUI._status = RomText.plain("gText_JustOnePkmn")
             BoxStorageUI.mode = "message"
             se(26) -- pokefirered/src/pokemon_storage_system_tasks.c:1052
           else
@@ -447,7 +448,7 @@ function BoxStorageUI.handleInput(input)
             BoxStorageUI.mode = "message"
             se(246)
           elseif err == "bag_full" then
-            BoxStorageUI._status = Strings("The BAG is full.")
+            BoxStorageUI._status = RomText.plain("gText_BagIsFull2")
             BoxStorageUI.mode = "message"
             se(26) -- pokefirered/src/pokemon_storage_system_tasks.c:1487
           else
@@ -742,8 +743,7 @@ function BoxStorageUI.draw()
       local isHovered = (BoxStorageUI.cursorSlot == s and BoxStorageUI.mode ~= "party_drawer" and not BoxStorageUI.holdingMon)
       local bounceY = (isHovered and BoxStorageUI.hoverFrame == 1) and -2 or 0
       local f = (isHovered and BoxStorageUI.hoverFrame == 1) and 1 or 0
-      local sp = Pokemon.speciesOrEgg(mon)
-      local icon = Pokemon.icon(sp)
+      local icon = Pokemon.monIcon(mon)
 
       if icon and icon.image then
         local q = icon.quads and (icon.quads[f] or icon.quads[0])
@@ -808,8 +808,7 @@ function BoxStorageUI.draw()
 
   -- If holding a mon, draw floating mini-icon under hand cursor
   if BoxStorageUI.holdingMon then
-    local hSp = Pokemon.speciesOrEgg(BoxStorageUI.holdingMon)
-    local hIcon = Pokemon.icon(hSp)
+    local hIcon = Pokemon.monIcon(BoxStorageUI.holdingMon)
     if hIcon and hIcon.image then
       local q = hIcon.quads and hIcon.quads[0]
       love.graphics.setColor(1, 1, 1, 1)

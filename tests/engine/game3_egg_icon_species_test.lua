@@ -19,6 +19,9 @@ check(Pokemon.speciesOrEgg({ species = 172, isEgg = false }) == 172, "a hatched 
 check(Pokemon.speciesOrEgg({ species = 25 }) == 25, "and so does any other mon")
 check(Pokemon.speciesOrEgg(nil) == nil, "no mon, no species")
 
+check(Pokemon.monPicSpecies({ species = 172, isEgg = true }) == 412, "the mon icon lookup draws an egg as the EGG")
+check(Pokemon.monPicSpecies({ species = 201, personality = 0x00000001 }) == 413, "and an Unown by its letter")
+
 -- Every screen that draws a party or box mon's icon goes through it (the PC
 -- chrome's third call is its hovered-mon front pic).
 local SITES = {
@@ -31,8 +34,8 @@ for _, site in ipairs(SITES) do
   local f = assert(io.open(site[1], "rb"))
   local src = f:read("*a")
   f:close()
-  local n = select(2, src:gsub("Pokemon%.speciesOrEgg%(", ""))
-  check(n == site[2], ("%s draws %d mon(s) by speciesOrEgg (found %d)"):format(site[1], site[2], n))
+  local n = select(2, src:gsub("Pokemon%.monIcon%(", "")) + select(2, src:gsub("Pokemon%.monFrontPic%(", ""))
+  check(n == site[2], ("%s draws %d mon(s) by monIcon/monFrontPic (found %d)"):format(site[1], site[2], n))
 end
 
 T.finish("game3_egg_icon_species_test")

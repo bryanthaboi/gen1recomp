@@ -417,6 +417,43 @@ Player.reset(2, 5, "down")
 check(TrainerSight.check(dummyGame) == true, "TRAINER_TYPE_NORMAL (1) from def engages")
 resetField()
 
+print("[test] 10. Wandering/Pacing Trainer (e.g. Route 3 Lass) Walk-Up and Permanent Stay Conversion")
+local pacer = {
+  localId = 2, cellX = 40, cellY = 11, px = 640, py = 176, homeX = 40, homeY = 11,
+  facing = "down", sight = 3, trainerType = 1,
+  movement = "WALK", movementType = 0x03, range = "UP_DOWN", radius = { x = 1, y = 1 },
+  elevation = 0, visible = true, hidden = false, moving = false, frozen = false, scriptBusy = false,
+  scriptKey = "trainer_battle_01",
+  def = { localId = 2, x = 40, y = 11, movementType = 0x03, movement = "WALK", range = "UP_DOWN" },
+}
+Objects.clear()
+Objects._byId[2] = pacer
+Objects._order = { 2 }
+-- Player stands 3 tiles below pacer at (40, 14)
+Player.reset(40, 14, "up")
+check(TrainerSight.check(dummyGame) == true, "Pacing trainer spots player 3 tiles away")
+check(Field.locked == true, "Field locked during exclamation and walk-up")
+
+-- Simulate frames for exclamation effect and approach walk track
+for _ = 1, 100 do
+  FieldEffects.step()
+  Objects.update(dummyGame)
+end
+
+check(pacer.cellX == 40 and pacer.cellY == 13, "Pacer walked 2 steps down to tile adjacent to player (40, 13)")
+check(pacer.movement == "STAY", "Pacer movement changed to STAY")
+check(pacer.movementType == 0x08, "Pacer movementType changed to MOVEMENT_TYPE_FACE_DOWN (0x08)")
+check(pacer.homeX == 40 and pacer.homeY == 13, "Pacer home coordinates updated to post-approach location (40, 13)")
+
+-- Verify that subsequent idle updates do not cause the trainer to resume pacing
+pacer.idleTimer = 0
+for _ = 1, 10 do
+  Objects.update(dummyGame)
+end
+check(pacer.moving == false and pacer.cellX == 40 and pacer.cellY == 13, "Trainer remains stationary and does not resume wander cycle")
+
+resetField()
+
 if failed > 0 then
   print(string.format("\n%d FAILURE(S)", failed))
   os.exit(1)

@@ -5,11 +5,10 @@
 -- 3. VS Seeker Battery (100 steps): Increments while the VS SEEKER is in the bag.
 -- 4. Overworld Poison (4 steps): 4-frame reddish screen flash, SE_FIELD_POISON, lethal faint at 0 HP.
 -- 5. Egg Cycles & Daycare (daycare stepCounter == 255): Decrements egg cycles -> EggHatch; +1 EXP per step in Daycare.
--- 6. Repel Counter: Decrements steps -> "Repel's effect wore off..." on expiration.
+-- 6. Repel Counter: Decrements steps -> Text_RepelWoreOff on expiration.
 
 local Pokemon = require("src.core.game3.pokemon")
-local ModRuntime = require("src.mods.Runtime")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local StepEvents = {}
 
@@ -73,55 +72,57 @@ local function party_is_wiped(party)
   return not hasAlive
 end
 
-local function trigger_white_out(session, game)
-  StepEvents.flush()
-  if session and session.onWhiteout then
-    session.onWhiteout()
-    return
-  end
-  local Runtime = require("src.core.game3.runtime")
-  local Map = require("src.core.game3.map")
-  local Fade = require("src.ui.game3.fade")
-
-  -- 1. Faint message
-  local Hud = require("src.ui.game3.hud")
-  local playerName = (session and (session.name or session.playerName)) or "PLAYER"
-  local msg = Strings("%s is out of usable\nPOKéMON!\n\n%s whited out!", playerName, playerName)
-
-  Hud.openMessage(game, msg, {
-    done = function()
-      -- 2. Fade to black and warp to last heal location (or Pallet Town player house)
-      Fade.begin(Fade.MODE.TO_BLACK, 0.5, function()
-        local healMap = (session and session.healMap) or "FR_PALLET_TOWN_PLAYERS_HOUSE_2F"
-        local healX = (session and session.healX) or 6
-        local healY = (session and session.healY) or 6
-        local healFacing = (session and session.healFacing) or "down"
-        if ModRuntime.wants("world.blacked_out") then
-          ModRuntime.emit("world.blacked_out", {
-            save = session,
-            healTarget = { map = healMap, x = healX, y = healY },
-          })
-        end
-
-        -- Heal all party Pokémon
-        if session and session.party then
-          for _, mon in ipairs(session.party) do
-            local maxHp = tonumber(mon.maxHp or mon.maxhp) or 1
-            mon.hp = maxHp
-            mon.status = nil
-            mon.statusNum = 0
-          end
-        end
-
-        Map.load(Runtime._mod, game, healMap, {
-          x = healX,
-          y = healY,
-          facing = healFacing,
-        })
-        Fade.begin(Fade.MODE.FROM_BLACK, 0.5)
-      end)
+-- data/scripts/white_out.inc:43
+local function field_white_out_event(session, game)
+  local ev = { type = "poison_white_out" }
+  ev.run = function(onDone)
+    if not party_is_wiped(session.party) then
+      onDone()
+      return
     end
-  })
+    local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
+    Field.lock()
+    local BattleBridge = require("src.core.game3.battle_bridge")
+    local save = game and game.save
+    local name = session.name or session.playerName or ""
+    local money = tonumber(session.money) or 0
+    local msg
+    if money >= 1 then
+      -- pokefirered/src/overworld.c:260
+      local loss = math.min(BattleBridge.calcMoneyLossFrlg(session, save), money)
+      -- data/scripts/white_out.inc:56
+      msg = RomText.box("Text_WhitedOutLostMoney", { playerName = name, stringVars = { tostring(loss) } })
+    else
+      -- data/scripts/white_out.inc:50
+      msg = RomText.box("Text_WhitedOut", { playerName = name })
+    end
+    ev.whiteOutText = msg
+    local Hud = require("src.ui.game3.hud")
+    Hud.openMessage(game, msg, {
+      done = function()
+        -- pokefirered/src/field_screen_effect.c:214
+        require("src.core.game3.audio").fadeOutBgm(4)
+        ev.phase = "music"
+      end,
+    })
+  end
+  ev.tick = function()
+    if ev.phase ~= "music" then return end
+    local Audio = require("src.core.game3.audio")
+    if Audio._fadeOut then return end
+    ev.phase = "fade"
+    local Fade = require("src.ui.game3.fade")
+    -- data/scripts/white_out.inc:63
+    Fade.begin(Fade.MODE.TO_BLACK, 1, function()
+      StepEvents.flush()
+      local BattleBridge = require("src.core.game3.battle_bridge")
+      -- pokefirered/src/overworld.c:253
+      BattleBridge.applyFrlgMoneyLoss(session, game and game.save)
+      local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
+      Field.respawnAtHeal()
+    end)
+  end
+  return ev
 end
 
 --- Evaluate step counters upon completing a grid step (Walk, Run, Bike, Surf).
@@ -215,26 +216,15 @@ function StepEvents.onStepTaken(session, game)
           name = fainted.name,
           mon = fainted.mon,
           run = function(onDone)
-            -- Play mon cry
-            pcall(function()
-              local Audio = require("src.core.game3.audio")
-              local sp = Pokemon.speciesOf(fainted.mon)
-              if Audio and Audio.playCry and sp then Audio.playCry(sp) end
-            end)
-
             local Hud = require("src.ui.game3.hud")
-            Hud.openMessage(game, Strings("%s fainted...", fainted.name), {
-              done = function()
-                if party_is_wiped(party) then
-                  trigger_white_out(session, game)
-                else
-                  onDone()
-                end
-              end
-            })
+            -- pokefirered/src/field_poison.c:64
+            Hud.openMessage(game, RomText.box("gText_PkmnFainted3", { stringVars = { fainted.name } }),
+              { done = onDone })
           end,
         })
       end
+      -- pokefirered/src/field_poison.c:76
+      if poisonFainted then push_event(field_white_out_event(session, game)) end
     end
   end
   session.vars[0x4040] = psnSteps
@@ -257,7 +247,7 @@ function StepEvents.onStepTaken(session, game)
           local Audio = require("src.core.game3.audio")
           local Hud = require("src.ui.game3.hud")
           -- pokefirered/data/scripts/day_care.inc:112 DayCare_Text_Huh
-          Hud.openMessage(game, Strings("Huh?"), {
+          Hud.openMessage(game, RomText.box("DayCare_Text_Huh"), {
             done = function()
               -- pokefirered/data/scripts/day_care.inc:113 special EggHatch
               EggHatch.start(hatching, {
@@ -308,9 +298,9 @@ function StepEvents.onRepelStep(session, game)
       push_event({
         type = "repel_wore_off",
         run = function(onDone)
-          se(67) -- SE_REPEL
           local Hud = require("src.ui.game3.hud")
-          Hud.openMessage(game, Strings("Repel's effect wore off..."), {
+          -- data/scripts/repel.inc:2
+          Hud.openMessage(game, RomText.box("Text_RepelWoreOff"), {
             done = onDone,
           })
         end,

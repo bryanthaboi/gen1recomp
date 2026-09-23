@@ -82,6 +82,7 @@ return function(game)
   Bag.Coins.set(session, 2750)
   result(Bag.Coins.get(session) == 2750, "the player has 2750 coins")
 
+  require("src.core.game3.scripting.flags").setFlag(require("src.core.game3.scripting.space").store, nil, 0x828, true) -- data/maps/PalletTown_ProfessorOaksLab/scripts.inc:1120
   if #(session.party or {}) == 0 then
     Party.giveMon(session, 4, 8)
   end

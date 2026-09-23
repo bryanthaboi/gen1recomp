@@ -1,6 +1,8 @@
 #!/usr/bin/env luajit
 -- Test: Game 3 Player Item PC starting Potion fidelity (pokefirered player_pc.c:100-101)
 
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.bundle() then print("[skip] item_pc_potion: " .. tostring(Game3Cache.reason)) return end
 local Storage = require("src.core.game3.storage")
 local Schema = require("src.core.game3.save_schema_firered")
 local Bag = require("src.core.game3.bag")

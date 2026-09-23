@@ -366,7 +366,7 @@ local options = OptionsMenu.new(optionsGame, {
 })
 -- The cart's seven rows, then the port's: CONTROLS, audio, PERFORMANCE,
 -- speed, display, SHADER FX + SHADER FX 2 (the second slot added alongside
-check("thirty-four rows", #OptionsMenu.ROWS, 34)
+check("thirty-five rows", #OptionsMenu.ROWS, 35)
 check("the cart's rows come first", OptionsMenu.ROWS[7].key, "frame")
 check("then the rebind screen", OptionsMenu.ROWS[8].id, "controls")
 check("then the port's audio group", OptionsMenu.ROWS[9].key, "musicVol")
@@ -1049,7 +1049,8 @@ check("and TILT follows VOID FILL", OptionsMenu.ROWS[zoomIndex + 2].label,
 -- moves the whole run instead of breaking six separate index assertions.
 do
   local run = { "TILT", "COLOR", "UI LETTERBOX", "SHADER FX",
-                "SHADER FX 2", "VIDEO MODE", "SCREEN POS", "TOUCH PAD" }
+                "SHADER FX 2", "VIDEO MODE", "FAITHFUL RATIO", "SCREEN POS",
+                "TOUCH PAD" }
   for at, want in ipairs(run) do
     check("display block order: " .. want,
       OptionsMenu.ROWS[tiltIndex + at - 1].label, want)

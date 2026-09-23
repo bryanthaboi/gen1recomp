@@ -326,13 +326,19 @@ function State.resetSentPokes(st)
   local sent = {}
   for _, id in ipairs({ 0, 2 }) do
     local b = State.battler(st, id)
-    if b and b.partyIndex then sent[#sent + 1] = b.partyIndex end
+    if b and b.partyIndex and not State.isAbsent(st, id) then sent[#sent + 1] = b.partyIndex end
   end
   for _, id in ipairs({ 1, 3 }) do
     local foe = State.battler(st, id)
     if foe then
       foe.participants = {}
       for _, pi in ipairs(sent) do foe.participants[pi] = true end
+    end
+  end
+  if st.enemy and not st.enemy.participants then
+    st.enemy.participants = {}
+    if st.player and st.player.partyIndex and not State.isAbsent(st, 0) then
+      st.enemy.participants[st.player.partyIndex] = true
     end
   end
 end
@@ -347,6 +353,9 @@ function State.opponentSwitchInResetSentPokes(st, foeBattler)
       foeBattler.participants[b.partyIndex] = true
     end
   end
+  if not st.double and st.player and not State.isAbsent(st, 0) and st.player.partyIndex then
+    foeBattler.participants[st.player.partyIndex] = true
+  end
 end
 
 -- pokefirered/src/battle_util.c:273
@@ -358,6 +367,9 @@ function State.updateSentPokes(st, battler)
   for _, id in ipairs({ 1, 3 }) do
     local foe = State.battler(st, id)
     if foe then State.trackParticipant(st, foe, battler.partyIndex) end
+  end
+  if not st.double and st.enemy then
+    State.trackParticipant(st, st.enemy, battler.partyIndex)
   end
 end
 

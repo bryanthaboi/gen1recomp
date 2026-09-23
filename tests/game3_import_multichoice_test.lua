@@ -40,6 +40,7 @@ if os.getenv("POKEPORT_IDENTITY") then
   print("[skip] fixture sections need a run without POKEPORT_IDENTITY: the identity cache is read first")
 else
   print("[test] 3. a missing cache degrades to synthetic labels")
+  Multichoice.LISTS = {}
   check(Multichoice.tryLoadCache() == false, "no cache means no lists")
   local synthetic = Multichoice.resolve(4242, 3)
   check(#synthetic == 3, "an unknown list keeps the count hint (" .. #synthetic .. ")")
@@ -57,6 +58,7 @@ else
   fixture:write('}\n')
   fixture:close()
   Extract.CACHE_ROOT = tmp
+  Multichoice.LISTS = {}
   check(Multichoice.tryLoadCache() == true, "the cache table loads")
   local zero = Multichoice.resolve(0, 2)
   check(zero[1] == "CACHE YES" and zero[2] == "CACHE NO",

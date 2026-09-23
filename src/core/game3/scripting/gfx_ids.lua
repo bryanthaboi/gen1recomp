@@ -46,46 +46,106 @@ GfxIds.TO_SPRITE = {
   [92] = "SPRITE_POKE_BALL",
 }
 
--- FRLG MOVEMENT_TYPE_* → host movement/range/radius (Gen1 strings or LOOK).
-GfxIds.MOVEMENT = {
-  [0x01] = { movement = "LOOK", range = "DOWN" },           -- LOOK_AROUND
-  [0x02] = { movement = "WALK", range = "ANY_DIR" },        -- WANDER_AROUND
-  [0x03] = { movement = "WALK", range = "UP_DOWN" },
-  [0x04] = { movement = "WALK", range = "UP_DOWN" },
-  [0x05] = { movement = "WALK", range = "LEFT_RIGHT" },
-  [0x06] = { movement = "WALK", range = "LEFT_RIGHT" },
-  [0x07] = { movement = "STAY", range = "UP" },
-  [0x08] = { movement = "STAY", range = "DOWN" },
-  [0x09] = { movement = "STAY", range = "LEFT" },
-  [0x0A] = { movement = "STAY", range = "RIGHT" },
-  [0x0D] = { movement = "LOOK", range = "DOWN" },           -- FACE_DOWN_AND_UP
-  [0x0E] = { movement = "LOOK", range = "LEFT" },           -- FACE_LEFT_AND_RIGHT
-  [0x17] = { movement = "LOOK", range = "DOWN" },           -- ROTATE_CCW
-  [0x18] = { movement = "LOOK", range = "DOWN" },           -- ROTATE_CW
-  [0x19] = { movement = "WALK", range = "UP_DOWN" },
-  [0x1A] = { movement = "WALK", range = "UP_DOWN" },
-  [0x1B] = { movement = "WALK", range = "LEFT_RIGHT" },
-  [0x1C] = { movement = "WALK", range = "LEFT_RIGHT" },
-  [0x4D] = { movement = "RAISE_HAND", range = "DOWN" },
-  [0x4E] = { movement = "RAISE_HAND", range = "DOWN" },
-  [0x4F] = { movement = "RAISE_HAND", range = "DOWN" },
+local S, N, W, E = "down", "up", "left", "right"
+
+-- src/event_object_movement.c:679
+GfxIds.DELAYS = {
+  MEDIUM = { 32, 64, 96, 128 },
+  LONG = { 32, 64, 128, 192 },
+  SHORT = { 32, 48, 64, 80 },
 }
+
+-- include/constants/event_object_movement.h:5
+-- src/event_object_movement.c:359
+-- src/data/object_events/movement_type_func_tables.h:183
+GfxIds.MOVEMENT = {
+  [0x01] = { movement = "LOOK", dirs = { S, N, W, E }, delays = "MEDIUM", follow = 0, face = S },
+  [0x02] = { movement = "WALK", range = "ANY_DIR", dirs = { S, N, W, E }, face = S },
+  [0x03] = { movement = "WALK", range = "UP_DOWN", dirs = { S, N }, face = N },
+  [0x04] = { movement = "WALK", range = "UP_DOWN", dirs = { S, N }, face = S },
+  [0x05] = { movement = "WALK", range = "LEFT_RIGHT", dirs = { W, E }, face = W },
+  [0x06] = { movement = "WALK", range = "LEFT_RIGHT", dirs = { W, E }, face = E },
+  [0x07] = { movement = "STAY", face = N },
+  [0x08] = { movement = "STAY", face = S },
+  [0x09] = { movement = "STAY", face = W },
+  [0x0A] = { movement = "STAY", face = E },
+  [0x0D] = { movement = "LOOK", dirs = { S, N }, delays = "MEDIUM", follow = 1, face = S },
+  [0x0E] = { movement = "LOOK", dirs = { W, E }, delays = "MEDIUM", follow = 2, face = W },
+  [0x0F] = { movement = "LOOK", dirs = { N, W }, delays = "SHORT", follow = 3, face = N },
+  [0x10] = { movement = "LOOK", dirs = { N, E }, delays = "SHORT", follow = 4, face = N },
+  [0x11] = { movement = "LOOK", dirs = { S, W }, delays = "SHORT", follow = 5, face = S },
+  [0x12] = { movement = "LOOK", dirs = { S, E }, delays = "SHORT", follow = 6, face = S },
+  [0x13] = { movement = "LOOK", dirs = { N, S, W, S }, delays = "SHORT", follow = 7, face = S },
+  [0x14] = { movement = "LOOK", dirs = { S, N, E, S }, delays = "SHORT", follow = 8, face = S },
+  [0x15] = { movement = "LOOK", dirs = { N, W, E, N }, delays = "SHORT", follow = 9, face = N },
+  [0x16] = { movement = "LOOK", dirs = { W, E, S, S }, delays = "SHORT", follow = 10, face = S },
+  [0x17] = { movement = "ROTATE", next = { [S] = E, [E] = N, [N] = W, [W] = S }, follow = 0, face = S },
+  [0x18] = { movement = "ROTATE", next = { [S] = W, [W] = N, [N] = E, [E] = S }, follow = 0, face = S },
+  [0x19] = { movement = "BACK_FORTH", face = N },
+  [0x1A] = { movement = "BACK_FORTH", face = S },
+  [0x1B] = { movement = "BACK_FORTH", face = W },
+  [0x1C] = { movement = "BACK_FORTH", face = E },
+  [0x4D] = { movement = "RAISE_HAND", face = S },
+  [0x4E] = { movement = "RAISE_HAND", face = S },
+  [0x4F] = { movement = "RAISE_HAND", face = S },
+  [0x50] = { movement = "WALK", range = "ANY_DIR", dirs = { S, N, W, E }, slow = true, face = S },
+}
+
+-- src/event_object_movement.c:3949
+local SEQUENCES = {
+  [0x1D] = { { N, E, W, S }, 2, "x" },
+  [0x1E] = { { E, W, S, N }, 1, "x" },
+  [0x1F] = { { S, N, E, W }, 1, "y" },
+  [0x20] = { { W, S, N, E }, 2, "y" },
+  [0x21] = { { N, W, E, S }, 2, "x" },
+  [0x22] = { { W, E, S, N }, 1, "x" },
+  [0x23] = { { S, N, W, E }, 1, "y" },
+  [0x24] = { { E, S, N, W }, 2, "y" },
+  [0x25] = { { W, N, S, E }, 2, "y" },
+  [0x26] = { { N, S, E, W }, 1, "y" },
+  [0x27] = { { E, W, N, S }, 1, "x" },
+  [0x28] = { { S, E, W, N }, 2, "x" },
+  [0x29] = { { E, N, S, W }, 2, "y" },
+  [0x2A] = { { N, S, W, E }, 1, "y" },
+  [0x2B] = { { W, E, N, S }, 1, "x" },
+  [0x2C] = { { S, W, E, N }, 2, "x" },
+  [0x2D] = { { N, W, S, E }, 2, "y" },
+  [0x2E] = { { S, E, N, W }, 2, "y" },
+  [0x2F] = { { W, S, E, N }, 2, "x" },
+  [0x30] = { { E, N, W, S }, 2, "x" },
+  [0x31] = { { N, E, S, W }, 2, "y" },
+  [0x32] = { { S, W, N, E }, 2, "y" },
+  [0x33] = { { W, N, E, S }, 2, "x" },
+  [0x34] = { { E, S, W, N }, 2, "x" },
+}
+for mt, s in pairs(SEQUENCES) do
+  GfxIds.MOVEMENT[mt] = {
+    movement = "SEQUENCE", route = s[1], skipFrom = s[2], skipAxis = s[3], face = s[1][1],
+  }
+end
 
 function GfxIds.spriteFor(graphicsId)
   return GfxIds.TO_SPRITE[tonumber(graphicsId) or -1] or "SPRITE_YOUNGSTER"
 end
 
+function GfxIds.initialFacing(movementType)
+  local spec = GfxIds.MOVEMENT[tonumber(movementType) or 0]
+  return spec and spec.face or S
+end
+
 function GfxIds.hostMovement(movementType, rangeX, rangeY)
   local mt = tonumber(movementType) or 0
-  local spec = GfxIds.MOVEMENT[mt] or { movement = "STAY", range = "DOWN" }
-  local out = {
-    movement = spec.movement,
-    range = spec.range,
-  }
-  if out.movement == "WALK" then
-    local rx = math.max(1, tonumber(rangeX) or 1)
-    local ry = math.max(1, tonumber(rangeY) or 1)
-    out.radius = { x = rx, y = ry }
+  local spec = GfxIds.MOVEMENT[mt] or { movement = "STAY", face = S }
+  local out = {}
+  for k, v in pairs(spec) do out[k] = v end
+  out.range = spec.range or spec.face:upper()
+  out.rangeX = tonumber(rangeX) or 0
+  out.rangeY = tonumber(rangeY) or 0
+  if out.movement == "WALK" or out.movement == "BACK_FORTH" or out.movement == "SEQUENCE" then
+    -- src/event_object_movement.c:1381
+    out.rangeX = math.max(1, out.rangeX)
+    out.rangeY = math.max(1, out.rangeY)
+    out.radius = { x = out.rangeX, y = out.rangeY }
   end
   return out
 end

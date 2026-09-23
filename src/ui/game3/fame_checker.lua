@@ -470,8 +470,7 @@ function FameCheckerUi.messageText()
     return pageList and pageList[1] or nil
   end
   if row.cancel then
-    -- pokefirered/src/strings.c:601 gFameCheckerText_FameCheckerWillBeClosed
-    return Strings("The FAME CHECKER will be closed.")
+    return require("src.core.game3.rom_text").plain("gFameCheckerText_FameCheckerWillBeClosed")
   end
   return nil
 end

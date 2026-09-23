@@ -24,6 +24,7 @@ local Bag = require("src.core.game3.bag")
 local ItemUse = require("src.core.game3.item_use")
 local PartyView = require("src.core.game3.battle.party_view")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local BerryPouch = {}
 
@@ -118,17 +119,7 @@ local function party_opts(row, mode, party)
       return
     end
     local mon = party[slot]
-    local canUse, err = BattleItems.canUseOn(st, row.id, slot, mon)
-    if not canUse then
-      se(5) -- pokefirered/src/party_menu.c:4490
-      PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
-        PartyMenu.mode = "use"
-      end)
-      return
-    end
-    PartyMenu.close()
-    BerryPouch.close()
-    BagMenu.battleUse(row.id, slot)
+    BagMenu.commitBattlePartyUse(st, row.id, slot, mon, function() BerryPouch.close() end)
   end
   return opts
 end
@@ -256,7 +247,7 @@ function BerryPouch.handleInput(input)
         if ItemUse.needsPartyTarget(row.id) then
           if #party == 0 then
             BerryPouch.mode = "message"
-            BerryPouch.messageText = Strings("There is no POKéMON.")
+            BerryPouch.messageText = RomText.plain("gText_ThereIsNoPokemon")
           else
             local PartyMenu = require("src.ui.game3.party_menu")
             PartyMenu.show(party, BerryPouch._session and BerryPouch._session.moveOverlay,
@@ -269,7 +260,7 @@ function BerryPouch.handleInput(input)
       elseif act == "GIVE" then
         if #party == 0 then
           BerryPouch.mode = "message"
-          BerryPouch.messageText = Strings("There is no POKéMON.")
+          BerryPouch.messageText = RomText.plain("gText_ThereIsNoPokemon")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
           PartyMenu.show(party, BerryPouch._session and BerryPouch._session.moveOverlay, {
@@ -402,7 +393,7 @@ function BerryPouch.draw()
 
   -- 5. Description Box (WIN 1: tilemapLeft=5, tilemapTop=16, width=25, height=4 -> screen (40, 128, 200, 32))
   if BerryPouch.cursor == total then
-    local closeDesc = Strings("The BERRY POUCH will be\nput away.")
+    local closeDesc = RomText.plain("gText_TheBerryPouchWillBePutAway")
     FrlgFont.draw(closeDesc, 40, 130, { colors = FrlgFont.COLOR.LIGHT, linePitch = 14 })
   elseif sel then
     local desc = sel.description or ItemsData.description(sel.id) or ""

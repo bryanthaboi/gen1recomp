@@ -106,6 +106,12 @@ return function(game)
     for _ = 1, 30 do
       U.hold(game, dir, 1)
       if Player.moving then break end
+      if Player.boulderPush then
+        for _ = 1, 40 do
+          if not Player.boulderPush then break end
+          U.hold(game, dir, 1)
+        end
+      end
     end
     for _ = 1, 48 do
       if not Player.moving then break end

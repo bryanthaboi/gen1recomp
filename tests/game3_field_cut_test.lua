@@ -151,7 +151,7 @@ print("[test] 4. executing it opens the door")
 standAt(RV.x, RV.y, "up")
 Field.executeFieldMove(FieldMoves.fromMenu("CUT", ctx))
 check(Field.locked == true, "the field locks for the animation")
-for _ = 1, 40 do FieldEffects.step() end
+for _ = 1, 200 do FieldEffects.step() end
 check(Field.locked == false, "the field unlocks when the animation ends")
 local override = Field.metatileOverrideAt(RV.map, RV.doorX, RV.doorY)
 check(override ~= nil and override.metatile == RV.doorOpen, "(24,24) became the open door")

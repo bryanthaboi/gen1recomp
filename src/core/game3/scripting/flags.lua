@@ -67,13 +67,7 @@ function Flags.setTrainerDefeated(store, session, trainerId, on)
 end
 
 -- pret EventScript_ResetAllMapFlags (derived from event_scripts.s).
-Flags.NEW_GAME_HIDE_FLAGS = FlagsTable.NEW_GAME_HIDE_FLAGS or {
-  43, 44, 51, 146, 53, 54, 55, 60, 61, 161, 63,
-  66, 67, 68, 69, 70, 71, 76, 77,
-  79, 90, 163, 164, 98, 107, 162,
-  140, 108, 109, 110, 111, 117, 116, 123, 124, 125, 118, 145, 151, 144, 148,
-  149, 150, 153, 165, 166, 167, 168, 169, 170, 171, 172, 157, 158, 159, 160, 174,
-}
+Flags.NEW_GAME_HIDE_FLAGS = FlagsTable.NEW_GAME_HIDE_FLAGS
 
 Flags.NEW_GAME_RESET_VARS = FlagsTable.NEW_GAME_RESET_VARS or {}
 
@@ -192,60 +186,10 @@ function Flags.ensurePalletOakHidden(store)
   end
 end
 
---- Fix Seafoam Islands boulder and current flags for saves created before seeding.
-function Flags.repairSeafoamFlags(store)
-  if not store then return end
-
-  -- B4F boulders and current
-  local b3f_boulder3_dropped = Flags.getFlag(store, nil, 0x48) -- FLAG_HIDE_SEAFOAM_B3F_BOULDER_3 (B3F obj 6 pushed)
-  local b3f_boulder5_dropped = Flags.getFlag(store, nil, 0x4A) -- FLAG_HIDE_SEAFOAM_B3F_BOULDER_5 (B3F obj 3 pushed)
-
-  if not b3f_boulder3_dropped and not b3f_boulder5_dropped then
-    -- Neither boulder was pushed into hole from B3F
-    Flags.setFlag(store, nil, 0x4C, true) -- FLAG_HIDE_SEAFOAM_B4F_BOULDER_1
-    Flags.setFlag(store, nil, 0x4D, true) -- FLAG_HIDE_SEAFOAM_B4F_BOULDER_2
-    Flags.setFlag(store, nil, 0x2D3, false) -- FLAG_STOPPED_SEAFOAM_B4F_CURRENT
-  elseif b3f_boulder3_dropped and not b3f_boulder5_dropped then
-    Flags.setFlag(store, nil, 0x4C, false)
-    Flags.setFlag(store, nil, 0x4D, true)
-    Flags.setFlag(store, nil, 0x2D3, false)
-  elseif not b3f_boulder3_dropped and b3f_boulder5_dropped then
-    Flags.setFlag(store, nil, 0x4C, true)
-    Flags.setFlag(store, nil, 0x4D, false)
-    Flags.setFlag(store, nil, 0x2D3, false)
-  else
-    -- Both dropped
-    Flags.setFlag(store, nil, 0x4C, false)
-    Flags.setFlag(store, nil, 0x4D, false)
-    Flags.setFlag(store, nil, 0x2D3, true)
-  end
-
-  -- B1F..B3F boulders and current
-  local f1_boulder1_dropped = Flags.getFlag(store, nil, 0x40) -- FLAG_HIDE_SEAFOAM_1F_BOULDER_1
-  local f1_boulder2_dropped = Flags.getFlag(store, nil, 0x41) -- FLAG_HIDE_SEAFOAM_1F_BOULDER_2
-
-  if not f1_boulder1_dropped then
-    Flags.setFlag(store, nil, 0x42, true) -- B1F boulder 1
-    Flags.setFlag(store, nil, 0x44, true) -- B2F boulder 1
-    Flags.setFlag(store, nil, 0x46, true) -- B3F boulder 1
-  end
-
-  if not f1_boulder2_dropped then
-    Flags.setFlag(store, nil, 0x43, true) -- B1F boulder 2
-    Flags.setFlag(store, nil, 0x45, true) -- B2F boulder 2
-    Flags.setFlag(store, nil, 0x47, true) -- B3F boulder 2
-  end
-
-  if not f1_boulder1_dropped and not f1_boulder2_dropped then
-    Flags.setFlag(store, nil, 0x2D2, false) -- FLAG_STOPPED_SEAFOAM_B3F_CURRENT
-  end
-end
-
 --- Repair/normalize legacy saves that missed initial hide flags.
 function Flags.repairSaveState(store)
   if not store then return end
   Flags.ensurePalletOakHidden(store)
-  Flags.repairSeafoamFlags(store)
 
   -- Bill human in sea cottage: if helped flag (0x233) is false, human is hidden (0x033)
   if not Flags.getFlag(store, nil, 0x233) then

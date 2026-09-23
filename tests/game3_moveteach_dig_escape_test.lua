@@ -125,6 +125,11 @@ FieldEffects.startWarpSpin = function(_, cb) cb() end
 session.party = { mon }
 mon.hp, mon.status = 1, "PSN"
 Field.executeFieldMove({ action = "dig", warp = ESCAPE })
+local ShowMon = require("src.core.game3.field_move_show_mon")
+for _ = 1, 300 do
+  if not ShowMon.isActive() then break end
+  ShowMon.step()
+end
 FieldEffects.startWarpSpin = realSpin
 eq(session.map, TOWN, "executeFieldMove reached respawnAtHeal with payload.warp")
 eq(Player.cellX, ESCAPE.x, "and landed on the escape warp's column")

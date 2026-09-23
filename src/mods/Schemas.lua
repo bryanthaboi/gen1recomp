@@ -2320,7 +2320,6 @@ R.text = {
   example = 'mod.content.text:override("_PalletTownText1", "HELLO!")',
   gen3Value = f.union{ f.str, f.list(f.any) },
   gen3Write = G3.textWrite,
-  gen3Example = 'mod.content.text:override("Text_BootedUpPC", "HELLO!")',
 }
 
 -- Gen 2's data/generated/text.lua is VM script text keyed by bank:address;

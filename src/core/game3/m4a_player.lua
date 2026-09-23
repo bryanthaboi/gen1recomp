@@ -426,7 +426,7 @@ function Player.snapshotSlot(slot, at)
 end
 
 -- pokefirered/src/m4a.c:668
-function Player.stopAt(slot, snaps, at, abs)
+function Player.stopAt(slot, snaps, at, abs, pack, cache)
   if not slot then return abs end
   at = tonumber(at)
   local snap
@@ -453,10 +453,20 @@ function Player.stopAt(slot, snaps, at, abs)
       if snaps[i].at > at then table.remove(snaps, i) end
     end
     abs = at
+  elseif at and slot.songId and (abs == nil or at < abs) and (pack or slot.pack) and (cache or slot.cache) then
+    Player.start(pack or slot.pack, cache or slot.cache, slot, slot.songId, { forceSeq = true })
+    if snaps then
+      for i = #snaps, 1, -1 do table.remove(snaps, i) end
+    end
+    local left = at
+    local q = Player.mixQuantum()
+    while left > 0 do
+      local n = math.min(q, left)
+      Player.renderBuffered(slot, n, { raw = true })
+      left = left - n
+    end
+    abs = at
   end
-  -- pokefirered/src/m4a_1.s:1469
-  if slot.seq then slot.seq.voices = {} end
-  slot.voices = {}
   slot.hpfState = { l = 0, r = 0 }
   slot.reverbState = Mix.newReverb(slot.reverb or 0)
   return abs

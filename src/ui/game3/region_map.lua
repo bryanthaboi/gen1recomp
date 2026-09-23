@@ -309,7 +309,6 @@ local function get_map_image()
     "data/generated/gba/region_map/kanto_map.rgba",
     "region_map/kanto_map.png",
     "data/generated/gba/region_map/kanto_map.png",
-    "assets/generated/region_map/kanto_map.png",
   }
   local img = try_load_image(candidates, 240, 160)
   RegionMap._images["kanto_map"] = img or false
@@ -325,7 +324,6 @@ local function get_cursor_image()
     "data/generated/gba/region_map/cursor.rgba",
     "region_map/cursor.png",
     "data/generated/gba/region_map/cursor.png",
-    "pokefirered/graphics/region_map/cursor.png",
   }
   local img = try_load_image(candidates, 16, 16)
   RegionMap._images["cursor"] = img or false
@@ -341,7 +339,6 @@ local function get_dungeon_icon_image()
     "data/generated/gba/region_map/dungeon_icon.rgba",
     "region_map/dungeon_icon.png",
     "data/generated/gba/region_map/dungeon_icon.png",
-    "pokefirered/graphics/region_map/dungeon_icon.png",
   }
   local img = try_load_image(candidates, 8, 8)
   RegionMap._images["dungeon_icon"] = img or false
@@ -354,7 +351,6 @@ local function get_dungeon_icon_visited_image()
     return RegionMap._images["dungeon_icon_visited"] or nil
   end
   local img = try_load_image("data/generated/gba/region_map/dungeon_icon_visited.png")
-    or try_load_image("data/generated/gba/region_map/dungeon_icon_1.png")
   RegionMap._images["dungeon_icon_visited"] = img or false
   return img
 end
@@ -483,8 +479,6 @@ local function get_player_image(female)
     "data/generated/gba/region_map/" .. key .. ".rgba",
     "region_map/" .. key .. ".png",
     "data/generated/gba/region_map/" .. key .. ".png",
-    female and "pokefirered/graphics/region_map/player_icon_leaf.png"
-           or "pokefirered/graphics/region_map/player_icon_red.png",
   }
   local img = try_load_image(candidates, 16, 16)
   RegionMap._images[key] = img or false

@@ -100,6 +100,8 @@ return function(game)
       U.shot(game, DIR .. "/stitchfield_movement_02_player_running_off.png")
     end
     if not (Space.vm and Space.vm:isRunning()) then break end
+    -- data/maps/IndigoPlateau_Exterior/scripts.inc:77
+    if Flags.getVar(Space.store, Space.vm.ctx, VAR_MAP_SCENE_INDIGO_PLATEAU_EXTERIOR) == 0 then break end
     U.wait(1)
   end
 

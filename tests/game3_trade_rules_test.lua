@@ -45,6 +45,7 @@ local Cache = require("tests.game3_cache")
 local cacheRoot = Cache.mount("meta.json")
 if not cacheRoot then
   print("[skip] no current FireRed cache: " .. tostring(Cache.reason))
+  os.exit(0)
 end
 
 local TradeScene = require("src.core.game3.trade_scene")

@@ -69,6 +69,7 @@ local function run(game)
   end
 
   session.party = {}
+  require("src.core.game3.scripting.flags").setFlag(require("src.core.game3.scripting.space").store, nil, 0x828, true) -- data/maps/PalletTown_ProfessorOaksLab/scripts.inc:1120
   Party.giveMon(session, WURMPLE, 20)
   result(Pokemon.national(WURMPLE) == 265, "the cache maps species 290 to national 265")
 

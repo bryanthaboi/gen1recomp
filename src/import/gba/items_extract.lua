@@ -25,10 +25,6 @@ local POCKET_NAMES = {
   [5] = "BERRY_POUCH",
 }
 
-local STATUS_BERRIES = {
-  [133] = true, [134] = true, [135] = true, [136] = true, [137] = true, [141] = true
-}
-
 local function get_byte(rom, off)
   if rom.get then
     return rom:get(off)
@@ -99,18 +95,54 @@ local function escape_lua(s)
   return (tostring(s or ""):gsub("\\", "\\\\"):gsub("\"", "\\\""):gsub("\n", "\\n"))
 end
 
-local function determine_field_use(nid, pocket, battleUsage)
+local function popcount(v)
+  local n = 0
+  while v > 0 do
+    n = n + v % 2
+    v = math.floor(v / 2)
+  end
+  return n
+end
+
+-- src/data/pokemon/item_effects.h:338, src/pokemon.c:4202
+local function read_effect(rom, id)
+  if id < Versions.ITEM_EFFECT_FIRST or id > Versions.ITEM_EFFECT_LAST then return nil end
+  local ptr = get_u32(rom, Versions.ITEM_EFFECT_TABLE + (id - Versions.ITEM_EFFECT_FIRST) * 4)
+  if ptr < 0x08000000 or ptr >= 0x0A000000 then return nil end
+  local off = ptr - 0x08000000
+  local e4, e5 = get_byte(rom, off + 4), get_byte(rom, off + 5)
+  local len = 6 + popcount(e4 % 8) + ((math.floor(e4 / 8) % 4 ~= 0) and 1 or 0)
+    + popcount(e5 % 16) + popcount(math.floor(e5 / 32))
+  local out = {}
+  for i = 1, len do out[i] = get_byte(rom, off + i - 1) end
+  return out
+end
+
+-- src/item_use.c:409
+local function medicine_kind(effect)
+  if not effect then return "heal" end
+  local e3, e4, e5 = effect[4], effect[5], effect[6]
+  if math.floor(e4 / 64) % 2 == 1 then return "revive" end
+  if e4 % 4 ~= 0 or e5 % 16 ~= 0 then return "vitamin" end
+  if math.floor(e4 / 4) % 2 == 1 then return "heal" end
+  if e3 % 64 ~= 0 or effect[1] >= 0x80 then return "status" end
+  return "heal"
+end
+
+local function determine_field_use(pocket, battleUsage, fieldUseFunc, effect)
   if pocket == "KEY_ITEMS" then return "key" end
   if pocket == "TM_CASE" then return "tm" end
   if pocket == "POKE_BALLS" then return "battle" end
-  if pocket == "BERRY_POUCH" then
-    if STATUS_BERRIES[nid] then return "status" end
-    return "heal"
-  end
-  if nid >= 13 and nid <= 33 then return "heal" end
-  if nid == 34 then return "escape" end
-  if nid >= 35 and nid <= 37 then return "repel" end
-  if nid >= 44 and nid <= 48 then return "evo" end
+  local F = Versions.FIELD_USE_FUNCS
+  local fn = fieldUseFunc - 0x08000001
+  if fn == F.medicine then return medicine_kind(effect) end
+  if fn == F.ether or fn == F.pp_up then return "pp" end
+  if fn == F.rare_candy then return "level" end
+  if fn == F.evo_item then return "evo" end
+  if fn == F.sacred_ash then return "revive" end
+  if fn == F.repel then return "repel" end
+  if fn == F.escape_rope then return "escape" end
+  if fn == F.black_white_flute then return "black_white_flute" end
   if (battleUsage or 0) > 0 then return "battle" end
   return "none"
 end
@@ -176,13 +208,14 @@ function ItemsExtract.run(rom, cache, opts)
 
     local desc = decode_text(rom, descPtr, 256)
     local pocket = POCKET_NAMES[pocketId] or "ITEMS"
-    local fieldUse = determine_field_use(id, pocket, battleUsage)
+    local effect = read_effect(rom, id)
+    local fieldUse = determine_field_use(pocket, battleUsage, fieldUseFunc, effect)
 
     lines[#lines + 1] = string.format(
       '    [%d] = { name="%s", pocket="%s", fieldUse="%s", price=%d, ' ..
       'holdEffect=%d, holdEffectParam=%d, importance=%d, registrability=%d, ' ..
       'battleUsage=%d, secondaryId=%d, itemId=%d, itemType=%d, ' ..
-      'fieldUseFunc=%d, battleUseFunc=%d, description="%s" },',
+      'fieldUseFunc=%d, battleUseFunc=%d, effect=%s, description="%s" },',
       id,
       escape_lua(name ~= "" and name or "????????"),
       pocket,
@@ -198,6 +231,7 @@ function ItemsExtract.run(rom, cache, opts)
       itemType,
       fieldUseFunc,
       battleUseFunc,
+      effect and ("{" .. table.concat(effect, ",") .. "}") or "nil",
       escape_lua(desc)
     )
   end

@@ -6,24 +6,24 @@ local PokedexRating = {}
 local KANTO_DEX_COUNT = 151
 local SPECIES_MEW = 151
 
--- pokefirered/data/text/pokedex_rating.inc
+-- pokefirered/src/prof_pc.c:6-21
 local RATING_MESSAGES = {
-  LESS_THAN_10 = "You still have lots to do.\nGo into every patch of grass you\nsee and look for POKéMON!",
-  LESS_THAN_20 = "It looks as if you're getting on\nthe right track!\nI've given one of my AIDES a FLASH\nHM. Make sure you go get it!",
-  LESS_THAN_30 = "Your POKéDEX could use a bit more\nvolume still!\nTry to catch other species of\nPOKéMON!",
-  LESS_THAN_40 = "Good, it's apparent that you're\ntrying hard!\nI've given one of my AIDES an\nITEMFINDER. Be sure to collect it!",
-  LESS_THAN_50 = "Your POKéDEX is coming along quite\nwell!\nI've given one of my AIDES an\nAMULET COIN. Be sure to get it!",
-  LESS_THAN_60 = "Ah, you've finally topped 50\nspecies!\nI've given one of my AIDES an EXP.\nSHARE. Be sure to go get it!",
-  LESS_THAN_70 = "Hoho! This is turning into quite the\nrespectable POKéDEX!",
-  LESS_THAN_80 = "Very good!\nI think you'll collect even more\nPOKéMON by going fishing!",
-  LESS_THAN_90 = "Wonderful! Let me guess… You\nlike to collect things, don't you?",
-  LESS_THAN_100 = "I'm impressed!\nIt must have been difficult to do!",
-  LESS_THAN_110 = "You've finally hit 100 species!\nI can't believe how good you are!",
-  LESS_THAN_120 = "You even have the evolved forms\nof POKéMON! Super!",
-  LESS_THAN_130 = "Excellent! Trade with friends to\nget some more!",
-  LESS_THAN_140 = "Outstanding!\nYou've become a real pro at this!",
-  LESS_THAN_150 = "I have nothing left to say!\nYou're the POKéMON PROFESSOR now!",
-  COMPLETE = "Your POKéDEX is entirely complete!\nCongratulations!!",
+  LESS_THAN_10 = "PokedexRating_Text_LessThan10",
+  LESS_THAN_20 = "PokedexRating_Text_LessThan20",
+  LESS_THAN_30 = "PokedexRating_Text_LessThan30",
+  LESS_THAN_40 = "PokedexRating_Text_LessThan40",
+  LESS_THAN_50 = "PokedexRating_Text_LessThan50",
+  LESS_THAN_60 = "PokedexRating_Text_LessThan60",
+  LESS_THAN_70 = "PokedexRating_Text_LessThan70",
+  LESS_THAN_80 = "PokedexRating_Text_LessThan80",
+  LESS_THAN_90 = "PokedexRating_Text_LessThan90",
+  LESS_THAN_100 = "PokedexRating_Text_LessThan100",
+  LESS_THAN_110 = "PokedexRating_Text_LessThan110",
+  LESS_THAN_120 = "PokedexRating_Text_LessThan120",
+  LESS_THAN_130 = "PokedexRating_Text_LessThan130",
+  LESS_THAN_140 = "PokedexRating_Text_LessThan140",
+  LESS_THAN_150 = "PokedexRating_Text_LessThan150",
+  COMPLETE = "PokedexRating_Text_Complete",
 }
 PokedexRating.TEXT = RATING_MESSAGES
 
@@ -87,7 +87,8 @@ function PokedexRating.getProfOaksRatingMessage(session, ctx, adapters)
 
   local count = tonumber(flagsMod.getVar(scriptStore, ctx, 0x8004)) or 0
   local dex = dexOf(session, ctx)
-  local msg, isComplete = PokedexRating.getRatingMessage(count, dex)
+  local key, isComplete = PokedexRating.getRatingMessage(count, dex)
+  local msg = require("src.core.game3.rom_text").box(key, ctx)
 
   flagsMod.setVar(scriptStore, ctx, 0x800D, isComplete and 1 or 0)
 

@@ -143,29 +143,9 @@ Moves.BY_NUM = {
   [249] = "ROCK_SMASH", [250] = "WHIRLPOOL", [291] = "DIVE",
 }
 
-local function load_lua(rel)
-  local paths = { rel, "mods/Kanto-Reforged/" .. rel }
-  for _, p in ipairs(paths) do
-    local f = io.open(p, "rb")
-    if f then
-      local src = f:read("*a")
-      f:close()
-      local chunk = load(src, "@" .. rel, "t", {})
-      if chunk then
-        local ok, t = pcall(chunk)
-        if ok then return t end
-      end
-    end
-  end
-  return nil
-end
-
 function Moves.loadRomPack(cache)
   Moves._romLoaded = true
   local root = (Extract.CACHE_ROOT or "data/generated/gba") .. "/pokemon/battle_moves.lua"
-  if root:find("sevii", 1, true) then
-    root = "data/generated/gba/pokemon/battle_moves.lua"
-  end
   local pack
   if not cache or not cache.read then
     local okD, Dataset = pcall(require, "src.core.game3.dataset")
@@ -183,7 +163,6 @@ function Moves.loadRomPack(cache)
       end
     end
   end
-  if not pack then pack = load_lua(root) end
   if pack and pack.moves then
     Moves._rom = pack.moves
     Moves._runReloadHooks()

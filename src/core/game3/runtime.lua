@@ -75,6 +75,11 @@ end
 function Runtime.noteFieldFocus(screenOpen)
   local was = Runtime._menuFocus == true
   Runtime._menuFocus = screenOpen and true or false
+  if screenOpen and not was then
+    -- pokefirered/src/start_menu.c:453
+    local Lighting = package.loaded["src.core.game3.league_lighting"]
+    if Lighting then Lighting.stop() end
+  end
   if screenOpen or not was then return false end
   local Battle = package.loaded["src.core.game3.battle"]
   if Battle and Battle.isActive and Battle.isActive() then return false end

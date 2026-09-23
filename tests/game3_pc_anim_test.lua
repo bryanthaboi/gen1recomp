@@ -107,13 +107,12 @@ do
   local Vm = require("src.core.game3.scripting.vm")
   local Natives = require("src.core.game3.scripting.natives")
 
-  local script = Std.SCRIPTS.EventScript_PC
-  assert_eq(type(script), "table", "EventScript_PC exists in Std.SCRIPTS")
+  local Fixture = require("tests.fixture_data.game3_pc_scripts")
 
   local Adapters = require("src.core.game3.scripting.adapters")
   local vm = Vm.new({
-    scripts = Std.SCRIPTS,
-    text = Std.TEXT,
+    scripts = Fixture.SCRIPTS,
+    text = Fixture.TEXT,
     adapters = Adapters.stub({
       openPc = function(done)
         -- Simulate user closing PC immediately

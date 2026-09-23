@@ -1,5 +1,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 require("src.core.GameVersion").set("firered")
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.bundle() then print("[skip] hidden_item_persistence: " .. tostring(Game3Cache.reason)) return end
 local Field = require("src.core.game3.field")
 local Flags = require("src.core.game3.scripting.flags")
 local Space = require("src.core.game3.scripting.space")

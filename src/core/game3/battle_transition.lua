@@ -121,19 +121,36 @@ function BattleTransition.pickWild(opts)
   end
 end
 
+-- pokefirered/include/constants/trainers.h:270, :273
+local TRAINER_CLASS_ELITE_FOUR = 87
+local TRAINER_CLASS_CHAMPION = 90
+-- pokefirered/include/constants/opponents.h:416-419, :741-744 (first run, rematch)
+local ELITE_FOUR_TRANSITION = {
+  [410] = ID.LORELEI, [735] = ID.LORELEI,
+  [411] = ID.BRUNO, [736] = ID.BRUNO,
+  [412] = ID.AGATHA, [737] = ID.AGATHA,
+  [413] = ID.LANCE, [738] = ID.LANCE,
+}
+
+-- pokefirered/src/battle_setup.c:624 GetTrainerBattleTransition: the Elite Four
+-- and the champion are recognised by class id, never by the class's name.
 function BattleTransition.pickTrainer(opts)
   opts = opts or {}
   local tid = tonumber(opts.trainerId) or 0
-  local tClass = opts.trainerClass
+  -- A Trainer Tower or e-Reader foe carries a facility class, whose numbers
+  -- overlap the trainer classes (FACILITY_CLASS_LASS is 90, the champion's,
+  -- pokefirered/include/constants/trainers.h:381); pret never picks their
+  -- transition by class (battle_setup.c:660).
+  local tClass = not (opts.trainerTower or opts.eReader) and tonumber(opts.trainerClass) or nil
 
-  if tClass == "ELITE_FOUR" or tClass == 57 then
-    if tid == 412 or tid == 413 or opts.isLorelei then return ID.LORELEI end
-    if tid == 414 or tid == 415 or opts.isBruno then return ID.BRUNO end
-    if tid == 416 or tid == 417 or opts.isAgatha then return ID.AGATHA end
-    if tid == 418 or tid == 419 or opts.isLance then return ID.LANCE end
-    return ID.BLUE
+  if tClass == TRAINER_CLASS_ELITE_FOUR then
+    if opts.isLorelei then return ID.LORELEI end
+    if opts.isBruno then return ID.BRUNO end
+    if opts.isAgatha then return ID.AGATHA end
+    if opts.isLance then return ID.LANCE end
+    return ELITE_FOUR_TRANSITION[tid] or ID.BLUE
   end
-  if tClass == "CHAMPION" or tClass == "RIVAL" or tClass == 58 or opts.isRival or opts.isChampion then
+  if tClass == TRAINER_CLASS_CHAMPION or opts.isRival or opts.isChampion then
     return ID.BLUE
   end
   if opts.isLorelei then return ID.LORELEI end

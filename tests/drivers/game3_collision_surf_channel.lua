@@ -82,6 +82,11 @@ return function(game)
   end
 
   print("[driver] 1. the Seafoam B3F current channel")
+  local Flags = require("src.core.game3.scripting.flags")
+  -- data/maps/Route20/scripts.inc:17
+  Flags.setFlag(Space.store, nil, 0x46, true)
+  -- data/maps/SeafoamIslands_B2F/map.json:41
+  Flags.setFlag(Space.store, nil, 0x47, false)
   goTo(B3F, 23, 8, "right")
   print(string.format("[driver] on %s at (%d,%d) surfing=%s",
     tostring(Space.mapId), Player.cellX, Player.cellY, tostring(Player.surfing)))

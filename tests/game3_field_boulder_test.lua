@@ -100,6 +100,14 @@ local function standAt(x, y, facing)
   Player.facing = facing or "down"
 end
 
+-- pokefirered/src/event_object_movement.c:8959 UpdateWalkSlowerAnim
+local function pumpPush(frames)
+  for _ = 1, frames or 33 do
+    Objects.update(game)
+    Player.update(game, nil)
+  end
+end
+
 print("[test] 1. Victory Road 1F: the floor switch coord event is var-gated shut")
 local vrDef = enterMap(VR)
 check(vrDef ~= nil, VR .. " is in the cache")
@@ -147,7 +155,18 @@ if not boulder then finish() end
 Objects.setObjectXY(boulder.localId, 20, 15)
 standAt(20, 14, "down")
 local result = Player.tryMove("down", game, false)
-check(result == "step", "bumping the boulder southward pushes it (" .. tostring(result) .. ")")
+check(result == "push", "bumping the boulder southward pushes it (" .. tostring(result) .. ")")
+check(Player.cellX == 20 and Player.cellY == 14 and not Player.moving,
+  "the player walks in place instead of stepping")
+check(boulder.moving == true and boulder.stepFrames == 32,
+  "the boulder starts a 32-frame slide")
+check(Flags.getVar(Space.store, Space.vm.ctx, VAR_VR1F) ~= 100,
+  "the switch has not fired before the slide ends")
+pumpPush(31)
+check(boulder.moving == true and Player.boulderPush ~= nil,
+  "the push is still running on frame 31")
+pumpPush(2)
+check(Player.boulderPush == nil, "the push task finished")
 check(boulder.cellX == 20 and boulder.cellY == 16,
   string.format("the boulder landed on the switch (%d,%d)", boulder.cellX, boulder.cellY))
 pumpVm()
@@ -189,7 +208,11 @@ Flags.setFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1, true)
 Flags.setFlag(Space.store, nil, FieldMoves.SYS_FLAGS.USE_STRENGTH, true)
 standAt(6, 16, "down")
 local r2 = Player.tryMove("down", game, false)
-check(r2 == "step", "the boulder is pushed south into the hole (" .. tostring(r2) .. ")")
+check(r2 == "push", "the boulder is pushed south into the hole (" .. tostring(r2) .. ")")
+check(sfBoulder.visible ~= false and sfBoulder.moving == true,
+  "the boulder is still sliding toward the hole")
+pumpPush(33)
+check(Player.cellX == 6 and Player.cellY == 16, "the player never left (6,16)")
 check(sfBoulder.visible == false and sfBoulder.hidden == true,
   "the boulder is gone from the floor")
 check(Objects.at(6, 18) == nil, "nothing stands on the hole any more")

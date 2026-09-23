@@ -69,7 +69,7 @@ return function(game)
       if type(mon) == "table" then mon.hp = 0 end
     end
     BattleBridge._whiteoutHook()
-    U.wait(180)
+    U.wait(2)
     print(string.format("[driver] %s map=%s at (%s,%s) lastTalked=%s",
       label, tostring(Map.current), tostring(Player.cellX), tostring(Player.cellY),
       tostring(session.healHealerLocalId)))
@@ -77,6 +77,7 @@ return function(game)
     result(Map.currentDef() ~= nil, label .. ": the respawn map has a live def")
     result(Player.cellX == x and Player.cellY == y,
       label .. ": the player stands at (" .. x .. "," .. y .. ")")
+    U.clearWhiteoutRush(game)
     if shot then result(U.shot(game, DIR .. "/" .. shot), label .. ": screenshot") end
   end
 

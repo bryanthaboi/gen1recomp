@@ -23,6 +23,7 @@ package.loaded["src.core.game3.audio"] = {
   playSe = function() end,
   playCry = function() end,
 }
+package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
 
 local drawn = {}
 package.loaded["src.ui.game3.window"] = setmetatable({

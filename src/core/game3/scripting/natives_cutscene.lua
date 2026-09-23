@@ -140,23 +140,32 @@ Cutscene.HANDLERS = {
   end,
 
   -- pokefirered/src/credits.c:711, data/maps/IndigoPlateau_Exterior/scripts.inc:80
-  [Std.SPECIAL.DoCredits] = function()
+  [Std.SPECIAL.DoCredits] = function(ctx)
+    local ok, Credits = pcall(require, "src.ui.game3.credits")
+    if not (ok and ctx) then return false end
+    local okStart, started = pcall(Credits.start)
+    if okStart and started then
+      require("src.core.game3.scripting.natives").awaitState(ctx, function() return false end)
+    end
     return false
   end,
 
-  -- pokefirered/src/field_specials.c:90, diploma.c:100, data/maps/CeladonCity_Condominiums_3F/scripts.inc:34, engine/events/diploma.asm
-  [Std.SPECIAL.ShowDiploma] = function()
-    return false
-  end,
-
-  -- pokefirered/src/ss_anne.c:82, data/maps/SSAnne_Exterior/scripts.inc:21
-  [Std.SPECIAL.DoSSAnneDepartureCutscene] = function(ctx, adapters)
-    playSe(adapters, SE_SS_ANNE_HORN)
+  -- pokefirered/src/field_specials.c:90, src/diploma.c:100, data/maps/CeladonCity_Condominiums_3F/scripts.inc:34
+  [Std.SPECIAL.ShowDiploma] = function(ctx)
+    local ok, Diploma = pcall(require, "src.ui.game3.diploma")
+    if not (ok and ctx) then return false end
+    local done = false
+    local okShow, shown = pcall(Diploma.show, { onDone = function() done = true end })
+    if okShow and shown then
+      require("src.core.game3.scripting.natives").awaitState(ctx, function() return done end)
+    end
     return false
   end,
 
   -- pokefirered/src/field_specials.c:2133, data/scripts/pokemon_league.inc:63
   [Std.SPECIAL.DoPokemonLeagueLightingEffect] = function()
+    local Space = package.loaded["src.core.game3.scripting.space"]
+    pcall(require("src.core.game3.league_lighting").start, Space and Space.mapId)
     return false
   end,
 
@@ -203,6 +212,13 @@ Cutscene.HANDLERS = {
   -- pokefirered/src/script_menu.c:1184
   [Std.SPECIAL.CloseMuseumFossilPic] = function(ctx)
     if ctx then ctx.museumFossilPic = nil end
+    return false
+  end,
+  -- pokefirered/src/ss_anne.c:82 DoSSAnneDepartureCutscene
+  [Std.SPECIAL.DoSSAnneDepartureCutscene] = function(ctx, adapters)
+    local SSAnne = require("src.core.game3.ss_anne_cutscene")
+    local Natives = require("src.core.game3.scripting.natives")
+    Natives.awaitState(ctx, SSAnne.start(ctx, adapters))
     return false
   end,
 }

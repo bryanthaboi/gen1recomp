@@ -1740,14 +1740,10 @@ function P.AnimSpriteOnMonPos(s)
 end
 
 local function mon_pic(b)
-  local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
-  if not okP or not Pokemon then return nil end
   local sp = P.species(b)
   local entry
   local okU, Ui = pcall(require, "src.core.game3.battle.ui")
   if okU and Ui.battlerPic then entry = Ui.battlerPic(b, nil, sp) end
-  if not entry and b == "player" and Pokemon.backPic then entry = Pokemon.backPic(sp) end
-  if not entry and Pokemon.frontPic then entry = Pokemon.frontPic(sp) end
   return entry and entry.image
 end
 

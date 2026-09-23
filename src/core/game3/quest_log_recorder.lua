@@ -91,12 +91,14 @@ function R.battle(session,st)
     local outcome=hp>=math.floor(max/3)*2 and 'Handily' or (hp>=math.floor(max/3) and 'Tenaciously' or 'Somehow')
     local args={D0=loc,D1=st.trainerName or 'TRAINER',D2=enemy,D3=player,D4={text=outcome}}
     local key='TookOnTrainersMonWithMonAndWon'
-    local class=st.trainerClassName or ''
-    if class=='LEADER' then key='TookOnGymLeadersMonWithMonAndWon'
-    elseif class=='ELITE FOUR' then
+    -- pokefirered/src/quest_log_battle.c:25 switches on the class id, which a
+    -- mod renaming the class leaves alone (include/constants/trainers.h:267-273)
+    local class=tonumber(st.trainerClass)
+    if class==84 then key='TookOnGymLeadersMonWithMonAndWon'
+    elseif class==87 then
       key='TookOnEliteFoursMonWithMonAndWon'
       args={D0=st.trainerName,D1=enemy,D2=player,D3={text=outcome}}
-    elseif class=='CHAMPION' then
+    elseif class==90 then
       key='PlayerBattledChampionRival';args={D0=session.name,D1=st.trainerName}
     end
     R.event(session,key,args)

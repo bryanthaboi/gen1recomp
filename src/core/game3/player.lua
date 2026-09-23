@@ -153,6 +153,7 @@ function Player.reset(x, y, facing)
   Player.spinning = false
   Player.walkInPlace = false
   Player.walkInPlaceFast = false
+  Player.boulderPush = nil
   if not Player._logged then
     log(string.format("avatar ready @ %d,%d %s",
       Player.cellX, Player.cellY, Player.facing))
@@ -243,6 +244,16 @@ function Player.walkPhase()
   return (p >= math.floor(frames / 4) and p < mid + math.floor(frames / 4)) and 1 or 0
 end
 
+-- src/event_object_movement.c:5333
+function Player.runPose()
+  if not (Player.moving and Player.running) or Player.biking or Player.jumping
+      or Player.surfing or Player.animDisabled then
+    return nil
+  end
+  -- src/data/object_events/object_event_anims.h:601
+  return ((Player.animClock or 0) - 1) % 8 >= 5 and 1 or 0
+end
+
 function Player.drawFlip()
   return Player.stepFlip and true or false
 end
@@ -302,9 +313,10 @@ local function beginStep(tx, ty, run, ledge)
 end
 
 function Player.tryMove(dir, game, run)
-  if Player.moving then return nil end
+  if Player.moving or Player.boulderPush then return nil end
   if not DELTA[dir] then return nil end
 
+  local wasFacing = Player.facing
   if Player.facing ~= dir then
     Player.facing = dir
     if Player.turnArmed then
@@ -398,6 +410,17 @@ function Player.tryMove(dir, game, run)
     end
   end
 
+  -- pokefirered/src/field_control_avatar.c:262
+  local Field = package.loaded["src.core.game3.field"]
+  if Field and Field.tryWalkIntoSign then
+    -- pokefirered/src/field_control_avatar.c:260
+    if wasFacing ~= dir then
+      if Field.tryWalkIntoSign(game, dir, true) then return "sign_turn" end
+    elseif Field.tryWalkIntoSign(game, dir) then
+      return "sign"
+    end
+  end
+
   local ok, why = Collision.canEnter(game, tx, ty, {
     fromX = Player.cellX,
     fromY = Player.cellY,
@@ -415,30 +438,32 @@ function Player.tryMove(dir, game, run)
         local Objects = require("src.core.game3.objects")
         local obj = Objects.at(tx, ty)
         if obj and (obj.def and (obj.def.graphicsId == FieldMoves.GFX_IDS.PUSHABLE_BOULDER or obj.def.gfx == FieldMoves.GFX_IDS.PUSHABLE_BOULDER)) then
+          -- pokefirered/src/field_player_avatar.c:638
           local canPush, destBx, destBy = FieldMoves.canPushBoulder(obj, dir, function(bx, by)
-            return Collision.canEnter(game, bx, by, { fromX = tx, fromY = ty, dir = dir })
+            local beh = Collision.behavior(bx, by)
+            if Collision.isFallWarp(beh) then return true end
+            return Collision.canEnter(game, bx, by, { fromX = tx, fromY = ty, dir = dir }) == true
+              and not Collision.isNonAnimDoor(beh)
           end)
-          if canPush then
-            obj.cellX = destBx
-            obj.cellY = destBy
-            obj.px = destBx * CELL
-            obj.py = destBy * CELL
-            obj.targetX = destBx
-            obj.targetY = destBy
-            obj.moving = false
-            obj.facing = dir
-            if obj.def then obj.def.x = destBx; obj.def.y = destBy end
+          if canPush and not obj.moving then
+            -- pokefirered/src/field_player_avatar.c:1417 DoBoulderInit
+            Player.boulderPush = { obj = obj }
+            -- pokefirered/src/field_player_avatar.c:1425 DoBoulderDust
+            Player.facing = dir
+            Player.walkInPlace = true
+            Player.walkInPlaceFast = false
+            Player.animClock = 0
+            Objects.pushStep(obj, dir, WALK_FRAMES * 2)
+            local FieldEffects = require("src.core.game3.field_effects")
+            FieldEffects.startDust(tx, ty)
+            require("src.core.game3.audio").playSe(require("src.core.game3.se_ids").SE_M_STRENGTH)
             if ModRuntime.wants("world.boulder_moved") then
               local Map = package.loaded["src.core.game3.map"]
               ModRuntime.emit("world.boulder_moved", {
                 mapId = Map and Map.current, npcId = obj.localId, x = destBx, y = destBy,
               })
             end
-            beginStep(tx, ty, false, false)
-            -- pokefirered/src/field_player_avatar.c:1452
-            local Field = require("src.core.game3.field")
-            if Field.onBoulderMoved then Field.onBoulderMoved(game, obj, destBx, destBy) end
-            return "step"
+            return "push"
           end
         end
       end
@@ -457,6 +482,7 @@ function Player.tryMove(dir, game, run)
   local isDismount = Player.surfing and (not (Collision.isWater and Collision.isWater(tx, ty)))
   if isDismount then
     Player.dismounting = true
+    require("src.core.game3.audio").stopSurfMusic()
   else
     Player.dismounting = false
   end
@@ -551,6 +577,8 @@ function Player.forcedStep(dir, frames, opts)
     local tx, ty = Player.cellX + d[1], Player.cellY + d[2]
     Player.dismounting = Player.surfing
       and (not (Collision.isWater and Collision.isWater(tx, ty))) or false
+    -- pokefirered/src/field_player_avatar.c:1609
+    if Player.dismounting then require("src.core.game3.audio").stopSurfMusic() end
     beginStep(tx, ty, false, false)
   end
   if frames and not opts.ledgeX and not Player.dismounting then
@@ -611,8 +639,10 @@ function Player.startSurfing(game, onDone)
   return true
 end
 
-function Player.startFieldMove(duration)
+function Player.startFieldMove(duration, kind)
   Player.fieldMoveAnim = duration or 28
+  Player.fieldMoveTotal = Player.fieldMoveAnim
+  Player.fieldMoveKind = kind
 end
 
 local function finishStep(game)
@@ -704,9 +734,6 @@ local function finishStep(game)
       TrainerSight.check(game)
     end
   end
-
-  -- pokefirered/src/field_tasks.c:66
-  ForcedMovement.runStepCallback(game, Player.prevCellX, Player.prevCellY)
 
   -- pokefirered/src/field_player_avatar.c:136
   local Warp = package.loaded["src.core.game3.warp"]
@@ -822,6 +849,18 @@ end
 function Player.update(game, input)
   Player.tick(game)
   if Player.moving then return end
+  local push = Player.boulderPush
+  if push then
+    if Player.walkInPlace and Player.animClock >= WALK_FRAMES then
+      Player.walkInPlace = false
+    end
+    -- pokefirered/src/field_player_avatar.c:1445 DoBoulderFinish
+    if Player.walkInPlace or push.obj.moving then return end
+    Player.boulderPush = nil
+    local Field = require("src.core.game3.field")
+    Field.onBoulderMoved(game, push.obj, push.obj.cellX, push.obj.cellY)
+    return
+  end
   if Player.fieldMoveAnim and Player.fieldMoveAnim > 0 then return end
 
   local Field = package.loaded["src.core.game3.field"]

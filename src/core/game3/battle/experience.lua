@@ -250,7 +250,7 @@ function Experience.awardFoe(st, foeBattler, opts)
   local sentIn = {}
   if opts.partyIndices then
     for _, pi in ipairs(opts.partyIndices) do sentIn[pi] = true end
-  elseif st.double and foeBattler.participants then
+  elseif foeBattler.participants and next(foeBattler.participants) then
     -- pokefirered/src/battle_script_commands.c:3123
     for pi in pairs(foeBattler.participants) do sentIn[pi] = true end
   elseif st.player and st.player.mon and (tonumber(st.player.mon.hp) or 0) > 0 then

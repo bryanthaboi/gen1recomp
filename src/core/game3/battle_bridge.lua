@@ -91,9 +91,12 @@ function BattleBridge.calcMoneyLossFrlg(session, hostSave)
   local maxLv = 1
   local party = session and session.party
   if type(party) == "table" then
+    -- pokefirered/src/pokemon.c:6085
     for _, mon in ipairs(party) do
-      local lv = tonumber(mon and mon.level) or 1
-      if lv > maxLv then maxLv = lv end
+      if mon and not Pokemon.isEgg(mon) then
+        local lv = tonumber(mon.level) or 1
+        if lv > maxLv then maxLv = lv end
+      end
     end
   end
   local badges = count_badges(session, hostSave)
@@ -480,6 +483,9 @@ function BattleBridge.start(mod, game, foe, opts)
       playerLevel = playerLv,
       enemyLevel = foeLv,
       trainerId = startOpts.trainerId,
+      trainerClass = (not opts.wild) and foe and foe.trainerClass or nil,
+      trainerTower = startOpts.trainerTower,
+      eReader = startOpts.eReader,
       playerGender = startOpts.playerGender,
       transitionId = opts.transitionId,
     }

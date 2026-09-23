@@ -141,7 +141,7 @@ GameVersion.VERSIONS = {
     },
     manifest = "tools/rom_manifest_leafgreen.json",
     cachePrefix = "leafgreen/", saveSuffix = "_leafgreen",
-    generation = 3, engine = "game3", cartShape = "gba", cartShell = "#80bc28",
+    generation = 3, engine = "game3", cartShape = "gba", cartShell = "#26a24e",
     cartLabel = "assets/labels/leafgreen.png",
   },
 }

@@ -5,6 +5,7 @@ local Bag = require("src.core.game3.bag")
 local Pokemon = require("src.core.game3.pokemon")
 local ModRuntime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 local Capabilities = require("src.core.game3.capabilities")
 
 local ItemUse = {}
@@ -91,29 +92,25 @@ function ItemUse.healMon(session, mon, id)
   return true, restored
 end
 
+-- pokefirered/include/constants/item_effects.h:20
+local STATUS_BIT = {
+  PSN = 0x10, TOX = 0x10, BRN = 0x08, FRZ = 0x04, SLP = 0x20, PAR = 0x02,
+  [1] = 0x10, [2] = 0x10, [3] = 0x08, [4] = 0x04, [5] = 0x20, [6] = 0x02,
+}
+local CURED_TEXT_KIND = { [0x10] = "poison", [0x08] = "burn", [0x04] = "freeze", [0x20] = "sleep", [0x02] = "paralysis" }
+
+-- pokefirered/src/pokemon.c:4511
 function ItemUse.clearStatus(mon, id)
   if not mon then return false, nil end
   local st, sleep = mon_status(mon)
   if not st and sleep <= 0 then return false, nil end
-  local num = ItemsData.toNumericId(id) or tonumber(id)
-  local cured = "status"
-  -- Specific cures when known; FULL HEAL / powder clear all.
-  if num == 14 then -- ANTIDOTE
-    if st ~= "PSN" and st ~= "TOX" and st ~= 1 and st ~= 2 then return false, nil end
-    cured = "poison"
-  elseif num == 15 then -- BURN
-    if st ~= "BRN" and st ~= 3 then return false, nil end
-    cured = "burn"
-  elseif num == 16 then -- ICE / FREEZE
-    if st ~= "FRZ" and st ~= 4 then return false, nil end
-    cured = "freeze"
-  elseif num == 17 then -- AWAKENING
-    if st ~= "SLP" and sleep <= 0 and st ~= 5 then return false, nil end
-    cured = "sleep"
-  elseif num == 18 then -- PARLYZ
-    if st ~= "PAR" and st ~= 6 then return false, nil end
-    cured = "paralysis"
-  end
+  local info = ItemsData.info(id)
+  local e = info and info.effect
+  if type(e) ~= "table" then return false, nil end
+  local mask = bit.band(tonumber(e[4]) or 0, 0x3E)
+  local have = STATUS_BIT[st] or ((sleep > 0) and 0x20) or 0
+  if bit.band(mask, have) == 0 then return false, nil end
+  local cured = CURED_TEXT_KIND[mask] or "status"
   mon.status = nil
   mon.sleep = 0
   return true, cured
@@ -142,6 +139,20 @@ function ItemUse.reviveAll(party)
   return any
 end
 
+-- pokefirered/src/party_menu.c:1647
+local function bag_full_text(itemId)
+  local pocket = ItemsData.pocketOf(itemId)
+  local name
+  if pocket == "TM_CASE" then
+    name = ItemsData.displayName(ItemsData.ITEM_TM_CASE)
+  elseif pocket == "BERRY_POUCH" then
+    name = ItemsData.displayName(ItemsData.ITEM_BERRY_POUCH)
+  else
+    name = RomText.plain("gText_MenuBag")
+  end
+  return RomText.box("gText_BagFullCouldNotRemoveItem", { stringVars = { name } })
+end
+
 --- Give item to party mon as held item. Returns ok, reason, messageText.
 function ItemUse.giveToMon(session, bag, id, partySlot)
   local party = session and session.party
@@ -158,7 +169,7 @@ function ItemUse.giveToMon(session, bag, id, partySlot)
   if prev and prev ~= 0 and prev ~= "" and prev ~= "NONE" then
     -- Swap: return previous to bag if possible
     if not Bag.canAdd(bag, prev, 1) then
-      return false, "bag_full", Strings("The BAG is full.")
+      return false, "bag_full", bag_full_text(prev)
     end
   end
   Bag.remove(bag, id, 1)
@@ -192,7 +203,7 @@ function ItemUse.takeFromMon(session, bag, partySlot)
     return false, "none", Strings("%s isn't\nholding anything.", monName)
   end
   if not Bag.canAdd(bag, held, 1) then
-    return false, "bag_full", Strings("The BAG is full. The\nitem could not be removed.")
+    return false, "bag_full", bag_full_text(held)
   end
   mon.item = nil
   mon.heldItem = nil
@@ -318,6 +329,7 @@ function ItemUse.useBike(session)
     end)
   end
   Player.biking = not Player.biking
+  require("src.core.game3.audio").bikeMusic(Player.biking)
   local t
   if Player.biking then
     t = Strings("%s got on the\nBICYCLE.", tostring(session.name or "RED"))
@@ -491,6 +503,167 @@ function ItemUse.useVitamin(session, mon, itemId)
   return true, "vitamin", t
 end
 
+-- pokefirered/include/constants/item_effects.h:34
+local ITEM4_HEAL_PP_ALL, ITEM4_HEAL_PP_ONE, ITEM4_PP_UP = 0x08, 0x10, 0x20
+local ITEM5_PP_MAX = 0x10
+
+local function s8(v)
+  v = tonumber(v) or 0
+  if v >= 0x80 then return v - 0x100 end
+  return v
+end
+
+-- pokefirered/src/pokemon.c:4001
+local function pp_effect(id)
+  local info = ItemsData.info(id)
+  local e = info and info.effect
+  if type(e) ~= "table" then return nil end
+  local e4, e5 = tonumber(e[5]) or 0, tonumber(e[6]) or 0
+  local idx = 7
+  for b = 0, 2 do
+    if bit.band(e4, bit.lshift(1, b)) ~= 0 then idx = idx + 1 end
+  end
+  local r = {
+    up = bit.band(e4, ITEM4_PP_UP) ~= 0,
+    max = bit.band(e5, ITEM5_PP_MAX) ~= 0,
+  }
+  if bit.band(e4, ITEM4_HEAL_PP_ALL) ~= 0 then
+    r.heal = tonumber(e[idx]) or 0
+    r.one = bit.band(e4, ITEM4_HEAL_PP_ONE) ~= 0
+    idx = idx + 1
+  end
+  if not (r.up or r.max or r.heal) then return nil end
+  for b = 0, 3 do
+    if bit.band(e5, bit.lshift(1, b)) ~= 0 then idx = idx + 1 end
+  end
+  if bit.band(e5, 0xE0) ~= 0 then
+    r.friendship = {}
+    for k, b in ipairs({ 0x20, 0x40, 0x80 }) do
+      if bit.band(e5, b) ~= 0 then
+        r.friendship[k] = s8(e[idx])
+        idx = idx + 1
+      end
+    end
+  end
+  return r
+end
+
+local function has_move(mon, s)
+  local m = Pokemon.moveIdAt(mon, s)
+  return m ~= nil and m > 0
+end
+
+-- pokefirered/src/pokemon.c:3898
+local function pp_with_bonus(mon, s, n)
+  local base = tonumber(Pokemon.movePp(Pokemon.moveIdAt(mon, s))) or 0
+  return base + math.floor(base * 20 * n / 100)
+end
+
+local function pp_bonus(mon, s)
+  if type(mon.ppBonusesPacked) == "number" then
+    return bit.band(bit.rshift(mon.ppBonusesPacked, (s - 1) * 2), 3)
+  end
+  local m = tonumber(mon.maxPp and mon.maxPp[s])
+  if not m then return 0 end
+  local best = 0
+  for n = 0, 3 do
+    local v = pp_with_bonus(mon, s, n)
+    if v == m then return n end
+    if v <= m then best = n end
+  end
+  return best
+end
+
+-- pokefirered/src/pokemon.c:4202, :4344, :4463
+local function pp_plan(mon, id, moveSlot)
+  local e = pp_effect(id)
+  if not e or not mon then return nil, nil end
+  local out = {}
+  if e.up or e.max then
+    local s = tonumber(moveSlot)
+    if s and has_move(mon, s) then
+      local n = pp_bonus(mon, s)
+      local cur = pp_with_bonus(mon, s, n)
+      local nn
+      if e.up and n < 3 and cur > 4 then nn = n + 1 end
+      if e.max and n < 3 then nn = 3 end
+      if nn then
+        local newMax = pp_with_bonus(mon, s, nn)
+        out[#out + 1] = {
+          slot = s, bonus = nn, max = newMax,
+          pp = (tonumber(mon.pp and mon.pp[s]) or 0) + newMax - cur,
+        }
+      end
+    end
+  elseif e.heal then
+    for s = 1, 4 do
+      if (not e.one or s == tonumber(moveSlot)) and has_move(mon, s) then
+        local max = pp_with_bonus(mon, s, pp_bonus(mon, s))
+        local cur = tonumber(mon.pp and mon.pp[s]) or 0
+        if cur ~= max then
+          out[#out + 1] = { slot = s, pp = math.min(max, cur + e.heal) }
+        end
+      end
+    end
+  end
+  return out, e
+end
+
+-- pokefirered/src/party_menu.c:4591, :4709
+function ItemUse.ppItemNeedsMove(id)
+  local e = pp_effect(id)
+  return e ~= nil and (e.one or e.up or e.max) and true or false
+end
+
+function ItemUse.ppItemBoosts(id)
+  local e = pp_effect(id)
+  return e ~= nil and (e.up or e.max) and true or false
+end
+
+-- pokefirered/src/pokemon.c:4529
+function ItemUse.ppItemHasEffect(mon, id, moveSlot)
+  local plan = pp_plan(mon, id, moveSlot)
+  return plan ~= nil and #plan > 0
+end
+
+-- pokefirered/src/party_menu.c:4340
+function ItemUse.ppItemText(mon, id, moveSlot)
+  if ItemUse.ppItemBoosts(id) then
+    return Strings("%s's PP increased.", Pokemon.moveName(Pokemon.moveIdAt(mon, moveSlot)) or "")
+  end
+  return Strings("PP was restored.")
+end
+
+function ItemUse.applyPpItem(mon, id, moveSlot, battler, session)
+  local plan, e = pp_plan(mon, id, moveSlot)
+  if not plan or #plan == 0 then return false end
+  mon.pp = mon.pp or {}
+  for _, c in ipairs(plan) do
+    mon.pp[c.slot] = c.pp
+    if c.max then
+      mon.maxPp = mon.maxPp or {}
+      mon.maxPp[c.slot] = c.max
+      if type(mon.ppBonusesPacked) == "number" then
+        local shift = (c.slot - 1) * 2
+        mon.ppBonusesPacked = bit.bor(bit.band(mon.ppBonusesPacked, bit.bnot(bit.lshift(3, shift))),
+          bit.lshift(c.bonus, shift))
+      end
+    end
+    -- pokefirered/src/pokemon.c:4366
+    local bMon = battler and battler.mon
+    if bMon and bMon ~= mon and not battler.transformed
+        and (not battler.permanentSlots or battler.permanentSlots[c.slot]) then
+      bMon.pp = bMon.pp or {}
+      bMon.pp[c.slot] = c.pp
+    end
+  end
+  -- pokefirered/src/pokemon.c:3976
+  if e.friendship then
+    Pokemon.itemFriendship(mon, e.friendship, { mapSec = Pokemon.currentMapSec(session) })
+  end
+  return true
+end
+
 function ItemUse.useEvolutionStone(session, mon, itemId, bag)
   local Evolution = require("src.core.game3.evolution")
   local target = Evolution.itemTarget and Evolution.itemTarget(mon, itemId, session)
@@ -635,7 +808,7 @@ function ItemUse.canFish()
     return (Collision.isWater and Collision.isWater(fx, fy)) == true
   end
   return (Collision.isSurfable and Collision.isSurfable(beh)) == true
-    and (tonumber(Collision.cell(fx, fy)) or 0xff) == 0
+    and Collision.isWater(fx, fy) == true
 end
 
 -- pokefirered/src/item_use.c:286 FieldUseFunc_Rod
@@ -676,27 +849,35 @@ end
 
 -- pokefirered/src/item_use.c:582 FieldUseFunc_BlackWhiteFlute
 function ItemUse.useBlackWhiteFlute(session, num)
-  local name = ItemsData.displayName(num)
-  local player = tostring((session and session.name) or "RED")
-  play_se(SE_GLASS_FLUTE)
+  local ctx = {
+    playerName = tostring((session and (session.name or session.playerName)) or ""),
+    stringVars = { [2] = ItemsData.displayName(num) },
+  }
   local text
   if num == ITEM_WHITE_FLUTE then
     sys_flag(session, FLAG_SYS_WHITE_FLUTE_ACTIVE, true)
     sys_flag(session, FLAG_SYS_BLACK_FLUTE_ACTIVE, false)
-    -- pokefirered/src/strings.c:199 gText_UsedVar2WildLured
-    text = Strings("%s used the\n%s.\\pWild POKéMON will be lured.", player, name)
+    -- pokefirered/src/item_use.c:590
+    text = RomText.box("gText_UsedVar2WildLured", ctx)
   else
     sys_flag(session, FLAG_SYS_BLACK_FLUTE_ACTIVE, true)
     sys_flag(session, FLAG_SYS_WHITE_FLUTE_ACTIVE, false)
-    -- pokefirered/src/strings.c:200 gText_UsedVar2WildRepelled
-    text = Strings("%s used the\n%s.\\pWild POKéMON will be repelled.", player, name)
+    -- pokefirered/src/item_use.c:599
+    text = RomText.box("gText_UsedVar2WildRepelled", ctx)
   end
-  return true, "flute", text
+  return true, "black_white_flute", text
+end
+
+-- pokefirered/src/item_use.c:605 Task_UsedBlackWhiteFlute
+ItemUse.BLACK_WHITE_FLUTE_DELAY = 8
+
+function ItemUse.playBlackWhiteFlute()
+  play_se(SE_GLASS_FLUTE)
 end
 
 --- Try field use. partySlot optional for heal/status/revive/tm/give.
 -- Returns ok, reason, messageText
-local function useField(session, bag, id, partySlot)
+local function useField(session, bag, id, partySlot, moveSlot)
   local info = ItemsData.info(id)
   if not info then return false, "unknown", Strings("Unknown item.") end
   local use = ItemsData.fieldUseKind(id)
@@ -811,7 +992,7 @@ local function useField(session, bag, id, partySlot)
     if num == ITEM_POKE_FLUTE then
       return ItemUse.usePokeFlute(session)
     end
-    if num == ITEM_WHITE_FLUTE or num == ITEM_BLACK_FLUTE then
+    if use == "black_white_flute" then
       return ItemUse.useBlackWhiteFlute(session, num)
     end
     -- pokefirered/src/item_use.c:253 FieldUseFunc_Bike
@@ -830,14 +1011,14 @@ local function useField(session, bag, id, partySlot)
       or use == "pp" or use == "level" or use == "evo" or use == "vitamin" then
     local party = session and session.party
     if not party or #party < 1 then
-      return false, "noparty", Strings("There is no POKéMON.")
+      return false, "noparty", RomText.box("gText_ThereIsNoPokemon")
     end
     if not partySlot then
       return false, "need_slot", Strings("Select a POKéMON.")
     end
     local mon = party[partySlot]
     if not mon then
-      return false, "noparty", Strings("There is no POKéMON.")
+      return false, "noparty", RomText.box("gText_ThereIsNoPokemon")
     end
     local ok = false
     local text = nil
@@ -878,7 +1059,13 @@ local function useField(session, bag, id, partySlot)
         text = Strings("%s recovered\nfrom illness!", monName)
       end
     elseif use == "pp" then
-      return false, "pp", Strings("It won't have any effect.")
+      if moveSlot == nil and ItemUse.ppItemNeedsMove(id) then
+        return false, "need_move", nil
+      end
+      moveSlot = moveSlot or 1
+      -- pokefirered/src/party_menu.c:4657
+      ok = ItemUse.applyPpItem(mon, id, moveSlot, nil, session)
+      if ok then text = ItemUse.ppItemText(mon, id, moveSlot) end
     elseif use == "vitamin" then
       ok, _, text = ItemUse.useVitamin(session, mon, id)
     else
@@ -906,15 +1093,15 @@ local function useField(session, bag, id, partySlot)
   return false, "none", Strings("OAK: This isn't the\ntime to use that!")
 end
 
-function ItemUse.useField(session,bag,id,partySlot)
+function ItemUse.useField(session,bag,id,partySlot,moveSlot)
   local ok,kind,text
   if ModRuntime.wantsHook("item.use") then
     local Runtime=package.loaded["src.core.game3.runtime"]
     ok,kind,text=ModRuntime.call("item.use",function(_,_,hid,hslot)
-      return useField(session,bag,hid,hslot)
+      return useField(session,bag,hid,hslot,moveSlot)
     end,Runtime and Runtime._game,nil,id,partySlot,bag)
   else
-    ok,kind,text=useField(session,bag,id,partySlot)
+    ok,kind,text=useField(session,bag,id,partySlot,moveSlot)
   end
   if ok and kind~="tm" and kind~="tm_case" and kind~="berry_pouch" and kind~="vs_seeker" then
     local Items=require("src.core.game3.items")

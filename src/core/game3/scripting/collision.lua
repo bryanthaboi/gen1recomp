@@ -90,7 +90,11 @@ local NUM_PRIMARY = 640
 function Collision.classify(mid, mapColl, behavior, kind)
   kind = kind or "route"
   local beh = behavior or 0
-  if WATER_BEH[beh] then return "WATER", nil end
+  if WATER_BEH[beh] then
+    -- pokefirered/src/event_object_movement.c:4835
+    if (mapColl or 0) ~= 0 then return "BLOCKED", nil end
+    return "WATER", nil
+  end
   if WALK_ON_WATER_BEH[beh] then
     if (mapColl or 0) ~= 0 then return "BLOCKED", nil end
     return "PATH", nil

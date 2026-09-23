@@ -260,21 +260,21 @@ function TradeSceneUi.draw()
   -- pokefirered/src/trade_scene.c:757 draws every mon by MON_DATA_SPECIES_OR_EGG
   -- pokefirered/src/trade_scene.c:1541
   if s.crossMonVisible then
-    draw_mon(Pokemon.frontPic(Pokemon.speciesOrEgg(s.offer)),
+    draw_mon(Pokemon.monFrontPic(s.offer),
       60, 192 + (s.monY2a or 0), 1)
-    draw_mon(Pokemon.frontPic(Pokemon.speciesOrEgg(s.received)),
+    draw_mon(Pokemon.monFrontPic(s.received),
       180, -32 + (s.monY2b or 0), 1)
   end
 
   -- pokefirered/src/trade_scene.c:772
   if s.playerVisible then
-    draw_mon(Pokemon.frontPic(Pokemon.speciesOrEgg(s.offer)),
+    draw_mon(Pokemon.monFrontPic(s.offer),
       120 + (s.monX2 or 0), 60, s.monScale or 1)
   end
 
   -- pokefirered/src/trade_scene.c:1716
   if s.partnerVisible then
-    draw_mon(Pokemon.frontPic(Pokemon.speciesOrEgg(s.received)),
+    draw_mon(Pokemon.monFrontPic(s.received),
       120, 60, 1)
   end
 

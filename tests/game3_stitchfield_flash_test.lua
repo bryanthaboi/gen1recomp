@@ -34,6 +34,15 @@ Field.locked = false
 FieldEffects._anims = {}
 local text = FieldMoves.TEXT.USED_FLASH:gsub("{STR_VAR_1}", "PIKACHU")
 Field.executeFieldMove({ action = "flash", text = text })
+local ShowMon = require("src.core.game3.field_move_show_mon")
+local function drainShowMon()
+  for _ = 1, 300 do
+    if not ShowMon.isActive() then break end
+    ShowMon.step()
+  end
+end
+check(ShowMon.isActive() == true, "the show-mon runs before the flash")
+drainShowMon()
 check(Message.isOpen() == true, "the message box is open on the frame the move starts")
 check(Field.locked == true, "and the field is locked for the animation")
 local anims = #FieldEffects._anims
@@ -57,6 +66,7 @@ print("[test] 3. a FLASH with no text still unlocks")
 Field.locked = false
 FieldEffects._anims = {}
 Field.executeFieldMove({ action = "flash" })
+drainShowMon()
 check(Message.isOpen() == false, "no message box for a textless FLASH")
 for _ = 1, 40 do FieldEffects.step() end
 check(Field.locked == false, "and the field unlocked")

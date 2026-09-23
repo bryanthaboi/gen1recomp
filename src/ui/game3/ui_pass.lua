@@ -62,6 +62,12 @@ function UiPass.drawUi()
     tryDraw(CoinsBox)
   end
 
+  -- pokefirered/src/berry_powder.c:113
+  local BerryPowderBox = require("src.ui.game3.berry_powder_box")
+  if BerryPowderBox.isVisible() then
+    tryDraw(BerryPowderBox)
+  end
+
   -- pokefirered/src/field_specials.c:1094
   if ElevatorWindow.isVisible and ElevatorWindow.isVisible() then
     tryDraw(ElevatorWindow)

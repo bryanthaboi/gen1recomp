@@ -113,6 +113,39 @@ function Dex.setCaught(dex, species)
   bit_set(dex.owned, sp, true)
 end
 
+local SPECIES_UNOWN = 201
+local SPECIES_SPINDA = 308
+
+local function record_personality(dex, species, personality)
+  local p = (tonumber(personality) or 0) % 4294967296
+  if species == SPECIES_UNOWN then dex.unownPersonality = p end
+  if species == SPECIES_SPINDA then dex.spindaPersonality = p end
+end
+
+-- pokefirered/src/pokemon.c:6233
+function Dex.handleSetPokedexFlag(dex, species, caught, personality)
+  if not dex then return end
+  local sp = resolve_species_id(species)
+  if not sp then return end
+  if caught then
+    if Dex.isCaught(dex, sp) then return end
+    Dex.setCaught(dex, sp)
+  else
+    if Dex.isSeen(dex, sp) then return end
+    Dex.setSeen(dex, sp)
+  end
+  record_personality(dex, sp, personality)
+end
+
+-- pokefirered/src/pokedex_screen.c:2197
+function Dex.defaultPersonality(dex, species)
+  species = tonumber(species)
+  if not dex then return 0 end
+  if species == SPECIES_SPINDA then return tonumber(dex.spindaPersonality) or 0 end
+  if species == SPECIES_UNOWN then return tonumber(dex.unownPersonality) or 0 end
+  return 0
+end
+
 function Dex.isSeen(dex, species)
   if not dex then return false end
   return bit_get(dex.seen, species)
@@ -143,7 +176,7 @@ function Dex.registerEncounter(dex, species, session)
 end
 
 --- Register a capture; returns whether it was already caught.
-function Dex.registerCapture(dex, species, session)
+function Dex.registerCapture(dex, species, session, personality)
   if not dex or not species then return false end
   local sp = tonumber(species) or 1
   if sp > (Dex.KANTO_MAX or 151) then
@@ -154,6 +187,8 @@ function Dex.registerCapture(dex, species, session)
   end
   local wasCaught = Dex.isCaught(dex, species)
   Dex.setCaught(dex, species)
+  -- pokefirered/src/battle_script_commands.c:9657
+  if not wasCaught then record_personality(dex, resolve_species_id(species), personality) end
   return wasCaught
 end
 

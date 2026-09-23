@@ -17,6 +17,7 @@ local ICEFALL_CAVE_ICE_COORDS = {
 
 -- pokefirered/include/constants/metatile_labels.h:188
 local METATILE_SEAFOAM_CRACKED_ICE = 0x35A
+local METATILE_SEAFOAM_ICE_HOLE = 0x35B
 
 -- pokefirered/include/constants/songs.h:290
 local MUS_CYCLING = 282
@@ -71,6 +72,7 @@ end
 
 Events.ICEFALL_CAVE_ICE_COORDS = ICEFALL_CAVE_ICE_COORDS
 Events.METATILE_SEAFOAM_CRACKED_ICE = METATILE_SEAFOAM_CRACKED_ICE
+Events.METATILE_SEAFOAM_ICE_HOLE = METATILE_SEAFOAM_ICE_HOLE
 
 Events.HANDLERS = {
   -- pokefirered/src/field_camera.c:93
@@ -122,6 +124,7 @@ Events.HANDLERS = {
       Player.biking = true
       Player.surfHopping = false
     end
+    require("src.core.game3.audio").bikeMusic(true, true)
     return false
   end,
   -- pokefirered/src/field_specials.c:1513
@@ -406,12 +409,10 @@ Events.HANDLERS = {
   -- pokefirered/src/script.c:245
   [Std.SPECIAL.DisableMsgBoxWalkaway] = function(ctx)
     if ctx then
-      ctx.msgBoxIsCancelable = false
       ctx.canWalkAway = false
     end
     local session = sessionOf(ctx)
     if session then
-      session.msgBoxIsCancelable = false
       session.canWalkAway = false
     end
     return false
@@ -465,7 +466,7 @@ Events.HANDLERS[Std.SPECIAL.SetPostgameFlagsUnusedSlot] =
 
 -- pokefirered/include/constants/global.h
 local DIR_BY_NAME = { down = 1, up = 2, left = 3, right = 4 }
-local WALKAWAY_ORDER = { "down", "up", "left", "right" }
+local WALKAWAY_ORDER = { "up", "down", "left", "right" }
 
 -- pokefirered/src/field_control_avatar.c:301, overworld.c:1402, data/event_scripts.s:1166
 function Events.pollWalkaway(vm, input)
@@ -510,33 +511,30 @@ function Events.pollWalkaway(vm, input)
     if cancelable == nil then cancelable = session.msgBoxIsCancelable end
     if canWalk == nil then canWalk = session.canWalkAway end
   end
-  if cancelable ~= true or canWalk ~= true then return end
+  if cancelable ~= true then return end
   if ctx.messageOpen ~= true then return end
 
   local dir
-  if input then
+  if input and input.isDown then
+    -- pokefirered/src/field_control_avatar.c:147
     for _, d in ipairs(WALKAWAY_ORDER) do
-      if input.wasPressed and input:wasPressed(d) then
+      if input:isDown(d) then
         dir = d
         break
       end
     end
-    if not dir then
-      for _, d in ipairs(WALKAWAY_ORDER) do
-        if input.isDown and input:isDown(d) then
-          dir = d
-          break
-        end
-      end
-    end
   end
-  if not dir then return end
   local facing = ctx.specialVars and tonumber(ctx.specialVars[VAR_FACING])
   if not facing then
     local P = package.loaded["src.core.game3.player"]
     facing = P and DIR_BY_NAME[P.facing] or nil
   end
-  if not facing or facing == DIR_BY_NAME[dir] then return end
+  local walked = dir and facing and facing ~= DIR_BY_NAME[dir]
+  -- pokefirered/src/field_control_avatar.c:311
+  if walked and canWalk ~= true then return end
+  -- pokefirered/src/field_control_avatar.c:324
+  local started = not walked and input and input.wasPressed and input:wasPressed("start")
+  if not walked and not started then return end
 
   -- data/event_scripts.s:1166
   if vm.adapters and vm.adapters.closeMessage then
@@ -549,6 +547,19 @@ function Events.pollWalkaway(vm, input)
   end
   clearWalkaway()
   vm:halt(true)
+  if started then
+    -- pokefirered/src/field_control_avatar.c:329
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    if Runtime and Runtime.defer then
+      Runtime.defer(function()
+        local Hud = package.loaded["src.ui.game3.hud"]
+        local Field = package.loaded["src.core.game3.field"]
+        if Hud and Hud.openStartMenu and Field then
+          Hud.openStartMenu(Field._game, Field._session)
+        end
+      end)
+    end
+  end
 end
 
 return Events

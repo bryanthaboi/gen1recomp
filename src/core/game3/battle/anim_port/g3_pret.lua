@@ -195,15 +195,11 @@ function P.monCenter(vm, side)
 end
 
 function P.monImage(vm, side)
-  local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
-  if not ok then return nil end
   local sp = P.species(vm, side)
   if not sp then return nil end
   local e
   local okU, Ui = pcall(require, "src.core.game3.battle.ui")
   if okU and Ui.battlerPic then e = Ui.battlerPic(side, nil, sp) end
-  if not e and side == "player" and Pokemon.backPic then e = Pokemon.backPic(sp) end
-  if not e and Pokemon.frontPic then e = Pokemon.frontPic(sp) end
   return e and e.image
 end
 

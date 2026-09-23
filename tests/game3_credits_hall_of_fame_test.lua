@@ -70,12 +70,18 @@ FrlgFont.draw = function(text, x, y, opts)
 end
 
 HallOfFame.start({
-  session = { name = "RED", trainerId = 12345, party = {
+  session = { name = "RED", trainerId = 12345, national_dex_unlocked = true, party = {
     { species = species, name = Pokemon.name(species), level = 50, otId = 12345 },
   } },
   onDone = function() end,
+  warp = false,
 })
 check(HallOfFame.isOpen(), "the Hall of Fame opened for the induction")
+for _ = 1, 400 do
+  if HallOfFame.phase() == "hold" then break end
+  HallOfFame.update(1 / 60)
+end
+check(HallOfFame.phase() == "hold", "the first mon slid in and its info printed")
 HallOfFame.draw()
 FrlgFont.draw = realDraw
 

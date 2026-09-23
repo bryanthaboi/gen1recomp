@@ -2,7 +2,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 require("tests.game3_cache").requireData("game3_surf_connections_test")
 require("src.core.GameVersion").set("firered")
 local Cache = require("tests.game3_cache")
-assert(Cache.mount("scripts/events.lua", { native = true }), Cache.reason)
+Cache.mountOrSkip("game3_surf_connections_test", "scripts/events.lua", { native = true })
 local Dataset = require("src.core.game3.dataset")
 local Collision = require("src.core.game3.collision")
 local Player = require("src.core.game3.player")

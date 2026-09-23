@@ -117,9 +117,9 @@ local function apply_cmd(msg)
     snaps = {}
   elseif msg.cmd == "stopAt" then
     bgm.epoch = msg.epoch
-    bgm.abs = Player.stopAt(bgm, snaps, msg.at, bgm.abs) or bgm.abs
+    bgm.abs = Player.stopAt(bgm, snaps, msg.at, bgm.abs, pack, cache) or bgm.abs
     Mix._hpfCapL, Mix._hpfCapR = 0, 0
-    bgm.muted = false
+    bgm.muted = true
   elseif msg.cmd == "pause" then
     bgm.muted = true
   elseif msg.cmd == "resume" then

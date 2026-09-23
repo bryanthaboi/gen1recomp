@@ -2,7 +2,7 @@
 
 local Player = require("src.core.game3.player")
 local ModRuntime = require("src.mods.Runtime")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local Field = {}
 
@@ -97,6 +97,9 @@ function Field.update(_dt)
   local Compat = package.loaded["src.mods.Gen3Compat"]
   if Compat and Compat.worldTick then Compat.worldTick(_dt) end
 
+  -- pokefirered/src/field_tasks.c:66
+  require("src.core.game3.forced_movement").runStepCallback(game)
+
   local Space = package.loaded["src.core.game3.scripting.space"]
   if Space and Space.vm then
     local ad = Space.vm.adapters
@@ -188,6 +191,8 @@ function Field.update(_dt)
   end
 
   if Message and Message.tick then Message.tick() end
+  Field.pollObtainSequence()
+  require("src.core.game3.itemfinder").update()
 end
 
 function Field.lock()
@@ -280,121 +285,207 @@ function Field.hiddenItemAt(game, x, y, elevation)
   return hidden_item_at(game or Field._game, x, y, elevation)
 end
 
-function Field.pickUpHiddenItem(game, hidden)
-  if not hidden then return false end
+-- pokefirered/include/constants/menu.h:107
+local STDSTRING_COINS = 23
+local POCKET_STDSTRING = {
+  ITEMS = 24, KEY_ITEMS = 25, POKE_BALLS = 26, TM_CASE = 27, BERRY_POUCH = 28,
+}
+
+local function std_string(id)
+  return require("src.core.game3.scripting.adapters").stdString(id)
+end
+
+local function player_name(session)
+  return (session and (session.playerName or session.name)) or "RED"
+end
+
+Field._obtainSeq = nil
+
+-- pokefirered/data/scripts/obtain_item.inc:170
+local function message_then_after_fanfare(first, second, delay)
+  local Message = require("src.ui.game3.message")
+  Message.showStay(first, { session = Field._session })
+  Field._obtainSeq = { second = second, delay = delay or 0 }
+end
+
+function Field.pollObtainSequence()
+  local seq = Field._obtainSeq
+  if not seq then return end
+  local Message = package.loaded["src.ui.game3.message"]
+  if not (Message and Message.isOpen()) then
+    Field._obtainSeq = nil
+    return
+  end
+  if not Message.isWaiting() then return end
+  local Audio = package.loaded["src.core.game3.audio"]
+  if Audio and Audio.isFanfareFinished and not Audio.isFanfareFinished() then return end
+  if seq.delay > 0 then
+    seq.delay = seq.delay - 1
+    return
+  end
+  Field._obtainSeq = nil
+  Message.show(seq.second, { session = Field._session, done = function() Message.close() end })
+end
+
+local function hidden_flag(hidden)
+  return hidden.flag or (hidden.hiddenItemId and (0x3E8 + hidden.hiddenItemId))
+end
+
+-- pokefirered/src/field_specials.c:158
+local function set_hidden_item_flag(game, hidden)
+  local session = Field._session
+  local store, Space = hidden_item_store(session)
+  local flag = hidden_flag(hidden)
+  if flag and store then
+    require("src.core.game3.scripting.flags").setFlag(store, nil, flag, true)
+    if Space then Space.persistSession(nil, game or Field._game) end
+  end
+end
+
+-- pokefirered/data/scripts/obtain_item.inc:197
+local function pick_up_hidden_coins(game, hidden, qty)
   local session = Field._session
   local Bag = require("src.core.game3.bag")
   local Flags = require("src.core.game3.scripting.flags")
+  local Corner = require("src.core.game3.scripting.natives_corner")
+  local Message = require("src.ui.game3.message")
+  local Audio = require("src.core.game3.audio")
+  local store = hidden_item_store(session)
+  local ctx = { playerName = player_name(session), stringVars = { tostring(qty), std_string(STDSTRING_COINS) } }
+  local found = RomText.box("Text_FoundXCoins", ctx)
+  local function refuse(key)
+    Message.show(found .. "\f" .. RomText.box(key, ctx), { session = session, done = function() Message.close() end })
+    return true
+  end
+  -- pokefirered/include/constants/flags.h:604
+  if not Flags.getFlag(store, nil, 0x243) then
+    return refuse("Text_NothingToPutThemIn")
+  end
+  if Corner.checkAddCoins(Bag.Coins.get(session), qty) == 0 then
+    return refuse("Text_CoinCaseIsFull")
+  end
+  Bag.Coins.add(session, qty)
+  set_hidden_item_flag(game, hidden)
+  Audio.playFanfare(257)
+  message_then_after_fanfare(found, RomText.box("Text_PutCoinsAwayInCoinCase", ctx))
+  return true
+end
+
+-- pokefirered/data/scripts/obtain_item.inc:158
+local function pick_up_hidden_item(game, hidden, qty, foundKey, delay)
+  local session = Field._session
+  local Bag = require("src.core.game3.bag")
   local Items = require("src.core.game3.items")
   local ItemsData = require("src.core.game3.items_data")
   local Message = require("src.ui.game3.message")
   local Audio = require("src.core.game3.audio")
-  local store, Space = hidden_item_store(session)
-
-  local flag = hidden.flag or (hidden.hiddenItemId and (0x3E8 + hidden.hiddenItemId))
-  if flag and Flags.getFlag(store, nil, flag) then
-    return false
-  end
-
   local itemId = hidden.item
-  local qty = hidden.quantity or 1
+  local ctx = { playerName = player_name(session), stringVars = { "", Items.displayName(itemId) } }
+  local found = RomText.box(foundKey, ctx)
   local bag = session and session.bag
-
   if not bag or not Bag.add(bag, itemId, qty) then
-    Message.show("Too bad!\nThe BAG is full…", {
-      done = function()
-        Message.close()
-      end,
-    })
+    -- pokefirered/data/scripts/obtain_item.inc:190
+    Message.show(found .. "\f" .. RomText.box("Text_TooBadBagFull", ctx),
+      { session = session, done = function() Message.close() end })
     return true
   end
-
-  if flag and store then
-    Flags.setFlag(store, nil, flag, true)
-    if Space then Space.persistSession(nil, game or Field._game) end
-  end
-
+  set_hidden_item_flag(game, hidden)
+  -- pokefirered/data/scripts/obtain_item.inc:27
   Audio.playFanfare(257)
-
-  local playerName = (session and (session.playerName or session.name)) or "RED"
-  local itemName = Items.displayName(itemId)
-  local pocket = ItemsData.pocketOf(itemId)
-  local pocketLabel = ItemsData.POCKET_LABEL[pocket] or "ITEMS POCKET"
-  local text = string.format("%s found one\n%s!\f%s put away the\n%s in the %s.", playerName, itemName, playerName, itemName, pocketLabel)
-
-  Message.show(text, {
-    done = function()
-      Message.close()
-    end,
-  })
-
-  if session then
-    local okQ, Q = pcall(require, "src.core.game3.quest_log_recorder")
-    if okQ and Q and Q.event then
-      Q.event(session, "UsedTheItem", { itemName, "" })
-    end
-  end
-
+  ctx.stringVars[3] = std_string(POCKET_STDSTRING[ItemsData.pocketOf(itemId)] or POCKET_STDSTRING.ITEMS)
+  message_then_after_fanfare(found, RomText.box("Text_PutItemAway", ctx), delay)
   return true
 end
 
+-- pokefirered/data/scripts/obtain_item.inc:148
+function Field.pickUpHiddenItem(game, hidden)
+  if not hidden then return false end
+  local session = Field._session
+  local Flags = require("src.core.game3.scripting.flags")
+  local store = hidden_item_store(session)
+  local flag = hidden_flag(hidden)
+  if flag and Flags.getFlag(store, nil, flag) then
+    return false
+  end
+  local qty = hidden.quantity or 1
+  if (tonumber(hidden.item) or 0) == 0 then
+    return pick_up_hidden_coins(game, hidden, qty)
+  end
+  return pick_up_hidden_item(game, hidden, qty, "Text_FoundOneItem")
+end
+
+-- pokefirered/data/scripts/itemfinder.inc:1
+function Field.digUpUnderfootItem(game, hidden)
+  if not hidden then return false end
+  local Flags = require("src.core.game3.scripting.flags")
+  local flag = hidden_flag(hidden)
+  if flag and Flags.getFlag(hidden_item_store(Field._session), nil, flag) then
+    return false
+  end
+  -- pokefirered/src/itemfinder.c:245
+  return pick_up_hidden_item(game, hidden, 1, "Text_DugUpItemFromGround", 60)
+end
+
+-- pokefirered/src/itemfinder.c:131
 function Field.useItemfinder(session, showOWMessage)
   session = session or Field._session
   local P = package.loaded["src.core.game3.player"]
   local px = (session and (session.playerX or session.x)) or (P and (P.cellX or P.x)) or 0
   local py = (session and (session.playerY or session.y)) or (P and (P.cellY or P.y)) or 0
-  local events = get_map_bg_events(Field._game, session and session.map)
+  local game = Field._game
+  local mapId = session and session.map
   local Flags = require("src.core.game3.scripting.flags")
-  local Audio = require("src.core.game3.audio")
   local Message = require("src.ui.game3.message")
+  local Itemfinder = require("src.core.game3.itemfinder")
+  local Map = require("src.core.game3.map")
   local store = hidden_item_store(session)
+  local layout = mapId and Map.ensureMidLayout(game, mapId)
+  local result = Itemfinder.scan({
+    px = px,
+    py = py,
+    events = get_map_bg_events(game, mapId),
+    flagSet = function(ev)
+      local flag = hidden_flag(ev)
+      return not flag or Flags.getFlag(store, nil, flag)
+    end,
+    width = layout and layout.width,
+    height = layout and layout.height,
+    neighbors = Map.neighbors,
+    eventsFor = function(id) return get_map_bg_events(game, id) end,
+  })
 
-  local found = nil
-  local underfoot = false
-  local minDistance = 999999
-
-  for _, ev in ipairs(events) do
-    if (ev.type == "hidden_item" or ev.kind == 7) then
-      local flag = ev.flag or (ev.hiddenItemId and (0x3E8 + ev.hiddenItemId))
-      if flag and not Flags.getFlag(store, nil, flag) then
-        local dx = ev.x - px
-        local dy = ev.y - py
-        local dist = math.abs(dx) + math.abs(dy)
-        if math.abs(dx) <= 7 and math.abs(dy) <= 7 then
-          if dx == 0 and dy == 0 then
-            found = ev
-            underfoot = true
-            minDistance = 0
-            break
-          elseif dist < minDistance then
-            found = ev
-            underfoot = false
-            minDistance = dist
-          end
-        end
-      end
-    end
-  end
-
-  if found then
-    Audio.playSe(65) -- SE_ITEMFINDER
-    local text
-    if underfoot then
-      text = "Oh! The ITEMFINDER's responding!\nThere's an item buried right beneath your feet!"
-    else
-      text = "Huh? The ITEMFINDER's responding!\nThere's an item buried around here!"
-    end
+  if not result then
+    local text = RomText.box("gText_NopeTheresNoResponse")
     if showOWMessage then
-      Message.show(text, { done = function() Message.close() end })
-    end
-    return true, "itemfinder", text, { x = found.x, y = found.y, underfoot = underfoot }
-  else
-    local text = "… … … …Nope!\nThere's no response."
-    if showOWMessage then
-      Message.show(text, { done = function() Message.close() end })
+      -- pokefirered/src/itemfinder.c:150
+      Message.show(text, { session = session, done = function() Message.close() end })
     end
     return false, "itemfinder", text, nil
   end
+  local key = result.underfoot and "gText_ItemfinderShakingWildly" or "gText_ItemfinderResponding"
+  local text = RomText.box(key)
+  if showOWMessage then
+    Field.lock()
+    Itemfinder.start({
+      result = result,
+      facing = P and P.facing,
+      onMessage = function(msgKey, done)
+        Message.show(RomText.box(msgKey), { session = session, done = done })
+      end,
+      onDone = function()
+        if result.underfoot then
+          -- pokefirered/src/itemfinder.c:499
+          Field.digUpUnderfootItem(game, result.item)
+        else
+          -- pokefirered/src/itemfinder.c:485
+          Message.close()
+        end
+        Field.unlock()
+      end,
+    })
+  end
+  local info = { x = px + result.itemX, y = py + result.itemY, underfoot = result.underfoot }
+  return true, "itemfinder", text, info
 end
 
 --- Step-onto coord events (Pallet Oak gate, etc.). Returns true if a script started.
@@ -572,6 +663,65 @@ end
 
 local inInteract = false
 
+-- pokefirered/src/field_control_avatar.c:787
+local MB_SIGNPOST = 0x84
+local MB_POKEMON_CENTER_SIGN = 0x87
+local MB_POKEMART_SIGN = 0x88
+local WALK_INTO_SIGN = {
+  [MB_POKEMON_CENTER_SIGN] = "EventScript_PokecenterSign",
+  [MB_POKEMART_SIGN] = "EventScript_PokemartSign",
+  [0x91] = "EventScript_Indigo_UltimateGoal",
+  [0x92] = "EventScript_Indigo_HighestAuthority",
+}
+
+-- pokefirered/src/field_control_avatar.c:745
+function Field.tryWalkIntoSign(game, dir, probe)
+  game = game or Field._game
+  if dir ~= "up" and dir ~= "down" then return false end
+  local input = game and game.input
+  if input and input.isDown and (input:isDown("left") or input:isDown("right")) then return false end
+  if not Field.running or Field.locked then return false end
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  if not (Space and Space.vm) then return false end
+  if Space.vm.isRunning and Space.vm:isRunning() then return false end
+  local P = require("src.core.game3.player")
+  local Collision = require("src.core.game3.collision")
+  local fx, fy = facing_cell(P.cellX, P.cellY, dir)
+  local behavior = Collision.behavior(fx, fy)
+  local key
+  if behavior == MB_POKEMON_CENTER_SIGN or behavior == MB_POKEMART_SIGN then
+    -- pokefirered/src/metatile_behavior.c:721
+    if dir == "up" then key = WALK_INTO_SIGN[behavior] end
+  elseif WALK_INTO_SIGN[behavior] then
+    key = WALK_INTO_SIGN[behavior]
+  elseif behavior == MB_SIGNPOST then
+    -- pokefirered/src/field_control_avatar.c:815
+    local layout = Collision._mapDef and Collision._mapDef.midLayout
+    local elevation = layout and layout:elevAt(P.cellX, P.cellY) or 0
+    if elevation == 0 then elevation = P.elevation or 0 end
+    for _, ev in ipairs(get_map_bg_events(game)) do
+      if ev.scriptKey and ev.x == fx and ev.y == fy
+          and (not ev.elevation or ev.elevation == 0 or ev.elevation == elevation) then
+        key = ev.scriptKey
+        break
+      end
+    end
+  end
+  if not key then return false end
+  if probe then return true end
+  local facingDir = (dir == "up") and 2 or 1
+  if not Space.startScript(key, nil, facingDir) then return false end
+  -- pokefirered/src/script.c:260
+  local ctx = Space.vm.ctx
+  if ctx then
+    ctx.walkAwayFromSignInhibitTimer = 6
+    ctx.msgBoxIsCancelable = true
+    ctx.canWalkAway = true
+  end
+  interacted(fx, fy, "sign", key)
+  return true
+end
+
 function Field.interact(game)
   game = game or Field._game
   if not Field.running then return false end
@@ -597,7 +747,7 @@ function Field.interact(game)
   if not Space.active or not Space.startScript then return false end
 
   local P = require("src.core.game3.player")
-  if P.moving then return false end
+  if P.moving or P.boulderPush then return false end
 
   local Objects = require("src.core.game3.objects")
   local Collision = require("src.core.game3.collision")
@@ -700,13 +850,9 @@ function Field.interact(game)
     end
   end
 
-  -- Hidden items: check facing tile first, then underfoot tile
+  -- pokefirered/src/field_control_avatar.c:498
   local hidden = hidden_item_at(game, fx, fy, elevation)
-  if not hidden then
-    local pElev = layout and layout:elevAt(P.cellX, P.cellY) or P.elevation or 0
-    hidden = hidden_item_at(game, P.cellX, P.cellY, pElev)
-  end
-  if hidden then
+  if hidden and not hidden.underfoot then
     if Field.pickUpHiddenItem(game, hidden) then
       interacted(hidden.x, hidden.y, "hidden_item", hidden)
       return true
@@ -781,56 +927,68 @@ function Field.executeFieldMove(payload)
     Q.event(Field._session,key,{require("src.core.game3.pokemon").displayMonName(payload.mon),
       Q.location(Field._game,Field._session)})
   end
+  -- pokefirered/src/fldeff_rocksmash.c:39
+  local function showMon(fn, opts)
+    opts = opts or {}
+    require("src.core.game3.field_move_show_mon").start(payload.mon, {
+      pose = opts.pose ~= false, noDuck = opts.noDuck,
+    }, fn)
+  end
   if act == "cut_tree" then
     Field.locked = true
-    P.startFieldMove(28)
-    if payload.se then Audio.playSe(payload.se) end
-    local target = payload.target
-    local tx = target and (target.cellX or target.x or (target.def and target.def.x)) or P.cellX
-    local ty = target and (target.cellY or target.y or (target.def and target.def.y)) or P.cellY
+    -- pokefirered/src/fldeff_cut.c:183
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      local target = payload.target
+      local tx = target and (target.cellX or target.x or (target.def and target.def.x)) or P.cellX
+      local ty = target and (target.cellY or target.y or (target.def and target.def.y)) or P.cellY
 
-    FieldEffects.startCutTree(target, tx, ty, function()
-      if target then
-        local lid = target.localId or (target.def and (target.def.localId or target.def.index))
-        if lid then Objects.removeObject(lid) end
-      end
-      Field.locked = false
-      if payload.text then
-        Message.show(payload.text, function() Message.close() end)
-      end
+      FieldEffects.startCutTree(target, tx, ty, function()
+        if target then
+          local lid = target.localId or (target.def and (target.def.localId or target.def.index))
+          if lid then Objects.removeObject(lid) end
+        end
+        Field.locked = false
+        if payload.text then
+          Message.show(payload.text, function() Message.close() end)
+        end
+      end)
     end)
   elseif act == "cut_grass" then
     Field.locked = true
-    P.startFieldMove(24)
-    if payload.se then Audio.playSe(payload.se) end
-    local Map = require("src.core.game3.map")
-    local def = Map.currentDef()
-    local layout = def and def.midLayout
-    if layout and layout.midAt and layout.setMidAt then
-      local Collision = require("src.core.game3.collision")
-      local FieldMoves = require("src.core.game3.field_moves")
-      FieldMoves.mowGrass3x3(P.cellX, P.cellY, function(x, y) return layout:midAt(x, y) end,
-        function(x, y, mid) layout:setMidAt(x, y, mid) end,
-        function(x, y) return Collision.isGrass(x, y) end)
-      local okFv, FieldView = pcall(require, "src.core.game3.field_view")
-      if okFv and FieldView then FieldView._nativeDirty = true end
-    end
-    FieldEffects.startCutGrass(P.cellX, P.cellY, function()
-      Field.locked = false
-      if payload.text then
-        Message.show(payload.text, function() Message.close() end)
+    -- pokefirered/src/fldeff_cut.c:169
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      local Map = require("src.core.game3.map")
+      local def = Map.currentDef()
+      local layout = def and def.midLayout
+      if layout and layout.midAt and layout.setMidAt then
+        local Collision = require("src.core.game3.collision")
+        local FieldMoves = require("src.core.game3.field_moves")
+        FieldMoves.mowGrass3x3(P.cellX, P.cellY, function(x, y) return layout:midAt(x, y) end,
+          function(x, y, mid) layout:setMidAt(x, y, mid) end,
+          function(x, y) return Collision.isGrass(x, y) end)
+        local okFv, FieldView = pcall(require, "src.core.game3.field_view")
+        if okFv and FieldView then FieldView._nativeDirty = true end
       end
+      FieldEffects.startCutGrass(P.cellX, P.cellY, function()
+        Field.locked = false
+        if payload.text then
+          Message.show(payload.text, function() Message.close() end)
+        end
+      end)
     end)
   elseif act == "dotted_hole" then
     -- pokefirered/src/fldeff_cut.c:194
     Field.locked = true
-    P.startFieldMove(24)
-    if payload.se then Audio.playSe(payload.se) end
-    FieldEffects.startCutGrass(P.cellX, P.cellY, function()
-      Field.openDottedHoleDoor()
-      if payload.text then
-        Message.show(payload.text, function() Message.close() end)
-      end
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      FieldEffects.startCutGrass(P.cellX, P.cellY, function()
+        Field.openDottedHoleDoor()
+        if payload.text then
+          Message.show(payload.text, function() Message.close() end)
+        end
+      end)
     end)
   elseif act == "fly" then
     -- pokefirered/src/region_map.c:3873 CB2_OpenFlyMap
@@ -839,7 +997,7 @@ function Field.executeFieldMove(payload)
     local shown = okRm and RegionMap and RegionMap.show and pcall(RegionMap.show, {
       session = Field._session,
       mode = "fly",
-      onPick = function(section) Field.flyTo(section) end,
+      onPick = function(section) Field.flyTo(section, payload.mon) end,
       onClose = function() Field.locked = false end,
     })
     if not shown then
@@ -849,63 +1007,71 @@ function Field.executeFieldMove(payload)
     end
   elseif act == "rock_smash" then
     Field.locked = true
-    P.startFieldMove(28)
-    if payload.se then Audio.playSe(payload.se) end
-    local target = payload.target
-    local tx = target and (target.cellX or target.x or (target.def and target.def.x)) or P.cellX
-    local ty = target and (target.cellY or target.y or (target.def and target.def.y)) or P.cellY
+    -- pokefirered/src/fldeff_rocksmash.c:123
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      local target = payload.target
+      local tx = target and (target.cellX or target.x or (target.def and target.def.x)) or P.cellX
+      local ty = target and (target.cellY or target.y or (target.def and target.def.y)) or P.cellY
 
-    FieldEffects.startRockSmash(target, tx, ty, function()
-      if target then
-        local lid = target.localId or (target.def and (target.def.localId or target.def.index))
-        if lid then Objects.removeObject(lid) end
-      end
-      Field.locked = false
-      -- pokefirered/data/scripts/field_moves.inc:88
-      if payload.text then
-        Message.show(payload.text, function()
-          Message.close()
+      FieldEffects.startRockSmash(target, tx, ty, function()
+        if target then
+          local lid = target.localId or (target.def and (target.def.localId or target.def.index))
+          if lid then Objects.removeObject(lid) end
+        end
+        Field.locked = false
+        -- pokefirered/data/scripts/field_moves.inc:88
+        if payload.text then
+          Message.show(payload.text, function()
+            Message.close()
+            Field.tryRockSmashEncounter()
+          end)
+        else
           Field.tryRockSmashEncounter()
-        end)
-      else
-        Field.tryRockSmashEncounter()
-      end
+        end
+      end)
     end)
   elseif act == "strength" then
     Field.locked = true
-    P.startFieldMove(24)
-    if payload.flag then
-      local Space = package.loaded["src.core.game3.scripting.space"]
-      local Flags = require("src.core.game3.scripting.flags")
-      if Space and Space.store then
-        Flags.setFlag(Space.store, nil, payload.flag, true)
+    -- pokefirered/src/fldeff_strength.c:34
+    showMon(function()
+      if payload.flag then
+        local Space = package.loaded["src.core.game3.scripting.space"]
+        local Flags = require("src.core.game3.scripting.flags")
+        if Space and Space.store then
+          Flags.setFlag(Space.store, nil, payload.flag, true)
+        end
+        if Field._session and Field._session.flags then
+          Field._session.flags[payload.flag] = true
+        end
       end
-      if Field._session and Field._session.flags then
-        Field._session.flags[payload.flag] = true
-      end
-    end
-    if payload.text then
-      Message.show(payload.text, function()
-        Message.close()
-        Field.locked = false
-      end)
-    else
-      Field.locked = false
-    end
-  elseif act == "surf" then
-    Field.locked = true
-    P.startSurfing(Field._game, function()
-      Field.locked = false
       if payload.text then
-        Message.show(payload.text, function() Message.close() end)
+        Message.show(payload.text, function()
+          Message.close()
+          Field.locked = false
+        end)
+      else
+        Field.locked = false
       end
     end)
+  elseif act == "surf" then
+    Field.locked = true
+    Audio.startSurfMusic()
+    -- pokefirered/src/field_effect.c:3020
+    showMon(function()
+      P.startSurfing(Field._game, function()
+        Field.locked = false
+        if payload.text then
+          Message.show(payload.text, function() Message.close() end)
+        end
+      end)
+    end, { noDuck = true })
   elseif act == "waterfall" then
     -- pokefirered/data/scripts/field_moves.inc:178
     Field.locked = true
     local function ride()
-      P.startFieldMove(28)
-      Field.rideWaterfall("up", 28)
+      -- pokefirered/src/field_effect.c:1627
+      showMon(function() Field.rideWaterfall("up", 0) end, { pose = false })
     end
     if payload.text then
       Message.show(payload.text, function()
@@ -917,47 +1083,54 @@ function Field.executeFieldMove(payload)
     end
   elseif act == "flash" then
     Field.locked = true
-    P.startFieldMove(24)
-    if payload.se then Audio.playSe(payload.se) end
-    if payload.flag then
-      local Space = package.loaded["src.core.game3.scripting.space"]
-      local Flags = require("src.core.game3.scripting.flags")
-      if Space and Space.store then
-        Flags.setFlag(Space.store, nil, payload.flag, true)
-      end
-    end
     -- pokefirered/src/fldeff_flash.c:177
-    if payload.text then
-      Message.show(payload.text, function() Message.close() end)
-    end
-    FieldEffects.startFlash(function()
-      Field.locked = false
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      if payload.flag then
+        local Space = package.loaded["src.core.game3.scripting.space"]
+        local Flags = require("src.core.game3.scripting.flags")
+        if Space and Space.store then
+          Flags.setFlag(Space.store, nil, payload.flag, true)
+        end
+      end
+      if payload.text then
+        Message.show(payload.text, function() Message.close() end)
+      end
+      FieldEffects.startFlash(function()
+        Field.locked = false
+      end)
     end)
   elseif act == "teleport" or act == "dig" then
     Field.locked = true
-    if payload.se then Audio.playSe(payload.se) end
-    FieldEffects.startWarpSpin(act, function()
-      Field.locked = false
-      -- pokefirered/src/field_effect.c:2126 SetWarpDestinationToEscapeWarp
-      Field.respawnAtHeal({ fieldMove = true, warp = payload.warp })
-    end)
-    if payload.text then
-      Message.show(payload.text, function() Message.close() end)
-    end
-  elseif act == "sweet_scent" then
-    Field.locked = true
-    P.startFieldMove(24)
-    if payload.se then Audio.playSe(payload.se) end
-    FieldEffects.startSweetScent(function()
-      Field.locked = false
-      local okE, Encounters = pcall(require, "src.core.game3.encounters")
-      if okE and Encounters and Encounters.tryBattle then
-        Encounters.tryBattle(Field._game, true)
+    -- pokefirered/src/fldeff_dig.c:32
+    -- pokefirered/src/fldeff_teleport.c:31
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      FieldEffects.startWarpSpin(act, function()
+        Field.locked = false
+        -- pokefirered/src/field_effect.c:2126
+        Field.respawnAtHeal({ fieldMove = true, warp = payload.warp })
+      end)
+      if payload.text then
+        Message.show(payload.text, function() Message.close() end)
       end
     end)
-    if payload.text then
-      Message.show(payload.text, function() Message.close() end)
-    end
+  elseif act == "sweet_scent" then
+    Field.locked = true
+    -- pokefirered/src/fldeff_sweetscent.c:44
+    showMon(function()
+      if payload.se then Audio.playSe(payload.se) end
+      FieldEffects.startSweetScent(function()
+        Field.locked = false
+        local okE, Encounters = pcall(require, "src.core.game3.encounters")
+        if okE and Encounters and Encounters.tryBattle then
+          Encounters.tryBattle(Field._game, true)
+        end
+      end)
+      if payload.text then
+        Message.show(payload.text, function() Message.close() end)
+      end
+    end)
   end
 end
 
@@ -1002,8 +1175,20 @@ function Field.startFishing(rod)
   Field.locked = true
   Player.fishing = true
   -- field_player_avatar.c:1667
-  Field._fishing = { rod = tonumber(rod) or 0, step = "wait", timer = 0, dots = 0, required = 0, rounds = 0 }
+  Field._fishing = { rod = tonumber(rod) or 0, step = "wait", timer = 0, dots = 0, required = 0, rounds = 0,
+    anim = "takeout", animT = 0 }
   return true
+end
+
+-- pokefirered/src/field_player_avatar.c:1954 AlignFishingAnimationFrames
+function Field.fishingPose()
+  local f = Field._fishing
+  if not (f and Player.fishing) then return nil end
+  local OwSprites = require("src.core.game3.ow_sprites")
+  local facing = Player.facing or "down"
+  local g = OwSprites.fishingFrame(facing, f.anim, f.animT)
+  local x2, y2 = OwSprites.fishingOffset(OwSprites.fishingAbsFrame(facing, g), facing)
+  return g, x2, y2
 end
 
 -- pokefirered/src/field_player_avatar.c:1936 Fishing16
@@ -1050,6 +1235,14 @@ function Field.updateFishing()
   local Message = require("src.ui.game3.message")
   local Rng = require("src.core.game3.rng")
   f.timer = f.timer + 1
+  f.animT = (f.animT or 0) + 1
+
+  if f.step == "result" and f.anim == "putaway" and Player.fishing then
+    local OwSprites = require("src.core.game3.ow_sprites")
+    local _, ended = OwSprites.fishingFrame(Player.facing, f.anim, f.animT)
+    -- pokefirered/src/field_player_avatar.c:1918 Fishing15
+    if ended then Player.fishing = false end
+  end
 
   if f.step == "wait" then
     if f.timer >= FISHING_WAIT_FRAMES then
@@ -1082,12 +1275,16 @@ function Field.updateFishing()
     local hasMons = okE and Encounters and Encounters.hasFishingMons
       and Encounters.hasFishingMons(fishingMapId()) or false
     if (not hasMons) or (Rng.Random() % 2 == 1) then
-      -- pokefirered/src/strings.c:1060 gText_NotEvenANibble
-      Message.show(Strings("Not even a nibble…"), function() fishingStop() end)
+      -- pokefirered/src/field_player_avatar.c:1890 Fishing12
+      f.anim, f.animT = "putaway", 0
+      -- pokefirered/src/field_player_avatar.c:1895
+      Message.show(RomText.box("gText_NotEvenANibble"), function() fishingStop() end)
     else
-      -- pokefirered/src/strings.c:1059 gText_PokemonOnHook
+      -- pokefirered/src/field_player_avatar.c:1791
+      f.anim, f.animT = "hooked", 0
+      -- pokefirered/src/field_player_avatar.c:1848
       local rod = f.rod
-      Message.show(Strings("A POKéMON's on the hook!"), function()
+      Message.show(RomText.box("gText_PokemonOnHook"), function()
         fishingStop()
         Field.tryFishingEncounter(rod)
       end)
@@ -1229,7 +1426,7 @@ function Field.flyDestination(section)
 end
 
 -- pokefirered/src/field_effect.c:1065 ReturnToFieldFromFlyMapSelect
-function Field.flyTo(section)
+function Field.flyTo(section, mon)
   local dest = Field.flyDestination(section)
   local Message = require("src.ui.game3.message")
   if not dest then
@@ -1257,8 +1454,11 @@ function Field.flyTo(section)
     end)
   end
   if love and love.graphics and FieldEffects.startFlyTakeoff then
-    Player.setVisible(false)
-    FieldEffects.startFlyTakeoff(land, nil)
+    -- pokefirered/src/field_effect.c:3241
+    require("src.core.game3.field_move_show_mon").start(mon, { pose = true }, function()
+      Player.setVisible(false)
+      FieldEffects.startFlyTakeoff(land, nil)
+    end)
   else
     land()
     Field._flyLanding = false
@@ -1401,7 +1601,13 @@ function Field.respawnAtHeal(opts)
   if not session then return end
   local HealLocations = require("src.core.game3.heal_locations")
   HealLocations.normalizeSession(session)
-  if not (opts and opts.fieldMove) then
+  local whiteOut = not (opts and opts.fieldMove)
+  if whiteOut then
+    -- pokefirered/src/overworld.c:1556
+    local Space = package.loaded["src.core.game3.scripting.space"]
+    if Space and Space.vm and Space.vm:isRunning() then Space.vm:halt(true) end
+    -- pokefirered/src/overworld.c:252
+    Field.resetEliteFour()
     -- pokefirered/src/overworld.c:1553 CB2_WhiteOut
     local okS, Safari = pcall(require, "src.core.game3.safari")
     if okS and Safari and Safari.reset then Safari.reset(session) end
@@ -1429,14 +1635,16 @@ function Field.respawnAtHeal(opts)
     hx = tonumber(warp.x) or hx
     hy = tonumber(warp.y) or hy
   end
+  -- pokefirered/src/overworld.c:1555
+  local facing = whiteOut and "up" or "down"
   Map.load(Field._mod, Field._game, mapId, {
     x = hx,
     y = hy,
-    facing = "down",
+    facing = facing,
     depth1Connections = true,
     heal = true,
   })
-  Player.reset(hx, hy, "down")
+  Player.reset(hx, hy, facing)
   Player.syncToHost(Field._game)
   -- pokefirered/src/heal_location.c:119 SetWhiteoutRespawnHealerNpcAsLastTalked
   local healerId = tonumber(session.healHealerLocalId)
@@ -1448,7 +1656,34 @@ function Field.respawnAtHeal(opts)
       Flags.setVar(Space.store, Space.vm and Space.vm.ctx or nil, Ctx.VAR_LAST_TALKED, healerId)
     end
   end
+  if whiteOut then
+    -- pokefirered/src/overworld.c:1558
+    local home = HealLocations.get(1)
+    require("src.ui.game3.whiteout_rush").start(Field._game, session, {
+      home = home and home.map == mapId,
+      healerLocalId = healerId,
+    })
+  end
   -- Map.load already locked; ON_FRAME / releaseall own unlock.
+end
+
+-- data/scripts/hall_of_fame.inc:24
+local CHAMPION_TRAINERS = { 438, 439, 440, 739, 740, 741 }
+
+function Field.resetEliteFour()
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  local store = Space and Space.store
+  if not store then return end
+  local Flags = require("src.core.game3.scripting.flags")
+  local ctx = Space.vm and Space.vm.ctx or nil
+  for _, name in ipairs({ "FLAG_DEFEATED_LORELEI", "FLAG_DEFEATED_BRUNO", "FLAG_DEFEATED_AGATHA",
+      "FLAG_DEFEATED_LANCE", "FLAG_DEFEATED_CHAMP" }) do
+    Flags.setFlag(store, ctx, Flags.IDS[name], false)
+  end
+  for _, trainerId in ipairs(CHAMPION_TRAINERS) do
+    Flags.setFlag(store, ctx, Flags.trainerFlagId(trainerId), false)
+  end
+  Flags.setVar(store, ctx, Flags.IDS.VAR_MAP_SCENE_POKEMON_LEAGUE, 0)
 end
 
 function Field.setHealPoint(mapId, x, y)

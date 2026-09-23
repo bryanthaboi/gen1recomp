@@ -18,46 +18,6 @@ Window.TEXT_OY = 0 -- pixel nudge inside a row (pret printers often +0/+1)
 Window.CURSOR_WIDTH = 8
 Window.OPTION_HEIGHT = 15 -- start menu / Menu_InitCursor pitch in pixels
 
-Window._cursorImg = nil
-Window._cursorTried = false
-
-local CURSOR_PATHS = {
-  "mods/Kanto-Reforged/sevii/gba/chrome/fonts/menu_cursor_right.png",
-  "sevii/gba/chrome/fonts/menu_cursor_right.png",
-}
-
-local function load_cursor_image()
-  if Window._cursorTried then return Window._cursorImg end
-  Window._cursorTried = true
-  local okA, Assets = pcall(require, "src.render.Assets")
-  for _, path in ipairs(CURSOR_PATHS) do
-    if okA and Assets and Assets.image then
-      local ok, img = pcall(Assets.image, path)
-      if ok and img then
-        if img.setFilter then img:setFilter("nearest", "nearest") end
-        Window._cursorImg = img
-        return img
-      end
-    end
-    local ok, img = pcall(love.graphics.newImage, path)
-    if ok and img then
-      if img.setFilter then img:setFilter("nearest", "nearest") end
-      Window._cursorImg = img
-      return img
-    end
-  end
-  return nil
-end
-
---- ROM-baked selector pip (latin glyph 0xEF from FireRed font). Returns true if drawn.
-local function draw_rom_cursor(px, py)
-  local img = load_cursor_image()
-  if not img then return false end
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(img, px, py)
-  return true
-end
-
 --- Build a template table (pret field names + short aliases).
 function Window.template(left, top, width, height, opts)
   opts = opts or {}
@@ -144,21 +104,17 @@ function Window.cursor(tx, ty, opts)
   opts = opts or {}
   local px = tx * T + (opts.ox or 0)
   local py = ty * T + (opts.oy ~= nil and opts.oy or Window.TEXT_OY)
-  if not draw_rom_cursor(px, py) then
-    FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, px, py, {
-      colors = opts.colors or FrlgFont.COLOR.NORMAL,
-    })
-  end
+  FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, px, py, {
+    colors = opts.colors or FrlgFont.COLOR.NORMAL,
+  })
 end
 
 --- Pixel-space cursor (for 15px start-menu rows).
 function Window.cursorPx(px, py, opts)
   opts = opts or {}
-  if not draw_rom_cursor(px, py) then
-    FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, px, py, {
-      colors = opts.colors or FrlgFont.COLOR.NORMAL,
-    })
-  end
+  FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, px, py, {
+    colors = opts.colors or FrlgFont.COLOR.NORMAL,
+  })
 end
 
 --- Label X after cursor column (pret text at +8px).

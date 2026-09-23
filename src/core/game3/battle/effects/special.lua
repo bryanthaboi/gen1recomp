@@ -152,7 +152,9 @@ function Special.transform(ctx)
   user.ability = target.ability
   user.expTracedAbility = target.expTracedAbility
   user.transformed = true
-  user.expTransform = { species = target.species, type1 = target.type1, type2 = target.type2 }
+  user.expTransform = { species = target.species, type1 = target.type1, type2 = target.type2,
+    -- pokefirered/src/battle_script_commands.c:7416
+    personality = target.mon and target.mon.personality }
   user.expDisabledMove = nil
   user.expDisableTurns = nil
   user.permanentSlots = { false, false, false, false }

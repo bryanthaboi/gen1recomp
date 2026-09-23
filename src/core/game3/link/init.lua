@@ -192,6 +192,8 @@ function Link.warpToDest(ctx, adapters, dest)
   if not (Map and Map.load) then return false end
   local rt = runtime()
   local Player = package.loaded["src.core.game3.player"]
+  -- src/overworld.c:2144
+  if Player and Player.setVisible then Player.setVisible(true) end
   Map.load(rt and rt._mod, Link.game(), mapId, {
     x = x,
     y = y,
@@ -207,9 +209,13 @@ function Link.doCableClubWarp(ctx, adapters)
   local armedOn = Link._warpMap
   Link._warpMap = nil
   local mapId = Link.currentMap()
-  if armedOn and mapId ~= armedOn then return false end
   local s = Link.session()
-  Link.warpToDest(ctx, adapters, s and s.warpDestination)
+  local warped = not (armedOn and mapId ~= armedOn)
+    and Link.warpToDest(ctx, adapters, s and s.warpDestination)
+  if not warped then
+    local Player = package.loaded["src.core.game3.player"]
+    if Player and Player.setVisible then Player.setVisible(true) end
+  end
   return false
 end
 

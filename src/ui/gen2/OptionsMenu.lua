@@ -61,6 +61,7 @@ local FINITE_VALUE_SOURCES = {
   Strings.source("LIGHT"), Strings.source("STRONG"),
   Strings.source("ADAPTIVE"), Strings.source("UNAVAILABLE"),
   Strings.source("DISPLAY"), Strings.source("DISPLAY (%dHZ)"),
+  Strings.source("ON"), Strings.source("4X"),
 }
 
 local function volLabel(v)
@@ -345,6 +346,15 @@ local ROWS = {
       return VideoMode.normalize(options.videoMode) == "borderless"
         and Strings("FULL") or Strings("WINDOWED")
     end },
+  { label = Strings.source("FAITHFUL RATIO"), key = "faithfulRes", port = true,
+    cycle = function(options, delta)
+      local FaithfulRes = require("src.core.FaithfulRes")
+      options.faithfulRes = FaithfulRes.cycle(options.faithfulRes, delta)
+      FaithfulRes.apply(options.faithfulRes)
+    end,
+    text = function(options)
+      return Strings(require("src.core.FaithfulRes").label(options.faithfulRes))
+    end },
   { label = Strings.source("SCREEN POS"), key = "screenPos", port = true,
     cycle = function(options, delta)
       local ScreenPosition = require("src.core.ScreenPosition")
@@ -486,7 +496,8 @@ local GROUPS = {
   { id = "group.speed", label = Strings.source("SPEED"),
     members = { "textSpeed", "speed" } },
   { id = "group.video", label = Strings.source("VIDEO"),
-    members = { "videoMode", "screenPos", "fpsCap", "vsync", "logicClock" } },
+    members = { "videoMode", "faithfulRes", "screenPos", "fpsCap", "vsync",
+      "logicClock" } },
   { id = "group.graphics", label = Strings.source("GRAPHICS"),
     members = { "color", "uiLetterbox", "shaderfx", "shaderfx2", "frame" } },
   { id = "group.audio", label = Strings.source("AUDIO"),

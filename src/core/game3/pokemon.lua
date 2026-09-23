@@ -15,7 +15,6 @@ Pokemon._manifest = nil
 Pokemon._byName = nil -- normalized host/FRLG name → internal SPECIES
 Pokemon._icons = {} -- [species] = { image, w, h }
 Pokemon._front = {} -- [species] = { image, w, h }
-Pokemon._romBytes = nil -- cached full ROM string for lazy front-pic decode
 Pokemon._stats = nil
 Pokemon._abilities = nil
 Pokemon._abilityNames = nil
@@ -131,6 +130,8 @@ end
 
 function Pokemon.install(cache)
   Pokemon._cache = resolve_cache(cache)
+  Pokemon._spinda = nil
+  Pokemon._spindaPics = nil
   Pokemon._names = nil
   Pokemon._types = nil
   Pokemon._national = nil
@@ -151,7 +152,6 @@ function Pokemon.install(cache)
   Pokemon._battleMoves = nil
   Pokemon._icons = {}
   Pokemon._front = {}
-  Pokemon._romBytes = nil
   Pokemon._logged = false
   local root = (CachePaths.CACHE_ROOT or "data/generated/gba") .. "/pokemon"
   local c = Pokemon._cache
@@ -215,7 +215,6 @@ function Pokemon.invalidate()
   Pokemon._icons = {}
   Pokemon._front = {}
   Pokemon._back = nil
-  Pokemon._romBytes = nil
   Pokemon._names = nil
   Pokemon._types = nil
   Pokemon._national = nil
@@ -1268,6 +1267,55 @@ function Pokemon.speciesOrEgg(mon)
   return Pokemon.speciesOf(mon)
 end
 
+local SPECIES_UNOWN = 201
+local SPECIES_UNOWN_B = 413
+
+-- pokefirered/src/pokemon_icon.c:1080
+function Pokemon.unownLetter(personality)
+  local p = (tonumber(personality) or 0) % 4294967296
+  if p == 0 then return 0 end
+  local function bits(shift) return math.floor(p / 2 ^ shift) % 4 end
+  return (bits(24) * 64 + bits(16) * 16 + bits(8) * 4 + bits(0)) % 28
+end
+
+-- pokefirered/src/decompress.c:85, src/pokemon_icon.c:1056
+function Pokemon.picSpecies(species, personality)
+  species = tonumber(species)
+  if species ~= SPECIES_UNOWN then return species end
+  local letter = Pokemon.unownLetter(personality)
+  if letter == 0 then return SPECIES_UNOWN end
+  return SPECIES_UNOWN_B + letter - 1
+end
+
+-- pokefirered/src/pokemon.c:6062
+function Pokemon.isShiny(mon)
+  if not mon then return false end
+  if mon.isShiny ~= nil then return not not mon.isShiny end
+  local p = (tonumber(mon.personality) or 0) % 4294967296
+  local tid = (tonumber(mon.otId or mon.trainerId) or 0) % 65536
+  local sid = (tonumber(mon.otSecretId) or 0) % 65536
+  local value = bit.bxor(bit.bxor(tid, sid), bit.bxor(math.floor(p / 65536), p % 65536))
+  return value < 8
+end
+
+function Pokemon.monPicSpecies(mon)
+  if Pokemon.isEgg(mon) then return Pokemon.SPECIES_EGG end
+  return Pokemon.picSpecies(Pokemon.speciesOf(mon), mon and mon.personality)
+end
+
+function Pokemon.monFrontPic(mon, form)
+  return Pokemon.frontPic(Pokemon.monPicSpecies(mon), form, Pokemon.isShiny(mon), mon and mon.personality)
+end
+
+function Pokemon.monBackPic(mon, form)
+  return Pokemon.backPic(Pokemon.monPicSpecies(mon), form, Pokemon.isShiny(mon))
+end
+
+-- pokefirered/src/pokemon_icon.c:1116
+function Pokemon.monIcon(mon)
+  return Pokemon.icon(Pokemon.monPicSpecies(mon))
+end
+
 local function read_rgba(species)
   local cache = resolve_cache(Pokemon._cache)
   local root = (CachePaths.CACHE_ROOT or "data/generated/gba") .. "/pokemon"
@@ -1322,146 +1370,11 @@ function Pokemon.icon(species)
   return entry
 end
 
-local function bgr555_to_rgb8(c)
-  c = (tonumber(c) or 0) % 32768
-  local r5 = c % 32
-  local g5 = math.floor(c / 32) % 32
-  local b5 = math.floor(c / 1024) % 32
-  return math.floor(r5 * 255 / 31 + 0.5),
-    math.floor(g5 * 255 / 31 + 0.5),
-    math.floor(b5 * 255 / 31 + 0.5)
-end
-
-local function load_rom_bytes()
-  if Pokemon._romBytes then return Pokemon._romBytes end
-  local candidates = {
-    "1636 - Pokemon Fire Red (U)(Squirrels).gba",
-    "firered.gba",
-    "Pokemon FireRed.gba",
-  }
-  for _, path in ipairs(candidates) do
-    local f = io.open(path, "rb")
-    if f then
-      local data = f:read("*a")
-      f:close()
-      if data and #data >= 0x1000000 then
-        Pokemon._romBytes = data
-        return data
-      end
-    end
-    if love and love.filesystem and love.filesystem.read then
-      local ok, data = pcall(love.filesystem.read, path)
-      if ok and data and #data >= 0x1000000 then
-        Pokemon._romBytes = data
-        return data
-      end
-    end
-  end
-  local okC, CacheFs = pcall(require, "src.import.CacheFs")
-  if okC and CacheFs and CacheFs.readActive then
-    for _, path in ipairs(candidates) do
-      local data = CacheFs.readActive(path)
-      if data and #data >= 0x1000000 then
-        Pokemon._romBytes = data
-        return data
-      end
-    end
-  end
-  return nil
-end
-
-local function rom_u8(data, off)
-  return data:byte(off + 1) or 0
-end
-
-local function rom_u16(data, off)
-  return rom_u8(data, off) + rom_u8(data, off + 1) * 256
-end
-
-local function rom_u32(data, off)
-  return rom_u8(data, off)
-    + rom_u8(data, off + 1) * 256
-    + rom_u8(data, off + 2) * 65536
-    + rom_u8(data, off + 3) * 16777216
-end
-
---- Linear 4bpp decode helper shared by front/back.
-local function decode_pic_rgba(species, picTable, palTable, cacheRel, form, fileOffs)
-  species = tonumber(species)
-  if not species or species < 1 then return nil end
+local function read_pic(rel)
   local cache = resolve_cache(Pokemon._cache)
-  if cache and cache.read then
-    local d = cache:read(cacheRel)
-    if d and #d >= 64 * 64 * 4 then return d end
-  end
-
-  local data = load_rom_bytes()
-  if not data then return nil end
-  local Lz77 = require("src.import.gba.lz77")
-  local tileFile, palFile
-  if fileOffs then
-    tileFile, palFile = fileOffs[1], fileOffs[2]
-  else
-    tileFile = Versions.gbaToFile(rom_u32(data, picTable + species * 8))
-    palFile = Versions.gbaToFile(rom_u32(data, palTable + species * 8))
-  end
-  if not tileFile or not palFile then return nil end
-  form = tonumber(form) or 0
-  local function get(i)
-    return rom_u8(data, i)
-  end
-  local okT, tiles = pcall(Lz77.decompress, get, tileFile)
-  local okP, palBytes = pcall(Lz77.decompress, get, palFile)
-  if not okT or not okP or type(tiles) ~= "table" or type(palBytes) ~= "table" then
-    return nil
-  end
-  local pal = {}
-  for c = 0, 15 do
-    local lo = palBytes[form * 32 + c * 2 + 1] or 0
-    local hi = palBytes[form * 32 + c * 2 + 2] or 0
-    pal[c] = lo + hi * 256
-  end
-  local w, h = 64, 64
-  local rgb = {}
-  for c = 0, 15 do
-    local r, g, b = bgr555_to_rgb8(pal[c] or 0)
-    rgb[c] = { r, g, b }
-  end
-  local tilesW, tilesH = 8, 8
-  local chunks = {}
-  local ti = 0
-  for ty = 0, tilesH - 1 do
-    for tx = 0, tilesW - 1 do
-      local tileOff = form * 2048 + ti * 32
-      for row = 0, 7 do
-        for bx = 0, 3 do
-          local bi = tileOff + row * 4 + bx + 1
-          local byte = tiles[bi] or 0
-          local p0 = byte % 16
-          local p1 = math.floor(byte / 16) % 16
-          local x0 = tx * 8 + bx * 2
-          local y0 = ty * 8 + row
-          local function put(x, y, idx)
-            local i = y * w + x + 1
-            if idx == 0 then
-              chunks[i] = string.char(0, 0, 0, 0)
-            else
-              local c = rgb[idx] or rgb[0]
-              chunks[i] = string.char(c[1], c[2], c[3], 255)
-            end
-          end
-          put(x0, y0, p0)
-          put(x0 + 1, y0, p1)
-        end
-      end
-      ti = ti + 1
-    end
-  end
-  local rgba = table.concat(chunks)
-  if cache and cache.write then
-    pcall(cache.write, cache, cacheRel, rgba)
-  end
-  return rgba
+  local d = cache and cache.read and cache:read(rel)
+  if type(d) == "string" and #d >= 64 * 64 * 4 then return d end
+  return nil
 end
 
 local SPECIES_CASTFORM = 385
@@ -1478,22 +1391,6 @@ local function pic_rel(kind, species, form)
   return root .. species .. ".rgba"
 end
 
-local function decode_front_rgba(species, form)
-  species = tonumber(species)
-  if not species or species < 1 then return nil end
-  local picTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_front_pic_table) or 0x2350AC
-  local palTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_palette_table) or 0x23730C
-  return decode_pic_rgba(species, picTable, palTable, pic_rel("front", species, form), form)
-end
-
-local function decode_back_rgba(species, form)
-  species = tonumber(species)
-  if not species or species < 1 then return nil end
-  local picTable = Versions.MON_BACK_PIC_TABLE or 0x23654C
-  local palTable = (Versions.OAK_SPEECH and Versions.OAK_SPEECH.mon_palette_table) or 0x23730C
-  return decode_pic_rgba(species, picTable, palTable, pic_rel("back", species, form), form)
-end
-
 local function pic_entry(store, key, rgba)
   local image = image_from_rgba(rgba, 64, 64)
   if not image then return nil end
@@ -1502,40 +1399,142 @@ local function pic_entry(store, key, rgba)
   return entry
 end
 
---- 64×64 front pic for showmonpic (ROM-lazy or cache), else nil.
--- pokefirered/src/battle_gfx_sfx_util.c:354
-function Pokemon.frontPic(species, form)
+-- pokefirered/src/data/pokemon_graphics/shiny_palette_table.h:415
+local function pic(store, kind, species, form, shiny)
   species = tonumber(species)
   if not species or species < 1 then return nil end
   form = form_of(species, form)
+  if shiny and species ~= Pokemon.SPECIES_EGG then kind = kind .. "_shiny" end
   local key = form > 0 and (species .. "_" .. form) or species
-  if Pokemon._front[key] then return Pokemon._front[key] end
-  local entry = pic_entry(Pokemon._front, key, decode_front_rgba(species, form))
-  if not entry and form > 0 then return Pokemon.frontPic(species) end
-  return entry
+  if kind:find("_shiny", 1, true) then key = "shiny:" .. key end
+  if store[key] then return store[key] end
+  return pic_entry(store, key, read_pic(pic_rel(kind, species, form)))
+end
+
+local SPECIES_SPINDA = 308
+local SPINDA_ROOT = "/pokemon/spinda/"
+
+local function spinda_file(name)
+  local cache = resolve_cache(Pokemon._cache)
+  return cache and cache.read and cache:read((CachePaths.CACHE_ROOT or "data/generated/gba") .. SPINDA_ROOT .. name)
+end
+
+local function spinda_data()
+  if Pokemon._spinda then return Pokemon._spinda end
+  local tiles, normal, shinyPal, spots = spinda_file("front.4bpp"), spinda_file("normal.gbapal"),
+    spinda_file("shiny.gbapal"), spinda_file("spots.bin")
+  if not (tiles and #tiles >= 2048 and normal and #normal >= 32 and shinyPal and #shinyPal >= 32
+      and spots and #spots >= 144) then
+    return nil
+  end
+  Pokemon._spinda = { tiles = tiles, normal = normal, shiny = shinyPal, spots = spots }
+  return Pokemon._spinda
+end
+
+-- pokefirered/src/pokemon.c:5276
+function Pokemon.drawSpindaSpots(buf, spots, personality)
+  local p = (tonumber(personality) or 0) % 4294967296
+  for i = 0, 3 do
+    local base = i * 36
+    local x = (spots:byte(base + 1) + (p % 16) - 8) % 256
+    local y = (spots:byte(base + 2) + (math.floor(p / 16) % 16) - 8) % 256
+    for row = 0, 15 do
+      local bits = spots:byte(base + 3 + row * 2) + spots:byte(base + 4 + row * 2) * 256
+      for column = x, x + 15 do
+        local off = math.floor(column / 8) * 32 + math.floor((column % 8) / 2)
+          + math.floor(y / 8) * 256 + (y % 8) * 4
+        if bits % 2 == 1 then
+          local b = buf[off] or 0
+          if column % 2 == 1 then
+            local hi = math.floor(b / 16)
+            if hi >= 1 and hi <= 3 then buf[off] = b + 64 end
+          else
+            local lo = b % 16
+            if lo >= 1 and lo <= 3 then buf[off] = b + 4 end
+          end
+        end
+        bits = math.floor(bits / 2)
+      end
+      y = (y + 1) % 256
+    end
+    p = math.floor(p / 256)
+  end
+  return buf
+end
+
+local function spinda_rgba(personality, shiny)
+  local d = spinda_data()
+  if not d then return nil end
+  local buf = {}
+  for i = 0, 2047 do buf[i] = d.tiles:byte(i + 1) end
+  Pokemon.drawSpindaSpots(buf, d.spots, personality)
+  local pal = shiny and d.shiny or d.normal
+  local rgb = {}
+  for c = 0, 15 do
+    local v = pal:byte(c * 2 + 1) + pal:byte(c * 2 + 2) * 256
+    rgb[c] = string.char(math.floor((v % 32) * 255 / 31 + 0.5),
+      math.floor((math.floor(v / 32) % 32) * 255 / 31 + 0.5),
+      math.floor((math.floor(v / 1024) % 32) * 255 / 31 + 0.5), 255)
+  end
+  local out = {}
+  local clear = string.char(0, 0, 0, 0)
+  for ty = 0, 7 do
+    for tx = 0, 7 do
+      local tileOff = (ty * 8 + tx) * 32
+      for row = 0, 7 do
+        for bx = 0, 3 do
+          local b = buf[tileOff + row * 4 + bx]
+          local x0 = tx * 8 + bx * 2
+          local i0 = (ty * 8 + row) * 64 + x0 + 1
+          local lo, hi = b % 16, math.floor(b / 16)
+          out[i0] = lo == 0 and clear or rgb[lo]
+          out[i0 + 1] = hi == 0 and clear or rgb[hi]
+        end
+      end
+    end
+  end
+  return table.concat(out)
+end
+Pokemon.spindaRgba = spinda_rgba
+
+-- pokefirered/src/decompress.c:105, src/pokemon.c:5339
+local function spinda_pic(personality, shiny)
+  local p = (tonumber(personality) or 0) % 4294967296
+  local key = (shiny and "spinda_shiny:" or "spinda:") .. p
+  Pokemon._spindaPics = Pokemon._spindaPics or {}
+  if Pokemon._spindaPics[key] then return Pokemon._spindaPics[key] end
+  return pic_entry(Pokemon._spindaPics, key, spinda_rgba(p, shiny))
+end
+
+-- pokefirered/src/battle_gfx_sfx_util.c:354
+function Pokemon.frontPic(species, form, shiny, personality)
+  if tonumber(species) == SPECIES_SPINDA then return spinda_pic(personality, shiny) end
+  return pic(Pokemon._front, "front", species, form, shiny)
+end
+
+-- pokefirered/src/pokedex_screen.c:2212
+function Pokemon.dexFrontPic(species, personality)
+  local p = (tonumber(personality) or 0) % 4294967296
+  -- include/constants/pokemon.h:185
+  local shiny = Pokemon.isShiny({ personality = p, otId = 8, otSecretId = 0 })
+  return Pokemon.frontPic(Pokemon.picSpecies(species, p), 0, shiny, p)
+end
+
+-- pokefirered/src/pokedex_screen.c:3058
+function Pokemon.dexIcon(species, personality)
+  return Pokemon.icon(Pokemon.picSpecies(species, personality))
 end
 Pokemon.frontSprite = Pokemon.frontPic
 
---- 64×64 back pic for battle (ROM-lazy or cache).
-function Pokemon.backPic(species, form)
-  species = tonumber(species)
-  if not species or species < 1 then return nil end
+function Pokemon.backPic(species, form, shiny)
   Pokemon._back = Pokemon._back or {}
-  form = form_of(species, form)
-  local key = form > 0 and (species .. "_" .. form) or species
-  if Pokemon._back[key] then return Pokemon._back[key] end
-  local entry = pic_entry(Pokemon._back, key, decode_back_rgba(species, form))
-  if not entry and form > 0 then return Pokemon.backPic(species) end
-  return entry
+  return pic(Pokemon._back, "back", species, form, shiny)
 end
 
 -- pokefirered/src/battle_gfx_sfx_util.c:422
 function Pokemon.ghostPic()
   if Pokemon._front.ghost then return Pokemon._front.ghost end
-  local offs = Versions.GHOST_FRONT_PIC and Versions.GHOST_PALETTE
-    and { Versions.GHOST_FRONT_PIC, Versions.GHOST_PALETTE } or nil
-  local rgba = decode_pic_rgba(1, 0, 0, pic_rel("front", "ghost", 0), 0, offs or { false, false })
-  return pic_entry(Pokemon._front, "ghost", rgba)
+  return pic_entry(Pokemon._front, "ghost", read_pic(pic_rel("front", "ghost", 0)))
 end
 
 Pokemon.NUMBERING_INTERNAL = "internal"

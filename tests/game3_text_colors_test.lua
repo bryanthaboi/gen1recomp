@@ -224,7 +224,6 @@ local Ctx = require("src.core.game3.scripting.ctx")
 local Flags = require("src.core.game3.scripting.flags")
 local Adapters = require("src.core.game3.scripting.adapters")
 local Vm = require("src.core.game3.scripting.vm")
-local Std = require("src.core.game3.scripting.stdscripts")
 
 local c0 = Ctx.new()
 assert_eq(c0.specialVars[0x8012], 255, "fresh ctx VAR_TEXT_COLOR is DEFAULT")
@@ -279,7 +278,11 @@ local adapters = Adapters.stub({
   onMessage = function() seen[#seen + 1] = Adapters.resolveNpcColor(vmRef.ctx) end,
 })
 local scripts = {}
-for k, v in pairs(Std.SCRIPTS) do scripts[k] = v end
+-- data/scripts/obtain_item.inc:6
+scripts.EventScript_RestorePrevTextColor = {
+  { op = "copyvar", [1] = 0x8012, [2] = 0x8013 },
+  { op = "return" },
+}
 scripts.test_npc = {
   { op = "message", ptr = "T" },
   { op = "textcolor", color = 3 },
@@ -311,22 +314,6 @@ assert_eq(seen[1], 3, "sign/trigger (LAST_TALKED 0) is NEUTRAL")
 print("[ok] textcolor / RestorePrevTextColor / reset rules")
 
 print("=== [TEST 11] std bookends (obtain_item.inc:10, std_msgbox.inc:29) ===")
-local s0 = Std.SCRIPTS["std:0"]
-assert_eq(s0[1].op, "copyvar", "std:0 saves text color first")
-assert_eq(s0[1][1], 0x8013, "std:0 copies into VAR_PREV_TEXT_COLOR")
-assert_eq(s0[1][2], 0x8012, "std:0 copies from VAR_TEXT_COLOR")
-assert_eq(s0[2].op, "textcolor", "std:0 forces textcolor")
-assert_eq(s0[2].color, 3, "std:0 forces NEUTRAL")
-assert_eq(s0[#s0].op, "return", "std:0 returns")
-assert_eq(s0[#s0 - 1].op, "copyvar", "std:0 restores before return")
-assert_eq(s0[#s0 - 1][1], 0x8012, "std:0 restores VAR_TEXT_COLOR")
-assert_eq(s0[#s0 - 1][2], 0x8013, "std:0 restores from VAR_PREV_TEXT_COLOR")
-local s9 = Std.SCRIPTS["std:9"]
-assert_eq(s9[1].op, "textcolor", "std:9 starts with textcolor")
-assert_eq(s9[1].color, 3, "std:9 forces NEUTRAL")
-local show = Std.SCRIPTS.EventScript_ReceivedItemShowMsg
-assert_eq(show[#show - 1].target, "EventScript_RestorePrevTextColor", "std:9 restores after putitemaway")
-
 seen = {}
 scripts.test_received = {
   { op = "textcolor", color = 0 },

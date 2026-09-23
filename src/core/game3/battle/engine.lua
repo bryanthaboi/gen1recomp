@@ -1895,7 +1895,9 @@ function Engine.performSwitch(st, adapter, side, slot, opts)
   if not old or not party or not party[slot] then return nil end
   local oldSlot = old.partyIndex
   if side == "player" and not st.double then
-    State.trackParticipant(st, st.enemy, oldSlot or 1)
+    if not opts.isShift and opts.reason ~= "shift" then
+      State.trackParticipant(st, st.enemy, oldSlot or 1)
+    end
   end
   Engine.switchOutEffects(st, adapter, old)
   State.syncBattlerToParty(old, party)
@@ -1949,7 +1951,7 @@ function Engine.performSwitch(st, adapter, side, slot, opts)
     State.trackParticipant(st, st.enemy, slot)
   elseif st.player then
     -- pokefirered/src/battle_util.c:254
-    State.trackParticipant(st, nb, st.player.partyIndex)
+    State.opponentSwitchInResetSentPokes(st, nb)
   end
   if foe then
     if foe.expSeedSource == old then foe.expSeedSource = nb end

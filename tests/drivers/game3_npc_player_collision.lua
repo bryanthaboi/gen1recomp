@@ -62,7 +62,8 @@ return function(game)
           and Collision.canEnter(game, px, py, {}) and not Objects.at(px, py)
         then
           wanderer = eo
-          plan = { tx = tx, ty = ty, px = px, py = py, into = OPPOSITE[dir], back = dir }
+          plan = { hx = eo.cellX, hy = eo.cellY, tx = tx, ty = ty, px = px, py = py,
+            into = OPPOSITE[dir], back = dir }
           break
         end
       end
@@ -81,7 +82,12 @@ return function(game)
   U.wait(60)
   wanderer = Objects.find(wanderer.localId)
   if not result(wanderer ~= nil, "wanderer survived the reload") then return finish() end
-  local homeX, homeY = wanderer.cellX, wanderer.cellY
+  local homeX, homeY = plan.hx, plan.hy
+  wanderer.moving = false
+  wanderer.progress = 0
+  wanderer.cellX, wanderer.cellY = homeX, homeY
+  wanderer.targetX, wanderer.targetY = homeX, homeY
+  wanderer.px, wanderer.py = homeX * 16, homeY * 16
 
   local overlaps, contested, midSteps, declines = 0, 0, 0, 0
   local frozen, leashed = false, true

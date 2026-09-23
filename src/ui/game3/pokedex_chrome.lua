@@ -241,21 +241,6 @@ function PokedexChrome.drawKeypadIcon(iconName, x, y)
       end
     end
   end
-  if not img then
-    local candidates = {
-      "chrome/keypad_icons.png",
-      "data/generated/gba/chrome/keypad_icons.png",
-    }
-    for _, p in ipairs(candidates) do
-      local ok, newImg = pcall(love.graphics.newImage, p)
-      if ok and newImg then
-        if newImg.setFilter then newImg:setFilter("nearest", "nearest") end
-        img = newImg
-        PokedexChrome._images["keypad_icons"] = img
-        break
-      end
-    end
-  end
 
   if img then
     if not KEYPAD_ICON_QUADS then
@@ -657,21 +642,6 @@ local function get_pokedex_quad(key, x, y, w, h, sw, sh)
   return PokedexChrome._quads[key]
 end
 
-local function sanitize_menu_info_imagedata(id)
-  if not id or not id.getPixel or not id.setPixel then return id end
-  local ok, w, h = pcall(function() return id:getDimensions() end)
-  if not ok or not w or not h then return id end
-  for y = 0, h - 1 do
-    for x = 0, w - 1 do
-      local r, g, b, a = id:getPixel(x, y)
-      if math.abs(r - 123/255) < 0.02 and math.abs(g - 156/255) < 0.02 and math.abs(b - 131/255) < 0.02 then
-        id:setPixel(x, y, 1, 1, 1, 0)
-      end
-    end
-  end
-  return id
-end
-
 --- Load authentic GBA menu_info texture containing all 18 type badges & caught ball
 function PokedexChrome.menuInfoImage()
   if PokedexChrome._menuInfo then return PokedexChrome._menuInfo end
@@ -679,38 +649,6 @@ function PokedexChrome.menuInfoImage()
   if ok and SummaryChrome and SummaryChrome.menuInfoImage then
     PokedexChrome._menuInfo = SummaryChrome.menuInfoImage()
     if PokedexChrome._menuInfo then return PokedexChrome._menuInfo end
-  end
-  local paths = {
-    "data/generated/gba/pokemon/summary/menu_info.png",
-    "src/import/gba/chrome/menus/menu_info.png",
-  }
-  for _, p in ipairs(paths) do
-    local bytes = read_bytes(p)
-    if bytes and love and love.image and love.graphics then
-      local ok, img = pcall(function()
-        local fd = love.filesystem.newFileData(bytes, "menu_info.png")
-        local id = sanitize_menu_info_imagedata(love.image.newImageData(fd))
-        local image = love.graphics.newImage(id)
-        if image.setFilter then image:setFilter("nearest", "nearest") end
-        return image
-      end)
-      if ok and img then
-        PokedexChrome._menuInfo = img
-        return img
-      end
-    end
-    if love and love.graphics and love.image and love.image.newImageData then
-      local ok, img = pcall(function()
-        local id = sanitize_menu_info_imagedata(love.image.newImageData(p))
-        local image = love.graphics.newImage(id)
-        if image.setFilter then image:setFilter("nearest", "nearest") end
-        return image
-      end)
-      if ok and img then
-        PokedexChrome._menuInfo = img
-        return img
-      end
-    end
   end
   return nil
 end
@@ -1012,7 +950,7 @@ function PokedexChrome.drawMiniCard(speciesId, x, y, isCaught, isSeen, isSelecte
   local Pokemon = require("src.core.game3.pokemon")
 
   local sp = tonumber(speciesId) or 1
-  local natId = Pokemon.nationalPokedexNumber and Pokemon.nationalPokedexNumber(sp) or sp
+  local natId = Pokemon.national(sp) or 0
   local name = isSeen and (Pokemon.name and Pokemon.name(sp) or Strings("POKéMON %d", sp)) or "----------"
 
   -- Draw authentic 64x40 mini page background (white top, brown dividing line, beige bottom with simulated text)

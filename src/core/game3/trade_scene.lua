@@ -1,5 +1,6 @@
 local SE = require("src.core.game3.se_ids")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local TradeScene = {}
 
@@ -791,14 +792,14 @@ end)
 
 -- pokefirered/src/trade_scene.c:2572
 phase("link_standby", function(s)
-  setText(s, Strings("Communication standby…"))
+  setText(s, RomText.plain("gText_CommunicationStandby4"))
   if not s.awaitSave then return true end
   return s.linkTaskDone == true
 end, "link")
 
 -- pokefirered/src/trade_scene.c:2595
 phase("link_save", function(s)
-  setText(s, Strings("SAVING…\nDON'T TURN OFF THE POWER."))
+  setText(s, RomText.plain("gText_SavingDontTurnOffThePower2"))
   if not s.awaitSave then return true end
   return s.saveDone == true
 end, "link")
@@ -897,9 +898,10 @@ function TradeScene.hasArt()
   return (s and s.art) and true or false
 end
 
+-- pokefirered/src/trade_scene.c:1772
 function TradeScene.pressA()
   local s = TradeScene._s
-  if s then s.aPressed = true end
+  if s and TradeScene.phase() == "end_link_trade" then s.aPressed = true end
 end
 
 function TradeScene.isLink()

@@ -190,20 +190,6 @@ function BattleChrome.install(cache)
   end
 end
 
-local function rom_bytes()
-  local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
-  if okP and Pokemon and type(Pokemon._romBytes) == "string" then return Pokemon._romBytes end
-  for _, p in ipairs({ "1636 - Pokemon Fire Red (U)(Squirrels).gba", "firered.gba", "Pokemon FireRed.gba" }) do
-    local f = io.open(p, "rb")
-    if f then
-      local d = f:read("*a")
-      f:close()
-      if d and #d >= 0x1000000 then return d end
-    end
-  end
-  return nil
-end
-
 local function load_doubles_boxes()
   if BattleChrome._doublesTried then return end
   BattleChrome._doublesTried = true
@@ -211,17 +197,10 @@ local function load_doubles_boxes()
   local files = BattleChromeExtract.DOUBLES_FILES or {}
   local pRgba = read_bytes(root .. "/" .. (files.player or "healthbox_doubles_player.rgba"))
   local oRgba = read_bytes(root .. "/" .. (files.opponent or "healthbox_doubles_opponent.rgba"))
-  if not (pRgba and oRgba) then
-    local rom = rom_bytes()
-    if rom then
-      local ok, p2, o2 = pcall(BattleChromeExtract.bakeDoubles, function(i) return rom:byte(i + 1) or 0 end)
-      if ok and p2 and o2 then pRgba, oRgba = p2, o2 end
-    end
-  end
   BattleChrome._doublesPlayerBox = rgba_to_image(pRgba, 128, 32)
   BattleChrome._doublesOpponentBox = rgba_to_image(oRgba, 128, 32)
   if not (BattleChrome._doublesPlayerBox and BattleChrome._doublesOpponentBox) then
-    print("[game3/battle_chrome] doubles healthboxes missing; re-import the ROM to extract them")
+    print("[game3/battle_chrome] cache missing doubles healthboxes")
   end
 end
 
@@ -230,17 +209,10 @@ local function load_hp_bold()
   BattleChrome._hpBoldTried = true
   local w, h = BattleChromeExtract.HP_BOLD_W or 88, BattleChromeExtract.HP_BOLD_H or 8
   local rgba = read_bytes(battle_root() .. "/" .. (BattleChromeExtract.HP_BOLD_FILE or "hp_bold_digits.rgba"))
-  if not rgba then
-    local rom = rom_bytes()
-    if rom then
-      local ok, r2 = pcall(BattleChromeExtract.bakeHpBoldDigits, function(i) return rom:byte(i + 1) or 0 end)
-      if ok and r2 then rgba = r2 end
-    end
-  end
   BattleChrome._hpBold = rgba_to_image(rgba, w, h)
   BattleChrome._hpBoldQuads = {}
   if not BattleChrome._hpBold then
-    print("[game3/battle_chrome] bold HP digits missing; re-import the ROM to extract them")
+    print("[game3/battle_chrome] cache missing bold HP digits")
   end
 end
 

@@ -133,6 +133,12 @@ local function loadExtractorWithStubs(pokeRun, sectionsRun)
     ready = function() return true end,
     run = function() return {} end,
   }
+  for _, sibling in ipairs({ "credits_extract", "league_extract" }) do
+    package.loaded["src.import.gba." .. sibling] = {
+      ready = function() return true end,
+      run = function() return {} end,
+    }
+  end
   package.loaded["src.import.gba.map_sections_extract"] = {
     run = sectionsRun or function(_, cache, opts)
       cache:write((opts and opts.cacheRoot or "data/generated/gba")
@@ -210,6 +216,8 @@ package.loaded["src.import.gba.rom"] = nil
 package.loaded["src.import.gba.pokemon_extract"] = nil
 package.loaded["src.import.gba.region_map_extract"] = nil
 package.loaded["src.import.gba.multichoice_extract"] = nil
+package.loaded["src.import.gba.credits_extract"] = nil
+package.loaded["src.import.gba.league_extract"] = nil
 package.loaded["src.import.gba.map_sections_extract"] = nil
 package.loaded["src.import.gba.revision_view"] = nil
 package.loaded["src.import.gba.extract_intro"] = nil

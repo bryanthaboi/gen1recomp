@@ -302,12 +302,6 @@ function Register.apply(mod, MapsModule)
     end
   end
 
-  -- Ensure game3 script cache exists (ROM extract preferred; curated fallback).
-  local ExtractScripts = require("src.import.gba.extract_scripts")
-  if not cache:exists(CACHE .. "/scripts/events.lua") then
-    ExtractScripts.writeBundle(cache, CACHE)
-  end
-
   if MapsModule and MapsModule.registerFromExtract then
     local ok, mapErr = pcall(MapsModule.registerFromExtract, mod, bundle)
     if not ok then

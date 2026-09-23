@@ -67,7 +67,7 @@ return function(game)
     local fainted = faintParty()
     result(fainted > 0, label .. ": party is fainted before the whiteout")
     BattleBridge._whiteoutHook()
-    U.wait(150)
+    U.wait(2)
     print(string.format("[driver] %s map=%s at (%s,%s)",
       label, tostring(Map.current), tostring(Player.cellX), tostring(Player.cellY)))
     result(Map.current == want, label .. ": whiteout loaded " .. tostring(want))
@@ -78,6 +78,7 @@ return function(game)
       if type(mon) == "table" and (mon.hp or 0) <= 0 then healed = false end
     end
     result(healed, label .. ": the party was healed on arrival")
+    U.clearWhiteoutRush(game)
     if shot then result(U.shot(game, DIR .. "/" .. shot), label .. ": screenshot") end
   end
 

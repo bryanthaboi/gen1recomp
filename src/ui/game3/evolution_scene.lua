@@ -71,6 +71,13 @@ function EvolutionScene.isOpen()
   return EvolutionScene.open
 end
 
+-- pokefirered/src/evolution_scene.c:266
+local function evo_pic(species)
+  local mon = EvolutionScene._mon
+  return Pokemon.frontPic(Pokemon.picSpecies(species, mon and mon.personality), nil, Pokemon.isShiny(mon),
+    mon and mon.personality)
+end
+
 --- Start an evolution scene.
 -- @param mon table The Pokémon table
 -- @param postSpecies number Target species ID
@@ -132,8 +139,8 @@ function EvolutionScene.start(mon, postSpecies, opts)
   end
 
   -- Ensure pre-evolution and post-evolution pics are cached
-  Pokemon.frontPic(EvolutionScene._preSpecies)
-  Pokemon.frontPic(EvolutionScene._postSpecies)
+  evo_pic(EvolutionScene._preSpecies)
+  evo_pic(EvolutionScene._postSpecies)
 
   -- Open message box in battle frame
   if Message.setFrame then Message.setFrame("battle") end
@@ -583,8 +590,8 @@ function EvolutionScene.draw()
 
   -- 4. Draw Pokémon sprites (silhouette or full color)
   local st = EvolutionScene._state
-  local prePic = Pokemon.frontPic(EvolutionScene._preSpecies)
-  local postPic = Pokemon.frontPic(EvolutionScene._postSpecies)
+  local prePic = evo_pic(EvolutionScene._preSpecies)
+  local postPic = evo_pic(EvolutionScene._postSpecies)
 
   if st == "cycle" then
     -- Solid white silhouette shader

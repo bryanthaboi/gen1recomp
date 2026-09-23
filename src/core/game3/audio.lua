@@ -418,11 +418,103 @@ function Audio.setMapSong(id)
   Audio._mapSong = tonumber(id) or id
 end
 
+-- pokefirered/include/constants/songs.h:290
+Audio.MUS_CYCLING = 282
+-- pokefirered/include/constants/songs.h:313
+Audio.MUS_SURF = 305
+-- pokefirered/include/constants/region_map_sections.h:106
+local NO_RIDE_MUSIC_SECTIONS = { [97] = true, [123] = true, [132] = true }
+
+local function current_section()
+  local Map = package.loaded["src.core.game3.map"]
+  local def = Map and Map.currentDef and Map.currentDef()
+  return def and def.regionMapSectionId
+end
+
+-- pokefirered/src/overworld.c:1193
+function Audio.canOverrideMapMusic(song, sectionId)
+  if song == Audio.MUS_CYCLING or song == Audio.MUS_SURF then
+    if sectionId == nil then sectionId = current_section() end
+    return not NO_RIDE_MUSIC_SECTIONS[tonumber(sectionId) or -1]
+  end
+  return true
+end
+
+-- pokefirered/src/overworld.c:1014
+function Audio.specialMapSong(sectionId)
+  if Audio._savedSong then return Audio._savedSong end
+  local P = package.loaded["src.core.game3.player"]
+  if P and (P.surfing or P.surfHopping) and not P.dismounting
+      and Audio.canOverrideMapMusic(Audio.MUS_SURF, sectionId) then
+    return Audio.MUS_SURF
+  end
+  return Audio._mapSong
+end
+
 -- pokefirered/src/overworld.c:1039
 function Audio.restoreMapSong(opts)
-  local id = Audio._savedSong or Audio._mapSong
+  local id = Audio.specialMapSong()
   if id then return Audio.playSong(id, opts) end
   return true
+end
+
+-- pokefirered/src/sound.c:152
+function Audio.fadeOutAndPlay(id, speed)
+  id = tonumber(id) or id
+  if Audio._fanfareActive then
+    Audio._fanfareDeferred = id
+    return true
+  end
+  if not (Audio._currentSong and Audio._bgmSource) then
+    return Audio.playSong(id)
+  end
+  Audio.fadeOutBgm(speed)
+  if Audio._fadeOut then Audio._fadeOut.nextSong = id end
+  return true
+end
+
+-- pokefirered/src/overworld.c:1096
+function Audio.changeMusicTo(id)
+  id = tonumber(id) or id
+  local cur = Audio._currentSong and Audio._currentSong.id
+  local pending = Audio._fadeOut and Audio._fadeOut.nextSong
+  if (pending or cur) == id then return true end
+  return Audio.fadeOutAndPlay(id, 8)
+end
+
+-- pokefirered/src/overworld.c:1089
+function Audio.changeMusicToDefault()
+  if Audio._mapSong then return Audio.changeMusicTo(Audio._mapSong) end
+  return true
+end
+
+-- pokefirered/src/field_effect.c:2986
+function Audio.startSurfMusic()
+  Audio.setSavedSong(nil)
+  if Audio.canOverrideMapMusic(Audio.MUS_SURF) then Audio.changeMusicTo(Audio.MUS_SURF) end
+end
+
+-- pokefirered/src/field_player_avatar.c:1579
+function Audio.stopSurfMusic()
+  Audio.setSavedSong(nil)
+  Audio.changeMusicToDefault()
+end
+
+-- pokefirered/src/bike.c:314
+function Audio.bikeMusic(on, forced)
+  if on then
+    if forced or Audio.canOverrideMapMusic(Audio.MUS_CYCLING) then
+      Audio.setSavedSong(Audio.MUS_CYCLING)
+      Audio.changeMusicTo(Audio.MUS_CYCLING)
+    end
+    return
+  end
+  Audio.setSavedSong(nil)
+  local id = Audio.specialMapSong()
+  local pending = Audio._fadeOut and Audio._fadeOut.nextSong
+  if id and id ~= (pending or (Audio._currentSong and Audio._currentSong.id)) then
+    Audio.playSong(id)
+  end
 end
 
 -- pokefirered/src/overworld.c:1048
@@ -518,7 +610,12 @@ function Audio.resumeBgm()
   Audio._bgmPaused = false
   if Audio._cmdCh then Audio._cmdCh:push({ cmd = "resume" }) end
   if Audio._bgmSource then
-    pcall(function() Audio._bgmSource:setVolume(bgm_gain()) end)
+    pcall(function()
+      Audio._bgmSource:setVolume(bgm_gain())
+      if not Audio._bgmSource:isPlaying() then
+        Audio._bgmSource:play()
+      end
+    end)
   end
   Audio.pumpBgm()
 end
@@ -948,16 +1045,17 @@ end
 -- pokefirered/src/sound.c:333
 function Audio.playCry(species, mode, pan)
   species = tonumber(species) or species
-  local volume
+  local volume, noDuck
   if type(mode) == "table" then
     local o = mode
     mode = o.mode
     if pan == nil then pan = o.pan end
     volume = o.volume
+    noDuck = o.noDuck == true
   end
   mode = tonumber(mode) or 0
   local params = Sample.cryParams(mode, volume)
-  local doubles = params.mode == 1
+  local doubles = params.mode == 1 or noDuck
   Audio._cryParams = params
   log(string.format("playCry species=%s mode=%d", tostring(species), params.mode))
   if not Audio.isReady() then
@@ -1094,6 +1192,7 @@ function Audio.update(dt)
         Audio._currentSong = nil
       end
       Audio._fadeOut = nil
+      if stillSame and f.nextSong then Audio.playSong(f.nextSong) end
     end
   end
   if Audio._fadeIn and Audio._bgmSource then

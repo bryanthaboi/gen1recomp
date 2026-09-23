@@ -38,7 +38,7 @@ local PAL = {
   railAmber   = { 218, 145, 32 },  -- Gold cartridge (deeper metal)
   railSilver  = { 190, 198, 210 }, -- Silver cartridge (cool light metal)
   railCrystal = { 132, 196, 228 }, -- Crystal cartridge (translucent ice blue)
-  railLeafGreen = { 128, 188, 40 },
+  railLeafGreen = { 38, 162, 78 }, -- LeafGreen cartridge (vibrant deep forest green)
   railFireRed = { 220, 48, 48 },   -- FireRed cartridge (deeper red than Red)
 }
 -- Semantic aliases kept so ported call sites read the same as before.

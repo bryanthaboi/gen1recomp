@@ -14,73 +14,6 @@ AiItems.HEAL_HP_FULL = 0xFF
 AiItems.HEAL_HP_HALF = 0xFE
 AiItems.HEAL_HP_LVL_UP = 0xFD
 
--- src/data/pokemon/item_effects.h:338
-local EFFECTS = {
-  [13] = { 0, 0, 0, 0, 0x04, 20 },
-  [14] = { 0, 0, 0, 0x10, 0 },
-  [15] = { 0, 0, 0, 0x08, 0 },
-  [16] = { 0, 0, 0, 0x04, 0 },
-  [17] = { 0, 0, 0, 0x20, 0 },
-  [18] = { 0, 0, 0, 0x02, 0 },
-  [19] = { 0, 0, 0, 0x3F, 0x04, 0xFF },
-  [20] = { 0, 0, 0, 0, 0x04, 0xFF },
-  [21] = { 0, 0, 0, 0, 0x04, 200 },
-  [22] = { 0, 0, 0, 0, 0x04, 50 },
-  [23] = { 0, 0, 0, 0x3F, 0 },
-  [24] = { 0, 0, 0, 0, 0x44, 0xFE },
-  [25] = { 0, 0, 0, 0, 0x44, 0xFF },
-  [26] = { 0, 0, 0, 0, 0x04, 50 },
-  [27] = { 0, 0, 0, 0, 0x04, 60 },
-  [28] = { 0, 0, 0, 0, 0x04, 80 },
-  [29] = { 0, 0, 0, 0, 0x04, 100 },
-  [30] = { 0, 0, 0, 0, 0x04, 50 },
-  [31] = { 0, 0, 0, 0, 0x04, 200 },
-  [32] = { 0, 0, 0, 0x3F, 0 },
-  [33] = { 0, 0, 0, 0, 0x44, 0xFF },
-  [34] = { 0, 0, 0, 0, 0x18, 10 },
-  [35] = { 0, 0, 0, 0, 0x18, 0x7F },
-  [36] = { 0, 0, 0, 0, 0x08, 10 },
-  [37] = { 0, 0, 0, 0, 0x08, 0x7F },
-  [38] = { 0, 0, 0, 0x3F, 0 },
-  [39] = { 0, 0, 0, 0x20, 0 },
-  [40] = { 0, 0, 0, 0x01, 0 },
-  [41] = { 0x80, 0, 0, 0, 0 },
-  [44] = { 0, 0, 0, 0, 0x04, 20 },
-  [45] = { 0x40, 0, 0, 0, 0x44, 0xFF },
-  [63] = { 0, 0, 0, 0, 0x01 },
-  [64] = { 0, 0, 0, 0, 0x02 },
-  [65] = { 0, 0, 0, 0, 0 },
-  [66] = { 0, 0, 0, 0, 0 },
-  [67] = { 0, 0, 0, 0, 0 },
-  [68] = { 0, 0, 0, 0x40, 0x44, 0xFD },
-  [69] = { 0, 0, 0, 0, 0x20 },
-  [70] = { 0, 0, 0, 0, 0 },
-  [71] = { 0, 0, 0, 0, 0 },
-  [73] = { 0, 0, 0, 0x80, 0 },
-  [74] = { 0x20, 0, 0, 0, 0 },
-  [75] = { 0x01, 0, 0, 0, 0 },
-  [76] = { 0, 0x10, 0, 0, 0 },
-  [77] = { 0, 0x01, 0, 0, 0 },
-  [78] = { 0, 0, 0x10, 0, 0 },
-  [79] = { 0, 0, 0x01, 0, 0 },
-  [93] = { 0, 0, 0, 0, 0x80 },
-  [94] = { 0, 0, 0, 0, 0x80 },
-  [95] = { 0, 0, 0, 0, 0x80 },
-  [96] = { 0, 0, 0, 0, 0x80 },
-  [97] = { 0, 0, 0, 0, 0x80 },
-  [98] = { 0, 0, 0, 0, 0x80 },
-  [133] = { 0, 0, 0, 0x02, 0 },
-  [134] = { 0, 0, 0, 0x20, 0 },
-  [135] = { 0, 0, 0, 0x10, 0 },
-  [136] = { 0, 0, 0, 0x08, 0 },
-  [137] = { 0, 0, 0, 0x04, 0 },
-  [138] = { 0, 0, 0, 0, 0x18, 10 },
-  [139] = { 0, 0, 0, 0, 0x04, 10 },
-  [140] = { 0, 0, 0, 0x01, 0 },
-  [141] = { 0, 0, 0, 0x3F, 0 },
-  [142] = { 0, 0, 0, 0, 0x04, 30 },
-}
-
 local function band(a, b)
   a, b = math.floor(tonumber(a) or 0), math.floor(tonumber(b) or 0)
   local r, bit = 0, 1
@@ -102,10 +35,59 @@ local function item_num(item)
 end
 AiItems.itemNum = item_num
 
+-- src/pokemon.c:4843 GetItemEffectParamOffset
+local function param_offset(e, effectByte, effectBit)
+  local offset = 6
+  for i = 0, 5 do
+    if i <= 3 then
+      if i == effectByte then return 0 end
+    elseif i == 4 then
+      local val = tonumber(e[5]) or 0
+      if band(val, 0x20) ~= 0 then val = val - 0x20 end
+      local j = 0
+      while val > 0 do
+        if val % 2 == 1 then
+          if j == 2 and band(val, 0x10) ~= 0 then val = val - 0x10 end
+          if j == 0 or j == 1 or j == 2 or j == 3 then
+            if i == effectByte and band(val, effectBit) ~= 0 then return offset end
+            offset = offset + 1
+          elseif j == 7 then
+            if i == effectByte then return 0 end
+          end
+        end
+        j = j + 1
+        val = math.floor(val / 2)
+        if i == effectByte then effectBit = math.floor(effectBit / 2) end
+      end
+    else
+      local val = tonumber(e[6]) or 0
+      local j = 0
+      while val > 0 do
+        if val % 2 == 1 then
+          if j <= 6 then
+            if i == effectByte and band(val, effectBit) ~= 0 then return offset end
+            offset = offset + 1
+          elseif i == effectByte then
+            return 0
+          end
+        end
+        j = j + 1
+        val = math.floor(val / 2)
+        if i == effectByte then effectBit = math.floor(effectBit / 2) end
+      end
+    end
+  end
+  return offset
+end
+
 function AiItems.effect(item)
-  local e = EFFECTS[item_num(item)]
-  if not e then return nil end
-  return { e[1], e[2], e[3], e[4], e[5], hp = e[6] }
+  local ok, ItemsData = pcall(require, "src.core.game3.items_data")
+  local info = ok and ItemsData.info(item_num(item)) or nil
+  local e = info and info.effect
+  if type(e) ~= "table" or #e < 6 then return nil end
+  local off = band(e[5], 0x04) ~= 0 and param_offset(e, 4, 0x04) or 0
+  return { tonumber(e[1]) or 0, tonumber(e[2]) or 0, tonumber(e[3]) or 0, tonumber(e[4]) or 0, tonumber(e[5]) or 0,
+    tonumber(e[6]) or 0, hp = off ~= 0 and tonumber(e[off + 1]) or nil }
 end
 
 -- src/battle_ai_switch_items.c:546

@@ -155,6 +155,13 @@ local function finish_scene()
 end
 EggHatch._finish = finish_scene
 
+-- pokefirered/src/daycare.c:1705
+local function hatched_pic()
+  local mon = EggHatch._mon
+  return Pokemon.frontPic(Pokemon.picSpecies(EggHatch._species, mon and mon.personality), nil,
+    Pokemon.isShiny(mon), mon and mon.personality)
+end
+
 function EggHatch.start(mon, opts)
   opts = opts or {}
   if not mon then
@@ -184,7 +191,7 @@ function EggHatch.start(mon, opts)
   EggHatch.open = true
   if Oam and Oam.destroyAll then Oam.destroyAll() end
   if Message.setFrame then Message.setFrame("dialogue") end
-  pcall(Pokemon.frontPic, EggHatch._species)
+  pcall(hatched_pic)
   pcall(Pokemon.frontPic, Pokemon.SPECIES_EGG)
   Stack.push(STACK_ID, EggHatch, { hideBelow = true })
   return true
@@ -413,7 +420,7 @@ function EggHatch.draw()
       end
     end
   else
-    local pic = Pokemon.frontPic(EggHatch._species)
+    local pic = hatched_pic()
     if pic and pic.image then
       love.graphics.draw(pic.image, MON_X, MON_Y, 0, 1, 1, 32, 32)
     end

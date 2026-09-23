@@ -13,6 +13,7 @@ local ItemUse = require("src.core.game3.item_use")
 local ItemsData = require("src.core.game3.items_data")
 local Bag = require("src.core.game3.bag")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local PartyMenu = {}
 
@@ -446,7 +447,7 @@ local function ensure_slot_sprites(i, mon, selected)
   local maxHp = tonumber(mon.maxHp) or tonumber(mon.maxhp) or 1
   local hpLevel = get_hp_bar_level(hp, maxHp, mon.isEgg)
 
-  local icon = Pokemon.icon(Pokemon.speciesOrEgg(mon))
+  local icon = Pokemon.monIcon(mon)
   local q0 = icon and icon.quads and icon.quads[0]
   if not slot.mon then
     local id = select(1, Oam.createSprite({
@@ -517,9 +518,10 @@ local function ensure_slot_sprites(i, mon, selected)
     Oam.setInvisible(slot.ball, PartyMenu.mode == "summary")
   end
 
-  local statusFr = PartyChrome.statusFrameFor(mon.status)
+  local SummaryData = require("src.core.game3.summary_data")
+  local statusFr = SummaryData.statusAilment(mon)
   local stImg, stQ = PartyChrome.statusEntry(statusFr)
-  if statusFr > 0 and stImg then
+  if statusFr > 0 and statusFr ~= 6 and stImg then
     if not slot.status then
       local id = select(1, Oam.createSprite({
         dims = Oam.HRECT_32x8,
@@ -919,6 +921,29 @@ function PartyMenu.showForgetPrompt(promptText, moveNames, cb)
   PartyMenu._forgetCursor = 1
 end
 
+-- pokefirered/src/party_menu.c:4548 ShowMoveSelectWindow
+function PartyMenu.pickPpMove(mon, item, cb)
+  local names, slots = {}, {}
+  for i = 1, 4 do
+    local id = Pokemon.moveIdAt(mon, i)
+    if id and id > 0 then
+      names[#names + 1] = Pokemon.moveName(id) or Strings("MOVE %s", id)
+      slots[#slots + 1] = i
+    end
+  end
+  -- pokefirered/src/strings.c:319 gText_RestoreWhichMove, :320 gText_BoostPp
+  local prompt = ItemUse.ppItemBoosts(item) and RomText.plain("gText_BoostPp")
+    or RomText.plain("gText_RestoreWhichMove")
+  PartyMenu.showForgetPrompt(prompt, names, function(idx)
+    if idx == nil then
+      -- pokefirered/src/party_menu.c:4628 ReturnToUseOnWhichMon
+      PartyMenu.mode = "use"
+      return
+    end
+    cb(slots[idx + 1])
+  end)
+end
+
 -- pokefirered/src/party_menu.c:4841 Task_LearnNextMoveOrClosePartyMenu
 local function tutor_learned(moveLearned)
   if moveLearned then PartyMenu._tutorResult = true end
@@ -1045,7 +1070,7 @@ function PartyMenu.confirmChosenMons()
   if #order == 0 then
     se(26)
     -- pokefirered/src/strings.c:322
-    PartyMenu.showMessage(Strings("No battling this way!"), function()
+    PartyMenu.showMessage(RomText.plain("gText_NoPokemonForBattle"), function()
       PartyMenu.mode = "choose_multi"
     end)
     return false
@@ -1062,7 +1087,7 @@ end
 function PartyMenu.askCancelChooseMons()
   se(5)
   -- pokefirered/src/strings.c:370
-  PartyMenu.showYesNo(Strings("Cancel the battle?"), function(yes)
+  PartyMenu.showYesNo(RomText.plain("gText_CancelBattle"), function(yes)
     if not yes then
       PartyMenu.mode = "choose_multi"
       return
@@ -1421,7 +1446,7 @@ function PartyMenu.handleInput(input)
           local res = FieldMoves.fromMenu(act, ctx)
           if not res or not res.ok then
             se(5) -- pokefirered/src/party_menu.c:3910
-            PartyMenu.showMessage((res and res.text) or Strings("Can't use that here."), function()
+            PartyMenu.showMessage((res and res.text) or RomText.plain("gText_CantUseHere"), function()
               PartyMenu.mode = "list"
             end)
           else
@@ -1803,16 +1828,26 @@ function PartyMenu.handleInput(input)
       end
 
       -- Case 4: General Medicine / Potions / Status
-      local startHp = tonumber(mon and mon.hp) or 0
-      local maxHp = tonumber(mon and (mon.maxHp or mon.maxhp)) or 1
-      local realSlot = (PartyMenu._order and PartyMenu._order[PartyMenu.cursor]) or PartyMenu.cursor
-      local ok, reason, msgText = ItemUse.useField(PartyMenu._session, PartyMenu._bag, PartyMenu._item, realSlot)
-      local endHp = tonumber(mon and mon.hp) or startHp
-      if ok then
-        se(2)
-        local hasRemaining = Bag.has(PartyMenu._bag, PartyMenu._item, 1)
-        if endHp > startHp then
-          PartyMenu.startHpAnim(PartyMenu.cursor, startHp, endHp, maxHp, function()
+      local function use_general(moveSlot)
+        local startHp = tonumber(mon and mon.hp) or 0
+        local maxHp = tonumber(mon and (mon.maxHp or mon.maxhp)) or 1
+        local realSlot = (PartyMenu._order and PartyMenu._order[PartyMenu.cursor]) or PartyMenu.cursor
+        local ok, reason, msgText = ItemUse.useField(PartyMenu._session, PartyMenu._bag, PartyMenu._item, realSlot, moveSlot)
+        local endHp = tonumber(mon and mon.hp) or startHp
+        if ok then
+          se(1) -- pokefirered/src/party_menu.c:4500
+          local hasRemaining = Bag.has(PartyMenu._bag, PartyMenu._item, 1)
+          if endHp > startHp then
+            PartyMenu.startHpAnim(PartyMenu.cursor, startHp, endHp, maxHp, function()
+              PartyMenu.showMessage(msgText, function()
+                if hasRemaining then
+                  PartyMenu.mode = "use"
+                else
+                  PartyMenu.close()
+                end
+              end)
+            end)
+          else
             PartyMenu.showMessage(msgText, function()
               if hasRemaining then
                 PartyMenu.mode = "use"
@@ -1820,22 +1855,21 @@ function PartyMenu.handleInput(input)
                 PartyMenu.close()
               end
             end)
-          end)
+          end
         else
-          PartyMenu.showMessage(msgText, function()
-            if hasRemaining then
-              PartyMenu.mode = "use"
-            else
-              PartyMenu.close()
-            end
+          se(5) -- pokefirered/src/party_menu.c:4490
+          PartyMenu.showMessage(msgText or Strings("It won't have any effect."), function()
+            PartyMenu.mode = "use"
           end)
         end
-      else
-        se(5) -- pokefirered/src/party_menu.c:4490
-        PartyMenu.showMessage(msgText or Strings("It won't have any effect."), function()
-          PartyMenu.mode = "use"
-        end)
       end
+      -- pokefirered/src/party_menu.c:4591 ItemUseCB_TryRestorePP
+      if ItemsData.fieldUseKind(PartyMenu._item) == "pp" and ItemUse.ppItemNeedsMove(PartyMenu._item) then
+        se(5)
+        PartyMenu.pickPpMove(mon, PartyMenu._item, use_general)
+        return
+      end
+      use_general(nil)
     elseif input:wasPressed("b") or input:wasPressed("start") then
       se(5) -- pokefirered/src/party_menu.c:1246
       PartyMenu.close()
@@ -2122,7 +2156,13 @@ local function draw_filled_slot(i, mon, selected)
     if desc then party_print(desc, baseX + info.desc[1], baseY + info.desc[2], 64) end
     return
   end
-  party_print("Lv" .. tostring(mon.level or 0), baseX + info.level[1], baseY + info.level[2], 32)
+  local SummaryData = require("src.core.game3.summary_data")
+  local ailment = SummaryData.statusAilment(mon)
+  -- pokefirered/src/party_menu.c:2322 DisplayPartyPokemonLevelCheck:
+  -- Level is only shown when the mon is healthy (or PKRS); status ailments replace level.
+  if ailment == 0 or ailment == 6 then
+    party_print("Lv" .. tostring(mon.level or 0), baseX + info.level[1], baseY + info.level[2], 32)
+  end
 
   local gender = mon.gender or (Pokemon.gender and Pokemon.gender(mon.species, mon.personality))
   local isNidoran = (mon.species == 29 or mon.species == 32)
@@ -2263,7 +2303,7 @@ function PartyMenu.draw()
     end
   elseif PartyMenu.mode == "forget" then
     Window.stdFrame(Window.template(1, 17, 15, 2))
-    FrlgFont.draw(Strings("Which move?"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(PartyMenu._forgetPrompt or Strings("Which move?"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
 
     local moves = PartyMenu._forgetMoves or {}
     local popW = 11
@@ -2280,7 +2320,7 @@ function PartyMenu.draw()
     end
   elseif PartyMenu.mode == "item_action" then
     Window.stdFrame(Window.template(1, 17, 18, 2))
-    FrlgFont.draw(Strings("Do what with an item?"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
+    FrlgFont.draw(RomText.plain("gText_DoWhatWithItem"), 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
 
     local actCount = #PartyMenu.ITEM_ACTIONS
     local popW = 7
@@ -2316,21 +2356,22 @@ function PartyMenu.draw()
     end
   else
     Window.stdFrame(Window.template(1, 17, 21, 2))
-    local promptText = Strings("Choose a POKéMON.")
+    local promptKey = "gText_ChoosePokemon"
     if PartyMenu.mode == "switch" then
-      promptText = Strings("Move to where?")
+      promptKey = "gText_MoveToWhere"
     elseif PartyMenu.mode == "use" then
       if PartyMenu._item and ItemsData.isTm(PartyMenu._item) then
-        promptText = Strings("Teach which POKéMON?")
+        promptKey = "gText_TeachWhichPokemon"
       else
-        promptText = Strings("Use on which POKéMON?")
+        promptKey = "gText_UseOnWhichPokemon"
       end
     elseif PartyMenu.mode == "give" then
-      promptText = Strings("Give to which POKéMON?")
+      promptKey = "gText_GiveToWhichPokemon"
     elseif PartyMenu.mode == "move_tutor" then
       -- pokefirered/src/data/party_menu.h:609
-      promptText = Strings("Teach which POKéMON?")
+      promptKey = "gText_TeachWhichPokemon"
     end
+    local promptText = RomText.plain(promptKey)
     FrlgFont.draw(promptText, 1 * 8 + 2, 17 * 8 + 2, { colors = FrlgFont.COLOR.NORMAL })
     if PartyMenu.mode == "choose_multi" then
       -- pokefirered/src/party_menu.c:1063 DrawCancelConfirmButtons

@@ -15,6 +15,10 @@ OwSprites._logged = false
 local STAND = { down = 0, up = 1, left = 2, right = 2 }
 local WALK_A = { down = 3, up = 5, left = 7, right = 7 }
 local WALK_B = { down = 4, up = 6, left = 8, right = 8 }
+-- src/data/object_events/object_event_anims.h:601
+local RUN_BASE = { down = 9, up = 12, left = 15, right = 15 }
+local RUN_A = { down = 10, up = 13, left = 16, right = 16 }
+local RUN_B = { down = 11, up = 14, left = 17, right = 17 }
 
 local function owRoot()
   -- Must follow Dataset.mountExtractRoots() — do not bake CACHE_ROOT at require.
@@ -127,7 +131,76 @@ function OwSprites.get(graphicsId)
   return spr
 end
 
-local FIELD_MOVE_POSE = { down = 3, up = 7, left = 4, right = 4 }
+-- src/data/object_events/object_event_anims.h:633
+local FIELD_MOVE_SEQ = { 0, 4, 1, 4, 2, 4, 3, 4, 4, 8 }
+-- src/data/object_events/object_event_anims.h:642
+local VS_SEEKER_SEQ = { 0, 4, 1, 4, 5, 4, 6, 4 }
+for _ = 1, 7 do
+  VS_SEEKER_SEQ[#VS_SEEKER_SEQ + 1] = 7; VS_SEEKER_SEQ[#VS_SEEKER_SEQ + 1] = 4
+  VS_SEEKER_SEQ[#VS_SEEKER_SEQ + 1] = 8; VS_SEEKER_SEQ[#VS_SEEKER_SEQ + 1] = 4
+end
+for _, v in ipairs({ 6, 4, 1, 4, 0, 4 }) do VS_SEEKER_SEQ[#VS_SEEKER_SEQ + 1] = v end
+-- src/data/object_events/object_event_anims.h:657
+local VS_SEEKER_BIKE_SEQ = { 0, 4, 1, 4, 2, 4, 3, 4 }
+for _ = 1, 7 do
+  VS_SEEKER_BIKE_SEQ[#VS_SEEKER_BIKE_SEQ + 1] = 4; VS_SEEKER_BIKE_SEQ[#VS_SEEKER_BIKE_SEQ + 1] = 4
+  VS_SEEKER_BIKE_SEQ[#VS_SEEKER_BIKE_SEQ + 1] = 5; VS_SEEKER_BIKE_SEQ[#VS_SEEKER_BIKE_SEQ + 1] = 4
+end
+for _, v in ipairs({ 3, 4, 2, 4, 1, 4, 0, 4 }) do VS_SEEKER_BIKE_SEQ[#VS_SEEKER_BIKE_SEQ + 1] = v end
+
+-- src/data/object_events/object_event_anims.h:877
+local FISH_BASE = { down = 8, up = 4, left = 0, right = 0 }
+local FISH_TAKE_OUT = { 0, 4, 1, 4, 2, 4, 3, 4 }
+-- src/data/object_events/object_event_anims.h:909
+local FISH_PUT_AWAY_SN = { 3, 4, 2, 6, 1, 6, 0, 6 }
+local FISH_PUT_AWAY_WE = { 3, 4, 2, 4, 1, 4, 0, 4 }
+-- src/data/object_events/object_event_anims.h:941
+local FISH_HOOKED = { 2, 6, 3, 6, 2, 6, 3, 6, 3, 30 }
+
+local function seqFrame(seq, t, loop)
+  t = math.max(0, math.floor(tonumber(t) or 0))
+  local total = 0
+  for i = 2, #seq, 2 do total = total + seq[i] end
+  if loop and total > 0 then t = t % total end
+  local acc = 0
+  for i = 1, #seq, 2 do
+    acc = acc + seq[i + 1]
+    if t < acc then return seq[i], false end
+  end
+  return seq[#seq - 1], true
+end
+
+function OwSprites.fieldMoveFrame(elapsed, kind)
+  local seq = FIELD_MOVE_SEQ
+  if kind == "vs_seeker" then seq = VS_SEEKER_SEQ
+  elseif kind == "vs_seeker_bike" then seq = VS_SEEKER_BIKE_SEQ end
+  return (seqFrame(seq, elapsed))
+end
+
+function OwSprites.fishingFrame(facing, anim, t)
+  if anim == "hooked" then
+    return seqFrame(FISH_HOOKED, t, true)
+  elseif anim == "putaway" then
+    local seq = (facing == "left" or facing == "right") and FISH_PUT_AWAY_WE or FISH_PUT_AWAY_SN
+    return seqFrame(seq, t)
+  end
+  return seqFrame(FISH_TAKE_OUT, t)
+end
+
+function OwSprites.fishingAbsFrame(facing, frameInGroup)
+  return (FISH_BASE[facing] or 8) + (tonumber(frameInGroup) or 3)
+end
+
+-- src/field_player_avatar.c:1954 AlignFishingAnimationFrames
+function OwSprites.fishingOffset(absFrame, facing)
+  local x2, y2 = 0, 0
+  if absFrame == 1 or absFrame == 2 or absFrame == 3 then
+    x2 = (facing == "left") and -8 or 8
+  end
+  if absFrame == 5 then y2 = -8 end
+  if absFrame == 10 or absFrame == 11 then y2 = 8 end
+  return x2, y2
+end
 
 -- ------------------------------------------------ runtime palette substitution
 -- pret recolours field objects by loading a new palette into their OBJ palette
@@ -287,10 +360,22 @@ function OwSprites.pose(spr, facing, walkPhase, stepFlip, opts)
     return 9, false
   end
 
-  if opts and opts.fieldMove and spr.frameCount >= 9 then
-    local f = FIELD_MOVE_POSE[facing] or 3
+  if opts and opts.fishing and spr.frameCount >= 12 then
+    local g = math.max(0, math.min(3, tonumber(opts.fishFrame) or 3))
+    return OwSprites.fishingAbsFrame(facing, g), flip
+  end
+
+  if opts and opts.fieldMove and spr.frameCount >= 6 then
+    local f = tonumber(opts.fieldMoveFrame) or 4
     if f >= spr.frameCount then f = 0 end
-    return f, flip
+    return f, false
+  end
+
+  if opts and opts.running ~= nil and spr.frameCount >= 18 then
+    if opts.running == 1 then
+      return (stepFlip and RUN_A[facing] or RUN_B[facing]) or RUN_BASE[facing] or 9, flip
+    end
+    return RUN_BASE[facing] or 9, flip
   end
 
   if spr.frameCount == 3 then
@@ -323,7 +408,7 @@ end
 
 --- Draw at world pixel position (cell top-left). Feet at bottom of sprite.
 -- opts.bow: use nurse bow frame (ANIM_NURSE_BOW).
--- opts.fieldMove: use directional arm-raise field move frame.
+-- opts.fieldMove: use the arm-raise field move frame (opts.fieldMoveFrame).
 -- opts.frame: explicit frame index override.
 function OwSprites.draw(graphicsId, px, py, camX, camY, facing, walkPhase, stepFlip, opts)
   local spr = OwSprites.getDraw(graphicsId)
@@ -352,6 +437,11 @@ function OwSprites.playerGraphicsId(game)
 
   if P then
     if P.fieldMoveAnim and P.fieldMoveAnim > 0 then
+      if P.fieldMoveKind == "vs_seeker_bike" then
+        -- src/field_player_avatar.c:1331
+        return isFemale and (Versions.OW_PLAYER_FEMALE_VS_SEEKER_BIKE or 13)
+                         or (Versions.OW_PLAYER_MALE_VS_SEEKER_BIKE or 6)
+      end
       return isFemale and (Versions.OW_PLAYER_FEMALE_FIELD_MOVE or 10)
                        or (Versions.OW_PLAYER_MALE_FIELD_MOVE or 3)
     end

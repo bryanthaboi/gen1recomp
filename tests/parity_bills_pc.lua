@@ -87,6 +87,8 @@ package.loaded["src.ui.Menu"] = menuStub
 
 local queued
 local fakeSelf = setmetatable({
+  map = { id = "BILLS_HOUSE" },
+  player = { surfing = false },
   queueScript = function(_, script, extra) queued = { script, extra } end,
   billsHouseBillExits = function() end,
 }, { __index = OW })
@@ -117,11 +119,11 @@ check(tostring(lastPush().text):find("TELEPORTER", 1, true)
 -- === 2) Bill in machine, separator not used yet: initiated text ===
 resetFlags()
 fakeGame.save.flags.EVENT_BILL_SAID_USE_CELL_SEPARATOR = true
-local musicStopped = false
+local musicStopped, musicRestarted = false, nil
 local realMusic = package.loaded["src.core.Music"]
 package.loaded["src.core.Music"] = {
   stop = function() musicStopped = true end,
-  playMap = function() end,
+  playMap = function(_, mapId) musicRestarted = mapId end,
 }
 local realSound = package.loaded["src.core.Sound"]
 package.loaded["src.core.Sound"] = {
@@ -166,9 +168,39 @@ eq(table.concat(gotRows, " | "), table.concat(wantRows, " | "),
 eq(delayFrames, 268, "268 delay frames, DelayFrames call for DelayFrames call")
 check(not fakeGame.save.flags.EVENT_USED_CELL_SEPARATOR_ON_BILL,
       "SetEvent waits for the chain, not the text box")
+check(musicRestarted == nil, "map music stays off during the chain")
 queued[2].onDone()
 check(fakeGame.save.flags.EVENT_USED_CELL_SEPARATOR_ON_BILL,
       "separator path sets EVENT_USED_CELL_SEPARATOR_ON_BILL")
+eq(musicRestarted, "BILLS_HOUSE",
+   "PlayDefaultMusic right after Get_Item1, before Bill exits")
+
+do
+  local playing = true
+  local fakeSrc = { isPlaying = function() return playing end }
+  package.loaded["src.core.Sound"] = {
+    play = function() return fakeSrc end,
+    sfxBusy = function() return false end,
+  }
+  local yielded = 0
+  local runner = { yield = function() yielded = yielded + 1 end }
+  local ctx = { game = fakeGame, runner = runner }
+  local Commands = require("src.script.Commands")
+  Commands.play_sound(ctx, "Shrink")
+  Commands.wait_sound(ctx)
+  eq(yielded, 1, "wait_sound blocks on a Gen 1 sfx that is still sounding")
+  check(runner.waitingCheck and not runner.waitingCheck(),
+        "and keeps waiting while it plays")
+  playing = false
+  check(runner.waitingCheck(), "and releases the frame it ends")
+  runner.waitingCheck = nil
+  Commands.wait_sound(ctx)
+  eq(yielded, 1, "a second wait_sound with nothing playing falls through")
+  package.loaded["src.core.Sound"] = {
+    play = function() end,
+    playCry = function() end,
+  }
+end
 
 -- === 3) after separator, before leaving: monitor text again ===
 resetFlags()
@@ -322,6 +354,9 @@ local exitSelf = setmetatable({
 fakeGame.save = SaveData.newGame()
 setUpvalue(OW.billsHousePC, "Game", fakeGame)
 exitSelf:billsHouseBillExits()
+check(exitSelf.emote and exitSelf.emote.frames == 8
+      and exitSelf.emote.bubble == false,
+      "Bill holds 8 frames in the machine before walking (BillsHouse.asm:81)")
 drain(exitSelf)
 check(fakeGame.save.flags.EVENT_MET_BILL_2, "Bill's exit sets EVENT_MET_BILL_2")
 eq(ticketBill, exitSelf.npcs[1], "the exit walk hands BILL1 to the ticket scene")

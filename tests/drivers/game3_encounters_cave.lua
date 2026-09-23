@@ -97,7 +97,18 @@ return function(game)
         di = (di % 4) + 1
       else
         local bx, by = Player.cellX, Player.cellY
-        U.hold(game, DIRS[di], 20)
+        local btn = DIRS[di]
+        for _ = 1, 30 do
+          table.insert(game.input.pressQueue, btn)
+          game.input.state[btn] = true
+          coroutine.yield()
+          if Player.moving or (Battle.isActive and Battle.isActive()) then break end
+        end
+        game.input.state[btn] = false
+        for _ = 1, 60 do
+          if not Player.moving then break end
+          coroutine.yield()
+        end
         U.wait(4)
         if Battle.isActive and Battle.isActive() then return true, steps end
         if Map.current ~= mapId then return false, steps end
@@ -250,11 +261,11 @@ return function(game)
     placeAt(MT_MOON, cx, cy, "right")
     session.party = {}
     Party.giveMon(session, 6, topLevel)
-    session.repelSteps = 250
+    session.repelSteps = 500
     Rng.SeedRng(0x1234)
     Rng.SeedWildEncounterRng(0x1234)
     Encounters.resetRateModifiers()
-    local equalHit, eSteps = patrol(MT_MOON, 1, 150)
+    local equalHit, eSteps = patrol(MT_MOON, 1, 400)
     U.log(string.format("repel patrol (lead L%d) ended at (%d,%d) after %d steps",
       topLevel, Player.cellX, Player.cellY, eSteps))
     result(equalHit,

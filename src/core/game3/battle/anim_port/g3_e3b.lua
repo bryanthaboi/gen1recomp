@@ -591,12 +591,13 @@ C.ReversalOrb = P.cb(function(s, vm)
   H.reversalOrbStep(s, vm)
 end)
 
-function H.picImage(species, back)
+function H.picImage(species, back, side)
   local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
   if not ok or not species then return nil end
+  local picSp, shiny, personality = require("src.core.game3.battle.ui").sidePicArgs(side, species)
   local e
-  if back and Pokemon.backPic then e = Pokemon.backPic(species) end
-  if not e and Pokemon.frontPic then e = Pokemon.frontPic(species) end
+  if back and Pokemon.backPic then e = Pokemon.backPic(picSp, nil, shiny) end
+  if not e and Pokemon.frontPic then e = Pokemon.frontPic(picSp, nil, shiny, personality) end
   return e and e.image
 end
 
@@ -654,7 +655,7 @@ T.RolePlaySilhouette = P.task(function(t, vm)
   local y = P.coordAtk(vm, P.COORD_Y) + H.picYOffset(species, isBackPic)
   local c = P.CloneMon(vm, atk)
   if c then
-    local img = H.picImage(species, isBackPic)
+    local img = H.picImage(species, isBackPic, P.tgt(vm))
     if img then c.image = img end
     c.x, c.y = x, y
     c.ox, c.oy = 0, 0

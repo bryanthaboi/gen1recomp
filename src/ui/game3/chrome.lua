@@ -24,23 +24,14 @@ local PATHS = {
   dlg = {
     { path = "chrome/menu_message_rgba.rgba", w = 48, h = 24 },
     { path = "data/generated/gba/chrome/menu_message_rgba.rgba", w = 48, h = 24 },
-    { path = "src/import/gba/chrome/menu_message_rgba.png", w = 48, h = 24 },
-    { path = "chrome/menu_message_rgba.png", w = 48, h = 24 },
-    { path = "data/generated/gba/chrome/menu_message_rgba.png", w = 48, h = 24 },
   },
   std = {
     { path = "chrome/std_rgba.rgba", w = 24, h = 24 },
     { path = "data/generated/gba/chrome/std_rgba.rgba", w = 24, h = 24 },
-    { path = "src/import/gba/chrome/std_rgba.png", w = 24, h = 24 },
-    { path = "chrome/std_rgba.png", w = 24, h = 24 },
-    { path = "data/generated/gba/chrome/std_rgba.png", w = 24, h = 24 },
   },
   sign = {
     { path = "chrome/signpost_rgba.rgba", w = 40, h = 32 },
     { path = "data/generated/gba/chrome/signpost_rgba.rgba", w = 40, h = 32 },
-    { path = "src/import/gba/chrome/signpost_rgba.png", w = 40, h = 32 },
-    { path = "chrome/signpost_rgba.png", w = 40, h = 32 },
-    { path = "data/generated/gba/chrome/signpost_rgba.png", w = 40, h = 32 },
   },
   textCursor = {
     { path = "chrome/fonts/text_cursor.rgba", w = 16, h = 16 },
@@ -49,9 +40,6 @@ local PATHS = {
   arrow = {
     { path = "chrome/fonts/down_arrows_fg.rgba", w = 128, h = 16 },
     { path = "data/generated/gba/chrome/fonts/down_arrows_fg.rgba", w = 128, h = 16 },
-    { path = "src/import/gba/chrome/fonts/down_arrows_fg.rgba", w = 128, h = 16 },
-    { path = "chrome/fonts/down_arrows_fg.png", w = 128, h = 16 },
-    { path = "data/generated/gba/chrome/fonts/down_arrows_fg.png", w = 128, h = 16 },
   },
 }
 
@@ -325,8 +313,6 @@ local function ensureUser(frameType)
   local img, path = loadImage({
     { path = rel, w = 24, h = 24 },
     { path = "data/generated/gba/" .. rel, w = 24, h = 24 },
-    { path = "src/import/gba/chrome/user_frame_" .. n .. ".png", w = 24, h = 24 },
-    { path = "src/import/gba/chrome/user_frame_rgba.png", w = 24, h = 24 },
   })
   Chrome._user[n] = img and { image = img, quads = makeQuads(img, 3, 3), path = path } or false
   return Chrome._user[n] or nil

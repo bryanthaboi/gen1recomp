@@ -11,6 +11,7 @@ local Options = require("src.core.game3.options")
 local Trig = require("src.core.game3.trig")
 local PartyView = require("src.core.game3.battle.party_view")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.game3.rom_text")
 
 local BagMenu = {}
 
@@ -214,7 +215,7 @@ end
 -- Close the bag and report the chosen item to the battle system.  partySlot is
 -- the real party index for party-targeted items, or nil otherwise.  Shared with
 -- the Berry Pouch so a berry picked there takes the same route as a potion.
-function BagMenu.battleUse(itemId, partySlot)
+function BagMenu.battleUse(itemId, partySlot, moveSlot)
   begin_exit(true, function()
     save_pos()
     local cb = BagMenu._onBattleUse
@@ -223,8 +224,43 @@ function BagMenu.battleUse(itemId, partySlot)
     BagMenu._battle = false
     BagMenu._onBattleUse = nil
     Stack.pop("bag")
-    if cb then cb(itemId, partySlot) end
+    if cb then cb(itemId, partySlot, moveSlot) end
   end)
+end
+
+-- pokefirered/src/party_menu.c:4591 ItemUseCB_TryRestorePP
+function BagMenu.commitBattlePartyUse(st, itemId, realSlot, mon, beforeUse)
+  local PartyMenu = require("src.ui.game3.party_menu")
+  local BattleItems = require("src.core.game3.battle.items")
+  local isPp = ItemsData.fieldUseKind(itemId) == "pp"
+  local function commit(moveSlot)
+    local canUse, err = BattleItems.canUseOn(st, itemId, realSlot, mon, moveSlot)
+    if not canUse then
+      se(5) -- pokefirered/src/party_menu.c:4490
+      PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
+        PartyMenu.mode = "use"
+      end)
+      return
+    end
+    local function go()
+      PartyMenu.close()
+      if beforeUse then beforeUse() end
+      BagMenu.battleUse(itemId, realSlot, moveSlot)
+    end
+    if isPp then
+      -- pokefirered/src/party_menu.c:4696 TryUsePPItemInBattle
+      se(1)
+      PartyMenu.showMessage(ItemUse.ppItemText(mon, itemId, moveSlot or 1), go)
+      return
+    end
+    go()
+  end
+  if isPp and mon and not mon.isEgg and ItemUse.ppItemNeedsMove(itemId) then
+    se(5)
+    PartyMenu.pickPpMove(mon, itemId, commit)
+    return
+  end
+  commit(nil)
 end
 
 function BagMenu.show(sessionBag, opts)
@@ -427,6 +463,17 @@ local function use_field_from_bag(session, bag, id)
 end
 
 local function handle_menu_input(input)
+  if BagMenu.mode == "flute_wait" then
+    -- pokefirered/src/item_use.c:607
+    local w = BagMenu._fluteWait
+    w.frames = w.frames + 1
+    if w.frames >= ItemUse.BLACK_WHITE_FLUTE_DELAY then
+      BagMenu._fluteWait = nil
+      ItemUse.playBlackWhiteFlute()
+      show_bag_message(w.text)
+    end
+    return
+  end
   if BagMenu.mode == "toss" then
     local rows = BagMenu.list()
     local row = rows[BagMenu.cursor]
@@ -521,16 +568,7 @@ local function handle_menu_input(input)
                 -- party slot, so translating again would heal the wrong mon.
                 local realSlot = slot
                 local mon = liveParty and liveParty[realSlot]
-                local canUse, err = BattleItems.canUseOn(st, row.id, realSlot, mon)
-                if not canUse then
-                  se(5) -- pokefirered/src/party_menu.c:4490
-                  PartyMenu.showMessage(err or Strings("It won't have any effect."), function()
-                    PartyMenu.mode = "use"
-                  end)
-                  return
-                end
-                PartyMenu.close()
-                BagMenu.battleUse(row.id, realSlot)
+                BagMenu.commitBattlePartyUse(st, row.id, realSlot, mon)
               end,
               onClose = function()
                 BagMenu.mode = "list"
@@ -584,7 +622,7 @@ local function handle_menu_input(input)
           elseif ItemUse.needsPartyTarget(row.id) then
             if #party == 0 then
               BagMenu.mode = "message"
-              BagMenu.messageText = Strings("There is no POKéMON.")
+              BagMenu.messageText = RomText.plain("gText_ThereIsNoPokemon")
             else
               local PartyMenu = require("src.ui.game3.party_menu")
               open_submenu(function()
@@ -664,6 +702,10 @@ local function handle_menu_input(input)
                 if fade then field_fade_in() end
               end)
               return
+            elseif ok and kind == "black_white_flute" then
+              -- pokefirered/src/item_use.c:582
+              BagMenu.mode = "flute_wait"
+              BagMenu._fluteWait = { frames = 0, text = text }
             elseif ok and kind == "map" then
               -- pokefirered/src/item_use.c:649
               BagMenu.mode = "list"
@@ -684,7 +726,7 @@ local function handle_menu_input(input)
           BagMenu.messageText = Strings("This item can't be held.")
         elseif #party == 0 then
           BagMenu.mode = "message"
-          BagMenu.messageText = Strings("There is no POKéMON.")
+          BagMenu.messageText = RomText.plain("gText_ThereIsNoPokemon")
         else
           local PartyMenu = require("src.ui.game3.party_menu")
           -- src/item_menu.c:1620

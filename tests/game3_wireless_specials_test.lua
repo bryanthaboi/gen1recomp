@@ -79,14 +79,44 @@ local _, t2 = Natives.special(ctx, Std.SPECIAL.Script_TakeBerryPowder, A)
 checkEq(t2, 0, "cannot take 50 from 40")
 checkEq(session.berryPowder, 40, "balance unchanged after a refused take")
 
-print("=== 3. vendor window pair records open/close ===")
+print("=== 3. vendor powder box shows, reprints, and hides ===")
+local BerryPowderBox = require("src.ui.game3.berry_powder_box")
 local yDisp = Natives.special(ctx, Std.SPECIAL.DisplayBerryPowderVendorMenu, A)
 checkEq(yDisp, false, "Display does not yield")
-check(ctx.berryPowderVendorOpen == true, "vendor window marked open")
+check(BerryPowderBox.isVisible(), "powder box is visible")
+checkEq(BerryPowderBox.amount(), 40, "powder box shows the balance")
+checkEq(BerryPowderBox.amountText(40), "   40", "amount is right-aligned in 5 digits")
+session.berryPowder = 15
 local yPrint = Natives.special(ctx, Std.SPECIAL.PrintPlayerBerryPowderAmount, A)
-checkEq(yPrint, false, "Print is a bound no-op")
+checkEq(yPrint, false, "Print does not yield")
+checkEq(BerryPowderBox.amount(), 15, "Print reprints the new balance")
 Natives.special(ctx, Std.SPECIAL.RemoveBerryPowderVendorMenu, A)
-check(ctx.berryPowderVendorOpen ~= true, "Remove clears the vendor window state")
+check(not BerryPowderBox.isVisible(), "Remove hides the powder box")
+session.berryPowder = 40
+
+print("=== 3b. minigame record windows block waitstate until A/B ===")
+local Records = require("src.ui.game3.minigame_records")
+local Stack = require("src.ui.game3.stack")
+local fakeInput = { pressed = {} }
+function fakeInput:wasPressed(k) return self.pressed[k] == true end
+for _, row in ipairs({
+  { "ShowBerryCrushRankings", "berry_crush" },
+  { "ShowPokemonJumpRecords", "pokemon_jump" },
+  { "ShowDodrioBerryPickingRecords", "dodrio" },
+}) do
+  ctx.stateWait = nil
+  Natives.special(ctx, Std.SPECIAL[row[1]], A)
+  check(Records.isOpen() and Records.kind() == row[2], row[1] .. " opens the " .. row[2] .. " window")
+  check(Stack.top() and Stack.top().id == Records.ID, row[1] .. " pushes a modal layer")
+  check(type(ctx.stateWait) == "function" and not ctx.stateWait(), row[1] .. " holds waitstate")
+  Records.update(1 / 60); Records.update(1 / 60)
+  fakeInput.pressed = { a = true }
+  Records.handleInput(fakeInput)
+  fakeInput.pressed = {}
+  check(not Records.isOpen() and ctx.stateWait(), row[1] .. " closes on A and releases waitstate")
+end
+checkEq(Records.pressingSpeedText(0):match("^%s*(%d+%.%d+)"), "0.00", "empty rankings read 0.00")
+checkEq(Records.pressingSpeedText(0x0580):match("^%s*(%d+%.%d+)"), "5.50", "0x0580 reads 5.50")
 
 print("=== 4. e-Reader fallbacks ===")
 Natives.special(ctx, Std.SPECIAL.SetEReaderTrainerGfxId, A)

@@ -85,7 +85,7 @@ local function moves_for_mon(mon)
 
     if moveId and (type(moveId) ~= "number" or moveId > 0) and moveId ~= "" and moveId ~= "-------" then
       mdef = Pokemon.battleMove(moveId)
-      maxPp = (mdef and mdef.pp) or 5
+      maxPp = tonumber(mon.maxPp and mon.maxPp[i]) or (mdef and mdef.pp) or 5
       if not pp then pp = maxPp end
       local name = Pokemon.moveName(moveId)
       if not name or name == "" or name:match("^MOVE ") then
@@ -474,7 +474,7 @@ local function draw_header(mon)
   -- On PAGE_MOVES (Known Moves) and PAGE_MOVES_INFO (Move Details), the large 64x64 front pic is HIDDEN.
   -- Instead, the 32x32 party mon icon is displayed below the level/name plate at (24, 34).
   if isMovesPage then
-    local icon = Pokemon.icon(species)
+    local icon = Pokemon.monIcon(mon)
     if icon and icon.image and love and love.graphics then
       local iw = icon.w or 32
       local ih = icon.h or 32
@@ -489,14 +489,14 @@ local function draw_header(mon)
   else
     local pic = c.monPic or { x = 60, y = 65 }
     local cx, cy = pic.x or 60, pic.y or 65
-    local front = Pokemon.frontPic(species)
+    local front = Pokemon.monFrontPic(mon)
     if front and front.image and love and love.graphics then
       local iw = front.w or 64
       local ih = front.h or 64
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(front.image, cx - iw / 2, cy - ih / 2)
     else
-      local icon = Pokemon.icon(species)
+      local icon = Pokemon.monIcon(mon)
       if icon and icon.image and love and love.graphics then
         local iw = icon.w or 32
         local ih = icon.h or 32

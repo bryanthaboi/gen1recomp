@@ -77,7 +77,14 @@ local function read_from_disk()
 end
 
 function Multichoice.tryLoadCache()
-  local readers = { read_from_dataset, read_from_cachefs, read_from_love, read_from_disk }
+  local okE, Extract = pcall(require, "src.import.gba.extract_island1")
+  local customRoot = okE and Extract and Extract.CACHE_ROOT and Extract.CACHE_ROOT ~= "data/generated/gba"
+  local readers
+  if customRoot then
+    readers = { read_from_disk }
+  else
+    readers = { read_from_disk, read_from_dataset, read_from_cachefs, read_from_love }
+  end
   for _, reader in ipairs(readers) do
     local data = parse_lists(reader())
     if data then

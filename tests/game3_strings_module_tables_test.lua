@@ -22,12 +22,12 @@ local ItemsData = require("src.core.game3.items_data")
 Trainers._pack = { trainers = {} } -- no ROM pack: use the built-in fallbacks
 
 Strings.load({ strings = {
-  ["Can't use that here."] = "Impossible d'utiliser ça ici.",
+  ["Not enough HP!"] = "Pas assez de PV!",
   ["RIVAL: Yeah!\nAm I great or what?"] = "RIVAL: Ouais!\nJe suis trop fort!",
   ["KEY ITEMS"] = "OBJETS RARES",
 } })
 
-check(FieldMoves.TEXT.CANT_USE_HERE == "Impossible d'utiliser ça ici.",
+check(FieldMoves.TEXT.NOT_ENOUGH_HP == "Pas assez de PV!",
   "FieldMoves.TEXT translates when read")
 check(FieldMoves.TEXT.NOT_A_KEY == nil, "FieldMoves.TEXT has no entry for an unknown key")
 

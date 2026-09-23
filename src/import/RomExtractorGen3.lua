@@ -328,6 +328,8 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local EggExtract = require("src.import.gba.egg_extract")
   local BattleAnimExtract = require("src.import.gba.battle_anim_extract")
   local BattleAiExtract = require("src.import.gba.battle_ai_extract")
+  local CreditsExtract = require("src.import.gba.credits_extract")
+  local LeagueExtract = require("src.import.gba.league_extract")
   local Extract = require("src.import.gba.extract_island1")
   local prevRoot = Extract.CACHE_ROOT
   Extract.CACHE_ROOT = GBA_ROOT
@@ -352,11 +354,13 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local needEgg = wantedExtractor("egg_extract") and not EggExtract.ready(cache, GBA_ROOT)
   local needAnims = wantedExtractor("battle_anim_extract") and not BattleAnimExtract.ready(cache, GBA_ROOT)
   local needAi = wantedExtractor("battle_ai_extract") and not BattleAiExtract.ready(cache, GBA_ROOT)
+  local needCredits = wantedExtractor("credits_extract") and not CreditsExtract.ready(cache, GBA_ROOT)
+  local needLeague = wantedExtractor("league_extract") and not LeagueExtract.ready(cache, GBA_ROOT)
 
   if not (needRegion or needSections or needChoices or needHeal or needDoors
     or needSlots or needTrade or needLinkArt or needFame or needTeachy
     or needGift or needTower or needTutor or needMuseum or needRelearner
-    or needEgg or needAnims or needAi) then
+    or needEgg or needAnims or needAi or needCredits or needLeague) then
     Extract.CACHE_ROOT = prevRoot
     return true, { skipped = true }
   end
@@ -370,7 +374,7 @@ function RomExtractorGen3:runAuxExtracts(sha1)
   local ok, detail = pcall(function()
     local out = {}
     local step = 0
-    local totalSteps = 17
+    local totalSteps = 19
     local function auxTick(name)
       step = step + 1
       self:report(step / totalSteps, "Game Data: " .. name, step, totalSteps)
@@ -506,6 +510,16 @@ function RomExtractorGen3:runAuxExtracts(sha1)
       out.battleAi = okAi and detailAi or false
     end
     auxTick("Battle AI Scripts")
+
+    if needCredits then
+      out.credits = CreditsExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    end
+    auxTick("Staff Credits")
+
+    if needLeague then
+      out.league = LeagueExtract.run(rom, cache, { cacheRoot = GBA_ROOT })
+    end
+    auxTick("League Lighting & Diploma")
 
     return out
   end)

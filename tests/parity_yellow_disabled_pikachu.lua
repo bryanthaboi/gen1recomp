@@ -95,10 +95,10 @@ Follower.talk(fanGame, ow, pika)
 check(ow.emote and ow.emote.frames == 60 and type(ow.emote.bubble) == "number"
       and not ow.emote.pikaPic,
   "afterwards emotion 30 opens with the heart bubble alone")
-eq(pika.facing, "up", "pikaemotion_9's turn has not happened yet")
-ow.emote.onDone()
 eq(pika.facing, "down",
-  "the turn toward the player lands with the cry, facing player XOR 4")
+  "pikaemotion_9 turns away (player XOR 4) before the heart bubble")
+ow.emote.onDone()
+eq(pika.facing, "down", "and the cry leaves the facing alone")
 eq(cry, 5, "emotion 30 cries after its bubble")
 check(ow.emote and ow.emote.pikaPic, "and only then raises the pic")
 Sound.playPikaCry = realCry

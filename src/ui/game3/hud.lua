@@ -156,11 +156,14 @@ local function start_button_allowed()
   local Space = package.loaded["src.core.game3.scripting.space"]
   local Forced = package.loaded["src.core.game3.forced_movement"]
   local Warp = package.loaded["src.core.game3.warp"]
+  local P = package.loaded["src.core.game3.player"]
   local scriptBusy = Space and Space.vm and Space.vm.isRunning and Space.vm:isRunning()
   -- pokefirered/src/field_effect.c:1155 FieldCB_FallWarpExit
   local locked = (Field and Field.locked)
     or (Forced and Forced.isForced and Forced.isForced())
     or (Warp and Warp.isBusy and Warp.isBusy())
+    -- pokefirered/src/field_player_avatar.c:1419
+    or (P and P.boulderPush ~= nil)
   return not locked and not scriptBusy
 end
 
@@ -368,6 +371,7 @@ function Hud.openMessageStay(game, text, opts)
 end
 
 function Hud.openPc(game, session)
+  pcall(function() require("src.core.game3.audio").playSe(4) end) -- data/scripts/pc.inc:9
   PcMenu.show({ session = session or (require("src.core.game3.runtime").getSession()) })
 end
 

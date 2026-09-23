@@ -39,6 +39,7 @@ local function bgr555_to_rgb8(c)
 end
 
 local SPECIES_CASTFORM = 385
+local SPECIES_SPINDA = 308
 
 local function gba_off(ptr)
   return Versions.gbaToFile(ptr)
@@ -697,6 +698,59 @@ function PokemonExtract.run(rom, cache, opts)
     picsMissing[#picsMissing + 1] = kind .. "/" .. sp
   end
 
+  local function lz(off)
+    local ok, out = pcall(Lz77.decompress, function(i) return rom:get(i) end, off)
+    if ok then return out end
+    return nil
+  end
+
+  -- src/pokemon.c:5904
+  local function write_pics(sp)
+    local palOff = gba_off(rom:u32(palTable + sp * 8))
+    local shinyOff = gba_off(rom:u32(Versions.MON_SHINY_PALETTE_TABLE + sp * 8))
+    local palBytes = palOff and lz(palOff)
+    local shinyBytes = shinyOff and lz(shinyOff)
+    for _, kind in ipairs({ "front", "back" }) do
+      local tableOff = kind == "front" and frontPicTable or backPicTable
+      local picOff = gba_off(rom:u32(tableOff + sp * 8))
+      if picOff and palOff then
+        local tiles = lz(picOff)
+        local rgba = tiles and palBytes and decode_pic_sheet(tiles, palBytes)
+        local shiny = tiles and shinyBytes and decode_pic_sheet(tiles, shinyBytes)
+        if rgba and shiny then
+          put(cache, root .. "/" .. kind .. "/" .. sp .. ".rgba", rgba)
+          put(cache, root .. "/" .. kind .. "_shiny/" .. sp .. ".rgba", shiny)
+          picsWritten[kind] = picsWritten[kind] + 1
+          -- pokefirered/graphics_file_rules.mk:29
+          -- src/pokemon.c:1350, :5339
+          if sp == SPECIES_SPINDA and kind == "front" then
+            local function raw(t, n)
+              local out = {}
+              for i = 1, n do out[i] = string.char(t[i] or 0) end
+              return table.concat(out)
+            end
+            local spots = {}
+            for i = 0, 143 do spots[i + 1] = string.char(rom:get(Versions.SPINDA_SPOT_GRAPHICS + i)) end
+            put(cache, root .. "/spinda/front.4bpp", raw(tiles, 2048))
+            put(cache, root .. "/spinda/normal.gbapal", raw(palBytes, 32))
+            put(cache, root .. "/spinda/shiny.gbapal", raw(shinyBytes, 32))
+            put(cache, root .. "/spinda/spots.bin", table.concat(spots))
+          end
+          if sp == SPECIES_CASTFORM then
+            for form = 1, 3 do
+              put(cache, root .. "/" .. kind .. "/" .. sp .. "_" .. form .. ".rgba",
+                decode_pic_sheet(tiles, palBytes, form, form))
+              put(cache, root .. "/" .. kind .. "_shiny/" .. sp .. "_" .. form .. ".rgba",
+                decode_pic_sheet(tiles, shinyBytes, form, form))
+            end
+          end
+        else
+          noteMissing(kind, sp)
+        end
+      end
+    end
+  end
+
   for sp = 0, num - 1 do
     if progress and sp % 40 == 0 then
       progress("pokemon", sp, num)
@@ -746,57 +800,13 @@ function PokemonExtract.run(rom, cache, opts)
 
     put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
     picsWritten.icons = picsWritten.icons + 1
+    write_pics(sp)
+  end
 
-    -- Front Pic (64x64 RGBA)
-    local frontPtr = rom:u32(frontPicTable + sp * 8)
-    local palPtr = rom:u32(palTable + sp * 8)
-    local frontOff = gba_off(frontPtr)
-    local palOff = gba_off(palPtr)
-    if frontOff and palOff then
-      local made = false
-      local okT, tiles = pcall(Lz77.decompress, function(i) return rom:get(i) end, frontOff)
-      local okP, palBytes = pcall(Lz77.decompress, function(i) return rom:get(i) end, palOff)
-      if okT and okP and tiles and palBytes then
-        local frontRgba = decode_pic_sheet(tiles, palBytes)
-        if frontRgba then
-          put(cache, root .. "/front/" .. sp .. ".rgba", frontRgba)
-          picsWritten.front = picsWritten.front + 1
-          made = true
-        end
-        -- pokefirered/graphics_file_rules.mk:29
-        if sp == SPECIES_CASTFORM then
-          for form = 1, 3 do
-            local rgba = decode_pic_sheet(tiles, palBytes, form, form)
-            if rgba then put(cache, root .. "/front/" .. sp .. "_" .. form .. ".rgba", rgba) end
-          end
-        end
-      end
-      if not made then noteMissing("front", sp) end
-    end
-
-    -- Back Pic (64x64 RGBA)
-    local backPtr = rom:u32(backPicTable + sp * 8)
-    local backOff = gba_off(backPtr)
-    if backOff and palOff then
-      local made = false
-      local okT, tiles = pcall(Lz77.decompress, function(i) return rom:get(i) end, backOff)
-      local okP, palBytes = pcall(Lz77.decompress, function(i) return rom:get(i) end, palOff)
-      if okT and okP and tiles and palBytes then
-        local backRgba = decode_pic_sheet(tiles, palBytes)
-        if backRgba then
-          put(cache, root .. "/back/" .. sp .. ".rgba", backRgba)
-          picsWritten.back = picsWritten.back + 1
-          made = true
-        end
-        if sp == SPECIES_CASTFORM then
-          for form = 1, 3 do
-            local rgba = decode_pic_sheet(tiles, palBytes, form, form)
-            if rgba then put(cache, root .. "/back/" .. sp .. "_" .. form .. ".rgba", rgba) end
-          end
-        end
-      end
-      if not made then noteMissing("back", sp) end
-    end
+  -- include/constants/species.h:425
+  for sp = Versions.SPECIES_UNOWN_B, Versions.SPECIES_UNOWN_QMARK do
+    put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
+    write_pics(sp)
   end
 
   if #picsMissing > 0 then

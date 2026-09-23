@@ -904,7 +904,7 @@ local function draw_ordered_list()
     end
 
     -- Number: №001 (FONT_SMALL at x=28)
-    local natId = Pokemon.nationalPokedexNumber and Pokemon.nationalPokedexNumber(sp) or sp
+    local natId = Pokemon.national(sp) or 0
     local num = (Pokedex.currentOrder == "numerical_kanto") and sp or natId
     local numStr = string.format("№%03d", num)
     FrlgFont.draw(numStr, 28, rowY + 1, {
@@ -961,7 +961,7 @@ end
 local function draw_data_screen()
   local dex = Pokedex._dex
   local sp = Pokedex._regSpecies or Pokedex.selectedSpecies
-  local natId = Pokemon.nationalPokedexNumber and Pokemon.nationalPokedexNumber(sp) or sp
+  local natId = Pokemon.national(sp) or 0
   local dispNum = (Pokedex.currentOrder == "numerical_kanto") and sp or natId
   local name = species_label(sp)
   local entry = PokedexChrome.getEntry(sp)
@@ -1029,7 +1029,7 @@ local function draw_data_screen()
     end
 
     -- Front Sprite (64x64) at screen x=152, y=24 (sWindowTemplate_DexEntry_MonPic at x=152, y=24)
-    local pic = Pokemon.frontPic and Pokemon.frontPic(sp)
+    local pic = Pokemon.dexFrontPic(sp, Dex.defaultPersonality(Pokedex._dex, sp))
     if pic and pic.image then
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.draw(pic.image, 152, 24)
@@ -1082,7 +1082,7 @@ local function draw_data_screen()
     end
 
     -- 3. Top Left: Mon Icon (32x32) at (14, 20)
-    local icon = Pokemon.icon and Pokemon.icon(sp)
+    local icon = Pokemon.dexIcon(sp, Dex.defaultPersonality(Pokedex._dex, sp))
     if icon and icon.image then
       local q = icon.quads and icon.quads[0]
       love.graphics.setColor(1, 1, 1, 1)
@@ -1118,7 +1118,7 @@ local function draw_data_screen()
 
     if isCaught then
       -- pokefirered/src/pokedex_screen.c:3107
-      local pic = Pokemon.frontPic and Pokemon.frontPic(sp)
+      local pic = Pokemon.dexFrontPic(sp, Dex.defaultPersonality(Pokedex._dex, sp))
       if pic and pic.image then
         PokedexChrome.drawSilhouette(pic.image, 40, 104 + (entry.pokemonOffset or 0),
           Pokedex.silhouetteScale(entry.pokemonScale), Pokedex.silhouetteScale(entry.pokemonScale), 32, 32)
@@ -1229,7 +1229,7 @@ local function draw_habitat_grid()
 
       -- Pokémon Front Sprite
       if seen then
-        local pic = Pokemon.frontPic and Pokemon.frontPic(sp)
+        local pic = Pokemon.dexFrontPic(sp, Dex.defaultPersonality(Pokedex._dex, sp))
         if pic and pic.image then
           love.graphics.setColor(1, 1, 1, 1)
           love.graphics.draw(pic.image, coords.pic.x, coords.pic.y)
@@ -1269,7 +1269,7 @@ local function draw_area_screen()
   PokedexChrome.drawHeader(Strings("AREA: %s", name), nil, 2)
 
   -- Left Column: Mon Icon & Types & Name
-  local icon = Pokemon.icon and Pokemon.icon(sp)
+  local icon = Pokemon.dexIcon(sp, Dex.defaultPersonality(Pokedex._dex, sp))
   if icon and icon.image then
     local q = icon.quads and icon.quads[0]
     love.graphics.setColor(1, 1, 1, 1)
@@ -1297,7 +1297,7 @@ local function draw_area_screen()
     local entry = PokedexChrome.getEntry(sp)
     love.graphics.setColor(0.25, 0.25, 0.30, 0.85)
     local pScale = (entry.pokemonScale or 256) / 256 * 0.45
-    local pic = Pokemon.frontPic and Pokemon.frontPic(sp)
+    local pic = Pokemon.dexFrontPic(sp, Dex.defaultPersonality(Pokedex._dex, sp))
     if pic and pic.image then
       love.graphics.draw(pic.image, 14, 80 + (entry.pokemonOffset or 0), 0, pScale, pScale)
     end
@@ -1361,7 +1361,7 @@ local function draw_size_screen()
   FrlgFont.draw(Strings("WT  %s", (entry.weightFormatted or Strings("---.- lbs."))), 114, 62, { color = { 0.2, 0.2, 0.2, 1 } })
 
   local pScale = (entry.pokemonScale or 256) / 256 * 0.75
-  local pic = Pokemon.frontPic and Pokemon.frontPic(sp)
+  local pic = Pokemon.dexFrontPic(sp, Dex.defaultPersonality(Pokedex._dex, sp))
   if pic and pic.image then
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(pic.image, 140, 72 + (entry.pokemonOffset or 0), 0, pScale, pScale)

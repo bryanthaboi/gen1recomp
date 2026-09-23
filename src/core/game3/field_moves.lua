@@ -138,8 +138,12 @@ FieldMoves.MAP_TYPES = {
 
 -- Standard Text Strings.  Read through FieldMoves.TEXT, which translates each
 -- one when it is read: this table exists before any translation catalog.
+-- pokefirered/src/strings.c:317-318
+local TEXT_ROM = {
+  CANT_USE_HERE         = "gText_CantUseHere",
+  ALREADY_SURFING       = "gText_AlreadySurfing",
+}
 local TEXT_SOURCE = {
-  CANT_USE_HERE         = Strings.source("Can't use that here."),
   BADGE_REQUIRED        = Strings.source("Sorry! A new BADGE is required."),
   NOT_ENOUGH_HP         = Strings.source("Not enough HP!"),
   CANT_BE_USED_ON_PKMN  = Strings.source("It won't have any effect."),
@@ -165,7 +169,6 @@ local TEXT_SOURCE = {
   ASK_SURF              = Strings.source("The water is dyed a deep blue…\nWould you like to SURF?"),
   USED_SURF             = Strings.source("{STR_VAR_1} used SURF!"),
   CANT_SURF_CURRENT     = Strings.source("The current is much too fast!\nSURF can't be used here…"),
-  ALREADY_SURFING       = Strings.source("You're already SURFING."),
 
   -- Flash
   USED_FLASH            = Strings.source("{STR_VAR_1} used FLASH!\nA blinding light illuminates\nthe area!"),
@@ -194,6 +197,7 @@ local TEXT_SOURCE = {
 }
 FieldMoves.TEXT = setmetatable({}, {
   __index = function(_, key)
+    if TEXT_ROM[key] then return require("src.core.game3.rom_text").plain(TEXT_ROM[key]) end
     local source = TEXT_SOURCE[key]
     return source and Strings(source) or nil
   end,

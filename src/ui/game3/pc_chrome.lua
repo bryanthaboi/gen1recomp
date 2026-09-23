@@ -77,7 +77,6 @@ local function load_texture(name)
   local candidates = {
     "pokemon/storage/" .. name,
     "data/generated/gba/pokemon/storage/" .. name,
-    "src/import/gba/chrome/menus/storage/" .. name,
   }
   local okA, Assets = pcall(require, "src.render.Assets")
   for _, path in ipairs(candidates) do
@@ -219,7 +218,7 @@ function PcChrome.drawLeftDataPanel(hoveredMon, hoverFrame)
   -- 1. Front Sprite in TV Screen (X: 10..73, Y: 19..80, W: 64, H: 61)
   -- pokefirered/src/pokemon_storage_system_data.c:1034, :1057 MON_DATA_SPECIES_OR_EGG
   local sp = Pokemon.speciesOrEgg(hoveredMon)
-  local sprite = Pokemon.frontPic(sp)
+  local sprite = Pokemon.monFrontPic(hoveredMon)
   if sprite and sprite.image then
     love.graphics.setColor(1, 1, 1, 1)
     local sw, sh = sprite.image:getDimensions()
@@ -399,8 +398,7 @@ function PcChrome.drawPartyDrawer(party, partyCursor, hoverFrame, holdingSource)
   local isLeadPickedUp = (holdingSource and holdingSource.loc == "party" and holdingSource.slot == 1)
   local leadMon = (not isLeadPickedUp) and party[1]
   if leadMon then
-    local sp = Pokemon.speciesOrEgg(leadMon)
-    local icon = Pokemon.icon(sp)
+    local icon = Pokemon.monIcon(leadMon)
     if icon and icon.image then
       local isHovered = (partyCursor == 1)
       local bounce = (isHovered and (hoverFrame % 2 == 1)) and -2 or 0
@@ -419,8 +417,7 @@ function PcChrome.drawPartyDrawer(party, partyCursor, hoverFrame, holdingSource)
     local isPickedUp = (holdingSource and holdingSource.loc == "party" and holdingSource.slot == p)
     local pMon = (not isPickedUp) and party[p]
     if pMon then
-      local sp = Pokemon.speciesOrEgg(pMon)
-      local icon = Pokemon.icon(sp)
+      local icon = Pokemon.monIcon(pMon)
       if icon and icon.image then
         local isHovered = (partyCursor == p)
         local bounce = (isHovered and (hoverFrame % 2 == 1)) and -2 or 0

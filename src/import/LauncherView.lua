@@ -531,7 +531,7 @@ local function cartSkin(imp, version)
     and shellColor(os.getenv("POKEPORT_CART_SHELL")) or nil
   local row = imp.activeCartRow and imp:activeCartRow(version) or nil
   local color = shellOverride or shellColor(info.cartShell)
-    or (shape == "gba" and { 50, 171, 99 }) or cartColor(version)
+    or (shape == "gba" and { 38, 162, 78 }) or cartColor(version)
   if not row then
     local sparkle, holo = finishFlags(STOCK_FINISH[version])
     return { cacheKey = prefix .. version, shape = shape,

@@ -20,7 +20,6 @@ local Schema = require("src.core.game3.save_schema_firered")
 local Flags = require("src.core.game3.scripting.flags")
 local Ops = require("src.core.game3.scripting.ops_a")
 local Vm = require("src.core.game3.scripting.vm")
-local Std = require("src.core.game3.scripting.stdscripts")
 
 print("[test] 1. Items pack load")
 ItemsData.install(nil)
@@ -100,8 +99,6 @@ local vm = Vm.new({
       { op = "end" },
     },
   },
-  text = Std.TEXT,
-  stdscripts = Std.SCRIPTS,
 })
 
 vm:start("t_check")

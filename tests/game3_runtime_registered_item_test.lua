@@ -21,6 +21,7 @@ package.loaded["src.core.game3.audio"] = {
   playFanfare = function() end,
   stopAll = function() end,
   waitSe = function(_, cb) if cb then cb() end end,
+  bikeMusic = function() end,
 }
 
 local fieldMessages = {}

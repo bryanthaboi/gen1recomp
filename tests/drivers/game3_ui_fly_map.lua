@@ -60,6 +60,7 @@ local function run(game)
   Flags.setFlag(Space.store, ctx(), FLAG_BADGE03_GET, true)
 
   session.party = {}
+  require("src.core.game3.scripting.flags").setFlag(require("src.core.game3.scripting.space").store, nil, 0x828, true) -- data/maps/PalletTown_ProfessorOaksLab/scripts.inc:1120
   Party.giveMon(session, 6, 40)
   session.party[1].moves = { "FLY", "EMBER", "SCRATCH", "GROWL" }
   session.party[1].pp = { 15, 25, 35, 40 }

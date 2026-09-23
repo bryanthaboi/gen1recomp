@@ -163,7 +163,6 @@ end
 print("=== [TEST 5] Wall Town Map Metatile & Script Execution ===")
 do
   local Interaction = require("src.core.game3.scripting.interaction_scripts")
-  local Std = require("src.core.game3.scripting.stdscripts")
   local CollisionStd = require("src.core.game3.scripting.collision_std")
 
   local scriptKey = Interaction.scriptFor(0x85, "up")
@@ -171,12 +170,6 @@ do
 
   local collScript = CollisionStd.scriptFor(0x95)
   check(collScript == "EventScript_WallTownMap", "COLL_TOWN_MAP (0x95) maps to EventScript_WallTownMap")
-
-  local script = Std.SCRIPTS.EventScript_WallTownMap
-  check(script ~= nil, "EventScript_WallTownMap is defined in Std.SCRIPTS")
-  check(script[1].op == "lockall", "WallTownMap step 1 is lockall")
-  check(script[4].op == "fadescreen", "WallTownMap step 4 is fadescreen")
-  check(script[5].op == "special" and script[5].id == Std.SPECIAL.FieldShowRegionMap, "WallTownMap step 5 is special FieldShowRegionMap")
 
   local Adapters = require("src.core.game3.scripting.adapters")
   local hostAdapters = Adapters.host(nil, { session = { map = "VIRIDIAN_CITY" } }, nil)

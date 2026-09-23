@@ -771,6 +771,9 @@ function Sound.playPikaCry(data, n)
     local path = ("assets/generated/audio/pika_cries/cry_%02d.wav"):format(n)
     local ok, s = pcall(love.audio.newSource, path, "static")
     if not ok or not s then
+      if os.getenv("POKEPORT_DEV") == "1" or _G.POKEPORT_DEV_MODE == true then
+        error(("pikachu cry %d failed to load: %s"):format(n, tostring(s)))
+      end
       cache[key] = false
       return nil
     end

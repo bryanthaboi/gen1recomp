@@ -8,6 +8,15 @@ local MapIds = require("src.core.game3.map_ids")
 local Dataset = {}
 
 local function diskFallback(rel)
+  local override = Dataset.cacheRootOverride
+  if override then
+    local f = io.open(override .. "/" .. rel:gsub("^data/generated/gba/", ""), "rb")
+    if f then
+      local data = f:read("*a")
+      f:close()
+      if type(data) == "string" and #data > 0 then return data end
+    end
+  end
   local f = io.open(rel, "rb") or io.open("data/generated/gba/" .. rel, "rb")
   if f then
     local data = f:read("*a")

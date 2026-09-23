@@ -937,13 +937,14 @@ T.GetReturnPowerLevel = P.task(function(t, vm)
   P.DestroyAnimVisualTask(t)
 end)
 
-function H.monPicSprite(vm, species, isBack, x, y, z)
+function H.monPicSprite(vm, species, isBack, x, y, z, side)
   local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
   local img
   if ok and species then
+    local picSp, shiny, personality = require("src.core.game3.battle.ui").sidePicArgs(side, species)
     local e
-    if isBack and Pokemon.backPic then e = Pokemon.backPic(species) end
-    if not isBack and Pokemon.frontPic then e = Pokemon.frontPic(species) end
+    if isBack and Pokemon.backPic then e = Pokemon.backPic(picSp, nil, shiny) end
+    if not isBack and Pokemon.frontPic then e = Pokemon.frontPic(picSp, nil, shiny, personality) end
     img = e and e.image
   end
   local okc, pc = pcall(require, "src.core.game3.battle.pic_coords")
@@ -999,7 +1000,7 @@ function H.snatchStep(t, vm)
       x = -32
       z = 205
     end
-    t._s2 = H.monPicSprite(vm, species, isBack, x, P.coord(vm, tgt, P.COORD_Y), z)
+    t._s2 = H.monPicSprite(vm, species, isBack, x, P.coord(vm, tgt, P.COORD_Y), z, atk)
     d[0] = d[0] + 1
   elseif k == 2 then
     local s2 = t._s2

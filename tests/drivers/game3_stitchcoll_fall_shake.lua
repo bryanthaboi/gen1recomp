@@ -81,8 +81,22 @@ return function(game)
     "standing on the cracking ice at (" .. Player.cellX .. "," .. Player.cellY .. ")")
   U.shot(game, DIR .. "/stitchcoll_fall_shake_01_on_the_ice.png")
 
-  -- pokefirered/src/field_tasks.c:243 IcefallCaveIcePerStepCallback
-  Flags.setVar(Space.store, ctx(), VAR_TEMP_1, 1)
+  -- pokefirered/src/field_tasks.c:173 IcefallCaveIcePerStepCallback
+  U.wait(12)
+  while Player.cellY > 13 do
+    if not step("up") then break end
+  end
+  U.wait(8)
+  while Player.cellY < 14 do
+    if not step("down") then break end
+  end
+  result(Player.cellX == 8 and Player.cellY == 14, "stepped back onto the cracked ice")
+  for _ = 1, 30 do
+    if (tonumber(Flags.getVar(Space.store, ctx(), VAR_TEMP_1)) or 0) == 1 then break end
+    U.wait(1)
+  end
+  result((tonumber(Flags.getVar(Space.store, ctx(), VAR_TEMP_1)) or 0) == 1,
+    "breaking the ice set VAR_TEMP_1")
 
   -- pokefirered/src/field_control_avatar.c:212 TryRunOnFrameMapScript
   local started = false
@@ -91,17 +105,6 @@ return function(game)
     if Space.vm and Space.vm:isRunning() then
       started = true
       break
-    end
-  end
-  if not started then
-    print("[driver] the ON_FRAME poll did not claim the frame on its own, nudging once")
-    Space.scheduleOnFrame(game and (game.overworld or game.world))
-    for _ = 1, 120 do
-      U.wait(1)
-      if Space.vm and Space.vm:isRunning() then
-        started = true
-        break
-      end
     end
   end
   result(started, "the hole script started")

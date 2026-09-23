@@ -336,6 +336,7 @@ Save.DEFAULT_OPTIONS = {
   color = "gbc",
   palette = "",
   videoMode = "windowed",
+  faithfulRes = 0,
   fpsCap = 60,
   battleLayout = "og",
   battleHud = "standard",
@@ -373,7 +374,7 @@ Save.OPTIONS_KEY = "gold"
 
 local SHARED_KEYS = {
   touchControls = true, haptics = true, screenPos = true,
-  videoMode = true,
+  videoMode = true, faithfulRes = true,
   mods = true, modsByVersion = true, modsGen2 = true,
   modOptions = true, modProfiles = true, modProfilesSeeded = true,
   activeProfile = true,

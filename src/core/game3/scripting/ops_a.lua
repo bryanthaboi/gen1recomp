@@ -1063,7 +1063,8 @@ local function dispatch(vm, row)
     return false
   elseif op == "hideobjectat" or op == "showobjectat" then
     local lid = var_get(store, ctx, row.localId or row[1])
-    if not objectat_same_map(store, ctx, row, 2) then
+    -- src/event_object_movement.c:1258
+    if (tonumber(lid) or 0) < 0xFF and not objectat_same_map(store, ctx, row, 2) then
       if a.log then
         a.log("[game3] " .. op .. " targets another map — skipped")
       end
@@ -1071,8 +1072,6 @@ local function dispatch(vm, row)
       a.hideObject(lid)
     elseif op == "showobjectat" and a.showObject then
       a.showObject(lid)
-    elseif op == "hideobjectat" and a.removeObject then
-      a.removeObject(lid)
     end
     return false
   elseif op == "applymovementat" or op == "waitmovementat"
@@ -1202,7 +1201,7 @@ local function dispatch(vm, row)
     local Warp = require("src.core.game3.warp")
     local Runtime = package.loaded["src.core.game3.runtime"]
     local started = Warp.startFall(Runtime and Runtime._mod, Runtime and Runtime._game,
-      destMap, destX, destY)
+      destMap, destX, destY, nil, nil, { prologue = false })
     if not started then return false end
     ctx.warpPending = true
     local Task = require("src.core.game3.task")
@@ -1499,7 +1498,9 @@ local function dispatch(vm, row)
     }
     ctx.trainerBattleBeatenScript = eventScript
 
-    if op == "trainerbattle" and not earlyRival and not isRematch and Flags.getFlag(store, ctx, trainerFlag) then
+    -- data/scripts/trainer_battle.inc:44
+    if op == "trainerbattle" and not earlyRival and not isRematch and battleType ~= 3
+        and Flags.getFlag(store, ctx, trainerFlag) then
       -- Already defeated → fall through (gotopostbattlescript).
       return false
     end
@@ -1622,22 +1623,50 @@ local function dispatch(vm, row)
         })
       end
 
-      if isRematch then
-        -- pokefirered/src/battle_setup.c:848
-        local Objects = package.loaded["src.core.game3.objects"]
-        local eo = Objects and Objects.find and Objects.find(lastTalked)
-        if eo and Objects.setTrainerMovementType and not (Objects.isPlayer and Objects.isPlayer(lastTalked)) then
-          Objects.setTrainerMovementType(eo, VsSeeker.faceTypeFor(eo.facing))
+      -- pokefirered/src/battle_setup.c:848 SetUpTrainerMovement
+      local Objects = package.loaded["src.core.game3.objects"]
+      local eo = Objects and Objects.find and Objects.find(lastTalked)
+      if eo and not (Objects.isPlayer and Objects.isPlayer(lastTalked)) then
+        local faceMt = ({ down = 0x08, up = 0x07, left = 0x09, right = 0x0A })[eo.facing] or 0x08
+        if Objects.setTrainerMovementType then
+          Objects.setTrainerMovementType(eo, faceMt)
+        else
+          eo.movementType = faceMt
+          eo.movement = "STAY"
+          eo.range = (eo.facing or "down"):upper()
+        end
+        if Objects.overrideTemplateMovementType then
+          Objects.overrideTemplateMovementType(eo.localId, faceMt)
+        end
+        eo.homeX = eo.cellX
+        eo.homeY = eo.cellY
+        if eo.def then
+          eo.def.movementType = faceMt
+          eo.def.movement = "STAY"
+          eo.def.x = eo.cellX
+          eo.def.y = eo.cellY
+          eo.def.range = (eo.facing or "down"):upper()
+        end
+        if Objects.rememberPerm and Objects._mapId then
+          Objects.rememberPerm(Objects._mapId, eo.localId, {
+            x = eo.cellX,
+            y = eo.cellY,
+            movementType = faceMt,
+            facing = eo.facing,
+          })
         end
       end
 
-      if introText and introText ~= "" and a.openMessageAsync then
-        -- Play trainer encounter music if not already playing (pret PlayTrainerEncounterMusic / EventScript_TryDoNormalTrainerBattle)
+      local hasIntro = introText and introText ~= "" and a.openMessageAsync
+      -- pokefirered/src/battle_setup.c:1007
+      if (hasIntro or battleType == 3 or battleType == 9) and battleType ~= 1 and battleType ~= 8 then
         local song = Trainers.getEncounterMusic and Trainers.getEncounterMusic(opponentA)
         local okA, Audio = pcall(require, "src.core.game3.audio")
         if okA and Audio and Audio.playSong and song then
           Audio.playSong(song)
         end
+      end
+      if hasIntro then
         a.openMessageAsync(introText, function()
           beginBattle()
         end)
@@ -2131,6 +2160,8 @@ function Ops.dispatch(vm, row)
   end
   return ModRuntime.call("script.command", commandVanilla(vm), Ctx.modCtx(vm), row.op, row)
 end
+
+Ops.dispatchUnhooked = dispatch
 
 Ops.warpHoleDest = warp_hole_dest
 Ops.setMapLayout = set_map_layout

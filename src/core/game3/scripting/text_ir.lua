@@ -51,10 +51,20 @@ TextIR.PH = {
   [0x06] = "rival",
 }
 
+TextIR.KEYGFX = {
+  [0x00] = "A_BUTTON", [0x01] = "B_BUTTON", [0x02] = "L_BUTTON", [0x03] = "R_BUTTON",
+  [0x04] = "START_BUTTON", [0x05] = "SELECT_BUTTON", [0x06] = "DPAD_UP", [0x07] = "DPAD_DOWN",
+  [0x08] = "DPAD_LEFT", [0x09] = "DPAD_RIGHT", [0x0A] = "DPAD_UPDOWN", [0x0B] = "DPAD_LEFTRIGHT",
+  [0x0C] = "DPAD_ANY",
+}
+
 local function expand_seg(seg, ctx)
   local t = seg.t
   if t == "text" then
     return seg.s
+  elseif t == "dynamic" then
+    local dyn = ctx and ctx.dynamic
+    return (dyn and dyn[seg.n]) or ""
   elseif t == "player" then
     return (ctx and ctx.playerName) or "PLAYER"
   elseif t == "rival" then
@@ -138,6 +148,15 @@ function TextIR.decode(bytes)
       else
         out[#out + 1] = { t = "ph", code = nn }
       end
+      i = i + 2
+    elseif c == 0xF7 then
+      flush_text(out, buf); buf = {}
+      out[#out + 1] = { t = "dynamic", n = b(i + 1) or 0 }
+      i = i + 2
+    elseif c == 0xF8 then
+      flush_text(out, buf); buf = {}
+      local key = TextIR.KEYGFX[b(i + 1) or -1]
+      out[#out + 1] = { t = "tag", tag = key and ("{" .. key .. "}") or "" }
       i = i + 2
     elseif c == 0xFC then
       flush_text(out, buf); buf = {}

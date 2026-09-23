@@ -17,15 +17,14 @@ local function fakeImage(w, h)
   }
 end
 
--- 32x32 icon frames stacked two high; 64x64 front pic fallback.
+-- 32x32 icon frames stacked two high.
 local ICON_IMG = fakeImage(32, 64)
-local PIC_IMG = fakeImage(64, 64)
 local QUAD0, QUAD1 = { frame = 0 }, { frame = 1 }
 
-local monIcon, monFrontPic
+local monIcon
 package.loaded["src.core.game3.pokemon"] = {
   icon = function() return monIcon end,
-  frontPic = function() return monFrontPic end,
+  picSpecies = function(sp) return sp end,
 }
 package.loaded["src.ui.game3.stack"] = {
   push = function() end, pop = function() end,
@@ -73,7 +72,6 @@ end
 -- The mon icon: 1:1 on the (56, 40) frame centre, static frame 0.
 monIcon = { image = ICON_IMG, w = 32, h = 32, sheetH = 64, frames = 2,
             quads = { [0] = QUAD0, [1] = QUAD1 } }
-monFrontPic = nil
 local ds, ok, err = render({ template = "NICKNAME", species = 1, maxLen = 10 })
 check(ok, "nickname draw runs headless: " .. tostring(err))
 local icon = drawsOf(ds, ICON_IMG)
@@ -88,20 +86,8 @@ eq(d.sy, 1, "uniform scale")
 eq(d.ox, 16, "origin x is the frame centre, so the draw covers the frame")
 eq(d.oy, 16, "origin y is the frame centre")
 
--- frontPic fallback: 64x64 shrunk into the same 32x32 box (was 0.25).
-monIcon = nil
-monFrontPic = { image = PIC_IMG, w = 64, h = 64 }
-local ds2 = render({ template = "CAUGHT_MON", species = 4 })
-local pic = drawsOf(ds2, PIC_IMG)
-eq(#pic, 1, "the front-pic fallback is drawn once")
-eq(pic[1] and pic[1].x, 56, "fallback keeps the mon centre x")
-eq(pic[1] and pic[1].y, 40, "fallback keeps the mon centre y")
-eq(pic[1] and pic[1].sx, 0.5, "64x64 fallback fills the 32x32 mon box")
-eq(pic[1] and pic[1].sy, 0.5, "uniform fallback scale")
-eq(pic[1] and pic[1].ox, 32, "fallback origin is the pic centre")
-
 -- Player/rival slot: still the 16x32 OW box.
-monIcon, monFrontPic = nil, nil
+monIcon = nil
 local portrait = fakeImage(64, 64)
 local ds3 = render({ template = "PLAYER", icon = portrait })
 local p = drawsOf(ds3, portrait)
@@ -113,7 +99,7 @@ eq(p[1] and p[1].sy, 0.25, "player OW box scale is uniform")
 eq(p[1] and p[1].ox, 32, "player OW origin is the portrait centre")
 
 -- Guard: the mon icon is never letterboxed below 1:1 again.
-for _, dl in ipairs({ ds, ds2 }) do
+for _, dl in ipairs({ ds }) do
   for _, e in ipairs(drawsOf(dl, ICON_IMG)) do
     check((e.sx or 0) >= 1, "mon icon scale is never below 1:1")
   end

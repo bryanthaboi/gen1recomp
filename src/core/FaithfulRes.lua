@@ -52,6 +52,7 @@ FaithfulRes.MIN_W, FaithfulRes.MIN_H = 480, 360
 -- whether this module currently owns the window size
 FaithfulRes.locked = false
 FaithfulRes.prevSize = nil
+FaithfulRes.modeSerial = 0
 
 -- The highest level this display can actually show.
 --
@@ -210,6 +211,7 @@ function FaithfulRes.apply(v)
     flags.minheight = (prev and prev.minheight) or FaithfulRes.MIN_H
     love.window.setMode((prev and prev.w) or curW, (prev and prev.h) or curH,
                         flags)
+    FaithfulRes.modeSerial = FaithfulRes.modeSerial + 1
     FaithfulRes.prevSize = nil
     FaithfulRes.locked = false
     return false
@@ -231,6 +233,7 @@ function FaithfulRes.apply(v)
   flags.resizable = false
   flags.minwidth, flags.minheight = w, h
   love.window.setMode(w, h, flags)
+  FaithfulRes.modeSerial = FaithfulRes.modeSerial + 1
   FaithfulRes.locked = true
   return true
 end

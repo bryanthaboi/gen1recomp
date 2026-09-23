@@ -685,6 +685,7 @@ function Collision.tryConnection(game, fromX, fromY, dir, run)
   Player.running = run and true or false
   Player.jumping = false
   Player.dismounting = Player.surfing and not landingWater or false
+  if Player.dismounting then require("src.core.game3.audio").stopSurfMusic() end
   Player.spriteYOffset = 0
   Player.stepFrames = run and RUN_FRAMES or WALK_FRAMES
   Player.syncSavePosition(g)

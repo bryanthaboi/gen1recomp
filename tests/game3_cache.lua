@@ -164,7 +164,7 @@ end
 
 function M.requireData(label, marker)
   marker = marker or "meta.json"
-  if M.root(marker) then return end
+  if M.mount(marker) then return end
   for _, root in ipairs(datasetRoots()) do
     if readable(root .. "/data/generated/gba/" .. marker) then return end
   end

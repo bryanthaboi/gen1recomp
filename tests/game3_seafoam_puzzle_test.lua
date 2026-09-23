@@ -109,11 +109,24 @@ local function pumpVm(limit)
   return n
 end
 
+-- pokefirered/src/field_player_avatar.c:1445 DoBoulderFinish
+local function pumpPush(frames)
+  for _ = 1, frames or 33 do
+    Objects.update(game)
+    Player.update(game, nil)
+  end
+end
+
 print("[test] 1. New game initial Seafoam flag state")
-check(Flags.getFlag(session, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == true, "B4F boulder 1 starts HIDDEN")
-check(Flags.getFlag(session, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_2) == true, "B4F boulder 2 starts HIDDEN")
-check(Flags.getFlag(session, nil, FLAG_HIDE_SEAFOAM_B3F_BOULDER_1) == true, "B3F boulder 1 starts HIDDEN")
-check(Flags.getFlag(session, nil, FLAG_HIDE_SEAFOAM_B3F_BOULDER_2) == true, "B3F boulder 2 starts HIDDEN")
+check(Flags.getFlag(session, nil, FLAG_HIDE_SEAFOAM_B3F_BOULDER_1) == false, "B3F boulder 1 is not hidden by the new-game reset")
+check(Flags.getFlag(session, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == false, "B4F boulder 1 is not hidden by the new-game reset")
+-- data/maps/Route20/scripts.inc:5
+enterMap("FR_ROUTE_20")
+pumpVm()
+check(Flags.getFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == true, "B4F boulder 1 starts HIDDEN")
+check(Flags.getFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_2) == true, "B4F boulder 2 starts HIDDEN")
+check(Flags.getFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B3F_BOULDER_1) == true, "B3F boulder 1 starts HIDDEN")
+check(Flags.getFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B3F_BOULDER_2) == true, "B3F boulder 2 starts HIDDEN")
 check(Flags.getFlag(session, nil, FLAG_STOPPED_SEAFOAM_B3F_CURRENT) == false, "B3F current starts ACTIVE")
 check(Flags.getFlag(session, nil, FLAG_STOPPED_SEAFOAM_B4F_CURRENT) == false, "B4F current starts ACTIVE")
 
@@ -141,14 +154,16 @@ Flags.setFlag(Space.store, nil, FieldMoves.SYS_FLAGS.USE_STRENGTH, true)
 -- Move boulder 6 (at 6,17) into hole at (6,18)
 standAt(6, 16, "down")
 local r1 = Player.tryMove("down", game, false)
-eq(r1, "step", "boulder 6 pushed into hole")
+eq(r1, "push", "boulder 6 pushed into hole")
+pumpPush()
 check(Flags.getFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == false, "B4F boulder 1 is revealed (unhidden)")
 
 -- Position boulder 3 at (9,17) and push into hole at (9,18)
 Objects.setObjectXY(3, 9, 17)
 standAt(9, 16, "down")
 local r2 = Player.tryMove("down", game, false)
-eq(r2, "step", "boulder 3 pushed into hole")
+eq(r2, "push", "boulder 3 pushed into hole")
+pumpPush()
 check(Flags.getFlag(Space.store, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_2) == false, "B4F boulder 2 is revealed (unhidden)")
 
 print("[test] 5. Enter B4F after dropping both boulders: current STOPS, calm water layout applied")
@@ -179,7 +194,7 @@ eq(Player.surfing, false, "player was dumped on land and is no longer surfing")
 eq(Player.facing, "up", "player facing snapped to up (North)")
 eq(Player.cellY, 12, "player jumped up onto the stairs/land (y=12)")
 
-print("[test] 7. Legacy save repair: empty flags restored with correct defaults and invariants")
+print("[test] 7. Legacy save repair: empty flags restored with correct defaults")
 local legacySave = {
   schemaVersion = 1,
   name = "ASH",
@@ -187,43 +202,11 @@ local legacySave = {
   vars = {},
 }
 local restoredSession = Schema.fromSaveTable(legacySave)
-check(Flags.getFlag(restoredSession, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == true, "Legacy save: B4F boulder 1 is hidden")
-check(Flags.getFlag(restoredSession, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_2) == true, "Legacy save: B4F boulder 2 is hidden")
-check(Flags.getFlag(restoredSession, nil, FLAG_STOPPED_SEAFOAM_B4F_CURRENT) == false, "Legacy save: B4F current is active")
 check(Flags.getFlag(restoredSession, nil, 0x02C) == true, "Legacy save: Pallet Town Oak is hidden")
 check(Flags.getFlag(restoredSession, nil, 0x033) == true, "Legacy save: Bill (human) is hidden")
 check(Flags.getFlag(restoredSession, nil, 0x092) == true, "Legacy save: Pewter running shoes aide is hidden")
 check(Flags.getFlag(restoredSession, nil, 0x035) == true, "Legacy save: Mr. Fuji in house is hidden")
 check(Flags.getFlag(restoredSession, nil, 0x05A) == true, "Legacy save: Oak in champ room is hidden")
-
-print("[test] 8. Legacy save repair: premature calm water flag fixed when boulders were not dropped")
-local corruptedSave = {
-  schemaVersion = 1,
-  name = "RED",
-  flags = {
-    [tostring(FLAG_STOPPED_SEAFOAM_B4F_CURRENT)] = true, -- erroneously set
-  },
-  vars = {},
-}
-local fixedSession = Schema.fromSaveTable(corruptedSave)
-check(Flags.getFlag(fixedSession, nil, FLAG_STOPPED_SEAFOAM_B4F_CURRENT) == false, "Corrupted calm water flag corrected to false")
-check(Flags.getFlag(fixedSession, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == true, "Corrupted save: B4F boulder 1 hidden")
-check(Flags.getFlag(fixedSession, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_2) == true, "Corrupted save: B4F boulder 2 hidden")
-
-print("[test] 9. Legacy save repair: completed puzzle retains calm water and visible dropped boulders")
-local solvedSave = {
-  schemaVersion = 1,
-  name = "RED",
-  flags = {
-    [tostring(FLAG_HIDE_SEAFOAM_B3F_BOULDER_3)] = true, -- B3F obj 6 dropped
-    [tostring(FLAG_HIDE_SEAFOAM_B3F_BOULDER_5)] = true, -- B3F obj 3 dropped
-  },
-  vars = {},
-}
-local solvedSession = Schema.fromSaveTable(solvedSave)
-check(Flags.getFlag(solvedSession, nil, FLAG_STOPPED_SEAFOAM_B4F_CURRENT) == true, "Solved save: B4F current stopped")
-check(Flags.getFlag(solvedSession, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_1) == false, "Solved save: B4F boulder 1 visible")
-check(Flags.getFlag(solvedSession, nil, FLAG_HIDE_SEAFOAM_B4F_BOULDER_2) == false, "Solved save: B4F boulder 2 visible")
 
 if failed > 0 then
   print("[FAIL] " .. failed .. " tests failed")

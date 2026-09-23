@@ -8,6 +8,8 @@ local ROUTE_10 = "FR_ROUTE_10"
 local FLAG_BADGE01_GET = 0x820
 -- pokefirered/include/constants/flags.h:1333
 local FLAG_SYS_FLASH_ACTIVE = 0x806
+-- pokefirered/include/constants/flags.h:1374
+local FLAG_SYS_POKEMON_GET = 0x828
 -- pokefirered/include/constants/moves.h:152
 local MOVE_FLASH = 148
 local ENTRY_X, ENTRY_Y = 17, 3
@@ -61,6 +63,7 @@ return function(game)
   lead.pp = { 20 }
   lead.maxPp = { 20 }
   Flags.setFlag(Space.store, ctx(), FLAG_BADGE01_GET, true)
+  Flags.setFlag(Space.store, ctx(), FLAG_SYS_POKEMON_GET, true)
 
   local function placeAt(mapId, x, y, facing)
     Map.load(nil, game, mapId, { x = x, y = y, facing = facing or "down" })
@@ -95,6 +98,7 @@ return function(game)
   for i, e in ipairs(StartMenu.ENTRIES or {}) do
     if e.id == "pokemon" then pokeIdx = i end
   end
+  if not result(pokeIdx ~= nil, "start menu lists POKEMON") then return finish() end
   for _ = 1, 20 do
     if StartMenu.cursor == pokeIdx then break end
     U.tap(game, "down")
@@ -121,7 +125,10 @@ return function(game)
     U.wait(6)
   end
   U.tap(game, "a")
-  U.wait(40)
+  for _ = 1, 60 do
+    if flashActive() then break end
+    U.wait(2)
+  end
 
   local txt = Message.currentPage and Message.currentPage()
   if type(txt) == "string" and txt ~= "" then

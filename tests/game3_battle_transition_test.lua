@@ -89,12 +89,23 @@ check(BattleTransition.pickTrainer({ terrain = TERRAIN.WATER, playerLevel = 5, e
   "trainer water high-level foe -> RIPPLE")
 
 print("[test] 5. Elite Four & Rival Mugshots Routing")
-check(BattleTransition.pickTrainer({ trainerClass = "ELITE_FOUR", trainerId = 412 }) == ID.LORELEI, "Lorelei -> LORELEI")
-check(BattleTransition.pickTrainer({ trainerClass = "ELITE_FOUR", trainerId = 414 }) == ID.BRUNO, "Bruno -> BRUNO")
-check(BattleTransition.pickTrainer({ trainerClass = "ELITE_FOUR", trainerId = 416 }) == ID.AGATHA, "Agatha -> AGATHA")
-check(BattleTransition.pickTrainer({ trainerClass = "ELITE_FOUR", trainerId = 418 }) == ID.LANCE, "Lance -> LANCE")
-check(BattleTransition.pickTrainer({ trainerClass = "ELITE_FOUR", trainerId = 420 }) == ID.BLUE, "E4 Champion -> BLUE")
-check(BattleTransition.pickTrainer({ trainerClass = "CHAMPION" }) == ID.BLUE, "Champion -> BLUE")
+-- pokefirered/src/battle_setup.c:633, opponents.h:416-419 and :741-744
+check(BattleTransition.pickTrainer({ trainerClass = 87, trainerId = 410 }) == ID.LORELEI, "Lorelei -> LORELEI")
+check(BattleTransition.pickTrainer({ trainerClass = 87, trainerId = 411 }) == ID.BRUNO, "Bruno -> BRUNO")
+check(BattleTransition.pickTrainer({ trainerClass = 87, trainerId = 412 }) == ID.AGATHA, "Agatha -> AGATHA")
+check(BattleTransition.pickTrainer({ trainerClass = 87, trainerId = 413 }) == ID.LANCE, "Lance -> LANCE")
+check(BattleTransition.pickTrainer({ trainerClass = 87, trainerId = 737 }) == ID.AGATHA, "Agatha's rematch -> AGATHA")
+check(BattleTransition.pickTrainer({ trainerClass = 87, trainerId = 999 }) == ID.BLUE, "other Elite Four -> BLUE")
+check(BattleTransition.pickTrainer({ trainerClass = 90, trainerId = 438 }) == ID.BLUE, "Champion -> BLUE")
+check(BattleTransition.pickTrainer({ trainerClass = 81, trainerId = 326, terrain = TERRAIN.NORMAL,
+  playerLevel = 5, enemyLevel = 5 }) ~= ID.BLUE, "an early rival battle keeps the terrain transition")
+check(BattleTransition.pickTrainer({ trainerClass = "CHAMPION", playerLevel = 5, enemyLevel = 5 }) ~= ID.BLUE,
+  "a class is recognised by its id, not by its (translatable) name")
+-- pokefirered/src/trainer_tower_sets.c:8663 MIKAELA, FACILITY_CLASS_LASS (90)
+check(BattleTransition.pickTrainer({ trainerTower = true, trainerClass = 90, trainerId = 0,
+  playerLevel = 5, enemyLevel = 5 }) ~= ID.BLUE, "a Trainer Tower LASS is not taken for the champion")
+check(BattleTransition.pickTrainer({ eReader = true, trainerClass = 87, trainerId = 0,
+  playerLevel = 5, enemyLevel = 5 }) ~= ID.BLUE, "nor an e-Reader trainer for the Elite Four")
 check(BattleTransition.pickTrainer({ isRival = true }) == ID.BLUE, "Rival -> BLUE")
 
 print("[test] 6. Cache Contract & Extract Pipeline")

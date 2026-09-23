@@ -105,9 +105,9 @@ function LinkTradeMenu.confirm()
     LinkTradeMenu.message = Strings("Waiting...")
     return true
   end
-  local okT, Trade = pcall(require, "src.core.game3.scripting.natives_trade")
-  LinkTradeMenu.message = (okT and Trade and Trade.refusalText and Trade.refusalText(code))
-    or Strings("That POKéMON can't be traded\nnow.")
+  local Trade = require("src.core.game3.scripting.natives_trade")
+  LinkTradeMenu.message = Trade.refusalText(code)
+    or require("src.core.game3.rom_text").plain("gText_PkmnCantBeTradedNow")
   return false
 end
 

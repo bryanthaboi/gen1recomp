@@ -184,10 +184,7 @@ end
 function PokedexData.getEntry(speciesId)
   PokedexData.init()
   local sp = tonumber(speciesId) or 1
-  local natId = Pokemon.national and Pokemon.national(sp) or sp
-
-  local raw = (PokedexData._entries and PokedexData._entries[natId])
-    or (PokedexData._entries and PokedexData._entries[sp])
+  local raw = PokedexData._entries and PokedexData._entries[sp]
 
   if not raw then
     local name = (Pokemon.name and Pokemon.name(sp)) or "POKéMON"
@@ -296,28 +293,42 @@ function PokedexData.getOrderList(orderKey, dex)
   elseif orderKey == "numerical_national" then
     local maxNat = Dex.NATIONAL_MAX or 386
     local highestSeen = 0
-    for i = 1, maxNat do
-      if Dex.isSeen(dex, i) then
-        highestSeen = i
+    for nat = 1, maxNat do
+      if Dex.isSeen(dex, Pokemon.speciesFromNational(nat)) then
+        highestSeen = nat
       end
     end
     local result = {}
-    for i = 1, highestSeen do
-      table.insert(result, i)
+    for nat = 1, highestSeen do
+      table.insert(result, Pokemon.speciesFromNational(nat))
     end
     return result
   elseif orderKey == "atoz" then
+    -- pokefirered/src/pokedex_screen.c:1404
     local result = {}
-    for _, sp in ipairs(rawList) do
-      if sp <= maxN and Dex.isSeen(dex, sp) then
+    for _, nat in ipairs(rawList) do
+      local sp = Pokemon.speciesFromNational(nat)
+      if nat <= maxN and sp and Dex.isSeen(dex, sp) then
         table.insert(result, sp)
       end
     end
     return result
-  elseif orderKey == "type" or orderKey == "lightest" or orderKey == "smallest" then
+  elseif orderKey == "lightest" or orderKey == "smallest" then
+    -- pokefirered/src/pokedex_screen.c:1438
+    local result = {}
+    for _, nat in ipairs(rawList) do
+      local sp = Pokemon.speciesFromNational(nat)
+      if nat <= maxN and sp and Dex.isCaught(dex, sp) then
+        table.insert(result, sp)
+      end
+    end
+    return result
+  elseif orderKey == "type" then
+    -- pokefirered/src/pokedex_screen.c:1421
     local result = {}
     for _, sp in ipairs(rawList) do
-      if sp <= maxN and Dex.isCaught(dex, sp) then
+      local nat = Pokemon.national(sp)
+      if nat and nat <= maxN and Dex.isCaught(dex, sp) then
         table.insert(result, sp)
       end
     end

@@ -96,16 +96,17 @@ Daycare.compatibility = Breeding.compatibility
 
 -- pokefirered/src/strings.c:1252 sCompatibilityMessages
 function Daycare.compatibilityText(score)
+  local RomText = require("src.core.game3.rom_text")
   if score == PARENTS_INCOMPATIBLE then
-    return Strings("The two prefer to play with other\nPOKéMON than each other.")
+    return RomText.plain("gDaycareText_PlayOther")
   end
   if score == PARENTS_LOW_COMPATIBILITY then
-    return Strings("The two don't seem to like\neach other much.")
+    return RomText.plain("gDaycareText_DontLikeOther")
   end
   if score == PARENTS_MED_COMPATIBILITY then
-    return Strings("The two seem to get along.")
+    return RomText.plain("gDaycareText_GetAlong")
   end
-  return Strings("The two seem to get along\nvery well.")
+  return RomText.plain("gDaycareText_GetAlongVeryWell")
 end
 
 local function levelMenu()

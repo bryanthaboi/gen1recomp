@@ -671,6 +671,16 @@ local function gen2Rows(opts, hooks, shared)
       end)
   end
 
+  local okFr, FaithfulRes = pcall(require, "src.core.FaithfulRes")
+  if okFr then
+    add(Strings("FAITHFUL RATIO"),
+      function() return FaithfulRes.label(shared.faithfulRes) end,
+      function(dir)
+        shared.faithfulRes = FaithfulRes.cycle(shared.faithfulRes, dir)
+        return true
+      end)
+  end
+
   local okCap, FrameCap = pcall(require, "src.core.FrameCap")
   if okCap then
     add(Strings("MAX FPS"),

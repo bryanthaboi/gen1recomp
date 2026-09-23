@@ -111,7 +111,6 @@ end
 local function load_status_png()
   local candidates = {
     party_root() .. "/status_icons.png",
-    "src/import/gba/chrome/menus/party/status_icons.png",
     "data/generated/gba/pokemon/summary/status_icons.png",
   }
   for _, rel in ipairs(candidates) do

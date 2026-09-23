@@ -1,6 +1,8 @@
 -- Unit tests for Issue #2314: FireRed Hidden Items & Itemfinder
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("firered")
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.bundle() then print("[skip] hidden_items: " .. tostring(Game3Cache.reason)) return end
 
 local ExtractMapEvents = require("src.import.gba.extract_map_events")
 local Field = require("src.core.game3.field")
@@ -203,28 +205,32 @@ local ok, kind, text = ItemUse.useField(session, session.bag, ItemsData.ITEM_ITE
 assert(ok == false, "Itemfinder should not respond when out of range")
 assert(text == "… … … …Nope!\nThere's no response.", "Response text matches pret nope string")
 
--- Move player close to Potion at (3, 4): player at (5, 6) -> dx = -2, dy = -2 (within range <= 7)
-session.playerX = 5
-session.playerY = 6
+-- pokefirered/src/itemfinder.c:216
+Flags.setFlag(session, nil, 0x3E9, false)
 local okNear, kindNear, textNear = ItemUse.useField(session, session.bag, ItemsData.ITEM_ITEMFINDER, nil)
 assert(okNear == true, "Itemfinder should detect nearby hidden item")
-assert(textNear == "Huh? The ITEMFINDER's responding!\nThere's an item buried around here!", "Nearby text matches pret")
+assert(textNear == "Huh?\nThe ITEMFINDER's responding!\fThere's an item buried around here!", "Nearby text matches pret")
+Flags.setFlag(session, nil, 0x3E9, true)
 
--- Move player right on top of Potion at (3, 4) -> dx = 0, dy = 0 (underfoot)
+-- pokefirered/src/itemfinder.c:213
+session.playerX = 5
+session.playerY = 6
+local okAway = ItemUse.useField(session, session.bag, ItemsData.ITEM_ITEMFINDER, nil)
+assert(okAway == false, "An underfoot item only answers when the player stands on it")
+
 session.playerX = 3
 session.playerY = 4
 local okFeet, kindFeet, textFeet = ItemUse.useField(session, session.bag, ItemsData.ITEM_ITEMFINDER, nil)
 assert(okFeet == true, "Itemfinder should detect underfoot hidden item")
-assert(textFeet == "Oh! The ITEMFINDER's responding!\nThere's an item buried right beneath your feet!", "Underfoot text matches pret")
+assert(textFeet == "Oh!\nThe ITEMFINDER's shaking wildly!\fThere's an item buried underfoot!\f… … … … … …", "Underfoot text matches pret")
 
--- Pick up Potion at (3, 4)
 local hiddenPotion = Field.hiddenItemAt(game, 3, 4, 0)
 assert(hiddenPotion ~= nil, "Should find hidden Potion at 3, 4")
-Field.pickUpHiddenItem(game, hiddenPotion)
+assert(Field.digUpUnderfootItem(game, hiddenPotion), "the Itemfinder digs the underfoot item up")
 assert(Bag.get(session.bag, 13) == 1, "Bag now has 1 Potion")
 assert(Flags.getFlag(session, nil, 0x3E8) == true, "Flag 0x3E8 is now true")
+Message.close()
 
--- Scan again at (3, 4) -> should now be nope since all items on map are collected
 local okDone, kindDone, textDone = ItemUse.useField(session, session.bag, ItemsData.ITEM_ITEMFINDER, nil)
 assert(okDone == false, "Itemfinder has no response after items collected")
 assert(textDone == "… … … …Nope!\nThere's no response.")

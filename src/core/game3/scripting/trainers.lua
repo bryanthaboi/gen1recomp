@@ -8,6 +8,11 @@ local SPECIES_BULBASAUR = 1
 local SPECIES_CHARMANDER = 4
 local SPECIES_SQUIRTLE = 7
 
+-- pokefirered/include/constants/trainers.h:264, :272, :273
+local TRAINER_CLASS_RIVAL_EARLY = 81
+local TRAINER_CLASS_RIVAL_LATE = 89
+local TRAINER_CLASS_CHAMPION = 90
+
 local TRAINER_RIVAL_OAKS_LAB_SQUIRTLE = 326
 local TRAINER_RIVAL_OAKS_LAB_BULBASAUR = 327
 local TRAINER_RIVAL_OAKS_LAB_CHARMANDER = 328
@@ -263,7 +268,8 @@ function Trainers.foeFromId(trainerId)
 end
 
 --- ROM-derived trainer presentation info (class / name / pic / partySize / dialogs).
--- opts.rivalName replaces placeholder "TERRY" for class RIVAL when provided.
+-- opts.rivalName replaces the placeholder "TERRY" of the rival and champion
+-- classes when provided.
 function Trainers.info(trainerId, opts)
   opts = opts or {}
   trainerId = tonumber(trainerId)
@@ -289,7 +295,11 @@ function Trainers.info(trainerId, opts)
     dialogs = t.dialogs,
   }
 
-  if info.className == "RIVAL" and opts.rivalName and opts.rivalName ~= "" then
+  -- pokefirered/src/battle_message.c:2078 names these classes by the player's
+  -- rival, recognised by class id: a mod may rename the class itself.
+  local class = tonumber(info.class)
+  if (class == TRAINER_CLASS_RIVAL_EARLY or class == TRAINER_CLASS_RIVAL_LATE
+      or class == TRAINER_CLASS_CHAMPION) and opts.rivalName and opts.rivalName ~= "" then
     info.name = opts.rivalName
   end
   return info

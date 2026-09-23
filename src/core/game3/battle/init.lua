@@ -180,6 +180,8 @@ local function foe_mon_from(foe)
   end
   local mon = {
     species = species,
+    name = foe.name or foe.nickname,
+    nickname = foe.nickname,
     level = foe.level or 5,
     hp = foe.hp,
     maxHp = foe.maxHp,
@@ -444,11 +446,14 @@ function Battle.start(opts)
     -- pokefirered/src/battle_script_commands.c:4520
     if session and session.dex and foeMon and (foeMon.species or foeMon.speciesId)
         and not st.link
+        and not st.oldManTutorial
         and not (st.ghostBattle and not st.ghostUnveiled) then
       local Dex = require("src.core.game3.dex")
-      Dex.setSeen(session.dex, foeMon.species or foeMon.speciesId)
+      Dex.handleSetPokedexFlag(session.dex, foeMon.species or foeMon.speciesId, false, foeMon.personality)
       local b3 = st.double and not st.absent[3] and st.battlers[3]
-      if b3 and b3.mon then Dex.setSeen(session.dex, b3.mon.species or b3.mon.speciesId) end
+      if b3 and b3.mon then
+        Dex.handleSetPokedexFlag(session.dex, b3.mon.species or b3.mon.speciesId, false, b3.mon.personality)
+      end
     end
     -- pokefirered/src/pokemon.c:1796
     local wildMon = st.wild and st.enemy and st.enemy.mon
@@ -531,10 +536,12 @@ function Battle.start(opts)
   }))
 
   st.trainerId = trainerId
+  st.trainerClass = trainerInfo and tonumber(trainerInfo.class)
   st.trainerClassName = trainerInfo and trainerInfo.className
   st.trainerName = (trainerInfo and trainerInfo.name) or opts.trainerName
   -- pokefirered/src/battle_message.c:394 the link opponent is named, never classed
   if st.link and not st.unionRoom and st.peerName then
+    st.trainerClass = nil
     st.trainerClassName = ""
     st.trainerName = st.peerName
   end
@@ -650,7 +657,7 @@ function Battle.start(opts)
       Ui.push(strings.sentOut)
     end
     -- pokefirered/src/battle_main.c:2801
-    if not st.double and not st.safari then
+    if not st.double and not st.safari and not st.oldManTutorial then
       Ui.push(Strings("Go! %s!", State.displayName(st.player)))
     end
     -- pokefirered/src/battle_controller_oak_old_man.c:626
@@ -885,6 +892,13 @@ end
 
 Battle._refuseLinkItem = refuse_link_item
 
+local function auto_player_action(st)
+  if st and st.oldManTutorial then
+    return { kind = "bag", itemId = 4, user = "player" }
+  end
+  return Commands.playerAction(st, 1, 1)
+end
+
 local function begin_turn_with(playerAct)
   local st = Battle._st
   if st and st.double then return D.startSelection() end
@@ -957,7 +971,7 @@ local function send_out_enemy_next(nextEnemyIdx)
   local onDone = function()
     Battle._phase = "command"
     if Battle._auto then
-      begin_turn_with(Commands.playerAction(st, 1, 1))
+      begin_turn_with(auto_player_action(st))
     else
       Ui.openMenu()
     end
@@ -1023,7 +1037,7 @@ local function handle_player_faint(opts)
       onDone = function()
         Battle._phase = "command"
         if Battle._auto then
-          begin_turn_with(Commands.playerAction(st, 1, 1))
+          begin_turn_with(auto_player_action(st))
         else
           Ui.openMenu()
         end
@@ -1590,14 +1604,16 @@ local function step_action()
           return
         end
         local Bag = require("src.core.game3.bag")
-        if not bag or not Bag.has(bag, meta.itemId, 1) then
+        if not st.oldManTutorial and (not bag or not Bag.has(bag, meta.itemId, 1)) then
           Ui.push(Strings("You don't have that item."))
           Battle._actions = {}
           Battle._phase = "command"
           Ui.openMenu()
           return
         end
-        Bag.remove(bag, meta.itemId, 1)
+        if not st.oldManTutorial then
+          Bag.remove(bag, meta.itemId, 1)
+        end
         local rng = ad and ad.rng and ad:rng() or st.rng
         local caught, shakes = Catching.tryCatch(meta.itemId, st.enemy, st, session, rng)
         local pushFn = function(text) Ui.push(text) end
@@ -1627,7 +1643,7 @@ local function step_action()
       else
         local BattleItems = require("src.core.game3.battle.items")
         local result, _msgs, endsTurn, endsBattle = BattleItems.use(
-          st, ad, bag, session, meta.itemId, meta.partySlot)
+          st, ad, bag, session, meta.itemId, meta.partySlot, nil, meta.moveSlot)
         if endsBattle then
           Battle._actions = {}
           if result == "catch" then
@@ -2549,7 +2565,7 @@ function D.useBag(act)
     return D.afterEach()
   end
   local BattleItems = require("src.core.game3.battle.items")
-  local result = BattleItems.use(st, ad, bag, session, act.itemId, act.partySlot, act.battler)
+  local result = BattleItems.use(st, ad, bag, session, act.itemId, act.partySlot, act.battler, act.moveSlot)
   if result == "heal" then
     for _, id in ipairs(SEL_ORDER) do
       local b = State.battler(st, id)
@@ -2605,7 +2621,7 @@ local function finish_catch_flow(catchRes, ename, nicknamed)
 end
 
 local function start_post_catch_flow(catchRes)
-  if Battle._headless then
+  if Battle._headless or (Battle._st and Battle._st.oldManTutorial) then
     Battle._actions = {}
     Battle._pendingEnd = "catch"
     Battle._phase = "ending"
@@ -2808,7 +2824,7 @@ function Battle.update(dt, game)
       if begin_start_effects() then return end
       Battle._phase = "command"
       if Battle._auto then
-        begin_turn_with(Commands.playerAction(Battle._st, 1, 1))
+        begin_turn_with(auto_player_action(Battle._st))
       else
         Ui.openMenu()
       end
@@ -2822,7 +2838,7 @@ function Battle.update(dt, game)
     if AnimSeq.update() then
       Battle._phase = "command"
       if Battle._auto then
-        begin_turn_with(Commands.playerAction(Battle._st, 1, 1))
+        begin_turn_with(auto_player_action(Battle._st))
       else
         Ui.openMenu()
       end
@@ -3030,7 +3046,7 @@ function Battle.update(dt, game)
     end
     Battle._phase = "command"
     if Battle._auto then
-      begin_turn_with(Commands.playerAction(Battle._st, 1, 1))
+      begin_turn_with(auto_player_action(Battle._st))
     else
       Ui.openMenu()
     end
@@ -3074,7 +3090,7 @@ function Battle.update(dt, game)
   end
 
   if Battle._phase == "command" and Battle._auto then
-    begin_turn_with(Commands.playerAction(Battle._st, 1, 1))
+    begin_turn_with(auto_player_action(Battle._st))
   end
 end
 

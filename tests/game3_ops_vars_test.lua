@@ -349,6 +349,27 @@ w = warpArgs(0x4100, 0x8015)
 eq(w[4], 0x4100, "an id past VARS_END is a literal")
 eq(w[5], 0x8015, "an id past SPECIAL_VARS_END is a literal")
 
+print("[test] 11. buffernumberstring VarGets a literal requirement")
+-- pokefirered/data/maps/Route10_PokemonCenter_1F/scripts.inc:59
+-- pokefirered/src/event_data.c:235-241
+store = Flags.newStore()
+eq(Flags.getVar(store, nil, 20), 20, "getVar(20) returns the literal 20")
+Flags.setVar(store, nil, 0x4050, 3)
+eq(Flags.getVar(store, nil, 0x4050), 3, "a var at 0x4050 still reads the store")
+vm, store = run({
+  t = {
+    { op = "setvar", [1] = 0x8006, [2] = 7 },
+    { op = "setvar", [1] = VAR_TEMP_1, [2] = 42 },
+    { op = "buffernumberstring", [1] = 0, [2] = 20 },
+    { op = "buffernumberstring", [1] = 1, [2] = VAR_TEMP_1 },
+    { op = "buffernumberstring", [1] = 2, [2] = 0x8006 },
+    { op = "end" },
+  },
+}, "t")
+eq(vm.ctx.stringVars[1], "20", "buffernumberstring STR_VAR_1, 20 buffers \"20\"")
+eq(vm.ctx.stringVars[2], "42", "buffernumberstring of a save var buffers its value")
+eq(vm.ctx.stringVars[3], "7", "buffernumberstring of VAR_0x8006 buffers the caught count")
+
 if failed > 0 then
   print("[test] FAILED " .. failed)
   os.exit(1)

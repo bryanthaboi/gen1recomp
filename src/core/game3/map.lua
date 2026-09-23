@@ -12,6 +12,10 @@ Map.neighbors = {}
 Map._loadedLayouts = {}
 Map._def = nil
 Map._currentDef = nil
+-- pokefirered/include/overworld.h:46
+Map.MUSIC_DISABLE_OFF, Map.MUSIC_DISABLE_STOP, Map.MUSIC_DISABLE_KEEP = 0, 1, 2
+-- pokefirered/src/overworld.c:103
+Map.disableMusicChange = 0
 
 function Map.currentDef()
   return Map._def or Map._currentDef
@@ -436,10 +440,9 @@ function Map.load(mod, game, mapId, opts)
     Objects.loadMap(game, mapId, def)
     Ghosts.adopt(mapId)
   end
+  -- pokefirered/src/overworld.c:769
   -- pokefirered/src/overworld.c:806
-  if not opts.seamless then
-    require("src.core.game3.audio").setSavedSong(nil)
-  end
+  require("src.core.game3.audio").setSavedSong(nil)
   if fromMapId == mapId then
     if opts.reason and ModRuntime.wants("map.reloaded") then
       ModRuntime.emit("map.reloaded", { mapId = mapId, reason = opts.reason or "reload" })
@@ -468,10 +471,31 @@ function Map.load(mod, game, mapId, opts)
     if not music and Audio._pack and Audio._pack.index and Audio._pack.index.mapSongs then
       music = Audio._pack.index.mapSongs[mapId]
     end
+    -- pokefirered/src/overworld.c:1063
+    if Map.disableMusicChange == Map.MUSIC_DISABLE_STOP then
+      Audio.playSong(0)
+      music = nil
+    elseif Map.disableMusicChange == Map.MUSIC_DISABLE_KEEP then
+      music = nil
+    end
     if music and music ~= 0xFFFF then
-      -- pokefirered/src/overworld.c:1039
-      local id = (not opts.seamless and Audio._savedSong) or music
-      Audio.playMapSong(id, { mapSong = music })
+      local id
+      if opts.seamless then
+        -- pokefirered/src/overworld.c:1075
+        local fromDef = fromMapId and host_map_def(game, fromMapId)
+        if Audio._currentSong and Audio._currentSong.id == Audio.MUS_SURF then
+          Audio.setMapSong(music)
+        elseif Audio.specialMapSong(fromDef and fromDef.regionMapSectionId) == Audio.MUS_SURF then
+          id = Audio.MUS_SURF
+        else
+          id = music
+        end
+      else
+        -- pokefirered/src/overworld.c:1039
+        id = Audio._savedSong or (Audio.specialMapSong(def and def.regionMapSectionId) == Audio.MUS_SURF
+          and Audio.MUS_SURF) or music
+      end
+      if id then Audio.playMapSong(id, { mapSong = music }) end
     end
   end
 

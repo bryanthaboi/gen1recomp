@@ -66,13 +66,18 @@ function BattleItems.needsPartySelect(id)
   return false
 end
 
-function BattleItems.canUseOn(st, itemId, partySlot, mon)
+function BattleItems.canUseOn(st, itemId, partySlot, mon, moveSlot)
   if not mon or not itemId then return false, Strings("It won't have any effect.") end
   if mon.isEgg then return false, Strings("An EGG can't be used on.") end
   local hp = tonumber(mon.hp) or 0
   local maxHp = tonumber(mon.maxHp or mon.maxhp) or 1
   local mk = ItemsData.medicineKind(itemId)
   local use = ItemsData.fieldUseKind(itemId)
+  -- pokefirered/src/party_menu.c:4675 TryUsePPItemInBattle
+  if use == "pp" then
+    if ItemUse.ppItemHasEffect(mon, itemId, moveSlot or 1) then return true end
+    return false, Strings("It won't have any effect.")
+  end
   if mk == "revive" or use == "revive" then
     if hp > 0 then return false, Strings("It won't have any effect.") end
     return true
@@ -122,7 +127,7 @@ end
 --   msgs: string list
 --   endsTurn: bool (enemy may still move unless endsBattle)
 --   endsBattle: bool
-function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId)
+function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId, moveSlot)
   local msgs = {}
   local function say(t)
     msgs[#msgs + 1] = t
@@ -228,6 +233,31 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
   -- Medicine / berries on party mon
   local use = ItemsData.fieldUseKind(itemId)
   local info = ItemsData.info(itemId)
+  -- pokefirered/src/party_menu.c:4675 TryUsePPItemInBattle
+  if use == "pp" then
+    local party = st.playerParty or (session and session.party)
+    if not partySlot then
+      return "need_slot", msgs, false, false
+    end
+    local mon = party and party[partySlot]
+    local battler
+    if st.player and st.player.partyIndex == partySlot then
+      battler = st.player
+    elseif st.double and st.battlers and st.battlers[2] and st.battlers[2].partyIndex == partySlot then
+      battler = st.battlers[2]
+    end
+    if battler then
+      local State = require("src.core.game3.battle.state")
+      State.syncBattlerToParty(battler, party)
+    end
+    if not mon or not ItemUse.applyPpItem(mon, itemId, moveSlot or 1, battler, session) then
+      say(Strings("It won't have any effect."))
+      return "error", msgs, false, false
+    end
+    Bag.remove(bag, itemId, 1)
+    say(Strings("%s used\nthe %s!", tostring(session and session.name or "RED"), name))
+    return "heal", msgs, true, false
+  end
   local bu = info and tonumber(info.battleUsage) or 0
   if bu == 1 or use == "heal" or use == "status" or use == "revive"
       or (info and info.pocket == "BERRY_POUCH") then

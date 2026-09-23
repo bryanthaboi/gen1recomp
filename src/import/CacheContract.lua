@@ -392,6 +392,56 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/gba/trainer_card/screen_4_female.rgba",
     "data/generated/gba/trainer_card/star.rgba",
     "data/generated/gba/trainer_card/stickers.rgba",
+    -- src/credits.c:815, :1101, :1230
+    "data/generated/gba/credits/manifest.lua",
+    "data/generated/gba/credits/pack.lua",
+    "data/generated/gba/credits/copyright.rgba",
+    "data/generated/gba/credits/the_end.rgba",
+    "data/generated/gba/credits/circle.rgba",
+    "data/generated/gba/credits/pokeball_0.rgba",
+    "data/generated/gba/credits/mon_0_1.rgba",
+    "data/generated/gba/credits/player_male.rgba",
+    "data/generated/gba/credits/rival.rgba",
+    "data/generated/gba/credits/ground_grass.rgba",
+    -- src/field_specials.c:2133
+    "data/generated/gba/league/lighting.lua",
+    -- src/diploma.c:119
+    "data/generated/gba/diploma/manifest.lua",
+    "data/generated/gba/diploma/kanto.rgba",
+    "data/generated/gba/diploma/national.rgba",
+    -- src/hall_of_fame.c:1163, :1181
+    "data/generated/gba/hall_of_fame/manifest.lua",
+    "data/generated/gba/hall_of_fame/bands.rgba",
+    "data/generated/gba/hall_of_fame/stripes.rgba",
+    "data/generated/gba/hall_of_fame/confetti.rgba",
+    -- src/data/field_effects/field_effect_objects.h:288, src/itemfinder.c:39
+    "data/generated/gba/field_effects/ground_impact_dust.rgba",
+    "data/generated/gba/field_effects/itemfinder_arrow_star.rgba",
+    -- src/field_effect.c:73, :77
+    "data/generated/gba/field_effects/field_move_streaks_outdoors.rgba",
+    "data/generated/gba/field_effects/field_move_streaks_indoors.rgba",
+    -- src/pokemon.c:5904, src/decompress.c:83
+    "data/generated/gba/pokemon/front_shiny/1.rgba",
+    "data/generated/gba/pokemon/back_shiny/1.rgba",
+    "data/generated/gba/pokemon/front_shiny/385_3.rgba",
+    "data/generated/gba/pokemon/front/413.rgba",
+    "data/generated/gba/pokemon/back/439.rgba",
+    "data/generated/gba/pokemon/front_shiny/439.rgba",
+    "data/generated/gba/pokemon/back_shiny/439.rgba",
+    "data/generated/gba/pokemon/icons/439.rgba",
+    -- src/pokemon.c:1350, :5339
+    "data/generated/gba/pokemon/spinda/front.4bpp",
+    "data/generated/gba/pokemon/spinda/normal.gbapal",
+    "data/generated/gba/pokemon/spinda/shiny.gbapal",
+    "data/generated/gba/pokemon/spinda/spots.bin",
+    -- src/ss_anne.c:21-22
+    "data/generated/gba/field_effects/ss_anne_wake.rgba",
+    "data/generated/gba/field_effects/ss_anne_smoke.rgba",
+    -- src/data/trainer_graphics/front_pic_tables.h:153
+    "data/generated/gba/trainers/front/0.rgba",
+    "data/generated/gba/trainers/front/147.rgba",
+    -- src/pokeball.c:61
+    "data/generated/gba/intro/ball_poke.png",
   },
 }
 CacheContract.VERSION_REQUIRED_FILES_OVERRIDE.leafgreen = {}

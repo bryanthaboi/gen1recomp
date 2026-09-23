@@ -1,7 +1,5 @@
--- Write game3 script/event cache blobs from ROM MapEvents + BFS (primary),
--- or curated island1_content (dev/CI fallback when no ROM extract).
+-- Write game3 script/event cache blobs from ROM MapEvents + BFS.
 
-local Content = require("src.import.gba.island1_content")
 local Disasm = require("src.core.game3.scripting.disasm")
 local TextIR = require("src.core.game3.scripting.text_ir")
 local Movement = require("src.core.game3.scripting.movement")
@@ -16,7 +14,7 @@ ExtractScripts.CACHE_SUB = "scripts"
 local SCRIPT_CHUNK = 8192
 local TEXT_MAX = 1024
 local MOVE_MAX = 256
-local BFS_MAX = 4000
+local BFS_MAX = 16000
 
 local function json_escape(s)
   return (tostring(s):gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"))
@@ -62,27 +60,6 @@ local function serialize_lua(val, indent)
   end
   parts[#parts + 1] = sp .. "}"
   return table.concat(parts)
-end
-
-local function merge_std_scripts()
-  local scripts = {}
-  for k, v in pairs(Content.STDSCRIPTS) do scripts[k] = v end
-  return scripts
-end
-
-local function merge_std_text()
-  local text = {}
-  for k, v in pairs(Content.TEXT) do
-    -- Prefer extracted text; curated TEXT is only used for std nurse/PC labels
-    -- that are not in ROM BFS (EventScript_PC host path).
-    if type(k) == "string" and (k:find("^Text_", 1, true) or k:find("^EventScript", 1, true)) then
-      text[k] = v
-    end
-  end
-  -- Always include Std nurse/PC text keys.
-  local Std = require("src.core.game3.scripting.stdscripts")
-  for k, v in pairs(Std.TEXT) do text[k] = v end
-  return text
 end
 
 local function is_rom_ptr(ptr)
@@ -282,11 +259,11 @@ function ExtractScripts.bfsFromSeeds(rom, seedPtrs)
       if row.op == "end" or row.op == "return" then
         break
       end
-      -- gotostd / callstd — std overlay covers runtime; no ROM enqueue
     end
     scripts[key] = rows
     ::continue::
   end
+  assert(#queue == 0, "script BFS stopped at BFS_MAX with " .. #queue .. " scripts queued")
 
   return {
     scripts = scripts,
@@ -299,14 +276,38 @@ function ExtractScripts.bfsFromSeeds(rom, seedPtrs)
   }
 end
 
---- Full Island 1 extract: MapEvents + BFS + stdscripts overlay.
 function ExtractScripts.extractFromRom(rom, version)
   local events, seeds = ExtractMapEvents.extractIsland1(rom, version)
+  local aliases = {}
+  -- data/event_scripts.s:77
+  for i = 0, Versions.STD_SCRIPTS_COUNT - 1 do
+    local ptr = rom:u32(Versions.STD_SCRIPTS + i * 4)
+    assert(rom:ptrOffset(ptr), "gStdScripts entry " .. i .. " is not a ROM pointer")
+    seeds[#seeds + 1] = ptr
+    aliases["std:" .. i] = Opcodes.key(ptr)
+  end
+  -- data/scripts/pc.inc:1
+  for name, off in pairs(Versions.NAMED_SCRIPTS) do
+    local ptr = 0x08000000 + off
+    seeds[#seeds + 1] = ptr
+    aliases[name] = Opcodes.key(ptr)
+  end
   local bfs = ExtractScripts.bfsFromSeeds(rom, seeds)
-  local scripts = merge_std_scripts()
+  local scripts = {}
   for k, v in pairs(bfs.scripts) do scripts[k] = v end
-  local text = merge_std_text()
+  for name, key in pairs(aliases) do
+    scripts[name] = assert(scripts[key], "ROM script " .. name .. " was not extracted")
+  end
+  local text = {}
   for k, v in pairs(bfs.text) do text[k] = v end
+  for name, off in pairs(Versions.NAMED_TEXTS) do
+    text[name] = assert(read_text_ir(rom, 0x08000000 + off), "ROM text " .. name .. " is not readable")
+  end
+  -- src/script_menu.c:574
+  for i = 0, Versions.STD_STRING_COUNT - 1 do
+    local ptr = rom:u32(Versions.STD_STRING_PTRS + i * 4)
+    text["stdstring:" .. i] = assert(read_text_ir(rom, ptr), "gStdStringPtrs entry " .. i .. " is not a ROM pointer")
+  end
   local movements = {}
   for k, v in pairs(bfs.movements) do movements[k] = v end
   return {
@@ -329,7 +330,6 @@ local function write_tables(cache, root, scripts, text, movements, events, metaE
   cache:write(base .. "/scripts.lua", "return " .. serialize_lua(scripts) .. "\n")
   cache:write(base .. "/text.lua", "return " .. serialize_lua(text) .. "\n")
   cache:write(base .. "/movements.lua", "return " .. serialize_lua(movements) .. "\n")
-  cache:write(base .. "/stdscripts.lua", "return " .. serialize_lua(merge_std_scripts()) .. "\n")
   cache:write(base .. "/events.lua", "return " .. serialize_lua(events) .. "\n")
   local meta = {
     cache_version = Versions.CACHE_VERSION,
@@ -404,20 +404,6 @@ function ExtractScripts.writeBundleFromRom(rom, cache, root, version, extracted)
   return bundle
 end
 
---- Dev/CI fallback: curated island1_content (no ROM).
-function ExtractScripts.writeBundle(cache, root)
-  local scripts = merge_std_scripts()
-  for k, v in pairs(Content.SCRIPTS) do scripts[k] = v end
-  write_tables(cache, root, scripts, Content.TEXT, Content.MOVEMENTS or {}, Content.EVENTS, {
-    source = "curated",
-  })
-  do
-    local FlagsExtract = require("src.import.gba.flags_extract")
-    FlagsExtract.write(cache, root)
-  end
-  return true
-end
-
 --- Cache contract: ready extract has events+scripts+text.
 function ExtractScripts.bundleReady(bundle)
   if not bundle then return false, "nil bundle" end
@@ -458,22 +444,12 @@ function ExtractScripts.loadBundle(cache, root, opts)
       for k,v in pairs(objects.text or {}) do text[k]=v end
       for k,v in pairs(objects.movements or {}) do movements[k]=v end
     end
-    -- Overlay stdscripts always (nurse/PC host arms).
-    for k, v in pairs(merge_std_scripts()) do
-      scripts[k] = v
-    end
-    local stdText = merge_std_text()
-    text = text or {}
-    for k, v in pairs(stdText) do
-      if text[k] == nil then text[k] = v end
-    end
     local bundle = {
       scripts = scripts,
-      text = text,
+      text = text or {},
       movements = movements or {},
       events = events,
       fromCache = true,
-      fromCurated = false,
     }
     do
       local Marts = require("src.core.game3.marts")
@@ -482,35 +458,18 @@ function ExtractScripts.loadBundle(cache, root, opts)
     end
     local ok, why = ExtractScripts.bundleReady(bundle)
     if not ok and not opts.allowIncomplete then
-      -- Incomplete cache: refuse silent curated substitution for "normal" boots.
       if opts.strict then
         return nil, why
       end
     end
     return bundle
   end
-  -- No cache: curated fallback (CI / no ROM).
-  if opts.forbidCurated then
-    return nil, "extract cache missing"
-  end
-  return {
-    scripts = (function()
-      local s = merge_std_scripts()
-      for k, v in pairs(Content.SCRIPTS) do s[k] = v end
-      return s
-    end)(),
-    text = Content.TEXT,
-    movements = Content.MOVEMENTS or {},
-    events = Content.EVENTS,
-    fromCache = false,
-    fromCurated = true,
-  }
+  return nil, "extract cache missing"
 end
 
 ExtractScripts.Disasm = Disasm
 ExtractScripts.TextIR = TextIR
 ExtractScripts.Movement = Movement
-ExtractScripts.Content = Content
 ExtractScripts.serialize_lua = serialize_lua
 
 return ExtractScripts

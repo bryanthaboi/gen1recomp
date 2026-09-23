@@ -41,7 +41,7 @@ Versions.ROM_SIZE = 16777216
 -- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon — eggs were drawn
 --       with the icon of the species they hatch into.
 -- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
-Versions.CACHE_VERSION = 117
+Versions.CACHE_VERSION = 118
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 3
 Versions.ANIM_VERSION = 1
@@ -76,11 +76,13 @@ Versions.OW_PLAYER_MALE_BIKE = 1
 Versions.OW_PLAYER_MALE_SURF = 2
 Versions.OW_PLAYER_MALE_FIELD_MOVE = 3
 Versions.OW_PLAYER_MALE_FISH = 4
+Versions.OW_PLAYER_MALE_VS_SEEKER_BIKE = 6
 Versions.OW_PLAYER_FEMALE = 7
 Versions.OW_PLAYER_FEMALE_BIKE = 8
 Versions.OW_PLAYER_FEMALE_SURF = 9
 Versions.OW_PLAYER_FEMALE_FIELD_MOVE = 10
 Versions.OW_PLAYER_FEMALE_FISH = 11
+Versions.OW_PLAYER_FEMALE_VS_SEEKER_BIKE = 13
 -- FireRed USA 1.0 font (menu cursor = SelectorArrow2 / charmap ▶ = 0xEF).
 Versions.FONT_LATIN_NORMAL = 0x1FF300       -- sFontNormalLatinGlyphs
 Versions.FONT_LATIN_WIDTHS = 0x207300       -- sFontNormalLatinGlyphWidths
@@ -1407,6 +1409,21 @@ Versions.FIELD_EFFECTS = {
   deoxys_rock_fragments = {
     pic = 0x3CBDB0, pal = 0x3F6346, w = 8, h = 8, frames = 4,
   },
+  -- pokefirered/src/data/field_effects/field_effect_objects.h:288
+  ground_impact_dust = { pic = 0x399008, pal = 0x398FA8, w = 16, h = 8, frames = 3 },
+  -- pokefirered/src/itemfinder.c:40, src/event_object_movement.c:490
+  itemfinder_arrow_star = { pic = 0x4644D0, pal = 0x35B968, w = 16, h = 16, frames = 5 },
+  -- src/ss_anne.c:21, :156, include/event_object_movement.h:20
+  ss_anne_wake = { pic = 0x479838, pal = 0x395AE8, w = 16, h = 32, frames = 2 },
+  -- src/ss_anne.c:22, :190
+  ss_anne_smoke = { pic = 0x479A38, pal = 0x395AE8, w = 16, h = 16, frames = 4 },
+}
+
+Versions.FIELD_MOVE_STREAKS = {
+  -- pokefirered/src/field_effect.c:73
+  outdoors = { gfx = 0x3CB5F0, pal = 0x3CB7F0, tilemap = 0x3CB810, tiles = 16 },
+  -- pokefirered/src/field_effect.c:77
+  indoors = { gfx = 0x3CBA90, pal = 0x3CBB10, tilemap = 0x3CBB30, tiles = 4 },
 }
 
 -- Battle interface chrome (FireRed USA 1.0 file offsets; LZ unless noted).
@@ -1470,6 +1487,13 @@ Versions.BATTLE_TRANSITION = {
 }
 
 Versions.MON_BACK_PIC_TABLE = 0x23654C -- gMonBackPicTable
+-- src/data/pokemon_graphics/shiny_palette_table.h:1
+Versions.MON_SHINY_PALETTE_TABLE = 0x2380CC
+-- src/pokemon.c:1350
+Versions.SPINDA_SPOT_GRAPHICS = 0x25265C
+-- include/constants/species.h:425-451
+Versions.SPECIES_UNOWN_B = 413
+Versions.SPECIES_UNOWN_QMARK = 439
 Versions.GHOST_PALETTE = 0xE93B14 -- pokefirered/src/graphics.c:1135
 Versions.GHOST_FRONT_PIC = 0xE93B38 -- pokefirered/src/graphics.c:1136
 
@@ -1739,6 +1763,267 @@ Versions.MOVE_RELEARNER_TILEMAP = 0xE97EC4
 Versions.BATTLE_RECORDS_GFX = 0x3F6388
 Versions.BATTLE_RECORDS_PAL = 0x3F6448
 Versions.BATTLE_RECORDS_TILEMAP = 0x3F6468
+
+-- data/event_scripts.s:77
+Versions.STD_SCRIPTS = 0x160450
+Versions.STD_SCRIPTS_COUNT = 10
+
+-- data/scripts/pc.inc:1, data/scripts/pokedex_rating.inc:35
+Versions.NAMED_SCRIPTS = {
+  EventScript_PC = 0x1A6955,
+  EventScript_PCDisabled = 0x1A698E,
+  EventScript_PCMainMenu = 0x1A6998,
+  EventScript_ChoosePCMenu = 0x1A69A8,
+  EventScript_AccessPlayersPC = 0x1A69F0,
+  EventScript_AccessPokemonStorage = 0x1A6A05,
+  EventScript_AccessSomeonesPC = 0x1A6A34,
+  EventScript_AccessBillsPC = 0x1A6A3D,
+  EventScript_TurnOffPC = 0x1A6A46,
+  EventScript_AccessHallOfFame = 0x1A6A56,
+  EventScript_AccessProfOaksPC = 0x1A6A7A,
+  EventScript_ExitOaksPC = 0x1A6AB2,
+  PokedexRating_EventScript_Rate = 0x1A73E0,
+  -- data/scripts/white_out.inc:1, :22
+  EventScript_AfterWhiteOutHeal = 0x1A8D97,
+  EventScript_AfterWhiteOutMomHeal = 0x1A8DD8,
+}
+
+-- src/strings.c:190-192, :961-962, data/event_scripts.s:884, data/text/white_out.inc:43, :50,
+-- data/text/obtain_item.inc:7-30, data/text/itemfinder.inc:8
+Versions.NAMED_TEXTS = {
+  gText_ItemfinderResponding = 0x416476,
+  gText_ItemfinderShakingWildly = 0x4164BE,
+  gText_NopeTheresNoResponse = 0x416513,
+  gText_PlayerScurriedToCenter = 0x41B554,
+  gText_PlayerScurriedBackHome = 0x41B5B6,
+  gText_PkmnFainted3 = 0x1A5476,
+  Text_WhitedOutLostMoney = 0x1A6197,
+  Text_WhitedOut = 0x1A61E5,
+  Text_PutItemAway = 0x1A5218,
+  Text_FoundOneItem = 0x1A5231,
+  Text_TooBadBagFull = 0x1A5242,
+  Text_FoundXCoins = 0x1A525C,
+  Text_PutCoinsAwayInCoinCase = 0x1A526C,
+  Text_CoinCaseIsFull = 0x1A5294,
+  Text_NothingToPutThemIn = 0x1A52B4,
+  Text_DugUpItemFromGround = 0x1A5700,
+  -- src/strings.c:17, :36, :50-52, :103-112, :896
+  gText_WelcomeToHOF = 0x416008,
+  gText_LeagueChamp = 0x4160C8,
+  gText_SavingDontTurnOffThePower2 = 0x419F54,
+  gText_HOFCorrupted = 0x416090,
+  gText_HOFNumber = 0x4160B4,
+  gText_UPDOWNPick_ABUTTONNext_BBUTTONBack = 0x415D60,
+  gText_UPDOWNPick_ABUTTONBBUTTONCancel = 0x415D78,
+  gText_ABUTTONExit = 0x415D8C,
+  gText_Number = 0x4160EC,
+  gText_Level = 0x4160F4,
+  gText_Name = 0x4160FC,
+  gText_IDNumber = 0x416104,
+  gText_MainMenuTime = 0x415CE8,
+  gText_EggNickname = 0x415A62,
+  -- src/strings.c:963-967
+  gText_Diploma_Player = 0x41B60E,
+  gText_Diploma_ThisDocument = 0x41B619,
+  gText_Diploma_GameFreak = 0x41B684,
+  gText_Diploma_National = 0x41B68F,
+  gText_Diploma_Kanto = 0x41B698,
+  -- data/text/pokedex_rating.inc:13-85
+  PokedexRating_Text_LessThan10 = 0x1A6D17,
+  PokedexRating_Text_LessThan20 = 0x1A6D6D,
+  PokedexRating_Text_LessThan30 = 0x1A6DDF,
+  PokedexRating_Text_LessThan40 = 0x1A6E36,
+  PokedexRating_Text_LessThan50 = 0x1A6EA4,
+  PokedexRating_Text_LessThan60 = 0x1A6F0B,
+  PokedexRating_Text_LessThan70 = 0x1A6F71,
+  PokedexRating_Text_LessThan80 = 0x1A6FAB,
+  PokedexRating_Text_LessThan90 = 0x1A6FF1,
+  PokedexRating_Text_LessThan100 = 0x1A7031,
+  PokedexRating_Text_LessThan110 = 0x1A7063,
+  PokedexRating_Text_LessThan120 = 0x1A70A5,
+  PokedexRating_Text_LessThan130 = 0x1A70D8,
+  PokedexRating_Text_LessThan140 = 0x1A7108,
+  PokedexRating_Text_LessThan150 = 0x1A7137,
+  PokedexRating_Text_Complete = 0x1A7175,
+  -- data/scripts/repel.inc:5, data/text/day_care.inc:129
+  Text_RepelWoreOff = 0x1BFB6E,
+  DayCare_Text_Huh = 0x1BFB5A,
+  -- src/strings.c:1059-1061
+  gText_PokemonOnHook = 0x41D14E,
+  gText_NotEvenANibble = 0x41D169,
+  gText_ItGotAway = 0x41D17E,
+  -- src/strings.c:160, :278, :382, :629
+  gText_BagFullCouldNotRemoveItem = 0x416D78,
+  gText_MenuBag = 0x416285,
+  gText_BagIsFull2 = 0x418408,
+  gText_NoMoreRoomInBag = 0x41778A,
+  -- src/strings.c:199-200
+  gText_UsedVar2WildLured = 0x4165D2,
+  gText_UsedVar2WildRepelled = 0x416600,
+  -- src/strings.c:178, :209, :214, :301-304, :317-318, :601, :682-683, :1252-1255
+  gText_CantUseHere = 0x417299,
+  gText_AlreadySurfing = 0x417281,
+  gDaycareText_GetAlongVeryWell = 0x41E33C,
+  gDaycareText_GetAlong = 0x41E361,
+  gDaycareText_DontLikeOther = 0x41E37C,
+  gDaycareText_PlayOther = 0x41E3A8,
+  gText_OnlyPkmnForBattle = 0x417094,
+  gText_EggCantBeTradedNow = 0x4170E0,
+  gText_PkmnCantBeTradedNow = 0x4170BC,
+  gText_OtherTrainersPkmnCantBeTraded = 0x4170FC,
+  gText_ThereIsNoPokemon = 0x41632A,
+  gText_TheBerryPouchWillBePutAway = 0x416716,
+  gText_TMCaseWillBePutAway = 0x4166E1,
+  gText_JustOnePkmn = 0x418690,
+  gText_PartyFull = 0x4186B0,
+  gFameCheckerText_FameCheckerWillBeClosed = 0x4181C3,
+  -- src/strings.c:158, :401, :477-478, :672-681
+  gText_WhatWouldYouLikeToDo = 0x416262,
+  gText_HallOfFame = 0x4178F0,
+  gText_LogOff = 0x417BCB,
+  gText_ProfOakSPc = 0x417BD3,
+  gText_WithdrawPokemon = 0x41856C,
+  gText_DepositPokemon = 0x41857D,
+  gText_MovePokemon = 0x41858D,
+  gText_MoveItems = 0x41859A,
+  gText_SeeYa = 0x4185A5,
+  gText_WithdrawMonDescription = 0x4185AD,
+  gText_DepositMonDescription = 0x4185E2,
+  gText_MoveMonDescription = 0x418611,
+  gText_MoveItemsDescription = 0x418642,
+  gText_SeeYaDescription = 0x418681,
+  -- src/strings.c:224, :230, :309-322, :370, :980-981, :1004
+  gText_ChoosePokemon = 0x4171DF,
+  gText_MoveToWhere = 0x4171F1,
+  gText_TeachWhichPokemon = 0x417200,
+  gText_UseOnWhichPokemon = 0x417215,
+  gText_GiveToWhichPokemon = 0x41722B,
+  gText_RestoreWhichMove = 0x4172AE,
+  gText_BoostPp = 0x4172C2,
+  gText_DoWhatWithItem = 0x4172D5,
+  gText_NoPokemonForBattle = 0x4172EB,
+  gText_CancelBattle = 0x4176CF,
+  gText_HereYouGoThankYou = 0x4167E7,
+  gText_AnythingElseICanHelp = 0x41689E,
+  gString_OutOfCoins = 0x41B747,
+  gString_QuitPlaying = 0x41B76B,
+  gText_CommunicationStandby4 = 0x41CC64,
+}
+
+-- src/script_menu.c:574
+Versions.STD_STRING_PTRS = 0x3E06B8
+Versions.STD_STRING_COUNT = 29
+
+-- src/field_specials.c:2081, :2096, :2108, :2122
+Versions.LEAGUE_LIGHTING = {
+  e4_pals = 0x3F5F50,
+  e4_pal_count = 12,
+  e4_timers = 0x3F61F0,
+  e4_steps = 11,
+  champ_pals = 0x3F60D0,
+  champ_pal_count = 9,
+  champ_timers = 0x3F61FB,
+  champ_steps = 8,
+}
+
+-- src/hall_of_fame.c:143, :148, :288, :289
+Versions.HALL_OF_FAME = {
+  pal = 0x40C39C,
+  gfx = 0x40C3BC,
+  confetti_sheet = 0xD2D5FC,
+  confetti_pal = 0xD2D71C,
+  confetti_frames = 17,
+}
+
+-- src/diploma.c:42
+Versions.DIPLOMA = {
+  gfx = 0x4147C0,
+  tilemap = 0x4154E8,
+  pal = 0x415954,
+}
+
+-- src/credits.c:341, :383, :456, :479, :649, :665, src/graphics.c:1329, :1368, src/strings.c:1063
+Versions.CREDITS = {
+  script = 0x410CF4,
+  script_max = 0x42,
+  texts = 0x4145BC,
+  text_count = 43,
+  scenes = 0x414588,
+  scene_count = 13,
+  sprite_params = 0x41431C,
+  sprite_param_count = 5,
+  staff_firered = 0x41D198,
+  staff_leafgreen = 0x41D1B8,
+  copyright_pal = 0xEAE528,
+  copyright_tiles = 0xEAE548,
+  copyright_map = 0xEAE900,
+  the_end_pal = 0x410B00,
+  the_end_tiles = 0x410B20,
+  the_end_map = 0x410B94,
+  pokeball_pals = 0xEAAB18,
+  pokeball_tiles = 0xEAAB98,
+  pokeball_map = 0xEAB30C,
+  circle_pal = 0x40C630,
+  circle_tiles = 0x40C650,
+  circle_map = 0x40CA54,
+  player_male_pal = 0x410E10,
+  player_male_tiles = 0x410E30,
+  player_female_pal = 0x411BF8,
+  player_female_tiles = 0x411C18,
+  rival_pal = 0x4129A0,
+  rival_tiles = 0x4129C0,
+  ground_grass_pal = 0x413318,
+  ground_grass_tiles = 0x413338,
+  ground_dirt_pal = 0x413854,
+  ground_dirt_tiles = 0x413874,
+  ground_city_pal = 0x413D98,
+  ground_city_tiles = 0x413DB8,
+  charizard_1 = 0x40CB8C,
+  charizard_2 = 0x40D228,
+  venusaur_1 = 0x40E158,
+  venusaur_2 = 0x40E904,
+  blastoise_1 = 0x40F240,
+  blastoise_2 = 0x40F944,
+  pikachu_1 = 0x410198,
+  pikachu_2 = 0x4105B4,
+  windows_charizard = 0x40C5B0,
+  windows_venusaur = 0x40C5D0,
+  windows_blastoise = 0x40C5F0,
+  windows_pikachu = 0x40C610,
+}
+
+Versions.DYNAMIC_METATILES = {
+  -- src/field_tasks.c:225, :241
+  { metatiles = 0x2BB51C, mids = { 0x35A, 0x35B } },
+  -- src/field_specials.c:776
+  { metatiles = 0x2C0E04, mids = { 0x2E8, 0x2E9, 0x2EA, 0x2F0, 0x2F1, 0x2F2, 0x2F8, 0x2F9, 0x2FA } },
+  -- src/field_specials.c:2312
+  { metatiles = 0x2CF3F0, mids = { 0x358 } },
+  -- src/special_field_anim.c:257
+  { metatiles = 0x2C0968, mids = { 0x285, 0x28A, 0x296, 0x2B4, 0x2B5, 0x2B6, 0x2B7, 0x2B8, 0x2B9, 0x2BA } },
+  -- src/fldeff_cut.c:36
+  { metatiles = 0x29F6C8, mids = { 0x001, 0x013, 0x00E, 0x00F } },
+  { metatiles = 0x2A65F4, mids = { 0x33E } },
+  { metatiles = 0x2A78B4, mids = { 0x310, 0x311, 0x312 } },
+  { metatiles = 0x2B90B4, mids = { 0x281 } },
+}
+
+-- src/data/pokemon/item_effects.h:338, src/item_use.c:409
+Versions.ITEM_EFFECT_TABLE = 0x2528BC
+Versions.ITEM_EFFECT_FIRST = 13
+Versions.ITEM_EFFECT_LAST = 175
+Versions.FIELD_USE_FUNCS = {
+  medicine = 0x0A16E0,
+  ether = 0x0A16FC,
+  pp_up = 0x0A1718,
+  rare_candy = 0x0A1734,
+  evo_item = 0x0A1750,
+  sacred_ash = 0x0A176C,
+  repel = 0x0A1998,
+  escape_rope = 0x0A1BAC,
+  -- src/item_use.c:582
+  black_white_flute = 0x0A1A94,
+}
 
 -- Title screen + Oak speech graphics (FireRed USA 1.0 file offsets).
 -- Verified by matching pret .gbapal bytes + LZ sizes in local dump.

@@ -42,9 +42,20 @@ local a={'TEST'};Recorder.event(session,'ArrivedInLocation',a);a[1]='WRONG'
 assert(session.questLog.scenes[#session.questLog.scenes].events[2].args[1]=='TEST')
 local other={map='FR_OTHER'};Recorder.event(other,'ArrivedInLocation',a);assert(other.questLog==nil)
 local Pokemon=require('src.core.game3.pokemon');Pokemon.displayMonName=function(m)return m.name end
-local st={wild=false,result='win',trainerName='BROCK',trainerClassName='LEADER',
+-- The French cart calls a gym LEADER "CHAMPION": the class id decides, not its name.
+local st={wild=false,result='win',trainerName='BROCK',trainerClass=84,trainerClassName='CHAMPION',
  player={mon={name='BULBASAUR',hp=20,maxHp=30}},enemy={mon={name='ONIX'}}}
 Recorder.battle(session,st)
 local e=session.questLog.scenes[#session.questLog.scenes].events[3]
 assert(e.key=='TookOnGymLeadersMonWithMonAndWon' and e.args.D4.text=='Handily')
+local function keyFor(class,className)
+  local s={wild=false,result='win',trainerName='X',trainerClass=class,trainerClassName=className,
+   player={mon={name='BULBASAUR',hp=20,maxHp=30}},enemy={mon={name='ONIX'}}}
+  Recorder.battle(session,s)
+  local evs=session.questLog.scenes[#session.questLog.scenes].events
+  return evs[#evs].key
+end
+assert(keyFor(87,'CONSEIL 4')=='TookOnEliteFoursMonWithMonAndWon')
+assert(keyFor(90,'MAÎTRE')=='PlayerBattledChampionRival')
+assert(keyFor(82,'LEADER')=='TookOnTrainersMonWithMonAndWon')
 print('PASS Quest Log Continue, legacy save, quit, RNG isolation, event scoping and battle summary')

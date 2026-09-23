@@ -82,37 +82,70 @@ return function(game)
   print("[driver] on the ice at (" .. Player.cellX .. "," .. Player.cellY .. ")")
   result(Player.cellX == 8 and Player.cellY == 14,
     "standing on the crackable ice at (" .. Player.cellX .. "," .. Player.cellY .. ")")
-  U.shot(game, DIR .. "/ops_icefall_hole_01_on_the_ice.png")
 
-  -- pokefirered/src/field_tasks.c:243
-  Flags.setVar(Space.store, ctx(), VAR_TEMP_1, 1)
+  local Field = require("src.core.game3.field")
+  -- pokefirered/include/constants/metatile_labels.h:188
+  local CRACKED, HOLE = 0x35A, 0x35B
+  local function iceAt(x, y)
+    local b = Field.metatileOverrides[CAVE_1F]
+    local o = b and b[y * 1024 + x]
+    return o and o.metatile
+  end
 
-  -- pokefirered/src/field_control_avatar.c:212
-  local ranByItself = false
-  for _ = 1, 120 do
+  U.wait(12)
+  result(iceAt(8, 14) == CRACKED,
+    "the first step cracked the thin ice, metatile=" .. string.format("0x%X", iceAt(8, 14) or 0))
+  -- pokefirered/src/field_tasks.c:139
+  result(Flags.getFlag(Space.store, ctx(), 9) == true, "FLAG_TEMP_9 marks (8,14) visited")
+  result((tonumber(Flags.getVar(Space.store, ctx(), VAR_TEMP_1)) or 0) == 0,
+    "VAR_TEMP_1 is still 0 after the crack")
+  U.shot(game, DIR .. "/2418_ice_cracked.png")
+
+  local Audio = require("src.core.game3.audio")
+  local SE = require("src.core.game3.se_ids")
+  local seCount = {}
+  local realPlaySe = Audio.playSe
+  Audio.playSe = function(id, ...)
+    seCount[id] = (seCount[id] or 0) + 1
+    return realPlaySe(id, ...)
+  end
+
+  while Player.cellY > 13 do
+    if not step("up") then break end
+  end
+  result(Player.cellY < 14, "stepped back off the cracked ice")
+  U.wait(8)
+  while Player.cellY < 14 do
+    if not step("down") then break end
+  end
+  result(Player.cellX == 8 and Player.cellY == 14, "stepped onto the cracked ice again")
+
+  local broke = false
+  for _ = 1, 30 do
     U.wait(1)
-    if Space.vm and Space.vm:isRunning() then
-      ranByItself = true
-      break
-    end
+    if iceAt(8, 14) == HOLE then broke = true break end
   end
-  if not ranByItself then
-    print("[driver] BLOCKED src/core/game3/field.lua:93 only runs ON_FRAME when " ..
-      "Space._pendingOnFrame is set, so setting VAR_TEMP_1 while standing on the " ..
-      "map starts nothing; pret polls TryRunOnFrameMapScript every frame. " ..
-      "Owner handoff: field.lua / space.lua. Nudging once so warphole can be exercised.")
-    Space.scheduleOnFrame(game and (game.overworld or game.world))
-  end
+  result(broke, "the second step broke the ice into a hole")
+  U.shot(game, DIR .. "/2418_ice_broken.png")
 
   local started = false
   for _ = 1, 120 do
-    U.wait(1)
     if Space.vm and Space.vm:isRunning() then
       started = true
       break
     end
+    U.wait(1)
   end
-  result(started, "the OnFrame fall script started")
+  result(started, "the OnFrame fall script started by itself")
+
+  -- data/maps/FourIsland_IcefallCave_1F/scripts.inc:17
+  for _ = 1, 60 do
+    if not Player.isVisible() then break end
+    U.wait(1)
+  end
+  result(not Player.isVisible(), "set_invisible hid the player over the hole")
+  U.wait(2)
+  U.shot(game, DIR .. "/2418_fall_vanished.png")
 
   local pendingSeen = false
   local landed = false
@@ -124,6 +157,15 @@ return function(game)
       break
     end
   end
+  -- pokefirered/src/field_effect.c:1215 FallWarpEffect_4
+  local dropping = false
+  for _ = 1, 300 do
+    local y2 = Player.spriteYOffset or 0
+    if Player.isVisible() and y2 < -16 and y2 > -64 then dropping = true break end
+    U.wait(1)
+  end
+  result(dropping, "the player drops in from above on B1F")
+  U.shot(game, DIR .. "/2418_fall_dropping.png")
   result(pendingSeen, "warphole marked the warp pending while the fall ran")
   result(landed, "warphole landed the player on Icefall Cave B1F, map="
     .. tostring(Runtime.getSession().map))
@@ -139,7 +181,12 @@ return function(game)
   result(Player.cellX == 8 and Player.cellY == 14,
     "landed under the hole at (" .. Player.cellX .. "," .. Player.cellY .. ")")
   U.wait(60)
-  U.shot(game, DIR .. "/ops_icefall_hole_02_landed_b1f.png")
+  U.shot(game, DIR .. "/2418_fell_to_b1f.png")
+  Audio.playSe = realPlaySe
+  -- pokefirered/src/field_tasks.c:236, src/field_effect.c:1210
+  result((seCount[SE.SE_ICE_BREAK] or 0) == 1, "SE_ICE_BREAK played once, n=" .. tostring(seCount[SE.SE_ICE_BREAK]))
+  result((seCount[SE.SE_FALL] or 0) == 2,
+    "SE_FALL played once on each side of the warp, n=" .. tostring(seCount[SE.SE_FALL]))
 
   result(step("down") or step("left") or step("up"),
     "control came back to the player on B1F")

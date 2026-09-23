@@ -105,17 +105,28 @@ function CatchSeq.begin(st, itemId, caught, shakes, opts)
   local ename = (emon and ((emon.nickname ~= "" and emon.nickname) or emon.name))
     or Pokemon.name(st and st.enemy and st.enemy.species) or "POKéMON"
 
+  -- pokefirered/src/battle_message.c: STRINGID_OLDMANUSEDITEM vs STRINGID_PLAYERUSEDITEM
+  local throwMsg
+  if st and st.oldManTutorial then
+    throwMsg = Strings("OLD MAN used\n%s!", ballName)
+  else
+    throwMsg = Strings("%s used\nthe %s!", playerName, ballName)
+  end
+
   -- pokefirered/data/battle_scripts_2.s:124
   local DODGE = Strings("It dodged the thrown BALL!\nThis POKéMON can't be caught!")
   if opts.ghostDodge then CatchSeq._result = "fail_catch" end
   if CatchSeq._headless then
     if CatchSeq._pushMsg then
-      CatchSeq._pushMsg(Strings("%s used\nthe %s!", playerName, ballName))
+      CatchSeq._pushMsg(throwMsg)
     end
     if opts.ghostDodge then
       if CatchSeq._pushMsg then CatchSeq._pushMsg(DODGE) end
     elseif caught then
-      local res = Catching.storeCaught(session, st and st.enemy, itemId)
+      local res = nil
+      if not (st and st.oldManTutorial) then
+        res = Catching.storeCaught(session, st and st.enemy, itemId)
+      end
       CatchSeq._catchResult = res
       if CatchSeq._pushMsg then
         CatchSeq._pushMsg(Strings("Gotcha!\n%s was caught!", ename))
@@ -150,7 +161,7 @@ function CatchSeq.begin(st, itemId, caught, shakes, opts)
     steps[#steps + 1] = { kind = kind, data = data or {} }
   end
 
-  add("msg", { text = Strings("%s used\nthe %s!", playerName, ballName), wait = opts.ghostDodge and 0 or nil })
+  add("msg", { text = throwMsg, wait = opts.ghostDodge and 0 or nil })
 
   -- pokefirered/src/battle_script_commands.c:9590
   add("throw", {
@@ -761,7 +772,10 @@ local function run_step(step)
   end
 
   if kind == "capture_success" then
-    local res = Catching.storeCaught(CatchSeq._session, CatchSeq._st and CatchSeq._st.enemy, d.ballId)
+    local res = nil
+    if not (CatchSeq._st and CatchSeq._st.oldManTutorial) then
+      res = Catching.storeCaught(CatchSeq._session, CatchSeq._st and CatchSeq._st.enemy, d.ballId)
+    end
     CatchSeq._catchResult = res
     local ename = d.ename or "POKéMON"
     -- pokefirered/src/battle_message.c:475

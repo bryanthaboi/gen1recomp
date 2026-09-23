@@ -334,7 +334,7 @@ function Gen3Compat.setFlag(name, value)
     Flags.setFlag(store, nil, id, value and true or false)
     local Objects = package.loaded["src.core.game3.objects"]
     if Objects and Objects.syncFlagVisibility then
-      Objects.syncFlagVisibility(id, value and true or false)
+      Objects.syncFlagVisibility(id, value and true or false, true)
     end
     return true
   end
@@ -767,7 +767,9 @@ local function buildGame()
   function translate.saveGame()
     return function()
       local g = live()
-      if g and g.saveGame then return g:saveGame() end
+      if not (g and g.saveGame) then return end
+      if g.saveOffered and not g:saveOffered() then return false end
+      return g:saveGame()
     end
   end
 
@@ -1410,7 +1412,7 @@ local function buildOverworld()
     if not ready("warpToHealPoint") then return nil end
     local Field = g3("field")
     if not Field then return nil end
-    Field.respawnAtHeal()
+    Field.respawnAtHeal({ fieldMove = true })
     if onDone then onDone() end
     return true
   end
@@ -2078,22 +2080,22 @@ local function wrapPics(P)
   wrappedModules[P] = true
   local frontOrig, backOrig = P.frontPic, P.backPic
   if frontOrig then
-    P.frontPic = function(species, form)
+    P.frontPic = function(species, form, shiny, personality)
       local sp = tonumber(species)
       local path = sp and (tonumber(form) or 0) == 0 and spriteOverrides.front[sp]
       local entry = path and centredEntry(path)
-      if not entry then entry = frontOrig(species, form) end
+      if not entry then entry = frontOrig(species, form, shiny, personality) end
       if sp then return hookedEntry("front", sp, form, entry) end
       return entry
     end
     P.frontSprite = P.frontPic
   end
   if backOrig then
-    P.backPic = function(species, form)
+    P.backPic = function(species, form, shiny)
       local sp = tonumber(species)
       local path = sp and (tonumber(form) or 0) == 0 and spriteOverrides.back[sp]
       local entry = path and centredEntry(path)
-      if not entry then entry = backOrig(species, form) end
+      if not entry then entry = backOrig(species, form, shiny) end
       if sp then return hookedEntry("back", sp, form, entry) end
       return entry
     end

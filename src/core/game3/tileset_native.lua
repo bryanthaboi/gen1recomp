@@ -122,6 +122,10 @@ local function load_pair(cache, pair)
     overImage = nil,
     overImageData = nil,
     overQuads = {},
+    idxBlob = idxBlob,
+    overBlob = nil,
+    bgr = bgr,
+    slotPix = {},
   }
 
   if layered then
@@ -134,6 +138,7 @@ local function load_pair(cache, pair)
         ts.layered = true
         ts.overImage = oImg
         ts.overImageData = oData
+        ts.overBlob = overBlob
       end
     end
   end
@@ -222,6 +227,74 @@ function NativeTileset.overQuad(pairOrTs, slot)
   q = love.graphics.newQuad(sx, sy, 16, 16, ts.overImage:getDimensions())
   ts.overQuads[slot] = q
   return q
+end
+
+local function scan_slot(blob, cols, slot, skipZero)
+  local out = {}
+  if type(blob) ~= "string" or #blob < 12 then return out end
+  local midCount = blob:byte(7) + blob:byte(8) * 256
+  local base = 13 + midCount * 2
+  local lo, hi = slot * 16, slot * 16 + 15
+  local n = 0
+  for i = 0, midCount * 256 - 1 do
+    local b = blob:byte(base + i)
+    if b and b >= lo and b <= hi and not (skipZero and b == 0) then
+      local mid = math.floor(i / 256)
+      local within = i % 256
+      n = n + 1
+      out[n] = {
+        (mid % cols) * 16 + within % 16,
+        math.floor(mid / cols) * 16 + math.floor(within / 16),
+        b - lo,
+      }
+    end
+  end
+  return out
+end
+
+local function paint(image, imageData, list, colors)
+  if not (image and imageData and #list > 0) then return end
+  for i = 1, #list do
+    local p = list[i]
+    local c = colors[p[3]]
+    imageData:setPixel(p[1], p[2], c[1] / 255, c[2] / 255, c[3] / 255, 1)
+  end
+  if image.replacePixels then image:replacePixels(imageData) end
+end
+
+-- pokefirered/src/palette.c:88
+function NativeTileset.setSlotPalette(pairOrTs, slot, bgr16)
+  local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset.get(pairOrTs)
+  if not (ts and ts.imageData and type(bgr16) == "table") then return false end
+  slot = tonumber(slot) or 0
+  local pix = ts.slotPix[slot]
+  if not pix then
+    pix = {
+      under = scan_slot(ts.idxBlob, ts.cols, slot, false),
+      over = ts.overImageData and scan_slot(ts.overBlob, ts.cols, slot, true) or {},
+    }
+    ts.slotPix[slot] = pix
+  end
+  local src = {}
+  for c = 0, 15 do src[c] = bgr16[c + 1] or 0 end
+  local colors = NativePack.palsToRgb8({ [0] = src })[0]
+  paint(ts.image, ts.imageData, pix.under, colors)
+  paint(ts.overImage, ts.overImageData, pix.over, colors)
+  ts.patchedSlots = ts.patchedSlots or {}
+  ts.patchedSlots[slot] = true
+  return true
+end
+
+function NativeTileset.resetSlotPalette(pairOrTs, slot)
+  local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset._pairs[pairOrTs]
+  if not (ts and ts.patchedSlots and ts.patchedSlots[slot]) then return false end
+  local base = ts.bgr and ts.bgr[slot]
+  if not base then return false end
+  local list = {}
+  for c = 0, 15 do list[c + 1] = base[c] or 0 end
+  NativeTileset.setSlotPalette(ts, slot, list)
+  ts.patchedSlots[slot] = nil
+  return true
 end
 
 return NativeTileset

@@ -1,7 +1,10 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
+local Game3Cache = require("tests.game3_cache")
+if not Game3Cache.bundle() then print("[skip] pokedex_rating: " .. tostring(Game3Cache.reason)) return end
 local PokedexRating = require("src.core.game3.pokedex_rating")
+local RomText = require("src.core.game3.rom_text")
 local Dex = require("src.core.game3.dex")
 local Std = require("src.core.game3.scripting.stdscripts")
 local Natives = require("src.core.game3.scripting.natives")
@@ -125,14 +128,14 @@ do
   -- Case A: Count = 42
   Flags.setVar(session, ctx, 0x8004, 42)
   Natives.special(ctx, Std.SPECIAL.GetProfOaksRatingMessage, adapters)
-  eq(openedMsg, PokedexRating.TEXT.LESS_THAN_50, "opened message for 42 caught")
+  eq(openedMsg, RomText.box(PokedexRating.TEXT.LESS_THAN_50), "opened message for 42 caught")
   eq(Flags.getVar(session, ctx, 0x800D), 0, "VAR_RESULT = 0 for incomplete")
 
   -- Case B: Count = 150 without Mew
   for sp = 1, 150 do Dex.setCaught(session.dex, sp) end
   Flags.setVar(session, ctx, 0x8004, 150)
   Natives.special(ctx, Std.SPECIAL.GetProfOaksRatingMessage, adapters)
-  eq(openedMsg, PokedexRating.TEXT.COMPLETE, "opened complete message for 150 without Mew")
+  eq(openedMsg, RomText.box(PokedexRating.TEXT.COMPLETE), "opened complete message for 150 without Mew")
   eq(Flags.getVar(session, ctx, 0x800D), 1, "VAR_RESULT = 1 for complete")
 end
 

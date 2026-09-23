@@ -74,6 +74,7 @@ local function run(game)
   result(tonumber(sec) ~= nil, "Route 1 resolves to a region map section (" .. tostring(sec) .. ")")
 
   session.party = {}
+  require("src.core.game3.scripting.flags").setFlag(require("src.core.game3.scripting.space").store, nil, 0x828, true) -- data/maps/PalletTown_ProfessorOaksLab/scripts.inc:1120
   -- pokefirered/src/script_pokemon_util.c:48 ScriptGiveMon
   local code, gift = Party.giveMonToPlayer(session, 106, 25, "")
   if not result(code == Party.MON_GIVEN_TO_PARTY and gift ~= nil, "the script gift reached the party") then

@@ -1,4 +1,5 @@
 -- Automated Test Suite for Game 3 FRLG PC & Pokémon Storage System.
+package.loaded["src.core.game3.rom_text"] = { plain = function(key) return key end, box = function(key) return key end }
 
 local Storage = require("src.core.game3.storage")
 local Bag = require("src.core.game3.bag")
@@ -343,7 +344,7 @@ print("[ok] BoxStorageUI navigation and hover bounce passed")
 print("=== [TEST 11] PcMenu Root Navigation & Submenu Lifecycle ===")
 local pcSession = {
   name = "RED",
-  flags = { [0x828] = true }, -- BILL'S PC unlocked
+  flags = { [0x828] = true, [0x82C] = true }, -- BILL'S PC unlocked
   party = { { species = 25, level = 10, hp = 30, maxHp = 30 } },
   storage = Storage.new(),
   bag = Bag.new(),
@@ -380,34 +381,34 @@ assert_eq(PcMenu.mode, "root", "Started in root menu")
 PcMenu.handleInput(make_input({ a = true }))
 assert_eq(PcMenu.mode, "storage_menu", "Entered storage_menu")
 assert_eq(PcMenu.cursor, 1, "Cursor on WITHDRAW POKéMON")
-assert_true(PcMenu._status:find("You can withdraw"), "Description matches WITHDRAW POKéMON")
+assert_eq(PcMenu._status, "gText_WithdrawMonDescription", "Description matches WITHDRAW POKéMON")
 
 -- Navigate down to DEPOSIT POKéMON (index 2)
 PcMenu.handleInput(make_input({ down = true }))
 assert_eq(PcMenu.cursor, 2, "Cursor on DEPOSIT POKéMON")
-assert_true(PcMenu._status:find("You can deposit"), "Description matches DEPOSIT POKéMON")
+assert_eq(PcMenu._status, "gText_DepositMonDescription", "Description matches DEPOSIT POKéMON")
 
 -- Navigate down to MOVE POKéMON (index 3)
 PcMenu.handleInput(make_input({ down = true }))
 assert_eq(PcMenu.cursor, 3, "Cursor on MOVE POKéMON")
-assert_true(PcMenu._status:find("You can move POKéMON"), "Description matches MOVE POKéMON")
+assert_eq(PcMenu._status, "gText_MoveMonDescription", "Description matches MOVE POKéMON")
 
 -- Navigate down to MOVE ITEMS (index 4)
 PcMenu.handleInput(make_input({ down = true }))
 assert_eq(PcMenu.cursor, 4, "Cursor on MOVE ITEMS")
-assert_true(PcMenu._status:find("You can move items"), "Description matches MOVE ITEMS")
+assert_eq(PcMenu._status, "gText_MoveItemsDescription", "Description matches MOVE ITEMS")
 
 -- Navigate down to SEE YA! (index 5)
 PcMenu.handleInput(make_input({ down = true }))
 assert_eq(PcMenu.cursor, 5, "Cursor on SEE YA!")
-assert_true(PcMenu._status:find("See you later"), "Description matches SEE YA!")
+assert_eq(PcMenu._status, "gText_SeeYaDescription", "Description matches SEE YA!")
 
 -- Test DEPOSIT validation when party is 1
 PcMenu.handleInput(make_input({ up = true, up = true, up = true })) -- index 2
 PcMenu.cursor = 2
 PcMenu.handleInput(make_input({ a = true }))
 assert_eq(PcMenu.mode, "msg", "Blocked deposit due to single party Pokémon")
-assert_eq(PcMenu._status, "Can't deposit the last POKéMON!", "Error status matches FRLG text")
+assert_eq(PcMenu._status, "gText_JustOnePkmn", "Error status matches FRLG text")
 PcMenu.handleInput(make_input({ a = true }))
 assert_eq(PcMenu.mode, "storage_menu", "Returned to storage_menu")
 
@@ -419,7 +420,7 @@ assert_eq(#storageSubSession.party, 6, "Party is now full (6 mons)")
 PcMenu.cursor = 1
 PcMenu.handleInput(make_input({ a = true }))
 assert_eq(PcMenu.mode, "msg", "Blocked withdraw due to full party")
-assert_eq(PcMenu._status, "Can't take any more POKéMON.", "Error status matches FRLG text")
+assert_eq(PcMenu._status, "gText_PartyFull", "Error status matches FRLG text")
 PcMenu.handleInput(make_input({ a = true }))
 assert_eq(PcMenu.mode, "storage_menu", "Returned to storage_menu")
 
@@ -537,7 +538,7 @@ assert_eq(BoxStorageUI.mode, "action_menu", "Action menu opened on Rattata")
 BoxStorageUI.actionCursor = 1 -- STORE
 BoxStorageUI.handleInput(make_input({ a = true }))
 assert_eq(BoxStorageUI.mode, "message", "Entered message mode on last mon store attempt")
-assert_eq(BoxStorageUI._status, "Can't deposit the last POKéMON!", "Error status matches")
+assert_eq(BoxStorageUI._status, "gText_JustOnePkmn", "Error status matches")
 
 -- Dismiss message -> returns to party_drawer
 BoxStorageUI.handleInput(make_input({ a = true }))

@@ -236,6 +236,27 @@ local function chars(text)
   return tostring(text or ""):gmatch("[%z\1-\127\194-\244][\128-\191]*")
 end
 
+-- A Unicode braille cell (U+2800-U+283F, dots 1-6 as bits 0-5) is drawn as that
+-- cell: pokefirered/include/characters.h:282 keeps every dot combination in the
+-- braille font, numbered dot 1 = 0x01, 4 = 0x02, 2 = 0x04, 5 = 0x08, 3 = 0x10,
+-- 6 = 0x20.  A mod can hand over a European cart's own braille this way, cells
+-- such as German ä that no Latin character spells included.
+local CELL_BIT = { 0x01, 0x04, 0x10, 0x02, 0x08, 0x20 }
+
+local function unicode_cell(ch)
+  local b1, b2, b3 = ch:byte(1, 3)
+  if #ch ~= 3 or b1 ~= 0xE2 or b2 ~= 0xA0 or not b3 or b3 < 0x80 or b3 > 0xBF then
+    return nil
+  end
+  local dots, code = b3 - 0x80, 0
+  for dot = 1, 6 do
+    if dots % 2 == 1 then code = code + CELL_BIT[dot] end
+    dots = math.floor(dots / 2)
+  end
+  return code
+end
+Braille.unicodeCell = unicode_cell
+
 local encodeCache = {}
 local encodeCacheN = 0
 
@@ -252,9 +273,13 @@ function Braille.encode(text)
       cur = lines[#lines]
       inNumber = false
     elseif ch ~= "\r" then
-      local digit = Braille.DIGIT[ch]
-      local code = Braille.CODE[ch] or RECOVERED[ch]
-      if digit then
+      local cell = unicode_cell(ch)
+      local digit = not cell and Braille.DIGIT[ch]
+      local code = cell or Braille.CODE[ch] or RECOVERED[ch]
+      if cell then
+        -- a cell spells its own number sign, as the carts' braille does
+        inNumber = false
+      elseif digit then
         if not inNumber then
           inNumber = true
           cur[#cur + 1] = Braille.NUMBER

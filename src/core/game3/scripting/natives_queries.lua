@@ -423,6 +423,14 @@ Queries.HANDLERS = {
   [Std.SPECIAL.GetPCBoxToSendMon] = function()
     return false, Queries.pcBoxToSendMon or 0
   end,
+  -- pokefirered/src/field_specials.c:2056
+  [Std.SPECIAL.BufferTMHMMoveName] = function(ctx, adapters)
+    local Pokemon = require("src.core.game3.pokemon")
+    local move = Pokemon.moveFromTmItem(varGet(ctx, 0x8004))
+    if not move then return boolReturn(false) end
+    setStringVar(ctx, adapters, 1, Pokemon.moveName(move))
+    return boolReturn(true)
+  end,
 }
 
 -- pokefirered/src/field_specials.c:1975
