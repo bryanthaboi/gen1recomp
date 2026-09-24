@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.7",
+          "date": "2026-09-24",
+          "size": 37970343,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.7/gen1recomp++-0.3.7-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2441 some safari zone tiles not solid\n- #2444 Importing saves not working\n- #2445 Fire Red: premier ball is a pokeball\n- #2448 Sevii Island quest - seagallop transition softlock\n- #2450 Pokemons trying to learn a new move in the same level that they evolve Issue\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.6",
           "date": "2026-09-24",
           "size": 37936082,
