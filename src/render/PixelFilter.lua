@@ -1,4 +1,5 @@
--- PIXEL FILTER: built-in upscalers for the final frame (OFF, XBRZ, ...).
+-- PIXEL FILTER: built-in upscalers for the final frame (OFF, SHARP, XBRZ,
+-- SCALEFX, OMNISCALE).
 --
 -- Runs where SHADER FX runs (Renderer:endFrame for Gen 1 / Gen 3, Game2's
 -- present for Gen 2) and with the same render() signature, so both call sites
@@ -19,14 +20,19 @@
 -- below, returning
 --
 --   { id = "name", label = "NAME", passes = { ... },
---     tiers = { high = true } }   -- optional: PERFORMANCE tiers it runs on
+--     sourceFilter = "linear",    -- optional: how passes sample `tex`
+--     tiers = { low = true, ... } -- optional: the PERFORMANCE tiers it runs
+--   }                             -- on, in place of CAPS.pixelFilter
 --
 -- `passes` runs in order.  Every pass's main texture (`tex` in effect()) is
 -- the source grid, one texel per GB pixel, premultiplied RGBA.
---   { scope = "source", name = "info", source = GLSL }
---     runs once per source pixel into an rgba8 canvas the size of the grid,
---     written raw (no blending), which every later pass reads as
---     `extern Image info;`.  Any number of these, or none.
+--   { scope = "source", name = "info", source = GLSL,
+--     scale = 1, format = "rgba8", filter = "nearest" }  -- the defaults
+--     runs once per texel of a canvas `scale` times the grid, written raw
+--     (no blending), which every later pass reads as `extern Image info;`
+--     sampled with `filter`.  `format` is any LOVE canvas format; a filter
+--     whose format the driver lacks reports inactive.  Any number of these,
+--     or none.
 --   { scope = "output", source = GLSL }
 --     last, exactly one: runs once per output pixel, drawn over the frame
 --     with premultiplied alpha.
@@ -40,7 +46,10 @@ local PixelCanvas = require("src.render.PixelCanvas")
 local PixelFilter = {}
 
 local FILTERS = {
+  require("src.render.pixel_filters.sharp"),
   require("src.render.pixel_filters.xbrz"),
+  require("src.render.pixel_filters.scalefx"),
+  require("src.render.pixel_filters.omniscale"),
 }
 
 local byId = {}
@@ -96,7 +105,17 @@ local function getShaders(def)
     shaders = false
     if love and love.graphics and love.graphics.newShader then
       shaders = {}
-      for i, pass in ipairs(def.passes) do
+      local formats = love.graphics.getCanvasFormats
+        and love.graphics.getCanvasFormats()
+      for _, pass in ipairs(def.passes) do
+        if formats and pass.format and not formats[pass.format] then
+          Logger.error("PIXEL FILTER: %s needs %s canvases, which this driver lacks",
+            def.id, pass.format)
+          shaders = false
+          break
+        end
+      end
+      for i, pass in ipairs(shaders and def.passes or {}) do
         local ok, result = pcall(love.graphics.newShader, pass.source)
         if not (ok and result) then
           Logger.error("PIXEL FILTER: %s shader failed to compile: %s",
@@ -117,14 +136,17 @@ local Performance = nil
 -- Whether the final present should run through the chosen filter this
 -- frame.  The PERFORMANCE tier's `pixelFilter` cap turns it off on the low
 -- tier without rewriting the player's choice, the way TILT and SHADER FX
--- clamp; a filter's own `tiers` can narrow that further.
+-- clamp; a filter's own `tiers` replaces that cap for it.
 function PixelFilter.active()
   local def = byId[PixelFilter.mode]
   if not def then return false end
   Performance = Performance or require("src.core.Performance")
-  local caps = Performance.CAPS[Performance.tier]
-  if caps and caps.pixelFilter == false then return false end
-  if def.tiers and not def.tiers[Performance.tier] then return false end
+  if def.tiers then
+    if not def.tiers[Performance.tier] then return false end
+  else
+    local caps = Performance.CAPS[Performance.tier]
+    if caps and caps.pixelFilter == false then return false end
+  end
   return getShaders(def) ~= nil
 end
 
@@ -152,15 +174,17 @@ local function layerSlot(layer, def, cols, rows)
   if not slot or slot.cols ~= cols or slot.rows ~= rows or slot.def ~= def then
     slot = {
       def = def, cols = cols, rows = rows, targets = {},
-      src = PixelCanvas.new(cols, rows, "nearest"),
+      src = PixelCanvas.new(cols, rows, def.sourceFilter or "nearest"),
       quad = love.graphics.newQuad(0, 0, 1, 1, 1, 1),
     }
     for i, pass in ipairs(def.passes) do
       if pass.scope == "source" then
         -- explicit rgba8: packed data must round-trip exactly, which an sRGB
         -- canvas (LOVE's default under gamma-correct rendering) would not
-        local target = love.graphics.newCanvas(cols, rows, { dpiscale = 1, format = "rgba8" })
-        target:setFilter("nearest", "nearest")
+        local k = pass.scale or 1
+        local target = love.graphics.newCanvas(cols * k, rows * k,
+          { dpiscale = 1, format = pass.format or "rgba8" })
+        target:setFilter(pass.filter or "nearest", pass.filter or "nearest")
         slot.targets[i] = target
       end
     end
@@ -209,7 +233,7 @@ local function prepare(canvas, layer, def, shaders, gx, gy, cols, rows, s)
       love.graphics.setCanvas(slot.targets[i])
       love.graphics.setShader(shaders[i])
       sendInputs(shaders[i], def, slot, i)
-      love.graphics.draw(slot.src, 0, 0)
+      love.graphics.draw(slot.src, 0, 0, 0, pass.scale or 1, pass.scale or 1)
     end
   end
   love.graphics.pop()

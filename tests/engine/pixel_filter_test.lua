@@ -17,9 +17,12 @@ T.eq(require("src.core.gen2.Save").DEFAULT_OPTIONS.pixelFilter, "off",
 
 T.eq(PixelFilter.normalize(nil), "off", "no stored value is OFF")
 T.eq(PixelFilter.normalize("nonsense"), "off", "and so is a value we cannot read")
-T.eq(PixelFilter.cycle("off", 1), "xbrz", "right steps onto XBRZ")
-T.eq(PixelFilter.cycle("xbrz", 1), "off", "and wraps at the end")
-T.eq(PixelFilter.cycle("off", -1), "xbrz", "left wraps back")
+T.eq(table.concat(PixelFilter.MODES, ","), "off,sharp,xbrz,scalefx,omniscale",
+  "OFF, then sharpest to smoothest")
+T.eq(PixelFilter.cycle("off", 1), "sharp", "right steps onto SHARP")
+T.eq(PixelFilter.cycle("sharp", 1), "xbrz", "then XBRZ")
+T.eq(PixelFilter.cycle("omniscale", 1), "off", "and wraps at the end")
+T.eq(PixelFilter.cycle("off", -1), "omniscale", "left wraps back")
 for _, id in ipairs(PixelFilter.MODES) do
   T.check(PixelFilter.label(id) ~= nil, id .. " has a label")
 end
@@ -66,6 +69,22 @@ T.check(PixelFilter.active(), "XBRZ on a HIGH tier is active")
 Performance.tier = "low"
 T.check(not PixelFilter.active(), "LOW clamps it without touching the choice")
 T.eq(PixelFilter.mode, "xbrz", "the stored choice survives the clamp")
+PixelFilter.setMode("sharp")
+T.check(PixelFilter.active(), "SHARP is cheap enough to stay on at LOW")
+Performance.tier = tier
+PixelFilter.setMode("off")
+
+-- ScaleFX keeps its metric in float canvases; a driver without them turns
+-- that filter off rather than running it on quantized data.
+_G.love = { graphics = { newShader = function() return {} end,
+  getCanvasFormats = function() return { rgba8 = true } end } }
+package.loaded["src.render.PixelFilter"] = nil
+PixelFilter = require("src.render.PixelFilter")
+Performance.tier = "high"
+PixelFilter.setMode("scalefx")
+T.check(not PixelFilter.active(), "SCALEFX without rgba16f reports inactive")
+PixelFilter.setMode("xbrz")
+T.check(PixelFilter.active(), "while an rgba8-only filter still runs")
 Performance.tier = tier
 PixelFilter.setMode("off")
 
