@@ -19,6 +19,7 @@ end
 
 local build = read("scripts/build.sh")
 local release = read(".github/workflows/release.yml")
+local bridgeCi = read("scripts/ci/shaderfx_bridge.sh")
 local flatpak = read("scripts/build_flatpak.sh")
 local manifest = read("flatpak/com.theboisclub.gen1recomp.yml")
 local arm64 = read("scripts/build_linux_arm64.sh")
@@ -43,8 +44,8 @@ mustContain(release, "shaderfx-bridge:", "release.yml bridge job")
 for _, plat in ipairs({ "win-x64", "mac", "linux-x64", "linux-arm64", "android" }) do
   mustContain(release, "plat: " .. plat, "release.yml matrix")
 end
-mustContain(release, "lipo -create", "release.yml universal macOS bridge")
-mustContain(release, "cargo ndk -t arm64-v8a -t armeabi-v7a", "release.yml Android bridge build")
+mustContain(bridgeCi, "lipo -create", "scripts/ci/shaderfx_bridge.sh universal macOS bridge")
+mustContain(bridgeCi, "cargo ndk -t arm64-v8a -t armeabi-v7a", "scripts/ci/shaderfx_bridge.sh Android bridge build")
 mustContain(release, "SHADERFX_BRIDGE_ANDROID_DIR", "release.yml stages the Android bridge")
 
 local requiredIn = select(2, release:gsub('SHADERFX_BRIDGE_REQUIRED: "1"', ""))
@@ -81,11 +82,11 @@ for _, pair in ipairs({ { rg34, "build-rg34xxsp.sh" }, { sbc, "build-linux-arm-s
   mustContain(pair[1], "SHADERFX_BRIDGE_REQUIRED", pair[2])
 end
 
-check(release:find("ANDROID_NDK_LATEST_HOME", 1, true) == nil,
-  "release.yml must not build the Android bridge with the runner's newest NDK")
-mustContain(release, "mobile/android/app/build.gradle", "release.yml reads gradle's NDK pin")
-mustContain(release, '"ndk;$ndk_ver"', "release.yml installs gradle's NDK")
-mustContain(release, "bash scripts/android_bridge_link_check.sh", "release.yml link-checks the CI bridge")
+check(release:find("ANDROID_NDK_LATEST_HOME", 1, true) == nil and bridgeCi:find("ANDROID_NDK_LATEST_HOME", 1, true) == nil,
+  "CI must not build the Android bridge with the runner's newest NDK")
+mustContain(bridgeCi, "mobile/android/app/build.gradle", "scripts/ci/shaderfx_bridge.sh reads gradle's NDK pin")
+mustContain(bridgeCi, '"ndk;$ndk_ver"', "scripts/ci/shaderfx_bridge.sh installs gradle's NDK")
+mustContain(bridgeCi, "bash scripts/android_bridge_link_check.sh", "scripts/ci/shaderfx_bridge.sh link-checks the CI bridge")
 mustContain(android, 'android_bridge_link_check.sh" "$bridge" "$libcxx"', "build_android.sh link check")
 mustContain(android, '"lib/$abi/libc++_shared.so"', "build_android.sh checks against the APK's own libc++")
 mustContain(android, 'shader_bridge_gradle_libcxx "$abi"', "build_android.sh checks prebuilt bridges before gradle")

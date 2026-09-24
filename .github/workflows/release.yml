@@ -36,6 +36,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
   issues: read
   pull-requests: read
 
@@ -323,36 +324,28 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
-      - name: Setup .NET 8
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "8.0.x"
       - name: Identify TLS build environment
         id: tls-env
         shell: pwsh
         run: |
-          "sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
           "image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
       # Exact keys only: a partial match could ship an outdated native library.
-      # Hash the workflow too so changes to build flags invalidate the binary.
+      # Hash the build script too so changes to build flags invalidate the binary.
       - name: Restore finished TLS library
         id: tls-cache
         uses: actions/cache/restore@v4
         with:
           path: dist/native/win-x64/gen1tls.dll
-          key: native-tls-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.tls-env.outputs.image }}-${{ steps.tls-env.outputs.sdk }}-${{ hashFiles('native/tls_dial/**', '.github/workflows/release.yml', '**/Directory.Build.*', '**/Directory.Packages.props', '**/NuGet.Config', '**/nuget.config', '**/global.json') }}
+          key: native-tls-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.tls-env.outputs.image }}-dotnet8-${{ hashFiles('native/tls_dial/**', 'scripts/ci/build_gen1tls.ps1', '**/Directory.Build.*', '**/Directory.Packages.props', '**/NuGet.Config', '**/nuget.config', '**/global.json') }}
+      - name: Setup .NET 8
+        if: steps.tls-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
       - name: Publish gen1tls (win-x64 Native AOT)
         if: steps.tls-cache.outputs.cache-hit != 'true'
         shell: pwsh
-        run: |
-          $out = "dist/native/win-x64"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          dotnet publish native/tls_dial/Gen1Tls.csproj `
-            -c Release -r win-x64 -o $out
-          if (-not (Test-Path "$out/gen1tls.dll")) {
-            throw "gen1tls.dll missing after publish"
-          }
-          Get-Item "$out/gen1tls.dll" | Format-List Name, Length, LastWriteTime
+        run: ./scripts/ci/build_gen1tls.ps1
       - name: Verify TLS library
         shell: pwsh
         run: |
@@ -404,40 +397,12 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v7
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
       - name: Identify bridge build environment
         id: bridge-env
         shell: bash
         env:
           PLAT: ${{ matrix.plat }}
-        run: |
-          set -euo pipefail
-          fingerprint="$RUNNER_TEMP/bridge-environment.txt"
-          rustc -vV > "$fingerprint"
-          cargo -V >> "$fingerprint"
-          printf '%s\n' "${ImageOS:-}" "${ImageVersion:-}" >> "$fingerprint"
-          if [ "$PLAT" = android ]; then
-            ndk_ver="$(sed -n "s/^[[:space:]]*ndkVersion[[:space:]]*['\"]\([0-9.]*\)['\"].*/\1/p" mobile/android/app/build.gradle)"
-            test -n "$ndk_ver"
-            sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-            test -n "$sdk"
-            ndk="$sdk/ndk/$ndk_ver"
-            if [ ! -f "$ndk/source.properties" ]; then
-              (yes || true) | "$sdk/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk_ver" >/dev/null
-            fi
-            test -f "$ndk/source.properties"
-            grep -Eq "^Pkg\.Revision[[:space:]]*=[[:space:]]*$ndk_ver\$" "$ndk/source.properties"
-            cat "$ndk/source.properties" >> "$fingerprint"
-            echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
-            echo "ANDROID_NDK_ROOT=$ndk" >> "$GITHUB_ENV"
-          fi
-          if command -v sha256sum >/dev/null 2>&1; then
-            hash="$(sha256sum "$fingerprint")"
-          else
-            hash="$(shasum -a 256 "$fingerprint")"
-          fi
-          echo "hash=${hash%% *}" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/shaderfx_bridge.sh env
       # Keep release versions and game sources out of this key. Only bridge
       # inputs, build instructions, and the native environment affect reuse.
       - name: Restore finished bridge
@@ -445,7 +410,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: dist/native/${{ matrix.plat }}
-          key: shaderfx-binary-v1-${{ matrix.plat }}-${{ runner.arch }}-${{ matrix.glibc_triple }}-${{ steps.bridge-env.outputs.hash }}-${{ hashFiles('tools/shaderfx-bridge/**', '.cargo/**', 'rust-toolchain*', '.github/workflows/release.yml') }}
+          key: shaderfx-binary-v2-${{ matrix.plat }}-${{ runner.arch }}-${{ matrix.glibc_triple }}-${{ steps.bridge-env.outputs.hash }}-${{ hashFiles('tools/shaderfx-bridge/**', '.cargo/**', 'rust-toolchain*', 'scripts/ci/shaderfx_bridge.sh') }}
+      - name: Setup Rust
+        if: steps.bridge-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo registry and build dir
         if: steps.bridge-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
@@ -459,77 +427,13 @@ jobs:
           PLAT: ${{ matrix.plat }}
           LIB: ${{ matrix.lib }}
           GLIBC_TRIPLE: ${{ matrix.glibc_triple }}
-        run: |
-          set -euo pipefail
-          out="dist/native/$PLAT"
-          mkdir -p "$out"
-          cd tools/shaderfx-bridge
-          case "$PLAT" in
-            win-x64)
-              rustup target add x86_64-pc-windows-msvc
-              cargo build --locked --release --target x86_64-pc-windows-msvc
-              cp "target/x86_64-pc-windows-msvc/release/$LIB" "$GITHUB_WORKSPACE/$out/$LIB"
-              ;;
-            mac)
-              rustup target add x86_64-apple-darwin aarch64-apple-darwin
-              cargo build --locked --release --target x86_64-apple-darwin
-              cargo build --locked --release --target aarch64-apple-darwin
-              lipo -create -output "$GITHUB_WORKSPACE/$out/$LIB" \
-                "target/x86_64-apple-darwin/release/$LIB" \
-                "target/aarch64-apple-darwin/release/$LIB"
-              lipo -info "$GITHUB_WORKSPACE/$out/$LIB"
-              ;;
-            ios)
-              rustup target add aarch64-apple-ios
-              IPHONEOS_DEPLOYMENT_TARGET=15.0 cargo build --locked --release --target aarch64-apple-ios
-              cp "target/aarch64-apple-ios/release/$LIB" "$GITHUB_WORKSPACE/$out/$LIB"
-              ;;
-            linux-x64|linux-arm64)
-              pipx install 'cargo-zigbuild==0.23.4'
-              pipx inject cargo-zigbuild 'ziglang==0.16.0'
-              zigpy="$(pipx environment --value PIPX_LOCAL_VENVS)/cargo-zigbuild/bin/python"
-              "$zigpy" -m ziglang version
-              export CARGO_ZIGBUILD_PYTHON_PATH="$zigpy"
-              triple="$GLIBC_TRIPLE"
-              rustup target add "${triple%%.*}"
-              cargo zigbuild --locked --release --target "$triple"
-              cp "target/${triple%%.*}/release/$LIB" "$GITHUB_WORKSPACE/$out/$LIB"
-              ;;
-            android)
-              rustup target add aarch64-linux-android armv7-linux-androideabi
-              cargo install cargo-ndk --version 4.1.2 --locked
-              export CARGO_PROFILE_RELEASE_STRIP=symbols
-              cargo ndk -t arm64-v8a -t armeabi-v7a \
-                -o "$GITHUB_WORKSPACE/$out" build --locked --release
-              for abi in arm64-v8a armeabi-v7a; do
-                test -f "$GITHUB_WORKSPACE/$out/$abi/$LIB" \
-                  || { echo "::error::no Android bridge for $abi"; exit 1; }
-              done
-              ;;
-          esac
+        run: bash scripts/ci/shaderfx_bridge.sh build
       - name: Verify bridge libraries
         shell: bash
         env:
           PLAT: ${{ matrix.plat }}
           LIB: ${{ matrix.lib }}
-        run: |
-          set -euo pipefail
-          if [ "$PLAT" = android ]; then
-            for abi in arm64-v8a armeabi-v7a; do
-              test -s "dist/native/$PLAT/$abi/$LIB"
-              case "$abi" in
-                arm64-v8a) triple=aarch64-linux-android ;;
-                armeabi-v7a) triple=arm-linux-androideabi ;;
-              esac
-              libcxx="$(ls "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/$triple/libc++_shared.so)"
-              bash scripts/android_bridge_link_check.sh "dist/native/$PLAT/$abi/$LIB" "$libcxx"
-            done
-          else
-            test -s "dist/native/$PLAT/$LIB"
-          fi
-          if [ "$PLAT" = mac ]; then
-            lipo "dist/native/$PLAT/$LIB" -verify_arch x86_64 arm64
-          fi
+        run: bash scripts/ci/shaderfx_bridge.sh verify
       - name: Cache finished bridge
         if: steps.bridge-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -655,70 +559,6 @@ jobs:
       - name: Clean up signing keychain
         if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
         run: security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
-
-  windows:
-    name: build Windows
-    needs: [version, love-payload, native-tls-win, shaderfx-bridge]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download Windows gen1tls dialer
-        uses: actions/download-artifact@v8
-        with:
-          name: gen1tls-win-x64
-          path: dist/native/win-x64
-
-      - name: Download the Windows ShaderFX bridge
-        uses: actions/download-artifact@v8
-        with:
-          name: shaderfx-bridge-win-x64
-          path: dist/native/win-x64
-
-      - name: Download shared payload
-        uses: actions/download-artifact@v8
-        with:
-          name: gen1recomp-release-love
-          path: dist/payload
-
-      - name: Install icon tools
-        run: |
-          set -euo pipefail
-          command -v convert >/dev/null 2>&1 || { sudo apt-get update; sudo apt-get install -y imagemagick; }
-          if ! command -v magick >/dev/null 2>&1; then
-            mkdir -p "$RUNNER_TEMP/bin"
-            printf '#!/bin/sh\nexec convert "$@"\n' > "$RUNNER_TEMP/bin/magick"
-            chmod +x "$RUNNER_TEMP/bin/magick"
-            echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          fi
-          pipx install pe_tools
-
-      - name: Build Windows
-        env:
-          GEN1TLS_DLL: ${{ github.workspace }}/dist/native/win-x64/gen1tls.dll
-          SHADERFX_BRIDGE_REQUIRED: "1"
-        run: |
-          set -euo pipefail
-          if [ ! -f "$GEN1TLS_DLL" ]; then
-            echo "::error::gen1tls.dll missing at $GEN1TLS_DLL (native-tls-win job)"
-            exit 1
-          fi
-          command -v peresed >/dev/null || { echo "::error::peresed missing, the exe would ship with the stock LÖVE icon"; exit 1; }
-          scripts/build.sh win --version "${{ needs.version.outputs.version }}" \
-            --game-love dist/payload/game.love
-          unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1tls.dll \
-            || { echo "::error::Windows zip is missing gen1tls.dll"; exit 1; }
-          unzip -l dist/win/gen1recomp-win64.zip | grep -F librashader_bridge.dll \
-            || { echo "::error::Windows zip is missing librashader_bridge.dll"; exit 1; }
-
-      - name: Upload gen1recomp-windows-release
-        uses: actions/upload-artifact@v7
-        with:
-          name: gen1recomp-windows-release
-          path: dist/win/gen1recomp-win64.zip
-          if-no-files-found: error
-          retention-days: 7
 
   android:
     name: build Android
@@ -1089,65 +929,63 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  sign-windows:
-    name: sign Windows build (SignPath)
-    needs: [version, windows]
+  windows-sign:
+    name: build and sign Windows (separate run)
+    needs: [version, love-payload, native-tls-win, shaderfx-bridge]
     if: github.repository == 'bryanthaboi/gen1recomp'
     runs-on: ubuntu-latest
+    timeout-minutes: 100
     steps:
-      - name: Download the Windows build
+      - name: Start the Windows signing workflow
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          nonce="${{ github.run_id }}-${{ github.run_attempt }}"
+          title="windows ${{ needs.version.outputs.version }} ($nonce)"
+          gh workflow run windows-sign.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+            -f version="${{ needs.version.outputs.version }}" \
+            -f sha="$GITHUB_SHA" \
+            -f source_run="${{ github.run_id }}" \
+            -f nonce="$nonce"
+          id=""
+          for _ in $(seq 1 60); do
+            id="$(gh run list -R "$GITHUB_REPOSITORY" --workflow windows-sign.yml --event workflow_dispatch -L 30 \
+              --json databaseId,displayTitle --jq ".[] | select(.displayTitle == \"$title\") | .databaseId" | head -1)"
+            [ -n "$id" ] && break
+            sleep 5
+          done
+          [ -n "$id" ] || { echo "::error::the Windows signing run never showed up"; exit 1; }
+          echo "Windows signing run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$id"
+          echo "run-id=$id" >> "$GITHUB_OUTPUT"
+          gh run watch "$id" -R "$GITHUB_REPOSITORY" --exit-status --interval 15
+
+      - name: Download the signed Windows build
         uses: actions/download-artifact@v8
         with:
-          name: gen1recomp-windows-release
+          name: gen1recomp-windows-signed
           path: dist/win
+          run-id: ${{ steps.dispatch.outputs.run-id }}
+          github-token: ${{ github.token }}
 
-      - name: Unpack the Windows zip
+      - name: Check the signed Windows zip
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/win"
-          unzip -q dist/win/gen1recomp-win64.zip -d "$RUNNER_TEMP/win"
-          test -f "$RUNNER_TEMP/win/gen1recomp-win64/gen1recomp.exe"
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1recomp.exe
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1tls.dll
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F librashader_bridge.dll
 
-      - name: Upload unsigned Windows build
-        id: unsigned
-        uses: actions/upload-artifact@v7
-        with:
-          name: gen1recomp-windows-unsigned
-          path: ${{ runner.temp }}/win/
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Sign with SignPath
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: a50673ca-cc8a-496c-a8bb-7313d9cadb8e
-          project-slug: gen1recomp
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'test-signing' }}
-          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          wait-for-completion-timeout-in-seconds: 3600
-          output-artifact-directory: ${{ runner.temp }}/signed
-
-      - name: Repack the signed Windows zip
-        run: |
-          set -euo pipefail
-          test -f "$RUNNER_TEMP/signed/gen1recomp-win64/gen1recomp.exe"
-          mkdir -p dist/win-signed
-          (cd "$RUNNER_TEMP/signed" && zip -q -9 -r "$GITHUB_WORKSPACE/dist/win-signed/gen1recomp-win64.zip" gen1recomp-win64)
-          unzip -l dist/win-signed/gen1recomp-win64.zip | grep -F gen1tls.dll
-          unzip -l dist/win-signed/gen1recomp-win64.zip | grep -F librashader_bridge.dll
-
-      - name: Upload signed Windows build
+      - name: Upload gen1recomp-windows-signed
         uses: actions/upload-artifact@v7
         with:
           name: gen1recomp-windows-signed
-          path: dist/win-signed/gen1recomp-win64.zip
+          path: dist/win/gen1recomp-win64.zip
           if-no-files-found: error
           retention-days: 7
 
   release:
-    needs: [version, notes, love-payload, xbox-uwp, linux-arm64, linux-flatpak, desktop, windows, sign-windows, android, ios, switch, rg34xxsp, linux-arm-sbc]
+    needs: [version, notes, love-payload, xbox-uwp, linux-arm64, linux-flatpak, desktop, windows-sign, android, ios, switch, rg34xxsp, linux-arm-sbc]
     if: github.repository == 'bryanthaboi/gen1recomp'
     runs-on: ubuntu-latest
     steps:

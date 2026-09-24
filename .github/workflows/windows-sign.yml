@@ -1,0 +1,131 @@
+name: Windows signing
+
+run-name: windows ${{ inputs.version }} (${{ inputs.nonce }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (X.Y.Z)"
+        required: true
+      sha:
+        description: "Commit to build"
+        required: true
+      source_run:
+        description: "Release workflow run that built the shared inputs"
+        required: true
+      nonce:
+        description: "Unique id the release run uses to find this run"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows:
+    name: build and sign Windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Download Windows gen1tls dialer
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1tls-win-x64
+          path: dist/native/win-x64
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+
+      - name: Download the Windows ShaderFX bridge
+        uses: actions/download-artifact@v8
+        with:
+          name: shaderfx-bridge-win-x64
+          path: dist/native/win-x64
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+
+      - name: Download shared payload
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-love
+          path: dist/payload
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+
+      - name: Install icon tools
+        run: |
+          set -euo pipefail
+          command -v convert >/dev/null 2>&1 || { sudo apt-get update; sudo apt-get install -y imagemagick; }
+          if ! command -v magick >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/bin"
+            printf '#!/bin/sh\nexec convert "$@"\n' > "$RUNNER_TEMP/bin/magick"
+            chmod +x "$RUNNER_TEMP/bin/magick"
+            echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          fi
+          pipx install pe_tools
+
+      - name: Build Windows
+        env:
+          GEN1TLS_DLL: ${{ github.workspace }}/dist/native/win-x64/gen1tls.dll
+          SHADERFX_BRIDGE_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+          if [ ! -f "$GEN1TLS_DLL" ]; then
+            echo "::error::gen1tls.dll missing at $GEN1TLS_DLL (native-tls-win job)"
+            exit 1
+          fi
+          command -v peresed >/dev/null || { echo "::error::peresed missing, the exe would ship with the stock LÖVE icon"; exit 1; }
+          scripts/build.sh win --version "${{ inputs.version }}" \
+            --game-love dist/payload/game.love
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1tls.dll \
+            || { echo "::error::Windows zip is missing gen1tls.dll"; exit 1; }
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F librashader_bridge.dll \
+            || { echo "::error::Windows zip is missing librashader_bridge.dll"; exit 1; }
+
+      - name: Unpack the Windows zip
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/win"
+          unzip -q dist/win/gen1recomp-win64.zip -d "$RUNNER_TEMP/win"
+          test -f "$RUNNER_TEMP/win/gen1recomp-win64/gen1recomp.exe"
+
+      - name: Upload unsigned Windows build
+        id: unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-windows-unsigned
+          path: ${{ runner.temp }}/win/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Sign with SignPath
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: a50673ca-cc8a-496c-a8bb-7313d9cadb8e
+          project-slug: gen1recomp
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'test-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ runner.temp }}/signed
+
+      - name: Repack the signed Windows zip
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/signed/gen1recomp-win64/gen1recomp.exe"
+          mkdir -p dist/win-signed
+          (cd "$RUNNER_TEMP/signed" && zip -q -9 -r "$GITHUB_WORKSPACE/dist/win-signed/gen1recomp-win64.zip" gen1recomp-win64)
+
+      - name: Upload signed Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-windows-signed
+          path: dist/win-signed/gen1recomp-win64.zip
+          if-no-files-found: error
+          retention-days: 7
