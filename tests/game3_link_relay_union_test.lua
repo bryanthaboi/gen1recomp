@@ -445,21 +445,7 @@ Client.bindRoom(nil, nil)
 Union.state = "main"
 Union.relay = true
 
-print("[test] 6b. the GREETINGS card is text first (ViewURoomPartnerTrainerCard)")
-local card = { name = "GREEN", trainerId = 3, gender = 1, stars = 2, caughtMonsCount = 41,
-  playTimeHours = 12, playTimeMinutes = 5, linkBattleWins = 7, linkBattleLosses = 2, pokemonTrades = 3 }
-local childText = Union.cardText(card, false)
-local parentText = Union.cardText(card, true)
-if romBundle then
-  check(childText:find("GREEN", 1, true) ~= nil, "names the partner")
-  check(childText:find("41", 1, true) ~= nil, "with the POKeDEX count")
-  check(childText:find("12:05", 1, true) ~= nil, "and the play time")
-  check(childText:find(RomText.plain(RomText.key("gTexts_UR_CardColor", 2)), 1, true) ~= nil, "and the card colour")
-  check(childText:find("7", 1, true) ~= nil, "battle wins on page two")
-  check(childText:find(RomText.plain(RomText.key("gTexts_UR_GladToMeetYou", 1)):sub(3), 1, true) ~= nil,
-    "the child ends on gTexts_UR_GladToMeetYou")
-  check(parentText:find("GREEN", 1, true) ~= nil, "the parent reads the same card")
-end
+print("[test] 6b. the TRAINER CARD we send")
 local lc = Link.localTrainerCard()
 eq(type(lc.stars), "number", "the card we send carries the star count")
 eq(type(lc.caughtMonsCount), "number", "and the POKeDEX count")

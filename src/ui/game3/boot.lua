@@ -14,6 +14,7 @@ local Chrome = require("src.ui.game3.chrome")
 local RomText = require("src.core.game3.rom_text")
 local MysteryGift = require("src.core.game3.mystery_gift")
 local MysteryGiftUi = require("src.ui.game3.mystery_gift")
+local ListMenu = require("src.ui.game3.list_menu")
 
 local Boot = {}
 
@@ -187,9 +188,7 @@ end
 
 -- pokefirered/src/main_menu.c:370 MAIN_MENU_MYSTERYGIFT
 local function hasMysteryGift(state)
-  if not state.hasContinue then return false end
-  local info = state.continueInfo
-  return type(info) == "table" and info.mysteryGift == true
+  return state.hasContinue == true
 end
 
 Boot.hasMysteryGift = hasMysteryGift
@@ -548,6 +547,9 @@ local function drawMainMenu(state, W, H)
     end
     local rows = WIN0V_CONTINUE[state.menuIndex] or WIN0V_CONTINUE[1] -- pokefirered/src/main_menu.c:565
     darkenOutside(W, H, 18, math.max(0, rows[1] - dy), 222, rows[2] - dy)
+    if gift and scroll == 0 then
+      ListMenu.drawArrow("down", W / 2, H - 8, math.floor((state.blink or 0) * 60))
+    end
   else
     Window.userFrame(Window.template(3, 1, 24, 2), frameType)
     Window.userFrame(Window.template(3, 5, 24, 2), frameType)

@@ -281,7 +281,7 @@ return function(game)
   result(waitFor(function() return Union.state == "main" end, 5, 200), "back in the Union Room")
   result(Client.room() == nil, "the chat room was left")
 
-  print("[driver] 4b. GREETINGS: the card as text, then the full card")
+  print("[driver] 4b. GREETINGS: the full card")
   local TrainerCard = require("src.ui.game3.trainer_card")
   relay:handle(green, { type = "room_leave" })
   wait(4)
@@ -302,26 +302,7 @@ return function(game)
   greenSays({ type = "game3_link_card", card = { name = "GREEN", trainerId = 3, gender = 1, stars = 2,
     caughtMonsCount = 64, playTimeHours = 21, playTimeMinutes = 8, linkBattleWins = 12, linkBattleLosses = 3,
     pokemonTrades = 5, easyChatProfile = { 2601, 4128, 526, 2611 } } })
-  result(waitFor(function() return Union.state == "card_info" and Message.isOpen() end, 8, 400),
-    "the partner's card prints as text")
-  waitFor(function() return Message.isWaiting() end, 4, 300)
-  U.still(game, DIR .. "/g3link_union_card_text.png")
-  local firstPage = Message.currentPage()
-  U.tap(game, "a")
-  result(waitFor(function()
-    return Message.isOpen() and Message.isWaiting() and Message.currentPage() ~= firstPage
-  end, 4, 300), "the card text goes on to the next page")
-  print("[driver] card page 2=" .. tostring(Message.currentPage()))
-  U.still(game, DIR .. "/g3link_union_card_text_page2.png")
-  result(waitFor(function()
-    if Message.isOpen() and Message.isWaiting() and not Choice.active
-        and (not Message._stay or (Message._page or 1) < #(Message._pages or {})) then
-      U.tap(game, "a")
-    end
-    return Choice.active
-  end, 10, 900), "then asks to see the full card")
-  U.tap(game, "a")
-  result(waitFor(function() return TrainerCard.isOpen() end, 5, 200), "YES shows GREEN's TRAINER CARD")
+  result(waitFor(function() return TrainerCard.isOpen() end, 5, 200), "GREEN's TRAINER CARD opens at once")
   wait(40)
   U.still(game, DIR .. "/g3link_union_card_full.png")
   U.tap(game, "b")

@@ -138,6 +138,12 @@ local function driver(st)
   return d
 end
 
+local function giftSession(save)
+  local sess = MysteryGift.sessionFromSave(save)
+  MysteryGift.enable(sess)
+  return sess
+end
+
 local function openWireless(st, d, isNews)
   if isNews then d.step("down") end
   d.step("a")
@@ -157,11 +163,10 @@ do
   Boot.setHasContinue(plain, true)
   Boot.setContinueInfo(plain, { name = "RED", mysteryGift = false })
   rows = Boot.menuItems(plain)
-  eq(#rows, 3, "a save without the Mystery Gift flag gives three rows")
-  eq(rows[1], "CONTINUE", "row 1 is CONTINUE")
-  eq(rows[2], "NEW GAME", "row 2 is NEW GAME")
-  eq(rows[3], "EXIT", "row 3 is EXIT")
-  check(not Boot.hasMysteryGift(plain), "no MYSTERY GIFT row without the flag")
+  eq(#rows, 4, "any save file gets the MYSTERY GIFT row")
+  eq(rows[3], "MYSTERY GIFT", "even without the passphrase flag")
+  eq(rows[4], "EXIT", "EXIT follows it")
+  check(Boot.hasMysteryGift(plain), "a save alone opens the Mystery Gift layout")
 
   local gift = Boot.new()
   Boot.setHasContinue(gift, true)
@@ -229,7 +234,7 @@ print("[test] 4. The front end receives a card and saves it")
 local save, sess, st, saves
 do
   save = {}
-  sess = MysteryGift.sessionFromSave(save)
+  sess = giftSession(save)
   saves = 0
   local feedTransport = okFeed()
   st = Ui.new({
@@ -366,7 +371,7 @@ end
 print("[test] 6. Wonder News paging")
 do
   local newsSave = {}
-  local newsSess = MysteryGift.sessionFromSave(newsSave)
+  local newsSess = giftSession(newsSave)
   local body = {}
   for i = 1, 10 do body[i] = "LINE " .. i end
   check(MysteryGift.receiveNews(newsSess, {
@@ -404,7 +409,7 @@ end
 
 local function freshScreen(t, save)
   save = save or {}
-  local sess2 = MysteryGift.sessionFromSave(save)
+  local sess2 = giftSession(save)
   local st2 = Ui.new({
     session = sess2,
     fetch = { transport = t },
@@ -565,7 +570,7 @@ print("[test] 11. The save message runs the save with no button press")
 do
   local saves = 0
   local st2 = Ui.new({
-    session = MysteryGift.sessionFromSave({}),
+    session = giftSession({}),
     fetch = { transport = okFeed() },
     onSave = function() saves = saves + 1 return true end,
   })
@@ -624,6 +629,21 @@ do
     if action then break end
   end
   eq(type(action) == "table" and action.action or nil, "exit", "and it reaches the launcher exit action")
+end
+
+print("[test] 13. WONDER CARDS waits for the questionnaire passphrase")
+do
+  local locked = Ui.new({ session = MysteryGift.sessionFromSave({}), onSave = function() return true end })
+  eq(#locked.rows, 2, "without the passphrase only WONDER NEWS and EXIT show")
+  teq(locked.rows[1], "WONDER NEWS", "row 1 is WONDER NEWS")
+  teq(locked.rows[2], "EXIT", "row 2 is EXIT")
+  Ui.update(locked, function(k) return k == "a" end, 1 / 60)
+  check(locked.isNews, "the first row opens the news branch")
+  eq(locked.state, Ui.STATE.DONT_HAVE_ANY, "with no news saved yet")
+
+  local open = Ui.new({ session = giftSession({}), onSave = function() return true end })
+  eq(#open.rows, 3, "the passphrase adds WONDER CARDS back")
+  teq(open.rows[1], "WONDER CARDS", "on the first row")
 end
 
 if failed == 0 then

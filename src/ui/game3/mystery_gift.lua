@@ -204,8 +204,14 @@ local function session(st)
 end
 
 -- pokefirered/src/mystery_gift_menu.c:197 sListMenuItems_CardsOrNews
-function Ui.mainRows()
-  return RomText.list("sListMenuItems_CardsOrNews")
+function Ui.mainRows(st)
+  local rows = RomText.list("sListMenuItems_CardsOrNews")
+  if st and not MysteryGift.isEnabled(session(st)) then
+    st.mainActions = { "news", "exit" }
+    return { rows[2], rows[3] }
+  end
+  if st then st.mainActions = { "cards", "news", "exit" } end
+  return rows
 end
 
 -- pokefirered/src/mystery_gift_menu.c:203 sListMenuItems_WirelessOrFriend
@@ -272,7 +278,7 @@ function Ui.new(opts)
     msg = nil,
     yesno = nil,
   }
-  setRows(st, Ui.mainRows(), 1)
+  setRows(st, Ui.mainRows(st), 1)
   return st
 end
 
@@ -321,7 +327,7 @@ local function toMainMenu(st)
   st.msg = nil
   st.prompt = nil
   st.yesno = nil
-  setRows(st, Ui.mainRows(), 1)
+  setRows(st, Ui.mainRows(st), 1)
 end
 
 local function iconOff()
@@ -641,12 +647,13 @@ function Ui.update(st, pressed, dt)
   local S = Ui.STATE
   if st.state == S.MAIN_MENU then
     local pick = tickList(st, pressed)
-    if pick == 1 or pick == 2 then
-      st.isNews = (pick == 2)
+    local action = pick == -1 and "exit" or (st.mainActions or {})[pick]
+    if action == "cards" or action == "news" then
+      st.isNews = (action == "news")
       local held = st.isNews and MysteryGift.validateSavedNews(session(st))
         or (not st.isNews and MysteryGift.validateSavedCard(session(st)))
       if held then loadGift(st) else dontHaveAny(st) end
-    elseif pick == 3 or pick == -1 then
+    elseif action == "exit" then
       st.state = S.EXIT
       Ui.close(st)
       return "exit"

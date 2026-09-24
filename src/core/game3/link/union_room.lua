@@ -2065,7 +2065,7 @@ function Union.pollIncoming()
         Union.incoming = inv
         Union._lastIncoming = inv
         Union.activity = activity
-        Union._requestName = from.name
+        Union._requestName = type(from.avatar) == "table" and from.avatar.name or from.name
         Union.partnerId = Union.slotForId(from.id)
         playSe("SE_DING_DONG")
         Union.state = "player_contacted_you"
@@ -2306,9 +2306,6 @@ Union.START_TEXTS = {
     [1] = { "sText_DoneWaitingBattleFemale", "sText_DoneWaitingChatFemale", "sText_TradeWillBeStarted" },
   },
 }
--- pokefirered/src/union_room_message.c:205
-Union.CONTACTED_TEXTS = { [0] = "sText_SomebodyHasContactedYou", [1] = "sText_PlayerHasContactedYou" }
-
 -- pokefirered/src/union_room.c:4272
 function Union.waitTextIndex(activity)
   local raw = math.floor(tonumber(activity) or 0) % Union.IN_UNION_ROOM
@@ -2447,22 +2444,35 @@ function Union.facingTradingBoard()
     and (tonumber(P.cellY) or 0) + d[2] == Union.TRADING_BOARD.y
 end
 
+function Union.namedRequest(name)
+  local Strings = require("src.core.Strings")
+  local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
+  if raw == Union.ACTIVITY.BATTLE_SINGLE then return Strings("%s wants to battle!\nWill you accept?", name) end
+  if raw == Union.ACTIVITY.CHAT then return Strings("%s wants to chat!\nWill you join?", name) end
+  if raw == Union.ACTIVITY.CARD then return Strings("%s wants to show\nyou a TRAINER CARD. OK?", name) end
+  return nil
+end
+
 -- pokefirered/src/union_room.c:3148
 function Union.contactedYou()
   local inv = Union.incoming or {}
   local from = type(inv.from) == "table" and inv.from or {}
-  local p = Union.partnerRow() or { name = from.name, trainerId = from.avatar and from.avatar.trainerId }
-  local met = Union.metBefore(p) and 1 or 0
-  local ctx = textCtx({ stringVars = { from.name or "" } })
-  return Union.runFlow(stepsOf(
-    Union.pauseStep(RomText.ascii(Union.CONTACTED_TEXTS[met], ctx), 60),
-    Union.doStep(function()
-      Union.state = "handle_activity_request"
-      Union._asked = true
-    end),
-    Union.stayStep(Union.requestPrompt()),
-    Union.yesNoStep(function(yes) Union.answerRequest(yes) end)
-  ), "player_contacted_you")
+  local name = Union._requestName or from.name or ""
+  local Strings = require("src.core.Strings")
+  local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
+  Union.state = "handle_activity_request"
+  Union._asked = true
+  local named = Union.namedRequest(name)
+  local steps
+  if named then
+    steps = stepsOf(Union.stayStep(named))
+  elseif raw == Union.ACTIVITY.TRADE then
+    steps = stepsOf(Union.sayStep(Strings("%s wants to trade!", name)), Union.stayStep(Union.requestPrompt()))
+  else
+    steps = stepsOf(Union.stayStep(Union.requestPrompt()))
+  end
+  steps[#steps + 1] = Union.yesNoStep(function(yes) Union.answerRequest(yes) end)
+  return Union.runFlow(steps, "handle_activity_request")
 end
 
 -- pokefirered/src/union_room.c:4467
@@ -2697,56 +2707,11 @@ function Union.pollAwaitLink(dt)
   Union.state = "start_activity"
 end
 
--- pokefirered/src/union_room.c:4700
-function Union.cardText(card, isParent)
-  card = type(card) == "table" and card or {}
-  local LB = battle()
-  local who = { trainerId = tonumber(card.trainerId) or 0, gender = (card.gender == 1 or card.gender == "female") and 1 or 0 }
-  local okC, classId = pcall(LB.unionRoomTrainerClass, who)
-  local className = okC and classId and RomText.plain(RomText.key("gTrainerClassNames", classId)) or ""
-  local stars = math.max(0, math.min(4, math.floor(tonumber(card.stars) or 0)))
-  local minutes = math.max(0, math.min(59, math.floor(tonumber(card.playTimeMinutes) or 0)))
-  local dyn1 = {
-    [0] = className,
-    [1] = tostring(card.name or ""),
-    [2] = RomText.plain(RomText.key("gTexts_UR_CardColor", stars)),
-    [3] = tostring(math.floor(tonumber(card.caughtMonsCount) or 0)),
-    [4] = tostring(math.min(999, math.floor(tonumber(card.playTimeHours) or 0))),
-    [5] = string.format("%02d", minutes),
-  }
-  local page1 = RomText.ascii("gText_UR_TrainerCardInfoPage1", textCtx({ dynamic = dyn1 }))
-  local words = {}
-  local okE, EasyChat = pcall(require, "src.core.game3.easy_chat_text")
-  for i = 1, 4 do
-    local id = type(card.easyChatProfile) == "table" and tonumber(card.easyChatProfile[i]) or nil
-    local ok, w = false, nil
-    if okE and id then ok, w = pcall(EasyChat.word, id) end
-    words[i] = ok and w or ""
-  end
-  local dyn2 = {
-    [0] = tostring(math.min(9999, math.floor(tonumber(card.linkBattleWins) or 0))),
-    [1] = tostring(card.name or ""),
-    [2] = tostring(math.min(9999, math.floor(tonumber(card.linkBattleLosses) or 0))),
-    [3] = tostring(math.floor(tonumber(card.pokemonTrades) or 0)),
-    [4] = words[1], [5] = words[2], [6] = words[3], [7] = words[4],
-  }
-  local page2 = RomText.ascii("gText_UR_TrainerCardInfoPage2", textCtx({ dynamic = dyn2 }))
-  local tail
-  if isParent then
-    tail = RomText.ascii("gText_UR_FinishedCheckingPlayersTrainerCard", textCtx({ dynamic = dyn2 }))
-  else
-    tail = RomText.ascii(RomText.key("gTexts_UR_GladToMeetYou", who.gender), textCtx({ dynamic = dyn2 }))
-  end
-  return page1 .. page2 .. tail
-end
-
 -- pokefirered/src/union_room.c:2999
 function Union.cardFlow()
   local L = link()
   local card = L.peerCard or {}
   local isParent = Union._role ~= "child"
-  local Strings = require("src.core.Strings")
-  local viewing = false
   local function finish()
     Union.recordMet(Union.partnerRow() or { name = card.name, trainerId = card.trainerId })
     Union.noteLeftRoom()
@@ -2757,21 +2722,14 @@ function Union.cardFlow()
     return Union.doSomethingPrompt(true)
   end
   Union.lastResult = "card_shown"
+  local okC, TrainerCard = pcall(require, "src.ui.game3.trainer_card")
+  if not (okC and TrainerCard.show) then return finish() end
+  local viewing = true
+  TrainerCard.show({ session = card, onClose = function() viewing = false end })
   return Union.runFlow({
-    Union.sayStep(Union.cardText(card, isParent)),
-    Union.stayStep(Strings("Would you like to see the TRAINER CARD?")),
-    Union.yesNoStep(function(yes)
-      if not yes then return finish() end
-      local okC, TrainerCard = pcall(require, "src.ui.game3.trainer_card")
-      if not (okC and TrainerCard.show) then return finish() end
-      viewing = true
-      TrainerCard.show({ session = card, onClose = function() viewing = false end })
-      Union.runFlow({
-        Union.waitStep(function() return not viewing end),
-        Union.doStep(finish),
-      }, "card_view")
-    end),
-  }, "card_info")
+    Union.waitStep(function() return not viewing end),
+    Union.doStep(finish),
+  }, "card_view")
 end
 
 function Union.partyPreview()
