@@ -139,7 +139,7 @@ jobs:
           name: gen1recomp-release-love
           path: dist/payload/game.love
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   linux-arm64:
     name: build Linux arm64 AppImage
@@ -160,6 +160,12 @@ jobs:
         with:
           name: shaderfx-bridge-linux-arm64
           path: dist/native/linux-arm64
+      - name: Restore compiled arm64 dependencies
+        uses: actions/cache@v4
+        with:
+          path: .bazinga/cache/linux-arm64
+          key: linux-arm64-deps-${{ hashFiles('scripts/linux-arm64/**', 'scripts/build_linux_arm64.sh') }}
+
       - name: Build Linux arm64 AppImage
         env:
           SHADERFX_BRIDGE_REQUIRED: "1"
@@ -180,7 +186,7 @@ jobs:
             dist/linux-arm64/gen1recomp-${{ needs.version.outputs.version }}-linux-arm64.AppImage
             dist/linux-arm64/gen1recomp-${{ needs.version.outputs.version }}-linux-arm64.AppImage.sha256
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   linux-flatpak:
     name: build Linux Flatpak
@@ -203,6 +209,12 @@ jobs:
         with:
           name: shaderfx-bridge-linux-x64
           path: dist/native/linux-x64
+      - name: Restore the Flatpak runtime
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-runtime-${{ runner.arch }}-${{ hashFiles('flatpak/*.yml', 'scripts/build_flatpak.sh') }}
+
       - name: Build Flatpak bundle
         env:
           SHADERFX_BRIDGE_REQUIRED: "1"
@@ -219,7 +231,7 @@ jobs:
             dist/flatpak/gen1recomp-${{ needs.version.outputs.version }}-linux.flatpak
             dist/flatpak/gen1recomp-${{ needs.version.outputs.version }}-linux.flatpak.sha256
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   xbox-uwp:
     name: build Xbox UWP release
@@ -290,7 +302,7 @@ jobs:
             dist/xbox-uwp/gen1recomp-${{ needs.version.outputs.version }}-xbox-uwp.zip
             dist/xbox-uwp/gen1recomp-${{ needs.version.outputs.version }}-xbox-uwp.zip.sha256
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
       - name: Remove signing certificate
         if: always()
         shell: pwsh
@@ -358,7 +370,7 @@ jobs:
           name: gen1tls-win-x64
           path: dist/native/win-x64/gen1tls.dll
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   shaderfx-bridge:
     name: build ShaderFX bridge (${{ matrix.plat }})
@@ -386,6 +398,9 @@ jobs:
           - plat: android
             runs-on: ubuntu-24.04
             lib: liblibrashader_bridge.so
+          - plat: ios
+            runs-on: macos-latest
+            lib: liblibrashader_bridge.a
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v7
@@ -464,6 +479,11 @@ jobs:
                 "target/aarch64-apple-darwin/release/$LIB"
               lipo -info "$GITHUB_WORKSPACE/$out/$LIB"
               ;;
+            ios)
+              rustup target add aarch64-apple-ios
+              IPHONEOS_DEPLOYMENT_TARGET=15.0 cargo build --locked --release --target aarch64-apple-ios
+              cp "target/aarch64-apple-ios/release/$LIB" "$GITHUB_WORKSPACE/$out/$LIB"
+              ;;
             linux-x64|linux-arm64)
               pipx install 'cargo-zigbuild==0.23.4'
               pipx inject cargo-zigbuild 'ziglang==0.16.0'
@@ -522,12 +542,15 @@ jobs:
           name: shaderfx-bridge-${{ matrix.plat }}
           path: dist/native/${{ matrix.plat }}
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
-  release:
-    needs: [version, love-payload, xbox-uwp, linux-arm64, linux-flatpak, native-tls-win, shaderfx-bridge]
+  desktop:
+    name: build macOS + Windows + Linux
+    needs: [version, love-payload, native-tls-win, shaderfx-bridge]
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
-
+    concurrency:
+      group: mac-signing-keychain
+      cancel-in-progress: false
     steps:
       # The self-hosted runner lives under the machine owner's home
       # directory; mask it first so absolute paths in every later step's
@@ -537,9 +560,6 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          fetch-tags: true
 
       - name: Download Windows gen1tls dialer
         uses: actions/download-artifact@v8
@@ -552,6 +572,7 @@ jobs:
         with:
           pattern: shaderfx-bridge-*
           path: dist/native
+
       - name: Flatten the ShaderFX bridge artifact layout
         run: |
           set -euo pipefail
@@ -580,40 +601,7 @@ jobs:
 
       - name: Import signing certificate into a temporary keychain
         if: github.repository == 'bryanthaboi/gen1recomp'
-        run: |
-          set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/pokemon-signing.keychain-db"
-          ci_dir="${POKEMON_CI_DIR:-$HOME/.config/pokemon-ci}"
-          p12="$ci_dir/signing.p12"
-          passfile="$ci_dir/signing.pass"
-          if [ ! -f "$p12" ] || [ ! -f "$passfile" ]; then
-            echo "::error::Signing material not found in $ci_dir. Run scripts/ci-setup-signing.sh on the runner."
-            exit 1
-          fi
-          p12pw="$(cat "$passfile")"
-
-          kcpw="$(openssl rand -base64 24)"
-          echo "::add-mask::$kcpw"
-
-          # Fresh, dedicated keychain — no dependence on the login keychain/session.
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-          security create-keychain -p "$kcpw" "$KEYCHAIN_PATH"
-          security set-keychain-settings "$KEYCHAIN_PATH"          # disable auto-lock
-          security unlock-keychain -p "$kcpw" "$KEYCHAIN_PATH"
-
-          security import "$p12" -P "$p12pw" -k "$KEYCHAIN_PATH" \
-            -T /usr/bin/codesign -T /usr/bin/security
-
-          # Let codesign use the key non-interactively.
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$kcpw" "$KEYCHAIN_PATH" >/dev/null
-
-          # Make the keychain visible to find-identity/codesign (prepend to search list).
-          existing="$(security list-keychains -d user | sed -e 's/^[[:space:]]*//' -e 's/"//g')"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $existing
-
-          echo "Identities available to codesign:"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+        uses: ./.github/actions/mac-signing-keychain
 
       - name: Build macOS + Windows + Linux
         env:
@@ -635,87 +623,6 @@ jobs:
             || { echo "::error::Windows zip is missing gen1tls.dll"; exit 1; }
           unzip -l dist/win/gen1recomp-win64.zip | grep -F librashader_bridge.dll \
             || { echo "::error::Windows zip is missing librashader_bridge.dll"; exit 1; }
-
-      - name: Materialize Android release signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
-        run: |
-          set -euo pipefail
-          [ -n "$KEYSTORE_B64" ] || {
-            echo "::error::ANDROID_RELEASE_KEYSTORE_B64 is required for a publishable Android update"
-            exit 1
-          }
-          python3 - <<'PY'
-          import base64, os, pathlib
-          encoded = os.environ["KEYSTORE_B64"]
-          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "gen1recomp-android-release.keystore"
-          path.write_bytes(base64.b64decode(encoded, validate=True))
-          PY
-
-      - name: Build Android
-        env:
-          SHADERFX_BRIDGE_REQUIRED: "1"
-          SHADERFX_BRIDGE_ANDROID_DIR: ${{ github.workspace }}/dist/native/android
-          GEN1RECOMP_ANDROID_KEYSTORE: ${{ runner.temp }}/gen1recomp-android-release.keystore
-          GEN1RECOMP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
-          GEN1RECOMP_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-          GEN1RECOMP_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          scripts/build_android.sh --release --version "${{ needs.version.outputs.version }}"
-
-      - name: Install xcbeautify
-        run: |
-          set -euo pipefail
-          brew list xcbeautify >/dev/null 2>&1 || brew install xcbeautify
-
-      - name: Build iOS
-        env:
-          CANONICAL_REPOSITORY: ${{ github.repository == 'bryanthaboi/gen1recomp' }}
-        run: |
-          set -euo pipefail
-          if [ "$CANONICAL_REPOSITORY" = true ]; then
-            scripts/build_ios.sh --fetch --device --release \
-              --version "${{ needs.version.outputs.version }}"
-          else
-            scripts/build_ios.sh --fetch --release \
-              --version "${{ needs.version.outputs.version }}"
-          fi
-
-      - name: Build Switch
-        run: |
-          set -euo pipefail
-          # Hard-fail gate: Switch ships with every release (never soft-fail).
-          # PR CI is path-gated (ubuntu selftest + canonical fused); release
-          # always builds Switch regardless of which files changed.
-          # Needs native switch-tools (nacptool/elf2nro) and/or Docker on the
-          # Mac self-hosted runner; see docs/switch-build.md.
-          scripts/build_switch.sh --fetch --fused \
-            --version "${{ needs.version.outputs.version }}"
-
-      - name: Build Anbernic RG34XXSP port
-        env:
-          SHADERFX_BRIDGE_REQUIRED: "1"
-        run: |
-          set -euo pipefail
-          # Self-contained aarch64 PortMaster-style pack; pulls the LÖVE 11.5
-          # runtime from PortMaster-GUI, so it needs no signing/notarization.
-          ./build-rg34xxsp.sh --version "${{ needs.version.outputs.version }}"
-
-      - name: Build Linux ARM SBC PortMaster port
-        env:
-          # The release workflow must package the commit being released. The
-          # script defaults to the latest published release for standalone
-          # builds, while this explicit local override keeps CI source-aligned.
-          GEN1RECOMP_SOURCE_DIR: ${{ github.workspace }}
-          GEN1RECOMP_RELEASE_TAG: v${{ needs.version.outputs.version }}
-          SHADERFX_BRIDGE_REQUIRED: "1"
-        run: |
-          set -euo pipefail
-          # Same aarch64 PortMaster-style pack for Linux ARM SBC PortMaster. The build
-          # keeps its own cache because the two scripts use different staging
-          # layouts and runtime package paths.
-          ./build-linux-arm-sbc.sh --version "${{ needs.version.outputs.version }}"
 
       - name: Notarize & staple macOS app
         if: github.repository == 'bryanthaboi/gen1recomp'
@@ -752,106 +659,277 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
           echo "Notarized + stapled ✓"
 
-      - name: Download Xbox UWP release
-        if: github.repository == 'bryanthaboi/gen1recomp'
+      - name: Upload gen1recomp-desktop-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-desktop-release
+          path: |
+            dist/mac/gen1recomp-macos.zip
+            dist/win/gen1recomp-win64.zip
+            dist/linux/gen1recomp-linux-x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Clean up signing keychain
+        if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
+        run: security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
+
+  android:
+    name: build Android
+    needs: [version, shaderfx-bridge]
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    steps:
+      # The self-hosted runner lives under the machine owner's home
+      # directory; mask it first so absolute paths in every later step's
+      # output show up as *** in the public workflow logs.
+      - name: Mask runner paths
+        run: echo "::add-mask::$HOME"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download the Android ShaderFX bridge
         uses: actions/download-artifact@v8
         with:
-          name: gen1recomp-xbox-uwp-release
-          path: dist/xbox-uwp
+          name: shaderfx-bridge-android
+          path: dist/native/android
 
-      - name: Download Linux arm64 release
-        if: github.repository == 'bryanthaboi/gen1recomp'
-        uses: actions/download-artifact@v8
-        with:
-          name: gen1recomp-linux-arm64-release
-          path: dist/linux-arm64
-
-      - name: Download Linux Flatpak release
-        if: github.repository == 'bryanthaboi/gen1recomp'
-        uses: actions/download-artifact@v8
-        with:
-          name: gen1recomp-linux-flatpak-release
-          path: dist/flatpak
-
-      - name: Stage release assets
-        if: github.repository == 'bryanthaboi/gen1recomp'
-        id: assets
+      - name: Materialize Android release signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
         run: |
           set -euo pipefail
-          v="${{ needs.version.outputs.version }}"
-          outdir="dist/release"
-          rm -rf "$outdir"
-          mkdir -p "$outdir"
-          cp "dist/mac/gen1recomp-macos.zip" "$outdir/gen1recomp-${v}-macos.zip"
-          cp "dist/win/gen1recomp-win64.zip" "$outdir/gen1recomp-${v}-windows.zip"
-          # x86_64 desktop Linux: raw AppImage (no zip wrapper).
-          x64_appimage="dist/linux/gen1recomp-linux-x86_64.AppImage"
-          [ -f "$x64_appimage" ] || { echo "::error::$x64_appimage not found (expected from scripts/build.sh linux)"; exit 1; }
-          cp "$x64_appimage" "$outdir/gen1recomp-${v}-linux-x86_64.AppImage"
-          chmod +x "$outdir/gen1recomp-${v}-linux-x86_64.AppImage"
+          [ -n "$KEYSTORE_B64" ] || {
+            echo "::error::ANDROID_RELEASE_KEYSTORE_B64 is required for a publishable Android update"
+            exit 1
+          }
+          python3 - <<'PY'
+          import base64, os, pathlib
+          encoded = os.environ["KEYSTORE_B64"]
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "gen1recomp-android-release.keystore"
+          path.write_bytes(base64.b64decode(encoded, validate=True))
+          PY
 
-          # arm64 desktop Linux (Raspberry Pi, Armbian, arm64 VMs). Built on
-          # its own runner because LÖVE publishes no aarch64 binary and the
-          # AppImage has to be compiled natively; ships as a runnable
-          # AppImage so `chmod +x && ./it` just works.
-          arm64_appimage="dist/linux-arm64/gen1recomp-${v}-linux-arm64.AppImage"
-          [ -f "$arm64_appimage" ] || { echo "::error::$arm64_appimage not found (expected from the linux-arm64 job)"; exit 1; }
-          cp "$arm64_appimage" "$outdir/gen1recomp-${v}-linux-arm64.AppImage"
-          chmod +x "$outdir/gen1recomp-${v}-linux-arm64.AppImage"
+      - name: Build Android
+        env:
+          SHADERFX_BRIDGE_REQUIRED: "1"
+          SHADERFX_BRIDGE_ANDROID_DIR: ${{ github.workspace }}/dist/native/android
+          GEN1RECOMP_ANDROID_KEYSTORE: ${{ runner.temp }}/gen1recomp-android-release.keystore
+          GEN1RECOMP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          GEN1RECOMP_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          GEN1RECOMP_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export GEN1_ANDROID_SHADOW_DIR="$HOME/.cache/gen1recomp-ci/android-shadow"
+          scripts/build_android.sh --release --version "${{ needs.version.outputs.version }}"
 
-          flatpak_bundle="dist/flatpak/gen1recomp-${v}-linux.flatpak"
-          [ -f "$flatpak_bundle" ] || { echo "::error::$flatpak_bundle not found (expected from the linux-flatpak job)"; exit 1; }
-          cp "$flatpak_bundle" "$outdir/gen1recomp-${v}-linux.flatpak"
-          apk="$(find dist/android/release -name '*.apk' | head -1)"
-          [ -n "$apk" ] || { echo "::error::no Android APK found under dist/android/release"; exit 1; }
-          cp "$apk" "$outdir/gen1recomp-${v}-android.apk"
+      - name: Upload gen1recomp-android-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-android-release
+          path: |
+            dist/android/release/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
 
-          ipa="dist/ios/gen1recomp++.ipa"
-          [ -f "$ipa" ] || { echo "::error::$ipa not found (expected from scripts/build_ios.sh --device)"; exit 1; }
-          cp "$ipa" "$outdir/gen1recomp++-${v}-ios.ipa"
+  ios:
+    name: build iOS
+    needs: [version, shaderfx-bridge]
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    concurrency:
+      group: mac-signing-keychain
+      cancel-in-progress: false
+    steps:
+      # The self-hosted runner lives under the machine owner's home
+      # directory; mask it first so absolute paths in every later step's
+      # output show up as *** in the public workflow logs.
+      - name: Mask runner paths
+        run: echo "::add-mask::$HOME"
 
-          swzip="dist/switch/gen1recomp-${v}-switch.zip"
-          [ -f "$swzip" ] || { echo "::error::$swzip not found (expected from scripts/build_switch.sh --fused → pack_sd_zip.sh)"; exit 1; }
-          cp "$swzip" "$outdir/gen1recomp-${v}-switch.zip"
-          # Local fused .nro stays under dist/switch/ for PR CI / debug; release
-          # publishes the SD-ready zip only.
+      - name: Checkout
+        uses: actions/checkout@v7
 
-          uwp="dist/xbox-uwp/gen1recomp-${v}-xbox-uwp.zip"
-          [ -f "$uwp" ] || { echo "::error::$uwp not found (expected from the Xbox UWP job)"; exit 1; }
-          cp "$uwp" "$outdir/gen1recomp-${v}-xbox-uwp.zip"
-
-          # Anbernic handheld port (suffix names the CFW it targets, so a
-          # future RG35XX/other-CFW pack can ship alongside it).
-          rg34="dist/rg34xxsp/gen1recomp-rg34xxsp-stockos64-mod.zip"
-          [ -f "$rg34" ] || { echo "::error::$rg34 not found (expected from ./build-rg34xxsp.sh)"; exit 1; }
-          cp "$rg34" "$outdir/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip"
-
-          # Linux ARM SBC PortMaster handheld port.
-          sbc="dist/linux-arm-sbc/gen1recomp-sbc-portmaster.zip"
-          [ -f "$sbc" ] || { echo "::error::$sbc not found (expected from ./build-linux-arm-sbc.sh)"; exit 1; }
-          cp "$sbc" "$outdir/gen1recomp-${v}-sbc-portmaster.zip"
-
-          # Platform-independent update payload, built alongside the desktop
-          # apps above (same game.love that gets fused into each of them).
-          love_file=".bazinga/work/game.love"
-          [ -f "$love_file" ] || { echo "::error::$love_file not found (expected from scripts/build.sh)"; exit 1; }
-          cp "$love_file" "$outdir/gen1recomp-${v}.love"
-
-          ls -lh "$outdir"
-
-          # Checksums for every staged release asset (sums file itself is
-          # written after this and named outside the gen1recomp-* glob, so it
-          # never lists itself).
-          (cd "$outdir" && shasum -a 256 gen1recomp-* > sha256sums.txt)
-          cat "$outdir/sha256sums.txt"
-
-      - name: Publish GitHub Release
+      - name: Import signing certificate into a temporary keychain
         if: github.repository == 'bryanthaboi/gen1recomp'
+        uses: ./.github/actions/mac-signing-keychain
+
+      - name: Download the iOS ShaderFX bridge
+        uses: actions/download-artifact@v8
+        with:
+          name: shaderfx-bridge-ios
+          path: dist/native/ios
+
+      - name: Install xcbeautify
+        run: |
+          set -euo pipefail
+          brew list xcbeautify >/dev/null 2>&1 || brew install xcbeautify
+
+      - name: Build iOS
+        env:
+          CANONICAL_REPOSITORY: ${{ github.repository == 'bryanthaboi/gen1recomp' }}
+          SHADERFX_BRIDGE_IOS: ${{ github.workspace }}/dist/native/ios/liblibrashader_bridge.a
+        run: |
+          set -euo pipefail
+          if [ "$CANONICAL_REPOSITORY" = true ]; then
+            scripts/build_ios.sh --fetch --device --release \
+              --version "${{ needs.version.outputs.version }}"
+          else
+            scripts/build_ios.sh --fetch --release \
+              --version "${{ needs.version.outputs.version }}"
+          fi
+
+      - name: Upload gen1recomp-ios-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-ios-release
+          path: |
+            dist/ios/gen1recomp++.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Clean up signing keychain
+        if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
+        run: security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
+
+  switch:
+    name: build Switch
+    needs: version
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    steps:
+      # The self-hosted runner lives under the machine owner's home
+      # directory; mask it first so absolute paths in every later step's
+      # output show up as *** in the public workflow logs.
+      - name: Mask runner paths
+        run: echo "::add-mask::$HOME"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Restore pinned love-nx binaries
+        uses: actions/cache@v4
+        with:
+          path: .bazinga/love-nx/11.5-nx1
+          key: love-nx-11.5-nx1-${{ hashFiles('scripts/switch/love-nx-11.5-nx1.sha256') }}
+
+      - name: Build Switch
+        run: |
+          set -euo pipefail
+          # Hard-fail gate: Switch ships with every release (never soft-fail).
+          # PR CI is path-gated (ubuntu selftest + canonical fused); release
+          # always builds Switch regardless of which files changed.
+          # Needs native switch-tools (nacptool/elf2nro) and/or Docker on the
+          # Mac self-hosted runner; see docs/switch-build.md.
+          scripts/build_switch.sh --fetch --fused \
+            --version "${{ needs.version.outputs.version }}"
+
+      - name: Upload gen1recomp-switch-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-switch-release
+          path: |
+            dist/switch/gen1recomp-${{ needs.version.outputs.version }}-switch.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  rg34xxsp:
+    name: build Anbernic RG34XXSP port
+    needs: [version, shaderfx-bridge]
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    steps:
+      # The self-hosted runner lives under the machine owner's home
+      # directory; mask it first so absolute paths in every later step's
+      # output show up as *** in the public workflow logs.
+      - name: Mask runner paths
+        run: echo "::add-mask::$HOME"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download the Linux arm64 ShaderFX bridge
+        uses: actions/download-artifact@v8
+        with:
+          name: shaderfx-bridge-linux-arm64
+          path: dist/native/linux-arm64
+
+      - name: Build Anbernic RG34XXSP port
+        env:
+          SHADERFX_BRIDGE_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+          # Self-contained aarch64 PortMaster-style pack; pulls the LÖVE 11.5
+          # runtime from PortMaster-GUI, so it needs no signing/notarization.
+          ./build-rg34xxsp.sh --version "${{ needs.version.outputs.version }}"
+
+      - name: Upload gen1recomp-rg34xxsp-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-rg34xxsp-release
+          path: |
+            dist/rg34xxsp/gen1recomp-rg34xxsp-stockos64-mod.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-arm-sbc:
+    name: build Linux ARM SBC PortMaster port
+    needs: [version, shaderfx-bridge]
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    steps:
+      # The self-hosted runner lives under the machine owner's home
+      # directory; mask it first so absolute paths in every later step's
+      # output show up as *** in the public workflow logs.
+      - name: Mask runner paths
+        run: echo "::add-mask::$HOME"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download the Linux arm64 ShaderFX bridge
+        uses: actions/download-artifact@v8
+        with:
+          name: shaderfx-bridge-linux-arm64
+          path: dist/native/linux-arm64
+
+      - name: Build Linux ARM SBC PortMaster port
+        env:
+          # The release workflow must package the commit being released. The
+          # script defaults to the latest published release for standalone
+          # builds, while this explicit local override keeps CI source-aligned.
+          GEN1RECOMP_SOURCE_DIR: ${{ github.workspace }}
+          GEN1RECOMP_RELEASE_TAG: v${{ needs.version.outputs.version }}
+          SHADERFX_BRIDGE_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+          # Same aarch64 PortMaster-style pack for Linux ARM SBC PortMaster. The build
+          # keeps its own cache because the two scripts use different staging
+          # layouts and runtime package paths.
+          ./build-linux-arm-sbc.sh --version "${{ needs.version.outputs.version }}"
+
+      - name: Upload gen1recomp-linux-arm-sbc-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-linux-arm-sbc-release
+          path: |
+            dist/linux-arm-sbc/gen1recomp-sbc-portmaster.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  notes:
+    name: write release notes
+    needs: version
+    if: github.repository == 'bryanthaboi/gen1recomp'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Write release notes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          v="${{ needs.version.outputs.version }}"
           tag="${{ needs.version.outputs.tag }}"
 
           # Issues this release closes. Three sources, deduped by number:
@@ -954,6 +1032,240 @@ jobs:
             notes+=$'\n\n## Contributors\n\n'"$contributors"
           fi
           printf 'Release notes:\n%s\n' "$notes"
+          mkdir -p dist/release-notes
+          printf '%s\n' "$notes" > dist/release-notes/release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes/release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-windows:
+    name: sign Windows build (SignPath)
+    needs: [version, desktop]
+    if: github.repository == 'bryanthaboi/gen1recomp'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download desktop builds
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-desktop-release
+          path: dist
+
+      - name: Unpack the Windows zip
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/win"
+          unzip -q dist/win/gen1recomp-win64.zip -d "$RUNNER_TEMP/win"
+          test -f "$RUNNER_TEMP/win/gen1recomp-win64/gen1recomp.exe"
+
+      - name: Upload unsigned Windows build
+        id: unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-windows-unsigned
+          path: ${{ runner.temp }}/win/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Sign with SignPath
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: a50673ca-cc8a-496c-a8bb-7313d9cadb8e
+          project-slug: gen1recomp
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'test-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ runner.temp }}/signed
+
+      - name: Repack the signed Windows zip
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/signed/gen1recomp-win64/gen1recomp.exe"
+          mkdir -p dist/win-signed
+          (cd "$RUNNER_TEMP/signed" && zip -q -9 -r "$GITHUB_WORKSPACE/dist/win-signed/gen1recomp-win64.zip" gen1recomp-win64)
+          unzip -l dist/win-signed/gen1recomp-win64.zip | grep -F gen1tls.dll
+          unzip -l dist/win-signed/gen1recomp-win64.zip | grep -F librashader_bridge.dll
+
+      - name: Upload signed Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-windows-signed
+          path: dist/win-signed/gen1recomp-win64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [version, notes, love-payload, xbox-uwp, linux-arm64, linux-flatpak, desktop, sign-windows, android, ios, switch, rg34xxsp, linux-arm-sbc]
+    if: github.repository == 'bryanthaboi/gen1recomp'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download gen1recomp-release-notes
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Download gen1recomp-release-love
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-love
+          path: dist/payload
+
+      - name: Download gen1recomp-desktop-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-desktop-release
+          path: dist
+
+      - name: Download gen1recomp-windows-signed
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-windows-signed
+          path: dist/win
+
+      - name: Download gen1recomp-android-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-android-release
+          path: dist/android/release
+
+      - name: Download gen1recomp-ios-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-ios-release
+          path: dist/ios
+
+      - name: Download gen1recomp-switch-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-switch-release
+          path: dist/switch
+
+      - name: Download gen1recomp-rg34xxsp-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-rg34xxsp-release
+          path: dist/rg34xxsp
+
+      - name: Download gen1recomp-linux-arm-sbc-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-linux-arm-sbc-release
+          path: dist/linux-arm-sbc
+
+      - name: Download gen1recomp-xbox-uwp-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-xbox-uwp-release
+          path: dist/xbox-uwp
+
+      - name: Download gen1recomp-linux-arm64-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-linux-arm64-release
+          path: dist/linux-arm64
+
+      - name: Download gen1recomp-linux-flatpak-release
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-linux-flatpak-release
+          path: dist/flatpak
+
+      - name: Stage release assets
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        id: assets
+        run: |
+          set -euo pipefail
+          v="${{ needs.version.outputs.version }}"
+          outdir="dist/release"
+          rm -rf "$outdir"
+          mkdir -p "$outdir"
+          cp "dist/mac/gen1recomp-macos.zip" "$outdir/gen1recomp-${v}-macos.zip"
+          cp "dist/win/gen1recomp-win64.zip" "$outdir/gen1recomp-${v}-windows.zip"
+          # x86_64 desktop Linux: raw AppImage (no zip wrapper).
+          x64_appimage="dist/linux/gen1recomp-linux-x86_64.AppImage"
+          [ -f "$x64_appimage" ] || { echo "::error::$x64_appimage not found (expected from scripts/build.sh linux)"; exit 1; }
+          cp "$x64_appimage" "$outdir/gen1recomp-${v}-linux-x86_64.AppImage"
+          chmod +x "$outdir/gen1recomp-${v}-linux-x86_64.AppImage"
+
+          # arm64 desktop Linux (Raspberry Pi, Armbian, arm64 VMs). Built on
+          # its own runner because LÖVE publishes no aarch64 binary and the
+          # AppImage has to be compiled natively; ships as a runnable
+          # AppImage so `chmod +x && ./it` just works.
+          arm64_appimage="dist/linux-arm64/gen1recomp-${v}-linux-arm64.AppImage"
+          [ -f "$arm64_appimage" ] || { echo "::error::$arm64_appimage not found (expected from the linux-arm64 job)"; exit 1; }
+          cp "$arm64_appimage" "$outdir/gen1recomp-${v}-linux-arm64.AppImage"
+          chmod +x "$outdir/gen1recomp-${v}-linux-arm64.AppImage"
+
+          flatpak_bundle="dist/flatpak/gen1recomp-${v}-linux.flatpak"
+          [ -f "$flatpak_bundle" ] || { echo "::error::$flatpak_bundle not found (expected from the linux-flatpak job)"; exit 1; }
+          cp "$flatpak_bundle" "$outdir/gen1recomp-${v}-linux.flatpak"
+          apk="$(find dist/android/release -name '*.apk' | head -1)"
+          [ -n "$apk" ] || { echo "::error::no Android APK found under dist/android/release"; exit 1; }
+          cp "$apk" "$outdir/gen1recomp-${v}-android.apk"
+
+          ipa="dist/ios/gen1recomp++.ipa"
+          [ -f "$ipa" ] || { echo "::error::$ipa not found (expected from scripts/build_ios.sh --device)"; exit 1; }
+          cp "$ipa" "$outdir/gen1recomp++-${v}-ios.ipa"
+
+          swzip="dist/switch/gen1recomp-${v}-switch.zip"
+          [ -f "$swzip" ] || { echo "::error::$swzip not found (expected from scripts/build_switch.sh --fused → pack_sd_zip.sh)"; exit 1; }
+          cp "$swzip" "$outdir/gen1recomp-${v}-switch.zip"
+          # Local fused .nro stays under dist/switch/ for PR CI / debug; release
+          # publishes the SD-ready zip only.
+
+          uwp="dist/xbox-uwp/gen1recomp-${v}-xbox-uwp.zip"
+          [ -f "$uwp" ] || { echo "::error::$uwp not found (expected from the Xbox UWP job)"; exit 1; }
+          cp "$uwp" "$outdir/gen1recomp-${v}-xbox-uwp.zip"
+
+          # Anbernic handheld port (suffix names the CFW it targets, so a
+          # future RG35XX/other-CFW pack can ship alongside it).
+          rg34="dist/rg34xxsp/gen1recomp-rg34xxsp-stockos64-mod.zip"
+          [ -f "$rg34" ] || { echo "::error::$rg34 not found (expected from ./build-rg34xxsp.sh)"; exit 1; }
+          cp "$rg34" "$outdir/gen1recomp-${v}-rg34xxsp-stockos64-mod.zip"
+
+          # Linux ARM SBC PortMaster handheld port.
+          sbc="dist/linux-arm-sbc/gen1recomp-sbc-portmaster.zip"
+          [ -f "$sbc" ] || { echo "::error::$sbc not found (expected from ./build-linux-arm-sbc.sh)"; exit 1; }
+          cp "$sbc" "$outdir/gen1recomp-${v}-sbc-portmaster.zip"
+
+          # Platform-independent update payload, built alongside the desktop
+          # apps above (same game.love that gets fused into each of them).
+          love_file="dist/payload/game.love"
+          [ -f "$love_file" ] || { echo "::error::$love_file not found (expected from the love-payload job)"; exit 1; }
+          cp "$love_file" "$outdir/gen1recomp-${v}.love"
+
+          ls -lh "$outdir"
+
+          # Checksums for every staged release asset (sums file itself is
+          # written after this and named outside the gen1recomp-* glob, so it
+          # never lists itself).
+          (cd "$outdir" && shasum -a 256 gen1recomp-* > sha256sums.txt)
+          cat "$outdir/sha256sums.txt"
+
+      - name: Publish GitHub Release
+        if: github.repository == 'bryanthaboi/gen1recomp'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v="${{ needs.version.outputs.version }}"
+          tag="${{ needs.version.outputs.tag }}"
+
+          notes_file="dist/release-notes/release-notes.md"
+          [ -f "$notes_file" ] || { echo "::error::$notes_file not found (expected from the notes job)"; exit 1; }
 
           release_files=(
             "dist/release/gen1recomp-${v}-macos.zip"
@@ -971,11 +1283,16 @@ jobs:
             "dist/release/sha256sums.txt"
           )
 
+          if [ "$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)" = "true" ]; then
+            gh release delete "$tag" --yes
+          fi
           gh release create "$tag" \
+            --draft \
             --target "$GITHUB_SHA" \
             --title "$v" \
-            --notes "$notes" \
-            "${release_files[@]}"
+            --notes-file "$notes_file"
+          printf '%s\n' "${release_files[@]}" | xargs -P 6 -I{} gh release upload "$tag" {} --clobber
+          gh release edit "$tag" --draft=false
 
           echo "Published release $tag"
 
@@ -1043,9 +1360,3 @@ jobs:
           git -c core.sshCommand="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
             push "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
           rm -f "$key"
-
-      - name: Clean up signing keychain
-        if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
-        run: |
-          security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/release-deploy-key"

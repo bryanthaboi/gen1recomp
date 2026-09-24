@@ -1,0 +1,40 @@
+name: Import signing keychain
+description: Import the runner's signing identity into a temporary keychain for codesign.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        KEYCHAIN_PATH="$RUNNER_TEMP/pokemon-signing.keychain-db"
+        ci_dir="${POKEMON_CI_DIR:-$HOME/.config/pokemon-ci}"
+        p12="$ci_dir/signing.p12"
+        passfile="$ci_dir/signing.pass"
+        if [ ! -f "$p12" ] || [ ! -f "$passfile" ]; then
+          echo "::error::Signing material not found in $ci_dir. Run scripts/ci-setup-signing.sh on the runner."
+          exit 1
+        fi
+        p12pw="$(cat "$passfile")"
+
+        kcpw="$(openssl rand -base64 24)"
+        echo "::add-mask::$kcpw"
+
+        # Fresh, dedicated keychain — no dependence on the login keychain/session.
+        security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+        security create-keychain -p "$kcpw" "$KEYCHAIN_PATH"
+        security set-keychain-settings "$KEYCHAIN_PATH"          # disable auto-lock
+        security unlock-keychain -p "$kcpw" "$KEYCHAIN_PATH"
+
+        security import "$p12" -P "$p12pw" -k "$KEYCHAIN_PATH" \
+          -T /usr/bin/codesign -T /usr/bin/security
+
+        # Let codesign use the key non-interactively.
+        security set-key-partition-list -S apple-tool:,apple:,codesign: \
+          -s -k "$kcpw" "$KEYCHAIN_PATH" >/dev/null
+
+        # Make the keychain visible to find-identity/codesign (prepend to search list).
+        existing="$(security list-keychains -d user | sed -e 's/^[[:space:]]*//' -e 's/"//g')"
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $existing
+
+        echo "Identities available to codesign:"
+        security find-identity -v -p codesigning "$KEYCHAIN_PATH"

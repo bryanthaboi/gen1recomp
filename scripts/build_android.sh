@@ -809,21 +809,25 @@ run_gradle() {
   # When this checkout lives at a spaced path (e.g. "~/xCode Projects/..."),
   # shadow the android tree to a space-free location and build there; the
   # shadow persists across runs so gradle/ndk builds stay incremental.
+  local shadow="${GEN1_ANDROID_SHADOW_DIR:-}"
   case "$ANDROID_DIR" in
     *" "*)
-      build_dir="${TMPDIR:-/tmp}/gen1recomp-android-shadow"
+      shadow="${shadow:-${TMPDIR:-/tmp}/gen1recomp-android-shadow}"
       say "path contains spaces (ndk-build cannot handle them);"
-      say "shadow-building in: $build_dir"
-      mkdir -p "$build_dir"
-      rsync -a --delete \
-        --exclude=".gradle" --exclude="app/build" --exclude="love/build" \
-        --exclude="local.properties" \
-        "$ANDROID_DIR/" "$build_dir/"
-      if [ -f "$ANDROID_DIR/local.properties" ]; then
-        cp "$ANDROID_DIR/local.properties" "$build_dir/local.properties"
-      fi
       ;;
   esac
+  if [ -n "$shadow" ]; then
+    build_dir="$shadow"
+    say "shadow-building in: $build_dir"
+    mkdir -p "$build_dir"
+    rsync -a --no-times --checksum --delete \
+      --exclude=".gradle" --exclude="app/build" --exclude="love/build" \
+      --exclude="local.properties" \
+      "$ANDROID_DIR/" "$build_dir/"
+    if [ -f "$ANDROID_DIR/local.properties" ]; then
+      cp "$ANDROID_DIR/local.properties" "$build_dir/local.properties"
+    fi
+  fi
 
   say "building APK ($task)"
   if ! (
