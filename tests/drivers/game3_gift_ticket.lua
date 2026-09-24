@@ -150,16 +150,8 @@ return function(game)
   end
   local st = game.boot.gift
 
-  U.tap(game, "a")
-  for _ = 1, 300 do
-    if st.state == GiftUi.STATE.GIFT_INPUT then break end
-    if st.msg then U.tap(game, "a") end
-    U.wait(4)
-  end
-  result(st.state == GiftUi.STATE.GIFT_INPUT, "the saved WONDER CARD opens")
-  U.shot(game, DIR .. "/gift_ticket_03_wonder_card.png")
-  U.tap(game, "b")
-  U.wait(20)
+  result(st.state == GiftUi.STATE.MAIN_MENU, "the Mystery Gift menu is up")
+  U.shot(game, DIR .. "/gift_ticket_03_mystery_gift_menu.png")
   U.tap(game, "b")
   for _ = 1, 200 do
     if phase() == Boot.PHASE.MENU then break end

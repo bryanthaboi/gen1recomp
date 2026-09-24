@@ -109,13 +109,9 @@ return function(game)
     return st.state == S.MAIN_MENU and not st.msg
   end
 
-  local function searchFromPicker(label)
-    if not result(advance(function() return st.state == S.SOURCE_INPUT end),
-      label .. ": the source picker opened") then return false end
-    result(st.cursor == 1, label .. ": the cursor starts on WIRELESS COMMUNICATION")
-    U.tap(game, "a")
-    result(st.state == S.SEARCHING, label .. ": WIRELESS COMMUNICATION starts the search")
-    return true
+  local function startFetch(label)
+    return result(advance(function() return st.state == S.SEARCHING end),
+      label .. ": the card fetch starts with no source picker")
   end
 
   local function waitList(label)
@@ -132,9 +128,20 @@ return function(game)
     U.tap(game, "a")
   end
 
+  local function openCards(label)
+    U.tap(game, "a")
+    if not startFetch(label) then return false end
+    return waitList(label)
+  end
+
+  local function replaceYes()
+    result(advance(function() return st.state == S.ASK_REPLACE end), "the cart asks to throw away the held card")
+    U.tap(game, "a")
+    if st.state == S.ASK_REPLACE_UNRECEIVED then U.tap(game, "a") end
+  end
+
   U.tap(game, "a")
-  result(st.state == S.DONT_HAVE_ANY, "WONDER CARDS with no card asks for one")
-  if not searchFromPicker("owner key") then return finish() end
+  if not startFetch("owner key") then return finish() end
   result(advance(function() return st.state ~= S.SEARCHING end, 15) and st.lastError == "bad_signature",
     "a feed not signed by the owner's key is refused, err=" .. tostring(st.lastError))
   U.wait(90)
@@ -146,11 +153,9 @@ return function(game)
   MysteryGift.GIFT_PUBKEY = TEST_PUBKEY
 
   U.tap(game, "a")
-  result(st.state == S.DONT_HAVE_ANY, "WONDER CARDS with no card asks for one")
-  if not searchFromPicker("card") then return finish() end
-  U.wait(8)
+  if not startFetch("card") then return finish() end
+  U.wait(2)
   result(WirelessIcon.anim() == "searching", "the wireless icon is searching")
-  result(st.state == S.SEARCHING, "the searching text holds")
   U.still(game, DIR .. "/g3gift_searching.png")
   if not waitList("card") then return finish() end
   U.wait(12)
@@ -163,8 +168,12 @@ return function(game)
   U.still(game, DIR .. "/g3gift_card_list.png")
 
   pickRow(2)
-  result(advance(function() return st.state == S.COMM_COMPLETED end), "MEW: communication completes")
-  result(advance(function() return st.state == S.RESULT_MSG end), "MEW: the result message is up")
+  result(st.state == S.GIFT_INPUT and st.viewCard ~= nil and st.viewCard.titleText == "MEW",
+    "MEW: pressing the row shows the card first")
+  U.wait(10)
+  U.still(game, DIR .. "/g3gift_card_preview.png")
+  U.tap(game, "a")
+  result(advance(function() return st.state == S.RESULT_MSG end), "MEW: A receives it")
   print("[driver] result: " .. tostring(st.msg and st.msg.text))
   result(advance(atMenu, 15), "MEW: saved and back on the Mystery Gift menu")
   local sess = st.session
@@ -172,18 +181,24 @@ return function(game)
   result(card ~= nil and card.idNumber == 7 and card.titleText == "MEW", "the MEW Wonder Card is installed")
   result(MysteryGift.hasClaimedCard(sess, 7), "and claimed on this save")
 
-  U.tap(game, "a")
-  result(st.state == S.GIFT_INPUT, "WONDER CARDS opens the received card")
+  if not openCards("held") then return finish() end
+  U.wait(12)
+  U.still(game, DIR .. "/g3gift_card_list_marked.png")
+  pickRow(2)
+  result(st.state == S.GIFT_INPUT and st.viewCard == nil, "pressing the held MEW opens it")
   U.wait(10)
   U.still(game, DIR .. "/g3gift_received_wonder_card.png")
   U.tap(game, "b")
-  U.wait(6)
+  U.wait(4)
+  result(st.state == S.OFFER_LIST, "B goes back to the card list")
+  U.tap(game, "b")
+  U.wait(4)
+  result(atMenu(), "B on the list goes back to the Mystery Gift menu")
 
   U.tap(game, "down")
   U.wait(4)
   U.tap(game, "a")
-  result(st.state == S.DONT_HAVE_ANY and st.isNews, "WONDER NEWS with no news asks for one")
-  if not searchFromPicker("news") then return finish() end
+  result(st.state == S.SEARCHING and st.isNews, "WONDER NEWS fetches the list at once")
   if not waitList("news") then return finish() end
   labels = {}
   for i, entry in ipairs(st.offers or {}) do labels[i] = tostring(entry.label) end
@@ -192,56 +207,42 @@ return function(game)
   U.wait(6)
   U.still(game, DIR .. "/g3gift_news_list.png")
   pickRow(1)
-  result(advance(atMenu, 15), "news: saved and back on the Mystery Gift menu")
-  result(MysteryGift.validateSavedNews(sess), "the Wonder News is installed")
-  U.tap(game, "down")
-  U.wait(4)
-  U.tap(game, "a")
-  result(st.state == S.GIFT_INPUT and st.isNews, "WONDER NEWS opens the received news")
+  result(st.state == S.NEWS_VIEW and st.viewNews ~= nil, "pressing the row opens that news")
   U.wait(10)
   U.still(game, DIR .. "/g3gift_wonder_news.png")
   U.tap(game, "b")
-  U.wait(6)
-
-  U.tap(game, "a")
   U.wait(4)
-  U.tap(game, "a")
-  result(st.state == S.GIFT_SELECT, "the card menu is up")
-  local tossRow
-  for i, a in ipairs(st.giftActions or {}) do if a == "toss" then tossRow = i end end
-  pickRow(tossRow or 2)
-  result(st.state == S.ASK_TOSS, "TOSS asks first")
-  U.tap(game, "a")
-  if st.state == S.ASK_TOSS_UNRECEIVED then U.tap(game, "a") end
-  result(advance(atMenu, 15), "the MEW card is tossed")
-  result(not MysteryGift.validateSavedCard(sess), "no card is held")
-  U.tap(game, "a")
-  if not searchFromPicker("reclaim") then return finish() end
-  if not waitList("reclaim") then return finish() end
-  pickRow(2)
-  result(advance(function() return st.state == S.RESULT_MSG end), "reclaim: the result message is up")
-  U.wait(60)
-  print("[driver] reclaim: " .. tostring(st.msg and st.msg.text))
-  result(st.msg ~= nil and tostring(st.msg.text):find("already") ~= nil, "a second MEW is refused as already had")
-  U.still(game, DIR .. "/g3gift_already_had.png")
-  result(advance(atMenu, 15), "back on the menu")
-  result(not MysteryGift.validateSavedCard(sess), "and nothing was installed")
+  result(st.state == S.OFFER_LIST, "B goes back to the news list")
+  U.tap(game, "b")
+  U.wait(4)
+  result(atMenu(), "B on the list goes back to the Mystery Gift menu")
+  result(not MysteryGift.validateSavedNews(sess), "reading news saves nothing")
 
-  U.tap(game, "a")
-  if not searchFromPicker("stamp") then return finish() end
-  if not waitList("stamp") then return finish() end
+  if not openCards("stamp") then return finish() end
   pickRow(3)
+  U.tap(game, "a")
+  replaceYes()
   result(advance(atMenu, 15), "stamp: saved and back on the menu")
   card = MysteryGift.getSavedCard(sess)
-  result(card ~= nil and card.type == MysteryGift.CARD_TYPE_STAMP, "the STAMP CARD is installed")
+  result(card ~= nil and card.type == MysteryGift.CARD_TYPE_STAMP, "switching installs the STAMP CARD")
   MysteryGift.trySaveStamp(sess, { species = 25, id = 11111 })
   MysteryGift.trySaveStamp(sess, { species = 4, id = 22222 })
-  U.tap(game, "a")
-  result(st.state == S.GIFT_INPUT, "the STAMP CARD opens")
+  if not openCards("stamp view") then return finish() end
+  pickRow(3)
+  result(st.state == S.GIFT_INPUT and st.viewCard == nil, "the held STAMP CARD opens")
   U.wait(10)
   U.still(game, DIR .. "/g3gift_stamp_card.png")
   U.tap(game, "b")
-  U.wait(6)
+  U.wait(4)
+
+  U.tap(game, "up")
+  U.wait(4)
+  U.tap(game, "a")
+  U.tap(game, "a")
+  replaceYes()
+  result(advance(atMenu, 15), "switch back: saved and back on the menu")
+  card = MysteryGift.getSavedCard(sess)
+  result(card ~= nil and card.idNumber == 7, "the MEW card you had before installs again")
 
   local SaveData = require("src.core.SaveData")
   local okLoad, saved = pcall(SaveData.load)
@@ -251,7 +252,6 @@ return function(game)
   local have7 = false
   for _, id in ipairs(claims.cards or {}) do if tonumber(id) == 7 then have7 = true end end
   result(have7, "the MEW claim is on the save file")
-  result(rec ~= nil and rec.news ~= nil, "the news is on the save file")
 
   U.tap(game, "b")
   for _ = 1, 400 do

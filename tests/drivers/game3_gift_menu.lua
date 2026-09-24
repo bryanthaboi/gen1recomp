@@ -106,79 +106,47 @@ return function(game)
     "it opens on WONDER CARDS / WONDER NEWS / EXIT")
   U.shot(game, DIR .. "/gift_menu_03_front_end.png")
 
-  U.tap(game, "a")
-  U.wait(20)
-  result(st.state == Ui.STATE.GIFT_INPUT, "WONDER CARDS opens the saved card, state=" ..
-    tostring(st.state))
-  local card = Ui.card(st)
-  print("[driver] card title: " .. tostring(card and card.titleText))
-  result(card ~= nil and card.titleText == "MYSTIC TICKET", "the card is the MYSTIC TICKET")
-  U.wait(10)
-  U.shot(game, DIR .. "/gift_menu_04_wonder_card.png")
+  local function backToMenu()
+    if st.state == Ui.STATE.OFFER_LIST then U.tap(game, "b") end
+    for _ = 1, 300 do
+      if st.state == Ui.STATE.MAIN_MENU and not st.msg then break end
+      if st.msg and st.msg.revealed >= st.msg.total then U.tap(game, "a") end
+      U.wait(4)
+    end
+  end
 
   U.tap(game, "a")
-  U.wait(12)
-  result(st.state == Ui.STATE.GIFT_SELECT, "A opens RECEIVE / TOSS / CANCEL")
-  print("[driver] card menu rows: " .. table.concat(st.rows or {}, " | "))
-  U.shot(game, DIR .. "/gift_menu_05_card_menu.png")
-
-  U.tap(game, "b")
-  U.wait(12)
-  U.tap(game, "b")
-  U.wait(12)
+  U.wait(2)
+  result(st.state == Ui.STATE.SEARCHING and not st.isNews,
+    "WONDER CARDS fetches the list, not the saved card, state=" .. tostring(st.state))
+  local cardDeadline = love.timer.getTime() + 15
+  while st.state == Ui.STATE.SEARCHING and love.timer.getTime() < cardDeadline do U.wait(1) end
+  print("[driver] card fetch ended in state=" .. tostring(st.state) .. " err=" .. tostring(st.lastError))
+  result(st.state == Ui.STATE.OFFER_LIST or st.state == Ui.STATE.RESULT_MSG,
+    "the fetch ends on the card list or the cart's error, state=" .. tostring(st.state))
+  U.wait(30)
+  U.shot(game, DIR .. "/gift_menu_04_card_list.png")
+  backToMenu()
   result(st.state == Ui.STATE.MAIN_MENU, "B backs out to the Mystery Gift menu")
 
   U.tap(game, "down")
   U.wait(6)
   U.tap(game, "a")
-  U.wait(12)
-  for _ = 1, 300 do
-    if st.state == Ui.STATE.SOURCE_INPUT then break end
-    U.tap(game, "a")
-    U.wait(4)
-  end
-  -- pokefirered/src/mystery_gift_menu.c:1176
-  result(st.state == Ui.STATE.SOURCE_INPUT,
-    "WONDER NEWS with no saved news asks where to access it, state=" .. tostring(st.state))
-  print("[driver] news source rows: " .. table.concat(st.rows or {}, " | "))
-  -- pokefirered/src/mystery_gift_menu.c:203
-  result(#(st.rows or {}) == 3, "WIRELESS COMMUNICATION / FRIEND / CANCEL")
+  result(st.state == Ui.STATE.SEARCHING and st.isNews, "WONDER NEWS fetches the list at once")
+  local fetchDeadline = love.timer.getTime() + 15
+  while st.state == Ui.STATE.SEARCHING and love.timer.getTime() < fetchDeadline do U.wait(1) end
+  print("[driver] news fetch ended in state=" .. tostring(st.state) .. " err=" .. tostring(st.lastError))
+  result(st.state == Ui.STATE.OFFER_LIST or st.state == Ui.STATE.RESULT_MSG,
+    "the fetch ends on the news list or the cart's error, state=" .. tostring(st.state))
   U.wait(30)
-  U.shot(game, DIR .. "/gift_menu_06_news_source_prompt.png")
-  U.tap(game, "b")
+  U.shot(game, DIR .. "/gift_menu_06_news_list.png")
+  if st.state == Ui.STATE.OFFER_LIST then U.tap(game, "b") end
   for _ = 1, 300 do
     if st.state == Ui.STATE.MAIN_MENU and not st.msg then break end
+    if st.msg and st.msg.revealed >= st.msg.total then U.tap(game, "a") end
     U.wait(4)
   end
   result(st.state == Ui.STATE.MAIN_MENU, "B comes back to the Mystery Gift menu")
-
-  U.tap(game, "a")
-  U.wait(12)
-  U.tap(game, "a")
-  U.wait(12)
-  for _ = 1, 300 do
-    if st.state == Ui.STATE.GIFT_SELECT then break end
-    U.tap(game, "a")
-    U.wait(4)
-  end
-  result(st.state == Ui.STATE.GIFT_SELECT, "the card menu is back up")
-  U.tap(game, "a")
-  for _ = 1, 300 do
-    if st.state == Ui.STATE.SOURCE_INPUT then break end
-    U.tap(game, "a")
-    U.wait(4)
-  end
-  result(st.state == Ui.STATE.SOURCE_INPUT, "RECEIVE asks where the WONDER CARD should be accessed")
-  print("[driver] source rows: " .. table.concat(st.rows or {}, " | "))
-  -- pokefirered/src/mystery_gift_menu.c:203
-  result(#(st.rows or {}) == 3, "WIRELESS COMMUNICATION / FRIEND / CANCEL")
-  U.wait(10)
-  U.shot(game, DIR .. "/gift_menu_07_source_picker.png")
-
-  U.tap(game, "b")
-  U.wait(12)
-  U.tap(game, "b")
-  U.wait(12)
 
   U.tap(game, "b")
   for _ = 1, 200 do
