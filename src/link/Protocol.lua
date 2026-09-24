@@ -533,17 +533,19 @@ local function ppUpsOf(Pokemon, mon, slot, moveId)
 end
 
 local function movesOf3(Pokemon, mon)
-  local out = {}
+  local out, seen = {}, {}
   for slot = 1, 4 do
     local id = tonumber(Pokemon.moveIdAt(mon, slot))
-    if id and id > 0 then
+    if id and id > 0 and not seen[id] then
+      seen[id] = true
       local entry = mon.moves[slot]
       local ups = ppUpsOf(Pokemon, mon, slot, id)
+      local max = ppWithBonus(tonumber(Pokemon.movePp(id)) or 0, ups)
       local pp = tonumber(mon.pp and mon.pp[slot])
         or (type(entry) == "table" and tonumber(entry.pp))
-        or ppWithBonus(tonumber(Pokemon.movePp(id)) or 0, ups)
+        or max
       out[#out + 1] = { id = clampInt(id, 0, 65535, 0),
-                        pp = clampInt(pp, 0, 255, 0), ppUps = ups }
+                        pp = clampInt(pp, 0, max, max), ppUps = ups }
     end
   end
   return out

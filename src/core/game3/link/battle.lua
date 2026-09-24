@@ -235,7 +235,10 @@ function LB.unpackParty(packed, opts)
   local out = {}
   for i = 1, #packed do
     local mon, why = P.unpackMon3(nil, packed[i], { strict = true, forceLevel = opts.forceLevel })
-    if not mon then return nil, why or "bad mon" end
+    if not mon then
+      local sp = type(packed[i]) == "table" and tostring(packed[i].species) or "?"
+      return nil, string.format("%s (slot %d, species %s)", why or "bad mon", i, sp)
+    end
     local item = tonumber(mon.item or mon.heldItem) or 0
     mon.item, mon.heldItem = item, item
     local linked, linkWhy = LB.applyLinkStats(mon)
@@ -517,6 +520,10 @@ function LB.refuse(why, onDone)
   LB.state = "off"
   LB._started = false
   LB.report("error")
+  local okM, Message = pcall(require, "src.ui.game3.message")
+  if okM and type(Message) == "table" and Message.show and type(love) == "table" and love.graphics then
+    pcall(Message.show, require("src.core.Strings")("The battle couldn't start: %s.", why))
+  end
   if onDone then onDone("error") end
   return false, why
 end
