@@ -2715,6 +2715,71 @@ function Union.directDest(group)
 end
 
 -- pokefirered/src/union_room.c:1975
+-- pokefirered/data/maps/BattleColosseum_2P/map.json coord_events
+Union.COLOSSEUM_SEATS = {
+  [0] = { x = 3, y = 5, script = "BattleColosseum_2P_EventScript_PlayerSpot0" },
+  [1] = { x = 10, y = 5, script = "BattleColosseum_2P_EventScript_PlayerSpot1" },
+}
+Union.PARTNER_LOCAL_ID = 30
+
+local function seatPath(fromX, fromY, toX, toY, lead)
+  local C = require("src.core.game3.scripting.movement").CMD
+  local out = {}
+  local function add(cmd, n) for _ = 1, math.max(0, n) do out[#out + 1] = cmd end end
+  add(C.DELAY_16, lead or 0)
+  local midY = lead and fromY - 1 or toY
+  add(C.WALK_UP, fromY - midY)
+  add(C.WALK_LEFT, fromX - toX)
+  add(C.WALK_RIGHT, toX - fromX)
+  add(C.WALK_UP, midY - toY)
+  out[#out + 1] = C.STEP_END
+  return out
+end
+
+function Union.walkToSeats()
+  local L = link()
+  local lk = L.link
+  if not (lk and lk:isOpen()) then return false end
+  local seat = tonumber(lk.seat) or 0
+  local mine, theirs = Union.COLOSSEUM_SEATS[seat], Union.COLOSSEUM_SEATS[1 - seat]
+  if not (mine and theirs) then return false end
+  local ctx, adapters = L.vmCtx()
+  if not (ctx and adapters) then return false end
+  local Movement = require("src.core.game3.scripting.movement")
+  local px, py = L.playerCell()
+  local Objects = objects()
+  local g3 = type(lk.peerHello) == "table" and type(lk.peerHello.game3) == "table" and lk.peerHello.game3 or {}
+  if Objects and type(Objects._defs) == "table" and Objects.addObject then
+    Objects._defs[#Objects._defs + 1] = {
+      localId = Union.PARTNER_LOCAL_ID, x = px, y = py, facing = "up",
+      graphicsId = Union.graphicsIdFor(g3.gender, g3.trainerId),
+    }
+    if Objects.addObject(Union.PARTNER_LOCAL_ID) then
+      Movement.start(ctx, Union.PARTNER_LOCAL_ID, seatPath(px, py, theirs.x, theirs.y, 2), adapters)
+    end
+  end
+  local walk = Movement.start(ctx, Movement.LOCALID_PLAYER, seatPath(px, py, mine.x, mine.y), adapters)
+  local Space = require("src.core.game3.scripting.space")
+  require("src.core.game3.task").spawn(function()
+    Movement.tick(ctx, adapters)
+    if not walk.done then return false end
+    if Space.vm and Space.vm:isRunning() then return false end
+    Space.startScript(mine.script)
+    return true
+  end, { frames = 1200 })
+  return true
+end
+
+function Union.seatAfterWarp(mapId)
+  local Space = require("src.core.game3.scripting.space")
+  require("src.core.game3.task").spawn(function()
+    if Space.mapId ~= mapId then return false end
+    if Space.vm and Space.vm:isRunning() then return false end
+    Union.walkToSeats()
+    return true
+  end, { frames = 600 })
+end
+
 function Union.armCableClub(ctx, group)
   local dest, service = Union.directDest(group)
   local started, finished = false, false
@@ -2723,7 +2788,10 @@ function Union.armCableClub(ctx, group)
       started = true
       Union.warpForCableClubActivity(dest, service, {
         cableClubWarp = true,
-        onDone = function() finished = true end,
+        onDone = function()
+          finished = true
+          if dest == Union.COLOSSEUM_2P then Union.seatAfterWarp(dest.map) end
+        end,
       })
     end
     return finished
