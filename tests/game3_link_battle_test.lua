@@ -190,9 +190,8 @@ session.party = { charizard(), blastoise() }
 ok = LB.validateParty(session, Link.USING.DOUBLE_BATTLE)
 check(ok, "two usable mons pass the double battle check")
 
-ok, reason = LB.validateParty(session, Link.USING.SINGLE_BATTLE, { unionRoom = true })
-check(not ok, "two level 60 mons cannot enter a union room battle")
-eq(reason, "level_cap", "UNION_ROOM_MAX_LEVEL refuses them")
+ok = LB.validateParty(session, Link.USING.SINGLE_BATTLE, { unionRoom = true })
+check(ok, "two level 60 mons can enter a union room battle")
 
 session.party = {
   { species = 1, level = 12, hp = 30, maxHp = 30, moves = { 33 }, pp = { 35 }, maxPp = { 35 } },
@@ -521,15 +520,6 @@ pumpLink(host, guest)
 Link.attach(host)
 LB.headless = true
 LB.fade = false
-Union.state = "start_activity"
-Union.activity = Union.ACTIVITY.BATTLE_SINGLE + Union.IN_UNION_ROOM
-Union.partnerId = 1
-Union.update(0)
-eq(Union.state, "print_and_exit", "an over-level party cannot start the union room battle")
-Union.update(0)
-eq(Union.state, "main", "and the room goes back to its main loop")
-eq(Union.activity, nil, "with no pending activity")
-
 session.party = {
   legal({ species = 1, level = 12, hp = 30, maxHp = 30, moves = { 33 }, pp = { 35 }, maxPp = { 35 } }),
   legal({ species = 4, level = 9, hp = 25, maxHp = 25, moves = { 10 }, pp = { 35 }, maxPp = { 35 } }),
@@ -549,6 +539,9 @@ guest:send({ type = LB.MSG.SETUP, seed = urSetup and urSetup.seed,
 host:update(0)
 Union.update(0)
 check(Battle.isActive(), "the union room battle started")
+eq(LB.myParty()[1].level, LB.LINK_LEVEL, "our level 12 mon battles at level 50")
+eq(LB.myParty()[2].level, LB.LINK_LEVEL, "and so does the level 9 one")
+eq(session.party[1].level, 12, "while the party itself keeps its real level")
 eq(Battle.getState().link, true, "with BATTLE_TYPE_LINK")
 local urClasses = LB.unionRoomClasses()
 eq(Battle.getState().trainerPicId, urClasses.trainerPic[0x2222 % 8],

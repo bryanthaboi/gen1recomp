@@ -284,8 +284,9 @@ eq(#mapLoads, 1, "the player was warped back")
 eq(mapLoads[1] and mapLoads[1].map, COUNTER_MAP, "to the cable club counter map")
 eq(mapLoads[1] and mapLoads[1].x, 9, "onto the link room door x")
 eq(mapLoads[1] and mapLoads[1].y, 1, "onto the link room door y")
-eq(tonumber(Flags.getVar(store, ctx, Link.VAR_CABLE_CLUB_STATE)), 0,
-  "VAR_CABLE_CLUB_STATE is cleared")
+-- pokefirered/data/scripts/cable_club.inc:106 the 2F's OnFrame exit script clears it
+check(tonumber(Flags.getVar(store, ctx, Link.VAR_CABLE_CLUB_STATE)) ~= 0,
+  "VAR_CABLE_CLUB_STATE stays set for the Pokemon Center's exit script")
 
 print("[test] 10. CleanupLinkRoomState restores the bag and asks for the saved party")
 Link.reset()
@@ -323,8 +324,9 @@ mapLoads = {}
 Natives.special(ctx, NativesLink.SPECIAL.ExitLinkRoom, adapters)
 eq(#mapLoads, 1, "the player left the link room")
 eq(mapLoads[1] and mapLoads[1].map, COUNTER_MAP, "back to the counter")
-eq(tonumber(Flags.getVar(store, ctx, Link.VAR_CABLE_CLUB_STATE)), 0,
-  "VAR_CABLE_CLUB_STATE is cleared")
+-- pokefirered/data/scripts/cable_club.inc:106 the 2F's OnFrame exit script clears it
+check(tonumber(Flags.getVar(store, ctx, Link.VAR_CABLE_CLUB_STATE)) ~= 0,
+  "VAR_CABLE_CLUB_STATE stays set for the Pokemon Center's exit script")
 
 print("[test] 12. the real Pokemon Center 2F door is a dynamic warp back to the counter")
 local Cache = require("tests.game3_cache")

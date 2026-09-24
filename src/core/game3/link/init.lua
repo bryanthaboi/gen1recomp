@@ -303,9 +303,7 @@ function Link.doLinkRoomExit(ctx, adapters)
     ctx, adapters = Link.vmCtx()
   end
   Link.cleanupLinkRoomState(ctx, adapters)
-  local warped = Link.returnFromLinkRoom(ctx, adapters)
-  Link.setVar(ctx, Link.VAR_CABLE_CLUB_STATE, 0)
-  return warped
+  return Link.returnFromLinkRoom(ctx, adapters)
 end
 
 -- pokefirered/src/cable_club.c:821 ExitLinkRoom

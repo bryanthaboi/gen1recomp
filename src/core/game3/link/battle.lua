@@ -185,9 +185,12 @@ local function protocol()
   return require("src.link.Protocol")
 end
 
+LB.LINK_LEVEL = 50
+
 function LB.unpackOpts()
   local spec = LB._arena or (LB._spec and LB._spec.spec)
   local rule = spec and spec.profile and spec.profile.rule
+  if not spec then return { strict = true, forceLevel = LB.LINK_LEVEL } end
   return { strict = true, forceLevel = rule and tonumber(rule.forceLevel) or nil }
 end
 
@@ -276,15 +279,6 @@ local function hasEnigmaBerry(s)
   return false
 end
 
--- pokefirered/src/union_room.c:4565 HasAtLeastTwoMonsOfLevel30OrLower
-local function twoUnderCap(s, cap)
-  local n = 0
-  for _, mon in ipairs(partyOf(s)) do
-    if LB.eligible(mon) and (tonumber(mon.level) or 0) <= cap then n = n + 1 end
-  end
-  return n >= 2
-end
-
 function LB.validateParty(s, mode, opts)
   opts = opts or {}
   s = s or session()
@@ -297,9 +291,6 @@ function LB.validateParty(s, mode, opts)
   if opts.unionRoom then
     -- pokefirered/data/scripts/cable_club.inc:806
     if hasEnigmaBerry(s) then return false, "enigma_berry" end
-    if not twoUnderCap(s, (union() and union().MAX_LEVEL) or 30) then
-      return false, "level_cap"
-    end
     return true, nil
   end
   local L = link()

@@ -203,17 +203,8 @@ eq(#Screen.items, 4, "with the four pret entries")
 teq(Screen.labelFor(Screen.items[1]), "GREETINGS", "GREETINGS first")
 teq(Screen.labelFor(Screen.items[4]), "EXIT", "EXIT last")
 
-print("[test] 7. BATTLE needs two mons at or below level 30")
-session.party = { { species = 1, level = 42 } }
-Screen.cursor = 2
-Screen.confirm()
-check(not Screen.isOpen(), "the chooser closed")
-eq(Union.activity, nil, "an over-level party cannot start a union room battle")
-
-session.party = { { species = 1, level = 12 }, { species = 4, level = 9 } }
-Union.state = "do_something_prompt"
-Union.partnerId = 1
-Union.update(0)
+print("[test] 7. BATTLE has no level limit")
+session.party = { { species = 1, level = 42 }, { species = 4, level = 60 } }
 Screen.cursor = 2
 Screen.confirm()
 eq(Union.activity, Union.ACTIVITY.BATTLE_SINGLE + Union.IN_UNION_ROOM,

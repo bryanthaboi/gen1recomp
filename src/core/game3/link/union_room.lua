@@ -31,8 +31,6 @@ Union.ACTIVITY = {
 Union.IN_UNION_ROOM = 0x40
 -- pokefirered/include/constants/union_room.h:8
 Union.MAX_LEADERS = 8
--- pokefirered/include/constants/union_room.h:15
-Union.MAX_LEVEL = 30
 
 -- pokefirered/include/constants/union_room.h:51
 Union.LINK_GROUP = {
@@ -839,21 +837,6 @@ local function chooserOpen()
   return s and s.isOpen and s.isOpen() and s.mode == "activity"
 end
 
--- pokefirered/src/union_room.c:4565 HasAtLeastTwoMonsOfLevel30OrLower
-function Union.hasTwoMonsUnderLevelCap()
-  local s = link().session()
-  local party = (s and s.party) or {}
-  local n = 0
-  for i = 1, 6 do
-    local mon = party[i]
-    local species = mon and (tonumber(mon.species) or 0) or 0
-    if species ~= 0 and not mon.isEgg and (tonumber(mon.level) or 0) <= Union.MAX_LEVEL then
-      n = n + 1
-    end
-  end
-  return n >= 2
-end
-
 local function sendRequest(activity)
   if Union.relay then return Union.sendInvite(activity) end
   local lk = link().link
@@ -883,22 +866,6 @@ function Union.chooseActivity(index)
     return true
   end
   local activity = item.union and (item.activity + Union.IN_UNION_ROOM) or item.activity
-  if activity == (Union.ACTIVITY.BATTLE_SINGLE + Union.IN_UNION_ROOM)
-      and not Union.hasTwoMonsUnderLevelCap() then
-    Union.activity = nil
-    Union.lastResult = "need_two_mons"
-    if Union.relay and M and M.show then
-      return Union.runFlow({
-        Union.sayStep(RomText.ascii("gText_UR_NeedTwoMonsOfLevel30OrLower1")),
-        Union.doStep(function() Union.doSomethingPrompt(false) end),
-      }, "do_something_prompt")
-    end
-    Union.state = "do_something_prompt"
-    if M and M.show then
-      M.show(RomText.ascii("gText_UR_NeedTwoMonsOfLevel30OrLower1"))
-    end
-    return false
-  end
   Union.activity = activity
   Union._role = "child"
   local sent = sendRequest(activity)
@@ -1711,16 +1678,6 @@ function Union.answerRequest(accept)
     local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
     local M = message()
     local shown = inv and M and M.show and type(love) == "table" and love.graphics
-    -- pokefirered/src/union_room.c:3178
-    if accept and raw == Union.ACTIVITY.BATTLE_SINGLE and Union.activity >= Union.IN_UNION_ROOM
-        and not Union.hasTwoMonsUnderLevelCap() then
-      if inv then link().clientCall("replyInvite", inv.id, false) end
-      Union.lastResult = "need_two_mons"
-      Union.activity = nil
-      if shown then return Union.printAndExit(RomText.ascii("gText_UR_NeedTwoMonsOfLevel30OrLower2")) end
-      Union.state = "main"
-      return true
-    end
     if inv then link().clientCall("replyInvite", inv.id, accept and true or false) end
     Union.lastResult = accept and "accepted" or "declined"
     if accept and inv then
